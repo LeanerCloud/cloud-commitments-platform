@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"

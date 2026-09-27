@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

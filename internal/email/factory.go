@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LeanerCloud/CUDly/internal/secrets"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/secrets"
 )
 
 // ProviderType represents the cloud provider for email services.

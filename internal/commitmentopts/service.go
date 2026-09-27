@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"golang.org/x/sync/errgroup"
 )

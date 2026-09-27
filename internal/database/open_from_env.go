@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LeanerCloud/CUDly/internal/secrets"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/secrets"
 )
 
 // OpenFromEnv creates a database connection using environment-variable configuration.

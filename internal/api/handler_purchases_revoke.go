@@ -30,9 +30,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	armreservations "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
-	"github.com/LeanerCloud/CUDly/internal/auth"
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
 )

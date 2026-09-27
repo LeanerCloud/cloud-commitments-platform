@@ -20,9 +20,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/LeanerCloud/CUDly/internal/credentials"
-	"github.com/LeanerCloud/CUDly/internal/database"
-	"github.com/LeanerCloud/CUDly/internal/secrets"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/secrets"
 )
 
 const safetyEnv = "CUDLY_REKEY_FROM_ZERO_KEY"

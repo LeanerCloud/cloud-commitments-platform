@@ -13,8 +13,8 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/oidc"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/oidc"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"

@@ -7,11 +7,11 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
-	pkgladder "github.com/LeanerCloud/CUDly/pkg/ladder"
-	awsprovider "github.com/LeanerCloud/CUDly/providers/aws"
-	awsladder "github.com/LeanerCloud/CUDly/providers/aws/ladder"
-	ec2svc "github.com/LeanerCloud/CUDly/providers/aws/services/ec2"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	pkgladder "github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
+	awsprovider "github.com/LeanerCloud/cloud-commitments-go/providers/aws"
+	awsladder "github.com/LeanerCloud/cloud-commitments-go/providers/aws/ladder"
+	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
 )
 
 // exchangeRunnerAdapter bridges internal/server wiring (exchange store, EC2 exchange

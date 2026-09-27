@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 )
 
 // GlobalConfig represents the global CUDly configuration.

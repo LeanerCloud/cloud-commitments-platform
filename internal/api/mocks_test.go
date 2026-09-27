@@ -4,11 +4,11 @@ import (
 	"context"
 	"sync"
 
-	"github.com/LeanerCloud/CUDly/internal/auth"
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/credentials"
-	"github.com/LeanerCloud/CUDly/internal/mocks"
-	"github.com/LeanerCloud/CUDly/internal/scheduler"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/mocks"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/scheduler"
 	"github.com/stretchr/testify/mock"
 )
 

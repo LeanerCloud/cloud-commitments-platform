@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"

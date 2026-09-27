@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/LeanerCloud/CUDly/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 )
 
 const outputRelPath = "frontend/src/permissions.generated.ts"

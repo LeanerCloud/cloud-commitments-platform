@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/api"
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/mocks"
-	"github.com/LeanerCloud/CUDly/internal/testutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/mocks"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/mock"
 )

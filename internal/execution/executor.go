@@ -4,7 +4,7 @@ package execution
 import (
 	"context"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // AccountExecutor is a function that performs an operation for a single account.

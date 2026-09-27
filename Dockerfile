@@ -43,12 +43,6 @@ WORKDIR /app
 # Copy go module files
 COPY go.mod go.sum ./
 
-# Copy provider modules (multi-module setup)
-COPY pkg/go.mod pkg/go.sum ./pkg/
-COPY providers/aws/go.mod providers/aws/go.sum providers/aws/
-COPY providers/azure/go.mod providers/azure/go.sum providers/azure/
-COPY providers/gcp/go.mod providers/gcp/go.sum providers/gcp/
-
 # Download dependencies
 RUN go mod download
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // FinalizeResult summarizes one sweep of FinalizeInFlightRevocations.

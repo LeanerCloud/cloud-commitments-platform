@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"

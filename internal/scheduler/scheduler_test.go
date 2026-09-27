@@ -4,17 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/email"
-	"github.com/LeanerCloud/CUDly/internal/mocks"
-	"github.com/LeanerCloud/CUDly/internal/purchase"
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
-	azureprovider "github.com/LeanerCloud/CUDly/providers/azure"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
+	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/mocks"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/stretchr/testify/assert"
@@ -1717,18 +1719,21 @@ func TestScheduler_CollectAWSRecommendations_GetRecsError(t *testing.T) {
 }
 
 // TestScheduler_CollectAzureRecommendations_AllAccountsFailLoud pins the
-// COR-03 contract end-to-end on the Azure path: when the only registered
-// Azure account has unusable managed_identity credentials in the test
-// environment (no IMDS, no federated token), every per-service call inside
-// mergeServiceResults errors, the all-attempted-failed guard fires, the
-// per-account call returns an error, fanOutPerAccount marks the account as
-// failed, and collectAzureRecommendations propagates an "all accounts
-// failed" error to the caller instead of returning (empty, nil).
-//
-// Pre-fix this test asserted require.NoError and validated the silent-skip
-// behavior the COR-03 fix removes. Keeping that assertion would have
-// regressed the very property this PR is trying to enforce.
+// COR-03 all-attempted-failed path using a deterministic managed-identity
+// endpoint instead of the host's ambient metadata service.
 func TestScheduler_CollectAzureRecommendations_AllAccountsFailLoud(t *testing.T) {
+	const fixtureMarker = "azure-managed-identity-fixture"
+	var calls int32
+	identityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(fixtureMarker))
+	}))
+	t.Cleanup(identityServer.Close)
+	t.Setenv("IDENTITY_ENDPOINT", identityServer.URL)
+	t.Setenv("IDENTITY_HEADER", "fixture-header")
+	t.Setenv("IDENTITY_SERVER_THUMBPRINT", "")
+
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 
@@ -1757,6 +1762,9 @@ func TestScheduler_CollectAzureRecommendations_AllAccountsFailLoud(t *testing.T)
 	require.Error(t, err, "collectAzureRecommendations must fail loud when the only account has unusable credentials (COR-03)")
 	assert.Contains(t, err.Error(), "Azure: all 1 accounts failed",
 		"the per-account fan-out must surface the all-accounts-failed shape so the scheduler keeps stale rows and records last_collection_error")
+	assert.Contains(t, err.Error(), "all 4 Azure recommendation services failed")
+	assert.Contains(t, err.Error(), fixtureMarker)
+	assert.Positive(t, atomic.LoadInt32(&calls), "the managed-identity fixture must receive token requests")
 	assert.Nil(t, recs)
 	assert.Empty(t, succeeded,
 		"the failed account must not land in SucceededAccountIDs (stale-row eviction guard)")

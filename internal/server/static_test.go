@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/testutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 )
 
 // makeStaticDir creates a temporary directory with the given files and

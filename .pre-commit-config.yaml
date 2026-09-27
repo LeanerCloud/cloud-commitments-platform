@@ -3,14 +3,21 @@
 # Setup: pre-commit install
 
 repos:
-  # Go formatting and linting
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
+  # Go formatting and module checks
+  - repo: local
     hooks:
       - id: go-fmt
         name: Run gofmt
+        entry: bash scripts/gofmt-hook.sh
+        language: system
+        files: \.go$
       - id: go-mod-tidy
         name: Run go mod tidy
+        entry: make tidy-check
+        language: system
+        pass_filenames: false
+        require_serial: true
+        files: '(\.go$|(^|/)go\.(mod|sum)$)'
 
   - repo: local
     hooks:
@@ -165,8 +172,8 @@ repos:
       - id: gosec
         name: Go security scanner (per-module, per-changed-package)
         # Scans only the Go packages that contain staged files, resolved to
-        # their owning module (root, pkg/, providers/aws, providers/azure,
-        # providers/gcp).  Fast: never whole-repo, always per-changed-package.
+        # their owning module (root or tests/e2e).
+        # Fast: never whole-repo, always per-changed-package.
         #
         # gosec v2.28.0 is auto-installed to
         # ~/.cache/pre-commit-gosec/v2.28.0/gosec on first use.

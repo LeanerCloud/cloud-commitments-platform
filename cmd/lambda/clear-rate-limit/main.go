@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/LeanerCloud/CUDly/internal/database"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/aws/aws-lambda-go/lambda"
 )
 

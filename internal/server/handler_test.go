@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/mocks"
-	"github.com/LeanerCloud/CUDly/internal/purchase"
-	"github.com/LeanerCloud/CUDly/internal/scheduler"
-	"github.com/LeanerCloud/CUDly/internal/testutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/mocks"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/scheduler"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 	"github.com/stretchr/testify/mock"
 )
 

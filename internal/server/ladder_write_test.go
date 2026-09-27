@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	pkgcommon "github.com/LeanerCloud/CUDly/pkg/common"
-	pkgladder "github.com/LeanerCloud/CUDly/pkg/ladder"
-	awsladder "github.com/LeanerCloud/CUDly/providers/aws/ladder"
+	pkgcommon "github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	pkgladder "github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
+	awsladder "github.com/LeanerCloud/cloud-commitments-go/providers/aws/ladder"
 )
 
 // f64ptr returns a pointer to the given float64. BufferReshapeConfig uses

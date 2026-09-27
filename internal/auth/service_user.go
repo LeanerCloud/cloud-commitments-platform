@@ -7,7 +7,7 @@ import (
 	"net/mail"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

@@ -13,7 +13,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/LeanerCloud/CUDly/internal/server"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/server"
 	"github.com/aws/aws-lambda-go/lambda"
 )
 

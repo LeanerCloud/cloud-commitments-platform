@@ -6,8 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 )
 
 // StoreInterface defines the methods required for configuration storage.

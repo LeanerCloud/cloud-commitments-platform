@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/api"
-	"github.com/LeanerCloud/CUDly/internal/scheduler"
-	"github.com/LeanerCloud/CUDly/internal/server/scheduledauth"
-	"github.com/LeanerCloud/CUDly/internal/testutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/scheduler"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/server/scheduledauth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 	"github.com/aws/aws-lambda-go/events"
 )
 

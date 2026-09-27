@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/scheduler"
-	"github.com/LeanerCloud/CUDly/internal/testutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/scheduler"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 )
 
 // TestServerIntegration is an example integration test using testcontainers

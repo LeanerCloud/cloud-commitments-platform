@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/testutil"
-	pkgcommon "github.com/LeanerCloud/CUDly/pkg/common"
-	pkgladder "github.com/LeanerCloud/CUDly/pkg/ladder"
+	pkgcommon "github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	pkgladder "github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 )
 
 // ============================================================

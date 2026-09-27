@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/analytics"
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/analytics"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 )
 

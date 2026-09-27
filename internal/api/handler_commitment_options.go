@@ -5,8 +5,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/LeanerCloud/CUDly/internal/commitmentopts"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/commitmentopts"
 )
 
 // commitmentOptionsResponse is the JSON shape returned by

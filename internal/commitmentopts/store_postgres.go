@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/LeanerCloud/CUDly/internal/database"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/auth"
-	"github.com/LeanerCloud/CUDly/internal/config"
-	ec2svc "github.com/LeanerCloud/CUDly/providers/aws/services/ec2"
+	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	smithy "github.com/aws/smithy-go"

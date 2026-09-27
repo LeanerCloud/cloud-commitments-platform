@@ -10,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -39,26 +40,6 @@ var requiredDerivedActions = []string{
 	"ec2:CreateTags",
 }
 
-// scanRoots are walked, relative to the repo root, for SDK call sites.
-//
-// pkg/ is included because internal/ imports it at runtime: pkg/exchange
-// builds the RI exchange quote and accept inputs, reached from
-// internal/api/handler_ri_exchange.go and internal/server/ladder_write.go.
-// Being a separate Go module does not matter here; the walker reads files.
-//
-// cmd/ is excluded because the CLI runs under operator credentials, a
-// different identity than the runtime role this test guards
-// (organizations:DescribeAccount is CLI-only for exactly this reason, per
-// #1322). Note cmd/server IS a runtime entry point: the exclusion is safe
-// only while cmd/server and cmd/cudly-mcp import no SDK service package
-// directly, which holds today. If either starts issuing its own SDK calls,
-// add it here.
-var scanRoots = []string{
-	filepath.Join("providers", "aws"),
-	"internal",
-	"pkg",
-}
-
 // runtimeIAMFiles are the IaC files that grant the runtime role's IAM
 // actions, relative to this package's directory (the three flavors compared
 // by check-aws-iam-parity.sh comparison 1).
@@ -80,7 +61,7 @@ func TestRuntimeGrantsEveryCalledAction(t *testing.T) {
 
 	for _, action := range requiredDerivedActions {
 		if _, ok := called[action]; !ok {
-			t.Errorf("scanner did not derive %s from %v; it is a known SDK call the runtime role must be granted (#1967/#1968) and its absence here means the walker is broken, not that the call went away", action, scanRoots)
+			t.Errorf("scanner did not derive %s from runtime source and dependencies; it is a known SDK call the runtime role must be granted (#1967/#1968) and its absence here means the walker is broken, not that the call went away", action)
 		}
 	}
 
@@ -96,18 +77,37 @@ func TestRuntimeGrantsEveryCalledAction(t *testing.T) {
 	}
 }
 
-// deriveCalledActions walks scanRoots and returns every IAM action implied by
+// deriveCalledActions walks runtime source and returns every IAM action implied by
 // an SDK *Input request literal, keyed by action.
 func deriveCalledActions(t *testing.T) map[string]calledAction {
 	t.Helper()
 
 	root := repoRoot(t)
+	// Scan the selected library versions, including workspace replacements.
+	cmd := exec.CommandContext(t.Context(), "go", "list", "-m", "-f", "{{.Dir}}",
+		"github.com/LeanerCloud/cloud-commitments-go/providers/aws",
+		"github.com/LeanerCloud/cloud-commitments-go/pkg")
+	cmd.Dir = root
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("locating runtime dependencies: %v", err)
+	}
+	moduleDirs := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(moduleDirs) != 2 {
+		t.Fatalf("expected two runtime dependency directories, got %q", output)
+	}
+	scanRoots := []string{filepath.Join(root, "internal")}
+	for _, dir := range moduleDirs {
+		if !filepath.IsAbs(dir) {
+			t.Fatalf("runtime dependency directory is not absolute: %q", dir)
+		}
+		scanRoots = append(scanRoots, dir)
+	}
 	fset := token.NewFileSet()
 	actions := map[string]calledAction{}
 	filesScanned := 0
 
-	for _, rel := range scanRoots {
-		dir := filepath.Join(root, rel)
+	for _, dir := range scanRoots {
 		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err

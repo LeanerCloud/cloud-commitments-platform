@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

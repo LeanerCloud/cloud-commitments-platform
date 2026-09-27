@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // requireAccountAccess fetches the account by ID, then verifies the session's

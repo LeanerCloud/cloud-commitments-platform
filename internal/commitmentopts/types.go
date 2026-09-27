@@ -12,7 +12,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
 )
 

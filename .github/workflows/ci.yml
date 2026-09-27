@@ -206,23 +206,16 @@ jobs:
 
       - name: Download dependencies
         run: |
-          # Multi-module repo: `go mod download` resolves the current module
-          # only, so running it at the root left pkg/ and providers/* unverified
-          # (issue #1751). Mirror the govulncheck per-module loop below.
+          # Verify both platform-owned modules; libraries have their own CI.
           set -e
-          for mod in . pkg providers/aws providers/azure providers/gcp tests/e2e; do
+          for mod in . tests/e2e; do
             echo "==> go mod download/verify in $mod"
             (cd "$mod" && go mod download && go mod verify)
           done
 
       - name: Run unit tests (all modules)
         run: |
-          # Multi-module repo: each ./... only walks the current module, so
-          # running from the root alone never compiled or asserted pkg/,
-          # providers/* or tests/e2e -- roughly 1600 test functions that had
-          # never gated a merge (issue #1751). Mirror the govulncheck and gosec
-          # per-module loops, collect one coverage profile per module, then
-          # merge for the upload steps below.
+          # Each ./... walks one module. Check both platform-owned modules.
           #
           # A failing module must not abort the loop. Aborting would hide every
           # later module's result behind the first failure, which is the same
@@ -230,7 +223,7 @@ jobs:
           # status, and fail at the end so every module is reported.
           set -uo pipefail
           status=0
-          for mod in . pkg providers/aws providers/azure providers/gcp tests/e2e; do
+          for mod in . tests/e2e; do
             tag=$(echo "$mod" | tr './' '--' | sed 's/^-/root/')
             log="$RUNNER_TEMP/unit-${tag}.log"
             # tests/e2e holds only //go:build e2e files, so `go test ./...`
@@ -317,48 +310,6 @@ jobs:
             echo "::warning::Coverage is below 80% (current: ${coverage}%)"
           fi
 
-  mcp-build:
-    name: Build MCP (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            binary_format: ELF
-          - os: macos-latest
-            binary_format: Mach-O
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Assert MCP artifact is absent
-        run: test ! -e bin/cudly-mcp
-
-      - name: Build MCP
-        run: make build-mcp VERSION=v0.0.0-version-test
-
-      - name: Assert host-native binary format
-        run: file bin/cudly-mcp | grep -F '${{ matrix.binary_format }}'
-
-      - name: Verify Make-built MCP version
-        env:
-          CUDLY_MCP_TEST_BINARY: ${{ github.workspace }}/bin/cudly-mcp
-        run: go test ./cmd/cudly-mcp -run '^TestBuiltBinaryReportsInjectedVersion$' -count=1
-
-      - name: Assert clean target includes MCP artifact
-        run: make -n clean | grep -Fx 'rm -f cudly bootstrap bin/cudly-server bin/cudly-mcp'
-
   # Integration tests with real PostgreSQL
   integration-tests:
     name: Integration Tests
@@ -428,18 +379,10 @@ jobs:
           DB_PASSWORD: test_password  # CI-only throwaway password — not used in any real environment
           DB_SSL_MODE: disable
         run: |
-          # Same multi-module gap as the unit job (issue #1751): a bare ./...
-          # here only ever walked the root module. Mirror the same loop.
-          #
-          # Note that -tags=integration ADDS a build tag rather than selecting
-          # only tagged files, so each module runs its untagged tests too. Today
-          # every //go:build integration file lives in the root module, so for
-          # pkg/ and providers/* this run is a compile-under-tag check plus a
-          # re-run of their unit tests. That is the point: it is what makes an
-          # integration test added to those modules later actually gate.
+          # Integration tests run in the root module; E2E gets its own tag.
           set -uo pipefail
           status=0
-          for mod in . pkg providers/aws providers/azure providers/gcp tests/e2e; do
+          for mod in . tests/e2e; do
             tag=$(echo "$mod" | tr './' '--' | sed 's/^-/root/')
             log="$RUNNER_TEMP/integration-${tag}.log"
             # See the unit job: tests/e2e has no package to test without its own
@@ -644,11 +587,9 @@ jobs:
           # between PRs without an intentional bump in this repo.
           # Bumping is a deliberate review item, not a drift.
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-          # Multi-module repo: each ./... only walks the current module,
-          # so scanning the root would silently miss pkg/ and providers/*.
-          # Walk every module independently and fail on any HIGH/CRITICAL.
+          # Scan both platform-owned modules independently.
           set -e
-          for mod in . pkg providers/aws providers/azure providers/gcp tests/e2e; do
+          for mod in . tests/e2e; do
             echo "==> govulncheck in $mod"
             (cd "$mod" && govulncheck ./...)
           done
@@ -674,9 +615,7 @@ jobs:
           # The securego/gosec Docker action bundles its own Go toolchain which
           # cannot satisfy the module's go directive, causing a toolchain mismatch.
           go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
-          # Multi-module repo: each ./... only walks the current module so scanning root
-          # alone silently misses pkg/ and providers/*. Mirror the govulncheck per-module
-          # loop, collect per-module SARIF, then merge for the upload step.
+          # Collect SARIF for both platform-owned modules before uploading.
           #
           # gosec exits non-zero both for real findings and for a processing
           # error. A bare `set -e` loop aborts at the first non-zero module,
@@ -687,7 +626,7 @@ jobs:
           # `status` records whether the job should still fail at the end.
           set -e
           status=0
-          for mod in . pkg providers/aws providers/azure providers/gcp tests/e2e; do
+          for mod in . tests/e2e; do
             tag=$(echo "$mod" | tr './' '--' | sed 's/^-/root/')
             out="$RUNNER_TEMP/gosec-${tag}.sarif"
             echo "==> gosec in $mod"
@@ -1105,7 +1044,6 @@ jobs:
       - lint
       - workflow-lint
       - unit-tests
-      - mcp-build
       - integration-tests
       - docker-build
       - terraform-validate

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/api"
-	"github.com/LeanerCloud/CUDly/internal/scheduler"
-	"github.com/LeanerCloud/CUDly/internal/testutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/scheduler"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 )
 
 func TestDetectLambdaEventType(t *testing.T) {

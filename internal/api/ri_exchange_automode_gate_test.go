@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/internal/auth"
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/mocks"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/mocks"
 )
 
 // Coverage for the auto-mode write gate (issue #1765).

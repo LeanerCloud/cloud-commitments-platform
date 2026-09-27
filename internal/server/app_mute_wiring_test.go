@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/email"
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LeanerCloud/CUDly/internal/oidc"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/oidc"
 	"github.com/aws/aws-lambda-go/events"
 )
 

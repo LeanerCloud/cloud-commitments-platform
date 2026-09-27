@@ -14,11 +14,11 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/database/postgres/migrations"
-	"github.com/LeanerCloud/CUDly/internal/database/postgres/testhelpers"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
-	ec2svc "github.com/LeanerCloud/CUDly/providers/aws/services/ec2"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
+	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 

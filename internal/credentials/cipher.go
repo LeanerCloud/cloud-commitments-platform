@@ -17,7 +17,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LeanerCloud/CUDly/internal/secrets"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/secrets"
 )
 
 // devKeyHex is the all-zero 32-byte AES-256 dev key, used ONLY when

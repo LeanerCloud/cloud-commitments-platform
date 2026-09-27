@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )

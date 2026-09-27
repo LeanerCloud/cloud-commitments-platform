@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"golang.org/x/sync/singleflight"
 )
 

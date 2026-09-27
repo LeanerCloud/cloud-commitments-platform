@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // TestPostgresStore_SaveRIExchangeRecord_GeneratesID verifies that SaveRIExchangeRecord

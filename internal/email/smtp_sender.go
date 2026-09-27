@@ -11,8 +11,8 @@ import (
 	"net/smtp"
 	"strings"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // SMTPConfig holds configuration for SMTP email sender.

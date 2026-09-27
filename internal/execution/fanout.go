@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // ConcurrencyFromEnv reads the CUDLY_MAX_ACCOUNT_PARALLELISM env var and

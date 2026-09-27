@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/analytics"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/analytics"
 	"github.com/aws/aws-lambda-go/events"
 )
 

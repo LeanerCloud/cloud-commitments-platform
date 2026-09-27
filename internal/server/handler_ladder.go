@@ -13,9 +13,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/google/uuid"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	pkgcommon "github.com/LeanerCloud/CUDly/pkg/common"
-	pkgladder "github.com/LeanerCloud/CUDly/pkg/ladder"
+	pkgcommon "github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	pkgladder "github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // Cadence thresholds for the per-config self-gate (Q6).

@@ -14,8 +14,8 @@ import (
 
 	"github.com/google/uuid"
 
-	cudlyiac "github.com/LeanerCloud/CUDly/iac"
-	"github.com/LeanerCloud/CUDly/internal/iacfiles"
+	cudlyiac "github.com/LeanerCloud/cloud-commitments-platform/iac"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/iacfiles"
 	"github.com/aws/aws-lambda-go/events"
 )
 

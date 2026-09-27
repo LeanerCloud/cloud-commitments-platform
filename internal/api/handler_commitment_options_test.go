@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/commitmentopts"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/commitmentopts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

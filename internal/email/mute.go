@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // This file holds the transport-agnostic mute + List-Unsubscribe logic shared

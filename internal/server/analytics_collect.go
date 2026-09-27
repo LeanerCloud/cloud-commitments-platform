@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/analytics"
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/database"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/analytics"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 )
 
 // AnalyticsConfig holds the savings-snapshot collector knobs, read from env at

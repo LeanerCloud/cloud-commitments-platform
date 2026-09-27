@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/oidc"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/oidc"
 	"github.com/aws/aws-lambda-go/events"
 )
 

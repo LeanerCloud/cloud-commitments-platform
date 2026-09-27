@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // PlanHealthFactorCode identifies a single scoring factor in a plan's

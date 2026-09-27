@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/email"
-	"github.com/LeanerCloud/CUDly/internal/testutil"
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
-	ec2svc "github.com/LeanerCloud/CUDly/providers/aws/services/ec2"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
+	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 	"github.com/jackc/pgx/v5"
 )
 

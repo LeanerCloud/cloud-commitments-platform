@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/internal/credentials"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 )
 
 // TestRekeyOne_RoundTrip verifies the encrypt/decrypt loop without DB.
