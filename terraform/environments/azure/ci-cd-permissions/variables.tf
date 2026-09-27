@@ -4,9 +4,9 @@ variable "subscription_id" {
 }
 
 variable "github_repo" {
-  description = "GitHub repository (owner/name) whose Actions workflows may authenticate via federated identity credentials (e.g. 'LeanerCloud/CUDly'). Leave empty to skip federated credential setup."
+  description = "GitHub repository (owner/name) whose Actions workflows may authenticate via federated identity credentials (e.g. 'LeanerCloud/cloud-commitments-platform'). Leave empty to skip federated credential setup."
   type        = string
-  default     = "LeanerCloud/CUDly"
+  default     = "LeanerCloud/cloud-commitments-platform"
 }
 
 variable "github_environments" {

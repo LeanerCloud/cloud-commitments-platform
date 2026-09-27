@@ -132,7 +132,7 @@ terraform import azuread_service_principal.cudly_deploy "$SP_OBJ_ID"
 
 ### Repository secrets / variables
 
-Set these in **Settings → Secrets and variables → Actions** on the `LeanerCloud/CUDly` GitHub
+Set these in **Settings → Secrets and variables → Actions** on the `LeanerCloud/cloud-commitments-platform` GitHub
 repository (or in a GitHub Actions Environment for per-environment control):
 
 | Name | Value | How to get it |
@@ -164,9 +164,9 @@ Azure federated credentials allow no wildcards, so one resource is required per 
 
 | Credential | Subject | Use case |
 | --- | --- | --- |
-| `github-actions-main` | `repo:LeanerCloud/CUDly:ref:refs/heads/main` | Deployments from main |
-| `github-actions-pr` | `repo:LeanerCloud/CUDly:pull_request` | Plan runs on PRs |
-| `github-actions-env-<name>` | `repo:LeanerCloud/CUDly:environment:<name>` | Jobs bound to a deployment environment (one per `var.github_environments`) |
+| `github-actions-main` | `repo:LeanerCloud/cloud-commitments-platform:ref:refs/heads/main` | Deployments from main |
+| `github-actions-pr` | `repo:LeanerCloud/cloud-commitments-platform:pull_request` | Plan runs on PRs |
+| `github-actions-env-<name>` | `repo:LeanerCloud/cloud-commitments-platform:environment:<name>` | Jobs bound to a deployment environment (one per `var.github_environments`) |
 
 A job declaring `environment: <name>` presents the **environment** subject, not the
 main-branch one, so it cannot authenticate unless `<name>` is in

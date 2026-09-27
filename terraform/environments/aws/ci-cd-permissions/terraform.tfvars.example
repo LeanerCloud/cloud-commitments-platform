@@ -20,7 +20,7 @@ aws_region = "us-east-1"
 #
 # Set to "" to skip OIDC provider creation.
 #
-github_repo = "LeanerCloud/CUDly"
+github_repo = "LeanerCloud/cloud-commitments-platform"
 
 # ─── trust_principal ───────────────────────────────────────────────────────────
 # (Optional) IAM principal in the same account allowed to assume the deploy

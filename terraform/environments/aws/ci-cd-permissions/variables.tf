@@ -11,7 +11,7 @@ variable "trust_principal" {
 }
 
 variable "github_repo" {
-  description = "GitHub repository (owner/name) whose Actions workflows may assume the deploy role via OIDC (e.g. 'LeanerCloud/CUDly'). Leave empty to skip OIDC setup."
+  description = "GitHub repository (owner/name) whose Actions workflows may assume the deploy role via OIDC (e.g. 'LeanerCloud/cloud-commitments-platform'). Leave empty to skip OIDC setup."
   type        = string
-  default     = "LeanerCloud/CUDly"
+  default     = "LeanerCloud/cloud-commitments-platform"
 }

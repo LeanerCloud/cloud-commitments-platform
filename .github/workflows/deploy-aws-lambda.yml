@@ -43,7 +43,10 @@ on:
     paths:
       - 'cmd/**'
       - 'internal/**'
-      - 'providers/**'
+      # Provider code lives in cloud-commitments-go, so a provider change reaches
+      # this image through the go.mod pin, not through a path filter here.
+      - 'go.mod'
+      - 'go.sum'
       - 'frontend/**'
       - 'Dockerfile'
       - 'terraform/modules/compute/aws/lambda/**'
