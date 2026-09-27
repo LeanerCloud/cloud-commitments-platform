@@ -19,9 +19,13 @@ subscription_id = "00000000-0000-0000-0000-000000000000"
 # GitHub repository (owner/name) whose Actions workflows will authenticate
 # via Azure AD Federated Identity Credentials (keyless — no client secrets).
 #
-# Two federated credentials are created:
+# Federated credentials are created for:
 #   - main branch deployments: repo:<owner>/<name>:ref:refs/heads/main
-#   - pull request plan checks: repo:<owner>/<name>:pull_request
+#   - each entry in github_environments: repo:<owner>/<name>:environment:<name>
+#
+# No pull_request-subject credential is created (see #90): it is not scoped to
+# any branch or environment protection, and nothing in this repo authenticates
+# to Azure on a pull_request trigger.
 #
 # Set to "" to skip federated credential and service principal creation.
 #
