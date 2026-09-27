@@ -8,7 +8,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // Constants for time calculations.

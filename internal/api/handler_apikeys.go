@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/aws/aws-lambda-go/events"
 )
 

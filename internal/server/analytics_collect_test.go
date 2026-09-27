@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/testutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 )
 
 // TestLoadAnalyticsConfig_FailFastOnMalformedInt is the CR #1049 regression:

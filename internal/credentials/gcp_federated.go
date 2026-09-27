@@ -9,7 +9,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google/externalaccount"
 
-	"github.com/LeanerCloud/CUDly/internal/oidc"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/oidc"
 )
 
 // gcpFederatedSubject is the fixed JWT subject CUDly uses when the

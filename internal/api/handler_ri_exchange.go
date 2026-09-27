@@ -19,16 +19,16 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/smithy-go"
 
-	"github.com/LeanerCloud/CUDly/internal/auth"
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/credentials"
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	awsprovider "github.com/LeanerCloud/CUDly/providers/aws"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
-	ec2svc "github.com/LeanerCloud/CUDly/providers/aws/services/ec2"
-	azurecompute "github.com/LeanerCloud/CUDly/providers/azure/services/compute"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	awsprovider "github.com/LeanerCloud/cloud-commitments-go/providers/aws"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
+	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
+	azurecompute "github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 )
 
 // reshapeEC2Client is the narrow slice of the EC2 client that

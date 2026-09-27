@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // FireResult carries the aggregate outcome of a single FireScheduledDelayedPurchases

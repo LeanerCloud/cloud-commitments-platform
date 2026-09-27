@@ -3,11 +3,11 @@ package purchase
 import (
 	"context"
 
-	"github.com/LeanerCloud/CUDly/internal/credentials"
-	"github.com/LeanerCloud/CUDly/internal/email"
-	"github.com/LeanerCloud/CUDly/internal/mocks"
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/mocks"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/stretchr/testify/mock"
 )

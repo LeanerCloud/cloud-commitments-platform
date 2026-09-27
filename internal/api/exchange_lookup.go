@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // recsLister is the narrow slice of config.StoreInterface that the

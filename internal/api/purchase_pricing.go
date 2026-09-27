@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // priceAndEnforcePurchaseConstraints replaces every rec's cost fields with

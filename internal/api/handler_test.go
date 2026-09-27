@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/credentials"
-	"github.com/LeanerCloud/CUDly/internal/scheduler"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/scheduler"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/stretchr/testify/assert"

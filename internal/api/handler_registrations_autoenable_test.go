@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 func TestAccountHasCredentialFreePath(t *testing.T) {

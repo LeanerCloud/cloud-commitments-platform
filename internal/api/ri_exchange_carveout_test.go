@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

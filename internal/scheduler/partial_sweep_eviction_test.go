@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	azureprovider "github.com/LeanerCloud/CUDly/providers/azure"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

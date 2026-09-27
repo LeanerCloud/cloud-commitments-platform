@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/auth"
-	"github.com/LeanerCloud/CUDly/internal/database"
-	"github.com/LeanerCloud/CUDly/internal/testutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 )
 
 // ----- resolveAdminPassword -----

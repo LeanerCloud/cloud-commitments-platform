@@ -1,9 +1,9 @@
-.PHONY: build clean test deploy help all build-server build-lambda build-mcp test-unit test-integration \
+.PHONY: build clean test deploy help all build-server build-lambda test-unit test-integration \
         test-coverage full-test security-scan terraform-validate docker-build \
         fmt vet lint complexity complexity-report security-scan-go security-scan-docker \
         security-scan-terraform terraform-fmt terraform-fmt-check iac-arm docker-test pre-commit \
         setup-git-secrets security-scan-snyk security-scan-all ci docker-compose-test \
-        install-dev-tools
+        install-dev-tools tidy-check
 
 # Variables
 VERSION?=dev
@@ -27,10 +27,8 @@ all: build
 
 help: ## Display available targets
 	@echo "Available targets:"
-	@echo "  build              - Build the CLI"
 	@echo "  build-server       - Build the unified server"
 	@echo "  build-lambda       - Build for AWS Lambda"
-	@echo "  build-mcp          - Build the MCP server (cmd/cudly-mcp)"
 	@echo "  test               - Run all unit tests"
 	@echo "  test-unit          - Run unit tests only"
 	@echo "  test-integration   - Run integration tests with testcontainers"
@@ -48,9 +46,8 @@ help: ## Display available targets
 	@echo "  docker-compose-test - Run E2E tests with docker-compose"
 	@echo "  ci                 - Run CI pipeline locally"
 
-# Build the CLI
-build:
-	go build -o cudly ./cmd
+# Build the unified server by default
+build: build-server
 
 # Build the unified server
 build-server:
@@ -59,13 +56,6 @@ build-server:
 # Build for Lambda (backward compatible)
 build-lambda:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o bootstrap ./cmd/lambda
-
-# Build the MCP server (see mcp/README.md). Uses the same $(LDFLAGS)/$(VERSION)
-# as build-server so a tagged release reports its version in the MCP
-# initialize response instead of "dev" (see cmd/cudly-mcp/main.go).
-build-mcp:
-	mkdir -p bin
-	CGO_ENABLED=0 go build $(LDFLAGS) -o bin/cudly-mcp ./cmd/cudly-mcp
 
 # Run unit tests
 test: test-unit
@@ -92,7 +82,7 @@ full-test: test-unit test-integration test-coverage
 
 # Clean build artifacts
 clean:
-	rm -f cudly bootstrap bin/cudly-server bin/cudly-mcp
+	rm -f bootstrap bin/cudly-server
 	rm -f coverage.out coverage.html
 	rm -f gosec-report.json trivy-report.json tfsec-report.json
 	go clean
@@ -105,6 +95,17 @@ deploy:
 fmt:
 	go fmt ./...
 	terraform fmt -recursive terraform/
+
+tidy-check:
+	@version=$$(awk '/^[[:space:]]*go([[:space:]]|$$)/ { if (NF != 2) { print "__malformed__"; next } print $$2 }' go.mod); \
+	count=$$(printf '%s\n' "$$version" | awk 'NF { n++ } END { print n + 0 }'); \
+	if [ "$$count" -ne 1 ] || ! printf '%s\n' "$$version" | awk '$$0 !~ /^[0-9]+\.[0-9]+\.[0-9]+$$/ { exit 1 }'; then \
+		echo "expected exactly one patch-level Go version in go.mod" >&2; exit 1; \
+	fi; \
+	for mod in . tests/e2e; do \
+		echo "Checking go mod tidy in $$mod..."; \
+		(cd "$$mod" && GOTOOLCHAIN="go$$version" GOWORK=off go mod tidy -diff) || { echo "go mod tidy check failed for module $$mod" >&2; exit 1; }; \
+	done
 
 # Lint code
 lint:

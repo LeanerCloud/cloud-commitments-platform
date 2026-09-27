@@ -16,7 +16,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 
-	"github.com/LeanerCloud/CUDly/pkg/httpclient"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/httpclient"
 )
 
 // Mode is the authentication mode used for scheduled-task requests.

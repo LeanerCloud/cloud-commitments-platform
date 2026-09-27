@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // fakeRIUtilCacheStore is a minimal in-test implementation of

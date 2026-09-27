@@ -72,13 +72,13 @@ resource "aws_iam_role" "cudly_deploy" {
             #
             # Deliberately NOT listed, and why:
             #   - `pull_request` subjects: no job that assumes THIS role
-            #     (cudly_deploy) runs on `pull_request`. `aws_sanity.yml` is the
-            #     only pull_request-triggered workflow that calls
-            #     configure-aws-credentials, and it assumes a separate,
-            #     already-read-only role via `secrets.AWS_CICD_READONLY_ROLE_ARN`,
-            #     not this one. Also note GitHub does not mint OIDC tokens for
-            #     `pull_request` runs from forked repos by default, independent
-            #     of this policy.
+            #     (cudly_deploy) runs on `pull_request` in this repo. The
+            #     read-only AWS sanity-check workflow that calls
+            #     configure-aws-credentials on `pull_request` and assumes a
+            #     separate, already-read-only role lives in
+            #     cloud-commitments-go, not here. Also note GitHub does not
+            #     mint OIDC tokens for `pull_request` runs from forked repos
+            #     by default, independent of this policy.
             #   - `environment:aws-db-<anything>` from database-migration.yml's
             #     `workflow_call` trigger: that trigger declares `environment`
             #     as an unconstrained `type: string`, but nothing in this repo

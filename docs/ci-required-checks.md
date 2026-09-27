@@ -32,12 +32,12 @@ trigger was removed in the commit that merged that branch into `main`
 
 ## Admin steps
 
-These commands require repo-admin permission on LeanerCloud/CUDly.
+These commands require repo-admin permission on LeanerCloud/cloud-commitments-platform.
 
 ### Step 1 -- retrieve the current required checks for main
 
 ```bash
-gh api repos/LeanerCloud/CUDly/branches/main/protection \
+gh api repos/LeanerCloud/cloud-commitments-platform/branches/main/protection \
   --jq '.required_status_checks.contexts'
 ```
 
@@ -50,7 +50,7 @@ Replace `EXISTING_CHECK_1` etc. with the contexts returned by Step 1:
 
 ```bash
 gh api -X PATCH \
-  repos/LeanerCloud/CUDly/branches/main/protection/required_status_checks \
+  repos/LeanerCloud/cloud-commitments-platform/branches/main/protection/required_status_checks \
   -F 'contexts[]=EXISTING_CHECK_1' \
   -F 'contexts[]=Build frontend'
 ```
@@ -61,7 +61,7 @@ Adjust `required_pull_request_reviews` and `enforce_admins` to taste:
 
 ```bash
 gh api -X PUT \
-  repos/LeanerCloud/CUDly/branches/main/protection \
+  repos/LeanerCloud/cloud-commitments-platform/branches/main/protection \
   --input - <<'EOF'
 {
   "required_status_checks": {
@@ -78,7 +78,7 @@ EOF
 ### Step 4 -- verify
 
 ```bash
-gh api repos/LeanerCloud/CUDly/branches/main/protection \
+gh api repos/LeanerCloud/cloud-commitments-platform/branches/main/protection \
   --jq '.required_status_checks.contexts'
 ```
 

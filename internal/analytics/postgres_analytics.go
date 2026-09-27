@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/database"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"

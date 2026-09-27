@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/credentials"
-	"github.com/LeanerCloud/CUDly/internal/email"
-	"github.com/LeanerCloud/CUDly/internal/execution"
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
-	azureprovider "github.com/LeanerCloud/CUDly/providers/azure"
-	gcpprovider "github.com/LeanerCloud/CUDly/providers/gcp"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
+	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
+	gcpprovider "github.com/LeanerCloud/cloud-commitments-go/providers/gcp"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/execution"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/google/uuid"
@@ -1173,7 +1173,7 @@ func (m *Manager) mapServiceType(service string) common.ServiceType {
 // service: <legacy>". AWS provider accepts both legacy and canonical
 // forms (see providers/aws/provider.go), so the legacy slugs below are
 // still safe for AWS rec rows. Bug:
-// https://github.com/LeanerCloud/CUDly/issues/626.
+// https://github.com/LeanerCloud/CUDly/issues/626 (tracked in the monorepo).
 //
 // Pulled out of mapServiceType to keep that function under the gocyclo
 // budget (same pattern as mapSavingsPlansSlug).

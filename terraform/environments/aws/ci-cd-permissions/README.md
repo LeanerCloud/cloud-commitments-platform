@@ -121,7 +121,7 @@ terraform import aws_iam_role.cudly_deploy cudly-terraform-deploy
 
 ### Repository secrets / variables
 
-Set these in **Settings → Secrets and variables → Actions** on the `LeanerCloud/CUDly` GitHub
+Set these in **Settings → Secrets and variables → Actions** on the `LeanerCloud/cloud-commitments-platform` GitHub
 repository (or in a GitHub Actions Environment for per-environment control):
 
 | Name | Value | How to get it |
@@ -148,14 +148,14 @@ for temporary AWS credentials via `sts:AssumeRoleWithWebIdentity`, and injects `
 
 ### Trust policy conditions
 
-The trust policy does **not** allow all workflows from the repo: `repo:LeanerCloud/CUDly:*` would
+The trust policy does **not** allow all workflows from the repo: `repo:LeanerCloud/cloud-commitments-platform:*` would
 let any branch, including an unprotected feature branch, mint valid deploy credentials. Instead the
 OIDC `sub` claim is checked against an explicit, enumerated allowlist (`role.tf`'s
 `token.actions.githubusercontent.com:sub` condition):
 
-- `repo:LeanerCloud/CUDly:ref:refs/heads/main`, for workflows dispatched on `main` with no
+- `repo:LeanerCloud/cloud-commitments-platform:ref:refs/heads/main`, for workflows dispatched on `main` with no
   `environment:` binding.
-- `repo:LeanerCloud/CUDly:environment:<name>`, one entry per exact environment name a job that
+- `repo:LeanerCloud/cloud-commitments-platform:environment:<name>`, one entry per exact environment name a job that
   assumes this role binds to. A job's `environment:` **replaces** the ref-based subject with an
   environment-scoped one (never both), so every such value must be listed explicitly or that job
   cannot authenticate. See the comment above the `sub` list in `role.tf` for the full derivation:
@@ -193,7 +193,7 @@ environment-bound job presents the exact same subject a `main` run would, so thi
 it. The only control that reattaches the branch requirement is a deployment branch policy
 (`custom_branch_policies` restricted to `main`) on that environment, configured on the GitHub side.
 
-**Live state, checked against the GitHub API directly** (`gh api repos/LeanerCloud/CUDly/environments`),
+**Live state, checked against the GitHub API directly** (`gh api repos/LeanerCloud/cloud-commitments-platform/environments`),
 not assumed from an earlier issue's snapshot:
 
 | Environment | Exists today? | Protection rules | Deployment branch policy |

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 )
 
 // GlobalConfig represents the global CUDly configuration.
@@ -567,10 +567,10 @@ type RecommendationRecord struct {
 	// reported directly by the cloud provider (AWS Cost Explorer
 	// `EstimatedMonthlySavingsPercentage`, Azure / GCP converters' computed
 	// SavingsPercentage). It is the same figure the CLI/reporter prints
-	// verbatim (internal/reporter/reporter.go); persisting it lets the GUI
-	// show the identical number instead of re-deriving it client-side from
-	// savings / on-demand. Persisted via the recommendations row's JSONB
-	// `payload` column; no DDL needed.
+	// verbatim (github.com/LeanerCloud/cloud-commitments-go/pkg/reporter);
+	// persisting it lets the GUI show the identical number instead of
+	// re-deriving it client-side from savings / on-demand. Persisted via
+	// the recommendations row's JSONB `payload` column; no DDL needed.
 	//
 	// nil means the provider did not report a percentage; the frontend then
 	// falls back to the client-side reconstruction (effectiveSavingsPct).

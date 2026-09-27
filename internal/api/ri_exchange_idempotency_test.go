@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	azurecompute "github.com/LeanerCloud/CUDly/providers/azure/services/compute"
+	azurecompute "github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

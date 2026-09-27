@@ -93,7 +93,7 @@ terraform import google_service_account.cudly_deploy \
 
 ### Repository secrets / variables
 
-Set these in **Settings → Secrets and variables → Actions** on the `LeanerCloud/CUDly` GitHub
+Set these in **Settings → Secrets and variables → Actions** on the `LeanerCloud/cloud-commitments-platform` GitHub
 repository (or in a GitHub Actions Environment for per-environment control):
 
 | Name | Value | How to get it |

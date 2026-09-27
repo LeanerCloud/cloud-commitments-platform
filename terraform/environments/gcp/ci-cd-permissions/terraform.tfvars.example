@@ -29,7 +29,7 @@ project_id = "your-gcp-project-id"
 #
 # Set to "" to skip WIF setup.
 #
-github_repo = "LeanerCloud/CUDly"
+github_repo = "LeanerCloud/cloud-commitments-platform"
 
 # ─── deploy_ref ────────────────────────────────────────────────────────────────
 # Git ref whose workflows are permitted to impersonate the deploy SA.

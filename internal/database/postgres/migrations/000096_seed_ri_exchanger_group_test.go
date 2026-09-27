@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/database/postgres/migrations"
-	"github.com/LeanerCloud/CUDly/internal/database/postgres/testhelpers"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

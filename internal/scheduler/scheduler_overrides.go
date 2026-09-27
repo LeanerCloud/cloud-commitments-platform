@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // applyAccountOverrides drops recs that the per-account override marks

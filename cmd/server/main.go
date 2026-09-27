@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/runtime"
-	"github.com/LeanerCloud/CUDly/internal/server"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/runtime"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/server"
 )
 
 // Version, BuildTime, and GitSHA are set at build time via ldflags.

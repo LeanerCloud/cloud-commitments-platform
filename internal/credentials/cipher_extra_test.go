@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/internal/secrets"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/secrets"
 )
 
 // resetKeyCacheForTest clears the LoadKey memoization cache so each test

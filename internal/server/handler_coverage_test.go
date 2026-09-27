@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/auth"
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/testutil"
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 	"github.com/jackc/pgx/v5"
 )
 

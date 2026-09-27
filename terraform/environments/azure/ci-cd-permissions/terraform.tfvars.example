@@ -25,4 +25,4 @@ subscription_id = "00000000-0000-0000-0000-000000000000"
 #
 # Set to "" to skip federated credential and service principal creation.
 #
-github_repo = "LeanerCloud/CUDly"
+github_repo = "LeanerCloud/cloud-commitments-platform"

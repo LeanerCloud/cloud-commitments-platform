@@ -2,10 +2,13 @@ package secrets
 
 import (
 	"context"
+	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestNewAWSResolver_ConfigError attempts to trigger AWS config loading error
@@ -66,31 +69,14 @@ func TestNewAWSResolver_ConfigError(t *testing.T) {
 // TestNewGCPResolver_ConfigError attempts to trigger GCP config loading error.
 func TestNewGCPResolver_ConfigError(t *testing.T) {
 	ctx := context.Background()
-
-	// Save original env var
-	origCreds := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-	defer func() {
-		if origCreds != "" {
-			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origCreds)
-		} else {
-			os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
-		}
-	}()
-
-	// Point to a non-existent credentials file
-	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/path/credentials.json")
+	missing := filepath.Join(t.TempDir(), "missing-credentials.json")
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", missing)
 
 	resolver, err := NewGCPResolver(ctx, "test-project")
-
-	// GCP SDK should fail if credentials file doesn't exist
-	if err != nil {
-		assert.Nil(t, resolver)
-		assert.Contains(t, err.Error(), "failed to create GCP Secret Manager client")
-	} else {
-		// If it succeeded (e.g., default credentials exist), just cleanup
-		assert.NotNil(t, resolver)
-		resolver.Close()
-	}
+	assert.Nil(t, resolver)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create GCP Secret Manager client")
+	assert.True(t, errors.Is(err, os.ErrNotExist), "expected missing credential file error: %v", err)
 }
 
 // TestNewAzureResolver_ConfigError attempts to trigger Azure config loading error.

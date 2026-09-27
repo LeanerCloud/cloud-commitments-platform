@@ -5,8 +5,11 @@ import (
 	"os"
 	"testing"
 
+	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestLoadConfigFromEnv(t *testing.T) {
@@ -291,18 +294,42 @@ func TestNewResolver_GCPProvider_WithProjectID(t *testing.T) {
 	}
 
 	require.NotNil(t, resolver)
+	gcpResolver, ok := resolver.(*GCPResolver)
+	require.True(t, ok)
+	assert.Equal(t, "test-project-id", gcpResolver.projectID)
+	assert.NotNil(t, gcpResolver.client)
 	defer resolver.Close()
+}
 
-	// Test GetSecret - will fail either due to missing secret or missing credentials
-	_, secretErr := resolver.GetSecret(ctx, "non-existent-secret-for-testing-12345")
-	assert.Error(t, secretErr)
-
-	// Test GetSecretJSON - similar behavior
-	_, jsonErr := resolver.GetSecretJSON(ctx, "non-existent-json-secret-for-testing-12345")
-	assert.Error(t, jsonErr)
-
-	// Test ListSecrets - may fail due to credentials or return empty list
-	_, _ = resolver.ListSecrets(ctx, "")
+func TestGCPResolver_FactoryScenarioMethods(t *testing.T) {
+	expectedAccessName := ""
+	mock := &mockSecretManagerServer{
+		accessSecretVersionFn: func(ctx context.Context, req *secretmanagerpb.AccessSecretVersionRequest) (*secretmanagerpb.AccessSecretVersionResponse, error) {
+			assert.Equal(t, expectedAccessName, req.Name)
+			return nil, status.Error(codes.NotFound, "secret not found")
+		},
+		listSecretsFn: func(ctx context.Context, req *secretmanagerpb.ListSecretsRequest) (*secretmanagerpb.ListSecretsResponse, error) {
+			assert.Equal(t, "projects/test-project", req.Parent)
+			assert.Empty(t, req.Filter)
+			return nil, status.Error(codes.PermissionDenied, "list denied")
+		},
+	}
+	resolver, cleanup := newTestGCPResolver(t, mock)
+	defer cleanup()
+	expectedAccessName = "projects/test-project/secrets/non-existent-secret-for-testing-12345/versions/latest"
+	result, err := resolver.GetSecret(context.Background(), "non-existent-secret-for-testing-12345")
+	assert.Empty(t, result)
+	requireGCPStatusCode(t, err, codes.NotFound)
+	assert.Contains(t, err.Error(), "failed to access secret")
+	expectedAccessName = "projects/test-project/secrets/non-existent-json-secret-for-testing-12345/versions/latest"
+	jsonResult, err := resolver.GetSecretJSON(context.Background(), "non-existent-json-secret-for-testing-12345")
+	assert.Nil(t, jsonResult)
+	requireGCPStatusCode(t, err, codes.NotFound)
+	assert.Contains(t, err.Error(), "failed to access secret")
+	listResult, err := resolver.ListSecrets(context.Background(), "")
+	assert.Nil(t, listResult)
+	requireGCPStatusCode(t, err, codes.PermissionDenied)
+	assert.Contains(t, err.Error(), "failed to list secrets")
 }
 
 func TestNewResolver_AzureProvider_WithVaultURL(t *testing.T) {

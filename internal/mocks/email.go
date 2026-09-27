@@ -3,7 +3,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/LeanerCloud/CUDly/internal/email"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/stretchr/testify/mock"
 )
 

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	stypes "github.com/aws/aws-sdk-go-v2/service/sts/types"

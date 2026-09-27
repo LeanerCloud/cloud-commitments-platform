@@ -3,7 +3,7 @@ package email
 import (
 	"context"
 
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // NopSender is a SenderInterface implementation that does not send anything.

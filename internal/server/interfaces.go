@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/internal/config"
-	"github.com/LeanerCloud/CUDly/internal/purchase"
-	"github.com/LeanerCloud/CUDly/internal/scheduler"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/scheduler"
 )
 
 // SchedulerInterface defines the methods required for the scheduler component.
