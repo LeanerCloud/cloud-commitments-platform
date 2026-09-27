@@ -24,8 +24,10 @@ variable "github_environments" {
     workflow_dispatch runs the file as it exists on the dispatched ref.
 
     This list is NOT a complete enumeration of the environment subjects this repo
-    presents to Azure. It covers exactly the two destroy jobs bound by
-    cleanup-staging.yml (`staging`) and destroy-fargate-dev.yml (`dev`).
+    presents to Azure. It covers the destroy jobs bound by cleanup-staging.yml
+    (`staging`) and destroy-fargate-dev.yml (`dev`), plus deploy-azure.yml's
+    build-and-deploy and test-deployment jobs, which bind plain
+    `dev`/`staging`/`prod` (see #140).
 
     Knowingly NOT covered, tracked in #1648 — these Azure jobs bind to compound
     environment names and therefore still fail with AADSTS70021:
@@ -38,7 +40,7 @@ variable "github_environments" {
     the absence of a name as "no job uses it".
   EOT
   type        = list(string)
-  default     = ["dev", "staging"]
+  default     = ["dev", "staging", "prod"]
 
   validation {
     condition     = length(var.github_environments) == length(distinct(var.github_environments))
