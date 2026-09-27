@@ -27,7 +27,7 @@ permissions:
 
 # No workflow-level `concurrency` on purpose. What needs protecting is the
 # Terraform state blob, which is keyed on the environment, and only the
-# job-level key can see `needs.prepare.outputs.environment` -- this level is
+# job-level key can see `needs.prepare.outputs.target_environment` -- this level is
 # limited to the `github`, `inputs` and `vars` contexts. Keying it on
 # `github.ref` here was issue #1801: two refs resolving to the same environment
 # landed in different groups and applied against one state file. See
@@ -74,8 +74,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # NOTE: `target_environment` below is an OUTPUT, not an `environment:`
+    # binding -- this job is deliberately ungated and must never hold
+    # `id-token: write`. Naming it plain `environment` reads like a gate while
+    # gating nothing; matches the convention deploy-aws-lambda.yml uses.
     outputs:
-      environment: ${{ steps.set-env.outputs.environment }}
+      target_environment: ${{ steps.set-env.outputs.target_environment }}
     steps:
       - name: Determine environment
         id: set-env
@@ -122,7 +126,7 @@ jobs:
               ;;
           esac
 
-          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "target_environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
 
   # Build Docker image (via Terraform build module) and deploy
   build-and-deploy:
@@ -130,6 +134,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: prepare
     permissions:
+      # Assumes the Azure deploy SP via federated identity. The `environment:`
+      # binding below scopes this job's OIDC `sub` to
+      # `repo:<org/repo>:environment:<name>`, which must have a matching
+      # `azuread_application_federated_identity_credential` (see
+      # terraform/environments/azure/ci-cd-permissions/sp.tf) or `azure/login`
+      # fails with AADSTS70021. NOTE the binding is not by itself a reviewer
+      # gate: it only blocks a job once required-reviewer protection rules are
+      # configured on the Environment in repo settings. See #141.
       id-token: write
       contents: read
     # Every run that writes github-<environment>.terraform.tfstate serializes
@@ -145,8 +157,13 @@ jobs:
     # default: cancelling mid-`terraform apply` is how you get a half-applied
     # stack and a lease nobody releases.
     concurrency:
-      group: azure-tfstate-${{ needs.prepare.outputs.environment }}
+      group: azure-tfstate-${{ needs.prepare.outputs.target_environment }}
       cancel-in-progress: false
+    # Bind to the named GitHub Environment matching the target so secrets/vars
+    # resolve to environment-scoped values and the OIDC subject scopes to
+    # `environment:<name>` instead of `ref:refs/heads/main`. Matches
+    # deploy-aws-lambda.yml / deploy-aws-fargate.yml. See #140.
+    environment: ${{ needs.prepare.outputs.target_environment }}
     outputs:
       app_url: ${{ steps.deploy.outputs.app_url }}
       app_name: ${{ steps.deploy.outputs.app_name }}
@@ -184,7 +201,7 @@ jobs:
       - name: Write Terraform backend config
         env:
           TF_BACKEND: ${{ secrets.TF_BACKEND_AZURE }}
-          ENVIRONMENT: ${{ needs.prepare.outputs.environment }}
+          ENVIRONMENT: ${{ needs.prepare.outputs.target_environment }}
         run: |
           printf '%s\nkey = "github-%s.terraform.tfstate"\n' "$TF_BACKEND" "$ENVIRONMENT" > /tmp/backend.tfbackend
 
@@ -204,14 +221,14 @@ jobs:
           set -o pipefail
           cd terraform/environments/azure
           terraform plan \
-            -var-file="github-${{ needs.prepare.outputs.environment }}.tfvars" \
+            -var-file="github-${{ needs.prepare.outputs.target_environment }}.tfvars" \
             -var="location=${{ env.AZURE_LOCATION }}" \
             -out=tfplan 2>&1 | tee "${RUNNER_TEMP}/tf-plan.log"
 
 
       - name: Wait for resource group deletion to complete
         run: |
-          ENVIRONMENT="${{ needs.prepare.outputs.environment }}"
+          ENVIRONMENT="${{ needs.prepare.outputs.target_environment }}"
           RG_NAME="cudly-${ENVIRONMENT}-rg"
           echo "Checking resource group ${RG_NAME} state..."
           for i in $(seq 1 30); do
@@ -231,7 +248,7 @@ jobs:
 
       - name: Remove orphaned or soft-deleted Key Vault
         run: |
-          ENVIRONMENT="${{ needs.prepare.outputs.environment }}"
+          ENVIRONMENT="${{ needs.prepare.outputs.target_environment }}"
           KV_NAME="cudly-${ENVIRONMENT}-kv"
           # If the KV exists in Azure but not in Terraform state (orphaned from a failed run),
           # delete it so Terraform can re-create it cleanly
@@ -345,7 +362,7 @@ jobs:
 
       - name: Save deployment info
         env:
-          ENVIRONMENT: ${{ needs.prepare.outputs.environment }}
+          ENVIRONMENT: ${{ needs.prepare.outputs.target_environment }}
           APP_URL: ${{ steps.deploy.outputs.app_url }}
           APP_NAME: ${{ steps.deploy.outputs.app_name }}
           DEPLOYED_BY: ${{ github.actor }}
@@ -366,7 +383,7 @@ jobs:
       - name: Upload deployment info
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: deployment-info-azure-${{ needs.prepare.outputs.environment }}
+          name: deployment-info-azure-${{ needs.prepare.outputs.target_environment }}
           path: deployment-info.json
           retention-days: 90
 
@@ -377,8 +394,15 @@ jobs:
     needs: [prepare, build-and-deploy]
     if: always() && needs.build-and-deploy.result == 'success'
     permissions:
+      # Assumes the Azure deploy SP to look up the Container App URL. See the
+      # comment on build-and-deploy's `permissions:` for what the binding
+      # below does and does not buy.
       id-token: write
       contents: read
+    # Bind to the same named environment as build-and-deploy so the OIDC
+    # subject is the same `environment:<name>` the federated credential
+    # trusts. See #140.
+    environment: ${{ needs.prepare.outputs.target_environment }}
 
     steps:
       - name: Azure Login
@@ -473,7 +497,7 @@ jobs:
       - name: Download deployment info
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          name: deployment-info-azure-${{ needs.prepare.outputs.environment }}
+          name: deployment-info-azure-${{ needs.prepare.outputs.target_environment }}
         continue-on-error: true
 
       - name: Post summary
@@ -481,7 +505,7 @@ jobs:
           {
             echo "## Azure Container Apps Deployment Summary"
             echo ""
-            echo "**Environment:** ${{ needs.prepare.outputs.environment }}"
+            echo "**Environment:** ${{ needs.prepare.outputs.target_environment }}"
             echo "**Location:** ${{ env.AZURE_LOCATION }}"
             echo ""
 

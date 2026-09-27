@@ -26,7 +26,7 @@ permissions:
 
 # No workflow-level `concurrency` on purpose. What needs protecting is the
 # Terraform state object, which is keyed on the environment, and only the
-# job-level key can see `needs.prepare.outputs.environment` -- this level is
+# job-level key can see `needs.prepare.outputs.target_environment` -- this level is
 # limited to the `github`, `inputs` and `vars` contexts. Keying it on
 # `github.ref` put two runs on different refs that both resolve to the same
 # environment into different groups against one state file (#1806). The group
@@ -70,8 +70,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # NOTE: `target_environment` below is an OUTPUT, not an `environment:`
+    # binding -- this job is deliberately ungated and must never hold
+    # `id-token: write`. Naming it plain `environment` reads like a gate while
+    # gating nothing; matches the convention deploy-aws-lambda.yml uses.
     outputs:
-      environment: ${{ steps.set-env.outputs.environment }}
+      target_environment: ${{ steps.set-env.outputs.target_environment }}
       image_tag: ${{ steps.set-tag.outputs.tag }}
 
     steps:
@@ -105,7 +109,7 @@ jobs:
               ;;
           esac
 
-          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "target_environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
 
       - name: Set image tag
         id: set-tag
@@ -133,13 +137,13 @@ jobs:
     # cancelling mid-`terraform apply` is how you get a half-applied stack and a
     # lock nobody releases.
     concurrency:
-      group: aws-fargate-tfstate-${{ needs.prepare.outputs.environment }}
+      group: aws-fargate-tfstate-${{ needs.prepare.outputs.target_environment }}
       cancel-in-progress: false
     outputs:
       alb_url: ${{ steps.outputs.outputs.alb_url }}
       service_name: ${{ steps.outputs.outputs.service_name }}
     environment:
-      name: aws-fargate-${{ needs.prepare.outputs.environment }}
+      name: aws-fargate-${{ needs.prepare.outputs.target_environment }}
       url: ${{ steps.outputs.outputs.alb_url }}
 
     steps:
@@ -163,7 +167,7 @@ jobs:
         if: ${{ inputs.clear_stale_lock == true }}
         env:
           TF_BACKEND: ${{ secrets.TF_BACKEND_AWS }}
-          ENVIRONMENT: ${{ needs.prepare.outputs.environment }}
+          ENVIRONMENT: ${{ needs.prepare.outputs.target_environment }}
         run: |
           printf '%s\nkey = "github-fargate-%s/terraform.tfstate"\n' "$TF_BACKEND" "$ENVIRONMENT" > /tmp/backend.tfbackend
           BUCKET=$(grep -E '^\s*bucket\s*=' /tmp/backend.tfbackend 2>/dev/null | tr -d ' "' | cut -d= -f2)
@@ -178,7 +182,7 @@ jobs:
       - name: Terraform Init
         env:
           TF_BACKEND: ${{ secrets.TF_BACKEND_AWS }}
-          ENVIRONMENT: ${{ needs.prepare.outputs.environment }}
+          ENVIRONMENT: ${{ needs.prepare.outputs.target_environment }}
         run: |
           printf '%s\nkey = "github-fargate-%s/terraform.tfstate"\n' "$TF_BACKEND" "$ENVIRONMENT" > /tmp/backend.tfbackend
           cd terraform/environments/aws
@@ -187,7 +191,7 @@ jobs:
       - name: Terraform Plan
         env:
           TF_VAR_admin_email: ${{ secrets.ADMIN_EMAIL }}
-          ENVIRONMENT: ${{ needs.prepare.outputs.environment }}
+          ENVIRONMENT: ${{ needs.prepare.outputs.target_environment }}
         run: |
           cd terraform/environments/aws
           terraform plan \
@@ -220,7 +224,7 @@ jobs:
 
       - name: Save deployment info
         env:
-          ENVIRONMENT: ${{ needs.prepare.outputs.environment }}
+          ENVIRONMENT: ${{ needs.prepare.outputs.target_environment }}
           IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
           ALB_URL: ${{ steps.outputs.outputs.alb_url }}
           SERVICE_NAME: ${{ steps.outputs.outputs.service_name }}
@@ -243,7 +247,7 @@ jobs:
       - name: Upload deployment info
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: deployment-info-fargate-${{ needs.prepare.outputs.environment }}
+          name: deployment-info-fargate-${{ needs.prepare.outputs.target_environment }}
           path: deployment-info.json
           retention-days: 90
 
@@ -331,7 +335,7 @@ jobs:
       - name: Download deployment info
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          name: deployment-info-fargate-${{ needs.prepare.outputs.environment }}
+          name: deployment-info-fargate-${{ needs.prepare.outputs.target_environment }}
         continue-on-error: true
 
       - name: Post summary
@@ -339,7 +343,7 @@ jobs:
           {
             echo "## AWS Fargate Deployment Summary"
             echo ""
-            echo "**Environment:** ${{ needs.prepare.outputs.environment }}"
+            echo "**Environment:** ${{ needs.prepare.outputs.target_environment }}"
             echo "**Deploy Status:** ${{ needs.deploy.result }}"
             echo ""
 
