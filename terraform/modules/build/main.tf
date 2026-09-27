@@ -105,7 +105,6 @@ resource "terraform_data" "docker_build" {
         $PLATFORM_ARG \
         --provenance=false \
         --sbom=false \
-        --network=host \
         --tag ${local.image_uri} \
         --build-arg GIT_COMMIT=${local.git_commit} \
         --build-arg BUILD_DATE=${local.timestamp} \
