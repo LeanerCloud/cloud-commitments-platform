@@ -12,7 +12,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 1. **Search existing issues** - Check if the bug has already been reported
 2. **Create a detailed report** including:
-   - CUDly version (`./cudly --version`)
+   - CUDly server build (logged on startup as `CUDly Server v<version> (git: <sha>, built: <time>)`; built with `make build`)
    - Go version (`go version`)
    - Operating system and architecture
    - Cloud provider and service affected

@@ -96,7 +96,8 @@ func deriveCalledActions(t *testing.T) map[string]calledAction {
 	if len(moduleDirs) != 2 {
 		t.Fatalf("expected two runtime dependency directories, got %q", output)
 	}
-	scanRoots := []string{filepath.Join(root, "internal")}
+	scanRoots := make([]string, 0, 1+len(moduleDirs))
+	scanRoots = append(scanRoots, filepath.Join(root, "internal"))
 	for _, dir := range moduleDirs {
 		if !filepath.IsAbs(dir) {
 			t.Fatalf("runtime dependency directory is not absolute: %q", dir)
