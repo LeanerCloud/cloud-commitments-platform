@@ -285,6 +285,13 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 	plan.CreatedAt = existingPlan.CreatedAt
 	plan.UpdatedAt = time.Now()
 
+	// toPurchasePlan always rebuilds the ramp schedule from scratch
+	// (CurrentStep=0, StartDate=now) and recomputes NextExecutionDate,
+	// since it has no way to see the existing plan. Left alone, every PUT
+	// -- including a bare rename -- silently restarts an in-progress ramp,
+	// so the scheduler re-buys steps that already executed (issue #219).
+	preserveRampProgress(existingPlan, plan)
+
 	// If no services were created from request, preserve existing services
 	if len(plan.Services) == 0 && len(existingPlan.Services) > 0 {
 		plan.Services = existingPlan.Services
@@ -300,6 +307,38 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 	}
 
 	return plan, nil
+}
+
+// preserveRampProgress carries ramp-in-progress state from the existing
+// plan onto a freshly rebuilt one (issue #219). LastExecutionDate and
+// LastNotificationSent record real purchase history, so they are always
+// carried over; a rebuild has no way to know either and would otherwise
+// wipe them. CurrentStep, StartDate, and NextExecutionDate are only
+// carried over when the requested ramp schedule has the same shape as
+// the existing one (same type/percent/interval/step-count) -- an
+// unrelated field edit (rename, target coverage, ...) resubmits the same
+// schedule and must not restart it, while a deliberate change to a
+// different schedule starts that schedule's progress at step zero.
+func preserveRampProgress(existingPlan, plan *config.PurchasePlan) {
+	plan.LastExecutionDate = existingPlan.LastExecutionDate
+	plan.LastNotificationSent = existingPlan.LastNotificationSent
+
+	if rampScheduleShapeUnchanged(existingPlan.RampSchedule, plan.RampSchedule) {
+		plan.RampSchedule.CurrentStep = existingPlan.RampSchedule.CurrentStep
+		plan.RampSchedule.StartDate = existingPlan.RampSchedule.StartDate
+		plan.NextExecutionDate = existingPlan.NextExecutionDate
+	}
+}
+
+// rampScheduleShapeUnchanged compares the schedule's shape, deliberately
+// excluding the progress fields CurrentStep and StartDate, to tell apart
+// "the update resubmitted the same schedule" from "the update picked a
+// genuinely different one".
+func rampScheduleShapeUnchanged(a, b config.RampSchedule) bool {
+	return a.Type == b.Type &&
+		a.PercentPerStep == b.PercentPerStep &&
+		a.StepIntervalDays == b.StepIntervalDays &&
+		a.TotalSteps == b.TotalSteps
 }
 
 func (h *Handler) deletePlan(ctx context.Context, req *events.LambdaFunctionURLRequest, planID string) (any, error) {
