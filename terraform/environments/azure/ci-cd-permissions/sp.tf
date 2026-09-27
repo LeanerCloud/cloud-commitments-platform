@@ -47,16 +47,20 @@ resource "azuread_application_federated_identity_credential" "github_main" {
   subject        = "repo:${var.github_repo}:ref:refs/heads/main"
 }
 
-resource "azuread_application_federated_identity_credential" "github_pr" {
-  count = var.github_repo != "" ? 1 : 0
-
-  application_id = azuread_application.cudly_deploy.id
-  display_name   = "github-actions-pr"
-  description    = "GitHub Actions OIDC — ${var.github_repo} pull request plan checks"
-  audiences      = ["api://AzureADTokenExchange"]
-  issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:${var.github_repo}:pull_request"
-}
+# No `pull_request`-subject credential: this service principal holds
+# `CUDly Terraform Deploy` (Key Vault secrets data-plane, state-blob
+# read/write, managed identity and Container App data-plane — see role.tf /
+# locals_compute.tf). A `pull_request` subject is not scoped to this repo's
+# branch or environment protection at all, so any PR that touches a workflow
+# file (or reaches an existing `pull_request`-triggered job requesting
+# `id-token: write`) would obtain it. No workflow in this repo runs
+# `azure/login` on a `pull_request` trigger — the read-only PR sanity checks
+# that used to need this credential moved to cloud-commitments-go with the
+# repo split — so this credential has no consumer. See #90.
+#
+# If a read-only PR plan check is ever added here, point it at a separate
+# service principal scoped to Reader-only roles with no Key Vault data-plane
+# and no state-write permissions, rather than re-adding this credential.
 
 # One credential per named deployment environment, so environment-bound jobs
 # can authenticate. Mirrors the `environment:{dev,staging,prod}` subjects the

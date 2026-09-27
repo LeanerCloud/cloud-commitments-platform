@@ -12,7 +12,6 @@ secrets ever need to be stored.
 | `azuread_application.cudly_deploy` | Azure AD app registration |
 | `azuread_service_principal.cudly_deploy` | Service principal (identity) |
 | `azuread_application_federated_identity_credential.github_main` | Federated credential for main-branch deployments |
-| `azuread_application_federated_identity_credential.github_pr` | Federated credential for pull-request plan checks |
 | `azuread_application_federated_identity_credential.github_environment` | Federated credential per deployment environment (`var.github_environments`) |
 | `azurerm_role_definition.cudly_deploy` | Custom role with minimum required permissions |
 | `azurerm_role_assignment.cudly_deploy` | Assigns the custom role to the SP at subscription scope |
@@ -165,8 +164,12 @@ Azure federated credentials allow no wildcards, so one resource is required per 
 | Credential | Subject | Use case |
 | --- | --- | --- |
 | `github-actions-main` | `repo:LeanerCloud/cloud-commitments-platform:ref:refs/heads/main` | Deployments from main |
-| `github-actions-pr` | `repo:LeanerCloud/cloud-commitments-platform:pull_request` | Plan runs on PRs |
 | `github-actions-env-<name>` | `repo:LeanerCloud/cloud-commitments-platform:environment:<name>` | Jobs bound to a deployment environment (one per `var.github_environments`) |
+
+No `pull_request`-subject credential is provisioned: it is not scoped to any
+branch or environment protection, and no workflow in this repo runs
+`azure/login` on a `pull_request` trigger (the read-only PR sanity checks that
+used to need it moved to cloud-commitments-go with the repo split). See #90.
 
 A job declaring `environment: <name>` presents the **environment** subject, not the
 main-branch one, so it cannot authenticate unless `<name>` is in
