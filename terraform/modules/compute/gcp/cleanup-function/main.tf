@@ -36,11 +36,13 @@ resource "google_cloudfunctions2_function" "cleanup" {
     runtime     = "go121"
     entry_point = "cleanupExpiredRecords"
 
-    # Use pre-built container image
+    # Source archive is uploaded by the build/CI pipeline before this module
+    # is applied (see var.source_object_name); Terraform only points the
+    # function at it, it does not own or generate the object.
     source {
       storage_source {
         bucket = google_storage_bucket.function_source.name
-        object = google_storage_bucket_object.function_source.name
+        object = var.source_object_name
       }
     }
   }
@@ -81,13 +83,6 @@ resource "google_storage_bucket" "function_source" {
 
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
-}
-
-# Placeholder source object (will be replaced by actual deployment)
-resource "google_storage_bucket_object" "function_source" {
-  name   = "cleanup-${formatdate("YYYYMMDDhhmmss", timestamp())}.zip"
-  bucket = google_storage_bucket.function_source.name
-  source = "${path.module}/placeholder.zip"
 }
 
 # Cloud Scheduler job to trigger the function
