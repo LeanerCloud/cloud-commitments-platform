@@ -1812,6 +1812,11 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
         target_offering_id: modalQuoteReq.target_offering_id,
         target_count: modalQuoteReq.target_count,
         max_payment_due_usd: modalQuote.PaymentDueRaw,
+        // The backend rejects execute with no region (issue #238): a
+        // missing region there previously fell through with a 400 on
+        // every UI-initiated exchange. Reuse the region the quote
+        // response resolved so quote and execute stay pinned together.
+        region: modalQuote.Region,
       });
 
       setResultText(resultContainer, 'Exchange completed. ID: ' + result.exchange_id, 'success-message');

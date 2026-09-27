@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"testing"
@@ -1683,6 +1684,38 @@ func TestGetExchangeQuote_EmptyRegionResolvesFromSDK(t *testing.T) {
 		assert.NotEqual(t, 400, ce.code,
 			"getExchangeQuote must not return 400 for a missing region; it must resolve from the SDK chain")
 	}
+}
+
+// TestExchangeQuoteResponse_MarshalsRegionAlongsideSummaryFields pins
+// issue #238: the frontend modal learns the region the backend resolved
+// only from the quote response, then must echo it back unchanged on
+// execute (which rejects a missing region outright). Pre-fix,
+// getExchangeQuote returned the bare *exchange.ExchangeQuoteSummary with
+// no region field at all, so there was no way for the frontend to send
+// one on execute. This asserts the wrapper both carries "Region" in the
+// marshaled JSON and still promotes the embedded summary's own fields
+// to the top level, so this change is additive from the frontend's
+// point of view.
+func TestExchangeQuoteResponse_MarshalsRegionAlongsideSummaryFields(t *testing.T) {
+	resp := ExchangeQuoteResponse{
+		ExchangeQuoteSummary: &exchange.ExchangeQuoteSummary{
+			IsValidExchange: true,
+			PaymentDueRaw:   "12.50",
+		},
+		Region: "eu-west-1",
+	}
+
+	raw, err := json.Marshal(resp)
+	require.NoError(t, err)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+
+	assert.Equal(t, "eu-west-1", decoded["Region"],
+		"the region the SDK chain resolved must be present in the quote response JSON")
+	assert.Equal(t, true, decoded["IsValidExchange"],
+		"the embedded summary's own fields must still be promoted to the top level")
+	assert.Equal(t, "12.50", decoded["PaymentDueRaw"])
 }
 
 // TestExecuteApprovedExchange_EmptyRecordRegionFails pins finding 01-L4:

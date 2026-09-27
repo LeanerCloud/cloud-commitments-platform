@@ -1722,7 +1722,13 @@ func (h *Handler) getExchangeQuote(ctx context.Context, req *events.LambdaFuncti
 		return nil, mapAWSExchangeError("exchange quote failed", err)
 	}
 
-	return quote, nil
+	// Echo the region the SDK chain resolved back to the caller (issue
+	// #238): the frontend modal has no other way to learn it, and
+	// execute rejects a missing region outright since exchanges are
+	// financially irreversible. Carrying the same value the quote used
+	// keeps quote and execute pinned to one region instead of letting
+	// execute re-resolve (and potentially land on a different one).
+	return ExchangeQuoteResponse{ExchangeQuoteSummary: quote, Region: region}, nil
 }
 
 // validateExecuteExchangeBody validates an unmarshalled request body
@@ -1978,6 +1984,16 @@ func toExchangeTargets(targets []ExchangeTargetBody) []exchange.TargetConfig {
 type ExchangeExecuteResponse struct {
 	Quote      *exchange.ExchangeQuoteSummary `json:"quote"`
 	ExchangeID string                         `json:"exchange_id"`
+}
+
+// ExchangeQuoteResponse wraps the library's quote summary with the
+// region the SDK chain resolved (issue #238). The embedded pointer
+// promotes the summary's own fields to the JSON top level, matching
+// the shape callers got before this type existed; Region is the only
+// addition.
+type ExchangeQuoteResponse struct {
+	*exchange.ExchangeQuoteSummary
+	Region string `json:"Region"`
 }
 
 // getRIExchangeConfig returns the current RI exchange automation settings.

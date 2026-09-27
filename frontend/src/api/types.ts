@@ -796,6 +796,11 @@ export interface ExchangeQuoteSummary {
   TargetRemainingUpfrontRaw: string;
   TargetRemainingTotalRaw: string;
   OutputReservedInstancesExp?: string;
+  // Region the backend's SDK chain resolved for this quote (issue #238).
+  // Echo it back unchanged on the paired execute call: execute requires
+  // a region and refuses to default it, since exchanges are financially
+  // irreversible.
+  Region?: string;
 }
 
 // ExchangeExecuteRequest: same `targets[]` vs legacy singleton
