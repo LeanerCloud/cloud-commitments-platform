@@ -1725,6 +1725,11 @@ func TestKMSDataPlaneActionsAreNotUnconditionallyGranted(t *testing.T) {
 					continue
 				}
 
+				if refs := unreadListElements(stmt, actionAssignmentPattern); refs != "" {
+					t.Errorf("%s: statement %q has Action elements this test cannot read (%s); IAM still grants whatever they resolve to, so a KMS data-plane action may be invisible to this guard", f, statementSid(stmt), refs)
+					continue
+				}
+
 				granted := extractActionListActions(stmt)
 				if n := countActionListStrings(stmt); n != len(granted) {
 					t.Errorf("%s: statement %q has %d Action entries but this test could parse only %d of them; an entry it cannot read is still granted by IAM, so it may be a KMS data-plane grant this guard never sees", f, statementSid(stmt), n, len(granted))
