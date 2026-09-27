@@ -83,8 +83,49 @@ resource "azurerm_kubernetes_cluster" "main" {
 
   azure_policy_enabled = var.enable_azure_policy
 
-  # RBAC and Azure AD integration
+  # Kubernetes RBAC (authorization within the cluster). Real identity binding
+  # is the azure_active_directory_role_based_access_control block below --
+  # this flag alone does not add Entra integration.
   role_based_access_control_enabled = true
+
+  # Defaults to a private API server (no public endpoint). Set
+  # var.private_cluster_enabled = false only when var.authorized_ip_ranges is
+  # a real, non-empty allowlist (validated below) -- never leave the API
+  # server open to 0.0.0.0/0.
+  private_cluster_enabled = var.private_cluster_enabled
+
+  dynamic "api_server_access_profile" {
+    for_each = var.private_cluster_enabled ? [] : [1]
+    content {
+      authorized_ip_ranges = var.authorized_ip_ranges
+    }
+  }
+
+  # Disables the static cluster-admin client certificate obtained via
+  # `az aks get-credentials --admin`, which never expires, isn't tied to any
+  # Entra identity, and doesn't appear in Entra sign-in logs. With this
+  # disabled, admin access is granted through Azure RBAC role assignments
+  # (e.g. "Azure Kubernetes Service RBAC Cluster Admin") scoped to this
+  # cluster resource, or through var.admin_group_object_ids below -- both
+  # revocable per-identity and auditable.
+  local_account_disabled = var.local_account_disabled
+
+  # Azure RBAC for Kubernetes Authorization: Kubernetes access control is
+  # driven by Azure RBAC role assignments against this cluster resource
+  # (or the admin group below) rather than a separate, unauditable
+  # in-cluster admin credential.
+  azure_active_directory_role_based_access_control {
+    # Required on azurerm ~> 3.0 (this module's pin): `managed` defaults to
+    # false, which selects the deprecated legacy AAD integration and makes
+    # the provider demand client_app_id/server_app_id/server_app_secret --
+    # `terraform validate` passes without them, but `apply` fails. `managed
+    # = true` selects the current AKS-managed Entra integration that
+    # azure_rbac_enabled actually applies to. Implied (no longer a real
+    # toggle) on azurerm 4.x.
+    managed                = true
+    azure_rbac_enabled     = true
+    admin_group_object_ids = var.admin_group_object_ids
+  }
 
   tags = local.common_tags
 }

@@ -186,6 +186,12 @@ module "compute_aks" {
   enable_azure_policy  = var.aks_enable_azure_policy
   enable_log_analytics = var.aks_enable_log_analytics
 
+  # API server exposure and admin access (#121)
+  private_cluster_enabled = var.aks_private_cluster_enabled
+  authorized_ip_ranges    = var.aks_authorized_ip_ranges
+  local_account_disabled  = var.aks_local_account_disabled
+  admin_group_object_ids  = var.aks_admin_group_object_ids
+
   tags = local.common_tags
 
   depends_on = [module.networking, module.database, module.secrets]
