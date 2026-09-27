@@ -46,7 +46,11 @@ on:
         type: string
 
 env:
-  TF_VERSION: '1.6.0'
+  # Must satisfy `required_version = ">= 1.10.0"` declared by every
+  # terraform/environments/*/main.tf -- pinning below 1.10 makes
+  # terraform init/validate abort with "Unsupported Terraform Core version"
+  # before touching any state. Keep in sync with ci.yml and pre-commit.yml.
+  TF_VERSION: '1.10.5'
 
 jobs:
   # Validate rollback request
