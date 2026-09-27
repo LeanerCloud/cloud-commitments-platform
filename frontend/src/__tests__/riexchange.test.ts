@@ -180,6 +180,46 @@ describe('openExchangeModal', () => {
     expect(req.targets).toBeUndefined();
   });
 
+  it('carries the quote-resolved region onto the execute request (issue #238)', async () => {
+    const mockGetQuote = api.getExchangeQuote as jest.Mock;
+    const mockExecute = api.executeExchange as jest.Mock;
+    mockGetQuote.mockResolvedValueOnce({
+      IsValidExchange: true,
+      ValidationFailureReason: '',
+      CurrencyCode: 'USD',
+      PaymentDueRaw: '12.50',
+      SourceHourlyPriceRaw: '',
+      SourceRemainingUpfrontRaw: '',
+      SourceRemainingTotalRaw: '',
+      TargetHourlyPriceRaw: '',
+      TargetRemainingUpfrontRaw: '',
+      TargetRemainingTotalRaw: '',
+      // Region the backend's SDK chain resolved for this quote.
+      Region: 'us-west-2',
+    });
+    mockExecute.mockResolvedValueOnce({ exchange_id: 'exch-1', quote: {} });
+
+    const offeringUUID = '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91';
+    openExchangeModal('ri-abc', 3, 'm5.large', [
+      { instance_type: 'm5.large', offering_id: offeringUUID, effective_monthly_cost: 42.5 },
+    ]);
+    const quoteBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Get Quote');
+    quoteBtn?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const executeBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Execute Exchange');
+    expect(executeBtn?.classList.contains('hidden')).toBe(false);
+    executeBtn?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockExecute).toHaveBeenCalledTimes(1);
+    const execReq = mockExecute.mock.calls[0][0];
+    // Pre-fix, execute never carried a region at all, so the backend's
+    // validateExecuteExchangeBody rejected every UI-initiated exchange
+    // with a 400. This must equal the region the quote resolved.
+    expect(execReq.region).toBe('us-west-2');
+  });
+
   it('posts targets[] when two or more rows are present', async () => {
     const mockGetQuote = api.getExchangeQuote as jest.Mock;
     mockGetQuote.mockResolvedValueOnce({
