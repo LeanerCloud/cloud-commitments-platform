@@ -35,13 +35,13 @@ variable "skip_docker_build" {
 }
 
 variable "extra_build_args" {
-  description = "Extra arguments to pass to docker build"
+  description = "Extra arguments to pass to docker build. Passed through the local-exec provisioner's environment (not interpolated into the script), then whitespace-split unquoted (no shell quoting is honored): a value like \"--build-arg LABEL=hello world\" splits into two docker buildx arguments, not one. No caller sets this today; if a value ever needs an embedded space, extend the module to accept a list(string) instead."
   type        = string
   default     = ""
 }
 
 variable "registry_login_command" {
-  description = "Command to authenticate with registry (e.g., aws ecr get-login-password | docker login...)"
+  description = "Command to authenticate with registry (e.g., az acr login --name ..., aws ecr get-login-password | docker login ..., gcloud auth configure-docker ...). Runs verbatim as shell input. Must be an identity-based login (the CLI resolves/mints the credential itself); never embed a static, long-lived credential literal (a password, API key, or JSON key) in this value; it is not redacted in terraform plan/apply output, and marking it sensitive would suppress this resource's entire local-exec log (build/push progress, docker error output), which deploy-*.yml workflows tee and grep to detect build failures."
   type        = string
 }
 

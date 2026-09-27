@@ -21,7 +21,9 @@ module "build" {
   # platform not set — auto-detected from builder host (Container Apps and AKS support arm64 and amd64)
 
   # Registry login with the caller's Entra identity (deploy SP in CI, az login
-  # locally); the principal needs AcrPush on the registry.
+  # locally); the principal needs AcrPush on the registry. Identity-based, so
+  # it carries no static credential, matching the module's
+  # registry_login_command contract (see its variable description).
   registry_login_command = "az acr login --name ${azurerm_container_registry.main.name}"
 
   # Build options
