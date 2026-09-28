@@ -636,29 +636,40 @@ func TestMarketplaceList_EmptyOfferingClassFetchedConvertible(t *testing.T) {
 // TestComputeRemainingMonths exercises the helper directly, confirming it treats
 // its termMonths parameter as months (not years).
 func TestComputeRemainingMonths(t *testing.T) {
-	// Zero purchase time -> defensive floor.
-	assert.Equal(t, 1, computeRemainingMonths(time.Time{}, 36), "zero time should return 1")
+	remaining := func(purchase time.Time, termMonths int) int {
+		t.Helper()
+		r, err := computeRemainingMonths(purchase, termMonths)
+		require.NoError(t, err)
+		return r
+	}
 
-	// Non-positive term -> defensive floor.
-	assert.Equal(t, 1, computeRemainingMonths(time.Now(), 0), "zero term should return 1")
-	assert.Equal(t, 1, computeRemainingMonths(time.Now(), -1), "negative term should return 1")
+	// Absent timestamp or non-positive term -> explicit error (issue #98).
+	for _, tc := range []struct {
+		name       string
+		purchase   time.Time
+		termMonths int
+	}{
+		{"zero time", time.Time{}, 36},
+		{"zero term", time.Now(), 0},
+		{"negative term", time.Now(), -1},
+	} {
+		_, err := computeRemainingMonths(tc.purchase, tc.termMonths)
+		assert.Error(t, err, tc.name)
+	}
 
 	// Fresh purchase (elapsed ~ 0): 36-month term should return ~36.
-	r := computeRemainingMonths(time.Now(), 36)
-	assert.InDelta(t, 36, r, 1, "fresh 36-month RI should have ~36 months remaining")
+	assert.InDelta(t, 36, remaining(time.Now(), 36), 1, "fresh 36-month RI should have ~36 months remaining")
 
 	// 1-year RI: fresh purchase, 12-month term should return ~12.
-	r = computeRemainingMonths(time.Now(), 12)
-	assert.InDelta(t, 12, r, 1, "fresh 12-month RI should have ~12 months remaining")
+	assert.InDelta(t, 12, remaining(time.Now(), 12), 1, "fresh 12-month RI should have ~12 months remaining")
 
 	// 6 months elapsed on a 36-month term -> ~30 remaining.
 	sixMonthsAgo := time.Now().Add(-6 * 30 * 24 * time.Hour)
-	r = computeRemainingMonths(sixMonthsAgo, 36)
-	assert.InDelta(t, 30, r, 2, "36-month RI bought 6 months ago should have ~30 months remaining")
+	assert.InDelta(t, 30, remaining(sixMonthsAgo, 36), 2, "36-month RI bought 6 months ago should have ~30 months remaining")
 
 	// Fully elapsed term -> floor at 1, never zero or negative.
 	old := time.Now().Add(-40 * 30 * 24 * time.Hour)
-	assert.Equal(t, 1, computeRemainingMonths(old, 36), "expired RI should floor to 1")
+	assert.Equal(t, 1, remaining(old, 36), "expired RI should floor to 1")
 }
 
 // TestMarketplaceList_TermYearsConvertedToMonths is the end-to-end regression
@@ -768,5 +779,28 @@ func TestMarketplaceList_InvalidTermReturnsError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid term")
+	cfgStore.AssertExpectations(t)
+}
+
+// TestMarketplaceList_ZeroTimestampReturnsError: a purchase_history row with no
+// timestamp must be refused, not priced as if 1 month of the term remained
+// (issue #98: a $36k 3-year RI would otherwise be listed at ~$950).
+func TestMarketplaceList_ZeroTimestampReturnsError(t *testing.T) {
+	cfgStore := &MockConfigStore{}
+	authSvc := &MockAuthService{}
+	adminSession(authSvc)
+
+	row := standardRow()
+	row.Timestamp = time.Time{}
+	cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).
+		Return(row, nil)
+
+	ec2 := &stubMarketplaceEC2{}
+	h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no timestamp")
+	assert.Zero(t, ec2.createCallCount, "no listing may be created for an unpriceable RI")
 	cfgStore.AssertExpectations(t)
 }
