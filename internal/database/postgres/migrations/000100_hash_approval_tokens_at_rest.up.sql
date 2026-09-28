@@ -31,6 +31,12 @@
 
 ALTER TABLE purchase_executions ADD COLUMN IF NOT EXISTS approval_token_hash VARCHAR(64);
 
+-- #103 code no longer writes the raw column. Without a default its rows get a
+-- NULL raw, which pre-#103 code (rollback, or an old revision still serving
+-- during a rolling deploy) fails to scan into a Go string, breaking
+-- GetExecutionByID and the whole GetExecutionsByStatuses list.
+ALTER TABLE purchase_executions ALTER COLUMN approval_token SET DEFAULT '';
+
 UPDATE purchase_executions
    SET approval_token_hash = encode(sha256(convert_to(approval_token, 'UTF8')), 'hex'),
        approval_token = ''

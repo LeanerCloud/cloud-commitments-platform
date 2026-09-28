@@ -10,10 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -181,7 +183,8 @@ func TestMigration_HashApprovalTokensAtRest(t *testing.T) {
 // had an empty or NULL raw token (every canceled row, since clearApprovalToken
 // writes the empty string) keep a NULL approval_token_hash after migration 000100. The
 // store must read them back, alone and mixed with a tokened row in one list,
-// or execution history, pending lists and the scheduler break.
+// or execution history, pending lists and the scheduler break. A row the new
+// store writes must also stay readable by pre-#103 code.
 func TestMigration_HashApprovalTokensAtRest_StoreReadsTokenlessRows(t *testing.T) {
 	ctx := context.Background()
 	migrationsPath := getMigrationsPath()
@@ -214,4 +217,21 @@ func TestMigration_HashApprovalTokensAtRest_StoreReadsTokenlessRows(t *testing.T
 		got[exec.ExecutionID] = exec.ApprovalToken
 	}
 	assert.Equal(t, want, got)
+
+	// Pre-#103 code (a rollback, or an old revision still serving during a
+	// rolling deploy) scans approval_token into a plain string, so a row the
+	// new store writes must carry '' there, not NULL.
+	newRow := &config.PurchaseExecution{
+		Status:        "pending",
+		ScheduledDate: time.Now(),
+		ApprovalToken: sha256Hex("new-code-token"),
+	}
+	require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
+		return store.SavePurchaseExecutionTx(ctx, tx, newRow)
+	}))
+	var oldCodeRaw string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT approval_token FROM purchase_executions WHERE execution_id = $1`, newRow.ExecutionID).Scan(&oldCodeRaw),
+		"pre-#103 code must still read a row written by the #103 store")
+	assert.Equal(t, "", oldCodeRaw)
 }
