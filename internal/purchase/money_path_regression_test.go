@@ -361,6 +361,116 @@ func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 		"root must reflect partial success, never 'failed' (double-spend mislabel #642/#1014)")
 }
 
+// TestExecuteForAccount_CommittedButUnsavedIsAcked is the A16-006 regression
+// guard (#258): in the per-account fan-out, executeForAccount has exactly one
+// place where it returns committed==true together with an error -- the cloud
+// purchase succeeded but the per-account SavePurchaseExecution call failed
+// (execution.go:269-270, "AUDIT LOSS: failed to save execution record"). That
+// return value is what stops the SQS message from being redelivered and the
+// commitment from being bought twice: executeMultiAccount folds a committed
+// account with an error into *multiAccountPartialError, which
+// handleExecutePurchase acks rather than surfacing as a flat failure.
+//
+// acct-bad deliberately fails credential resolution (committed=false, like
+// TestMultiAccountPartialSuccessIsAcked's acct-bad) so acct-unsaved is the
+// ONLY account that can contribute committed=true. If a regression changed
+// the AUDIT LOSS return to "return false, ..." (reading it as "we failed,
+// report failure"), committed would drop to 0 across both accounts and the
+// aggregator would return errAllAccountsFailed instead of
+// *multiAccountPartialError, which handleExecutePurchase does NOT ack --
+// this test would then fail on require.NoError. Every other
+// SavePurchaseExecutionFn stub in this package returns nil on a committed
+// account, and the only stub that errors (execution_test.go:923) drives the
+// credential-failure AUDIT LOSS site at execution.go:300, not this one.
+func TestExecuteForAccount_CommittedButUnsavedIsAcked(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockFactory := new(MockProviderFactory)
+	mockProviderInst := new(MockProvider)
+	mockServiceClient := new(MockServiceClient)
+
+	accounts := []config.CloudAccount{
+		// role_arn with no STS client wired fails credential resolution
+		// deterministically -- committed=false, no PurchaseCommitment call.
+		{ID: "acct-bad", Name: "BAD", Provider: "aws", ExternalID: "111111111111", AWSAuthMode: "role_arn"},
+		{ID: "acct-unsaved", Name: "Unsaved", Provider: "aws", ExternalID: "222222222222", AWSAuthMode: "access_keys"},
+	}
+
+	exec := &config.PurchaseExecution{
+		ExecutionID:    "root-unsaved",
+		IdempotencyKey: "lineage-unsaved",
+		Status:         "pending",
+		PlanID:         "plan-y",
+		Recommendations: []config.RecommendationRecord{
+			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+		},
+	}
+	plan := &config.PurchasePlan{ID: "plan-y", Name: "Plan Y", AutoPurchase: true}
+
+	mockStore.On("GetExecutionByID", ctx, "root-unsaved").Return(exec, nil)
+	running := *exec
+	running.Status = "running"
+	mockStore.On("TransitionExecutionStatus", ctx, "root-unsaved",
+		[]string{"approved", "pending", "notified"}, "running", (*string)(nil)).Return(&running, nil)
+	mockStore.On("GetPurchasePlan", ctx, "plan-y").Return(plan, nil).Maybe()
+	mockStore.GetPlanAccountsFn = func(_ context.Context, _ string) ([]config.CloudAccount, error) {
+		return accounts, nil
+	}
+	mockStore.On("CompletePlanStep", ctx, "plan-y", mock.Anything).Return(nil).Maybe()
+
+	// acct-unsaved's own execution row fails to persist even though its
+	// purchase committed; acct-bad's failed row and the root row save cleanly.
+	saveErr := fmt.Errorf("insert failed: connection reset")
+	var savedRoot *config.PurchaseExecution
+	mockStore.SavePurchaseExecutionFn = func(_ context.Context, e *config.PurchaseExecution) error {
+		if e.CloudAccountID == nil {
+			c := *e
+			savedRoot = &c
+			return nil
+		}
+		if *e.CloudAccountID == "acct-unsaved" {
+			return saveErr
+		}
+		return nil
+	}
+	mockStore.On("SavePurchaseHistory", ctx, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil)
+	mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
+
+	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProviderInst, nil)
+	mockProviderInst.On("GetServiceClient", mock.Anything, common.ServiceEC2, mock.Anything).Return(mockServiceClient, nil)
+	// Only acct-unsaved reaches a purchase; it must fire exactly once. If the
+	// AUDIT LOSS branch under test were mis-coded, this test fails at
+	// require.NoError below before this count would even matter, but Once()
+	// also guards against a redrive-style double-purchase within this call.
+	mockServiceClient.On("PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything).
+		Return(common.PurchaseResult{Success: true, CommitmentID: "ri-ok"}, nil).Once()
+
+	manager := &Manager{
+		config:          mockStore,
+		email:           mockEmail,
+		providerFactory: mockFactory,
+		credStore:       awsAccessKeyCredStore(),
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	msg := AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: "root-unsaved"}
+	err := manager.handleExecutePurchase(ctx, &msg)
+	require.NoError(t, err,
+		"a committed-but-unsaved account must still ACK (return nil), never redeliver and double-buy (#258/A16-006)")
+
+	require.NotNil(t, savedRoot, "the root row must be saved with its aggregate status")
+	assert.Equal(t, "partially_completed", savedRoot.Status,
+		"root must reflect partial success: the one committed account carries an audit gap, not a flat failure")
+	// Pin the specific AUDIT LOSS branch under test: without this, acct-bad's
+	// credential-failure error alone would satisfy committed>0 && err!=nil and
+	// the test would pass even if acct-unsaved's SavePurchaseExecution failure
+	// were silently skipped or fixed.
+	assert.Contains(t, savedRoot.Error, "AUDIT LOSS: failed to save execution record for account acct-unsaved")
+
+	mockServiceClient.AssertExpectations(t)
+}
+
 // scopelessRunResult is what runScopelessRow observed: the tokens of every
 // commitment purchase that reached the fake cloud (one entry == one real
 // purchase), and the error executePurchase returned.
