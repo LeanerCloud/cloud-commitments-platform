@@ -1012,6 +1012,62 @@ func TestHandler_getPlannedPurchases_ErrorGettingExecutions(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to get planned executions")
 }
 
+// TestHandler_getPlannedPurchases_ScopedUserFiltersByPlanAccount is the
+// A16-008 regression guard (#259). getPlannedPurchases filters each
+// execution through isPlanAllowedCached so a per-account scoped session sees
+// only its own plans. None of the other tests in this file can reach the
+// exclusion branch: they all run as an unrestricted admin/read-only session
+// (GetAllowedAccountsAPI returns nil, which requirePlanAccess's
+// allowed.AllowsAll() reads as unrestricted). This test seeds two plans on
+// two different cloud accounts with a session scoped to only one of them,
+// and asserts the response contains EXACTLY the allowed plan's execution --
+// a non-zero count first, so the assertion cannot pass on an empty result.
+func TestHandler_getPlannedPurchases_ScopedUserFiltersByPlanAccount(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+
+	const (
+		planAllowedID = "11111111-1111-1111-1111-111111111111"
+		planDeniedID  = "22222222-2222-2222-2222-222222222222"
+		execAllowedID = "33333333-3333-3333-3333-333333333333"
+		execDeniedID  = "44444444-4444-4444-4444-444444444444"
+	)
+	scheduledDate := time.Now().AddDate(0, 0, 7)
+	executions := []config.PurchaseExecution{
+		{ExecutionID: execAllowedID, PlanID: planAllowedID, Status: "pending", ScheduledDate: scheduledDate},
+		{ExecutionID: execDeniedID, PlanID: planDeniedID, Status: "pending", ScheduledDate: scheduledDate},
+	}
+	plans := []config.PurchasePlan{
+		{ID: planAllowedID, Name: "Allowed Plan", RampSchedule: config.RampSchedule{TotalSteps: 1}},
+		{ID: planDeniedID, Name: "Denied Plan", RampSchedule: config.RampSchedule{TotalSteps: 1}},
+	}
+
+	mockStore.On("GetPlannedExecutions", ctx,
+		[]string{"pending", "notified", "paused"}, config.MaxListLimit).Return(executions, nil)
+	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).Return(plans, nil)
+	mockStore.GetPlanAccountsFn = func(_ context.Context, planID string) ([]config.CloudAccount, error) {
+		switch planID {
+		case planAllowedID:
+			return []config.CloudAccount{{ID: permsAccA, Name: permsAccAName}}, nil
+		case planDeniedID:
+			return []config.CloudAccount{{ID: permsAccB, Name: permsAccBName}}, nil
+		default:
+			return nil, nil
+		}
+	}
+
+	handler := &Handler{config: mockStore, auth: scopedAuthMock(ctx)}
+	result, err := handler.getPlannedPurchases(ctx, scopedReq())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.NotEmpty(t, result.Purchases, "the scoped user's own plan must still be visible")
+	require.Len(t, result.Purchases, 1, "only the account-A plan may appear; the account-B plan must be excluded")
+	assert.Equal(t, execAllowedID, result.Purchases[0].ID)
+	assert.Equal(t, planAllowedID, result.Purchases[0].PlanID)
+	assert.Equal(t, "Allowed Plan", result.Purchases[0].PlanName)
+}
+
 // TestHandler_getPlannedPurchases_PausedStaysVisible is a regression guard:
 // a paused execution must remain in the list (not silently disappear) and
 // rows must be ordered soonest-first end-to-end.
