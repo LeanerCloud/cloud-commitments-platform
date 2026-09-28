@@ -148,9 +148,12 @@ func cacheTTLFromEnv() time.Duration {
 // the cron EventBridge rule or by an async self-invoke from the POST
 // /api/recommendations/refresh handler. In the async case,
 // MarkCollectionStarted has already set last_collection_started_at and
-// returned the token that ownerToken carries here; the cron case (and
-// cold-start) call with an empty ownerToken since they never won a marker,
-// and the clear is skipped entirely rather than clearing unconditionally,
+// returned the token that ownerToken carries here; kickColdStartCollection's
+// background collect does too (issue #106), for the same reason. The cron
+// case calls with an empty ownerToken since it never wins a marker of its
+// own (it coordinates via the advisory lock instead, see
+// HandleScheduledTask), and the clear is skipped entirely rather than
+// clearing unconditionally,
 // which previously let a cron run wipe a concurrent user-triggered run's
 // marker. This deferred clear is the ONLY place that touches started_at:
 // persistCollection's SetRecommendationsCollectionError call (below, on a
@@ -369,12 +372,12 @@ func (s *Scheduler) collectAllProviders(ctx context.Context, globalCfg *config.G
 // prevent returning the collection result. Extracted so CollectRecommendations
 // stays under the cyclomatic-complexity gate.
 //
-// A caller that never won MarkCollectionStarted (cron, cold-start) passes
-// an empty ownerToken and by design owns no marker to clear; this is an
-// explicit, logged skip, not a silent fallback.
+// A caller that never won MarkCollectionStarted (the cron) passes an empty
+// ownerToken and by design owns no marker to clear; this is an explicit,
+// logged skip, not a silent fallback.
 func (s *Scheduler) clearCollectionStartedBestEffort(ctx context.Context, ownerToken string) {
 	if ownerToken == "" {
-		logging.Debugf("skipping collection-started clear: caller holds no owner token (cron/cold-start run)")
+		logging.Debugf("skipping collection-started clear: caller holds no owner token (cron run)")
 		return
 	}
 	if err := s.config.ClearCollectionStarted(ctx, ownerToken); err != nil {
@@ -1046,10 +1049,13 @@ func (s *Scheduler) tagAccount(recs []config.RecommendationRecord, accountID str
 //
 // Order of operations:
 //  1. Read freshness.
-//  2. Cold-start (LastCollectedAt==nil): synchronous CollectRecommendations
-//     so the first caller sees real data rather than an empty table. Safe
-//     on all runtimes since the call is sync.
-//  3. Read from the cache.
+//  2. Cold-start (LastCollectedAt==nil): single-flight a background collect
+//     via kickColdStartCollection rather than blocking this read on it (issue
+//     #106) -- the frontend already drives a coordinated first collection on
+//     page load (triggerAutoRefreshIfStale -> POST /recommendations/refresh),
+//     so this is a best-effort kick for non-browser API callers only.
+//  3. Read from the cache (empty on a genuine cold start, until the kicked
+//     collection or the frontend's refresh populates it).
 //  4. Stale-while-revalidate: if the cache is older than cacheTTL AND we
 //     aren't on Lambda, kick off a background CollectRecommendations so
 //     the NEXT read sees fresh data. Lambda skips this (goroutines freeze
@@ -1063,11 +1069,7 @@ func (s *Scheduler) ListRecommendations(ctx context.Context, filter config.Recom
 	}
 
 	if freshness.LastCollectedAt == nil {
-		logging.Info("Recommendations cache is empty; performing synchronous cold-start collect")
-		_, collectErr := s.CollectRecommendations(ctx, "")
-		if collectErr != nil {
-			return nil, fmt.Errorf("cold-start collect failed: %w", collectErr)
-		}
+		s.kickColdStartCollection(ctx)
 	}
 
 	recs, err := s.config.ListStoredRecommendations(ctx, filter)
@@ -1302,6 +1304,77 @@ func applySuppressionIndex(recs []config.RecommendationRecord, index map[suppres
 	return out
 }
 
+// kickColdStartCollection single-flights the FIRST-EVER collection
+// (freshness.LastCollectedAt == nil) cluster-wide via MarkCollectionStarted
+// -- the same marker the explicit refresh endpoint and the scheduled cron
+// coordinate through -- instead of every concurrent cold reader racing its
+// own uncoordinated CollectRecommendations call on its own short request
+// context (issue #106). The previous synchronous call ran on ctx, which the
+// HTTP layer caps at 30s (internal/server/http.go); a real sweep routinely
+// takes longer, so collectAllProviders returned ctx.Err() before
+// persistCollection ever ran, last_collected_at never advanced, and every
+// subsequent reader repeated the same doomed collect -- a self-sustaining
+// storm hammering Cost Explorer with duplicated fan-outs.
+//
+// The frontend already drives a properly-coordinated first collection on
+// page load (triggerAutoRefreshIfStale -> POST /api/recommendations/refresh,
+// which uses this same marker and, on Lambda, a real async self-invoke
+// dispatched through HandleScheduledTask's advisory lock). This function is
+// a best-effort kick for non-browser API callers that read the cache
+// directly without ever hitting that endpoint.
+//
+// On non-Lambda runtimes the winning caller runs the collection on a
+// detached background context sized for a real sweep, mirroring
+// maybeKickBackgroundRefresh's stale-cache refresh below, gated by the same
+// per-process s.collecting guard so the two background paths can never
+// double-run concurrently. On Lambda a goroutine started inside a request
+// handler freezes the instant this invocation's response is sent (see
+// maybeKickBackgroundRefresh), so there is no way to make progress from
+// inside this invocation; the marker is released immediately and the cache
+// is populated by whichever runs first: the scheduled cron (already
+// advisory-locked) or the frontend's auto-refresh-on-open flow.
+func (s *Scheduler) kickColdStartCollection(ctx context.Context) {
+	token, ok, err := s.config.MarkCollectionStarted(ctx)
+	if err != nil {
+		logging.Warnf("cold-start collection: failed to mark started: %v", err)
+		return
+	}
+	if !ok {
+		// Another reader, the cron, or an explicit refresh already has a
+		// collection in flight.
+		return
+	}
+	if s.isLambda {
+		s.clearCollectionStartedBestEffort(ctx, token)
+		return
+	}
+	if !s.collecting.CompareAndSwap(false, true) {
+		// A stale-cache background refresh already claimed the per-process
+		// slot; release the DB marker so the refresh endpoint (or the next
+		// reader) is not blocked by a marker nothing is actively working.
+		s.clearCollectionStartedBestEffort(ctx, token)
+		return
+	}
+
+	logging.Info("Recommendations cache is empty; triggering single-flighted background cold-start collect")
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	go func() {
+		defer cancel()
+		defer s.collecting.Store(false)
+		defer func() {
+			if r := recover(); r != nil {
+				logging.Errorf("cold-start collection panic: %v", r)
+			}
+		}()
+		if _, err := s.CollectRecommendations(bgCtx, token); err != nil {
+			// CollectRecommendations already surfaces errors via
+			// recommendations_state.last_collection_error, so just log
+			// locally here for operator visibility.
+			logging.Errorf("cold-start collection: %v", err)
+		}
+	}()
+}
+
 // maybeKickBackgroundRefresh spawns a detached CollectRecommendations
 // goroutine when the cache is stale AND the runtime can safely run
 // background goroutines (i.e. not Lambda). The atomic.Bool guard
@@ -1316,7 +1389,7 @@ func (s *Scheduler) maybeKickBackgroundRefresh(freshness *config.Recommendations
 		return
 	}
 	if freshness.LastCollectedAt == nil {
-		// Just handled synchronously; nothing to backfill.
+		// kickColdStartCollection already handles this case.
 		return
 	}
 	if time.Since(*freshness.LastCollectedAt) < effectiveTTL {
