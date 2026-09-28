@@ -1078,7 +1078,7 @@ func (h *Handler) checkAzureExecuteConstraints(ctx context.Context, session *Ses
 		attempt.MaxPurchaseAmount = math.MaxFloat64
 	}
 
-	err := h.requirePermissionConstraints(ctx, session, "ri-exchange", []auth.PermissionConstraints{attempt})
+	err := h.requirePermissionConstraints(ctx, session, "execute", "ri-exchange", []auth.PermissionConstraints{attempt})
 	if err == nil || isUSD {
 		return err
 	}
@@ -1087,7 +1087,7 @@ func (h *Handler) checkAzureExecuteConstraints(ctx context.Context, session *Ses
 	// specifically the cause.
 	withoutAmount := base
 	withoutAmount.MaxPurchaseAmount = 0
-	if otherErr := h.requirePermissionConstraints(ctx, session, "ri-exchange", []auth.PermissionConstraints{withoutAmount}); otherErr != nil {
+	if otherErr := h.requirePermissionConstraints(ctx, session, "execute", "ri-exchange", []auth.PermissionConstraints{withoutAmount}); otherErr != nil {
 		return otherErr
 	}
 	return NewClientError(403, fmt.Sprintf(
@@ -1846,7 +1846,7 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve cloud account scope: %w", err)
 	}
-	err = h.requirePermissionConstraints(ctx, session, "ri-exchange", []auth.PermissionConstraints{{
+	err = h.requirePermissionConstraints(ctx, session, "execute", "ri-exchange", []auth.PermissionConstraints{{
 		AccountIDs:        []string{cloudAccountID},
 		Providers:         []string{string(common.ProviderAWS)},
 		Services:          []string{string(common.ServiceEC2)},

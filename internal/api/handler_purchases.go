@@ -324,6 +324,30 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 		return nil, err
 	}
 
+	// Re-hydrate the persisted recommendations and enforce the session's
+	// execute:purchases Constraints against them before RunPlannedPurchaseNow
+	// fires the purchase (issue #60). requirePermission above only checked
+	// the bare execute:purchases verb: a session running a plan via
+	// update-any:purchases (which authorizeExecutionManagement lets bypass
+	// the creator check) would otherwise bypass any MaxPurchaseAmount/
+	// Providers/Services/Regions/AccountIDs cap configured on their own
+	// execute:purchases permission, exactly the fail-open class the web
+	// execute path (validateExecutePurchaseRequest) already closed for
+	// SEC-01 (#1141). Routed through the shared enforcePurchaseConstraints
+	// helper so a planned execution whose recs sum to $0 is refused by
+	// requireNonZeroCommitment rather than reading as an uncapped
+	// MaxPurchaseAmount (issue #60 review follow-up).
+	execution, fetchErr := h.config.GetExecutionByID(ctx, executionID)
+	if errors.Is(fetchErr, config.ErrNotFound) {
+		return nil, errNotFound
+	}
+	if fetchErr != nil {
+		return nil, fmt.Errorf("failed to get execution: %w", fetchErr)
+	}
+	if constraintErr := h.enforcePurchaseConstraints(ctx, session, "execute", execution.Recommendations); constraintErr != nil {
+		return nil, constraintErr
+	}
+
 	if err := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session)); err != nil {
 		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
 	}
@@ -607,6 +631,21 @@ func (h *Handler) approveViaToken(ctx context.Context, req *events.LambdaFunctio
 	if err := h.requireDifferentApprover(ctx, tokenSession, execution); err != nil {
 		return nil, err
 	}
+	// SEC-01 follow-up (issue #60 review): the deep-link flow always forces
+	// a login, so tokenSession is populated whenever a browser reaches this
+	// endpoint. approvePurchase's session-vs-token dispatch already denies a
+	// session whose approve-any/approve-own is capped tighter than this
+	// request before it ever reaches approveViaToken (authorizeSessionApprove
+	// returns a terminal constraintDeniedError, not a fall-through 403). This
+	// is a second, independent evaluation of that same session's Constraints
+	// so a capped approver who is ALSO the account's registered
+	// contact_email cannot use the email link to approve past their own cap
+	// -- the contact_email gate above authorizes a completely different
+	// principal (the account's contact), and must not be read as clearing
+	// Constraints on this session's own approve-* permission.
+	if err := h.approveConstraintsForSession(ctx, tokenSession, execution); err != nil {
+		return nil, err
+	}
 	// Check for Gmail-style pre-fire delay (issue #291 wave-2).
 	// Token/email-link path: no authenticated session UUID is available, so the
 	// scheduled transition is recorded as system-initiated (transitioned_by = NULL).
@@ -745,6 +784,33 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 // approve the given execution under the approve-any / approve-own RBAC
 // rules added in issue #286. Returns a 403 ClientError otherwise.
 // Mirror of authorizeSessionCancel.
+//
+// Also enforces the approve-any/approve-own permission's own per-permission
+// Constraints against execution.Recommendations (issue #60): approving here
+// hands off to purchase.Manager.ApproveAndExecute, which fires the AWS
+// purchase synchronously, so this is as much a money-spending path as
+// execute-any/execute-own and must be capped the same way. Without this, a
+// session whose approve-any is constrained to e.g. MaxPurchaseAmount: $1,000
+// could approve (and thereby execute) an arbitrarily large pending execution
+// created by someone else, even though the identically-capped execute-any
+// permission already blocks a matching direct-execute.
+//
+// A session holding BOTH approve-any and approve-own is evaluated on
+// approve-any ONLY (the first branch below returns unconditionally once
+// hasAny is true): approve-any's Constraints are what gate it, even for an
+// execution this session happens to have created itself. This mirrors
+// authorizeSessionExecuteDirect's execute-any/execute-own ordering and the
+// group model's own semantics -- approve-any is the broader grant, so a
+// group holding both is expected to configure whichever Constraints the
+// broader grant should carry, not rely on approve-own's (narrower-intent)
+// Constraints ever being consulted for such a session.
+//
+// The returned error is wrapped via wrapConstraintDenied whenever it comes
+// from the Constraints check (as opposed to the bare verb/ownership checks
+// above it): approvePurchase's session-vs-token dispatch must treat a
+// Constraints-exceeded denial as terminal, not as a signal to fall through
+// to the token/contact_email flow, which never evaluates Constraints (issue
+// #60 review follow-up; see constraintDeniedError's doc comment).
 func (h *Handler) authorizeSessionApprove(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
 	// The stateless admin API key has full access and no user row to resolve
 	// permissions from. Administrators-group users fall through and pass via
@@ -762,7 +828,7 @@ func (h *Handler) authorizeSessionApprove(ctx context.Context, session *Session,
 		return fmt.Errorf("permission check failed: %w", err)
 	}
 	if hasAny {
-		return nil
+		return wrapConstraintDenied(h.enforcePurchaseConstraints(ctx, session, auth.ActionApproveAny, execution.Recommendations))
 	}
 
 	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionApproveOwn, auth.ResourcePurchases)
@@ -775,6 +841,41 @@ func (h *Handler) authorizeSessionApprove(ctx context.Context, session *Session,
 
 	if execution.CreatedByUserID == nil || *execution.CreatedByUserID != session.UserID {
 		return NewClientError(403, "permission denied: cannot approve another user's pending purchase")
+	}
+	return wrapConstraintDenied(h.enforcePurchaseConstraints(ctx, session, auth.ActionApproveOwn, execution.Recommendations))
+}
+
+// approveConstraintsForSession is approveViaToken's independent Constraints
+// check (issue #60 review follow-up): it mirrors authorizeSessionApprove's
+// approve-any/approve-own grant-then-constrain matrix, but returns nil
+// (rather than a 403) when the session holds neither verb, or holds only
+// approve-own for an execution it didn't create. Those are not denials here
+// -- a session with no applicable approve-* permission simply has no
+// Constraints to be bound by, and is being authorized entirely through the
+// token flow's separate contact_email mechanism. This function only ever
+// narrows what that mechanism would otherwise allow; it never widens it.
+//
+// session may be nil (a pure email-client click with no browser session at
+// all); that also returns nil, since there is no session-held permission to
+// evaluate. session.UserID == apiKeyAdminUserID or a nil h.auth are treated
+// the same way authorizeSessionApprove treats them.
+func (h *Handler) approveConstraintsForSession(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	if session == nil || session.UserID == apiKeyAdminUserID || h.auth == nil {
+		return nil
+	}
+	hasAny, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionApproveAny, auth.ResourcePurchases)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
+	}
+	if hasAny {
+		return h.enforcePurchaseConstraints(ctx, session, auth.ActionApproveAny, execution.Recommendations)
+	}
+	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionApproveOwn, auth.ResourcePurchases)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
+	}
+	if hasOwn && execution.CreatedByUserID != nil && *execution.CreatedByUserID == session.UserID {
+		return h.enforcePurchaseConstraints(ctx, session, auth.ActionApproveOwn, execution.Recommendations)
 	}
 	return nil
 }
@@ -984,16 +1085,25 @@ func (h *Handler) requireDifferentApprover(ctx context.Context, session *Session
 //
 // creatorID is the creator of the execution being submitted (resolved via
 // resolveCreatorUserID before this call; "" on non-human or legacy rows).
+// recs is the execution's (store-priced) recommendation set, used to build
+// the same per-permission Constraints sets validateExecutePurchaseRequest
+// already enforces against the base execute:purchases permission (issue
+// #60): execute-any/execute-own are DISTINCT permissions from execute, so a
+// session capped tighter on execute-any than on execute could otherwise
+// direct-execute past that tighter cap by holding both verbs.
 //
 // Gate logic (mirrors authorizeSessionApprove / authorizeSessionCancel):
 //   - stateless admin API key: always permitted (apiKeyAdminUserID sentinel).
-//   - execute-any: permitted regardless of creator. Administrators-group users
-//     pass here because {admin, *} matches ActionExecuteAny.
-//   - execute-own: permitted only when creatorID == session.UserID and both
-//     are non-empty (prevents an empty-string collision from granting access).
-//   - no matching grant: 403 fail-closed; nil auth component is a 500 as
-//     per feedback_fail_closed_middleware.md.
-func (h *Handler) authorizeSessionExecuteDirect(ctx context.Context, session *Session, creatorID string) error {
+//   - execute-any: permitted when the execute-any permission's own
+//     Constraints also allow this batch, regardless of creator.
+//     Administrators-group users pass the verb check here because
+//     {admin, *} matches ActionExecuteAny.
+//   - execute-own: permitted only when creatorID == session.UserID (both
+//     non-empty) AND the execute-own permission's own Constraints allow
+//     this batch.
+//   - no matching grant, or a constraint denial: 403 fail-closed; nil auth
+//     component is a 500 as per feedback_fail_closed_middleware.md.
+func (h *Handler) authorizeSessionExecuteDirect(ctx context.Context, session *Session, creatorID string, recs []config.RecommendationRecord) error {
 	// Stateless admin API key: full access, no user row. Administrators-group
 	// users pass via the execute-any HasPermissionAPI check below, since
 	// {admin, *} matches any requested permission.
@@ -1009,7 +1119,7 @@ func (h *Handler) authorizeSessionExecuteDirect(ctx context.Context, session *Se
 		return fmt.Errorf("permission check failed: %w", err)
 	}
 	if hasAny {
-		return nil
+		return h.enforcePurchaseConstraints(ctx, session, auth.ActionExecuteAny, recs)
 	}
 
 	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionExecuteOwn, auth.ResourcePurchases)
@@ -1025,7 +1135,7 @@ func (h *Handler) authorizeSessionExecuteDirect(ctx context.Context, session *Se
 	if session.UserID == "" || creatorID == "" || creatorID != session.UserID {
 		return NewClientError(403, "permission denied: execute-own requires you to be the creator of this purchase")
 	}
-	return nil
+	return h.enforcePurchaseConstraints(ctx, session, auth.ActionExecuteOwn, recs)
 }
 
 func (h *Handler) cancelPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, execID, token string) (any, error) {
@@ -1637,7 +1747,7 @@ func (h *Handler) retryPurchase(ctx context.Context, req *events.LambdaFunctionU
 	// store-derived prices stamped at submit time
 	// (priceRecommendationsFromStore), so this re-check never sees
 	// client-supplied numbers.
-	if constraintErr := h.enforcePurchaseConstraints(ctx, session, failedExec.Recommendations); constraintErr != nil {
+	if constraintErr := h.enforcePurchaseConstraints(ctx, session, "execute", failedExec.Recommendations); constraintErr != nil {
 		return nil, constraintErr
 	}
 
@@ -2037,6 +2147,44 @@ func (h *Handler) tryResolveActorEmail(ctx context.Context, req *events.LambdaFu
 	return ""
 }
 
+// constraintDeniedError marks a 403 produced by requirePermissionConstraints
+// (a granted verb whose own per-permission Constraints reject the request)
+// so isPermissionDenied's strict, unwrapped *clientError assertion does NOT
+// recognize it (issue #60 review follow-up, same mechanism as errCSRFRejected
+// above). This matters because approvePurchase's session-vs-token dispatch
+// treats any isPermissionDenied 403 as "no approve-* grant at all, fall
+// through to the token/contact_email flow" -- correct for a bare missing-verb
+// denial, but wrong for a Constraints-exceeded denial: approveViaToken never
+// evaluates Constraints, so a session holding a capped approve-any/
+// approve-own would otherwise bypass its own cap by using the email
+// deep-link (which forces a login and therefore always carries a session)
+// instead of the dashboard Approve button. Wrapping forces the dispatch's
+// `default:` branch (propagate, terminal) instead of the fall-through
+// branch. IsClientError still resolves this to the right HTTP code and
+// message via errors.As + Unwrap, so response mapping is unaffected.
+type constraintDeniedError struct {
+	*clientError
+}
+
+func (e *constraintDeniedError) Unwrap() error { return e.clientError }
+
+// wrapConstraintDenied marks a non-nil requirePermissionConstraints /
+// enforcePurchaseConstraints error as terminal (see constraintDeniedError).
+// A nil err, or an err that isn't a *clientError (e.g. an auth-service
+// failure wrapped with fmt.Errorf), passes through unchanged -- the latter
+// is already un-recognized by isPermissionDenied's own strict assertion, so
+// it already hits the propagate branch without needing to be wrapped here.
+func wrapConstraintDenied(err error) error {
+	if err == nil {
+		return nil
+	}
+	ce, ok := err.(*clientError) //nolint:errorlint // wrapping the concrete constructor's return; see constraintDeniedError doc
+	if !ok {
+		return err
+	}
+	return &constraintDeniedError{clientError: ce}
+}
+
 // isPermissionDenied reports whether err is *directly* a 403 ClientError
 // (not merely something that wraps one). Used by the cancel-from-email
 // session pre-check to distinguish a legitimate "your session lacks
@@ -2050,7 +2198,8 @@ func (h *Handler) tryResolveActorEmail(ctx context.Context, req *events.LambdaFu
 // wrapper's intent), not "this is still a 403". errors.As-style unwrapping
 // would erase that distinction and silently route wrapped backend
 // failures into the contact_email gate — exactly the misclassification
-// the propagate-vs-fall-through split is meant to prevent.
+// the propagate-vs-fall-through split is meant to prevent. constraintDeniedError
+// above deliberately exploits the same strictness from the other direction.
 func isPermissionDenied(err error) bool {
 	ce, ok := err.(*clientError) //nolint:errorlint // strict (unwrapped) assertion is deliberate; see comment above
 	return ok && ce.code == 403
@@ -2234,21 +2383,28 @@ func (h *Handler) validateExecutePurchaseRequest(ctx context.Context, req *event
 
 // enforcePurchaseConstraints builds the per-recommendation
 // auth.PermissionConstraints sets (purchaseConstraintSets) and enforces them
-// against session's execute:purchases permission, first rejecting a batch
+// against session's action:purchases permission, first rejecting a batch
 // whose total commitment computes to zero (requireNonZeroCommitment).
-// Shared by the direct-execute request validation and the retry path
-// (retryPurchase) so both re-derive and check the exact same Constraints
-// (SEC-01, issue #1141; adversarial review follow-up to #1210 -- the retry
-// path previously skipped this check entirely). The web execute path
-// reaches this through priceAndEnforcePurchaseConstraints, so recs carry
-// store-derived costs; the retry path enforces against the persisted row,
-// which was priced when it was written.
-func (h *Handler) enforcePurchaseConstraints(ctx context.Context, session *Session, recs []config.RecommendationRecord) error {
+// Shared by every money-mutating purchases call site (direct-execute request
+// validation, the retry path, execute-any/own, approve-any/own and
+// runPlannedPurchase) so all of them re-derive and check the exact same
+// Constraints against the exact same zero-commitment guard (SEC-01, issue
+// #1141; adversarial review follow-up to #1210 -- the retry path previously
+// skipped this check entirely; issue #60 review follow-up -- approve-any/own
+// and runPlannedPurchase previously skipped requireNonZeroCommitment, so an
+// execution whose recs summed to $0 read as an uncapped MaxPurchaseAmount).
+// action is threaded through (not hardcoded) because callers check
+// different verbs: "execute" for the web submit and retry paths and
+// runPlannedPurchase, "execute-any"/"execute-own" for direct-execute,
+// "approve-any"/"approve-own" for session approve. recs carry store-derived
+// or persisted-at-submit-time costs depending on the caller; none of these
+// call sites ever price from client-supplied numbers.
+func (h *Handler) enforcePurchaseConstraints(ctx context.Context, session *Session, action string, recs []config.RecommendationRecord) error {
 	constraintSets := purchaseConstraintSets(recs)
 	if err := requireNonZeroCommitment(constraintSets); err != nil {
 		return err
 	}
-	return h.requirePermissionConstraints(ctx, session, "purchases", constraintSets)
+	return h.requirePermissionConstraints(ctx, session, action, "purchases", constraintSets)
 }
 
 // purchaseConstraintSets builds one auth.PermissionConstraints per
@@ -2712,7 +2868,7 @@ func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctio
 	// prevents a client that sets execute_mode="direct" but only holds the
 	// base execute:purchases verb from silently degrading to the email flow.
 	if execReq.ExecuteMode == "direct" {
-		if err := h.authorizeSessionExecuteDirect(ctx, session, creatorID); err != nil {
+		if err := h.authorizeSessionExecuteDirect(ctx, session, creatorID, execReq.Recommendations); err != nil {
 			return nil, err
 		}
 		return h.directExecutePurchase(ctx, req, execution, session, paymentAdjustments)

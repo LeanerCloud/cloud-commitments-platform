@@ -22,7 +22,7 @@ func (h *Handler) priceAndEnforcePurchaseConstraints(ctx context.Context, sessio
 	if err := h.priceRecommendationsFromStore(ctx, recs); err != nil {
 		return err
 	}
-	return h.enforcePurchaseConstraints(ctx, session, recs)
+	return h.enforcePurchaseConstraints(ctx, session, "execute", recs)
 }
 
 // priceRecommendationsFromStore rewrites recs in place. Each rec must match
