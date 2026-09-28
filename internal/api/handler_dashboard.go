@@ -429,10 +429,12 @@ func (h *Handler) getUpcomingPurchases(ctx context.Context, req *events.LambdaFu
 		planMap[plans[i].ID] = &plans[i]
 	}
 
-	// Per-plan access cache mirrors getPlannedPurchases — all executions
-	// for the same plan share the same account scope, so we resolve once
-	// per plan.
-	allowedPlan := make(map[string]bool)
+	scope, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+	// Memoises GetPlanAccounts, mirroring getPlannedPurchases.
+	planAccounts := make(map[string][]config.CloudAccount)
 
 	var upcoming []UpcomingPurchase
 	for i := range executions {
@@ -443,7 +445,7 @@ func (h *Handler) getUpcomingPurchases(ctx context.Context, req *events.LambdaFu
 			// Hide rather than crash; cleanup is a separate concern.
 			continue
 		}
-		ok, err := h.isPlanAllowedCached(ctx, session, exec.PlanID, allowedPlan)
+		ok, err := h.isExecutionInScope(ctx, scope, &exec, planAccounts)
 		if err != nil {
 			return nil, err
 		}

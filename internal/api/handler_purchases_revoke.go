@@ -246,6 +246,11 @@ func (h *Handler) revokeScheduledExecution(ctx context.Context, session *Session
 	// cancel it before any cloud call. Let CancelScheduledExecutionAtomic be the
 	// sole arbiter: it returns canceled=false (-> 410) only when the row has
 	// actually moved out of "scheduled".
+	// Account-scope gate (issue #92), ahead of RBAC so an out-of-scope caller
+	// gets the enumeration-safe 404 rather than a 403 that confirms the row.
+	if err := h.requireExecutionAccess(ctx, session, execution.ExecutionID); err != nil {
+		return nil, err
+	}
 	if err := h.authorizeSessionRevokeExecution(ctx, session, execution); err != nil {
 		return nil, err
 	}

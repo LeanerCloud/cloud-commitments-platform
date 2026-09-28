@@ -127,9 +127,12 @@ func (h *Handler) getPlannedPurchases(ctx context.Context, req *events.LambdaFun
 		planMap[plans[i].ID] = &plans[i]
 	}
 
-	// Cache per-plan access decisions — all executions for the same plan share
-	// the same account scope. Avoids GetPlanAccounts round-trips per execution.
-	allowedPlan := make(map[string]bool)
+	scope, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+	// Memoises GetPlanAccounts: plan-level parents of the same plan share it.
+	planAccounts := make(map[string][]config.CloudAccount)
 
 	var purchases []PlannedPurchase
 	for _rvc := range executions {
@@ -138,7 +141,7 @@ func (h *Handler) getPlannedPurchases(ctx context.Context, req *events.LambdaFun
 		if plan == nil {
 			continue
 		}
-		ok, err := h.isPlanAllowedCached(ctx, session, exec.PlanID, allowedPlan)
+		ok, err := h.isExecutionInScope(ctx, scope, &exec, planAccounts)
 		if err != nil {
 			return nil, err
 		}
@@ -153,20 +156,15 @@ func (h *Handler) getPlannedPurchases(ctx context.Context, req *events.LambdaFun
 	}, nil
 }
 
-// isPlanAllowedCached resolves and memoises whether the session may see the given plan.
-// NotFound errors are treated as "not allowed" (not an error) so missing plans don't
-// surface as 500s, mirroring the previous inline behavior.
-func (h *Handler) isPlanAllowedCached(ctx context.Context, session *Session, planID string, cache map[string]bool) (bool, error) {
-	if ok, cached := cache[planID]; cached {
-		return ok, nil
+// isExecutionInScope is requireExecutionInScope for list filtering: an
+// out-of-scope execution is hidden (false) rather than an error, while store
+// failures still propagate.
+func (h *Handler) isExecutionInScope(ctx context.Context, scope auth.AccountScope, exec *config.PurchaseExecution, planAccounts map[string][]config.CloudAccount) (bool, error) {
+	err := h.requireExecutionInScope(ctx, scope, exec, planAccounts)
+	if IsNotFoundError(err) {
+		return false, nil
 	}
-	planErr := h.requirePlanAccess(ctx, session, planID)
-	if planErr != nil && !IsNotFoundError(planErr) {
-		return false, planErr
-	}
-	ok := planErr == nil
-	cache[planID] = ok
-	return ok, nil
+	return err == nil, err
 }
 
 // buildPlannedPurchase converts a (plan, execution) pair into the API-facing PlannedPurchase.
@@ -599,13 +597,14 @@ func (h *Handler) approvePurchase(ctx context.Context, req *events.LambdaFunctio
 	//      approvePurchaseViaSession runs the approve-any /
 	//      approve-own RBAC matrix and rejects sessions without it.
 	if session := h.tryGetSession(ctx, req); session != nil {
-		switch err := h.authorizeSessionApprove(ctx, session, execution); {
+		switch err := h.authorizeScopedSessionApprove(ctx, session, execution); {
 		case err == nil:
 			return h.approvePurchaseViaSession(ctx, req, execution)
-		case isPermissionDenied(err):
-			// Explicit 403 → fall through to the token branch so the
-			// contact_email gate gets a chance (a logged-in user without
-			// approve-* may still be the per-account contact recipient).
+		case fallsThroughToToken(err, token):
+			// Explicit 403, or an out-of-scope 404 with a token → fall
+			// through to the token branch so the contact_email gate gets a
+			// chance (a logged-in user without approve-* or outside the
+			// account scope may still be the per-account contact recipient).
 		default:
 			// Transient failure — propagate instead of silently widening.
 			return nil, err
@@ -730,15 +729,7 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be approved (status=%s)", execution.ExecutionID, execution.Status))
 	}
 
-	if err := h.authorizeSessionApprove(ctx, session, execution); err != nil {
-		return nil, err
-	}
-
-	// 4-eyes mode (issue #1005): enforce after RBAC so only users who already
-	// pass the approve-any / approve-own gate reach this check. The admin
-	// wildcard inside authorizeSessionApprove short-circuits RBAC but NOT this
-	// check; admins who created the row must disable the mode first.
-	if err := h.requireDifferentApprover(ctx, session, execution); err != nil {
+	if err := h.authorizeApproveSession(ctx, session, execution); err != nil {
 		return nil, err
 	}
 
@@ -785,6 +776,31 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 	// and never propagate — the purchase is already done at this point.
 	h.sendPurchaseExecutedEmail(ctx, req, execution, revocationToken, session.Email)
 	return map[string]string{"status": "completed"}, nil
+}
+
+// authorizeApproveSession runs every gate approvePurchaseViaSession must pass
+// before mutating state: the account-scope check (issue #92), the
+// approve-any/approve-own RBAC matrix with its Constraints, and the 4-eyes
+// distinct-approver rule.
+func (h *Handler) authorizeApproveSession(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	if err := h.authorizeScopedSessionApprove(ctx, session, execution); err != nil {
+		return err
+	}
+	// 4-eyes mode (issue #1005): enforce after RBAC so only users who already
+	// pass the approve-any / approve-own gate reach this check. The admin
+	// wildcard inside authorizeSessionApprove short-circuits RBAC but NOT this
+	// check; admins who created the row must disable the mode first.
+	return h.requireDifferentApprover(ctx, session, execution)
+}
+
+// authorizeScopedSessionApprove runs the account-scope gate (issue #92)
+// before the approve RBAC and Constraints checks, so an out-of-scope caller
+// gets the enumeration-safe 404 before a 403 can reveal the execution exists.
+func (h *Handler) authorizeScopedSessionApprove(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	if err := h.requireExecutionAccess(ctx, session, execution.ExecutionID); err != nil {
+		return err
+	}
+	return h.authorizeSessionApprove(ctx, session, execution)
 }
 
 // authorizeSessionApprove returns nil when the session is permitted to
@@ -1185,15 +1201,16 @@ func (h *Handler) cancelPurchase(ctx context.Context, req *events.LambdaFunction
 	//      token. cancelPurchaseViaSession runs the cancel-any /
 	//      cancel-own RBAC matrix and rejects sessions without it.
 	if session := h.tryGetSession(ctx, req); session != nil {
-		switch err := h.authorizeSessionCancel(ctx, session, execution); {
+		switch err := h.authorizeCancelSession(ctx, session, execution); {
 		case err == nil:
 			// Session is RBAC-authorized → run the session-authed cancel.
 			return h.cancelPurchaseViaSession(ctx, req, execution)
-		case isPermissionDenied(err):
-			// Explicit "permission denied" (403) → fall through to the
-			// token branch so the contact_email gate still gets a chance
-			// (a logged-in user without admin / cancel-* may still be
-			// the per-account contact email recipient).
+		case fallsThroughToToken(err, token):
+			// Explicit "permission denied" (403), or an out-of-scope 404
+			// with a token → fall through to the token branch so the
+			// contact_email gate still gets a chance (a logged-in user
+			// without admin / cancel-* may still be the per-account contact
+			// email recipient).
 		default:
 			// Transient failure (auth-service down, HasPermissionAPI
 			// returning a wrapped error, h.auth==nil 500). Propagate
@@ -1269,7 +1286,7 @@ func (h *Handler) cancelPurchaseViaSession(ctx context.Context, req *events.Lamb
 		return nil, err
 	}
 
-	if err := h.authorizeSessionCancel(ctx, session, execution); err != nil {
+	if err := h.authorizeCancelSession(ctx, session, execution); err != nil {
 		return nil, err
 	}
 
@@ -1377,14 +1394,8 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 		return nil, NewClientError(404, "execution not found")
 	}
 
-	// Only completed/partially_completed purchases have anything to revoke.
-	// A pending/notified purchase should be canceled instead.
-	if statusErr := checkRevokableStatus(execution); statusErr != nil {
-		return nil, statusErr
-	}
-
 	// Three-mode dispatch — same shape as cancelPurchase.
-	result, handled, revokeErr := h.tryRevokeViaSession(ctx, req, execution)
+	result, handled, revokeErr := h.tryRevokeViaSession(ctx, req, execution, token)
 	if handled {
 		return result, revokeErr
 	}
@@ -1410,6 +1421,9 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 		return nil, err
 	}
 	if err := validateRevokeToken(execution, token); err != nil {
+		return nil, err
+	}
+	if err := checkRevokableStatus(execution); err != nil {
 		return nil, err
 	}
 	return h.revokeViaSession(ctx, execution, actor)
@@ -1445,12 +1459,12 @@ func renderRevokeConfirmPage(execID, token string) *rawResponse {
 // (nil, false, nil) when the session was absent or returned a permission-denied
 // error so the caller can fall through to the token branch. Extracted from
 // revokeViaEmailToken to keep that function under the cyclomatic limit.
-func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution) (result any, handled bool, err error) {
+func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, token string) (result any, handled bool, err error) {
 	session := h.tryGetSession(ctx, req)
 	if session == nil {
 		return nil, false, nil
 	}
-	switch sessErr := h.authorizeSessionCancel(ctx, session, execution); {
+	switch sessErr := h.authorizeCancelSession(ctx, session, execution); {
 	case sessErr == nil:
 		// These endpoints are AuthPublic so the outer middleware skips CSRF.
 		// Enforce it here for the session-authed revoke sub-path, consistent
@@ -1459,9 +1473,14 @@ func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFun
 		if csrfErr := h.validateCSRF(ctx, req); csrfErr != nil {
 			return nil, true, NewClientError(403, "CSRF validation failed")
 		}
+		// Status is checked only once the caller is authorized, so an
+		// out-of-scope caller cannot learn it from a 409.
+		if statusErr := checkRevokableStatus(execution); statusErr != nil {
+			return nil, true, statusErr
+		}
 		res, revokeErr := h.revokeViaSession(ctx, execution, session.Email)
 		return res, true, revokeErr
-	case isPermissionDenied(sessErr):
+	case fallsThroughToToken(sessErr, token):
 		// Fall through to the token branch.
 		return nil, false, nil
 	default:
@@ -1600,6 +1619,17 @@ func (h *Handler) revokeViaSession(ctx context.Context, execution *config.Purcha
 		"status":  "revocation_requested",
 		"message": "Revocation request recorded. Contact AWS Support to complete the cancellation within the allowed window.",
 	}, nil
+}
+
+// authorizeCancelSession runs the account-scope gate (issue #92) before the
+// cancel-any/cancel-own RBAC matrix, so an out-of-scope caller gets the
+// enumeration-safe 404 before a 403 can reveal the execution exists. Shared
+// by the cancel and revoke session paths.
+func (h *Handler) authorizeCancelSession(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	if err := h.requireExecutionAccess(ctx, session, execution.ExecutionID); err != nil {
+		return err
+	}
+	return h.authorizeSessionCancel(ctx, session, execution)
 }
 
 // authorizeSessionCancel returns nil when the session is permitted to cancel
@@ -1815,16 +1845,7 @@ func (h *Handler) loadAndValidateRetryRequest(ctx context.Context, req *events.L
 		return nil, nil, err
 	}
 
-	if failedExec.Status != "failed" {
-		return nil, nil, NewClientError(409, fmt.Sprintf("execution %s cannot be retried (status=%s)", failedExec.ExecutionID, failedExec.Status))
-	}
-
-	// Authorize BEFORE the already-retried guard so an unauthorized
-	// caller can't enumerate descendant execution IDs by probing
-	// failed-row UUIDs (CR #168 review). The status check above is
-	// allowed pre-RBAC because non-admins can already see the row's
-	// status via the History endpoint they're entitled to read.
-	if err := h.authorizeSessionRetry(ctx, session, failedExec); err != nil {
+	if err := h.authorizeRetrySession(ctx, session, failedExec); err != nil {
 		return nil, nil, err
 	}
 
@@ -1844,6 +1865,31 @@ func (h *Handler) loadAndValidateRetryRequest(ctx context.Context, req *events.L
 	}
 
 	return failedExec, session, nil
+}
+
+// authorizeRetrySession runs the account-scope gate (issue #92), the status
+// guard, and the retry-any/retry-own RBAC matrix, in that order. Extracted
+// from loadAndValidateRetryRequest to keep that function under the
+// cyclomatic-complexity ceiling; the order is preserved from the original
+// inline sequence, so the security boundary is unchanged.
+func (h *Handler) authorizeRetrySession(ctx context.Context, session *Session, failedExec *config.PurchaseExecution) error {
+	// Account-scope gate (issue #92): retry relied only on the retry-any/
+	// retry-own RBAC matrix below and never consulted allowed_accounts. Runs
+	// before the status check so an out-of-scope caller learns nothing about
+	// the execution, matching the 404 a scoped-out session already gets from
+	// the History endpoint for the same row.
+	if err := h.requireExecutionAccess(ctx, session, failedExec.ExecutionID); err != nil {
+		return err
+	}
+	if failedExec.Status != "failed" {
+		return NewClientError(409, fmt.Sprintf("execution %s cannot be retried (status=%s)", failedExec.ExecutionID, failedExec.Status))
+	}
+	// Authorize BEFORE the already-retried guard so an unauthorized
+	// caller can't enumerate descendant execution IDs by probing
+	// failed-row UUIDs (CR #168 review). The status check above is
+	// allowed pre-RBAC because non-admins can already see the row's
+	// status via the History endpoint they're entitled to read.
+	return h.authorizeSessionRetry(ctx, session, failedExec)
 }
 
 // checkRetryEligibilityGates runs the provider re-drive-safety (issue
@@ -2198,6 +2244,18 @@ func wrapConstraintDenied(err error) error {
 	return &constraintDeniedError{clientError: ce}
 }
 
+// fallsThroughToToken reports whether a session-authorization failure should
+// hand the request to the email-token branch: an RBAC denial (403), or an
+// account-scope miss (404) when a token is present. The token branch's
+// contact_email gate is deliberately not account-scoped (issue #92). Without
+// a token the 404 is returned as-is, so the token branch's status guards
+// cannot reveal an out-of-scope execution's existence or status. Both
+// matches are strict, like isPermissionDenied, so a wrapped error from
+// deeper in the chain propagates.
+func fallsThroughToToken(err error, token string) bool {
+	return isPermissionDenied(err) || (token != "" && err == errNotFound) //nolint:errorlint // strict sentinel identity is deliberate
+}
+
 // isPermissionDenied reports whether err is *directly* a 403 ClientError
 // (not merely something that wraps one). Used by the cancel-from-email
 // session pre-check to distinguish a legitimate "your session lacks
@@ -2286,8 +2344,11 @@ func (h *Handler) getPurchaseDetails(ctx context.Context, req *events.LambdaFunc
 		return nil, fmt.Errorf("failed to get execution: %w", err)
 	}
 
-	// Scope: reject if the execution's plan isn't accessible to the session.
-	if err := h.requirePlanAccess(ctx, session, execution.PlanID); err != nil {
+	scope, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+	if err := h.requireExecutionInScope(ctx, scope, execution, nil); err != nil {
 		return nil, err
 	}
 

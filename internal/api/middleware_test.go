@@ -662,6 +662,7 @@ func TestTokenOnlyApprove_BypassesCSRF(t *testing.T) {
 	// falls through to the token branch. CSRF is NOT called on the token
 	// branch (approvePurchaseViaSession is never reached).
 	mockAuth := new(MockAuthService)
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: contactEmail}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "", "approve-any", "purchases").Return(false, nil).Maybe()
 	mockAuth.On("HasPermissionAPI", ctx, "", "approve-own", "purchases").Return(false, nil).Maybe()

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
@@ -143,11 +144,11 @@ func (h *Handler) validatePurchaseRecommendationScope(ctx context.Context, sessi
 	return nil
 }
 
-// requireExecutionAccess rejects with errNotFound when the execution's plan's
-// associated accounts don't intersect with the session's allowed_accounts.
-// Convenience wrapper around requirePlanAccess for the pause/resume/run/
-// delete/details handlers that key on executionID. Returns errNotFound when
-// the execution itself doesn't exist, so unauthenticated probing can't
+// requireExecutionAccess rejects with errNotFound unless every cloud account
+// the execution can buy in (executionAccounts) is inside the session's
+// allowed_accounts (issue #92). Used by the approve/cancel/retry/revoke and
+// pause/resume/run/delete handlers that key on executionID. Returns
+// errNotFound when the execution itself doesn't exist, so probing can't
 // distinguish "no such execution" from "you can't see it".
 //
 // Short-circuits for admin / unrestricted sessions BEFORE the
@@ -155,21 +156,116 @@ func (h *Handler) validatePurchaseRecommendationScope(ctx context.Context, sessi
 // round-trip (and to keep existing unit-test fixtures for admin operations
 // working without adding execution mocks).
 func (h *Handler) requireExecutionAccess(ctx context.Context, session *Session, executionID string) error {
-	allowed, err := h.getAccountScope(ctx, session)
+	scope, err := h.getAccountScope(ctx, session)
 	if err != nil {
 		return fmt.Errorf("failed to get allowed accounts: %w", err)
 	}
-	if allowed.AllowsAll() {
+	if scope.AllowsAll() {
 		return nil
 	}
 	execution, err := h.config.GetExecutionByID(ctx, executionID)
-	if errors.Is(err, config.ErrNotFound) {
+	if errors.Is(err, config.ErrNotFound) || (err == nil && execution == nil) {
 		return errNotFound
 	}
 	if err != nil {
 		return fmt.Errorf("failed to get execution: %w", err)
 	}
-	return h.requirePlanAccess(ctx, session, execution.PlanID)
+	return h.requireExecutionInScope(ctx, scope, execution, nil)
+}
+
+// requireExecutionInScope returns errNotFound unless the scope allows every
+// account in executionAccounts(execution). An empty set is a deny: an
+// execution that cannot be attributed must not be actionable by a scoped
+// user. planAccounts memoises GetPlanAccounts for list callers; nil disables
+// it.
+func (h *Handler) requireExecutionInScope(ctx context.Context, scope auth.AccountScope, execution *config.PurchaseExecution, planAccounts map[string][]config.CloudAccount) error {
+	if scope.AllowsAll() {
+		return nil
+	}
+	accounts, err := h.executionAccounts(ctx, execution, planAccounts)
+	if err != nil {
+		return err
+	}
+	if len(accounts) == 0 {
+		return errNotFound
+	}
+	for i := range accounts {
+		if !scope.Allows(accounts[i].ID, accounts[i].Name) {
+			return errNotFound
+		}
+	}
+	return nil
+}
+
+// executionAccounts returns every cloud account the execution can buy in:
+//   - CloudAccountID set: that account only (a fan-out child or a
+//     single-account execution).
+//   - otherwise PlanID set: all of the plan's accounts, since a plan-level
+//     parent fans out to every one of them (purchase.Manager.executeScopeAware).
+//   - otherwise (an ad-hoc web purchase, plan_id NULL): the account of every
+//     recommendation. One without an account is unattributable, so the whole
+//     execution is refused with errNotFound.
+//
+// An account ID with no cloud_accounts row comes back without a name, so it
+// can only match an ID entry in the scope.
+func (h *Handler) executionAccounts(ctx context.Context, execution *config.PurchaseExecution, planAccounts map[string][]config.CloudAccount) ([]config.CloudAccount, error) {
+	if execution.CloudAccountID != nil {
+		a, err := h.lookupCloudAccount(ctx, *execution.CloudAccountID)
+		if err != nil {
+			return nil, err
+		}
+		return []config.CloudAccount{a}, nil
+	}
+	if execution.PlanID != "" {
+		if cached, ok := planAccounts[execution.PlanID]; ok {
+			return cached, nil
+		}
+		accounts, err := h.config.GetPlanAccounts(ctx, execution.PlanID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get plan accounts: %w", err)
+		}
+		if planAccounts != nil {
+			planAccounts[execution.PlanID] = accounts
+		}
+		return accounts, nil
+	}
+	return h.recommendationAccounts(ctx, execution.Recommendations)
+}
+
+// recommendationAccounts returns the distinct accounts of recs, or
+// errNotFound when any recommendation has no account.
+func (h *Handler) recommendationAccounts(ctx context.Context, recs []config.RecommendationRecord) ([]config.CloudAccount, error) {
+	seen := make(map[string]bool, len(recs))
+	accounts := make([]config.CloudAccount, 0, len(recs))
+	for i := range recs {
+		id := recs[i].CloudAccountID
+		if id == nil || *id == "" {
+			return nil, errNotFound
+		}
+		if seen[*id] {
+			continue
+		}
+		seen[*id] = true
+		a, err := h.lookupCloudAccount(ctx, *id)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, a)
+	}
+	return accounts, nil
+}
+
+// lookupCloudAccount resolves an account ID for a scope check; a missing row
+// yields an ID-only account rather than an error (see executionAccounts).
+func (h *Handler) lookupCloudAccount(ctx context.Context, id string) (config.CloudAccount, error) {
+	a, err := h.config.GetCloudAccount(ctx, id)
+	if err != nil {
+		return config.CloudAccount{}, fmt.Errorf("accounts: %w", err)
+	}
+	if a == nil {
+		return config.CloudAccount{ID: id}, nil
+	}
+	return *a, nil
 }
 
 // resolveAccountFilterIDs maps requested cloud_accounts UUIDs to the
