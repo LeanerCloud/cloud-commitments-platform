@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -223,6 +225,38 @@ func isTextContentType(ct string) bool {
 }
 
 // handleLambdaSQSEvent processes SQS messages (for async purchase processing).
+//
+// When app.appConfig.ReportSQSBatchItemFailures is true, returns a partial
+// batch response (events.SQSEventResponse) naming only the records that
+// actually failed, with a nil error, instead of a single error for the
+// whole batch (issue #108). Lambda's SQS integration treats ANY non-nil
+// handler error as "the entire batch failed" and redelivers every record,
+// including ones HandleSQSMessage already processed successfully. On
+// redelivery those already-succeeded records typically fail a second time
+// (status already advanced past what the CAS-guarded handlers expect),
+// which redelivers the whole batch again and burns the redrive budget on
+// records that were never actually broken, until the one genuinely poison
+// message drags the rest of the batch to the DLQ with it.
+//
+// The partial-response shape is only honored by AWS when the SQS
+// event-source mapping sets function_response_types =
+// ["ReportBatchItemFailures"] (Terraform; see loadReportSQSBatchItemFailures
+// for why no such resource currently exists in this repo). Without that
+// setting live, AWS ignores the response body entirely and treats a nil
+// error as the WHOLE BATCH having succeeded -- deleting every message from
+// the queue, including the ones that just failed. That is a strictly worse
+// outcome than the old all-or-nothing behavior (which at least redelivered
+// and eventually DLQ'd a genuine failure): a transient error would now
+// silently drop an approval, and a poison message would vanish instead of
+// landing in the DLQ for investigation. ReportSQSBatchItemFailures defaults
+// to false specifically to keep the old, safe, all-or-nothing behavior
+// until an operator has confirmed the event source mapping is actually
+// configured to honor partial responses and flips
+// SQS_REPORT_BATCH_ITEM_FAILURES=true.
+//
+// Regardless of the flag, a batch where every record failed always returns
+// an error: there is no reason to ack (or partially ack) a batch that
+// accomplished nothing, flag or no flag.
 func (app *Application) handleLambdaSQSEvent(ctx context.Context, rawEvent json.RawMessage) (any, error) {
 	var sqsEvent events.SQSEvent
 	if err := json.Unmarshal(rawEvent, &sqsEvent); err != nil {
@@ -230,21 +264,66 @@ func (app *Application) handleLambdaSQSEvent(ctx context.Context, rawEvent json.
 		return nil, err
 	}
 
-	var failures []string
+	failures := []events.SQSBatchItemFailure{}
 	for _rvc := range sqsEvent.Records {
 		record := sqsEvent.Records[_rvc]
 		log.Printf("Processing SQS message: %s", record.MessageId)
 		if err := app.HandleSQSMessage(ctx, record.Body); err != nil {
 			log.Printf("Failed to process message %s: %v", record.MessageId, err)
-			failures = append(failures, record.MessageId)
+			failures = append(failures, events.SQSBatchItemFailure{ItemIdentifier: record.MessageId})
 		}
 	}
 
-	if len(failures) > 0 {
-		return nil, fmt.Errorf("failed to process %d SQS message(s): %v", len(failures), failures)
+	if len(failures) == 0 {
+		return events.SQSEventResponse{BatchItemFailures: failures}, nil
 	}
 
-	return map[string]string{"status": "processed"}, nil
+	if len(failures) == len(sqsEvent.Records) {
+		return nil, fmt.Errorf("failed to process all %d SQS message(s) in batch: %v", len(failures), sqsBatchItemFailureIDs(failures))
+	}
+
+	if !app.appConfig.ReportSQSBatchItemFailures {
+		// Fail closed: see the function doc comment above for why acking
+		// (even partially) without the Terraform side confirmed live would
+		// silently drop failed messages instead of redelivering them.
+		return nil, fmt.Errorf("failed to process %d SQS message(s): %v", len(failures), sqsBatchItemFailureIDs(failures))
+	}
+
+	return events.SQSEventResponse{BatchItemFailures: failures}, nil
+}
+
+// sqsBatchItemFailureIDs extracts the message IDs from a batch item failure
+// list for the aggregate-error log/error text.
+func sqsBatchItemFailureIDs(failures []events.SQSBatchItemFailure) []string {
+	ids := make([]string, len(failures))
+	for i, f := range failures {
+		ids[i] = f.ItemIdentifier
+	}
+	return ids
+}
+
+// loadReportSQSBatchItemFailures parses SQS_REPORT_BATCH_ITEM_FAILURES at
+// startup (called once from NewApplication). Unset means false: keep the
+// old all-or-nothing batch behavior, which is safe (if noisier) until an
+// operator confirms the SQS event source mapping's function_response_types
+// actually includes "ReportBatchItemFailures" -- a Terraform resource that
+// does not exist anywhere in this repo today (issue #108 follow-up: no
+// aws_sqs_queue / AWS::SQS::Queue / EventSourceMapping / batch_size found
+// across terraform/, cloudformation/, iac/, or arm/). A set but
+// unparseable value is a startup error rather than a silently-ignored
+// typo: flipping this flag is a deploy-time contract with that Terraform
+// setting, and getting it wrong risks silently dropping failed purchase
+// messages instead of redelivering them (see handleLambdaSQSEvent).
+func loadReportSQSBatchItemFailures() (bool, error) {
+	raw := os.Getenv("SQS_REPORT_BATCH_ITEM_FAILURES")
+	if raw == "" {
+		return false, nil
+	}
+	val, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("invalid SQS_REPORT_BATCH_ITEM_FAILURES %q: must be a boolean: %w", raw, err)
+	}
+	return val, nil
 }
 
 // handleLambdaScheduledEvent processes scheduled/cron events.

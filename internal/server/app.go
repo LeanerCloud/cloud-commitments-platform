@@ -118,6 +118,13 @@ type ApplicationConfig struct {
 	DefaultTerm             int
 	EnableDashboard         bool
 	IsLambda                bool
+	// ReportSQSBatchItemFailures gates whether handleLambdaSQSEvent returns
+	// the partial events.SQSEventResponse{BatchItemFailures} shape (true) or
+	// the old whole-batch aggregate error (false, default). See
+	// loadReportSQSBatchItemFailures for why this must stay false until the
+	// SQS event source mapping's function_response_types actually includes
+	// "ReportBatchItemFailures" (issue #108 follow-up).
+	ReportSQSBatchItemFailures bool
 }
 
 // ExternalDeps holds pre-built external dependencies that require infrastructure.
@@ -533,6 +540,12 @@ func NewApplication(ctx context.Context, version string) (*Application, error) {
 	if err := cfg.Analytics.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid analytics configuration: %w", err)
 	}
+
+	reportSQSBatchItemFailures, err := loadReportSQSBatchItemFailures()
+	if err != nil {
+		return nil, fmt.Errorf("invalid SQS configuration: %w", err)
+	}
+	cfg.ReportSQSBatchItemFailures = reportSQSBatchItemFailures
 
 	log.Printf("CUDly Server initializing, version: %s", cfg.Version)
 
