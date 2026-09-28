@@ -335,10 +335,24 @@ func (h *Handler) intersectAccountFilterScope(
 
 // intersectDualColumnScope computes the AND of two dual-column account
 // filters: an id (UUID, or external id under its provider bucket) survives
-// only when present on both sides. Pure set intersection is correct here
-// because both sides are always produced by resolveAccountFilterIDs (or its
-// callers) from the same cloud_accounts source, so a given account resolves
-// to the same UUID/external-id representation on both sides.
+// only when present on both sides. The uuid half is a straightforward set
+// intersection because both sides are always produced by
+// resolveAccountFilterIDs (or resolveAllowedAccountScope, its caller) from
+// the same cloud_accounts source, so a given account resolves to the same
+// UUID on both sides.
+//
+// The external-id half needs one extra step for the "" (unknown-provider)
+// bucket. filterExternalIDsByProvider can carry a "" entry --
+// resolveSingleAccountFilterIDs groups a raw external number under "" when
+// the value isn't a known UUID (or the cloud_accounts load failed) -- but
+// allowedExternalIDsByProvider (built from resolveAccountFilterIDs, which
+// only ever groups by a *resolved* account's real provider) never has a ""
+// key. A plain per-provider lookup would therefore always miss the ""
+// bucket and zero out an otherwise-in-scope legacy external-number filter
+// (CodeRabbit #374). Since "" means "provider not known", a "" entry is
+// matched against every allowed provider's ids and, on a hit, re-grouped
+// under that real provider so the downstream dual-column predicate still
+// scopes it correctly.
 //
 // The returned uuid slice is always non-nil (even when empty) so callers can
 // rely on the "non-nil-but-empty means scoped to zero accounts" sentinel
@@ -356,10 +370,19 @@ func intersectDualColumnScope(
 	}
 
 	for provider, ids := range filterExternalIDsByProvider {
-		allowedIDs := allowedExternalIDsByProvider[provider]
 		for _, id := range ids {
-			if stringInSlice(id, allowedIDs) {
-				externalIDsByProvider = addExternalIDForProvider(externalIDsByProvider, provider, id)
+			if provider != "" {
+				if stringInSlice(id, allowedExternalIDsByProvider[provider]) {
+					externalIDsByProvider = addExternalIDForProvider(externalIDsByProvider, provider, id)
+				}
+				continue
+			}
+			// Unknown-provider bucket: narrow to whichever allowed provider(s)
+			// actually own this id.
+			for allowedProvider, allowedIDs := range allowedExternalIDsByProvider {
+				if stringInSlice(id, allowedIDs) {
+					externalIDsByProvider = addExternalIDForProvider(externalIDsByProvider, allowedProvider, id)
+				}
 			}
 		}
 	}
