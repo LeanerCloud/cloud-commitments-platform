@@ -407,6 +407,76 @@ func TestService_CreateGroupAPI(t *testing.T) {
 func TestService_UpdateGroupAPI(t *testing.T) {
 	ctx := context.Background()
 
+	// Issue #237: an explicit `"permissions": []` must be refused (400), not
+	// silently treated as "leave unchanged". Pre-fix, APIUpdateGroupRequest.
+	// Permissions was a plain []APIPermission, which cannot distinguish
+	// "field omitted" from "field sent as []" once decoded -- both left the
+	// slice empty, and apiPermissionsToPermissions/applyUpdateGroupRequest's
+	// `len(perms) > 0` check silently kept the group's OLD permissions
+	// (possibly admin:*) while UpdateGroup still returned success.
+	t.Run("explicit empty permissions list is refused, not silently kept", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		existingGroup := &Group{
+			ID:          "group-123",
+			Name:        "Admins",
+			Description: "Old description",
+			Permissions: []Permission{{Action: ActionAdmin, Resource: ResourceAll}},
+		}
+		mockStore.On("GetGroup", ctx, "group-123").Return(existingGroup, nil).Once()
+
+		req := APIUpdateGroupRequest{
+			Name:        "Admins",
+			Description: "New description",
+			Permissions: []APIPermission{}, // explicit []: every row removed and saved
+		}
+
+		result, err := service.UpdateGroupAPI(ctx, AdminAPIKeyActorID, "group-123", req)
+
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, ErrEmptyPermissions)
+		// The group's real admin:* permissions must never be silently kept by
+		// a write that reports success -- UpdateGroup must not even be called.
+		mockStore.AssertNotCalled(t, "UpdateGroup", mock.Anything, mock.Anything)
+	})
+
+	// Negative control: an omitted Permissions field (nil pointer) is the
+	// pre-existing "leave unchanged" contract and must still work exactly as
+	// before -- this refusal must not overreach into that case.
+	t.Run("omitted permissions field leaves the group's permissions unchanged", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		existingGroup := &Group{
+			ID:          "group-123",
+			Name:        "Admins",
+			Description: "Old description",
+			Permissions: []Permission{{Action: ActionAdmin, Resource: ResourceAll}},
+		}
+		mockStore.On("GetGroup", ctx, "group-123").Return(existingGroup, nil).Once()
+		mockStore.On("UpdateGroup", ctx, mock.AnythingOfType("*auth.Group")).Return(nil).Once()
+
+		req := APIUpdateGroupRequest{
+			Name:        "Admins",
+			Description: "New description",
+			// Permissions left as its zero value: nil pointer, field omitted.
+		}
+
+		result, err := service.UpdateGroupAPI(ctx, AdminAPIKeyActorID, "group-123", req)
+
+		require.NoError(t, err)
+		apiGroup, ok := result.(*APIGroup)
+		require.True(t, ok)
+		assert.Equal(t, "New description", apiGroup.Description)
+		assert.Equal(t, []Permission{{Action: ActionAdmin, Resource: ResourceAll}}, existingGroup.Permissions,
+			"omitting the field must leave permissions untouched")
+		mockStore.AssertExpectations(t)
+	})
+
 	t.Run("successful group update", func(t *testing.T) {
 		mockStore := new(MockStore)
 		mockEmail := new(MockEmailSender)

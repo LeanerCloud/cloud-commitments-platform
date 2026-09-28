@@ -63,6 +63,16 @@ var (
 	// tenant-wide. Mapped to 403 (issue #1629).
 	ErrSystemManagedGroup = errors.New("system-managed group cannot be modified")
 
+	// ErrEmptyPermissions is returned when a group update explicitly sends
+	// permissions as an empty list. APIUpdateGroupRequest.Permissions is a
+	// pointer so a nil value (field omitted) can be told apart from a
+	// pointer to an empty slice (field sent as `[]`): the former means
+	// "leave unchanged" (this endpoint has no other way to express that),
+	// the latter must be refused rather than silently treated as a no-op
+	// that reports success while the group's real permissions -- possibly
+	// admin:* -- are left untouched (issue #237). Mapped to 400.
+	ErrEmptyPermissions = errors.New("a group must grant at least one permission; delete the group to remove all privileges")
+
 	// ErrCurrentPasswordIncorrect is returned by UpdateUserProfile when the
 	// caller-supplied current password does not match the stored hash. Mapped
 	// to 401 at the API layer (the acting user is verifying their own
