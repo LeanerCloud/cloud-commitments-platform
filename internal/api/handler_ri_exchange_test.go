@@ -1699,7 +1699,12 @@ func TestExecuteExchange_SessionAccountScopeMismatchReturns403(t *testing.T) {
 	// No HasPermissionForConstraintsAPI expectation: the permission carries no
 	// AccountIDs constraint (matching the issue's failure scenario) and would
 	// satisfy that check unconditionally, so it must never be reached -- the
-	// session-scope gate above must refuse the request first.
+	// session-scope gate above must refuse the request first. Left
+	// deliberately unstubbed rather than stubbed-and-asserted-not-called: on
+	// the pre-fix handler this call happens and testify panics on the
+	// unstubbed mock, which fails the test just as surely (and for the same
+	// reason) as an assertion would; the AssertNotCalled below still proves
+	// the post-fix ordering.
 
 	mockStore := new(MockConfigStore)
 	mockStore.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
@@ -1722,6 +1727,92 @@ func TestExecuteExchange_SessionAccountScopeMismatchReturns403(t *testing.T) {
 	require.True(t, ok, "expected a ClientError, got: %v", err)
 	assert.Equal(t, 403, ce.code)
 	assert.Contains(t, ce.Error(), "allowed accounts")
+	mockAuth.AssertNotCalled(t, "HasPermissionForConstraintsAPI",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestExecuteExchange_SessionAccountScopeMatchReachesConstraintsCheck is the
+// positive-path counterpart to TestExecuteExchange_SessionAccountScopeMismatchReturns403:
+// a session restricted to allowed_accounts that DOES include the deployment's
+// cloud account must clear the new session-scope gate and reach the existing
+// SEC-01/#1141 permission-constraints check, proving the fix does not
+// over-deny an in-scope request. HasPermissionForConstraintsAPI is stubbed to
+// deny rather than mocking the downstream AWS call; the "constraints" (not
+// "allowed accounts") substring in the resulting error distinguishes which
+// gate produced it.
+func TestExecuteExchange_SessionAccountScopeMatchReachesConstraintsCheck(t *testing.T) {
+	ctx := context.Background()
+	const deploymentAccountID = "11111111-2222-3333-4444-555555555555"
+
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	userSession := &Session{
+		UserID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+		Email:  "exchanger@example.com",
+	}
+	mockAuth.On("ValidateSession", ctx, "exchange-token").Return(userSession, nil)
+	mockAuth.On("HasPermissionAPI", ctx, userSession.UserID, "execute", "ri-exchange").Return(true, nil)
+	// The session is restricted, but its allowed list includes the
+	// deployment's own account, so the scope gate must let this through.
+	mockAuth.On("GetAllowedAccountsAPI", ctx, userSession.UserID).Return([]string{deploymentAccountID}, nil)
+	mockAuth.On("HasPermissionForConstraintsAPI", ctx, userSession.UserID, "execute", "ri-exchange", mock.Anything).
+		Return(false, nil)
+
+	mockStore := new(MockConfigStore)
+	mockStore.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+		return nil, nil
+	}
+
+	h := &Handler{
+		auth:   mockAuth,
+		config: mockStore,
+		reshapeAccountResolver: func(_ context.Context) (string, error) {
+			return deploymentAccountID, nil
+		},
+	}
+	_, err := h.executeExchange(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"authorization": "Bearer exchange-token"},
+		Body:    `{"ri_ids":["ri-123"],"target_offering_id":"off-1","target_count":1,"max_payment_due_usd":"250.50","region":"eu-central-1"}`,
+	})
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a ClientError, got: %v", err)
+	assert.Equal(t, 403, ce.code)
+	assert.Contains(t, ce.Error(), "constraints", "must be refused by the constraints check, not the session-scope gate")
+}
+
+// TestExecuteExchange_SessionScopeLookupErrorFailsClosed pins the fail-closed
+// behavior of the new session-scope gate itself: a failure resolving the
+// session's allowed_accounts (auth store outage, etc.) must propagate as an
+// error, not collapse into a 403 that would misreport a lookup failure as an
+// out-of-scope denial, and must abort before the constraints check runs.
+func TestExecuteExchange_SessionScopeLookupErrorFailsClosed(t *testing.T) {
+	ctx := context.Background()
+
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	userSession := &Session{
+		UserID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+		Email:  "exchanger@example.com",
+	}
+	mockAuth.On("ValidateSession", ctx, "exchange-token").Return(userSession, nil)
+	mockAuth.On("HasPermissionAPI", ctx, userSession.UserID, "execute", "ri-exchange").Return(true, nil)
+	mockAuth.On("GetAllowedAccountsAPI", ctx, userSession.UserID).
+		Return(nil, fmt.Errorf("auth store unavailable"))
+	// No HasPermissionForConstraintsAPI expectation: the scope-lookup failure
+	// must abort before the constraints check is ever reached.
+
+	h := &Handler{auth: mockAuth}
+	_, err := h.executeExchange(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"authorization": "Bearer exchange-token"},
+		Body:    `{"ri_ids":["ri-123"],"target_offering_id":"off-1","target_count":1,"max_payment_due_usd":"250.50","region":"eu-central-1"}`,
+	})
+	require.Error(t, err)
+	_, ok := IsClientError(err)
+	assert.False(t, ok, "a scope-lookup failure must not be reported as a ClientError, got: %v", err)
+	assert.Contains(t, err.Error(), "failed to get allowed accounts")
 	mockAuth.AssertNotCalled(t, "HasPermissionForConstraintsAPI",
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
