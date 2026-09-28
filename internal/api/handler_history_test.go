@@ -1803,6 +1803,32 @@ func TestSummarizePurchaseHistory_CancelledExcludedFromKPIs(t *testing.T) {
 		"TotalAnnualSavings = TotalMonthlySavings * 12 and must exclude canceled (issues #625, #736)")
 }
 
+// TestSummarizePurchaseHistory_ScheduledExcludedFromKPIs is the regression
+// test for issue #239. "scheduled" (a Gmail-style pre-fire delay, issue #291
+// wave-2) has no case in summarizePurchaseHistory's switch, so pre-fix it
+// fell through to the default TotalCompleted++ branch: a delayed purchase
+// whose provider call has not fired yet counted toward TotalCompleted and
+// the "Total Upfront Spent" card counted money not yet spent.
+// PurchaseExecution.IsCancelable groups "scheduled" with "pending"/
+// "notified" as pre-purchase states (the cloud SDK has not been called),
+// so it must land in TotalPending like those two, not TotalCompleted.
+func TestSummarizePurchaseHistory_ScheduledExcludedFromKPIs(t *testing.T) {
+	purchases := []config.PurchaseHistoryRecord{
+		{Status: "completed", UpfrontCost: 100.0, EstimatedSavings: 10.0},
+		{Status: "scheduled", UpfrontCost: 999.0, EstimatedSavings: 99.0},
+	}
+
+	summary := summarizePurchaseHistory(purchases)
+
+	assert.Equal(t, 2, summary.TotalPurchases)
+	assert.Equal(t, 1, summary.TotalCompleted, "scheduled row must not inflate TotalCompleted")
+	assert.Equal(t, 1, summary.TotalPending, "scheduled is a pre-purchase state, grouped with pending/notified")
+	assert.InDelta(t, 100.0, summary.TotalUpfront, 0.001,
+		"the scheduled row's upfront cost must not be counted as already spent (issue #239)")
+	assert.InDelta(t, 10.0, summary.TotalMonthlySavings, 0.001,
+		"the scheduled row's savings must not be counted as realized (issue #239)")
+}
+
 // TestSummarizePurchaseHistory_CancelPendingDoesNotChangeKPIs mirrors the
 // QA reproduction scenario from issues #625 and #736: start with N approved
 // purchases, observe KPI totals, then add a canceled execution and assert the

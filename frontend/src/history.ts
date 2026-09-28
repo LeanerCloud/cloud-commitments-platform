@@ -80,8 +80,14 @@ function normalizeStatus(p: HistoryPurchase): string {
 // "Completed" badge — doing so would tell the user a purchase finished when it
 // may not have, tempting a re-approval / double-spend. They are grouped under
 // the "Pending" filter chip (not "Completed") for the same reason.
+//
+// 'scheduled' (issue #239) is included here too: historyExecutionStatuses
+// (internal/api/handler_history.go) deliberately keeps 'scheduled' rows in
+// history so the inline Revoke button stays reachable, but the provider
+// call for a delayed purchase has not fired yet -- it is exactly as
+// unfinished as 'approved'/'running'/'paused'.
 function isInFlightStatus(s: string): boolean {
-  return s === 'approved' || s === 'running' || s === 'paused';
+  return s === 'approved' || s === 'running' || s === 'paused' || s === 'scheduled';
 }
 
 // readDeepLinkExecutionID returns the value of the ?execution=<id>
@@ -441,6 +447,10 @@ function statusBadgeHTML(status: string): string {
       // In-flight (issue #621): not finished — never show the green Completed
       // badge for these, or the user may think the purchase is done.
       return '<span class="badge badge-warning">In Progress</span>';
+    case 'scheduled':
+      // Issue #239: a delayed purchase whose provider call has not fired
+      // yet — must never fall through to the default green Completed badge.
+      return '<span class="badge badge-warning">Scheduled</span>';
     case 'canceled':
     case 'cancelled':
       // Migration 000089 (expand-contract rename): the backend may return
