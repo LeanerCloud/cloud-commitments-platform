@@ -14,18 +14,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testAPIKeyPassword and testAPIKeyPasswordHash back every TestService_CreateAPIKey
+// fixture: CreateAPIKey now re-verifies the caller's password before minting a
+// key (issue #102), so every user fixture in this file needs a matching hash.
+// Hashed once at MinCost and reused across subtests to keep bcrypt off the hot
+// path of each assertion.
+var (
+	testAPIKeyPassword     = "CorrectHorse@123"
+	testAPIKeyPasswordHash = func() string {
+		hash, err := newTestService().hashPassword(testAPIKeyPassword)
+		if err != nil {
+			panic(err)
+		}
+		return hash
+	}()
+)
+
 func TestService_CreateAPIKey(t *testing.T) {
 	ctx := context.Background()
+	validExpiry := time.Now().Add(24 * time.Hour)
 
 	t.Run("successfully create API key", func(t *testing.T) {
 		mockStore := new(MockStore)
 		service := &Service{store: mockStore}
 
 		user := &User{
-			ID:       "user-123",
-			Email:    "test@example.com",
-			Active:   true,
-			GroupIDs: []string{DefaultAdminGroupID},
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+			GroupIDs:     []string{DefaultAdminGroupID},
 		}
 
 		permissions := []Permission{
@@ -39,7 +57,7 @@ func TestService_CreateAPIKey(t *testing.T) {
 		}, nil)
 		mockStore.On("CreateAPIKey", ctx, mock.AnythingOfType("*auth.UserAPIKey")).Return(nil)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", permissions, nil)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, permissions, &validExpiry)
 
 		require.NoError(t, err)
 		require.NotNil(t, keyInfo)
@@ -58,7 +76,7 @@ func TestService_CreateAPIKey(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(nil, assert.AnError)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", []Permission{}, nil)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, &validExpiry)
 
 		assert.Error(t, err)
 		assert.Empty(t, apiKey)
@@ -78,10 +96,32 @@ func TestService_CreateAPIKey(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", []Permission{}, nil)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, &validExpiry)
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not active")
+		assert.Empty(t, apiKey)
+		assert.Nil(t, keyInfo)
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("fail when password is wrong", func(t *testing.T) {
+		mockStore := new(MockStore)
+		service := &Service{store: mockStore}
+
+		user := &User{
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+		}
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
+
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", "wrong-password", []Permission{}, &validExpiry)
+
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrAPIKeyInvalidPassword)
 		assert.Empty(t, apiKey)
 		assert.Nil(t, keyInfo)
 		mockStore.AssertExpectations(t)
@@ -92,17 +132,63 @@ func TestService_CreateAPIKey(t *testing.T) {
 		service := &Service{store: mockStore}
 
 		user := &User{
-			ID:     "user-123",
-			Email:  "test@example.com",
-			Active: true,
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "", []Permission{}, nil)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "", testAPIKeyPassword, []Permission{}, &validExpiry)
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "name is required")
+		assert.Empty(t, apiKey)
+		assert.Nil(t, keyInfo)
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("fail when expiresAt is nil", func(t *testing.T) {
+		mockStore := new(MockStore)
+		service := &Service{store: mockStore}
+
+		user := &User{
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+		}
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
+
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, nil)
+
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrAPIKeyExpiresAtRequired)
+		assert.Empty(t, apiKey)
+		assert.Nil(t, keyInfo)
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("fail when expiresAt exceeds MaxAPIKeyLifetime", func(t *testing.T) {
+		mockStore := new(MockStore)
+		service := &Service{store: mockStore}
+
+		user := &User{
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+		}
+		tooFar := time.Now().Add(MaxAPIKeyLifetime + 24*time.Hour)
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
+
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, &tooFar)
+
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrAPIKeyExpiresAtTooFar)
 		assert.Empty(t, apiKey)
 		assert.Nil(t, keyInfo)
 		mockStore.AssertExpectations(t)
@@ -113,10 +199,11 @@ func TestService_CreateAPIKey(t *testing.T) {
 		service := &Service{store: mockStore}
 
 		user := &User{
-			ID:       "user-123",
-			Email:    "test@example.com",
-			Active:   true,
-			GroupIDs: []string{DefaultAdminGroupID},
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+			GroupIDs:     []string{DefaultAdminGroupID},
 		}
 
 		expiresAt := time.Now().Add(30 * 24 * time.Hour)
@@ -131,7 +218,7 @@ func TestService_CreateAPIKey(t *testing.T) {
 		}, nil)
 		mockStore.On("CreateAPIKey", ctx, mock.AnythingOfType("*auth.UserAPIKey")).Return(nil)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", permissions, &expiresAt)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, permissions, &expiresAt)
 
 		require.NoError(t, err)
 		require.NotNil(t, keyInfo)
@@ -146,15 +233,16 @@ func TestService_CreateAPIKey(t *testing.T) {
 		service := &Service{store: mockStore}
 
 		user := &User{
-			ID:     "user-123",
-			Email:  "test@example.com",
-			Active: true,
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
 		mockStore.On("CreateAPIKey", ctx, mock.AnythingOfType("*auth.UserAPIKey")).Return(assert.AnError)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", []Permission{}, nil)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, &validExpiry)
 
 		assert.Error(t, err)
 		assert.Empty(t, apiKey)

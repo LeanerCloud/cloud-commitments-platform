@@ -208,6 +208,25 @@ func (s *Service) checkCommonPasswords(password string) error {
 	return nil
 }
 
+// invalidateUserCredentialsBestEffort revokes every credential surface a
+// password rotation must close: sessions and API keys. A leaked API key
+// authenticates via X-API-Key and never touches the session store, so it
+// would otherwise survive a password change or reset meant to lock an
+// attacker out (issue #102).
+//
+// Both cleanups are best-effort: failures are logged, not returned, because
+// the new password has already taken effect by the time this runs. Shared
+// by ChangePassword, ConfirmPasswordReset and UpdateUserProfile so the two
+// checks live in one place instead of three.
+func (s *Service) invalidateUserCredentialsBestEffort(ctx context.Context, userID, opName string) {
+	if err := s.store.DeleteUserSessions(ctx, userID); err != nil {
+		logging.Warnf("Failed to delete sessions for user %s during %s: %v", userID, opName, err)
+	}
+	if err := s.RevokeAllUserAPIKeys(ctx, userID); err != nil {
+		logging.Warnf("Failed to revoke API keys for user %s during %s: %v", userID, opName, err)
+	}
+}
+
 // ChangePassword allows a user to change their password.
 func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest) error {
 	user, err := s.store.GetUserByID(ctx, userID)
@@ -251,10 +270,8 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 	user.Salt = "" // Not used anymore
 	user.PasswordHash = passwordHash
 
-	// Invalidate all sessions (non-critical, log error but continue)
-	if err := s.store.DeleteUserSessions(ctx, userID); err != nil {
-		logging.Warnf("Failed to delete sessions for user %s during password change: %v", userID, err)
-	}
+	// Invalidate sessions and API keys (non-critical, best-effort -- issue #102).
+	s.invalidateUserCredentialsBestEffort(ctx, userID, "password change")
 
 	if err := s.store.UpdateUser(ctx, user); err != nil {
 		return err
@@ -356,9 +373,7 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, req PasswordResetCon
 		user.Active = true
 	}
 
-	if err := s.store.DeleteUserSessions(ctx, user.ID); err != nil {
-		logging.Warnf("Failed to delete sessions for user %s during password reset: %v", user.ID, err)
-	}
+	s.invalidateUserCredentialsBestEffort(ctx, user.ID, "password reset")
 
 	if err := s.store.UpdateUser(ctx, user); err != nil {
 		return err

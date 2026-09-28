@@ -687,11 +687,13 @@ func (s *Service) UpdateUserProfile(ctx context.Context, userID, email, currentP
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
-	// Invalidate sessions when password changes
+	// Invalidate sessions and API keys when password changes. This is a
+	// third self-service password-rotation path with the same gap as
+	// ChangePassword/ConfirmPasswordReset (issue #102): an API key
+	// authenticates via X-API-Key rather than the session store, so it
+	// would otherwise survive a profile-driven password change too.
 	if passwordChanged {
-		if err := s.store.DeleteUserSessions(ctx, userID); err != nil {
-			logging.Warnf("Failed to delete sessions for user %s during profile update: %v", userID, err)
-		}
+		s.invalidateUserCredentialsBestEffort(ctx, userID, "profile update")
 		s.notifyPasswordChange(ctx, userID, newPassword)
 	}
 

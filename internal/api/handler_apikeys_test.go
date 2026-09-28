@@ -2,10 +2,14 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
@@ -270,6 +274,157 @@ func TestHandler_createAPIKey_ServiceError(t *testing.T) {
 	_, err := handler.createAPIKey(ctx, req)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create API key")
+}
+
+// TestHandler_createAPIKey_WrongPassword is the regression test for issue
+// #102 property (2): CreateAPIKey previously required no password
+// re-verification, unlike the comparable sensitive-action pattern in
+// MFASetup/MFADisable. Mirrors TestHandler_mfaSetup_WrongPassword: the mock
+// simulates the real service's wrapped sentinel and asserts the handler maps
+// it to 401, the same treatment as ErrCurrentPasswordIncorrect.
+//
+// Pre-fix, CreateAPIKey never checked the password at all, so this sentinel
+// and its handler mapping did not exist; this test could not have been
+// written against the pre-fix code because ErrAPIKeyInvalidPassword is a
+// fix artifact. See TestService_CreateAPIKey/fail_when_password_is_wrong in
+// internal/auth for the service-level proof that the real (unmocked)
+// verification logic rejects a wrong password, which is what makes this
+// handler-level sentinel reachable in production.
+func TestHandler_createAPIKey_WrongPassword(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	mockRateLimiter := new(MockRateLimiter)
+
+	session := &Session{UserID: "user-123", Email: "user@example.com"}
+	mockAuth.On("ValidateSession", ctx, "test-token").Return(session, nil)
+	mockAuth.grantAdmin()
+	mockRateLimiter.On("AllowWithUser", ctx, "user-123", "admin").Return(true, nil)
+	mockAuth.On("CreateAPIKeyAPI", ctx, "user-123", mock.Anything).
+		Return(nil, fmt.Errorf("%w", auth.ErrAPIKeyInvalidPassword))
+
+	handler := &Handler{auth: mockAuth, rateLimiter: mockRateLimiter}
+
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{
+			"Authorization": "Bearer test-token",
+		},
+		Body: `{"name": "My API Key", "password": "` + base64.StdEncoding.EncodeToString([]byte("wrong")) + `"}`,
+	}
+
+	_, err := handler.createAPIKey(ctx, req)
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 401, ce.code)
+	assert.Contains(t, ce.Error(), "invalid password")
+}
+
+// TestHandler_createAPIKey_PasswordDecodedBeforeForwarding proves the
+// handler decodes the base64-encoded password field (same convention as
+// login/MFA) before handing it to the service, rather than forwarding the
+// encoded value or dropping it.
+func TestHandler_createAPIKey_PasswordDecodedBeforeForwarding(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	mockRateLimiter := new(MockRateLimiter)
+
+	session := &Session{UserID: "user-123", Email: "user@example.com"}
+	mockAuth.On("ValidateSession", ctx, "test-token").Return(session, nil)
+	mockAuth.grantAdmin()
+	mockRateLimiter.On("AllowWithUser", ctx, "user-123", "admin").Return(true, nil)
+	mockAuth.On("CreateAPIKeyAPI", ctx, "user-123", mock.MatchedBy(func(req any) bool {
+		ckReq, ok := req.(CreateAPIKeyRequest)
+		return ok && ckReq.Password == "correct-horse"
+	})).Return(map[string]string{"api_key": "new-key-value", "key_id": "key-123"}, nil)
+
+	handler := &Handler{auth: mockAuth, rateLimiter: mockRateLimiter}
+
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{
+			"Authorization": "Bearer test-token",
+		},
+		Body: `{"name": "My API Key", "password": "` + base64.StdEncoding.EncodeToString([]byte("correct-horse")) + `"}`,
+	}
+
+	_, err := handler.createAPIKey(ctx, req)
+	require.NoError(t, err)
+	mockAuth.AssertExpectations(t)
+}
+
+// TestHandler_createAPIKey_ExpiresAtRequired and
+// TestHandler_createAPIKey_ExpiresAtTooFar are the regression tests for
+// issue #102 property (3): ExpiresAt used to be optional and uncapped (nil
+// meant "never expires"). Mirrors the mapMFAServiceError pattern: the mock
+// simulates the real service's wrapped sentinel and asserts the handler maps
+// it to 400. See TestService_CreateAPIKey/fail_when_expiresAt_is_nil and
+// .../fail_when_expiresAt_exceeds_MaxAPIKeyLifetime in internal/auth for the
+// service-level proof against the real (unmocked) validation.
+func TestHandler_createAPIKey_ExpiresAtRequired(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	mockRateLimiter := new(MockRateLimiter)
+
+	session := &Session{UserID: "user-123", Email: "user@example.com"}
+	mockAuth.On("ValidateSession", ctx, "test-token").Return(session, nil)
+	mockAuth.grantAdmin()
+	mockRateLimiter.On("AllowWithUser", ctx, "user-123", "admin").Return(true, nil)
+	mockAuth.On("CreateAPIKeyAPI", ctx, "user-123", mock.Anything).
+		Return(nil, fmt.Errorf("%w", auth.ErrAPIKeyExpiresAtRequired))
+
+	handler := &Handler{auth: mockAuth, rateLimiter: mockRateLimiter}
+
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{
+			"Authorization": "Bearer test-token",
+		},
+		// No expires_at field at all -- the pre-fix behavior treated this as
+		// "never expires".
+		Body: `{"name": "My API Key", "password": "` + base64.StdEncoding.EncodeToString([]byte("pw")) + `"}`,
+	}
+
+	_, err := handler.createAPIKey(ctx, req)
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 400, ce.code)
+	assert.Contains(t, ce.Error(), "expires_at is required")
+}
+
+func TestHandler_createAPIKey_ExpiresAtTooFar(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	mockRateLimiter := new(MockRateLimiter)
+
+	session := &Session{UserID: "user-123", Email: "user@example.com"}
+	mockAuth.On("ValidateSession", ctx, "test-token").Return(session, nil)
+	mockAuth.grantAdmin()
+	mockRateLimiter.On("AllowWithUser", ctx, "user-123", "admin").Return(true, nil)
+	mockAuth.On("CreateAPIKeyAPI", ctx, "user-123", mock.Anything).
+		Return(nil, fmt.Errorf("%w", auth.ErrAPIKeyExpiresAtTooFar))
+
+	handler := &Handler{auth: mockAuth, rateLimiter: mockRateLimiter}
+
+	farFuture := time.Now().Add(10 * 365 * 24 * time.Hour)
+	body, err := json.Marshal(map[string]string{
+		"name":       "My API Key",
+		"password":   base64.StdEncoding.EncodeToString([]byte("pw")),
+		"expires_at": farFuture.Format(time.RFC3339),
+	})
+	require.NoError(t, err)
+
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{
+			"Authorization": "Bearer test-token",
+		},
+		Body: string(body),
+	}
+
+	_, err = handler.createAPIKey(ctx, req)
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 400, ce.code)
+	assert.Contains(t, ce.Error(), "exceeds the maximum API key lifetime")
 }
 
 func TestHandler_deleteAPIKey_Success(t *testing.T) {

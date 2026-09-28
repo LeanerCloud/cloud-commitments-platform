@@ -179,11 +179,15 @@ export function showCreateKeyModal(): void {
   form.reset();
   if (errorEl) errorEl.classList.add('hidden');
 
-  // Reset expiration checkbox and field visibility
-  const expiresCheckbox = document.getElementById('apikey-expires') as HTMLInputElement;
-  const expiresAtField = document.getElementById('apikey-expires-at-field');
-  if (expiresCheckbox) expiresCheckbox.checked = false;
-  if (expiresAtField) expiresAtField.classList.add('hidden');
+  // Expiration is required (issue #102: no more "never expires"). Prefill
+  // 90 days out so the field never starts empty; the actual cap is
+  // enforced server-side.
+  const expiresAtInput = document.getElementById('apikey-expires-at') as HTMLInputElement | null;
+  if (expiresAtInput) {
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() + 90);
+    expiresAtInput.value = defaultDate.toISOString().split('T')[0] || '';
+  }
 
   openModal(modal);
 }
@@ -197,18 +201,20 @@ export function closeCreateKeyModal(): void {
 }
 
 /**
- * Create new API key
+ * Create new API key. password and expiresAt are required server-side
+ * (issue #102): creation re-verifies the caller's password, and a key can
+ * no longer be minted with no expiration.
  */
-export async function createApiKey(name: string, permissions?: api.Permission[], expiresAt?: Date): Promise<CreateAPIKeyResponse> {
+export async function createApiKey(name: string, password: string, expiresAt: Date, permissions?: api.Permission[]): Promise<CreateAPIKeyResponse> {
   try {
-    const request: api.CreateAPIKeyRequest = { name };
+    const request: api.CreateAPIKeyRequest = {
+      name,
+      password: api.base64Encode(password),
+      expires_at: expiresAt.toISOString(),
+    };
 
     if (permissions && permissions.length > 0) {
       request.permissions = permissions;
-    }
-
-    if (expiresAt) {
-      request.expires_at = expiresAt.toISOString();
     }
 
     const response = await api.createApiKey(request);
@@ -229,25 +235,30 @@ export async function handleCreateApiKey(e: Event): Promise<void> {
   if (errorEl) errorEl.classList.add('hidden');
 
   const name = (document.getElementById('apikey-name') as HTMLInputElement | null)?.value.trim() ?? '';
-  const expiresCheckbox = (document.getElementById('apikey-expires') as HTMLInputElement | null)?.checked ?? false;
+  const password = (document.getElementById('apikey-password') as HTMLInputElement | null)?.value ?? '';
   const expiresAtInput = (document.getElementById('apikey-expires-at') as HTMLInputElement | null)?.value ?? '';
 
   if (!name) {
     showError('API key name is required');
     return;
   }
+  if (!password) {
+    showError('Your password is required to create an API key');
+    return;
+  }
+  if (!expiresAtInput) {
+    showError('An expiration date is required');
+    return;
+  }
 
-  let expiresAt: Date | undefined;
-  if (expiresCheckbox && expiresAtInput) {
-    expiresAt = new Date(expiresAtInput);
-    if (expiresAt <= new Date()) {
-      showError('Expiration date must be in the future');
-      return;
-    }
+  const expiresAt = new Date(expiresAtInput);
+  if (expiresAt <= new Date()) {
+    showError('Expiration date must be in the future');
+    return;
   }
 
   try {
-    const response = await createApiKey(name, undefined, expiresAt);
+    const response = await createApiKey(name, password, expiresAt);
     closeCreateKeyModal();
     showKeyCreatedModal(response.api_key);
     await loadApiKeys();
@@ -392,25 +403,6 @@ export function initApiKeys(): void {
   const form = document.getElementById('create-apikey-form');
   if (form) {
     form.addEventListener('submit', (e) => void handleCreateApiKey(e));
-  }
-
-  // Setup expires checkbox toggle
-  const expiresCheckbox = document.getElementById('apikey-expires') as HTMLInputElement;
-  const expiresAtField = document.getElementById('apikey-expires-at-field');
-  if (expiresCheckbox && expiresAtField) {
-    expiresCheckbox.addEventListener('change', () => {
-      expiresAtField.classList.toggle('hidden', !expiresCheckbox.checked);
-      const expiresAtInput = document.getElementById('apikey-expires-at') as HTMLInputElement;
-      if (expiresAtInput) {
-        expiresAtInput.required = expiresCheckbox.checked;
-        // Set default to 90 days from now
-        if (expiresCheckbox.checked && !expiresAtInput.value) {
-          const defaultDate = new Date();
-          defaultDate.setDate(defaultDate.getDate() + 90);
-          expiresAtInput.value = defaultDate.toISOString().split('T')[0] || "";
-        }
-      }
-    });
   }
 
   // Close modal when clicking outside

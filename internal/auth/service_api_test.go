@@ -347,6 +347,7 @@ func TestService_ChangePasswordAPI(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 		err := service.ChangePasswordAPI(ctx, "user-123", "OldPassword123", "SecureTest@456")
