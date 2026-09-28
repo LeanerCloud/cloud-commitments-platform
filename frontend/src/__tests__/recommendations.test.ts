@@ -8180,6 +8180,27 @@ describe('Issue #135: SP group parent row rendered in table', () => {
     // Should reflect sum: 100 + 200 = 300
     expect(groupSavings!.textContent).toContain('$300');
   });
+
+  test('issue #252: SP group savings does not double-apply the cost-period factor', async () => {
+    const recs = [
+      mkSpRec('savings-plans-compute',   { id: 'sp-c', savings: 100 }),
+      mkSpRec('savings-plans-sagemaker', { id: 'sp-s', savings: 200 }),
+    ];
+    (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs, regions: [] });
+    (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+    (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
+
+    // Monthly total is $300. On "yearly" (factor 12) the correct figure is
+    // $3,600/yr. Pre-fix, scaleCost was applied once outside and again
+    // inside formatCostForPeriod, yielding $36,000/yr (12x too high).
+    (state.getCostPeriod as jest.Mock).mockReturnValue('yearly');
+    await loadRecommendations();
+
+    const groupSavings = document.querySelector('.rec-sp-group-savings');
+    expect(groupSavings).not.toBeNull();
+    expect(groupSavings!.textContent).toContain('$3600');
+    expect(groupSavings!.textContent).not.toContain('$36000');
+  });
 });
 
 // ============================================================================
