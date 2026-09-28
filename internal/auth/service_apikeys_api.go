@@ -72,6 +72,21 @@ func effectiveLifetimeUsage(key *UserAPIKey) *int64 {
 	return &total
 }
 
+// normalizeAPIKeyPermissions returns perms unchanged, or []Permission{} when
+// nil. CreateAPIKey now rejects new keys with zero permissions (issue #61),
+// but a legacy key minted before that fix can still have a NULL permissions
+// column, which the JSONB scan surfaces as a nil slice. Since
+// APIKeyInfo.Permissions is no longer omitempty (issue #61), a raw nil would
+// serialize as "permissions":null instead of the intended "permissions":[]
+// -- both mean "no scope", but a client that expects the field to always be
+// an array (never null) would otherwise have to special-case it.
+func normalizeAPIKeyPermissions(perms []Permission) []Permission {
+	if perms == nil {
+		return []Permission{}
+	}
+	return perms
+}
+
 // API wrapper methods for API key operations
 // These methods return API-friendly types and handle type conversions
 
@@ -93,12 +108,18 @@ type APIKeyInfo struct {
 	// has never recorded a request or because its last window has closed.
 	// Exposed so consumers know exactly which period RequestCountWindow
 	// covers instead of assuming a true trailing "last 24h".
-	RequestCountWindowStart *time.Time   `json:"request_count_window_start,omitempty"`
-	ID                      string       `json:"id"`
-	Name                    string       `json:"name"`
-	KeyPrefix               string       `json:"key_prefix"`
-	Permissions             []Permission `json:"permissions,omitempty"`
-	IsActive                bool         `json:"is_active"`
+	RequestCountWindowStart *time.Time `json:"request_count_window_start,omitempty"`
+	ID                      string     `json:"id"`
+	Name                    string     `json:"name"`
+	KeyPrefix               string     `json:"key_prefix"`
+	// Permissions is never omitempty: CreateAPIKey now rejects zero-length
+	// permissions outright (issue #61), so an empty array in a listing means
+	// a legacy key minted before that fix, distinguishable from a key that
+	// simply has no info populated. Hiding it behind omitempty made a
+	// zero-scope key indistinguishable from a fully-scoped one in
+	// listAPIKeys, which was itself part of the audit gap the issue raised.
+	Permissions []Permission `json:"permissions"`
+	IsActive    bool         `json:"is_active"`
 	// Usage counters (issue #340/#344 deferred sub-task). RequestCountWindow
 	// is a fixed/tumbling window count, not a true rolling 24h total, and is
 	// zero once that window has closed -- see effectiveWindowUsage,
@@ -207,7 +228,7 @@ func (s *Service) CreateAPIKeyAPI(ctx context.Context, userID string, req any) (
 			ID:                      keyInfo.ID,
 			Name:                    keyInfo.Name,
 			KeyPrefix:               keyInfo.KeyPrefix,
-			Permissions:             keyInfo.Permissions,
+			Permissions:             normalizeAPIKeyPermissions(keyInfo.Permissions),
 			ExpiresAt:               keyInfo.ExpiresAt,
 			CreatedAt:               keyInfo.CreatedAt,
 			LastUsedAt:              keyInfo.LastUsedAt,
@@ -237,7 +258,7 @@ func (s *Service) ListUserAPIKeysAPI(ctx context.Context, userID string) (any, e
 			ID:                      key.ID,
 			Name:                    key.Name,
 			KeyPrefix:               key.KeyPrefix,
-			Permissions:             key.Permissions,
+			Permissions:             normalizeAPIKeyPermissions(key.Permissions),
 			ExpiresAt:               key.ExpiresAt,
 			CreatedAt:               key.CreatedAt,
 			LastUsedAt:              key.LastUsedAt,
@@ -339,8 +360,11 @@ func (s *Service) ValidateUserAPIKeyAPI(ctx context.Context, apiKey string) (*Us
 // action/resource against the key's effective permissions: the intersection
 // of the key's scoped permissions with the owning user's group-derived
 // permissions (ComputeEffectivePermissions). A key created without explicit
-// permissions inherits the owner's full permission set. Returns the owning
-// user's ID, the key's database ID, and whether the permission is held.
+// permissions grants nothing (deny-by-default, issue #61); CreateAPIKey now
+// rejects new unscoped keys outright, but a legacy zero-scope key minted
+// before that fix still authenticates its owner while authorizing no
+// action. Returns the owning user's ID, the key's database ID, and whether
+// the permission is held.
 // The key ID is threaded to callers so they can pass it to
 // HasAPIKeyPermissionForConstraintsAPI without a redundant DB lookup.
 //

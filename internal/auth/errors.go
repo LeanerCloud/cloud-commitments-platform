@@ -79,6 +79,13 @@ var (
 	// credential, so a precise message is safe -- issue #929).
 	ErrCurrentPasswordIncorrect = errors.New("current password is incorrect")
 
+	// ErrEmptyAPIKeyPermissions is returned by CreateAPIKey when the request
+	// carries zero permissions. An unscoped key used to silently inherit the
+	// owner's full permission set at request time; requiring at least one
+	// explicit permission at creation forces scoping to be deliberate rather
+	// than the most-permissive default. Mapped to 400 (issue #61).
+	ErrEmptyAPIKeyPermissions = errors.New("at least one permission is required")
+
 	// MFA login-gate sentinels — used by the login API handler to map
 	// to machine-readable response codes (mfa_required /
 	// invalid_mfa_code) so the frontend can branch on the error class

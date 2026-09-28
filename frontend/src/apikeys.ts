@@ -167,17 +167,100 @@ export function renderApiKeysList(): void {
 }
 
 /**
- * Show create API key modal
+ * Format an (action, resource) permission entry for display in the
+ * create-key picker. No catalog of human labels is maintained here --
+ * the values are the closed vocabulary the backend already validates
+ * (internal/auth/types.go), so the raw "action:resource" pair is
+ * unambiguous and never goes stale against a separate label list.
  */
-export function showCreateKeyModal(): void {
+function formatPermissionLabel(entry: api.PermissionEntry): string {
+  if (entry.action === 'admin' && entry.resource === '*') {
+    return 'Admin (all actions, all resources)';
+  }
+  return `${entry.action}:${entry.resource}`;
+}
+
+/**
+ * Render the create-key permission picker as one checkbox per entry the
+ * calling user actually holds (issue #61's frontend follow-up): after the
+ * backend fix, CreateAPIKey rejects an empty permissions array, so a
+ * picker limited to the owner's own effective permissions is both the
+ * fix for the resulting "every key creation 400s" regression and the
+ * least-privilege UI the per-key scoping feature always intended.
+ *
+ * Every interpolated value is escaped even though action/resource come
+ * from the closed backend vocabulary -- defense in depth for an innerHTML
+ * write.
+ */
+function renderApiKeyPermissionPicker(entries: api.PermissionEntry[]): void {
+  const container = document.getElementById('apikey-permissions-list');
+  if (!container) return;
+
+  if (entries.length === 0) {
+    container.innerHTML = '<p class="text-muted">No permissions available on your account -- an API key cannot be created.</p>';
+    return;
+  }
+
+  container.innerHTML = entries.map((entry, i) => `
+    <label class="apikey-permission-option">
+      <input type="checkbox" class="apikey-permission-checkbox" id="apikey-perm-${i}"
+             data-action="${escapeHtml(entry.action)}" data-resource="${escapeHtml(entry.resource)}">
+      ${escapeHtml(formatPermissionLabel(entry))}
+    </label>
+  `).join('');
+
+  container.querySelectorAll('.apikey-permission-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateCreateKeySubmitState);
+  });
+}
+
+/**
+ * Read the permissions currently checked in the picker.
+ */
+function collectSelectedApiKeyPermissions(): api.Permission[] {
+  const container = document.getElementById('apikey-permissions-list');
+  if (!container) return [];
+
+  const permissions: api.Permission[] = [];
+  container.querySelectorAll<HTMLInputElement>('.apikey-permission-checkbox:checked').forEach(cb => {
+    const action = cb.dataset['action'];
+    const resource = cb.dataset['resource'];
+    if (action && resource) permissions.push({ action, resource });
+  });
+  return permissions;
+}
+
+/**
+ * Enable the Create button only while at least one permission is
+ * selected. An unscoped key is now rejected server-side (400), and
+ * disabling here catches it before the round-trip rather than after.
+ */
+function updateCreateKeySubmitState(): void {
+  const submitBtn = document.getElementById('create-apikey-submit-btn') as HTMLButtonElement | null;
+  if (!submitBtn) return;
+  submitBtn.disabled = collectSelectedApiKeyPermissions().length === 0;
+}
+
+/**
+ * Show create API key modal.
+ *
+ * Fetches the caller's own effective permissions fresh on every open
+ * (rather than reusing a cached snapshot from login) so the picker
+ * reflects the account's CURRENT grants -- a group change since login
+ * shows up immediately instead of offering a permission the key would
+ * then fail to obtain from the intersection check server-side.
+ */
+export async function showCreateKeyModal(): Promise<void> {
   const modal = document.getElementById('create-apikey-modal');
   const form = document.getElementById('create-apikey-form') as HTMLFormElement;
   const errorEl = document.getElementById('create-apikey-error');
+  const submitBtn = document.getElementById('create-apikey-submit-btn') as HTMLButtonElement | null;
 
   if (!modal || !form) return;
 
   form.reset();
   if (errorEl) errorEl.classList.add('hidden');
+  if (submitBtn) submitBtn.disabled = true;
 
   // Expiration is required (issue #102: no more "never expires"). Prefill
   // 90 days out so the field never starts empty; the actual cap is
@@ -189,7 +272,23 @@ export function showCreateKeyModal(): void {
     expiresAtInput.value = toLocalDateInputValue(defaultDate);
   }
 
+  const permissionsContainer = document.getElementById('apikey-permissions-list');
+  if (permissionsContainer) permissionsContainer.innerHTML = '<p class="text-muted">Loading your permissions&hellip;</p>';
+
+  // Open the modal before the permissions fetch resolves so the dialog
+  // never sits closed while waiting on the network.
   openModal(modal);
+
+  try {
+    const { permissions } = await api.getUserPermissions();
+    renderApiKeyPermissionPicker(permissions);
+  } catch (error) {
+    console.error('Failed to load permissions for API key creation:', error);
+    if (permissionsContainer) {
+      permissionsContainer.innerHTML = '<p class="error">Failed to load your permissions. Close and reopen this dialog to retry.</p>';
+    }
+  }
+  updateCreateKeySubmitState();
 }
 
 /**
@@ -224,21 +323,19 @@ export function closeCreateKeyModal(): void {
 }
 
 /**
- * Create new API key. password and expiresAt are required server-side
- * (issue #102): creation re-verifies the caller's password, and a key can
- * no longer be minted with no expiration.
+ * Create new API key. password, expiresAt and permissions are all required
+ * server-side: creation re-verifies the caller's password (issue #102), a
+ * key can no longer be minted with no expiration (issue #102), and an
+ * empty permissions array is rejected outright (issue #61).
  */
-export async function createApiKey(name: string, password: string, expiresAt: Date, permissions?: api.Permission[]): Promise<CreateAPIKeyResponse> {
+export async function createApiKey(name: string, password: string, expiresAt: Date, permissions: api.Permission[]): Promise<CreateAPIKeyResponse> {
   try {
     const request: api.CreateAPIKeyRequest = {
       name,
       password: api.base64Encode(password),
       expires_at: expiresAt.toISOString(),
+      permissions,
     };
-
-    if (permissions && permissions.length > 0) {
-      request.permissions = permissions;
-    }
 
     const response = await api.createApiKey(request);
     return response;
@@ -274,6 +371,16 @@ export async function handleCreateApiKey(e: Event): Promise<void> {
     return;
   }
 
+  // Belt-and-suspenders alongside the disabled submit button: the backend
+  // now rejects an empty permissions array with 400 (issue #61), so an
+  // unscoped key can never be minted. Catching it here avoids the round
+  // trip and gives a clearer message than the raw 400 body.
+  const permissions = collectSelectedApiKeyPermissions();
+  if (permissions.length === 0) {
+    showError('Select at least one permission');
+    return;
+  }
+
   const expiresAt = parseLocalDateInputValue(expiresAtInput);
   if (expiresAt <= new Date()) {
     showError('Expiration date must be in the future');
@@ -281,7 +388,7 @@ export async function handleCreateApiKey(e: Event): Promise<void> {
   }
 
   try {
-    const response = await createApiKey(name, password, expiresAt);
+    const response = await createApiKey(name, password, expiresAt, permissions);
     closeCreateKeyModal();
     showKeyCreatedModal(response.api_key);
     await loadApiKeys();
@@ -413,7 +520,7 @@ export function initApiKeys(): void {
   // Setup create key button
   const createKeyBtn = document.getElementById('create-apikey-btn');
   if (createKeyBtn) {
-    createKeyBtn.addEventListener('click', () => showCreateKeyModal());
+    createKeyBtn.addEventListener('click', () => void showCreateKeyModal());
   }
 
   // Setup close modal button
