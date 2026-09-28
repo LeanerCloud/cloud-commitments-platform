@@ -514,20 +514,39 @@ gh variable set API_URL -b"https://api.cudly.example.com"
 
 ### 3. Set Up Environments
 
-GitHub Environments provide deployment protection and environment-specific secrets:
+GitHub Environments provide deployment protection and environment-specific secrets.
+GitHub **auto-creates** a referenced environment on first use with no protection rules and no
+branch policy, so relying on that instead of provisioning the list below produces exactly the gap
+this section exists to prevent (see #141). The list below is generated from the actual
+`environment:` expressions each workflow binds, not from what the environment happens to be named
+-- keep the two in sync when a workflow's binding changes.
 
 1. Go to **Settings** → **Environments**
-2. Create environments:
-   - `aws-lambda-dev`, `aws-lambda-staging`, `aws-lambda-prod`
-   - `aws-fargate-dev`, `aws-fargate-staging`, `aws-fargate-prod`
-   - `gcp-dev`, `gcp-staging`, `gcp-prod`
-   - `azure-dev`, `azure-staging`, `azure-prod`
-   - `frontend-aws-dev`, etc.
+2. Create environments matching every `environment:` binding in `.github/workflows/*.yml`:
+   - `dev`, `staging`, `prod` -- bound by `deploy-aws-lambda.yml`, `deploy-aws-fargate`'s sibling
+     compute platforms use their own names (below), `deploy-gcp.yml`, `deploy-azure.yml`, and all
+     four `rollback.yml` jobs (rollback intentionally reuses the deploy environments rather than
+     having its own, see #139)
+   - `aws-fargate-dev`, `aws-fargate-staging`, `aws-fargate-prod` -- `deploy-aws-fargate.yml`
+   - `aws-db-dev`, `aws-db-staging`, `aws-db-prod` -- `database-migration.yml` (AWS)
+   - `gcp-db-dev`, `gcp-db-staging`, `gcp-db-prod` -- `database-migration.yml` (GCP)
+   - `azure-db-dev`, `azure-db-staging`, `azure-db-prod` -- `database-migration.yml` (Azure)
+   - `staging` -- also bound by `cleanup-staging.yml`'s destroy jobs (same `staging` environment as
+     above, not a separate one)
+   - `dev` -- also bound by `destroy-fargate-dev.yml` (same `dev` environment as above)
+   - `frontend-aws-dev`, etc. -- if/when frontend deploy workflows gain an `environment:` binding
 
 3. Configure protection rules:
-   - **Production**: Require approvals, restrict to main branch
-   - **Staging**: Optional approvals
-   - **Dev**: No restrictions
+   - **Production** (`prod`, `aws-fargate-prod`, `aws-db-prod`, `gcp-db-prod`, `azure-db-prod`):
+     require approvals, restrict `deployment_branch_policy` to `main`
+   - **Staging** (`staging`, `aws-fargate-staging`, `aws-db-staging`, `gcp-db-staging`,
+     `azure-db-staging`): optional approvals, restrict to `main`
+   - **Dev** (`dev`, `aws-fargate-dev`, `aws-db-dev`, `gcp-db-dev`, `azure-db-dev`): no restrictions
+
+   Each cloud's OIDC trust policy must also allowlist the `environment:<name>` subject for every
+   name above (`terraform/environments/{aws,gcp,azure}/ci-cd-permissions/`) or the bound job's
+   cloud login step fails with `AssumeRoleWithWebIdentity`/`AADSTS70021` regardless of what's
+   configured here -- see the `github_environments` variable in each module.
 
 ---
 
