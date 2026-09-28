@@ -4392,7 +4392,16 @@ async function openFanOutModal(
     container.appendChild(renderFanOutBucketSection(b));
   }
 
-  openModal(modal);
+  // onClose covers every close path (Escape included, issue #331): closing
+  // this modal without submitting must always discard both fan-out and
+  // single-row purchase state, or a later single-bucket open can submit
+  // these stale buckets instead of the newly displayed recommendation.
+  openModal(modal, {
+    onClose: () => {
+      clearPurchaseModalRecommendations();
+      clearFanOutBuckets();
+    },
+  });
 }
 
 // renderFanOutSummary rebuilds the fan-out modal's header — title, email
@@ -5350,7 +5359,19 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
   updatePurchaseModalTotals(selectAllCb);
 
   const purchaseModal = document.getElementById('purchase-modal');
-  if (purchaseModal) openModal(purchaseModal);
+  // onClose covers every close path (Escape included, issue #331): closing
+  // this modal without submitting must always discard both single-row and
+  // fan-out purchase state, or a later fan-out open can submit stale
+  // buckets left over from a previous session instead of the current
+  // selection.
+  if (purchaseModal) {
+    openModal(purchaseModal, {
+      onClose: () => {
+        clearPurchaseModalRecommendations();
+        clearFanOutBuckets();
+      },
+    });
+  }
 }
 
 /**

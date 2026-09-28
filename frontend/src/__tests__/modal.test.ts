@@ -337,6 +337,60 @@ describe('modal focus-trap helper', () => {
     });
   });
 
+  // Issue #331: the RI/purchase modal's Escape handler called only
+  // closeModal(el), bypassing the caller-specific cleanup (clearing
+  // purchase-specific state) that the explicit close-button handler ran.
+  // onClose closes that gap for EVERY closeModal caller, not just Escape.
+  describe('onClose', () => {
+    test('Escape runs the onClose callback passed to openModal', () => {
+      const { modal } = buildModal();
+      const onClose = jest.fn();
+      openModal(modal, { onClose });
+
+      dispatchKey(modal, 'Escape');
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    test('closeModal called directly (e.g. an explicit close button) also runs onClose', () => {
+      const { modal } = buildModal();
+      const onClose = jest.fn();
+      openModal(modal, { onClose });
+
+      closeModal(modal);
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    test('onClose is not called while the modal is still open', () => {
+      const { modal } = buildModal();
+      const onClose = jest.fn();
+      openModal(modal, { onClose });
+
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    test('re-opening with a new onClose replaces the previous one', () => {
+      const { modal } = buildModal();
+      const first = jest.fn();
+      const second = jest.fn();
+      openModal(modal, { onClose: first });
+      openModal(modal, { onClose: second }); // re-open without closing first
+
+      closeModal(modal);
+
+      expect(second).toHaveBeenCalledTimes(1);
+      expect(first).not.toHaveBeenCalled();
+    });
+
+    test('closeModal on a modal opened without onClose does not throw', () => {
+      const { modal } = buildModal();
+      openModal(modal);
+
+      expect(() => closeModal(modal)).not.toThrow();
+    });
+  });
+
   describe('focus restoration', () => {
     test('focus returns to the trigger on close', () => {
       const { modal, trigger } = buildModal();
