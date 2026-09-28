@@ -84,6 +84,8 @@ func TestHandler_approvePurchase_PurchaseError(t *testing.T) {
 	mockConfig.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{}, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: approver}, nil)
 	// After issue #286, approvePurchase is session-first: with a Bearer
 	// header present the dispatch consults the approve-{any,own} RBAC
@@ -155,6 +157,8 @@ func TestHandler_cancelPurchase_PurchaseError(t *testing.T) {
 	mockConfig.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{}, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: approver}, nil)
 	// Session has no admin role / cancel permissions → cancelPurchase's
 	// session-authed pre-check falls through to authorizeApprovalAction →

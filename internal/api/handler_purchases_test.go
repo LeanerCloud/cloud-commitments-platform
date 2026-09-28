@@ -58,6 +58,8 @@ func TestHandler_approvePurchase(t *testing.T) {
 	}, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: approver}, nil)
 	// After issue #286 the session-authed approve dispatch consults the
 	// approve-{any,own} verb matrix BEFORE falling through to the token
@@ -99,6 +101,8 @@ func TestHandler_cancelPurchase(t *testing.T) {
 	}, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: approver}, nil)
 	// Session has no admin role and no cancel permissions, so cancelPurchase's
 	// session-authed pre-check (added to fix the deep-link contact_email gate)
@@ -135,6 +139,8 @@ func TestHandler_approvePurchase_RejectsMismatchedSession(t *testing.T) {
 	}, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	// Session belongs to someone who is NOT the authorized approver.
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: "wrong@example.com"}, nil)
 	// After issue #286 the dispatch consults approve-{any,own} BEFORE
@@ -193,6 +199,8 @@ func TestHandler_approvePurchase_RejectsMissingContactEmail(t *testing.T) {
 	}, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: globalNotify}, nil)
 	// Issue #286 dispatch consults approve-{any,own} BEFORE the contact_email
 	// gate. globalNotify session has neither verb → 403 → fall through to
@@ -259,6 +267,8 @@ func TestHandler_approvePurchase_AcceptsContactEmailSession(t *testing.T) {
 	}
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	// Session email matches the account contact email — global notify is
 	// NOT enough here because a contact email exists for the account.
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: contactEmail}, nil)
@@ -427,6 +437,8 @@ func TestHandler_approvePurchase_SessionApproveAny_PermissionConstraintsDenied(t
 	mockConfig.On("GetExecutionByID", ctx, execID).Return(exec, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 	userSession := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd", Email: "capped@example.com"}
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(userSession, nil)
@@ -503,6 +515,8 @@ func TestHandler_approvePurchase_SessionApproveAny_TokenPresent_ConstraintsDenie
 	// (wired to succeed) to isolate approveConstraintsForSession's own check.
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 	mockAuth.On("ValidateSession", ctx, "capped-token").Return(capped, nil)
 	mockAuth.On("HasPermissionAPI", ctx, capped.UserID, "approve-any", "purchases").Return(true, nil)
@@ -584,6 +598,8 @@ func TestHandler_approveViaToken_GlobalConfigError_FailsClosed(t *testing.T) {
 	mockConfig.On("GetGlobalConfig", ctx).Return(nil, errors.New("db transient error"))
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: contactEmail}, nil)
 	// No approve-any / approve-own permissions — dispatch falls to token path.
 	mockAuth.On("HasPermissionAPI", ctx, "", "approve-any", "purchases").Return(false, nil).Maybe()
@@ -910,6 +926,8 @@ func TestHandler_approvePurchase_RejectsGlobalNotifyWhenContactSet(t *testing.T)
 	}
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: globalNotify}, nil)
 	// Issue #286: dispatch consults approve-{any,own} BEFORE the
 	// contact_email gate. Returning false for both verbs lets the
@@ -959,6 +977,8 @@ func TestHandler_approvePurchase_RejectsCreatorWithoutApprovePermission(t *testi
 	mockConfig.On("GetExecutionByID", ctx, execID).Return(exec, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	// Session belongs to the creator themselves but holds no approve verb.
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{
 		UserID: creatorUserID,
@@ -3499,6 +3519,8 @@ func TestHandler_cancelPurchase_DeepLink_TransientAuthErrorPropagates(t *testing
 	mockConfig.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", mock.Anything, "sess-tok").Return(session, nil)
 	// Simulate a transient auth-backend failure on the cancel-any check.
 	// authorizeSessionCancel wraps this as "permission check failed: …"
@@ -5514,6 +5536,8 @@ func TestHandler_revokePurchase_ValidToken(t *testing.T) {
 	mockStore.On("SetCancelledBy", ctx, execID, revokerEmail).Return(nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	// Provide a session for the revoker so authorizeApprovalAction resolves actor.
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: revokerEmail}, nil)
 	// RBAC: revoker has no cancel-any or cancel-own, so falls through to token path.
@@ -5559,6 +5583,8 @@ func TestHandler_revokePurchase_InvalidToken(t *testing.T) {
 	}
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: contactEmail}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "", "cancel-any", "purchases").Return(false, nil).Maybe()
 	mockAuth.On("HasPermissionAPI", ctx, "", "cancel-own", "purchases").Return(false, nil).Maybe()
@@ -5650,6 +5676,8 @@ func TestHandler_revokePurchase_ExpiredToken(t *testing.T) {
 	}
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: contactEmail}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "", "cancel-any", "purchases").Return(false, nil).Maybe()
 	mockAuth.On("HasPermissionAPI", ctx, "", "cancel-own", "purchases").Return(false, nil).Maybe()
@@ -5693,7 +5721,7 @@ func TestHandler_revokePurchase_SessionAdminCancelAny(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "admin-token").
 		Return(&Session{UserID: adminUserID, Email: adminEmail}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, adminUserID, "cancel-any", "purchases").Return(true, nil)
-	// requireExecutionAccess (issue #92) runs after RBAC succeeds; unrestricted
+	// requireExecutionAccess (issue #92) runs before RBAC; unrestricted
 	// here since scope is not under test.
 	mockAuth.On("GetAllowedAccountsAPI", ctx, adminUserID).Return([]string{}, nil)
 	// CSRF is enforced for the session-authed revoke path (tryRevokeViaSession).
@@ -5739,7 +5767,7 @@ func TestHandler_revokePurchase_SessionOwnerCancelOwn(t *testing.T) {
 		Return(&Session{UserID: ownerUserID, Email: ownerEmail}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, ownerUserID, "cancel-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, ownerUserID, "cancel-own", "purchases").Return(true, nil)
-	// requireExecutionAccess (issue #92) runs after RBAC succeeds; unrestricted
+	// requireExecutionAccess (issue #92) runs before RBAC; unrestricted
 	// here since scope is not under test.
 	mockAuth.On("GetAllowedAccountsAPI", ctx, ownerUserID).Return([]string{}, nil)
 	// CSRF is enforced for the session-authed revoke path (tryRevokeViaSession).
@@ -5773,6 +5801,8 @@ func TestHandler_revokePurchase_SessionNoPermissionNoToken(t *testing.T) {
 	mockStore.On("GetExecutionByID", ctx, execID).Return(exec, nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "user-token").
 		Return(&Session{UserID: userID, Email: userEmail}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userID, "cancel-any", "purchases").Return(false, nil)
@@ -6140,6 +6170,8 @@ func TestRevokePurchase_POSTPerformsRevoke(t *testing.T) {
 	mockStore.On("SetCancelledBy", ctx, execID, revokerEmail).Return(nil)
 
 	mockAuth := new(MockAuthService)
+
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: revokerEmail}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "", "cancel-any", "purchases").Return(false, nil).Maybe()
 	mockAuth.On("HasPermissionAPI", ctx, "", "cancel-own", "purchases").Return(false, nil).Maybe()
@@ -6330,6 +6362,7 @@ func TestRequireDifferentApprover_EmailTokenPath_ModeOn(t *testing.T) {
 	// Session identifies the user as the CREATOR via UserID.
 	creatorSession := &Session{UserID: creatorID, Email: contactEmail}
 	mockAuth := new(MockAuthService)
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	// Session exists but lacks approve-* permission, so the dispatch falls
 	// through to the token branch. The 4-eyes check then uses the session
 	// identity against CreatedByUserID and must deny.

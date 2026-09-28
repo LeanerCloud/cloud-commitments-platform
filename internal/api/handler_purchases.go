@@ -594,13 +594,15 @@ func (h *Handler) approvePurchase(ctx context.Context, req *events.LambdaFunctio
 	//      approvePurchaseViaSession runs the approve-any /
 	//      approve-own RBAC matrix and rejects sessions without it.
 	if session := h.tryGetSession(ctx, req); session != nil {
-		switch err := h.authorizeSessionApprove(ctx, session, execution); {
+		switch err := h.authorizeScopedSessionApprove(ctx, session, execution); {
 		case err == nil:
 			return h.approvePurchaseViaSession(ctx, req, execution)
-		case isPermissionDenied(err):
-			// Explicit 403 → fall through to the token branch so the
-			// contact_email gate gets a chance (a logged-in user without
-			// approve-* may still be the per-account contact recipient).
+		case fallsThroughToToken(err):
+			// Explicit 403 or out-of-scope 404 → fall through to the token
+			// branch so the contact_email gate gets a chance (a logged-in
+			// user without approve-* or outside the account scope may still
+			// be the per-account contact recipient). Without a token the
+			// session branch below re-runs the gate and returns the error.
 		default:
 			// Transient failure — propagate instead of silently widening.
 			return nil, err
@@ -773,23 +775,11 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 }
 
 // authorizeApproveSession runs every gate approvePurchaseViaSession must pass
-// before mutating state: the approve-any/approve-own RBAC matrix, the
-// account-scope check (issue #92), and the 4-eyes distinct-approver rule.
-// Extracted from approvePurchaseViaSession to keep that function under the
-// cyclomatic-complexity ceiling; the three checks stay in this order so the
-// security boundary is unchanged (RBAC first, so a caller who fails it and
-// falls through to the contact_email token path is unaffected by the scope
-// or 4-eyes checks; 4-eyes last, since only a caller admin's own RBAC has
-// already approved needs it).
+// before mutating state: the account-scope check (issue #92), the
+// approve-any/approve-own RBAC matrix with its Constraints, and the 4-eyes
+// distinct-approver rule.
 func (h *Handler) authorizeApproveSession(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
-	if err := h.authorizeSessionApprove(ctx, session, execution); err != nil {
-		return err
-	}
-	// Account-scope gate (issue #92): approve is a money-moving endpoint
-	// that, unlike pause/resume/run/delete-planned, relied only on the
-	// approve-any/approve-own RBAC matrix above and never consulted the
-	// session's allowed_accounts.
-	if err := h.requireExecutionAccess(ctx, session, execution.ExecutionID); err != nil {
+	if err := h.authorizeScopedSessionApprove(ctx, session, execution); err != nil {
 		return err
 	}
 	// 4-eyes mode (issue #1005): enforce after RBAC so only users who already
@@ -797,6 +787,16 @@ func (h *Handler) authorizeApproveSession(ctx context.Context, session *Session,
 	// wildcard inside authorizeSessionApprove short-circuits RBAC but NOT this
 	// check; admins who created the row must disable the mode first.
 	return h.requireDifferentApprover(ctx, session, execution)
+}
+
+// authorizeScopedSessionApprove runs the account-scope gate (issue #92)
+// before the approve RBAC and Constraints checks, so an out-of-scope caller
+// gets the enumeration-safe 404 before a 403 can reveal the execution exists.
+func (h *Handler) authorizeScopedSessionApprove(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	if err := h.requireExecutionAccess(ctx, session, execution.ExecutionID); err != nil {
+		return err
+	}
+	return h.authorizeSessionApprove(ctx, session, execution)
 }
 
 // authorizeSessionApprove returns nil when the session is permitted to
@@ -1197,15 +1197,16 @@ func (h *Handler) cancelPurchase(ctx context.Context, req *events.LambdaFunction
 	//      token. cancelPurchaseViaSession runs the cancel-any /
 	//      cancel-own RBAC matrix and rejects sessions without it.
 	if session := h.tryGetSession(ctx, req); session != nil {
-		switch err := h.authorizeSessionCancel(ctx, session, execution); {
+		switch err := h.authorizeCancelSession(ctx, session, execution); {
 		case err == nil:
 			// Session is RBAC-authorized → run the session-authed cancel.
 			return h.cancelPurchaseViaSession(ctx, req, execution)
-		case isPermissionDenied(err):
-			// Explicit "permission denied" (403) → fall through to the
-			// token branch so the contact_email gate still gets a chance
-			// (a logged-in user without admin / cancel-* may still be
-			// the per-account contact email recipient).
+		case fallsThroughToToken(err):
+			// Explicit "permission denied" (403) or out-of-scope (404) →
+			// fall through to the token branch so the contact_email gate
+			// still gets a chance (a logged-in user without admin /
+			// cancel-* may still be the per-account contact email
+			// recipient).
 		default:
 			// Transient failure (auth-service down, HasPermissionAPI
 			// returning a wrapped error, h.auth==nil 500). Propagate
@@ -1462,18 +1463,8 @@ func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFun
 	if session == nil {
 		return nil, false, nil
 	}
-	switch sessErr := h.authorizeSessionCancel(ctx, session, execution); {
+	switch sessErr := h.authorizeCancelSession(ctx, session, execution); {
 	case sessErr == nil:
-		// Account-scope gate (issue #92): the session-authed revoke branch
-		// relied only on the cancel-any/cancel-own RBAC matrix above and never
-		// consulted allowed_accounts. Runs after RBAC succeeds, alongside the
-		// CSRF check below, so a caller who fails RBAC and falls through to
-		// the contact_email token path is unaffected. Unlike a
-		// permission-denied result, a scope miss has no legitimate fallback to
-		// the token branch, so it is a hard failure.
-		if scopeErr := h.requireExecutionAccess(ctx, session, execution.ExecutionID); scopeErr != nil {
-			return nil, true, scopeErr
-		}
 		// These endpoints are AuthPublic so the outer middleware skips CSRF.
 		// Enforce it here for the session-authed revoke sub-path, consistent
 		// with cancelPurchaseViaSession and approvePurchaseViaSession which both
@@ -1483,7 +1474,7 @@ func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFun
 		}
 		res, revokeErr := h.revokeViaSession(ctx, execution, session.Email)
 		return res, true, revokeErr
-	case isPermissionDenied(sessErr):
+	case fallsThroughToToken(sessErr):
 		// Fall through to the token branch.
 		return nil, false, nil
 	default:
@@ -1623,21 +1614,15 @@ func (h *Handler) revokeViaSession(ctx context.Context, execution *config.Purcha
 	}, nil
 }
 
-// authorizeCancelSession combines the cancel-any/cancel-own RBAC matrix with
-// the account-scope check (issue #92) for cancelPurchaseViaSession. Extracted
-// to keep that function under the cyclomatic-complexity ceiling. Runs RBAC
-// first so a caller who fails it and falls through to the contact_email
-// token path (in cancelPurchase's dispatcher) is unaffected by the scope
-// check. Not used by the OTHER two callers of authorizeSessionCancel
-// (cancelPurchase's dispatcher, tryRevokeViaSession) which call the
-// unwrapped RBAC-only check directly, since a permission-denied result there
-// must fall through to the token path rather than the scope check ever
-// running.
+// authorizeCancelSession runs the account-scope gate (issue #92) before the
+// cancel-any/cancel-own RBAC matrix, so an out-of-scope caller gets the
+// enumeration-safe 404 before a 403 can reveal the execution exists. Shared
+// by the cancel and revoke session paths.
 func (h *Handler) authorizeCancelSession(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
-	if err := h.authorizeSessionCancel(ctx, session, execution); err != nil {
+	if err := h.requireExecutionAccess(ctx, session, execution.ExecutionID); err != nil {
 		return err
 	}
-	return h.requireExecutionAccess(ctx, session, execution.ExecutionID)
+	return h.authorizeSessionCancel(ctx, session, execution)
 }
 
 // authorizeSessionCancel returns nil when the session is permitted to cancel
@@ -2262,6 +2247,15 @@ func wrapConstraintDenied(err error) error {
 // failures into the contact_email gate — exactly the misclassification
 // the propagate-vs-fall-through split is meant to prevent. constraintDeniedError
 // above deliberately exploits the same strictness from the other direction.
+// fallsThroughToToken reports whether a session-authorization failure should
+// hand the request to the email-token branch: an RBAC denial (403) or an
+// account-scope miss (404). The token branch's contact_email gate is
+// deliberately not account-scoped (issue #92). Both matches are strict, like
+// isPermissionDenied, so a wrapped error from deeper in the chain propagates.
+func fallsThroughToToken(err error) bool {
+	return isPermissionDenied(err) || err == errNotFound //nolint:errorlint // strict sentinel identity is deliberate
+}
+
 func isPermissionDenied(err error) bool {
 	ce, ok := err.(*clientError) //nolint:errorlint // strict (unwrapped) assertion is deliberate; see comment above
 	return ok && ce.code == 403

@@ -144,7 +144,11 @@ func (h *Handler) validatePurchaseRecommendationScope(ctx context.Context, sessi
 }
 
 // requireExecutionAccess rejects with errNotFound when the execution's plan's
-// associated accounts don't intersect with the session's allowed_accounts.
+// associated accounts don't intersect with the session's allowed_accounts,
+// or when the execution targets a CloudAccountID outside them. The plan
+// check alone is not enough: a plan spanning accounts {A, B} intersects a
+// session scoped to A, yet its execution for B still spends B's money
+// (issue #92).
 // Convenience wrapper around requirePlanAccess for the pause/resume/run/
 // delete/details handlers that key on executionID. Returns errNotFound when
 // the execution itself doesn't exist, so unauthenticated probing can't
@@ -169,7 +173,15 @@ func (h *Handler) requireExecutionAccess(ctx context.Context, session *Session, 
 	if err != nil {
 		return fmt.Errorf("failed to get execution: %w", err)
 	}
-	return h.requirePlanAccess(ctx, session, execution.PlanID)
+	if err := h.requirePlanAccess(ctx, session, execution.PlanID); err != nil {
+		return err
+	}
+	if execution.CloudAccountID != nil {
+		if _, err := h.requireAccountAccess(ctx, session, *execution.CloudAccountID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // resolveAccountFilterIDs maps requested cloud_accounts UUIDs to the

@@ -727,7 +727,7 @@ func TestRevokePurchase_ScheduledExecution_RevokeOwnCreator(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "tok").Return(sess, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userID, "revoke-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userID, "revoke-own", "purchases").Return(true, nil)
-	// requireExecutionAccess (issue #92) runs after RBAC succeeds; unrestricted
+	// requireExecutionAccess (issue #92) runs before RBAC; unrestricted
 	// here since scope is not under test.
 	mockAuth.On("GetAllowedAccountsAPI", ctx, userID).Return([]string{}, nil)
 
@@ -749,6 +749,7 @@ func TestRevokePurchase_ScheduledExecution_RevokeOwnWrongCreator(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	t.Cleanup(func() {
 		mockStore.AssertExpectations(t)
 		mockAuth.AssertExpectations(t)
@@ -1663,6 +1664,7 @@ func TestRevokePurchase_ConcurrentScheduledRevoke_OneWinsOneGets410(t *testing.T
 		t.Parallel()
 		mockStore := new(MockConfigStore)
 		mockAuth := new(MockAuthService)
+		mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 		t.Cleanup(func() {
 			mockStore.AssertExpectations(t)
 			mockAuth.AssertExpectations(t)
