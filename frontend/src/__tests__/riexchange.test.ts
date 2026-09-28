@@ -220,6 +220,143 @@ describe('openExchangeModal', () => {
     expect(execReq.region).toBe('us-west-2');
   });
 
+  it('invalidates a fetched quote when the count changes, hiding Execute (issue #244)', async () => {
+    const mockGetQuote = api.getExchangeQuote as jest.Mock;
+    mockGetQuote.mockResolvedValueOnce({
+      IsValidExchange: true,
+      ValidationFailureReason: '',
+      CurrencyCode: 'USD',
+      PaymentDueRaw: '40.00',
+      SourceHourlyPriceRaw: '',
+      SourceRemainingUpfrontRaw: '',
+      SourceRemainingTotalRaw: '',
+      TargetHourlyPriceRaw: '',
+      TargetRemainingUpfrontRaw: '',
+      TargetRemainingTotalRaw: '',
+      Region: 'us-west-2',
+    });
+    const offeringUUID = '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91';
+    openExchangeModal('ri-abc', 2, 'm5.large', [
+      { instance_type: 'm5.large', offering_id: offeringUUID, effective_monthly_cost: 42.5 },
+    ]);
+    const quoteBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Get Quote');
+    quoteBtn?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const executeBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Execute Exchange');
+    expect(executeBtn?.classList.contains('hidden')).toBe(false);
+
+    // Change the count after a valid quote was fetched -- the stale quote
+    // must be discarded and Execute re-hidden until a fresh quote is fetched.
+    const countInput = modal.querySelector<HTMLInputElement>('.modal-exchange-count');
+    if (countInput) {
+      countInput.value = '8';
+      countInput.dispatchEvent(new Event('input'));
+    }
+    expect(executeBtn?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('invalidates a fetched quote when the target picker changes (issue #244)', async () => {
+    const mockGetQuote = api.getExchangeQuote as jest.Mock;
+    mockGetQuote.mockResolvedValueOnce({
+      IsValidExchange: true,
+      ValidationFailureReason: '',
+      CurrencyCode: 'USD',
+      PaymentDueRaw: '40.00',
+      SourceHourlyPriceRaw: '',
+      SourceRemainingUpfrontRaw: '',
+      SourceRemainingTotalRaw: '',
+      TargetHourlyPriceRaw: '',
+      TargetRemainingUpfrontRaw: '',
+      TargetRemainingTotalRaw: '',
+      Region: 'us-west-2',
+    });
+    const uuid1 = '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91';
+    const uuid2 = '7e123456-0000-4567-abcd-ef0123456789';
+    openExchangeModal('ri-abc', 2, 'm5.large', [
+      { instance_type: 'm5.large', offering_id: uuid1, effective_monthly_cost: 42.5 },
+      { instance_type: 'm5.4xlarge', offering_id: uuid2, effective_monthly_cost: 320.0 },
+    ]);
+    const quoteBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Get Quote');
+    quoteBtn?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const executeBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Execute Exchange');
+    expect(executeBtn?.classList.contains('hidden')).toBe(false);
+
+    const picker = modal.querySelector<HTMLSelectElement>('.modal-exchange-target-select');
+    if (picker) {
+      picker.value = uuid2;
+      picker.dispatchEvent(new Event('change'));
+    }
+    expect(executeBtn?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('invalidates a fetched quote when a target row is removed (issue #244)', async () => {
+    const mockGetQuote = api.getExchangeQuote as jest.Mock;
+    mockGetQuote.mockResolvedValueOnce({
+      IsValidExchange: true,
+      ValidationFailureReason: '',
+      CurrencyCode: 'USD',
+      PaymentDueRaw: '0',
+      SourceHourlyPriceRaw: '',
+      SourceRemainingUpfrontRaw: '',
+      SourceRemainingTotalRaw: '',
+      TargetHourlyPriceRaw: '',
+      TargetRemainingUpfrontRaw: '',
+      TargetRemainingTotalRaw: '',
+    });
+    const uuid1 = '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91';
+    const uuid2 = '7e123456-0000-4567-abcd-ef0123456789';
+    openExchangeModal('ri-multi', 1, 'm5.large', [
+      { instance_type: 'm5.large', offering_id: uuid1, effective_monthly_cost: 40.0 },
+    ]);
+    modal.querySelector<HTMLButtonElement>('#modal-exchange-add-target')?.click();
+    const rows = modal.querySelectorAll<HTMLDivElement>('.exchange-target-row');
+    const secondOffering = rows[1]?.querySelector<HTMLInputElement>('.modal-exchange-target');
+    if (secondOffering) secondOffering.value = uuid2;
+
+    const quoteBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Get Quote');
+    quoteBtn?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const executeBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Execute Exchange');
+    expect(executeBtn?.classList.contains('hidden')).toBe(false);
+
+    modal.querySelector<HTMLButtonElement>('.exchange-remove-target')?.click();
+    expect(executeBtn?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('disables the Quote button while a request is in flight to prevent overlapping quotes (issue #244)', async () => {
+    const mockGetQuote = api.getExchangeQuote as jest.Mock;
+    let resolveQuote: ((v: unknown) => void) | undefined;
+    mockGetQuote.mockImplementationOnce(() => new Promise((resolve) => { resolveQuote = resolve; }));
+    const offeringUUID = '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91';
+    openExchangeModal('ri-abc', 2, 'm5.large', [
+      { instance_type: 'm5.large', offering_id: offeringUUID, effective_monthly_cost: 42.5 },
+    ]);
+    const quoteBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Get Quote') as HTMLButtonElement;
+    quoteBtn.click();
+    expect(quoteBtn.disabled).toBe(true);
+    quoteBtn.click(); // second click while in flight must not fire a second request
+    await Promise.resolve();
+    expect(mockGetQuote).toHaveBeenCalledTimes(1);
+    resolveQuote?.({
+      IsValidExchange: false,
+      ValidationFailureReason: 'test',
+      CurrencyCode: 'USD',
+      PaymentDueRaw: '0',
+      SourceHourlyPriceRaw: '',
+      SourceRemainingUpfrontRaw: '',
+      SourceRemainingTotalRaw: '',
+      TargetHourlyPriceRaw: '',
+      TargetRemainingUpfrontRaw: '',
+      TargetRemainingTotalRaw: '',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(quoteBtn.disabled).toBe(false);
+  });
+
   it('posts targets[] when two or more rows are present', async () => {
     const mockGetQuote = api.getExchangeQuote as jest.Mock;
     mockGetQuote.mockResolvedValueOnce({

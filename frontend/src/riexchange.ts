@@ -1594,6 +1594,7 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
         targetRows.splice(idx, 1);
         rowEl.remove();
         updateRunningTotal();
+        invalidateQuote();
       }
     });
     rowEl.appendChild(removeBtn);
@@ -1610,8 +1611,12 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
       offeringInput.value = pickerSelect.value;
       updateRowChip(pickerSelect.value, chipEl);
       updateRunningTotal();
+      invalidateQuote();
     });
-    countInput.addEventListener('input', updateRunningTotal);
+    countInput.addEventListener('input', () => {
+      updateRunningTotal();
+      invalidateQuote();
+    });
 
     targetsContainer.appendChild(rowEl);
     targetRows.push({ offeringInput, pickerSelect, countInput, chipEl, rowEl });
@@ -1723,6 +1728,16 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
     closeModal(modal);
   });
 
+  // invalidateQuote discards any previously fetched quote whenever the
+  // target set changes (picker, count, remove-row), so Execute can never
+  // submit a request that no longer matches what the form displays.
+  function invalidateQuote(): void {
+    modalQuote = null;
+    modalQuoteReq = null;
+    executeBtn.classList.add('hidden');
+    resultContainer.textContent = '';
+  }
+
   quoteBtn.addEventListener('click', () => {
     void submitModalQuote();
   });
@@ -1778,6 +1793,7 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
   }
 
   async function submitModalQuote(): Promise<void> {
+    if (quoteBtn.disabled) return; // guard against overlapping quote requests
     const { targets, error } = collectTargets();
     if (error) {
       setResultText(resultContainer, error, 'error');
@@ -1786,6 +1802,7 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
 
     setResultText(resultContainer, 'Getting exchange quote...', 'loading');
     executeBtn.classList.add('hidden');
+    quoteBtn.disabled = true;
 
     const quoteReq = buildQuoteReq(targets);
     try {
@@ -1796,6 +1813,8 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
     } catch (error) {
       const err = error as Error;
       setResultText(resultContainer, 'Quote failed: ' + err.message, 'error');
+    } finally {
+      quoteBtn.disabled = false;
     }
   }
 
