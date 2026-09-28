@@ -24,6 +24,8 @@ type APIUser struct {
 	LastLogin  string   `json:"last_login,omitempty"`
 	Groups     []string `json:"groups"`
 	MFAEnabled bool     `json:"mfa_enabled"`
+	// No omitempty: false means deactivated, not absent.
+	Active bool `json:"active"`
 }
 
 // APIGroup is the group type for API responses.
@@ -86,9 +88,13 @@ type APICreateUserResponse struct {
 // "not sent". A non-empty Groups replaces the user's membership; an empty/nil
 // Groups means "leave membership unchanged" (callers that intend to change
 // groups always send at least one, since zero-group users are forbidden).
+//
+// Active is a pointer so "not sent" differs from false; otherwise every PUT
+// that omits it would reactivate the user.
 type APIUpdateUserRequest struct {
 	Email  string   `json:"email,omitempty"`
 	Groups []string `json:"groups,omitempty"`
+	Active *bool    `json:"active,omitempty"`
 }
 
 // APICreateGroupRequest is the request type for creating groups via API.
@@ -144,6 +150,7 @@ func userToAPIUser(u *User) *APIUser {
 		CreatedAt:  u.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:  u.UpdatedAt.Format(time.RFC3339),
 		LastLogin:  lastLogin,
+		Active:     u.Active,
 	}
 }
 
@@ -252,6 +259,7 @@ func (s *Service) UpdateUserAPI(ctx context.Context, actorUserID, userID string,
 	if req.Email != "" {
 		authReq.Email = &req.Email
 	}
+	authReq.Active = req.Active
 	user, err := s.UpdateUser(ctx, actorUserID, userID, authReq)
 	if err != nil {
 		return nil, err

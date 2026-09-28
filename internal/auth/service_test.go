@@ -142,11 +142,45 @@ func TestService_ValidateSession(t *testing.T) {
 		}
 
 		mockStore.On("GetSession", ctx, hashedToken).Return(validSession, nil).Once()
+		// ValidateSession loads the user to reject a deactivated account
+		// (issue #89); an active user must not block an otherwise-valid session.
+		mockStore.On("GetUserByID", ctx, "user-123").Return(&User{ID: "user-123", Active: true}, nil).Once()
 
 		session, err := service.ValidateSession(ctx, "valid-token")
 		require.NoError(t, err)
 		assert.NotNil(t, session)
 		assert.Equal(t, "user-123", session.UserID)
+
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("deactivated user session rejected", func(t *testing.T) {
+		// Regression test for issue #89: a session whose user has been
+		// deactivated (e.g. by an admin via UpdateUser, or by any other path
+		// that flips Active to false) must not validate, even though the
+		// session row itself is unexpired and otherwise intact. This is the
+		// defense-in-depth backstop for the gap before UpdateUser's session
+		// revocation lands, or a session issued by another process.
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		hashedToken := hashSessionToken("valid-token-deactivated-user")
+
+		validSession := &Session{
+			Token:     hashedToken,
+			UserID:    "user-123",
+			Email:     "test@example.com",
+			ExpiresAt: time.Now().Add(time.Hour),
+		}
+
+		mockStore.On("GetSession", ctx, hashedToken).Return(validSession, nil).Once()
+		mockStore.On("GetUserByID", ctx, "user-123").Return(&User{ID: "user-123", Active: false}, nil).Once()
+
+		session, err := service.ValidateSession(ctx, "valid-token-deactivated-user")
+		assert.Error(t, err)
+		assert.Nil(t, session)
+		assert.Contains(t, err.Error(), "session not found")
 
 		mockStore.AssertExpectations(t)
 	})
@@ -916,6 +950,7 @@ func TestService_ValidateCSRFToken(t *testing.T) {
 		}
 
 		mockStore.On("GetSession", ctx, hashedToken).Return(session, nil)
+		mockStore.On("GetUserByID", ctx, "user-123").Return(&User{ID: "user-123", Active: true}, nil)
 
 		err := service.ValidateCSRFToken(ctx, rawToken, correctCSRF)
 		require.NoError(t, err)
@@ -964,6 +999,7 @@ func TestService_ValidateCSRFToken(t *testing.T) {
 		}
 
 		mockStore.On("GetSession", ctx, hashedToken).Return(session, nil)
+		mockStore.On("GetUserByID", ctx, "user-123").Return(&User{ID: "user-123", Active: true}, nil)
 
 		// A static string cannot match the HMAC-derived token.
 		err := service.ValidateCSRFToken(ctx, "session-token", "not-a-real-csrf-token")
@@ -987,6 +1023,7 @@ func TestService_ValidateCSRFToken(t *testing.T) {
 		}
 
 		mockStore.On("GetSession", ctx, hashedToken).Return(session, nil)
+		mockStore.On("GetUserByID", ctx, "user-123").Return(&User{ID: "user-123", Active: true}, nil)
 
 		// A token for a different session is rejected even if it is a valid HMAC.
 		wrongCSRF := deriveCSRFToken(service.csrfKey, "different-session-token")

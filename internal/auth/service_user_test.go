@@ -476,6 +476,12 @@ func TestService_UpdateUser_ConcurrentDeactivateLastTwoAdmins(t *testing.T) {
 	mockStore.On("GetUserByID", ctx, "admin-b").Return(adminB, nil).Once()
 	mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil).Twice()
 
+	// Session revocation now happens only after store.UpdateUser succeeds,
+	// so only admin-a (whose commit succeeds below) gets DeleteUserSessions;
+	// admin-b hits the deferred trigger and must not be logged out for a
+	// deactivation that never actually took effect.
+	mockStore.On("DeleteUserSessions", ctx, "admin-a").Return(nil).Once()
+
 	// admin-a's deactivation commits; admin-b's hits the deferred trigger.
 	mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool { return u.ID == "admin-a" })).Return(nil).Once()
 	triggerErr := fmt.Errorf("last_admin_constraint_violation: at least one active member of the Administrators group must remain")
@@ -644,6 +650,11 @@ func TestService_UpdateUser(t *testing.T) {
 	})
 
 	t.Run("update active status successfully", func(t *testing.T) {
+		// Regression test for issue #89: deactivating a user (Active true ->
+		// false) must revoke their existing sessions synchronously, not just
+		// prevent future logins, and must stamp DeactivatedAt so
+		// ConfirmPasswordReset / RequestPasswordReset can later refuse to
+		// let this account self-reactivate (audit finding A03-006).
 		mockStore := new(MockStore)
 		mockEmail := new(MockEmailSender)
 		service := createTestService(mockStore, mockEmail)
@@ -656,6 +667,7 @@ func TestService_UpdateUser(t *testing.T) {
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
+		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 		inactive := false
@@ -666,6 +678,107 @@ func TestService_UpdateUser(t *testing.T) {
 		user, err := service.UpdateUser(ctx, "", "user-123", req)
 		require.NoError(t, err)
 		assert.False(t, user.Active)
+		require.NotNil(t, user.DeactivatedAt, "DeactivatedAt must be stamped on true -> false transition")
+		assert.WithinDuration(t, time.Now(), *user.DeactivatedAt, 5*time.Second)
+
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("reactivating clears DeactivatedAt", func(t *testing.T) {
+		// The reverse transition (false -> true) must clear DeactivatedAt so a
+		// user who is deactivated, reactivated, then completes a password
+		// reset is judged on the CURRENT state, not a stale marker.
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		deactivatedAt := time.Now().Add(-time.Hour)
+		existingUser := &User{
+			ID:            "user-123",
+			Email:         "test@example.com",
+			GroupIDs:      []string{"group-1"},
+			Active:        false,
+			DeactivatedAt: &deactivatedAt,
+		}
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
+		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+
+		active := true
+		req := UpdateUserRequest{
+			Active: &active,
+		}
+
+		user, err := service.UpdateUser(ctx, "", "user-123", req)
+		require.NoError(t, err)
+		assert.True(t, user.Active)
+		assert.Nil(t, user.DeactivatedAt, "reactivation must clear DeactivatedAt")
+
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("explicitly deactivating an already-inactive invited user stamps DeactivatedAt", func(t *testing.T) {
+		// Regression: DeactivatedAt used to be stamped only on the
+		// true -> false TRANSITION, so an admin explicitly PUTting
+		// active:false on a user who was already inactive (an invited user
+		// who never completed setup, priorActive already false) was a
+		// silent no-op -- 200 OK, DeactivatedAt stayed nil, and the
+		// outstanding invite/reset link would still go on to activate the
+		// account, undoing the admin's explicit intent.
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		existingUser := &User{
+			ID:            "user-invited",
+			Email:         "invited@example.com",
+			GroupIDs:      []string{"group-1"},
+			Active:        false,
+			DeactivatedAt: nil, // invited, never activated
+		}
+
+		mockStore.On("GetUserByID", ctx, "user-invited").Return(existingUser, nil).Once()
+		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		// DeleteUserSessions must NOT be called: priorActive was already
+		// false, so there is nothing to revoke; only the marker changes.
+
+		inactive := false
+		req := UpdateUserRequest{Active: &inactive}
+
+		user, err := service.UpdateUser(ctx, "", "user-invited", req)
+		require.NoError(t, err)
+		assert.False(t, user.Active)
+		require.NotNil(t, user.DeactivatedAt,
+			"an explicit deactivation of an already-inactive user must still stamp DeactivatedAt")
+
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("redundant deactivation does not refresh an existing DeactivatedAt", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		originalDeactivation := time.Now().Add(-48 * time.Hour)
+		existingUser := &User{
+			ID:            "user-123",
+			Email:         "test@example.com",
+			GroupIDs:      []string{"group-1"},
+			Active:        false,
+			DeactivatedAt: &originalDeactivation,
+		}
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
+		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+
+		inactive := false
+		req := UpdateUserRequest{Active: &inactive}
+
+		user, err := service.UpdateUser(ctx, "", "user-123", req)
+		require.NoError(t, err)
+		require.NotNil(t, user.DeactivatedAt)
+		assert.True(t, user.DeactivatedAt.Equal(originalDeactivation),
+			"a repeat deactivation request must not overwrite the original DeactivatedAt timestamp")
 
 		mockStore.AssertExpectations(t)
 	})
@@ -729,6 +842,7 @@ func TestService_UpdateUser(t *testing.T) {
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
+		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 		active := false
@@ -840,6 +954,7 @@ func TestService_UpdateUser(t *testing.T) {
 		}
 		mockStore.On("GetUserByID", ctx, "admin-1").Return(adminUser, nil).Once()
 		mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil).Once()
+		mockStore.On("DeleteUserSessions", ctx, "admin-1").Return(nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 		t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -870,6 +985,10 @@ func TestService_UpdateUser(t *testing.T) {
 		mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil).Once()
 		triggerErr := fmt.Errorf("last_admin_constraint_violation: at least one active member of the Administrators group must remain")
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(triggerErr).Once()
+		// DeleteUserSessions must NOT be called: session revocation now
+		// happens only after store.UpdateUser succeeds, so a request that
+		// hits the deferred trigger must not log the user out for a change
+		// that never actually took effect.
 
 		t.Cleanup(func() { mockStore.AssertExpectations(t) })
 

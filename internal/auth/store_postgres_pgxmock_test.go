@@ -319,7 +319,7 @@ var userColumns = []string{
 	"mfa_enabled", "mfa_secret", "mfa_pending_secret", "mfa_pending_secret_expires_at",
 	"mfa_recovery_codes", "password_reset_token", "password_reset_expiry",
 	"failed_login_attempts", "locked_until", "password_history",
-	"created_at", "updated_at", "last_login_at",
+	"created_at", "updated_at", "last_login_at", "deactivated_at",
 }
 
 func TestPGXMock_ListUsers_Success(t *testing.T) {
@@ -329,6 +329,7 @@ func TestPGXMock_ListUsers_Success(t *testing.T) {
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	lastLogin := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
 
+	deactivated := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
 	rows := pgxmock.NewRows(userColumns).
 		AddRow(
 			"user-1", "admin@example.com", "hash1", "salt1",
@@ -336,7 +337,7 @@ func TestPGXMock_ListUsers_Success(t *testing.T) {
 			true, "mfa-secret", nil, nil,
 			[]string{"code1"}, nil, nil,
 			0, nil, []string{"old-hash"},
-			created, created, lastLogin,
+			created, created, lastLogin, nil,
 		).
 		AddRow(
 			"user-2", "user@example.com", "hash2", "salt2",
@@ -344,7 +345,7 @@ func TestPGXMock_ListUsers_Success(t *testing.T) {
 			false, nil, nil, nil,
 			[]string{}, nil, nil,
 			2, nil, []string{},
-			created, created, nil,
+			created, created, nil, deactivated,
 		)
 
 	mock.ExpectQuery(`(?s)SELECT id, email, password_hash, salt, group_ids, active,.*FROM users\s+ORDER BY created_at DESC\s+LIMIT 10000`).
@@ -362,11 +363,15 @@ func TestPGXMock_ListUsers_Success(t *testing.T) {
 	require.NotNil(t, users[0].LastLoginAt)
 	assert.Equal(t, lastLogin, *users[0].LastLoginAt)
 
+	assert.Nil(t, users[0].DeactivatedAt)
+
 	assert.Equal(t, "user-2", users[1].ID)
 	assert.False(t, users[1].Active)
 	assert.Empty(t, users[1].MFASecret)
 	assert.Nil(t, users[1].LastLoginAt)
 	assert.Equal(t, 2, users[1].FailedLoginAttempts)
+	require.NotNil(t, users[1].DeactivatedAt)
+	assert.Equal(t, deactivated, *users[1].DeactivatedAt)
 }
 
 func TestPGXMock_ListUsers_Empty(t *testing.T) {
@@ -407,7 +412,7 @@ func TestPGXMock_ListUsers_RowError(t *testing.T) {
 			false, nil, nil, nil,
 			[]string{}, nil, nil,
 			0, nil, []string{},
-			created, created, nil,
+			created, created, nil, nil,
 		).
 		RowError(0, errors.New("connection reset mid-iteration"))
 

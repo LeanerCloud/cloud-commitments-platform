@@ -65,19 +65,19 @@ func (m *MockRow) Scan(dest ...interface{}) error {
 }
 
 // Helper function to create a mock row that returns a user
-// The scan order matches scanUser() in store_postgres.go (issue #907 removed
-// the role column, so there are now 19 destinations, not 20):
+// The scan order matches scanUser() in store_postgres.go (issue #89 added
+// deactivated_at, so there are now 20 destinations):
 // id, email, password_hash, salt, group_ids, active,
 // mfa_enabled, mfa_secret (NullString), mfa_pending_secret (NullString),
 // mfa_pending_secret_expires_at (NullTime), mfa_recovery_codes ([]string),
 // reset_token (NullString), reset_expiry (NullTime),
 // failed_login_attempts, locked_until (NullTime), password_history,
-// created_at, updated_at, last_login_at (NullTime).
+// created_at, updated_at, last_login_at (NullTime), deactivated_at (NullTime).
 func createMockRowWithUser(user *User) *MockRow {
 	return &MockRow{
 		scanFunc: func(dest ...interface{}) error {
 			// Populate destination pointers with user data
-			if len(dest) >= 19 {
+			if len(dest) >= 20 {
 				*dest[0].(*string) = user.ID
 				*dest[1].(*string) = user.Email
 				*dest[2].(*string) = user.PasswordHash
@@ -132,6 +132,12 @@ func createMockRowWithUser(user *User) *MockRow {
 					*dest[18].(*sql.NullTime) = sql.NullTime{Time: *user.LastLoginAt, Valid: true}
 				} else {
 					*dest[18].(*sql.NullTime) = sql.NullTime{Valid: false}
+				}
+				// dest[19] is sql.NullTime for DeactivatedAt
+				if user.DeactivatedAt != nil {
+					*dest[19].(*sql.NullTime) = sql.NullTime{Time: *user.DeactivatedAt, Valid: true}
+				} else {
+					*dest[19].(*sql.NullTime) = sql.NullTime{Valid: false}
 				}
 			}
 			return nil

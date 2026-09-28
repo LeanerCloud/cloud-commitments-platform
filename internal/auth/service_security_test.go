@@ -173,6 +173,9 @@ func TestCSRFToken_DerivedFromSessionToken(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 	mockStore.On("GetSession", ctx, storedSession.Token).Return(storedForLookup, nil).Times(2)
+	// ValidateSession (called by ValidateCSRFToken, twice below) loads the
+	// user to reject a deactivated account (issue #89).
+	mockStore.On("GetUserByID", ctx, user.ID).Return(&User{ID: user.ID, Active: true}, nil).Times(2)
 
 	// Derived token must be accepted.
 	err = service.ValidateCSRFToken(ctx, clientSession.Token, clientSession.CSRFToken)
@@ -206,6 +209,7 @@ func TestCSRFToken_CrossSessionRejected(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 	mockStore.On("GetSession", ctx, hashedToken).Return(session, nil)
+	mockStore.On("GetUserByID", ctx, "user-1").Return(&User{ID: "user-1", Active: true}, nil)
 
 	// CSRF token derived for a different session — must be rejected.
 	csrfForSessionA := deriveCSRFToken(service.csrfKey, "session-A")
@@ -313,6 +317,7 @@ func TestCSRFKey_CrossInstanceStable(t *testing.T) {
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 		CreatedAt: time.Now(),
 	}, nil).Once()
+	storeB.On("GetUserByID", ctx, user.ID).Return(&User{ID: user.ID, Active: true}, nil).Once()
 
 	// THE INVARIANT: a token minted on instance A must validate on instance B.
 	// On the pre-fix code (random per-process key) this fails — exactly the QA
@@ -334,6 +339,7 @@ func TestCSRFKey_CrossInstanceStable(t *testing.T) {
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 		CreatedAt: time.Now(),
 	}, nil).Once()
+	storeC.On("GetUserByID", ctx, user.ID).Return(&User{ID: user.ID, Active: true}, nil).Once()
 
 	err = instanceC.ValidateCSRFToken(ctx, clientSession.Token, clientSession.CSRFToken)
 	require.Error(t, err, "a CSRF token must NOT validate under a different master secret")

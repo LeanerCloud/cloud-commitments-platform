@@ -340,10 +340,20 @@ func (s *Service) ValidateSession(ctx context.Context, token string) (*Session, 
 	}
 
 	if time.Now().After(session.ExpiresAt) {
-		if err := s.store.DeleteSession(ctx, hashedToken); err != nil {
-			logging.Warnf("Failed to delete expired session: %v", err)
+		if delErr := s.store.DeleteSession(ctx, hashedToken); delErr != nil {
+			logging.Warnf("Failed to delete expired session: %v", delErr)
 		}
 		return nil, fmt.Errorf("session expired")
+	}
+
+	// UpdateUser revokes sessions on deactivation; this rejects any session that
+	// outlives that (a failed delete, or Active flipped another way). Issue #89.
+	user, err := s.loadUser(ctx, session.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load session user: %w", err)
+	}
+	if !user.Active {
+		return nil, fmt.Errorf("session not found")
 	}
 
 	// Return a copy of the session with the original token (not the hash) for client use.

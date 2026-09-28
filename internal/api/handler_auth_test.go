@@ -732,6 +732,33 @@ func TestHandler_resetPassword_Error(t *testing.T) {
 	assert.Contains(t, ce.Error(), "invalid or expired reset token")
 }
 
+// TestHandler_resetPassword_AccountDeactivated is the regression test for
+// issue #89 / audit finding A03-006: ConfirmPasswordReset returning
+// auth.ErrAccountDeactivated must map to 403, ahead of the generic
+// isResetPasswordClientError(400) path -- deleting that branch in the
+// handler would leave every OTHER resetPassword test green while this one
+// alone catches the regression.
+func TestHandler_resetPassword_AccountDeactivated(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	mockAuth.On("ConfirmPasswordReset", ctx, mock.Anything).Return(auth.ErrAccountDeactivated)
+
+	handler := &Handler{auth: mockAuth}
+
+	encoded := base64.StdEncoding.EncodeToString([]byte("SecureT3st@789"))
+	req := &events.LambdaFunctionURLRequest{Body: `{"token": "valid-token", "new_password": "` + encoded + `"}`}
+	result, err := handler.resetPassword(ctx, req)
+	require.Error(t, err)
+	assert.Nil(t, result)
+
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "ErrAccountDeactivated must be wrapped as a client error, not a 500")
+	assert.Equal(t, 403, ce.code)
+	assert.Contains(t, ce.Error(), "deactivated")
+}
+
 // Issue #459: ConfirmPasswordReset errors must surface as a 4xx client
 // error with the original message preserved, so the frontend renders a
 // specific reason rather than the opaque "Failed to reset password" that

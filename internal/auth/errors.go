@@ -86,6 +86,11 @@ var (
 	// than the most-permissive default. Mapped to 400 (issue #61).
 	ErrEmptyAPIKeyPermissions = errors.New("at least one permission is required")
 
+	// ErrAccountDeactivated: ConfirmPasswordReset refused an admin-deactivated
+	// account (A03-006). Safe to name, since the caller already holds a valid
+	// reset token mailed to the account.
+	ErrAccountDeactivated = errors.New("account is deactivated")
+
 	// MFA login-gate sentinels — used by the login API handler to map
 	// to machine-readable response codes (mfa_required /
 	// invalid_mfa_code) so the frontend can branch on the error class

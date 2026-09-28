@@ -342,6 +342,10 @@ func (s *Service) UpdateUser(ctx context.Context, actorUserID, userID string, re
 		return nil, err
 	}
 
+	// Stamped in memory so it persists in the same UPDATE; session revocation
+	// waits until that UPDATE commits so a failed write never logs the user out.
+	applyDeactivatedAtTransition(user, req.Active)
+
 	// Email is mutated through updateUserEmail rather than applyUpdateUserRequest
 	// because it requires a DB lookup (uniqueness check) and format validation
 	// (same rules as the self-edit profile path; see updateUserEmail and #868
@@ -363,6 +367,8 @@ func (s *Service) UpdateUser(ctx context.Context, actorUserID, userID string, re
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 
+	s.revokeSessionsOnDeactivation(ctx, user, priorActive)
+
 	return user, nil
 }
 
@@ -383,6 +389,39 @@ func (s *Service) guardDeactivation(ctx context.Context, user *User, priorActive
 		return s.checkLastAdminConstraint(ctx)
 	}
 	return nil
+}
+
+// revokeSessionsOnDeactivation deletes the user's sessions after an
+// Active true -> false change has been persisted. Failure is logged, not
+// returned, matching DeleteUser and ChangePassword; ValidateSession's Active
+// check covers the gap (issue #89).
+func (s *Service) revokeSessionsOnDeactivation(ctx context.Context, user *User, priorActive bool) {
+	if !priorActive || user.Active {
+		return
+	}
+	if err := s.store.DeleteUserSessions(ctx, user.ID); err != nil {
+		logging.Warnf("Failed to delete sessions for user %s during deactivation: %v", user.ID, err)
+	}
+}
+
+// applyDeactivatedAtTransition sets or clears User.DeactivatedAt from the
+// requested Active value. An explicit deactivation stamps it even when the
+// user was already inactive (an invited user), so an outstanding invite link
+// cannot activate the account afterwards; a repeat deactivation keeps the
+// original timestamp. DeactivatedAt is what lets the password-reset flow
+// refuse admin-deactivated accounts while still completing invites (A03-006).
+func applyDeactivatedAtTransition(user *User, reqActive *bool) {
+	if reqActive == nil {
+		return
+	}
+	if *reqActive {
+		user.DeactivatedAt = nil
+		return
+	}
+	if user.DeactivatedAt == nil {
+		now := time.Now()
+		user.DeactivatedAt = &now
+	}
 }
 
 // guardGroupChange enforces the issue #907 invariants for a group-membership

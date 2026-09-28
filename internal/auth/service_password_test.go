@@ -330,6 +330,34 @@ func TestService_RequestPasswordReset(t *testing.T) {
 		mockStore.AssertExpectations(t)
 		mockEmail.AssertExpectations(t)
 	})
+
+	// Regression test for issue #89 / audit finding A03-006: an admin-
+	// deactivated account must not receive a working reset link. It must be
+	// refused with the exact same no-error, no-email response as "email
+	// does not exist" -- neither UpdateUser (which would mint a fresh reset
+	// token) nor SendPasswordResetEmail may be called, or the response shape
+	// would let a caller distinguish deactivated from missing.
+	t.Run("deactivated account gets no reset link, same response as missing email", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+		t.Cleanup(func() { mockStore.AssertExpectations(t) })
+		t.Cleanup(func() { mockEmail.AssertExpectations(t) })
+
+		deactivatedAt := time.Now().Add(-time.Hour)
+		deactivatedUser := &User{
+			ID:            "user-deactivated",
+			Email:         "deactivated@example.com",
+			Active:        false,
+			DeactivatedAt: &deactivatedAt,
+		}
+
+		mockStore.On("GetUserByEmail", ctx, "deactivated@example.com").Return(deactivatedUser, nil).Once()
+		// UpdateUser and SendPasswordResetEmail must NOT be called.
+
+		err := service.RequestPasswordReset(ctx, "deactivated@example.com")
+		require.NoError(t, err, "deactivated-account reset request must not error (enumeration protection)")
+	})
 }
 
 // TestService_RequestPasswordReset_RateLimit is the regression test for 03-M5.
@@ -632,6 +660,89 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 
 		mockStore.AssertExpectations(t)
 	})
+
+	// Regression tests for issue #89 / audit finding A03-006: a deactivated
+	// account must not be able to restore its own access through the
+	// password-reset flow, while an invited-but-never-activated account
+	// (Active false, DeactivatedAt nil) must still complete first-time
+	// setup normally. These fail on pre-fix code, which used !user.Active
+	// alone to decide "activate on reset" and would flip Active back to
+	// true for BOTH cases.
+	t.Run("admin-deactivated account cannot self-reactivate via reset", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		expiry := time.Now().Add(time.Hour)
+		deactivatedAt := time.Now().Add(-time.Hour)
+		const originalHash = "$2a$12$original-hash-must-not-change"
+		deactivatedUser := &User{
+			ID:                  "user-789",
+			Email:               "deactivated@example.com",
+			Active:              false,
+			DeactivatedAt:       &deactivatedAt,
+			PasswordHash:        originalHash,
+			PasswordResetToken:  hashSessionToken("valid-reset-token"),
+			PasswordResetExpiry: &expiry,
+		}
+
+		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(deactivatedUser, nil).Once()
+		// The token is still consumed (one-time use) even though the
+		// reactivation itself is refused. PasswordHash must be untouched:
+		// processPasswordReset (which would set the NEW password) must
+		// never run for a deactivated account.
+		mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool {
+			return u.PasswordResetToken == "" && u.PasswordResetExpiry == nil && u.PasswordHash == originalHash
+		})).Return(nil).Once()
+
+		req := PasswordResetConfirm{
+			Token:       "valid-reset-token",
+			NewPassword: "SecureT3st@789",
+		}
+
+		err := service.ConfirmPasswordReset(ctx, req)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrAccountDeactivated)
+		// Active must stay false: this is the exact regression this test
+		// guards against.
+		assert.False(t, deactivatedUser.Active)
+		assert.Equal(t, originalHash, deactivatedUser.PasswordHash,
+			"the new password must never be set for a deactivated account")
+
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("invited never-activated account still activates on reset", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		expiry := time.Now().Add(time.Hour)
+		invitedUser := &User{
+			ID:                  "user-790",
+			Email:               "invited@example.com",
+			Active:              false,
+			DeactivatedAt:       nil, // never activated, never deactivated
+			PasswordResetToken:  hashSessionToken("valid-invite-token"),
+			PasswordResetExpiry: &expiry,
+		}
+
+		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(invitedUser, nil).Once()
+		mockStore.On("DeleteUserSessions", ctx, "user-790").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-790").Return([]*UserAPIKey{}, nil).Once()
+		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+
+		req := PasswordResetConfirm{
+			Token:       "valid-invite-token",
+			NewPassword: "SecureT3st@789",
+		}
+
+		err := service.ConfirmPasswordReset(ctx, req)
+		require.NoError(t, err)
+		assert.True(t, invitedUser.Active)
+
+		mockStore.AssertExpectations(t)
+	})
 }
 
 // TestService_ResetTokenStatus covers the read-only token-status probe
@@ -670,6 +781,33 @@ func TestService_ResetTokenStatus(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, ResetTokenStateValid, state)
 		assert.Equal(t, ResetTokenFlowInvite, flow)
+
+		mockStore.AssertExpectations(t)
+	})
+
+	// Regression test for issue #89 / audit finding A03-006: a deactivated
+	// user (DeactivatedAt set) is also Active=false, but must report the
+	// "reset" flow, not "invite" -- the frontend must not show "Set your
+	// password" wording implying the token will activate the account, since
+	// ConfirmPasswordReset refuses to. Before the fix, resetTokenFlowFor did
+	// not exist and this branch keyed on !user.Active alone.
+	t.Run("valid token on deactivated user is valid + reset flow, not invite", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		expiry := time.Now().Add(time.Hour)
+		deactivatedAt := time.Now().Add(-time.Hour)
+		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).
+			Return(&User{
+				ID: "u4", Active: false, DeactivatedAt: &deactivatedAt,
+				PasswordResetToken: hashSessionToken("valid-token-deactivated"), PasswordResetExpiry: &expiry,
+			}, nil).Once()
+
+		state, flow, err := service.ResetTokenStatus(ctx, "valid-token-deactivated")
+		require.NoError(t, err)
+		assert.Equal(t, ResetTokenStateValid, state)
+		assert.Equal(t, ResetTokenFlowReset, flow)
 
 		mockStore.AssertExpectations(t)
 	})

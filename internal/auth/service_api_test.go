@@ -25,6 +25,7 @@ func TestConversionHelpers(t *testing.T) {
 			Email:      "test@example.com",
 			GroupIDs:   []string{"group-1", "group-2"},
 			MFAEnabled: true,
+			Active:     true,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
@@ -34,6 +35,7 @@ func TestConversionHelpers(t *testing.T) {
 		assert.Equal(t, "test@example.com", result.Email)
 		assert.Equal(t, []string{"group-1", "group-2"}, result.Groups)
 		assert.True(t, result.MFAEnabled)
+		assert.True(t, result.Active)
 		assert.NotEmpty(t, result.CreatedAt)
 		assert.NotEmpty(t, result.UpdatedAt)
 	})
@@ -289,6 +291,75 @@ func TestService_UpdateUserAPI(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "invalid request type")
+	})
+
+	// Regression for issue #89: before this fix, APIUpdateUserRequest had no
+	// Active field at all, so a PUT /api/users/{id} body could never
+	// deactivate a user -- the same field-silently-dropped defect class
+	// issue #892 fixed for Email. We assert the User passed to store.UpdateUser
+	// carries Active=false, not just that the call succeeds, so the test
+	// would have failed on the pre-fix struct (which drops the field on the
+	// floor and always persists whatever GetUserByID returned, i.e. true).
+	t.Run("deactivation via active=false persists and revokes sessions", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		existingUser := &User{
+			ID:       "user-123",
+			Email:    "test@example.com",
+			GroupIDs: []string{"group-1"},
+			Active:   true,
+		}
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
+		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool {
+			return u != nil && u.ID == "user-123" && !u.Active && u.DeactivatedAt != nil
+		})).Return(nil).Once()
+
+		inactive := false
+		req := APIUpdateUserRequest{Active: &inactive}
+
+		result, err := service.UpdateUserAPI(ctx, "", "user-123", req)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		apiUser, ok := result.(*APIUser)
+		require.True(t, ok)
+		assert.False(t, apiUser.Active, "the API response must reflect the deactivation")
+
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("nil Active leaves the user's active status unchanged", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		existingUser := &User{
+			ID:       "user-123",
+			Email:    "test@example.com",
+			GroupIDs: []string{"group-1"},
+			Active:   true,
+		}
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
+		// DeleteUserSessions must NOT be called: an omitted `active` field is
+		// not a deactivation.
+		mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool {
+			return u != nil && u.Active
+		})).Return(nil).Once()
+
+		req := APIUpdateUserRequest{Groups: []string{"group-2"}}
+
+		result, err := service.UpdateUserAPI(ctx, "", "user-123", req)
+		require.NoError(t, err)
+		apiUser, ok := result.(*APIUser)
+		require.True(t, ok)
+		assert.True(t, apiUser.Active)
+
+		mockStore.AssertExpectations(t)
 	})
 }
 
