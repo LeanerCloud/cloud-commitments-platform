@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1156,14 +1157,19 @@ func TestScheduler_ListRecommendations_ColdStart_NonLambda_KicksBackgroundCollec
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 
+	// GetGlobalConfig is called both synchronously by resolveEffectiveCacheTTL
+	// (the stale-while-revalidate step further down in ListRecommendations)
+	// and, in the background goroutine, by CollectRecommendations itself --
+	// sync.Once makes the close idempotent regardless of which fires first.
 	started := make(chan struct{})
+	var closeOnce sync.Once
 	mockStore.On("GetRecommendationsFreshness", ctx).
 		Return(&config.RecommendationsFreshness{LastCollectedAt: nil}, nil)
 	mockStore.On("MarkCollectionStarted", ctx).Return(mocks.MockOwnerToken, true, nil).Once()
 	mockStore.On("ListStoredRecommendations", ctx, mock.Anything).
 		Return([]config.RecommendationRecord{}, nil)
 	mockStore.On("GetGlobalConfig", mock.Anything).
-		Run(func(mock.Arguments) { close(started) }).
+		Run(func(mock.Arguments) { closeOnce.Do(func() { close(started) }) }).
 		Return(&config.GlobalConfig{EnabledProviders: []string{}}, nil).Maybe()
 	mockStore.On("UpsertRecommendations", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	mockStore.On("ClearCollectionStarted", mock.Anything, mocks.MockOwnerToken).Return(nil).Maybe()
