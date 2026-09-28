@@ -750,8 +750,18 @@ func (s *Scheduler) collectGCPAmbient(ctx context.Context) ([]config.Recommendat
 }
 
 func (s *Scheduler) collectAWSForAccount(ctx context.Context, globalCfg *config.GlobalConfig, acct config.CloudAccount) ([]config.RecommendationRecord, bool, error) {
-	// Self-account (role_arn with no role ARN) or ambient modes use ambient credentials
-	if acct.AWSRoleARN == "" {
+	// Self-account: role_arn mode with no role ARN means "use the CUDly
+	// Lambda's own (ambient) credentials to access this account" -- see
+	// credentials.resolveRoleARNProvider, which documents the identical
+	// shape. Any OTHER auth mode with an empty AWSRoleARN -- including the
+	// empty string org-discovery persists on newly-discovered member
+	// accounts pending operator review (handler_accounts.go,
+	// persistDiscoveredMembers) -- must NOT take this branch: it must fall
+	// through to ResolveAWSCredentialProvider below so its switch fails
+	// loud ("unsupported aws_auth_mode") instead of silently collecting the
+	// HOST account's data and tagging it with this account's UUID
+	// (issue #107).
+	if acct.AWSAuthMode == "role_arn" && acct.AWSRoleARN == "" {
 		prov, err := s.providerFactory.CreateAndValidateProvider(ctx, "aws", nil)
 		if err != nil {
 			return nil, false, fmt.Errorf("create ambient provider: %w", err)
