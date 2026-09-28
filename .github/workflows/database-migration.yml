@@ -587,9 +587,9 @@ jobs:
 
           # No `2>/dev/null || echo ""`: let terraform's own error reach the
           # log instead of collapsing every distinct cause into one message.
-          DB_ENDPOINT=$(terraform output -raw database_fqdn)
+          DB_ENDPOINT=$(terraform output -raw database_server_fqdn)
           if [ -z "$DB_ENDPOINT" ]; then
-            echo "::error::terraform output returned an empty database_fqdn for environment=$ENVIRONMENT"
+            echo "::error::terraform output returned an empty database_server_fqdn for environment=$ENVIRONMENT"
             exit 1
           fi
           echo "endpoint=$DB_ENDPOINT" >> "$GITHUB_OUTPUT"
