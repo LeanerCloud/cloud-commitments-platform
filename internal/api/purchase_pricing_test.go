@@ -158,7 +158,7 @@ func TestHandler_executePurchase_PersistsStoredCostsNotClientCosts(t *testing.T)
 
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"recommendations":[{"id":"client-id","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.24xlarge","count":2,"term":3,"payment":"all-upfront","recommended_count":4,"upfront_cost":1,"monthly_cost":1,"savings":999,"on_demand_cost":1,"details":{"platform":"Windows"},"selected":true}],"capacity_percent":50}`,
+		Body:    `{"recommendations":[{"id":"","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.24xlarge","count":2,"term":3,"payment":"all-upfront","recommended_count":4,"upfront_cost":1,"monthly_cost":1,"savings":999,"on_demand_cost":1,"details":{"platform":"Windows"},"selected":true}],"capacity_percent":50}`,
 	}
 	result, err := handler.executePurchase(ctx, req)
 	require.NoError(t, err)
@@ -304,7 +304,7 @@ func TestHandler_executePurchase_StoredRecWithoutPriceRefused(t *testing.T) {
 	handler := &Handler{config: mockStore, auth: mockAuth}
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"recommendations":[{"id":"rec-1","provider":"aws","service":"ec2","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":100,"savings":10}]}`,
+		Body:    `{"recommendations":[{"id":"","provider":"aws","service":"ec2","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":100,"savings":10}]}`,
 	}
 	_, err := handler.executePurchase(ctx, req)
 	require.Error(t, err)
@@ -341,7 +341,7 @@ func TestHandler_executePurchase_StoredRecWithZeroCountRefused(t *testing.T) {
 	handler := &Handler{config: mockStore, auth: mockAuth}
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"recommendations":[{"id":"rec-1","provider":"aws","service":"ec2","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":100,"savings":10}]}`,
+		Body:    `{"recommendations":[{"id":"","provider":"aws","service":"ec2","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":100,"savings":10}]}`,
 	}
 	_, err := handler.executePurchase(ctx, req)
 	require.Error(t, err)
@@ -466,7 +466,7 @@ func TestHandler_executePurchase_SavingsPlanCountMustMatchStored(t *testing.T) {
 	handler := &Handler{config: mockStore, auth: mockAuth}
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"recommendations":[{"id":"rec-1","provider":"aws","service":"savings-plans-compute","count":2,"term":1,"payment":"all-upfront","upfront_cost":0,"savings":10}]}`,
+		Body:    `{"recommendations":[{"id":"","provider":"aws","service":"savings-plans-compute","count":2,"term":1,"payment":"all-upfront","upfront_cost":0,"savings":10}]}`,
 	}
 	_, err := handler.executePurchase(ctx, req)
 	require.Error(t, err)
@@ -720,6 +720,51 @@ func TestCheckPurchaseDetailIdentity_LegacyEmptyOriginDetailsSkipsCheck(t *testi
 	require.NoError(t, checkPurchaseDetailIdentity(&origin, &match, &req, 0))
 }
 
+// TestCheckPurchaseDetailIdentity_KnownOriginVsLegacyEmptyMatchRefused is
+// the asymmetric half of the legacy-details contract: origin knows its own
+// tenancy (dedicated) but match is a legacy row with NO recorded Details.
+// buildOfferingFilters substitutes the provider default for match's empty
+// tenancy, so silently allowing this would resolve to default tenancy even
+// though origin explicitly recorded dedicated -- "unknown" must be refused
+// alongside "different", not treated as compatible with a known origin.
+func TestCheckPurchaseDetailIdentity_KnownOriginVsLegacyEmptyMatchRefused(t *testing.T) {
+	origin := config.RecommendationRecord{
+		ID: "stored-dedicated-3yr", Provider: "aws", Service: "ec2", Term: 3,
+		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`),
+	}
+	match := config.RecommendationRecord{ID: "legacy-row-1yr", Provider: "aws", Service: "ec2", Term: 1}
+	req := config.RecommendationRecord{ID: origin.ID, Service: "ec2", Term: 1, Count: 1}
+
+	err := checkPurchaseDetailIdentity(&origin, &match, &req, 0)
+	require.Error(t, err, "a known origin tenancy must not silently resolve to an unrecorded (default-substituted) match tenancy")
+	assert.Contains(t, err.Error(), "tenancy")
+	assert.Contains(t, err.Error(), "dedicated")
+	_, isClient := IsClientError(err)
+	assert.True(t, isClient)
+}
+
+// TestCheckPurchaseDetailIdentity_MemoryGBMismatchRefused: GCP custom
+// machine types (Compute Engine CUDs) read ComputeDetails.MemoryGB at
+// purchase time to build the machine spec, so a memory mismatch is as
+// purchase-critical as tenancy.
+func TestCheckPurchaseDetailIdentity_MemoryGBMismatchRefused(t *testing.T) {
+	origin := config.RecommendationRecord{
+		ID: "stored-16gb-3yr", Provider: "gcp", Service: "compute", Term: 3,
+		Details: json.RawMessage(`{"instance_type":"custom-4-16384","platform":"linux","tenancy":"default","scope":"regional","memory_gb":16}`),
+	}
+	match := config.RecommendationRecord{
+		ID: "stored-32gb-1yr", Provider: "gcp", Service: "compute", Term: 1,
+		Details: json.RawMessage(`{"instance_type":"custom-4-32768","platform":"linux","tenancy":"default","scope":"regional","memory_gb":32}`),
+	}
+	req := config.RecommendationRecord{ID: origin.ID, Service: "compute", Term: 1, Count: 1}
+
+	err := checkPurchaseDetailIdentity(&origin, &match, &req, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "memory_gb")
+	_, isClient := IsClientError(err)
+	assert.True(t, isClient)
+}
+
 // TestCheckPurchaseDetailIdentity_SavingsPlanNeverCompared confirms Savings
 // Plan fields (hourly_commitment, offering-shaped identifiers) are never
 // treated as purchase discriminators: they legitimately vary across priced
@@ -844,4 +889,56 @@ func TestHandler_executePurchase_MatchingTenancyTermChangeSucceeds(t *testing.T)
 	require.NotNil(t, saved)
 	require.Len(t, saved.Recommendations, 1)
 	assert.Equal(t, "aws|acct|ec2|us-east-1|m5.large||1|all-upfront", saved.Recommendations[0].ID)
+}
+
+// TestHandler_executePurchase_StaleOriginIDRefused is the fail-open
+// regression guard from the independent review of PR #406: the request
+// names an origin recommendation id that used to be real but has since been
+// wiped from the current stored set (e.g. a collection refresh --
+// ReplaceRecommendations -- ran between page load and purchase), while the
+// NEWLY requested term still resolves to a current row via recIdentityKey.
+// Pre-fix, an unresolvable id was silently SKIPPED (treated the same as an
+// honest caller who never made an origin claim at all), so the purchase
+// proceeded with whatever configuration the current row happened to carry
+// -- an honest client hits this exact path, not just a malicious one. The
+// fix refuses whenever a NON-EMPTY id fails to resolve.
+func TestHandler_executePurchase_StaleOriginIDRefused(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+
+	session := &Session{UserID: "11111111-2222-3333-4444-555555555555", Email: "stale@example.com"}
+	mockAuth.On("ValidateSession", ctx, "stale-token").Return(session, nil)
+	mockAuth.grantPermissions([]auth.Permission{
+		{Action: auth.ActionExecute, Resource: auth.ResourcePurchases, Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 100000}},
+	})
+	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
+
+	// Only the 1yr row is in the CURRENT stored set -- the 3yr row the
+	// request's id names has been wiped (a refresh landed between the user
+	// loading the page and submitting the purchase).
+	expectStoredRecs(mockStore, config.RecommendationRecord{
+		ID:       "aws|acct|ec2|us-east-1|m5.large||1|all-upfront",
+		Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+		Count: 1, Term: 1, Payment: "all-upfront", UpfrontCost: 1200, Savings: 100,
+		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`),
+	})
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer stale-token"},
+		// Names the now-gone 3yr row's id; only term changed to 1.
+		Body: `{"recommendations":[{"id":"aws|acct|ec2|us-east-1|m5.large||3|all-upfront","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100}]}`,
+	}
+	result, err := handler.executePurchase(ctx, req)
+	require.Error(t, err, "a stale, unresolvable origin id must refuse the purchase, not silently fall through to the matched row")
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "no longer in the current recommendation set")
+	ce, isClient := IsClientError(err)
+	require.True(t, isClient)
+	assert.Equal(t, 409, ce.code)
+	mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
 }

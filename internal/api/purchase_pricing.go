@@ -44,7 +44,22 @@ func (h *Handler) priceRecommendationsFromStore(ctx context.Context, recs []conf
 				"recommendation %d (%s) is not in the current recommendation set; refresh the recommendations and try again",
 				i, describeRec(&recs[i])))
 		}
-		if origin, ok := byID[recs[i].ID]; ok {
+		if recs[i].ID != "" {
+			origin, ok := byID[recs[i].ID]
+			if !ok {
+				// The request names a specific origin recommendation that no
+				// longer exists in the current stored set (e.g. a collection
+				// refresh -- ReplaceRecommendations -- wiped it between page
+				// load and purchase, while the NEWLY requested term/payment
+				// still resolves via recIdentityKey). Refusing here, not
+				// skipping the check, closes the fail-open gap: an honest
+				// client whose origin row went stale must not silently fall
+				// through to whatever configuration `match` happens to
+				// carry. Same refusal shape as the tuple-miss case above.
+				return NewClientError(409, fmt.Sprintf(
+					"recommendation %d (%s): originally selected recommendation %q is no longer in the current recommendation set; refresh recommendations and try again",
+					i, describeRec(&recs[i]), recs[i].ID))
+			}
 			if err := checkPurchaseDetailIdentity(&origin, &match, &recs[i], i); err != nil {
 				return err
 			}
@@ -215,13 +230,17 @@ func checkPurchaseDetailIdentity(origin, match, req *config.RecommendationRecord
 // typed discriminator to compare for this service). See
 // checkPurchaseDetailIdentity for the full contract.
 //
-// A field is compared only when BOTH sides are non-empty. A pre-#453 legacy
-// row decodes to a zero-valued typed pointer (empty Tenancy/Platform/Scope/
-// AZConfig) precisely because its true configuration was never recorded --
-// buildOfferingFilters already treats that emptiness as "substitute the
-// provider default", so flagging it against a fully-detailed match would be
-// a false positive on data the codebase already treats as compatible, not a
-// real mismatch.
+// A field is compared only when origin is non-empty: a pre-#453 legacy
+// ORIGIN row decodes to a zero-valued typed pointer (empty Tenancy/
+// Platform/Scope/AZConfig/MemoryGB) precisely because its true
+// configuration was never recorded, so there is nothing known to
+// contradict. But once origin IS known, an empty match is ALSO a mismatch,
+// not a pass: buildOfferingFilters substitutes the provider default for an
+// empty match field, which can silently buy a different configuration than
+// the one origin recorded (e.g. origin=dedicated tenancy, match=legacy-
+// empty -> the purchase would resolve to the default-tenancy substitute).
+// "Unknown" is therefore refused right alongside "different", not treated
+// as compatible.
 func purchaseDetailMismatch(origin, match common.ServiceDetails) string {
 	switch m := match.(type) {
 	case *common.ComputeDetails:
@@ -240,13 +259,29 @@ func purchaseDetailMismatch(origin, match common.ServiceDetails) string {
 	return ""
 }
 
-// mismatchField compares one purchase-critical field and, when both sides
-// are non-empty and differ, returns a "<field>: originally %q, now %q"
-// description; otherwise "". See purchaseDetailMismatch for why an empty
-// side is never treated as a mismatch.
+// mismatchField compares one purchase-critical string field. Returns "" when
+// origin is empty (nothing known to contradict). Otherwise returns a
+// "<field>: originally %q, now %q" description whenever match is empty
+// (unknown -- see purchaseDetailMismatch) or differs from origin.
 func mismatchField(field, origin, match string) string {
-	if origin != "" && match != "" && origin != match {
+	if origin == "" {
+		return ""
+	}
+	if match == "" || origin != match {
 		return fmt.Sprintf("%s: originally %q, now %q", field, origin, match)
+	}
+	return ""
+}
+
+// mismatchFieldFloat64 is mismatchField for a numeric field whose zero value
+// means "unknown" (per ComputeDetails.MemoryGB's doc comment), applying the
+// same origin-known/match-unknown-or-different asymmetry.
+func mismatchFieldFloat64(field string, origin, match float64) string {
+	if origin == 0 {
+		return ""
+	}
+	if match == 0 || origin != match {
+		return fmt.Sprintf("%s: originally %g, now %g", field, origin, match)
 	}
 	return ""
 }
@@ -256,6 +291,10 @@ func computeDetailMismatch(o, m *common.ComputeDetails) string {
 		mismatchField("tenancy", o.Tenancy, m.Tenancy),
 		mismatchField("platform", o.Platform, m.Platform),
 		mismatchField("scope", o.Scope, m.Scope),
+		// GCP custom machine types (Compute Engine CUDs) read MemoryGB at
+		// purchase time to build the machine spec, so a memory mismatch is
+		// as purchase-critical as tenancy for that provider.
+		mismatchFieldFloat64("memory_gb", o.MemoryGB, m.MemoryGB),
 	} {
 		if f != "" {
 			return f
