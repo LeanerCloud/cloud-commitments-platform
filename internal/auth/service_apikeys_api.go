@@ -72,6 +72,21 @@ func effectiveLifetimeUsage(key *UserAPIKey) *int64 {
 	return &total
 }
 
+// normalizeAPIKeyPermissions returns perms unchanged, or []Permission{} when
+// nil. CreateAPIKey now rejects new keys with zero permissions (issue #61),
+// but a legacy key minted before that fix can still have a NULL permissions
+// column, which the JSONB scan surfaces as a nil slice. Since
+// APIKeyInfo.Permissions is no longer omitempty (issue #61), a raw nil would
+// serialize as "permissions":null instead of the intended "permissions":[]
+// -- both mean "no scope", but a client that expects the field to always be
+// an array (never null) would otherwise have to special-case it.
+func normalizeAPIKeyPermissions(perms []Permission) []Permission {
+	if perms == nil {
+		return []Permission{}
+	}
+	return perms
+}
+
 // API wrapper methods for API key operations
 // These methods return API-friendly types and handle type conversions
 
@@ -213,7 +228,7 @@ func (s *Service) CreateAPIKeyAPI(ctx context.Context, userID string, req any) (
 			ID:                      keyInfo.ID,
 			Name:                    keyInfo.Name,
 			KeyPrefix:               keyInfo.KeyPrefix,
-			Permissions:             keyInfo.Permissions,
+			Permissions:             normalizeAPIKeyPermissions(keyInfo.Permissions),
 			ExpiresAt:               keyInfo.ExpiresAt,
 			CreatedAt:               keyInfo.CreatedAt,
 			LastUsedAt:              keyInfo.LastUsedAt,
@@ -243,7 +258,7 @@ func (s *Service) ListUserAPIKeysAPI(ctx context.Context, userID string) (any, e
 			ID:                      key.ID,
 			Name:                    key.Name,
 			KeyPrefix:               key.KeyPrefix,
-			Permissions:             key.Permissions,
+			Permissions:             normalizeAPIKeyPermissions(key.Permissions),
 			ExpiresAt:               key.ExpiresAt,
 			CreatedAt:               key.CreatedAt,
 			LastUsedAt:              key.LastUsedAt,

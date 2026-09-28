@@ -1026,6 +1026,11 @@
                         <small class="form-help">Confirm your password to create this API key</small>
                     </div>
                     <div class="form-group">
+                        <label id="apikey-permissions-label">Permissions</label>
+                        <div id="apikey-permissions-list" class="apikey-permissions-list" aria-labelledby="apikey-permissions-label"></div>
+                        <small class="form-help">Only the permissions your own account holds are offered. At least one is required -- an unscoped key would authenticate you but authorize nothing.</small>
+                    </div>
+                    <div class="form-group">
                         <label for="apikey-expires-at">Expires On</label>
                         <input type="date" id="apikey-expires-at" required>
                         <small class="form-help">API key will automatically become invalid on this date</small>
@@ -1033,7 +1038,7 @@
                     <div id="create-apikey-error" class="error-message hidden"></div>
                     <div class="modal-buttons">
                         <button type="button" id="close-create-apikey-modal-btn">Cancel</button>
-                        <button type="submit" class="primary">Create Key</button>
+                        <button type="submit" id="create-apikey-submit-btn" class="primary" disabled>Create Key</button>
                     </div>
                 </form>
             </div>

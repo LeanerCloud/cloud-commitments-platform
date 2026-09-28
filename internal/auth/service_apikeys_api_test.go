@@ -224,6 +224,34 @@ func TestService_ListUserAPIKeysAPI(t *testing.T) {
 		mockStore.AssertExpectations(t)
 	})
 
+	// Regression for issue #61's follow-up: a key minted before CreateAPIKey
+	// started rejecting zero-length permissions can still have a NULL
+	// permissions column, which the store surfaces as a nil slice.
+	// APIKeyInfo.Permissions is no longer omitempty, so a raw nil would
+	// serialize as "permissions":null; normalizeAPIKeyPermissions makes it
+	// "permissions":[] like every post-fix key instead.
+	t.Run("normalizes a legacy nil-permissions key to an empty slice, not null", func(t *testing.T) {
+		mockStore := new(MockStore)
+		t.Cleanup(func() { mockStore.AssertExpectations(t) })
+		service := &Service{store: mockStore}
+
+		keys := []*UserAPIKey{
+			{ID: "legacy-key", UserID: "user-123", Name: "pre-fix key", Permissions: nil},
+		}
+		user := &User{ID: "user-123", Email: "test@example.com", Active: true}
+		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return(keys, nil)
+
+		result, err := service.ListUserAPIKeysAPI(ctx, "user-123")
+		require.NoError(t, err)
+
+		resp, ok := result.(*APIListAPIKeysResponse)
+		require.True(t, ok)
+		require.Len(t, resp.APIKeys, 1)
+		assert.NotNil(t, resp.APIKeys[0].Permissions, "a legacy nil-permissions key must serialize as [] not null")
+		assert.Empty(t, resp.APIKeys[0].Permissions)
+	})
+
 	// Regression: the per-row "Requests (window)" cell must not show a count
 	// left over from a window that has already closed. The stored column
 	// keeps its value until the key's next request, so the read path is what
