@@ -211,8 +211,8 @@ func newScopeTestHandler(t *testing.T, exec *config.PurchaseExecution, scope []s
 	store.On("TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, errScopeTestReached).Maybe()
 	store.On("CancelExecutionAtomic", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, "", errScopeTestReached).Maybe()
 	store.On("CancelScheduledExecutionAtomic", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, "", errScopeTestReached).Maybe()
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errScopeTestReached).Maybe()
-	mockPurchase.On("RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errScopeTestReached).Maybe()
+	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", errScopeTestReached).Maybe()
+	mockPurchase.On("RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", errScopeTestReached).Maybe()
 	mockPurchase.On("CancelExecution", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	return &Handler{auth: mockAuth, config: store, purchase: mockPurchase}
@@ -321,7 +321,7 @@ func TestRevoke_AuthorizedNonRevocableStatusIs409(t *testing.T) {
 		for _, status := range []string{"pending", "notified", "failed"} {
 			t.Run(tc.name+"/"+status, func(t *testing.T) {
 				exec := scopeTestExecution(stageOnly, status)
-				exec.ApprovalToken = "email-token"
+				exec.ApprovalToken = config.HashApprovalToken("email-token")
 				store := new(MockConfigStore)
 				h := newScopeTestHandler(t, exec, tc.scope, store, new(MockPurchaseManager))
 
