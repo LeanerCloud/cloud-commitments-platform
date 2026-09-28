@@ -205,12 +205,16 @@ not assumed from an earlier issue's snapshot:
 | `aws-fargate-staging` | Yes | none | none |
 | `aws-fargate-prod` | **No** | n/a | n/a |
 | `aws-db-dev` / `aws-db-staging` / `aws-db-prod` | **No** (all three) | n/a | n/a |
-| `aws-lambda-{dev,staging,prod}-rollback` | **No** (all three) | n/a | n/a |
-| `aws-fargate-{dev,staging,prod}-rollback` | **No** (all three) | n/a | n/a |
 
-Only 3 of the 15 environments this allowlist names exist yet, and none of the 3, including `dev`
+`rollback.yml`'s rollback-aws-lambda and rollback-aws-fargate jobs bind to `dev`/`staging`/`prod`
+and `aws-fargate-<env>` respectively -- the same environments their corresponding deploy jobs use,
+listed above -- rather than a separate `<cloud>-<env>-rollback` family (#139). This allowlist
+previously carried six `aws-{lambda,fargate}-<env>-rollback` subjects added for #1648; they were
+removed once nothing presented them any more, rather than left as unused trust surface.
+
+Only 3 of the 9 environments this allowlist names exist yet, and none of the 3, including `dev`
 which multiple deploy jobs already use in production, has a branch policy or protection rules of any
-kind. Every environment above needs (2) configured (and the 12 that don't exist yet also need to be
+kind. Every environment above needs (2) configured (and the 6 that don't exist yet also need to be
 created) before this allowlist actually delivers "only `main` deploys" rather than "only these
 environments deploy, from any branch". This module has no GitHub provider configured (no
 `provider "github"` or `github_repository_*` resource anywhere under `terraform/` or `iac/`), so

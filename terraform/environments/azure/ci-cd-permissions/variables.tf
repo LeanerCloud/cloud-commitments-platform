@@ -25,13 +25,13 @@ variable "github_environments" {
 
     This list is NOT a complete enumeration of the environment subjects this repo
     presents to Azure. It covers the destroy jobs bound by cleanup-staging.yml
-    (`staging`) and destroy-fargate-dev.yml (`dev`), plus deploy-azure.yml's
-    build-and-deploy and test-deployment jobs, which bind plain
-    `dev`/`staging`/`prod` (see #140).
+    (`staging`) and destroy-fargate-dev.yml (`dev`), deploy-azure.yml's
+    build-and-deploy and test-deployment jobs (see #140), and rollback.yml's
+    rollback-azure job (see #139) — all of which bind plain
+    `dev`/`staging`/`prod`.
 
-    Knowingly NOT covered, tracked in #1648 — these Azure jobs bind to compound
-    environment names and therefore still fail with AADSTS70021:
-      - rollback.yml           -> azure-{dev,staging,prod}-rollback
+    Knowingly NOT covered, tracked in #1648 — this Azure job binds a compound
+    environment name and therefore still fails with AADSTS70021:
       - database-migration.yml -> azure-db-{dev,staging,prod}
 
     They are excluded here rather than fixed because each needs its environment

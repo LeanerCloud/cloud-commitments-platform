@@ -16,22 +16,35 @@ name: Rollback Deployment
 # a deployment environment, so no OIDC token can be minted by a job outside the
 # environment's protection rules.
 #
-# Every rollback job binds the plain `dev`/`staging`/`prod` environment that
-# the matching deploy workflow uses for that environment (not a compound
-# `<cloud>-<env>-rollback` name). Compound per-cloud-per-env rollback
-# environments were never in any cloud's OIDC trust allowlist -- AWS/Azure
-# reject a `sub` they don't recognise outright (AADSTS70021 / AssumeRole
-# denied) -- and provisioning 12 more environments plus 12 more Azure
-# federated credentials (Azure allows no wildcards) to fix that is a bigger
-# change than reusing environments that already exist and are already
-# trusted. The tradeoff: a rollback now shares its approval gate with the
-# corresponding deploy environment rather than having a distinct one. See
-# #139.
+# Every rollback job now binds the SAME environment name its corresponding
+# deploy job uses (`dev`/`staging`/`prod` for Lambda/GCP/Azure,
+# `aws-fargate-<env>` for Fargate) instead of a compound
+# `<cloud>-<env>-rollback` name. This was NOT symmetric across clouds:
+#   - AWS already trusted all six compound `aws-{lambda,fargate}-<env>-
+#     rollback` subjects (terraform/environments/aws/ci-cd-permissions/
+#     role.tf, added in #1648) -- rollback-aws-lambda and
+#     rollback-aws-fargate could already authenticate before this change.
+#   - Azure never trusted ANY compound rollback subject -- its federated
+#     credentials (sp.tf) only cover plain dev/staging/prod -- so
+#     rollback-azure failed with AADSTS70021 on every attempt. This is the
+#     one rollback job this PR actually fixes authentication for.
+#   - GCP's trust condition (github_oidc.tf) checks repository+ref, never
+#     `sub`, so the environment name was never load-bearing there either
+#     way.
+# Rebinding every job to match its deploy's environment name removes the
+# now-dead AWS compound subjects (deleted from role.tf in this PR) in favour
+# of reusing environments that already exist and are already trusted,
+# rather than adding six more. Tradeoff: rollback-aws-lambda, rollback-gcp
+# and rollback-azure now share their approval gate with the corresponding
+# deploy environment instead of having a distinct rollback-only one;
+# rollback-aws-fargate already shared it with deploy-aws-fargate even before
+# this change; see #139.
 #
 # The binding is necessary but not sufficient: GitHub auto-creates a referenced
 # environment on first use with NO protection rules. `dev`/`staging`/`prod`
-# must therefore be configured with required reviewers in repo settings for
-# the approval gate to actually stop anything (#141).
+# and `aws-fargate-<env>` must therefore be configured with required
+# reviewers in repo settings for the approval gate to actually stop anything
+# (#141).
 permissions:
   contents: read
 
@@ -309,9 +322,11 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    # Plain dev/staging/prod, not aws-fargate-<env>-rollback: see the
-    # workflow-level comment above.
-    environment: ${{ inputs.environment }}
+    # aws-fargate-<env>, matching deploy-aws-fargate.yml's own binding
+    # (already trusted, role.tf) -- not plain dev/staging/prod (that's
+    # Lambda's environment) and not aws-fargate-<env>-rollback (dead, no
+    # longer trusted; see the workflow-level comment above).
+    environment: aws-fargate-${{ inputs.environment }}
 
     steps:
       - name: Checkout code
