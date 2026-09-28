@@ -73,8 +73,18 @@ resource "google_project_iam_member" "cudly_custom" {
   member  = "serviceAccount:${var.service_account_email}"
 }
 
-resource "google_project_iam_member" "cudly_compute_viewer" {
-  project = var.project_id
-  role    = "roles/compute.viewer"
-  member  = "serviceAccount:${var.service_account_email}"
+# Built-in read-side roles, mirroring federation/gcp-target's
+# service_account_project_roles: roles/compute.viewer (regions/zones/
+# machineTypes/commitments.list/.get) and roles/recommender.viewer. The
+# latter is required by the collection pipeline
+# (providers/gcp/services/computeengine.GetRecommendations calls the GCP
+# Recommender API, "google.billing.CostInsight.commitmentRecommender");
+# without it, every recommendation call 403s and is caught and warn-logged
+# by providers/gcp/recommendations.go, so an onboarded account would
+# silently surface zero GCP recommendations rather than erroring.
+resource "google_project_iam_member" "cudly_built_in" {
+  for_each = toset(var.built_in_project_roles)
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${var.service_account_email}"
 }

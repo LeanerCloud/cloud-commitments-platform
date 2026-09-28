@@ -195,6 +195,13 @@ variable "service_account_project_roles" {
     the two modules' definitions of cudlyCommitmentWriter identical
     so one doesn't stomp the other on apply.
 
+    roles/recommender.viewer is required by the collection pipeline
+    (providers/gcp/services/computeengine.GetRecommendations calls the GCP
+    Recommender API). Missing it doesn't fail the apply or any API call
+    visibly -- providers/gcp/recommendations.go catches the resulting 403
+    and only warn-logs it, so the account onboards successfully but
+    silently returns zero GCP recommendations (#129).
+
     Note: GCP's built-in commitment/billing roles (e.g.
     roles/commerceorgpolicy.commitmentAdmin, roles/billing.viewer) are
     organization- or billing-account-scoped and will 400 if granted at
@@ -204,6 +211,7 @@ variable "service_account_project_roles" {
   type        = list(string)
   default = [
     "roles/compute.viewer",
+    "roles/recommender.viewer",
   ]
 }
 

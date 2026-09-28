@@ -24,8 +24,25 @@ gcloud iam service-accounts create "${SA_NAME}" \
   --display-name="CUDly target SA" \
   || echo "  (service account may already exist)"
 
+# roles/commerceorgpolicy.commitmentAdmin (organization-scoped) and
+# roles/billing.viewer (billing-account-scoped) both fail at project scope
+# (#129). Grant exactly what CUDly needs instead: a project custom role
+# holding only the two commitment-write permissions, plus the built-in
+# roles/compute.viewer and roles/recommender.viewer for read access. This
+# mirrors iac/federation/gcp-sa-impersonation/terraform/main.tf so the
+# Terraform and CLI onboarding paths grant the same permission set.
+CUSTOM_ROLE_ID="cudlyCommitmentWriter"
+echo "Creating custom role ${CUSTOM_ROLE_ID} (if missing)..."
+gcloud iam roles create "${CUSTOM_ROLE_ID}" \
+  --project="${PROJECT_ID}" \
+  --title="CUDly Commitment Writer" \
+  --description="Minimum permissions for CUDly to purchase and update committed use discounts." \
+  --permissions=compute.commitments.create,compute.commitments.update \
+  --stage=GA \
+  || echo "  (custom role may already exist)"
+
 echo "Granting required roles to ${SERVICE_ACCOUNT_EMAIL}..."
-for role in roles/commerceorgpolicy.commitmentAdmin roles/billing.viewer; do
+for role in "projects/${PROJECT_ID}/roles/${CUSTOM_ROLE_ID}" roles/compute.viewer roles/recommender.viewer; do
   gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${SERVICE_ACCOUNT_EMAIL}" \
     --role="${role}" \

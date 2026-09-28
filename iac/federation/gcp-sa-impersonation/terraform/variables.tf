@@ -61,6 +61,27 @@ variable "custom_role_permissions" {
   ]
 }
 
+variable "built_in_project_roles" {
+  description = <<-EOT
+    Built-in project-scoped roles granted to var.service_account_email.
+    Defaults match federation/gcp-target's service_account_project_roles, so
+    both onboarding paths grant the same read-side access:
+
+    - roles/compute.viewer: regions/zones/machineTypes/commitments.list/.get.
+    - roles/recommender.viewer: required by the collection pipeline
+      (providers/gcp/services/computeengine.GetRecommendations calls the GCP
+      Recommender API). Missing it doesn't fail the apply or any API call
+      visibly -- providers/gcp/recommendations.go catches the resulting 403
+      and only warn-logs it, so the account onboards successfully but
+      silently returns zero GCP recommendations.
+  EOT
+  type        = list(string)
+  default = [
+    "roles/compute.viewer",
+    "roles/recommender.viewer",
+  ]
+}
+
 variable "cudly_api_url" {
   description = "CUDly API base URL for automatic account registration. Leave empty to skip registration."
   type        = string
