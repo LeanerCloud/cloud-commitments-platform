@@ -223,6 +223,22 @@ func isTextContentType(ct string) bool {
 }
 
 // handleLambdaSQSEvent processes SQS messages (for async purchase processing).
+//
+// Returns a partial batch response (events.SQSEventResponse) naming only the
+// records that actually failed, with a nil error, instead of a single error
+// for the whole batch (issue #108). Lambda's SQS integration treats ANY
+// non-nil handler error as "the entire batch failed" and redelivers every
+// record, including ones HandleSQSMessage already processed successfully.
+// On redelivery those already-succeeded records typically fail a second
+// time (status already advanced past what the CAS-guarded handlers expect),
+// which redelivers the whole batch again and burns the redrive budget on
+// records that were never actually broken, until the one genuinely poison
+// message drags the rest of the batch to the DLQ with it.
+//
+// This response shape is only honored by AWS when the SQS event-source
+// mapping sets function_response_types = ["ReportBatchItemFailures"]
+// (Terraform); without it, AWS silently ignores the response and redelivers
+// the whole batch on any failure regardless of what this function returns.
 func (app *Application) handleLambdaSQSEvent(ctx context.Context, rawEvent json.RawMessage) (any, error) {
 	var sqsEvent events.SQSEvent
 	if err := json.Unmarshal(rawEvent, &sqsEvent); err != nil {
@@ -230,21 +246,17 @@ func (app *Application) handleLambdaSQSEvent(ctx context.Context, rawEvent json.
 		return nil, err
 	}
 
-	var failures []string
+	var failures []events.SQSBatchItemFailure
 	for _rvc := range sqsEvent.Records {
 		record := sqsEvent.Records[_rvc]
 		log.Printf("Processing SQS message: %s", record.MessageId)
 		if err := app.HandleSQSMessage(ctx, record.Body); err != nil {
 			log.Printf("Failed to process message %s: %v", record.MessageId, err)
-			failures = append(failures, record.MessageId)
+			failures = append(failures, events.SQSBatchItemFailure{ItemIdentifier: record.MessageId})
 		}
 	}
 
-	if len(failures) > 0 {
-		return nil, fmt.Errorf("failed to process %d SQS message(s): %v", len(failures), failures)
-	}
-
-	return map[string]string{"status": "processed"}, nil
+	return events.SQSEventResponse{BatchItemFailures: failures}, nil
 }
 
 // handleLambdaScheduledEvent processes scheduled/cron events.

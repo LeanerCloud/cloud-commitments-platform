@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/scheduler"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
+	"github.com/aws/aws-lambda-go/events"
 )
 
 func TestDetectLambdaEventType(t *testing.T) {
@@ -209,6 +211,85 @@ func TestHandleLambdaSQSEvent(t *testing.T) {
 				testutil.AssertNoError(t, err)
 			}
 		})
+	}
+}
+
+// TestHandleLambdaSQSEvent_PartialBatchFailure pins issue #108: a batch
+// where only some records fail must leave the succeeded records ACKed
+// rather than redelivering the whole batch. Pre-fix, handleLambdaSQSEvent
+// collected every failed message ID and returned a single aggregate error
+// for the batch; Lambda's SQS integration treats ANY non-nil handler error
+// as "the entire batch failed", so records 1 and 3 (which HandleSQSMessage
+// already processed successfully) would be redelivered right alongside the
+// genuinely failed record 2 -- and would typically fail a second time since
+// their status already advanced past what the CAS-guarded handlers expect,
+// repeating until the whole batch (not just the poison message) hits the
+// DLQ.
+//
+// Asserted on the returned events.SQSEventResponse.BatchItemFailures set,
+// per the issue's own fix direction, rather than on the error value: the
+// function must return a nil error alongside the partial-failure response,
+// since a non-nil error here is exactly the all-or-nothing behavior being
+// removed.
+func TestHandleLambdaSQSEvent_PartialBatchFailure(t *testing.T) {
+	ctx := testutil.TestContext(t)
+
+	mockPurchase := &testutil.MockPurchaseManager{
+		ProcessMessageFunc: func(_ context.Context, body string) error {
+			if strings.Contains(body, "msg-2") {
+				return fmt.Errorf("execution not found: msg-2")
+			}
+			return nil
+		},
+	}
+	app := &Application{Purchase: mockPurchase}
+
+	rawEvent := `{
+		"Records": [
+			{"messageId": "msg-1", "eventSource": "aws:sqs", "body": "{\"execution_id\": \"msg-1\"}"},
+			{"messageId": "msg-2", "eventSource": "aws:sqs", "body": "{\"execution_id\": \"msg-2\"}"},
+			{"messageId": "msg-3", "eventSource": "aws:sqs", "body": "{\"execution_id\": \"msg-3\"}"}
+		]
+	}`
+
+	result, err := app.handleLambdaSQSEvent(ctx, json.RawMessage(rawEvent))
+	testutil.AssertNoError(t, err)
+
+	resp, ok := result.(events.SQSEventResponse)
+	if !ok {
+		t.Fatalf("expected events.SQSEventResponse, got %T", result)
+	}
+	if len(resp.BatchItemFailures) != 1 {
+		t.Fatalf("expected exactly 1 batch item failure, got %d: %+v", len(resp.BatchItemFailures), resp.BatchItemFailures)
+	}
+	if resp.BatchItemFailures[0].ItemIdentifier != "msg-2" {
+		t.Fatalf("expected the failed record's own messageId (msg-2) in BatchItemFailures, got %q",
+			resp.BatchItemFailures[0].ItemIdentifier)
+	}
+}
+
+// TestHandleLambdaSQSEvent_AllSucceedReturnsEmptyFailures documents the
+// all-succeed shape: a nil error and an explicitly empty (not omitted)
+// BatchItemFailures list, matching the SQS partial-batch-response contract.
+func TestHandleLambdaSQSEvent_AllSucceedReturnsEmptyFailures(t *testing.T) {
+	ctx := testutil.TestContext(t)
+
+	mockPurchase := &testutil.MockPurchaseManager{
+		ProcessMessageFunc: func(_ context.Context, _ string) error { return nil },
+	}
+	app := &Application{Purchase: mockPurchase}
+
+	rawEvent := `{"Records": [{"messageId": "msg-1", "eventSource": "aws:sqs", "body": "{}"}]}`
+
+	result, err := app.handleLambdaSQSEvent(ctx, json.RawMessage(rawEvent))
+	testutil.AssertNoError(t, err)
+
+	resp, ok := result.(events.SQSEventResponse)
+	if !ok {
+		t.Fatalf("expected events.SQSEventResponse, got %T", result)
+	}
+	if len(resp.BatchItemFailures) != 0 {
+		t.Fatalf("expected no batch item failures, got %+v", resp.BatchItemFailures)
 	}
 }
 
