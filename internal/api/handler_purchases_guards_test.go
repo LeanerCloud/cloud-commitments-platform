@@ -377,8 +377,8 @@ func TestHandler_executePurchase_SurfacesPaymentAdjustments(t *testing.T) {
 		// rec 0 is already canonical (azure/monthly); rec 1 carries the #1503
 		// partial-upfront token and must be the only rec surfaced.
 		Body: `{"recommendations": [` +
-			`{"id": "rec-1", "provider": "azure", "service": "vm", "count": 1, "term": 1, "payment": "monthly", "upfront_cost": 100.0, "savings": 50.0},` +
-			`{"id": "rec-2", "provider": "azure", "service": "vm", "count": 1, "term": 1, "payment": "partial-upfront", "upfront_cost": 200.0, "savings": 25.0}]}`,
+			`{"id": "", "provider": "azure", "service": "vm", "count": 1, "term": 1, "payment": "monthly", "upfront_cost": 100.0, "savings": 50.0},` +
+			`{"id": "", "provider": "azure", "service": "vm", "count": 1, "term": 1, "payment": "partial-upfront", "upfront_cost": 200.0, "savings": 25.0}]}`,
 	}
 	result, err := handler.executePurchase(ctx, req)
 	require.NoError(t, err)
@@ -427,7 +427,7 @@ func TestHandler_executePurchase_NoAdjustmentsWhenCanonical(t *testing.T) {
 
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"recommendations": [{"id": "rec-1", "provider": "azure", "service": "vm", "count": 1, "term": 1, "payment": "monthly", "upfront_cost": 100.0, "savings": 50.0}]}`,
+		Body:    `{"recommendations": [{"id": "", "provider": "azure", "service": "vm", "count": 1, "term": 1, "payment": "monthly", "upfront_cost": 100.0, "savings": 50.0}]}`,
 	}
 	result, err := handler.executePurchase(ctx, req)
 	require.NoError(t, err)

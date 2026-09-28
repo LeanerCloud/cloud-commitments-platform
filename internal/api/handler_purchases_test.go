@@ -2277,7 +2277,7 @@ func TestHandler_executePurchase_Success(t *testing.T) {
 		Headers: map[string]string{
 			"Authorization": "Bearer admin-token",
 		},
-		Body: `{"recommendations": [{"id": "rec-1", "provider": "aws", "service": "ec2", "resource_type": "m5.large", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 100.0, "savings": 50.0}, {"id": "rec-2", "provider": "aws", "service": "ec2", "resource_type": "m5.xlarge", "count": 2, "term": 1, "payment": "all-upfront", "upfront_cost": 200.0, "savings": 100.0}]}`,
+		Body: `{"recommendations": [{"id": "", "provider": "aws", "service": "ec2", "resource_type": "m5.large", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 100.0, "savings": 50.0}, {"id": "", "provider": "aws", "service": "ec2", "resource_type": "m5.xlarge", "count": 2, "term": 1, "payment": "all-upfront", "upfront_cost": 200.0, "savings": 100.0}]}`,
 	}
 	result, err := handler.executePurchase(ctx, req)
 	require.NoError(t, err)
@@ -2374,7 +2374,7 @@ func TestHandler_executePurchase_NegativeUpfrontCost(t *testing.T) {
 		Headers: map[string]string{
 			"Authorization": "Bearer admin-token",
 		},
-		Body: `{"recommendations": [{"id": "rec-1", "provider": "aws", "service": "ec2", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": -100.0, "savings": 50.0}]}`,
+		Body: `{"recommendations": [{"id": "", "provider": "aws", "service": "ec2", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": -100.0, "savings": 50.0}]}`,
 	}
 	result, err := handler.executePurchase(ctx, req)
 	assert.Error(t, err)
@@ -2410,7 +2410,7 @@ func TestHandler_executePurchase_NegativeSavings(t *testing.T) {
 		Headers: map[string]string{
 			"Authorization": "Bearer admin-token",
 		},
-		Body: `{"recommendations": [{"id": "rec-1", "provider": "aws", "service": "ec2", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 100.0, "savings": 50.0}]}`,
+		Body: `{"recommendations": [{"id": "", "provider": "aws", "service": "ec2", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 100.0, "savings": 50.0}]}`,
 	}
 	result, err := handler.executePurchase(ctx, req)
 	assert.Error(t, err)
@@ -2482,7 +2482,7 @@ func TestHandler_executePurchase_ExceedsMaxAmount(t *testing.T) {
 		Headers: map[string]string{
 			"Authorization": "Bearer admin-token",
 		},
-		Body: `{"recommendations": [{"id": "rec-1", "provider": "aws", "service": "ec2", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 100.0, "savings": 50.0}]}`,
+		Body: `{"recommendations": [{"id": "", "provider": "aws", "service": "ec2", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 100.0, "savings": 50.0}]}`,
 	}
 	result, err := handler.executePurchase(ctx, req)
 	assert.Error(t, err)
@@ -2515,7 +2515,7 @@ func TestHandler_executePurchase_SaveError(t *testing.T) {
 		Headers: map[string]string{
 			"Authorization": "Bearer admin-token",
 		},
-		Body: `{"recommendations": [{"id": "rec-1", "provider": "aws", "service": "ec2", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 100.0, "savings": 50.0}]}`,
+		Body: `{"recommendations": [{"id": "", "provider": "aws", "service": "ec2", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 100.0, "savings": 50.0}]}`,
 	}
 	result, err := handler.executePurchase(ctx, req)
 	assert.Error(t, err)
@@ -3878,8 +3878,8 @@ func TestHandler_executePurchase_PermissionConstraintsDenied(t *testing.T) {
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer capped-token"},
 		Body: `{"recommendations": [
-			{"id": "rec-1", "provider": "aws", "service": "ec2", "region": "us-east-1", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 3000.0, "savings": 50.0},
-			{"id": "rec-2", "provider": "aws", "service": "ec2", "region": "eu-west-1", "count": 2, "term": 1, "payment": "all-upfront", "upfront_cost": 2500.0, "savings": 100.0}
+			{"id": "", "provider": "aws", "service": "ec2", "region": "us-east-1", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 3000.0, "savings": 50.0},
+			{"id": "", "provider": "aws", "service": "ec2", "region": "eu-west-1", "count": 2, "term": 1, "payment": "all-upfront", "upfront_cost": 2500.0, "savings": 100.0}
 		]}`,
 	}
 	_, err := handler.executePurchase(ctx, req)
@@ -3940,7 +3940,7 @@ func TestHandler_executePurchase_NoUpfrontBatch_TotalCommitmentEnforced(t *testi
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer noupfront-token"},
 		Body: `{"recommendations": [
-			{"id": "rec-1", "provider": "aws", "service": "ec2", "region": "us-east-1", "count": 1, "term": 3, "payment": "no-upfront", "upfront_cost": 0.0, "monthly_cost": 600.0, "savings": 50.0}
+			{"id": "", "provider": "aws", "service": "ec2", "region": "us-east-1", "count": 1, "term": 3, "payment": "no-upfront", "upfront_cost": 0.0, "monthly_cost": 600.0, "savings": 50.0}
 		]}`,
 	}
 	_, err := handler.executePurchase(ctx, req)
@@ -4002,7 +4002,7 @@ func TestHandler_executePurchase_UserAPIKeyConstraintsDenied(t *testing.T) {
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"x-api-key": "ci-key-value"},
 		Body: `{"recommendations": [
-			{"id": "rec-1", "provider": "aws", "service": "ec2", "region": "us-east-1", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 500.0, "savings": 50.0}
+			{"id": "", "provider": "aws", "service": "ec2", "region": "us-east-1", "count": 1, "term": 1, "payment": "all-upfront", "upfront_cost": 500.0, "savings": 50.0}
 		]}`,
 	}
 	_, err := handler.executePurchase(ctx, req)

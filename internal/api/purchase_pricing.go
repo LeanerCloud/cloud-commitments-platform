@@ -33,16 +33,36 @@ func (h *Handler) priceAndEnforcePurchaseConstraints(ctx context.Context, sessio
 // user actually chose: AWS stores every (term, payment) combination and
 // Azure stores both payment variants, each under its own id.
 func (h *Handler) priceRecommendationsFromStore(ctx context.Context, recs []config.RecommendationRecord) error {
-	stored, err := h.loadStoredRecommendationIndex(ctx, recs)
+	byKey, byID, err := h.loadStoredRecommendationIndex(ctx, recs)
 	if err != nil {
 		return err
 	}
 	for i := range recs {
-		match, ok := stored[recIdentityKey(&recs[i])]
+		match, ok := byKey[recIdentityKey(&recs[i])]
 		if !ok {
 			return NewClientError(409, fmt.Sprintf(
 				"recommendation %d (%s) is not in the current recommendation set; refresh the recommendations and try again",
 				i, describeRec(&recs[i])))
+		}
+		if recs[i].ID != "" {
+			origin, ok := byID[recs[i].ID]
+			if !ok {
+				// The request names a specific origin recommendation that no
+				// longer exists in the current stored set (e.g. a collection
+				// refresh -- ReplaceRecommendations -- wiped it between page
+				// load and purchase, while the NEWLY requested term/payment
+				// still resolves via recIdentityKey). Refusing here, not
+				// skipping the check, closes the fail-open gap: an honest
+				// client whose origin row went stale must not silently fall
+				// through to whatever configuration `match` happens to
+				// carry. Same refusal shape as the tuple-miss case above.
+				return NewClientError(409, fmt.Sprintf(
+					"recommendation %d (%s): originally selected recommendation %q is no longer in the current recommendation set; refresh recommendations and try again",
+					i, describeRec(&recs[i]), recs[i].ID))
+			}
+			if err := checkPurchaseDetailIdentity(&origin, &match, &recs[i], i); err != nil {
+				return err
+			}
 		}
 		priced, err := priceFromStored(&recs[i], &match, i)
 		if err != nil {
@@ -55,17 +75,22 @@ func (h *Handler) priceRecommendationsFromStore(ctx context.Context, recs []conf
 
 // loadStoredRecommendationIndex reads the stored rows for every provider in
 // the batch (one query per distinct provider, at most three) and indexes
-// them by identity tuple. The store's unique index on the same tuple
-// (migration 000043) guarantees one row per key only when provider and
-// payment are byte-identical: the index is case-sensitive on both columns,
-// while recIdentityKey folds their case, so two rows differing only in case
-// would collide here (unreachable today because the scheduler always writes
+// them two ways: by identity tuple (recIdentityKey, for resolving the
+// term/payment-scaled row to price from) and by ID (for the request's OWN
+// id, which recIdentityKey-based matching deliberately ignores, but issue
+// #334's mismatch check needs to recover the row the caller's id used to
+// point at). The store's unique index on the same tuple (migration 000043)
+// guarantees one row per key only when provider and payment are
+// byte-identical: the index is case-sensitive on both columns, while
+// recIdentityKey folds their case, so two rows differing only in case would
+// collide here (unreachable today because the scheduler always writes
 // lowercase, but not guaranteed by the index itself). Rather than silently
 // picking whichever row wins the map insert, a collision is refused: this is
 // a money path, and the caller (priceRecommendationsFromStore) must never
 // price a purchase off an arbitrarily chosen row.
-func (h *Handler) loadStoredRecommendationIndex(ctx context.Context, recs []config.RecommendationRecord) (map[string]config.RecommendationRecord, error) {
-	index := make(map[string]config.RecommendationRecord)
+func (h *Handler) loadStoredRecommendationIndex(ctx context.Context, recs []config.RecommendationRecord) (byKey, byID map[string]config.RecommendationRecord, err error) {
+	byKey = make(map[string]config.RecommendationRecord)
+	byID = make(map[string]config.RecommendationRecord)
 	seen := make(map[string]bool)
 	for i := range recs {
 		provider := recs[i].Provider
@@ -75,17 +100,18 @@ func (h *Handler) loadStoredRecommendationIndex(ctx context.Context, recs []conf
 		seen[provider] = true
 		rows, err := h.config.ListStoredRecommendations(ctx, config.RecommendationFilter{Provider: provider})
 		if err != nil {
-			return nil, fmt.Errorf("load stored recommendations for %s: %w", provider, err)
+			return nil, nil, fmt.Errorf("load stored recommendations for %s: %w", provider, err)
 		}
 		for j := range rows {
 			key := recIdentityKey(&rows[j])
-			if _, dup := index[key]; dup {
-				return nil, fmt.Errorf("stored recommendations for %s contain more than one row for identity key %q", provider, key)
+			if _, dup := byKey[key]; dup {
+				return nil, nil, fmt.Errorf("stored recommendations for %s contain more than one row for identity key %q", provider, key)
 			}
-			index[key] = rows[j]
+			byKey[key] = rows[j]
+			byID[rows[j].ID] = rows[j]
 		}
 	}
-	return index, nil
+	return byKey, byID, nil
 }
 
 // recIdentityKey is the tuple a price is a function of: the same eight
@@ -137,6 +163,148 @@ func priceFromStored(req, stored *config.RecommendationRecord, idx int) (config.
 	out.MonthlyCost = scaledCost(stored.MonthlyCost, ratio)
 	out.OnDemandCost = scaledCost(stored.OnDemandCost, ratio)
 	return out, nil
+}
+
+// checkPurchaseDetailIdentity refuses a repriced purchase when the row the
+// request's id used to point at (origin) and the row recIdentityKey just
+// resolved the request to (match) carry different purchase-critical Details
+// discriminators (EC2 tenancy/platform/scope, RDS AZ config) -- issue #334.
+//
+// recIdentityKey's tuple already covers Service/Region/ResourceType/Engine/
+// Term/Payment, but tenancy/platform/scope/az_config live inside the opaque
+// Details blob, so a term/payment change (the purchase modal's #111/#197/
+// #1903 flow) can silently resolve to a DIFFERENT purchase configuration
+// while the visible account/service/region/instance-type tuple stays the
+// same -- e.g. a request built from a 3yr/default-tenancy row, re-priced to
+// 1yr, lands on a 1yr/dedicated-tenancy row, and priceFromStored's
+// `out := *stored` would copy dedicated tenancy into the response even
+// though the caller never asked for it.
+//
+// Both origin and match come from the SERVER's own trusted stored index
+// (never from the client-supplied Details payload, which #1905/audit
+// A01-001 established must be ignored entirely for pricing/purchase
+// decisions -- see TestHandler_executePurchase_PersistsStoredCostsNotClientCosts).
+// The only client input this check trusts is the request's id field, used
+// purely as a LOOKUP KEY into that trusted index; if it doesn't resolve to a
+// real stored row (bogus, stale, or simply omitted), there is nothing to
+// compare against and this is a no-op, identical to pre-fix behavior.
+// origin == match (the id still names the row recIdentityKey matched, i.e.
+// no term/payment change occurred) is also a no-op.
+//
+// Savings Plans are deliberately excluded -- hourly_commitment and
+// offering_id legitimately vary across priced alternatives and are not
+// purchase discriminators (purchaseDetailMismatch has no case for
+// *common.SavingsPlanDetails).
+//
+// Mirrors the frontend's samePurchaseVariantIdentity
+// (frontend/src/recommendations.ts), which narrows the purchase modal's
+// term/payment alternatives to same-configuration siblings. That frontend
+// guard cannot protect every caller (API scripts, the MCP server, a future
+// UI bug), so this backend check is the shared identity contract's actual
+// enforcement point.
+func checkPurchaseDetailIdentity(origin, match, req *config.RecommendationRecord, idx int) error {
+	if origin.ID == match.ID {
+		return nil
+	}
+	originDetails, err := common.DecodeServiceDetailsFor(origin.Service, origin.Details)
+	if err != nil {
+		return fmt.Errorf("recommendation %d (%s): originally-selected recommendation %q details could not be decoded: %w",
+			idx, describeRec(req), origin.ID, err)
+	}
+	matchDetails, err := common.DecodeServiceDetailsFor(match.Service, match.Details)
+	if err != nil {
+		return fmt.Errorf("recommendation %d (%s): stored recommendation %q details could not be decoded: %w",
+			idx, describeRec(req), match.ID, err)
+	}
+	if mismatch := purchaseDetailMismatch(originDetails, matchDetails); mismatch != "" {
+		return NewClientError(409, fmt.Sprintf(
+			"recommendation %d (%s): changing term/payment would also change the purchase configuration (%s); "+
+				"this is a different commitment than %q, refresh recommendations and submit a fresh purchase for the desired configuration",
+			idx, describeRec(req), mismatch, origin.ID))
+	}
+	return nil
+}
+
+// purchaseDetailMismatch reports the purchase-critical discriminator field
+// where origin and match diverge, or "" when there is no mismatch (or no
+// typed discriminator to compare for this service). See
+// checkPurchaseDetailIdentity for the full contract.
+//
+// A field is compared only when origin is non-empty: a pre-#453 legacy
+// ORIGIN row decodes to a zero-valued typed pointer (empty Tenancy/
+// Platform/Scope/AZConfig/MemoryGB) precisely because its true
+// configuration was never recorded, so there is nothing known to
+// contradict. But once origin IS known, an empty match is ALSO a mismatch,
+// not a pass: buildOfferingFilters substitutes the provider default for an
+// empty match field, which can silently buy a different configuration than
+// the one origin recorded (e.g. origin=dedicated tenancy, match=legacy-
+// empty -> the purchase would resolve to the default-tenancy substitute).
+// "Unknown" is therefore refused right alongside "different", not treated
+// as compatible.
+func purchaseDetailMismatch(origin, match common.ServiceDetails) string {
+	switch m := match.(type) {
+	case *common.ComputeDetails:
+		o, ok := origin.(*common.ComputeDetails)
+		if !ok {
+			return ""
+		}
+		return computeDetailMismatch(o, m)
+	case *common.DatabaseDetails:
+		o, ok := origin.(*common.DatabaseDetails)
+		if !ok {
+			return ""
+		}
+		return databaseDetailMismatch(o, m)
+	}
+	return ""
+}
+
+// mismatchField compares one purchase-critical string field. Returns "" when
+// origin is empty (nothing known to contradict). Otherwise returns a
+// "<field>: originally %q, now %q" description whenever match is empty
+// (unknown -- see purchaseDetailMismatch) or differs from origin.
+func mismatchField(field, origin, match string) string {
+	if origin == "" {
+		return ""
+	}
+	if match == "" || origin != match {
+		return fmt.Sprintf("%s: originally %q, now %q", field, origin, match)
+	}
+	return ""
+}
+
+// mismatchFieldFloat64 is mismatchField for a numeric field whose zero value
+// means "unknown" (per ComputeDetails.MemoryGB's doc comment), applying the
+// same origin-known/match-unknown-or-different asymmetry.
+func mismatchFieldFloat64(field string, origin, match float64) string {
+	if origin == 0 {
+		return ""
+	}
+	if match == 0 || origin != match {
+		return fmt.Sprintf("%s: originally %g, now %g", field, origin, match)
+	}
+	return ""
+}
+
+func computeDetailMismatch(o, m *common.ComputeDetails) string {
+	for _, f := range [...]string{
+		mismatchField("tenancy", o.Tenancy, m.Tenancy),
+		mismatchField("platform", o.Platform, m.Platform),
+		mismatchField("scope", o.Scope, m.Scope),
+		// GCP custom machine types (Compute Engine CUDs) read MemoryGB at
+		// purchase time to build the machine spec, so a memory mismatch is
+		// as purchase-critical as tenancy for that provider.
+		mismatchFieldFloat64("memory_gb", o.MemoryGB, m.MemoryGB),
+	} {
+		if f != "" {
+			return f
+		}
+	}
+	return ""
+}
+
+func databaseDetailMismatch(o, m *common.DatabaseDetails) string {
+	return mismatchField("az_config", o.AZConfig, m.AZConfig)
 }
 
 func scaledCost(v *float64, ratio float64) *float64 {

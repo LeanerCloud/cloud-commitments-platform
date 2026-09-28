@@ -728,7 +728,6 @@ func TestPerAccountPerms_ExecutePurchase_AllowedAccountAccepted(t *testing.T) {
 	body, err := json.Marshal(map[string]interface{}{
 		"recommendations": []map[string]interface{}{
 			{
-				"id":               "rec-a-exec",
 				"provider":         "aws",
 				"service":          "ec2",
 				"cloud_account_id": permsAccA,
