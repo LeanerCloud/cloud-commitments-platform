@@ -82,70 +82,68 @@ type scopeTestEndpoint struct {
 	name   string
 	status string
 	call   func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error)
-	// mutation is the store method the endpoint reaches only once every
-	// gate has passed; purchaseMutation is the purchase-manager equivalent.
-	// Both empty for read-only endpoints.
-	mutation         string
-	purchaseMutation string
+	// readOnly endpoints reach no mutation, so an allowed call succeeds
+	// instead of answering errScopeTestReached.
+	readOnly bool
 }
 
 var scopeTestEndpoints = []scopeTestEndpoint{
 	{
-		name: "approve", status: "pending", purchaseMutation: "ApproveAndExecute",
+		name: "approve", status: "pending",
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.approvePurchase(context.Background(), req, scopeTestExecID, "")
 		},
 	},
 	{
-		name: "cancel", status: "pending", mutation: "CancelExecutionAtomic",
+		name: "cancel", status: "pending",
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.cancelPurchase(context.Background(), req, scopeTestExecID, "")
 		},
 	},
 	{
-		name: "retry", status: "failed", mutation: "SavePurchaseExecution",
+		name: "retry", status: "failed",
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.retryPurchase(context.Background(), req, scopeTestExecID)
 		},
 	},
 	{
-		name: "revoke completed via session", status: "completed", mutation: "TransitionExecutionStatus",
+		name: "revoke completed via session", status: "completed",
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.revokeViaEmailToken(context.Background(), req, scopeTestExecID, "")
 		},
 	},
 	{
-		name: "revoke scheduled", status: "scheduled", mutation: "CancelScheduledExecutionAtomic",
+		name: "revoke scheduled", status: "scheduled",
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.revokePurchase(context.Background(), req, scopeTestExecID)
 		},
 	},
 	{
-		name: "run now", status: "pending", purchaseMutation: "RunPlannedPurchaseNow",
+		name: "run now", status: "pending",
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.runPlannedPurchase(context.Background(), req, scopeTestExecID)
 		},
 	},
 	{
-		name: "pause", status: "pending", mutation: "TransitionExecutionStatus",
+		name: "pause", status: "pending",
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.pausePlannedPurchase(context.Background(), req, scopeTestExecID)
 		},
 	},
 	{
-		name: "resume", status: "paused", mutation: "TransitionExecutionStatus",
+		name: "resume", status: "paused",
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.resumePlannedPurchase(context.Background(), req, scopeTestExecID)
 		},
 	},
 	{
-		name: "delete", status: "pending", mutation: "TransitionExecutionStatus",
+		name: "delete", status: "pending",
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.deletePlannedPurchase(context.Background(), req, scopeTestExecID)
 		},
 	},
 	{
-		name: "details", status: "completed",
+		name: "details", status: "completed", readOnly: true,
 		call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.getPurchaseDetails(context.Background(), req, scopeTestExecID)
 		},
@@ -169,11 +167,12 @@ func scopeTestExecution(k scopeTestKind, status string) *config.PurchaseExecutio
 // whose store serves exec. GetPlanAccounts("") errors the way the UUID
 // plan_id column does in Postgres, so a gate that queries it for an ad-hoc
 // execution surfaces as a 500 rather than a quiet deny.
-func newScopeTestHandler(t *testing.T, exec *config.PurchaseExecution, scope []string) (*Handler, *MockConfigStore, *MockPurchaseManager) {
+//
+// The caller constructs the mocks so their types resolve at its assertion
+// sites for TestNoUnfailableMockAssertions.
+func newScopeTestHandler(t *testing.T, exec *config.PurchaseExecution, scope []string, store *MockConfigStore, mockPurchase *MockPurchaseManager) *Handler {
 	t.Helper()
-	store := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
-	mockPurchase := new(MockPurchaseManager)
 
 	mockAuth.On("ValidateSession", mock.Anything, "operator-token").Return(&Session{
 		UserID: "operator-1", Email: "operator@example.com",
@@ -216,7 +215,7 @@ func newScopeTestHandler(t *testing.T, exec *config.PurchaseExecution, scope []s
 	mockPurchase.On("RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errScopeTestReached).Maybe()
 	mockPurchase.On("CancelExecution", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	return &Handler{auth: mockAuth, config: store, purchase: mockPurchase}, store, mockPurchase
+	return &Handler{auth: mockAuth, config: store, purchase: mockPurchase}
 }
 
 func scopeTestRequest() *events.LambdaFunctionURLRequest {
@@ -237,22 +236,26 @@ func TestExecutionEndpoints_ScopeMatrix(t *testing.T) {
 		for _, sc := range scopeTestScopes {
 			for _, ep := range scopeTestEndpoints {
 				t.Run(k.name+"/"+sc.name+"/"+ep.name, func(t *testing.T) {
-					h, store, mockPurchase := newScopeTestHandler(t, scopeTestExecution(k, ep.status), sc.scope(k))
+					store := new(MockConfigStore)
+					mockPurchase := new(MockPurchaseManager)
+					h := newScopeTestHandler(t, scopeTestExecution(k, ep.status), sc.scope(k), store, mockPurchase)
 
 					_, err := ep.call(h, scopeTestRequest())
 
 					if !sc.allow {
 						require.Error(t, err)
 						assert.True(t, IsNotFoundError(err), "expected 404 not-found, got %v", err)
-						if ep.mutation != "" {
-							store.AssertNotCalled(t, ep.mutation)
-						}
-						if ep.purchaseMutation != "" {
-							mockPurchase.AssertNotCalled(t, ep.purchaseMutation)
-						}
+						// A denied call reaches no mutation of any endpoint.
+						store.AssertNotCalled(t, "SavePurchaseExecution")
+						store.AssertNotCalled(t, "TransitionExecutionStatus")
+						store.AssertNotCalled(t, "CancelExecutionAtomic")
+						store.AssertNotCalled(t, "CancelScheduledExecutionAtomic")
+						mockPurchase.AssertNotCalled(t, "ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+						mockPurchase.AssertNotCalled(t, "RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+						mockPurchase.AssertNotCalled(t, "CancelExecution", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 						return
 					}
-					if ep.mutation == "" && ep.purchaseMutation == "" {
+					if ep.readOnly {
 						require.NoError(t, err)
 						return
 					}
@@ -280,15 +283,59 @@ func TestExecutionEndpoints_OutOfScopeNoTokenIs404(t *testing.T) {
 		{"cancel wrong status", "completed", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.cancelPurchase(context.Background(), req, scopeTestExecID, "")
 		}},
-		{"revoke", "completed", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+		{"revoke completed", "completed", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+			return h.revokeViaEmailToken(context.Background(), req, scopeTestExecID, "")
+		}},
+		{"revoke pending", "pending", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+			return h.revokeViaEmailToken(context.Background(), req, scopeTestExecID, "")
+		}},
+		{"revoke notified", "notified", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+			return h.revokeViaEmailToken(context.Background(), req, scopeTestExecID, "")
+		}},
+		{"revoke failed", "failed", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.revokeViaEmailToken(context.Background(), req, scopeTestExecID, "")
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, _, _ := newScopeTestHandler(t, scopeTestExecution(adhoc, tc.status), []string{"Other"})
+			h := newScopeTestHandler(t, scopeTestExecution(adhoc, tc.status), []string{"Other"}, new(MockConfigStore), new(MockPurchaseManager))
 			_, err := tc.call(h, scopeTestRequest())
 			assert.True(t, IsNotFoundError(err), "expected 404 not-found, got %v", err)
 		})
+	}
+}
+
+// TestRevoke_AuthorizedNonRevocableStatusIs409: moving the status check
+// behind authorization must not drop it. An authorized caller, via the
+// session or the email token, still gets the 409 for a status with nothing
+// to revoke, and no mutation runs.
+func TestRevoke_AuthorizedNonRevocableStatusIs409(t *testing.T) {
+	stageOnly := scopeTestKind{recs: []config.RecommendationRecord{scopeTestRec("rec-stage", &scopeTestStage.ID)}}
+	for _, tc := range []struct {
+		name  string
+		scope []string
+		token string
+	}{
+		{"session", []string{scopeTestStage.Name}, ""},
+		{"token", []string{"Other"}, "email-token"},
+	} {
+		for _, status := range []string{"pending", "notified", "failed"} {
+			t.Run(tc.name+"/"+status, func(t *testing.T) {
+				exec := scopeTestExecution(stageOnly, status)
+				exec.ApprovalToken = "email-token"
+				store := new(MockConfigStore)
+				h := newScopeTestHandler(t, exec, tc.scope, store, new(MockPurchaseManager))
+
+				_, err := h.revokeViaEmailToken(context.Background(), scopeTestRequest(), scopeTestExecID, tc.token)
+
+				var ce *clientError
+				require.ErrorAs(t, err, &ce)
+				assert.Equal(t, 409, ce.code, "got %v", err)
+				if status == "pending" {
+					assert.Contains(t, ce.message, "Cancel")
+				}
+				store.AssertNotCalled(t, "TransitionExecutionStatus")
+			})
+		}
 	}
 }
 
@@ -300,7 +347,8 @@ func TestCancel_OutOfScopeSessionWithTokenUsesContactGate(t *testing.T) {
 	exec := scopeTestExecution(scopeTestKind{recs: []config.RecommendationRecord{
 		scopeTestRec("rec-stage", &scopeTestStage.ID),
 	}}, "pending")
-	h, _, mockPurchase := newScopeTestHandler(t, exec, []string{scopeTestProd.Name})
+	mockPurchase := new(MockPurchaseManager)
+	h := newScopeTestHandler(t, exec, []string{scopeTestProd.Name}, new(MockConfigStore), mockPurchase)
 
 	res, err := h.cancelPurchase(context.Background(), scopeTestRequest(), scopeTestExecID, "email-token")
 
@@ -319,7 +367,7 @@ func TestExecutionAccounts_AdHocUnattributedDenied(t *testing.T) {
 			scopeTestRec("rec-prod", &scopeTestProd.ID),
 			scopeTestRec("rec-none", missing),
 		}}, "pending")
-		h, _, _ := newScopeTestHandler(t, exec, []string{scopeTestProd.Name, scopeTestStage.Name})
+		h := newScopeTestHandler(t, exec, []string{scopeTestProd.Name, scopeTestStage.Name}, new(MockConfigStore), new(MockPurchaseManager))
 		err := h.requireExecutionAccess(context.Background(), &Session{UserID: "operator-1"}, scopeTestExecID)
 		assert.True(t, IsNotFoundError(err), "expected 404 not-found, got %v", err)
 	}
@@ -337,7 +385,8 @@ func TestPlannedPurchases_HidesPartiallyScopedParent(t *testing.T) {
 		{[]string{scopeTestProd.Name, scopeTestStage.Name}, 1},
 	} {
 		exec := scopeTestExecution(scopeTestKinds[0], "pending")
-		h, store, _ := newScopeTestHandler(t, exec, tc.scope)
+		store := new(MockConfigStore)
+		h := newScopeTestHandler(t, exec, tc.scope, store, new(MockPurchaseManager))
 		store.On("GetPlannedExecutions", mock.Anything, mock.Anything, mock.Anything).Return([]config.PurchaseExecution{*exec}, nil)
 		store.On("ListPurchasePlans", mock.Anything, mock.Anything).Return([]config.PurchasePlan{{ID: scopeTestPlanID, Name: "p"}}, nil)
 

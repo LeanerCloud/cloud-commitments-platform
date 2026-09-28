@@ -1387,12 +1387,6 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 		return nil, NewClientError(404, "execution not found")
 	}
 
-	// Only completed/partially_completed purchases have anything to revoke.
-	// A pending/notified purchase should be canceled instead.
-	if statusErr := checkRevokableStatus(execution); statusErr != nil {
-		return nil, statusErr
-	}
-
 	// Three-mode dispatch — same shape as cancelPurchase.
 	result, handled, revokeErr := h.tryRevokeViaSession(ctx, req, execution, token)
 	if handled {
@@ -1420,6 +1414,9 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 		return nil, err
 	}
 	if err := validateRevokeToken(execution, token); err != nil {
+		return nil, err
+	}
+	if err := checkRevokableStatus(execution); err != nil {
 		return nil, err
 	}
 	return h.revokeViaSession(ctx, execution, actor)
@@ -1468,6 +1465,11 @@ func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFun
 		// validate CSRF before mutating state (nit #1).
 		if csrfErr := h.validateCSRF(ctx, req); csrfErr != nil {
 			return nil, true, NewClientError(403, "CSRF validation failed")
+		}
+		// Status is checked only once the caller is authorized, so an
+		// out-of-scope caller cannot learn it from a 409.
+		if statusErr := checkRevokableStatus(execution); statusErr != nil {
+			return nil, true, statusErr
 		}
 		res, revokeErr := h.revokeViaSession(ctx, execution, session.Email)
 		return res, true, revokeErr

@@ -5602,8 +5602,10 @@ func TestHandler_revokePurchase_InvalidToken(t *testing.T) {
 	assert.Equal(t, 403, ce.code)
 }
 
-// TestHandler_revokePurchase_PendingExecution verifies that a pending execution
-// returns 409 with a friendly message directing the user to Cancel instead.
+// TestHandler_revokePurchase_PendingExecution verifies that a caller with no
+// session gets the 401 for a pending execution, not the status 409: status is
+// only disclosed once the caller is authorized. The authorized 409 is covered by
+// TestRevoke_AuthorizedNonRevocableStatusIs409.
 func TestHandler_revokePurchase_PendingExecution(t *testing.T) {
 	ctx := context.Background()
 	execID := "33333333-3333-3333-3333-333333333333"
@@ -5625,8 +5627,7 @@ func TestHandler_revokePurchase_PendingExecution(t *testing.T) {
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a client error")
-	assert.Equal(t, 409, ce.code)
-	assert.Contains(t, ce.message, "Cancel")
+	assert.Equal(t, 401, ce.code)
 }
 
 // TestHandler_revokePurchase_NotFound verifies 404 when the execution does not exist.
