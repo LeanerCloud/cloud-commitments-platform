@@ -3203,8 +3203,9 @@ function buildListMarkup(
         const cv = groups.get(ck)!;
         spSavingsTotal += Math.max(...cv.map((r) => r.savings));
       }
-      const scaledSpSavings = scaleCost(spSavingsTotal, period) ?? spSavingsTotal;
-      const spSavingsText = `${formatCostForPeriod(scaledSpSavings, period)}${sfxLabel}`;
+      // formatCostForPeriod scales internally; passing the already-scaled
+      // scaledSpSavings here double-applied the period factor (issue #252).
+      const spSavingsText = `${formatCostForPeriod(spSavingsTotal, period)}${sfxLabel}`;
       const sgkAttr = escapeHtml(sgk);
       rows.push(`
   <tr class="rec-sp-group-row" data-sp-group-key="${sgkAttr}">
