@@ -1298,6 +1298,50 @@ func (h *Handler) reshapeCloudAccountInScope(ctx context.Context, session *Sessi
 	return allowed.Allows(cloudAccountID, nameByID[cloudAccountID]), nil
 }
 
+// requireReshapeAccountScope enforces the session's allowed_accounts scope
+// for executeExchange (issue #93). The three sibling read endpoints
+// (listConvertibleRIs, getRIUtilization, getReshapeRecommendations) all call
+// reshapeCloudAccountInScope and return an empty list when the deployment's
+// cloud account falls outside the session's scope; executeExchange is the
+// one mutating, financially irreversible endpoint among the four, so it must
+// fail closed with a 403 ClientError instead of an empty response. This is
+// independent of the requirePermissionConstraints check executeExchange also
+// runs, which evaluates the granting permission's own Constraints (SEC-01,
+// issue #1141): a permission with no AccountIDs constraint satisfies that
+// check unconditionally, so it does not substitute for the session-level
+// scope enforced here. Split out as its own function (rather than inlined in
+// executeExchange) to keep that handler's cyclomatic complexity under the
+// project's gate.
+func (h *Handler) requireReshapeAccountScope(ctx context.Context, session *Session) error {
+	inScope, err := h.reshapeCloudAccountInScope(ctx, session)
+	if err != nil {
+		return err
+	}
+	if !inScope {
+		return NewClientError(403, "permission denied: this deployment's cloud account is not covered by your session's allowed accounts")
+	}
+	return nil
+}
+
+// resolveReshapeCloudAccountIDOrUnattributed resolves the deployment's cloud
+// account ID, substituting the unattributedAccountConstraint sentinel when
+// the deployment maps to no registered account. Used by executeExchange to
+// build the AccountIDs dimension of its permission-constraints check
+// (SEC-01, issue #1141): an AccountIDs-constrained permission must deny
+// rather than silently matching an empty/absent constraint. Split out from
+// executeExchange to keep that handler's cyclomatic complexity under the
+// project's gate.
+func (h *Handler) resolveReshapeCloudAccountIDOrUnattributed(ctx context.Context) (string, error) {
+	cloudAccountID, err := h.resolveReshapeCloudAccountID(ctx)
+	if err != nil {
+		return "", err
+	}
+	if cloudAccountID == "" {
+		return unattributedAccountConstraint, nil
+	}
+	return cloudAccountID, nil
+}
+
 // resolveReshapeCloudAccountID returns the cloud account ID for the running
 // deployment, using the test-injected reshapeAccountResolver when set and
 // falling back to the production resolveAWSCloudAccountID (STS-backed).
@@ -1774,6 +1818,13 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 		return nil, err
 	}
 
+	// Apply the session's allowed_accounts scope (issue #93). See
+	// requireReshapeAccountScope for what this guards against.
+	err = h.requireReshapeAccountScope(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+
 	var body ExchangeExecuteRequestBody
 	err = json.Unmarshal([]byte(req.Body), &body)
 	if err != nil {
@@ -1802,12 +1853,9 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 	// max_payment_due_usd guardrail, which ExecuteExchange independently
 	// enforces against the actual quoted payment due.
 	maxPayment, _ := maxRat.Float64()
-	cloudAccountID, err := h.resolveReshapeCloudAccountID(ctx)
+	cloudAccountID, err := h.resolveReshapeCloudAccountIDOrUnattributed(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve cloud account scope: %w", err)
-	}
-	if cloudAccountID == "" {
-		cloudAccountID = unattributedAccountConstraint
 	}
 	err = h.requirePermissionConstraints(ctx, session, "ri-exchange", []auth.PermissionConstraints{{
 		AccountIDs:        []string{cloudAccountID},

@@ -457,6 +457,9 @@ func TestExecuteExchange_PermissionGate(t *testing.T) {
 	// AWS SDK call will fail with a non-403 (connection refused / 500).
 	t.Run("user with execute:ri-exchange clears 403 gate", func(t *testing.T) {
 		mockAuth := authForUserWith(ctx, t, userID, "execute", "ri-exchange", true)
+		// Unrestricted session scope so the reshapeCloudAccountInScope gate
+		// (issue #93) does not itself produce the 403 this sub-test must not see.
+		allowAnyAccountScope(mockAuth)
 		h := &Handler{auth: mockAuth}
 		body := `{"ri_ids":["ri-abc"],"targets":[{"offering_id":"of-1"}],"max_payment_due_usd":"1000"}`
 		_, err := h.executeExchange(ctx, reqWithBearerAndBody("user-token", body))

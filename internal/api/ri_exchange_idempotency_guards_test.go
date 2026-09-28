@@ -87,6 +87,10 @@ func TestExecuteExchange_InvalidBodyNeverClaims(t *testing.T) {
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "user-1", "execute", "ri-exchange").Return(true, nil)
+	// Unrestricted session scope so the reshapeCloudAccountInScope gate
+	// (issue #93), which now runs before body validation, does not block the
+	// request before reaching the validation failure this test targets.
+	allowAnyAccountScope(mockAuth)
 	// Maybe(): the validation below must return before this is reached. It is
 	// registered anyway so that a regression letting the request through fails
 	// on the assertions rather than panicking on an unexpected mock call.
