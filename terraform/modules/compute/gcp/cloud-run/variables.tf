@@ -88,6 +88,33 @@ variable "allow_unauthenticated" {
   default     = true
 }
 
+variable "scheduled_task_auth_mode_override" {
+  description = <<-EOT
+    Override for SCHEDULED_TASK_AUTH_MODE used ONLY when neither
+    var.enable_scheduled_tasks nor var.enable_ri_exchange_schedule is true.
+    When either scheduler is enabled, auth mode is always "oidc" -- the
+    override is ignored.
+
+    Why this exists (#123): the Cloud Run service can be reachable from the
+    open internet independently of the scheduler flags (see
+    var.allow_unauthenticated / var.ingress), so tying auth mode to those
+    flags would silently boot /api/scheduled/* unauthenticated whenever
+    both schedulers are disabled. The fail-closed default ("oidc") means a
+    deploy with no scheduler SA still requires the validator to be
+    configured with a non-empty subject allow-list, or startup fails
+    (internal/server/scheduledauth) instead of serving unauthenticated
+    money-path requests. Set this to "disabled" deliberately for
+    local-dev / dry-run only.
+  EOT
+  type        = string
+  default     = "oidc"
+
+  validation {
+    condition     = contains(["oidc", "bearer", "disabled"], var.scheduled_task_auth_mode_override)
+    error_message = "scheduled_task_auth_mode_override must be one of: \"oidc\", \"bearer\", \"disabled\"."
+  }
+}
+
 variable "database_host" {
   description = "Database host (Cloud SQL private IP)"
   type        = string
