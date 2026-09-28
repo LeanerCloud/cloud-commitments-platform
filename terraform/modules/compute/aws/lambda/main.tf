@@ -108,6 +108,15 @@ resource "aws_lambda_function" "main" {
   reserved_concurrent_executions = var.reserved_concurrent_executions
 
   tags = var.tags
+
+  # Points Lambda at Terraform's own log group (see aws_cloudwatch_log_group.lambda
+  # below) instead of letting Lambda auto-create /aws/lambda/<function_name>
+  # itself with "Never expire" retention on first invocation (#126). The
+  # reference here is the dependency; no depends_on needed.
+  logging_config {
+    log_format = "Text"
+    log_group  = aws_cloudwatch_log_group.lambda.name
+  }
 }
 
 # ==============================================
@@ -517,8 +526,25 @@ resource "aws_iam_role_policy" "org_discovery" {
 # CloudWatch Log Group
 # ==============================================
 
+# Kept as name_prefix, deliberately not the exact /aws/lambda/<function_name>
+# name: that fixed name was already auto-created by Lambda in every deployed
+# environment (with "Never expire" retention) before this module ever
+# managed a log group, so a same-named Terraform resource would collide with
+# it (ResourceAlreadyExistsException on create -- there is nothing to import
+# into, since the auto-created group was never in this module's state
+# either). Terraform instead owns a distinct, prefixed group, and
+# aws_lambda_function.main.logging_config (above) points Lambda at it
+# explicitly -- Lambda writes wherever logging_config says, not only to the
+# fixed default name. The old auto-created group is simply abandoned (its
+# history is preserved; delete it manually later once it's no longer
+# needed).
+#
+# Literal ${var.stack_name}-api (not aws_lambda_function.main.function_name)
+# so this resource has no dependency on the function -- aws_lambda_function.main
+# already depends on THIS resource via logging_config.log_group, and a
+# reference back the other way would be a cycle.
 resource "aws_cloudwatch_log_group" "lambda" {
-  name_prefix       = "/aws/lambda/${aws_lambda_function.main.function_name}-"
+  name_prefix       = "/aws/lambda/${var.stack_name}-api-"
   retention_in_days = var.log_retention_days
 
   tags = var.tags
