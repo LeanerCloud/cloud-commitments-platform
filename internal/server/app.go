@@ -1097,8 +1097,8 @@ func (a *authServiceAdapter) UpdateUserProfile(ctx context.Context, userID, emai
 }
 
 // User management methods - delegate to auth service API methods.
-func (a *authServiceAdapter) CreateUserAPI(ctx context.Context, req any) (any, error) {
-	return a.service.CreateUserAPI(ctx, req)
+func (a *authServiceAdapter) CreateUserAPI(ctx context.Context, actorUserID string, req any) (any, error) {
+	return a.service.CreateUserAPI(ctx, actorUserID, req)
 }
 
 func (a *authServiceAdapter) UpdateUserAPI(ctx context.Context, actorUserID, userID string, req any) (any, error) {

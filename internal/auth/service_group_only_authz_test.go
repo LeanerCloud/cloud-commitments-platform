@@ -139,7 +139,7 @@ func TestCreateUser_RejectsZeroGroups(t *testing.T) {
 	// The email-uniqueness pre-check runs before the group check.
 	mockStore.On("GetUserByEmail", ctx, "new@example.com").Return(nil, nil)
 
-	_, err := svc.CreateUser(ctx, CreateUserRequest{
+	_, err := svc.CreateUser(ctx, "", CreateUserRequest{
 		Email:    "new@example.com",
 		Password: "Sup3rSecretP@ssw0rd!",
 		GroupIDs: nil,

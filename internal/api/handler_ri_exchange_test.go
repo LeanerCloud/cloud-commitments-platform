@@ -1230,7 +1230,9 @@ func (m *mockAuthForExchange) GetUser(_ context.Context, _ string) (*User, error
 func (m *mockAuthForExchange) UpdateUserProfile(_ context.Context, _, _, _, _ string) error {
 	return nil
 }
-func (m *mockAuthForExchange) CreateUserAPI(_ context.Context, _ any) (any, error) { return nil, nil }
+func (m *mockAuthForExchange) CreateUserAPI(_ context.Context, _ string, _ any) (any, error) {
+	return nil, nil
+}
 func (m *mockAuthForExchange) UpdateUserAPI(_ context.Context, _, _ string, _ any) (any, error) {
 	return nil, nil
 }

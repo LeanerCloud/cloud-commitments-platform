@@ -201,8 +201,8 @@ func (m *MockAuthService) UpdateUserProfile(ctx context.Context, userID string, 
 }
 
 // User management mock methods.
-func (m *MockAuthService) CreateUserAPI(ctx context.Context, req interface{}) (interface{}, error) {
-	args := m.Called(ctx, req)
+func (m *MockAuthService) CreateUserAPI(ctx context.Context, actorUserID string, req interface{}) (interface{}, error) {
+	args := m.Called(ctx, actorUserID, req)
 	return args.Get(0), args.Error(1)
 }
 

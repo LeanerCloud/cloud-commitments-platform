@@ -161,7 +161,26 @@ type CreateUserResult struct {
 	InviteEmailError string
 }
 
+// checkCreateUserCeiling applies the membership grant ceiling to a create
+// request's GroupIDs, skipping it for trusted internal callers. Extracted
+// from CreateUser to keep that function under gocyclo's complexity
+// threshold, the same reason guardDeactivation was pulled out of UpdateUser.
+func (s *Service) checkCreateUserCeiling(ctx context.Context, actorUserID string, groupIDs []string) error {
+	if actorUserID == "" {
+		return nil
+	}
+	return s.checkMembershipGrantCeiling(ctx, actorUserID, groupIDs)
+}
+
 // CreateUser creates a new user (admin only).
+//
+// actorUserID is the authenticated user performing the creation (from the
+// session, never client-supplied). It caps req.GroupIDs at the actor's own
+// grant ceiling (issue #226): membership in a group is a permission grant,
+// so creating a user in a group the actor could not grant through the
+// group-permission API is the same escalation via a different door. Pass ""
+// for trusted internal callers (e.g. bootstrap/seeding) that have already
+// been authorized.
 //
 // If req.Password is empty the user is created in the "invited" state:
 // inactive, with an unguessable placeholder password hash that no client
@@ -174,8 +193,11 @@ type CreateUserResult struct {
 // "stored, but the user is currently unreachable". An invite-email send
 // failure is reported via the result (not as an error) so the user row
 // is still surfaced and the admin can react instead of seeing a 5xx.
-func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest) (*CreateUserResult, error) {
+func (s *Service) CreateUser(ctx context.Context, actorUserID string, req CreateUserRequest) (*CreateUserResult, error) {
 	if err := s.validateCreateUserRequest(ctx, req); err != nil {
+		return nil, err
+	}
+	if err := s.checkCreateUserCeiling(ctx, actorUserID, req.GroupIDs); err != nil {
 		return nil, err
 	}
 
@@ -380,23 +402,36 @@ func (s *Service) guardGroupChange(ctx context.Context, actorUserID, targetUserI
 		}
 	}
 
-	// Self-escalation guard: when the actor is editing their own membership,
-	// the change must not leave them holding more than they went in with.
-	// Internal callers (actorUserID == "") are already trusted and skip it.
-	//
-	// This deliberately does NOT filter on addsNewGroup, and that condition
-	// used to live here (issue #1756). Screening the whole guard on "does this
-	// add a group?" is right for the permission dimension and wrong for the
-	// account dimension, because a REMOVAL widens account scope: the union of
-	// allowed_accounts is a set in which EMPTY means every account, so dropping
-	// the group carrying the restriction removes the restriction. The
-	// add-only screen therefore left the pure-removal self-edit completely
-	// unguarded. addsNewGroup now sits inside guardSelfEscalation, scoped to
-	// the dimension it is actually true for.
-	if actorUserID == "" || actorUserID != targetUserID {
+	// Internal callers (actorUserID == "") are already trusted and skip
+	// every actor-scoped guard below.
+	if actorUserID == "" {
+		// Trusted internal caller (e.g. bootstrap/seeding); already authorized.
 		return nil
 	}
-	return s.guardSelfEscalation(ctx, prior, next)
+
+	// Grant ceiling (issue #226): update:users alone does not authorize
+	// handing any target, the actor included, more access than the actor
+	// already holds. guardSelfEscalation only checks that a self-editor holds
+	// update:users, so without this a caller holding just update:users could
+	// add Administrators to their own membership. A self-edit resolves the
+	// actor's permissions from `prior` (see guardSelfEscalation for why it
+	// must not re-read the row).
+	added := addedGroups(prior, next)
+	if actorUserID == targetUserID {
+		heldBefore, err := s.permissionsForGroups(ctx, prior)
+		if err != nil {
+			return fmt.Errorf("failed to resolve the acting user's permissions: %w", err)
+		}
+		// Self-escalation guard: the change must not leave the actor
+		// holding more than they went in with. It deliberately runs on
+		// removals too (issue #1756): dropping a group can WIDEN account
+		// scope, since an empty allowed_accounts union means every account.
+		if err := s.guardSelfEscalation(ctx, prior, next, heldBefore); err != nil {
+			return err
+		}
+		return s.checkMembershipGrantCeilingWithPerms(ctx, heldBefore, added)
+	}
+	return s.checkMembershipGrantCeiling(ctx, actorUserID, added)
 }
 
 // guardSelfEscalation runs the self-edit checks: the #907 manage-users gate,
@@ -437,12 +472,11 @@ func (s *Service) guardGroupChange(ctx context.Context, actorUserID, targetUserI
 //
 // Enforced by mutation, not just by this comment: swapping `prior` for `next`
 // below fails the suite (see the M13 row in the PR #1737 mutation matrix).
-func (s *Service) guardSelfEscalation(ctx context.Context, prior, next []string) error {
+//
+// heldBefore is that PRIOR permission set, resolved once by guardGroupChange
+// and shared with the #226 grant-ceiling check.
+func (s *Service) guardSelfEscalation(ctx context.Context, prior, next []string, heldBefore []Permission) error {
 	if addsNewGroup(prior, next) {
-		heldBefore, err := s.permissionsForGroups(ctx, prior)
-		if err != nil {
-			return fmt.Errorf("failed to verify manage-users permission: %w", err)
-		}
 		if !permissionsAllow(heldBefore, ActionUpdate, ResourceUsers, nil) {
 			return ErrSelfEscalation
 		}
@@ -511,10 +545,14 @@ func (s *Service) guardSelfAccountScope(ctx context.Context, prior, next []strin
 // actor already holds is not an escalation and is allowed, so a user who is
 // legitimately a purchaser is not blocked from ordinary membership changes.
 //
-// Only SELF-edits reach here. An admin may still add another user to the
-// Purchaser group: that is the two-person control separation of duties is
-// meant to create, not a hole. Trusted internal callers (actorUserID == "")
+// Only SELF-edits reach here; trusted internal callers (actorUserID == "")
 // never reach here either, so seeding and bootstrap paths are unaffected.
+// guardGroupChange also applies the #226 membership grant ceiling to every
+// edit, self-edits included, which covers the same carved-out rule; this
+// check stays as the self-edit statement of it. Together they keep the
+// two-person control intact from both directions: an admin cannot add
+// themselves here, and cannot use a puppet account or a low-privilege
+// update:users grant to add someone else either.
 //
 // held is the actor's PRIOR permission set (see guardSelfEscalation). Fails
 // closed: any error loading a group being joined refuses the change.

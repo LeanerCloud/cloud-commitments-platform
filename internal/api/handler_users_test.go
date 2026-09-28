@@ -88,7 +88,7 @@ func TestHandler_createUser_Success(t *testing.T) {
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockAuth.On("CreateUserAPI", ctx, mock.Anything).Return(createdUser, nil)
+	mockAuth.On("CreateUserAPI", ctx, mock.Anything, mock.Anything).Return(createdUser, nil)
 
 	handler := &Handler{auth: mockAuth}
 
