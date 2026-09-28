@@ -71,3 +71,24 @@ check "cloud_armor_must_sit_in_the_request_path" {
     EOT
   }
 }
+
+# Guards against a partial cutover: enable_cdn = true provisions the LB +
+# Cloud Armor, but neither of the two checks above notices if
+# cloud_run_ingress is left at INGRESS_TRAFFIC_ALL (the *.run.app URL still
+# answers direct internet traffic, bypassing the LB and Cloud Armor
+# entirely). var.cloud_run_ingress's own default/validation already steers
+# toward INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER; this check makes a drift
+# from that pairing visible on every plan instead of only in the variable
+# description (CodeRabbit finding on PR #401).
+check "cdn_requires_restricted_ingress" {
+  assert {
+    condition     = !(var.enable_cdn && var.cloud_run_ingress == "INGRESS_TRAFFIC_ALL")
+    error_message = <<-EOT
+      enable_cdn = true with cloud_run_ingress = "INGRESS_TRAFFIC_ALL": the
+      LB and Cloud Armor are provisioned, but the *.run.app URL still
+      answers direct internet traffic, bypassing both. Set cloud_run_ingress
+      = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER" (the variable's default) so
+      only requests through the LB reach the service.
+    EOT
+  }
+}

@@ -52,6 +52,7 @@ func TestConfigurationGuardsPresent(t *testing.T) {
 	for _, want := range []string{
 		`check "prod_requires_network_authenticated_ingress"`,
 		`check "cloud_armor_must_sit_in_the_request_path"`,
+		`check "cdn_requires_restricted_ingress"`,
 	} {
 		if !strings.Contains(checks, want) {
 			t.Errorf("checks.tf missing %s (#128 continuous-validation guard)", want)
@@ -63,5 +64,8 @@ func TestConfigurationGuardsPresent(t *testing.T) {
 	}
 	if !regexp.MustCompile(`condition\s*=\s*!\(var\.enable_cloud_armor\s*&&\s*!var\.enable_cdn\)`).MatchString(checks) {
 		t.Error(`checks.tf: cloud_armor_must_sit_in_the_request_path must assert !(var.enable_cloud_armor && !var.enable_cdn)`)
+	}
+	if !regexp.MustCompile(`condition\s*=\s*!\(var\.enable_cdn\s*&&\s*var\.cloud_run_ingress\s*==\s*"INGRESS_TRAFFIC_ALL"\)`).MatchString(checks) {
+		t.Error(`checks.tf: cdn_requires_restricted_ingress must assert !(var.enable_cdn && var.cloud_run_ingress == "INGRESS_TRAFFIC_ALL")`)
 	}
 }
