@@ -1653,6 +1653,87 @@ describe('Issue #331: Escape discards purchase state like the explicit close but
   });
 });
 
+// Issue #430: openPurchaseModal and openFanOutModal both await an override
+// fetch before rendering. Without a shared open token, an older open that
+// resolved last could render over the newer one, or the single-row modal
+// could render while fan-out buckets from the other open were still set, so
+// Execute submitted buckets the dialog did not show.
+describe('Issue #430: interleaved purchase modal opens submit what the newest open displays', () => {
+  type Opener = 'single' | 'fanout';
+  const cases: Array<[Opener[], Opener[]]> = [
+    [['fanout', 'single'], ['fanout', 'single']],
+    [['fanout', 'single'], ['single', 'fanout']],
+    [['single', 'fanout'], ['single', 'fanout']],
+    [['single', 'fanout'], ['fanout', 'single']],
+  ];
+
+  test.each(cases)('opens %j resolving %j', async (starts, resolves) => {
+    const fanOutRows: LocalRecommendation[] = [
+      {
+        id: 'fo-ec2', provider: 'aws', cloud_account_id: 'fo-acct', service: 'ec2',
+        region: 'us-east-1', resource_type: 'm5.large', term: 1, payment: 'no-upfront',
+        count: 1, upfront_cost: 0, monthly_cost: 100, savings: 50,
+      },
+      {
+        id: 'fo-rds', provider: 'aws', cloud_account_id: 'fo-acct', service: 'rds',
+        region: 'us-east-1', resource_type: 'db.r5.large', term: 3, payment: 'all-upfront',
+        count: 1, upfront_cost: 1000, monthly_cost: 0, savings: 200,
+      },
+    ];
+    const singleRec: LocalRecommendation = {
+      id: 'single-only', provider: 'aws', cloud_account_id: 'single-acct', service: 'ec2',
+      region: 'us-west-2', resource_type: 'm6i.large', term: 3, payment: 'all-upfront',
+      count: 1, upfront_cost: 4000, monthly_cost: 0, savings: 300,
+    };
+    (api.getConfig as jest.Mock).mockResolvedValue({ global: { default_payment: 'no-upfront' } });
+    (api.getRecommendations as jest.Mock).mockResolvedValue({
+      summary: {}, recommendations: fanOutRows, regions: [],
+    });
+    (state.getRecommendations as jest.Mock).mockReturnValue([...fanOutRows, singleRec]);
+    (state.getVisibleRecommendations as jest.Mock).mockReturnValue(fanOutRows);
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set(['fo-ec2', 'fo-rds']));
+    await loadRecommendations();
+
+    const fetches: Record<Opener, ReturnType<typeof deferred<Awaited<ReturnType<typeof api.listAccountServiceOverrides>>>>> = {
+      single: deferred(),
+      fanout: deferred(),
+    };
+    (api.listAccountServiceOverrides as jest.Mock).mockImplementation((id: string) =>
+      (id === 'single-acct' ? fetches.single : fetches.fanout).promise);
+
+    const pending: Array<Promise<void>> = [];
+    for (const opener of starts) {
+      if (opener === 'single') {
+        pending.push(openPurchaseModal([singleRec]));
+      } else {
+        (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
+        await flush();
+      }
+    }
+    // Both opens must be parked on their fetch before either resolves, or
+    // the interleaving under test never happens.
+    expect(api.listAccountServiceOverrides).toHaveBeenCalledWith('single-acct');
+    expect(api.listAccountServiceOverrides).toHaveBeenCalledWith('fo-acct');
+
+    for (const opener of resolves) {
+      fetches[opener].resolve([]);
+      await flush();
+    }
+    await Promise.all(pending);
+
+    const newest = starts[starts.length - 1]!;
+    expect(document.getElementById('fanout-summary') !== null).toBe(newest === 'fanout');
+
+    (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+
+    const submittedIDs = (api.executePurchase as jest.Mock).mock.calls
+      .flatMap(([payload]) => (payload as Array<{ id: string }>).map((rec) => rec.id))
+      .sort();
+    expect(submittedIDs).toEqual(newest === 'fanout' ? ['fo-ec2', 'fo-rds'] : ['single-only']);
+  });
+});
+
 // Issue #333: the frontend grouped bulk purchases without account identity,
 // so two recommendations sharing (provider, service, term, payment) but
 // belonging to different cloud accounts landed in ONE bucket and were sent

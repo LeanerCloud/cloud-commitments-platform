@@ -54,6 +54,10 @@ let checkedPurchaseIndices: Set<number> = new Set();
 // checkedPurchaseIndices. Used by getPurchaseModalRecommendations to
 // distinguish "all deselected by user" from "modal never opened".
 let checkedPurchaseModalInitialised = false;
+// Bumped by every openPurchaseModal/openFanOutModal call. Each opener checks
+// it after its override fetch so only the newest open renders and sets
+// submit state (issue #430).
+let purchaseModalOpenToken = 0;
 // Cache of account ID → name for column display
 let accountNamesCache: Map<string, string> = new Map();
 
@@ -4362,6 +4366,7 @@ async function openFanOutModal(
   bucketEntries: Array<[string, LocalRecommendation[]]>,
   toolbar: BulkPurchaseToolbarState,
 ): Promise<void> {
+  const openToken = ++purchaseModalOpenToken;
   // Pre-fetch service-overrides for every distinct account referenced by
   // any rec in any bucket; overridesByAccount seeds the bucket-level
   // payment (issue #111). One fetch per distinct accountID; cached for the lifetime of this
@@ -4374,6 +4379,7 @@ async function openFanOutModal(
     }
   }
   const overridesByAccount = await fetchOverridesForAccounts(allAccountIDs);
+  if (openToken !== purchaseModalOpenToken) return;
 
   const buckets: FanOutBucket[] = bucketEntries
     .filter(([_key, recs]) => recs.length > 0)
@@ -5111,6 +5117,8 @@ function renderDirectExecuteWarning(): void {
  * payments and loaded priced alternatives.
  */
 export async function openPurchaseModal(recommendations: LocalRecommendation[], capacityPercent = 100): Promise<void> {
+  const openToken = ++purchaseModalOpenToken;
+  clearFanOutBuckets();
   currentPurchaseCapacityPercent = capacityPercent;
   currentPurchaseRecommendations = [];
   const pendingRows = currentPurchaseRecommendations;
@@ -5129,7 +5137,7 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
   }
   const overridesByAccount = await fetchOverridesForAccounts(accountIDs);
 
-  if (currentPurchaseRecommendations !== pendingRows) return;
+  if (openToken !== purchaseModalOpenToken || currentPurchaseRecommendations !== pendingRows) return;
 
   const seeds = recommendations.map((r) => resolvePerRecPaymentSeed(r, overridesByAccount, capacityPercent));
   const resolvedSeeds = seeds.filter((seed) => seed !== null);
