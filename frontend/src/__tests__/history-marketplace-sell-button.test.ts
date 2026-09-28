@@ -248,8 +248,13 @@ describe('History inline Sell on Marketplace button (issue #292)', () => {
 // must multiply by 12 before computing remaining term / residual. Parallels the
 // backend TestMarketplaceList_TermYearsConvertedToMonths.
 describe('Marketplace consent modal residual proration (issue #808 follow-up)', () => {
-  // ~6 months ago (6 * 30.4375 days) so a 3-year (36-month) RI has ~30 months left.
-  const SIX_MONTHS_AGO = new Date(Date.now() - 6 * 30.4375 * 24 * 60 * 60 * 1000).toISOString();
+  // ~5.5 months ago so a 3-year (36-month) RI has 30 months left after
+  // flooring (issue #240: remainingMonths must floor, not round, to match
+  // computeRemainingMonths in internal/api/handler_marketplace.go exactly).
+  // The 0.5-month margin from the 30/31 boundary keeps this deterministic
+  // against the real wall-clock drift between building this timestamp and
+  // the click handler re-computing elapsed time.
+  const SIX_MONTHS_AGO = new Date(Date.now() - 5.5 * 30.4375 * 24 * 60 * 60 * 1000).toISOString();
 
   beforeEach(() => {
     setupDOM();
@@ -293,7 +298,7 @@ describe('Marketplace consent modal residual proration (issue #808 follow-up)', 
     const arg = (confirmDialog as jest.Mock).mock.calls[0][0] as { body: HTMLElement };
     const text = arg.body.textContent || '';
 
-    // termMonths = 3 * 12 = 36; remaining = round(36 - 6) = 30.
+    // termMonths = 3 * 12 = 36; remaining = floor(36 - 5.5) = 30.
     expect(text).toContain('30 months');
     // Residual = 3600 * (30/36) = 3000; list price = 3000 * 0.95 = 2850.
     // formatCurrency is mocked as `$${val || 0}`, so 2850 -> "$2850".
@@ -314,7 +319,10 @@ describe('Marketplace consent modal residual proration (issue #808 follow-up)', 
   // cases use a nonzero monthly_cost and count > 1 to actually exercise the
   // divergence and pin the modal to the backend's real per-unit formula.
   test('shows the backend-matching per-unit price, not the old recurring-inclusive row total', async () => {
-    const JUST_NOW = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // ~1 day ago
+    // ~2.5 months ago so a 1-year (12-month) RI has 9 months left after
+    // flooring (issue #240), with a 0.5-month margin from the 9/10 boundary
+    // so this stays deterministic against real wall-clock drift.
+    const PARTWAY = new Date(Date.now() - 2.5 * 30.4375 * 24 * 60 * 60 * 1000).toISOString();
     (api.getHistory as jest.Mock).mockResolvedValue({
       summary: {},
       purchases: [
@@ -322,7 +330,7 @@ describe('Marketplace consent modal residual proration (issue #808 follow-up)', 
           purchase_id: 'ri-multi',
           offering_class: 'standard',
           term: 1, // 1 year = 12 months
-          timestamp: JUST_NOW,
+          timestamp: PARTWAY,
           count: 3,
           upfront_cost: 1200, // row total across all 3 instances
           monthly_cost: 50,
@@ -345,14 +353,66 @@ describe('Marketplace consent modal residual proration (issue #808 follow-up)', 
     const text = arg.body.textContent || '';
 
     // Backend math (mirrors marketplaceResidualPerUnit): per-unit residual =
-    // 1200 * (12/12) / 3 = 400; default per-unit price = 400 * 0.95 = 380;
-    // total across 3 units = 1140. Monthly cost is excluded entirely.
-    expect(text).toContain('$380/unit');
-    expect(text).toContain('$1140 total for 3 units');
+    // 1200 * (9/12) / 3 = 300; default per-unit price = 300 * 0.95 = 285;
+    // total across 3 units = 855. Monthly cost is excluded entirely.
+    expect(text).toContain('$285/unit');
+    expect(text).toContain('$855 total for 3 units');
     // The old buggy formula (upfrontRemaining + monthly*remainingMonths, row
-    // total, no count division) produced totalValue=1800, listPrice=1710 --
+    // total, no count division) produced a materially different price --
     // a price the backend never actually lists at. Guard against regressing.
     expect(text).not.toContain('$1710');
+  });
+
+  // Issue #240: the dialog rounded the remaining-months figure (floor of 0)
+  // while the backend's computeRemainingMonths floors (floor at 1). For a
+  // fractional remainder of half a month or more, the dialog showed a
+  // different, higher list price than what the backend would actually list
+  // the RI at, so the user authorized one amount and a different, lower one
+  // was submitted. Reproduces the issue's exact worked example: a 1-year,
+  // $1,200-upfront, count-1 RI purchased 5.4 months ago.
+  test('issue #240: floors the remaining term like the backend, not rounds it', async () => {
+    const FIVE_POINT_FOUR_MONTHS_AGO = new Date(Date.now() - 5.4 * 30.4375 * 24 * 60 * 60 * 1000).toISOString();
+    (api.getHistory as jest.Mock).mockResolvedValue({
+      summary: {},
+      purchases: [
+        makeRow({
+          purchase_id: 'ri-boundary',
+          offering_class: 'standard',
+          term: 1, // 1 year = 12 months
+          timestamp: FIVE_POINT_FOUR_MONTHS_AGO,
+          count: 1,
+          upfront_cost: 1200,
+          monthly_cost: 0,
+        }),
+      ],
+    });
+
+    await loadHistory();
+
+    const sellBtn = document
+      .getElementById('history-list')!
+      .querySelector<HTMLButtonElement>('.history-marketplace-sell-btn[data-marketplace-sell-id="ri-boundary"]');
+    expect(sellBtn).not.toBeNull();
+
+    sellBtn!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const arg = (confirmDialog as jest.Mock).mock.calls[0][0] as { body: HTMLElement };
+    const text = arg.body.textContent || '';
+
+    // remaining = floor(12 - 5.4) = floor(6.6) = 6 (the pre-fix code rounded
+    // to 7). residual = 1200 * (6/12) = 600; list = 600 * 0.95 = 570;
+    // net = 570 * 0.88 = 501.6 -- matching what the backend actually lists at.
+    expect(text).toContain('6 months');
+    expect(text).toContain('$570');
+    expect(text).toContain('$501.6');
+    // The pre-fix rounded figure (7 months -> $665 list / $585 net) must not
+    // appear: that is an amount the user would authorize but the backend
+    // would never actually submit.
+    expect(text).not.toContain('7 months');
+    expect(text).not.toContain('$665');
+    expect(text).not.toContain('$585');
   });
 
   test('shows default price as unavailable for a no-upfront RI instead of a fabricated price', async () => {
