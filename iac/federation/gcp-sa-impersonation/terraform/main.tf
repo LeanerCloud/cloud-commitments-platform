@@ -37,7 +37,17 @@ resource "google_service_account_iam_member" "cudly_impersonate" {
 # .list/.get). There is no billing-read path in this bundle (no
 # billing_account_id input to scope roles/billing.viewer to), so it is
 # dropped rather than reintroduced broken.
+#
+# var.create_custom_role gates creation: if the same project was already
+# onboarded through federation/gcp-target (or self-hosts CUDly via
+# terraform/modules/compute/gcp/cloud-run), that call site already created a
+# role with the same var.custom_role_id, and creating it again here 409s
+# (custom role IDs are unique per project, and each bundle applies from its
+# own Terraform state, so there's no shared state to reconcile against).
+# Default true preserves this bundle's own behavior for the common case
+# where it's the only onboarding path applied to the project.
 resource "google_project_iam_custom_role" "cudly" {
+  count   = var.create_custom_role ? 1 : 0
   project = var.project_id
   role_id = var.custom_role_id
   title   = "CUDly Commitment Writer"
@@ -49,9 +59,17 @@ resource "google_project_iam_custom_role" "cudly" {
   stage       = "GA"
 }
 
+locals {
+  # Reference the role this bundle created, or (when var.create_custom_role
+  # is false) the identically-shaped role another call site already created
+  # in this project. google_project_iam_custom_role.id renders to exactly
+  # this format.
+  custom_role_id = var.create_custom_role ? google_project_iam_custom_role.cudly[0].id : "projects/${var.project_id}/roles/${var.custom_role_id}"
+}
+
 resource "google_project_iam_member" "cudly_custom" {
   project = var.project_id
-  role    = google_project_iam_custom_role.cudly.id
+  role    = local.custom_role_id
   member  = "serviceAccount:${var.service_account_email}"
 }
 

@@ -13,6 +13,20 @@ variable "source_service_account" {
   type        = string
 }
 
+variable "create_custom_role" {
+  description = <<-EOT
+    Whether to create the var.custom_role_id custom role in this project.
+    Set to false if the project was already onboarded through
+    federation/gcp-target, or already self-hosts CUDly via
+    terraform/modules/compute/gcp/cloud-run, since either of those call
+    sites already creates a role with the same ID and re-creating it here
+    409s. Default true is correct when this bundle is the only onboarding
+    path applied to the project.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "custom_role_id" {
   description = <<-EOT
     Project-scoped custom role ID Terraform creates and binds to
