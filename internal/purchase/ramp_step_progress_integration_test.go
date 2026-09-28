@@ -26,6 +26,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -260,8 +261,19 @@ func (f *rampStepFixture) saveRetryExecution(ctx context.Context, t *testing.T, 
 	}
 	require.NoError(t, f.store.SavePurchaseExecution(ctx, exec))
 
+	// Stamp the predecessor with the linkage via LinkRetryExecutionAtomic
+	// (issue #220), not a second full-row SavePurchaseExecution: that
+	// upsert no longer writes retry_execution_id at all, so this must
+	// mirror api.persistRetrySuccessorTx's actual write.
+	require.NoError(t, f.store.WithTx(ctx, func(tx pgx.Tx) error {
+		linked, err := f.store.LinkRetryExecutionAtomic(ctx, tx, predecessor.ExecutionID, exec.ExecutionID)
+		if err != nil {
+			return err
+		}
+		require.True(t, linked, "test fixture precondition: predecessor must be linkable (status=failed, not already linked)")
+		return nil
+	}))
 	predecessor.RetryExecutionID = &exec.ExecutionID
-	require.NoError(t, f.store.SavePurchaseExecution(ctx, predecessor))
 	return exec
 }
 

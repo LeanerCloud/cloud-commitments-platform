@@ -119,11 +119,20 @@ func (f *rampFixture) updatedAt(ctx context.Context, t *testing.T, execID string
 }
 
 // supersede points predecessor at successor, the link persistRetryExecution
-// writes onto a retried row.
+// writes onto a retried row via LinkRetryExecutionAtomic (issue #220 --
+// this is no longer a full-row SavePurchaseExecution upsert, since that
+// upsert no longer writes retry_execution_id at all).
 func (f *rampFixture) supersede(ctx context.Context, t *testing.T, predecessor, successor *PurchaseExecution) {
 	t.Helper()
+	require.NoError(t, f.store.WithTx(ctx, func(tx pgx.Tx) error {
+		linked, err := f.store.LinkRetryExecutionAtomic(ctx, tx, predecessor.ExecutionID, successor.ExecutionID)
+		if err != nil {
+			return err
+		}
+		require.True(t, linked, "test fixture precondition: predecessor must be linkable (status=failed, not already linked)")
+		return nil
+	}))
 	predecessor.RetryExecutionID = &successor.ExecutionID
-	require.NoError(t, f.store.SavePurchaseExecution(ctx, predecessor))
 }
 
 // retryInOneTx inserts a successor for predecessor and stamps the supersession
@@ -145,15 +154,18 @@ func (f *rampFixture) retryInOneTx(ctx context.Context, t *testing.T, predecesso
 		ScheduledDate:  time.Now(),
 		RetryAttemptN:  predecessor.RetryAttemptN + 1,
 	}
-	updated := *predecessor
-	updated.RetryExecutionID = &successorID
-
 	require.NoError(t, f.store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := f.store.SavePurchaseExecutionTx(ctx, tx, successor); err != nil {
 			return err
 		}
-		return f.store.SavePurchaseExecutionTx(ctx, tx, &updated)
+		linked, err := f.store.LinkRetryExecutionAtomic(ctx, tx, predecessor.ExecutionID, successorID)
+		if err != nil {
+			return err
+		}
+		require.True(t, linked, "test fixture precondition: predecessor must be linkable (status=failed, not already linked)")
+		return nil
 	}))
+	predecessor.RetryExecutionID = &successorID
 	return successor
 }
 

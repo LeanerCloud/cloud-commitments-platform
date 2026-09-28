@@ -1003,7 +1003,6 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 			approved_by = $16,
 			cancelled_by = $17,
 			capacity_percent = $18,
-			retry_execution_id = $20,
 			approval_token_expires_at = $22,
 			executed_by_user_id = $23,
 			executed_at = $24,
@@ -1027,11 +1026,14 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 	// ON CONFLICT update (e.g. the scheduler upserting status transitions).
 	// They are omitted from the DO UPDATE SET clause above.
 	//
-	// retry_execution_id IS in the DO UPDATE SET clause because the retry
-	// handler explicitly updates the *original* failed row to point at the
-	// new successor execution after creating it (issue #47). That update
-	// re-saves the failed row through this same path, and the pointer
-	// must persist.
+	// retry_execution_id is also omitted from the DO UPDATE SET clause
+	// (issue #220 CR follow-up): any other caller that upserts a stale
+	// in-memory copy of a failed row (e.g. the reaper) through this same
+	// path must not be able to clear a link LinkRetryExecutionAtomic
+	// already wrote, which would defeat the already-retried guard and
+	// let the row be retried a second time. The retry handler links the
+	// original failed row to its successor exclusively through
+	// LinkRetryExecutionAtomic's targeted, conditional UPDATE.
 	_, err = tx.Exec(ctx, query,
 		planIDArg,
 		execution.ExecutionID,
@@ -1067,6 +1069,37 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 	}
 
 	return nil
+}
+
+// LinkRetryExecutionAtomic stamps retry_execution_id on a failed execution
+// row, conditional on status = 'failed' AND retry_execution_id IS NULL,
+// without touching any other column. This replaces a full-row
+// SavePurchaseExecutionTx upsert of a stale in-memory copy of the failed
+// row (issue #220): that upsert both raced two concurrent retries of the
+// same row past the in-memory already-retried guard (both would insert an
+// approvable successor and send an approval email) and reverted any column
+// another writer changed on the failed row in between.
+//
+// Returns (true, nil) when this call won the race and wrote the linkage,
+// (false, nil) when zero rows were affected because a concurrent retry
+// already claimed the row (or it is no longer 'failed'), and (false, err)
+// on a real DB error. Must be called inside the same tx that inserts the
+// successor row, after that insert, so the FK on retry_execution_id is
+// satisfied.
+func (s *PostgresStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error) {
+	q := `
+		UPDATE purchase_executions
+		   SET retry_execution_id = $2,
+		       updated_at = NOW()
+		 WHERE execution_id = $1
+		   AND status = 'failed'
+		   AND retry_execution_id IS NULL
+	`
+	tag, err := tx.Exec(ctx, q, executionID, retryExecutionID)
+	if err != nil {
+		return false, fmt.Errorf("failed to link retry execution: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // TransitionExecutionStatus atomically transitions an execution from one of the

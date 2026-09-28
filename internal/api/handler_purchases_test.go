@@ -3186,9 +3186,12 @@ func sessionRetryReqWithForce() *events.LambdaFunctionURLRequest {
 }
 
 // runSessionRetryAllowed asserts the success path of retryPurchase given a
-// permission-matrix cell that should be allowed. Captures BOTH saves —
-// the new successor execution AND the original failed row updated with
-// the linkage pointer — so callers can assert linkage invariants
+// permission-matrix cell that should be allowed. Captures the new successor
+// execution (via SavePurchaseExecution) and the linkage the handler stamps
+// on the original failed row via the targeted LinkRetryExecutionAtomic CAS
+// (issue #220 — a full-row SavePurchaseExecutionTx upsert of a stale
+// in-memory copy previously raced two concurrent retries past the
+// already-retried guard), so callers can assert linkage invariants
 // (retry_attempt_n stamped to predecessor.n+1, RetryExecutionID on the
 // original points at the successor).
 func runSessionRetryAllowed(t *testing.T, failed *config.PurchaseExecution, session *Session, hasAny, hasOwn bool, req *events.LambdaFunctionURLRequest) (newExec, updatedOriginal *config.PurchaseExecution) {
@@ -3206,18 +3209,39 @@ func runSessionRetryAllowed(t *testing.T, failed *config.PurchaseExecution, sess
 		}).
 		Return(nil)
 
+	var linkedOriginalID, linkedSuccessorID string
+	mockConfig.On("LinkRetryExecutionAtomic", mock.Anything, mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+		Run(func(args mock.Arguments) {
+			linkedOriginalID = args.Get(2).(string)
+			linkedSuccessorID = args.Get(3).(string)
+		}).
+		Return(true, nil)
+
 	result, err := handler.retryPurchase(context.Background(), req, failed.ExecutionID)
 	require.NoError(t, err)
 	resp := result.(map[string]any)
 	assert.NotEmpty(t, resp["execution_id"])
 	assert.Equal(t, failed.ExecutionID, resp["original_execution"])
-	require.GreaterOrEqual(t, len(saved), 2, "expected at least 2 SavePurchaseExecution calls (new + original linkage)")
+	// At least 1: the successor insert. A second entry appears when the mock
+	// email path doesn't report success and finalizePurchaseStatus re-saves
+	// the SAME successor execution (marking it failed) -- not a second row.
+	// The original failed row's linkage no longer goes through
+	// SavePurchaseExecution at all; it's asserted via linkedOriginalID /
+	// linkedSuccessorID below.
+	require.GreaterOrEqual(t, len(saved), 1, "expected the successor SavePurchaseExecution call")
 
-	// First save is the new successor; second is the original with
-	// retry_execution_id stamped. The retry tx orders them this way
-	// so the FK constraint on retry_execution_id is satisfied.
 	newExec = saved[0]
-	updatedOriginal = saved[1]
+	require.Equal(t, failed.ExecutionID, linkedOriginalID, "the linkage CAS must target the original failed row")
+	require.Equal(t, newExec.ExecutionID, linkedSuccessorID, "the linkage CAS must point at the new successor")
+
+	// Synthesize the "updated original" the pre-fix full-row upsert used to
+	// return, so existing assertions on RetryExecutionID / Status keep
+	// working: the linkage CAS only ever changes retry_execution_id, so the
+	// original row is otherwise identical to the row that was read.
+	snap := *failed
+	snap.RetryExecutionID = &linkedSuccessorID
+	updatedOriginal = &snap
+
 	mockAuth.AssertExpectations(t)
 	return newExec, updatedOriginal
 }
@@ -3457,6 +3481,65 @@ func TestHandler_retryPurchase_AlreadyRetried_Rejects(t *testing.T) {
 	assert.Equal(t, 409, ce.code)
 	assert.Equal(t, successor, ce.Details()["retry_execution_id"])
 	mockConfig.AssertNotCalled(t, "WithTx")
+}
+
+// TestHandler_retryPurchase_ConcurrentRetryRace_SecondCASLoses is the
+// issue #220 regression guard. Two concurrent retries of the same failed
+// row can both read RetryExecutionID == nil in loadAndValidateRetryRequest
+// before either commits -- the in-memory already-retried guard at
+// handler_purchases.go:1718 cannot see the other request's in-flight write.
+// The authoritative guard is the atomic CAS inside the tx
+// (LinkRetryExecutionAtomic, conditional on status='failed' AND
+// retry_execution_id IS NULL): whichever request's UPDATE runs second
+// matches zero rows.
+//
+// Pre-fix, the second writer instead ran a full-row SavePurchaseExecutionTx
+// upsert of a stale in-memory copy of the failed row, which always
+// succeeds (no CAS predicate) -- both requests would persist an approvable
+// successor and send an approval email, and the second upsert would revert
+// any column another writer changed on the original row in between.
+//
+// This test simulates the race by making LinkRetryExecutionAtomic return
+// (false, nil), exactly as the real conditional UPDATE would when a
+// concurrent winner already claimed the row between the SELECT and this
+// tx's UPDATE (a mock store where the second CAS matches zero rows, per
+// the store idioms CancelExecutionAtomic / CancelScheduledExecutionAtomic
+// already use for this class of race).
+func TestHandler_retryPurchase_ConcurrentRetryRace_SecondCASLoses(t *testing.T) {
+	creator := retryCallerID
+	failed := &config.PurchaseExecution{
+		ExecutionID:     retryExecID,
+		Status:          "failed",
+		CreatedByUserID: &creator,
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+	}
+	session := &Session{UserID: retryCallerID}
+	// Caller owns the row; retry-own authorizes it (issue #907). Both
+	// racing requests pass the pre-tx already-retried check because
+	// neither has committed yet -- this test's `failed` fixture models
+	// exactly that: RetryExecutionID is still nil when the handler reads it.
+	handler, mockConfig, mockAuth := buildSessionRetryHandler(failed, session, false, true)
+
+	// The successor insert always succeeds; only the linkage CAS loses the
+	// race, simulating this request being the second writer.
+	mockConfig.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
+	mockConfig.On("LinkRetryExecutionAtomic", mock.Anything, mock.Anything, failed.ExecutionID, mock.AnythingOfType("string")).
+		Return(false, nil)
+
+	result, err := handler.retryPurchase(context.Background(), sessionRetryReq(), retryExecID)
+
+	require.Error(t, err, "the losing side of the race must not return a successful retry")
+	assert.Nil(t, result)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "the race loss must surface as a structured client error, not a 500")
+	assert.Equal(t, 409, ce.code)
+	assert.Contains(t, err.Error(), "already retried")
+
+	// The suppression rows must not be created for a tx that rolled back --
+	// asserting this guards against a future refactor that moves the
+	// suppression writes ahead of the linkage CAS.
+	mockConfig.AssertNotCalled(t, "CreateSuppressionTx")
+	mockAuth.AssertExpectations(t)
 }
 
 func TestHandler_retryPurchase_RejectsMissingSession(t *testing.T) {
