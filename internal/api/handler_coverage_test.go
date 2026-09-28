@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"testing"
 
@@ -239,8 +240,11 @@ func TestRouter_Handlers_Coverage(t *testing.T) {
 		h := &Handler{auth: mockAuth}
 		router := NewRouter(h)
 
+		// Password must be base64-encoded, exactly as the frontend encodes it
+		// (issue #224) - setupAdmin decodes it before forwarding to auth.
+		encodedPassword := base64.StdEncoding.EncodeToString([]byte("pass123"))
 		req := &events.LambdaFunctionURLRequest{
-			Body: `{"email": "admin@example.com", "password": "pass123"}`,
+			Body: `{"email": "admin@example.com", "password": "` + encodedPassword + `"}`,
 		}
 
 		result, err := router.setupAdminHandler(ctx, req, nil)

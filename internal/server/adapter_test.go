@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"testing"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -486,4 +488,81 @@ func TestAuthServiceAdapter_SetupAdmin(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, "admin@example.com", resp.User.Email)
+}
+
+// TestSetupAdminThenLogin_RoundTrip is a regression test for issue #224: the
+// frontend base64-encodes the setup-admin password exactly as it does for
+// login (frontend/src/api/auth.ts), but the setupAdmin handler used to
+// forward the still-encoded string straight through the adapter to
+// auth.Service.SetupAdmin, which bcrypt-hashed the base64 text. Every later
+// login (whose handler does decode) then compared the real plaintext
+// against that hash and failed, locking the bootstrap admin out
+// permanently.
+//
+// This drives the full stack an HTTP request would: api.Router.Route ->
+// api.Handler.setupAdmin/login -> authServiceAdapter -> the real
+// *auth.Service, backed by an auth.MockStore that persists the user
+// setupAdmin creates and hands it back to login. It fails on the pre-fix
+// setupAdmin handler (which skips decodeBase64Password) and passes once it
+// decodes like every other password handler.
+func TestSetupAdminThenLogin_RoundTrip(t *testing.T) {
+	ctx := context.Background()
+
+	mockStore := new(auth.MockStore)
+	realAuth := auth.NewService(auth.ServiceConfig{
+		Store:           mockStore,
+		SessionDuration: time.Hour,
+		CSRFKey:         auth.TestCSRFKey(),
+		DashboardURL:    "http://localhost:3000",
+	})
+	adapter := newAuthServiceAdapter(realAuth)
+	handler := api.NewHandler(api.HandlerConfig{AuthService: adapter})
+	router := api.NewRouter(handler)
+
+	const email = "admin@example.com"
+	const plaintextPassword = "SecureBootstrapPass@1"
+	encodedPassword := base64.StdEncoding.EncodeToString([]byte(plaintextPassword))
+	body := `{"email": "` + email + `", "password": "` + encodedPassword + `"}`
+
+	mockStore.On("AdminExists", ctx).Return(false, nil).Once()
+
+	var createdUser *auth.User
+	mockStore.On("CreateAdminIfNone", ctx, mock.AnythingOfType("*auth.User")).
+		Run(func(args mock.Arguments) {
+			u, ok := args.Get(1).(*auth.User)
+			require.True(t, ok)
+			createdUser = u
+		}).
+		Return(true, nil).Once()
+	mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil).Twice()
+	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+
+	setupReq := &events.LambdaFunctionURLRequest{
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{SourceIP: "127.0.0.1"},
+		},
+		Body: body,
+	}
+	_, err := router.Route(ctx, "POST", "/api/auth/setup-admin", setupReq)
+	require.NoError(t, err)
+	require.NotNil(t, createdUser, "setupAdmin must have created the admin user")
+
+	// login looks the user up by email; hand back the user setupAdmin
+	// created, carrying whatever password hash setupAdmin actually produced.
+	mockStore.On("GetUserByEmail", ctx, email).Return(createdUser, nil).Once()
+
+	loginReq := &events.LambdaFunctionURLRequest{
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{SourceIP: "127.0.0.1"},
+		},
+		Body: body,
+	}
+	result, err := router.Route(ctx, "POST", "/api/auth/login", loginReq)
+	require.NoError(t, err, "the bootstrap admin must be able to log in with the same frontend-encoded password used at setup")
+
+	resp, ok := result.(*api.LoginResponse)
+	require.True(t, ok)
+	assert.Equal(t, email, resp.User.Email)
+
+	mockStore.AssertExpectations(t)
 }
