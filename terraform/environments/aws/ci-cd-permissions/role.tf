@@ -127,21 +127,14 @@ resource "aws_iam_role" "cudly_deploy" {
               "repo:${var.github_repo}:environment:aws-db-staging",
               "repo:${var.github_repo}:environment:aws-db-prod",
 
-              # rollback.yml's rollback-aws-lambda / rollback-aws-fargate jobs
-              # bind to `aws-lambda-${{ inputs.environment }}-rollback` /
-              # `aws-fargate-${{ inputs.environment }}-rollback`; inputs.environment
-              # is a workflow_dispatch choice input constrained to
-              # dev/staging/prod. Listing the subject here only fixes control
-              # (1) above (this issue, #1648); it does nothing for controls
-              # (2) or (3). Live check: none of these six exist yet -- first
-              # dispatch auto-creates them bare, with neither a branch policy
-              # nor reviewers, unless #1660's provisioning work lands first.
-              "repo:${var.github_repo}:environment:aws-lambda-dev-rollback",
-              "repo:${var.github_repo}:environment:aws-lambda-staging-rollback",
-              "repo:${var.github_repo}:environment:aws-lambda-prod-rollback",
-              "repo:${var.github_repo}:environment:aws-fargate-dev-rollback",
-              "repo:${var.github_repo}:environment:aws-fargate-staging-rollback",
-              "repo:${var.github_repo}:environment:aws-fargate-prod-rollback",
+              # rollback.yml's rollback-aws-lambda binds to plain
+              # dev/staging/prod (covered above) and rollback-aws-fargate
+              # binds to aws-fargate-<env> (covered above), matching each
+              # job's own deploy workflow, rather than a compound
+              # `<cloud>-<env>-rollback` name. See #139. This list previously
+              # had six `aws-{lambda,fargate}-<env>-rollback` entries added
+              # for #1648; nothing presents those subjects any more, so they
+              # were removed rather than left as unused trust surface.
             ]
           }
         }
