@@ -19,3 +19,55 @@ module "deployment_checks" {
 
   provider_name = "gcp"
 }
+
+# ==============================================
+# Configuration Guards (#128)
+# ==============================================
+#
+# `check` blocks, not `precondition`s: they run on every plan/apply and
+# surface as a WARNING, but never fail the plan or block an apply. A
+# blocking precondition would also block every future prod deploy (any
+# unrelated change) until the LB/CDN/Cloud Armor stack is provisioned --
+# a coordinated runtime cutover (DNS + certificate + a human-run apply,
+# tracked separately) that this project's automated changes never perform
+# blind. A non-blocking warning that cannot be missed on every plan is the
+# guard that ships without waiting for that coordination.
+#
+# Today the first assert fails (WARN) for prod: environment = "prod" has
+# enable_cdn = false, so the API is internet-reachable with no network-layer
+# gate. That is the current, tracked state (#128), not a regression
+# introduced here -- the point of this check is to make sure it cannot
+# become "current" again silently once the LB/CDN cutover lands and someone
+# edits a tfvars file back. The second assert is clean today: prod and
+# staging's enable_cloud_armor was flipped to false alongside this change,
+# since it was previously a no-op that misrepresented what protects the
+# request path (#128) -- it guards against that combination reappearing.
+
+check "prod_requires_network_authenticated_ingress" {
+  assert {
+    condition     = !(var.environment == "prod" && !var.enable_cdn)
+    error_message = <<-EOT
+      environment = "prod" with enable_cdn = false leaves Cloud Run
+      allow_unauthenticated = true (see compute.tf) and cloud_run_ingress
+      typically INGRESS_TRAFFIC_ALL: the API is reachable from the open
+      internet with no network-layer gate, IAM-invoker gate, or Cloud Armor
+      in the request path. This must be resolved by the enable_cdn = true
+      cutover (LB + CloudFront-equivalent OAC + Cloud Armor), not by
+      silencing this warning.
+    EOT
+  }
+}
+
+check "cloud_armor_must_sit_in_the_request_path" {
+  assert {
+    condition     = !(var.enable_cloud_armor && !var.enable_cdn)
+    error_message = <<-EOT
+      enable_cloud_armor = true with enable_cdn = false: the Cloud Armor
+      policy is provisioned into nothing, since module.frontend (the only
+      place that attaches it) only exists when enable_cdn = true (see
+      frontend.tf). An operator reading this environment's tfvars is misled
+      into believing Cloud Armor protects it. Either set enable_cloud_armor
+      = false until the enable_cdn cutover lands, or complete that cutover.
+    EOT
+  }
+}
