@@ -586,6 +586,139 @@ func TestHandler_updatePlan(t *testing.T) {
 	assert.Equal(t, "Updated Plan", plan.Name)
 }
 
+// TestHandler_updatePlan_PreservesCompletedRampSteps pins issue #219:
+// PUT rebuilt the ramp schedule from scratch on every update -- even a
+// bare rename that resubmits the same ramp_schedule preset -- which
+// reset CurrentStep to 0, moved StartDate/NextExecutionDate to now, and
+// cleared LastExecutionDate/LastNotificationSent. The scheduler then
+// found no execution row for the new NextExecutionDate and re-bought
+// steps 1..N that had already executed. A PUT that resubmits the same
+// ramp schedule preset must leave the ramp's progress untouched.
+func TestHandler_updatePlan_PreservesCompletedRampSteps(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+
+	adminSession := &Session{
+		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		Email:  "admin@example.com",
+	}
+
+	rampStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	lastExec := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	lastNotif := time.Date(2026, 1, 14, 0, 0, 0, 0, time.UTC)
+	nextExec := time.Date(2026, 1, 22, 0, 0, 0, 0, time.UTC)
+
+	existingPlan := &config.PurchasePlan{
+		ID:      "12345678-1234-1234-1234-123456789abc",
+		Name:    "Weekly ramp plan",
+		Enabled: true,
+		Services: map[string]config.ServiceConfig{
+			"aws/ec2": {Provider: "aws", Service: "ec2", Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 80},
+		},
+		RampSchedule: config.RampSchedule{
+			Type:             "weekly",
+			PercentPerStep:   25,
+			StepIntervalDays: 7,
+			CurrentStep:      3,
+			TotalSteps:       4,
+			StartDate:        rampStart,
+		},
+		LastExecutionDate:    &lastExec,
+		LastNotificationSent: &lastNotif,
+		NextExecutionDate:    &nextExec,
+	}
+
+	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
+	mockAuth.grantAdmin()
+	mockStore.On("GetPurchasePlan", ctx, "12345678-1234-1234-1234-123456789abc").Return(existingPlan, nil)
+	mockStore.On("UpdatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+
+	// A rename: resubmits the plan's current "weekly-25pct" ramp preset,
+	// matching what the Edit modal actually sends (frontend/src/plans.ts).
+	body := `{"name": "Renamed weekly ramp plan", "enabled": true, "ramp_schedule": "weekly-25pct"}`
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{
+			"Authorization": "Bearer admin-token",
+		},
+		Body: body,
+	}
+	result, err := handler.updatePlan(ctx, req, "12345678-1234-1234-1234-123456789abc")
+	require.NoError(t, err)
+
+	plan := result.(*config.PurchasePlan)
+	assert.Equal(t, "Renamed weekly ramp plan", plan.Name)
+	assert.Equal(t, 3, plan.RampSchedule.CurrentStep,
+		"a same-schedule PUT must not reset ramp progress to step 0")
+	assert.True(t, plan.RampSchedule.StartDate.Equal(rampStart),
+		"the ramp's original start date must survive an unrelated field update")
+	require.NotNil(t, plan.NextExecutionDate)
+	assert.True(t, plan.NextExecutionDate.Equal(nextExec),
+		"next_execution_date must not be recomputed from now() when the ramp is unchanged")
+	require.NotNil(t, plan.LastExecutionDate)
+	assert.True(t, plan.LastExecutionDate.Equal(lastExec),
+		"last_execution_date is purchase history and must never be cleared by an update")
+	require.NotNil(t, plan.LastNotificationSent)
+	assert.True(t, plan.LastNotificationSent.Equal(lastNotif))
+}
+
+// TestHandler_updatePlan_ChangingRampScheduleStartsAtStepZero documents
+// the complementary case: when the update genuinely picks a different
+// ramp schedule, its progress legitimately starts fresh rather than
+// carrying over a step count that has no meaning under the new schedule.
+func TestHandler_updatePlan_ChangingRampScheduleStartsAtStepZero(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+
+	adminSession := &Session{
+		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		Email:  "admin@example.com",
+	}
+
+	rampStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	existingPlan := &config.PurchasePlan{
+		ID:      "12345678-1234-1234-1234-123456789abc",
+		Name:    "Weekly ramp plan",
+		Enabled: true,
+		Services: map[string]config.ServiceConfig{
+			"aws/ec2": {Provider: "aws", Service: "ec2", Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 80},
+		},
+		RampSchedule: config.RampSchedule{
+			Type:             "weekly",
+			PercentPerStep:   25,
+			StepIntervalDays: 7,
+			CurrentStep:      3,
+			TotalSteps:       4,
+			StartDate:        rampStart,
+		},
+	}
+
+	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
+	mockAuth.grantAdmin()
+	mockStore.On("GetPurchasePlan", ctx, "12345678-1234-1234-1234-123456789abc").Return(existingPlan, nil)
+	mockStore.On("UpdatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+
+	body := `{"name": "Weekly ramp plan", "enabled": true, "ramp_schedule": "monthly-10pct"}`
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{
+			"Authorization": "Bearer admin-token",
+		},
+		Body: body,
+	}
+	result, err := handler.updatePlan(ctx, req, "12345678-1234-1234-1234-123456789abc")
+	require.NoError(t, err)
+
+	plan := result.(*config.PurchasePlan)
+	assert.Equal(t, "monthly", plan.RampSchedule.Type)
+	assert.Equal(t, 0, plan.RampSchedule.CurrentStep,
+		"a deliberately different schedule starts its own progress at step 0")
+}
+
 func TestHandler_deletePlan(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
