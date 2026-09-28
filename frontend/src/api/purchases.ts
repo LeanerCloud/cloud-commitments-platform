@@ -7,7 +7,8 @@ import type {
   Recommendation,
   PurchaseResult,
   PurchaseDetails,
-  PlannedPurchasesResponse
+  PlannedPurchasesResponse,
+  RequestOptions
 } from './types';
 
 /**
@@ -84,8 +85,31 @@ export interface RevokePurchaseResult {
   revoked_via: string;
 }
 
-export async function revokePurchase(purchaseId: string): Promise<RevokePurchaseResult> {
-  return apiRequest<RevokePurchaseResult>(`/purchases/${purchaseId}/revoke`, { method: 'POST' });
+/** Azure refund quote from GET /purchases/{id}/revoke/calculate. */
+export interface RevokeQuote {
+  refund_amount: number;
+  refund_currency: string;
+  quoted_at: string;
+}
+
+export async function getRevokeQuote(purchaseId: string): Promise<RevokeQuote> {
+  return apiRequest<RevokeQuote>(`/purchases/${purchaseId}/revoke/calculate`);
+}
+
+/**
+ * The backend requires `quote` for completed Azure rows and rejects the
+ * return if Azure's current quote differs in amount or currency. Scheduled
+ * (pre-fire) rows are a free cancel and take no quote.
+ */
+export async function revokePurchase(purchaseId: string, quote?: RevokeQuote): Promise<RevokePurchaseResult> {
+  const init: RequestOptions = { method: 'POST' };
+  if (quote) {
+    init.body = JSON.stringify({
+      expected_refund_amount: quote.refund_amount,
+      expected_refund_currency: quote.refund_currency,
+    });
+  }
+  return apiRequest<RevokePurchaseResult>(`/purchases/${purchaseId}/revoke`, init);
 }
 
 /**

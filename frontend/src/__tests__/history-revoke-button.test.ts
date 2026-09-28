@@ -26,6 +26,7 @@ jest.mock('../api', () => ({
   getHistory: jest.fn(),
   getConfig: jest.fn().mockResolvedValue({ global: {} }),
   revokePurchase: jest.fn(),
+  getRevokeQuote: jest.fn(),
 }));
 
 jest.mock('../navigation', () => ({
@@ -71,6 +72,7 @@ jest.mock('../state', () => ({
 
 import * as api from '../api';
 import { getCurrentUser } from '../state';
+import { confirmDialog } from '../confirmDialog';
 
 // Administrators group GUID -- mirrors ADMINISTRATORS_GROUP_ID in
 // frontend/src/permissions.ts. Without this, isAdmin() returns false and
@@ -302,5 +304,60 @@ describe('History inline Revoke button (issue #290)', () => {
     await loadHistory();
 
     expect(revokeIds()).toContain('commit-scheduled');
+  });
+});
+
+// platform#96: the backend refuses an Azure return unless the body carries the
+// quote the user consented to, so the click flow must fetch the quote, show it,
+// and send amount + currency back.
+describe('History Revoke click flow (platform#96)', () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    setupDOM();
+    jest.clearAllMocks();
+    (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
+  });
+
+  async function clickRevoke(status: string): Promise<void> {
+    (api.getHistory as jest.Mock).mockResolvedValue({
+      summary: {},
+      purchases: [makeRow({ purchase_id: 'commit-azure', status, revocation_window_closes_at: FUTURE })],
+    });
+    await loadHistory();
+    document.querySelector<HTMLButtonElement>('.history-revoke-btn')!.click();
+    await flush();
+  }
+
+  test('completed row: fetches the quote, shows it, and sends it with the revoke', async () => {
+    const quote = { refund_amount: 4200, refund_currency: 'EUR', quoted_at: '2024-01-16T00:00:00Z' };
+    (api.getRevokeQuote as jest.Mock).mockResolvedValue(quote);
+    (confirmDialog as jest.Mock).mockResolvedValue(true);
+    (api.revokePurchase as jest.Mock).mockResolvedValue({ status: 'revoked' });
+
+    await clickRevoke('completed');
+
+    expect(api.getRevokeQuote).toHaveBeenCalledWith('commit-azure');
+    expect((confirmDialog as jest.Mock).mock.calls[0][0].body).toContain('4200.00 EUR');
+    expect(api.revokePurchase).toHaveBeenCalledWith('commit-azure', quote);
+  });
+
+  test('completed row: a failed quote never reaches the revoke call', async () => {
+    (api.getRevokeQuote as jest.Mock).mockRejectedValue(new Error('boom'));
+
+    await clickRevoke('completed');
+
+    expect(confirmDialog).not.toHaveBeenCalled();
+    expect(api.revokePurchase).not.toHaveBeenCalled();
+  });
+
+  test('scheduled row: free cancel, no quote requested', async () => {
+    (confirmDialog as jest.Mock).mockResolvedValue(true);
+    (api.revokePurchase as jest.Mock).mockResolvedValue({ status: 'cancelled' });
+
+    await clickRevoke('scheduled');
+
+    expect(api.getRevokeQuote).not.toHaveBeenCalled();
+    expect(api.revokePurchase).toHaveBeenCalledWith('commit-azure', undefined);
   });
 });

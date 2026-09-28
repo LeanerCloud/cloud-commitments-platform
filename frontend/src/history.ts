@@ -6,6 +6,7 @@ import * as api from './api';
 import * as state from './state';
 import { formatCurrency, formatDate, formatTerm, escapeHtml, escapeHtmlAttr, amortizedMonthly } from './utils';
 import type { HistoryResponse, HistorySummary, HistoryPurchase } from './types';
+import type { RevokeQuote } from './api';
 import { switchTab } from './navigation';
 import { confirmDialog } from './confirmDialog';
 import { buildApprovalDetailsBody } from './approval-details';
@@ -899,7 +900,7 @@ function renderActionCell(p: HistoryPurchase): string {
     // #290). Only Azure supports direct in-app revocation; AWS and GCP have
     // no cancel API so the button is suppressed for those providers.
     if (canRevokeCompletedRow(p)) {
-      trailingActions.push(`<button type="button" class="btn-link history-revoke-btn" data-revoke-id="${escapeHtml(p.purchase_id)}">Revoke</button>`);
+      trailingActions.push(`<button type="button" class="btn-link history-revoke-btn" data-revoke-id="${escapeHtml(p.purchase_id)}" data-revoke-scheduled="${(p.status || '').toLowerCase() === 'scheduled'}">Revoke</button>`);
     }
     // Completed Standard RI rows (AWS): Cancel listing / Sell on Marketplace
     // (issue #292). Mutually exclusive with revoke in practice (revoke is
@@ -1406,7 +1407,9 @@ function wireRowActionHandlers(container: HTMLElement): void {
   });
 
   // Wire the inline Revoke button on completed Azure rows within the
-  // free-cancel window (issue #290). confirmDialog -> POST -> reload.
+  // free-cancel window (issue #290). quote -> confirmDialog -> POST -> reload.
+  // Completed rows fetch the Azure refund quote first so the user consents to
+  // a concrete amount, which the backend re-checks before issuing the refund.
   // The backend is the security boundary; canRevokeCompletedRow is a
   // UX gate that hides the button when the call would fail, but a stale
   // cache can still surface a 4xx -- handle it like any other failure.
@@ -1414,9 +1417,23 @@ function wireRowActionHandlers(container: HTMLElement): void {
     btn.addEventListener('click', async () => {
       const id = btn.dataset['revokeId'];
       if (!id) return;
+      let quote: RevokeQuote | undefined;
+      if (btn.dataset['revokeScheduled'] !== 'true') {
+        try {
+          quote = await api.getRevokeQuote(id);
+        } catch (quoteError) {
+          console.error('Failed to get refund quote:', quoteError);
+          const err = quoteError as Error;
+          showToast({ message: `Failed to get refund quote: ${err.message || 'unknown error'}`, kind: 'error' });
+          return;
+        }
+      }
+      const refundLine = quote
+        ? `Azure will refund ${quote.refund_amount.toFixed(2)} ${quote.refund_currency}.`
+        : 'The scheduled purchase has not been submitted yet, so nothing will be charged.';
       const ok = await confirmDialog({
         title: 'Revoke this purchase within the free-cancel window?',
-        body: 'This will request an Azure reservation return. The charge will be refunded if the request is within the 7-day window. This action cannot be undone.',
+        body: `This will request an Azure reservation return. ${refundLine} This action cannot be undone.`,
         confirmLabel: 'Revoke purchase',
         destructive: true,
       });
@@ -1424,7 +1441,7 @@ function wireRowActionHandlers(container: HTMLElement): void {
       const rowActions = sameRowActions(btn);
       rowActions.forEach((b) => { b.disabled = true; });
       try {
-        await api.revokePurchase(id);
+        await api.revokePurchase(id, quote);
       } catch (revokeError) {
         console.error('Failed to revoke purchase:', revokeError);
         const err = revokeError as Error;
