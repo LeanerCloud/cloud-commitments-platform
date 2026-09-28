@@ -186,10 +186,33 @@ export function showCreateKeyModal(): void {
   if (expiresAtInput) {
     const defaultDate = new Date();
     defaultDate.setDate(defaultDate.getDate() + 90);
-    expiresAtInput.value = defaultDate.toISOString().split('T')[0] || '';
+    expiresAtInput.value = toLocalDateInputValue(defaultDate);
   }
 
   openModal(modal);
+}
+
+/**
+ * Formats a Date as the YYYY-MM-DD value an <input type="date"> expects,
+ * using local calendar components. toISOString() converts to UTC first,
+ * which can shift the date by a day near local midnight.
+ */
+function toLocalDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Parses an <input type="date"> value (YYYY-MM-DD) as local midnight.
+ * new Date(dateString) parses it as UTC midnight instead, which can read as
+ * "yesterday evening" in timezones behind UTC and reject a same-day or
+ * next-day expiration that should be valid (CodeRabbit finding on #392).
+ */
+function parseLocalDateInputValue(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
 }
 
 /**
@@ -251,7 +274,7 @@ export async function handleCreateApiKey(e: Event): Promise<void> {
     return;
   }
 
-  const expiresAt = new Date(expiresAtInput);
+  const expiresAt = parseLocalDateInputValue(expiresAtInput);
   if (expiresAt <= new Date()) {
     showError('Expiration date must be in the future');
     return;

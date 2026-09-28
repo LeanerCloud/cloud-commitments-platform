@@ -270,12 +270,17 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 	user.Salt = "" // Not used anymore
 	user.PasswordHash = passwordHash
 
-	// Invalidate sessions and API keys (non-critical, best-effort -- issue #102).
-	s.invalidateUserCredentialsBestEffort(ctx, userID, "password change")
-
 	if err := s.store.UpdateUser(ctx, user); err != nil {
 		return err
 	}
+
+	// Invalidate sessions and API keys only after the new password is
+	// persisted (non-critical, best-effort -- issue #102). Invalidating
+	// first would mean a failed UpdateUser leaves the caller with revoked
+	// credentials for a password that never actually changed (CodeRabbit
+	// finding on #392).
+	s.invalidateUserCredentialsBestEffort(ctx, userID, "password change")
+
 	s.notifyPasswordChange(ctx, userID, req.NewPassword)
 	return nil
 }
@@ -373,11 +378,14 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, req PasswordResetCon
 		user.Active = true
 	}
 
-	s.invalidateUserCredentialsBestEffort(ctx, user.ID, "password reset")
-
 	if err := s.store.UpdateUser(ctx, user); err != nil {
 		return err
 	}
+
+	// See the matching comment in ChangePassword: invalidate only after the
+	// new password is persisted, or a failed UpdateUser leaves the caller
+	// with revoked credentials for a password that never actually changed.
+	s.invalidateUserCredentialsBestEffort(ctx, user.ID, "password reset")
 	s.notifyPasswordChange(ctx, user.ID, req.NewPassword)
 	return nil
 }

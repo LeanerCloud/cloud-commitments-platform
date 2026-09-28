@@ -384,11 +384,18 @@ describe('API Keys Module', () => {
 
       showCreateKeyModal();
 
-      expect(expiresAtInput.value).not.toBe('');
-      const prefilled = new Date(expiresAtInput.value);
+      // Compare local calendar components, not a UTC round-trip: the field
+      // is filled from local date parts (issue #102 CodeRabbit finding), so
+      // asserting via toISOString would flake near local midnight in
+      // timezones ahead of or behind UTC.
       const expected = new Date();
       expected.setDate(expected.getDate() + 90);
-      expect(prefilled.toISOString().split('T')[0]).toBe(expected.toISOString().split('T')[0]);
+      const expectedValue = [
+        expected.getFullYear(),
+        String(expected.getMonth() + 1).padStart(2, '0'),
+        String(expected.getDate()).padStart(2, '0'),
+      ].join('-');
+      expect(expiresAtInput.value).toBe(expectedValue);
     });
 
     test('handles missing modal gracefully', () => {

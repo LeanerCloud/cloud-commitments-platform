@@ -111,7 +111,10 @@ var (
 	// ErrAPIKeyExpiresAtRequired — no expires_at supplied; unscoped-lifetime
 	//                              keys are no longer allowed.
 	// ErrAPIKeyExpiresAtTooFar  — expires_at exceeds MaxAPIKeyLifetime.
+	// ErrAPIKeyExpiresAtInPast  — expires_at is not in the future, which would
+	//                             mint a key that is already expired.
 	ErrAPIKeyInvalidPassword   = errors.New("invalid password")
 	ErrAPIKeyExpiresAtRequired = errors.New("expires_at is required")
 	ErrAPIKeyExpiresAtTooFar   = errors.New("expires_at exceeds the maximum API key lifetime")
+	ErrAPIKeyExpiresAtInPast   = errors.New("expires_at must be in the future")
 )

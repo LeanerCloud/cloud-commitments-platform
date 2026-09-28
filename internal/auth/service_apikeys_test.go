@@ -194,6 +194,32 @@ func TestService_CreateAPIKey(t *testing.T) {
 		mockStore.AssertExpectations(t)
 	})
 
+	// CodeRabbit finding on this PR: a past expiresAt slipped through the
+	// pre-fix version of this check (which only rejected values too far in
+	// the future), minting a key that was already expired.
+	t.Run("fail when expiresAt is in the past", func(t *testing.T) {
+		mockStore := new(MockStore)
+		service := &Service{store: mockStore}
+
+		user := &User{
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+		}
+		pastExpiry := time.Now().Add(-1 * time.Hour)
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
+
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, &pastExpiry)
+
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrAPIKeyExpiresAtInPast)
+		assert.Empty(t, apiKey)
+		assert.Nil(t, keyInfo)
+		mockStore.AssertExpectations(t)
+	})
+
 	t.Run("successfully create API key with expiration", func(t *testing.T) {
 		mockStore := new(MockStore)
 		service := &Service{store: mockStore}

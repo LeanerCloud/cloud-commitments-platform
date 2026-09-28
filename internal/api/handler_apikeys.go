@@ -85,15 +85,17 @@ func (h *Handler) createAPIKey(ctx context.Context, req *events.LambdaFunctionUR
 //   - ErrAPIKeyInvalidPassword -> 401: the acting user is re-verifying their
 //     own credential, so a precise message is safe (same treatment as
 //     ErrCurrentPasswordIncorrect).
-//   - ErrAPIKeyExpiresAtRequired / ErrAPIKeyExpiresAtTooFar -> 400: caller-
-//     correctable request validation.
+//   - ErrAPIKeyExpiresAtRequired / ErrAPIKeyExpiresAtTooFar / ErrAPIKeyExpiresAtInPast
+//     -> 400: caller-correctable request validation.
 //   - All other errors pass through unchanged for handleRequestError to
 //     render as 500.
 func mapCreateAPIKeyError(err error) error {
 	switch {
 	case errors.Is(err, auth.ErrAPIKeyInvalidPassword):
 		return NewClientError(401, err.Error())
-	case errors.Is(err, auth.ErrAPIKeyExpiresAtRequired), errors.Is(err, auth.ErrAPIKeyExpiresAtTooFar):
+	case errors.Is(err, auth.ErrAPIKeyExpiresAtRequired),
+		errors.Is(err, auth.ErrAPIKeyExpiresAtTooFar),
+		errors.Is(err, auth.ErrAPIKeyExpiresAtInPast):
 		return NewClientError(400, err.Error())
 	}
 	return fmt.Errorf("failed to create API key: %w", err)

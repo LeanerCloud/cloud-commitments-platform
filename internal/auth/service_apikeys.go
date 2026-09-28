@@ -140,7 +140,11 @@ func (s *Service) validateCreateAPIKeyRequest(user *User, password, name string,
 	if expiresAt == nil {
 		return fmt.Errorf("%w", ErrAPIKeyExpiresAtRequired)
 	}
-	if expiresAt.After(time.Now().Add(MaxAPIKeyLifetime)) {
+	now := time.Now()
+	if !expiresAt.After(now) {
+		return fmt.Errorf("%w", ErrAPIKeyExpiresAtInPast)
+	}
+	if expiresAt.After(now.Add(MaxAPIKeyLifetime)) {
 		return fmt.Errorf("%w", ErrAPIKeyExpiresAtTooFar)
 	}
 	return nil
