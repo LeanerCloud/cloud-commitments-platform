@@ -1635,3 +1635,88 @@ func TestMapMFAServiceError_AuthFailed_Is401(t *testing.T) {
 	assert.Equal(t, 401, ce.code, "ErrMFAAuthFailed must map to HTTP 401")
 	assert.Contains(t, ce.Error(), auth.ErrMFAAuthFailed.Error())
 }
+
+// Issue #94: every MFA route that checks a password, TOTP or recovery code
+// must be throttled per IP and per session user.
+func TestHandler_mfaEndpoints_RateLimited(t *testing.T) {
+	limit := getDefaultRateLimits()["mfa"].MaxAttempts
+	invalid := auth.ErrMFAInvalidCode
+	cases := []struct {
+		name   string
+		method string
+		args   []any
+		ret    []any
+		call   func(h *Handler, req *events.LambdaFunctionURLRequest) error
+		body   string
+	}{
+		{"setup", "MFASetupAPI", []any{"user-1", "pw"}, []any{"", "", invalid},
+			func(h *Handler, r *events.LambdaFunctionURLRequest) error {
+				_, err := h.mfaSetup(context.Background(), r)
+				return err
+			},
+			`{"password":"` + b64("pw") + `"}`},
+		{"enable", "MFAEnableAPI", []any{"user-1", "000000"}, []any{[]string(nil), invalid},
+			func(h *Handler, r *events.LambdaFunctionURLRequest) error {
+				_, err := h.mfaEnable(context.Background(), r)
+				return err
+			},
+			`{"code":"000000"}`},
+		{"disable", "MFADisableAPI", []any{"user-1", "pw", "000000"}, []any{invalid},
+			func(h *Handler, r *events.LambdaFunctionURLRequest) error {
+				_, err := h.mfaDisable(context.Background(), r)
+				return err
+			},
+			`{"password":"` + b64("pw") + `","code":"000000"}`},
+		{"regenerate", "MFARegenerateRecoveryCodesAPI", []any{"user-1", "000000"}, []any{[]string(nil), invalid},
+			func(h *Handler, r *events.LambdaFunctionURLRequest) error {
+				_, err := h.mfaRegenerateRecoveryCodes(context.Background(), r)
+				return err
+			},
+			`{"code":"000000"}`},
+	}
+	for _, tc := range cases {
+		for _, rotateIP := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/rotateIP=%v", tc.name, rotateIP), func(t *testing.T) {
+				mockAuth := new(MockAuthService)
+				t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+				mockAuth.On("ValidateSession", mock.Anything, "tok").
+					Return(&Session{UserID: "user-1", Email: "u@x.com"}, nil)
+				mockAuth.On(tc.method, append([]any{mock.Anything}, tc.args...)...).
+					Return(tc.ret...).Times(limit)
+				h := &Handler{auth: mockAuth, rateLimiter: NewInMemoryRateLimiter()}
+
+				for i := 0; i <= limit; i++ {
+					req := authedReq("tok", tc.body)
+					req.RequestContext.HTTP.SourceIP = "198.51.100.1"
+					if rotateIP {
+						req.RequestContext.HTTP.SourceIP = fmt.Sprintf("198.51.100.%d", i+1)
+					}
+					err := tc.call(h, req)
+					ce, ok := IsClientError(err)
+					require.True(t, ok, "attempt %d: %v", i+1, err)
+					if i < limit {
+						assert.Equal(t, 400, ce.code, "attempt %d", i+1)
+					} else {
+						assert.Equal(t, 429, ce.code, "attempt %d must be throttled", i+1)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestHandler_mfaEnable_RateLimiterErrorFailsClosed(t *testing.T) {
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	mockAuth.On("ValidateSession", mock.Anything, "tok").Return(&Session{UserID: "user-1"}, nil)
+	rl := new(MockRateLimiter)
+	t.Cleanup(func() { rl.AssertExpectations(t) })
+	rl.On("AllowWithIP", mock.Anything, mock.Anything, "mfa").Return(true, nil)
+	rl.On("AllowWithUser", mock.Anything, "user-1", "mfa").Return(false, errors.New("db down"))
+	h := &Handler{auth: mockAuth, rateLimiter: rl}
+
+	_, err := h.mfaEnable(context.Background(), authedReq("tok", `{"code":"000000"}`))
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 503, ce.code)
+}

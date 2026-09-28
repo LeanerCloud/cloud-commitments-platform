@@ -569,3 +569,31 @@ func (h *Handler) checkRateLimitStrict(ctx context.Context, req *events.LambdaFu
 	}
 	return nil
 }
+
+// requireMFASession is requireSession plus the "mfa" bucket applied per IP and
+// then per session user, both fail-closed, so a stolen session cannot reset its
+// guessing budget by rotating IPs (#94).
+func (h *Handler) requireMFASession(ctx context.Context, req *events.LambdaFunctionURLRequest) (*Session, error) {
+	const endpoint = "mfa"
+	if err := h.checkRateLimitStrict(ctx, req, endpoint); err != nil {
+		return nil, err
+	}
+	session, err := h.requireSession(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if h.rateLimiter == nil {
+		return session, nil
+	}
+	allowed, err := h.rateLimiter.AllowWithUser(ctx, session.UserID, endpoint)
+	if err != nil {
+		logging.Errorf("ALERT: rate limiter error on credential endpoint %s for user %s; request denied (02-M1): %v",
+			endpoint, session.UserID, err)
+		return nil, NewClientError(503, "service temporarily unavailable, please try again later")
+	}
+	if !allowed {
+		logging.Warnf("Rate limit exceeded for %s for user: %s", endpoint, session.UserID)
+		return nil, NewClientError(429, "too many requests, please try again later")
+	}
+	return session, nil
+}

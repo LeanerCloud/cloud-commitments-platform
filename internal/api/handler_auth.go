@@ -552,7 +552,7 @@ func mapMFAServiceError(err error) error {
 // the body (base64-encoded, same convention as login). Returns the
 // generated secret + otpauth provisioning URI for QR display.
 func (h *Handler) mfaSetup(ctx context.Context, req *events.LambdaFunctionURLRequest) (*MFASetupResponse, error) {
-	session, err := h.requireSession(ctx, req)
+	session, err := h.requireMFASession(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -576,7 +576,7 @@ func (h *Handler) mfaSetup(ctx context.Context, req *events.LambdaFunctionURLReq
 // TOTP code against the pending secret + flips MFAEnabled=true on
 // success. Returns the plaintext recovery codes once.
 func (h *Handler) mfaEnable(ctx context.Context, req *events.LambdaFunctionURLRequest) (*MFAEnableResponse, error) {
-	session, err := h.requireSession(ctx, req)
+	session, err := h.requireMFASession(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -597,7 +597,7 @@ func (h *Handler) mfaEnable(ctx context.Context, req *events.LambdaFunctionURLRe
 // code). On success: clears the secret + recovery codes, flips
 // MFAEnabled=false.
 func (h *Handler) mfaDisable(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
-	session, err := h.requireSession(ctx, req)
+	session, err := h.requireMFASession(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -622,7 +622,7 @@ func (h *Handler) mfaDisable(ctx context.Context, req *events.LambdaFunctionURLR
 // recovery codes with a fresh batch. Requires a current TOTP code
 // (NOT a recovery code).
 func (h *Handler) mfaRegenerateRecoveryCodes(ctx context.Context, req *events.LambdaFunctionURLRequest) (*MFARegenerateResponse, error) {
-	session, err := h.requireSession(ctx, req)
+	session, err := h.requireMFASession(ctx, req)
 	if err != nil {
 		return nil, err
 	}
