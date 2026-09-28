@@ -68,7 +68,20 @@ resource "terraform_data" "docker_build" {
 
   provisioner "local-exec" {
     working_dir = var.source_path
-    command     = <<-EOT
+    # extra_build_args is passed through the environment, not interpolated into
+    # the script text below, so shell metacharacters in its value (;, `, $())
+    # are never parsed as script syntax. registry_login_command still has to be
+    # interpolated as literal shell source (it is documented to be a full
+    # command, e.g. a pipe into `docker login`), so it stays a trusted,
+    # identity-based-only input (see its variable description) rather than a
+    # secret: neither variable is marked sensitive, because that would
+    # suppress this resource's entire local-exec output (the build/push log
+    # deploy-*.yml workflows tee and grep to detect failures), not just the
+    # two variables' own values.
+    environment = {
+      EXTRA_BUILD_ARGS = var.extra_build_args
+    }
+    command = <<-EOT
       set -e
       echo "Logging in to registry..."
       ${var.registry_login_command}
@@ -105,11 +118,11 @@ resource "terraform_data" "docker_build" {
         $PLATFORM_ARG \
         --provenance=false \
         --sbom=false \
-        --tag ${local.image_uri} \
-        --build-arg GIT_COMMIT=${local.git_commit} \
-        --build-arg BUILD_DATE=${local.timestamp} \
+        --tag "${local.image_uri}" \
+        --build-arg "GIT_COMMIT=${local.git_commit}" \
+        --build-arg "BUILD_DATE=${local.timestamp}" \
         --push \
-        ${var.extra_build_args} \
+        $EXTRA_BUILD_ARGS \
         .
 
       echo "Docker image built and pushed successfully"
