@@ -352,6 +352,38 @@ export async function triggerAutoRefreshIfStale(
   startRecommendationsRefresh(onReload);
 }
 
+// pollForCollectionToClear bounds how long startRecommendationsRefresh waits
+// out a 409 (issue #106): POLL_INTERVAL_MS between checks,
+// POLL_MAX_ATTEMPTS checks total, so the longest wait matches the backend's
+// own detached-collection budget (5 min in internal/scheduler/scheduler.go).
+const COLLECTION_POLL_INTERVAL_MS = 5_000;
+const COLLECTION_POLL_MAX_ATTEMPTS = 24; // 24 * 5s = 2 min
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Polls GET /api/recommendations/freshness until last_collection_started_at
+ * clears (the collection someone else already started has finished), up to
+ * COLLECTION_POLL_MAX_ATTEMPTS times. Returns true once cleared, false on
+ * timeout. Network failures while polling are treated as "not yet cleared"
+ * (same over-show-vs-fail philosophy as the rest of this module) rather than
+ * aborting the wait early.
+ */
+async function pollUntilCollectionClears(): Promise<boolean> {
+  for (let attempt = 0; attempt < COLLECTION_POLL_MAX_ATTEMPTS; attempt++) {
+    await delay(COLLECTION_POLL_INTERVAL_MS);
+    try {
+      const freshness = await getRecommendationsFreshness();
+      if (!freshness.last_collection_started_at) return true;
+    } catch (err) {
+      console.error('Failed to poll recommendations freshness:', err);
+    }
+  }
+  return false;
+}
+
 /**
  * Kick off a recommendations re-collect, surface the three-stage toast
  * (in-flight / success / failure), and reload the page-specific UI on
@@ -360,6 +392,12 @@ export async function triggerAutoRefreshIfStale(
  * two concurrent collects. Returns the in-flight promise (or the existing
  * one when a refresh is already running) so callers that need to await
  * completion — e.g. re-enabling a control — can do so.
+ *
+ * A 409 ("collection already in progress") is NOT a failure: it means the
+ * backend's cold-start marker (issue #106) or another caller already has a
+ * collection running. Rather than showing a red toast for a refresh that is
+ * actually happening, poll the freshness endpoint until the in-flight
+ * marker clears, then reload -- same as if this call had started it.
  */
 function startRecommendationsRefresh(
   onReload: () => Promise<void> = loadRecommendations,
@@ -390,7 +428,29 @@ function startRecommendationsRefresh(
       // a page that doesn't display them.
       return onReload();
     })
-    .catch((err: unknown) => {
+    .catch(async (err: unknown) => {
+      const status = err !== null && typeof err === 'object' && 'status' in err
+        ? (err as { status?: unknown }).status
+        : undefined;
+      if (status === 409) {
+        const cleared = await pollUntilCollectionClears();
+        if (cleared) {
+          inFlight.dismiss();
+          showToast({
+            message: 'Recommendations refreshed',
+            kind: 'success',
+            timeout: 5_000,
+          });
+          await onReload();
+          return;
+        }
+        inFlight.dismiss();
+        showToast({
+          message: 'Recommendations refresh is taking longer than expected; try again shortly',
+          kind: 'error',
+        });
+        return;
+      }
       inFlight.dismiss();
       const message =
         err instanceof Error

@@ -1330,10 +1330,16 @@ func applySuppressionIndex(recs []config.RecommendationRecord, index map[suppres
 // double-run concurrently. On Lambda a goroutine started inside a request
 // handler freezes the instant this invocation's response is sent (see
 // maybeKickBackgroundRefresh), so there is no way to make progress from
-// inside this invocation; the marker is released immediately and the cache
-// is populated by whichever runs first: the scheduled cron (already
-// advisory-locked) or the frontend's auto-refresh-on-open flow.
+// inside this invocation; this function returns immediately WITHOUT ever
+// calling MarkCollectionStarted, rather than winning the marker only to
+// release it straight back -- that mark-then-clear round trip does no work
+// and briefly opens a false-409 window on the refresh endpoint for nothing.
+// The cache is populated by whichever runs first: the scheduled cron
+// (already advisory-locked) or the frontend's auto-refresh-on-open flow.
 func (s *Scheduler) kickColdStartCollection(ctx context.Context) {
+	if s.isLambda {
+		return
+	}
 	token, ok, err := s.config.MarkCollectionStarted(ctx)
 	if err != nil {
 		logging.Warnf("cold-start collection: failed to mark started: %v", err)
@@ -1342,10 +1348,6 @@ func (s *Scheduler) kickColdStartCollection(ctx context.Context) {
 	if !ok {
 		// Another reader, the cron, or an explicit refresh already has a
 		// collection in flight.
-		return
-	}
-	if s.isLambda {
-		s.clearCollectionStartedBestEffort(ctx, token)
 		return
 	}
 	if !s.collecting.CompareAndSwap(false, true) {
