@@ -60,6 +60,12 @@ on:
         required: false
         type: string
         default: ''
+      compute_platform:
+        description: 'AWS compute platform whose database to migrate (terraform/environments/aws has two independent RDS instances, one per namespace; ignored for gcp/azure)'
+        required: false
+        type: choice
+        options: [lambda, fargate]
+        default: lambda
   workflow_call:
     inputs:
       cloud:
@@ -72,9 +78,16 @@ on:
         required: false
         type: string
         default: up
+      compute_platform:
+        required: false
+        type: string
+        default: lambda
 
 env:
   MIGRATIONS_PATH: internal/database/postgres/migrations
+  # Must satisfy `required_version = ">= 1.10.0"` declared by every
+  # terraform/environments/*/main.tf. Keep in sync with ci.yml/pre-commit.yml.
+  TF_VERSION: '1.10.5'
 
 jobs:
   # Validate migration request
@@ -100,6 +113,7 @@ jobs:
           DIRECTION: ${{ inputs.direction }}
           STEPS: ${{ inputs.steps }}
           CONFIRM: ${{ inputs.confirm }}
+          COMPUTE_PLATFORM: ${{ inputs.compute_platform }}
         run: |
           set -uo pipefail
           IS_SAFE=true
@@ -108,6 +122,11 @@ jobs:
           # renders empty. Treat that the same as the explicit default of "0"
           # (apply/rollback everything) rather than rejecting it outright.
           STEPS="${STEPS:-0}"
+
+          # Both triggers default `compute_platform` to "lambda", but
+          # workflow_call's is a plain `type: string` with no `choice`
+          # enforcement, so re-validate it here like every other input.
+          COMPUTE_PLATFORM="${COMPUTE_PLATFORM:-lambda}"
 
           # workflow_dispatch's cloud/environment/direction are `type: choice`,
           # enforced server-side before the run starts. workflow_call's are plain
@@ -133,6 +152,14 @@ jobs:
             up|down) ;;
             *)
               echo "❌ Invalid direction: '$DIRECTION' (expected up or down)"
+              IS_SAFE=false
+              ;;
+          esac
+
+          case "$COMPUTE_PLATFORM" in
+            lambda|fargate) ;;
+            *)
+              echo "❌ Invalid compute_platform: '$COMPUTE_PLATFORM' (expected lambda or fargate)"
               IS_SAFE=false
               ;;
           esac
@@ -289,14 +316,48 @@ jobs:
           role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
       - name: Get database endpoint from Terraform
         id: get-endpoint
+        env:
+          TF_BACKEND: ${{ secrets.TF_BACKEND_AWS }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          COMPUTE_PLATFORM: ${{ inputs.compute_platform || 'lambda' }}
         run: |
+          set -euo pipefail
           cd terraform/environments/aws
-          terraform init
-          DB_ENDPOINT=$(terraform output -raw database_proxy_endpoint 2>/dev/null || echo "")
+
+          # terraform/environments/aws is one root applied into two independent
+          # state objects, each with its own RDS instance (module.database has
+          # no `count` on compute_platform): github-<env>/ for Lambda deploys,
+          # github-fargate-<env>/ for Fargate. Picking the wrong one migrates a
+          # database nobody is serving traffic from while the live one stays on
+          # the old schema, so the namespace is an explicit operator input
+          # (`inputs.compute_platform`), never guessed. `validate` already
+          # rejects anything outside lambda|fargate before this job runs.
+          case "$COMPUTE_PLATFORM" in
+            lambda)  STATE_KEY="github-${ENVIRONMENT}/terraform.tfstate" ;;
+            fargate) STATE_KEY="github-fargate-${ENVIRONMENT}/terraform.tfstate" ;;
+            *)
+              echo "::error::Unknown compute_platform: '$COMPUTE_PLATFORM'"
+              exit 1
+              ;;
+          esac
+          printf '%s\nkey = "%s"\n' "$TF_BACKEND" "$STATE_KEY" > /tmp/backend.tfbackend
+          terraform init -backend-config=/tmp/backend.tfbackend
+
+          # No `2>/dev/null || echo ""` here: letting terraform's own error
+          # reach the log is what tells an operator WHICH cause they hit
+          # (output renamed, empty state for this environment/platform, wrong
+          # key, insufficient IAM on the state bucket) instead of the single
+          # undifferentiated "Failed to get database endpoint" below.
+          DB_ENDPOINT=$(terraform output -raw database_proxy_endpoint)
           if [ -z "$DB_ENDPOINT" ]; then
-            echo "Failed to get database endpoint"
+            echo "::error::terraform output returned an empty database_proxy_endpoint for compute_platform=$COMPUTE_PLATFORM, environment=$ENVIRONMENT"
             exit 1
           fi
           echo "endpoint=$DB_ENDPOINT" >> "$GITHUB_OUTPUT"
@@ -403,14 +464,27 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
       - name: Get database endpoint from Terraform
         id: get-endpoint
+        env:
+          TF_BACKEND: ${{ secrets.TF_BACKEND_GCP }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
+          set -euo pipefail
+          printf '%s\nprefix = "github-%s"\n' "$TF_BACKEND" "$ENVIRONMENT" > /tmp/backend.tfbackend
           cd terraform/environments/gcp
-          terraform init
-          DB_ENDPOINT=$(terraform output -raw database_private_ip 2>/dev/null || echo "")
+          terraform init -backend-config=/tmp/backend.tfbackend
+
+          # No `2>/dev/null || echo ""`: let terraform's own error reach the
+          # log instead of collapsing every distinct cause into one message.
+          DB_ENDPOINT=$(terraform output -raw database_private_ip)
           if [ -z "$DB_ENDPOINT" ]; then
-            echo "Failed to get database endpoint"
+            echo "::error::terraform output returned an empty database_private_ip for environment=$ENVIRONMENT"
             exit 1
           fi
           echo "endpoint=$DB_ENDPOINT" >> "$GITHUB_OUTPUT"
@@ -495,14 +569,27 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
       - name: Get database endpoint from Terraform
         id: get-endpoint
+        env:
+          TF_BACKEND: ${{ secrets.TF_BACKEND_AZURE }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
+          set -euo pipefail
+          printf '%s\nkey = "github-%s.terraform.tfstate"\n' "$TF_BACKEND" "$ENVIRONMENT" > /tmp/backend.tfbackend
           cd terraform/environments/azure
-          terraform init
-          DB_ENDPOINT=$(terraform output -raw database_fqdn 2>/dev/null || echo "")
+          terraform init -backend-config=/tmp/backend.tfbackend
+
+          # No `2>/dev/null || echo ""`: let terraform's own error reach the
+          # log instead of collapsing every distinct cause into one message.
+          DB_ENDPOINT=$(terraform output -raw database_server_fqdn)
           if [ -z "$DB_ENDPOINT" ]; then
-            echo "Failed to get database endpoint"
+            echo "::error::terraform output returned an empty database_server_fqdn for environment=$ENVIRONMENT"
             exit 1
           fi
           echo "endpoint=$DB_ENDPOINT" >> "$GITHUB_OUTPUT"
