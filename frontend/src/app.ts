@@ -346,6 +346,17 @@ export async function handleExecutePurchase(): Promise<void> {
     await handleFanOutExecute(fanOutBuckets);
     return;
   }
+  // fanOutBuckets !== null means fan-out mode is active but every bucket
+  // was skipped (unpriced/unavailable) -- distinct from null (fan-out was
+  // never opened). Refuse rather than silently falling through to
+  // getPurchaseModalRecommendations()'s single-row state, which could be
+  // stale leftovers from a different selection (issue #331). In practice
+  // the Execute button is already disabled in this state; this is
+  // defense-in-depth, not a workaround for a reachable click.
+  if (fanOutBuckets !== null) {
+    showToast({ message: 'No recommendations selected for purchase.', kind: 'warning' });
+    return;
+  }
 
   const localRecs = getPurchaseModalRecommendations();
   if (localRecs.length === 0) {

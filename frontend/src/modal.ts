@@ -8,7 +8,8 @@
  * Usage:
  *   openModal(modalEl);          // shows + traps + focuses first focusable
  *   openModal(modalEl, { initialFocus: '#some-input' });
- *   closeModal(modalEl);         // hides + releases trap + restores focus
+ *   openModal(modalEl, { onClose: () => discardCallerState() }); // runs on EVERY close path (issue #331)
+ *   closeModal(modalEl);         // hides + releases trap + restores focus + runs onClose
  *
  * The helper toggles the existing `.hidden` CSS class so it slots into the
  * established show/hide convention without touching the stylesheet.
@@ -32,6 +33,7 @@ export const FOCUSABLE_SELECTOR = [
 interface ModalState {
   trigger: Element | null;
   keydownHandler: (e: KeyboardEvent) => void;
+  onClose?: () => void;
 }
 
 // WeakMap so a removed modal element doesn't leak its handler reference.
@@ -91,7 +93,7 @@ function resolveInitialFocus(
  */
 export function openModal(
   el: HTMLElement,
-  opts?: { initialFocus?: HTMLElement | string },
+  opts?: { initialFocus?: HTMLElement | string; onClose?: () => void },
 ): void {
   // Re-opening: tear down the prior trap so we don't stack listeners
   // and so the recorded trigger reflects the latest opener.
@@ -141,7 +143,7 @@ export function openModal(
   };
 
   el.addEventListener('keydown', keydownHandler);
-  openModals.set(el, { trigger, keydownHandler });
+  openModals.set(el, { trigger, keydownHandler, onClose: opts?.onClose });
 
   const focusables = getFocusables(el);
   const initialTarget = resolveInitialFocus(el, opts?.initialFocus, focusables);
@@ -158,6 +160,12 @@ export function closeModal(el: HTMLElement): void {
   const state = openModals.get(el);
   teardown(el);
   el.classList.add('hidden');
+
+  // Runs on every close path -- Escape, an explicit close button that
+  // routes through this function, or any future path -- so a caller-
+  // supplied cleanup (e.g. discarding purchase-specific state) can never
+  // be skipped by one of them (issue #331).
+  state?.onClose?.();
 
   const trigger = state?.trigger as HTMLElement | null | undefined;
   if (trigger && typeof trigger.focus === 'function' && document.contains(trigger)) {

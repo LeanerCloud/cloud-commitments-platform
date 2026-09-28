@@ -2325,3 +2325,91 @@ describe('Issue #1904: fan-out modal skips incompatible buckets', () => {
     })]);
   });
 });
+
+// Issue #331: closing the purchase modal with Escape bypassed purchase-state
+// cleanup, so a later single-bucket modal could submit the previous fan-out
+// buckets instead of the newly displayed recommendation. modal.ts is mocked
+// in this file (see the jest.mock('../modal', ...) above), so these tests
+// capture the onClose callback openPurchaseModal/openFanOutModal pass to
+// openModal() and invoke it directly to simulate what the real modal.ts's
+// Escape handler now does on every close path -- modal.test.ts separately
+// proves Escape actually invokes that callback via the real keydown handler.
+describe('Issue #331: Escape discards purchase state like the explicit close button', () => {
+  // Grabs the onClose callback from the most recent openModal(...) call.
+  function lastRegisteredOnClose(): () => void {
+    const calls = (openModal as jest.Mock).mock.calls;
+    const opts = calls[calls.length - 1]![1] as { onClose?: () => void } | undefined;
+    expect(opts?.onClose).toBeInstanceOf(Function);
+    return opts!.onClose!;
+  }
+
+  function fanOutEligibleRows(): LocalRecommendation[] {
+    return [
+      {
+        id: 'fo-ec2', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
+        region: 'us-east-1', resource_type: 'm5.large', term: 1, payment: 'no-upfront',
+        count: 1, upfront_cost: 0, monthly_cost: 100, savings: 50,
+      },
+      {
+        id: 'fo-rds', provider: 'aws', cloud_account_id: 'a1', service: 'rds',
+        region: 'us-east-1', resource_type: 'db.r5.large', term: 3, payment: 'all-upfront',
+        count: 1, upfront_cost: 1000, monthly_cost: 0, savings: 200,
+      },
+    ];
+  }
+
+  test('Escape on a fan-out modal discards its buckets, so a later single-bucket selection submits only itself', async () => {
+    const [ec2Rec, rdsRec] = fanOutEligibleRows();
+    (api.getConfig as jest.Mock).mockResolvedValue({ global: { default_payment: 'no-upfront' } });
+    (api.getRecommendations as jest.Mock).mockResolvedValue({
+      summary: {}, recommendations: [ec2Rec, rdsRec], regions: [],
+    });
+    (state.getRecommendations as jest.Mock).mockReturnValue([ec2Rec, rdsRec]);
+    (state.getVisibleRecommendations as jest.Mock).mockReturnValue([ec2Rec, rdsRec]);
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set(['fo-ec2', 'fo-rds']));
+
+    await loadRecommendations();
+    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+
+    // Sanity check: both buckets are live before the simulated Escape.
+    expect(getFanOutBuckets()).toHaveLength(2);
+
+    // Simulate the user pressing Escape instead of submitting or clicking
+    // the explicit close button.
+    lastRegisteredOnClose()();
+
+    expect(getFanOutBuckets()).toBeNull();
+    expect(getPurchaseModalRecommendations()).toEqual([]);
+
+    // A different, single-bucket recommendation is now selected and its
+    // modal opened -- the exact reproduction from the issue.
+    const otherRec: LocalRecommendation = {
+      id: 'single-only', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
+      region: 'us-west-2', resource_type: 'm6i.large', term: 3, payment: 'all-upfront',
+      count: 1, upfront_cost: 4000, monthly_cost: 0, savings: 300,
+    };
+    await openPurchaseModal([otherRec]);
+
+    (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+
+    // Only the newly displayed recommendation must be submitted -- never
+    // the stale fan-out buckets from the modal closed via Escape.
+    expect(api.executePurchase).toHaveBeenCalledTimes(1);
+    const body = (api.executePurchase as jest.Mock).mock.calls[0]![0] as Array<Record<string, unknown>>;
+    expect(body).toHaveLength(1);
+    expect(body[0]!['id']).toBe('single-only');
+  });
+
+  test('Escape on a single-bucket modal discards its selection too (reverse direction)', async () => {
+    const staleRec = buildRows()[0]!; // v-3-all
+    await openPurchaseModal([staleRec]);
+    expect(getPurchaseModalRecommendations()).toHaveLength(1);
+
+    lastRegisteredOnClose()();
+
+    expect(getPurchaseModalRecommendations()).toEqual([]);
+    expect(getFanOutBuckets()).toBeNull();
+  });
+});
