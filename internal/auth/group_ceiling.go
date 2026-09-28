@@ -109,9 +109,10 @@ func (s *Service) checkGrantCeiling(ctx context.Context, actorUserID string, req
 //
 // addedGroupIDs is the set of groups newly gained by the target user (a
 // group already held is not a grant and is not re-checked). Called for
-// non-self UpdateUser edits and for CreateUser; self-edits go through the
-// narrower guardSelfEscalation/guardSelfCarvedOutGrant path instead, which
-// this function does not replace.
+// CreateUser and for non-self UpdateUser edits; a self-edit applies the same
+// ceiling through checkMembershipGrantCeilingWithPerms with its PRIOR
+// permissions, because re-reading the actor's row mid-update is the hazard
+// guardSelfEscalation documents.
 //
 // Fails closed: any error resolving the actor's permissions, or loading a
 // group being joined, refuses the change.
@@ -123,6 +124,12 @@ func (s *Service) checkMembershipGrantCeiling(ctx context.Context, actorUserID s
 	if err != nil {
 		return err
 	}
+	return s.checkMembershipGrantCeilingWithPerms(ctx, actorPerms, addedGroupIDs)
+}
+
+// checkMembershipGrantCeilingWithPerms is checkMembershipGrantCeiling with
+// the actor's permission set supplied by the caller.
+func (s *Service) checkMembershipGrantCeilingWithPerms(ctx context.Context, actorPerms []Permission, addedGroupIDs []string) error {
 	for _, groupID := range addedGroupIDs {
 		group, err := s.store.GetGroup(ctx, groupID)
 		if err != nil {

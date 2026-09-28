@@ -83,6 +83,33 @@ func TestMembershipCeiling_UpdateUser_UpdateUsersOnlyCannotPromoteToAdmin(t *tes
 	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
 }
 
+// Self-edit variant of the test above (issue #226 review follow-up): an actor
+// holding only update:users adds Administrators to their OWN membership.
+// guardSelfEscalation alone admits this because it checks only that the actor
+// holds update:users.
+func TestMembershipCeiling_UpdateUser_UpdateUsersOnlyCannotSelfPromoteToAdmin(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	svc := newCeilingService(t, mockStore)
+
+	stubActorPermissions(ctx, mockStore, updateUsersOnly)
+	mockStore.On("GetGroup", ctx, DefaultAdminGroupID).Return(&Group{
+		ID:          DefaultAdminGroupID,
+		Name:        "Administrators",
+		Permissions: []Permission{{Action: ActionAdmin, Resource: ResourceAll}},
+	}, nil)
+
+	_, err := svc.UpdateUser(ctx, ceilingActorID, ceilingActorID, UpdateUserRequest{
+		GroupIDs: []string{ceilingActorGroupID, DefaultAdminGroupID},
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrPermissionCeiling)
+	assert.Contains(t, err.Error(), ActionAdmin+":"+ResourceAll)
+	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+}
+
 // Negative control: an actor may still create a user in a group whose
 // permissions their own effective set already covers.
 func TestMembershipCeiling_CreateUser_AllowedWithinCeiling(t *testing.T) {
