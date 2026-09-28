@@ -27,6 +27,11 @@ type PurchaseManagerInterface interface {
 	ProcessMessage(ctx context.Context, body string) error
 	ApproveExecution(ctx context.Context, execID, token, actor string) error
 	ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) error
+	// RunPlannedPurchaseNow forces a pending or paused scheduled purchase to
+	// execute immediately (the "Run now" button), sharing ApproveAndExecute's
+	// 4-eyes-gated, CAS-guarded funnel instead of a bare status flip that
+	// nothing else consumes (issue #218).
+	RunPlannedPurchaseNow(ctx context.Context, execID, actor string, transitionedBy *string) error
 	CancelExecution(ctx context.Context, execID, token, actor string) error
 	// ReapStuckExecutions sweeps purchase_executions stuck in
 	// approved/running longer than reapAfter and flips them to "failed"

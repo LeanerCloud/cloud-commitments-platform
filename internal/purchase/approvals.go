@@ -311,17 +311,47 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 // approval drives its own executeAndFinalize, which already fans out
 // per-account in parallel via executeMultiAccount.
 func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string) error {
+	return m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "notified"})
+}
+
+// RunPlannedPurchaseNow lets an operator force a scheduled purchase (pending
+// or paused) to execute immediately instead of waiting for its scheduled
+// date, going through the exact same 4-eyes gate and synchronous
+// executeAndFinalize funnel ApproveAndExecute uses (issue #218). The
+// previous runPlannedPurchase implementation only flipped the row's status
+// to "running" and returned success: no executor consumes "running" rows
+// (the scheduler picks up pending/notified, the reaper only cleans up a
+// stuck "running" row after 10 minutes), so nothing ever bought the
+// purchase and the row later reads "failed" out from under the operator who
+// was told it ran.
+//
+// Sharing transitionApproveAndExecute's CAS with ApproveAndExecute and
+// claimAndExecute is also what makes this idempotent: a second "Run now"
+// click, or the scheduler racing the same pending row, loses the atomic
+// UPDATE ... WHERE status IN (...) and gets a clean "cannot transition"
+// error rather than executing the purchase a second time.
+func (m *Manager) RunPlannedPurchaseNow(ctx context.Context, executionID, actor string, transitionedBy *string) error {
+	return m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "paused"})
+}
+
+// transitionApproveAndExecute is the shared body behind ApproveAndExecute
+// and RunPlannedPurchaseNow: enforce the 4-eyes gate, atomically CAS the row
+// from one of fromStatuses to "approved", stamp ApprovedBy, then run the
+// purchase synchronously. Parameterizing on fromStatuses lets both entry
+// points share one implementation of the gate and the CAS instead of the
+// gate being reimplemented (or skipped) at a second call site.
+func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string, fromStatuses []string) error {
 	t0 := time.Now()
-	logging.Infof("purchase[%s]: ApproveAndExecute starting (actor=%q)", executionID, maskActor(actor))
+	logging.Infof("purchase[%s]: transitionApproveAndExecute starting (actor=%q, from=%v)", executionID, maskActor(actor), fromStatuses)
 
 	// Universal 4-eyes gate (issue #1005 / PR #1500 adversarial review): runs
 	// before any state mutation so every caller -- session approve, direct
-	// execute, token approve, SQS approve -- is covered by one policy check.
-	// transitionedBy doubles as the actor's own UUID for this check when the
-	// caller has one (session-based callers); see enforceFourEyesPolicy's doc
-	// comment for the full rationale.
+	// execute, run-now, token approve, SQS approve -- is covered by one
+	// policy check. transitionedBy doubles as the actor's own UUID for this
+	// check when the caller has one (session-based callers); see
+	// enforceFourEyesPolicy's doc comment for the full rationale.
 	if err := m.enforceFourEyesPolicy(ctx, executionID, actor, transitionedBy); err != nil {
-		logging.Warnf("purchase[%s]: ApproveAndExecute denied by 4-eyes policy: %v", executionID, err)
+		logging.Warnf("purchase[%s]: transitionApproveAndExecute denied by 4-eyes policy: %v", executionID, err)
 		return err
 	}
 
@@ -329,9 +359,9 @@ func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor stri
 	// approvals (stamped onto transitioned_by); it is nil for token/SQS/system
 	// flows so transitioned_by = NULL on those hops. The human-readable actor
 	// email is recorded separately onto approved_by (below).
-	updated, err := m.config.TransitionExecutionStatus(ctx, executionID, []string{"pending", "notified"}, "approved", transitionedBy)
+	updated, err := m.config.TransitionExecutionStatus(ctx, executionID, fromStatuses, "approved", transitionedBy)
 	if err != nil {
-		logging.Errorf("purchase[%s]: ApproveAndExecute status transition failed after %s: %v",
+		logging.Errorf("purchase[%s]: transitionApproveAndExecute status transition failed after %s: %v",
 			executionID, time.Since(t0), err)
 		return fmt.Errorf("approve: %w", err)
 	}
@@ -351,9 +381,9 @@ func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor stri
 	logging.Infof("purchase[%s]: executing purchase synchronously", executionID)
 	execErr := m.executeAndFinalize(ctx, updated)
 	if execErr != nil {
-		logging.Errorf("purchase[%s]: ApproveAndExecute failed after %s: %v", executionID, time.Since(t0), execErr)
+		logging.Errorf("purchase[%s]: transitionApproveAndExecute failed after %s: %v", executionID, time.Since(t0), execErr)
 	} else {
-		logging.Infof("purchase[%s]: ApproveAndExecute completed in %s", executionID, time.Since(t0))
+		logging.Infof("purchase[%s]: transitionApproveAndExecute completed in %s", executionID, time.Since(t0))
 	}
 	return execErr
 }

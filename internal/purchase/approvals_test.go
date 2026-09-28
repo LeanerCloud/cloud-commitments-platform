@@ -306,6 +306,57 @@ func TestManager_ApproveAndExecute_SkipsTokenCheck(t *testing.T) {
 	sender.AssertExpectations(t)
 }
 
+// TestManager_RunPlannedPurchaseNow_ExecutesFromPaused pins issue #218:
+// "Run now" on a scheduled purchase must actually execute it, not just flip
+// its status. Pre-fix, the handler CASed the row straight to "running" with
+// no executor consuming that state -- the scheduler only picks up
+// pending/notified, so the purchase was never bought and the reaper
+// eventually failed the row out from under the operator who was told it
+// ran. This drives RunPlannedPurchaseNow from "paused" (a source
+// ApproveAndExecute itself does not accept) and asserts the full
+// executeAndFinalize chain runs: the plan lookup, the confirmation email,
+// SavePurchaseExecution, and CompletePlanStep all fire, proving the
+// purchase was actually executed rather than left stuck in "running".
+func TestManager_RunPlannedPurchaseNow_ExecutesFromPaused(t *testing.T) {
+	ctx := context.Background()
+	manager, store, sender := newApproveManager(t)
+
+	updated := &config.PurchaseExecution{
+		ExecutionID: "exec-run-now",
+		PlanID:      "plan-run-now",
+		Status:      "approved",
+		StepNumber:  1,
+	}
+	store.On("TransitionExecutionStatus", ctx, "exec-run-now", []string{"pending", "paused"}, "approved", (*string)(nil)).Return(updated, nil)
+	stubExecuteChain(t, store, sender, "plan-run-now")
+
+	err := manager.RunPlannedPurchaseNow(ctx, "exec-run-now", "operator@example.com", nil)
+	require.NoError(t, err)
+	require.NotNil(t, updated.ApprovedBy)
+	assert.Equal(t, "operator@example.com", *updated.ApprovedBy)
+	store.AssertExpectations(t)
+	sender.AssertExpectations(t)
+}
+
+// TestManager_RunPlannedPurchaseNow_LostCASReturnsError proves a lost CAS
+// (row already claimed -- by a concurrent "Run now" click, or the scheduler
+// racing the same pending row) surfaces as an error rather than silently
+// reporting success, and that no execution work runs on that path (no
+// unexpected mock calls -- store has no execute-chain stubs registered).
+// This is the idempotency half of issue #218's "no double purchase" ask.
+func TestManager_RunPlannedPurchaseNow_LostCASReturnsError(t *testing.T) {
+	ctx := context.Background()
+	manager, store, _ := newApproveManager(t)
+
+	store.On("TransitionExecutionStatus", ctx, "exec-race", []string{"pending", "paused"}, "approved", (*string)(nil)).
+		Return(nil, config.ErrExecutionNotInExpectedStatus)
+
+	err := manager.RunPlannedPurchaseNow(ctx, "exec-race", "operator@example.com", nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, config.ErrExecutionNotInExpectedStatus)
+	store.AssertExpectations(t)
+}
+
 // ─── enforceFourEyesPolicy at the ApproveAndExecute choke point ───────────────
 // (issue #1005 / PR #1500 adversarial review)
 //
