@@ -2322,8 +2322,11 @@ function updateServiceDropdownForProvider(provider: string): void {
   let firstVisibleOptionValue = '';
 
   optgroups.forEach(optgroup => {
-    const optgroupLabel = optgroup.label.toLowerCase();
-    const shouldShow = optgroupLabel.includes(provider.toLowerCase());
+    // Match on the explicit data-provider attribute, not a substring of the
+    // human-readable label (issue #241): the AWS Savings Plans optgroup is
+    // labeled "Savings Plans", which does not contain "aws", so the old
+    // label.includes() check hid and disabled it for the entire session.
+    const shouldShow = optgroup.dataset['provider'] === provider.toLowerCase();
     optgroup.classList.toggle('hidden', !shouldShow);
     optgroup.disabled = !shouldShow;
 

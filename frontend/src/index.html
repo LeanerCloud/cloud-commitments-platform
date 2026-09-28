@@ -842,7 +842,7 @@
                             </label>
                             <label>Service:
                                 <select id="plan-service">
-                                    <optgroup label="AWS" id="plan-service-aws">
+                                    <optgroup label="AWS" id="plan-service-aws" data-provider="aws">
                                         <option value="ec2">EC2</option>
                                         <option value="rds">RDS</option>
                                         <option value="elasticache">ElastiCache</option>
@@ -850,20 +850,20 @@
                                         <option value="memorydb">MemoryDB</option>
                                         <option value="redshift">Redshift</option>
                                     </optgroup>
-                                    <optgroup label="Savings Plans" id="plan-service-aws-sp">
+                                    <optgroup label="Savings Plans" id="plan-service-aws-sp" data-provider="aws">
                                         <option value="savings-plans-compute">Compute SP</option>
                                         <option value="savings-plans-ec2instance">EC2 Instance SP</option>
                                         <option value="savings-plans-sagemaker">SageMaker SP</option>
                                         <option value="savings-plans-database">Database SP</option>
                                     </optgroup>
-                                    <optgroup label="Azure" id="plan-service-azure" class="hidden">
+                                    <optgroup label="Azure" id="plan-service-azure" data-provider="azure" class="hidden">
                                         <option value="vm">Virtual Machines</option>
                                         <option value="sql">SQL Database</option>
                                         <option value="cosmosdb">Cosmos DB</option>
                                         <option value="redis">Azure Cache</option>
                                         <option value="search">Cognitive Search</option>
                                     </optgroup>
-                                    <optgroup label="GCP" id="plan-service-gcp" class="hidden">
+                                    <optgroup label="GCP" id="plan-service-gcp" data-provider="gcp" class="hidden">
                                         <option value="compute">Compute Engine</option>
                                         <option value="cloudsql">Cloud SQL</option>
                                         <option value="memorystore">Memorystore</option>

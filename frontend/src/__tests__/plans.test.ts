@@ -149,14 +149,21 @@ describe('Plans Module', () => {
             <option value="gcp">GCP</option>
           </select>
           <select id="plan-service">
-            <optgroup label="AWS Services">
+            <optgroup label="AWS Services" data-provider="aws">
               <option value="ec2">EC2</option>
               <option value="rds">RDS</option>
             </optgroup>
-            <optgroup label="Azure Services">
+            <!-- Issue #241: mirrors the real markup's AWS Savings Plans
+                 optgroup, whose human-readable label ("Savings Plans") does
+                 not contain "aws" -- only the data-provider attribute ties
+                 it to the AWS provider. -->
+            <optgroup label="Savings Plans" data-provider="aws">
+              <option value="savings-plans-compute">Compute SP</option>
+            </optgroup>
+            <optgroup label="Azure Services" data-provider="azure">
               <option value="compute">Compute</option>
             </optgroup>
-            <optgroup label="GCP Services">
+            <optgroup label="GCP Services" data-provider="gcp">
               <option value="compute">Compute</option>
             </optgroup>
           </select>
@@ -2587,6 +2594,32 @@ describe('Plans Module', () => {
       expect(azure.disabled).toBe(true);
       expect(gcp.classList.contains('hidden')).toBe(true);
       expect(gcp.disabled).toBe(true);
+    });
+
+    // Issue #241: the AWS Savings Plans optgroup is labeled "Savings Plans",
+    // which does not contain the substring "aws". The provider select has
+    // no empty option, so this runs at app init with the default provider
+    // ('aws'), exactly reproducing the reported all-session lockout.
+    test('initial state (provider=aws): the Savings Plans optgroup is also enabled, not hidden/disabled', () => {
+      const savingsPlans = document.querySelector(
+        '#plan-service > optgroup[label="Savings Plans"]',
+      ) as HTMLOptGroupElement;
+
+      expect(savingsPlans).not.toBeNull();
+      expect(savingsPlans.classList.contains('hidden')).toBe(false);
+      expect(savingsPlans.disabled).toBe(false);
+    });
+
+    test('switching away from aws hides the Savings Plans optgroup too', () => {
+      const provider = document.getElementById('plan-provider') as HTMLSelectElement;
+      provider.value = 'azure';
+      provider.dispatchEvent(new Event('change'));
+
+      const savingsPlans = document.querySelector(
+        '#plan-service > optgroup[label="Savings Plans"]',
+      ) as HTMLOptGroupElement;
+      expect(savingsPlans.classList.contains('hidden')).toBe(true);
+      expect(savingsPlans.disabled).toBe(true);
     });
 
     test('switching to azure enables only the Azure optgroup', () => {
