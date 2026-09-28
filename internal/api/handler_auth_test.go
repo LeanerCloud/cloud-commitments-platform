@@ -431,13 +431,16 @@ func TestHandler_setupAdmin_Success(t *testing.T) {
 
 	handler := &Handler{auth: mockAuth}
 
+	// Password must be base64-encoded in the request body, exactly as the
+	// frontend encodes it (issue #224).
+	encodedPassword := base64.StdEncoding.EncodeToString([]byte("admin123"))
 	req := &events.LambdaFunctionURLRequest{
 		RequestContext: events.LambdaFunctionURLRequestContext{
 			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{
 				SourceIP: "127.0.0.1",
 			},
 		},
-		Body: `{"email": "admin@example.com", "password": "admin123"}`,
+		Body: `{"email": "admin@example.com", "password": "` + encodedPassword + `"}`,
 	}
 
 	result, err := handler.setupAdmin(ctx, req)

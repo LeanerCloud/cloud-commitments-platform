@@ -21,9 +21,10 @@
 //
 // For each such function the test verifies that the function body also contains
 // a call to decodeBase64Password or one of its known delegate helpers
-// (decodeChangePasswordRequest). Functions that are legitimately exempt (e.g.,
-// setupAdmin, which is bootstrapped separately) must be listed in
-// knownExemptFunctions with an explanation.
+// (decodeChangePasswordRequest). A function that is legitimately exempt for a
+// documented reason must be listed in knownExemptFunctions with an
+// explanation; there are currently no such functions (see issue #224, which
+// removed the previous setupAdmin exemption).
 //
 // # Synthetic-regression sub-test
 //
@@ -54,14 +55,13 @@ import (
 // decoding the password (e.g., the endpoint uses a different auth convention or
 // is not exposed to the frontend encode/decode contract). Every entry here
 // should be accompanied by a comment explaining why.
-var knownExemptFunctions = map[string]string{
-	// setupAdmin: the bootstrap endpoint. The frontend does base64-encode the
-	// password (see frontend/src/api/auth.ts:setupAdmin), but the backend
-	// currently forwards the raw value to the auth service which handles
-	// hashing internally. Tracked as a separate concern; do not expand this
-	// exemption to other handlers.
-	"setupAdmin": "bootstrap endpoint — see comment in knownExemptFunctions for details",
-}
+// knownExemptFunctions intentionally starts empty. Add an entry here only
+// when a handler has a documented reason for not decoding a password field
+// (e.g., the endpoint uses a different auth convention or is not exposed to
+// the frontend encode/decode contract), with a comment explaining why.
+// setupAdmin was previously (wrongly) exempted here; see issue #224. It now
+// decodes like every other password handler.
+var knownExemptFunctions = map[string]string{}
 
 // decodeHelpers is the set of function-call names that constitute a compliant
 // alternative to calling decodeBase64Password directly. A handler that

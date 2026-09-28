@@ -240,6 +240,15 @@ func (h *Handler) setupAdmin(ctx context.Context, req *events.LambdaFunctionURLR
 		return nil, NewClientError(400, "invalid request body")
 	}
 
+	// Decode base64-encoded password (the frontend encodes it identically to
+	// login/resetPassword; skipping this hashes the base64 text and locks the
+	// bootstrap admin out on first login — see issue #224).
+	decoded, err := decodeBase64Password(setupReq.Password)
+	if err != nil {
+		return nil, err
+	}
+	setupReq.Password = decoded
+
 	response, err := h.auth.SetupAdmin(ctx, setupReq)
 	if err != nil {
 		// Share the sentinel→ClientError mapping with /api/users (issue #349)
