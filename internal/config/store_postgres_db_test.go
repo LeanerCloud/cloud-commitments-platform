@@ -1575,6 +1575,26 @@ func TestPostgresStoreDB_LinkRetryExecutionAtomic(t *testing.T) {
 		return exec
 	}
 
+	// newSuccessorID persists a real pending execution row and returns its
+	// ID. LinkRetryExecutionAtomic's UPDATE target column,
+	// retry_execution_id, carries a foreign key to purchase_executions
+	// (migration-enforced, matching what persistRetrySuccessorTx satisfies
+	// in production by inserting the successor row in the SAME tx before
+	// linking): a random UUID that names no row fails the write with a FK
+	// violation rather than exercising the CAS this test targets.
+	newSuccessorID := func(t *testing.T) string {
+		t.Helper()
+		successor := &PurchaseExecution{
+			PlanID:          plan.ID,
+			Status:          "pending",
+			StepNumber:      1,
+			ScheduledDate:   time.Now(),
+			Recommendations: []RecommendationRecord{},
+		}
+		require.NoError(t, store.SavePurchaseExecution(ctx, successor))
+		return successor.ExecutionID
+	}
+
 	linkInTx := func(t *testing.T, executionID, retryExecutionID string) bool {
 		t.Helper()
 		var linked bool
@@ -1588,7 +1608,7 @@ func TestPostgresStoreDB_LinkRetryExecutionAtomic(t *testing.T) {
 
 	t.Run("first call wins and stamps the pointer", func(t *testing.T) {
 		failed := newFailedExecution(t)
-		successorID := uuid.New().String()
+		successorID := newSuccessorID(t)
 
 		linked := linkInTx(t, failed.ExecutionID, successorID)
 		require.True(t, linked, "the first call on a failed, unlinked row must win the CAS")
@@ -1601,8 +1621,8 @@ func TestPostgresStoreDB_LinkRetryExecutionAtomic(t *testing.T) {
 
 	t.Run("a concurrent second call loses and the pointer is unchanged", func(t *testing.T) {
 		failed := newFailedExecution(t)
-		firstSuccessorID := uuid.New().String()
-		secondSuccessorID := uuid.New().String()
+		firstSuccessorID := newSuccessorID(t)
+		secondSuccessorID := newSuccessorID(t)
 
 		require.True(t, linkInTx(t, failed.ExecutionID, firstSuccessorID),
 			"the winner of the race must claim the row")
@@ -1627,6 +1647,9 @@ func TestPostgresStoreDB_LinkRetryExecutionAtomic(t *testing.T) {
 		}
 		require.NoError(t, store.SavePurchaseExecution(ctx, exec))
 
+		// No FK target needed here: the WHERE clause excludes this row
+		// before the UPDATE would write anything, so a nonexistent
+		// retryExecutionID does not trip the foreign key.
 		linked := linkInTx(t, exec.ExecutionID, uuid.New().String())
 		assert.False(t, linked, "only a 'failed' row is eligible for the retry linkage")
 
