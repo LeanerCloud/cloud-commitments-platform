@@ -268,10 +268,9 @@ func TestScheduler_CollectRecommendations_AWSProvider(t *testing.T) {
 }
 
 // TestScheduler_CollectRecommendations_EmptyTokenSkipsClear pins issue #261:
-// a caller with no owner token (cron, cold-start) never won
-// MarkCollectionStarted and must not call ClearCollectionStarted at all,
-// rather than clearing unconditionally and risking wiping another run's
-// marker.
+// a caller with no owner token (the cron) never won MarkCollectionStarted
+// and must not call ClearCollectionStarted at all, rather than clearing
+// unconditionally and risking wiping another run's marker.
 func TestScheduler_CollectRecommendations_EmptyTokenSkipsClear(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
@@ -909,8 +908,8 @@ func (m *MockRecommendationsClient) GetRecommendationsForService(ctx context.Con
 // Test ListRecommendations method
 // ListRecommendations reads from the recommendations cache rather than
 // doing live cloud API calls. The tests below cover the cache-read path
-// (warm cache) + filter pass-through. Cold-start behavior is covered by
-// TestScheduler_ListRecommendations_ColdStart.
+// (warm cache) + filter pass-through. Cold-start behavior is covered by the
+// TestScheduler_ListRecommendations_ColdStart_* tests.
 func TestScheduler_ListRecommendations(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
@@ -1074,39 +1073,161 @@ func TestScheduler_ListRecommendations_StaleSingleFlight(t *testing.T) {
 	_ = ctx
 }
 
-// Cold-start (LastCollectedAt==nil) triggers a synchronous
-// CollectRecommendations before the read so the user sees real data
-// rather than an empty table.
-func TestScheduler_ListRecommendations_ColdStartSync(t *testing.T) {
+// Cold-start (LastCollectedAt==nil) on Lambda marks a collection started
+// On Lambda, kickColdStartCollection must return immediately WITHOUT ever
+// calling MarkCollectionStarted at all: a goroutine started inside a Lambda
+// invocation freezes the instant this request's response is sent, so there
+// is no way to make progress from inside this call, and winning the marker
+// only to release it straight back would do no work while briefly opening a
+// false-409 window on the refresh endpoint for nothing (fix-review finding
+// 3 on issue #106's PR). GetGlobalConfig -- only ever called by
+// CollectRecommendations -- must also never fire.
+func TestScheduler_ListRecommendations_ColdStart_Lambda_NeverMarksOrCollects(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
-	// Freshness reports cold cache.
 	mockStore.On("GetRecommendationsFreshness", ctx).
 		Return(&config.RecommendationsFreshness{LastCollectedAt: nil}, nil)
-
-	// Cold-start drills into CollectRecommendations, which needs the
-	// global config. Return no enabled providers so the collect is a
-	// no-op but still runs the persistence path.
-	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{EnabledProviders: []string{}}, nil)
-	// UpsertRecommendations runs inside CollectRecommendations, after the
-	// shared-semaphore is attached to ctx; the wrapped ctx is what reaches
-	// the persistence layer. mock.Anything keeps the assertion resilient
-	// to that wrap.
-	mockStore.On("UpsertRecommendations", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	mockStore.On("ListStoredRecommendations", ctx, mock.Anything).
 		Return([]config.RecommendationRecord{}, nil)
 
-	scheduler := &Scheduler{config: mockStore}
+	scheduler := &Scheduler{config: mockStore, isLambda: true}
 
-	_, err := scheduler.ListRecommendations(ctx, config.RecommendationFilter{})
+	recs, err := scheduler.ListRecommendations(ctx, config.RecommendationFilter{})
 	require.NoError(t, err)
+	assert.Empty(t, recs)
 
-	// Assert the cold-start path ran: GetGlobalConfig is only called by
-	// CollectRecommendations, so seeing it prove the sync collect fired
-	// before the store read.
-	mockStore.AssertCalled(t, "GetGlobalConfig", ctx)
-	mockStore.AssertCalled(t, "UpsertRecommendations", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "MarkCollectionStarted", mock.Anything)
+	mockStore.AssertNotCalled(t, "ClearCollectionStarted", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "GetGlobalConfig", mock.Anything)
+}
+
+// When another caller already holds the in-flight marker (a concurrent cold
+// reader or an explicit refresh), a losing MarkCollectionStarted
+// call must be a pure no-op: no clear (this caller owns no marker to clear)
+// and no collection. Only reachable on non-Lambda -- Lambda never calls
+// MarkCollectionStarted at all (see the test above).
+func TestScheduler_ListRecommendations_ColdStart_AlreadyInFlight_NoOp(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+
+	mockStore.On("GetRecommendationsFreshness", ctx).
+		Return(&config.RecommendationsFreshness{LastCollectedAt: nil}, nil)
+	mockStore.On("MarkCollectionStarted", ctx).Return("", false, nil).Once()
+	mockStore.On("ListStoredRecommendations", ctx, mock.Anything).
+		Return([]config.RecommendationRecord{}, nil)
+
+	scheduler := &Scheduler{config: mockStore, isLambda: false}
+
+	recs, err := scheduler.ListRecommendations(ctx, config.RecommendationFilter{})
+	require.NoError(t, err)
+	assert.Empty(t, recs)
+
+	// No collection ran: this caller owns no marker to clear. (GetGlobalConfig
+	// is NOT asserted here -- resolveEffectiveCacheTTL, an unrelated
+	// synchronous step further down ListRecommendations on non-Lambda, also
+	// calls it regardless of the cold-start outcome.)
+	mockStore.AssertNotCalled(t, "ClearCollectionStarted", mock.Anything, mock.Anything)
+}
+
+// A MarkCollectionStarted failure (DB hiccup) must not fail the read: this
+// is a best-effort kick, not a requirement for serving cached data. Only
+// reachable on non-Lambda -- Lambda never calls MarkCollectionStarted.
+func TestScheduler_ListRecommendations_ColdStart_MarkErrorDoesNotFailRead(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+
+	mockStore.On("GetRecommendationsFreshness", ctx).
+		Return(&config.RecommendationsFreshness{LastCollectedAt: nil}, nil)
+	mockStore.On("MarkCollectionStarted", ctx).Return("", false, errors.New("db down")).Once()
+	mockStore.On("ListStoredRecommendations", ctx, mock.Anything).
+		Return([]config.RecommendationRecord{}, nil)
+
+	scheduler := &Scheduler{config: mockStore, isLambda: false}
+
+	recs, err := scheduler.ListRecommendations(ctx, config.RecommendationFilter{})
+	require.NoError(t, err)
+	assert.Empty(t, recs)
+}
+
+// On a non-Lambda runtime, winning the marker kicks a background collection
+// that is both asynchronous and detached from the caller's context, the two
+// properties whose absence caused issue #106.
+//
+// The collect's first store call (GetGlobalConfig on a ctx other than the
+// caller's) blocks until ListRecommendations has returned AND the caller's
+// ctx has been canceled, then records that ctx's Err():
+//   - a synchronous collect deadlocks on the gate, so ListRecommendations
+//     never returns and the timeout below fails the test;
+//   - a bgCtx derived from the caller's ctx is already canceled when the
+//     gate opens, so the recorded Err() is non-nil;
+//   - a removed spawn never reaches the gate, so the wait for it times out.
+func TestScheduler_ListRecommendations_ColdStart_NonLambda_KicksBackgroundCollect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mockStore := new(MockConfigStore)
+
+	release := make(chan struct{})
+	collectCtxErr := make(chan error, 1)
+	cleared := make(chan struct{})
+	mockStore.On("GetRecommendationsFreshness", ctx).
+		Return(&config.RecommendationsFreshness{LastCollectedAt: nil}, nil)
+	mockStore.On("MarkCollectionStarted", ctx).Return(mocks.MockOwnerToken, true, nil).Once()
+	mockStore.On("ListStoredRecommendations", ctx, mock.Anything).
+		Return([]config.RecommendationRecord{}, nil)
+	// resolveEffectiveCacheTTL, synchronously on the caller's ctx.
+	mockStore.On("GetGlobalConfig", ctx).
+		Return(&config.GlobalConfig{EnabledProviders: []string{}}, nil).Maybe()
+	// CollectRecommendations, on the background ctx.
+	mockStore.On("GetGlobalConfig", mock.MatchedBy(func(c context.Context) bool { return c != ctx })).
+		Run(func(args mock.Arguments) {
+			<-release
+			collectCtxErr <- args.Get(0).(context.Context).Err()
+		}).
+		Return(&config.GlobalConfig{EnabledProviders: []string{}}, nil).Once()
+	mockStore.On("UpsertRecommendations", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	mockStore.On("ClearCollectionStarted", mock.Anything, mocks.MockOwnerToken).
+		Run(func(mock.Arguments) { close(cleared) }).
+		Return(nil).Once()
+
+	scheduler := &Scheduler{config: mockStore, isLambda: false}
+
+	type listResult struct {
+		recs []config.RecommendationRecord
+		err  error
+	}
+	listDone := make(chan listResult, 1)
+	go func() {
+		recs, err := scheduler.ListRecommendations(ctx, config.RecommendationFilter{})
+		listDone <- listResult{recs, err}
+	}()
+	var res listResult
+	select {
+	case res = <-listDone:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("ListRecommendations blocked on the cold-start collect; it must run in the background")
+	}
+	require.NoError(t, res.err)
+	assert.Empty(t, res.recs, "the cache is still empty at the moment this read returns")
+
+	cancel()
+	close(release)
+
+	select {
+	case err := <-collectCtxErr:
+		assert.NoError(t, err, "the background collect's ctx must not be derived from the caller's ctx")
+	case <-time.After(2 * time.Second):
+		t.Fatal("background cold-start collection never started")
+	}
+	select {
+	case <-cleared:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background cold-start collection never completed (ClearCollectionStarted never called)")
+	}
 }
 
 // fanOutPerAccount bounds parallel in-flight calls to
