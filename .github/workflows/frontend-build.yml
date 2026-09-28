@@ -1,6 +1,7 @@
 name: Frontend build (PR)
 
-# Pre-merge gate: catches TypeScript errors and webpack build failures
+# Pre-merge gate: catches TypeScript errors, webpack build failures and
+# jest regressions
 # BEFORE a PR is merged, not after. Motivated by the post-mortem in #191:
 # a TS6133 error rode through to the protected branch and caused all three
 # post-merge deploy jobs to fail after spending minutes on infrastructure
@@ -37,7 +38,7 @@ jobs:
   build:
     name: Build frontend
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
@@ -66,3 +67,8 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # Same invocation as frontend-build-sentinel.yml; the sentinel only
+      # fires post-merge on main / feat/**, so this is the pre-merge jest gate.
+      - name: Run frontend tests
+        run: npx jest --no-coverage --silent

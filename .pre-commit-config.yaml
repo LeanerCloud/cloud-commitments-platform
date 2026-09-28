@@ -242,10 +242,10 @@ repos:
   #                                     frontend-build-sentinel.yml runs
   #                                     the build on every push to main /
   #                                     feat/**.
-  #   - frontend-test (jest)          : frontend-build-sentinel.yml runs
+  #   - frontend-test (jest)          : frontend-build.yml runs
   #                                     `npx jest --no-coverage --silent`
-  #                                     on every push to feat/** (which
-  #                                     fires on every PR-branch update).
+  #                                     on every PR touching frontend/**;
+  #                                     the sentinel re-runs it post-merge.
   #
   # Moving them to the pre-push stage keeps the local safety net (devs
   # who run `pre-commit install --hook-type pre-push` still get these
@@ -272,7 +272,7 @@ repos:
         stages: [pre-push]
 
       - id: frontend-test
-        name: Run frontend tests (pre-push only; CI covers via frontend-build-sentinel.yml)
+        name: Run frontend tests (pre-push only; CI covers via frontend-build.yml)
         entry: bash -c 'cd frontend && npx jest --no-coverage --silent'
         language: system
         pass_filenames: false
