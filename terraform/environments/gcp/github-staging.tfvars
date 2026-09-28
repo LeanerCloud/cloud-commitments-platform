@@ -74,8 +74,14 @@ auto_migrate = true
 # Frontend (Load Balancer)
 # ==============================================
 
-enable_cdn         = false
-enable_cloud_armor = true
+enable_cdn = false
+# enable_cloud_armor is a no-op today: module.frontend, the only place that
+# attaches the Cloud Armor policy, only exists when enable_cdn = true
+# (frontend.tf). Leaving this true while enable_cdn = false provisions
+# nothing but falsely tells an operator reading this file that a WAF
+# protects staging (#128). Flip to true together with enable_cdn when the
+# LB/CDN cutover lands.
+enable_cloud_armor = false
 
 # ==============================================
 # Variables provided by GitHub Actions:
