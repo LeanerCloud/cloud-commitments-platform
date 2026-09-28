@@ -208,6 +208,25 @@ func (s *Service) checkCommonPasswords(password string) error {
 	return nil
 }
 
+// invalidateUserCredentialsBestEffort revokes every credential surface a
+// password rotation must close: sessions and API keys. A leaked API key
+// authenticates via X-API-Key and never touches the session store, so it
+// would otherwise survive a password change or reset meant to lock an
+// attacker out (issue #102).
+//
+// Both cleanups are best-effort: failures are logged, not returned, because
+// the new password has already taken effect by the time this runs. Shared
+// by ChangePassword, ConfirmPasswordReset and UpdateUserProfile so the two
+// checks live in one place instead of three.
+func (s *Service) invalidateUserCredentialsBestEffort(ctx context.Context, userID, opName string) {
+	if err := s.store.DeleteUserSessions(ctx, userID); err != nil {
+		logging.Warnf("Failed to delete sessions for user %s during %s: %v", userID, opName, err)
+	}
+	if err := s.RevokeAllUserAPIKeys(ctx, userID); err != nil {
+		logging.Warnf("Failed to revoke API keys for user %s during %s: %v", userID, opName, err)
+	}
+}
+
 // ChangePassword allows a user to change their password.
 func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest) error {
 	user, err := s.store.GetUserByID(ctx, userID)
@@ -251,14 +270,17 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 	user.Salt = "" // Not used anymore
 	user.PasswordHash = passwordHash
 
-	// Invalidate all sessions (non-critical, log error but continue)
-	if err := s.store.DeleteUserSessions(ctx, userID); err != nil {
-		logging.Warnf("Failed to delete sessions for user %s during password change: %v", userID, err)
-	}
-
 	if err := s.store.UpdateUser(ctx, user); err != nil {
 		return err
 	}
+
+	// Invalidate sessions and API keys only after the new password is
+	// persisted (non-critical, best-effort -- issue #102). Invalidating
+	// first would mean a failed UpdateUser leaves the caller with revoked
+	// credentials for a password that never actually changed (CodeRabbit
+	// finding on #392).
+	s.invalidateUserCredentialsBestEffort(ctx, userID, "password change")
+
 	s.notifyPasswordChange(ctx, userID, req.NewPassword)
 	return nil
 }
@@ -356,13 +378,14 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, req PasswordResetCon
 		user.Active = true
 	}
 
-	if err := s.store.DeleteUserSessions(ctx, user.ID); err != nil {
-		logging.Warnf("Failed to delete sessions for user %s during password reset: %v", user.ID, err)
-	}
-
 	if err := s.store.UpdateUser(ctx, user); err != nil {
 		return err
 	}
+
+	// See the matching comment in ChangePassword: invalidate only after the
+	// new password is persisted, or a failed UpdateUser leaves the caller
+	// with revoked credentials for a password that never actually changed.
+	s.invalidateUserCredentialsBestEffort(ctx, user.ID, "password reset")
 	s.notifyPasswordChange(ctx, user.ID, req.NewPassword)
 	return nil
 }

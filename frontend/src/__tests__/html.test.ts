@@ -562,15 +562,17 @@ describe('HTML Structure', () => {
       expect(input?.hasAttribute('required')).toBe(true);
     });
 
-    test('has expiration checkbox', () => {
-      const checkbox = document.getElementById('apikey-expires');
-      expect(checkbox).toBeTruthy();
+    test('has required password input (issue #102)', () => {
+      const input = document.getElementById('apikey-password') as HTMLInputElement | null;
+      expect(input).toBeTruthy();
+      expect(input?.type).toBe('password');
+      expect(input?.hasAttribute('required')).toBe(true);
     });
 
-    test('has expiration date field (hidden by default)', () => {
-      const field = document.getElementById('apikey-expires-at-field');
+    test('has required expiration date field (issue #102)', () => {
+      const field = document.getElementById('apikey-expires-at') as HTMLInputElement | null;
       expect(field).toBeTruthy();
-      expect(field?.classList.contains('hidden')).toBe(true);
+      expect(field?.hasAttribute('required')).toBe(true);
     });
   });
 

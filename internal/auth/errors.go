@@ -100,4 +100,21 @@ var (
 	ErrMFAEnrollmentExpired      = errors.New("MFA enrollment expired")
 	ErrMFANotEnabled             = errors.New("MFA is not enabled")
 	ErrMFAAuthFailed             = errors.New("authentication failed")
+
+	// API key creation sentinels — returned (wrapped via fmt.Errorf "%w") by
+	// CreateAPIKey so the API handler can map each to the right HTTP status
+	// via errors.Is rather than substring matching. See issue #102.
+	//
+	// ErrAPIKeyInvalidPassword — wrong current password on key creation
+	//                            (same defense-in-depth re-verification as
+	//                            MFASetup/MFADisable).
+	// ErrAPIKeyExpiresAtRequired — no expires_at supplied; unscoped-lifetime
+	//                              keys are no longer allowed.
+	// ErrAPIKeyExpiresAtTooFar  — expires_at exceeds MaxAPIKeyLifetime.
+	// ErrAPIKeyExpiresAtInPast  — expires_at is not in the future, which would
+	//                             mint a key that is already expired.
+	ErrAPIKeyInvalidPassword   = errors.New("invalid password")
+	ErrAPIKeyExpiresAtRequired = errors.New("expires_at is required")
+	ErrAPIKeyExpiresAtTooFar   = errors.New("expires_at exceeds the maximum API key lifetime")
+	ErrAPIKeyExpiresAtInPast   = errors.New("expires_at must be in the future")
 )

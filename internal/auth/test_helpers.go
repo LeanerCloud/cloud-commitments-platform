@@ -274,6 +274,19 @@ func TestCSRFKey() []byte {
 	return key
 }
 
+// TestPasswordHash returns a bcrypt hash of password at bcrypt.MinCost, for
+// test fixtures in this and other packages that need a User.PasswordHash
+// verifyPassword will accept (issue #102: CreateAPIKey and the password-
+// rotation paths now re-verify the caller's password). MinCost keeps the
+// hash cheap to compute since tests only need a hash that round-trips
+// through bcrypt.CompareHashAndPassword, not the production work factor.
+func TestPasswordHash(t testing.TB, password string) string {
+	t.Helper()
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	require.NoError(t, err)
+	return string(hash)
+}
+
 // DeriveTestCSRFToken returns the CSRF token a service configured with
 // TestCSRFKey expects for the given raw session token. It reuses the
 // production derivation (HMAC-SHA256(key, rawSessionToken)) so tests assert

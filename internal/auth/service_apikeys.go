@@ -35,11 +35,23 @@ const (
 	// load would keep a single goroutine writing forever; with it, the
 	// leftover count is simply picked up by the next request's flush.
 	maxAPIKeyUsageFlushRounds = 16
+
+	// MaxAPIKeyLifetime caps how far in the future ExpiresAt may be set on
+	// creation. A key that never expires (nil ExpiresAt) survived
+	// indefinitely, including past a password rotation intended to lock out
+	// an attacker holding it (issue #102); one year bounds the blast radius
+	// of a leaked key to a re-issuance cycle without forcing short-lived
+	// CI/CD credentials to be re-minted more often than that.
+	MaxAPIKeyLifetime = 365 * 24 * time.Hour
 )
 
-// CreateAPIKey creates a new user API key with scoped permissions
+// CreateAPIKey creates a new user API key with scoped permissions. The
+// caller's current password must be supplied and is re-verified against the
+// stored hash before minting a key: a stolen session token alone must not be
+// enough to create a durable, potentially wildcard-scoped credential, the
+// same defense-in-depth MFASetup/MFADisable already apply (issue #102).
 // Returns the full API key (shown only once), key info, and error.
-func (s *Service) CreateAPIKey(ctx context.Context, userID, name string, permissions []Permission, expiresAt *time.Time) (string, *UserAPIKey, error) {
+func (s *Service) CreateAPIKey(ctx context.Context, userID, name, password string, permissions []Permission, expiresAt *time.Time) (string, *UserAPIKey, error) {
 	// Validate user exists and is active
 	user, err := s.store.GetUserByID(ctx, userID)
 	if err != nil {
@@ -55,9 +67,8 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, name string, permiss
 		return "", nil, fmt.Errorf("user account is not active")
 	}
 
-	// Validate name
-	if name == "" {
-		return "", nil, fmt.Errorf("API key name is required")
+	if err := s.validateCreateAPIKeyRequest(user, password, name, expiresAt); err != nil {
+		return "", nil, err
 	}
 
 	// Generate a secure random key (32 bytes = 256 bits)
@@ -111,6 +122,32 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, name string, permiss
 	logging.Infof("Created API key %s for user %s", keyPrefix, userID)
 
 	return apiKey, userAPIKey, nil
+}
+
+// validateCreateAPIKeyRequest checks the caller-supplied fields of a
+// CreateAPIKey call: password re-verification, key name, and the mandatory,
+// capped expiry (issue #102). Extracted out of CreateAPIKey to keep its
+// cyclomatic complexity under the repo's gocyclo gate.
+func (s *Service) validateCreateAPIKeyRequest(user *User, password, name string, expiresAt *time.Time) error {
+	if !s.verifyPassword(password, user.PasswordHash) {
+		return fmt.Errorf("%w", ErrAPIKeyInvalidPassword)
+	}
+	if name == "" {
+		return fmt.Errorf("API key name is required")
+	}
+	// ExpiresAt is mandatory and capped: a nil value used to mean "never
+	// expires", which let a single leaked key outlive any credential rotation.
+	if expiresAt == nil {
+		return fmt.Errorf("%w", ErrAPIKeyExpiresAtRequired)
+	}
+	now := time.Now()
+	if !expiresAt.After(now) {
+		return fmt.Errorf("%w", ErrAPIKeyExpiresAtInPast)
+	}
+	if expiresAt.After(now.Add(MaxAPIKeyLifetime)) {
+		return fmt.Errorf("%w", ErrAPIKeyExpiresAtTooFar)
+	}
+	return nil
 }
 
 // validateAPIKeyPermissions ensures the key's permissions don't exceed the
@@ -243,6 +280,32 @@ func (s *Service) DeleteAPIKey(ctx context.Context, userID, keyID string) error 
 
 	logging.Infof("Deleted API key %s for user %s", key.KeyPrefix, key.UserID)
 
+	return nil
+}
+
+// RevokeAllUserAPIKeys deactivates every still-active API key owned by a
+// user. Called by ChangePassword and ConfirmPasswordReset alongside
+// DeleteUserSessions: a password rotation meant to lock out an attacker
+// otherwise left any API key they had minted fully valid, since keys are
+// presented via X-API-Key and never touch the session store (issue #102).
+//
+// Best-effort like the sibling DeleteUserSessions call: a transient store
+// failure here is logged by the caller and does not block the password
+// change itself, since the new password has already taken effect.
+func (s *Service) RevokeAllUserAPIKeys(ctx context.Context, userID string) error {
+	keys, err := s.store.ListAPIKeysByUser(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to list API keys for user %s: %w", userID, err)
+	}
+	for _, key := range keys {
+		if !key.IsActive {
+			continue
+		}
+		key.IsActive = false
+		if err := s.store.UpdateAPIKey(ctx, key); err != nil {
+			return fmt.Errorf("failed to revoke API key %s for user %s: %w", key.ID, userID, err)
+		}
+	}
 	return nil
 }
 

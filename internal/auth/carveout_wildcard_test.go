@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -122,18 +123,23 @@ func TestCreateAPIKey_AdminCannotMintWildcardMoneyVerb(t *testing.T) {
 	ctx := context.Background()
 	adminGrp := &Group{ID: DefaultAdminGroupID, Permissions: adminOnly}
 
+	const password = "CorrectHorse@123"
+	passwordHash, err := newTestService().hashPassword(password)
+	require.NoError(t, err)
+	expiresAt := time.Now().Add(24 * time.Hour)
+
 	for _, perm := range wildcardMoneyVerbs {
 		t.Run(perm.Action+":"+perm.Resource, func(t *testing.T) {
 			mockStore := new(MockStore)
 			t.Cleanup(func() { mockStore.AssertExpectations(t) })
 			service := &Service{store: mockStore}
 
-			user := &User{ID: "user-123", Active: true, GroupIDs: []string{DefaultAdminGroupID}}
+			user := &User{ID: "user-123", Active: true, PasswordHash: passwordHash, GroupIDs: []string{DefaultAdminGroupID}}
 			mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
 			mockStore.On("GetGroup", ctx, DefaultAdminGroupID).Return(adminGrp, nil)
 
-			_, _, err := service.CreateAPIKey(ctx, "user-123", "spender",
-				[]Permission{{Action: perm.Action, Resource: perm.Resource}}, nil)
+			_, _, err := service.CreateAPIKey(ctx, "user-123", "spender", password,
+				[]Permission{{Action: perm.Action, Resource: perm.Resource}}, &expiresAt)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "user does not have permission")
@@ -150,7 +156,7 @@ func TestCreateAPIKey_AdminCannotMintWildcardMoneyVerb(t *testing.T) {
 		service := &Service{store: mockStore}
 
 		grpID := "99999999-9999-4999-8999-999999999999"
-		user := &User{ID: "user-123", Active: true, GroupIDs: []string{grpID}}
+		user := &User{ID: "user-123", Active: true, PasswordHash: passwordHash, GroupIDs: []string{grpID}}
 		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
 		mockStore.On("GetGroup", ctx, grpID).Return(&Group{
 			ID:          grpID,
@@ -158,8 +164,8 @@ func TestCreateAPIKey_AdminCannotMintWildcardMoneyVerb(t *testing.T) {
 		}, nil)
 		mockStore.On("CreateAPIKey", ctx, mock.AnythingOfType("*auth.UserAPIKey")).Return(nil).Once()
 
-		_, _, err := service.CreateAPIKey(ctx, "user-123", "spender",
-			[]Permission{{Action: ActionExecute, Resource: ResourceAll}}, nil)
+		_, _, err := service.CreateAPIKey(ctx, "user-123", "spender", password,
+			[]Permission{{Action: ActionExecute, Resource: ResourceAll}}, &expiresAt)
 		require.NoError(t, err)
 	})
 }

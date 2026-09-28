@@ -34,6 +34,7 @@ func TestService_OnPasswordChange_ChangePassword(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 		err := service.ChangePassword(ctx, "user-123", ChangePasswordRequest{
@@ -55,6 +56,7 @@ func TestService_OnPasswordChange_ChangePassword(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 		err := service.ChangePassword(ctx, "user-123", ChangePasswordRequest{
@@ -82,8 +84,11 @@ func TestService_OnPasswordChange_ChangePassword(t *testing.T) {
 
 		testUser := createTestUser(t, "OldSecure123!")
 
+		// Invalidation now runs only after UpdateUser succeeds (issue #102
+		// CodeRabbit finding on #392: invalidating first would revoke
+		// credentials for a password that never actually changed), so a
+		// failed UpdateUser must never reach DeleteUserSessions/ListAPIKeysByUser.
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
-		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(assert.AnError).Once()
 
 		err := service.ChangePassword(ctx, "user-123", ChangePasswordRequest{
@@ -127,6 +132,7 @@ func TestService_OnPasswordChange_ConfirmPasswordReset(t *testing.T) {
 
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-456").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-456").Return([]*UserAPIKey{}, nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 		err := service.ConfirmPasswordReset(ctx, PasswordResetConfirm{
@@ -164,6 +170,7 @@ func TestService_OnPasswordChange_UpdateUserProfile(t *testing.T) {
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
 
 		err := service.UpdateUserProfile(ctx, "user-123", "", "OldSecure123!", "NewSecure@456")
 		require.NoError(t, err)

@@ -1021,14 +1021,13 @@
                         <small class="form-help">Give your API key a descriptive name</small>
                     </div>
                     <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="apikey-expires">
-                            Set expiration date
-                        </label>
+                        <label for="apikey-password">Your Password</label>
+                        <input type="password" id="apikey-password" required autocomplete="current-password">
+                        <small class="form-help">Confirm your password to create this API key</small>
                     </div>
-                    <div id="apikey-expires-at-field" class="form-group hidden">
+                    <div class="form-group">
                         <label for="apikey-expires-at">Expires On</label>
-                        <input type="date" id="apikey-expires-at">
+                        <input type="date" id="apikey-expires-at" required>
                         <small class="form-help">API key will automatically become invalid on this date</small>
                     </div>
                     <div id="create-apikey-error" class="error-message hidden"></div>

@@ -20,20 +20,23 @@ func TestService_CreateAPIKeyAPI(t *testing.T) {
 		service := &Service{store: mockStore}
 
 		user := &User{
-			ID:       "user-123",
-			Email:    "test@example.com",
-			Active:   true,
-			GroupIDs: []string{DefaultAdminGroupID},
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+			GroupIDs:     []string{DefaultAdminGroupID},
 		}
 
 		permissions := []Permission{
 			{Action: ActionView, Resource: ResourceRecommendations},
 		}
 
+		expiresAt := time.Now().Add(24 * time.Hour)
 		req := APICreateAPIKeyRequest{
 			Name:        "Test API Key",
+			Password:    testAPIKeyPassword,
 			Permissions: permissions,
-			ExpiresAt:   nil,
+			ExpiresAt:   &expiresAt,
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
@@ -60,15 +63,17 @@ func TestService_CreateAPIKeyAPI(t *testing.T) {
 		service := &Service{store: mockStore}
 
 		user := &User{
-			ID:       "user-123",
-			Email:    "test@example.com",
-			Active:   true,
-			GroupIDs: []string{DefaultAdminGroupID},
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+			GroupIDs:     []string{DefaultAdminGroupID},
 		}
 
 		expiresAt := time.Now().Add(30 * 24 * time.Hour)
 		req := APICreateAPIKeyRequest{
 			Name:        "Test API Key",
+			Password:    testAPIKeyPassword,
 			Permissions: []Permission{{Action: ActionView, Resource: ResourceRecommendations}},
 			ExpiresAt:   &expiresAt,
 		}
@@ -128,10 +133,11 @@ func TestService_CreateAPIKeyAPI_CrossPackageType(t *testing.T) {
 	service := &Service{store: mockStore}
 
 	user := &User{
-		ID:       "user-123",
-		Email:    "test@example.com",
-		Active:   true,
-		GroupIDs: []string{DefaultAdminGroupID},
+		ID:           "user-123",
+		Email:        "test@example.com",
+		Active:       true,
+		PasswordHash: testAPIKeyPasswordHash,
+		GroupIDs:     []string{DefaultAdminGroupID},
 	}
 	mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
 	mockStore.On("GetGroup", ctx, DefaultAdminGroupID).Return(&Group{
@@ -143,15 +149,19 @@ func TestService_CreateAPIKeyAPI_CrossPackageType(t *testing.T) {
 	// Simulate what the api.Handler does: an anonymous struct with the same
 	// json field names but a different Go type than APICreateAPIKeyRequest.
 	// This is exactly the value passed by the handler in production (issue #1440).
+	expiresAt := time.Now().Add(24 * time.Hour)
 	crossPkgReq := struct {
 		Name        string     `json:"name"`
+		Password    string     `json:"password"`
 		ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 		Permissions []struct {
 			Action   string `json:"action"`
 			Resource string `json:"resource"`
 		} `json:"permissions,omitempty"`
 	}{
-		Name: "My API Key",
+		Name:      "My API Key",
+		Password:  testAPIKeyPassword,
+		ExpiresAt: &expiresAt,
 	}
 
 	result, err := service.CreateAPIKeyAPI(ctx, "user-123", crossPkgReq)

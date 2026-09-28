@@ -1092,6 +1092,7 @@ func TestService_UpdateUserProfile(t *testing.T) {
 		mockStore.On("GetUserByEmail", ctx, "new@example.com").Return(nil, nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
 
 		err := service.UpdateUserProfile(ctx, "user-123", "new@example.com", "OldPassword123", "SecureTest@456")
 		require.NoError(t, err)

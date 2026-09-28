@@ -377,13 +377,17 @@ func TestAuthServiceAdapter_CreateAPIKeyAPI(t *testing.T) {
 	ctx := context.Background()
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
-	// CreateAPIKey calls GetUserByID then validateAPIKeyPermissions (GetGroup)
-	// then CreateAPIKey. All three stores must be mocked for the happy path.
+	// CreateAPIKey calls GetUserByID then validateCreateAPIKeyRequest
+	// (password re-verification, issue #102) then validateAPIKeyPermissions
+	// (GetGroup) then CreateAPIKey. All three stores must be mocked for the
+	// happy path.
+	const password = "CorrectHorse@123"
 	mockStore.On("GetUserByID", ctx, "user-1").Return(&auth.User{
-		ID:       "user-1",
-		Email:    "test@example.com",
-		Active:   true,
-		GroupIDs: []string{auth.DefaultAdminGroupID},
+		ID:           "user-1",
+		Email:        "test@example.com",
+		Active:       true,
+		PasswordHash: auth.TestPasswordHash(t, password),
+		GroupIDs:     []string{auth.DefaultAdminGroupID},
 	}, nil)
 	mockStore.On("GetGroup", ctx, auth.DefaultAdminGroupID).Return(&auth.Group{
 		ID:          auth.DefaultAdminGroupID,
@@ -391,8 +395,11 @@ func TestAuthServiceAdapter_CreateAPIKeyAPI(t *testing.T) {
 	}, nil)
 	mockStore.On("CreateAPIKey", ctx, mock.AnythingOfType("*auth.UserAPIKey")).Return(nil)
 
+	expiresAt := time.Now().Add(24 * time.Hour)
 	result, err := adapter.CreateAPIKeyAPI(ctx, "user-1", auth.APICreateAPIKeyRequest{
-		Name: "my-key",
+		Name:      "my-key",
+		Password:  password,
+		ExpiresAt: &expiresAt,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)

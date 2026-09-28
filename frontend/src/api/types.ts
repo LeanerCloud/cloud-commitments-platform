@@ -616,8 +616,13 @@ export interface APIKeysUsageStats {
 
 export interface CreateAPIKeyRequest {
   name: string;
+  // Base64-encoded, same convention as login/change-password/MFA (issue
+  // #102: creation now re-verifies the caller's password).
+  password: string;
   permissions?: Permission[];
-  expires_at?: string;
+  // Required and capped server-side (issue #102): a key can no longer be
+  // created with no expiration.
+  expires_at: string;
 }
 
 export interface CreateAPIKeyResponse {

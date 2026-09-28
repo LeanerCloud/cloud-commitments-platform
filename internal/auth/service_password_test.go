@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -23,6 +25,7 @@ func TestService_ChangePassword(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 		req := ChangePasswordRequest{
@@ -136,6 +139,7 @@ func TestService_ChangePassword(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool {
 			// Verify password history includes old password and maintains limit
 			// Should have: original current password (newly added to history) + 2 existing = 3 total
@@ -179,6 +183,66 @@ func TestService_ChangePassword(t *testing.T) {
 		err := service.ChangePassword(ctx, "user-123", req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "used recently")
+
+		mockStore.AssertExpectations(t)
+	})
+
+	// Regression test for issue #102 property (4): ChangePassword called
+	// DeleteUserSessions and nothing else, so an API key minted before the
+	// change stayed fully valid afterward -- a password rotation meant to
+	// lock out an attacker did not lock out a key they held. This proves the
+	// real (unmocked) revocation end to end: after ChangePassword, the same
+	// key that ValidateUserAPIKey previously accepted -- the function the
+	// X-API-Key middleware calls on every protected request via
+	// HasAPIKeyPermissionAPI (internal/api/handler.go) -- is rejected.
+	//
+	// apiKeyRecord is shared by pointer with the mocked store: RevokeAllUserAPIKeys
+	// flips IsActive on the same object ListAPIKeysByUser returned, so the
+	// second ValidateUserAPIKey call (mocked to return that same pointer)
+	// observes the mutation exactly as a real database round-trip would.
+	t.Run("revokes API keys so a previously valid key is rejected afterward", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		testUser := createTestUser(t, "OldSecure123!")
+
+		plaintextAPIKey := "user-api-key-abc123"
+		hash := sha256.Sum256([]byte(plaintextAPIKey))
+		keyHash := base64.RawURLEncoding.EncodeToString(hash[:])
+		apiKeyRecord := &UserAPIKey{
+			ID:       "key-1",
+			UserID:   "user-123",
+			Name:     "CI key",
+			KeyHash:  keyHash,
+			IsActive: true,
+		}
+
+		mockStore.On("GetAPIKeyByHash", ctx, keyHash).Return(apiKeyRecord, nil)
+		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil)
+
+		// Precondition: the key is valid before the password change.
+		_, _, err := service.ValidateUserAPIKey(ctx, plaintextAPIKey)
+		require.NoError(t, err, "key must be valid before ChangePassword")
+
+		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{apiKeyRecord}, nil).Once()
+		mockStore.On("UpdateAPIKey", ctx, apiKeyRecord).Return(nil).Once()
+		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+
+		err = service.ChangePassword(ctx, "user-123", ChangePasswordRequest{
+			CurrentPassword: "OldSecure123!",
+			NewPassword:     "NewSecure@456",
+		})
+		require.NoError(t, err)
+		assert.False(t, apiKeyRecord.IsActive, "ChangePassword must revoke the user's API keys")
+
+		// Postcondition: the same key used with X-API-Key must now be
+		// rejected -- this is exactly what HasAPIKeyPermissionAPI enforces
+		// on every protected request.
+		_, _, err = service.ValidateUserAPIKey(ctx, plaintextAPIKey)
+		require.Error(t, err, "a key that survived ChangePassword defeats the purpose of the password rotation")
+		assert.Contains(t, err.Error(), "revoked")
 
 		mockStore.AssertExpectations(t)
 	})
@@ -317,6 +381,7 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 		// Token is hashed before lookup, use mock.Anything to match the hash
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
 		// UpdateUser is called once: password change + token invalidation in single call
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
@@ -327,6 +392,59 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 
 		err := service.ConfirmPasswordReset(ctx, req)
 		require.NoError(t, err)
+
+		mockStore.AssertExpectations(t)
+	})
+
+	// Regression test for issue #102 property (4), reset-flow half: same
+	// gap as ChangePassword above, but for the "forgot password" flow.
+	t.Run("revokes API keys so a previously valid key is rejected afterward", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		expiry := time.Now().Add(time.Hour)
+		testUser := &User{
+			ID:                  "user-123",
+			Email:               "test@example.com",
+			PasswordResetToken:  hashSessionToken("valid-reset-token"),
+			PasswordResetExpiry: &expiry,
+			Active:              true,
+		}
+
+		plaintextAPIKey := "user-api-key-def456"
+		hash := sha256.Sum256([]byte(plaintextAPIKey))
+		keyHash := base64.RawURLEncoding.EncodeToString(hash[:])
+		apiKeyRecord := &UserAPIKey{
+			ID:       "key-2",
+			UserID:   "user-123",
+			Name:     "CI key",
+			KeyHash:  keyHash,
+			IsActive: true,
+		}
+
+		mockStore.On("GetAPIKeyByHash", ctx, keyHash).Return(apiKeyRecord, nil)
+		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil)
+
+		_, _, err := service.ValidateUserAPIKey(ctx, plaintextAPIKey)
+		require.NoError(t, err, "key must be valid before ConfirmPasswordReset")
+
+		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(testUser, nil).Once()
+		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
+		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{apiKeyRecord}, nil).Once()
+		mockStore.On("UpdateAPIKey", ctx, apiKeyRecord).Return(nil).Once()
+		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+
+		err = service.ConfirmPasswordReset(ctx, PasswordResetConfirm{
+			Token:       "valid-reset-token",
+			NewPassword: "SecureT3st@789",
+		})
+		require.NoError(t, err)
+		assert.False(t, apiKeyRecord.IsActive, "ConfirmPasswordReset must revoke the user's API keys")
+
+		_, _, err = service.ValidateUserAPIKey(ctx, plaintextAPIKey)
+		require.Error(t, err, "a key that survived ConfirmPasswordReset defeats the purpose of the reset")
+		assert.Contains(t, err.Error(), "revoked")
 
 		mockStore.AssertExpectations(t)
 	})

@@ -20,7 +20,11 @@ jest.mock('../api', () => ({
   getApiKeysUsageStats: jest.fn(),
   createApiKey: jest.fn(),
   revokeApiKey: jest.fn(),
-  deleteApiKey: jest.fn()
+  deleteApiKey: jest.fn(),
+  // Real implementation (not mocked): createApiKey encodes the password
+  // field with this before building the request, so tests need the real
+  // encoding to assert on the resulting request shape.
+  base64Encode: (str: string) => Buffer.from(str, 'binary').toString('base64')
 }));
 
 // confirmDialog (introduced in P2) is used for revoke/delete in place of
@@ -43,10 +47,8 @@ describe('API Keys Module', () => {
       <div id="create-apikey-modal" class="hidden">
         <form id="create-apikey-form">
           <input type="text" id="apikey-name" value="">
-          <input type="checkbox" id="apikey-expires">
-          <div id="apikey-expires-at-field" class="hidden">
-            <input type="date" id="apikey-expires-at" value="">
-          </div>
+          <input type="password" id="apikey-password" value="">
+          <input type="date" id="apikey-expires-at" value="">
           <div id="create-apikey-error" class="hidden"></div>
           <button type="submit">Create</button>
         </form>
@@ -376,17 +378,24 @@ describe('API Keys Module', () => {
       expect(errorEl?.classList.contains('hidden')).toBe(true);
     });
 
-    test('resets expiration checkbox and field', () => {
-      const expiresCheckbox = document.getElementById('apikey-expires') as HTMLInputElement;
-      const expiresAtField = document.getElementById('apikey-expires-at-field');
-
-      expiresCheckbox.checked = true;
-      expiresAtField?.classList.remove('hidden');
+    test('prefills expiration date 90 days out', () => {
+      const expiresAtInput = document.getElementById('apikey-expires-at') as HTMLInputElement;
+      expiresAtInput.value = '';
 
       showCreateKeyModal();
 
-      expect(expiresCheckbox.checked).toBe(false);
-      expect(expiresAtField?.classList.contains('hidden')).toBe(true);
+      // Compare local calendar components, not a UTC round-trip: the field
+      // is filled from local date parts (issue #102 CodeRabbit finding), so
+      // asserting via toISOString would flake near local midnight in
+      // timezones ahead of or behind UTC.
+      const expected = new Date();
+      expected.setDate(expected.getDate() + 90);
+      const expectedValue = [
+        expected.getFullYear(),
+        String(expected.getMonth() + 1).padStart(2, '0'),
+        String(expected.getDate()).padStart(2, '0'),
+      ].join('-');
+      expect(expiresAtInput.value).toBe(expectedValue);
     });
 
     test('handles missing modal gracefully', () => {
@@ -416,7 +425,9 @@ describe('API Keys Module', () => {
   });
 
   describe('createApiKey', () => {
-    test('creates API key with name only', async () => {
+    const expiresAt = new Date('2025-12-31T00:00:00Z');
+
+    test('creates API key with name, password and expiration', async () => {
       const mockResponse = {
         api_key: 'full-api-key-value',
         key_id: 'key-1',
@@ -425,9 +436,13 @@ describe('API Keys Module', () => {
 
       (api.createApiKey as jest.Mock).mockResolvedValue(mockResponse);
 
-      const result = await createApiKey('Test Key');
+      const result = await createApiKey('Test Key', 'my-password', expiresAt);
 
-      expect(api.createApiKey).toHaveBeenCalledWith({ name: 'Test Key' });
+      expect(api.createApiKey).toHaveBeenCalledWith({
+        name: 'Test Key',
+        password: Buffer.from('my-password', 'binary').toString('base64'),
+        expires_at: expiresAt.toISOString()
+      });
       expect(result.api_key).toBe('full-api-key-value');
     });
 
@@ -441,29 +456,13 @@ describe('API Keys Module', () => {
       (api.createApiKey as jest.Mock).mockResolvedValue(mockResponse);
 
       const permissions = [{ action: 'read', resource: '*' }];
-      await createApiKey('Test Key', permissions);
+      await createApiKey('Test Key', 'my-password', expiresAt, permissions);
 
       expect(api.createApiKey).toHaveBeenCalledWith({
         name: 'Test Key',
+        password: Buffer.from('my-password', 'binary').toString('base64'),
+        expires_at: expiresAt.toISOString(),
         permissions: permissions
-      });
-    });
-
-    test('creates API key with expiration', async () => {
-      const mockResponse = {
-        api_key: 'full-api-key-value',
-        key_id: 'key-1',
-        key: { id: 'key-1', name: 'Test Key', key_prefix: 'abc' }
-      };
-
-      (api.createApiKey as jest.Mock).mockResolvedValue(mockResponse);
-
-      const expiresAt = new Date('2025-12-31T00:00:00Z');
-      await createApiKey('Test Key', undefined, expiresAt);
-
-      expect(api.createApiKey).toHaveBeenCalledWith({
-        name: 'Test Key',
-        expires_at: expiresAt.toISOString()
       });
     });
 
@@ -471,7 +470,7 @@ describe('API Keys Module', () => {
       const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
       (api.createApiKey as jest.Mock).mockRejectedValue(new Error('Create failed'));
 
-      await expect(createApiKey('Test Key')).rejects.toThrow('Create failed');
+      await expect(createApiKey('Test Key', 'my-password', expiresAt)).rejects.toThrow('Create failed');
       expect(consoleError).toHaveBeenCalled();
       consoleError.mockRestore();
     });
@@ -503,11 +502,41 @@ describe('API Keys Module', () => {
       expect(errorEl?.textContent).toBe('API key name is required');
     });
 
+    // Regression coverage for issue #102: the form must not let a key be
+    // created with no password re-verification.
+    test('shows error when password is empty', async () => {
+      const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
+      (document.getElementById('apikey-expires-at') as HTMLInputElement).value = futureDate.toISOString().split('T')[0] || "";
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await handleCreateApiKey(event);
+
+      const errorEl = document.getElementById('create-apikey-error');
+      expect(errorEl?.textContent).toBe('Your password is required to create an API key');
+      expect(api.createApiKey).not.toHaveBeenCalled();
+    });
+
+    // Regression coverage for issue #102: the form must not let a key be
+    // created with no expiration.
+    test('shows error when expiration date is empty', async () => {
+      (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
+      (document.getElementById('apikey-password') as HTMLInputElement).value = 'my-password';
+      (document.getElementById('apikey-expires-at') as HTMLInputElement).value = '';
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await handleCreateApiKey(event);
+
+      const errorEl = document.getElementById('create-apikey-error');
+      expect(errorEl?.textContent).toBe('An expiration date is required');
+      expect(api.createApiKey).not.toHaveBeenCalled();
+    });
+
     test('shows error when expiration date is in the past', async () => {
       const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
       (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
-      (document.getElementById('apikey-expires') as HTMLInputElement).checked = true;
+      (document.getElementById('apikey-password') as HTMLInputElement).value = 'my-password';
       (document.getElementById('apikey-expires-at') as HTMLInputElement).value = pastDate.toISOString().split('T')[0] || "";
 
       const event = { preventDefault: jest.fn() } as unknown as Event;
@@ -518,6 +547,7 @@ describe('API Keys Module', () => {
     });
 
     test('creates key and shows success modal', async () => {
+      const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       const mockResponse = {
         api_key: 'new-api-key-12345',
         key_id: 'key-1',
@@ -528,30 +558,7 @@ describe('API Keys Module', () => {
       (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: [] });
 
       (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
-
-      const event = { preventDefault: jest.fn() } as unknown as Event;
-      await handleCreateApiKey(event);
-
-      // Check that the key created modal is shown
-      const createdModal = document.getElementById('apikey-created-modal');
-      expect(createdModal).not.toBeNull();
-      expect(createdModal?.innerHTML).toContain('new-api-key-12345');
-    });
-
-    test('creates key with expiration date', async () => {
-      const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-      const mockResponse = {
-        api_key: 'new-api-key',
-        key_id: 'key-1',
-        key: { id: 'key-1', name: 'Test Key', key_prefix: 'new' }
-      };
-
-      (api.createApiKey as jest.Mock).mockResolvedValue(mockResponse);
-      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: [] });
-
-      (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
-      (document.getElementById('apikey-expires') as HTMLInputElement).checked = true;
+      (document.getElementById('apikey-password') as HTMLInputElement).value = 'my-password';
       (document.getElementById('apikey-expires-at') as HTMLInputElement).value = futureDate.toISOString().split('T')[0] || "";
 
       const event = { preventDefault: jest.fn() } as unknown as Event;
@@ -560,15 +567,24 @@ describe('API Keys Module', () => {
       expect(api.createApiKey).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'Test Key',
+          password: expect.any(String),
           expires_at: expect.any(String)
         })
       );
+
+      // Check that the key created modal is shown
+      const createdModal = document.getElementById('apikey-created-modal');
+      expect(createdModal).not.toBeNull();
+      expect(createdModal?.innerHTML).toContain('new-api-key-12345');
     });
 
     test('shows error on API failure', async () => {
+      const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       (api.createApiKey as jest.Mock).mockRejectedValue(new Error('Create failed'));
 
       (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
+      (document.getElementById('apikey-password') as HTMLInputElement).value = 'my-password';
+      (document.getElementById('apikey-expires-at') as HTMLInputElement).value = futureDate.toISOString().split('T')[0] || "";
 
       const event = { preventDefault: jest.fn() } as unknown as Event;
       await handleCreateApiKey(event);
@@ -819,6 +835,7 @@ describe('API Keys Module', () => {
     });
 
     test('sets up form submission handler', async () => {
+      const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       (api.createApiKey as jest.Mock).mockResolvedValue({
         api_key: 'test-key',
         key_id: 'key-1',
@@ -829,6 +846,8 @@ describe('API Keys Module', () => {
       initApiKeys();
 
       (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
+      (document.getElementById('apikey-password') as HTMLInputElement).value = 'my-password';
+      (document.getElementById('apikey-expires-at') as HTMLInputElement).value = futureDate.toISOString().split('T')[0] || "";
 
       const form = document.getElementById('create-apikey-form');
       form?.dispatchEvent(new Event('submit'));
@@ -836,38 +855,6 @@ describe('API Keys Module', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
 
       expect(api.createApiKey).toHaveBeenCalled();
-    });
-
-    test('sets up expires checkbox toggle', () => {
-      initApiKeys();
-
-      const expiresCheckbox = document.getElementById('apikey-expires') as HTMLInputElement;
-      const expiresAtField = document.getElementById('apikey-expires-at-field');
-      const expiresAtInput = document.getElementById('apikey-expires-at') as HTMLInputElement;
-
-      expiresCheckbox.checked = true;
-      expiresCheckbox.dispatchEvent(new Event('change'));
-
-      expect(expiresAtField?.classList.contains('hidden')).toBe(false);
-      expect(expiresAtInput.required).toBe(true);
-      // Should set default date to 90 days from now
-      expect(expiresAtInput.value).not.toBe('');
-    });
-
-    test('expires checkbox toggle hides field when unchecked', () => {
-      initApiKeys();
-
-      const expiresCheckbox = document.getElementById('apikey-expires') as HTMLInputElement;
-      const expiresAtField = document.getElementById('apikey-expires-at-field');
-
-      // First check, then uncheck
-      expiresCheckbox.checked = true;
-      expiresCheckbox.dispatchEvent(new Event('change'));
-
-      expiresCheckbox.checked = false;
-      expiresCheckbox.dispatchEvent(new Event('change'));
-
-      expect(expiresAtField?.classList.contains('hidden')).toBe(true);
     });
 
     test('sets up modal backdrop click to close', () => {

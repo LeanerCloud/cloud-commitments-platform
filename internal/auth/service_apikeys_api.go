@@ -79,6 +79,7 @@ func effectiveLifetimeUsage(key *UserAPIKey) *int64 {
 type APICreateAPIKeyRequest struct {
 	ExpiresAt   *time.Time   `json:"expires_at,omitempty"`
 	Name        string       `json:"name"`
+	Password    string       `json:"password"` //nolint:gosec // G117: intentional credential field in request struct -- decoded by the handler and verified against the caller's own stored hash, never re-stored
 	Permissions []Permission `json:"permissions,omitempty"`
 }
 
@@ -186,7 +187,7 @@ func (s *Service) CreateAPIKeyAPI(ctx context.Context, userID string, req any) (
 	}
 
 	// Create the API key
-	apiKey, keyInfo, err := s.CreateAPIKey(ctx, userID, createReq.Name, createReq.Permissions, createReq.ExpiresAt)
+	apiKey, keyInfo, err := s.CreateAPIKey(ctx, userID, createReq.Name, createReq.Password, createReq.Permissions, createReq.ExpiresAt)
 	if err != nil {
 		return nil, err
 	}

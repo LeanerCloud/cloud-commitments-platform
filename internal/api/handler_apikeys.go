@@ -3,11 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -62,12 +64,41 @@ func (h *Handler) createAPIKey(ctx context.Context, req *events.LambdaFunctionUR
 		return nil, NewClientError(400, "invalid request body")
 	}
 
+	// Password re-verification, base64-encoded like login/MFA (issue #102).
+	password, err := decodeBase64Password(createReq.Password)
+	if err != nil {
+		return nil, err
+	}
+	createReq.Password = password
+
 	result, err := h.auth.CreateAPIKeyAPI(ctx, session.UserID, createReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create API key: %w", err)
+		return nil, mapCreateAPIKeyError(err)
 	}
 
 	return result, nil
+}
+
+// mapCreateAPIKeyError converts CreateAPIKey service errors to the correct
+// HTTP status code and a user-facing message.
+//
+//   - ErrAPIKeyInvalidPassword -> 401: the acting user is re-verifying their
+//     own credential, so a precise message is safe (same treatment as
+//     ErrCurrentPasswordIncorrect).
+//   - ErrAPIKeyExpiresAtRequired / ErrAPIKeyExpiresAtTooFar / ErrAPIKeyExpiresAtInPast
+//     -> 400: caller-correctable request validation.
+//   - All other errors pass through unchanged for handleRequestError to
+//     render as 500.
+func mapCreateAPIKeyError(err error) error {
+	switch {
+	case errors.Is(err, auth.ErrAPIKeyInvalidPassword):
+		return NewClientError(401, err.Error())
+	case errors.Is(err, auth.ErrAPIKeyExpiresAtRequired),
+		errors.Is(err, auth.ErrAPIKeyExpiresAtTooFar),
+		errors.Is(err, auth.ErrAPIKeyExpiresAtInPast):
+		return NewClientError(400, err.Error())
+	}
+	return fmt.Errorf("failed to create API key: %w", err)
 }
 
 // deleteAPIKey handles DELETE /api/api-keys/{id}.

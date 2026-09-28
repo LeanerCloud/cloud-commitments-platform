@@ -2290,10 +2290,13 @@ components:
     # -- API Keys -----------------------------------------------------------
     CreateAPIKeyRequest:
       type: object
-      required: [name]
+      required: [name, password, expires_at]
       properties:
         name:
           type: string
+        password:
+          type: string
+          description: Base64-encoded password, re-verified before minting the key
         permissions:
           type: array
           items:
@@ -2301,6 +2304,7 @@ components:
         expires_at:
           type: string
           format: date-time
+          description: Required and capped at the server-side maximum API key lifetime
 
     CreateAPIKeyResponse:
       type: object

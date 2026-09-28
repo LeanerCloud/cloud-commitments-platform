@@ -110,13 +110,14 @@ describe('API Keys API Module', () => {
         json: () => Promise.resolve(mockResponse)
       });
 
-      const result = await createApiKey({ name: 'New Key' });
+      const request = { name: 'New Key', password: 'cGFzc3dvcmQ=', expires_at: '2025-12-31T00:00:00Z' };
+      const result = await createApiKey(request);
 
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/api-keys',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ name: 'New Key' }),
+          body: JSON.stringify(request),
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
             'x-amz-content-sha256': expect.stringMatching(/^[a-f0-9]{64}$/)
@@ -140,6 +141,7 @@ describe('API Keys API Module', () => {
 
       const request = {
         name: 'Admin Key',
+        password: 'cGFzc3dvcmQ=',
         permissions: [{ action: 'read', resource: '*' }],
         expires_at: '2025-12-31T00:00:00Z'
       };
@@ -163,7 +165,7 @@ describe('API Keys API Module', () => {
         json: () => Promise.resolve({ error: 'Invalid request' })
       });
 
-      await expect(createApiKey({ name: '' })).rejects.toThrow('Invalid request');
+      await expect(createApiKey({ name: '', password: '', expires_at: '2025-12-31T00:00:00Z' })).rejects.toThrow('Invalid request');
     });
   });
 
