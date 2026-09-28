@@ -349,10 +349,17 @@ func TestApproveViaSession_PassesCSRF(t *testing.T) {
 
 	mockConfig := new(MockConfigStore)
 	exec := &config.PurchaseExecution{
-		ExecutionID:     execID,
-		ApprovalToken:   "email-tok",
-		Status:          "pending",
-		Recommendations: []config.RecommendationRecord{{ID: "r1"}},
+		ExecutionID:   execID,
+		ApprovalToken: "email-tok",
+		Status:        "pending",
+		// Non-zero UpfrontCost: this test's CSRF token is valid, so the flow
+		// reaches authorizeSessionApprove's approve-any branch, which now
+		// routes through enforcePurchaseConstraints and would otherwise
+		// refuse the $0-commitment batch before the CSRF-pass assertion this
+		// test targets is reached (issue #60 review follow-up).
+		Recommendations: []config.RecommendationRecord{
+			{ID: "r1", Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 100},
+		},
 	}
 	mockConfig.On("GetExecutionByID", ctx, execID).Return(exec, nil)
 	mockConfig.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{}, nil)
