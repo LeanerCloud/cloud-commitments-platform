@@ -201,8 +201,8 @@ function lastToastKind(): string | null {
 describe('handleExecutePurchase — single-record path', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Default: no fan-out buckets, one single-record rec
-    (recs.getFanOutBuckets as jest.Mock).mockReturnValue([]);
+    // Default: fan-out never opened (null; [] means fan-out is open with every bucket skipped), one single-record rec
+    (recs.getFanOutBuckets as jest.Mock).mockReturnValue(null);
     (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([buildMinimalRec()]);
     (plans.closePurchaseModal as jest.Mock).mockImplementation(() => undefined);
   });
@@ -289,6 +289,20 @@ describe('handleExecutePurchase — single-record path', () => {
 
     expect(lastToastKind()).toBe('error');
     expect(archera.openArcheraOfferModal).not.toHaveBeenCalled();
+  });
+
+  // Issue #331: fan-out open with every bucket skipped must not fall through
+  // to (possibly stale) single-row state.
+  test('fan-out with every bucket skipped refuses instead of submitting single-row state', async () => {
+    (recs.getFanOutBuckets as jest.Mock).mockReturnValue([]);
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(api.executePurchase).not.toHaveBeenCalled();
+    expect(lastToastMessage()).toBe('No recommendations selected for purchase.');
+    expect(lastToastKind()).toBe('warning');
   });
 
   // Issue #597: details must be preserved in the POST body on the single-rec path.
@@ -411,7 +425,7 @@ describe('handleExecutePurchase — single-record path', () => {
 describe('issue #735 — toast uses API approval_recipient, not hardcoded email', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (recs.getFanOutBuckets as jest.Mock).mockReturnValue([]);
+    (recs.getFanOutBuckets as jest.Mock).mockReturnValue(null);
     (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([buildMinimalRec()]);
     (plans.closePurchaseModal as jest.Mock).mockImplementation(() => undefined);
   });
@@ -878,7 +892,7 @@ describe('#1503 — payment-option coercion is disclosed in the purchase toast',
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (recs.getFanOutBuckets as jest.Mock).mockReturnValue([]);
+    (recs.getFanOutBuckets as jest.Mock).mockReturnValue(null);
     (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([buildMinimalRec()]);
     (plans.closePurchaseModal as jest.Mock).mockImplementation(() => undefined);
   });
