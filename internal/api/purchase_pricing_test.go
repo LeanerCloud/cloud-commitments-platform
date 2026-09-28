@@ -549,7 +549,7 @@ func TestLoadStoredRecommendationIndex_CaseFoldCollisionRefused(t *testing.T) {
 	}, nil)
 
 	handler := &Handler{config: mockStore}
-	_, err := handler.loadStoredRecommendationIndex(ctx, []config.RecommendationRecord{
+	_, _, err := handler.loadStoredRecommendationIndex(ctx, []config.RecommendationRecord{
 		{Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large", Term: 1, Payment: "all-upfront"},
 	})
 	require.Error(t, err)
@@ -609,4 +609,239 @@ func TestRecIdentityKey_TupleSemantics(t *testing.T) {
 		withB.CloudAccountID = &acctB
 		assert.NotEqual(t, recIdentityKey(&withA), recIdentityKey(&withB))
 	})
+}
+
+// TestCheckPurchaseDetailIdentity_TenancyMismatchRefused is the issue #334
+// regression guard. recIdentityKey's tuple (provider/account/service/region/
+// resource_type/engine/term/payment) does not include EC2 tenancy, which
+// lives inside the opaque Details blob. A term change can therefore resolve
+// the request's id (origin) and its recIdentityKey match to two DIFFERENT
+// stored rows whose tenancy differs while the visible tuple stays the same.
+// Pre-fix, priceFromStored's `out := *stored` would silently copy the
+// matched row's dedicated tenancy into the response even though the
+// caller's original (origin) row was default tenancy.
+func TestCheckPurchaseDetailIdentity_TenancyMismatchRefused(t *testing.T) {
+	origin := config.RecommendationRecord{
+		ID: "stored-default-3yr", Provider: "aws", Service: "ec2", Term: 3,
+		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional"}`),
+	}
+	match := config.RecommendationRecord{
+		ID: "stored-dedicated-1yr", Provider: "aws", Service: "ec2", Term: 1,
+		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`),
+	}
+	req := config.RecommendationRecord{ID: origin.ID, Service: "ec2", Term: 1, Count: 1}
+
+	err := checkPurchaseDetailIdentity(&origin, &match, &req, 0)
+	require.Error(t, err, "changing term must not silently resolve to a different tenancy than originally selected")
+	assert.Contains(t, err.Error(), "tenancy")
+	assert.Contains(t, err.Error(), "dedicated")
+	assert.Contains(t, err.Error(), "default")
+	ce, isClient := IsClientError(err)
+	require.True(t, isClient, "a purchase-configuration mismatch must be a client error, not a 500")
+	assert.Equal(t, 409, ce.code)
+}
+
+// TestCheckPurchaseDetailIdentity_RDSAZConfigMismatchRefused covers the RDS
+// half of the issue's reproduction: a term change whose recIdentityKey match
+// carries a different Multi-AZ configuration than the request's origin row.
+func TestCheckPurchaseDetailIdentity_RDSAZConfigMismatchRefused(t *testing.T) {
+	origin := config.RecommendationRecord{
+		ID: "stored-single-az-3yr", Provider: "aws", Service: "rds", Term: 3, Engine: "postgres",
+		Details: json.RawMessage(`{"engine":"postgres","az_config":"single-az","instance_class":"db.m5.large"}`),
+	}
+	match := config.RecommendationRecord{
+		ID: "stored-multi-az-1yr", Provider: "aws", Service: "rds", Term: 1, Engine: "postgres",
+		Details: json.RawMessage(`{"engine":"postgres","az_config":"multi-az","instance_class":"db.m5.large"}`),
+	}
+	req := config.RecommendationRecord{ID: origin.ID, Service: "rds", Term: 1, Engine: "postgres", Count: 1}
+
+	err := checkPurchaseDetailIdentity(&origin, &match, &req, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "az_config")
+	_, isClient := IsClientError(err)
+	assert.True(t, isClient)
+}
+
+// TestCheckPurchaseDetailIdentity_MatchingTenancyAllowed is the positive
+// control: a term/payment change whose matched row carries the SAME tenancy
+// as the origin row must not be refused (the fix must not over-broaden into
+// blocking legitimate term/payment repricing).
+func TestCheckPurchaseDetailIdentity_MatchingTenancyAllowed(t *testing.T) {
+	origin := config.RecommendationRecord{
+		ID: "stored-default-3yr", Provider: "aws", Service: "ec2", Term: 3,
+		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional"}`),
+	}
+	match := config.RecommendationRecord{
+		ID: "stored-default-1yr", Provider: "aws", Service: "ec2", Term: 1,
+		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional"}`),
+	}
+	req := config.RecommendationRecord{ID: origin.ID, Service: "ec2", Term: 1, Count: 1}
+
+	require.NoError(t, checkPurchaseDetailIdentity(&origin, &match, &req, 0))
+}
+
+// TestCheckPurchaseDetailIdentity_SameOriginAndMatchSkipsCheck: when the
+// request's id still names the row recIdentityKey resolved to (no term/
+// payment change occurred), there is nothing to compare -- a no-op,
+// regardless of what Details say.
+func TestCheckPurchaseDetailIdentity_SameOriginAndMatchSkipsCheck(t *testing.T) {
+	row := config.RecommendationRecord{
+		ID: "stored-row", Provider: "aws", Service: "ec2", Term: 1,
+		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated"}`),
+	}
+	req := config.RecommendationRecord{ID: row.ID, Service: "ec2", Term: 1, Count: 1}
+
+	require.NoError(t, checkPurchaseDetailIdentity(&row, &row, &req, 0))
+}
+
+// TestCheckPurchaseDetailIdentity_UnknownOriginIDSkipsCheck: the common
+// case where the request's id does not resolve to any current stored row
+// (bogus, stale, or the caller never resends an id at all) must be a no-op,
+// exactly as this exact scenario already behaves in
+// TestHandler_executePurchase_PersistsStoredCostsNotClientCosts, which
+// deliberately sends a non-matching id and mismatched details to prove
+// client-supplied data is fully ignored (#1905). priceRecommendationsFromStore
+// only calls checkPurchaseDetailIdentity when byID[req.ID] resolves, so this
+// asserts the underlying function is safe to call with two otherwise-normal,
+// differently-configured rows when origin was never established as "the row
+// the caller actually meant" in the first place -- i.e. proves the caller-side
+// `ok` gate, not the function itself, is what matters here.
+func TestCheckPurchaseDetailIdentity_LegacyEmptyOriginDetailsSkipsCheck(t *testing.T) {
+	// A pre-#453 legacy row has no recorded Details at all; its true tenancy
+	// was never captured, so it must never false-positive-refuse against a
+	// fully-detailed match.
+	origin := config.RecommendationRecord{ID: "legacy-row", Provider: "aws", Service: "ec2", Term: 3}
+	match := config.RecommendationRecord{
+		ID: "stored-dedicated-1yr", Provider: "aws", Service: "ec2", Term: 1,
+		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`),
+	}
+	req := config.RecommendationRecord{ID: origin.ID, Service: "ec2", Term: 1, Count: 1}
+
+	require.NoError(t, checkPurchaseDetailIdentity(&origin, &match, &req, 0))
+}
+
+// TestCheckPurchaseDetailIdentity_SavingsPlanNeverCompared confirms Savings
+// Plan fields (hourly_commitment, offering-shaped identifiers) are never
+// treated as purchase discriminators: they legitimately vary across priced
+// alternatives for the SAME purchase (issue #334's explicit carve-out).
+func TestCheckPurchaseDetailIdentity_SavingsPlanNeverCompared(t *testing.T) {
+	origin := config.RecommendationRecord{
+		ID: "stored-sp-3yr", Provider: "aws", Service: "savingsplans", Term: 3,
+		Details: json.RawMessage(`{"plan_type":"ComputeSavingsPlans","hourly_commitment":12.5,"instance_family":"m5","region":"us-east-1"}`),
+	}
+	match := config.RecommendationRecord{
+		ID: "stored-sp-1yr", Provider: "aws", Service: "savingsplans", Term: 1,
+		Details: json.RawMessage(`{"plan_type":"ComputeSavingsPlans","hourly_commitment":99.0,"instance_family":"m3","region":"us-west-2"}`),
+	}
+	req := config.RecommendationRecord{ID: origin.ID, Service: "savingsplans", Term: 1, Count: 1}
+
+	require.NoError(t, checkPurchaseDetailIdentity(&origin, &match, &req, 0),
+		"hourly_commitment and other SP fields are not purchase discriminators and must never be refused")
+}
+
+// TestHandler_executePurchase_TenancyMismatchOnTermChangeRefused is the full
+// end-to-end reproduction from the issue: two EC2 recommendations share
+// account/service/region/instance-type but differ in term AND tenancy (3yr
+// default-tenancy vs 1yr dedicated-tenancy). The client submits a request
+// derived from the default-tenancy row -- SAME id, term changed to 1yr --
+// exactly what the purchase modal does when narrowing to a term/payment
+// sibling. The purchase must be refused rather than silently resolving to
+// the dedicated-tenancy row's configuration.
+func TestHandler_executePurchase_TenancyMismatchOnTermChangeRefused(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+
+	session := &Session{UserID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", Email: "tenancy@example.com"}
+	mockAuth.On("ValidateSession", ctx, "tenancy-token").Return(session, nil)
+	mockAuth.grantPermissions([]auth.Permission{
+		{Action: auth.ActionExecute, Resource: auth.ResourcePurchases, Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 100000}},
+	})
+
+	// The refusal happens inside priceAndEnforcePurchaseConstraints, before
+	// GetGlobalConfig / GetPendingExecutions are ever reached -- Maybe()
+	// documents that these are not expected to fire, without making an
+	// unmet call a hard test failure.
+	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
+
+	expectStoredRecs(mockStore,
+		config.RecommendationRecord{
+			ID:       "aws|acct|ec2|us-east-1|m5.large||3|all-upfront",
+			Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+			Count: 1, Term: 3, Payment: "all-upfront", UpfrontCost: 3000, Savings: 300,
+			Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional"}`),
+		},
+		config.RecommendationRecord{
+			ID:       "aws|acct|ec2|us-east-1|m5.large||1|all-upfront",
+			Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+			Count: 1, Term: 1, Payment: "all-upfront", UpfrontCost: 1200, Savings: 100,
+			Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`),
+		},
+	)
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer tenancy-token"},
+		// Same id as the 3yr/default-tenancy row (the recommendation the
+		// purchase modal was actually opened on); only term changes to 1.
+		Body: `{"recommendations":[{"id":"aws|acct|ec2|us-east-1|m5.large||3|all-upfront","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100}]}`,
+	}
+	result, err := handler.executePurchase(ctx, req)
+	require.Error(t, err, "the purchase must be refused rather than silently buying dedicated tenancy the caller never asked for")
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "tenancy")
+	mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+}
+
+// TestHandler_executePurchase_MatchingTenancyTermChangeSucceeds is the
+// positive control for the end-to-end path: a term change whose resolved
+// row carries the SAME tenancy as the originally-selected row must still
+// execute normally.
+func TestHandler_executePurchase_MatchingTenancyTermChangeSucceeds(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+
+	session := &Session{UserID: "ffffffff-ffff-ffff-ffff-ffffffffffff", Email: "matching@example.com"}
+	mockAuth.On("ValidateSession", ctx, "matching-token").Return(session, nil)
+	mockAuth.grantPermissions([]auth.Permission{
+		{Action: auth.ActionExecute, Resource: auth.ResourcePurchases, Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 100000}},
+	})
+	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil)
+	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil)
+	var saved *config.PurchaseExecution
+	mockStore.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).
+		Return(nil)
+
+	expectStoredRecs(mockStore,
+		config.RecommendationRecord{
+			ID:       "aws|acct|ec2|us-east-1|m5.large||3|all-upfront",
+			Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+			Count: 1, Term: 3, Payment: "all-upfront", UpfrontCost: 3000, Savings: 300,
+			Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional"}`),
+		},
+		config.RecommendationRecord{
+			ID:       "aws|acct|ec2|us-east-1|m5.large||1|all-upfront",
+			Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+			Count: 1, Term: 1, Payment: "all-upfront", UpfrontCost: 1200, Savings: 100,
+			Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional"}`),
+		},
+	)
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer matching-token"},
+		Body:    `{"recommendations":[{"id":"aws|acct|ec2|us-east-1|m5.large||3|all-upfront","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100}]}`,
+	}
+	_, err := handler.executePurchase(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	require.Len(t, saved.Recommendations, 1)
+	assert.Equal(t, "aws|acct|ec2|us-east-1|m5.large||1|all-upfront", saved.Recommendations[0].ID)
 }
