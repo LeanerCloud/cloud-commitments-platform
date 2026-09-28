@@ -1801,6 +1801,85 @@ func TestScheduler_CollectAzureForAccount_MissingSubscriptionIDFailsLoud(t *test
 	assert.Contains(t, err.Error(), "az-no-sub", "the error must identify the misconfigured account")
 }
 
+// Regression test for issue #107: an enabled AWS cloud_accounts row with an
+// empty aws_role_arn must be rejected UNLESS aws_auth_mode is explicitly
+// "role_arn" (the documented self-account shape). Before the fix,
+// collectAWSForAccount took the ambient-credentials branch for ANY empty
+// role ARN regardless of auth mode -- including the empty string
+// org-discovery persists on a freshly-discovered member account pending
+// operator review (handler_accounts.go, persistDiscoveredMembers) -- which
+// silently collected the HOST account's Cost Explorer data and tagged it
+// with the member account's UUID: a purchase approved off one of those rows
+// is a money action taken in one account against another account's usage.
+func TestScheduler_CollectAWSForAccount_EmptyRoleARNWrongModeFailsLoud(t *testing.T) {
+	ctx := context.Background()
+	scheduler := &Scheduler{config: new(MockConfigStore)}
+
+	globalCfg := &config.GlobalConfig{DefaultTerm: 3, DefaultPayment: "all-upfront"}
+
+	recs, complete, err := scheduler.collectAWSForAccount(ctx, globalCfg, config.CloudAccount{
+		ID:         "aws-member-pending-review",
+		Provider:   "aws",
+		ExternalID: "222222222222",
+		Enabled:    true,
+		// AWSAuthMode and AWSRoleARN deliberately both empty, exactly as
+		// persistDiscoveredMembers leaves a freshly-discovered member
+		// account until the operator finishes credential setup.
+	})
+
+	require.Error(t, err, "an empty aws_auth_mode must fail loud, never fall back to ambient (host) credentials")
+	assert.Contains(t, err.Error(), "unsupported aws_auth_mode")
+	assert.False(t, complete, "a rejected account is never eviction-eligible")
+	assert.Nil(t, recs, "zero recommendation rows must be produced for a rejected account")
+}
+
+// The legitimate counterpart to the test above: aws_auth_mode=="role_arn"
+// with an empty aws_role_arn is the documented self-account shape (this
+// cloud_accounts row IS the account CUDly is deployed in) and must still use
+// ambient credentials, tagged with this account's own UUID.
+func TestScheduler_CollectAWSForAccount_SelfAccountRoleARNModeUsesAmbient(t *testing.T) {
+	ctx := context.Background()
+	mockFactory := new(MockProviderFactory)
+	mockProvider := new(MockProvider)
+	mockRecClient := new(MockRecommendationsClient)
+
+	globalCfg := &config.GlobalConfig{DefaultTerm: 3, DefaultPayment: "all-upfront"}
+
+	recommendations := []common.Recommendation{
+		{
+			Provider:         common.ProviderAWS,
+			Service:          common.ServiceEC2,
+			Region:           "us-east-1",
+			ResourceType:     "m5.large",
+			Count:            1,
+			Term:             "3yr",
+			EstimatedSavings: 100.0,
+		},
+	}
+	mockFactory.On("CreateAndValidateProvider", ctx, "aws", (*provider.ProviderConfig)(nil)).Return(mockProvider, nil)
+	mockProvider.On("GetRecommendationsClient", ctx).Return(mockRecClient, nil)
+	mockRecClient.On("GetAllRecommendations", ctx).Return(recommendations, nil)
+
+	scheduler := &Scheduler{
+		config:          new(MockConfigStore),
+		providerFactory: mockFactory,
+	}
+
+	recs, complete, err := scheduler.collectAWSForAccount(ctx, globalCfg, config.CloudAccount{
+		ID:          "aws-self-account",
+		Provider:    "aws",
+		AWSAuthMode: "role_arn",
+		ExternalID:  "111111111111",
+		Enabled:     true,
+		// AWSRoleARN deliberately empty: self-account shape.
+	})
+
+	require.NoError(t, err)
+	assert.True(t, complete)
+	require.Len(t, recs, 1)
+	assert.Equal(t, "aws-self-account", *recs[0].CloudAccountID)
+}
+
 // Test GCP recommendations with no accounts — should skip gracefully.
 func TestScheduler_CollectGCPRecommendations_NoAccounts(t *testing.T) {
 	ctx := context.Background()
