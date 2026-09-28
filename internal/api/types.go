@@ -173,7 +173,7 @@ type AuthServiceInterface interface {
 	GetUser(ctx context.Context, userID string) (*User, error)
 	UpdateUserProfile(ctx context.Context, userID string, email string, currentPassword string, newPassword string) error
 	// User management - uses auth.API* types
-	CreateUserAPI(ctx context.Context, req any) (any, error)
+	CreateUserAPI(ctx context.Context, actorUserID string, req any) (any, error)
 	UpdateUserAPI(ctx context.Context, actorUserID, userID string, req any) (any, error)
 	DeleteUser(ctx context.Context, userID string) error
 	ListUsersAPI(ctx context.Context) (any, error)

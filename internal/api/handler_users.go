@@ -64,7 +64,10 @@ func (h *Handler) createUser(ctx context.Context, req *events.LambdaFunctionURLR
 	}
 	createReq.Password = decoded
 
-	user, err := h.auth.CreateUserAPI(ctx, createReq)
+	// session.UserID is the trusted actor identity (from the validated
+	// session, never the request body); the service layer uses it to cap the
+	// requested groups at the actor's own grant ceiling (issue #226).
+	user, err := h.auth.CreateUserAPI(ctx, session.UserID, createReq)
 	if err != nil {
 		return nil, mapAuthError(err)
 	}
@@ -84,7 +87,9 @@ func mapAuthError(err error) error {
 		errors.Is(err, auth.ErrNoGroups),
 		errors.Is(err, auth.ErrPasswordPolicy):
 		return NewClientError(400, err.Error())
-	case errors.Is(err, auth.ErrSelfEscalation):
+	case errors.Is(err, auth.ErrSelfEscalation),
+		errors.Is(err, auth.ErrPermissionCeiling),
+		errors.Is(err, auth.ErrPermissionNotGrantable):
 		return NewClientError(403, err.Error())
 	case errors.Is(err, auth.ErrEmailInUse),
 		errors.Is(err, auth.ErrAdminExists),

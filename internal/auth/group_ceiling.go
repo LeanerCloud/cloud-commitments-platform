@@ -99,6 +99,60 @@ func (s *Service) checkGrantCeiling(ctx context.Context, actorUserID string, req
 	return nil
 }
 
+// checkMembershipGrantCeiling applies the same ceiling to GROUP MEMBERSHIP
+// writes that checkGrantCeiling applies to group-permission writes (issue
+// #226): a caller may only put another user into a group that carries
+// permissions the caller already holds, at constraints no broader than their
+// own, and a group carrying a carved-out money verb (#923) may only be
+// assigned by a caller who already holds that verb themselves -- admin:*
+// does not count, mirroring the carve-out's whole point.
+//
+// addedGroupIDs is the set of groups newly gained by the target user (a
+// group already held is not a grant and is not re-checked). Called for
+// non-self UpdateUser edits and for CreateUser; self-edits go through the
+// narrower guardSelfEscalation/guardSelfCarvedOutGrant path instead, which
+// this function does not replace.
+//
+// Fails closed: any error resolving the actor's permissions, or loading a
+// group being joined, refuses the change.
+func (s *Service) checkMembershipGrantCeiling(ctx context.Context, actorUserID string, addedGroupIDs []string) error {
+	if len(addedGroupIDs) == 0 {
+		return nil
+	}
+	actorPerms, err := s.grantCeilingPermissions(ctx, actorUserID)
+	if err != nil {
+		return err
+	}
+	for _, groupID := range addedGroupIDs {
+		group, err := s.store.GetGroup(ctx, groupID)
+		if err != nil {
+			return fmt.Errorf("failed to load group %s: %w", groupID, err)
+		}
+		if group == nil {
+			// A membership entry for a group that does not exist grants
+			// nothing; the change is validated elsewhere.
+			continue
+		}
+		for i := range group.Permissions {
+			perm := group.Permissions[i]
+			if coversCarvedOut(perm) {
+				if permissionsAllow(actorPerms, perm.Action, perm.Resource, nil) {
+					continue
+				}
+				return fmt.Errorf(
+					"%w: adding this user to %q would grant %s:%s, which is reserved for separation of duties (issue #923) and cannot be assigned through the API",
+					ErrPermissionNotGrantable, group.Name, perm.Action, perm.Resource)
+			}
+			if !grantCeilingAllows(actorPerms, perm) {
+				return fmt.Errorf(
+					"%w: adding this user to %q would grant %s:%s, beyond your own permissions",
+					ErrPermissionCeiling, group.Name, perm.Action, perm.Resource)
+			}
+		}
+	}
+	return nil
+}
+
 // validateRequestedPermissions rejects malformed entries before the ceiling
 // runs (issue #1730).
 //

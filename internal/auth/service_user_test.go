@@ -128,7 +128,7 @@ func TestService_CreateUser(t *testing.T) {
 			GroupIDs: []string{DefaultAdminGroupID},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotNil(t, result.User)
@@ -159,7 +159,7 @@ func TestService_CreateUser(t *testing.T) {
 			GroupIDs: []string{DefaultAdminGroupID},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "email already in use")
@@ -182,7 +182,7 @@ func TestService_CreateUser(t *testing.T) {
 			GroupIDs: nil,
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, ErrNoGroups)
@@ -203,7 +203,7 @@ func TestService_CreateUser(t *testing.T) {
 			GroupIDs: []string{DefaultAdminGroupID},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 
@@ -224,7 +224,7 @@ func TestService_CreateUser(t *testing.T) {
 			GroupIDs: []string{DefaultAdminGroupID},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 
@@ -251,7 +251,7 @@ func TestService_CreateUser(t *testing.T) {
 			// Password intentionally empty — admin is inviting the user.
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotNil(t, captured)
@@ -293,7 +293,7 @@ func TestService_CreateUser(t *testing.T) {
 			GroupIDs: []string{DefaultAdminGroupID},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		// The user row exists, so the caller must not see an error —
 		// otherwise the admin assumes the operation rolled back and may
 		// re-submit, hitting the duplicate-email guard. The delivery
@@ -894,7 +894,7 @@ func TestService_CreateUser_EdgeCases(t *testing.T) {
 			GroupIDs: []string{DefaultAdminGroupID},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "invalid email format")
@@ -913,7 +913,7 @@ func TestService_CreateUser_EdgeCases(t *testing.T) {
 			GroupIDs: []string{DefaultAdminGroupID},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		assert.Error(t, err)
 		assert.Nil(t, result)
 
@@ -934,7 +934,7 @@ func TestService_CreateUser_EdgeCases(t *testing.T) {
 			GroupIDs: []string{"group-1", "group-2"},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotNil(t, result.User)
@@ -957,7 +957,7 @@ func TestService_CreateUser_EdgeCases(t *testing.T) {
 			GroupIDs: []string{DefaultAdminGroupID},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotNil(t, result.User)
@@ -980,7 +980,7 @@ func TestService_CreateUser_EdgeCases(t *testing.T) {
 			GroupIDs: []string{"00000000-0000-5000-8000-000000000006"},
 		}
 
-		result, err := service.CreateUser(ctx, req)
+		result, err := service.CreateUser(ctx, "", req)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotNil(t, result.User)

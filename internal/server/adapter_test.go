@@ -309,7 +309,7 @@ func TestAuthServiceAdapter_CreateUserAPI(t *testing.T) {
 	mockStore.On("CreateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil)
 
 	// Pass a properly typed request
-	_, err := adapter.CreateUserAPI(ctx, map[string]interface{}{
+	_, err := adapter.CreateUserAPI(ctx, "", map[string]interface{}{
 		"email":    "new@example.com",
 		"password": "StrongPassword123!",
 		"groups":   []string{"group-viewer"},
@@ -327,6 +327,21 @@ func TestAuthServiceAdapter_UpdateUserAPI(t *testing.T) {
 		Email:    "old@example.com",
 		GroupIDs: []string{"group-viewer"},
 	}, nil).Once()
+	// Actor != target, so this is a non-self edit: the membership grant
+	// ceiling (issue #226) resolves the actor's own permissions before
+	// allowing the group-editor group to be added.
+	mockStore.On("GetUserByID", ctx, "actor-1").Return(&auth.User{
+		ID:       "actor-1",
+		GroupIDs: []string{"group-admin"},
+	}, nil)
+	mockStore.On("GetGroup", ctx, "group-admin").Return(&auth.Group{
+		ID:          "group-admin",
+		Permissions: []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}},
+	}, nil)
+	mockStore.On("GetGroup", ctx, "group-editor").Return(&auth.Group{
+		ID:          "group-editor",
+		Permissions: []auth.Permission{{Action: auth.ActionUpdate, Resource: auth.ResourceUsers}},
+	}, nil)
 	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 	// The new signature threads the actor user ID through to s.UpdateUser

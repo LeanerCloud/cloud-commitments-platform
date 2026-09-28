@@ -166,9 +166,18 @@ func TestSelfCarvedOutGrant_ExistingPurchaserNotBlocked(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// Negative control 3: the two-person control is preserved. An admin may add
-// ANOTHER user to the Purchaser group; only self-edits are gated.
-func TestSelfCarvedOutGrant_AdminMayAddAnotherUserToPurchaser(t *testing.T) {
+// Tightened by issue #226: a plain admin who is not already a purchaser
+// cannot add ANOTHER user to Purchaser either. update:users alone used to be
+// enough for a cross-user edit because guardSelfCarvedOutGrant only ran for
+// self-edits; that let an admin stand up a second account under their own
+// control (or move any account a low-privilege update:users group reaches)
+// straight into a money group, defeating the #923 two-person control the
+// same way self-adding would. The membership grant ceiling
+// (checkMembershipGrantCeiling) now applies to non-self edits too: the
+// caller must already hold a carved-out verb themselves before they can
+// hand it to ANYONE, mirroring the rule checkGrantCeiling already applies to
+// group-permission writes.
+func TestSelfCarvedOutGrant_PlainAdminCannotAddAnotherUserToPurchaser(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -176,15 +185,64 @@ func TestSelfCarvedOutGrant_AdminMayAddAnotherUserToPurchaser(t *testing.T) {
 
 	mockStore.On("GetUserByID", ctx, otherUserID).
 		Return(&User{ID: otherUserID, Active: true, GroupIDs: []string{adminGroupID}}, nil)
+	// The actor's own permissions are now resolved for a cross-user edit too.
+	stubSelfActor(ctx, mockStore, []string{adminGroupID}, adminGroupRow(), purchaserGroupRow())
+
+	_, err := svc.UpdateUser(ctx, selfActorID, otherUserID, UpdateUserRequest{
+		GroupIDs: []string{adminGroupID, purchaserGroup},
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrPermissionNotGrantable)
+	assert.Contains(t, err.Error(), GroupPurchaser)
+	assert.Contains(t, err.Error(), ActionExecute+":"+ResourcePurchases)
+	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+}
+
+// The two-person control still works for someone who already holds the
+// money verbs: an existing purchaser may add ANOTHER user to Purchaser. That
+// hand-off between two already-authorized people is what #923's two-person
+// control is meant to enable, not a hole -- the ceiling only refuses a
+// caller handing out a verb they do not themselves hold.
+func TestSelfCarvedOutGrant_ExistingPurchaserMayAddAnotherUserToPurchaser(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	svc := createTestService(mockStore, new(MockEmailSender))
+
+	mockStore.On("GetUserByID", ctx, otherUserID).
+		Return(&User{ID: otherUserID, Active: true, GroupIDs: []string{adminGroupID}}, nil)
+	stubSelfActor(ctx, mockStore, []string{adminGroupID, purchaserGroup}, adminGroupRow(), purchaserGroupRow())
 	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
 
 	_, err := svc.UpdateUser(ctx, selfActorID, otherUserID, UpdateUserRequest{
 		GroupIDs: []string{adminGroupID, purchaserGroup},
 	})
 	require.NoError(t, err)
-	// The self-guard never runs for a cross-user edit, so the actor's own
-	// permissions are never even fetched.
-	mockStore.AssertNotCalled(t, "GetUserByID", ctx, selfActorID)
+}
+
+// A non-self edit into an ORDINARY group (no carved-out verb, and one the
+// actor's own admin:* already covers) is unaffected by the tightened ceiling.
+func TestSelfCarvedOutGrant_AdminMayAddAnotherUserToOrdinaryGroup(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	svc := createTestService(mockStore, new(MockEmailSender))
+
+	readOnly := &Group{
+		ID:          "99999999-9999-4999-8999-999999999999",
+		Name:        "Read-Only Users",
+		Permissions: []Permission{{Action: ActionView, Resource: ResourcePlans}},
+	}
+	mockStore.On("GetUserByID", ctx, otherUserID).
+		Return(&User{ID: otherUserID, Active: true, GroupIDs: []string{adminGroupID}}, nil)
+	stubSelfActor(ctx, mockStore, []string{adminGroupID}, adminGroupRow(), readOnly)
+	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+
+	_, err := svc.UpdateUser(ctx, selfActorID, otherUserID, UpdateUserRequest{
+		GroupIDs: []string{adminGroupID, readOnly.ID},
+	})
+	require.NoError(t, err)
 }
 
 // Trusted internal callers (actorUserID == "") are unaffected, so bootstrap

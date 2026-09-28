@@ -145,7 +145,7 @@ func TestService_CreateUserAPI(t *testing.T) {
 			Groups:   []string{"group-1"},
 		}
 
-		result, err := service.CreateUserAPI(ctx, req)
+		result, err := service.CreateUserAPI(ctx, "", req)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -166,7 +166,7 @@ func TestService_CreateUserAPI(t *testing.T) {
 		mockEmail := new(MockEmailSender)
 		service := createTestService(mockStore, mockEmail)
 
-		result, err := service.CreateUserAPI(ctx, "invalid")
+		result, err := service.CreateUserAPI(ctx, "", "invalid")
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "invalid request type")

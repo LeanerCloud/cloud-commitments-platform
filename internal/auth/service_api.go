@@ -198,8 +198,11 @@ func apiPermissionToPermission(ap APIPermission) Permission {
 // API adapter methods - these implement the AuthServiceInterface from handler.go
 // They use any to avoid import cycles with the api package
 
-// CreateUserAPI creates a new user via the API.
-func (s *Service) CreateUserAPI(ctx context.Context, reqInterface any) (any, error) {
+// CreateUserAPI creates a new user via the API. actorUserID is the
+// authenticated caller performing the creation (from the session, never the
+// request body); it is used by the service layer to enforce the membership
+// grant ceiling (issue #226).
+func (s *Service) CreateUserAPI(ctx context.Context, actorUserID string, reqInterface any) (any, error) {
 	req, ok := reqInterface.(APICreateUserRequest)
 	if !ok {
 		return nil, fmt.Errorf("invalid request type")
@@ -209,7 +212,7 @@ func (s *Service) CreateUserAPI(ctx context.Context, reqInterface any) (any, err
 		Password: req.Password,
 		GroupIDs: req.Groups,
 	}
-	result, err := s.CreateUser(ctx, authReq)
+	result, err := s.CreateUser(ctx, actorUserID, authReq)
 	if err != nil {
 		return nil, err
 	}
