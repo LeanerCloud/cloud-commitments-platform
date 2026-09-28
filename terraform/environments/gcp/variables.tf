@@ -401,6 +401,47 @@ variable "gke_enable_workload_identity" {
   default     = true
 }
 
+variable "gke_enable_private_nodes" {
+  description = "Give GKE nodes private IPs only. Defaults to true."
+  type        = bool
+  default     = true
+}
+
+variable "gke_enable_private_endpoint" {
+  description = "Remove the GKE control plane's public IP entirely. Defaults to false; the public endpoint still denies every external IP by default (see gke_master_authorized_networks, gke_gcp_public_cidrs_access_enabled). CONSEQUENCE: with the default empty gke_master_authorized_networks, a standard GitHub-hosted runner (ubuntu-latest) cannot reach the public endpoint -- deploy_kubernetes_resources=true from ordinary CI needs a self-hosted/VNet-reachable runner or a real allowlist entry."
+  type        = bool
+  default     = false
+}
+
+variable "gke_master_ipv4_cidr_block" {
+  description = <<-EOT
+    /28 CIDR for the GKE control plane's own VPC peering endpoint. Required
+    by the google provider whenever GKE nodes are private on a Standard
+    cluster (always true here) -- terraform validate/plan do not catch the
+    omission, apply fails outright. Must not overlap subnet_cidr (default
+    10.0.0.0/24) or connector_subnet_cidr (default 10.8.0.0/28). Default is
+    a distinct RFC1918 /16 (172.16.0.0/16) from the 10.0.0.0/8 space those
+    use.
+  EOT
+  type        = string
+  default     = "172.16.0.0/28"
+}
+
+variable "gke_gcp_public_cidrs_access_enabled" {
+  description = "Whether Google Cloud's own public IP ranges can reach the GKE control plane's public endpoint, independent of gke_master_authorized_networks. Defaults to false: the provider's own default (true) would mean an empty allowlist does not actually deny all external access."
+  type        = bool
+  default     = false
+}
+
+variable "gke_master_authorized_networks" {
+  description = "CIDR allowlist for the GKE control plane's public endpoint. Defaults to empty; combined with gke_gcp_public_cidrs_access_enabled=false (also default), that denies all external access. Must not include 0.0.0.0/0."
+  type = list(object({
+    cidr_block   = string
+    display_name = optional(string, "")
+  }))
+  default = []
+}
+
 # ==============================================
 # Frontend (Load Balancer) Configuration
 # ==============================================
