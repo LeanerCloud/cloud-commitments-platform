@@ -1003,7 +1003,6 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 			approved_by = $16,
 			cancelled_by = $17,
 			capacity_percent = $18,
-			retry_execution_id = $20,
 			approval_token_expires_at = $22,
 			executed_by_user_id = $23,
 			executed_at = $24,
@@ -1027,11 +1026,14 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 	// ON CONFLICT update (e.g. the scheduler upserting status transitions).
 	// They are omitted from the DO UPDATE SET clause above.
 	//
-	// retry_execution_id IS in the DO UPDATE SET clause because the retry
-	// handler explicitly updates the *original* failed row to point at the
-	// new successor execution after creating it (issue #47). That update
-	// re-saves the failed row through this same path, and the pointer
-	// must persist.
+	// retry_execution_id is also omitted from the DO UPDATE SET clause
+	// (issue #220 CR follow-up): any other caller that upserts a stale
+	// in-memory copy of a failed row (e.g. the reaper) through this same
+	// path must not be able to clear a link LinkRetryExecutionAtomic
+	// already wrote, which would defeat the already-retried guard and
+	// let the row be retried a second time. The retry handler links the
+	// original failed row to its successor exclusively through
+	// LinkRetryExecutionAtomic's targeted, conditional UPDATE.
 	_, err = tx.Exec(ctx, query,
 		planIDArg,
 		execution.ExecutionID,
