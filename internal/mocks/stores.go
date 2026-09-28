@@ -329,6 +329,20 @@ func (m *MockConfigStore) SetCancelledBy(ctx context.Context, executionID, cance
 	return args.Error(0)
 }
 
+// LinkRetryExecutionAtomic mocks the LinkRetryExecutionAtomic operation.
+// Defaults to (true, nil) when no expectation is registered so tests that
+// only need the happy path don't require explicit mock setup. Tests
+// exercising the CAS-race path (a concurrent retry already claimed the
+// row) register an expectation that returns (false, nil).
+func (m *MockConfigStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (bool, error) {
+	m.record("LinkRetryExecutionAtomic", ctx, tx, executionID, retryExecutionID)
+	if !isExpected(&m.Mock, "LinkRetryExecutionAtomic") {
+		return true, nil
+	}
+	args := m.Called(ctx, tx, executionID, retryExecutionID)
+	return args.Bool(0), args.Error(1)
+}
+
 // CancelExecutionAtomic mocks the CancelExecutionAtomic operation.
 // Defaults to (true, "cancelled", nil) when no expectation is registered
 // so tests that only need the happy path don't require explicit mock setup.

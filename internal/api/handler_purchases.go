@@ -1912,31 +1912,50 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 		RetryAttemptN:          failedExec.RetryAttemptN + 1,
 	}
 
-	// Stamp the original failed row with the linkage. This is a
-	// separate value copy so the caller's pointer to failedExec doesn't
-	// accidentally pick up other status-mutating concerns: only
-	// retry_execution_id changes here, the status stays `failed`.
-	originalUpdated := *failedExec
-	originalUpdated.RetryExecutionID = &newExecutionID
-
 	var gracePeriodCfg *config.GlobalConfig
 	if g, err := h.config.GetGlobalConfig(ctx); err == nil {
 		gracePeriodCfg = g
 	}
 	suppressions := buildSuppressions(failedExec.Recommendations, newExecutionID, gracePeriodCfg, time.Now())
 
-	// Three writes in one tx:
-	//  1. INSERT the new execution row (the successor).
-	//  2. UPSERT the original failed row to set retry_execution_id.
-	//  3. INSERT suppression rows for the new execution.
-	// Order matters: the FK on retry_execution_id requires the
-	// successor to exist before the original can point at it.
-	if err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
+	if err := h.persistRetrySuccessorTx(ctx, failedExec, newExecution, suppressions); err != nil {
+		return nil, err
+	}
+
+	return newExecution, nil
+}
+
+// persistRetrySuccessorTx writes the three retry-tx changes: the new
+// successor execution, the linkage pointer on the original failed row, and
+// the successor's suppression rows. Extracted from persistRetryExecution to
+// keep that function under the cyclomatic-complexity ceiling.
+//
+// Order matters: the FK on retry_execution_id requires the successor to
+// exist before the original can point at it.
+//
+// The linkage write is an atomic CAS (LinkRetryExecutionAtomic, conditional
+// on status='failed' AND retry_execution_id IS NULL), not a full-row
+// upsert of a stale in-memory copy of the failed row. This is the
+// authoritative, race-safe guard: the pre-tx already-retried check in
+// loadAndValidateRetryRequest is only a fast-path optimization, since two
+// concurrent retries of the same row can both read RetryExecutionID == nil
+// before either commits. Whichever request's UPDATE runs second here
+// matches zero rows and the tx rolls back (issue #220) instead of both
+// persisting an approvable successor and reverting whatever the other
+// writer changed on the original row.
+func (h *Handler) persistRetrySuccessorTx(ctx context.Context, failedExec, newExecution *config.PurchaseExecution, suppressions []config.PurchaseSuppression) error {
+	var lostRace bool
+	err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := h.config.SavePurchaseExecutionTx(ctx, tx, newExecution); err != nil {
 			return err
 		}
-		if err := h.config.SavePurchaseExecutionTx(ctx, tx, &originalUpdated); err != nil {
-			return err
+		linked, linkErr := h.config.LinkRetryExecutionAtomic(ctx, tx, failedExec.ExecutionID, newExecution.ExecutionID)
+		if linkErr != nil {
+			return linkErr
+		}
+		if !linked {
+			lostRace = true
+			return errRetryLinkRaceLost
 		}
 		for i := range suppressions {
 			if err := h.config.CreateSuppressionTx(ctx, tx, &suppressions[i]); err != nil {
@@ -1944,12 +1963,25 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 			}
 		}
 		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to save retry execution: %w", err)
+	})
+	if err == nil {
+		return nil
 	}
-
-	return newExecution, nil
+	if lostRace {
+		return NewClientErrorWithDetails(409,
+			fmt.Sprintf("execution %s was already retried; act on its descendant instead", failedExec.ExecutionID),
+			map[string]any{})
+	}
+	return fmt.Errorf("failed to save retry execution: %w", err)
 }
+
+// errRetryLinkRaceLost is returned from persistRetrySuccessorTx's tx
+// closure to force a rollback (via WithTx's error path) when
+// LinkRetryExecutionAtomic matches zero rows -- a concurrent retry already
+// claimed the failed row between the pre-tx already-retried check and this
+// tx's UPDATE. Never returned to a caller directly; persistRetrySuccessorTx
+// translates it into a 409 ClientError.
+var errRetryLinkRaceLost = errors.New("retry link race lost")
 
 // authorizeSessionRetry is the retry-side mirror of
 // authorizeSessionCancel. Returns nil when the session is permitted to

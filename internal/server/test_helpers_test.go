@@ -153,6 +153,10 @@ func (m *mockConfigStoreForHealth) SetCancelledBy(_ context.Context, _ string, _
 	return nil
 }
 
+func (m *mockConfigStoreForHealth) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (bool, error) {
+	return false, nil
+}
+
 func (m *mockConfigStoreForHealth) CancelExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string, cancelledBy *string) (bool, string, error) {
 	return false, "", nil
 }

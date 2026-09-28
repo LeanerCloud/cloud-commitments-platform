@@ -105,8 +105,9 @@ func purchasesFiredByRetry(t *testing.T, failed *config.PurchaseExecution, req *
 		return nil, err
 	}
 
-	// First save is the successor; the second is the original row stamped with
-	// the linkage pointer (the retry tx orders them that way for the FK).
+	// The only SavePurchaseExecution call is the successor; the original
+	// row's linkage is a targeted LinkRetryExecutionAtomic CAS (issue #220),
+	// not a second full-row upsert.
 	require.NotEmpty(t, saved, "an allowed retry must have persisted a successor execution")
 	return executeRedriveSuccessor(t, saved[0]), nil
 }

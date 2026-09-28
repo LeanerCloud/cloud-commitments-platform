@@ -133,6 +133,14 @@ func TestRetryCarveOut_AdminPurchaserIsAllowed(t *testing.T) {
 		}).
 		Return(nil)
 
+	var linkedOriginalID, linkedSuccessorID string
+	mockConfig.On("LinkRetryExecutionAtomic", mock.Anything, mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+		Run(func(args mock.Arguments) {
+			linkedOriginalID = args.Get(2).(string)
+			linkedSuccessorID = args.Get(3).(string)
+		}).
+		Return(true, nil)
+
 	result, err := h.retryPurchase(context.Background(), sessionRetryReq(), failed.ExecutionID)
 
 	require.NoError(t, err, "admin + Purchaser must be able to retry another user's failed row")
@@ -141,11 +149,10 @@ func TestRetryCarveOut_AdminPurchaserIsAllowed(t *testing.T) {
 	assert.Equal(t, failed.ExecutionID, resp["original_execution"])
 	assert.NotEmpty(t, resp["execution_id"])
 
-	require.GreaterOrEqual(t, len(saved), 2,
-		"expected the successor write plus the linkage update on the original")
+	require.GreaterOrEqual(t, len(saved), 1, "expected the successor SavePurchaseExecution call")
 	assert.Equal(t, 1, saved[0].RetryAttemptN, "fresh first retry -> n=1")
-	require.NotNil(t, saved[1].RetryExecutionID, "original must point at the successor")
-	assert.Equal(t, saved[0].ExecutionID, *saved[1].RetryExecutionID)
+	assert.Equal(t, failed.ExecutionID, linkedOriginalID, "the linkage CAS must target the original failed row")
+	assert.Equal(t, saved[0].ExecutionID, linkedSuccessorID, "the linkage CAS must point at the new successor")
 
 	mockAuth.AssertCalled(t, "HasPermissionAPI", mock.Anything, retryCallerID,
 		auth.ActionRetryAny, auth.ResourcePurchases)

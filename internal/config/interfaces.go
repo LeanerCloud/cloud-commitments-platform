@@ -168,6 +168,18 @@ type StoreInterface interface {
 	// logical write without the full-row SavePurchaseExecution clobber risk
 	// (Finding #5 / PR #889).
 	SetCancelledBy(ctx context.Context, executionID string, cancelledBy string) error
+	// LinkRetryExecutionAtomic stamps retry_execution_id on a failed
+	// execution row without a full-row overwrite, conditional on
+	// status = 'failed' AND retry_execution_id IS NULL. Replaces a
+	// SavePurchaseExecutionTx upsert of a stale in-memory copy of the
+	// failed row, which let two concurrent retries of the same row both
+	// pass the in-memory already-retried guard and both persist an
+	// approvable successor (issue #220). Returns (true, nil) when this
+	// call won the race, (false, nil) when a concurrent retry already
+	// claimed the row (or it left 'failed'), and (false, err) on a real
+	// DB error. Must be called inside the same tx that inserts the
+	// successor row, after that insert.
+	LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error)
 	// CancelExecutionAtomic atomically flips status from pending / notified
 	// to 'canceled' (canonical US spelling), setting canceled_by. The
 	// 'scheduled' status is NOT accepted here; scheduled rows are revoked via
