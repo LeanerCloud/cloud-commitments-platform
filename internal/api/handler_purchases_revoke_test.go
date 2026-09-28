@@ -258,7 +258,8 @@ func TestRevokePurchase_AzureSuccess(t *testing.T) {
 		resp: armreservations.CalculateRefundClientPostResponse{
 			CalculateRefundResponse: armreservations.CalculateRefundResponse{
 				Properties: &armreservations.RefundResponseProperties{
-					SessionID: &sessID,
+					SessionID:           &sessID,
+					BillingRefundAmount: &armreservations.Price{Amount: toPtr(10.0), CurrencyCode: toPtr("USD")},
 				},
 			},
 		},
@@ -268,7 +269,7 @@ func TestRevokePurchase_AzureSuccess(t *testing.T) {
 	h := &Handler{config: mockStore}
 	orderID := "order-abc"
 	resID := "res-xyz"
-	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, orderID, resID, nil)
+	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, orderID, resID, confirmedQuote(10, "USD"))
 	require.NoError(t, err)
 	m, ok := result.(*revokePurchaseResult)
 	require.True(t, ok)
@@ -289,7 +290,7 @@ func TestRevokePurchase_AzureCalcRefundClientError(t *testing.T) {
 	returnClient := &stubReturnClient{}
 
 	h := &Handler{config: mockStore}
-	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(10, "USD"))
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -307,7 +308,8 @@ func TestRevokePurchase_AzureReturnClientError(t *testing.T) {
 		resp: armreservations.CalculateRefundClientPostResponse{
 			CalculateRefundResponse: armreservations.CalculateRefundResponse{
 				Properties: &armreservations.RefundResponseProperties{
-					SessionID: &sessID,
+					SessionID:           &sessID,
+					BillingRefundAmount: &armreservations.Price{Amount: toPtr(10.0), CurrencyCode: toPtr("USD")},
 				},
 			},
 		},
@@ -316,7 +318,7 @@ func TestRevokePurchase_AzureReturnClientError(t *testing.T) {
 
 	r := armReservationRecord()
 	h := &Handler{config: mockStore}
-	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(10, "USD"))
 	require.Error(t, err)
 	// 500 is not a client error -- expect wrapped error, not ClientError.
 	_, isClient := IsClientError(err)
@@ -372,7 +374,7 @@ func TestRevokePurchase_EmptyReservationIDRejected(t *testing.T) {
 
 	r := armReservationRecord()
 	h := &Handler{config: mockStore}
-	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "", nil)
+	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "", confirmedQuote(10, "USD"))
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -967,7 +969,7 @@ func TestCallAzureReturn_TOCTOUDivergenceRejectedWith422(t *testing.T) {
 	returnClient := &stubReturnClient{}
 
 	h := &Handler{config: mockStore}
-	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", &userConfirmed)
+	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(userConfirmed, "USD"))
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -993,7 +995,7 @@ func TestCallAzureReturn_TOCTOUWithinEpsilonSucceeds(t *testing.T) {
 	returnClient := &stubReturnClient{resp: armreservations.ReturnClientPostResponse{}}
 
 	h := &Handler{config: mockStore}
-	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", &userConfirmed)
+	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(userConfirmed, "USD"))
 	require.NoError(t, err)
 	m, ok := result.(*revokePurchaseResult)
 	require.True(t, ok)
@@ -1020,7 +1022,7 @@ func TestCallAzureReturn_AuditRowPopulatedWithQuote(t *testing.T) {
 	).Return(nil)
 
 	h := &Handler{config: mockStore}
-	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(42.50, "EUR"))
 	require.NoError(t, err)
 	mockStore.AssertExpectations(t)
 }
@@ -1094,7 +1096,7 @@ func TestCallAzureReturn_MarkPurchaseRevokedFailAllRetries(t *testing.T) {
 		Return(errors.New("db down")).Times(4)
 
 	h := &Handler{config: mockStore}
-	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(10, "USD"))
 	require.NoError(t, err, "a DB failure after Azure success should not surface as an error")
 
 	pending, ok := result.(*revokeReconcilePendingResult)
@@ -1202,7 +1204,7 @@ func TestCallAzureReturn_JustOutsideSafetyMargin(t *testing.T) {
 	mockStore.On("MarkPurchaseRevoked", ctx, r.PurchaseID, mock.AnythingOfType("time.Time"), "direct-api", "", mock.Anything, mock.Anything).Return(nil)
 
 	h := &Handler{config: mockStore}
-	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(50, "USD"))
 	require.NoError(t, err)
 	m, ok := result.(*revokePurchaseResult)
 	require.True(t, ok)
@@ -1267,7 +1269,7 @@ func TestCallAzureReturn_RefundPolicyViolatedReturns422WindowEdge(t *testing.T) 
 
 	r := armReservationRecord()
 	h := &Handler{config: mockStore}
-	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(30, "USD"))
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -1295,7 +1297,7 @@ func TestCallAzureReturn_TransientError_ClearsInFlight(t *testing.T) {
 	mockStore.On("ClearRevocationInFlight", ctx, r.PurchaseID).Return(nil).Once()
 
 	h := &Handler{config: mockStore}
-	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(10, "USD"))
 	require.Error(t, err)
 	// Must not be a ClientError -- transient errors surface as a 500 from the caller.
 	_, isClientErr := IsClientError(err)
@@ -1321,7 +1323,7 @@ func TestCallAzureReturn_ClientError_ClearsInFlight(t *testing.T) {
 	mockStore.On("ClearRevocationInFlight", ctx, r.PurchaseID).Return(nil).Once()
 
 	h := &Handler{config: mockStore}
-	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(10, "USD"))
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -1346,7 +1348,7 @@ func TestCallAzureReturn_WindowEdge_ClearsInFlight(t *testing.T) {
 	mockStore.On("ClearRevocationInFlight", ctx, r.PurchaseID).Return(nil).Once()
 
 	h := &Handler{config: mockStore}
-	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	_, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(10, "USD"))
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -1371,7 +1373,7 @@ func TestCallAzureReturn_Success_DoesNotClearInFlight(t *testing.T) {
 		"direct-api", "", mock.Anything, mock.Anything).Return(nil).Once()
 
 	h := &Handler{config: mockStore}
-	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", nil)
+	result, err := h.callAzureReturn(ctx, calcClient, returnClient, r, "order-abc", "res-xyz", confirmedQuote(10, "USD"))
 	require.NoError(t, err)
 	rr, ok := result.(*revokePurchaseResult)
 	require.True(t, ok)
@@ -1604,7 +1606,7 @@ func TestRevokeAzurePurchase_Success(t *testing.T) {
 		},
 	}
 
-	result, err := h.revokeAzurePurchase(ctx, r, nil)
+	result, err := h.revokeAzurePurchase(ctx, r, confirmedQuote(12.34, "USD"))
 	require.NoError(t, err)
 	m, ok := result.(*revokePurchaseResult)
 	require.True(t, ok)
@@ -1636,7 +1638,7 @@ func TestRevokeAzurePurchase_ClientFactoryError(t *testing.T) {
 		},
 	}
 
-	_, err := h.revokeAzurePurchase(ctx, r, nil)
+	_, err := h.revokeAzurePurchase(ctx, r, confirmedQuote(10, "USD"))
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "revoke azure:")
 	assert.ErrorIs(t, err, factoryErr)
