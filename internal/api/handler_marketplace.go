@@ -144,17 +144,13 @@ func (h *Handler) marketplaceList(ctx context.Context, req *events.LambdaFunctio
 
 	// purchase_history.term is stored in years (1 or 3); both
 	// computeRemainingMonths and resolveMarketplacePriceSchedule operate in
-	// months. Reject a zero or negative term rather than silently computing
-	// garbage on this money path (no-silent-fallbacks policy).
-	if row.Term <= 0 {
-		return nil, fmt.Errorf("purchase has invalid term %d (expected 1 or 3 years); cannot compute marketplace pricing", row.Term)
-	}
+	// months. computeRemainingMonths rejects a non-positive term and a missing
+	// timestamp rather than pricing garbage on this money path.
 	termMonths := row.Term * 12
-
-	// Compute actual remaining months from the purchase timestamp and total
-	// term so the default price schedule reflects real remaining value
-	// rather than the full contract term (which overprices older RIs).
-	remainingMonths := computeRemainingMonths(row.Timestamp, termMonths)
+	remainingMonths, err := computeRemainingMonths(row.Timestamp, termMonths)
+	if err != nil {
+		return nil, err
+	}
 
 	// Validate and normalise the price schedule. Row-total UpfrontCost and the
 	// instance Count are passed so pricing is computed per instance; recurring
@@ -442,20 +438,24 @@ func (h *Handler) authorizeAllowedAccount(ctx context.Context, session *Session,
 }
 
 // computeRemainingMonths returns the number of whole months remaining on an RI
-// given its purchase timestamp and total term in months. The result is floored
-// at 1 so defensive callers always get a positive value.
-func computeRemainingMonths(purchaseTime time.Time, termMonths int) int {
-	if purchaseTime.IsZero() || termMonths <= 0 {
-		return 1
+// given its purchase timestamp and total term in months. A zero timestamp is
+// absent data and returns an error: pricing it as 1 remaining month would list
+// the RI for a fraction of its residual value. The result is floored at 1.
+func computeRemainingMonths(purchaseTime time.Time, termMonths int) (int, error) {
+	if purchaseTime.IsZero() {
+		return 0, fmt.Errorf("purchase has no timestamp; cannot compute remaining term for marketplace pricing")
+	}
+	if termMonths <= 0 {
+		return 0, fmt.Errorf("invalid term of %d months; cannot compute remaining term for marketplace pricing", termMonths)
 	}
 	elapsed := time.Since(purchaseTime)
 	elapsedMonths := elapsed.Hours() / (24 * 30.4375)
 	remaining := float64(termMonths) - elapsedMonths
 	r := int(math.Floor(remaining))
 	if r < 1 {
-		return 1
+		return 1, nil
 	}
-	return r
+	return r, nil
 }
 
 // awsMarketplaceFeePercent is the AWS Marketplace transaction fee percentage
