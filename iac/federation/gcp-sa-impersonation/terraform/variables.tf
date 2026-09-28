@@ -13,6 +13,35 @@ variable "source_service_account" {
   type        = string
 }
 
+variable "custom_role_id" {
+  description = <<-EOT
+    Project-scoped custom role ID Terraform creates and binds to
+    var.service_account_email. The role carries the minimum permissions
+    required to purchase and manage Compute Engine CUDs on behalf of CUDly.
+    Matches the default in federation/gcp-target/terraform so applies from
+    either bundle stay idempotent against the same project.
+  EOT
+  type        = string
+  default     = "cudlyCommitmentWriter"
+}
+
+variable "custom_role_permissions" {
+  description = <<-EOT
+    Permissions bundled into the custom role granted to
+    var.service_account_email. Defaults match the definition in
+    terraform/modules/compute/gcp/cloud-run and federation/gcp-target, so all
+    three stay in lockstep and none can stomp another's role on apply.
+
+    Read-side permissions (regions/zones/machineTypes/commitments.list/.get)
+    come from roles/compute.viewer, granted separately in main.tf.
+  EOT
+  type        = list(string)
+  default = [
+    "compute.commitments.create",
+    "compute.commitments.update",
+  ]
+}
+
 variable "cudly_api_url" {
   description = "CUDly API base URL for automatic account registration. Leave empty to skip registration."
   type        = string
