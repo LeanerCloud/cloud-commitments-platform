@@ -77,11 +77,29 @@ locals {
     var.enable_scheduled_tasks ? try(google_service_account.scheduler[0].unique_id, "") : "",
     var.enable_ri_exchange_schedule ? try(google_service_account.scheduler_ri_exchange[0].unique_id, "") : "",
   ]))
-  # Auth mode selector. When neither scheduler is enabled there's
-  # nothing to validate; staying on "disabled" avoids fail-fast on an
-  # empty allow-list in the validator. The resulting WARN log is
-  # harmless when /api/scheduled/* is never hit.
-  scheduled_task_auth_mode = (var.enable_scheduled_tasks || var.enable_ri_exchange_schedule) ? "oidc" : "disabled"
+  # Auth mode selector. Deriving "disabled" from the scheduler flags was
+  # wrong (#123): it conflates "does Terraform create a Cloud Scheduler
+  # job" with "does the app authenticate /api/scheduled/*", and the
+  # latter is reachable from the open internet whenever
+  # var.allow_unauthenticated = true regardless of the scheduler flags.
+  # A flag flip during a rollout, or a cost-saving change, then silently
+  # turns off request auth on money-path handlers on an already-public
+  # service.
+  #
+  # When a scheduler is enabled, auth mode is always "oidc" — not
+  # overridable. When neither is enabled, fall back to
+  # var.scheduled_task_auth_mode_override, which fails closed by default
+  # (mirrors terraform/modules/compute/gcp/gke's fix for the same
+  # defect): "oidc" with no scheduler SA means an empty
+  # SCHEDULED_TASK_OIDC_SUBJECTS, which internal/server/scheduledauth
+  # rejects at startup rather than booting with /api/scheduled/*
+  # unauthenticated. Set the override to "disabled" only as a deliberate,
+  # explicit opt-in (local-dev / dry-run).
+  scheduled_task_auth_mode = (
+    var.enable_scheduled_tasks || var.enable_ri_exchange_schedule
+    ? "oidc"
+    : var.scheduled_task_auth_mode_override
+  )
 }
 
 # ==============================================
