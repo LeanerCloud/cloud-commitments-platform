@@ -299,6 +299,15 @@ func (h *Handler) resumePlannedPurchase(ctx context.Context, req *events.LambdaF
 	return &StatusResponse{Status: "resumed"}, nil
 }
 
+// runPlannedPurchase forces a pending or paused scheduled purchase to
+// execute immediately (the "Run now" button) instead of waiting for its
+// scheduled date. It delegates to purchase.Manager.RunPlannedPurchaseNow,
+// which shares ApproveAndExecute's 4-eyes-gated, CAS-guarded
+// claim-then-execute funnel (issue #218): the previous implementation only
+// CASed the row's status to "running" and reported success from that bare
+// flip, but no executor consumes "running" rows -- the scheduler only picks
+// up pending/notified, so nothing ever bought the purchase and the reaper
+// later failed the row out from under the operator who was told it ran.
 func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID string) (any, error) {
 	if err := validateUUID(executionID); err != nil {
 		return nil, err
@@ -315,16 +324,14 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 		return nil, err
 	}
 
-	// Atomically transition to running — only one concurrent caller can succeed.
-	// TransitionExecutionStatus handles not-found and wrong-status cases.
-	if _, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"pending", "paused"}, "running", resolveCreatorUserID(session)); err != nil {
+	if err := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session)); err != nil {
 		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
 	}
 
 	return map[string]any{
 		"execution_id": executionID,
-		"status":       "running",
-		"message":      "Purchase execution initiated",
+		"status":       "completed",
+		"message":      "Purchase executed",
 	}, nil
 }
 

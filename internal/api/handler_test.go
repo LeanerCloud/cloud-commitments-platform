@@ -1253,10 +1253,14 @@ func TestHandler_HandleRequest_RunPlannedPurchase(t *testing.T) {
 	mockAuth.grantAdmin()
 	mockAuth.On("ValidateCSRFToken", ctx, mock.Anything, mock.Anything).Return(nil)
 
-	transitioned := &config.PurchaseExecution{ExecutionID: "11111111-1111-1111-1111-111111111111", Status: "running"}
-	mockStore.On("TransitionExecutionStatus", mock.Anything, "11111111-1111-1111-1111-111111111111", []string{"pending", "paused"}, "running", mock.Anything).Return(transitioned, nil)
+	mockPurchase := new(MockPurchaseManager)
+	// This request authenticates via the admin API key (X-API-Key), which
+	// resolves to the stateless admin-api-key principal rather than the
+	// bearer-token session, so the actor identity fourEyesActorIdentity
+	// derives is the sentinel, not the session's email.
+	mockPurchase.On("RunPlannedPurchaseNow", mock.Anything, "11111111-1111-1111-1111-111111111111", "admin-api-key", mock.Anything).Return(nil)
 
-	handler := &Handler{config: mockStore, auth: mockAuth, corsAllowedOrigin: "*", apiKey: "test-key"}
+	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth, corsAllowedOrigin: "*", apiKey: "test-key"}
 
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{

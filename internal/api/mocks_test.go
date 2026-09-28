@@ -58,6 +58,11 @@ func (m *MockPurchaseManager) ApproveAndExecute(ctx context.Context, execID, act
 	return args.Error(0)
 }
 
+func (m *MockPurchaseManager) RunPlannedPurchaseNow(ctx context.Context, execID, actor string, transitionedBy *string) error {
+	args := m.Called(ctx, execID, actor, transitionedBy)
+	return args.Error(0)
+}
+
 func (m *MockPurchaseManager) CancelExecution(ctx context.Context, execID, token, actor string) error {
 	args := m.Called(ctx, execID, token, actor)
 	return args.Error(0)

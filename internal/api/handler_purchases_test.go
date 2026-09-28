@@ -1246,22 +1246,22 @@ func TestHandler_runPlannedPurchase(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
+	mockPurchase := new(MockPurchaseManager)
 
 	adminSession := &Session{
 		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
 		Email:  "admin@example.com",
 	}
 
-	transitioned := &config.PurchaseExecution{
-		ExecutionID: "11111111-1111-1111-1111-111111111111",
-		Status:      "running",
-	}
-
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdminPurchaser()
-	mockStore.On("TransitionExecutionStatus", ctx, "11111111-1111-1111-1111-111111111111", []string{"pending", "paused"}, "running", mock.Anything).Return(transitioned, nil)
+	// runPlannedPurchase ("Run now") must delegate to the same 4-eyes-gated,
+	// CAS-guarded funnel ApproveAndExecute uses (issue #218) rather than a
+	// bare TransitionExecutionStatus flip to "running" that no executor
+	// consumes.
+	mockPurchase.On("RunPlannedPurchaseNow", ctx, "11111111-1111-1111-1111-111111111111", "admin@example.com", mock.Anything).Return(nil)
 
-	handler := &Handler{config: mockStore, auth: mockAuth}
+	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth}
 
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{
@@ -1273,7 +1273,8 @@ func TestHandler_runPlannedPurchase(t *testing.T) {
 
 	resultMap := result.(map[string]interface{})
 	assert.Equal(t, "11111111-1111-1111-1111-111111111111", resultMap["execution_id"])
-	assert.Equal(t, "running", resultMap["status"])
+	assert.Equal(t, "completed", resultMap["status"])
+	mockPurchase.AssertExpectations(t)
 }
 
 func TestHandler_deletePlannedPurchase(t *testing.T) {
@@ -1758,6 +1759,7 @@ func TestHandler_runPlannedPurchase_NilExecution(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
+	mockPurchase := new(MockPurchaseManager)
 
 	adminSession := &Session{
 		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -1766,9 +1768,10 @@ func TestHandler_runPlannedPurchase_NilExecution(t *testing.T) {
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("TransitionExecutionStatus", ctx, "99999999-9999-9999-9999-999999999999", []string{"pending", "paused"}, "running", mock.Anything).Return(nil, fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
+	mockPurchase.On("RunPlannedPurchaseNow", ctx, "99999999-9999-9999-9999-999999999999", "admin@example.com", mock.Anything).
+		Return(fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
 
-	handler := &Handler{config: mockStore, auth: mockAuth}
+	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth}
 
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{
