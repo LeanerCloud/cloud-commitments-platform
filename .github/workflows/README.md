@@ -523,10 +523,11 @@ this section exists to prevent (see #141). The list below is generated from the 
 
 1. Go to **Settings** → **Environments**
 2. Create environments matching every `environment:` binding in `.github/workflows/*.yml`:
-   - `dev`, `staging`, `prod` -- bound by `deploy-aws-lambda.yml`, `deploy-aws-fargate`'s sibling
-     compute platforms use their own names (below), `deploy-gcp.yml`, `deploy-azure.yml`, and all
-     four `rollback.yml` jobs (rollback intentionally reuses the deploy environments rather than
-     having its own, see #139)
+   - `dev`, `staging`, `prod` -- bound by `deploy-aws-lambda.yml`, `deploy-gcp.yml`,
+     `deploy-azure.yml`, and three of `rollback.yml`'s four jobs (`rollback-aws-lambda`,
+     `rollback-gcp`, `rollback-azure` -- reusing the deploy environments rather than having their
+     own, see #139). `deploy-aws-fargate.yml` and `rollback.yml`'s `rollback-aws-fargate` job both
+     use `aws-fargate-<env>` instead (below), matching each other rather than this group.
    - `aws-fargate-dev`, `aws-fargate-staging`, `aws-fargate-prod` -- `deploy-aws-fargate.yml`
    - `aws-db-dev`, `aws-db-staging`, `aws-db-prod` -- `database-migration.yml` (AWS)
    - `gcp-db-dev`, `gcp-db-staging`, `gcp-db-prod` -- `database-migration.yml` (GCP)
@@ -543,10 +544,19 @@ this section exists to prevent (see #141). The list below is generated from the 
      `azure-db-staging`): optional approvals, restrict to `main`
    - **Dev** (`dev`, `aws-fargate-dev`, `aws-db-dev`, `gcp-db-dev`, `azure-db-dev`): no restrictions
 
-   Each cloud's OIDC trust policy must also allowlist the `environment:<name>` subject for every
-   name above (`terraform/environments/{aws,gcp,azure}/ci-cd-permissions/`) or the bound job's
-   cloud login step fails with `AssumeRoleWithWebIdentity`/`AADSTS70021` regardless of what's
-   configured here -- see the `github_environments` variable in each module.
+   Configuring protection rules here is necessary but not sufficient on its own: each cloud's OIDC
+   trust must independently allowlist the `environment:<name>` subject for every name above, and
+   the three clouds do this three different ways:
+   - **Azure** (`terraform/environments/azure/ci-cd-permissions/`): the `github_environments`
+     Terraform variable -- add the name there and re-apply, or `azure/login` fails with
+     `AADSTS70021`.
+   - **AWS** (`terraform/environments/aws/ci-cd-permissions/role.tf`): a literal `sub` list inlined
+     in the role's assume-role policy, not a variable -- add the subject there and re-apply, or
+     `configure-aws-credentials` fails with `AssumeRoleWithWebIdentity` denied.
+   - **GCP** (`terraform/environments/gcp/ci-cd-permissions/github_oidc.tf`): ref-based, not
+     environment-based -- its `attribute_condition` checks `repository`/`ref` only, never `sub`, so
+     no GCP-side change is needed for a new environment name (see #141 for why that's its own,
+     separate gap).
 
 ---
 
