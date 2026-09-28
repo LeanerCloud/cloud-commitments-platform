@@ -383,7 +383,9 @@ func (c *Connection) ReleaseAdvisoryLock(ctx context.Context, lockID int64) {
 		// return to the pool: Conn.Release() reuses a connection unless it
 		// finds the underlying conn already closed, so close it here to
 		// force the deferred Release above to destroy it instead.
-		conn.Conn().Close(releaseCtx)
+		if closeErr := conn.Conn().Close(releaseCtx); closeErr != nil {
+			logging.Warnf("Failed to close advisory-lock connection %d after a failed unlock: %v", lockID, closeErr)
+		}
 		return
 	}
 	if !released {
