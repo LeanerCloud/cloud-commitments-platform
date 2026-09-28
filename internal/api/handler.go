@@ -212,6 +212,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		"change_password",
 		"register",
 		"approve_cancel_public",
+		"mfa",
 	)
 
 	return h

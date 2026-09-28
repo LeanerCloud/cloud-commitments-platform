@@ -185,7 +185,7 @@ func (r *Router) registerRoutes() {
 		// GET /api/purchases/{id}/revoke/calculate: returns the Azure refund quote
 		// (amount + currency) for the two-step quote-then-confirm revoke UX
 		// (issue #290 Finding #4). No state mutation; result used to populate
-		// expected_refund_amount in the POST /revoke body.
+		// expected_refund_amount + expected_refund_currency in the POST /revoke body.
 		{PathPrefix: "/api/purchases/", PathSuffix: "/revoke/calculate", Method: "GET", Handler: r.calculateRevokeHandler, Auth: AuthUser},
 
 		// RI Marketplace listing (issue #292). Session-authed only; the

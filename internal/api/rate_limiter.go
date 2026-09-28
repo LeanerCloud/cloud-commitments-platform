@@ -40,6 +40,10 @@ func getDefaultRateLimits() map[string]RateLimitConfig {
 		// api_general (300/min), enabling bulk table-flooding and inbox-spam. Limit
 		// to 5 per 15 minutes per IP, matching setup_admin severity.
 		"register": NewRateLimitConfig(5, 15*60), // 5 attempts / 15 minutes / IP (#1016)
+		// mfa covers every /api/auth/mfa/* route that checks a password, TOTP or
+		// recovery code. Applied per IP AND per session user (#94), so rotating
+		// source IPs does not reset one account's guessing budget.
+		"mfa": NewRateLimitConfig(10, 15*60), // 10 attempts / 15 minutes / IP and / user (#94)
 	}
 }
 

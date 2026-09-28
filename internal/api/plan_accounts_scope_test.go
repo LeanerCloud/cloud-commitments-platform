@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -276,4 +278,82 @@ func TestRouterDispatch_ListPlanAccounts_ScopedCallerFiltered(t *testing.T) {
 	require.True(t, ok, "expected []config.CloudAccount, got %T", result)
 	require.Len(t, got, 1)
 	assert.Equal(t, scopedInAccount, got[0].ID)
+}
+
+// ── createPlan: target_accounts ─────────────────────────────────────────────
+
+// seedCreatePlanStore wires the store so POST /api/plans would SUCCEED if the
+// scope guard were removed, and reports whether the plan row was written.
+func seedCreatePlanStore(store *MockConfigStore) (*planAccountsWrite, *bool) {
+	write := seedPlanAccountsStore(store, nil)
+	created := false
+	store.On("CreatePurchasePlan", mock.Anything, mock.AnythingOfType("*config.PurchasePlan")).
+		Run(func(mock.Arguments) { created = true }).Return(nil).Maybe()
+	return write, &created
+}
+
+func createPlanBody(accounts ...string) string {
+	return `{"name":"P","enabled":true,"auto_purchase":true,"provider":"aws","service":"ec2","target_accounts":["` +
+		strings.Join(accounts, `","`) + `"]}`
+}
+
+// A scoped caller must not create a plan (auto-purchase or not) against an
+// account outside their allowed_accounts. The refusal lands before the plan
+// row is written, so there is no orphan to roll back.
+func TestCreatePlan_ScopedCallerCannotTargetOutOfScopeAccount(t *testing.T) {
+	ctx := context.Background()
+	h, store := scopedHandler(t, scopedInAccount)
+	t.Cleanup(func() { store.AssertExpectations(t) })
+	write, created := seedCreatePlanStore(store)
+
+	_, err := h.createPlan(ctx, scopedRequest(createPlanBody(scopedOutAccount)))
+
+	require.Error(t, err)
+	assert.True(t, IsNotFoundError(err), "expected the enumeration-safe not-found refusal, got %v", err)
+	assert.False(t, *created, "CreatePurchasePlan must not run for an out-of-scope target account")
+	assert.False(t, write.called, "SetPlanAccounts must not run for an out-of-scope target account")
+}
+
+func TestCreatePlan_ScopedCallerMixedTargetsRefusedWhole(t *testing.T) {
+	ctx := context.Background()
+	h, store := scopedHandler(t, scopedInAccount)
+	t.Cleanup(func() { store.AssertExpectations(t) })
+	write, created := seedCreatePlanStore(store)
+
+	_, err := h.createPlan(ctx, scopedRequest(createPlanBody(scopedInAccount, scopeThirdAccount)))
+
+	require.Error(t, err)
+	assert.True(t, IsNotFoundError(err), "expected not-found, got %v", err)
+	assert.False(t, *created)
+	assert.False(t, write.called)
+}
+
+// Control: the same scoped caller may still create a plan for an account it holds.
+func TestCreatePlan_ScopedCallerCanTargetInScopeAccount(t *testing.T) {
+	ctx := context.Background()
+	h, store := scopedHandler(t, scopedInAccount)
+	t.Cleanup(func() { store.AssertExpectations(t) })
+	write, created := seedCreatePlanStore(store)
+
+	_, err := h.createPlan(ctx, scopedRequest(createPlanBody(scopedInAccount)))
+
+	require.NoError(t, err)
+	assert.True(t, *created)
+	require.True(t, write.called)
+	assert.Equal(t, []string{scopedInAccount}, write.ids)
+}
+
+// Control: an unrestricted caller may target any account.
+func TestCreatePlan_UnrestrictedCallerUnaffected(t *testing.T) {
+	ctx := context.Background()
+	h, store := scopedHandler(t)
+	t.Cleanup(func() { store.AssertExpectations(t) })
+	write, created := seedCreatePlanStore(store)
+
+	_, err := h.createPlan(ctx, scopedRequest(createPlanBody(scopedOutAccount)))
+
+	require.NoError(t, err)
+	assert.True(t, *created)
+	require.True(t, write.called)
+	assert.Equal(t, []string{scopedOutAccount}, write.ids)
 }

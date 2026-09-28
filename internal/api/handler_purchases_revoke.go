@@ -65,12 +65,12 @@ type revokeQuoteResult struct {
 
 // revokeConfirmBody is the JSON body expected on
 // POST /api/purchases/{purchaseId}/revoke.
-// ExpectedRefundAmount is the amount the user consented to after seeing the
-// quote, used for TOCTOU-divergence detection.
+// ExpectedRefundAmount and ExpectedRefundCurrency are the quote the user
+// consented to (from GET /revoke/calculate), used for TOCTOU-divergence
+// detection. Both are required for Azure revocations.
 type revokeConfirmBody struct {
-	// ExpectedRefundAmount is the refund amount the user confirmed.
-	// Required when the purchase has an Azure revocation window.
-	ExpectedRefundAmount *float64 `json:"expected_refund_amount"`
+	ExpectedRefundAmount   *float64 `json:"expected_refund_amount"`
+	ExpectedRefundCurrency string   `json:"expected_refund_currency"`
 }
 
 // AzureRevocationWindowDays is the number of days after purchase within which
@@ -211,9 +211,9 @@ func (h *Handler) loadAndRevokePurchaseHistory(ctx context.Context, req *events.
 		}, nil
 	}
 
-	// Parse the optional expected_refund_amount from the request body.
-	// Azure revocations require this for TOCTOU-divergence detection
-	// (the two-step quote-then-confirm flow, issue #290 Finding #4).
+	// Parse the confirmed quote from the request body. Azure revocations
+	// require it for TOCTOU-divergence detection (the two-step
+	// quote-then-confirm flow, issue #290 Finding #4); callAzureReturn enforces it.
 	var body revokeConfirmBody
 	if req.Body != "" {
 		if jsonErr := json.Unmarshal([]byte(req.Body), &body); jsonErr != nil {
@@ -221,7 +221,7 @@ func (h *Handler) loadAndRevokePurchaseHistory(ctx context.Context, req *events.
 		}
 	}
 
-	return h.dispatchProviderRevoke(ctx, record, body.ExpectedRefundAmount)
+	return h.dispatchProviderRevoke(ctx, record, body)
 }
 
 // revokeScheduledExecution cancels a Gmail-style pre-fire delayed execution
@@ -337,10 +337,10 @@ func (h *Handler) authorizeSessionRevokeExecution(ctx context.Context, session *
 // dispatchProviderRevoke routes a revocation request to the correct
 // provider-specific implementation. Extracted from revokePurchase to keep
 // that function's cyclomatic complexity within the project limit.
-func (h *Handler) dispatchProviderRevoke(ctx context.Context, record *config.PurchaseHistoryRecord, expectedRefundAmount *float64) (any, error) {
+func (h *Handler) dispatchProviderRevoke(ctx context.Context, record *config.PurchaseHistoryRecord, confirmed revokeConfirmBody) (any, error) {
 	switch record.Provider {
 	case "azure":
-		return h.revokeAzurePurchase(ctx, record, expectedRefundAmount)
+		return h.revokeAzurePurchase(ctx, record, confirmed)
 	case "aws":
 		// AWS does not expose a direct RI cancel API. Phase 2 (#291) adds the
 		// AWS Support case path. Return 422 so the frontend hides this button.
@@ -417,7 +417,7 @@ func (h *Handler) checkRevokeOwnAccountAccess(ctx context.Context, userID string
 //
 // This is the first step of the two-step quote-then-confirm revoke UX
 // (issue #290 Finding #4). No state is mutated; the result is used by the
-// frontend to populate revokeConfirmBody.ExpectedRefundAmount.
+// frontend to populate revokeConfirmBody.
 func (h *Handler) calculateAzureRevoke(ctx context.Context, req *events.LambdaFunctionURLRequest, purchaseID string) (any, error) {
 	_, orderID, reservationID, count, err := h.validateAzureRevokeRequest(ctx, req, purchaseID)
 	if err != nil {
@@ -546,7 +546,7 @@ func extractAzureRefundQuote(resp armreservations.CalculateRefundClientPostRespo
 // Reservations API (CalculateRefund + Return). The reservation order ID and
 // reservation ID are parsed from the purchase_id ARM resource path stored at
 // purchase time.
-func (h *Handler) revokeAzurePurchase(ctx context.Context, record *config.PurchaseHistoryRecord, expectedRefundAmount *float64) (any, error) {
+func (h *Handler) revokeAzurePurchase(ctx context.Context, record *config.PurchaseHistoryRecord, confirmed revokeConfirmBody) (any, error) {
 	// Prefer the window stamped on the row at purchase time (single source of
 	// truth, issue #290). Fall back to recomputing from Timestamp for legacy
 	// rows written before the column was populated, so they remain revocable.
@@ -574,7 +574,7 @@ func (h *Handler) revokeAzurePurchase(ctx context.Context, record *config.Purcha
 		return nil, fmt.Errorf("revoke azure: %w", err)
 	}
 
-	return h.callAzureReturn(ctx, calcClient, returnClient, record, orderID, reservationID, expectedRefundAmount)
+	return h.callAzureReturn(ctx, calcClient, returnClient, record, orderID, reservationID, confirmed)
 }
 
 func (h *Handler) getAzureRevokeFactory() azureRevokeClientFactory {
@@ -630,17 +630,15 @@ func (h *Handler) buildAzureRevokeClients() (azureCalculateRefundClient, azureRe
 // CalculateRefund (to get the session ID and quoted amount) followed by Return.
 // Extracted from revokeAzurePurchase to allow test injection of the two clients.
 //
-// expectedRefundAmount: the amount the user consented to after the
-// quote step (GET /revoke/calculate). When provided and the CalculateRefund
-// response diverges by more than revokeQuoteEpsilon, the call is rejected with
-// 422 so the user can re-quote and confirm the new amount.
+// confirmed: the quote the user consented to after the quote step
+// (GET /revoke/calculate). It is mandatory; see checkConfirmedRefund.
 func (h *Handler) callAzureReturn(
 	ctx context.Context,
 	calcClient azureCalculateRefundClient,
 	returnClient azureReturnClient,
 	record *config.PurchaseHistoryRecord,
 	orderID, reservationID string,
-	expectedRefundAmount *float64,
+	confirmed revokeConfirmBody,
 ) (any, error) {
 	// Guard against an order-only ARM path (no /reservations/{id} segment),
 	// which parseAzureReservationIDs returns with an empty reservationID.
@@ -650,6 +648,9 @@ func (h *Handler) callAzureReturn(
 	if orderID == "" || reservationID == "" {
 		return nil, NewClientError(422, "cannot determine Azure reservation ID from purchase record; contact Azure Support to request a refund")
 	}
+	if confirmed.ExpectedRefundAmount == nil || strings.TrimSpace(confirmed.ExpectedRefundCurrency) == "" {
+		return nil, NewClientError(400, "expected_refund_amount and expected_refund_currency are required; fetch a quote from GET /api/purchases/{id}/revoke/calculate and confirm it")
+	}
 
 	// Step 1: CalculateRefund -> sessionID + quoted amount (TOCTOU check).
 	quantity := int32(record.Count) // #nosec G115 -- Azure reservation count validated at purchase; bounded by API limits (<<math.MaxInt32) //nolint:gosec
@@ -658,18 +659,8 @@ func (h *Handler) callAzureReturn(
 		return nil, err
 	}
 
-	// TOCTOU-divergence check: if the caller supplied an expected refund amount
-	// (from the prior GET /revoke/calculate), verify it matches the current
-	// CalculateRefund response within epsilon. A mismatch means Azure's refund
-	// quote changed between the user's confirmation and the actual call (e.g.
-	// partial return already submitted, time-based fee tier changed).
-	if expectedRefundAmount != nil && calcRefundAmount != nil {
-		if math.Abs(*expectedRefundAmount-*calcRefundAmount) > revokeQuoteEpsilon {
-			return nil, NewClientError(422, fmt.Sprintf(
-				"refund amount diverged: you confirmed %.2f but Azure now quotes %.2f %s; re-confirm to proceed",
-				*expectedRefundAmount, *calcRefundAmount, calcRefundCurrency,
-			))
-		}
+	if quoteErr := checkConfirmedRefund(confirmed, calcRefundAmount, calcRefundCurrency); quoteErr != nil {
+		return nil, quoteErr
 	}
 
 	// Partial-success guard (issue #290 Finding #6): flip the in-flight flag
@@ -698,6 +689,32 @@ func (h *Handler) callAzureReturn(
 	}
 
 	return h.persistAzureRevocation(ctx, record, calcRefundAmount, calcRefundCurrency)
+}
+
+// checkConfirmedRefund is the TOCTOU-divergence check: the refund the user
+// confirmed must match Azure's current CalculateRefund quote in currency and,
+// within revokeQuoteEpsilon, in amount. A mismatch means the quote changed
+// between confirmation and the call (e.g. a fee tier boundary was crossed).
+// It fails closed when Azure returns no comparable quote, and never converts
+// currencies (there is no trusted FX source).
+func checkConfirmedRefund(confirmed revokeConfirmBody, calcRefundAmount *float64, calcRefundCurrency string) error {
+	if calcRefundAmount == nil || strings.TrimSpace(calcRefundCurrency) == "" {
+		return NewClientError(422, "Azure returned no refund quote to verify against the amount you confirmed; refusing to return the reservation")
+	}
+	expectedCurrency := strings.TrimSpace(confirmed.ExpectedRefundCurrency)
+	if !strings.EqualFold(expectedCurrency, strings.TrimSpace(calcRefundCurrency)) {
+		return NewClientError(422, fmt.Sprintf(
+			"refund currency diverged: you confirmed %.2f %s but Azure now quotes %.2f %s; re-confirm to proceed",
+			*confirmed.ExpectedRefundAmount, expectedCurrency, *calcRefundAmount, calcRefundCurrency,
+		))
+	}
+	if math.Abs(*confirmed.ExpectedRefundAmount-*calcRefundAmount) > revokeQuoteEpsilon {
+		return NewClientError(422, fmt.Sprintf(
+			"refund amount diverged: you confirmed %.2f but Azure now quotes %.2f %s; re-confirm to proceed",
+			*confirmed.ExpectedRefundAmount, *calcRefundAmount, calcRefundCurrency,
+		))
+	}
+	return nil
 }
 
 // azureCalculateRefund runs the CalculateRefund step and parses out the session

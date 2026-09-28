@@ -86,7 +86,7 @@ func (h *Handler) requirePlanAccess(ctx context.Context, session *Session, planI
 // decides which accounts that plan buys commitments for, so either half
 // redirects purchasing.
 //
-// The scope is resolved once and unrestricted callers short-circuit BEFORE
+// Unrestricted callers short-circuit in both helpers BEFORE
 // any store lookup, mirroring requireExecutionAccess: an admin/API-key
 // session must not pay for (or need fixtures for) reads it cannot be refused
 // by. Empty and "*" allow-lists are unrestricted at exactly this seam
@@ -99,15 +99,22 @@ func (h *Handler) requirePlanAccess(ctx context.Context, session *Session, planI
 //
 // requirePermission must fire first; pass it the session that returned.
 func (h *Handler) requirePlanAccountsAccess(ctx context.Context, session *Session, planID string, accountIDs []string) error {
+	if err := h.requirePlanAccess(ctx, session, planID); err != nil {
+		return err
+	}
+	return h.requireAccountsAccess(ctx, session, accountIDs)
+}
+
+// requireAccountsAccess is requireAccountAccess over a batch: every account
+// must be in the session's scope or the whole batch is refused with
+// errNotFound. Unrestricted callers return before any store lookup.
+func (h *Handler) requireAccountsAccess(ctx context.Context, session *Session, accountIDs []string) error {
 	allowed, err := h.getAccountScope(ctx, session)
 	if err != nil {
 		return fmt.Errorf("failed to get allowed accounts: %w", err)
 	}
 	if allowed.AllowsAll() {
 		return nil
-	}
-	if err := h.requirePlanAccess(ctx, session, planID); err != nil {
-		return err
 	}
 	for _, aid := range accountIDs {
 		if _, err := h.requireAccountAccess(ctx, session, aid); err != nil {
