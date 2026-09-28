@@ -83,6 +83,9 @@ func TestAuthServiceAdapter_ValidateSession(t *testing.T) {
 		Email:     "test@example.com",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}, nil)
+	// ValidateSession loads the user to reject a deactivated account (issue
+	// #89); an active user must not block an otherwise-valid session.
+	mockStore.On("GetUserByID", ctx, "user-1").Return(&auth.User{ID: "user-1", Active: true}, nil)
 
 	sess, err := adapter.ValidateSession(ctx, "valid-token")
 	require.NoError(t, err)
@@ -259,6 +262,7 @@ func TestAuthServiceAdapter_ValidateCSRFToken(t *testing.T) {
 		CSRFToken: "csrf-token",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}, nil)
+	mockStore.On("GetUserByID", ctx, "user-1").Return(&auth.User{ID: "user-1", Active: true}, nil)
 
 	// ValidateCSRFToken recomputes the expected token as
 	// HMAC-SHA256(csrfKey, rawSessionToken); it never reads the stored

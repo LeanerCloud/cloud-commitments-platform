@@ -172,6 +172,51 @@ func TestHandler_updateUser_Success(t *testing.T) {
 	assert.NotNil(t, result)
 }
 
+// TestHandler_updateUser_Deactivate is the regression test for issue #89:
+// before auth.APIUpdateUserRequest gained an Active field, `{"active":
+// false}` in the PUT body decoded into a struct with nowhere to put it and
+// was silently dropped -- the same defect class issue #892 fixed for email.
+// We assert the request auth.UpdateUserAPI actually receives carries
+// Active pointing at false, not just that the call happens with
+// mock.Anything, so this test would fail against the pre-fix struct (the
+// unmarshal would succeed but req.Active would not exist / always be nil).
+func TestHandler_updateUser_Deactivate(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+
+	adminSession := &Session{
+		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		Email:  "admin@example.com",
+	}
+
+	updatedUser := map[string]interface{}{
+		"id":     "11111111-1111-1111-1111-111111111111",
+		"email":  "user@example.com",
+		"active": false,
+	}
+
+	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
+	mockAuth.grantAdmin()
+	mockAuth.On("UpdateUserAPI", ctx, adminSession.UserID, "11111111-1111-1111-1111-111111111111",
+		mock.MatchedBy(func(req auth.APIUpdateUserRequest) bool {
+			return req.Active != nil && !*req.Active
+		}),
+	).Return(updatedUser, nil)
+
+	handler := &Handler{auth: mockAuth}
+
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{
+			"Authorization": "Bearer admin-token",
+		},
+		Body: `{"active": false}`,
+	}
+
+	result, err := handler.updateUser(ctx, req, "11111111-1111-1111-1111-111111111111")
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+}
+
 func TestHandler_deleteUser_Success(t *testing.T) {
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)

@@ -2157,6 +2157,9 @@ components:
             type: string
         mfa_enabled:
           type: boolean
+        active:
+          type: boolean
+          description: Whether the account is active. A deactivated user's existing sessions are revoked and cannot be restored via password reset.
         created_at:
           type: string
           format: date-time
@@ -2195,6 +2198,9 @@ components:
           type: array
           items:
             type: string
+        active:
+          type: boolean
+          description: Set false to deactivate the user (revokes their existing sessions); set true to reactivate. Omit to leave unchanged.
 
     Group:
       type: object

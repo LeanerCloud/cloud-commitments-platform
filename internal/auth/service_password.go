@@ -285,6 +285,24 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 	return nil
 }
 
+// resetRecentlyIssued reports whether a reset token was issued within
+// PasswordResetRateLimit. The caller then returns silently so the existing
+// token stays valid: this prevents a griefing attack where an adversary who
+// knows the victim's email repeatedly requests resets to perpetually
+// invalidate the victim's legitimate link.
+func resetRecentlyIssued(user *User, email string) bool {
+	if user.PasswordResetExpiry == nil {
+		return false
+	}
+	tokenAge := PasswordResetExpiry - time.Until(*user.PasswordResetExpiry)
+	if tokenAge < PasswordResetRateLimit {
+		logging.Debugf("Password reset rate-limited for %s (token age %s < %s)",
+			redactEmail(email), tokenAge.Round(time.Second), PasswordResetRateLimit)
+		return true
+	}
+	return false
+}
+
 // RequestPasswordReset initiates a password reset.
 func (s *Service) RequestPasswordReset(ctx context.Context, email string) error {
 	user, err := s.store.GetUserByEmail(ctx, email)
@@ -302,17 +320,15 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		return nil
 	}
 
-	// Rate-limit: if a reset token was issued recently (within PasswordResetRateLimit),
-	// silently return so the existing token stays valid. This prevents a griefing
-	// attack where an adversary who knows the victim's email repeatedly requests
-	// resets to perpetually invalidate the victim's legitimate link.
-	if user.PasswordResetExpiry != nil {
-		tokenAge := PasswordResetExpiry - time.Until(*user.PasswordResetExpiry)
-		if tokenAge < PasswordResetRateLimit {
-			logging.Debugf("Password reset rate-limited for %s (token age %s < %s)",
-				redactEmail(email), tokenAge.Round(time.Second), PasswordResetRateLimit)
-			return nil
-		}
+	// A deactivated account gets no reset link (A03-006), answered exactly like
+	// an unknown email so the endpoint cannot tell the two apart.
+	if user.DeactivatedAt != nil {
+		logging.Debugf("Password reset requested for deactivated account: %s", redactEmail(email))
+		return nil
+	}
+
+	if resetRecentlyIssued(user, email) {
+		return nil
 	}
 
 	// Generate reset token
@@ -365,6 +381,15 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, req PasswordResetCon
 	user.PasswordResetToken = ""
 	user.PasswordResetExpiry = nil
 
+	// An admin-deactivated account must not reactivate itself through a reset
+	// (A03-006). The token is still consumed so the link cannot be replayed.
+	if user.DeactivatedAt != nil {
+		if updateErr := s.store.UpdateUser(ctx, user); updateErr != nil {
+			logging.Warnf("Failed to invalidate reset token for deactivated user %s: %v", user.ID, updateErr)
+		}
+		return ErrAccountDeactivated
+	}
+
 	if err := s.processPasswordReset(user, req.NewPassword); err != nil {
 		// Token is consumed even on validation failure (one-time use)
 		if updateErr := s.store.UpdateUser(ctx, user); updateErr != nil {
@@ -373,7 +398,8 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, req PasswordResetCon
 		return err
 	}
 
-	// Activate user on first password set (admin bootstrap flow)
+	// Activate user on first password set (invite flow). Deactivated accounts
+	// returned above, so !Active here means "never activated".
 	if !user.Active {
 		user.Active = true
 	}
@@ -409,17 +435,27 @@ const (
 )
 
 // ResetTokenFlow describes whether the matched token belongs to an
-// invite flow (user had Active = false at issue time, still false now)
-// or a normal password-reset flow. The frontend uses this to swap
-// "Set your password" vs "Reset your password" wording (issue #461).
+// invite flow (user has never been activated) or a normal password-reset
+// flow. The frontend uses this to swap "Set your password" vs "Reset your
+// password" wording (issue #461).
 type ResetTokenFlow string
 
 const (
-	// ResetTokenFlowReset is the default flow for active users.
+	// ResetTokenFlowReset is the flow for active and admin-deactivated users.
 	ResetTokenFlowReset ResetTokenFlow = "reset"
-	// ResetTokenFlowInvite is the bootstrap flow for not-yet-active users.
+	// ResetTokenFlowInvite is the bootstrap flow for an account that has
+	// never been activated (Active false, DeactivatedAt nil).
 	ResetTokenFlowInvite ResetTokenFlow = "invite"
 )
+
+// resetTokenFlowFor reports "invite" only for never-activated accounts; a
+// deactivated account is also !Active but must not get invite wording.
+func resetTokenFlowFor(user *User) ResetTokenFlow {
+	if !user.Active && user.DeactivatedAt == nil {
+		return ResetTokenFlowInvite
+	}
+	return ResetTokenFlowReset
+}
 
 // ResetTokenStatus returns the state of a reset token without consuming
 // it. The frontend calls this before rendering the reset-password form
@@ -449,18 +485,10 @@ func (s *Service) ResetTokenStatus(ctx context.Context, token string) (ResetToke
 	}
 
 	if user.PasswordResetExpiry == nil || time.Now().After(*user.PasswordResetExpiry) {
-		flow := ResetTokenFlowReset
-		if !user.Active {
-			flow = ResetTokenFlowInvite
-		}
-		return ResetTokenStateExpired, flow, nil
+		return ResetTokenStateExpired, resetTokenFlowFor(user), nil
 	}
 
-	flow := ResetTokenFlowReset
-	if !user.Active {
-		flow = ResetTokenFlowInvite
-	}
-	return ResetTokenStateValid, flow, nil
+	return ResetTokenStateValid, resetTokenFlowFor(user), nil
 }
 
 func (s *Service) validateResetToken(ctx context.Context, token string) (*User, error) {

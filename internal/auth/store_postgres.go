@@ -48,7 +48,7 @@ func (s *PostgresStore) GetUserByID(ctx context.Context, userID string) (*User, 
 		       mfa_enabled, mfa_secret, mfa_pending_secret, mfa_pending_secret_expires_at,
 		       mfa_recovery_codes, password_reset_token, password_reset_expiry,
 		       failed_login_attempts, locked_until, password_history,
-		       created_at, updated_at, last_login_at
+		       created_at, updated_at, last_login_at, deactivated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -63,7 +63,7 @@ func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (*User
 		       mfa_enabled, mfa_secret, mfa_pending_secret, mfa_pending_secret_expires_at,
 		       mfa_recovery_codes, password_reset_token, password_reset_expiry,
 		       failed_login_attempts, locked_until, password_history,
-		       created_at, updated_at, last_login_at
+		       created_at, updated_at, last_login_at, deactivated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -208,7 +208,8 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, user *User) error {
 			locked_until = $15,
 			password_history = $16,
 			updated_at = $17,
-			last_login_at = $18
+			last_login_at = $18,
+			deactivated_at = $19
 		WHERE id = $1
 	`
 
@@ -237,6 +238,7 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, user *User) error {
 		user.PasswordHistory,
 		user.UpdatedAt,
 		user.LastLoginAt,
+		user.DeactivatedAt,
 	)
 
 	if err != nil {
@@ -275,7 +277,7 @@ func (s *PostgresStore) ListUsers(ctx context.Context) ([]User, error) {
 		       mfa_enabled, mfa_secret, mfa_pending_secret, mfa_pending_secret_expires_at,
 		       mfa_recovery_codes, password_reset_token, password_reset_expiry,
 		       failed_login_attempts, locked_until, password_history,
-		       created_at, updated_at, last_login_at
+		       created_at, updated_at, last_login_at, deactivated_at
 		FROM users
 		ORDER BY created_at DESC
 		LIMIT 10000
@@ -314,7 +316,7 @@ func (s *PostgresStore) GetUserByResetToken(ctx context.Context, token string) (
 		       mfa_enabled, mfa_secret, mfa_pending_secret, mfa_pending_secret_expires_at,
 		       mfa_recovery_codes, password_reset_token, password_reset_expiry,
 		       failed_login_attempts, locked_until, password_history,
-		       created_at, updated_at, last_login_at
+		       created_at, updated_at, last_login_at, deactivated_at
 		FROM users
 		WHERE password_reset_token = $1
 	`
@@ -739,12 +741,19 @@ type Scanner interface {
 }
 
 // scanUser scans a user from a database row.
+func nullTimePtr(t sql.NullTime) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	return &t.Time
+}
+
 func (s *PostgresStore) scanUser(scanner Scanner) (*User, error) {
 	var user User
 	var groupIDs []string
 	var passwordHistory []string
 	var recoveryCodes []string
-	var resetExpiry, lockedUntil, lastLoginAt, mfaPendingExpiry sql.NullTime
+	var resetExpiry, lockedUntil, lastLoginAt, mfaPendingExpiry, deactivatedAt sql.NullTime
 	var mfaSecret, mfaPendingSecret, resetToken sql.NullString
 
 	err := scanner.Scan(
@@ -767,6 +776,7 @@ func (s *PostgresStore) scanUser(scanner Scanner) (*User, error) {
 		&user.CreatedAt,
 		&user.UpdatedAt,
 		&lastLoginAt,
+		&deactivatedAt,
 	)
 
 	if err != nil {
@@ -792,18 +802,11 @@ func (s *PostgresStore) scanUser(scanner Scanner) (*User, error) {
 	}
 
 	// Handle nullable timestamps
-	if mfaPendingExpiry.Valid {
-		user.MFAPendingSecretExpiresAt = &mfaPendingExpiry.Time
-	}
-	if resetExpiry.Valid {
-		user.PasswordResetExpiry = &resetExpiry.Time
-	}
-	if lockedUntil.Valid {
-		user.LockedUntil = &lockedUntil.Time
-	}
-	if lastLoginAt.Valid {
-		user.LastLoginAt = &lastLoginAt.Time
-	}
+	user.MFAPendingSecretExpiresAt = nullTimePtr(mfaPendingExpiry)
+	user.PasswordResetExpiry = nullTimePtr(resetExpiry)
+	user.LockedUntil = nullTimePtr(lockedUntil)
+	user.LastLoginAt = nullTimePtr(lastLoginAt)
+	user.DeactivatedAt = nullTimePtr(deactivatedAt)
 
 	return &user, nil
 }

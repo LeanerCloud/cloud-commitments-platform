@@ -147,12 +147,12 @@ func (s *Service) checkMembershipGrantCeilingWithPerms(ctx context.Context, acto
 					continue
 				}
 				return fmt.Errorf(
-					"%w: adding this user to %q would grant %s:%s, which is reserved for separation of duties (issue #923) and cannot be assigned through the API",
+					"%w: granting membership in %q would grant %s:%s, which is reserved for separation of duties (issue #923) and cannot be assigned through the API",
 					ErrPermissionNotGrantable, group.Name, perm.Action, perm.Resource)
 			}
 			if !grantCeilingAllows(actorPerms, perm) {
 				return fmt.Errorf(
-					"%w: adding this user to %q would grant %s:%s, beyond your own permissions",
+					"%w: granting membership in %q would grant %s:%s, beyond your own permissions",
 					ErrPermissionCeiling, group.Name, perm.Action, perm.Resource)
 			}
 		}

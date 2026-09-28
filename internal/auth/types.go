@@ -13,19 +13,23 @@ type User struct {
 	MFAPendingSecretExpiresAt *time.Time `json:"-" dynamodbav:"MFAPendingSecretExpiresAt,omitempty"`
 	PasswordResetExpiry       *time.Time `json:"-" dynamodbav:"PasswordResetExpiry,omitempty"`
 	LastLoginAt               *time.Time `json:"last_login_at,omitempty" dynamodbav:"LastLoginAt"`
-	MFASecret                 string     `json:"-" dynamodbav:"MFASecret,omitempty"`
-	PasswordResetToken        string     `json:"-" dynamodbav:"PasswordResetToken,omitempty"`
-	Salt                      string     `json:"-" dynamodbav:"Salt"`
-	ID                        string     `json:"id" dynamodbav:"PK"`
-	MFAPendingSecret          string     `json:"-" dynamodbav:"MFAPendingSecret,omitempty"`
-	PasswordHash              string     `json:"-" dynamodbav:"PasswordHash"`
-	Email                     string     `json:"email" dynamodbav:"Email"`
-	GroupIDs                  []string   `json:"group_ids,omitempty" dynamodbav:"GroupIDs"`
-	MFARecoveryCodes          []string   `json:"-" dynamodbav:"MFARecoveryCodes,omitempty"`
-	PasswordHistory           []string   `json:"-" dynamodbav:"PasswordHistory,omitempty"`
-	FailedLoginAttempts       int        `json:"-" dynamodbav:"FailedLoginAttempts,omitempty"`
-	Active                    bool       `json:"active" dynamodbav:"Active"`
-	MFAEnabled                bool       `json:"mfa_enabled" dynamodbav:"MFAEnabled"`
+	// DeactivatedAt is set when an admin deactivates the user and cleared on
+	// reactivation; it separates deactivated from invited-never-activated (both
+	// Active false) so a password reset cannot reactivate the former (#89).
+	DeactivatedAt       *time.Time `json:"deactivated_at,omitempty" dynamodbav:"DeactivatedAt"`
+	MFASecret           string     `json:"-" dynamodbav:"MFASecret,omitempty"`
+	PasswordResetToken  string     `json:"-" dynamodbav:"PasswordResetToken,omitempty"`
+	Salt                string     `json:"-" dynamodbav:"Salt"`
+	ID                  string     `json:"id" dynamodbav:"PK"`
+	MFAPendingSecret    string     `json:"-" dynamodbav:"MFAPendingSecret,omitempty"`
+	PasswordHash        string     `json:"-" dynamodbav:"PasswordHash"`
+	Email               string     `json:"email" dynamodbav:"Email"`
+	GroupIDs            []string   `json:"group_ids,omitempty" dynamodbav:"GroupIDs"`
+	MFARecoveryCodes    []string   `json:"-" dynamodbav:"MFARecoveryCodes,omitempty"`
+	PasswordHistory     []string   `json:"-" dynamodbav:"PasswordHistory,omitempty"`
+	FailedLoginAttempts int        `json:"-" dynamodbav:"FailedLoginAttempts,omitempty"`
+	Active              bool       `json:"active" dynamodbav:"Active"`
+	MFAEnabled          bool       `json:"mfa_enabled" dynamodbav:"MFAEnabled"`
 }
 
 // Group represents a permission group.
