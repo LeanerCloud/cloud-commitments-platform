@@ -13,6 +13,75 @@ variable "source_service_account" {
   type        = string
 }
 
+variable "create_custom_role" {
+  description = <<-EOT
+    Whether to create the var.custom_role_id custom role in this project.
+    Default true is correct when this bundle is the only onboarding path
+    applied to the project.
+
+    Set to false ONLY after confirming the role already exists (e.g. `gcloud
+    iam roles describe var.custom_role_id --project var.project_id`):
+    either terraform/modules/compute/gcp/cloud-run (self-hosted CUDly,
+    unconditional) or federation/gcp-target (only when it created its own
+    service account, i.e. its var.service_account_email was left empty) can
+    have already created a role with the same ID in this project. If
+    neither applies, the role does not exist and setting this to false
+    makes the binding below target a missing role, which fails the apply.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "custom_role_id" {
+  description = <<-EOT
+    Project-scoped custom role ID Terraform creates and binds to
+    var.service_account_email. The role carries the minimum permissions
+    required to purchase and manage Compute Engine CUDs on behalf of CUDly.
+    Matches the default in federation/gcp-target/terraform so applies from
+    either bundle stay idempotent against the same project.
+  EOT
+  type        = string
+  default     = "cudlyCommitmentWriter"
+}
+
+variable "custom_role_permissions" {
+  description = <<-EOT
+    Permissions bundled into the custom role granted to
+    var.service_account_email. Defaults match the definition in
+    terraform/modules/compute/gcp/cloud-run and federation/gcp-target, so all
+    three stay in lockstep and none can stomp another's role on apply.
+
+    Read-side permissions (regions/zones/machineTypes/commitments.list/.get)
+    come from roles/compute.viewer, granted separately in main.tf.
+  EOT
+  type        = list(string)
+  default = [
+    "compute.commitments.create",
+    "compute.commitments.update",
+  ]
+}
+
+variable "built_in_project_roles" {
+  description = <<-EOT
+    Built-in project-scoped roles granted to var.service_account_email.
+    Defaults match federation/gcp-target's service_account_project_roles, so
+    both onboarding paths grant the same read-side access:
+
+    - roles/compute.viewer: regions/zones/machineTypes/commitments.list/.get.
+    - roles/recommender.viewer: required by the collection pipeline
+      (providers/gcp/services/computeengine.GetRecommendations calls the GCP
+      Recommender API). Missing it doesn't fail the apply or any API call
+      visibly -- providers/gcp/recommendations.go catches the resulting 403
+      and only warn-logs it, so the account onboards successfully but
+      silently returns zero GCP recommendations.
+  EOT
+  type        = list(string)
+  default = [
+    "roles/compute.viewer",
+    "roles/recommender.viewer",
+  ]
+}
+
 variable "cudly_api_url" {
   description = "CUDly API base URL for automatic account registration. Leave empty to skip registration."
   type        = string

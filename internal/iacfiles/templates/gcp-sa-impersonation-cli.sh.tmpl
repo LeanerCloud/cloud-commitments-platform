@@ -24,14 +24,60 @@ gcloud iam service-accounts create "${SA_NAME}" \
   --display-name="CUDly target SA" \
   || echo "  (service account may already exist)"
 
+# roles/commerceorgpolicy.commitmentAdmin (organization-scoped) and
+# roles/billing.viewer (billing-account-scoped) both fail at project scope
+# (#129). Grant exactly what CUDly needs instead: a project custom role
+# holding only the two commitment-write permissions, plus the built-in
+# roles/compute.viewer and roles/recommender.viewer for read access. This
+# mirrors iac/federation/gcp-sa-impersonation/terraform/main.tf so the
+# Terraform and CLI onboarding paths grant the same permission set.
+CUSTOM_ROLE_ID="cudlyCommitmentWriter"
+CUSTOM_ROLE_TITLE="CUDly Commitment Writer"
+CUSTOM_ROLE_DESCRIPTION="Minimum permissions for CUDly to purchase and update committed use discounts."
+CUSTOM_ROLE_PERMISSIONS="compute.commitments.create,compute.commitments.update"
+
+echo "Creating custom role ${CUSTOM_ROLE_ID} (if missing)..."
+if ! gcloud iam roles create "${CUSTOM_ROLE_ID}" \
+  --project="${PROJECT_ID}" \
+  --title="${CUSTOM_ROLE_TITLE}" \
+  --description="${CUSTOM_ROLE_DESCRIPTION}" \
+  --permissions="${CUSTOM_ROLE_PERMISSIONS}" \
+  --stage=GA; then
+  # Create fails whether the role already exists, was soft-deleted, or the
+  # call hit a real error (permission denied, quota, ...). Distinguish them
+  # with `describe` instead of assuming "already exists": a real failure
+  # here must propagate (set -e), not be swallowed and leave the role
+  # unbound below.
+  echo "  role create failed; checking whether ${CUSTOM_ROLE_ID} already exists..."
+  IS_DELETED=$(gcloud iam roles describe "${CUSTOM_ROLE_ID}" --project="${PROJECT_ID}" --format='value(deleted)')
+  if [ "${IS_DELETED}" = "True" ]; then
+    echo "  role was soft-deleted; undeleting..."
+    gcloud iam roles undelete "${CUSTOM_ROLE_ID}" --project="${PROJECT_ID}"
+  fi
+  # The role may already exist with a different (e.g. stale, pre-#129)
+  # permission set; converge it unconditionally rather than trusting
+  # whatever is already there.
+  echo "  role exists; converging its permissions..."
+  gcloud iam roles update "${CUSTOM_ROLE_ID}" \
+    --project="${PROJECT_ID}" \
+    --title="${CUSTOM_ROLE_TITLE}" \
+    --description="${CUSTOM_ROLE_DESCRIPTION}" \
+    --permissions="${CUSTOM_ROLE_PERMISSIONS}" \
+    --stage=GA
+fi
+
 echo "Granting required roles to ${SERVICE_ACCOUNT_EMAIL}..."
-for role in roles/commerceorgpolicy.commitmentAdmin roles/billing.viewer; do
+# add-iam-policy-binding is idempotent (re-adding an existing binding is a
+# no-op success), so a failure here is real and must propagate (set -e),
+# not be swallowed -- otherwise the script can print "=== Done ===" with a
+# required role never actually bound.
+for role in "projects/${PROJECT_ID}/roles/${CUSTOM_ROLE_ID}" roles/compute.viewer roles/recommender.viewer; do
   gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${SERVICE_ACCOUNT_EMAIL}" \
     --role="${role}" \
     --condition=None \
     --quiet \
-    --output=none || echo "  (role ${role} may already be bound or unavailable)"
+    --output=none
 done
 
 echo "Granting token creator to source SA ${SOURCE_SERVICE_ACCOUNT}..."
