@@ -92,3 +92,20 @@ check "cdn_requires_restricted_ingress" {
     EOT
   }
 }
+
+# The inverse of cloud_armor_must_sit_in_the_request_path: warns if a future
+# prod cutover enables the LB (enable_cdn = true) without also turning on
+# Cloud Armor. Scoped to environment = "prod" (not every enable_cdn = true
+# environment) since dev/staging may deliberately run the LB without a WAF.
+# Passes today for every environment: none currently sets enable_cdn = true
+# (CodeRabbit finding on PR #401).
+check "prod_cdn_requires_cloud_armor" {
+  assert {
+    condition     = !(var.environment == "prod" && var.enable_cdn && !var.enable_cloud_armor)
+    error_message = <<-EOT
+      environment = "prod" with enable_cdn = true and enable_cloud_armor =
+      false: the CDN request path has no Cloud Armor policy in front of it.
+      Enable Cloud Armor as part of the production enable_cdn cutover.
+    EOT
+  }
+}
