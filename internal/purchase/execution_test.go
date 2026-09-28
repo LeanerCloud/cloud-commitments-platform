@@ -1687,6 +1687,58 @@ func TestSingleCloudAccountIDFromRecs(t *testing.T) {
 	}
 }
 
+// TestExecutePurchase_SingleAccount_MixedAccountRecs_Refused is the A05-002
+// regression guard (#232). TestSingleCloudAccountIDFromRecs already proves the
+// helper itself errors on a mixed-account rec set in isolation, but nothing
+// drove that error through the actual single-account execution path (a
+// direct-execute purchase with no plan, or a plan-scoped execution with no
+// configured accounts) to prove the purchase is refused before any provider
+// is ever touched. Without this guard, a regression in resolveSingleAccountProvider
+// (e.g. swallowing the SingleCloudAccountIDFromRecs error, or picking the first
+// account instead of refusing) would fall through to ambient AWS credentials
+// and purchase against the wrong account (#1902) while every existing test
+// stays green.
+func TestExecutePurchase_SingleAccount_MixedAccountRecs_Refused(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockFactory := new(MockProviderFactory)
+	mockProviderInst := new(MockProvider)
+
+	aid1, aid2 := "acct-1", "acct-2"
+	exec := &config.PurchaseExecution{
+		ExecutionID: "exec-mixed-accounts",
+		PlanID:      "", // direct-execute: no plan, no plan-accounts fan-out.
+		Recommendations: []config.RecommendationRecord{
+			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 100.0, Selected: true, CloudAccountID: &aid1},
+			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 100.0, Selected: true, CloudAccountID: &aid2},
+		},
+	}
+
+	// Register a matching expectation so the AssertNotCalled below is a
+	// meaningful check rather than a vacuous one (a mock with zero
+	// registered calls never "not calls" anything interesting).
+	mockFactory.On("CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything).Return(mockProviderInst, nil).Maybe()
+
+	manager := &Manager{
+		config:          mockStore,
+		email:           mockEmail,
+		providerFactory: mockFactory,
+	}
+
+	err := manager.executePurchase(ctx, exec)
+
+	require.Error(t, err, "a purchase whose selected recs span two cloud accounts must be refused")
+	assert.ErrorIs(t, err, errAmbiguousAccountScope)
+	assert.Contains(t, err.Error(), "2 cloud accounts (acct-1, acct-2)")
+
+	// The provider factory must NEVER be invoked: the account-scope check
+	// happens before credential resolution, so no ambient-credential
+	// fallback purchase can occur against either account.
+	mockFactory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "SavePurchaseHistory", mock.Anything, mock.Anything)
+}
+
 // TestManager_ExecuteAndFinalize_HistorySaveFailure_StaysVisible is the issue
 // #621 secondary-path regression guard. When the AWS purchase SUCCEEDS but the
 // purchase_history insert fails, the execution must NOT be silently marked a
