@@ -52,6 +52,9 @@ jest.mock('../recommendations', () => ({
   // that don't exercise the direct-execute path are unaffected.
   getExecuteMode: jest.fn().mockReturnValue(''),
   clearExecuteMode: jest.fn(),
+  fanOutBucketAccountLabel: jest.fn(
+    (b: { recs: Array<{ cloud_account_id?: string }> }) => b.recs[0]?.cloud_account_id || 'Unattributed',
+  ),
 }));
 
 jest.mock('../plans', () => ({
@@ -563,6 +566,24 @@ describe('handleFanOutExecute — fan-out path', () => {
     // The failed bucket must NOT be listed as submitted.
     expect(msg).not.toContain('svc-b');
     expect(lastToastKind()).toBe('warning');
+  });
+
+  test('#333: partial fan-out failure prefixes each failure with its bucket account', async () => {
+    (recs.getFanOutBuckets as jest.Mock).mockReturnValue([
+      { ...buildBucket('a'), recs: [{ ...buildMinimalRec(), cloud_account_id: 'acct-a' }] },
+      { ...buildBucket('b'), recs: [{ ...buildMinimalRec(), cloud_account_id: 'acct-b' }] },
+    ]);
+    (api.executePurchase as jest.Mock)
+      .mockResolvedValueOnce({ execution_id: 'exec-a', status: 'queued', email_sent: true })
+      .mockRejectedValueOnce(new Error('network down'));
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const msg = lastToastMessage();
+    expect(msg).toContain('failed: acct-b: network down');
+    expect(msg).not.toContain('acct-a:');
   });
 
   test('Finding 2 — status === "failed" also counts as failure, recipient excluded', async () => {

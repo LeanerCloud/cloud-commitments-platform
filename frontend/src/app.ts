@@ -6,7 +6,7 @@ import * as api from './api';
 import * as state from './state';
 import { showLoginModal, showAdminSetupModal, showResetPasswordModal, updateUserUI } from './auth';
 import { loadDashboard, setupDashboardHandlers } from './dashboard';
-import { setupRecommendationsHandlers, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, getFanOutBuckets, clearFanOutBuckets, getExecuteMode, clearExecuteMode, type FanOutBucket } from './recommendations';
+import { setupRecommendationsHandlers, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, getFanOutBuckets, clearFanOutBuckets, getExecuteMode, clearExecuteMode, fanOutBucketAccountLabel, type FanOutBucket } from './recommendations';
 import { switchTab, applyTabFromPath, initRouter, switchSettingsSubTab, canonicalTabPath } from './navigation';
 import { savePlan, setupPlanHandlers, closePlanModal, openNewPlanModal, closePurchaseModal } from './plans';
 import { saveGlobalSettings, setupSettingsHandlers, resetSettings } from './settings';
@@ -553,8 +553,7 @@ async function submitFanOutBuckets(buckets: FanOutBucket[]): Promise<void> {
   // server-provided rec so `details`, `engine`, `cloud_account_id`, and
   // any future additions flow through unchanged. Only `payment`,
   // `monthly_cost`, `selected`, and `purchased` are overridden: `payment`
-  // comes from perRecPayments[rec.id] for multi-account buckets (issue #197)
-  // or from the bucket-level payment for single-account buckets.
+  // comes from the bucket-level payment.
   // `monthly_cost` is coerced to null for absent values, and the
   // purchase-intent flags are forced to their canonical values. Passing
   // `details` ensures non-default platforms (Windows EC2, dedicated tenancy,
@@ -565,7 +564,7 @@ async function submitFanOutBuckets(buckets: FanOutBucket[]): Promise<void> {
       b.recs.map((r) => ({
         ...r,
         monthly_cost: r.monthly_cost ?? null,
-        payment: b.perRecPayments?.get(r.id) ?? b.payment,
+        payment: b.payment,
         selected: true,
         purchased: false,
       })),
@@ -631,12 +630,20 @@ async function submitFanOutBuckets(buckets: FanOutBucket[]): Promise<void> {
       timeout: 15_000,
     });
   } else {
-    const failureMsgs = [
-      ...results
-        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-        .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason))),
-      ...submissionFailures.map((r) => r.value.email_reason || 'approval email did not send'),
-    ]
+    // Prefix each failure with its bucket's account so the user knows what to
+    // retry when one account's bucket fails and another's succeeds (issue #333).
+    const failureMsgs = results
+      .flatMap((r, i) => {
+        let reason: string;
+        if (r.status === 'rejected') {
+          reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        } else if (r.value.email_sent === false || r.value.status === 'failed') {
+          reason = r.value.email_reason || 'approval email did not send';
+        } else {
+          return [];
+        }
+        return [`${fanOutBucketAccountLabel(buckets[i]!)}: ${reason}`];
+      })
       .slice(0, 3)
       .join('; ');
     // #642: on a partial fan-out failure the succeeded buckets created real

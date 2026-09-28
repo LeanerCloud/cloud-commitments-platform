@@ -1132,31 +1132,6 @@ describe('Issue #1904: fan-out modal skips incompatible buckets', () => {
     await flush();
   });
 
-  // Issue #333: the tests previously here ("pending fan-out per-row payment
-  // restores its value...", "fan-out repeated Savings Plans row swaps...",
-  // "fan-out resolves full priced siblings per account in a mixed bucket",
-  // "fan-out preserves an equal-default multi-account override...", "fan-out
-  // row controls distinguish explicit equal-default from bucket
-  // inheritance", "fan-out row rollback preserves the live inheritance
-  // sentinel...", "fan-out repairs an explicit row after its same-ID priced
-  // variant reaches zero at 50 percent", "fan-out skips a zero-priced current
-  // bucket and restores native row edits while execute is pending", "fan-out
-  // skips an unresolved mixed legacy bucket while posting a valid bucket", and
-  // "fan-out bucket edits preserve explicit full records and submitted
-  // payment overrides") all constructed a bucket spanning two
-  // cloud_account_id values (e.g. 'a1' and 'a2') sharing one
-  // (provider, service, term, payment), and asserted that the resulting
-  // single executePurchase POST correctly combined both accounts via
-  // perRecPayments. That is the exact bug issue #333 fixes: the backend's
-  // SingleCloudAccountIDFromRecs (internal/purchase/execution.go) rejects a
-  // POST whose selected recs span more than one cloud account with HTTP 400.
-  // handleBulkPurchaseClick's bucket key now includes cloud_account_id, so a
-  // multi-account bucket can no longer form through this entry point --
-  // these tests asserted the pre-#333 bug as correct behavior and were
-  // removed rather than kept red. See the new
-  // "Issue #333: bulk purchase buckets never span more than one cloud
-  // account" describe block below for the corrected-behavior coverage.
-
   test('fan-out clears submitting state when result processing throws', async () => {
     const rows = buildFanOutRows().map((row) => row.service === 'rds'
       ? { ...row, payment: 'partial-upfront' as const, upfront_cost: 1000 }
@@ -1272,7 +1247,6 @@ describe('Issue #1904: fan-out modal skips incompatible buckets', () => {
     const ec2Section = Array.from(document.querySelectorAll<HTMLElement>('.fanout-bucket'))
       .find((section) => section.textContent?.includes('ec2'))!;
     expect(ec2Section.querySelector<HTMLSelectElement>('.fanout-bucket-payment')!.disabled).toBe(false);
-    expect(ec2Section.querySelector('.fanout-per-rec-payment')).toBeNull();
     expect(ec2Section.querySelector('.fanout-bucket-totals')!.textContent).toContain('$2,000');
     expect(getFanOutBuckets()!.find((bucket) => bucket.service === 'ec2')!.recs[0]).toMatchObject({
       id: 'ec2-1-partial', payment: 'partial-upfront', upfront_cost: 2000, monthly_cost: 100,
@@ -1741,6 +1715,46 @@ describe('Issue #333: bulk purchase buckets never span more than one cloud accou
     }
     const allAccounts = new Set(posts.flat().map((rec) => rec.cloud_account_id));
     expect(allAccounts).toEqual(new Set(['account-1', 'account-2']));
+  });
+
+  test('each fan-out bucket header names its account, so a two-account split is distinguishable', async () => {
+    const rows: LocalRecommendation[] = [
+      {
+        id: 'named', provider: 'aws', cloud_account_id: 'account-1', service: 'ec2',
+        region: 'us-east-1', resource_type: 'm5.large', term: 3, payment: 'all-upfront',
+        count: 2, upfront_cost: 4000, monthly_cost: 0, savings: 900,
+      },
+      {
+        id: 'unnamed', provider: 'aws', cloud_account_id: 'account-2', service: 'ec2',
+        region: 'us-east-1', resource_type: 'm5.large', term: 3, payment: 'all-upfront',
+        count: 2, upfront_cost: 4200, monthly_cost: 0, savings: 950,
+      },
+      {
+        id: 'ambient', provider: 'aws', service: 'ec2',
+        region: 'us-east-1', resource_type: 'm5.large', term: 3, payment: 'all-upfront',
+        count: 2, upfront_cost: 4200, monthly_cost: 0, savings: 950,
+      },
+    ];
+    (api.listAccountsMinimal as jest.Mock).mockResolvedValueOnce([{ id: 'account-1', name: '<b>Prod</b>' }]);
+    (api.getConfig as jest.Mock).mockResolvedValue({ global: { default_payment: 'all-upfront' } });
+    (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: rows, regions: [] });
+    (state.getRecommendations as jest.Mock).mockReturnValue(rows);
+    (state.getVisibleRecommendations as jest.Mock).mockReturnValue(rows);
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set(['named', 'unnamed', 'ambient']));
+
+    await loadRecommendations();
+    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+
+    const headers = Array.from(document.querySelectorAll<HTMLElement>('.fanout-bucket h4'));
+    expect(headers.map((h) => h.textContent)).toEqual(expect.arrayContaining([
+      expect.stringContaining('AWS / <b>Prod</b> / ec2'),
+      expect.stringContaining('AWS / account-2 / ec2'),
+      expect.stringContaining('AWS / Unattributed / ec2'),
+    ]));
+    expect(headers).toHaveLength(3);
+    // The account name is rendered as text, never parsed as markup.
+    expect(document.querySelector('.fanout-bucket h4 b')).toBeNull();
   });
 
   test('an unattributed rec never shares a bucket with an attributed rec of the same shape', async () => {

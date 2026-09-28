@@ -3448,7 +3448,7 @@ describe('Issue #111: per-bucket Payment seed from per-account service override'
   });
 
   test('(c) issue #333: recs on different accounts never share a bucket, and each honours its own override', async () => {
-    // Two recs, same (provider, service, term) — pre-#333 bucket-key match —
+    // Two recs, same (provider, service, term) (the pre-#333 bucket-key match),
     // but different cloud_account_ids. The bucket key now includes
     // cloud_account_id (issue #333: the backend's SingleCloudAccountIDFromRecs
     // rejects a POST spanning more than one account), so 'a' and 'b' must
@@ -3646,22 +3646,6 @@ describe('Issue #111: per-bucket Payment seed from per-account service override'
     // openPurchaseModal instead of openFanOutModal).
     expect(buckets).toBeNull();
   });
-
-  // Issue #197's multi-account-bucket tests ((h), (i), (j) in earlier
-  // revisions of this file) asserted that two recs on different cloud
-  // accounts could land in ONE bucket and post together via perRecPayments.
-  // Issue #333 found that behavior violates the backend's
-  // SingleCloudAccountIDFromRecs contract (internal/purchase/execution.go):
-  // a single executePurchase POST spanning more than one account is
-  // rejected with HTTP 400. handleBulkPurchaseClick's bucket key now
-  // includes cloud_account_id, so a multi-account bucket can no longer form
-  // through this entry point -- those three tests asserted the pre-#333 bug
-  // as correct behavior and were removed rather than kept red. Test (c)
-  // above now covers per-account override resolution once recs are split
-  // into single-account buckets; the perRecPayments resolution machinery
-  // itself (still exercised by its own unit path) is left in place as
-  // documented in openFanOutModal's comment, in case a future caller
-  // legitimately constructs a multi-account bucket.
 });
 
 // Issue #111 (iii): per-row Payment seed in openPurchaseModal — the
@@ -4044,7 +4028,7 @@ describe('Issue #132: bulk-buy collapses SP plan types into one bucket', () => {
     ).map((el) => el.textContent || '');
     expect(sectionTitles.some((t) => t.includes('Savings Plans (Compute + SageMaker)'))).toBe(true);
     // Non-SP bucket title still uses the raw service slug.
-    expect(sectionTitles.some((t) => t.includes('AWS / ec2'))).toBe(true);
+    expect(sectionTitles.some((t) => t.includes('AWS / a1 / ec2'))).toBe(true);
   });
 
   // Issue #249: mixed-SP bucket renders collapsible per-plan-type sub-rows
