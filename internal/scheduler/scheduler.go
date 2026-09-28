@@ -1306,8 +1306,8 @@ func applySuppressionIndex(recs []config.RecommendationRecord, index map[suppres
 
 // kickColdStartCollection single-flights the FIRST-EVER collection
 // (freshness.LastCollectedAt == nil) cluster-wide via MarkCollectionStarted
-// -- the same marker the explicit refresh endpoint and the scheduled cron
-// coordinate through -- instead of every concurrent cold reader racing its
+// -- the same marker the explicit refresh endpoint coordinates through --
+// instead of every concurrent cold reader racing its
 // own uncoordinated CollectRecommendations call on its own short request
 // context (issue #106). The previous synchronous call ran on ctx, which the
 // HTTP layer caps at 30s (internal/server/http.go); a real sweep routinely
@@ -1336,6 +1336,11 @@ func applySuppressionIndex(recs []config.RecommendationRecord, index map[suppres
 // and briefly opens a false-409 window on the refresh endpoint for nothing.
 // The cache is populated by whichever runs first: the scheduled cron
 // (already advisory-locked) or the frontend's auto-refresh-on-open flow.
+//
+// The cron never calls MarkCollectionStarted (it single-flights through the
+// advisory lock instead), so a kick here can overlap at most one in-flight
+// cron collect. That overlap is bounded: the marker still limits cold
+// readers to one kick cluster-wide, and s.collecting to one per process.
 func (s *Scheduler) kickColdStartCollection(ctx context.Context) {
 	if s.isLambda {
 		return
@@ -1346,7 +1351,7 @@ func (s *Scheduler) kickColdStartCollection(ctx context.Context) {
 		return
 	}
 	if !ok {
-		// Another reader, the cron, or an explicit refresh already has a
+		// Another cold reader or an explicit refresh already has a
 		// collection in flight.
 		return
 	}

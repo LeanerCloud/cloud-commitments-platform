@@ -1547,8 +1547,15 @@ describe('Recommendations Module', () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      // 24 poll attempts * 5s = the full budget.
-      await jest.advanceTimersByTimeAsync(24 * 5_000);
+      // One attempt short of the budget: no timeout toast yet (the budget
+      // must cover the backend's 5 min collection window).
+      await jest.advanceTimersByTimeAsync(59 * 5_000);
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'error' }),
+      );
+
+      // 60 poll attempts * 5s = the full 5 min budget.
+      await jest.advanceTimersByTimeAsync(5_000);
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1558,6 +1565,40 @@ describe('Recommendations Module', () => {
       );
       // Only the initial load called getRecommendations — no reload fired.
       expect(api.getRecommendations).toHaveBeenCalledTimes(1);
+    });
+
+    // When the other collection finishes with an error, the cleared marker
+    // must not be reported as a successful refresh.
+    test('409 already-in-progress — failure toast when the other collect failed', async () => {
+      mockGetRecs();
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValueOnce({
+        last_collected_at: null,
+        last_collection_error: null,
+      });
+      (recsApi.refreshRecommendations as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('HTTP 409'), { status: 409 }),
+      );
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+        last_collected_at: null,
+        last_collection_error: 'aws: cost explorer throttled',
+        last_collection_started_at: null,
+      });
+
+      await loadRecommendations();
+      await Promise.resolve();
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Recommendations refresh failed: aws: cost explorer throttled',
+          kind: 'error',
+        }),
+      );
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Recommendations refreshed' }),
+      );
+      expect(api.getRecommendations).toHaveBeenCalledTimes(2);
     });
 
     test('dedup — concurrent stale loads fire refreshRecommendations only once', async () => {

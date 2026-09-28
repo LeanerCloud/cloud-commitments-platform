@@ -7,6 +7,7 @@ import * as state from './state';
 import type { CostPeriod } from './state';
 import { formatCurrency, formatTerm, escapeHtml, CURRENCY_DEFAULT_DIGITS } from './utils';
 import { getRecommendationsFreshness, refreshRecommendations as refreshRecommendationsAPI } from './api/recommendations';
+import type { RecommendationsFreshness } from './api/recommendations';
 import { showToast } from './toast';
 import {
   isPaymentSupported,
@@ -357,7 +358,7 @@ export async function triggerAutoRefreshIfStale(
 // POLL_MAX_ATTEMPTS checks total, so the longest wait matches the backend's
 // own detached-collection budget (5 min in internal/scheduler/scheduler.go).
 const COLLECTION_POLL_INTERVAL_MS = 5_000;
-const COLLECTION_POLL_MAX_ATTEMPTS = 24; // 24 * 5s = 2 min
+const COLLECTION_POLL_MAX_ATTEMPTS = 60; // 60 * 5s = 5 min
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -366,22 +367,22 @@ function delay(ms: number): Promise<void> {
 /**
  * Polls GET /api/recommendations/freshness until last_collection_started_at
  * clears (the collection someone else already started has finished), up to
- * COLLECTION_POLL_MAX_ATTEMPTS times. Returns true once cleared, false on
- * timeout. Network failures while polling are treated as "not yet cleared"
+ * COLLECTION_POLL_MAX_ATTEMPTS times. Returns the freshness response that
+ * showed the marker cleared, or null on timeout. Network failures while polling are treated as "not yet cleared"
  * (same over-show-vs-fail philosophy as the rest of this module) rather than
  * aborting the wait early.
  */
-async function pollUntilCollectionClears(): Promise<boolean> {
+async function pollUntilCollectionClears(): Promise<RecommendationsFreshness | null> {
   for (let attempt = 0; attempt < COLLECTION_POLL_MAX_ATTEMPTS; attempt++) {
     await delay(COLLECTION_POLL_INTERVAL_MS);
     try {
       const freshness = await getRecommendationsFreshness();
-      if (!freshness.last_collection_started_at) return true;
+      if (!freshness.last_collection_started_at) return freshness;
     } catch (err) {
       console.error('Failed to poll recommendations freshness:', err);
     }
   }
-  return false;
+  return null;
 }
 
 /**
@@ -436,11 +437,20 @@ function startRecommendationsRefresh(
         const cleared = await pollUntilCollectionClears();
         if (cleared) {
           inFlight.dismiss();
-          showToast({
-            message: 'Recommendations refreshed',
-            kind: 'success',
-            timeout: 5_000,
-          });
+          if (cleared.last_collection_error) {
+            showToast({
+              message: `Recommendations refresh failed: ${cleared.last_collection_error}`,
+              kind: 'error',
+            });
+          } else {
+            showToast({
+              message: 'Recommendations refreshed',
+              kind: 'success',
+              timeout: 5_000,
+            });
+          }
+          // Reload either way: a partially failed collect may still have
+          // persisted rows.
           await onReload();
           return;
         }
