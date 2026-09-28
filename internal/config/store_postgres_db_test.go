@@ -18,6 +18,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1535,5 +1536,102 @@ func TestPostgresStoreDB_ClaimRIExchangeIdempotencyKey(t *testing.T) {
 		claimed, err = store.ClaimRIExchangeIdempotencyKey(ctx, key, window)
 		require.NoError(t, err)
 		assert.False(t, claimed, "the takeover must refresh claimed_at, not leave the row expired")
+	})
+}
+
+// TestPostgresStoreDB_LinkRetryExecutionAtomic is the real-DB regression
+// guard for issue #220: LinkRetryExecutionAtomic's conditional UPDATE is the
+// authoritative guard against two concurrent retries of the same failed
+// execution both minting an approvable successor. A pgxmock or handler-level
+// mock cannot prove the CAS predicate actually restricts which rows the
+// UPDATE touches; only a real Postgres engine evaluating `WHERE status =
+// 'failed' AND retry_execution_id IS NULL` can.
+func TestPostgresStoreDB_LinkRetryExecutionAtomic(t *testing.T) {
+	conn := setupTestContainerDB(t)
+	if conn == nil {
+		return
+	}
+	store := NewPostgresStore(conn)
+	ctx := context.Background()
+
+	plan := &PurchasePlan{
+		Name:         "LinkRetryExecutionAtomic Test Plan",
+		Enabled:      true,
+		Services:     map[string]ServiceConfig{},
+		RampSchedule: PresetRampSchedules["immediate"],
+	}
+	require.NoError(t, store.CreatePurchasePlan(ctx, plan))
+
+	newFailedExecution := func(t *testing.T) *PurchaseExecution {
+		t.Helper()
+		exec := &PurchaseExecution{
+			PlanID:          plan.ID,
+			Status:          "failed",
+			StepNumber:      1,
+			ScheduledDate:   time.Now(),
+			Recommendations: []RecommendationRecord{},
+		}
+		require.NoError(t, store.SavePurchaseExecution(ctx, exec))
+		return exec
+	}
+
+	linkInTx := func(t *testing.T, executionID, retryExecutionID string) bool {
+		t.Helper()
+		var linked bool
+		require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
+			var linkErr error
+			linked, linkErr = store.LinkRetryExecutionAtomic(ctx, tx, executionID, retryExecutionID)
+			return linkErr
+		}))
+		return linked
+	}
+
+	t.Run("first call wins and stamps the pointer", func(t *testing.T) {
+		failed := newFailedExecution(t)
+		successorID := uuid.New().String()
+
+		linked := linkInTx(t, failed.ExecutionID, successorID)
+		require.True(t, linked, "the first call on a failed, unlinked row must win the CAS")
+
+		reread, err := store.GetExecutionByID(ctx, failed.ExecutionID)
+		require.NoError(t, err)
+		require.NotNil(t, reread.RetryExecutionID)
+		assert.Equal(t, successorID, *reread.RetryExecutionID)
+	})
+
+	t.Run("a concurrent second call loses and the pointer is unchanged", func(t *testing.T) {
+		failed := newFailedExecution(t)
+		firstSuccessorID := uuid.New().String()
+		secondSuccessorID := uuid.New().String()
+
+		require.True(t, linkInTx(t, failed.ExecutionID, firstSuccessorID),
+			"the winner of the race must claim the row")
+
+		linked := linkInTx(t, failed.ExecutionID, secondSuccessorID)
+		assert.False(t, linked, "a second retry of the same row must lose the CAS (issue #220)")
+
+		reread, err := store.GetExecutionByID(ctx, failed.ExecutionID)
+		require.NoError(t, err)
+		require.NotNil(t, reread.RetryExecutionID)
+		assert.Equal(t, firstSuccessorID, *reread.RetryExecutionID,
+			"the loser must not overwrite the winner's linkage pointer")
+	})
+
+	t.Run("a row not in status failed cannot be linked", func(t *testing.T) {
+		exec := &PurchaseExecution{
+			PlanID:          plan.ID,
+			Status:          "pending",
+			StepNumber:      1,
+			ScheduledDate:   time.Now(),
+			Recommendations: []RecommendationRecord{},
+		}
+		require.NoError(t, store.SavePurchaseExecution(ctx, exec))
+
+		linked := linkInTx(t, exec.ExecutionID, uuid.New().String())
+		assert.False(t, linked, "only a 'failed' row is eligible for the retry linkage")
+
+		reread, err := store.GetExecutionByID(ctx, exec.ExecutionID)
+		require.NoError(t, err)
+		assert.Nil(t, reread.RetryExecutionID)
 	})
 }
