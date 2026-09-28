@@ -250,6 +250,16 @@ func (h *Handler) revokeScheduledExecution(ctx context.Context, session *Session
 		return nil, err
 	}
 
+	// Account-scope gate (issue #92): this endpoint relied only on the
+	// revoke-any/revoke-own RBAC matrix above and never consulted the
+	// session's allowed_accounts, unlike the sibling pause/resume/run/
+	// delete-planned execution endpoints. Runs after RBAC so a session that
+	// fails the permission check is denied on that (existing) ground without
+	// requiring an account-scope lookup.
+	if err := h.requireExecutionAccess(ctx, session, execution.ExecutionID); err != nil {
+		return nil, err
+	}
+
 	// Atomically transition from scheduled -> canceled and remove suppressions.
 	var cancelledBy *string
 	if session.Email != "" {

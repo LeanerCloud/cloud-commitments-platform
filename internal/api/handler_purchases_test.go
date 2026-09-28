@@ -2896,6 +2896,101 @@ func TestHandler_pausePlannedPurchase_OutOfScope(t *testing.T) {
 	mockStore.AssertNotCalled(t, "TransitionExecutionStatus")
 }
 
+// TestHandler_approvePurchase_OutOfScope is the issue #92 regression guard:
+// approvePurchase (unlike pause/resume/run/delete-planned) relied only on the
+// approve-any/approve-own RBAC matrix and never consulted the session's
+// allowed_accounts, so a scoped operator holding approve-any could approve
+// -- and fire the real SDK purchase for -- an execution belonging to an
+// account outside their scope. A session scoped to allowed_accounts=
+// ["Production"] holding approve-any:purchases must get the same 404 that
+// requireExecutionAccess already returns for pause/resume/delete-planned
+// when acting on an execution whose plan is scoped to a different account
+// ("Staging"). Locks down that approvePurchaseViaSession never reaches
+// GetGlobalConfig (the first store call past the scope gate) for an
+// out-of-scope execution.
+func TestHandler_approvePurchase_OutOfScope(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+
+	executionID := "aaaaaaaa-1111-1111-1111-111111111111"
+	planID := "bbbbbbbb-1111-1111-1111-111111111111"
+
+	mockAuth.On("ValidateSession", ctx, "operator-token").Return(&Session{
+		UserID: "operator-1", Email: "operator@example.com",
+	}, nil)
+	// approve-any:purchases -- the RBAC matrix that pre-fix was the ONLY gate
+	// on this endpoint.
+	mockAuth.On("HasPermissionAPI", ctx, "operator-1", "approve-any", "purchases").Return(true, nil)
+	mockAuth.On("GetAllowedAccountsAPI", ctx, "operator-1").Return([]string{"Production"}, nil)
+	mockAuth.On("ValidateCSRFToken", ctx, "operator-token", "").Return(nil)
+
+	mockStore.On("GetExecutionByID", ctx, executionID).Return(&config.PurchaseExecution{
+		ExecutionID: executionID, PlanID: planID, Status: "pending",
+	}, nil)
+
+	store := &mockStoreWithPlanAccounts{
+		MockConfigStore: mockStore,
+		planAccounts: map[string][]config.CloudAccount{
+			planID: {{ID: "acc-stage", Name: "Staging"}},
+		},
+	}
+
+	handler := &Handler{auth: mockAuth, config: store}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer operator-token"},
+	}
+	_, err := handler.approvePurchase(ctx, req, executionID, "")
+	require.Error(t, err)
+	assert.True(t, IsNotFoundError(err), "expected 404 not-found, got %v", err)
+	mockStore.AssertNotCalled(t, "GetGlobalConfig")
+}
+
+// TestHandler_retryPurchase_OutOfScope is the issue #92 regression guard for
+// the retry endpoint: retryPurchase relied only on the retry-any/retry-own
+// RBAC matrix and never consulted allowed_accounts, so a scoped operator
+// holding retry-any could relaunch a failed purchase belonging to an account
+// outside their scope. A session scoped to allowed_accounts=["Production"]
+// holding retry-any:purchases must get the same 404 requireExecutionAccess
+// already returns for pause/resume/delete-planned when acting on an
+// execution whose plan is scoped to a different account ("Staging").
+func TestHandler_retryPurchase_OutOfScope(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+
+	executionID := "cccccccc-1111-1111-1111-111111111111"
+	planID := "dddddddd-1111-1111-1111-111111111111"
+
+	mockAuth.On("ValidateSession", ctx, "operator-token").Return(&Session{
+		UserID: "operator-1", Email: "operator@example.com",
+	}, nil)
+	// retry-any:purchases -- the RBAC matrix that pre-fix was the ONLY gate
+	// on this endpoint.
+	mockAuth.On("HasPermissionAPI", ctx, "operator-1", "retry-any", "purchases").Return(true, nil)
+	mockAuth.On("GetAllowedAccountsAPI", ctx, "operator-1").Return([]string{"Production"}, nil)
+
+	mockStore.On("GetExecutionByID", ctx, executionID).Return(&config.PurchaseExecution{
+		ExecutionID: executionID, PlanID: planID, Status: "failed",
+	}, nil)
+
+	store := &mockStoreWithPlanAccounts{
+		MockConfigStore: mockStore,
+		planAccounts: map[string][]config.CloudAccount{
+			planID: {{ID: "acc-stage", Name: "Staging"}},
+		},
+	}
+
+	handler := &Handler{auth: mockAuth, config: store}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer operator-token"},
+	}
+	_, err := handler.retryPurchase(ctx, req, executionID)
+	require.Error(t, err)
+	assert.True(t, IsNotFoundError(err), "expected 404 not-found, got %v", err)
+	mockStore.AssertNotCalled(t, "SavePurchaseExecution")
+}
+
 // ─── Session-authed Cancel (issue #46) ─────────────────────────────────────
 //
 // Covers the full cancel-any / cancel-own RBAC matrix on the
@@ -2936,6 +3031,10 @@ func buildSessionCancelHandler(exec *config.PurchaseExecution, session *Session,
 	if session != nil {
 		mockAuth.On("HasPermissionAPI", mock.Anything, session.UserID, "cancel-any", "purchases").Return(hasAny, nil).Maybe()
 		mockAuth.On("HasPermissionAPI", mock.Anything, session.UserID, "cancel-own", "purchases").Return(hasOwn, nil).Maybe()
+		// cancelPurchaseViaSession now consults requireExecutionAccess (issue
+		// #92); an empty allowed_accounts list resolves to unrestricted, which
+		// is what these RBAC-matrix tests intend to exercise.
+		mockAuth.On("GetAllowedAccountsAPI", mock.Anything, session.UserID).Return([]string{}, nil).Maybe()
 	}
 
 	return &Handler{config: mockConfig, auth: mockAuth}, mockConfig, mockAuth
@@ -3490,6 +3589,10 @@ func buildSessionRetryHandler(failed *config.PurchaseExecution, session *Session
 	if session != nil {
 		mockAuth.On("HasPermissionAPI", mock.Anything, session.UserID, "retry-any", "purchases").Return(hasAny, nil).Maybe()
 		mockAuth.On("HasPermissionAPI", mock.Anything, session.UserID, "retry-own", "purchases").Return(hasOwn, nil).Maybe()
+		// retryPurchase now consults requireExecutionAccess (issue #92); an
+		// empty allowed_accounts list resolves to unrestricted, which is what
+		// these RBAC-matrix tests intend to exercise.
+		mockAuth.On("GetAllowedAccountsAPI", mock.Anything, session.UserID).Return([]string{}, nil).Maybe()
 	}
 	// SEC-01 constraint check (adversarial review follow-up to #1210): the
 	// retry path now re-evaluates the retrying session's execute:purchases
@@ -3976,6 +4079,9 @@ func TestHandler_retryPurchase_PermissionConstraintsDenied(t *testing.T) {
 	// Caller owns the row; retry-own authorizes it (issue #907).
 	mockAuth.On("HasPermissionAPI", mock.Anything, session.UserID, "retry-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", mock.Anything, session.UserID, "retry-own", "purchases").Return(true, nil)
+	// requireExecutionAccess (issue #92) resolves the session's scope before
+	// the constraints check; unrestricted here since scope is not under test.
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, session.UserID).Return([]string{}, nil)
 	// The retrying session's execute:purchases permission is capped below
 	// the failed batch's $5,000 total commitment.
 	mockAuth.On("HasPermissionForConstraintsAPI", mock.Anything, session.UserID, "execute", "purchases",
@@ -5587,6 +5693,9 @@ func TestHandler_revokePurchase_SessionAdminCancelAny(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "admin-token").
 		Return(&Session{UserID: adminUserID, Email: adminEmail}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, adminUserID, "cancel-any", "purchases").Return(true, nil)
+	// requireExecutionAccess (issue #92) runs after RBAC succeeds; unrestricted
+	// here since scope is not under test.
+	mockAuth.On("GetAllowedAccountsAPI", ctx, adminUserID).Return([]string{}, nil)
 	// CSRF is enforced for the session-authed revoke path (tryRevokeViaSession).
 	// No CSRF token header in this request, so csrfToken is "".
 	mockAuth.On("ValidateCSRFToken", ctx, "admin-token", "").Return(nil)
@@ -5630,6 +5739,9 @@ func TestHandler_revokePurchase_SessionOwnerCancelOwn(t *testing.T) {
 		Return(&Session{UserID: ownerUserID, Email: ownerEmail}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, ownerUserID, "cancel-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, ownerUserID, "cancel-own", "purchases").Return(true, nil)
+	// requireExecutionAccess (issue #92) runs after RBAC succeeds; unrestricted
+	// here since scope is not under test.
+	mockAuth.On("GetAllowedAccountsAPI", ctx, ownerUserID).Return([]string{}, nil)
 	// CSRF is enforced for the session-authed revoke path (tryRevokeViaSession).
 	mockAuth.On("ValidateCSRFToken", ctx, "owner-token", "").Return(nil)
 

@@ -727,6 +727,9 @@ func TestRevokePurchase_ScheduledExecution_RevokeOwnCreator(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "tok").Return(sess, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userID, "revoke-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userID, "revoke-own", "purchases").Return(true, nil)
+	// requireExecutionAccess (issue #92) runs after RBAC succeeds; unrestricted
+	// here since scope is not under test.
+	mockAuth.On("GetAllowedAccountsAPI", ctx, userID).Return([]string{}, nil)
 
 	exec := scheduledExecution(execID, userID)
 	mockStore.On("GetExecutionByID", ctx, execID).Return(exec, nil)
@@ -804,6 +807,122 @@ func TestAuthorizeSessionRevokeExecution_NilCreatorDenied(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, 403, ce.code)
 	assert.Contains(t, ce.message, "cannot revoke another user")
+}
+
+// TestAuthorizeSessionRevokeExecution_Matrix is the audit finding A16-009
+// regression guard. Before this test, the only three tests reaching
+// authorizeSessionRevokeExecution (TestRevokePurchase_ScheduledExecution_
+// RevokeOwnCreator/RevokeOwnWrongCreator and
+// TestAuthorizeSessionRevokeExecution_NilCreatorDenied) all stubbed
+// revoke-any=false and revoke-own=true, so nothing proved a session holding
+// NEITHER permission was refused, nor that the revoke-any allow path or
+// either permission-lookup error path worked. Table-drives the four
+// remaining branches of the function (handler_purchases_revoke.go):
+//
+//   - hasAny allow (:312): revoke-any:purchases grants access regardless of
+//     creator, mirroring the sibling authorizeSessionRevoke's revoke-any path.
+//   - !hasOwn 403 (:320): neither revoke-any nor revoke-own must fail closed.
+//   - revoke-any lookup error (:309): a HasPermissionAPI failure on the FIRST
+//     check must propagate rather than silently falling through to the
+//     revoke-own check.
+//   - revoke-own lookup error (:317): a HasPermissionAPI failure on the
+//     SECOND check must propagate rather than being read as "no own
+//     permission" and denied with the wrong (403) error.
+func TestAuthorizeSessionRevokeExecution_Matrix(t *testing.T) {
+	t.Parallel()
+
+	creator := "u-owner"
+	permErr := errors.New("permission service unavailable")
+
+	tests := []struct {
+		name          string
+		hasAnyReturn  bool
+		hasAnyErr     error
+		hasOwnReturn  bool
+		hasOwnErr     error
+		callsHasOwn   bool
+		creatorUserID *string
+		wantErr       bool
+		wantClientErr bool
+		wantCode      int
+	}{
+		{
+			// :312 hasAny allow -- grants access without ever consulting
+			// revoke-own or the execution's creator.
+			name:         "revoke-any allows regardless of creator",
+			hasAnyReturn: true,
+			callsHasOwn:  false,
+			wantErr:      false,
+		},
+		{
+			// :320 !hasOwn 403 -- neither permission held.
+			name:          "neither permission denies with 403",
+			hasAnyReturn:  false,
+			hasOwnReturn:  false,
+			callsHasOwn:   true,
+			creatorUserID: &creator,
+			wantErr:       true,
+			wantClientErr: true,
+			wantCode:      403,
+		},
+		{
+			// :309 revoke-any lookup error -- must propagate as a bare error,
+			// not get swallowed into a 403 permission-denied.
+			name:        "revoke-any lookup error propagates",
+			hasAnyErr:   permErr,
+			callsHasOwn: false,
+			wantErr:     true,
+		},
+		{
+			// :317 revoke-own lookup error -- must propagate as a bare error
+			// once revoke-any has already returned false.
+			name:         "revoke-own lookup error propagates",
+			hasAnyReturn: false,
+			hasOwnErr:    permErr,
+			callsHasOwn:  true,
+			wantErr:      true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			mockAuth := new(MockAuthService)
+			t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+			mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").
+				Return(tc.hasAnyReturn, tc.hasAnyErr)
+			if tc.callsHasOwn {
+				mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").
+					Return(tc.hasOwnReturn, tc.hasOwnErr)
+			}
+
+			h := &Handler{auth: mockAuth}
+			sess := &Session{UserID: "u-1"}
+			exec := &config.PurchaseExecution{ExecutionID: "e-1", CreatedByUserID: tc.creatorUserID}
+			err := h.authorizeSessionRevokeExecution(ctx, sess, exec)
+
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			if !tc.wantClientErr {
+				// A propagated lookup error must NOT be misread as a
+				// ClientError (which would surface as a clean 403/404 to the
+				// caller instead of the 500 a transient auth-backend failure
+				// deserves).
+				_, ok := IsClientError(err)
+				assert.False(t, ok, "expected a bare propagated error, got ClientError: %v", err)
+				assert.ErrorIs(t, err, permErr)
+				return
+			}
+			ce, ok := IsClientError(err)
+			require.True(t, ok)
+			assert.Equal(t, tc.wantCode, ce.code)
+		})
+	}
 }
 
 // --- Two-step quote-then-confirm: Finding #4 TOCTOU tests ---

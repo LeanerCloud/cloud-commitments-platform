@@ -728,15 +728,7 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be approved (status=%s)", execution.ExecutionID, execution.Status))
 	}
 
-	if err := h.authorizeSessionApprove(ctx, session, execution); err != nil {
-		return nil, err
-	}
-
-	// 4-eyes mode (issue #1005): enforce after RBAC so only users who already
-	// pass the approve-any / approve-own gate reach this check. The admin
-	// wildcard inside authorizeSessionApprove short-circuits RBAC but NOT this
-	// check; admins who created the row must disable the mode first.
-	if err := h.requireDifferentApprover(ctx, session, execution); err != nil {
+	if err := h.authorizeApproveSession(ctx, session, execution); err != nil {
 		return nil, err
 	}
 
@@ -778,6 +770,33 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 	// and never propagate — the purchase is already done at this point.
 	h.sendPurchaseExecutedEmail(ctx, req, execution, session.Email)
 	return map[string]string{"status": "completed"}, nil
+}
+
+// authorizeApproveSession runs every gate approvePurchaseViaSession must pass
+// before mutating state: the approve-any/approve-own RBAC matrix, the
+// account-scope check (issue #92), and the 4-eyes distinct-approver rule.
+// Extracted from approvePurchaseViaSession to keep that function under the
+// cyclomatic-complexity ceiling; the three checks stay in this order so the
+// security boundary is unchanged (RBAC first, so a caller who fails it and
+// falls through to the contact_email token path is unaffected by the scope
+// or 4-eyes checks; 4-eyes last, since only a caller admin's own RBAC has
+// already approved needs it).
+func (h *Handler) authorizeApproveSession(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	if err := h.authorizeSessionApprove(ctx, session, execution); err != nil {
+		return err
+	}
+	// Account-scope gate (issue #92): approve is a money-moving endpoint
+	// that, unlike pause/resume/run/delete-planned, relied only on the
+	// approve-any/approve-own RBAC matrix above and never consulted the
+	// session's allowed_accounts.
+	if err := h.requireExecutionAccess(ctx, session, execution.ExecutionID); err != nil {
+		return err
+	}
+	// 4-eyes mode (issue #1005): enforce after RBAC so only users who already
+	// pass the approve-any / approve-own gate reach this check. The admin
+	// wildcard inside authorizeSessionApprove short-circuits RBAC but NOT this
+	// check; admins who created the row must disable the mode first.
+	return h.requireDifferentApprover(ctx, session, execution)
 }
 
 // authorizeSessionApprove returns nil when the session is permitted to
@@ -1262,7 +1281,7 @@ func (h *Handler) cancelPurchaseViaSession(ctx context.Context, req *events.Lamb
 		return nil, err
 	}
 
-	if err := h.authorizeSessionCancel(ctx, session, execution); err != nil {
+	if err := h.authorizeCancelSession(ctx, session, execution); err != nil {
 		return nil, err
 	}
 
@@ -1445,6 +1464,16 @@ func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFun
 	}
 	switch sessErr := h.authorizeSessionCancel(ctx, session, execution); {
 	case sessErr == nil:
+		// Account-scope gate (issue #92): the session-authed revoke branch
+		// relied only on the cancel-any/cancel-own RBAC matrix above and never
+		// consulted allowed_accounts. Runs after RBAC succeeds, alongside the
+		// CSRF check below, so a caller who fails RBAC and falls through to
+		// the contact_email token path is unaffected. Unlike a
+		// permission-denied result, a scope miss has no legitimate fallback to
+		// the token branch, so it is a hard failure.
+		if scopeErr := h.requireExecutionAccess(ctx, session, execution.ExecutionID); scopeErr != nil {
+			return nil, true, scopeErr
+		}
 		// These endpoints are AuthPublic so the outer middleware skips CSRF.
 		// Enforce it here for the session-authed revoke sub-path, consistent
 		// with cancelPurchaseViaSession and approvePurchaseViaSession which both
@@ -1592,6 +1621,23 @@ func (h *Handler) revokeViaSession(ctx context.Context, execution *config.Purcha
 		"status":  "revocation_requested",
 		"message": "Revocation request recorded. Contact AWS Support to complete the cancellation within the allowed window.",
 	}, nil
+}
+
+// authorizeCancelSession combines the cancel-any/cancel-own RBAC matrix with
+// the account-scope check (issue #92) for cancelPurchaseViaSession. Extracted
+// to keep that function under the cyclomatic-complexity ceiling. Runs RBAC
+// first so a caller who fails it and falls through to the contact_email
+// token path (in cancelPurchase's dispatcher) is unaffected by the scope
+// check. Not used by the OTHER two callers of authorizeSessionCancel
+// (cancelPurchase's dispatcher, tryRevokeViaSession) which call the
+// unwrapped RBAC-only check directly, since a permission-denied result there
+// must fall through to the token path rather than the scope check ever
+// running.
+func (h *Handler) authorizeCancelSession(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	if err := h.authorizeSessionCancel(ctx, session, execution); err != nil {
+		return err
+	}
+	return h.requireExecutionAccess(ctx, session, execution.ExecutionID)
 }
 
 // authorizeSessionCancel returns nil when the session is permitted to cancel
@@ -1807,16 +1853,7 @@ func (h *Handler) loadAndValidateRetryRequest(ctx context.Context, req *events.L
 		return nil, nil, err
 	}
 
-	if failedExec.Status != "failed" {
-		return nil, nil, NewClientError(409, fmt.Sprintf("execution %s cannot be retried (status=%s)", failedExec.ExecutionID, failedExec.Status))
-	}
-
-	// Authorize BEFORE the already-retried guard so an unauthorized
-	// caller can't enumerate descendant execution IDs by probing
-	// failed-row UUIDs (CR #168 review). The status check above is
-	// allowed pre-RBAC because non-admins can already see the row's
-	// status via the History endpoint they're entitled to read.
-	if err := h.authorizeSessionRetry(ctx, session, failedExec); err != nil {
+	if err := h.authorizeRetrySession(ctx, session, failedExec); err != nil {
 		return nil, nil, err
 	}
 
@@ -1836,6 +1873,31 @@ func (h *Handler) loadAndValidateRetryRequest(ctx context.Context, req *events.L
 	}
 
 	return failedExec, session, nil
+}
+
+// authorizeRetrySession runs the account-scope gate (issue #92), the status
+// guard, and the retry-any/retry-own RBAC matrix, in that order. Extracted
+// from loadAndValidateRetryRequest to keep that function under the
+// cyclomatic-complexity ceiling; the order is preserved from the original
+// inline sequence, so the security boundary is unchanged.
+func (h *Handler) authorizeRetrySession(ctx context.Context, session *Session, failedExec *config.PurchaseExecution) error {
+	// Account-scope gate (issue #92): retry relied only on the retry-any/
+	// retry-own RBAC matrix below and never consulted allowed_accounts. Runs
+	// before the status check so an out-of-scope caller learns nothing about
+	// the execution, matching the 404 a scoped-out session already gets from
+	// the History endpoint for the same row.
+	if err := h.requireExecutionAccess(ctx, session, failedExec.ExecutionID); err != nil {
+		return err
+	}
+	if failedExec.Status != "failed" {
+		return NewClientError(409, fmt.Sprintf("execution %s cannot be retried (status=%s)", failedExec.ExecutionID, failedExec.Status))
+	}
+	// Authorize BEFORE the already-retried guard so an unauthorized
+	// caller can't enumerate descendant execution IDs by probing
+	// failed-row UUIDs (CR #168 review). The status check above is
+	// allowed pre-RBAC because non-admins can already see the row's
+	// status via the History endpoint they're entitled to read.
+	return h.authorizeSessionRetry(ctx, session, failedExec)
 }
 
 // checkRetryEligibilityGates runs the provider re-drive-safety (issue
