@@ -376,6 +376,99 @@ func TestHandler_approvePurchase_SessionExecuteFailureSurfacesAs409(t *testing.T
 	assert.Contains(t, ce.Error(), "could not be approved")
 }
 
+// TestHandler_approvePurchase_SessionApproveAny_PermissionConstraintsDenied
+// is the SEC-01 (#1141) follow-up regression test for issue #60: a session
+// whose approve-any:purchases verb is granted (the bare-verb gate passes,
+// exactly as it does for a permission that carries Constraints) but whose
+// per-permission Constraints reject the request must receive a 403 BEFORE
+// ApproveAndExecute fires the AWS purchase. Pre-fix, authorizeSessionApprove
+// never consulted the approve-any permission's own Constraints, so a
+// $50,000 execution created by someone else was approved (and executed) by
+// a session whose approve-any was configured with a $1,000 cap.
+func TestHandler_approvePurchase_SessionApproveAny_PermissionConstraintsDenied(t *testing.T) {
+	ctx := context.Background()
+	execID := "12345678-1234-1234-1234-123456789abc"
+	otherCreator := "creator-user-uuid"
+
+	mockConfig := new(MockConfigStore)
+	t.Cleanup(func() { mockConfig.AssertExpectations(t) })
+	exec := &config.PurchaseExecution{
+		ExecutionID:     execID,
+		ApprovalToken:   "valid-token",
+		Status:          "pending",
+		CreatedByUserID: &otherCreator,
+		Recommendations: []config.RecommendationRecord{
+			{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 50000},
+		},
+	}
+	mockConfig.On("GetExecutionByID", ctx, execID).Return(exec, nil)
+
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	userSession := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd", Email: "capped@example.com"}
+	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(userSession, nil)
+	// The bare verb/resource gate passes - this is exactly what happens for
+	// a permission that carries Constraints, because HasPermissionAPI checks
+	// with nil request-side constraints.
+	mockAuth.On("HasPermissionAPI", ctx, userSession.UserID, "approve-any", "purchases").Return(true, nil)
+	mockAuth.On("HasPermissionForConstraintsAPI", ctx, userSession.UserID, "approve-any", "purchases",
+		purchaseConstraintSets(exec.Recommendations)).Return(false, nil)
+	// authorizeSessionApprove's constraint denial is a plain 403, which
+	// isPermissionDenied treats the same as a bare-verb 403 and falls
+	// through to approvePurchaseViaSession (token is empty in this test, so
+	// that is the terminal branch either way). That path enforces CSRF
+	// before re-running the same RBAC gate.
+	mockAuth.On("ValidateCSRFToken", ctx, "sess-tok", "").Return(nil)
+
+	mockPurchase := new(MockPurchaseManager)
+	t.Cleanup(func() { mockPurchase.AssertExpectations(t) })
+
+	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"authorization": "Bearer sess-tok"}}
+	_, err := handler.approvePurchase(ctx, req, execID, "")
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a clientError, got: %v", err)
+	assert.Equal(t, 403, ce.code)
+	assert.Contains(t, ce.Error(), "constraints")
+	// The purchase must never fire.
+	mockPurchase.AssertNotCalled(t, "ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockPurchase.AssertNotCalled(t, "ApproveExecution", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestHandler_authorizeSessionApprove_ApproveOwn_ConstraintsDenied mirrors
+// the approve-any case above for approve-own:purchases (issue #60): the
+// creator-ownership check passes, but the approve-own permission's own
+// Constraints reject the request.
+func TestHandler_authorizeSessionApprove_ApproveOwn_ConstraintsDenied(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	userID := "cccccccc-cccc-cccc-cccc-cccccccccccc"
+	session := &Session{UserID: userID}
+	execution := &config.PurchaseExecution{
+		ExecutionID:     "exec-1",
+		CreatedByUserID: &userID,
+		Recommendations: []config.RecommendationRecord{
+			{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 50000},
+		},
+	}
+
+	mockAuth.On("HasPermissionAPI", ctx, userID, "approve-any", "purchases").Return(false, nil)
+	mockAuth.On("HasPermissionAPI", ctx, userID, "approve-own", "purchases").Return(true, nil)
+	mockAuth.On("HasPermissionForConstraintsAPI", ctx, userID, "approve-own", "purchases",
+		purchaseConstraintSets(execution.Recommendations)).Return(false, nil)
+
+	handler := &Handler{auth: mockAuth}
+	err := handler.authorizeSessionApprove(ctx, session, execution)
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a clientError, got: %v", err)
+	assert.Equal(t, 403, ce.code)
+	assert.Contains(t, ce.Error(), "constraints")
+}
+
 // --- F3 regression: global-config read error must fail closed (not execute) ---
 
 // TestHandler_approveViaToken_GlobalConfigError_FailsClosed pins the F3 fix:
@@ -1311,6 +1404,13 @@ func TestHandler_runPlannedPurchase(t *testing.T) {
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdminPurchaser()
+	// runPlannedPurchase re-hydrates the execution to enforce the session's
+	// execute:purchases Constraints against its recommendations (issue #60).
+	mockStore.On("GetExecutionByID", ctx, "11111111-1111-1111-1111-111111111111").Return(&config.PurchaseExecution{
+		ExecutionID:     "11111111-1111-1111-1111-111111111111",
+		Status:          "pending",
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 100}},
+	}, nil)
 	// runPlannedPurchase ("Run now") must delegate to the same 4-eyes-gated,
 	// CAS-guarded funnel ApproveAndExecute uses (issue #218) rather than a
 	// bare TransitionExecutionStatus flip to "running" that no executor
@@ -4325,7 +4425,9 @@ func TestHandler_authorizeSessionExecuteDirect_ExecuteOwn_NonOwner(t *testing.T)
 	mockAuth.On("HasPermissionAPI", ctx, sessionUserID, "execute-own", "purchases").Return(true, nil)
 
 	handler := &Handler{auth: mockAuth}
-	err := handler.authorizeSessionExecuteDirect(ctx, session, differentCreatorID)
+	// The ownership mismatch is rejected before any constraint set is built,
+	// so recs is nil here (no HasPermissionForConstraintsAPI mock needed).
+	err := handler.authorizeSessionExecuteDirect(ctx, session, differentCreatorID, nil)
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a clientError")
@@ -4336,7 +4438,8 @@ func TestHandler_authorizeSessionExecuteDirect_ExecuteOwn_NonOwner(t *testing.T)
 // TestHandler_authorizeSessionExecuteDirect_AdminGroupViaExecuteAny verifies
 // that an Administrators-group user whose {admin,*} wildcard resolves to
 // execute-any is PERMITTED by the HasPermissionAPI path (not a dead
-// session.Role shortcut that was removed in issue #940).
+// session.Role shortcut that was removed in issue #940), and that the
+// execute-any permission's own Constraints are then consulted (issue #60).
 func TestHandler_authorizeSessionExecuteDirect_AdminGroupViaExecuteAny(t *testing.T) {
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
@@ -4345,13 +4448,76 @@ func TestHandler_authorizeSessionExecuteDirect_AdminGroupViaExecuteAny(t *testin
 	adminUserID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	creatorID := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	session := &Session{UserID: adminUserID}
+	recs := []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 500}}
 
 	// Administrators-group wildcard {admin,*} covers execute-any.
 	mockAuth.On("HasPermissionAPI", ctx, adminUserID, "execute-any", "purchases").Return(true, nil)
+	mockAuth.On("HasPermissionForConstraintsAPI", ctx, adminUserID, "execute-any", "purchases",
+		purchaseConstraintSets(recs)).Return(true, nil)
 
 	handler := &Handler{auth: mockAuth}
-	err := handler.authorizeSessionExecuteDirect(ctx, session, creatorID)
+	err := handler.authorizeSessionExecuteDirect(ctx, session, creatorID, recs)
 	require.NoError(t, err)
+}
+
+// TestHandler_authorizeSessionExecuteDirect_ExecuteAny_ConstraintsDenied is
+// the SEC-01 (#1141) follow-up regression test for issue #60: a session
+// whose execute-any:purchases verb is granted (the bare-verb gate passes)
+// but whose per-permission Constraints reject the request must receive a
+// 403. Pre-fix, authorizeSessionExecuteDirect never consulted the
+// execute-any permission's own Constraints, so this request was allowed
+// through to directExecutePurchase.
+func TestHandler_authorizeSessionExecuteDirect_ExecuteAny_ConstraintsDenied(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	userID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	creatorID := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	session := &Session{UserID: userID}
+	recs := []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 50000}}
+
+	mockAuth.On("HasPermissionAPI", ctx, userID, "execute-any", "purchases").Return(true, nil)
+	mockAuth.On("HasPermissionForConstraintsAPI", ctx, userID, "execute-any", "purchases",
+		purchaseConstraintSets(recs)).Return(false, nil)
+
+	handler := &Handler{auth: mockAuth}
+	err := handler.authorizeSessionExecuteDirect(ctx, session, creatorID, recs)
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a clientError, got: %v", err)
+	assert.Equal(t, 403, ce.code)
+	assert.Contains(t, ce.Error(), "constraints")
+}
+
+// TestHandler_authorizeSessionExecuteDirect_ExecuteOwn_ConstraintsDenied
+// mirrors the ExecuteAny case above for execute-own:purchases (issue #60):
+// the creator-ownership check passes, but the execute-own permission's own
+// Constraints reject the request.
+func TestHandler_authorizeSessionExecuteDirect_ExecuteOwn_ConstraintsDenied(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	userID := "cccccccc-cccc-cccc-cccc-cccccccccccc"
+	session := &Session{UserID: userID}
+	recs := []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 50000}}
+
+	mockAuth.On("HasPermissionAPI", ctx, userID, "execute-any", "purchases").Return(false, nil)
+	mockAuth.On("HasPermissionAPI", ctx, userID, "execute-own", "purchases").Return(true, nil)
+	mockAuth.On("HasPermissionForConstraintsAPI", ctx, userID, "execute-own", "purchases",
+		purchaseConstraintSets(recs)).Return(false, nil)
+
+	handler := &Handler{auth: mockAuth}
+	// creatorID == userID: the ownership gate passes, so the constraint
+	// check is the only thing standing between this session and a direct
+	// execute past its cap.
+	err := handler.authorizeSessionExecuteDirect(ctx, session, userID, recs)
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a clientError, got: %v", err)
+	assert.Equal(t, 403, ce.code)
+	assert.Contains(t, ce.Error(), "constraints")
 }
 
 // TestHandler_authorizeSessionExecuteDirect_NoGrant verifies that a session
@@ -4369,7 +4535,7 @@ func TestHandler_authorizeSessionExecuteDirect_NoGrant(t *testing.T) {
 	mockAuth.On("HasPermissionAPI", ctx, userID, "execute-own", "purchases").Return(false, nil)
 
 	handler := &Handler{auth: mockAuth}
-	err := handler.authorizeSessionExecuteDirect(ctx, session, creatorID)
+	err := handler.authorizeSessionExecuteDirect(ctx, session, creatorID, nil)
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a clientError")
@@ -4383,7 +4549,7 @@ func TestHandler_authorizeSessionExecuteDirect_NilAuth(t *testing.T) {
 	session := &Session{UserID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"}
 
 	handler := &Handler{auth: nil}
-	err := handler.authorizeSessionExecuteDirect(ctx, session, "")
+	err := handler.authorizeSessionExecuteDirect(ctx, session, "", nil)
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a clientError")
@@ -5831,6 +5997,13 @@ func TestHandler_approvePurchaseViaSession_FourEyesOn_DifferentApproverSucceeds(
 		ApprovalToken:   "valid-token",
 		Status:          "pending",
 		CreatedByUserID: &creatorID,
+		// authorizeSessionApprove builds constraint sets from Recommendations
+		// (issue #60); an empty set is a caller bug the constraint check
+		// fails closed on, so this fixture needs at least one recommendation
+		// like every other execution a real submit would have produced.
+		Recommendations: []config.RecommendationRecord{
+			{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 100},
+		},
 	}
 	approved := &config.PurchaseExecution{ExecutionID: execID, PlanID: planID, Status: "approved", StepNumber: 1}
 	mockConfig.On("GetExecutionByID", ctx, execID).Return(exec, nil)

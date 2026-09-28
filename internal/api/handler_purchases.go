@@ -324,6 +324,30 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 		return nil, err
 	}
 
+	// Re-hydrate the persisted recommendations and enforce the session's
+	// execute:purchases Constraints against them before RunPlannedPurchaseNow
+	// fires the purchase (issue #60). requirePermission above only checked
+	// the bare execute:purchases verb: a session running a plan via
+	// update-any:purchases (which authorizeExecutionManagement lets bypass
+	// the creator check) would otherwise bypass any MaxPurchaseAmount/
+	// Providers/Services/Regions/AccountIDs cap configured on their own
+	// execute:purchases permission, exactly the fail-open class the web
+	// execute path (validateExecutePurchaseRequest) already closed for
+	// SEC-01 (#1141). Routed through the shared enforcePurchaseConstraints
+	// helper so a planned execution whose recs sum to $0 is refused by
+	// requireNonZeroCommitment rather than reading as an uncapped
+	// MaxPurchaseAmount (issue #60 review follow-up).
+	execution, fetchErr := h.config.GetExecutionByID(ctx, executionID)
+	if errors.Is(fetchErr, config.ErrNotFound) {
+		return nil, errNotFound
+	}
+	if fetchErr != nil {
+		return nil, fmt.Errorf("failed to get execution: %w", fetchErr)
+	}
+	if constraintErr := h.enforcePurchaseConstraints(ctx, session, "execute", execution.Recommendations); constraintErr != nil {
+		return nil, constraintErr
+	}
+
 	if err := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session)); err != nil {
 		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
 	}
@@ -745,6 +769,16 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 // approve the given execution under the approve-any / approve-own RBAC
 // rules added in issue #286. Returns a 403 ClientError otherwise.
 // Mirror of authorizeSessionCancel.
+//
+// Also enforces the approve-any/approve-own permission's own per-permission
+// Constraints against execution.Recommendations (issue #60): approving here
+// hands off to purchase.Manager.ApproveAndExecute, which fires the AWS
+// purchase synchronously, so this is as much a money-spending path as
+// execute-any/execute-own and must be capped the same way. Without this, a
+// session whose approve-any is constrained to e.g. MaxPurchaseAmount: $1,000
+// could approve (and thereby execute) an arbitrarily large pending execution
+// created by someone else, even though the identically-capped execute-any
+// permission already blocks a matching direct-execute.
 func (h *Handler) authorizeSessionApprove(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
 	// The stateless admin API key has full access and no user row to resolve
 	// permissions from. Administrators-group users fall through and pass via
@@ -762,7 +796,7 @@ func (h *Handler) authorizeSessionApprove(ctx context.Context, session *Session,
 		return fmt.Errorf("permission check failed: %w", err)
 	}
 	if hasAny {
-		return nil
+		return h.requirePermissionConstraints(ctx, session, auth.ActionApproveAny, auth.ResourcePurchases, purchaseConstraintSets(execution.Recommendations))
 	}
 
 	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionApproveOwn, auth.ResourcePurchases)
@@ -776,7 +810,7 @@ func (h *Handler) authorizeSessionApprove(ctx context.Context, session *Session,
 	if execution.CreatedByUserID == nil || *execution.CreatedByUserID != session.UserID {
 		return NewClientError(403, "permission denied: cannot approve another user's pending purchase")
 	}
-	return nil
+	return h.requirePermissionConstraints(ctx, session, auth.ActionApproveOwn, auth.ResourcePurchases, purchaseConstraintSets(execution.Recommendations))
 }
 
 // approveWithDelay is the Gmail-style pre-fire delay branch (issue #291 wave-2).
@@ -984,16 +1018,25 @@ func (h *Handler) requireDifferentApprover(ctx context.Context, session *Session
 //
 // creatorID is the creator of the execution being submitted (resolved via
 // resolveCreatorUserID before this call; "" on non-human or legacy rows).
+// recs is the execution's (store-priced) recommendation set, used to build
+// the same per-permission Constraints sets validateExecutePurchaseRequest
+// already enforces against the base execute:purchases permission (issue
+// #60): execute-any/execute-own are DISTINCT permissions from execute, so a
+// session capped tighter on execute-any than on execute could otherwise
+// direct-execute past that tighter cap by holding both verbs.
 //
 // Gate logic (mirrors authorizeSessionApprove / authorizeSessionCancel):
 //   - stateless admin API key: always permitted (apiKeyAdminUserID sentinel).
-//   - execute-any: permitted regardless of creator. Administrators-group users
-//     pass here because {admin, *} matches ActionExecuteAny.
-//   - execute-own: permitted only when creatorID == session.UserID and both
-//     are non-empty (prevents an empty-string collision from granting access).
-//   - no matching grant: 403 fail-closed; nil auth component is a 500 as
-//     per feedback_fail_closed_middleware.md.
-func (h *Handler) authorizeSessionExecuteDirect(ctx context.Context, session *Session, creatorID string) error {
+//   - execute-any: permitted when the execute-any permission's own
+//     Constraints also allow this batch, regardless of creator.
+//     Administrators-group users pass the verb check here because
+//     {admin, *} matches ActionExecuteAny.
+//   - execute-own: permitted only when creatorID == session.UserID (both
+//     non-empty) AND the execute-own permission's own Constraints allow
+//     this batch.
+//   - no matching grant, or a constraint denial: 403 fail-closed; nil auth
+//     component is a 500 as per feedback_fail_closed_middleware.md.
+func (h *Handler) authorizeSessionExecuteDirect(ctx context.Context, session *Session, creatorID string, recs []config.RecommendationRecord) error {
 	// Stateless admin API key: full access, no user row. Administrators-group
 	// users pass via the execute-any HasPermissionAPI check below, since
 	// {admin, *} matches any requested permission.
@@ -1009,7 +1052,7 @@ func (h *Handler) authorizeSessionExecuteDirect(ctx context.Context, session *Se
 		return fmt.Errorf("permission check failed: %w", err)
 	}
 	if hasAny {
-		return nil
+		return h.requirePermissionConstraints(ctx, session, auth.ActionExecuteAny, auth.ResourcePurchases, purchaseConstraintSets(recs))
 	}
 
 	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionExecuteOwn, auth.ResourcePurchases)
@@ -1025,7 +1068,7 @@ func (h *Handler) authorizeSessionExecuteDirect(ctx context.Context, session *Se
 	if session.UserID == "" || creatorID == "" || creatorID != session.UserID {
 		return NewClientError(403, "permission denied: execute-own requires you to be the creator of this purchase")
 	}
-	return nil
+	return h.requirePermissionConstraints(ctx, session, auth.ActionExecuteOwn, auth.ResourcePurchases, purchaseConstraintSets(recs))
 }
 
 func (h *Handler) cancelPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, execID, token string) (any, error) {
@@ -2216,7 +2259,7 @@ func (h *Handler) enforcePurchaseConstraints(ctx context.Context, session *Sessi
 	if err := requireNonZeroCommitment(constraintSets); err != nil {
 		return err
 	}
-	return h.requirePermissionConstraints(ctx, session, "purchases", constraintSets)
+	return h.requirePermissionConstraints(ctx, session, "execute", "purchases", constraintSets)
 }
 
 // purchaseConstraintSets builds one auth.PermissionConstraints per
@@ -2680,7 +2723,7 @@ func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctio
 	// prevents a client that sets execute_mode="direct" but only holds the
 	// base execute:purchases verb from silently degrading to the email flow.
 	if execReq.ExecuteMode == "direct" {
-		if err := h.authorizeSessionExecuteDirect(ctx, session, creatorID); err != nil {
+		if err := h.authorizeSessionExecuteDirect(ctx, session, creatorID, execReq.Recommendations); err != nil {
 			return nil, err
 		}
 		return h.directExecutePurchase(ctx, req, execution, session, paymentAdjustments)

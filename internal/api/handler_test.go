@@ -1254,6 +1254,13 @@ func TestHandler_HandleRequest_RunPlannedPurchase(t *testing.T) {
 	mockAuth.On("ValidateCSRFToken", ctx, mock.Anything, mock.Anything).Return(nil)
 
 	mockPurchase := new(MockPurchaseManager)
+	// runPlannedPurchase re-hydrates the execution to enforce the session's
+	// execute:purchases Constraints against its recommendations (issue #60).
+	mockStore.On("GetExecutionByID", mock.Anything, "11111111-1111-1111-1111-111111111111").Return(&config.PurchaseExecution{
+		ExecutionID:     "11111111-1111-1111-1111-111111111111",
+		Status:          "pending",
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 100}},
+	}, nil)
 	// This request authenticates via the admin API key (X-API-Key), which
 	// resolves to the stateless admin-api-key principal rather than the
 	// bearer-token session, so the actor identity fourEyesActorIdentity

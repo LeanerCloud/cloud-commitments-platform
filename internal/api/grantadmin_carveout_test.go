@@ -332,7 +332,7 @@ func TestRequirePermissionConstraints_ConstrainedGrantIsBoundedAtHandler(t *test
 	session := &Session{UserID: "u1"}
 
 	require.NoError(t,
-		h.requirePermissionConstraints(ctx, session, auth.ResourceRIExchange, []auth.PermissionConstraints{{
+		h.requirePermissionConstraints(ctx, session, auth.ActionExecute, auth.ResourceRIExchange, []auth.PermissionConstraints{{
 			Providers: []string{"aws"}, MaxPurchaseAmount: 500,
 		}}),
 		"a request inside every dimension must pass the gate")
@@ -345,7 +345,7 @@ func TestRequirePermissionConstraints_ConstrainedGrantIsBoundedAtHandler(t *test
 		{"over the spend cap", auth.PermissionConstraints{Providers: []string{"aws"}, MaxPurchaseAmount: 5000}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := h.requirePermissionConstraints(ctx, session, auth.ResourceRIExchange,
+			err := h.requirePermissionConstraints(ctx, session, auth.ActionExecute, auth.ResourceRIExchange,
 				[]auth.PermissionConstraints{tc.request})
 			require.Error(t, err)
 			ce, ok := IsClientError(err)
