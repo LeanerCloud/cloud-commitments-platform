@@ -61,8 +61,10 @@ type usageBookingHarness struct {
 }
 
 // newUsageBookingHarness builds the harness. groupPermissions are granted to
-// the key owner's group; the API key itself carries no explicit permissions,
-// so it inherits the owner's set.
+// both the key owner's group and the key itself: an unscoped key now
+// authorizes nothing (issue #61's fail-closed fix), so the harness scopes the
+// key explicitly to the same permissions to exercise the booking path rather
+// than the now-denied inheritance path.
 func newUsageBookingHarness(t *testing.T, groupPermissions []auth.Permission) *usageBookingHarness {
 	t.Helper()
 
@@ -74,11 +76,12 @@ func newUsageBookingHarness(t *testing.T, groupPermissions []auth.Permission) *u
 
 	keyHash := usageBookingKeyHash()
 	key := &auth.UserAPIKey{
-		ID:       "key-1",
-		UserID:   "user-1",
-		Name:     "usage booking harness",
-		KeyHash:  keyHash,
-		IsActive: true,
+		ID:          "key-1",
+		UserID:      "user-1",
+		Name:        "usage booking harness",
+		KeyHash:     keyHash,
+		IsActive:    true,
+		Permissions: groupPermissions,
 	}
 	user := &auth.User{
 		ID:       "user-1",

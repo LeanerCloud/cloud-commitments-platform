@@ -263,16 +263,74 @@ func TestService_CreateAPIKey(t *testing.T) {
 			Email:        "test@example.com",
 			Active:       true,
 			PasswordHash: testAPIKeyPasswordHash,
+			GroupIDs:     []string{DefaultAdminGroupID},
+		}
+		permissions := []Permission{
+			{Action: ActionView, Resource: ResourceRecommendations},
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
+		mockStore.On("GetGroup", ctx, DefaultAdminGroupID).Return(&Group{
+			ID:          DefaultAdminGroupID,
+			Permissions: []Permission{{Action: ActionAdmin, Resource: ResourceAll}},
+		}, nil)
 		mockStore.On("CreateAPIKey", ctx, mock.AnythingOfType("*auth.UserAPIKey")).Return(assert.AnError)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, &validExpiry)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, permissions, &validExpiry)
 
 		assert.Error(t, err)
 		assert.Empty(t, apiKey)
 		assert.Nil(t, keyInfo)
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("fail when permissions is empty", func(t *testing.T) {
+		// Regression test for issue #61: an unscoped key used to be accepted
+		// and would silently inherit the owner's full permission set at
+		// request time. CreateAPIKey must now reject it outright so scoping
+		// is a deliberate choice, not a default.
+		mockStore := new(MockStore)
+		service := &Service{store: mockStore}
+
+		user := &User{
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+		}
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
+
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, &validExpiry)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrEmptyAPIKeyPermissions)
+		assert.Empty(t, apiKey)
+		assert.Nil(t, keyInfo)
+		mockStore.AssertNotCalled(t, "CreateAPIKey", mock.Anything, mock.Anything)
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("fail when permissions is nil", func(t *testing.T) {
+		mockStore := new(MockStore)
+		service := &Service{store: mockStore}
+
+		user := &User{
+			ID:           "user-123",
+			Email:        "test@example.com",
+			Active:       true,
+			PasswordHash: testAPIKeyPasswordHash,
+		}
+
+		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
+
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, nil, &validExpiry)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrEmptyAPIKeyPermissions)
+		assert.Empty(t, apiKey)
+		assert.Nil(t, keyInfo)
+		mockStore.AssertNotCalled(t, "CreateAPIKey", mock.Anything, mock.Anything)
 		mockStore.AssertExpectations(t)
 	})
 }
@@ -1006,7 +1064,10 @@ func TestService_ComputeEffectivePermissions(t *testing.T) {
 		assert.Equal(t, scoped, permissions)
 	})
 
-	t.Run("admin with unscoped key returns full group permissions", func(t *testing.T) {
+	t.Run("admin with unscoped key returns no permissions (fail closed)", func(t *testing.T) {
+		// Regression test for issue #61: an unscoped key used to inherit the
+		// owner's full permission set, so an admin's unscoped key was
+		// silently admin-capable. It must now authorize nothing.
 		mockStore := new(MockStore)
 		service := &Service{store: mockStore}
 		t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1019,7 +1080,7 @@ func TestService_ComputeEffectivePermissions(t *testing.T) {
 
 		permissions, err := service.ComputeEffectivePermissions(ctx, apiKey, user)
 		require.NoError(t, err)
-		assert.Equal(t, []Permission{{Action: ActionAdmin, Resource: ResourceAll}}, permissions)
+		assert.Empty(t, permissions)
 	})
 
 	t.Run("zero-group user with unscoped key returns no permissions (fail closed)", func(t *testing.T) {
@@ -1166,13 +1227,13 @@ func TestService_HasAPIKeyPermissionAPI(t *testing.T) {
 		assert.False(t, has, "key must not grant permissions the owning user does not hold")
 	})
 
-	t.Run("unscoped key inherits the owner's group permissions", func(t *testing.T) {
+	t.Run("regression #61: unscoped key is denied (fail closed), not inherited from the owner", func(t *testing.T) {
 		service := setup(t, nil)
 
 		userID, _, has, err := service.HasAPIKeyPermissionAPI(ctx, rawKey, ActionCreate, ResourcePlans)
 		require.NoError(t, err)
 		assert.Equal(t, "user-123", userID)
-		assert.True(t, has)
+		assert.False(t, has, "unscoped key must not inherit the owner's group permissions")
 	})
 
 	t.Run("invalid key fails closed with an error", func(t *testing.T) {

@@ -93,12 +93,18 @@ type APIKeyInfo struct {
 	// has never recorded a request or because its last window has closed.
 	// Exposed so consumers know exactly which period RequestCountWindow
 	// covers instead of assuming a true trailing "last 24h".
-	RequestCountWindowStart *time.Time   `json:"request_count_window_start,omitempty"`
-	ID                      string       `json:"id"`
-	Name                    string       `json:"name"`
-	KeyPrefix               string       `json:"key_prefix"`
-	Permissions             []Permission `json:"permissions,omitempty"`
-	IsActive                bool         `json:"is_active"`
+	RequestCountWindowStart *time.Time `json:"request_count_window_start,omitempty"`
+	ID                      string     `json:"id"`
+	Name                    string     `json:"name"`
+	KeyPrefix               string     `json:"key_prefix"`
+	// Permissions is never omitempty: CreateAPIKey now rejects zero-length
+	// permissions outright (issue #61), so an empty array in a listing means
+	// a legacy key minted before that fix, distinguishable from a key that
+	// simply has no info populated. Hiding it behind omitempty made a
+	// zero-scope key indistinguishable from a fully-scoped one in
+	// listAPIKeys, which was itself part of the audit gap the issue raised.
+	Permissions []Permission `json:"permissions"`
+	IsActive    bool         `json:"is_active"`
 	// Usage counters (issue #340/#344 deferred sub-task). RequestCountWindow
 	// is a fixed/tumbling window count, not a true rolling 24h total, and is
 	// zero once that window has closed -- see effectiveWindowUsage,
@@ -339,8 +345,11 @@ func (s *Service) ValidateUserAPIKeyAPI(ctx context.Context, apiKey string) (*Us
 // action/resource against the key's effective permissions: the intersection
 // of the key's scoped permissions with the owning user's group-derived
 // permissions (ComputeEffectivePermissions). A key created without explicit
-// permissions inherits the owner's full permission set. Returns the owning
-// user's ID, the key's database ID, and whether the permission is held.
+// permissions grants nothing (deny-by-default, issue #61); CreateAPIKey now
+// rejects new unscoped keys outright, but a legacy zero-scope key minted
+// before that fix still authenticates its owner while authorizing no
+// action. Returns the owning user's ID, the key's database ID, and whether
+// the permission is held.
 // The key ID is threaded to callers so they can pass it to
 // HasAPIKeyPermissionForConstraintsAPI without a redundant DB lookup.
 //

@@ -2290,7 +2290,7 @@ components:
     # -- API Keys -----------------------------------------------------------
     CreateAPIKeyRequest:
       type: object
-      required: [name, password, expires_at]
+      required: [name, password, permissions, expires_at]
       properties:
         name:
           type: string
@@ -2301,6 +2301,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Permission'
+          minItems: 1
+          description: |
+            At least one permission is required. An unscoped key would
+            authenticate its owner but authorize nothing (issue #61), so the
+            API rejects an empty or missing list with 400 rather than
+            accepting a key that can never be used.
         expires_at:
           type: string
           format: date-time

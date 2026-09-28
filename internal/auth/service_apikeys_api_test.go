@@ -162,6 +162,10 @@ func TestService_CreateAPIKeyAPI_CrossPackageType(t *testing.T) {
 		Name:      "My API Key",
 		Password:  testAPIKeyPassword,
 		ExpiresAt: &expiresAt,
+		Permissions: []struct {
+			Action   string `json:"action"`
+			Resource string `json:"resource"`
+		}{{Action: ActionView, Resource: ResourceRecommendations}},
 	}
 
 	result, err := service.CreateAPIKeyAPI(ctx, "user-123", crossPkgReq)

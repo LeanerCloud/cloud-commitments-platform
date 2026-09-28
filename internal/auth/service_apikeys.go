@@ -45,6 +45,27 @@ const (
 	MaxAPIKeyLifetime = 365 * 24 * time.Hour
 )
 
+// loadActiveUserForAPIKey resolves userID and ensures the account exists and
+// is active. Pulled out of CreateAPIKey to keep its cyclomatic complexity
+// under the project's gocyclo gate as new checks (e.g. issue #61's empty-
+// permissions rejection, issue #102's password/expiry validation) are added.
+func (s *Service) loadActiveUserForAPIKey(ctx context.Context, userID string) (*User, error) {
+	user, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if !user.Active {
+		return nil, fmt.Errorf("user account is not active")
+	}
+	return user, nil
+}
+
 // CreateAPIKey creates a new user API key with scoped permissions. The
 // caller's current password must be supplied and is re-verified against the
 // stored hash before minting a key: a stolen session token alone must not be
@@ -52,22 +73,12 @@ const (
 // same defense-in-depth MFASetup/MFADisable already apply (issue #102).
 // Returns the full API key (shown only once), key info, and error.
 func (s *Service) CreateAPIKey(ctx context.Context, userID, name, password string, permissions []Permission, expiresAt *time.Time) (string, *UserAPIKey, error) {
-	// Validate user exists and is active
-	user, err := s.store.GetUserByID(ctx, userID)
+	user, err := s.loadActiveUserForAPIKey(ctx, userID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", nil, fmt.Errorf("user not found")
-		}
-		return "", nil, fmt.Errorf("failed to get user: %w", err)
-	}
-	if user == nil {
-		return "", nil, fmt.Errorf("user not found")
-	}
-	if !user.Active {
-		return "", nil, fmt.Errorf("user account is not active")
+		return "", nil, err
 	}
 
-	if err := s.validateCreateAPIKeyRequest(user, password, name, expiresAt); err != nil {
+	if err := s.validateCreateAPIKeyRequest(user, password, name, permissions, expiresAt); err != nil {
 		return "", nil, err
 	}
 
@@ -125,15 +136,24 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, name, password strin
 }
 
 // validateCreateAPIKeyRequest checks the caller-supplied fields of a
-// CreateAPIKey call: password re-verification, key name, and the mandatory,
-// capped expiry (issue #102). Extracted out of CreateAPIKey to keep its
-// cyclomatic complexity under the repo's gocyclo gate.
-func (s *Service) validateCreateAPIKeyRequest(user *User, password, name string, expiresAt *time.Time) error {
+// CreateAPIKey call: password re-verification, key name, the required
+// permissions scope, and the mandatory, capped expiry (issues #61, #102).
+// Extracted out of CreateAPIKey to keep its cyclomatic complexity under the
+// repo's gocyclo gate.
+func (s *Service) validateCreateAPIKeyRequest(user *User, password, name string, permissions []Permission, expiresAt *time.Time) error {
 	if !s.verifyPassword(password, user.PasswordHash) {
 		return fmt.Errorf("%w", ErrAPIKeyInvalidPassword)
 	}
 	if name == "" {
 		return fmt.Errorf("API key name is required")
+	}
+	// Reject unscoped keys outright: an unscoped key used to inherit the
+	// owner's full permission set (computeEffectivePermissionsFromAuthCtx),
+	// which made "leave scope blank" the most permissive option in the UI.
+	// Requiring at least one explicit permission forces scoping to be a
+	// deliberate choice (issue #61).
+	if len(permissions) == 0 {
+		return ErrEmptyAPIKeyPermissions
 	}
 	// ExpiresAt is mandatory and capped: a nil value used to mean "never
 	// expires", which let a single leaked key outlive any credential rotation.
@@ -518,13 +538,17 @@ func (s *Service) RecordUsage(ctx context.Context, keyID string, delta int64) er
 
 // computeEffectivePermissionsFromAuthCtx returns the subset of key permissions
 // that the owner's authCtx also grants at the action/resource level, keeping
-// the key's own constraint limits. If the key has no specific permissions the
-// owner's full permission set is returned (key inherits owner). The result
-// carries the key's constraints, not the owner's; callers that need both
-// sources must check ownerAuthCtx.Permissions independently.
+// the key's own constraint limits. If the key has no specific permissions it
+// authorizes nothing: an unscoped key authenticates the owner but grants no
+// permissions (deny-by-default, issue #61), rather than inheriting the
+// owner's full permission set. That inheritance was a privilege-escalation
+// trap -- a long-lived unscoped key silently became admin-capable the moment
+// its owner joined the Administrators group. The result carries the key's
+// constraints, not the owner's; callers that need both sources must check
+// ownerAuthCtx.Permissions independently.
 func computeEffectivePermissionsFromAuthCtx(key *UserAPIKey, authCtx *AuthContext) []Permission {
 	if len(key.Permissions) == 0 {
-		return authCtx.Permissions
+		return []Permission{}
 	}
 	effectivePerms := make([]Permission, 0, len(key.Permissions))
 	for _, keyPerm := range key.Permissions {
@@ -538,11 +562,11 @@ func computeEffectivePermissionsFromAuthCtx(key *UserAPIKey, authCtx *AuthContex
 // ComputeEffectivePermissions computes the intersection of API key permissions and user permissions.
 // This ensures an API key cannot grant more permissions than the user has.
 //
-// Administrators-group members carry {admin, *}: with no key-specific
-// permissions their full {admin, *} context is returned, and a scoped admin
-// key's permissions all pass the HasPermission intersection below, so the
-// group-derived path preserves the previous role == admin behavior without a
-// special case.
+// An unscoped key (no key-specific permissions) grants nothing, regardless of
+// the owner's group; see computeEffectivePermissionsFromAuthCtx. A scoped
+// admin key's permissions all pass the HasPermission intersection below, so
+// the group-derived path still lets a deliberately-admin-scoped key act with
+// the owner's {admin, *} authority.
 func (s *Service) ComputeEffectivePermissions(ctx context.Context, apiKey *UserAPIKey, user *User) ([]Permission, error) {
 	authCtx, err := s.GetAuthContext(ctx, user.ID)
 	if err != nil {
