@@ -340,7 +340,7 @@ func TestProcessMessage_ApproveHappyPath(t *testing.T) {
 		ExecutionID:   "exec-appv",
 		PlanID:        planID,
 		Status:        "pending",
-		ApprovalToken: "correct-token",
+		ApprovalToken: config.HashApprovalToken("correct-token"),
 		// Recommendations are non-Selected, so processPurchaseRecommendations
 		// is a no-op and no AWS API call is made.
 		Recommendations: []config.RecommendationRecord{
@@ -351,15 +351,16 @@ func TestProcessMessage_ApproveHappyPath(t *testing.T) {
 		ExecutionID:     "exec-appv",
 		PlanID:          planID,
 		Status:          "approved",
-		ApprovalToken:   "correct-token",
+		ApprovalToken:   config.HashApprovalToken("correct-token"),
 		StepNumber:      1,
 		Recommendations: exec.Recommendations,
 	}
 	account := &config.CloudAccount{ID: accountID, ContactEmail: "owner@example.com"}
 
-	// verifyAsyncApprovalActor + ApproveExecution both load the execution;
-	// rotateApprovalToken adds a third fetch after the successful approve.
-	mockStore.On("GetExecutionByID", ctx, "exec-appv").Return(exec, nil).Times(3)
+	// verifyAsyncApprovalActor + ApproveExecution both load the execution.
+	// rotateApprovalToken adds no further fetch: it mutates `approved` (the
+	// row TransitionExecutionStatus returns) in place.
+	mockStore.On("GetExecutionByID", ctx, "exec-appv").Return(exec, nil).Times(2)
 	mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
 	// Atomic approve transition (issue #372 fix).
 	mockStore.On("TransitionExecutionStatus", ctx, "exec-appv", []string{"pending", "notified"}, "approved", (*string)(nil)).Return(approved, nil)
@@ -406,7 +407,7 @@ func TestProcessMessage_ApproveFourEyesOn_SelfApproveDenied(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID:     "exec-appv-self",
 		Status:          "pending",
-		ApprovalToken:   "correct-token",
+		ApprovalToken:   config.HashApprovalToken("correct-token"),
 		CreatedByUserID: &creatorID,
 		Recommendations: []config.RecommendationRecord{
 			{CloudAccountID: &accountID},
@@ -452,7 +453,7 @@ func TestProcessMessage_ApproveFourEyesOn_DifferentApproverSucceeds(t *testing.T
 		ExecutionID:     "exec-appv-diff",
 		PlanID:          planID,
 		Status:          "pending",
-		ApprovalToken:   "correct-token",
+		ApprovalToken:   config.HashApprovalToken("correct-token"),
 		CreatedByUserID: &creatorID,
 		Recommendations: []config.RecommendationRecord{
 			{CloudAccountID: &accountID},
@@ -467,10 +468,11 @@ func TestProcessMessage_ApproveFourEyesOn_DifferentApproverSucceeds(t *testing.T
 	}
 	account := &config.CloudAccount{ID: accountID, ContactEmail: "approver@example.com"}
 
-	// verifyAsyncApprovalActor + ApproveExecution's own load + the new
-	// enforceFourEyesPolicy load (issue #1005 gate) + mintRevocationToken's
-	// post-success re-fetch: 4 loads total.
-	mockStore.On("GetExecutionByID", ctx, "exec-appv-diff").Return(exec, nil).Times(4)
+	// verifyAsyncApprovalActor + ApproveExecution's own load + the
+	// enforceFourEyesPolicy load (issue #1005 gate): 3 loads total.
+	// rotateApprovalToken adds no further fetch: it mutates `approved` (the
+	// row TransitionExecutionStatus returns) in place.
+	mockStore.On("GetExecutionByID", ctx, "exec-appv-diff").Return(exec, nil).Times(3)
 	mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
 	mockStore.On("GetUserEmailByID", ctx, creatorID).Return("owner@example.com", nil)
@@ -502,7 +504,7 @@ func TestProcessMessage_CancelHappyPath(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID:   "exec-cancel",
 		Status:        "pending",
-		ApprovalToken: "correct-token",
+		ApprovalToken: config.HashApprovalToken("correct-token"),
 		Recommendations: []config.RecommendationRecord{
 			{CloudAccountID: &accountID},
 		},
@@ -592,7 +594,7 @@ func TestProcessMessage_ApproveRejectsNonMatchingActor(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID:   "exec-mismatch",
 		Status:        "pending",
-		ApprovalToken: "correct-token",
+		ApprovalToken: config.HashApprovalToken("correct-token"),
 		Recommendations: []config.RecommendationRecord{
 			{CloudAccountID: &accountID},
 		},
@@ -632,7 +634,7 @@ func TestProcessMessage_ApproveRejectsTokenMismatch(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID:   "exec-bad-token",
 		Status:        "pending",
-		ApprovalToken: "correct-token",
+		ApprovalToken: config.HashApprovalToken("correct-token"),
 		Recommendations: []config.RecommendationRecord{
 			{CloudAccountID: &accountID},
 		},
@@ -667,7 +669,7 @@ func TestProcessMessage_ApproveRejectsNoApprovers(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID:     "exec-no-approvers",
 		Status:          "pending",
-		ApprovalToken:   "correct-token",
+		ApprovalToken:   config.HashApprovalToken("correct-token"),
 		Recommendations: []config.RecommendationRecord{}, // no account refs
 	}
 

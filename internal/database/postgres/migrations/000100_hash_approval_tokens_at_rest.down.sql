@@ -1,0 +1,13 @@
+-- 000100 down: intentional no-op.
+--
+-- SHA-256 is a one-way function: the up migration overwrites every raw
+-- approval_token with its digest, and the raw values it replaced cannot be
+-- recovered from the digest to restore them. Leaving the hashed values in
+-- place on rollback is also the SAFE choice, not just the only possible one:
+-- old application code (pre-#103) compared the stored value directly
+-- (RI exchange) or re-hashed it only at compare time without ever writing a
+-- hash back (purchases), so a rollback to old code against hashed data would
+-- simply reject every outstanding token as invalid rather than leak or
+-- corrupt anything. A real rollback of this fix requires reissuing pending
+-- approval/revoke/reject links, not an inverse UPDATE.
+SELECT 1; -- no-op: SHA-256 is one-way, the pre-image cannot be recovered

@@ -36,10 +36,11 @@ func (r *recordingExecutedNotifier) SendPurchaseExecutedNotification(_ context.C
 // exactly once, resolved the per-account contact email as the primary To, and
 // carried the expected revocation token + the executor in the body.
 //
-// For the token-authed approve path, expectedToken is the fresh revocation
-// token minted by mintRevocationToken (obtained from the re-fetched execution).
-// For the session-approve and direct-execute paths, it is the original
-// approval token (those paths do not rotate the token).
+// expectedToken is the raw revocation token purchase.Manager.ApproveAndExecute
+// mints and returns for this specific approval (issue #103): all three paths
+// (token-authed approve, session approve, direct-execute) fund it from the
+// mock's return value now, since approval_token is hashed at rest and a
+// re-read of the execution can never again yield a raw, emailable token.
 func assertExecutedNotificationFingerprints(t *testing.T, n *recordingExecutedNotifier, contact, executedBy, expectedToken string) {
 	t.Helper()
 	require.Equal(t, 1, n.calls, "SendPurchaseExecutedNotification must fire exactly once")
@@ -55,19 +56,18 @@ func assertExecutedNotificationFingerprints(t *testing.T, n *recordingExecutedNo
 // TestExecutedNotification_TokenApprovePath covers the email one-click
 // (token-authed) approve branch of approvePurchase: after ApproveExecution
 // succeeds, sendPurchaseExecutedEmail must fire with the fresh revocation
-// token from the re-fetched execution, not the stale pre-approve token.
+// token ApproveExecution returns, not the stale pre-approve token.
 //
 // This is the regression test for the defect where approveViaToken passed
-// the stale pre-approve execution struct to sendPurchaseExecutedEmail.
-// mintRevocationToken (called inside ApproveExecution) had already overwritten
+// the stale pre-approve execution struct's ApprovalToken to
+// sendPurchaseExecutedEmail. mintRevocationToken (called inside
+// ApproveExecution's ApproveAndExecute) had already overwritten
 // ApprovalToken in the DB, so the email embedded the old consumed token which
 // validateRevokeToken rejected with 403 on every revoke attempt.
 //
-// Fail-before: without the re-fetch, GetExecutionByID is called only once
-// (the second .Once() expectation goes unconsumed), the email carries the
-// stale "valid-token", and the RevocationToken assertion fails.
-// Pass-after: approveViaToken re-fetches, both .Once() expectations are
-// consumed, and the email carries the fresh "fresh-revoke-token".
+// Post issue #103 (approval_token hashed at rest), the fix can no longer be
+// "re-fetch the row" -- a re-read only ever yields the hash. The token must
+// come directly from ApproveExecution's return value, which this test pins.
 func TestExecutedNotification_TokenApprovePath(t *testing.T) {
 	ctx := context.Background()
 	execID := "12345678-1234-1234-1234-123456789abc"
@@ -80,12 +80,13 @@ func TestExecutedNotification_TokenApprovePath(t *testing.T) {
 	mockConfig := new(MockConfigStore)
 	exec := approvalTestExec(execID, contact, mockConfig)
 
-	// post-approve: completed execution with the fresh revocation token written
-	// by mintRevocationToken. Recommendations must be present so
-	// gatherAccountContactEmails can resolve the contact email via GetCloudAccountFn.
+	// post-approve: completed execution as re-fetched for the OTHER email
+	// fields (status, completed_at). Its ApprovalToken is the SHA-256 hash
+	// mintRevocationToken persisted for freshToken (issue #103) -- never the
+	// raw value, which only the ApproveExecution return carries.
 	freshExec := &config.PurchaseExecution{
 		ExecutionID:   execID,
-		ApprovalToken: freshToken,
+		ApprovalToken: config.HashApprovalToken(freshToken),
 		Status:        "completed",
 		CompletedAt:   &recentCompleted,
 		Recommendations: []config.RecommendationRecord{
@@ -94,8 +95,9 @@ func TestExecutedNotification_TokenApprovePath(t *testing.T) {
 	}
 
 	// First call: loadApproveExecution fetches the pending execution.
-	// Second call: approveViaToken re-fetches after ApproveExecution returns to
-	// pick up the fresh revocation token written by mintRevocationToken.
+	// Second call: approveViaToken re-fetches after ApproveExecution returns,
+	// to pick up the FINAL execution state (status, completed_at) for the
+	// email body -- not the token, which comes from the return value below.
 	mockConfig.On("GetExecutionByID", ctx, execID).Return(exec, nil).Once()
 	mockConfig.On("GetExecutionByID", ctx, execID).Return(freshExec, nil).Once()
 	mockConfig.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
@@ -108,7 +110,7 @@ func TestExecutedNotification_TokenApprovePath(t *testing.T) {
 	mockAuth.On("HasPermissionAPI", ctx, "", "approve-own", "purchases").Return(false, nil).Maybe()
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contact).Return(nil)
+	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contact).Return(freshToken, nil)
 
 	notifier := &recordingExecutedNotifier{}
 	handler := &Handler{
@@ -125,13 +127,15 @@ func TestExecutedNotification_TokenApprovePath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "completed", result.(map[string]string)["status"])
 
-	// The email must carry the fresh revocation token from the re-fetched row,
-	// not the stale "valid-token" from the pre-approve struct.
+	// The email must carry the fresh revocation token ApproveExecution
+	// returned, not the stale "valid-token" from the pre-approve struct.
 	assertExecutedNotificationFingerprints(t, notifier, contact, contact, freshToken)
 
 	// Confirm the fresh token is actually valid for revocation: validateRevokeToken
-	// against the post-approve execution must succeed. This guards the end-to-end
-	// scenario: recipient clicks "Revoke" in the email -> token validates -> 200.
+	// against the post-approve execution (whose ApprovalToken is the token's
+	// hash, matching what mintRevocationToken actually persists) must succeed.
+	// This guards the end-to-end scenario: recipient clicks "Revoke" in the
+	// email -> token validates -> 200.
 	require.NoError(t, validateRevokeToken(freshExec, freshToken),
 		"the token embedded in the email must pass validateRevokeToken on the post-approve execution")
 
@@ -139,25 +143,29 @@ func TestExecutedNotification_TokenApprovePath(t *testing.T) {
 	mockConfig.AssertExpectations(t)
 }
 
-// TestExecutedNotification_TokenApprovePath_RefetchFailureSuppressesPanel is the
-// regression test for the degraded-path nit: when the post-approve re-fetch
-// fails, approveViaToken must NOT email the stale pre-approve execution struct
-// (which still carries the OLD approval token that mintRevocationToken has
-// already replaced in the DB -- that token would 403 on every Revoke click,
-// resurrecting the original defect). Instead the email must carry an EMPTY
-// RevocationToken so the email template's {{if .RevocationToken}} suppresses the
-// Revoke panel entirely (no broken button).
-func TestExecutedNotification_TokenApprovePath_RefetchFailureSuppressesPanel(t *testing.T) {
+// TestExecutedNotification_TokenApprovePath_RefetchFailureStillEmailsToken is
+// the regression test for the degraded-path case: when the post-approve
+// re-fetch (for the email's OTHER fields -- status, completed_at) fails,
+// approveViaToken must still email a VALID revocation token, because that
+// token comes from ApproveExecution's return value, not from the re-fetch
+// (issue #103: a re-read of the execution can only ever yield the hash, so
+// the old "re-fetch to get the fresh token, blank it on failure" design is no
+// longer possible -- and no longer necessary, since the return value is
+// already in hand regardless of the re-fetch outcome). The email falls back
+// to the pre-approve execution snapshot for its other, cosmetic fields only.
+func TestExecutedNotification_TokenApprovePath_RefetchFailureStillEmailsToken(t *testing.T) {
 	ctx := context.Background()
 	execID := "12345678-1234-1234-1234-123456789abc"
 	contact := "contact@example.com"
+	freshToken := "fresh-revoke-token-2"
 
 	mockConfig := new(MockConfigStore)
 	exec := approvalTestExec(execID, contact, mockConfig)
 
 	// First call: loadApproveExecution fetches the pending execution.
-	// Second call: approveViaToken re-fetches after ApproveExecution returns,
-	// but this time the store errors -- the fresh token cannot be obtained.
+	// Second call: approveViaToken re-fetches for the final email state,
+	// but this time the store errors -- the handler must fall back to the
+	// pre-approve snapshot for those fields, and still emails the token.
 	mockConfig.On("GetExecutionByID", ctx, execID).Return(exec, nil).Once()
 	mockConfig.On("GetExecutionByID", ctx, execID).
 		Return(nil, errors.New("transient store failure")).Once()
@@ -171,7 +179,7 @@ func TestExecutedNotification_TokenApprovePath_RefetchFailureSuppressesPanel(t *
 	mockAuth.On("HasPermissionAPI", ctx, "", "approve-own", "purchases").Return(false, nil).Maybe()
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contact).Return(nil)
+	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contact).Return(freshToken, nil)
 
 	notifier := &recordingExecutedNotifier{}
 	handler := &Handler{
@@ -188,15 +196,12 @@ func TestExecutedNotification_TokenApprovePath_RefetchFailureSuppressesPanel(t *
 	require.NoError(t, err, "approve must still succeed even when the email re-fetch fails")
 	assert.Equal(t, "completed", result.(map[string]string)["status"])
 
-	// The notification still fires (best-effort), but with an EMPTY revocation
-	// token so the Revoke panel is suppressed rather than showing a broken button.
+	// The notification still fires (best-effort) and, critically, still
+	// carries a working revocation token -- unaffected by the re-fetch
+	// failure since it never sourced the token from the re-fetch.
 	require.Equal(t, 1, notifier.calls, "notification must still fire on the degraded path")
-	assert.Empty(t, notifier.captured.RevocationToken,
-		"re-fetch failure must blank the revocation token (suppress panel), never email the stale token")
-
-	// The stale pre-approve struct must be untouched: blanking happens on a COPY.
-	assert.Equal(t, "valid-token", exec.ApprovalToken,
-		"the fallback must blank a COPY, not mutate the caller's execution struct")
+	assert.Equal(t, freshToken, notifier.captured.RevocationToken,
+		"re-fetch failure must not affect the revocation token embedded in the email")
 
 	mockPurchase.AssertExpectations(t)
 	mockConfig.AssertExpectations(t)
@@ -210,6 +215,7 @@ func TestExecutedNotification_SessionApprovePath(t *testing.T) {
 	execID := "23456789-2345-2345-2345-23456789abcd"
 	adminEmail := "admin@example.com"
 	contact := "contact@example.com"
+	freshToken := "session-revoke-token"
 
 	mockConfig := new(MockConfigStore)
 	exec := approvalTestExec(execID, contact, mockConfig)
@@ -224,7 +230,12 @@ func TestExecutedNotification_SessionApprovePath(t *testing.T) {
 	mockAuth.On("ValidateCSRFToken", ctx, "sess-tok", "").Return(nil)
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil)
+	// The session path mints its own fresh revocation token too (issue #103):
+	// once approval_token is hashed at rest, reusing the pre-approve
+	// execution's ApprovalToken (the pre-fix behavior) is no longer possible,
+	// so ApproveAndExecute mints and returns one on every successful approve
+	// regardless of which path triggered it.
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(freshToken, nil)
 
 	notifier := &recordingExecutedNotifier{}
 	handler := &Handler{
@@ -243,7 +254,7 @@ func TestExecutedNotification_SessionApprovePath(t *testing.T) {
 	assert.Equal(t, "completed", result.(map[string]string)["status"])
 
 	// Admin approved, so the executor recorded in the body is the admin.
-	assertExecutedNotificationFingerprints(t, notifier, contact, adminEmail, "valid-token")
+	assertExecutedNotificationFingerprints(t, notifier, contact, adminEmail, freshToken)
 	mockPurchase.AssertExpectations(t)
 	mockPurchase.AssertNotCalled(t, "ApproveExecution", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
@@ -259,6 +270,7 @@ func TestExecutedNotification_DirectExecutePath(t *testing.T) {
 	adminEmail := "admin@example.com"
 	contact := "contact@example.com"
 	accountID := "acct-1"
+	freshToken := "direct-execute-revoke-token"
 
 	mockConfig := new(MockConfigStore)
 	exec := &config.PurchaseExecution{
@@ -280,7 +292,10 @@ func TestExecutedNotification_DirectExecutePath(t *testing.T) {
 	}, nil)
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil)
+	// Direct-execute also mints its own fresh revocation token (issue #103),
+	// replacing the pre-fix "reuse execution.ApprovalToken directly" behavior
+	// -- see the SessionApprovePath test above for the full rationale.
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(freshToken, nil)
 
 	notifier := &recordingExecutedNotifier{}
 	handler := &Handler{
@@ -302,7 +317,7 @@ func TestExecutedNotification_DirectExecutePath(t *testing.T) {
 	assert.Equal(t, "completed", resultMap["status"])
 	assert.Equal(t, true, resultMap["direct_execute"])
 
-	assertExecutedNotificationFingerprints(t, notifier, contact, adminEmail, "valid-token")
+	assertExecutedNotificationFingerprints(t, notifier, contact, adminEmail, freshToken)
 	mockPurchase.AssertExpectations(t)
 }
 
@@ -326,7 +341,7 @@ func TestExecutedNotification_DirectExecute_NilNotifierNoPanic(t *testing.T) {
 	mockConfig.On("SavePurchaseExecution", ctx, exec).Return(nil)
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil)
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", nil)
 
 	handler := &Handler{
 		purchase:      mockPurchase,

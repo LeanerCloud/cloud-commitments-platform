@@ -2,8 +2,6 @@ package purchase
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,28 +16,35 @@ import (
 // ApproveExecution is the token-authenticated approve entry point used by
 // the legacy email-link flow and the SQS approve worker. After validating
 // the approval token it hands off to ApproveAndExecute, which performs the
-// atomic status transition and runs the AWS purchase synchronously.
+// atomic status transition, runs the AWS purchase synchronously, and mints
+// the fresh revocation token returned here.
 //
 // actor carries the email of the operator who triggered the approval
 // (session-authed click on the HTTP path; verified actor_email on the SQS
 // path) so it can be stamped onto ApprovedBy. Empty actor is recorded as
 // NULL — the column is nullable TEXT and we don't want to claim "approved
 // by nobody".
-func (m *Manager) ApproveExecution(ctx context.Context, executionID, token, actor string) error {
+//
+// Returns the raw revocation token minted by ApproveAndExecute on success
+// (see that function's doc comment for why this must be a return value
+// rather than something the caller re-fetches from the DB). Empty on
+// failure, and best-effort empty if the mint itself failed after an
+// otherwise-successful approve.
+func (m *Manager) ApproveExecution(ctx context.Context, executionID, token, actor string) (string, error) {
 	t0 := time.Now()
 	logging.Infof("purchase[%s]: ApproveExecution entry (auth=token actor=%q)", executionID, maskActor(actor))
 
 	execution, err := m.config.GetExecutionByID(ctx, executionID)
 	if errors.Is(err, config.ErrNotFound) {
-		return fmt.Errorf("execution not found: %s", executionID)
+		return "", fmt.Errorf("execution not found: %s", executionID)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to get execution: %w", err)
+		return "", fmt.Errorf("failed to get execution: %w", err)
 	}
 
 	// Validate token and TTL (Finding #4 + issue #397).
 	if tokErr := validateApprovalToken(execution, token); tokErr != nil {
-		return tokErr
+		return "", tokErr
 	}
 
 	// Preflight guard (issue #609): reject non-AWS orphan executions before
@@ -47,41 +52,20 @@ func (m *Manager) ApproveExecution(ctx context.Context, executionID, token, acto
 	if checkErr := OrphanExecutionError(execution); checkErr != nil {
 		logging.Errorf("purchase[%s]: ApproveExecution preflight rejected after %s: %v",
 			executionID, time.Since(t0), checkErr)
-		return checkErr
+		return "", checkErr
 	}
 
 	// Token/SQS path: no authenticated session UUID is available, so the
 	// transition is recorded as system-initiated (transitioned_by = NULL).
-	err = m.ApproveAndExecute(ctx, executionID, actor, nil)
+	revocationToken, err := m.ApproveAndExecute(ctx, executionID, actor, nil)
 	if err != nil {
 		logging.Errorf("purchase[%s]: ApproveExecution (token path) failed after %s: %v",
 			executionID, time.Since(t0), err)
 	} else {
 		logging.Infof("purchase[%s]: ApproveExecution (token path) completed in %s",
 			executionID, time.Since(t0))
-		// Token rotation (best-effort): mint a fresh revocation token after a
-		// successful approve. The old approval token must not double as a
-		// revocation token: (a) it was consumed to authorize this approve action
-		// and (b) clearing it (old behavior) caused the post-execution email to
-		// embed an already-invalidated token, making every "Revoke" click return
-		// 403 (issue #291 wave-2 adversarial review finding).
-		//
-		// mintRevocationToken fetches the freshly-finalized row (so we don't
-		// stomp completed_at or other fields), generates a new random token with
-		// a 24-hour expiry matching the revocation window, and persists it.
-		// The handler re-fetches the execution after this call to obtain the
-		// fresh token for the email.
-		//
-		// Security: re-approval with the old token is still blocked by the status
-		// check in TransitionExecutionStatus (the row is now "completed", not
-		// "pending"/"notified"), so token rotation is NOT required to prevent
-		// approve-replay. The new token is scoped to revoke-only via the status
-		// check in checkRevokableStatus ("completed" required).
-		if rotateErr := m.mintRevocationToken(ctx, executionID); rotateErr != nil {
-			logging.Warnf("purchase[%s]: ApproveExecution: revocation token mint failed (best-effort): %v", executionID, rotateErr)
-		}
 	}
-	return err
+	return revocationToken, err
 }
 
 // maskActor masks an actor email/username for safe log emission.
@@ -112,13 +96,15 @@ func maskActor(actor string) string {
 // (issue #397). Legacy rows with a nil ApprovalTokenExpiresAt pass the TTL
 // check for backward compatibility. Extracted from ApproveExecution to keep
 // that function under the gocyclo threshold.
+//
+// execution.ApprovalToken is the SHA-256 hex digest stored at rest
+// (issue #103), never the raw secret; config.ApprovalTokenMatches hashes the
+// supplied token and compares digests in constant time.
 func validateApprovalToken(execution *config.PurchaseExecution, token string) error {
 	if execution.ApprovalToken == "" || token == "" {
 		return fmt.Errorf("invalid approval token")
 	}
-	storedHash := sha256.Sum256([]byte(execution.ApprovalToken))
-	userHash := sha256.Sum256([]byte(token))
-	if subtle.ConstantTimeCompare(storedHash[:], userHash[:]) != 1 {
+	if !config.ApprovalTokenMatches(execution.ApprovalToken, token) {
 		return fmt.Errorf("invalid approval token")
 	}
 	if execution.ApprovalTokenExpiresAt != nil && time.Now().After(*execution.ApprovalTokenExpiresAt) {
@@ -297,12 +283,12 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 
 // ApproveAndExecute atomically flips a pending/notified execution to
 // "approved" (stamping ApprovedBy) and then runs the purchase
-// synchronously, returning the final outcome. Callers MUST have already
-// authorized the actor — this method does no RBAC or token validation; it
-// is shared between:
+// synchronously. Callers MUST have already authorized the actor — this
+// method does no RBAC or token validation; it is shared between:
 //
-//   - ApproveExecution (token path: token validated by the caller)
+//   - ApproveExecution (token/SQS path: token validated by the caller)
 //   - approvePurchaseViaSession (session path: RBAC validated by the caller)
+//   - directExecutePurchase (execute_mode="direct": RBAC validated by the caller)
 //
 // Concurrency: TransitionExecutionStatus uses an atomic UPDATE WHERE status
 // IN ('pending','notified'). Two callers racing to approve the same row
@@ -310,7 +296,7 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 // transition" error. Cross-execution concurrency is unaffected: each
 // approval drives its own executeAndFinalize, which already fans out
 // per-account in parallel via executeMultiAccount.
-func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string) error {
+func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string) (string, error) {
 	return m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "notified"})
 }
 
@@ -330,7 +316,7 @@ func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor stri
 // click, or the scheduler racing the same pending row, loses the atomic
 // UPDATE ... WHERE status IN (...) and gets a clean "cannot transition"
 // error rather than executing the purchase a second time.
-func (m *Manager) RunPlannedPurchaseNow(ctx context.Context, executionID, actor string, transitionedBy *string) error {
+func (m *Manager) RunPlannedPurchaseNow(ctx context.Context, executionID, actor string, transitionedBy *string) (string, error) {
 	return m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "paused"})
 }
 
@@ -340,7 +326,13 @@ func (m *Manager) RunPlannedPurchaseNow(ctx context.Context, executionID, actor 
 // purchase synchronously. Parameterizing on fromStatuses lets both entry
 // points share one implementation of the gate and the CAS instead of the
 // gate being reimplemented (or skipped) at a second call site.
-func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string, fromStatuses []string) error {
+//
+// Returns the raw revocation token minted on a successful execute, or ""
+// if the (best-effort) mint failed. Every caller emails a "purchase
+// executed, revoke here" link, and since only the token's hash is stored
+// (issue #103) a DB re-read can never yield a raw, emailable value, so the
+// rotation lives here, in the one funnel all approve paths share.
+func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string, fromStatuses []string) (string, error) {
 	t0 := time.Now()
 	logging.Infof("purchase[%s]: transitionApproveAndExecute starting (actor=%q, from=%v)", executionID, maskActor(actor), fromStatuses)
 
@@ -352,7 +344,7 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 	// enforceFourEyesPolicy's doc comment for the full rationale.
 	if err := m.enforceFourEyesPolicy(ctx, executionID, actor, transitionedBy); err != nil {
 		logging.Warnf("purchase[%s]: transitionApproveAndExecute denied by 4-eyes policy: %v", executionID, err)
-		return err
+		return "", err
 	}
 
 	// transitionedBy carries the session user's UUID for human-initiated
@@ -363,7 +355,7 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 	if err != nil {
 		logging.Errorf("purchase[%s]: transitionApproveAndExecute status transition failed after %s: %v",
 			executionID, time.Since(t0), err)
-		return fmt.Errorf("approve: %w", err)
+		return "", fmt.Errorf("approve: %w", err)
 	}
 	logging.Infof("purchase[%s]: status transitioned to approved in %s", executionID, time.Since(t0))
 
@@ -382,10 +374,20 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 	execErr := m.executeAndFinalize(ctx, updated)
 	if execErr != nil {
 		logging.Errorf("purchase[%s]: transitionApproveAndExecute failed after %s: %v", executionID, time.Since(t0), execErr)
-	} else {
-		logging.Infof("purchase[%s]: transitionApproveAndExecute completed in %s", executionID, time.Since(t0))
+		return "", execErr
 	}
-	return execErr
+	logging.Infof("purchase[%s]: transitionApproveAndExecute completed in %s", executionID, time.Since(t0))
+
+	// Mint a fresh revocation token now that the purchase has committed. The
+	// pre-approve approval token must not double as the revocation token: on
+	// the token path it was just consumed to authorize this very approve
+	// action, and on every path its raw value is no longer recoverable once
+	// hashed at rest (issue #103). See rotateApprovalToken's doc comment.
+	revocationToken, mintErr := m.rotateApprovalToken(ctx, updated, config.RevocationWindow)
+	if mintErr != nil {
+		logging.Warnf("purchase[%s]: transitionApproveAndExecute: revocation token mint failed (best-effort): %v", executionID, mintErr)
+	}
+	return revocationToken, nil
 }
 
 // CancelExecution cancels a pending execution. actor carries the email of
@@ -453,40 +455,54 @@ func (m *Manager) CancelExecution(ctx context.Context, executionID, token, actor
 	return nil
 }
 
-// mintRevocationToken generates a fresh cryptographically-secure revocation
-// token, stamps it onto the execution with a revocationTokenWindow expiry,
-// and persists the update. Called after a successful token-authed approve so
-// the post-execution email carries a valid revoke-capable token rather than
-// the now-consumed approval token.
+// rotateApprovalToken generates a fresh cryptographically-secure token,
+// mutates exec in place to hold its SHA-256 hash and a new ttl-based expiry
+// (issue #103: approval_token is hashed at rest, so only the digest is ever
+// written to the DB), persists exec with a single SavePurchaseExecution
+// call, and returns the RAW token for the caller to embed in an email.
 //
-// The handler re-fetches the execution after ApproveExecution returns to
-// pick up the fresh token for embedding in the email.
+// exec MUST already be the caller's current, freshly-loaded copy of the row
+// -- this function does no fetch of its own. That is deliberate: an internal
+// fetch-by-ID would allocate a SEPARATE struct from whatever the caller is
+// already holding, and mutating that separate copy while the caller
+// independently re-saves ITS OWN (still-stale) copy afterwards would silently
+// overwrite this function's hash with the pre-rotation one -- exactly the
+// class of two-writers-one-row bug this signature is designed to make
+// impossible by construction.
 //
-// Best-effort: if the write fails the approve has already landed and this
-// returns an error the caller only logs. The stored token is then unchanged
-// (still the consumed approval token), so the handler's re-fetch surfaces that
-// token and the email carries it -- it still validates for revoke because it
-// was never rotated (degraded to the old reuse-the-approval-token behavior on
-// this rare path, but functional and safe). The distinct failure mode where the
-// handler's re-fetch itself errors is handled in approveViaToken by blanking
-// ApprovalToken so the Revoke panel is suppressed rather than emailing a token
-// whose validity is unknown.
-func (m *Manager) mintRevocationToken(ctx context.Context, executionID string) error {
-	exec, err := m.config.GetExecutionByID(ctx, executionID)
-	if err != nil {
-		return fmt.Errorf("mintRevocationToken: failed to fetch execution: %w", err)
-	}
+// Two callers:
+//
+//   - ApproveAndExecute (ttl=RevocationWindow): called after every
+//     successful approve, passing `updated` (mutated in place by the
+//     preceding TransitionExecutionStatus / executeAndFinalize calls), so
+//     the "purchase executed" email carries a valid revoke-capable token
+//     rather than the now-consumed (token path) or simply stale (session /
+//     direct-execute paths) approval token.
+//   - getOrCreateExecution (ttl=ApprovalTokenTTL): called when an existing,
+//     not-yet-notified execution row is about to receive its first "please
+//     approve" email, passing the row it just fetched, since the row's
+//     stored approval_token is already a hash with no recoverable raw value.
+//
+// Best-effort: if the write fails the caller's own state change (the
+// approve, or the notification-worthy row already existing) has already
+// landed, so this returns ("", err) and the caller only logs -- the
+// email-link convenience is degraded for this row, not the underlying
+// purchase state.
+func (m *Manager) rotateApprovalToken(ctx context.Context, exec *config.PurchaseExecution, ttl time.Duration) (string, error) {
 	if exec == nil {
-		return fmt.Errorf("mintRevocationToken: execution not found: %s", executionID)
+		return "", fmt.Errorf("rotateApprovalToken: execution is nil")
 	}
 	tok, err := common.GenerateApprovalToken()
 	if err != nil {
-		return fmt.Errorf("mintRevocationToken: failed to generate token: %w", err)
+		return "", fmt.Errorf("rotateApprovalToken: failed to generate token: %w", err)
 	}
-	expiry := time.Now().Add(config.RevocationWindow)
-	exec.ApprovalToken = tok
+	expiry := time.Now().Add(ttl)
+	exec.ApprovalToken = config.HashApprovalToken(tok)
 	exec.ApprovalTokenExpiresAt = &expiry
-	return m.config.SavePurchaseExecution(ctx, exec)
+	if saveErr := m.config.SavePurchaseExecution(ctx, exec); saveErr != nil {
+		return "", saveErr
+	}
+	return tok, nil
 }
 
 // clearApprovalToken clears the ApprovalToken on the execution after a
@@ -524,9 +540,10 @@ func (m *Manager) loadCancelableExecution(ctx context.Context, executionID, toke
 	if execution.ApprovalToken == "" || token == "" {
 		return nil, fmt.Errorf("invalid approval token")
 	}
-	storedHash := sha256.Sum256([]byte(execution.ApprovalToken))
-	userHash := sha256.Sum256([]byte(token))
-	if subtle.ConstantTimeCompare(storedHash[:], userHash[:]) != 1 {
+	// execution.ApprovalToken is the SHA-256 hex digest stored at rest
+	// (issue #103); config.ApprovalTokenMatches hashes the supplied token
+	// and compares digests in constant time.
+	if !config.ApprovalTokenMatches(execution.ApprovalToken, token) {
 		return nil, fmt.Errorf("invalid approval token")
 	}
 

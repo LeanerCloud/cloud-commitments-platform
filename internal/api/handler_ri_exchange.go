@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -2392,7 +2391,11 @@ func (h *Handler) validateExchangeApproval(ctx context.Context, id, token string
 		return nil, NewClientError(403, "this exchange record does not support approval")
 	}
 
-	if subtle.ConstantTimeCompare([]byte(token), []byte(record.ApprovalToken)) != 1 {
+	// record.ApprovalToken is the SHA-256 hex digest stored at rest
+	// (issue #103); hash the supplied token and compare digests in
+	// constant time, matching config.ApprovalTokenMatches everywhere else
+	// in this codebase that validates one of these tokens.
+	if !config.ApprovalTokenMatches(record.ApprovalToken, token) {
 		return nil, NewClientError(403, "invalid approval token")
 	}
 
@@ -2587,7 +2590,9 @@ func (h *Handler) rejectRIExchange(ctx context.Context, id, token string) (any, 
 		return nil, NewClientError(403, "this exchange record does not support rejection")
 	}
 
-	if subtle.ConstantTimeCompare([]byte(token), []byte(record.ApprovalToken)) != 1 {
+	// See validateExchangeApproval: record.ApprovalToken is a SHA-256 hex
+	// digest (issue #103), not the raw secret.
+	if !config.ApprovalTokenMatches(record.ApprovalToken, token) {
 		return nil, NewClientError(403, "invalid rejection token")
 	}
 

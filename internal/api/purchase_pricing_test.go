@@ -63,7 +63,7 @@ func TestHandler_executePurchase_CapUsesStoredPriceNotClientPrice(t *testing.T) 
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
 	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil).Maybe()
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil).Maybe()
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
 	req := &events.LambdaFunctionURLRequest{
@@ -108,7 +108,7 @@ func TestHandler_executePurchase_StoredPriceUnderCapProceeds(t *testing.T) {
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil)
 	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil)
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil)
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
 	req := &events.LambdaFunctionURLRequest{
@@ -256,7 +256,7 @@ func TestHandler_executePurchase_CrossAccountMismatchRefused(t *testing.T) {
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
 	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil).Maybe()
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil).Maybe()
 
 	accountA := "111111111111"
 	expectStoredRecs(mockStore, config.RecommendationRecord{

@@ -97,7 +97,7 @@ func TestHandler_approvePurchase_PurchaseError(t *testing.T) {
 
 	mockPurchase := new(MockPurchaseManager)
 	mockPurchase.On("ApproveExecution", ctx, execID, "tok", approver).
-		Return(errors.New("approval failed"))
+		Return("", errors.New("approval failed"))
 
 	h := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 	req := &events.LambdaFunctionURLRequest{
@@ -251,7 +251,7 @@ func TestHandler_sendPurchaseApprovalEmail_ConfigError(t *testing.T) {
 		emailNotifier: &stubEmailNotifier{},
 	}
 	// Should not panic; error is swallowed (non-blocking path)
-	h.sendPurchaseApprovalEmail(ctx, nil, &config.PurchaseExecution{ExecutionID: "x"}, nil, 0, 0)
+	h.sendPurchaseApprovalEmail(ctx, nil, &config.PurchaseExecution{ExecutionID: "x"}, "", nil, 0, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +318,7 @@ func TestHandler_rejectRIExchange_WrongToken(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockStore.On("GetRIExchangeRecord", ctx, "11111111-1111-1111-1111-111111111111").Return(
-		&config.RIExchangeRecord{ID: "11111111-1111-1111-1111-111111111111", ApprovalToken: "correct"}, nil)
+		&config.RIExchangeRecord{ID: "11111111-1111-1111-1111-111111111111", ApprovalToken: config.HashApprovalToken("correct")}, nil)
 
 	h := &Handler{config: mockStore}
 	_, err := h.rejectRIExchange(ctx, "11111111-1111-1111-1111-111111111111", "wrong")
@@ -330,7 +330,7 @@ func TestHandler_rejectRIExchange_AlreadyProcessed(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockStore.On("GetRIExchangeRecord", ctx, "11111111-1111-1111-1111-111111111111").Return(
-		&config.RIExchangeRecord{ID: "11111111-1111-1111-1111-111111111111", ApprovalToken: "tok"}, nil)
+		&config.RIExchangeRecord{ID: "11111111-1111-1111-1111-111111111111", ApprovalToken: config.HashApprovalToken("tok")}, nil)
 	// Transition returns nil indicating already processed.
 	// Canonical spelling used (#1277 follow-up).
 	mockStore.On("TransitionRIExchangeStatus", ctx, "11111111-1111-1111-1111-111111111111", "pending", config.StatusCanceled, mock.Anything).
@@ -366,7 +366,7 @@ func TestHandler_approveRIExchange_AlreadyProcessed(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockStore.On("GetRIExchangeRecord", ctx, "11111111-1111-1111-1111-111111111111").Return(
-		&config.RIExchangeRecord{ID: "11111111-1111-1111-1111-111111111111", ApprovalToken: "tok"}, nil)
+		&config.RIExchangeRecord{ID: "11111111-1111-1111-1111-111111111111", ApprovalToken: config.HashApprovalToken("tok")}, nil)
 	mockStore.On("TransitionRIExchangeStatus", ctx, "11111111-1111-1111-1111-111111111111", "pending", "processing", mock.Anything).
 		Return(nil, nil)
 

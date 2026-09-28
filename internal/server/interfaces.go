@@ -25,13 +25,17 @@ type PurchaseManagerInterface interface {
 	ProcessScheduledPurchases(ctx context.Context) (*purchase.ProcessResult, error)
 	SendUpcomingPurchaseNotifications(ctx context.Context) (*purchase.NotificationResult, error)
 	ProcessMessage(ctx context.Context, body string) error
-	ApproveExecution(ctx context.Context, execID, token, actor string) error
-	ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) error
+	// ApproveExecution, ApproveAndExecute and RunPlannedPurchaseNow return the
+	// raw revocation token minted on a successful execute (issue #103: only
+	// its hash is stored, so a re-read cannot yield an emailable token).
+	// Empty on failure.
+	ApproveExecution(ctx context.Context, execID, token, actor string) (string, error)
+	ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (string, error)
 	// RunPlannedPurchaseNow forces a pending or paused scheduled purchase to
 	// execute immediately (the "Run now" button), sharing ApproveAndExecute's
 	// 4-eyes-gated, CAS-guarded funnel instead of a bare status flip that
 	// nothing else consumes (issue #218).
-	RunPlannedPurchaseNow(ctx context.Context, execID, actor string, transitionedBy *string) error
+	RunPlannedPurchaseNow(ctx context.Context, execID, actor string, transitionedBy *string) (string, error)
 	CancelExecution(ctx context.Context, execID, token, actor string) error
 	// ReapStuckExecutions sweeps purchase_executions stuck in
 	// approved/running longer than reapAfter and flips them to "failed"

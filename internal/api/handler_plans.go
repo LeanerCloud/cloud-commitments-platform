@@ -575,13 +575,20 @@ func (h *Handler) createPurchaseExecutionsTx(ctx context.Context, tx pgx.Tx, pla
 		if err != nil {
 			return created, fmt.Errorf("failed to generate approval token (row %d/%d): %w", created+1, count, err)
 		}
+		// Stored as a hash (issue #103): this token is never emailed from
+		// here directly. These rows are for future ramp steps whose
+		// "please approve" notification purchase.SendUpcomingPurchaseNotifications
+		// sends later, and that scheduled job always rotates the token
+		// immediately before emailing (getOrCreateExecution), so the value
+		// generated here only needs to exist to satisfy the non-empty
+		// invariant the compare/expiry checks assume until it is rotated.
 		execution := &config.PurchaseExecution{
 			PlanID:          planID,
 			ExecutionID:     uuid.New().String(),
 			Status:          "pending",
 			StepNumber:      plan.RampSchedule.CurrentStep + i + 1,
 			ScheduledDate:   scheduledDate,
-			ApprovalToken:   approvalToken,
+			ApprovalToken:   config.HashApprovalToken(approvalToken),
 			CreatedByUserID: creator,
 		}
 

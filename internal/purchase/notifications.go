@@ -69,7 +69,7 @@ func (m *Manager) sendPlanNotification(ctx context.Context, plan *config.Purchas
 	logging.Infof("Sending notification for plan %s (purchase in %d days)", plan.Name, daysUntil)
 
 	// Create execution record if doesn't exist
-	execution, err := m.getOrCreateExecution(ctx, plan)
+	execution, rawApprovalToken, err := m.getOrCreateExecution(ctx, plan)
 	if err != nil {
 		logging.Errorf("Failed to create execution: %v", err)
 		return false
@@ -88,7 +88,7 @@ func (m *Manager) sendPlanNotification(ctx context.Context, plan *config.Purchas
 	}
 
 	// Send notification
-	data := m.buildNotificationData(*plan, execution, daysUntil, notifyEmail)
+	data := m.buildNotificationData(*plan, execution, rawApprovalToken, daysUntil, notifyEmail)
 	if err := m.email.SendScheduledPurchaseNotification(ctx, data); err != nil {
 		logging.Errorf("Failed to send notification: %v", err)
 		return false
@@ -107,8 +107,20 @@ func (m *Manager) sendPlanNotification(ctx context.Context, plan *config.Purchas
 	return true
 }
 
-// getOrCreateExecution gets existing execution or creates new one.
-func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.PurchasePlan) (*config.PurchaseExecution, error) {
+// getOrCreateExecution gets an existing execution or creates a new one, and
+// returns the RAW approval token to embed in the notification about to be
+// sent. approval_token is hashed at rest (issue #103), so a row fetched from
+// the store (the "existing" branch) never carries a raw, emailable token --
+// getOrCreateExecution rotates it via rotateApprovalToken (mint + hash +
+// persist + return raw, applied to the row already in hand -- see that
+// function's doc comment for why it must take the row directly rather than
+// re-fetching it) immediately before this notification, with the full
+// ApprovalTokenTTL rather than the shorter RevocationWindow the post-approve
+// path uses -- but only when the row is still pending/notified; see the
+// status guard below for why rotating any other status is unsafe. The
+// "create new" branch already holds the raw value it just generated and
+// returns that directly instead of rotating again.
+func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.PurchasePlan) (*config.PurchaseExecution, string, error) {
 	// Check for existing execution for this date to prevent duplicates.
 	// GetExecutionByPlanAndDate wraps ErrNotFound on zero rows; any other
 	// error is a real store failure and must propagate.
@@ -116,15 +128,31 @@ func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.Purchas
 	switch {
 	case err == nil && existing != nil:
 		logging.Debugf("Found existing execution %s for plan %s on %s", existing.ExecutionID, plan.ID, plan.NextExecutionDate)
-		return existing, nil
+		// GetExecutionByPlanAndDate filters only on plan_id + scheduled_date,
+		// not status, so this row can already be approved/completed/canceled
+		// by the time a later notification tick re-runs for the same date
+		// (e.g. the plan's NextExecutionDate hasn't advanced yet). Rotating
+		// unconditionally would overwrite the hash + expiry a "pending
+		// approval" email or a post-approve "purchase executed" revoke email
+		// already committed to, 403-ing whichever link is currently live.
+		// Only pending/notified rows are still awaiting their first (or a
+		// repeat) approval notification.
+		if existing.Status != "pending" && existing.Status != "notified" {
+			return nil, "", fmt.Errorf("existing execution %s is %s; not re-notifying", existing.ExecutionID, existing.Status)
+		}
+		rawToken, rotateErr := m.rotateApprovalToken(ctx, existing, config.ApprovalTokenTTL)
+		if rotateErr != nil {
+			return nil, "", fmt.Errorf("failed to rotate approval token for notification: %w", rotateErr)
+		}
+		return existing, rawToken, nil
 	case err != nil && !errors.Is(err, config.ErrNotFound):
-		return nil, fmt.Errorf("failed to check for existing execution: %w", err)
+		return nil, "", fmt.Errorf("failed to check for existing execution: %w", err)
 	}
 	// ErrNotFound (or nil error with nil row): no existing execution for this plan+date; create a new one.
 
 	approvalToken, err := common.GenerateApprovalToken()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate approval token: %w", err)
+		return nil, "", fmt.Errorf("failed to generate approval token: %w", err)
 	}
 	tokenExpiresAt := time.Now().Add(config.ApprovalTokenTTL)
 	execution := &config.PurchaseExecution{
@@ -138,24 +166,26 @@ func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.Purchas
 		// notification-created row re-complete a counted step, freezing the ramp.
 		StepNumber:             plan.RampSchedule.CurrentStep + 1,
 		ScheduledDate:          *plan.NextExecutionDate,
-		ApprovalToken:          approvalToken,
+		ApprovalToken:          config.HashApprovalToken(approvalToken),
 		ApprovalTokenExpiresAt: &tokenExpiresAt,
 	}
 
 	if err := m.config.SavePurchaseExecution(ctx, execution); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return execution, nil
+	return execution, approvalToken, nil
 }
 
 // buildNotificationData creates notification data from plan and execution.
 // notifyEmail is the global notification address from GlobalConfig; it is set
 // as RecipientEmail so the token-bearing body routes through targeted SES.
-func (m *Manager) buildNotificationData(plan config.PurchasePlan, exec *config.PurchaseExecution, daysUntil int, notifyEmail string) email.NotificationData {
+// rawApprovalToken is the RAW token from getOrCreateExecution -- never read
+// from exec.ApprovalToken, which holds only the hash (issue #103).
+func (m *Manager) buildNotificationData(plan config.PurchasePlan, exec *config.PurchaseExecution, rawApprovalToken string, daysUntil int, notifyEmail string) email.NotificationData {
 	data := email.NotificationData{
 		DashboardURL:      m.dashboardURL,
-		ApprovalToken:     exec.ApprovalToken,
+		ApprovalToken:     rawApprovalToken,
 		ExecutionID:       exec.ExecutionID,
 		PlanID:            plan.ID,
 		TotalSavings:      exec.EstimatedSavings,

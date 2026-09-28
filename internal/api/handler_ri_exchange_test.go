@@ -260,7 +260,7 @@ func TestRejectRIExchange_AlreadyCompleted(t *testing.T) {
 	// Record exists but is already completed
 	mockStore.On("GetRIExchangeRecord", ctx, id).Return(&config.RIExchangeRecord{
 		ID:            id,
-		ApprovalToken: token,
+		ApprovalToken: config.HashApprovalToken(token),
 		Status:        "completed",
 		ExchangeID:    "exch-already-done",
 	}, nil)
@@ -290,7 +290,7 @@ func TestApproveRIExchange_AlreadyCancelled(t *testing.T) {
 	// Record exists but was canceled by a newer analysis run
 	mockStore.On("GetRIExchangeRecord", ctx, id).Return(&config.RIExchangeRecord{
 		ID:            id,
-		ApprovalToken: token,
+		ApprovalToken: config.HashApprovalToken(token),
 		Status:        "cancelled",
 	}, nil)
 
@@ -318,7 +318,7 @@ func TestApproveRIExchange_DoubleApprove(t *testing.T) {
 	// Record exists and is already being processed (first approve succeeded)
 	mockStore.On("GetRIExchangeRecord", ctx, id).Return(&config.RIExchangeRecord{
 		ID:            id,
-		ApprovalToken: token,
+		ApprovalToken: config.HashApprovalToken(token),
 		Status:        "processing",
 		SourceRIIDs:   []string{"ri-123"},
 		PaymentDue:    "5.00",
@@ -516,7 +516,7 @@ func TestApproveRIExchange_LegacyTokenStillWorks(t *testing.T) {
 
 	mockStore.On("GetRIExchangeRecord", ctx, id).Return(&config.RIExchangeRecord{
 		ID:            id,
-		ApprovalToken: token,
+		ApprovalToken: config.HashApprovalToken(token),
 		Status:        "pending",
 		SourceRIIDs:   []string{"ri-1"},
 		PaymentDue:    "10.00",
@@ -2014,7 +2014,7 @@ func TestRejectRIExchange_TokenPathActorIsNil(t *testing.T) {
 	const id = "550e8400-e29b-41d4-a716-446655441002"
 
 	mockStore.On("GetRIExchangeRecord", ctx, id).Return(&config.RIExchangeRecord{
-		ID: id, Status: "pending", ApprovalToken: "tok",
+		ID: id, Status: "pending", ApprovalToken: config.HashApprovalToken("tok"),
 	}, nil)
 	// Token path: actor must be nil. Canonical spelling used (#1277 follow-up).
 	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", config.StatusCanceled,
