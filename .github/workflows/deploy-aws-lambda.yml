@@ -418,10 +418,10 @@ jobs:
           echo "Testing health endpoint: $URL/health"
 
           for i in {1..5}; do
-            if curl -f -s "$URL/health" > /dev/null; then
-              RESPONSE=$(curl -s "$URL/health")
+            # /health returns HTTP 200 even when degraded; the body is the verdict.
+            if RESPONSE=$(curl -fsS --max-time 10 "$URL/health"); then
               echo "Response: $RESPONSE"
-              if echo "$RESPONSE" | grep -q '"status"'; then
+              if jq -e '.status == "healthy"' > /dev/null <<< "$RESPONSE"; then
                 echo "Health check passed!"
                 exit 0
               fi
@@ -442,11 +442,11 @@ jobs:
           echo "Running basic smoke tests..."
 
           for i in {1..3}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health")
-            if [ "$STATUS" -eq 200 ]; then
-              echo "Health check $i: passed (HTTP $STATUS)"
+            if RESPONSE=$(curl -fsS --max-time 10 "$URL/health") &&
+              jq -e '.status == "healthy"' > /dev/null <<< "$RESPONSE"; then
+              echo "Health check $i: passed"
             else
-              echo "Health check $i: failed (HTTP $STATUS)"
+              echo "Health check $i: failed: ${RESPONSE:-no response}"
               exit 1
             fi
             sleep 2

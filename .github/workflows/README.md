@@ -217,7 +217,6 @@ Deploy CUDly to Azure Container Apps. Serverless container platform with built-i
 
 - `AZURE_LOCATION` (default: eastus)
 - `ACR_NAME` (default: cudlyacr)
-- `RESOURCE_GROUP` (default: cudly-rg)
 
 ### Example
 
@@ -503,7 +502,6 @@ gh variable set ARTIFACT_REGISTRY_REPO -b"cudly"
 # Azure
 gh variable set AZURE_LOCATION -b"eastus"
 gh variable set ACR_NAME -b"cudlyacr"
-gh variable set RESOURCE_GROUP -b"cudly-rg"
 
 # Frontend
 gh variable set CLOUD_PROVIDER -b"aws"

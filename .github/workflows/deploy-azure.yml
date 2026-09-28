@@ -12,7 +12,6 @@
 # Required GitHub Variables:
 #   - AZURE_LOCATION: Azure region (e.g., eastus)
 #   - ACR_NAME: Azure Container Registry name
-#   - RESOURCE_GROUP: Azure resource group name
 #   - KEY_VAULT_NAME: Azure Key Vault name
 #
 # Triggered by:
@@ -63,7 +62,6 @@ on:
 env:
   AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus2' }}
   ACR_NAME: ${{ vars.ACR_NAME || 'cudlyacr' }}
-  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP || 'cudly-rg' }}
   TF_VERSION: '1.10.0'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -167,6 +165,7 @@ jobs:
     outputs:
       app_url: ${{ steps.deploy.outputs.app_url }}
       app_name: ${{ steps.deploy.outputs.app_name }}
+      resource_group_name: ${{ steps.deploy.outputs.resource_group_name }}
     env:
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -285,6 +284,9 @@ jobs:
           # Get app name
           APP_NAME=$(terraform output -raw container_app_name 2>/dev/null | grep -v '::' || echo "")
           echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+
+          RESOURCE_GROUP_NAME=$(terraform output -raw resource_group_name 2>/dev/null | grep -v '::' || echo "")
+          echo "resource_group_name=$RESOURCE_GROUP_NAME" >> "$GITHUB_OUTPUT"
 
       # The provider fails the data read outright when the custom role is absent,
       # so a Terraform precondition can never run for this case. Issue #1794: the
@@ -439,10 +441,13 @@ jobs:
           echo "Testing health endpoint: $URL/health"
 
           for i in {1..5}; do
-            if curl -f -s "$URL/health" > /dev/null; then
-              RESPONSE=$(curl -s "$URL/health")
+            # /health reports but never triggers the lazy DB init on the HTTP
+            # server; any /api/ request does. /health below is the gate.
+            curl -s -o /dev/null --max-time 60 "$URL/api/auth/check-admin" || true
+            # /health returns HTTP 200 even when degraded; the body is the verdict.
+            if RESPONSE=$(curl -fsS --max-time 10 "$URL/health"); then
               echo "Response: $RESPONSE"
-              if echo "$RESPONSE" | grep -q '"status"'; then
+              if jq -e '.status == "healthy"' > /dev/null <<< "$RESPONSE"; then
                 echo "Health check passed!"
                 exit 0
               fi
@@ -461,11 +466,11 @@ jobs:
           echo "Running basic smoke tests..."
 
           for i in {1..3}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL/health")
-            if [ "$STATUS" -eq 200 ]; then
-              echo "Health check $i: passed (HTTP $STATUS)"
+            if RESPONSE=$(curl -fsS --max-time 10 "$URL/health") &&
+              jq -e '.status == "healthy"' > /dev/null <<< "$RESPONSE"; then
+              echo "Health check $i: passed"
             else
-              echo "Health check $i: failed (HTTP $STATUS)"
+              echo "Health check $i: failed: ${RESPONSE:-no response}"
               exit 1
             fi
             sleep 2
@@ -474,15 +479,19 @@ jobs:
           echo "All smoke tests passed!"
 
       - name: Check Container App logs
+        env:
+          APP_NAME: ${{ needs.build-and-deploy.outputs.app_name }}
+          RESOURCE_GROUP_NAME: ${{ needs.build-and-deploy.outputs.resource_group_name }}
         run: |
-          APP_NAME="${{ needs.build-and-deploy.outputs.app_name }}"
-          if [ -n "$APP_NAME" ]; then
-            echo "Recent Container App logs:"
-            az containerapp logs show \
-              --name $APP_NAME \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --tail 50 || true
+          if [ -z "$APP_NAME" ] || [ -z "$RESOURCE_GROUP_NAME" ]; then
+            echo "::error::Terraform outputs missing: app_name='$APP_NAME' resource_group_name='$RESOURCE_GROUP_NAME'"
+            exit 1
           fi
+          echo "Recent Container App logs:"
+          az containerapp logs show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --tail 50
 
   # Post deployment summary
   summary:
