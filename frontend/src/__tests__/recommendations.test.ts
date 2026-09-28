@@ -3447,11 +3447,15 @@ describe('Issue #111: per-bucket Payment seed from per-account service override'
     expect(document.querySelectorAll('.fanout-bucket-payment-source').length).toBe(0);
   });
 
-  test('(c) multi-account bucket → bucket payment seeded from toolbar regardless of any override', async () => {
-    // Two recs, same (provider, service, term) — bucket-key match —
-    // but different cloud_account_ids. resolveBucketPaymentSeed must
-    // return toolbar (the documented multi-account fallback).
-    // Pair with a third 3yr rec to force multi-bucket fan-out.
+  test('(c) issue #333: recs on different accounts never share a bucket, and each honours its own override', async () => {
+    // Two recs, same (provider, service, term) — pre-#333 bucket-key match —
+    // but different cloud_account_ids. The bucket key now includes
+    // cloud_account_id (issue #333: the backend's SingleCloudAccountIDFromRecs
+    // rejects a POST spanning more than one account), so 'a' and 'b' must
+    // land in separate, single-account buckets rather than one multi-account
+    // bucket that falls back to the toolbar payment.
+    // Pair with a third 3yr rec to also exercise the pre-existing
+    // single-bucket-honours-its-override path alongside the split.
     //
     // issues #225/#226: resolvePurchaseTarget uses pickBestVariantPerCell so
     // each rec must be in its own cell. Recs 'a' and 'b' differ by account
@@ -3463,9 +3467,6 @@ describe('Issue #111: per-bucket Payment seed from per-account service override'
       { id: 'c', provider: 'aws', cloud_account_id: 'test-account-a', service: 'ec2', resource_type: 'r5.large', region: 'us-east-1', count: 1, term: 3, savings: 200, upfront_cost: 800 },
     ];
     setupMixedTermRecs(recs);
-    // Both accounts have ec2 overrides — the multi-account bucket
-    // must NOT pick either; only the single-account 3yr bucket may
-    // honour the override.
     (api.listAccountServiceOverrides as jest.Mock).mockImplementation(async (id: string) => {
       if (id === 'test-account-a') return [{ id: 'ovr-a', account_id: 'test-account-a', provider: 'aws', service: 'ec2', payment: 'partial-upfront' }];
       if (id === 'test-account-b') return [{ id: 'ovr-b', account_id: 'test-account-b', provider: 'aws', service: 'ec2', payment: 'no-upfront' }];
@@ -3479,14 +3480,26 @@ describe('Issue #111: per-bucket Payment seed from per-account service override'
     const { getFanOutBuckets } = await import('../recommendations');
     const buckets = getFanOutBuckets();
     expect(buckets).not.toBeNull();
-    expect(buckets!.length).toBe(2);
-    const bucket1yr = buckets!.find((b) => b.term === 1)!;
+    // 3 buckets, not 2: 1yr/account-a, 1yr/account-b, 3yr/account-a.
+    expect(buckets!.length).toBe(3);
+    // Every bucket's recs share exactly one cloud_account_id -- the
+    // invariant the backend requires.
+    for (const bucket of buckets!) {
+      const accountIDs = new Set(bucket.recs.map((r) => r.cloud_account_id));
+      expect(accountIDs.size).toBe(1);
+    }
+    const bucket1yrA = buckets!.find((b) => b.term === 1 && b.recs[0]!.cloud_account_id === 'test-account-a')!;
+    const bucket1yrB = buckets!.find((b) => b.term === 1 && b.recs[0]!.cloud_account_id === 'test-account-b')!;
     const bucket3yr = buckets!.find((b) => b.term === 3)!;
-    // 1yr bucket: 2 recs, 2 distinct accounts → toolbar.
-    expect(bucket1yr.recs.length).toBe(2);
-    expect(bucket1yr.payment).toBe('all-upfront');
-    expect(bucket1yr.paymentSource).toBe('toolbar');
-    // 3yr bucket: 1 rec, single account a → override honoured.
+    // Each single-account 1yr bucket now honours its OWN account's
+    // override, rather than falling back to the toolbar default.
+    expect(bucket1yrA.recs.length).toBe(1);
+    expect(bucket1yrA.payment).toBe('partial-upfront');
+    expect(bucket1yrA.paymentSource).toBe('override');
+    expect(bucket1yrB.recs.length).toBe(1);
+    expect(bucket1yrB.payment).toBe('no-upfront');
+    expect(bucket1yrB.paymentSource).toBe('override');
+    // 3yr bucket: 1 rec, single account a → override honoured (unchanged).
     expect(bucket3yr.recs.length).toBe(1);
     expect(bucket3yr.payment).toBe('partial-upfront');
     expect(bucket3yr.paymentSource).toBe('override');
@@ -3634,163 +3647,21 @@ describe('Issue #111: per-bucket Payment seed from per-account service override'
     expect(buckets).toBeNull();
   });
 
-  // Issue #197: multi-account bucket exposes per-rec payment defaults seeded
-  // from each rec's account override. The bucket-level payment falls back to
-  // the toolbar; perRecPayments overrides per rec.
-  test('(h) issue #197: multi-account bucket carries per-rec payment map seeded from each account override', async () => {
-    // Two recs, same (provider, service, term, payment) bucket key so they
-    // land in ONE bucket, but different cloud_account_ids — triggers the
-    // multi-account per-rec seeding path. Need a second bucket (different term)
-    // to force fan-out via openFanOutModal.
-    const recs = [
-      { id: 'h1', provider: 'aws', cloud_account_id: 'acct-x', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500 },
-      { id: 'h2', provider: 'aws', cloud_account_id: 'acct-y', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'all-upfront', savings: 150, upfront_cost: 600 },
-      // Second bucket (3yr, single account) just to force fan-out modal.
-      { id: 'h3', provider: 'aws', cloud_account_id: 'acct-x', service: 'ec2', resource_type: 'm5.large', region: 'us-east-1', count: 1, term: 3, payment: 'all-upfront', savings: 300, upfront_cost: 1200 },
-    ];
-    setupMixedTermRecs(recs);
-    // acct-x prefers partial-upfront; acct-y prefers no-upfront.
-    (api.listAccountServiceOverrides as jest.Mock).mockImplementation(async (id: string) => {
-      if (id === 'acct-x') return [{ id: 'ovr-x', account_id: 'acct-x', provider: 'aws', service: 'ec2', payment: 'partial-upfront' }];
-      if (id === 'acct-y') return [{ id: 'ovr-y', account_id: 'acct-y', provider: 'aws', service: 'ec2', payment: 'no-upfront' }];
-      return [];
-    });
-
-    await loadRecommendations();
-    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-
-    const { getFanOutBuckets } = await import('../recommendations');
-    const buckets = getFanOutBuckets();
-    expect(buckets).not.toBeNull();
-    const bucket1yr = buckets!.find((b) => b.term === 1)!;
-    expect(bucket1yr).toBeDefined();
-
-    // The 1yr bucket is multi-account: perRecPayments must be present.
-    expect(bucket1yr.perRecPayments).toBeDefined();
-    const prp = bucket1yr.perRecPayments!;
-    // h1 (acct-x) seeded from partial-upfront override.
-    expect(prp.get('h1-partial')).toBe('partial-upfront');
-    // h2 (acct-y) seeded from no-upfront override.
-    expect(prp.get('h2-no')).toBe('no-upfront');
-
-    // Bucket-level payment falls back to toolbar (multi-account, no single override).
-    expect(bucket1yr.paymentSource).toBe('toolbar');
-
-    // Per-rec dropdowns must be rendered in the modal.
-    const perRecSelects = document.querySelectorAll<HTMLSelectElement>('.fanout-per-rec-payment');
-    expect(perRecSelects.length).toBeGreaterThanOrEqual(2);
-    const h1Select = Array.from(perRecSelects).find((s) => s.dataset['recId'] === 'h1-partial');
-    const h2Select = Array.from(perRecSelects).find((s) => s.dataset['recId'] === 'h2-no');
-    expect(h1Select?.value).toBe('partial-upfront');
-    expect(h2Select?.value).toBe('no-upfront');
-  });
-
-  test('(i) issue #197: per-rec dropdown change updates perRecPayments in module state', async () => {
-    // Same multi-account 1yr bucket as (h), plus a 3yr bucket to force fan-out.
-    const recs = [
-      { id: 'i1', provider: 'aws', cloud_account_id: 'acct-p', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500 },
-      { id: 'i2', provider: 'aws', cloud_account_id: 'acct-q', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'all-upfront', savings: 120, upfront_cost: 550 },
-      { id: 'i3', provider: 'aws', cloud_account_id: 'acct-p', service: 'ec2', resource_type: 'm5.large', region: 'us-east-1', count: 1, term: 3, payment: 'all-upfront', savings: 300, upfront_cost: 1200 },
-    ];
-    setupMixedTermRecs(recs);
-    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([]);
-
-    await loadRecommendations();
-    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-
-    const { getFanOutBuckets } = await import('../recommendations');
-    const before = getFanOutBuckets();
-    const bucket1yr = before!.find((b) => b.term === 1)!;
-    expect(bucket1yr.perRecPayments).toBeDefined();
-    // No overrides: both recs match the bucket default (all-upfront), so the
-    // map holds ONLY explicit overrides — i1/i2 are absent and fall back to
-    // b.payment via the execute path. (Eager population would make the
-    // bucket-level dropdown a no-op for these rows.)
-    expect(bucket1yr.perRecPayments!.has('i1')).toBe(false);
-    expect(bucket1yr.perRecPayments!.has('i2')).toBe(false);
-
-    // User changes the i1 dropdown to no-upfront — now an explicit override.
-    const i1Select = Array.from(
-      document.querySelectorAll<HTMLSelectElement>('.fanout-per-rec-payment'),
-    ).find((s) => s.dataset['recId'] === 'i1')!;
-    expect(i1Select).toBeDefined();
-    i1Select.value = 'no-upfront';
-    i1Select.dispatchEvent(new Event('change'));
-
-    const after = getFanOutBuckets();
-    const afterBucket1yr = after!.find((b) => b.term === 1)!;
-    expect(afterBucket1yr.perRecPayments!.get('i1-no')).toBe('no-upfront');
-    // i2 still follows the bucket default — absent from the override map.
-    expect(afterBucket1yr.perRecPayments!.has('i2')).toBe(false);
-
-    // Setting i1 back to the bucket default removes the override again so the
-    // row resumes tracking the bucket-level dropdown.
-    const liveI1Select = Array.from(
-      document.querySelectorAll<HTMLSelectElement>('.fanout-per-rec-payment'),
-    ).find((s) => s.dataset['recId'] === 'i1-no')!;
-    liveI1Select.value = '__fanout-bucket-default__';
-    liveI1Select.dispatchEvent(new Event('change'));
-    const reset = getFanOutBuckets();
-    expect(reset!.find((b) => b.term === 1)!.perRecPayments!.has('i1-no')).toBe(false);
-  });
-
-  // Issue #197 regression (CR #838): the bucket-level Payment dropdown must
-  // remain effective for multi-account rows that follow the bucket default.
-  // Before the fix, openFanOutModal eagerly wrote every rec into
-  // perRecPayments, so changing the bucket dropdown only mutated b.payment
-  // while the execute path still read the stale per-rec entry — making the
-  // visible control a no-op for unedited rows.
-  test('(j) issue #197: bucket-level Payment change propagates to non-overridden recs in the POST payload', async () => {
-    const recs = [
-      { id: 'j1', provider: 'aws', cloud_account_id: 'acct-r', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500 },
-      { id: 'j2', provider: 'aws', cloud_account_id: 'acct-s', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'all-upfront', savings: 120, upfront_cost: 550 },
-      { id: 'j3', provider: 'aws', cloud_account_id: 'acct-r', service: 'ec2', resource_type: 'm5.large', region: 'us-east-1', count: 1, term: 3, payment: 'all-upfront', savings: 300, upfront_cost: 1200 },
-    ];
-    setupMixedTermRecs(recs);
-    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([]);
-
-    await loadRecommendations();
-    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
-    // fetchOverridesForAccounts is a separate async function (one extra
-    // microtask boundary vs the previous inline Promise.all); four ticks
-    // are needed for openFanOutModal to finish populating the DOM.
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-
-    // Change the multi-account 1yr bucket's bucket-level Payment dropdown.
-    const bucketSelects = Array.from(
-      document.querySelectorAll<HTMLSelectElement>('.fanout-bucket-payment'),
-    );
-    // The 1yr bucket is the multi-account one (renders per-rec selects); find
-    // the bucket section that contains per-rec rows.
-    const targetSelect = bucketSelects.find((sel) => {
-      const section = sel.closest('.fanout-bucket');
-      return section?.querySelector('.fanout-per-rec-payment') != null;
-    })!;
-    expect(targetSelect).toBeDefined();
-    targetSelect.value = 'no-upfront';
-    targetSelect.dispatchEvent(new Event('change'));
-
-    const { getFanOutBuckets } = await import('../recommendations');
-    const buckets = getFanOutBuckets()!;
-    const bucket1yr = buckets.find((b) => b.term === 1)!;
-    // Execute path: payment = perRecPayments.get(id) ?? b.payment. With the
-    // override map empty for unedited rows, both recs must post the NEW
-    // bucket payment.
-    const resolved = (id: string): string => bucket1yr.perRecPayments?.get(id) ?? bucket1yr.payment;
-    expect(resolved('j1')).toBe('no-upfront');
-    expect(resolved('j2')).toBe('no-upfront');
-
-    // The visible per-rec selects must reflect the new bucket default too.
-    const perRecSelects = Array.from(
-      document.querySelectorAll<HTMLSelectElement>('.fanout-per-rec-payment'),
-    );
-    const j1Select = perRecSelects.find((s) => s.dataset['recId'] === 'j1-no');
-    const j2Select = perRecSelects.find((s) => s.dataset['recId'] === 'j2-no');
-    expect(j1Select?.value).toBe('__fanout-bucket-default__');
-    expect(j2Select?.value).toBe('__fanout-bucket-default__');
-  });
+  // Issue #197's multi-account-bucket tests ((h), (i), (j) in earlier
+  // revisions of this file) asserted that two recs on different cloud
+  // accounts could land in ONE bucket and post together via perRecPayments.
+  // Issue #333 found that behavior violates the backend's
+  // SingleCloudAccountIDFromRecs contract (internal/purchase/execution.go):
+  // a single executePurchase POST spanning more than one account is
+  // rejected with HTTP 400. handleBulkPurchaseClick's bucket key now
+  // includes cloud_account_id, so a multi-account bucket can no longer form
+  // through this entry point -- those three tests asserted the pre-#333 bug
+  // as correct behavior and were removed rather than kept red. Test (c)
+  // above now covers per-account override resolution once recs are split
+  // into single-account buckets; the perRecPayments resolution machinery
+  // itself (still exercised by its own unit path) is left in place as
+  // documented in openFanOutModal's comment, in case a future caller
+  // legitimately constructs a multi-account bucket.
 });
 
 // Issue #111 (iii): per-row Payment seed in openPurchaseModal — the

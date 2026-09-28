@@ -4111,28 +4111,28 @@ function handleBulkPurchaseClick(recommendations: LocalRecommendation[]): void {
     return;
   }
 
-  // Bucket by (provider, service, term, payment). Bundle B added `term` to
-  // the key so multi-term selections fan out into separate buckets. Issue
-  // #699 adds `payment` for the same reason: recs with identical
-  // (provider, service, term) but different per-rec payment values must
-  // also land in separate buckets so each bucket is payment-uniform and
-  // resolveBucketPaymentSeed can seed from recs[0].payment rather than
-  // falling back to the toolbar default ('all-upfront').
+  // Bucket by (provider, service, term, payment, cloud_account_id). Bundle B
+  // added `term` to the key so multi-term selections fan out into separate
+  // buckets. Issue #699 adds `payment` for the same reason: recs with
+  // identical (provider, service, term) but different per-rec payment
+  // values must also land in separate buckets so each bucket is payment-
+  // uniform and resolveBucketPaymentSeed can seed from recs[0].payment
+  // rather than falling back to the toolbar default ('all-upfront').
   //
-  // Issue #132: SP recs (savings-plans-{compute,ec2instance,sagemaker,
-  // database}) collapse into a single bucket per (provider, term) so an
-  // operator who used to bulk-buy SP pre-PR-#123 (when there was one
-  // 'savings-plans' service) keeps the one-click experience. Each rec
-  // retains its real per-plan-type service slug — only the bucket key
-  // is canonicalized via SAVINGS_PLANS_BUCKET_KEY. The backend
-  // executePurchase loops per rec and uses rec.service for the
-  // suppression and audit records, so a mixed-SP POST behaves
-  // identically to four separate POSTs except that there's only one
-  // approval token / email.
+  // Issue #333: `cloud_account_id` joins the key so a bucket -- and
+  // therefore the single executePurchase POST body built from it -- never
+  // spans more than one cloud account. internal/purchase/execution.go's
+  // SingleCloudAccountIDFromRecs (enforced both at the API boundary in
+  // validateExecutePurchaseRecommendations and by the executor) rejects a
+  // request whose selected recs target more than one account, or mix
+  // attributed and unattributed recs, with HTTP 400 (issue #1902). Recs
+  // with no cloud_account_id (the ambient single-account deployment)
+  // normalize to '' so they still bucket together, but never alongside an
+  // attributed account's recs.
   const buckets = new Map<string, LocalRecommendation[]>();
   for (const r of scaled) {
     const bucketService = isSavingsPlanService(r.service) ? SAVINGS_PLANS_BUCKET_KEY : r.service;
-    const key = `${r.provider}|${bucketService}|${r.term}|${normalizeBulkPayment(r.payment) ?? ''}`;
+    const key = `${r.provider}|${bucketService}|${r.term}|${normalizeBulkPayment(r.payment) ?? ''}|${r.cloud_account_id ?? ''}`;
     const existing = buckets.get(key);
     if (existing) existing.push(r);
     else buckets.set(key, [r]);
@@ -4202,6 +4202,17 @@ function handleBulkPurchaseClick(recommendations: LocalRecommendation[]): void {
 // bucket-level `payment`. handleFanOutExecute uses the per-rec
 // value when sending the POST so each rec's account override is
 // honoured even inside a mixed-account bucket.
+//
+// Issue #333: handleBulkPurchaseClick's bucket key now includes
+// cloud_account_id, so every bucket reaching openFanOutModal is already
+// single-account (or all-unattributed) by construction -- the backend
+// rejects a POST spanning more than one account (SingleCloudAccountIDFromRecs,
+// issue #1902), and one executePurchase call per bucket sends the whole
+// bucket in one body. The distinctAccountIDs.size > 1 branch below (and
+// perRecPayments) is therefore structurally unreachable from this call
+// site today; left in place as the multi-account resolution machinery in
+// case a future caller legitimately needs it, rather than deleted as an
+// out-of-scope cleanup.
 export interface FanOutBucket {
   provider: CompatProvider;
   service: string;
