@@ -407,6 +407,41 @@ describe('History Module', () => {
       expect(html).not.toContain('>Completed<');
     });
 
+    // Issue #239: a scheduled execution (Gmail-style pre-fire delay, issue
+    // #291 wave-2) has not had its provider call fire yet. It MUST render
+    // as "Scheduled", never the green "Completed" badge, or the user could
+    // think a delayed purchase already fired -- while a Revoke button sits
+    // right beside it. Pre-fix "scheduled" had no case in statusBadgeHTML
+    // and fell through to the Completed default.
+    test('renders scheduled as Scheduled, not Completed, and counts it under Pending', async () => {
+      (api.getHistory as jest.Mock).mockResolvedValue({
+        summary: {},
+        purchases: [
+          { purchase_id: 'sched-1', status: 'scheduled', provider: 'aws', region: 'us-east-1', upfront_cost: 500 },
+          { purchase_id: 'comp-1', status: 'completed', provider: 'aws', region: 'us-east-1', upfront_cost: 100 },
+        ],
+      });
+
+      await loadHistory();
+
+      const list = document.getElementById('history-list');
+      const scheduledRow = list?.querySelector('tr[data-execution-id="sched-1"]');
+      expect(scheduledRow?.innerHTML).toContain('Scheduled');
+      expect(scheduledRow?.innerHTML).not.toContain('>Completed<');
+      // The genuinely completed row is the negative control: it must still
+      // render as Completed, proving this isn't just a blanket badge change.
+      const completedRow = list?.querySelector('tr[data-execution-id="comp-1"]');
+      expect(completedRow?.innerHTML).toContain('>Completed<');
+
+      // The Pending chip count must include the scheduled row (it buckets
+      // via isInFlightStatus alongside approved/running/paused), not the
+      // Completed chip.
+      const pendingChip = document.querySelector('[data-history-status="pending"]');
+      expect(pendingChip?.textContent).toContain('Pending (1)');
+      const completedChip = document.querySelector('[data-history-status="completed"]');
+      expect(completedChip?.textContent).toContain('Completed (1)');
+    });
+
     // Issue #706: partially_completed rows counted in the Completed chip bucket
     // but excluded from the chip filter. Clicking "Completed" must show ALL rows
     // that the chip counted -- including partially_completed ones.

@@ -1040,7 +1040,12 @@ func summarizePurchaseHistory(purchases []config.PurchaseHistoryRecord) HistoryS
 		// for any of those states. "completed" and unset (legacy DB rows that
 		// pre-date the status field) both count as completed.
 		switch p.Status {
-		case "pending", "notified":
+		case "pending", "notified", "scheduled":
+			// "scheduled" (issue #239) is a pre-purchase state like
+			// pending/notified (PurchaseExecution.IsCancelable groups all
+			// three): the cloud SDK has not been called yet. It must not
+			// fall through to the default TotalCompleted++ below, or the
+			// "Total Upfront Spent" card counts money not yet spent.
 			summary.TotalPending++
 			continue
 		case "approved", "running", "paused":
