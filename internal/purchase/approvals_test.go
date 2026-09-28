@@ -610,6 +610,65 @@ func TestManager_ApproveExecution_FourEyesOn_DifferentActor_Allowed(t *testing.T
 	sender.AssertExpectations(t)
 }
 
+// TestManager_ApproveExecution_FourEyesOn_UnresolvableCreator_Denied is the
+// A16-001 regression guard (#256). checkDifferentApprover's tier-2 (email)
+// path resolves the creator's email via GetUserEmailByID and must fail
+// closed when that lookup cannot identify the creator -- either because the
+// creator's row was deleted (Postgres's GetUserEmailByID returns ("", nil)
+// on pgx.ErrNoRows, per internal/config/store_postgres.go) or because the
+// lookup itself errors. Neither branch had a test: every stub in this
+// package returned a real address, so a refactor that dropped or inverted
+// the `creatorEmail == ""` check would silently let a forwarded token from
+// the original requester clear dual control for any execution whose creator
+// was deleted, without failing a single existing test.
+func TestManager_ApproveExecution_FourEyesOn_UnresolvableCreator_Denied(t *testing.T) {
+	creatorID := "user-creator-deleted"
+	baseExecution := func() *config.PurchaseExecution {
+		return &config.PurchaseExecution{
+			ExecutionID:     "exec-sqs-unresolvable",
+			PlanID:          "plan-fourEyes",
+			Status:          "pending",
+			ApprovalToken:   "valid-token",
+			CreatedByUserID: &creatorID,
+		}
+	}
+
+	t.Run("GetUserEmailByID returns empty address (deleted creator row)", func(t *testing.T) {
+		ctx := context.Background()
+		manager, store, _ := newApproveManager(t)
+
+		store.On("GetExecutionByID", ctx, "exec-sqs-unresolvable").Return(baseExecution(), nil)
+		store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
+		// Mirrors the real Postgres store's ("", nil) result for
+		// pgx.ErrNoRows -- a deleted/nonexistent creator user row.
+		store.On("GetUserEmailByID", ctx, creatorID).Return("", nil)
+
+		err := manager.ApproveExecution(ctx, "exec-sqs-unresolvable", "valid-token", "approver@example.com")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "creator's account could not be resolved")
+		store.AssertNotCalled(t, "TransitionExecutionStatus",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		store.AssertExpectations(t)
+	})
+
+	t.Run("GetUserEmailByID errors", func(t *testing.T) {
+		ctx := context.Background()
+		manager, store, _ := newApproveManager(t)
+		lookupErr := errors.New("connection reset by peer")
+
+		store.On("GetExecutionByID", ctx, "exec-sqs-unresolvable").Return(baseExecution(), nil)
+		store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
+		store.On("GetUserEmailByID", ctx, creatorID).Return("", lookupErr)
+
+		err := manager.ApproveExecution(ctx, "exec-sqs-unresolvable", "valid-token", "approver@example.com")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to resolve creator identity")
+		store.AssertNotCalled(t, "TransitionExecutionStatus",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		store.AssertExpectations(t)
+	})
+}
+
 func TestManager_CancelExecution(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
