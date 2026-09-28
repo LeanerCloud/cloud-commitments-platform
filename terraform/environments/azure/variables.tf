@@ -467,6 +467,30 @@ variable "aks_enable_log_analytics" {
   default     = true
 }
 
+variable "aks_private_cluster_enabled" {
+  description = "Disable the AKS API server's public endpoint. Defaults to true; set false only alongside a real, non-empty aks_authorized_ip_ranges allowlist."
+  type        = bool
+  default     = true
+}
+
+variable "aks_authorized_ip_ranges" {
+  description = "CIDR allowlist for the public API server when aks_private_cluster_enabled=false. Must not include 0.0.0.0/0."
+  type        = list(string)
+  default     = []
+}
+
+variable "aks_local_account_disabled" {
+  description = "Disable AKS's static cluster-admin client certificate in favor of Azure RBAC / Entra-bound access. Defaults to true."
+  type        = bool
+  default     = true
+}
+
+variable "aks_admin_group_object_ids" {
+  description = "Entra ID (Azure AD) group object IDs granted AKS admin access. Optional: Azure RBAC role assignments against the cluster resource work without this."
+  type        = list(string)
+  default     = []
+}
+
 # ==============================================
 # Frontend (CDN) Configuration
 # ==============================================

@@ -174,3 +174,37 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "private_cluster_enabled" {
+  description = "Disable the AKS API server's public endpoint. Defaults to true (private cluster). Set to false only alongside a real, non-empty var.authorized_ip_ranges allowlist -- an operator who disables this without one gets a plan-time error, not a public-by-accident cluster. CONSEQUENCE: with this true (the default), the API server is reachable only from inside the VNet, so terraform apply itself cannot reach it from a standard GitHub-hosted runner (ubuntu-latest) unless that runner has VNet connectivity (self-hosted runner, VPN, or a peered network) -- and the kubernetes/helm providers this module's deploy_kubernetes_resources=true path configures (see environments/azure/main.tf) will time out trying to reach a private endpoint from a non-VNet runner. Only set var.deploy_kubernetes_resources=true from a VNet-reachable apply context."
+  type        = bool
+  default     = true
+
+  validation {
+    condition     = var.private_cluster_enabled || length(var.authorized_ip_ranges) > 0
+    error_message = "private_cluster_enabled=false requires a non-empty authorized_ip_ranges allowlist; otherwise the AKS API server is reachable from 0.0.0.0/0."
+  }
+}
+
+variable "authorized_ip_ranges" {
+  description = "CIDR allowlist for the public API server when private_cluster_enabled=false (e.g. CI egress ranges plus an operator bastion). Ignored when private_cluster_enabled=true. Must not include 0.0.0.0/0."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = !contains(var.authorized_ip_ranges, "0.0.0.0/0")
+    error_message = "authorized_ip_ranges must not contain 0.0.0.0/0; that reopens the public endpoint to the whole internet, exactly what private_cluster_enabled/authorized_ip_ranges exists to prevent."
+  }
+}
+
+variable "local_account_disabled" {
+  description = "Disable AKS's static cluster-admin client certificate (obtained via `az aks get-credentials --admin`), which never expires and isn't tied to any Entra identity. Defaults to true; admin access is instead granted via Azure RBAC role assignments (e.g. \"Azure Kubernetes Service RBAC Cluster Admin\") or var.admin_group_object_ids. CONSEQUENCE: with this true (the default), the Kubernetes provider's `client_certificate`/`client_key` auth (as environments/azure/main.tf currently configures it) stops working, because AKS no longer issues that certificate -- terraform's kubernetes/helm providers need `exec`-based auth (e.g. kubelogin, or an Azure RBAC-authorized service principal token) instead. Do not set var.deploy_kubernetes_resources=true with the default (true) until the provider block is switched to exec auth."
+  type        = bool
+  default     = true
+}
+
+variable "admin_group_object_ids" {
+  description = "Entra ID (Azure AD) group object IDs granted AKS admin access via azure_active_directory_role_based_access_control. Optional: with azure_rbac_enabled=true (always set by this module), admin access can also be granted purely through Azure RBAC role assignments against the cluster resource, so an empty list is a valid, non-locking-out default."
+  type        = list(string)
+  default     = []
+}
