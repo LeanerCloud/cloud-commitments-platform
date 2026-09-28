@@ -1,0 +1,15 @@
+-- 000100 down: intentional no-op.
+--
+-- The up migration blanked every raw approval_token and kept only its SHA-256
+-- digest in approval_token_hash, which cannot be reversed. Dropping
+-- approval_token_hash here would destroy the only copy of every live
+-- approval/revocation token, so a later re-up would permanently invalidate every
+-- outstanding link. The raw column's DEFAULT '' also stays, and pre-#103 code
+-- depends on it: rows written by #103 code carry only a hash, so the default is
+-- what keeps their raw column non-NULL and scannable. Pre-#103 code never reads
+-- approval_token_hash, so every outstanding link (and every link #103 code
+-- issued) fails closed as invalid after a rollback. Raw tokens pre-#103 code
+-- writes are swept into the hash again by a re-up, which uses ADD COLUMN IF
+-- NOT EXISTS. The hash column is removed only by the follow-up contract
+-- migration.
+SELECT 1;

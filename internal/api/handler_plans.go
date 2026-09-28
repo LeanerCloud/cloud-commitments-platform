@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
@@ -571,17 +570,16 @@ func (h *Handler) createPurchaseExecutionsTx(ctx context.Context, tx pgx.Tx, pla
 	for i := 0; i < count; i++ {
 		scheduledDate := startDate.AddDate(0, 0, i*intervalDays)
 
-		approvalToken, err := common.GenerateApprovalToken()
-		if err != nil {
-			return created, fmt.Errorf("failed to generate approval token (row %d/%d): %w", created+1, count, err)
-		}
+		// No approval token (issue #103): nothing emails one from here, and
+		// the notification job mints, emails and only then persists a token
+		// for these future ramp steps (getOrCreateExecution). An empty token
+		// fails closed at every compare site until then.
 		execution := &config.PurchaseExecution{
 			PlanID:          planID,
 			ExecutionID:     uuid.New().String(),
 			Status:          "pending",
 			StepNumber:      plan.RampSchedule.CurrentStep + i + 1,
 			ScheduledDate:   scheduledDate,
-			ApprovalToken:   approvalToken,
 			CreatedByUserID: creator,
 		}
 

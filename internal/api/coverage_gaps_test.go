@@ -748,6 +748,7 @@ func TestHandler_sendPurchaseApprovalEmail_NilNotifier(t *testing.T) {
 		context.Background(),
 		nil,
 		&config.PurchaseExecution{ExecutionID: "test-id"},
+		"",
 		nil,
 		0,
 		0,
@@ -773,6 +774,7 @@ func TestHandler_sendPurchaseApprovalEmail_NoNotificationEmail(t *testing.T) {
 		ctx,
 		nil, // no inbound request — resolveDashboardURL falls back to h.dashboardURL
 		&config.PurchaseExecution{ExecutionID: "test-id"},
+		"",
 		nil,
 		0,
 		0,
@@ -829,7 +831,7 @@ func TestHandler_sendPurchaseApprovalEmail_ResponseRecipientUsesNotificationEmai
 			{ID: "r1", CloudAccountID: &accountID},
 		},
 	}
-	emailSent, _, responseRecipient := h.sendPurchaseApprovalEmail(ctx, nil, exec, exec.Recommendations, 0, 0)
+	emailSent, _, responseRecipient := h.sendPurchaseApprovalEmail(ctx, nil, exec, "tok", exec.Recommendations, 0, 0)
 
 	require.True(t, emailSent, "email send must succeed")
 	// The response recipient surfaced in the toast must be the notification_email
@@ -870,7 +872,7 @@ func TestHandler_sendPurchaseApprovalEmail_ResponseRecipientFallsBackToContactEm
 			{ID: "r1", CloudAccountID: &accountID},
 		},
 	}
-	emailSent, _, responseRecipient := h.sendPurchaseApprovalEmail(ctx, nil, exec, exec.Recommendations, 0, 0)
+	emailSent, _, responseRecipient := h.sendPurchaseApprovalEmail(ctx, nil, exec, "tok2", exec.Recommendations, 0, 0)
 
 	require.True(t, emailSent, "email send must succeed")
 	// Without a notification_email, the response recipient falls back to contact_email.

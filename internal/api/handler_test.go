@@ -873,7 +873,7 @@ func TestHandler_HandleRequest_ApprovePurchase(t *testing.T) {
 	mockAuth.On("HasPermissionAPI", mock.Anything, "", "approve-own", "purchases").Return(false, nil).Maybe()
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveExecution", mock.Anything, execID, "token123", approver).Return(nil)
+	mockPurchase.On("ApproveExecution", mock.Anything, execID, "token123", approver).Return("", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -1265,7 +1265,7 @@ func TestHandler_HandleRequest_RunPlannedPurchase(t *testing.T) {
 	// resolves to the stateless admin-api-key principal rather than the
 	// bearer-token session, so the actor identity fourEyesActorIdentity
 	// derives is the sentinel, not the session's email.
-	mockPurchase.On("RunPlannedPurchaseNow", mock.Anything, "11111111-1111-1111-1111-111111111111", "admin-api-key", mock.Anything).Return(nil)
+	mockPurchase.On("RunPlannedPurchaseNow", mock.Anything, "11111111-1111-1111-1111-111111111111", "admin-api-key", mock.Anything).Return("", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth, corsAllowedOrigin: "*", apiKey: "test-key"}
 

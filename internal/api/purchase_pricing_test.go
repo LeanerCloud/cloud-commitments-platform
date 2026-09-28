@@ -63,7 +63,7 @@ func TestHandler_executePurchase_CapUsesStoredPriceNotClientPrice(t *testing.T) 
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
 	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil).Maybe()
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil).Maybe()
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
 	req := &events.LambdaFunctionURLRequest{
@@ -108,7 +108,7 @@ func TestHandler_executePurchase_StoredPriceUnderCapProceeds(t *testing.T) {
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil)
 	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil)
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil)
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
 	req := &events.LambdaFunctionURLRequest{
@@ -184,6 +184,11 @@ func TestHandler_executePurchase_PersistsStoredCostsNotClientCosts(t *testing.T)
 	assert.Equal(t, 2000.0, notifier.captured.TotalUpfrontCost)
 	assert.Equal(t, 200.0, notifier.captured.TotalSavings)
 
+	// Issue #103: the row stores only the hash of the token the email carries.
+	require.NotEmpty(t, notifier.captured.ApprovalToken)
+	assert.Equal(t, config.HashApprovalToken(notifier.captured.ApprovalToken), saved.ApprovalToken)
+	assert.NotEqual(t, notifier.captured.ApprovalToken, saved.ApprovalToken, "the raw token must never be stored")
+
 	resultMap := result.(map[string]any)
 	assert.Equal(t, 2000.0, resultMap["total_upfront_cost"])
 	assert.Equal(t, 200.0, resultMap["estimated_savings"])
@@ -256,7 +261,7 @@ func TestHandler_executePurchase_CrossAccountMismatchRefused(t *testing.T) {
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
 	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil).Maybe()
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil).Maybe()
 
 	accountA := "111111111111"
 	expectStoredRecs(mockStore, config.RecommendationRecord{

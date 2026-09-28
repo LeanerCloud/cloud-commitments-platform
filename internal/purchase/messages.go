@@ -2,8 +2,6 @@ package purchase
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -178,7 +176,10 @@ func (m *Manager) handleApproveMessage(ctx context.Context, msg *AsyncMessage) e
 	if err := m.verifyAsyncApprovalActor(ctx, msg); err != nil {
 		return err
 	}
-	return m.ApproveExecution(ctx, msg.ExecutionID, msg.Token, msg.ActorEmail)
+	// The SQS worker sends no email itself, so the minted revocation token
+	// (issue #103) has no consumer here; only the error matters.
+	_, err := m.ApproveExecution(ctx, msg.ExecutionID, msg.Token, msg.ActorEmail)
+	return err
 }
 
 // handleCancelMessage processes a cancel message. Same hardening as
@@ -240,9 +241,10 @@ func (m *Manager) loadAsyncExecutionForApproval(ctx context.Context, msg *AsyncM
 	if execution.ApprovalToken == "" || msg.Token == "" {
 		return nil, fmt.Errorf("invalid approval token")
 	}
-	storedHash := sha256.Sum256([]byte(execution.ApprovalToken))
-	userHash := sha256.Sum256([]byte(msg.Token))
-	if subtle.ConstantTimeCompare(storedHash[:], userHash[:]) != 1 {
+	// execution.ApprovalToken is the SHA-256 hex digest stored at rest
+	// (issue #103); config.ApprovalTokenMatches hashes msg.Token and
+	// compares digests in constant time.
+	if !config.ApprovalTokenMatches(execution.ApprovalToken, msg.Token) {
 		return nil, fmt.Errorf("invalid approval token")
 	}
 	return execution, nil

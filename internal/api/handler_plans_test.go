@@ -1881,7 +1881,10 @@ func TestHandler_createPlannedPurchases_AllowsAnUnstartedStep(t *testing.T) {
 	}
 	mockStore.On("GetPurchasePlan", ctx, planID).Return(plan, nil)
 	mockStore.On("OccupiedRampStepsInRangeTx", ctx, mock.Anything, planID, 3, 4).Return([]int{}, nil)
-	mockStore.On("SavePurchaseExecutionTx", ctx, mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
+	var saved []config.PurchaseExecution
+	mockStore.On("SavePurchaseExecutionTx", ctx, mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = append(saved, *args.Get(2).(*config.PurchaseExecution)) }).
+		Return(nil)
 	mockStore.On("UpdatePurchasePlanTx", ctx, mock.Anything, mock.AnythingOfType("*config.PurchasePlan")).Return(nil).Maybe()
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
@@ -1893,6 +1896,12 @@ func TestHandler_createPlannedPurchases_AllowsAnUnstartedStep(t *testing.T) {
 	resp, err := handler.createPlannedPurchases(ctx, req, planID)
 	require.NoError(t, err)
 	assert.Equal(t, 2, resp.Created)
+	// Issue #103: ramp rows store no approval token (raw or otherwise); the
+	// notification job mints and persists one only when it emails it.
+	require.Len(t, saved, 2)
+	for _, e := range saved {
+		assert.Empty(t, e.ApprovalToken)
+	}
 }
 
 // TestHandler_createPlannedPurchases_FailsClosedWhenTheProbeFails: the guard

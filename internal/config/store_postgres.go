@@ -980,7 +980,7 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 	query := `
 		INSERT INTO purchase_executions (
 			plan_id, execution_id, status, step_number, scheduled_date,
-			notification_sent, approval_token, recommendations,
+			notification_sent, approval_token_hash, recommendations,
 			total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 			cloud_account_id, source, approved_by, cancelled_by, capacity_percent,
 			created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -991,7 +991,7 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 		ON CONFLICT (execution_id) DO UPDATE SET
 			status = $3,
 			notification_sent = $6,
-			approval_token = $7,
+			approval_token_hash = $7,
 			recommendations = $8,
 			total_upfront_cost = $9,
 			estimated_savings = $10,
@@ -1102,6 +1102,23 @@ func (s *PostgresStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx,
 	return tag.RowsAffected() == 1, nil
 }
 
+// RotatePendingApprovalToken implements StoreInterface.
+func (s *PostgresStore) RotatePendingApprovalToken(ctx context.Context, executionID, tokenHash string, expiresAt time.Time) (bool, error) {
+	q := `
+		UPDATE purchase_executions
+		   SET approval_token_hash = $2,
+		       approval_token_expires_at = $3,
+		       updated_at = NOW()
+		 WHERE execution_id = $1
+		   AND status IN ('pending', 'notified')
+	`
+	tag, err := s.db.Exec(ctx, q, executionID, tokenHash, expiresAt)
+	if err != nil {
+		return false, fmt.Errorf("failed to rotate approval token: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // TransitionExecutionStatus atomically transitions an execution from one of the
 // allowed statuses to a new status. Returns the updated record, or an error if
 // the execution was not found or not in an allowed status.
@@ -1114,7 +1131,7 @@ func (s *PostgresStore) TransitionExecutionStatus(ctx context.Context, execution
 		    transitioned_by = $4, transitioned_at = NOW()
 		WHERE execution_id = $1 AND status = ANY($3)
 		RETURNING plan_id, execution_id, status, step_number, scheduled_date,
-		          notification_sent, approval_token, recommendations,
+		          notification_sent, approval_token_hash, recommendations,
 		          total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		          cloud_account_id, source, approved_by, cancelled_by, capacity_percent,
 		          created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -1302,7 +1319,7 @@ func (s *PostgresStore) GetExecutionsByStatuses(ctx context.Context, statuses []
 	}
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -1413,7 +1430,7 @@ func (s *PostgresStore) GetPlannedExecutions(ctx context.Context, statuses []str
 	}
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -1438,7 +1455,7 @@ func (s *PostgresStore) GetPlannedExecutions(ctx context.Context, statuses []str
 func (s *PostgresStore) GetStaleApprovedExecutions(ctx context.Context, olderThan time.Duration) ([]PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -1480,7 +1497,7 @@ func (s *PostgresStore) ListStuckExecutions(ctx context.Context, statuses []stri
 	}
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -1501,7 +1518,7 @@ func (s *PostgresStore) ListStuckExecutions(ctx context.Context, statuses []stri
 func (s *PostgresStore) GetPendingExecutions(ctx context.Context) ([]PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -1525,7 +1542,7 @@ func (s *PostgresStore) GetPendingExecutions(ctx context.Context) ([]PurchaseExe
 func (s *PostgresStore) GetPendingExecutionsTx(ctx context.Context, tx pgx.Tx) ([]PurchaseExecution, error) {
 	const query = `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -1555,7 +1572,7 @@ func (s *PostgresStore) GetPendingExecutionsTx(ctx context.Context, tx pgx.Tx) (
 func (s *PostgresStore) GetExecutionByID(ctx context.Context, executionID string) (*PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -1582,7 +1599,7 @@ func (s *PostgresStore) GetExecutionByID(ctx context.Context, executionID string
 func (s *PostgresStore) GetExecutionByPlanAndDate(ctx context.Context, planID string, scheduledDate time.Time) (*PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -1724,6 +1741,9 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 		// leave exec.IdempotencyKey "" for those so the derivation falls back
 		// to ExecutionID (issue #1012).
 		var idempotencyKey sql.NullString
+		// approval_token_hash is NULL on rows migration 000100 found with no
+		// raw token (every canceled row among them).
+		var approvalTokenHash sql.NullString
 
 		err := rows.Scan(
 			&planID,
@@ -1732,7 +1752,7 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 			&exec.StepNumber,
 			&exec.ScheduledDate,
 			&notifSent,
-			&exec.ApprovalToken,
+			&approvalTokenHash,
 			&recommendationsJSON,
 			&exec.TotalUpfrontCost,
 			&exec.EstimatedSavings,
@@ -1764,6 +1784,7 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 		if idempotencyKey.Valid {
 			exec.IdempotencyKey = idempotencyKey.String
 		}
+		exec.ApprovalToken = approvalTokenHash.String
 
 		// Unmarshal recommendations
 		if err := json.Unmarshal(recommendationsJSON, &exec.Recommendations); err != nil {
@@ -1786,7 +1807,7 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 func (s *PostgresStore) GetScheduledExecutionsDue(ctx context.Context) ([]PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
 		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
@@ -2645,7 +2666,13 @@ func (s *PostgresStore) ClaimRIExchangeIdempotencyKey(ctx context.Context, key s
 	return tag.RowsAffected() == 1, nil
 }
 
-// SaveRIExchangeRecord saves an RI exchange record.
+// SaveRIExchangeRecord saves an RI exchange record. This is the single write
+// path for ri_exchange_history (an INSERT, never an update-in-place of an
+// existing row's token), so it is the correct place to hash the token
+// into approval_token_hash (issue #103): record.ApprovalToken always carries a fresh
+// raw value freshly generated by the caller (pkg/exchange in
+// cloud-commitments-go), never a value previously read back from this
+// column, so hashing it here can never double-hash an already-hashed value.
 func (s *PostgresStore) SaveRIExchangeRecord(ctx context.Context, record *RIExchangeRecord) error {
 	if record.ID == "" {
 		record.ID = uuid.New().String()
@@ -2674,7 +2701,7 @@ func (s *PostgresStore) SaveRIExchangeRecord(ctx context.Context, record *RIExch
 			id, account_id, exchange_id, region, source_ri_ids,
 			source_instance_type, source_count, target_offering_id,
 			target_instance_type, target_count, payment_due,
-			status, approval_token, error, mode, completed_at, expires_at,
+			status, approval_token_hash, error, mode, completed_at, expires_at,
 			created_at, updated_at, created_by_user_id, ladder_run_id
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 	`
@@ -2692,7 +2719,7 @@ func (s *PostgresStore) SaveRIExchangeRecord(ctx context.Context, record *RIExch
 		record.TargetCount,
 		paymentDue,
 		record.Status,
-		nullStringFromString(record.ApprovalToken),
+		nullStringFromString(HashApprovalToken(record.ApprovalToken)),
 		nullStringFromString(record.Error),
 		record.Mode,
 		record.CompletedAt,
@@ -2716,7 +2743,7 @@ func (s *PostgresStore) GetRIExchangeRecord(ctx context.Context, id string) (*RI
 		SELECT id, account_id, exchange_id, region, source_ri_ids,
 		       source_instance_type, source_count, target_offering_id,
 		       target_instance_type, target_count, payment_due::text,
-		       status, approval_token, error, mode,
+		       status, approval_token_hash, error, mode,
 		       created_at, updated_at, completed_at, expires_at,
 		       created_by_user_id, approved_by, ladder_run_id
 		FROM ri_exchange_history
@@ -2735,20 +2762,22 @@ func (s *PostgresStore) GetRIExchangeRecord(ctx context.Context, id string) (*RI
 	return &records[0], nil
 }
 
-// GetRIExchangeRecordByToken retrieves an RI exchange record by approval token.
+// GetRIExchangeRecordByToken retrieves an RI exchange record by approval
+// token. token is the raw, caller-supplied value; only its hash is stored
+// (approval_token_hash, issue #103), so the lookup hashes it first.
 func (s *PostgresStore) GetRIExchangeRecordByToken(ctx context.Context, token string) (*RIExchangeRecord, error) {
 	query := `
 		SELECT id, account_id, exchange_id, region, source_ri_ids,
 		       source_instance_type, source_count, target_offering_id,
 		       target_instance_type, target_count, payment_due::text,
-		       status, approval_token, error, mode,
+		       status, approval_token_hash, error, mode,
 		       created_at, updated_at, completed_at, expires_at,
 		       created_by_user_id, approved_by, ladder_run_id
 		FROM ri_exchange_history
-		WHERE approval_token = $1
+		WHERE approval_token_hash = $1
 	`
 
-	records, err := s.queryRIExchangeRecords(ctx, query, token)
+	records, err := s.queryRIExchangeRecords(ctx, query, HashApprovalToken(token))
 	if err != nil {
 		return nil, err
 	}
@@ -2766,7 +2795,7 @@ func (s *PostgresStore) GetRIExchangeHistory(ctx context.Context, since time.Tim
 		SELECT id, account_id, exchange_id, region, source_ri_ids,
 		       source_instance_type, source_count, target_offering_id,
 		       target_instance_type, target_count, payment_due::text,
-		       status, approval_token, error, mode,
+		       status, approval_token_hash, error, mode,
 		       created_at, updated_at, completed_at, expires_at,
 		       created_by_user_id, approved_by, ladder_run_id
 		FROM ri_exchange_history
@@ -2791,7 +2820,7 @@ func (s *PostgresStore) TransitionRIExchangeStatus(ctx context.Context, id, from
 		RETURNING id, account_id, exchange_id, region, source_ri_ids,
 		          source_instance_type, source_count, target_offering_id,
 		          target_instance_type, target_count, payment_due::text,
-		          status, approval_token, error, mode,
+		          status, approval_token_hash, error, mode,
 		          created_at, updated_at, completed_at, expires_at,
 		          created_by_user_id, approved_by, ladder_run_id
 	`
@@ -3011,7 +3040,7 @@ func (s *PostgresStore) GetStaleProcessingExchanges(ctx context.Context, olderTh
 		SELECT id, account_id, exchange_id, region, source_ri_ids,
 		       source_instance_type, source_count, target_offering_id,
 		       target_instance_type, target_count, payment_due::text,
-		       status, approval_token, error, mode,
+		       status, approval_token_hash, error, mode,
 		       created_at, updated_at, completed_at, expires_at,
 		       created_by_user_id, approved_by, ladder_run_id
 		FROM ri_exchange_history

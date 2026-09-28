@@ -63,35 +63,52 @@ func (m *Manager) shouldNotifyPlan(plan config.PurchasePlan) bool {
 	return true
 }
 
+// errExecutionNotNotifiable marks an existing execution for the plan's date
+// that has already left pending/notified; every notification tick until the
+// plan's NextExecutionDate advances hits it, so it is skipped quietly.
+var errExecutionNotNotifiable = errors.New("execution is no longer awaiting approval")
+
 // sendPlanNotification sends a notification for a plan and returns true if successful.
 func (m *Manager) sendPlanNotification(ctx context.Context, plan *config.PurchasePlan) bool {
 	daysUntil := int(time.Until(*plan.NextExecutionDate).Hours() / config.HoursPerDay)
 	logging.Infof("Sending notification for plan %s (purchase in %d days)", plan.Name, daysUntil)
 
-	// Create execution record if doesn't exist
-	execution, err := m.getOrCreateExecution(ctx, plan)
-	if err != nil {
-		logging.Errorf("Failed to create execution: %v", err)
-		return false
-	}
-
-	// Resolve the notification recipient. The rendered body embeds action tokens
-	// and must be delivered via targeted SES, not broadcast via SNS. Log a
-	// warning and skip rather than broadcasting if no recipient is configured.
-	notifyEmail := ""
-	if globalCfg, cfgErr := m.config.GetGlobalConfig(ctx); cfgErr == nil && globalCfg != nil && globalCfg.NotificationEmail != nil {
-		notifyEmail = *globalCfg.NotificationEmail
-	}
+	// Resolve the notification recipient before touching any token. The
+	// rendered body embeds action tokens and must be delivered via targeted
+	// SES, not broadcast via SNS. Log a warning and skip rather than
+	// broadcasting if no recipient is configured.
+	notifyEmail := m.globalNotificationEmail(ctx)
 	if notifyEmail == "" {
 		logging.Warnf("Skipping scheduled-purchase notification for plan %s: no notification email configured in global settings", plan.Name)
 		return false
 	}
 
-	// Send notification
-	data := m.buildNotificationData(*plan, execution, daysUntil, notifyEmail)
+	execution, rawApprovalToken, rotationPending, err := m.getOrCreateExecution(ctx, plan)
+	if errors.Is(err, errExecutionNotNotifiable) {
+		logging.Debugf("Skipping notification for plan %s: %v", plan.Name, err)
+		return false
+	}
+	if err != nil {
+		logging.Errorf("Failed to create execution: %v", err)
+		return false
+	}
+
+	data := m.buildNotificationData(*plan, execution, rawApprovalToken, daysUntil, notifyEmail)
 	if err := m.email.SendScheduledPurchaseNotification(ctx, data); err != nil {
 		logging.Errorf("Failed to send notification: %v", err)
 		return false
+	}
+
+	// Persist a rotated token only after the email carrying it went out, so a
+	// failed send leaves the previously emailed link live (issue #103). On
+	// failure the timestamp below is not written and the next tick resends.
+	if rotationPending {
+		rotated, rotErr := m.config.RotatePendingApprovalToken(ctx, execution.ExecutionID, execution.ApprovalToken, *execution.ApprovalTokenExpiresAt)
+		if rotErr != nil || !rotated {
+			logging.Errorf("purchase[%s]: notification sent but its approval token was not persisted (rotated=%t): %v",
+				execution.ExecutionID, rotated, rotErr)
+			return false
+		}
 	}
 
 	// Update notification sent time. If this fails the suppression timestamp is
@@ -107,8 +124,24 @@ func (m *Manager) sendPlanNotification(ctx context.Context, plan *config.Purchas
 	return true
 }
 
-// getOrCreateExecution gets existing execution or creates new one.
-func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.PurchasePlan) (*config.PurchaseExecution, error) {
+// globalNotificationEmail returns the configured global notification
+// address, or "" when none is set or the config can't be read.
+func (m *Manager) globalNotificationEmail(ctx context.Context) string {
+	if globalCfg, cfgErr := m.config.GetGlobalConfig(ctx); cfgErr == nil && globalCfg != nil && globalCfg.NotificationEmail != nil {
+		return *globalCfg.NotificationEmail
+	}
+	return ""
+}
+
+// getOrCreateExecution gets an existing execution or creates a new one, and
+// returns the RAW approval token to embed in the notification about to be
+// sent. Only the token's hash is stored (issue #103), so an existing row
+// never carries an emailable token: a fresh one is minted into the returned
+// copy (hash + ApprovalTokenTTL expiry) but NOT persisted, and
+// rotationPending tells the caller to persist it via
+// RotatePendingApprovalToken once the email has been sent. A new row is
+// saved with its hash up front, since nothing was emailed for it yet.
+func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.PurchasePlan) (execution *config.PurchaseExecution, rawToken string, rotationPending bool, err error) {
 	// Check for existing execution for this date to prevent duplicates.
 	// GetExecutionByPlanAndDate wraps ErrNotFound on zero rows; any other
 	// error is a real store failure and must propagate.
@@ -116,18 +149,33 @@ func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.Purchas
 	switch {
 	case err == nil && existing != nil:
 		logging.Debugf("Found existing execution %s for plan %s on %s", existing.ExecutionID, plan.ID, plan.NextExecutionDate)
-		return existing, nil
+		// GetExecutionByPlanAndDate filters only on plan_id + scheduled_date,
+		// not status, so this row can already be approved/completed/canceled
+		// by the time a later notification tick re-runs for the same date.
+		// Rotating then would kill whichever link (approval or post-approve
+		// revoke) is currently live.
+		if existing.Status != "pending" && existing.Status != "notified" {
+			return nil, "", false, fmt.Errorf("%w: %s is %s", errExecutionNotNotifiable, existing.ExecutionID, existing.Status)
+		}
+		tok, genErr := common.GenerateApprovalToken()
+		if genErr != nil {
+			return nil, "", false, fmt.Errorf("failed to generate approval token: %w", genErr)
+		}
+		expiry := time.Now().Add(config.ApprovalTokenTTL)
+		existing.ApprovalToken = config.HashApprovalToken(tok)
+		existing.ApprovalTokenExpiresAt = &expiry
+		return existing, tok, true, nil
 	case err != nil && !errors.Is(err, config.ErrNotFound):
-		return nil, fmt.Errorf("failed to check for existing execution: %w", err)
+		return nil, "", false, fmt.Errorf("failed to check for existing execution: %w", err)
 	}
 	// ErrNotFound (or nil error with nil row): no existing execution for this plan+date; create a new one.
 
 	approvalToken, err := common.GenerateApprovalToken()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate approval token: %w", err)
+		return nil, "", false, fmt.Errorf("failed to generate approval token: %w", err)
 	}
 	tokenExpiresAt := time.Now().Add(config.ApprovalTokenTTL)
-	execution := &config.PurchaseExecution{
+	execution = &config.PurchaseExecution{
 		PlanID:      plan.ID,
 		ExecutionID: uuid.New().String(),
 		Status:      "pending",
@@ -138,24 +186,26 @@ func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.Purchas
 		// notification-created row re-complete a counted step, freezing the ramp.
 		StepNumber:             plan.RampSchedule.CurrentStep + 1,
 		ScheduledDate:          *plan.NextExecutionDate,
-		ApprovalToken:          approvalToken,
+		ApprovalToken:          config.HashApprovalToken(approvalToken),
 		ApprovalTokenExpiresAt: &tokenExpiresAt,
 	}
 
 	if err := m.config.SavePurchaseExecution(ctx, execution); err != nil {
-		return nil, err
+		return nil, "", false, err
 	}
 
-	return execution, nil
+	return execution, approvalToken, false, nil
 }
 
 // buildNotificationData creates notification data from plan and execution.
 // notifyEmail is the global notification address from GlobalConfig; it is set
 // as RecipientEmail so the token-bearing body routes through targeted SES.
-func (m *Manager) buildNotificationData(plan config.PurchasePlan, exec *config.PurchaseExecution, daysUntil int, notifyEmail string) email.NotificationData {
+// rawApprovalToken is the RAW token from getOrCreateExecution -- never read
+// from exec.ApprovalToken, which holds only the hash (issue #103).
+func (m *Manager) buildNotificationData(plan config.PurchasePlan, exec *config.PurchaseExecution, rawApprovalToken string, daysUntil int, notifyEmail string) email.NotificationData {
 	data := email.NotificationData{
 		DashboardURL:      m.dashboardURL,
-		ApprovalToken:     exec.ApprovalToken,
+		ApprovalToken:     rawApprovalToken,
 		ExecutionID:       exec.ExecutionID,
 		PlanID:            plan.ID,
 		TotalSavings:      exec.EstimatedSavings,

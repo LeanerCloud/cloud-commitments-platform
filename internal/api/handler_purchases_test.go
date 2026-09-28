@@ -69,7 +69,7 @@ func TestHandler_approvePurchase(t *testing.T) {
 	mockAuth.On("HasPermissionAPI", ctx, "", "approve-own", "purchases").Return(false, nil).Maybe()
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", approver).Return(nil)
+	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", approver).Return("", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -270,7 +270,7 @@ func TestHandler_approvePurchase_AcceptsContactEmailSession(t *testing.T) {
 	mockAuth.On("HasPermissionAPI", ctx, "", "approve-own", "purchases").Return(false, nil).Maybe()
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contactEmail).Return(nil)
+	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contactEmail).Return("", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -327,7 +327,7 @@ func TestHandler_approvePurchase_SessionApproveAnyChainsToExecute(t *testing.T) 
 	// ApproveAndExecute, not ApproveExecution. The token-only path runs
 	// ApproveExecution; the dashboard click runs ApproveAndExecute. Both
 	// converge inside the Manager.
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil)
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -375,7 +375,7 @@ func TestHandler_approvePurchase_SessionExecuteFailureSurfacesAs409(t *testing.T
 	mockAuth.On("ValidateCSRFToken", ctx, "sess-tok", "").Return(nil)
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(errors.New("AWS RI purchase failed"))
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", errors.New("AWS RI purchase failed"))
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -826,7 +826,7 @@ func TestHandler_approvePurchase_AWSOrphanFallsThrough(t *testing.T) {
 
 	mockPurchase := new(MockPurchaseManager)
 	// Guard does not fire; ApproveAndExecute is called normally.
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil)
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -868,7 +868,7 @@ func TestHandler_approvePurchase_NonOrphanUnchanged(t *testing.T) {
 	mockAuth.On("ValidateCSRFToken", ctx, "sess-tok", "").Return(nil)
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil)
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -1572,9 +1572,12 @@ func TestHandler_runPlannedPurchase(t *testing.T) {
 	// CAS-guarded funnel ApproveAndExecute uses (issue #218) rather than a
 	// bare TransitionExecutionStatus flip to "running" that no executor
 	// consumes.
-	mockPurchase.On("RunPlannedPurchaseNow", ctx, "11111111-1111-1111-1111-111111111111", "admin@example.com", mock.Anything).Return(nil)
+	mockPurchase.On("RunPlannedPurchaseNow", ctx, "11111111-1111-1111-1111-111111111111", "admin@example.com", mock.Anything).Return("raw-revocation-token", nil)
+	notify := "notify@example.com"
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &notify}, nil)
 
-	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth}
+	notifier := &recordingExecutedNotifier{}
+	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth, emailNotifier: notifier}
 
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{
@@ -1587,6 +1590,9 @@ func TestHandler_runPlannedPurchase(t *testing.T) {
 	resultMap := result.(map[string]interface{})
 	assert.Equal(t, "11111111-1111-1111-1111-111111111111", resultMap["execution_id"])
 	assert.Equal(t, "completed", resultMap["status"])
+	// The revocation token the shared funnel minted (issue #103) exists only
+	// as this return value, so Run-now must email it.
+	assertExecutedNotificationFingerprints(t, notifier, notify, "admin@example.com", "raw-revocation-token")
 	mockPurchase.AssertExpectations(t)
 }
 
@@ -2155,7 +2161,7 @@ func TestHandler_runPlannedPurchase_NilExecution(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
 	mockPurchase.On("RunPlannedPurchaseNow", ctx, "99999999-9999-9999-9999-999999999999", "admin@example.com", mock.Anything).
-		Return(fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
+		Return("", fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
 
 	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth}
 
@@ -3596,6 +3602,41 @@ func TestHandler_retryPurchase_Admin_AllowsAny(t *testing.T) {
 	assert.Equal(t, "failed", updated.Status, "original keeps failed status as historical record")
 }
 
+// TestHandler_retryPurchase_StoresHashOfEmailedToken (issue #103): the retry
+// successor row must store only the hash of the approval token its email
+// carries, never the raw value.
+func TestHandler_retryPurchase_StoresHashOfEmailedToken(t *testing.T) {
+	creator := retryOtherID
+	accountID := "acct-retry"
+	failed := &config.PurchaseExecution{
+		ExecutionID:     retryExecID,
+		Status:          "failed",
+		CreatedByUserID: &creator,
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100, CloudAccountID: &accountID}},
+	}
+	session := &Session{UserID: retryCallerID, Email: "admin@example.com"}
+	handler, mockConfig, _ := buildSessionRetryHandler(failed, session, true, false)
+	mockConfig.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
+		return &config.CloudAccount{ID: id, ContactEmail: "contact@acct.example.com"}, nil
+	}
+	notifier := &recordingEmailNotifier{}
+	handler.emailNotifier = notifier
+
+	var saved []config.PurchaseExecution
+	mockConfig.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = append(saved, *args.Get(1).(*config.PurchaseExecution)) }).
+		Return(nil)
+	mockConfig.On("LinkRetryExecutionAtomic", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+
+	_, err := handler.retryPurchase(context.Background(), sessionRetryReq(), failed.ExecutionID)
+	require.NoError(t, err)
+	require.NotEmpty(t, saved)
+	emailed := notifier.captured.ApprovalToken
+	require.NotEmpty(t, emailed, "the approval email must carry the raw token")
+	assert.Equal(t, config.HashApprovalToken(emailed), saved[0].ApprovalToken)
+	assert.NotEqual(t, emailed, saved[0].ApprovalToken, "the raw token must never be stored")
+}
+
 func TestHandler_retryPurchase_RetryAny_AllowsAny(t *testing.T) {
 	creator := retryOtherID
 	failed := &config.PurchaseExecution{
@@ -4482,7 +4523,7 @@ func TestHandler_executePurchase_DirectExec_ExecuteAny(t *testing.T) {
 	// Direct-execute is a human session action: the transitioned_by actor
 	// must be the session user's UUID, not nil (issue #1009 audit objective).
 	mockPurchase.On("ApproveAndExecute", ctx, mock.AnythingOfType("string"), adminSession.Email,
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == adminSession.UserID })).Return(nil)
+		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == adminSession.UserID })).Return("", nil)
 	setupDirectExecMocks(ctx, mockStore)
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
@@ -4524,7 +4565,7 @@ func TestHandler_executePurchase_DirectExec_ExecuteOwn_Owner(t *testing.T) {
 	// Direct-execute is a human session action: the transitioned_by actor
 	// must be the session user's UUID, not nil (issue #1009 audit objective).
 	mockPurchase.On("ApproveAndExecute", ctx, mock.AnythingOfType("string"), ownerSession.Email,
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == ownerID })).Return(nil)
+		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == ownerID })).Return("", nil)
 	setupDirectExecMocks(ctx, mockStore)
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
@@ -4579,7 +4620,7 @@ func TestHandler_executePurchase_MultiAccountBatch_Rejected(t *testing.T) {
 			mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil).Maybe()
 			mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{}, nil).Maybe()
 			mockStore.On("GetPendingExecutions", ctx).Return([]config.PurchaseExecution{}, nil).Maybe()
-			mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+			mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil).Maybe()
 
 			handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
 			req := &events.LambdaFunctionURLRequest{
@@ -5382,7 +5423,7 @@ func TestHandler_revokePurchase_ValidToken(t *testing.T) {
 
 	exec := &config.PurchaseExecution{
 		ExecutionID:   execID,
-		ApprovalToken: token,
+		ApprovalToken: config.HashApprovalToken(token),
 		Status:        "completed",
 		Recommendations: []config.RecommendationRecord{
 			{ID: "r1", CloudAccountID: &accountID},
@@ -5888,7 +5929,7 @@ func TestRevokePurchase_RejectsRotatedToken(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID:   "exec-post-approve",
 		Status:        "completed",
-		ApprovalToken: freshToken, // minted by mintRevocationToken after approve
+		ApprovalToken: config.HashApprovalToken(freshToken), // minted by mintRevocationToken after approve
 	}
 	// The OLD approval token (from the approve-request email) must be rejected
 	// because the stored token has been rotated to the fresh revocation token.
@@ -5919,7 +5960,7 @@ func TestRevoke_WithinWindow_Allowed(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID:   "exec-in-window",
 		Status:        "completed",
-		ApprovalToken: "valid-token",
+		ApprovalToken: config.HashApprovalToken("valid-token"),
 		CompletedAt:   &recentCompleted,
 	}
 	err := validateRevokeToken(exec, "valid-token")
@@ -5933,7 +5974,7 @@ func TestRevoke_AfterWindow_Denied(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID:   "exec-past-window",
 		Status:        "completed",
-		ApprovalToken: "valid-token",
+		ApprovalToken: config.HashApprovalToken("valid-token"),
 		CompletedAt:   &staleCompleted,
 	}
 	err := validateRevokeToken(exec, "valid-token")
@@ -5950,7 +5991,7 @@ func TestRevoke_NoTimestamp_Allowed(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID:   "exec-legacy",
 		Status:        "completed",
-		ApprovalToken: "valid-token",
+		ApprovalToken: config.HashApprovalToken("valid-token"),
 		// No CompletedAt or ExecutedAt set (legacy row).
 	}
 	err := validateRevokeToken(exec, "valid-token")
@@ -6007,7 +6048,7 @@ func TestRevokePurchase_POSTPerformsRevoke(t *testing.T) {
 
 	exec := &config.PurchaseExecution{
 		ExecutionID:   execID,
-		ApprovalToken: token,
+		ApprovalToken: config.HashApprovalToken(token),
 		Status:        "completed",
 		Recommendations: []config.RecommendationRecord{
 			{ID: "r1", CloudAccountID: &accountID},

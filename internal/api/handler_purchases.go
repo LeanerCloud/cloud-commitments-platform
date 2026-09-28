@@ -4,7 +4,6 @@ package api
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -348,9 +347,15 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 		return nil, constraintErr
 	}
 
-	if err := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session)); err != nil {
-		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
+	revocationToken, runErr := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session))
+	if runErr != nil {
+		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, runErr))
 	}
+
+	// The shared execute funnel rotated the row's token into a revocation
+	// token whose raw value exists only here (issue #103); email it like the
+	// session-approve path does. Best-effort: the purchase already committed.
+	h.sendPurchaseExecutedEmail(ctx, req, execution, revocationToken, session.Email)
 
 	return map[string]any{
 		"execution_id": executionID,
@@ -662,35 +667,32 @@ func (h *Handler) approveViaToken(ctx context.Context, req *events.LambdaFunctio
 	// same call (issue #372). When it returns nil the AWS API call
 	// has already happened, so the response surfaces "completed"
 	// instead of the transient "approved" the old no-op flow returned.
-	if err := h.purchase.ApproveExecution(ctx, execution.ExecutionID, token, actor); err != nil {
-		return nil, err
+	//
+	// revocationToken is the raw token ApproveExecution's own
+	// ApproveAndExecute minted for this approval (issue #103); it is
+	// sourced from this return value, never from a DB re-read, since
+	// only the token hash is stored and a re-read can only ever yield
+	// the hash.
+	revocationToken, approveErr := h.purchase.ApproveExecution(ctx, execution.ExecutionID, token, actor)
+	if approveErr != nil {
+		return nil, approveErr
 	}
-	// Re-fetch the execution to pick up the fresh revocation token written by
-	// mintRevocationToken inside ApproveExecution. The stale pre-approve struct
-	// still carries the old approval token; passing it to sendPurchaseExecutedEmail
-	// would embed that now-overwritten token as RevocationToken, causing any
-	// subsequent revoke attempt to return 403 (validateRevokeToken checks the
-	// stored token, which mintRevocationToken has already replaced).
+	// Re-fetch the execution to pick up the FINAL state (status,
+	// completed_at, per-rec purchase results) ApproveAndExecute wrote --
+	// the pre-approve `execution` struct is stale on those fields. Falling
+	// back to the stale struct on a re-fetch failure is a cosmetic
+	// degradation of the email content only: revocationToken above is
+	// already in hand either way, so the Revoke link is always valid.
 	emailExec, fetchErr := h.config.GetExecutionByID(ctx, execution.ExecutionID)
 	if fetchErr != nil || emailExec == nil {
-		// Best-effort fallback: the re-fetch failed, so we cannot obtain the
-		// fresh revocation token minted inside ApproveExecution. The stale
-		// pre-approve struct still carries the OLD approval token, which
-		// mintRevocationToken has already replaced in the DB -- emailing it
-		// would embed an invalid token and every Revoke click would 403.
-		// Instead, send a COPY with ApprovalToken blanked so the email
-		// template's {{if .RevocationToken}} suppresses the Revoke panel
-		// entirely (no broken button). The purchase is complete regardless.
-		logging.Warnf("approveViaToken[%s]: re-fetch for email failed (%v); suppressing Revoke panel (no valid token available)",
+		logging.Warnf("approveViaToken[%s]: re-fetch for email failed (%v); using pre-approve snapshot",
 			execution.ExecutionID, fetchErr)
-		emailCopy := *execution
-		emailCopy.ApprovalToken = ""
-		emailExec = &emailCopy
+		emailExec = execution
 	}
 	// Best-effort post-execution notification email (issue #291). Mirrors
 	// the session-authed path; errors are logged inside sendPurchaseExecutedEmail
 	// and never propagate — the purchase is already done at this point.
-	h.sendPurchaseExecutedEmail(ctx, req, emailExec, actor)
+	h.sendPurchaseExecutedEmail(ctx, req, emailExec, revocationToken, actor)
 	return map[string]string{"status": "completed"}, nil
 }
 
@@ -759,15 +761,20 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 		return h.approveWithDelay(ctx, execution, globalCfg.GetPurchaseDelay(), session.Email, actor)
 	}
 
-	if err := h.purchase.ApproveAndExecute(ctx, execution.ExecutionID, fourEyesActorIdentity(session), actor); err != nil {
+	// revocationToken is the raw token ApproveAndExecute mints for this
+	// approval (issue #103); only the token hash is stored, so this
+	// return value is the only place a raw, emailable token exists after
+	// the call returns.
+	revocationToken, approveErr := h.purchase.ApproveAndExecute(ctx, execution.ExecutionID, fourEyesActorIdentity(session), actor)
+	if approveErr != nil {
 		// ApproveAndExecute returns either a transition error (the row
 		// drifted out of pending/notified between our check and the UPDATE
 		// -- race with cancel/expire) or an execution error (AWS API failed,
 		// status is now "failed" on disk). Both surface as 409 to the
 		// caller; the History view shows the resulting row state.
 		logging.Errorf("purchase[%s]: approvePurchaseViaSession failed after %s: %v",
-			execution.ExecutionID, time.Since(t0), err)
-		return nil, NewClientError(409, fmt.Sprintf("execution %s could not be approved: %v", execution.ExecutionID, err))
+			execution.ExecutionID, time.Since(t0), approveErr)
+		return nil, NewClientError(409, fmt.Sprintf("execution %s could not be approved: %v", execution.ExecutionID, approveErr))
 	}
 
 	logging.Infof("purchase[%s]: approvePurchaseViaSession completed in %s (auth=session)",
@@ -776,7 +783,7 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 	// after the synchronous purchase completes so the email carries the
 	// final committed state. Errors are logged inside sendPurchaseExecutedEmail
 	// and never propagate — the purchase is already done at this point.
-	h.sendPurchaseExecutedEmail(ctx, req, execution, session.Email)
+	h.sendPurchaseExecutedEmail(ctx, req, execution, revocationToken, session.Email)
 	return map[string]string{"status": "completed"}, nil
 }
 
@@ -1500,9 +1507,10 @@ func validateRevokeToken(execution *config.PurchaseExecution, token string) erro
 	if windowErr := checkRevocationWindow(execution); windowErr != nil {
 		return windowErr
 	}
-	storedHash := sha256.Sum256([]byte(execution.ApprovalToken))
-	userHash := sha256.Sum256([]byte(token))
-	if subtle.ConstantTimeCompare(storedHash[:], userHash[:]) != 1 {
+	// execution.ApprovalToken is the SHA-256 hex digest stored at rest
+	// (issue #103), not the raw secret; config.ApprovalTokenMatches hashes
+	// the supplied token and compares digests in constant time.
+	if !config.ApprovalTokenMatches(execution.ApprovalToken, token) {
 		return NewClientError(403, "invalid revocation token")
 	}
 	return nil
@@ -1751,7 +1759,7 @@ func (h *Handler) retryPurchase(ctx context.Context, req *events.LambdaFunctionU
 		return nil, constraintErr
 	}
 
-	newExecution, err := h.persistRetryExecution(ctx, failedExec, session, totalUpfront, totalSavings)
+	newExecution, rawApprovalToken, err := h.persistRetryExecution(ctx, failedExec, session, totalUpfront, totalSavings)
 	if err != nil {
 		return nil, err
 	}
@@ -1761,7 +1769,7 @@ func (h *Handler) retryPurchase(ctx context.Context, req *events.LambdaFunctionU
 	// `failed` so the user sees the reason in History; the linkage on
 	// the original row is unaffected (it points at the failed-again
 	// successor, which is exactly the audit trail we want).
-	emailSent, emailReason, recipient := h.sendPurchaseApprovalEmail(ctx, req, newExecution, failedExec.Recommendations, totalUpfront, totalSavings)
+	emailSent, emailReason, recipient := h.sendPurchaseApprovalEmail(ctx, req, newExecution, rawApprovalToken, failedExec.Recommendations, totalUpfront, totalSavings)
 	status := h.finalizePurchaseStatus(ctx, newExecution, emailSent, emailReason)
 
 	resp := map[string]any{
@@ -1933,7 +1941,12 @@ func clonePtr[T any](p *T) *T {
 // approval email and synthesize the response. Extracted from
 // retryPurchase to keep that function under the cyclomatic-complexity
 // ceiling; tx ordering and the slice-aliasing fix live here.
-func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.PurchaseExecution, session *Session, totalUpfront, totalSavings float64) (*config.PurchaseExecution, error) {
+//
+// Also returns the RAW approval token: newExecution.ApprovalToken holds
+// only the SHA-256 hash that gets persisted (issue #103), so the caller's
+// synchronous approval email (sendPurchaseApprovalEmail) must take the raw
+// value from this second return instead.
+func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.PurchaseExecution, session *Session, totalUpfront, totalSavings float64) (*config.PurchaseExecution, string, error) {
 	// Defensive deep copy of the recommendations slice. Sharing the
 	// backing array with failedExec.Recommendations would let the
 	// downstream purchase pipeline (purchase.Manager.purchaseRecommendations
@@ -1952,7 +1965,7 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 	// provides 256 bits of uniform randomness, matching every other creation site.
 	approvalToken, err := common.GenerateApprovalToken()
 	if err != nil {
-		return nil, fmt.Errorf("generate approval token for retry: %w", err)
+		return nil, "", fmt.Errorf("generate approval token for retry: %w", err)
 	}
 	tokenExpiresAt := time.Now().Add(config.ApprovalTokenTTL)
 
@@ -2014,7 +2027,7 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 		Recommendations:        copiedRecs,
 		TotalUpfrontCost:       totalUpfront,
 		EstimatedSavings:       totalSavings,
-		ApprovalToken:          approvalToken,
+		ApprovalToken:          config.HashApprovalToken(approvalToken),
 		ApprovalTokenExpiresAt: &tokenExpiresAt,
 		Source:                 common.PurchaseSourceWeb,
 		CapacityPercent:        failedExec.CapacityPercent,
@@ -2029,10 +2042,10 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 	suppressions := buildSuppressions(failedExec.Recommendations, newExecutionID, gracePeriodCfg, time.Now())
 
 	if err := h.persistRetrySuccessorTx(ctx, failedExec, newExecution, suppressions); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return newExecution, nil
+	return newExecution, approvalToken, nil
 }
 
 // persistRetrySuccessorTx writes the three retry-tx changes: the new
@@ -2786,10 +2799,15 @@ func buildDuplicatePurchaseResponse(ex *config.PurchaseExecution) map[string]any
 // newPendingExecution builds a fresh pending PurchaseExecution with a
 // crypto/rand-backed approval token. Extracted from executePurchase to keep
 // that function under the gocyclo threshold.
-func newPendingExecution(req *ExecutePurchaseRequest, totalUpfront, totalSavings float64) (*config.PurchaseExecution, error) {
+//
+// Returns the RAW token alongside the execution: the struct's ApprovalToken
+// field holds only the SHA-256 hash that gets persisted (issue #103), so the
+// caller's synchronous approval email (sendPurchaseApprovalEmail) must take
+// the raw value from the second return, not from execution.ApprovalToken.
+func newPendingExecution(req *ExecutePurchaseRequest, totalUpfront, totalSavings float64) (*config.PurchaseExecution, string, error) {
 	approvalToken, err := common.GenerateApprovalToken()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate approval token: %w", err)
+		return nil, "", fmt.Errorf("failed to generate approval token: %w", err)
 	}
 	tokenExpiresAt := time.Now().Add(config.ApprovalTokenTTL)
 	return &config.PurchaseExecution{
@@ -2799,11 +2817,11 @@ func newPendingExecution(req *ExecutePurchaseRequest, totalUpfront, totalSavings
 		Recommendations:        req.Recommendations,
 		TotalUpfrontCost:       totalUpfront,
 		EstimatedSavings:       totalSavings,
-		ApprovalToken:          approvalToken,
+		ApprovalToken:          config.HashApprovalToken(approvalToken),
 		ApprovalTokenExpiresAt: &tokenExpiresAt,
 		Source:                 common.PurchaseSourceWeb,
 		CapacityPercent:        req.CapacityPercent,
-	}, nil
+	}, approvalToken, nil
 }
 
 func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
@@ -2827,7 +2845,7 @@ func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctio
 	creatorID := derefStringOrEmpty(creator)
 	idempotencyKey := purchaseIdempotencyKey(creatorID, execReq.Recommendations, execReq.CapacityPercent)
 
-	execution, err := newPendingExecution(&execReq, totalUpfront, totalSavings)
+	execution, rawApprovalToken, err := newPendingExecution(&execReq, totalUpfront, totalSavings)
 	if err != nil {
 		return nil, err
 	}
@@ -2879,7 +2897,7 @@ func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctio
 	// best-effort and never blocks the response body; the returned
 	// email_sent / email_reason fields let the UI tell the user whether they
 	// should wait for an inbox or cancel/retry manually.
-	emailSent, emailReason, recipient := h.sendPurchaseApprovalEmail(ctx, req, execution, execReq.Recommendations, totalUpfront, totalSavings)
+	emailSent, emailReason, recipient := h.sendPurchaseApprovalEmail(ctx, req, execution, rawApprovalToken, execReq.Recommendations, totalUpfront, totalSavings)
 	status := h.finalizePurchaseStatus(ctx, execution, emailSent, emailReason)
 
 	return withPaymentAdjustments(buildApprovalPendingResponse(executionID, status, len(execReq.Recommendations), totalUpfront, totalSavings, emailSent, emailReason, recipient), paymentAdjustments), nil
@@ -2983,7 +3001,13 @@ func (h *Handler) directExecutePurchase(ctx context.Context, req *events.LambdaF
 	// Human session direct-execute: stamp the session user's UUID onto
 	// transitioned_by (FK-safe via validUUIDPtrOrNil) so the audit trail
 	// records who flipped the row to "approved".
-	if err := h.purchase.ApproveAndExecute(ctx, executionID, fourEyesActorIdentity(session), validUUIDPtrOrNil(&session.UserID)); err != nil {
+	//
+	// revocationToken is the raw token ApproveAndExecute mints for this
+	// approval (issue #103); only the token hash is stored, so this
+	// return value is the only place a raw, emailable token exists after
+	// the call returns.
+	revocationToken, err := h.purchase.ApproveAndExecute(ctx, executionID, fourEyesActorIdentity(session), validUUIDPtrOrNil(&session.UserID))
+	if err != nil {
 		logging.Errorf("purchase[%s]: directExecutePurchase failed after %s: %v",
 			executionID, time.Since(t0), err)
 		return nil, NewClientError(409, fmt.Sprintf("execution %s could not be direct-executed: %v", executionID, err))
@@ -2998,7 +3022,7 @@ func (h *Handler) directExecutePurchase(ctx context.Context, req *events.LambdaF
 	// approvePurchaseViaSession); recipient resolution and the nil-notifier
 	// guard live inside sendPurchaseExecutedEmail. session.Email is the actor
 	// who direct-executed, matching the actor passed to ApproveAndExecute above.
-	h.sendPurchaseExecutedEmail(ctx, req, execution, session.Email)
+	h.sendPurchaseExecutedEmail(ctx, req, execution, revocationToken, session.Email)
 	return withPaymentAdjustments(map[string]any{
 		"execution_id":         executionID,
 		"status":               "completed",
@@ -3050,7 +3074,7 @@ func approvalResponseRecipient(globalNotify, to string) string {
 //
 // Errors are also logged at Errorf level so they show up in CloudWatch, but
 // the reason string is what the API response surfaces to the UI.
-func (h *Handler) sendPurchaseApprovalEmail(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, recs []config.RecommendationRecord, totalUpfront, totalSavings float64) (bool, string, string) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
+func (h *Handler) sendPurchaseApprovalEmail(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, rawApprovalToken string, recs []config.RecommendationRecord, totalUpfront, totalSavings float64) (bool, string, string) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
 	if h.emailNotifier == nil {
 		return false, "email notifier not configured for this deployment", ""
 	}
@@ -3092,7 +3116,7 @@ func (h *Handler) sendPurchaseApprovalEmail(ctx context.Context, req *events.Lam
 	dashboardBase := h.resolveDashboardURL(req)
 	data := email.NotificationData{
 		DashboardURL:        dashboardBase,
-		ApprovalToken:       execution.ApprovalToken,
+		ApprovalToken:       rawApprovalToken,
 		ExecutionID:         execution.ExecutionID,
 		TotalSavings:        totalSavings,
 		TotalUpfrontCost:    totalUpfront,
@@ -3131,7 +3155,12 @@ func (h *Handler) sendPurchaseApprovalEmail(ctx context.Context, req *events.Lam
 // token infrastructure). When the sibling "AWS RI/SP revocation via support
 // case" issue lands and adds a dedicated revocation token + window field,
 // this method should be updated to use those fields instead.
-func (h *Handler) sendPurchaseExecutedEmail(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, executedByEmail string) {
+// revocationToken is the RAW token to embed as the email's revoke link
+// (issue #103: execution.ApprovalToken holds only the hash, and a fresh
+// token is minted for every successful approve -- see
+// purchase.Manager.ApproveAndExecute). Empty when minting failed
+// best-effort; the template's {{if .RevocationToken}} then omits the panel.
+func (h *Handler) sendPurchaseExecutedEmail(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, revocationToken, executedByEmail string) {
 	if h.emailNotifier == nil {
 		logging.Debug("sendPurchaseExecutedEmail: no email notifier configured, skipping")
 		return
@@ -3193,11 +3222,11 @@ func (h *Handler) sendPurchaseExecutedEmail(ctx context.Context, req *events.Lam
 		Recommendations:  summaries,
 		RecipientEmail:   to,
 		CCEmails:         cc,
-		// Reuse the approval token as the revocation token so the recipient can
-		// trigger a post-execution cancel via the /revoke route. A dedicated
-		// revocation token will be added when the sibling "AWS RI/SP revocation"
-		// issue lands its own DB column.
-		RevocationToken: execution.ApprovalToken,
+		// A fresh, dedicated revocation token minted by
+		// purchase.Manager.ApproveAndExecute for this specific approval
+		// (issue #103) so the recipient can trigger a post-execution cancel
+		// via the /revoke route.
+		RevocationToken: revocationToken,
 		// Populate the revocation window deadline so the email copy matches
 		// the enforced 24-hour window in validateRevokeToken (Finding #6).
 		RevocationWindowClosesAt: revocationWindowClosesAt(execution),

@@ -134,14 +134,19 @@ type BreakdownValue struct {
 // `transitionedBy` (ApproveAndExecute) is the session user's UUID stamped
 // onto purchase_executions.transitioned_by for human-initiated approvals;
 // pass nil for token/SQS/system flows so transitioned_by = NULL (issue #1009).
+//
+// ApproveExecution, ApproveAndExecute and RunPlannedPurchaseNow return the
+// raw revocation token minted on a successful execute (issue #103: only its
+// hash is stored, so callers can no longer recover a raw, emailable token by
+// re-reading the execution from the store). Empty on failure.
 type PurchaseManagerInterface interface {
-	ApproveExecution(ctx context.Context, execID, token, actor string) error
-	ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) error
+	ApproveExecution(ctx context.Context, execID, token, actor string) (string, error)
+	ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (string, error)
 	// RunPlannedPurchaseNow forces a pending or paused scheduled purchase to
 	// execute immediately (the "Run now" button), sharing ApproveAndExecute's
 	// 4-eyes-gated, CAS-guarded funnel instead of a bare status flip that
 	// nothing else consumes (issue #218).
-	RunPlannedPurchaseNow(ctx context.Context, execID, actor string, transitionedBy *string) error
+	RunPlannedPurchaseNow(ctx context.Context, execID, actor string, transitionedBy *string) (string, error)
 	CancelExecution(ctx context.Context, execID, token, actor string) error
 }
 

@@ -303,6 +303,10 @@ func (m *mockConfigStore) SetCancelledBy(_ context.Context, _ string, _ string) 
 	return nil
 }
 
+func (m *mockConfigStore) RotatePendingApprovalToken(ctx context.Context, executionID, tokenHash string, expiresAt time.Time) (bool, error) {
+	return false, nil
+}
+
 func (m *mockConfigStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (bool, error) {
 	return false, nil
 }

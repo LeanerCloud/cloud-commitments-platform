@@ -664,7 +664,7 @@ func TestHandler_validateExchangeApproval_Success(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockStore.On("GetRIExchangeRecord", ctx, "11111111-1111-1111-1111-111111111111").Return(
-		&config.RIExchangeRecord{ID: "11111111-1111-1111-1111-111111111111", ApprovalToken: "good-token"}, nil)
+		&config.RIExchangeRecord{ID: "11111111-1111-1111-1111-111111111111", ApprovalToken: config.HashApprovalToken("good-token")}, nil)
 
 	h := &Handler{config: mockStore}
 	record, err := h.validateExchangeApproval(ctx, "11111111-1111-1111-1111-111111111111", "good-token")
@@ -781,7 +781,7 @@ func TestHandler_rejectRIExchange_ValidTokenAndRecord(t *testing.T) {
 	mockStore.On("GetRIExchangeRecord", ctx, "11111111-1111-1111-1111-111111111111").Return(
 		&config.RIExchangeRecord{
 			ID:            "11111111-1111-1111-1111-111111111111",
-			ApprovalToken: "tok",
+			ApprovalToken: config.HashApprovalToken("tok"),
 			Status:        "pending",
 		}, nil)
 	// rejectRIExchange transitions to "canceled" (US canonical spelling, #1277 follow-up).

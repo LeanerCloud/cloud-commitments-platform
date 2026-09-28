@@ -329,6 +329,17 @@ func (m *MockConfigStore) SetCancelledBy(ctx context.Context, executionID, cance
 	return args.Error(0)
 }
 
+// RotatePendingApprovalToken mocks the RotatePendingApprovalToken operation.
+// Defaults to (true, nil) when no expectation is registered.
+func (m *MockConfigStore) RotatePendingApprovalToken(ctx context.Context, executionID, tokenHash string, expiresAt time.Time) (bool, error) {
+	m.record("RotatePendingApprovalToken", ctx, executionID, tokenHash, expiresAt)
+	if !isExpected(&m.Mock, "RotatePendingApprovalToken") {
+		return true, nil
+	}
+	args := m.Called(ctx, executionID, tokenHash, expiresAt)
+	return args.Bool(0), args.Error(1)
+}
+
 // LinkRetryExecutionAtomic mocks the LinkRetryExecutionAtomic operation.
 // Defaults to (true, nil) when no expectation is registered so tests that
 // only need the happy path don't require explicit mock setup. Tests
