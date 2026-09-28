@@ -1590,6 +1590,79 @@ func TestHandler_runPlannedPurchase(t *testing.T) {
 	mockPurchase.AssertExpectations(t)
 }
 
+// runPlannedPurchaseGuardHarness wires a runPlannedPurchase call for a
+// session holding admin:* (so update-any lets authorizeExecutionManagement
+// pass) plus the given execute:purchases permission, against an execution
+// carrying recs. RunPlannedPurchaseNow is deliberately left unstubbed: a
+// regression that reaches the funnel panics on the unexpected call.
+func runPlannedPurchaseGuardHarness(t *testing.T, executePerm auth.Permission, recs []config.RecommendationRecord) (*MockPurchaseManager, error) {
+	t.Helper()
+	ctx := context.Background()
+	execID := "11111111-1111-1111-1111-111111111111"
+
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	mockStore.On("GetExecutionByID", ctx, execID).Return(&config.PurchaseExecution{
+		ExecutionID:     execID,
+		Status:          "pending",
+		Recommendations: recs,
+	}, nil)
+
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	session := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd", Email: "capped@example.com"}
+	mockAuth.On("ValidateSession", ctx, "capped-token").Return(session, nil)
+	mockAuth.grantPermissions([]auth.Permission{
+		{Action: auth.ActionAdmin, Resource: auth.ResourceAll},
+		executePerm,
+	})
+
+	mockPurchase := new(MockPurchaseManager)
+	t.Cleanup(func() { mockPurchase.AssertExpectations(t) })
+
+	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"Authorization": "Bearer capped-token"}}
+	_, err := handler.runPlannedPurchase(ctx, req, execID)
+	return mockPurchase, err
+}
+
+// TestHandler_runPlannedPurchase_ConstraintDenied: a MaxPurchaseAmount cap on
+// the session's execute:purchases permission below the execution's total
+// commitment must refuse "Run now" with 403 before the purchase funnel fires
+// (issue #60).
+func TestHandler_runPlannedPurchase_ConstraintDenied(t *testing.T) {
+	mockPurchase, err := runPlannedPurchaseGuardHarness(t,
+		auth.Permission{
+			Action:      auth.ActionExecute,
+			Resource:    auth.ResourcePurchases,
+			Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 100},
+		},
+		[]config.RecommendationRecord{{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 50000}},
+	)
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a clientError, got: %v", err)
+	assert.Equal(t, 403, ce.code)
+	assert.Contains(t, ce.Error(), "constraints")
+	mockPurchase.AssertNotCalled(t, "RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestHandler_runPlannedPurchase_ZeroCommitment: an execution whose recs sum
+// to $0 must be refused with 400 by requireNonZeroCommitment rather than
+// reading as an uncapped MaxPurchaseAmount (issue #60 review follow-up).
+func TestHandler_runPlannedPurchase_ZeroCommitment(t *testing.T) {
+	mockPurchase, err := runPlannedPurchaseGuardHarness(t,
+		auth.Permission{Action: auth.ActionExecute, Resource: auth.ResourcePurchases},
+		[]config.RecommendationRecord{{Provider: "aws", Service: "ec2", Region: "us-east-1"}},
+	)
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a clientError, got: %v", err)
+	assert.Equal(t, 400, ce.code)
+	assert.Contains(t, ce.Error(), "zero total commitment")
+	mockPurchase.AssertNotCalled(t, "RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
 func TestHandler_deletePlannedPurchase(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
