@@ -279,6 +279,93 @@ func (h *Handler) resolveSingleAccountFilterIDs(ctx context.Context, accountID s
 	return nil, map[string][]string{"": {accountID}}
 }
 
+// intersectAccountFilterScope narrows a caller-supplied dual-column account
+// filter (filterUUIDs, filterExternalIDsByProvider — e.g. the resolved
+// account_ids/account_id query params) down to the accounts the session's
+// allowed_accounts scope permits.
+//
+// This is the single choke point for the "retrofit only guards the
+// no-explicit-filter branch" defect (issue #99): resolveDashboardAccountScope
+// previously fell back to resolveAllowedAccountScope only when the caller
+// supplied no filter at all, so a restricted session that DID supply an
+// account_ids/account_id filter got that filter unintersected — any account
+// the client named came straight through, in or out of allowed_accounts. Every
+// resolver that turns a client-controlled account filter into a query-ready
+// scope must run it through here rather than re-deriving the guard locally.
+//
+//   - Unrestricted session (resolveAllowedAccountScope's AllowsAll() case,
+//     signaled by a nil uuid slice): the caller-supplied filter passes through
+//     unchanged, including nil/nil for "no filter -> all accounts".
+//   - Restricted session, no caller-supplied filter: narrows to the full
+//     allowed_accounts scope (the pre-existing no-filter behavior).
+//   - Restricted session, explicit caller-supplied filter: narrows to the
+//     INTERSECTION of the two sets. An account named in the filter but
+//     outside allowed_accounts is dropped rather than honored. An empty
+//     intersection returns the non-nil-but-empty uuid sentinel that
+//     fetchCommitmentPurchases / GetActivePurchaseHistory callers already
+//     treat as "match nothing" (issue #956).
+func (h *Handler) intersectAccountFilterScope(
+	ctx context.Context,
+	session *Session,
+	filterUUIDs []string,
+	filterExternalIDsByProvider map[string][]string,
+) (uuids []string, externalIDsByProvider map[string][]string, err error) {
+	allowedUUIDs, allowedExternalIDsByProvider, err := h.resolveAllowedAccountScope(ctx, session)
+	if err != nil {
+		return nil, nil, err
+	}
+	if allowedUUIDs == nil {
+		// resolveAllowedAccountScope's (nil, nil, nil) sentinel for an
+		// unrestricted/admin session: keep the caller-supplied filter as-is.
+		return filterUUIDs, filterExternalIDsByProvider, nil
+	}
+
+	if len(filterUUIDs) == 0 && len(filterExternalIDsByProvider) == 0 {
+		// No explicit filter from the caller: the effective scope is the full
+		// allowed_accounts set.
+		return allowedUUIDs, allowedExternalIDsByProvider, nil
+	}
+
+	uuids, externalIDsByProvider = intersectDualColumnScope(
+		filterUUIDs, filterExternalIDsByProvider,
+		allowedUUIDs, allowedExternalIDsByProvider,
+	)
+	return uuids, externalIDsByProvider, nil
+}
+
+// intersectDualColumnScope computes the AND of two dual-column account
+// filters: an id (UUID, or external id under its provider bucket) survives
+// only when present on both sides. Pure set intersection is correct here
+// because both sides are always produced by resolveAccountFilterIDs (or its
+// callers) from the same cloud_accounts source, so a given account resolves
+// to the same UUID/external-id representation on both sides.
+//
+// The returned uuid slice is always non-nil (even when empty) so callers can
+// rely on the "non-nil-but-empty means scoped to zero accounts" sentinel
+// documented on resolveAllowedAccountScope. The returned map is nil when no
+// external id survives the intersection.
+func intersectDualColumnScope(
+	filterUUIDs []string, filterExternalIDsByProvider map[string][]string,
+	allowedUUIDs []string, allowedExternalIDsByProvider map[string][]string,
+) (uuids []string, externalIDsByProvider map[string][]string) {
+	uuids = make([]string, 0, len(filterUUIDs))
+	for _, id := range filterUUIDs {
+		if stringInSlice(id, allowedUUIDs) {
+			uuids = append(uuids, id)
+		}
+	}
+
+	for provider, ids := range filterExternalIDsByProvider {
+		allowedIDs := allowedExternalIDsByProvider[provider]
+		for _, id := range ids {
+			if stringInSlice(id, allowedIDs) {
+				externalIDsByProvider = addExternalIDForProvider(externalIDsByProvider, provider, id)
+			}
+		}
+	}
+	return uuids, externalIDsByProvider
+}
+
 // a map from account identifier → display name. The map is keyed by BOTH
 // the internal UUID (CloudAccount.ID) and the cloud-provider external ID
 // (CloudAccount.ExternalID, e.g. an AWS account number or Azure subscription

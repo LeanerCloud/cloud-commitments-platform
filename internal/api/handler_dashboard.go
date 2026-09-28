@@ -22,24 +22,9 @@ func (h *Handler) getDashboardSummary(ctx context.Context, req *events.LambdaFun
 		return nil, err
 	}
 
-	accountUUIDs, accountExternalIDsByProvider, err := h.resolveDashboardAccountScope(ctx, params)
+	accountUUIDs, accountExternalIDsByProvider, err := h.resolveDashboardAccountScope(ctx, session, params)
 	if err != nil {
 		return nil, err
-	}
-
-	// Issue #956 (CR): when the session is account-restricted and no explicit
-	// account filter was supplied, scope the commitment metrics to the session's
-	// allowed_accounts instead of falling through to all-accounts history. The
-	// recommendations half is already gated by filterDashboardRecommendations;
-	// without this the commitment KPIs (ActiveCommitments / CommittedMonthly /
-	// CurrentCoverage / YTDSavings) would leak other accounts' data to a scoped
-	// user. Unrestricted / admin sessions resolve to an empty scope and keep the
-	// all-accounts behavior.
-	if len(accountUUIDs) == 0 && len(accountExternalIDsByProvider) == 0 {
-		accountUUIDs, accountExternalIDsByProvider, err = h.resolveAllowedAccountScope(ctx, session)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	recommendations, err := h.scheduler.ListRecommendations(ctx, config.RecommendationFilter{
@@ -91,9 +76,12 @@ func (h *Handler) getDashboardSummary(ctx context.Context, req *events.LambdaFun
 	}, nil
 }
 
-// resolveDashboardAccountScope parses the account filter params and resolves
-// them to the dual-column purchase-history filter inputs: the cloud_accounts
-// UUIDs and their cloud-provider external account numbers.
+// resolveDashboardAccountScope parses the account filter params, resolves
+// them to the dual-column purchase-history filter inputs (cloud_accounts
+// UUIDs and their cloud-provider external account numbers), and then
+// intersects that caller-supplied scope with the session's allowed_accounts
+// via intersectAccountFilterScope.
+//
 // Both are needed because purchase_history rows carry either identifier
 // independently and the top-bar chip emits the UUID, so matching only
 // cloud_account_id dropped every NULL-cloud_account_id row (issue #701/#498).
@@ -104,24 +92,33 @@ func (h *Handler) getDashboardSummary(ctx context.Context, req *events.LambdaFun
 //     raw external number for pre-UUID callers; resolved via
 //     resolveSingleAccountFilterIDs.
 //
-// Both return values are nil when neither param is supplied, so the caller
-// fetches across all accounts (or, for a restricted session, scopes to the
-// session's allowed_accounts — see resolveAllowedAccountScope).
-func (h *Handler) resolveDashboardAccountScope(ctx context.Context, params map[string]string) (uuids []string, externalIDsByProvider map[string][]string, err error) {
+// Issue #99: an EARLIER version of this function returned the caller-supplied
+// filter as-is and left the allowed_accounts fallback to a guard in the
+// caller that only fired when NO filter was supplied — so a restricted
+// session that supplied an explicit (possibly out-of-scope) account_ids/
+// account_id filter bypassed the session's allowed_accounts entirely, with no
+// downstream post-filter to catch it (unlike handler_inventory.go's
+// analogous no-filter-only retrofit, which happens to be saved by its own
+// separate filterPurchaseHistoryByAllowedAccounts post-filter). The
+// intersection now lives here, in the resolver, so every caller gets it for
+// free rather than having to remember a guard or a post-filter.
+func (h *Handler) resolveDashboardAccountScope(ctx context.Context, session *Session, params map[string]string) (uuids []string, externalIDsByProvider map[string][]string, err error) {
 	parsedUUIDs, parseErr := parseAccountIDs(params["account_ids"])
 	if parseErr != nil {
 		return nil, nil, NewClientError(400, parseErr.Error())
 	}
 
+	var filterUUIDs []string
+	var filterExternalIDsByProvider map[string][]string
 	if len(parsedUUIDs) > 0 {
 		// UUID-based multi-account filter — takes precedence over legacy param.
-		uuids, externalIDsByProvider = h.resolveAccountFilterIDs(ctx, parsedUUIDs)
-		return uuids, externalIDsByProvider, nil
+		filterUUIDs, filterExternalIDsByProvider = h.resolveAccountFilterIDs(ctx, parsedUUIDs)
+	} else {
+		// No plural UUID filter: fall back to the legacy singular param.
+		filterUUIDs, filterExternalIDsByProvider = h.resolveSingleAccountFilterIDs(ctx, params["account_id"])
 	}
 
-	// No plural UUID filter: fall back to the legacy singular param.
-	uuids, externalIDsByProvider = h.resolveSingleAccountFilterIDs(ctx, params["account_id"])
-	return uuids, externalIDsByProvider, nil
+	return h.intersectAccountFilterScope(ctx, session, filterUUIDs, filterExternalIDsByProvider)
 }
 
 // resolveAllowedAccountScope resolves a restricted session's allowed_accounts
