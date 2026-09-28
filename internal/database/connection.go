@@ -337,6 +337,11 @@ func (c *Connection) TryAdvisoryLock(ctx context.Context, lockID int64) (bool, e
 	return true, nil
 }
 
+// advisoryLockReleaseTimeout bounds the detached unlock query issued by
+// ReleaseAdvisoryLock. Matches the 5s budget the scheduler's own deferred
+// marker-clear uses for the same reason (scheduler.CollectRecommendations).
+const advisoryLockReleaseTimeout = 5 * time.Second
+
 // ReleaseAdvisoryLock releases a previously acquired advisory lock.
 // It reuses the same pinned connection used by TryAdvisoryLock to ensure
 // the unlock targets the correct PostgreSQL session.
@@ -353,10 +358,35 @@ func (c *Connection) ReleaseAdvisoryLock(ctx context.Context, lockID int64) {
 	}
 	defer conn.Release()
 
+	// The caller's ctx is typically a deferred call sited right after
+	// TryAdvisoryLock (server/handler.go's HandleScheduledTask) and can
+	// already be canceled or past its deadline by the time this runs -- a
+	// long-running task whose Lambda invocation context (or HTTP request
+	// context) expired while dispatchTask was still in flight. Issuing the
+	// unlock on a dead context skips it entirely, and pg_advisory_unlock is
+	// session-scoped: the pinned connection is otherwise healthy, so it goes
+	// back to the pool with the lock still held, wedging every future
+	// acquire for this task type as "already_running" until that specific
+	// connection happens to be recycled (issue #105). Detach onto a fresh
+	// background context with a short timeout, matching the scheduler's own
+	// deferred marker-clear.
+	releaseCtx, cancel := context.WithTimeout(context.Background(), advisoryLockReleaseTimeout)
+	defer cancel()
+
 	var released bool
-	if err := conn.QueryRow(ctx, "SELECT pg_advisory_unlock($1)", lockID).Scan(&released); err != nil {
+	if err := conn.QueryRow(releaseCtx, "SELECT pg_advisory_unlock($1)", lockID).Scan(&released); err != nil {
 		logging.Warnf("Failed to release advisory lock %d: %v", lockID, err)
-	} else if !released {
+		// The unlock query itself failed, so whether the session-level lock
+		// was actually dropped is unknown -- unlike the `!released` branch
+		// below, which means Postgres successfully confirmed no unlock was
+		// needed. A connection that might still hold the lock must never
+		// return to the pool: Conn.Release() reuses a connection unless it
+		// finds the underlying conn already closed, so close it here to
+		// force the deferred Release above to destroy it instead.
+		conn.Conn().Close(releaseCtx)
+		return
+	}
+	if !released {
 		logging.Warnf("Advisory lock %d was not held by this session", lockID)
 	}
 }
