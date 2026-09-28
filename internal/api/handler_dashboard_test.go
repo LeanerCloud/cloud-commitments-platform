@@ -1399,6 +1399,215 @@ func TestHandler_getDashboardSummary_Errors(t *testing.T) {
 	})
 }
 
+// TestGetDashboardSummary_ScopedUser_ExplicitOutOfScopeAccountIsIgnored is the
+// issue #99 regression test. Read-Only user "viewer-1" is restricted to
+// acct-A only (GetAllowedAccountsAPI). Before the fix, resolveDashboardAccountScope
+// applied the allowed_accounts fallback ONLY when the caller supplied no
+// account_ids/account_id filter at all; a caller who DID supply an explicit
+// filter got it back unintersected, so requesting acct-B's UUID leaked
+// acct-B's commitment KPIs (ActiveCommitments/CommittedMonthly/YTDSavings) to
+// a session with no access to acct-B.
+//
+// This must fail pre-fix: the old resolveDashboardAccountScope returned
+// acct-B's UUID unchanged, fetchCommitmentPurchases would NOT short-circuit,
+// and GetActivePurchaseHistory would be called carrying "acct-B-uuid" -- which
+// this test does not stub, so the pre-fix code panics the mock ("I don't know
+// what to return") instead of silently passing. Post-fix, the intersection of
+// {acct-B} (requested) and {acct-A} (allowed) is empty, so
+// fetchCommitmentPurchases short-circuits on the non-nil-but-empty sentinel
+// and GetActivePurchaseHistory is never called.
+func TestGetDashboardSummary_ScopedUser_ExplicitOutOfScopeAccountIsIgnored(t *testing.T) {
+	ctx := context.Background()
+	const scopedUserID = "viewer-1"
+	const acctAUUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+	const acctBUUID = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+
+	mockScheduler := new(MockScheduler)
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() {
+		mockStore.AssertExpectations(t)
+		mockScheduler.AssertExpectations(t)
+	})
+
+	mockScheduler.On("ListRecommendations", ctx, mock.Anything).Return([]config.RecommendationRecord{}, nil)
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{DefaultCoverage: 80.0}, nil)
+	// Deliberately NOT stubbing GetActivePurchaseHistory: the fix must never
+	// reach it for this request, so any call (with any arguments, including
+	// acct-B's) fails the test via testify's "I don't know what to return".
+	mockStore.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+		return []config.CloudAccount{
+			{ID: acctAUUID, Name: "Account A"},
+			{ID: acctBUUID, Name: "Account B"},
+		}, nil
+	}
+
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", ctx, "viewer-token").Return(&Session{
+		UserID: scopedUserID,
+		Email:  "viewer@example.com",
+	}, nil)
+	mockAuth.On("HasPermissionAPI", ctx, scopedUserID, "view", "recommendations").Return(true, nil)
+	// Restricted to acct-A only.
+	mockAuth.On("GetAllowedAccountsAPI", ctx, scopedUserID).Return([]string{acctAUUID}, nil)
+
+	handler := &Handler{
+		auth:      mockAuth,
+		scheduler: mockScheduler,
+		config:    mockStore,
+	}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer viewer-token"},
+	}
+
+	result, err := handler.getDashboardSummary(ctx, req, map[string]string{"account_ids": acctBUUID})
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, result.ActiveCommitments, "acct-B is outside allowed_accounts; must not contribute commitments")
+	assert.Equal(t, 0.0, result.CommittedMonthly, "acct-B's committed spend must not leak to a session scoped to acct-A")
+	assert.Equal(t, 0.0, result.YTDSavings, "acct-B's realized savings must not leak to a session scoped to acct-A")
+}
+
+// TestGetDashboardSummary_ScopedUser_ExplicitInScopeAccountStillWorks guards
+// against an overcorrection of the issue #99 fix: a restricted session that
+// explicitly requests an account it DOES have access to must still see that
+// account's commitment KPIs, not get zeroed out by the new intersection.
+func TestGetDashboardSummary_ScopedUser_ExplicitInScopeAccountStillWorks(t *testing.T) {
+	ctx := context.Background()
+	const scopedUserID = "viewer-1"
+	const acctAUUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+	const acctBUUID = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+
+	now := time.Now()
+	purchases := []config.PurchaseHistoryRecord{
+		{
+			AccountID:        acctAUUID,
+			Service:          "ec2",
+			Timestamp:        now.AddDate(0, -3, 0),
+			Term:             1,
+			EstimatedSavings: 42.0,
+		},
+	}
+
+	mockScheduler := new(MockScheduler)
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() {
+		mockStore.AssertExpectations(t)
+		mockScheduler.AssertExpectations(t)
+	})
+
+	mockScheduler.On("ListRecommendations", ctx, mock.Anything).Return([]config.RecommendationRecord{}, nil)
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{DefaultCoverage: 80.0}, nil)
+	mockStore.On("GetActivePurchaseHistory", ctx, mock.AnythingOfType("time.Time"), []string{acctAUUID}, map[string][]string(nil)).Return(purchases, nil)
+	mockStore.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+		return []config.CloudAccount{
+			{ID: acctAUUID, Name: "Account A"},
+			{ID: acctBUUID, Name: "Account B"},
+		}, nil
+	}
+
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", ctx, "viewer-token").Return(&Session{
+		UserID: scopedUserID,
+		Email:  "viewer@example.com",
+	}, nil)
+	mockAuth.On("HasPermissionAPI", ctx, scopedUserID, "view", "recommendations").Return(true, nil)
+	mockAuth.On("GetAllowedAccountsAPI", ctx, scopedUserID).Return([]string{acctAUUID}, nil)
+
+	handler := &Handler{
+		auth:      mockAuth,
+		scheduler: mockScheduler,
+		config:    mockStore,
+	}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer viewer-token"},
+	}
+
+	result, err := handler.getDashboardSummary(ctx, req, map[string]string{"account_ids": acctAUUID})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.ActiveCommitments)
+	assert.InDelta(t, 42.0, result.CommittedMonthly, 0.001)
+}
+
+// TestGetDashboardSummary_ScopedUser_LegacyExternalAccountIDStillMatchesAllowedAccount
+// is the CodeRabbit #374 follow-up on the issue #99 fix: the legacy singular
+// `account_id` param can resolve to a raw external account number grouped
+// under the "" (unknown-provider) bucket (resolveSingleAccountFilterIDs, when
+// the value isn't a known cloud_accounts UUID). intersectDualColumnScope's
+// first version compared that "" bucket only against
+// allowedExternalIDsByProvider[""], which is never populated --
+// resolveAllowedAccountScope always groups by the account's REAL provider --
+// so a scoped user filtering by an external number that legitimately belongs
+// to one of their allowed accounts got zeroed KPIs instead of that account's
+// real data (fails closed, but a functional regression from pre-fix
+// behavior).
+//
+// acct-A resolves to external id "111122223333" under provider "aws"; the
+// session is scoped to acct-A; the request filters by
+// account_id=111122223333 (the external number, not the UUID). The fix must
+// match the "" bucket against every allowed provider's ids and re-group the
+// hit under its real provider, so GetActivePurchaseHistory is still called
+// with that id and the KPIs are NOT zeroed.
+func TestGetDashboardSummary_ScopedUser_LegacyExternalAccountIDStillMatchesAllowedAccount(t *testing.T) {
+	ctx := context.Background()
+	const scopedUserID = "viewer-1"
+	const acctAUUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+	const acctAExternalID = "111122223333"
+
+	now := time.Now()
+	purchases := []config.PurchaseHistoryRecord{
+		{
+			AccountID:        acctAExternalID,
+			Service:          "ec2",
+			Provider:         "aws",
+			Timestamp:        now.AddDate(0, -3, 0),
+			Term:             1,
+			EstimatedSavings: 77.0,
+		},
+	}
+
+	mockScheduler := new(MockScheduler)
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() {
+		mockStore.AssertExpectations(t)
+		mockScheduler.AssertExpectations(t)
+	})
+
+	mockScheduler.On("ListRecommendations", ctx, mock.Anything).Return([]config.RecommendationRecord{}, nil)
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{DefaultCoverage: 80.0}, nil)
+	// filterUUIDs is empty (the raw external number isn't a known UUID), so
+	// only the external-id half of the dual-column predicate carries the match.
+	mockStore.On("GetActivePurchaseHistory", ctx, mock.AnythingOfType("time.Time"), []string{}, map[string][]string{"aws": {acctAExternalID}}).Return(purchases, nil)
+	mockStore.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+		return []config.CloudAccount{
+			{ID: acctAUUID, Name: "Account A", Provider: "aws", ExternalID: acctAExternalID},
+		}, nil
+	}
+
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", ctx, "viewer-token").Return(&Session{
+		UserID: scopedUserID,
+		Email:  "viewer@example.com",
+	}, nil)
+	mockAuth.On("HasPermissionAPI", ctx, scopedUserID, "view", "recommendations").Return(true, nil)
+	mockAuth.On("GetAllowedAccountsAPI", ctx, scopedUserID).Return([]string{acctAUUID}, nil)
+
+	handler := &Handler{
+		auth:      mockAuth,
+		scheduler: mockScheduler,
+		config:    mockStore,
+	}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer viewer-token"},
+	}
+
+	result, err := handler.getDashboardSummary(ctx, req, map[string]string{"account_id": acctAExternalID})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.ActiveCommitments, "the external-number filter matches acct-A, which IS in allowed_accounts")
+	assert.InDelta(t, 77.0, result.CommittedMonthly, 0.001)
+}
+
 func TestHandler_getUpcomingPurchases_Errors(t *testing.T) {
 	ctx := context.Background()
 
