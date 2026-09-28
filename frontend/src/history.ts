@@ -1460,7 +1460,10 @@ function wireRowActionHandlers(container: HTMLElement): void {
         const elapsedMonths = Number.isFinite(purchaseMs)
           ? (Date.now() - purchaseMs) / (1000 * 60 * 60 * 24 * 30.4375)
           : 0;
-        const remainingMonths = Math.max(0, Math.round(termMonths - elapsedMonths));
+        // Must match computeRemainingMonths in internal/api/handler_marketplace.go
+        // EXACTLY: floor (not round), floored at 1 (not 0), so the number
+        // shown here is the same number the backend actually lists at.
+        const remainingMonths = Math.max(1, Math.floor(termMonths - elapsedMonths));
         const upfront = purchase.upfront_cost ?? 0;
         const count = purchase.count > 0 ? purchase.count : 1;
         // Mirror marketplaceResidualPerUnit + resolveMarketplacePriceSchedule's
