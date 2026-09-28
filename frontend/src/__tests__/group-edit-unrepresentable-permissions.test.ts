@@ -579,7 +579,12 @@ describe('regression: group edit preserves constraints.accounts (#1629)', () => 
     test('removing the offending row unblocks the save', async () => {
       // The verdict lives on the row, so deleting the row clears it. Removing
       // the permission outright is an explicit edit, not a silent drop.
-      await openEdit(groupWithAccounts(['']));
+      // A second, unrelated clean permission is included so removing the
+      // offending row exercises this refusal in isolation from the separate
+      // "a group must keep at least one permission" refusal (issue #237).
+      const group = groupWithAccounts(['']);
+      group.permissions.push({ action: 'view', resource: 'plans' });
+      await openEdit(group);
       const removeBtn = document.querySelector('.permission-item .remove-permission-btn') as HTMLButtonElement;
       removeBtn.click();
       await clickSave();
@@ -588,7 +593,7 @@ describe('regression: group edit preserves constraints.accounts (#1629)', () => 
       expect(api.updateGroup).toHaveBeenCalledWith('operators-group-id', {
         name: 'Prod Operators',
         description: 'Old description',
-        permissions: [],
+        permissions: [{ action: 'view', resource: 'plans' }],
       });
     });
 

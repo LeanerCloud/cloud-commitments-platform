@@ -718,7 +718,7 @@ describe('groups/groupModals', () => {
       }));
     });
 
-    it('should handle missing permissions list', async () => {
+    it('should handle a missing permissions list without throwing, and refuse to save (issue #237)', async () => {
       document.body.innerHTML = `
         <div id="group-modal">
           <form id="group-form">
@@ -729,11 +729,15 @@ describe('groups/groupModals', () => {
       `;
 
       const event = { preventDefault: jest.fn() } as unknown as Event;
-      await groupModals.saveGroup(event);
+      // Must not throw even though #permissions-list is entirely absent from
+      // the DOM (collectPermissions() returns [] rather than erroring).
+      await expect(groupModals.saveGroup(event)).resolves.toBeUndefined();
 
-      expect(api.createGroup).toHaveBeenCalledWith(expect.objectContaining({
-        permissions: [],
-      }));
+      // A group must grant at least one permission -- an empty list is
+      // refused rather than submitted as a group with zero permissions
+      // (issue #237: the update path's [] means "leave unchanged", so
+      // submitting it here would be indistinguishable from that).
+      expect(api.createGroup).not.toHaveBeenCalled();
     });
   });
 

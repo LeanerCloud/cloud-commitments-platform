@@ -106,6 +106,22 @@ export async function saveGroup(e: Event): Promise<void> {
   const description = (document.getElementById('group-description') as HTMLTextAreaElement).value;
   const permissions = collectPermissions();
 
+  // Refuse an empty permission list rather than submit it. collectPermissions
+  // silently drops any row left on the "Select Action"/"Select Resource"
+  // placeholder, so removing every real row (or leaving only a placeholder
+  // row) collects as []. The update API treats an empty list as "not sent"
+  // and leaves the group's stored permissions untouched (issue #237), so
+  // submitting would show "Group updated successfully" while silently
+  // keeping the group's old privileges -- there is no way for this form to
+  // express "clear all permissions".
+  if (permissions.length === 0) {
+    showError(
+      'A group must grant at least one permission. ' +
+      'To remove all privileges, delete the group instead.'
+    );
+    return;
+  }
+
   try {
     if (currentEditingGroup) {
       // Update existing group
