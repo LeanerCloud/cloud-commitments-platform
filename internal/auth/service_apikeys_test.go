@@ -162,7 +162,8 @@ func TestService_CreateAPIKey(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, nil)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword,
+			[]Permission{{Action: ActionView, Resource: ResourceRecommendations}}, nil)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrAPIKeyExpiresAtRequired)
@@ -185,7 +186,8 @@ func TestService_CreateAPIKey(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, &tooFar)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword,
+			[]Permission{{Action: ActionView, Resource: ResourceRecommendations}}, &tooFar)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrAPIKeyExpiresAtTooFar)
@@ -211,7 +213,8 @@ func TestService_CreateAPIKey(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(user, nil)
 
-		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword, []Permission{}, &pastExpiry)
+		apiKey, keyInfo, err := service.CreateAPIKey(ctx, "user-123", "Test Key", testAPIKeyPassword,
+			[]Permission{{Action: ActionView, Resource: ResourceRecommendations}}, &pastExpiry)
 
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrAPIKeyExpiresAtInPast)
