@@ -16,18 +16,19 @@ import (
 )
 
 // seedDeactivatedAtUser inserts a users row with the given active/
-// last_login_at combination and returns its id. The test only checks
-// whether deactivated_at ends up NULL or non-NULL, not its exact value, so
-// updated_at's DEFAULT NOW() (INSERT does not run the UPDATE trigger) is
+// last_login_at/password_reset_token combination and returns its id. It uses
+// the seeded Administrators group to satisfy users_min_one_group; INSERT does
+// not fire the 000065 last-admin triggers. The test only checks whether
+// deactivated_at ends up NULL or non-NULL, so updated_at's DEFAULT NOW() is
 // fine as-is.
-func seedDeactivatedAtUser(ctx context.Context, t *testing.T, pool *pgxpool.Pool, email string, active bool, lastLoginAt *time.Time) string {
+func seedDeactivatedAtUser(ctx context.Context, t *testing.T, pool *pgxpool.Pool, email string, active bool, lastLoginAt *time.Time, resetToken *string) string {
 	t.Helper()
 	var userID string
 	err := pool.QueryRow(ctx, `
-		INSERT INTO users (email, password_hash, active, last_login_at)
-		VALUES ($1, 'hash', $2, $3)
+		INSERT INTO users (email, password_hash, salt, active, last_login_at, password_reset_token, group_ids)
+		VALUES ($1, 'hash', '', $2, $3, $4, ARRAY[$5::uuid])
 		RETURNING id
-	`, email, active, lastLoginAt).Scan(&userID)
+	`, email, active, lastLoginAt, resetToken, adminGroupIDForMinAdminTest).Scan(&userID)
 	require.NoError(t, err)
 	return userID
 }
@@ -62,16 +63,24 @@ func TestMigration_UserDeactivatedAtBackfill(t *testing.T) {
 
 	lastLogin := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
 
+	inviteToken := "hashed-invite-token"
+	clearedToken := ""
+
 	// Inactive with a login history: was active at some point, is not now --
 	// the out-of-band-deactivated shape the backfill exists to mark.
-	deactivatedNoAPI := seedDeactivatedAtUser(ctx, t, pool, "deactivated-no-api@example.com", false, &lastLogin)
+	deactivatedNoAPI := seedDeactivatedAtUser(ctx, t, pool, "deactivated-no-api@example.com", false, &lastLogin, nil)
 
-	// Inactive with NO login history: cannot have been anything but invited
-	// (Login requires Active = true), so it must NOT be backfilled.
-	invitedNeverActivated := seedDeactivatedAtUser(ctx, t, pool, "invited@example.com", false, nil)
+	// Pending invite: inactive, never logged in, setup token outstanding. It
+	// must NOT be backfilled or the invite link stops working.
+	invitedNeverActivated := seedDeactivatedAtUser(ctx, t, pool, "invited@example.com", false, nil, &inviteToken)
+
+	// Inactive, never logged in, no pending token (NULL or the '' a completed
+	// reset stores): not an open invite, so it is marked deactivated.
+	noTokenNull := seedDeactivatedAtUser(ctx, t, pool, "no-token-null@example.com", false, nil, nil)
+	noTokenCleared := seedDeactivatedAtUser(ctx, t, pool, "no-token-cleared@example.com", false, nil, &clearedToken)
 
 	// Active user: deactivated_at must stay NULL regardless of login history.
-	activeUser := seedDeactivatedAtUser(ctx, t, pool, "active@example.com", true, &lastLogin)
+	activeUser := seedDeactivatedAtUser(ctx, t, pool, "active@example.com", true, &lastLogin, nil)
 
 	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, 99))
 
@@ -80,7 +89,12 @@ func TestMigration_UserDeactivatedAtBackfill(t *testing.T) {
 		"an inactive row with login history must be backfilled as admin-deactivated, not left classifiable as invited")
 
 	assert.Nil(t, deactivatedAtOf(ctx, t, pool, invitedNeverActivated),
-		"an inactive row that has never logged in is genuinely invited and must not be backfilled")
+		"a pending invite must not be backfilled")
+
+	assert.NotNil(t, deactivatedAtOf(ctx, t, pool, noTokenNull),
+		"an inactive row with no pending setup token is not an open invite and must be backfilled")
+	assert.NotNil(t, deactivatedAtOf(ctx, t, pool, noTokenCleared),
+		"a cleared ('') reset token must be treated like NULL")
 
 	assert.Nil(t, deactivatedAtOf(ctx, t, pool, activeUser),
 		"an active row must never get a deactivated_at, whatever its login history")

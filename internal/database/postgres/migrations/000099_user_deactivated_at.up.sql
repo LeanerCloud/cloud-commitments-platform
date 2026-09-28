@@ -10,9 +10,14 @@ ALTER TABLE users ADD COLUMN deactivated_at TIMESTAMPTZ;
 -- Backfill: before this change the API could not deactivate users, so any
 -- existing inactive row was deactivated out of band or is an unfinished
 -- invite. Login requires active = true, so a row with a login history is the
--- former. updated_at is only an approximation of when it happened; the gate
--- checks only NULL vs non-NULL.
+-- former. An invite always carries a setup token, and a completed reset
+-- stores '' (not NULL), so an inactive row with no pending token cannot be an
+-- open invite either and is marked deactivated (fail closed). Residual edge:
+-- a never-logged-in account deactivated out of band while it had a pending
+-- forgot-password token reads as an invite; an admin can deactivate it again
+-- through the API to stamp it. updated_at is only an approximation of when
+-- it happened; the gate checks only NULL vs non-NULL.
 UPDATE users
    SET deactivated_at = updated_at
  WHERE active = false
-   AND last_login_at IS NOT NULL;
+   AND (last_login_at IS NOT NULL OR COALESCE(password_reset_token, '') = '');
