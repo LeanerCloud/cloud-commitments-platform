@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -190,7 +191,7 @@ func TestManager_GetOrCreateExecution(t *testing.T) {
 		dashboardURL: "https://dashboard.example.com",
 	}
 
-	execution, rawToken, err := manager.getOrCreateExecution(ctx, plan)
+	execution, rawToken, _, err := manager.getOrCreateExecution(ctx, plan)
 	require.NoError(t, err)
 	assert.NotNil(t, execution)
 	assert.Equal(t, "plan-123", execution.PlanID)
@@ -234,13 +235,11 @@ func TestManager_GetOrCreateExecution_ExistingExecution(t *testing.T) {
 		ScheduledDate: nextExec,
 	}
 
-	// Existing execution found: getOrCreateExecution rotates its approval
-	// token (issue #103 -- a stored hash can never be re-emailed raw) via
-	// rotateApprovalToken, which mutates existingExec in place (no re-fetch)
-	// and persists it with a single save, using the full ApprovalTokenTTL
-	// rather than rotateApprovalToken's shorter RevocationWindow default.
+	// Existing execution found: getOrCreateExecution mints a fresh token into
+	// the returned copy (issue #103 -- a stored hash can never be re-emailed
+	// raw) with the full ApprovalTokenTTL, but persists nothing: no
+	// SavePurchaseExecution expectation, so a write here panics the mock.
 	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(existingExec, nil)
-	mockStore.On("SavePurchaseExecution", ctx, existingExec).Return(nil)
 
 	manager := &Manager{
 		config:       mockStore,
@@ -248,8 +247,9 @@ func TestManager_GetOrCreateExecution_ExistingExecution(t *testing.T) {
 		dashboardURL: "https://dashboard.example.com",
 	}
 
-	execution, rawToken, err := manager.getOrCreateExecution(ctx, plan)
+	execution, rawToken, rotationPending, err := manager.getOrCreateExecution(ctx, plan)
 	require.NoError(t, err)
+	assert.True(t, rotationPending, "the caller must persist the minted token after sending")
 	assert.NotNil(t, execution)
 	assert.Equal(t, "existing-exec-id", execution.ExecutionID)
 	assert.Equal(t, "plan-123", execution.PlanID)
@@ -306,8 +306,9 @@ func TestManager_GetOrCreateExecution_ExistingCompletedNotRotated(t *testing.T) 
 		dashboardURL: "https://dashboard.example.com",
 	}
 
-	execution, rawToken, err := manager.getOrCreateExecution(ctx, plan)
+	execution, rawToken, _, err := manager.getOrCreateExecution(ctx, plan)
 	require.Error(t, err, "a completed row must not be silently re-notified or rotated")
+	assert.ErrorIs(t, err, errExecutionNotNotifiable)
 	assert.Contains(t, err.Error(), "completed")
 	assert.Nil(t, execution)
 	assert.Empty(t, rawToken)
@@ -339,7 +340,7 @@ func TestManager_GetOrCreateExecution_SaveError(t *testing.T) {
 		dashboardURL: "https://dashboard.example.com",
 	}
 
-	execution, _, err := manager.getOrCreateExecution(ctx, plan)
+	execution, _, _, err := manager.getOrCreateExecution(ctx, plan)
 	assert.Error(t, err)
 	assert.Nil(t, execution)
 
@@ -367,7 +368,7 @@ func TestManager_GetOrCreateExecution_LookupError(t *testing.T) {
 		dashboardURL: "https://dashboard.example.com",
 	}
 
-	execution, _, err := manager.getOrCreateExecution(ctx, plan)
+	execution, _, _, err := manager.getOrCreateExecution(ctx, plan)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to check for existing execution")
 	assert.Nil(t, execution)
@@ -399,7 +400,7 @@ func TestManager_GetOrCreateExecution_CreatesOnErrNotFound(t *testing.T) {
 
 	manager := &Manager{config: mockStore, dashboardURL: "https://example.com"}
 
-	execution, rawToken, err := manager.getOrCreateExecution(ctx, plan)
+	execution, rawToken, _, err := manager.getOrCreateExecution(ctx, plan)
 	require.NoError(t, err, "ErrNotFound must trigger the create path, not a hard error (F2)")
 	require.NotNil(t, execution)
 	assert.Equal(t, "plan-f2", execution.PlanID)
@@ -601,6 +602,94 @@ func TestManager_SendUpcomingPurchaseNotifications_EmailFails(t *testing.T) {
 
 	assert.Equal(t, 0, result.Notified)
 
+	mockStore.AssertExpectations(t)
+	mockEmail.AssertExpectations(t)
+}
+
+// pendingExecForNotification sets up a plan due for a notification whose
+// execution row already exists as "pending" with the hash of the token the
+// previous notification emailed.
+func pendingExecForNotification(ctx context.Context, mockStore *MockConfigStore) (*config.PurchasePlan, *config.PurchaseExecution) {
+	nextExec := time.Now().Add(3 * 24 * time.Hour)
+	plan := &config.PurchasePlan{ID: "plan-rot", Name: "Rotation Plan", NextExecutionDate: &nextExec}
+	existing := &config.PurchaseExecution{
+		ExecutionID:   "exec-rot",
+		PlanID:        "plan-rot",
+		Status:        "pending",
+		ApprovalToken: config.HashApprovalToken("previously-emailed-token"),
+		ScheduledDate: nextExec,
+	}
+	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-rot", nextExec).Return(existing, nil).Maybe()
+	return plan, existing
+}
+
+// TestManager_SendPlanNotification_NoRecipientLeavesLiveTokenAlone pins the
+// #416 review finding: without a notification email nothing is sent, so the
+// previously emailed link must stay live. No write expectation is registered,
+// so any token persist panics the mock.
+func TestManager_SendPlanNotification_NoRecipientLeavesLiveTokenAlone(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	plan, existing := pendingExecForNotification(ctx, mockStore)
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{}, nil)
+
+	manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
+	assert.False(t, manager.sendPlanNotification(ctx, plan))
+	assert.Equal(t, config.HashApprovalToken("previously-emailed-token"), existing.ApprovalToken)
+	mockStore.AssertExpectations(t)
+	mockEmail.AssertExpectations(t)
+}
+
+// TestManager_SendPlanNotification_SendFailureLeavesLiveTokenAlone: an SES
+// failure must not persist the replacement token, or the previous email's
+// link dies with no working successor.
+func TestManager_SendPlanNotification_SendFailureLeavesLiveTokenAlone(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	plan, _ := pendingExecForNotification(ctx, mockStore)
+	notify := "notify@example.com"
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &notify}, nil)
+	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.AnythingOfType("email.NotificationData")).Return(errors.New("ses down"))
+
+	manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
+	assert.False(t, manager.sendPlanNotification(ctx, plan))
+	mockStore.AssertNotCalled(t, "RotatePendingApprovalToken", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockStore.AssertExpectations(t)
+	mockEmail.AssertExpectations(t)
+}
+
+// TestManager_SendPlanNotification_PersistsEmailedTokenHashAfterSend: on a
+// successful send, the hash persisted (via the status-guarded targeted
+// update, never a full-row upsert) is the hash of exactly the raw token that
+// was emailed, and the raw token itself is never stored.
+func TestManager_SendPlanNotification_PersistsEmailedTokenHashAfterSend(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	plan, _ := pendingExecForNotification(ctx, mockStore)
+	notify := "notify@example.com"
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &notify}, nil)
+
+	var emailedToken string
+	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.AnythingOfType("email.NotificationData")).
+		Run(func(args mock.Arguments) {
+			emailedToken = args.Get(1).(email.NotificationData).ApprovalToken
+		}).Return(nil)
+	var persistedHash string
+	mockStore.On("RotatePendingApprovalToken", ctx, "exec-rot", mock.AnythingOfType("string"), mock.AnythingOfType("time.Time")).
+		Run(func(args mock.Arguments) {
+			require.NotEmpty(t, emailedToken, "the token must be persisted only after the email went out")
+			persistedHash = args.String(2)
+		}).Return(true, nil)
+	mockStore.On("UpdatePurchasePlan", ctx, plan).Return(nil)
+
+	manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
+	assert.True(t, manager.sendPlanNotification(ctx, plan))
+	require.NotEmpty(t, emailedToken)
+	assert.Equal(t, config.HashApprovalToken(emailedToken), persistedHash)
+	assert.NotEqual(t, emailedToken, persistedHash)
 	mockStore.AssertExpectations(t)
 	mockEmail.AssertExpectations(t)
 }

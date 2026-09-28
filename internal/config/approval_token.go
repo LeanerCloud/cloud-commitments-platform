@@ -8,11 +8,11 @@ import (
 
 // HashApprovalToken returns the SHA-256 hex digest of a raw approval /
 // revocation / rejection token, in the exact format persisted to the
-// approval_token column (purchase_executions, ri_exchange_history).
+// approval_token_hash column (purchase_executions, ri_exchange_history).
 // Mirrors internal/auth's unexported hashSessionToken so every long-lived
 // secret token in this codebase is hashed the same way before it touches
-// storage (issue #103: these columns previously held the raw, directly
-// usable secret).
+// storage (issue #103: the approval_token columns these replace held the
+// raw, directly usable secret).
 //
 // Empty input returns "" so "no token" continues to mean an empty/NULL
 // column value rather than the hash of an empty string -- callers must not

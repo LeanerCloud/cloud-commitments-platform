@@ -75,7 +75,7 @@ func (s *additionalMockStore) queryExecutions(ctx context.Context, query string,
 func (s *additionalMockStore) GetExecutionByID(ctx context.Context, executionID string) (*PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at
 		FROM purchase_executions
 		WHERE execution_id = $1
@@ -96,7 +96,7 @@ func (s *additionalMockStore) GetExecutionByID(ctx context.Context, executionID 
 func (s *additionalMockStore) GetExecutionByPlanAndDate(ctx context.Context, planID string, scheduledDate time.Time) (*PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at
 		FROM purchase_executions
 		WHERE plan_id = $1 AND scheduled_date = $2

@@ -1572,9 +1572,12 @@ func TestHandler_runPlannedPurchase(t *testing.T) {
 	// CAS-guarded funnel ApproveAndExecute uses (issue #218) rather than a
 	// bare TransitionExecutionStatus flip to "running" that no executor
 	// consumes.
-	mockPurchase.On("RunPlannedPurchaseNow", ctx, "11111111-1111-1111-1111-111111111111", "admin@example.com", mock.Anything).Return(nil)
+	mockPurchase.On("RunPlannedPurchaseNow", ctx, "11111111-1111-1111-1111-111111111111", "admin@example.com", mock.Anything).Return("raw-revocation-token", nil)
+	notify := "notify@example.com"
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &notify}, nil)
 
-	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth}
+	notifier := &recordingExecutedNotifier{}
+	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth, emailNotifier: notifier}
 
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{
@@ -1587,6 +1590,9 @@ func TestHandler_runPlannedPurchase(t *testing.T) {
 	resultMap := result.(map[string]interface{})
 	assert.Equal(t, "11111111-1111-1111-1111-111111111111", resultMap["execution_id"])
 	assert.Equal(t, "completed", resultMap["status"])
+	// The revocation token the shared funnel minted (issue #103) exists only
+	// as this return value, so Run-now must email it.
+	assertExecutedNotificationFingerprints(t, notifier, notify, "admin@example.com", "raw-revocation-token")
 	mockPurchase.AssertExpectations(t)
 }
 
@@ -2155,7 +2161,7 @@ func TestHandler_runPlannedPurchase_NilExecution(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
 	mockPurchase.On("RunPlannedPurchaseNow", ctx, "99999999-9999-9999-9999-999999999999", "admin@example.com", mock.Anything).
-		Return(fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
+		Return("", fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
 
 	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth}
 
@@ -3594,6 +3600,41 @@ func TestHandler_retryPurchase_Admin_AllowsAny(t *testing.T) {
 	require.NotNil(t, updated.RetryExecutionID, "original must carry pointer to successor")
 	assert.Equal(t, newExec.ExecutionID, *updated.RetryExecutionID)
 	assert.Equal(t, "failed", updated.Status, "original keeps failed status as historical record")
+}
+
+// TestHandler_retryPurchase_StoresHashOfEmailedToken (issue #103): the retry
+// successor row must store only the hash of the approval token its email
+// carries, never the raw value.
+func TestHandler_retryPurchase_StoresHashOfEmailedToken(t *testing.T) {
+	creator := retryOtherID
+	accountID := "acct-retry"
+	failed := &config.PurchaseExecution{
+		ExecutionID:     retryExecID,
+		Status:          "failed",
+		CreatedByUserID: &creator,
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100, CloudAccountID: &accountID}},
+	}
+	session := &Session{UserID: retryCallerID, Email: "admin@example.com"}
+	handler, mockConfig, _ := buildSessionRetryHandler(failed, session, true, false)
+	mockConfig.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
+		return &config.CloudAccount{ID: id, ContactEmail: "contact@acct.example.com"}, nil
+	}
+	notifier := &recordingEmailNotifier{}
+	handler.emailNotifier = notifier
+
+	var saved []config.PurchaseExecution
+	mockConfig.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = append(saved, *args.Get(1).(*config.PurchaseExecution)) }).
+		Return(nil)
+	mockConfig.On("LinkRetryExecutionAtomic", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+
+	_, err := handler.retryPurchase(context.Background(), sessionRetryReq(), failed.ExecutionID)
+	require.NoError(t, err)
+	require.NotEmpty(t, saved)
+	emailed := notifier.captured.ApprovalToken
+	require.NotEmpty(t, emailed, "the approval email must carry the raw token")
+	assert.Equal(t, config.HashApprovalToken(emailed), saved[0].ApprovalToken)
+	assert.NotEqual(t, emailed, saved[0].ApprovalToken, "the raw token must never be stored")
 }
 
 func TestHandler_retryPurchase_RetryAny_AllowsAny(t *testing.T) {

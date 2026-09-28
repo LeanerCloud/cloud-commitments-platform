@@ -203,13 +203,13 @@ func (s *mockablePostgresStore) SavePurchaseExecution(ctx context.Context, execu
 	query := `
 		INSERT INTO purchase_executions (
 			plan_id, execution_id, status, step_number, scheduled_date,
-			notification_sent, approval_token, recommendations,
+			notification_sent, approval_token_hash, recommendations,
 			total_upfront_cost, estimated_savings, completed_at, error, expires_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (execution_id) DO UPDATE SET
 			status = $3,
 			notification_sent = $6,
-			approval_token = $7,
+			approval_token_hash = $7,
 			recommendations = $8,
 			total_upfront_cost = $9,
 			estimated_savings = $10,
@@ -241,7 +241,7 @@ func (s *mockablePostgresStore) SavePurchaseExecution(ctx context.Context, execu
 func (s *mockablePostgresStore) GetPendingExecutions(ctx context.Context) ([]PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at
 		FROM purchase_executions
 		WHERE status IN ('pending', 'notified')
@@ -255,7 +255,7 @@ func (s *mockablePostgresStore) GetPendingExecutions(ctx context.Context) ([]Pur
 func (s *mockablePostgresStore) GetExecutionByID(ctx context.Context, executionID string) (*PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at
 		FROM purchase_executions
 		WHERE execution_id = $1
@@ -276,7 +276,7 @@ func (s *mockablePostgresStore) GetExecutionByID(ctx context.Context, executionI
 func (s *mockablePostgresStore) GetExecutionByPlanAndDate(ctx context.Context, planID string, scheduledDate time.Time) (*PurchaseExecution, error) {
 	query := `
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token, recommendations,
+		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at
 		FROM purchase_executions
 		WHERE plan_id = $1 AND scheduled_date = $2

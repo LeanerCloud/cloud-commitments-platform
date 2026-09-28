@@ -1658,3 +1658,67 @@ func TestPostgresStoreDB_LinkRetryExecutionAtomic(t *testing.T) {
 		assert.Nil(t, reread.RetryExecutionID)
 	})
 }
+
+// TestPostgresStoreDB_RotatePendingApprovalToken (issue #103): the
+// notification path's token rotation writes approval_token_hash and its
+// expiry only while the row is pending/notified, and touches nothing else
+// (a full-row upsert of a stale copy could revert a concurrent approve).
+// The hash round-trips through the approval_token_hash column.
+func TestPostgresStoreDB_RotatePendingApprovalToken(t *testing.T) {
+	conn := setupTestContainerDB(t)
+	if conn == nil {
+		return
+	}
+	store := NewPostgresStore(conn)
+	ctx := context.Background()
+
+	plan := &PurchasePlan{
+		Name:         "RotatePendingApprovalToken Test Plan",
+		Enabled:      true,
+		Services:     map[string]ServiceConfig{},
+		RampSchedule: PresetRampSchedules["immediate"],
+	}
+	require.NoError(t, store.CreatePurchasePlan(ctx, plan))
+
+	newExecution := func(t *testing.T, status string) *PurchaseExecution {
+		t.Helper()
+		exec := &PurchaseExecution{
+			PlanID:          plan.ID,
+			Status:          status,
+			StepNumber:      1,
+			ScheduledDate:   time.Now(),
+			ApprovalToken:   HashApprovalToken("original-token"),
+			Recommendations: []RecommendationRecord{},
+		}
+		require.NoError(t, store.SavePurchaseExecution(ctx, exec))
+		return exec
+	}
+	expiresAt := time.Now().Add(ApprovalTokenTTL).UTC().Truncate(time.Second)
+
+	for _, status := range []string{"pending", "notified"} {
+		t.Run(status+" row is rotated", func(t *testing.T) {
+			exec := newExecution(t, status)
+			rotated, err := store.RotatePendingApprovalToken(ctx, exec.ExecutionID, HashApprovalToken("fresh-token"), expiresAt)
+			require.NoError(t, err)
+			require.True(t, rotated)
+
+			reread, err := store.GetExecutionByID(ctx, exec.ExecutionID)
+			require.NoError(t, err)
+			assert.Equal(t, HashApprovalToken("fresh-token"), reread.ApprovalToken)
+			require.NotNil(t, reread.ApprovalTokenExpiresAt)
+			assert.True(t, expiresAt.Equal(reread.ApprovalTokenExpiresAt.UTC().Truncate(time.Second)))
+			assert.Equal(t, status, reread.Status, "rotation must not touch status")
+		})
+	}
+
+	t.Run("row that left pending is not rotated", func(t *testing.T) {
+		exec := newExecution(t, "completed")
+		rotated, err := store.RotatePendingApprovalToken(ctx, exec.ExecutionID, HashApprovalToken("fresh-token"), expiresAt)
+		require.NoError(t, err)
+		assert.False(t, rotated)
+
+		reread, err := store.GetExecutionByID(ctx, exec.ExecutionID)
+		require.NoError(t, err)
+		assert.Equal(t, HashApprovalToken("original-token"), reread.ApprovalToken)
+	})
+}

@@ -184,6 +184,11 @@ func TestHandler_executePurchase_PersistsStoredCostsNotClientCosts(t *testing.T)
 	assert.Equal(t, 2000.0, notifier.captured.TotalUpfrontCost)
 	assert.Equal(t, 200.0, notifier.captured.TotalSavings)
 
+	// Issue #103: the row stores only the hash of the token the email carries.
+	require.NotEmpty(t, notifier.captured.ApprovalToken)
+	assert.Equal(t, config.HashApprovalToken(notifier.captured.ApprovalToken), saved.ApprovalToken)
+	assert.NotEqual(t, notifier.captured.ApprovalToken, saved.ApprovalToken, "the raw token must never be stored")
+
 	resultMap := result.(map[string]any)
 	assert.Equal(t, 2000.0, resultMap["total_upfront_cost"])
 	assert.Equal(t, 200.0, resultMap["estimated_savings"])

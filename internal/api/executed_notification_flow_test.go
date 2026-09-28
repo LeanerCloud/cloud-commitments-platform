@@ -39,7 +39,7 @@ func (r *recordingExecutedNotifier) SendPurchaseExecutedNotification(_ context.C
 // expectedToken is the raw revocation token purchase.Manager.ApproveAndExecute
 // mints and returns for this specific approval (issue #103): all three paths
 // (token-authed approve, session approve, direct-execute) fund it from the
-// mock's return value now, since approval_token is hashed at rest and a
+// mock's return value now, since only the token hash is stored and a
 // re-read of the execution can never again yield a raw, emailable token.
 func assertExecutedNotificationFingerprints(t *testing.T, n *recordingExecutedNotifier, contact, executedBy, expectedToken string) {
 	t.Helper()
@@ -65,7 +65,7 @@ func assertExecutedNotificationFingerprints(t *testing.T, n *recordingExecutedNo
 // ApprovalToken in the DB, so the email embedded the old consumed token which
 // validateRevokeToken rejected with 403 on every revoke attempt.
 //
-// Post issue #103 (approval_token hashed at rest), the fix can no longer be
+// Post issue #103 (only the token hash stored), the fix can no longer be
 // "re-fetch the row" -- a re-read only ever yields the hash. The token must
 // come directly from ApproveExecution's return value, which this test pins.
 func TestExecutedNotification_TokenApprovePath(t *testing.T) {
@@ -231,7 +231,7 @@ func TestExecutedNotification_SessionApprovePath(t *testing.T) {
 
 	mockPurchase := new(MockPurchaseManager)
 	// The session path mints its own fresh revocation token too (issue #103):
-	// once approval_token is hashed at rest, reusing the pre-approve
+	// once only the token hash is stored, reusing the pre-approve
 	// execution's ApprovalToken (the pre-fix behavior) is no longer possible,
 	// so ApproveAndExecute mints and returns one on every successful approve
 	// regardless of which path triggered it.

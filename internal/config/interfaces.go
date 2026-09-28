@@ -180,6 +180,12 @@ type StoreInterface interface {
 	// DB error. Must be called inside the same tx that inserts the
 	// successor row, after that insert.
 	LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error)
+	// RotatePendingApprovalToken sets approval_token_hash and its expiry only
+	// while the row is still pending/notified, touching no other column, so a
+	// re-notification can never clobber a concurrent approve/cancel the way a
+	// full-row upsert of a stale copy would. Returns false when the row left
+	// pending/notified (issue #103).
+	RotatePendingApprovalToken(ctx context.Context, executionID, tokenHash string, expiresAt time.Time) (rotated bool, err error)
 	// CancelExecutionAtomic atomically flips status from pending / notified
 	// to 'canceled' (canonical US spelling), setting canceled_by. The
 	// 'scheduled' status is NOT accepted here; scheduled rows are revoked via

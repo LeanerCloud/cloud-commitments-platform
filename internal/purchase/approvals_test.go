@@ -330,8 +330,12 @@ func TestManager_RunPlannedPurchaseNow_ExecutesFromPaused(t *testing.T) {
 	store.On("TransitionExecutionStatus", ctx, "exec-run-now", []string{"pending", "paused"}, "approved", (*string)(nil)).Return(updated, nil)
 	stubExecuteChain(t, store, sender, "plan-run-now")
 
-	err := manager.RunPlannedPurchaseNow(ctx, "exec-run-now", "operator@example.com", nil)
+	revocationToken, err := manager.RunPlannedPurchaseNow(ctx, "exec-run-now", "operator@example.com", nil)
 	require.NoError(t, err)
+	// Run-now shares the execute funnel's revocation-token rotation (#103).
+	require.NotEmpty(t, revocationToken)
+	assert.Equal(t, config.HashApprovalToken(revocationToken), updated.ApprovalToken)
+	assert.NotEqual(t, revocationToken, updated.ApprovalToken)
 	require.NotNil(t, updated.ApprovedBy)
 	assert.Equal(t, "operator@example.com", *updated.ApprovedBy)
 	store.AssertExpectations(t)
@@ -351,7 +355,7 @@ func TestManager_RunPlannedPurchaseNow_LostCASReturnsError(t *testing.T) {
 	store.On("TransitionExecutionStatus", ctx, "exec-race", []string{"pending", "paused"}, "approved", (*string)(nil)).
 		Return(nil, config.ErrExecutionNotInExpectedStatus)
 
-	err := manager.RunPlannedPurchaseNow(ctx, "exec-race", "operator@example.com", nil)
+	_, err := manager.RunPlannedPurchaseNow(ctx, "exec-race", "operator@example.com", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, config.ErrExecutionNotInExpectedStatus)
 	store.AssertExpectations(t)
@@ -633,7 +637,7 @@ func TestManager_ApproveExecution_FourEyesOn_UnresolvableCreator_Denied(t *testi
 			ExecutionID:     "exec-sqs-unresolvable",
 			PlanID:          "plan-fourEyes",
 			Status:          "pending",
-			ApprovalToken:   "valid-token",
+			ApprovalToken:   config.HashApprovalToken("valid-token"),
 			CreatedByUserID: &creatorID,
 		}
 	}
@@ -648,7 +652,7 @@ func TestManager_ApproveExecution_FourEyesOn_UnresolvableCreator_Denied(t *testi
 		// pgx.ErrNoRows -- a deleted/nonexistent creator user row.
 		store.On("GetUserEmailByID", ctx, creatorID).Return("", nil)
 
-		err := manager.ApproveExecution(ctx, "exec-sqs-unresolvable", "valid-token", "approver@example.com")
+		_, err := manager.ApproveExecution(ctx, "exec-sqs-unresolvable", "valid-token", "approver@example.com")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "creator's account could not be resolved")
 		store.AssertNotCalled(t, "TransitionExecutionStatus",
@@ -665,7 +669,7 @@ func TestManager_ApproveExecution_FourEyesOn_UnresolvableCreator_Denied(t *testi
 		store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
 		store.On("GetUserEmailByID", ctx, creatorID).Return("", lookupErr)
 
-		err := manager.ApproveExecution(ctx, "exec-sqs-unresolvable", "valid-token", "approver@example.com")
+		_, err := manager.ApproveExecution(ctx, "exec-sqs-unresolvable", "valid-token", "approver@example.com")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to resolve creator identity")
 		store.AssertNotCalled(t, "TransitionExecutionStatus",

@@ -347,9 +347,9 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 		return nil, constraintErr
 	}
 
-	revocationToken, err := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session))
-	if err != nil {
-		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
+	revocationToken, runErr := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session))
+	if runErr != nil {
+		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, runErr))
 	}
 
 	// The shared execute funnel rotated the row's token into a revocation
@@ -671,7 +671,7 @@ func (h *Handler) approveViaToken(ctx context.Context, req *events.LambdaFunctio
 	// revocationToken is the raw token ApproveExecution's own
 	// ApproveAndExecute minted for this approval (issue #103); it is
 	// sourced from this return value, never from a DB re-read, since
-	// approval_token is hashed at rest and a re-read can only ever yield
+	// only the token hash is stored and a re-read can only ever yield
 	// the hash.
 	revocationToken, approveErr := h.purchase.ApproveExecution(ctx, execution.ExecutionID, token, actor)
 	if approveErr != nil {
@@ -762,7 +762,7 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 	}
 
 	// revocationToken is the raw token ApproveAndExecute mints for this
-	// approval (issue #103); approval_token is hashed at rest, so this
+	// approval (issue #103); only the token hash is stored, so this
 	// return value is the only place a raw, emailable token exists after
 	// the call returns.
 	revocationToken, approveErr := h.purchase.ApproveAndExecute(ctx, execution.ExecutionID, fourEyesActorIdentity(session), actor)
@@ -3003,7 +3003,7 @@ func (h *Handler) directExecutePurchase(ctx context.Context, req *events.LambdaF
 	// records who flipped the row to "approved".
 	//
 	// revocationToken is the raw token ApproveAndExecute mints for this
-	// approval (issue #103); approval_token is hashed at rest, so this
+	// approval (issue #103); only the token hash is stored, so this
 	// return value is the only place a raw, emailable token exists after
 	// the call returns.
 	revocationToken, err := h.purchase.ApproveAndExecute(ctx, executionID, fourEyesActorIdentity(session), validUUIDPtrOrNil(&session.UserID))

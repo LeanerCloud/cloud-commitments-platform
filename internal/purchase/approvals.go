@@ -457,7 +457,7 @@ func (m *Manager) CancelExecution(ctx context.Context, executionID, token, actor
 
 // rotateApprovalToken generates a fresh cryptographically-secure token,
 // mutates exec in place to hold its SHA-256 hash and a new ttl-based expiry
-// (issue #103: approval_token is hashed at rest, so only the digest is ever
+// (issue #103: only the token hash is stored, so only the digest is ever
 // written to the DB), persists exec with a single SavePurchaseExecution
 // call, and returns the RAW token for the caller to embed in an email.
 //
@@ -470,22 +470,16 @@ func (m *Manager) CancelExecution(ctx context.Context, executionID, token, actor
 // class of two-writers-one-row bug this signature is designed to make
 // impossible by construction.
 //
-// Two callers:
-//
-//   - ApproveAndExecute (ttl=RevocationWindow): called after every
-//     successful approve, passing `updated` (mutated in place by the
-//     preceding TransitionExecutionStatus / executeAndFinalize calls), so
-//     the "purchase executed" email carries a valid revoke-capable token
-//     rather than the now-consumed (token path) or simply stale (session /
-//     direct-execute paths) approval token.
-//   - getOrCreateExecution (ttl=ApprovalTokenTTL): called when an existing,
-//     not-yet-notified execution row is about to receive its first "please
-//     approve" email, passing the row it just fetched, since the row's
-//     stored approval_token is already a hash with no recoverable raw value.
+// Its caller is transitionApproveAndExecute (ttl=RevocationWindow), after
+// every successful execute, passing `updated` (mutated in place by the
+// preceding TransitionExecutionStatus / executeAndFinalize calls), so the
+// "purchase executed" email carries a valid revoke-capable token rather than
+// the consumed or unrecoverable approval token. The pre-approval
+// notification path rotates via RotatePendingApprovalToken instead, because
+// it persists only after the email is sent and must not upsert a stale row.
 //
 // Best-effort: if the write fails the caller's own state change (the
-// approve, or the notification-worthy row already existing) has already
-// landed, so this returns ("", err) and the caller only logs -- the
+// approve) has already landed, so this returns ("", err) and the caller only logs -- the
 // email-link convenience is degraded for this row, not the underlying
 // purchase state.
 func (m *Manager) rotateApprovalToken(ctx context.Context, exec *config.PurchaseExecution, ttl time.Duration) (string, error) {

@@ -1,47 +1,45 @@
 -- Migration 000100: hash approval/revocation tokens at rest (issue #103).
 --
--- WHY
--- purchase_executions.approval_token and ri_exchange_history.approval_token
--- stored the raw, directly-usable secret. handler_ri_exchange.go compared it
--- with a plain subtle.ConstantTimeCompare against the stored value;
--- validateRevokeToken (purchase side) SHA-256'd the STORED raw value and the
--- supplied value at COMPARE time, which only normalizes length for the
--- constant-time compare and does not mean the column is hashed. The
--- consuming endpoints (/api/purchases/approve, /api/purchases/cancel,
--- /api/purchases/revoke, /api/ri-exchange/approve, /api/ri-exchange/reject)
--- are unauthenticated and CSRF-exempt, so token possession alone commits or
--- reverses money. A read-only DB compromise (SQL injection, a leaked
--- backup/snapshot, a read replica, an over-permissioned analytics role)
--- therefore escalates straight to spending money.
+-- purchase_executions.approval_token (approval AND post-execution revocation
+-- tokens) and ri_exchange_history.approval_token stored the raw secret that
+-- the unauthenticated, CSRF-exempt approve/cancel/revoke/reject endpoints
+-- accept, so a read-only DB compromise escalated to spending money.
 --
--- WHAT
--- Rewrites every existing non-empty value in place to
--- encode(digest(approval_token, 'sha256'), 'hex') -- the same SHA-256 hex
--- digest format Go's config.HashApprovalToken (and internal/auth's
--- hashSessionToken, for session/reset/invite tokens) produces. No column
--- type change is needed: both columns are VARCHAR(255) and a SHA-256 hex
--- digest is 64 characters, well inside that width, so this is a plain
--- in-place UPDATE rather than an expand-contract (new column + backfill +
--- drop-old-column) migration.
+-- Expand-contract, step 1 of 2: add approval_token_hash, move every raw
+-- value into it as its SHA-256 hex digest (the format config.HashApprovalToken
+-- produces), and NULL the raw column. The application reads and writes only
+-- approval_token_hash from this release on. Dropping approval_token is a
+-- later migration (follow-up issue), after the sweep below has been re-run.
 --
--- Because the digest is deterministic, a still-outstanding token from an
--- already-sent email keeps validating after this migration: the application
--- layer (this PR's Go changes, deployed together with this migration) now
--- hashes the SUPPLIED token at compare time and compares it against the
--- stored value, so hash(supplied) == migrated_stored_hash continues to hold
--- for every unexpired token. Zero outstanding approval/revoke/reject links
--- are invalidated by this migration.
+-- The sweep keys on "raw IS NOT NULL", never on the hash column, so it is
+-- idempotent and safe to re-run by hand: it only ever hashes a raw value once
+-- (the raw is NULLed in the same statement) and it picks up rows that
+-- pre-#103 code wrote after an earlier run (prod migrates manually, so old
+-- code can run against the migrated schema for a while). A re-run can never
+-- double-hash, unlike an in-place rewrite of approval_token.
 --
--- pgcrypto is required for digest(); it is not yet enabled in this database
--- (only uuid-ossp and pg_trgm are, per migration 000001).
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- sha256() is built in (PostgreSQL 11+), so no pgcrypto is needed. Empty
+-- raw values mean "no token" and become NULL, not the digest of ''.
+
+ALTER TABLE purchase_executions ADD COLUMN IF NOT EXISTS approval_token_hash VARCHAR(64);
 
 UPDATE purchase_executions
-   SET approval_token = encode(digest(approval_token, 'sha256'), 'hex')
- WHERE approval_token IS NOT NULL
-   AND approval_token <> '';
+   SET approval_token_hash = CASE WHEN approval_token <> ''
+                                  THEN encode(sha256(convert_to(approval_token, 'UTF8')), 'hex')
+                             END,
+       approval_token = NULL
+ WHERE approval_token IS NOT NULL;
+
+ALTER TABLE ri_exchange_history ADD COLUMN IF NOT EXISTS approval_token_hash VARCHAR(64);
 
 UPDATE ri_exchange_history
-   SET approval_token = encode(digest(approval_token, 'sha256'), 'hex')
- WHERE approval_token IS NOT NULL
-   AND approval_token <> '';
+   SET approval_token_hash = CASE WHEN approval_token <> ''
+                                  THEN encode(sha256(convert_to(approval_token, 'UTF8')), 'hex')
+                             END,
+       approval_token = NULL
+ WHERE approval_token IS NOT NULL;
+
+-- GetRIExchangeRecordByToken looks rows up by hash; keep the uniqueness the
+-- raw column had (000009).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ri_exchange_history_approval_token_hash
+    ON ri_exchange_history (approval_token_hash);

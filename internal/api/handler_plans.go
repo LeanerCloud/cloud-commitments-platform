@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
@@ -571,24 +570,16 @@ func (h *Handler) createPurchaseExecutionsTx(ctx context.Context, tx pgx.Tx, pla
 	for i := 0; i < count; i++ {
 		scheduledDate := startDate.AddDate(0, 0, i*intervalDays)
 
-		approvalToken, err := common.GenerateApprovalToken()
-		if err != nil {
-			return created, fmt.Errorf("failed to generate approval token (row %d/%d): %w", created+1, count, err)
-		}
-		// Stored as a hash (issue #103): this token is never emailed from
-		// here directly. These rows are for future ramp steps whose
-		// "please approve" notification purchase.SendUpcomingPurchaseNotifications
-		// sends later, and that scheduled job always rotates the token
-		// immediately before emailing (getOrCreateExecution), so the value
-		// generated here only needs to exist to satisfy the non-empty
-		// invariant the compare/expiry checks assume until it is rotated.
+		// No approval token (issue #103): nothing emails one from here, and
+		// the notification job mints, emails and only then persists a token
+		// for these future ramp steps (getOrCreateExecution). An empty token
+		// fails closed at every compare site until then.
 		execution := &config.PurchaseExecution{
 			PlanID:          planID,
 			ExecutionID:     uuid.New().String(),
 			Status:          "pending",
 			StepNumber:      plan.RampSchedule.CurrentStep + i + 1,
 			ScheduledDate:   scheduledDate,
-			ApprovalToken:   config.HashApprovalToken(approvalToken),
 			CreatedByUserID: creator,
 		}
 

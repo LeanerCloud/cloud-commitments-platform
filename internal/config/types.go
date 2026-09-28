@@ -291,7 +291,7 @@ type PurchaseExecution struct {
 	StepNumber       int                    `json:"step_number" dynamodbav:"step_number"`
 	ScheduledDate    time.Time              `json:"scheduled_date" dynamodbav:"scheduled_date"`
 	NotificationSent *time.Time             `json:"notification_sent,omitempty" dynamodbav:"notification_sent,omitempty"`
-	ApprovalToken    string                 `json:"approval_token,omitempty" dynamodbav:"approval_token,omitempty"`
+	ApprovalToken    string                 `json:"approval_token,omitempty" dynamodbav:"approval_token,omitempty"` // SHA-256 hex digest (approval_token_hash column), never the raw token
 	Recommendations  []RecommendationRecord `json:"recommendations" dynamodbav:"recommendations"`
 	TotalUpfrontCost float64                `json:"total_upfront_cost" dynamodbav:"total_upfront_cost"`
 	EstimatedSavings float64                `json:"estimated_savings" dynamodbav:"estimated_savings"`
@@ -954,7 +954,7 @@ type RIExchangeRecord struct {
 	TargetCount        int      `json:"target_count"`
 	PaymentDue         string   `json:"payment_due"`
 	Status             string   `json:"status"`
-	ApprovalToken      string   `json:"approval_token,omitempty"`
+	ApprovalToken      string   `json:"approval_token,omitempty"` // raw when passed to SaveRIExchangeRecord (hashed there); the hash when read back
 	Error              string   `json:"error,omitempty"`
 	Mode               string   `json:"mode"`
 	// CreatedByUserID is the UUID of the session user who submitted the exchange
