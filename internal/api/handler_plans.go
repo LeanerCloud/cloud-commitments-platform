@@ -126,7 +126,8 @@ func mapCreatePlanStorageError(err error, notFoundMsg, genericMsg, logFmt string
 
 func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunctionURLRequest) (any, error) {
 	// Require create:plans permission
-	if _, err := h.requirePermission(ctx, httpReq, "create", "plans"); err != nil {
+	session, err := h.requirePermission(ctx, httpReq, "create", "plans")
+	if err != nil {
 		return nil, err
 	}
 
@@ -142,6 +143,12 @@ func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunction
 	// scope, hard to filter, and hard to govern. Reject early with a clear
 	// 400 so the frontend can surface the error before any DB write.
 	if err := validateTargetAccounts(req.TargetAccounts); err != nil {
+		return nil, err
+	}
+
+	// Refuse before the plan row exists: a scoped caller must not create a
+	// plan that buys for an account outside their allowed_accounts.
+	if err := h.requireAccountsAccess(ctx, session, req.TargetAccounts); err != nil {
 		return nil, err
 	}
 
