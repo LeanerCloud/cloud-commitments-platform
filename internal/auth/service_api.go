@@ -102,6 +102,16 @@ type APICreateGroupRequest struct {
 // APIUpdateGroupRequest is the request type for updating groups via API.
 // AllowedAccounts has no omitempty: clients must be able to send an explicit
 // empty slice to clear account restrictions. Nil means "not sent".
+//
+// Permissions has the same "nil means not sent" contract, but encoding/json
+// already gives UpdateGroupAPI what it needs without a pointer: decoding an
+// omitted field leaves the slice nil, while decoding an explicit `[]` leaves
+// it non-nil with length 0 (json.Unmarshal allocates the slice before
+// leaving it empty). UpdateGroupAPI checks req.Permissions != nil &&
+// len(req.Permissions) == 0 to refuse that explicit-empty case -- this
+// endpoint has no way to express "clear all permissions" (a group must
+// always grant at least one) -- rather than silently keeping the group's
+// old permissions while reporting success (issue #237).
 type APIUpdateGroupRequest struct {
 	Name            string          `json:"name,omitempty"`
 	Description     string          `json:"description,omitempty"`
@@ -356,6 +366,16 @@ func (s *Service) UpdateGroupAPI(ctx context.Context, actorUserID, groupID strin
 		return nil, fmt.Errorf("%w: %q is seeded and maintained by migrations", ErrSystemManagedGroup, group.Name)
 	}
 
+	// req.Permissions == nil means the field was omitted: leave the group's
+	// permissions unchanged (this endpoint's pre-existing "not sent"
+	// contract). A non-nil-but-empty slice means the client explicitly sent
+	// `"permissions": []` (encoding/json allocates the slice before leaving
+	// it empty, so this is distinguishable from omission after decode),
+	// which this endpoint has no way to honor as "clear all permissions" --
+	// refuse rather than silently no-op it (issue #237).
+	if req.Permissions != nil && len(req.Permissions) == 0 {
+		return nil, ErrEmptyPermissions
+	}
 	perms := apiPermissionsToPermissions(req.Permissions)
 	if err := s.checkGrantCeiling(ctx, actorUserID, perms, group.Permissions); err != nil {
 		return nil, err

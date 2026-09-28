@@ -65,7 +65,7 @@ func (h *Handler) createGroup(ctx context.Context, req *events.LambdaFunctionURL
 // are disjoint. Unrecognized errors pass through for handleRequestError.
 func mapGroupAuthError(err error) error {
 	switch {
-	case errors.Is(err, auth.ErrInvalidPermission):
+	case errors.Is(err, auth.ErrInvalidPermission), errors.Is(err, auth.ErrEmptyPermissions):
 		// Malformed input, not an authorization failure.
 		return NewClientError(400, err.Error())
 	case errors.Is(err, auth.ErrPermissionCeiling),
