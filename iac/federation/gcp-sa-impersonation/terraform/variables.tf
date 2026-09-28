@@ -16,12 +16,17 @@ variable "source_service_account" {
 variable "create_custom_role" {
   description = <<-EOT
     Whether to create the var.custom_role_id custom role in this project.
-    Set to false if the project was already onboarded through
-    federation/gcp-target, or already self-hosts CUDly via
-    terraform/modules/compute/gcp/cloud-run, since either of those call
-    sites already creates a role with the same ID and re-creating it here
-    409s. Default true is correct when this bundle is the only onboarding
-    path applied to the project.
+    Default true is correct when this bundle is the only onboarding path
+    applied to the project.
+
+    Set to false ONLY after confirming the role already exists (e.g. `gcloud
+    iam roles describe var.custom_role_id --project var.project_id`):
+    either terraform/modules/compute/gcp/cloud-run (self-hosted CUDly,
+    unconditional) or federation/gcp-target (only when it created its own
+    service account, i.e. its var.service_account_email was left empty) can
+    have already created a role with the same ID in this project. If
+    neither applies, the role does not exist and setting this to false
+    makes the binding below target a missing role, which fails the apply.
   EOT
   type        = bool
   default     = true
