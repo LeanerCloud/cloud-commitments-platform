@@ -462,6 +462,11 @@ func TestExecuteForAccount_CommittedButUnsavedIsAcked(t *testing.T) {
 	require.NotNil(t, savedRoot, "the root row must be saved with its aggregate status")
 	assert.Equal(t, "partially_completed", savedRoot.Status,
 		"root must reflect partial success: the one committed account carries an audit gap, not a flat failure")
+	// Pin the specific AUDIT LOSS branch under test: without this, acct-bad's
+	// credential-failure error alone would satisfy committed>0 && err!=nil and
+	// the test would pass even if acct-unsaved's SavePurchaseExecution failure
+	// were silently skipped or fixed.
+	assert.Contains(t, savedRoot.Error, "AUDIT LOSS: failed to save execution record for account acct-unsaved")
 
 	mockServiceClient.AssertExpectations(t)
 }
