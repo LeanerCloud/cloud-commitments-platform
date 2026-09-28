@@ -338,7 +338,7 @@ func (s *Service) UpdateUser(ctx context.Context, actorUserID, userID string, re
 		}
 	}
 
-	if err := s.guardActiveChange(ctx, actorUserID, user, priorGroups, priorActive, req.Active); err != nil {
+	if err := s.guardActiveChange(ctx, actorUserID, user, priorActive, req.Active); err != nil {
 		return nil, err
 	}
 
@@ -372,20 +372,17 @@ func (s *Service) UpdateUser(ctx context.Context, actorUserID, userID string, re
 	return user, nil
 }
 
-// guardActiveChange caps an Active flip at the actor's grant ceiling, then
-// applies guardDeactivation. Flipping Active restores or revokes all of the
-// target's group access at once, so update:users alone must not do it to
-// someone holding more than the actor does (issue #89 review; otherwise the
-// #226 ceiling only runs on GroupIDs changes). Reactivation is measured
-// against the membership being restored, deactivation against the one being
-// revoked. Trusted internal callers (actorUserID == "") skip the ceiling.
-func (s *Service) guardActiveChange(ctx context.Context, actorUserID string, user *User, priorGroups []string, priorActive bool, reqActive *bool) error {
-	if actorUserID != "" && reqActive != nil && *reqActive != priorActive {
-		affected := user.GroupIDs
-		if !*reqActive {
-			affected = priorGroups
-		}
-		if err := s.checkMembershipGrantCeiling(ctx, actorUserID, affected); err != nil {
+// guardActiveChange caps a reactivation at the actor's grant ceiling, then
+// applies guardDeactivation. Reactivating restores the target's whole
+// membership at once, so update:users alone must not bring back someone holding
+// more than the actor does (issue #89 review; otherwise the #226 ceiling only
+// runs on GroupIDs changes). Deactivation is a revocation and, like a group
+// removal, is not ceiling-checked. Trusted internal callers (actorUserID == "")
+// skip the ceiling.
+func (s *Service) guardActiveChange(ctx context.Context, actorUserID string, user *User, priorActive bool, reqActive *bool) error {
+	reactivating := !priorActive && reqActive != nil && *reqActive
+	if actorUserID != "" && reactivating {
+		if err := s.checkMembershipGrantCeiling(ctx, actorUserID, user.GroupIDs); err != nil {
 			return err
 		}
 	}

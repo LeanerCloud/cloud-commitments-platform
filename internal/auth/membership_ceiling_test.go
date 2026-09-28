@@ -169,7 +169,7 @@ func stubAdminTarget(ctx context.Context, mockStore *MockStore, active bool) {
 		ID:          DefaultAdminGroupID,
 		Name:        "Administrators",
 		Permissions: []Permission{{Action: ActionAdmin, Resource: ResourceAll}},
-	}, nil)
+	}, nil).Maybe()
 }
 
 // Issue #89 review: flipping Active restores or revokes the target's whole
@@ -194,24 +194,62 @@ func TestMembershipCeiling_UpdateUser_UpdateUsersOnlyCannotReactivateAdmin(t *te
 	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
 }
 
-func TestMembershipCeiling_UpdateUser_UpdateUsersOnlyCannotDeactivateAdmin(t *testing.T) {
+// stubPurchaserTarget registers the target as a Purchaser member with the
+// given active state, plus the Purchaser group holding the carved-out verb.
+func stubPurchaserTarget(ctx context.Context, mockStore *MockStore, active bool) {
+	target := &User{ID: ceilingTargetID, Active: active, GroupIDs: []string{DefaultPurchaserGroupID}}
+	if !active {
+		deactivatedAt := time.Now()
+		target.DeactivatedAt = &deactivatedAt
+	}
+	mockStore.On("GetUserByID", ctx, ceilingTargetID).Return(target, nil)
+	mockStore.On("GetGroup", ctx, DefaultPurchaserGroupID).Return(&Group{
+		ID:          DefaultPurchaserGroupID,
+		Name:        GroupPurchaser,
+		Permissions: []Permission{{Action: ActionExecute, Resource: ResourcePurchases}},
+	}, nil).Maybe()
+}
+
+// Deactivation is a revocation, so the ceiling must not run: the #923 carve-out
+// would otherwise stop an administrator from locking out a Purchaser member
+// during an incident, while protecting nothing (removals are not ceiling-checked).
+func TestMembershipCeiling_UpdateUser_AdminCanDeactivatePurchaser(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	svc := newCeilingService(t, mockStore)
 
-	stubActorPermissions(ctx, mockStore, updateUsersOnly)
-	stubAdminTarget(ctx, mockStore, true)
-	// Two admins, so only the ceiling can refuse this.
-	mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil).Maybe()
+	stubActorPermissionsMaybe(ctx, mockStore, adminOnly)
+	stubPurchaserTarget(ctx, mockStore, true)
+	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("DeleteUserSessions", ctx, ceilingTargetID).Return(nil).Once()
 
 	inactive := false
-	_, err := svc.UpdateUser(ctx, ceilingActorID, ceilingTargetID, UpdateUserRequest{Active: &inactive})
+	user, err := svc.UpdateUser(ctx, ceilingActorID, ceilingTargetID, UpdateUserRequest{Active: &inactive})
+
+	require.NoError(t, err)
+	assert.False(t, user.Active)
+	assert.NotNil(t, user.DeactivatedAt)
+}
+
+// Reactivation restores the carved-out money verb, which even an administrator
+// cannot grant (issue #923).
+func TestMembershipCeiling_UpdateUser_AdminCannotReactivatePurchaser(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	svc := newCeilingService(t, mockStore)
+
+	stubActorPermissions(ctx, mockStore, adminOnly)
+	stubPurchaserTarget(ctx, mockStore, false)
+
+	active := true
+	_, err := svc.UpdateUser(ctx, ceilingActorID, ceilingTargetID, UpdateUserRequest{Active: &active})
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrPermissionCeiling)
+	assert.ErrorIs(t, err, ErrPermissionNotGrantable)
+	assert.Contains(t, err.Error(), ActionExecute+":"+ResourcePurchases)
 	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
-	mockStore.AssertNotCalled(t, "DeleteUserSessions", mock.Anything, mock.Anything)
 }
 
 // Negative control: an admin actor may still reactivate and deactivate an
@@ -238,7 +276,7 @@ func TestMembershipCeiling_UpdateUser_AdminCanToggleAdminActive(t *testing.T) {
 		mockStore := new(MockStore)
 		t.Cleanup(func() { mockStore.AssertExpectations(t) })
 		svc := newCeilingService(t, mockStore)
-		stubActorPermissions(ctx, mockStore, adminOnly)
+		stubActorPermissionsMaybe(ctx, mockStore, adminOnly)
 		stubAdminTarget(ctx, mockStore, true)
 		mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil).Once()
 		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
@@ -255,7 +293,7 @@ func TestMembershipCeiling_UpdateUser_AdminCanToggleAdminActive(t *testing.T) {
 		mockStore := new(MockStore)
 		t.Cleanup(func() { mockStore.AssertExpectations(t) })
 		svc := newCeilingService(t, mockStore)
-		stubActorPermissions(ctx, mockStore, adminOnly)
+		stubActorPermissionsMaybe(ctx, mockStore, adminOnly)
 		stubAdminTarget(ctx, mockStore, true)
 		mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(1, nil).Once()
 
