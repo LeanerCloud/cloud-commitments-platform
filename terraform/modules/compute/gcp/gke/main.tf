@@ -77,6 +77,45 @@ resource "google_container_cluster" "main" {
     services_ipv4_cidr_block = ""
   }
 
+  # Private nodes always (no reason for nodes to hold public IPs); the
+  # control plane's own public endpoint is a separate toggle
+  # (var.enable_private_endpoint) since fully removing it requires VPC
+  # peering/a bastion for kubectl access, which this module does not set up.
+  # Either way, master_authorized_networks_config below denies every public
+  # IP by default, so a public endpoint is unreachable until an operator
+  # explicitly allowlists something.
+  #
+  # master_ipv4_cidr_block is required by the provider whenever
+  # enable_private_nodes = true on a Standard cluster and neither this nor
+  # private_endpoint_subnetwork is set: terraform validate/plan do not catch
+  # the omission (a provider-side check at create), apply fails outright with
+  # "master_ipv4_cidr_block or private_endpoint_subnetwork is required".
+  private_cluster_config {
+    enable_private_nodes    = var.enable_private_nodes
+    enable_private_endpoint = var.enable_private_endpoint
+    master_ipv4_cidr_block  = var.master_ipv4_cidr_block
+  }
+
+  # No entries and gcp_public_cidrs_access_enabled = false = the public
+  # endpoint (when enabled) accepts no external traffic at all; only
+  # in-VPC/private access works. Google Cloud's own public IP ranges bypass
+  # cidr_blocks entirely unless gcp_public_cidrs_access_enabled is explicitly
+  # false -- the provider defaults it to true, which would otherwise let any
+  # Google Cloud public IP reach the endpoint even with an empty allowlist.
+  # An operator opts in to public kubectl access by adding CIDRs to
+  # var.master_authorized_networks (rejects 0.0.0.0/0).
+  master_authorized_networks_config {
+    gcp_public_cidrs_access_enabled = var.gcp_public_cidrs_access_enabled
+
+    dynamic "cidr_blocks" {
+      for_each = var.master_authorized_networks
+      content {
+        cidr_block   = cidr_blocks.value.cidr_block
+        display_name = cidr_blocks.value.display_name
+      }
+    }
+  }
+
   # Workload Identity
   workload_identity_config {
     workload_pool = var.enable_workload_identity ? "${var.project_id}.svc.id.goog" : null

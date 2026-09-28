@@ -155,6 +155,13 @@ module "compute_gke" {
   enable_auto_upgrade      = var.gke_enable_auto_upgrade
   enable_workload_identity = var.gke_enable_workload_identity
 
+  # API server exposure (#125)
+  enable_private_nodes            = var.gke_enable_private_nodes
+  enable_private_endpoint         = var.gke_enable_private_endpoint
+  master_ipv4_cidr_block          = var.gke_master_ipv4_cidr_block
+  gcp_public_cidrs_access_enabled = var.gke_gcp_public_cidrs_access_enabled
+  master_authorized_networks      = var.gke_master_authorized_networks
+
   # Database connection
   database_host                 = module.database.instance_connection_name
   database_name                 = module.database.database_name

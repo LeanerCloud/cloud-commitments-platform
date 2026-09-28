@@ -289,3 +289,71 @@ variable "scheduled_task_auth_mode_override" {
     error_message = "scheduled_task_auth_mode_override must be one of: \"oidc\", \"bearer\", \"disabled\"."
   }
 }
+
+variable "enable_private_nodes" {
+  description = "Give GKE nodes private IPs only (no public node IPs). Defaults to true; there is no legitimate reason to expose node IPs publicly."
+  type        = bool
+  default     = true
+}
+
+variable "enable_private_endpoint" {
+  description = "Remove the GKE control plane's public IP entirely (kubectl then requires VPC peering, Private Service Connect, or a bastion inside the network). Defaults to false: the public endpoint stays present but is denied to every external IP by default (see var.master_authorized_networks and var.gcp_public_cidrs_access_enabled) rather than reachable from 0.0.0.0/0. CONSEQUENCE either way: with the default empty var.master_authorized_networks, a standard GitHub-hosted runner (ubuntu-latest) cannot reach the public endpoint at all -- ubuntu-latest has no stable, allowlistable egress CIDR. terraform apply itself (creating/updating the cluster) does not need API server reachability, but var.deploy_kubernetes_resources=true (which configures kubernetes/helm providers against this cluster) does, and needs either a self-hosted/VNet-reachable runner or a real entry in var.master_authorized_networks."
+  type        = bool
+  default     = false
+}
+
+variable "master_ipv4_cidr_block" {
+  description = <<-EOT
+    /28 CIDR for the GKE control plane's own VPC (used for its private peering
+    endpoint). Required by the google provider whenever enable_private_nodes =
+    true on a Standard cluster and neither this nor
+    private_endpoint_subnetwork is set -- terraform validate and plan do not
+    catch the omission (it is a provider-side check at apply/create), but
+    apply fails outright with "master_ipv4_cidr_block or
+    private_endpoint_subnetwork is required".
+
+    Must not overlap var.network_name / var.subnetwork_name's ranges. The
+    default is a distinct RFC1918 /16 (172.16.0.0/16) from the 10.0.0.0/8
+    space terraform/environments/gcp's subnet_cidr (default 10.0.0.0/24) and
+    connector_subnet_cidr (default 10.8.0.0/28) use, so it cannot collide
+    with this repo's default networking layout; an operator using a
+    non-default VPC CIDR plan must override this to a /28 outside it.
+  EOT
+  type        = string
+  default     = "172.16.0.0/28"
+
+  validation {
+    condition     = can(cidrnetmask(var.master_ipv4_cidr_block)) && tonumber(split("/", var.master_ipv4_cidr_block)[1]) == 28
+    error_message = "master_ipv4_cidr_block must be a valid /28 CIDR (e.g. 172.16.0.0/28); GKE requires exactly a /28 for the control plane's private peering range."
+  }
+}
+
+variable "gcp_public_cidrs_access_enabled" {
+  description = <<-EOT
+    Whether Google Cloud's own public IP ranges (used by services like Cloud
+    Build) can reach the GKE control plane's public endpoint, independent of
+    var.master_authorized_networks. Defaults to false: leaving this at the
+    provider's own default (true) would mean an empty
+    master_authorized_networks allowlist does NOT actually deny all external
+    access -- any Google Cloud public IP could still reach the endpoint. Set
+    to true only if a Google-managed service genuinely needs direct API
+    server access (most integrations use the GKE API instead and do not need
+    this).
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "master_authorized_networks" {
+  description = "CIDR allowlist for the GKE control plane's public endpoint (CI egress ranges, an operator bastion). Defaults to empty; combined with gcp_public_cidrs_access_enabled=false (also this module's default), that denies all external access -- only in-VPC/private traffic reaches the API server until an operator explicitly adds a range here. Must not include 0.0.0.0/0. CONSEQUENCE: a standard GitHub-hosted runner (ubuntu-latest) has no stable CIDR to allowlist, so var.deploy_kubernetes_resources=true from ordinary CI needs a self-hosted/VNet-reachable runner rather than an entry here."
+  type = list(object({
+    cidr_block   = string
+    display_name = optional(string, "")
+  }))
+  default = []
+
+  validation {
+    condition     = !contains([for n in var.master_authorized_networks : n.cidr_block], "0.0.0.0/0")
+    error_message = "master_authorized_networks must not contain 0.0.0.0/0; that reopens the control plane's public endpoint to the whole internet, exactly what this allowlist exists to prevent."
+  }
+}
