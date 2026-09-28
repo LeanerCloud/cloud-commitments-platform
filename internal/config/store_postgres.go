@@ -1741,6 +1741,9 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 		// leave exec.IdempotencyKey "" for those so the derivation falls back
 		// to ExecutionID (issue #1012).
 		var idempotencyKey sql.NullString
+		// approval_token_hash is NULL on rows migration 000100 found with no
+		// raw token (every canceled row among them).
+		var approvalTokenHash sql.NullString
 
 		err := rows.Scan(
 			&planID,
@@ -1749,7 +1752,7 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 			&exec.StepNumber,
 			&exec.ScheduledDate,
 			&notifSent,
-			&exec.ApprovalToken,
+			&approvalTokenHash,
 			&recommendationsJSON,
 			&exec.TotalUpfrontCost,
 			&exec.EstimatedSavings,
@@ -1781,6 +1784,7 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 		if idempotencyKey.Valid {
 			exec.IdempotencyKey = idempotencyKey.String
 		}
+		exec.ApprovalToken = approvalTokenHash.String
 
 		// Unmarshal recommendations
 		if err := json.Unmarshal(recommendationsJSON, &exec.Recommendations); err != nil {

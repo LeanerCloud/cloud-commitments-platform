@@ -7,28 +7,34 @@
 --
 -- Expand-contract, step 1 of 2: add approval_token_hash, move every raw
 -- value into it as its SHA-256 hex digest (the format config.HashApprovalToken
--- produces), and NULL the raw column. The application reads and writes only
+-- produces), and blank the raw column. The application reads and writes only
 -- approval_token_hash from this release on. Dropping approval_token is a
 -- later migration (follow-up issue), after the sweep below has been re-run.
 --
--- The sweep keys on "raw IS NOT NULL", never on the hash column, so it is
--- idempotent and safe to re-run by hand: it only ever hashes a raw value once
--- (the raw is NULLed in the same statement) and it picks up rows that
--- pre-#103 code wrote after an earlier run (prod migrates manually, so old
--- code can run against the migrated schema for a while). A re-run can never
--- double-hash, unlike an in-place rewrite of approval_token.
+-- Deploy order: run this migration BEFORE deploying the #103 code (that code
+-- reads and writes approval_token_hash and fails without it), then re-run it
+-- after the deploy to sweep raw tokens that pre-#103 code wrote in between.
+-- Until that re-run those links fail closed as invalid, which is acceptable.
 --
--- sha256() is built in (PostgreSQL 11+), so no pgcrypto is needed. Empty
--- raw values mean "no token" and become NULL, not the digest of ''.
+-- Re-running is safe because each sweep keys on a non-empty raw value, never
+-- on the hash column, and blanks the raw in the same statement: a raw value is
+-- hashed exactly once, a migrated row is never double-hashed, and a row that
+-- pre-#103 code re-saved with an empty raw keeps its hash.
+--
+-- purchase_executions: the raw column is set to '' (not NULL) because pre-#103
+-- code scans it into a Go string and would fail on NULL.
+-- ri_exchange_history: the raw column is UNIQUE (000009), so it must become
+-- NULL, not ''; pre-#103 code scans it into sql.NullString and writes '' as
+-- NULL, so a non-NULL raw there is always a real token.
+--
+-- sha256() is built in (PostgreSQL 11+), so no pgcrypto is needed.
 
 ALTER TABLE purchase_executions ADD COLUMN IF NOT EXISTS approval_token_hash VARCHAR(64);
 
 UPDATE purchase_executions
-   SET approval_token_hash = CASE WHEN approval_token <> ''
-                                  THEN encode(sha256(convert_to(approval_token, 'UTF8')), 'hex')
-                             END,
-       approval_token = NULL
- WHERE approval_token IS NOT NULL;
+   SET approval_token_hash = encode(sha256(convert_to(approval_token, 'UTF8')), 'hex'),
+       approval_token = ''
+ WHERE approval_token <> '';
 
 ALTER TABLE ri_exchange_history ADD COLUMN IF NOT EXISTS approval_token_hash VARCHAR(64);
 

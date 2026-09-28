@@ -1,6 +1,6 @@
 -- 000100 down: intentional no-op.
 --
--- The up migration NULLed every raw approval_token and kept only its SHA-256
+-- The up migration blanked every raw approval_token and kept only its SHA-256
 -- digest in approval_token_hash, which cannot be reversed. Dropping
 -- approval_token_hash here would destroy the only copy of every live
 -- approval/revocation token, so a later re-up would permanently invalidate every
