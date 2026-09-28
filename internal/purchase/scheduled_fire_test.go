@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -148,24 +150,172 @@ func TestFireScheduledDelayedPurchases_HardDBErrorClassifiedAsErrored(t *testing
 // TestFireScheduledDelayedPurchases_EndToEnd exercises the full sequence:
 // a purchase_execution in status=scheduled (purchase_delay_hours > 0) is found
 // by GetScheduledExecutionsDue, the CAS transitions it to approved, the
-// approved_by audit stamp is saved, and executeAndFinalize is invoked.
+// approved_by audit stamp is saved, and executeAndFinalize is invoked and
+// actually fires a real cloud purchase.
 //
-// This test uses a manager wired with a minimal provider stub so
-// executeAndFinalize runs to completion and Status ends at "completed".
-// It acts as the end-to-end smoke test that verifies the fire-tick path does
-// not silently no-op the pre-fire delay branch (CRITICAL: issue #291 wave-2).
+// This is the A16-004 regression guard (#257). It was previously a t.Skip
+// placeholder; every other test in this file asserts Fired == 0 (no-due-rows,
+// list-error, CAS-race-lost, hard-DB-error), and the compile-time
+// TestFireScheduledDelayedPurchases_DelayPathNotSilentNoOp only locks the
+// method signature, so nothing observed result.Fired == 1 or a real
+// PurchaseCommitment call. A change that made fireOneDue return (false, false)
+// for every due row, or executeAndFinalize error out unconditionally, would
+// silently stop every delayed purchase from ever firing while this suite
+// stayed green.
+//
+// Uses the awsAccessKeyCredStore + MockProviderFactory chain already built
+// for money_path_regression_test.go so the provider/credential wiring is
+// real end to end and only the cloud SDK call itself is stubbed.
 func TestFireScheduledDelayedPurchases_EndToEnd(t *testing.T) {
-	t.Skip("placeholder until full provider-stub wiring is available; " +
-		"the CAS and audit-stamp paths are covered by the unit tests above")
-	// When un-skipped, the test scenario is:
-	//   1. Create an execution with purchase_delay_hours > 0, Status="scheduled",
-	//      ScheduledExecutionAt = time.Now().Add(-1h).
-	//   2. Call FireScheduledDelayedPurchases(ctx).
-	//   3. Assert result.Fired == 1, result.RaceLost == 0, result.Errored == 0.
-	//   4. Assert the execution row has Status == "completed" (or "failed" if
-	//      the provider stub returns an error, but Fired must still be 1 since
-	//      the CAS succeeded).
-	// Tracked via issue #1005 (4-eyes approval integration).
+	ctx := context.Background()
+	store := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockFactory := new(MockProviderFactory)
+	mockProviderInst := new(MockProvider)
+	mockServiceClient := new(MockServiceClient)
+
+	const acctID = "acct-fire"
+	row := dueExec("exec-scheduled-fire")
+	row.StepNumber = 1
+	row.Recommendations = []config.RecommendationRecord{
+		{
+			Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
+			Count: 1, UpfrontCost: 300, Savings: 60, Selected: true, CloudAccountID: aws.String(acctID),
+		},
+	}
+	account := &config.CloudAccount{
+		ID: acctID, Name: "Fire Account", Provider: "aws", ExternalID: "333333333333", AWSAuthMode: "access_keys",
+	}
+	plan := &config.PurchasePlan{ID: "plan-1", Name: "Plan 1", RampSchedule: config.RampSchedule{TotalSteps: 1}}
+
+	store.On("GetScheduledExecutionsDue", ctx).Return([]config.PurchaseExecution{row}, nil)
+
+	approved := row
+	approved.Status = "approved"
+	store.On("TransitionExecutionStatus", ctx, "exec-scheduled-fire", []string{"scheduled"}, "approved", (*string)(nil)).
+		Return(&approved, nil)
+
+	store.On("GetPurchasePlan", ctx, "plan-1").Return(plan, nil)
+	store.GetPlanAccountsFn = func(_ context.Context, _ string) ([]config.CloudAccount, error) {
+		return nil, nil // no plan-level accounts -> single-account path
+	}
+	store.On("GetCloudAccount", ctx, acctID).Return(account, nil)
+	store.On("CompletePlanStep", ctx, "plan-1", 1).Return(nil)
+
+	var savedFinal *config.PurchaseExecution
+	store.SavePurchaseExecutionFn = func(_ context.Context, e *config.PurchaseExecution) error {
+		c := *e
+		savedFinal = &c
+		return nil
+	}
+	store.On("SavePurchaseHistory", ctx, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil)
+	mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
+
+	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProviderInst, nil)
+	mockProviderInst.On("GetServiceClient", mock.Anything, common.ServiceEC2, mock.Anything).Return(mockServiceClient, nil)
+	mockServiceClient.On("PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything).
+		Return(common.PurchaseResult{Success: true, CommitmentID: "ri-fired"}, nil).Once()
+
+	mgr := &Manager{
+		config:          store,
+		email:           mockEmail,
+		providerFactory: mockFactory,
+		credStore:       awsAccessKeyCredStore(),
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	result, err := mgr.FireScheduledDelayedPurchases(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Found)
+	assert.Equal(t, 1, result.Fired, "a due scheduled purchase must actually fire")
+	assert.Equal(t, 0, result.RaceLost)
+	assert.Equal(t, 0, result.Errored)
+
+	require.NotNil(t, savedFinal, "the fired execution must be persisted")
+	assert.Equal(t, "completed", savedFinal.Status)
+	require.NotNil(t, savedFinal.ApprovedBy)
+	assert.Equal(t, "scheduler", *savedFinal.ApprovedBy, "the scheduler must stamp itself as approver")
+
+	mockServiceClient.AssertExpectations(t)
+}
+
+// TestFireScheduledDelayedPurchases_AuditGapAfterCASStillFires covers the
+// AUDIT GAP branch at scheduled_fire.go:97: the approved_by stamp write
+// after a winning CAS is best-effort by design (a failed audit stamp must
+// never block the purchase itself from firing). Asserts the purchase still
+// fires and counts as Fired even when that intermediate save fails.
+func TestFireScheduledDelayedPurchases_AuditGapAfterCASStillFires(t *testing.T) {
+	ctx := context.Background()
+	store := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockFactory := new(MockProviderFactory)
+	mockProviderInst := new(MockProvider)
+	mockServiceClient := new(MockServiceClient)
+
+	const acctID = "acct-auditgap"
+	row := dueExec("exec-auditgap-fire")
+	row.StepNumber = 1
+	row.Recommendations = []config.RecommendationRecord{
+		{
+			Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
+			Count: 1, UpfrontCost: 300, Savings: 60, Selected: true, CloudAccountID: aws.String(acctID),
+		},
+	}
+	account := &config.CloudAccount{
+		ID: acctID, Name: "Audit Gap Account", Provider: "aws", ExternalID: "444444444444", AWSAuthMode: "access_keys",
+	}
+	plan := &config.PurchasePlan{ID: "plan-1", Name: "Plan 1", RampSchedule: config.RampSchedule{TotalSteps: 1}}
+
+	store.On("GetScheduledExecutionsDue", ctx).Return([]config.PurchaseExecution{row}, nil)
+
+	approved := row
+	approved.Status = "approved"
+	store.On("TransitionExecutionStatus", ctx, "exec-auditgap-fire", []string{"scheduled"}, "approved", (*string)(nil)).
+		Return(&approved, nil)
+
+	store.On("GetPurchasePlan", ctx, "plan-1").Return(plan, nil)
+	store.GetPlanAccountsFn = func(_ context.Context, _ string) ([]config.CloudAccount, error) {
+		return nil, nil
+	}
+	store.On("GetCloudAccount", ctx, acctID).Return(account, nil)
+	store.On("CompletePlanStep", ctx, "plan-1", 1).Return(nil)
+
+	// The approved_by audit-stamp save (the FIRST SavePurchaseExecution call,
+	// right after the CAS) fails; the terminal save after executeAndFinalize
+	// (the SECOND call) succeeds -- exactly the branch at scheduled_fire.go:97.
+	var saveCalls int
+	store.SavePurchaseExecutionFn = func(_ context.Context, e *config.PurchaseExecution) error {
+		saveCalls++
+		if saveCalls == 1 {
+			return fmt.Errorf("connection reset by peer")
+		}
+		return nil
+	}
+	store.On("SavePurchaseHistory", ctx, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil)
+	mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
+
+	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProviderInst, nil)
+	mockProviderInst.On("GetServiceClient", mock.Anything, common.ServiceEC2, mock.Anything).Return(mockServiceClient, nil)
+	mockServiceClient.On("PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything).
+		Return(common.PurchaseResult{Success: true, CommitmentID: "ri-auditgap"}, nil).Once()
+
+	mgr := &Manager{
+		config:          store,
+		email:           mockEmail,
+		providerFactory: mockFactory,
+		credStore:       awsAccessKeyCredStore(),
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	result, err := mgr.FireScheduledDelayedPurchases(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Fired,
+		"a failed approved_by audit stamp must not block the purchase from firing (scheduled_fire.go:97)")
+	assert.Equal(t, 0, result.RaceLost)
+	assert.Equal(t, 0, result.Errored)
+	assert.Equal(t, 2, saveCalls, "the audit-stamp save and the terminal save must both be attempted")
+
+	mockServiceClient.AssertExpectations(t)
 }
 
 // TestFireScheduledDelayedPurchases_DelayPathNotSilentNoOp is a compile-time
