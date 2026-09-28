@@ -16,10 +16,22 @@ name: Rollback Deployment
 # a deployment environment, so no OIDC token can be minted by a job outside the
 # environment's protection rules.
 #
+# Every rollback job binds the plain `dev`/`staging`/`prod` environment that
+# the matching deploy workflow uses for that environment (not a compound
+# `<cloud>-<env>-rollback` name). Compound per-cloud-per-env rollback
+# environments were never in any cloud's OIDC trust allowlist -- AWS/Azure
+# reject a `sub` they don't recognise outright (AADSTS70021 / AssumeRole
+# denied) -- and provisioning 12 more environments plus 12 more Azure
+# federated credentials (Azure allows no wildcards) to fix that is a bigger
+# change than reusing environments that already exist and are already
+# trusted. The tradeoff: a rollback now shares its approval gate with the
+# corresponding deploy environment rather than having a distinct one. See
+# #139.
+#
 # The binding is necessary but not sufficient: GitHub auto-creates a referenced
-# environment on first use with NO protection rules. The `<cloud>-<env>-rollback`
-# environments must therefore be configured with required reviewers in repo
-# settings for the approval gate to actually stop anything.
+# environment on first use with NO protection rules. `dev`/`staging`/`prod`
+# must therefore be configured with required reviewers in repo settings for
+# the approval gate to actually stop anything (#141).
 permissions:
   contents: read
 
@@ -192,8 +204,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    environment:
-      name: aws-lambda-${{ inputs.environment }}-rollback
+    # Plain dev/staging/prod, not aws-lambda-<env>-rollback: see the
+    # workflow-level comment above.
+    environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout code
@@ -296,8 +309,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    environment:
-      name: aws-fargate-${{ inputs.environment }}-rollback
+    # Plain dev/staging/prod, not aws-fargate-<env>-rollback: see the
+    # workflow-level comment above.
+    environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout code
@@ -376,8 +390,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    environment:
-      name: gcp-${{ inputs.environment }}-rollback
+    # Plain dev/staging/prod, not gcp-<env>-rollback: see the workflow-level
+    # comment above.
+    environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout code
@@ -458,8 +473,11 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    environment:
-      name: azure-${{ inputs.environment }}-rollback
+    # Plain dev/staging/prod, not azure-<env>-rollback: see the
+    # workflow-level comment above. Also the fix for #139: Azure's federated
+    # credentials cover dev/staging/prod (sp.tf), never the compound rollback
+    # names, so azure/login failed with AADSTS70021 on every prior rollback.
+    environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout code
