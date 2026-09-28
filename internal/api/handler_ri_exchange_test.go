@@ -1551,6 +1551,10 @@ func TestExecuteExchange_PermissionConstraintsDenied(t *testing.T) {
 	}
 	mockAuth.On("ValidateSession", ctx, "exchange-token").Return(userSession, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userSession.UserID, "execute", "ri-exchange").Return(true, nil)
+	// The session-scope gate (reshapeCloudAccountInScope, issue #93) runs
+	// before the permission-constraints check this test targets; unrestrict
+	// it so the request reaches the constraints check under test.
+	allowAnyAccountScope(mockAuth)
 	mockAuth.On("HasPermissionForConstraintsAPI", ctx, userSession.UserID, "execute", "ri-exchange",
 		mock.MatchedBy(func(sets []auth.PermissionConstraints) bool {
 			if len(sets) != 1 {
@@ -1598,6 +1602,10 @@ func TestExecuteExchange_AccountResolutionErrorFailsClosed(t *testing.T) {
 	}
 	mockAuth.On("ValidateSession", ctx, "exchange-token").Return(userSession, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userSession.UserID, "execute", "ri-exchange").Return(true, nil)
+	// Unrestricted session scope so the reshapeCloudAccountInScope gate
+	// (issue #93) short-circuits without needing the resolver, and this
+	// test's own resolver failure is the one that fails closed below.
+	allowAnyAccountScope(mockAuth)
 
 	h := &Handler{
 		auth: mockAuth,
@@ -1630,6 +1638,10 @@ func TestExecuteExchange_UnattributedAccountStillConstrained(t *testing.T) {
 	}
 	mockAuth.On("ValidateSession", ctx, "exchange-token").Return(userSession, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userSession.UserID, "execute", "ri-exchange").Return(true, nil)
+	// Unrestricted session scope so the reshapeCloudAccountInScope gate
+	// (issue #93) is satisfied without consulting the resolver, leaving this
+	// test's own single resolver call (for the constraint set below) intact.
+	allowAnyAccountScope(mockAuth)
 	mockAuth.On("HasPermissionForConstraintsAPI", ctx, userSession.UserID, "execute", "ri-exchange",
 		mock.MatchedBy(func(sets []auth.PermissionConstraints) bool {
 			return len(sets) == 1 &&
@@ -1650,6 +1662,68 @@ func TestExecuteExchange_UnattributedAccountStillConstrained(t *testing.T) {
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a ClientError, got: %v", err)
 	assert.Equal(t, 403, ce.code)
+}
+
+// TestExecuteExchange_SessionAccountScopeMismatchReturns403 is the regression
+// test for issue #93: listConvertibleRIs, getRIUtilization and
+// getReshapeRecommendations each call reshapeCloudAccountInScope and return an
+// empty list when the deployment's registered AWS cloud account falls outside
+// the session's allowed_accounts, but executeExchange did not, even though it
+// is the only one of the four RI-exchange endpoints that is financially
+// irreversible.
+//
+// This replays the issue's exact scenario: a session scoped to
+// allowed_accounts=[acct-A] holding an execute:ri-exchange grant with NO
+// AccountIDs constraint (so the SEC-01/#1141 requirePermissionConstraints
+// check below would allow it unconditionally) attempts to execute against a
+// deployment whose ambient AWS account resolves to acct-B. Before the fix
+// this reached requirePermissionConstraints and beyond; it must instead be
+// refused with 403 by the session-scope gate before either the constraints
+// check or the AWS call.
+func TestExecuteExchange_SessionAccountScopeMismatchReturns403(t *testing.T) {
+	ctx := context.Background()
+	const allowedAccountID = "11111111-2222-3333-4444-555555555555"    // acct-A: in the session's scope
+	const deploymentAccountID = "99999999-8888-7777-6666-555555555555" // acct-B: the deployment's ambient account
+
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	userSession := &Session{
+		UserID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+		Email:  "exchanger@example.com",
+	}
+	mockAuth.On("ValidateSession", ctx, "exchange-token").Return(userSession, nil)
+	mockAuth.On("HasPermissionAPI", ctx, userSession.UserID, "execute", "ri-exchange").Return(true, nil)
+	// The session is restricted to acct-A only.
+	mockAuth.On("GetAllowedAccountsAPI", ctx, userSession.UserID).Return([]string{allowedAccountID}, nil)
+	// No HasPermissionForConstraintsAPI expectation: the permission carries no
+	// AccountIDs constraint (matching the issue's failure scenario) and would
+	// satisfy that check unconditionally, so it must never be reached -- the
+	// session-scope gate above must refuse the request first.
+
+	mockStore := new(MockConfigStore)
+	mockStore.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+		return nil, nil
+	}
+
+	h := &Handler{
+		auth:   mockAuth,
+		config: mockStore,
+		reshapeAccountResolver: func(_ context.Context) (string, error) {
+			return deploymentAccountID, nil
+		},
+	}
+	_, err := h.executeExchange(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"authorization": "Bearer exchange-token"},
+		Body:    `{"ri_ids":["ri-123"],"target_offering_id":"off-1","target_count":1,"max_payment_due_usd":"250.50","region":"eu-central-1"}`,
+	})
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a ClientError, got: %v", err)
+	assert.Equal(t, 403, ce.code)
+	assert.Contains(t, ce.Error(), "allowed accounts")
+	mockAuth.AssertNotCalled(t, "HasPermissionForConstraintsAPI",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestGetExchangeQuote_EmptyRegionResolvesFromSDK pins finding 01-L4:

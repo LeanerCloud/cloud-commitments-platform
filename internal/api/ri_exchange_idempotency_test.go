@@ -226,6 +226,9 @@ func TestExecuteExchange_DuplicateSubmitRefusedBeforeAWS(t *testing.T) {
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "user-1", "execute", "ri-exchange").Return(true, nil)
+	// Unrestricted session scope so the reshapeCloudAccountInScope gate
+	// (issue #93) does not interfere with the claim-ledger behavior under test.
+	allowAnyAccountScope(mockAuth)
 	mockAuth.On("HasPermissionForConstraintsAPI", ctx, "user-1", "execute", "ri-exchange", mock.Anything).Return(true, nil)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 
