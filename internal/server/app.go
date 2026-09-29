@@ -258,18 +258,38 @@ func decorateSenderWithMute(sender email.SenderInterface, mc email.MuteChecker, 
 }
 
 // LoadApplicationConfig reads all configuration from environment variables.
-func LoadApplicationConfig() ApplicationConfig {
+func LoadApplicationConfig() (ApplicationConfig, error) {
 	version := os.Getenv("VERSION")
 	if version == "" {
 		version = "dev"
+	}
+	term := 3
+	if raw := os.Getenv("DEFAULT_TERM"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil {
+			return ApplicationConfig{}, fmt.Errorf("invalid DEFAULT_TERM: %w", err)
+		}
+		term = value
+	}
+	coverage := 80.0
+	if raw := os.Getenv("DEFAULT_COVERAGE"); raw != "" {
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return ApplicationConfig{}, fmt.Errorf("invalid DEFAULT_COVERAGE: %w", err)
+		}
+		coverage = value
+	}
+	analyticsConfig, err := LoadAnalyticsConfig()
+	if err != nil {
+		return ApplicationConfig{}, err
 	}
 
 	return ApplicationConfig{
 		Version:                version,
 		NotificationDaysBefore: getEnvInt("NOTIFICATION_DAYS_BEFORE", 3),
-		DefaultTerm:            getEnvInt("DEFAULT_TERM", 3),
+		DefaultTerm:            term,
 		DefaultPaymentOption:   os.Getenv("DEFAULT_PAYMENT_OPTION"),
-		DefaultCoverage:        getEnvFloat("DEFAULT_COVERAGE", 80),
+		DefaultCoverage:        coverage,
 		DefaultRampSchedule:    os.Getenv("DEFAULT_RAMP_SCHEDULE"),
 		APIKeySecretARN:        os.Getenv("API_KEY_SECRET_ARN"),
 		EnableDashboard:        os.Getenv("ENABLE_DASHBOARD") == "true",
@@ -283,8 +303,8 @@ func LoadApplicationConfig() ApplicationConfig {
 		ScheduledTaskSecret:     os.Getenv("SCHEDULED_TASK_SECRET"),
 		ScheduledTaskSecretName: os.Getenv("SCHEDULED_TASK_SECRET_NAME"),
 		IsLambda:                runtime.IsLambda(),
-		Analytics:               LoadAnalyticsConfig(),
-	}
+		Analytics:               analyticsConfig,
+	}, nil
 }
 
 // validateAppConfigEnvDefaults validates the money-moving env-sourced defaults
@@ -532,12 +552,15 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 // can pass the ldflags-stamped value directly instead of round-tripping
 // through os.Setenv / os.Getenv (04-N1). Pass "" to fall back to the env.
 func NewApplication(ctx context.Context, version string) (*Application, error) {
-	cfg := LoadApplicationConfig()
+	cfg, err := LoadApplicationConfig()
+	if err != nil {
+		return nil, err
+	}
 	if version != "" {
 		cfg.Version = version
 	}
 
-	if err := cfg.Analytics.Validate(); err != nil {
+	if err = cfg.Analytics.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid analytics configuration: %w", err)
 	}
 
@@ -962,23 +985,6 @@ func getEnvInt(key string, defaultVal int) int {
 		result, err := strconv.Atoi(val)
 		if err != nil {
 			log.Printf("WARNING: %s=%q is not a valid integer; using default %d", key, val, defaultVal) // #nosec G706 -- env var value is operator-controlled configuration; logged for diagnostics
-			return defaultVal
-		}
-		return result
-	}
-	return defaultVal
-}
-
-// getEnvFloat mirrors getEnvInt for float-valued env vars. defaultVal is kept
-// parameterized (rather than inlined) to stay symmetric with getEnvInt even
-// though every current caller passes the same coverage default.
-//
-//nolint:unparam // general-purpose env parser; default kept parameterized for symmetry with getEnvInt
-func getEnvFloat(key string, defaultVal float64) float64 {
-	if val := os.Getenv(key); val != "" {
-		result, err := strconv.ParseFloat(val, 64)
-		if err != nil {
-			log.Printf("WARNING: %s=%q is not a valid float; using default %g", key, val, defaultVal) // #nosec G706 -- env var value is operator-controlled configuration; logged for diagnostics
 			return defaultVal
 		}
 		return result

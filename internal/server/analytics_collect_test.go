@@ -2,10 +2,56 @@ package server
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 )
+
+func TestLoadAnalyticsConfigEnabled(t *testing.T) {
+	t.Setenv("ANALYTICS_RETENTION_MONTHS", "")
+	t.Setenv("ANALYTICS_PARTITIONS_AHEAD", "")
+	for _, tc := range []struct {
+		name, value string
+		wantEnabled bool
+		wantError   bool
+	}{
+		{"unset", "", true, false},
+		{"empty", "", true, false},
+		{"true", "true", true, false},
+		{"TRUE", "TRUE", true, false},
+		{"1", "1", true, false},
+		{"false", "false", false, false},
+		{"FALSE", "FALSE", false, false},
+		{"0", "0", false, false},
+		{"no", "no", false, true},
+		{"off", "off", false, true},
+		{"trailing space", "False ", false, true},
+		{"disabled", "disabled", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ANALYTICS_COLLECTION_ENABLED", tc.value)
+			if tc.name == "unset" {
+				if err := os.Unsetenv("ANALYTICS_COLLECTION_ENABLED"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg, err := LoadAnalyticsConfig()
+			if tc.wantError {
+				if err == nil || !strings.Contains(err.Error(), "ANALYTICS_COLLECTION_ENABLED") {
+					t.Fatalf("expected enabled parse error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			testutil.AssertEqual(t, tc.wantEnabled, cfg.Enabled)
+			testutil.AssertNoError(t, cfg.Validate())
+		})
+	}
+}
 
 // TestLoadAnalyticsConfig_FailFastOnMalformedInt is the CR #1049 regression:
 // a set-but-unparseable ANALYTICS_RETENTION_MONTHS / ANALYTICS_PARTITIONS_AHEAD
@@ -16,7 +62,8 @@ func TestLoadAnalyticsConfig_FailFastOnMalformedInt(t *testing.T) {
 	t.Run("unset uses defaults and validates", func(t *testing.T) {
 		t.Setenv("ANALYTICS_RETENTION_MONTHS", "")
 		t.Setenv("ANALYTICS_PARTITIONS_AHEAD", "")
-		cfg := LoadAnalyticsConfig()
+		cfg, err := LoadAnalyticsConfig()
+		testutil.AssertNoError(t, err)
 		testutil.AssertEqual(t, defaultAnalyticsRetentionMonths, cfg.RetentionMonths)
 		testutil.AssertEqual(t, defaultAnalyticsPartitionsAhead, cfg.PartitionsAhead)
 		testutil.AssertNoError(t, cfg.Validate())
@@ -25,7 +72,8 @@ func TestLoadAnalyticsConfig_FailFastOnMalformedInt(t *testing.T) {
 	t.Run("valid override is parsed", func(t *testing.T) {
 		t.Setenv("ANALYTICS_RETENTION_MONTHS", "12")
 		t.Setenv("ANALYTICS_PARTITIONS_AHEAD", "6")
-		cfg := LoadAnalyticsConfig()
+		cfg, err := LoadAnalyticsConfig()
+		testutil.AssertNoError(t, err)
 		testutil.AssertEqual(t, 12, cfg.RetentionMonths)
 		testutil.AssertEqual(t, 6, cfg.PartitionsAhead)
 		testutil.AssertNoError(t, cfg.Validate())
@@ -34,7 +82,8 @@ func TestLoadAnalyticsConfig_FailFastOnMalformedInt(t *testing.T) {
 	t.Run("malformed retention is rejected by Validate", func(t *testing.T) {
 		t.Setenv("ANALYTICS_RETENTION_MONTHS", "not-a-number")
 		t.Setenv("ANALYTICS_PARTITIONS_AHEAD", "3")
-		cfg := LoadAnalyticsConfig()
+		cfg, err := LoadAnalyticsConfig()
+		testutil.AssertNoError(t, err)
 		testutil.AssertEqual(t, 0, cfg.RetentionMonths) // sentinel
 		testutil.AssertTrue(t, cfg.Validate() != nil, "malformed retention must fail Validate")
 	})
@@ -42,7 +91,8 @@ func TestLoadAnalyticsConfig_FailFastOnMalformedInt(t *testing.T) {
 	t.Run("malformed partitions-ahead is rejected by Validate", func(t *testing.T) {
 		t.Setenv("ANALYTICS_RETENTION_MONTHS", "24")
 		t.Setenv("ANALYTICS_PARTITIONS_AHEAD", "12x")
-		cfg := LoadAnalyticsConfig()
+		cfg, err := LoadAnalyticsConfig()
+		testutil.AssertNoError(t, err)
 		testutil.AssertEqual(t, 0, cfg.PartitionsAhead) // sentinel
 		testutil.AssertTrue(t, cfg.Validate() != nil, "malformed partitions-ahead must fail Validate")
 	})

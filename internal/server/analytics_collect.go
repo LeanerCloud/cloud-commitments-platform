@@ -40,16 +40,22 @@ const (
 	analyticsDDLTimeout = 5 * time.Minute
 )
 
-// LoadAnalyticsConfig reads the collector knobs from env, falling back to
-// defaults for unset/blank values. Out-of-range or unparseable values are
-// preserved as-is here so Validate can reject them with a clear message at
-// startup (fail-fast at the boundary) rather than being silently clamped.
-func LoadAnalyticsConfig() AnalyticsConfig {
+// LoadAnalyticsConfig defaults unset/blank values and rejects malformed booleans.
+// Integer validation remains in Validate.
+func LoadAnalyticsConfig() (AnalyticsConfig, error) {
+	enabled := true
+	if raw := os.Getenv("ANALYTICS_COLLECTION_ENABLED"); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return AnalyticsConfig{}, fmt.Errorf("invalid ANALYTICS_COLLECTION_ENABLED: %w", err)
+		}
+		enabled = value
+	}
 	return AnalyticsConfig{
-		Enabled:         getEnvBool("ANALYTICS_COLLECTION_ENABLED", true),
+		Enabled:         enabled,
 		RetentionMonths: loadAnalyticsInt("ANALYTICS_RETENTION_MONTHS", defaultAnalyticsRetentionMonths),
 		PartitionsAhead: loadAnalyticsInt("ANALYTICS_PARTITIONS_AHEAD", defaultAnalyticsPartitionsAhead),
-	}
+	}, nil
 }
 
 // loadAnalyticsInt reads an integer collector knob from env. An unset/blank
@@ -89,17 +95,6 @@ func withDDLTimeout(ctx context.Context, fn func(context.Context, int) error, ar
 	stepCtx, cancel := context.WithTimeout(ctx, analyticsDDLTimeout)
 	defer cancel()
 	return fn(stepCtx, arg)
-}
-
-// getEnvBool parses a boolean env var, returning defaultVal when unset or
-// unparseable. Accepts the strconv.ParseBool truth set (1/t/true/...).
-func getEnvBool(key string, defaultVal bool) bool {
-	if val := os.Getenv(key); val != "" {
-		if result, err := strconv.ParseBool(val); err == nil {
-			return result
-		}
-	}
-	return defaultVal
 }
 
 // newAnalyticsCollector builds the savings-snapshot collector against the live
