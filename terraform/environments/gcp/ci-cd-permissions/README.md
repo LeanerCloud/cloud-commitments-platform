@@ -55,7 +55,8 @@ to `terraform init -backend-config=backend.hcl`.
 cp terraform.tfvars.example terraform.tfvars
 cp backend.hcl.example backend.hcl
 
-# 2. Fill in terraform.tfvars (project_id is required)
+# 2. Fill in terraform.tfvars (project_id, github_repository_id and github_repository_owner_id
+#    are required; see docs/deploy-trust-bootstrap.md for the apply order)
 # 3. Fill in backend.hcl with your GCS bucket name
 
 # 4. Initialise
@@ -119,11 +120,19 @@ Workload Identity Federation endpoint for a short-lived SA access token, and set
 
 ### Attribute condition
 
-The WIF provider enforces **two** conditions simultaneously:
+The WIF provider enforces **three** conditions simultaneously:
 
 ```text
-assertion.repository == '<github_repo>' && assertion.ref == '<deploy_ref>'
+assertion.repository_owner_id == '<github_repository_owner_id>' &&
+assertion.repository_id == '<github_repository_id>' &&
+assertion.ref == '<deploy_ref>'
 ```
+
+and the deploy SA grants `roles/iam.workloadIdentityUser` only to
+`attribute.repository_id/<github_repository_id>`. The repository is matched on its immutable IDs,
+not its `owner/name`, so a rename or a new repository reusing a freed name neither gains nor loses
+deploy rights. Apply order and rollback:
+[docs/deploy-trust-bootstrap.md](../../../../docs/deploy-trust-bootstrap.md).
 
 Only workflows running from the exact repository **and** the exact ref (branch) configured in
 `terraform.tfvars` can obtain a GCP token. Any other branch, PR, fork, tag, or
@@ -148,4 +157,5 @@ gcloud iam workload-identity-pools providers describe github-actions \
   --format="value(attributeCondition)"
 ```
 
-To change the allowed repo, update `github_repo` in `terraform.tfvars` and re-apply.
+To change the allowed repo, set `github_repository_id` and `github_repository_owner_id` in
+`terraform.tfvars` to its IDs (`gh api repos/<owner>/<repo> --jq '.id,.owner.id'`) and re-apply.
