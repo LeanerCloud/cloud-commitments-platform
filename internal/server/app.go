@@ -494,18 +494,10 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 		DashboardURL:    cfg.DashboardURL,
 	})
 
-	// Initialize rate limiter based on runtime environment.
-	// Lambda: start with an in-memory limiter immediately so the first cold-start
-	// request is protected. ensureDB() swaps it for the DB-backed limiter once the
-	// database connection is established (distributed state across warm containers).
-	// Fargate/containers: in-memory is the permanent implementation because the
-	// process is long-lived and single-instance.
+	// Sensitive requests pass ensureDB, which replaces this temporary limiter
+	// with shared database counters before dispatch on every runtime.
 	rateLimiter := api.RateLimiterInterface(api.NewInMemoryRateLimiter())
-	if !cfg.IsLambda {
-		log.Println("Initialized in-memory rate limiter for single-instance deployment (Fargate/Container)")
-	} else {
-		log.Println("Initialized in-memory rate limiter for Lambda cold-start (will be upgraded to DB-backed on first DB connect)")
-	}
+	log.Println("Initialized temporary in-memory rate limiter until database connection")
 
 	// Initialize API handler
 	apiHandler := api.NewHandler(api.HandlerConfig{
@@ -781,16 +773,11 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 	}
 	app.Auth = authSvc
 
-	// Initialize distributed rate limiter for Lambda (multi-instance)
-	// For Fargate/containers, we already have in-memory rate limiter from startup
-	if app.appConfig.IsLambda {
-		dbRL := api.NewDBRateLimiter(dbConn.Pool())
-		// Start the scheduled cleanup worker so perpetually-denied keys (whose
-		// count never resets to 1) are still evicted on a fixed schedule (02-M2).
-		dbRL.StartCleanupWorker(ctx)
-		app.RateLimiter = dbRL
-		log.Println("Initialized database-backed rate limiter for Lambda (distributed state)")
-	}
+	dbRL := api.NewDBRateLimiter(dbConn.Pool())
+	// Periodic cleanup also evicts expired keys with no subsequent allowed request.
+	dbRL.StartCleanupWorker(ctx)
+	app.RateLimiter = dbRL
+	log.Println("Initialized database-backed rate limiter with shared replica counters")
 
 	// Initialize analytics store for savings data and materialized views, plus
 	// the snapshot collector behind the scheduled analytics_collect task.

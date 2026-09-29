@@ -16,8 +16,8 @@ import (
 // memory growth from rotating attacker source IPs (02-M3).
 const inMemoryRateLimitMaxEntries = 500
 
-// InMemoryRateLimiter provides in-memory rate limiting for single-instance deployments (Fargate, ECS)
-// This implementation should NOT be used for Lambda (multi-instance) - use DBRateLimiter instead.
+// InMemoryRateLimiter holds process-local counters for explicitly single-process use
+// or temporary initialization. Replicated deployments must use DBRateLimiter.
 type InMemoryRateLimiter struct {
 	attempts map[string]*inMemoryRateLimitEntry
 	limits   map[string]RateLimitConfig
