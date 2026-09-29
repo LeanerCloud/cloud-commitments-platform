@@ -134,7 +134,7 @@ jobs:
     permissions:
       # Assumes the Azure deploy SP via federated identity. The `environment:`
       # binding below scopes this job's OIDC `sub` to
-      # `repo:<org/repo>:environment:<name>`, which must have a matching
+      # `<repo-ids>:environment:<name>`, which must have a matching
       # `azuread_application_federated_identity_credential` (see
       # terraform/environments/azure/ci-cd-permissions/sp.tf) or `azure/login`
       # fails with AADSTS70021. NOTE the binding is not by itself a reviewer

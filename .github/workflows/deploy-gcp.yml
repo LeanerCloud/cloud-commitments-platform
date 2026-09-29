@@ -126,7 +126,7 @@ jobs:
     permissions:
       # Assumes the GCP deploy identity via Workload Identity Federation. The
       # `environment:` binding below scopes this job's OIDC `sub` to
-      # `repo:<org/repo>:environment:<name>`. NOTE it is not by itself a
+      # `<repo-ids>:environment:<name>`. NOTE it is not by itself a
       # reviewer gate: an Environment only blocks a job once required-reviewer
       # protection rules are configured on it in repo settings. See #141.
       id-token: write

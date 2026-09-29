@@ -10,17 +10,29 @@
 #
 aws_region = "us-east-1"
 
-# ─── github_repo ───────────────────────────────────────────────────────────────
-# GitHub repository (owner/name) whose Actions workflows may assume the deploy
-# role via OIDC (keyless — no access keys needed).
+# ─── github_repository_id / github_repository_owner_id ─────────────────────────
+# Immutable numeric IDs of the GitHub repository whose Actions workflows may
+# deploy, and of its owning account. The deploy trust is keyed on these IDs,
+# not on owner/name, so a rename (or a new repo that reuses a freed name)
+# neither gains nor loses deploy rights.
 #
-# Creates an IAM OIDC identity provider for token.actions.githubusercontent.com
-# and updates the role trust policy to allow sts:AssumeRoleWithWebIdentity from
-# the specified repo.
+# Look them up (read-only):
+#   gh api repos/LeanerCloud/cloud-commitments-platform --jq '.id,.owner.id'
 #
-# Set to "" to skip OIDC provider creation.
+# Values for LeanerCloud/cloud-commitments-platform as of 2026-09-29:
+#   github_repository_id       = 1391259743
+#   github_repository_owner_id = 86753534 (LeanerCloud)
 #
-github_repo = "LeanerCloud/cloud-commitments-platform"
+# The trust only matches once scripts/bootstrap-github-deploy-config.sh --apply
+# has set the repo's OIDC sub claim template; see
+# docs/deploy-trust-bootstrap.md for the apply order.
+#
+# Subjects allowed to assume the role:
+#   repository_owner_id:<owner_id>:repository_id:<id>:ref:refs/heads/main
+#   repository_owner_id:<owner_id>:repository_id:<id>:environment:<name>
+#
+github_repository_id       = "1391259743"
+github_repository_owner_id = "86753534"
 
 # ─── trust_principal ───────────────────────────────────────────────────────────
 # (Optional) IAM principal in the same account allowed to assume the deploy

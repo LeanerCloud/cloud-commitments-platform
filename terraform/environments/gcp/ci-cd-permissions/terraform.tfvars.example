@@ -19,17 +19,29 @@
 #
 project_id = "your-gcp-project-id"
 
-# ─── github_repo ───────────────────────────────────────────────────────────────
-# GitHub repository (owner/name) whose Actions workflows may impersonate the
-# deploy service account via Workload Identity Federation (keyless — no JSON
-# key files needed).
+# ─── github_repository_id / github_repository_owner_id ─────────────────────────
+# Immutable numeric IDs of the GitHub repository whose Actions workflows may
+# deploy, and of its owning account. The deploy trust is keyed on these IDs,
+# not on owner/name, so a rename (or a new repo that reuses a freed name)
+# neither gains nor loses deploy rights.
 #
-# Creates a WIF pool + OIDC provider and binds the SA with
-# roles/iam.workloadIdentityUser restricted to the specified repository.
+# Look them up (read-only):
+#   gh api repos/LeanerCloud/cloud-commitments-platform --jq '.id,.owner.id'
 #
-# Set to "" to skip WIF setup.
+# Values for LeanerCloud/cloud-commitments-platform as of 2026-09-29:
+#   github_repository_id       = 1391259743
+#   github_repository_owner_id = 86753534 (LeanerCloud)
 #
-github_repo = "LeanerCloud/cloud-commitments-platform"
+# The trust only matches once scripts/bootstrap-github-deploy-config.sh --apply
+# has set the repo's OIDC sub claim template; see
+# docs/deploy-trust-bootstrap.md for the apply order.
+#
+# Creates a WIF pool + OIDC provider whose attribute condition requires both
+# IDs and deploy_ref, and binds the SA with roles/iam.workloadIdentityUser on
+# attribute.repository_id.
+#
+github_repository_id       = "1391259743"
+github_repository_owner_id = "86753534"
 
 # ─── deploy_ref ────────────────────────────────────────────────────────────────
 # Git ref whose workflows are permitted to impersonate the deploy SA.
