@@ -15,7 +15,7 @@ CI/CD pipeline uses to deploy infrastructure on AWS. It optionally sets up keyle
 | `aws_iam_policy.data` | RDS, ElastiCache, S3 (state bucket), Secrets Manager |
 | `aws_iam_policy.iam` | IAM role creation and policy attachment, gated on the permissions boundary below (#1705) |
 | `aws_iam_policy.workload_boundary` | `cudly-deploy-boundary`: the permissions ceiling every role the deploy role creates must carry |
-| `aws_iam_openid_connect_provider.github` | GitHub Actions OIDC provider (conditional on `github_repo`) |
+| `aws_iam_openid_connect_provider.github` | GitHub Actions OIDC provider |
 
 ## Apply this root BEFORE merging changes that touch the boundary
 
@@ -86,7 +86,8 @@ to `terraform init -backend-config=backend.hcl`.
 cp terraform.tfvars.example terraform.tfvars
 cp backend.hcl.example backend.hcl
 
-# 2. Fill in terraform.tfvars (only github_repo is strictly required if using OIDC)
+# 2. Fill in terraform.tfvars (github_repository_id and github_repository_owner_id are required;
+#    run scripts/bootstrap-github-deploy-config.sh first, see docs/deploy-trust-bootstrap.md)
 # 3. Fill in backend.hcl with your S3 bucket details
 
 # 4. Initialise
@@ -148,14 +149,21 @@ for temporary AWS credentials via `sts:AssumeRoleWithWebIdentity`, and injects `
 
 ### Trust policy conditions
 
-The trust policy does **not** allow all workflows from the repo: `repo:LeanerCloud/cloud-commitments-platform:*` would
-let any branch, including an unprotected feature branch, mint valid deploy credentials. Instead the
-OIDC `sub` claim is checked against an explicit, enumerated allowlist (`role.tf`'s
-`token.actions.githubusercontent.com:sub` condition):
+Subjects carry the repository's immutable owner and repository IDs, not its `owner/name`, so a rename
+or a new repository reusing a freed name neither gains nor loses deploy rights. GitHub mints this
+shape only after `scripts/bootstrap-github-deploy-config.sh` has set the repository's OIDC `sub`
+claim template; see [docs/deploy-trust-bootstrap.md](../../../../docs/deploy-trust-bootstrap.md) for
+the apply order and rollback.
 
-- `repo:LeanerCloud/cloud-commitments-platform:ref:refs/heads/main`, for workflows dispatched on `main` with no
+The trust policy does **not** allow all workflows from the repo: a `<prefix>:*` wildcard would let
+any branch, including an unprotected feature branch, mint valid deploy credentials. Instead the
+OIDC `sub` claim is checked against an explicit, enumerated allowlist (`role.tf`'s
+`token.actions.githubusercontent.com:sub` condition), where `<prefix>` is
+`repository_owner_id:<github_repository_owner_id>:repository_id:<github_repository_id>`:
+
+- `<prefix>:ref:refs/heads/main`, for workflows dispatched on `main` with no
   `environment:` binding.
-- `repo:LeanerCloud/cloud-commitments-platform:environment:<name>`, one entry per exact environment name a job that
+- `<prefix>:environment:<name>`, one entry per exact environment name a job that
   assumes this role binds to. A job's `environment:` **replaces** the ref-based subject with an
   environment-scoped one (never both), so every such value must be listed explicitly or that job
   cannot authenticate. See the comment above the `sub` list in `role.tf` for the full derivation:
@@ -163,8 +171,10 @@ OIDC `sub` claim is checked against an explicit, enumerated allowlist (`role.tf`
   jobs, and an unreachable `workflow_call` input path), kept in one place so it cannot drift out of
   sync with the policy itself.
 
-If you fork CUDly or use a different repo, set `github_repo` in `terraform.tfvars` to the new
-`owner/repo` value and re-apply; the prefix changes, the enumerated suffixes do not. If you add a
+If you fork CUDly or use a different repo, set `github_repository_id` and
+`github_repository_owner_id` in `terraform.tfvars` to that repo's IDs
+(`gh api repos/<owner>/<repo> --jq '.id,.owner.id'`) and re-apply; the prefix changes, the
+enumerated suffixes do not. If you add a
 new workflow job that assumes this role and binds to a not-yet-listed `environment:`, add its exact
 subject to `role.tf` and re-apply *before* that job runs, or `configure-aws-credentials` fails with
 `AssumeRoleWithWebIdentity`/`Not authorized`.
@@ -177,9 +187,9 @@ implements only the first of them:
 
 1. **Allowlist membership** (`role.tf`'s `sub` list, this module): can the job authenticate to AWS
    at all? Nothing below matters if this says no.
-2. **Deployment branch policy** (a GitHub environment setting, not configured by this module): which
-   *branch* may trigger a deploy to that environment. This is what "only `main` may deploy" actually
-   requires, and nothing in this module sets it.
+2. **Deployment branch policy** (a GitHub environment setting, not configured by this module; set
+   to `main` only by `scripts/bootstrap-github-deploy-config.sh`): which *branch* may trigger a
+   deploy to that environment. This is what "only `main` may deploy" actually requires.
 3. **Required reviewers / protection rules** (a GitHub environment setting, not configured by this
    module): *who* must approve before a job bound to that environment proceeds. The subject of
    #1591/#1674/#1660, not this module.
@@ -187,40 +197,22 @@ implements only the first of them:
 `ref:refs/heads/main` in the allowlist enforces (2) on its own for a job with no `environment:`
 binding: no environment, no policy needed, the ref check *is* the restriction. `environment:<name>`
 subjects enforce **neither (2) nor (3)** on their own, because the OIDC `sub` for those is
-`repo:<repo>:environment:<name>`, which is ref-agnostic: it says which environment the job bound to,
+`<prefix>:environment:<name>`, which is ref-agnostic: it says which environment the job bound to,
 nothing about which branch triggered the run. A `workflow_dispatch` fired from any branch against an
 environment-bound job presents the exact same subject a `main` run would, so this allowlist admits
 it. The only control that reattaches the branch requirement is a deployment branch policy
 (`custom_branch_policies` restricted to `main`) on that environment, configured on the GitHub side.
 
-**Live state, checked against the GitHub API directly** (`gh api repos/LeanerCloud/cloud-commitments-platform/environments`),
-not assumed from an earlier issue's snapshot:
-
-| Environment | Exists today? | Protection rules | Deployment branch policy |
-| --- | --- | --- | --- |
-| `dev` | Yes | none | none |
-| `staging` | **No** | n/a | n/a |
-| `prod` | **No** | n/a | n/a |
-| `aws-fargate-dev` | Yes | none | none |
-| `aws-fargate-staging` | Yes | none | none |
-| `aws-fargate-prod` | **No** | n/a | n/a |
-| `aws-db-dev` / `aws-db-staging` / `aws-db-prod` | **No** (all three) | n/a | n/a |
+`scripts/bootstrap-github-deploy-config.sh` creates every environment this allowlist names (and
+the `gcp-db-*`/`azure-db-*` environments the other clouds use) with a deployment branch policy that
+admits only `main`. Run it before applying this module; see
+[docs/deploy-trust-bootstrap.md](../../../../docs/deploy-trust-bootstrap.md).
 
 `rollback.yml`'s rollback-aws-lambda and rollback-aws-fargate jobs bind to `dev`/`staging`/`prod`
 and `aws-fargate-<env>` respectively -- the same environments their corresponding deploy jobs use,
-listed above -- rather than a separate `<cloud>-<env>-rollback` family (#139). This allowlist
+already in the allowlist -- rather than a separate `<cloud>-<env>-rollback` family (#139). This allowlist
 previously carried six `aws-{lambda,fargate}-<env>-rollback` subjects added for #1648; they were
 removed once nothing presented them any more, rather than left as unused trust surface.
-
-Only 3 of the 9 environments this allowlist names exist yet, and none of the 3, including `dev`
-which multiple deploy jobs already use in production, has a branch policy or protection rules of any
-kind. Every environment above needs (2) configured (and the 6 that don't exist yet also need to be
-created) before this allowlist actually delivers "only `main` deploys" rather than "only these
-environments deploy, from any branch". This module has no GitHub provider configured (no
-`provider "github"` or `github_repository_*` resource anywhere under `terraform/` or `iac/`), so
-none of this, creation, branch policy, or reviewers, can be done declaratively today; it is a
-manual, per-environment step in **Settings -> Environments** on the repo. Adding a GitHub Terraform
-provider so this becomes code is #1660's scope, not this module's.
 
 Related: #1648 (this allowlist gap, control 1), #1660 (controls 2 and 3: environments need creating,
 a branch policy, and protection rules), #1674 (binds the destroy workflows' jobs to environments

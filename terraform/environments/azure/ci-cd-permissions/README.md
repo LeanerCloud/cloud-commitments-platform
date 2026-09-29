@@ -92,7 +92,9 @@ to `terraform init -backend-config=backend.hcl`.
 cp terraform.tfvars.example terraform.tfvars
 cp backend.hcl.example backend.hcl
 
-# 2. Fill in terraform.tfvars (only subscription_id is required)
+# 2. Fill in terraform.tfvars (subscription_id, github_repository_id and github_repository_owner_id
+#    are required; run scripts/bootstrap-github-deploy-config.sh first, see
+#    docs/deploy-trust-bootstrap.md)
 # 3. Fill in backend.hcl with your storage account details
 
 # 4. Initialise
@@ -159,12 +161,18 @@ the `az` CLI context for all subsequent steps.
 
 ### Federated credential subjects
 
-Azure federated credentials allow no wildcards, so one resource is required per subject:
+Azure federated credentials allow no wildcards, so one resource is required per subject. Subjects
+carry the repository's immutable IDs, not its `owner/name`, so a rename or a new repository reusing
+a freed name neither gains nor loses deploy rights. `<prefix>` below is
+`repository_owner_id:<github_repository_owner_id>:repository_id:<github_repository_id>`; GitHub
+mints it only after `scripts/bootstrap-github-deploy-config.sh` has set the repository's OIDC `sub`
+claim template (apply order and rollback:
+[docs/deploy-trust-bootstrap.md](../../../../docs/deploy-trust-bootstrap.md)).
 
 | Credential | Subject | Use case |
 | --- | --- | --- |
-| `github-actions-main` | `repo:LeanerCloud/cloud-commitments-platform:ref:refs/heads/main` | Deployments from main |
-| `github-actions-env-<name>` | `repo:LeanerCloud/cloud-commitments-platform:environment:<name>` | Jobs bound to a deployment environment (one per `var.github_environments`) |
+| `github-actions-main` | `<prefix>:ref:refs/heads/main` | Deployments from main |
+| `github-actions-env-<name>` | `<prefix>:environment:<name>` | Jobs bound to a deployment environment (one per `var.github_environments`) |
 
 No `pull_request`-subject credential is provisioned: it is not scoped to any
 branch or environment protection, and no workflow in this repo runs
@@ -179,10 +187,11 @@ main-branch one, so it cannot authenticate unless `<name>` is in
 Note the environment subject is **ref-agnostic** — it does not encode the branch. Adding
 a name here therefore lets any branch that can reach a job bound to that environment
 obtain the deploy service principal. Restrict the branch via the environment's
-`deployment_branch_policy`; a ref check inside the workflow does **not** bind, because
+`deployment_branch_policy` (the bootstrap script limits every workflow environment to `main`); a ref check inside the workflow does **not** bind, because
 `workflow_dispatch` runs the workflow file as it exists on the dispatched ref, so the
 check can be removed on that branch.
 
-To allow a new deployment environment, add its name to `var.github_environments`. To
-deploy from a different branch or repo, add a further
-`azuread_application_federated_identity_credential` resource to `sp.tf`.
+To allow a new deployment environment, add it to the bootstrap script's `ENVIRONMENTS` and
+run the script, then add its name to `var.github_environments`. To deploy from a different
+repo, set `github_repository_id` and `github_repository_owner_id` to that repo's IDs
+(`gh api repos/<owner>/<repo> --jq '.id,.owner.id'`).
