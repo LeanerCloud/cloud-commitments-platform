@@ -26,7 +26,7 @@ on:
 # deployment environment. `guard` authenticates to nothing and must not hold it.
 #
 # IMPORTANT — what the `environment:` binding does and does not buy. It scopes
-# secrets/vars and sets the OIDC subject to `repo:<org/repo>:environment:staging`.
+# secrets/vars and sets the OIDC subject to `<repo-ids>:environment:staging`.
 # What each cloud does with that subject differs; see the per-job comments.
 #
 # It is NOT a reviewer gate. GitHub only blocks a job once required-reviewer

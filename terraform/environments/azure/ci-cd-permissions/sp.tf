@@ -25,9 +25,16 @@ resource "azuread_service_principal" "cudly_deploy" {
 # Azure federated credentials require one entry per allowed subject (no
 # wildcards), so each named deployment environment needs its own resource.
 #
+# Subjects carry the repository's immutable owner and repo IDs, not its name,
+# so a rename or a new repo reusing a freed name neither gains nor loses deploy
+# rights. GitHub mints this shape only after
+# scripts/bootstrap-github-deploy-config.sh sets the repo's OIDC sub claim
+# template to ["repository_owner_id", "repository_id", "context"]; keep the
+# two in lockstep.
+#
 # The `github_environment` entries below are what let an environment-bound job
 # authenticate at all. A job carrying `environment: staging` presents the
-# subject `repo:<org/repo>:environment:staging`, NOT the main-branch subject,
+# subject `<prefix>:environment:staging`, NOT the main-branch subject,
 # so without a matching credential `azure/login` fails with AADSTS70021 even
 # though the workflow is running on main. Adding an `environment:` binding to
 # an Azure job and forgetting this is the exact breakage recorded in #1648.
@@ -36,15 +43,22 @@ resource "azuread_service_principal" "cudly_deploy" {
 # by a privileged human, not by the deploy workflow. The Azure destroy job in
 # cleanup-staging.yml cannot authenticate until that re-apply happens.
 
-resource "azuread_application_federated_identity_credential" "github_main" {
-  count = var.github_repo != "" ? 1 : 0
+locals {
+  github_oidc_sub_prefix = "repository_owner_id:${var.github_repository_owner_id}:repository_id:${var.github_repository_id}"
+}
 
+resource "azuread_application_federated_identity_credential" "github_main" {
   application_id = azuread_application.cudly_deploy.id
   display_name   = "github-actions-main"
-  description    = "GitHub Actions OIDC — ${var.github_repo} main branch deployments"
+  description    = "GitHub Actions OIDC - repository ${var.github_repository_id} main branch deployments"
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:${var.github_repo}:ref:refs/heads/main"
+  subject        = "${local.github_oidc_sub_prefix}:ref:refs/heads/main"
+}
+
+moved {
+  from = azuread_application_federated_identity_credential.github_main[0]
+  to   = azuread_application_federated_identity_credential.github_main
 }
 
 # No `pull_request`-subject credential: this service principal holds
@@ -67,12 +81,12 @@ resource "azuread_application_federated_identity_credential" "github_main" {
 # AWS role's trust policy already allows
 # (terraform/environments/aws/ci-cd-permissions/role.tf).
 resource "azuread_application_federated_identity_credential" "github_environment" {
-  for_each = var.github_repo != "" ? toset(var.github_environments) : toset([])
+  for_each = toset(var.github_environments)
 
   application_id = azuread_application.cudly_deploy.id
   display_name   = "github-actions-env-${each.value}"
-  description    = "GitHub Actions OIDC — ${var.github_repo} ${each.value} environment"
+  description    = "GitHub Actions OIDC - repository ${var.github_repository_id} ${each.value} environment"
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:${var.github_repo}:environment:${each.value}"
+  subject        = "${local.github_oidc_sub_prefix}:environment:${each.value}"
 }

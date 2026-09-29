@@ -17,7 +17,7 @@ on:
 # environment. `guard` authenticates to nothing and must not hold it.
 #
 # IMPORTANT — what the `environment:` binding does and does not buy. It scopes
-# secrets/vars and sets the OIDC subject to `repo:<org/repo>:environment:dev`,
+# secrets/vars and sets the OIDC subject to `<repo-ids>:environment:dev`,
 # which the AWS trust policy's sub allowlist accepts (role.tf:30).
 #
 # It is NOT a reviewer gate. GitHub only blocks a job once required-reviewer
@@ -87,7 +87,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    # Binds the OIDC subject to repo:<org/repo>:environment:dev, which the AWS
+    # Binds the OIDC subject to <repo-ids>:environment:dev, which the AWS
     # trust policy matches on. Not a reviewer gate until protection rules exist
     # on this environment -- see the note at the top of this file.
     environment: dev

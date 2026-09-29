@@ -12,19 +12,23 @@ resource "aws_iam_role" "cudly_deploy" {
         Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:${var.trust_principal}" }
         Action    = "sts:AssumeRole"
       }] : [],
-      # Optional: allow GitHub Actions via OIDC
-      var.github_repo != "" ? [{
+      # GitHub Actions via OIDC
+      [{
         Effect = "Allow"
         Principal = {
-          Federated = aws_iam_openid_connect_provider.github[0].arn
+          Federated = aws_iam_openid_connect_provider.github.arn
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            # Restrict to protected branches and named deployment environments.
-            # Any-branch wildcard (repo:org/repo:*) would let a developer push to
-            # an unprotected feature branch and mint valid deploy credentials.
+            # Restrict to main and named deployment environments. An any-ref
+            # wildcard (`<prefix>:*`) would let a developer push to an
+            # unprotected feature branch and mint valid deploy credentials.
+            # Subjects carry the repository's immutable owner and repo IDs,
+            # not its name, so a rename or a new repo reusing a freed name
+            # neither gains nor loses deploy rights (see local
+            # github_oidc_sub_prefix in github_oidc.tf).
             #
             # An OIDC `sub` is EITHER `...:ref:refs/heads/<branch>` OR
             # `...:environment:<name>` -- never both -- so every job in every
@@ -45,11 +49,11 @@ resource "aws_iam_role" "cudly_deploy" {
             # the first of them:
             #   1. Allowlist membership (THIS list): can the job authenticate
             #      to AWS at all? Nothing else below matters if this says no.
-            #   2. Deployment branch policy (GitHub environment setting,
-            #      manual, NOT configured by this module): which BRANCH may
-            #      trigger a deploy to that environment. This is what "only
-            #      main may deploy" actually requires, and nothing here sets
-            #      it.
+            #   2. Deployment branch policy (GitHub environment setting, NOT
+            #      configured by this module; set to main-only by
+            #      scripts/bootstrap-github-deploy-config.sh): which BRANCH
+            #      may trigger a deploy to that environment. This is what
+            #      "only main may deploy" actually requires.
             #   3. Required reviewers / protection rules (GitHub environment
             #      setting, manual, NOT configured by this module): WHO must
             #      approve before a job bound to that environment proceeds.
@@ -64,11 +68,9 @@ resource "aws_iam_role" "cudly_deploy" {
             # environment-bound job presents the identical subject a `main`
             # run would. Until a deployment branch policy exists on that
             # environment, this allowlist delivers "only these environments
-            # deploy, from any branch", not "only main deploys" -- and per a
-            # live check against the GitHub API, none of the environments
-            # below have one, or any protection rules, today. See the PR that
-            # added this comment for the full list of environments needing
-            # that policy, and which of them exist yet at all.
+            # deploy, from any branch", not "only main deploys". Run the
+            # bootstrap script before applying this module so every
+            # environment below exists with a main-only branch policy.
             #
             # Deliberately NOT listed, and why:
             #   - `pull_request` subjects: no job that assumes THIS role
@@ -89,7 +91,7 @@ resource "aws_iam_role" "cudly_deploy" {
             #     caller is ever added, this must be revisited before that
             #     caller can authenticate.
             "token.actions.githubusercontent.com:sub" = [
-              "repo:${var.github_repo}:ref:refs/heads/main",
+              "${local.github_oidc_sub_prefix}:ref:refs/heads/main",
 
               # Bare deployment environments. Bound directly by
               # deploy-aws-lambda.yml's build-and-deploy / test-deployment jobs
@@ -98,34 +100,27 @@ resource "aws_iam_role" "cudly_deploy" {
               # once #1674 merges -- by cleanup-staging.yml's two AWS destroy
               # jobs (environment: staging) and destroy-fargate-dev.yml's
               # destroy job (environment: dev).
-              # Live check (`gh api repos/.../environments`): `dev` exists,
-              # `staging`/`prod` do not. None has a deployment branch policy or
-              # protection rules -- see the top-of-list note.
-              "repo:${var.github_repo}:environment:dev",
-              "repo:${var.github_repo}:environment:staging",
-              "repo:${var.github_repo}:environment:prod",
+              "${local.github_oidc_sub_prefix}:environment:dev",
+              "${local.github_oidc_sub_prefix}:environment:staging",
+              "${local.github_oidc_sub_prefix}:environment:prod",
 
               # deploy-aws-fargate.yml's `deploy` job binds to
               # `aws-fargate-${{ needs.prepare.outputs.environment }}`, and that
               # output is always dev/staging/prod (workflow_dispatch choice
               # input, workflow_call from deploy-all.yml which is itself
               # choice-constrained, or the untriggered-input "dev" fallback).
-              # Live check: `aws-fargate-dev` and `aws-fargate-staging` exist,
-              # `aws-fargate-prod` does not. Same "no branch policy, no
-              # protection rules" caveat as above applies to all three.
-              "repo:${var.github_repo}:environment:aws-fargate-dev",
-              "repo:${var.github_repo}:environment:aws-fargate-staging",
-              "repo:${var.github_repo}:environment:aws-fargate-prod",
+              "${local.github_oidc_sub_prefix}:environment:aws-fargate-dev",
+              "${local.github_oidc_sub_prefix}:environment:aws-fargate-staging",
+              "${local.github_oidc_sub_prefix}:environment:aws-fargate-prod",
 
               # database-migration.yml's `migrate-aws` job binds to
               # `aws-db-${{ inputs.environment }}` on its `workflow_dispatch`
               # trigger, where `inputs.environment` is a choice input
               # constrained to dev/staging/prod. See the workflow_call caveat
-              # above for what is deliberately excluded. Live check: none of
-              # the three exist yet.
-              "repo:${var.github_repo}:environment:aws-db-dev",
-              "repo:${var.github_repo}:environment:aws-db-staging",
-              "repo:${var.github_repo}:environment:aws-db-prod",
+              # above for what is deliberately excluded.
+              "${local.github_oidc_sub_prefix}:environment:aws-db-dev",
+              "${local.github_oidc_sub_prefix}:environment:aws-db-staging",
+              "${local.github_oidc_sub_prefix}:environment:aws-db-prod",
 
               # rollback.yml's rollback-aws-lambda binds to plain
               # dev/staging/prod (covered above) and rollback-aws-fargate
@@ -138,7 +133,7 @@ resource "aws_iam_role" "cudly_deploy" {
             ]
           }
         }
-      }] : []
+      }]
     )
   })
 

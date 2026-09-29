@@ -15,18 +15,32 @@
 #
 subscription_id = "00000000-0000-0000-0000-000000000000"
 
-# ─── github_repo ───────────────────────────────────────────────────────────────
-# GitHub repository (owner/name) whose Actions workflows will authenticate
-# via Azure AD Federated Identity Credentials (keyless — no client secrets).
+# ─── github_repository_id / github_repository_owner_id ─────────────────────────
+# Immutable numeric IDs of the GitHub repository whose Actions workflows may
+# deploy, and of its owning account. The deploy trust is keyed on these IDs,
+# not on owner/name, so a rename (or a new repo that reuses a freed name)
+# neither gains nor loses deploy rights.
+#
+# Look them up (read-only):
+#   gh api repos/LeanerCloud/cloud-commitments-platform --jq '.id,.owner.id'
+#
+# Values for LeanerCloud/cloud-commitments-platform as of 2026-09-29:
+#   github_repository_id       = 1391259743
+#   github_repository_owner_id = 86753534 (LeanerCloud)
+#
+# The trust only matches once scripts/bootstrap-github-deploy-config.sh --apply
+# has set the repo's OIDC sub claim template; see
+# docs/deploy-trust-bootstrap.md for the apply order.
 #
 # Federated credentials are created for:
-#   - main branch deployments: repo:<owner>/<name>:ref:refs/heads/main
-#   - each entry in github_environments: repo:<owner>/<name>:environment:<name>
+#   - main branch deployments:
+#       repository_owner_id:<owner_id>:repository_id:<id>:ref:refs/heads/main
+#   - each entry in github_environments:
+#       repository_owner_id:<owner_id>:repository_id:<id>:environment:<name>
 #
 # No pull_request-subject credential is created (see #90): it is not scoped to
 # any branch or environment protection, and nothing in this repo authenticates
 # to Azure on a pull_request trigger.
 #
-# Set to "" to skip federated credential and service principal creation.
-#
-github_repo = "LeanerCloud/cloud-commitments-platform"
+github_repository_id       = "1391259743"
+github_repository_owner_id = "86753534"

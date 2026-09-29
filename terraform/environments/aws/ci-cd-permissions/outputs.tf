@@ -18,6 +18,6 @@ output "policy_arns" {
 }
 
 output "oidc_provider_arn" {
-  description = "ARN of the GitHub Actions OIDC provider (null if github_repo is empty)"
-  value       = var.github_repo != "" ? aws_iam_openid_connect_provider.github[0].arn : null
+  description = "ARN of the GitHub Actions OIDC provider"
+  value       = aws_iam_openid_connect_provider.github.arn
 }

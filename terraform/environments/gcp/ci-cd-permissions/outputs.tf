@@ -15,5 +15,5 @@ output "roles" {
 
 output "workload_identity_provider" {
   description = "Full resource name of the Workload Identity Pool Provider — use as GCP_WORKLOAD_IDENTITY_PROVIDER in GitHub Actions"
-  value       = var.github_repo != "" ? google_iam_workload_identity_pool_provider.github[0].name : null
+  value       = google_iam_workload_identity_pool_provider.github.name
 }
