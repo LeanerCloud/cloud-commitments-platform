@@ -73,22 +73,6 @@ func TestGetEnvInt(t *testing.T) {
 	testutil.AssertEqual(t, 42, getEnvInt(key, 42))
 }
 
-func TestGetEnvFloat(t *testing.T) {
-	key := "TEST_GET_ENV_FLOAT_CUDLY"
-	defer os.Unsetenv(key)
-
-	// Default value
-	testutil.AssertEqual(t, 80.0, getEnvFloat(key, 80.0))
-
-	// Valid float
-	os.Setenv(key, "95.5")
-	testutil.AssertEqual(t, 95.5, getEnvFloat(key, 80.0))
-
-	// Invalid float - returns default
-	os.Setenv(key, "not-a-float")
-	testutil.AssertEqual(t, 80.0, getEnvFloat(key, 80.0))
-}
-
 func TestHttpToLambdaRequest_XForwardedFor(t *testing.T) {
 	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/test", nil)
 	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
@@ -336,7 +320,8 @@ func TestLoadApplicationConfig(t *testing.T) {
 			testutil.SetEnv(t, key, "")
 		}
 
-		cfg := LoadApplicationConfig()
+		cfg, err := LoadApplicationConfig()
+		testutil.AssertNoError(t, err)
 
 		testutil.AssertEqual(t, "dev", cfg.Version)
 		testutil.AssertEqual(t, 3, cfg.NotificationDaysBefore)
@@ -362,7 +347,8 @@ func TestLoadApplicationConfig(t *testing.T) {
 		testutil.SetEnv(t, "CORS_ALLOWED_ORIGIN", "https://example.com")
 		testutil.SetEnv(t, "AWS_LAMBDA_RUNTIME_API", "localhost:9001")
 
-		cfg := LoadApplicationConfig()
+		cfg, err := LoadApplicationConfig()
+		testutil.AssertNoError(t, err)
 
 		testutil.AssertEqual(t, "1.2.3", cfg.Version)
 		testutil.AssertEqual(t, 7, cfg.NotificationDaysBefore)
@@ -377,6 +363,77 @@ func TestLoadApplicationConfig(t *testing.T) {
 		testutil.AssertEqual(t, "https://example.com", cfg.CORSAllowedOrigin)
 		testutil.AssertEqual(t, true, cfg.IsLambda)
 	})
+}
+
+func TestNewApplicationRejectsMalformedEnvDefaults(t *testing.T) {
+	for _, key := range []string{"DEFAULT_TERM", "DEFAULT_COVERAGE", "ANALYTICS_COLLECTION_ENABLED", "ANALYTICS_RETENTION_MONTHS", "ANALYTICS_PARTITIONS_AHEAD", "SQS_REPORT_BATCH_ITEM_FAILURES", "DB_HOST"} {
+		t.Setenv(key, "")
+	}
+	for _, tc := range []struct{ key, value string }{
+		{"DEFAULT_TERM", "3y"},
+		{"DEFAULT_TERM", "999999999999999999999999999"},
+		{"DEFAULT_COVERAGE", "80%"},
+		{"DEFAULT_COVERAGE", "1e999"},
+		{"ANALYTICS_COLLECTION_ENABLED", "no"},
+		{"ANALYTICS_COLLECTION_ENABLED", "off"},
+		{"ANALYTICS_COLLECTION_ENABLED", "False "},
+		{"ANALYTICS_COLLECTION_ENABLED", "disabled"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			t.Setenv(tc.key, tc.value)
+			if _, err := LoadApplicationConfig(); err == nil || !strings.Contains(err.Error(), tc.key) {
+				t.Fatalf("expected %s load error, got %v", tc.key, err)
+			}
+			app, err := NewApplication(context.Background(), "test")
+			if app != nil || err == nil || !strings.Contains(err.Error(), tc.key) {
+				t.Fatalf("expected %s startup error and nil application, got app=%v err=%v", tc.key, app, err)
+			}
+		})
+	}
+}
+
+func TestLoadApplicationConfigNumericDefaults(t *testing.T) {
+	t.Setenv("ANALYTICS_COLLECTION_ENABLED", "false")
+	t.Setenv("ANALYTICS_RETENTION_MONTHS", "")
+	t.Setenv("ANALYTICS_PARTITIONS_AHEAD", "")
+	for _, tc := range []struct {
+		name, term, coverage string
+		wantTerm             int
+		wantCoverage         float64
+	}{
+		{"unset", "", "", 3, 80},
+		{"empty", "", "", 3, 80},
+		{"one year", "1", "95.5", 1, 95.5},
+		{"zero coverage", "3", "0", 3, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DEFAULT_TERM", tc.term)
+			t.Setenv("DEFAULT_COVERAGE", tc.coverage)
+			if tc.name == "unset" {
+				if err := os.Unsetenv("DEFAULT_TERM"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Unsetenv("DEFAULT_COVERAGE"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg, err := LoadApplicationConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("DEFAULT_TERM", "3y")
+			t.Setenv("DEFAULT_COVERAGE", "80%")
+			t.Setenv("ANALYTICS_COLLECTION_ENABLED", "off")
+			testutil.AssertEqual(t, tc.wantTerm, cfg.DefaultTerm)
+			testutil.AssertEqual(t, tc.wantCoverage, cfg.DefaultCoverage)
+			testutil.AssertNoError(t, validateAppConfigEnvDefaults(cfg))
+			testutil.AssertNoError(t, cfg.Analytics.Validate())
+			app := &Application{appConfig: cfg}
+			result, err := app.handleCollectAnalytics(context.Background())
+			testutil.AssertNoError(t, err)
+			testutil.AssertEqual(t, "disabled", result["status"])
+		})
+	}
 }
 
 func TestNewApplicationFromDeps(t *testing.T) {
@@ -572,26 +629,6 @@ func TestGetEnvIntLogsOnBadValue(t *testing.T) {
 	testutil.AssertTrue(t, strings.Contains(logged, "WARNING"),
 		"Expected WARNING log for bad int env var, got: "+logged)
 	testutil.AssertTrue(t, strings.Contains(logged, "TEST_ENV_INT_BAD"),
-		"Expected key name in warning log, got: "+logged)
-}
-
-// TestGetEnvFloatLogsOnBadValue mirrors TestGetEnvIntLogsOnBadValue for floats.
-func TestGetEnvFloatLogsOnBadValue(t *testing.T) {
-	testutil.SetEnv(t, "TEST_ENV_FLOAT_BAD", "eighty")
-
-	var logged string
-	orig := log.Writer()
-	var buf strings.Builder
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(orig) })
-
-	result := getEnvFloat("TEST_ENV_FLOAT_BAD", 80.0)
-	logged = buf.String()
-
-	testutil.AssertEqual(t, 80.0, result)
-	testutil.AssertTrue(t, strings.Contains(logged, "WARNING"),
-		"Expected WARNING log for bad float env var, got: "+logged)
-	testutil.AssertTrue(t, strings.Contains(logged, "TEST_ENV_FLOAT_BAD"),
 		"Expected key name in warning log, got: "+logged)
 }
 
