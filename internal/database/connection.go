@@ -417,18 +417,16 @@ func isSensitiveKey(k string) bool {
 	return k == "password" || k == "secret" || k == "token"
 }
 
-// sanitizeLogData returns a copy of data with sensitive fields removed.
-// At debug level, the pgx "args" key (SQL bound parameters) is also removed
-// unless DB_LOG_BIND_PARAMETERS=true is set, because bound values can carry
-// session tokens, bcrypt hashes, or approval tokens.
-func sanitizeLogData(level tracelog.LogLevel, data map[string]any) map[string]any {
+// Bound parameters can carry credentials even when a query fails.
+// Only DB_LOG_BIND_PARAMETERS=true opts into logging them at any level.
+func sanitizeLogData(data map[string]any) map[string]any {
 	bindParams := os.Getenv("DB_LOG_BIND_PARAMETERS") == "true"
 	safe := make(map[string]any, len(data))
 	for k, v := range data {
 		if isSensitiveKey(k) {
 			continue
 		}
-		if k == "args" && level == tracelog.LogLevelDebug && !bindParams {
+		if k == "args" && !bindParams {
 			continue
 		}
 		safe[k] = v
@@ -437,7 +435,7 @@ func sanitizeLogData(level tracelog.LogLevel, data map[string]any) map[string]an
 }
 
 func (l *stdLogger) Log(ctx context.Context, level tracelog.LogLevel, msg string, data map[string]any) {
-	safeData := sanitizeLogData(level, data)
+	safeData := sanitizeLogData(data)
 
 	switch level {
 	case tracelog.LogLevelDebug:

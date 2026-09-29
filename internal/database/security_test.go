@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/jackc/pgx/v5/tracelog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -155,83 +156,32 @@ func TestBuildPoolConfig_ParseError_NoPasswordLeak(t *testing.T) {
 	// The placeholder "REDACTED" may appear, which is acceptable.
 }
 
-// TestSanitizeLogData_ArgsKeyStrippedAtDebugByDefault is a regression test for
-// issue #446: pgx logs SQL bound parameters under the "args" key at debug
-// level. Without the fix, these would be included in log output and could
-// expose session tokens, bcrypt hashes, or approval tokens.
-//
-// By default (DB_LOG_BIND_PARAMETERS not set) the "args" key must be stripped
-// from debug-level log data.
-func TestSanitizeLogData_ArgsKeyStrippedAtDebugByDefault(t *testing.T) {
-	t.Setenv("DB_LOG_BIND_PARAMETERS", "")
-
-	tests := []struct {
-		inputData     map[string]any
-		name          string
-		level         tracelog.LogLevel
-		wantArgsInOut bool
-	}{
-		{
-			name: "args stripped at debug level by default",
-			inputData: map[string]any{
-				"args": []any{"session-token-abc", "bcrypt-hash-xyz"},
-				"sql":  "SELECT * FROM users WHERE token = $1",
-			},
-			level:         tracelog.LogLevelDebug,
-			wantArgsInOut: false,
-		},
-		{
-			name: "args kept at warn level",
-			inputData: map[string]any{
-				"args": []any{"value"},
-				"sql":  "SELECT 1",
-			},
-			level:         tracelog.LogLevelWarn,
-			wantArgsInOut: true,
-		},
-		{
-			name: "args kept at error level",
-			inputData: map[string]any{
-				"args": []any{"value"},
-			},
-			level:         tracelog.LogLevelError,
-			wantArgsInOut: true,
-		},
-		{
-			name: "password always stripped at warn level",
-			inputData: map[string]any{
-				"password": "secret",
-				"safe":     "ok",
-			},
-			level:         tracelog.LogLevelWarn,
-			wantArgsInOut: false, // "args" key not in input, not relevant
-		},
+func TestSanitizeLogData_BoundArgumentsRequireExplicitOptIn(t *testing.T) {
+	input := map[string]any{
+		"args": []any{"session-token", "bcrypt-hash"},
+		"sql":  "SELECT $1", "err": "query failed",
+		"password": "private-password", "secret": "private-secret", "token": "private-token",
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			safe := sanitizeLogData(tc.level, tc.inputData)
-			_, hasArgs := safe["args"]
-			assert.Equal(t, tc.wantArgsInOut, hasArgs,
-				"args key presence mismatch for level %v", tc.level)
+	for _, optIn := range []string{"", "false", "TRUE", "1", "true"} {
+		t.Run("bind_parameters="+optIn, func(t *testing.T) {
+			t.Setenv("DB_LOG_BIND_PARAMETERS", optIn)
+			safe := sanitizeLogData(input)
+			assert.Equal(t, input["sql"], safe["sql"])
+			assert.Equal(t, input["err"], safe["err"])
+			for _, key := range []string{"password", "secret", "token"} {
+				assert.NotContains(t, safe, key)
+				assert.Contains(t, input, key)
+			}
+			if optIn == "true" {
+				assert.Equal(t, input["args"], safe["args"])
+			} else {
+				assert.NotContains(t, safe, "args")
+			}
+			assert.Equal(t, []any{"session-token", "bcrypt-hash"}, input["args"])
+			safe["sql"] = "changed"
+			assert.Equal(t, "SELECT $1", input["sql"])
 		})
 	}
-}
-
-// TestSanitizeLogData_ArgsKeyKeptWhenOptedIn verifies that setting
-// DB_LOG_BIND_PARAMETERS=true allows the "args" key through at debug level.
-func TestSanitizeLogData_ArgsKeyKeptWhenOptedIn(t *testing.T) {
-	t.Setenv("DB_LOG_BIND_PARAMETERS", "true")
-
-	inputData := map[string]any{
-		"args": []any{"param1", "param2"},
-		"sql":  "SELECT 1",
-	}
-
-	safe := sanitizeLogData(tracelog.LogLevelDebug, inputData)
-	_, hasArgs := safe["args"]
-	assert.True(t, hasArgs,
-		"args key must be preserved when DB_LOG_BIND_PARAMETERS=true")
 }
 
 // TestIsSensitiveKey verifies the sensitive-key predicate covers all expected names.
@@ -244,33 +194,54 @@ func TestIsSensitiveKey(t *testing.T) {
 	assert.False(t, isSensitiveKey("host"))
 }
 
-// TestStdLogger_DoesNotPanicWithArgsKey exercises the live stdLogger.Log path
-// with an "args" entry to confirm it does not panic when the key is filtered.
-func TestStdLogger_DoesNotPanicWithArgsKey(t *testing.T) {
-	t.Setenv("DB_LOG_BIND_PARAMETERS", "")
-
-	logger := &stdLogger{}
-	ctx := context.Background()
+func TestStdLogger_RedactsBoundArguments(t *testing.T) {
+	var output bytes.Buffer
+	previousOutput := logging.SetOutput(&output)
+	previousLevel := logging.GetLevel()
+	logging.SetLevelValue(logging.LevelDebug)
+	t.Cleanup(func() {
+		logging.SetOutput(previousOutput)
+		logging.SetLevelValue(previousLevel)
+	})
 
 	data := map[string]any{
 		"args":     []any{"session-token", "hash-value"},
 		"sql":      "INSERT INTO sessions VALUES ($1, $2)",
-		"password": "should-be-stripped",
+		"password": "private-password", "secret": "private-secret", "token": "private-token",
 	}
-
-	assert.NotPanics(t, func() {
-		logger.Log(ctx, tracelog.LogLevelDebug, "Query", data)
-	})
-	assert.NotPanics(t, func() {
-		logger.Log(ctx, tracelog.LogLevelInfo, "Query", data)
-	})
+	for _, optIn := range []string{"", "true"} {
+		t.Run("bind_parameters="+optIn, func(t *testing.T) {
+			t.Setenv("DB_LOG_BIND_PARAMETERS", optIn)
+			for _, level := range []tracelog.LogLevel{tracelog.LogLevelDebug, tracelog.LogLevelInfo, tracelog.LogLevelWarn, tracelog.LogLevelError} {
+				t.Run(level.String(), func(t *testing.T) {
+					output.Reset()
+					(&stdLogger{}).Log(context.Background(), level, "Query", data)
+					logged := output.String()
+					assert.Contains(t, logged, "Query")
+					for _, value := range []string{"private-password", "private-secret", "private-token"} {
+						assert.NotContains(t, logged, value)
+					}
+					if optIn == "true" && level != tracelog.LogLevelInfo {
+						assert.Contains(t, logged, "args:")
+						assert.Contains(t, logged, "session-token")
+						assert.Contains(t, logged, "hash-value")
+					} else {
+						assert.NotContains(t, logged, "args:")
+						assert.NotContains(t, logged, "session-token")
+						assert.NotContains(t, logged, "hash-value")
+					}
+					if level == tracelog.LogLevelInfo {
+						assert.NotContains(t, logged, "sql:")
+					} else {
+						assert.Contains(t, logged, data["sql"])
+					}
+				})
+			}
+		})
+	}
 }
 
-// TestSanitizeLogData_PasswordStrippedAtAllLevels confirms password/secret/token
-// keys are removed regardless of log level.
-func TestSanitizeLogData_PasswordStrippedAtAllLevels(t *testing.T) {
-	t.Setenv("DB_LOG_BIND_PARAMETERS", "")
-
+func TestSanitizeLogData_SensitiveKeysWithoutArgs(t *testing.T) {
 	sensitive := map[string]any{
 		"password": "my-password",
 		"secret":   "my-secret",
@@ -278,14 +249,10 @@ func TestSanitizeLogData_PasswordStrippedAtAllLevels(t *testing.T) {
 		"safe":     "visible",
 	}
 
-	for _, level := range []tracelog.LogLevel{
-		tracelog.LogLevelDebug,
-		tracelog.LogLevelInfo,
-		tracelog.LogLevelWarn,
-		tracelog.LogLevelError,
-	} {
-		t.Run(level.String(), func(t *testing.T) {
-			safe := sanitizeLogData(level, sensitive)
+	for _, optIn := range []string{"", "true"} {
+		t.Run("bind_parameters="+optIn, func(t *testing.T) {
+			t.Setenv("DB_LOG_BIND_PARAMETERS", optIn)
+			safe := sanitizeLogData(sensitive)
 			assert.NotContains(t, safe, "password")
 			assert.NotContains(t, safe, "secret")
 			assert.NotContains(t, safe, "token")
