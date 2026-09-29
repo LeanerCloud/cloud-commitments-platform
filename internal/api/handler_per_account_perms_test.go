@@ -288,12 +288,12 @@ func TestPerAccountPerms_RecommendationDetail_AllowedAccountReturns200(t *testin
 func TestPerAccountPerms_History_ListFilter(t *testing.T) {
 	ctx := context.Background()
 
-	rowA := config.PurchaseHistoryRecord{
+	rowA := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 		AccountID:  permsAccA,
 		PurchaseID: "hist-a",
 		Status:     "completed",
 	}
-	rowB := config.PurchaseHistoryRecord{
+	rowB := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 		AccountID:  permsAccB,
 		PurchaseID: "hist-b",
 		Status:     "completed",
@@ -557,7 +557,7 @@ func TestPerAccountPerms_DashboardSummary_CommitmentMetricsExcludeOtherAccounts(
 	// Only account A's purchase history is returned by the scoped query; the
 	// account-B row (200/mo) is filtered out at the store and must not appear.
 	accountARows := []config.PurchaseHistoryRecord{
-		{CloudAccountID: permsPtr(permsAccA), Timestamp: purchaseTime, Term: 1, Service: "ec2", EstimatedSavings: 100.0},
+		{UpfrontCost: new(float64), CloudAccountID: permsPtr(permsAccA), Timestamp: purchaseTime, Term: 1, Service: "ec2", EstimatedSavings: 100.0},
 	}
 
 	mockStore := new(MockConfigStore)
@@ -826,7 +826,7 @@ func TestPerAccountPerms_CoverageBreakdown_RecsFilteredByAllowedAccounts(t *test
 
 	now := time.Now()
 	// Active commitment for account A: contributes to covered side.
-	purchaseA := config.PurchaseHistoryRecord{
+	purchaseA := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 		AccountID:   permsAccA,
 		PurchaseID:  "p-cov-a",
 		Provider:    "aws",
@@ -894,7 +894,7 @@ func TestPerAccountPerms_CoverageBreakdown_RecsFilteredByAllowedAccounts(t *test
 
 	ec2 := aws.Services[0]
 	assert.Equal(t, "ec2", ec2.Service)
-	assert.Equal(t, 200.0, ec2.CoveredMonthly, "covered side must reflect account-A commitment")
+	assert.Equal(t, 200.0, *ec2.CoveredMonthly, "covered side must reflect account-A commitment")
 	assert.Equal(t, 200.0, ec2.OnDemandMonthly,
 		"on-demand side must include only account-A rec (200); account-B rec (200) must be excluded")
 	// coverage = 200/(200+200) * 100 = 50%
@@ -910,7 +910,7 @@ func TestPerAccountPerms_CoverageBreakdown_AdminSeesAll(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now()
-	purchaseA := config.PurchaseHistoryRecord{
+	purchaseA := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 		AccountID:   permsAccA,
 		PurchaseID:  "p-cov-admin-a",
 		Provider:    "aws",
@@ -987,7 +987,7 @@ func TestPerAccountPerms_InventoryCommitments_ScopedSQLRead(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now()
-	purchaseA := config.PurchaseHistoryRecord{
+	purchaseA := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 		AccountID:        permsAccA,
 		PurchaseID:       "p-inv-a",
 		Provider:         "aws",

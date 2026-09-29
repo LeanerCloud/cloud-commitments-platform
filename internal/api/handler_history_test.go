@@ -34,7 +34,7 @@ func TestHandler_getHistory(t *testing.T) {
 	mockStore := new(MockConfigStore)
 
 	history := []config.PurchaseHistoryRecord{
-		{AccountID: "123456789012", PurchaseID: "purchase-1", UpfrontCost: 100.0, EstimatedSavings: 10.0},
+		{AccountID: "123456789012", PurchaseID: "purchase-1", UpfrontCost: new(float64(100.0)), EstimatedSavings: 10.0},
 	}
 
 	// account_id "123456789012" is not a known cloud_accounts UUID, so it is
@@ -59,7 +59,7 @@ func TestHandler_getHistory(t *testing.T) {
 	assert.Equal(t, 1, historyResp.Summary.TotalPurchases)
 	assert.Equal(t, 1, historyResp.Summary.TotalCompleted)
 	assert.Equal(t, 0, historyResp.Summary.TotalPending)
-	assert.Equal(t, 100.0, historyResp.Summary.TotalUpfront)
+	assert.Equal(t, 100.0, *historyResp.Summary.TotalUpfront)
 	assert.Equal(t, 10.0, historyResp.Summary.TotalMonthlySavings)
 	assert.Equal(t, 120.0, historyResp.Summary.TotalAnnualSavings)
 }
@@ -69,8 +69,8 @@ func TestHandler_getHistory_AllAccounts(t *testing.T) {
 	mockStore := new(MockConfigStore)
 
 	history := []config.PurchaseHistoryRecord{
-		{AccountID: "111111111111", PurchaseID: "purchase-1", UpfrontCost: 100.0, EstimatedSavings: 10.0},
-		{AccountID: "222222222222", PurchaseID: "purchase-2", UpfrontCost: 200.0, EstimatedSavings: 20.0},
+		{AccountID: "111111111111", PurchaseID: "purchase-1", UpfrontCost: new(float64(100.0)), EstimatedSavings: 10.0},
+		{AccountID: "222222222222", PurchaseID: "purchase-2", UpfrontCost: new(float64(200.0)), EstimatedSavings: 20.0},
 	}
 
 	mockStore.On("GetAllPurchaseHistory", ctx, 100).Return(history, nil)
@@ -88,7 +88,7 @@ func TestHandler_getHistory_AllAccounts(t *testing.T) {
 	assert.Len(t, historyResp.Purchases, 2)
 	assert.Equal(t, 2, historyResp.Summary.TotalPurchases)
 	assert.Equal(t, 2, historyResp.Summary.TotalCompleted)
-	assert.Equal(t, 300.0, historyResp.Summary.TotalUpfront)
+	assert.Equal(t, 300.0, *historyResp.Summary.TotalUpfront)
 	assert.Equal(t, 30.0, historyResp.Summary.TotalMonthlySavings)
 }
 
@@ -101,7 +101,7 @@ func TestHandler_getHistory_IncludesPending(t *testing.T) {
 	mockStore := new(MockConfigStore)
 
 	completed := []config.PurchaseHistoryRecord{
-		{AccountID: "acc-1", PurchaseID: "done-1", UpfrontCost: 500.0, EstimatedSavings: 50.0},
+		{AccountID: "acc-1", PurchaseID: "done-1", UpfrontCost: new(float64(500.0)), EstimatedSavings: 50.0},
 	}
 	pending := []config.PurchaseExecution{
 		{
@@ -136,7 +136,7 @@ func TestHandler_getHistory_IncludesPending(t *testing.T) {
 	assert.Equal(t, 2, historyResp.Summary.TotalPurchases)
 	assert.Equal(t, 1, historyResp.Summary.TotalCompleted)
 	assert.Equal(t, 1, historyResp.Summary.TotalPending)
-	assert.Equal(t, 500.0, historyResp.Summary.TotalUpfront, "pending spend must not inflate committed totals")
+	assert.Equal(t, 500.0, *historyResp.Summary.TotalUpfront, "pending spend must not inflate committed totals")
 	assert.Equal(t, 50.0, historyResp.Summary.TotalMonthlySavings)
 
 	// Locate the pending row by PurchaseID and assert its shape.
@@ -150,7 +150,7 @@ func TestHandler_getHistory_IncludesPending(t *testing.T) {
 	require.NotNil(t, pendingRow, "pending execution must render as a history row")
 	assert.Equal(t, "pending", pendingRow.Status)
 	assert.Equal(t, "aws", pendingRow.Provider, "single-provider execution must collapse to that provider")
-	assert.Equal(t, 999.0, pendingRow.UpfrontCost)
+	assert.Equal(t, 999.0, *pendingRow.UpfrontCost)
 	assert.Equal(t, 2, pendingRow.Count)
 	assert.Equal(t, "2 commitment(s)", pendingRow.ResourceType)
 	assert.Equal(t, approverEmail, pendingRow.Approver, "pending rows must expose the approver email so the UI can tell the user whose inbox to check")
@@ -686,7 +686,7 @@ func TestHandler_getHistory_IncludesInFlightApprovals(t *testing.T) {
 	mockStore := new(MockConfigStore)
 
 	completed := []config.PurchaseHistoryRecord{
-		{AccountID: "acc-1", PurchaseID: "done-1", UpfrontCost: 500.0, EstimatedSavings: 50.0},
+		{AccountID: "acc-1", PurchaseID: "done-1", UpfrontCost: new(float64(500.0)), EstimatedSavings: 50.0},
 	}
 	approver := "ops@example.com"
 	inFlight := []config.PurchaseExecution{
@@ -735,7 +735,7 @@ func TestHandler_getHistory_IncludesInFlightApprovals(t *testing.T) {
 	assert.Equal(t, 3, resp.Summary.TotalPurchases)
 	assert.Equal(t, 1, resp.Summary.TotalCompleted)
 	assert.Equal(t, 2, resp.Summary.TotalInProgress, "approved+running must count as in-progress")
-	assert.Equal(t, 500.0, resp.Summary.TotalUpfront, "in-flight spend must not inflate committed totals")
+	assert.Equal(t, 500.0, *resp.Summary.TotalUpfront, "in-flight spend must not inflate committed totals")
 	assert.Equal(t, 50.0, resp.Summary.TotalMonthlySavings)
 }
 
@@ -800,7 +800,7 @@ func TestHandler_getHistory_InProgressRowMapsRecFields(t *testing.T) {
 			assert.Equal(t, "eu-west-1", row.Region, "region must be the rec's, not 'multiple'")
 			assert.Equal(t, 1, row.Term, "term must be the rec's 1yr, not 0 ('0 Years')")
 			assert.Equal(t, 1, row.Count)
-			assert.Equal(t, 0.0, row.UpfrontCost, "upfront must come from the rec")
+			assert.Equal(t, 0.0, *row.UpfrontCost, "upfront must come from the rec")
 			assert.Equal(t, 1.2333, row.EstimatedSavings, "savings must come from the rec")
 			require.NotNil(t, row.MonthlyCost, "monthly cost must come from the rec")
 			assert.InDelta(t, 2.117, *row.MonthlyCost, 1e-9, "monthly cost must come from the rec")
@@ -856,7 +856,7 @@ func TestHandler_getHistory_AuditGapCompletedVisible(t *testing.T) {
 	// purchase_history rows AND this synthesized row, so its execution-level
 	// dollars must NOT be added to the committed totals (those come from the
 	// purchase_history rows that actually saved).
-	assert.Equal(t, 0.0, resp.Summary.TotalUpfront, "audit-gap row must not contribute execution-level dollars (double-count risk)")
+	assert.Equal(t, 0.0, *resp.Summary.TotalUpfront, "audit-gap row must not contribute execution-level dollars (double-count risk)")
 	assert.Equal(t, 0.0, resp.Summary.TotalMonthlySavings)
 }
 
@@ -901,7 +901,7 @@ func TestHandler_getHistory_PartiallyCompletedVisible(t *testing.T) {
 	assert.Contains(t, row.StatusDescription, "partially completed", "the partial outcome must be surfaced to the user")
 	assert.True(t, row.IsAuditGap, "partial row must carry IsAuditGap so its execution-level dollars are excluded")
 	assert.Equal(t, 1, resp.Summary.TotalCompleted, "money was committed, so it counts as completed")
-	assert.Equal(t, 0.0, resp.Summary.TotalUpfront, "partial row must not contribute execution-level dollars (committed dollars come from purchase_history rows)")
+	assert.Equal(t, 0.0, *resp.Summary.TotalUpfront, "partial row must not contribute execution-level dollars (committed dollars come from purchase_history rows)")
 	assert.Equal(t, 0.0, resp.Summary.TotalMonthlySavings)
 }
 
@@ -925,7 +925,7 @@ func TestHandler_getHistory_CompletedDBRowWithDescriptionStillCounts(t *testing.
 			PurchaseID:        "ri-commitment-1",
 			Status:            "completed",
 			StatusDescription: "approved by ops@example.com",
-			UpfrontCost:       700.0,
+			UpfrontCost:       new(float64(700.0)),
 			EstimatedSavings:  70.0,
 		},
 	}
@@ -944,7 +944,7 @@ func TestHandler_getHistory_CompletedDBRowWithDescriptionStillCounts(t *testing.
 	require.Len(t, resp.Purchases, 1)
 	assert.False(t, resp.Purchases[0].IsAuditGap, "DB-loaded completed rows are never audit gaps")
 	assert.Equal(t, 1, resp.Summary.TotalCompleted)
-	assert.Equal(t, 700.0, resp.Summary.TotalUpfront, "a completed DB row with a StatusDescription must still count its committed dollars")
+	assert.Equal(t, 700.0, *resp.Summary.TotalUpfront, "a completed DB row with a StatusDescription must still count its committed dollars")
 	assert.Equal(t, 70.0, resp.Summary.TotalMonthlySavings)
 }
 
@@ -986,7 +986,7 @@ func TestHandler_getHistory_FilterParams(t *testing.T) {
 		// SQL path: must be called via GetPurchaseHistoryFiltered with
 		// provider="aws" and no other filters set. Return only the aws row.
 		filtered := []config.PurchaseHistoryRecord{
-			{AccountID: "acc-aws", PurchaseID: "p-aws", Provider: "aws", UpfrontCost: 100.0},
+			{AccountID: "acc-aws", PurchaseID: "p-aws", Provider: "aws", UpfrontCost: new(float64(100.0))},
 		}
 		mockStore.On("GetPurchaseHistoryFiltered", ctx, config.PurchaseHistoryFilter{Provider: "aws", Limit: config.DefaultListLimit}).
 			Return(filtered, nil).Once()
@@ -1668,7 +1668,7 @@ func TestHandler_getHistory_ExternalIDOnlyAccount(t *testing.T) {
 	// BOTH the UUID and the resolved external id. The row itself has the external
 	// AccountID and (implicitly) a NULL cloud_account_id.
 	bRow := []config.PurchaseHistoryRecord{
-		{AccountID: accountBExternal, PurchaseID: "p-B", Provider: "aws", Service: "ec2", UpfrontCost: 100.0, EstimatedSavings: 25.0},
+		{AccountID: accountBExternal, PurchaseID: "p-B", Provider: "aws", Service: "ec2", UpfrontCost: new(float64(100.0)), EstimatedSavings: 25.0},
 	}
 	mockStore.On("GetPurchaseHistoryFiltered", ctx, config.PurchaseHistoryFilter{
 		AccountIDs:            []string{accountBUUID},
@@ -1726,7 +1726,7 @@ func TestHandler_getHistory_CompletedExecutionNotDuplicated(t *testing.T) {
 	mockStore := new(MockConfigStore)
 
 	completed := []config.PurchaseHistoryRecord{
-		{AccountID: "acc-1", PurchaseID: "ri-commitment-1", UpfrontCost: 400.0, EstimatedSavings: 40.0},
+		{AccountID: "acc-1", PurchaseID: "ri-commitment-1", UpfrontCost: new(float64(400.0)), EstimatedSavings: 40.0},
 	}
 	// A clean completed execution exists alongside a purchase_history row. The
 	// execution (exec-clean-1) and the purchase_history row (ri-commitment-1)
@@ -1758,7 +1758,7 @@ func TestHandler_getHistory_CompletedExecutionNotDuplicated(t *testing.T) {
 	require.Len(t, resp.Purchases, 1, "a clean completed execution must not duplicate its purchase_history row")
 	assert.Equal(t, "ri-commitment-1", resp.Purchases[0].PurchaseID, "the surviving row is the purchase_history row")
 	assert.Equal(t, 1, resp.Summary.TotalCompleted)
-	assert.Equal(t, 400.0, resp.Summary.TotalUpfront)
+	assert.Equal(t, 400.0, *resp.Summary.TotalUpfront)
 }
 
 // TestSummarizePurchaseHistory_CancelledExcludedFromKPIs is the regression
@@ -1771,11 +1771,11 @@ func TestHandler_getHistory_CompletedExecutionNotDuplicated(t *testing.T) {
 func TestSummarizePurchaseHistory_CancelledExcludedFromKPIs(t *testing.T) {
 	purchases := []config.PurchaseHistoryRecord{
 		// Three completed rows that should contribute to the KPI totals.
-		{Status: "completed", UpfrontCost: 100.0, EstimatedSavings: 10.0},
-		{Status: "completed", UpfrontCost: 200.0, EstimatedSavings: 20.0},
-		{Status: "", UpfrontCost: 50.0, EstimatedSavings: 5.0}, // legacy row, no status
+		{Status: "completed", UpfrontCost: new(float64(100.0)), EstimatedSavings: 10.0},
+		{Status: "completed", UpfrontCost: new(float64(200.0)), EstimatedSavings: 20.0},
+		{Status: "", UpfrontCost: new(float64(50.0)), EstimatedSavings: 5.0}, // legacy row, no status
 		// One pending row that should be counted as pending, not completed.
-		{Status: "pending", UpfrontCost: 999.0, EstimatedSavings: 99.0},
+		{Status: "pending", UpfrontCost: new(float64(999.0)), EstimatedSavings: 99.0},
 		// Two canceled rows — the regression case from issue #736. Neither must
 		// appear in the dollar KPIs or TotalCompleted. One uses the new US
 		// spelling (config.StatusCanceled) and one the legacy British spelling
@@ -1785,8 +1785,8 @@ func TestSummarizePurchaseHistory_CancelledExcludedFromKPIs(t *testing.T) {
 		// the legacy value without a literal the US-locale misspell linter would
 		// flag (and without a nolint). Drop the legacy fixture once the contract
 		// migration (#1278) normalizes the data.
-		{Status: config.StatusCanceled, UpfrontCost: 500.0, EstimatedSavings: 50.0},
-		{Status: config.LegacyStatusCanceled, UpfrontCost: 750.0, EstimatedSavings: 75.0},
+		{Status: config.StatusCanceled, UpfrontCost: new(float64(500.0)), EstimatedSavings: 50.0},
+		{Status: config.LegacyStatusCanceled, UpfrontCost: new(float64(750.0)), EstimatedSavings: 75.0},
 	}
 
 	summary := summarizePurchaseHistory(purchases)
@@ -1795,7 +1795,7 @@ func TestSummarizePurchaseHistory_CancelledExcludedFromKPIs(t *testing.T) {
 	assert.Equal(t, 3, summary.TotalCompleted, "canceled rows must not inflate TotalCompleted")
 	assert.Equal(t, 1, summary.TotalPending)
 
-	assert.InDelta(t, 350.0, summary.TotalUpfront, 0.001,
+	assert.InDelta(t, 350.0, *summary.TotalUpfront, 0.001,
 		"canceled upfront cost must not be included in TotalUpfront (issues #625, #736)")
 	assert.InDelta(t, 35.0, summary.TotalMonthlySavings, 0.001,
 		"canceled savings must not be included in TotalMonthlySavings (issues #625, #736)")
@@ -1814,8 +1814,8 @@ func TestSummarizePurchaseHistory_CancelledExcludedFromKPIs(t *testing.T) {
 // so it must land in TotalPending like those two, not TotalCompleted.
 func TestSummarizePurchaseHistory_ScheduledExcludedFromKPIs(t *testing.T) {
 	purchases := []config.PurchaseHistoryRecord{
-		{Status: "completed", UpfrontCost: 100.0, EstimatedSavings: 10.0},
-		{Status: "scheduled", UpfrontCost: 999.0, EstimatedSavings: 99.0},
+		{Status: "completed", UpfrontCost: new(float64(100.0)), EstimatedSavings: 10.0},
+		{Status: "scheduled", UpfrontCost: new(float64(999.0)), EstimatedSavings: 99.0},
 	}
 
 	summary := summarizePurchaseHistory(purchases)
@@ -1823,7 +1823,7 @@ func TestSummarizePurchaseHistory_ScheduledExcludedFromKPIs(t *testing.T) {
 	assert.Equal(t, 2, summary.TotalPurchases)
 	assert.Equal(t, 1, summary.TotalCompleted, "scheduled row must not inflate TotalCompleted")
 	assert.Equal(t, 1, summary.TotalPending, "scheduled is a pre-purchase state, grouped with pending/notified")
-	assert.InDelta(t, 100.0, summary.TotalUpfront, 0.001,
+	assert.InDelta(t, 100.0, *summary.TotalUpfront, 0.001,
 		"the scheduled row's upfront cost must not be counted as already spent (issue #239)")
 	assert.InDelta(t, 10.0, summary.TotalMonthlySavings, 0.001,
 		"the scheduled row's savings must not be counted as realized (issue #239)")
@@ -1916,16 +1916,16 @@ func TestSummarizePurchaseHistory_CancelPendingDoesNotChangeKPIs(t *testing.T) {
 	// Baseline: three approved (completed) rows.
 	baseline := make([]config.PurchaseHistoryRecord, 0, 4)
 	baseline = append(baseline,
-		config.PurchaseHistoryRecord{Status: "completed", UpfrontCost: 100.0, EstimatedSavings: 10.0},
-		config.PurchaseHistoryRecord{Status: "completed", UpfrontCost: 200.0, EstimatedSavings: 20.0},
-		config.PurchaseHistoryRecord{Status: "completed", UpfrontCost: 300.0, EstimatedSavings: 30.0},
+		config.PurchaseHistoryRecord{Status: "completed", UpfrontCost: new(float64(100.0)), EstimatedSavings: 10.0},
+		config.PurchaseHistoryRecord{Status: "completed", UpfrontCost: new(float64(200.0)), EstimatedSavings: 20.0},
+		config.PurchaseHistoryRecord{Status: "completed", UpfrontCost: new(float64(300.0)), EstimatedSavings: 30.0},
 	)
 	before := summarizePurchaseHistory(baseline)
 
 	// After: same rows plus one canceled execution (the pending that got canceled).
 	withCancelled := append(baseline, config.PurchaseHistoryRecord{ //nolint:gocritic
 		Status:           "cancelled", //nolint:misspell // DB schema value 'cancelled' -- see migration 000001_initial_schema.up.sql
-		UpfrontCost:      999.0,
+		UpfrontCost:      new(float64(999.0)),
 		EstimatedSavings: 99.0,
 	})
 	after := summarizePurchaseHistory(withCancelled)
@@ -2074,13 +2074,13 @@ func TestSummarizePurchaseHistory_RevokedExcludedFromKPIs(t *testing.T) {
 
 	purchases := []config.PurchaseHistoryRecord{
 		// Completed, non-revoked: must contribute to dollar totals.
-		{Status: "completed", UpfrontCost: 100.0, EstimatedSavings: 10.0},
+		{Status: "completed", UpfrontCost: new(float64(100.0)), EstimatedSavings: 10.0},
 		// Revoked: term still open but revoked_at is set.
 		// Pre-fix: fell through to the completed branch, inflating TotalUpfront
 		// by 500 and TotalMonthlySavings by 50.
-		{Status: "completed", UpfrontCost: 500.0, EstimatedSavings: 50.0, RevokedAt: &revokedAt},
+		{Status: "completed", UpfrontCost: new(float64(500.0)), EstimatedSavings: 50.0, RevokedAt: &revokedAt},
 		// Revoked with empty status (legacy DB row): same guard must apply.
-		{Status: "", UpfrontCost: 750.0, EstimatedSavings: 75.0, RevokedAt: &revokedAt},
+		{Status: "", UpfrontCost: new(float64(750.0)), EstimatedSavings: 75.0, RevokedAt: &revokedAt},
 	}
 
 	summary := summarizePurchaseHistory(purchases)
@@ -2091,7 +2091,7 @@ func TestSummarizePurchaseHistory_RevokedExcludedFromKPIs(t *testing.T) {
 	assert.Equal(t, 1, summary.TotalCompleted,
 		"revoked rows must not inflate TotalCompleted")
 
-	assert.InDelta(t, 100.0, summary.TotalUpfront, 0.001,
+	assert.InDelta(t, 100.0, *summary.TotalUpfront, 0.001,
 		"revoked upfront cost must not appear in TotalUpfront")
 	assert.InDelta(t, 10.0, summary.TotalMonthlySavings, 0.001,
 		"revoked savings must not appear in TotalMonthlySavings")

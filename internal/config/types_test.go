@@ -335,7 +335,7 @@ func TestPurchaseHistoryRecord_Fields(t *testing.T) {
 		Count:            5,
 		Term:             1,
 		Payment:          "no-upfront",
-		UpfrontCost:      0,
+		UpfrontCost:      new(float64(0)),
 		MonthlyCost:      pf(150.00),
 		EstimatedSavings: 50.00,
 		PlanID:           "plan-123",
@@ -353,7 +353,7 @@ func TestPurchaseHistoryRecord_Fields(t *testing.T) {
 	assert.Equal(t, 5, rec.Count)
 	assert.Equal(t, 1, rec.Term)
 	assert.Equal(t, "no-upfront", rec.Payment)
-	assert.Equal(t, float64(0), rec.UpfrontCost)
+	assert.Equal(t, float64(0), *rec.UpfrontCost)
 	require.NotNil(t, rec.MonthlyCost)
 	assert.Equal(t, 150.00, *rec.MonthlyCost)
 	assert.Equal(t, 50.00, rec.EstimatedSavings)

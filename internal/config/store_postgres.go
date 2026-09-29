@@ -2311,6 +2311,7 @@ func (s *PostgresStore) queryPurchaseHistory(ctx context.Context, query string, 
 // cyclomatic complexity under the gocyclo budget as columns accrue across
 // issues #290 (revocation) and #292 (marketplace).
 type purchaseHistoryNullables struct {
+	upfrontCost              sql.NullFloat64
 	monthlyCost              sql.NullFloat64
 	planID                   sql.NullString
 	planName                 sql.NullString
@@ -2329,6 +2330,7 @@ type purchaseHistoryNullables struct {
 // an explicit $0 recurring charge); the revocation-window timestamps map
 // directly onto their pointer fields.
 func (n *purchaseHistoryNullables) applyTo(record *PurchaseHistoryRecord) {
+	record.UpfrontCost = nullPtrFromNullFloat64(n.upfrontCost)
 	if n.monthlyCost.Valid {
 		v := n.monthlyCost.Float64
 		record.MonthlyCost = &v
@@ -2376,7 +2378,7 @@ func scanPurchaseHistoryRow(rows pgx.Rows) (PurchaseHistoryRecord, error) {
 		&record.Count,
 		&record.Term,
 		&record.Payment,
-		&record.UpfrontCost,
+		&n.upfrontCost,
 		&n.monthlyCost,
 		&record.EstimatedSavings,
 		&n.planID,
@@ -2444,7 +2446,7 @@ func (s *PostgresStore) GetPurchaseHistoryByPurchaseID(ctx context.Context, purc
 		&r.Count,
 		&r.Term,
 		&r.Payment,
-		&r.UpfrontCost,
+		&n.upfrontCost,
 		&r.MonthlyCost,
 		&r.EstimatedSavings,
 		&n.planID,
@@ -2578,6 +2580,7 @@ func (s *PostgresStore) GetPurchaseHistoryInFlight(ctx context.Context) ([]*Purc
 		var planID, planName, cloudAccountID sql.NullString
 		var revocationWindowClosesAt, revokedAt *time.Time
 		var revokedVia, supportCaseID sql.NullString
+		var upfrontCost sql.NullFloat64
 
 		if err := rows.Scan(
 			&r.AccountID,
@@ -2590,7 +2593,7 @@ func (s *PostgresStore) GetPurchaseHistoryInFlight(ctx context.Context) ([]*Purc
 			&r.Count,
 			&r.Term,
 			&r.Payment,
-			&r.UpfrontCost,
+			&upfrontCost,
 			&r.MonthlyCost,
 			&r.EstimatedSavings,
 			&planID,
@@ -2604,6 +2607,7 @@ func (s *PostgresStore) GetPurchaseHistoryInFlight(ctx context.Context) ([]*Purc
 		); err != nil {
 			return nil, fmt.Errorf("GetPurchaseHistoryInFlight scan: %w", err)
 		}
+		r.UpfrontCost = nullPtrFromNullFloat64(upfrontCost)
 
 		if planID.Valid {
 			r.PlanID = planID.String
@@ -3845,6 +3849,13 @@ func nullPtrFromNullString(ns sql.NullString) *string {
 	}
 	s := ns.String
 	return &s
+}
+
+func nullPtrFromNullFloat64(n sql.NullFloat64) *float64 {
+	if !n.Valid {
+		return nil
+	}
+	return &n.Float64
 }
 
 // ==========================================

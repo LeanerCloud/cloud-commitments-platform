@@ -59,7 +59,7 @@ func TestAnalyticsNestedRollup_COR02(t *testing.T) {
 			Service:         "rds",
 			Region:          region,
 			CommitmentType:  commitmentType,
-			TotalCommitment: savings * 10,
+			TotalCommitment: new(float64(savings * 10)),
 			TotalSavings:    savings,
 		}
 	}

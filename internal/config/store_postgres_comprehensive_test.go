@@ -415,7 +415,7 @@ func (s *mockablePostgresStore) queryPurchaseHistory(ctx context.Context, query 
 	for rows.Next() {
 		var record PurchaseHistoryRecord
 		var planID, planName sql.NullString
-		var monthlyCost sql.NullFloat64
+		var monthlyCost, upfrontCost sql.NullFloat64
 
 		err := rows.Scan(
 			&record.AccountID,
@@ -428,7 +428,7 @@ func (s *mockablePostgresStore) queryPurchaseHistory(ctx context.Context, query 
 			&record.Count,
 			&record.Term,
 			&record.Payment,
-			&record.UpfrontCost,
+			&upfrontCost,
 			&monthlyCost,
 			&record.EstimatedSavings,
 			&planID,
@@ -439,6 +439,9 @@ func (s *mockablePostgresStore) queryPurchaseHistory(ctx context.Context, query 
 			return nil, err
 		}
 
+		if upfrontCost.Valid {
+			record.UpfrontCost = &upfrontCost.Float64
+		}
 		if monthlyCost.Valid {
 			v := monthlyCost.Float64
 			record.MonthlyCost = &v
@@ -1288,7 +1291,7 @@ func TestSavePurchaseHistory_Success(t *testing.T) {
 		Count:            3,
 		Term:             3,
 		Payment:          "all-upfront",
-		UpfrontCost:      2250.00,
+		UpfrontCost:      new(float64(2250.00)),
 		MonthlyCost:      pf(0),
 		EstimatedSavings: 450.00,
 		PlanID:           "plan-123",
@@ -1985,7 +1988,7 @@ func TestQueryPurchaseHistory_AllFieldsPresent(t *testing.T) {
 	assert.Equal(t, 2, record.Count)
 	assert.Equal(t, 3, record.Term)
 	assert.Equal(t, "all-upfront", record.Payment)
-	assert.Equal(t, 3000.0, record.UpfrontCost)
+	assert.Equal(t, 3000.0, *record.UpfrontCost)
 	require.NotNil(t, record.MonthlyCost, "monthly_cost 0.0 from DB must scan as non-nil pointer")
 	assert.Equal(t, 0.0, *record.MonthlyCost)
 	assert.Equal(t, 600.0, record.EstimatedSavings)

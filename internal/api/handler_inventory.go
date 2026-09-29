@@ -205,13 +205,19 @@ func (h *Handler) getCoverageBreakdown(ctx context.Context, req *events.LambdaFu
 	// (MonthlyCost nil, UpfrontCost > 0 — typical for Azure RIs) still
 	// registers as covered instead of being silently dropped (issue: Azure
 	// showed $0 coverage while the dashboard reported active commitments).
-	coveredByKey := make(map[string]float64)
+	coveredByKey := make(map[string]*float64)
 	for _rvc := range purchases {
 		p := purchases[_rvc]
 		if !isActiveCommitment(p, now) {
 			continue
 		}
-		coveredByKey[p.Provider+":"+p.Service] += commitmentCoveredMonthly(p)
+		key := p.Provider + ":" + p.Service
+		cost := commitmentCoveredMonthly(p)
+		total, exists := coveredByKey[key]
+		if !exists {
+			total = new(float64)
+		}
+		coveredByKey[key] = sumKnownCosts(total, cost)
 	}
 
 	// --- on-demand gap: recommendations -------------------------------------
@@ -295,15 +301,18 @@ func aggregateOnDemandByKey(recs []config.RecommendationRecord, providerFilter s
 // its recurring MonthlyCost. The scheduler only writes Term >= 1 rows, so this
 // guard matches analytics.Collector's skip-bad-term defense rather than papering
 // over real data.
-func commitmentCoveredMonthly(p config.PurchaseHistoryRecord) float64 {
+func commitmentCoveredMonthly(p config.PurchaseHistoryRecord) *float64 {
+	if p.UpfrontCost == nil {
+		return nil
+	}
 	var covered float64
 	if p.MonthlyCost != nil {
 		covered += *p.MonthlyCost
 	}
 	if p.Term > 0 {
-		covered += p.UpfrontCost / (float64(p.Term) * analytics.MonthsPerYear)
+		covered += *p.UpfrontCost / (float64(p.Term) * analytics.MonthsPerYear)
 	}
-	return covered
+	return &covered
 }
 
 // buildCoverageBreakdown constructs the CoverageBreakdownResponse from
@@ -314,7 +323,7 @@ func commitmentCoveredMonthly(p config.PurchaseHistoryRecord) float64 {
 // A provider that appears in neither map gets Services=nil and
 // OverallCoveragePct=nil (no usage detected).
 func buildCoverageBreakdown(
-	coveredByKey map[string]float64,
+	coveredByKey map[string]*float64,
 	onDemandByKey map[string]float64,
 ) CoverageBreakdownResponse {
 	// Collect all (provider, service) keys appearing in either map.
@@ -333,7 +342,10 @@ func buildCoverageBreakdown(
 	providerSvcMap := make(map[string][]CoverageServiceRow)
 	for ps := range keySet {
 		key := ps.provider + ":" + ps.service
-		covered := coveredByKey[key]
+		covered, exists := coveredByKey[key]
+		if !exists {
+			covered = new(float64)
+		}
 		onDemand := onDemandByKey[key]
 		row := CoverageServiceRow{
 			Service:         ps.service,
@@ -368,9 +380,10 @@ func buildCoverageBreakdown(
 			continue
 		}
 
-		var totalCovered, totalOnDemand float64
+		totalCovered := new(float64)
+		var totalOnDemand float64
 		for _, r := range rows {
-			totalCovered += r.CoveredMonthly
+			totalCovered = sumKnownCosts(totalCovered, r.CoveredMonthly)
 			totalOnDemand += r.OnDemandMonthly
 		}
 		sections = append(sections, ProviderCoverageSection{
@@ -387,12 +400,15 @@ func buildCoverageBreakdown(
 // Returns nil when both inputs are zero (no usage signal) to preserve the
 // "absent" semantic per feedback_nullable_not_zero — callers should render
 // nil as "N/A", not "0%".
-func coveragePct(covered, onDemand float64) *float64 {
-	total := covered + onDemand
+func coveragePct(covered *float64, onDemand float64) *float64 {
+	if covered == nil {
+		return nil
+	}
+	total := *covered + onDemand
 	if total == 0 {
 		return nil
 	}
-	pct := covered / total * 100
+	pct := *covered / total * 100
 	return &pct
 }
 

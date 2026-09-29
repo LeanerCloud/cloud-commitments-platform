@@ -307,6 +307,13 @@ func databaseDetailMismatch(o, m *common.DatabaseDetails) string {
 	return mismatchField("az_config", o.AZConfig, m.AZConfig)
 }
 
+func sumKnownCosts(a, b *float64) *float64 {
+	if a == nil || b == nil {
+		return nil
+	}
+	return new(*a + *b)
+}
+
 func scaledCost(v *float64, ratio float64) *float64 {
 	if v == nil {
 		return nil

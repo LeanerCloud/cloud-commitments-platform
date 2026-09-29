@@ -47,7 +47,7 @@ func TestPostgresAnalyticsStore_SaveSnapshot_Success(t *testing.T) {
 		Service:            "ec2",
 		Region:             "us-east-1",
 		CommitmentType:     "RI",
-		TotalCommitment:    1000.0,
+		TotalCommitment:    new(float64(1000.0)),
 		TotalUsage:         f64ptr(900.0),
 		TotalSavings:       100.0,
 		CoveragePercentage: f64ptr(90.0),

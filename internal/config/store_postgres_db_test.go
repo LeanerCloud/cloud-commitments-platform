@@ -704,7 +704,7 @@ func TestPostgresStoreDB_PurchaseHistory(t *testing.T) {
 			Count:            3,
 			Term:             3,
 			Payment:          "all-upfront",
-			UpfrontCost:      2250.00,
+			UpfrontCost:      new(float64(2250.00)),
 			MonthlyCost:      pf(0),
 			EstimatedSavings: 450.00,
 			PlanID:           "",
@@ -751,7 +751,7 @@ func TestPostgresStoreDB_PurchaseHistory(t *testing.T) {
 			Count:            1,
 			Term:             1,
 			Payment:          "all-upfront",
-			UpfrontCost:      1200.00,
+			UpfrontCost:      new(float64(1200.00)),
 			MonthlyCost:      nil,
 			EstimatedSavings: 240.00,
 		}

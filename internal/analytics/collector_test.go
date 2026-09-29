@@ -498,7 +498,7 @@ func activeRecord(provider, service, region string, term int, savings, upfront f
 		Region:           region,
 		Term:             term,
 		EstimatedSavings: savings,
-		UpfrontCost:      upfront,
+		UpfrontCost:      new(float64(upfront)),
 	}
 }
 
@@ -563,7 +563,7 @@ func TestCollectorCollect(t *testing.T) {
 		expired := config.PurchaseHistoryRecord{
 			AccountID: "123456789012", Timestamp: time.Now().AddDate(-3, 0, 0),
 			Provider: "aws", Service: "rds", Region: "us-east-1",
-			Term: 1, EstimatedSavings: 100, UpfrontCost: 500,
+			Term: 1, EstimatedSavings: 100, UpfrontCost: new(float64(500)),
 		}
 		cfgStore := &mockConfigStore{
 			getActivePurchaseHistoryFunc: func(ctx context.Context, asOf time.Time, accountIDs []string, externalIDsByProvider map[string][]string) ([]config.PurchaseHistoryRecord, error) {
@@ -589,7 +589,8 @@ func TestCollectorCollect(t *testing.T) {
 		assert.Equal(t, "rds", s.Service)
 		assert.Equal(t, "RI", s.CommitmentType)
 		assert.Greater(t, s.TotalSavings, 0.0)
-		assert.Greater(t, s.TotalCommitment, 0.0)
+		require.NotNil(t, s.TotalCommitment)
+		assert.Greater(t, *s.TotalCommitment, 0.0)
 	})
 
 	t.Run("aggregates multiple purchases for same bucket", func(t *testing.T) {
@@ -661,7 +662,7 @@ func TestCollectorCollect(t *testing.T) {
 		require.NoError(t, newTestCollector(t, store, cfgStore).Collect(context.Background()))
 		require.Len(t, store.savedSnapshots, 1)
 		assert.InDelta(t, monthlySavings, store.savedSnapshots[0].TotalSavings, 0.001)
-		assert.InDelta(t, upfront/(1*MonthsPerYear), store.savedSnapshots[0].TotalCommitment, 0.001)
+		assert.InDelta(t, upfront/(1*MonthsPerYear), *store.savedSnapshots[0].TotalCommitment, 0.001)
 	})
 
 	// ── Regression tests for the latent data bugs (#1023) ──
@@ -680,9 +681,10 @@ func TestCollectorCollect(t *testing.T) {
 		s := store.savedSnapshots[0]
 		// Only the good row contributed: no +Inf/NaN, exactly one active purchase.
 		assert.Equal(t, 1, s.Metadata["active_purchases"])
-		assert.False(t, math.IsInf(s.TotalCommitment, 0), "commitment must not be Inf")
-		assert.False(t, math.IsNaN(s.TotalCommitment), "commitment must not be NaN")
-		assert.InDelta(t, 500.0/(1*MonthsPerYear), s.TotalCommitment, 0.001)
+		require.NotNil(t, s.TotalCommitment)
+		assert.False(t, math.IsInf(*s.TotalCommitment, 0), "commitment must not be Inf")
+		assert.False(t, math.IsNaN(*s.TotalCommitment), "commitment must not be NaN")
+		assert.InDelta(t, 500.0/(1*MonthsPerYear), *s.TotalCommitment, 0.001)
 	})
 
 	t.Run("H1: a negative Term is also skipped", func(t *testing.T) {

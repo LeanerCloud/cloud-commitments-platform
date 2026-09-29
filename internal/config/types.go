@@ -796,7 +796,7 @@ type PurchaseHistoryRecord struct {
 	Count        int       `json:"count" dynamodbav:"count"`
 	Term         int       `json:"term" dynamodbav:"term"`
 	Payment      string    `json:"payment" dynamodbav:"payment"`
-	UpfrontCost  float64   `json:"upfront_cost" dynamodbav:"upfront_cost"`
+	UpfrontCost  *float64  `json:"upfront_cost" dynamodbav:"upfront_cost"`
 	// MonthlyCost is nil when the provider API did not return a monthly
 	// recurring breakdown for this commitment (e.g. Azure all-upfront where
 	// no recurring charge exists at the commitment layer). GCP commitments

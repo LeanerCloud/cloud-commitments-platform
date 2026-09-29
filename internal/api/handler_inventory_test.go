@@ -66,7 +66,7 @@ func TestHandler_listActiveCommitments_FiltersExpired(t *testing.T) {
 	now := time.Now()
 	purchases := []config.PurchaseHistoryRecord{
 		// Active: bought 6 months ago, 1-year term — 6 months remaining.
-		{
+		{UpfrontCost: new(float64),
 			AccountID:        "acc-active",
 			PurchaseID:       "p-active",
 			Provider:         "aws",
@@ -80,7 +80,7 @@ func TestHandler_listActiveCommitments_FiltersExpired(t *testing.T) {
 			EstimatedSavings: 30.0,
 		},
 		// Expired: bought 2 years ago, 1-year term.
-		{
+		{UpfrontCost: new(float64),
 			AccountID:        "acc-expired",
 			PurchaseID:       "p-expired",
 			Provider:         "aws",
@@ -144,7 +144,7 @@ func TestHandler_listActiveCommitments_AccountFilter(t *testing.T) {
 
 	now := time.Now()
 	purchases := []config.PurchaseHistoryRecord{
-		{
+		{UpfrontCost: new(float64),
 			AccountID:        "acc-1",
 			PurchaseID:       "p-1",
 			Provider:         "aws",
@@ -187,7 +187,7 @@ func TestHandler_listActiveCommitments_ProviderFilter(t *testing.T) {
 
 	now := time.Now()
 	purchases := []config.PurchaseHistoryRecord{
-		{
+		{UpfrontCost: new(float64),
 			AccountID:   "acc-1",
 			PurchaseID:  "p-aws",
 			Provider:    "aws",
@@ -197,7 +197,7 @@ func TestHandler_listActiveCommitments_ProviderFilter(t *testing.T) {
 			Count:       1,
 			MonthlyCost: float64Ptr(80.0),
 		},
-		{
+		{UpfrontCost: new(float64),
 			AccountID:   "acc-1",
 			PurchaseID:  "p-azure",
 			Provider:    "azure",
@@ -239,7 +239,7 @@ func TestHandler_listActiveCommitments_SortedByExpiry(t *testing.T) {
 	// "out of order" so the sort step actually has work to do.
 	purchases := []config.PurchaseHistoryRecord{
 		// 30 months remaining (3y term, bought 6mo ago).
-		{
+		{UpfrontCost: new(float64),
 			AccountID:  "acc-1",
 			PurchaseID: "p-long",
 			Provider:   "aws",
@@ -249,7 +249,7 @@ func TestHandler_listActiveCommitments_SortedByExpiry(t *testing.T) {
 			Count:      1,
 		},
 		// 6 months remaining (1y term, bought 6mo ago).
-		{
+		{UpfrontCost: new(float64),
 			AccountID:  "acc-1",
 			PurchaseID: "p-short",
 			Provider:   "aws",
@@ -259,7 +259,7 @@ func TestHandler_listActiveCommitments_SortedByExpiry(t *testing.T) {
 			Count:      1,
 		},
 		// 18 months remaining (3y term, bought 18mo ago).
-		{
+		{UpfrontCost: new(float64),
 			AccountID:  "acc-1",
 			PurchaseID: "p-mid",
 			Provider:   "aws",
@@ -308,7 +308,7 @@ func splitPurchaseID(id string) string {
 // cause the two views to disagree about which commitments are active.
 func TestHandler_isActiveCommitment_Predicate(t *testing.T) {
 	now := time.Now()
-	p := config.PurchaseHistoryRecord{
+	p := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 		Timestamp: now.AddDate(-1, 0, 0),
 		Term:      1, // 1y term, started 1y ago — at the boundary.
 	}
@@ -319,7 +319,7 @@ func TestHandler_isActiveCommitment_Predicate(t *testing.T) {
 	assert.True(t, isActiveCommitment(p, now.Add(-time.Hour)),
 		"a commitment one hour before its expiry must still be active")
 
-	expired := config.PurchaseHistoryRecord{
+	expired := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 		Timestamp: now.AddDate(-2, 0, 0),
 		Term:      1,
 	}
@@ -335,9 +335,9 @@ func TestHandler_isActiveCommitment_Predicate(t *testing.T) {
 // sums are correctly attributed per service and the overall coverage% is
 // computed across all services in the provider.
 func TestBuildCoverageBreakdown_SingleProvider(t *testing.T) {
-	covered := map[string]float64{
-		"aws:ec2": 200.0,
-		"aws:rds": 100.0,
+	covered := map[string]*float64{
+		"aws:ec2": new(float64(200.0)),
+		"aws:rds": new(float64(100.0)),
 	}
 	onDemand := map[string]float64{
 		"aws:ec2": 300.0, // ec2 coverage = 200/(200+300) = 40%
@@ -355,14 +355,14 @@ func TestBuildCoverageBreakdown_SingleProvider(t *testing.T) {
 	// Services are sorted alphabetically; ec2 < rds.
 	ec2 := aws.Services[0]
 	assert.Equal(t, "ec2", ec2.Service)
-	assert.Equal(t, 200.0, ec2.CoveredMonthly)
+	assert.Equal(t, 200.0, *ec2.CoveredMonthly)
 	assert.Equal(t, 300.0, ec2.OnDemandMonthly)
 	require.NotNil(t, ec2.CoveragePct)
 	assert.InDelta(t, 40.0, *ec2.CoveragePct, 0.001, "ec2 coverage = 200/500 * 100")
 
 	rds := aws.Services[1]
 	assert.Equal(t, "rds", rds.Service)
-	assert.Equal(t, 100.0, rds.CoveredMonthly)
+	assert.Equal(t, 100.0, *rds.CoveredMonthly)
 	assert.Equal(t, 0.0, rds.OnDemandMonthly)
 	require.NotNil(t, rds.CoveragePct)
 	assert.InDelta(t, 100.0, *rds.CoveragePct, 0.001, "rds coverage = 100/100 * 100")
@@ -376,7 +376,7 @@ func TestBuildCoverageBreakdown_SingleProvider(t *testing.T) {
 // data in either map gets Services=nil and OverallCoveragePct=nil — not
 // a zero — per feedback_nullable_not_zero.
 func TestBuildCoverageBreakdown_EmptyProvider(t *testing.T) {
-	covered := map[string]float64{"aws:ec2": 100.0}
+	covered := map[string]*float64{"aws:ec2": new(float64(100.0))}
 	onDemand := map[string]float64{"aws:ec2": 100.0}
 
 	resp := buildCoverageBreakdown(covered, onDemand)
@@ -394,13 +394,13 @@ func TestBuildCoverageBreakdown_EmptyProvider(t *testing.T) {
 // TestBuildCoverageBreakdown_ZeroBothSides verifies that a service with
 // both covered=0 and on_demand=0 produces a nil CoveragePct, not 0.
 func TestBuildCoverageBreakdown_ZeroBothSides(t *testing.T) {
-	assert.Nil(t, coveragePct(0, 0), "no usage: coverage% must be nil, not 0")
+	assert.Nil(t, coveragePct(new(float64), 0), "no usage: coverage% must be nil, not 0")
 }
 
 // TestBuildCoverageBreakdown_OnlyOnDemand verifies that a provider with
 // recommendations but no commitments shows 0% coverage (not nil).
 func TestBuildCoverageBreakdown_OnlyOnDemand(t *testing.T) {
-	covered := map[string]float64{}
+	covered := map[string]*float64{}
 	onDemand := map[string]float64{"azure:compute": 500.0}
 
 	resp := buildCoverageBreakdown(covered, onDemand)
@@ -432,7 +432,7 @@ func TestHandler_getCoverageBreakdown_Integration(t *testing.T) {
 
 	now := time.Now()
 	purchases := []config.PurchaseHistoryRecord{
-		{
+		{UpfrontCost: new(float64),
 			AccountID:   "acc-1",
 			PurchaseID:  "p-1",
 			Provider:    "aws",
@@ -501,7 +501,7 @@ func TestHandler_getCoverageBreakdown_ProviderAndAccountChip(t *testing.T) {
 	// acc-1 rows here. The provider chip is applied in-memory by
 	// fetchCommitmentRecords to drop the azure row.
 	acc1Purchases := []config.PurchaseHistoryRecord{
-		{
+		{UpfrontCost: new(float64),
 			AccountID:   "acc-1",
 			PurchaseID:  "p-aws-acc1",
 			Provider:    "aws",
@@ -510,7 +510,7 @@ func TestHandler_getCoverageBreakdown_ProviderAndAccountChip(t *testing.T) {
 			Term:        1,
 			MonthlyCost: float64Ptr(200.0),
 		},
-		{
+		{UpfrontCost: new(float64),
 			AccountID:   "acc-1",
 			PurchaseID:  "p-azure-acc1",
 			Provider:    "azure",
@@ -576,7 +576,7 @@ func TestHandler_getCoverageBreakdown_ProviderAndAccountChip(t *testing.T) {
 
 	ec2 := aws.Services[0]
 	assert.Equal(t, "ec2", ec2.Service)
-	assert.Equal(t, 200.0, ec2.CoveredMonthly, "covered comes from acc-1 purchase only")
+	assert.Equal(t, 200.0, *ec2.CoveredMonthly, "covered comes from acc-1 purchase only")
 	assert.Equal(t, 300.0, ec2.OnDemandMonthly, "on-demand comes from acc-1 rec only")
 	require.NotNil(t, ec2.CoveragePct)
 	// 200 / (200+300) * 100 = 40
@@ -631,7 +631,7 @@ func TestHandler_getCoverageBreakdown_AzureAllUpfrontConsistency(t *testing.T) {
 		Service:          "compute",
 		Timestamp:        now.AddDate(0, -2, 0), // active: 1y term started 2mo ago
 		Term:             1,
-		UpfrontCost:      1200.0,
+		UpfrontCost:      new(float64(1200.0)),
 		MonthlyCost:      nil, // all-upfront: no recurring charge at the commitment layer
 		EstimatedSavings: 166.0,
 	}
@@ -681,7 +681,7 @@ func TestHandler_getCoverageBreakdown_AzureAllUpfrontConsistency(t *testing.T) {
 	compute := azure.Services[0]
 	assert.Equal(t, "compute", compute.Service)
 	// $1200 upfront / (1yr * 12mo) = $100/mo amortized covered spend.
-	assert.InDelta(t, 100.0, compute.CoveredMonthly, 0.001,
+	assert.InDelta(t, 100.0, *compute.CoveredMonthly, 0.001,
 		"covered monthly = amortized upfront for an all-upfront commitment")
 	assert.Equal(t, 0.0, compute.OnDemandMonthly)
 	require.NotNil(t, compute.CoveragePct)
@@ -715,7 +715,7 @@ func TestHandler_listActiveCommitments_NoTruncationBeyond1000(t *testing.T) {
 	now := time.Now()
 
 	// Oldest row: 3-year commitment purchased ~2.5 years ago, still active.
-	oldActive := config.PurchaseHistoryRecord{
+	oldActive := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 		AccountID:        "111122223333",
 		PurchaseID:       "p-old-active",
 		Provider:         "aws",
@@ -729,7 +729,7 @@ func TestHandler_listActiveCommitments_NoTruncationBeyond1000(t *testing.T) {
 	// 1000 newer rows: 1-year commitments purchased ~2 years ago, all expired.
 	newestFirst := make([]config.PurchaseHistoryRecord, 0, config.MaxListLimit)
 	for i := config.MaxListLimit - 1; i >= 0; i-- {
-		newestFirst = append(newestFirst, config.PurchaseHistoryRecord{
+		newestFirst = append(newestFirst, config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 			AccountID:        "111122223333",
 			PurchaseID:       fmt.Sprintf("p-expired-%04d", i),
 			Provider:         "aws",

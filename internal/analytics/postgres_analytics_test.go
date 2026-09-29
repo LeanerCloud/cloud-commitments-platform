@@ -82,7 +82,7 @@ func TestSaveSnapshot(t *testing.T) {
 			Service:            "rds",
 			Region:             "us-east-1",
 			CommitmentType:     "RI",
-			TotalCommitment:    100.0,
+			TotalCommitment:    new(float64(100.0)),
 			TotalUsage:         f64ptr(80.0),
 			TotalSavings:       20.0,
 			CoveragePercentage: f64ptr(80.0),
@@ -846,7 +846,7 @@ func TestSavingsSnapshot(t *testing.T) {
 			Service:            "rds",
 			Region:             "us-east-1",
 			CommitmentType:     "RI",
-			TotalCommitment:    100.50,
+			TotalCommitment:    new(float64(100.50)),
 			TotalUsage:         f64ptr(80.25),
 			TotalSavings:       20.25,
 			CoveragePercentage: f64ptr(80.0),
@@ -862,7 +862,7 @@ func TestSavingsSnapshot(t *testing.T) {
 		assert.Equal(t, "rds", snapshot.Service)
 		assert.Equal(t, "us-east-1", snapshot.Region)
 		assert.Equal(t, "RI", snapshot.CommitmentType)
-		assert.InDelta(t, 100.50, snapshot.TotalCommitment, 0.001)
+		assert.InDelta(t, 100.50, *snapshot.TotalCommitment, 0.001)
 		require.NotNil(t, snapshot.TotalUsage)
 		assert.InDelta(t, 80.25, *snapshot.TotalUsage, 0.001)
 		assert.InDelta(t, 20.25, snapshot.TotalSavings, 0.001)
@@ -881,7 +881,7 @@ func TestSavingsSnapshot(t *testing.T) {
 			Service:            "rds",
 			Region:             "us-east-1",
 			CommitmentType:     "RI",
-			TotalCommitment:    100.50,
+			TotalCommitment:    new(float64(100.50)),
 			TotalUsage:         f64ptr(80.25),
 			TotalSavings:       20.25,
 			CoveragePercentage: f64ptr(80.0),
