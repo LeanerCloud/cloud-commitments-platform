@@ -25,7 +25,7 @@ type SavingsSnapshot struct {
 	Region             string         `json:"region"`
 	CommitmentType     string         `json:"commitment_type"`
 	ID                 string         `json:"id"`
-	TotalCommitment    float64        `json:"total_commitment"`
+	TotalCommitment    *float64       `json:"total_commitment"`
 	TotalSavings       float64        `json:"total_savings"`
 }
 

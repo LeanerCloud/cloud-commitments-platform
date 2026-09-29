@@ -152,6 +152,16 @@ function sellIds(): (string | undefined)[] {
 }
 
 describe('History inline Sell on Marketplace button (issue #292)', () => {
+  test('unknown upfront disables listing without showing a fabricated price', async () => {
+    (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [makeRow({ purchase_id: 'ri-unknown-cost', upfront_cost: null })] });
+    await loadHistory();
+    const button = document.querySelector<HTMLButtonElement>('.history-marketplace-sell-btn');
+    expect(button).not.toBeNull();
+    button?.click();
+    expect(button?.disabled).toBe(true);
+    expect(api.createMarketplaceListing).not.toHaveBeenCalled();
+    expect(confirmDialog).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     setupDOM();
     jest.clearAllMocks();

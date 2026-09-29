@@ -105,7 +105,7 @@ func standardRow() *config.PurchaseHistoryRecord {
 		// multiplies by 12 before passing to computeRemainingMonths and
 		// resolveMarketplacePriceSchedule, which both work in months.
 		Term:        3,
-		UpfrontCost: 1200,
+		UpfrontCost: new(float64(1200)),
 		Timestamp:   time.Now(),
 	}
 }
@@ -351,7 +351,7 @@ func TestMarketplaceList_DBFailureCompensatingRollback(t *testing.T) {
 func TestMarketplaceList_DefaultScheduleProrationMath(t *testing.T) {
 	// remaining=12, term=12, count=1, upfront=1200 => per-unit residual
 	// 1200*12/12/1 = 1200; default price = 1200*0.95 = 1140.
-	schedule, err := resolveMarketplacePriceSchedule(nil, 12, 12, 1, 1200)
+	schedule, err := resolveMarketplacePriceSchedule(nil, 12, 12, 1, new(float64(1200)))
 	require.NoError(t, err)
 	require.Len(t, schedule, 1)
 	assert.Equal(t, int64(12), schedule[0].TermMonths)
@@ -360,7 +360,7 @@ func TestMarketplaceList_DefaultScheduleProrationMath(t *testing.T) {
 	// Half the term elapsed, count=1: remaining=6, term=12, upfront=1200.
 	// per-unit residual = 1200*6/12/1 = 600; recurring is excluded (the buyer
 	// assumes it post-transfer); default price = 600*0.95 = 570.
-	schedule, err = resolveMarketplacePriceSchedule(nil, 6, 12, 1, 1200)
+	schedule, err = resolveMarketplacePriceSchedule(nil, 6, 12, 1, new(float64(1200)))
 	require.NoError(t, err)
 	require.Len(t, schedule, 1)
 	assert.Equal(t, int64(6), schedule[0].TermMonths)
@@ -370,7 +370,7 @@ func TestMarketplaceList_DefaultScheduleProrationMath(t *testing.T) {
 	// the residual by the instance count, so the default per-unit price is a
 	// third of the count=1 price (1200/3=400 per-unit residual; 400*0.95=380),
 	// NOT the row-total (which would 3x-overprice each listed unit).
-	schedule, err = resolveMarketplacePriceSchedule(nil, 12, 12, 3, 1200)
+	schedule, err = resolveMarketplacePriceSchedule(nil, 12, 12, 3, new(float64(1200)))
 	require.NoError(t, err)
 	require.Len(t, schedule, 1)
 	assert.Equal(t, int64(12), schedule[0].TermMonths)
@@ -483,7 +483,7 @@ func TestMarketplaceList_ClaimErrorMapsToInternal(t *testing.T) {
 func TestResolveMarketplacePriceSchedule_ZeroPriceRejected(t *testing.T) {
 	_, err := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 		{TermMonths: 6, Price: 0},
-	}, 6, 12, 1, 1200)
+	}, 6, 12, 1, new(float64(1200)))
 	require.Error(t, err, "Price=0 must be rejected")
 	assert.Contains(t, err.Error(), "positive")
 }
@@ -497,7 +497,7 @@ func TestResolveMarketplacePriceSchedule_ZeroPriceRejected(t *testing.T) {
 func TestResolveMarketplacePriceSchedule_BelowFloorRejected(t *testing.T) {
 	_, err := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 		{TermMonths: 12, Price: 5.0},
-	}, 12, 12, 1, 1200)
+	}, 12, 12, 1, new(float64(1200)))
 	require.Error(t, err, "a $5 one-time price on a $1,200 residual must be rejected by the per-tier floor")
 	assert.Contains(t, err.Error(), "floor")
 	assert.Contains(t, err.Error(), "residual")
@@ -511,13 +511,13 @@ func TestResolveMarketplacePriceSchedule_BelowFloorRejected(t *testing.T) {
 func TestResolveMarketplacePriceSchedule_PerUnitFloor(t *testing.T) {
 	_, errBelow := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 		{TermMonths: 12, Price: 19.0},
-	}, 12, 12, 3, 1200)
+	}, 12, 12, 3, new(float64(1200)))
 	require.Error(t, errBelow, "$19 is below the $20 per-unit floor (5%% of $400 per-unit residual)")
 	assert.Contains(t, errBelow.Error(), "per-unit residual")
 
 	schedule, errAbove := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 		{TermMonths: 12, Price: 21.0},
-	}, 12, 12, 3, 1200)
+	}, 12, 12, 3, new(float64(1200)))
 	require.NoError(t, errAbove, "$21 clears the $20 per-unit floor")
 	require.Len(t, schedule, 1)
 	assert.InDelta(t, 21.0, schedule[0].Price, 0.001)
@@ -533,14 +533,14 @@ func TestResolveMarketplacePriceSchedule_PerUnitFloor(t *testing.T) {
 // This FAILS on the pre-fix code (no error, schedule[0].Price == 0) and
 // PASSES after (explicit error, nil schedule).
 func TestResolveMarketplacePriceSchedule_ZeroDefaultPriceRejected(t *testing.T) {
-	schedule, err := resolveMarketplacePriceSchedule(nil, 12, 12, 1, 0)
+	schedule, err := resolveMarketplacePriceSchedule(nil, 12, 12, 1, new(float64))
 	require.Error(t, err, "a no-upfront RI must not silently produce a $0 default listing")
 	assert.Nil(t, schedule)
 	assert.Contains(t, err.Error(), "cannot compute a default listing price")
 
 	// Same failure mode when the term is unknown (originalTerm <= 0), e.g. an
 	// imported/external row where the contract term could not be resolved.
-	schedule, err = resolveMarketplacePriceSchedule(nil, 12, 0, 1, 1200)
+	schedule, err = resolveMarketplacePriceSchedule(nil, 12, 0, 1, new(float64(1200)))
 	require.Error(t, err, "an unknown term must not silently produce a $0 default listing")
 	assert.Nil(t, schedule)
 	assert.Contains(t, err.Error(), "cannot compute a default listing price")
@@ -554,7 +554,7 @@ func TestResolveMarketplacePriceSchedule_ZeroDefaultPriceRejected(t *testing.T) 
 func TestResolveMarketplacePriceSchedule_TermExceedsRemainingRejected(t *testing.T) {
 	_, err := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 		{TermMonths: 12, Price: 1000},
-	}, 6, 12, 1, 1200)
+	}, 6, 12, 1, new(float64(1200)))
 	require.Error(t, err, "term_months exceeding remaining term must be rejected")
 	assert.Contains(t, err.Error(), "exceeds the RI's remaining term")
 }
@@ -692,7 +692,7 @@ func TestMarketplaceList_TermYearsConvertedToMonths(t *testing.T) {
 		row := standardRow()
 		row.Term = 3                                             // 3-year RI (stored in years)
 		row.Timestamp = time.Now().Add(-6 * 30 * 24 * time.Hour) // purchased ~6 months ago
-		row.UpfrontCost = 3600
+		row.UpfrontCost = new(float64(3600))
 		row.Count = 1
 
 		cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).
@@ -737,7 +737,7 @@ func TestMarketplaceList_TermYearsConvertedToMonths(t *testing.T) {
 		// 5% floor (~$150 on a $3,000 prorated residual).
 		schedule, err := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 			{TermMonths: 30, Price: 2500},
-		}, 30, 36, 1, 3600)
+		}, 30, 36, 1, new(float64(3600)))
 		require.NoError(t, err,
 			"a {TermMonths:30, Price:2500} schedule must be accepted when remainingMonths=30 (post-fix)")
 		require.Len(t, schedule, 1)
@@ -754,7 +754,7 @@ func TestMarketplaceList_TermYearsConvertedToMonths(t *testing.T) {
 		// old broken inputs -- must still reject it).
 		_, err := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 			{TermMonths: 30, Price: 2500},
-		}, 1, 3, 1, 3600)
+		}, 1, 3, 1, new(float64(3600)))
 		require.Error(t, err,
 			"pre-fix inputs (remainingMonths=1, originalTerm=3 months) must reject a 30-month tier")
 		assert.Contains(t, err.Error(), "exceeds the RI's remaining term")

@@ -1,6 +1,7 @@
 package purchase
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -37,82 +39,102 @@ func hasPerRecDeadline(max time.Duration) func(context.Context) bool {
 }
 
 func TestManager_ExecutePurchase(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	mockEmail := new(MockEmailSender)
-	mockSTS := new(MockSTSClient)
-	mockFactory := new(MockProviderFactory)
-	mockProviderInst := new(MockProvider)
-	mockServiceClient := new(MockServiceClient)
+	for _, tc := range []struct {
+		name   string
+		cost   *float64
+		logged string
+	}{
+		{"unknown", nil, "cost=unknown"},
+		{"zero", new(float64), "cost=0.00"},
+		{"known", new(float64(125.5)), "cost=125.50"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			previousOutput := logging.SetOutput(&logs)
+			defer logging.SetOutput(previousOutput)
+			ctx := context.Background()
+			mockStore := new(MockConfigStore)
+			mockEmail := new(MockEmailSender)
+			mockSTS := new(MockSTSClient)
+			mockFactory := new(MockProviderFactory)
+			mockProviderInst := new(MockProvider)
+			mockServiceClient := new(MockServiceClient)
 
-	plan := &config.PurchasePlan{
-		ID:   "plan-123",
-		Name: "Test Plan",
+			plan := &config.PurchasePlan{
+				ID:   "plan-123",
+				Name: "Test Plan",
+			}
+
+			exec := &config.PurchaseExecution{
+				ExecutionID: "exec-123",
+				PlanID:      "plan-123",
+				StepNumber:  1,
+				Recommendations: []config.RecommendationRecord{
+					{
+						Provider:     "aws",
+						Service:      "ec2",
+						ResourceType: "m5.large",
+						Region:       "us-east-1",
+						Count:        5,
+						Savings:      100.0,
+						UpfrontCost:  500.0,
+						Selected:     true,
+					},
+					{
+						Provider:     "aws",
+						Service:      "rds",
+						ResourceType: "db.r5.large",
+						Region:       "us-west-2",
+						Count:        2,
+						Savings:      50.0,
+						UpfrontCost:  200.0,
+						Selected:     false, // Not selected
+					},
+				},
+			}
+
+			mockStore.On("GetPurchasePlan", ctx, "plan-123").Return(plan, nil)
+			mockStore.On("SavePurchaseHistory", ctx, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Run(func(args mock.Arguments) {
+				assert.Equal(t, tc.cost, args.Get(1).(*config.PurchaseHistoryRecord).UpfrontCost)
+			}).Return(nil)
+			mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
+			mockSTS.On("GetCallerIdentity", ctx, mock.AnythingOfType("*sts.GetCallerIdentityInput")).Return(&sts.GetCallerIdentityOutput{
+				Account: aws.String("123456789012"),
+			}, nil)
+
+			// Mock provider factory to return a mock provider
+			mockFactory.On("CreateAndValidateProvider", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), "aws", mock.Anything).Return(mockProviderInst, nil)
+			mockProviderInst.On("GetServiceClient", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), common.ServiceEC2, "us-east-1").Return(mockServiceClient, nil)
+			mockServiceClient.On("PurchaseCommitment", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions")).Return(common.PurchaseResult{
+				Success:      true,
+				CommitmentID: "ri-12345",
+				Cost:         tc.cost,
+			}, nil)
+
+			manager := &Manager{
+				config:          mockStore,
+				email:           mockEmail,
+				stsClient:       mockSTS,
+				providerFactory: mockFactory,
+				dashboardURL:    "https://dashboard.example.com",
+			}
+
+			err := manager.executePurchase(ctx, exec)
+			require.NoError(t, err)
+
+			// Verify that only selected recommendation was purchased
+			assert.True(t, exec.Recommendations[0].Purchased)
+			assert.NotEmpty(t, exec.Recommendations[0].PurchaseID)
+			assert.False(t, exec.Recommendations[1].Purchased)
+
+			mockStore.AssertExpectations(t)
+			mockEmail.AssertExpectations(t)
+			mockSTS.AssertExpectations(t)
+			mockFactory.AssertExpectations(t)
+			assert.Contains(t, logs.String(), tc.logged)
+			assert.NotContains(t, logs.String(), "%!")
+		})
 	}
-
-	exec := &config.PurchaseExecution{
-		ExecutionID: "exec-123",
-		PlanID:      "plan-123",
-		StepNumber:  1,
-		Recommendations: []config.RecommendationRecord{
-			{
-				Provider:     "aws",
-				Service:      "ec2",
-				ResourceType: "m5.large",
-				Region:       "us-east-1",
-				Count:        5,
-				Savings:      100.0,
-				UpfrontCost:  500.0,
-				Selected:     true,
-			},
-			{
-				Provider:     "aws",
-				Service:      "rds",
-				ResourceType: "db.r5.large",
-				Region:       "us-west-2",
-				Count:        2,
-				Savings:      50.0,
-				UpfrontCost:  200.0,
-				Selected:     false, // Not selected
-			},
-		},
-	}
-
-	mockStore.On("GetPurchasePlan", ctx, "plan-123").Return(plan, nil)
-	mockStore.On("SavePurchaseHistory", ctx, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil)
-	mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
-	mockSTS.On("GetCallerIdentity", ctx, mock.AnythingOfType("*sts.GetCallerIdentityInput")).Return(&sts.GetCallerIdentityOutput{
-		Account: aws.String("123456789012"),
-	}, nil)
-
-	// Mock provider factory to return a mock provider
-	mockFactory.On("CreateAndValidateProvider", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), "aws", mock.Anything).Return(mockProviderInst, nil)
-	mockProviderInst.On("GetServiceClient", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), common.ServiceEC2, "us-east-1").Return(mockServiceClient, nil)
-	mockServiceClient.On("PurchaseCommitment", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions")).Return(common.PurchaseResult{
-		Success:      true,
-		CommitmentID: "ri-12345",
-	}, nil)
-
-	manager := &Manager{
-		config:          mockStore,
-		email:           mockEmail,
-		stsClient:       mockSTS,
-		providerFactory: mockFactory,
-		dashboardURL:    "https://dashboard.example.com",
-	}
-
-	err := manager.executePurchase(ctx, exec)
-	require.NoError(t, err)
-
-	// Verify that only selected recommendation was purchased
-	assert.True(t, exec.Recommendations[0].Purchased)
-	assert.NotEmpty(t, exec.Recommendations[0].PurchaseID)
-	assert.False(t, exec.Recommendations[1].Purchased)
-
-	mockStore.AssertExpectations(t)
-	mockEmail.AssertExpectations(t)
-	mockSTS.AssertExpectations(t)
-	mockFactory.AssertExpectations(t)
 }
 
 // TestManager_ExecutePurchase_WebSourcePropagates covers the gap noted in the

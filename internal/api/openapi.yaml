@@ -3058,6 +3058,7 @@ components:
         total_upfront:
           type: number
           format: double
+          nullable: true
         total_monthly_savings:
           type: number
           format: double
@@ -3092,6 +3093,7 @@ components:
         upfront_cost:
           type: number
           format: double
+          nullable: true
         monthly_cost:
           type: number
           format: double
@@ -3135,6 +3137,7 @@ components:
         total_upfront:
           type: number
           format: double
+          nullable: true
         purchase_count:
           type: integer
         cumulative_savings:
@@ -3176,6 +3179,7 @@ components:
         total_upfront:
           type: number
           format: double
+          nullable: true
         purchase_count:
           type: integer
         percentage:

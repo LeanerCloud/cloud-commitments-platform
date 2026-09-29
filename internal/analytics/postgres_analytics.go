@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -255,6 +256,7 @@ func (s *PostgresAnalyticsStore) QuerySavings(ctx context.Context, req QueryRequ
 	snapshots := make([]SavingsSnapshot, 0)
 	for rows.Next() {
 		var snapshot SavingsSnapshot
+		var commitment sql.NullFloat64
 		var metadataJSON []byte
 
 		err := rows.Scan(
@@ -266,7 +268,7 @@ func (s *PostgresAnalyticsStore) QuerySavings(ctx context.Context, req QueryRequ
 			&snapshot.Service,
 			&snapshot.Region,
 			&snapshot.CommitmentType,
-			&snapshot.TotalCommitment,
+			&commitment,
 			&snapshot.TotalUsage,
 			&snapshot.TotalSavings,
 			&snapshot.CoveragePercentage,
@@ -274,6 +276,9 @@ func (s *PostgresAnalyticsStore) QuerySavings(ctx context.Context, req QueryRequ
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan snapshot: %w", err)
+		}
+		if commitment.Valid {
+			snapshot.TotalCommitment = &commitment.Float64
 		}
 
 		if len(metadataJSON) > 0 {

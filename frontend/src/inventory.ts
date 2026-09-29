@@ -271,7 +271,7 @@ function buildCommitmentRow(c: api.InventoryCommitment): HTMLTableRowElement {
   const amortize = state.getAmortizeUpfront();
   let displayMonthly: number | null = c.monthly_cost;
   if (displayMonthly != null && amortize) {
-    displayMonthly = amortizedMonthly(displayMonthly, c.upfront_cost, c.term_years);
+    displayMonthly = c.upfront_cost == null ? null : amortizedMonthly(displayMonthly, c.upfront_cost, c.term_years);
   }
   appendCell(tr, displayMonthly != null ? formatCurrency(displayMonthly) : '—');
 

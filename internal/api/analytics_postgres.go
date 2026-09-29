@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -176,7 +177,7 @@ func (c *PostgresAnalyticsClient) QueryHistory(
 		       service,
 		       provider,
 		       SUM(estimated_savings)::float8 AS savings,
-		       SUM(upfront_cost)::float8 AS upfront,
+		       CASE WHEN COUNT(upfront_cost) = COUNT(*) THEN SUM(upfront_cost)::float8 END AS upfront,
 		       COUNT(*) AS purchases
 		FROM purchase_history
 		WHERE timestamp >= $1
@@ -195,12 +196,13 @@ func (c *PostgresAnalyticsClient) QueryHistory(
 	// Fold rows into bucket → HistoryDataPoint with per-service/provider maps.
 	bucketIndex := make(map[time.Time]*HistoryDataPoint)
 	var bucketOrder []time.Time
-	summary := &HistorySummary{}
+	summary := &HistorySummary{TotalUpfront: new(float64)}
 
 	for rows.Next() {
 		var bucket time.Time
 		var service, provider string
-		var savings, upfront float64
+		var savings float64
+		var upfront sql.NullFloat64
 		var purchases int
 		if err := rows.Scan(&bucket, &service, &provider, &savings, &upfront, &purchases); err != nil {
 			return nil, nil, fmt.Errorf("scan purchase_history row: %w", err)
@@ -209,20 +211,25 @@ func (c *PostgresAnalyticsClient) QueryHistory(
 		dp, ok := bucketIndex[bucket]
 		if !ok {
 			dp = &HistoryDataPoint{
-				Timestamp:  bucket,
-				ByService:  make(map[string]float64),
-				ByProvider: make(map[string]float64),
+				TotalUpfront: new(float64),
+				Timestamp:    bucket,
+				ByService:    make(map[string]float64),
+				ByProvider:   make(map[string]float64),
 			}
 			bucketIndex[bucket] = dp
 			bucketOrder = append(bucketOrder, bucket)
 		}
 		dp.TotalSavings += savings
-		dp.TotalUpfront += upfront
+		var cost *float64
+		if upfront.Valid {
+			cost = &upfront.Float64
+		}
+		dp.TotalUpfront = sumKnownCosts(dp.TotalUpfront, cost)
+		summary.TotalUpfront = sumKnownCosts(summary.TotalUpfront, cost)
 		dp.PurchaseCount += purchases
 		dp.ByService[service] += savings
 		dp.ByProvider[provider] += savings
 
-		summary.TotalUpfront += upfront
 		summary.TotalMonthlySavings += savings
 		summary.TotalPurchases += purchases
 	}
@@ -270,7 +277,7 @@ func (c *PostgresAnalyticsClient) QueryBreakdown(
 	query := fmt.Sprintf(`
 		SELECT %s AS bucket,
 		       SUM(estimated_savings)::float8 AS savings,
-		       SUM(upfront_cost)::float8 AS upfront,
+		       CASE WHEN COUNT(upfront_cost) = COUNT(*) THEN SUM(upfront_cost)::float8 END AS upfront,
 		       COUNT(*) AS purchases
 		FROM purchase_history
 		WHERE timestamp >= $1
@@ -289,7 +296,7 @@ func (c *PostgresAnalyticsClient) QueryBreakdown(
 	type rawRow struct {
 		bucket    string
 		savings   float64
-		upfront   float64
+		upfront   sql.NullFloat64
 		purchases int
 	}
 	var raws []rawRow
@@ -308,13 +315,17 @@ func (c *PostgresAnalyticsClient) QueryBreakdown(
 
 	result := make(map[string]BreakdownValue, len(raws))
 	for _, r := range raws {
+		var upfront *float64
+		if r.upfront.Valid {
+			upfront = &r.upfront.Float64
+		}
 		pct := 0.0
 		if totalSavings > 0 {
 			pct = (r.savings / totalSavings) * 100.0
 		}
 		result[r.bucket] = BreakdownValue{
 			TotalSavings:  r.savings,
-			TotalUpfront:  r.upfront,
+			TotalUpfront:  upfront,
 			PurchaseCount: r.purchases,
 			Percentage:    pct,
 		}

@@ -201,7 +201,7 @@ export interface HistorySummary {
   total_pending?: number;
   total_failed?: number;
   total_expired?: number;
-  total_upfront?: number;
+  total_upfront?: number | null;
   total_monthly_savings?: number;
   total_annual_savings?: number;
 }
@@ -216,7 +216,7 @@ export interface HistoryPurchase {
   count: number;
   term: number;
   payment?: string;
-  upfront_cost: number;
+  upfront_cost: number | null;
   monthly_cost?: number | null;
   estimated_savings: number;
   account_id?: string;
@@ -321,7 +321,7 @@ export interface SavingsAnalyticsSummary {
 export interface SavingsDataPoint {
   timestamp: string;
   total_savings: number;
-  total_upfront: number;
+  total_upfront: number | null;
   purchase_count: number;
   cumulative_savings: number;
   by_service?: Record<string, number>;
@@ -337,7 +337,7 @@ export interface SavingsBreakdownResponse {
 
 export interface SavingsBreakdownValue {
   total_savings: number;
-  total_upfront: number;
+  total_upfront: number | null;
   purchase_count: number;
   percentage: number;
 }

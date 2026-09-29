@@ -51,13 +51,14 @@ func NewCollector(cfg CollectorConfig, configStore config.StoreInterface) (*Coll
 // aggregateData holds aggregated savings data for one
 // (cloud_account_id|account_id|service|provider|region|commitment_type) bucket.
 type aggregateData struct {
-	accountID      string
-	cloudAccountID *string
-	service        string
-	provider       string
-	region         string
-	commitmentType string
-	commitment     float64
+	accountID         string
+	cloudAccountID    *string
+	service           string
+	provider          string
+	region            string
+	commitmentType    string
+	commitment        float64
+	commitmentUnknown bool
 	// usage accumulates the recurring (monthly) cost of the commitments in this
 	// bucket as the covered-usage proxy. usageKnown stays false until at least
 	// one contributing row carried a non-nil MonthlyCost, so a bucket made up
@@ -179,7 +180,11 @@ func aggregatePurchases(ctx context.Context, purchases []config.PurchaseHistoryR
 		agg.savings += p.EstimatedSavings
 		// Upfront commitment amortized to a monthly run-rate over the term.
 		// Term > 0 guaranteed above.
-		agg.commitment += p.UpfrontCost / (float64(p.Term) * MonthsPerYear)
+		if p.UpfrontCost == nil {
+			agg.commitmentUnknown = true
+		} else {
+			agg.commitment += *p.UpfrontCost / (float64(p.Term) * MonthsPerYear)
+		}
 		// H2: real covered usage from the recurring monthly cost when present.
 		// Nil MonthlyCost (e.g. AWS all-upfront) contributes nothing and leaves
 		// usage unknown rather than implicitly $0.
@@ -209,6 +214,10 @@ func commitmentTypeFor(service string) string {
 func buildSnapshots(serviceMap map[string]*aggregateData, now time.Time) []SavingsSnapshot {
 	snapshots := make([]SavingsSnapshot, 0, len(serviceMap))
 	for _, agg := range serviceMap {
+		var commitment *float64
+		if !agg.commitmentUnknown {
+			commitment = &agg.commitment
+		}
 		var usage *float64
 		if agg.usageKnown {
 			u := agg.usage
@@ -223,7 +232,7 @@ func buildSnapshots(serviceMap map[string]*aggregateData, now time.Time) []Savin
 			Service:            agg.service,
 			Region:             agg.region,
 			CommitmentType:     agg.commitmentType,
-			TotalCommitment:    agg.commitment,
+			TotalCommitment:    commitment,
 			TotalUsage:         usage,
 			TotalSavings:       agg.savings,
 			CoveragePercentage: nil,

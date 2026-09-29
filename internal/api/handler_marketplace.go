@@ -600,7 +600,10 @@ func checkSuppliedScheduleFloor(tiers []MarketplacePriceTier, remainingMonths, o
 // NOT the raw term, which would overprice older RIs). originalTerm is the full
 // contract term in months. count is the row's instance count (pricing is per
 // instance). upfrontCost is the row-total upfront paid across all instances.
-func resolveMarketplacePriceSchedule(supplied []MarketplacePriceTier, remainingMonths, originalTerm, count int, upfrontCost float64) ([]MarketplacePriceTier, error) {
+func resolveMarketplacePriceSchedule(supplied []MarketplacePriceTier, remainingMonths, originalTerm, count int, upfrontCost *float64) ([]MarketplacePriceTier, error) {
+	if upfrontCost == nil {
+		return nil, fmt.Errorf("upfront cost is unknown; cannot price this marketplace listing")
+	}
 	if len(supplied) > 0 {
 		for i, t := range supplied {
 			if t.TermMonths <= 0 {
@@ -610,7 +613,7 @@ func resolveMarketplacePriceSchedule(supplied []MarketplacePriceTier, remainingM
 				return nil, fmt.Errorf("price_schedule[%d]: price must be positive (received %.4f); use a non-zero listing price", i, t.Price)
 			}
 		}
-		if err := checkSuppliedScheduleFloor(supplied, remainingMonths, originalTerm, count, upfrontCost); err != nil {
+		if err := checkSuppliedScheduleFloor(supplied, remainingMonths, originalTerm, count, *upfrontCost); err != nil {
 			return nil, err
 		}
 		return supplied, nil
@@ -625,7 +628,7 @@ func resolveMarketplacePriceSchedule(supplied []MarketplacePriceTier, remainingM
 	if remainingMonths <= 0 {
 		remainingMonths = 1 // defensive: should not happen for an active RI
 	}
-	listPrice := marketplaceResidualPerUnit(remainingMonths, originalTerm, count, upfrontCost) * awsMarketplaceBuyerDiscountFactor
+	listPrice := marketplaceResidualPerUnit(remainingMonths, originalTerm, count, *upfrontCost) * awsMarketplaceBuyerDiscountFactor
 	if listPrice <= 0 {
 		// A no-upfront RI (upfrontCost <= 0) or an unknown/elapsed term
 		// (originalTerm <= 0) makes marketplaceResidualPerUnit return 0, which

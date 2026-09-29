@@ -960,7 +960,7 @@ function purchaseHistoryNumericCellValue(
 ): number {
   switch (col) {
     case 'count':         return p.count ?? 0;
-    case 'upfront_cost':  return p.upfront_cost ?? 0;
+    case 'upfront_cost':  return p.upfront_cost ?? Number.NaN;
     case 'savings':       return p.estimated_savings ?? 0;
     case 'provider':
     case 'service':
@@ -1149,7 +1149,7 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
     const amortize = state.getAmortizeUpfront();
     const rawMonthly = p.monthly_cost != null ? p.monthly_cost : null;
     const displayMonthly = (rawMonthly != null && amortize)
-      ? amortizedMonthly(rawMonthly, p.upfront_cost, p.term)
+      ? (p.upfront_cost == null ? null : amortizedMonthly(rawMonthly, p.upfront_cost, p.term))
       : rawMonthly;
     const monthlyCostCell = displayMonthly != null
       ? formatCurrency(displayMonthly)
@@ -1471,6 +1471,12 @@ function wireRowActionHandlers(container: HTMLElement): void {
       // Look up the purchase record so we can show a meaningful price summary.
       const purchase = lastPurchases.find(p => p.purchase_id === id);
 
+      if (!purchase || purchase.upfront_cost == null) {
+        btn.disabled = true;
+        showToast({ message: 'Upfront cost is unknown; marketplace pricing is unavailable.', kind: 'error' });
+        return;
+      }
+
       // Build a pricing modal body with RI summary and fee breakdown.
       const bodyEl = document.createElement('div');
       bodyEl.className = 'marketplace-pricing-modal-body';
@@ -1491,7 +1497,7 @@ function wireRowActionHandlers(container: HTMLElement): void {
         // EXACTLY: floor (not round), floored at 1 (not 0), so the number
         // shown here is the same number the backend actually lists at.
         const remainingMonths = Math.max(1, Math.floor(termMonths - elapsedMonths));
-        const upfront = purchase.upfront_cost ?? 0;
+        const upfront = purchase.upfront_cost;
         const count = purchase.count > 0 ? purchase.count : 1;
         // Mirror marketplaceResidualPerUnit + resolveMarketplacePriceSchedule's
         // default branch in internal/api/handler_marketplace.go EXACTLY, so
@@ -1689,7 +1695,7 @@ function approvalQueueNumericCellValue(
     // Return NaN for null monthly_cost so numeric predicates (e.g. "= 0")
     // don't match rows where the provider didn't report a monthly cost.
     case 'monthly_cost': return p.monthly_cost == null ? Number.NaN : p.monthly_cost;
-    case 'upfront_cost': return p.upfront_cost ?? 0;
+    case 'upfront_cost': return p.upfront_cost ?? Number.NaN;
     case 'savings':      return p.estimated_savings ?? 0;
     case 'provider':
     case 'account':
@@ -1814,7 +1820,7 @@ export function renderApprovalQueue(purchases: HistoryPurchase[]): void {
     const amortize = state.getAmortizeUpfront();
     const rawMonthly = p.monthly_cost != null ? p.monthly_cost : null;
     const displayMonthly = (rawMonthly != null && amortize)
-      ? amortizedMonthly(rawMonthly, p.upfront_cost, p.term)
+      ? (p.upfront_cost == null ? null : amortizedMonthly(rawMonthly, p.upfront_cost, p.term))
       : rawMonthly;
     const monthlyCostCell = displayMonthly != null
       ? formatCurrency(displayMonthly)

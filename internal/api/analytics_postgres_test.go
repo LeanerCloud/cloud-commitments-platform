@@ -79,7 +79,7 @@ func TestQueryHistory_Success(t *testing.T) {
 	// Bucket 1 aggregates: savings 140, upfront 60, purchases 3.
 	assert.Equal(t, bucket1, points[0].Timestamp)
 	assert.InDelta(t, 140.0, points[0].TotalSavings, 1e-9)
-	assert.InDelta(t, 60.0, points[0].TotalUpfront, 1e-9)
+	assert.InDelta(t, 60.0, *points[0].TotalUpfront, 1e-9)
 	assert.Equal(t, 3, points[0].PurchaseCount)
 	assert.InDelta(t, 100.0, points[0].ByService["ec2"], 1e-9)
 	assert.InDelta(t, 40.0, points[0].ByService["rds"], 1e-9)
@@ -94,7 +94,7 @@ func TestQueryHistory_Success(t *testing.T) {
 	require.NotNil(t, summary)
 	assert.Equal(t, 4, summary.TotalPurchases)
 	assert.Equal(t, 4, summary.TotalCompleted)
-	assert.InDelta(t, 60.0, summary.TotalUpfront, 1e-9)
+	assert.InDelta(t, 60.0, *summary.TotalUpfront, 1e-9)
 	assert.InDelta(t, 215.0, summary.TotalMonthlySavings, 1e-9)
 	assert.InDelta(t, 215.0*12, summary.TotalAnnualSavings, 1e-9)
 
@@ -137,7 +137,7 @@ func TestQueryBreakdown_Success(t *testing.T) {
 
 	ec2 := out["ec2"]
 	assert.InDelta(t, 300.0, ec2.TotalSavings, 1e-9)
-	assert.InDelta(t, 150.0, ec2.TotalUpfront, 1e-9)
+	assert.InDelta(t, 150.0, *ec2.TotalUpfront, 1e-9)
 	assert.Equal(t, 5, ec2.PurchaseCount)
 	assert.InDelta(t, 75.0, ec2.Percentage, 1e-9)
 

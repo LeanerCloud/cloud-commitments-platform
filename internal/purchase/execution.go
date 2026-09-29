@@ -1138,8 +1138,12 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 		return result, fmt.Errorf("purchase was not successful")
 	}
 
-	logging.Infof("purchase[%s]: %s/%s/%s/%s PurchaseCommitment succeeded in %s (commitmentID=%s, cost=%.2f)",
-		opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, elapsed, result.CommitmentID, result.Cost)
+	cost := "unknown"
+	if result.Cost != nil {
+		cost = fmt.Sprintf("%.2f", *result.Cost)
+	}
+	logging.Infof("purchase[%s]: %s/%s/%s/%s PurchaseCommitment succeeded in %s (commitmentID=%s, cost=%s)",
+		opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, elapsed, result.CommitmentID, cost)
 	return result, nil
 }
 

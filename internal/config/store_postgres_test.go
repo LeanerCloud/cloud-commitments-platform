@@ -350,7 +350,7 @@ func TestPostgresStore_PurchaseHistory(t *testing.T) {
 			Count:            3,
 			Term:             3,
 			Payment:          "all-upfront",
-			UpfrontCost:      2250.00,
+			UpfrontCost:      new(float64(2250.00)),
 			MonthlyCost:      func() *float64 { v := 0.0; return &v }(),
 			EstimatedSavings: 450.00,
 			// PlanID intentionally left empty since it needs to be a valid UUID

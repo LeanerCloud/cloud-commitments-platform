@@ -103,7 +103,7 @@ type HistoryDataPoint struct {
 	ByService         map[string]float64 `json:"by_service,omitempty"`
 	ByProvider        map[string]float64 `json:"by_provider,omitempty"`
 	TotalSavings      float64            `json:"total_savings"`
-	TotalUpfront      float64            `json:"total_upfront"`
+	TotalUpfront      *float64           `json:"total_upfront"`
 	PurchaseCount     int                `json:"purchase_count"`
 	CumulativeSavings float64            `json:"cumulative_savings"`
 }
@@ -119,10 +119,10 @@ type HistorySummaryAnalytics struct {
 
 // BreakdownValue represents savings breakdown by dimension.
 type BreakdownValue struct {
-	TotalSavings  float64 `json:"total_savings"`
-	TotalUpfront  float64 `json:"total_upfront"`
-	PurchaseCount int     `json:"purchase_count"`
-	Percentage    float64 `json:"percentage"`
+	TotalSavings  float64  `json:"total_savings"`
+	TotalUpfront  *float64 `json:"total_upfront"`
+	PurchaseCount int      `json:"purchase_count"`
+	Percentage    float64  `json:"percentage"`
 }
 
 // PurchaseManagerInterface defines purchase manager methods used by handler.
@@ -650,7 +650,7 @@ type InventoryCommitment struct {
 	ID               string   `json:"id"`
 	PaymentOption    string   `json:"payment_option,omitempty"`
 	TermYears        int      `json:"term_years"`
-	UpfrontCost      float64  `json:"upfront_cost"`
+	UpfrontCost      *float64 `json:"upfront_cost"`
 	EstimatedSavings float64  `json:"estimated_savings"`
 	Count            int      `json:"count"`
 }
@@ -673,7 +673,7 @@ type InventoryCommitmentsResponse struct {
 type CoverageServiceRow struct {
 	CoveragePct     *float64 `json:"coverage_pct"`
 	Service         string   `json:"service"`
-	CoveredMonthly  float64  `json:"covered_monthly"`
+	CoveredMonthly  *float64 `json:"covered_monthly"`
 	OnDemandMonthly float64  `json:"on_demand_monthly"`
 }
 
@@ -932,8 +932,8 @@ type HistorySummary struct {
 	// TotalRevoked counts commitments that have been revoked/refunded via
 	// MarkPurchaseRevoked. They are excluded from TotalCompleted and all dollar
 	// totals because the provider has canceled the commitment.
-	TotalRevoked        int     `json:"total_revoked"`
-	TotalUpfront        float64 `json:"total_upfront"`
-	TotalMonthlySavings float64 `json:"total_monthly_savings"`
-	TotalAnnualSavings  float64 `json:"total_annual_savings"`
+	TotalRevoked        int      `json:"total_revoked"`
+	TotalUpfront        *float64 `json:"total_upfront"`
+	TotalMonthlySavings float64  `json:"total_monthly_savings"`
+	TotalAnnualSavings  float64  `json:"total_annual_savings"`
 }

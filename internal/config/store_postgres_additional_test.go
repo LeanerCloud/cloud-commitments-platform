@@ -125,7 +125,7 @@ func (s *additionalMockStore) queryPurchaseHistory(ctx context.Context, query st
 	records := make([]PurchaseHistoryRecord, 0)
 	for rows.Next() {
 		var record PurchaseHistoryRecord
-		var monthlyCost sql.NullFloat64
+		var monthlyCost, upfrontCost sql.NullFloat64
 		var planID, planName sql.NullString
 
 		err := rows.Scan(
@@ -139,7 +139,7 @@ func (s *additionalMockStore) queryPurchaseHistory(ctx context.Context, query st
 			&record.Count,
 			&record.Term,
 			&record.Payment,
-			&record.UpfrontCost,
+			&upfrontCost,
 			&monthlyCost,
 			&record.EstimatedSavings,
 			&planID,
@@ -150,6 +150,9 @@ func (s *additionalMockStore) queryPurchaseHistory(ctx context.Context, query st
 			return nil, err
 		}
 
+		if upfrontCost.Valid {
+			record.UpfrontCost = &upfrontCost.Float64
+		}
 		if monthlyCost.Valid {
 			v := monthlyCost.Float64
 			record.MonthlyCost = &v

@@ -488,7 +488,7 @@ func projectRecommendationFields(row *config.PurchaseHistoryRecord, exec config.
 		row.Region = r.Region
 		row.Term = r.Term
 		row.Payment = r.Payment
-		row.UpfrontCost = r.UpfrontCost
+		row.UpfrontCost = &r.UpfrontCost
 		row.EstimatedSavings = r.Savings
 		row.MonthlyCost = r.MonthlyCost
 		return
@@ -499,7 +499,7 @@ func projectRecommendationFields(row *config.PurchaseHistoryRecord, exec config.
 	row.Term = collapseRecommendationTerm(recs)
 	row.Payment = collapseRecommendationPayment(recs)
 	row.MonthlyCost = sumRecommendationMonthlyCostPtr(recs)
-	row.UpfrontCost = exec.TotalUpfrontCost
+	row.UpfrontCost = &exec.TotalUpfrontCost
 	row.EstimatedSavings = exec.EstimatedSavings
 }
 
@@ -1020,7 +1020,7 @@ func (h *Handler) filterPurchaseHistoryByAllowedAccounts(ctx context.Context, se
 }
 
 func summarizePurchaseHistory(purchases []config.PurchaseHistoryRecord) HistorySummary {
-	summary := HistorySummary{TotalPurchases: len(purchases)}
+	summary := HistorySummary{TotalPurchases: len(purchases), TotalUpfront: new(float64)}
 	for _rvc := range purchases {
 		p := purchases[_rvc]
 		// Revoked commitments are excluded from dollar KPIs regardless of their
@@ -1085,7 +1085,7 @@ func summarizePurchaseHistory(purchases []config.PurchaseHistoryRecord) HistoryS
 		if p.IsAuditGap {
 			continue
 		}
-		summary.TotalUpfront += p.UpfrontCost
+		summary.TotalUpfront = sumKnownCosts(summary.TotalUpfront, p.UpfrontCost)
 		summary.TotalMonthlySavings += p.EstimatedSavings
 	}
 	summary.TotalAnnualSavings = summary.TotalMonthlySavings * 12

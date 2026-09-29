@@ -63,6 +63,7 @@ jest.mock('../state', () => ({
 }));
 
 import * as api from '../api';
+import { getAmortizeUpfront } from '../state';
 import { switchTab } from '../navigation';
 import { canAccess } from '../permissions';
 
@@ -82,6 +83,26 @@ describe('History Module', () => {
     jest.clearAllMocks();
     mockGetCurrentProvider.mockReturnValue('all');
     mockGetCurrentAccountIDs.mockReturnValue([]);
+    (getAmortizeUpfront as jest.Mock).mockReturnValue(false);
+  });
+
+  test.each([false, true])('unknown upfront with amortization %s preserves recurring versus effective cost', async (amortize) => {
+    (getAmortizeUpfront as jest.Mock).mockReturnValue(amortize);
+    const purchase = {
+      timestamp: '2026-09-29T00:00:00Z', provider: 'aws', service: 'ec2', resource_type: 'm5.large',
+      region: 'us-east-1', count: 1, term: 1, upfront_cost: null, monthly_cost: 50, estimated_savings: 10,
+    };
+    (api.getHistory as jest.Mock).mockResolvedValue({ summary: { total_upfront: null }, purchases: [
+      { ...purchase, purchase_id: 'complete', status: 'completed' },
+      { ...purchase, purchase_id: 'pending', status: 'pending' },
+    ] });
+    await loadHistory();
+    const history = document.querySelector('#history-list tr[data-execution-id="complete"]');
+    const queue = document.querySelector('#purchases-approval-queue tr[data-execution-id="pending"]');
+    expect(history?.querySelectorAll('td')[8]?.textContent).toBe('--');
+    expect(history?.querySelectorAll('td')[9]?.textContent).toBe(amortize ? '-' : '$50');
+    expect(queue?.querySelectorAll('td')[7]?.textContent).toBe(amortize ? '-' : '$50');
+    expect(queue?.querySelectorAll('td')[8]?.textContent).toBe('--');
   });
 
   describe('initHistoryDateRange', () => {

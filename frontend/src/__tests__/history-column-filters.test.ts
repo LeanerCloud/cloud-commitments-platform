@@ -67,6 +67,13 @@ const rows: HistoryPurchase[] = [
 ];
 
 describe('applyPurchaseHistoryColumnFilters', () => {
+  test('unknown upfront cost does not match a known-zero filter', () => {
+    const out = applyPurchaseHistoryColumnFilters([
+      mkRow({ purchase_id: 'unknown', upfront_cost: null }),
+      mkRow({ purchase_id: 'zero', upfront_cost: 0 }),
+    ], { upfront_cost: { kind: 'expr', expr: '0' } });
+    expect(out.map(row => row.purchase_id)).toEqual(['zero']);
+  });
   test('numeric expr: savings > 100 narrows to high-saving rows', () => {
     const filters: PurchaseHistoryColumnFilters = {
       savings: { kind: 'expr', expr: '>100' },

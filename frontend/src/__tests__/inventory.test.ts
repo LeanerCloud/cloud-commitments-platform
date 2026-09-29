@@ -146,6 +146,21 @@ function clearDOM(): void {
   while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
 }
 
+test.each([false, true])('inventory unknown upfront with amortization %s', async (amortize) => {
+  clearDOM();
+  buildInventoryDOM();
+  (state.getAmortizeUpfront as jest.Mock).mockReturnValue(amortize);
+  (api.listActiveCommitments as jest.Mock).mockResolvedValue([makeCommitment({ upfront_cost: null, monthly_cost: 50 })]);
+  try {
+    await loadActiveCommitments();
+    const cell = document.querySelector('#active-commitments-list tbody tr')?.querySelectorAll('td')[8];
+    expect(cell?.textContent).toBe(amortize ? '\u2014' : '$50');
+  } finally {
+    (state.getAmortizeUpfront as jest.Mock).mockReturnValue(false);
+    clearDOM();
+  }
+});
+
 describe('Inventory & Coverage sub-section switching', () => {
   beforeEach(() => {
     buildInventoryDOM();
