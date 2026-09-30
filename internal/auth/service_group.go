@@ -332,6 +332,9 @@ func permissionsAllow(permissions []Permission, action, resource string, constra
 			if coversCarvedOut(Permission{Action: action, Resource: resource}) {
 				continue
 			}
+			if constraints != nil && constraints.StrictScope && !checkPermissionConstraints(perm, constraints) {
+				continue
+			}
 			return true
 		}
 
@@ -391,9 +394,16 @@ func checkPermissionConstraints(perm Permission, constraints *PermissionConstrai
 
 // matchConstraints checks if permission constraints match request constraints.
 func matchConstraints(permConstraints, reqConstraints *PermissionConstraints) bool {
-	return matchStringListConstraints(permConstraints.AccountIDs, reqConstraints.AccountIDs) &&
-		matchStringListConstraints(permConstraints.Providers, reqConstraints.Providers) &&
-		matchStringListConstraints(permConstraints.Services, reqConstraints.Services) &&
+	if reqConstraints.StrictScope && len(permConstraints.Regions) > 0 && len(reqConstraints.Regions) == 0 {
+		return false
+	}
+	matchList := matchStringListConstraints
+	if reqConstraints.StrictScope {
+		matchList = listCovers
+	}
+	return matchList(permConstraints.AccountIDs, reqConstraints.AccountIDs) &&
+		matchList(permConstraints.Providers, reqConstraints.Providers) &&
+		matchList(permConstraints.Services, reqConstraints.Services) &&
 		matchAllRegionsConstraint(permConstraints.Regions, reqConstraints.Regions) &&
 		matchPurchaseAmountConstraint(permConstraints.MaxPurchaseAmount, reqConstraints.MaxPurchaseAmount)
 }
