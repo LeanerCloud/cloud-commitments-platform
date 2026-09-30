@@ -555,7 +555,7 @@ func TestSetupAdminThenLogin_RoundTrip(t *testing.T) {
 		}).
 		Return(true, nil).Once()
 	mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil).Twice()
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+	mockStore.On("RecordSuccessfulLogin", ctx, mock.AnythingOfType("string")).Return(nil).Once()
 
 	setupReq := &events.LambdaFunctionURLRequest{
 		RequestContext: events.LambdaFunctionURLRequestContext{

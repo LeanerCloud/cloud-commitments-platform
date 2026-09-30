@@ -50,6 +50,14 @@ func (m *MockStore) UpdateUser(ctx context.Context, user *User) error {
 	return args.Error(0)
 }
 
+func (m *MockStore) RecordFailedLogin(ctx context.Context, userID string) error {
+	return m.Called(ctx, userID).Error(0)
+}
+
+func (m *MockStore) RecordSuccessfulLogin(ctx context.Context, userID string) error {
+	return m.Called(ctx, userID).Error(0)
+}
+
 func (m *MockStore) DeleteUser(ctx context.Context, userID string) error {
 	args := m.Called(ctx, userID)
 	return args.Error(0)

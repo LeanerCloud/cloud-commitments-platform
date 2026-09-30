@@ -849,18 +849,7 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 
 // recordFailedLogin increments failed login attempts and locks the account if necessary.
 func (s *Service) recordFailedLogin(ctx context.Context, user *User) {
-	user.FailedLoginAttempts++
-	now := time.Now()
-	user.UpdatedAt = now
-
-	if user.FailedLoginAttempts >= MaxFailedLoginAttempts {
-		lockUntil := now.Add(AccountLockoutDuration)
-		user.LockedUntil = &lockUntil
-		logging.Warnf("Account locked due to %d failed login attempts: id=%s (locked until %v)",
-			user.FailedLoginAttempts, user.ID, lockUntil)
-	}
-
-	if err := s.store.UpdateUser(ctx, user); err != nil {
+	if err := s.store.RecordFailedLogin(ctx, user.ID); err != nil {
 		logging.Errorf("Failed to record failed login attempt for user %s: %v", user.ID, err)
 	}
 }

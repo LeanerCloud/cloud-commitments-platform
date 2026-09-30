@@ -450,9 +450,9 @@ func TestLogin_WithMFA_RecoveryCode_ConsumedOnce(t *testing.T) {
 	user.MFARecoveryCodes = []string{hash}
 
 	mockStore.On("GetUserByEmail", ctx, user.Email).Return(user, nil)
-	// recovery-code consumption persists user, then completeSuccessfulLogin
-	// persists again. Both must succeed.
 	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil)
+	mockStore.On("RecordSuccessfulLogin", ctx, user.ID).Return(nil)
+	mockStore.On("RecordFailedLogin", ctx, user.ID).Return(nil)
 	mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil)
 
 	resp, err := service.Login(ctx, LoginRequest{
