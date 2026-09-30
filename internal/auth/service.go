@@ -210,7 +210,7 @@ func (s *Service) getUserAndValidateStatus(ctx context.Context, email string) (*
 // the request didn't carry a code, so the API handler can map to a
 // machine-readable response (`{"error":"mfa_required"}`) rather than
 // a generic 401. Returns ErrInvalidMFACode (sentinel) when the code
-// was provided but didn't match TOTP or any stored recovery code.
+// was provided but didn't match TOTP or a persistently consumed recovery code.
 //
 // Accepts either a TOTP code OR a single-use recovery code as proof
 // of MFA. Consumed recovery codes are removed from the user row on
@@ -254,10 +254,7 @@ func (s *Service) verifyPasswordAndMFA(ctx context.Context, user *User, req Logi
 		if s.consumeRecoveryCode(user, req.MFACode) {
 			if err := s.store.UpdateUser(ctx, user); err != nil {
 				logging.Warnf("Failed to persist recovery-code consumption for user %s: %v", user.ID, err)
-				// The recovery code already verified; still allow
-				// login but warn — repeated use of the same code on
-				// the next login will fail because the slice is
-				// stale, which is the safe failure mode.
+				return ErrInvalidMFACode
 			}
 			return nil
 		}
