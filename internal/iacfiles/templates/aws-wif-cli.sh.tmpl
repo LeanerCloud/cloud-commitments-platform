@@ -6,18 +6,13 @@
 # Usage:
 #   bash {{.AccountSlug}}-aws-wif-cli.sh
 #
-# Requirements: aws-cli v2, credentials for target account {{.AccountExternalID}}.
+# Requirements: aws-cli v2, jq, credentials for target account {{.AccountExternalID}}.
 set -euo pipefail
 
 ROLE_NAME="${ROLE_NAME:-CUDly-{{.AccountSlug}}}"
 OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-{{.OIDCIssuerURL}}}"
-OIDC_AUDIENCE="${OIDC_AUDIENCE:-{{.OIDCAudience}}}"
-# REQUIRED: restricts which OIDC subject can assume the role. Without a :sub
-# condition the trust policy accepts every identity the issuer can mint — the
-# same hole #1543/#1602 closed in the CloudFormation template — so this is
-# validated below rather than left to build a subject-less policy silently.
-# Matches the required TF variable oidc_subject_claim and the required
-# CloudFormation OIDCSubjectClaim parameter.
+OIDC_AUDIENCE="${OIDC_AUDIENCE-{{.OIDCAudience}}}"
+OIDC_AUDIENCE="${OIDC_AUDIENCE:-sts.amazonaws.com}"
 OIDC_SUBJECT_CLAIM="${OIDC_SUBJECT_CLAIM:-{{.OIDCSubjectClaim}}}"
 if [[ -z "${OIDC_SUBJECT_CLAIM}" ]]; then
   echo "Error: OIDC_SUBJECT_CLAIM is required. Without it the trust policy has no" >&2
@@ -29,7 +24,7 @@ if [[ -z "${OIDC_SUBJECT_CLAIM}" ]]; then
   exit 1
 fi
 case "${OIDC_SUBJECT_CLAIM}" in
-  *[[:space:]]*|*'$'*|*'*'*)
+  *[$' \t\n\r\v\f']*|*'$'*|*'*'*)
     echo "Error: OIDC_SUBJECT_CLAIM must not contain whitespace, '\$' or '*'." >&2
     echo "       IAM expands \${...} policy variables inside Condition values, so a" >&2
     echo "       value such as \${accounts.google.com:sub} would expand to the token's" >&2
@@ -39,45 +34,68 @@ case "${OIDC_SUBJECT_CLAIM}" in
     exit 1
     ;;
 esac
+case "${OIDC_AUDIENCE}" in
+  *[$' \t\n\r\v\f']*|*'$'*|*'*'*)
+    echo "Error: OIDC_AUDIENCE must not contain whitespace, '\$' or '*'." >&2
+    exit 1 ;;
+esac
+# Keep this issuer check equivalent to aws-target/terraform/variables.tf.
+if ! [[ "$OIDC_ISSUER_URL" =~ ^https://[^/]+(/[^/].*[^/]|/[^/]+)?$ ]] || [[ "$OIDC_ISSUER_URL" == */ ]]; then
+  echo "Error: OIDC_ISSUER_URL must start with https:// and must not end with a trailing slash." >&2
+  exit 1
+fi
+command -v jq >/dev/null || { echo "Error: jq is required." >&2; exit 1; }
 PROFILE_ARG=""
 if [[ -n "${AWS_PROFILE:-}" ]]; then PROFILE_ARG="--profile ${AWS_PROFILE}"; fi
 
-OIDC_HOST=$(echo "${OIDC_ISSUER_URL}" | sed -E 's#^https://##; s#/$##')
+OIDC_HOST="${OIDC_ISSUER_URL#https://}"
 
 echo "Creating/ensuring OIDC provider for ${OIDC_ISSUER_URL}..."
 # shellcheck disable=SC2086
-EXISTING_PROVIDER=$(aws iam list-open-id-connect-providers $PROFILE_ARG \
-  --query "OpenIDConnectProviderList[?contains(Arn, '${OIDC_HOST}')].Arn | [0]" \
-  --output text 2>/dev/null || echo "None")
-if [[ "${EXISTING_PROVIDER}" == "None" || -z "${EXISTING_PROVIDER}" ]]; then
+PROVIDERS=$(aws iam list-open-id-connect-providers $PROFILE_ARG --output json)
+PROVIDER_ARN=$(jq -er --arg host "$OIDC_HOST" '
+  if (.OpenIDConnectProviderList | type) != "array" then error("Invalid provider list")
+  else [.OpenIDConnectProviderList[].Arn | select(split(":oidc-provider/")[1] == $host)]
+    | if length > 1 then error("Multiple providers match the issuer") else .[0] // "" end
+  end' <<< "$PROVIDERS")
+if [[ -z "$PROVIDER_ARN" ]]; then
   # shellcheck disable=SC2086
-  aws iam create-open-id-connect-provider $PROFILE_ARG \
+  CREATED_PROVIDER=$(aws iam create-open-id-connect-provider $PROFILE_ARG \
     --url "${OIDC_ISSUER_URL}" \
     --client-id-list "${OIDC_AUDIENCE}" \
-    --thumbprint-list "0000000000000000000000000000000000000000" >/dev/null
+    --output json)
+  PROVIDER_ARN=$(jq -er '.OpenIDConnectProviderArn | select(type == "string" and length > 0)' <<< "$CREATED_PROVIDER")
+fi
+if ! [[ "$PROVIDER_ARN" =~ ^arn:[a-z0-9-]+:iam::[0-9]{12}:oidc-provider/ ]] || [[ "${PROVIDER_ARN#*:oidc-provider/}" != "$OIDC_HOST" ]]; then
+  echo "Error: returned provider ARN does not match OIDC_ISSUER_URL." >&2
+  exit 1
 fi
 # shellcheck disable=SC2086
-PROVIDER_ARN=$(aws iam list-open-id-connect-providers $PROFILE_ARG \
-  --query "OpenIDConnectProviderList[?contains(Arn, '${OIDC_HOST}')].Arn | [0]" \
-  --output text)
+PROVIDER=$(aws iam get-open-id-connect-provider $PROFILE_ARG --open-id-connect-provider-arn "$PROVIDER_ARN" --output json)
+if ! jq -e --arg host "$OIDC_HOST" --arg audience "$OIDC_AUDIENCE" '
+  .Url == $host and
+  (.ClientIDList | type == "array" and all(.[]; type == "string") and index($audience) != null) and
+  (.ThumbprintList | type == "array" and all(.[]; type == "string" and
+    test("^[0-9a-fA-F]{40}$") and . != "0000000000000000000000000000000000000000"))
+  ' <<< "$PROVIDER" >/dev/null; then
+  echo "Error: provider URL, audience or thumbprints do not match. Inspect $PROVIDER_ARN before rerunning; shared providers are not modified." >&2
+  exit 1
+fi
 
-# Build trust policy. OIDC_SUBJECT_CLAIM is validated non-empty above, so the
-# :sub condition below is always present — there is no branch that omits it.
-TRUST_POLICY=$(cat <<JSON
+TRUST_POLICY=$(jq -n --arg host "$OIDC_HOST" --arg audience "$OIDC_AUDIENCE" \
+  --arg subject "$OIDC_SUBJECT_CLAIM" --arg provider "$PROVIDER_ARN" '
 {
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
-    "Principal": {"Federated": "${PROVIDER_ARN}"},
+    "Principal": {"Federated": $provider},
     "Action": "sts:AssumeRoleWithWebIdentity",
     "Condition": {"StringEquals": {
-      "${OIDC_HOST}:aud": "${OIDC_AUDIENCE}",
-      "${OIDC_HOST}:sub": "${OIDC_SUBJECT_CLAIM}"
+      ($host + ":aud"): $audience,
+      ($host + ":sub"): $subject
     }}
   }]
-}
-JSON
-)
+}')
 
 PERMISSIONS_POLICY=$(cat <<'JSON'
 {
