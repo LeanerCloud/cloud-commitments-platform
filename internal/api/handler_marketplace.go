@@ -88,7 +88,7 @@ type MarketplaceListResponse struct {
 func (h *Handler) validateMarketplaceListRequest(ctx context.Context, req *events.LambdaFunctionURLRequest, purchaseID string) (*config.PurchaseHistoryRecord, MarketplaceListRequest, error) {
 	var body MarketplaceListRequest
 
-	session, err := h.requireSession(ctx, req)
+	session, action, err := h.requireSessionPurchaseAction(ctx, req, auth.ActionSellAny, auth.ActionSellOwn)
 	if err != nil {
 		return nil, body, err
 	}
@@ -115,7 +115,7 @@ func (h *Handler) validateMarketplaceListRequest(ctx context.Context, req *event
 	}
 
 	// Enforce sell-any / sell-own RBAC.
-	if err := h.authorizeSessionSell(ctx, session, row.CloudAccountID); err != nil {
+	if err := h.authorizeSessionSell(ctx, session, action, row); err != nil {
 		return nil, body, err
 	}
 
@@ -309,7 +309,7 @@ func (h *Handler) releaseMarketplaceClaim(ctx context.Context, purchaseID string
 
 // marketplaceCancel handles POST /api/purchases/{id}/marketplace-cancel.
 func (h *Handler) marketplaceCancel(ctx context.Context, req *events.LambdaFunctionURLRequest, purchaseID string) (any, error) {
-	session, err := h.requireSession(ctx, req)
+	session, action, err := h.requireSessionPurchaseAction(ctx, req, auth.ActionSellAny, auth.ActionSellOwn)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +327,7 @@ func (h *Handler) marketplaceCancel(ctx context.Context, req *events.LambdaFunct
 		return nil, NewClientError(404, "purchase not found")
 	}
 
-	err = h.authorizeSessionSell(ctx, session, row.CloudAccountID)
+	err = h.authorizeSessionSell(ctx, session, action, row)
 	if err != nil {
 		return nil, err
 	}
@@ -360,81 +360,27 @@ func (h *Handler) marketplaceCancel(ctx context.Context, req *events.LambdaFunct
 	return map[string]string{"listing_id": result.ListingID, "listing_state": result.State}, nil
 }
 
-// authorizeSessionSell returns nil when the session is permitted to perform a
-// sell/marketplace action under the sell-any / sell-own RBAC rules. The
-// cloudAccountID is the cloud account that owns the RI (used for sell-own to
-// confirm the session's allowed accounts cover that account). Returns a 403
-// ClientError otherwise.
-//
-// sell-own semantics: a non-admin user can list/cancel RIs for cloud accounts
-// they are permitted to access (allowed_accounts covers the account). This is
-// intentionally looser than cancel-own (which checks the session UserID against
-// created_by_user_id) because purchase_history rows lack a created_by_user_id.
-func (h *Handler) authorizeSessionSell(ctx context.Context, session *Session, cloudAccountID *string) error {
-	if h.auth == nil {
-		return NewClientError(500, "authentication service not configured")
-	}
-
-	// Admins are recognized by holding the full-access admin capability
-	// (auth migrated from role-based to group-membership-only, issue #907).
-	isAdmin, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionAdmin, auth.ResourceAll)
-	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
-	}
-	if isAdmin {
-		return nil
-	}
-
-	hasAny, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionSellAny, auth.ResourcePurchases)
-	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
-	}
-	if hasAny {
-		return nil
-	}
-
-	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionSellOwn, auth.ResourcePurchases)
-	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
-	}
-	if !hasOwn {
-		return NewClientError(403, "permission denied: requires sell-any or sell-own on purchases")
-	}
-
-	// sell-own: verify the session covers the cloud account that holds the RI.
-	// When cloudAccountID is nil (ambient/legacy row), deny for non-admins.
-	if cloudAccountID == nil {
-		return NewClientError(403, "permission denied: cannot sell an RI from an ambiguous (non-per-account) purchase row without sell-any")
-	}
-	return h.authorizeAllowedAccount(ctx, session, *cloudAccountID)
-}
-
-// authorizeAllowedAccount returns nil when the session's allowed_accounts
-// permit access to the given cloud account UUID. Returns 403 otherwise.
-func (h *Handler) authorizeAllowedAccount(ctx context.Context, session *Session, cloudAccountID string) error {
-	if h.auth != nil {
-		// Admins are recognized by holding the full-access admin capability
-		// (auth migrated from role-based to group-membership-only, issue #907).
-		isAdmin, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionAdmin, auth.ResourceAll)
-		if err != nil {
-			return fmt.Errorf("admin permission check failed: %w", err)
-		}
-		if isAdmin {
-			return nil
-		}
-	}
+// sell-own uses account access rather than creator identity for purchase-history rows.
+func (h *Handler) authorizeSessionSell(ctx context.Context, session *Session, action string, row *config.PurchaseHistoryRecord) error {
 	scope, err := h.getAccountScope(ctx, session)
 	if err != nil {
-		return fmt.Errorf("failed to check allowed accounts: %w", err)
+		return err
 	}
-	// Was a hand-rolled `len(allowed) == 0` meaning "no restriction", which
-	// read an unestablishable scope as unrestricted independently of any
-	// producer (issue #1748). AccountScope makes unrestricted an explicit
-	// flag, so the zero value denies.
-	if scope.Allows(cloudAccountID, "") {
-		return nil
+	accountID := ""
+	if row.CloudAccountID != nil {
+		accountID = *row.CloudAccountID
 	}
-	return NewClientError(403, "permission denied: purchase is in a cloud account not covered by your session's allowed accounts")
+	if strings.TrimSpace(accountID) == "" {
+		if action == auth.ActionSellOwn || !scope.AllowsAll() {
+			return NewClientError(403, "permission denied: purchase has no cloud account attribution")
+		}
+	} else if !scope.Allows(accountID, "") {
+		return NewClientError(403, "permission denied: purchase is outside your allowed accounts")
+	}
+	return h.requirePermissionConstraints(ctx, session, action, auth.ResourcePurchases, []auth.PermissionConstraints{{
+		StrictScope: true, AccountIDs: knownScopeValue(accountID), Providers: knownScopeValue(row.Provider),
+		Services: knownScopeValue(row.Service), Regions: knownScopeValue(row.Region),
+	}})
 }
 
 // computeRemainingMonths returns the number of whole months remaining on an RI
