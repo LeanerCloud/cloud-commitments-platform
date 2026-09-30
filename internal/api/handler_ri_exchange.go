@@ -2055,7 +2055,8 @@ func (h *Handler) getRIExchangeConfig(ctx context.Context, req *events.LambdaFun
 
 // updateRIExchangeConfig updates the RI exchange automation settings.
 func (h *Handler) updateRIExchangeConfig(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
-	if _, err := h.requirePermission(ctx, req, "update", "config"); err != nil {
+	session, err := h.requirePermission(ctx, req, "update", "config")
+	if err != nil {
 		return nil, err
 	}
 
@@ -2065,6 +2066,9 @@ func (h *Handler) updateRIExchangeConfig(ctx context.Context, req *events.Lambda
 	}
 
 	if err := body.validate(); err != nil {
+		return nil, err
+	}
+	if err := h.requireGlobalConfigScope(ctx, session); err != nil {
 		return nil, err
 	}
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -156,7 +157,9 @@ func (h *Handler) requireLadderAccountAccess(ctx context.Context, session *Sessi
 	if account.Provider != cfg.Provider {
 		return NewClientError(400, fmt.Sprintf("provider %q does not match cloud account provider %q", cfg.Provider, account.Provider))
 	}
-	return nil
+	return h.requirePermissionConstraints(ctx, session, auth.ActionUpdate, auth.ResourceConfig, []auth.PermissionConstraints{{
+		AccountIDs: []string{cfg.CloudAccountID}, Providers: []string{account.Provider}, StrictScope: true,
+	}})
 }
 
 // applyLadderConfigNumericDefaults fills a numeric field with its default ONLY
