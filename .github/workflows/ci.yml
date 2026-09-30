@@ -49,14 +49,46 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Run golangci-lint
+      - name: Install golangci-lint
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
           version: v2.10.1
-          args: --timeout=10m
+          install-only: true
+
+      - name: Run golangci-lint
+        run: |
+          set -uo pipefail
+          export GOLANGCI_LINT_CACHE="$HOME/.cache/golangci-lint"
+          status=0
+          for mod in . tests/e2e; do
+            echo "==> golangci-lint in $mod"
+            args=(run --timeout=10m)
+            # The standalone e2e module has only e2e-tagged test files.
+            if [ "$mod" = "tests/e2e" ]; then
+              args+=(--build-tags=e2e)
+            fi
+            if ! (cd "$mod" && golangci-lint config verify && \
+                  golangci-lint "${args[@]}" ./...); then
+              status=1
+            fi
+          done
+          exit "$status"
 
       - name: Run go vet
-        run: go vet ./...
+        run: |
+          set -uo pipefail
+          status=0
+          for mod in . tests/e2e; do
+            echo "==> go vet in $mod"
+            args=(vet)
+            if [ "$mod" = "tests/e2e" ]; then
+              args+=(-tags=e2e)
+            fi
+            if ! (cd "$mod" && go "${args[@]}" ./...); then
+              status=1
+            fi
+          done
+          exit "$status"
 
       - name: Install gocyclo
         run: go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
