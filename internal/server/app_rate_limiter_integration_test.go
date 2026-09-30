@@ -65,10 +65,10 @@ func TestApplicationRateLimiter(t *testing.T) {
 			}
 			client := &http.Client{Timeout: 10 * time.Second}
 			ip := func(bucket int) string { return fmt.Sprintf("192.0.2.%d", mode*10+bucket) }
-			request := func(replica int, path, sourceIP string) (int, error) {
-				method, body := http.MethodGet, ""
+			request := func(replica int, path, sourceIP, body string) (int, error) {
+				method := http.MethodGet
 				if path == "/api/auth/login" {
-					method, body = http.MethodPost, `{"email":"absent@example.test","password":"d3JvbmctcGFzc3dvcmQ="}`
+					method = http.MethodPost
 				}
 				req, reqErr := http.NewRequestWithContext(ctx, method, servers[replica].URL+path, strings.NewReader(body))
 				if reqErr != nil {
@@ -86,7 +86,11 @@ func TestApplicationRateLimiter(t *testing.T) {
 			}
 			checkRequest := func(replica int, path, sourceIP string, want int) {
 				t.Helper()
-				status, reqErr := request(replica, path, sourceIP)
+				body := ""
+				if path == "/api/auth/login" {
+					body = `{"email":"absent@example.test","password":"d3JvbmctcGFzc3dvcmQ="}`
+				}
+				status, reqErr := request(replica, path, sourceIP, body)
 				require.NoError(t, reqErr)
 				assert.Equal(t, want, status, "replica=%d path=%s source=%s", replica, path, sourceIP)
 			}
@@ -130,7 +134,7 @@ func TestApplicationRateLimiter(t *testing.T) {
 			results := make(chan outcome, 12)
 			for i := range 12 {
 				go func() {
-					status, reqErr := request(i%2, "/api/auth/login", ip(4))
+					status, reqErr := request(i%2, "/api/auth/login", ip(4), "{")
 					results <- outcome{status, reqErr}
 				}()
 			}
@@ -140,7 +144,7 @@ func TestApplicationRateLimiter(t *testing.T) {
 				require.NoError(t, result.err)
 				statuses[result.status]++
 			}
-			assert.Equal(t, map[int]int{http.StatusUnauthorized: 5, http.StatusTooManyRequests: 7}, statuses)
+			assert.Equal(t, map[int]int{http.StatusBadRequest: 5, http.StatusTooManyRequests: 7}, statuses)
 			checkCount(ip(4), "login", 12)
 
 			apps[0].DB.Close()
