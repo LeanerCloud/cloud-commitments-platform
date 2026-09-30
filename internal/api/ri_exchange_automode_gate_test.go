@@ -119,6 +119,13 @@ func autoGateSessionRouter(t *testing.T, perms []auth.Permission, stored config.
 func autoGateKeyRouter(t *testing.T, keyPerms, userPerms []auth.Permission, stored config.GlobalConfig) (*Router, *mocks.MockConfigStore) {
 	t.Helper()
 	mockAuth := new(MockAuthService)
+	sets := []auth.PermissionConstraints{{StrictScope: true}}
+	keyAllowed, err := auth.PermissionsAllowForConstraintSets(keyPerms, auth.ActionUpdate, auth.ResourceConfig, sets)
+	require.NoError(t, err)
+	ownerAllowed, err := auth.PermissionsAllowForConstraintSets(userPerms, auth.ActionUpdate, auth.ResourceConfig, sets)
+	require.NoError(t, err)
+	mockAuth.On("HasAPIKeyPermissionForConstraintsAPI", mock.Anything, autoGateKeyID, autoGateUserID,
+		auth.ActionUpdate, auth.ResourceConfig, sets).Return(keyAllowed && ownerAllowed, nil).Maybe()
 
 	mockAuth.On("ValidateUserAPIKeyAPI", mock.Anything, autoGateAPIKey).
 		Return(&auth.UserAPIKey{ID: autoGateKeyID}, &auth.User{ID: autoGateUserID}, nil).Maybe()

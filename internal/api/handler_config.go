@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -60,8 +61,9 @@ func (h *Handler) getConfig(ctx context.Context, req *events.LambdaFunctionURLRe
 
 func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionURLRequest) (*StatusResponse, error) {
 	// Require update:config permission
-	if _, err := h.requirePermission(ctx, req, "update", "config"); err != nil {
-		return nil, err
+	session, permErr := h.requirePermission(ctx, req, "update", "config")
+	if permErr != nil {
+		return nil, permErr
 	}
 
 	// Reject a malformed body before any DB work so a bad request fails fast
@@ -80,6 +82,9 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 		return nil, NewClientError(400, "invalid request body")
 	}
 	_, gracePresent := present["grace_period_days"]
+	if err := h.requireGlobalConfigScope(ctx, session); err != nil {
+		return nil, err
+	}
 
 	// Serialized read-modify-write: the store loads the stored config and
 	// applies this closure under an advisory-locked transaction, then upserts
@@ -128,6 +133,18 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 	}
 
 	return &StatusResponse{Status: "updated"}, nil
+}
+
+func (h *Handler) requireGlobalConfigScope(ctx context.Context, session *Session) error {
+	scope, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return err
+	}
+	if !scope.AllowsAll() {
+		return NewClientError(403, "permission denied: global configuration requires unrestricted account access")
+	}
+	return h.requirePermissionConstraints(ctx, session, auth.ActionUpdate, auth.ResourceConfig,
+		[]auth.PermissionConstraints{{StrictScope: true}})
 }
 
 // anyKeyPresent reports whether any of keys is present in m.

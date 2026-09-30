@@ -54,6 +54,9 @@ type Permission struct {
 
 // PermissionConstraints limit permissions to specific accounts, providers, or services.
 type PermissionConstraints struct {
+	// StrictScope is request-only: unknown or unbounded dimensions require an unrestricted grant.
+	StrictScope bool `json:"-" dynamodbav:"-"`
+
 	// AccountIDs limits to specific AWS/Azure/GCP accounts
 	AccountIDs []string `json:"account_ids,omitempty" dynamodbav:"AccountIDs"`
 
