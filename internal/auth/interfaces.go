@@ -11,6 +11,8 @@ type StoreInterface interface {
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	CreateUser(ctx context.Context, user *User) error
 	UpdateUser(ctx context.Context, user *User) error
+	RecordFailedLogin(ctx context.Context, userID string) error
+	RecordSuccessfulLogin(ctx context.Context, userID string) error
 	DeleteUser(ctx context.Context, userID string) error
 	ListUsers(ctx context.Context) ([]User, error)
 	GetUserByResetToken(ctx context.Context, token string) (*User, error)

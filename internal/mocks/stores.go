@@ -792,6 +792,14 @@ func (m *MockAuthStore) UpdateUser(ctx context.Context, user *auth.User) error {
 	return args.Error(0)
 }
 
+func (m *MockAuthStore) RecordFailedLogin(ctx context.Context, userID string) error {
+	return m.Called(ctx, userID).Error(0)
+}
+
+func (m *MockAuthStore) RecordSuccessfulLogin(ctx context.Context, userID string) error {
+	return m.Called(ctx, userID).Error(0)
+}
+
 // DeleteUser mocks the DeleteUser operation.
 func (m *MockAuthStore) DeleteUser(ctx context.Context, userID string) error {
 	args := m.Called(ctx, userID)

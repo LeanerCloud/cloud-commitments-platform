@@ -275,15 +275,8 @@ func (s *Service) completeSuccessfulLogin(ctx context.Context, user *User) (*Log
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
-	now := time.Now()
-	user.LastLoginAt = &now
-	user.FailedLoginAttempts = 0
-	user.LockedUntil = nil
-	// Deliberately do not return this error: the session was successfully created and the
-	// token already issued. Failing here would leave the caller with no token despite a
-	// valid login. The consequence is that LastLoginAt / FailedLoginAttempts may be stale
-	// in the store until the next successful login, which is an acceptable trade-off.
-	if err := s.store.UpdateUser(ctx, user); err != nil {
+	// The session already exists; bookkeeping failure must not hide its token.
+	if err := s.store.RecordSuccessfulLogin(ctx, user.ID); err != nil {
 		logging.Warnf("Failed to update login info for user %s: %v", user.ID, err)
 	}
 
