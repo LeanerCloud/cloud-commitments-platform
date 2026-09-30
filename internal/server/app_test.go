@@ -462,7 +462,7 @@ func TestNewApplicationFromDeps(t *testing.T) {
 		IsLambda:               false,
 	}
 
-	t.Run("non-Lambda path with in-memory rate limiter", func(t *testing.T) {
+	t.Run("non-Lambda path with temporary preconnect rate limiter", func(t *testing.T) {
 		deps := ExternalDeps{
 			EmailSender: &noopEmailSender{},
 			DBConfig:    validDBConfig,
@@ -476,7 +476,7 @@ func TestNewApplicationFromDeps(t *testing.T) {
 		testutil.AssertTrue(t, app.Scheduler != nil, "Scheduler should be created")
 		testutil.AssertTrue(t, app.Purchase != nil, "Purchase manager should be created")
 		testutil.AssertTrue(t, app.Auth != nil, "Auth service should be created")
-		testutil.AssertTrue(t, app.RateLimiter != nil, "Rate limiter should be in-memory for non-Lambda")
+		testutil.AssertTrue(t, app.RateLimiter != nil, "Rate limiter must be present before database connection")
 		testutil.AssertTrue(t, app.DB == nil, "DB should be nil (lazy init)")
 	})
 
