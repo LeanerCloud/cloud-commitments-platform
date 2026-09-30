@@ -557,6 +557,13 @@ jobs:
       - name: Terraform Format Check
         run: terraform fmt -check -recursive terraform/
 
+      - name: Test Azure federation identity guards
+        if: matrix.cloud == 'azure'
+        run: |
+          terraform -chdir=iac/federation/azure-target/terraform init -backend=false -lockfile=readonly -input=false
+          terraform -chdir=iac/federation/azure-target/terraform fmt -check -recursive
+          terraform -chdir=iac/federation/azure-target/terraform test
+
       - name: Terraform Init
         run: |
           cd terraform/environments/${{ matrix.cloud }}
