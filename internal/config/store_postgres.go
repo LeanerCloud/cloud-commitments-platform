@@ -516,9 +516,11 @@ func (s *PostgresStore) CreatePurchasePlan(ctx context.Context, plan *PurchasePl
 			services, ramp_schedule, created_at, updated_at,
 			next_execution_date, last_execution_date, last_notification_sent
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING updated_at
 	`
 
-	_, err = s.db.Exec(ctx, query,
+	var updatedAt time.Time
+	err = s.db.QueryRow(ctx, query,
 		plan.ID,
 		plan.Name,
 		plan.Enabled,
@@ -531,11 +533,12 @@ func (s *PostgresStore) CreatePurchasePlan(ctx context.Context, plan *PurchasePl
 		plan.NextExecutionDate,
 		plan.LastExecutionDate,
 		plan.LastNotificationSent,
-	)
+	).Scan(&updatedAt)
 
 	if err != nil {
 		return fmt.Errorf("failed to create purchase plan: %w", err)
 	}
+	plan.UpdatedAt = updatedAt
 
 	return nil
 }
@@ -715,39 +718,24 @@ func (s *PostgresStore) persistRampPosition(ctx context.Context, tx pgx.Tx, plan
 
 	now := time.Now()
 	plan.LastExecutionDate = &now
-	// Refresh updated_at on every advance. The plan was read from the DB
-	// with its previous UpdatedAt, so UpdatePurchasePlanTx's zero-value
-	// guard would otherwise persist a stale updated_at timestamp.
-	plan.UpdatedAt = now
 
 	return s.UpdatePurchasePlanTx(ctx, tx, plan)
 }
 
-// UpdatePurchasePlan updates an existing purchase plan. Delegates to
-// UpdatePurchasePlanTx inside a single-call WithTx — keeps the public
-// surface unchanged for callers that don't need to bundle this with
-// other writes, while sharing the SQL with the Tx variant. UpdatedAt
-// is stamped here (before the WithTx call) so existing tests that
-// inspect plan.UpdatedAt without exercising the DB still see it set —
-// see TestPostgresStore_UpdatePurchasePlan_NilDB.
+// UpdatePurchasePlan publishes the new version only after the transaction commits.
 func (s *PostgresStore) UpdatePurchasePlan(ctx context.Context, plan *PurchasePlan) error {
-	plan.UpdatedAt = time.Now()
-	return s.WithTx(ctx, func(tx pgx.Tx) error {
-		return s.UpdatePurchasePlanTx(ctx, tx, plan)
-	})
+	pending := *plan
+	if err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		return s.UpdatePurchasePlanTx(ctx, tx, &pending)
+	}); err != nil {
+		return err
+	}
+	plan.UpdatedAt = pending.UpdatedAt
+	return nil
 }
 
-// UpdatePurchasePlanTx is the tx-accepting variant of UpdatePurchasePlan.
-// Used by createPlannedPurchases so the per-row execution inserts and
-// the plan's next_execution_date bump commit atomically — see the
-// interface doc for the partial-failure rationale. Callers that need
-// the auto-stamp of UpdatedAt either use UpdatePurchasePlan (which
-// stamps before WithTx) or stamp it themselves before calling Tx.
+// UpdatePurchasePlanTx rejects snapshots that lost a race with another plan writer.
 func (s *PostgresStore) UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, plan *PurchasePlan) error {
-	if plan.UpdatedAt.IsZero() {
-		plan.UpdatedAt = time.Now()
-	}
-
 	// Marshal services and ramp_schedule to JSONB
 	servicesJSON, err := json.Marshal(plan.Services)
 	if err != nil {
@@ -767,14 +755,15 @@ func (s *PostgresStore) UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, pla
 			notification_days_before = $5,
 			services = $6,
 			ramp_schedule = $7,
-			updated_at = $8,
 			next_execution_date = $9,
 			last_execution_date = $10,
 			last_notification_sent = $11
-		WHERE id = $1
+		WHERE id = $1 AND updated_at = $8
+		RETURNING updated_at
 	`
 
-	result, err := tx.Exec(ctx, query,
+	var updatedAt time.Time
+	err = tx.QueryRow(ctx, query,
 		plan.ID,
 		plan.Name,
 		plan.Enabled,
@@ -786,16 +775,34 @@ func (s *PostgresStore) UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, pla
 		plan.NextExecutionDate,
 		plan.LastExecutionDate,
 		plan.LastNotificationSent,
-	)
+	).Scan(&updatedAt)
 
+	if errors.Is(err, pgx.ErrNoRows) {
+		var exists bool
+		if probeErr := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM purchase_plans WHERE id = $1)`, plan.ID).Scan(&exists); probeErr != nil {
+			return fmt.Errorf("failed to check purchase plan after conflict: %w", probeErr)
+		}
+		if !exists {
+			return fmt.Errorf("%w: purchase plan %s", ErrNotFound, plan.ID)
+		}
+		return ErrPurchasePlanConflict
+	}
 	if err != nil {
 		return fmt.Errorf("failed to update purchase plan: %w", err)
 	}
+	plan.UpdatedAt = updatedAt
+	return nil
+}
 
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("purchase plan not found: %s", plan.ID)
+// StampPlanNotificationSent never writes a snapshot of the plan's ramp state.
+func (s *PostgresStore) StampPlanNotificationSent(ctx context.Context, planID string, at time.Time) error {
+	result, err := s.db.Exec(ctx, `UPDATE purchase_plans SET last_notification_sent = $2 WHERE id = $1`, planID, at)
+	if err != nil {
+		return fmt.Errorf("failed to stamp plan notification: %w", err)
 	}
-
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("%w: purchase plan %s", ErrNotFound, planID)
+	}
 	return nil
 }
 

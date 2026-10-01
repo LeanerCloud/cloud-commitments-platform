@@ -284,8 +284,7 @@ func TestPostgresStore_UpdatePurchasePlan_NilDB(t *testing.T) {
 	})
 
 	assert.True(t, panicked, "expected panic with nil db connection")
-	// UpdatedAt should be set before JSON marshaling and DB call
-	assert.False(t, plan.UpdatedAt.IsZero(), "UpdatedAt should have been set")
+	assert.True(t, plan.UpdatedAt.IsZero(), "failed writes must preserve the read version")
 }
 
 func TestPostgresStore_UpdatePurchasePlan_NilDB_WithServices(t *testing.T) {
@@ -317,7 +316,7 @@ func TestPostgresStore_UpdatePurchasePlan_NilDB_WithServices(t *testing.T) {
 	})
 
 	assert.True(t, panicked, "expected panic with nil db connection")
-	assert.False(t, plan.UpdatedAt.IsZero())
+	assert.True(t, plan.UpdatedAt.IsZero())
 }
 
 // ==========================================

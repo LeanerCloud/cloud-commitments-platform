@@ -442,7 +442,7 @@ func TestManager_SendUpcomingPurchaseNotifications_WithNotification(t *testing.T
 	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(globalCfg, nil)
 	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
-	mockStore.On("UpdatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
+	mockStore.On("StampPlanNotificationSent", ctx, "plan-123", mock.AnythingOfType("time.Time")).Return(nil)
 
 	manager := &Manager{
 		config:       mockStore,
@@ -683,7 +683,7 @@ func TestManager_SendPlanNotification_PersistsEmailedTokenHashAfterSend(t *testi
 			require.NotEmpty(t, emailedToken, "the token must be persisted only after the email went out")
 			persistedHash = args.String(2)
 		}).Return(true, nil)
-	mockStore.On("UpdatePurchasePlan", ctx, plan).Return(nil)
+	mockStore.On("StampPlanNotificationSent", ctx, plan.ID, mock.AnythingOfType("time.Time")).Return(nil)
 
 	manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
 	assert.True(t, manager.sendPlanNotification(ctx, plan))

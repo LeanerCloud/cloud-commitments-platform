@@ -115,8 +115,7 @@ func (m *Manager) sendPlanNotification(ctx context.Context, plan *config.Purchas
 	// not persisted, so the next run would resend — return false to avoid
 	// double-counting and let the caller decide whether to retry.
 	now := time.Now()
-	plan.LastNotificationSent = &now
-	if err := m.config.UpdatePurchasePlan(ctx, plan); err != nil {
+	if err := m.config.StampPlanNotificationSent(ctx, plan.ID, now); err != nil {
 		logging.Errorf("Failed to update plan notification timestamp: %v", err)
 		return false
 	}
