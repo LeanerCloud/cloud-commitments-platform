@@ -1642,7 +1642,7 @@ func TestScheduler_ConvertRecommendations_SavingsPercentage(t *testing.T) {
 }
 
 // TestScheduler_ConvertRecommendations_IDUniqueness pins issue #187 +
-// #188: the rec ID must include term, account, and engine — not just
+// #188: the rec ID must include term and engine, not just
 // (provider, service, region, resource_type, payment) — otherwise
 // recs that should be distinct get the same ID, which (a) collapses
 // two rendered rows into one selection in the UI (#187), and (b)
@@ -1676,14 +1676,6 @@ func TestScheduler_ConvertRecommendations_IDUniqueness(t *testing.T) {
 			recs: func() (common.Recommendation, common.Recommendation) {
 				b := base
 				b.Term = "3yr"
-				return base, b
-			},
-		},
-		{
-			name: "account: separates multi-subscription recs (issue #187)",
-			recs: func() (common.Recommendation, common.Recommendation) {
-				b := base
-				b.Account = "test-account-b"
 				return base, b
 			},
 		},
@@ -2248,6 +2240,7 @@ func TestScheduler_CollectAWSRecommendations_AmbientTagging_HappyPath(t *testing
 	require.Len(t, recs, 1)
 	require.NotNil(t, recs[0].CloudAccountID, "rec must be tagged with registered account UUID, not nil")
 	assert.Equal(t, "abc-uuid", *recs[0].CloudAccountID)
+	assert.Equal(t, "aws|abc-uuid|ec2|us-east-1|t4g.nano||1|", recs[0].ID)
 	assert.Equal(t, []string{"abc-uuid"}, acctIDs,
 		"eviction account-keys must be the registered UUID, not the ambient sentinel")
 }
@@ -2286,6 +2279,7 @@ func TestScheduler_CollectAWSRecommendations_AmbientTagging_NoRegisteredAccount(
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
 	assert.Nil(t, recs[0].CloudAccountID, "truly-orphan ambient deployment must keep CloudAccountID = nil")
+	assert.Equal(t, "aws||ec2|us-east-1|t4g.nano||1|", recs[0].ID)
 	assert.Equal(t, []string{""}, acctIDs, "eviction account-keys must keep the ambient sentinel")
 }
 
@@ -2319,6 +2313,7 @@ func TestScheduler_CollectAWSRecommendations_AmbientTagging_STSFailure(t *testin
 	require.NoError(t, err, "STS failure must NOT fail the collection")
 	require.Len(t, recs, 1)
 	assert.Nil(t, recs[0].CloudAccountID, "STS failure must leave the pre-fix nil tagging in place")
+	assert.Equal(t, "aws||ec2|us-east-1|t4g.nano||1|", recs[0].ID)
 	assert.Equal(t, []string{""}, acctIDs)
 
 	// Sanity: GetCloudAccountByExternalID must not be called when STS fails.
@@ -2429,6 +2424,7 @@ func TestScheduler_CollectAzureRecommendations_AmbientTagging_HappyPath(t *testi
 	require.Len(t, recs, 1)
 	require.NotNil(t, recs[0].CloudAccountID, "rec must be tagged with registered Azure account UUID, not nil")
 	assert.Equal(t, "az-uuid-001", *recs[0].CloudAccountID)
+	assert.Equal(t, "azure|az-uuid-001|compute|eastus|Standard_D2s_v3||1|", recs[0].ID)
 	assert.Equal(t, []string{"az-uuid-001"}, acctIDs,
 		"eviction account-keys must be the registered UUID, not the ambient sentinel")
 }
@@ -2581,6 +2577,7 @@ func TestScheduler_CollectGCPRecommendations_AmbientTagging_HappyPath(t *testing
 	require.Len(t, recs, 1)
 	require.NotNil(t, recs[0].CloudAccountID, "rec must be tagged with registered GCP account UUID, not nil")
 	assert.Equal(t, "gcp-uuid-001", *recs[0].CloudAccountID)
+	assert.Equal(t, "gcp|gcp-uuid-001|compute|us-central1|n2-standard-4||1|", recs[0].ID)
 	assert.Equal(t, []string{"gcp-uuid-001"}, acctIDs,
 		"eviction account-keys must be the registered UUID, not the ambient sentinel")
 }
