@@ -9,6 +9,7 @@
  */
 import { initLadderingSettings, renderConfigTable, saveLadderConfig } from '../ladder';
 import type { LadderConfig } from '../api';
+import { waitFor } from '@testing-library/dom';
 
 jest.mock('../api', () => ({
   getLadderConfigs: jest.fn(),
@@ -50,9 +51,9 @@ function baseConfig(overrides: Partial<LadderConfig> = {}): LadderConfig {
 
 // Render the full section (incl. the modal form) into the DOM so the exported
 // helpers have the elements they read.
-async function renderSection(): Promise<void> {
+async function renderSection(configs: LadderConfig[] = []): Promise<void> {
   document.body.innerHTML = '<div id="commitment-laddering-settings"></div>';
-  (api.getLadderConfigs as jest.Mock).mockResolvedValue([]);
+  (api.getLadderConfigs as jest.Mock).mockResolvedValue(configs);
   await initLadderingSettings(false);
 }
 
@@ -60,6 +61,30 @@ describe('ladder.ts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockShowToast.mockReset();
+  });
+
+  test.each([
+    ['aws', 'email_approval', 'daily'],
+    ['azure', 'auto_approve', 'weekly'],
+    ['gcp', 'auto_approve', 'weekly'],
+  ] as const)('editing %s preserves the selected values in the submitted config', async (provider, mode, cadence) => {
+    const config = baseConfig({ id: 'config-1', provider, mode, cadence, target_coverage: 80 });
+    await renderSection([config]);
+    (api.upsertLadderConfig as jest.Mock).mockImplementation(async (cfg: LadderConfig) => cfg);
+
+    document.querySelector<HTMLButtonElement>('.ladder-edit-btn')!.click();
+    expect(document.getElementById('ladder-cfg-provider')).toHaveValue(provider);
+    expect(document.getElementById('ladder-cfg-mode')).toHaveValue(mode);
+    expect(document.getElementById('ladder-cfg-cadence')).toHaveValue(cadence);
+    expect(document.getElementById('ladder-cfg-provider')).toBeDisabled();
+    expect(document.getElementById('ladder-cfg-account')).toHaveAttribute('readonly');
+
+    (document.getElementById('ladder-cfg-target-coverage') as HTMLInputElement).value = '75';
+    document.getElementById('ladder-config-form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await waitFor(() => expect(document.getElementById('ladder-config-modal')).toHaveClass('hidden'));
+    expect(api.upsertLadderConfig).toHaveBeenCalledTimes(1);
+    const { updated_at: _updatedAt, ...expected } = config;
+    expect(api.upsertLadderConfig).toHaveBeenCalledWith({ ...expected, target_coverage: 75 });
   });
 
   describe('renderLadderingSection: toggle label accessibility (issue #1412 row 3.1)', () => {
