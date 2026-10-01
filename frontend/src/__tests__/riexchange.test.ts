@@ -210,6 +210,9 @@ describe('openExchangeModal', () => {
     const executeBtn = Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Execute Exchange');
     expect(executeBtn?.classList.contains('hidden')).toBe(false);
     executeBtn?.click();
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(document.querySelector('.modal-confirm-body')?.textContent).toContain('USD 12.50');
+    document.querySelector<HTMLButtonElement>('.modal-confirm-actions .btn-destructive')?.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(mockExecute).toHaveBeenCalledTimes(1);
