@@ -358,6 +358,20 @@ function openLadderConfigModal(existing?: api.LadderConfig): void {
   const modal = document.getElementById('ladder-config-modal');
   if (!modal) return;
 
+  // Clone before populating: select values do not survive cloneNode.
+  const form = document.getElementById('ladder-config-form');
+  if (form) {
+    const newForm = form.cloneNode(true) as HTMLElement;
+    form.replaceWith(newForm);
+    newForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      saveLadderConfig();
+    });
+    // Cancel is inside the cloned form; the outside Close button keeps its listener.
+    newForm.querySelector('#ladder-modal-cancel-btn')
+      ?.addEventListener('click', closeLadderModal);
+  }
+
   // Populate modal fields.
   setValue('ladder-cfg-id', existing?.id ?? '');
   setValue('ladder-cfg-account', existing?.cloud_account_id ?? '');
@@ -385,24 +399,6 @@ function openLadderConfigModal(existing?: api.LadderConfig): void {
   const providerSelect = document.getElementById('ladder-cfg-provider') as HTMLSelectElement | null;
   if (accountInput) accountInput.readOnly = !!existing;
   if (providerSelect) providerSelect.disabled = !!existing;
-
-  // Wire the save button (remove previous listener by replacing the element
-  // clone so duplicate-listener accumulation cannot occur).
-  const form = document.getElementById('ladder-config-form');
-  if (form) {
-    const newForm = form.cloneNode(true) as HTMLElement;
-    form.replaceWith(newForm);
-    newForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      saveLadderConfig();
-    });
-    // The Cancel button lives inside the form, so cloneNode drops its
-    // listener (cloneNode does not copy event handlers). Re-wire it on the
-    // fresh node. The × close button sits outside the form and keeps the
-    // listener attached once in wireModalCloseButtons.
-    newForm.querySelector('#ladder-modal-cancel-btn')
-      ?.addEventListener('click', closeLadderModal);
-  }
 
   modal.classList.remove('hidden');
 }
