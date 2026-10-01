@@ -545,3 +545,28 @@ describe('History retry-own permission gate (issue #1418)', () => {
     expect(ids).toEqual(['own-fail']);
   });
 });
+
+ test('retry owns its row while confirmation is deferred and permits an explicit retry (#249)', async () => {
+  setupDOM();
+  jest.clearAllMocks();
+  (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
+  (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [makeRow({ retry_attempt_n: 5 })] });
+  (api.retryPurchase as jest.Mock).mockResolvedValue({ status: 'pending', email_sent: true });
+  let resolveConfirm!: (value: boolean) => void;
+  (confirmDialog as jest.Mock).mockImplementationOnce(() => new Promise<boolean>(resolve => { resolveConfirm = resolve; }));
+  await loadHistory();
+  const btn = document.querySelector<HTMLButtonElement>('#history-list .history-retry-btn')!;
+  btn.click();
+  btn.dispatchEvent(new MouseEvent('click'));
+  const disabledDuringConfirmation = btn.disabled;
+  resolveConfirm(false);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(disabledDuringConfirmation).toBe(true);
+  expect(confirmDialog).toHaveBeenCalledTimes(1);
+  expect(api.retryPurchase).not.toHaveBeenCalled();
+  expect(btn.disabled).toBe(false);
+  (confirmDialog as jest.Mock).mockResolvedValue(true);
+  btn.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(api.retryPurchase).toHaveBeenCalledTimes(1);
+ });

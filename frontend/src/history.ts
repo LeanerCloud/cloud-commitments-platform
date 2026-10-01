@@ -41,6 +41,8 @@ type StatusFilter = 'all' | 'pending' | 'completed' | 'failed' | 'expired' | 'ca
 // Cache of the last-rendered purchase list so the status-chip click handler
 // can re-render without re-fetching. Cleared on each loadHistory / viewPlanHistory.
 let lastPurchases: HistoryPurchase[] = [];
+const busyHistoryExecutions = new Set<string>();
+let historyMutationEpoch = 0;
 let activeStatusFilter: StatusFilter = 'all';
 
 // _fourEyesMode mirrors GlobalConfig.require_different_approver (issue #1005).
@@ -252,6 +254,7 @@ export function initHistoryDateRange(): void {
  * would be misleading.
  */
 export async function viewPlanHistory(planId: string): Promise<void> {
+  const requestEpoch = historyMutationEpoch;
   // skipDefaultLoad: the tab's own unscoped 7-day fetch would land after the
   // plan-scoped one below and overwrite it, and its date-range seeding is
   // exactly what the doc comment above says not to do here.
@@ -265,12 +268,14 @@ export async function viewPlanHistory(planId: string): Promise<void> {
       api.getHistory({ planId }) as unknown as Promise<HistoryResponse>,
       refreshFourEyesMode(),
     ]);
+    if (requestEpoch !== historyMutationEpoch) return;
     renderHistorySummary(data.summary ?? null);
     const purchases = data.purchases || [];
     renderApprovalQueue(purchases);
     renderHistoryList(purchases);
     snapDateInputsToPurchases(purchases);
   } catch (error) {
+    if (requestEpoch !== historyMutationEpoch) return;
     console.error('Failed to load plan history:', error);
     const err = error as Error;
     const list = document.getElementById('history-list');
@@ -311,6 +316,7 @@ function snapDateInputsToPurchases(purchases: HistoryPurchase[]): void {
  * Load history with filters
  */
 export async function loadHistory(): Promise<void> {
+  const requestEpoch = historyMutationEpoch;
   // Issue #344 T3: skeleton rows for the purchase-history table. 8
   // rows matches the typical first-page row count so the skeleton
   // doesn't shrink dramatically when real data arrives. Column count
@@ -354,11 +360,13 @@ export async function loadHistory(): Promise<void> {
       api.getHistory(filters) as unknown as Promise<HistoryResponse>,
       refreshFourEyesMode(),
     ]);
+    if (requestEpoch !== historyMutationEpoch) return;
     renderHistorySummary(data.summary ?? null);
     const purchases = data.purchases || [];
     renderApprovalQueue(purchases);
     renderHistoryList(purchases);
   } catch (error) {
+    if (requestEpoch !== historyMutationEpoch) return;
     console.error('Failed to load history:', error);
     const err = error as Error;
     const list = document.getElementById('history-list');
@@ -805,9 +813,48 @@ function sameRowActions(btn: HTMLButtonElement): HTMLButtonElement[] {
   if (!cell) return [btn];
   return Array.from(
     cell.querySelectorAll<HTMLButtonElement>(
-      '.history-approve-btn, .history-cancel-btn, .history-revoke-btn, .history-marketplace-sell-btn, .history-marketplace-cancel-btn',
+      '.history-approve-btn, .history-cancel-btn, .history-retry-btn, .history-revoke-btn, .history-marketplace-sell-btn, .history-marketplace-cancel-btn',
     ),
   );
+}
+
+async function runHistoryRowAction(
+  btn: HTMLButtonElement,
+  id: string,
+  action: (markMutationSucceeded: () => void) => Promise<void>,
+): Promise<void> {
+  if (btn.disabled || busyHistoryExecutions.has(id)) return;
+  const buttons = sameRowActions(btn).filter(button => !button.disabled);
+  busyHistoryExecutions.add(id);
+  buttons.forEach(button => { button.disabled = true; });
+  let mutationSucceeded = false;
+  try {
+    await action(() => {
+      mutationSucceeded = true;
+      historyMutationEpoch++;
+      lastPurchases = lastPurchases.filter(purchase => purchase.purchase_id !== id);
+      lastPendingForQueue = lastPendingForQueue.filter(purchase => purchase.purchase_id !== id);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast({
+      kind: mutationSucceeded ? 'warning' : 'error',
+      message: mutationSucceeded
+        ? `Purchase action succeeded, but the display could not update: ${message}`
+        : `Failed to complete purchase action: ${message}`,
+    });
+  } finally {
+    try {
+      if (mutationSucceeded) {
+        await loadHistory();
+      } else {
+        buttons.forEach(button => { button.disabled = false; });
+        if (btn.isConnected && document.activeElement === document.body) btn.focus();
+      }
+    } finally {
+      busyHistoryExecutions.delete(id);
+    }
+  }
 }
 
 // renderPendingActionButtons returns the inline Approve / Cancel
@@ -1242,9 +1289,9 @@ function wireRowActionHandlers(container: HTMLElement): void {
   // Backend may still 409 on a status race (concurrent cancel landed
   // first); the catch surfaces the structured detail.
   container.querySelectorAll<HTMLButtonElement>('.history-approve-btn[data-approve-id]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset['approveId'];
-      if (!id) return;
+    const id = btn.dataset['approveId'];
+    if (!id) return;
+    btn.addEventListener('click', () => runHistoryRowAction(btn, id, async markMutationSucceeded => {
       // Issue #374: show the per-rec details (service / engine /
       // resource / region / count / term + payment / costs) in the
       // modal so the user has informed consent before authorising a
@@ -1258,31 +1305,17 @@ function wireRowActionHandlers(container: HTMLElement): void {
         destructive: false,
       });
       if (!ok) return;
-      // Issue #286 + CR pass: Approve and Cancel can render together on
-      // the same row, so disabling only the clicked button leaves the
-      // sibling clickable while we await the API. Disable BOTH on
-      // either click and re-enable both on failure — a successful
-      // approve triggers a full history reload that re-renders the
-      // row, so the row-action sibling state doesn't matter on the
-      // happy path.
-      const rowActions = sameRowActions(btn);
-      rowActions.forEach((b) => { b.disabled = true; });
       try {
         await api.approvePurchase(id);
+        markMutationSucceeded();
       } catch (approveError) {
         console.error('Failed to approve pending purchase:', approveError);
         const err = approveError as Error;
         showToast({ message: `Failed to approve: ${err.message || 'unknown error'}`, kind: 'error' });
-        rowActions.forEach((b) => { b.disabled = false; });
         return;
       }
       showToast({ message: 'Purchase approved', kind: 'success', timeout: 5_000 });
-      try {
-        await loadHistory();
-      } catch (reloadError) {
-        console.error('Failed to reload history after approve:', reloadError);
-      }
-    });
+    }));
   });
 
   // Wire the inline Cancel button on pending/notified rows the current
@@ -1298,9 +1331,9 @@ function wireRowActionHandlers(container: HTMLElement): void {
   // user should see success-toast first so they don't think their
   // click was lost while we re-fetch the table.
   container.querySelectorAll<HTMLButtonElement>('.history-cancel-btn[data-cancel-id]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset['cancelId'];
-      if (!id) return;
+    const id = btn.dataset['cancelId'];
+    if (!id) return;
+    btn.addEventListener('click', () => runHistoryRowAction(btn, id, async markMutationSucceeded => {
       const ok = await confirmDialog({
         title: 'Cancel this pending purchase?',
         body: 'This will permanently abort the approval flow. The pending email approval link will stop working. This action cannot be undone.',
@@ -1308,32 +1341,17 @@ function wireRowActionHandlers(container: HTMLElement): void {
         destructive: true,
       });
       if (!ok) return;
-      // Symmetric with the Approve handler above: disable both row
-      // actions while the API is in flight (CR pass on PR #299).
-      const rowActions = sameRowActions(btn);
-      rowActions.forEach((b) => { b.disabled = true; });
       try {
         await api.cancelPurchase(id);
+        markMutationSucceeded();
       } catch (cancelError) {
         console.error('Failed to cancel pending purchase:', cancelError);
         const err = cancelError as Error;
         showToast({ message: `Failed to cancel: ${err.message || 'unknown error'}`, kind: 'error' });
-        rowActions.forEach((b) => { b.disabled = false; });
         return;
       }
-      // Cancel succeeded — surface success regardless of whether the
-      // refresh works. A reload failure leaves the row in its previous
-      // pending state on screen (stale-but-correct: the next manual
-      // reload corrects it).
       showToast({ message: 'Purchase cancelled', kind: 'success', timeout: 5_000 });
-      try {
-        await loadHistory();
-      } catch (reloadError) {
-        console.error('Failed to reload history after cancel:', reloadError);
-        // Don't downgrade the success toast; loadHistory's own catch
-        // already paints an error message into the list area.
-      }
-    });
+    }));
   });
 
   // Wire the inline Retry button on failed rows the current session
@@ -1344,9 +1362,9 @@ function wireRowActionHandlers(container: HTMLElement): void {
   // The backend may still 409 with an ops_hint or threshold response;
   // the catch block surfaces the structured detail when present.
   container.querySelectorAll<HTMLButtonElement>('.history-retry-btn[data-retry-id]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset['retryId'];
-      if (!id) return;
+    const id = btn.dataset['retryId'];
+    if (!id) return;
+    btn.addEventListener('click', () => runHistoryRowAction(btn, id, async markMutationSucceeded => {
       const overThreshold = btn.classList.contains('history-retry-over-threshold');
       const ok = await confirmDialog({
         title: overThreshold ? 'Retry past threshold?' : 'Retry this failed purchase?',
@@ -1357,10 +1375,10 @@ function wireRowActionHandlers(container: HTMLElement): void {
         destructive: false,
       });
       if (!ok) return;
-      btn.disabled = true;
       let retryResult: Awaited<ReturnType<typeof api.retryPurchase>>;
       try {
         retryResult = await api.retryPurchase(id, overThreshold ? { force: true } : undefined);
+        markMutationSucceeded();
       } catch (retryError) {
         console.error('Failed to retry purchase:', retryError);
         // Surface structured retry hints from the backend (issue #47):
@@ -1379,7 +1397,6 @@ function wireRowActionHandlers(container: HTMLElement): void {
         }
         const finalMessage = detailMessage || err.message || 'unknown error';
         showToast({ message: `Failed to retry: ${finalMessage}`, kind: 'error' });
-        btn.disabled = false;
         return;
       }
       // Gate the toast on the approval email outcome reported by the backend.
@@ -1398,12 +1415,7 @@ function wireRowActionHandlers(container: HTMLElement): void {
       } else {
         showToast({ message: 'Retry created but approval email failed - check your notification settings', kind: 'warning', timeout: 8_000 });
       }
-      try {
-        await loadHistory();
-      } catch (reloadError) {
-        console.error('Failed to reload history after retry:', reloadError);
-      }
-    });
+    }));
   });
 
   // Wire the inline Revoke button on completed Azure rows within the
@@ -1414,9 +1426,9 @@ function wireRowActionHandlers(container: HTMLElement): void {
   // UX gate that hides the button when the call would fail, but a stale
   // cache can still surface a 4xx -- handle it like any other failure.
   container.querySelectorAll<HTMLButtonElement>('.history-revoke-btn[data-revoke-id]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset['revokeId'];
-      if (!id) return;
+    const id = btn.dataset['revokeId'];
+    if (!id) return;
+    btn.addEventListener('click', () => runHistoryRowAction(btn, id, async markMutationSucceeded => {
       let quote: RevokeQuote | undefined;
       if (btn.dataset['revokeScheduled'] !== 'true') {
         try {
@@ -1438,24 +1450,17 @@ function wireRowActionHandlers(container: HTMLElement): void {
         destructive: true,
       });
       if (!ok) return;
-      const rowActions = sameRowActions(btn);
-      rowActions.forEach((b) => { b.disabled = true; });
       try {
         await api.revokePurchase(id, quote);
+        markMutationSucceeded();
       } catch (revokeError) {
         console.error('Failed to revoke purchase:', revokeError);
         const err = revokeError as Error;
         showToast({ message: `Failed to revoke: ${err.message || 'unknown error'}`, kind: 'error' });
-        rowActions.forEach((b) => { b.disabled = false; });
         return;
       }
       showToast({ message: 'Purchase revocation submitted', kind: 'success', timeout: 5_000 });
-      try {
-        await loadHistory();
-      } catch (reloadError) {
-        console.error('Failed to reload history after revoke:', reloadError);
-      }
-    });
+    }));
   });
 
   // Wire Sell on Marketplace button (issue #292).
@@ -1477,116 +1482,111 @@ function wireRowActionHandlers(container: HTMLElement): void {
         return;
       }
 
-      // Build a pricing modal body with RI summary and fee breakdown.
-      const bodyEl = document.createElement('div');
-      bodyEl.className = 'marketplace-pricing-modal-body';
+      const upfront = purchase.upfront_cost;
+      return runHistoryRowAction(btn, id, async markMutationSucceeded => {
+        // Build a pricing modal body with RI summary and fee breakdown.
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'marketplace-pricing-modal-body';
 
-      if (purchase) {
-        // purchase_history.term is stored in YEARS (1 or 3); convert to months
-        // before computing the remaining term and residual so the price summary
-        // shown to the user reflects real remaining value rather than ~1/3 of it
-        // (a 3-year RI was previously treated as 3 months). Mirrors the
-        // row.Term * 12 conversion in internal/api/handler_marketplace.go.
-        const termYears = typeof purchase.term === 'number' ? purchase.term : Number(purchase.term) || 0;
-        const termMonths = termYears > 0 ? termYears * 12 : 0;
-        const purchaseMs = new Date(purchase.timestamp).getTime();
-        const elapsedMonths = Number.isFinite(purchaseMs)
-          ? (Date.now() - purchaseMs) / (1000 * 60 * 60 * 24 * 30.4375)
-          : 0;
-        // Must match computeRemainingMonths in internal/api/handler_marketplace.go
-        // EXACTLY: floor (not round), floored at 1 (not 0), so the number
-        // shown here is the same number the backend actually lists at.
-        const remainingMonths = Math.max(1, Math.floor(termMonths - elapsedMonths));
-        const upfront = purchase.upfront_cost;
-        const count = purchase.count > 0 ? purchase.count : 1;
-        // Mirror marketplaceResidualPerUnit + resolveMarketplacePriceSchedule's
-        // default branch in internal/api/handler_marketplace.go EXACTLY, so
-        // this preview can never diverge from what the backend actually lists:
-        //   - upfront-only: recurring (monthly) cost is deliberately excluded
-        //     because the buyer assumes the recurring obligation post-transfer;
-        //   - per instance: upfront_cost is the row total for `count` instances,
-        //     but the AWS Marketplace price is per instance, so divide by count;
-        //   - prorated: the upfront residual is scaled by remaining/original
-        //     term (a 36-month RI at month 6 retains only 30/36 of its value);
-        //   - zero when unpriceable: a no-upfront RI (upfront <= 0) or an
-        //     unknown term (termMonths <= 0) has no residual to prorate, which
-        //     is exactly when the backend now rejects the default schedule
-        //     with an error instead of silently listing at $0.
-        const perUnitResidual = termMonths > 0 && upfront > 0
-          ? (upfront * (remainingMonths / termMonths)) / count
-          : 0;
-        const listPricePerUnit = perUnitResidual * AWS_MARKETPLACE_BUYER_DISCOUNT;
-        const listPriceTotal = listPricePerUnit * count;
-        const netProceedsTotal = listPriceTotal * AWS_MARKETPLACE_NET_FACTOR;
+        if (purchase) {
+          // purchase_history.term is stored in YEARS (1 or 3); convert to months
+          // before computing the remaining term and residual so the price summary
+          // shown to the user reflects real remaining value rather than ~1/3 of it
+          // (a 3-year RI was previously treated as 3 months). Mirrors the
+          // row.Term * 12 conversion in internal/api/handler_marketplace.go.
+          const termYears = typeof purchase.term === 'number' ? purchase.term : Number(purchase.term) || 0;
+          const termMonths = termYears > 0 ? termYears * 12 : 0;
+          const purchaseMs = new Date(purchase.timestamp).getTime();
+          const elapsedMonths = Number.isFinite(purchaseMs)
+            ? (Date.now() - purchaseMs) / (1000 * 60 * 60 * 24 * 30.4375)
+            : 0;
+          // Must match computeRemainingMonths in internal/api/handler_marketplace.go
+          // EXACTLY: floor (not round), floored at 1 (not 0), so the number
+          // shown here is the same number the backend actually lists at.
+          const remainingMonths = Math.max(1, Math.floor(termMonths - elapsedMonths));
+          const count = purchase.count > 0 ? purchase.count : 1;
+          // Mirror marketplaceResidualPerUnit + resolveMarketplacePriceSchedule's
+          // default branch in internal/api/handler_marketplace.go EXACTLY, so
+          // this preview can never diverge from what the backend actually lists:
+          //   - upfront-only: recurring (monthly) cost is deliberately excluded
+          //     because the buyer assumes the recurring obligation post-transfer;
+          //   - per instance: upfront_cost is the row total for `count` instances,
+          //     but the AWS Marketplace price is per instance, so divide by count;
+          //   - prorated: the upfront residual is scaled by remaining/original
+          //     term (a 36-month RI at month 6 retains only 30/36 of its value);
+          //   - zero when unpriceable: a no-upfront RI (upfront <= 0) or an
+          //     unknown term (termMonths <= 0) has no residual to prorate, which
+          //     is exactly when the backend now rejects the default schedule
+          //     with an error instead of silently listing at $0.
+          const perUnitResidual = termMonths > 0 && upfront > 0
+            ? (upfront * (remainingMonths / termMonths)) / count
+            : 0;
+          const listPricePerUnit = perUnitResidual * AWS_MARKETPLACE_BUYER_DISCOUNT;
+          const listPriceTotal = listPricePerUnit * count;
+          const netProceedsTotal = listPriceTotal * AWS_MARKETPLACE_NET_FACTOR;
 
-        const summaryEl = document.createElement('dl');
-        summaryEl.className = 'marketplace-pricing-summary';
-        const addRow = (label: string, value: string): void => {
-          const dt = document.createElement('dt');
-          dt.textContent = label;
-          const dd = document.createElement('dd');
-          dd.textContent = value;
-          summaryEl.appendChild(dt);
-          summaryEl.appendChild(dd);
-        };
-        addRow('RI ID', id);
-        addRow('Region', purchase.region || '-');
-        addRow('Resource type', purchase.resource_type || '-');
-        addRow('Remaining term', remainingMonths === 1 ? '1 month' : `${remainingMonths} months`);
-        if (listPricePerUnit > 0) {
-          addRow('Default list price', count > 1
-            ? `${formatCurrency(listPricePerUnit)}/unit (${formatCurrency(listPriceTotal)} total for ${count} units)`
-            : formatCurrency(listPriceTotal));
-          addRow(`AWS fee (${AWS_MARKETPLACE_FEE_PERCENT}%)`, formatCurrency(listPriceTotal * (AWS_MARKETPLACE_FEE_PERCENT / 100)));
-          addRow('Estimated net proceeds', formatCurrency(netProceedsTotal));
-        } else {
-          // No default price can be computed (no upfront cost or unknown
-          // term) -- listing will be rejected server-side unless a custom
-          // price_schedule is supplied. Say so instead of showing a
-          // misleading $0 or fabricated price.
-          addRow('Default list price', 'unavailable (no upfront cost or unknown term)');
+          const summaryEl = document.createElement('dl');
+          summaryEl.className = 'marketplace-pricing-summary';
+          const addRow = (label: string, value: string): void => {
+            const dt = document.createElement('dt');
+            dt.textContent = label;
+            const dd = document.createElement('dd');
+            dd.textContent = value;
+            summaryEl.appendChild(dt);
+            summaryEl.appendChild(dd);
+          };
+          addRow('RI ID', id);
+          addRow('Region', purchase.region || '-');
+          addRow('Resource type', purchase.resource_type || '-');
+          addRow('Remaining term', remainingMonths === 1 ? '1 month' : `${remainingMonths} months`);
+          if (listPricePerUnit > 0) {
+            addRow('Default list price', count > 1
+              ? `${formatCurrency(listPricePerUnit)}/unit (${formatCurrency(listPriceTotal)} total for ${count} units)`
+              : formatCurrency(listPriceTotal));
+            addRow(`AWS fee (${AWS_MARKETPLACE_FEE_PERCENT}%)`, formatCurrency(listPriceTotal * (AWS_MARKETPLACE_FEE_PERCENT / 100)));
+            addRow('Estimated net proceeds', formatCurrency(netProceedsTotal));
+          } else {
+            // No default price can be computed (no upfront cost or unknown
+            // term) -- listing will be rejected server-side unless a custom
+            // price_schedule is supplied. Say so instead of showing a
+            // misleading $0 or fabricated price.
+            addRow('Default list price', 'unavailable (no upfront cost or unknown term)');
+          }
+          bodyEl.appendChild(summaryEl);
         }
-        bodyEl.appendChild(summaryEl);
-      }
 
-      const noteEl = document.createElement('p');
-      noteEl.className = 'marketplace-pricing-note';
-      noteEl.textContent = `AWS charges a ${AWS_MARKETPLACE_FEE_PERCENT}% transaction fee on proceeds. The default schedule prices the listing at ${(1 - AWS_MARKETPLACE_BUYER_DISCOUNT) * 100}% below remaining value. You can adjust pricing by contacting your administrator or modifying the schedule via the API. This action cannot be undone without cancelling the listing.`;
-      bodyEl.appendChild(noteEl);
+        const noteEl = document.createElement('p');
+        noteEl.className = 'marketplace-pricing-note';
+        noteEl.textContent = `AWS charges a ${AWS_MARKETPLACE_FEE_PERCENT}% transaction fee on proceeds. The default schedule prices the listing at ${(1 - AWS_MARKETPLACE_BUYER_DISCOUNT) * 100}% below remaining value. You can adjust pricing by contacting your administrator or modifying the schedule via the API. This action cannot be undone without cancelling the listing.`;
+        bodyEl.appendChild(noteEl);
 
-      const ok = await confirmDialog({
-        title: 'List this RI on the AWS Marketplace?',
-        body: bodyEl,
-        confirmLabel: 'Confirm listing',
-        destructive: false,
+        const ok = await confirmDialog({
+          title: 'List this RI on the AWS Marketplace?',
+          body: bodyEl,
+          confirmLabel: 'Confirm listing',
+          destructive: false,
+        });
+        if (!ok) return;
+
+        try {
+          await api.createMarketplaceListing(id);
+          markMutationSucceeded();
+        } catch (sellError) {
+          console.error('Failed to list RI on Marketplace:', sellError);
+          const err = sellError as Error;
+          showToast({ message: `Failed to list on Marketplace: ${err.message || 'unknown error'}`, kind: 'error' });
+          return;
+        }
+        showToast({ message: 'RI listed on Marketplace successfully', kind: 'success', timeout: 5_000 });
       });
-      if (!ok) return;
-
-      const rowActions = sameRowActions(btn);
-      rowActions.forEach(b => { b.disabled = true; });
-      try {
-        await api.createMarketplaceListing(id);
-      } catch (sellError) {
-        console.error('Failed to list RI on Marketplace:', sellError);
-        const err = sellError as Error;
-        showToast({ message: `Failed to list on Marketplace: ${err.message || 'unknown error'}`, kind: 'error' });
-        rowActions.forEach(b => { b.disabled = false; });
-        return;
-      }
-      showToast({ message: 'RI listed on Marketplace successfully', kind: 'success', timeout: 5_000 });
-      try {
-        await loadHistory();
-      } catch (reloadError) {
-        console.error('Failed to reload history after Marketplace listing:', reloadError);
-      }
     });
   });
 
   // Wire Cancel listing button (issue #292)
   container.querySelectorAll<HTMLButtonElement>('.history-marketplace-cancel-btn[data-marketplace-cancel-id]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset['marketplaceCancelId'];
-      if (!id) return;
+    const id = btn.dataset['marketplaceCancelId'];
+    if (!id) return;
+    btn.addEventListener('click', () => runHistoryRowAction(btn, id, async markMutationSucceeded => {
       const ok = await confirmDialog({
         title: 'Cancel this Marketplace listing?',
         body: 'This will remove the listing from the AWS Marketplace. Any existing buyer negotiations will be cancelled. You can relist the RI at any time.',
@@ -1594,24 +1594,17 @@ function wireRowActionHandlers(container: HTMLElement): void {
         destructive: true,
       });
       if (!ok) return;
-      const rowActions = sameRowActions(btn);
-      rowActions.forEach(b => { b.disabled = true; });
       try {
         await api.cancelMarketplaceListing(id);
+        markMutationSucceeded();
       } catch (cancelError) {
         console.error('Failed to cancel Marketplace listing:', cancelError);
         const err = cancelError as Error;
         showToast({ message: `Failed to cancel listing: ${err.message || 'unknown error'}`, kind: 'error' });
-        rowActions.forEach(b => { b.disabled = false; });
         return;
       }
       showToast({ message: 'Marketplace listing cancelled', kind: 'success', timeout: 5_000 });
-      try {
-        await loadHistory();
-      } catch (reloadError) {
-        console.error('Failed to reload history after Marketplace cancel:', reloadError);
-      }
-    });
+    }));
   });
 }
 

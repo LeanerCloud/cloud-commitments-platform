@@ -465,3 +465,53 @@ describe('Marketplace consent modal residual proration (issue #808 follow-up)', 
     expect(text).not.toContain('$0');
   });
 });
+
+ test('marketplace-sell owns its row while confirmation is deferred and permits an explicit retry (#249)', async () => {
+  setupDOM();
+  jest.clearAllMocks();
+  (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
+  (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [makeRow({})] });
+  (api.createMarketplaceListing as jest.Mock).mockResolvedValue({ status: 'pending', email_sent: true });
+  let resolveConfirm!: (value: boolean) => void;
+  (confirmDialog as jest.Mock).mockImplementationOnce(() => new Promise<boolean>(resolve => { resolveConfirm = resolve; }));
+  await loadHistory();
+  const btn = document.querySelector<HTMLButtonElement>('#history-list .history-marketplace-sell-btn')!;
+  btn.click();
+  btn.dispatchEvent(new MouseEvent('click'));
+  const disabledDuringConfirmation = btn.disabled;
+  resolveConfirm(false);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(disabledDuringConfirmation).toBe(true);
+  expect(confirmDialog).toHaveBeenCalledTimes(1);
+  expect(api.createMarketplaceListing).not.toHaveBeenCalled();
+  expect(btn.disabled).toBe(false);
+  (confirmDialog as jest.Mock).mockResolvedValue(true);
+  btn.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(api.createMarketplaceListing).toHaveBeenCalledTimes(1);
+ });
+
+ test('marketplace-cancel owns its row while confirmation is deferred and permits an explicit retry (#249)', async () => {
+  setupDOM();
+  jest.clearAllMocks();
+  (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
+  (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [makeRow({ listing_state: 'active' })] });
+  (api.cancelMarketplaceListing as jest.Mock).mockResolvedValue({ status: 'pending', email_sent: true });
+  let resolveConfirm!: (value: boolean) => void;
+  (confirmDialog as jest.Mock).mockImplementationOnce(() => new Promise<boolean>(resolve => { resolveConfirm = resolve; }));
+  await loadHistory();
+  const btn = document.querySelector<HTMLButtonElement>('#history-list .history-marketplace-cancel-btn')!;
+  btn.click();
+  btn.dispatchEvent(new MouseEvent('click'));
+  const disabledDuringConfirmation = btn.disabled;
+  resolveConfirm(false);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(disabledDuringConfirmation).toBe(true);
+  expect(confirmDialog).toHaveBeenCalledTimes(1);
+  expect(api.cancelMarketplaceListing).not.toHaveBeenCalled();
+  expect(btn.disabled).toBe(false);
+  (confirmDialog as jest.Mock).mockResolvedValue(true);
+  btn.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(api.cancelMarketplaceListing).toHaveBeenCalledTimes(1);
+ });
