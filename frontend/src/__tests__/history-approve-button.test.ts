@@ -18,13 +18,16 @@
  *      session qualifies for both verbs.
  */
 
-import { loadHistory } from '../history';
+import { loadHistory, setupHistoryHandlers, viewPlanHistory } from '../history';
 
 jest.mock('../api', () => ({
   getHistory: jest.fn(),
   getConfig: jest.fn().mockResolvedValue({ global: {} }),
   approvePurchase: jest.fn(),
   cancelPurchase: jest.fn(),
+  getPurchaseDetails: jest.fn().mockResolvedValue({ recommendations: [] }),
+  listAccounts: jest.fn().mockResolvedValue([]),
+  getDeploymentInfo: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('../navigation', () => ({
@@ -76,7 +79,7 @@ jest.mock('../state', () => ({
 import * as api from '../api';
 import { confirmDialog } from '../confirmDialog';
 import { showToast } from '../toast';
-import { getCurrentUser } from '../state';
+import { getCurrentUser, subscribeAmortizeUpfront } from '../state';
 import { ADMINISTRATORS_GROUP_ID, PURCHASER_GROUP_ID } from '../permissions';
 
 // Admin user includes Purchaser membership (mirrors the auto-migration for
@@ -109,6 +112,139 @@ const REG_USER = {
   ],
 };
 const OTHER_UUID = 'other-uuid';
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void; reject(error: Error): void } {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+const settleActions = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
+describe('History action ownership and refresh recovery (#249)', () => {
+  const data = { summary: {}, purchases: [makeRow({ purchase_id: 'guarded' })] };
+  beforeEach(() => {
+    setupDOM();
+    jest.clearAllMocks();
+    (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
+    (api.getHistory as jest.Mock).mockReset().mockResolvedValue(data);
+    (api.getPurchaseDetails as jest.Mock).mockReset().mockResolvedValue({ recommendations: [] });
+    (api.approvePurchase as jest.Mock).mockReset().mockResolvedValue(undefined);
+    (confirmDialog as jest.Mock).mockReset().mockResolvedValue(true);
+    (showToast as jest.Mock).mockReset();
+  });
+
+  test('details fetch owns both actions and same-ID projections while other IDs remain independent', async () => {
+    const details = deferred<{ recommendations: never[] }>();
+    (api.getPurchaseDetails as jest.Mock).mockReturnValue(details.promise);
+    (api.getHistory as jest.Mock).mockResolvedValue({ ...data, purchases: [...data.purchases, makeRow({ purchase_id: 'other' })] });
+    (confirmDialog as jest.Mock).mockResolvedValue(false);
+    await loadHistory();
+    const btn = document.querySelector<HTMLButtonElement>('#history-list [data-approve-id="guarded"]')!;
+    btn.click();
+    btn.dispatchEvent(new MouseEvent('click'));
+    document.querySelector<HTMLButtonElement>('#history-list [data-cancel-id="guarded"]')!.click();
+    document.querySelector<HTMLButtonElement>('#purchases-approval-queue [data-approve-id="guarded"]')!.click();
+    document.querySelector<HTMLButtonElement>('#history-list [data-approve-id="other"]')!.click();
+    const disabled = btn.disabled;
+    details.resolve({ recommendations: [] });
+    await settleActions();
+    expect(disabled).toBe(true);
+    expect(api.getPurchaseDetails).toHaveBeenCalledTimes(2);
+    expect(confirmDialog).toHaveBeenCalledTimes(2);
+    expect(api.approvePurchase).not.toHaveBeenCalled();
+    expect(api.cancelPurchase).not.toHaveBeenCalled();
+    expect(btn.disabled).toBe(false);
+  });
+
+  test.each(['cancel', 'reject', 'throw', 'api-error'] as const)('%s releases ownership for a later explicit attempt', async outcome => {
+    await loadHistory();
+    const btn = document.querySelector<HTMLButtonElement>('#history-list .history-approve-btn')!;
+    if (outcome === 'cancel') (confirmDialog as jest.Mock).mockResolvedValueOnce(false);
+    if (outcome === 'reject') (confirmDialog as jest.Mock).mockRejectedValueOnce(new Error('dialog failed'));
+    if (outcome === 'throw') (confirmDialog as jest.Mock).mockImplementationOnce(() => { throw new Error('dialog failed'); });
+    if (outcome === 'api-error') (api.approvePurchase as jest.Mock).mockRejectedValueOnce(new Error('mutation failed'));
+    btn.click();
+    await settleActions();
+    expect(btn.disabled).toBe(false);
+    const count = outcome === 'api-error' ? 1 : 0;
+    expect(api.approvePurchase).toHaveBeenCalledTimes(count);
+    btn.click();
+    await settleActions();
+    expect(api.approvePurchase).toHaveBeenCalledTimes(count + 1);
+  });
+
+  test('API remains guarded across a cached re-render and direct disabled dispatch', async () => {
+    const mutation = deferred<void>();
+    (api.approvePurchase as jest.Mock).mockReturnValue(mutation.promise);
+    setupHistoryHandlers();
+    await loadHistory();
+    const btn = document.querySelector<HTMLButtonElement>('#history-list .history-approve-btn')!;
+    btn.click();
+    await settleActions();
+    const redraw = (subscribeAmortizeUpfront as jest.Mock).mock.calls[0]![0] as () => void;
+    redraw();
+    document.querySelector<HTMLButtonElement>('#history-list .history-approve-btn')!.click();
+    document.querySelector<HTMLButtonElement>('#purchases-approval-queue .history-cancel-btn')!.click();
+    btn.dispatchEvent(new MouseEvent('click'));
+    mutation.resolve();
+    await settleActions();
+    expect(api.approvePurchase).toHaveBeenCalledTimes(1);
+    expect(api.cancelPurchase).not.toHaveBeenCalled();
+  });
+
+  test.each([false, true])('success survives failed refresh and cached redraw (toast throws=%s)', async toastThrows => {
+    setupHistoryHandlers();
+    await loadHistory();
+    (api.getHistory as jest.Mock).mockRejectedValueOnce(new Error('refresh failed'));
+    if (toastThrows) (showToast as jest.Mock).mockImplementationOnce(() => { throw new Error('toast failed'); });
+    document.querySelector<HTMLButtonElement>('#history-list .history-approve-btn')!.click();
+    await settleActions();
+    const redraw = (subscribeAmortizeUpfront as jest.Mock).mock.calls[0]![0] as () => void;
+    redraw();
+    expect(document.querySelectorAll('[data-approve-id="guarded"]')).toHaveLength(0);
+    expect(api.approvePurchase).toHaveBeenCalledTimes(1);
+    expect(api.getHistory).toHaveBeenCalledTimes(2);
+    expect((showToast as jest.Mock).mock.calls.some(([opts]) => opts.message?.startsWith('Failed to approve'))).toBe(false);
+    await loadHistory();
+    expect(document.querySelectorAll('[data-approve-id="guarded"]')).toHaveLength(2);
+  });
+
+  test.each(['history', 'plan'] as const)('%s loader cannot publish responses started before a successful mutation', async loader => {
+    const old = deferred<typeof data>();
+    setupHistoryHandlers();
+    await loadHistory();
+    (api.getHistory as jest.Mock).mockReturnValueOnce(old.promise);
+    const oldLoad = loader === 'history' ? loadHistory() : viewPlanHistory('plan-1');
+    const redraw = (subscribeAmortizeUpfront as jest.Mock).mock.calls[0]![0] as () => void;
+    redraw();
+    (api.getHistory as jest.Mock).mockRejectedValueOnce(new Error('refresh failed'));
+    document.querySelector<HTMLButtonElement>('#history-list .history-approve-btn')!.click();
+    await settleActions();
+    old.resolve(data);
+    await oldLoad;
+    redraw();
+    expect(document.querySelectorAll('[data-approve-id="guarded"]')).toHaveLength(0);
+    await loadHistory();
+    expect(document.querySelectorAll('[data-approve-id="guarded"]')).toHaveLength(2);
+  });
+
+  test.each(['history', 'plan'] as const)('%s loader ignores old errors after a successful mutation refresh', async loader => {
+    const old = deferred<typeof data>();
+    setupHistoryHandlers();
+    await loadHistory();
+    (api.getHistory as jest.Mock).mockReturnValueOnce(old.promise);
+    const oldLoad = loader === 'history' ? loadHistory() : viewPlanHistory('plan-1');
+    ((subscribeAmortizeUpfront as jest.Mock).mock.calls[0]![0] as () => void)();
+    document.querySelector<HTMLButtonElement>('#history-list .history-approve-btn')!.click();
+    await settleActions();
+    old.reject(new Error('old failure'));
+    await oldLoad;
+    expect(document.querySelectorAll('[data-approve-id="guarded"]')).toHaveLength(2);
+    expect(document.getElementById('history-list')!.textContent).not.toContain('old failure');
+  });
+});
 
 function setupDOM(): void {
   while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
