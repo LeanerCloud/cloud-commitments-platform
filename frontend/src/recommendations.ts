@@ -5078,7 +5078,7 @@ function renderDirectExecuteWarning(): void {
   directWarning.appendChild(icon);
   const text = document.createTextNode(
     `This will charge ${formatCurrency(totalUpfront, '$', 2)} upfront immediately. ` +
-    'This bypasses the approval step. AWS allows cancellation within 24 hours via the Account & Billing console.',
+    'This bypasses the approval step.',
   );
   directWarning.appendChild(text);
 }
