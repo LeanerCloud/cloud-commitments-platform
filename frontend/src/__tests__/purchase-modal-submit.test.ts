@@ -269,6 +269,37 @@ beforeEach(() => {
   (state.getRecommendations as jest.Mock).mockReturnValue(buildRows());
 });
 
+describe('Issue #251: Execute Now makes no cancellation promise', () => {
+  test.each<Pick<LocalRecommendation, 'provider' | 'service' | 'payment' | 'upfront_cost'>>([
+    { provider: 'aws', service: 'ec2', payment: 'all-upfront', upfront_cost: 1200 },
+    { provider: 'azure', service: 'compute', payment: 'all-upfront', upfront_cost: 2400 },
+    { provider: 'gcp', service: 'gce', payment: 'monthly', upfront_cost: 0 },
+  ])('$provider shows the charge and approval bypass only', async (sample) => {
+    const rec: LocalRecommendation = { ...buildRows()[0]!, ...sample, term: 1 };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    await openPurchaseModal([rec]);
+    const warning = document.querySelector<HTMLElement>('.direct-execute-warning')!;
+    expect(warning).not.toBeNull();
+    expect(warning.hidden).toBe(true);
+    (document.getElementById('execute-mode-direct') as HTMLInputElement).click();
+    expect(warning.hidden).toBe(false);
+    expect(warning.textContent).toBe(
+      `Warning: This will charge ${formatCurrency(sample.upfront_cost, '$', 2)} upfront immediately. This bypasses the approval step.`,
+    );
+    expect(warning.textContent).not.toMatch(/AWS|cancell|24 hours/);
+    expect(document.getElementById('execute-purchase-btn')?.textContent).toBe('Execute Purchase Now');
+    (document.getElementById('execute-mode-approval') as HTMLInputElement).click();
+    expect(warning.hidden).toBe(true);
+    expect(document.getElementById('execute-purchase-btn')?.textContent).toBe('Send for Approval');
+    (document.getElementById('execute-mode-direct') as HTMLInputElement).click();
+    (document.getElementById('close-purchase-modal-btn') as HTMLButtonElement).click();
+    await openPurchaseModal([rec]);
+    expect((document.getElementById('execute-mode-approval') as HTMLInputElement).checked).toBe(true);
+    expect(document.querySelector<HTMLElement>('.direct-execute-warning')!.hidden).toBe(true);
+    expect(api.executePurchase).not.toHaveBeenCalled();
+  });
+});
+
 // #1903: purchase modal re-prices on Term/Payment change
 
 describe('Issue #1903: purchase modal re-prices on Term/Payment change', () => {
