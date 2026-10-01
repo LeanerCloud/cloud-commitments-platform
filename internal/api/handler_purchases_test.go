@@ -1499,7 +1499,7 @@ func TestHandler_pausePlannedPurchase(t *testing.T) {
 	paused := &config.PurchaseExecution{ExecutionID: "11111111-1111-1111-1111-111111111111", Status: "paused"}
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("TransitionExecutionStatus", ctx, "11111111-1111-1111-1111-111111111111", []string{"pending", "running"}, "paused", mock.Anything).Return(paused, nil)
+	mockStore.On("TransitionExecutionStatus", ctx, "11111111-1111-1111-1111-111111111111", []string{"pending"}, "paused", mock.Anything).Return(paused, nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 
@@ -1526,7 +1526,7 @@ func TestHandler_pausePlannedPurchase_NotFound(t *testing.T) {
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("TransitionExecutionStatus", ctx, "99999999-9999-9999-9999-999999999999", []string{"pending", "running"}, "paused", mock.Anything).Return(nil, fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
+	mockStore.On("TransitionExecutionStatus", ctx, "99999999-9999-9999-9999-999999999999", []string{"pending"}, "paused", mock.Anything).Return(nil, fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 
@@ -2084,7 +2084,7 @@ func TestHandler_pausePlannedPurchase_NilExecution(t *testing.T) {
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("TransitionExecutionStatus", ctx, "99999999-9999-9999-9999-999999999999", []string{"pending", "running"}, "paused", mock.Anything).Return(nil, fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
+	mockStore.On("TransitionExecutionStatus", ctx, "99999999-9999-9999-9999-999999999999", []string{"pending"}, "paused", mock.Anything).Return(nil, fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 
@@ -2104,41 +2104,43 @@ func TestHandler_pausePlannedPurchase_NilExecution(t *testing.T) {
 // Postgres CHECK constraint error (SQLSTATE 23514). This is the regression test
 // for issue #772.
 func TestHandler_pausePlannedPurchase_IneligibleStatus(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	mockAuth := new(MockAuthService)
-	t.Cleanup(func() {
-		mockStore.AssertExpectations(t)
-		mockAuth.AssertExpectations(t)
-	})
+	for _, status := range []string{"running", "completed", "canceled", "approved", "notified", "scheduled"} {
+		t.Run(status, func(t *testing.T) {
+			ctx := context.Background()
+			mockStore := new(MockConfigStore)
+			mockAuth := new(MockAuthService)
+			t.Cleanup(func() {
+				mockStore.AssertExpectations(t)
+				mockAuth.AssertExpectations(t)
+			})
 
-	adminSession := &Session{
-		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-		Email:  "admin@example.com",
+			adminSession := &Session{
+				UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+				Email:  "admin@example.com",
+			}
+
+			mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
+			mockAuth.grantAdmin()
+			mockStore.On("TransitionExecutionStatus", ctx, "11111111-1111-1111-1111-111111111111", []string{"pending"}, "paused", mock.Anything).
+				Return(nil, fmt.Errorf("%w: execution 11111111-1111-1111-1111-111111111111 cannot transition from %q to %q",
+					config.ErrExecutionNotInExpectedStatus, status, "paused"))
+
+			handler := &Handler{config: mockStore, auth: mockAuth}
+
+			req := &events.LambdaFunctionURLRequest{
+				Headers: map[string]string{"Authorization": "Bearer admin-token"},
+			}
+			result, err := handler.pausePlannedPurchase(ctx, req, "11111111-1111-1111-1111-111111111111")
+			require.Error(t, err, "pausing a %s execution must fail", status)
+			assert.Nil(t, result)
+
+			// Must be a 409 client error, not a 500.
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+			assert.Equal(t, 409, ce.code, "ineligible-status pause must return 409")
+			assert.Contains(t, ce.message, "cannot be paused", "error message must name the action")
+		})
 	}
-
-	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
-	mockAuth.grantAdmin()
-	// Store returns ErrExecutionNotInExpectedStatus when the row is 'completed'
-	// and cannot be transitioned to 'paused'.
-	mockStore.On("TransitionExecutionStatus", ctx, "11111111-1111-1111-1111-111111111111", []string{"pending", "running"}, "paused", mock.Anything).
-		Return(nil, fmt.Errorf("%w: execution 11111111-1111-1111-1111-111111111111 cannot transition from %q to %q",
-			config.ErrExecutionNotInExpectedStatus, "completed", "paused"))
-
-	handler := &Handler{config: mockStore, auth: mockAuth}
-
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-	}
-	result, err := handler.pausePlannedPurchase(ctx, req, "11111111-1111-1111-1111-111111111111")
-	require.Error(t, err, "pausing a completed execution must fail")
-	assert.Nil(t, result)
-
-	// Must be a 409 client error, not a 500.
-	ce, ok := IsClientError(err)
-	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
-	assert.Equal(t, 409, ce.code, "ineligible-status pause must return 409")
-	assert.Contains(t, ce.message, "cannot be paused", "error message must name the action")
 }
 
 func TestHandler_resumePlannedPurchase_NilExecution(t *testing.T) {
@@ -2240,7 +2242,7 @@ func TestHandler_pausePlannedPurchase_ActorStamped(t *testing.T) {
 	paused := &config.PurchaseExecution{ExecutionID: "11111111-1111-1111-1111-111111111111", Status: "paused"}
 	// Actor must equal the session UserID (pointer value comparison via reflect.DeepEqual).
 	mockStore.On("TransitionExecutionStatus", ctx, "11111111-1111-1111-1111-111111111111",
-		[]string{"pending", "running"}, "paused",
+		[]string{"pending"}, "paused",
 		mock.MatchedBy(func(a *string) bool { return a != nil && *a == actorID }),
 	).Return(paused, nil)
 
@@ -5232,20 +5234,20 @@ func TestHandler_runPlannedPurchase_NonOwner_Rejected(t *testing.T) {
 // TestHandler_pausePlannedPurchase_Owner_Allowed: user A manages their OWN P1.
 func TestHandler_pausePlannedPurchase_Owner_Allowed(t *testing.T) {
 	handler, mockConfig, _ := buildManageHandler(ownUserA, ownUserA, false)
-	mockConfig.On("TransitionExecutionStatus", mock.Anything, ownExecID, []string{"pending", "running"}, "paused", mock.Anything).
+	mockConfig.On("TransitionExecutionStatus", mock.Anything, ownExecID, []string{"pending"}, "paused", mock.Anything).
 		Return(&config.PurchaseExecution{ExecutionID: ownExecID, Status: "paused"}, nil)
 
 	res, err := handler.pausePlannedPurchase(context.Background(), manageReq(), ownExecID)
 	require.NoError(t, err)
 	assert.Equal(t, "paused", res.Status)
-	mockConfig.AssertCalled(t, "TransitionExecutionStatus", mock.Anything, ownExecID, []string{"pending", "running"}, "paused", mock.Anything)
+	mockConfig.AssertCalled(t, "TransitionExecutionStatus", mock.Anything, ownExecID, []string{"pending"}, "paused", mock.Anything)
 }
 
 // TestHandler_pausePlannedPurchase_UpdateAny_AllowsAny: a privileged user with
 // update-any:purchases manages P2 created by user B.
 func TestHandler_pausePlannedPurchase_UpdateAny_AllowsAny(t *testing.T) {
 	handler, mockConfig, _ := buildManageHandler(ownUserA, ownUserB, true)
-	mockConfig.On("TransitionExecutionStatus", mock.Anything, ownExecID, []string{"pending", "running"}, "paused", mock.Anything).
+	mockConfig.On("TransitionExecutionStatus", mock.Anything, ownExecID, []string{"pending"}, "paused", mock.Anything).
 		Return(&config.PurchaseExecution{ExecutionID: ownExecID, Status: "paused"}, nil)
 
 	res, err := handler.pausePlannedPurchase(context.Background(), manageReq(), ownExecID)

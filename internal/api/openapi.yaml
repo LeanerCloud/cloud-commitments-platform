@@ -576,6 +576,7 @@ paths:
       operationId: pausePlannedPurchase
       tags: [PlannedPurchases]
       summary: Pause a planned purchase
+      description: Only pending executions can be paused.
       parameters:
         - $ref: '#/components/parameters/CSRFToken'
       responses:
@@ -585,6 +586,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
+        '409':
+          description: The execution is not pending and cannot be paused.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
