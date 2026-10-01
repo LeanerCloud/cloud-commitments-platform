@@ -160,6 +160,10 @@ func (m *mockConfigStore) UpdatePurchasePlan(ctx context.Context, plan *config.P
 	return nil
 }
 
+func (m *mockConfigStore) StampPlanNotificationSent(context.Context, string, time.Time) error {
+	return nil
+}
+
 func (m *mockConfigStore) CompletePlanStep(ctx context.Context, planID string, stepNumber int) error {
 	return nil
 }

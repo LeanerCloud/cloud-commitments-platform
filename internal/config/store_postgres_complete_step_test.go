@@ -87,29 +87,14 @@ func (a nullTimeArg) Match(v interface{}) bool {
 	return (tp == nil) == a.wantNil
 }
 
-// afterArg matches a time.Time UPDATE argument that is strictly after the given
-// instant, used to assert updated_at is refreshed rather than persisted stale.
-type afterArg struct{ notBefore time.Time }
-
-func (a afterArg) Match(v interface{}) bool {
-	ts, ok := v.(time.Time)
-	if !ok {
-		return false
-	}
-	return ts.After(a.notBefore)
-}
-
 const purchasePlanUpdateArgs = 11
 
-// completeStepUpdateArgs builds the WithArgs matcher list for the UPDATE issued
-// by CompletePlanStep, asserting the persisted CurrentStep at $7, a refreshed
-// updated_at at $8 (> staleUpdatedAt), and the next_execution_date presence at
-// $9 while leaving the rest as AnyArg.
+// completeStepUpdateArgs pins the completed step, expected read version, and next-date presence.
 func completeStepUpdateArgs(wantStep int, staleUpdatedAt time.Time, wantNextNil bool) []interface{} {
 	args := anyArgsCfg(purchasePlanUpdateArgs)
-	args[6] = rampStepArg{want: wantStep}         // ramp_schedule = $7
-	args[7] = afterArg{notBefore: staleUpdatedAt} // updated_at = $8
-	args[8] = nullTimeArg{wantNil: wantNextNil}   // next_execution_date = $9
+	args[6] = rampStepArg{want: wantStep}       // ramp_schedule = $7
+	args[7] = staleUpdatedAt                    // expected updated_at = $8
+	args[8] = nullTimeArg{wantNil: wantNextNil} // next_execution_date = $9
 	return args
 }
 
@@ -177,9 +162,9 @@ func TestPGXMock_CompletePlanStep_LocksAndAdvances(t *testing.T) {
 		WithArgs("plan-123").
 		WillReturnRows(rampPlanRows(t, "plan-123", ramp, now, stale, sql.NullTime{Valid: false}))
 	expectFanOut(mock, "plan-123", 2, 3, 0)
-	mock.ExpectExec(`UPDATE purchase_plans`).
+	mock.ExpectQuery(`UPDATE purchase_plans`).
 		WithArgs(completeStepUpdateArgs(2, stale, false)...).
-		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+		WillReturnRows(pgxmock.NewRows([]string{"updated_at"}).AddRow(now))
 	mock.ExpectCommit()
 
 	require.NoError(t, store.CompletePlanStep(ctx, "plan-123", 2))
@@ -372,9 +357,9 @@ func TestPGXMock_CompletePlanStep_CompletedRampClearsNextDate(t *testing.T) {
 		WillReturnRows(rampPlanRows(t, "plan-done", ramp, now, stale, sql.NullTime{Valid: true, Time: now}))
 	// Step stays at 4 (already complete), updated_at refreshed, and
 	// next_execution_date is cleared.
-	mock.ExpectExec(`UPDATE purchase_plans`).
+	mock.ExpectQuery(`UPDATE purchase_plans`).
 		WithArgs(completeStepUpdateArgs(4, stale, true)...).
-		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+		WillReturnRows(pgxmock.NewRows([]string{"updated_at"}).AddRow(now))
 	mock.ExpectCommit()
 
 	require.NoError(t, store.CompletePlanStep(ctx, "plan-done", 5))

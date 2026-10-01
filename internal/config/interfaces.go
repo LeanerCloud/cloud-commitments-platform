@@ -29,7 +29,9 @@ type StoreInterface interface {
 	// Purchase plans
 	CreatePurchasePlan(ctx context.Context, plan *PurchasePlan) error
 	GetPurchasePlan(ctx context.Context, planID string) (*PurchasePlan, error)
+	// UpdatedAt must be the read version; a stale version returns ErrPurchasePlanConflict.
 	UpdatePurchasePlan(ctx context.Context, plan *PurchasePlan) error
+	StampPlanNotificationSent(ctx context.Context, planID string, at time.Time) error
 	// CompletePlanStep records that ramp step stepNumber finished and advances
 	// the plan's schedule to it, inside a SELECT FOR UPDATE transaction that
 	// prevents the concurrent-write lost-update race of issue #1071.
@@ -77,11 +79,8 @@ type StoreInterface interface {
 	// transaction; without it the answer is advisory and two concurrent callers
 	// both see the step free.
 	OccupiedRampStepsInRangeTx(ctx context.Context, tx pgx.Tx, planID string, from, to int) ([]int, error)
-	// UpdatePurchasePlanTx is the tx-accepting variant of UpdatePurchasePlan.
-	// Used from createPlannedPurchases' WithTx block so the per-row
-	// SavePurchaseExecutionTx writes and the plan's next_execution_date
-	// bump commit atomically — a partial failure leaves no orphaned
-	// rows and no stale plan pointer.
+	// UpdatePurchasePlanTx checks UpdatedAt and replaces it with the returned version.
+	// The caller must discard the transaction-local plan if the transaction rolls back.
 	UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, plan *PurchasePlan) error
 	DeletePurchasePlan(ctx context.Context, planID string) error
 	ListPurchasePlans(ctx context.Context, filter PurchasePlanFilter) ([]PurchasePlan, error)

@@ -49,6 +49,10 @@ func (m *mockConfigStoreForHealth) UpdatePurchasePlan(ctx context.Context, plan 
 	return nil
 }
 
+func (m *mockConfigStoreForHealth) StampPlanNotificationSent(context.Context, string, time.Time) error {
+	return nil
+}
+
 func (m *mockConfigStoreForHealth) CompletePlanStep(_ context.Context, _ string, _ int) error {
 	return nil
 }
