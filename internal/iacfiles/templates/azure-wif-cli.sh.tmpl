@@ -5,7 +5,7 @@
 # Usage:
 #   bash {{.AccountSlug}}-azure-wif-cli.sh
 #
-# Requirements: az cli logged in to the target subscription.
+# Requirements: jq and az cli logged in to the target subscription.
 #
 # This script configures true Azure Workload Identity Federation —
 # no certificate, no private key, no client secret is created or stored.
@@ -22,11 +22,24 @@ SUBSCRIPTION_ID="${SUBSCRIPTION_ID:-{{.SubscriptionID}}}"
 # /.well-known/openid-configuration when resolving the discovery doc,
 # so do NOT include the well-known suffix here. Trailing slashes and
 # http/https matter for Azure AD validation (AADSTS700213 if mismatched).
-CUDLY_ISSUER_URL="${CUDLY_ISSUER_URL:-{{.CUDlyAPIURL}}/oidc}"
-CUDLY_FEDERATED_SUBJECT="${CUDLY_FEDERATED_SUBJECT:-cudly-controller}"
-CUDLY_FEDERATED_AUDIENCE="${CUDLY_FEDERATED_AUDIENCE:-api://AzureADTokenExchange}"
+CUDLY_ISSUER_URL="${CUDLY_ISSUER_URL-{{.CUDlyAPIURL}}/oidc}"
+CUDLY_FEDERATED_SUBJECT="${CUDLY_FEDERATED_SUBJECT-cudly-controller}"
+CUDLY_FEDERATED_AUDIENCE="${CUDLY_FEDERATED_AUDIENCE-api://AzureADTokenExchange}"
 
-: "${CUDLY_ISSUER_URL:?set CUDLY_ISSUER_URL to the OIDC issuer URL of your CUDly deployment (base URL + /oidc)}"
+# Keep this CUDly input contract aligned with azure-target/terraform/variables.tf.
+ISSUER_PATTERN='^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~%/-]*)?$'
+if [[ ! "${CUDLY_ISSUER_URL}" =~ $ISSUER_PATTERN || "${CUDLY_ISSUER_URL}" == */ ]]; then
+  echo "ERROR: CUDLY_ISSUER_URL must be a CUDly HTTPS issuer URL without a trailing slash." >&2
+  exit 1
+fi
+for CLAIM_NAME in CUDLY_FEDERATED_SUBJECT CUDLY_FEDERATED_AUDIENCE; do
+  case "${!CLAIM_NAME}" in
+    ''|*[$' \t\n\r\v\f']*|*'$'*|*'*'*)
+      echo "ERROR: ${CLAIM_NAME} must be nonempty without ASCII whitespace, dollar signs or asterisks." >&2
+      exit 1 ;;
+  esac
+done
+command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required." >&2; exit 1; }
 
 if [[ -n "${SUBSCRIPTION_ID}" && "${SUBSCRIPTION_ID}" != "<SUBSCRIPTION_ID>" ]]; then
   az account set --subscription "${SUBSCRIPTION_ID}"
@@ -41,23 +54,16 @@ echo "Creating service principal..."
 SP_OBJECT_ID=$(az ad sp create --id "${APP_ID}" --query id --output tsv)
 
 echo "Adding federated identity credential bound to CUDly OIDC issuer..."
-# Idempotent: if the same name exists (re-run of the script), az throws a
-# conflict error — catch and continue. A subsequent run with the same
-# script is safe.
-FEDCRED_PARAMS=$(cat <<JSON
-{
-  "name": "cudly",
-  "issuer": "${CUDLY_ISSUER_URL}",
-  "subject": "${CUDLY_FEDERATED_SUBJECT}",
-  "audiences": ["${CUDLY_FEDERATED_AUDIENCE}"],
-  "description": "CUDly signs JWTs via its own OIDC issuer (KMS-backed). No secret is stored on the CUDly side."
-}
-JSON
-)
+FEDCRED_PARAMS=$(jq -n \
+  --arg issuer "${CUDLY_ISSUER_URL}" \
+  --arg subject "${CUDLY_FEDERATED_SUBJECT}" \
+  --arg audience "${CUDLY_FEDERATED_AUDIENCE}" \
+  '{name: "cudly", issuer: $issuer, subject: $subject, audiences: [$audience],
+    description: "CUDly signs JWTs via its own OIDC issuer (KMS-backed). No secret is stored on the CUDly side."}')
 az ad app federated-credential create \
   --id "${APP_ID}" \
   --parameters "${FEDCRED_PARAMS}" \
-  --output none 2>&1 || echo "  (federated credential may already exist — continuing)"
+  --output none
 
 echo ""
 echo "=== Done ==="
