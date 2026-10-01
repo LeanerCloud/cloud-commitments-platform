@@ -265,7 +265,7 @@ func (h *Handler) pausePlannedPurchase(ctx context.Context, req *events.LambdaFu
 	}
 
 	// Atomically transition to paused
-	if _, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"pending", "running"}, "paused", resolveCreatorUserID(session)); err != nil {
+	if _, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"pending"}, "paused", resolveCreatorUserID(session)); err != nil {
 		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be paused: %v", executionID, err))
 	}
 
