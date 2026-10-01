@@ -53,15 +53,45 @@ func TestResolveAccountConfigsForRecs_EmptyRecs(t *testing.T) {
 	assert.Zero(t, reader.overrideCalls)
 }
 
-func TestResolveAccountConfigsForRecs_NilCloudAccountSkipped(t *testing.T) {
-	reader := &fakeAccountConfigReader{}
+func TestResolveAccountConfigsForRecs_NilCloudAccountUsesGlobal(t *testing.T) {
+	reader := &fakeAccountConfigReader{globals: map[string]*ServiceConfig{
+		"aws|rds": {Provider: "aws", Service: "rds", Enabled: false},
+	}, overrideErr: errors.New("ambient must not query overrides")}
 	recs := []RecommendationRecord{
 		{Provider: "aws", Service: "rds", CloudAccountID: nil}, // ambient
+		{Provider: "aws", Service: "rds", CloudAccountID: nil},
 	}
 	got, err := ResolveAccountConfigsForRecs(context.Background(), reader, recs)
 	assert.NoError(t, err)
-	assert.Empty(t, got, "nil CloudAccountID recs are skipped")
-	assert.Zero(t, reader.globalCalls)
+	assert.Equal(t, reader.globals["aws|rds"], got[AccountConfigKey("", "aws", "rds")])
+	assert.Equal(t, 1, reader.globalCalls)
+	assert.Zero(t, reader.overrideCalls)
+}
+
+func TestResolveAccountConfigsForRecs_AmbientAndRegistered(t *testing.T) {
+	reader := &fakeAccountConfigReader{
+		globals:   map[string]*ServiceConfig{"aws|rds": {Enabled: false}},
+		overrides: map[string]*AccountServiceOverride{"acct-A|aws|rds": {Enabled: boolPtr(true)}},
+	}
+	got, err := ResolveAccountConfigsForRecs(t.Context(), reader, []RecommendationRecord{
+		{Provider: "aws", Service: "rds"}, acctRec("acct-A", "aws", "rds"),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, &ServiceConfig{Enabled: false}, got[AccountConfigKey("", "aws", "rds")])
+	assert.True(t, got[AccountConfigKey("acct-A", "aws", "rds")].Enabled)
+	assert.Equal(t, 1, reader.globalCalls)
+	assert.Equal(t, 1, reader.overrideCalls)
+}
+
+func TestResolveAccountConfigsForRecs_AmbientMissingAndErrors(t *testing.T) {
+	for _, lookupErr := range []error{nil, fmt.Errorf("absent: %w", ErrNotFound), errors.New("database unavailable")} {
+		reader := &fakeAccountConfigReader{globalErr: lookupErr}
+		got, err := ResolveAccountConfigsForRecs(t.Context(), reader, []RecommendationRecord{{Provider: "aws", Service: "rds"}})
+		assert.Equal(t, lookupErr != nil && !errors.Is(lookupErr, ErrNotFound), err != nil)
+		assert.Empty(t, got)
+		assert.Equal(t, 1, reader.globalCalls)
+		assert.Zero(t, reader.overrideCalls)
+	}
 }
 
 func TestResolveAccountConfigsForRecs_OverridePresent_ResolvedConfigReflectsOverride(t *testing.T) {

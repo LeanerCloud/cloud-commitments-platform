@@ -924,6 +924,7 @@ func TestScheduler_ListRecommendations(t *testing.T) {
 		Return(&config.RecommendationsFreshness{LastCollectedAt: &now}, nil)
 	mockStore.On("ListStoredRecommendations", ctx, mock.Anything).
 		Return(cached, nil)
+	mockStore.On("GetServiceConfig", ctx, "aws", mock.Anything).Return(nil, config.ErrNotFound)
 	// Non-Lambda path resolves the effective stale TTL from the DB config.
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RecommendationsCacheStaleHours: config.DefaultRecommendationsCacheStaleHours,
@@ -953,6 +954,7 @@ func TestScheduler_ListRecommendations_StaleHoursZeroDisablesBackgroundRefresh(t
 		Return(&config.RecommendationsFreshness{LastCollectedAt: &old}, nil)
 	mockStore.On("ListStoredRecommendations", ctx, mock.Anything).
 		Return(cached, nil)
+	mockStore.On("GetServiceConfig", ctx, "aws", "ec2").Return(nil, config.ErrNotFound)
 	// Disable sentinel: 0 must NOT trigger a background refresh.
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RecommendationsCacheStaleHours: 0,
