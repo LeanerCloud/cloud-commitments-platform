@@ -1044,12 +1044,24 @@ func (s *Scheduler) fetchAndConvert(ctx context.Context, prov provider.Provider,
 	return result, complete, nil
 }
 
-// tagAccount sets CloudAccountID on each recommendation record.
+// tagAccount assigns the stored account identity and updates its recommendation ID.
 func (s *Scheduler) tagAccount(recs []config.RecommendationRecord, accountID string) []config.RecommendationRecord {
 	for i := range recs {
 		recs[i].CloudAccountID = &accountID
+		recs[i].ID = recommendationID(recs[i])
 	}
 	return recs
+}
+
+// recommendationID uses the same identity dimensions as the stored natural key.
+func recommendationID(rec config.RecommendationRecord) string {
+	accountID := ""
+	if rec.CloudAccountID != nil {
+		accountID = *rec.CloudAccountID
+	}
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%s",
+		rec.Provider, accountID, rec.Service, rec.Region,
+		rec.ResourceType, rec.Engine, rec.Term, rec.Payment)
 }
 
 // ListRecommendations reads cached recommendations from the store, applying
@@ -1547,44 +1559,7 @@ func (s *Scheduler) convertRecommendations(recs []common.Recommendation, provide
 			continue
 		}
 
-		// The ID must be unique per logically-distinct rec — otherwise
-		// the frontend collapses two rows into one selection (the
-		// data-rec-id collision in recommendations.ts:1067-1069 / the
-		// selection-set toggle in :1639-1660 — see issue #187), and
-		// any downstream stage that dedupes by ID drops the second rec
-		// entirely (the AWS-1yr-missing symptom in issue #188).
-		//
-		// We use the natural composite key directly rather than a hash:
-		// no truncation collision risk, self-documenting in DevTools
-		// (an id like "aws|123456789012|ec2|us-east-1|m5.large||1|all-upfront"
-		// makes any future regression visibly identical), and the
-		// downstream consumers — frontend selection Set, plan-target
-		// matching, suppression keying — all treat the id opaquely as
-		// a string. The fields are alphanumeric/hyphen by upstream
-		// contract (provider slugs, AWS/Azure/GCP account IDs and
-		// subscription UUIDs, AWS region names, instance-type SKUs,
-		// payment-option enums), so `|` cannot appear inside any
-		// component — no escaping needed.
-		//
-		// Fields:
-		//   - providerName: separates AWS/Azure/GCP recs
-		//   - rec.Account:  separates per-account/per-subscription recs
-		//                   sharing the same provider+SKU+region+payment
-		//   - rec.Service / rec.Region / rec.ResourceType: the cell
-		//   - engine:       MySQL vs Postgres RDS at same SKU collide otherwise
-		//   - term:         1yr vs 3yr at same SKU collide otherwise
-		//   - rec.PaymentOption: all-upfront vs no-upfront collide otherwise
-		//
-		// The parsed integer `term` is used (not rec.Term) so a rec
-		// with Term="" or "3yr" both reduce to the same canonical
-		// value and don't drift out of agreement with the persisted
-		// Term column.
-		recordID := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%s",
-			providerName, rec.Account, rec.Service, rec.Region,
-			rec.ResourceType, engine, term, rec.PaymentOption)
-
-		records = append(records, config.RecommendationRecord{
-			ID:                recordID,
+		record := config.RecommendationRecord{
 			Provider:          providerName,
 			Service:           string(rec.Service),
 			Region:            rec.Region,
@@ -1602,7 +1577,9 @@ func (s *Scheduler) convertRecommendations(recs []common.Recommendation, provide
 			UsageHistory:      rec.UsageHistory,                  // daily coverage pcts (nil when provider not yet wired; see #239)
 			Selected:          true,                              // Default to selected
 			Purchased:         false,
-		})
+		}
+		record.ID = recommendationID(record)
+		records = append(records, record)
 	}
 
 	return records

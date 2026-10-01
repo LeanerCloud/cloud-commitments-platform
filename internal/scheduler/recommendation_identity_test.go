@@ -1,0 +1,117 @@
+package scheduler
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+)
+
+type issue235Store struct{ mockOverrideStore }
+
+func (s *issue235Store) GetGlobalConfig(context.Context) (*config.GlobalConfig, error) {
+	return &config.GlobalConfig{EnabledProviders: []string{"aws"}, DefaultTerm: 1, DefaultPayment: "all-upfront"}, nil
+}
+
+func (s *issue235Store) UpsertRecommendations(_ context.Context, _ time.Time, recs []config.RecommendationRecord, _ []config.SuccessfulCollect) error {
+	s.recs = append([]config.RecommendationRecord(nil), recs...)
+	return nil
+}
+
+func (s *issue235Store) ListStoredRecommendations(_ context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error) {
+	var found []config.RecommendationRecord
+	for _, r := range s.recs {
+		if filter.ID == "" || r.ID == filter.ID {
+			found = append(found, r)
+		}
+	}
+	return found, nil
+}
+
+func TestRecommendationIdentity_TwoRegisteredAccounts(t *testing.T) {
+	for _, reported := range []string{"", "999999999999"} {
+		t.Run("provider_account="+reported, func(t *testing.T) {
+			ctx := context.Background()
+			store := &issue235Store{}
+			accounts := []config.CloudAccount{
+				{ID: "11111111-1111-4111-8111-111111111111", Provider: "aws", ExternalID: "111111111111", AWSAuthMode: "role_arn", AWSRoleARN: "arn:aws:iam::111111111111:role/cudly", Enabled: true},
+				{ID: "22222222-2222-4222-8222-222222222222", Provider: "aws", ExternalID: "222222222222", AWSAuthMode: "role_arn", AWSRoleARN: "arn:aws:iam::222222222222:role/cudly", Enabled: true},
+			}
+			store.On("ListCloudAccounts", mock.Anything, mock.Anything).Return(accounts, nil)
+			factory := new(MockProviderFactory)
+			prov := new(MockProvider)
+			client := new(MockRecommendationsClient)
+			factory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(prov, nil)
+			prov.On("GetRecommendationsClient", mock.Anything).Return(client, nil)
+			client.On("GetAllRecommendations", mock.Anything).Return([]common.Recommendation{{Provider: common.ProviderAWS, Account: reported, Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", Count: 1, Term: "1yr", PaymentOption: "all-upfront"}}, nil)
+			s := &Scheduler{config: store, providerFactory: factory}
+			result, err := s.CollectRecommendations(ctx, "")
+			require.NoError(t, err)
+			require.Equal(t, 2, result.Recommendations)
+			require.Len(t, store.recs, 2)
+			assert.NotEqual(t, store.recs[0].ID, store.recs[1].ID)
+			ids := make(map[string]string)
+			for _, want := range store.recs {
+				ids[*want.CloudAccountID] = want.ID
+				got, _, lookupErr := s.GetRecommendationByID(ctx, want.ID)
+				require.NoError(t, lookupErr)
+				require.NotNil(t, got)
+				assert.Equal(t, want, *got)
+			}
+			_, err = s.CollectRecommendations(ctx, "")
+			require.NoError(t, err)
+			require.Len(t, store.recs, 2)
+			for _, got := range store.recs {
+				assert.Equal(t, ids[*got.CloudAccountID], got.ID)
+			}
+		})
+	}
+}
+
+func TestRecommendationIdentity_Tagging(t *testing.T) {
+	for _, cloud := range []string{"aws", "azure", "gcp"} {
+		t.Run(cloud, func(t *testing.T) {
+			s := &Scheduler{}
+			rec := common.Recommendation{Service: common.ServiceEC2, Region: "region", ResourceType: "sku", Term: "1yr", PaymentOption: "all-upfront"}
+			payment := map[string]string{"aws": "all-upfront", "azure": "upfront", "gcp": "monthly"}[cloud]
+			ambient := s.convertRecommendations([]common.Recommendation{rec}, cloud)
+			require.Len(t, ambient, 1)
+			assert.Nil(t, ambient[0].CloudAccountID)
+			assert.Equal(t, cloud+"||ec2|region|sku||1|"+payment, ambient[0].ID)
+			first := s.tagAccount(ambient, "11111111-1111-4111-8111-111111111111")
+			want := cloud + "|11111111-1111-4111-8111-111111111111|ec2|region|sku||1|" + payment
+			assert.Equal(t, want, first[0].ID)
+			assert.Equal(t, want, s.tagAccount(first, *first[0].CloudAccountID)[0].ID)
+			rec.Account = "provider-reported-account"
+			changed := s.convertRecommendations([]common.Recommendation{rec}, cloud)
+			assert.Equal(t, want, s.tagAccount(changed, *first[0].CloudAccountID)[0].ID)
+			retagged := s.tagAccount(first, "22222222-2222-4222-8222-222222222222")
+			assert.Equal(t, cloud+"|22222222-2222-4222-8222-222222222222|ec2|region|sku||1|"+payment, retagged[0].ID)
+		})
+	}
+}
+
+func TestRecommendationIdentity_NaturalKeyDimensions(t *testing.T) {
+	base := config.RecommendationRecord{Provider: "aws", Service: "rds", Region: "us-east-1", ResourceType: "db.m5.large", Engine: "mysql", Term: 1, Payment: "all-upfront"}
+	for name, change := range map[string]func(*config.RecommendationRecord){
+		"account":       func(r *config.RecommendationRecord) { r.CloudAccountID = new("11111111-1111-4111-8111-111111111111") },
+		"provider":      func(r *config.RecommendationRecord) { r.Provider = "azure" },
+		"service":       func(r *config.RecommendationRecord) { r.Service = "ec2" },
+		"region":        func(r *config.RecommendationRecord) { r.Region = "us-west-2" },
+		"resource type": func(r *config.RecommendationRecord) { r.ResourceType = "db.m5.xlarge" },
+		"engine":        func(r *config.RecommendationRecord) { r.Engine = "postgres" },
+		"term":          func(r *config.RecommendationRecord) { r.Term = 3 },
+		"payment":       func(r *config.RecommendationRecord) { r.Payment = "no-upfront" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			other := base
+			change(&other)
+			assert.NotEqual(t, recommendationID(base), recommendationID(other))
+		})
+	}
+}
