@@ -78,6 +78,66 @@ describe('Savings History Module', () => {
     (Chart as unknown as jest.Mock).mockClear();
   });
 
+  describe('requested-window average', () => {
+    const now = new Date('2026-10-01T12:17:15.123Z');
+
+    beforeEach(() => { jest.useFakeTimers().setSystemTime(now); });
+    afterEach(() => { jest.useRealTimers(); });
+
+    test.each([
+      ['24h', 'hourly', 24], ['7d', 'hourly', 168],
+      ['30d', 'daily', 30], ['90d', 'daily', 90],
+    ] as const)('%s includes empty intervals in the average', async (period, interval, count) => {
+      (document.getElementById('savings-period') as HTMLSelectElement).value = period;
+      for (const mode of ['sparse', 'zero-filled', 'full']) {
+        (getSavingsAnalytics as jest.Mock).mockImplementation(({ start, end }) => ({
+          start, end, interval,
+          summary: { total_monthly_savings: mode === 'full' ? count * 10 : 1680 },
+          data_points: Array.from({ length: mode === 'sparse' ? 3 : count }, (_, i) => ({
+            timestamp: new Date(Date.parse(start) + i * (interval === 'hourly' ? 3600000 : 86400000)).toISOString(),
+            total_savings: mode === 'full' ? 10 : i < 3 ? 560 : 0,
+          })),
+        }));
+        await loadSavingsHistory();
+        expect(document.getElementById('avg-hourly-savings')?.textContent)
+          .toBe('$' + (mode === 'full' ? 10 : 1680 / count).toFixed(2) + '/mo');
+        const calls = (getSavingsAnalytics as jest.Mock).mock.calls;
+        const request = calls[calls.length - 1]?.[0];
+        expect(request.end).toBe(now.toISOString());
+        expect(Date.parse(request.end) - Date.parse(request.start))
+          .toBe(count * (interval === 'hourly' ? 3600000 : 86400000));
+        expect(request.interval).toBe(interval);
+      }
+    });
+
+    test.each([
+      ['hourly', '$0.01/hr'], ['monthly', '$10.00/mo'], ['yearly', '$120.00/yr'],
+    ])('converts the window average to %s', async (unit, expected) => {
+      (document.getElementById('savings-period') as HTMLSelectElement).value = '7d';
+      (document.getElementById('savings-unit') as HTMLSelectElement).value = unit;
+      (getSavingsAnalytics as jest.Mock).mockImplementation(({ start, end, interval }) => ({
+        start, end, interval,
+        summary: { total_monthly_savings: 1680, total_annual_savings: 20160 },
+        data_points: [start, new Date(Date.parse(start) + 72 * 3600000).toISOString(), end].map(timestamp => ({
+          timestamp: new Date(Math.floor(Date.parse(timestamp) / 3600000) * 3600000).toISOString(),
+          total_savings: 560,
+        })),
+      }));
+      await loadSavingsHistory();
+      expect(document.getElementById('avg-hourly-savings')?.textContent).toBe(expected);
+    });
+
+    test('keeps a zero-valued populated window visible', async () => {
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        summary: { total_monthly_savings: 0 },
+        data_points: [{ timestamp: now.toISOString(), total_savings: 0 }],
+      });
+      await loadSavingsHistory();
+      expect(document.getElementById('avg-hourly-savings')?.textContent).toBe('$0.00/mo');
+      expect(document.getElementById('savings-stats')?.classList.contains('hidden')).toBe(false);
+    });
+  });
+
   describe('loadSavingsHistory', () => {
     test('loads and renders savings data for default 90d period', async () => {
       const mockData = {
