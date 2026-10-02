@@ -25,7 +25,7 @@ func TestGlobalFiltersPersistedAmbientAndRegistered(t *testing.T) {
 	store := config.NewPostgresStore(pg.DB)
 	account := uuid.NewString()
 	require.NoError(t, store.CreateCloudAccount(ctx, &config.CloudAccount{ID: account, Name: "registered", Provider: "aws", ExternalID: "111111111111", Enabled: true}))
-	var records []config.RecommendationRecord
+	records := make([]config.RecommendationRecord, 0, 10)
 	for i, id := range []*string{nil, &account} {
 		for _, count := range []int{1, 10, 11} {
 			records = append(records, config.RecommendationRecord{ID: fmt.Sprintf("%d-%d", i, count), Provider: "aws", Service: "rds", Region: "us-east-1", ResourceType: fmt.Sprintf("db.m5.%d", count), Engine: "mysql", Count: count, Term: 1, Payment: "all-upfront", CloudAccountID: id})
@@ -63,14 +63,15 @@ func TestGlobalFiltersPersistedAmbientAndRegistered(t *testing.T) {
 			require.NoError(t, store.SaveServiceConfig(ctx, &tc.policy))
 			got, err := s.ListRecommendations(ctx, config.RecommendationFilter{})
 			require.NoError(t, err)
-			var ids []string
+			ids := make([]string, 0, len(got))
 			for _, rec := range got {
 				ids = append(ids, rec.ID)
 				_, hidden, err := s.GetRecommendationByID(ctx, rec.ID)
 				require.NoError(t, err)
 				assert.Empty(t, hidden, "visible recommendation %s", rec.ID)
 			}
-			want := []string{"0-other", "1-other"}
+			want := make([]string, 2, 2+2*len(tc.want))
+			want[0], want[1] = "0-other", "1-other"
 			for _, suffix := range tc.want {
 				want = append(want, "0-"+suffix, "1-"+suffix)
 			}
@@ -92,7 +93,7 @@ func TestGlobalFiltersPersistedAmbientAndRegistered(t *testing.T) {
 		require.NoError(t, store.SaveAccountServiceOverride(ctx, &config.AccountServiceOverride{AccountID: account, Provider: "aws", Service: "rds", Enabled: boolPtr(true)}))
 		got, err := s.ListRecommendations(ctx, config.RecommendationFilter{})
 		require.NoError(t, err)
-		var ids []string
+		ids := make([]string, 0, len(got))
 		for _, rec := range got {
 			ids = append(ids, rec.ID)
 		}
