@@ -151,7 +151,7 @@ func TestApplyAccountOverrides_NoGlobalConfig_RecsPassThrough(t *testing.T) {
 	assert.Len(t, recs, 1, "no global config -> no per-account policy applies -> rec passes through")
 }
 
-func TestApplyAccountOverrides_NilCloudAccountID_PassesThrough(t *testing.T) {
+func TestApplyAccountOverrides_NilCloudAccountID_UsesGlobal(t *testing.T) {
 	ctx := context.Background()
 	rec := config.RecommendationRecord{
 		ID: "ambient", Provider: "aws", Service: "ec2",
@@ -168,7 +168,37 @@ func TestApplyAccountOverrides_NilCloudAccountID_PassesThrough(t *testing.T) {
 
 	recs, err := s.ListRecommendations(ctx, config.RecommendationFilter{})
 	require.NoError(t, err)
-	assert.Len(t, recs, 1, "nil CloudAccountID recs are not subject to per-account override policy")
+	assert.Empty(t, recs, "global policy also applies without an account override")
+}
+
+func TestApplyAccountOverrides_AmbientControls(t *testing.T) {
+	for _, lookupErr := range []error{nil, errors.New("database unavailable")} {
+		store := &mockOverrideStore{getGlobalErr: lookupErr, recs: []config.RecommendationRecord{{ID: "ambient", Provider: "aws", Service: "rds"}}}
+		s := &Scheduler{config: store, isLambda: true}
+		got, err := s.ListRecommendations(t.Context(), config.RecommendationFilter{})
+		require.NoError(t, err)
+		assert.Equal(t, store.recs, got)
+		rec, hidden, err := s.GetRecommendationByID(t.Context(), "ambient")
+		require.NoError(t, err)
+		require.NotNil(t, rec)
+		assert.Empty(t, hidden)
+	}
+}
+
+func TestFilterRecsByResolvedConfigs_AmbientIsolation(t *testing.T) {
+	recs := []config.RecommendationRecord{
+		{ID: "drop", Provider: "aws", Service: "rds", Engine: "mysql"},
+		{ID: "engine-less", Provider: "aws", Service: "rds"},
+		{ID: "other-service", Provider: "aws", Service: "ec2", Engine: "mysql"},
+		{ID: "other-provider", Provider: "azure", Service: "rds", Engine: "mysql"},
+	}
+	original := append([]config.RecommendationRecord(nil), recs...)
+	resolved := map[string]*config.ServiceConfig{
+		config.AccountConfigKey("", "aws", "rds"): {Enabled: true, IncludeEngines: []string{"postgres"}},
+	}
+	got := filterRecsByResolvedConfigs(recs, resolved)
+	assert.Equal(t, original[1:], got)
+	assert.Equal(t, original, recs, "filter must preserve caller's backing array")
 }
 
 func TestApplyAccountOverrides_IncludeEngineMatch(t *testing.T) {

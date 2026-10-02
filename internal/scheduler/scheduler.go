@@ -1154,18 +1154,20 @@ func (s *Scheduler) GetRecommendationByID(ctx context.Context, id string) (rec *
 
 	// Check whether the account-override filter would drop this rec. This is
 	// a read-only call — we never drop it here, only report the reasons.
+	resolved, resolveErr := config.ResolveAccountConfigsForRecs(ctx, s.config, recs)
+	if resolveErr != nil {
+		// Non-fatal: if the override check fails we surface the rec without
+		// a hidden_by marker (over-show is the safer default).
+		logging.Errorf("GetRecommendationByID: override resolution failed; returning rec without hidden_by: %v", resolveErr)
+		return found, nil, nil
+	}
+	accountID := ""
 	if found.CloudAccountID != nil {
-		resolved, resolveErr := config.ResolveAccountConfigsForRecs(ctx, s.config, recs)
-		if resolveErr != nil {
-			// Non-fatal: if the override check fails we surface the rec without
-			// a hidden_by marker (over-show is the safer default).
-			logging.Errorf("GetRecommendationByID: override resolution failed; returning rec without hidden_by: %v", resolveErr)
-			return found, nil, nil
-		}
-		cfg := resolved[config.AccountConfigKey(*found.CloudAccountID, found.Provider, found.Service)]
-		if cfg != nil {
-			hiddenBy = overrideHiddenReasons(found, cfg)
-		}
+		accountID = *found.CloudAccountID
+	}
+	cfg := resolved[config.AccountConfigKey(accountID, found.Provider, found.Service)]
+	if cfg != nil {
+		hiddenBy = overrideHiddenReasons(found, cfg)
 	}
 
 	return found, hiddenBy, nil
