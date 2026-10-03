@@ -3,15 +3,86 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	awsrecommendations "github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAWSIncompleteSweep(t *testing.T) {
+	incomplete := &awsrecommendations.IncompleteRecommendationsError{
+		FailedDetails: 2, FailedScopes: 1, Causes: []error{errors.New("malformed quantity"), errors.New("API scope failed")},
+	}
+	for _, tc := range []struct {
+		name     string
+		err      error
+		complete bool
+		fatal    bool
+	}{
+		{name: "complete", complete: true},
+		{name: "incomplete", err: incomplete},
+		{name: "wrapped incomplete", err: fmt.Errorf("collect: %w", incomplete)},
+		{name: "ordinary failure", err: errors.New("API unavailable"), fatal: true},
+		{name: "canceled", err: context.Canceled, fatal: true},
+		{name: "deadline", err: context.DeadlineExceeded, fatal: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			complete, err := tolerateIncompleteSweep("aws", tc.err)
+			require.Equal(t, tc.complete, complete)
+			if tc.fatal {
+				require.ErrorIs(t, err, tc.err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestAWSIncompleteFallbackCannotAuthorizeEviction(t *testing.T) {
+	incomplete := &awsrecommendations.IncompleteRecommendationsError{FailedDetails: 1, Causes: []error{errors.New("invalid quantity")}}
+	for _, tc := range []struct {
+		name     string
+		firstErr error
+		lastErr  error
+	}{
+		{name: "all-invalid then complete", firstErr: incomplete},
+		{name: "empty then incomplete", lastErr: incomplete},
+		{name: "both incomplete", firstErr: incomplete, lastErr: incomplete},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := new(MockRecommendationsClient)
+			client.On("GetAllRecommendations", mock.Anything).Return([]common.Recommendation{}, tc.firstErr).Once()
+			for _, service := range []common.ServiceType{common.ServiceEC2, common.ServiceRDS, common.ServiceElastiCache, common.ServiceOpenSearch, common.ServiceRedshift, common.ServiceSavingsPlansAll} {
+				var rows []common.Recommendation
+				var lastErr error
+				if service == common.ServiceRDS {
+					rows = []common.Recommendation{{Service: common.ServiceRDS, Region: "us-east-1", ResourceType: "db.t3.medium", Count: 2,
+						Term: "1yr", PaymentOption: "no-upfront"}}
+					lastErr = tc.lastErr
+				}
+				client.On("GetRecommendations", mock.Anything, mock.MatchedBy(func(params *common.RecommendationParams) bool {
+					return params.Service == service && params.Term == "1yr" && params.PaymentOption == "no-upfront" && params.LookbackPeriod == "30d"
+				})).Return(rows, lastErr).Once()
+			}
+			prov := new(MockProvider)
+			prov.On("GetRecommendationsClient", mock.Anything).Return(client, nil).Once()
+			s := &Scheduler{}
+			recs, complete, err := s.fetchAndConvert(context.Background(), prov, "aws", nil,
+				&config.GlobalConfig{DefaultTerm: 1, DefaultPayment: "no-upfront", RecommendationsLookbackDays: 30})
+			require.NoError(t, err)
+			require.Len(t, recs, 1)
+			require.False(t, complete)
+			client.AssertExpectations(t)
+			prov.AssertExpectations(t)
+		})
+	}
+}
 
 // A partially-swept account must never authorize stale-row eviction.
 //

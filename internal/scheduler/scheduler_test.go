@@ -2108,7 +2108,15 @@ func TestScheduler_CollectAWSRecommendations_FallbackToFiltered(t *testing.T) {
 	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProvider, nil)
 	mockProvider.On("GetRecommendationsClient", ctx).Return(mockRecClient, nil)
 	mockRecClient.On("GetAllRecommendations", ctx).Return([]common.Recommendation{}, nil) // Empty
-	mockRecClient.On("GetRecommendations", ctx, mock.AnythingOfType("*common.RecommendationParams")).Return(filteredRecommendations, nil)
+	for _, service := range []common.ServiceType{common.ServiceEC2, common.ServiceRDS, common.ServiceElastiCache, common.ServiceOpenSearch, common.ServiceRedshift, common.ServiceSavingsPlansAll} {
+		var rows []common.Recommendation
+		if service == common.ServiceEC2 {
+			rows = filteredRecommendations
+		}
+		mockRecClient.On("GetRecommendations", ctx, mock.MatchedBy(func(params *common.RecommendationParams) bool {
+			return params.Service == service && params.Term == "3yr" && params.PaymentOption == "all-upfront" && params.LookbackPeriod == "7d"
+		})).Return(rows, nil).Once()
+	}
 
 	scheduler := &Scheduler{
 		config:          mockStore,
@@ -2118,6 +2126,7 @@ func TestScheduler_CollectAWSRecommendations_FallbackToFiltered(t *testing.T) {
 	recs, _, err := scheduler.collectAWSRecommendations(ctx, globalCfg)
 	require.NoError(t, err)
 	assert.Len(t, recs, 1)
+	mockRecClient.AssertExpectations(t)
 }
 
 // Regression test for COR-05 (#1168): when the primary sweep returns zero
@@ -2146,7 +2155,9 @@ func TestScheduler_CollectAWSRecommendations_FallbackError(t *testing.T) {
 	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProvider, nil)
 	mockProvider.On("GetRecommendationsClient", ctx).Return(mockRecClient, nil)
 	mockRecClient.On("GetAllRecommendations", ctx).Return([]common.Recommendation{}, nil) // Empty -> triggers fallback
-	mockRecClient.On("GetRecommendations", ctx, mock.AnythingOfType("*common.RecommendationParams")).Return(nil, fallbackErr)
+	mockRecClient.On("GetRecommendations", ctx, mock.MatchedBy(func(params *common.RecommendationParams) bool {
+		return params.Service == common.ServiceEC2 && params.Term == "3yr" && params.PaymentOption == "all-upfront" && params.LookbackPeriod == "7d"
+	})).Return(nil, fallbackErr).Once()
 
 	scheduler := &Scheduler{
 		config:          mockStore,
