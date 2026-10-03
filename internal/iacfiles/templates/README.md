@@ -52,6 +52,11 @@ from this directory via the `//go:embed` directive in `internal/iacfiles/embed.g
 Use `scripts/generate-federation-iac.go`, a self-contained Go script with no
 external dependencies.
 
+Azure targets require `--cudly-api-url` with the CUDly HTTPS base URL, without a
+trailing slash. The generator appends `/oidc` for the issuer and preserves custom
+paths. Contact email remains optional; AWS and GCP targets may omit the API URL
+to skip automatic registration.
+
 Every AWS target with a non-AWS source requires `--oidc-subject-claim`: it is
 the workload subject the generated AWS trust policy pins to, and there is no
 working default (see #1640). Pass the calling workload's subject claim, which is
@@ -101,7 +106,8 @@ go run scripts/generate-federation-iac.go \
 go run scripts/generate-federation-iac.go \
   --target azure --source aws \
   --account-name "prod-azure" --account-id "sub-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" \
-  --tenant-id "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  --tenant-id "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" \
+  --cudly-api-url "https://cudly.example.com"
 
 # GCP target, AWS source
 go run scripts/generate-federation-iac.go \

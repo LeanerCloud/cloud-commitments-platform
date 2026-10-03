@@ -62,7 +62,8 @@
 //	go run scripts/generate-federation-iac.go \
 //	  --target azure --source aws \
 //	  --account-name "prod-azure" --account-id "sub-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" \
-//	  --tenant-id "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+//	  --tenant-id "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" \
+//	  --cudly-api-url "https://cudly.example.com"
 //
 //	# GCP target, AWS source — WIF pool tfvars
 //	# --source-account-id is CUDly's own AWS account (required when --source aws)
@@ -131,13 +132,8 @@ type iacData struct {
 	ProjectID           string
 	ServiceAccountEmail string
 	OIDCIssuerURI       string
-	// CUDlyAPIURL and ContactEmail feed the optional auto-registration block
-	// in the tfvars/deploy-script templates. The server pre-fills them from
-	// the dashboard URL and the authenticated session; the standalone script
-	// has neither, so they come from --cudly-api-url / --contact-email and
-	// default to "" (which the Terraform modules treat as "skip
-	// registration" — see the cudly_api_url/contact_email variable
-	// descriptions in iac/federation/*/terraform/variables.tf).
+	// Azure also requires CUDlyAPIURL to derive its issuer; ContactEmail is optional.
+	// Other targets use both fields only for optional registration.
 	CUDlyAPIURL  string
 	ContactEmail string
 }
@@ -504,13 +500,20 @@ func requireSourceAccountID(data *iacData, source, sourceAccountID, errMsg strin
 	return nil
 }
 
-// populateData fills target-specific fields on data from CLI flags. It reports
-// an error rather than writing an invalid value into data, so a rejected flag
-// stops the run before any template is rendered. This covers two independent
-// gates: --oidc-subject-claim, required (and only meaningful) for an AWS
-// target with a non-AWS source; and --source-account-id, required whenever
-// the source is AWS itself (the aws-cross-account and gcp-wif-from-aws paths),
-// since CUDly's own account has no other way to reach this standalone script.
+// Mirrors iac/federation/azure-target/terraform/variables.tf's issuer grammar.
+var azureAPIURLRE = regexp.MustCompile(`^https://[A-Za-z0-9.-]+(:\d+)?(/[A-Za-z0-9._~%/-]*)?$`)
+
+func validateAzureAPIURL(baseURL string) error {
+	if baseURL == "" {
+		return errors.New("--cudly-api-url is required when --target=azure to derive the CUDly OIDC issuer")
+	}
+	if !azureAPIURLRE.MatchString(baseURL) || strings.HasSuffix(baseURL, "/") {
+		return errors.New("--cudly-api-url must be a CUDly HTTPS base URL without a trailing slash, query, fragment or userinfo")
+	}
+	return nil
+}
+
+// Validation precedes rendering so rejected input cannot overwrite an artifact.
 func populateData(data *iacData, target, source, tenantID, projectID, saEmail, oidcSubjectClaim, sourceAccountID string) error {
 	// --target is checked first so that a typo there is reported as a bad
 	// --target rather than as an inapplicable --oidc-subject-claim, which would
@@ -536,6 +539,7 @@ func populateData(data *iacData, target, source, tenantID, projectID, saEmail, o
 	case "azure":
 		data.SubscriptionID = data.AccountExternalID
 		data.TenantID = tenantID
+		return validateAzureAPIURL(data.CUDlyAPIURL)
 	case "gcp":
 		data.ProjectID = projectID
 		if data.ProjectID == "" {
@@ -573,7 +577,7 @@ func main() {
 	oidcSubjectClaim := flag.String("oidc-subject-claim", "", "Subject (sub) claim restricting the AWS trust policy to one workload: a GCP service account's numeric unique ID or an Azure managed identity's object ID. Required when --target=aws and --source is not aws; there is no working default (see #1640). Letters, digits and . _ : / @ = + - only")
 	sourceAccountID := flag.String("source-account-id", "", "AWS account ID where CUDly itself runs (required for --target aws --source aws, and --target gcp --source aws; NOT the same as --account-id, which is the target account)")
 	contactEmail := flag.String("contact-email", "", "Contact email pre-filled for CUDly auto-registration (optional; empty skips auto-registration)")
-	cudlyAPIURL := flag.String("cudly-api-url", "", "CUDly API base URL pre-filled for auto-registration (optional; empty skips auto-registration)")
+	cudlyAPIURL := flag.String("cudly-api-url", "", "CUDly HTTPS base URL without a trailing slash (required for Azure: /oidc is appended for its issuer; otherwise optional for auto-registration)")
 	outFile := flag.String("output", "", "Output file path; use '-' to print to stdout (default: derived filename in current directory)")
 	templDir := flag.String("templates-dir", "internal/iacfiles/templates", "Path to templates directory (run from repo root)")
 	modulesDir := flag.String("modules-dir", "iac/federation", "Path to Terraform modules directory (used by --format bundle)")
