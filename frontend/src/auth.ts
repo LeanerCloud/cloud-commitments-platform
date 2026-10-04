@@ -4,7 +4,7 @@
 
 import * as api from './api';
 import * as state from './state';
-import { escapeHtml } from './utils';
+import { escapeHtml, reloadPage } from './utils';
 import { openModal, closeModal } from './modal';
 import { isAdmin as permissionsIsAdmin, canAccess } from './permissions';
 import { showToast } from './toast';
@@ -373,7 +373,7 @@ async function handleResetPasswordSubmit(e: Event, token: string): Promise<void>
       document.getElementById('reset-password-modal')?.remove();
       // Clear URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);
-      location.reload();
+      reloadPage();
     }, 2000);
   } catch (error) {
     const err = error as Error;
@@ -525,7 +525,7 @@ async function handleAdminSetupSubmit(e: Event): Promise<void> {
   try {
     await api.setupAdmin(apiKey, email, password);
     document.getElementById('admin-setup-modal')?.remove();
-    location.reload();
+    reloadPage();
   } catch (error) {
     const err = error as Error;
     if (errorDiv) {
@@ -711,7 +711,7 @@ async function handleLogin(e: Event): Promise<void> {
     await api.login(email, password);
     clearPendingMFA();
     document.getElementById('login-modal')?.remove();
-    location.reload();
+    reloadPage();
   } catch (error) {
     if (error instanceof api.MFALoginError) {
       // First-leg success: password is correct, server wants the
@@ -794,7 +794,7 @@ async function handleMFACodeSubmit(e: Event): Promise<void> {
     await api.login(pendingMFAEmail, pendingMFAPassword, code);
     clearPendingMFA();
     document.getElementById('login-modal')?.remove();
-    location.reload();
+    reloadPage();
   } catch (error) {
     if (error instanceof api.MFALoginError && error.code === 'invalid_mfa_code') {
       // Wrong code — stay on the MFA step, surface a specific error.
@@ -830,7 +830,7 @@ function showForgotPasswordForm(modal: HTMLElement): void {
   document.getElementById('send-reset-btn')?.addEventListener('click', () => void handlePasswordReset());
   document.getElementById('back-to-login-link')?.addEventListener('click', (e) => {
     e.preventDefault();
-    location.reload();
+    reloadPage();
   });
 }
 
@@ -888,7 +888,7 @@ function showResetEmailConfirmation(): void {
   document.getElementById('reset-confirmation-close')?.addEventListener('click', () => {
     // Reloading returns the user to the login modal in a clean state
     // (same exit-path as the existing back-to-login-link).
-    location.reload();
+    reloadPage();
   });
 }
 
@@ -1532,5 +1532,5 @@ async function saveProfile(e: Event): Promise<void> {
 export async function logout(): Promise<void> {
   await api.logout();
   state.setCurrentUser(null);
-  location.reload();
+  reloadPage();
 }

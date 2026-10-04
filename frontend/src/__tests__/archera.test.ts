@@ -427,16 +427,23 @@ describe('transparency disclosure', () => {
 // ---------------------------------------------------------------------------
 
 describe('handleArcheraDeeplink', () => {
+  let originalURL: string;
+  let originalState: unknown;
+
   beforeEach(() => {
+    originalURL = window.location.href;
+    originalState = window.history.state;
     buildArcheraContainer();
   });
 
+  afterEach(() => {
+    window.history.replaceState(originalState, '', originalURL);
+  });
+
   it('returns false and does not open overlay for a non-Archera path', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/dashboard' },
-      writable: true,
-      configurable: true,
-    });
+    const url = new URL(window.location.href);
+    url.pathname = '/dashboard';
+    window.history.replaceState(window.history.state, '', url);
     const result = handleArcheraDeeplink();
     expect(result).toBe(false);
     const container = document.getElementById('archera-page-container')!;
@@ -444,11 +451,9 @@ describe('handleArcheraDeeplink', () => {
   });
 
   it('returns true and opens the overlay for ARCHERA_PAGE_A_PATH', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: ARCHERA_PAGE_A_PATH },
-      writable: true,
-      configurable: true,
-    });
+    const url = new URL(window.location.href);
+    url.pathname = ARCHERA_PAGE_A_PATH;
+    window.history.replaceState(window.history.state, '', url);
     const result = handleArcheraDeeplink();
     expect(result).toBe(true);
     const container = document.getElementById('archera-page-container')!;
@@ -457,11 +462,9 @@ describe('handleArcheraDeeplink', () => {
   });
 
   it('returns true and opens the same overlay for legacy ARCHERA_PAGE_B_PATH', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: ARCHERA_PAGE_B_PATH },
-      writable: true,
-      configurable: true,
-    });
+    const url = new URL(window.location.href);
+    url.pathname = ARCHERA_PAGE_B_PATH;
+    window.history.replaceState(window.history.state, '', url);
     const result = handleArcheraDeeplink();
     expect(result).toBe(true);
     const container = document.getElementById('archera-page-container')!;

@@ -3,6 +3,7 @@
  */
 
 import type { ApiError, RequestOptions } from './types';
+import { reloadPage } from '../utils';
 
 const API_BASE = '/api';
 
@@ -101,7 +102,7 @@ function installStorageListener(): void {
     apiKey = '';
     csrfToken = '';
     if (typeof window.location?.reload === 'function') {
-      window.location.reload();
+      reloadPage();
     }
   });
   storageListenerInstalled = true;

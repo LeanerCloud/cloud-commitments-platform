@@ -3,6 +3,12 @@
  */
 import { showLoginModal, showResetPasswordModal, updateUserUI, logout } from '../auth';
 import { ADMINISTRATORS_GROUP_ID } from '../permissions';
+import { reloadPage } from '../utils';
+
+jest.mock('../utils', () => ({
+  ...jest.requireActual('../utils'),
+  reloadPage: jest.fn(),
+}));
 
 // Mock the api module
 jest.mock('../api', () => {
@@ -65,11 +71,6 @@ describe('Auth Module', () => {
     jest.spyOn(Date, 'now').mockImplementation(() => {
       mockTime += 10000; // Advance 10 seconds each call
       return mockTime;
-    });
-    // Mock location.reload
-    Object.defineProperty(window, 'location', {
-      writable: true,
-      value: { reload: jest.fn() }
     });
     window.alert = jest.fn();
   });
@@ -258,7 +259,7 @@ describe('Auth Module', () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      expect(window.location.reload).toHaveBeenCalled();
+      expect(reloadPage).toHaveBeenCalled();
     });
 
     test('removes existing modal before creating new one', async () => {
@@ -332,7 +333,7 @@ describe('Auth Module', () => {
 
       document.getElementById('reset-confirmation-close')?.click();
 
-      expect(window.location.reload).toHaveBeenCalled();
+      expect(reloadPage).toHaveBeenCalled();
     });
 
     test('password reset handles empty email inline (no alert)', async () => {
@@ -393,7 +394,7 @@ describe('Auth Module', () => {
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(window.location.reload).toHaveBeenCalled();
+      expect(reloadPage).toHaveBeenCalled();
     });
   });
 
@@ -575,7 +576,7 @@ describe('Auth Module', () => {
 
       expect(api.logout).toHaveBeenCalled();
       expect(state.setCurrentUser).toHaveBeenCalledWith(null);
-      expect(window.location.reload).toHaveBeenCalled();
+      expect(reloadPage).toHaveBeenCalled();
     });
   });
 
