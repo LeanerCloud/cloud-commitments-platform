@@ -63,6 +63,12 @@ import { canAccess } from '../permissions';
 import { loadInventory } from '../inventory';
 import { isAdmin } from '../auth';
 
+function setPathname(pathname: string): void {
+  const url = new URL(window.location.href);
+  url.pathname = pathname;
+  window.history.replaceState(window.history.state, '', url);
+}
+
 describe('Navigation Module', () => {
   beforeEach(() => {
     // Setup DOM with tabs
@@ -567,53 +573,57 @@ describe('Navigation Module', () => {
   });
 
   describe('getSettingsSubTabFromPath', () => {
+    let originalURL: string;
+    let originalState: unknown;
+
+    beforeEach(() => {
+      originalURL = window.location.href;
+      originalState = window.history.state;
+    });
+
+    afterEach(() => {
+      window.history.replaceState(originalState, '', originalURL);
+    });
+
     // Canonical /admin/* paths (issue #340 IA rename)
     test('returns general for root admin path', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/admin' } as Location;
+      setPathname('/admin');
       expect(getSettingsSubTabFromPath()).toBe('general');
     });
 
     test('returns accounts for /admin/accounts', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/admin/accounts' } as Location;
+      setPathname('/admin/accounts');
       expect(getSettingsSubTabFromPath()).toBe('accounts');
     });
 
     test('returns purchasing for /admin/purchasing', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/admin/purchasing' } as Location;
+      setPathname('/admin/purchasing');
       expect(getSettingsSubTabFromPath()).toBe('purchasing');
     });
 
     test('returns users for /admin/users', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/admin/users' } as Location;
+      setPathname('/admin/users');
       expect(getSettingsSubTabFromPath()).toBe('users');
     });
 
     // Legacy /settings/* paths still work via LEGACY_PATH_REDIRECTS
     test('returns general for root settings path', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/settings' } as Location;
+      setPathname('/settings');
       expect(getSettingsSubTabFromPath()).toBe('general');
     });
 
     test('returns accounts for /settings/accounts', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/settings/accounts' } as Location;
+      setPathname('/settings/accounts');
       expect(getSettingsSubTabFromPath()).toBe('accounts');
     });
 
     test('returns purchasing for /settings/purchasing', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/settings/purchasing' } as Location;
+      setPathname('/settings/purchasing');
       expect(getSettingsSubTabFromPath()).toBe('purchasing');
     });
 
     test('returns general for unknown sub-tab', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/settings/foobar' } as Location;
+      setPathname('/settings/foobar');
       expect(getSettingsSubTabFromPath()).toBe('general');
     });
   });
@@ -621,27 +631,35 @@ describe('Navigation Module', () => {
   // QA A.4: Inventory sub-tabs become URL-addressable (/inventory/<subtab>),
   // matching the Admin /admin/<subtab> convention.
   describe('getInventorySubTabFromPath', () => {
+    let originalURL: string;
+    let originalState: unknown;
+
+    beforeEach(() => {
+      originalURL = window.location.href;
+      originalState = window.history.state;
+    });
+
+    afterEach(() => {
+      window.history.replaceState(originalState, '', originalURL);
+    });
+
     test('returns the default (active-commitments) for a bare /inventory path', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/inventory' } as Location;
+      setPathname('/inventory');
       expect(getInventorySubTabFromPath()).toBe('active-commitments');
     });
 
     test('returns coverage for /inventory/coverage', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/inventory/coverage' } as Location;
+      setPathname('/inventory/coverage');
       expect(getInventorySubTabFromPath()).toBe('coverage');
     });
 
     test('returns ri-exchange for /inventory/ri-exchange', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/inventory/ri-exchange' } as Location;
+      setPathname('/inventory/ri-exchange');
       expect(getInventorySubTabFromPath()).toBe('ri-exchange');
     });
 
     test('falls back to the default for an unknown sub-tab', () => {
-      delete (window as unknown as Record<string, unknown>).location;
-      (window as unknown as Record<string, unknown>).location = { pathname: '/inventory/bogus' } as Location;
+      setPathname('/inventory/bogus');
       expect(getInventorySubTabFromPath()).toBe('active-commitments');
     });
   });
