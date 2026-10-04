@@ -300,10 +300,14 @@ resource "google_secret_manager_secret_iam_member" "additional_readers" {
 # precondition for "admin secret is wired up enough to produce known-after-
 # apply names without tripping Terraform's sensitive-value-in-count limit"
 # (see variable docs).
+#
+# No `project` on either binding: admin_password_secret_name is the full
+# `projects/<number>/secrets/<id>` name, so the provider records the project
+# NUMBER. Setting `project = var.project_id` made every apply replace both
+# bindings, and destroying the old copy removed the live grant.
 resource "google_secret_manager_secret_iam_member" "admin_password_reader" {
   count = var.enable_admin_password_writer ? 1 : 0
 
-  project   = var.project_id
   secret_id = var.admin_password_secret_name
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.cloud_run.email}"
@@ -313,7 +317,6 @@ resource "google_secret_manager_secret_iam_member" "admin_password_reader" {
 resource "google_secret_manager_secret_iam_member" "admin_password_writer" {
   count = var.enable_admin_password_writer ? 1 : 0
 
-  project   = var.project_id
   secret_id = var.admin_password_secret_name
   role      = "roles/secretmanager.secretVersionAdder"
   member    = "serviceAccount:${google_service_account.cloud_run.email}"
