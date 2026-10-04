@@ -465,6 +465,41 @@ func TestLogin_WithMFA_RecoveryCode_ConsumedOnce(t *testing.T) {
 	assert.Empty(t, user.MFARecoveryCodes, "consumed recovery code must be removed from the slice")
 }
 
+func TestLogin_WithMFA_RecoveryCode_PersistenceFailure(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	store := new(MockStore)
+	service := createTestService(store, new(MockEmailSender))
+	code := "ABCD-2345"
+	hash, err := service.hashRecoveryCode(code)
+	require.NoError(t, err)
+	user := createTestUser(t, "SecurePass@123")
+	user.MFAEnabled = true
+	user.MFASecret = "JBSWY3DPEHPK3PXP"
+	user.MFARecoveryCodes = []string{hash}
+
+	for range 2 {
+		snapshot := *user
+		snapshot.MFARecoveryCodes = append([]string(nil), user.MFARecoveryCodes...)
+		store.On("GetUserByEmail", ctx, user.Email).Return(&snapshot, nil).Once()
+	}
+	store.On("UpdateUser", ctx, mock.MatchedBy(func(updated *User) bool {
+		return updated.ID == user.ID && len(updated.MFARecoveryCodes) == 0
+	})).Return(errors.New("consumption write failed")).Twice()
+
+	for range 2 {
+		response, loginErr := service.Login(ctx, LoginRequest{
+			Email: user.Email, Password: "SecurePass@123", MFACode: code,
+		})
+		assert.ErrorIs(t, loginErr, ErrInvalidMFACode)
+		assert.True(t, response == nil, "failed consumption must not return a token")
+	}
+	store.AssertNotCalled(t, "CreateSession", mock.Anything, mock.Anything)
+	store.AssertNotCalled(t, "RecordSuccessfulLogin", mock.Anything, mock.Anything)
+	store.AssertNotCalled(t, "RecordFailedLogin", mock.Anything, mock.Anything)
+	store.AssertExpectations(t)
+}
+
 // ---------------------------------------------------------------
 // Sentinel-identity tests (issue #512).
 //
