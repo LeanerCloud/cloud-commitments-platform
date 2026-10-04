@@ -361,3 +361,28 @@ describe('History Revoke click flow (platform#96)', () => {
     expect(api.revokePurchase).toHaveBeenCalledWith('commit-azure', undefined);
   });
 });
+
+ test('revoke owns its row while confirmation is deferred and permits an explicit retry (#249)', async () => {
+  setupDOM();
+  jest.clearAllMocks();
+  (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
+  (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [makeRow({ status: 'scheduled', revocation_window_closes_at: new Date(Date.now() + 86400000).toISOString() })] });
+  (api.revokePurchase as jest.Mock).mockResolvedValue({ status: 'pending', email_sent: true });
+  let resolveConfirm!: (value: boolean) => void;
+  (confirmDialog as jest.Mock).mockImplementationOnce(() => new Promise<boolean>(resolve => { resolveConfirm = resolve; }));
+  await loadHistory();
+  const btn = document.querySelector<HTMLButtonElement>('#history-list .history-revoke-btn')!;
+  btn.click();
+  btn.dispatchEvent(new MouseEvent('click'));
+  const disabledDuringConfirmation = btn.disabled;
+  resolveConfirm(false);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(disabledDuringConfirmation).toBe(true);
+  expect(confirmDialog).toHaveBeenCalledTimes(1);
+  expect(api.revokePurchase).not.toHaveBeenCalled();
+  expect(btn.disabled).toBe(false);
+  (confirmDialog as jest.Mock).mockResolvedValue(true);
+  btn.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(api.revokePurchase).toHaveBeenCalledTimes(1);
+ });
