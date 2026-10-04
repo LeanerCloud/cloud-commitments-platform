@@ -5,9 +5,12 @@
  * SECURITY mitigation noted in client.ts goes silently false.
  */
 
-const originalLocation = window.location;
+jest.mock('../utils', () => ({
+  ...jest.requireActual('../utils'),
+  reloadPage: jest.fn(),
+}));
+
 afterEach(() => {
-  Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
   // initAuth() seeds in-memory auth from localStorage, so clear it between
   // tests to stop stale tokens from one case leaking into the next.
   localStorage.clear();
@@ -17,8 +20,8 @@ function loadAuth(): { api: typeof import('../api'); handler: (e: StorageEvent) 
   let out: ReturnType<typeof loadAuth> | undefined;
   jest.isolateModules(() => {
     const addSpy = jest.spyOn(window, 'addEventListener');
-    const reload = jest.fn();
-    Object.defineProperty(window, 'location', { configurable: true, value: { ...window.location, reload } });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { reloadPage: reload } = require('../utils') as { reloadPage: jest.Mock };
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const api = require('../api') as typeof import('../api');
     api.initAuth();

@@ -8,6 +8,12 @@
  * step.
  */
 import { showLoginModal } from '../auth';
+import { reloadPage } from '../utils';
+
+jest.mock('../utils', () => ({
+  ...jest.requireActual('../utils'),
+  reloadPage: jest.fn(),
+}));
 
 jest.mock('../api', () => {
   class MFALoginError extends Error {
@@ -55,12 +61,6 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-// Suppress jsdom "Not implemented: navigation" noise.
-Object.defineProperty(window, 'location', {
-  writable: true,
-  value: { reload: jest.fn() },
-});
-
 async function submitLogin(email: string, password: string): Promise<void> {
   (document.getElementById('login-email') as HTMLInputElement).value = email;
   (document.getElementById('login-password') as HTMLInputElement).value = password;
@@ -81,7 +81,7 @@ describe('Login two-step MFA flow', () => {
     await showLoginModal();
     await submitLogin('user@x.com', 'pw');
     expect(api.login).toHaveBeenCalledWith('user@x.com', 'pw');
-    expect(window.location.reload).toHaveBeenCalled();
+    expect(reloadPage).toHaveBeenCalled();
   });
 
   test('mfa_required swaps to code prompt and keeps modal open', async () => {
@@ -91,7 +91,7 @@ describe('Login two-step MFA flow', () => {
     await submitLogin('user@x.com', 'pw');
     expect(document.getElementById('mfa-code')).not.toBeNull();
     expect(document.getElementById('login-email')).toBeNull(); // first step gone
-    expect(window.location.reload).not.toHaveBeenCalled();
+    expect(reloadPage).not.toHaveBeenCalled();
   });
 
   test('correct MFA code logs in', async () => {
@@ -104,7 +104,7 @@ describe('Login two-step MFA flow', () => {
     await submitMFACode('123456');
     // Verify the second call carried the code.
     expect(api.login).toHaveBeenNthCalledWith(2, 'user@x.com', 'pw', '123456');
-    expect(window.location.reload).toHaveBeenCalled();
+    expect(reloadPage).toHaveBeenCalled();
   });
 
   test('wrong MFA code stays on the MFA step and shows specific error', async () => {
@@ -120,7 +120,7 @@ describe('Login two-step MFA flow', () => {
     const err = document.getElementById('login-error');
     expect(err?.classList.contains('hidden')).toBe(false);
     expect(err?.textContent).toMatch(/incorrect/i);
-    expect(window.location.reload).not.toHaveBeenCalled();
+    expect(reloadPage).not.toHaveBeenCalled();
   });
 
   test('Back to login link clears the closure and re-opens the email/password step', async () => {
