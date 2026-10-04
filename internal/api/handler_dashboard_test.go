@@ -64,6 +64,7 @@ func TestHandler_getDashboardSummary(t *testing.T) {
 
 	mockScheduler.On("ListRecommendations", ctx, mock.Anything).Return(recommendations, nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(globalCfg, nil)
+	mockStore.On("GetServiceConfig", ctx, "", mock.Anything).Return(nil, config.ErrNotFound)
 	// No account_id / account_ids filter → calculateCommitmentMetrics fetches the
 	// uncapped active set across all accounts via GetActivePurchaseHistory.
 	mockStore.On("GetActivePurchaseHistory", ctx, mock.Anything, mock.Anything, mock.Anything).Return([]config.PurchaseHistoryRecord{}, nil)
@@ -1200,6 +1201,7 @@ func TestHandler_getDashboardSummary_CurrentSavingsPopulated(t *testing.T) {
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{DefaultCoverage: 80.0}, nil)
 	// No account_id / account_ids filter, so calculateCommitmentMetrics fetches
 	// across all accounts via GetActivePurchaseHistory (uncapped, active-only).
+	mockStore.On("GetServiceConfig", ctx, "", mock.Anything).Return(nil, config.ErrNotFound)
 	mockStore.On("GetActivePurchaseHistory", ctx, mock.Anything, mock.Anything, mock.Anything).Return(purchases, nil)
 
 	mockAuth, req := adminDashboardReq(ctx)
@@ -1242,6 +1244,7 @@ func TestHandler_getDashboardSummary_CurrentSavingsJSON(t *testing.T) {
 
 	mockScheduler.On("ListRecommendations", ctx, mock.Anything).Return(
 		[]config.RecommendationRecord{{Service: "EC2", Savings: 400.0}}, nil)
+	mockStore.On("GetServiceConfig", ctx, "", "EC2").Return(nil, config.ErrNotFound)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{DefaultCoverage: 80.0}, nil)
 	// No account filter, so the all-accounts fetch path (GetActivePurchaseHistory
 	// with an empty scope) runs.
@@ -1287,6 +1290,7 @@ func TestHandler_getDashboardSummary_CurrentSavingsZeroWhenNoCommitments(t *test
 			{Service: "EC2", Savings: 500.0},
 			{Service: "RDS", Savings: 300.0},
 		}, nil)
+	mockStore.On("GetServiceConfig", ctx, "", mock.Anything).Return(nil, config.ErrNotFound)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{DefaultCoverage: 80.0}, nil)
 	// No account filter: the all-accounts active fetch path runs.
 	mockStore.On("GetActivePurchaseHistory", ctx, mock.Anything, mock.Anything, mock.Anything).Return(

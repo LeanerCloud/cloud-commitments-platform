@@ -68,12 +68,9 @@ func (c *globalConfigCache) lookup(ctx context.Context, store AccountConfigReade
 // ResolveServiceConfig(provider, service, global, override). Returns a map
 // keyed by AccountConfigKey -> resolved *ServiceConfig.
 //
-// Triples are skipped (not present in the map) when:
-//   - rec.CloudAccountID is nil — no per-account override possible (e.g.
-//     AWS ambient-credentials path).
-//   - Neither a global ServiceConfig nor a per-account override exists for the
-//     (provider, service) pair — no configuration to apply, so callers treat
-//     the triple as "no filter applies".
+// A nil CloudAccountID uses an empty account key and resolves only global
+// configuration. Triples with neither global configuration nor an account
+// override are omitted from the map.
 //
 // When a per-account override exists but no global ServiceConfig does, the
 // override is applied against a synthesized default baseline (Enabled: true)
@@ -105,10 +102,10 @@ func ResolveAccountConfigsForRecs(
 
 	for i := range recs {
 		rec := &recs[i]
-		if rec.CloudAccountID == nil {
-			continue
+		accountID := ""
+		if rec.CloudAccountID != nil {
+			accountID = *rec.CloudAccountID
 		}
-		accountID := *rec.CloudAccountID
 		key := AccountConfigKey(accountID, rec.Provider, rec.Service)
 		if _, ok := seen[key]; ok {
 			continue
@@ -120,9 +117,12 @@ func ResolveAccountConfigsForRecs(
 			return resolved, err
 		}
 
-		override, err := store.GetAccountServiceOverride(ctx, accountID, rec.Provider, rec.Service)
-		if err != nil {
-			return resolved, fmt.Errorf("get override %s/%s/%s: %w", accountID, rec.Provider, rec.Service, err)
+		var override *AccountServiceOverride
+		if rec.CloudAccountID != nil {
+			override, err = store.GetAccountServiceOverride(ctx, accountID, rec.Provider, rec.Service)
+			if err != nil {
+				return resolved, fmt.Errorf("get override %s/%s/%s: %w", accountID, rec.Provider, rec.Service, err)
+			}
 		}
 
 		// Skip the triple only when both global and override are absent — there is
