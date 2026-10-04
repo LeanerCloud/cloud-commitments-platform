@@ -191,6 +191,11 @@ func (m *MockConfigStore) UpdatePurchasePlan(ctx context.Context, plan *config.P
 	return args.Error(0)
 }
 
+func (m *MockConfigStore) StampPlanNotificationSent(ctx context.Context, planID string, at time.Time) error {
+	m.record("StampPlanNotificationSent", ctx, planID, at)
+	return m.Called(ctx, planID, at).Error(0)
+}
+
 // CompletePlanStep mocks the idempotent ramp-step advance operation.
 func (m *MockConfigStore) CompletePlanStep(ctx context.Context, planID string, stepNumber int) error {
 	m.record("CompletePlanStep", ctx, planID, stepNumber)

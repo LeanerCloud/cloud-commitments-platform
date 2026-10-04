@@ -112,13 +112,13 @@ func calculateNextExecutionDate(plan *config.PurchasePlan, now time.Time) *time.
 	return &nextDate
 }
 
-// mapCreatePlanStorageError converts a storage-layer error from createPlan into
-// the appropriate HTTP ClientError. If err is ErrNotFound it returns a 404
-// with notFoundMsg; otherwise it logs the supplied format string at ERROR level
-// and returns a 500 with genericMsg.
+// mapCreatePlanStorageError keeps storage details out of API responses.
 func mapCreatePlanStorageError(err error, notFoundMsg, genericMsg, logFmt string, logArgs ...any) error {
 	if errors.Is(err, config.ErrNotFound) {
 		return NewClientError(http.StatusNotFound, notFoundMsg)
+	}
+	if errors.Is(err, config.ErrPurchasePlanConflict) {
+		return NewClientError(http.StatusConflict, "plan changed; refresh the plan and try again")
 	}
 	logging.Errorf(logFmt, logArgs...)
 	return NewClientError(http.StatusInternalServerError, genericMsg)
@@ -289,7 +289,7 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 
 	// Preserve timestamps from existing plan
 	plan.CreatedAt = existingPlan.CreatedAt
-	plan.UpdatedAt = time.Now()
+	plan.UpdatedAt = existingPlan.UpdatedAt
 
 	// toPurchasePlan always rebuilds the ramp schedule from scratch
 	// (CurrentStep=0, StartDate=now) and recomputes NextExecutionDate,
@@ -309,7 +309,7 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 	}
 
 	if err := h.config.UpdatePurchasePlan(ctx, plan); err != nil {
-		return nil, err
+		return nil, mapCreatePlanStorageError(err, "plan not found", "failed to update plan", "updatePlan: UpdatePurchasePlan failed")
 	}
 
 	return plan, nil
@@ -605,7 +605,6 @@ func (h *Handler) createPurchaseExecutionsTx(ctx context.Context, tx pgx.Tx, pla
 func (h *Handler) updatePlanNextExecutionDateTx(ctx context.Context, tx pgx.Tx, plan *config.PurchasePlan, startDate time.Time) error {
 	if plan.NextExecutionDate == nil || plan.NextExecutionDate.After(startDate) {
 		plan.NextExecutionDate = &startDate
-		plan.UpdatedAt = time.Now()
 		if err := h.config.UpdatePurchasePlanTx(ctx, tx, plan); err != nil {
 			return fmt.Errorf("failed to update plan: %w", err)
 		}
@@ -687,14 +686,12 @@ func (h *Handler) patchPlan(ctx context.Context, httpReq *events.LambdaFunctionU
 		return nil, err
 	}
 
-	plan.UpdatedAt = time.Now()
-
 	if err := plan.Validate(); err != nil {
 		return nil, NewClientError(400, fmt.Sprintf("validation error: %s", err))
 	}
 
 	if err := h.config.UpdatePurchasePlan(ctx, plan); err != nil {
-		return nil, err
+		return nil, mapCreatePlanStorageError(err, "plan not found", "failed to update plan", "patchPlan: UpdatePurchasePlan failed")
 	}
 
 	return plan, nil

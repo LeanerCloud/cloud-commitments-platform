@@ -5,6 +5,9 @@ import "errors"
 // ErrNotFound is returned when a requested config-store row does not exist.
 var ErrNotFound = errors.New("not found")
 
+// ErrPurchasePlanConflict means a plan changed after the caller read it.
+var ErrPurchasePlanConflict = errors.New("purchase plan changed")
+
 // ErrExecutionNotInExpectedStatus is returned by TransitionExecutionStatus
 // when the target execution exists but its current status is not in the
 // allowed `fromStatuses` set -- i.e. the atomic CAS rejected because some

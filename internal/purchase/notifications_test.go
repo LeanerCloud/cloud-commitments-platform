@@ -442,7 +442,7 @@ func TestManager_SendUpcomingPurchaseNotifications_WithNotification(t *testing.T
 	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(globalCfg, nil)
 	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
-	mockStore.On("UpdatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
+	mockStore.On("StampPlanNotificationSent", ctx, "plan-123", mock.AnythingOfType("time.Time")).Return(nil)
 
 	manager := &Manager{
 		config:       mockStore,
@@ -656,6 +656,7 @@ func TestManager_SendPlanNotification_SendFailureLeavesLiveTokenAlone(t *testing
 	manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
 	assert.False(t, manager.sendPlanNotification(ctx, plan))
 	mockStore.AssertNotCalled(t, "RotatePendingApprovalToken", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "StampPlanNotificationSent", mock.Anything, mock.Anything, mock.Anything)
 	mockStore.AssertExpectations(t)
 	mockEmail.AssertExpectations(t)
 }
@@ -683,7 +684,7 @@ func TestManager_SendPlanNotification_PersistsEmailedTokenHashAfterSend(t *testi
 			require.NotEmpty(t, emailedToken, "the token must be persisted only after the email went out")
 			persistedHash = args.String(2)
 		}).Return(true, nil)
-	mockStore.On("UpdatePurchasePlan", ctx, plan).Return(nil)
+	mockStore.On("StampPlanNotificationSent", ctx, plan.ID, mock.AnythingOfType("time.Time")).Return(nil)
 
 	manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
 	assert.True(t, manager.sendPlanNotification(ctx, plan))
@@ -692,4 +693,21 @@ func TestManager_SendPlanNotification_PersistsEmailedTokenHashAfterSend(t *testi
 	assert.NotEqual(t, emailedToken, persistedHash)
 	mockStore.AssertExpectations(t)
 	mockEmail.AssertExpectations(t)
+}
+
+func TestManager_SendPlanNotification_StampFailure(t *testing.T) {
+	ctx := context.Background()
+	store := new(MockConfigStore)
+	sender := new(MockEmailSender)
+	plan, _ := pendingExecForNotification(ctx, store)
+	recipient := "fixture@example.invalid"
+	store.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &recipient}, nil)
+	sender.On("SendScheduledPurchaseNotification", ctx, mock.Anything).Return(nil)
+	store.On("RotatePendingApprovalToken", ctx, "exec-rot", mock.Anything, mock.Anything).Return(true, nil)
+	store.On("StampPlanNotificationSent", ctx, plan.ID, mock.Anything).Return(errors.New("stamp failed"))
+	manager := &Manager{config: store, email: sender}
+	require.False(t, manager.sendPlanNotification(ctx, plan))
+	require.Nil(t, plan.LastNotificationSent)
+	store.AssertExpectations(t)
+	sender.AssertExpectations(t)
 }

@@ -522,20 +522,16 @@ func TestPGXMock_UpdatePurchasePlan_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	plan := &PurchasePlan{ID: "missing-id", Services: map[string]ServiceConfig{}, RampSchedule: RampSchedule{}}
-	// UpdatePurchasePlan now wraps the UPDATE in a WithTx so it can be
-	// composed with other writes (e.g. createPlannedPurchases bundling
-	// per-row execution inserts with the plan's next_execution_date
-	// bump). The pgxmock script needs the matching Begin / Commit
-	// frame; the inner Exec returns 0 rows-affected, which the store
-	// surfaces as a "not found" error after the rollback.
 	mock.ExpectBegin()
-	mock.ExpectExec("UPDATE").WithArgs(anyArgsCfg(11)...).
-		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+	mock.ExpectQuery("UPDATE").WithArgs(anyArgsCfg(11)...).
+		WillReturnRows(pgxmock.NewRows([]string{"updated_at"}))
+	mock.ExpectQuery("SELECT EXISTS").WithArgs("missing-id").
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(false))
 	mock.ExpectRollback()
 
 	err := store.UpdatePurchasePlan(ctx, plan)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	assert.ErrorIs(t, err, ErrNotFound)
 }
 
 // ─── DeletePurchasePlan ───────────────────────────────────────────────────────
