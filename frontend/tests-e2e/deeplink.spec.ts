@@ -116,3 +116,88 @@ test('a deep-linked Inventory sub-tab opens that sub-section, not the default', 
   await expect(page.locator('#inventory-tab .sub-tab-btn.active')).toHaveText(/coverage/i);
   expect(new URL(page.url()).pathname).toBe('/inventory/coverage');
 });
+
+test.describe('authentication reloads', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockApi(page);
+    await page.route('**/api/info', route => route.fulfill({ json: { admin_exists: true } }));
+    // Unlike seedAuth, this must not restore authentication after logout reloads.
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem('reload-smoke-seeded')) {
+        localStorage.setItem('authToken', 'smoke-token');
+        sessionStorage.setItem('reload-smoke-seeded', 'true');
+      }
+    });
+    await page.goto('/home');
+    await expect(page.locator('#user-email-display')).toHaveText('smoke@example.com');
+  });
+
+  test('UI logout reloads the document and returns to login', async ({ page }) => {
+    await page.route('**/api/auth/logout', route => route.fulfill({ status: 204 }));
+    const originalDocument = await page.evaluate(() => performance.timeOrigin);
+    let documentRequests = 0;
+    page.on('request', request => {
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()
+          && request.resourceType() === 'document') documentRequests++;
+    });
+
+    const [logoutRequest] = await Promise.all([
+      page.waitForRequest(request => new URL(request.url()).pathname === '/api/auth/logout'
+        && request.method() === 'POST'),
+      page.waitForEvent('load'),
+      page.locator('#logout-btn').click(),
+    ]);
+
+    expect(logoutRequest.method()).toBe('POST');
+    await expect(page.locator('#login-form')).toBeVisible();
+    expect(documentRequests).toBe(1);
+    expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(originalDocument);
+    expect(await page.evaluate(() =>
+      (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming).type
+    )).toBe('reload');
+    expect(await page.evaluate(() => ['authToken', 'apiKey', 'csrfToken'].map(key =>
+      [localStorage.getItem(key), sessionStorage.getItem(key)]
+    ))).toEqual([[null, null], [null, null], [null, null]]);
+  });
+
+  test('cross-tab sign-out reloads only when an auth key is cleared', async ({ page, context }) => {
+    const source = await context.newPage();
+    await mockApi(source);
+    await source.goto('/home');
+    await expect(source.locator('#user-email-display')).toHaveText('smoke@example.com');
+    const originalDocument = await page.evaluate(() => performance.timeOrigin);
+    let documentRequests = 0;
+    page.on('request', request => {
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()
+          && request.resourceType() === 'document') documentRequests++;
+    });
+    await page.evaluate(() => {
+      window.addEventListener('storage', event => {
+        document.documentElement.dataset.lastStorageEvent = JSON.stringify([event.key, event.newValue]);
+      });
+    });
+
+    for (const [key, value] of [['unrelated-setting', 'changed'], ['authToken', 'refreshed-token']] as const) {
+      await source.evaluate(([eventKey, eventValue]) => localStorage.setItem(eventKey, eventValue), [key, value] as const);
+      await expect(page.locator('html')).toHaveAttribute('data-last-storage-event', JSON.stringify([key, value]));
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+      expect(documentRequests).toBe(0);
+      expect(await page.evaluate(() => performance.timeOrigin)).toBe(originalDocument);
+      await expect(page.locator('#login-modal')).toHaveCount(0);
+    }
+
+    await Promise.all([
+      page.waitForEvent('load'),
+      source.evaluate(() => localStorage.removeItem('authToken')),
+    ]);
+
+    await expect(page.locator('#login-form')).toBeVisible();
+    expect(documentRequests).toBe(1);
+    expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(originalDocument);
+    expect(await page.evaluate(() =>
+      (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming).type
+    )).toBe('reload');
+    expect(await page.evaluate(() => localStorage.getItem('authToken'))).toBeNull();
+    await source.close();
+  });
+});
