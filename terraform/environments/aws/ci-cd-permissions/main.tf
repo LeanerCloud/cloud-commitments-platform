@@ -12,7 +12,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "cudly-terraform-state-dev"
+    bucket       = "cudly-terraform-state-909626172446"
     key          = "iam/terraform.tfstate"
     region       = "us-east-1"
     encrypt      = true

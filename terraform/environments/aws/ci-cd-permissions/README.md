@@ -48,7 +48,7 @@ The remote state is stored in S3. Create the bucket once before the first `terra
 
 ```bash
 # Choose a unique bucket name — must match the value in backend.hcl
-BUCKET="cudly-terraform-state-dev"
+BUCKET="cudly-terraform-state-909626172446"
 REGION="us-east-1"
 
 aws s3api create-bucket \
