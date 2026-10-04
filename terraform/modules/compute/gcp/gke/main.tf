@@ -252,8 +252,12 @@ resource "google_service_account" "workload" {
 # the workload can read everything it needs at startup. Previously only
 # `database_password_secret_name` was bound, so any code path that read
 # other secrets silently 403'd inside the pod.
+#
+# No `project` on `workload`: database_password_secret_name is the full
+# `projects/<number>/secrets/<id>` name, so the provider records the project
+# NUMBER and a project ID here would replace the binding on every apply.
+# `workload_additional` keeps `project` because its values are short IDs.
 resource "google_secret_manager_secret_iam_member" "workload" {
-  project   = local.secret_project_id
   secret_id = var.database_password_secret_name
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.workload.email}"
