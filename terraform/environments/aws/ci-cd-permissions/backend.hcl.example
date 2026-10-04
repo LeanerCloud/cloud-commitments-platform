@@ -10,7 +10,7 @@
 # List existing buckets:
 #   aws s3 ls
 #
-bucket = "cudly-terraform-state-dev"
+bucket = "cudly-terraform-state-909626172446"
 
 # ─── key ───────────────────────────────────────────────────────────────────────
 # State file path within the bucket. Use a unique key per workspace.
@@ -20,7 +20,7 @@ key = "iam/terraform.tfstate"
 # ─── region ────────────────────────────────────────────────────────────────────
 # Region of the S3 bucket (must match the bucket's region).
 # Check the bucket's region:
-#   aws s3api get-bucket-location --bucket cudly-terraform-state-dev --output text
+#   aws s3api get-bucket-location --bucket cudly-terraform-state-909626172446 --output text
 #
 region = "us-east-1"
 
