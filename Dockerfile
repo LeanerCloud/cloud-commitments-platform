@@ -120,6 +120,8 @@ COPY frontend/package*.json ./
 RUN npm ci --no-progress --maxsockets 1 --no-audit --no-fund && \
     test -x node_modules/.bin/webpack
 COPY frontend/ ./
+# webpack.config.js copies ../internal/api/openapi.yaml into the bundle.
+COPY internal/api/openapi.yaml /internal/api/openapi.yaml
 RUN npm run build
 
 # ==============================================
