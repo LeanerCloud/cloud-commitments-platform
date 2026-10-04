@@ -298,6 +298,20 @@ describe('Issue #251: Execute Now makes no cancellation promise', () => {
     expect(document.querySelector<HTMLElement>('.direct-execute-warning')!.hidden).toBe(true);
     expect(api.executePurchase).not.toHaveBeenCalled();
   });
+
+  test('direct-execute confirm dialog makes no cancellation promise', async () => {
+    const rec: LocalRecommendation = { ...buildRows()[0]!, provider: 'aws', service: 'ec2', term: 1 };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    (confirmDialog as jest.Mock).mockClear();
+    await openPurchaseModal([rec]);
+    (document.getElementById('execute-mode-direct') as HTMLInputElement).click();
+    (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
+    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { title: string; body: string };
+    expect(opts.body).toMatch(/charge the full upfront amount immediately/);
+    expect(`${opts.title} ${opts.body}`).not.toMatch(/AWS|cancell|24 hours/i);
+  });
 });
 
 // #1903: purchase modal re-prices on Term/Payment change
