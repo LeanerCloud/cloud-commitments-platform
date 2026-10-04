@@ -273,10 +273,6 @@ resource "google_project_iam_member" "cloud_sql_client" {
 #   - admin_password_secret_name   (writer binding handled separately below)
 #   - additional_secret_accessor_ids (sendgrid, credential encryption key,
 #     anything else the env wires through)
-#
-# The admin-password reader binding rides on the same `additional_*` map
-# entry from the env, so the admin-password-writer binding below is the
-# only admin-specific resource left here.
 resource "google_secret_manager_secret_iam_member" "db_password_reader" {
   project   = var.project_id
   secret_id = var.database_password_secret_id
