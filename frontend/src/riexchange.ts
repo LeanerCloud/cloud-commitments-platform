@@ -36,6 +36,7 @@ import { getCurrentUser } from './state';
 let currentRIs: ConvertibleRI[] = [];
 let currentUtilization: Map<string, RIUtilization> = new Map();
 let currentRecommendations: ReshapeRecommendation[] = [];
+const exchangePaymentPattern = /^\d+(?:\.\d+)?$/;
 
 // Generation counter to prevent stale utilization data from overwriting fresh data
 let utilizationGeneration = 0;
@@ -1438,6 +1439,9 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
   };
   let modalQuote: ExchangeQuoteSummary | null = null;
   let modalQuoteReq: QuoteReqShape | null = null;
+  let quoteRevision = 0;
+  let sessionOpen = true;
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Build header
   const h3 = document.createElement('h3');
@@ -1658,6 +1662,7 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
   addTargetBtn.addEventListener('click', () => {
     addTargetRow();
     updateRunningTotal();
+    invalidateQuote();
   });
   addTargetBtnRow.appendChild(addTargetBtn);
   content.appendChild(addTargetBtnRow);
@@ -1722,7 +1727,11 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
   content.appendChild(btnRow);
 
   // Show modal
-  openModal(modal);
+  openModal(modal, { onClose: () => {
+    sessionOpen = false;
+    invalidateQuote();
+    clearTimeout(closeTimer);
+  } });
 
   cancelBtn.addEventListener('click', () => {
     closeModal(modal);
@@ -1732,6 +1741,7 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
   // target set changes (picker, count, remove-row), so Execute can never
   // submit a request that no longer matches what the form displays.
   function invalidateQuote(): void {
+    quoteRevision++;
     modalQuote = null;
     modalQuoteReq = null;
     executeBtn.classList.add('hidden');
@@ -1800,17 +1810,21 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
       return;
     }
 
+    invalidateQuote();
+    const revision = quoteRevision;
     setResultText(resultContainer, 'Getting exchange quote...', 'loading');
-    executeBtn.classList.add('hidden');
     quoteBtn.disabled = true;
 
     const quoteReq = buildQuoteReq(targets);
     try {
-      modalQuote = await api.getExchangeQuote(quoteReq);
+      const quote = await api.getExchangeQuote(quoteReq);
+      if (!sessionOpen || revision !== quoteRevision) return;
+      modalQuote = quote;
       modalQuoteReq = quoteReq;
       renderModalQuoteResult(resultContainer, modalQuote);
       if (modalQuote.IsValidExchange) executeBtn.classList.remove('hidden');
     } catch (error) {
+      if (!sessionOpen || revision !== quoteRevision) return;
       const err = error as Error;
       setResultText(resultContainer, 'Quote failed: ' + err.message, 'error');
     } finally {
@@ -1819,39 +1833,53 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
   }
 
   async function submitModalExecute(): Promise<void> {
-    if (!modalQuote || !modalQuoteReq) return;
-
-    setResultText(resultContainer, 'Executing exchange...', 'loading');
+    if (executeBtn.disabled || !sessionOpen || !modalQuote?.IsValidExchange || !modalQuoteReq) return;
+    const quote = modalQuote;
+    const request = modalQuoteReq;
+    if (!exchangePaymentPattern.test(quote.PaymentDueRaw) || !quote.CurrencyCode?.trim()) {
+      setResultText(resultContainer, 'Cannot confirm exchange without a quoted payment and currency. Get a new quote.', 'error');
+      return;
+    }
+    const targets = request.targets ?? [{ offering_id: request.target_offering_id, count: request.target_count }];
     executeBtn.disabled = true;
-
+    quoteBtn.disabled = true;
+    let confirmed = false;
     try {
-      const result = await api.executeExchange({
-        ri_ids: modalQuoteReq.ri_ids,
-        targets: modalQuoteReq.targets,
-        target_offering_id: modalQuoteReq.target_offering_id,
-        target_count: modalQuoteReq.target_count,
-        max_payment_due_usd: modalQuote.PaymentDueRaw,
-        // The backend rejects execute with no region (issue #238): a
-        // missing region there previously fell through with a 400 on
-        // every UI-initiated exchange. Reuse the region the quote
-        // response resolved so quote and execute stay pinned together.
-        region: modalQuote.Region,
+      confirmed = await confirmDialog({
+        title: 'Execute RI Exchange',
+        body: `Quoted payment: ${quote.CurrencyCode} ${quote.PaymentDueRaw}. `
+          + `Source RIs: ${request.ri_ids.join(', ')}. Region: ${quote.Region}. `
+          + `Targets: ${targets.map(target => `${target.count} × ${target.offering_id}`).join(', ')}. `
+          + 'This exchange executes immediately and cannot be reversed.',
+        confirmLabel: 'Execute Exchange',
+        destructive: true,
       });
-
+      if (!confirmed) return;
+      setResultText(resultContainer, 'Executing exchange...', 'loading');
+      const result = await api.executeExchange({
+        ...request,
+        max_payment_due_usd: quote.PaymentDueRaw,
+        region: quote.Region,
+      });
+      void loadConvertibleRIs();
+      void loadExchangeHistory();
+      if (!sessionOpen) return;
       setResultText(resultContainer, 'Exchange completed. ID: ' + result.exchange_id, 'success-message');
       executeBtn.classList.add('hidden');
       modalQuote = null;
       modalQuoteReq = null;
 
-      setTimeout(() => {
+      closeTimer = setTimeout(() => {
         closeModal(modal);
-        void loadConvertibleRIs();
-        void loadExchangeHistory();
       }, 2000);
     } catch (error) {
+      if (!sessionOpen) return;
       const err = error as Error;
       setResultText(resultContainer, 'Exchange failed: ' + err.message, 'error');
+    } finally {
       executeBtn.disabled = false;
+      quoteBtn.disabled = false;
+      if (!confirmed) executeBtn.focus();
     }
   }
 }
@@ -2260,24 +2288,37 @@ function renderExchangeHistory(container: HTMLElement, records: RIExchangeHistor
 
   // Wire Approve button click handlers
   container.querySelectorAll<HTMLButtonElement>('.riexchange-approve-btn[data-approve-id]').forEach(btn => {
-    btn.addEventListener('click', () => handleRIExchangeApproveClick(btn));
+    const record = records.find(rec => rec.id === btn.dataset.approveId);
+    if (record) btn.addEventListener('click', () => handleRIExchangeApproveClick(btn, record));
   });
 }
 
-async function handleRIExchangeApproveClick(btn: HTMLButtonElement): Promise<void> {
-  const id = btn.dataset.approveId;
-  if (!id) return;
-
-  const confirmed = await confirmDialog({
-    title: 'Approve RI Exchange',
-    body: 'Approve this pending RI exchange? The exchange will execute immediately.',
-    confirmLabel: 'Approve',
-  });
-  if (!confirmed) return;
+async function handleRIExchangeApproveClick(btn: HTMLButtonElement, record: RIExchangeHistoryRecord): Promise<void> {
+  if (btn.disabled) return;
+  if (!exchangePaymentPattern.test(record.payment_due)) {
+    showToast({ kind: 'error', message: 'Cannot approve exchange without a previously quoted payment.' });
+    return;
+  }
 
   btn.disabled = true;
+  const confirmed = await confirmDialog({
+    title: 'Approve RI Exchange',
+    body: `Previously quoted payment: USD ${record.payment_due}. `
+      + `Source RIs: ${record.source_ri_ids.join(', ')}. Region: ${record.region}. `
+      + `Target: ${record.target_count} × ${record.target_offering_id} (${record.target_instance_type}). `
+      + 'Approving executes immediately using a fresh quote, within the configured per-exchange '
+      + 'and remaining daily spending limits. This exchange cannot be reversed.',
+    confirmLabel: 'Approve',
+    destructive: true,
+  });
+  if (!confirmed) {
+    btn.disabled = false;
+    btn.focus();
+    return;
+  }
+
   try {
-    await api.approveRIExchange(id);
+    await api.approveRIExchange(record.id);
     showToast({ kind: 'success', message: 'RI exchange approved and executing.' });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
