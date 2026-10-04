@@ -10,7 +10,7 @@
 #
 # Set CUDLY_CONTACT_EMAIL to auto-register with CUDly after deployment.
 #
-# Requirements: az cli v2 logged in to the target subscription.
+# Requirements: jq and az cli v2 logged in to the target subscription.
 set -euo pipefail
 
 APP_NAME="${APP_NAME:-CUDly-target}"
@@ -24,6 +24,25 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown flag: $1" >&2; exit 1 ;;
   esac
 done
+
+CUDLY_ISSUER_URL="${CUDLY_ISSUER_URL-{{.CUDlyAPIURL}}/oidc}"
+CUDLY_FEDERATED_SUBJECT="${CUDLY_FEDERATED_SUBJECT-cudly-controller}"
+CUDLY_FEDERATED_AUDIENCE="${CUDLY_FEDERATED_AUDIENCE-api://AzureADTokenExchange}"
+
+# Keep this CUDly input contract aligned with azure-target/terraform/variables.tf.
+ISSUER_PATTERN='^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~%/-]*)?$'
+if [[ ! "${CUDLY_ISSUER_URL}" =~ $ISSUER_PATTERN || "${CUDLY_ISSUER_URL}" == */ ]]; then
+  echo "ERROR: CUDLY_ISSUER_URL must be a CUDly HTTPS issuer URL without a trailing slash." >&2
+  exit 1
+fi
+for CLAIM_NAME in CUDLY_FEDERATED_SUBJECT CUDLY_FEDERATED_AUDIENCE; do
+  case "${!CLAIM_NAME}" in
+    ''|*[$' \t\n\r\v\f']*|*'$'*|*'*'*)
+      echo "ERROR: ${CLAIM_NAME} must be nonempty without ASCII whitespace, dollar signs or asterisks." >&2
+      exit 1 ;;
+  esac
+done
+command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required." >&2; exit 1; }
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -57,26 +76,18 @@ echo "SP Object ID:    ${SP_OBJECT_ID}"
 # ---------------------------------------------------------------------------
 # Step 3: Add federated identity credential bound to CUDly OIDC issuer
 # ---------------------------------------------------------------------------
-CUDLY_ISSUER_URL="${CUDLY_ISSUER_URL:-{{.CUDlyAPIURL}}/oidc}"
-CUDLY_FEDERATED_SUBJECT="${CUDLY_FEDERATED_SUBJECT:-cudly-controller}"
-CUDLY_FEDERATED_AUDIENCE="${CUDLY_FEDERATED_AUDIENCE:-api://AzureADTokenExchange}"
-
 echo ""
 echo "Adding federated identity credential..."
-FEDCRED_PARAMS=$(cat <<JSON
-{
-  "name": "cudly",
-  "issuer": "${CUDLY_ISSUER_URL}",
-  "subject": "${CUDLY_FEDERATED_SUBJECT}",
-  "audiences": ["${CUDLY_FEDERATED_AUDIENCE}"],
-  "description": "CUDly OIDC issuer (KMS-backed). No secret stored."
-}
-JSON
-)
+FEDCRED_PARAMS=$(jq -n \
+  --arg issuer "${CUDLY_ISSUER_URL}" \
+  --arg subject "${CUDLY_FEDERATED_SUBJECT}" \
+  --arg audience "${CUDLY_FEDERATED_AUDIENCE}" \
+  '{name: "cudly", issuer: $issuer, subject: $subject, audiences: [$audience],
+    description: "CUDly OIDC issuer (KMS-backed). No secret stored."}')
 az ad app federated-credential create \
   --id "${APP_ID}" \
   --parameters "${FEDCRED_PARAMS}" \
-  --output none 2>&1 || echo "  (federated credential may already exist — continuing)"
+  --output none
 
 # ---------------------------------------------------------------------------
 # Step 4: Deploy role assignment via Bicep/ARM

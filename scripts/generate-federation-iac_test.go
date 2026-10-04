@@ -11,9 +11,15 @@ package main
 // nothing exercised this path so the break went unnoticed.
 
 import (
+	"archive/zip"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // runViaGoRun invokes `go run generate-federation-iac.go <args>` from the
@@ -260,6 +266,131 @@ func TestGenerateFederationIaC_RejectsMalformedSourceAccountID(t *testing.T) {
 			if !strings.Contains(out, tt.sourceAccountID) {
 				t.Errorf("expected error to name the rejected value %q, got:\n%s", tt.sourceAccountID, out)
 			}
+		})
+	}
+}
+
+func TestGenerator_AzureRejectsInvalidAPIURL(t *testing.T) {
+	cases := []struct {
+		name string
+		url  string
+		omit bool
+	}{
+		{name: "omitted", omit: true},
+		{name: "empty"},
+		{name: "http", url: "http://cudly.example.com"},
+		{name: "missing host", url: "https://"},
+		{name: "space", url: "https://cudly.example.com/a b"},
+		{name: "newline", url: "https://cudly.example.com/a\nb"},
+		{name: "quote", url: `https://cudly.example.com/a"b`},
+		{name: "backslash", url: `https://cudly.example.com/a\b`},
+		{name: "userinfo", url: "https://user@cudly.example.com"},
+		{name: "query", url: "https://cudly.example.com/?q=1"},
+		{name: "fragment", url: "https://cudly.example.com/#f"},
+		{name: "trailing slash", url: "https://cudly.example.com/"},
+		{name: "nonnumeric port", url: "https://cudly.example.com:https"},
+	}
+	for _, source := range []string{"aws", "gcp", "azure"} {
+		for _, format := range []string{"tfvars", "bundle"} {
+			for _, tc := range cases {
+				t.Run(source+"/"+format+"/"+tc.name, func(t *testing.T) {
+					output := filepath.Join(t.TempDir(), "output")
+					args := []string{
+						"--target", "azure", "--source", source,
+						"--account-name", "Acme", "--account-id", "11111111-2222-3333-4444-555555555555",
+						"--tenant-id", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "--output", output,
+					}
+					if format == "bundle" {
+						args = append(args, "--format", "bundle")
+					}
+					if !tc.omit {
+						args = append(args, "--cudly-api-url", tc.url)
+					}
+					res := runGenerator(t, args...)
+					require.NotZero(t, res.exitCode, "stdout: %s; stderr: %s", res.stdout, res.stderr)
+					require.Contains(t, res.stderr, "--cudly-api-url")
+					require.Empty(t, res.stdout)
+					_, err := os.Stat(output)
+					require.ErrorIs(t, err, os.ErrNotExist)
+				})
+			}
+		}
+	}
+}
+
+func TestGenerator_AzureMissingURLPreservesOutput(t *testing.T) {
+	for _, format := range []string{"tfvars", "bundle"} {
+		t.Run(format, func(t *testing.T) {
+			output := filepath.Join(t.TempDir(), "existing-output")
+			const sentinel = "existing operator data\n"
+			require.NoError(t, os.WriteFile(output, []byte(sentinel), 0o600))
+			args := []string{"--target", "azure", "--source", "aws", "--account-name", "Acme", "--account-id", "subscription"}
+			if format == "bundle" {
+				args = append(args, "--format", "bundle")
+			}
+			res := runGenerator(t, append(args, "--output", output)...)
+			require.NotZero(t, res.exitCode, "stderr: %s", res.stderr)
+			require.Contains(t, res.stderr, "--cudly-api-url")
+			got, err := os.ReadFile(output)
+			require.NoError(t, err)
+			require.Equal(t, sentinel, string(got))
+			if format == "tfvars" {
+				res = runGenerator(t, append(args, "--output", "-")...)
+				require.NotZero(t, res.exitCode)
+				require.Empty(t, res.stdout)
+				require.Contains(t, res.stderr, "--cudly-api-url")
+			}
+		})
+	}
+}
+
+func TestGenerator_AzurePreservesValidAPIURL(t *testing.T) {
+	for _, baseURL := range []string{"https://cudly.example.com", "https://CUDly.example.com:8443/a_b/~v1%20"} {
+		for _, source := range []string{"aws", "gcp", "azure"} {
+			for _, format := range []string{"tfvars", "bundle"} {
+				t.Run(baseURL+"/"+source+"/"+format, func(t *testing.T) {
+					args := []string{
+						"--target", "azure", "--source", source,
+						"--account-name", "Acme", "--account-id", "11111111-2222-3333-4444-555555555555",
+						"--tenant-id", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "--cudly-api-url", baseURL,
+					}
+					output := "-"
+					if format == "bundle" {
+						output = filepath.Join(t.TempDir(), "bundle.zip")
+						args = append(args, "--format", "bundle")
+					}
+					res := runGenerator(t, append(args, "--output", output)...)
+					require.Zero(t, res.exitCode, "stderr: %s", res.stderr)
+					content := res.stdout
+					if format == "bundle" {
+						archive, err := zip.OpenReader(output)
+						require.NoError(t, err)
+						defer archive.Close()
+						entry, err := archive.Open("terraform/acme-azure-wif.tfvars")
+						require.NoError(t, err)
+						data, err := io.ReadAll(entry)
+						require.NoError(t, entry.Close())
+						require.NoError(t, err)
+						content = string(data)
+					}
+					require.Contains(t, content, `cudly_issuer_url = "`+baseURL+`/oidc"`)
+					require.Contains(t, content, `cudly_api_url = "`+baseURL+`"`)
+					require.Contains(t, content, `contact_email = ""`)
+				})
+			}
+		}
+	}
+}
+
+func TestGenerator_NonAzureDoesNotRequireAPIURL(t *testing.T) {
+	for _, target := range []string{"aws", "gcp"} {
+		t.Run(target, func(t *testing.T) {
+			res := runGenerator(t,
+				"--target", target, "--source", "aws", "--account-name", "Acme", "--account-id", "999888777666",
+				"--source-account-id", "111122223333", "--output", "-",
+			)
+			require.Zero(t, res.exitCode, "stderr: %s", res.stderr)
+			require.Contains(t, res.stdout, `cudly_api_url = ""`)
 		})
 	}
 }
