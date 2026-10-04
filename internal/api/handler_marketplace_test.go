@@ -119,8 +119,11 @@ func marketplaceReq() *events.LambdaFunctionURLRequest {
 func adminSession(authSvc *MockAuthService) {
 	authSvc.On("ValidateSession", mock.Anything, "test-token").
 		Return(&Session{UserID: "admin", Email: "admin@test.com"}, nil)
-	authSvc.On("HasPermissionAPI", mock.Anything, mock.Anything, auth.ActionAdmin, auth.ResourceAll).
+	authSvc.On("HasPermissionAPI", mock.Anything, "admin", auth.ActionSellAny, auth.ResourcePurchases).
 		Return(true, nil).Maybe()
+	authSvc.On("GetAllowedAccountsAPI", mock.Anything, "admin").Return([]string{"*"}, nil).Maybe()
+	authSvc.On("HasPermissionForConstraintsAPI", mock.Anything, "admin", auth.ActionSellAny, auth.ResourcePurchases,
+		[]auth.PermissionConstraints{{StrictScope: true, AccountIDs: []string{"acct-1"}, Regions: []string{"us-east-1"}}}).Return(true, nil).Maybe()
 }
 
 // --- Gap 3 handler tests (issue #292) ---
@@ -128,8 +131,7 @@ func adminSession(authSvc *MockAuthService) {
 func TestMarketplaceList_ConvertibleRejected(t *testing.T) {
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
-	authSvc.On("ValidateSession", mock.Anything, "test-token").
-		Return(&Session{UserID: "admin"}, nil)
+	adminSession(authSvc)
 
 	row := standardRow()
 	row.OfferingClass = "convertible"
@@ -154,8 +156,6 @@ func TestMarketplaceList_SellOwnAllowed(t *testing.T) {
 
 	authSvc.On("ValidateSession", mock.Anything, "test-token").
 		Return(&Session{UserID: "user-1"}, nil)
-	authSvc.On("HasPermissionAPI", mock.Anything, "user-1", auth.ActionAdmin, auth.ResourceAll).
-		Return(false, nil)
 	authSvc.On("HasPermissionAPI", mock.Anything, "user-1", auth.ActionSellAny, auth.ResourcePurchases).
 		Return(false, nil)
 	authSvc.On("HasPermissionAPI", mock.Anything, "user-1", auth.ActionSellOwn, auth.ResourcePurchases).
@@ -163,6 +163,8 @@ func TestMarketplaceList_SellOwnAllowed(t *testing.T) {
 	// allowed accounts cover the row's cloud account.
 	authSvc.On("GetAllowedAccountsAPI", mock.Anything, "user-1").
 		Return([]string{"acct-1"}, nil)
+	authSvc.On("HasPermissionForConstraintsAPI", mock.Anything, "user-1", auth.ActionSellOwn, auth.ResourcePurchases,
+		[]auth.PermissionConstraints{{StrictScope: true, AccountIDs: []string{"acct-1"}, Regions: []string{"us-east-1"}}}).Return(true, nil)
 
 	cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).
 		Return(standardRow(), nil)
@@ -190,8 +192,6 @@ func TestMarketplaceList_SellOwnDeniedWrongAccount(t *testing.T) {
 
 	authSvc.On("ValidateSession", mock.Anything, "test-token").
 		Return(&Session{UserID: "user-1"}, nil)
-	authSvc.On("HasPermissionAPI", mock.Anything, "user-1", auth.ActionAdmin, auth.ResourceAll).
-		Return(false, nil)
 	authSvc.On("HasPermissionAPI", mock.Anything, "user-1", auth.ActionSellAny, auth.ResourcePurchases).
 		Return(false, nil)
 	authSvc.On("HasPermissionAPI", mock.Anything, "user-1", auth.ActionSellOwn, auth.ResourcePurchases).

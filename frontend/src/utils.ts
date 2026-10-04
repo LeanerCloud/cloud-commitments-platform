@@ -4,6 +4,10 @@
 
 import type { CloudAccount, AccountListFilters } from './api';
 
+export function reloadPage(): void {
+  window.location.reload();
+}
+
 /**
  * Default number of fraction digits used by formatCurrency when the caller
  * doesn't pass an explicit `digits` value. Exported so downstream code (e.g.

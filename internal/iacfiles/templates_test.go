@@ -102,7 +102,7 @@ func TestCLITemplatesAutoRegister(t *testing.T) {
 				`TARGET_ACCOUNT_ID=$(aws sts get-caller-identity`,
 				// #1640: the trust policy's :sub condition must be present
 				// unconditionally — there is no longer a code path that omits it.
-				`"${OIDC_HOST}:sub": "${OIDC_SUBJECT_CLAIM}"`,
+				`($host + ":sub"): $subject`,
 			},
 			mustNot: []string{
 				"/api/registrations",
@@ -237,7 +237,7 @@ func TestAWSWIFCLI_SubjectClaimRequired(t *testing.T) {
 
 	// Exactly one Condition block, and it always carries :sub — no branch
 	// builds a StringEquals map with only :aud.
-	subCondition := `"${OIDC_HOST}:sub": "${OIDC_SUBJECT_CLAIM}"`
+	subCondition := `($host + ":sub"): $subject`
 	if n := strings.Count(rendered, subCondition); n != 1 {
 		t.Errorf("expected exactly one :sub condition in the rendered trust policy, found %d", n)
 	}
@@ -276,9 +276,12 @@ func awsStubScript(logPath string) string {
 		// JSON, so newlines inside the arguments are folded to spaces first.
 		"args=\"$*\"\n" +
 		"printf '%s\\n' \"${args//$'\\n'/ }\" >> '" + logPath + "'\n" +
-		// "None" is what the script's provider-lookup branches expect when no
-		// OIDC provider exists yet, so the rest of the script proceeds.
-		"echo None\n"
+		"case \"$1 $2\" in\n" +
+		"  'iam list-open-id-connect-providers') echo '{\"OpenIDConnectProviderList\":[]}' ;;\n" +
+		"  'iam create-open-id-connect-provider') echo '{\"OpenIDConnectProviderArn\":\"" + awsWIFProvider + "\"}' ;;\n" +
+		"  'iam get-open-id-connect-provider') echo '{\"Url\":\"accounts.google.com\",\"ClientIDList\":[\"sts.amazonaws.com\"],\"ThumbprintList\":[]}' ;;\n" +
+		"  *) echo None ;;\n" +
+		"esac\n"
 }
 
 // runRenderedWIFScript writes the rendered aws-wif-cli.sh to a temp file, puts a

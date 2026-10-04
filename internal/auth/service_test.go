@@ -23,7 +23,7 @@ func TestService_Login(t *testing.T) {
 
 		mockStore.On("GetUserByEmail", ctx, "test@example.com").Return(testUser, nil).Once()
 		mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("RecordSuccessfulLogin", ctx, mock.AnythingOfType("string")).Return(nil).Once()
 
 		req := LoginRequest{
 			Email:    "test@example.com",
@@ -67,7 +67,7 @@ func TestService_Login(t *testing.T) {
 		testUser := createTestUser(t, "SecurePass@123")
 
 		mockStore.On("GetUserByEmail", ctx, "test@example.com").Return(testUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+		mockStore.On("RecordFailedLogin", ctx, mock.AnythingOfType("string")).Return(nil).Maybe()
 
 		req := LoginRequest{
 			Email:    "test@example.com",
@@ -91,7 +91,7 @@ func TestService_Login(t *testing.T) {
 		testUser.Active = false
 
 		mockStore.On("GetUserByEmail", ctx, "test@example.com").Return(testUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+		mockStore.On("RecordFailedLogin", ctx, mock.AnythingOfType("string")).Return(nil).Maybe()
 
 		req := LoginRequest{
 			Email:    "test@example.com",
@@ -422,7 +422,7 @@ func TestLogin_WithMFA(t *testing.T) {
 
 	mockStore.On("GetUserByEmail", ctx, "mfa@example.com").Return(user, nil)
 	mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil)
+	mockStore.On("RecordSuccessfulLogin", ctx, mock.AnythingOfType("string")).Return(nil)
 
 	req := LoginRequest{
 		Email:    "mfa@example.com",
@@ -457,7 +457,7 @@ func TestLogin_WithMFA_InvalidCode(t *testing.T) {
 
 	mockStore.On("GetUserByEmail", ctx, "mfa@example.com").Return(user, nil)
 	// Add mock for failed login recording due to invalid MFA code
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+	mockStore.On("RecordFailedLogin", ctx, mock.AnythingOfType("string")).Return(nil).Maybe()
 
 	req := LoginRequest{
 		Email:    "mfa@example.com",
@@ -556,7 +556,7 @@ func TestLogin_WithMFA_NoSecret(t *testing.T) {
 		t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
 		mockStore.On("GetUserByEmail", ctx, "mfa@example.com").Return(user, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+		mockStore.On("RecordFailedLogin", ctx, mock.AnythingOfType("string")).Return(nil).Maybe()
 
 		req := LoginRequest{
 			Email:    "mfa@example.com",
@@ -726,7 +726,7 @@ func TestService_ErrorPaths(t *testing.T) {
 
 		mockStore.On("GetUserByEmail", ctx, "test@example.com").Return(testUser, nil).Once()
 		mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(fmt.Errorf("update error")).Once()
+		mockStore.On("RecordSuccessfulLogin", ctx, testUser.ID).Return(fmt.Errorf("update error")).Once()
 
 		req := LoginRequest{
 			Email:    "test@example.com",
@@ -839,7 +839,7 @@ func TestService_Login_RFC5322DisplayName(t *testing.T) {
 	// Store should be called with the bare address only, not the display-name form
 	mockStore.On("GetUserByEmail", ctx, "test@example.com").Return(testUser, nil).Once()
 	mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil).Once()
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("RecordSuccessfulLogin", ctx, testUser.ID).Return(nil).Once()
 
 	req := LoginRequest{
 		Email:    `"Attacker" <test@example.com>`,
