@@ -3,6 +3,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
+	awsrecommendations "github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
 	gcpprovider "github.com/LeanerCloud/cloud-commitments-go/providers/gcp"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -939,7 +941,7 @@ func (s *Scheduler) enabledAccounts(ctx context.Context, providerName string) []
 	return accounts
 }
 
-// tolerateIncompleteSweep converts an org-wide partial-subscription failure
+// tolerateIncompleteSweep converts an incomplete recommendation collection
 // into a warning and a nil error, so the caller keeps the recommendations that
 // WERE collected instead of discarding them.
 //
@@ -984,6 +986,12 @@ func (s *Scheduler) enabledAccounts(ctx context.Context, providerName string) []
 // design decision and is left as follow-up work. With eviction withheld the
 // residue is observability, not lost rows.
 func tolerateIncompleteSweep(providerName string, err error) (complete bool, _ error) {
+	var incomplete *awsrecommendations.IncompleteRecommendationsError
+	if errors.As(err, &incomplete) {
+		logging.Warnf("%s recommendations incomplete: failed_details=%d failed_scopes=%d; %v; keeping collected rows and withholding stale-row eviction",
+			providerName, incomplete.FailedDetails, incomplete.FailedScopes, incomplete)
+		return false, nil
+	}
 	partial := azureprovider.AsPartialSubscriptionFailure(err)
 	if partial == nil {
 		return err == nil, err
@@ -1016,26 +1024,22 @@ func (s *Scheduler) fetchAndConvert(ctx context.Context, prov provider.Provider,
 		if lookbackDays == 0 {
 			lookbackDays = config.DefaultRecommendationsLookbackDays
 		}
-		params := common.RecommendationParams{
-			Term:           fmt.Sprintf("%dyr", globalCfg.DefaultTerm),
-			PaymentOption:  globalCfg.DefaultPayment,
-			LookbackPeriod: fmt.Sprintf("%dd", lookbackDays),
+		for _, service := range []common.ServiceType{common.ServiceEC2, common.ServiceRDS, common.ServiceElastiCache, common.ServiceOpenSearch, common.ServiceRedshift, common.ServiceSavingsPlansAll} {
+			params := common.RecommendationParams{
+				Service:        service,
+				Term:           fmt.Sprintf("%dyr", globalCfg.DefaultTerm),
+				PaymentOption:  globalCfg.DefaultPayment,
+				LookbackPeriod: fmt.Sprintf("%dd", lookbackDays),
+			}
+			fallbackRecs, recErr := recClient.GetRecommendations(ctx, &params)
+			fallbackComplete, recErr := tolerateIncompleteSweep(providerName, recErr)
+			if recErr != nil {
+				return nil, false, fmt.Errorf("failed to get %s recommendations with default term/payment fallback (service=%s, term=%s, payment=%s, lookback=%s): %w",
+					providerName, params.Service, params.Term, params.PaymentOption, params.LookbackPeriod, recErr)
+			}
+			recs = append(recs, fallbackRecs...)
+			complete = complete && fallbackComplete
 		}
-		var recErr error
-		recs, recErr = recClient.GetRecommendations(ctx, &params)
-		fallbackComplete, recErr := tolerateIncompleteSweep(providerName, recErr)
-		if recErr != nil {
-			// Fail loud: a misconfigured DefaultPayment/DefaultTerm or a CE
-			// failure on this fallback must surface to the operator instead
-			// of silently presenting as "zero recommendations".
-			return nil, false, fmt.Errorf("failed to get %s recommendations with default term/payment fallback (term=%s, payment=%s, lookback=%s): %w",
-				providerName, params.Term, params.PaymentOption, params.LookbackPeriod, recErr)
-		}
-		// AND, not assignment: the fallback re-queries the same scope, so an
-		// incomplete first sweep stays incomplete even if the retry happens to
-		// come back whole. Overwriting here would let the retry launder away
-		// the first sweep's missing subscriptions and re-authorize eviction.
-		complete = complete && fallbackComplete
 	}
 	result := s.convertRecommendations(recs, providerName)
 	if accountID != nil {
