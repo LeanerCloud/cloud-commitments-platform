@@ -118,7 +118,7 @@ export async function loadSavingsHistory(): Promise<void> {
         if (emptyEl) emptyEl.classList.add('hidden');
         if (statsEl) statsEl.classList.remove('hidden');
 
-        renderSavingsStats(data);
+        renderSavingsStats(data, start, end, interval);
         renderSavingsChart(data.data_points, interval, getSelectedUnit(), start, end);
     } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -214,10 +214,10 @@ function buildFilterDesc(provider: string, accountIDs: readonly string[]): strin
 /**
  * Get start/end dates and interval based on period selection
  */
-function getPeriodDates(period: string): { start: Date; end: Date; interval: 'hourly' | 'daily' | 'weekly' | 'monthly' } {
+function getPeriodDates(period: string): { start: Date; end: Date; interval: 'hourly' | 'daily' } {
     const end = new Date();
-    const start = new Date();
-    let interval: 'hourly' | 'daily' | 'weekly' | 'monthly' = 'hourly';
+    const start = new Date(end);
+    let interval: 'hourly' | 'daily' = 'hourly';
 
     switch (period) {
         case '24h':
@@ -247,7 +247,7 @@ function getPeriodDates(period: string): { start: Date; end: Date; interval: 'ho
 /**
  * Render savings statistics
  */
-function renderSavingsStats(data: SavingsAnalyticsResponse): void {
+function renderSavingsStats(data: SavingsAnalyticsResponse, start: Date, end: Date, interval: 'hourly' | 'daily'): void {
     const periodSavingsEl = document.getElementById('period-savings');
     // The unit indicator belongs below the value, not inside the label.
     // Period Savings is a cumulative dollar total over the selected date range,
@@ -286,7 +286,10 @@ function renderSavingsStats(data: SavingsAnalyticsResponse): void {
         }
     }
 
-    const avgPerPeriod = dataPoints.length > 0 ? totalSavings / dataPoints.length : 0;
+    // Average projected monthly additions over the whole requested window, including empty intervals.
+    const intervalMs = interval === 'hourly' ? 3600000 : 86400000;
+    const periodCount = (end.getTime() - start.getTime()) / intervalMs;
+    const avgPerPeriod = totalSavings / periodCount;
 
     // Use summary if available, otherwise fall back to calculated values.
     // All three values are in the API's canonical monthly unit.
