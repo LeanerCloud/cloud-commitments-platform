@@ -382,11 +382,11 @@ export async function handleExecutePurchase(): Promise<void> {
   // Confirmation dialog varies by mode:
   //   - Approval path: low-friction, non-destructive.
   //   - Direct-execute path: red destructive dialog with cost callout and
-  //     cancellation-window reminder (issue #289 acceptance criteria).
+  //     immediate-charge callout; no cancellation promise (issue #251).
   const ok = isDirect
     ? await confirmDialog({
         title: `Execute ${localRecs.length} purchase${localRecs.length === 1 ? '' : 's'} now?`,
-        body: 'This will charge the full upfront amount immediately. This bypasses the approval step. AWS allows cancellation within 24 hours via the Account & Billing console.',
+        body: 'This will charge the full upfront amount immediately. This bypasses the approval step.',
         confirmLabel: 'Execute Purchase Now',
         destructive: true,
       })
