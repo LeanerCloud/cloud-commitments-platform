@@ -533,6 +533,15 @@ assert_behaviour "behaviour: a failed 'terraform state list' fails the step with
   "exit ${STUB_EXIT}, calls: $(cat "$STUB_CALLS")"
 unset STATE_LIST_FAILS TF_STATE_LIST
 
+# The type must start a path segment: an address that only ends in the text
+# (a resource NAME like x_aws_db_instance) is not an instance.
+export TF_STATE_LIST=$'aws_ssm_parameter.x_aws_db_instance.main\nmodule.m.aws_ssm_parameter.y_aws_db_instance.main'
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: an address whose segment merely ends in 'aws_db_instance' does not count as an instance" \
+  "$([[ "$STUB_EXIT" -eq 0 && ! -s "$STUB_CALLS" ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, stderr: ${STUB_ERR}, calls: $(cat "$STUB_CALLS")"
+unset TF_STATE_LIST
+
 # `jq -er` accepts an empty string, so without its own check this reaches AWS.
 export TF_OUTPUT_JSON='{"database_instance_identifier":{"value":""}}'
 run_script "$STUB_STATE"
@@ -543,12 +552,15 @@ assert_behaviour "behaviour: the empty-identifier error is distinct and says an 
   "$([[ "$STUB_ERR" == *"will NOT fix this"* && "$STUB_ERR" != *"re-apply this state"* ]] && echo 0 || echo 1)" \
   "stderr: ${STUB_ERR}"
 
-# A null value takes the jq branch, not the empty branch.
+# A null value takes the jq branch, not the empty branch. The state list is
+# instance-free, so a mutant that consults it for null exits 0 instead of 1.
+export TF_STATE_LIST=$'aws_ecr_repository.main\nmodule.networking.aws_vpc.main'
 export TF_OUTPUT_JSON='{"database_instance_identifier":{"value":null}}'
 run_script "$STUB_STATE"
 assert_behaviour "behaviour: a null identifier exits 1 without calling aws" \
   "$([[ "$STUB_EXIT" -eq 1 && ! -s "$STUB_CALLS" ]] && echo 0 || echo 1)" \
   "exit ${STUB_EXIT}, calls: $(cat "$STUB_CALLS")"
+unset TF_STATE_LIST
 
 # The golden path, against the hostile listing.
 export TF_OUTPUT_JSON='{"database_instance_identifier":{"value":"cudly-dev-1a2b3c4d-postgres"}}'

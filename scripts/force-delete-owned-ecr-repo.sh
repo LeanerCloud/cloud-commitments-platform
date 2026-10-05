@@ -80,6 +80,17 @@ if [[ "$OUTPUTS_LENGTH" -eq 0 ]]; then
 fi
 
 OWNED_REPO="$(jq -er '.ecr_repository_name.value' <<<"$OUTPUTS_JSON")"
+# An empty string is neither null nor false, so `jq -er` above accepts it.
+# Whitespace is refused too: no repository name contains any.
+case "$OWNED_REPO" in
+  '' | *[![:graph:]]*)
+    echo "error: state '${STATE_DIR}' publishes 'ecr_repository_name', but it resolved" >&2
+    echo "       to '${OWNED_REPO}', which is not a repository name. Inspect" >&2
+    echo "       'terraform -chdir=${STATE_DIR} output -json' before destroying anything." >&2
+    exit 1
+    ;;
+esac
+
 echo "This state owns ECR repository '$OWNED_REPO'"
 
 # Asks for the owned repository by name rather than listing the account. A
@@ -96,7 +107,7 @@ DESCRIBE_EXIT=0
 LISTING="$(aws ecr describe-repositories --repository-names "$OWNED_REPO" \
   --query 'repositories[].repositoryName' --output text 2>"$DESCRIBE_ERR")" || DESCRIBE_EXIT=$?
 if [[ "$DESCRIBE_EXIT" -ne 0 ]]; then
-  if grep -q 'RepositoryNotFoundException' "$DESCRIBE_ERR"; then
+  if grep -q '(RepositoryNotFoundException)' "$DESCRIBE_ERR"; then
     echo "ECR repository '$OWNED_REPO' does not exist; it is already deleted and there is nothing to clean up."
     exit 0
   fi
