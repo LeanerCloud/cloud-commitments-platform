@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"time"
 )
 
 // StoreInterface defines the methods required for auth storage.
@@ -11,6 +12,8 @@ type StoreInterface interface {
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	CreateUser(ctx context.Context, user *User) error
 	UpdateUser(ctx context.Context, user *User) error
+	UpdateUserCredentials(ctx context.Context, user *User, readEmail, readPasswordHash string) error
+	SetPasswordResetToken(ctx context.Context, user *User, readExpiry *time.Time) error
 	RecordFailedLogin(ctx context.Context, userID string) error
 	RecordSuccessfulLogin(ctx context.Context, userID string) error
 	DeleteUser(ctx context.Context, userID string) error

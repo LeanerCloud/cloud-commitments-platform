@@ -1084,6 +1084,29 @@ func TestHandler_updateProfile_DuplicateEmail(t *testing.T) {
 	assert.NotContains(t, ce.message, "already in use", "response must not confirm another account's existence")
 }
 
+func TestHandler_credentialWritesMapConcurrentChangeToConflict(t *testing.T) {
+	ctx := context.Background()
+	userID := "12345678-1234-1234-1234-123456789abc"
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	mockAuth.On("ValidateSession", ctx, "test-token").Return(&Session{UserID: userID}, nil)
+	mockAuth.On("UpdateUserProfile", mock.Anything, userID, "new@example.com", "oldpass", "").Return(fmt.Errorf("failed to update user: %w", auth.ErrUserChanged))
+	mockAuth.On("ChangePasswordAPI", ctx, userID, "oldpass", "newpass").Return(auth.ErrUserChanged)
+	handler := &Handler{auth: mockAuth}
+	old, next := base64.StdEncoding.EncodeToString([]byte("oldpass")), base64.StdEncoding.EncodeToString([]byte("newpass"))
+	headers := map[string]string{"Authorization": "Bearer test-token"}
+
+	_, profileErr := handler.updateProfile(ctx, &events.LambdaFunctionURLRequest{Headers: headers,
+		Body: `{"email": "new@example.com", "current_password": "` + old + `"}`})
+	_, passwordErr := handler.changePassword(ctx, &events.LambdaFunctionURLRequest{Headers: headers,
+		Body: `{"current_password": "` + old + `", "new_password": "` + next + `"}`})
+	for _, err := range []error{profileErr, passwordErr} {
+		ce, ok := IsClientError(err)
+		require.True(t, ok, "a concurrent account change must be a 409, got %v", err)
+		assert.Equal(t, 409, ce.code)
+	}
+}
+
 // TestHandler_resetPassword_DecodesBase64 verifies issue #356: the
 // resetPassword handler must base64-decode new_password before forwarding to
 // the service, matching the pattern used by login / change-password /

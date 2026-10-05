@@ -50,6 +50,14 @@ func (m *MockStore) UpdateUser(ctx context.Context, user *User) error {
 	return args.Error(0)
 }
 
+func (m *MockStore) UpdateUserCredentials(ctx context.Context, user *User, readEmail, readPasswordHash string) error {
+	return m.Called(ctx, user, readEmail, readPasswordHash).Error(0)
+}
+
+func (m *MockStore) SetPasswordResetToken(ctx context.Context, user *User, readExpiry *time.Time) error {
+	return m.Called(ctx, user, readExpiry).Error(0)
+}
+
 func (m *MockStore) RecordFailedLogin(ctx context.Context, userID string) error {
 	return m.Called(ctx, userID).Error(0)
 }
