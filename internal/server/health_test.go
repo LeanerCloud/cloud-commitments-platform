@@ -32,6 +32,14 @@ func (m *mockAuthStoreForHealth) UpdateUser(ctx context.Context, user *auth.User
 	return nil
 }
 
+func (m *mockAuthStoreForHealth) UpdateUserCredentials(context.Context, *auth.User, string, string) error {
+	return nil
+}
+
+func (m *mockAuthStoreForHealth) SetPasswordResetToken(context.Context, *auth.User, *time.Time) error {
+	return nil
+}
+
 func (m *mockAuthStoreForHealth) RecordFailedLogin(context.Context, string) error {
 	return nil
 }

@@ -797,6 +797,14 @@ func (m *MockAuthStore) UpdateUser(ctx context.Context, user *auth.User) error {
 	return args.Error(0)
 }
 
+func (m *MockAuthStore) UpdateUserCredentials(ctx context.Context, user *auth.User, readEmail, readPasswordHash string) error {
+	return m.Called(ctx, user, readEmail, readPasswordHash).Error(0)
+}
+
+func (m *MockAuthStore) SetPasswordResetToken(ctx context.Context, user *auth.User, readExpiry *time.Time) error {
+	return m.Called(ctx, user, readExpiry).Error(0)
+}
+
 func (m *MockAuthStore) RecordFailedLogin(ctx context.Context, userID string) error {
 	return m.Called(ctx, userID).Error(0)
 }
