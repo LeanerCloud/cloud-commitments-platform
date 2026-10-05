@@ -23,11 +23,9 @@ const (
 
 var errDenialTestReached = errors.New("mutation reached")
 
-func newDenialTestHandler(t *testing.T) (*Handler, *MockConfigStore, *MockPurchaseManager, context.Context) {
+func newDenialTestHandler(t *testing.T, store *MockConfigStore, mockPurchase *MockPurchaseManager) (*Handler, context.Context) {
 	t.Helper()
-	store := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
-	mockPurchase := new(MockPurchaseManager)
 
 	mockAuth.On("ValidateSession", mock.Anything, "sess-tok").Return(&Session{UserID: denialTestUserID, Email: "denied@example.com"}, nil)
 	mockAuth.On("HasPermissionAPI", mock.Anything, denialTestUserID, mock.Anything, mock.Anything).Return(false, nil)
@@ -44,7 +42,7 @@ func newDenialTestHandler(t *testing.T) (*Handler, *MockConfigStore, *MockPurcha
 		Session: &Session{UserID: apiKeyAdminUserID, Email: "admin@example.com"},
 		UserID:  apiKeyAdminUserID,
 	})
-	return &Handler{auth: mockAuth, config: store, purchase: mockPurchase}, store, mockPurchase, ctx
+	return &Handler{auth: mockAuth, config: store, purchase: mockPurchase}, ctx
 }
 
 func denialTestRequest() *events.LambdaFunctionURLRequest {
@@ -65,7 +63,8 @@ func requireForbidden(t *testing.T, err error) {
 }
 
 func TestApprovePurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
-	h, store, mockPurchase, ctx := newDenialTestHandler(t)
+	store, mockPurchase := new(MockConfigStore), new(MockPurchaseManager)
+	h, ctx := newDenialTestHandler(t, store, mockPurchase)
 	store.On("GetExecutionByID", mock.Anything, denialTestExecID).Return(&config.PurchaseExecution{
 		ExecutionID:     denialTestExecID,
 		Status:          "pending",
@@ -80,7 +79,8 @@ func TestApprovePurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
 }
 
 func TestCancelPurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
-	h, store, _, ctx := newDenialTestHandler(t)
+	store := new(MockConfigStore)
+	h, ctx := newDenialTestHandler(t, store, new(MockPurchaseManager))
 	store.On("GetExecutionByID", mock.Anything, denialTestExecID).Return(&config.PurchaseExecution{
 		ExecutionID: denialTestExecID,
 		Status:      "pending",
@@ -94,7 +94,8 @@ func TestCancelPurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
 }
 
 func TestRevokePurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
-	h, store, _, ctx := newDenialTestHandler(t)
+	store := new(MockConfigStore)
+	h, ctx := newDenialTestHandler(t, store, new(MockPurchaseManager))
 	store.On("GetExecutionByID", mock.Anything, denialTestExecID).Return(&config.PurchaseExecution{
 		ExecutionID: denialTestExecID,
 		Status:      "completed",
@@ -107,7 +108,8 @@ func TestRevokePurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
 }
 
 func TestApproveRIExchange_SessionDenialWithoutTokenIsFinal(t *testing.T) {
-	h, store, _, ctx := newDenialTestHandler(t)
+	store := new(MockConfigStore)
+	h, ctx := newDenialTestHandler(t, store, new(MockPurchaseManager))
 	store.On("GetRIExchangeRecord", mock.Anything, denialTestExecID).Return(&config.RIExchangeRecord{
 		ID:            denialTestExecID,
 		Status:        "pending",
@@ -124,7 +126,8 @@ func TestApproveRIExchange_SessionDenialWithoutTokenIsFinal(t *testing.T) {
 }
 
 func TestApproveRIExchange_SessionDenialWithTokenUsesToken(t *testing.T) {
-	h, store, _, ctx := newDenialTestHandler(t)
+	store := new(MockConfigStore)
+	h, ctx := newDenialTestHandler(t, store, new(MockPurchaseManager))
 	store.On("GetRIExchangeRecord", mock.Anything, denialTestExecID).Return(&config.RIExchangeRecord{
 		ID:            denialTestExecID,
 		Status:        "pending",
