@@ -63,8 +63,6 @@ func TestHandler_updateConfig(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
 	mockStore.On("SaveGlobalConfig", ctx, mock.AnythingOfType("*config.GlobalConfig")).Return(nil)
-	// Mock ListServiceConfigs for propagation of global defaults
-	mockStore.On("ListServiceConfigs", ctx).Return([]config.ServiceConfig{}, nil)
 	// updateConfig now calls GetGlobalConfig when recommendations_cache_stale_hours
 	// or recommendations_lookback_days is omitted from the request body, so the
 	// existing persisted value can be preserved rather than zeroed out (PR #308
@@ -124,7 +122,6 @@ func TestHandler_updateConfig_LadderingEnabledPreservation(t *testing.T) {
 			RecommendationsLookbackDays:    config.DefaultRecommendationsLookbackDays,
 			LadderingEnabled:               existingLaddering,
 		}, nil)
-		mockStore.On("ListServiceConfigs", ctx).Return([]config.ServiceConfig{}, nil)
 
 		var saved config.GlobalConfig
 		mockStore.On("SaveGlobalConfig", ctx, mock.AnythingOfType("*config.GlobalConfig")).
@@ -1045,127 +1042,65 @@ func TestHandler_getServiceConfig_InvalidProvider(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid provider")
 }
 
-func TestHandler_updateConfig_WithPropagation(t *testing.T) {
+// TestHandler_updateConfig_DefaultsPUTDoesNotRewriteServiceConfigs is the
+// issue #225 regression: a global-defaults PUT must not rewrite service
+// configs itself; the store propagates only changed defaults inside its tx.
+func TestHandler_updateConfig_DefaultsPUTDoesNotRewriteServiceConfigs(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockStore.AssertExpectations(t); mockAuth.AssertExpectations(t) })
 
-	adminSession := &Session{
-		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-		Email:  "admin@example.com",
-	}
-
-	serviceConfigs := []config.ServiceConfig{
-		{Provider: "aws", Service: "rds", Enabled: true},
-		{Provider: "aws", Service: "ec2", Enabled: true},
-	}
-
-	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
+	mockAuth.On("ValidateSession", ctx, "admin-token").
+		Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("SaveGlobalConfig", ctx, mock.AnythingOfType("*config.GlobalConfig")).Return(nil)
-	// updateConfig calls GetGlobalConfig before save to preserve persisted
-	// values for fields omitted from the request body (PR #308 CR pass-2).
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+		DefaultTerm:                    1,
+		DefaultPayment:                 "no-upfront",
+		DefaultCoverage:                80,
 		RecommendationsCacheStaleHours: config.DefaultRecommendationsCacheStaleHours,
 		RecommendationsLookbackDays:    config.DefaultRecommendationsLookbackDays,
 	}, nil)
-	mockStore.On("ListServiceConfigs", ctx).Return(serviceConfigs, nil)
-	mockStore.On("SaveServiceConfig", ctx, mock.AnythingOfType("*config.ServiceConfig")).Return(nil)
+	var saved config.GlobalConfig
+	mockStore.On("SaveGlobalConfig", ctx, mock.AnythingOfType("*config.GlobalConfig")).
+		Run(func(args mock.Arguments) { saved = *args.Get(1).(*config.GlobalConfig) }).
+		Return(nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
-
-	body := `{"enabled_providers": ["aws"], "default_term": 3, "default_coverage": 80}`
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{
-			"Authorization": "Bearer admin-token",
-		},
-		Body: body,
-	}
-	result, err := handler.updateConfig(ctx, req)
+	result, err := handler.updateConfig(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer admin-token"},
+		Body:    `{"default_coverage": 70}`,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "updated", result.Status)
-
-	// Verify SaveServiceConfig was called for each service
-	mockStore.AssertNumberOfCalls(t, "SaveServiceConfig", 2)
+	assert.Equal(t, 70.0, saved.DefaultCoverage)
+	mockStore.AssertNotCalled(t, "ListServiceConfigs", mock.Anything)
+	mockStore.AssertNotCalled(t, "SaveServiceConfig", mock.Anything, mock.Anything)
 }
 
-func TestHandler_updateConfig_PropagationServiceSaveError(t *testing.T) {
+// TestHandler_updateConfig_PropagationErrorIsReturned asserts a failed
+// default propagation (which rolls back the store tx) is not reported as
+// "updated".
+func TestHandler_updateConfig_PropagationErrorIsReturned(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockStore.AssertExpectations(t); mockAuth.AssertExpectations(t) })
 
-	adminSession := &Session{
-		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-		Email:  "admin@example.com",
-	}
-
-	serviceConfigs := []config.ServiceConfig{
-		{Provider: "aws", Service: "rds", Enabled: true},
-	}
-
-	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
+	mockAuth.On("ValidateSession", ctx, "admin-token").
+		Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("SaveGlobalConfig", ctx, mock.AnythingOfType("*config.GlobalConfig")).Return(nil)
-	// updateConfig calls GetGlobalConfig before save to preserve persisted
-	// values for fields omitted from the request body (PR #308 CR pass-2).
-	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
-		RecommendationsCacheStaleHours: config.DefaultRecommendationsCacheStaleHours,
-		RecommendationsLookbackDays:    config.DefaultRecommendationsLookbackDays,
-	}, nil)
-	mockStore.On("ListServiceConfigs", ctx).Return(serviceConfigs, nil)
-	// Simulate failure when saving service config during propagation
-	mockStore.On("SaveServiceConfig", ctx, mock.AnythingOfType("*config.ServiceConfig")).Return(assert.AnError)
+	propErr := fmt.Errorf("failed to propagate global defaults to service configs: %w", assert.AnError)
+	mockStore.On("UpdateGlobalConfigAtomic", ctx, mock.AnythingOfType("func(*config.GlobalConfig) error")).
+		Return(nil, propErr)
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
-
-	body := `{"enabled_providers": ["aws"], "default_term": 3}`
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{
-			"Authorization": "Bearer admin-token",
-		},
-		Body: body,
-	}
-	// Should still succeed even if service config propagation fails
-	result, err := handler.updateConfig(ctx, req)
-	require.NoError(t, err)
-	assert.Equal(t, "updated", result.Status)
-}
-
-func TestHandler_updateConfig_PropagationListError(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	mockAuth := new(MockAuthService)
-
-	adminSession := &Session{
-		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-		Email:  "admin@example.com",
-	}
-
-	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
-	mockAuth.grantAdmin()
-	mockStore.On("SaveGlobalConfig", ctx, mock.AnythingOfType("*config.GlobalConfig")).Return(nil)
-	// updateConfig calls GetGlobalConfig before save to preserve persisted
-	// values for fields omitted from the request body (PR #308 CR pass-2).
-	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
-		RecommendationsCacheStaleHours: config.DefaultRecommendationsCacheStaleHours,
-		RecommendationsLookbackDays:    config.DefaultRecommendationsLookbackDays,
-	}, nil)
-	// Simulate failure when listing service configs for propagation
-	mockStore.On("ListServiceConfigs", ctx).Return(nil, assert.AnError)
-
-	handler := &Handler{config: mockStore, auth: mockAuth}
-
-	body := `{"enabled_providers": ["aws"], "default_term": 3}`
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{
-			"Authorization": "Bearer admin-token",
-		},
-		Body: body,
-	}
-	// Should still succeed even if listing fails - global config was saved
-	result, err := handler.updateConfig(ctx, req)
-	require.NoError(t, err)
-	assert.Equal(t, "updated", result.Status)
+	result, err := handler.updateConfig(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer admin-token"},
+		Body:    `{"enabled_providers": ["aws"], "default_term": 3}`,
+	})
+	require.ErrorIs(t, err, assert.AnError)
+	assert.Nil(t, result)
 }
 
 // Regression tests for 02-M4: GET /api/config and GET /api/config/service/*

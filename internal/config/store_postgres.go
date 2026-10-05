@@ -184,11 +184,15 @@ func (s *PostgresStore) UpdateGlobalConfigAtomic(ctx context.Context, apply func
 		if readErr != nil {
 			return readErr
 		}
+		before := *cfg
 		if applyErr := apply(cfg); applyErr != nil {
 			return applyErr
 		}
 		if saveErr := saveGlobalConfigWith(ctx, tx, cfg); saveErr != nil {
 			return saveErr
+		}
+		if propErr := propagateChangedDefaults(ctx, tx, &before, cfg); propErr != nil {
+			return propErr
 		}
 		merged = cfg
 		return nil
@@ -197,6 +201,35 @@ func (s *PostgresStore) UpdateGlobalConfigAtomic(ctx context.Context, apply func
 		return nil, err
 	}
 	return merged, nil
+}
+
+// propagateChangedDefaults overwrites a service-config column only when its
+// global default changed, so a round-tripped or partial PUT keeps per-service
+// customisations.
+func propagateChangedDefaults(ctx context.Context, tx pgx.Tx, before, after *GlobalConfig) error {
+	termChanged := after.DefaultTerm != before.DefaultTerm
+	paymentChanged := after.DefaultPayment != before.DefaultPayment
+	coverageChanged := after.DefaultCoverage != before.DefaultCoverage
+	rampChanged := after.DefaultRampSchedule != before.DefaultRampSchedule
+	if !termChanged && !paymentChanged && !coverageChanged && !rampChanged {
+		return nil
+	}
+	const query = `
+		UPDATE service_configs SET
+			term = CASE WHEN $1 THEN $2 ELSE term END,
+			payment = CASE WHEN $3 THEN $4 ELSE payment END,
+			coverage = CASE WHEN $5 THEN $6 ELSE coverage END,
+			ramp_schedule = CASE WHEN $7 THEN $8 ELSE ramp_schedule END
+	`
+	if _, err := tx.Exec(ctx, query,
+		termChanged, after.DefaultTerm,
+		paymentChanged, after.DefaultPayment,
+		coverageChanged, after.DefaultCoverage,
+		rampChanged, after.DefaultRampSchedule,
+	); err != nil {
+		return fmt.Errorf("failed to propagate global defaults to service configs: %w", err)
+	}
+	return nil
 }
 
 // saveGlobalConfigWith upserts the global_config singleton via q (the pool or a
