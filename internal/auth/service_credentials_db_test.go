@@ -263,6 +263,23 @@ func TestIntegration_CredentialWritesRejectStaleCredentials(t *testing.T) {
 		assert.Equal(t, winner(), f.stored())
 	})
 
+	t.Run("reset-after-concurrent-email-change", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "stale-reset-email@example.com")
+		winner := f.onRead(func(ctx context.Context, _ *Service) {
+			u, err := store.GetUserByID(ctx, f.user.ID)
+			require.NoError(t, err)
+			u.Email = "stale-reset-email-new@example.com"
+			require.NoError(t, store.UpdateUser(ctx, u))
+		})
+		require.NoError(t, f.svc.RequestPasswordReset(ctx, f.user.Email))
+		assert.Empty(t, f.mail.resets, "a token must not be mailed to the address the user just left")
+		stored := f.stored()
+		assert.Equal(t, winner(), stored)
+		assert.Equal(t, "stale-reset-email-new@example.com", stored.Email)
+		assert.Empty(t, stored.PasswordResetToken)
+		assert.Nil(t, stored.PasswordResetExpiry)
+	})
+
 	t.Run("reset-after-concurrent-reset", func(t *testing.T) {
 		f := newCredentialRaceFixture(t, store, "stale-reset-twice@example.com")
 		winner := f.onRead(func(ctx context.Context, other *Service) {
