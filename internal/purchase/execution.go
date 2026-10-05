@@ -567,6 +567,10 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 	if globalCfg != nil {
 		opts.OfferingClass = globalCfg.OfferingClass
 	}
+	offeringClass, err := resolveEC2OfferingClass(opts.OfferingClass)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("purchase[%s]: %w", exec.ExecutionID, err)
+	}
 
 	// Build the list of selected indices once so the fan-out closure only
 	// has to look up rec[i] (no second pass over the full slice).
@@ -625,7 +629,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 	// there are no concurrent writes to totals, exec.Recommendations, or
 	// purchaseErrors (05-N2). Do NOT move the aggregation inside the FanOut
 	// closure or run it concurrently with the fan-out.
-	totalSavings, totalUpfront, purchaseErrors = m.aggregatePurchaseOutcomes(ctx, exec, plan, accountID, results)
+	totalSavings, totalUpfront, purchaseErrors = m.aggregatePurchaseOutcomes(ctx, exec, plan, accountID, offeringClass, results)
 	return totalSavings, totalUpfront, purchaseErrors, nil
 }
 
@@ -635,7 +639,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 // so the aggregation logic is single-threaded — no concurrent writes to
 // totals, purchaseErrors, or exec.Recommendations[i] regardless of how
 // many recs ran in parallel.
-func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan, accountID string, results []execution.Result[recPurchaseOutcome]) (float64, float64, []string) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
+func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan, accountID string, offeringClass ec2types.OfferingClassType, results []execution.Result[recPurchaseOutcome]) (float64, float64, []string) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
 	var totalSavings, totalUpfront float64
 	var purchaseErrors []string
 	for _, r := range results {
@@ -670,7 +674,7 @@ func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.Pu
 		exec.Recommendations[i].PurchaseID = v.purchase.CommitmentID
 		totalSavings += rec.Savings
 		totalUpfront += rec.UpfrontCost
-		if histErr := m.savePurchaseHistory(ctx, exec, plan, rec, v.purchase, accountID); histErr != nil {
+		if histErr := m.savePurchaseHistory(ctx, exec, plan, rec, v.purchase, accountID, offeringClass); histErr != nil {
 			// The purchase SUCCEEDED but its purchase_history row failed to
 			// persist. Do NOT add this to purchaseErrors — that would flip the
 			// execution to "failed" and tempt the user to re-approve a purchase
@@ -925,7 +929,7 @@ func SingleCloudAccountIDFromRecs(recs []config.RecommendationRecord) (*string, 
 // caller can record an audit gap on the execution: a swallowed failure here
 // used to leave the execution silently "completed" with no purchase_history
 // row, making the purchase invisible in the History view (issue #621).
-func (m *Manager) savePurchaseHistory(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan, rec config.RecommendationRecord, result common.PurchaseResult, accountID string) error {
+func (m *Manager) savePurchaseHistory(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan, rec config.RecommendationRecord, result common.PurchaseResult, accountID string, offeringClass ec2types.OfferingClassType) error {
 	purchasedAt := time.Now()
 	historyRecord := &config.PurchaseHistoryRecord{
 		AccountID:        accountID,
@@ -950,13 +954,11 @@ func (m *Manager) savePurchaseHistory(ctx context.Context, exec *config.Purchase
 		// Revoke button (issue #290). Azure-only in Phase 1; nil for AWS/GCP.
 		RevocationWindowClosesAt: config.RevocationWindowClosesAtFor(rec.Provider, purchasedAt),
 	}
-	// Stamp offering_class for AWS EC2 Reserved Instances. CUDly always
-	// purchases EC2 RIs with offering-class=Convertible (the EC2 client
-	// hard-wires OfferingClassTypeConvertible). Stamping at write time
-	// ensures the marketplace-sell guard can distinguish eligibility without
-	// an extra AWS round-trip for CUDly-purchased rows (issue #292).
-	if rec.Provider == string(common.ProviderAWS) && rec.Service == string(common.ServiceEC2) {
-		historyRecord.OfferingClass = string(ec2types.OfferingClassTypeConvertible)
+	// The marketplace-sell guard reads this column instead of asking AWS
+	// (issue #292), so it must be the class the EC2 client was asked to buy.
+	svc := m.mapServiceType(rec.Service)
+	if rec.Provider == string(common.ProviderAWS) && (svc == common.ServiceEC2 || svc == common.ServiceCompute) {
+		historyRecord.OfferingClass = string(offeringClass)
 	}
 	if err := m.config.SavePurchaseHistory(ctx, historyRecord); err != nil {
 		logging.Errorf("Failed to save history: %v", err)
@@ -1160,6 +1162,22 @@ func (m *Manager) mapServiceType(service string) common.ServiceType {
 		return svc
 	}
 	return common.ServiceType(service)
+}
+
+var errUnknownOfferingClass = errors.New("unknown EC2 RI offering class")
+
+// resolveEC2OfferingClass mirrors the pinned EC2 client's resolveOfferingClassType,
+// where "" means convertible, so history records the class the client buys.
+func resolveEC2OfferingClass(s string) (ec2types.OfferingClassType, error) {
+	switch s {
+	case "", string(ec2types.OfferingClassTypeConvertible):
+		return ec2types.OfferingClassTypeConvertible, nil
+	case string(ec2types.OfferingClassTypeStandard):
+		return ec2types.OfferingClassTypeStandard, nil
+	default:
+		return "", fmt.Errorf("%w %q: must be %q or %q", errUnknownOfferingClass, s,
+			ec2types.OfferingClassTypeConvertible, ec2types.OfferingClassTypeStandard)
+	}
 }
 
 // mapServiceSlug returns the common.ServiceType for a canonical or legacy
