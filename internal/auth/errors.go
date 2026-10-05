@@ -127,6 +127,10 @@ var (
 	ErrMFANotEnabled             = errors.New("MFA is not enabled")
 	ErrMFAAuthFailed             = errors.New("authentication failed")
 
+	// ErrMFAAlreadyEnabled: setup or enable on an account whose MFA is on.
+	// Replacing a factor needs the disable proof first (issue #227). Mapped to 409.
+	ErrMFAAlreadyEnabled = errors.New("MFA is already enabled; disable it before enrolling a new authenticator")
+
 	// API key creation sentinels — returned (wrapped via fmt.Errorf "%w") by
 	// CreateAPIKey so the API handler can map each to the right HTTP status
 	// via errors.Is rather than substring matching. See issue #102.

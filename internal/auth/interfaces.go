@@ -17,6 +17,9 @@ type StoreInterface interface {
 	CompletePasswordReset(ctx context.Context, user *User, readResetToken, readPasswordHash string) error
 	ConsumePasswordResetToken(ctx context.Context, userID, readResetToken string) error
 	ConsumeMFARecoveryCode(ctx context.Context, userID string, readCodes, remaining []string) error
+	SetPendingMFASecret(ctx context.Context, userID, secret string, expiresAt time.Time) error
+	EnableMFA(ctx context.Context, userID, pendingSecret string, recoveryHashes []string) error
+	ClearPendingMFASecret(ctx context.Context, userID string) error
 	RecordFailedLogin(ctx context.Context, userID string) error
 	RecordSuccessfulLogin(ctx context.Context, userID string) error
 	DeleteUser(ctx context.Context, userID string) error

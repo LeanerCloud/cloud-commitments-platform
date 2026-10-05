@@ -547,6 +547,10 @@ func mapMFAServiceError(err error) error {
 		errors.Is(err, auth.ErrMFAEnrollmentExpired),
 		errors.Is(err, auth.ErrMFANotEnabled):
 		return NewClientError(400, err.Error())
+	case errors.Is(err, auth.ErrMFAAlreadyEnabled):
+		return NewClientError(409, auth.ErrMFAAlreadyEnabled.Error())
+	case errors.Is(err, auth.ErrUserChanged):
+		return NewClientError(409, auth.ErrUserChanged.Error())
 	case errors.Is(err, auth.ErrMFAAuthFailed):
 		// Opaque 401 to prevent user enumeration: the service returns this
 		// for both "user not found" and "DB lookup failed" paths so callers

@@ -1675,6 +1675,29 @@ func TestMapMFAServiceError_AuthFailed_Is401(t *testing.T) {
 	assert.Contains(t, ce.Error(), auth.ErrMFAAuthFailed.Error())
 }
 
+// Issue #227: refusing to replace an enabled factor, and losing an enrollment
+// race, are client conflicts rather than 500s.
+func TestHandler_mfaSetupAndEnable_ConflictsAre409(t *testing.T) {
+	ctx := context.Background()
+	for _, sentinel := range []error{auth.ErrMFAAlreadyEnabled, auth.ErrUserChanged} {
+		mockAuth := new(MockAuthService)
+		mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
+		mockAuth.On("MFASetupAPI", ctx, "user-1", "pw").Return("", "", fmt.Errorf("persist: %w", sentinel))
+		mockAuth.On("MFAEnableAPI", ctx, "user-1", "123456").Return(nil, fmt.Errorf("persist: %w", sentinel))
+		handler := &Handler{auth: mockAuth}
+
+		_, setupErr := handler.mfaSetup(ctx, authedReq("tok", `{"password":"`+b64("pw")+`"}`))
+		_, enableErr := handler.mfaEnable(ctx, authedReq("tok", `{"code":"123456"}`))
+		for _, err := range []error{setupErr, enableErr} {
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "%v must be a client error", sentinel)
+			assert.Equal(t, 409, ce.code)
+			assert.Equal(t, sentinel.Error(), ce.Error())
+		}
+		mockAuth.AssertExpectations(t)
+	}
+}
+
 // Issue #94: every MFA route that checks a password, TOTP or recovery code
 // must be throttled per IP and per session user.
 func TestHandler_mfaEndpoints_RateLimited(t *testing.T) {

@@ -73,6 +73,55 @@ func (s *PostgresStore) ConsumeMFARecoveryCode(ctx context.Context, userID strin
 	return nil
 }
 
+// SetPendingMFASecret writes only the pending enrollment, and only while MFA is
+// off, so a stale setup cannot overwrite a concurrent enrollment (issue #227).
+func (s *PostgresStore) SetPendingMFASecret(ctx context.Context, userID, secret string, expiresAt time.Time) error {
+	result, err := s.db.Exec(ctx, `
+		UPDATE users SET mfa_pending_secret = $2, mfa_pending_secret_expires_at = $3, updated_at = NOW()
+		WHERE id = $1 AND mfa_enabled = false
+	`, userID, secret, expiresAt)
+	if err != nil {
+		return fmt.Errorf("failed to persist pending MFA secret: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrUserChanged
+	}
+	return nil
+}
+
+// EnableMFA promotes the pending secret the caller verified, only while MFA is
+// still off and that secret is still the pending one (issue #227).
+func (s *PostgresStore) EnableMFA(ctx context.Context, userID, pendingSecret string, recoveryHashes []string) error {
+	result, err := s.db.Exec(ctx, `
+		UPDATE users SET mfa_enabled = true, mfa_secret = $2, mfa_recovery_codes = $3,
+			mfa_pending_secret = '', mfa_pending_secret_expires_at = NULL, updated_at = NOW()
+		WHERE id = $1 AND mfa_enabled = false AND mfa_pending_secret = $2
+	`, userID, pendingSecret, recoveryHashes)
+	if err != nil {
+		return fmt.Errorf("failed to enable MFA: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrUserChanged
+	}
+	return nil
+}
+
+// ClearPendingMFASecret cancels a pending enrollment, only while MFA is off, so
+// a password-only cancel cannot erase a concurrent enrollment (issue #227).
+func (s *PostgresStore) ClearPendingMFASecret(ctx context.Context, userID string) error {
+	result, err := s.db.Exec(ctx, `
+		UPDATE users SET mfa_pending_secret = '', mfa_pending_secret_expires_at = NULL, updated_at = NOW()
+		WHERE id = $1 AND mfa_enabled = false
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("failed to clear pending MFA secret: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrUserChanged
+	}
+	return nil
+}
+
 // SetPasswordResetToken writes only the reset token columns, and only while the
 // account is still active under the same email with the reset expiry the caller
 // read, so a concurrent deactivation or reset issuance wins.
