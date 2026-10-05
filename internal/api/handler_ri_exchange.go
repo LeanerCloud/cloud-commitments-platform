@@ -1652,12 +1652,8 @@ func (h *Handler) attachReshapeStaleness(ctx context.Context, resp *ReshapeRecom
 	}
 }
 
-// firstNonEmptyCurrency returns the CurrencyCode of the first RI that
-// has one set, defaulting to "USD" for legacy fixtures and the common
-// case. The reshape page operates on a single AWS account at a time so
-// all RIs share the same currency in practice; picking the first
-// populated value is sufficient and avoids a noisy mismatch panic when
-// some entries are missing the field.
+// firstNonEmptyCurrency returns the first RI CurrencyCode set, or "" when none
+// is, so the response omits currency_code instead of claiming USD (#361).
 func firstNonEmptyCurrency(instances []ec2svc.ConvertibleRI) string {
 	for _rvc := range instances {
 		inst := instances[_rvc]
@@ -1665,7 +1661,7 @@ func firstNonEmptyCurrency(instances []ec2svc.ConvertibleRI) string {
 			return inst.CurrencyCode
 		}
 	}
-	return "USD"
+	return ""
 }
 
 // validateTargets checks each entry in targets for a non-empty, UUID-shaped

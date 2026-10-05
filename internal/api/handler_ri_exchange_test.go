@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -844,6 +845,63 @@ func TestGetReshapeRecommendations_EmptyRegionUsesConfigRegion(t *testing.T) {
 				"must normalize to cfg.Region or the recs lookup runs unscoped and leaks "+
 				"alternatives from other regions onto the reshape page (commit afc3aa1ff)",
 			i, cfgRegion, f.Region)
+	}
+}
+
+// Alternatives carry the RIs' own currency; RIs reporting none yield no
+// currency_code, never a fabricated "USD" (#361).
+func TestGetReshapeRecommendations_AlternativeCurrencyFromRIs(t *testing.T) {
+	cases := []struct {
+		name       string
+		riCurrency string
+	}{
+		{name: "RIs without currency", riCurrency: ""},
+		{name: "JPY RIs", riCurrency: "JPY"},
+		{name: "EUR RIs", riCurrency: "EUR"},
+		{name: "USD RIs", riCurrency: "USD"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockStore := &MockConfigStore{}
+			mockStore.On("ListStoredRecommendations", mock.Anything, mock.Anything).
+				Return([]config.RecommendationRecord{
+					{ID: "rec-1", ResourceType: "c6i.large", Count: 1, MonthlyCost: aws.Float64(40)},
+				}, nil)
+			h := &Handler{
+				config: mockStore,
+				auth:   &mockAuthForExchange{},
+				reshapeEC2Factory: func(_ aws.Config) reshapeEC2Client {
+					return &fakeReshapeEC2Stub{instances: []ec2svc.ConvertibleRI{
+						{ReservedInstanceID: "ri-1", InstanceType: "m5.xlarge", InstanceCount: 1, CurrencyCode: tc.riCurrency},
+					}}
+				},
+				reshapeRecsFactory: func(_ aws.Config) reshapeRecsClient {
+					return &fakeReshapeRecsStub{utilization: []recommendations.RIUtilization{
+						{ReservedInstanceID: "ri-1", UtilizationPercent: 50.0},
+					}}
+				},
+				reshapeAccountResolver: func(_ context.Context) (string, error) { return "", nil },
+			}
+			h.awsCfgOnce.Do(func() { h.awsCfg = aws.Config{Region: "us-east-1"} })
+
+			req := &events.LambdaFunctionURLRequest{
+				Headers:               map[string]string{"authorization": "Bearer test-token"},
+				QueryStringParameters: map[string]string{"lookback_days": "30", "threshold": "95.0"},
+			}
+			out, err := h.getReshapeRecommendations(context.Background(), req)
+			require.NoError(t, err)
+			resp, ok := out.(*ReshapeRecommendationsResponse)
+			require.True(t, ok)
+			require.Len(t, resp.Recommendations, 1)
+			alts := resp.Recommendations[0].AlternativeTargets
+			require.Len(t, alts, 1, "the c6i.large rec must surface as a cross-family alternative")
+			assert.Equal(t, tc.riCurrency, alts[0].CurrencyCode)
+
+			raw, err := json.Marshal(alts[0])
+			require.NoError(t, err)
+			assert.Equal(t, tc.riCurrency != "", bytes.Contains(raw, []byte(`"currency_code"`)),
+				"currency_code must be present only when the RIs report a currency: %s", raw)
+		})
 	}
 }
 
