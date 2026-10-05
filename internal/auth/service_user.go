@@ -765,6 +765,7 @@ func (s *Service) UpdateUserProfile(ctx context.Context, userID, email, currentP
 	if !s.verifyPassword(currentPassword, user.PasswordHash) {
 		return ErrCurrentPasswordIncorrect
 	}
+	readEmail, readPasswordHash := user.Email, user.PasswordHash
 
 	err = s.updateUserEmail(ctx, user, email)
 	if err != nil {
@@ -776,8 +777,7 @@ func (s *Service) UpdateUserProfile(ctx context.Context, userID, email, currentP
 		return err
 	}
 
-	user.UpdatedAt = time.Now()
-	if err := s.store.UpdateUser(ctx, user); err != nil {
+	if err := s.store.UpdateUserCredentials(ctx, user, readEmail, readPasswordHash); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 

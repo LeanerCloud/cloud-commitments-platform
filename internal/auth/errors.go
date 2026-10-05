@@ -91,6 +91,10 @@ var (
 	// reset token mailed to the account.
 	ErrAccountDeactivated = errors.New("account is deactivated")
 
+	// ErrUserChanged: a field-scoped user write found the row changed since the
+	// caller read it (issue #474). Mapped to 409.
+	ErrUserChanged = errors.New("account changed concurrently; reload and retry")
+
 	// MFA login-gate sentinels — used by the login API handler to map
 	// to machine-readable response codes (mfa_required /
 	// invalid_mfa_code) so the frontend can branch on the error class

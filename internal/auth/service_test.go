@@ -625,7 +625,7 @@ func TestService_ErrorPaths(t *testing.T) {
 		testUser := createTestUser(t, "SecurePass@123")
 
 		mockStore.On("GetUserByEmail", ctx, "test@example.com").Return(testUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("SetPasswordResetToken", ctx, mock.AnythingOfType("*auth.User"), mock.Anything).Return(nil).Once()
 		mockEmail.On("SendPasswordResetEmail", ctx, "test@example.com", mock.AnythingOfType("string")).Return(fmt.Errorf("email error")).Once()
 
 		// Should not return error to prevent email enumeration
@@ -671,7 +671,7 @@ func TestService_ErrorPaths(t *testing.T) {
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(fmt.Errorf("session error")).Once()
 		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserCredentials", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything).Return(nil).Once()
 
 		req := ChangePasswordRequest{
 			CurrentPassword: "OldPassword123",

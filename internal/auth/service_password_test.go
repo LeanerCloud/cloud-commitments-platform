@@ -26,7 +26,7 @@ func TestService_ChangePassword(t *testing.T) {
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
 		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserCredentials", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything).Return(nil).Once()
 
 		req := ChangePasswordRequest{
 			CurrentPassword: "OldSecure123!",
@@ -140,7 +140,7 @@ func TestService_ChangePassword(t *testing.T) {
 		mockStore.On("GetUserByID", ctx, "user-123").Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
 		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool {
+		mockStore.On("UpdateUserCredentials", ctx, mock.MatchedBy(func(u *User) bool {
 			// Verify password history includes old password and maintains limit
 			// Should have: original current password (newly added to history) + 2 existing = 3 total
 			return len(u.PasswordHistory) == 3 &&
@@ -148,7 +148,7 @@ func TestService_ChangePassword(t *testing.T) {
 				u.PasswordHistory[0] == originalHash && // Original current password should be first in history
 				u.PasswordHistory[1] == hash1 && // Previous history items should follow
 				u.PasswordHistory[2] == hash2
-		})).Return(nil).Once()
+		}), mock.Anything, mock.Anything).Return(nil).Once()
 
 		req := ChangePasswordRequest{
 			CurrentPassword: "CurrentS3cur3!",
@@ -228,7 +228,7 @@ func TestService_ChangePassword(t *testing.T) {
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
 		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{apiKeyRecord}, nil).Once()
 		mockStore.On("UpdateAPIKey", ctx, apiKeyRecord).Return(nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserCredentials", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything).Return(nil).Once()
 
 		err = service.ChangePassword(ctx, "user-123", ChangePasswordRequest{
 			CurrentPassword: "OldSecure123!",
@@ -259,7 +259,7 @@ func TestService_RequestPasswordReset(t *testing.T) {
 		testUser := createTestUser(t, "SecureS3cur3@123")
 
 		mockStore.On("GetUserByEmail", ctx, "test@example.com").Return(testUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("SetPasswordResetToken", ctx, mock.AnythingOfType("*auth.User"), mock.Anything).Return(nil).Once()
 		mockEmail.On("SendPasswordResetEmail", ctx, "test@example.com", mock.AnythingOfType("string")).Return(nil).Once()
 
 		err := service.RequestPasswordReset(ctx, "test@example.com")
@@ -296,7 +296,7 @@ func TestService_RequestPasswordReset(t *testing.T) {
 		mockStore.AssertExpectations(t)
 	})
 
-	t.Run("return error when UpdateUser fails", func(t *testing.T) {
+	t.Run("return error when SetPasswordResetToken fails", func(t *testing.T) {
 		mockStore := new(MockStore)
 		mockEmail := new(MockEmailSender)
 		service := createTestService(mockStore, mockEmail)
@@ -304,7 +304,7 @@ func TestService_RequestPasswordReset(t *testing.T) {
 		testUser := createTestUser(t, "SecureS3cur3@123")
 
 		mockStore.On("GetUserByEmail", ctx, "test@example.com").Return(testUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(assert.AnError).Once()
+		mockStore.On("SetPasswordResetToken", ctx, mock.AnythingOfType("*auth.User"), mock.Anything).Return(assert.AnError).Once()
 
 		err := service.RequestPasswordReset(ctx, "test@example.com")
 		assert.Error(t, err)
@@ -320,7 +320,7 @@ func TestService_RequestPasswordReset(t *testing.T) {
 		testUser := createTestUser(t, "SecureS3cur3@123")
 
 		mockStore.On("GetUserByEmail", ctx, "test@example.com").Return(testUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("SetPasswordResetToken", ctx, mock.AnythingOfType("*auth.User"), mock.Anything).Return(nil).Once()
 		mockEmail.On("SendPasswordResetEmail", ctx, "test@example.com", mock.AnythingOfType("string")).Return(assert.AnError).Once()
 
 		// Should not return error to prevent email enumeration

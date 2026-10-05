@@ -263,6 +263,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
+	readPasswordHash := user.PasswordHash
 	// Update password history (add current password to history)
 	user.PasswordHistory = addToPasswordHistory(user.PasswordHash, user.PasswordHistory)
 
@@ -270,7 +271,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 	user.Salt = "" // Not used anymore
 	user.PasswordHash = passwordHash
 
-	if err := s.store.UpdateUser(ctx, user); err != nil {
+	if err := s.store.UpdateUserCredentials(ctx, user, user.Email, readPasswordHash); err != nil {
 		return err
 	}
 
@@ -342,13 +343,26 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 
 	// Set expiry based on configured duration
 	expiry := time.Now().Add(PasswordResetExpiry)
+	readExpiry := user.PasswordResetExpiry
 	user.PasswordResetToken = tokenHash
 	user.PasswordResetExpiry = &expiry
 
-	if err := s.store.UpdateUser(ctx, user); err != nil {
-		return fmt.Errorf("failed to save reset token: %w", err)
+	if err := s.store.SetPasswordResetToken(ctx, user, readExpiry); err != nil {
+		if errors.Is(err, ErrUserChanged) {
+			// Deactivated, re-addressed or reset concurrently: answer as for an ineligible account.
+			logging.Debugf("Password reset skipped for concurrently changed account: %s", redactEmail(email))
+			return nil
+		}
+		return err
 	}
 
+	s.sendPasswordResetEmail(ctx, user.Email, token)
+	return nil
+}
+
+// sendPasswordResetEmail is best-effort so RequestPasswordReset's response
+// never reveals whether an email was sent.
+func (s *Service) sendPasswordResetEmail(ctx context.Context, email, token string) {
 	// Skip the email entirely if dashboardURL is unconfigured — a broken
 	// relative link in an inbox is worse than no email; the operator's
 	// startup-time WARN already names the missing env var. Don't return an
@@ -357,17 +371,14 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	// exists, and that includes whether or not a send happened). Issue #355.
 	if s.dashboardURL == "" {
 		logging.Errorf("RequestPasswordReset: skipping send — DashboardURL empty would produce a broken relative link (set DASHBOARD_URL).")
-		return nil
+		return
 	}
 
 	// Send reset email (use unhashed token in URL)
 	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.dashboardURL, token)
-	if err := s.emailSender.SendPasswordResetEmail(ctx, user.Email, resetURL); err != nil {
+	if err := s.emailSender.SendPasswordResetEmail(ctx, email, resetURL); err != nil {
 		logging.Errorf("Failed to send password reset email: %v", err)
-		// Don't return error to prevent email enumeration
 	}
-
-	return nil
 }
 
 // ConfirmPasswordReset completes a password reset.

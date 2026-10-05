@@ -430,6 +430,7 @@ func (h *Handler) updateProfile(ctx context.Context, req *events.LambdaFunctionU
 //   - ErrEmailInUse -> 409 with a neutral message that does NOT confirm whether
 //     another account holds the address; prevents account enumeration via the
 //     profile-update path (issue #929).
+//   - ErrUserChanged -> 409: the account changed after it was read (issue #474).
 //   - All other errors pass through unchanged for handleRequestError to render
 //     as 500.
 func mapProfileUpdateError(err error) error {
@@ -438,6 +439,8 @@ func mapProfileUpdateError(err error) error {
 		return NewClientError(401, err.Error())
 	case errors.Is(err, auth.ErrEmailInUse):
 		return NewClientError(409, "Unable to update email")
+	case errors.Is(err, auth.ErrUserChanged):
+		return NewClientError(409, auth.ErrUserChanged.Error())
 	}
 	return err
 }
@@ -505,6 +508,9 @@ func (h *Handler) changePassword(ctx context.Context, req *events.LambdaFunction
 	}
 
 	err = h.auth.ChangePasswordAPI(ctx, session.UserID, currentPassword, newPassword)
+	if errors.Is(err, auth.ErrUserChanged) {
+		return nil, NewClientError(409, err.Error())
+	}
 	if err != nil {
 		return nil, err
 	}
