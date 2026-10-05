@@ -32,6 +32,12 @@ func TestHandler_isPublicEndpoint(t *testing.T) {
 		{"/versionXYZ", false},        // prefix overlap must not bypass auth
 		{"/api/register", true},       // POST /api/register (exact)
 		{"/api/registrations", false}, // must not match via prefix
+		{"/api/info", true},
+		{"/api/info/deployment", false}, // AuthUser (issue #192)
+		{"/api/info/", false},
+		{"/api/info/anything", false},
+		{"/api/infox", false},
+		{"/API/INFO", false},
 	}
 
 	for _, tt := range tests {
@@ -40,6 +46,33 @@ func TestHandler_isPublicEndpoint(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+// TestIsPublicEndpoint_MatchesRouteAuthLevels checks every registered route
+// against the middleware's public list, so a route that is public only by
+// prefix overlap (issue #192) or an AuthPublic route missing from the list
+// fails here.
+func TestIsPublicEndpoint_MatchesRouteAuthLevels(t *testing.T) {
+	h := &Handler{}
+	for _, route := range NewRouter(h).routes {
+		path := route.ExactPath
+		if path == "" {
+			path = route.PathPrefix + "x" + route.PathSuffix
+		}
+		assert.Equal(t, route.Auth == AuthPublic, h.isPublicEndpoint(path),
+			"%s %s: Auth=%d disagrees with isPublicEndpoint", route.Method, path, route.Auth)
+	}
+}
+
+func TestValidateSecurity_UnauthenticatedDeploymentInfoRejectedByMiddleware(t *testing.T) {
+	handler := &Handler{apiKey: "secret-key"}
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{}}
+
+	resp := handler.validateSecurity(context.Background(), req, "GET", "/api/info/deployment", map[string]string{})
+	require.NotNil(t, resp, "middleware must refuse /api/info/deployment itself, not rely on Router.Route")
+	assert.Equal(t, 401, resp.StatusCode)
+
+	assert.Nil(t, handler.validateSecurity(context.Background(), req, "GET", "/api/info", map[string]string{}))
 }
 
 func TestHandler_authenticate(t *testing.T) {
