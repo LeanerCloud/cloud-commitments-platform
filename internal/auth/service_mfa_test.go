@@ -450,7 +450,7 @@ func TestLogin_WithMFA_RecoveryCode_ConsumedOnce(t *testing.T) {
 	user.MFARecoveryCodes = []string{hash}
 
 	mockStore.On("GetUserByEmail", ctx, user.Email).Return(user, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil)
+	mockStore.On("ConsumeMFARecoveryCode", ctx, user.ID, []string{hash}, []string{}).Return(nil).Once()
 	mockStore.On("RecordSuccessfulLogin", ctx, user.ID).Return(nil)
 	mockStore.On("RecordFailedLogin", ctx, user.ID).Return(nil)
 	mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil)
@@ -483,9 +483,8 @@ func TestLogin_WithMFA_RecoveryCode_PersistenceFailure(t *testing.T) {
 		snapshot.MFARecoveryCodes = append([]string(nil), user.MFARecoveryCodes...)
 		store.On("GetUserByEmail", ctx, user.Email).Return(&snapshot, nil).Once()
 	}
-	store.On("UpdateUser", ctx, mock.MatchedBy(func(updated *User) bool {
-		return updated.ID == user.ID && len(updated.MFARecoveryCodes) == 0
-	})).Return(errors.New("consumption write failed")).Twice()
+	store.On("ConsumeMFARecoveryCode", ctx, user.ID, []string{hash}, []string{}).
+		Return(errors.New("consumption write failed")).Twice()
 
 	for range 2 {
 		response, loginErr := service.Login(ctx, LoginRequest{

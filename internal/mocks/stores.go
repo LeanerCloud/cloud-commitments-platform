@@ -813,6 +813,10 @@ func (m *MockAuthStore) ConsumePasswordResetToken(ctx context.Context, userID, r
 	return m.Called(ctx, userID, readResetToken).Error(0)
 }
 
+func (m *MockAuthStore) ConsumeMFARecoveryCode(ctx context.Context, userID string, readCodes, remaining []string) error {
+	return m.Called(ctx, userID, readCodes, remaining).Error(0)
+}
+
 func (m *MockAuthStore) RecordFailedLogin(ctx context.Context, userID string) error {
 	return m.Called(ctx, userID).Error(0)
 }

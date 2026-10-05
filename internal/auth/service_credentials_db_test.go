@@ -400,3 +400,44 @@ func TestIntegration_ResetConfirmRejectsStaleRead(t *testing.T) {
 		assert.Empty(t, f.stored().PasswordResetToken)
 	})
 }
+
+func (f *credentialRaceFixture) enrollMFA() []string {
+	setup, err := f.svc.MFASetup(f.t.Context(), f.user.ID, credentialRacePassword)
+	require.NoError(f.t, err)
+	codes, err := f.svc.MFAEnable(f.t.Context(), f.user.ID, generateTOTP(setup.Secret, time.Now().Unix()/30))
+	require.NoError(f.t, err)
+	return codes
+}
+
+func TestIntegration_RecoveryCodeLoginRejectsStaleRead(t *testing.T) {
+	store := NewPostgresStore(setupAuthTestDB(t))
+	ctx := t.Context()
+
+	t.Run("after-concurrent-use-of-same-code", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "recovery-twice@example.com")
+		req := LoginRequest{Email: f.user.Email, Password: credentialRacePassword, MFACode: f.enrollMFA()[0]}
+		winner := f.onRead(func(ctx context.Context, other *Service) {
+			_, err := other.Login(ctx, req)
+			require.NoError(t, err)
+		})
+		_, err := f.svc.Login(ctx, req)
+		require.ErrorIs(t, err, ErrInvalidMFACode, "a recovery code must be spent once")
+		assert.Equal(t, winner(), f.stored())
+	})
+
+	t.Run("after-concurrent-password-change", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "recovery-after-change@example.com")
+		codes := f.enrollMFA()
+		winner := f.onRead(func(ctx context.Context, other *Service) {
+			require.NoError(t, other.ChangePassword(ctx, f.user.ID, ChangePasswordRequest{CurrentPassword: credentialRacePassword, NewPassword: credentialRaceNew}))
+		})
+		// Login checks the password it read, so it still succeeds here (a separate, pre-existing gap);
+		// this test pins only that the code write leaves the new password in place.
+		_, err := f.svc.Login(ctx, LoginRequest{Email: f.user.Email, Password: credentialRacePassword, MFACode: codes[0]})
+		require.NoError(t, err)
+		stored := f.stored()
+		assert.Len(t, stored.MFARecoveryCodes, len(codes)-1)
+		assertOnlyChanged(t, winner(), stored, func(w *User) { w.MFARecoveryCodes = stored.MFARecoveryCodes })
+		f.requireFactorEnforced(f.user.Email, credentialRaceNew, stored)
+	})
+}

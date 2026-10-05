@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -215,7 +216,7 @@ func (s *Service) getUserAndValidateStatus(ctx context.Context, email string) (*
 // Accepts either a TOTP code OR a single-use recovery code as proof
 // of MFA. Consumed recovery codes are removed from the user row on
 // success — the success path persists the updated codes slice via
-// UpdateUser before returning. A failed recovery-code attempt does
+// ConsumeMFARecoveryCode before returning. A failed recovery-code attempt does
 // NOT consume anything (the consumeRecoveryCode call only mutates
 // the slice on a match).
 func (s *Service) verifyPasswordAndMFA(ctx context.Context, user *User, req LoginRequest) error {
@@ -251,8 +252,9 @@ func (s *Service) verifyPasswordAndMFA(ctx context.Context, user *User, req Logi
 		// TOTP miss — try a recovery code. consumeRecoveryCode mutates
 		// the user's slice on a match; persist the slice so the
 		// consumed code can't be reused.
+		readCodes := slices.Clone(user.MFARecoveryCodes)
 		if s.consumeRecoveryCode(user, req.MFACode) {
-			if err := s.store.UpdateUser(ctx, user); err != nil {
+			if err := s.store.ConsumeMFARecoveryCode(ctx, user.ID, readCodes, user.MFARecoveryCodes); err != nil {
 				logging.Warnf("Failed to persist recovery-code consumption for user %s: %v", user.ID, err)
 				return ErrInvalidMFACode
 			}

@@ -57,6 +57,22 @@ func (s *PostgresStore) ConsumePasswordResetToken(ctx context.Context, userID, r
 	return nil
 }
 
+// ConsumeMFARecoveryCode writes only the recovery codes, and only while the row
+// still holds the codes the caller read, so each code is spent once (issue #493).
+func (s *PostgresStore) ConsumeMFARecoveryCode(ctx context.Context, userID string, readCodes, remaining []string) error {
+	result, err := s.db.Exec(ctx, `
+		UPDATE users SET mfa_recovery_codes = $3, updated_at = NOW()
+		WHERE id = $1 AND mfa_recovery_codes = $2
+	`, userID, readCodes, remaining)
+	if err != nil {
+		return fmt.Errorf("failed to consume recovery code: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrUserChanged
+	}
+	return nil
+}
+
 // SetPasswordResetToken writes only the reset token columns, and only while the
 // account is still active under the same email with the reset expiry the caller
 // read, so a concurrent deactivation or reset issuance wins.
