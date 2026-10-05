@@ -319,9 +319,9 @@ export function normalizePaymentValue(value: string, provider: string): string {
     if (value === 'all-upfront') {
       return 'upfront';
     }
-    if (value === 'no-upfront' || value === 'partial-upfront') {
-      return 'monthly';
-    }
+    // Unknown or empty values also land on 'monthly': the irreversible
+    // 'upfront' plan must only ever be an explicit choice.
+    return value === 'upfront' ? 'upfront' : 'monthly';
   } else if (provider === 'gcp') {
     // GCP only has monthly
     return 'monthly';
