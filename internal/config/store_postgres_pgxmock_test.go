@@ -305,6 +305,70 @@ func TestPGXMock_UpdateGlobalConfigAtomic_ApplyErrorRollsBack(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestPGXMock_UpdateGlobalConfigAtomic_PropagatesOnlyChangedDefaults covers
+// issue #225: only the changed default reaches service_configs, in the same
+// tx, and a failed propagation rolls the global write back.
+func TestPGXMock_UpdateGlobalConfigAtomic_PropagatesOnlyChangedDefaults(t *testing.T) {
+	seeded := func() *pgxmock.Rows {
+		return pgxmock.NewRows(globalConfigCols).AddRow(
+			[]string{"aws"}, (*string)(nil), true,
+			1, "no-upfront", 80.0, RampImmediate,
+			false, "manual", 95.0,
+			0.0, 0.0, 30,
+			true, "daily", 3,
+			"{}",
+			24, 7,
+			0,
+			false,
+			false,
+			"convertible",
+			false,
+		)
+	}
+	setCoverage := func(existing *GlobalConfig) error {
+		existing.DefaultCoverage = 70
+		return nil
+	}
+
+	t.Run("changed coverage only", func(t *testing.T) {
+		mock := newMock(t)
+		store := storeWith(mock)
+		mock.ExpectBegin()
+		mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
+			WillReturnResult(pgxmock.NewResult("SELECT", 1))
+		mock.ExpectQuery("FROM global_config").WillReturnRows(seeded())
+		mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(24)...).
+			WillReturnResult(pgxmock.NewResult("INSERT", 1))
+		mock.ExpectExec("UPDATE service_configs").
+			WithArgs(false, 1, false, "no-upfront", true, 70.0, false, RampImmediate).
+			WillReturnResult(pgxmock.NewResult("UPDATE", 2))
+		mock.ExpectCommit()
+
+		_, err := store.UpdateGlobalConfigAtomic(context.Background(), setCoverage)
+		require.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("propagation failure rolls back", func(t *testing.T) {
+		mock := newMock(t)
+		store := storeWith(mock)
+		mock.ExpectBegin()
+		mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
+			WillReturnResult(pgxmock.NewResult("SELECT", 1))
+		mock.ExpectQuery("FROM global_config").WillReturnRows(seeded())
+		mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(24)...).
+			WillReturnResult(pgxmock.NewResult("INSERT", 1))
+		dbErr := errors.New("service_configs update failed")
+		mock.ExpectExec("UPDATE service_configs").WithArgs(anyArgsCfg(8)...).WillReturnError(dbErr)
+		mock.ExpectRollback()
+
+		merged, err := store.UpdateGlobalConfigAtomic(context.Background(), setCoverage)
+		require.ErrorIs(t, err, dbErr)
+		assert.Nil(t, merged)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
 // ─── GetServiceConfig ─────────────────────────────────────────────────────────
 
 func TestPGXMock_GetServiceConfig_Success(t *testing.T) {

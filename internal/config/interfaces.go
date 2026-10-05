@@ -19,6 +19,8 @@ type StoreInterface interface {
 	// global_config singleton under an advisory-locked transaction so
 	// concurrent partial PUTs cannot lose each other's updates. apply mutates
 	// the loaded config in place; its error aborts the write and is propagated.
+	// Each default_* value apply changes is copied onto every service config
+	// in the same transaction.
 	UpdateGlobalConfigAtomic(ctx context.Context, apply func(*GlobalConfig) error) (*GlobalConfig, error)
 
 	// Service configuration

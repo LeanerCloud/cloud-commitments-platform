@@ -72,11 +72,8 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 		return nil, NewClientError(400, "invalid request body")
 	}
 
-	// Presence map of the top-level keys the caller actually sent. Used to
-	// (a) replace (not merge) grace_period_days when present, and (b) gate the
-	// service-config propagation on the global defaults actually being sent, so
-	// a deliberately-partial PUT (e.g. the kill-switch toggle) does not rewrite
-	// per-service customizations.
+	// Presence map of the top-level keys the caller actually sent, used to
+	// replace (not merge) grace_period_days when present.
 	var present map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(req.Body), &present); err != nil {
 		return nil, NewClientError(400, "invalid request body")
@@ -95,8 +92,9 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 	// laddering kill-switch toggle and a Settings save) from reading the same
 	// stale base and losing each other's update. The closure returns a
 	// ClientError(400) on a bad body or validation failure, which the store
-	// propagates unchanged; DB/transport errors surface as 500.
-	cfg, err := h.config.UpdateGlobalConfigAtomic(ctx, func(existing *config.GlobalConfig) error {
+	// propagates unchanged; DB/transport errors surface as 500. A changed
+	// default reaches the service configs inside the same transaction.
+	_, err := h.config.UpdateGlobalConfigAtomic(ctx, func(existing *config.GlobalConfig) error {
 		// Snapshot before the wholesale unmarshal: this body writes onto the
 		// entire GlobalConfig, so ri_exchange_mode / ri_exchange_enabled reach
 		// the scheduler through this endpoint exactly as they do through the
@@ -124,14 +122,6 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 		return nil, err
 	}
 
-	// Propagate global defaults to every service config ONLY when the caller
-	// actually sent at least one of those defaults. A partial PUT that omits
-	// them (the kill-switch toggle sends only { laddering_enabled }) must not
-	// overwrite money-affecting per-service term/payment/coverage/ramp overrides.
-	if anyKeyPresent(present, "default_term", "default_payment", "default_coverage", "default_ramp_schedule") {
-		h.propagateGlobalDefaults(ctx, cfg)
-	}
-
 	return &StatusResponse{Status: "updated"}, nil
 }
 
@@ -145,39 +135,6 @@ func (h *Handler) requireGlobalConfigScope(ctx context.Context, session *Session
 	}
 	return h.requirePermissionConstraints(ctx, session, auth.ActionUpdate, auth.ResourceConfig,
 		[]auth.PermissionConstraints{{StrictScope: true}})
-}
-
-// anyKeyPresent reports whether any of keys is present in m.
-func anyKeyPresent(m map[string]json.RawMessage, keys ...string) bool {
-	for _, k := range keys {
-		if _, ok := m[k]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-// propagateGlobalDefaults overlays the global term/payment/coverage/ramp
-// defaults onto every service config. Best-effort: failures are logged, not
-// returned, because the global config was already saved.
-func (h *Handler) propagateGlobalDefaults(ctx context.Context, cfg *config.GlobalConfig) {
-	services, err := h.config.ListServiceConfigs(ctx)
-	if err != nil {
-		logging.Warnf("Failed to list service configs for propagation: %v", err)
-		return
-	}
-	// Index-based iteration mutates each element in place and avoids copying the
-	// (large) ServiceConfig struct per iteration (gocritic rangeValCopy).
-	for i := range services {
-		svc := &services[i]
-		svc.Term = cfg.DefaultTerm
-		svc.Payment = cfg.DefaultPayment
-		svc.Coverage = cfg.DefaultCoverage
-		svc.RampSchedule = cfg.DefaultRampSchedule
-		if saveErr := h.config.SaveServiceConfig(ctx, svc); saveErr != nil {
-			logging.Warnf("Failed to update service config %s/%s: %v", svc.Provider, svc.Service, saveErr)
-		}
-	}
 }
 
 // checkCommitmentOptionCombo rejects saves that carry a (term, payment)
