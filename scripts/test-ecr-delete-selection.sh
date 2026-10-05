@@ -662,6 +662,134 @@ EOF
 assert_sweep "a finding names the file it came from, not the file swept after it" \
   "${FIXTURE_DIR}/misattrib" 'a-unwired.yml: step "Force-delete all staging ECR repos"'
 
+# --- Behaviour: the script run end to end against stubbed terraform and aws ---
+#
+# The deploy role's ECR grant covers only arn:aws:ecr:*:*:repository/cudly-*
+# (terraform/environments/aws/ci-cd-permissions/policy_compute.tf,
+# ECRRepositoryScoped). A DescribeRepositories without --repository-names is
+# authorized against repository/*, so the role is denied it, which is how every
+# real destroy failed before the selector ran (#483). The aws stub reproduces
+# that denial, so a script that goes back to listing the account fails here
+# rather than on the next live destroy.
+STUB_DIR="$(mktemp -d)"
+STUB_STATE="$(mktemp -d)"
+STUB_CALLS="$(mktemp)"
+trap 'rm -rf "$FIXTURE_DIR" "$STUB_DIR" "$STUB_STATE" "$STUB_CALLS"' EXIT
+
+cat >"${STUB_DIR}/terraform" <<'EOF'
+#!/usr/bin/env bash
+printf '%s' "$TF_OUTPUT_JSON"
+EOF
+
+cat >"${STUB_DIR}/aws" <<'EOF'
+#!/usr/bin/env bash
+echo "aws $*" >>"$AWS_CALLS"
+case "$2" in
+  describe-repositories)
+    requested=""
+    while [[ $# -gt 0 ]]; do
+      [[ "$1" == "--repository-names" ]] && requested="$2"
+      shift
+    done
+    if [[ -z "$requested" ]]; then
+      echo "An error occurred (AccessDeniedException) when calling the DescribeRepositories operation: User: arn:aws:sts::111111111111:assumed-role/cudly-terraform-deploy/GitHubActions is not authorized to perform: ecr:DescribeRepositories on resource: arn:aws:ecr:us-east-1:111111111111:repository/*" >&2
+      exit 254
+    fi
+    case "$DESCRIBE_MODE" in
+      found) printf '%s\n' "$requested" ;;
+      other) printf '%s\n' "${requested}-backup" ;;
+      missing)
+        echo "An error occurred (RepositoryNotFoundException) when calling the DescribeRepositories operation: The repository with name '${requested}' does not exist in the registry with id '111111111111'" >&2
+        exit 254
+        ;;
+      error)
+        echo "An error occurred (ThrottlingException) when calling the DescribeRepositories operation: Rate exceeded" >&2
+        exit 254
+        ;;
+    esac
+    ;;
+  delete-repository)
+    [[ "${DELETE_FAILS:-0}" == "1" ]] && { echo "delete failed" >&2; exit 254; }
+    ;;
+esac
+exit 0
+EOF
+chmod +x "${STUB_DIR}/terraform" "${STUB_DIR}/aws"
+
+export AWS_CALLS="$STUB_CALLS"
+export TF_OUTPUT_JSON='{"ecr_repository_name":{"value":"cudly-dev-1a2b3c4d"}}'
+
+# run_script -> STUB_EXIT, STUB_OUT, STUB_ERR, and a truncated call log
+run_script() {
+  : >"$STUB_CALLS"
+  local outfile errfile
+  outfile="$(mktemp)"
+  errfile="$(mktemp)"
+  STUB_EXIT=0
+  PATH="${STUB_DIR}:${PATH}" "$CLEANUP_SCRIPT" "$@" >"$outfile" 2>"$errfile" || STUB_EXIT=$?
+  STUB_OUT="$(cat "$outfile")"
+  STUB_ERR="$(cat "$errfile")"
+  rm -f "$outfile" "$errfile"
+}
+
+# assert_behaviour LABEL CONDITION_RESULT DETAIL
+assert_behaviour() {
+  if [[ "$2" == "0" ]]; then
+    echo "PASS: $1"
+    ((pass++)) || true
+  else
+    echo "FAIL: $1"
+    echo "      $3"
+    ((fail++)) || true
+  fi
+}
+
+count_calls() { grep -c -- "$1" "$STUB_CALLS" 2>/dev/null || true; }
+
+export DESCRIBE_MODE=found
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: the owned repository is looked up by name, not by listing the account" \
+  "$([[ "$STUB_EXIT" -eq 0 ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, stderr: ${STUB_ERR}"
+assert_behaviour "behaviour: exactly the owned repository is force-deleted" \
+  "$([[ "$(count_calls 'delete-repository')" -eq 1 ]] && grep -q 'aws ecr delete-repository --repository-name cudly-dev-1a2b3c4d --force' "$STUB_CALLS" && echo 0 || echo 1)" \
+  "calls: $(cat "$STUB_CALLS")"
+
+# The response is still passed through the exact-match selector, so a name the
+# API returns that is not the owned one is never deleted.
+export DESCRIBE_MODE=other
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: a returned name other than the owned one is not deleted" \
+  "$([[ "$STUB_EXIT" -eq 0 && "$(count_calls 'delete-repository')" -eq 0 ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, calls: $(cat "$STUB_CALLS")"
+
+# Re-running a cleanup after a completed one is normal, not an error.
+export DESCRIBE_MODE=missing
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: RepositoryNotFoundException exits 0 and deletes nothing" \
+  "$([[ "$STUB_EXIT" -eq 0 && "$(count_calls 'delete-repository')" -eq 0 ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, stderr: ${STUB_ERR}, calls: $(cat "$STUB_CALLS")"
+assert_behaviour "behaviour: the already-deleted case says so" \
+  "$([[ "$STUB_OUT" == *"already deleted"* ]] && echo 0 || echo 1)" \
+  "stdout: ${STUB_OUT}"
+
+# Any other lookup error must fail the step and surface the AWS message, not
+# read as "already deleted".
+export DESCRIBE_MODE=error
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: any other lookup error fails the step and deletes nothing" \
+  "$([[ "$STUB_EXIT" -ne 0 && "$(count_calls 'delete-repository')" -eq 0 ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, calls: $(cat "$STUB_CALLS")"
+assert_behaviour "behaviour: the lookup error's AWS message reaches stderr" \
+  "$([[ "$STUB_ERR" == *"ThrottlingException"* ]] && echo 0 || echo 1)" \
+  "stderr: ${STUB_ERR}"
+
+export DESCRIBE_MODE=found DELETE_FAILS=1
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: a failed delete fails the step" \
+  "$([[ "$STUB_EXIT" -ne 0 ]] && echo 0 || echo 1)" "exit ${STUB_EXIT}"
+unset DELETE_FAILS
+
 echo
 echo "passed: ${pass}, failed: ${fail}"
 [[ "$fail" -eq 0 ]]

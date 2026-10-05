@@ -16,8 +16,8 @@
 # the whole safety property here, so it stays visible at each call site.
 #
 # The owned name is read from `terraform output` on the state the destroy is
-# about to tear down and compared by exact equality against every repository in
-# the account, by scripts/select-owned-name.sh. The callers used to
+# about to tear down, looked up by that name alone, and the response compared by
+# exact equality against it by scripts/select-owned-name.sh. The callers used to
 # select by the `cudly-dev*` / `cudly-staging*` prefix, which also matches
 # `cudly-staging-prod-mirror` and `cudly-staging-<hex>-backup` and force-deleted
 # every image in them (#1592, #1820). The prefix also spans both staging states:
@@ -40,9 +40,9 @@
 # callers used to carry reported success after a failed listing or a failed
 # delete, and a failed listing is indistinguishable from an empty account, so
 # the cleanup did nothing and `terraform destroy` then failed on the images
-# still in the repository. "Already gone" needs no swallowing: the repository is
-# simply absent from the listing, the selector prints nothing and exits 0, and
-# the loop body never runs.
+# still in the repository. "Already gone" is the one lookup error that is
+# recognised, by name (RepositoryNotFoundException), and reported as a normal
+# exit; every other error fails the script with the AWS CLI's own exit code.
 #
 # Exit codes:
 #   0  cleanup completed, including the "state already destroyed" and "nothing
@@ -82,7 +82,29 @@ fi
 OWNED_REPO="$(jq -er '.ecr_repository_name.value' <<<"$OUTPUTS_JSON")"
 echo "This state owns ECR repository '$OWNED_REPO'"
 
-aws ecr describe-repositories --query 'repositories[].repositoryName' --output text \
+# Asks for the owned repository by name rather than listing the account. A
+# DescribeRepositories without --repository-names is authorized against
+# repository/*, and the deploy role's ECR grant covers only repository/cudly-*
+# (terraform/environments/aws/ci-cd-permissions/policy_compute.tf,
+# ECRRepositoryScoped), so the listing was denied before the selector ever ran
+# (#483). The response still goes through the selector, so "only the owned
+# repository is ever deleted" stays a property of this script rather than of
+# the API's filtering.
+DESCRIBE_ERR="$(mktemp)"
+trap 'rm -f "$DESCRIBE_ERR"' EXIT
+DESCRIBE_EXIT=0
+LISTING="$(aws ecr describe-repositories --repository-names "$OWNED_REPO" \
+  --query 'repositories[].repositoryName' --output text 2>"$DESCRIBE_ERR")" || DESCRIBE_EXIT=$?
+if [[ "$DESCRIBE_EXIT" -ne 0 ]]; then
+  if grep -q 'RepositoryNotFoundException' "$DESCRIBE_ERR"; then
+    echo "ECR repository '$OWNED_REPO' does not exist; it is already deleted and there is nothing to clean up."
+    exit 0
+  fi
+  cat "$DESCRIBE_ERR" >&2
+  exit "$DESCRIBE_EXIT"
+fi
+
+printf '%s\n' "$LISTING" \
   | tr '\t' '\n' \
   | "${SCRIPT_DIR}/select-owned-name.sh" "$OWNED_REPO" \
   | while IFS= read -r REPO; do
