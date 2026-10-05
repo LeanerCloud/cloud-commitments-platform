@@ -2180,13 +2180,13 @@ func (h *Handler) approveRIExchange(ctx context.Context, req *events.LambdaFunct
 			// If a token is present, preserve legacy token flow; otherwise surface the error.
 			//
 			// A CSRF rejection must NOT fall through, even with a token present.
-			// isPermissionDenied is a bare 403 test, so without this it cannot tell a
+			// fallsThroughToToken matches any 403, so without this it cannot tell a
 			// forged cross-site request from a legitimate approve-own denial, and the
 			// request would proceed on the token alone: the exchange executes, but as
 			// an unattributed system approval (transitioned_by NULL, no approved_by
 			// stamp) on a money path. Checked first so the sentinel is never reached
-			// by the 403 test below.
-			if errors.Is(sessErr, errCSRFRejected) || token == "" || !isPermissionDenied(sessErr) {
+			// by the fall-through test below.
+			if errors.Is(sessErr, errCSRFRejected) || !fallsThroughToToken(sessErr, token) {
 				return nil, sessErr
 			}
 		case token != "" && isPermissionDenied(err):
@@ -2293,6 +2293,16 @@ func (h *Handler) approveRIExchangeViaSession(ctx context.Context, req *events.L
 func (h *Handler) fetchAndAuthorizeRIExchange(ctx context.Context, session *Session, id string) (*config.RIExchangeRecord, error) {
 	if err := validateUUID(id); err != nil {
 		return nil, err
+	}
+
+	// Same deployment-account scope as executeExchange (#93), checked before
+	// the fetch so an out-of-scope id is indistinguishable from a missing one.
+	inScope, err := h.reshapeCloudAccountInScope(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	if !inScope {
+		return nil, errNotFound
 	}
 
 	record, err := h.config.GetRIExchangeRecord(ctx, id)

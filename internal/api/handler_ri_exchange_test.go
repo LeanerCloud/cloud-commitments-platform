@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"testing"
@@ -436,6 +437,7 @@ func TestApproveRIExchange_SessionApproveOwn(t *testing.T) {
 		mockAuth.On("ValidateSession", ctx, "owner-bearer").Return(ownerSession, nil)
 		mockAuth.On("HasPermissionAPI", ctx, ownerID, auth.ActionApproveAny, auth.ResourcePurchases).Return(false, nil)
 		mockAuth.On("HasPermissionAPI", ctx, ownerID, auth.ActionApproveOwn, auth.ResourcePurchases).Return(true, nil)
+		mockAuth.On("GetAllowedAccountsAPI", ctx, ownerID).Return(nil, nil)
 		// Issue #1757: CSRF must be validated before the record fetch.
 		mockAuth.On("ValidateCSRFToken", ctx, "owner-bearer", "csrf-abc").Return(nil)
 
@@ -479,6 +481,7 @@ func TestApproveRIExchange_SessionApproveOwn(t *testing.T) {
 		mockAuth.On("ValidateSession", ctx, "owner-bearer").Return(ownerSession, nil)
 		mockAuth.On("HasPermissionAPI", ctx, ownerID, auth.ActionApproveAny, auth.ResourcePurchases).Return(false, nil)
 		mockAuth.On("HasPermissionAPI", ctx, ownerID, auth.ActionApproveOwn, auth.ResourcePurchases).Return(true, nil)
+		mockAuth.On("GetAllowedAccountsAPI", ctx, ownerID).Return(nil, nil)
 		// Issue #1757: CSRF must be validated before the record fetch, so this
 		// test needs a valid token to reach the ownership check it targets.
 		mockAuth.On("ValidateCSRFToken", ctx, "owner-bearer", "csrf-abc").Return(nil)
@@ -506,11 +509,87 @@ func TestApproveRIExchange_SessionApproveOwn(t *testing.T) {
 	})
 }
 
+// TestApproveRIExchange_SessionScope (issue #519): a user scoped to account A
+// holding approve-any must not approve an exchange on a deployment whose cloud
+// account is B, matching executeExchange's scope gate (#93).
+func TestApproveRIExchange_SessionScope(t *testing.T) {
+	ctx := context.Background()
+	id := "550e8400-e29b-41d4-a716-446655440019"
+	const accA, accB = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+
+	setup := func(deploymentAccount string, action string) (*Handler, *MockConfigStore) {
+		mockStore := new(MockConfigStore)
+		mockAuth := new(MockAuthService)
+		mockAuth.On("ValidateSession", ctx, "sess").Return(&Session{UserID: "approver-uuid", Email: "approver@example.com"}, nil)
+		mockAuth.On("ValidateCSRFToken", ctx, "sess", "csrf").Return(nil)
+		mockAuth.grantPermissionsScoped([]auth.Permission{{Action: action, Resource: auth.ResourcePurchases}}, []string{accA})
+
+		creator := "creator-uuid"
+		mockStore.On("GetRIExchangeRecord", ctx, id).Return(&config.RIExchangeRecord{
+			ID: id, Status: "pending", ApprovalToken: config.HashApprovalToken("tok"), SourceRIIDs: []string{"ri-1"},
+			PaymentDue: "50.00", CreatedByUserID: &creator,
+		}, nil).Maybe()
+		mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+			RIExchangeMaxDailyUSD: 1000, RIExchangeMaxPerExchangeUSD: 500,
+		}, nil).Maybe()
+		mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
+			Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-1"}, PaymentDue: "50.00"}, nil).Maybe()
+		mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil).Maybe()
+		mockStore.On("FailRIExchange", ctx, id, mock.AnythingOfType("string")).Return(nil).Maybe()
+		mockStore.On("StampRIExchangeApprovedBy", ctx, id, mock.Anything).Return(nil).Maybe()
+
+		return &Handler{
+			config:                 mockStore,
+			auth:                   mockAuth,
+			reshapeAccountResolver: func(context.Context) (string, error) { return deploymentAccount, nil },
+		}, mockStore
+	}
+
+	t.Run("out of scope is not found", func(t *testing.T) {
+		h, mockStore := setup(accB, auth.ActionApproveAny)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "")
+		require.ErrorIs(t, err, errNotFound)
+		mockStore.AssertNotCalled(t, "GetRIExchangeRecord", ctx, id)
+		mockStore.AssertNotCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything)
+	})
+
+	t.Run("out of scope approve-own is not found", func(t *testing.T) {
+		h, mockStore := setup(accB, auth.ActionApproveOwn)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "")
+		require.ErrorIs(t, err, errNotFound)
+		mockStore.AssertNotCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything)
+	})
+
+	t.Run("out of scope with a valid token falls through to the token flow", func(t *testing.T) {
+		h, mockStore := setup(accB, auth.ActionApproveAny)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "tok")
+		require.NoError(t, err)
+		mockStore.AssertCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything)
+	})
+
+	t.Run("scope resolver error fails closed", func(t *testing.T) {
+		h, mockStore := setup(accA, auth.ActionApproveAny)
+		h.reshapeAccountResolver = func(context.Context) (string, error) { return "", errors.New("resolver down") }
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "")
+		require.Error(t, err)
+		require.NotErrorIs(t, err, errNotFound)
+		mockStore.AssertNotCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything)
+	})
+
+	t.Run("in scope is approved", func(t *testing.T) {
+		h, mockStore := setup(accA, auth.ActionApproveAny)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "")
+		require.NoError(t, err)
+		mockStore.AssertCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything)
+	})
+}
+
 type riApproverGrant func(m *MockAuthService, userID string)
 
 func grantRIAdmin(m *MockAuthService, _ string) { m.grantAdminPurchaser() }
 
 func grantRIApproveOwn(m *MockAuthService, userID string) {
+	m.On("GetAllowedAccountsAPI", context.Background(), userID).Return(nil, nil).Maybe()
 	m.On("HasPermissionAPI", context.Background(), userID, auth.ActionApproveAny, auth.ResourcePurchases).Return(false, nil)
 	m.On("HasPermissionAPI", context.Background(), userID, auth.ActionApproveOwn, auth.ResourcePurchases).Return(true, nil)
 }
