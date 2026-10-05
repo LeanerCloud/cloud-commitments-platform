@@ -171,6 +171,11 @@ const savedSnapshot: Record<string, string> = {};
 // non-UI fields (ramp_schedule, include_engines, etc.) that SaveServiceConfig replaces entirely.
 let loadedServiceConfigs: api.ServiceConfig[] = [];
 
+// Global default_coverage as last loaded or saved. The backend copies a changed
+// default onto every service row, so a save that changes it must not send the
+// stale per-service coverage back over the propagated value (#522).
+let loadedDefaultCoverage: number | undefined;
+
 // saveInFlight guards saveGlobalSettings against concurrent invocations
 // (rapid Save clicks, Enter-in-form, etc.). Toggled in a try/finally and
 // mirrored on the Save button's disabled attribute so the UI reflects the
@@ -3242,6 +3247,7 @@ export async function loadGlobalSettings(): Promise<void> {
 
     const services = data.services ?? [];
     loadedServiceConfigs = services;
+    loadedDefaultCoverage = data.global?.default_coverage;
     for (const svc of services) {
       const key = `${svc.provider}-${svc.service}`;
       const termEl = document.getElementById(`${key}-term`) as HTMLSelectElement | null;
@@ -3479,8 +3485,10 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
     saveInFlight = false;
     return;
   }
-  const rawCoverage = Number(byId<HTMLInputElement>('setting-default-coverage')?.value ?? '80');
-  if (!Number.isFinite(rawCoverage) || !Number.isInteger(rawCoverage) || rawCoverage < 0 || rawCoverage > 100) {
+  const coverageText = byId<HTMLInputElement>('setting-default-coverage')?.value ?? '80';
+  const rawCoverage = Number(coverageText);
+  // Number('') is 0, so an empty field must be rejected explicitly.
+  if (coverageText.trim() === '' || !Number.isFinite(rawCoverage) || !Number.isInteger(rawCoverage) || rawCoverage < 0 || rawCoverage > 100) {
     showToast({ message: 'Target coverage must be a whole number between 0 and 100', kind: 'error' });
     if (saveBtn) saveBtn.disabled = false;
     saveInFlight = false;
@@ -3557,12 +3565,19 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
       // controls. Read from the DOM when the card has the controls; fall back
       // to the base row value (or the global default) otherwise so RI and
       // Azure/GCP cards continue to inherit the global settings.
-      let coverage = base?.coverage ?? settings.default_coverage;
+      const defaultCoverageChanged = loadedDefaultCoverage !== undefined
+        && settings.default_coverage !== loadedDefaultCoverage;
+      let coverage = defaultCoverageChanged
+        ? settings.default_coverage
+        : (base?.coverage ?? settings.default_coverage);
       let enabled = base?.enabled ?? true;
       if ('coverageId' in field && field.coverageId) {
         const rawCov = byId<HTMLInputElement>(field.coverageId)?.value ?? '';
         const parsed = Number(rawCov);
-        if (rawCov !== '' && Number.isFinite(parsed)) coverage = parsed;
+        // Only a value the user edited on the card overrides the propagated
+        // default; an untouched card still shows the pre-save coverage.
+        const loadedCardCoverage = base?.coverage ?? loadedDefaultCoverage ?? settings.default_coverage;
+        if (rawCov !== '' && Number.isFinite(parsed) && parsed !== loadedCardCoverage) coverage = parsed;
       }
       if ('enabledId' in field && field.enabledId) {
         const el = byId<HTMLInputElement>(field.enabledId);
@@ -3590,9 +3605,19 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
           min_count: filters.min_count,
         } : {}),
       };
-      return api.updateServiceConfig(provider, service, cfg);
+      return api.updateServiceConfig(provider, service, cfg).then(() => {
+        loadedServiceConfigs = [
+          ...loadedServiceConfigs.filter(s => !(s.provider === provider && s.service === service)),
+          cfg,
+        ];
+        if ('coverageId' in field && field.coverageId) {
+          const el = byId<HTMLInputElement>(field.coverageId);
+          if (el) el.value = String(coverage);
+        }
+      });
     });
     await Promise.all(serviceSaves);
+    loadedDefaultCoverage = settings.default_coverage;
 
     snapshotAllFields();
     updateDirtyMarkers();
