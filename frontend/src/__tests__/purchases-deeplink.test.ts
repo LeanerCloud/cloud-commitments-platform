@@ -47,6 +47,27 @@ describe('handlePurchaseDeeplink approve (issue #247)', () => {
     expect(window.location.pathname).toBe('/purchases');
   });
 
+  it.each([
+    [403, true],
+    [404, true],
+    [500, false],
+    [undefined, false],
+  ])('details fetch failing with status %s: permission wording only=%s', async (status, permanent) => {
+    const err = Object.assign(new Error(status ? `HTTP ${status}` : 'Failed to fetch'), { status });
+    (api.getPurchaseDetails as jest.Mock).mockRejectedValue(err);
+
+    await expect(handlePurchaseDeeplink()).resolves.toBe(true);
+
+    const text = document.querySelector('[role="alert"]')?.textContent ?? '';
+    if (permanent) {
+      expect(text).toContain('view:purchases');
+      expect(text).not.toContain('retry');
+    } else {
+      expect(text).toContain('Open the approval link again to retry.');
+      expect(text).not.toContain('view:purchases');
+    }
+  });
+
   it('shows the upfront amount and approves when details load', async () => {
     (api.getPurchaseDetails as jest.Mock).mockResolvedValue({
       execution_id: EXEC_ID, status: 'pending', total_upfront_cost: 1200, estimated_savings: 10,
