@@ -169,9 +169,10 @@ module "compute_gke" {
   database_password_secret_name = module.secrets.database_password_secret_name
 
   # Application configuration
-  admin_email                = var.admin_email
-  admin_password_secret_name = coalesce(module.secrets.admin_password_secret_name, "")
-  auto_migrate               = var.auto_migrate
+  admin_email                  = var.admin_email
+  admin_password_secret_name   = coalesce(module.secrets.admin_password_secret_name, "")
+  enable_admin_password_writer = true # secret name comes from secrets module output, not a literal
+  auto_migrate                 = var.auto_migrate
 
   # Per-secret IAM bindings for the GKE workload SA. Without these the pod
   # could only read `database_password_secret_name`, so any code path

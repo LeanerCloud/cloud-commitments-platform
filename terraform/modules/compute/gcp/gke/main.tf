@@ -263,6 +263,26 @@ resource "google_secret_manager_secret_iam_member" "workload" {
   member    = "serviceAccount:${google_service_account.workload.email}"
 }
 
+# Admin password secret: the app reads it at startup and adds a version when
+# the admin password changes, so the SA needs both roles. No `project`, same
+# reason as `workload`. Gated by a literal bool because the secret name is
+# known only after apply (sensitive-value-in-count).
+resource "google_secret_manager_secret_iam_member" "admin_password_reader" {
+  count = var.enable_admin_password_writer ? 1 : 0
+
+  secret_id = var.admin_password_secret_name
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.workload.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "admin_password_writer" {
+  count = var.enable_admin_password_writer ? 1 : 0
+
+  secret_id = var.admin_password_secret_name
+  role      = "roles/secretmanager.secretVersionAdder"
+  member    = "serviceAccount:${google_service_account.workload.email}"
+}
+
 resource "google_secret_manager_secret_iam_member" "workload_additional" {
   for_each = var.additional_secret_accessor_ids
 
