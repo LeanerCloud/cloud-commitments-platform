@@ -112,7 +112,7 @@ func TestPostgresStoreDB_ListPurchasePlans_UnassignedBucket(t *testing.T) {
 	// Sub-test 1: account-filtered query (filter = [accountX])
 	// ====================================================================
 	t.Run("account-filtered result includes unassigned plan and excludes wrong-account plan", func(t *testing.T) {
-		plans, err := store.ListPurchasePlans(ctx, PurchasePlanFilter{AccountIDs: []string{accountXID}})
+		plans, err := store.ListPurchasePlans(ctx, PurchasePlanFilter{AccountIDs: []string{accountXID}, IncludeUnassigned: true})
 		require.NoError(t, err)
 
 		byID := make(map[string]PurchasePlan, len(plans))
@@ -135,6 +135,21 @@ func TestPostgresStoreDB_ListPurchasePlans_UnassignedBucket(t *testing.T) {
 		// planC must NOT appear (it belongs only to accountY).
 		_, planCPresent := byID[planC.ID]
 		assert.False(t, planCPresent, "planC (assigned to accountY only) must NOT appear when filtering by accountX")
+	})
+
+	// Sub-test 1b: a scoped caller (IncludeUnassigned unset) must not receive
+	// the unassigned plan, nor another account's plan (issue #29).
+	t.Run("account-filtered result without IncludeUnassigned excludes unassigned plan", func(t *testing.T) {
+		plans, err := store.ListPurchasePlans(ctx, PurchasePlanFilter{AccountIDs: []string{accountXID}})
+		require.NoError(t, err)
+
+		ids := make([]string, 0, len(plans))
+		for _, p := range plans {
+			ids = append(ids, p.ID)
+		}
+		assert.Contains(t, ids, planA.ID, "planA (assigned to accountX) must be in result")
+		assert.NotContains(t, ids, planB.ID, "planB (unassigned) must not reach a scoped caller")
+		assert.NotContains(t, ids, planC.ID, "planC (assigned to accountY only) must not appear")
 	})
 
 	// ====================================================================

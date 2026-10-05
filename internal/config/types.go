@@ -674,6 +674,9 @@ type RecommendationFilter struct {
 // plan_accounts join table.
 type PurchasePlanFilter struct {
 	AccountIDs []string // nil/empty = all plans
+	// IncludeUnassigned adds plans with zero plan_accounts rows to an
+	// AccountIDs-filtered result. Only unrestricted callers may set it.
+	IncludeUnassigned bool
 }
 
 // RecommendationsFreshness describes the cache staleness state surfaced to

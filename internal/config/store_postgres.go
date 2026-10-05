@@ -836,9 +836,11 @@ func (s *PostgresStore) DeletePurchasePlan(ctx context.Context, planID string) e
 // caller bucket the two groups without a separate query.
 //
 // The WHERE clause retains the original account-filter semantics for
-// assigned plans and adds OR NOT EXISTS ... to include unassigned ones.
-// DISTINCT prevents duplicates when a plan matches multiple account IDs.
-func buildListPlansQuery(accountIDs []string) (query string, args []any) {
+// assigned plans and adds OR NOT EXISTS ... to include unassigned ones only
+// when includeUnassigned is set, so an account-scoped caller never receives
+// plans no account owns (issue #29). DISTINCT prevents duplicates when a plan
+// matches multiple account IDs.
+func buildListPlansQuery(accountIDs []string, includeUnassigned bool) (query string, args []any) {
 	if len(accountIDs) == 0 {
 		return `
 			SELECT id, name, enabled, auto_purchase, notification_days_before,
@@ -855,6 +857,10 @@ func buildListPlansQuery(accountIDs []string) (query string, args []any) {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
 		args[i] = id
 	}
+	unassignedClause := ""
+	if includeUnassigned {
+		unassignedClause = " OR NOT EXISTS (SELECT 1 FROM plan_accounts WHERE plan_id = pp.id)"
+	}
 	query = fmt.Sprintf(`
 		SELECT DISTINCT pp.id, pp.name, pp.enabled, pp.auto_purchase, pp.notification_days_before,
 		       pp.services, pp.ramp_schedule, pp.created_at, pp.updated_at,
@@ -862,21 +868,19 @@ func buildListPlansQuery(accountIDs []string) (query string, args []any) {
 		       (NOT EXISTS (SELECT 1 FROM plan_accounts WHERE plan_id = pp.id)) AS unassigned
 		FROM purchase_plans pp
 		LEFT JOIN plan_accounts pa ON pa.plan_id = pp.id
-		WHERE pa.account_id IN (%s)
-		   OR NOT EXISTS (SELECT 1 FROM plan_accounts WHERE plan_id = pp.id)
+		WHERE pa.account_id IN (%s)%s
 		ORDER BY pp.created_at DESC
-	`, strings.Join(placeholders, ", "))
+	`, strings.Join(placeholders, ", "), unassignedClause)
 	return query, args
 }
 
 // ListPurchasePlans lists purchase plans, optionally filtered by account IDs.
-// When filter.AccountIDs is non-empty the result includes both plans that
-// reference at least one of the given accounts AND legacy plans with zero
-// plan_accounts rows (flagged with Unassigned=true). Plans that have at
-// least one account row are returned with Unassigned=false. The no-filter
-// case returns all plans with Unassigned=false.
+// When filter.AccountIDs is non-empty the result includes plans that
+// reference at least one of the given accounts and, with
+// filter.IncludeUnassigned, plans with zero plan_accounts rows (flagged with
+// Unassigned=true). The no-filter case returns all plans with Unassigned=false.
 func (s *PostgresStore) ListPurchasePlans(ctx context.Context, filter PurchasePlanFilter) ([]PurchasePlan, error) {
-	query, args := buildListPlansQuery(filter.AccountIDs)
+	query, args := buildListPlansQuery(filter.AccountIDs, filter.IncludeUnassigned)
 	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list purchase plans: %w", err)
