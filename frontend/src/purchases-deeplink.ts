@@ -21,7 +21,7 @@
 import { apiRequest } from './api/client';
 import { showToast } from './toast';
 import { confirmDialog } from './confirmDialog';
-import { approvalDetailsUnavailableMessage, buildApprovalDetailsBody } from './approval-details';
+import { approvalDetailsUnavailableMessage, buildApprovalDetailsBody, isPermanentDetailsError } from './approval-details';
 
 type DeeplinkAction = 'approve' | 'cancel';
 
@@ -88,7 +88,9 @@ export async function handlePurchaseDeeplink(): Promise<boolean> {
     } catch (err) {
       console.error('Failed to load purchase details for approval:', err);
       showToast({
-        message: `${approvalDetailsUnavailableMessage(err)} Open the approval link again to retry.`,
+        message: isPermanentDetailsError(err)
+          ? approvalDetailsUnavailableMessage(err)
+          : `${approvalDetailsUnavailableMessage(err)} Open the approval link again to retry.`,
         kind: 'error',
         timeout: null,
       });

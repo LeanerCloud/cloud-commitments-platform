@@ -47,6 +47,35 @@ describe('handlePurchaseDeeplink approve (issue #247)', () => {
     expect(window.location.pathname).toBe('/purchases');
   });
 
+  it.each([
+    [403, 'forbidden', 'view:purchases'],
+    [404, 'execution not found', 'not found or is outside your account access'],
+  ])('details fetch failing with %s is permanent: no retry advice, keeps server message', async (status, message, wording) => {
+    (api.getPurchaseDetails as jest.Mock).mockRejectedValue(Object.assign(new Error(message), { status }));
+
+    await expect(handlePurchaseDeeplink()).resolves.toBe(true);
+
+    const text = document.querySelector('[role="alert"]')?.textContent ?? '';
+    expect(text).toContain(wording);
+    expect(text).toContain(`(${message})`);
+    expect(text).not.toContain('retry');
+  });
+
+  it.each([
+    [500, 'internal error'],
+    [401, 'unauthorized'],
+    [undefined, 'Failed to fetch'],
+  ])('details fetch failing with %s keeps the retry path', async (status, message) => {
+    (api.getPurchaseDetails as jest.Mock).mockRejectedValue(Object.assign(new Error(message), { status }));
+
+    await expect(handlePurchaseDeeplink()).resolves.toBe(true);
+
+    const text = document.querySelector('[role="alert"]')?.textContent ?? '';
+    expect(text).toContain('Open the approval link again to retry.');
+    expect(text).toContain(`(${message})`);
+    expect(text).not.toContain('view:purchases');
+  });
+
   it('shows the upfront amount and approves when details load', async () => {
     (api.getPurchaseDetails as jest.Mock).mockResolvedValue({
       execution_id: EXEC_ID, status: 'pending', total_upfront_cost: 1200, estimated_savings: 10,

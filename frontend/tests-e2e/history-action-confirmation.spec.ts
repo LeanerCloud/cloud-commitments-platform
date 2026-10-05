@@ -122,7 +122,7 @@ test('approve is not offered when the purchase details cannot be loaded (issue #
   await page.route(`**/api/purchases/${ID}`, route => {
     detailGets++;
     return detailGets === 1
-      ? route.fulfill({ status: 403, json: { error: 'forbidden' } })
+      ? route.fulfill({ status: 500, json: { error: 'internal error' } })
       : route.fulfill({ json: DETAILS });
   });
   await page.goto('/purchases/history');
@@ -136,6 +136,21 @@ test('approve is not offered when the purchase details cannot be loaded (issue #
   await page.keyboard.press('Enter');
   await expect.poll(() => fixture.posts.length).toBe(1);
 });
+
+for (const [status, wording] of [[403, 'view:purchases'], [404, 'outside your account access']] as const) {
+  test(`approval link with details ${status} shows permanent wording without retry advice (issue #529)`, async ({ page }) => {
+    const fixture = await historyFixture(page, 'approve');
+    await page.route(`**/api/purchases/${ID}`, route => route.fulfill({ status, json: { error: 'denied by server' } }));
+    await page.goto(`/purchases/approve/${ID}?token=tok`);
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('cannot be approved without showing the amount');
+    await expect(alert).toContainText(wording);
+    await expect(alert).toContainText('denied by server');
+    await expect(alert).not.toContainText(/try again|retry/i);
+    await expect(page.locator('.modal-confirm-backdrop')).toHaveCount(0);
+    expect(fixture.posts).toHaveLength(0);
+  });
+}
 
 test('canceling an independent row does not steal focus from another confirmation', async ({ page }) => {
   const fixture = await historyFixture(page, 'approve');

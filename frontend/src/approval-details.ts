@@ -351,7 +351,21 @@ export async function buildApprovalDetailsBody(executionId: string): Promise<HTM
   return renderApprovalDetailsBody(details, accountsById, hostAWSAccountID);
 }
 
+/** True for a 403/404 on the details fetch: retrying cannot succeed. */
+export function isPermanentDetailsError(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  return status === 403 || status === 404;
+}
+
 export function approvalDetailsUnavailableMessage(err: unknown): string {
   const cause = err instanceof Error ? err.message : String(err);
-  return `This purchase cannot be approved without showing the amount, and its details could not be loaded (${cause}).`;
+  const base = `This purchase cannot be approved without showing the amount, and its details could not be loaded (${cause}).`;
+  const status = (err as { status?: number } | null)?.status;
+  if (status === 403) {
+    return `${base} Loading details requires the view:purchases permission and access to the purchase's account.`;
+  }
+  if (status === 404) {
+    return `${base} The purchase was not found or is outside your account access.`;
+  }
+  return base;
 }
