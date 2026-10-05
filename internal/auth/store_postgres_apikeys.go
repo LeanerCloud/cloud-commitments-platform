@@ -39,8 +39,8 @@ func (s *PostgresStore) CreateAPIKey(ctx context.Context, key *UserAPIKey) error
 	query := `
 		INSERT INTO api_keys (
 			id, user_id, name, key_prefix, key_hash, permissions,
-			is_active, expires_at, created_at, last_used_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			is_active, expires_at, created_at, last_used_at, password_version
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	_, err = s.db.Exec(ctx, query,
@@ -54,6 +54,7 @@ func (s *PostgresStore) CreateAPIKey(ctx context.Context, key *UserAPIKey) error
 		key.ExpiresAt,
 		key.CreatedAt,
 		key.LastUsedAt,
+		key.PasswordVersion,
 	)
 
 	if err != nil {
@@ -68,7 +69,8 @@ func (s *PostgresStore) GetAPIKeyByID(ctx context.Context, keyID string) (*UserA
 	query := `
 		SELECT id, user_id, name, key_prefix, key_hash, permissions,
 		       is_active, expires_at, created_at, last_used_at,
-		       request_count_total, request_count_window, request_count_window_start
+		       request_count_total, request_count_window, request_count_window_start,
+		       password_version
 		FROM api_keys
 		WHERE id = $1
 	`
@@ -81,7 +83,8 @@ func (s *PostgresStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*U
 	query := `
 		SELECT id, user_id, name, key_prefix, key_hash, permissions,
 		       is_active, expires_at, created_at, last_used_at,
-		       request_count_total, request_count_window, request_count_window_start
+		       request_count_total, request_count_window, request_count_window_start,
+		       password_version
 		FROM api_keys
 		WHERE key_hash = $1 AND is_active = true
 		  AND (expires_at IS NULL OR expires_at > NOW())
@@ -95,7 +98,8 @@ func (s *PostgresStore) ListAPIKeysByUser(ctx context.Context, userID string) ([
 	query := `
 		SELECT id, user_id, name, key_prefix, key_hash, permissions,
 		       is_active, expires_at, created_at, last_used_at,
-		       request_count_total, request_count_window, request_count_window_start
+		       request_count_total, request_count_window, request_count_window_start,
+		       password_version
 		FROM api_keys
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -274,6 +278,7 @@ func (s *PostgresStore) scanAPIKey(scanner Scanner) (*UserAPIKey, error) {
 		&key.RequestCountTotal,
 		&key.RequestCountWindow,
 		&windowStart,
+		&key.PasswordVersion,
 	)
 
 	if err != nil {

@@ -30,6 +30,9 @@ type User struct {
 	FailedLoginAttempts int        `json:"-" dynamodbav:"FailedLoginAttempts,omitempty"`
 	Active              bool       `json:"active" dynamodbav:"Active"`
 	MFAEnabled          bool       `json:"mfa_enabled" dynamodbav:"MFAEnabled"`
+	// PasswordVersion is bumped by a database trigger on every password_hash
+	// change; API keys minted under an older version are rejected (#402).
+	PasswordVersion int64 `json:"-" dynamodbav:"PasswordVersion"`
 }
 
 // Group represents a permission group.
@@ -85,6 +88,8 @@ type UserAPIKey struct {
 	KeyHash     string       `json:"-" dynamodbav:"KeyHash"`
 	Permissions []Permission `json:"permissions,omitempty" dynamodbav:"Permissions"`
 	IsActive    bool         `json:"is_active" dynamodbav:"IsActive"`
+	// PasswordVersion is the owner's User.PasswordVersion read when the key was minted.
+	PasswordVersion int64 `json:"-" dynamodbav:"PasswordVersion"`
 	// Usage counters (issue #340/#344 deferred sub-task -- migration 000094).
 	// Both default to 0 for legacy rows. RequestCountWindow is a
 	// FIXED/TUMBLING window count, not a true trailing-24h rolling count:
