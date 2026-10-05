@@ -79,14 +79,17 @@ type STSClientFactory func(provider aws.CredentialsProvider) STSClient
 //
 // AmbientProvider, when set, is returned for role_arn accounts whose
 // AWSRoleARN is empty (the "Self" account shape: auth_mode=role_arn with no
-// role ARN). This mirrors the scheduler's collectAWSForAccount logic, which
-// treats the same shape as an ambient-credentials case.
+// role ARN), once AmbientSTS confirms the account is the host. This mirrors
+// the scheduler's collectAWSForAccount logic.
 type AWSResolveOptions struct {
 	AccountLookup    AccountLookupFunc
 	STSClientFactory STSClientFactory
 	// AmbientProvider is the host Lambda / EC2 instance credentials provider.
 	// Required when resolving a Self account (role_arn with empty AWSRoleARN).
 	AmbientProvider aws.CredentialsProvider
+	// AmbientSTS is an STS client signed with AmbientProvider, used to check
+	// a Self account's external_id against the host identity.
+	AmbientSTS CallerIdentityClient
 }
 
 // ResolveAWSCredentialProvider is a back-compat wrapper that calls
@@ -121,7 +124,7 @@ func ResolveAWSCredentialProviderWithOpts(
 	case "access_keys":
 		return resolveAccessKeyProvider(ctx, account, store)
 	case "role_arn":
-		return resolveRoleARNProvider(ctx, account, stsClient, opts.AmbientProvider)
+		return resolveRoleARNProvider(ctx, account, stsClient, opts.AmbientProvider, opts.AmbientSTS)
 	case "bastion":
 		return resolveBastionProvider(ctx, account, store, stsClient, opts)
 	case "workload_identity_federation":
@@ -163,23 +166,24 @@ func resolveAccessKeyProvider(ctx context.Context, account *config.CloudAccount,
 // 1-hour STS token expiry problem of static credentials.
 //
 // When AWSRoleARN is empty (the "Self" account shape: auth_mode=role_arn with
-// no role ARN), the ambient provider is returned directly so collection and
-// execution agree on what this shape means. If ambient is nil in that case,
-// a descriptive error is returned.
+// no role ARN), the ambient provider is returned so collection and execution
+// agree on what this shape means, but only once ambientSTS confirms the
+// account is the host (ErrNotHostAccount otherwise).
 func resolveRoleARNProvider(
-	_ context.Context,
+	ctx context.Context,
 	account *config.CloudAccount,
 	stsClient STSClient,
 	ambient aws.CredentialsProvider,
+	ambientSTS CallerIdentityClient,
 ) (aws.CredentialsProvider, error) {
 	if account.AWSRoleARN == "" {
-		// Self-account: auth_mode=role_arn with no role ARN means "use the
-		// CUDly Lambda's own credentials to access this account." The
-		// scheduler's collectAWSForAccount handles the same shape identically.
-		if ambient != nil {
-			return ambient, nil
+		if ambient == nil {
+			return nil, fmt.Errorf("credentials: aws_role_arn is empty and no ambient credentials available (account %s)", account.ID)
 		}
-		return nil, fmt.Errorf("credentials: aws_role_arn is empty and no ambient credentials available (account %s)", account.ID)
+		if err := VerifyHostAccount(ctx, account, ambientSTS); err != nil {
+			return nil, err
+		}
+		return ambient, nil
 	}
 
 	sessionSuffix := account.ID
@@ -221,7 +225,7 @@ func resolveBastionProvider(
 	}
 	if opts.AccountLookup == nil || opts.STSClientFactory == nil {
 		// Legacy fallback: trust caller's stsClient. Tracked in known_issues/03.
-		return resolveRoleARNProvider(ctx, account, stsClient, nil)
+		return resolveRoleARNProvider(ctx, account, stsClient, nil, nil)
 	}
 	bastion, err := opts.AccountLookup(ctx, account.AWSBastionID)
 	if err != nil {
@@ -244,7 +248,7 @@ func resolveBastionProvider(
 		return nil, fmt.Errorf("credentials: resolve bastion %s creds: %w", bastion.ID, err)
 	}
 	bastionSTS := opts.STSClientFactory(bastionCreds)
-	return resolveRoleARNProvider(ctx, account, bastionSTS, nil)
+	return resolveRoleARNProvider(ctx, account, bastionSTS, nil, nil)
 }
 
 // resolveWebIdentityProvider returns a credential provider that exchanges an OIDC token

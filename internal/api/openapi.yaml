@@ -2084,6 +2084,7 @@ components:
           format: email
         password:
           type: string
+          description: Base64-encoded password
 
     PasswordResetRequest:
       type: object
@@ -2101,6 +2102,7 @@ components:
           type: string
         new_password:
           type: string
+          description: Base64-encoded new password
 
     ProfileUpdateRequest:
       type: object

@@ -14,6 +14,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/mocks"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
@@ -1978,6 +1979,7 @@ func TestScheduler_CollectAWSForAccount_SelfAccountRoleARNModeUsesAmbient(t *tes
 	scheduler := &Scheduler{
 		config:          new(MockConfigStore),
 		providerFactory: mockFactory,
+		stsClient:       &fakeSTSClient{accountID: "111111111111"},
 	}
 
 	recs, complete, err := scheduler.collectAWSForAccount(ctx, globalCfg, config.CloudAccount{
@@ -1993,6 +1995,34 @@ func TestScheduler_CollectAWSForAccount_SelfAccountRoleARNModeUsesAmbient(t *tes
 	assert.True(t, complete)
 	require.Len(t, recs, 1)
 	assert.Equal(t, "aws-self-account", *recs[0].CloudAccountID)
+}
+
+// Issue #402: a role_arn account with no role ARN that is NOT the host must
+// never reach the ambient (host) credentials provider.
+func TestScheduler_CollectAWSForAccount_RoleARNWithoutARNOnNonHostFailsClosed(t *testing.T) {
+	for name, stsClient := range map[string]STSClient{
+		"different host account": &fakeSTSClient{accountID: "999999999999"},
+		"host identity unknown":  &fakeSTSClient{err: errors.New("sts down")},
+		"no STS client":          nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			mockFactory := new(MockProviderFactory)
+			scheduler := &Scheduler{config: new(MockConfigStore), providerFactory: mockFactory, stsClient: stsClient}
+
+			recs, complete, err := scheduler.collectAWSForAccount(context.Background(), &config.GlobalConfig{}, config.CloudAccount{
+				ID:          "tenant-account",
+				Provider:    "aws",
+				AWSAuthMode: "role_arn",
+				ExternalID:  "222222222222",
+				Enabled:     true,
+			})
+
+			require.ErrorIs(t, err, credentials.ErrNotHostAccount)
+			assert.False(t, complete)
+			assert.Nil(t, recs)
+			mockFactory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
+		})
+	}
 }
 
 // Test GCP recommendations with no accounts — should skip gracefully.

@@ -261,7 +261,7 @@ func TestAWSRecommendationCompletenessPersistence(t *testing.T) {
 					Service: "savings-plans-compute", Savings: 40, Count: 1, Term: 1, Payment: "no-upfront"})
 			}
 			require.NoError(t, store.UpsertRecommendations(ctx, time.Now().Add(-time.Hour), seed, nil))
-			s := &Scheduler{config: store, providerFactory: factory}
+			s := &Scheduler{config: store, providerFactory: factory, stsClient: &fakeSTSClient{accountID: "111111111111"}}
 			var globalCfg *config.GlobalConfig
 			if tc.fallback != nil {
 				globalCfg = &config.GlobalConfig{DefaultTerm: 1, DefaultPayment: "no-upfront", RecommendationsLookbackDays: 30}

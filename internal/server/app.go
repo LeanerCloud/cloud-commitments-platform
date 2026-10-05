@@ -845,7 +845,7 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 		func(ctx context.Context, acct *config.CloudAccount) (aws.Config, error) {
 			stsClient := sts.NewFromConfig(awsCfg)
 			prov, err := credentials.ResolveAWSCredentialProviderWithOpts(ctx, acct, credStore, stsClient,
-				credentials.AWSResolveOptions{AmbientProvider: awsCfg.Credentials})
+				credentials.AWSResolveOptions{AmbientProvider: awsCfg.Credentials, AmbientSTS: stsClient})
 			if err != nil {
 				return aws.Config{}, err
 			}
