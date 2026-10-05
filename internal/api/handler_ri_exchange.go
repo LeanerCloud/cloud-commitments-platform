@@ -2295,6 +2295,16 @@ func (h *Handler) fetchAndAuthorizeRIExchange(ctx context.Context, session *Sess
 		return nil, err
 	}
 
+	// Same deployment-account scope as executeExchange (#93), checked before
+	// the fetch so an out-of-scope id is indistinguishable from a missing one.
+	inScope, err := h.reshapeCloudAccountInScope(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	if !inScope {
+		return nil, errNotFound
+	}
+
 	record, err := h.config.GetRIExchangeRecord(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up exchange record: %w", err)
