@@ -142,14 +142,8 @@ let cachedGlobalDefaultPayment: CompatPayment = 'all-upfront';
 let cachedGlobalDefaultTerm: 1 | 3 = 1;
 
 // Issue #909: the most-recent full GlobalConfig from /api/config, cached so
-// the Opportunities lookback selector can (a) prefill its value and (b)
-// round-trip the complete config on save. The backend config PUT only
-// preserves the two recommendation cycle-params when omitted; every other
-// field that is absent/zero in the request body is written as-is, so a
-// partial PUT carrying only recommendations_lookback_days would wipe
-// enabled_providers, default_term, etc. We therefore spread the cached
-// config and override just the lookback when persisting (see
-// onLookbackChange). null until the first successful load.
+// the Opportunities lookback selector can prefill its value. null until the
+// first successful load.
 let cachedGlobalConfig: GlobalConfig | null = null;
 
 // Issue #909: the AWS Cost Explorer LookbackPeriodInDays enum. The only
@@ -788,11 +782,10 @@ async function onLookbackChange(rawValue: string): Promise<void> {
   const parsed = Number(rawValue);
   if (parsed === previous) return;
 
-  // The backend config PUT preserves the two recommendation cycle-params
-  // when omitted but writes every other absent field as its zero value, so
-  // we must round-trip the full cached config and override only the
-  // lookback. Block the save if the config cache is not yet populated —
-  // falling back to {} would wipe every other global setting on the PUT.
+  // The backend config PUT preserves every omitted field, so send only the
+  // lookback: re-sending a stale cached config would revert newer global
+  // values (#530). Block the save until the config has loaded, since the
+  // selector's current value is unknown before then.
   if (!cachedGlobalConfig) {
     showToast({
       message: 'Settings are still loading. Please retry once configuration has loaded.',
@@ -802,14 +795,10 @@ async function onLookbackChange(rawValue: string): Promise<void> {
     return;
   }
   const base = cachedGlobalConfig;
-  const payload: api.Config = {
-    ...(base as api.Config),
-    recommendations_lookback_days: parsed,
-  };
 
   if (select) select.disabled = true;
   try {
-    await api.updateConfig(payload);
+    await api.updateConfig({ recommendations_lookback_days: parsed });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('Failed to persist lookback window:', err);

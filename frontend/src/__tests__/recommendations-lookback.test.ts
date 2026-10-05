@@ -6,9 +6,8 @@
  *   - admin sees an editable control with the AWS-scope tooltip
  *   - non-admin (user / readonly) sees the control disabled with the
  *     no-permission tooltip (backend stays authoritative)
- *   - changing the value persists the full config (override only the
- *     lookback, not wiping other fields), triggers a recommendations
- *     refresh, and reloads the list
+ *   - changing the value persists only the lookback (#530), triggers a
+ *     recommendations refresh, and reloads the list
  *   - a persist failure toasts the error and reverts the selector
  *   - a tampered/out-of-range value is rejected client-side
  */
@@ -97,8 +96,8 @@ const setupDom = () => {
 
 const getSelect = () => document.getElementById('recs-lookback-days') as HTMLSelectElement | null;
 
-// A realistic full GlobalConfig so we can assert the change handler does
-// not wipe sibling fields when it round-trips the config on save.
+// A realistic full GlobalConfig, so the change handler has sibling fields
+// in its cache that it must not re-send on save.
 const baseConfig = {
   enabled_providers: ['aws', 'azure', 'gcp'],
   default_term: 3,
@@ -156,7 +155,7 @@ describe('Opportunities lookback selector (issue #909)', () => {
     expect(tip.textContent).toContain('admin');
   });
 
-  test('changing the value persists the full config (override only lookback) and refreshes', async () => {
+  test('changing the value persists only the lookback and refreshes', async () => {
     mockUser('admin');
     await loadRecommendations();
     const select = getSelect()!;
@@ -167,13 +166,11 @@ describe('Opportunities lookback selector (issue #909)', () => {
     await new Promise(r => setTimeout(r, 0));
     await new Promise(r => setTimeout(r, 0));
 
+    // Issue #530: the cache is stale once another admin saves a newer
+    // default_term, so re-sending it would revert that change. The backend
+    // preserves omitted fields.
     expect(api.updateConfig).toHaveBeenCalledTimes(1);
-    const sent = (api.updateConfig as jest.Mock).mock.calls[0][0];
-    expect(sent.recommendations_lookback_days).toBe(60);
-    // Sibling fields preserved -- a partial PUT would have wiped these.
-    expect(sent.enabled_providers).toEqual(['aws', 'azure', 'gcp']);
-    expect(sent.default_term).toBe(3);
-    expect(sent.collection_schedule).toBe('daily');
+    expect(api.updateConfig).toHaveBeenCalledWith({ recommendations_lookback_days: 60 });
 
     // Re-collect triggered for the new window.
     expect(refreshRecsAPI).toHaveBeenCalledTimes(1);
