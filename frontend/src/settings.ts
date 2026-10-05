@@ -3181,7 +3181,7 @@ export async function loadGlobalSettings(): Promise<void> {
       if (paymentSelect) paymentSelect.value = data.global.default_payment || 'all-upfront';
 
       const coverageInput = document.getElementById('setting-default-coverage') as HTMLInputElement | null;
-      if (coverageInput) coverageInput.value = String(data.global.default_coverage || 80);
+      if (coverageInput) coverageInput.value = String(data.global.default_coverage ?? 80);
 
       // Cache defaults for the override modal "Inherit (currently: X)" labels
       // (issue #112). Must be updated here so reopening the override modal
@@ -3189,7 +3189,7 @@ export async function loadGlobalSettings(): Promise<void> {
       cachedGlobalDefaults = {
         term: data.global.default_term || 3,
         payment: data.global.default_payment || 'all-upfront',
-        coverage: data.global.default_coverage || 80,
+        coverage: data.global.default_coverage ?? 80,
       };
 
       const notifyDaysInput = document.getElementById('setting-notification-days') as HTMLInputElement | null;

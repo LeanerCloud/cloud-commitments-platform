@@ -8,6 +8,7 @@ import {
   setupSettingsHandlers,
   copyToClipboard,
   isUnsavedChanges,
+  openOverrideModal,
 } from '../settings';
 
 // Mock the api module
@@ -1554,6 +1555,89 @@ describe('Settings Module', () => {
       emailInput.dispatchEvent(new Event('input'));
 
       expect(isUnsavedChanges()).toBe(true);
+    });
+  });
+
+  // Issue #135: `default_coverage || 80` rewrote a stored 0 to 80, and the
+  // next Save persisted 80 without the user touching the field.
+  describe('default_coverage 0 round-trips through load and save (issue #135)', () => {
+    const configWithCoverage = (global: Record<string, unknown>, services: unknown[] = []) => ({
+      global: {
+        enabled_providers: ['aws'],
+        notification_email: '',
+        auto_collect: true,
+        default_term: 3,
+        default_payment: 'all-upfront',
+        notification_days_before: 3,
+        ...global,
+      },
+      services,
+      credentials: {},
+    });
+
+    const serviceCall = (service: string) =>
+      (api.updateServiceConfig as jest.Mock).mock.calls.find(([p, s]) => p === 'aws' && s === service);
+
+    const saveUnchanged = async () => {
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+      await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+    };
+
+    test('a stored 0 renders as 0 and an unedited Save sends 0, not 80', async () => {
+      (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage({ default_coverage: 0 }));
+      await loadGlobalSettings();
+
+      expect((document.getElementById('setting-default-coverage') as HTMLInputElement).value).toBe('0');
+      expect((document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value).toBe('0');
+
+      await saveUnchanged();
+
+      expect((api.updateConfig as jest.Mock).mock.calls[0]![0].default_coverage).toBe(0);
+      expect(serviceCall('savings-plans-compute')![2].coverage).toBe(0);
+      expect(serviceCall('ec2')![2].coverage).toBe(0);
+    });
+
+    test('an absent default_coverage still renders the 80 default', async () => {
+      (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage({}));
+      await loadGlobalSettings();
+
+      expect((document.getElementById('setting-default-coverage') as HTMLInputElement).value).toBe('80');
+
+      await saveUnchanged();
+
+      expect((api.updateConfig as jest.Mock).mock.calls[0]![0].default_coverage).toBe(80);
+    });
+
+    test('a per-service coverage of 0 round-trips under a non-zero global', async () => {
+      (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage(
+        { default_coverage: 50 },
+        [{ provider: 'aws', service: 'savings-plans-compute', enabled: true, term: 3, payment: 'all-upfront', coverage: 0 }],
+      ));
+      await loadGlobalSettings();
+
+      expect((document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value).toBe('0');
+      expect((document.getElementById('aws-savings-plans-ec2instance-coverage') as HTMLInputElement).value).toBe('50');
+
+      await saveUnchanged();
+
+      expect(serviceCall('savings-plans-compute')![2].coverage).toBe(0);
+      expect(serviceCall('savings-plans-ec2instance')![2].coverage).toBe(50);
+    });
+
+    test('the override modal inherit label shows the stored 0%', async () => {
+      const modal = document.createElement('div');
+      modal.id = 'override-modal';
+      const covInput = document.createElement('input');
+      covInput.id = 'override-coverage';
+      modal.appendChild(covInput);
+      document.body.appendChild(modal);
+
+      (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage({ default_coverage: 0 }));
+      await loadGlobalSettings();
+      openOverrideModal('acc-1', 'aws', [], document.createElement('div'));
+
+      expect(covInput.placeholder).toBe('Inherit (currently: 0%)');
     });
   });
 });
