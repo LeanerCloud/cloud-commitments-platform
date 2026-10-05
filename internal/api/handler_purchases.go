@@ -612,15 +612,14 @@ func (h *Handler) approvePurchase(ctx context.Context, req *events.LambdaFunctio
 	//      session. authorizeApprovalAction enforces the per-account
 	//      contact_email gate from PR #101; the purchase service
 	//      validates the token itself before mutating state.
-	//   3. token == "" → session-authed dashboard Approve button.
-	//      approvePurchaseViaSession runs the approve-any /
-	//      approve-own RBAC matrix and rejects sessions without it.
+	//   3. token == "" → a session denial above is final (issue #173);
+	//      with no session, approvePurchaseViaSession returns 401.
 	if session := h.tryGetSession(ctx, req); session != nil {
 		switch err := h.authorizeScopedSessionApprove(ctx, session, execution); {
 		case err == nil:
 			return h.approvePurchaseViaSession(ctx, req, execution)
 		case fallsThroughToToken(err, token):
-			// Explicit 403, or an out-of-scope 404 with a token → fall
+			// Explicit 403 or out-of-scope 404, with a token → fall
 			// through to the token branch so the contact_email gate gets a
 			// chance (a logged-in user without approve-* or outside the
 			// account scope may still be the per-account contact recipient).
@@ -1215,18 +1214,16 @@ func (h *Handler) cancelPurchase(ctx context.Context, req *events.LambdaFunction
 	//      preserves the security model for forwarded email / shared
 	//      inbox / stolen link cases — a non-privileged session falls
 	//      through to this branch.
-	//   3. token == "" → session-authed dashboard Cancel button (issue
-	//      #46). Same path as branch (1) but reached without a URL
-	//      token. cancelPurchaseViaSession runs the cancel-any /
-	//      cancel-own RBAC matrix and rejects sessions without it.
+	//   3. token == "" → a session denial above is final (issue #173);
+	//      with no session, cancelPurchaseViaSession returns 401.
 	if session := h.tryGetSession(ctx, req); session != nil {
 		switch err := h.authorizeCancelSession(ctx, session, execution); {
 		case err == nil:
 			// Session is RBAC-authorized → run the session-authed cancel.
 			return h.cancelPurchaseViaSession(ctx, req, execution)
 		case fallsThroughToToken(err, token):
-			// Explicit "permission denied" (403), or an out-of-scope 404
-			// with a token → fall through to the token branch so the
+			// Explicit "permission denied" (403) or out-of-scope 404, with
+			// a token → fall through to the token branch so the
 			// contact_email gate still gets a chance (a logged-in user
 			// without admin / cancel-* may still be the per-account contact
 			// email recipient).
@@ -2264,15 +2261,15 @@ func wrapConstraintDenied(err error) error {
 }
 
 // fallsThroughToToken reports whether a session-authorization failure should
-// hand the request to the email-token branch: an RBAC denial (403), or an
-// account-scope miss (404) when a token is present. The token branch's
-// contact_email gate is deliberately not account-scoped (issue #92). Without
-// a token the 404 is returned as-is, so the token branch's status guards
-// cannot reveal an out-of-scope execution's existence or status. Both
-// matches are strict, like isPermissionDenied, so a wrapped error from
-// deeper in the chain propagates.
+// hand the request to the email-token branch: an RBAC denial (403) or an
+// account-scope miss (404), and only when a token is present. The token
+// branch's contact_email gate is deliberately not account-scoped (issue #92).
+// Without a token the denial is final (issue #173): nothing else can authorize
+// the request, and the 404 must not let later status guards reveal an
+// out-of-scope execution. Both matches are strict, like isPermissionDenied,
+// so a wrapped error from deeper in the chain propagates.
 func fallsThroughToToken(err error, token string) bool {
-	return isPermissionDenied(err) || (token != "" && err == errNotFound) //nolint:errorlint // strict sentinel identity is deliberate
+	return token != "" && (isPermissionDenied(err) || err == errNotFound) //nolint:errorlint // strict sentinel identity is deliberate
 }
 
 // isPermissionDenied reports whether err is *directly* a 403 ClientError

@@ -2166,8 +2166,8 @@ func (h *Handler) getRIExchangeHistory(ctx context.Context, req *events.LambdaFu
 //  2. token != "" -> legacy email-link flow. validateExchangeApproval enforces
 //     the token-equality check; the permission-denied fall-through ensures a
 //     logged-in user without approve-* can still use an email link they hold.
-//  3. token == "" AND no qualifying session -> 403 via
-//     approveRIExchangeViaSession's requireSession gate.
+//  3. token == "": a session denial is returned as-is (issue #173); with no
+//     session, approveRIExchangeViaSession's requireSession gate returns 401.
 func (h *Handler) approveRIExchange(ctx context.Context, req *events.LambdaFunctionURLRequest, id, token string) (any, error) {
 	if session := h.tryGetSession(ctx, req); session != nil {
 		// Quick RBAC pre-check (no record fetch needed): does this session hold
@@ -2193,7 +2193,7 @@ func (h *Handler) approveRIExchange(ctx context.Context, req *events.LambdaFunct
 			if errors.Is(sessErr, errCSRFRejected) || token == "" || !isPermissionDenied(sessErr) {
 				return nil, sessErr
 			}
-		case isPermissionDenied(err):
+		case token != "" && isPermissionDenied(err):
 			// Logged-in user without approve-* may still hold a valid email token.
 		default:
 			return nil, err

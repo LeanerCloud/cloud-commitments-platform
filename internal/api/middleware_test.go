@@ -306,10 +306,14 @@ func TestApproveViaSession_RequiresCSRF(t *testing.T) {
 
 	mockConfig := new(MockConfigStore)
 	exec := &config.PurchaseExecution{
-		ExecutionID:     execID,
-		ApprovalToken:   "email-tok",
-		Status:          "pending",
-		Recommendations: []config.RecommendationRecord{{ID: "r1"}},
+		ExecutionID:   execID,
+		ApprovalToken: "email-tok",
+		Status:        "pending",
+		// Non-zero UpfrontCost so the approve-any Constraints check passes and
+		// the dispatcher hands off to approvePurchaseViaSession (issue #173).
+		Recommendations: []config.RecommendationRecord{
+			{ID: "r1", Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 100},
+		},
 	}
 	mockConfig.On("GetExecutionByID", ctx, execID).Return(exec, nil)
 
@@ -319,7 +323,7 @@ func TestApproveViaSession_RequiresCSRF(t *testing.T) {
 	// Authorization is group-membership-only after issue #907: the session must
 	// pass the approve-* HasPermissionAPI check to reach the CSRF guard, since
 	// the dispatcher authorizes before invoking approvePurchaseViaSession.
-	mockAuth.grantAdmin()
+	mockAuth.grantAdminPurchaser()
 	// CSRF token is empty → ValidateCSRFToken must return an error so the
 	// request is rejected. This is the critical regression assertion for #404.
 	mockAuth.On("ValidateCSRFToken", ctx, "sess-tok", "").Return(errors.New("csrf mismatch"))
