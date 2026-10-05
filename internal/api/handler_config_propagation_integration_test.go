@@ -11,6 +11,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,6 +56,16 @@ func TestUpdateConfigPropagatesOnlyChangedDefaults(t *testing.T) {
 	ec2, rds := service("ec2"), service("rds")
 	require.Equal(t, []any{3, "all-upfront", 70.0, config.RampWeekly25Pct}, []any{ec2.Term, ec2.Payment, ec2.Coverage, ec2.RampSchedule})
 	require.Equal(t, []any{1, "partial-upfront", 70.0, config.RampMonthly10Pct}, []any{rds.Term, rds.Payment, rds.Coverage, rds.RampSchedule})
+
+	// Both writes must share one transaction, or a failed commit could leave
+	// the services rewritten while the global change rolls back.
+	var globalXmin string
+	require.NoError(t, pg.DB.Pool().QueryRow(ctx, `SELECT xmin::text FROM global_config`).Scan(&globalXmin))
+	rows, err := pg.DB.Pool().Query(ctx, `SELECT DISTINCT xmin::text FROM service_configs WHERE coverage = 70`)
+	require.NoError(t, err)
+	serviceXmins, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	require.Equal(t, []string{globalXmin}, serviceXmins, "propagation must run in the global config transaction")
 
 	// The recommendations lookback control round-trips the whole config, so
 	// every default key is present but none changed.
