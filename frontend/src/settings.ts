@@ -171,11 +171,6 @@ const savedSnapshot: Record<string, string> = {};
 // non-UI fields (ramp_schedule, include_engines, etc.) that SaveServiceConfig replaces entirely.
 let loadedServiceConfigs: api.ServiceConfig[] = [];
 
-// Global default_coverage as last loaded or saved. The backend copies a changed
-// default onto every service row, so a save that changes it must not send the
-// stale per-service coverage back over the propagated value (#522).
-let loadedDefaultCoverage: number | undefined;
-
 // saveInFlight guards saveGlobalSettings against concurrent invocations
 // (rapid Save clicks, Enter-in-form, etc.). Toggled in a try/finally and
 // mirrored on the Save button's disabled attribute so the UI reflects the
@@ -3247,7 +3242,6 @@ export async function loadGlobalSettings(): Promise<void> {
 
     const services = data.services ?? [];
     loadedServiceConfigs = services;
-    loadedDefaultCoverage = data.global?.default_coverage;
     for (const svc of services) {
       const key = `${svc.provider}-${svc.service}`;
       const termEl = document.getElementById(`${key}-term`) as HTMLSelectElement | null;
@@ -3532,7 +3526,18 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
   }
 
   try {
+    // The backend copies a changed default onto every service row, so a changed
+    // default must win over the stale per-service coverage (#522). Decide it from
+    // the dirty snapshot before the save refreshes it.
+    const defaultCoverageChanged = 'setting-default-coverage' in savedSnapshot
+      && getFieldValue('setting-default-coverage') !== savedSnapshot['setting-default-coverage'];
     await api.updateConfig(settings);
+    if (defaultCoverageChanged) {
+      // The default is persisted and propagated; mirror that locally so a retry
+      // after a partial failure does not send the old coverage back.
+      savedSnapshot['setting-default-coverage'] = getFieldValue('setting-default-coverage');
+      loadedServiceConfigs = loadedServiceConfigs.map(s => ({ ...s, coverage: settings.default_coverage }));
+    }
 
     // Read + validate the per-service recommendation filters up front so a bad
     // min-count aborts the whole save with a targeted toast (rather than firing
@@ -3565,8 +3570,6 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
       // controls. Read from the DOM when the card has the controls; fall back
       // to the base row value (or the global default) otherwise so RI and
       // Azure/GCP cards continue to inherit the global settings.
-      const defaultCoverageChanged = loadedDefaultCoverage !== undefined
-        && settings.default_coverage !== loadedDefaultCoverage;
       let coverage = defaultCoverageChanged
         ? settings.default_coverage
         : (base?.coverage ?? settings.default_coverage);
@@ -3576,8 +3579,8 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
         const parsed = Number(rawCov);
         // Only a value the user edited on the card overrides the propagated
         // default; an untouched card still shows the pre-save coverage.
-        const loadedCardCoverage = base?.coverage ?? loadedDefaultCoverage ?? settings.default_coverage;
-        if (rawCov !== '' && Number.isFinite(parsed) && parsed !== loadedCardCoverage) coverage = parsed;
+        const cardEdited = getFieldValue(field.coverageId) !== savedSnapshot[field.coverageId];
+        if (cardEdited && rawCov !== '' && Number.isFinite(parsed)) coverage = parsed;
       }
       if ('enabledId' in field && field.enabledId) {
         const el = byId<HTMLInputElement>(field.enabledId);
@@ -3613,11 +3616,11 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
         if ('coverageId' in field && field.coverageId) {
           const el = byId<HTMLInputElement>(field.coverageId);
           if (el) el.value = String(coverage);
+          savedSnapshot[field.coverageId] = getFieldValue(field.coverageId);
         }
       });
     });
     await Promise.all(serviceSaves);
-    loadedDefaultCoverage = settings.default_coverage;
 
     snapshotAllFields();
     updateDirtyMarkers();

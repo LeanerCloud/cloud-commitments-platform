@@ -766,6 +766,67 @@ describe('Settings Module', () => {
         expect(coverageSentFor('savings-plans-compute')).toBe(70);
       });
 
+      test('an SP card edit saved after a global change survives a further save', async () => {
+        await loadWithCoverage50();
+        (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '0';
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+        (document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value = '70';
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+        (api.updateServiceConfig as jest.Mock).mockClear();
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(coverageSentFor('ec2')).toBe(0);
+        expect(coverageSentFor('savings-plans-compute')).toBe(70);
+      });
+
+      test('a saved SP card edit does not shield the card from a later global change', async () => {
+        await loadWithCoverage50();
+        (document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value = '70';
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+        (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '20';
+        (api.updateServiceConfig as jest.Mock).mockClear();
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(coverageSentFor('ec2')).toBe(20);
+        expect(coverageSentFor('savings-plans-compute')).toBe(20);
+      });
+
+      test('after a partial failure the retry keeps the saved SP card coverage', async () => {
+        await loadWithCoverage50();
+        (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '0';
+        (document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value = '70';
+        (api.updateServiceConfig as jest.Mock).mockImplementation(async (provider: string, svc: string) => {
+          if (provider === 'aws' && svc === 'ec2') throw new Error('ec2 failed');
+        });
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+        expect(coverageSentFor('savings-plans-compute')).toBe(70);
+
+        (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(coverageSentFor('ec2')).toBe(0);
+        expect(coverageSentFor('savings-plans-compute')).toBe(70);
+      });
+
+      test('after a partial failure a further global change still reaches the SP card', async () => {
+        await loadWithCoverage50();
+        (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '0';
+        (api.updateServiceConfig as jest.Mock).mockImplementation(async (provider: string, svc: string) => {
+          if (provider === 'aws' && svc === 'ec2') throw new Error('ec2 failed');
+        });
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '20';
+        (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(coverageSentFor('ec2')).toBe(20);
+        expect(coverageSentFor('savings-plans-compute')).toBe(20);
+      });
+
       test('an empty global coverage field is rejected instead of saving 0', async () => {
         await loadWithCoverage50();
         (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '';
