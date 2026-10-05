@@ -99,6 +99,28 @@ func TestIntegration_MFAReplacementNeedsCurrentFactor(t *testing.T) {
 		assert.Equal(t, winner(), f.stored(), "the loser must not replace the winner's recovery codes")
 	})
 
+	// Only reachable with legacy data: MFA on while the verified pending secret
+	// is still stored, so the enabled predicate alone must refuse the write.
+	t.Run("stale-enable-with-enabled-row-and-matching-pending", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "mfa-enabled-pending@example.com")
+		setupA, err := f.svc.MFASetup(ctx, f.user.ID, credentialRacePassword)
+		require.NoError(t, err)
+		victim, err := generateMFASecret()
+		require.NoError(t, err)
+		winner := f.onRead(func(ctx context.Context, _ *Service) {
+			_, execErr := store.db.Exec(ctx, "UPDATE users SET mfa_enabled = true, mfa_secret = $2 WHERE id = $1", f.user.ID, victim)
+			require.NoError(t, execErr)
+		})
+		codes, err := f.svc.MFAEnable(ctx, f.user.ID, generateTOTP(setupA.Secret, time.Now().Unix()/30))
+		require.ErrorIs(t, err, ErrUserChanged)
+		assert.Nil(t, codes)
+		stored := winner()
+		assert.Equal(t, stored, f.stored())
+		assert.True(t, stored.MFAEnabled)
+		assert.Equal(t, victim, stored.MFASecret, "the victim's factor must not be overwritten")
+		assert.Equal(t, setupA.Secret, stored.MFAPendingSecret, "the write must not have touched the row")
+	})
+
 	t.Run("expired-enable-after-concurrent-enrollment", func(t *testing.T) {
 		f := newCredentialRaceFixture(t, store, "mfa-expired-enable@example.com")
 		stale, err := generateMFASecret()
