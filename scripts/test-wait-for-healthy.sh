@@ -66,6 +66,40 @@ run_case "unhealthy in the middle of a streak resets it" 1 "H H U H H U" "auth s
 run_case "healthy once then unhealthy forever fails with last body" 1 "H U" "auth store not initialized"
 run_case "connection refused forever fails with curl error" 1 "R" "Failed to connect"
 
+run_case "curl error mid-streak resets it (H R H H U, streak 3, must not pass)" 1 "H R H H U" "Failed to connect"
+
+# run_env_case LABEL EXPECTED_EXIT SCENARIO OUTPUT_SUBSTRING [ENV=VAL ...]
+# Runs the SUT with ONLY the given env overrides (plus a zero sleep interval),
+# so the script's own defaults (streak 3, 30 attempts) are exercised.
+run_env_case() {
+  local label="$1" expected="$2" scenario="$3" needle="$4"
+  shift 4
+  local out actual=0
+  : > "$WORK/state"
+  out=$(env PATH="$WORK/bin:$PATH" STATE="$WORK/state" SCENARIO="$scenario" \
+    HEALTH_INTERVAL_SECONDS=0 "$@" "$SUT" https://app.example 2>&1) || actual=$?
+  if [[ "$actual" -ne "$expected" ]]; then
+    echo "FAIL: $label (expected exit $expected, got $actual)"; echo "$out"
+    ((fail++)) || true
+  elif [[ -n "$needle" && "$out" != *"$needle"* ]]; then
+    echo "FAIL: $label (output lacks '$needle')"; echo "$out"
+    ((fail++)) || true
+  else
+    echo "PASS: $label"
+    ((pass++)) || true
+  fi
+}
+
+run_env_case "defaults: H H U H H H passes only at attempt 6 (streak 3)" 0 "H H U H H H" "Health check 6: healthy (3/3)"
+run_env_case "defaults: two healthy then unhealthy forever exhausts 30 attempts" 1 "H H U" "after 30 attempts"
+run_env_case "streak 0 rejected" 2 "H" "HEALTH_REQUIRED_STREAK must be a positive integer" HEALTH_REQUIRED_STREAK=0
+run_env_case "streak abc rejected" 2 "H" "HEALTH_REQUIRED_STREAK must be a positive integer" HEALTH_REQUIRED_STREAK=abc
+run_env_case "streak empty rejected" 2 "H" "HEALTH_REQUIRED_STREAK must be a positive integer" HEALTH_REQUIRED_STREAK=
+run_env_case "attempts 0 rejected" 2 "H" "HEALTH_MAX_ATTEMPTS must be a positive integer" HEALTH_MAX_ATTEMPTS=0
+run_env_case "attempts abc rejected" 2 "H" "HEALTH_MAX_ATTEMPTS must be a positive integer" HEALTH_MAX_ATTEMPTS=abc
+run_env_case "attempts empty rejected" 2 "H" "HEALTH_MAX_ATTEMPTS must be a positive integer" HEALTH_MAX_ATTEMPTS=
+run_env_case "attempts below streak rejected" 2 "H" "could never pass" HEALTH_MAX_ATTEMPTS=2 HEALTH_REQUIRED_STREAK=3
+
 # Pre-fix logic, verbatim from deploy-azure.yml (URL var as the workflow set it).
 old_inline() {
   local URL=https://app.example RESPONSE i

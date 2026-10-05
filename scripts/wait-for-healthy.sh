@@ -21,10 +21,23 @@
 set -euo pipefail
 
 URL="${1:?usage: wait-for-healthy.sh URL}"
-REQUIRED_STREAK="${HEALTH_REQUIRED_STREAK:-3}"
-MAX_ATTEMPTS="${HEALTH_MAX_ATTEMPTS:-30}"
+REQUIRED_STREAK="${HEALTH_REQUIRED_STREAK-3}"
+MAX_ATTEMPTS="${HEALTH_MAX_ATTEMPTS-30}"
 INTERVAL="${HEALTH_INTERVAL_SECONDS:-5}"
 WARMUP_PATH="${HEALTH_WARMUP_PATH:-/api/auth/check-admin}"
+
+# Fail loudly on bad limits: 0 or non-numeric would silently behave like 1, and
+# attempts < streak can never pass. A set-but-empty value is rejected too.
+for pair in "HEALTH_REQUIRED_STREAK=${REQUIRED_STREAK}" "HEALTH_MAX_ATTEMPTS=${MAX_ATTEMPTS}"; do
+  if [[ ! "${pair#*=}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "::error::${pair%%=*} must be a positive integer, got '${pair#*=}'" >&2
+    exit 2
+  fi
+done
+if ((MAX_ATTEMPTS < REQUIRED_STREAK)); then
+  echo "::error::HEALTH_MAX_ATTEMPTS (${MAX_ATTEMPTS}) is below HEALTH_REQUIRED_STREAK (${REQUIRED_STREAK}); the check could never pass" >&2
+  exit 2
+fi
 
 streak=0
 last="no response"
