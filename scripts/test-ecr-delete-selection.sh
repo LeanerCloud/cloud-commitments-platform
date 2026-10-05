@@ -702,6 +702,10 @@ case "$2" in
         echo "An error occurred (RepositoryNotFoundException) when calling the DescribeRepositories operation: The repository with name '${requested}' does not exist in the registry with id '111111111111'" >&2
         exit 254
         ;;
+      mention)
+        echo "An error occurred (AccessDeniedException) when calling the DescribeRepositories operation: not authorized; RepositoryNotFoundException is not the cause" >&2
+        exit 254
+        ;;
       error)
         echo "An error occurred (ThrottlingException) when calling the DescribeRepositories operation: Rate exceeded" >&2
         exit 254
@@ -773,6 +777,14 @@ assert_behaviour "behaviour: the already-deleted case says so" \
   "$([[ "$STUB_OUT" == *"already deleted"* ]] && echo 0 || echo 1)" \
   "stdout: ${STUB_OUT}"
 
+# The not-found match is anchored to the error name AWS prints, so a message
+# that only mentions the word is not read as "already deleted".
+export DESCRIBE_MODE=mention
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: a non-NotFound error that mentions RepositoryNotFoundException still fails the step" \
+  "$([[ "$STUB_EXIT" -ne 0 && "$STUB_OUT" != *"already deleted"* ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, stdout: ${STUB_OUT}"
+
 # Any other lookup error must fail the step and surface the AWS message, not
 # read as "already deleted".
 export DESCRIBE_MODE=error
@@ -783,6 +795,16 @@ assert_behaviour "behaviour: any other lookup error fails the step and deletes n
 assert_behaviour "behaviour: the lookup error's AWS message reaches stderr" \
   "$([[ "$STUB_ERR" == *"ThrottlingException"* ]] && echo 0 || echo 1)" \
   "stderr: ${STUB_ERR}"
+
+# An empty or whitespace name is refused before any AWS call.
+for bad in '""' '"a b"'; do
+  export TF_OUTPUT_JSON="{\"ecr_repository_name\":{\"value\":${bad}}}"
+  run_script "$STUB_STATE"
+  assert_behaviour "behaviour: repository name ${bad} exits 1 with its own error and no aws call" \
+    "$([[ "$STUB_EXIT" -eq 1 && ! -s "$STUB_CALLS" && "$STUB_ERR" == *"not a repository name"* ]] && echo 0 || echo 1)" \
+    "exit ${STUB_EXIT}, stderr: ${STUB_ERR}, calls: $(cat "$STUB_CALLS")"
+done
+export TF_OUTPUT_JSON='{"ecr_repository_name":{"value":"cudly-dev-1a2b3c4d"}}'
 
 export DESCRIBE_MODE=found DELETE_FAILS=1
 run_script "$STUB_STATE"
