@@ -367,42 +367,38 @@ func (h *Handler) authorizeSessionRevoke(ctx context.Context, session *Session, 
 	if err != nil {
 		return fmt.Errorf("permission check failed: %w", err)
 	}
-	if hasAny {
-		return nil
+	if !hasAny {
+		hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionRevokeOwn, auth.ResourcePurchases)
+		if err != nil {
+			return fmt.Errorf("permission check failed: %w", err)
+		}
+		if !hasOwn {
+			return NewClientError(403, "permission denied: requires revoke-any or revoke-own on purchases")
+		}
 	}
 
-	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionRevokeOwn, auth.ResourcePurchases)
-	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
-	}
-	if !hasOwn {
-		return NewClientError(403, "permission denied: requires revoke-any or revoke-own on purchases")
-	}
-
-	return h.checkRevokeOwnAccountAccess(ctx, session.UserID, record)
+	return h.checkRevokeAccountAccess(ctx, session, record, hasAny)
 }
 
-// checkRevokeOwnAccountAccess enforces the account-scope ownership constraint
-// for revoke-own: the purchase must be in a cloud account the session user
-// is allowed to access. Extracted from authorizeSessionRevoke to keep that
-// function's cyclomatic complexity within the project limit.
-func (h *Handler) checkRevokeOwnAccountAccess(ctx context.Context, userID string, record *config.PurchaseHistoryRecord) error {
-	// Purchase history rows pre-date created_by_user_id; ownership is via
-	// account access (same model as the per-account-perms middleware used
-	// elsewhere in the history view). Whether revoke-own should be tightened
-	// to creator scope instead is a product decision tracked in issue #950.
-	// Fail closed for revoke-own: if the purchase has no account association
-	// we cannot verify ownership, so deny rather than allow an unscoped revoke.
-	if record.CloudAccountID == nil || *record.CloudAccountID == "" {
-		return NewClientError(403, "permission denied: cannot verify ownership for this purchase")
-	}
+// checkRevokeAccountAccess requires the purchase to be in a cloud account the
+// session may access. revoke-any lifts no account scope (issue #386, the #92
+// class): only an unrestricted revoke-any caller skips the check.
+func (h *Handler) checkRevokeAccountAccess(ctx context.Context, session *Session, record *config.PurchaseHistoryRecord, revokeAny bool) error {
 	// Goes through getAccountScope rather than calling GetAllowedAccountsAPI
 	// directly: the direct call skipped the admin-API-key and nil-auth
 	// branches, and the `len(allowed) > 0 &&` guard read an empty list as
 	// unrestricted independently of any producer (issue #1748).
-	scope, err := h.getAccountScope(ctx, &Session{UserID: userID})
+	scope, err := h.getAccountScope(ctx, session)
 	if err != nil {
 		return fmt.Errorf("account access check failed: %w", err)
+	}
+	if revokeAny && scope.AllowsAll() {
+		return nil
+	}
+	// Purchase history rows pre-date created_by_user_id, so ownership is via
+	// account access (creator scope: issue #950). Unattributed rows fail closed.
+	if record.CloudAccountID == nil || *record.CloudAccountID == "" {
+		return NewClientError(403, "permission denied: cannot verify ownership for this purchase")
 	}
 	if !scope.Allows(*record.CloudAccountID, "") {
 		return NewClientError(403, "permission denied: purchase is in an account you do not have access to")

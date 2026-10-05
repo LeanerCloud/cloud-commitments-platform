@@ -455,12 +455,97 @@ func TestAuthorizeSessionRevoke_RevokeAny(t *testing.T) {
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
+	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{}, nil)
 
 	h := &Handler{auth: mockAuth}
 	sess := &Session{UserID: "u-1"}
+	// Unrestricted revoke-any may revoke even a row with no account association.
 	r := &config.PurchaseHistoryRecord{}
 	err := h.authorizeSessionRevoke(ctx, sess, r)
 	require.NoError(t, err)
+}
+
+// TestAuthorizeSessionRevoke_RevokeAny_AccountScope pins issue #386: revoke-any
+// lifts the ownership requirement but not the session's account scope.
+func TestAuthorizeSessionRevoke_RevokeAny_AccountScope(t *testing.T) {
+	t.Parallel()
+	inScope := "aaaa-1111"
+	outOfScope := "bbbb-2222"
+	empty := ""
+	cases := []struct {
+		name      string
+		accountID *string
+		wantErr   string
+	}{
+		{name: "in scope", accountID: &inScope},
+		{name: "other account", accountID: &outOfScope, wantErr: "account you do not have access to"},
+		{name: "nil account", accountID: nil, wantErr: "cannot verify ownership"},
+		{name: "empty account", accountID: &empty, wantErr: "cannot verify ownership"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			mockAuth := new(MockAuthService)
+			t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+			mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
+			mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{inScope}, nil)
+
+			h := &Handler{auth: mockAuth}
+			err := h.authorizeSessionRevoke(ctx, &Session{UserID: "u-1"}, &config.PurchaseHistoryRecord{CloudAccountID: tc.accountID})
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+			assert.Equal(t, 403, ce.code)
+			assert.Contains(t, ce.Error(), tc.wantErr)
+		})
+	}
+}
+
+// TestRevokePurchase_RevokeAnyOutOfScopeNeverCallsAzure drives the real revoke
+// endpoint for a scoped revoke-any user against an executed Azure purchase in
+// another account (issue #386): it must 403 before any Azure client is built.
+func TestRevokePurchase_RevokeAnyOutOfScopeNeverCallsAzure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() {
+		mockStore.AssertExpectations(t)
+		mockAuth.AssertExpectations(t)
+	})
+
+	otherAccount := "bbbb-2222"
+	r := armReservationRecord()
+	r.CloudAccountID = &otherAccount
+	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "u-1", Email: "u1@example.com"}, nil)
+	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
+	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{"aaaa-1111"}, nil)
+	mockStore.On("GetExecutionByID", ctx, r.PurchaseID).Return(nil, fmt.Errorf("%w: execution", config.ErrNotFound))
+	mockStore.On("GetPurchaseHistoryByPurchaseID", ctx, r.PurchaseID).Return(r, nil)
+
+	azureCalls := 0
+	h := &Handler{
+		config: mockStore,
+		auth:   mockAuth,
+		azureRevokeFactory: &azureRevokeClientFactory{
+			newCredential: func() (azcore.TokenCredential, error) {
+				azureCalls++
+				return nil, errors.New("azure must not be reached")
+			},
+		},
+	}
+
+	req := sessionReq("tok")
+	req.Body = `{"expected_refund_amount":10,"expected_refund_currency":"USD"}`
+	_, err := h.revokePurchase(ctx, req, r.PurchaseID)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+	assert.Equal(t, 403, ce.code)
+	assert.Zero(t, azureCalls, "no Azure client may be built for an out-of-scope purchase")
 }
 
 func TestAuthorizeSessionRevoke_RevokeOwn_AccountAccessGranted(t *testing.T) {
@@ -534,6 +619,8 @@ func TestAuthorizeSessionRevoke_RevokeOwn_NilAccountID(t *testing.T) {
 
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(true, nil)
+	// Unrestricted scope must not excuse an unattributed revoke-own.
+	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{}, nil)
 
 	h := &Handler{auth: mockAuth}
 	sess := &Session{UserID: "u-1"}

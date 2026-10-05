@@ -509,11 +509,11 @@ const (
 	//     "Own" is currently enforced at ACCOUNT scope, not creator scope:
 	//     a user may revoke a completed purchase in any cloud account they
 	//     are allowed to access (the check in
-	//     api.checkRevokeOwnAccountAccess via GetAllowedAccountsAPI), because
+	//     api.checkRevokeAccountAccess via GetAllowedAccountsAPI), because
 	//     purchase_history rows pre-date created_by_user_id and have no
 	//     reliable per-creator attribution. Rows with no account association
-	//     (CloudAccountID NULL) are out of reach for non-admins (fail-closed);
-	//     admins still revoke them via revoke-any.
+	//     (CloudAccountID NULL) fail closed; only an unrestricted revoke-any
+	//     caller can revoke them.
 	//     NOTE: whether revoke-own should instead be creator-scoped is a
 	//     product decision tracked in issue #950; do not tighten this to
 	//     created_by_user_id without resolving that issue first.
