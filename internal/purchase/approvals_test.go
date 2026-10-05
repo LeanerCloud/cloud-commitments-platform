@@ -330,7 +330,7 @@ func TestManager_RunPlannedPurchaseNow_ExecutesFromPaused(t *testing.T) {
 	store.On("TransitionExecutionStatus", ctx, "exec-run-now", []string{"pending", "paused"}, "approved", (*string)(nil)).Return(updated, nil)
 	stubExecuteChain(t, store, sender, "plan-run-now")
 
-	revocationToken, err := manager.RunPlannedPurchaseNow(ctx, "exec-run-now", "operator@example.com", nil)
+	final, revocationToken, err := manager.RunPlannedPurchaseNow(ctx, "exec-run-now", "operator@example.com", nil)
 	require.NoError(t, err)
 	// Run-now shares the execute funnel's revocation-token rotation (#103).
 	require.NotEmpty(t, revocationToken)
@@ -338,6 +338,8 @@ func TestManager_RunPlannedPurchaseNow_ExecutesFromPaused(t *testing.T) {
 	assert.NotEqual(t, revocationToken, updated.ApprovalToken)
 	require.NotNil(t, updated.ApprovedBy)
 	assert.Equal(t, "operator@example.com", *updated.ApprovedBy)
+	assert.Same(t, updated, final)
+	assert.Equal(t, "completed", final.Status)
 	store.AssertExpectations(t)
 	sender.AssertExpectations(t)
 }
@@ -355,8 +357,9 @@ func TestManager_RunPlannedPurchaseNow_LostCASReturnsError(t *testing.T) {
 	store.On("TransitionExecutionStatus", ctx, "exec-race", []string{"pending", "paused"}, "approved", (*string)(nil)).
 		Return(nil, config.ErrExecutionNotInExpectedStatus)
 
-	_, err := manager.RunPlannedPurchaseNow(ctx, "exec-race", "operator@example.com", nil)
+	final, _, err := manager.RunPlannedPurchaseNow(ctx, "exec-race", "operator@example.com", nil)
 	require.Error(t, err)
+	assert.Nil(t, final)
 	assert.ErrorIs(t, err, config.ErrExecutionNotInExpectedStatus)
 	store.AssertExpectations(t)
 }

@@ -1592,7 +1592,11 @@ func TestHandler_runPlannedPurchase(t *testing.T) {
 	// CAS-guarded funnel ApproveAndExecute uses (issue #218) rather than a
 	// bare TransitionExecutionStatus flip to "running" that no executor
 	// consumes.
-	mockPurchase.On("RunPlannedPurchaseNow", ctx, "11111111-1111-1111-1111-111111111111", "admin@example.com", mock.Anything).Return("raw-revocation-token", nil)
+	mockPurchase.On("RunPlannedPurchaseNow", ctx, "11111111-1111-1111-1111-111111111111", "admin@example.com", mock.Anything).Return(&config.PurchaseExecution{
+		ExecutionID:     "11111111-1111-1111-1111-111111111111",
+		Status:          "completed",
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 100}},
+	}, "raw-revocation-token", nil)
 	notify := "notify@example.com"
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &notify}, nil)
 
@@ -2183,7 +2187,7 @@ func TestHandler_runPlannedPurchase_NilExecution(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
 	mockPurchase.On("RunPlannedPurchaseNow", ctx, "99999999-9999-9999-9999-999999999999", "admin@example.com", mock.Anything).
-		Return("", fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
+		Return(nil, "", fmt.Errorf("execution not found: 99999999-9999-9999-9999-999999999999"))
 
 	handler := &Handler{purchase: mockPurchase, config: mockStore, auth: mockAuth}
 
@@ -2195,6 +2199,41 @@ func TestHandler_runPlannedPurchase_NilExecution(t *testing.T) {
 	result, err := handler.runPlannedPurchase(ctx, req, "99999999-9999-9999-9999-999999999999")
 	assert.Error(t, err)
 	assert.Nil(t, result)
+}
+
+func TestRunNowError(t *testing.T) {
+	ran := &config.PurchaseExecution{Status: "failed"}
+	cases := []struct {
+		name  string
+		final *config.PurchaseExecution
+		err   error
+		code  int // 0: not a client error, so the router answers a generic 500
+	}{
+		{"four-eyes denial", nil, fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), 403},
+		{"lost claim", nil, fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), 409},
+		{"row gone", nil, fmt.Errorf("approve: %w", config.ErrNotFound), 409},
+		{"store error before claim", nil, errors.New("connection reset"), 0},
+		{"plan deleted after claim", ran, fmt.Errorf("failed to get plan: %w", config.ErrNotFound), 502},
+		{"audit loss wrapping not found", ran, fmt.Errorf("%w: %w", config.ErrAuditLoss, config.ErrNotFound), 500},
+		{"final status not saved", ran, fmt.Errorf("%w: boom", config.ErrAuditLoss), 500},
+		{"execution failed", ran, errors.New("provider rejected"), 502},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runNowError("exec-1", tc.final, tc.err)
+			ce, ok := IsClientError(err)
+			if tc.code == 0 {
+				assert.False(t, ok)
+				assert.ErrorIs(t, err, tc.err)
+				return
+			}
+			require.True(t, ok)
+			assert.Equal(t, tc.code, ce.code)
+			if tc.code == 502 {
+				assert.Equal(t, "failed", ce.Details()["status"])
+			}
+		})
+	}
 }
 
 func TestHandler_deletePlannedPurchase_NilExecution(t *testing.T) {

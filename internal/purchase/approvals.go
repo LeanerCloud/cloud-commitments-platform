@@ -13,6 +13,14 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// ErrFourEyesDenied wraps every refusal by the 4-eyes approval policy, as
+// opposed to a failure to evaluate it (config or store errors).
+var ErrFourEyesDenied = errors.New("approval declined")
+
+// runNowSkipReason is stamped onto PreApprovalSkipReason when an operator's
+// "Run now" stands in for the approval and the scheduled wait.
+const runNowSkipReason = "run-now"
+
 // ApproveExecution is the token-authenticated approve entry point used by
 // the legacy email-link flow and the SQS approve worker. After validating
 // the approval token it hands off to ApproveAndExecute, which performs the
@@ -239,7 +247,7 @@ func (m *Manager) loadExecutionForFourEyes(ctx context.Context, executionID stri
 func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string, execution *config.PurchaseExecution, actorEmail string, actorUserID *string) error {
 	if execution.CreatedByUserID == nil {
 		logging.Warnf("purchase[%s]: 4-eyes mode on; NULL creator (legacy row), denying", executionID)
-		return fmt.Errorf("approval declined: this execution predates the dual-control feature and has no recorded creator; an admin must disable 4-eyes mode to approve")
+		return fmt.Errorf("%w: this execution predates the dual-control feature and has no recorded creator; an admin must disable 4-eyes mode to approve", ErrFourEyesDenied)
 	}
 
 	// Tier 1: authoritative UUID comparison when the caller identified the
@@ -249,7 +257,7 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 		if *actorUserID == *execution.CreatedByUserID {
 			logging.Warnf("purchase[%s]: 4-eyes mode on; creator %s attempted self-approval (actor UUID match), denied",
 				executionID, *execution.CreatedByUserID)
-			return fmt.Errorf("approval declined: 4-eyes mode requires a different approver than the requester")
+			return fmt.Errorf("%w: 4-eyes mode requires a different approver than the requester", ErrFourEyesDenied)
 		}
 		return nil
 	}
@@ -259,7 +267,7 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 	actorEmail = strings.TrimSpace(actorEmail)
 	if actorEmail == "" {
 		logging.Warnf("purchase[%s]: 4-eyes mode on; no actor identity available, denying (fail-closed)", executionID)
-		return fmt.Errorf("4-eyes approval mode is enabled but no approver identity could be determined; sign in or supply a verified actor before approving")
+		return fmt.Errorf("%w: 4-eyes approval mode is enabled but no approver identity could be determined; sign in or supply a verified actor before approving", ErrFourEyesDenied)
 	}
 
 	creatorEmail, err := m.config.GetUserEmailByID(ctx, *execution.CreatedByUserID)
@@ -270,13 +278,13 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 	if creatorEmail == "" {
 		logging.Warnf("purchase[%s]: 4-eyes mode on; creator account %s not found, denying (fail-closed)",
 			executionID, *execution.CreatedByUserID)
-		return fmt.Errorf("4-eyes approval mode is enabled but the creator's account could not be resolved; an admin must investigate before approving")
+		return fmt.Errorf("%w: 4-eyes approval mode is enabled but the creator's account could not be resolved; an admin must investigate before approving", ErrFourEyesDenied)
 	}
 
 	if strings.EqualFold(creatorEmail, actorEmail) {
 		logging.Warnf("purchase[%s]: 4-eyes mode on; creator %s attempted self-approval via actor %q, denied",
 			executionID, *execution.CreatedByUserID, maskActor(actorEmail))
-		return fmt.Errorf("approval declined: 4-eyes mode requires a different approver than the requester")
+		return fmt.Errorf("%w: 4-eyes mode requires a different approver than the requester", ErrFourEyesDenied)
 	}
 	return nil
 }
@@ -297,7 +305,8 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 // approval drives its own executeAndFinalize, which already fans out
 // per-account in parallel via executeMultiAccount.
 func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string) (string, error) {
-	return m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "notified"})
+	_, revocationToken, err := m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "notified"}, "")
+	return revocationToken, err
 }
 
 // RunPlannedPurchaseNow lets an operator force a scheduled purchase (pending
@@ -316,8 +325,11 @@ func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor stri
 // click, or the scheduler racing the same pending row, loses the atomic
 // UPDATE ... WHERE status IN (...) and gets a clean "cannot transition"
 // error rather than executing the purchase a second time.
-func (m *Manager) RunPlannedPurchaseNow(ctx context.Context, executionID, actor string, transitionedBy *string) (string, error) {
-	return m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "paused"})
+//
+// The returned row carries the run-now audit stamp and its final status, also
+// on an execution error; it is nil when the run never started.
+func (m *Manager) RunPlannedPurchaseNow(ctx context.Context, executionID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error) {
+	return m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "paused"}, runNowSkipReason)
 }
 
 // transitionApproveAndExecute is the shared body behind ApproveAndExecute
@@ -332,7 +344,10 @@ func (m *Manager) RunPlannedPurchaseNow(ctx context.Context, executionID, actor 
 // executed, revoke here" link, and since only the token's hash is stored
 // (issue #103) a DB re-read can never yield a raw, emailable value, so the
 // rotation lives here, in the one funnel all approve paths share.
-func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string, fromStatuses []string) (string, error) {
+//
+// A non-empty skipReason stamps the executed_* audit fields once the CAS wins.
+// The returned row is nil when the CAS was never won.
+func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string, fromStatuses []string, skipReason string) (*config.PurchaseExecution, string, error) {
 	t0 := time.Now()
 	logging.Infof("purchase[%s]: transitionApproveAndExecute starting (actor=%q, from=%v)", executionID, maskActor(actor), fromStatuses)
 
@@ -344,7 +359,7 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 	// enforceFourEyesPolicy's doc comment for the full rationale.
 	if err := m.enforceFourEyesPolicy(ctx, executionID, actor, transitionedBy); err != nil {
 		logging.Warnf("purchase[%s]: transitionApproveAndExecute denied by 4-eyes policy: %v", executionID, err)
-		return "", err
+		return nil, "", err
 	}
 
 	// transitionedBy carries the session user's UUID for human-initiated
@@ -355,18 +370,27 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 	if err != nil {
 		logging.Errorf("purchase[%s]: transitionApproveAndExecute status transition failed after %s: %v",
 			executionID, time.Since(t0), err)
-		return "", fmt.Errorf("approve: %w", err)
+		return nil, "", fmt.Errorf("approve: %w", err)
 	}
 	logging.Infof("purchase[%s]: status transitioned to approved in %s", executionID, time.Since(t0))
 
+	if skipReason != "" {
+		now := time.Now()
+		reason := skipReason
+		updated.ExecutedAt = &now
+		updated.ExecutedByUserID = transitionedBy
+		updated.PreApprovalSkipReason = &reason
+	}
 	if actor != "" {
 		a := actor
 		updated.ApprovedBy = &a
+	}
+	if actor != "" || skipReason != "" {
 		if saveErr := m.config.SavePurchaseExecution(ctx, updated); saveErr != nil {
 			// Attribution is best-effort once the atomic flip has landed --
-			// dropping ApprovedBy must not stop the purchase from firing.
+			// dropping these audit fields must not stop the purchase from firing.
 			// Log loudly so the audit gap is visible.
-			logging.Errorf("AUDIT GAP: failed to stamp approved_by on %s: %v", executionID, saveErr)
+			logging.Errorf("AUDIT GAP: failed to stamp approval audit fields on %s: %v", executionID, saveErr)
 		}
 	}
 
@@ -374,7 +398,7 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 	execErr := m.executeAndFinalize(ctx, updated)
 	if execErr != nil {
 		logging.Errorf("purchase[%s]: transitionApproveAndExecute failed after %s: %v", executionID, time.Since(t0), execErr)
-		return "", execErr
+		return updated, "", execErr
 	}
 	logging.Infof("purchase[%s]: transitionApproveAndExecute completed in %s", executionID, time.Since(t0))
 
@@ -387,7 +411,7 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 	if mintErr != nil {
 		logging.Warnf("purchase[%s]: transitionApproveAndExecute: revocation token mint failed (best-effort): %v", executionID, mintErr)
 	}
-	return revocationToken, nil
+	return updated, revocationToken, nil
 }
 
 // CancelExecution cancels a pending execution. actor carries the email of
