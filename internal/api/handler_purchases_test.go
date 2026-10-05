@@ -6308,7 +6308,7 @@ func TestRequireDifferentApprover_ModeOff_AllowsSameUser(t *testing.T) {
 	mockConfig.On("GetGlobalConfig", ctx).Return(fourEyesCfgOff(), nil)
 
 	handler := &Handler{config: mockConfig}
-	err := handler.requireDifferentApprover(ctx, session, exec)
+	err := handler.requireDifferentApprover(ctx, session, exec.ExecutionID, exec.CreatedByUserID)
 	require.NoError(t, err, "mode off: creator self-approve must be allowed")
 }
 
@@ -6326,7 +6326,7 @@ func TestRequireDifferentApprover_ModeOn_DeniesSameUser(t *testing.T) {
 	mockConfig.On("GetGlobalConfig", ctx).Return(fourEyesCfgOn(), nil)
 
 	handler := &Handler{config: mockConfig}
-	err := handler.requireDifferentApprover(ctx, session, exec)
+	err := handler.requireDifferentApprover(ctx, session, exec.ExecutionID, exec.CreatedByUserID)
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -6348,7 +6348,7 @@ func TestRequireDifferentApprover_ModeOn_AllowsDifferentUser(t *testing.T) {
 	mockConfig.On("GetGlobalConfig", ctx).Return(fourEyesCfgOn(), nil)
 
 	handler := &Handler{config: mockConfig}
-	err := handler.requireDifferentApprover(ctx, session, exec)
+	err := handler.requireDifferentApprover(ctx, session, exec.ExecutionID, exec.CreatedByUserID)
 	require.NoError(t, err, "mode on: different user must be allowed")
 }
 
@@ -6366,7 +6366,7 @@ func TestRequireDifferentApprover_ModeOn_DeniesAdminSelfApprove(t *testing.T) {
 	mockConfig.On("GetGlobalConfig", ctx).Return(fourEyesCfgOn(), nil)
 
 	handler := &Handler{config: mockConfig}
-	err := handler.requireDifferentApprover(ctx, session, exec)
+	err := handler.requireDifferentApprover(ctx, session, exec.ExecutionID, exec.CreatedByUserID)
 	require.Error(t, err, "mode on: admin self-approve must be denied")
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -6387,7 +6387,7 @@ func TestRequireDifferentApprover_ModeOn_NullCreatorDenied(t *testing.T) {
 	mockConfig.On("GetGlobalConfig", ctx).Return(fourEyesCfgOn(), nil)
 
 	handler := &Handler{config: mockConfig}
-	err := handler.requireDifferentApprover(ctx, session, exec)
+	err := handler.requireDifferentApprover(ctx, session, exec.ExecutionID, exec.CreatedByUserID)
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -6407,7 +6407,7 @@ func TestRequireDifferentApprover_NilAuth_500(t *testing.T) {
 	mockConfig.On("GetGlobalConfig", ctx).Return(fourEyesCfgOn(), nil)
 
 	handler := &Handler{config: mockConfig}
-	err := handler.requireDifferentApprover(ctx, nil, exec)
+	err := handler.requireDifferentApprover(ctx, nil, exec.ExecutionID, exec.CreatedByUserID)
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
