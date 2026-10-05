@@ -397,13 +397,25 @@ func (h *Handler) checkRevokeAccountAccess(ctx context.Context, session *Session
 	}
 	// Purchase history rows pre-date created_by_user_id, so ownership is via
 	// account access (creator scope: issue #950). Unattributed rows fail closed.
-	if record.CloudAccountID == nil || *record.CloudAccountID == "" {
+	// Match the way History does: a row may carry only the external account
+	// id, and allow-lists may name accounts rather than list ids (issue #534).
+	var rowAccountIDs []string
+	if record.CloudAccountID != nil && *record.CloudAccountID != "" {
+		rowAccountIDs = append(rowAccountIDs, *record.CloudAccountID)
+	}
+	if record.AccountID != "" {
+		rowAccountIDs = append(rowAccountIDs, record.AccountID)
+	}
+	if len(rowAccountIDs) == 0 {
 		return NewClientError(403, "permission denied: cannot verify ownership for this purchase")
 	}
-	if !scope.Allows(*record.CloudAccountID, "") {
-		return NewClientError(403, "permission denied: purchase is in an account you do not have access to")
+	nameByID := h.resolveAccountNamesByID(ctx)
+	for _, id := range rowAccountIDs {
+		if scope.Allows(id, nameByID[id]) {
+			return nil
+		}
 	}
-	return nil
+	return NewClientError(403, "permission denied: purchase is in an account you do not have access to")
 }
 
 // calculateAzureRevoke handles GET /api/purchases/revoke/calculate/{id}.
