@@ -21,7 +21,7 @@
 import { apiRequest } from './api/client';
 import { showToast } from './toast';
 import { confirmDialog } from './confirmDialog';
-import { buildApprovalDetailsBody } from './approval-details';
+import { approvalDetailsUnavailableMessage, buildApprovalDetailsBody } from './approval-details';
 
 type DeeplinkAction = 'approve' | 'cancel';
 
@@ -83,7 +83,18 @@ export async function handlePurchaseDeeplink(): Promise<boolean> {
   // approval is non-destructive to AWS.
   let body: string | HTMLElement;
   if (dl.action === 'approve') {
-    body = await buildApprovalDetailsBody(dl.id);
+    try {
+      body = await buildApprovalDetailsBody(dl.id);
+    } catch (err) {
+      console.error('Failed to load purchase details for approval:', err);
+      showToast({
+        message: `${approvalDetailsUnavailableMessage(err)} Open the approval link again to retry.`,
+        kind: 'error',
+        timeout: null,
+      });
+      window.history.replaceState({}, '', '/purchases');
+      return true;
+    }
   } else {
     body = `You're about to ${gerund} purchase execution ${dl.id}. This action will be recorded against your logged-in account.`;
   }

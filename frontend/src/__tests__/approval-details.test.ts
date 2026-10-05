@@ -240,14 +240,6 @@ describe('renderApprovalDetailsBody', () => {
     expect(stats[5]?.querySelector('.approval-details-stat-value')?.textContent).toBe('0');
   });
 
-  it('falls back to a legacy text sentence when recommendations are empty', () => {
-    const details = makeDetails([]);
-    const body = renderApprovalDetailsBody(details, new Map());
-    expect(body.querySelector('.approval-details-fallback')).not.toBeNull();
-    expect(body.querySelector('.approval-details-table')).toBeNull();
-    expect(body.textContent).toContain('Cloud commitments will be charged');
-  });
-
   it('escapes user-controlled string values in the table', () => {
     const rec = makeRec({ resource_type: '<script>alert(1)</script>' });
     const body = renderApprovalDetailsBody(makeDetails([rec]), new Map());

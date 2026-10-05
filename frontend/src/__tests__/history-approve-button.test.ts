@@ -25,7 +25,7 @@ jest.mock('../api', () => ({
   getConfig: jest.fn().mockResolvedValue({ global: {} }),
   approvePurchase: jest.fn(),
   cancelPurchase: jest.fn(),
-  getPurchaseDetails: jest.fn().mockResolvedValue({ recommendations: [] }),
+  getPurchaseDetails: jest.fn(),
   listAccounts: jest.fn().mockResolvedValue([]),
   getDeploymentInfo: jest.fn().mockResolvedValue({}),
 }));
@@ -112,6 +112,11 @@ const REG_USER = {
   ],
 };
 const OTHER_UUID = 'other-uuid';
+const DETAILS = {
+  total_upfront_cost: 100,
+  estimated_savings: 10,
+  recommendations: [{ provider: 'aws', service: 'ec2', region: 'us-east-1', count: 1, term: 1, payment: 'all-upfront', upfront_cost: 100, savings: 10 }],
+};
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void; reject(error: Error): void } {
   let resolve!: (value: T) => void;
@@ -129,14 +134,14 @@ describe('History action ownership and refresh recovery (#249)', () => {
     jest.clearAllMocks();
     (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
     (api.getHistory as jest.Mock).mockReset().mockResolvedValue(data);
-    (api.getPurchaseDetails as jest.Mock).mockReset().mockResolvedValue({ recommendations: [] });
+    (api.getPurchaseDetails as jest.Mock).mockReset().mockResolvedValue(DETAILS);
     (api.approvePurchase as jest.Mock).mockReset().mockResolvedValue(undefined);
     (confirmDialog as jest.Mock).mockReset().mockResolvedValue(true);
     (showToast as jest.Mock).mockReset();
   });
 
   test('details fetch owns both actions and same-ID projections while other IDs remain independent', async () => {
-    const details = deferred<{ recommendations: never[] }>();
+    const details = deferred<typeof DETAILS>();
     (api.getPurchaseDetails as jest.Mock).mockReturnValue(details.promise);
     (api.getHistory as jest.Mock).mockResolvedValue({ ...data, purchases: [...data.purchases, makeRow({ purchase_id: 'other' })] });
     (confirmDialog as jest.Mock).mockResolvedValue(false);
@@ -148,13 +153,32 @@ describe('History action ownership and refresh recovery (#249)', () => {
     document.querySelector<HTMLButtonElement>('#purchases-approval-queue [data-approve-id="guarded"]')!.click();
     document.querySelector<HTMLButtonElement>('#history-list [data-approve-id="other"]')!.click();
     const disabled = btn.disabled;
-    details.resolve({ recommendations: [] });
+    details.resolve(DETAILS);
     await settleActions();
     expect(disabled).toBe(true);
     expect(api.getPurchaseDetails).toHaveBeenCalledTimes(2);
     expect(confirmDialog).toHaveBeenCalledTimes(2);
     expect(api.approvePurchase).not.toHaveBeenCalled();
     expect(api.cancelPurchase).not.toHaveBeenCalled();
+    expect(btn.disabled).toBe(false);
+  });
+
+  test.each([
+    ['the details fetch fails', () => (api.getPurchaseDetails as jest.Mock).mockRejectedValue(new Error('403 Forbidden'))],
+    ['the details carry no recommendations', () => (api.getPurchaseDetails as jest.Mock).mockResolvedValue({ ...DETAILS, recommendations: [] })],
+  ])('Approve is not offered when %s (issue #247)', async (_label, arrange) => {
+    arrange();
+    console.error = jest.fn();
+    await loadHistory();
+    const btn = document.querySelector<HTMLButtonElement>('#history-list .history-approve-btn')!;
+    btn.click();
+    await settleActions();
+    expect(confirmDialog).not.toHaveBeenCalled();
+    expect(api.approvePurchase).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'error',
+      message: expect.stringContaining('cannot be approved without showing the amount'),
+    }));
     expect(btn.disabled).toBe(false);
   });
 
@@ -304,6 +328,7 @@ describe('History inline Approve button (issue #286)', () => {
   beforeEach(() => {
     setupDOM();
     jest.clearAllMocks();
+    (api.getPurchaseDetails as jest.Mock).mockResolvedValue(DETAILS);
   });
 
   test('admin sees Approve on every pending row, regardless of creator', async () => {

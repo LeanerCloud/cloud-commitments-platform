@@ -27,6 +27,13 @@ jest.mock('../api', () => ({
   getConfig: jest.fn().mockResolvedValue({ global: {} }),
   approvePurchase: jest.fn(),
   cancelPurchase: jest.fn(),
+  getPurchaseDetails: jest.fn().mockResolvedValue({
+    total_upfront_cost: 100,
+    estimated_savings: 10,
+    recommendations: [{ provider: 'aws', service: 'ec2', region: 'us-east-1', count: 1, term: 1, upfront_cost: 100, savings: 10 }],
+  }),
+  listAccounts: jest.fn().mockResolvedValue([]),
+  getDeploymentInfo: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('../navigation', () => ({

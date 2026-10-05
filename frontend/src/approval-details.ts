@@ -18,12 +18,9 @@
  * The pure builder `renderApprovalDetailsBody(details, accountsById)`
  * is split out from the network-fetching wrapper
  * `buildApprovalDetailsBody(executionId)` so unit tests can exercise
- * the rendering without mocking fetch. Both code paths share the same
- * fallback shape: when the GET fails (404, 403, network error) we
- * return a plain-text element preserving the legacy behaviour so the
- * dialog still opens and the Approve button still works — just without
- * the details. Showing a half-built modal would be worse UX than
- * gracefully falling back.
+ * the rendering without mocking fetch. When the details cannot be loaded
+ * or carry no recommendations the wrapper rejects, so callers never offer
+ * Approve without the amount (issue #247).
  */
 
 import * as api from './api';
@@ -44,8 +41,7 @@ export type AccountsById = Map<string, CloudAccount>;
 /**
  * Build an HTMLElement to pass as `body` to confirmDialog when the
  * user is about to approve a purchase. Renders the rich details from
- * `details.recommendations`, falling back to a plain text element
- * (with the legacy approval sentence) when no recs are present.
+ * `details.recommendations`.
  *
  * Exported separately from `buildApprovalDetailsBody` so tests can
  * render the body deterministically — no fetch mocking required.
@@ -55,16 +51,6 @@ export function renderApprovalDetailsBody(details: PurchaseDetails, accountsById
   root.className = 'approval-details';
 
   const recs = details.recommendations ?? [];
-  if (recs.length === 0) {
-    // Direct-execute paths (capacity_percent flow) can sometimes
-    // race the JSONB write — surface the legacy sentence so the user
-    // can still confirm rather than blocking the click on a missing
-    // payload. Shared helper keeps the fallback text identical to
-    // the network-failure branch.
-    root.appendChild(buildApprovalDetailsFallback());
-    return root;
-  }
-
   root.appendChild(renderApprovalDetailsHeader(details, recs, hostAWSAccountID));
   root.appendChild(renderApprovalDetailsTable(recs, accountsById, hostAWSAccountID));
   return root;
@@ -332,50 +318,40 @@ export function computeEffectiveSavingsPct(rec: Recommendation): number | null {
 /**
  * Network-fetching wrapper. Fetches `/api/purchases/{id}` + the
  * accounts list in parallel, builds the rich body, and returns it.
- * Any fetch failure falls back to a plain-text element carrying the
- * legacy approval sentence so confirmDialog still works.
+ * Rejects when the purchase details fail to load or carry no
+ * recommendations; callers must then refuse to offer Approve.
  */
 export async function buildApprovalDetailsBody(executionId: string): Promise<HTMLElement> {
-  try {
-    // Fetch purchase details, account list, and public info in parallel.
-    // listAccounts and getPublicInfo are caught inline so the modal still
-    // renders the full details when either endpoint is unreachable; the
-    // per-rec table degrades gracefully. console.warn keeps failures
-    // traceable rather than silently dropping them.
-    const [details, accounts, deploymentInfo] = await Promise.all([
-      api.getPurchaseDetails(executionId),
-      api.listAccounts().catch((err) => {
-        console.warn('Failed to load accounts for approval modal — falling back to UUID-prefixed labels:', err);
-        return [] as CloudAccount[];
-      }),
-      // getDeploymentInfo requires an authenticated session (AuthUser). The
-      // approval modal is only reachable post-login, so this is safe. On
-      // failure (e.g. token expiry) the orphan label degrades to "Account deleted"
-      // which is the safe default (#633).
-      api.getDeploymentInfo().catch((err) => {
-        console.warn('Failed to load deployment info for approval modal — orphan label will show "Account deleted":', err);
-        return undefined;
-      }),
-    ]);
-    const accountsById = new Map<string, CloudAccount>();
-    for (const acct of accounts) accountsById.set(acct.id, acct);
-    const hostAWSAccountID = deploymentInfo?.deployment_aws_account_id;
-    return renderApprovalDetailsBody(details, accountsById, hostAWSAccountID);
-  } catch (err) {
-    console.error('Failed to load purchase details for approval modal:', err);
-    return buildApprovalDetailsFallback();
+  // Fetch purchase details, account list, and public info in parallel.
+  // listAccounts and getPublicInfo are caught inline so the modal still
+  // renders the full details when either endpoint is unreachable; the
+  // per-rec table degrades gracefully. console.warn keeps failures
+  // traceable rather than silently dropping them.
+  const [details, accounts, deploymentInfo] = await Promise.all([
+    api.getPurchaseDetails(executionId),
+    api.listAccounts().catch((err) => {
+      console.warn('Failed to load accounts for approval modal — falling back to UUID-prefixed labels:', err);
+      return [] as CloudAccount[];
+    }),
+    // getDeploymentInfo requires an authenticated session (AuthUser). The
+    // approval modal is only reachable post-login, so this is safe. On
+    // failure (e.g. token expiry) the orphan label degrades to "Account deleted"
+    // which is the safe default (#633).
+    api.getDeploymentInfo().catch((err) => {
+      console.warn('Failed to load deployment info for approval modal — orphan label will show "Account deleted":', err);
+      return undefined;
+    }),
+  ]);
+  if (!details.recommendations?.length) {
+    throw new Error('the purchase details contain no recommendations');
   }
+  const accountsById = new Map<string, CloudAccount>();
+  for (const acct of accounts) accountsById.set(acct.id, acct);
+  const hostAWSAccountID = deploymentInfo?.deployment_aws_account_id;
+  return renderApprovalDetailsBody(details, accountsById, hostAWSAccountID);
 }
 
-/**
- * Build the legacy approval sentence as a standalone fallback
- * element. Extracted so the two failure paths (empty recommendations
- * + fetch failure) render identical text and class hooks; previously
- * the literal string lived in two places and could drift.
- */
-function buildApprovalDetailsFallback(): HTMLElement {
-  const fallback = document.createElement('div');
-  fallback.className = 'approval-details-fallback';
-  fallback.textContent = 'This authorises the purchase to execute. Cloud commitments will be charged once the executor picks up the approved row.';
-  return fallback;
+export function approvalDetailsUnavailableMessage(err: unknown): string {
+  const cause = err instanceof Error ? err.message : String(err);
+  return `This purchase cannot be approved without showing the amount, and its details could not be loaded (${cause}).`;
 }
