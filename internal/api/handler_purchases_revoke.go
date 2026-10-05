@@ -437,17 +437,26 @@ func accountNameByID(accounts []config.CloudAccount, id string) string {
 // provider and external id, or "" when none or more than one matches, so the
 // caller cannot name-match an ambiguous account.
 func accountNameByExternalID(accounts []config.CloudAccount, provider, externalID string) string {
-	name, n := "", 0
+	if a := uniqueAccountByExternalID(accounts, provider, externalID); a != nil {
+		return a.Name
+	}
+	return ""
+}
+
+// uniqueAccountByExternalID returns the single account with this provider and
+// external id, or nil when none or more than one matches.
+func uniqueAccountByExternalID(accounts []config.CloudAccount, provider, externalID string) *config.CloudAccount {
+	var found *config.CloudAccount
 	for i := range accounts {
-		if accounts[i].Provider == provider && accounts[i].ExternalID == externalID {
-			name = accounts[i].Name
-			n++
+		if accounts[i].Provider != provider || accounts[i].ExternalID != externalID {
+			continue
 		}
+		if found != nil {
+			return nil
+		}
+		found = &accounts[i]
 	}
-	if n != 1 {
-		return ""
-	}
-	return name
+	return found
 }
 
 // calculateAzureRevoke handles GET /api/purchases/revoke/calculate/{id}.

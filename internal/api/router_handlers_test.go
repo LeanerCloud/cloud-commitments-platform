@@ -995,3 +995,51 @@ func TestRouter_rejectRIExchangeHandler_RateLimited(t *testing.T) {
 
 	mockRL.AssertExpectations(t)
 }
+
+// RI exchange records carry the 12-digit STS account id. A scoped user must
+// see a deployment's own exchanges whether the allow-list names the account by
+// UUID, by name or by that id, and never another account's (issue #541).
+func TestHandler_getRIExchangeHistory_AccountScope(t *testing.T) {
+	t.Parallel()
+	const stsAccount = "111122223333"
+	accounts := []config.CloudAccount{
+		{ID: "u-prod", Name: "prod", Provider: "aws", ExternalID: stsAccount},
+		{ID: "u-dev", Name: "dev", Provider: "aws", ExternalID: "444455556666"},
+		{ID: "u-az", Name: "az-prod", Provider: "azure", ExternalID: stsAccount},
+	}
+	tests := []struct {
+		name  string
+		scope []string // nil means unrestricted
+		want  int
+	}{
+		{name: "unrestricted sees all", scope: nil, want: 1},
+		{name: "scoped by account uuid", scope: []string{"u-prod"}, want: 1},
+		{name: "scoped by account name", scope: []string{"prod"}, want: 1},
+		{name: "scoped by sts account id", scope: []string{stsAccount}, want: 1},
+		{name: "scoped to a different account", scope: []string{"u-dev"}, want: 0},
+		{name: "scoped to a different account by name", scope: []string{"dev"}, want: 0},
+		{name: "same external id under another provider by uuid", scope: []string{"u-az"}, want: 0},
+		{name: "same external id under another provider by name", scope: []string{"az-prod"}, want: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			mockAuth := new(MockAuthService)
+			mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "uid"}, nil)
+			mockAuth.grantScoped(tc.scope...)
+			store := new(MockConfigStore)
+			store.On("GetRIExchangeHistory", ctx, mock.Anything, 500).
+				Return([]config.RIExchangeRecord{{ID: "ex-1", AccountID: stsAccount}}, nil)
+			store.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+				return accounts, nil
+			}
+			h := &Handler{auth: mockAuth, config: store}
+			req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"Authorization": "Bearer tok"}}
+
+			result, err := h.getRIExchangeHistory(ctx, req)
+			require.NoError(t, err)
+			assert.Len(t, result.(*RIExchangeHistoryResponse).Records, tc.want)
+		})
+	}
+}
