@@ -168,6 +168,7 @@ func TestIntegration_CredentialWritesPreserveConcurrentMFA(t *testing.T) {
 		assert.Equal(t, []string{f.user.PasswordHash}, stored.PasswordHistory)
 		assertOnlyChanged(t, enrolled(), stored, func(w *User) {
 			w.Email, w.PasswordHash, w.Salt, w.PasswordHistory = "profile-both-new@example.com", stored.PasswordHash, "", stored.PasswordHistory
+			w.PasswordVersion++
 		})
 		_, err := f.svc.ValidateSession(ctx, f.session)
 		require.Error(t, err, "a password change must revoke existing sessions")
@@ -185,6 +186,7 @@ func TestIntegration_CredentialWritesPreserveConcurrentMFA(t *testing.T) {
 		assert.Equal(t, []string{f.user.PasswordHash}, stored.PasswordHistory)
 		assertOnlyChanged(t, enrolled(), stored, func(w *User) {
 			w.PasswordHash, w.Salt, w.PasswordHistory = stored.PasswordHash, "", stored.PasswordHistory
+			w.PasswordVersion++
 		})
 		_, err := f.svc.ValidateSession(ctx, f.session)
 		require.Error(t, err, "a password change must revoke existing sessions")
