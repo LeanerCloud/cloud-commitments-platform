@@ -9,7 +9,7 @@ import { initFederationPanel } from './federation';
 import { confirmDialog } from './confirmDialog';
 import { reflectDirtyState } from './settings-subnav';
 import { showToast } from './toast';
-import { isValidCombination, getValidPaymentOptions, getValidTermOptions, getPaymentLabel, getCommitmentConfig } from './commitmentOptions';
+import { isValidCombination, getValidPaymentOptions, getValidTermOptions, getPaymentLabel, getCommitmentConfig, normalizePaymentValue } from './commitmentOptions';
 import { openModal, closeModal } from './modal';
 import { loadRecommendations } from './recommendations';
 import { canAccess } from './permissions';
@@ -2860,7 +2860,7 @@ function propagateTermToServices(term: string): void {
  */
 function propagatePaymentToServices(payment: string): void {
   SERVICE_FIELDS
-    .filter(f => f.paymentId !== null)
+    .filter(f => f.provider === 'aws' && f.paymentId !== null)
     .forEach(({ paymentId }) => {
       const select = document.getElementById(paymentId!) as HTMLSelectElement | null;
       if (select) {
@@ -3052,7 +3052,7 @@ async function confirmAndPropagatePayment(select: HTMLSelectElement): Promise<vo
   const newValue = select.value;
   if (newValue === previousValue) return;
   const affected = SERVICE_FIELDS
-    .filter(f => f.paymentId !== null)
+    .filter(f => f.provider === 'aws' && f.paymentId !== null)
     .filter(({ paymentId }) => {
       const svc = document.getElementById(paymentId!) as HTMLSelectElement | null;
       return svc && svc.value !== newValue;
@@ -3546,8 +3546,8 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
       const { provider, service, termId, paymentId } = field;
       const term = parseInt(byId<HTMLSelectElement>(termId)?.value || '3', 10);
       const payment = paymentId
-        ? (byId<HTMLSelectElement>(paymentId)?.value || 'all-upfront')
-        : settings.default_payment;
+        ? (byId<HTMLSelectElement>(paymentId)?.value || normalizePaymentValue('all-upfront', provider))
+        : normalizePaymentValue(settings.default_payment, provider);
       const base = loadedServiceConfigs.find(s => s.provider === provider && s.service === service);
       // Carry forward every field the UI doesn't own (e.g. ramp_schedule).
       // The recommendation-filter fields are now UI-owned and overwritten from

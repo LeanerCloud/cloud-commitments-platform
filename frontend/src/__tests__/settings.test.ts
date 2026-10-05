@@ -1030,11 +1030,11 @@ describe('Settings Module', () => {
         if (document.getElementById(`azure-${svc}-payment`)) continue;
         const select = document.createElement('select');
         select.id = `azure-${svc}-payment`;
-        for (const [value, label] of [['all-upfront', 'Upfront'], ['no-upfront', 'Monthly']] as const) {
+        for (const [value, label] of [['upfront', 'Upfront'], ['monthly', 'Monthly']] as const) {
           const opt = document.createElement('option');
           opt.value = value;
           opt.textContent = label;
-          if (value === 'all-upfront') opt.selected = true;
+          if (value === 'upfront') opt.selected = true;
           select.appendChild(opt);
         }
         form.appendChild(select);
@@ -1051,14 +1051,14 @@ describe('Settings Module', () => {
           default_coverage: 80,
         },
         services: [
-          { provider: 'azure', service: 'vm', term: 3, payment: 'no-upfront', enabled: true, coverage: 80 },
+          { provider: 'azure', service: 'vm', term: 3, payment: 'monthly', enabled: true, coverage: 80 },
         ],
       });
 
       await loadGlobalSettings();
 
       const vmPayment = document.getElementById('azure-vm-payment') as HTMLSelectElement;
-      expect(vmPayment.value).toBe('no-upfront');
+      expect(vmPayment.value).toBe('monthly');
     });
 
     test('saveGlobalSettings sends the per-service Azure payment, not the global default', async () => {
@@ -1072,7 +1072,7 @@ describe('Settings Module', () => {
 
       await loadGlobalSettings();
       // User flips Azure VM to Monthly while global default stays all-upfront.
-      (document.getElementById('azure-vm-payment') as HTMLSelectElement).value = 'no-upfront';
+      (document.getElementById('azure-vm-payment') as HTMLSelectElement).value = 'monthly';
       (document.getElementById('setting-default-payment') as HTMLSelectElement).value = 'all-upfront';
 
       await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
@@ -1082,7 +1082,7 @@ describe('Settings Module', () => {
       );
       expect(azureVmCall).toBeDefined();
       const cfg = azureVmCall![2];
-      expect(cfg.payment).toBe('no-upfront');
+      expect(cfg.payment).toBe('monthly');
     });
 
     test('help text describes the correct per-provider payment semantics', () => {

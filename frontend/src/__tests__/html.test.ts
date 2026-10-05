@@ -715,10 +715,9 @@ describe('HTML Structure', () => {
       expect(paySel).not.toBeNull();
       expect(termSel?.querySelector('option[value="1"]')).not.toBeNull();
       expect(termSel?.querySelector('option[value="3"]')).not.toBeNull();
-      // Azure payment values round-trip through the backend's AWS-style
-      // vocabulary — "all-upfront" for Upfront, "no-upfront" for Monthly.
-      expect(paySel?.querySelector('option[value="all-upfront"]')).not.toBeNull();
-      expect(paySel?.querySelector('option[value="no-upfront"]')).not.toBeNull();
+      // Azure payment values are the backend's Azure tokens (issue #545).
+      expect(paySel?.querySelector('option[value="upfront"]')).not.toBeNull();
+      expect(paySel?.querySelector('option[value="monthly"]')).not.toBeNull();
     });
 
     test('aws external-id input is readonly with a copy button + trust-policy hint (issue #18)', () => {
