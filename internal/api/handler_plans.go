@@ -18,8 +18,8 @@ import (
 
 // Plans handlers.
 func (h *Handler) listPlans(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (*PlansResponse, error) {
-	// Require view:plans permission
-	if _, err := h.requirePermission(ctx, req, "view", "plans"); err != nil {
+	session, err := h.requirePermission(ctx, req, "view", "plans")
+	if err != nil {
 		return nil, err
 	}
 
@@ -30,7 +30,13 @@ func (h *Handler) listPlans(ctx context.Context, req *events.LambdaFunctionURLRe
 		return nil, NewClientError(400, err.Error())
 	}
 
-	filter := config.PurchasePlanFilter{AccountIDs: accountIDs}
+	filter, anyAccount, err := h.scopedPlanFilter(ctx, session, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	if !anyAccount {
+		return &PlansResponse{Plans: []PlanWithHealth{}}, nil
+	}
 	plans, err := h.config.ListPurchasePlans(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -45,6 +51,23 @@ func (h *Handler) listPlans(ctx context.Context, req *events.LambdaFunctionURLRe
 	}
 
 	return &PlansResponse{Plans: h.attachPlanHealth(ctx, plans, now)}, nil
+}
+
+// scopedPlanFilter narrows account_ids to the session's allowed_accounts. Only
+// unrestricted callers get unassigned plans, matching requirePlanAccess.
+func (h *Handler) scopedPlanFilter(ctx context.Context, session *Session, accountIDs []string) (filter config.PurchasePlanFilter, anyAccount bool, err error) {
+	scope, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return filter, false, fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+	if scope.AllowsAll() {
+		return config.PurchasePlanFilter{AccountIDs: accountIDs, IncludeUnassigned: true}, true, nil
+	}
+	allowed, _, err := h.intersectAccountFilterScope(ctx, session, accountIDs, nil)
+	if err != nil {
+		return filter, false, err
+	}
+	return config.PurchasePlanFilter{AccountIDs: allowed}, len(allowed) > 0, nil
 }
 
 // attachPlanHealth computes the per-plan health-score badge (issue #340

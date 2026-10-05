@@ -1715,7 +1715,13 @@ func validateExchangeRIIDs(riIDs []string) error {
 
 // getExchangeQuote gets a quote for an RI exchange.
 func (h *Handler) getExchangeQuote(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
-	if _, err := h.requirePermission(ctx, req, "view", "purchases"); err != nil {
+	session, permErr := h.requirePermission(ctx, req, "view", "purchases")
+	if permErr != nil {
+		return nil, permErr
+	}
+	// A quote reveals the deployment account's RI ids and prices, so it takes
+	// the same session-scope gate as executeExchange (issue #384).
+	if err := h.requireReshapeAccountScope(ctx, session); err != nil {
 		return nil, err
 	}
 

@@ -499,7 +499,7 @@ func TestPGXMock_ListPurchasePlans_UnassignedIncluded(t *testing.T) {
 			sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, true)
 	mock.ExpectQuery("SELECT").WithArgs("acc-uuid").WillReturnRows(rows)
 
-	plans, err := store.ListPurchasePlans(ctx, PurchasePlanFilter{AccountIDs: []string{"acc-uuid"}})
+	plans, err := store.ListPurchasePlans(ctx, PurchasePlanFilter{AccountIDs: []string{"acc-uuid"}, IncludeUnassigned: true})
 	require.NoError(t, err)
 	require.Len(t, plans, 2)
 

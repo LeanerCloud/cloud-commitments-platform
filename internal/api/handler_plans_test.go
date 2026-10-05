@@ -33,7 +33,7 @@ func TestHandler_listPlans(t *testing.T) {
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).Return(plans, nil)
+	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{IncludeUnassigned: true}).Return(plans, nil)
 	// listPlans now also counts each plan's failed/canceled executions to
 	// compute its health-score badge (issue #340 follow-up).
 	mockStore.On("CountExecutionsByPlanAndStatus", ctx, planHealthExecutionStatuses, mock.AnythingOfType("time.Time")).
@@ -73,7 +73,7 @@ func TestHandler_listPlans_AccountIDsFilter(t *testing.T) {
 	}
 
 	accountID := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-	expectedFilter := config.PurchasePlanFilter{AccountIDs: []string{accountID}}
+	expectedFilter := config.PurchasePlanFilter{AccountIDs: []string{accountID}, IncludeUnassigned: true}
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
@@ -117,7 +117,7 @@ func TestHandler_listPlans_HealthScoreReflectsFailedExecutions(t *testing.T) {
 		{ID: troubledPlanID, Name: "Troubled Plan", Enabled: true},
 		{ID: otherPlanID, Name: "Other Plan", Enabled: true},
 	}
-	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).Return(plans, nil)
+	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{IncludeUnassigned: true}).Return(plans, nil)
 	mockStore.On("CountExecutionsByPlanAndStatus", ctx, planHealthExecutionStatuses, mock.AnythingOfType("time.Time")).
 		Return(map[string]config.ExecutionStatusCounts{
 			troubledPlanID: {"failed": 2},
@@ -169,7 +169,7 @@ func TestHandler_listPlans_HealthScoreUnknownOnCountsFetchError(t *testing.T) {
 	plans := []config.PurchasePlan{
 		{ID: "11111111-1111-1111-1111-111111111111", Name: "Some Plan", Enabled: true},
 	}
-	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).Return(plans, nil)
+	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{IncludeUnassigned: true}).Return(plans, nil)
 	mockStore.On("CountExecutionsByPlanAndStatus", ctx, planHealthExecutionStatuses, mock.AnythingOfType("time.Time")).
 		Return(nil, errors.New("db unavailable"))
 
@@ -206,7 +206,7 @@ func TestHandler_listPlans_HealthUsesExactCountsNotTruncatedPage(t *testing.T) {
 	mockAuth.grantAdmin()
 
 	planID := "11111111-1111-1111-1111-111111111111"
-	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).
+	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{IncludeUnassigned: true}).
 		Return([]config.PurchasePlan{{ID: planID, Name: "Old Failures", Enabled: true}}, nil)
 	mockStore.On("CountExecutionsByPlanAndStatus", ctx, planHealthExecutionStatuses, mock.AnythingOfType("time.Time")).
 		Return(map[string]config.ExecutionStatusCounts{planID: {"failed": 3}}, nil)
@@ -239,7 +239,7 @@ func TestHandler_listPlans_HealthCountsUseTheLookbackWindow(t *testing.T) {
 	adminSession := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).
+	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{IncludeUnassigned: true}).
 		Return([]config.PurchasePlan{{ID: "11111111-1111-1111-1111-111111111111", Enabled: true}}, nil)
 
 	var gotSince time.Time
@@ -273,7 +273,7 @@ func TestHandler_listPlans_EmptyListSkipsCountsQuery(t *testing.T) {
 	adminSession := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).
+	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{IncludeUnassigned: true}).
 		Return([]config.PurchasePlan{}, nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
@@ -1732,7 +1732,7 @@ func TestHandler_listPlans_StuckRampFetchFailureLeavesHealthUnknown(t *testing.T
 	mockAuth.grantAdmin()
 
 	planID := "11111111-1111-1111-1111-111111111111"
-	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).
+	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{IncludeUnassigned: true}).
 		Return([]config.PurchasePlan{{ID: planID, Name: "Ramping Plan", Enabled: true}}, nil)
 	mockStore.On("CountExecutionsByPlanAndStatus", ctx, planHealthExecutionStatuses, mock.AnythingOfType("time.Time")).
 		Return(map[string]config.ExecutionStatusCounts{}, nil)
@@ -1768,7 +1768,7 @@ func TestHandler_listPlans_StuckRampProducesTheBlockedFactor(t *testing.T) {
 		Type: "weekly", PercentPerStep: 25, StepIntervalDays: 7,
 		CurrentStep: 2, TotalSteps: 4, StartDate: time.Now().AddDate(0, 0, -28),
 	}
-	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).
+	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{IncludeUnassigned: true}).
 		Return([]config.PurchasePlan{
 			{ID: planID, Name: "Stuck Plan", Enabled: true, RampSchedule: ramp},
 			{ID: quietPlanID, Name: "Late Plan", Enabled: true, RampSchedule: ramp},
