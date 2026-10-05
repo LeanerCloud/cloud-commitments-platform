@@ -7,7 +7,7 @@
 #   terraform init -backend-config=backends/dev.tfbackend
 
 bucket = "your-cudly-terraform-state-gcp-dev"
-prefix = "dev"
+prefix = "github-dev"
 
 # Note: Create the GCS bucket before first use:
 #   gsutil mb -p YOUR_PROJECT_ID -l US gs://your-cudly-terraform-state-gcp-dev
