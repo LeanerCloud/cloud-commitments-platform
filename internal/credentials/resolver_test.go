@@ -165,28 +165,22 @@ func TestResolveAWSCredentialProvider_RoleARN_NoARN_NilAmbient(t *testing.T) {
 
 // TestResolveAWSCredentialProvider_SelfAccount_WithAmbient verifies that a
 // Self-account (auth_mode=role_arn, empty AWSRoleARN) returns the ambient
-// credentials provider when one is supplied via AWSResolveOptions.
+// credentials provider when one is supplied via AWSResolveOptions and the
+// host identity matches the account's external_id.
 func TestResolveAWSCredentialProvider_SelfAccount_WithAmbient(t *testing.T) {
 	account := &config.CloudAccount{
 		ID:          "self-acct",
+		ExternalID:  "111111111111",
 		AWSAuthMode: "role_arn",
 		AWSRoleARN:  "", // Self-account shape
 	}
-
-	ambientCreds := aws.CredentialsProviderFunc(func(_ context.Context) (aws.Credentials, error) {
-		return aws.Credentials{
-			AccessKeyID:     "AMBIENTKEY",
-			SecretAccessKey: "ambientsecret",
-			Source:          "test-ambient",
-		}, nil
-	})
 
 	provider, err := ResolveAWSCredentialProviderWithOpts(
 		context.Background(),
 		account,
 		newMockStore(),
 		&mockSTSClient{},
-		AWSResolveOptions{AmbientProvider: ambientCreds},
+		AWSResolveOptions{AmbientProvider: testAmbientCreds, AmbientSTS: &callerIdentitySTS{account: "111111111111"}},
 	)
 	require.NoError(t, err)
 	assert.NotNil(t, provider)
@@ -195,6 +189,45 @@ func TestResolveAWSCredentialProvider_SelfAccount_WithAmbient(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "AMBIENTKEY", creds.AccessKeyID)
 	assert.Equal(t, "test-ambient", creds.Source)
+}
+
+var testAmbientCreds = aws.CredentialsProviderFunc(func(_ context.Context) (aws.Credentials, error) {
+	return aws.Credentials{AccessKeyID: "AMBIENTKEY", SecretAccessKey: "ambientsecret", Source: "test-ambient"}, nil
+})
+
+type callerIdentitySTS struct {
+	account string
+	err     error
+}
+
+func (c *callerIdentitySTS) GetCallerIdentity(_ context.Context, _ *sts.GetCallerIdentityInput, _ ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &sts.GetCallerIdentityOutput{Account: aws.String(c.account)}, nil
+}
+
+// Issue #402: a role_arn account with no role ARN gets the host's ambient
+// credentials only when it is the host account.
+func TestResolveAWSCredentialProvider_SelfAccount_NonHostFailsClosed(t *testing.T) {
+	for name, tc := range map[string]struct {
+		externalID string
+		hostSTS    CallerIdentityClient
+	}{
+		"different host account": {"222222222222", &callerIdentitySTS{account: "111111111111"}},
+		"empty external_id":      {"", &callerIdentitySTS{account: "111111111111"}},
+		"empty host account":     {"", &callerIdentitySTS{account: ""}},
+		"host identity unknown":  {"222222222222", &callerIdentitySTS{err: errors.New("sts down")}},
+		"no host STS client":     {"222222222222", nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			account := &config.CloudAccount{ID: "tenant-acct", ExternalID: tc.externalID, AWSAuthMode: "role_arn"}
+			provider, err := ResolveAWSCredentialProviderWithOpts(context.Background(), account, newMockStore(), &mockSTSClient{},
+				AWSResolveOptions{AmbientProvider: testAmbientCreds, AmbientSTS: tc.hostSTS})
+			require.ErrorIs(t, err, ErrNotHostAccount)
+			assert.Nil(t, provider)
+		})
+	}
 }
 
 // TestResolveAWSCredentialProvider_SelfAccount_NilAmbient verifies that a

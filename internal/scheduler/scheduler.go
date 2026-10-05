@@ -765,8 +765,12 @@ func (s *Scheduler) collectAWSForAccount(ctx context.Context, globalCfg *config.
 	// through to ResolveAWSCredentialProvider below so its switch fails
 	// loud ("unsupported aws_auth_mode") instead of silently collecting the
 	// HOST account's data and tagging it with this account's UUID
-	// (issue #107).
+	// (issue #107). A role_arn account that is not the host fails the
+	// host-identity check instead (issue #402).
 	if acct.AWSAuthMode == "role_arn" && acct.AWSRoleARN == "" {
+		if err := credentials.VerifyHostAccount(ctx, &acct, s.stsClient); err != nil {
+			return nil, false, err
+		}
 		prov, err := s.providerFactory.CreateAndValidateProvider(ctx, "aws", nil)
 		if err != nil {
 			return nil, false, fmt.Errorf("create ambient provider: %w", err)

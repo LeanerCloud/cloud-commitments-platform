@@ -8,6 +8,9 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -130,6 +133,29 @@ func TestResolveAWSProvider_NoSTS(t *testing.T) {
 	// Without STS, returns error (not silent nil)
 	assert.Error(t, err)
 	assert.Nil(t, result)
+}
+
+// Issue #402: purchasing for a role_arn account with no role ARN must not use
+// the host's ambient credentials unless the account is the host.
+func TestResolveAWSProvider_RoleARNWithoutARNOnNonHostFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	hostSTS := new(MockSTSClient)
+	hostSTS.On("GetCallerIdentity", ctx, mock.Anything).Return(&sts.GetCallerIdentityOutput{Account: aws.String("111111111111")}, nil)
+	m := &Manager{
+		assumeRoleSTS:   new(MockAssumeRoleSTS),
+		stsClient:       hostSTS,
+		ambientAWSCreds: aws.AnonymousCredentials{},
+	}
+	account := config.CloudAccount{ID: "tenant", Provider: "aws", ExternalID: "222222222222", AWSAuthMode: "role_arn"}
+
+	result, err := m.resolveAWSProvider(ctx, account)
+	require.ErrorIs(t, err, credentials.ErrNotHostAccount)
+	assert.Nil(t, result)
+
+	account.ExternalID = "111111111111"
+	result, err = m.resolveAWSProvider(ctx, account)
+	require.NoError(t, err)
+	assert.Equal(t, aws.AnonymousCredentials{}, result.AWSCredentialsProvider)
 }
 
 // Tests for resolveAzureProvider without credStore and not managed_identity — returns error.
