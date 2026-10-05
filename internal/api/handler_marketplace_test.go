@@ -83,8 +83,9 @@ func (e *marketplaceTestAPIError) ErrorFault() smithy.ErrorFault { return e.faul
 // hit the real SDK.
 func newMarketplaceHandler(cfgStore *MockConfigStore, authSvc *MockAuthService, ec2 *stubMarketplaceEC2) *Handler {
 	h := &Handler{
-		config: cfgStore,
-		auth:   authSvc,
+		config:    cfgStore,
+		credStore: &accountKeyStore{},
+		auth:      authSvc,
 		marketplaceEC2Factory: func(_ aws.Config) marketplaceEC2Client {
 			return ec2
 		},

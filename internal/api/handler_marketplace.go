@@ -26,9 +26,11 @@ import (
 	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	smithy "github.com/aws/smithy-go"
 	"github.com/google/uuid"
 )
@@ -53,6 +55,44 @@ func (h *Handler) buildMarketplaceEC2Client(cfg aws.Config) marketplaceEC2Client
 		return h.marketplaceEC2Factory(cfg)
 	}
 	return awsprovider.NewEC2ClientDirect(cfg)
+}
+
+// loadMarketplaceAWSConfig returns an AWS config for the purchase's region that
+// signs requests as the purchase's own cloud account, resolved through the same
+// credential resolver the purchase path uses. A role_arn account without a role
+// ARN is accepted only when it is the host account (credentials.ErrNotHostAccount
+// otherwise). Rows without a cloud account (reachable only by sell-any callers
+// with unrestricted scope) keep the host's own credentials.
+func (h *Handler) loadMarketplaceAWSConfig(ctx context.Context, row *config.PurchaseHistoryRecord) (aws.Config, error) {
+	base, err := h.loadAWSConfigWithRegion(ctx, row.Region)
+	if err != nil {
+		return aws.Config{}, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	if row.CloudAccountID == nil || strings.TrimSpace(*row.CloudAccountID) == "" {
+		return base, nil
+	}
+	account, err := h.config.GetCloudAccount(ctx, *row.CloudAccountID)
+	if err != nil {
+		return aws.Config{}, fmt.Errorf("failed to look up the purchase's cloud account: %w", err)
+	}
+	if account == nil {
+		return aws.Config{}, NewClientError(400, "the purchase's cloud account no longer exists")
+	}
+	if account.Provider != "aws" {
+		return aws.Config{}, NewClientError(400, "the purchase's cloud account is not an AWS account")
+	}
+	stsClient := sts.NewFromConfig(base)
+	provider, err := credentials.ResolveAWSCredentialProviderWithOpts(ctx, account, h.credStore, stsClient,
+		credentials.AWSResolveOptions{AmbientProvider: base.Credentials, AmbientSTS: stsClient})
+	if err != nil {
+		if errors.Is(err, credentials.ErrNotHostAccount) {
+			return aws.Config{}, NewClientError(400, err.Error())
+		}
+		return aws.Config{}, fmt.Errorf("failed to resolve AWS credentials for the purchase's account: %w", err)
+	}
+	cfg := base.Copy()
+	cfg.Credentials = provider
+	return cfg, nil
 }
 
 // MarketplacePriceTier is the JSON-decodable shape accepted in the request body.
@@ -162,9 +202,9 @@ func (h *Handler) marketplaceList(ctx context.Context, req *events.LambdaFunctio
 	}
 
 	// Build per-provider AWS config for the region the RI lives in.
-	cfg, err := h.loadAWSConfigWithRegion(ctx, row.Region)
+	cfg, err := h.loadMarketplaceAWSConfig(ctx, row)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, err
 	}
 
 	ec2Client := h.buildMarketplaceEC2Client(cfg)
@@ -361,9 +401,9 @@ func (h *Handler) marketplaceCancel(ctx context.Context, req *events.LambdaFunct
 		return nil, NewClientError(409, "no active listing found for this RI; current state: "+row.ListingState)
 	}
 
-	cfg, err := h.loadAWSConfigWithRegion(ctx, row.Region)
+	cfg, err := h.loadMarketplaceAWSConfig(ctx, row)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, err
 	}
 
 	ec2Client := h.buildMarketplaceEC2Client(cfg)
