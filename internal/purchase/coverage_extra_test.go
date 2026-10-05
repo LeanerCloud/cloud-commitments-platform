@@ -10,6 +10,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -1073,7 +1074,7 @@ func TestManager_SavePurchaseHistory_RevocationWindow(t *testing.T) {
 			}
 			result := common.PurchaseResult{Success: true, CommitmentID: "commit-rev-001"}
 
-			err := manager.savePurchaseHistory(ctx, exec, plan, rec, result, "acct-1")
+			err := manager.savePurchaseHistory(ctx, exec, plan, rec, result, "acct-1", ec2types.OfferingClassTypeConvertible)
 			require.NoError(t, err)
 			require.NotNil(t, captured)
 

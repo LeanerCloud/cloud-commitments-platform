@@ -719,9 +719,9 @@ function retryThresholdReached(p: HistoryPurchase): boolean {
 // Conditions:
 //   * row must be a completed purchase (status "completed" or absent);
 //   * row must be an AWS EC2 RI (marketplace is EC2-only);
-//   * offering_class must be "standard" OR still unknown (empty). CUDly stamps
-//     "convertible" on its own EC2 purchases, but externally-created Standard
-//     RIs (and pre-migration rows) have an empty offering_class until the
+//   * offering_class must be "standard" OR still unknown (empty). CUDly stamps the
+//     configured class on its own EC2 purchases; externally-created RIs
+//     (and pre-migration rows) have an empty offering_class until the
 //     backend lazily populates it from AWS on the list call. The backend
 //     definitively gates -- it 400s a fetched "convertible" -- so we show the
 //     button for unknown-class EC2 rows and let the backend decide, otherwise

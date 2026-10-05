@@ -10,6 +10,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -74,6 +75,86 @@ func captureIdempotencyTokens(t *testing.T, exec *config.PurchaseExecution) map[
 	require.NoError(t, procErr, "processPurchaseRecommendations must not fail in the happy path")
 	require.Empty(t, errs, "all recs must commit so the captured token reflects a real purchase")
 	return tokens
+}
+
+// TestOfferingClassStampedOnHistoryMatchesPurchase is the issue #112 regression
+// guard: purchase_history.offering_class must be the class the EC2 client was
+// asked to buy, for both the legacy "ec2" and canonical "compute" slugs.
+func TestOfferingClassStampedOnHistoryMatchesPurchase(t *testing.T) {
+	cases := []struct {
+		name       string
+		configured string
+		service    string
+		svcType    common.ServiceType
+		want       ec2types.OfferingClassType
+	}{
+		{"standard legacy slug", "standard", "ec2", common.ServiceEC2, ec2types.OfferingClassTypeStandard},
+		{"standard canonical slug", "standard", "compute", common.ServiceCompute, ec2types.OfferingClassTypeStandard},
+		{"convertible", "convertible", "ec2", common.ServiceEC2, ec2types.OfferingClassTypeConvertible},
+		{"unset means the client default", "", "compute", common.ServiceCompute, ec2types.OfferingClassTypeConvertible},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			mockStore := new(MockConfigStore)
+			mockEmail := new(MockEmailSender)
+			mockFactory := new(MockProviderFactory)
+			mockProviderInst := new(MockProvider)
+			mockServiceClient := new(MockServiceClient)
+
+			mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{OfferingClass: tc.configured}, nil)
+			var history *config.PurchaseHistoryRecord
+			mockStore.On("SavePurchaseHistory", ctx, mock.AnythingOfType("*config.PurchaseHistoryRecord")).
+				Run(func(args mock.Arguments) { history = args.Get(1).(*config.PurchaseHistoryRecord) }).
+				Return(nil).Once()
+			mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProviderInst, nil)
+			mockProviderInst.On("GetServiceClient", mock.Anything, tc.svcType, "us-east-1").Return(mockServiceClient, nil)
+			var requested string
+			mockServiceClient.On("PurchaseCommitment", mock.Anything,
+				mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions"),
+			).Run(func(args mock.Arguments) {
+				requested = args.Get(2).(common.PurchaseOptions).OfferingClass
+			}).Return(common.PurchaseResult{Success: true, CommitmentID: "ri-112"}, nil)
+
+			manager := &Manager{config: mockStore, email: mockEmail, providerFactory: mockFactory}
+			exec := &config.PurchaseExecution{
+				ExecutionID: "exec-112",
+				Recommendations: []config.RecommendationRecord{
+					{Provider: "aws", Service: tc.service, ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+				},
+			}
+
+			_, _, errs, procErr := manager.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "Direct purchase"}, "111111111111", nil)
+			require.NoError(t, procErr)
+			require.Empty(t, errs)
+			require.NotNil(t, history)
+			assert.Equal(t, tc.configured, requested, "the EC2 client must be asked for the configured class")
+			assert.Equal(t, string(tc.want), history.OfferingClass,
+				"history must record the class that was bought, or the marketplace-sell guard reads it inverted")
+		})
+	}
+}
+
+// TestUnknownOfferingClassRefusesBeforePurchase: a class the EC2 client cannot
+// resolve must stop the run before any commitment is bought.
+func TestUnknownOfferingClassRefusesBeforePurchase(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockFactory := new(MockProviderFactory)
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{OfferingClass: "Standard"}, nil)
+
+	manager := &Manager{config: mockStore, providerFactory: mockFactory}
+	exec := &config.PurchaseExecution{
+		ExecutionID: "exec-112-unknown",
+		Recommendations: []config.RecommendationRecord{
+			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+		},
+	}
+
+	_, _, errs, procErr := manager.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "Direct purchase"}, "111111111111", nil)
+	require.ErrorIs(t, procErr, errUnknownOfferingClass)
+	assert.Nil(t, errs)
+	mockFactory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestRetryReusesIdempotencyToken is the issue #1012 regression guard: a retry
