@@ -805,6 +805,14 @@ func (m *MockAuthStore) SetPasswordResetToken(ctx context.Context, user *auth.Us
 	return m.Called(ctx, user, readExpiry).Error(0)
 }
 
+func (m *MockAuthStore) CompletePasswordReset(ctx context.Context, user *auth.User, readResetToken, readPasswordHash string) error {
+	return m.Called(ctx, user, readResetToken, readPasswordHash).Error(0)
+}
+
+func (m *MockAuthStore) ConsumePasswordResetToken(ctx context.Context, userID, readResetToken string) error {
+	return m.Called(ctx, userID, readResetToken).Error(0)
+}
+
 func (m *MockAuthStore) RecordFailedLogin(ctx context.Context, userID string) error {
 	return m.Called(ctx, userID).Error(0)
 }

@@ -48,6 +48,14 @@ func (s *credentialReadBarrier) GetUserByEmail(ctx context.Context, email string
 	return u, err
 }
 
+func (s *credentialReadBarrier) GetUserByResetToken(ctx context.Context, token string) (*User, error) {
+	u, err := s.StoreInterface.GetUserByResetToken(ctx, token)
+	if err == nil {
+		s.pause(ctx, u)
+	}
+	return u, err
+}
+
 type recordingMailSink struct {
 	resets []string
 	err    error
@@ -291,5 +299,104 @@ func TestIntegration_CredentialWritesRejectStaleCredentials(t *testing.T) {
 		assert.Empty(t, f.mail.resets, "the losing request must not mail a token it did not store")
 		assert.Equal(t, winner(), f.stored())
 		assert.NotEmpty(t, f.stored().PasswordResetToken)
+	})
+}
+
+func (f *credentialRaceFixture) issueResetToken() string {
+	token := "reset-token-" + f.user.ID
+	_, err := f.store.db.Exec(f.t.Context(), `UPDATE users SET password_reset_token = $2,
+		password_reset_expiry = NOW() + interval '1 hour' WHERE id = $1`, f.user.ID, hashSessionToken(token))
+	require.NoError(f.t, err)
+	return token
+}
+
+func TestIntegration_ResetConfirmPreservesConcurrentMFA(t *testing.T) {
+	store := NewPostgresStore(setupAuthTestDB(t))
+	ctx := t.Context()
+
+	t.Run("confirm", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "reset-confirm@example.com")
+		token := f.issueResetToken()
+		enrolled := f.enrollOnRead()
+		require.NoError(t, f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew}))
+		stored := f.stored()
+		assert.True(t, f.svc.verifyPassword(credentialRaceNew, stored.PasswordHash))
+		assertOnlyChanged(t, enrolled(), stored, func(w *User) {
+			w.PasswordHash, w.Salt, w.PasswordHistory = stored.PasswordHash, "", []string{f.user.PasswordHash}
+			w.PasswordResetToken, w.PasswordResetExpiry = "", nil
+			w.PasswordVersion++
+		})
+		_, err := f.svc.ValidateSession(ctx, f.session)
+		require.Error(t, err, "a reset must revoke existing sessions")
+		f.requireFactorEnforced(f.user.Email, credentialRaceNew, enrolled())
+		err = f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: "AnotherPassword789!"})
+		require.ErrorContains(t, err, "invalid or expired reset token")
+	})
+
+	t.Run("rejected-password-consumes-token", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "reset-confirm-weak@example.com")
+		token := f.issueResetToken()
+		enrolled := f.enrollOnRead()
+		require.Error(t, f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: "weak"}))
+		assertOnlyChanged(t, enrolled(), f.stored(), func(w *User) { w.PasswordResetToken, w.PasswordResetExpiry = "", nil })
+		f.requireFactorEnforced(f.user.Email, credentialRacePassword, enrolled())
+	})
+}
+
+func TestIntegration_ResetConfirmRejectsStaleRead(t *testing.T) {
+	store := NewPostgresStore(setupAuthTestDB(t))
+	ctx := t.Context()
+
+	t.Run("after-concurrent-confirm", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "reset-twice-confirm@example.com")
+		token := f.issueResetToken()
+		winner := f.onRead(func(ctx context.Context, other *Service) {
+			require.NoError(t, other.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: "WinnerPassword789!"}))
+		})
+		err := f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew})
+		require.ErrorIs(t, err, ErrUserChanged, "a reset token must be spent once")
+		assert.Equal(t, winner(), f.stored())
+	})
+
+	t.Run("after-concurrent-rejected-confirm", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "reset-after-rejected@example.com")
+		token := f.issueResetToken()
+		winner := f.onRead(func(ctx context.Context, other *Service) {
+			require.Error(t, other.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: "weak"}))
+		})
+		err := f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew})
+		require.ErrorIs(t, err, ErrUserChanged, "a token consumed by a rejected attempt must not set a password")
+		assert.Equal(t, winner(), f.stored())
+	})
+
+	t.Run("after-concurrent-password-change", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "reset-after-change@example.com")
+		token := f.issueResetToken()
+		winner := f.onRead(func(ctx context.Context, other *Service) {
+			require.NoError(t, other.ChangePassword(ctx, f.user.ID, ChangePasswordRequest{CurrentPassword: credentialRacePassword, NewPassword: "WinnerPassword789!"}))
+		})
+		err := f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew})
+		require.ErrorIs(t, err, ErrUserChanged)
+		assert.Equal(t, winner(), f.stored())
+		require.NoError(t, f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew}),
+			"a lost race must leave the token usable")
+		assert.Equal(t, []string{winner().PasswordHash, f.user.PasswordHash}, f.stored().PasswordHistory)
+	})
+
+	t.Run("after-concurrent-deactivation", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "reset-after-deactivation@example.com")
+		token := f.issueResetToken()
+		winner := f.onRead(func(ctx context.Context, _ *Service) {
+			u, err := store.GetUserByID(ctx, f.user.ID)
+			require.NoError(t, err)
+			now := time.Now()
+			u.Active, u.DeactivatedAt = false, &now
+			require.NoError(t, store.UpdateUser(ctx, u))
+		})
+		err := f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew})
+		require.ErrorIs(t, err, ErrUserChanged)
+		assert.Equal(t, winner(), f.stored())
+		require.ErrorIs(t, f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew}), ErrAccountDeactivated)
+		assert.Empty(t, f.stored().PasswordResetToken)
 	})
 }

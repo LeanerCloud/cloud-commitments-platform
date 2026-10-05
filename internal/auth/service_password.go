@@ -388,14 +388,12 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, req PasswordResetCon
 		return err
 	}
 
-	// Invalidate the reset token before processing to ensure one-time use
-	user.PasswordResetToken = ""
-	user.PasswordResetExpiry = nil
+	readResetToken, readPasswordHash := user.PasswordResetToken, user.PasswordHash
 
 	// An admin-deactivated account must not reactivate itself through a reset
 	// (A03-006). The token is still consumed so the link cannot be replayed.
 	if user.DeactivatedAt != nil {
-		if updateErr := s.store.UpdateUser(ctx, user); updateErr != nil {
+		if updateErr := s.store.ConsumePasswordResetToken(ctx, user.ID, readResetToken); updateErr != nil {
 			logging.Warnf("Failed to invalidate reset token for deactivated user %s: %v", user.ID, updateErr)
 		}
 		return ErrAccountDeactivated
@@ -403,7 +401,7 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, req PasswordResetCon
 
 	if err := s.processPasswordReset(user, req.NewPassword); err != nil {
 		// Token is consumed even on validation failure (one-time use)
-		if updateErr := s.store.UpdateUser(ctx, user); updateErr != nil {
+		if updateErr := s.store.ConsumePasswordResetToken(ctx, user.ID, readResetToken); updateErr != nil {
 			logging.Warnf("Failed to invalidate reset token after password validation failure: %v", updateErr)
 		}
 		return err
@@ -415,12 +413,12 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, req PasswordResetCon
 		user.Active = true
 	}
 
-	if err := s.store.UpdateUser(ctx, user); err != nil {
+	if err := s.store.CompletePasswordReset(ctx, user, readResetToken, readPasswordHash); err != nil {
 		return err
 	}
 
 	// See the matching comment in ChangePassword: invalidate only after the
-	// new password is persisted, or a failed UpdateUser leaves the caller
+	// new password is persisted, or a failed write leaves the caller
 	// with revoked credentials for a password that never actually changed.
 	s.invalidateUserCredentialsBestEffort(ctx, user.ID, "password reset")
 	s.notifyPasswordChange(ctx, user.ID, req.NewPassword)

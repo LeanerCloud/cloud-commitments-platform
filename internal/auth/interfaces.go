@@ -14,6 +14,8 @@ type StoreInterface interface {
 	UpdateUser(ctx context.Context, user *User) error
 	UpdateUserCredentials(ctx context.Context, user *User, readEmail, readPasswordHash string) error
 	SetPasswordResetToken(ctx context.Context, user *User, readExpiry *time.Time) error
+	CompletePasswordReset(ctx context.Context, user *User, readResetToken, readPasswordHash string) error
+	ConsumePasswordResetToken(ctx context.Context, userID, readResetToken string) error
 	RecordFailedLogin(ctx context.Context, userID string) error
 	RecordSuccessfulLogin(ctx context.Context, userID string) error
 	DeleteUser(ctx context.Context, userID string) error
