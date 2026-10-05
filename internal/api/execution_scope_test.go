@@ -212,7 +212,7 @@ func newScopeTestHandler(t *testing.T, exec *config.PurchaseExecution, scope []s
 	store.On("CancelExecutionAtomic", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, "", errScopeTestReached).Maybe()
 	store.On("CancelScheduledExecutionAtomic", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, "", errScopeTestReached).Maybe()
 	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", errScopeTestReached).Maybe()
-	mockPurchase.On("RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", errScopeTestReached).Maybe()
+	mockPurchase.On("RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, "", errScopeTestReached).Maybe()
 	mockPurchase.On("CancelExecution", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	return &Handler{auth: mockAuth, config: store, purchase: mockPurchase}

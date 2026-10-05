@@ -345,21 +345,39 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 		return nil, constraintErr
 	}
 
-	revocationToken, runErr := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session))
+	final, revocationToken, runErr := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session))
 	if runErr != nil {
-		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, runErr))
+		return nil, runNowError(executionID, final, runErr)
 	}
 
 	// The shared execute funnel rotated the row's token into a revocation
 	// token whose raw value exists only here (issue #103); email it like the
 	// session-approve path does. Best-effort: the purchase already committed.
-	h.sendPurchaseExecutedEmail(ctx, req, execution, revocationToken, session.Email)
+	h.sendPurchaseExecutedEmail(ctx, req, final, revocationToken, session.Email)
 
 	return map[string]any{
 		"execution_id": executionID,
-		"status":       "completed",
+		"status":       final.Status,
 		"message":      "Purchase executed",
 	}, nil
+}
+
+// runNowError maps a RunPlannedPurchaseNow failure to its HTTP error. A non-nil
+// final means the purchase ran and money may have moved, so it is never a 409.
+func runNowError(executionID string, final *config.PurchaseExecution, err error) error {
+	switch {
+	case errors.Is(err, purchase.ErrFourEyesDenied):
+		return NewClientError(403, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
+	case errors.Is(err, config.ErrExecutionNotInExpectedStatus), errors.Is(err, config.ErrNotFound):
+		return NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
+	case final == nil:
+		return fmt.Errorf("execution %s could not be started: %w", executionID, err)
+	case errors.Is(err, config.ErrAuditLoss):
+		return NewClientError(500, fmt.Sprintf("execution %s ran but its final status could not be saved: %v", executionID, err))
+	default:
+		return NewClientErrorWithDetails(502, fmt.Sprintf("execution %s failed: %v", executionID, err),
+			map[string]any{"execution_id": executionID, "status": final.Status})
+	}
 }
 
 // requireDeleteOrCancelPurchasePermission validates the request session and
