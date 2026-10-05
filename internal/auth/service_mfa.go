@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -278,10 +277,9 @@ type MFASetupResult struct {
 // that happens in MFAEnable after the user proves they have the
 // secret loaded in their authenticator.
 //
-// Safe to call repeatedly: each call overwrites the previous pending
-// secret and resets the expiry. An abandoned enrollment expires
-// harmlessly because the active MFASecret + MFAEnabled fields are
-// untouched.
+// Safe to call repeatedly while MFA is off: each call overwrites the
+// previous pending secret and resets the expiry. Refused while MFA is
+// on, so replacing a factor needs MFADisable's proof first (issue #227).
 func (s *Service) MFASetup(ctx context.Context, userID, password string) (*MFASetupResult, error) {
 	if err := s.ensureStore(); err != nil {
 		return nil, err
@@ -296,17 +294,17 @@ func (s *Service) MFASetup(ctx context.Context, userID, password string) (*MFASe
 	if !s.verifyPassword(password, user.PasswordHash) {
 		return nil, fmt.Errorf("%w", ErrMFAInvalidPassword)
 	}
+	if user.MFAEnabled {
+		return nil, fmt.Errorf("%w", ErrMFAAlreadyEnabled)
+	}
 
 	secret, err := generateMFASecret()
 	if err != nil {
 		return nil, err
 	}
 
-	expiresAt := time.Now().Add(mfaPendingExpiry)
-	user.MFAPendingSecret = secret
-	user.MFAPendingSecretExpiresAt = &expiresAt
-	if err := s.store.UpdateUser(ctx, user); err != nil {
-		return nil, fmt.Errorf("failed to persist pending MFA secret: %w", err)
+	if err := s.store.SetPendingMFASecret(ctx, user.ID, secret, time.Now().Add(mfaPendingExpiry)); err != nil {
+		return nil, err
 	}
 
 	return &MFASetupResult{
@@ -337,19 +335,13 @@ func (s *Service) generateAndHashRecoveryCodes() (plaintext, hashes []string, er
 }
 
 // validatePendingMFAEnrollment checks that a pending enrollment
-// exists, hasn't expired, and the supplied code matches. Mutates
-// user on expiry to wipe stale pending fields so a re-probe returns
-// "no enrollment in progress" rather than "expired" forever.
-func (s *Service) validatePendingMFAEnrollment(ctx context.Context, user *User, code string) error {
+// exists, hasn't expired, and the supplied code matches. It writes
+// nothing: the next setup overwrites an expired pending secret.
+func validatePendingMFAEnrollment(user *User, code string) error {
 	if user.MFAPendingSecret == "" || user.MFAPendingSecretExpiresAt == nil {
 		return fmt.Errorf("%w", ErrMFANoEnrollmentInProgress)
 	}
 	if time.Now().After(*user.MFAPendingSecretExpiresAt) {
-		user.MFAPendingSecret = ""
-		user.MFAPendingSecretExpiresAt = nil
-		if updateErr := s.store.UpdateUser(ctx, user); updateErr != nil {
-			logging.Warnf("MFAVerifyPendingCode: failed to clear expired pending secret for user: %v", updateErr)
-		}
 		return fmt.Errorf("%w", ErrMFAEnrollmentExpired)
 	}
 	if !verifyTOTP(user.MFAPendingSecret, code) {
@@ -369,9 +361,8 @@ func (s *Service) validatePendingMFAEnrollment(ctx context.Context, user *User, 
 //   - the pending secret has expired
 //   - the supplied code doesn't match the pending secret
 //
-// Idempotent in the sense that a second enable on an already-enabled
-// user with no pending secret returns "no MFA enrollment in progress",
-// not a silent re-enable with new recovery codes.
+// A user whose MFA is already on gets ErrMFAAlreadyEnabled, never a
+// silent re-enable with a new secret or new recovery codes.
 func (s *Service) MFAEnable(ctx context.Context, userID, code string) ([]string, error) {
 	if err := s.ensureStore(); err != nil {
 		return nil, err
@@ -380,7 +371,10 @@ func (s *Service) MFAEnable(ctx context.Context, userID, code string) ([]string,
 	if err != nil || user == nil {
 		return nil, fmt.Errorf("%w", ErrMFAAuthFailed)
 	}
-	err = s.validatePendingMFAEnrollment(ctx, user, code)
+	if user.MFAEnabled {
+		return nil, fmt.Errorf("%w", ErrMFAAlreadyEnabled)
+	}
+	err = validatePendingMFAEnrollment(user, code)
 	if err != nil {
 		return nil, err
 	}
@@ -389,14 +383,8 @@ func (s *Service) MFAEnable(ctx context.Context, userID, code string) ([]string,
 	if err != nil {
 		return nil, err
 	}
-
-	user.MFASecret = user.MFAPendingSecret
-	user.MFAEnabled = true
-	user.MFAPendingSecret = ""
-	user.MFAPendingSecretExpiresAt = nil
-	user.MFARecoveryCodes = hashes
-	if err := s.store.UpdateUser(ctx, user); err != nil {
-		return nil, fmt.Errorf("failed to enable MFA: %w", err)
+	if err := s.store.EnableMFA(ctx, user.ID, user.MFAPendingSecret, hashes); err != nil {
+		return nil, err
 	}
 	return plaintext, nil
 }
@@ -414,14 +402,9 @@ func clearMFAFromUser(user *User) {
 
 // disableMFAAlreadyOff is the idempotent path for MFADisable: the
 // user already has MFA off, so we only need to clear any stale
-// pending fields and persist.
+// pending fields.
 func (s *Service) disableMFAAlreadyOff(ctx context.Context, user *User) error {
-	user.MFAPendingSecret = ""
-	user.MFAPendingSecretExpiresAt = nil
-	if err := s.store.UpdateUser(ctx, user); err != nil {
-		return fmt.Errorf("failed to disable MFA: %w", err)
-	}
-	return nil
+	return s.store.ClearPendingMFASecret(ctx, user.ID)
 }
 
 // MFADisable turns off MFA for a user. Requires both the current

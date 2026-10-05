@@ -211,16 +211,15 @@ func TestMFASetup_HappyPath(t *testing.T) {
 	user := createTestUser(t, "SecurePass@123")
 	user.MFAEnabled = false
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Run(func(args mock.Arguments) {
-		u := args.Get(1).(*User)
-		assert.NotEmpty(t, u.MFAPendingSecret, "setup should persist a pending secret")
-		assert.NotNil(t, u.MFAPendingSecretExpiresAt)
-		assert.False(t, u.MFAEnabled, "setup must not flip MFAEnabled")
+	var pending string
+	mockStore.On("SetPendingMFASecret", ctx, user.ID, mock.AnythingOfType("string"), mock.AnythingOfType("time.Time")).Run(func(args mock.Arguments) {
+		pending = args.String(2)
+		assert.WithinDuration(t, time.Now().Add(mfaPendingExpiry), args.Get(3).(time.Time), time.Minute)
 	}).Return(nil).Once()
 
 	res, err := service.MFASetup(ctx, user.ID, "SecurePass@123")
 	require.NoError(t, err)
-	assert.NotEmpty(t, res.Secret)
+	assert.Equal(t, pending, res.Secret, "the returned secret must be the persisted pending one")
 	assert.True(t, strings.HasPrefix(res.ProvisioningURI, "otpauth://totp/"))
 	mockStore.AssertExpectations(t)
 }
@@ -251,13 +250,8 @@ func TestMFAEnable_HappyPath(t *testing.T) {
 	user.MFAPendingSecretExpiresAt = &expiresAt
 
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Run(func(args mock.Arguments) {
-		u := args.Get(1).(*User)
-		assert.True(t, u.MFAEnabled)
-		assert.Equal(t, secret, u.MFASecret)
-		assert.Empty(t, u.MFAPendingSecret, "pending secret must be cleared on enable")
-		assert.Nil(t, u.MFAPendingSecretExpiresAt)
-		assert.Len(t, u.MFARecoveryCodes, recoveryCodeCount)
+	mockStore.On("EnableMFA", ctx, user.ID, secret, mock.AnythingOfType("[]string")).Run(func(args mock.Arguments) {
+		assert.Len(t, args.Get(3).([]string), recoveryCodeCount)
 	}).Return(nil).Once()
 
 	codes, err := service.MFAEnable(ctx, user.ID, totpFor(secret))
@@ -277,12 +271,11 @@ func TestMFAEnable_ExpiredPending(t *testing.T) {
 	user.MFAPendingSecret = secret
 	user.MFAPendingSecretExpiresAt = &expiresAt
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
-	// Stale pending fields get wiped on expiry; allow but don't require.
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
 
 	_, err := service.MFAEnable(ctx, user.ID, totpFor(secret))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expired")
+	mockStore.AssertExpectations(t) // an expired enrollment is rejected without a write
 }
 
 func TestMFAEnable_NoPending(t *testing.T) {
@@ -385,10 +378,47 @@ func TestMFADisable_IdempotentWhenAlreadyDisabled(t *testing.T) {
 	user := createTestUser(t, "SecurePass@123")
 	user.MFAEnabled = false
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("ClearPendingMFASecret", ctx, user.ID).Return(nil).Once()
 
 	err := service.MFADisable(ctx, user.ID, "SecurePass@123", "")
 	require.NoError(t, err)
+	mockStore.AssertExpectations(t)
+}
+
+func TestMFASetupAndEnable_RefusedWhileEnabled(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	service := createTestService(mockStore, new(MockEmailSender))
+
+	pending := "GEZDGNBVGY3TQOJQ"
+	expiresAt := time.Now().Add(mfaPendingExpiry)
+	user := createTestUser(t, "SecurePass@123")
+	user.MFAEnabled = true
+	user.MFASecret = "JBSWY3DPEHPK3PXP"
+	user.MFAPendingSecret = pending
+	user.MFAPendingSecretExpiresAt = &expiresAt
+	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+
+	res, err := service.MFASetup(ctx, user.ID, "SecurePass@123")
+	require.ErrorIs(t, err, ErrMFAAlreadyEnabled)
+	assert.Nil(t, res)
+	codes, err := service.MFAEnable(ctx, user.ID, totpFor(pending))
+	require.ErrorIs(t, err, ErrMFAAlreadyEnabled)
+	assert.Nil(t, codes)
+	mockStore.AssertExpectations(t) // no write reached the store
+}
+
+func TestMFASetup_WrongPasswordWhileEnabled_ReportsPassword(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	service := createTestService(mockStore, new(MockEmailSender))
+
+	user := createTestUser(t, "SecurePass@123")
+	user.MFAEnabled = true
+	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+
+	_, err := service.MFASetup(ctx, user.ID, "WrongPassword!@#")
+	require.ErrorIs(t, err, ErrMFAInvalidPassword)
 }
 
 func TestMFARegenerateRecoveryCodes_HappyPath(t *testing.T) {
@@ -550,7 +580,6 @@ func TestMFAEnable_ExpiredPending_ReturnsSentinel(t *testing.T) {
 	user.MFAPendingSecret = secret
 	user.MFAPendingSecretExpiresAt = &expiresAt
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
 
 	_, err := service.MFAEnable(ctx, user.ID, totpFor(secret))
 	require.Error(t, err)
