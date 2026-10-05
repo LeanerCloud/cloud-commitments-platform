@@ -141,7 +141,7 @@ func TestResolveAWSProvider_NoSTS(t *testing.T) {
 func TestResolveAWSProvider_RoleARNWithoutARNOnNonHostFailsClosed(t *testing.T) {
 	ctx := context.Background()
 	hostSTS := new(MockSTSClient)
-	hostSTS.On("GetCallerIdentity", ctx, mock.Anything).Return(&sts.GetCallerIdentityOutput{Account: aws.String("111111111111")}, nil)
+	hostSTS.On("GetCallerIdentity", mock.Anything, mock.Anything).Return(&sts.GetCallerIdentityOutput{Account: aws.String("111111111111")}, nil)
 	m := &Manager{
 		assumeRoleSTS:   new(MockAssumeRoleSTS),
 		stsClient:       hostSTS,
@@ -1505,4 +1505,43 @@ func TestApplyEngineFallback(t *testing.T) {
 	cc := &common.ComputeDetails{}
 	applyEngineFallback(cc, "mysql")
 	assert.Empty(t, cc.Platform, "ComputeDetails must remain untouched by applyEngineFallback")
+}
+
+// The stored per-account execution error is visible to users scoped to the
+// tenant account, so a failed host-identity check must not expose the host
+// account id or the raw STS error.
+func TestExecuteForAccount_NonHostRoleARN_StoredErrorOmitsHostIdentity(t *testing.T) {
+	ctx := context.Background()
+	const hostID = "111111111111"
+	hostSTS := new(MockSTSClient)
+	hostSTS.On("GetCallerIdentity", mock.Anything, mock.Anything).Return(&sts.GetCallerIdentityOutput{Account: aws.String(hostID)}, nil)
+
+	var saved []*config.PurchaseExecution
+	mockStore := new(MockConfigStore)
+	mockStore.SavePurchaseExecutionFn = func(_ context.Context, e *config.PurchaseExecution) error {
+		saved = append(saved, e)
+		return nil
+	}
+	m := &Manager{
+		config:          mockStore,
+		assumeRoleSTS:   new(MockAssumeRoleSTS),
+		stsClient:       hostSTS,
+		ambientAWSCreds: aws.AnonymousCredentials{},
+	}
+	account := config.CloudAccount{ID: "tenant", Provider: "aws", ExternalID: "222222222222", AWSAuthMode: "role_arn"}
+	baseExec := &config.PurchaseExecution{
+		ExecutionID:     "exec-nonhost",
+		PlanID:          "plan-nonhost",
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Count: 1, Selected: true}},
+	}
+
+	committed, err := m.executeForAccount(ctx, baseExec, &config.PurchasePlan{ID: "plan-nonhost"}, account)
+	require.ErrorIs(t, err, credentials.ErrNotHostAccount)
+	assert.False(t, committed)
+	require.NotEmpty(t, saved)
+	for _, e := range saved {
+		assert.NotContains(t, e.Error, hostID)
+		assert.NotContains(t, e.Error, "GetCallerIdentity")
+	}
+	assert.Contains(t, saved[len(saved)-1].Error, credentials.ErrNotHostAccount.Error())
 }
