@@ -3245,7 +3245,7 @@ func TestHandler_cancelPurchase_Session_RejectsTerminalStatus(t *testing.T) {
 	}
 	session := &Session{UserID: cancelCallerID}
 
-	handler, mockConfig, mockAuth := buildSessionCancelHandler(exec, session, false, false)
+	handler, mockConfig, mockAuth := buildSessionCancelHandler(exec, session, true, false)
 
 	_, err := handler.cancelPurchase(context.Background(), sessionCancelReq(), cancelExecID, "")
 	require.Error(t, err)
@@ -3274,7 +3274,7 @@ func TestHandler_cancelPurchase_Session_RejectsEachNonCancelableStatus(t *testin
 			}
 			session := &Session{UserID: cancelCallerID}
 
-			handler, mockConfig, mockAuth := buildSessionCancelHandler(exec, session, false, false)
+			handler, mockConfig, mockAuth := buildSessionCancelHandler(exec, session, true, false)
 
 			_, err := handler.cancelPurchase(context.Background(), sessionCancelReq(), cancelExecID, "")
 			require.Error(t, err)
@@ -5869,9 +5869,9 @@ func TestHandler_revokePurchase_SessionOwnerCancelOwn(t *testing.T) {
 }
 
 // TestHandler_revokePurchase_SessionNoPermissionNoToken verifies that a session
-// lacking both cancel-any and cancel-own, with no token supplied, is denied:
-// the session branch returns permission-denied and falls through to the
-// tokenless 401. Covers the session-auth revoke branch CR finding (PR #889).
+// lacking both cancel-any and cancel-own, with no token supplied, gets the
+// session branch's 403: without a token the denial is final (issue #173).
+// Covers the session-auth revoke branch CR finding (PR #889).
 func TestHandler_revokePurchase_SessionNoPermissionNoToken(t *testing.T) {
 	ctx := context.Background()
 	execID := "88888888-8888-8888-8888-888888888888"
@@ -5899,7 +5899,7 @@ func TestHandler_revokePurchase_SessionNoPermissionNoToken(t *testing.T) {
 	require.Error(t, err, "no permission and no token must be denied")
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a client error")
-	assert.Equal(t, 401, ce.code)
+	assert.Equal(t, 403, ce.code)
 	mockStore.AssertExpectations(t)
 	mockAuth.AssertExpectations(t)
 }
