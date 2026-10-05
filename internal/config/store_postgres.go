@@ -1168,23 +1168,32 @@ func (s *PostgresStore) RotatePendingApprovalToken(ctx context.Context, executio
 // the execution was not found or not in an allowed status.
 // actor is the UUID of the user performing the transition (nil for system-initiated paths);
 // it is stamped onto transitioned_by and transitioned_at is always set to NOW().
+// A transition to StatusCanceled also stamps the actor's email onto canceled_by
+// and the legacy cancelled_by (issue #119), matching what the other cancel paths
+// record and what History reads.
 func (s *PostgresStore) TransitionExecutionStatus(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string) (*PurchaseExecution, error) {
+	var cancelActor *string
+	if toStatus == StatusCanceled {
+		cancelActor = actor
+	}
 	query := `
 		UPDATE purchase_executions
 		SET status = $2, updated_at = NOW(),
-		    transitioned_by = $4, transitioned_at = NOW()
+		    transitioned_by = $4, transitioned_at = NOW(),
+		    canceled_by = COALESCE((SELECT email FROM users WHERE id = $5), canceled_by),
+		    cancelled_by = COALESCE((SELECT email FROM users WHERE id = $5), cancelled_by)
 		WHERE execution_id = $1 AND status = ANY($3)
 		RETURNING plan_id, execution_id, status, step_number, scheduled_date,
 		          notification_sent, approval_token_hash, recommendations,
 		          total_upfront_cost, estimated_savings, completed_at, error, expires_at,
-		          cloud_account_id, source, approved_by, cancelled_by, capacity_percent,
+		          cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
 		          created_by_user_id, retry_execution_id, retry_attempt_n,
 		          approval_token_expires_at,
 		          executed_by_user_id, executed_at, pre_approval_skip_reason,
 		          idempotency_key, scheduled_execution_at
 	`
 
-	records, err := s.queryExecutions(ctx, query, executionID, toStatus, fromStatuses, actor)
+	records, err := s.queryExecutions(ctx, query, executionID, toStatus, fromStatuses, actor, cancelActor)
 	if err != nil {
 		return nil, err
 	}
