@@ -393,6 +393,83 @@ func TestMarketplaceList_DBFailureAndCancelFailureKeepsListing(t *testing.T) {
 	}
 }
 
+func TestMarketplaceList_CancelFailureRecordsNonActiveStateAsPending(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		awsState   string
+		wantState  string
+		wantMsg    string
+		wantNotMsg string
+	}{
+		{name: "pending", awsState: config.ListingStatePending, wantState: config.ListingStatePending, wantMsg: "needs reconciliation", wantNotMsg: "cancel it again"},
+		{name: "empty", awsState: "", wantState: config.ListingStatePending, wantMsg: "needs reconciliation", wantNotMsg: "cancel it again"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfgStore := &MockConfigStore{}
+			authSvc := &MockAuthService{}
+			adminSession(authSvc)
+			cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).
+				Return(standardRow(), nil)
+			cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).
+				Return(true, nil)
+			cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-x", tc.awsState).
+				Return(errors.New("db down")).Once()
+			cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-x", tc.wantState).
+				Return(nil).Once()
+
+			ec2 := &stubMarketplaceEC2{
+				createFn: func(_ context.Context, _ ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error) {
+					return ec2svc.MarketplaceListingResult{ListingID: "ril-x", State: tc.awsState}, nil
+				},
+				cancelFn: func(_ context.Context, _ string) (ec2svc.MarketplaceListingResult, error) {
+					return ec2svc.MarketplaceListingResult{}, errors.New("throttled")
+				},
+			}
+			h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+			_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "%v", err)
+			assert.Equal(t, 502, ce.code)
+			assert.Contains(t, ce.message, tc.wantMsg)
+			assert.Contains(t, ce.message, "ril-x")
+			assert.NotContains(t, ce.message, tc.wantNotMsg)
+			cfgStore.AssertExpectations(t)
+		})
+	}
+}
+
+func TestMarketplaceList_CancelFailureAfterRequestContextCanceledStillRecords(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cfgStore := &MockConfigStore{}
+	authSvc := &MockAuthService{}
+	adminSession(authSvc)
+	cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).
+		Return(standardRow(), nil)
+	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).
+		Return(true, nil)
+	// The request context dies during the first write, as on a deadline.
+	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-default", config.ListingStateActive).
+		Run(func(mock.Arguments) { cancel() }).Return(errors.New("db down")).Once()
+	liveCtx := mock.MatchedBy(func(c context.Context) bool { return c.Err() == nil })
+	cfgStore.On("UpdatePurchaseHistoryListing", liveCtx, validMarketplacePurchaseID, "ril-default", config.ListingStateActive).
+		Return(nil).Once()
+
+	ec2 := &stubMarketplaceEC2{
+		cancelFn: func(c context.Context, _ string) (ec2svc.MarketplaceListingResult, error) {
+			require.NoError(t, c.Err(), "compensating cancel must not run on the canceled request context")
+			return ec2svc.MarketplaceListingResult{}, errors.New("throttled")
+		},
+	}
+	h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+	_, err := h.marketplaceList(ctx, marketplaceReq(), validMarketplacePurchaseID)
+
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "%v", err)
+	assert.Contains(t, ce.message, "now recorded on this RI")
+	cfgStore.AssertExpectations(t)
+}
+
 func TestMarketplaceList_DefaultScheduleProrationMath(t *testing.T) {
 	// remaining=12, term=12, count=1, upfront=1200 => per-unit residual
 	// 1200*12/12/1 = 1200; default price = 1200*0.95 = 1140.
