@@ -545,7 +545,9 @@ type StoreInterface interface {
 	//
 	// GetInFlightLadderCommitUSDHr returns the total hourly USD commitment in
 	// flight for the given config: the sum of amount_usd_hr for tranches with
-	// status = 'scheduled' ONLY. Fired/completed tranches are executed
+	// status = 'scheduled' and scheduled_date after asOf ONLY (an elapsed
+	// tranche was never bought while no executor fires it, issue #118).
+	// Fired/completed tranches are executed
 	// purchases already reflected in the engine's ExistingUSDPerHour (the
 	// provider adapters fold payment-pending and active commitments into E),
 	// so summing them here too would double-count and under-purchase. Returns
@@ -554,7 +556,7 @@ type StoreInterface interface {
 	// nil without an error.
 	SaveLadderRun(ctx context.Context, run *LadderRunDB) (*LadderRunDB, error)
 	SaveLadderRunWithTranches(ctx context.Context, run *LadderRunDB, tranches []LadderTrancheDB) (*LadderRunDB, error)
-	GetInFlightLadderCommitUSDHr(ctx context.Context, configID string) (*float64, error)
+	GetInFlightLadderCommitUSDHr(ctx context.Context, configID string, asOf time.Time) (*float64, error)
 	GetLadderRun(ctx context.Context, id string) (*LadderRunDB, error)
 	SaveLadderTranches(ctx context.Context, tranches []LadderTrancheDB) error
 	LatestLadderRunStartedAt(ctx context.Context, configID string) (*time.Time, error)
