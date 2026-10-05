@@ -14,6 +14,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awscreds "github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -331,6 +332,67 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountKeepsHostCredentials(t *testing.
 
 			require.NoError(t, err)
 			assert.Equal(t, marketplaceHostKeyID, signingKeyID(t, cfg))
+		})
+	}
+}
+
+func TestMapAWSMarketplaceError_GenuineEC2ErrorsKeepTheirOwnMessage(t *testing.T) {
+	for _, code := range []string{"InvalidReservedInstancesId.NotFound", "UnauthorizedOperation"} {
+		t.Run(code, func(t *testing.T) {
+			const msg = "the ec2 service said no"
+			err := &smithy.OperationError{
+				ServiceID:     "EC2",
+				OperationName: "CreateReservedInstancesListing",
+				Err:           &smithy.GenericAPIError{Code: code, Message: msg, Fault: smithy.FaultClient},
+			}
+
+			ce, ok := IsClientError(mapAWSMarketplaceError("create listing", err))
+
+			require.True(t, ok)
+			assert.Equal(t, 400, ce.code)
+			assert.Equal(t, msg, ce.message)
+			assert.NotEqual(t, marketplaceRoleAssumptionMessage, ce.message)
+		})
+	}
+}
+
+// loadErrStore fails the credential load with an arbitrary error.
+type loadErrStore struct{ MockCredentialStore }
+
+func (*loadErrStore) LoadRaw(context.Context, string, string) ([]byte, error) {
+	return nil, errors.New("secret backend unavailable")
+}
+
+// missingKeyStore returns a credential payload without an access key.
+type missingKeyStore struct{ MockCredentialStore }
+
+func (*missingKeyStore) LoadRaw(context.Context, string, string) ([]byte, error) {
+	return []byte(`{"secret_access_key":"member-secret"}`), nil
+}
+
+func TestLoadMarketplaceAWSConfig_ResolverErrorNeverFallsBackToHost(t *testing.T) {
+	stores := map[string]credentials.CredentialStore{
+		"store error":        &loadErrStore{},
+		"missing access key": &missingKeyStore{},
+	}
+	for name, store := range stores {
+		t.Run(name, func(t *testing.T) {
+			cfgStore := &MockConfigStore{}
+			cfgStore.On("GetCloudAccount", mock.Anything, "acct-1").Return(memberAccount(), nil)
+			h := &Handler{config: cfgStore, credStore: store}
+			h.awsCfgOnce.Do(func() {
+				h.awsCfg = aws.Config{
+					Region:      "us-east-1",
+					Credentials: awscreds.NewStaticCredentialsProvider(marketplaceHostKeyID, "host-secret", ""),
+					HTTPClient:  hostSTSTransport{},
+				}
+			})
+
+			cfg, err := h.loadMarketplaceAWSConfig(context.Background(), standardRow())
+
+			require.Error(t, err)
+			assert.False(t, errors.Is(err, credentials.ErrNotHostAccount))
+			assert.Nil(t, cfg.Credentials)
 		})
 	}
 }
