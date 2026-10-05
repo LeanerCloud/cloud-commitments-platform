@@ -147,4 +147,62 @@ describe('Settings Save payment tokens (issue #545)', () => {
     expect(awsPayment.classList.contains('dirty')).toBe(false);
     consoleError.mockRestore();
   });
+  it.each([
+    ['no-upfront', 'monthly'],
+    ['partial-upfront', 'monthly'],
+    ['all-upfront', 'upfront'],
+    ['', 'monthly'],
+    ['junk', 'monthly'],
+  ])('loads legacy stored Azure payment %p into the %s option and Save sends it', async (stored, expected) => {
+    (api.getConfig as jest.Mock).mockResolvedValue({
+      global: { enabled_providers: ['azure'], default_term: 3, default_payment: 'all-upfront', default_coverage: 80 },
+      services: [{ provider: 'azure', service: 'vm', term: 3, payment: stored, enabled: true, coverage: 80 }],
+    });
+    await save();
+
+    expect((document.getElementById('azure-vm-payment') as HTMLSelectElement).value).toBe(expected);
+    expect(serviceCalls().find(c => c.provider === 'azure' && c.service === 'vm')!.payment).toBe(expected);
+  });
+
+  it('never falls back to upfront when a payment select has no matching option at Save', async () => {
+    await loadGlobalSettings();
+    (document.getElementById('azure-vm-payment') as HTMLSelectElement).value = 'junk';
+    expect((document.getElementById('azure-vm-payment') as HTMLSelectElement).value).toBe('');
+    await saveGlobalSettings(new Event('submit'));
+
+    expect(serviceCalls().find(c => c.provider === 'azure' && c.service === 'vm')!.payment).toBe('monthly');
+  });
+
+  it('counts only AWS services when asking to propagate the default payment', async () => {
+    const { confirmDialog } = jest.requireMock('../confirmDialog') as { confirmDialog: jest.Mock };
+    await loadGlobalSettings();
+    setupSettingsHandlers();
+    const awsCount = document.querySelectorAll('select[id^="aws-"][id$="-payment"]').length;
+    const def = document.getElementById('setting-default-payment') as HTMLSelectElement;
+    def.value = 'partial-upfront';
+    def.dispatchEvent(new Event('change'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
+    expect(confirmDialog.mock.calls[0]![0].title).toBe(`Apply "Partial Upfront" to ${awsCount} AWS services?`);
+  });
+
+  it('a failed service keeps its term, payment and coverage fields dirty', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (api.updateServiceConfig as jest.Mock).mockImplementation(async (provider: string, service: string) => {
+      if (provider === 'aws' && service === 'savings-plans-compute') throw new Error('boom');
+    });
+    await loadGlobalSettings();
+    const term = document.getElementById('aws-savings-plans-compute-term') as HTMLSelectElement;
+    const payment = document.getElementById('aws-savings-plans-compute-payment') as HTMLSelectElement;
+    const coverage = document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement;
+    term.value = term.value === '1' ? '3' : '1';
+    payment.value = payment.value === 'no-upfront' ? 'all-upfront' : 'no-upfront';
+    coverage.value = '55';
+
+    await saveGlobalSettings(new Event('submit'));
+
+    for (const el of [term, payment, coverage]) expect({ id: el.id, dirty: el.classList.contains('dirty') }).toEqual({ id: el.id, dirty: true });
+    consoleError.mockRestore();
+  });
 });

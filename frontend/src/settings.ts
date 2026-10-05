@@ -3247,7 +3247,7 @@ export async function loadGlobalSettings(): Promise<void> {
       const termEl = document.getElementById(`${key}-term`) as HTMLSelectElement | null;
       if (termEl) termEl.value = String(svc.term);
       const paymentEl = document.getElementById(`${key}-payment`) as HTMLSelectElement | null;
-      if (paymentEl) paymentEl.value = svc.payment;
+      if (paymentEl) paymentEl.value = normalizePaymentValue(svc.payment, svc.provider);
     }
 
     // Issue #136: populate per-product SP coverage and enabled fields for every
@@ -3546,7 +3546,7 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
       const { provider, service, termId, paymentId } = field;
       const term = parseInt(byId<HTMLSelectElement>(termId)?.value || '3', 10);
       const payment = paymentId
-        ? (byId<HTMLSelectElement>(paymentId)?.value || normalizePaymentValue('all-upfront', provider))
+        ? (byId<HTMLSelectElement>(paymentId)?.value || normalizePaymentValue('no-upfront', provider))
         : normalizePaymentValue(settings.default_payment, provider);
       const base = loadedServiceConfigs.find(s => s.provider === provider && s.service === service);
       // Carry forward every field the UI doesn't own (e.g. ramp_schedule).
