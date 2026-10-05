@@ -2213,6 +2213,8 @@ func TestRunNowError(t *testing.T) {
 		{"lost claim", nil, fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), 409},
 		{"row gone", nil, fmt.Errorf("approve: %w", config.ErrNotFound), 409},
 		{"store error before claim", nil, errors.New("connection reset"), 0},
+		{"plan deleted after claim", ran, fmt.Errorf("failed to get plan: %w", config.ErrNotFound), 502},
+		{"audit loss wrapping not found", ran, fmt.Errorf("%w: %w", config.ErrAuditLoss, config.ErrNotFound), 500},
 		{"final status not saved", ran, fmt.Errorf("%w: boom", config.ErrAuditLoss), 500},
 		{"execution failed", ran, errors.New("provider rejected"), 502},
 	}

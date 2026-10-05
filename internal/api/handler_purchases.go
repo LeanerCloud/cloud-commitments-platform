@@ -364,11 +364,12 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 
 // runNowError maps a RunPlannedPurchaseNow failure to its HTTP error. A non-nil
 // final means the purchase ran and money may have moved, so it is never a 409.
+// ErrNotFound and ErrExecutionNotInExpectedStatus are 409 only before a claim.
 func runNowError(executionID string, final *config.PurchaseExecution, err error) error {
 	switch {
 	case errors.Is(err, purchase.ErrFourEyesDenied):
 		return NewClientError(403, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
-	case errors.Is(err, config.ErrExecutionNotInExpectedStatus), errors.Is(err, config.ErrNotFound):
+	case final == nil && (errors.Is(err, config.ErrExecutionNotInExpectedStatus) || errors.Is(err, config.ErrNotFound)):
 		return NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
 	case final == nil:
 		return fmt.Errorf("execution %s could not be started: %w", executionID, err)

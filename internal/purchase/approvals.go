@@ -388,7 +388,7 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 	if actor != "" || skipReason != "" {
 		if saveErr := m.config.SavePurchaseExecution(ctx, updated); saveErr != nil {
 			// Attribution is best-effort once the atomic flip has landed --
-			// dropping ApprovedBy must not stop the purchase from firing.
+			// dropping these audit fields must not stop the purchase from firing.
 			// Log loudly so the audit gap is visible.
 			logging.Errorf("AUDIT GAP: failed to stamp approval audit fields on %s: %v", executionID, saveErr)
 		}
