@@ -6,9 +6,9 @@
 #   # Edit dev.tfbackend with your values, then:
 #   terraform init -backend-config=backends/dev.tfbackend
 
-bucket = "cudly-terraform-state-dev"
-prefix = "dev"
+bucket = "your-cudly-terraform-state-gcp-dev"
+prefix = "github-dev"
 
 # Note: Create the GCS bucket before first use:
-#   gsutil mb -p YOUR_PROJECT_ID -l US gs://cudly-terraform-state-dev
-#   gsutil versioning set on gs://cudly-terraform-state-dev
+#   gsutil mb -p YOUR_PROJECT_ID -l US gs://your-cudly-terraform-state-gcp-dev
+#   gsutil versioning set on gs://your-cudly-terraform-state-gcp-dev

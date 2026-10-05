@@ -65,7 +65,7 @@ gcloud services enable \
 ### 4. Create Terraform State Bucket
 
 ```bash
-BUCKET_NAME="cudly-terraform-state-dev"
+BUCKET_NAME="your-cudly-terraform-state-gcp-dev"
 gsutil mb -p $PROJECT_ID -l us-central1 gs://$BUCKET_NAME
 gsutil versioning set on gs://$BUCKET_NAME
 ```
