@@ -9,7 +9,7 @@ import type { HistoryResponse, HistorySummary, HistoryPurchase } from './types';
 import type { RevokeQuote } from './api';
 import { switchTab } from './navigation';
 import { confirmDialog } from './confirmDialog';
-import { buildApprovalDetailsBody } from './approval-details';
+import { approvalDetailsUnavailableMessage, buildApprovalDetailsBody } from './approval-details';
 import { showToast } from './toast';
 import { getCurrentUser } from './state';
 import { canAccess } from './permissions';
@@ -1295,9 +1295,15 @@ function wireRowActionHandlers(container: HTMLElement): void {
       // Issue #374: show the per-rec details (service / engine /
       // resource / region / count / term + payment / costs) in the
       // modal so the user has informed consent before authorising a
-      // financial commitment. buildApprovalDetailsBody falls back to
-      // the legacy text sentence if the GET fails.
-      const detailsBody = await buildApprovalDetailsBody(id);
+      // financial commitment. Without them, Approve is not offered (#247).
+      let detailsBody: HTMLElement;
+      try {
+        detailsBody = await buildApprovalDetailsBody(id);
+      } catch (detailsError) {
+        console.error('Failed to load purchase details for approval:', detailsError);
+        showToast({ message: `${approvalDetailsUnavailableMessage(detailsError)} Try again.`, kind: 'error' });
+        return;
+      }
       const ok = await confirmDialog({
         title: 'Approve this pending purchase?',
         body: detailsBody,

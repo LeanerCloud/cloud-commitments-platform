@@ -1048,13 +1048,6 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     gap: 1rem;
 }
 
-.approval-details-fallback {
-    margin: 0;
-    color: #444;
-    line-height: 1.5;
-    font-size: 0.95rem;
-}
-
 .approval-details-header {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

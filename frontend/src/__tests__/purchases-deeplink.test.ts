@@ -1,13 +1,70 @@
 /**
- * Deep-link parser tests. The handler itself is side-effectful (toast,
- * confirmDialog, fetch, location.replaceState) and exercised end-to-end
- * in manual smoke — here we pin the pure parser that decides whether a
- * given URL *is* a deep-link, which is the piece most likely to
- * regress when someone adds a new SPA route that overlaps with the
- * `/purchases/` prefix.
+ * Deep-link parser and approve-handler tests. The parser decides whether a
+ * given URL *is* a deep-link; the handler tests drive the real toast and
+ * confirm dialog with only the network layer mocked.
  */
 
-import { parsePurchaseDeeplink } from '../purchases-deeplink';
+jest.mock('../api', () => ({
+  getPurchaseDetails: jest.fn(),
+  listAccounts: jest.fn().mockResolvedValue([]),
+  getDeploymentInfo: jest.fn().mockResolvedValue({}),
+}));
+jest.mock('../api/client', () => ({ apiRequest: jest.fn() }));
+
+import * as api from '../api';
+import { apiRequest } from '../api/client';
+import { handlePurchaseDeeplink, parsePurchaseDeeplink } from '../purchases-deeplink';
+
+const EXEC_ID = '11111111-1111-1111-1111-111111111111';
+
+describe('handlePurchaseDeeplink approve (issue #247)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    jest.clearAllMocks();
+    (apiRequest as jest.Mock).mockResolvedValue({ status: 'approved' });
+    window.history.replaceState({}, '', `/purchases/approve/${EXEC_ID}?token=tok-xyz`);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([
+    ['the details fetch fails', () => (api.getPurchaseDetails as jest.Mock).mockRejectedValue(new Error('403 Forbidden'))],
+    ['the details carry no recommendations', () => (api.getPurchaseDetails as jest.Mock).mockResolvedValue({
+      execution_id: EXEC_ID, status: 'pending', total_upfront_cost: 0, estimated_savings: 0, recommendations: [],
+    })],
+  ])('does not offer Approve when %s', async (_label, arrange) => {
+    arrange();
+
+    await expect(handlePurchaseDeeplink()).resolves.toBe(true);
+
+    expect(document.querySelector('.modal-confirm-backdrop')).toBeNull();
+    const buttons = Array.from(document.querySelectorAll('button')).map(b => b.textContent);
+    expect(buttons).not.toContain('Approve purchase');
+    const alert = document.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('cannot be approved without showing the amount');
+    expect(apiRequest).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe('/purchases');
+  });
+
+  it('shows the upfront amount and approves when details load', async () => {
+    (api.getPurchaseDetails as jest.Mock).mockResolvedValue({
+      execution_id: EXEC_ID, status: 'pending', total_upfront_cost: 1200, estimated_savings: 10,
+      recommendations: [{ id: 'r1', provider: 'aws', service: 'ec2', region: 'us-east-1', resource_type: 'm5.large',
+        count: 1, term: 1, payment: 'all-upfront', upfront_cost: 1200, monthly_cost: 0, savings: 10, selected: true, purchased: false }],
+    });
+
+    const done = handlePurchaseDeeplink();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(document.querySelector('.approval-details-header')?.textContent).toContain('$1,200');
+    const approve = Array.from(document.querySelectorAll<HTMLButtonElement>('.modal-confirm-actions button'))
+      .find(b => b.textContent === 'Approve purchase');
+    approve!.click();
+    await done;
+
+    expect(apiRequest).toHaveBeenCalledWith(`/purchases/approve/${EXEC_ID}`, expect.objectContaining({ method: 'POST' }));
+  });
+});
 
 describe('parsePurchaseDeeplink', () => {
   it('parses an approve deep-link with a token', () => {

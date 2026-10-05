@@ -5,6 +5,12 @@ const ID = '11111111-1111-1111-1111-111111111111';
 const actions = ['approve', 'cancel', 'retry', 'revoke', 'marketplace-sell', 'marketplace-cancel'] as const;
 type Action = typeof actions[number];
 
+const DETAILS = {
+  execution_id: ID, status: 'pending', total_upfront_cost: 1200, estimated_savings: 10,
+  recommendations: [{ id: 'r1', provider: 'aws', service: 'ec2', region: 'us-east-1', resource_type: 'm5.large',
+    count: 1, term: 1, payment: 'all-upfront', upfront_cost: 1200, monthly_cost: 0, savings: 10 }],
+};
+
 function gate(): { promise: Promise<void>; release(): void } {
   let release!: () => void;
   const promise = new Promise<void>(resolve => { release = resolve; });
@@ -40,7 +46,7 @@ async function historyFixture(page: Page, action: Action) {
     } else {
       await route.fulfill({ json: route.request().url().includes('/calculate')
         ? { refund_amount: 100, refund_currency: 'USD' }
-        : { execution_id: ID, status: 'pending', recommendations: [] } });
+        : DETAILS });
     }
   });
   return { row, posts, failNextMutation: () => { failNext = true; } };
@@ -95,7 +101,7 @@ test('actual double-click and second projection cannot duplicate pending approva
   await page.route(`**/api/purchases/${ID}`, async route => {
     detailGets++;
     await details.promise;
-    await route.fulfill({ json: { execution_id: ID, status: 'pending', recommendations: [] } });
+    await route.fulfill({ json: DETAILS });
   });
   await page.goto('/purchases/history');
   const btn = page.locator('#history-list .history-approve-btn');
@@ -110,13 +116,34 @@ test('actual double-click and second projection cannot duplicate pending approva
   await expect.poll(() => fixture.posts.length).toBe(1);
 });
 
+test('approve is not offered when the purchase details cannot be loaded (issue #247)', async ({ page }) => {
+  const fixture = await historyFixture(page, 'approve');
+  let detailGets = 0;
+  await page.route(`**/api/purchases/${ID}`, route => {
+    detailGets++;
+    return detailGets === 1
+      ? route.fulfill({ status: 403, json: { error: 'forbidden' } })
+      : route.fulfill({ json: DETAILS });
+  });
+  await page.goto('/purchases/history');
+  const btn = page.locator('#history-list .history-approve-btn');
+  await btn.click();
+  await expect(page.getByRole('alert')).toContainText('cannot be approved without showing the amount');
+  await expect(page.locator('.modal-confirm-backdrop')).toHaveCount(0);
+  await expect(btn).toBeEnabled();
+  await btn.click();
+  await expect(page.locator('.modal-confirm-body')).toContainText('$1,200');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => fixture.posts.length).toBe(1);
+});
+
 test('canceling an independent row does not steal focus from another confirmation', async ({ page }) => {
   const fixture = await historyFixture(page, 'approve');
   const details = gate();
   await page.route('**/api/history**', route => route.fulfill({ json: { summary: {}, purchases: [fixture.row, { ...fixture.row, purchase_id: 'other-execution' }] } }));
   await page.route('**/api/purchases/*', async route => {
     await details.promise;
-    await route.fulfill({ json: { status: 'pending', recommendations: [] } });
+    await route.fulfill({ json: DETAILS });
   });
   await page.goto('/purchases/history');
   const buttons = page.locator('#history-list .history-approve-btn');
