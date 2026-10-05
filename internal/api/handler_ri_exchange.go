@@ -2124,20 +2124,23 @@ func (h *Handler) getRIExchangeHistory(ctx context.Context, req *events.LambdaFu
 		return nil, fmt.Errorf("failed to load exchange history: %w", err)
 	}
 
-	// Filter records by the session's allowed_accounts against the record's
-	// AccountID. Scoped users don't see history for accounts outside their
-	// scope. Admin / unrestricted sessions pass through unchanged.
+	// RI exchange records carry the 12-digit AWS account id from STS, so
+	// resolve it to its single registered AWS account and match the scope by
+	// that account's UUID or name. An unregistered or ambiguous id matches
+	// only a literal entry in the allow-list. A lookup failure errors out.
 	allowed, err := h.getAccountScope(ctx, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get allowed accounts: %w", err)
 	}
 	if !allowed.AllowsAll() {
-		nameByID := h.resolveAccountNamesByID(ctx)
+		accounts, err := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list cloud accounts for exchange history scope: %w", err)
+		}
 		filtered := records[:0]
-		for _rvc := range records {
-			r := records[_rvc]
-			if allowed.Allows(r.AccountID, nameByID[r.AccountID]) {
-				filtered = append(filtered, r)
+		for i := range records {
+			if exchangeRecordInScope(allowed, accounts, records[i].AccountID) {
+				filtered = append(filtered, records[i])
 			}
 		}
 		records = filtered
@@ -2150,6 +2153,17 @@ func (h *Handler) getRIExchangeHistory(ctx context.Context, req *events.LambdaFu
 	}
 
 	return &RIExchangeHistoryResponse{Records: records}, nil
+}
+
+// exchangeRecordInScope reports whether the scope covers an exchange record's
+// STS account id, directly or through the single registered AWS account that
+// owns it.
+func exchangeRecordInScope(allowed auth.AccountScope, accounts []config.CloudAccount, stsAccountID string) bool {
+	acct := uniqueAccountByExternalID(accounts, "aws", stsAccountID)
+	if acct == nil {
+		return allowed.Allows(stsAccountID, "")
+	}
+	return allowed.Allows(stsAccountID, acct.Name) || allowed.Allows(acct.ID, acct.Name)
 }
 
 // approveRIExchange handles approval of a pending RI exchange.
