@@ -208,11 +208,16 @@ func (h *Handler) marketplaceList(ctx context.Context, req *events.LambdaFunctio
 	}, nil
 }
 
+// marketplaceCompensationTimeout bounds the detached cancel and recording write
+// run after a created listing failed to persist.
+const marketplaceCompensationTimeout = 10 * time.Second
+
 // reserveAndCreateListing atomically claims the marketplace-listing slot for the
 // row, creates the AWS listing, and persists it, releasing the claim on every
-// failure path so a failed attempt never leaves the row stuck in the transient
-// pending state. Extracted from marketplaceList to keep that handler under the
-// gocyclo budget. Returns the persisted listing result on success.
+// failure path that leaves no live listing so a failed attempt does not leave
+// the row stuck in the transient pending state. Extracted from marketplaceList
+// to keep that handler under the gocyclo budget. Returns the persisted listing
+// result on success.
 func (h *Handler) reserveAndCreateListing(ctx context.Context, purchaseID string, row *config.PurchaseHistoryRecord, ec2Client marketplaceEC2Client, awsSchedule []ec2svc.MarketplacePriceTier) (ec2svc.MarketplaceListingResult, error) {
 	// List every RI in the row: a row of N Standard RIs must list all N, not a
 	// single unit (issue #292 multi-count fix). Floor at 1 for legacy rows that
@@ -260,16 +265,36 @@ func (h *Handler) reserveAndCreateListing(ctx context.Context, purchaseID string
 	// release the claim so the row does not stay stuck in the pending state.
 	if dbErr := h.config.UpdatePurchaseHistoryListing(ctx, purchaseID, result.ListingID, result.State); dbErr != nil {
 		logging.Errorf("marketplace: listing created (%s / %s) but DB update failed: %v; attempting rollback", result.ListingID, result.State, dbErr)
-		if _, rollbackErr := ec2Client.CancelMarketplaceListing(ctx, result.ListingID); rollbackErr != nil {
-			logging.Errorf("marketplace: rollback cancel for listing %s also failed: %v", result.ListingID, rollbackErr)
-		} else {
-			logging.Warnf("marketplace: listing %s rolled back (canceled) after DB failure", result.ListingID)
+		compCtx, cancelComp := context.WithTimeout(context.WithoutCancel(ctx), marketplaceCompensationTimeout)
+		defer cancelComp()
+		if _, rollbackErr := ec2Client.CancelMarketplaceListing(compCtx, result.ListingID); rollbackErr != nil {
+			return ec2svc.MarketplaceListingResult{}, h.keepUncanceledListing(compCtx, purchaseID, result, rollbackErr)
 		}
+		logging.Warnf("marketplace: listing %s rolled back (canceled) after DB failure", result.ListingID)
 		h.releaseMarketplaceClaim(ctx, purchaseID, row)
 		return ec2svc.MarketplaceListingResult{}, fmt.Errorf("listing created but could not be persisted; listing has been rolled back: %w", dbErr)
 	}
 
 	return result, nil
+}
+
+// keepUncanceledListing records a listing that could be neither persisted nor
+// canceled; releasing the claim instead would hide it from the cancel endpoint.
+func (h *Handler) keepUncanceledListing(ctx context.Context, purchaseID string, listing ec2svc.MarketplaceListingResult, cancelErr error) error {
+	logging.Errorf("marketplace: rollback cancel for listing %s failed: %v", listing.ListingID, cancelErr)
+	state := listing.State
+	if state == "" {
+		state = config.ListingStatePending
+	}
+	msg := fmt.Sprintf("marketplace listing %s was created but could not be saved, and canceling it failed (%v); the listing may still be active on AWS", listing.ListingID, cancelErr)
+	if err := h.config.UpdatePurchaseHistoryListing(ctx, purchaseID, listing.ListingID, state); err != nil {
+		logging.Errorf("marketplace: failed to record uncanceled listing %s for purchase %s (row stays %q): %v", listing.ListingID, purchaseID, config.ListingStatePending, err)
+		return NewClientError(502, msg+"; the RI stays locked as pending until an operator reconciles the listing")
+	}
+	if state != config.ListingStateActive {
+		return NewClientError(502, fmt.Sprintf("%s; it is recorded on this RI as %s and needs reconciliation (listing %s)", msg, state, listing.ListingID))
+	}
+	return NewClientError(502, msg+"; it is now recorded on this RI, so cancel it again")
 }
 
 // populateOfferingClass calls AWS DescribeReservedInstances to determine the
