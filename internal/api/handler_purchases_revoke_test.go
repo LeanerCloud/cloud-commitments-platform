@@ -474,13 +474,20 @@ func TestAuthorizeSessionRevoke_RevokeAny_AccountScope(t *testing.T) {
 	empty := ""
 	cases := []struct {
 		name      string
+		scope     []string
 		accountID *string
+		external  string
 		wantErr   string
 	}{
-		{name: "in scope", accountID: &inScope},
-		{name: "other account", accountID: &outOfScope, wantErr: "account you do not have access to"},
-		{name: "nil account", accountID: nil, wantErr: "cannot verify ownership"},
-		{name: "empty account", accountID: &empty, wantErr: "cannot verify ownership"},
+		{name: "in scope", scope: []string{inScope}, accountID: &inScope},
+		{name: "other account", scope: []string{inScope}, accountID: &outOfScope, wantErr: "account you do not have access to"},
+		{name: "nil account", scope: []string{inScope}, accountID: nil, wantErr: "cannot verify ownership"},
+		{name: "empty account", scope: []string{inScope}, accountID: &empty, wantErr: "cannot verify ownership"},
+		// Issue #534: History shows these rows, so revoke must accept them.
+		{name: "external id only, scoped by external id", scope: []string{"111122223333"}, external: "111122223333"},
+		{name: "external id only, scoped by name", scope: []string{"prod"}, external: "111122223333"},
+		{name: "uuid row, scoped by name", scope: []string{"prod"}, accountID: &inScope, external: "111122223333"},
+		{name: "external id only, other account", scope: []string{"dev"}, external: "999999999999", wantErr: "account you do not have access to"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -489,10 +496,80 @@ func TestAuthorizeSessionRevoke_RevokeAny_AccountScope(t *testing.T) {
 			mockAuth := new(MockAuthService)
 			t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 			mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
-			mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{inScope}, nil)
+			mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return(tc.scope, nil)
 
-			h := &Handler{auth: mockAuth}
-			err := h.authorizeSessionRevoke(ctx, &Session{UserID: "u-1"}, &config.PurchaseHistoryRecord{CloudAccountID: tc.accountID})
+			store := &MockConfigStore{
+				ListCloudAccountsFn: func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+					return []config.CloudAccount{
+						{ID: inScope, Name: "prod", ExternalID: "111122223333"},
+						{ID: outOfScope, Name: "dev", ExternalID: "444455556666"},
+					}, nil
+				},
+			}
+			h := &Handler{auth: mockAuth, config: store}
+			rec := &config.PurchaseHistoryRecord{CloudAccountID: tc.accountID, AccountID: tc.external}
+			err := h.authorizeSessionRevoke(ctx, &Session{UserID: "u-1"}, rec)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+			assert.Equal(t, 403, ce.code)
+			assert.Contains(t, ce.Error(), tc.wantErr)
+		})
+	}
+}
+
+// TestAuthorizeSessionRevoke_RevokeAny_ProviderAndUUIDAuthority pins the
+// review fixes on issue #534: external ids are unique per provider only, and
+// a set CloudAccountID is authoritative over the external id.
+func TestAuthorizeSessionRevoke_RevokeAny_ProviderAndUUIDAuthority(t *testing.T) {
+	t.Parallel()
+	awsDev := config.CloudAccount{ID: "u-aws", Name: "dev", Provider: "aws", ExternalID: "123"}
+	azProd := config.CloudAccount{ID: "u-az", Name: "prod", Provider: "azure", ExternalID: "123"}
+	in := config.CloudAccount{ID: "u-in", Name: "in", ExternalID: "111"}
+	out := config.CloudAccount{ID: "u-out", Name: "out", ExternalID: "222"}
+	str := func(s string) *string { return &s }
+	const denied = "account you do not have access to"
+	cases := []struct {
+		name     string
+		scope    []string
+		accounts []config.CloudAccount
+		listErr  error
+		rec      config.PurchaseHistoryRecord
+		wantErr  string
+	}{
+		{name: "same external id, scope names other provider account, aws first", scope: []string{"prod"},
+			accounts: []config.CloudAccount{awsDev, azProd}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}, wantErr: denied},
+		{name: "same external id, scope names other provider account, azure first", scope: []string{"prod"},
+			accounts: []config.CloudAccount{azProd, awsDev}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}, wantErr: denied},
+		{name: "same external id, scope names own provider account, aws first", scope: []string{"dev"},
+			accounts: []config.CloudAccount{awsDev, azProd}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}},
+		{name: "same external id, scope names own provider account, azure first", scope: []string{"dev"},
+			accounts: []config.CloudAccount{azProd, awsDev}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}},
+		{name: "uuid out of scope, in-scope external id", scope: []string{"in"},
+			accounts: []config.CloudAccount{in, out}, rec: config.PurchaseHistoryRecord{CloudAccountID: str("u-out"), AccountID: "111"}, wantErr: denied},
+		{name: "uuid in scope, out-of-scope external id", scope: []string{"u-in"},
+			accounts: []config.CloudAccount{in, out}, rec: config.PurchaseHistoryRecord{CloudAccountID: str("u-in"), AccountID: "222"}},
+		{name: "resolver error, name scope", scope: []string{"prod"}, listErr: errors.New("db down"),
+			rec: config.PurchaseHistoryRecord{AccountID: "123"}, wantErr: denied},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			mockAuth := new(MockAuthService)
+			t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+			mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
+			mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return(tc.scope, nil)
+			store := &MockConfigStore{
+				ListCloudAccountsFn: func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+					return tc.accounts, tc.listErr
+				},
+			}
+			h := &Handler{auth: mockAuth, config: store}
+			err := h.authorizeSessionRevoke(ctx, &Session{UserID: "u-1"}, &tc.rec)
 			if tc.wantErr == "" {
 				require.NoError(t, err)
 				return
@@ -559,7 +636,7 @@ func TestAuthorizeSessionRevoke_RevokeOwn_AccountAccessGranted(t *testing.T) {
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(true, nil)
 	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{accountUUID}, nil)
 
-	h := &Handler{auth: mockAuth}
+	h := &Handler{auth: mockAuth, config: &MockConfigStore{}}
 	sess := &Session{UserID: "u-1"}
 	r := &config.PurchaseHistoryRecord{CloudAccountID: &accountUUID}
 	err := h.authorizeSessionRevoke(ctx, sess, r)
@@ -578,7 +655,7 @@ func TestAuthorizeSessionRevoke_RevokeOwn_WrongAccount(t *testing.T) {
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(true, nil)
 	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{otherUUID}, nil)
 
-	h := &Handler{auth: mockAuth}
+	h := &Handler{auth: mockAuth, config: &MockConfigStore{}}
 	sess := &Session{UserID: "u-1"}
 	r := &config.PurchaseHistoryRecord{CloudAccountID: &accountUUID}
 	err := h.authorizeSessionRevoke(ctx, sess, r)

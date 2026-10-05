@@ -397,13 +397,57 @@ func (h *Handler) checkRevokeAccountAccess(ctx context.Context, session *Session
 	}
 	// Purchase history rows pre-date created_by_user_id, so ownership is via
 	// account access (creator scope: issue #950). Unattributed rows fail closed.
-	if record.CloudAccountID == nil || *record.CloudAccountID == "" {
+	// Match the way History does: a row may carry only the external account
+	// id, and allow-lists may name accounts rather than list ids (issue #534).
+	// A set CloudAccountID is authoritative; the external id is only a
+	// fallback when it is absent, and is resolved within the row's provider
+	// because external ids are unique per (provider, external_id) only.
+	cloudID := derefString(record.CloudAccountID)
+	if cloudID == "" && record.AccountID == "" {
 		return NewClientError(403, "permission denied: cannot verify ownership for this purchase")
 	}
-	if !scope.Allows(*record.CloudAccountID, "") {
-		return NewClientError(403, "permission denied: purchase is in an account you do not have access to")
+	accounts, listErr := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{})
+	if cloudID != "" {
+		return revokeScopeResult(scope.Allows(cloudID, accountNameByID(accounts, cloudID)))
 	}
-	return nil
+	name := ""
+	if listErr == nil {
+		name = accountNameByExternalID(accounts, record.Provider, record.AccountID)
+	}
+	return revokeScopeResult(scope.Allows(record.AccountID, name))
+}
+
+func revokeScopeResult(allowed bool) error {
+	if allowed {
+		return nil
+	}
+	return NewClientError(403, "permission denied: purchase is in an account you do not have access to")
+}
+
+func accountNameByID(accounts []config.CloudAccount, id string) string {
+	for i := range accounts {
+		if accounts[i].ID == id {
+			return accounts[i].Name
+		}
+	}
+	return ""
+}
+
+// accountNameByExternalID returns the name of the single account with this
+// provider and external id, or "" when none or more than one matches, so the
+// caller cannot name-match an ambiguous account.
+func accountNameByExternalID(accounts []config.CloudAccount, provider, externalID string) string {
+	name, n := "", 0
+	for i := range accounts {
+		if accounts[i].Provider == provider && accounts[i].ExternalID == externalID {
+			name = accounts[i].Name
+			n++
+		}
+	}
+	if n != 1 {
+		return ""
+	}
+	return name
 }
 
 // calculateAzureRevoke handles GET /api/purchases/revoke/calculate/{id}.
