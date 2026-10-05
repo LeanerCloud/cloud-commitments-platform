@@ -369,6 +369,23 @@ func TestIntegration_ResetConfirmRejectsStaleRead(t *testing.T) {
 		assert.Equal(t, winner(), f.stored())
 	})
 
+	t.Run("rejected-confirm-after-concurrent-reissue", func(t *testing.T) {
+		f := newCredentialRaceFixture(t, store, "reset-rejected-reissue@example.com")
+		token := f.issueResetToken()
+		winner := f.onRead(func(ctx context.Context, other *Service) {
+			_, err := store.db.Exec(ctx, "UPDATE users SET password_reset_expiry = NOW() - interval '1 hour' WHERE id = $1", f.user.ID)
+			require.NoError(t, err)
+			require.NoError(t, other.RequestPasswordReset(ctx, f.user.Email))
+		})
+		err := f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: "weak"})
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrUserChanged)
+		reissued := winner().PasswordResetToken
+		require.NotEmpty(t, reissued)
+		require.NotEqual(t, hashSessionToken(token), reissued, "the concurrent request must have replaced the token")
+		assert.Equal(t, winner(), f.stored(), "a rejected confirm must not clear a token it did not read")
+	})
+
 	t.Run("after-concurrent-password-change", func(t *testing.T) {
 		f := newCredentialRaceFixture(t, store, "reset-after-change@example.com")
 		token := f.issueResetToken()
