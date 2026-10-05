@@ -48,7 +48,7 @@ func (s *PostgresStore) GetUserByID(ctx context.Context, userID string) (*User, 
 		       mfa_enabled, mfa_secret, mfa_pending_secret, mfa_pending_secret_expires_at,
 		       mfa_recovery_codes, password_reset_token, password_reset_expiry,
 		       failed_login_attempts, locked_until, password_history,
-		       created_at, updated_at, last_login_at, deactivated_at
+		       created_at, updated_at, last_login_at, deactivated_at, password_version
 		FROM users
 		WHERE id = $1
 	`
@@ -63,7 +63,7 @@ func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (*User
 		       mfa_enabled, mfa_secret, mfa_pending_secret, mfa_pending_secret_expires_at,
 		       mfa_recovery_codes, password_reset_token, password_reset_expiry,
 		       failed_login_attempts, locked_until, password_history,
-		       created_at, updated_at, last_login_at, deactivated_at
+		       created_at, updated_at, last_login_at, deactivated_at, password_version
 		FROM users
 		WHERE email = $1
 	`
@@ -277,7 +277,7 @@ func (s *PostgresStore) ListUsers(ctx context.Context) ([]User, error) {
 		       mfa_enabled, mfa_secret, mfa_pending_secret, mfa_pending_secret_expires_at,
 		       mfa_recovery_codes, password_reset_token, password_reset_expiry,
 		       failed_login_attempts, locked_until, password_history,
-		       created_at, updated_at, last_login_at, deactivated_at
+		       created_at, updated_at, last_login_at, deactivated_at, password_version
 		FROM users
 		ORDER BY created_at DESC
 		LIMIT 10000
@@ -316,7 +316,7 @@ func (s *PostgresStore) GetUserByResetToken(ctx context.Context, token string) (
 		       mfa_enabled, mfa_secret, mfa_pending_secret, mfa_pending_secret_expires_at,
 		       mfa_recovery_codes, password_reset_token, password_reset_expiry,
 		       failed_login_attempts, locked_until, password_history,
-		       created_at, updated_at, last_login_at, deactivated_at
+		       created_at, updated_at, last_login_at, deactivated_at, password_version
 		FROM users
 		WHERE password_reset_token = $1
 	`
@@ -777,6 +777,7 @@ func (s *PostgresStore) scanUser(scanner Scanner) (*User, error) {
 		&user.UpdatedAt,
 		&lastLoginAt,
 		&deactivatedAt,
+		&user.PasswordVersion,
 	)
 
 	if err != nil {

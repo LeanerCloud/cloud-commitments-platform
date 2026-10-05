@@ -139,4 +139,8 @@ var (
 	ErrAPIKeyExpiresAtRequired = errors.New("expires_at is required")
 	ErrAPIKeyExpiresAtTooFar   = errors.New("expires_at exceeds the maximum API key lifetime")
 	ErrAPIKeyExpiresAtInPast   = errors.New("expires_at must be in the future")
+
+	// ErrAPIKeyPasswordRotated: the owner's password changed after the key was
+	// minted (issue #402).
+	ErrAPIKeyPasswordRotated = errors.New("API key predates the owner's last password change")
 )

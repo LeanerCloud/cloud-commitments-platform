@@ -319,7 +319,7 @@ var userColumns = []string{
 	"mfa_enabled", "mfa_secret", "mfa_pending_secret", "mfa_pending_secret_expires_at",
 	"mfa_recovery_codes", "password_reset_token", "password_reset_expiry",
 	"failed_login_attempts", "locked_until", "password_history",
-	"created_at", "updated_at", "last_login_at", "deactivated_at",
+	"created_at", "updated_at", "last_login_at", "deactivated_at", "password_version",
 }
 
 func TestPGXMock_ListUsers_Success(t *testing.T) {
@@ -337,7 +337,7 @@ func TestPGXMock_ListUsers_Success(t *testing.T) {
 			true, "mfa-secret", nil, nil,
 			[]string{"code1"}, nil, nil,
 			0, nil, []string{"old-hash"},
-			created, created, lastLogin, nil,
+			created, created, lastLogin, nil, int64(4),
 		).
 		AddRow(
 			"user-2", "user@example.com", "hash2", "salt2",
@@ -345,7 +345,7 @@ func TestPGXMock_ListUsers_Success(t *testing.T) {
 			false, nil, nil, nil,
 			[]string{}, nil, nil,
 			2, nil, []string{},
-			created, created, nil, deactivated,
+			created, created, nil, deactivated, int64(0),
 		)
 
 	mock.ExpectQuery(`(?s)SELECT id, email, password_hash, salt, group_ids, active,.*FROM users\s+ORDER BY created_at DESC\s+LIMIT 10000`).
@@ -364,6 +364,7 @@ func TestPGXMock_ListUsers_Success(t *testing.T) {
 	assert.Equal(t, lastLogin, *users[0].LastLoginAt)
 
 	assert.Nil(t, users[0].DeactivatedAt)
+	assert.Equal(t, int64(4), users[0].PasswordVersion)
 
 	assert.Equal(t, "user-2", users[1].ID)
 	assert.False(t, users[1].Active)
@@ -412,7 +413,7 @@ func TestPGXMock_ListUsers_RowError(t *testing.T) {
 			false, nil, nil, nil,
 			[]string{}, nil, nil,
 			0, nil, []string{},
-			created, created, nil, nil,
+			created, created, nil, nil, int64(0),
 		).
 		RowError(0, errors.New("connection reset mid-iteration"))
 
@@ -429,6 +430,7 @@ var apiKeyColumns = []string{
 	"id", "user_id", "name", "key_prefix", "key_hash", "permissions",
 	"is_active", "expires_at", "created_at", "last_used_at",
 	"request_count_total", "request_count_window", "request_count_window_start",
+	"password_version",
 }
 
 func TestPGXMock_ListAPIKeysByUser_Success(t *testing.T) {
@@ -444,12 +446,12 @@ func TestPGXMock_ListAPIKeysByUser_Success(t *testing.T) {
 		AddRow(
 			"key-1", "user-1", "ci key", "cudly_ab", "hash-1",
 			[]byte(`[{"action":"view","resource":"recommendations"}]`), true, expires, created, lastUsed,
-			int64(42), int64(3), windowStart,
+			int64(42), int64(3), windowStart, int64(4),
 		).
 		AddRow(
 			"key-2", "user-1", "old key", "cudly_cd", "hash-2",
 			[]byte(`[]`), false, nil, created, nil,
-			int64(0), int64(0), nil,
+			int64(0), int64(0), nil, int64(0),
 		)
 
 	mock.ExpectQuery(`(?s)SELECT id, user_id, name, key_prefix, key_hash, permissions,.*FROM api_keys\s+WHERE user_id = \$1\s+ORDER BY created_at DESC`).
@@ -470,6 +472,7 @@ func TestPGXMock_ListAPIKeysByUser_Success(t *testing.T) {
 	assert.Equal(t, lastUsed, *keys[0].LastUsedAt)
 	assert.Equal(t, int64(42), keys[0].RequestCountTotal)
 	assert.Equal(t, int64(3), keys[0].RequestCountWindow)
+	assert.Equal(t, int64(4), keys[0].PasswordVersion)
 	require.NotNil(t, keys[0].RequestCountWindowStart)
 	assert.Equal(t, windowStart, *keys[0].RequestCountWindowStart)
 

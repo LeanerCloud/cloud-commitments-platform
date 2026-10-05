@@ -720,6 +720,27 @@ func TestService_ValidateUserAPIKey(t *testing.T) {
 		mockStore.AssertExpectations(t)
 	})
 
+	t.Run("fail when owner's password changed after minting", func(t *testing.T) {
+		mockStore := new(MockStore)
+		service := &Service{store: mockStore}
+
+		apiKey := "test-api-key-123456"
+		hash := sha256.Sum256([]byte(apiKey))
+		keyHash := base64.RawURLEncoding.EncodeToString(hash[:])
+
+		mockStore.On("GetAPIKeyByHash", ctx, keyHash).Return(&UserAPIKey{
+			ID: "key-1", UserID: "user-123", KeyHash: keyHash, IsActive: true, PasswordVersion: 2,
+		}, nil)
+		mockStore.On("GetUserByID", ctx, "user-123").Return(&User{ID: "user-123", Active: true, PasswordVersion: 3}, nil)
+
+		resultKey, resultUser, err := service.ValidateUserAPIKey(ctx, apiKey)
+
+		require.ErrorIs(t, err, ErrAPIKeyPasswordRotated)
+		assert.Nil(t, resultUser)
+		assert.Nil(t, resultKey)
+		mockStore.AssertExpectations(t)
+	})
+
 	t.Run("fail when API key not found", func(t *testing.T) {
 		mockStore := new(MockStore)
 		service := &Service{store: mockStore}

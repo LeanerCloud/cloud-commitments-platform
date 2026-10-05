@@ -123,6 +123,9 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, name, password strin
 		CreatedAt:   now,
 		LastUsedAt:  nil,
 		IsActive:    true,
+		// The version of the row whose password was just verified, so a
+		// rotation that commits before this insert still invalidates the key.
+		PasswordVersion: user.PasswordVersion,
 	}
 
 	// Store the API key
@@ -395,6 +398,9 @@ func (s *Service) ValidateUserAPIKey(ctx context.Context, apiKey string) (*UserA
 	user, err := s.lookupAPIKeyUser(ctx, key.UserID)
 	if err != nil {
 		return nil, nil, err
+	}
+	if key.PasswordVersion != user.PasswordVersion {
+		return nil, nil, ErrAPIKeyPasswordRotated
 	}
 
 	return key, user, nil
