@@ -48,24 +48,32 @@ describe('handlePurchaseDeeplink approve (issue #247)', () => {
   });
 
   it.each([
-    [403, true],
-    [404, true],
-    [500, false],
-    [undefined, false],
-  ])('details fetch failing with status %s: permission wording only=%s', async (status, permanent) => {
-    const err = Object.assign(new Error(status ? `HTTP ${status}` : 'Failed to fetch'), { status });
-    (api.getPurchaseDetails as jest.Mock).mockRejectedValue(err);
+    [403, 'forbidden', 'view:purchases'],
+    [404, 'execution not found', 'not found or is outside your account access'],
+  ])('details fetch failing with %s is permanent: no retry advice, keeps server message', async (status, message, wording) => {
+    (api.getPurchaseDetails as jest.Mock).mockRejectedValue(Object.assign(new Error(message), { status }));
 
     await expect(handlePurchaseDeeplink()).resolves.toBe(true);
 
     const text = document.querySelector('[role="alert"]')?.textContent ?? '';
-    if (permanent) {
-      expect(text).toContain('view:purchases');
-      expect(text).not.toContain('retry');
-    } else {
-      expect(text).toContain('Open the approval link again to retry.');
-      expect(text).not.toContain('view:purchases');
-    }
+    expect(text).toContain(wording);
+    expect(text).toContain(`(${message})`);
+    expect(text).not.toContain('retry');
+  });
+
+  it.each([
+    [500, 'internal error'],
+    [401, 'unauthorized'],
+    [undefined, 'Failed to fetch'],
+  ])('details fetch failing with %s keeps the retry path', async (status, message) => {
+    (api.getPurchaseDetails as jest.Mock).mockRejectedValue(Object.assign(new Error(message), { status }));
+
+    await expect(handlePurchaseDeeplink()).resolves.toBe(true);
+
+    const text = document.querySelector('[role="alert"]')?.textContent ?? '';
+    expect(text).toContain('Open the approval link again to retry.');
+    expect(text).toContain(`(${message})`);
+    expect(text).not.toContain('view:purchases');
   });
 
   it('shows the upfront amount and approves when details load', async () => {

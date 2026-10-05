@@ -358,9 +358,14 @@ export function isPermanentDetailsError(err: unknown): boolean {
 }
 
 export function approvalDetailsUnavailableMessage(err: unknown): string {
-  if (isPermanentDetailsError(err)) {
-    return 'This purchase cannot be approved without showing the amount, and your account cannot load its details. You need the view:purchases permission and access to the purchase\'s account.';
-  }
   const cause = err instanceof Error ? err.message : String(err);
-  return `This purchase cannot be approved without showing the amount, and its details could not be loaded (${cause}).`;
+  const base = `This purchase cannot be approved without showing the amount, and its details could not be loaded (${cause}).`;
+  const status = (err as { status?: number } | null)?.status;
+  if (status === 403) {
+    return `${base} Loading details requires the view:purchases permission and access to the purchase's account.`;
+  }
+  if (status === 404) {
+    return `${base} The purchase was not found or is outside your account access.`;
+  }
+  return base;
 }
