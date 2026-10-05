@@ -1110,6 +1110,9 @@ jobs:
       - name: Run guard script self-tests
         run: bash scripts/test-azure-kv-access-policy.sh
 
+      - name: Run smoke-gate self-test
+        run: bash scripts/test-wait-for-healthy.sh
+
   # Summary job - all checks must pass
   ci-success:
     name: CI Success
