@@ -759,6 +759,22 @@ func TestHandler_resetPassword_AccountDeactivated(t *testing.T) {
 	assert.Contains(t, ce.Error(), "deactivated")
 }
 
+// A reset that lost a race to a concurrent account change is a 409, not a 500 (issue #493).
+func TestHandler_resetPassword_UserChanged(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	mockAuth.On("ConfirmPasswordReset", ctx, mock.Anything).Return(auth.ErrUserChanged)
+
+	handler := &Handler{auth: mockAuth}
+	encoded := base64.StdEncoding.EncodeToString([]byte("SecureT3st@789"))
+	req := &events.LambdaFunctionURLRequest{Body: `{"token": "valid-token", "new_password": "` + encoded + `"}`}
+	_, err := handler.resetPassword(ctx, req)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "ErrUserChanged must be wrapped as a client error, not a 500")
+	assert.Equal(t, 409, ce.code)
+}
+
 // Issue #459: ConfirmPasswordReset errors must surface as a 4xx client
 // error with the original message preserved, so the frontend renders a
 // specific reason rather than the opaque "Failed to reset password" that

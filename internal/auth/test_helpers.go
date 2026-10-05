@@ -58,6 +58,18 @@ func (m *MockStore) SetPasswordResetToken(ctx context.Context, user *User, readE
 	return m.Called(ctx, user, readExpiry).Error(0)
 }
 
+func (m *MockStore) CompletePasswordReset(ctx context.Context, user *User, readResetToken, readPasswordHash string) error {
+	return m.Called(ctx, user, readResetToken, readPasswordHash).Error(0)
+}
+
+func (m *MockStore) ConsumePasswordResetToken(ctx context.Context, userID, readResetToken string) error {
+	return m.Called(ctx, userID, readResetToken).Error(0)
+}
+
+func (m *MockStore) ConsumeMFARecoveryCode(ctx context.Context, userID string, readCodes, remaining []string) error {
+	return m.Called(ctx, userID, readCodes, remaining).Error(0)
+}
+
 func (m *MockStore) RecordFailedLogin(ctx context.Context, userID string) error {
 	return m.Called(ctx, userID).Error(0)
 }

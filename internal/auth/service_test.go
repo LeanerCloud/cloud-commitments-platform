@@ -702,8 +702,7 @@ func TestService_ErrorPaths(t *testing.T) {
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(fmt.Errorf("session error")).Once()
 		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
-		// UpdateUser is called once: password change + token invalidation in single call
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("CompletePasswordReset", ctx, mock.AnythingOfType("*auth.User"), hashSessionToken("valid-reset-token"), "").Return(nil).Once()
 
 		req := PasswordResetConfirm{
 			Token:       "valid-reset-token",

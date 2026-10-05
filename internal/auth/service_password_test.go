@@ -410,8 +410,7 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
 		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{}, nil).Once()
-		// UpdateUser is called once: password change + token invalidation in single call
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("CompletePasswordReset", ctx, mock.AnythingOfType("*auth.User"), hashSessionToken("valid-reset-token"), "").Return(nil).Once()
 
 		req := PasswordResetConfirm{
 			Token:       "valid-reset-token",
@@ -461,7 +460,7 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
 		mockStore.On("ListAPIKeysByUser", ctx, "user-123").Return([]*UserAPIKey{apiKeyRecord}, nil).Once()
 		mockStore.On("UpdateAPIKey", ctx, apiKeyRecord).Return(nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("CompletePasswordReset", ctx, mock.AnythingOfType("*auth.User"), hashSessionToken("valid-reset-token"), "").Return(nil).Once()
 
 		err = service.ConfirmPasswordReset(ctx, PasswordResetConfirm{
 			Token:       "valid-reset-token",
@@ -543,7 +542,7 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 		// Token is hashed before lookup
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(testUser, nil).Once()
 		// Token is invalidated even on password validation failure (one-time use)
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("ConsumePasswordResetToken", ctx, "user-123", hashSessionToken("valid-reset-token")).Return(nil).Once()
 
 		req := PasswordResetConfirm{
 			Token:       "valid-reset-token",
@@ -576,7 +575,7 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(testUser, nil).Once()
 		// Token is invalidated even on password validation failure (one-time use)
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("ConsumePasswordResetToken", ctx, "user-123", hashSessionToken("valid-reset-token")).Return(nil).Once()
 
 		// Try to reuse a password from history
 		req := PasswordResetConfirm{
@@ -615,7 +614,7 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(testUser, nil).Once()
 		// Token is invalidated even on validation failure (one-time use).
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("ConsumePasswordResetToken", ctx, "user-123", hashSessionToken("valid-reset-token")).Return(nil).Once()
 
 		req := PasswordResetConfirm{
 			Token:       "valid-reset-token",
@@ -688,12 +687,8 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(deactivatedUser, nil).Once()
 		// The token is still consumed (one-time use) even though the
-		// reactivation itself is refused. PasswordHash must be untouched:
-		// processPasswordReset (which would set the NEW password) must
-		// never run for a deactivated account.
-		mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool {
-			return u.PasswordResetToken == "" && u.PasswordResetExpiry == nil && u.PasswordHash == originalHash
-		})).Return(nil).Once()
+		// reactivation itself is refused, and no password write happens.
+		mockStore.On("ConsumePasswordResetToken", ctx, "user-789", hashSessionToken("valid-reset-token")).Return(nil).Once()
 
 		req := PasswordResetConfirm{
 			Token:       "valid-reset-token",
@@ -730,7 +725,8 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(invitedUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-790").Return(nil).Once()
 		mockStore.On("ListAPIKeysByUser", ctx, "user-790").Return([]*UserAPIKey{}, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("CompletePasswordReset", ctx, mock.MatchedBy(func(u *User) bool { return u.Active }),
+			hashSessionToken("valid-invite-token"), "").Return(nil).Once()
 
 		req := PasswordResetConfirm{
 			Token:       "valid-invite-token",

@@ -40,6 +40,18 @@ func (m *mockAuthStoreForHealth) SetPasswordResetToken(context.Context, *auth.Us
 	return nil
 }
 
+func (m *mockAuthStoreForHealth) CompletePasswordReset(context.Context, *auth.User, string, string) error {
+	return nil
+}
+
+func (m *mockAuthStoreForHealth) ConsumePasswordResetToken(context.Context, string, string) error {
+	return nil
+}
+
+func (m *mockAuthStoreForHealth) ConsumeMFARecoveryCode(context.Context, string, []string, []string) error {
+	return nil
+}
+
 func (m *mockAuthStoreForHealth) RecordFailedLogin(context.Context, string) error {
 	return nil
 }

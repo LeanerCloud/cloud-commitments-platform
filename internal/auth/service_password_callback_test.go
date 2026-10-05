@@ -133,7 +133,7 @@ func TestService_OnPasswordChange_ConfirmPasswordReset(t *testing.T) {
 		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).Return(testUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-456").Return(nil).Once()
 		mockStore.On("ListAPIKeysByUser", ctx, "user-456").Return([]*UserAPIKey{}, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("CompletePasswordReset", ctx, mock.AnythingOfType("*auth.User"), hashSessionToken("valid-token"), "").Return(nil).Once()
 
 		err := service.ConfirmPasswordReset(ctx, PasswordResetConfirm{
 			Token:       "valid-token",
