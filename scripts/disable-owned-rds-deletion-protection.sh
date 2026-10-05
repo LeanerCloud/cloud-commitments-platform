@@ -48,9 +48,17 @@
 #   -------------------+---------------+-----------+---------------+------------
 #   no state file      | {}            | 0         | exit 1        | skip, exit 0
 #   state, no outputs  | {}            | 0         | exit 1        | skip, exit 0
+#   key absent, no     | {...} w/o key | >=1       | exit 1        | skip, exit 0
+#    aws_db_instance   |               |           |               |
 #   key absent         | {...} w/o key | >=1       | exit 1        | exit 1, remedy
 #   key present, null  | {"value":null}| 1         | exit 1        | exit 1, remedy
 #   key present, ""    | {"value":""}  | 1         | exit 0, ""    | exit 1, remedy
+#
+# "Key absent" is split by `terraform state list`, not by the outputs: an apply
+# that failed on aws_db_instance.main (e.g. InsufficientDBInstanceCapacity)
+# stores the outputs of what it did create but not this one, which depends on
+# the instance. No aws_db_instance in the state means nothing to unprotect; one
+# present means a pre-#1821 state that owns an instance, and stays loud (#485).
 #
 # The last row is the trap: an empty string is neither null nor false, so `jq
 # -er` accepts it and hands the caller a valid-looking empty identifier. It is
@@ -72,11 +80,13 @@
 # never runs.
 #
 # Exit codes:
-#   0  completed, including the "state already destroyed" and "instance already
-#      gone" cases, which are normal outcomes and not errors
+#   0  completed, including the "state already destroyed", "state owns no RDS
+#      instance" and "instance already gone" cases, which are normal outcomes
+#      and not errors
 #   1  the owned identifier cannot be resolved from a state that has outputs:
-#      the key is absent or null (state predates the output), or it is present
-#      and empty (state or module defect). Distinct messages, distinct remedies.
+#      the key is absent (with an aws_db_instance in the state) or null (state
+#      predates the output), or it is present and empty (state or module
+#      defect). Distinct messages, distinct remedies.
 #   2  usage error (wrong arity, or a state directory that does not exist)
 #   *  anything the AWS CLI, terraform, jq or the selector fails with, unmasked
 
@@ -114,6 +124,21 @@ fi
 # rather than a fallback: the only fallback available is the identifier prefix
 # this script exists to remove.
 if ! OWNED_INSTANCE="$(jq -er '.database_instance_identifier.value' <<<"$OUTPUTS_JSON")"; then
+  # A partially applied state that never created the instance publishes no
+  # identifier either; tell it apart by the resources the state holds. The
+  # address must END in an aws_db_instance resource (any module path), so a
+  # type that merely starts with the name, such as
+  # aws_db_instance_automated_backups_replication, does not count. A failing
+  # `state list` stops here under `set -e` rather than reading as "no instance".
+  HAS_IDENTIFIER_KEY="$(jq -r 'has("database_instance_identifier")' <<<"$OUTPUTS_JSON")"
+  if [[ "$HAS_IDENTIFIER_KEY" == "false" ]]; then
+    STATE_RESOURCES="$(terraform -chdir="$STATE_DIR" state list)"
+    DB_INSTANCE_COUNT="$(awk '/(^|\.)aws_db_instance\.[A-Za-z_][A-Za-z0-9_-]*(\[[^]]*\])?$/ { n++ } END { print n + 0 }' <<<"$STATE_RESOURCES")"
+    if [[ "$DB_INSTANCE_COUNT" -eq 0 ]]; then
+      echo "State has outputs but no aws_db_instance resource; this state owns no RDS instance to unprotect."
+      exit 0
+    fi
+  fi
   echo "error: state '${STATE_DIR}' has outputs, but 'database_instance_identifier' is" >&2
   echo "       absent or null, so the instance this state owns cannot be identified." >&2
   echo "       This state was last applied before that output existed (#1821)." >&2

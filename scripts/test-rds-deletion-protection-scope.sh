@@ -417,9 +417,19 @@ STUB_STATE="$(mktemp -d)"
 STUB_CALLS="$(mktemp)"
 trap 'rm -rf "$STUB_DIR" "$STUB_STATE" "$STUB_CALLS"' EXIT
 
+# `state list` reads TF_STATE_LIST with `?`, so a case that reaches it without
+# setting one fails loudly instead of passing on an empty (instance-less) state.
 cat >"${STUB_DIR}/terraform" <<'EOF'
 #!/usr/bin/env bash
-printf '%s' "$TF_OUTPUT_JSON"
+case "$2" in
+  output) printf '%s' "$TF_OUTPUT_JSON" ;;
+  state)
+    [[ "${STATE_LIST_FAILS:-0}" == "1" ]] && { echo "state list failed" >&2; exit 1; }
+    printf '%s\n' "${TF_STATE_LIST?TF_STATE_LIST not set by this case}"
+    ;;
+  *) echo "unexpected terraform call: $*" >&2; exit 99 ;;
+esac
+exit 0
 EOF
 
 cat >"${STUB_DIR}/aws" <<'EOF'
@@ -479,9 +489,10 @@ assert_behaviour "behaviour: a state with no outputs exits 0 without calling aws
   "$([[ "$STUB_EXIT" -eq 0 && ! -s "$STUB_CALLS" ]] && echo 0 || echo 1)" \
   "exit ${STUB_EXIT}, calls: $(cat "$STUB_CALLS")"
 
-# A state that predates the output. Distinct from the empty case below, because
-# the remedies differ: this one wants an apply.
+# A state that predates the output but owns an instance. Distinct from the
+# empty case below, because the remedies differ: this one wants an apply.
 export TF_OUTPUT_JSON='{"ecr_repository_name":{"value":"cudly-dev-1a2b3c4d"}}'
+export TF_STATE_LIST=$'aws_ecr_repository.main\nmodule.database.aws_db_instance.main\nmodule.networking.aws_vpc.main'
 run_script "$STUB_STATE"
 assert_behaviour "behaviour: a state missing the output exits 1 without calling aws" \
   "$([[ "$STUB_EXIT" -eq 1 && ! -s "$STUB_CALLS" ]] && echo 0 || echo 1)" \
@@ -489,6 +500,38 @@ assert_behaviour "behaviour: a state missing the output exits 1 without calling 
 assert_behaviour "behaviour: the missing-output error tells the operator to re-apply" \
   "$([[ "$STUB_ERR" == *"absent or null"* && "$STUB_ERR" == *"re-apply this state"* ]] && echo 0 || echo 1)" \
   "stderr: ${STUB_ERR}"
+
+# #485: an apply that failed on the instance itself (InsufficientDBInstanceCapacity)
+# stores the outputs of what it did create but no identifier, and owns no
+# instance. Nothing to unprotect, so the destroy must be allowed to proceed.
+export TF_STATE_LIST=$'aws_ecr_repository.main\nmodule.networking.aws_vpc.main\nmodule.secrets.aws_secretsmanager_secret.db'
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: outputs without the identifier and no aws_db_instance in state exit 0 without calling aws" \
+  "$([[ "$STUB_EXIT" -eq 0 && ! -s "$STUB_CALLS" ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, stderr: ${STUB_ERR}, calls: $(cat "$STUB_CALLS")"
+
+# Names that contain the type but are not an aws_db_instance resource must not
+# count as one, or the #485 state above would still exit 1.
+export TF_STATE_LIST=$'aws_db_instance_automated_backups_replication.x\nmodule.database.aws_db_instance_role_association.main\nmodule.aws_db_instance_tools.aws_s3_bucket.main\naws_ssm_parameter.aws_db_instance'
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: resources that merely contain 'aws_db_instance' do not count as an instance" \
+  "$([[ "$STUB_EXIT" -eq 0 && ! -s "$STUB_CALLS" ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, stderr: ${STUB_ERR}, calls: $(cat "$STUB_CALLS")"
+
+# An indexed instance at the root still counts.
+export TF_STATE_LIST=$'aws_ecr_repository.main\naws_db_instance.main[0]'
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: an indexed root aws_db_instance with no identifier output exits 1" \
+  "$([[ "$STUB_EXIT" -eq 1 && ! -s "$STUB_CALLS" ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, calls: $(cat "$STUB_CALLS")"
+
+# A failed `state list` is not an empty state.
+export STATE_LIST_FAILS=1
+run_script "$STUB_STATE"
+assert_behaviour "behaviour: a failed 'terraform state list' fails the step without calling aws" \
+  "$([[ "$STUB_EXIT" -ne 0 && ! -s "$STUB_CALLS" ]] && echo 0 || echo 1)" \
+  "exit ${STUB_EXIT}, calls: $(cat "$STUB_CALLS")"
+unset STATE_LIST_FAILS TF_STATE_LIST
 
 # `jq -er` accepts an empty string, so without its own check this reaches AWS.
 export TF_OUTPUT_JSON='{"database_instance_identifier":{"value":""}}'
