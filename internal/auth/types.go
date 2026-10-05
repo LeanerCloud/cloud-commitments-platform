@@ -516,9 +516,9 @@ const (
 	//     are allowed to access (the check in
 	//     api.checkRevokeAccountAccess via GetAllowedAccountsAPI), because
 	//     purchase_history rows pre-date created_by_user_id and have no
-	//     reliable per-creator attribution. Rows with no account association
-	//     (CloudAccountID NULL) fail closed; only an unrestricted revoke-any
-	//     caller can revoke them.
+	//     reliable per-creator attribution. Rows with neither a CloudAccountID
+	//     nor an external account id fail closed; only an unrestricted
+	//     revoke-any caller can revoke them.
 	//     NOTE: whether revoke-own should instead be creator-scoped is a
 	//     product decision tracked in issue #950; do not tighten this to
 	//     created_by_user_id without resolving that issue first.

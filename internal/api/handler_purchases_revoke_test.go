@@ -521,6 +521,67 @@ func TestAuthorizeSessionRevoke_RevokeAny_AccountScope(t *testing.T) {
 	}
 }
 
+// TestAuthorizeSessionRevoke_RevokeAny_ProviderAndUUIDAuthority pins the
+// review fixes on issue #534: external ids are unique per provider only, and
+// a set CloudAccountID is authoritative over the external id.
+func TestAuthorizeSessionRevoke_RevokeAny_ProviderAndUUIDAuthority(t *testing.T) {
+	t.Parallel()
+	awsDev := config.CloudAccount{ID: "u-aws", Name: "dev", Provider: "aws", ExternalID: "123"}
+	azProd := config.CloudAccount{ID: "u-az", Name: "prod", Provider: "azure", ExternalID: "123"}
+	in := config.CloudAccount{ID: "u-in", Name: "in", ExternalID: "111"}
+	out := config.CloudAccount{ID: "u-out", Name: "out", ExternalID: "222"}
+	str := func(s string) *string { return &s }
+	const denied = "account you do not have access to"
+	cases := []struct {
+		name     string
+		scope    []string
+		accounts []config.CloudAccount
+		listErr  error
+		rec      config.PurchaseHistoryRecord
+		wantErr  string
+	}{
+		{name: "same external id, scope names other provider account, aws first", scope: []string{"prod"},
+			accounts: []config.CloudAccount{awsDev, azProd}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}, wantErr: denied},
+		{name: "same external id, scope names other provider account, azure first", scope: []string{"prod"},
+			accounts: []config.CloudAccount{azProd, awsDev}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}, wantErr: denied},
+		{name: "same external id, scope names own provider account, aws first", scope: []string{"dev"},
+			accounts: []config.CloudAccount{awsDev, azProd}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}},
+		{name: "same external id, scope names own provider account, azure first", scope: []string{"dev"},
+			accounts: []config.CloudAccount{azProd, awsDev}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}},
+		{name: "uuid out of scope, in-scope external id", scope: []string{"in"},
+			accounts: []config.CloudAccount{in, out}, rec: config.PurchaseHistoryRecord{CloudAccountID: str("u-out"), AccountID: "111"}, wantErr: denied},
+		{name: "uuid in scope, out-of-scope external id", scope: []string{"u-in"},
+			accounts: []config.CloudAccount{in, out}, rec: config.PurchaseHistoryRecord{CloudAccountID: str("u-in"), AccountID: "222"}},
+		{name: "resolver error, name scope", scope: []string{"prod"}, listErr: errors.New("db down"),
+			rec: config.PurchaseHistoryRecord{AccountID: "123"}, wantErr: denied},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			mockAuth := new(MockAuthService)
+			t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+			mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
+			mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return(tc.scope, nil)
+			store := &MockConfigStore{
+				ListCloudAccountsFn: func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+					return tc.accounts, tc.listErr
+				},
+			}
+			h := &Handler{auth: mockAuth, config: store}
+			err := h.authorizeSessionRevoke(ctx, &Session{UserID: "u-1"}, &tc.rec)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+			assert.Equal(t, 403, ce.code)
+			assert.Contains(t, ce.Error(), tc.wantErr)
+		})
+	}
+}
+
 // TestRevokePurchase_RevokeAnyOutOfScopeNeverCallsAzure drives the real revoke
 // endpoint for a scoped revoke-any user against an executed Azure purchase in
 // another account (issue #386): it must 403 before any Azure client is built.
