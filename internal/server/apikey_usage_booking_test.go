@@ -221,3 +221,20 @@ func TestHandleRequest_UserAPIKeyMultiVerbGate_BooksOneUsagePerRequest(t *testin
 		"harness precondition: the four-verb gate must re-validate the credential once per verb")
 	h.requireExactlyOneBooking(t)
 }
+
+// TestHandleRequest_UserAPIKeyDeploymentInfo_BooksOneUsage pins issue #156:
+// /api/info/deployment is AuthUser, but a prefix match on the public
+// "/api/info" skipped the middleware's booking block for it.
+func TestHandleRequest_UserAPIKeyDeploymentInfo_BooksOneUsage(t *testing.T) {
+	t.Setenv("CUDLY_SOURCE_CLOUD", "gcp") // skip the best-effort STS lookup
+	h := newUsageBookingHarness(t, []auth.Permission{
+		{Action: auth.ActionView, Resource: auth.ResourceAPIKeys},
+	})
+
+	resp, err := h.handler.HandleRequest(context.Background(),
+		h.request("GET", "/api/info/deployment"))
+
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode, "body: %s", resp.Body)
+	h.requireExactlyOneBooking(t)
+}

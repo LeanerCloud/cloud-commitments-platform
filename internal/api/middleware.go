@@ -19,7 +19,6 @@ func (h *Handler) isPublicEndpoint(path string) bool {
 	publicPrefixEndpoints := []string{
 		"/health",     // Root health endpoint (no /api prefix)
 		"/api/health", // API health endpoint
-		"/api/info",
 		"/api/purchases/approve/",
 		"/api/purchases/cancel/",
 		"/api/purchases/revoke/",
@@ -45,6 +44,7 @@ func (h *Handler) isPublicEndpoint(path string) bool {
 	// bypassing auth via accidental prefix overlap.
 	switch path {
 	case "/version", // Public build-version endpoint (version / git SHA / build time)
+		"/api/info",     // Not /api/info/deployment, which is AuthUser
 		"/api/register": // POST /api/register (no trailing slash)
 		return true
 	}
