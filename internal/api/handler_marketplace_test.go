@@ -348,6 +348,51 @@ func TestMarketplaceList_DBFailureCompensatingRollback(t *testing.T) {
 	cfgStore.AssertExpectations(t)
 }
 
+func TestMarketplaceList_DBFailureAndCancelFailureKeepsListing(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		recordErr error
+		wantMsg   string
+	}{
+		{name: "listing recorded", wantMsg: "now recorded on this RI"},
+		{name: "db still down", recordErr: errors.New("db still down"), wantMsg: "stays locked as pending"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfgStore := &MockConfigStore{}
+			authSvc := &MockAuthService{}
+			adminSession(authSvc)
+			cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).
+				Return(standardRow(), nil)
+			cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).
+				Return(true, nil)
+			cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-default", config.ListingStateActive).
+				Return(errors.New("db down")).Once()
+			cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-default", config.ListingStateActive).
+				Return(tc.recordErr).Once()
+
+			ec2 := &stubMarketplaceEC2{
+				cancelFn: func(_ context.Context, _ string) (ec2svc.MarketplaceListingResult, error) {
+					return ec2svc.MarketplaceListingResult{}, errors.New("throttled")
+				},
+			}
+			h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+			_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+
+			require.Error(t, err)
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "operator must see the message, not a generic 500: %v", err)
+			assert.Equal(t, 502, ce.code)
+			assert.NotContains(t, ce.message, "rolled back")
+			assert.Contains(t, ce.message, "ril-default")
+			assert.Contains(t, ce.message, "throttled")
+			assert.Contains(t, ce.message, tc.wantMsg)
+			assert.Equal(t, 1, ec2.cancelCallCount)
+			cfgStore.AssertNotCalled(t, "UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "", "")
+			cfgStore.AssertExpectations(t)
+		})
+	}
+}
+
 func TestMarketplaceList_DefaultScheduleProrationMath(t *testing.T) {
 	// remaining=12, term=12, count=1, upfront=1200 => per-unit residual
 	// 1200*12/12/1 = 1200; default price = 1200*0.95 = 1140.
