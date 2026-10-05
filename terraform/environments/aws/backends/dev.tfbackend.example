@@ -1,4 +1,5 @@
 # AWS Terraform Backend Configuration - Development
+# CI does not use this file: it builds its backend from the TF_BACKEND_AWS secret.
 # Copy to dev.tfbackend and customize with your values
 #
 # Usage:
@@ -6,13 +7,13 @@
 #   # Edit dev.tfbackend with your values, then:
 #   terraform init -backend-config=backends/dev.tfbackend
 
-bucket         = "cudly-terraform-state-dev"
-key            = "dev/terraform.tfstate"
+bucket         = "your-cudly-terraform-state-aws-dev"
+key            = "github-dev/terraform.tfstate"
 region         = "us-east-1"
 encrypt        = true
 use_lockfile   = true
 # profile      = "your-aws-profile"  # Optional: AWS CLI profile
 
 # Note: Create the S3 bucket before first use:
-#   aws s3 mb s3://cudly-terraform-state-dev --region us-east-1
-#   aws s3api put-bucket-versioning --bucket cudly-terraform-state-dev --versioning-configuration Status=Enabled
+#   aws s3 mb s3://your-cudly-terraform-state-aws-dev --region us-east-1
+#   aws s3api put-bucket-versioning --bucket your-cudly-terraform-state-aws-dev --versioning-configuration Status=Enabled
