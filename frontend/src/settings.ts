@@ -3592,11 +3592,34 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
       };
       return api.updateServiceConfig(provider, service, cfg);
     });
-    await Promise.all(serviceSaves);
+    const results = await Promise.allSettled(serviceSaves);
 
+    // The global PUT and every fulfilled service PUT are persisted, so the
+    // snapshot moves forward for them. A rejected service keeps its previous
+    // snapshot so its fields stay marked dirty and the user can retry.
+    const previousSnapshot = { ...savedSnapshot };
     snapshotAllFields();
+    const failures: string[] = [];
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') return;
+      const field = SERVICE_FIELDS[i]!;
+      failures.push(`${field.provider}/${field.service}: ${(result.reason as Error).message}`);
+      const ids = [field.termId, field.paymentId, 'coverageId' in field ? field.coverageId : null, 'enabledId' in field ? field.enabledId : null];
+      for (const id of ids) {
+        if (id && id in previousSnapshot) savedSnapshot[id] = previousSnapshot[id]!;
+      }
+    });
     updateDirtyMarkers();
-    showToast({ message: 'Settings saved successfully', kind: 'success', timeout: 5_000 });
+
+    if (failures.length > 0) {
+      console.error('Failed to save service configs:', failures);
+      showToast({
+        message: `Settings saved, but ${failures.length} service${failures.length === 1 ? '' : 's'} failed: ${failures.join('; ')}`,
+        kind: 'error',
+      });
+    } else {
+      showToast({ message: 'Settings saved successfully', kind: 'success', timeout: 5_000 });
+    }
   } catch (error) {
     console.error('Failed to save settings:', error);
     const err = error as Error;

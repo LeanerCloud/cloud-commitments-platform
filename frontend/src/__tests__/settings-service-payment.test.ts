@@ -23,8 +23,9 @@ jest.mock('../federation', () => ({
 jest.mock('../confirmDialog', () => ({
   confirmDialog: jest.fn(() => Promise.resolve(true)),
 }));
+const mockShowToast = jest.fn<{ dismiss: () => void }, [unknown]>(() => ({ dismiss: jest.fn() }));
 jest.mock('../toast', () => ({
-  showToast: jest.fn(() => ({ dismiss: jest.fn() })),
+  showToast: (opts: unknown) => mockShowToast(opts),
 }));
 
 import * as api from '../api';
@@ -121,5 +122,29 @@ describe('Settings Save payment tokens (issue #545)', () => {
     });
     await loadGlobalSettings();
     expect((document.getElementById('azure-vm-payment') as HTMLSelectElement).value).toBe('monthly');
+  });
+
+  it('one failed service PUT reports that service, still saves the rest and keeps only its fields dirty', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (api.updateServiceConfig as jest.Mock).mockImplementation(async (provider: string, service: string) => {
+      if (provider === 'azure' && service === 'vm') throw new Error('invalid payment option');
+    });
+    await loadGlobalSettings();
+    const azurePayment = document.getElementById('azure-vm-payment') as HTMLSelectElement;
+    azurePayment.value = 'monthly';
+    const awsPayment = document.getElementById('aws-ec2-payment') as HTMLSelectElement;
+    awsPayment.value = 'no-upfront';
+
+    await saveGlobalSettings(new Event('submit'));
+
+    expect(api.updateServiceConfig).toHaveBeenCalledTimes(18);
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message: 'Settings saved, but 1 service failed: azure/vm: invalid payment option',
+      kind: 'error',
+    });
+    expect(azurePayment.classList.contains('dirty')).toBe(true);
+    expect(awsPayment.classList.contains('dirty')).toBe(false);
+    consoleError.mockRestore();
   });
 });
