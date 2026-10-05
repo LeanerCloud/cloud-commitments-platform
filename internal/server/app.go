@@ -842,25 +842,7 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 	commitmentOpts := commitmentopts.New(
 		commitmentopts.NewPostgresStore(dbConn),
 		app.Config,
-		func(ctx context.Context, acct *config.CloudAccount) (aws.Config, error) {
-			stsClient := sts.NewFromConfig(awsCfg)
-			prov, err := credentials.ResolveAWSCredentialProviderWithOpts(ctx, acct, credStore, stsClient,
-				credentials.AWSResolveOptions{AmbientProvider: awsCfg.Credentials, AmbientSTS: stsClient})
-			if err != nil {
-				return aws.Config{}, err
-			}
-			// us-east-1 hardcoded because reserved offerings are global
-			// facts (not AZ-scoped), and us-east-1 has the widest
-			// instance-type coverage. This fails silently for GovCloud
-			// / China-partition accounts — those return ErrNoData from
-			// the probe and the frontend falls back to hardcoded rules,
-			// which is acceptable since those partitions rarely need
-			// dynamic commitment detection.
-			return awsconfig.LoadDefaultConfig(ctx,
-				awsconfig.WithCredentialsProvider(prov),
-				awsconfig.WithRegion("us-east-1"),
-			)
-		},
+		newCommitmentProbeConfigBuilder(credStore, awsCfg.Credentials, sts.NewFromConfig(awsCfg)),
 		commitmentopts.DefaultProbers(),
 	)
 
@@ -894,6 +876,38 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 	}
 
 	return nil
+}
+
+// hostAndAssumeRoleSTS is the STS surface the probe config builder needs:
+// AssumeRole for role-based accounts and GetCallerIdentity for the
+// host-identity check on role_arn accounts with no role ARN.
+type hostAndAssumeRoleSTS interface {
+	credentials.STSClient
+	credentials.CallerIdentityClient
+}
+
+// newCommitmentProbeConfigBuilder resolves the aws.Config the commitment-options
+// probe uses for an account. ambient and stsClient let a role_arn account with
+// no role ARN use the host credentials only when it is the host account.
+func newCommitmentProbeConfigBuilder(credStore credentials.CredentialStore, ambient aws.CredentialsProvider, stsClient hostAndAssumeRoleSTS) commitmentopts.BuildConfigFn {
+	return func(ctx context.Context, acct *config.CloudAccount) (aws.Config, error) {
+		prov, err := credentials.ResolveAWSCredentialProviderWithOpts(ctx, acct, credStore, stsClient,
+			credentials.AWSResolveOptions{AmbientProvider: ambient, AmbientSTS: stsClient})
+		if err != nil {
+			return aws.Config{}, err
+		}
+		// us-east-1 hardcoded because reserved offerings are global
+		// facts (not AZ-scoped), and us-east-1 has the widest
+		// instance-type coverage. This fails silently for GovCloud
+		// / China-partition accounts - those return ErrNoData from
+		// the probe and the frontend falls back to hardcoded rules,
+		// which is acceptable since those partitions rarely need
+		// dynamic commitment detection.
+		return awsconfig.LoadDefaultConfig(ctx,
+			awsconfig.WithCredentialsProvider(prov),
+			awsconfig.WithRegion("us-east-1"),
+		)
+	}
 }
 
 // buildAdminPasswordSyncCallback returns a callback that syncs the admin user's
