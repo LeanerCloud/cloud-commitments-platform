@@ -341,11 +341,22 @@ func findAwsModuleFiles(t *testing.T) []string {
 func deployPathFiles(t *testing.T, modules, envRoot string) []string {
 	t.Helper()
 
+	files, err := walkDeployPath(modules, envRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// walkDeployPath is deployPathFiles' body, returning the abort as an error so
+// the fail-closed cases can be asserted: t.Fatalf cannot be observed from the
+// test that triggers it.
+func walkDeployPath(modules, envRoot string) ([]string, error) {
 	seen := map[string]bool{}
-	addDir := func(dir string) []string {
+	addDir := func(dir string) ([]string, error) {
 		entries, err := filepath.Glob(filepath.Join(dir, "*.tf"))
 		if err != nil {
-			t.Fatalf("globbing %s: %v", dir, err)
+			return nil, fmt.Errorf("globbing %s: %w", dir, err)
 		}
 		var added []string
 		for _, e := range entries {
@@ -354,7 +365,7 @@ func deployPathFiles(t *testing.T, modules, envRoot string) []string {
 				added = append(added, e)
 			}
 		}
-		return added
+		return added, nil
 	}
 
 	err := filepath.WalkDir(modules, func(path string, d fs.DirEntry, walkErr error) error {
@@ -373,28 +384,39 @@ func deployPathFiles(t *testing.T, modules, envRoot string) []string {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walking %s for aws module .tf files: %v", modules, err)
+		return nil, fmt.Errorf("walking %s for aws module .tf files: %w", modules, err)
 	}
 
-	queue := addDir(envRoot)
+	queue, err := addDir(envRoot)
+	if err != nil {
+		return nil, err
+	}
 	for len(queue) > 0 {
 		f := queue[0]
 		queue = queue[1:]
-		content := readPolicySource(t, f)
+		data, err := os.ReadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", f, err)
+		}
+		content := stripCommentLines(string(data))
 		for _, loc := range moduleBlockPattern.FindAllStringIndex(content, -1) {
 			body := content[loc[1]-1 : balancedBraceEnd(content, loc[1]-1)]
 			m := moduleSourcePattern.FindStringSubmatch(body)
 			if m == nil {
-				t.Fatalf("%s: module block %q has no literal source; this walk cannot tell which directory it instantiates", f, strings.TrimSpace(content[loc[0]:loc[1]]))
+				return nil, fmt.Errorf("%s: module block %q has no literal source; this walk cannot tell which directory it instantiates", f, strings.TrimSpace(content[loc[0]:loc[1]]))
 			}
 			if !strings.HasPrefix(m[1], "./") && !strings.HasPrefix(m[1], "../") {
-				t.Fatalf("%s: module source %q is not a local directory; this walk cannot read a remote module's IAM policies, so the boundary guards would not see them", f, m[1])
+				return nil, fmt.Errorf("%s: module source %q is not a local directory; this walk cannot read a remote module's IAM policies, so the boundary guards would not see them", f, m[1])
 			}
 			dir := filepath.Join(filepath.Dir(f), m[1])
 			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-				t.Fatalf("%s: module source %q resolves to %s, which is not a readable directory", f, m[1], dir)
+				return nil, fmt.Errorf("%s: module source %q resolves to %s, which is not a readable directory", f, m[1], dir)
 			}
-			queue = append(queue, addDir(dir)...)
+			added, err := addDir(dir)
+			if err != nil {
+				return nil, err
+			}
+			queue = append(queue, added...)
 		}
 	}
 
@@ -403,7 +425,7 @@ func deployPathFiles(t *testing.T, modules, envRoot string) []string {
 		files = append(files, f)
 	}
 	sort.Strings(files)
-	return files
+	return files, nil
 }
 
 // readPolicySource reads path and strips its whole-line comments, so every
@@ -1912,5 +1934,41 @@ func TestBoundaryInvokeFunctionIsScopedToCudlyFunctions(t *testing.T) {
 		if got := statementResources(stmt); !equalStringSets(got, []string{wantResource}) {
 			t.Errorf("%s: statement %q allows lambda:InvokeFunction on Resource %v, want exactly [%q]", boundaryFile, statementSid(stmt), got, wantResource)
 		}
+	}
+}
+
+// TestDeployPathWalkFailsClosed pins the three aborts in walkDeployPath: each
+// must be a returned error, never a silent skip, because a module the walk
+// skips is a module no boundary guard sees.
+func TestDeployPathWalkFailsClosed(t *testing.T) {
+	cases := []struct {
+		name    string
+		module  string
+		wantErr string
+	}{
+		{"no literal source", "module \"m\" {\n  source = var.src\n}\n", "has no literal source"},
+		{"registry source", "module \"m\" {\n  source  = \"terraform-aws-modules/iam/aws\"\n  version = \"5.0.0\"\n}\n", "is not a local directory"},
+		{"git source with ref", "module \"m\" {\n  source = \"git::https://example.com/m.git?ref=v1\"\n}\n", "is not a local directory"},
+		{"missing local directory", "module \"m\" {\n  source = \"../modules/absent\"\n}\n", "not a readable directory"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, d := range []string{"env", "modules"} {
+				if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(root, "env", "main.tf"), []byte(tc.module), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			files, err := walkDeployPath(filepath.Join(root, "modules"), filepath.Join(root, "env"))
+			if err == nil {
+				t.Fatalf("walkDeployPath returned %v and no error; want a hard failure containing %q", files, tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("walkDeployPath error = %q, want it to contain %q", err, tc.wantErr)
+			}
+		})
 	}
 }
