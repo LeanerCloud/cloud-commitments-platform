@@ -651,7 +651,7 @@ func (h *Handler) approveViaToken(ctx context.Context, req *events.LambdaFunctio
 	// session; requireDifferentApprover returns 500 when mode is on and no
 	// session is available (fail-closed).
 	tokenSession := h.tryGetSession(ctx, req)
-	if err := h.requireDifferentApprover(ctx, tokenSession, execution); err != nil {
+	if err := h.requireDifferentApprover(ctx, tokenSession, execution.ExecutionID, execution.CreatedByUserID); err != nil {
 		return nil, err
 	}
 	// SEC-01 follow-up (issue #60 review): the deep-link flow always forces
@@ -809,7 +809,7 @@ func (h *Handler) authorizeApproveSession(ctx context.Context, session *Session,
 	// pass the approve-any / approve-own gate reach this check. The admin
 	// wildcard inside authorizeSessionApprove short-circuits RBAC but NOT this
 	// check; admins who created the row must disable the mode first.
-	return h.requireDifferentApprover(ctx, session, execution)
+	return h.requireDifferentApprover(ctx, session, execution.ExecutionID, execution.CreatedByUserID)
 }
 
 // authorizeScopedSessionApprove runs the account-scope gate (issue #92)
@@ -1082,15 +1082,15 @@ func (h *Handler) sendPurchaseScheduledEmail(ctx context.Context, execution *con
 //   - session == nil AND mode on: returns 500 (fail-closed; we cannot determine
 //     identity without a session; the email-token path should always carry a
 //     session when mode is on because the deep-link flow forces a login).
-//   - session present AND execution.CreatedByUserID == nil: returns 403 with a
+//   - session present AND creatorUserID == nil: returns 403 with a
 //     targeted message explaining that the legacy row predates dual-control and
 //     an admin must disable 4-eyes mode to proceed.
-//   - session present AND session.UserID == *execution.CreatedByUserID: returns 403.
-//   - session present AND session.UserID != *execution.CreatedByUserID: returns nil.
+//   - session present AND session.UserID == *creatorUserID: returns 403.
+//   - session present AND session.UserID != *creatorUserID: returns nil.
 //
 // Admin wildcard is intentionally NOT exempt: an admin who created an execution
 // must disable the mode in Settings before approving their own row.
-func (h *Handler) requireDifferentApprover(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+func (h *Handler) requireDifferentApprover(ctx context.Context, session *Session, subjectID string, creatorUserID *string) error {
 	cfg, err := h.config.GetGlobalConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("4-eyes policy check: failed to load global config: %w", err)
@@ -1101,19 +1101,19 @@ func (h *Handler) requireDifferentApprover(ctx context.Context, session *Session
 
 	// Mode is on.
 	if session == nil {
-		logging.Warnf("purchase[%s]: 4-eyes mode on but no session available; denying (fail-closed)", execution.ExecutionID)
+		logging.Warnf("4-eyes[%s]: mode on but no session available; denying (fail-closed)", subjectID)
 		return NewClientError(500, "4-eyes approval mode is enabled but no session could be resolved; sign in before approving")
 	}
 
-	if execution.CreatedByUserID == nil {
-		logging.Warnf("purchase[%s]: 4-eyes mode on; NULL creator (legacy row) attempted by user %s, denied",
-			execution.ExecutionID, session.UserID)
+	if creatorUserID == nil {
+		logging.Warnf("4-eyes[%s]: mode on; NULL creator (legacy row) attempted by user %s, denied",
+			subjectID, session.UserID)
 		return NewClientError(403, "approval declined: this execution predates the dual-control feature and has no recorded creator; an admin must disable 4-eyes mode to approve")
 	}
 
-	if session.UserID == *execution.CreatedByUserID {
-		logging.Warnf("purchase[%s]: 4-eyes mode on; creator %s attempted self-approval, denied",
-			execution.ExecutionID, session.UserID)
+	if session.UserID == *creatorUserID {
+		logging.Warnf("4-eyes[%s]: mode on; creator %s attempted self-approval, denied",
+			subjectID, session.UserID)
 		return NewClientError(403, "approval declined: 4-eyes mode requires a different approver than the requester")
 	}
 

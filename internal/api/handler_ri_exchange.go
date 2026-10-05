@@ -2201,7 +2201,7 @@ func (h *Handler) approveRIExchange(ctx context.Context, req *events.LambdaFunct
 	}
 
 	if token != "" {
-		return h.approveRIExchangeViaToken(ctx, id, token)
+		return h.approveRIExchangeViaToken(ctx, req, id, token)
 	}
 
 	return h.approveRIExchangeViaSession(ctx, req, id, nil)
@@ -2210,8 +2210,13 @@ func (h *Handler) approveRIExchange(ctx context.Context, req *events.LambdaFunct
 // approveRIExchangeViaToken is the legacy email-link branch of approveRIExchange.
 // It validates the approval token, transitions the exchange to processing, and
 // executes it. Extracted to keep approveRIExchange within cyclomatic-complexity limits.
-func (h *Handler) approveRIExchangeViaToken(ctx context.Context, id, token string) (any, error) {
+func (h *Handler) approveRIExchangeViaToken(ctx context.Context, req *events.LambdaFunctionURLRequest, id, token string) (any, error) {
 	record, err := h.validateExchangeApproval(ctx, id, token)
+	if err != nil {
+		return nil, err
+	}
+	// The deep link forces a login, so the approver's session is resolvable here.
+	err = h.requireDifferentRIExchangeApprover(ctx, h.tryGetSession(ctx, req), record)
 	if err != nil {
 		return nil, err
 	}
@@ -2255,6 +2260,10 @@ func (h *Handler) approveRIExchangeViaSession(ctx context.Context, req *events.L
 	}
 
 	record, err := h.fetchAndAuthorizeRIExchange(ctx, session, id)
+	if err != nil {
+		return nil, err
+	}
+	err = h.requireDifferentRIExchangeApprover(ctx, session, record)
 	if err != nil {
 		return nil, err
 	}
@@ -2378,6 +2387,15 @@ func (h *Handler) authorizeSessionApproveRIExchange(ctx context.Context, session
 	}
 
 	return nil
+}
+
+// requireDifferentRIExchangeApprover applies the purchase 4-eyes check when a creator
+// is recorded; automated exchanges have none and stay approvable (see issue #233).
+func (h *Handler) requireDifferentRIExchangeApprover(ctx context.Context, session *Session, record *config.RIExchangeRecord) error {
+	if record.CreatedByUserID == nil {
+		return nil
+	}
+	return h.requireDifferentApprover(ctx, session, record.ID, record.CreatedByUserID)
 }
 
 // validateExchangeApproval validates ID, token, and record state for an exchange approval.

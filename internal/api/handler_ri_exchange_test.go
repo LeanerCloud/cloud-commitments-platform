@@ -505,6 +505,138 @@ func TestApproveRIExchange_SessionApproveOwn(t *testing.T) {
 	})
 }
 
+type riApproverGrant func(m *MockAuthService, userID string)
+
+func grantRIAdmin(m *MockAuthService, _ string) { m.grantAdminPurchaser() }
+
+func grantRIApproveOwn(m *MockAuthService, userID string) {
+	m.On("HasPermissionAPI", context.Background(), userID, auth.ActionApproveAny, auth.ResourcePurchases).Return(false, nil)
+	m.On("HasPermissionAPI", context.Background(), userID, auth.ActionApproveOwn, auth.ResourcePurchases).Return(true, nil)
+}
+
+func grantRINone(m *MockAuthService, userID string) {
+	m.On("HasPermissionAPI", context.Background(), userID, mock.Anything, auth.ResourcePurchases).Return(false, nil)
+}
+
+// fourEyesRIExchangeFixture wires a pending exchange created by creatorID and a
+// session for approverID holding the given approve grant.
+func fourEyesRIExchangeFixture(t *testing.T, creatorID *string, approverID string, grant riApproverGrant, fourEyes bool) (*Handler, *MockConfigStore, string, string) {
+	t.Helper()
+	ctx := context.Background()
+	id := "550e8400-e29b-41d4-a716-446655440021"
+	token := "four-eyes-token"
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+
+	mockAuth.On("ValidateSession", ctx, "sess").Return(&Session{UserID: approverID, Email: approverID + "@example.com"}, nil)
+	mockAuth.On("ValidateCSRFToken", ctx, "sess", "csrf").Return(nil)
+	grant(mockAuth, approverID)
+
+	mockStore.On("GetRIExchangeRecord", ctx, id).Return(&config.RIExchangeRecord{
+		ID:              id,
+		Status:          "pending",
+		ApprovalToken:   config.HashApprovalToken(token),
+		SourceRIIDs:     []string{"ri-1"},
+		PaymentDue:      "50.00",
+		CreatedByUserID: creatorID,
+	}, nil)
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+		RequireDifferentApprover:    fourEyes,
+		RIExchangeMaxDailyUSD:       1000,
+		RIExchangeMaxPerExchangeUSD: 500,
+	}, nil)
+	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
+		Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-1"}, PaymentDue: "50.00"}, nil)
+	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	mockStore.On("FailRIExchange", ctx, id, mock.AnythingOfType("string")).Return(nil)
+	mockStore.On("StampRIExchangeApprovedBy", ctx, id, mock.Anything).Return(nil)
+
+	return &Handler{config: mockStore, auth: mockAuth}, mockStore, id, token
+}
+
+func csrfSessionReq() *events.LambdaFunctionURLRequest {
+	req := sessionReq("sess")
+	req.Headers["x-csrf-token"] = "csrf"
+	return req
+}
+
+// TestApproveRIExchange_FourEyes (issue #221): with 4-eyes on, the creator cannot
+// approve their own exchange through the session or the email-token branch.
+func TestApproveRIExchange_FourEyes(t *testing.T) {
+	ctx := context.Background()
+	creator := "creator-uuid"
+
+	denied := func(t *testing.T, mockStore *MockConfigStore, err error, code int) {
+		t.Helper()
+		require.Error(t, err)
+		ce, ok := IsClientError(err)
+		require.True(t, ok, "want ClientError, got %v", err)
+		assert.Equal(t, code, ce.code)
+		mockStore.AssertNotCalled(t, "TransitionRIExchangeStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	}
+	approved := func(t *testing.T, mockStore *MockConfigStore, err error) {
+		t.Helper()
+		require.NoError(t, err)
+		mockStore.AssertCalled(t, "TransitionRIExchangeStatus", ctx, mock.Anything, "pending", "processing", mock.Anything)
+	}
+
+	t.Run("session: creator with approve-own denied", func(t *testing.T) {
+		h, store, id, _ := fourEyesRIExchangeFixture(t, &creator, creator, grantRIApproveOwn, true)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "")
+		denied(t, store, err, 403)
+		assert.Contains(t, err.Error(), "4-eyes mode")
+	})
+
+	t.Run("session: admin creator denied", func(t *testing.T) {
+		h, store, id, _ := fourEyesRIExchangeFixture(t, &creator, creator, grantRIAdmin, true)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "")
+		denied(t, store, err, 403)
+	})
+
+	t.Run("session: creator holding the email token still denied", func(t *testing.T) {
+		h, store, id, token := fourEyesRIExchangeFixture(t, &creator, creator, grantRIApproveOwn, true)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, token)
+		denied(t, store, err, 403)
+	})
+
+	t.Run("token: creator session without approve rights denied", func(t *testing.T) {
+		h, store, id, token := fourEyesRIExchangeFixture(t, &creator, creator, grantRINone, true)
+		_, err := h.approveRIExchange(ctx, sessionReq("sess"), id, token)
+		denied(t, store, err, 403)
+		assert.Contains(t, err.Error(), "4-eyes mode")
+	})
+
+	t.Run("token: no session fails closed", func(t *testing.T) {
+		h, store, id, token := fourEyesRIExchangeFixture(t, &creator, creator, grantRIAdmin, true)
+		_, err := h.approveRIExchange(ctx, &events.LambdaFunctionURLRequest{}, id, token)
+		denied(t, store, err, 500)
+	})
+
+	t.Run("session: different approver allowed", func(t *testing.T) {
+		h, store, id, _ := fourEyesRIExchangeFixture(t, &creator, "approver-uuid", grantRIAdmin, true)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "")
+		approved(t, store, err)
+	})
+
+	t.Run("token: different approver allowed", func(t *testing.T) {
+		h, store, id, token := fourEyesRIExchangeFixture(t, &creator, "approver-uuid", grantRINone, true)
+		_, err := h.approveRIExchange(ctx, sessionReq("sess"), id, token)
+		approved(t, store, err)
+	})
+
+	t.Run("mode off: creator allowed", func(t *testing.T) {
+		h, store, id, _ := fourEyesRIExchangeFixture(t, &creator, creator, grantRIApproveOwn, false)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "")
+		approved(t, store, err)
+	})
+
+	t.Run("automated exchange without creator stays approvable", func(t *testing.T) {
+		h, store, id, _ := fourEyesRIExchangeFixture(t, nil, "approver-uuid", grantRIAdmin, true)
+		_, err := h.approveRIExchange(ctx, csrfSessionReq(), id, "")
+		approved(t, store, err)
+	})
+}
+
 // TestApproveRIExchange_LegacyTokenStillWorks verifies that the token-only path
 // continues to work for non-session callers after the dual-auth refactor (backwards-compat).
 func TestApproveRIExchange_LegacyTokenStillWorks(t *testing.T) {
