@@ -158,7 +158,7 @@ func TestHandler_executePurchase_PersistsStoredCostsNotClientCosts(t *testing.T)
 
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"recommendations":[{"id":"","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.24xlarge","count":2,"term":3,"payment":"all-upfront","recommended_count":4,"upfront_cost":1,"monthly_cost":1,"savings":999,"on_demand_cost":1,"details":{"platform":"Windows"},"selected":true}],"capacity_percent":50}`,
+		Body:    `{"recommendations":[{"id":"","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.24xlarge","count":2,"term":3,"payment":"all-upfront","recommended_count":4,"upfront_cost":1,"monthly_cost":1,"savings":999,"on_demand_cost":1,"selected":true}],"capacity_percent":50}`,
 	}
 	result, err := handler.executePurchase(ctx, req)
 	require.NoError(t, err)
@@ -942,6 +942,207 @@ func TestHandler_executePurchase_StaleOriginIDRefused(t *testing.T) {
 	require.Error(t, err, "a stale, unresolvable origin id must refuse the purchase, not silently fall through to the matched row")
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "no longer in the current recommendation set")
+	ce, isClient := IsClientError(err)
+	require.True(t, isClient)
+	assert.Equal(t, 409, ce.code)
+	mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+}
+
+// emptyIDExecuteHarness runs executePurchase for a request that omits the
+// recommendation id (issue #418) against one stored dedicated-tenancy EC2 row.
+func emptyIDExecuteHarness(t *testing.T, details string) (*config.PurchaseExecution, error) {
+	t.Helper()
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	session := &Session{UserID: "22222222-2222-3333-4444-555555555555", Email: "emptyid@example.com"}
+	mockAuth.On("ValidateSession", ctx, "emptyid-token").Return(session, nil)
+	mockAuth.grantPermissions([]auth.Permission{
+		{Action: auth.ActionExecute, Resource: auth.ResourcePurchases, Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 100000}},
+	})
+	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
+	var saved *config.PurchaseExecution
+	mockStore.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).
+		Return(nil).Maybe()
+
+	expectStoredRecs(mockStore, config.RecommendationRecord{
+		ID:       "aws|acct|ec2|us-east-1|m5.large||1|all-upfront",
+		Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+		Count: 1, Term: 1, Payment: "all-upfront", UpfrontCost: 1200, Savings: 100,
+		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`),
+	})
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	body := `{"recommendations":[{"id":"","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100` + details + `}]}`
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer emptyid-token"},
+		Body:    body,
+	}
+	_, err := handler.executePurchase(ctx, req)
+	if err != nil {
+		mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+	}
+	return saved, err
+}
+
+// TestHandler_executePurchase_EmptyIDMismatchedTenancyRefused is issue #418:
+// no id, tenancy "default" stated, stored row is dedicated. Pre-fix the
+// purchase silently resolved to the dedicated row.
+func TestHandler_executePurchase_EmptyIDMismatchedTenancyRefused(t *testing.T) {
+	saved, err := emptyIDExecuteHarness(t, `,"details":{"tenancy":"default"}`)
+	require.Error(t, err)
+	assert.Nil(t, saved)
+	assert.Contains(t, err.Error(), "tenancy")
+	ce, isClient := IsClientError(err)
+	require.True(t, isClient)
+	assert.Equal(t, 409, ce.code)
+}
+
+func TestHandler_executePurchase_EmptyIDMatchingDiscriminatorsSucceed(t *testing.T) {
+	saved, err := emptyIDExecuteHarness(t, `,"details":{"tenancy":"dedicated","platform":"Linux/UNIX","scope":"regional"}`)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	assert.JSONEq(t, `{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`, string(saved.Recommendations[0].Details))
+}
+
+// Omitted details are not compared and the purchase prices from the stored row.
+func TestHandler_executePurchase_EmptyIDOmittedDetailsSucceed(t *testing.T) {
+	saved, err := emptyIDExecuteHarness(t, ``)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	assert.Equal(t, "aws|acct|ec2|us-east-1|m5.large||1|all-upfront", saved.Recommendations[0].ID)
+}
+
+func TestHandler_executePurchase_EmptyIDMalformedDetailsRefused(t *testing.T) {
+	_, err := emptyIDExecuteHarness(t, `,"details":{"tenancy":5}`)
+	require.Error(t, err)
+	ce, isClient := IsClientError(err)
+	require.True(t, isClient)
+	assert.Equal(t, 400, ce.code)
+}
+
+// emptyIDExecuteAgainst runs executePurchase with an empty id against the
+// given single stored row; recJSON is the request recommendation object.
+func emptyIDExecuteAgainst(t *testing.T, stored config.RecommendationRecord, recJSON string) (*config.PurchaseExecution, error) {
+	t.Helper()
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	mockAuth.On("ValidateSession", ctx, "emptyid-token").Return(&Session{UserID: "22222222-2222-3333-4444-555555555555", Email: "emptyid@example.com"}, nil)
+	mockAuth.grantPermissions([]auth.Permission{
+		{Action: auth.ActionExecute, Resource: auth.ResourcePurchases, Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 100000}},
+	})
+	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
+	var saved *config.PurchaseExecution
+	mockStore.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).
+		Return(nil).Maybe()
+	expectStoredRecs(mockStore, stored)
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer emptyid-token"},
+		Body:    `{"recommendations":[` + recJSON + `]}`,
+	}
+	_, err := handler.executePurchase(ctx, req)
+	if err != nil {
+		mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+	}
+	return saved, err
+}
+
+func TestHandler_executePurchase_EmptyIDDiscriminatorMismatchesRefused(t *testing.T) {
+	ec2 := func(details string) config.RecommendationRecord {
+		return config.RecommendationRecord{
+			ID: "ec2-row", Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+			Count: 1, Term: 1, Payment: "all-upfront", UpfrontCost: 1200, Savings: 100,
+			Details: json.RawMessage(details),
+		}
+	}
+	const full = `{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional","memory_gb":16}`
+	ec2Rec := func(details string) string {
+		return `{"id":"","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100,"details":` + details + `}`
+	}
+	rdsStored := config.RecommendationRecord{
+		ID: "rds-row", Provider: "aws", Service: "rds", Region: "us-east-1", ResourceType: "db.m5.large", Engine: "postgres",
+		Count: 1, Term: 1, Payment: "all-upfront", UpfrontCost: 1200, Savings: 100,
+		Details: json.RawMessage(`{"engine":"postgres","az_config":"multi-az","instance_class":"db.m5.large"}`),
+	}
+	cases := []struct {
+		name   string
+		stored config.RecommendationRecord
+		rec    string
+		field  string
+	}{
+		{"platform", ec2(full), ec2Rec(`{"platform":"Windows"}`), "platform"},
+		{"scope", ec2(full), ec2Rec(`{"scope":"availability-zone"}`), "scope"},
+		{"memory_gb", ec2(full), ec2Rec(`{"memory_gb":32}`), "memory_gb"},
+		{"legacy stored row with empty details", ec2(``), ec2Rec(`{"tenancy":"dedicated"}`), "tenancy"},
+		{"rds az_config", rdsStored,
+			`{"id":"","provider":"aws","service":"rds","region":"us-east-1","resource_type":"db.m5.large","engine":"postgres","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100,"details":{"az_config":"single-az"}}`,
+			"az_config"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			saved, err := emptyIDExecuteAgainst(t, tc.stored, tc.rec)
+			require.Error(t, err)
+			assert.Nil(t, saved)
+			assert.Contains(t, err.Error(), tc.field)
+			ce, isClient := IsClientError(err)
+			require.True(t, isClient)
+			assert.Equal(t, 409, ce.code)
+		})
+	}
+}
+
+// Non-discriminator details (instance_type, vcpu, unknown keys) are neither
+// compared nor persisted: the priced record carries the STORED details.
+func TestHandler_executePurchase_EmptyIDIgnoresNonDiscriminatorDetails(t *testing.T) {
+	const stored = `{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`
+	row := config.RecommendationRecord{
+		ID: "ec2-row", Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+		Count: 1, Term: 1, Payment: "all-upfront", UpfrontCost: 1200, Savings: 100,
+		Details: json.RawMessage(stored),
+	}
+	saved, err := emptyIDExecuteAgainst(t, row,
+		`{"id":"","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100,`+
+			`"details":{"instance_type":"x1.32xlarge","vcpu":999,"surprise":"x","tenancy":"dedicated","platform":"Linux/UNIX","scope":"regional"}}`)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	assert.JSONEq(t, stored, string(saved.Recommendations[0].Details))
+}
+
+// The same refusal through the router, so the route-to-handler wiring is covered.
+func TestRouter_PurchasesExecute_EmptyIDMismatchedTenancyRefused(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", ctx, "emptyid-token").Return(&Session{UserID: "22222222-2222-3333-4444-555555555555", Email: "emptyid@example.com"}, nil)
+	mockAuth.grantPermissions([]auth.Permission{
+		{Action: auth.ActionExecute, Resource: auth.ResourcePurchases, Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 100000}},
+	})
+	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
+	expectStoredRecs(mockStore, config.RecommendationRecord{
+		ID: "ec2-row", Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+		Count: 1, Term: 1, Payment: "all-upfront", UpfrontCost: 1200, Savings: 100,
+		Details: json.RawMessage(`{"platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`),
+	})
+	r := NewRouter(&Handler{config: mockStore, auth: mockAuth})
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer emptyid-token"},
+		Body:    `{"recommendations":[{"id":"","provider":"aws","service":"ec2","region":"us-east-1","resource_type":"m5.large","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100,"details":{"tenancy":"default"}}]}`,
+	}
+	_, err := r.Route(ctx, "POST", "/api/purchases/execute", req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tenancy")
 	ce, isClient := IsClientError(err)
 	require.True(t, isClient)
 	assert.Equal(t, 409, ce.code)

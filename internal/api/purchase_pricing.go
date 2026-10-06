@@ -63,6 +63,8 @@ func (h *Handler) priceRecommendationsFromStore(ctx context.Context, recs []conf
 			if err := checkPurchaseDetailIdentity(&origin, &match, &recs[i], i); err != nil {
 				return err
 			}
+		} else if err := checkRequestDetailDiscriminators(&recs[i], &match, i); err != nil {
+			return err
 		}
 		priced, err := priceFromStored(&recs[i], &match, i)
 		if err != nil {
@@ -221,6 +223,33 @@ func checkPurchaseDetailIdentity(origin, match, req *config.RecommendationRecord
 			"recommendation %d (%s): changing term/payment would also change the purchase configuration (%s); "+
 				"this is a different commitment than %q, refresh recommendations and submit a fresh purchase for the desired configuration",
 			idx, describeRec(req), mismatch, origin.ID))
+	}
+	return nil
+}
+
+// checkRequestDetailDiscriminators is the empty-id counterpart of
+// checkPurchaseDetailIdentity (issue #418). With no id there is no origin
+// row, so the discriminators the client states in req.Details are compared
+// refuse-only against the stored match: a stated tenancy/platform/scope/
+// memory_gb/az_config that differs from (or is unknown on) the match is
+// refused with 409. Omitted discriminators are not compared, and the client
+// values are never copied into the priced record; priceFromStored still
+// takes everything from match.
+func checkRequestDetailDiscriminators(req, match *config.RecommendationRecord, idx int) error {
+	stated, err := common.DecodeServiceDetailsFor(req.Service, req.Details)
+	if err != nil {
+		return NewClientError(400, fmt.Sprintf("recommendation %d (%s): details are malformed: %v", idx, describeRec(req), err))
+	}
+	matchDetails, err := common.DecodeServiceDetailsFor(match.Service, match.Details)
+	if err != nil {
+		return fmt.Errorf("recommendation %d (%s): stored recommendation %q details could not be decoded: %w",
+			idx, describeRec(req), match.ID, err)
+	}
+	if mismatch := purchaseDetailMismatch(stated, matchDetails); mismatch != "" {
+		return NewClientError(409, fmt.Sprintf(
+			"recommendation %d (%s): the requested purchase configuration does not match the stored recommendation (%s); "+
+				"refresh recommendations and submit the desired configuration, or omit details",
+			idx, describeRec(req), mismatch))
 	}
 	return nil
 }
