@@ -696,6 +696,17 @@ function renderPlannedPurchaseRow(purchase: PlannedPurchase): string {
     ? formatCurrency(purchase.upfront_cost)
     : '—';
 
+  // platform#609: a step with no recommendations has nothing to buy, and its
+  // count, resource type, upfront and savings are placeholders. Say so rather
+  // than render them as zeros.
+  const hasNoRecommendations = purchase.has_recommendations === false;
+  const resourceCell = hasNoRecommendations
+    ? '<span class="no-recommendations" title="This step has no recommendations attached, so it cannot buy anything.">No recommendations attached</span>'
+    : `${escapeHtml(purchase.resource_type)} (${escapeHtml(purchase.region)})`;
+  const countCell = hasNoRecommendations ? '—' : String(purchase.count);
+  const upfrontShown = hasNoRecommendations ? '—' : upfrontCell;
+  const savingsCell = hasNoRecommendations ? '—' : `${formatCurrency(purchase.estimated_savings)}/mo`;
+
   // Issue #365: gate row actions by the same plan-management permissions
   // a click on each button would require. Readonly users see no buttons
   // (status badge only); user role sees Run/Pause/Resume/Edit but not
@@ -733,11 +744,11 @@ function renderPlannedPurchaseRow(purchase: PlannedPurchase): string {
       <td>${formatDate(purchase.scheduled_date)}</td>
       <td>${providerBadgeHtml(purchase.provider)}</td>
       <td>${escapeHtml(purchase.service)}</td>
-      <td>${escapeHtml(purchase.resource_type)} (${escapeHtml(purchase.region)})</td>
-      <td>${purchase.count}</td>
+      <td>${resourceCell}</td>
+      <td>${countCell}</td>
       <td>${termCell}</td>
-      <td>${upfrontCell}</td>
-      <td class="savings">${formatCurrency(purchase.estimated_savings)}/mo</td>
+      <td>${upfrontShown}</td>
+      <td class="savings">${savingsCell}</td>
       <td><span class="status-badge ${statusClass}">${escapeHtml(purchase.status)}</span></td>
       <td class="actions">
         ${canRunPurchase ? `<button data-action="run" data-id="${escapeHtmlAttr(purchase.id)}" class="btn-small primary" title="Run now">▶</button>` : ''}
