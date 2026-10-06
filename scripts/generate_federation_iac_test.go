@@ -312,6 +312,33 @@ func TestGenerator_InvalidTargetReportedAsTarget(t *testing.T) {
 	}
 }
 
+// TestGenerator_InvalidSourceReportedAsSource is the --source mirror of the
+// target test above. Before the source allowlist, --source Azure rendered a
+// WIF tfvars with oidc_issuer_url = "" beside a populated subject claim.
+func TestGenerator_InvalidSourceReportedAsSource(t *testing.T) {
+	for _, target := range []string{"aws", "gcp"} {
+		t.Run(target, func(t *testing.T) {
+			res := runGenerator(t,
+				"--target", target,
+				"--source", "Azure", // capitalised: a plausible typo
+				"--account-name", "prod",
+				"--account-id", "123456789012",
+				"--oidc-subject-claim", "123456789012345678901",
+				"--output", "-",
+			)
+			if res.exitCode == 0 {
+				t.Fatalf("--source Azure was accepted (exit 0):\n%s", res.stdout)
+			}
+			if !strings.Contains(res.stderr, "--source must be aws, azure, or gcp") {
+				t.Errorf("a bad --source must be reported as a --source problem, got:\n%s", res.stderr)
+			}
+			if res.stdout != "" {
+				t.Errorf("a rejected --source must not render an artifact, got:\n%s", res.stdout)
+			}
+		})
+	}
+}
+
 // TestGenerator_OverlongClaimIsNotEchoed checks that no rejection path echoes a
 // multi-kilobyte argument back at the operator, whichever diagnosis it reports.
 // Every branch that formats the claim goes through displayClaim, so this holds

@@ -470,6 +470,11 @@ func validateOIDCSubjectClaim(claim string, mode subjectClaimMode) error {
 // validFederationTargets in internal/api/handler_federation.go.
 var validTargets = map[string]bool{"aws": true, "azure": true, "gcp": true}
 
+// validSources is the allowlist of source clouds. Without it a typo such as
+// --source Azure fell through every source switch, rendering an empty OIDC
+// issuer next to a populated subject claim.
+var validSources = map[string]bool{"aws": true, "azure": true, "gcp": true}
+
 // sourceAccountIDRE matches an AWS account ID: exactly 12 ASCII digits, no
 // whitespace padding, leading sign, or Unicode digit look-alikes. AWS account
 // IDs are always 12 digits; anything else could not be a real one and would
@@ -513,13 +518,25 @@ func validateAzureAPIURL(baseURL string) error {
 	return nil
 }
 
+// validateCloudFlags checks --target before --source, for the diagnostic
+// ordering described in populateData.
+func validateCloudFlags(target, source string) error {
+	if !validTargets[target] {
+		return fmt.Errorf("--target must be aws, azure, or gcp (got %q)", target)
+	}
+	if !validSources[source] {
+		return fmt.Errorf("--source must be aws, azure, or gcp (got %q)", source)
+	}
+	return nil
+}
+
 // Validation precedes rendering so rejected input cannot overwrite an artifact.
 func populateData(data *iacData, target, source, tenantID, projectID, saEmail, oidcSubjectClaim, sourceAccountID string) error {
 	// --target is checked first so that a typo there is reported as a bad
 	// --target rather than as an inapplicable --oidc-subject-claim, which would
 	// send the operator off to drop a flag that was never the problem.
-	if !validTargets[target] {
-		return fmt.Errorf("--target must be aws, azure, or gcp (got %q)", target)
+	if err := validateCloudFlags(target, source); err != nil {
+		return err
 	}
 	// The claim is then validated outside the switch, so the check covers the
 	// targets that must NOT carry a subject claim as well as the one that must.
