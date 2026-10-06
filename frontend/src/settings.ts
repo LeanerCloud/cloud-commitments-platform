@@ -140,7 +140,6 @@ const SERVICE_FIELDS = [
   { provider: 'gcp',   service: 'compute',    termId: 'gcp-compute-term',      paymentId: null },
   { provider: 'gcp',   service: 'sql',        termId: 'gcp-sql-term',          paymentId: null },
   { provider: 'gcp',   service: 'memorystore',termId: 'gcp-memorystore-term',  paymentId: null },
-  { provider: 'gcp',   service: 'storage',    termId: 'gcp-storage-term',      paymentId: null },
 ] as const;
 
 // Fields that are persisted to the backend via saveGlobalSettings.
@@ -690,7 +689,6 @@ const GCP_OVERRIDE_SERVICES: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'compute',     label: 'Compute Engine' },
   { value: 'sql',         label: 'Cloud SQL' },
   { value: 'memorystore', label: 'Memorystore' },
-  { value: 'storage',     label: 'Cloud Storage' },
 ];
 
 /** Return the service list for the given provider's override modal. */
@@ -2997,13 +2995,6 @@ const SERVICE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
     'compute': 'Compute Engine CUDs',
     'sql': 'Cloud SQL CUDs',
     'memorystore': 'Memorystore CUDs',
-    // GCP Cloud Storage doesn't have a Committed Use Discount product
-    // (CUDs only apply to Compute Engine / Bigtable / NetApp / etc.),
-    // so the label is intentionally plain "Cloud Storage" — kept in
-    // sync with the matching <h5> on the Service Default card so the
-    // Global-Defaults confirmation pop-up still mirrors the card title
-    // (CodeRabbit on #472).
-    'storage': 'Cloud Storage',
   },
 };
 

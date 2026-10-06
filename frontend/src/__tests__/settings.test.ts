@@ -979,7 +979,7 @@ describe('Settings Module', () => {
       expect(ec2Enabled.checked).toBe(true);
     });
 
-    test('calls updateServiceConfig once per service field (18 calls)', async () => {
+    test('calls updateServiceConfig once per service field (17 calls)', async () => {
       (api.updateConfig as jest.Mock).mockResolvedValue({});
       (api.updateServiceConfig as jest.Mock).mockResolvedValue(undefined);
       window.alert = jest.fn();
@@ -989,11 +989,11 @@ describe('Settings Module', () => {
 
       // 5 AWS RIs (ec2, rds, elasticache, opensearch, redshift) + 4 AWS
       // SP (compute, ec2instance, sagemaker, database) + 5 Azure (vm,
-      // sql, cosmosdb, redis, search) + 4 GCP (compute, sql, memorystore,
-      // storage). Pre-rev-2 was 16 (1 umbrella SP + 1 sagemaker, plus 5
+      // sql, cosmosdb, redis, search) + 3 GCP (compute, sql, memorystore).
+      // Pre-rev-2 was 16 (1 umbrella SP + 1 sagemaker, plus 5
       // RIs); the SP split replaced those two with four per-plan-type
       // entries, net +2.
-      expect(api.updateServiceConfig).toHaveBeenCalledTimes(18);
+      expect(api.updateServiceConfig).toHaveBeenCalledTimes(17);
     });
 
     // Issue #301: configurable recommendations cache-staleness threshold + lookback
