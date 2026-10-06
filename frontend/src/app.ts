@@ -368,7 +368,7 @@ export async function handleExecutePurchase(): Promise<void> {
   // option. Defaulting here would silently pick the most cash-intensive
   // schedule on a money path (issue #431).
   const recsWithPayment = localRecs.filter(
-    (r): r is typeof r & { payment: string } => !!r.payment,
+    (r): r is typeof r & { payment: string } => !!r.payment?.trim(),
   );
   const missingCount = localRecs.length - recsWithPayment.length;
   if (missingCount > 0) {
