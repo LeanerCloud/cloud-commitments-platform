@@ -596,6 +596,10 @@ func (h *Handler) approvePurchase(ctx context.Context, req *events.LambdaFunctio
 		return nil, err
 	}
 
+	if err := h.requireSessionBeforeLookup(ctx, req); err != nil {
+		return nil, err
+	}
+
 	execution, err := h.loadApproveExecution(ctx, execID)
 	if err != nil {
 		return nil, err
@@ -634,6 +638,18 @@ func (h *Handler) approvePurchase(ctx context.Context, req *events.LambdaFunctio
 	}
 
 	return h.approvePurchaseViaSession(ctx, req, execution)
+}
+
+// requireSessionBeforeLookup answers 401 to a caller with no valid session
+// before the execution is loaded. Every branch of the email-link
+// approve/cancel/revoke routes needs a session (the token alone never
+// authorizes), so an unauthenticated caller gets the same response for a
+// missing and an existing execution ID (issue #435).
+func (h *Handler) requireSessionBeforeLookup(ctx context.Context, req *events.LambdaFunctionURLRequest) error {
+	if h.tryGetSession(ctx, req) == nil {
+		return NewClientError(401, "sign in with the account's contact email to approve or cancel this purchase")
+	}
+	return nil
 }
 
 // tokenActionError maps the email-link approve/cancel failures that are the
@@ -1206,12 +1222,13 @@ func (h *Handler) cancelPurchase(ctx context.Context, req *events.LambdaFunction
 		return nil, err
 	}
 
-	execution, err := h.config.GetExecutionByID(ctx, execID)
-	if errors.Is(err, config.ErrNotFound) {
-		return nil, NewClientError(404, "execution not found")
+	if err := h.requireSessionBeforeLookup(ctx, req); err != nil {
+		return nil, err
 	}
+
+	execution, err := h.getExecutionOr404(ctx, execID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get execution: %w", err)
+		return nil, err
 	}
 
 	// Three-mode dispatch:
@@ -1422,6 +1439,10 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 	// the email one-click link), but no mutation occurs on GET.
 	if req.RequestContext.HTTP.Method == "GET" {
 		return renderRevokeConfirmPage(execID, token), nil
+	}
+
+	if err := h.requireSessionBeforeLookup(ctx, req); err != nil {
+		return nil, err
 	}
 
 	execution, err := h.getExecutionOr404(ctx, execID)

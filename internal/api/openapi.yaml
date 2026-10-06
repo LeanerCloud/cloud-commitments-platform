@@ -544,18 +544,16 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           description: >
-            Token mode only: a token was supplied but the caller is not
-            signed in. A request with no credentials at all gets 403 (CSRF
-            validation failed), not 401, because the session path validates
-            CSRF before it requires a session.
+            The caller has no valid session, with or without a token. This
+            is answered before the execution is looked up, so an existing
+            and a missing execution ID get the same response.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
           description: >
-            CSRF validation failed (this includes a request with no
-            credentials), the session lacks approve permission or
+            CSRF validation failed for a signed-in session, the session lacks approve permission or
             exceeds its Constraints, the caller is not the account's contact
             email, no contact email is configured on the execution's
             accounts, 4-eyes mode rejects the approver, or (token mode) the
@@ -649,18 +647,16 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           description: >
-            Token mode only: a token was supplied but the caller is not
-            signed in. A request with no credentials at all gets 403 (CSRF
-            validation failed), not 401, because the session path validates
-            CSRF before it requires a session.
+            The caller has no valid session, with or without a token. This
+            is answered before the execution is looked up, so an existing
+            and a missing execution ID get the same response.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
           description: >
-            CSRF validation failed (this includes a request with no
-            credentials), the session lacks cancel permission, the caller is
+            CSRF validation failed for a signed-in session, the session lacks cancel permission, the caller is
             not the account's contact email, no contact email is
             configured on the execution's accounts, or (token mode) the
             approval token is invalid.
@@ -758,8 +754,9 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           description: >
-            No session and no token, or token mode without a signed-in
-            contact-email session.
+            The caller has no valid session, with or without a token. This
+            is answered before the execution is looked up, so an existing
+            and a missing execution ID get the same response.
           content:
             application/json:
               schema:
