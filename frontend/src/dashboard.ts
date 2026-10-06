@@ -485,10 +485,13 @@ function renderUpcomingPurchases(purchases: UpcomingPurchase[]): void {
     savings.className = 'upcoming-savings';
     const amountDiv = document.createElement('div');
     amountDiv.className = 'amount';
-    amountDiv.textContent = formatCurrency(p.estimated_savings);
+    // platform#609: a step with no recommendations has nothing to buy, and
+    // its savings is a placeholder. Say so rather than render $0.
+    const hasNoRecommendations = p.has_recommendations === false;
+    amountDiv.textContent = hasNoRecommendations ? '—' : formatCurrency(p.estimated_savings);
     const labelDiv = document.createElement('div');
     labelDiv.className = 'label';
-    labelDiv.textContent = 'Est. monthly savings';
+    labelDiv.textContent = hasNoRecommendations ? 'No recommendations attached' : 'Est. monthly savings';
     savings.appendChild(amountDiv);
     savings.appendChild(labelDiv);
 
@@ -597,7 +600,10 @@ function buildUpcomingDetailsModal(p: UpcomingPurchase, executionId: string): HT
   addRow('Provider', p.provider.toUpperCase());
   addRow('Service', p.service);
   addRow('Step', `${p.step_number} of ${p.total_steps}`);
-  addRow('Est. monthly savings', formatCurrency(p.estimated_savings));
+  addRow(
+    'Est. monthly savings',
+    p.has_recommendations === false ? 'No recommendations attached' : formatCurrency(p.estimated_savings),
+  );
 
   // Buttons row
   const btnRow = document.createElement('div');

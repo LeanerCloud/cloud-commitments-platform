@@ -3003,6 +3003,11 @@ components:
         estimated_savings:
           type: number
           format: double
+        has_recommendations:
+          type: boolean
+          description: >
+            False for a plan step that carries no recommendations;
+            estimated_savings is then a placeholder, not data (platform#609).
 
     # -- Recommendations ----------------------------------------------------
     RecommendationsResponse:

@@ -742,6 +742,9 @@ type UpcomingPurchase struct {
 	StepNumber       int     `json:"step_number"`
 	TotalSteps       int     `json:"total_steps"`
 	EstimatedSavings float64 `json:"estimated_savings"`
+	// HasRecommendations is false for a step that carries no recommendations,
+	// whose EstimatedSavings is then a placeholder, not data (platform#609).
+	HasRecommendations bool `json:"has_recommendations"`
 }
 
 // PlannedPurchasesResponse holds the list of planned purchases.

@@ -493,6 +493,8 @@ func upcomingFromExecution(plan *config.PurchasePlan, exec *config.PurchaseExecu
 		TotalSteps:       plan.RampSchedule.TotalSteps,
 		EstimatedSavings: exec.EstimatedSavings,
 		CreatedByUserID:  exec.CreatedByUserID,
+
+		HasRecommendations: len(exec.Recommendations) > 0,
 	}
 }
 
