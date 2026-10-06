@@ -88,10 +88,12 @@ func TestDatabaseMigrationWorkflow_MasksEncodedPassword(t *testing.T) {
 
 	const (
 		assignment = "ENCODED_PASSWORD=$("
-		mask       = `echo "::add-mask::${ENCODED_PASSWORD}"`
+		mask       = `echo "::add-mask::${ENCODED_PASSWORD//%/%25}"`
+		emptyCheck = `if [ -z "$ENCODED_PASSWORD" ]; then`
+		emptyFail  = `echo "::error::failed to encode the database password"`
 		dsn        = `DB_URL="pgx5://`
 	)
-	var assignments, masks int
+	var assignments, masks, emptyChecks, emptyFails int
 	var pendingAssignment bool
 	for _, raw := range strings.Split(string(content), "\n") {
 		line := strings.TrimSpace(raw)
@@ -100,6 +102,12 @@ func TestDatabaseMigrationWorkflow_MasksEncodedPassword(t *testing.T) {
 			assert.False(t, pendingAssignment, "ENCODED_PASSWORD assigned again before it was masked")
 			assignments++
 			pendingAssignment = true
+		case line == emptyCheck:
+			assert.True(t, pendingAssignment, "empty-encode check must sit between the assignment and its mask")
+			emptyChecks++
+		case line == emptyFail:
+			assert.True(t, pendingAssignment, "empty-encode failure must sit between the assignment and its mask")
+			emptyFails++
 		case line == mask:
 			assert.True(t, pendingAssignment, "add-mask without a preceding ENCODED_PASSWORD assignment")
 			masks++
@@ -111,4 +119,6 @@ func TestDatabaseMigrationWorkflow_MasksEncodedPassword(t *testing.T) {
 	assert.False(t, pendingAssignment, "last ENCODED_PASSWORD assignment is never masked")
 	assert.Equal(t, 4, assignments, "expected one ENCODED_PASSWORD assignment per migration step")
 	assert.Equal(t, assignments, masks, "every ENCODED_PASSWORD assignment needs an add-mask line")
+	assert.Equal(t, assignments, emptyChecks, "every ENCODED_PASSWORD assignment needs an empty-encode check")
+	assert.Equal(t, assignments, emptyFails, "every empty-encode check needs its ::error:: line")
 }
