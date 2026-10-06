@@ -48,31 +48,63 @@ func (h *Handler) requireAccountAccess(ctx context.Context, session *Session, ac
 // requirePlanAccess fetches the plan's associated accounts and rejects with
 // errNotFound when the session's allowed_accounts list doesn't intersect
 // with any of them. Admin / unrestricted sessions pass through unchanged.
-// Plans with no account assignments are hidden from scoped users — the safe
+// Plans with no account assignments are hidden from scoped users, the safe
 // default when we can't attribute the plan to a specific account.
+//
+// This is the READ gate: one in-scope account is enough to see the plan.
+// Mutations must use requirePlanMutationAccess instead.
 //
 // requirePermission must fire first; the session it returns is what the
 // caller passes here. This is the plan-level analog of requireAccountAccess
 // and is used by the plans/purchases/ri-exchange per-record scoping.
 func (h *Handler) requirePlanAccess(ctx context.Context, session *Session, planID string) error {
-	allowed, err := h.getAccountScope(ctx, session)
-	if err != nil {
-		return fmt.Errorf("failed to get allowed accounts: %w", err)
+	allowed, accounts, err := h.planScopeInputs(ctx, session, planID)
+	if err != nil || allowed.AllowsAll() {
+		return err
 	}
-	if allowed.AllowsAll() {
-		return nil
-	}
-	accounts, err := h.config.GetPlanAccounts(ctx, planID)
-	if err != nil {
-		return fmt.Errorf("failed to get plan accounts: %w", err)
-	}
-	for _rvc := range accounts {
-		acct := accounts[_rvc]
-		if allowed.Allows(acct.ID, acct.Name) {
+	for i := range accounts {
+		if allowed.Allows(accounts[i].ID, accounts[i].Name) {
 			return nil
 		}
 	}
 	return errNotFound
+}
+
+// requirePlanMutationAccess is the write gate: every account on the plan must
+// be in the session's scope, otherwise a user scoped to [A] could change or
+// delete a plan that also buys for account B. Plans with no accounts are
+// hidden from scoped users, as in requirePlanAccess. Refusals are errNotFound.
+func (h *Handler) requirePlanMutationAccess(ctx context.Context, session *Session, planID string) error {
+	allowed, accounts, err := h.planScopeInputs(ctx, session, planID)
+	if err != nil || allowed.AllowsAll() {
+		return err
+	}
+	if len(accounts) == 0 {
+		return errNotFound
+	}
+	for i := range accounts {
+		if !allowed.Allows(accounts[i].ID, accounts[i].Name) {
+			return errNotFound
+		}
+	}
+	return nil
+}
+
+// planScopeInputs resolves the session's scope and, only for scoped sessions,
+// the plan's accounts.
+func (h *Handler) planScopeInputs(ctx context.Context, session *Session, planID string) (auth.AccountScope, []config.CloudAccount, error) {
+	allowed, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return allowed, nil, fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+	if allowed.AllowsAll() {
+		return allowed, nil, nil
+	}
+	accounts, err := h.config.GetPlanAccounts(ctx, planID)
+	if err != nil {
+		return allowed, nil, fmt.Errorf("failed to get plan accounts: %w", err)
+	}
+	return allowed, accounts, nil
 }
 
 // requirePlanAccountsAccess guards BOTH axes of a plan↔account association
@@ -99,7 +131,7 @@ func (h *Handler) requirePlanAccess(ctx context.Context, session *Session, planI
 //
 // requirePermission must fire first; pass it the session that returned.
 func (h *Handler) requirePlanAccountsAccess(ctx context.Context, session *Session, planID string, accountIDs []string) error {
-	if err := h.requirePlanAccess(ctx, session, planID); err != nil {
+	if err := h.requirePlanMutationAccess(ctx, session, planID); err != nil {
 		return err
 	}
 	return h.requireAccountsAccess(ctx, session, accountIDs)
