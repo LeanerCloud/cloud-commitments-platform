@@ -94,7 +94,7 @@ func TestSelfAccountScope_JoiningWiderGroupRefused(t *testing.T) {
 
 	stubScopedActor(ctx, mockStore, []string{regionalAdminGroupID},
 		regionalAdminGroup(), adminGroup())
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	_, err := svc.UpdateUser(ctx, scopedActorID, scopedActorID, UpdateUserRequest{
 		GroupIDs: []string{regionalAdminGroupID, DefaultAdminGroupID},
@@ -103,7 +103,7 @@ func TestSelfAccountScope_JoiningWiderGroupRefused(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSelfEscalation)
 	assert.Contains(t, err.Error(), "all cloud accounts")
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // T2 -- Route 2: leaving the group that carries the restriction. Nothing is
@@ -120,7 +120,7 @@ func TestSelfAccountScope_LeavingScopingGroupRefused(t *testing.T) {
 	// the union: dropping regionalAdminGroup leaves the actor unrestricted.
 	stubScopedActor(ctx, mockStore, []string{regionalAdminGroupID, viewerGroup().ID},
 		regionalAdminGroup(), viewerGroup())
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	_, err := svc.UpdateUser(ctx, scopedActorID, scopedActorID, UpdateUserRequest{
 		GroupIDs: []string{viewerGroup().ID},
@@ -129,7 +129,7 @@ func TestSelfAccountScope_LeavingScopingGroupRefused(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSelfEscalation)
 	assert.Contains(t, err.Error(), "all cloud accounts")
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // T3 -- Control for T2: the SAME actor removing the OTHER group. viewerGroup
@@ -144,7 +144,7 @@ func TestSelfAccountScope_NonWideningRemovalAllowed(t *testing.T) {
 
 	stubScopedActor(ctx, mockStore, []string{regionalAdminGroupID, viewerGroup().ID},
 		regionalAdminGroup(), viewerGroup())
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	updated, err := svc.UpdateUser(ctx, scopedActorID, scopedActorID, UpdateUserRequest{
 		GroupIDs: []string{regionalAdminGroupID},
@@ -165,7 +165,7 @@ func TestSelfAccountScope_JoiningSubsetScopedGroupAllowed(t *testing.T) {
 
 	stubScopedActor(ctx, mockStore, []string{regionalAdminGroupID},
 		regionalAdminGroup(), acctAViewersGroup())
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	updated, err := svc.UpdateUser(ctx, scopedActorID, scopedActorID, UpdateUserRequest{
 		GroupIDs: []string{regionalAdminGroupID, acctAViewersGroupID},
@@ -194,7 +194,7 @@ func TestSelfAccountScope_FailsClosedOnUnresolvablePriorGroup(t *testing.T) {
 	// The store returns (nil, nil) for a deleted group.
 	mockStore.On("GetGroup", ctx, deletedGroupID).Return(nil, nil)
 	mockStore.On("GetGroup", ctx, viewerGroup().ID).Return(viewerGroup(), nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	_, err := svc.UpdateUser(ctx, scopedActorID, scopedActorID, UpdateUserRequest{
 		GroupIDs: []string{viewerGroup().ID},
@@ -202,7 +202,7 @@ func TestSelfAccountScope_FailsClosedOnUnresolvablePriorGroup(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "could not be loaded")
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // T6 -- Control for T5, and the reason the fail-closed rule is "the surviving
@@ -229,7 +229,7 @@ func TestSelfAccountScope_UnrestrictedActorCanDropDanglingGroup(t *testing.T) {
 			GroupIDs: []string{DefaultAdminGroupID, deletedGroupID}}, nil)
 	mockStore.On("GetGroup", ctx, DefaultAdminGroupID).Return(adminGroup(), nil).Maybe()
 	mockStore.On("GetGroup", ctx, deletedGroupID).Return(nil, nil).Maybe()
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	updated, err := svc.UpdateUser(ctx, scopedActorID, scopedActorID, UpdateUserRequest{
 		GroupIDs: []string{DefaultAdminGroupID},

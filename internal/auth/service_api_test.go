@@ -190,7 +190,7 @@ func TestService_UpdateUserAPI(t *testing.T) {
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		// An admin actor ("") changes another user's group membership.
 		req := APIUpdateUserRequest{
@@ -232,9 +232,9 @@ func TestService_UpdateUserAPI(t *testing.T) {
 		// Capture the User passed to UpdateUser and assert its email is
 		// the NEW one. Without the fix, this fails because the User would
 		// still carry old@example.com.
-		mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool {
+		mockStore.On("UpdateUserAdminFields", ctx, mock.MatchedBy(func(u *User) bool {
 			return u != nil && u.ID == "user-123" && u.Email == "new@example.com"
-		})).Return(nil).Once()
+		}), "old@example.com", mock.Anything, mock.Anything).Return(nil).Once()
 
 		req := APIUpdateUserRequest{
 			Email: "new@example.com",
@@ -314,9 +314,9 @@ func TestService_UpdateUserAPI(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool {
+		mockStore.On("UpdateUserAdminFields", ctx, mock.MatchedBy(func(u *User) bool {
 			return u != nil && u.ID == "user-123" && !u.Active && u.DeactivatedAt != nil
-		})).Return(nil).Once()
+		}), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		inactive := false
 		req := APIUpdateUserRequest{Active: &inactive}
@@ -347,9 +347,9 @@ func TestService_UpdateUserAPI(t *testing.T) {
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
 		// DeleteUserSessions must NOT be called: an omitted `active` field is
 		// not a deactivation.
-		mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool {
+		mockStore.On("UpdateUserAdminFields", ctx, mock.MatchedBy(func(u *User) bool {
 			return u != nil && u.Active
-		})).Return(nil).Once()
+		}), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		req := APIUpdateUserRequest{Groups: []string{"group-2"}}
 

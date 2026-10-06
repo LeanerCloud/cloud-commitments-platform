@@ -329,6 +329,7 @@ func (s *Service) UpdateUser(ctx context.Context, actorUserID, userID string, re
 	// below can reason about what is being added/removed/deactivated.
 	priorGroups := append([]string(nil), user.GroupIDs...)
 	priorActive := user.Active
+	readEmail := user.Email
 
 	applyUpdateUserRequest(user, req)
 
@@ -356,7 +357,7 @@ func (s *Service) UpdateUser(ctx context.Context, actorUserID, userID string, re
 		}
 	}
 
-	if err := s.store.UpdateUser(ctx, user); err != nil {
+	if err := s.store.UpdateUserAdminFields(ctx, user, readEmail, priorGroups, priorActive); err != nil {
 		// The deferred DB trigger (migration 000065) fires at commit time and
 		// can reject writes that the application-level soft check missed due to
 		// concurrent requests. Surface the trigger violation as ErrLastAdmin so

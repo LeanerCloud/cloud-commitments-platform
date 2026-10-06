@@ -164,7 +164,7 @@ func TestUpdateUser_RejectsZeroGroups(t *testing.T) {
 	_, err := svc.UpdateUser(ctx, "actor", "u1", UpdateUserRequest{GroupIDs: empty})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNoGroups)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestUpdateUser_LastAdminProtection proves the last Administrators-group
@@ -184,7 +184,7 @@ func TestUpdateUser_LastAdminProtection(t *testing.T) {
 	_, err := svc.UpdateUser(ctx, "", "a1", UpdateUserRequest{GroupIDs: []string{viewerGroup().ID}})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrLastAdmin)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestUpdateUser_DemoteAdminWhenOthersExist allows demotion when another admin
@@ -199,7 +199,7 @@ func TestUpdateUser_DemoteAdminWhenOthersExist(t *testing.T) {
 	admin := &User{ID: "a1", GroupIDs: []string{DefaultAdminGroupID}, Active: true}
 	mockStore.On("GetUserByID", ctx, "a1").Return(admin, nil)
 	mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil)
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	updated, err := svc.UpdateUser(ctx, "", "a1", UpdateUserRequest{GroupIDs: []string{viewerGroup().ID}})
 	require.NoError(t, err)
@@ -251,7 +251,7 @@ func TestUpdateUser_SelfEscalationDenied(t *testing.T) {
 	// UpdateUser -- a kill that disappears the moment someone adds a stub
 	// while tidying fixtures. With it, the removal is caught by the
 	// AssertNotCalled below, which is the actual security property.
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	mockStore.On("GetGroup", ctx, DefaultAdminGroupID).Return(adminGroup(), nil).Maybe()
 	// The change ADDS Administrators (does not remove it), so the last-admin
 	// branch is skipped; the self-escalation branch then evaluates
@@ -261,7 +261,7 @@ func TestUpdateUser_SelfEscalationDenied(t *testing.T) {
 		UpdateUserRequest{GroupIDs: []string{viewerGroup().ID, DefaultAdminGroupID}})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSelfEscalation)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestUpdateUser_AdminEditingSelfAllowed proves a privileged actor (manage-users)
@@ -278,7 +278,7 @@ func TestUpdateUser_AdminEditingSelfAllowed(t *testing.T) {
 	mockStore.On("GetUserByID", ctx, "adm").Return(admin, nil)
 	mockStore.On("GetGroup", ctx, DefaultAdminGroupID).Return(adminGroup(), nil)
 	mockStore.On("GetGroup", ctx, viewerGroup().ID).Return(viewerGroup(), nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil)
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	// Admin adds a viewer group to themselves while KEEPING Administrators, so
 	// the last-admin branch is not triggered and the self-escalation guard
