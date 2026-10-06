@@ -302,6 +302,7 @@ func TestMFAEnable_WrongCode(t *testing.T) {
 	user.MFAPendingSecret = secret
 	user.MFAPendingSecretExpiresAt = &expiresAt
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("RecordFailedLogin", ctx, user.ID).Return(nil).Once()
 
 	_, err := service.MFAEnable(ctx, user.ID, "000000")
 	require.Error(t, err)
@@ -455,6 +456,7 @@ func TestMFARegenerateRecoveryCodes_WrongTOTP(t *testing.T) {
 	user.MFAEnabled = true
 	user.MFASecret = "JBSWY3DPEHPK3PXP"
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("RecordFailedLogin", ctx, user.ID).Return(nil).Once()
 
 	_, err := service.MFARegenerateRecoveryCodes(ctx, user.ID, "000000")
 	require.Error(t, err)
@@ -595,6 +597,7 @@ func TestMFAEnable_WrongCode_ReturnsSentinel(t *testing.T) {
 	user.MFAPendingSecret = secret
 	user.MFAPendingSecretExpiresAt = &expiresAt
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("RecordFailedLogin", ctx, user.ID).Return(nil).Once()
 
 	_, err := service.MFAEnable(ctx, user.ID, "000000")
 	require.Error(t, err)
@@ -647,6 +650,7 @@ func TestMFADisable_WrongCode_ReturnsSentinel(t *testing.T) {
 	user.MFASecret = "JBSWY3DPEHPK3PXP"
 	user.MFARecoveryCodes = []string{"$2a$04$hashedstub"} // won't match any real code
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("RecordFailedLogin", ctx, user.ID).Return(nil).Once()
 
 	err := service.MFADisable(ctx, user.ID, "SecurePass@123", "000000")
 	require.Error(t, err)
@@ -680,6 +684,7 @@ func TestMFARegenerateRecoveryCodes_WrongCode_ReturnsSentinel(t *testing.T) {
 	user.MFAEnabled = true
 	user.MFASecret = "JBSWY3DPEHPK3PXP"
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("RecordFailedLogin", ctx, user.ID).Return(nil).Once()
 
 	_, err := service.MFARegenerateRecoveryCodes(ctx, user.ID, "000000")
 	require.Error(t, err)
@@ -711,10 +716,12 @@ func TestMFADisable_ReplayedTOTPIsRejected(t *testing.T) {
 	user.MFASecret = secret
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
 	mockStore.On("ClaimTOTPCounter", ctx, user.ID, mock.AnythingOfType("int64")).Return(false, nil).Once()
+	mockStore.On("RecordFailedLogin", ctx, user.ID).Return(nil).Once()
 
 	err := service.MFADisable(ctx, user.ID, "SecurePass@123", totpFor(secret))
 	require.ErrorIs(t, err, ErrMFAInvalidCode)
 	mockStore.AssertNotCalled(t, "DisableMFA", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockStore.AssertExpectations(t)
 }
 
 func TestMFARegenerateRecoveryCodes_ReplayedTOTPIsRejected(t *testing.T) {
@@ -728,6 +735,7 @@ func TestMFARegenerateRecoveryCodes_ReplayedTOTPIsRejected(t *testing.T) {
 	user.MFASecret = secret
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
 	mockStore.On("ClaimTOTPCounter", ctx, user.ID, mock.AnythingOfType("int64")).Return(false, nil).Once()
+	mockStore.On("RecordFailedLogin", ctx, user.ID).Return(nil).Once()
 
 	_, err := service.MFARegenerateRecoveryCodes(ctx, user.ID, totpFor(secret))
 	require.ErrorIs(t, err, ErrMFAInvalidCode)
@@ -766,4 +774,54 @@ func TestMFADisable_ClaimFailureFailsClosed(t *testing.T) {
 	err := service.MFADisable(ctx, user.ID, "SecurePass@123", totpFor(secret))
 	require.ErrorContains(t, err, "db down")
 	mockStore.AssertNotCalled(t, "DisableMFA", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// Issue #442: a locked account is refused before any code is checked, with
+// the opaque error and without spending a TOTP counter or writing state.
+func TestMFALifecycle_LockedAccountRefusedBeforeCodeCheck(t *testing.T) {
+	secret := "JBSWY3DPEHPK3PXP"
+	calls := map[string]func(s *Service, user *User) error{
+		"enable": func(s *Service, user *User) error {
+			_, err := s.MFAEnable(context.Background(), user.ID, totpFor(secret))
+			return err
+		},
+		"disable": func(s *Service, user *User) error {
+			return s.MFADisable(context.Background(), user.ID, "SecurePass@123", totpFor(secret))
+		},
+		"regenerate": func(s *Service, user *User) error {
+			_, err := s.MFARegenerateRecoveryCodes(context.Background(), user.ID, totpFor(secret))
+			return err
+		},
+	}
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			mockStore := new(MockStore)
+			service := createTestService(mockStore, new(MockEmailSender))
+			until := time.Now().Add(time.Minute)
+			expires := time.Now().Add(mfaPendingExpiry)
+			user := createTestUser(t, "SecurePass@123")
+			user.MFAEnabled, user.MFASecret, user.LockedUntil = true, secret, &until
+			user.MFAPendingSecret, user.MFAPendingSecretExpiresAt = secret, &expires
+			mockStore.On("GetUserByID", mock.Anything, user.ID).Return(user, nil)
+
+			require.ErrorIs(t, call(service, user), ErrMFAAuthFailed)
+			// Any store call beyond the user read would panic on the unstubbed mock.
+			mockStore.AssertExpectations(t)
+		})
+	}
+}
+
+// An empty code is a missing field, not a guess: it never counts (as in Login).
+func TestMFAEnable_EmptyCodeNotCounted(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	service := createTestService(mockStore, new(MockEmailSender))
+	expires := time.Now().Add(mfaPendingExpiry)
+	user := createTestUser(t, "SecurePass@123")
+	user.MFAPendingSecret, user.MFAPendingSecretExpiresAt = "JBSWY3DPEHPK3PXP", &expires
+	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+
+	_, err := service.MFAEnable(ctx, user.ID, "")
+	require.ErrorIs(t, err, ErrMFAInvalidCode)
+	mockStore.AssertNotCalled(t, "RecordFailedLogin", mock.Anything, mock.Anything)
 }
