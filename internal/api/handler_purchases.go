@@ -639,7 +639,7 @@ func (h *Handler) approvePurchase(ctx context.Context, req *events.LambdaFunctio
 // tokenActionError maps the email-link approve/cancel failures that are the
 // caller's fault to a 4xx: a wrong token is 403 (as on the RI exchange
 // approve path), an expired token is 410, and an execution that is no longer
-// in a transitionable status is 409. Anything else stays a server error.
+// whose status no longer allows the action is 409. Anything else stays a server error.
 func tokenActionError(err error) error {
 	switch {
 	case errors.Is(err, purchase.ErrInvalidApprovalToken):

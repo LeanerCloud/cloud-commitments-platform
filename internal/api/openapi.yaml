@@ -559,7 +559,10 @@ paths:
             exceeds its Constraints, the caller is not the account's contact
             email, no contact email is configured on the execution's
             accounts, 4-eyes mode rejects the approver, or (token mode) the
-            approval token is invalid.
+            approval token is invalid. Token validation applies on the
+            immediate-approval path only; the delayed-approval path (purchase
+            delay configured) does not validate the token yet (tracked
+            separately).
           content:
             application/json:
               schema:
@@ -585,7 +588,9 @@ paths:
                 $ref: '#/components/schemas/Error'
         '410':
           description: >
-            Token mode only, the approval token has expired.
+            Token mode only, the approval token has expired (immediate-approval
+            path only; the delayed-approval path does not validate the token yet,
+            tracked separately).
           content:
             application/json:
               schema:

@@ -117,3 +117,16 @@ func TestHandleRequest_RevokeViaEmail_MissingExecutionIs404(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 404, resp.StatusCode, resp.Body)
 }
+
+func TestHandleRequest_CancelViaToken_LostCASIs409(t *testing.T) {
+	future := time.Now().Add(time.Hour)
+	exec := &config.PurchaseExecution{Status: "pending", ApprovalToken: config.HashApprovalToken(tokenErrRawToken), ApprovalTokenExpiresAt: &future}
+	h := tokenErrHandler(t, exec, nil)
+	store := h.config.(*MockConfigStore)
+	store.On("CancelExecutionAtomic", mock.Anything, mock.Anything, tokenErrExecID, mock.Anything).
+		Return(false, "approved", nil)
+
+	resp, err := h.HandleRequest(context.Background(), tokenErrRequest("cancel", tokenErrRawToken))
+	require.NoError(t, err)
+	assert.Equal(t, 409, resp.StatusCode, resp.Body)
+}
