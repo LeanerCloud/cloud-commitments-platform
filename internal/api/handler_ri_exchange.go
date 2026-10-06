@@ -1457,7 +1457,7 @@ func (h *Handler) getRIUtilization(ctx context.Context, req *events.LambdaFuncti
 		region = cfg.Region
 	}
 
-	recsAdapter := awsprovider.NewRecommendationsClientDirect(cfg)
+	recsAdapter := h.buildReshapeRecsClient(cfg)
 	fetch := func(fetchCtx context.Context, days int) ([]recommendations.RIUtilization, error) {
 		return recsAdapter.GetRIUtilization(fetchCtx, days, region)
 	}
@@ -1466,7 +1466,46 @@ func (h *Handler) getRIUtilization(ctx context.Context, req *events.LambdaFuncti
 		return nil, fmt.Errorf("failed to get RI utilization: %w", err)
 	}
 
+	utilization, err = h.restrictUtilizationToDeploymentRIs(ctx, session, cfg, utilization)
+	if err != nil {
+		return nil, err
+	}
+
 	return &RIUtilizationResponse{Utilization: utilization}, nil
+}
+
+// restrictUtilizationToDeploymentRIs drops utilization rows that do not belong
+// to the deployment account for a scoped session. Cost Explorer
+// GetReservationUtilization, called from an AWS payer (management) account,
+// returns every linked member account's RIs and the rows carry only the RI id,
+// so the rows cannot be matched to a member account. The deployment account's
+// own RIs (EC2 DescribeReservedInstances never lists members' RIs) are the
+// only rows the scope gate in the caller has authorized; unknown ids are
+// dropped, so an unregistered or out-of-scope member's RIs stay hidden.
+// Unrestricted sessions keep every row and make no extra AWS call.
+func (h *Handler) restrictUtilizationToDeploymentRIs(ctx context.Context, session *Session, cfg aws.Config, utilization []recommendations.RIUtilization) ([]recommendations.RIUtilization, error) {
+	allowed, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+	if allowed.AllowsAll() {
+		return utilization, nil
+	}
+	own, err := h.buildReshapeEC2Client(cfg).ListConvertibleReservedInstances(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list convertible RIs: %w", err)
+	}
+	ownIDs := make(map[string]struct{}, len(own))
+	for i := range own {
+		ownIDs[own[i].ReservedInstanceID] = struct{}{}
+	}
+	visible := make([]recommendations.RIUtilization, 0, len(utilization))
+	for i := range utilization {
+		if _, ok := ownIDs[utilization[i].ReservedInstanceID]; ok {
+			visible = append(visible, utilization[i])
+		}
+	}
+	return visible, nil
 }
 
 // parseLookbackDaysParam parses and validates the "lookback_days" query parameter.
