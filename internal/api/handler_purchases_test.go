@@ -3259,9 +3259,10 @@ func TestHandler_cancelPurchase_Session_RejectsTerminalStatus(t *testing.T) {
 // TestHandler_cancelPurchase_Session_RejectsEachNonCancelableStatus is the
 // session-path companion to the token-path #645 regression guard: every
 // status outside pending/notified must be rejected with a 409 and no write,
-// for parity with purchase.Manager.CancelExecution. The admin session keeps
-// the focus on the status guard (which fires before authorizeSessionCancel)
-// rather than the RBAC matrix, already covered by the matrix tests above.
+// for parity with purchase.Manager.CancelExecution. The session holds
+// cancel-any, so it passes authorizeCancelSession in cancelPurchase and the
+// status guard in cancelPurchaseViaSession is what rejects; the RBAC matrix
+// is covered by the matrix tests above.
 func TestHandler_cancelPurchase_Session_RejectsEachNonCancelableStatus(t *testing.T) {
 	rejected := []string{"approved", "running", "paused", "failed", "expired", "completed", "canceled"}
 	for _, status := range rejected {
