@@ -83,10 +83,11 @@ func (h *Handler) getHistory(ctx context.Context, req *events.LambdaFunctionURLR
 	// filters) because the cap drops rows before they run. It is a single
 	// boolean: a count would reveal other tenants' row volume to a scoped user.
 	return HistoryResponse{
-		Summary:   summarizePurchaseHistory(all),
-		Purchases: all,
-		Truncated: len(completed) >= filters.Limit || executionsCapped,
-		Limit:     filters.Limit,
+		Summary:         summarizePurchaseHistory(all),
+		Purchases:       all,
+		Truncated:       len(completed) >= filters.Limit || executionsCapped,
+		Limit:           filters.Limit,
+		ExecutionsLimit: config.DefaultListLimit,
 	}, nil
 }
 
@@ -159,7 +160,6 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 		logging.Warnf("history: failed to load non-completed executions: %v", err)
 		return nil, nil, false
 	}
-	capped := len(executions) >= config.DefaultListLimit
 	if len(executions) == 0 {
 		return nil, nil, false
 	}
@@ -167,6 +167,9 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 	userEmailCache := h.resolveUserEmails(ctx, executions)
 	out := make([]config.PurchaseHistoryRecord, 0, len(executions))
 	var staleExecs []config.PurchaseExecution
+	// Rows the History view can surface; clean completed executions do not
+	// count toward the cap signal (the store already excludes them).
+	surfaced := 0
 	for _rvc := range executions {
 		exec := executions[_rvc]
 		// Dedup: a normal completed execution is already represented by its
@@ -177,6 +180,7 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 		if exec.Status == "completed" && exec.Error == "" {
 			continue
 		}
+		surfaced++
 		// Collect stale pending/notified executions for the post-assembly
 		// expire sweep. We do NOT mutate status here to keep the GET
 		// read-only: the response reflects current DB state; the sweep
@@ -193,7 +197,7 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 		}
 		out = append(out, executionToHistoryRow(exec, approver, createdByEmail))
 	}
-	return out, staleExecs, capped
+	return out, staleExecs, surfaced >= config.DefaultListLimit
 }
 
 // isStaleExecution reports whether the execution is a pending/notified

@@ -74,6 +74,47 @@ func TestHandler_getHistory_TruncatedWhenExecutionsAtCap(t *testing.T) {
 	assert.Equal(t, true, body["truncated"])
 }
 
+func cleanCompletedExecutions(n int) []config.PurchaseExecution {
+	execs := pendingExecutions(n, nil)
+	for i := range execs {
+		execs[i].Status = "completed"
+	}
+	return execs
+}
+
+// Clean completed executions are skipped by the handler (and excluded by the
+// store query), so a mature tenant must not see a permanent banner.
+func TestHandler_getHistory_NotTruncatedByCleanCompletedExecutions(t *testing.T) {
+	body := runAdminHistory(t, historyRows(3), cleanCompletedExecutions(config.DefaultListLimit), map[string]string{})
+	assert.Equal(t, false, body["truncated"])
+	assert.Len(t, body["purchases"], 3)
+}
+
+func TestHandler_getHistory_TruncatedByFailedExecutions(t *testing.T) {
+	execs := pendingExecutions(config.DefaultListLimit, nil)
+	for i := range execs {
+		execs[i].Status = "failed"
+	}
+	body := runAdminHistory(t, nil, execs, map[string]string{})
+	assert.Equal(t, true, body["truncated"])
+}
+
+func TestHandler_getHistory_AuditGapCompletedExecutionsCountTowardCap(t *testing.T) {
+	execs := cleanCompletedExecutions(config.DefaultListLimit)
+	for i := range execs {
+		execs[i].Error = "history write failed"
+	}
+	body := runAdminHistory(t, nil, execs, map[string]string{})
+	assert.Equal(t, true, body["truncated"])
+}
+
+func TestHandler_getHistory_ExecutionsLimitIsFixed(t *testing.T) {
+	body := runAdminHistory(t, historyRows(2), pendingExecutions(config.DefaultListLimit, nil), map[string]string{"limit": "500"})
+	assert.EqualValues(t, 500, body["limit"])
+	assert.EqualValues(t, config.DefaultListLimit, body["executions_limit"])
+	assert.Equal(t, true, body["truncated"])
+}
+
 func TestHandler_getHistory_TruncatedHonorsCustomLimit(t *testing.T) {
 	body := runAdminHistory(t, historyRows(5), nil, map[string]string{"limit": "5"})
 	assert.Equal(t, true, body["truncated"])

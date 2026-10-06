@@ -73,7 +73,7 @@ describe('History truncation banner (issue #248)', () => {
   });
 
   test('shows the banner above both tables when the API reports truncation', async () => {
-    (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [], truncated: true, limit: 100 });
+    (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [], truncated: true, limit: 100, executions_limit: 100 });
     await loadHistory();
     for (const id of ['purchases-truncation-notice', 'history-truncation-notice']) {
       const el = document.getElementById(id)!;
@@ -91,11 +91,22 @@ describe('History truncation banner (issue #248)', () => {
   });
 
   test('clears a previous banner on a later untruncated load', async () => {
-    (api.getHistory as jest.Mock).mockResolvedValueOnce({ summary: {}, purchases: [], truncated: true, limit: 100 });
+    (api.getHistory as jest.Mock).mockResolvedValueOnce({ summary: {}, purchases: [], truncated: true, limit: 100, executions_limit: 100 });
     await loadHistory();
     (api.getHistory as jest.Mock).mockResolvedValueOnce({ summary: {}, purchases: [] });
     await loadHistory();
     expect(document.getElementById('history-truncation-notice')!.hidden).toBe(true);
     expect(document.getElementById('history-truncation-notice')!.textContent).toBe('');
+  });
+
+  test('hides a previous banner when the next load fails', async () => {
+    (api.getHistory as jest.Mock).mockResolvedValueOnce({ summary: {}, purchases: [], truncated: true, limit: 100, executions_limit: 100 });
+    await loadHistory();
+    (api.getHistory as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    await loadHistory();
+    for (const id of ['purchases-truncation-notice', 'history-truncation-notice']) {
+      expect(document.getElementById(id)!.hidden).toBe(true);
+    }
   });
 });
