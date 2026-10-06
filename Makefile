@@ -1,4 +1,4 @@
-.PHONY: build clean test deploy help all build-server build-lambda test-unit test-integration \
+.PHONY: build clean test deploy help all build-server build-lambda test-unit test-integration test-compile-integration \
         test-coverage full-test security-scan terraform-validate docker-build \
         fmt vet lint complexity complexity-report security-scan-go security-scan-docker \
         security-scan-terraform terraform-fmt terraform-fmt-check iac-arm docker-test pre-commit \
@@ -57,12 +57,17 @@ build-server:
 build-lambda:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o bootstrap ./cmd/lambda
 
-# Run unit tests
-test: test-unit
+# Run unit tests, then type-check integration-tagged tests (no database needed)
+test: test-unit test-compile-integration
 
 test-unit:
 	@echo "Running unit tests..."
 	go test -v -race -short ./...
+
+# Compile integration-tagged tests without running them
+test-compile-integration:
+	@echo "Type-checking integration-tagged tests..."
+	go vet -tags=integration ./...
 
 # Run integration tests (requires testcontainers)
 test-integration:
