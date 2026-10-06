@@ -993,6 +993,43 @@ describe('Settings Module', () => {
         expect(isUnsavedChanges()).toBe(false);
       });
 
+      test('an SP card coverage typed during its pending PUT is kept and sent by the next save (#576)', async () => {
+        await loadWithCoverage50();
+        const card = document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement;
+        card.value = '60';
+        let resolvePut!: () => void;
+        (api.updateServiceConfig as jest.Mock).mockImplementation((provider: string, svc: string) =>
+          provider === 'aws' && svc === 'savings-plans-compute'
+            ? new Promise<void>(resolve => { resolvePut = resolve; })
+            : Promise.resolve());
+
+        const firstSave = saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+        await new Promise(r => setTimeout(r, 0));
+        card.value = '77';
+        resolvePut();
+        await firstSave;
+
+        expect(coverageSentFor('savings-plans-compute')).toBe(60);
+        expect(card.value).toBe('77');
+        expect(isUnsavedChanges()).toBe(true);
+
+        (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(coverageSentFor('savings-plans-compute')).toBe(77);
+        expect(isUnsavedChanges()).toBe(false);
+      });
+
+      test('a saved service payment edit leaves nothing unsaved (#576)', async () => {
+        await loadWithCoverage50();
+        (document.getElementById('aws-ec2-payment') as HTMLSelectElement).value = 'partial-upfront';
+        expect(isUnsavedChanges()).toBe(true);
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(isUnsavedChanges()).toBe(false);
+      });
+
       test('an empty global coverage field is rejected instead of saving 0', async () => {
         await loadWithCoverage50();
         (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '';
