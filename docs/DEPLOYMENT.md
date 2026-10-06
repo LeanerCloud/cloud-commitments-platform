@@ -687,7 +687,7 @@ migrate -path internal/database/postgres/migrations \
 Check: `DB_AUTO_MIGRATE=true`, `DB_MIGRATIONS_PATH=/app/internal/database/postgres/migrations`, correct credentials. Run manually:
 
 ```bash
-DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id cudly-dev-db-password-* --query SecretString --output text)
+DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id cudly-dev-db-password-* --query SecretString --output text | jq -r .password)
 RDS_ENDPOINT=$(cd terraform/environments/aws && terraform output -raw database_proxy_endpoint)
 
 ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)

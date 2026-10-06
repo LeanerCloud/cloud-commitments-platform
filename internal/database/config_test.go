@@ -842,3 +842,14 @@ func TestConfigDSN_PasswordRoundTrip(t *testing.T) {
 		assert.Equal(t, "localhost", parsed.Host)
 	}
 }
+
+func TestConfigDSN_PasswordQuotingText(t *testing.T) {
+	cfg := &Config{
+		Host: "localhost", Port: 5432, User: "u", Database: "d",
+		SSLMode: "disable", ConnectTimeout: 10 * time.Second,
+	}
+	// libpq unescapes a backslash in quoted values only, and pgx does not
+	// reject an unquoted one, so the round trip alone cannot catch its omission.
+	assert.Contains(t, cfg.DSN(`back\slash`), ` password='back\\slash' `)
+	assert.Contains(t, cfg.DSN("it's"), ` password='it\'s' `)
+}
