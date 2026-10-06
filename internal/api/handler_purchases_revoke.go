@@ -496,8 +496,11 @@ func (h *Handler) calculateAzureRevoke(ctx context.Context, req *events.LambdaFu
 	}
 
 	refundAmount, refundCurrency := extractAzureRefundQuote(calcResp)
+	if refundAmount == nil || strings.TrimSpace(refundCurrency) == "" {
+		return nil, NewClientError(422, "Azure returned no refund amount or currency for this reservation; cannot quote a refund, contact Azure Support to request one")
+	}
 	return &revokeQuoteResult{
-		RefundAmount:   refundAmount,
+		RefundAmount:   *refundAmount,
 		RefundCurrency: refundCurrency,
 		QuotedAt:       time.Now().UTC().Format(time.RFC3339),
 	}, nil
@@ -575,20 +578,24 @@ func azureRevokeWindowAndIDs(record *config.PurchaseHistoryRecord) (string, stri
 }
 
 // extractAzureRefundQuote pulls the refund amount and currency out of a
-// CalculateRefund response, guarding every nil pointer in the chain. Returns
-// zero values when the response carries no billing-refund amount.
-func extractAzureRefundQuote(resp armreservations.CalculateRefundClientPostResponse) (float64, string) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
-	var refundAmount float64
-	var refundCurrency string
-	if resp.Properties != nil && resp.Properties.BillingRefundAmount != nil {
-		if resp.Properties.BillingRefundAmount.Amount != nil {
-			refundAmount = *resp.Properties.BillingRefundAmount.Amount
-		}
-		if resp.Properties.BillingRefundAmount.CurrencyCode != nil {
-			refundCurrency = *resp.Properties.BillingRefundAmount.CurrencyCode
-		}
+// CalculateRefund response, guarding every nil pointer in the chain. A missing
+// amount is returned as nil and a missing currency as "", never as zero, so
+// callers can tell "Azure quoted nothing" from "Azure quoted 0".
+func extractAzureRefundQuote(resp armreservations.CalculateRefundClientPostResponse) (*float64, string) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
+	if resp.Properties == nil || resp.Properties.BillingRefundAmount == nil {
+		return nil, ""
 	}
-	return refundAmount, refundCurrency
+	price := resp.Properties.BillingRefundAmount
+	var amount *float64
+	if price.Amount != nil {
+		v := *price.Amount
+		amount = &v
+	}
+	var currency string
+	if price.CurrencyCode != nil {
+		currency = *price.CurrencyCode
+	}
+	return amount, currency
 }
 
 // revokeAzurePurchase handles Azure reservation returns via the Azure
@@ -787,22 +794,10 @@ func (h *Handler) azureCalculateRefund(ctx context.Context, calcClient azureCalc
 	}
 
 	var sessionID string
-	var calcRefundAmount *float64
-	var calcRefundCurrency string
-	if calcResp.Properties != nil {
-		if calcResp.Properties.SessionID != nil {
-			sessionID = *calcResp.Properties.SessionID
-		}
-		if calcResp.Properties.BillingRefundAmount != nil {
-			if calcResp.Properties.BillingRefundAmount.Amount != nil {
-				v := *calcResp.Properties.BillingRefundAmount.Amount
-				calcRefundAmount = &v
-			}
-			if calcResp.Properties.BillingRefundAmount.CurrencyCode != nil {
-				calcRefundCurrency = *calcResp.Properties.BillingRefundAmount.CurrencyCode
-			}
-		}
+	if calcResp.Properties != nil && calcResp.Properties.SessionID != nil {
+		sessionID = *calcResp.Properties.SessionID
 	}
+	calcRefundAmount, calcRefundCurrency := extractAzureRefundQuote(calcResp)
 	return sessionID, calcRefundAmount, calcRefundCurrency, nil
 }
 
