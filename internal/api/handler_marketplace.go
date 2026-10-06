@@ -187,7 +187,7 @@ func (h *Handler) marketplaceList(ctx context.Context, req *events.LambdaFunctio
 	// months. computeRemainingMonths rejects a non-positive term and a missing
 	// timestamp rather than pricing garbage on this money path.
 	termMonths := row.Term * 12
-	remainingMonths, err := computeRemainingMonths(row.Timestamp, termMonths)
+	remainingMonths, err := computeRemainingMonths(row.Timestamp, termMonths, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -452,25 +452,24 @@ func (h *Handler) authorizeSessionSell(ctx context.Context, session *Session, ac
 	}})
 }
 
-// computeRemainingMonths returns the number of whole months remaining on an RI
-// given its purchase timestamp and total term in months. A zero timestamp is
-// absent data and returns an error: pricing it as 1 remaining month would list
-// the RI for a fraction of its residual value. The result is floored at 1.
-func computeRemainingMonths(purchaseTime time.Time, termMonths int) (int, error) {
+// computeRemainingMonths returns the whole months remaining on an RI at now,
+// given its purchase timestamp and total term in months (12 or 36). Absent
+// data, an unsupported term and less than one month remaining are rejected with
+// a 422 so the caller sees why: AWS requires at least one month remaining in the
+// term to list a Standard RI on the Reserved Instance Marketplace.
+func computeRemainingMonths(purchaseTime time.Time, termMonths int, now time.Time) (int, error) {
 	if purchaseTime.IsZero() {
-		return 0, fmt.Errorf("purchase has no timestamp; cannot compute remaining term for marketplace pricing")
+		return 0, NewClientError(422, "purchase has no timestamp; cannot compute remaining term for marketplace pricing")
 	}
-	if termMonths <= 0 {
-		return 0, fmt.Errorf("invalid term of %d months; cannot compute remaining term for marketplace pricing", termMonths)
+	if termMonths != 12 && termMonths != 36 {
+		return 0, NewClientError(422, fmt.Sprintf("invalid term of %d months (expected 1 or 3 years); cannot compute remaining term for marketplace pricing", termMonths))
 	}
-	elapsed := time.Since(purchaseTime)
-	elapsedMonths := elapsed.Hours() / (24 * 30.4375)
-	remaining := float64(termMonths) - elapsedMonths
-	r := int(math.Floor(remaining))
-	if r < 1 {
-		return 1, nil
+	elapsedMonths := now.Sub(purchaseTime).Hours() / (24 * 30.4375)
+	remaining := int(math.Floor(float64(termMonths) - elapsedMonths))
+	if remaining < 1 {
+		return 0, NewClientError(422, "this Reserved Instance has less than one month remaining (or has expired) and cannot be listed on the AWS Marketplace")
 	}
-	return r, nil
+	return remaining, nil
 }
 
 // awsMarketplaceFeePercent is the AWS Marketplace transaction fee percentage
