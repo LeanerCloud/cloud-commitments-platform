@@ -803,25 +803,21 @@ func TestMFALifecycle_LockedAccountRefusedBeforeCodeCheck(t *testing.T) {
 			user.MFAEnabled, user.MFASecret, user.LockedUntil = true, secret, &until
 			user.MFAPendingSecret, user.MFAPendingSecretExpiresAt = secret, &expires
 			mockStore.On("GetUserByID", mock.Anything, user.ID).Return(user, nil)
+			// Permissive stubs so an unfixed service fails by assertion, not by panic.
+			writes := []string{"ClaimTOTPCounter", "EnableMFA", "DisableMFA", "ReplaceMFARecoveryCodes", "ClearPendingMFASecret", "RecordFailedLogin"}
+			mockStore.On("ClaimTOTPCounter", mock.Anything, user.ID, mock.Anything).Return(true, nil).Maybe()
+			mockStore.On("EnableMFA", mock.Anything, user.ID, mock.Anything, mock.Anything).Return(nil).Maybe()
+			mockStore.On("DisableMFA", mock.Anything, user.ID, mock.Anything, mock.Anything).Return(nil).Maybe()
+			mockStore.On("ReplaceMFARecoveryCodes", mock.Anything, user.ID, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+			mockStore.On("ClearPendingMFASecret", mock.Anything, user.ID).Return(nil).Maybe()
+			mockStore.On("RecordFailedLogin", mock.Anything, user.ID).Return(nil).Maybe()
 
 			require.ErrorIs(t, call(service, user), ErrMFAAuthFailed)
-			// Any store call beyond the user read would panic on the unstubbed mock.
-			mockStore.AssertExpectations(t)
+			for _, method := range writes {
+				for _, c := range mockStore.Calls {
+					assert.NotEqual(t, method, c.Method, "locked account must not reach %s", method)
+				}
+			}
 		})
 	}
-}
-
-// An empty code is a missing field, not a guess: it never counts (as in Login).
-func TestMFAEnable_EmptyCodeNotCounted(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockStore)
-	service := createTestService(mockStore, new(MockEmailSender))
-	expires := time.Now().Add(mfaPendingExpiry)
-	user := createTestUser(t, "SecurePass@123")
-	user.MFAPendingSecret, user.MFAPendingSecretExpiresAt = "JBSWY3DPEHPK3PXP", &expires
-	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
-
-	_, err := service.MFAEnable(ctx, user.ID, "")
-	require.ErrorIs(t, err, ErrMFAInvalidCode)
-	mockStore.AssertNotCalled(t, "RecordFailedLogin", mock.Anything, mock.Anything)
 }

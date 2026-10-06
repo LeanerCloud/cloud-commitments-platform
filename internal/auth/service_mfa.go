@@ -392,8 +392,8 @@ func (s *Service) MFAEnable(ctx context.Context, userID, code string) ([]string,
 	if err != nil || user == nil {
 		return nil, fmt.Errorf("%w", ErrMFAAuthFailed)
 	}
-	if err := s.rejectLockedMFAUser(user); err != nil {
-		return nil, err
+	if lockErr := s.rejectLockedMFAUser(user); lockErr != nil {
+		return nil, lockErr
 	}
 	if user.MFAEnabled {
 		return nil, fmt.Errorf("%w", ErrMFAAlreadyEnabled)
@@ -487,8 +487,8 @@ func (s *Service) MFADisable(ctx context.Context, userID, password, codeOrRecove
 	if err != nil || user == nil {
 		return fmt.Errorf("%w", ErrMFAAuthFailed)
 	}
-	if err := s.rejectLockedMFAUser(user); err != nil {
-		return err
+	if lockErr := s.rejectLockedMFAUser(user); lockErr != nil {
+		return lockErr
 	}
 	if !s.verifyPassword(password, user.PasswordHash) {
 		return fmt.Errorf("%w", ErrMFAInvalidPassword)
@@ -527,14 +527,14 @@ func (s *Service) MFARegenerateRecoveryCodes(ctx context.Context, userID, code s
 	if err != nil || user == nil {
 		return nil, fmt.Errorf("%w", ErrMFAAuthFailed)
 	}
-	if err := s.rejectLockedMFAUser(user); err != nil {
-		return nil, err
+	if lockErr := s.rejectLockedMFAUser(user); lockErr != nil {
+		return nil, lockErr
 	}
 	if !user.MFAEnabled || user.MFASecret == "" {
 		return nil, fmt.Errorf("%w", ErrMFANotEnabled)
 	}
-	if err := s.claimTOTPOrReject(ctx, user, code); err != nil {
-		return nil, err
+	if claimErr := s.claimTOTPOrReject(ctx, user, code); claimErr != nil {
+		return nil, claimErr
 	}
 
 	plaintext, hashes, err := s.generateAndHashRecoveryCodes()
