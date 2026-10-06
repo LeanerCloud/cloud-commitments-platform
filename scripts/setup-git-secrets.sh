@@ -93,27 +93,38 @@ git secrets --register-aws
 echo ""
 echo "Adding custom secret patterns..."
 
+# `git secrets --add` exits 1 when the pattern is already registered, which under
+# `set -e` aborted a re-run at the first custom pattern and skipped the rest.
+# Skip patterns already present so the script is idempotent; a real failure
+# (for example an invalid regex) still stops it.
+add_pattern() {
+    if git config --get-all secrets.patterns | grep -qxF -- "$1"; then
+        return 0
+    fi
+    git secrets --add "$1"
+}
+
 # AWS patterns
-git secrets --add 'AKIA[0-9A-Z]{16}'                                    # AWS Access Key ID
-git secrets --add '[^A-Za-z0-9/+=]{40}[^A-Za-z0-9/+=]'                 # AWS Secret Access Key
-git secrets --add 'aws(.{0,20})?['\''"][0-9a-zA-Z/+]{40}['\''"]'       # AWS Credentials
+add_pattern 'AKIA[0-9A-Z]{16}'                                    # AWS Access Key ID
+add_pattern '[^A-Za-z0-9/+=]{40}[^A-Za-z0-9/+=]'                 # AWS Secret Access Key
+add_pattern 'aws(.{0,20})?['\''"][0-9a-zA-Z/+]{40}['\''"]'       # AWS Credentials
 
 # GCP patterns
-git secrets --add 'AIza[0-9A-Za-z_-]{35}'                              # GCP API Key
+add_pattern 'AIza[0-9A-Za-z_-]{35}'                              # GCP API Key
 
 # Azure patterns
-git secrets --add 'DefaultEndpointsProtocol=https'                      # Azure Connection String
+add_pattern 'DefaultEndpointsProtocol=https'                      # Azure Connection String
 
 # Generic secrets (require quoted values to avoid matching variable declarations)
-git secrets --add 'password[[:space:]]*[=:][[:space:]]*['\''"][^'\''"]{8,}'             # Password with quoted value
-git secrets --add 'api[_-]?key[[:space:]]*[=:][[:space:]]*['\''"][^'\''"]{8,}'         # API key with quoted value
-git secrets --add 'secret[_-]?key[[:space:]]*[=:][[:space:]]*['\''"][^'\''"]{8,}'      # Secret key with quoted value
-git secrets --add 'BEGIN[[:space:]]((RSA|DSA|EC|OPENSSH|ENCRYPTED)[[:space:]])?PRIVATE[[:space:]]KEY-----'  # PEM private keys
+add_pattern 'password[[:space:]]*[=:][[:space:]]*['\''"][^'\''"]{8,}'             # Password with quoted value
+add_pattern 'api[_-]?key[[:space:]]*[=:][[:space:]]*['\''"][^'\''"]{8,}'         # API key with quoted value
+add_pattern 'secret[_-]?key[[:space:]]*[=:][[:space:]]*['\''"][^'\''"]{8,}'      # Secret key with quoted value
+add_pattern 'BEGIN[[:space:]]((RSA|DSA|EC|OPENSSH|ENCRYPTED)[[:space:]])?PRIVATE[[:space:]]KEY-----'  # PEM private keys
 
 # Database connection strings
-git secrets --add 'postgres://[^:]+:[^@]+@'                           # PostgreSQL
-git secrets --add 'mysql://[^:]+:[^@]+@'                              # MySQL
-git secrets --add 'mongodb(\+srv)?://[^:]+:[^@]+@'                    # MongoDB
+add_pattern 'postgres://[^:]+:[^@]+@'                           # PostgreSQL
+add_pattern 'mysql://[^:]+:[^@]+@'                              # MySQL
+add_pattern 'mongodb(\+srv)?://[^:]+:[^@]+@'                    # MongoDB
 
 # Allowed patterns live in .gitallowed (versioned, applied by every scan, including CI).
 # They are matched against the whole "path:line:content" scanner output line, so an entry

@@ -40,6 +40,20 @@ if ! bash scripts/setup-git-secrets.sh > "$tmp/setup.log" 2>&1; then
     cat "$tmp/setup.log" >&2
     exit 1
 fi
+# A second run must succeed and register nothing twice: `git secrets --add`
+# exits 1 on an already-registered pattern, which used to abort a re-run
+# half-configured.
+patterns_before=$(git config --get-all secrets.patterns | wc -l)
+if ! bash scripts/setup-git-secrets.sh > "$tmp/setup2.log" 2>&1; then
+    echo "scripts/setup-git-secrets.sh is not idempotent; second run failed:" >&2
+    cat "$tmp/setup2.log" >&2
+    exit 1
+fi
+patterns_after=$(git config --get-all secrets.patterns | wc -l)
+if [ "$patterns_before" -ne "$patterns_after" ]; then
+    echo "second setup run changed the pattern count: $patterns_before -> $patterns_after" >&2
+    exit 1
+fi
 # Same HOME-isolation reason: drop the provider before any further scan.
 git config --unset-all secrets.providers
 

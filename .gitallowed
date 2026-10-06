@@ -73,9 +73,9 @@
 # suppress (confirmed empirically: without this, the .gitallowed
 # self-scan case below fails -- and note this comment must not spell any
 # of those spans out literally either, for the same reason).
-^scripts/setup-git-secrets\.sh:[0-9]+:git secrets --add 'DefaultEndpointsProtoco[l]=https'                      # Azure Connection String$
-^scripts/setup-git-secrets\.sh:[0-9]+:git secrets --add 'postgre[s]://\[\^:\]\+:\[\^@\]\+@'                           # PostgreSQL$
-^scripts/setup-git-secrets\.sh:[0-9]+:git secrets --add 'mysq[l]://\[\^:\]\+:\[\^@\]\+@'                              # MySQL$
+^scripts/setup-git-secrets\.sh:[0-9]+:add_pattern 'DefaultEndpointsProtoco[l]=https'                      # Azure Connection String$
+^scripts/setup-git-secrets\.sh:[0-9]+:add_pattern 'postgre[s]://\[\^:\]\+:\[\^@\]\+@'                           # PostgreSQL$
+^scripts/setup-git-secrets\.sh:[0-9]+:add_pattern 'mysq[l]://\[\^:\]\+:\[\^@\]\+@'                              # MySQL$
 
 # Truncated PEM placeholder used by scripts/test-git-secrets-allowlist.sh
 # (and by any fixture in this repo needing a non-secret PEM-shaped string):
