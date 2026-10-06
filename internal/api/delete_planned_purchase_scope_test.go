@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -50,9 +51,25 @@ func newPlannedDeleteFixture(t *testing.T, planAccounts []config.CloudAccount, s
 	return plannedDeleteFixture{h: h, store: store}
 }
 
-func (f plannedDeleteFixture) delete(t *testing.T) (any, error) {
+func (f plannedDeleteFixture) delete(t *testing.T) (*DeletePlannedPurchaseResponse, error) {
 	t.Helper()
-	return NewRouter(f.h).Route(context.Background(), "DELETE", "/api/purchases/planned/"+plannedDeleteExecID, scopedRequest(""))
+	resp, err := NewRouter(f.h).Route(context.Background(), "DELETE", "/api/purchases/planned/"+plannedDeleteExecID, scopedRequest(""))
+	if err != nil {
+		return nil, err
+	}
+	typed, ok := resp.(*DeletePlannedPurchaseResponse)
+	require.True(t, ok, "unexpected response type %T", resp)
+	return typed, nil
+}
+
+// callIndex returns the position of the first recorded call to method, or -1.
+func callIndex(store *MockConfigStore, method string) int {
+	for i, c := range store.Calls {
+		if c.Method == method {
+			return i
+		}
+	}
+	return -1
 }
 
 func (f plannedDeleteFixture) planDisables() int {
@@ -72,7 +89,9 @@ func TestRouterDispatch_DeletePlannedPurchase_PartiallyScopedKeepsPlanEnabled(t 
 	resp, err := f.delete(t)
 
 	require.NoError(t, err)
-	assert.Equal(t, &StatusResponse{Status: "canceled"}, resp)
+	assert.Equal(t, "canceled", resp.Status)
+	require.NotNil(t, resp.PlanDisabled)
+	assert.False(t, *resp.PlanDisabled)
 	store.AssertNumberOfCalls(t, "TransitionExecutionStatus", 1)
 	assert.Zero(t, f.planDisables(), "a plan spanning an out-of-scope account must stay enabled")
 	store.AssertNotCalled(t, "GetPurchasePlan", mock.Anything, mock.Anything)
@@ -82,9 +101,11 @@ func TestRouterDispatch_DeletePlannedPurchase_FullyScopedDisablesPlan(t *testing
 	f := newPlannedDeleteFixture(t, []config.CloudAccount{inScopeAccount(), outOfScopeAccount()}, scopedInAccount, scopedOutAccount)
 	store := f.store
 
-	_, err := f.delete(t)
+	resp, err := f.delete(t)
 
 	require.NoError(t, err)
+	require.NotNil(t, resp.PlanDisabled)
+	assert.True(t, *resp.PlanDisabled)
 	store.AssertNumberOfCalls(t, "TransitionExecutionStatus", 1)
 	store.AssertCalled(t, "UpdatePurchasePlan", mock.Anything, mock.MatchedBy(func(p *config.PurchasePlan) bool {
 		return p.ID == scopePlanID && !p.Enabled
@@ -96,9 +117,11 @@ func TestRouterDispatch_DeletePlannedPurchase_UnrestrictedDisablesPlanWithoutSco
 	f := newPlannedDeleteFixture(t, []config.CloudAccount{inScopeAccount(), outOfScopeAccount()})
 	store := f.store
 
-	_, err := f.delete(t)
+	resp, err := f.delete(t)
 
 	require.NoError(t, err)
+	require.NotNil(t, resp.PlanDisabled)
+	assert.True(t, *resp.PlanDisabled)
 	assert.Equal(t, 1, f.planDisables())
 	store.AssertNotCalled(t, "GetPlanAccounts", mock.Anything, mock.Anything)
 }
@@ -109,9 +132,11 @@ func TestRouterDispatch_DeletePlannedPurchase_ZeroAccountPlanKeepsPlanEnabled(t 
 	f := newPlannedDeleteFixture(t, nil, scopedInAccount)
 	store := f.store
 
-	_, err := f.delete(t)
+	resp, err := f.delete(t)
 
 	require.NoError(t, err)
+	require.NotNil(t, resp.PlanDisabled)
+	assert.False(t, *resp.PlanDisabled)
 	store.AssertNumberOfCalls(t, "TransitionExecutionStatus", 1)
 	assert.Zero(t, f.planDisables())
 }
@@ -163,4 +188,39 @@ func TestRouterDispatch_DeletePlannedPurchase_PermissionRefusedBeforeScope(t *te
 	store.AssertNotCalled(t, "GetPlanAccounts", mock.Anything, mock.Anything)
 	store.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	assert.Zero(t, f.planDisables())
+}
+
+// The plan is disabled only after the execution is canceled: a failed cancel
+// must never leave a disabled plan behind.
+func TestRouterDispatch_DeletePlannedPurchase_CancelsBeforeDisablingPlan(t *testing.T) {
+	f := newPlannedDeleteFixture(t, []config.CloudAccount{inScopeAccount()}, scopedInAccount)
+	store := f.store
+
+	_, err := f.delete(t)
+
+	require.NoError(t, err)
+	cancelAt := callIndex(store, "TransitionExecutionStatus")
+	disableAt := callIndex(store, "UpdatePurchasePlan")
+	require.NotEqual(t, -1, cancelAt)
+	require.NotEqual(t, -1, disableAt)
+	assert.Less(t, cancelAt, disableAt, "the cancel must be recorded before the plan disable")
+}
+
+// An execution without a plan omits plan_disabled from the JSON body.
+func TestRouterDispatch_DeletePlannedPurchase_NoPlanOmitsPlanDisabled(t *testing.T) {
+	f := newPlannedDeleteFixture(t, nil)
+	store := f.store
+	noPlan := &config.PurchaseExecution{ExecutionID: plannedDeleteExecID, Status: config.StatusCanceled}
+	store.ExpectedCalls = nil
+	store.On("GetExecutionByID", mock.Anything, plannedDeleteExecID).Return(noPlan, nil)
+	store.On("TransitionExecutionStatus", mock.Anything, plannedDeleteExecID, mock.Anything, config.StatusCanceled, mock.Anything).Return(noPlan, nil)
+
+	resp, err := f.delete(t)
+
+	require.NoError(t, err)
+	assert.Nil(t, resp.PlanDisabled)
+	assert.Zero(t, f.planDisables())
+	body, err := json.Marshal(resp)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"status":"canceled"}`, string(body))
 }

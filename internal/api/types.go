@@ -416,6 +416,15 @@ type StatusResponse struct {
 	Status string `json:"status"`
 }
 
+// DeletePlannedPurchaseResponse is the body of DELETE /api/purchases/planned/{id}.
+// PlanDisabled is omitted when the execution has no plan, true when the plan
+// was disabled, and false when the plan was left enabled because it spans
+// accounts outside the caller's scope (issue #520).
+type DeletePlannedPurchaseResponse struct {
+	Status       string `json:"status"`
+	PlanDisabled *bool  `json:"plan_disabled,omitempty"`
+}
+
 // RecommendationsSummary holds aggregate statistics for recommendations.
 type RecommendationsSummary struct {
 	TotalCount          int     `json:"total_count"`

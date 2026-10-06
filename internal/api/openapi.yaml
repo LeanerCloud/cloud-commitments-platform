@@ -912,7 +912,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                $ref: '#/components/schemas/DeletePlannedPurchaseResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2364,6 +2364,20 @@ components:
       properties:
         status:
           type: string
+
+    DeletePlannedPurchaseResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+        plan_disabled:
+          type: boolean
+          description: >-
+            Present when the execution belongs to a plan. True when the plan
+            was disabled; false when it was left enabled because it spans
+            accounts outside the caller's scope. Omitted for executions
+            without a plan.
 
     StatusMessageResponse:
       type: object
