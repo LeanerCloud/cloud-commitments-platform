@@ -475,6 +475,10 @@ export interface PlannedPurchase {
   payment: string;
   estimated_savings: number;
   upfront_cost: number;
+  // False for a step that carries no recommendations: count, resource_type,
+  // upfront_cost and estimated_savings are then placeholders, not data
+  // (platform#609).
+  has_recommendations: boolean;
   status: 'pending' | 'paused' | 'running' | 'completed' | 'failed';
   step_number: number;
   total_steps: number;

@@ -763,6 +763,10 @@ type PlannedPurchase struct {
 	StepNumber       int     `json:"step_number"`
 	TotalSteps       int     `json:"total_steps"`
 	Term             int     `json:"term"`
+	// HasRecommendations is false for a step that carries no recommendations,
+	// whose Count, UpfrontCost, EstimatedSavings and ResourceType are then
+	// placeholders, not data (platform#609).
+	HasRecommendations bool `json:"has_recommendations"`
 }
 
 // PlanRequest represents the API request format for creating/updating plans

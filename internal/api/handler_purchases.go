@@ -190,6 +190,8 @@ func buildPlannedPurchase(plan *config.PurchasePlan, exec *config.PurchaseExecut
 		StepNumber:       exec.StepNumber,
 		TotalSteps:       plan.RampSchedule.TotalSteps,
 		CreatedByUserID:  exec.CreatedByUserID,
+
+		HasRecommendations: len(exec.Recommendations) > 0,
 	}
 }
 

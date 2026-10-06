@@ -705,6 +705,41 @@ describe('Plans Module', () => {
       expect(container?.innerHTML).toContain('us-east-1');
     });
 
+    test('labels a step with no recommendations instead of rendering zeros (#609)', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            id: 'purchase-bare',
+            plan_id: 'plan-1',
+            plan_name: 'Azure compute 80% weekly',
+            scheduled_date: '2026-10-07',
+            provider: 'azure',
+            service: 'compute',
+            resource_type: 'Various',
+            region: 'Multiple',
+            count: 0,
+            term: 1,
+            payment: 'monthly',
+            upfront_cost: 0,
+            estimated_savings: 0,
+            has_recommendations: false,
+            status: 'pending',
+            step_number: 1,
+            total_steps: 4
+          }
+        ]
+      });
+
+      await loadPlans();
+
+      const html = document.getElementById('planned-purchases-list')?.innerHTML ?? '';
+      expect(html).toContain('No recommendations attached');
+      expect(html).not.toContain('Various');
+      expect(html).not.toContain('Multiple');
+      expect(html).not.toContain('$0');
+    });
+
     test('shows empty message when no planned purchases', async () => {
       (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
