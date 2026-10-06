@@ -69,17 +69,16 @@ if [ "$DB_AUTO_MIGRATE" = "true" ]; then
     # URL scheme. The pgx/v5 driver registers "pgx5" only. See issue #1849.
     DB_URL="pgx5://${DB_USER}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSL_MODE}"
 
-    migrate -path "$DB_MIGRATIONS_PATH" -database "$DB_URL" up 2>&1
-    MIGRATE_EXIT_CODE=$?
-    if [ $MIGRATE_EXIT_CODE -eq 0 ]; then
-      echo "   ✅ Migrations completed successfully"
-    elif [ $MIGRATE_EXIT_CODE -eq 1 ]; then
-      # Exit code 1 means "no change", which is okay
-      echo "   ℹ️  No new migrations to apply"
-    else
+    # `|| MIGRATE_EXIT_CODE=$?` keeps the failure out of errexit so the
+    # diagnostic below runs. golang-migrate exits 0 on "no change", so any
+    # non-zero status is a real failure.
+    MIGRATE_EXIT_CODE=0
+    migrate -path "$DB_MIGRATIONS_PATH" -database "$DB_URL" up 2>&1 || MIGRATE_EXIT_CODE=$?
+    if [ "$MIGRATE_EXIT_CODE" -ne 0 ]; then
       echo "   ❌ Migration failed with exit code $MIGRATE_EXIT_CODE"
-      exit $MIGRATE_EXIT_CODE
+      exit "$MIGRATE_EXIT_CODE"
     fi
+    echo "   ✅ Migrations completed successfully"
   else
     echo "   ⚠️  Skipping migrations (DB_PASSWORD not available)"
     echo "   Application will handle migrations on first connection"
