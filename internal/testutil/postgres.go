@@ -6,6 +6,8 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"testing"
 	"time"
 
@@ -76,8 +78,14 @@ func SetupPostgresContainer(ctx context.Context, t *testing.T) (*PostgresContain
 
 // ConnectionString returns a PostgreSQL connection string.
 func (pc *PostgresContainer) ConnectionString() string {
-	return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable",
-		pc.Username, pc.Password, pc.Host, pc.Port, pc.Database)
+	u := url.URL{
+		Scheme:   "postgresql",
+		User:     url.UserPassword(pc.Username, pc.Password),
+		Host:     net.JoinHostPort(pc.Host, pc.Port),
+		Path:     "/" + pc.Database,
+		RawQuery: "sslmode=disable",
+	}
+	return u.String()
 }
 
 // Config returns a database configuration for the test container.

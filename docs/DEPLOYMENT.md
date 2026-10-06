@@ -666,13 +666,18 @@ If `DB_AUTO_MIGRATE=true` (the default), migration 000011 runs automatically on 
 > driver by scheme, and `migrate` is built here with `-tags pgx5` so it does not
 > link `lib/pq` (issue #1849). A `postgres://` URL fails with
 > `unknown driver postgres`.
+>
+> The password is percent-encoded with `jq -sRr @uri` because it may contain
+> `@`, `:`, `/`, `%`, `#`, `?` or spaces, which break the URL when left raw.
 
 ```bash
 DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id cudly-dev-db-password-* --query SecretString --output text | jq -r .password)
 RDS_ENDPOINT=$(cd terraform/environments/aws && terraform output -raw database_proxy_endpoint)
 
+ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)
+
 migrate -path internal/database/postgres/migrations \
-  -database "pgx5://cudly:${DB_PASSWORD}@${RDS_ENDPOINT}:5432/cudly?sslmode=require" up
+  -database "pgx5://cudly:${ENCODED_PASSWORD}@${RDS_ENDPOINT}:5432/cudly?sslmode=require" up
 ```
 
 ---
@@ -682,11 +687,13 @@ migrate -path internal/database/postgres/migrations \
 Check: `DB_AUTO_MIGRATE=true`, `DB_MIGRATIONS_PATH=/app/internal/database/postgres/migrations`, correct credentials. Run manually:
 
 ```bash
-DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id cudly-dev-db-password-* --query SecretString --output text)
+DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id cudly-dev-db-password-* --query SecretString --output text | jq -r .password)
 RDS_ENDPOINT=$(cd terraform/environments/aws && terraform output -raw database_proxy_endpoint)
 
+ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)
+
 migrate -path internal/database/postgres/migrations \
-  -database "pgx5://cudly:${DB_PASSWORD}@${RDS_ENDPOINT}:5432/cudly?sslmode=require" up
+  -database "pgx5://cudly:${ENCODED_PASSWORD}@${RDS_ENDPOINT}:5432/cudly?sslmode=require" up
 ```
 
 ### Terraform State Lock

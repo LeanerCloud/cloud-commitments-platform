@@ -397,8 +397,10 @@ jobs:
           DB_PASSWORD: test_password  # CI-only throwaway password — not used in any real environment
         run: |
           if [ -d "internal/database/postgres/migrations" ]; then
+            # Percent-encode the password: it may contain @ : / ? # % or spaces.
+            ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)
             migrate -path internal/database/postgres/migrations \
-              -database "pgx5://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable" \
+              -database "pgx5://${DB_USER}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable" \
               up
           fi
 
