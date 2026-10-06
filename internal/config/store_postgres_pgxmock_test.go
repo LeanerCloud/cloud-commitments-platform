@@ -3062,3 +3062,22 @@ func TestPGXMock_CountExecutionsByPlanAndStatus_QueryError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to count executions by plan and status")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// TestPGXMock_GetExecutionsByStatuses_ExcludesCleanCompleted guards the SQL
+// predicate that keeps clean completed executions (status completed, empty
+// error) out of the result: they only consume the cap, because the History
+// handler skips them. Dropping the predicate lets them push pending
+// approvals past the cap again.
+func TestPGXMock_GetExecutionsByStatuses_ExcludesCleanCompleted(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+
+	mock.ExpectQuery(`(?s)FROM purchase_executions\s+WHERE status = ANY\(\$1\)\s+AND NOT \(status = 'completed' AND COALESCE\(error, ''\) = ''\)\s+ORDER BY scheduled_date DESC\s+LIMIT \$2`).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WillReturnRows(pgxmock.NewRows(stuckExecCols()))
+
+	execs, err := store.GetExecutionsByStatuses(context.Background(), []string{"pending", "completed"}, 100)
+	require.NoError(t, err)
+	assert.Empty(t, execs)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
