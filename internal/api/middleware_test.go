@@ -135,8 +135,8 @@ func TestHandler_authenticate(t *testing.T) {
 				Headers:               tt.headers,
 				QueryStringParameters: tt.params,
 			}
-			result := handler.authenticate(ctx, req)
-			assert.Equal(t, tt.expected, result)
+			principal, err := handler.authenticatePrincipal(ctx, req)
+			assert.Equal(t, tt.expected, err == nil && principal != nil)
 		})
 	}
 }
@@ -217,7 +217,7 @@ func TestHandler_extractBearerToken(t *testing.T) {
 	}
 }
 
-func TestHandler_authenticate_BearerToken(t *testing.T) {
+func TestHandler_authenticatePrincipal_BearerToken(t *testing.T) {
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -237,7 +237,9 @@ func TestHandler_authenticate_BearerToken(t *testing.T) {
 			"Authorization": "Bearer valid-token",
 		},
 	}
-	assert.True(t, handler.authenticate(ctx, req))
+	principal, err := handler.authenticatePrincipal(ctx, req)
+	require.NoError(t, err)
+	assert.Equal(t, PrincipalSession, principal.Kind)
 
 	// Test invalid token - invalid bearer token denies access
 	req = &events.LambdaFunctionURLRequest{
@@ -246,10 +248,11 @@ func TestHandler_authenticate_BearerToken(t *testing.T) {
 		},
 	}
 	// Should be false because token is invalid and no API key provided
-	assert.False(t, handler.authenticate(ctx, req))
+	_, err = handler.authenticatePrincipal(ctx, req)
+	assert.Error(t, err)
 }
 
-func TestHandler_authenticate_BearerTokenWithAPIKey(t *testing.T) {
+func TestHandler_authenticatePrincipal_BearerTokenWithAPIKey(t *testing.T) {
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -269,7 +272,9 @@ func TestHandler_authenticate_BearerTokenWithAPIKey(t *testing.T) {
 			"Authorization": "Bearer valid-token",
 		},
 	}
-	assert.True(t, handler.authenticate(ctx, req))
+	principal, err := handler.authenticatePrincipal(ctx, req)
+	require.NoError(t, err)
+	assert.Equal(t, PrincipalSession, principal.Kind)
 
 	// Test invalid bearer token when API key is configured
 	req = &events.LambdaFunctionURLRequest{
@@ -278,7 +283,8 @@ func TestHandler_authenticate_BearerTokenWithAPIKey(t *testing.T) {
 		},
 	}
 	// Should be false because API key is configured and bearer token is invalid
-	assert.False(t, handler.authenticate(ctx, req))
+	_, err = handler.authenticatePrincipal(ctx, req)
+	assert.Error(t, err)
 }
 
 // TestHandler_requiresCSRFValidation_ExactMatch asserts that paths sharing a
