@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -129,14 +130,13 @@ func TestHandleLambdaHTTPEvent_StaticPath(t *testing.T) {
 //
 // This drives the real failing scenario end-to-end: a base64-encoded,
 // form-urlencoded POST body hitting POST /api/purchases/revoke/{execID}.
-// With no session, revokeViaEmailToken (internal/api/handler_purchases.go)
-// 401s with "sign in or use the revocation link..." when the token fails to
-// resolve, or 401s with the DIFFERENT message "sign in with the account's
-// contact email..." from authorizeApprovalAction once the token resolves and
-// the (session-only) actor lookup fails. Only the second message is reachable
-// once the token has actually been parsed out of the decoded body, so
-// asserting it proves the fix; asserting the pre-fix code fails this test
-// caught the bug (verified manually before landing the fix).
+// With a session that lacks cancel permission, revokeViaEmailToken answers 403
+// "permission denied" when the token fails to resolve, or falls through to the
+// token branch and answers the DIFFERENT 403 "no per-account contact email"
+// from authorizeApprovalAction once the token has been parsed out of the
+// decoded body. Only the second message is reachable when the token resolves,
+// so asserting it proves the fix. (A request with no session never reaches
+// either: it gets 401 before the lookup, issue #435.)
 func TestHandleLambdaHTTPEvent_DecodesBase64FormBody(t *testing.T) {
 	execID := "11111111-1111-1111-1111-111111111111"
 	exec := &config.PurchaseExecution{
@@ -146,15 +146,19 @@ func TestHandleLambdaHTTPEvent_DecodesBase64FormBody(t *testing.T) {
 
 	mockStore := new(mocks.MockConfigStore)
 	mockStore.On("GetExecutionByID", mock.Anything, execID).Return(exec, nil)
+	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil)
 
 	app := &Application{
-		API: api.NewHandler(api.HandlerConfig{ConfigStore: mockStore}),
+		API: api.NewHandler(api.HandlerConfig{ConfigStore: mockStore, AuthService: sessionOnlyAuth{}}),
 	}
 
 	encodedBody := base64.StdEncoding.EncodeToString([]byte("token=body-token"))
 	request := events.LambdaFunctionURLRequest{
 		RawPath: "/api/purchases/revoke/" + execID,
-		Headers: map[string]string{"content-type": "application/x-www-form-urlencoded"},
+		Headers: map[string]string{
+			"content-type":  "application/x-www-form-urlencoded",
+			"authorization": "Bearer sess-tok",
+		},
 		RequestContext: events.LambdaFunctionURLRequestContext{
 			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{
 				Method: "POST",
@@ -170,9 +174,9 @@ func TestHandleLambdaHTTPEvent_DecodesBase64FormBody(t *testing.T) {
 	ctx := testutil.TestContext(t)
 	resp, err := app.handleLambdaHTTPEvent(ctx, rawEvent)
 	testutil.AssertNoError(t, err)
-	testutil.AssertEqual(t, 401, resp.StatusCode)
-	testutil.AssertContains(t, resp.Body, "sign in with the account's contact email")
-	testutil.AssertTrue(t, !strings.Contains(resp.Body, "revocation link from the notification email"),
+	testutil.AssertEqual(t, 403, resp.StatusCode)
+	testutil.AssertContains(t, resp.Body, "no per-account contact email")
+	testutil.AssertTrue(t, !strings.Contains(resp.Body, "requires cancel-any"),
 		"token must have been resolved from the decoded body, not left empty")
 
 	mockStore.AssertExpectations(t)
@@ -190,4 +194,23 @@ func TestHandleLambdaEvent_UnknownEventRouteToScheduled(t *testing.T) {
 	_, err := app.HandleLambdaEvent(ctx, rawEvent)
 	// Unknown action → error from ParseScheduledEvent
 	testutil.AssertError(t, err)
+}
+
+// sessionOnlyAuth accepts the bearer "sess-tok" as a signed-in user with no
+// purchase permissions; any other method panics via the nil embedded interface.
+type sessionOnlyAuth struct{ api.AuthServiceInterface }
+
+func (sessionOnlyAuth) ValidateSession(_ context.Context, token string) (*api.Session, error) {
+	if token != "sess-tok" {
+		return nil, errors.New("invalid session")
+	}
+	return &api.Session{UserID: "user-1", Email: "user@example.com"}, nil
+}
+
+func (sessionOnlyAuth) HasPermissionAPI(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
+
+func (sessionOnlyAuth) GetAllowedAccountsAPI(context.Context, string) ([]string, error) {
+	return nil, nil
 }

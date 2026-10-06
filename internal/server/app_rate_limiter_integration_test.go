@@ -122,7 +122,7 @@ func TestApplicationRateLimiter(t *testing.T) {
 				if i%2 == 1 {
 					action = "cancel"
 				}
-				want := http.StatusNotFound
+				want := http.StatusUnauthorized
 				if i >= 30 {
 					want = http.StatusTooManyRequests
 				}
