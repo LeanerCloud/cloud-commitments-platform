@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -554,30 +555,17 @@ const migrateURLScheme = "pgx5"
 // (verify-ca / verify-full) are preserved rather than silently downgraded to
 // require. See sslModeFromTLSConfig for the exact mapping.
 func buildMigrateDSN(config *pgxpool.Config) string {
-	// Extract connection details from pgx config
-	host := config.ConnConfig.Host
-	port := config.ConnConfig.Port
-	user := config.ConnConfig.User
-	password := config.ConnConfig.Password
-	database := config.ConnConfig.Database
-
-	// URL encode the username and password to handle special characters
-	encodedUser := url.QueryEscape(user)
-	encodedPassword := url.QueryEscape(password)
-
-	sslMode := sslModeFromTLSConfig(config.ConnConfig.TLSConfig)
+	cc := config.ConnConfig
 
 	// Don't add connection options - RDS Proxy doesn't support them
-	return fmt.Sprintf(
-		"%s://%s:%s@%s:%d/%s?sslmode=%s",
-		migrateURLScheme,
-		encodedUser,
-		encodedPassword,
-		host,
-		port,
-		database,
-		sslMode,
-	)
+	u := url.URL{
+		Scheme:   migrateURLScheme,
+		User:     url.UserPassword(cc.User, cc.Password),
+		Host:     net.JoinHostPort(cc.Host, strconv.Itoa(int(cc.Port))),
+		Path:     "/" + cc.Database,
+		RawQuery: url.Values{"sslmode": {sslModeFromTLSConfig(cc.TLSConfig)}}.Encode(),
+	}
+	return u.String()
 }
 
 // sslModeFromTLSConfig recovers the libpq sslmode string that pgx derived from
