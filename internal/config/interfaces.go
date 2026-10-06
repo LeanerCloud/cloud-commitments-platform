@@ -304,7 +304,9 @@ type StoreInterface interface {
 	// UpdatePurchaseHistoryListing stamps the AWS marketplace listing_id and
 	// listing_state onto a purchase_history row. Called after
 	// CreateReservedInstancesListing succeeds (listing_state="active") and
-	// on subsequent poll/cancel transitions (issue #292).
+	// on subsequent poll/cancel transitions (issue #292). Recording a listing
+	// resolves the attempt, so it also clears the persisted client token and
+	// price schedule (issue #525).
 	UpdatePurchaseHistoryListing(ctx context.Context, purchaseID, listingID, listingState string) error
 
 	// StampOfferingClass writes the offering_class value to a purchase_history
@@ -319,13 +321,22 @@ type StoreInterface interface {
 	// slot for a purchase_history row so two concurrent marketplace-list
 	// requests cannot both proceed to create a duplicate AWS listing (issue
 	// #292). It transitions listing_state to ListingStatePending only when the
-	// row is not already listed or mid-listing, and reports whether this call
-	// won the claim: (true, nil) means the caller reserved the slot and must
-	// then persist the real listing on success or release the slot back to its
-	// prior state on failure; (false, nil) means another request already holds
-	// an active or pending listing (the caller maps this to a 409). Modeled on
-	// FlipPurchaseRevocationInFlight.
-	ClaimMarketplaceListingSlot(ctx context.Context, purchaseID string) (bool, error)
+	// row is not listed, and in the same UPDATE persists clientToken and
+	// priceSchedule (JSON) unless an unresolved attempt already stored a token,
+	// in which case that token and schedule are kept so the retry is idempotent
+	// on AWS (issue #525). A pending row that holds a token is claimable again:
+	// the same token makes a concurrent or crashed attempt safe to resume.
+	// It returns the claimed row's values, or (nil, nil) when the row is active,
+	// pending without a token, or absent (the caller maps that to a 409). The
+	// caller must persist the real listing on success or call
+	// ReleaseMarketplaceListingClaim on failure.
+	ClaimMarketplaceListingSlot(ctx context.Context, purchaseID, clientToken string, priceSchedule []byte) (*MarketplaceListingClaim, error)
+
+	// ReleaseMarketplaceListingClaim moves a pending row back to priorState
+	// (empty for none) after a failed attempt. keepAttempt keeps the persisted
+	// token and schedule so the retry resends them (ambiguous AWS outcome);
+	// otherwise they are cleared because AWS created nothing reusable.
+	ReleaseMarketplaceListingClaim(ctx context.Context, purchaseID, priorState string, keepAttempt bool) error
 
 	// ClaimRIExchangeIdempotencyKey atomically claims key for an RI exchange
 	// submit, so a client that retries a timed-out execute request cannot

@@ -53,8 +53,9 @@ func marketplaceAccountHandler(t *testing.T, account *config.CloudAccount, row *
 	adminSession(authSvc)
 	cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).Return(row, nil)
 	cfgStore.On("GetCloudAccount", mock.Anything, "acct-1").Return(account, nil)
-	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).Return(true, nil).Maybe()
+	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).Return(&config.MarketplaceListingClaim{ClientToken: "tok"}, nil).Maybe()
 	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).Return(nil).Maybe()
+	cfgStore.On("ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	var built aws.Config
 	h := &Handler{
@@ -220,7 +221,7 @@ func TestMarketplaceList_CompensationAssumeRoleDeniedReturnsFixedMessage(t *test
 	row := standardRow()
 	cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).Return(row, nil)
 	cfgStore.On("GetCloudAccount", mock.Anything, "acct-1").Return(roleAccount(), nil)
-	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).Return(true, nil)
+	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).Return(&config.MarketplaceListingClaim{ClientToken: "tok"}, nil)
 	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).Return(errors.New("db down"))
 	h := &Handler{config: cfgStore, credStore: &accountKeyStore{}, auth: authSvc}
 	h.awsCfgOnce.Do(func() {

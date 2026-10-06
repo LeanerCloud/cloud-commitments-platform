@@ -2055,7 +2055,8 @@ func (s *PostgresStore) SavePurchaseHistory(ctx context.Context, record *Purchas
 func (s *PostgresStore) UpdatePurchaseHistoryListing(ctx context.Context, purchaseID, listingID, listingState string) error {
 	query := `
 		UPDATE purchase_history
-		SET listing_id = $1, listing_state = $2
+		SET listing_id = $1, listing_state = $2,
+		    listing_client_token = NULL, listing_price_schedule = NULL
 		WHERE purchase_id = $3
 	`
 	tag, err := s.db.Exec(ctx, query, listingID, listingState, purchaseID)
@@ -2085,23 +2086,57 @@ func (s *PostgresStore) StampOfferingClass(ctx context.Context, purchaseID, offe
 // ClaimMarketplaceListingSlot atomically reserves the marketplace-listing slot
 // for a purchase_history row so two concurrent marketplace-list requests cannot
 // both proceed to create a duplicate AWS listing (issue #292). The single
-// conditional UPDATE transitions listing_state to ListingStatePending only when
-// the row is not already active or pending, so exactly one racing request wins.
-// It returns (true, nil) when this call reserved the slot and (false, nil) when
-// the row is already active/pending (or absent); the caller maps false to a 409.
-func (s *PostgresStore) ClaimMarketplaceListingSlot(ctx context.Context, purchaseID string) (bool, error) {
+// conditional UPDATE transitions listing_state to ListingStatePending unless the
+// row is active, or pending without a persisted token. It stores clientToken and
+// priceSchedule in the same statement unless an earlier attempt already stored a
+// token, and returns the row's values as of the claim (issue #525): the handler
+// must not trust a row read before the claim. It returns (nil, nil) when the row
+// could not be claimed (active, pending without a token, or absent).
+func (s *PostgresStore) ClaimMarketplaceListingSlot(ctx context.Context, purchaseID, clientToken string, priceSchedule []byte) (*MarketplaceListingClaim, error) {
+	query := `
+		UPDATE purchase_history AS p
+		SET listing_state = $1,
+		    listing_client_token = COALESCE(p.listing_client_token, $3::text),
+		    listing_price_schedule = CASE WHEN p.listing_client_token IS NULL
+		                                  THEN $4::jsonb ELSE p.listing_price_schedule END
+		FROM (SELECT purchase_id, listing_state AS prior_state,
+		             listing_client_token IS NOT NULL AS had_token
+		      FROM purchase_history WHERE purchase_id = $2) AS prev
+		WHERE p.purchase_id = prev.purchase_id
+		  AND lower(COALESCE(p.listing_state, '')) <> $5
+		  AND (lower(COALESCE(p.listing_state, '')) <> $1 OR p.listing_client_token IS NOT NULL)
+		RETURNING COALESCE(p.listing_id, ''), COALESCE(prev.prior_state, ''),
+		          p.listing_client_token, p.listing_price_schedule::text, prev.had_token
+	`
+	var claim MarketplaceListingClaim
+	var schedule string
+	err := s.db.QueryRow(ctx, query, ListingStatePending, purchaseID, clientToken, priceSchedule, ListingStateActive).
+		Scan(&claim.ListingID, &claim.PriorState, &claim.ClientToken, &schedule, &claim.Resumed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim marketplace listing slot for purchase %s: %w", purchaseID, err)
+	}
+	claim.PriceSchedule = []byte(schedule)
+	return &claim, nil
+}
+
+// ReleaseMarketplaceListingClaim moves a pending row back to priorState and,
+// unless keepAttempt, clears the persisted token and schedule. It only touches
+// a row that is still pending so it never overwrites a recorded listing.
+func (s *PostgresStore) ReleaseMarketplaceListingClaim(ctx context.Context, purchaseID, priorState string, keepAttempt bool) error {
 	query := `
 		UPDATE purchase_history
-		SET listing_state = $1
-		WHERE purchase_id = $2
-		  AND lower(COALESCE(listing_state, '')) NOT IN ($3, $4)
+		SET listing_state = NULLIF($2, ''),
+		    listing_client_token = CASE WHEN $3 THEN listing_client_token END,
+		    listing_price_schedule = CASE WHEN $3 THEN listing_price_schedule END
+		WHERE purchase_id = $1 AND lower(COALESCE(listing_state, '')) = $4
 	`
-	tag, err := s.db.Exec(ctx, query,
-		ListingStatePending, purchaseID, ListingStateActive, ListingStatePending)
-	if err != nil {
-		return false, fmt.Errorf("failed to claim marketplace listing slot for purchase %s: %w", purchaseID, err)
+	if _, err := s.db.Exec(ctx, query, purchaseID, priorState, keepAttempt, ListingStatePending); err != nil {
+		return fmt.Errorf("failed to release marketplace listing claim for purchase %s: %w", purchaseID, err)
 	}
-	return tag.RowsAffected() == 1, nil
+	return nil
 }
 
 // GetPurchaseHistory retrieves purchase history for an account.

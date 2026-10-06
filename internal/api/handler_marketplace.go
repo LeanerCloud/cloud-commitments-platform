@@ -32,7 +32,6 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	smithy "github.com/aws/smithy-go"
-	"github.com/google/uuid"
 )
 
 // marketplaceEC2Client is the narrow EC2 interface the marketplace handlers
@@ -226,15 +225,7 @@ func (h *Handler) marketplaceList(ctx context.Context, req *events.LambdaFunctio
 		return nil, NewClientError(400, "only Standard Reserved Instances can be listed on the AWS Marketplace; this purchase has offering_class="+offeringClass)
 	}
 
-	awsSchedule := make([]ec2svc.MarketplacePriceTier, 0, len(schedule))
-	for _, t := range schedule {
-		awsSchedule = append(awsSchedule, ec2svc.MarketplacePriceTier{
-			Term:  t.TermMonths,
-			Price: t.Price,
-		})
-	}
-
-	result, err := h.reserveAndCreateListing(ctx, purchaseID, row, ec2Client, awsSchedule)
+	result, usedSchedule, err := h.reserveAndCreateListing(ctx, purchaseID, row, cfg, ec2Client, schedule)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +233,7 @@ func (h *Handler) marketplaceList(ctx context.Context, req *events.LambdaFunctio
 	return &MarketplaceListResponse{
 		ListingID:     result.ListingID,
 		ListingState:  result.State,
-		PriceSchedule: schedule,
+		PriceSchedule: usedSchedule,
 		AWSFeePercent: awsMarketplaceFeePercent,
 		Note:          fmt.Sprintf("AWS charges a %d%% transaction fee on the listing proceeds. Net proceeds = ListingPrice * %.2f.", awsMarketplaceFeePercent, awsMarketplaceNetFactor),
 	}, nil
@@ -251,122 +242,6 @@ func (h *Handler) marketplaceList(ctx context.Context, req *events.LambdaFunctio
 // marketplaceCompensationTimeout bounds the detached cancel and recording write
 // run after a created listing failed to persist.
 const marketplaceCompensationTimeout = 10 * time.Second
-
-// reserveAndCreateListing atomically claims the marketplace-listing slot for the
-// row, creates the AWS listing, and persists it, releasing the claim on every
-// failure path that leaves no live listing so a failed attempt does not leave
-// the row stuck in the transient pending state. Extracted from marketplaceList
-// to keep that handler under the gocyclo budget. Returns the persisted listing
-// result on success.
-func (h *Handler) reserveAndCreateListing(ctx context.Context, purchaseID string, row *config.PurchaseHistoryRecord, ec2Client marketplaceEC2Client, awsSchedule []ec2svc.MarketplacePriceTier) (ec2svc.MarketplaceListingResult, error) {
-	// List every RI in the row: a row of N Standard RIs must list all N, not a
-	// single unit (issue #292 multi-count fix). Floor at 1 for legacy rows that
-	// somehow recorded a non-positive count so a valid Standard RI still lists,
-	// and reject an implausibly large count rather than silently truncating it
-	// into int32 (which could list the wrong number of RIs on the money path).
-	instanceCount := int32(1)
-	switch {
-	case row.Count > math.MaxInt32:
-		return ec2svc.MarketplaceListingResult{}, NewClientError(500, fmt.Sprintf("purchase count %d exceeds the marketplace listing limit", row.Count))
-	case row.Count > 1:
-		instanceCount = int32(row.Count)
-	}
-
-	// Atomically reserve the listing slot before calling AWS. The read-only
-	// listing_state check in validateMarketplaceListRequest is not enough on its
-	// own: two concurrent requests can both pass it, and AWS assigns a fresh
-	// ClientToken per call so the provider will not dedup them, leaving two live
-	// listings for one RI. The claim serializes concurrent creates for the same
-	// purchase_id (issue #292 CR concurrent-create guard).
-	claimed, err := h.config.ClaimMarketplaceListingSlot(ctx, purchaseID)
-	if err != nil {
-		return ec2svc.MarketplaceListingResult{}, fmt.Errorf("failed to reserve marketplace listing slot: %w", err)
-	}
-	if !claimed {
-		return ec2svc.MarketplaceListingResult{}, NewClientError(409, "a marketplace listing is already active or in progress for this RI; cancel it first")
-	}
-
-	result, err := ec2Client.CreateMarketplaceListing(ctx, ec2svc.MarketplaceListingRequest{
-		ReservedInstancesID: purchaseID,
-		ClientToken:         marketplaceClientToken(purchaseID, row.ListingID, instanceCount, awsSchedule),
-		PriceSchedule:       awsSchedule,
-		InstanceCount:       instanceCount,
-	})
-	if err != nil {
-		// AWS created nothing: release the claim so a retry is not blocked.
-		h.releaseMarketplaceClaim(ctx, purchaseID, row)
-		logging.Warnf("marketplace: CreateReservedInstancesListing for purchase %s failed: %v", purchaseID, err)
-		return ec2svc.MarketplaceListingResult{}, mapAWSMarketplaceError("AWS marketplace listing failed", err)
-	}
-
-	if isDeadListingState(result.State) {
-		return ec2svc.MarketplaceListingResult{}, h.recordDeadListing(ctx, purchaseID, row, result)
-	}
-
-	// Persist the listing ID and state. On DB failure, attempt a compensating
-	// rollback (cancel the just-created listing) to avoid a desync where the
-	// user sees success but the listing is invisible in subsequent renders, then
-	// release the claim so the row does not stay stuck in the pending state.
-	if dbErr := h.config.UpdatePurchaseHistoryListing(ctx, purchaseID, result.ListingID, result.State); dbErr != nil {
-		logging.Errorf("marketplace: listing created (%s / %s) but DB update failed: %v; attempting rollback", result.ListingID, result.State, dbErr)
-		compCtx, cancelComp := context.WithTimeout(context.WithoutCancel(ctx), marketplaceCompensationTimeout)
-		defer cancelComp()
-		if _, rollbackErr := ec2Client.CancelMarketplaceListing(compCtx, result.ListingID); rollbackErr != nil {
-			return ec2svc.MarketplaceListingResult{}, h.keepUncanceledListing(compCtx, purchaseID, result, rollbackErr)
-		}
-		logging.Warnf("marketplace: listing %s rolled back (canceled) after DB failure", result.ListingID)
-		h.recordRolledBackListing(compCtx, ctx, purchaseID, row, result.ListingID)
-		return ec2svc.MarketplaceListingResult{}, fmt.Errorf("listing created but could not be persisted; listing has been rolled back: %w", dbErr)
-	}
-
-	return result, nil
-}
-
-// marketplaceClientToken derives the CreateReservedInstancesListing ClientToken
-// from the request instead of drawing a random one, so a retry of the same
-// attempt (for example after a timeout that hid AWS's success) carries the same
-// token and AWS returns the existing listing rather than creating a second one.
-// The previously recorded listing id is part of the input: every path that
-// ends a listing (cancel, rollback, dead state) records that listing's id, so
-// the next attempt gets a new token instead of AWS replaying the dead listing.
-// The default schedule depends on the remaining months, so a retry across a
-// month boundary also gets a new token; persisting the token (issue #525)
-// closes that. The count and schedule are included so a retry
-// with different parameters never trips AWS's idempotent-parameter-mismatch
-// error.
-func marketplaceClientToken(purchaseID, priorListingID string, count int32, schedule []ec2svc.MarketplacePriceTier) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s|%s|%d", purchaseID, priorListingID, count)
-	for _, t := range schedule {
-		fmt.Fprintf(&b, "|%d:%v", t.Term, t.Price)
-	}
-	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(b.String())).String()
-}
-
-func isDeadListingState(state string) bool {
-	return strings.EqualFold(state, config.ListingStateCancelled) || strings.EqualFold(state, config.ListingStateClosed)
-}
-
-// recordDeadListing handles a create response in a canceled or closed state
-// (AWS replays a dead listing for a reused ClientToken): it records the listing
-// so the slot is free with a new token for the next attempt, and reports it.
-func (h *Handler) recordDeadListing(ctx context.Context, purchaseID string, row *config.PurchaseHistoryRecord, listing ec2svc.MarketplaceListingResult) error {
-	if err := h.config.UpdatePurchaseHistoryListing(ctx, purchaseID, listing.ListingID, listing.State); err != nil {
-		logging.Errorf("marketplace: failed to record dead listing %s for purchase %s: %v", listing.ListingID, purchaseID, err)
-		h.releaseMarketplaceClaim(ctx, purchaseID, row)
-	}
-	return NewClientError(502, fmt.Sprintf("AWS returned listing %s in state %s instead of a live listing; retry to create a new one", listing.ListingID, listing.State))
-}
-
-// recordRolledBackListing records the canceled listing instead of restoring the
-// old listing id, so the next attempt derives a different ClientToken; AWS
-// would otherwise replay the canceled listing for the same token.
-func (h *Handler) recordRolledBackListing(compCtx, ctx context.Context, purchaseID string, row *config.PurchaseHistoryRecord, listingID string) {
-	if err := h.config.UpdatePurchaseHistoryListing(compCtx, purchaseID, listingID, config.ListingStateCancelled); err != nil {
-		logging.Errorf("marketplace: failed to record rolled-back listing %s for purchase %s: %v", listingID, purchaseID, err)
-		h.releaseMarketplaceClaim(ctx, purchaseID, row)
-	}
-}
 
 // keepUncanceledListing records a listing that could be neither persisted nor
 // canceled; releasing the claim instead would hide it from the cancel endpoint.
@@ -412,18 +287,6 @@ func (h *Handler) populateOfferingClass(ctx context.Context, purchaseID string, 
 		logging.Errorf("marketplace: failed to persist offering_class %q for purchase %s: %v", class, purchaseID, stampErr)
 	}
 	return class, nil
-}
-
-// releaseMarketplaceClaim restores a purchase_history row's listing fields to
-// the state captured before ClaimMarketplaceListingSlot reserved the slot. It
-// runs on every failure path after a successful claim so a failed listing
-// attempt does not leave the row stuck in the transient pending state (which
-// would block future list attempts). Best-effort: on error it logs loudly
-// because the row may stay pending until the #292 status poller reconciles it.
-func (h *Handler) releaseMarketplaceClaim(ctx context.Context, purchaseID string, row *config.PurchaseHistoryRecord) {
-	if err := h.config.UpdatePurchaseHistoryListing(ctx, purchaseID, row.ListingID, row.ListingState); err != nil {
-		logging.Errorf("marketplace: failed to release listing claim for purchase %s (row may be stuck in %q): %v", purchaseID, config.ListingStatePending, err)
-	}
 }
 
 // marketplaceCancel handles POST /api/purchases/{id}/marketplace-cancel.

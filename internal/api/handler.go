@@ -91,6 +91,10 @@ type Handler struct {
 	// awsprovider.NewEC2ClientDirect.
 	marketplaceEC2Factory func(aws.Config) marketplaceEC2Client
 
+	// Optional listing-finder injected by tests. When nil, the marketplace
+	// reconcile uses the AWS SDK directly (see awsMarketplaceListingFinder).
+	marketplaceFinderFactory func(aws.Config) marketplaceListingFinder
+
 	// Optional account-resolver injection point used by the reshape
 	// handler integration test. When nil (the production default), the
 	// handler calls h.resolveAWSCloudAccountID which in turn invokes
