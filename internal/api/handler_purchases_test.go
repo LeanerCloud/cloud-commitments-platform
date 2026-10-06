@@ -3406,15 +3406,14 @@ func TestHandler_cancelPurchase_Session_RejectsMissingSession(t *testing.T) {
 	mockConfig.On("GetExecutionByID", mock.Anything, cancelExecID).Return(exec, nil)
 
 	handler := &Handler{config: mockConfig, auth: new(MockAuthService)}
-	// No Authorization header → CSRF fires first (issue #404: cancelPurchaseViaSession
-	// now enforces CSRF before requireSession). A tokenless request can't provide a
-	// valid CSRF binding, so we get a 403 "CSRF validation failed".
+	// No Authorization header → 401 before the execution is loaded (issue #435),
+	// so a missing and an existing ID are indistinguishable.
 	_, err := handler.cancelPurchase(context.Background(), &events.LambdaFunctionURLRequest{}, cancelExecID, "")
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a clientError, got: %v", err)
-	assert.Equal(t, 403, ce.code)
-	assert.Contains(t, ce.Error(), "CSRF validation failed")
+	assert.Equal(t, 401, ce.code)
+	mockConfig.AssertNotCalled(t, "GetExecutionByID", mock.Anything, cancelExecID)
 }
 
 // TestHandler_cancelPurchase_DeepLink_AdminBypassesContactEmailGate is the
@@ -5721,8 +5720,10 @@ func TestHandler_revokePurchase_NotFound(t *testing.T) {
 	mockStore := new(MockConfigStore)
 	mockStore.On("GetExecutionByID", ctx, execID).Return(nil, nil)
 
-	handler := &Handler{config: mockStore}
-	req := &events.LambdaFunctionURLRequest{}
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", mock.Anything, "sess-tok").Return(&Session{Email: "admin@example.com"}, nil)
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"authorization": "Bearer sess-tok"}}
 	_, err := handler.revokeViaEmailToken(ctx, req, execID, "some-token")
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
