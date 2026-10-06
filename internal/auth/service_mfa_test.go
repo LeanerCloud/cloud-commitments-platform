@@ -750,3 +750,20 @@ func TestMFARegenerateRecoveryCodes_ClaimFailureFailsClosed(t *testing.T) {
 	require.ErrorContains(t, err, "db down")
 	mockStore.AssertNotCalled(t, "ReplaceMFARecoveryCodes", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
+
+func TestMFADisable_ClaimFailureFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	service := createTestService(mockStore, new(MockEmailSender))
+
+	secret := "JBSWY3DPEHPK3PXP"
+	user := createTestUser(t, "SecurePass@123")
+	user.MFAEnabled = true
+	user.MFASecret = secret
+	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("ClaimTOTPCounter", ctx, user.ID, mock.AnythingOfType("int64")).Return(false, errors.New("db down")).Once()
+
+	err := service.MFADisable(ctx, user.ID, "SecurePass@123", totpFor(secret))
+	require.ErrorContains(t, err, "db down")
+	mockStore.AssertNotCalled(t, "DisableMFA", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
