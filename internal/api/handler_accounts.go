@@ -1451,11 +1451,12 @@ func (h *Handler) discoverOrgAccounts(ctx context.Context, req *events.LambdaFun
 	// and may bring unfamiliar accounts into the roster. Even though those
 	// rows boot disabled, the elevated privilege makes admin-scope the right
 	// gate (CR pass 1 on PR #212).
-	if _, err := h.requireAdmin(ctx, req); err != nil {
+	session, err := h.requireAdmin(ctx, req)
+	if err != nil {
 		return nil, err
 	}
 
-	root, err := h.parseDiscoverOrgRoot(ctx, req.Body)
+	root, err := h.parseDiscoverOrgRoot(ctx, session, req.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -1481,7 +1482,7 @@ func (h *Handler) discoverOrgAccounts(ctx context.Context, req *events.LambdaFun
 // failure modes the spec enumerates (bad JSON / bad UUID / not-aws / not-root)
 // + 404 for missing-account. Pulled out of discoverOrgAccounts to keep that
 // function under the gocyclo budget.
-func (h *Handler) parseDiscoverOrgRoot(ctx context.Context, rawBody string) (*config.CloudAccount, error) {
+func (h *Handler) parseDiscoverOrgRoot(ctx context.Context, session *Session, rawBody string) (*config.CloudAccount, error) {
 	var body DiscoverOrgRequest
 	if err := json.Unmarshal([]byte(rawBody), &body); err != nil {
 		return nil, NewClientError(400, "invalid JSON body")
@@ -1490,12 +1491,12 @@ func (h *Handler) parseDiscoverOrgRoot(ctx context.Context, rawBody string) (*co
 		return nil, err
 	}
 
-	root, err := h.config.GetCloudAccount(ctx, body.AccountID)
+	// The org root's credentials list the whole organization and every member
+	// is persisted as a row, so the root must be in the caller's scope. Missing
+	// and out-of-scope roots share one not-found refusal.
+	root, err := h.requireAccountAccess(ctx, session, body.AccountID)
 	if err != nil {
-		return nil, fmt.Errorf("accounts: get cloud account: %w", err)
-	}
-	if root == nil {
-		return nil, NewClientError(404, "cloud account not found")
+		return nil, err
 	}
 	if root.Provider != "aws" {
 		return nil, NewClientError(400, "discover-org requires an aws account")

@@ -1356,9 +1356,7 @@ func TestDiscoverOrgAccounts_NotFound(t *testing.T) {
 
 	_, err := handler.discoverOrgAccounts(ctx, adminRequest(`{"account_id":"11111111-1111-1111-1111-111111111111"}`))
 	require.Error(t, err)
-	ce, ok := IsClientError(err)
-	require.True(t, ok)
-	assert.Equal(t, 404, ce.code)
+	assert.True(t, IsNotFoundError(err), "expected the shared not-found refusal, got %v", err)
 }
 
 // TestDiscoverOrgAccounts_RejectsNonAdmin locks down the admin-only gate
