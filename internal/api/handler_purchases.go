@@ -449,7 +449,7 @@ func (h *Handler) authorizePlannedPurchaseCancel(ctx context.Context, session *S
 	return nil
 }
 
-func (h *Handler) deletePlannedPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID string) (*StatusResponse, error) {
+func (h *Handler) deletePlannedPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID string) (*DeletePlannedPurchaseResponse, error) {
 	if err := validateUUID(executionID); err != nil {
 		return nil, err
 	}
@@ -479,13 +479,38 @@ func (h *Handler) deletePlannedPurchase(ctx context.Context, req *events.LambdaF
 	// reflects the disable action immediately. Issue #774: previously the
 	// execution was canceled but plan.enabled was left true, causing
 	// inconsistent state between the Scheduled Purchases and Plans views.
+	//
+	// A single-account child passes requireExecutionAccess on its own account
+	// while its plan may span accounts outside the caller's scope (issue #520).
+	// Disabling the plan changes those accounts too, so it needs the same
+	// every-account check as the plan mutation routes. Without it the
+	// execution is still canceled and the plan is left enabled.
+	resp := &DeletePlannedPurchaseResponse{Status: "canceled"}
 	if canceled.PlanID != "" {
-		if err := h.disablePlan(ctx, canceled.PlanID); err != nil {
+		disabled, err := h.disablePlanIfInScope(ctx, session, canceled.PlanID)
+		if err != nil {
 			return nil, err
 		}
+		resp.PlanDisabled = &disabled
 	}
 
-	return &StatusResponse{Status: "canceled"}, nil
+	return resp, nil
+}
+
+// disablePlanIfInScope disables the plan only when the session may mutate
+// every plan account, and reports whether it did. A scope refusal is not an
+// error: the caller's cancel stands and the plan is left enabled.
+func (h *Handler) disablePlanIfInScope(ctx context.Context, session *Session, planID string) (bool, error) {
+	if err := h.requirePlanMutationAccess(ctx, session, planID); err != nil {
+		if IsNotFoundError(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := h.disablePlan(ctx, planID); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // cancelOrRecoverExecution transitions the execution to "canceled" if it is
