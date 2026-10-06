@@ -33,11 +33,26 @@ const defaultAdminGroupID = "00000000-0000-5000-8000-000000000001"
 // RunMigrations runs database migrations using golang-migrate
 // adminEmail is optional - if provided, admin user will be created after migrations complete
 // adminPassword is optional - if provided, admin is created with hashed password and active=true.
+//
+// ctx bounds the schema work itself: connection setup, advisory-lock wait and
+// the running migration SQL. When ctx ends, the migrator's connections are
+// canceled server-side and RunMigrations returns an error matching
+// errors.Is(err, ctx.Err()). An interrupted migration rolls back (every
+// migration is transactional) but leaves schema_migrations dirty, which the
+// next run reports through maybeAutoHealDirty.
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsPath, adminEmail, adminPassword string) error {
+	tracker := &connTracker{ctx: ctx}
+	stopWatch := tracker.watch()
+	defer stopWatch()
+
+	return wrapContextError(ctx, runMigrations(ctx, tracker, pool, migrationsPath, adminEmail, adminPassword))
+}
+
+func runMigrations(ctx context.Context, tracker *connTracker, pool *pgxpool.Pool, migrationsPath, adminEmail, adminPassword string) error {
 	// Create the migrator and run the pre-Up recovery hooks (operator force,
 	// then default-on dirty auto-heal). Kept in a helper so RunMigrations stays
 	// under the cyclomatic-complexity budget as recovery paths grow.
-	m, err := newMigratorWithRecovery(pool, migrationsPath)
+	m, err := newMigratorWithRecovery(tracker, pool, migrationsPath)
 	if err != nil {
 		return err
 	}
@@ -88,14 +103,11 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsPath, admi
 // dirty for auto-heal to act on). The auto-heal error propagates so a heal
 // failure is recorded (and the app fail-opens in ensureDB) rather than being
 // masked by the later dirty check.
-func newMigratorWithRecovery(pool *pgxpool.Pool, migrationsPath string) (*migrate.Migrate, error) {
+func newMigratorWithRecovery(tracker *connTracker, pool *pgxpool.Pool, migrationsPath string) (*migrate.Migrate, error) {
 	// Get database connection string from pool config (without admin email parameter - RDS Proxy doesn't support options)
 	dsn := buildMigrateDSN(pool.Config())
 
-	m, err := migrate.New(
-		fmt.Sprintf("file://%s", migrationsPath),
-		dsn,
-	)
+	m, err := newCancelableMigrator(tracker, migrationsPath, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create migrator: %w", err)
 	}
