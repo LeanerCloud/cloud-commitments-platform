@@ -89,7 +89,7 @@ func TestMarketplacePermissionConstraintsHTTP(t *testing.T) {
 	csrfKey := []byte(strings.Repeat("m", 32))
 	handler := NewHandler(HandlerConfig{ConfigStore: store, AuthService: &marketplaceAuthFixture{service: auth.NewService(auth.ServiceConfig{Store: authStore, CSRFKey: csrfKey})}})
 	handler.apiKey = uuid.NewString()
-	handler.awsCfgOnce.Do(func() { handler.awsCfg = aws.Config{Region: "us-east-1"} })
+	handler.awsCfgOnce.Do(func() { handler.awsCfg = hostAWSConfig() })
 	var providerCalls atomic.Int32
 	handler.marketplaceEC2Factory = func(_ aws.Config) marketplaceEC2Client { providerCalls.Add(1); return &stubMarketplaceEC2{} }
 	// HTTP transport, cached AWS config, and EC2 are fixtures; auth decisions and stores are real.
@@ -114,7 +114,7 @@ func TestMarketplacePermissionConstraintsHTTP(t *testing.T) {
 	t.Cleanup(server.Close)
 	account, other := uuid.NewString(), uuid.NewString()
 	for i, id := range []string{account, other} {
-		require.NoError(t, store.CreateCloudAccount(ctx, &config.CloudAccount{ID: id, Name: id, Provider: "aws", ExternalID: []string{"111111111111", "222222222222"}[i], Enabled: true}))
+		require.NoError(t, store.CreateCloudAccount(ctx, &config.CloudAccount{ID: id, Name: id, Provider: "aws", ExternalID: []string{marketplaceHostAccount, "222222222222"}[i], AWSAuthMode: "role_arn", Enabled: true}))
 	}
 	matching := &auth.PermissionConstraints{AccountIDs: []string{account}, Providers: []string{"aws"}, Services: []string{"ec2"}, Regions: []string{" US-EAST-1 "}}
 	own := auth.Permission{Action: auth.ActionSellOwn, Resource: auth.ResourcePurchases}
