@@ -717,6 +717,78 @@ func TestApproveRIExchange_FourEyes(t *testing.T) {
 	})
 }
 
+// TestApproveRIExchange_TokenPathAttributesResolvedApprover (issue #518): a token
+// approval whose deep link resolves a session records that user as the transition
+// actor and stamps approved_by; with no session both stay unset.
+func TestApproveRIExchange_TokenPathAttributesResolvedApprover(t *testing.T) {
+	ctx := context.Background()
+	approver := "11111111-1111-4111-8111-111111111111"
+
+	t.Run("session resolves", func(t *testing.T) {
+		h, store, id, token := fourEyesRIExchangeFixture(t, nil, approver, grantRINone, false)
+		_, err := h.approveRIExchange(ctx, sessionReq("sess"), id, token)
+		require.NoError(t, err)
+		store.AssertCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", &approver)
+		store.AssertCalled(t, "StampRIExchangeApprovedBy", ctx, id, approver+"@example.com")
+	})
+
+	t.Run("no session leaves the actor unset", func(t *testing.T) {
+		h, store, id, token := fourEyesRIExchangeFixture(t, nil, approver, grantRINone, false)
+		_, err := h.approveRIExchange(ctx, &events.LambdaFunctionURLRequest{}, id, token)
+		require.NoError(t, err)
+		store.AssertCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", (*string)(nil))
+		store.AssertNotCalled(t, "StampRIExchangeApprovedBy", mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
+// TestApproveRIExchange_TokenPathSkipsStampWhenExecutionErrors (issue #518): when
+// execution returns an error (money moved, ledger write failed), the transition
+// still records the actor but approved_by is not stamped, as on the session path.
+func TestApproveRIExchange_TokenPathSkipsStampWhenExecutionErrors(t *testing.T) {
+	ctx := context.Background()
+	approver := "11111111-1111-4111-8111-111111111111"
+	id := "550e8400-e29b-41d4-a716-446655440021"
+	token := "four-eyes-token"
+
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", ctx, "sess").Return(&Session{UserID: approver, Email: "approver@example.com"}, nil)
+	grantRINone(mockAuth, approver)
+	mockStore.On("GetRIExchangeRecord", ctx, id).Return(&config.RIExchangeRecord{
+		ID:               id,
+		Status:           "pending",
+		ApprovalToken:    config.HashApprovalToken(token),
+		Region:           "us-east-1",
+		SourceRIIDs:      []string{"ri-1"},
+		TargetOfferingID: "offering-1",
+		TargetCount:      1,
+		PaymentDue:       "0",
+	}, nil)
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+		RIExchangeMaxDailyUSD:       1000,
+		RIExchangeMaxPerExchangeUSD: 500,
+	}, nil)
+	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", &approver).
+		Return(&config.RIExchangeRecord{ID: id, Status: "processing"}, nil)
+	mockStore.On("CompleteRIExchangeWithPayment", ctx, id, "exch-518", "0").
+		Return(fmt.Errorf("DB write failed")).Times(3)
+
+	h := &Handler{
+		config: mockStore,
+		auth:   mockAuth,
+		executeExchangeFn: func(_ context.Context, _ exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+			return "exch-518", &exchange.ExchangeQuoteSummary{PaymentDueUSDStr: "0"}, nil
+		},
+	}
+
+	_, err := h.approveRIExchange(ctx, sessionReq("sess"), id, token)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ledger update failed")
+	mockStore.AssertCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", &approver)
+	mockStore.AssertNotCalled(t, "StampRIExchangeApprovedBy", mock.Anything, mock.Anything, mock.Anything)
+}
+
 // TestApproveRIExchange_LegacyTokenStillWorks verifies that the token-only path
 // continues to work for non-session callers after the dual-auth refactor (backwards-compat).
 func TestApproveRIExchange_LegacyTokenStillWorks(t *testing.T) {

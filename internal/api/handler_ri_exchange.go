@@ -2226,13 +2226,14 @@ func (h *Handler) approveRIExchangeViaToken(ctx context.Context, req *events.Lam
 		return nil, err
 	}
 	// The deep link forces a login, so the approver's session is resolvable here.
-	err = h.requireDifferentRIExchangeApprover(ctx, h.tryGetSession(ctx, req), record)
+	// When it is not (pure email-client flow), the actor stays NULL.
+	session := h.tryGetSession(ctx, req)
+	err = h.requireDifferentRIExchangeApprover(ctx, session, record)
 	if err != nil {
 		return nil, err
 	}
 
-	// Token-based approval: no session user, so transitioned_by = NULL.
-	transitioned, err := h.config.TransitionRIExchangeStatus(ctx, id, "pending", "processing", nil)
+	transitioned, err := h.config.TransitionRIExchangeStatus(ctx, id, "pending", "processing", resolveCreatorUserID(session))
 	if err != nil {
 		return nil, fmt.Errorf("failed to transition exchange status: %w", err)
 	}
@@ -2240,7 +2241,19 @@ func (h *Handler) approveRIExchangeViaToken(ctx context.Context, req *events.Lam
 		return nil, NewClientError(409, "exchange already processed, expired, or was canceled by a newer analysis run")
 	}
 
-	return h.executeApprovedExchange(ctx, id, record)
+	result, execErr := h.executeApprovedExchange(ctx, id, record)
+	if execErr == nil && session != nil {
+		h.stampRIExchangeApprover(ctx, id, session)
+	}
+	return result, execErr
+}
+
+// stampRIExchangeApprover records session.Email as approved_by. Best-effort: the
+// exchange already executed, so a stamp failure is logged, not surfaced.
+func (h *Handler) stampRIExchangeApprover(ctx context.Context, id string, session *Session) {
+	if err := h.config.StampRIExchangeApprovedBy(ctx, id, session.Email); err != nil {
+		logging.Errorf("failed to stamp approved_by on exchange %s: %v", id, err)
+	}
 }
 
 // approveRIExchangeViaSession is the session-authed branch of approveRIExchange
@@ -2289,12 +2302,8 @@ func (h *Handler) approveRIExchangeViaSession(ctx context.Context, req *events.L
 
 	result, execErr := h.executeApprovedExchange(ctx, id, record)
 
-	// Stamp approver attribution (best-effort: the exchange itself already
-	// executed, so a stamp failure is logged but not surfaced to the caller).
 	if execErr == nil {
-		if stampErr := h.config.StampRIExchangeApprovedBy(ctx, id, session.Email); stampErr != nil {
-			logging.Errorf("failed to stamp approved_by on exchange %s: %v", id, stampErr)
-		}
+		h.stampRIExchangeApprover(ctx, id, session)
 	}
 
 	return result, execErr
