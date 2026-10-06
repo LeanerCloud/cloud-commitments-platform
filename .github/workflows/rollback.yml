@@ -6,6 +6,9 @@
 # Required GitHub Secrets:
 #   - Same as deployment workflows (AWS, GCP, Azure credentials)
 #
+# Required GitHub Variables:
+#   - GCP_PROJECT_ID (GCP rollback; same variable deploy-gcp.yml reads)
+#
 # Triggered by:
 #   - Manual workflow dispatch only (safety measure)
 
@@ -103,7 +106,7 @@ jobs:
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
           GCP_REGION: ${{ vars.GCP_REGION || 'us-central1' }}
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           ARTIFACT_REGISTRY_REPO: ${{ vars.ARTIFACT_REGISTRY_REPO || 'cudly' }}
           ACR_NAME: ${{ vars.ACR_NAME || 'cudlyacr' }}
         run: |
@@ -141,7 +144,7 @@ jobs:
               ;;
             gcp)
               if [ -z "$GCP_PROJECT_ID" ]; then
-                echo "::error::GCP_PROJECT_ID secret is not set; refusing to guess the project"
+                echo "::error::GCP_PROJECT_ID variable is not set; refusing to guess the project"
                 exit 1
               fi
               IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/cudly:${IMAGE_TAG}"
@@ -447,7 +450,7 @@ jobs:
           TF_BACKEND: ${{ secrets.TF_BACKEND_GCP }}
           ENVIRONMENT: ${{ inputs.environment }}
           IMAGE_URI: ${{ needs.validate.outputs.image_uri }}
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
         run: |
           set -euo pipefail
           printf '%s\nprefix = "github-%s"\n' "$TF_BACKEND" "$ENVIRONMENT" > /tmp/backend.tfbackend
