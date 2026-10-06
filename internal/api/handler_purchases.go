@@ -479,9 +479,21 @@ func (h *Handler) deletePlannedPurchase(ctx context.Context, req *events.LambdaF
 	// reflects the disable action immediately. Issue #774: previously the
 	// execution was canceled but plan.enabled was left true, causing
 	// inconsistent state between the Scheduled Purchases and Plans views.
+	//
+	// A single-account child passes requireExecutionAccess on its own account
+	// while its plan may span accounts outside the caller's scope (issue #520).
+	// Disabling the plan changes those accounts too, so it needs the same
+	// every-account check as the plan mutation routes. Without it the
+	// execution is still canceled and the plan is left enabled.
 	if canceled.PlanID != "" {
-		if err := h.disablePlan(ctx, canceled.PlanID); err != nil {
-			return nil, err
+		planErr := h.requirePlanMutationAccess(ctx, session, canceled.PlanID)
+		switch {
+		case planErr == nil:
+			if err := h.disablePlan(ctx, canceled.PlanID); err != nil {
+				return nil, err
+			}
+		case !IsNotFoundError(planErr):
+			return nil, planErr
 		}
 	}
 
