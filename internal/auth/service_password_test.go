@@ -806,6 +806,27 @@ func TestService_ResetTokenStatus(t *testing.T) {
 		mockStore.AssertExpectations(t)
 	})
 
+	t.Run("expired token on deactivated user reports expired + reset flow", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		expiry := time.Now().Add(-time.Hour)
+		deactivatedAt := time.Now().Add(-2 * time.Hour)
+		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).
+			Return(&User{
+				ID: "u5", Active: false, DeactivatedAt: &deactivatedAt,
+				PasswordResetToken: hashSessionToken("expired-deactivated"), PasswordResetExpiry: &expiry,
+			}, nil).Once()
+
+		state, flow, err := service.ResetTokenStatus(ctx, "expired-deactivated")
+		require.NoError(t, err)
+		assert.Equal(t, ResetTokenStateExpired, state)
+		assert.Equal(t, ResetTokenFlowReset, flow)
+
+		mockStore.AssertExpectations(t)
+	})
+
 	t.Run("expired token reports expired", func(t *testing.T) {
 		mockStore := new(MockStore)
 		mockEmail := new(MockEmailSender)

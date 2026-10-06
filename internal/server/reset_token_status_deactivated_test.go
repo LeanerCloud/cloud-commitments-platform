@@ -74,11 +74,15 @@ func TestHandleRequest_ResetPasswordStatus_DeactivatedUserLooksLikeUnknownToken(
 	unknown, err := handler.HandleRequest(ctx, resetStatusRequest("unknown-token"))
 	require.NoError(t, err)
 
+	require.Equal(t, 200, unknown.StatusCode, "body: %s", unknown.Body)
 	require.Equal(t, 200, deactivated.StatusCode, "body: %s", deactivated.Body)
 	var body map[string]string
 	require.NoError(t, json.Unmarshal([]byte(deactivated.Body), &body))
 	assert.Equal(t, "used", body["state"])
 	assert.Equal(t, "reset", body["flow"])
+	assert.Equal(t, unknown.StatusCode, deactivated.StatusCode)
+	assert.Equal(t, unknown.Headers, deactivated.Headers,
+		"deactivated token must be indistinguishable from an unknown token")
 	assert.JSONEq(t, unknown.Body, deactivated.Body,
 		"deactivated token must be indistinguishable from an unknown token")
 }
