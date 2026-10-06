@@ -107,6 +107,10 @@ export interface UpcomingPurchase {
   step_number: number;
   total_steps: number;
   estimated_savings: number;
+  // false when the step carries no recommendations; estimated_savings is
+  // then a placeholder, not data (platform#609). Optional so fixtures that
+  // predate the field keep type-checking; only an explicit false is bare.
+  has_recommendations?: boolean;
   // created_by_user_id is the UUID of the user who scheduled the
   // execution, propagated by the backend so the dashboard's "Cancel"
   // button can apply the same creator-scope ownership gate the Plans

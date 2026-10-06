@@ -1896,3 +1896,57 @@ func TestHandler_calculateCommitmentMetrics_ProviderFilter(t *testing.T) {
 	assert.NotContains(t, savingsByService, "cud",
 		"gcp rows must not appear when filtering to aws")
 }
+
+// Issue #620: through the real HandleRequest path, an upcoming purchase whose
+// execution carries no recommendations must be flagged so the dashboard does
+// not present its $0 savings as data (platform#609).
+func TestHandleRequest_DashboardUpcomingFlagsStepWithoutRecommendations(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+
+	plan := config.PurchasePlan{
+		ID:   "11111111-1111-1111-1111-111111111620",
+		Name: "Azure compute 80% weekly",
+		Services: map[string]config.ServiceConfig{
+			"azure:compute": {Provider: "azure", Service: "compute"},
+		},
+		RampSchedule: config.RampSchedule{TotalSteps: 4},
+	}
+	scheduled := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
+	pending := []config.PurchaseExecution{
+		{ExecutionID: "exec-bare", PlanID: plan.ID, Status: "pending", StepNumber: 1, ScheduledDate: scheduled},
+		{
+			ExecutionID: "exec-with-recs", PlanID: plan.ID, Status: "pending", StepNumber: 2, ScheduledDate: scheduled,
+			Recommendations:  []config.RecommendationRecord{{Provider: "azure", Service: "compute", Count: 2}},
+			EstimatedSavings: 120,
+		},
+	}
+	mockStore.On("GetPendingExecutions", mock.Anything).Return(pending, nil)
+	mockStore.On("ListPurchasePlans", mock.Anything, config.PurchasePlanFilter{}).Return([]config.PurchasePlan{plan}, nil)
+
+	handler := &Handler{config: mockStore, corsAllowedOrigin: "*", apiKey: "test-key"}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"X-API-Key": "test-key"},
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{Method: "GET", Path: "/api/dashboard/upcoming"},
+		},
+	}
+
+	resp, err := handler.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+
+	var body struct {
+		Purchases []map[string]any `json:"purchases"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &body))
+	require.Len(t, body.Purchases, 2)
+	byID := map[string]map[string]any{}
+	for _, p := range body.Purchases {
+		id, ok := p["execution_id"].(string)
+		require.True(t, ok)
+		byID[id] = p
+	}
+	assert.Equal(t, false, byID["exec-bare"]["has_recommendations"])
+	assert.Equal(t, true, byID["exec-with-recs"]["has_recommendations"])
+}
