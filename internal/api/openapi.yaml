@@ -3373,6 +3373,12 @@ components:
         upfront_cost:
           type: number
           format: double
+        has_recommendations:
+          type: boolean
+          description: >
+            False for a plan step that carries no recommendations; count,
+            resource_type, upfront_cost and estimated_savings are then
+            placeholders, not data (platform#609).
         status:
           type: string
         step_number:
