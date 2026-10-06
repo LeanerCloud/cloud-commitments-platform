@@ -30,7 +30,16 @@ const (
 	riRecAlreadyProcessed
 )
 
-func riStatusHandler(rec riStatusRecord) *Handler {
+// riStatusOpts tweaks the fixture for the less common cases.
+type riStatusOpts struct {
+	fourEyes    bool // global 4-eyes mode on; the admin session is the creator
+	noApprove   bool // the session holds no approve permission
+	approveOwn  bool // the session holds approve-own only (not the creator)
+	dbError     bool // the record lookup fails
+	rateLimited bool // the public approve/cancel rate limit rejects the request
+}
+
+func riStatusHandler(rec riStatusRecord, o riStatusOpts) *Handler {
 	var record *config.RIExchangeRecord
 	if rec != riRecMissing {
 		record = &config.RIExchangeRecord{
@@ -40,9 +49,20 @@ func riStatusHandler(rec riStatusRecord) *Handler {
 		if rec == riRecNoToken {
 			record.ApprovalToken = ""
 		}
+		if o.fourEyes || o.approveOwn {
+			creator := "admin-uuid"
+			if o.approveOwn {
+				creator = "someone-else"
+			}
+			record.CreatedByUserID = &creator
+		}
 	}
 	store := new(MockConfigStore)
-	store.On("GetRIExchangeRecord", mock.Anything, riStatusID).Return(record, nil).Maybe()
+	if o.dbError {
+		store.On("GetRIExchangeRecord", mock.Anything, riStatusID).Return(nil, errors.New("db down")).Maybe()
+	} else {
+		store.On("GetRIExchangeRecord", mock.Anything, riStatusID).Return(record, nil).Maybe()
+	}
 	var transitioned *config.RIExchangeRecord
 	if rec != riRecAlreadyProcessed {
 		transitioned = &config.RIExchangeRecord{ID: riStatusID, Status: "processing"}
@@ -50,17 +70,30 @@ func riStatusHandler(rec riStatusRecord) *Handler {
 	store.On("TransitionRIExchangeStatus", mock.Anything, riStatusID, "pending", mock.Anything, mock.Anything).
 		Return(transitioned, nil).Maybe()
 	store.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil).Maybe()
-	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{RequireDifferentApprover: o.fourEyes}, nil).Maybe()
 	store.On("FailRIExchange", mock.Anything, riStatusID, mock.Anything).Return(nil).Maybe()
 	store.On("StampRIExchangeApprovedBy", mock.Anything, riStatusID, mock.Anything).Return(nil).Maybe()
 
 	a := new(MockAuthService)
 	a.On("ValidateSession", mock.Anything, "admin-bearer").Return(&Session{UserID: "admin-uuid", Email: "admin@example.com"}, nil).Maybe()
 	a.On("ValidateSession", mock.Anything, mock.Anything).Return(nil, errors.New("invalid session")).Maybe()
-	a.grantAdminPurchaser()
+	switch {
+	case o.noApprove:
+		grantRINone(a, "admin-uuid")
+	case o.approveOwn:
+		grantRIApproveOwn(a, "admin-uuid")
+	default:
+		a.grantAdminPurchaser()
+	}
 	a.On("ValidateCSRFToken", mock.Anything, "admin-bearer", "csrf-ok").Return(nil).Maybe()
 	a.On("ValidateCSRFToken", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("csrf mismatch")).Maybe()
-	return &Handler{config: store, auth: a}
+	h := &Handler{config: store, auth: a}
+	if o.rateLimited {
+		rl := new(MockRateLimiter)
+		rl.On("AllowWithIP", mock.Anything, mock.Anything, "approve_cancel_public").Return(false, nil)
+		h.rateLimiter = rl
+	}
+	return h
 }
 
 type riStatusSession int
@@ -96,6 +129,9 @@ type riStatusCase struct {
 	rec       riStatusRecord
 	sess      riStatusSession
 	token     string
+	opts      riStatusOpts
+	id        string // overrides riStatusID
+	body      string // JSON request body
 	want      int
 	wantError string // exact "error" body text; empty for 200 cases
 	wantBody  string // substring of the body for 200 cases
@@ -104,8 +140,16 @@ type riStatusCase struct {
 func runRIStatusCases(t *testing.T, action string, cases []riStatusCase) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h := riStatusHandler(tc.rec)
-			resp, err := h.HandleRequest(context.Background(), riStatusRequest(action, tc.sess, tc.token))
+			h := riStatusHandler(tc.rec, tc.opts)
+			req := riStatusRequest(action, tc.sess, tc.token)
+			if tc.id != "" {
+				req.RequestContext.HTTP.Path = "/api/ri-exchange/" + action + "/" + tc.id
+			}
+			if tc.body != "" {
+				req.Body = tc.body
+				req.Headers["content-type"] = "application/json"
+			}
+			resp, err := h.HandleRequest(context.Background(), req)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, resp.StatusCode, resp.Body)
 			if tc.wantError != "" {
@@ -134,6 +178,14 @@ func TestHandleRequest_ApproveRIExchange_StatusCodes(t *testing.T) {
 		{name: "403 session without CSRF does not fall through to a valid token", rec: riRecPending, sess: riSessNoCSRF, token: riStatusRawToken, want: 403, wantError: "CSRF validation failed"},
 		{name: "403 wrong token without session", rec: riRecPending, sess: riSessNone, token: "wrong", want: 403, wantError: "invalid approval token"},
 		{name: "403 record without approval token", rec: riRecNoToken, sess: riSessNone, token: riStatusRawToken, want: 403, wantError: "this exchange record does not support approval"},
+		{name: "400 invalid UUID", rec: riRecPending, sess: riSessNone, token: riStatusRawToken, id: "not-a-uuid", want: 400, wantError: "invalid ID format: must be a valid UUID"},
+		{name: "403 session without approve right and no token", rec: riRecPending, sess: riSessCSRF, opts: riStatusOpts{noApprove: true}, want: 403, wantError: "permission denied: requires approve-any or approve-own on purchases"},
+		{name: "403 4-eyes creator cannot approve own exchange", rec: riRecPending, sess: riSessCSRF, opts: riStatusOpts{fourEyes: true}, want: 403, wantError: "approval declined: 4-eyes mode requires a different approver than the requester"},
+		{name: "500 4-eyes on and token without session", rec: riRecPending, sess: riSessNone, token: riStatusRawToken, opts: riStatusOpts{fourEyes: true}, want: 500, wantError: "4-eyes approval mode is enabled but no session could be resolved; sign in before approving"},
+		{name: "200 approve-own session that is not the creator falls through to the token", rec: riRecPending, sess: riSessCSRF, token: riStatusRawToken, opts: riStatusOpts{approveOwn: true}, want: 200, wantBody: `"status"`},
+		{name: "403 body token is not read", rec: riRecPending, sess: riSessNone, body: `{"token":"` + riStatusRawToken + `"}`, want: 403, wantError: "CSRF validation failed"},
+		{name: "429 rate limited", rec: riRecPending, sess: riSessNone, token: riStatusRawToken, opts: riStatusOpts{rateLimited: true}, want: 429, wantError: "too many requests, please try again later"},
+		{name: "500 record lookup fails", rec: riRecPending, sess: riSessNone, token: riStatusRawToken, opts: riStatusOpts{dbError: true}, want: 500},
 		{name: "404 missing record with token", rec: riRecMissing, sess: riSessNone, token: riStatusRawToken, want: 404, wantError: "exchange record not found"},
 		{name: "404 missing record with wrong token", rec: riRecMissing, sess: riSessNone, token: "wrong", want: 404, wantError: "exchange record not found"},
 		{name: "404 missing record with session", rec: riRecMissing, sess: riSessCSRF, want: 404, wantError: "exchange record not found"},
@@ -149,6 +201,10 @@ func TestHandleRequest_RejectRIExchange_StatusCodes(t *testing.T) {
 		{name: "200 token with session without CSRF", rec: riRecPending, sess: riSessNoCSRF, token: riStatusRawToken, want: 200, wantBody: `"status":"canceled"`},
 		{name: "400 no token", rec: riRecPending, sess: riSessNone, want: 400, wantError: "rejection token is required"},
 		{name: "400 no token even with a valid session", rec: riRecPending, sess: riSessCSRF, want: 400, wantError: "rejection token is required"},
+		{name: "400 invalid UUID", rec: riRecPending, sess: riSessNone, token: riStatusRawToken, id: "not-a-uuid", want: 400, wantError: "invalid ID format: must be a valid UUID"},
+		{name: "400 body token is not read", rec: riRecPending, sess: riSessNone, body: `{"token":"` + riStatusRawToken + `"}`, want: 400, wantError: "rejection token is required"},
+		{name: "429 rate limited", rec: riRecPending, sess: riSessNone, token: riStatusRawToken, opts: riStatusOpts{rateLimited: true}, want: 429, wantError: "too many requests, please try again later"},
+		{name: "500 record lookup fails", rec: riRecPending, sess: riSessNone, token: riStatusRawToken, opts: riStatusOpts{dbError: true}, want: 500},
 		{name: "403 wrong token", rec: riRecPending, sess: riSessNone, token: "wrong", want: 403, wantError: "invalid rejection token"},
 		{name: "403 record without approval token", rec: riRecNoToken, sess: riSessNone, token: riStatusRawToken, want: 403, wantError: "this exchange record does not support rejection"},
 		{name: "404 missing record with token", rec: riRecMissing, sess: riSessNone, token: riStatusRawToken, want: 404, wantError: "exchange record not found"},
