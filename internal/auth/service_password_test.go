@@ -781,13 +781,11 @@ func TestService_ResetTokenStatus(t *testing.T) {
 		mockStore.AssertExpectations(t)
 	})
 
-	// Regression test for issue #89 / audit finding A03-006: a deactivated
-	// user (DeactivatedAt set) is also Active=false, but must report the
-	// "reset" flow, not "invite" -- the frontend must not show "Set your
-	// password" wording implying the token will activate the account, since
-	// ConfirmPasswordReset refuses to. Before the fix, resetTokenFlowFor did
-	// not exist and this branch keyed on !user.Active alone.
-	t.Run("valid token on deactivated user is valid + reset flow, not invite", func(t *testing.T) {
+	// Issue #421: ConfirmPasswordReset refuses deactivated accounts, so the
+	// status probe must not offer the form. It reports "used", the same state
+	// as an unknown or consumed token, so the endpoint does not reveal that the
+	// account is deactivated.
+	t.Run("unexpired token on deactivated user reports used + reset flow", func(t *testing.T) {
 		mockStore := new(MockStore)
 		mockEmail := new(MockEmailSender)
 		service := createTestService(mockStore, mockEmail)
@@ -802,7 +800,28 @@ func TestService_ResetTokenStatus(t *testing.T) {
 
 		state, flow, err := service.ResetTokenStatus(ctx, "valid-token-deactivated")
 		require.NoError(t, err)
-		assert.Equal(t, ResetTokenStateValid, state)
+		assert.Equal(t, ResetTokenStateUsed, state)
+		assert.Equal(t, ResetTokenFlowReset, flow)
+
+		mockStore.AssertExpectations(t)
+	})
+
+	t.Run("expired token on deactivated user reports expired + reset flow", func(t *testing.T) {
+		mockStore := new(MockStore)
+		mockEmail := new(MockEmailSender)
+		service := createTestService(mockStore, mockEmail)
+
+		expiry := time.Now().Add(-time.Hour)
+		deactivatedAt := time.Now().Add(-2 * time.Hour)
+		mockStore.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).
+			Return(&User{
+				ID: "u5", Active: false, DeactivatedAt: &deactivatedAt,
+				PasswordResetToken: hashSessionToken("expired-deactivated"), PasswordResetExpiry: &expiry,
+			}, nil).Once()
+
+		state, flow, err := service.ResetTokenStatus(ctx, "expired-deactivated")
+		require.NoError(t, err)
+		assert.Equal(t, ResetTokenStateExpired, state)
 		assert.Equal(t, ResetTokenFlowReset, flow)
 
 		mockStore.AssertExpectations(t)
