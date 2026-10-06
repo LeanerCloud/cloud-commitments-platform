@@ -2177,7 +2177,8 @@ func exchangeRecordInScope(allowed auth.AccountScope, accounts []config.CloudAcc
 //     the token-equality check; the permission-denied fall-through ensures a
 //     logged-in user without approve-* can still use an email link they hold.
 //  3. token == "": a session denial is returned as-is (issue #173); with no
-//     session, approveRIExchangeViaSession's requireSession gate returns 401.
+//     session, approveRIExchangeViaSession's CSRF check fails first and the
+//     request gets 403 (never 401).
 func (h *Handler) approveRIExchange(ctx context.Context, req *events.LambdaFunctionURLRequest, id, token string) (any, error) {
 	if session := h.tryGetSession(ctx, req); session != nil {
 		// Quick RBAC pre-check (no record fetch needed): does this session hold
@@ -2262,7 +2263,8 @@ func (h *Handler) stampRIExchangeApprover(ctx context.Context, id string, sessio
 // session.Email onto the approved_by column as an audit trail.
 //
 // The session parameter may be non-nil (already validated by the caller) or nil
-// (requireSession will validate it and return 401 if absent).
+// (an absent session never reaches requireSession: the CSRF check above
+// rejects it with 403).
 func (h *Handler) approveRIExchangeViaSession(ctx context.Context, req *events.LambdaFunctionURLRequest, id string, session *Session) (any, error) {
 	// This endpoint is AuthPublic so the outer middleware skips CSRF.
 	// Enforce it here for the session-authed sub-path, mirroring
