@@ -357,6 +357,30 @@ func TestCancel_OutOfScopeSessionWithTokenUsesContactGate(t *testing.T) {
 	mockPurchase.AssertCalled(t, "CancelExecution", mock.Anything, scopeTestExecID, "email-token", "operator@example.com")
 }
 
+// TestApprove_OutOfScopeSessionWithTokenUsesContactGate is the approve
+// counterpart of the cancel control above: an out-of-scope session carrying
+// the email token falls through to the token branch and is approved because
+// the session email is the account's contact_email. The negative case (a
+// session that is not the contact email) is covered at
+// handler_purchases_test.go:144.
+func TestApprove_OutOfScopeSessionWithTokenUsesContactGate(t *testing.T) {
+	exec := scopeTestExecution(scopeTestKind{recs: []config.RecommendationRecord{
+		scopeTestRec("rec-stage", &scopeTestStage.ID),
+	}}, "pending")
+	store := new(MockConfigStore)
+	mockPurchase := new(MockPurchaseManager)
+	h := newScopeTestHandler(t, exec, []string{scopeTestProd.Name}, store, mockPurchase)
+	mockPurchase.On("ApproveExecution", mock.Anything, scopeTestExecID, "email-token", "operator@example.com").Return("revocation-token", nil)
+	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil)
+
+	res, err := h.approvePurchase(context.Background(), scopeTestRequest(), scopeTestExecID, "email-token")
+
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"status": "completed"}, res)
+	mockPurchase.AssertNotCalled(t, "ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockPurchase.AssertCalled(t, "ApproveExecution", mock.Anything, scopeTestExecID, "email-token", "operator@example.com")
+}
+
 // TestExecutionAccounts_AdHocUnattributedDenied: an ad-hoc execution with a
 // recommendation lacking a cloud account cannot be attributed, so a scoped
 // session is denied even when every attributed account is in scope.
