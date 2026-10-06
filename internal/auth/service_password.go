@@ -439,7 +439,8 @@ const (
 	ResetTokenStateValid ResetTokenState = "valid"
 	// ResetTokenStateExpired means the token matches but its expiry has passed.
 	ResetTokenStateExpired ResetTokenState = "expired"
-	// ResetTokenStateUsed covers both consumed and never-issued tokens.
+	// ResetTokenStateUsed covers consumed, never-issued, and
+	// deactivated-account tokens.
 	ResetTokenStateUsed ResetTokenState = "used"
 )
 
@@ -495,6 +496,13 @@ func (s *Service) ResetTokenStatus(ctx context.Context, token string) (ResetToke
 
 	if user.PasswordResetExpiry == nil || time.Now().After(*user.PasswordResetExpiry) {
 		return ResetTokenStateExpired, resetTokenFlowFor(user), nil
+	}
+
+	// ConfirmPasswordReset refuses admin-deactivated accounts, so report the
+	// token as used (terminal view, no form that can never succeed). Using
+	// "used" keeps the endpoint from revealing that the account is deactivated.
+	if user.DeactivatedAt != nil {
+		return ResetTokenStateUsed, ResetTokenFlowReset, nil
 	}
 
 	return ResetTokenStateValid, resetTokenFlowFor(user), nil
