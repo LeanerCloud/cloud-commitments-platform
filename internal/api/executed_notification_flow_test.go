@@ -239,7 +239,7 @@ func TestExecutedNotification_SessionApprovePath(t *testing.T) {
 	// execution's ApprovalToken (the pre-fix behavior) is no longer possible,
 	// so ApproveAndExecute mints and returns one on every successful approve
 	// regardless of which path triggered it.
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(freshToken, nil)
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil, freshToken, nil)
 
 	notifier := &recordingExecutedNotifier{}
 	handler := &Handler{
@@ -299,7 +299,7 @@ func TestExecutedNotification_DirectExecutePath(t *testing.T) {
 	// Direct-execute also mints its own fresh revocation token (issue #103),
 	// replacing the pre-fix "reuse execution.ApprovalToken directly" behavior
 	// -- see the SessionApprovePath test above for the full rationale.
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(freshToken, nil)
+	mockPurchase.On("DirectExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil, freshToken, nil)
 
 	notifier := &recordingExecutedNotifier{}
 	handler := &Handler{
@@ -345,7 +345,7 @@ func TestExecutedNotification_DirectExecute_NilNotifierNoPanic(t *testing.T) {
 	mockConfig.On("SavePurchaseExecution", ctx, exec).Return(nil)
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", nil)
+	mockPurchase.On("DirectExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil, "", nil)
 
 	handler := &Handler{
 		purchase:      mockPurchase,

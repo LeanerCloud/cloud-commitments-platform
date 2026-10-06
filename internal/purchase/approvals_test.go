@@ -286,7 +286,7 @@ func TestManager_ApproveAndExecute_EmptyPlanID(t *testing.T) {
 	sender.On("SendPurchaseConfirmation", mock.Anything, mock.Anything).Return(nil)
 	store.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
 
-	_, err := manager.ApproveAndExecute(ctx, "exec-direct-1", "operator@example.com", nil)
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-direct-1", "operator@example.com", nil)
 	require.NoError(t, err)
 
 	// Crucially, the empty PlanID must never reach the UUID-typed store columns.
@@ -330,7 +330,7 @@ func TestManager_ApproveAndExecute_SkipsTokenCheck(t *testing.T) {
 		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == actorUUID })).Return(updated, nil)
 	stubExecuteChain(t, store, sender, "plan-789")
 
-	_, err := manager.ApproveAndExecute(ctx, "exec-456", "session-user@example.com", &actorUUID)
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-456", "session-user@example.com", &actorUUID)
 	require.NoError(t, err)
 	require.NotNil(t, updated.ApprovedBy)
 	assert.Equal(t, "session-user@example.com", *updated.ApprovedBy)
@@ -397,6 +397,76 @@ func TestManager_RunPlannedPurchaseNow_LostCASReturnsError(t *testing.T) {
 	store.AssertExpectations(t)
 }
 
+// TestManager_DirectExecute_StampsAuditFieldsAfterClaim pins #532: the
+// executed_* audit fields land on the row the claim returned, together with
+// the skip reason, and the row comes back to the caller.
+func TestManager_DirectExecute_StampsAuditFieldsAfterClaim(t *testing.T) {
+	ctx := context.Background()
+	manager, store, sender := newApproveManager(t)
+
+	actorUUID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	updated := &config.PurchaseExecution{
+		ExecutionID:     "exec-direct-stamp",
+		PlanID:          "plan-direct-stamp",
+		Status:          "approved",
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
+	}
+	store.On("TransitionExecutionStatus", ctx, "exec-direct-stamp", approveFromStatuses, "approved",
+		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == actorUUID })).Return(updated, nil)
+	stubExecuteChain(t, store, sender, "plan-direct-stamp")
+
+	final, _, err := manager.DirectExecute(ctx, "exec-direct-stamp", "session-user@example.com", &actorUUID)
+	require.NoError(t, err)
+	assert.Same(t, updated, final)
+	require.NotNil(t, final.ExecutedAt)
+	require.NotNil(t, final.ExecutedByUserID)
+	assert.Equal(t, actorUUID, *final.ExecutedByUserID)
+	require.NotNil(t, final.PreApprovalSkipReason)
+	assert.Equal(t, directExecuteSkipReason, *final.PreApprovalSkipReason)
+}
+
+// TestManager_DirectExecute_RefusedLeavesNoExecutedAt pins #532: a lost claim
+// returns no row and saves nothing, so no executed_at can land on a row that
+// never ran.
+func TestManager_DirectExecute_RefusedLeavesNoExecutedAt(t *testing.T) {
+	ctx := context.Background()
+	manager, store, _ := newApproveManager(t)
+
+	store.On("TransitionExecutionStatus", ctx, "exec-direct-lost", approveFromStatuses, "approved", (*string)(nil)).
+		Return(nil, config.ErrExecutionNotInExpectedStatus)
+
+	final, _, err := manager.DirectExecute(ctx, "exec-direct-lost", "operator@example.com", nil)
+	require.ErrorIs(t, err, config.ErrExecutionNotInExpectedStatus)
+	assert.Nil(t, final)
+	store.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+}
+
+// TestManager_ApproveAndExecute_ReturnsRowOnExecutionFailure pins #532: after
+// the claim, an execution failure still returns the row (with its final
+// status) so the HTTP layer can tell it from a lost claim.
+func TestManager_ApproveAndExecute_ReturnsRowOnExecutionFailure(t *testing.T) {
+	ctx := context.Background()
+	store := new(MockConfigStore)
+	factory := new(MockProviderFactory)
+	factory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(nil, errors.New("credentials rejected"))
+	manager := &Manager{config: store, email: new(MockEmailSender), providerFactory: factory}
+
+	updated := &config.PurchaseExecution{
+		ExecutionID:     "exec-fail-after-claim",
+		Status:          "approved",
+		Recommendations: approvalTestRecs(),
+	}
+	store.On("TransitionExecutionStatus", ctx, "exec-fail-after-claim", approveFromStatuses, "approved", (*string)(nil)).Return(updated, nil)
+	store.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
+
+	final, token, err := manager.ApproveAndExecute(ctx, "exec-fail-after-claim", "operator@example.com", nil)
+	require.Error(t, err)
+	assert.Empty(t, token)
+	require.NotNil(t, final)
+	assert.Equal(t, "failed", final.Status)
+}
+
 // ─── enforceFourEyesPolicy at the ApproveAndExecute choke point ───────────────
 // (issue #1005 / PR #1500 adversarial review)
 //
@@ -446,7 +516,7 @@ func TestManager_ApproveAndExecute_FourEyesOn_DeniesSelfApprove(t *testing.T) {
 	store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
 	store.On("GetExecutionByID", ctx, "exec-direct-self").Return(execution, nil)
 
-	_, err := manager.ApproveAndExecute(ctx, "exec-direct-self", creatorEmail, &creatorID)
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-direct-self", creatorEmail, &creatorID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "4-eyes mode requires a different approver")
 	store.AssertNotCalled(t, "TransitionExecutionStatus",
@@ -481,7 +551,7 @@ func TestManager_ApproveAndExecute_FourEyesOn_AllowsDifferentApprover(t *testing
 	store.On("TransitionExecutionStatus", ctx, "exec-direct-diff", approveFromStatuses, "approved", &approverUUID).Return(updated, nil)
 	stubExecuteChain(t, store, sender, "plan-fourEyes")
 
-	_, err := manager.ApproveAndExecute(ctx, "exec-direct-diff", approverEmail, &approverUUID)
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-direct-diff", approverEmail, &approverUUID)
 	require.NoError(t, err)
 	require.NotNil(t, updated.ApprovedBy)
 	assert.Equal(t, approverEmail, *updated.ApprovedBy)
@@ -515,7 +585,7 @@ func TestManager_ApproveAndExecute_FourEyesOn_PerUserAPIKey_DeniesSelfExecute(t 
 	// what internal/api's fourEyesActorIdentity would pass for a per-user API
 	// key session; transitionedBy is the same UUID, populated regardless of
 	// Email by validUUIDPtrOrNil(&session.UserID).
-	_, err := manager.ApproveAndExecute(ctx, "exec-apikey-self", creatorID, &creatorID)
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-apikey-self", creatorID, &creatorID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "4-eyes mode requires a different approver")
 	store.AssertNotCalled(t, "TransitionExecutionStatus",
@@ -536,7 +606,7 @@ func TestManager_ApproveAndExecute_FourEyesOn_NullCreatorDenied(t *testing.T) {
 	store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
 	store.On("GetExecutionByID", ctx, "exec-legacy").Return(execution, nil)
 
-	_, err := manager.ApproveAndExecute(ctx, "exec-legacy", "someone@example.com", nil)
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-legacy", "someone@example.com", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "predates the dual-control feature")
 	store.AssertExpectations(t)
@@ -554,7 +624,7 @@ func TestManager_ApproveAndExecute_FourEyesOn_EmptyActorDenied(t *testing.T) {
 	store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
 	store.On("GetExecutionByID", ctx, "exec-no-actor").Return(execution, nil)
 
-	_, err := manager.ApproveAndExecute(ctx, "exec-no-actor", "", nil)
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-no-actor", "", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no approver identity could be determined")
 	store.AssertExpectations(t)
@@ -578,7 +648,7 @@ func TestManager_ApproveAndExecute_FourEyesOff_AllowsSelfApprove(t *testing.T) {
 	store.On("TransitionExecutionStatus", ctx, "exec-mode-off", approveFromStatuses, "approved", &creatorID).Return(updated, nil)
 	stubExecuteChain(t, store, sender, "plan-fourEyes")
 
-	_, err := manager.ApproveAndExecute(ctx, "exec-mode-off", "creator@example.com", &creatorID)
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-mode-off", "creator@example.com", &creatorID)
 	require.NoError(t, err)
 	store.AssertNotCalled(t, "GetExecutionByID", mock.Anything, mock.Anything)
 	store.AssertNotCalled(t, "GetUserEmailByID", mock.Anything, mock.Anything)

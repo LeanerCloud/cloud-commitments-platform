@@ -349,7 +349,7 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 
 	final, revocationToken, runErr := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session))
 	if runErr != nil {
-		return nil, runNowError(executionID, final, runErr)
+		return nil, executeFailureError(executionID, "started", final, runErr)
 	}
 
 	// The shared execute funnel rotated the row's token into a revocation
@@ -364,17 +364,19 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 	}, nil
 }
 
-// runNowError maps a RunPlannedPurchaseNow failure to its HTTP error. A non-nil
+// executeFailureError maps a failure of the shared approve-and-execute funnel
+// (run-now, session approve, direct execute) to its HTTP error. action names
+// what the caller tried ("started", "approved", "direct-executed"). A non-nil
 // final means the purchase ran and money may have moved, so it is never a 409.
 // ErrNotFound and ErrExecutionNotInExpectedStatus are 409 only before a claim.
-func runNowError(executionID string, final *config.PurchaseExecution, err error) error {
+func executeFailureError(executionID, action string, final *config.PurchaseExecution, err error) error {
 	switch {
 	case errors.Is(err, purchase.ErrFourEyesDenied):
-		return NewClientError(403, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
+		return NewClientError(403, fmt.Sprintf("execution %s cannot be %s: %v", executionID, action, err))
 	case final == nil && (errors.Is(err, config.ErrExecutionNotInExpectedStatus) || errors.Is(err, config.ErrNotFound)):
-		return NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, err))
+		return NewClientError(409, fmt.Sprintf("execution %s cannot be %s: %v", executionID, action, err))
 	case final == nil:
-		return fmt.Errorf("execution %s could not be started: %w", executionID, err)
+		return fmt.Errorf("execution %s could not be %s: %w", executionID, action, err)
 	case errors.Is(err, config.ErrAuditLoss):
 		return NewClientError(500, fmt.Sprintf("execution %s ran but its final status could not be saved: %v", executionID, err))
 	default:
@@ -839,16 +841,11 @@ func (h *Handler) approvePurchaseViaSession(ctx context.Context, req *events.Lam
 	// approval (issue #103); only the token hash is stored, so this
 	// return value is the only place a raw, emailable token exists after
 	// the call returns.
-	revocationToken, approveErr := h.purchase.ApproveAndExecute(ctx, execution.ExecutionID, fourEyesActorIdentity(session), actor)
+	final, revocationToken, approveErr := h.purchase.ApproveAndExecute(ctx, execution.ExecutionID, fourEyesActorIdentity(session), actor)
 	if approveErr != nil {
-		// ApproveAndExecute returns either a transition error (the row
-		// drifted out of pending/notified between our check and the UPDATE
-		// -- race with cancel/expire) or an execution error (AWS API failed,
-		// status is now "failed" on disk). Both surface as 409 to the
-		// caller; the History view shows the resulting row state.
 		logging.Errorf("purchase[%s]: approvePurchaseViaSession failed after %s: %v",
 			execution.ExecutionID, time.Since(t0), approveErr)
-		return nil, NewClientError(409, fmt.Sprintf("execution %s could not be approved: %v", execution.ExecutionID, approveErr))
+		return nil, executeFailureError(execution.ExecutionID, "approved", final, approveErr)
 	}
 
 	logging.Infof("purchase[%s]: approvePurchaseViaSession completed in %s (auth=session)",
@@ -3119,64 +3116,41 @@ func buildApprovalPendingResponse(
 // holds execute-any or execute-own on purchases.
 //
 // Steps:
-//  1. Stamp the three audit fields (executed_by_user_id, executed_at,
-//     pre_approval_skip_reason) onto the in-memory execution so
-//     SavePurchaseExecution persists them in the next call inside
-//     ApproveAndExecute.
-//  2. Delegate to purchase.Manager.ApproveAndExecute, which atomically
-//     transitions the row to "approved" and then runs the purchase
-//     synchronously. ApproveAndExecute already stamps ApprovedBy; we pass
-//     the session email as the actor so the approved_by column also records
-//     who direct-executed.
-//  3. Send the best-effort post-execution notification email (issue #291).
+//  1. Delegate to purchase.Manager.DirectExecute, which atomically
+//     transitions the row to "approved" (stamping ApprovedBy), stamps the
+//     three audit fields (executed_by_user_id, executed_at,
+//     pre_approval_skip_reason) only once that claim is won, and then runs the
+//     purchase synchronously. A refused or lost direct execute therefore
+//     leaves no executed_at on a row that never ran, and failures map through
+//     executeFailureError (403 four-eyes, 409 lost claim, 502 after the claim).
+//  2. Send the best-effort post-execution notification email (issue #291).
 //     This is the only email the direct-execute flow emits -- no approval
 //     email precedes it -- so it is the path where the executed-notification
 //     matters most.
-//  4. Return a "completed" status to the caller, carrying any payment-option
+//  3. Return a "completed" status to the caller, carrying any payment-option
 //     coercion notices (paymentAdjustments, from the request validation) so
 //     the direct-execute response surfaces them like the approval path does.
 //
-// The audit fields are best-effort if ApproveAndExecute's SavePurchaseExecution
-// races with our pre-call stamp -- but in practice ApproveAndExecute calls
-// SavePurchaseExecution once after a successful TransitionExecutionStatus, at
-// which point our pre-stamp is already on the row that was loaded by
-// TransitionExecutionStatus. The critical audit invariant is that a non-nil
-// executed_by_user_id always co-occurs with a non-nil pre_approval_skip_reason,
-// and both are set atomically in the same SavePurchaseExecution call here.
+// The audit invariant is that a non-nil executed_by_user_id always co-occurs
+// with a non-nil pre_approval_skip_reason; both are stamped in the same save.
 func (h *Handler) directExecutePurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, session *Session, paymentAdjustments []PaymentAdjustment) (any, error) {
 	t0 := time.Now()
 	executionID := execution.ExecutionID
 	logging.Infof("purchase[%s]: directExecutePurchase entry (auth=session)", executionID)
 
-	// Stamp audit fields before the status transition so they are
-	// present on the row the reaper / history query reads.
-	if session.UserID != "" {
-		uid := session.UserID
-		execution.ExecutedByUserID = &uid
-	}
-	now := time.Now()
-	execution.ExecutedAt = &now
-	skipReason := "direct-execute permission"
-	execution.PreApprovalSkipReason = &skipReason
-	if err := h.config.SavePurchaseExecution(ctx, execution); err != nil {
-		// Audit-gap: stamp failed but don't block the purchase. Log at
-		// error level so a CloudWatch alarm can catch persistent failures.
-		logging.Errorf("AUDIT GAP: failed to stamp direct-execute audit fields on %s: %v", executionID, err)
-	}
-
 	// Human session direct-execute: stamp the session user's UUID onto
 	// transitioned_by (FK-safe via validUUIDPtrOrNil) so the audit trail
 	// records who flipped the row to "approved".
 	//
-	// revocationToken is the raw token ApproveAndExecute mints for this
+	// revocationToken is the raw token DirectExecute mints for this
 	// approval (issue #103); only the token hash is stored, so this
 	// return value is the only place a raw, emailable token exists after
 	// the call returns.
-	revocationToken, err := h.purchase.ApproveAndExecute(ctx, executionID, fourEyesActorIdentity(session), validUUIDPtrOrNil(&session.UserID))
+	final, revocationToken, err := h.purchase.DirectExecute(ctx, executionID, fourEyesActorIdentity(session), validUUIDPtrOrNil(&session.UserID))
 	if err != nil {
 		logging.Errorf("purchase[%s]: directExecutePurchase failed after %s: %v",
 			executionID, time.Since(t0), err)
-		return nil, NewClientError(409, fmt.Sprintf("execution %s could not be direct-executed: %v", executionID, err))
+		return nil, executeFailureError(executionID, "direct-executed", final, err)
 	}
 
 	logging.Infof("purchase[%s]: directExecutePurchase completed in %s", executionID, time.Since(t0))

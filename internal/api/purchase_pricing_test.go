@@ -63,7 +63,7 @@ func TestHandler_executePurchase_CapUsesStoredPriceNotClientPrice(t *testing.T) 
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
 	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil).Maybe()
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil).Maybe()
+	mockPurchase.On("DirectExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, "", nil).Maybe()
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
 	req := &events.LambdaFunctionURLRequest{
@@ -77,7 +77,7 @@ func TestHandler_executePurchase_CapUsesStoredPriceNotClientPrice(t *testing.T) 
 	assert.Equal(t, 403, ce.code)
 	assert.Contains(t, ce.Error(), "constraints")
 	mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
-	mockPurchase.AssertNotCalled(t, "ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockPurchase.AssertNotCalled(t, "DirectExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestHandler_executePurchase_StoredPriceUnderCapProceeds is the no-over-
@@ -108,7 +108,7 @@ func TestHandler_executePurchase_StoredPriceUnderCapProceeds(t *testing.T) {
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil)
 	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil)
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil)
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil)
+	mockPurchase.On("DirectExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, "", nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
 	req := &events.LambdaFunctionURLRequest{
@@ -261,7 +261,7 @@ func TestHandler_executePurchase_CrossAccountMismatchRefused(t *testing.T) {
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
 	mockStore.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil).Maybe()
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil).Maybe()
+	mockPurchase.On("DirectExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, "", nil).Maybe()
 
 	accountA := "111111111111"
 	expectStoredRecs(mockStore, config.RecommendationRecord{
@@ -281,7 +281,7 @@ func TestHandler_executePurchase_CrossAccountMismatchRefused(t *testing.T) {
 	assert.Equal(t, 409, ce.code)
 	assert.Contains(t, ce.Error(), "not in the current recommendation set")
 	mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
-	mockPurchase.AssertNotCalled(t, "ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockPurchase.AssertNotCalled(t, "DirectExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestHandler_executePurchase_StoredRecWithoutPriceRefused: a matched stored

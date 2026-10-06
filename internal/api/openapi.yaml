@@ -492,7 +492,18 @@ paths:
             cause: for the idempotency case, verify the earlier submit's
             outcome with the provider before resubmitting; for a
             stored-recommendation conflict, refresh the recommendation set
-            and resubmit with the current data.
+            and resubmit with the current data. With execute_mode "direct",
+            a lost claim on the new execution also answers 409.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: >
+            execute_mode "direct" only. The claim was won and the purchase
+            ran, but it failed or only partly completed. Money may have moved;
+            the body details carry execution_id and the row's actual status.
+            Check the execution in History before retrying.
           content:
             application/json:
               schema:
@@ -585,8 +596,8 @@ paths:
             The execution cannot be approved: a non-AWS execution without a
             resolvable cloud account, a status other than pending or notified
             (in token mode the status check is the atomic transition, so a
-            concurrent change answers the same way), or (session mode) the
-            purchase itself failed during execution.
+            concurrent change answers the same way, and in session mode a
+            lost claim answers 409 as well).
           content:
             application/json:
               schema:
@@ -603,6 +614,17 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           description: Server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: >
+            Session mode only. The claim was won and the purchase ran, but it
+            failed or only partly completed (a failed or partially_completed
+            run). Money may have moved; the body details carry execution_id
+            and the row's actual status. Check the execution in History
+            before retrying.
           content:
             application/json:
               schema:

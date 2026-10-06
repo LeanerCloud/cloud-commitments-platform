@@ -28,6 +28,10 @@ var (
 // "Run now" stands in for the approval and the scheduled wait.
 const runNowSkipReason = "run-now"
 
+// directExecuteSkipReason is stamped onto PreApprovalSkipReason when a session
+// holding the direct-execute permission skips the approval round-trip.
+const directExecuteSkipReason = "direct-execute permission"
+
 // ApproveExecution is the token-authenticated approve entry point used by
 // the legacy email-link flow and the SQS approve worker. After validating
 // the approval token it hands off to ApproveAndExecute, which performs the
@@ -72,7 +76,7 @@ func (m *Manager) ApproveExecution(ctx context.Context, executionID, token, acto
 
 	// Token/SQS path: no authenticated session UUID is available, so the
 	// transition is recorded as system-initiated (transitioned_by = NULL).
-	revocationToken, err := m.ApproveAndExecute(ctx, executionID, actor, nil)
+	_, revocationToken, err := m.ApproveAndExecute(ctx, executionID, actor, nil)
 	if err != nil {
 		logging.Errorf("purchase[%s]: ApproveExecution (token path) failed after %s: %v",
 			executionID, time.Since(t0), err)
@@ -313,9 +317,19 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 // transition" error. Cross-execution concurrency is unaffected: each
 // approval drives its own executeAndFinalize, which already fans out
 // per-account in parallel via executeMultiAccount.
-func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string) (string, error) {
-	_, revocationToken, err := m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "notified"}, "")
-	return revocationToken, err
+//
+// The returned row carries the approval's final status, also on an execution
+// error; it is nil when the run never started.
+func (m *Manager) ApproveAndExecute(ctx context.Context, executionID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error) {
+	return m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "notified"}, "")
+}
+
+// DirectExecute is ApproveAndExecute for a session with the direct-execute
+// permission: the same 4-eyes-gated, CAS-guarded funnel, but it stamps the
+// executed_* audit fields once the CAS has won, so a refused or lost direct
+// execute leaves no executed_at on a row that never ran.
+func (m *Manager) DirectExecute(ctx context.Context, executionID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error) {
+	return m.transitionApproveAndExecute(ctx, executionID, actor, transitionedBy, []string{"pending", "notified"}, directExecuteSkipReason)
 }
 
 // RunPlannedPurchaseNow lets an operator force a scheduled purchase (pending
