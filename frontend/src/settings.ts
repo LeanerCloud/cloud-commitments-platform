@@ -3535,16 +3535,6 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
     require_different_approver: byId<HTMLInputElement>('setting-require-different-approver')?.checked ?? false,
   };
 
-  // Include laddering_enabled in the payload when the Purchasing panel's
-  // toggle is present in the DOM (i.e. initLadderingSettings has run).
-  // When absent (General panel), the backend's updateConfig merges this PUT
-  // over the stored config, so an omitted laddering_enabled keeps its
-  // persisted value rather than being reset.
-  const ladderingToggle = byId<HTMLInputElement>('setting-laddering-enabled');
-  if (ladderingToggle !== null) {
-    settings.laddering_enabled = ladderingToggle.checked;
-  }
-
   try {
     // The backend copies a changed default onto every service row, so a changed
     // default must win over the stale per-service coverage (#522). Decide it from
@@ -3552,13 +3542,14 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
     const defaultCoverageChanged = 'setting-default-coverage' in savedSnapshot
       && getFieldValue('setting-default-coverage') !== savedSnapshot['setting-default-coverage'];
     // Send only the global keys the user changed, so a tab opened before another
-    // admin's save cannot write its stale defaults back (#539). Before the first
-    // load there is no snapshot, so everything is sent.
+    // admin's save cannot write its stale defaults back (#539). The form and the
+    // Save button are unreachable after a failed first load, so the snapshot is
+    // always populated here. laddering_enabled is not part of Save: its toggle
+    // saves itself (ladder.ts). Multi-field keys (grace map, enabled_providers)
+    // are sent whole, because the backend replaces them as a unit.
     const changedGlobal: Partial<api.Config> = { ...settings };
-    if (Object.keys(savedSnapshot).length > 0) {
-      for (const [key, ids] of GLOBAL_CONFIG_FIELDS) {
-        if (ids.every(id => getFieldValue(id) === savedSnapshot[id])) delete changedGlobal[key];
-      }
+    for (const [key, ids] of GLOBAL_CONFIG_FIELDS) {
+      if (ids.every(id => getFieldValue(id) === savedSnapshot[id])) delete changedGlobal[key];
     }
     if (Object.keys(changedGlobal).length > 0) await api.updateConfig(changedGlobal);
     if (defaultCoverageChanged) {
