@@ -42,7 +42,9 @@ type RefreshResponse struct {
 // postRefreshRecommendations implements POST /api/recommendations/refresh.
 //
 // Flow:
-//  1. Require view:recommendations permission.
+//  1. Require view:recommendations permission, then an unrestricted account
+//     scope: the collection covers every registered account, so a caller
+//     limited to a subset is refused with 403 before anything starts.
 //  2. Atomically set last_collection_started_at via MarkCollectionStarted.
 //     Returns 409 if another collection is already in flight (started within the
 //     past 5 minutes). The 5-minute window provides automatic recovery if the
@@ -60,13 +62,17 @@ type RefreshResponse struct {
 // Lambda SDK is unavailable or the invoke call fails — in those cases the error
 // is surfaced directly rather than silently swallowed.
 func (h *Handler) postRefreshRecommendations(ctx context.Context, req *events.LambdaFunctionURLRequest) (*RefreshResponse, error) {
-	if _, err := h.requirePermission(ctx, req, "view", "recommendations"); err != nil {
+	session, err := h.requirePermission(ctx, req, "view", "recommendations")
+	if err != nil {
 		return nil, err
+	}
+	if scopeErr := h.requireUnrestrictedAccountScope(ctx, session); scopeErr != nil {
+		return nil, scopeErr
 	}
 
 	// Pre-check freshness store is reachable before acquiring the collection slot.
-	if _, err := h.config.GetRecommendationsFreshness(ctx); err != nil {
-		return nil, fmt.Errorf("failed to read freshness: %w", err)
+	if _, freshErr := h.config.GetRecommendationsFreshness(ctx); freshErr != nil {
+		return nil, fmt.Errorf("failed to read freshness: %w", freshErr)
 	}
 
 	// Atomically mark collection as started. Returns false (409) if another
@@ -100,6 +106,22 @@ func (h *Handler) postRefreshRecommendations(ctx context.Context, req *events.La
 		StartedAt:       startedAt,
 		LastCollectedAt: freshness.LastCollectedAt,
 	}, nil
+}
+
+// requireUnrestrictedAccountScope refuses sessions limited to a subset of
+// accounts. The refresh takes no account parameter: it collects for every
+// enabled provider and registered account, rewrites the shared recommendation
+// cache and holds the global in-flight marker, so it cannot be narrowed to the
+// caller's accounts.
+func (h *Handler) requireUnrestrictedAccountScope(ctx context.Context, session *Session) error {
+	scope, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+	if !scope.AllowsAll() {
+		return NewClientError(403, "permission denied: refreshing recommendations covers every account and requires unrestricted account access")
+	}
+	return nil
 }
 
 // runMarkedCollection triggers the actual collection after MarkCollectionStarted
