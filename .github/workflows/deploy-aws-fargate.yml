@@ -59,7 +59,6 @@ on:
         required: true
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   TF_VERSION: '1.10.0'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -142,6 +141,11 @@ jobs:
     outputs:
       alb_url: ${{ steps.outputs.outputs.alb_url }}
       service_name: ${{ steps.outputs.outputs.service_name }}
+    # Set at job level, not workflow level: workflow-level `env:` is resolved
+    # before this job's `environment:` is in scope, so an environment-scoped
+    # AWS_REGION variable would be invisible there. Matches cleanup-staging.yml.
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
     environment:
       name: aws-fargate-${{ needs.prepare.outputs.target_environment }}
       url: ${{ steps.outputs.outputs.alb_url }}
