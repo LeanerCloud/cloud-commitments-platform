@@ -8,10 +8,13 @@ import (
 
 // UpdateUserCredentials writes only the email and password columns, and only
 // while the row still holds the email and hash the caller read (issue #474).
+// It also clears any outstanding reset token so a stale link cannot overwrite
+// the credentials written here (issue #526).
 func (s *PostgresStore) UpdateUserCredentials(ctx context.Context, user *User, readEmail, readPasswordHash string) error {
 	result, err := s.db.Exec(ctx, `
 		UPDATE users SET email = $4, password_hash = $5, salt = $6,
-			password_history = $7, updated_at = NOW()
+			password_history = $7, password_reset_token = NULL, password_reset_expiry = NULL,
+			updated_at = NOW()
 		WHERE id = $1 AND email = $2 AND password_hash = $3
 	`, user.ID, readEmail, readPasswordHash, user.Email, user.PasswordHash, user.Salt, user.PasswordHistory)
 	if err != nil {
@@ -25,12 +28,14 @@ func (s *PostgresStore) UpdateUserCredentials(ctx context.Context, user *User, r
 
 // CompletePasswordReset writes the new password, activates the account and
 // consumes the reset token, only while the row still holds the token and hash
-// the caller read and the account is not deactivated (issue #493).
+// the caller read, the token has not expired and the account is not
+// deactivated (issues #493, #526).
 func (s *PostgresStore) CompletePasswordReset(ctx context.Context, user *User, readResetToken, readPasswordHash string) error {
 	result, err := s.db.Exec(ctx, `
 		UPDATE users SET password_hash = $4, salt = $5, password_history = $6, active = $7,
 			password_reset_token = NULL, password_reset_expiry = NULL, updated_at = NOW()
 		WHERE id = $1 AND password_reset_token = $2 AND password_hash = $3 AND deactivated_at IS NULL
+			AND password_reset_expiry > NOW()
 	`, user.ID, readResetToken, readPasswordHash, user.PasswordHash, user.Salt, user.PasswordHistory, user.Active)
 	if err != nil {
 		return fmt.Errorf("failed to complete password reset: %w", err)

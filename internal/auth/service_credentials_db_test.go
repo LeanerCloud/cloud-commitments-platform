@@ -395,9 +395,9 @@ func TestIntegration_ResetConfirmRejectsStaleRead(t *testing.T) {
 		err := f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew})
 		require.ErrorIs(t, err, ErrUserChanged)
 		assert.Equal(t, winner(), f.stored())
-		require.NoError(t, f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew}),
-			"a lost race must leave the token usable")
-		assert.Equal(t, []string{winner().PasswordHash, f.user.PasswordHash}, f.stored().PasswordHistory)
+		require.ErrorContains(t, f.svc.ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: token, NewPassword: credentialRaceNew}),
+			"invalid or expired reset token", "the winning password change must have consumed the token")
+		assert.Equal(t, winner(), f.stored())
 	})
 
 	t.Run("after-concurrent-deactivation", func(t *testing.T) {
