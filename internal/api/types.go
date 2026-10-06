@@ -922,6 +922,12 @@ type CreatePlannedPurchasesResponse struct {
 type HistoryResponse struct {
 	Purchases []config.PurchaseHistoryRecord `json:"purchases"`
 	Summary   HistorySummary                 `json:"summary"`
+	// Truncated is true when a fetch reached its row cap, so older rows (and
+	// possibly pending approvals) may be missing from Purchases and Summary.
+	// It can be a false positive when exactly Limit rows exist.
+	Truncated bool `json:"truncated"`
+	// Limit is the per-source row cap in effect for this request.
+	Limit int `json:"limit"`
 }
 
 // HistorySummary provides aggregate statistics for purchase history.

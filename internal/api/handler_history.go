@@ -61,7 +61,7 @@ func (h *Handler) getHistory(ctx context.Context, req *events.LambdaFunctionURLR
 	// status. On servers the transitions fire in a goroutine; on Lambda they
 	// run synchronously before returning because the execution environment
 	// freezes once the response is out (issue #1170).
-	extra, staleExecs := h.fetchExecutionsAsHistory(ctx, filters)
+	extra, staleExecs, executionsCapped := h.fetchExecutionsAsHistory(ctx, filters)
 	h.expireStaleExecutions(staleExecs)
 
 	all := make([]config.PurchaseHistoryRecord, 0, len(completed)+len(extra))
@@ -79,9 +79,14 @@ func (h *Handler) getHistory(ctx context.Context, req *events.LambdaFunctionURLR
 		return all[i].Timestamp.After(all[j].Timestamp)
 	})
 
+	// Truncation is judged on the raw fetches (before the in-memory and scope
+	// filters) because the cap drops rows before they run. It is a single
+	// boolean: a count would reveal other tenants' row volume to a scoped user.
 	return HistoryResponse{
 		Summary:   summarizePurchaseHistory(all),
 		Purchases: all,
+		Truncated: len(completed) >= filters.Limit || executionsCapped,
+		Limit:     filters.Limit,
 	}, nil
 }
 
@@ -145,14 +150,18 @@ const approvalExpiryWindow = 7 * 24 * time.Hour
 // The filter set (issue #701) is applied in Go against the synthetic row:
 // provider via the recs' collapsed provider, account via CloudAccountID,
 // date via ScheduledDate.
-func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyFilters) ([]config.PurchaseHistoryRecord, []config.PurchaseExecution) {
+//
+// The third return value reports that the fetch reached its cap, so older
+// executions may have been dropped before the filters ran.
+func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyFilters) ([]config.PurchaseHistoryRecord, []config.PurchaseExecution, bool) {
 	executions, err := h.config.GetExecutionsByStatuses(ctx, historyExecutionStatuses, config.DefaultListLimit)
 	if err != nil {
 		logging.Warnf("history: failed to load non-completed executions: %v", err)
-		return nil, nil
+		return nil, nil, false
 	}
+	capped := len(executions) >= config.DefaultListLimit
 	if len(executions) == 0 {
-		return nil, nil
+		return nil, nil, false
 	}
 	approver := h.resolvePendingApproverEmail(ctx)
 	userEmailCache := h.resolveUserEmails(ctx, executions)
@@ -184,7 +193,7 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 		}
 		out = append(out, executionToHistoryRow(exec, approver, createdByEmail))
 	}
-	return out, staleExecs
+	return out, staleExecs, capped
 }
 
 // isStaleExecution reports whether the execution is a pending/notified

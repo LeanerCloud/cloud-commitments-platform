@@ -3429,6 +3429,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PurchaseHistoryRecord'
+        truncated:
+          type: boolean
+          description: >-
+            True when a fetch reached its row cap, so older rows (and possibly
+            pending approvals) may be missing from purchases and summary. May
+            be a false positive when exactly `limit` rows exist.
+        limit:
+          type: integer
+          description: Per-source row cap in effect for this request.
 
     HistorySummary:
       type: object
