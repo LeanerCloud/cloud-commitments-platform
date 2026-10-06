@@ -83,7 +83,6 @@ on:
         required: true
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   TF_VERSION: '1.10.0'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -232,6 +231,11 @@ jobs:
     # all share one value — producing wrong email links in customer
     # mailboxes. Per CR review on PR #368.
     environment: ${{ needs.prepare.outputs.target_environment }}
+    # Set at job level, not workflow level: workflow-level `env:` is resolved
+    # before this job's `environment:` is in scope, so an environment-scoped
+    # AWS_REGION variable would be invisible there. Matches cleanup-staging.yml.
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
     outputs:
       function_url: ${{ steps.outputs.outputs.function_url }}
       function_name: ${{ steps.outputs.outputs.function_name }}
@@ -378,6 +382,11 @@ jobs:
     # Bind to the same named environment as build-and-deploy so that
     # vars.AWS_ROLE_TO_ASSUME resolves to the per-environment scoped value.
     environment: ${{ needs.prepare.outputs.target_environment }}
+    # Set at job level, not workflow level: workflow-level `env:` is resolved
+    # before this job's `environment:` is in scope, so an environment-scoped
+    # AWS_REGION variable would be invisible there. Matches cleanup-staging.yml.
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
 
     steps:
       - name: Configure AWS credentials
