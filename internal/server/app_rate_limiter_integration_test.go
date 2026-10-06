@@ -67,7 +67,7 @@ func TestApplicationRateLimiter(t *testing.T) {
 			ip := func(bucket int) string { return fmt.Sprintf("192.0.2.%d", mode*10+bucket) }
 			request := func(replica int, path, sourceIP, body string) (int, error) {
 				method := http.MethodGet
-				if path == "/api/auth/login" {
+				if path == "/api/auth/login" || strings.HasPrefix(path, "/api/purchases/approve/") {
 					method = http.MethodPost
 				}
 				req, reqErr := http.NewRequestWithContext(ctx, method, servers[replica].URL+path, strings.NewReader(body))
@@ -89,6 +89,9 @@ func TestApplicationRateLimiter(t *testing.T) {
 				body := ""
 				if path == "/api/auth/login" {
 					body = `{"email":"absent@example.test","password":"d3JvbmctcGFzc3dvcmQ="}`
+				}
+				if strings.HasPrefix(path, "/api/purchases/approve/") {
+					body = `{"token":"invalid"}`
 				}
 				status, reqErr := request(replica, path, sourceIP, body)
 				require.NoError(t, reqErr)
@@ -123,7 +126,11 @@ func TestApplicationRateLimiter(t *testing.T) {
 				if i >= 30 {
 					want = http.StatusTooManyRequests
 				}
-				checkRequest(i%2, "/api/purchases/"+action+"/00000000-0000-4000-8000-000000000109?token=invalid", ip(3), want)
+				path := "/api/purchases/" + action + "/00000000-0000-4000-8000-000000000109"
+				if action == "cancel" {
+					path += "?token=invalid"
+				}
+				checkRequest(i%2, path, ip(3), want)
 			}
 			checkCount(ip(3), "approve_cancel_public", 32)
 
