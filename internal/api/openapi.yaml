@@ -508,8 +508,8 @@ paths:
         permission, or is outside the account scope, falls through to token
         mode when a token is present; with no token the denial is final.
         A session whose approve permission Constraints are exceeded is
-        denied outright and does not fall through. The route is also
-        routed for GET (email link click) with the token in the query string.
+        denied outright and does not fall through. GET is not routed: the
+        approval email links to the dashboard, which POSTs after confirmation.
         When the global purchase delay is configured the response status is
         "scheduled" instead of "completed".
       security:

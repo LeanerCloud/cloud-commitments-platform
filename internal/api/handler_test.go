@@ -902,6 +902,29 @@ func TestHandler_HandleRequest_ApprovePurchase(t *testing.T) {
 	assert.Equal(t, "completed", body["status"])
 }
 
+// A GET to the approve URL must never approve (issue #549): mail scanners
+// prefetch email links.
+func TestHandler_HandleRequest_ApprovePurchase_GETDoesNotApprove(t *testing.T) {
+	execID := "12312312-3123-1231-2312-312312312312"
+	mockPurchase := new(MockPurchaseManager)
+	handler := &Handler{purchase: mockPurchase, config: new(MockConfigStore), auth: new(MockAuthService)}
+
+	req := &events.LambdaFunctionURLRequest{
+		QueryStringParameters: map[string]string{"token": "token123"},
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{
+				Method: "GET",
+				Path:   "/api/purchases/approve/" + execID,
+			},
+		},
+	}
+
+	resp, err := handler.HandleRequest(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, 401, resp.StatusCode) // unrouted: the catch-all refuses it
+	mockPurchase.AssertNotCalled(t, "ApproveExecution", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
 func TestHandler_HandleRequest_CancelPurchase(t *testing.T) {
 	ctx := context.Background()
 	execID := "45645645-6456-4564-5645-645645645645"
