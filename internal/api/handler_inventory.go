@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -49,7 +50,10 @@ func (h *Handler) listActiveCommitments(ctx context.Context, req *events.LambdaF
 		return nil, err
 	}
 
-	nameByID := h.resolveAccountNamesByID(ctx)
+	accounts, listErr := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{})
+	if listErr != nil {
+		return nil, fmt.Errorf("failed to list cloud accounts: %w", listErr)
+	}
 
 	commitments := make([]InventoryCommitment, 0, len(purchases))
 	for _rvc := range purchases {
@@ -57,7 +61,7 @@ func (h *Handler) listActiveCommitments(ctx context.Context, req *events.LambdaF
 		if !isActiveCommitment(p, now) {
 			continue
 		}
-		commitments = append(commitments, buildInventoryCommitment(p, nameByID[p.AccountID]))
+		commitments = append(commitments, buildInventoryCommitment(p, historyRowAccountName(accounts, p)))
 	}
 
 	// Soonest-expiring first. The dashboard framing is "what do I need to

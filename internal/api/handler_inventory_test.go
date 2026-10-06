@@ -97,13 +97,13 @@ func TestHandler_listActiveCommitments_FiltersExpired(t *testing.T) {
 	mockStore.On("GetActivePurchaseHistory", ctx, mock.AnythingOfType("time.Time"), []string(nil), map[string][]string(nil)).Return(purchases, nil)
 	// Use realistic fixtures: CloudAccount.ID is a UUID; CloudAccount.ExternalID is
 	// the provider external ID (e.g. AWS account number) that matches
-	// PurchaseHistoryRecord.AccountID. The name lookup in resolveAccountNamesByID
-	// must key by ExternalID, not UUID, to find the name — this is the regression
+	// PurchaseHistoryRecord.AccountID. The name lookup must resolve by provider plus
+	// ExternalID, not UUID, to find the name; this is the regression
 	// guard for issue #952.
 	mockStore.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
 		return []config.CloudAccount{
-			{ID: "11111111-0000-0000-0000-000000000001", ExternalID: "acc-active", Name: "Active Account"},
-			{ID: "11111111-0000-0000-0000-000000000002", ExternalID: "acc-expired", Name: "Expired Account"},
+			{ID: "11111111-0000-0000-0000-000000000001", Provider: "aws", ExternalID: "acc-active", Name: "Active Account"},
+			{ID: "11111111-0000-0000-0000-000000000002", Provider: "aws", ExternalID: "acc-expired", Name: "Expired Account"},
 		}, nil
 	}
 

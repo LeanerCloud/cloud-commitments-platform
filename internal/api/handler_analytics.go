@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/analytics"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -241,11 +243,42 @@ func (h *Handler) validateAnalyticsAccountScope(ctx context.Context, session *Se
 	if accountID == "" {
 		return NewClientError(400, "account_id is required for scoped users")
 	}
-	nameByID := h.resolveAccountNamesByID(ctx)
-	if !allowed.Allows(accountID, nameByID[accountID]) {
+	accounts, listErr := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{})
+	if listErr != nil {
+		return fmt.Errorf("failed to list cloud accounts: %w", listErr)
+	}
+	if !analyticsAccountAllowed(allowed, accounts, accountID) {
 		return errNotFound
 	}
 	return nil
+}
+
+// analyticsAccountAllowed reports whether the scope allows the requested
+// account_id. A registered account UUID is authoritative. Otherwise the value
+// is a raw external id, which is unique only per provider, so it is attributed
+// to an account only when exactly one registered account has it; an id shared
+// across providers (or within one) cannot be attributed and is refused, rather
+// than read through a name that depends on account list order.
+func analyticsAccountAllowed(allowed auth.AccountScope, accounts []config.CloudAccount, accountID string) bool {
+	for i := range accounts {
+		if accounts[i].ID == accountID {
+			return allowed.Allows(accountID, accounts[i].Name)
+		}
+	}
+	var match *config.CloudAccount
+	for i := range accounts {
+		if accounts[i].ExternalID != accountID {
+			continue
+		}
+		if match != nil {
+			return false
+		}
+		match = &accounts[i]
+	}
+	if match == nil {
+		return allowed.Allows(accountID, "")
+	}
+	return allowed.Allows(accountID, match.Name)
 }
 
 // triggerAnalyticsCollection handles POST /analytics/collect (admin only)
