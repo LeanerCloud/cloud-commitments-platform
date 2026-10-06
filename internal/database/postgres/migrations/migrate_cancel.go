@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database"
 	migratepgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5"
@@ -140,7 +139,7 @@ func newCancelableMigrator(tracker *connTracker, migrationsPath, dsn string) (*m
 		_ = driver.Close()
 		return nil, err
 	}
-	m, err := migrate.NewWithInstance("file", src, "pgx5", database.Driver(driver))
+	m, err := migrate.NewWithInstance("file", src, "pgx5", driver)
 	if err != nil {
 		_ = src.Close()
 		_ = driver.Close()
@@ -155,5 +154,5 @@ func wrapContextError(ctx context.Context, err error) error {
 	if err == nil || ctx.Err() == nil {
 		return err
 	}
-	return fmt.Errorf("migrations interrupted: %w: %v", ctx.Err(), err)
+	return fmt.Errorf("migrations interrupted: %w: %w", ctx.Err(), err)
 }

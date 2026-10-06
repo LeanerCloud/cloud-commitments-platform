@@ -97,3 +97,17 @@ func TestRunMigrations_ReturnsWhenContextCanceledDuringConnectionSetup(t *testin
 		t.Fatal("RunMigrations did not return within 5s of cancellation")
 	}
 }
+
+func TestWrapContextError_KeepsBothErrorChains(t *testing.T) {
+	cause := errors.New("driver failure")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+	wrapped := wrapContextError(ctx, cause)
+	require.ErrorIs(t, wrapped, context.DeadlineExceeded)
+	require.ErrorIs(t, wrapped, cause)
+
+	require.Same(t, cause, wrapContextError(context.Background(), cause), "live context must not wrap")
+	require.NoError(t, wrapContextError(ctx, nil))
+}
