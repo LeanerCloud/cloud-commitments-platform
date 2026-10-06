@@ -47,6 +47,9 @@ export interface UpcomingPurchase {
   step_number: number;
   total_steps: number;
   estimated_savings: number;
+  // false when the step carries no recommendations; estimated_savings is
+  // then a placeholder, not data (platform#609). Only an explicit false is bare.
+  has_recommendations?: boolean;
   // created_by_user_id mirrors the field on api.UpcomingPurchase so the
   // dashboard widget can apply the issue-#950 creator-scope ownership
   // gate on the Cancel button. Optional: legacy / scheduler-tick rows

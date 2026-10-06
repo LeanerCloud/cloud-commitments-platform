@@ -441,6 +441,58 @@ describe('Dashboard Module', () => {
       expect(modal?.textContent).toContain('exec-123');
     });
 
+    // platform#609 / #620: a step with no recommendations must not render its
+    // placeholder savings as data, on the card or in the details dialog.
+    describe.each([
+      ['false', false, true],
+      ['true', true, false],
+      ['absent', undefined, false],
+    ])('has_recommendations %s', (_label, flag, bare) => {
+      test('renders card and details dialog accordingly', async () => {
+        (api.getDashboardSummary as jest.Mock).mockResolvedValue({
+          potential_monthly_savings: 1000,
+          by_service: {}
+        });
+        (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({
+          purchases: [
+            {
+              execution_id: 'exec-620', plan_id: 'plan-620',
+              plan_name: 'Test Plan',
+              provider: 'aws',
+              service: 'ec2',
+              step_number: 1,
+              total_steps: 4,
+              estimated_savings: 100,
+              scheduled_date: '2024-02-15',
+              ...(flag === undefined ? {} : { has_recommendations: flag })
+            }
+          ]
+        });
+
+        await loadDashboard();
+
+        const card = document.querySelector('.upcoming-savings');
+        const viewBtn = document.querySelector('[data-action="view-purchase"]') as HTMLButtonElement;
+        viewBtn.click();
+        const modal = document.getElementById('purchase-details-modal');
+
+        if (bare) {
+          expect(card?.textContent).toContain('—');
+          expect(card?.textContent).toContain('No recommendations attached');
+          expect(card?.textContent).not.toContain('100');
+          expect(modal?.textContent).toContain('No recommendations attached');
+          expect(modal?.textContent).not.toContain('$100');
+        } else {
+          expect(card?.textContent).toContain('100');
+          expect(card?.textContent).toContain('Est. monthly savings');
+          expect(card?.textContent).not.toContain('No recommendations attached');
+          expect(modal?.textContent).toContain('100');
+          expect(modal?.textContent).not.toContain('No recommendations attached');
+        }
+        modal?.remove();
+      });
+    });
+
     // (The previous "shows error on failure" test exercised an API
     // rejection path that no longer exists — viewPurchaseDetails is
     // synchronous after the data-flow fix. The graceful-fallback for a
