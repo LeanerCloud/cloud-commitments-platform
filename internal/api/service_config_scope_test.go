@@ -82,11 +82,49 @@ func TestUpdateServiceConfig_PermissionCheckPrecedesScopeCheck(t *testing.T) {
 	res, err := h.updateServiceConfig(context.Background(), scopedRequest(serviceConfigBody), "aws/ec2")
 
 	require.Error(t, err, "got response %v", res)
+	assert.Contains(t, err.Error(), "permission denied")
 	assert.NotContains(t, err.Error(), "global configuration requires")
 	assert.Empty(t, store.Calls)
 }
 
-func TestUpdateServiceConfig_NoSessionRefusedBeforeScope(t *testing.T) {
+func TestRouterDispatch_UpdateServiceConfig_ScopeRefusedBeforeBodyAndPathValidation(t *testing.T) {
+	cases := map[string]struct{ path, body string }{
+		"invalid body": {serviceConfigPath, `{`},
+		"invalid path": {"/api/config/service/aws/..%2Fec2", serviceConfigBody},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			h, store := scopedHandler(t, scopedInAccount)
+
+			res, err := NewRouter(h).Route(context.Background(), "PUT", tc.path, scopedRequest(tc.body))
+
+			require.Error(t, err, "got response %v", res)
+			assert.Contains(t, err.Error(), "global configuration requires unrestricted account access")
+			assert.Empty(t, store.Calls)
+		})
+	}
+}
+
+// An unrestricted account scope is not enough when the permission itself
+// carries constraints: requireGlobalConfigScope's StrictScope check refuses it.
+func TestUpdateServiceConfig_ConstrainedPermissionRefusedByStrictScope(t *testing.T) {
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", mock.Anything, scopedToken).
+		Return(&Session{UserID: scopedUserID}, nil).Maybe()
+	mockAuth.grantPermissionsScoped([]auth.Permission{{
+		Action: auth.ActionUpdate, Resource: auth.ResourceConfig,
+		Constraints: &auth.PermissionConstraints{Providers: []string{"aws"}},
+	}}, nil)
+	store := new(MockConfigStore)
+	h := &Handler{config: store, auth: mockAuth}
+
+	res, err := h.updateServiceConfig(context.Background(), scopedRequest(serviceConfigBody), "aws/ec2")
+
+	require.Error(t, err, "got response %v", res)
+	assert.Empty(t, store.Calls)
+}
+
+func TestUpdateServiceConfig_NoSessionRefused(t *testing.T) {
 	h, store := scopedHandler(t, scopedInAccount)
 	req := &events.LambdaFunctionURLRequest{Body: serviceConfigBody}
 
