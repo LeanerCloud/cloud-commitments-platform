@@ -76,6 +76,10 @@ func (m *mockAuthStoreForHealth) ClearPendingMFASecret(context.Context, string) 
 	return nil
 }
 
+func (m *mockAuthStoreForHealth) ClaimTOTPCounter(context.Context, string, int64) (bool, error) {
+	return true, nil
+}
+
 func (m *mockAuthStoreForHealth) RecordFailedLogin(context.Context, string) error {
 	return nil
 }

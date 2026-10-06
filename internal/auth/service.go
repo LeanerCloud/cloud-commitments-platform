@@ -246,7 +246,12 @@ func (s *Service) verifyPasswordAndMFA(ctx context.Context, user *User, req Logi
 		}
 		// verifyTOTP fails closed on empty or malformed inputs: empty code, empty
 		// secret, and base32-decode errors all return false rather than a match.
-		if verifyTOTP(user.MFASecret, req.MFACode) {
+		claimed, err := s.verifyAndClaimTOTP(ctx, user.ID, user.MFASecret, req.MFACode)
+		if err != nil {
+			logging.Warnf("Failed to record TOTP use for user %s: %v", user.ID, err)
+			return ErrInvalidMFACode
+		}
+		if claimed {
 			return nil
 		}
 		// TOTP miss — try a recovery code. consumeRecoveryCode mutates

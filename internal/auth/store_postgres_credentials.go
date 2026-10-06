@@ -170,6 +170,19 @@ func (s *PostgresStore) DisableMFA(ctx context.Context, userID, readSecret strin
 	return nil
 }
 
+// ClaimTOTPCounter advances the last accepted TOTP counter only while the stored
+// one is lower, so a code is accepted once even when two requests race (issue #442).
+func (s *PostgresStore) ClaimTOTPCounter(ctx context.Context, userID string, counter int64) (bool, error) {
+	result, err := s.db.Exec(ctx, `
+		UPDATE users SET mfa_last_totp_counter = $2
+		WHERE id = $1 AND mfa_last_totp_counter < $2
+	`, userID, counter)
+	if err != nil {
+		return false, fmt.Errorf("failed to record TOTP counter: %w", err)
+	}
+	return result.RowsAffected() == 1, nil
+}
+
 // ClearPendingMFASecret cancels a pending enrollment, only while MFA is off, so
 // a password-only cancel cannot erase a concurrent enrollment (issue #227).
 func (s *PostgresStore) ClearPendingMFASecret(ctx context.Context, userID string) error {

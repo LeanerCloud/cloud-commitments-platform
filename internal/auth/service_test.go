@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -421,6 +422,7 @@ func TestLogin_WithMFA(t *testing.T) {
 	}
 
 	mockStore.On("GetUserByEmail", ctx, "mfa@example.com").Return(user, nil)
+	mockStore.On("ClaimTOTPCounter", ctx, user.ID, counter).Return(true, nil).Once()
 	mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil)
 	mockStore.On("RecordSuccessfulLogin", ctx, mock.AnythingOfType("string")).Return(nil)
 
@@ -434,6 +436,28 @@ func TestLogin_WithMFA(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.NotEmpty(t, resp.Token)
+}
+
+func TestLogin_WithMFA_ClaimFailureFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	service := createTestService(mockStore, new(MockEmailSender))
+
+	mfaSecret := "JBSWY3DPEHPK3PXP"
+	s := newTestService()
+	hash, _ := s.hashPassword("SecurePass@123")
+	user := &User{ID: "user-123", Email: "mfa@example.com", PasswordHash: hash, Active: true, MFAEnabled: true, MFASecret: mfaSecret}
+
+	mockStore.On("GetUserByEmail", ctx, "mfa@example.com").Return(user, nil)
+	mockStore.On("ClaimTOTPCounter", ctx, user.ID, mock.AnythingOfType("int64")).Return(false, errors.New("db down")).Once()
+
+	resp, err := service.Login(ctx, LoginRequest{
+		Email: "mfa@example.com", Password: "SecurePass@123",
+		MFACode: generateTOTP(mfaSecret, time.Now().Unix()/30),
+	})
+	require.ErrorIs(t, err, ErrInvalidMFACode)
+	assert.Nil(t, resp)
+	mockStore.AssertNotCalled(t, "CreateSession", mock.Anything, mock.Anything)
 }
 
 func TestLogin_WithMFA_InvalidCode(t *testing.T) {
