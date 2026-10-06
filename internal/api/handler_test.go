@@ -907,7 +907,9 @@ func TestHandler_HandleRequest_ApprovePurchase(t *testing.T) {
 func TestHandler_HandleRequest_ApprovePurchase_GETDoesNotApprove(t *testing.T) {
 	execID := "12312312-3123-1231-2312-312312312312"
 	mockPurchase := new(MockPurchaseManager)
-	handler := &Handler{purchase: mockPurchase, config: new(MockConfigStore), auth: new(MockAuthService)}
+	mockConfig := new(MockConfigStore)
+	mockConfig.On("GetExecutionByID", mock.Anything, execID).Return(nil, config.ErrNotFound).Maybe()
+	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: new(MockAuthService)}
 
 	req := &events.LambdaFunctionURLRequest{
 		QueryStringParameters: map[string]string{"token": "token123"},
