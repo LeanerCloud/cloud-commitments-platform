@@ -156,6 +156,7 @@ const TRACKED_FIELDS = [
   'setting-recs-stale-hours', 'setting-recs-lookback-days',
   // 4-eyes approval mode (issue #1005)
   'setting-require-different-approver',
+  'setting-ec2-offering-class',
   // Per-service fields
   ...SERVICE_FIELDS.map(f => f.termId),
   ...SERVICE_FIELDS.filter(f => f.paymentId !== null).map(f => f.paymentId as string),
@@ -166,6 +167,25 @@ const TRACKED_FIELDS = [
 
 // Snapshot of field values at last save (or initial load).
 const savedSnapshot: Record<string, string> = {};
+
+// DOM fields behind each global Config key, so the global PUT can carry only
+// the keys whose fields changed since load/save (#539). The backend merges
+// omitted keys over the stored row.
+const GLOBAL_CONFIG_FIELDS: ReadonlyArray<readonly [keyof api.Config, readonly string[]]> = [
+  ['enabled_providers', ['provider-aws', 'provider-azure', 'provider-gcp']],
+  ['notification_email', ['setting-notification-email']],
+  ['auto_collect', ['setting-auto-collect']],
+  ['collection_schedule', ['setting-collection-schedule']],
+  ['default_term', ['setting-default-term']],
+  ['default_payment', ['setting-default-payment']],
+  ['default_coverage', ['setting-default-coverage']],
+  ['notification_days_before', ['setting-notification-days']],
+  ['grace_period_days', ['setting-grace-aws', 'setting-grace-azure', 'setting-grace-gcp']],
+  ['recommendations_cache_stale_hours', ['setting-recs-stale-hours']],
+  ['recommendations_lookback_days', ['setting-recs-lookback-days']],
+  ['offering_class', ['setting-ec2-offering-class']],
+  ['require_different_approver', ['setting-require-different-approver']],
+];
 
 // Cached service configs from last load — used as base when saving to preserve
 // non-UI fields (ramp_schedule, include_engines, etc.) that SaveServiceConfig replaces entirely.
@@ -3515,23 +3535,30 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
     require_different_approver: byId<HTMLInputElement>('setting-require-different-approver')?.checked ?? false,
   };
 
-  // Include laddering_enabled in the payload when the Purchasing panel's
-  // toggle is present in the DOM (i.e. initLadderingSettings has run).
-  // When absent (General panel), the backend's updateConfig merges this PUT
-  // over the stored config, so an omitted laddering_enabled keeps its
-  // persisted value rather than being reset.
-  const ladderingToggle = byId<HTMLInputElement>('setting-laddering-enabled');
-  if (ladderingToggle !== null) {
-    settings.laddering_enabled = ladderingToggle.checked;
-  }
-
   try {
     // The backend copies a changed default onto every service row, so a changed
     // default must win over the stale per-service coverage (#522). Decide it from
     // the dirty snapshot before the save refreshes it.
     const defaultCoverageChanged = 'setting-default-coverage' in savedSnapshot
       && getFieldValue('setting-default-coverage') !== savedSnapshot['setting-default-coverage'];
-    await api.updateConfig(settings);
+    // Send only the global keys the user changed, so a tab opened before another
+    // admin's save cannot write its stale defaults back (#539). The form and the
+    // Save button are unreachable after a failed first load, so the snapshot is
+    // always populated here. laddering_enabled is not part of Save: its toggle
+    // saves itself (ladder.ts). Multi-field keys (grace map, enabled_providers)
+    // are sent whole, because the backend replaces them as a unit.
+    const changedGlobal: Partial<api.Config> = { ...settings };
+    for (const [key, ids] of GLOBAL_CONFIG_FIELDS) {
+      if (ids.every(id => getFieldValue(id) === savedSnapshot[id])) delete changedGlobal[key];
+    }
+    if (Object.keys(changedGlobal).length > 0) {
+      await api.updateConfig(changedGlobal);
+      // Persisted: advance the snapshot now, so a later validation failure or
+      // service-save error does not leave these fields looking unsaved.
+      for (const [key, ids] of GLOBAL_CONFIG_FIELDS) {
+        if (key in changedGlobal) ids.forEach(id => { savedSnapshot[id] = getFieldValue(id); });
+      }
+    }
     if (defaultCoverageChanged) {
       // The default is persisted and propagated; mirror that locally so a retry
       // after a partial failure does not send the old coverage back.

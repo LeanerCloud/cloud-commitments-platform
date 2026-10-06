@@ -523,7 +523,7 @@ describe('Settings Module', () => {
   });
 
   describe('saveGlobalSettings', () => {
-    beforeEach(() => {
+    const fillForm = (): void => {
       // Set up form values
       (document.getElementById('provider-aws') as HTMLInputElement).checked = true;
       (document.getElementById('provider-azure') as HTMLInputElement).checked = false;
@@ -534,7 +534,9 @@ describe('Settings Module', () => {
       (document.getElementById('setting-default-payment') as HTMLSelectElement).value = 'all-upfront';
       (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '80';
       (document.getElementById('setting-notification-days') as HTMLInputElement).value = '3';
-    });
+    };
+
+    beforeEach(fillForm);
 
     test('prevents default form submission', async () => {
       (api.updateConfig as jest.Mock).mockResolvedValue({});
@@ -546,33 +548,42 @@ describe('Settings Module', () => {
     });
 
     test('collects form data and calls updateConfig', async () => {
-      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      // Load a config that differs in every field, then fill the form, so each
+      // field is dirty and the PUT carries all of them.
+      (api.getConfig as jest.Mock).mockResolvedValue({
+        global: {
+          enabled_providers: ['azure'],
+          notification_email: 'old@test.com',
+          auto_collect: false,
+          default_term: 1,
+          default_payment: 'no-upfront',
+          default_coverage: 10,
+          notification_days_before: 5,
+          grace_period_days: { aws: 1, azure: 2, gcp: 3 },
+          recommendations_cache_stale_hours: 12,
+          recommendations_lookback_days: 30,
+        },
+        services: [],
+      });
+      await loadGlobalSettings();
+      fillForm();
+      (api.updateConfig as jest.Mock).mockClear().mockResolvedValue({});
       window.alert = jest.fn();
 
       const event = { preventDefault: jest.fn() } as unknown as Event;
       await saveGlobalSettings(event);
 
+      // The harness has no schedule, grace, stale-hours, lookback, offering-class
+      // or approver elements, so those read the same before and after and are
+      // not sent.
       expect(api.updateConfig).toHaveBeenCalledWith({
         enabled_providers: ['aws', 'gcp'],
         notification_email: 'test@test.com',
         auto_collect: true,
-        collection_schedule: 'daily',
         default_term: 3,
         default_payment: 'all-upfront',
         default_coverage: 80,
         notification_days_before: 3,
-        // Grace-period inputs default to 7 per provider when the DOM
-        // doesn't include the new inputs (older test harness setup).
-        // The save helper reads missing elements as "empty" -> default 7.
-        grace_period_days: { aws: 7, azure: 7, gcp: 7 },
-        recommendations_cache_stale_hours: 24,
-        recommendations_lookback_days: 7,
-        // offering_class select is absent in this test harness (no DOM element);
-        // saveGlobalSettings falls back to 'convertible'.
-        offering_class: 'convertible',
-        // setting-require-different-approver checkbox is absent in this test
-        // harness (no DOM element); saveGlobalSettings falls back to false.
-        require_different_approver: false,
       });
     });
 
@@ -711,6 +722,78 @@ describe('Settings Module', () => {
       );
       expect(ec2Call).toBeDefined();
       expect(ec2Call![2].coverage).toBe(80);
+    });
+
+    describe('global PUT carries only changed fields (issue #539)', () => {
+      const loadStaleTab = async (): Promise<void> => {
+        (api.getConfig as jest.Mock).mockResolvedValue({
+          global: {
+            enabled_providers: ['aws'],
+            notification_email: 'old@test.com',
+            default_term: 1,
+            default_payment: 'no-upfront',
+            default_coverage: 50,
+            notification_days_before: 3,
+          },
+          services: [
+            { provider: 'aws', service: 'ec2', enabled: true, term: 1, payment: 'no-upfront', coverage: 50 },
+          ],
+        });
+        (api.updateConfig as jest.Mock).mockClear().mockResolvedValue({});
+        (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+        await loadGlobalSettings();
+      };
+      const save = (): Promise<void> => saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+      test('saving an unrelated field does not send the cached term, payment or coverage', async () => {
+        await loadStaleTab();
+        (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'new@test.com';
+
+        await save();
+
+        expect(api.updateConfig).toHaveBeenCalledTimes(1);
+        expect(api.updateConfig).toHaveBeenCalledWith({ notification_email: 'new@test.com' });
+      });
+
+      test('changing only the term sends only the term', async () => {
+        await loadStaleTab();
+        (document.getElementById('setting-default-term') as HTMLSelectElement).value = '3';
+
+        await save();
+
+        expect(api.updateConfig).toHaveBeenCalledWith({ default_term: 3 });
+      });
+
+      test('changing the coverage sends only the coverage and still propagates to the services', async () => {
+        await loadStaleTab();
+        (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '70';
+
+        await save();
+
+        expect(api.updateConfig).toHaveBeenCalledWith({ default_coverage: 70 });
+        const ec2 = (api.updateServiceConfig as jest.Mock).mock.calls.find(([p, svc]) => p === 'aws' && svc === 'ec2');
+        expect(ec2![2].coverage).toBe(70);
+      });
+
+      test('a second save does not resend a field the first save persisted', async () => {
+        await loadStaleTab();
+        (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'new@test.com';
+        await save();
+        (api.updateConfig as jest.Mock).mockClear();
+
+        await save();
+
+        expect(api.updateConfig).not.toHaveBeenCalled();
+      });
+
+      test('an unchanged form sends no global PUT but still saves the services', async () => {
+        await loadStaleTab();
+
+        await save();
+
+        expect(api.updateConfig).not.toHaveBeenCalled();
+        expect(api.updateServiceConfig).toHaveBeenCalled();
+      });
     });
 
     describe('global coverage propagation (issue #522)', () => {
@@ -1712,7 +1795,7 @@ describe('Settings Module', () => {
       await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
     };
 
-    test('a stored 0 renders as 0 and an unedited Save sends 0, not 80', async () => {
+    test('a stored 0 renders as 0 and an unedited Save sends no global PUT', async () => {
       (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage({ default_coverage: 0 }));
       await loadGlobalSettings();
 
@@ -1721,12 +1804,12 @@ describe('Settings Module', () => {
 
       await saveUnchanged();
 
-      expect((api.updateConfig as jest.Mock).mock.calls[0]![0].default_coverage).toBe(0);
+      expect(api.updateConfig).not.toHaveBeenCalled();
       expect(serviceCall('savings-plans-compute')![2].coverage).toBe(0);
       expect(serviceCall('ec2')![2].coverage).toBe(0);
     });
 
-    test('an absent default_coverage still renders the 80 default', async () => {
+    test('an absent default_coverage renders the 80 default and an unedited Save sends no global PUT', async () => {
       (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage({}));
       await loadGlobalSettings();
 
@@ -1734,7 +1817,7 @@ describe('Settings Module', () => {
 
       await saveUnchanged();
 
-      expect((api.updateConfig as jest.Mock).mock.calls[0]![0].default_coverage).toBe(80);
+      expect(api.updateConfig).not.toHaveBeenCalled();
     });
 
     test('a per-service coverage of 0 round-trips under a non-zero global', async () => {
@@ -1766,6 +1849,129 @@ describe('Settings Module', () => {
       openOverrideModal('acc-1', 'aws', [], document.createElement('div'));
 
       expect(covInput.placeholder).toBe('Inherit (currently: 0%)');
+    });
+  });
+
+  describe('global PUT against the real index.html (issue #539)', () => {
+    const loadRealPage = async (): Promise<void> => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('fs') as typeof import('fs');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const path = require('path') as typeof import('path');
+      const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+      document.body.innerHTML = html
+        .replace(/^[\s\S]*<body[^>]*>/i, '')
+        .replace(/<\/body>[\s\S]*$/i, '')
+        .replace(/<script[\s\S]*?<\/script>/gi, '');
+      (api.getConfig as jest.Mock).mockResolvedValue({
+        global: {
+          enabled_providers: ['aws'],
+          notification_email: 'old@test.com',
+          auto_collect: true,
+          collection_schedule: 'daily',
+          default_term: 3,
+          default_payment: 'all-upfront',
+          default_coverage: 80,
+          notification_days_before: 3,
+          grace_period_days: { aws: 7, azure: 7, gcp: 7 },
+          recommendations_cache_stale_hours: 24,
+          recommendations_lookback_days: 7,
+          offering_class: 'convertible',
+          require_different_approver: false,
+          laddering_enabled: true,
+        },
+        services: [],
+      });
+      (api.updateConfig as jest.Mock).mockClear().mockResolvedValue({});
+      (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+      await loadGlobalSettings();
+      await new Promise(resolve => setTimeout(resolve, 0));
+    };
+    const save = (): Promise<void> => saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+    const globalBody = (): unknown => (api.updateConfig as jest.Mock).mock.calls[0]?.[0];
+
+    test('the laddering toggle is rendered and an unedited Save sends no global PUT', async () => {
+      await loadRealPage();
+      expect(document.getElementById('setting-laddering-enabled')).not.toBeNull();
+
+      await save();
+
+      expect(api.updateConfig).not.toHaveBeenCalled();
+    });
+
+    test('editing only the notification email sends only the email', async () => {
+      await loadRealPage();
+      (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'new@test.com';
+
+      await save();
+
+      expect(globalBody()).toEqual({ notification_email: 'new@test.com' });
+    });
+
+    test('editing one grace input saves grace_period_days', async () => {
+      await loadRealPage();
+      (document.getElementById('setting-grace-azure') as HTMLInputElement).value = '9';
+
+      await save();
+
+      expect(globalBody()).toEqual({ grace_period_days: { aws: 7, azure: 9, gcp: 7 } });
+    });
+
+    test('editing only a provider toggle saves enabled_providers', async () => {
+      await loadRealPage();
+      (document.getElementById('provider-gcp') as HTMLInputElement).checked = true;
+
+      await save();
+
+      expect(globalBody()).toEqual({ enabled_providers: ['aws', 'gcp'] });
+    });
+
+    test('editing only the collection schedule saves it', async () => {
+      await loadRealPage();
+      (document.getElementById('setting-collection-schedule') as HTMLSelectElement).value = 'weekly';
+
+      await save();
+
+      expect(globalBody()).toEqual({ collection_schedule: 'weekly' });
+    });
+
+    test('editing only the approver toggle saves it', async () => {
+      await loadRealPage();
+      (document.getElementById('setting-require-different-approver') as HTMLInputElement).checked = true;
+
+      await save();
+
+      expect(globalBody()).toEqual({ require_different_approver: true });
+    });
+
+    test('editing only the offering class saves it', async () => {
+      await loadRealPage();
+      (document.getElementById('setting-ec2-offering-class') as HTMLSelectElement).value = 'standard';
+
+      await save();
+
+      expect(globalBody()).toEqual({ offering_class: 'standard' });
+    });
+
+    test('a global field persisted before a filter validation failure is not treated as unsaved', async () => {
+      await loadRealPage();
+      const minCount = document.getElementById('aws-ec2-min-count') as HTMLInputElement;
+      expect(minCount).not.toBeNull();
+      (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'new@test.com';
+      minCount.value = '-1';
+
+      await save();
+      expect(api.updateConfig).toHaveBeenCalledTimes(1);
+      expect(api.updateConfig).toHaveBeenLastCalledWith({ notification_email: 'new@test.com' });
+
+      // The user undoes the edit and fixes the filter. The stored email is
+      // new@test.com, so reverting the field must be sent.
+      (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'old@test.com';
+      minCount.value = '0';
+      await save();
+
+      expect(api.updateConfig).toHaveBeenCalledTimes(2);
+      expect(api.updateConfig).toHaveBeenLastCalledWith({ notification_email: 'old@test.com' });
     });
   });
 });
