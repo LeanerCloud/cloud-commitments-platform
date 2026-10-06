@@ -2,7 +2,7 @@ package api
 
 // coverage_gaps_test.go — additional tests to push internal/api coverage above 80%.
 // Targets: parseAccountIDs, redactEmail, mergeServiceConfig, checkRateLimit,
-//          checkUserAPIKey, ambientCredResult, credTypeForAccount,
+//          ambientCredResult, credTypeForAccount,
 //          checkCredentialPresence, validateCSRF, requireAdmin,
 //          getRecommendations (more cases), sendPurchaseApprovalEmail.
 
@@ -261,37 +261,21 @@ func TestHandler_checkRateLimit_Exceeded(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// checkUserAPIKey
+// user API key validation failure (via requireAuth)
 // ---------------------------------------------------------------------------
 
-func TestHandler_checkUserAPIKey_ValidKey(t *testing.T) {
-	ctx := context.Background()
-	mockAuth := new(MockAuthService)
-	mockAuth.On("ValidateUserAPIKeyAPI", ctx, "valid-user-key").
-		Return("user-id", map[string]interface{}{}, nil)
-
-	h := &Handler{auth: mockAuth}
-	assert.True(t, h.checkUserAPIKey(ctx, "valid-user-key"))
-}
-
-func TestHandler_checkUserAPIKey_InvalidKey(t *testing.T) {
+func TestRequireAuth_UserAPIKey_InvalidKey(t *testing.T) {
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateUserAPIKeyAPI", ctx, "bad-key").
 		Return(nil, nil, errors.New("invalid key"))
 
 	h := &Handler{auth: mockAuth}
-	assert.False(t, h.checkUserAPIKey(ctx, "bad-key"))
-}
-
-func TestHandler_checkUserAPIKey_EmptyKey(t *testing.T) {
-	h := &Handler{auth: nil}
-	assert.False(t, h.checkUserAPIKey(context.Background(), ""))
-}
-
-func TestHandler_checkUserAPIKey_NilAuth(t *testing.T) {
-	h := &Handler{auth: nil}
-	assert.False(t, h.checkUserAPIKey(context.Background(), "some-key"))
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"X-API-Key": "bad-key"}}
+	_, err := h.requireAuth(ctx, req)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+	assert.Equal(t, 401, ce.code)
 }
 
 // ---------------------------------------------------------------------------

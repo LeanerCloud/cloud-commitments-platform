@@ -96,25 +96,10 @@ func principalFromContext(ctx context.Context) (*Principal, bool) {
 	return principal, ok && principal != nil
 }
 
-// authenticate checks authentication via admin API key, user API key, or Bearer token.
-func (h *Handler) authenticate(ctx context.Context, req *events.LambdaFunctionURLRequest) bool {
-	apiKey := extractAPIKey(req)
-
-	if h.checkAdminAPIKey(apiKey) {
-		return true
-	}
-
-	if h.checkUserAPIKey(ctx, apiKey) {
-		return true
-	}
-
-	return h.checkBearerToken(ctx, req)
-}
-
-// authenticatePrincipal performs the same three-path credential check as
-// authenticate but returns the fully resolved Principal so callers do not
-// need to repeat the lookup. Returns a non-nil Principal on success; returns
-// nil and a 401 ClientError when no valid credential is present.
+// authenticatePrincipal checks the admin API key, user API key and Bearer
+// token credentials and returns the fully resolved Principal. Returns a
+// non-nil Principal on success; returns nil and a 401 ClientError when no
+// valid credential is present.
 func (h *Handler) authenticatePrincipal(ctx context.Context, req *events.LambdaFunctionURLRequest) (*Principal, error) {
 	apiKey := extractAPIKey(req)
 
@@ -212,28 +197,6 @@ func extractAPIKey(req *events.LambdaFunctionURLRequest) string {
 func (h *Handler) checkAdminAPIKey(apiKey string) bool {
 	if apiKey != "" && h.apiKey != "" && subtle.ConstantTimeCompare([]byte(apiKey), []byte(h.apiKey)) == 1 {
 		return true
-	}
-	return false
-}
-
-func (h *Handler) checkUserAPIKey(ctx context.Context, apiKey string) bool {
-	if apiKey != "" && h.auth != nil {
-		_, _, err := h.auth.ValidateUserAPIKeyAPI(ctx, apiKey)
-		if err == nil {
-			return true
-		}
-		logging.Debugf("User API key validation failed: %v", err)
-	}
-	return false
-}
-
-func (h *Handler) checkBearerToken(ctx context.Context, req *events.LambdaFunctionURLRequest) bool {
-	token := h.extractBearerToken(req)
-	if token != "" && h.auth != nil {
-		_, err := h.auth.ValidateSession(ctx, token)
-		if err == nil {
-			return true
-		}
 	}
 	return false
 }
