@@ -119,7 +119,7 @@ func (h *Handler) listTargetOfferings(ctx context.Context, req *events.LambdaFun
 		return nil, err
 	}
 
-	if err = h.requireReshapeAccountVisible(ctx, session); err != nil {
+	if visErr := h.requireReshapeAccountVisible(ctx, session); visErr != nil {
 		return nil, err
 	}
 

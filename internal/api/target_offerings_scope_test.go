@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
@@ -20,7 +21,7 @@ import (
 
 const targetOfferingsSourceRI = "296818b6-73f8-4cd2-94bc-dbb95f794812"
 
-func targetOfferingsHandler(t *testing.T, deploymentAccountID string, scoped bool) (*Handler, *stubTargetOfferingsEC2) {
+func targetOfferingsHandler(t *testing.T, deploymentAccountID string, scoped bool) *Handler {
 	t.Helper()
 	var h *Handler
 	if scoped {
@@ -38,7 +39,7 @@ func targetOfferingsHandler(t *testing.T, deploymentAccountID string, scoped boo
 	h.targetOfferingsEC2Factory = func(_ aws.Config) targetOfferingsEC2Client { return stub }
 	h.reshapeAccountResolver = func(_ context.Context) (string, error) { return deploymentAccountID, nil }
 	h.awsCfgOnce.Do(func() { h.awsCfg = aws.Config{Region: "us-east-1"} })
-	return h, stub
+	return h
 }
 
 func targetOfferingsRequest() *events.LambdaFunctionURLRequest {
@@ -48,7 +49,7 @@ func targetOfferingsRequest() *events.LambdaFunctionURLRequest {
 }
 
 func TestRouterDispatch_TargetOfferings_DeploymentAccountOutOfScope(t *testing.T) {
-	h, _ := targetOfferingsHandler(t, scopedOutAccount, true)
+	h := targetOfferingsHandler(t, scopedOutAccount, true)
 
 	res, err := NewRouter(h).Route(context.Background(), "GET", "/api/ri-exchange/target-offerings", targetOfferingsRequest())
 
@@ -57,7 +58,7 @@ func TestRouterDispatch_TargetOfferings_DeploymentAccountOutOfScope(t *testing.T
 }
 
 func TestRouterDispatch_TargetOfferings_DeploymentAccountInScope(t *testing.T) {
-	h, _ := targetOfferingsHandler(t, scopedInAccount, true)
+	h := targetOfferingsHandler(t, scopedInAccount, true)
 
 	res, err := NewRouter(h).Route(context.Background(), "GET", "/api/ri-exchange/target-offerings", targetOfferingsRequest())
 
@@ -68,7 +69,7 @@ func TestRouterDispatch_TargetOfferings_DeploymentAccountInScope(t *testing.T) {
 }
 
 func TestRouterDispatch_TargetOfferings_UnscopedUserSkipsAccountLookup(t *testing.T) {
-	h, _ := targetOfferingsHandler(t, scopedOutAccount, false)
+	h := targetOfferingsHandler(t, scopedOutAccount, false)
 	// No ListCloudAccounts expectation: any scope lookup would panic the mock.
 	h.reshapeAccountResolver = func(_ context.Context) (string, error) {
 		t.Fatal("unrestricted session must not resolve the deployment account")
@@ -80,4 +81,28 @@ func TestRouterDispatch_TargetOfferings_UnscopedUserSkipsAccountLookup(t *testin
 	require.NoError(t, err)
 	_, ok := res.(*TargetOfferingsResponse)
 	assert.True(t, ok)
+}
+
+func TestRouterDispatch_TargetOfferings_ResolverErrorPropagates(t *testing.T) {
+	h := targetOfferingsHandler(t, scopedInAccount, true)
+	resolveErr := errors.New("deployment account lookup failed")
+	h.reshapeAccountResolver = func(_ context.Context) (string, error) { return "", resolveErr }
+
+	res, err := NewRouter(h).Route(context.Background(), "GET", "/api/ri-exchange/target-offerings", targetOfferingsRequest())
+
+	require.Error(t, err, "got response %v", res)
+	assert.ErrorIs(t, err, resolveErr)
+	assert.False(t, IsNotFoundError(err))
+}
+
+func TestListTargetOfferings_PermissionCheckPrecedesVisibility(t *testing.T) {
+	h := targetOfferingsHandler(t, scopedOutAccount, true)
+	req := targetOfferingsRequest()
+	req.Headers = nil // no session
+
+	res, err := h.listTargetOfferings(context.Background(), req)
+
+	require.Error(t, err, "got response %v", res)
+	assert.Contains(t, err.Error(), "no authorization token")
+	assert.False(t, IsNotFoundError(err))
 }
