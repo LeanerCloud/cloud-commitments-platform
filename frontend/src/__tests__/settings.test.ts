@@ -1584,6 +1584,25 @@ describe('Settings Module', () => {
       expect(errEl!.textContent).toBe(msg);
     });
 
+    it('clearing the default coverage field shows the inline error instead of passing as 0 (#522)', () => {
+      const input = document.getElementById('setting-default-coverage') as HTMLInputElement;
+      input.value = '';
+      fire(input, 'input');
+
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      const errEl = document.getElementById('setting-default-coverage-range-error');
+      expect(errEl!.classList.contains('hidden')).toBe(false);
+      expect(errEl!.textContent).toBe('Must be a whole number between 0 and 100');
+    });
+
+    it('clearing an optional numeric field stays without an inline error', () => {
+      const input = document.getElementById('setting-notification-days') as HTMLInputElement;
+      input.value = '';
+      fire(input, 'input');
+
+      expect(input.getAttribute('aria-invalid')).toBeNull();
+    });
+
     it('typing a fractional value into notification-days is rejected inline', () => {
       const input = document.getElementById('setting-notification-days') as HTMLInputElement;
       input.value = '1.5';
