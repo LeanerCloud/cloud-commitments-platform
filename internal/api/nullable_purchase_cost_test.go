@@ -117,7 +117,7 @@ func TestMarketplaceUnknownUpfront(t *testing.T) {
 			row.UpfrontCost = tc.cost
 			store.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).Return(row, nil)
 			if tc.allowed {
-				store.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).Return(true, nil)
+				store.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).Return(&config.MarketplaceListingClaim{ClientToken: "tok"}, nil)
 				store.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-default", config.ListingStateActive).Return(nil)
 			}
 			req := marketplaceReq()
@@ -129,7 +129,7 @@ func TestMarketplaceUnknownUpfront(t *testing.T) {
 			} else {
 				require.ErrorContains(t, err, "upfront cost is unknown")
 				assert.Zero(t, ec2.createCallCount)
-				store.AssertNotCalled(t, "ClaimMarketplaceListingSlot", mock.Anything, mock.Anything)
+				store.AssertNotCalled(t, "ClaimMarketplaceListingSlot", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			}
 			store.AssertExpectations(t)
 		})

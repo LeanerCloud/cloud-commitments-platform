@@ -58,7 +58,7 @@ func TestMarketplaceScopeLookupErrors(t *testing.T) {
 			require.ErrorIs(t, err, lookupErr)
 			require.Zero(t, provider.createCallCount)
 			require.Zero(t, provider.cancelCallCount)
-			store.AssertNotCalled(t, "ClaimMarketplaceListingSlot", mock.Anything, mock.Anything)
+			store.AssertNotCalled(t, "ClaimMarketplaceListingSlot", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			store.AssertNotCalled(t, "UpdatePurchaseHistoryListing", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			service.AssertExpectations(t)
 		}

@@ -930,6 +930,29 @@ type PurchaseHistoryRecord struct {
 	ListingState string `json:"listing_state,omitempty" dynamodbav:"listing_state,omitempty"`
 }
 
+// MarketplaceListingClaim is what ClaimMarketplaceListingSlot reads back from
+// the row it just claimed, so the handler works from the row as it is at claim
+// time instead of a copy read before the claim (issue #525).
+type MarketplaceListingClaim struct {
+	// ListingID is the listing recorded on the row when it was claimed.
+	ListingID string
+	// PriorState is the listing_state before the claim; empty when none.
+	PriorState string
+	// ClientToken is the token of this attempt: the one passed to the claim, or
+	// the persisted one when an unresolved attempt already held a token.
+	ClientToken string //nolint:gosec // G117: an idempotency token for AWS, not a credential
+	// PriceSchedule is the JSON price schedule stored with ClientToken.
+	PriceSchedule []byte
+	// Resumed reports that the token and schedule were already persisted by an
+	// earlier attempt that never recorded a listing. It is derived from the
+	// returned row (its token differs from the one this claim tried to write),
+	// so it stays correct when two claims race. PriorState is then "pending",
+	// the state the earlier attempt left; releasing restores an empty state
+	// and the row keeps its recorded listing id, which every list, cancel and
+	// claim check treats the same as the original dead state.
+	Resumed bool
+}
+
 // AWS EC2 ReservedInstancesListing status values, mirroring the
 // ec2types.ListingStatus enum. Stored verbatim in purchase_history.listing_state
 // so the strings must match AWS exactly. ListingStatePending is additionally

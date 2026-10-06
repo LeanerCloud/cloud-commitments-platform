@@ -619,10 +619,25 @@ func (m *MockConfigStore) StampOfferingClass(ctx context.Context, purchaseID, of
 }
 
 // ClaimMarketplaceListingSlot mocks the atomic listing-slot claim (issue #292).
-func (m *MockConfigStore) ClaimMarketplaceListingSlot(ctx context.Context, purchaseID string) (bool, error) {
-	m.record("ClaimMarketplaceListingSlot", ctx, purchaseID)
-	args := m.Called(ctx, purchaseID)
-	return args.Bool(0), args.Error(1)
+func (m *MockConfigStore) ClaimMarketplaceListingSlot(ctx context.Context, purchaseID, clientToken string, priceSchedule []byte) (*config.MarketplaceListingClaim, error) {
+	m.record("ClaimMarketplaceListingSlot", ctx, purchaseID, clientToken, priceSchedule)
+	args := m.Called(ctx, purchaseID, clientToken, priceSchedule)
+	var claim *config.MarketplaceListingClaim
+	if v := args.Get(0); v != nil {
+		c, ok := v.(*config.MarketplaceListingClaim)
+		if !ok {
+			panic(fmt.Sprintf("mock: expected *config.MarketplaceListingClaim, got %T", v))
+		}
+		claim = c
+	}
+	return claim, args.Error(1)
+}
+
+// ReleaseMarketplaceListingClaim mocks releasing a pending listing claim (issue #525).
+func (m *MockConfigStore) ReleaseMarketplaceListingClaim(ctx context.Context, purchaseID, clientToken, priorState string, keepAttempt bool) error {
+	m.record("ReleaseMarketplaceListingClaim", ctx, purchaseID, clientToken, priorState, keepAttempt)
+	args := m.Called(ctx, purchaseID, clientToken, priorState, keepAttempt)
+	return args.Error(0)
 }
 
 // ClaimRIExchangeIdempotencyKey mocks the atomic RI exchange submit claim

@@ -475,8 +475,12 @@ func (m *mockConfigStore) UpdatePurchaseHistoryListing(_ context.Context, _, _, 
 	return nil
 }
 
-func (m *mockConfigStore) ClaimMarketplaceListingSlot(_ context.Context, _ string) (bool, error) {
-	return true, nil
+func (m *mockConfigStore) ClaimMarketplaceListingSlot(_ context.Context, _, _ string, _ []byte) (*config.MarketplaceListingClaim, error) {
+	return &config.MarketplaceListingClaim{}, nil
+}
+
+func (m *mockConfigStore) ReleaseMarketplaceListingClaim(_ context.Context, _, _, _ string, _ bool) error {
+	return nil
 }
 
 func (m *mockConfigStore) ClaimRIExchangeIdempotencyKey(_ context.Context, _ string, _ time.Duration) (bool, error) {

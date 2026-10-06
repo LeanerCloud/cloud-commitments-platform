@@ -406,8 +406,12 @@ func (m *mockConfigStoreForHealth) UpdateGlobalConfigAtomic(_ context.Context, a
 func (m *mockConfigStoreForHealth) UpdatePurchaseHistoryListing(_ context.Context, _, _, _ string) error {
 	return nil
 }
-func (m *mockConfigStoreForHealth) ClaimMarketplaceListingSlot(_ context.Context, _ string) (bool, error) {
-	return true, nil
+func (m *mockConfigStoreForHealth) ClaimMarketplaceListingSlot(_ context.Context, _, _ string, _ []byte) (*config.MarketplaceListingClaim, error) {
+	return &config.MarketplaceListingClaim{}, nil
+}
+
+func (m *mockConfigStoreForHealth) ReleaseMarketplaceListingClaim(_ context.Context, _, _, _ string, _ bool) error {
+	return nil
 }
 
 func (m *mockConfigStoreForHealth) ClaimRIExchangeIdempotencyKey(_ context.Context, _ string, _ time.Duration) (bool, error) {
