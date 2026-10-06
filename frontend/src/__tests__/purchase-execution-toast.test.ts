@@ -1040,6 +1040,7 @@ describe('handleExecutePurchase - missing payment option (#431)', () => {
   test.each([
     ['undefined', undefined],
     ['empty string', ''],
+    ['whitespace only', '   '],
   ])('refuses with an error toast and no POST when payment is %s', async (_label, payment) => {
     const rec: Record<string, unknown> = { ...buildMinimalRec() };
     if (payment === undefined) delete rec.payment;
