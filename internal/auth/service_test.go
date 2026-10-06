@@ -421,6 +421,7 @@ func TestLogin_WithMFA(t *testing.T) {
 	}
 
 	mockStore.On("GetUserByEmail", ctx, "mfa@example.com").Return(user, nil)
+	mockStore.On("ClaimTOTPCounter", ctx, user.ID, counter).Return(true, nil).Once()
 	mockStore.On("CreateSession", ctx, mock.AnythingOfType("*auth.Session")).Return(nil)
 	mockStore.On("RecordSuccessfulLogin", ctx, mock.AnythingOfType("string")).Return(nil)
 

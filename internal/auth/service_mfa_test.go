@@ -320,6 +320,7 @@ func TestMFADisable_WithTOTP(t *testing.T) {
 	user.MFARecoveryCodes = []string{"$2a$04$hashedstub"} // doesn't matter, won't be tested
 
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("ClaimTOTPCounter", ctx, user.ID, mock.AnythingOfType("int64")).Return(true, nil).Once()
 	mockStore.On("DisableMFA", ctx, user.ID, secret, []string{"$2a$04$hashedstub"}).Return(nil).Once()
 
 	err := service.MFADisable(ctx, user.ID, "SecurePass@123", totpFor(secret))
@@ -429,6 +430,7 @@ func TestMFARegenerateRecoveryCodes_HappyPath(t *testing.T) {
 	user.MFARecoveryCodes = []string{"$2a$04$preexistingstub"}
 
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("ClaimTOTPCounter", ctx, user.ID, mock.AnythingOfType("int64")).Return(true, nil).Once()
 	var captured []string
 	mockStore.On("ReplaceMFARecoveryCodes", ctx, user.ID, secret, []string{"$2a$04$preexistingstub"}, mock.Anything).Run(func(args mock.Arguments) {
 		captured = append([]string{}, args.Get(4).([]string)...)
@@ -684,4 +686,67 @@ func TestMFARegenerateRecoveryCodes_WrongCode_ReturnsSentinel(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrMFAInvalidCode),
 		"MFARegenerateRecoveryCodes wrong TOTP must return ErrMFAInvalidCode, got: %v", err)
 	mockStore.AssertExpectations(t)
+}
+
+func TestMatchTOTP_ReturnsMatchedCounter(t *testing.T) {
+	secret := "JBSWY3DPEHPK3PXP"
+	current := time.Now().Unix() / 30
+	for _, offset := range []int64{-1, 0, 1} {
+		counter, ok := matchTOTP(secret, generateTOTP(secret, current+offset))
+		assert.True(t, ok)
+		assert.Equal(t, current+offset, counter)
+	}
+	_, ok := matchTOTP(secret, generateTOTP(secret, current+5))
+	assert.False(t, ok)
+}
+
+func TestMFADisable_ReplayedTOTPIsRejected(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	service := createTestService(mockStore, new(MockEmailSender))
+
+	secret := "JBSWY3DPEHPK3PXP"
+	user := createTestUser(t, "SecurePass@123")
+	user.MFAEnabled = true
+	user.MFASecret = secret
+	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("ClaimTOTPCounter", ctx, user.ID, mock.AnythingOfType("int64")).Return(false, nil).Once()
+
+	err := service.MFADisable(ctx, user.ID, "SecurePass@123", totpFor(secret))
+	require.ErrorIs(t, err, ErrMFAInvalidCode)
+	mockStore.AssertNotCalled(t, "DisableMFA", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestMFARegenerateRecoveryCodes_ReplayedTOTPIsRejected(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	service := createTestService(mockStore, new(MockEmailSender))
+
+	secret := "JBSWY3DPEHPK3PXP"
+	user := createTestUser(t, "SecurePass@123")
+	user.MFAEnabled = true
+	user.MFASecret = secret
+	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("ClaimTOTPCounter", ctx, user.ID, mock.AnythingOfType("int64")).Return(false, nil).Once()
+
+	_, err := service.MFARegenerateRecoveryCodes(ctx, user.ID, totpFor(secret))
+	require.ErrorIs(t, err, ErrMFAInvalidCode)
+	mockStore.AssertNotCalled(t, "ReplaceMFARecoveryCodes", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestMFARegenerateRecoveryCodes_ClaimFailureFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	service := createTestService(mockStore, new(MockEmailSender))
+
+	secret := "JBSWY3DPEHPK3PXP"
+	user := createTestUser(t, "SecurePass@123")
+	user.MFAEnabled = true
+	user.MFASecret = secret
+	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
+	mockStore.On("ClaimTOTPCounter", ctx, user.ID, mock.AnythingOfType("int64")).Return(false, errors.New("db down")).Once()
+
+	_, err := service.MFARegenerateRecoveryCodes(ctx, user.ID, totpFor(secret))
+	require.ErrorContains(t, err, "db down")
+	mockStore.AssertNotCalled(t, "ReplaceMFARecoveryCodes", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

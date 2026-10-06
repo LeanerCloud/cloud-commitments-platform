@@ -94,6 +94,11 @@ func (m *MockStore) ClearPendingMFASecret(ctx context.Context, userID string) er
 	return m.Called(ctx, userID).Error(0)
 }
 
+func (m *MockStore) ClaimTOTPCounter(ctx context.Context, userID string, counter int64) (bool, error) {
+	args := m.Called(ctx, userID, counter)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockStore) RecordFailedLogin(ctx context.Context, userID string) error {
 	return m.Called(ctx, userID).Error(0)
 }

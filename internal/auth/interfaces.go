@@ -23,6 +23,9 @@ type StoreInterface interface {
 	ReplaceMFARecoveryCodes(ctx context.Context, userID, readSecret string, readCodes, newHashes []string) error
 	DisableMFA(ctx context.Context, userID, readSecret string, readCodes []string) error
 	ClearPendingMFASecret(ctx context.Context, userID string) error
+	// ClaimTOTPCounter records counter as the user's last accepted TOTP step and
+	// reports whether it was above the previous one; false means a replay.
+	ClaimTOTPCounter(ctx context.Context, userID string, counter int64) (bool, error)
 	RecordFailedLogin(ctx context.Context, userID string) error
 	RecordSuccessfulLogin(ctx context.Context, userID string) error
 	DeleteUser(ctx context.Context, userID string) error

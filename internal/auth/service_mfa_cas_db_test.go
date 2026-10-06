@@ -60,7 +60,8 @@ func TestIntegration_MFADisableAndRegenerateAreColumnScoped(t *testing.T) {
 		fresh, err := f.svc.MFARegenerateRecoveryCodes(ctx, f.user.ID, totpNow(secret))
 		require.ErrorIs(t, err, ErrUserChanged)
 		assert.Nil(t, fresh)
-		assert.Equal(t, winner(), f.stored(), "the stale write must not replace the codes the login left")
+		assertOnlyChanged(t, winner(), f.stored(), func(*User) {})
+		assert.Equal(t, winner().MFARecoveryCodes, f.stored().MFARecoveryCodes, "the stale write must not replace the codes the login left")
 		assert.Len(t, f.stored().MFARecoveryCodes, len(codes)-1)
 	})
 
@@ -71,7 +72,7 @@ func TestIntegration_MFADisableAndRegenerateAreColumnScoped(t *testing.T) {
 		winner := f.onRead(spendRecoveryCode(f, codes[0]))
 		err := f.svc.MFADisable(ctx, f.user.ID, credentialRacePassword, totpNow(secret))
 		require.ErrorIs(t, err, ErrUserChanged)
-		assert.Equal(t, winner(), f.stored())
+		assertOnlyChanged(t, winner(), f.stored(), func(*User) {})
 		assert.True(t, f.stored().MFAEnabled)
 	})
 

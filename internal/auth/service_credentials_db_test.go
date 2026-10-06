@@ -142,7 +142,7 @@ func (f *credentialRaceFixture) requireFactorEnforced(email, password string, en
 	_, err := f.svc.Login(f.t.Context(), LoginRequest{Email: email, Password: password})
 	require.ErrorIs(f.t, err, ErrMFARequired)
 	_, err = f.svc.Login(f.t.Context(), LoginRequest{Email: email, Password: password,
-		MFACode: generateTOTP(enrolled.MFASecret, time.Now().Unix()/30)})
+		MFACode: generateTOTP(enrolled.MFASecret, time.Now().Unix()/30+1)})
 	require.NoError(f.t, err)
 }
 

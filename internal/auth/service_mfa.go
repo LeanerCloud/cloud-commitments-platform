@@ -57,14 +57,19 @@ const recoveryCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 // the correct behavior is to reject, not to accidentally match because
 // generateTOTP("","") returns "" and ConstantTimeCompare("","") == 1.
 func verifyTOTP(secret, code string) bool {
+	_, ok := matchTOTP(secret, code)
+	return ok
+}
+
+// matchTOTP is verifyTOTP that also returns the matched time-step counter, so
+// a caller can record it and refuse the same code afterwards (RFC 6238 5.2).
+// When two steps in the window produce the same code the later counter wins.
+func matchTOTP(secret, code string) (int64, bool) {
 	// Fail closed: reject empty code and empty secret up front.
 	// generateTOTP returns "" on base32-decode failure; ConstantTimeCompare("","")
 	// evaluates to 1 and would bypass MFA for any caller that passes code="".
-	if code == "" {
-		return false
-	}
-	if secret == "" {
-		return false
+	if code == "" || secret == "" {
+		return 0, false
 	}
 
 	// Allow for time skew by checking current and adjacent time windows.
@@ -73,17 +78,30 @@ func verifyTOTP(secret, code string) bool {
 
 	// Check current time step and one step before/after for clock skew tolerance.
 	// Use constant-time comparison and avoid early returns to prevent timing attacks.
-	valid := 0
+	var matched int64
+	found := 0
 	for _, offset := range []int64{-1, 0, 1} {
 		counter := (currentTime / timeStep) + offset
 		expected := generateTOTP(secret, counter)
 		// generateTOTP returns "" on base32-decode failure; a non-empty code can
 		// never equal "" so a bad secret produces no match.
 		if subtle.ConstantTimeCompare([]byte(expected), []byte(code)) == 1 {
-			valid = 1
+			matched = counter
+			found = 1
 		}
 	}
-	return valid == 1
+	return matched, found == 1
+}
+
+// verifyAndClaimTOTP accepts a TOTP code at most once per user: the matched
+// counter must be above the last one the store accepted. A replayed or
+// concurrently raced code returns false with no error.
+func (s *Service) verifyAndClaimTOTP(ctx context.Context, userID, secret, code string) (bool, error) {
+	counter, ok := matchTOTP(secret, code)
+	if !ok {
+		return false, nil
+	}
+	return s.store.ClaimTOTPCounter(ctx, userID, counter)
 }
 
 // generateTOTP generates a TOTP code for the given counter.
@@ -397,6 +415,19 @@ func (s *Service) disableMFAAlreadyOff(ctx context.Context, user *User) error {
 	return s.store.ClearPendingMFASecret(ctx, user.ID)
 }
 
+// verifyMFAProof accepts an unspent TOTP code, or else consumes a recovery code
+// in memory; the caller persists the consumed slice through its own CAS write.
+func (s *Service) verifyMFAProof(ctx context.Context, user *User, codeOrRecovery string) error {
+	matched, err := s.verifyAndClaimTOTP(ctx, user.ID, user.MFASecret, codeOrRecovery)
+	if err != nil {
+		return fmt.Errorf("failed to record TOTP use: %w", err)
+	}
+	if !matched && !s.consumeRecoveryCode(user, codeOrRecovery) {
+		return fmt.Errorf("%w", ErrMFAInvalidCode)
+	}
+	return nil
+}
+
 // MFADisable turns off MFA for a user. Requires both the current
 // password AND a fresh proof-of-possession (either a TOTP code or
 // an unused recovery code). Defense-in-depth: a stolen session
@@ -428,9 +459,8 @@ func (s *Service) MFADisable(ctx context.Context, userID, password, codeOrRecove
 	// compare, ~constant-time per slot). Either path counts as a
 	// fresh proof-of-possession.
 	readSecret, readCodes := user.MFASecret, slices.Clone(user.MFARecoveryCodes)
-	matched := verifyTOTP(user.MFASecret, codeOrRecovery) || s.consumeRecoveryCode(user, codeOrRecovery)
-	if !matched {
-		return fmt.Errorf("%w", ErrMFAInvalidCode)
+	if err := s.verifyMFAProof(ctx, user, codeOrRecovery); err != nil {
+		return err
 	}
 
 	if err := s.store.DisableMFA(ctx, user.ID, readSecret, readCodes); err != nil {
@@ -455,7 +485,11 @@ func (s *Service) MFARegenerateRecoveryCodes(ctx context.Context, userID, code s
 	if !user.MFAEnabled || user.MFASecret == "" {
 		return nil, fmt.Errorf("%w", ErrMFANotEnabled)
 	}
-	if !verifyTOTP(user.MFASecret, code) {
+	valid, err := s.verifyAndClaimTOTP(ctx, user.ID, user.MFASecret, code)
+	if err != nil {
+		return nil, fmt.Errorf("failed to record TOTP use: %w", err)
+	}
+	if !valid {
 		return nil, fmt.Errorf("%w", ErrMFAInvalidCode)
 	}
 
