@@ -85,7 +85,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
     const valid = validPaymentsByProvider();
     const calls = serviceCalls();
     expect(calls.filter(c => c.provider === 'azure')).toHaveLength(5);
-    expect(calls.filter(c => c.provider === 'gcp')).toHaveLength(4);
+    expect(calls.filter(c => c.provider === 'gcp')).toHaveLength(3);
     for (const c of calls) {
       expect({ ...c, valid: valid[c.provider]!.includes(c.payment) }).toEqual({ ...c, valid: true });
     }
@@ -101,6 +101,29 @@ describe('Settings Save payment tokens (issue #545)', () => {
     expect(calls.find(c => c.provider === 'azure' && c.service === 'vm')!.payment).toBe('monthly');
     expect(calls.find(c => c.provider === 'azure' && c.service === 'sql')!.payment).toBe('upfront');
     for (const c of calls.filter(x => x.provider === 'gcp')) expect(c.payment).toBe('monthly');
+  });
+
+  it('has no GCP Cloud Storage card and never PUTs gcp/storage (issue #543)', async () => {
+    expect(document.getElementById('gcp-storage-term')).toBeNull();
+    await save();
+    expect(serviceCalls().filter(c => c.provider === 'gcp').map(c => c.service))
+      .toEqual(['compute', 'sql', 'memorystore']);
+  });
+
+  it('ignores a stored gcp/storage row on load and keeps the other GCP cards', async () => {
+    (api.getConfig as jest.Mock).mockResolvedValue({
+      global: { enabled_providers: ['gcp'], default_term: 3, default_payment: 'all-upfront', default_coverage: 80 },
+      services: [
+        { provider: 'gcp', service: 'storage', term: 1, payment: 'monthly', enabled: true, coverage: 80 },
+        { provider: 'gcp', service: 'compute', term: 1, payment: 'monthly', enabled: true, coverage: 80 },
+      ],
+    });
+    await expect(loadGlobalSettings()).resolves.not.toThrow();
+    expect(document.getElementById('gcp-storage-term')).toBeNull();
+    expect((document.getElementById('gcp-compute-term') as HTMLSelectElement).value).toBe('1');
+    await saveGlobalSettings(new Event('submit'));
+    expect(serviceCalls().filter(c => c.provider === 'gcp').every(c => c.payment === 'monthly')).toBe(true);
+    expect(serviceCalls().some(c => c.service === 'storage')).toBe(false);
   });
 
   it('does not push the AWS default payment into Azure cards', async () => {
@@ -137,7 +160,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
 
     await saveGlobalSettings(new Event('submit'));
 
-    expect(api.updateServiceConfig).toHaveBeenCalledTimes(18);
+    expect(api.updateServiceConfig).toHaveBeenCalledTimes(17);
     expect(mockShowToast).toHaveBeenCalledTimes(1);
     expect(mockShowToast).toHaveBeenCalledWith({
       message: 'Settings saved, but 1 service failed: azure/vm: invalid payment option',
