@@ -7,12 +7,14 @@ import (
 	"crypto/sha1" // #nosec G505 -- SHA-1 retained for broad authenticator app compatibility and existing otpauth provisioning; RFC 6238 permits SHA-256/SHA-512 but most authenticator apps default to SHA-1
 	"crypto/subtle"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -390,10 +392,16 @@ func (s *Service) MFAEnable(ctx context.Context, userID, code string) ([]string,
 	if err != nil || user == nil {
 		return nil, fmt.Errorf("%w", ErrMFAAuthFailed)
 	}
+	if lockErr := s.rejectLockedMFAUser(user); lockErr != nil {
+		return nil, lockErr
+	}
 	if user.MFAEnabled {
 		return nil, fmt.Errorf("%w", ErrMFAAlreadyEnabled)
 	}
 	err = validatePendingMFAEnrollment(user, code)
+	if errors.Is(err, ErrMFAInvalidCode) {
+		return nil, s.rejectMFACode(ctx, user, code)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -415,6 +423,40 @@ func (s *Service) disableMFAAlreadyOff(ctx context.Context, user *User) error {
 	return s.store.ClearPendingMFASecret(ctx, user.ID)
 }
 
+// rejectLockedMFAUser refuses MFA lifecycle calls while the account is locked
+// by failed attempts, using the same opaque error as a missing user so a
+// stolen session learns nothing about the lock (same stance as Login).
+func (s *Service) rejectLockedMFAUser(user *User) error {
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		logging.Warnf("MFA operation refused for locked account (locked for %v more)", time.Until(*user.LockedUntil).Round(time.Minute))
+		return fmt.Errorf("%w", ErrMFAAuthFailed)
+	}
+	return nil
+}
+
+// rejectMFACode counts a wrong or replayed code against the account lockout,
+// the same counter Login uses, and returns the invalid-code error. An empty
+// code is a missing field, not a guess, and (as in Login) is not counted.
+func (s *Service) rejectMFACode(ctx context.Context, user *User, code string) error {
+	if code != "" {
+		s.recordFailedLogin(ctx, user)
+	}
+	return fmt.Errorf("%w", ErrMFAInvalidCode)
+}
+
+// claimTOTPOrReject spends an unused TOTP code for the user, counting a wrong
+// or replayed one against the lockout.
+func (s *Service) claimTOTPOrReject(ctx context.Context, user *User, code string) error {
+	valid, err := s.verifyAndClaimTOTP(ctx, user.ID, user.MFASecret, code)
+	if err != nil {
+		return fmt.Errorf("failed to record TOTP use: %w", err)
+	}
+	if !valid {
+		return s.rejectMFACode(ctx, user, code)
+	}
+	return nil
+}
+
 // verifyMFAProof accepts an unspent TOTP code, or else consumes a recovery code
 // in memory; the caller persists the consumed slice through its own CAS write.
 func (s *Service) verifyMFAProof(ctx context.Context, user *User, codeOrRecovery string) error {
@@ -423,7 +465,7 @@ func (s *Service) verifyMFAProof(ctx context.Context, user *User, codeOrRecovery
 		return fmt.Errorf("failed to record TOTP use: %w", err)
 	}
 	if !matched && !s.consumeRecoveryCode(user, codeOrRecovery) {
-		return fmt.Errorf("%w", ErrMFAInvalidCode)
+		return s.rejectMFACode(ctx, user, codeOrRecovery)
 	}
 	return nil
 }
@@ -444,6 +486,9 @@ func (s *Service) MFADisable(ctx context.Context, userID, password, codeOrRecove
 	user, err := s.store.GetUserByID(ctx, userID)
 	if err != nil || user == nil {
 		return fmt.Errorf("%w", ErrMFAAuthFailed)
+	}
+	if lockErr := s.rejectLockedMFAUser(user); lockErr != nil {
+		return lockErr
 	}
 	if !s.verifyPassword(password, user.PasswordHash) {
 		return fmt.Errorf("%w", ErrMFAInvalidPassword)
@@ -482,15 +527,14 @@ func (s *Service) MFARegenerateRecoveryCodes(ctx context.Context, userID, code s
 	if err != nil || user == nil {
 		return nil, fmt.Errorf("%w", ErrMFAAuthFailed)
 	}
+	if lockErr := s.rejectLockedMFAUser(user); lockErr != nil {
+		return nil, lockErr
+	}
 	if !user.MFAEnabled || user.MFASecret == "" {
 		return nil, fmt.Errorf("%w", ErrMFANotEnabled)
 	}
-	valid, err := s.verifyAndClaimTOTP(ctx, user.ID, user.MFASecret, code)
-	if err != nil {
-		return nil, fmt.Errorf("failed to record TOTP use: %w", err)
-	}
-	if !valid {
-		return nil, fmt.Errorf("%w", ErrMFAInvalidCode)
+	if claimErr := s.claimTOTPOrReject(ctx, user, code); claimErr != nil {
+		return nil, claimErr
 	}
 
 	plaintext, hashes, err := s.generateAndHashRecoveryCodes()
