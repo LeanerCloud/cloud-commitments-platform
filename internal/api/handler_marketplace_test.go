@@ -790,9 +790,108 @@ func TestComputeRemainingMonths(t *testing.T) {
 	sixMonthsAgo := time.Now().Add(-6 * 30 * 24 * time.Hour)
 	assert.InDelta(t, 30, remaining(sixMonthsAgo, 36), 2, "36-month RI bought 6 months ago should have ~30 months remaining")
 
-	// Fully elapsed term -> floor at 1, never zero or negative.
+	// Fully elapsed term -> rejected as expired (issue #449), not floored to 1.
 	old := time.Now().Add(-40 * 30 * 24 * time.Hour)
-	assert.Equal(t, 1, remaining(old, 36), "expired RI should floor to 1")
+	_, err := computeRemainingMonths(old, 36)
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 422, ce.code)
+
+	// Final partial month is still listable and floors to 1.
+	almostDone := time.Now().Add(-1090 * 24 * time.Hour)
+	assert.Equal(t, 1, remaining(almostDone, 36), "RI in its last partial month should floor to 1")
+}
+
+func marketplaceListHTTPRequest() *events.LambdaFunctionURLRequest {
+	return &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"authorization": "Bearer test-token", "content-type": "application/json"},
+		Body:    "{}",
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{
+				Method: "POST",
+				Path:   "/api/purchases/" + validMarketplacePurchaseID + "/marketplace-list",
+			},
+		},
+	}
+}
+
+// TestMarketplaceListHTTP_UnlistableTermsReturn422 drives the real HandleRequest
+// path (issue #449): an expired RI, a missing timestamp and a non-positive term
+// must reach the client as a 422 with a reason, never a 500, and must not
+// claim a listing slot or call AWS.
+func TestMarketplaceListHTTP_UnlistableTermsReturn422(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mutate   func(r *config.PurchaseHistoryRecord)
+		wantBody string
+	}{
+		{"expired 3-year RI", func(r *config.PurchaseHistoryRecord) {
+			r.Timestamp = time.Now().Add(-37 * 31 * 24 * time.Hour)
+		}, "expired"},
+		{"expired 1-year RI", func(r *config.PurchaseHistoryRecord) {
+			r.Term = 1
+			r.Timestamp = time.Now().Add(-13 * 31 * 24 * time.Hour)
+		}, "expired"},
+		{"term elapsed by an hour", func(r *config.PurchaseHistoryRecord) {
+			r.Timestamp = time.Now().Add(-time.Duration(36*30.4375*24+1) * time.Hour)
+		}, "expired"},
+		{"zero timestamp", func(r *config.PurchaseHistoryRecord) { r.Timestamp = time.Time{} }, "timestamp"},
+		{"zero term", func(r *config.PurchaseHistoryRecord) { r.Term = 0 }, "expected 1 or 3 years"},
+		{"negative term", func(r *config.PurchaseHistoryRecord) { r.Term = -1 }, "expected 1 or 3 years"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfgStore := &MockConfigStore{}
+			authSvc := &MockAuthService{}
+			adminSession(authSvc)
+			authSvc.On("ValidateCSRFToken", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+			row := standardRow()
+			tc.mutate(row)
+			cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).Return(row, nil)
+
+			ec2 := &stubMarketplaceEC2{}
+			h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+			resp, err := h.HandleRequest(context.Background(), marketplaceListHTTPRequest())
+
+			require.NoError(t, err)
+			assert.Equal(t, 422, resp.StatusCode, "body: %s", resp.Body)
+			assert.Contains(t, resp.Body, tc.wantBody)
+			assert.Zero(t, ec2.createCallCount, "no AWS call for an unlistable RI")
+			cfgStore.AssertNotCalled(t, "ClaimMarketplaceListingSlot", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+// TestMarketplaceListHTTP_ValidRIStillLists guards the boundary on the other
+// side: a fresh RI and one in its final partial month both list (200).
+func TestMarketplaceListHTTP_ValidRIStillLists(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		timestamp time.Time
+	}{
+		{"fresh", time.Now()},
+		{"last partial month", time.Now().Add(-1090 * 24 * time.Hour)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfgStore := &MockConfigStore{}
+			authSvc := &MockAuthService{}
+			adminSession(authSvc)
+			authSvc.On("ValidateCSRFToken", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+			row := standardRow()
+			row.Timestamp = tc.timestamp
+			cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).Return(row, nil)
+			cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).Return(true, nil)
+			cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-default", config.ListingStateActive).Return(nil)
+
+			ec2 := &stubMarketplaceEC2{}
+			h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+			resp, err := h.HandleRequest(context.Background(), marketplaceListHTTPRequest())
+
+			require.NoError(t, err)
+			assert.Equal(t, 200, resp.StatusCode, "body: %s", resp.Body)
+			assert.Equal(t, 1, ec2.createCallCount)
+		})
+	}
 }
 
 // TestMarketplaceList_TermYearsConvertedToMonths is the end-to-end regression
