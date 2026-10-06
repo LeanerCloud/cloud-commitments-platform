@@ -786,6 +786,61 @@ describe('Settings Module', () => {
         expect(api.updateConfig).not.toHaveBeenCalled();
       });
 
+      test('a rejected global PUT leaves the field dirty, so the next save resends it', async () => {
+        await loadStaleTab();
+        (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'new@test.com';
+        (api.updateConfig as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+
+        await save();
+        expect(api.updateConfig).toHaveBeenCalledTimes(1);
+        (api.updateConfig as jest.Mock).mockClear().mockResolvedValue({});
+
+        await save();
+
+        expect(api.updateConfig).toHaveBeenCalledTimes(1);
+        expect(api.updateConfig).toHaveBeenCalledWith({ notification_email: 'new@test.com' });
+      });
+
+      test('a field edited while the global PUT is in flight is still sent by the next save', async () => {
+        await loadStaleTab();
+        (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'new@test.com';
+        let resolvePut!: () => void;
+        (api.updateConfig as jest.Mock).mockImplementationOnce(
+          () => new Promise<void>(resolve => { resolvePut = resolve; }),
+        );
+
+        const firstSave = save();
+        (document.getElementById('setting-default-term') as HTMLSelectElement).value = '3';
+        resolvePut();
+        await firstSave;
+        (api.updateConfig as jest.Mock).mockClear().mockResolvedValue({});
+
+        await save();
+
+        expect(api.updateConfig).toHaveBeenCalledWith({ default_term: 3 });
+      });
+
+      test('a sent field edited again while its PUT is in flight is still sent by the next save', async () => {
+        await loadStaleTab();
+        const email = document.getElementById('setting-notification-email') as HTMLInputElement;
+        email.value = 'first@test.com';
+        let resolvePut!: () => void;
+        (api.updateConfig as jest.Mock).mockImplementationOnce(
+          () => new Promise<void>(resolve => { resolvePut = resolve; }),
+        );
+
+        const firstSave = save();
+        email.value = 'second@test.com';
+        resolvePut();
+        await firstSave;
+        expect(api.updateConfig).toHaveBeenCalledWith({ notification_email: 'first@test.com' });
+        (api.updateConfig as jest.Mock).mockClear().mockResolvedValue({});
+
+        await save();
+
+        expect(api.updateConfig).toHaveBeenCalledWith({ notification_email: 'second@test.com' });
+      });
+
       test('an unchanged form sends no global PUT but still saves the services', async () => {
         await loadStaleTab();
 

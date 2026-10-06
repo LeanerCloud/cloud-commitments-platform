@@ -3510,6 +3510,9 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
   const rawOfferingClass = byId<HTMLSelectElement>('setting-ec2-offering-class')?.value ?? 'convertible';
   const offeringClass: 'convertible' | 'standard' = (rawOfferingClass === 'standard') ? 'standard' : 'convertible';
 
+  const sentFields: Record<string, string> = {};
+  TRACKED_FIELDS.forEach(id => { sentFields[id] = getFieldValue(id); });
+
   const settings: api.Config = {
     enabled_providers: enabledProviders,
     notification_email: byId<HTMLInputElement>('setting-notification-email')?.value || '',
@@ -3547,13 +3550,13 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
       // Persisted: advance the snapshot now, so a later validation failure or
       // service-save error does not leave these fields looking unsaved.
       for (const [key, ids] of GLOBAL_CONFIG_FIELDS) {
-        if (key in changedGlobal) ids.forEach(id => { savedSnapshot[id] = getFieldValue(id); });
+        if (key in changedGlobal) ids.forEach(id => { savedSnapshot[id] = sentFields[id]!; });
       }
     }
     if (defaultCoverageChanged) {
       // The default is persisted and propagated; mirror that locally so a retry
       // after a partial failure does not send the old coverage back.
-      savedSnapshot['setting-default-coverage'] = getFieldValue('setting-default-coverage');
+      savedSnapshot['setting-default-coverage'] = sentFields['setting-default-coverage']!;
       loadedServiceConfigs = loadedServiceConfigs.map(s => ({ ...s, coverage: settings.default_coverage }));
     }
 
@@ -3644,7 +3647,9 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
     // snapshot moves forward for them. A rejected service keeps its previous
     // snapshot so its fields stay marked dirty and the user can retry.
     const previousSnapshot = { ...savedSnapshot };
-    snapshotAllFields();
+    TRACKED_FIELDS.forEach(id => {
+      if (getFieldValue(id) === sentFields[id]) savedSnapshot[id] = sentFields[id]!;
+    });
     const failures: string[] = [];
     results.forEach((result, i) => {
       if (result.status === 'fulfilled') return;
