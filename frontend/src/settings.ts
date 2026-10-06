@@ -3634,8 +3634,11 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
         ];
         if ('coverageId' in field && field.coverageId) {
           const el = byId<HTMLInputElement>(field.coverageId);
-          if (el) el.value = String(coverage);
-          savedSnapshot[field.coverageId] = getFieldValue(field.coverageId);
+          // Show the persisted (possibly propagated) value only when the card
+          // still holds what this Save read; an edit typed during the PUT stays
+          // dirty against the persisted value and goes out with the next Save.
+          if (el && getFieldValue(field.coverageId) === sentFields[field.coverageId]) el.value = String(coverage);
+          savedSnapshot[field.coverageId] = String(coverage);
         }
       });
     });
