@@ -109,3 +109,38 @@ func TestHandleRequest_History_UniqueExternalIDStillMatches(t *testing.T) {
 	got = historyScopeIDs(t, []string{"111"}, []config.CloudAccount{in, out}, rows)
 	assert.ElementsMatch(t, []string{"in-prov", "in-legacy"}, got)
 }
+
+// In-flight history rows carry the account UUID in AccountID with no
+// CloudAccountID, so a name-scoped user must still see their own rows.
+func TestHandleRequest_History_UUIDInAccountID(t *testing.T) {
+	t.Parallel()
+	dev := config.CloudAccount{ID: "u-aws", Name: "dev", Provider: "aws", ExternalID: "123"}
+	prod := config.CloudAccount{ID: "u-az", Name: "prod", Provider: "azure", ExternalID: "123"}
+	accounts := []config.CloudAccount{dev, prod}
+
+	t.Run("pending row with provider", func(t *testing.T) {
+		t.Parallel()
+		rows := []config.PurchaseHistoryRecord{{PurchaseID: "p1", Provider: "aws", AccountID: "u-aws", Status: "pending"}}
+		assert.Equal(t, []string{"p1"}, historyScopeIDs(t, []string{"dev"}, accounts, rows))
+		assert.Empty(t, historyScopeIDs(t, []string{"prod"}, accounts, rows))
+	})
+	t.Run("pending row without provider", func(t *testing.T) {
+		t.Parallel()
+		rows := []config.PurchaseHistoryRecord{{PurchaseID: "p2", AccountID: "u-aws", Status: "pending"}}
+		assert.Equal(t, []string{"p2"}, historyScopeIDs(t, []string{"dev"}, accounts, rows))
+		assert.Empty(t, historyScopeIDs(t, []string{"prod"}, accounts, rows))
+	})
+}
+
+// Two accounts of one provider sharing an external id are ambiguous: the row
+// is hidden from both name scopes.
+func TestHandleRequest_History_SameProviderAmbiguousExternalID(t *testing.T) {
+	t.Parallel()
+	a := config.CloudAccount{ID: "u-a", Name: "dev", Provider: "aws", ExternalID: "123"}
+	b := config.CloudAccount{ID: "u-b", Name: "prod", Provider: "aws", ExternalID: "123"}
+	rows := []config.PurchaseHistoryRecord{{PurchaseID: "amb", Provider: "aws", AccountID: "123", Status: "completed"}}
+	for _, scope := range []string{"dev", "prod"} {
+		assert.Empty(t, historyScopeIDs(t, []string{scope}, []config.CloudAccount{a, b}, rows), scope)
+		assert.Empty(t, historyScopeIDs(t, []string{scope}, []config.CloudAccount{b, a}, rows), scope)
+	}
+}

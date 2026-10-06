@@ -1023,13 +1023,17 @@ func (h *Handler) filterPurchaseHistoryByAllowedAccounts(ctx context.Context, se
 }
 
 // historyRowAccountName returns the registered account name for a history row,
-// or "" when it cannot be determined unambiguously. External ids are unique
-// only per provider, so a row without CloudAccountID is matched on provider plus
-// external id; a legacy row without a provider matches only when exactly one
+// or "" when it cannot be determined unambiguously. Without CloudAccountID it
+// tries the account UUID first (in-flight rows store the UUID in AccountID),
+// then provider plus external id, since external ids are unique only per
+// provider. A legacy row without a provider matches only when exactly one
 // account across all providers has that external id.
 func historyRowAccountName(accounts []config.CloudAccount, p config.PurchaseHistoryRecord) string {
 	if p.CloudAccountID != nil {
 		return accountNameByID(accounts, *p.CloudAccountID)
+	}
+	if name := accountNameByID(accounts, p.AccountID); name != "" {
+		return name
 	}
 	if p.Provider != "" {
 		return accountNameByExternalID(accounts, p.Provider, p.AccountID)
