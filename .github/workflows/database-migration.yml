@@ -374,6 +374,15 @@ jobs:
           # above and golang-migrate dispatches on the URL scheme (issue #1849).
           # Percent-encode the password: it may contain @ : / ? # % or spaces.
           ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)
+          if [ -n "$DB_PASSWORD" ]; then
+            if [ -z "$ENCODED_PASSWORD" ]; then
+              echo "::error::failed to encode the database password"
+              exit 1
+            fi
+            # The percent-encoded form is not the registered secret, so mask it too.
+            # The runner unescapes %25 in command data, so send % as %25.
+            echo "::add-mask::${ENCODED_PASSWORD//%/%25}"
+          fi
           DB_URL="pgx5://cudly:${ENCODED_PASSWORD}@${DB_ENDPOINT}:5432/cudly?sslmode=require"
 
           # `validate` already rejects a malformed `steps`/`direction` before this
@@ -413,6 +422,14 @@ jobs:
           # above and golang-migrate dispatches on the URL scheme (issue #1849).
           # Percent-encode the password: it may contain @ : / ? # % or spaces.
           ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)
+          if [ -n "$DB_PASSWORD" ]; then
+            if [ -z "$ENCODED_PASSWORD" ]; then
+              echo "::error::failed to encode the database password"
+              exit 1
+            fi
+            # The percent-encoded form is not the registered secret, so mask it too.
+            echo "::add-mask::${ENCODED_PASSWORD//%/%25}"
+          fi
           DB_URL="pgx5://cudly:${ENCODED_PASSWORD}@${DB_ENDPOINT}:5432/cudly?sslmode=require"
           VERSION=$(migrate -path "$MIGRATIONS_PATH" -database "$DB_URL" version 2>&1 || echo "unknown")
           echo "Current migration version: $VERSION"
@@ -505,6 +522,14 @@ jobs:
           # above and golang-migrate dispatches on the URL scheme (issue #1849).
           # Percent-encode the password: it may contain @ : / ? # % or spaces.
           ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)
+          if [ -n "$DB_PASSWORD" ]; then
+            if [ -z "$ENCODED_PASSWORD" ]; then
+              echo "::error::failed to encode the database password"
+              exit 1
+            fi
+            # The percent-encoded form is not the registered secret, so mask it too.
+            echo "::add-mask::${ENCODED_PASSWORD//%/%25}"
+          fi
           DB_URL="pgx5://cudly:${ENCODED_PASSWORD}@${DB_ENDPOINT}:5432/cudly?sslmode=require"
 
           STEPS="${STEPS:-0}"
@@ -612,6 +637,14 @@ jobs:
           # above and golang-migrate dispatches on the URL scheme (issue #1849).
           # Percent-encode the password: it may contain @ : / ? # % or spaces.
           ENCODED_PASSWORD=$(printf '%s' "$DB_PASSWORD" | jq -sRr @uri)
+          if [ -n "$DB_PASSWORD" ]; then
+            if [ -z "$ENCODED_PASSWORD" ]; then
+              echo "::error::failed to encode the database password"
+              exit 1
+            fi
+            # The percent-encoded form is not the registered secret, so mask it too.
+            echo "::add-mask::${ENCODED_PASSWORD//%/%25}"
+          fi
           DB_URL="pgx5://cudly:${ENCODED_PASSWORD}@${DB_ENDPOINT}:5432/cudly?sslmode=require"
 
           STEPS="${STEPS:-0}"
