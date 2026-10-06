@@ -320,12 +320,7 @@ func TestMFADisable_WithTOTP(t *testing.T) {
 	user.MFARecoveryCodes = []string{"$2a$04$hashedstub"} // doesn't matter, won't be tested
 
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Run(func(args mock.Arguments) {
-		u := args.Get(1).(*User)
-		assert.False(t, u.MFAEnabled)
-		assert.Empty(t, u.MFASecret)
-		assert.Empty(t, u.MFARecoveryCodes)
-	}).Return(nil).Once()
+	mockStore.On("DisableMFA", ctx, user.ID, secret, []string{"$2a$04$hashedstub"}).Return(nil).Once()
 
 	err := service.MFADisable(ctx, user.ID, "SecurePass@123", totpFor(secret))
 	require.NoError(t, err)
@@ -348,7 +343,7 @@ func TestMFADisable_WithRecoveryCode(t *testing.T) {
 	user.MFARecoveryCodes = []string{hash}
 
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("DisableMFA", ctx, user.ID, secret, []string{hash}).Return(nil).Once()
 
 	err = service.MFADisable(ctx, user.ID, "SecurePass@123", plaintextCode)
 	require.NoError(t, err)
@@ -435,9 +430,8 @@ func TestMFARegenerateRecoveryCodes_HappyPath(t *testing.T) {
 
 	mockStore.On("GetUserByID", ctx, user.ID).Return(user, nil)
 	var captured []string
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Run(func(args mock.Arguments) {
-		u := args.Get(1).(*User)
-		captured = append([]string{}, u.MFARecoveryCodes...)
+	mockStore.On("ReplaceMFARecoveryCodes", ctx, user.ID, secret, []string{"$2a$04$preexistingstub"}, mock.Anything).Run(func(args mock.Arguments) {
+		captured = append([]string{}, args.Get(4).([]string)...)
 	}).Return(nil).Once()
 
 	codes, err := service.MFARegenerateRecoveryCodes(ctx, user.ID, totpFor(secret))

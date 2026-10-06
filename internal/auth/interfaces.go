@@ -19,6 +19,8 @@ type StoreInterface interface {
 	ConsumeMFARecoveryCode(ctx context.Context, userID string, readCodes, remaining []string) error
 	SetPendingMFASecret(ctx context.Context, userID, secret string, expiresAt time.Time) error
 	EnableMFA(ctx context.Context, userID, pendingSecret string, recoveryHashes []string) error
+	ReplaceMFARecoveryCodes(ctx context.Context, userID, readSecret string, readCodes, newHashes []string) error
+	DisableMFA(ctx context.Context, userID, readSecret string, readCodes []string) error
 	ClearPendingMFASecret(ctx context.Context, userID string) error
 	RecordFailedLogin(ctx context.Context, userID string) error
 	RecordSuccessfulLogin(ctx context.Context, userID string) error

@@ -9,6 +9,7 @@ import (
 	"encoding/base32"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -389,17 +390,6 @@ func (s *Service) MFAEnable(ctx context.Context, userID, code string) ([]string,
 	return plaintext, nil
 }
 
-// clearMFAFromUser zeroes every MFA-related field on the user. Used
-// by MFADisable to apply the disable in one place; keeps the disable
-// state machine readable.
-func clearMFAFromUser(user *User) {
-	user.MFAEnabled = false
-	user.MFASecret = ""
-	user.MFAPendingSecret = ""
-	user.MFAPendingSecretExpiresAt = nil
-	user.MFARecoveryCodes = nil
-}
-
 // disableMFAAlreadyOff is the idempotent path for MFADisable: the
 // user already has MFA off, so we only need to clear any stale
 // pending fields.
@@ -437,13 +427,13 @@ func (s *Service) MFADisable(ctx context.Context, userID, password, codeOrRecove
 	// Try TOTP first (cheap), then fall back to recovery code (bcrypt
 	// compare, ~constant-time per slot). Either path counts as a
 	// fresh proof-of-possession.
+	readSecret, readCodes := user.MFASecret, slices.Clone(user.MFARecoveryCodes)
 	matched := verifyTOTP(user.MFASecret, codeOrRecovery) || s.consumeRecoveryCode(user, codeOrRecovery)
 	if !matched {
 		return fmt.Errorf("%w", ErrMFAInvalidCode)
 	}
 
-	clearMFAFromUser(user)
-	if err := s.store.UpdateUser(ctx, user); err != nil {
+	if err := s.store.DisableMFA(ctx, user.ID, readSecret, readCodes); err != nil {
 		return fmt.Errorf("failed to disable MFA: %w", err)
 	}
 	return nil
@@ -473,8 +463,7 @@ func (s *Service) MFARegenerateRecoveryCodes(ctx context.Context, userID, code s
 	if err != nil {
 		return nil, err
 	}
-	user.MFARecoveryCodes = hashes
-	if err := s.store.UpdateUser(ctx, user); err != nil {
+	if err := s.store.ReplaceMFARecoveryCodes(ctx, user.ID, user.MFASecret, user.MFARecoveryCodes, hashes); err != nil {
 		return nil, fmt.Errorf("failed to regenerate recovery codes: %w", err)
 	}
 	return plaintext, nil

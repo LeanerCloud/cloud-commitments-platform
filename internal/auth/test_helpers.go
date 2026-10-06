@@ -78,6 +78,14 @@ func (m *MockStore) EnableMFA(ctx context.Context, userID, pendingSecret string,
 	return m.Called(ctx, userID, pendingSecret, recoveryHashes).Error(0)
 }
 
+func (m *MockStore) ReplaceMFARecoveryCodes(ctx context.Context, userID, readSecret string, readCodes, newHashes []string) error {
+	return m.Called(ctx, userID, readSecret, readCodes, newHashes).Error(0)
+}
+
+func (m *MockStore) DisableMFA(ctx context.Context, userID, readSecret string, readCodes []string) error {
+	return m.Called(ctx, userID, readSecret, readCodes).Error(0)
+}
+
 func (m *MockStore) ClearPendingMFASecret(ctx context.Context, userID string) error {
 	return m.Called(ctx, userID).Error(0)
 }
