@@ -360,7 +360,9 @@ func TestCancel_OutOfScopeSessionWithTokenUsesContactGate(t *testing.T) {
 // TestApprove_OutOfScopeSessionWithTokenUsesContactGate is the approve
 // counterpart of the cancel control above: an out-of-scope session carrying
 // the email token falls through to the token branch and is approved because
-// the session email is the account's contact_email.
+// the session email is the account's contact_email. The negative case (a
+// session that is not the contact email) is covered at
+// handler_purchases_test.go:144.
 func TestApprove_OutOfScopeSessionWithTokenUsesContactGate(t *testing.T) {
 	exec := scopeTestExecution(scopeTestKind{recs: []config.RecommendationRecord{
 		scopeTestRec("rec-stage", &scopeTestStage.ID),

@@ -544,16 +544,18 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           description: >
-            No valid session. Returned when neither a session nor a token
-            authorizes the request, and in token mode when the caller is not
-            signed in.
+            Token mode only: a token was supplied but the caller is not
+            signed in. A request with no credentials at all gets 403 (CSRF
+            validation failed), not 401, because the session path validates
+            CSRF before it requires a session.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
           description: >
-            CSRF validation failed, the session lacks approve permission or
+            CSRF validation failed (this includes a request with no
+            credentials), the session lacks approve permission or
             exceeds its Constraints, the caller is not the account's contact
             email, no contact email is configured on the execution's
             accounts, or 4-eyes mode rejects the approver.
@@ -573,7 +575,8 @@ paths:
           description: >
             The execution cannot be approved: a non-AWS execution without a
             resolvable cloud account, or (session mode) a status other than
-            pending or notified, or the status changed concurrently.
+            pending or notified, the status changed concurrently, or the
+            purchase itself failed during execution.
           content:
             application/json:
               schema:
@@ -582,9 +585,9 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           description: >
-            Server error. In token mode an invalid or expired approval token
-            is also reported as 500, because the purchase service returns an
-            untyped error that the handler does not map to a 4xx.
+            Server error. Currently also returned in token mode for an
+            invalid or expired approval token. Known defect tracked in #564;
+            this will become a 4xx, so do not rely on the 500.
           content:
             application/json:
               schema:
@@ -637,17 +640,19 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           description: >
-            No valid session. Returned when neither a session nor a token
-            authorizes the request, and in token mode when the caller is not
-            signed in.
+            Token mode only: a token was supplied but the caller is not
+            signed in. A request with no credentials at all gets 403 (CSRF
+            validation failed), not 401, because the session path validates
+            CSRF before it requires a session.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
           description: >
-            CSRF validation failed, the session lacks cancel permission, the
-            caller is not the account's contact email, or no contact email is
+            CSRF validation failed (this includes a request with no
+            credentials), the session lacks cancel permission, the caller is
+            not the account's contact email, or no contact email is
             configured on the execution's accounts.
           content:
             application/json:
@@ -674,10 +679,10 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           description: >
-            Server error. In token mode an invalid or expired token, or an
-            execution that can no longer be canceled, is also reported as
-            500, because the purchase service returns an untyped error that
-            the handler does not map to a 4xx.
+            Server error. Currently also returned in token mode for an
+            invalid or expired token, or an execution that is no longer
+            pending. Known defect tracked in #564; this will become a 4xx,
+            so do not rely on the 500.
           content:
             application/json:
               schema:
@@ -697,7 +702,9 @@ paths:
         trigger a revocation); that form POSTs the token here. The GET
         operation is not listed separately because the permission-gate
         guard in openapi_403_test.go matches routes by prefix and would
-        mistake it for the GET /api/purchases/{id} details route. Two modes. Session mode: session bearer token plus
+        mistake it for the GET /api/purchases/{id} details route.
+
+        Two modes. Session mode: session bearer token plus
         X-CSRF-Token, with cancel-any or cancel-own and account scope, as for
         cancel. Token mode: the approval token plus a session signed in as
         the contact email of an account on the execution, within the
@@ -728,6 +735,12 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  status:
+                    type: string
+                    example: revocation_requested
+                  message:
+                    type: string
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -765,8 +778,9 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           description: >
-            Server error. A non-existent execution id also yields 500 on
-            POST, because the lookup error is not mapped to 404.
+            Server error. Currently also returned for a non-existent
+            execution id. Known defect tracked in #564; this will become a
+            404, so do not rely on the 500.
           content:
             application/json:
               schema:
