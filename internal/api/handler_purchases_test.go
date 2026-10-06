@@ -337,7 +337,7 @@ func TestHandler_approvePurchase_SessionApproveAnyChainsToExecute(t *testing.T) 
 	// ApproveAndExecute, not ApproveExecution. The token-only path runs
 	// ApproveExecution; the dashboard click runs ApproveAndExecute. Both
 	// converge inside the Manager.
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", nil)
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil, "", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -352,52 +352,64 @@ func TestHandler_approvePurchase_SessionApproveAnyChainsToExecute(t *testing.T) 
 	mockPurchase.AssertNotCalled(t, "ApproveExecution", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
-// TestHandler_approvePurchase_SessionExecuteFailureSurfacesAs409 pins the
-// failure shape: when ApproveAndExecute returns an error (e.g. the AWS
-// purchase fails or the row drifted out of pending/notified mid-flight),
-// the session handler surfaces it as a 409 instead of the optimistic
-// "approved" the pre-fix flow returned. Mirrors the rationale in
-// approvePurchaseViaSession.
-func TestHandler_approvePurchase_SessionExecuteFailureSurfacesAs409(t *testing.T) {
+// TestHandleRequest_approvePurchase_SessionFailureStatuses drives a session
+// approve through the real router and pins the status class per failure:
+// a four-eyes denial is 403, a lost claim is 409, a failure before the claim
+// is 500, and a failure after the claim (money may have moved, including a
+// partial run) is 502 carrying the row's actual status, never a 409 (#532).
+func TestHandleRequest_approvePurchase_SessionFailureStatuses(t *testing.T) {
 	ctx := context.Background()
 	execID := "12345678-1234-1234-1234-123456789abc"
 	adminEmail := "admin@example.com"
-
-	mockConfig := new(MockConfigStore)
-	exec := &config.PurchaseExecution{
-		ExecutionID:   execID,
-		ApprovalToken: "valid-token",
-		Status:        "pending",
-		// Non-zero UpfrontCost: see the comment on the sibling test above.
-		Recommendations: []config.RecommendationRecord{
-			{ID: "r1", Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 100},
-		},
+	cases := []struct {
+		name       string
+		final      *config.PurchaseExecution
+		err        error
+		wantStatus int
+		wantRow    string
+	}{
+		{"four-eyes denial", nil, fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), 403, ""},
+		{"lost claim", nil, fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), 409, ""},
+		{"store error before claim", nil, errors.New("connection reset"), 500, ""},
+		{"provider failure after claim", &config.PurchaseExecution{Status: "failed"}, errors.New("AWS RI purchase failed"), 502, "failed"},
+		{"partial multi-account run", &config.PurchaseExecution{Status: "partially_completed"}, errors.New("1 of 2 accounts failed"), 502, "partially_completed"},
 	}
-	mockConfig.On("GetExecutionByID", ctx, execID).Return(exec, nil)
-	// approvePurchaseViaSession checks PurchaseDelayHours (issue #291 wave-2)
-	// and requireDifferentApprover's mode-off default (issue #1005).
-	mockConfig.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{PurchaseDelayHours: 0}, nil)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockConfig := new(MockConfigStore)
+			exec := &config.PurchaseExecution{
+				ExecutionID:   execID,
+				ApprovalToken: "valid-token",
+				Status:        "pending",
+				Recommendations: []config.RecommendationRecord{
+					{ID: "r1", Provider: "aws", Service: "ec2", Region: "us-east-1", UpfrontCost: 100},
+				},
+			}
+			mockConfig.On("GetExecutionByID", mock.Anything, execID).Return(exec, nil)
+			mockConfig.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{PurchaseDelayHours: 0}, nil)
 
-	mockAuth := new(MockAuthService)
-	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: adminEmail}, nil)
-	mockAuth.grantAdminPurchaser()
-	// approvePurchaseViaSession enforces CSRF on the session-authed path (issue #404).
-	mockAuth.On("ValidateCSRFToken", ctx, "sess-tok", "").Return(nil)
+			mockAuth := new(MockAuthService)
+			mockAuth.On("ValidateSession", mock.Anything, "sess-tok").Return(&Session{Email: adminEmail}, nil)
+			mockAuth.grantAdminPurchaser()
+			mockAuth.On("ValidateCSRFToken", mock.Anything, "sess-tok", "").Return(nil)
 
-	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", errors.New("AWS RI purchase failed"))
+			mockPurchase := new(MockPurchaseManager)
+			mockPurchase.On("ApproveAndExecute", mock.Anything, execID, adminEmail, (*string)(nil)).Return(tc.final, "", tc.err)
 
-	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
-
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{"authorization": "Bearer sess-tok"},
+			handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth, corsAllowedOrigin: "*"}
+			resp, err := handler.HandleRequest(ctx, &events.LambdaFunctionURLRequest{
+				Headers: map[string]string{"authorization": "Bearer sess-tok"},
+				RequestContext: events.LambdaFunctionURLRequestContext{
+					HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{Method: "POST", Path: "/api/purchases/approve/" + execID},
+				},
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantStatus, resp.StatusCode, resp.Body)
+			if tc.wantRow != "" {
+				assert.Contains(t, resp.Body, tc.wantRow)
+			}
+		})
 	}
-	_, err := handler.approvePurchase(ctx, req, execID, "")
-	require.Error(t, err)
-	ce, ok := IsClientError(err)
-	require.True(t, ok, "expected a clientError")
-	assert.Equal(t, 409, ce.code)
-	assert.Contains(t, ce.Error(), "could not be approved")
 }
 
 // TestHandler_approvePurchase_SessionApproveAny_PermissionConstraintsDenied
@@ -842,7 +854,7 @@ func TestHandler_approvePurchase_AWSOrphanFallsThrough(t *testing.T) {
 
 	mockPurchase := new(MockPurchaseManager)
 	// Guard does not fire; ApproveAndExecute is called normally.
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", nil)
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil, "", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -884,7 +896,7 @@ func TestHandler_approvePurchase_NonOrphanUnchanged(t *testing.T) {
 	mockAuth.On("ValidateCSRFToken", ctx, "sess-tok", "").Return(nil)
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", nil)
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil, "", nil)
 
 	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
 
@@ -2201,7 +2213,7 @@ func TestHandler_runPlannedPurchase_NilExecution(t *testing.T) {
 	assert.Nil(t, result)
 }
 
-func TestRunNowError(t *testing.T) {
+func TestExecuteFailureError(t *testing.T) {
 	ran := &config.PurchaseExecution{Status: "failed"}
 	cases := []struct {
 		name  string
@@ -2220,7 +2232,7 @@ func TestRunNowError(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := runNowError("exec-1", tc.final, tc.err)
+			err := executeFailureError("exec-1", "started", tc.final, tc.err)
 			ce, ok := IsClientError(err)
 			if tc.code == 0 {
 				assert.False(t, ok)
@@ -4691,8 +4703,8 @@ func TestHandler_executePurchase_DirectExec_ExecuteAny(t *testing.T) {
 	mockAuth.On("GetAllowedAccountsAPI", ctx, adminSession.UserID).Return([]string{}, nil)
 	// Direct-execute is a human session action: the transitioned_by actor
 	// must be the session user's UUID, not nil (issue #1009 audit objective).
-	mockPurchase.On("ApproveAndExecute", ctx, mock.AnythingOfType("string"), adminSession.Email,
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == adminSession.UserID })).Return("", nil)
+	mockPurchase.On("DirectExecute", ctx, mock.AnythingOfType("string"), adminSession.Email,
+		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == adminSession.UserID })).Return(nil, "", nil)
 	setupDirectExecMocks(ctx, mockStore)
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
@@ -4706,6 +4718,66 @@ func TestHandler_executePurchase_DirectExec_ExecuteAny(t *testing.T) {
 	assert.Equal(t, "completed", resultMap["status"])
 	assert.Equal(t, true, resultMap["direct_execute"])
 	assert.Equal(t, 500.0, resultMap["total_upfront_cost"])
+}
+
+// TestHandler_executePurchase_DirectExec_FailureStatuses pins the status class
+// per direct-execute failure (#532): four-eyes denial 403, lost claim 409, a
+// failure before the claim 500, and a failure after the claim 502 with the
+// row's status. The handler itself must never stamp executed_at: the manager
+// does that once the claim is won, so a refused run leaves it unset.
+func TestHandler_executePurchase_DirectExec_FailureStatuses(t *testing.T) {
+	cases := []struct {
+		name       string
+		final      *config.PurchaseExecution
+		err        error
+		wantStatus int
+	}{
+		{"four-eyes denial", nil, fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), 403},
+		{"lost claim", nil, fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), 409},
+		{"store error before claim", nil, errors.New("connection reset"), 500},
+		{"provider failure after claim", &config.PurchaseExecution{Status: "failed"}, errors.New("AWS RI purchase failed"), 502},
+		{"partial run", &config.PurchaseExecution{Status: "partially_completed"}, errors.New("1 of 2 accounts failed"), 502},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			mockStore := new(MockConfigStore)
+			mockAuth := new(MockAuthService)
+			mockPurchase := new(MockPurchaseManager)
+
+			adminSession := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}
+			mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
+			mockAuth.On("HasPermissionAPI", ctx, adminSession.UserID, "execute", "purchases").Return(true, nil)
+			mockAuth.allowConstraintChecks()
+			mockAuth.On("HasPermissionAPI", ctx, adminSession.UserID, "execute-any", "purchases").Return(true, nil)
+			mockAuth.On("GetAllowedAccountsAPI", ctx, adminSession.UserID).Return([]string{}, nil)
+			mockPurchase.On("DirectExecute", ctx, mock.AnythingOfType("string"), adminSession.Email, mock.Anything).Return(tc.final, "", tc.err)
+			setupDirectExecMocks(ctx, mockStore)
+
+			handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
+			_, err := handler.executePurchase(ctx, &events.LambdaFunctionURLRequest{
+				Headers: map[string]string{"Authorization": "Bearer admin-token"},
+				Body:    directExecRecBody,
+			})
+			require.Error(t, err)
+			if tc.wantStatus == 500 {
+				_, isClient := IsClientError(err)
+				assert.False(t, isClient)
+			} else {
+				ce, ok := IsClientError(err)
+				require.True(t, ok)
+				assert.Equal(t, tc.wantStatus, ce.code)
+			}
+			for _, call := range mockStore.Calls {
+				if call.Method != "SavePurchaseExecution" {
+					continue
+				}
+				saved, ok := call.Arguments.Get(1).(*config.PurchaseExecution)
+				require.True(t, ok)
+				assert.Nil(t, saved.ExecutedAt, "handler must not stamp executed_at before the claim")
+			}
+		})
+	}
 }
 
 // TestHandler_executePurchase_DirectExec_ExecuteOwn_Owner verifies that a
@@ -4733,8 +4805,8 @@ func TestHandler_executePurchase_DirectExec_ExecuteOwn_Owner(t *testing.T) {
 	mockAuth.On("GetAllowedAccountsAPI", ctx, ownerID).Return([]string{}, nil)
 	// Direct-execute is a human session action: the transitioned_by actor
 	// must be the session user's UUID, not nil (issue #1009 audit objective).
-	mockPurchase.On("ApproveAndExecute", ctx, mock.AnythingOfType("string"), ownerSession.Email,
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == ownerID })).Return("", nil)
+	mockPurchase.On("DirectExecute", ctx, mock.AnythingOfType("string"), ownerSession.Email,
+		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == ownerID })).Return(nil, "", nil)
 	setupDirectExecMocks(ctx, mockStore)
 
 	handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
@@ -4789,7 +4861,7 @@ func TestHandler_executePurchase_MultiAccountBatch_Rejected(t *testing.T) {
 			mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil).Maybe()
 			mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{}, nil).Maybe()
 			mockStore.On("GetPendingExecutions", ctx).Return([]config.PurchaseExecution{}, nil).Maybe()
-			mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", nil).Maybe()
+			mockPurchase.On("DirectExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, "", nil).Maybe()
 
 			handler := &Handler{config: mockStore, auth: mockAuth, purchase: mockPurchase}
 			req := &events.LambdaFunctionURLRequest{
@@ -4869,11 +4941,21 @@ func TestHandler_executePurchase_DirectExec_FourEyesOn_DeniesSelfExecute(t *test
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a clientError")
-	assert.Equal(t, 409, ce.code)
+	assert.Equal(t, 403, ce.code)
 	assert.Contains(t, ce.Error(), "4-eyes mode requires a different approver")
 	mockStore.AssertNotCalled(t, "TransitionExecutionStatus",
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	mockStore.AssertNotCalled(t, "GetUserEmailByID", mock.Anything, mock.Anything)
+	// A refused direct execute must leave no executed_at on the row, so only
+	// the creation save (no ExecutedAt) may have happened.
+	for _, call := range mockStore.Calls {
+		if call.Method != "SavePurchaseExecution" {
+			continue
+		}
+		saved, ok := call.Arguments.Get(1).(*config.PurchaseExecution)
+		require.True(t, ok)
+		assert.Nil(t, saved.ExecutedAt, "refused direct execute must not stamp executed_at")
+	}
 }
 
 // TestHandler_executePurchase_DirectExec_FourEyesOn_PerUserAPIKey_DeniesSelfExecute
@@ -4901,7 +4983,6 @@ func TestHandler_executePurchase_DirectExec_FourEyesOn_PerUserAPIKey_DeniesSelfE
 	ownerSession := &Session{UserID: ownerID, Email: "", UserAPIKeyID: "key-1"}
 
 	mockStore.On("GetGlobalConfig", ctx).Return(fourEyesCfgOn(), nil)
-	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
 
 	execution := &config.PurchaseExecution{
 		ExecutionID:     "exec-apikey-direct",
@@ -4916,11 +4997,13 @@ func TestHandler_executePurchase_DirectExec_FourEyesOn_PerUserAPIKey_DeniesSelfE
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a clientError")
-	assert.Equal(t, 409, ce.code)
+	assert.Equal(t, 403, ce.code)
 	assert.Contains(t, ce.Error(), "4-eyes mode requires a different approver")
 	mockStore.AssertNotCalled(t, "TransitionExecutionStatus",
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	mockStore.AssertNotCalled(t, "GetUserEmailByID", mock.Anything, mock.Anything)
+	// A refused direct execute must leave no executed_at on the row.
+	mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
 }
 
 // TestHandler_executePurchase_DirectExec_ExecuteOwn_NonOwner verifies the

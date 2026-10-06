@@ -30,7 +30,10 @@ type PurchaseManagerInterface interface {
 	// its hash is stored, so a re-read cannot yield an emailable token).
 	// Empty on failure.
 	ApproveExecution(ctx context.Context, execID, token, actor string) (string, error)
-	ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (string, error)
+	ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
+	// DirectExecute is ApproveAndExecute for the direct-execute permission; it
+	// stamps the executed_* audit fields only after the claim is won.
+	DirectExecute(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
 	// RunPlannedPurchaseNow forces a pending or paused scheduled purchase to
 	// execute immediately (the "Run now" button), sharing ApproveAndExecute's
 	// 4-eyes-gated, CAS-guarded funnel instead of a bare status flip that

@@ -418,7 +418,7 @@ func TestApproveViaSession_PassesCSRF(t *testing.T) {
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return("", nil)
+	mockPurchase.On("ApproveAndExecute", ctx, execID, adminEmail, (*string)(nil)).Return(nil, "", nil)
 
 	handler := &Handler{config: mockConfig, auth: mockAuth, purchase: mockPurchase}
 

@@ -43,7 +43,8 @@ type MockPurchaseManager struct {
 	SendUpcomingPurchaseNotificationsFunc func(ctx context.Context) (*purchase.NotificationResult, error)
 	ProcessMessageFunc                    func(ctx context.Context, body string) error
 	ApproveExecutionFunc                  func(ctx context.Context, execID, token, actor string) (string, error)
-	ApproveAndExecuteFunc                 func(ctx context.Context, execID, actor string, transitionedBy *string) (string, error)
+	ApproveAndExecuteFunc                 func(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
+	DirectExecuteFunc                     func(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
 	RunPlannedPurchaseNowFunc             func(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
 	CancelExecutionFunc                   func(ctx context.Context, execID, token, actor string) error
 	ReapStuckExecutionsFunc               func(ctx context.Context, reapAfter time.Duration) (*purchase.ReapResult, error)
@@ -79,11 +80,18 @@ func (m *MockPurchaseManager) ApproveExecution(ctx context.Context, execID, toke
 	return "", nil
 }
 
-func (m *MockPurchaseManager) ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (string, error) {
+func (m *MockPurchaseManager) ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error) {
 	if m.ApproveAndExecuteFunc != nil {
 		return m.ApproveAndExecuteFunc(ctx, execID, actor, transitionedBy)
 	}
-	return "", nil
+	return nil, "", nil
+}
+
+func (m *MockPurchaseManager) DirectExecute(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error) {
+	if m.DirectExecuteFunc != nil {
+		return m.DirectExecuteFunc(ctx, execID, actor, transitionedBy)
+	}
+	return nil, "", nil
 }
 
 func (m *MockPurchaseManager) RunPlannedPurchaseNow(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error) {

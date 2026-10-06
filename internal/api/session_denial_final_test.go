@@ -35,7 +35,7 @@ func newDenialTestHandler(t *testing.T, store *MockConfigStore, mockPurchase *Mo
 	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
 	store.On("CancelExecutionAtomic", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, "", errDenialTestReached).Maybe()
 	store.On("TransitionRIExchangeStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, errDenialTestReached).Maybe()
-	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", errDenialTestReached).Maybe()
+	mockPurchase.On("ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, "", errDenialTestReached).Maybe()
 
 	ctx := contextWithPrincipal(context.Background(), &Principal{
 		Kind:    PrincipalSession,
