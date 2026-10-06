@@ -257,6 +257,52 @@ func TestHandler_updateConfig_PartialPUTPreservesOmittedFields(t *testing.T) {
 	assert.Equal(t, "ops@example.com", *saved.NotificationEmail)
 }
 
+// The recommendations lookback selector sends only {"recommendations_lookback_days": N};
+// every other stored field must survive that body.
+func TestHandler_updateConfig_LookbackOnlyPUTPreservesOmittedFields(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockStore.AssertExpectations(t); mockAuth.AssertExpectations(t) })
+
+	mockAuth.On("ValidateSession", ctx, "admin-token").
+		Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}, nil)
+	mockAuth.grantAdmin()
+
+	existing := &config.GlobalConfig{
+		EnabledProviders:            []string{"aws"},
+		ApprovalRequired:            true,
+		DefaultTerm:                 3,
+		DefaultPayment:              "all-upfront",
+		DefaultCoverage:             80,
+		RecommendationsLookbackDays: 7,
+		LadderingEnabled:            true,
+	}
+	mockStore.On("GetGlobalConfig", ctx).Return(existing, nil)
+
+	var saved config.GlobalConfig
+	mockStore.On("SaveGlobalConfig", ctx, mock.AnythingOfType("*config.GlobalConfig")).
+		Run(func(args mock.Arguments) { saved = *args.Get(1).(*config.GlobalConfig) }).
+		Return(nil)
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer admin-token"},
+		Body:    `{"recommendations_lookback_days": 60}`,
+	}
+	result, err := handler.updateConfig(ctx, req)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", result.Status)
+
+	assert.Equal(t, 60, saved.RecommendationsLookbackDays)
+	assert.True(t, saved.LadderingEnabled, "laddering_enabled must be preserved")
+	assert.True(t, saved.ApprovalRequired, "approval_required must be preserved")
+	assert.Equal(t, 3, saved.DefaultTerm)
+	assert.Equal(t, "all-upfront", saved.DefaultPayment)
+	assert.Equal(t, 80.0, saved.DefaultCoverage)
+	assert.Equal(t, []string{"aws"}, saved.EnabledProviders)
+}
+
 // TestHandler_updateConfig_UsesAtomicPath asserts updateConfig performs its
 // read-modify-write through UpdateGlobalConfigAtomic (the serialized,
 // advisory-locked store path) rather than a separate Get + Save, which is what
