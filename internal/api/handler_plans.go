@@ -284,7 +284,7 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 		return nil, err
 	}
 
-	err = h.requirePlanAccess(ctx, session, planID)
+	err = h.requirePlanMutationAccess(ctx, session, planID)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +381,7 @@ func (h *Handler) deletePlan(ctx context.Context, req *events.LambdaFunctionURLR
 		return nil, err
 	}
 
-	if err := h.requirePlanAccess(ctx, session, planID); err != nil {
+	if err := h.requirePlanMutationAccess(ctx, session, planID); err != nil {
 		return nil, err
 	}
 
@@ -407,7 +407,7 @@ func (h *Handler) createPlannedPurchases(ctx context.Context, httpReq *events.La
 		return nil, err
 	}
 
-	err = h.requirePlanAccess(ctx, session, planID)
+	err = h.requirePlanMutationAccess(ctx, session, planID)
 	if err != nil {
 		return nil, err
 	}
@@ -680,7 +680,7 @@ func (h *Handler) patchPlan(ctx context.Context, httpReq *events.LambdaFunctionU
 		return nil, err
 	}
 
-	err = h.requirePlanAccess(ctx, session, planID)
+	err = h.requirePlanMutationAccess(ctx, session, planID)
 	if err != nil {
 		return nil, err
 	}
