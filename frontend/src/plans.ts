@@ -952,6 +952,17 @@ function healthBadgeHtml(plan: BackendPlan): string {
 // ("Compute Savings Plans") so a multi-SP plan with 3-4 entries still
 // fits in the summary line. Non-SP slugs pass through unchanged so
 // existing single-service plans render exactly as before.
+// Plans saved before #608 carry the modal's old per-provider option ids, which
+// the backend's mapServiceSlug never accepted. Map them to the canonical slug
+// so editing such a plan selects the right option instead of a blank one.
+const LEGACY_PLAN_SERVICE_IDS: Readonly<Record<string, string>> = {
+  'azure/vm': 'compute',
+  'azure/sql': 'relational-db',
+  'azure/redis': 'cache',
+  'gcp/cloudsql': 'relational-db',
+  'gcp/memorystore': 'cache',
+};
+
 function planServiceLabel(slug: string): string {
   switch (slug) {
     case 'savings-plans-compute':     return 'Compute SP';
@@ -1261,13 +1272,22 @@ async function editPlan(planId: string): Promise<boolean> {
     // than fabricating 'aws' (H-4: never default provider silently).
     const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement;
     providerSelect.value = info.provider ?? '';
-    (document.getElementById('plan-service') as HTMLSelectElement).value = info.service;
+    const planService = LEGACY_PLAN_SERVICE_IDS[`${info.provider}/${info.service}`] ?? info.service;
+    const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement;
+    serviceSelect.value = planService;
+    if (serviceSelect.selectedIndex === -1 || serviceSelect.value === '') {
+      serviceSelect.selectedIndex = -1;
+      showToast({
+        message: `This plan uses a service that is no longer supported (${info.provider ?? 'unknown provider'}/${info.service}). Recreate the plan, or choose a supported service before saving.`,
+        kind: 'error',
+      });
+    }
 
     // Update term/payment options based on provider/service
     const termSelect = document.getElementById('plan-term') as HTMLSelectElement;
     const paymentSelect = document.getElementById('plan-payment') as HTMLSelectElement;
-    populateTermSelect(termSelect, info.provider ?? '', info.service);
-    populatePaymentSelect(paymentSelect, info.provider ?? '', info.service);
+    populateTermSelect(termSelect, info.provider ?? '', planService);
+    populatePaymentSelect(paymentSelect, info.provider ?? '', planService);
 
     // Set term only when present; absent term leaves the select unset so
     // the user must explicitly choose rather than silently inheriting a
@@ -1348,6 +1368,12 @@ export async function savePlan(e: Event): Promise<void> {
   const rampScheduleRadio = document.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked');
   const rampSchedule = rampScheduleRadio?.value || 'immediate';
 
+  const service = (document.getElementById('plan-service') as HTMLSelectElement).value;
+  if (!service) {
+    showToast({ message: 'Service is required: choose a supported service before saving the plan', kind: 'error' });
+    return;
+  }
+
   // Parse and validate integer fields up front. Use Number() not parseInt so
   // fractions like "2.5" fail Number.isInteger() rather than silently truncating
   // to 2. Mirrors the strict parse pattern from handleAddPurchases and settings.ts
@@ -1373,7 +1399,7 @@ export async function savePlan(e: Event): Promise<void> {
     name: (document.getElementById('plan-name') as HTMLInputElement).value,
     description: (document.getElementById('plan-description') as HTMLTextAreaElement).value,
     provider: (document.getElementById('plan-provider') as HTMLSelectElement).value,
-    service: (document.getElementById('plan-service') as HTMLSelectElement).value,
+    service,
     term: rawTerm,
     payment: (document.getElementById('plan-payment') as HTMLSelectElement).value,
     target_coverage: rawCoverage,
