@@ -132,3 +132,41 @@ func TestHandleRequest_Analytics_UnrestrictedRawExternalID(t *testing.T) {
 	assert.Equal(t, 200, status)
 	assert.Equal(t, map[string][]string{"": {"123"}}, externals)
 }
+
+// An id that matches no registered account is judged on the literal allow-list
+// entry alone.
+func TestHandleRequest_Analytics_UnregisteredRawID(t *testing.T) {
+	t.Parallel()
+	accounts := []config.CloudAccount{{ID: "u-solo", Name: "solo", Provider: "aws", ExternalID: "111"}}
+
+	status, _, _ := analyticsScopeCall(t, []string{"999"}, "999", accounts)
+	assert.Equal(t, 200, status)
+
+	status, _, _ = analyticsScopeCall(t, []string{"solo"}, "999", accounts)
+	assert.Equal(t, 404, status)
+}
+
+// A failed account load must not fall back to literal-id matching.
+func TestHandleRequest_Analytics_AccountListFailureIsAnError(t *testing.T) {
+	t.Parallel()
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", mock.Anything, "tok").Return(&Session{UserID: "u-1", Email: "u@example.com"}, nil)
+	mockAuth.On("HasPermissionAPI", mock.Anything, "u-1", mock.Anything, mock.Anything).Return(true, nil)
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, "u-1").Return([]string{"999"}, nil)
+	store := new(MockConfigStore)
+	store.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+		return nil, assert.AnError
+	}
+	client := new(MockAnalyticsClient)
+
+	h := &Handler{auth: mockAuth, analyticsClient: client, config: store}
+	resp, _ := h.HandleRequest(context.Background(), &events.LambdaFunctionURLRequest{
+		Headers:               map[string]string{"Authorization": "Bearer tok"},
+		QueryStringParameters: map[string]string{"account_id": "999"},
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{Method: "GET", Path: "/api/history/analytics"},
+		},
+	})
+	assert.GreaterOrEqual(t, resp.StatusCode, 500)
+	client.AssertNotCalled(t, "QueryHistory", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}

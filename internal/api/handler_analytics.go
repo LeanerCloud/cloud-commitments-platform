@@ -243,9 +243,10 @@ func (h *Handler) validateAnalyticsAccountScope(ctx context.Context, session *Se
 	if accountID == "" {
 		return NewClientError(400, "account_id is required for scoped users")
 	}
-	// A failed account load leaves no names, so only a literal id match in the
-	// allow-list passes.
-	accounts, _ := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{})
+	accounts, listErr := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{})
+	if listErr != nil {
+		return fmt.Errorf("failed to list cloud accounts: %w", listErr)
+	}
 	if !analyticsAccountAllowed(allowed, accounts, accountID) {
 		return errNotFound
 	}

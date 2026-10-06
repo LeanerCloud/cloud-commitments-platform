@@ -137,3 +137,28 @@ func TestHandleRequest_Inventory_SameProviderAmbiguousExternalID(t *testing.T) {
 		assert.Equal(t, map[string]string{"123:amb": ""}, inventoryNames(t, nil, accounts, rows))
 	}
 }
+
+// A failed account load is an error, not a blank account name.
+func TestHandleRequest_Inventory_AccountListFailureIsAnError(t *testing.T) {
+	t.Parallel()
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", mock.Anything, "tok").Return(&Session{UserID: "u-1", Email: "u@example.com"}, nil)
+	mockAuth.On("HasPermissionAPI", mock.Anything, "u-1", mock.Anything, mock.Anything).Return(true, nil)
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, "u-1").Return([]string(nil), nil)
+	store := new(MockConfigStore)
+	store.On("GetActivePurchaseHistory", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return([]config.PurchaseHistoryRecord{activeRow("r", "aws", "123")}, nil)
+	store.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+		return nil, assert.AnError
+	}
+
+	h := &Handler{auth: mockAuth, config: store}
+	resp, _ := h.HandleRequest(context.Background(), &events.LambdaFunctionURLRequest{
+		Headers:               map[string]string{"Authorization": "Bearer tok"},
+		QueryStringParameters: map[string]string{},
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{Method: "GET", Path: "/api/inventory/commitments"},
+		},
+	})
+	assert.GreaterOrEqual(t, resp.StatusCode, 500)
+}

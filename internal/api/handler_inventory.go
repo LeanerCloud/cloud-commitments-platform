@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -49,9 +50,10 @@ func (h *Handler) listActiveCommitments(ctx context.Context, req *events.LambdaF
 		return nil, err
 	}
 
-	// A failed account load leaves the name blank rather than failing a read
-	// that is already scoped.
-	accounts, _ := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{})
+	accounts, listErr := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{})
+	if listErr != nil {
+		return nil, fmt.Errorf("failed to list cloud accounts: %w", listErr)
+	}
 
 	commitments := make([]InventoryCommitment, 0, len(purchases))
 	for _rvc := range purchases {
