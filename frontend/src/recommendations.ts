@@ -794,8 +794,6 @@ async function onLookbackChange(rawValue: string): Promise<void> {
     if (select) select.value = String(previous);
     return;
   }
-  const base = cachedGlobalConfig;
-
   if (select) select.disabled = true;
   try {
     await api.updateConfig({ recommendations_lookback_days: parsed });
@@ -812,7 +810,11 @@ async function onLookbackChange(rawValue: string): Promise<void> {
 
   // Reflect the persisted value in the cache so currentLookbackDays() and
   // the next renderLookbackToolbar() stay consistent even before reload.
-  cachedGlobalConfig = { ...base, recommendations_lookback_days: parsed };
+  // Merge onto the current cache, not a pre-await copy: a refresh that landed
+  // while the PUT was in flight must not be rolled back.
+  if (cachedGlobalConfig) {
+    cachedGlobalConfig = { ...cachedGlobalConfig, recommendations_lookback_days: parsed };
+  }
 
   // Re-collect for the new window, then reload the list. loadRecommendations
   // rebuilds the toolbar (re-enabling the select) on success; on a refresh

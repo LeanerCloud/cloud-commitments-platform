@@ -176,6 +176,37 @@ describe('Opportunities lookback selector (issue #909)', () => {
     expect(refreshRecsAPI).toHaveBeenCalledTimes(1);
   });
 
+  test('does not rebuild the cache from a pre-await copy when the cache changes during the PUT', async () => {
+    mockUser('admin');
+    await loadRecommendations();
+    const select = getSelect()!;
+
+    let resolvePut!: (v: { status: string }) => void;
+    (api.updateConfig as jest.Mock).mockReturnValueOnce(
+      new Promise(r => { resolvePut = r; }),
+    );
+    // Hold the post-save re-collect so the cache can be inspected before the
+    // final reload refetches the config.
+    (refreshRecsAPI as jest.Mock).mockReturnValueOnce(new Promise(() => {}));
+
+    select.value = '60';
+    select.dispatchEvent(new Event('change'));
+    await new Promise(r => setTimeout(r, 0));
+
+    // The cache is cleared while the PUT is pending. The handler must merge
+    // onto the current cache after the await; the pre-fix code resurrected
+    // the pre-await copy with the new lookback.
+    resetCachedGlobalConfig();
+    resolvePut({ status: 'updated' });
+    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
+
+    // Re-render the toolbar from the cache only (config fetch fails).
+    (api.getConfig as jest.Mock).mockRejectedValue(new Error('offline'));
+    await loadRecommendations();
+    expect(getSelect()!.value).toBe('7');
+  });
+
   test('does nothing when the value is unchanged', async () => {
     mockUser('admin');
     await loadRecommendations();
