@@ -31,8 +31,8 @@ export async function updateServiceConfig(provider: string, service: string, cfg
  * only the fields they intend to change (e.g. the laddering kill-switch toggle
  * sends just { laddering_enabled }). A full Config is still valid input.
  */
-export async function updateConfig(config: Partial<Config>): Promise<Config> {
-  return apiRequest<Config>('/config', {
+export async function updateConfig(config: Partial<Config>): Promise<{ status: string }> {
+  return apiRequest<{ status: string }>('/config', {
     method: 'PUT',
     body: JSON.stringify(config)
   });
