@@ -22,14 +22,13 @@ func historyRows(n int) []config.PurchaseHistoryRecord {
 	return rows
 }
 
-func pendingExecutions(n int, creatorID *string) []config.PurchaseExecution {
+func pendingExecutions(n int) []config.PurchaseExecution {
 	execs := make([]config.PurchaseExecution, n)
 	for i := range execs {
 		execs[i] = config.PurchaseExecution{
-			ExecutionID:     fmt.Sprintf("e-%d", i),
-			Status:          "pending",
-			ScheduledDate:   time.Now(),
-			CreatedByUserID: creatorID,
+			ExecutionID:   fmt.Sprintf("e-%d", i),
+			Status:        "pending",
+			ScheduledDate: time.Now(),
 		}
 	}
 	return execs
@@ -70,12 +69,12 @@ func TestHandler_getHistory_TruncatedWhenCompletedAtCap(t *testing.T) {
 func TestHandler_getHistory_TruncatedWhenExecutionsAtCap(t *testing.T) {
 	// The execution fetch is capped before the in-memory filters run, so a
 	// full page means pending approvals may have been dropped.
-	body := runAdminHistory(t, nil, pendingExecutions(config.DefaultListLimit, nil), map[string]string{})
+	body := runAdminHistory(t, nil, pendingExecutions(config.DefaultListLimit), map[string]string{})
 	assert.Equal(t, true, body["truncated"])
 }
 
 func cleanCompletedExecutions(n int) []config.PurchaseExecution {
-	execs := pendingExecutions(n, nil)
+	execs := pendingExecutions(n)
 	for i := range execs {
 		execs[i].Status = "completed"
 	}
@@ -91,7 +90,7 @@ func TestHandler_getHistory_NotTruncatedByCleanCompletedExecutions(t *testing.T)
 }
 
 func TestHandler_getHistory_TruncatedByFailedExecutions(t *testing.T) {
-	execs := pendingExecutions(config.DefaultListLimit, nil)
+	execs := pendingExecutions(config.DefaultListLimit)
 	for i := range execs {
 		execs[i].Status = "failed"
 	}
@@ -109,7 +108,7 @@ func TestHandler_getHistory_AuditGapCompletedExecutionsCountTowardCap(t *testing
 }
 
 func TestHandler_getHistory_ExecutionsLimitIsFixed(t *testing.T) {
-	body := runAdminHistory(t, historyRows(2), pendingExecutions(config.DefaultListLimit, nil), map[string]string{"limit": "500"})
+	body := runAdminHistory(t, historyRows(2), pendingExecutions(config.DefaultListLimit), map[string]string{"limit": "500"})
 	assert.EqualValues(t, 500, body["limit"])
 	assert.EqualValues(t, config.DefaultListLimit, body["executions_limit"])
 	assert.Equal(t, true, body["truncated"])
@@ -122,7 +121,7 @@ func TestHandler_getHistory_TruncatedHonorsCustomLimit(t *testing.T) {
 }
 
 func TestHandler_getHistory_NotTruncatedUnderLimit(t *testing.T) {
-	body := runAdminHistory(t, historyRows(config.DefaultListLimit-1), pendingExecutions(config.DefaultListLimit-1, nil), map[string]string{})
+	body := runAdminHistory(t, historyRows(config.DefaultListLimit-1), pendingExecutions(config.DefaultListLimit-1), map[string]string{})
 	assert.Equal(t, false, body["truncated"])
 	assert.EqualValues(t, config.DefaultListLimit, body["limit"])
 }
@@ -134,7 +133,7 @@ func TestHandler_getHistory_ScopedUserTruncationLeaksNoCounts(t *testing.T) {
 	ctx := context.Background()
 	const scopedUserID = "scoped-user-id"
 	own := scopedUserID
-	execs := pendingExecutions(config.DefaultListLimit, nil)
+	execs := pendingExecutions(config.DefaultListLimit)
 	execs[0].CreatedByUserID = &own
 
 	mockStore := new(MockConfigStore)
