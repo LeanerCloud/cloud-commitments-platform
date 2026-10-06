@@ -76,3 +76,39 @@ func TestDatabaseMigrationWorkflow_EncodesPassword(t *testing.T) {
 	}
 	assert.NotZero(t, dsnLines, "no migration URL found in %s; update this guard", path)
 }
+
+// TestDatabaseMigrationWorkflow_MasksEncodedPassword guards that the
+// percent-encoded password (not covered by GitHub's automatic secret masking)
+// is registered with ::add-mask:: after each assignment and before the
+// migration URL is built.
+func TestDatabaseMigrationWorkflow_MasksEncodedPassword(t *testing.T) {
+	path := filepath.Join(mainModuleRoot(t), ".github", "workflows", "database-migration.yml")
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	const (
+		assignment = "ENCODED_PASSWORD=$("
+		mask       = `echo "::add-mask::${ENCODED_PASSWORD}"`
+		dsn        = `DB_URL="pgx5://`
+	)
+	var assignments, masks int
+	var pendingAssignment bool
+	for _, raw := range strings.Split(string(content), "\n") {
+		line := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(line, assignment):
+			assert.False(t, pendingAssignment, "ENCODED_PASSWORD assigned again before it was masked")
+			assignments++
+			pendingAssignment = true
+		case line == mask:
+			assert.True(t, pendingAssignment, "add-mask without a preceding ENCODED_PASSWORD assignment")
+			masks++
+			pendingAssignment = false
+		case strings.HasPrefix(line, dsn):
+			assert.False(t, pendingAssignment, "migration URL built before ENCODED_PASSWORD was masked")
+		}
+	}
+	assert.False(t, pendingAssignment, "last ENCODED_PASSWORD assignment is never masked")
+	assert.Equal(t, 4, assignments, "expected one ENCODED_PASSWORD assignment per migration step")
+	assert.Equal(t, assignments, masks, "every ENCODED_PASSWORD assignment needs an add-mask line")
+}
