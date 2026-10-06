@@ -270,6 +270,7 @@ export async function viewPlanHistory(planId: string): Promise<void> {
     ]);
     if (requestEpoch !== historyMutationEpoch) return;
     renderHistorySummary(data.summary ?? null);
+    renderTruncationNotices(data);
     const purchases = data.purchases || [];
     renderApprovalQueue(purchases);
     renderHistoryList(purchases);
@@ -277,6 +278,7 @@ export async function viewPlanHistory(planId: string): Promise<void> {
   } catch (error) {
     if (requestEpoch !== historyMutationEpoch) return;
     console.error('Failed to load plan history:', error);
+    renderTruncationNotices({});
     const err = error as Error;
     const list = document.getElementById('history-list');
     if (list) {
@@ -362,12 +364,14 @@ export async function loadHistory(): Promise<void> {
     ]);
     if (requestEpoch !== historyMutationEpoch) return;
     renderHistorySummary(data.summary ?? null);
+    renderTruncationNotices(data);
     const purchases = data.purchases || [];
     renderApprovalQueue(purchases);
     renderHistoryList(purchases);
   } catch (error) {
     if (requestEpoch !== historyMutationEpoch) return;
     console.error('Failed to load history:', error);
+    renderTruncationNotices({});
     const err = error as Error;
     const list = document.getElementById('history-list');
     if (list) {
@@ -379,6 +383,23 @@ export async function loadHistory(): Promise<void> {
       teardownSkeleton(queue);
       queue.innerHTML = `<p class="error">Failed to load approval queue: ${escapeHtml(err.message)}</p>`;
     }
+  }
+}
+
+/**
+ * Show or hide the "results capped" banner above the approval queue and the
+ * history table. The API sets `truncated` when a fetch hit its row cap, in
+ * which case pending approvals and the summary totals can under-report.
+ */
+function renderTruncationNotices(data: HistoryResponse): void {
+  const message = data.truncated
+    ? `Results are capped at the most recent ${data.limit ?? '?'} completed purchases and ${data.executions_limit ?? '?'} pending, failed or other non-completed executions. Older rows are not shown, so pending approvals and totals may be incomplete. Narrow the date range or filters to see them.`
+    : '';
+  for (const id of ['purchases-truncation-notice', 'history-truncation-notice']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.textContent = message;
+    el.hidden = !data.truncated;
   }
 }
 

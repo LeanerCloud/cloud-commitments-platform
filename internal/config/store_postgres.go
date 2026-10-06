@@ -1360,6 +1360,10 @@ func (s *PostgresStore) CancelScheduledExecutionAtomic(ctx context.Context, tx p
 // handler to merge pending/failed/expired rows alongside completed purchases
 // without changing the narrower GetPendingExecutions contract the scheduler
 // depends on.
+//
+// Executions with status 'completed' and an empty error are excluded: they are
+// already represented by their purchase_history rows, so returning them would
+// only consume the cap (the History handler skips them anyway).
 func (s *PostgresStore) GetExecutionsByStatuses(ctx context.Context, statuses []string, limit int) ([]PurchaseExecution, error) {
 	if len(statuses) == 0 {
 		return nil, nil
@@ -1381,6 +1385,7 @@ func (s *PostgresStore) GetExecutionsByStatuses(ctx context.Context, statuses []
 		       idempotency_key, scheduled_execution_at
 		FROM purchase_executions
 		WHERE status = ANY($1)
+		  AND NOT (status = 'completed' AND COALESCE(error, '') = '')
 		ORDER BY scheduled_date DESC
 		LIMIT $2
 	`

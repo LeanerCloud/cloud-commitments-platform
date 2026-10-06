@@ -196,6 +196,12 @@ export interface SavePlanData {
 export interface HistoryResponse {
   summary?: HistorySummary;
   purchases?: HistoryPurchase[];
+  /** True when a fetch hit its row cap, so older rows may be missing. */
+  truncated?: boolean;
+  /** Row cap on completed purchase history rows for the request. */
+  limit?: number;
+  /** Fixed row cap on non-completed executions. */
+  executions_limit?: number;
 }
 
 export interface HistorySummary {
