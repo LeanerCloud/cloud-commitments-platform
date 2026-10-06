@@ -2,8 +2,11 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // UpdateUserAdminFields writes only the columns an admin edit changes (email,
@@ -12,15 +15,16 @@ import (
 // stale admin save cannot erase MFA fields or restore an old password hash
 // (issue #493).
 func (s *PostgresStore) UpdateUserAdminFields(ctx context.Context, user *User, readEmail string, readGroupIDs []string, readActive bool) error {
-	result, err := s.db.Exec(ctx, `
+	err := s.db.QueryRow(ctx, `
 		UPDATE users SET email = $2, group_ids = $3, active = $4, deactivated_at = $5, updated_at = NOW()
 		WHERE id = $1 AND email = $6 AND group_ids = $7 AND active = $8
-	`, user.ID, user.Email, user.GroupIDs, user.Active, user.DeactivatedAt, readEmail, readGroupIDs, readActive)
+		RETURNING updated_at
+	`, user.ID, user.Email, user.GroupIDs, user.Active, user.DeactivatedAt, readEmail, readGroupIDs, readActive).Scan(&user.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrUserChanged
+	}
 	if err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return ErrUserChanged
 	}
 	return nil
 }

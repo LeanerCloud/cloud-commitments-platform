@@ -127,4 +127,32 @@ func TestAdminUpdateUserHTTPKeepsConcurrentMFA(t *testing.T) {
 		assert.True(t, stored.Active, "a conflicting write must not land")
 		assert.Equal(t, "renamed-"+before.Email, stored.Email)
 	})
+
+	t.Run("active-flipped-after-the-read-is-409", func(t *testing.T) {
+		victimID, put := setup(t, func(id string) {
+			_, execErr := pg.DB.Pool().Exec(ctx, `UPDATE users SET active = false WHERE id = $1`, id)
+			require.NoError(t, execErr)
+		})
+		resp := put(`{"active": false}`)
+		assert.Equal(t, 409, resp.StatusCode, resp.Body)
+		stored, err := authStore.GetUserByID(ctx, victimID)
+		require.NoError(t, err)
+		assert.False(t, stored.Active)
+		assert.Nil(t, stored.DeactivatedAt, "a conflicting write must not stamp deactivation")
+	})
+
+	t.Run("groups-changed-after-the-read-is-409", func(t *testing.T) {
+		other := &auth.Group{Name: "other-" + t.Name(), Permissions: view, AllowedAccounts: []string{"*"}}
+		require.NoError(t, authStore.CreateGroup(ctx, other))
+		victimID, put := setup(t, func(id string) {
+			_, execErr := pg.DB.Pool().Exec(ctx, `UPDATE users SET group_ids = ARRAY[$2]::uuid[] WHERE id = $1`, id, other.ID)
+			require.NoError(t, execErr)
+		})
+		resp := put(`{"active": false}`)
+		assert.Equal(t, 409, resp.StatusCode, resp.Body)
+		stored, err := authStore.GetUserByID(ctx, victimID)
+		require.NoError(t, err)
+		assert.Equal(t, []string{other.ID}, stored.GroupIDs)
+		assert.True(t, stored.Active, "a conflicting write must not land")
+	})
 }
