@@ -261,11 +261,12 @@ function byId<T extends HTMLElement>(id: string): T | null {
  * The element's min/max attributes are the source of truth so the
  * range stays in sync with the HTML. An empty value clears the error
  * (the input may have its own "required" enforcement; we don't fight
- * that here).
+ * that here). Pass `required` for a field whose empty value would
+ * save as 0 (the save path rejects it too), so the error shows inline.
  */
 function wireInlineRangeValidation(
   inputId: string,
-  { signal, requireInteger = false }: { signal?: AbortSignal; requireInteger?: boolean } = {},
+  { signal, requireInteger = false, required = false }: { signal?: AbortSignal; requireInteger?: boolean; required?: boolean } = {},
 ): void {
   const input = document.getElementById(inputId) as HTMLInputElement | null;
   if (!input) return;
@@ -312,13 +313,15 @@ function wireInlineRangeValidation(
 
   const check = (): void => {
     const raw = input.value.trim();
-    if (raw === '') {
+    if (raw === '' && !required) {
       input.removeAttribute('aria-invalid');
       error.classList.add('hidden');
       return;
     }
+    // Number('') is 0, so a required empty field is invalid explicitly.
     const n = Number(raw);
     const invalid =
+      raw === '' ||
       !Number.isFinite(n) ||
       (requireInteger && !Number.isInteger(n)) ||
       n < min ||
@@ -2703,7 +2706,7 @@ export function setupSettingsHandlers(signal?: AbortSignal): void {
   // across Settings.
   wireInlineRangeValidation('setting-notification-days', { signal, requireInteger: true });
   wireInlineRangeValidation('setting-recs-stale-hours', { signal, requireInteger: true });
-  wireInlineRangeValidation('setting-default-coverage', { signal, requireInteger: true });
+  wireInlineRangeValidation('setting-default-coverage', { signal, requireInteger: true, required: true });
   wireInlineRangeValidation('setting-grace-aws', { signal, requireInteger: true });
   wireInlineRangeValidation('setting-grace-azure', { signal, requireInteger: true });
   wireInlineRangeValidation('setting-grace-gcp', { signal, requireInteger: true });
