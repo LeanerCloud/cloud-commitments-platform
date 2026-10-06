@@ -114,7 +114,12 @@ var offeringIDPattern = regexp.MustCompile(
 //
 // GET /api/ri-exchange/target-offerings?source_ri_id=<uuid>&region=<region>.
 func (h *Handler) listTargetOfferings(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
-	if _, err := h.requirePermission(ctx, req, "view", "purchases"); err != nil {
+	session, err := h.requirePermission(ctx, req, "view", "purchases")
+	if err != nil {
+		return nil, err
+	}
+
+	if err = h.requireReshapeAccountVisible(ctx, session); err != nil {
 		return nil, err
 	}
 
@@ -1310,6 +1315,20 @@ func (h *Handler) requireReshapeAccountScope(ctx context.Context, session *Sessi
 	}
 	if !inScope {
 		return NewClientError(403, "permission denied: this deployment's cloud account is not covered by your session's allowed accounts")
+	}
+	return nil
+}
+
+// requireReshapeAccountVisible is the single-record read variant of
+// requireReshapeAccountScope: the deployment's cloud account being outside the
+// session scope yields errNotFound, indistinguishable from an unknown record.
+func (h *Handler) requireReshapeAccountVisible(ctx context.Context, session *Session) error {
+	inScope, err := h.reshapeCloudAccountInScope(ctx, session)
+	if err != nil {
+		return err
+	}
+	if !inScope {
+		return errNotFound
 	}
 	return nil
 }
