@@ -26,9 +26,11 @@ import (
 	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	smithy "github.com/aws/smithy-go"
 	"github.com/google/uuid"
 )
@@ -53,6 +55,44 @@ func (h *Handler) buildMarketplaceEC2Client(cfg aws.Config) marketplaceEC2Client
 		return h.marketplaceEC2Factory(cfg)
 	}
 	return awsprovider.NewEC2ClientDirect(cfg)
+}
+
+// loadMarketplaceAWSConfig returns an AWS config for the purchase's region that
+// signs requests as the purchase's own cloud account, resolved through the same
+// credential resolver the purchase path uses. A role_arn account without a role
+// ARN is accepted only when it is the host account (credentials.ErrNotHostAccount
+// otherwise). Rows without a cloud account (reachable only by sell-any callers
+// with unrestricted scope) keep the host's own credentials.
+func (h *Handler) loadMarketplaceAWSConfig(ctx context.Context, row *config.PurchaseHistoryRecord) (aws.Config, error) {
+	base, err := h.loadAWSConfigWithRegion(ctx, row.Region)
+	if err != nil {
+		return aws.Config{}, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	if row.CloudAccountID == nil || strings.TrimSpace(*row.CloudAccountID) == "" {
+		return base, nil
+	}
+	account, err := h.config.GetCloudAccount(ctx, *row.CloudAccountID)
+	if err != nil {
+		return aws.Config{}, fmt.Errorf("failed to look up the purchase's cloud account: %w", err)
+	}
+	if account == nil {
+		return aws.Config{}, NewClientError(400, "the purchase's cloud account no longer exists")
+	}
+	if account.Provider != "aws" {
+		return aws.Config{}, NewClientError(400, "the purchase's cloud account is not an AWS account")
+	}
+	stsClient := sts.NewFromConfig(base)
+	provider, err := credentials.ResolveAWSCredentialProviderWithOpts(ctx, account, h.credStore, stsClient,
+		credentials.AWSResolveOptions{AmbientProvider: base.Credentials, AmbientSTS: stsClient})
+	if err != nil {
+		if errors.Is(err, credentials.ErrNotHostAccount) {
+			return aws.Config{}, NewClientError(400, err.Error())
+		}
+		return aws.Config{}, fmt.Errorf("failed to resolve AWS credentials for the purchase's account: %w", err)
+	}
+	cfg := base.Copy()
+	cfg.Credentials = provider
+	return cfg, nil
 }
 
 // MarketplacePriceTier is the JSON-decodable shape accepted in the request body.
@@ -162,9 +202,9 @@ func (h *Handler) marketplaceList(ctx context.Context, req *events.LambdaFunctio
 	}
 
 	// Build per-provider AWS config for the region the RI lives in.
-	cfg, err := h.loadAWSConfigWithRegion(ctx, row.Region)
+	cfg, err := h.loadMarketplaceAWSConfig(ctx, row)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, err
 	}
 
 	ec2Client := h.buildMarketplaceEC2Client(cfg)
@@ -286,7 +326,11 @@ func (h *Handler) keepUncanceledListing(ctx context.Context, purchaseID string, 
 	if state == "" {
 		state = config.ListingStatePending
 	}
-	msg := fmt.Sprintf("marketplace listing %s was created but could not be saved, and canceling it failed (%v); the listing may still be active on AWS", listing.ListingID, cancelErr)
+	cancelDetail := cancelErr.Error()
+	if isRoleAssumptionFailure(cancelErr) {
+		cancelDetail = marketplaceRoleAssumptionMessage
+	}
+	msg := fmt.Sprintf("marketplace listing %s was created but could not be saved, and canceling it failed (%s); the listing may still be active on AWS", listing.ListingID, cancelDetail)
 	if err := h.config.UpdatePurchaseHistoryListing(ctx, purchaseID, listing.ListingID, state); err != nil {
 		logging.Errorf("marketplace: failed to record uncanceled listing %s for purchase %s (row stays %q): %v", listing.ListingID, purchaseID, config.ListingStatePending, err)
 		return NewClientError(502, msg+"; the RI stays locked as pending until an operator reconciles the listing")
@@ -361,9 +405,9 @@ func (h *Handler) marketplaceCancel(ctx context.Context, req *events.LambdaFunct
 		return nil, NewClientError(409, "no active listing found for this RI; current state: "+row.ListingState)
 	}
 
-	cfg, err := h.loadAWSConfigWithRegion(ctx, row.Region)
+	cfg, err := h.loadMarketplaceAWSConfig(ctx, row)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, err
 	}
 
 	ec2Client := h.buildMarketplaceEC2Client(cfg)
@@ -472,11 +516,29 @@ var awsMarketplaceClientFaultCodes = map[string]bool{
 	"UnauthorizedOperation":                 true,
 }
 
+const marketplaceRoleAssumptionMessage = "could not assume the role configured for this account"
+
+// isRoleAssumptionFailure reports whether err came from the STS AssumeRole call
+// that the credential provider makes lazily inside an EC2 request. Its text
+// names the host account and role ARNs, so it must never reach the caller.
+func isRoleAssumptionFailure(err error) bool {
+	for ; err != nil; err = errors.Unwrap(err) {
+		var opErr *smithy.OperationError
+		if errors.As(err, &opErr) && opErr.ServiceID == "STS" && strings.HasPrefix(opErr.OperationName, "AssumeRole") {
+			return true
+		}
+	}
+	return false
+}
+
 // mapAWSMarketplaceError maps an AWS SDK error to an appropriate ClientError.
 // AWS client-fault errors (4xx-category codes) produce a 4xx response with the
 // original AWS message so the caller gets actionable feedback. All other errors
 // produce a 502 (AWS-side failure).
 func mapAWSMarketplaceError(opMsg string, err error) error {
+	if isRoleAssumptionFailure(err) {
+		return NewClientError(400, marketplaceRoleAssumptionMessage)
+	}
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		if awsMarketplaceClientFaultCodes[apiErr.ErrorCode()] || apiErr.ErrorFault() == smithy.FaultClient {

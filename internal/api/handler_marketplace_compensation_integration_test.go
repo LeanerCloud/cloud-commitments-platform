@@ -13,6 +13,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awscreds "github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -43,7 +44,7 @@ func TestMarketplaceListCancelFailureKeepsListingRecorded(t *testing.T) {
 	store := config.NewPostgresStore(pg.DB)
 
 	account := uuid.NewString()
-	require.NoError(t, store.CreateCloudAccount(ctx, &config.CloudAccount{ID: account, Name: account, Provider: "aws", ExternalID: "111111111111", Enabled: true}))
+	require.NoError(t, store.CreateCloudAccount(ctx, &config.CloudAccount{ID: account, Name: account, Provider: "aws", ExternalID: marketplaceHostAccount, AWSAuthMode: "role_arn", Enabled: true}))
 	row := standardRow()
 	row.PurchaseID, row.CloudAccountID, row.Provider, row.Service = uuid.NewString(), &account, "aws", "ec2"
 	require.NoError(t, store.SavePurchaseHistory(ctx, row))
@@ -63,7 +64,7 @@ func TestMarketplaceListCancelFailureKeepsListingRecorded(t *testing.T) {
 	}}
 	h := &Handler{config: &failFirstListingWriteStore{StoreInterface: store}, auth: authSvc,
 		marketplaceEC2Factory: func(_ aws.Config) marketplaceEC2Client { return ec2 }}
-	h.awsCfgOnce.Do(func() { h.awsCfg = aws.Config{Region: "us-east-1"} })
+	h.awsCfgOnce.Do(func() { h.awsCfg = hostAWSConfig() })
 
 	_, err = h.marketplaceList(ctx, marketplaceReq(), row.PurchaseID)
 	require.Error(t, err)
@@ -112,11 +113,21 @@ func setupCompensationRow(t *testing.T, store config.StoreInterface) *config.Pur
 	t.Helper()
 	ctx := t.Context()
 	account := uuid.NewString()
-	require.NoError(t, store.CreateCloudAccount(ctx, &config.CloudAccount{ID: account, Name: account, Provider: "aws", ExternalID: "111111111111", Enabled: true}))
+	require.NoError(t, store.CreateCloudAccount(ctx, &config.CloudAccount{ID: account, Name: account, Provider: "aws", ExternalID: marketplaceHostAccount, AWSAuthMode: "role_arn", Enabled: true}))
 	row := standardRow()
 	row.PurchaseID, row.CloudAccountID, row.Provider, row.Service = uuid.NewString(), &account, "aws", "ec2"
 	require.NoError(t, store.SavePurchaseHistory(ctx, row))
 	return row
+}
+
+// hostAWSConfig is the ambient config of a handler running in the host account,
+// which the purchase's cloud account must match for the credential resolution.
+func hostAWSConfig() aws.Config {
+	return aws.Config{
+		Region:      "us-east-1",
+		Credentials: awscreds.NewStaticCredentialsProvider(marketplaceHostKeyID, "host-secret", ""),
+		HTTPClient:  hostSTSTransport{},
+	}
 }
 
 func newCompensationAuth() *MockAuthService {
@@ -144,7 +155,7 @@ func TestMarketplaceListCancelFailureAfterContextCanceledStillRecordsListing(t *
 	}}
 	h := &Handler{config: &cancelOnFirstWriteStore{StoreInterface: store, cancel: cancel}, auth: newCompensationAuth(),
 		marketplaceEC2Factory: func(_ aws.Config) marketplaceEC2Client { return ec2 }}
-	h.awsCfgOnce.Do(func() { h.awsCfg = aws.Config{Region: "us-east-1"} })
+	h.awsCfgOnce.Do(func() { h.awsCfg = hostAWSConfig() })
 
 	_, err = h.marketplaceList(reqCtx, marketplaceReq(), row.PurchaseID)
 	require.Error(t, err)
@@ -174,7 +185,7 @@ func TestMarketplaceListCancelFailureRecordsEmptyAWSStateAsPending(t *testing.T)
 	}
 	h := &Handler{config: &failFirstListingWriteStore{StoreInterface: store}, auth: newCompensationAuth(),
 		marketplaceEC2Factory: func(_ aws.Config) marketplaceEC2Client { return ec2 }}
-	h.awsCfgOnce.Do(func() { h.awsCfg = aws.Config{Region: "us-east-1"} })
+	h.awsCfgOnce.Do(func() { h.awsCfg = hostAWSConfig() })
 
 	_, err = h.marketplaceList(ctx, marketplaceReq(), row.PurchaseID)
 	ce, ok := IsClientError(err)
