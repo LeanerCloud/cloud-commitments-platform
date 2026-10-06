@@ -2093,25 +2093,29 @@ func (s *PostgresStore) StampOfferingClass(ctx context.Context, purchaseID, offe
 // must not trust a row read before the claim. It returns (nil, nil) when the row
 // could not be claimed (active, pending without a token, or absent).
 func (s *PostgresStore) ClaimMarketplaceListingSlot(ctx context.Context, purchaseID, clientToken string, priceSchedule []byte) (*MarketplaceListingClaim, error) {
+	// prev locks the row first, so a claim that races another one waits for it
+	// and then sees its committed token and state instead of a stale snapshot.
 	query := `
+		WITH prev AS (
+			SELECT purchase_id, listing_state AS prior_state
+			FROM purchase_history WHERE purchase_id = $2 FOR UPDATE
+		)
 		UPDATE purchase_history AS p
 		SET listing_state = $1,
 		    listing_client_token = COALESCE(p.listing_client_token, $3::text),
 		    listing_price_schedule = CASE WHEN p.listing_client_token IS NULL
 		                                  THEN $4::jsonb ELSE p.listing_price_schedule END
-		FROM (SELECT purchase_id, listing_state AS prior_state,
-		             listing_client_token IS NOT NULL AS had_token
-		      FROM purchase_history WHERE purchase_id = $2) AS prev
+		FROM prev
 		WHERE p.purchase_id = prev.purchase_id
 		  AND lower(COALESCE(p.listing_state, '')) <> $5
 		  AND (lower(COALESCE(p.listing_state, '')) <> $1 OR p.listing_client_token IS NOT NULL)
 		RETURNING COALESCE(p.listing_id, ''), COALESCE(prev.prior_state, ''),
-		          p.listing_client_token, p.listing_price_schedule::text, prev.had_token
+		          p.listing_client_token, p.listing_price_schedule::text
 	`
 	var claim MarketplaceListingClaim
 	var schedule string
 	err := s.db.QueryRow(ctx, query, ListingStatePending, purchaseID, clientToken, priceSchedule, ListingStateActive).
-		Scan(&claim.ListingID, &claim.PriorState, &claim.ClientToken, &schedule, &claim.Resumed)
+		Scan(&claim.ListingID, &claim.PriorState, &claim.ClientToken, &schedule)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -2119,21 +2123,24 @@ func (s *PostgresStore) ClaimMarketplaceListingSlot(ctx context.Context, purchas
 		return nil, fmt.Errorf("failed to claim marketplace listing slot for purchase %s: %w", purchaseID, err)
 	}
 	claim.PriceSchedule = []byte(schedule)
+	claim.Resumed = claim.ClientToken != clientToken
 	return &claim, nil
 }
 
 // ReleaseMarketplaceListingClaim moves a pending row back to priorState and,
 // unless keepAttempt, clears the persisted token and schedule. It only touches
-// a row that is still pending so it never overwrites a recorded listing.
-func (s *PostgresStore) ReleaseMarketplaceListingClaim(ctx context.Context, purchaseID, priorState string, keepAttempt bool) error {
+// a pending row whose token is clientToken, so it never overwrites a recorded
+// listing or the attempt of another request.
+func (s *PostgresStore) ReleaseMarketplaceListingClaim(ctx context.Context, purchaseID, clientToken, priorState string, keepAttempt bool) error {
 	query := `
 		UPDATE purchase_history
 		SET listing_state = NULLIF($2, ''),
 		    listing_client_token = CASE WHEN $3 THEN listing_client_token END,
 		    listing_price_schedule = CASE WHEN $3 THEN listing_price_schedule END
 		WHERE purchase_id = $1 AND lower(COALESCE(listing_state, '')) = $4
+		  AND listing_client_token = $5
 	`
-	if _, err := s.db.Exec(ctx, query, purchaseID, priorState, keepAttempt, ListingStatePending); err != nil {
+	if _, err := s.db.Exec(ctx, query, purchaseID, priorState, keepAttempt, ListingStatePending, clientToken); err != nil {
 		return fmt.Errorf("failed to release marketplace listing claim for purchase %s: %w", purchaseID, err)
 	}
 	return nil

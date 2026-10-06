@@ -410,7 +410,7 @@ func (m *mockConfigStoreForHealth) ClaimMarketplaceListingSlot(_ context.Context
 	return &config.MarketplaceListingClaim{}, nil
 }
 
-func (m *mockConfigStoreForHealth) ReleaseMarketplaceListingClaim(_ context.Context, _, _ string, _ bool) error {
+func (m *mockConfigStoreForHealth) ReleaseMarketplaceListingClaim(_ context.Context, _, _, _ string, _ bool) error {
 	return nil
 }
 

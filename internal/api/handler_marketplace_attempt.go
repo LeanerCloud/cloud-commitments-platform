@@ -43,7 +43,8 @@ func (f awsMarketplaceListingFinder) FindMarketplaceListingByToken(ctx context.C
 	if err != nil {
 		return ec2svc.MarketplaceListingResult{}, false, fmt.Errorf("DescribeReservedInstancesListings failed: %w", err)
 	}
-	for _, l := range out.ReservedInstancesListings {
+	for i := range out.ReservedInstancesListings {
+		l := &out.ReservedInstancesListings[i]
 		if aws.ToString(l.ClientToken) == clientToken {
 			return ec2svc.MarketplaceListingResult{ListingID: aws.ToString(l.ReservedInstancesListingId), State: string(l.Status)}, true, nil
 		}
@@ -243,7 +244,7 @@ func (h *Handler) releaseMarketplaceClaim(ctx context.Context, purchaseID string
 	if strings.EqualFold(prior, config.ListingStatePending) {
 		prior = ""
 	}
-	if err := h.config.ReleaseMarketplaceListingClaim(ctx, purchaseID, prior, keepAttempt); err != nil {
+	if err := h.config.ReleaseMarketplaceListingClaim(ctx, purchaseID, claim.ClientToken, prior, keepAttempt); err != nil {
 		logging.Errorf("marketplace: failed to release listing claim for purchase %s (row may be stuck in %q): %v", purchaseID, config.ListingStatePending, err)
 	}
 }

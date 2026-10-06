@@ -244,7 +244,7 @@ func TestMarketplaceList_AWSClientFaultMapsTo400(t *testing.T) {
 	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).
 		Return(&config.MarketplaceListingClaim{ClientToken: "tok"}, nil)
 	// AWS create fails, so the claim must be released back to the unlisted state.
-	cfgStore.On("ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, "", false).
+	cfgStore.On("ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, "tok", "", false).
 		Return(nil)
 
 	ec2 := &stubMarketplaceEC2{
@@ -274,7 +274,7 @@ func TestMarketplaceList_AWSServerFaultMapsTo502(t *testing.T) {
 	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).
 		Return(&config.MarketplaceListingClaim{ClientToken: "tok"}, nil)
 	// AWS create fails, so the claim must be released back to the unlisted state.
-	cfgStore.On("ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, "", true).
+	cfgStore.On("ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, "tok", "", true).
 		Return(nil)
 
 	ec2 := &stubMarketplaceEC2{
@@ -303,7 +303,7 @@ func TestMarketplaceList_UnknownErrorMapsTo502(t *testing.T) {
 	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).
 		Return(&config.MarketplaceListingClaim{ClientToken: "tok"}, nil)
 	// AWS create fails, so the claim must be released back to the unlisted state.
-	cfgStore.On("ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, "", true).
+	cfgStore.On("ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, "tok", "", true).
 		Return(nil)
 
 	ec2 := &stubMarketplaceEC2{
@@ -388,7 +388,7 @@ func TestMarketplaceList_DBFailureAndCancelFailureKeepsListing(t *testing.T) {
 			assert.Contains(t, ce.message, "throttled")
 			assert.Contains(t, ce.message, tc.wantMsg)
 			assert.Equal(t, 1, ec2.cancelCallCount)
-			cfgStore.AssertNotCalled(t, "ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything)
+			cfgStore.AssertNotCalled(t, "ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything, mock.Anything)
 			cfgStore.AssertExpectations(t)
 		})
 	}

@@ -333,10 +333,12 @@ type StoreInterface interface {
 	ClaimMarketplaceListingSlot(ctx context.Context, purchaseID, clientToken string, priceSchedule []byte) (*MarketplaceListingClaim, error)
 
 	// ReleaseMarketplaceListingClaim moves a pending row back to priorState
-	// (empty for none) after a failed attempt. keepAttempt keeps the persisted
-	// token and schedule so the retry resends them (ambiguous AWS outcome);
-	// otherwise they are cleared because AWS created nothing reusable.
-	ReleaseMarketplaceListingClaim(ctx context.Context, purchaseID, priorState string, keepAttempt bool) error
+	// (empty for none) after a failed attempt. It only acts on a row whose
+	// persisted token is clientToken, so a request never releases or drops the
+	// attempt of another request. keepAttempt keeps the persisted token and
+	// schedule so the retry resends them (ambiguous AWS outcome); otherwise
+	// they are cleared because AWS created nothing reusable.
+	ReleaseMarketplaceListingClaim(ctx context.Context, purchaseID, clientToken, priorState string, keepAttempt bool) error
 
 	// ClaimRIExchangeIdempotencyKey atomically claims key for an RI exchange
 	// submit, so a client that retries a timed-out execute request cannot

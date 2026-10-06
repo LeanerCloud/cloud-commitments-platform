@@ -62,8 +62,8 @@ func (f *fakeListingDB) ClaimMarketplaceListingSlot(_ context.Context, _, client
 	return &config.MarketplaceListingClaim{ListingID: f.row.ListingID, PriorState: prior, ClientToken: f.token, PriceSchedule: f.schedule, Resumed: resumed}, nil
 }
 
-func (f *fakeListingDB) ReleaseMarketplaceListingClaim(_ context.Context, _, priorState string, keepAttempt bool) error {
-	if strings.EqualFold(f.row.ListingState, config.ListingStatePending) {
+func (f *fakeListingDB) ReleaseMarketplaceListingClaim(_ context.Context, _, clientToken, priorState string, keepAttempt bool) error {
+	if strings.EqualFold(f.row.ListingState, config.ListingStatePending) && f.token == clientToken {
 		f.row.ListingState = priorState
 		if !keepAttempt {
 			f.token, f.schedule = "", nil

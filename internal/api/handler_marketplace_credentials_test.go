@@ -55,7 +55,7 @@ func marketplaceAccountHandler(t *testing.T, account *config.CloudAccount, row *
 	cfgStore.On("GetCloudAccount", mock.Anything, "acct-1").Return(account, nil)
 	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).Return(&config.MarketplaceListingClaim{ClientToken: "tok"}, nil).Maybe()
 	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).Return(nil).Maybe()
-	cfgStore.On("ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).Return(nil).Maybe()
+	cfgStore.On("ReleaseMarketplaceListingClaim", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	var built aws.Config
 	h := &Handler{
