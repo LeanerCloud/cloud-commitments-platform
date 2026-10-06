@@ -302,11 +302,12 @@ func TestManager_ExecutePurchase_GetPlanError(t *testing.T) {
 	mockStore.AssertExpectations(t)
 }
 
+// A plan step with no recommendations buys nothing, so it fails instead of
+// completing and advancing the ramp (#609).
 func TestManager_ExecutePurchase_NoRecommendations(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
-	mockEmail := new(MockEmailSender)
-	mockSTS := new(MockSTSClient)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
 	plan := &config.PurchasePlan{
 		ID:   "plan-123",
@@ -321,23 +322,14 @@ func TestManager_ExecutePurchase_NoRecommendations(t *testing.T) {
 	}
 
 	mockStore.On("GetPurchasePlan", ctx, "plan-123").Return(plan, nil)
-	mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
-	mockSTS.On("GetCallerIdentity", ctx, mock.AnythingOfType("*sts.GetCallerIdentityInput")).Return(&sts.GetCallerIdentityOutput{
-		Account: aws.String("123456789012"),
-	}, nil)
 
 	manager := &Manager{
 		config:       mockStore,
-		email:        mockEmail,
-		stsClient:    mockSTS,
 		dashboardURL: "https://dashboard.example.com",
 	}
 
 	err := manager.executePurchase(ctx, exec)
-	require.NoError(t, err)
-
-	mockStore.AssertExpectations(t)
-	mockEmail.AssertExpectations(t)
+	require.ErrorIs(t, err, ErrPlanStepNoRecommendations)
 }
 
 func TestManager_UpdatePlanProgress(t *testing.T) {

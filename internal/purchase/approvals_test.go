@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -25,24 +26,51 @@ func newApproveManager(t *testing.T) (*Manager, *MockConfigStore, *MockEmailSend
 	t.Helper()
 	store := new(MockConfigStore)
 	sender := new(MockEmailSender)
+
+	// A plan step with no recommendations is refused (#609), so the
+	// approved fixtures carry one recommendation; this factory lets it
+	// purchase. Maybe(): tests that never reach execution register nothing.
+	prov := new(MockProvider)
+	svc := new(MockServiceClient)
+	factory := new(MockProviderFactory)
+	factory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(prov, nil).Maybe()
+	prov.On("GetServiceClient", mock.Anything, common.ServiceEC2, "us-east-1").Return(svc, nil).Maybe()
+	svc.On("PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything).
+		Return(common.PurchaseResult{Success: true, CommitmentID: "ri-approval-test"}, nil).Maybe()
+
 	return &Manager{
-		config:       store,
-		email:        sender,
-		dashboardURL: "https://dashboard.example.com",
+		config:          store,
+		email:           sender,
+		providerFactory: factory,
+		dashboardURL:    "https://dashboard.example.com",
 	}, store, sender
 }
 
+// approvalTestRecs is the one recommendation an approved plan step carries in
+// these tests.
+func approvalTestRecs() []config.RecommendationRecord {
+	return []config.RecommendationRecord{{
+		Provider:     "aws",
+		Service:      "ec2",
+		ResourceType: "m5.large",
+		Region:       "us-east-1",
+		Count:        1,
+		Savings:      10,
+		UpfrontCost:  50,
+		Selected:     true,
+	}}
+}
+
 // stubExecuteChain wires the mocks that Manager.executeAndFinalize touches
-// when the execution has no work to do (empty Recommendations, no plan
-// accounts). GetPlanAccounts uses the Fn-override pattern in this mock,
-// not testify's .On; left at its nil default it returns (nil, nil) which
-// drops us into the single-account branch with no recs.
+// for an approved execution carrying approvalTestRecs (no plan accounts).
+// GetPlanAccounts uses the Fn-override pattern in this mock, not testify's
+// .On; left at its nil default it returns (nil, nil) which drops us into the
+// single-account branch.
 func stubExecuteChain(t *testing.T, store *MockConfigStore, sender *MockEmailSender, planID string) {
 	t.Helper()
 	plan := &config.PurchasePlan{ID: planID, Name: "test-plan"}
 	store.On("GetPurchasePlan", mock.Anything, planID).Return(plan, nil)
-	// Empty Recommendations means processPurchaseRecommendations is a
-	// no-op; totals stay zero but sendPurchaseNotification still fires.
+	store.On("SavePurchaseHistory", mock.Anything, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil)
 	sender.On("SendPurchaseConfirmation", mock.Anything, mock.Anything).Return(nil)
 	// finalizeExecution writes status=completed via SavePurchaseExecution.
 	store.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
@@ -62,11 +90,12 @@ func TestManager_ApproveExecution_Success(t *testing.T) {
 		ApprovalToken: config.HashApprovalToken("valid-token"),
 	}
 	updated := &config.PurchaseExecution{
-		ExecutionID:   "exec-123",
-		PlanID:        "plan-456",
-		Status:        "approved",
-		ApprovalToken: config.HashApprovalToken("valid-token"),
-		StepNumber:    1,
+		ExecutionID:     "exec-123",
+		PlanID:          "plan-456",
+		Status:          "approved",
+		ApprovalToken:   config.HashApprovalToken("valid-token"),
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 
 	store.On("GetExecutionByID", ctx, "exec-123").Return(execution, nil)
@@ -90,11 +119,12 @@ func TestManager_ApproveExecution_StampsApprovedBy(t *testing.T) {
 		ApprovalToken: config.HashApprovalToken("valid-token"),
 	}
 	updated := &config.PurchaseExecution{
-		ExecutionID:   "exec-123",
-		PlanID:        "plan-456",
-		Status:        "approved",
-		ApprovalToken: config.HashApprovalToken("valid-token"),
-		StepNumber:    1,
+		ExecutionID:     "exec-123",
+		PlanID:          "plan-456",
+		Status:          "approved",
+		ApprovalToken:   config.HashApprovalToken("valid-token"),
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 
 	store.On("GetExecutionByID", ctx, "exec-123").Return(execution, nil)
@@ -124,11 +154,12 @@ func TestManager_ApproveExecution_NotifiedStatus(t *testing.T) {
 		ApprovalToken: config.HashApprovalToken("valid-token"),
 	}
 	updated := &config.PurchaseExecution{
-		ExecutionID:   "exec-123",
-		PlanID:        "plan-456",
-		Status:        "approved",
-		ApprovalToken: config.HashApprovalToken("valid-token"),
-		StepNumber:    1,
+		ExecutionID:     "exec-123",
+		PlanID:          "plan-456",
+		Status:          "approved",
+		ApprovalToken:   config.HashApprovalToken("valid-token"),
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 
 	store.On("GetExecutionByID", ctx, "exec-123").Return(execution, nil)
@@ -288,11 +319,12 @@ func TestManager_ApproveAndExecute_SkipsTokenCheck(t *testing.T) {
 
 	actorUUID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	updated := &config.PurchaseExecution{
-		ExecutionID:   "exec-456",
-		PlanID:        "plan-789",
-		Status:        "approved",
-		ApprovalToken: "tok",
-		StepNumber:    1,
+		ExecutionID:     "exec-456",
+		PlanID:          "plan-789",
+		Status:          "approved",
+		ApprovalToken:   "tok",
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 	store.On("TransitionExecutionStatus", ctx, "exec-456", approveFromStatuses, "approved",
 		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == actorUUID })).Return(updated, nil)
@@ -322,10 +354,11 @@ func TestManager_RunPlannedPurchaseNow_ExecutesFromPaused(t *testing.T) {
 	manager, store, sender := newApproveManager(t)
 
 	updated := &config.PurchaseExecution{
-		ExecutionID: "exec-run-now",
-		PlanID:      "plan-run-now",
-		Status:      "approved",
-		StepNumber:  1,
+		ExecutionID:     "exec-run-now",
+		PlanID:          "plan-run-now",
+		Status:          "approved",
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 	store.On("TransitionExecutionStatus", ctx, "exec-run-now", []string{"pending", "paused"}, "approved", (*string)(nil)).Return(updated, nil)
 	stubExecuteChain(t, store, sender, "plan-run-now")
@@ -436,10 +469,11 @@ func TestManager_ApproveAndExecute_FourEyesOn_AllowsDifferentApprover(t *testing
 	approverEmail := "approver@example.com"
 	execution := fourEyesManagerExec("exec-direct-diff", &creatorID)
 	updated := &config.PurchaseExecution{
-		ExecutionID: "exec-direct-diff",
-		PlanID:      "plan-fourEyes",
-		Status:      "approved",
-		StepNumber:  1,
+		ExecutionID:     "exec-direct-diff",
+		PlanID:          "plan-fourEyes",
+		Status:          "approved",
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 
 	store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
@@ -540,7 +574,7 @@ func TestManager_ApproveAndExecute_FourEyesOff_AllowsSelfApprove(t *testing.T) {
 	manager, store, sender := newApproveManager(t)
 
 	creatorID := "user-creator"
-	updated := &config.PurchaseExecution{ExecutionID: "exec-mode-off", PlanID: "plan-fourEyes", Status: "approved", StepNumber: 1}
+	updated := &config.PurchaseExecution{ExecutionID: "exec-mode-off", PlanID: "plan-fourEyes", Status: "approved", StepNumber: 1, Recommendations: approvalTestRecs()}
 	store.On("TransitionExecutionStatus", ctx, "exec-mode-off", approveFromStatuses, "approved", &creatorID).Return(updated, nil)
 	stubExecuteChain(t, store, sender, "plan-fourEyes")
 
@@ -601,11 +635,12 @@ func TestManager_ApproveExecution_FourEyesOn_DifferentActor_Allowed(t *testing.T
 		CreatedByUserID: &creatorID,
 	}
 	updated := &config.PurchaseExecution{
-		ExecutionID:   "exec-sqs-diff",
-		PlanID:        "plan-fourEyes",
-		Status:        "approved",
-		ApprovalToken: config.HashApprovalToken("valid-token"),
-		StepNumber:    1,
+		ExecutionID:     "exec-sqs-diff",
+		PlanID:          "plan-fourEyes",
+		Status:          "approved",
+		ApprovalToken:   config.HashApprovalToken("valid-token"),
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 
 	store.On("GetExecutionByID", ctx, "exec-sqs-diff").Return(execution, nil)
@@ -942,11 +977,12 @@ func TestManager_ApproveExecution_ValidTokenWithinTTL(t *testing.T) {
 		ApprovalTokenExpiresAt: &future,
 	}
 	updated := &config.PurchaseExecution{
-		ExecutionID:   "exec-live",
-		PlanID:        "plan-live",
-		Status:        "approved",
-		ApprovalToken: config.HashApprovalToken("valid-token"),
-		StepNumber:    1,
+		ExecutionID:     "exec-live",
+		PlanID:          "plan-live",
+		Status:          "approved",
+		ApprovalToken:   config.HashApprovalToken("valid-token"),
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 	store.On("GetExecutionByID", ctx, "exec-live").Return(execution, nil)
 	store.On("TransitionExecutionStatus", ctx, "exec-live", approveFromStatuses, "approved", (*string)(nil)).Return(updated, nil)
@@ -973,10 +1009,11 @@ func TestManager_ApproveExecution_NilExpiresAt_LegacyRow(t *testing.T) {
 		ApprovalTokenExpiresAt: nil, // pre-migration row
 	}
 	updated := &config.PurchaseExecution{
-		ExecutionID: "exec-legacy",
-		PlanID:      "plan-legacy",
-		Status:      "approved",
-		StepNumber:  1,
+		ExecutionID:     "exec-legacy",
+		PlanID:          "plan-legacy",
+		Status:          "approved",
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 	store.On("GetExecutionByID", ctx, "exec-legacy").Return(execution, nil)
 	store.On("TransitionExecutionStatus", ctx, "exec-legacy", approveFromStatuses, "approved", (*string)(nil)).Return(updated, nil)
@@ -1033,11 +1070,12 @@ func TestManager_ApproveExecution_AWSOrphanFallsThrough(t *testing.T) {
 		Recommendations: []config.RecommendationRecord{{ID: "r1", Provider: "aws"}},
 	}
 	updated := &config.PurchaseExecution{
-		ExecutionID:   "exec-aws-ambient",
-		PlanID:        "plan-aws",
-		Status:        "approved",
-		ApprovalToken: config.HashApprovalToken("valid-token"),
-		StepNumber:    1,
+		ExecutionID:     "exec-aws-ambient",
+		PlanID:          "plan-aws",
+		Status:          "approved",
+		ApprovalToken:   config.HashApprovalToken("valid-token"),
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 	store.On("GetExecutionByID", ctx, "exec-aws-ambient").Return(execution, nil)
 	store.On("TransitionExecutionStatus", ctx, "exec-aws-ambient", approveFromStatuses, "approved", (*string)(nil)).Return(updated, nil)
@@ -1146,11 +1184,12 @@ func TestApproveExecution_MintsRevocationToken(t *testing.T) {
 		ApprovalToken: config.HashApprovalToken("pre-rotate-token"),
 	}
 	updated := &config.PurchaseExecution{
-		ExecutionID:   "exec-rotate",
-		PlanID:        "plan-rotate",
-		Status:        "approved",
-		ApprovalToken: config.HashApprovalToken("pre-rotate-token"),
-		StepNumber:    1,
+		ExecutionID:     "exec-rotate",
+		PlanID:          "plan-rotate",
+		Status:          "approved",
+		ApprovalToken:   config.HashApprovalToken("pre-rotate-token"),
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
 	}
 
 	// GetExecutionByID is called once, in ApproveExecution itself, to

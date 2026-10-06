@@ -438,6 +438,14 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: >
+            Plan steps cannot yet carry recommendations (platform#609), so no
+            purchases can be added to a plan. Purchase from Opportunities instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   # ---- Purchase Actions ---------------------------------------------------
   /api/purchases/execute:

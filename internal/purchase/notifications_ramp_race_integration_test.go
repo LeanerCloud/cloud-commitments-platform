@@ -8,8 +8,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
-	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
-	"github.com/stretchr/testify/mock"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,27 +30,26 @@ func TestNotificationStampPreservesCompletedRampAndNextExecution(t *testing.T) {
 	}
 	require.NoError(t, plan.Validate())
 	require.NoError(t, store.CreatePurchasePlan(ctx, plan))
-	sender := new(MockEmailSender)
-	manager := &Manager{config: store, email: sender}
-	var completed *config.PurchasePlan
-	sender.On("SendScheduledPurchaseNotification", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		data := args.Get(1).(email.NotificationData)
-		execution, getErr := store.GetExecutionByID(ctx, data.ExecutionID)
-		require.NoError(t, getErr)
-		require.Equal(t, 2, execution.StepNumber)
-		execution.Status = "completed"
-		require.NoError(t, store.SavePurchaseExecution(ctx, execution))
-		require.NoError(t, store.CompletePlanStep(ctx, plan.ID, 2))
-		completed, getErr = store.GetPurchasePlan(ctx, plan.ID)
-		require.NoError(t, getErr)
-		require.Equal(t, 2, completed.RampSchedule.CurrentStep)
-		require.NotNil(t, completed.LastExecutionDate)
-		require.True(t, completed.NextExecutionDate.After(next))
-	}).Return(nil).Once()
-	result, err := manager.SendUpcomingPurchaseNotifications(ctx)
+	manager := &Manager{config: store}
+
+	// A step-2 execution completes (and advances the ramp) while a reminder for
+	// the same plan is in flight. Plan steps carry no recommendations (#609), so
+	// the reminder path no longer creates such a row itself; the row is written
+	// directly, and the stamp the reminder issues afterwards is called as the
+	// notification path does once its email has gone out.
+	step2 := &config.PurchaseExecution{
+		PlanID: plan.ID, ExecutionID: uuid.New().String(), Status: "completed", StepNumber: 2,
+		ScheduledDate:   next,
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Count: 1}},
+	}
+	require.NoError(t, store.SavePurchaseExecution(ctx, step2))
+	require.NoError(t, store.CompletePlanStep(ctx, plan.ID, 2))
+	completed, err := store.GetPurchasePlan(ctx, plan.ID)
 	require.NoError(t, err)
-	require.Equal(t, 1, result.Notified)
-	sender.AssertExpectations(t)
+	require.Equal(t, 2, completed.RampSchedule.CurrentStep)
+	require.NotNil(t, completed.LastExecutionDate)
+	require.True(t, completed.NextExecutionDate.After(next))
+	require.NoError(t, store.StampPlanNotificationSent(ctx, plan.ID, time.Now()))
 	after, err := store.GetPurchasePlan(ctx, plan.ID)
 	require.NoError(t, err)
 	require.NotNil(t, after.LastNotificationSent)
@@ -59,8 +57,13 @@ func TestNotificationStampPreservesCompletedRampAndNextExecution(t *testing.T) {
 	require.Equal(t, completed.NextExecutionDate, after.NextExecutionDate)
 	require.Equal(t, completed.LastExecutionDate, after.LastExecutionDate)
 
-	execution, _, _, err := manager.getOrCreateExecution(ctx, after)
+	// The reminder path no longer emails a bare step (#609): it records the
+	// row as failed. The step stamp and date it carries are still what matters.
+	_, _, _, err = manager.getOrCreateExecution(ctx, after)
+	require.ErrorIs(t, err, errExecutionNotNotifiable)
+	execution, err := store.GetExecutionByPlanAndDate(ctx, plan.ID, *completed.NextExecutionDate)
 	require.NoError(t, err)
+	require.Equal(t, "failed", execution.Status)
 	require.Equal(t, 3, execution.StepNumber)
 	require.Equal(t, *completed.NextExecutionDate, execution.ScheduledDate)
 	execution.Status = "completed"

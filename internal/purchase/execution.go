@@ -23,6 +23,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrPlanStepNoRecommendations marks a plan-step execution that carries no
+// recommendations. Nothing attaches recommendations to a plan step yet
+// (platform#609), so such a step can only "succeed" by buying nothing, which
+// would complete it and advance the ramp. It is refused instead.
+var ErrPlanStepNoRecommendations = errors.New("plan step has no recommendations attached, so it cannot buy anything (platform#609: plan steps cannot yet carry recommendations)")
+
 // executePurchase performs the actual purchase.
 // When the plan has associated cloud accounts and a credential store is configured,
 // it fans out execution in parallel — one goroutine per account, each with its own
@@ -57,6 +63,13 @@ func (m *Manager) executePurchase(ctx context.Context, exec *config.PurchaseExec
 		}
 		if plan == nil {
 			return fmt.Errorf("plan not found: %s", exec.PlanID)
+		}
+
+		// Checked once here, before the per-account fan-out: past this point
+		// every account would write its own failed row and strand its own ramp
+		// unit, and credential resolution would mask the real cause.
+		if len(exec.Recommendations) == 0 {
+			return fmt.Errorf("execution %s: %w", exec.ExecutionID, ErrPlanStepNoRecommendations)
 		}
 
 		// Fan out across plan accounts when accounts are configured.

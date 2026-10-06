@@ -1842,6 +1842,8 @@ func resolveOpsHint(failureReason string) string {
 //
 // State gate:
 //   - failedExec.Status must be "failed" → 409 otherwise.
+//   - a plan-step row (PlanID set) must carry at least one recommendation
+//     → 409 otherwise, nothing to buy (platform#609).
 //   - every rec must be safe to re-drive per purchase.RedriveRefusalReason
 //     → 409 with ops_hint + redrive_unsafe when any is not, NOT
 //     overridable by ?force=true (issue #1668).
@@ -1861,6 +1863,14 @@ func (h *Handler) retryPurchase(ctx context.Context, req *events.LambdaFunctionU
 	failedExec, session, err := h.loadAndValidateRetryRequest(ctx, req, execID)
 	if err != nil {
 		return nil, err
+	}
+
+	// A plan step with no recommendations buys nothing and never can until plan
+	// steps carry recommendations (platform#609); retrying it would only mint a
+	// successor that fails the same way.
+	if failedExec.PlanID != "" && len(failedExec.Recommendations) == 0 {
+		return nil, NewClientError(409,
+			"this plan step has no recommendations attached, so retrying it would buy nothing (platform#609: plan steps cannot yet carry recommendations)")
 	}
 
 	totalUpfront, totalSavings, err := validateAndTotalRecommendations(failedExec.Recommendations)
@@ -2013,15 +2023,14 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 	// A refusal here is permanent: nothing about the row can change to make
 	// it retryable. So the gate must fire only where the duplicate hazard is
 	// real. An execution carrying no recommendations buys nothing and cannot
-	// double-buy, and rec-less executions are legitimately created by
-	// createPurchaseExecutionsTx (handler_plans.go) and getOrCreateExecution
-	// (purchase/notifications.go); a failed approval email marks those
-	// "failed", and retrying is the only recovery. Refusing them would strand
-	// that whole class forever, so RedriveRefusalReason stays silent on the
-	// empty case. Empty here always means empty as created, never "we could
-	// not load them": GetExecutionByID propagates a recommendations unmarshal
-	// failure as an error (config/store_postgres.go), which this handler has
-	// already turned into a 500 well before this gate.
+	// double-buy, so RedriveRefusalReason stays silent on the empty case. The
+	// rec-less plan steps that createPurchaseExecutionsTx (handler_plans.go) and
+	// getOrCreateExecution (purchase/notifications.go) used to create are
+	// refused earlier in this handler instead (platform#609), because a retry of
+	// one can only fail the same way. Empty here always means empty as created,
+	// never "we could not load them": GetExecutionByID propagates a
+	// recommendations unmarshal failure as an error (config/store_postgres.go),
+	// which this handler has already turned into a 500 well before this gate.
 	if reason := purchase.RedriveRefusalReason(failedExec); reason != "" {
 		return NewClientErrorWithDetails(409,
 			"this purchase cannot be retried safely: "+reason,
