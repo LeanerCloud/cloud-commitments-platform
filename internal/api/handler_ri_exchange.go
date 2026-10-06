@@ -120,7 +120,7 @@ func (h *Handler) listTargetOfferings(ctx context.Context, req *events.LambdaFun
 	}
 
 	if visErr := h.requireReshapeAccountVisible(ctx, session); visErr != nil {
-		return nil, err
+		return nil, visErr
 	}
 
 	sourceRIID := req.QueryStringParameters["source_ri_id"]
