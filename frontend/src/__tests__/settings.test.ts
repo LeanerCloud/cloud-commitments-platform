@@ -979,7 +979,7 @@ describe('Settings Module', () => {
       expect(ec2Enabled.checked).toBe(true);
     });
 
-    test('calls updateServiceConfig once per service field (18 calls)', async () => {
+    test('calls updateServiceConfig once per service field (17 calls)', async () => {
       (api.updateConfig as jest.Mock).mockResolvedValue({});
       (api.updateServiceConfig as jest.Mock).mockResolvedValue(undefined);
       window.alert = jest.fn();
