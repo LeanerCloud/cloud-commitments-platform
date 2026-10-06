@@ -3594,9 +3594,7 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
       // controls. Read from the DOM when the card has the controls; fall back
       // to the base row value (or the global default) otherwise so RI and
       // Azure/GCP cards continue to inherit the global settings.
-      let coverage = defaultCoverageChanged
-        ? settings.default_coverage
-        : (base?.coverage ?? settings.default_coverage);
+      let coverage = base?.coverage ?? settings.default_coverage;
       let enabled = base?.enabled ?? true;
       if ('coverageId' in field && field.coverageId) {
         const rawCov = byId<HTMLInputElement>(field.coverageId)?.value ?? '';

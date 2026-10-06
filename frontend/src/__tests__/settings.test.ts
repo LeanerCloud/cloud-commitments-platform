@@ -965,6 +965,34 @@ describe('Settings Module', () => {
         expect(coverageSentFor('savings-plans-compute')).toBe(20);
       });
 
+      test('a rejected global PUT leaves the coverage dirty and sends no service PUTs', async () => {
+        await loadWithCoverage50();
+        (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '70';
+        (api.updateConfig as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(api.updateServiceConfig).not.toHaveBeenCalled();
+        expect(isUnsavedChanges()).toBe(true);
+      });
+
+      test('an SP card coverage whose service PUT failed stays dirty and is resent', async () => {
+        await loadWithCoverage50();
+        (document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value = '70';
+        (api.updateServiceConfig as jest.Mock).mockImplementation(async (provider: string, svc: string) => {
+          if (provider === 'aws' && svc === 'savings-plans-compute') throw new Error('sp failed');
+        });
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+        expect(isUnsavedChanges()).toBe(true);
+
+        (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(coverageSentFor('savings-plans-compute')).toBe(70);
+        expect(isUnsavedChanges()).toBe(false);
+      });
+
       test('an empty global coverage field is rejected instead of saving 0', async () => {
         await loadWithCoverage50();
         (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '';
