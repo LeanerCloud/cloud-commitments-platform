@@ -19,7 +19,7 @@ type RouteHandler func(ctx context.Context, req *events.LambdaFunctionURLRequest
 // block below for the AuthAdmin / AuthUser / AuthPublic options.
 //
 // Router.Route enforces these levels itself as a defense-in-depth check,
-// in addition to the validateSecurity → authenticate middleware that runs
+// in addition to the authentication middleware that runs
 // earlier in the request pipeline. If middleware ordering ever changes or
 // a new route bypasses validateSecurity, the router-level enforcement
 // still rejects unauthorized requests.
@@ -376,8 +376,8 @@ func (r *Router) registerRoutes() {
 
 // Route finds and executes the matching route handler.
 //
-// Authentication enforcement is defense-in-depth: validateSecurity →
-// authenticate already runs in the middleware pipeline before dispatch,
+// Authentication enforcement is defense-in-depth: authentication middleware
+// already runs in the middleware pipeline before dispatch,
 // but Router.Route also enforces the per-route Auth level so routes stay
 // protected even if middleware ordering changes or a new code path
 // bypasses validateSecurity. AuthAdmin routes require admin access;
