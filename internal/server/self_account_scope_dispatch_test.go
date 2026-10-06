@@ -108,7 +108,7 @@ func TestSelfAccountScopeDispatch_JoinWiderGroupRefused(t *testing.T) {
 	}, nil)
 	// Permissive write stub so a guard removal fails by assertion below rather
 	// than by panicking on an unstubbed call.
-	mockStore.On("UpdateUser", mock.Anything, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+	mockStore.On("UpdateUserAdminFields", mock.Anything, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	resp, err := handler.HandleRequest(context.Background(),
 		selfMembershipRequest(t, []string{scopeDispatchGroupID, auth.DefaultAdminGroupID}))
@@ -116,7 +116,7 @@ func TestSelfAccountScopeDispatch_JoinWiderGroupRefused(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 403, resp.StatusCode, "body: %s", resp.Body)
 	assert.Contains(t, resp.Body, "all cloud accounts")
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // The same actor dropping the group that carries their restriction: the
@@ -131,7 +131,7 @@ func TestSelfAccountScopeDispatch_LeaveScopingGroupRefused(t *testing.T) {
 	}
 	handler, mockStore := newSelfScopeHarness(t, []string{scopeDispatchGroupID, viewers.ID})
 	mockStore.On("GetGroup", mock.Anything, viewers.ID).Return(viewers, nil)
-	mockStore.On("UpdateUser", mock.Anything, mock.AnythingOfType("*auth.User")).Return(nil).Maybe()
+	mockStore.On("UpdateUserAdminFields", mock.Anything, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	resp, err := handler.HandleRequest(context.Background(),
 		selfMembershipRequest(t, []string{viewers.ID}))
@@ -139,7 +139,7 @@ func TestSelfAccountScopeDispatch_LeaveScopingGroupRefused(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 403, resp.StatusCode, "body: %s", resp.Body)
 	assert.Contains(t, resp.Body, "all cloud accounts")
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // Control: the same actor making a membership change that does NOT widen their
@@ -154,7 +154,7 @@ func TestSelfAccountScopeDispatch_NonWideningChangeAllowed(t *testing.T) {
 	}
 	handler, mockStore := newSelfScopeHarness(t, []string{scopeDispatchGroupID})
 	mockStore.On("GetGroup", mock.Anything, subset.ID).Return(subset, nil)
-	mockStore.On("UpdateUser", mock.Anything, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", mock.Anything, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	resp, err := handler.HandleRequest(context.Background(),
 		selfMembershipRequest(t, []string{scopeDispatchGroupID, subset.ID}))

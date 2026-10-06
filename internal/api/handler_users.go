@@ -93,7 +93,8 @@ func mapAuthError(err error) error {
 		return NewClientError(403, err.Error())
 	case errors.Is(err, auth.ErrEmailInUse),
 		errors.Is(err, auth.ErrAdminExists),
-		errors.Is(err, auth.ErrLastAdmin):
+		errors.Is(err, auth.ErrLastAdmin),
+		errors.Is(err, auth.ErrUserChanged):
 		return NewClientError(409, err.Error())
 	}
 	return err

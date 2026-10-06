@@ -32,6 +32,10 @@ func (m *mockAuthStoreForHealth) UpdateUser(ctx context.Context, user *auth.User
 	return nil
 }
 
+func (m *mockAuthStoreForHealth) UpdateUserAdminFields(context.Context, *auth.User, string, []string, bool) error {
+	return nil
+}
+
 func (m *mockAuthStoreForHealth) UpdateUserCredentials(context.Context, *auth.User, string, string) error {
 	return nil
 }

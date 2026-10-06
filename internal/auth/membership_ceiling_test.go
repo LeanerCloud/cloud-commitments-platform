@@ -81,7 +81,7 @@ func TestMembershipCeiling_UpdateUser_UpdateUsersOnlyCannotPromoteToAdmin(t *tes
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrPermissionCeiling)
 	assert.Contains(t, err.Error(), ActionAdmin+":"+ResourceAll)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // Self-edit variant of the test above (issue #226 review follow-up): an actor
@@ -108,7 +108,7 @@ func TestMembershipCeiling_UpdateUser_UpdateUsersOnlyCannotSelfPromoteToAdmin(t 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrPermissionCeiling)
 	assert.Contains(t, err.Error(), ActionAdmin+":"+ResourceAll)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // Negative control: an actor may still create a user in a group whose
@@ -191,7 +191,7 @@ func TestMembershipCeiling_UpdateUser_UpdateUsersOnlyCannotReactivateAdmin(t *te
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrPermissionCeiling)
 	assert.Contains(t, err.Error(), ActionAdmin+":"+ResourceAll)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // stubPurchaserTarget registers the target as a Purchaser member with the
@@ -221,7 +221,7 @@ func TestMembershipCeiling_UpdateUser_AdminCanDeactivatePurchaser(t *testing.T) 
 
 	stubActorPermissionsMaybe(ctx, mockStore, adminOnly)
 	stubPurchaserTarget(ctx, mockStore, true)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 	mockStore.On("DeleteUserSessions", ctx, ceilingTargetID).Return(nil).Once()
 
 	inactive := false
@@ -249,7 +249,7 @@ func TestMembershipCeiling_UpdateUser_AdminCannotReactivatePurchaser(t *testing.
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrPermissionNotGrantable)
 	assert.Contains(t, err.Error(), ActionExecute+":"+ResourcePurchases)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // Negative control: an admin actor may still reactivate and deactivate an
@@ -263,7 +263,7 @@ func TestMembershipCeiling_UpdateUser_AdminCanToggleAdminActive(t *testing.T) {
 		svc := newCeilingService(t, mockStore)
 		stubActorPermissions(ctx, mockStore, adminOnly)
 		stubAdminTarget(ctx, mockStore, false)
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		active := true
 		user, err := svc.UpdateUser(ctx, ceilingActorID, ceilingTargetID, UpdateUserRequest{Active: &active})
@@ -279,7 +279,7 @@ func TestMembershipCeiling_UpdateUser_AdminCanToggleAdminActive(t *testing.T) {
 		stubActorPermissionsMaybe(ctx, mockStore, adminOnly)
 		stubAdminTarget(ctx, mockStore, true)
 		mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, ceilingTargetID).Return(nil).Once()
 
 		inactive := false
@@ -300,6 +300,6 @@ func TestMembershipCeiling_UpdateUser_AdminCanToggleAdminActive(t *testing.T) {
 		inactive := false
 		_, err := svc.UpdateUser(ctx, ceilingActorID, ceilingTargetID, UpdateUserRequest{Active: &inactive})
 		require.ErrorIs(t, err, ErrLastAdmin)
-		mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+		mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 }

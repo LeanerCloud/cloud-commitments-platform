@@ -348,7 +348,7 @@ func TestAuthServiceAdapter_UpdateUserAPI(t *testing.T) {
 		ID:          "group-editor",
 		Permissions: []auth.Permission{{Action: auth.ActionUpdate, Resource: auth.ResourceUsers}},
 	}, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	// The new signature threads the actor user ID through to s.UpdateUser
 	// (issue #907 self-escalation guard). Actor != target, so the

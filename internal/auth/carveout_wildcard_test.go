@@ -114,7 +114,7 @@ func TestSelfCarvedOutGrant_WildcardGroupBlocked(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSelfEscalation)
 	assert.Contains(t, err.Error(), ActionExecute+":"+ResourceAll)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // A03-002, API-key creation: an admin minting a key that carries the

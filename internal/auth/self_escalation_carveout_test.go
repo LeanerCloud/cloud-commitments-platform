@@ -78,7 +78,7 @@ func TestSelfCarvedOutGrant_AdminCannotJoinPurchaser(t *testing.T) {
 	// Names the group and the specific verb.
 	assert.Contains(t, err.Error(), GroupPurchaser)
 	assert.Contains(t, err.Error(), ActionExecute+":"+ResourcePurchases)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // A custom (non-seeded) group carrying a carved-out verb is blocked too: the
@@ -103,7 +103,7 @@ func TestSelfCarvedOutGrant_CustomGroupWithMoneyVerbAlsoBlocked(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSelfEscalation)
 	assert.Contains(t, err.Error(), ActionRetryAny+":"+ResourcePurchases)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // Negative control 1: an admin may still add themselves to a group that
@@ -123,7 +123,7 @@ func TestSelfCarvedOutGrant_OrdinaryGroupStillAllowed(t *testing.T) {
 	stubSelfActor(ctx, mockStore, []string{adminGroupID}, adminGroupRow(), readOnly)
 
 	var saved *User
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
 			u, ok := args.Get(1).(*User)
 			require.True(t, ok)
@@ -158,7 +158,7 @@ func TestSelfCarvedOutGrant_ExistingPurchaserNotBlocked(t *testing.T) {
 		[]string{adminGroupID, purchaserGroup},
 		adminGroupRow(), purchaserGroupRow(), second)
 
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	_, err := svc.UpdateUser(ctx, selfActorID, selfActorID, UpdateUserRequest{
 		GroupIDs: []string{adminGroupID, purchaserGroup, second.ID},
@@ -196,7 +196,7 @@ func TestSelfCarvedOutGrant_PlainAdminCannotAddAnotherUserToPurchaser(t *testing
 	assert.ErrorIs(t, err, ErrPermissionNotGrantable)
 	assert.Contains(t, err.Error(), GroupPurchaser)
 	assert.Contains(t, err.Error(), ActionExecute+":"+ResourcePurchases)
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // The two-person control still works for someone who already holds the
@@ -213,7 +213,7 @@ func TestSelfCarvedOutGrant_ExistingPurchaserMayAddAnotherUserToPurchaser(t *tes
 	mockStore.On("GetUserByID", ctx, otherUserID).
 		Return(&User{ID: otherUserID, Active: true, GroupIDs: []string{adminGroupID}}, nil)
 	stubSelfActor(ctx, mockStore, []string{adminGroupID, purchaserGroup}, adminGroupRow(), purchaserGroupRow())
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	_, err := svc.UpdateUser(ctx, selfActorID, otherUserID, UpdateUserRequest{
 		GroupIDs: []string{adminGroupID, purchaserGroup},
@@ -237,7 +237,7 @@ func TestSelfCarvedOutGrant_AdminMayAddAnotherUserToOrdinaryGroup(t *testing.T) 
 	mockStore.On("GetUserByID", ctx, otherUserID).
 		Return(&User{ID: otherUserID, Active: true, GroupIDs: []string{adminGroupID}}, nil)
 	stubSelfActor(ctx, mockStore, []string{adminGroupID}, adminGroupRow(), readOnly)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	_, err := svc.UpdateUser(ctx, selfActorID, otherUserID, UpdateUserRequest{
 		GroupIDs: []string{adminGroupID, readOnly.ID},
@@ -255,7 +255,7 @@ func TestSelfCarvedOutGrant_InternalCallerUnaffected(t *testing.T) {
 
 	mockStore.On("GetUserByID", ctx, selfActorID).
 		Return(&User{ID: selfActorID, Active: true, GroupIDs: []string{adminGroupID}}, nil)
-	mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	_, err := svc.UpdateUser(ctx, "", selfActorID, UpdateUserRequest{
 		GroupIDs: []string{adminGroupID, purchaserGroup},
@@ -287,5 +287,5 @@ func TestSelfCarvedOutGrant_FailsClosedOnGroupLoadError(t *testing.T) {
 	// generic error would pass a message-text check while losing the reason.
 	assert.ErrorIs(t, err, loadErr)
 	assert.Contains(t, err.Error(), "failed to load group")
-	mockStore.AssertNotCalled(t, "UpdateUser", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

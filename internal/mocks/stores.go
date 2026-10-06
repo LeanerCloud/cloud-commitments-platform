@@ -797,6 +797,10 @@ func (m *MockAuthStore) UpdateUser(ctx context.Context, user *auth.User) error {
 	return args.Error(0)
 }
 
+func (m *MockAuthStore) UpdateUserAdminFields(ctx context.Context, user *auth.User, readEmail string, readGroupIDs []string, readActive bool) error {
+	return m.Called(ctx, user, readEmail, readGroupIDs, readActive).Error(0)
+}
+
 func (m *MockAuthStore) UpdateUserCredentials(ctx context.Context, user *auth.User, readEmail, readPasswordHash string) error {
 	return m.Called(ctx, user, readEmail, readPasswordHash).Error(0)
 }

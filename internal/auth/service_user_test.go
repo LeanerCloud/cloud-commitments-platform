@@ -483,9 +483,9 @@ func TestService_UpdateUser_ConcurrentDeactivateLastTwoAdmins(t *testing.T) {
 	mockStore.On("DeleteUserSessions", ctx, "admin-a").Return(nil).Once()
 
 	// admin-a's deactivation commits; admin-b's hits the deferred trigger.
-	mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool { return u.ID == "admin-a" })).Return(nil).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.MatchedBy(func(u *User) bool { return u.ID == "admin-a" }), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 	triggerErr := fmt.Errorf("last_admin_constraint_violation: at least one active member of the Administrators group must remain")
-	mockStore.On("UpdateUser", ctx, mock.MatchedBy(func(u *User) bool { return u.ID == "admin-b" })).Return(triggerErr).Once()
+	mockStore.On("UpdateUserAdminFields", ctx, mock.MatchedBy(func(u *User) bool { return u.ID == "admin-b" }), mock.Anything, mock.Anything, mock.Anything).Return(triggerErr).Once()
 
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
@@ -633,7 +633,7 @@ func TestService_UpdateUser(t *testing.T) {
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		req := UpdateUserRequest{
 			GroupIDs: []string{"group-2", "group-3"},
@@ -668,7 +668,7 @@ func TestService_UpdateUser(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		inactive := false
 		req := UpdateUserRequest{
@@ -702,7 +702,7 @@ func TestService_UpdateUser(t *testing.T) {
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		active := true
 		req := UpdateUserRequest{
@@ -738,7 +738,7 @@ func TestService_UpdateUser(t *testing.T) {
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-invited").Return(existingUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 		// DeleteUserSessions must NOT be called: priorActive was already
 		// false, so there is nothing to revoke; only the marker changes.
 
@@ -769,7 +769,7 @@ func TestService_UpdateUser(t *testing.T) {
 		}
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		inactive := false
 		req := UpdateUserRequest{Active: &inactive}
@@ -843,7 +843,7 @@ func TestService_UpdateUser(t *testing.T) {
 
 		mockStore.On("GetUserByID", ctx, "user-123").Return(existingUser, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "user-123").Return(nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		active := false
 		req := UpdateUserRequest{
@@ -901,7 +901,7 @@ func TestService_UpdateUser(t *testing.T) {
 		mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil).Once()
 		// UpdateUser hits the deferred trigger at commit time.
 		triggerErr := fmt.Errorf("last_admin_constraint_violation: at least one member of the Administrators group must remain")
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(triggerErr).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(triggerErr).Once()
 
 		t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
@@ -955,7 +955,7 @@ func TestService_UpdateUser(t *testing.T) {
 		mockStore.On("GetUserByID", ctx, "admin-1").Return(adminUser, nil).Once()
 		mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil).Once()
 		mockStore.On("DeleteUserSessions", ctx, "admin-1").Return(nil).Once()
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(nil).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 		t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
@@ -984,7 +984,7 @@ func TestService_UpdateUser(t *testing.T) {
 		mockStore.On("GetUserByID", ctx, "admin-1").Return(adminUser, nil).Once()
 		mockStore.On("CountGroupMembers", ctx, DefaultAdminGroupID).Return(2, nil).Once()
 		triggerErr := fmt.Errorf("last_admin_constraint_violation: at least one active member of the Administrators group must remain")
-		mockStore.On("UpdateUser", ctx, mock.AnythingOfType("*auth.User")).Return(triggerErr).Once()
+		mockStore.On("UpdateUserAdminFields", ctx, mock.AnythingOfType("*auth.User"), mock.Anything, mock.Anything, mock.Anything).Return(triggerErr).Once()
 		// DeleteUserSessions must NOT be called: session revocation now
 		// happens only after store.UpdateUser succeeds, so a request that
 		// hits the deferred trigger must not log the user out for a change
