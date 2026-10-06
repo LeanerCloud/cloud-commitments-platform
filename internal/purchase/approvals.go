@@ -58,7 +58,7 @@ func (m *Manager) ApproveExecution(ctx context.Context, executionID, token, acto
 	}
 
 	// Validate token and TTL (Finding #4 + issue #397).
-	if tokErr := validateApprovalToken(execution, token); tokErr != nil {
+	if tokErr := ValidateApprovalToken(execution, token); tokErr != nil {
 		return "", tokErr
 	}
 
@@ -105,17 +105,19 @@ func maskActor(actor string) string {
 	return "****"
 }
 
-// validateApprovalToken checks that the execution carries a non-empty token,
+// ValidateApprovalToken checks that the execution carries a non-empty token,
 // that the supplied token matches the stored one using constant-time comparison
 // (Finding #4 -- prevents timing attacks), and that the token has not expired
 // (issue #397). Legacy rows with a nil ApprovalTokenExpiresAt pass the TTL
 // check for backward compatibility. Extracted from ApproveExecution to keep
-// that function under the gocyclo threshold.
+// that function under the gocyclo threshold. Exported so the HTTP layer's
+// delayed-approval branch (which never calls ApproveExecution) validates the
+// token the same way (issue #586).
 //
 // execution.ApprovalToken is the SHA-256 hex digest stored at rest
 // (issue #103), never the raw secret; config.ApprovalTokenMatches hashes the
 // supplied token and compares digests in constant time.
-func validateApprovalToken(execution *config.PurchaseExecution, token string) error {
+func ValidateApprovalToken(execution *config.PurchaseExecution, token string) error {
 	if execution.ApprovalToken == "" || token == "" {
 		return ErrInvalidApprovalToken
 	}
@@ -563,10 +565,10 @@ func (m *Manager) loadCancelableExecution(ctx context.Context, executionID, toke
 		return nil, fmt.Errorf("failed to get execution: %w", err)
 	}
 	// execution.ApprovalToken is the SHA-256 hex digest stored at rest
-	// (issue #103); validateApprovalToken hashes the supplied token and
+	// (issue #103); ValidateApprovalToken hashes the supplied token and
 	// compares digests in constant time, and enforces the TTL (issue #397;
 	// legacy rows without ApprovalTokenExpiresAt pass).
-	if err := validateApprovalToken(execution, token); err != nil {
+	if err := ValidateApprovalToken(execution, token); err != nil {
 		return nil, err
 	}
 

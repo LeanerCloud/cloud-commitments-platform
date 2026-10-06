@@ -695,6 +695,11 @@ func (h *Handler) approveViaToken(ctx context.Context, req *events.LambdaFunctio
 		return nil, fmt.Errorf("failed to read global config for purchase delay check: %w", cfgErr)
 	}
 	if globalCfg.GetPurchaseDelay() > 0 {
+		// The delayed branch bypasses ApproveExecution, which is where the
+		// token is otherwise validated (issue #586).
+		if err := purchase.ValidateApprovalToken(execution, token); err != nil {
+			return nil, tokenActionError(err)
+		}
 		return h.approveWithDelay(ctx, execution, globalCfg.GetPurchaseDelay(), actor, nil)
 	}
 	// ApproveExecution now runs the purchase synchronously inside the
