@@ -16,7 +16,8 @@ import (
 // Issue #447: the quote endpoint must not fabricate a 0 / empty refund when
 // Azure omits the amount or currency; it must fail with a 422 instead.
 
-func quoteResponse(sessionID string, price *armreservations.Price) armreservations.CalculateRefundClientPostResponse {
+func quoteResponse(price *armreservations.Price) armreservations.CalculateRefundClientPostResponse {
+	sessionID := "s1"
 	return armreservations.CalculateRefundClientPostResponse{
 		CalculateRefundResponse: armreservations.CalculateRefundResponse{
 			Properties: &armreservations.RefundResponseProperties{
@@ -52,17 +53,17 @@ func TestHandleRequest_RevokeCalculate_AzureQuote(t *testing.T) {
 	}{
 		{
 			name:       "complete quote",
-			resp:       quoteResponse("s1", &armreservations.Price{Amount: &amount, CurrencyCode: &currency}),
+			resp:       quoteResponse(&armreservations.Price{Amount: &amount, CurrencyCode: &currency}),
 			wantStatus: 200,
 		},
 		{
 			name:       "zero amount is a real quote",
-			resp:       quoteResponse("s1", &armreservations.Price{Amount: new(float64), CurrencyCode: &currency}),
+			resp:       quoteResponse(&armreservations.Price{Amount: new(float64), CurrencyCode: &currency}),
 			wantStatus: 200,
 		},
 		{
 			name:       "no billing refund amount",
-			resp:       quoteResponse("s1", nil),
+			resp:       quoteResponse(nil),
 			wantStatus: 422,
 			wantErr:    "no refund amount or currency",
 		},
@@ -74,19 +75,19 @@ func TestHandleRequest_RevokeCalculate_AzureQuote(t *testing.T) {
 		},
 		{
 			name:       "amount missing",
-			resp:       quoteResponse("s1", &armreservations.Price{CurrencyCode: &currency}),
+			resp:       quoteResponse(&armreservations.Price{CurrencyCode: &currency}),
 			wantStatus: 422,
 			wantErr:    "no refund amount or currency",
 		},
 		{
 			name:       "currency missing",
-			resp:       quoteResponse("s1", &armreservations.Price{Amount: &amount}),
+			resp:       quoteResponse(&armreservations.Price{Amount: &amount}),
 			wantStatus: 422,
 			wantErr:    "no refund amount or currency",
 		},
 		{
 			name:       "currency blank",
-			resp:       quoteResponse("s1", &armreservations.Price{Amount: &amount, CurrencyCode: &empty}),
+			resp:       quoteResponse(&armreservations.Price{Amount: &amount, CurrencyCode: &empty}),
 			wantStatus: 422,
 			wantErr:    "no refund amount or currency",
 		},
