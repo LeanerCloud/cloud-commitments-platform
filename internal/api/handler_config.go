@@ -292,7 +292,13 @@ func (h *Handler) getServiceConfig(ctx context.Context, req *events.LambdaFuncti
 
 func (h *Handler) updateServiceConfig(ctx context.Context, req *events.LambdaFunctionURLRequest, service string) (*StatusResponse, error) {
 	// Require update:config permission
-	if _, err := h.requirePermission(ctx, req, "update", "config"); err != nil {
+	session, permErr := h.requirePermission(ctx, req, "update", "config")
+	if permErr != nil {
+		return nil, permErr
+	}
+	// Service configs are deployment-wide (provider+service, no account), so
+	// they need the same unrestricted-account gate as the global config.
+	if err := h.requireGlobalConfigScope(ctx, session); err != nil {
 		return nil, err
 	}
 
