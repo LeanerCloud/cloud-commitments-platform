@@ -636,6 +636,23 @@ func (h *Handler) approvePurchase(ctx context.Context, req *events.LambdaFunctio
 	return h.approvePurchaseViaSession(ctx, req, execution)
 }
 
+// tokenActionError maps the email-link approve/cancel failures that are the
+// caller's fault to a 4xx: a wrong token is 403 (as on the RI exchange
+// approve path), an expired token is 410, and an execution
+// whose status no longer allows the action is 409. Anything else stays a server error.
+func tokenActionError(err error) error {
+	switch {
+	case errors.Is(err, purchase.ErrInvalidApprovalToken):
+		return NewClientError(403, "invalid approval token")
+	case errors.Is(err, purchase.ErrApprovalTokenExpired):
+		return NewClientError(410, "approval token has expired")
+	case errors.Is(err, config.ErrExecutionNotInExpectedStatus):
+		return NewClientError(409, err.Error())
+	default:
+		return err
+	}
+}
+
 // approveViaToken handles the email-link approve branch of approvePurchase to keep
 // that function under the cyclomatic limit.
 func (h *Handler) approveViaToken(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, token string) (any, error) {
@@ -692,7 +709,7 @@ func (h *Handler) approveViaToken(ctx context.Context, req *events.LambdaFunctio
 	// the hash.
 	revocationToken, approveErr := h.purchase.ApproveExecution(ctx, execution.ExecutionID, token, actor)
 	if approveErr != nil {
-		return nil, approveErr
+		return nil, tokenActionError(approveErr)
 	}
 	// Re-fetch the execution to pick up the FINAL state (status,
 	// completed_at, per-rec purchase results) ApproveAndExecute wrote --
@@ -1243,7 +1260,7 @@ func (h *Handler) cancelPurchase(ctx context.Context, req *events.LambdaFunction
 			return nil, err
 		}
 		if err := h.purchase.CancelExecution(ctx, execID, token, actor); err != nil {
-			return nil, err
+			return nil, tokenActionError(err)
 		}
 		return map[string]string{"status": "canceled"}, nil
 	}
@@ -1402,12 +1419,9 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 		return renderRevokeConfirmPage(execID, token), nil
 	}
 
-	execution, err := h.config.GetExecutionByID(ctx, execID)
+	execution, err := h.getExecutionOr404(ctx, execID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get execution: %w", err)
-	}
-	if execution == nil {
-		return nil, NewClientError(404, "execution not found")
+		return nil, err
 	}
 
 	// Three-mode dispatch — same shape as cancelPurchase.
@@ -1443,6 +1457,19 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 		return nil, err
 	}
 	return h.revokeViaSession(ctx, execution, actor)
+}
+
+// getExecutionOr404 loads an execution, answering 404 for a missing one
+// (ErrNotFound or a nil row) and leaving real store errors as 500s.
+func (h *Handler) getExecutionOr404(ctx context.Context, execID string) (*config.PurchaseExecution, error) {
+	execution, err := h.config.GetExecutionByID(ctx, execID)
+	if errors.Is(err, config.ErrNotFound) || (err == nil && execution == nil) {
+		return nil, NewClientError(404, "execution not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get execution: %w", err)
+	}
+	return execution, nil
 }
 
 // renderRevokeConfirmPage returns a rawResponse containing the HTML

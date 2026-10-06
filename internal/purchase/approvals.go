@@ -17,6 +17,13 @@ import (
 // opposed to a failure to evaluate it (config or store errors).
 var ErrFourEyesDenied = errors.New("approval declined")
 
+// ErrInvalidApprovalToken and ErrApprovalTokenExpired let the HTTP layer map a
+// bad email-link token to a 4xx instead of a 500.
+var (
+	ErrInvalidApprovalToken = errors.New("invalid approval token")
+	ErrApprovalTokenExpired = errors.New("approval token has expired")
+)
+
 // runNowSkipReason is stamped onto PreApprovalSkipReason when an operator's
 // "Run now" stands in for the approval and the scheduled wait.
 const runNowSkipReason = "run-now"
@@ -110,13 +117,13 @@ func maskActor(actor string) string {
 // supplied token and compares digests in constant time.
 func validateApprovalToken(execution *config.PurchaseExecution, token string) error {
 	if execution.ApprovalToken == "" || token == "" {
-		return fmt.Errorf("invalid approval token")
+		return ErrInvalidApprovalToken
 	}
 	if !config.ApprovalTokenMatches(execution.ApprovalToken, token) {
-		return fmt.Errorf("invalid approval token")
+		return ErrInvalidApprovalToken
 	}
 	if execution.ApprovalTokenExpiresAt != nil && time.Now().After(*execution.ApprovalTokenExpiresAt) {
-		return fmt.Errorf("approval token has expired")
+		return ErrApprovalTokenExpired
 	}
 	return nil
 }
@@ -465,7 +472,7 @@ func (m *Manager) CancelExecution(ctx context.Context, executionID, token, actor
 	}
 
 	if !canceled {
-		return fmt.Errorf("execution %s cannot be canceled: concurrent operation already transitioned it to %q", executionID, currentStatus)
+		return fmt.Errorf("%w: execution %s cannot be canceled: concurrent operation already transitioned it to %q", config.ErrExecutionNotInExpectedStatus, executionID, currentStatus)
 	}
 
 	logging.Infof("Execution %s canceled", executionID)
@@ -555,20 +562,12 @@ func (m *Manager) loadCancelableExecution(ctx context.Context, executionID, toke
 	if err != nil {
 		return nil, fmt.Errorf("failed to get execution: %w", err)
 	}
-	if execution.ApprovalToken == "" || token == "" {
-		return nil, fmt.Errorf("invalid approval token")
-	}
 	// execution.ApprovalToken is the SHA-256 hex digest stored at rest
-	// (issue #103); config.ApprovalTokenMatches hashes the supplied token
-	// and compares digests in constant time.
-	if !config.ApprovalTokenMatches(execution.ApprovalToken, token) {
-		return nil, fmt.Errorf("invalid approval token")
-	}
-
-	// Enforce token TTL (issue #397). Same backward-compat nil-guard as
-	// ApproveExecution: legacy rows without ApprovalTokenExpiresAt pass through.
-	if execution.ApprovalTokenExpiresAt != nil && time.Now().After(*execution.ApprovalTokenExpiresAt) {
-		return nil, fmt.Errorf("approval token has expired")
+	// (issue #103); validateApprovalToken hashes the supplied token and
+	// compares digests in constant time, and enforces the TTL (issue #397;
+	// legacy rows without ApprovalTokenExpiresAt pass).
+	if err := validateApprovalToken(execution, token); err != nil {
+		return nil, err
 	}
 
 	// Only pre-purchase rows (pending/notified/scheduled) are cancelable --
@@ -583,7 +582,7 @@ func (m *Manager) loadCancelableExecution(ctx context.Context, executionID, toke
 	// mid-execution (the AWS commitment is being or has been created), so
 	// canceling them would leave the DB and the cloud out of sync.
 	if !execution.IsCancelable() {
-		return nil, fmt.Errorf("execution cannot be canceled, current status: %s", execution.Status)
+		return nil, fmt.Errorf("%w: execution cannot be canceled, current status: %s", config.ErrExecutionNotInExpectedStatus, execution.Status)
 	}
 	return execution, nil
 }
