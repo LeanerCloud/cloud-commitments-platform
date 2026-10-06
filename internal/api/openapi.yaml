@@ -498,23 +498,97 @@ paths:
       tags: [Purchases]
       summary: Approve a pending purchase execution
       description: >
-        Token-based approval; does not require session auth or CSRF.
-      security: []
+        Two modes. Session mode: send the session bearer token plus the
+        X-CSRF-Token header; the session must hold approve-any, or
+        approve-own for an execution it created, and the execution must be
+        inside the session's account scope. Token mode (email link): send the
+        approval token; the caller must also be signed in with the email of
+        the contact_email of a cloud account on the execution (the global
+        notification address is not an accepted approver). A session that lacks the
+        permission, or is outside the account scope, falls through to token
+        mode when a token is present; with no token the denial is final.
+        A session whose approve permission Constraints are exceeded is
+        denied outright and does not fall through. The route is also
+        routed for GET (email link click) with the token in the query string.
+        When the global purchase delay is configured the response status is
+        "scheduled" instead of "completed".
+      security:
+        - bearerAuth: []
+        - {}
       parameters:
         - name: token
           in: query
-          required: true
+          required: false
+          description: >
+            Approval token. For POST it may instead be sent as a JSON body
+            {"token": "..."} or a form field named token; the body is
+            preferred so the token stays out of access logs.
+          schema:
+            type: string
+        - name: X-CSRF-Token
+          in: header
+          required: false
+          description: >
+            CSRF token from the login response. Required when the request
+            carries a session bearer token and is handled in session mode.
           schema:
             type: string
       responses:
         '200':
-          description: Approved
+          description: Approved and executed ("completed"), or scheduled behind the purchase delay ("scheduled")
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          description: >
+            No valid session. Returned when neither a session nor a token
+            authorizes the request, and in token mode when the caller is not
+            signed in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: >
+            CSRF validation failed, the session lacks approve permission or
+            exceeds its Constraints, the caller is not the account's contact
+            email, no contact email is configured on the execution's
+            accounts, or 4-eyes mode rejects the approver.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >
+            Execution not found, or outside the session's account scope and
+            no token was supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            The execution cannot be approved: a non-AWS execution without a
+            resolvable cloud account, or (session mode) a status other than
+            pending or notified, or the status changed concurrently.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          description: >
+            Server error. In token mode an invalid or expired approval token
+            is also reported as 500, because the purchase service returns an
+            untyped error that the handler does not map to a 4xx.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/purchases/cancel/{id}:
     parameters:
@@ -524,12 +598,32 @@ paths:
       tags: [Purchases]
       summary: Cancel a pending purchase execution
       description: >
-        Token-based cancellation; does not require session auth or CSRF.
-      security: []
+        Two modes, with the same dispatch as approve. Session mode: session
+        bearer token plus X-CSRF-Token; the session must hold cancel-any, or
+        cancel-own for an execution it created, and the execution must be
+        inside the session's account scope. Token mode (email link): the
+        approval token plus a session signed in as the contact email of an
+        account on the execution. A session that lacks the permission, or is
+        outside the account scope, falls through to token mode when a token
+        is present; with no token the denial is final. Also routed for GET
+        with the token in the query string.
+      security:
+        - bearerAuth: []
+        - {}
       parameters:
         - name: token
           in: query
-          required: true
+          required: false
+          description: >
+            Approval token. For POST it may instead be sent as a JSON body
+            {"token": "..."} or a form field named token.
+          schema:
+            type: string
+        - name: X-CSRF-Token
+          in: header
+          required: false
+          description: >
+            CSRF token from the login response. Required in session mode.
           schema:
             type: string
       responses:
@@ -541,6 +635,142 @@ paths:
                 $ref: '#/components/schemas/StatusResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          description: >
+            No valid session. Returned when neither a session nor a token
+            authorizes the request, and in token mode when the caller is not
+            signed in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: >
+            CSRF validation failed, the session lacks cancel permission, the
+            caller is not the account's contact email, or no contact email is
+            configured on the execution's accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: >
+            Execution not found, or outside the session's account scope and
+            no token was supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            Session mode only: the execution is not cancelable (scheduled
+            executions must use the revoke endpoint), or its status changed
+            concurrently.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          description: >
+            Server error. In token mode an invalid or expired token, or an
+            execution that can no longer be canceled, is also reported as
+            500, because the purchase service returns an untyped error that
+            the handler does not map to a 4xx.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/purchases/revoke/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ResourceID'
+    post:
+      operationId: revokePurchaseViaEmail
+      tags: [Purchases]
+      summary: Revoke a completed purchase from the email link
+      description: >
+        Records a revocation request for a completed or partially completed
+        purchase. The same path also answers GET with an unauthenticated HTML
+        confirmation form (no state change, so mail prefetchers cannot
+        trigger a revocation); that form POSTs the token here. The GET
+        operation is not listed separately because the permission-gate
+        guard in openapi_403_test.go matches routes by prefix and would
+        mistake it for the GET /api/purchases/{id} details route. Two modes. Session mode: session bearer token plus
+        X-CSRF-Token, with cancel-any or cancel-own and account scope, as for
+        cancel. Token mode: the approval token plus a session signed in as
+        the contact email of an account on the execution, within the
+        24-hour revocation window. A session denial falls through to token
+        mode only when a token is present.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - name: token
+          in: query
+          required: false
+          description: >
+            Approval token. May instead be sent as a JSON body
+            {"token": "..."} or a form field named token.
+          schema:
+            type: string
+        - name: X-CSRF-Token
+          in: header
+          required: false
+          description: CSRF token from the login response. Required in session mode.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Revocation request recorded
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: >
+            No session and no token, or token mode without a signed-in
+            contact-email session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: >
+            CSRF validation failed, the session lacks cancel permission, the
+            token is invalid, the revocation window has closed, or the caller
+            is not the account's contact email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Execution outside the session's account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            The execution status cannot be revoked (still pending or
+            notified, or not completed), or the revocation link has expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          description: >
+            Server error. A non-existent execution id also yields 500 on
+            POST, because the lookup error is not mapped to 404.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   # ---- Planned Purchases --------------------------------------------------
   /api/purchases/planned:
@@ -1067,19 +1297,63 @@ paths:
     post:
       operationId: approveRIExchange
       tags: [RIExchange]
-      summary: Approve a pending RI exchange (token-based, no session required)
-      security: []
+      summary: Approve a pending RI exchange
+      description: >
+        Two modes. Session mode: session bearer token plus X-CSRF-Token; the
+        session must hold approve-any, or approve-own for an exchange it
+        created, within the deployment account scope. Token mode (email
+        link): the approval token in the query string, no session needed
+        unless 4-eyes mode is on. A session that lacks the permission falls
+        through to token mode when a token is present; a CSRF rejection
+        never falls through.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: X-CSRF-Token
+          in: header
+          required: false
+          description: CSRF token from the login response. Required in session mode.
+          schema:
+            type: string
       responses:
         '200':
-          description: Exchange approved
+          description: Exchange approved and executed (the body carries a status such as completed or failed)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusResponse'
+                type: object
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          description: >
+            CSRF validation failed (including a request with neither a token
+            nor a valid session), the session lacks approve permission, the
+            token is invalid, the record does not support approval, or 4-eyes
+            mode rejects the approver.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: >
+            The exchange is no longer pending (already processed, expired or
+            canceled by a newer analysis run).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /api/ri-exchange/reject/{id}:
     parameters:
@@ -1940,6 +2214,12 @@ components:
         have failed without committing anything. Do not read a 409 as
         confirmation that the earlier submit succeeded. Verify its outcome
         with the provider before resubmitting.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Internal server error
       content:
         application/json:
           schema:
