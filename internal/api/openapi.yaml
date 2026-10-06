@@ -558,7 +558,8 @@ paths:
             credentials), the session lacks approve permission or
             exceeds its Constraints, the caller is not the account's contact
             email, no contact email is configured on the execution's
-            accounts, or 4-eyes mode rejects the approver.
+            accounts, 4-eyes mode rejects the approver, or (token mode) the
+            approval token is invalid.
           content:
             application/json:
               schema:
@@ -574,9 +575,17 @@ paths:
         '409':
           description: >
             The execution cannot be approved: a non-AWS execution without a
-            resolvable cloud account, or (session mode) a status other than
-            pending or notified, the status changed concurrently, or the
+            resolvable cloud account, a status other than pending or notified
+            (in token mode the status check is the atomic transition, so a
+            concurrent change answers the same way), or (session mode) the
             purchase itself failed during execution.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '410':
+          description: >
+            Token mode only, the approval token has expired.
           content:
             application/json:
               schema:
@@ -584,10 +593,7 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
-          description: >
-            Server error. Currently also returned in token mode for an
-            invalid or expired approval token. Known defect tracked in #564;
-            this will become a 4xx, so do not rely on the 500.
+          description: Server error.
           content:
             application/json:
               schema:
@@ -652,8 +658,9 @@ paths:
           description: >
             CSRF validation failed (this includes a request with no
             credentials), the session lacks cancel permission, the caller is
-            not the account's contact email, or no contact email is
-            configured on the execution's accounts.
+            not the account's contact email, no contact email is
+            configured on the execution's accounts, or (token mode) the
+            approval token is invalid.
           content:
             application/json:
               schema:
@@ -668,9 +675,16 @@ paths:
                 $ref: '#/components/schemas/Error'
         '409':
           description: >
-            Session mode only: the execution is not cancelable (scheduled
+            The execution is not cancelable (in session mode, scheduled
             executions must use the revoke endpoint), or its status changed
             concurrently.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '410':
+          description: >
+            Token mode only, the approval token has expired.
           content:
             application/json:
               schema:
@@ -678,11 +692,7 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
-          description: >
-            Server error. Currently also returned in token mode for an
-            invalid or expired token, or an execution that is no longer
-            pending. Known defect tracked in #564; this will become a 4xx,
-            so do not rely on the 500.
+          description: Server error.
           content:
             application/json:
               schema:
@@ -761,7 +771,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Execution outside the session's account scope.
+          description: >
+            Execution not found, or outside the session's account scope.
           content:
             application/json:
               schema:
@@ -777,10 +788,7 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
-          description: >
-            Server error. Currently also returned for a non-existent
-            execution id. Known defect tracked in #564; this will become a
-            404, so do not rely on the 500.
+          description: Server error.
           content:
             application/json:
               schema:
