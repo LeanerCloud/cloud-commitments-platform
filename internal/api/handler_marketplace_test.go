@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -332,9 +333,9 @@ func TestMarketplaceList_DBFailureCompensatingRollback(t *testing.T) {
 	// DB persist fails after the listing was created.
 	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-default", config.ListingStateActive).
 		Return(errors.New("db down"))
-	// After the compensating cancel, the claim is released back to unlisted so
-	// the row is not left stuck in the pending state.
-	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "", "").
+	// After the compensating cancel, the canceled listing is recorded so the
+	// row is not left stuck in the pending state and the retry gets a new token.
+	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-default", config.ListingStateCancelled).
 		Return(nil)
 
 	ec2 := &stubMarketplaceEC2{}
@@ -1021,5 +1022,130 @@ func TestMarketplaceList_ZeroTimestampReturnsError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no timestamp")
 	assert.Zero(t, ec2.createCallCount, "no listing may be created for an unpriceable RI")
+	cfgStore.AssertExpectations(t)
+}
+
+// A timeout after AWS accepted CreateReservedInstancesListing releases the
+// claim, so the operator retries. The retry must reuse the ClientToken so AWS
+// returns the existing listing instead of creating a second live one.
+func TestMarketplaceList_AmbiguousAWSErrorRetryDoesNotDuplicateListing(t *testing.T) {
+	cfgStore := &MockConfigStore{}
+	authSvc := &MockAuthService{}
+	adminSession(authSvc)
+	cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).
+		Return(standardRow(), nil)
+	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).
+		Return(true, nil)
+	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).
+		Return(nil)
+
+	// Fake AWS: dedups on ClientToken like the real API, and the first call
+	// loses its response after creating the listing.
+	listingsByToken := map[string]string{}
+	calls := 0
+	ec2 := &stubMarketplaceEC2{createFn: func(_ context.Context, req ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error) {
+		calls++
+		id, ok := listingsByToken[req.ClientToken]
+		if !ok {
+			id = "ril-" + req.ClientToken
+			listingsByToken[req.ClientToken] = id
+		}
+		if calls == 1 {
+			return ec2svc.MarketplaceListingResult{}, errors.New("RequestTimeout: response lost")
+		}
+		return ec2svc.MarketplaceListingResult{ListingID: id, State: config.ListingStateActive}, nil
+	}}
+	h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+
+	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+	require.Error(t, err)
+	_, err = h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+	require.NoError(t, err)
+
+	assert.Len(t, listingsByToken, 1, "the retry must reuse the ClientToken so AWS does not create a second listing")
+}
+
+// A deliberate re-list after a listing was canceled must not replay the dead
+// listing: the recorded listing id changes the token.
+func TestMarketplaceClientToken(t *testing.T) {
+	sched := []ec2svc.MarketplacePriceTier{{Term: 12, Price: 100}, {Term: 6, Price: 50}}
+	base := marketplaceClientToken("p1", "", 3, sched)
+
+	assert.Equal(t, base, marketplaceClientToken("p1", "", 3, sched), "same attempt, same token")
+	assert.NotEqual(t, base, marketplaceClientToken("p1", "ril-old", 3, sched), "re-list after cancel")
+	assert.NotEqual(t, base, marketplaceClientToken("p2", "", 3, sched), "other RI")
+	assert.NotEqual(t, base, marketplaceClientToken("p1", "", 2, sched), "other count")
+	assert.NotEqual(t, base, marketplaceClientToken("p1", "", 3, sched[:1]), "other schedule")
+}
+
+// replayingAWS dedups on ClientToken and replays a listing that was canceled.
+type replayingAWS struct {
+	byToken  map[string]string
+	canceled map[string]bool
+	n        int
+}
+
+func (a *replayingAWS) create(_ context.Context, req ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error) {
+	id, ok := a.byToken[req.ClientToken]
+	if !ok {
+		a.n++
+		id = fmt.Sprintf("ril-%d", a.n)
+		a.byToken[req.ClientToken] = id
+	}
+	state := config.ListingStateActive
+	if a.canceled[id] {
+		state = config.ListingStateCancelled
+	}
+	return ec2svc.MarketplaceListingResult{ListingID: id, State: state}, nil
+}
+
+func (a *replayingAWS) cancel(_ context.Context, id string) (ec2svc.MarketplaceListingResult, error) {
+	a.canceled[id] = true
+	return ec2svc.MarketplaceListingResult{ListingID: id, State: config.ListingStateCancelled}, nil
+}
+
+func TestMarketplaceList_RetryAfterRolledBackPersistFailureGetsNewListing(t *testing.T) {
+	cfgStore := &MockConfigStore{}
+	authSvc := &MockAuthService{}
+	adminSession(authSvc)
+	// The store reflects what the handler records, like the real table.
+	cur := standardRow()
+	cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).Return(cur, nil)
+	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).Return(true, nil)
+	record := func(args mock.Arguments) { cur.ListingID, cur.ListingState = args.String(2), args.String(3) }
+	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-1", config.ListingStateActive).
+		Return(errors.New("db down")).Once()
+	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).
+		Run(record).Return(nil)
+
+	aws := &replayingAWS{byToken: map[string]string{}, canceled: map[string]bool{}}
+	ec2 := &stubMarketplaceEC2{createFn: aws.create, cancelFn: aws.cancel}
+	h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+
+	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rolled back")
+
+	got, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+	require.NoError(t, err)
+	resp := got.(*MarketplaceListResponse)
+	assert.Equal(t, config.ListingStateActive, resp.ListingState)
+	assert.Equal(t, "ril-2", resp.ListingID, "the retry must create a new listing, not replay the canceled one")
+}
+
+func TestMarketplaceList_ReturnedCanceledStateIsAnError(t *testing.T) {
+	cfgStore := &MockConfigStore{}
+	authSvc := &MockAuthService{}
+	adminSession(authSvc)
+	cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).Return(standardRow(), nil)
+	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).Return(true, nil)
+	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, "ril-dead", config.ListingStateCancelled).Return(nil)
+	ec2 := &stubMarketplaceEC2{createFn: func(context.Context, ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error) {
+		return ec2svc.MarketplaceListingResult{ListingID: "ril-dead", State: config.ListingStateCancelled}, nil
+	}}
+	h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+
+	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+	require.Error(t, err)
 	cfgStore.AssertExpectations(t)
 }

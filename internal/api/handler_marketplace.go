@@ -288,7 +288,7 @@ func (h *Handler) reserveAndCreateListing(ctx context.Context, purchaseID string
 
 	result, err := ec2Client.CreateMarketplaceListing(ctx, ec2svc.MarketplaceListingRequest{
 		ReservedInstancesID: purchaseID,
-		ClientToken:         uuid.New().String(),
+		ClientToken:         marketplaceClientToken(purchaseID, row.ListingID, instanceCount, awsSchedule),
 		PriceSchedule:       awsSchedule,
 		InstanceCount:       instanceCount,
 	})
@@ -297,6 +297,10 @@ func (h *Handler) reserveAndCreateListing(ctx context.Context, purchaseID string
 		h.releaseMarketplaceClaim(ctx, purchaseID, row)
 		logging.Warnf("marketplace: CreateReservedInstancesListing for purchase %s failed: %v", purchaseID, err)
 		return ec2svc.MarketplaceListingResult{}, mapAWSMarketplaceError("AWS marketplace listing failed", err)
+	}
+
+	if isDeadListingState(result.State) {
+		return ec2svc.MarketplaceListingResult{}, h.recordDeadListing(ctx, purchaseID, row, result)
 	}
 
 	// Persist the listing ID and state. On DB failure, attempt a compensating
@@ -311,11 +315,57 @@ func (h *Handler) reserveAndCreateListing(ctx context.Context, purchaseID string
 			return ec2svc.MarketplaceListingResult{}, h.keepUncanceledListing(compCtx, purchaseID, result, rollbackErr)
 		}
 		logging.Warnf("marketplace: listing %s rolled back (canceled) after DB failure", result.ListingID)
-		h.releaseMarketplaceClaim(ctx, purchaseID, row)
+		h.recordRolledBackListing(compCtx, ctx, purchaseID, row, result.ListingID)
 		return ec2svc.MarketplaceListingResult{}, fmt.Errorf("listing created but could not be persisted; listing has been rolled back: %w", dbErr)
 	}
 
 	return result, nil
+}
+
+// marketplaceClientToken derives the CreateReservedInstancesListing ClientToken
+// from the request instead of drawing a random one, so a retry of the same
+// attempt (for example after a timeout that hid AWS's success) carries the same
+// token and AWS returns the existing listing rather than creating a second one.
+// The previously recorded listing id is part of the input: every path that
+// ends a listing (cancel, rollback, dead state) records that listing's id, so
+// the next attempt gets a new token instead of AWS replaying the dead listing.
+// The default schedule depends on the remaining months, so a retry across a
+// month boundary also gets a new token; persisting the token (issue #525)
+// closes that. The count and schedule are included so a retry
+// with different parameters never trips AWS's idempotent-parameter-mismatch
+// error.
+func marketplaceClientToken(purchaseID, priorListingID string, count int32, schedule []ec2svc.MarketplacePriceTier) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s|%s|%d", purchaseID, priorListingID, count)
+	for _, t := range schedule {
+		fmt.Fprintf(&b, "|%d:%v", t.Term, t.Price)
+	}
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(b.String())).String()
+}
+
+func isDeadListingState(state string) bool {
+	return strings.EqualFold(state, config.ListingStateCancelled) || strings.EqualFold(state, config.ListingStateClosed)
+}
+
+// recordDeadListing handles a create response in a canceled or closed state
+// (AWS replays a dead listing for a reused ClientToken): it records the listing
+// so the slot is free with a new token for the next attempt, and reports it.
+func (h *Handler) recordDeadListing(ctx context.Context, purchaseID string, row *config.PurchaseHistoryRecord, listing ec2svc.MarketplaceListingResult) error {
+	if err := h.config.UpdatePurchaseHistoryListing(ctx, purchaseID, listing.ListingID, listing.State); err != nil {
+		logging.Errorf("marketplace: failed to record dead listing %s for purchase %s: %v", listing.ListingID, purchaseID, err)
+		h.releaseMarketplaceClaim(ctx, purchaseID, row)
+	}
+	return NewClientError(502, fmt.Sprintf("AWS returned listing %s in state %s instead of a live listing; retry to create a new one", listing.ListingID, listing.State))
+}
+
+// recordRolledBackListing records the canceled listing instead of restoring the
+// old listing id, so the next attempt derives a different ClientToken; AWS
+// would otherwise replay the canceled listing for the same token.
+func (h *Handler) recordRolledBackListing(compCtx, ctx context.Context, purchaseID string, row *config.PurchaseHistoryRecord, listingID string) {
+	if err := h.config.UpdatePurchaseHistoryListing(compCtx, purchaseID, listingID, config.ListingStateCancelled); err != nil {
+		logging.Errorf("marketplace: failed to record rolled-back listing %s for purchase %s: %v", listingID, purchaseID, err)
+		h.releaseMarketplaceClaim(ctx, purchaseID, row)
+	}
 }
 
 // keepUncanceledListing records a listing that could be neither persisted nor
