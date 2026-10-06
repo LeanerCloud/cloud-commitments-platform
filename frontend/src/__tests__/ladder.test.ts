@@ -122,6 +122,43 @@ describe('ladder.ts', () => {
     });
   });
 
+  describe('kill-switch toggle', () => {
+    const flip = (): HTMLInputElement => {
+      const toggle = document.getElementById('setting-laddering-enabled') as HTMLInputElement;
+      toggle.checked = !toggle.checked;
+      toggle.dispatchEvent(new Event('change'));
+      return toggle;
+    };
+
+    test.each([true, false])('sends exactly the new laddering_enabled value and nothing else (was %s)', async (before) => {
+      await renderSection();
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      const toggle = document.getElementById('setting-laddering-enabled') as HTMLInputElement;
+      toggle.checked = before;
+
+      flip();
+      await waitFor(() => expect(api.updateConfig).toHaveBeenCalledTimes(1));
+
+      expect(api.updateConfig).toHaveBeenCalledWith({ laddering_enabled: !before });
+      expect(toggle.checked).toBe(!before);
+      await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'success' })));
+    });
+
+    test('a failed PUT reverts the toggle and shows an error toast', async () => {
+      await renderSection();
+      (api.updateConfig as jest.Mock).mockRejectedValue(new Error('boom'));
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const toggle = document.getElementById('setting-laddering-enabled') as HTMLInputElement;
+      const before = toggle.checked;
+
+      flip();
+
+      await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' })));
+      expect(api.updateConfig).toHaveBeenCalledWith({ laddering_enabled: !before });
+      expect(toggle.checked).toBe(before);
+    });
+  });
+
   describe('renderConfigTable XSS escaping', () => {
     test('renders a malicious cloud_account_id/provider as inert text, not markup', async () => {
       await renderSection();
