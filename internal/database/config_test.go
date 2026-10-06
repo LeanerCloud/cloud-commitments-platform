@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -820,5 +821,24 @@ func TestValidatePoolSettings(t *testing.T) {
 				assert.NoError(t, err)
 			}
 		})
+	}
+}
+
+// trickyPassword holds every character that breaks an unquoted keyword DSN or
+// an unescaped URL userinfo.
+const trickyPassword = `p@ss:w/rd%#? "q" 'it\s'`
+
+func TestConfigDSN_PasswordRoundTrip(t *testing.T) {
+	cfg := &Config{
+		Host: "localhost", Port: 5432, User: "u", Database: "d",
+		SSLMode: "disable", ConnectTimeout: 10 * time.Second,
+	}
+	for _, pw := range []string{trickyPassword, "has space", "it's", `back\slash`, "", "plain"} {
+		parsed, err := pgconn.ParseConfig(cfg.DSN(pw))
+		require.NoError(t, err, "password %q", pw)
+		assert.Equal(t, pw, parsed.Password)
+		assert.Equal(t, "u", parsed.User)
+		assert.Equal(t, "d", parsed.Database)
+		assert.Equal(t, "localhost", parsed.Host)
 	}
 }

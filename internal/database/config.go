@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -145,11 +146,22 @@ func (c *Config) dsn(password string) string {
 		c.Host,
 		c.Port,
 		c.User,
-		password,
+		quoteDSNValue(password),
 		c.Database,
 		c.SSLMode,
 		int(c.ConnectTimeout.Seconds()),
 	)
+}
+
+// quoteDSNValue quotes a keyword/value DSN value per libpq rules when it is
+// empty or contains whitespace, a single quote or a backslash; otherwise it
+// returns the value unchanged.
+func quoteDSNValue(v string) string {
+	if v != "" && !strings.ContainsAny(v, " \t\n\r\f\v'\\") {
+		return v
+	}
+	r := strings.NewReplacer(`\`, `\\`, `'`, `\'`)
+	return "'" + r.Replace(v) + "'"
 }
 
 // DSN generates a PostgreSQL connection string
