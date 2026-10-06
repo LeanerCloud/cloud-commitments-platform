@@ -1952,5 +1952,26 @@ describe('Settings Module', () => {
 
       expect(globalBody()).toEqual({ offering_class: 'standard' });
     });
+
+    test('a global field persisted before a filter validation failure is not treated as unsaved', async () => {
+      await loadRealPage();
+      const minCount = document.getElementById('aws-ec2-min-count') as HTMLInputElement;
+      expect(minCount).not.toBeNull();
+      (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'new@test.com';
+      minCount.value = '-1';
+
+      await save();
+      expect(api.updateConfig).toHaveBeenCalledTimes(1);
+      expect(api.updateConfig).toHaveBeenLastCalledWith({ notification_email: 'new@test.com' });
+
+      // The user undoes the edit and fixes the filter. The stored email is
+      // new@test.com, so reverting the field must be sent.
+      (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'old@test.com';
+      minCount.value = '0';
+      await save();
+
+      expect(api.updateConfig).toHaveBeenCalledTimes(2);
+      expect(api.updateConfig).toHaveBeenLastCalledWith({ notification_email: 'old@test.com' });
+    });
   });
 });

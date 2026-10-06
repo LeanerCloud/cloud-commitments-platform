@@ -3551,7 +3551,14 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
     for (const [key, ids] of GLOBAL_CONFIG_FIELDS) {
       if (ids.every(id => getFieldValue(id) === savedSnapshot[id])) delete changedGlobal[key];
     }
-    if (Object.keys(changedGlobal).length > 0) await api.updateConfig(changedGlobal);
+    if (Object.keys(changedGlobal).length > 0) {
+      await api.updateConfig(changedGlobal);
+      // Persisted: advance the snapshot now, so a later validation failure or
+      // service-save error does not leave these fields looking unsaved.
+      for (const [key, ids] of GLOBAL_CONFIG_FIELDS) {
+        if (key in changedGlobal) ids.forEach(id => { savedSnapshot[id] = getFieldValue(id); });
+      }
+    }
     if (defaultCoverageChanged) {
       // The default is persisted and propagated; mirror that locally so a retry
       // after a partial failure does not send the old coverage back.
