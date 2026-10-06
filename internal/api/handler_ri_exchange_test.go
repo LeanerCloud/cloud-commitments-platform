@@ -717,6 +717,30 @@ func TestApproveRIExchange_FourEyes(t *testing.T) {
 	})
 }
 
+// TestApproveRIExchange_TokenPathAttributesResolvedApprover (issue #518): a token
+// approval whose deep link resolves a session records that user as the transition
+// actor and stamps approved_by; with no session both stay unset.
+func TestApproveRIExchange_TokenPathAttributesResolvedApprover(t *testing.T) {
+	ctx := context.Background()
+	approver := "11111111-1111-4111-8111-111111111111"
+
+	t.Run("session resolves", func(t *testing.T) {
+		h, store, id, token := fourEyesRIExchangeFixture(t, nil, approver, grantRINone, false)
+		_, err := h.approveRIExchange(ctx, sessionReq("sess"), id, token)
+		require.NoError(t, err)
+		store.AssertCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", &approver)
+		store.AssertCalled(t, "StampRIExchangeApprovedBy", ctx, id, approver+"@example.com")
+	})
+
+	t.Run("no session leaves the actor unset", func(t *testing.T) {
+		h, store, id, token := fourEyesRIExchangeFixture(t, nil, approver, grantRINone, false)
+		_, err := h.approveRIExchange(ctx, &events.LambdaFunctionURLRequest{}, id, token)
+		require.NoError(t, err)
+		store.AssertCalled(t, "TransitionRIExchangeStatus", ctx, id, "pending", "processing", (*string)(nil))
+		store.AssertNotCalled(t, "StampRIExchangeApprovedBy", mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
 // TestApproveRIExchange_LegacyTokenStillWorks verifies that the token-only path
 // continues to work for non-session callers after the dual-auth refactor (backwards-compat).
 func TestApproveRIExchange_LegacyTokenStillWorks(t *testing.T) {

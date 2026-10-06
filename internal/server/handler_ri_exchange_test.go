@@ -573,6 +573,11 @@ func TestExecuteRIExchangeReshape_ManualMode(t *testing.T) {
 	}
 	testutil.AssertEqual(t, "pending", savedRecords[0].Status)
 	testutil.AssertEqual(t, "manual", savedRecords[0].Mode)
+	// Scheduler-created exchanges have no session creator (issue #518); the
+	// policy for creator-less rows under four-eyes is issue #233.
+	if savedRecords[0].CreatedByUserID != nil {
+		t.Errorf("scheduled exchange CreatedByUserID = %q, want nil", *savedRecords[0].CreatedByUserID)
+	}
 
 	if !approvalSent {
 		t.Error("expected approval email to be sent in manual mode")

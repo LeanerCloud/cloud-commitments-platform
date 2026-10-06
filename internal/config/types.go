@@ -960,13 +960,14 @@ type RIExchangeRecord struct {
 	ApprovalToken      string   `json:"approval_token,omitempty"` // raw when passed to SaveRIExchangeRecord (hashed there); the hash when read back
 	Error              string   `json:"error,omitempty"`
 	Mode               string   `json:"mode"`
-	// CreatedByUserID is the UUID of the session user who submitted the exchange
-	// (populated for dashboard-initiated exchanges; nil for automated or legacy
-	// email-link-initiated ones). Exposed to the frontend so the Approve button
+	// CreatedByUserID is the UUID of the session user who submitted the exchange.
+	// Always nil today: every exchange is created by the scheduler or the ladder
+	// engine, and pkg/exchange.ExchangeRecord carries no creator (see issue #233
+	// for the policy on creator-less rows). Exposed to the frontend so the Approve button
 	// can apply the approve-own ownership check client-side.
 	CreatedByUserID *string `json:"created_by_user_id,omitempty"`
 	// ApprovedBy carries the email of the session user who approved the exchange
-	// via the dashboard Approve button (issue #300). Nil for token-authed approvals.
+	// via the dashboard Approve button (issue #300). Nil when no session resolves (pure email-link approval).
 	ApprovedBy *string `json:"approved_by,omitempty"`
 	// LadderRunID links this exchange record to the ladder run that created it
 	// (cudly-ladder engine). Nil for standalone ri_exchange_reshape task records.
