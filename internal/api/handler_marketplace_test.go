@@ -1023,3 +1023,56 @@ func TestMarketplaceList_ZeroTimestampReturnsError(t *testing.T) {
 	assert.Zero(t, ec2.createCallCount, "no listing may be created for an unpriceable RI")
 	cfgStore.AssertExpectations(t)
 }
+
+// A timeout after AWS accepted CreateReservedInstancesListing releases the
+// claim, so the operator retries. The retry must reuse the ClientToken so AWS
+// returns the existing listing instead of creating a second live one.
+func TestMarketplaceList_AmbiguousAWSErrorRetryDoesNotDuplicateListing(t *testing.T) {
+	cfgStore := &MockConfigStore{}
+	authSvc := &MockAuthService{}
+	adminSession(authSvc)
+	cfgStore.On("GetPurchaseHistoryByPurchaseID", mock.Anything, validMarketplacePurchaseID).
+		Return(standardRow(), nil)
+	cfgStore.On("ClaimMarketplaceListingSlot", mock.Anything, validMarketplacePurchaseID).
+		Return(true, nil)
+	cfgStore.On("UpdatePurchaseHistoryListing", mock.Anything, validMarketplacePurchaseID, mock.Anything, mock.Anything).
+		Return(nil)
+
+	// Fake AWS: dedups on ClientToken like the real API, and the first call
+	// loses its response after creating the listing.
+	listingsByToken := map[string]string{}
+	calls := 0
+	ec2 := &stubMarketplaceEC2{createFn: func(_ context.Context, req ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error) {
+		calls++
+		id, ok := listingsByToken[req.ClientToken]
+		if !ok {
+			id = "ril-" + req.ClientToken
+			listingsByToken[req.ClientToken] = id
+		}
+		if calls == 1 {
+			return ec2svc.MarketplaceListingResult{}, errors.New("RequestTimeout: response lost")
+		}
+		return ec2svc.MarketplaceListingResult{ListingID: id, State: config.ListingStateActive}, nil
+	}}
+	h := newMarketplaceHandler(cfgStore, authSvc, ec2)
+
+	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+	require.Error(t, err)
+	_, err = h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
+	require.NoError(t, err)
+
+	assert.Len(t, listingsByToken, 1, "the retry must reuse the ClientToken so AWS does not create a second listing")
+}
+
+// A deliberate re-list after a listing was canceled must not replay the dead
+// listing: the recorded listing id changes the token.
+func TestMarketplaceClientToken(t *testing.T) {
+	sched := []ec2svc.MarketplacePriceTier{{Term: 12, Price: 100}, {Term: 6, Price: 50}}
+	base := marketplaceClientToken("p1", "", 3, sched)
+
+	assert.Equal(t, base, marketplaceClientToken("p1", "", 3, sched), "same attempt, same token")
+	assert.NotEqual(t, base, marketplaceClientToken("p1", "ril-old", 3, sched), "re-list after cancel")
+	assert.NotEqual(t, base, marketplaceClientToken("p2", "", 3, sched), "other RI")
+	assert.NotEqual(t, base, marketplaceClientToken("p1", "", 2, sched), "other count")
+	assert.NotEqual(t, base, marketplaceClientToken("p1", "", 3, sched[:1]), "other schedule")
+}

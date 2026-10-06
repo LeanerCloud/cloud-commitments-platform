@@ -288,7 +288,7 @@ func (h *Handler) reserveAndCreateListing(ctx context.Context, purchaseID string
 
 	result, err := ec2Client.CreateMarketplaceListing(ctx, ec2svc.MarketplaceListingRequest{
 		ReservedInstancesID: purchaseID,
-		ClientToken:         uuid.New().String(),
+		ClientToken:         marketplaceClientToken(purchaseID, row.ListingID, instanceCount, awsSchedule),
 		PriceSchedule:       awsSchedule,
 		InstanceCount:       instanceCount,
 	})
@@ -316,6 +316,24 @@ func (h *Handler) reserveAndCreateListing(ctx context.Context, purchaseID string
 	}
 
 	return result, nil
+}
+
+// marketplaceClientToken derives the CreateReservedInstancesListing ClientToken
+// from the request instead of drawing a random one, so a retry of the same
+// attempt (for example after a timeout that hid AWS's success) carries the same
+// token and AWS returns the existing listing rather than creating a second one.
+// The previously recorded listing id is part of the input: after a listing is
+// canceled or closed, a deliberate re-list gets a new token instead of AWS
+// replaying the dead listing. The count and schedule are included so a retry
+// with different parameters never trips AWS's idempotent-parameter-mismatch
+// error.
+func marketplaceClientToken(purchaseID, priorListingID string, count int32, schedule []ec2svc.MarketplacePriceTier) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s|%s|%d", purchaseID, priorListingID, count)
+	for _, t := range schedule {
+		fmt.Fprintf(&b, "|%d:%v", t.Term, t.Price)
+	}
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(b.String())).String()
 }
 
 // keepUncanceledListing records a listing that could be neither persisted nor
