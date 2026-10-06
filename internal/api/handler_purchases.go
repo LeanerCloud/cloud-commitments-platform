@@ -1817,6 +1817,8 @@ func resolveOpsHint(failureReason string) string {
 //
 // State gate:
 //   - failedExec.Status must be "failed" → 409 otherwise.
+//   - a plan-step row (PlanID set) must carry at least one recommendation
+//     → 409 otherwise, nothing to buy (platform#609).
 //   - every rec must be safe to re-drive per purchase.RedriveRefusalReason
 //     → 409 with ops_hint + redrive_unsafe when any is not, NOT
 //     overridable by ?force=true (issue #1668).

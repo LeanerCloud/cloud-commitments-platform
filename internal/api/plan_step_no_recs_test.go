@@ -81,8 +81,6 @@ func TestRetryOfBarePlanStepIsRefusedAndCreatesNothing(t *testing.T) {
 		CreatedByUserID: &creator,
 		Source:          common.PurchaseSourceWeb,
 	}
-	session := &Session{UserID: retryCallerID, Email: "operator@example.com"}
-
 	// purchasesFiredByRetry asserts that a refused retry persisted no successor.
 	tokens, err := purchasesFiredByRetry(t, failed, sessionRetryReq())
 
@@ -92,5 +90,4 @@ func TestRetryOfBarePlanStepIsRefusedAndCreatesNothing(t *testing.T) {
 	require.True(t, ok, "expected a client error, got %v", err)
 	assert.Equal(t, 409, ce.code)
 	assert.Contains(t, ce.Error(), "no recommendations")
-	_ = session
 }

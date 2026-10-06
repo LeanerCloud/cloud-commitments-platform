@@ -157,7 +157,7 @@ func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.Purchas
 			return nil, "", false, fmt.Errorf("%w: %s is %s", errExecutionNotNotifiable, existing.ExecutionID, existing.Status)
 		}
 		if len(existing.Recommendations) == 0 {
-			return nil, "", false, m.failBarePlanStep(ctx, existing)
+			return nil, "", false, m.failExistingBarePlanStep(ctx, existing)
 		}
 		tok, genErr := common.GenerateApprovalToken()
 		if genErr != nil {
@@ -186,13 +186,30 @@ func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.Purchas
 		StepNumber:    plan.RampSchedule.CurrentStep + 1,
 		ScheduledDate: *plan.NextExecutionDate,
 	}
-	return nil, "", false, m.failBarePlanStep(ctx, execution)
+	return nil, "", false, m.recordFailedBarePlanStep(ctx, execution)
 }
 
-// failBarePlanStep records a plan-step execution with no recommendations as
-// failed, logs it once, and returns errExecutionNotNotifiable so the
-// notification tick sends nothing for it.
-func (m *Manager) failBarePlanStep(ctx context.Context, exec *config.PurchaseExecution) error {
+// failExistingBarePlanStep fails a pending/notified plan-step row that carries
+// no recommendations. The status change is a compare-and-set, so a human
+// approving the row between this tick's read and now wins: the row is no
+// longer awaiting approval and the tick skips it, instead of an upsert from the
+// stale read overwriting the approval. A won CAS returns the fresh row, which
+// is the one the error text is written onto.
+func (m *Manager) failExistingBarePlanStep(ctx context.Context, exec *config.PurchaseExecution) error {
+	failed, err := m.config.TransitionExecutionStatus(ctx, exec.ExecutionID, []string{"pending", "notified"}, "failed", nil)
+	if errors.Is(err, config.ErrNotFound) || errors.Is(err, config.ErrExecutionNotInExpectedStatus) {
+		return fmt.Errorf("%w: %s changed state before it could be failed", errExecutionNotNotifiable, exec.ExecutionID)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to fail plan step %d of plan %s: %w", exec.StepNumber, exec.PlanID, err)
+	}
+	return m.recordFailedBarePlanStep(ctx, failed)
+}
+
+// recordFailedBarePlanStep stamps the failure reason onto exec (already failed,
+// or a new row), saves it, logs it once, and returns errExecutionNotNotifiable
+// so the notification tick sends nothing for it.
+func (m *Manager) recordFailedBarePlanStep(ctx context.Context, exec *config.PurchaseExecution) error {
 	exec.Status = "failed"
 	exec.Error = ErrPlanStepNoRecommendations.Error()
 	if err := m.config.SavePurchaseExecution(ctx, exec); err != nil {

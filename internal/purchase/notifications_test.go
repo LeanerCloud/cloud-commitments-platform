@@ -285,7 +285,10 @@ func TestManager_GetOrCreateExecution_ExistingBareRowIsFailedNotRotated(t *testi
 		ScheduledDate: nextExec,
 	}
 	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(bare, nil)
-	mockStore.On("SavePurchaseExecution", ctx, bare).Return(nil)
+	failed := *bare
+	failed.Status = "failed"
+	mockStore.On("TransitionExecutionStatus", ctx, "bare-exec-id", []string{"pending", "notified"}, "failed", (*string)(nil)).Return(&failed, nil)
+	mockStore.On("SavePurchaseExecution", ctx, &failed).Return(nil)
 
 	manager := &Manager{config: mockStore}
 
@@ -294,7 +297,33 @@ func TestManager_GetOrCreateExecution_ExistingBareRowIsFailedNotRotated(t *testi
 	assert.Nil(t, execution)
 	assert.Empty(t, rawToken)
 	assert.False(t, rotationPending)
-	assert.Equal(t, "failed", bare.Status)
+	assert.Equal(t, "failed", failed.Status)
+	assert.Contains(t, failed.Error, "no recommendations")
+}
+
+// A human approving the row between the tick's read and its fail loses nothing:
+// the CAS is refused, nothing is saved over the approval, and the tick skips.
+func TestManager_GetOrCreateExecution_ExistingBareRowApprovedMeanwhileIsNotOverwritten(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+
+	nextExec := time.Now().Add(24 * time.Hour)
+	plan := &config.PurchasePlan{ID: "plan-123", NextExecutionDate: &nextExec}
+	stale := &config.PurchaseExecution{
+		ExecutionID: "bare-exec-id", PlanID: "plan-123", Status: "pending", StepNumber: 1, ScheduledDate: nextExec,
+	}
+	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(stale, nil)
+	mockStore.On("TransitionExecutionStatus", ctx, "bare-exec-id", []string{"pending", "notified"}, "failed", (*string)(nil)).
+		Return(nil, config.ErrExecutionNotInExpectedStatus)
+	// No SavePurchaseExecution expectation: an upsert here would clobber the approval.
+
+	manager := &Manager{config: mockStore}
+
+	execution, _, _, err := manager.getOrCreateExecution(ctx, plan)
+	require.ErrorIs(t, err, errExecutionNotNotifiable)
+	assert.Nil(t, execution)
+	mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
 }
 
 // TestManager_GetOrCreateExecution_ExistingCompletedNotRotated is the

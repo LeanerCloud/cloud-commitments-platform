@@ -2385,6 +2385,21 @@ describe('Plans Module', () => {
       expect(errorDiv?.textContent).toBe('API Error');
       expect(errorDiv?.classList.contains('hidden')).toBe(false);
     });
+
+    test('submit form shows the 409 refusal message while plan steps cannot carry recommendations (#609)', async () => {
+      const refusal = 'plan steps cannot yet carry recommendations (tracked in platform#609), so no purchases can be added to a plan; purchase from Opportunities instead';
+      (api.createPlannedPurchases as jest.Mock).mockRejectedValue(new Error(refusal));
+
+      const form = document.getElementById('add-purchases-form') as HTMLFormElement;
+      form.dispatchEvent(new Event('submit'));
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const errorDiv = document.getElementById('add-purchases-error');
+      expect(errorDiv?.textContent).toBe(refusal);
+      expect(errorDiv?.classList.contains('hidden')).toBe(false);
+      expect(mockShowToast).not.toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Successfully') }));
+    });
   });
 
   describe('ramp schedule form handlers', () => {
