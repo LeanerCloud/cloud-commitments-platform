@@ -152,6 +152,7 @@ func TestRouterDispatch_RefreshRecommendations_PermissionPrecedesScope(t *testin
 	res, err := f.refresh(scopedRequest(""))
 
 	require.Error(t, err, "got response %v", res)
+	assert.Contains(t, err.Error(), "permission denied")
 	assert.NotContains(t, err.Error(), "unrestricted account access")
 	f.assertNothingStarted(t)
 }
@@ -174,4 +175,19 @@ func TestRouterDispatch_RefreshRecommendations_ScopeLookupErrorFailsClosed(t *te
 	require.Error(t, err, "got response %v", res)
 	assert.ErrorIs(t, err, lookupErr)
 	f.assertNothingStarted(t)
+}
+
+// The stateless admin API key carries no user row and is unrestricted.
+func TestRouterDispatch_RefreshRecommendations_AdminAPIKeyRefreshes(t *testing.T) {
+	t.Setenv("SCHEDULER_LAMBDA_ARN", "")
+	f := newRefreshFixture(t, viewRecommendationsOnly(), []string{scopedInAccount})
+	f.handler.apiKey = "test-key"
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"X-API-Key": "test-key"}}
+
+	res, err := f.refresh(req)
+
+	require.NoError(t, err)
+	assert.IsType(t, &RefreshResponse{}, res)
+	f.store.AssertNumberOfCalls(t, "MarkCollectionStarted", 1)
+	f.scheduler.AssertNumberOfCalls(t, "CollectRecommendations", 1)
 }
