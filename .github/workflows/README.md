@@ -170,10 +170,10 @@ Deploy CUDly to GCP Cloud Run. Serverless container platform.
 ### Required Secrets
 
 - `GCP_SA_KEY` (Service Account JSON with permissions)
-- `GCP_PROJECT_ID`
 
 ### Required Variables
 
+- `GCP_PROJECT_ID`
 - `GCP_REGION` (default: us-central1)
 - `ARTIFACT_REGISTRY_REPO` (default: cudly)
 
@@ -464,8 +464,10 @@ gcloud iam service-accounts keys create key.json \
 
 # Set secrets
 gh secret set GCP_SA_KEY < key.json
-gh secret set GCP_PROJECT_ID -b"<project-id>"
 gh secret set DB_PASSWORD_GCP
+
+# Set variables
+gh variable set GCP_PROJECT_ID --body "<project-id>"
 ```
 
 **Azure:**
