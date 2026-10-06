@@ -817,6 +817,14 @@ func (m *MockAuthStore) ConsumeMFARecoveryCode(ctx context.Context, userID strin
 	return m.Called(ctx, userID, readCodes, remaining).Error(0)
 }
 
+func (m *MockAuthStore) ReplaceMFARecoveryCodes(ctx context.Context, userID, readSecret string, readCodes, newHashes []string) error {
+	return m.Called(ctx, userID, readSecret, readCodes, newHashes).Error(0)
+}
+
+func (m *MockAuthStore) DisableMFA(ctx context.Context, userID, readSecret string, readCodes []string) error {
+	return m.Called(ctx, userID, readSecret, readCodes).Error(0)
+}
+
 func (m *MockAuthStore) SetPendingMFASecret(ctx context.Context, userID, secret string, expiresAt time.Time) error {
 	return m.Called(ctx, userID, secret, expiresAt).Error(0)
 }

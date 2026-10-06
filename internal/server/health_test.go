@@ -52,6 +52,14 @@ func (m *mockAuthStoreForHealth) ConsumeMFARecoveryCode(context.Context, string,
 	return nil
 }
 
+func (m *mockAuthStoreForHealth) ReplaceMFARecoveryCodes(context.Context, string, string, []string, []string) error {
+	return nil
+}
+
+func (m *mockAuthStoreForHealth) DisableMFA(context.Context, string, string, []string) error {
+	return nil
+}
+
 func (m *mockAuthStoreForHealth) SetPendingMFASecret(context.Context, string, string, time.Time) error {
 	return nil
 }

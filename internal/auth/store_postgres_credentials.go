@@ -95,15 +95,51 @@ func (s *PostgresStore) SetPendingMFASecret(ctx context.Context, userID, secret 
 }
 
 // EnableMFA promotes the pending secret the caller verified, only while MFA is
-// still off and that secret is still the pending one (issue #227).
+// still off and that secret is still the pending one and unexpired (issues #227,
+// #527).
 func (s *PostgresStore) EnableMFA(ctx context.Context, userID, pendingSecret string, recoveryHashes []string) error {
 	result, err := s.db.Exec(ctx, `
 		UPDATE users SET mfa_enabled = true, mfa_secret = $2, mfa_recovery_codes = $3,
 			mfa_pending_secret = '', mfa_pending_secret_expires_at = NULL, updated_at = NOW()
 		WHERE id = $1 AND mfa_enabled = false AND mfa_pending_secret = $2
+			AND mfa_pending_secret_expires_at > NOW()
 	`, userID, pendingSecret, recoveryHashes)
 	if err != nil {
 		return fmt.Errorf("failed to enable MFA: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrUserChanged
+	}
+	return nil
+}
+
+// ReplaceMFARecoveryCodes writes only the recovery codes, and only while MFA is
+// on under the secret and codes the caller read (issue #527).
+func (s *PostgresStore) ReplaceMFARecoveryCodes(ctx context.Context, userID, readSecret string, readCodes, newHashes []string) error {
+	result, err := s.db.Exec(ctx, `
+		UPDATE users SET mfa_recovery_codes = $4, updated_at = NOW()
+		WHERE id = $1 AND mfa_enabled = true AND mfa_secret = $2 AND mfa_recovery_codes = $3
+	`, userID, readSecret, readCodes, newHashes)
+	if err != nil {
+		return fmt.Errorf("failed to replace recovery codes: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrUserChanged
+	}
+	return nil
+}
+
+// DisableMFA clears only the MFA columns, and only while MFA is on under the
+// secret and codes the caller read, so a recovery code spent in between is not
+// restored and no other column is rewritten (issue #527).
+func (s *PostgresStore) DisableMFA(ctx context.Context, userID, readSecret string, readCodes []string) error {
+	result, err := s.db.Exec(ctx, `
+		UPDATE users SET mfa_enabled = false, mfa_secret = '', mfa_recovery_codes = '{}',
+			mfa_pending_secret = '', mfa_pending_secret_expires_at = NULL, updated_at = NOW()
+		WHERE id = $1 AND mfa_enabled = true AND mfa_secret = $2 AND mfa_recovery_codes = $3
+	`, userID, readSecret, readCodes)
+	if err != nil {
+		return fmt.Errorf("failed to disable MFA: %w", err)
 	}
 	if result.RowsAffected() == 0 {
 		return ErrUserChanged
