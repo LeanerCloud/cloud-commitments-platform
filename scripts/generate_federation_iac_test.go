@@ -339,6 +339,24 @@ func TestGenerator_InvalidSourceReportedAsSource(t *testing.T) {
 	}
 }
 
+// TestGenerator_BadTargetAndSourceReportsTargetFirst pins the check order in
+// validateCloudFlags: with both flags wrong, --target is the one reported.
+func TestGenerator_BadTargetAndSourceReportsTargetFirst(t *testing.T) {
+	res := runGenerator(t,
+		"--target", "bad",
+		"--source", "Azure",
+		"--account-name", "prod",
+		"--account-id", "123456789012",
+		"--output", "-",
+	)
+	if res.exitCode == 0 {
+		t.Fatalf("bad --target and --source were accepted (exit 0)")
+	}
+	if !strings.Contains(res.stderr, "--target must be aws, azure, or gcp") {
+		t.Errorf("a bad --target must be reported before a bad --source, got:\n%s", res.stderr)
+	}
+}
+
 // TestGenerator_OverlongClaimIsNotEchoed checks that no rejection path echoes a
 // multi-kilobyte argument back at the operator, whichever diagnosis it reports.
 // Every branch that formats the claim goes through displayClaim, so this holds
