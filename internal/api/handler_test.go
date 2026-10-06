@@ -1370,8 +1370,6 @@ func TestHandler_HandleRequest_CreatePlannedPurchases(t *testing.T) {
 	}
 
 	mockStore.On("GetPurchasePlan", mock.Anything, "11111111-1111-1111-1111-111111111111").Return(plan, nil)
-	mockStore.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil)
-	mockStore.On("UpdatePurchasePlan", mock.Anything, mock.Anything).Return(nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth, corsAllowedOrigin: "*", apiKey: "test-key"}
 
@@ -1393,7 +1391,8 @@ func TestHandler_HandleRequest_CreatePlannedPurchases(t *testing.T) {
 
 	resp, err := handler.HandleRequest(ctx, req)
 	require.NoError(t, err)
-	assert.Equal(t, 200, resp.StatusCode)
+	// Plan steps cannot carry recommendations yet (#609), so the route refuses.
+	assert.Equal(t, 409, resp.StatusCode)
 }
 
 // Tests for edge cases in getPlan.

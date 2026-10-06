@@ -224,11 +224,14 @@ func TestHandleExecutePurchase_ApprovedStatus(t *testing.T) {
 	}
 
 	exec := &config.PurchaseExecution{
-		ExecutionID:     "exec-approved",
-		PlanID:          "plan-approved",
-		Status:          "approved",
-		StepNumber:      1,
-		Recommendations: []config.RecommendationRecord{},
+		ExecutionID: "exec-approved",
+		PlanID:      "plan-approved",
+		Status:      "approved",
+		StepNumber:  1,
+		Recommendations: []config.RecommendationRecord{{
+			Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
+			Count: 1, Selected: true,
+		}},
 	}
 
 	mockStore.On("GetExecutionByID", ctx, "exec-approved").Return(exec, nil)
@@ -241,7 +244,14 @@ func TestHandleExecutePurchase_ApprovedStatus(t *testing.T) {
 	mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
 	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
 	mockStore.On("CompletePlanStep", ctx, "plan-approved", 1).Return(nil)
+	mockStore.On("SavePurchaseHistory", ctx, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil)
 	mockSTS.On("GetCallerIdentity", ctx, mock.Anything).Return(nil, errors.New("sts error"))
+	mockProv := new(MockProvider)
+	mockSvc := new(MockServiceClient)
+	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProv, nil)
+	mockProv.On("GetServiceClient", mock.Anything, common.ServiceEC2, "us-east-1").Return(mockSvc, nil)
+	mockSvc.On("PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything).
+		Return(common.PurchaseResult{Success: true, CommitmentID: "ri-approved"}, nil)
 
 	manager := &Manager{
 		config:          mockStore,

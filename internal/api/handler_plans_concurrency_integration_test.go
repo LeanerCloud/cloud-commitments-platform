@@ -15,7 +15,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -23,8 +22,8 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -89,13 +88,22 @@ func newCreateConcurrencyFixture(ctx context.Context, t *testing.T) *createConcu
 	}
 }
 
-// create issues one create-planned-purchases request for `count` steps.
+// create creates `count` steps through createPlannedPurchasesTx, the path
+// POST /plans/{id}/purchases used to reach. The handler itself refuses
+// unconditionally while plan steps cannot carry recommendations (platform#609,
+// tier A), so the ramp lock and guard are driven here directly.
 func (f *createConcurrencyFixture) create(ctx context.Context, count int) (*CreatePlannedPurchasesResponse, error) {
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    fmt.Sprintf(`{"count":%d,"start_date":"2026-09-01"}`, count),
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	created := 0
+	err := f.store.WithTx(ctx, func(tx pgx.Tx) error {
+		n, txErr := f.handler.createPlannedPurchasesTx(ctx, tx, f.planID, count, start, nil)
+		created = n
+		return txErr
+	})
+	if err != nil {
+		return nil, err
 	}
-	return f.handler.createPlannedPurchases(ctx, req, f.planID)
+	return &CreatePlannedPurchasesResponse{Created: created}, nil
 }
 
 // executionsForStep counts the plan's execution rows stamped with step.

@@ -776,44 +776,21 @@ func TestHandler_updatePlan_InvalidBody(t *testing.T) {
 
 // MockAuthService is a mock implementation of AuthServiceInterface
 
-func TestHandler_createPlannedPurchases(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	mockAuth := new(MockAuthService)
-
-	adminSession := &Session{
-		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-		Email:  "admin@example.com",
-	}
-
-	plan := &config.PurchasePlan{
-		ID:   "11111111-1111-1111-1111-111111111111",
-		Name: "Test Plan",
-		RampSchedule: config.RampSchedule{
-			StepIntervalDays: 7,
-			CurrentStep:      0,
-		},
-	}
-
-	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
-	mockAuth.grantAdmin()
-	mockStore.On("GetPurchasePlan", ctx, "11111111-1111-1111-1111-111111111111").Return(plan, nil)
-	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil).Times(3)
-	mockStore.On("UpdatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
-
-	handler := &Handler{config: mockStore, auth: mockAuth}
-
-	body := `{"count": 3, "start_date": "2024-12-01"}`
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{
-			"Authorization": "Bearer admin-token",
-		},
-		Body: body,
-	}
-	result, err := handler.createPlannedPurchases(ctx, req, "11111111-1111-1111-1111-111111111111")
-	require.NoError(t, err)
-
-	assert.Equal(t, 3, result.Created)
+// createStepsViaTx drives the transactional step-creation path
+// (createPlannedPurchasesTx) that POST /plans/{id}/purchases used to reach.
+// The handler now refuses unconditionally (platform#609, tier A), so the
+// behavior these tests pin (creator stamping #950, single transaction, ramp
+// guard #1861) is exercised here until tier B restores the endpoint.
+func createStepsViaTx(ctx context.Context, h *Handler, count int, creator *string) (int, error) {
+	const planID = "11111111-1111-1111-1111-111111111111"
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	created := 0
+	err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
+		n, txErr := h.createPlannedPurchasesTx(ctx, tx, planID, count, start, creator)
+		created = n
+		return txErr
+	})
+	return created, err
 }
 
 // TestHandler_createPlannedPurchases_StampsCreator is the issue-#950 regression
@@ -860,14 +837,9 @@ func TestHandler_createPlannedPurchases_StampsCreator(t *testing.T) {
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 
-	body := `{"count": 3, "start_date": "2024-12-01"}`
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{"Authorization": "Bearer user-token"},
-		Body:    body,
-	}
-	result, err := handler.createPlannedPurchases(ctx, req, "11111111-1111-1111-1111-111111111111")
+	created, err := createStepsViaTx(ctx, handler, 3, resolveCreatorUserID(userSession))
 	require.NoError(t, err)
-	assert.Equal(t, 3, result.Created)
+	assert.Equal(t, 3, created)
 
 	require.Len(t, savedCreators, 3, "expected 3 saved executions")
 	for i, c := range savedCreators {
@@ -913,12 +885,7 @@ func TestHandler_createPlannedPurchases_AdminAPIKeyCreatorIsNil(t *testing.T) {
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 
-	body := `{"count": 2, "start_date": "2024-12-01"}`
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{"Authorization": "Bearer api-key"},
-		Body:    body,
-	}
-	_, err := handler.createPlannedPurchases(ctx, req, "11111111-1111-1111-1111-111111111111")
+	_, err := createStepsViaTx(ctx, handler, 2, resolveCreatorUserID(apiKeySession))
 	require.NoError(t, err)
 
 	require.Len(t, savedCreators, 2)
@@ -1003,16 +970,8 @@ func TestHandler_createPlannedPurchases_MidLoopFailureRollsBack(t *testing.T) {
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 
-	body := `{"count": 5, "start_date": "2024-12-01"}`
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{
-			"Authorization": "Bearer admin-token",
-		},
-		Body: body,
-	}
-	result, err := handler.createPlannedPurchases(ctx, req, "11111111-1111-1111-1111-111111111111")
+	_, err := createStepsViaTx(ctx, handler, 5, nil)
 	require.Error(t, err)
-	assert.Nil(t, result)
 	// The handler propagates whatever WithTx returned; the regression we
 	// care about is the inner-loop wrapping, asserted via withTxFnErr.
 	require.Error(t, withTxFnErr, "inner WithTx callback must surface the save failure")
@@ -1025,7 +984,7 @@ func TestHandler_createPlannedPurchases_MidLoopFailureRollsBack(t *testing.T) {
 	mockStore.AssertNotCalled(t, "UpdatePurchasePlanTx")
 	// And confirm the loop ran inside a transaction — see the WithTx
 	// expectation above for why this matters.
-	require.True(t, withTxCalled, "createPlannedPurchases must run save loop inside WithTx")
+	require.True(t, withTxCalled, "step creation must run the save loop inside WithTx")
 }
 
 func TestHandler_createPlannedPurchases_InvalidCount(t *testing.T) {
@@ -1835,12 +1794,8 @@ func TestHandler_createPlannedPurchases_RefusesAPartlyBoughtStep(t *testing.T) {
 	mockStore.On("UpdatePurchasePlanTx", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"count":2,"start_date":"2026-09-01"}`,
-	}
 
-	_, err := handler.createPlannedPurchases(ctx, req, planID)
+	_, err := createStepsViaTx(ctx, handler, 2, nil)
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "a partly-bought step must map to an HTTP status, not a 500")
@@ -1888,14 +1843,10 @@ func TestHandler_createPlannedPurchases_AllowsAnUnstartedStep(t *testing.T) {
 	mockStore.On("UpdatePurchasePlanTx", ctx, mock.Anything, mock.AnythingOfType("*config.PurchasePlan")).Return(nil).Maybe()
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"count":2,"start_date":"2026-09-01"}`,
-	}
 
-	resp, err := handler.createPlannedPurchases(ctx, req, planID)
+	created, err := createStepsViaTx(ctx, handler, 2, nil)
 	require.NoError(t, err)
-	assert.Equal(t, 2, resp.Created)
+	assert.Equal(t, 2, created)
 	// Issue #103: ramp rows store no approval token (raw or otherwise); the
 	// notification job mints and persists one only when it emails it.
 	require.Len(t, saved, 2)
@@ -1930,12 +1881,8 @@ func TestHandler_createPlannedPurchases_FailsClosedWhenTheProbeFails(t *testing.
 	mockStore.On("UpdatePurchasePlanTx", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"count":1,"start_date":"2026-09-01"}`,
-	}
 
-	_, err := handler.createPlannedPurchases(ctx, req, planID)
+	_, err := createStepsViaTx(ctx, handler, 1, nil)
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
 	require.True(t, ok)

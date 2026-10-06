@@ -181,30 +181,33 @@ func TestManager_GetOrCreateExecution(t *testing.T) {
 		NextExecutionDate: &nextExec,
 	}
 
-	// No existing execution found
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(nil, nil)
-	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
-
 	manager := &Manager{
 		config:       mockStore,
 		email:        mockEmail,
 		dashboardURL: "https://dashboard.example.com",
 	}
 
+	// No existing execution found
+	var saved *config.PurchaseExecution
+	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(nil, nil)
+	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).Return(nil)
+
 	execution, rawToken, _, err := manager.getOrCreateExecution(ctx, plan)
-	require.NoError(t, err)
-	assert.NotNil(t, execution)
-	assert.Equal(t, "plan-123", execution.PlanID)
-	assert.Equal(t, "pending", execution.Status)
+	// A plan step carries no recommendations (#609): the row is recorded as
+	// failed and no emailable token is minted.
+	require.ErrorIs(t, err, errExecutionNotNotifiable)
+	assert.Nil(t, execution)
+	assert.Empty(t, rawToken)
+	require.NotNil(t, saved)
+	assert.Equal(t, "plan-123", saved.PlanID)
+	assert.Equal(t, "failed", saved.Status)
+	assert.Contains(t, saved.Error, "no recommendations")
 	// step_number names the step this row will COMPLETE, so a plan with one
 	// step already done creates the row for step 2 (issue #1669).
-	assert.Equal(t, 2, execution.StepNumber)
-	assert.NotEmpty(t, execution.ExecutionID)
-	// execution.ApprovalToken is the persisted SHA-256 hash (issue #103); the
-	// raw, emailable value comes back as rawToken and must hash to it.
-	assert.NotEmpty(t, execution.ApprovalToken)
-	assert.NotEmpty(t, rawToken)
-	assert.Equal(t, config.HashApprovalToken(rawToken), execution.ApprovalToken)
+	assert.Equal(t, 2, saved.StepNumber)
+	assert.NotEmpty(t, saved.ExecutionID)
+	assert.Empty(t, saved.ApprovalToken)
 
 	mockStore.AssertExpectations(t)
 }
@@ -231,8 +234,9 @@ func TestManager_GetOrCreateExecution_ExistingExecution(t *testing.T) {
 		// A hash-shaped placeholder: the whole point of the rotation branch
 		// is that this value is never recoverable as a raw token, so
 		// getOrCreateExecution must mint a fresh one rather than reuse it.
-		ApprovalToken: config.HashApprovalToken("stale-notified-token"),
-		ScheduledDate: nextExec,
+		ApprovalToken:   config.HashApprovalToken("stale-notified-token"),
+		ScheduledDate:   nextExec,
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Count: 1}},
 	}
 
 	// Existing execution found: getOrCreateExecution mints a fresh token into
@@ -262,6 +266,35 @@ func TestManager_GetOrCreateExecution_ExistingExecution(t *testing.T) {
 	assert.WithinDuration(t, time.Now().Add(config.ApprovalTokenTTL), *execution.ApprovalTokenExpiresAt, time.Minute)
 
 	mockStore.AssertExpectations(t)
+}
+
+// A pending row that predates the #609 guard and carries no recommendations is
+// failed at the tick instead of being rotated and emailed as a $0 approval.
+func TestManager_GetOrCreateExecution_ExistingBareRowIsFailedNotRotated(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+
+	nextExec := time.Now().Add(24 * time.Hour)
+	plan := &config.PurchasePlan{ID: "plan-123", NextExecutionDate: &nextExec}
+	bare := &config.PurchaseExecution{
+		ExecutionID:   "bare-exec-id",
+		PlanID:        "plan-123",
+		Status:        "pending",
+		StepNumber:    1,
+		ScheduledDate: nextExec,
+	}
+	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(bare, nil)
+	mockStore.On("SavePurchaseExecution", ctx, bare).Return(nil)
+
+	manager := &Manager{config: mockStore}
+
+	execution, rawToken, rotationPending, err := manager.getOrCreateExecution(ctx, plan)
+	require.ErrorIs(t, err, errExecutionNotNotifiable)
+	assert.Nil(t, execution)
+	assert.Empty(t, rawToken)
+	assert.False(t, rotationPending)
+	assert.Equal(t, "failed", bare.Status)
 }
 
 // TestManager_GetOrCreateExecution_ExistingCompletedNotRotated is the
@@ -342,6 +375,7 @@ func TestManager_GetOrCreateExecution_SaveError(t *testing.T) {
 
 	execution, _, _, err := manager.getOrCreateExecution(ctx, plan)
 	assert.Error(t, err)
+	assert.NotErrorIs(t, err, errExecutionNotNotifiable, "a failed save must not read as a quiet skip")
 	assert.Nil(t, execution)
 
 	mockStore.AssertExpectations(t)
@@ -396,21 +430,21 @@ func TestManager_GetOrCreateExecution_CreatesOnErrNotFound(t *testing.T) {
 	// Store returns ErrNotFound (wrapped), matching the post-fix store behavior.
 	notFoundErr := fmt.Errorf("%w: plan plan-f2 at %v", config.ErrNotFound, nextExec)
 	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-f2", nextExec).Return(nil, notFoundErr)
-	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
+	var saved *config.PurchaseExecution
+	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).Return(nil)
 
 	manager := &Manager{config: mockStore, dashboardURL: "https://example.com"}
 
-	execution, rawToken, _, err := manager.getOrCreateExecution(ctx, plan)
-	require.NoError(t, err, "ErrNotFound must trigger the create path, not a hard error (F2)")
-	require.NotNil(t, execution)
-	assert.Equal(t, "plan-f2", execution.PlanID)
-	assert.Equal(t, "pending", execution.Status)
+	execution, _, _, err := manager.getOrCreateExecution(ctx, plan)
+	require.ErrorIs(t, err, errExecutionNotNotifiable, "ErrNotFound must trigger the create path, not a hard error (F2)")
+	assert.Nil(t, execution)
+	require.NotNil(t, saved)
+	assert.Equal(t, "plan-f2", saved.PlanID)
+	assert.Equal(t, "failed", saved.Status)
 	// Two steps already completed, so this row is step 3 (issue #1669).
-	assert.Equal(t, 3, execution.StepNumber)
-	assert.NotEmpty(t, execution.ExecutionID)
-	assert.NotEmpty(t, execution.ApprovalToken)
-	assert.NotEmpty(t, rawToken)
-	assert.Equal(t, config.HashApprovalToken(rawToken), execution.ApprovalToken)
+	assert.Equal(t, 3, saved.StepNumber)
+	assert.NotEmpty(t, saved.ExecutionID)
 
 	mockStore.AssertExpectations(t)
 }
@@ -437,9 +471,18 @@ func TestManager_SendUpcomingPurchaseNotifications_WithNotification(t *testing.T
 	notifyEmailStr := "notify@example.com"
 	globalCfg := &config.GlobalConfig{NotificationEmail: &notifyEmailStr}
 	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).Return(plans, nil)
-	// No existing execution found
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(nil, nil)
-	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
+	// An existing pending row that carries recommendations is the only kind
+	// the reminder still emails (#609); it is rotated, not created.
+	pendingExec := &config.PurchaseExecution{
+		ExecutionID:     "pending-exec-id",
+		PlanID:          "plan-123",
+		Status:          "pending",
+		StepNumber:      1,
+		ScheduledDate:   nextExec,
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Count: 1}},
+	}
+	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(pendingExec, nil)
+	mockStore.On("RotatePendingApprovalToken", ctx, "pending-exec-id", mock.Anything, mock.Anything).Return(true, nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(globalCfg, nil)
 	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
 	mockStore.On("StampPlanNotificationSent", ctx, "plan-123", mock.AnythingOfType("time.Time")).Return(nil)
@@ -584,9 +627,15 @@ func TestManager_SendUpcomingPurchaseNotifications_EmailFails(t *testing.T) {
 	notifyEmailStr := "notify@example.com"
 	globalCfg := &config.GlobalConfig{NotificationEmail: &notifyEmailStr}
 	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).Return(plans, nil)
-	// No existing execution found
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(nil, nil)
-	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
+	pendingExec := &config.PurchaseExecution{
+		ExecutionID:     "pending-exec-id",
+		PlanID:          "plan-123",
+		Status:          "pending",
+		StepNumber:      1,
+		ScheduledDate:   nextExec,
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Count: 1}},
+	}
+	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(pendingExec, nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(globalCfg, nil)
 	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.AnythingOfType("email.NotificationData")).Return(errors.New("email failed"))
 
@@ -613,11 +662,12 @@ func pendingExecForNotification(ctx context.Context, mockStore *MockConfigStore)
 	nextExec := time.Now().Add(3 * 24 * time.Hour)
 	plan := &config.PurchasePlan{ID: "plan-rot", Name: "Rotation Plan", NextExecutionDate: &nextExec}
 	existing := &config.PurchaseExecution{
-		ExecutionID:   "exec-rot",
-		PlanID:        "plan-rot",
-		Status:        "pending",
-		ApprovalToken: config.HashApprovalToken("previously-emailed-token"),
-		ScheduledDate: nextExec,
+		ExecutionID:     "exec-rot",
+		PlanID:          "plan-rot",
+		Status:          "pending",
+		ApprovalToken:   config.HashApprovalToken("previously-emailed-token"),
+		ScheduledDate:   nextExec,
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Count: 1}},
 	}
 	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-rot", nextExec).Return(existing, nil).Maybe()
 	return plan, existing

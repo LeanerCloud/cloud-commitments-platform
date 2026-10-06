@@ -156,6 +156,9 @@ func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.Purchas
 		if existing.Status != "pending" && existing.Status != "notified" {
 			return nil, "", false, fmt.Errorf("%w: %s is %s", errExecutionNotNotifiable, existing.ExecutionID, existing.Status)
 		}
+		if len(existing.Recommendations) == 0 {
+			return nil, "", false, m.failBarePlanStep(ctx, existing)
+		}
 		tok, genErr := common.GenerateApprovalToken()
 		if genErr != nil {
 			return nil, "", false, fmt.Errorf("failed to generate approval token: %w", genErr)
@@ -167,33 +170,37 @@ func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.Purchas
 	case err != nil && !errors.Is(err, config.ErrNotFound):
 		return nil, "", false, fmt.Errorf("failed to check for existing execution: %w", err)
 	}
-	// ErrNotFound (or nil error with nil row): no existing execution for this plan+date; create a new one.
-
-	approvalToken, err := common.GenerateApprovalToken()
-	if err != nil {
-		return nil, "", false, fmt.Errorf("failed to generate approval token: %w", err)
-	}
-	tokenExpiresAt := time.Now().Add(config.ApprovalTokenTTL)
+	// ErrNotFound (or nil error with nil row): no existing execution for this
+	// plan+date. Nothing attaches recommendations to a plan step yet
+	// (platform#609), so the row is recorded as failed instead of emailing a $0
+	// approval link. The failed row also makes every later tick for this date
+	// return errExecutionNotNotifiable quietly rather than minting another.
+	//
+	// step_number names the step this row will COMPLETE, not the count already
+	// completed, matching api.createPurchaseExecutionsTx (CurrentStep + 1). The
+	// ramp advance is keyed on this value since issue #1669.
 	execution = &config.PurchaseExecution{
-		PlanID:      plan.ID,
-		ExecutionID: uuid.New().String(),
-		Status:      "pending",
-		// step_number names the step this row will COMPLETE, not the count
-		// already completed, matching api.createPurchaseExecutionsTx
-		// (CurrentStep + i + 1). The ramp advance is keyed on this value since
-		// issue #1669, so stamping the completed count here would have every
-		// notification-created row re-complete a counted step, freezing the ramp.
-		StepNumber:             plan.RampSchedule.CurrentStep + 1,
-		ScheduledDate:          *plan.NextExecutionDate,
-		ApprovalToken:          config.HashApprovalToken(approvalToken),
-		ApprovalTokenExpiresAt: &tokenExpiresAt,
+		PlanID:        plan.ID,
+		ExecutionID:   uuid.New().String(),
+		Status:        "pending",
+		StepNumber:    plan.RampSchedule.CurrentStep + 1,
+		ScheduledDate: *plan.NextExecutionDate,
 	}
+	return nil, "", false, m.failBarePlanStep(ctx, execution)
+}
 
-	if err := m.config.SavePurchaseExecution(ctx, execution); err != nil {
-		return nil, "", false, err
+// failBarePlanStep records a plan-step execution with no recommendations as
+// failed, logs it once, and returns errExecutionNotNotifiable so the
+// notification tick sends nothing for it.
+func (m *Manager) failBarePlanStep(ctx context.Context, exec *config.PurchaseExecution) error {
+	exec.Status = "failed"
+	exec.Error = ErrPlanStepNoRecommendations.Error()
+	if err := m.config.SavePurchaseExecution(ctx, exec); err != nil {
+		return fmt.Errorf("failed to record plan step %d of plan %s as failed: %w", exec.StepNumber, exec.PlanID, err)
 	}
-
-	return execution, approvalToken, false, nil
+	logging.Errorf("purchase[%s]: plan %s step %d has no recommendations and was marked failed: %v",
+		exec.ExecutionID, exec.PlanID, exec.StepNumber, ErrPlanStepNoRecommendations)
+	return fmt.Errorf("%w: %s has no recommendations", errExecutionNotNotifiable, exec.ExecutionID)
 }
 
 // buildNotificationData creates notification data from plan and execution.

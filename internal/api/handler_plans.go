@@ -392,6 +392,7 @@ func (h *Handler) deletePlan(ctx context.Context, req *events.LambdaFunctionURLR
 	return map[string]string{"status": "deleted"}, nil
 }
 
+//nolint:unparam // the response is nil only while steps cannot carry recommendations (platform#609); tier B returns it again
 func (h *Handler) createPlannedPurchases(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, planID string) (*CreatePlannedPurchasesResponse, error) {
 	if err := validateUUID(planID); err != nil {
 		return nil, err
@@ -412,50 +413,25 @@ func (h *Handler) createPlannedPurchases(ctx context.Context, httpReq *events.La
 		return nil, err
 	}
 
-	req, startDate, err := h.parseCreatePurchasesRequest(httpReq.Body)
-	if err != nil {
+	// Parsed only so malformed input still gets its specific 400 before the
+	// tier-A refusal below.
+	if _, _, err = h.parseCreatePurchasesRequest(httpReq.Body); err != nil {
 		return nil, err
 	}
 
-	// Validation only: this answers the 404 (and maps storage errors to a clean
-	// message) before a transaction is opened. The plan it returns is
-	// deliberately discarded -- it is an unlocked snapshot whose ramp position
-	// can be stale by the time the inserts run, and the authoritative read
-	// happens under the ramp lock inside the transaction below (issue #1861).
 	if _, err := h.getPlanForPurchaseCreation(ctx, planID); err != nil {
 		return nil, err
 	}
 
-	// Atomic write: per-row execution inserts and the plan's
-	// next_execution_date bump commit together, or roll back together.
-	// The previous implementation called SavePurchaseExecution outside
-	// a transaction, so a mid-loop failure (e.g. network blip on row 4
-	// of 5) left rows 1-3 persisted and updatePlanNextExecutionDate
-	// either skipped (orphaned rows) or partially-applied (stale plan
-	// pointer). A retry would then duplicate rows 1-3. WithTx makes
-	// both classes of corruption impossible — the caller can safely
-	// retry on transient errors knowing nothing was committed.
-	//
-	// Issue #950: stamp the session user onto each new execution's
-	// created_by_user_id so the per-row creator-scope ownership gate
-	// (authorizeExecutionManagement) recognizes the actor who scheduled
-	// the purchases as their owner. Without this the rows ship NULL and
-	// are unreachable for pause / resume / run / delete by anyone except
-	// admins / update-any holders, including the user who just clicked
-	// "Create planned purchases" for their own plan. Admin-API-key and
-	// non-UUID sessions resolve to nil, matching the executePurchase /
-	// retry paths and the migration-000041 fail-closed policy.
-	creator := resolveCreatorUserID(session)
-	created := 0
-	if err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
-		n, txErr := h.createPlannedPurchasesTx(ctx, tx, planID, req.Count, startDate, creator)
-		created = n
-		return txErr
-	}); err != nil {
-		return nil, err
-	}
-
-	return &CreatePlannedPurchasesResponse{Created: created}, nil
+	// Issue #609 (tier A): nothing attaches recommendations to a plan step, so
+	// every step this endpoint minted was a bare row that could never buy
+	// anything yet showed up as healthy. Refuse until steps can carry
+	// recommendations (tier B). createPlannedPurchasesTx and
+	// createPurchaseExecutionsTx stay in place for that change; the handler no
+	// longer reaches them, so the creator stamp (#950), the single transaction
+	// and the ramp lock (#1861) are exercised through them directly in tests.
+	return nil, NewClientError(409,
+		"plan steps cannot yet carry recommendations (tracked in platform#609), so no purchases can be added to a plan; purchase from Opportunities instead")
 }
 
 // createPlannedPurchasesTx is the transactional body of createPlannedPurchases:
