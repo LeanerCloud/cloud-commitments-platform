@@ -1262,7 +1262,15 @@ async function editPlan(planId: string): Promise<boolean> {
     const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement;
     providerSelect.value = info.provider ?? '';
     const planService = LEGACY_PLAN_SERVICE_IDS[`${info.provider}/${info.service}`] ?? info.service;
-    (document.getElementById('plan-service') as HTMLSelectElement).value = planService;
+    const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement;
+    serviceSelect.value = planService;
+    if (serviceSelect.selectedIndex === -1 || serviceSelect.value === '') {
+      serviceSelect.selectedIndex = -1;
+      showToast({
+        message: `This plan uses a service that is no longer supported (${info.provider ?? 'unknown provider'}/${info.service}). Recreate the plan, or choose a supported service before saving.`,
+        kind: 'error',
+      });
+    }
 
     // Update term/payment options based on provider/service
     const termSelect = document.getElementById('plan-term') as HTMLSelectElement;
@@ -1349,6 +1357,12 @@ export async function savePlan(e: Event): Promise<void> {
   const rampScheduleRadio = document.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked');
   const rampSchedule = rampScheduleRadio?.value || 'immediate';
 
+  const service = (document.getElementById('plan-service') as HTMLSelectElement).value;
+  if (!service) {
+    showToast({ message: 'Service is required: choose a supported service before saving the plan', kind: 'error' });
+    return;
+  }
+
   // Parse and validate integer fields up front. Use Number() not parseInt so
   // fractions like "2.5" fail Number.isInteger() rather than silently truncating
   // to 2. Mirrors the strict parse pattern from handleAddPurchases and settings.ts
@@ -1374,7 +1388,7 @@ export async function savePlan(e: Event): Promise<void> {
     name: (document.getElementById('plan-name') as HTMLInputElement).value,
     description: (document.getElementById('plan-description') as HTMLTextAreaElement).value,
     provider: (document.getElementById('plan-provider') as HTMLSelectElement).value,
-    service: (document.getElementById('plan-service') as HTMLSelectElement).value,
+    service,
     term: rawTerm,
     payment: (document.getElementById('plan-payment') as HTMLSelectElement).value,
     target_coverage: rawCoverage,

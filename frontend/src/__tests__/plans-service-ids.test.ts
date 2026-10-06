@@ -6,7 +6,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { loadPlans, openCreatePlanModal, setupPlanHandlers, _resetRampHandlersForTest } from '../plans';
+import { loadPlans, openCreatePlanModal, setupPlanHandlers, savePlan, _resetRampHandlersForTest } from '../plans';
 
 jest.mock('../api', () => ({
   getPlans: jest.fn(),
@@ -42,6 +42,7 @@ jest.mock('../toast', () => ({ showToast: jest.fn(() => ({ dismiss: jest.fn() })
 jest.mock('../confirmDialog', () => ({ confirmDialog: jest.fn(() => Promise.resolve(true)) }));
 
 import * as api from '../api';
+import { showToast } from '../toast';
 
 // Canonical service slugs per provider. Mirrors mapServiceSlug in
 // internal/purchase/execution.go (compute, relational-db, cache, search,
@@ -132,5 +133,60 @@ describe('plan modal service ids (#608)', () => {
     expect((document.getElementById('plan-provider') as HTMLSelectElement).value).toBe('azure');
     expect(select.selectedOptions[0]!.value).toBe(expected);
     expect(select.selectedOptions[0]!.parentElement).toBe(azureOptgroup());
+  });
+  async function editSavedPlan(provider: string, saved: string): Promise<void> {
+    const plan = {
+      id: 'plan-1', name: 'Legacy Plan', enabled: true, auto_purchase: false,
+      notification_days_before: 3,
+      services: { [saved]: { provider, service: saved, enabled: true, term: 1, payment: 'upfront', coverage: 80 } },
+      ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0 },
+    };
+    (api.getPlans as jest.Mock).mockResolvedValue({ plans: [plan] });
+    (api.getPlan as jest.Mock).mockResolvedValue(plan);
+    await loadPlans();
+    (document.querySelector('[data-action="edit-plan"]') as HTMLButtonElement).click();
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  test.each([
+    ['gcp', 'cloudsql', 'relational-db'],
+    ['gcp', 'memorystore', 'cache'],
+  ])('edit flow of a saved %s plan with service %s selects the %s option', async (provider, saved, expected) => {
+    await editSavedPlan(provider, saved);
+
+    const select = document.getElementById('plan-service') as HTMLSelectElement;
+    expect((document.getElementById('plan-provider') as HTMLSelectElement).value).toBe(provider);
+    expect(select.selectedOptions[0]!.value).toBe(expected);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['azure', 'cosmosdb'],
+    ['gcp', 'cloudstorage'],
+  ])('edit flow of a saved %s/%s plan reports an unsupported service and leaves the select empty', async (provider, saved) => {
+    await editSavedPlan(provider, saved);
+
+    const select = document.getElementById('plan-service') as HTMLSelectElement;
+    expect(select.selectedIndex).toBe(-1);
+    expect(select.value).toBe('');
+    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'error',
+      message: expect.stringContaining(`${provider}/${saved}`),
+    }));
+  });
+
+  test('savePlan with no service selected does not call the API and shows an error', async () => {
+    (document.getElementById('plan-service') as HTMLSelectElement).selectedIndex = -1;
+    const save = jest.fn();
+    (api as unknown as Record<string, unknown>)['createPlan'] = save;
+    (api as unknown as Record<string, unknown>)['updatePlan'] = save;
+
+    await savePlan(new Event('submit'));
+
+    expect(save).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'error',
+      message: expect.stringContaining('Service is required'),
+    }));
   });
 });
