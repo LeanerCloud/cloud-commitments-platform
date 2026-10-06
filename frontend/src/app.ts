@@ -364,6 +364,21 @@ export async function handleExecutePurchase(): Promise<void> {
     return;
   }
 
+  // Refuse before the confirm dialog and the POST when any rec has no payment
+  // option. Defaulting here would silently pick the most cash-intensive
+  // schedule on a money path (issue #431).
+  const recsWithPayment = localRecs.filter(
+    (r): r is typeof r & { payment: string } => !!r.payment,
+  );
+  const missingCount = localRecs.length - recsWithPayment.length;
+  if (missingCount > 0) {
+    showToast({
+      message: `Cannot submit: ${missingCount} of ${localRecs.length} selected recommendation${localRecs.length === 1 ? '' : 's'} ${missingCount === 1 ? 'has' : 'have'} no payment option. Choose a payment option for each row and try again.`,
+      kind: 'error',
+    });
+    return;
+  }
+
   // Read the execute mode set by the modal toggle (issue #289).
   // "direct" means the session has execute-any/execute-own and chose to
   // bypass approval; "" is the default approval-required path.
@@ -407,16 +422,15 @@ export async function handleExecutePurchase(): Promise<void> {
   // future additions) flow through unchanged. Only `payment`, `selected`,
   // and `purchased` are overridden: `payment` uses the user-edited value
   // (issue #111), and `selected`/`purchased` are forced to the canonical
-  // purchase-intent values. The `?? 'all-upfront'` on payment is defensive
-  // only — direct test-harness callers that bypass the modal may not set
-  // `payment`; the production path always does. Passing `details` ensures
+  // purchase-intent values. A missing `payment` was refused above, so it is
+  // never defaulted here. Passing `details` ensures
   // Windows EC2, dedicated-tenancy, AZ-scoped RIs, and non-default-engine
   // RDS/Cache recs reach the backend with the correct ServiceDetails payload
   // instead of falling back to Linux/regional/default (issue #597).
-  const apiRecs: api.Recommendation[] = localRecs.map((r) => ({
+  const apiRecs: api.Recommendation[] = recsWithPayment.map((r) => ({
     ...r,
     monthly_cost: r.monthly_cost ?? null,
-    payment: r.payment ?? 'all-upfront',
+    payment: r.payment,
     selected: true,
     purchased: false,
   }));
