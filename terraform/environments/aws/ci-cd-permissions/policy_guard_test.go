@@ -353,6 +353,7 @@ func deployPathFiles(t *testing.T, modules, envRoot string) []string {
 // test that triggers it.
 func walkDeployPath(modules, envRoot string) ([]string, error) {
 	seen := map[string]bool{}
+	queued := map[string]bool{}
 	addDir := func(dir string) ([]string, error) {
 		entries, err := filepath.Glob(filepath.Join(dir, "*.tf"))
 		if err != nil {
@@ -360,8 +361,9 @@ func walkDeployPath(modules, envRoot string) ([]string, error) {
 		}
 		var added []string
 		for _, e := range entries {
-			if !seen[e] {
-				seen[e] = true
+			seen[e] = true
+			if !queued[e] {
+				queued[e] = true
 				added = append(added, e)
 			}
 		}
@@ -1876,7 +1878,8 @@ func TestDeployPathWalkReachesModulesWithoutAwsSegment(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("env/main.tf", "module \"build\" {\n  source = \"../modules/build\"\n}\n")
+	write("env/main.tf", "module \"parent\" {\n  source = \"../modules/aws/parent\"\n}\n")
+	write("modules/aws/parent/main.tf", "module \"build\" {\n  source = \"../../build\"\n}\n")
 	write("modules/build/main.tf", `resource "aws_iam_role_policy" "x" {
   policy = jsonencode({
     Statement = [
@@ -1895,7 +1898,7 @@ func TestDeployPathWalkReachesModulesWithoutAwsSegment(t *testing.T) {
 
 	want := filepath.Join(root, "modules", "build", "main.tf")
 	if !slices.Contains(files, want) {
-		t.Fatalf("deployPathFiles = %v, missing %s, which env/main.tf instantiates", files, want)
+		t.Fatalf("deployPathFiles = %v, missing %s, which env/main.tf instantiates through modules/aws/parent", files, want)
 	}
 	if slices.Contains(files, filepath.Join(root, "modules", "unreferenced", "main.tf")) {
 		t.Errorf("deployPathFiles = %v includes a module nothing instantiates", files)
@@ -1949,6 +1952,7 @@ func TestDeployPathWalkFailsClosed(t *testing.T) {
 		{"no literal source", "module \"m\" {\n  source = var.src\n}\n", "has no literal source"},
 		{"registry source", "module \"m\" {\n  source  = \"terraform-aws-modules/iam/aws\"\n  version = \"5.0.0\"\n}\n", "is not a local directory"},
 		{"git source with ref", "module \"m\" {\n  source = \"git::https://example.com/m.git?ref=v1\"\n}\n", "is not a local directory"},
+		{"remote source in AWS parent", "module \"parent\" {\n  source = \"../modules/aws/parent\"\n}\n", "is not a local directory"},
 		{"missing local directory", "module \"m\" {\n  source = \"../modules/absent\"\n}\n", "not a readable directory"},
 	}
 	for _, tc := range cases {
@@ -1961,6 +1965,15 @@ func TestDeployPathWalkFailsClosed(t *testing.T) {
 			}
 			if err := os.WriteFile(filepath.Join(root, "env", "main.tf"), []byte(tc.module), 0o644); err != nil {
 				t.Fatal(err)
+			}
+			if tc.name == "remote source in AWS parent" {
+				parent := filepath.Join(root, "modules", "aws", "parent")
+				if err := os.MkdirAll(parent, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(parent, "main.tf"), []byte("module \"remote\" {\n  source = \"terraform-aws-modules/iam/aws\"\n}\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
 			}
 			files, err := walkDeployPath(filepath.Join(root, "modules"), filepath.Join(root, "env"))
 			if err == nil {
