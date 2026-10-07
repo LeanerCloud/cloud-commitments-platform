@@ -205,7 +205,7 @@ func (s *ladderTestStore) SaveLadderRunWithTranches(_ context.Context, run *conf
 
 // GetInFlightLadderCommitUSDHr returns the configurable in-flight value.
 // When inFlightUSDHr is nil, returns a pointer to 0.0 (no in-flight default).
-func (s *ladderTestStore) GetInFlightLadderCommitUSDHr(_ context.Context, _ string) (*float64, error) {
+func (s *ladderTestStore) GetInFlightLadderCommitUSDHr(_ context.Context, _ string, _ time.Time) (*float64, error) {
 	if s.inFlightErr != nil {
 		return nil, s.inFlightErr
 	}
@@ -1139,7 +1139,8 @@ func TestRatToFloat64Ptr_PositiveValue(t *testing.T) {
 // returns a FIXED in-flight value), it tracks each persisted tranche's live
 // status so the L5 netting + append-only interplay can be exercised end-to-end
 // across multiple sequential runs. It mirrors PostgresStore semantics exactly:
-//   - GetInFlightLadderCommitUSDHr sums SCHEDULED tranches only, per config.
+//   - GetInFlightLadderCommitUSDHr sums SCHEDULED, not-yet-due tranches only,
+//     per config.
 //   - SaveLadderRunWithTranches APPENDS the run + its new tranches and NEVER
 //     cancels existing scheduled tranches (there is no supersede path).
 //
@@ -1151,9 +1152,8 @@ type ladderStatefulStore struct {
 	runs     []*config.LadderRunDB
 }
 
-// scheduledSum totals the config's currently-scheduled tranche amounts. It is
-// the single source of truth reused by GetInFlightLadderCommitUSDHr so the fake
-// cannot drift from its own netting view.
+// scheduledSum totals the config's currently-scheduled tranche amounts,
+// regardless of scheduled_date.
 func (s *ladderStatefulStore) scheduledSum(configID string) float64 {
 	total := 0.0
 	for i := range s.tranches {
@@ -1178,8 +1178,14 @@ func (s *ladderStatefulStore) scheduledTrancheIDs(configID string) map[string]bo
 	return ids
 }
 
-func (s *ladderStatefulStore) GetInFlightLadderCommitUSDHr(_ context.Context, configID string) (*float64, error) {
-	total := s.scheduledSum(configID)
+func (s *ladderStatefulStore) GetInFlightLadderCommitUSDHr(_ context.Context, configID string, asOf time.Time) (*float64, error) {
+	total := 0.0
+	for i := range s.tranches {
+		tr := &s.tranches[i]
+		if tr.ConfigID != nil && *tr.ConfigID == configID && tr.Status == pkgladder.TrancheStatusScheduled && tr.ScheduledDate.After(asOf) {
+			total += tr.AmountUSDHr
+		}
+	}
 	return &total, nil
 }
 
@@ -1195,13 +1201,15 @@ func (s *ladderStatefulStore) SaveLadderRunWithTranches(_ context.Context, run *
 // fullyDelayedRamp is a 2-step ramp with NO AfterDays==0 step, so ALL planned
 // commitment lands as SCHEDULED tranches (no buy-now). With a static E=0 fake
 // capability, that scheduled ramp is the only in-flight commitment, so the L5
-// netting alone decides whether a follow-up run Holds or tops up.
+// netting alone decides whether a follow-up run Holds or tops up. The first
+// step is a week out so follow-up runs within a few days still see the whole
+// ramp as not yet due.
 func fullyDelayedRamp(t *testing.T) json.RawMessage {
 	t.Helper()
 	raw, err := json.Marshal(pkgladder.RampSchedule{
 		Steps: []pkgladder.RampStep{
-			{AfterDays: 1, Fraction: 0.5},
 			{AfterDays: 7, Fraction: 0.5},
+			{AfterDays: 14, Fraction: 0.5},
 		},
 	})
 	require.NoError(t, err)
@@ -1256,6 +1264,35 @@ func TestExecuteLadderRun_L5Convergence_PreservesRampAcrossHolds(t *testing.T) {
 	assert.Equal(t, gen1, gen3, "run3 Hold must still preserve the original ramp (same IDs)")
 	assert.InDelta(t, 8.0, store.scheduledSum(cfgID), 1e-9, "three constant-usage runs must not accumulate commitment")
 	assert.Equal(t, 0.0, store.runs[2].TotalHourlyCommit, "run3 must be a Hold (zero new commitment)")
+}
+
+// TestExecuteLadderRun_L5ElapsedTranchesStopNetting is the issue #118
+// regression: no executor moves a tranche out of 'scheduled', so once the
+// ramp's fire dates have passed those tranches were never bought. A run after
+// that point must plan the gap again instead of netting the stale ramp out
+// forever and holding at zero.
+func TestExecuteLadderRun_L5ElapsedTranchesStopNetting(t *testing.T) {
+	ctx := testutil.TestContext(t)
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	const cfgID = "cfg-l5-elapsed"
+	dbCfg := validTestDBConfig(cfgID)
+	dbCfg.RampSchedule = fullyDelayedRamp(t)
+
+	store := &ladderStatefulStore{}
+	app := &Application{Config: store}
+	capability := &fakeLadderCapability{t: t, baseline: testBaseline()}
+
+	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, capability, "123456789012",
+		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now))
+	require.Len(t, store.runs, 1)
+	assert.InDelta(t, 8.0, store.runs[0].TotalHourlyCommit, 1e-9, "run1 must plan the full gap (8)")
+
+	// Day 15: both ramp steps (day 7, day 14) are past due and still 'scheduled'.
+	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, capability, "123456789012",
+		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now.Add(15*24*time.Hour)))
+	require.Len(t, store.runs, 2)
+	assert.InDelta(t, 8.0, store.runs[1].TotalHourlyCommit, 1e-9,
+		"a run after the ramp elapsed must plan the full gap again, not Hold on never-fired tranches")
 }
 
 // TestExecuteLadderRun_L5DriftUp_AppendsToTargetAndConverges verifies the

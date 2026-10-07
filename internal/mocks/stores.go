@@ -1815,13 +1815,13 @@ func (m *MockConfigStore) LatestLadderRunStartedAt(ctx context.Context, configID
 // GetInFlightLadderCommitUSDHr mocks the GetInFlightLadderCommitUSDHr
 // operation. Returns a pointer to zero (no in-flight commitment) when no
 // expectation is registered, matching the happy-path default.
-func (m *MockConfigStore) GetInFlightLadderCommitUSDHr(ctx context.Context, configID string) (*float64, error) {
-	m.record("GetInFlightLadderCommitUSDHr", ctx, configID)
+func (m *MockConfigStore) GetInFlightLadderCommitUSDHr(ctx context.Context, configID string, asOf time.Time) (*float64, error) {
+	m.record("GetInFlightLadderCommitUSDHr", ctx, configID, asOf)
 	if !isExpected(&m.Mock, "GetInFlightLadderCommitUSDHr") {
 		zero := 0.0
 		return &zero, nil
 	}
-	args := m.Called(ctx, configID)
+	args := m.Called(ctx, configID, asOf)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

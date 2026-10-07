@@ -314,13 +314,14 @@ func (app *Application) executeLadderRun(
 	}
 
 	// L5: Fetch in-flight commitment BEFORE Allocate so the engine can subtract
-	// it from the gap. In-flight = the config's status=scheduled (not-yet-fired)
-	// ladder tranches ONLY. Fired/completed tranches are excluded because they
-	// are executed purchases already counted in ExistingUSDPerHour; netting them
+	// it from the gap. In-flight = the config's status=scheduled ladder tranches
+	// whose scheduled_date is still after now ONLY (an elapsed one never fired).
+	// Fired/completed tranches are excluded because they are executed purchases
+	// already counted in ExistingUSDPerHour; netting them
 	// again would double-subtract. Including prior-run scheduled tranches lets
 	// the engine account for en-route commitment and produce a ~zero gap (Hold)
 	// when the scheduled ramp already covers the target.
-	inFlight, err := app.Config.GetInFlightLadderCommitUSDHr(ctx, dbCfg.ID)
+	inFlight, err := app.Config.GetInFlightLadderCommitUSDHr(ctx, dbCfg.ID, now)
 	if err != nil {
 		return fmt.Errorf("GetInFlightLadderCommitUSDHr: %w", err)
 	}

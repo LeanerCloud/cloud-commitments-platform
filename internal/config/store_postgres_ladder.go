@@ -363,7 +363,7 @@ func (s *PostgresStore) SaveLadderRunWithTranches(ctx context.Context, run *Ladd
 
 // GetInFlightLadderCommitUSDHr returns the total hourly USD commitment already
 // in flight for the given config: the SUM of amount_usd_hr for ladder_tranches
-// rows where config_id=$1 and status = 'scheduled'.
+// rows where config_id=$1, status = 'scheduled' and scheduled_date > asOf.
 //
 // SCHEDULED ONLY: fired/completed tranches are executed purchases already
 // counted in the engine's ExistingUSDPerHour (the provider adapters fold
@@ -372,17 +372,23 @@ func (s *PostgresStore) SaveLadderRunWithTranches(ctx context.Context, run *Ladd
 // not-yet-fired (scheduled) tranches are genuinely "in flight" and absent
 // from E, so they alone must be netted out of the gap.
 //
+// NOT YET DUE ONLY: nothing transitions a tranche out of 'scheduled' yet (the
+// executor does not exist, issue #118), so a tranche whose scheduled_date has
+// passed was never bought. Counting it would net every past plan out of the
+// gap forever and stop the ladder planning after its first run.
+//
 // Returns a non-nil *float64 (zero when no scheduled tranches exist); never
 // returns nil without a non-nil error, so callers can pass it directly to
 // AllocationInput.InFlightUSDPerHour without an extra nil-guard.
-func (s *PostgresStore) GetInFlightLadderCommitUSDHr(ctx context.Context, configID string) (*float64, error) {
+func (s *PostgresStore) GetInFlightLadderCommitUSDHr(ctx context.Context, configID string, asOf time.Time) (*float64, error) {
 	var total float64
 	err := s.db.QueryRow(ctx, `
 		SELECT COALESCE(SUM(amount_usd_hr), 0)
 		FROM ladder_tranches
 		WHERE config_id = $1
 		  AND status = $2
-	`, configID, string(ladder.TrancheStatusScheduled)).Scan(&total)
+		  AND scheduled_date > $3
+	`, configID, string(ladder.TrancheStatusScheduled), asOf).Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("GetInFlightLadderCommitUSDHr config_id=%s: %w", configID, err)
 	}
