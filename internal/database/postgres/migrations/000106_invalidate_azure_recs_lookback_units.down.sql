@@ -1,0 +1,1 @@
+-- Wrong-unit prices cannot be restored; a successful collection supplies corrected values.
