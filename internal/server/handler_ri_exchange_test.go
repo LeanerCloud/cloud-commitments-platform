@@ -551,6 +551,7 @@ func TestExecuteRIExchangeReshape_ManualMode(t *testing.T) {
 					IsValidExchange:  true,
 					PaymentDueUSD:    new(big.Rat).SetFloat64(5.00),
 					PaymentDueUSDStr: "5.00",
+					CurrencyCode:     "USD",
 				}, nil
 			},
 		},
@@ -641,6 +642,7 @@ func TestExecuteRIExchangeReshape_AutoMode(t *testing.T) {
 					IsValidExchange:  true,
 					PaymentDueUSD:    new(big.Rat).SetFloat64(3.50),
 					PaymentDueUSDStr: "3.50",
+					CurrencyCode:     "USD",
 				}, nil
 			},
 			executeFunc: func(ctx context.Context, req exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
@@ -648,6 +650,7 @@ func TestExecuteRIExchangeReshape_AutoMode(t *testing.T) {
 					IsValidExchange:  true,
 					PaymentDueUSD:    new(big.Rat).SetFloat64(3.50),
 					PaymentDueUSDStr: "3.50",
+					CurrencyCode:     "USD",
 				}, nil
 			},
 		},
@@ -745,6 +748,7 @@ func TestExecuteRIExchangeReshape_DailyCapHitMidRun(t *testing.T) {
 					IsValidExchange:  true,
 					PaymentDueUSD:    new(big.Rat).SetFloat64(8.00),
 					PaymentDueUSDStr: "8.00",
+					CurrencyCode:     "USD",
 				}, nil
 			},
 			executeFunc: func(ctx context.Context, req exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
@@ -752,6 +756,7 @@ func TestExecuteRIExchangeReshape_DailyCapHitMidRun(t *testing.T) {
 					IsValidExchange:  true,
 					PaymentDueUSD:    new(big.Rat).SetFloat64(8.00),
 					PaymentDueUSDStr: "8.00",
+					CurrencyCode:     "USD",
 				}, nil
 			},
 		},
