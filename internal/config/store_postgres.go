@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"math/big"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -60,6 +62,12 @@ type globalConfigExecutor interface {
 var globalConfigLockKey = func() int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte("cudly:global_config:singleton"))
+	return int64(h.Sum64())
+}()
+
+var riExchangeDailySpendLockKey = func() int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte("cudly:ri_exchange:global_daily_spend"))
 	return int64(h.Sum64())
 }()
 
@@ -2778,6 +2786,10 @@ func (s *PostgresStore) ClaimRIExchangeIdempotencyKey(ctx context.Context, key s
 // cloud-commitments-go), never a value previously read back from this
 // column, so hashing it here can never double-hash an already-hashed value.
 func (s *PostgresStore) SaveRIExchangeRecord(ctx context.Context, record *RIExchangeRecord) error {
+	return saveRIExchangeRecord(ctx, s.db, record)
+}
+
+func saveRIExchangeRecord(ctx context.Context, q globalConfigExecutor, record *RIExchangeRecord) error {
 	if record.ID == "" {
 		record.ID = uuid.New().String()
 	}
@@ -2810,7 +2822,7 @@ func (s *PostgresStore) SaveRIExchangeRecord(ctx context.Context, record *RIExch
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 	`
 
-	_, err := s.db.Exec(ctx, query,
+	_, err := q.Exec(ctx, query,
 		record.ID,
 		record.AccountID,
 		record.ExchangeID,
@@ -2839,6 +2851,91 @@ func (s *PostgresStore) SaveRIExchangeRecord(ctx context.Context, record *RIExch
 	}
 
 	return nil
+}
+
+// ReserveRIExchange atomically records the full execution ceiling before a provider call.
+func (s *PostgresStore) ReserveRIExchange(ctx context.Context, record *RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	initial, dailyCap, perCap, err := riExchangeReservationMicros(record, dailyCapUSD, perExchangeCapUSD)
+	if err != nil {
+		return "", err
+	}
+
+	candidate := *record
+	var ceiling string
+	err = s.WithTx(ctx, func(tx pgx.Tx) error {
+		if _, lockErr := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", riExchangeDailySpendLockKey); lockErr != nil {
+			return fmt.Errorf("failed to lock RI exchange daily spend: %w", lockErr)
+		}
+		var spendText string
+		if scanErr := tx.QueryRow(ctx, riExchangeDailySpendQuery, time.Now().UTC()).Scan(&spendText); scanErr != nil {
+			return fmt.Errorf("failed to read RI exchange daily spend: %w", scanErr)
+		}
+		spend, parseErr := riExchangeMicros(spendText)
+		if parseErr != nil {
+			return fmt.Errorf("invalid RI exchange daily spend: %w", parseErr)
+		}
+		remaining := new(big.Int).Sub(dailyCap, spend)
+		if remaining.Cmp(perCap) > 0 {
+			remaining.Set(perCap)
+		}
+		if remaining.Sign() < 0 {
+			return fmt.Errorf("RI exchange daily cap exceeded: spend %s exceeds cap %s", spendText, dailyCapUSD)
+		}
+		if initial.Cmp(remaining) > 0 {
+			return fmt.Errorf("RI exchange daily cap exceeded: initial %s, remaining %s", record.PaymentDue, riExchangeUSD(remaining))
+		}
+		ceiling = riExchangeUSD(remaining)
+		candidate.PaymentDue = ceiling
+		return saveRIExchangeRecord(ctx, tx, &candidate)
+	})
+	if err != nil {
+		return "", err
+	}
+	*record = candidate
+	return ceiling, nil
+}
+
+func riExchangeReservationMicros(record *RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (initial, dailyCap, perCap *big.Int, err error) {
+	if record == nil || record.Status != "processing" || record.Mode != "auto" {
+		return nil, nil, nil, errors.New("auto RI exchange reservation requires a processing auto record")
+	}
+	initial, err = riExchangeMicros(record.PaymentDue)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid initial RI exchange payment: %w", err)
+	}
+	dailyCap, err = riExchangeMicros(dailyCapUSD)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid daily RI exchange cap: %w", err)
+	}
+	perCap, err = riExchangeMicros(perExchangeCapUSD)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid per-exchange RI cap: %w", err)
+	}
+	return initial, dailyCap, perCap, nil
+}
+
+var riExchangeMicroScale = big.NewInt(1_000_000)
+var riExchangeDecimalPattern = regexp.MustCompile(`^\d+(?:\.\d+)?$`)
+
+func riExchangeMicros(value string) (*big.Int, error) {
+	if !riExchangeDecimalPattern.MatchString(value) {
+		return nil, fmt.Errorf("invalid nonnegative decimal %q", value)
+	}
+	amount, ok := new(big.Rat).SetString(value)
+	if !ok {
+		return nil, fmt.Errorf("invalid nonnegative decimal %q", value)
+	}
+	amount.Mul(amount, new(big.Rat).SetInt(riExchangeMicroScale))
+	if !amount.IsInt() || len(new(big.Int).Quo(amount.Num(), riExchangeMicroScale).String()) > 14 {
+		return nil, fmt.Errorf("decimal exceeds DECIMAL(20,6): %q", value)
+	}
+	return new(big.Int).Set(amount.Num()), nil
+}
+
+func riExchangeUSD(micros *big.Int) string {
+	whole, fractional := new(big.Int), new(big.Int)
+	whole.QuoRem(micros, riExchangeMicroScale, fractional)
+	return fmt.Sprintf("%s.%06d", whole, fractional)
 }
 
 // GetRIExchangeRecord retrieves an RI exchange record by ID.
@@ -3057,13 +3154,7 @@ func (s *PostgresStore) FailRIExchange(ctx context.Context, id, errorMsg string)
 // it is updated_at (the moment the record transitioned to processing, i.e.
 // when it was approved).
 func (s *PostgresStore) GetRIExchangeDailySpend(ctx context.Context, date time.Time) (string, error) {
-	query := `
-		SELECT COALESCE(SUM(payment_due), 0)::text
-		FROM ri_exchange_history
-		WHERE status IN ('completed', 'processing')
-		  AND COALESCE(completed_at, updated_at) >= date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC')
-		  AND COALESCE(completed_at, updated_at) < date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') + INTERVAL '1 day'
-	`
+	query := riExchangeDailySpendQuery
 
 	var total string
 	err := s.db.QueryRow(ctx, query, date).Scan(&total)
@@ -3073,6 +3164,14 @@ func (s *PostgresStore) GetRIExchangeDailySpend(ctx context.Context, date time.T
 
 	return total, nil
 }
+
+const riExchangeDailySpendQuery = `
+		SELECT COALESCE(SUM(payment_due), 0)::text
+		FROM ri_exchange_history
+		WHERE status IN ('completed', 'processing')
+		  AND COALESCE(completed_at, updated_at) >= (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+		  AND COALESCE(completed_at, updated_at) < (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') + INTERVAL '1 day') AT TIME ZONE 'UTC'
+	`
 
 // CancelAllPendingExchanges cancels all pending RI exchange records regardless
 // of origin. Kept for interface compatibility; new callers should prefer
