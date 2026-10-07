@@ -13,9 +13,10 @@ var ErrStaleAzurePricing = errors.New("stale Azure recommendation pricing; refre
 
 func (m *Manager) staleAzurePricingRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
 	var azure []config.RecommendationRecord
-	for _, rec := range exec.Recommendations {
+	for i := range exec.Recommendations {
+		rec := &exec.Recommendations[i]
 		if rec.Provider == "azure" {
-			azure = append(azure, rec)
+			azure = append(azure, *rec)
 		}
 	}
 	if len(azure) == 0 {
@@ -26,12 +27,13 @@ func (m *Manager) staleAzurePricingRefusal(ctx context.Context, exec *config.Pur
 		return fmt.Errorf("load current Azure recommendation pricing: %w", err)
 	}
 	byID := make(map[string]config.RecommendationRecord, len(rows))
-	for _, row := range rows {
-		byID[row.ID] = row
+	for i := range rows {
+		byID[rows[i].ID] = rows[i]
 	}
-	for _, rec := range azure {
+	for i := range azure {
+		rec := &azure[i]
 		stored, ok := byID[rec.ID]
-		if rec.ID == "" || !ok || !azurePricingMatches(rec, stored) {
+		if rec.ID == "" || !ok || !azurePricingMatches(*rec, stored) {
 			return fmt.Errorf("%w: Azure recommendation %q no longer has the approved price", ErrStaleAzurePricing, rec.ID)
 		}
 	}

@@ -146,11 +146,11 @@ func TestAzurePricingUnchangedStillPurchases(t *testing.T) {
 }
 
 func TestAzureCostEqualRoundingBound(t *testing.T) {
-	within, beyond := 100.0, 100.0
+	within := 100.0
 	for i := 0; i < 8; i++ {
 		within = math.Nextafter(within, math.Inf(1))
 	}
-	beyond = math.Nextafter(within, math.Inf(1))
+	beyond := math.Nextafter(within, math.Inf(1))
 	assert.True(t, azureCostEqual(100, within, 1))
 	assert.False(t, azureCostEqual(100, beyond, 1))
 }
