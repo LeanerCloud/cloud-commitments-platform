@@ -1,0 +1,76 @@
+package purchase
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math"
+
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+)
+
+var ErrStaleAzurePricing = errors.New("stale Azure recommendation pricing; refresh recommendations and submit a new purchase")
+
+func (m *Manager) staleAzurePricingRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
+	var azure []config.RecommendationRecord
+	for _, rec := range exec.Recommendations {
+		if rec.Provider == "azure" {
+			azure = append(azure, rec)
+		}
+	}
+	if len(azure) == 0 {
+		return nil
+	}
+	rows, err := m.config.ListStoredRecommendations(ctx, config.RecommendationFilter{Provider: "azure"})
+	if err != nil {
+		return fmt.Errorf("load current Azure recommendation pricing: %w", err)
+	}
+	byID := make(map[string]config.RecommendationRecord, len(rows))
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	for _, rec := range azure {
+		stored, ok := byID[rec.ID]
+		if rec.ID == "" || !ok || !azurePricingMatches(rec, stored) {
+			return fmt.Errorf("%w: Azure recommendation %q no longer has the approved price", ErrStaleAzurePricing, rec.ID)
+		}
+	}
+	return nil
+}
+
+func azurePricingMatches(rec, stored config.RecommendationRecord) bool {
+	if rec.Count <= 0 || stored.Count <= 0 {
+		return false
+	}
+	total := stored.UpfrontCost
+	if stored.MonthlyCost != nil {
+		total += *stored.MonthlyCost * float64(stored.Term) * 12
+	}
+	if total <= 0 || !azureCostEqual(total, total, 1) {
+		return false
+	}
+	ratio := float64(rec.Count) / float64(stored.Count)
+	if !azureCostEqual(rec.UpfrontCost, stored.UpfrontCost, ratio) {
+		return false
+	}
+	if rec.MonthlyCost == nil || stored.MonthlyCost == nil {
+		return rec.MonthlyCost == nil && stored.MonthlyCost == nil
+	}
+	return azureCostEqual(*rec.MonthlyCost, *stored.MonthlyCost, ratio)
+}
+
+func azureCostEqual(a, b, ratio float64) bool {
+	if a < 0 || b < 0 || math.IsNaN(a) || math.IsNaN(b) || math.IsInf(a, 0) || math.IsInf(b, 0) {
+		return false
+	}
+	b *= ratio
+	if math.IsInf(b, 0) {
+		return false
+	}
+	// Nonnegative IEEE-754 bit patterns are ordered; allow only rounding drift.
+	x, y := math.Float64bits(math.Abs(a)), math.Float64bits(math.Abs(b))
+	if x > y {
+		return x-y <= 8
+	}
+	return y-x <= 8
+}

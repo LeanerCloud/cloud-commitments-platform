@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -1147,4 +1149,56 @@ func TestRouter_PurchasesExecute_EmptyIDMismatchedTenancyRefused(t *testing.T) {
 	require.True(t, isClient)
 	assert.Equal(t, 409, ce.code)
 	mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+}
+
+func TestAzureCommitmentUnitsRegression(t *testing.T) {
+	upfront := config.RecommendationRecord{Provider: "azure", Term: 3, Count: 1, UpfrontCost: 3600}
+	monthly := config.RecommendationRecord{Provider: "azure", Term: 3, Count: 1, MonthlyCost: float64Ptr(100)}
+	assert.Equal(t, recTotalCommitment(&upfront), recTotalCommitment(&monthly))
+	assert.Equal(t, 3600.0, recTotalCommitment(&monthly))
+	assert.Equal(t, 3600.0, buildRecommendationsResponse([]config.RecommendationRecord{upfront, monthly}).Summary.TotalUpfrontCost)
+	stored := upfront
+	stored.MonthlyCost = float64Ptr(10)
+	stored.OnDemandCost = float64Ptr(150)
+	stored.Savings = 50
+	req := stored
+	req.Count = 2
+	priced, err := priceFromStored(&req, &stored, 0)
+	require.NoError(t, err)
+	assert.Equal(t, 7200.0, priced.UpfrontCost)
+	assert.Equal(t, 20.0, *priced.MonthlyCost)
+	assert.Equal(t, 300.0, *priced.OnDemandCost)
+	assert.Equal(t, 100.0, priced.Savings)
+}
+
+func TestAzureCorrectedPriceExceedsOldUnitsCap(t *testing.T) {
+	ctx := context.Background()
+	store := new(MockConfigStore)
+	authService := new(MockAuthService)
+	authService.On("ValidateSession", ctx, "azure-cap").Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "capped@example.com"}, nil)
+	authService.grantPermissions([]auth.Permission{{Action: auth.ActionExecute, Resource: auth.ResourcePurchases, Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 1000}}})
+	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	store.On("GetPendingExecutions", mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
+	expectStoredRecs(store, config.RecommendationRecord{ID: "azure-corrected", Provider: "azure", Service: "compute", Region: "westeurope", ResourceType: "Standard_D2s_v3", Count: 1, Term: 3, Payment: "upfront", UpfrontCost: 3600, Savings: 50})
+	h := &Handler{config: store, auth: authService}
+	_, err := h.executePurchase(ctx, &events.LambdaFunctionURLRequest{Headers: map[string]string{"Authorization": "Bearer azure-cap"}, Body: `{"recommendations":[{"id":"azure-corrected","provider":"azure","service":"compute","region":"westeurope","resource_type":"Standard_D2s_v3","count":1,"term":3,"payment":"all-upfront","upfront_cost":70,"savings":50}]}`})
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 403, ce.code)
+	assert.Contains(t, err.Error(), "exceeds the constraints configured on your execute permission for purchases")
+	store.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+}
+
+func TestStaleAzurePricingErrorMapping(t *testing.T) {
+	stale := purchase.ErrStaleAzurePricing
+	audit := fmt.Errorf("%w: %w", config.ErrAuditLoss, stale)
+	for _, mapped := range []error{executeFailureError("id", "approved", &config.PurchaseExecution{Status: "failed"}, stale), tokenActionError(stale)} {
+		ce, ok := IsClientError(mapped)
+		require.True(t, ok)
+		assert.Equal(t, 409, ce.code)
+	}
+	ce, ok := IsClientError(executeFailureError("id", "approved", &config.PurchaseExecution{Status: "failed"}, audit))
+	require.True(t, ok)
+	assert.Equal(t, 500, ce.code)
+	assert.ErrorIs(t, tokenActionError(audit), config.ErrAuditLoss)
 }

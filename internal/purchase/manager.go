@@ -222,6 +222,9 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 	// entry point funnels through here, so one check covers all of them.
 	execErr := armedRedriveRefusal(exec)
 	if execErr == nil {
+		execErr = m.staleAzurePricingRefusal(ctx, exec)
+	}
+	if execErr == nil {
 		execErr = m.executePurchase(ctx, exec)
 	}
 	m.finalizeExecution(exec, execErr)

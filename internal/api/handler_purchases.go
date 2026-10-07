@@ -364,11 +364,7 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 	}, nil
 }
 
-// executeFailureError maps a failure of the shared approve-and-execute funnel
-// (run-now, session approve, direct execute) to its HTTP error. action names
-// what the caller tried ("started", "approved", "direct-executed"). A non-nil
-// final means the purchase ran and money may have moved, so it is never a 409.
-// ErrNotFound and ErrExecutionNotInExpectedStatus are 409 only before a claim.
+// Stale Azure prices are refused before purchase, even after a successful claim.
 func executeFailureError(executionID, action string, final *config.PurchaseExecution, err error) error {
 	switch {
 	case errors.Is(err, purchase.ErrFourEyesDenied):
@@ -379,6 +375,8 @@ func executeFailureError(executionID, action string, final *config.PurchaseExecu
 		return fmt.Errorf("execution %s could not be %s: %w", executionID, action, err)
 	case errors.Is(err, config.ErrAuditLoss):
 		return NewClientError(500, fmt.Sprintf("execution %s ran but its final status could not be saved: %v", executionID, err))
+	case errors.Is(err, purchase.ErrStaleAzurePricing):
+		return NewClientError(409, err.Error())
 	default:
 		return NewClientErrorWithDetails(502, fmt.Sprintf("execution %s failed: %v", executionID, err),
 			map[string]any{"execution_id": executionID, "status": final.Status})
@@ -687,6 +685,10 @@ func (h *Handler) requireSessionBeforeLookup(ctx context.Context, req *events.La
 // whose status no longer allows the action is 409. Anything else stays a server error.
 func tokenActionError(err error) error {
 	switch {
+	case errors.Is(err, config.ErrAuditLoss):
+		return err
+	case errors.Is(err, purchase.ErrStaleAzurePricing):
+		return NewClientError(409, err.Error())
 	case errors.Is(err, purchase.ErrInvalidApprovalToken):
 		return NewClientError(403, "invalid approval token")
 	case errors.Is(err, purchase.ErrApprovalTokenExpired):
