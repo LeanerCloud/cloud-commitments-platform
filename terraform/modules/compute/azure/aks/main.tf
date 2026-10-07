@@ -449,9 +449,12 @@ resource "kubernetes_deployment" "app" {
             failure_threshold     = 3
           }
 
+          # /ready answers 503 until this replica has completed database
+          # initialization, so a cold replica stays out of the Service
+          # endpoints (#488).
           readiness_probe {
             http_get {
-              path = "/health"
+              path = "/ready"
               port = 8080
             }
             initial_delay_seconds = 10

@@ -161,11 +161,14 @@ resource "azurerm_container_app" "main" {
         failure_count_threshold = 3
       }
 
-      # Readiness probe
+      # Readiness probe. /ready answers 503 until this replica has completed
+      # database initialization, so a cold replica is never admitted to traffic
+      # (#488). /health would answer 200 with "degraded" in the body, which the
+      # probe cannot see.
       readiness_probe {
         transport = "HTTP"
         port      = 8080
-        path      = "/health"
+        path      = "/ready"
 
         interval_seconds        = 10
         timeout                 = 3
