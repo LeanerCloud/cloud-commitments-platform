@@ -642,8 +642,8 @@ func validateAzureExecuteBody(body AzureExecuteExchangeRequestBody) error {
 // applies the requested quantities after requireAzureSourceOwnership succeeds.
 func toAzureExchangeSources(sources []AzureExchangeSourceBody, owned []azurecompute.ExchangeableReservation) []azurecompute.ExchangeableReservation {
 	byID := make(map[string]azurecompute.ExchangeableReservation, len(owned))
-	for _, reservation := range owned {
-		byID[strings.ToLower(reservation.ReservationID)] = reservation
+	for i := range owned {
+		byID[strings.ToLower(owned[i].ReservationID)] = owned[i]
 	}
 	out := make([]azurecompute.ExchangeableReservation, len(sources))
 	for i, s := range sources {
