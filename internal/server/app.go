@@ -86,6 +86,11 @@ type Application struct {
 	migrationsTimeout time.Duration
 	migrationMu       sync.Mutex
 
+	// initRetryDelay is the pause between background database-initialization
+	// attempts (see startBackgroundInit). Zero means backgroundInitRetryDelay.
+	// Only tests set it.
+	initRetryDelay time.Duration
+
 	// encKeySource is the env var name that resolved the credential encryption
 	// key (e.g. "CREDENTIAL_ENCRYPTION_KEY_SECRET_NAME"). Set during
 	// reinitializeAfterConnect; surfaced via /health.

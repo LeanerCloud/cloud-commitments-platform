@@ -378,7 +378,7 @@ func TestCheckConfigStore(t *testing.T) {
 				tt.setupApp(app)
 			}
 
-			result := app.checkConfigStore(ctx)
+			result := app.checkConfigStore(ctx, app.Config, app.DB)
 			testutil.AssertEqual(t, tt.expectedStatus, result.Status)
 		})
 	}
@@ -414,7 +414,7 @@ func TestCheckAuthStore(t *testing.T) {
 				tt.setupApp(app)
 			}
 
-			result := app.checkAuthStore(ctx)
+			result := app.checkAuthStore(ctx, app.Auth)
 			testutil.AssertEqual(t, tt.expectedStatus, result.Status)
 		})
 	}

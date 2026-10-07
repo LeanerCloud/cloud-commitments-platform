@@ -29,6 +29,12 @@ func CreateHTTPServer(app *Application, port int) *http.Server {
 	// SCHEDULED_TASK_AUTH_MODE: oidc on GCP, bearer on Azure, disabled
 	// for local dev.
 	mux.HandleFunc("/health", app.handleHealthCheck)
+	// /ready is the traffic-admission contract, distinct from the /health
+	// liveness contract: it answers 503 until required initialization has
+	// completed on THIS process, so the load balancer stops routing to cold
+	// replicas (#488). Registered explicitly like /health and /version because
+	// the STATIC_DIR catch-all would otherwise serve the SPA index here.
+	mux.HandleFunc("/ready", app.handleReadinessCheck)
 	// /version is a root-path (no /api prefix) public endpoint. Like /health
 	// it must be registered explicitly: when STATIC_DIR is set the catch-all
 	// "/" route serves the SPA, so an unregistered /version would return the
@@ -72,6 +78,74 @@ func CreateHTTPServer(app *Application, port int) *http.Server {
 	}
 }
 
+// backgroundInitRetryDelay is the pause between background ensureDB attempts.
+// Startup failures are usually a database that is not accepting connections
+// yet, so retrying beats leaving the replica permanently unready.
+const backgroundInitRetryDelay = 5 * time.Second
+
+// backgroundInitAttemptTimeout bounds a single background initialization
+// attempt. It must cover the worst case of ensureDB's own bounded phases
+// (connect retries plus migrationsTimeout); secret resolution inside ensureDB
+// has no timeout of its own, so this cap is what turns a wedged attempt into
+// a retryable error instead of a replica that holds dbMu forever.
+const backgroundInitAttemptTimeout = 10 * time.Minute
+
+// backgroundInitDelay is the retry interval the background initializer uses.
+// It reads the initRetryDelay field so tests can run the loop without waiting
+// out the production interval; zero means the production default.
+func (app *Application) backgroundInitDelay() time.Duration {
+	if app.initRetryDelay > 0 {
+		return app.initRetryDelay
+	}
+	return backgroundInitRetryDelay
+}
+
+// startBackgroundInit initializes the database without waiting for user
+// traffic. Readiness (#488) answers 503 until initialization completes, so a
+// replica that only initializes on the first /api/ request would never receive
+// that request through the load balancer and would stay unready forever. Each
+// HTTP-serving process must therefore drive its own initialization.
+//
+// Retries on failure until it succeeds or ctx is done, so a transient database
+// outage at boot does not permanently strand the replica. Lambda does not use
+// this path: cold starts there must stay lazy to avoid paying the database
+// connection cost on invocations that never touch the database.
+func (app *Application) startBackgroundInit(ctx context.Context) {
+	if app.dbConfig == nil {
+		return // Not using PostgreSQL; nothing to initialize.
+	}
+	go app.initializeUntilReady(ctx, app.ensureDB)
+}
+
+// initializeUntilReady calls init until it succeeds or ctx is done, so a
+// transient database outage at boot does not permanently strand the replica out
+// of rotation. It always makes at least one attempt before consulting ctx, so a
+// context that is already cancelled cannot skip initialization entirely.
+//
+// Each attempt runs under backgroundInitAttemptTimeout: ensureDB bounds its
+// connect and migration phases, but secret resolution has no timeout of its
+// own, so without a per-attempt bound a wedged secret store would hold dbMu
+// forever and leave the replica unready-but-alive with no retry.
+func (app *Application) initializeUntilReady(ctx context.Context, init func(context.Context) error) {
+	for {
+		attemptCtx, cancel := context.WithTimeout(ctx, backgroundInitAttemptTimeout)
+		err := init(attemptCtx)
+		cancel()
+		if err == nil {
+			log.Println("Background database initialization complete")
+			return
+		}
+		delay := app.backgroundInitDelay()
+		log.Printf("Background database initialization failed: %v (retrying in %s)", err, delay)
+		select {
+		case <-ctx.Done():
+			log.Printf("Background database initialization stopped: %v", ctx.Err())
+			return
+		case <-time.After(delay):
+		}
+	}
+}
+
 // StartHTTPServer starts the HTTP server with graceful shutdown on SIGINT/SIGTERM.
 // It blocks until the server exits cleanly. In container orchestrators (Cloud Run,
 // Container Apps, Fargate) SIGTERM is the normal stop signal; without this wiring
@@ -84,6 +158,8 @@ func StartHTTPServer(app *Application, port int) error {
 	// Signal context cancels on the first SIGINT or SIGTERM.
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	app.startBackgroundInit(sigCtx)
 
 	serveErr := make(chan error, 1)
 	go func() {

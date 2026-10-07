@@ -2114,6 +2114,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
 
+  /ready:
+    get:
+      operationId: readinessCheckRoot
+      tags: [Health]
+      summary: Readiness check (root path)
+      description: >-
+        Traffic-admission contract: answers 200 with the same payload as
+        /health once this replica has completed initialization, 503 while any
+        check is pending or failed. /health is the liveness counterpart and
+        always answers 200.
+      security: []
+      responses:
+        '200':
+          description: Replica is ready to serve traffic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Replica is still initializing or a check failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
   /api/health:
     get:
       operationId: healthCheck
