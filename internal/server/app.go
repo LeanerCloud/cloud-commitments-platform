@@ -648,6 +648,11 @@ func (app *Application) ensureDB(ctx context.Context) error {
 		adminEmail := os.Getenv("ADMIN_EMAIL")
 		adminPassword, err := app.resolveAdminPassword(ctx)
 		if err != nil {
+			// Same cleanup as the reinitializeAfterConnect failure path below:
+			// the retry loop (and repeated lazy attempts) would otherwise leak
+			// a pool per attempt while secret resolution keeps failing.
+			dbConn.Close()
+			app.DB = nil
 			return err // secret-resolution failure is still fatal — env/config, not a migration runtime error
 		}
 
