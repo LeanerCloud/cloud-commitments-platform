@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
 # wait-for-healthy.sh URL
 #
-# Smoke gate for a just-deployed service. Polls URL/health until it reports
-# status "healthy" HEALTH_REQUIRED_STREAK times in a row. An unhealthy or
-# failed response inside the polling budget resets the streak instead of
-# failing, because during a rollout a probe can hit a replica that is still
-# initializing. If the budget (HEALTH_MAX_ATTEMPTS) runs out before the streak
-# is reached, exits 1 and prints the last response (or curl error).
+# Smoke gate for a just-deployed service. Polls URL/ready until curl -f
+# accepts the response (any status below 400) HEALTH_REQUIRED_STREAK times in
+# a row. A not-ready or failed response inside the polling budget resets the
+# streak instead of failing, because during a
+# rollout a probe can hit a replica that is still initializing. If the budget
+# (HEALTH_MAX_ATTEMPTS) runs out before the streak is reached, exits 1 and
+# prints the last response (or curl error).
 #
-# Each round first sends one request to HEALTH_WARMUP_PATH: /health reports but
-# never triggers the lazy DB/auth-store init on the HTTP server; any /api/
-# request does.
+# /ready is the traffic-admission endpoint: it answers 503 until the replica it
+# answers for has completed initialization, so the gate reflects the same
+# contract the load balancer uses (#488). /health answers 200 even when
+# degraded and is a liveness signal only. No warm-up request is needed: the
+# server initializes its database in the background at startup.
+#
+# Requires curl 7.76+ for --fail-with-body, so a 503 still prints the JSON
+# check detail that explains which dependency is not ready.
 #
 # Env (defaults suit the deploy workflows; tests shrink them):
-#   HEALTH_REQUIRED_STREAK   consecutive healthy responses needed (3)
+#   HEALTH_REQUIRED_STREAK   consecutive ready responses needed (3)
 #   HEALTH_MAX_ATTEMPTS      polling rounds before failing (30)
 #   HEALTH_INTERVAL_SECONDS  sleep between rounds (5)
-#   HEALTH_WARMUP_PATH       path hit before each probe (/api/auth/check-admin)
 
 set -euo pipefail
 
@@ -24,7 +29,6 @@ URL="${1:?usage: wait-for-healthy.sh URL}"
 REQUIRED_STREAK="${HEALTH_REQUIRED_STREAK-3}"
 MAX_ATTEMPTS="${HEALTH_MAX_ATTEMPTS-30}"
 INTERVAL="${HEALTH_INTERVAL_SECONDS:-5}"
-WARMUP_PATH="${HEALTH_WARMUP_PATH:-/api/auth/check-admin}"
 
 # Fail loudly on bad limits: 0 or non-numeric would silently behave like 1, and
 # attempts < streak can never pass. A set-but-empty value is rejected too.
@@ -43,29 +47,23 @@ streak=0
 last="no response"
 
 for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
-  curl -s -o /dev/null --max-time 30 "${URL}${WARMUP_PATH}" || true
-
-  # /health returns HTTP 200 even when degraded; the body is the verdict.
-  if body=$(curl -fsS --max-time 10 "${URL}/health" 2>&1); then
-    last="$body"
-    if jq -e '.status == "healthy"' >/dev/null 2>&1 <<<"$body"; then
-      streak=$((streak + 1))
-      echo "Health check ${attempt}: healthy (${streak}/${REQUIRED_STREAK})"
-      if ((streak >= REQUIRED_STREAK)); then
-        echo "All smoke tests passed!"
-        exit 0
-      fi
-    else
-      streak=0
-      echo "Health check ${attempt}: not healthy yet, streak reset: ${body}"
+  # /ready answers 503 until the replica has completed initialization;
+  # --fail-with-body keeps the JSON check detail so a failure says WHICH
+  # dependency is not ready.
+  if body=$(curl -fsS --fail-with-body --max-time 10 "${URL}/ready" 2>&1); then
+    streak=$((streak + 1))
+    echo "Readiness check ${attempt}: ready (${streak}/${REQUIRED_STREAK})"
+    if ((streak >= REQUIRED_STREAK)); then
+      echo "Service is ready."
+      exit 0
     fi
   else
     last="${body:-no response}"
     streak=0
-    echo "Health check ${attempt}: request failed, streak reset: ${last}"
+    echo "Readiness check ${attempt}: not ready yet, streak reset: ${last}"
   fi
   sleep "$INTERVAL"
 done
 
-echo "::error::Service not healthy ${REQUIRED_STREAK}x in a row after ${MAX_ATTEMPTS} attempts. Last response: ${last}"
+echo "::error::Service not ready ${REQUIRED_STREAK}x in a row after ${MAX_ATTEMPTS} attempts. Last response: ${last}"
 exit 1
