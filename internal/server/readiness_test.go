@@ -252,7 +252,7 @@ func TestInitializeUntilReadyRetriesAfterTransientFailure(t *testing.T) {
 
 // TestInitializeUntilReadyStopsOnCancelledContext pins that shutdown stops the
 // retry loop instead of leaving a goroutine connecting to a database that is
-// going away. One attempt is always made, so an already-cancelled context still
+// going away. One attempt is always made, so an already-canceled context still
 // tries once.
 func TestInitializeUntilReadyStopsOnCancelledContext(t *testing.T) {
 	app := &Application{Version: "test", initRetryDelay: time.Millisecond}
@@ -277,7 +277,7 @@ func TestInitializeUntilReadyStopsOnCancelledContext(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("initializeUntilReady did not return after the context was cancelled")
+		t.Fatal("initializeUntilReady did not return after the context was canceled")
 	}
 
 	mu.Lock()

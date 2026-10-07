@@ -120,7 +120,7 @@ func (app *Application) startBackgroundInit(ctx context.Context) {
 // initializeUntilReady calls init until it succeeds or ctx is done, so a
 // transient database outage at boot does not permanently strand the replica out
 // of rotation. It always makes at least one attempt before consulting ctx, so a
-// context that is already cancelled cannot skip initialization entirely.
+// context that is already canceled cannot skip initialization entirely.
 //
 // Each attempt runs under backgroundInitAttemptTimeout: ensureDB bounds its
 // connect and migration phases, but secret resolution has no timeout of its
