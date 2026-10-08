@@ -2,10 +2,12 @@ package secrets
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -46,22 +48,33 @@ func azureTestHandler(handler http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// newTestAzureResolver creates an AzureResolver backed by a mock HTTPS server.
-// TLS is required because the GA Key Vault challenge policy only attaches
-// credentials over TLS-protected connections; server.Client() supplies a
-// transport that trusts the test server's certificate.
-// The handler must NOT reference the server variable (it is created inside this function).
+// The Key Vault challenge policy requires TLS before attaching credentials.
 func newTestAzureResolver(t *testing.T, handler http.HandlerFunc) (*AzureResolver, *httptest.Server) {
 	t.Helper()
 
-	server := httptest.NewTLSServer(azureTestHandler(handler))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	server := &httptest.Server{
+		Listener: listener,
+		Config:   &http.Server{Handler: azureTestHandler(handler)},
+	}
+	server.StartTLS()
+	t.Cleanup(server.Close)
+
+	httpClient := imdsBlockingTransport()
+	transport, ok := httpClient.Transport.(*http.Transport)
+	require.True(t, ok)
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	t.Cleanup(httpClient.CloseIdleConnections)
 
 	cred := &fakeTokenCredential{}
 	client, err := azsecrets.NewClient(server.URL, cred, &azsecrets.ClientOptions{
 		ClientOptions: policy.ClientOptions{
-			Transport: server.Client(),
+			Transport: httpClient,
 			Retry: policy.RetryOptions{
-				MaxRetries: 0,
+				MaxRetries: -1,
 			},
 		},
 		DisableChallengeResourceVerification: true,
@@ -76,7 +89,8 @@ func newTestAzureResolver(t *testing.T, handler http.HandlerFunc) (*AzureResolve
 
 func TestAzureResolverReal_GetSecret_Success(t *testing.T) {
 	resolver, server := newTestAzureResolver(t, func(w http.ResponseWriter, r *http.Request) {
-		assert.True(t, strings.HasPrefix(r.URL.Path, "/secrets/"))
+		assert.Equal(t, "/secrets/test-secret/", r.URL.Path)
+		assert.Equal(t, "Bearer fake-access-token", r.Header.Get("Authorization"))
 		resp := map[string]interface{}{
 			"value": "my-azure-secret-value",
 			"id":    "https://myvault.vault.azure.net/secrets/test-secret/abc123",
@@ -307,4 +321,22 @@ func TestAzureResolver_IMDSBlocked(t *testing.T) {
 	require.Error(t, err, "expected IMDS connection to be blocked")
 	assert.Contains(t, err.Error(), "blocked",
 		"error message should indicate the connection was blocked")
+}
+
+func TestNewAzureResolver_GetSecret_BlocksMetadata(t *testing.T) {
+	for name, vaultURL := range map[string]string{
+		"literal": "https://169.254.169.254",
+		"mapped":  "https://[::ffff:169.254.169.254]",
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			resolver, err := NewAzureResolver(ctx, vaultURL)
+			require.NoError(t, err)
+
+			secret, err := resolver.GetSecret(ctx, "test-secret")
+			require.Error(t, err)
+			assert.Empty(t, secret)
+			assert.Contains(t, err.Error(), "connection to metadata endpoint 169.254.169.254 is blocked")
+		})
+	}
 }
