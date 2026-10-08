@@ -895,8 +895,12 @@ function renderPendingActionButtons(p: HistoryPurchase): string {
   } else if (user && rbacAllowsApprove(p, user) && !canApproveUnder4Eyes(p, user.id)) {
     // RBAC would allow Approve, but 4-eyes dual-control (issue #1005) blocks
     // this session from approving its own row. Surface the reason inline
-    // instead of silently hiding the action.
-    buttons.push('<span class="badge badge-muted">Awaiting different approver</span>');
+    // instead of silently hiding the action. A row with no recorded creator
+    // can never get a different approver, so say who can unblock it (#233).
+    const reason = p.created_by_user_id == null
+      ? 'No recorded creator - an admin must disable 4-eyes mode'
+      : 'Awaiting different approver';
+    buttons.push(`<span class="badge badge-muted">${reason}</span>`);
   }
   if (canCancelPendingRow(p)) {
     buttons.push(`<button type="button" class="btn-link history-cancel-btn" data-cancel-id="${escapeHtmlAttr(p.purchase_id)}">Cancel</button>`);
