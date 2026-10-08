@@ -303,7 +303,9 @@ func (h *Handler) revokeScheduledExecution(ctx context.Context, session *Session
 // matrix for scheduled executions (pre-SDK-call state). Mirrors
 // authorizeSessionRevoke for completed purchases but operates on a
 // PurchaseExecution (which has CreatedByUserID) rather than a
-// PurchaseHistoryRecord (which has CloudAccountID).
+// PurchaseHistoryRecord (which has CloudAccountID). Each verb is also checked
+// against the Constraints of the permission that grants it; a constrained
+// revoke-any falls back to revoke-own when the creator matches.
 func (h *Handler) authorizeSessionRevokeExecution(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
 	if session.UserID == apiKeyAdminUserID {
 		return nil
@@ -313,8 +315,12 @@ func (h *Handler) authorizeSessionRevokeExecution(ctx context.Context, session *
 	if err != nil {
 		return fmt.Errorf("permission check failed: %w", err)
 	}
+	var anyErr error
 	if hasAny {
-		return nil
+		anyErr = h.requirePermissionConstraints(ctx, session, auth.ActionRevokeAny, auth.ResourcePurchases, revokeExecutionConstraintSets(execution))
+		if anyErr == nil || !isForbidden(anyErr) {
+			return anyErr
+		}
 	}
 
 	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionRevokeOwn, auth.ResourcePurchases)
@@ -322,16 +328,54 @@ func (h *Handler) authorizeSessionRevokeExecution(ctx context.Context, session *
 		return fmt.Errorf("permission check failed: %w", err)
 	}
 	if !hasOwn {
+		if anyErr != nil {
+			return anyErr
+		}
 		return NewClientError(403, "permission denied: requires revoke-any or revoke-own on purchases")
 	}
 
-	// revoke-own: the execution must have been created by this user.
-	// NULL CreatedByUserID means a non-human or legacy creator — deny rather
-	// than allow an unscoped revoke (fail-closed).
+	return h.authorizeRevokeOwnExecution(ctx, session, execution)
+}
+
+// authorizeRevokeOwnExecution requires the execution to have been created by
+// this user, then checks revoke-own Constraints. NULL CreatedByUserID means a
+// non-human or legacy creator: deny rather than allow an unscoped revoke
+// (fail-closed).
+func (h *Handler) authorizeRevokeOwnExecution(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
 	if execution.CreatedByUserID == nil || *execution.CreatedByUserID != session.UserID {
 		return NewClientError(403, "permission denied: cannot revoke another user's scheduled purchase")
 	}
-	return nil
+	return h.requirePermissionConstraints(ctx, session, auth.ActionRevokeOwn, auth.ResourcePurchases, revokeExecutionConstraintSets(execution))
+}
+
+// revokeConstraintSet is the strict request-side constraint set for a revoke:
+// a dimension the stored row does not know is left empty, which a constrained
+// grant on that dimension refuses. No MaxPurchaseAmount: a revoke is a refund,
+// not a spend.
+func revokeConstraintSet(accountID, provider, service, region string) auth.PermissionConstraints {
+	return auth.PermissionConstraints{
+		StrictScope: true, AccountIDs: knownScopeValue(accountID), Providers: knownScopeValue(provider),
+		Services: knownScopeValue(service), Regions: knownScopeValue(region),
+	}
+}
+
+// revokeExecutionConstraintSets builds one set per recommendation. An
+// execution with none gets a single empty strict set so a constrained grant
+// still denies instead of the empty slice failing the permission check loudly.
+func revokeExecutionConstraintSets(execution *config.PurchaseExecution) []auth.PermissionConstraints {
+	if len(execution.Recommendations) == 0 {
+		return []auth.PermissionConstraints{revokeConstraintSet("", "", "", "")}
+	}
+	sets := make([]auth.PermissionConstraints, 0, len(execution.Recommendations))
+	for _, rec := range execution.Recommendations {
+		sets = append(sets, revokeConstraintSet(derefString(rec.CloudAccountID), rec.Provider, rec.Service, rec.Region))
+	}
+	return sets
+}
+
+func isForbidden(err error) bool {
+	ce, ok := IsClientError(err)
+	return ok && ce.code == 403
 }
 
 // dispatchProviderRevoke routes a revocation request to the correct
@@ -352,7 +396,10 @@ func (h *Handler) dispatchProviderRevoke(ctx context.Context, record *config.Pur
 	}
 }
 
-// authorizeSessionRevoke enforces the revoke-any / revoke-own RBAC matrix.
+// authorizeSessionRevoke enforces the revoke-any / revoke-own RBAC matrix, then
+// the Constraints of the granting permission against the stored record. A
+// revoke-any that fails on account access or constraints falls back to
+// revoke-own, as requireSessionPurchaseAction does.
 // Mirror of authorizeSessionCancel / authorizeSessionApprove patterns.
 func (h *Handler) authorizeSessionRevoke(ctx context.Context, session *Session, record *config.PurchaseHistoryRecord) error {
 	// The stateless admin API key has full access and no user row to resolve
@@ -367,17 +414,36 @@ func (h *Handler) authorizeSessionRevoke(ctx context.Context, session *Session, 
 	if err != nil {
 		return fmt.Errorf("permission check failed: %w", err)
 	}
-	if !hasAny {
-		hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionRevokeOwn, auth.ResourcePurchases)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !hasOwn {
-			return NewClientError(403, "permission denied: requires revoke-any or revoke-own on purchases")
+	var anyErr error
+	if hasAny {
+		anyErr = h.authorizeRevokeVerb(ctx, session, record, auth.ActionRevokeAny)
+		if anyErr == nil || !isForbidden(anyErr) {
+			return anyErr
 		}
 	}
 
-	return h.checkRevokeAccountAccess(ctx, session, record, hasAny)
+	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionRevokeOwn, auth.ResourcePurchases)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
+	}
+	if !hasOwn {
+		if anyErr != nil {
+			return anyErr
+		}
+		return NewClientError(403, "permission denied: requires revoke-any or revoke-own on purchases")
+	}
+	return h.authorizeRevokeVerb(ctx, session, record, auth.ActionRevokeOwn)
+}
+
+// authorizeRevokeVerb applies account access and permission Constraints for
+// one held verb. Values come from the stored record, never the request body.
+func (h *Handler) authorizeRevokeVerb(ctx context.Context, session *Session, record *config.PurchaseHistoryRecord, verb string) error {
+	if err := h.checkRevokeAccountAccess(ctx, session, record, verb == auth.ActionRevokeAny); err != nil {
+		return err
+	}
+	return h.requirePermissionConstraints(ctx, session, verb, auth.ResourcePurchases, []auth.PermissionConstraints{
+		revokeConstraintSet(derefString(record.CloudAccountID), record.Provider, record.Service, record.Region),
+	})
 }
 
 // checkRevokeAccountAccess requires the purchase to be in a cloud account the
