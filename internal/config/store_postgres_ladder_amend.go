@@ -71,7 +71,8 @@ func amendLadderTrancheTx(ctx context.Context, tx pgx.Tx, id, accountID, provide
 	if !tranche.editable(run.status, *amendment.ExpectedRevision) {
 		return ErrLadderAmendConflict
 	}
-	if err = checkLadderRunTotal(ctx, tx, run, tranche.amount, amendment.AmountUSDHr, result); err != nil {
+	err = checkLadderRunTotal(ctx, tx, run, tranche.amount, amendment.AmountUSDHr, result)
+	if err != nil {
 		return err
 	}
 	err = tx.QueryRow(ctx, `UPDATE ladder_tranches SET amount_usd_hr=$2::numeric,scheduled_date=$3,revision=revision+1

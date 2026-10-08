@@ -16,7 +16,7 @@ import (
 )
 
 func (h *Handler) amendLadderTranche(ctx context.Context, req *events.LambdaFunctionURLRequest, id string) (any, error) {
-	store, accountID, provider, session, err := h.authorizeLadderAmend(ctx, req, id)
+	scope, err := h.authorizeLadderAmend(ctx, req, id)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (h *Handler) amendLadderTranche(ctx context.Context, req *events.LambdaFunc
 	if err != nil {
 		return nil, err
 	}
-	result, err := store.AmendLadderTranche(ctx, id, accountID, provider, session.UserID, amendment)
+	result, err := scope.store.AmendLadderTranche(ctx, id, scope.accountID, scope.provider, scope.userID, amendment)
 	switch {
 	case errors.Is(err, config.ErrLadderAmendNotFound):
 		return nil, errNotFound
@@ -37,37 +37,43 @@ func (h *Handler) amendLadderTranche(ctx context.Context, req *events.LambdaFunc
 	}
 }
 
-func (h *Handler) authorizeLadderAmend(ctx context.Context, req *events.LambdaFunctionURLRequest, id string) (store config.LadderAmendmentStore, accountID, provider string, session *Session, err error) {
-	session, err = h.requirePermission(ctx, req, string(auth.ActionUpdate), string(auth.ResourceConfig))
+type ladderAmendScope struct {
+	store     config.LadderAmendmentStore
+	accountID string
+	provider  string
+	userID    string
+}
+
+func (h *Handler) authorizeLadderAmend(ctx context.Context, req *events.LambdaFunctionURLRequest, id string) (ladderAmendScope, error) {
+	session, err := h.requirePermission(ctx, req, string(auth.ActionUpdate), string(auth.ResourceConfig))
 	if err != nil {
-		return nil, "", "", nil, err
+		return ladderAmendScope{}, err
 	}
-	if _, err = uuid.Parse(id); err != nil {
-		return nil, "", "", nil, errNotFound
+	if _, parseErr := uuid.Parse(id); parseErr != nil {
+		return ladderAmendScope{}, errNotFound
 	}
 	store, ok := h.config.(config.LadderAmendmentStore)
 	if !ok {
-		return nil, "", "", nil, NewClientError(503, "Ladder amendment storage is unavailable")
+		return ladderAmendScope{}, NewClientError(503, "Ladder amendment storage is unavailable")
 	}
-	accountID, provider, err = store.LadderTrancheScope(ctx, id)
+	accountID, provider, err := store.LadderTrancheScope(ctx, id)
 	if errors.Is(err, config.ErrLadderAmendNotFound) {
-		return nil, "", "", nil, errNotFound
+		return ladderAmendScope{}, errNotFound
 	}
 	if err != nil {
-		return nil, "", "", nil, err
+		return ladderAmendScope{}, err
 	}
 	if _, err = h.requireAccountAccess(ctx, session, accountID); err != nil {
-		return nil, "", "", nil, err
+		return ladderAmendScope{}, err
 	}
-	if err = h.requirePermissionConstraints(ctx, session, auth.ActionUpdate, auth.ResourceConfig, []auth.PermissionConstraints{{
-		AccountIDs: []string{accountID}, Providers: []string{provider}, StrictScope: true,
-	}}); err != nil {
-		return nil, "", "", nil, err
+	constraints := []auth.PermissionConstraints{{AccountIDs: []string{accountID}, Providers: []string{provider}, StrictScope: true}}
+	if err = h.requirePermissionConstraints(ctx, session, auth.ActionUpdate, auth.ResourceConfig, constraints); err != nil {
+		return ladderAmendScope{}, err
 	}
 	if common.ProviderType(provider) != common.ProviderAWS {
-		return nil, "", "", nil, NewClientError(501, "Ladder planning is currently available only for AWS accounts")
+		return ladderAmendScope{}, NewClientError(501, "Ladder planning is currently available only for AWS accounts")
 	}
-	return store, accountID, provider, session, nil
+	return ladderAmendScope{store: store, accountID: accountID, provider: provider, userID: session.UserID}, nil
 }
 
 func decodeLadderAmendment(body string) (config.LadderAmendment, error) {

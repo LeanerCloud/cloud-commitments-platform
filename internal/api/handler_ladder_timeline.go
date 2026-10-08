@@ -12,40 +12,46 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
-func (h *Handler) ladderTimelineScope(ctx context.Context, req *events.LambdaFunctionURLRequest) (store config.LadderTimelineStore, accountID, provider string, cursor *config.LadderTimelineCursor, err error) {
+type ladderTimelineRequest struct {
+	store     config.LadderTimelineStore
+	accountID string
+	provider  string
+	cursor    *config.LadderTimelineCursor
+}
+
+func (h *Handler) ladderTimelineScope(ctx context.Context, req *events.LambdaFunctionURLRequest) (ladderTimelineRequest, error) {
 	session, err := h.requirePermission(ctx, req, string(auth.ActionView), string(auth.ResourceConfig))
 	if err != nil {
-		return nil, "", "", nil, err
+		return ladderTimelineRequest{}, err
 	}
 	params := req.QueryStringParameters
-	accountID, provider = params["account_id"], params["provider"]
+	accountID, provider := params["account_id"], params["provider"]
 	if accountID == "" || provider == "" {
-		return nil, "", "", nil, NewClientError(400, "account_id and provider are required")
+		return ladderTimelineRequest{}, NewClientError(400, "account_id and provider are required")
 	}
 	account, err := h.requireAccountAccess(ctx, session, accountID)
 	if err != nil {
-		return nil, "", "", nil, err
+		return ladderTimelineRequest{}, err
 	}
 	if account.Provider != provider {
-		return nil, "", "", nil, NewClientError(404, "account not found")
+		return ladderTimelineRequest{}, NewClientError(404, "account not found")
 	}
-	if err = h.requirePermissionConstraints(ctx, session, auth.ActionView, auth.ResourceConfig, []auth.PermissionConstraints{{
-		AccountIDs: []string{accountID}, Providers: []string{provider}, StrictScope: true,
-	}}); err != nil {
-		return nil, "", "", nil, err
+	constraints := []auth.PermissionConstraints{{AccountIDs: []string{accountID}, Providers: []string{provider}, StrictScope: true}}
+	if err = h.requirePermissionConstraints(ctx, session, auth.ActionView, auth.ResourceConfig, constraints); err != nil {
+		return ladderTimelineRequest{}, err
 	}
 	if common.ProviderType(provider) != common.ProviderAWS {
-		return nil, "", "", nil, NewClientError(501, "Ladder planning is currently available only for AWS accounts")
+		return ladderTimelineRequest{}, NewClientError(501, "Ladder planning is currently available only for AWS accounts")
 	}
-	cursor, err = ladderTimelineCursor(params)
+	cursor, err := ladderTimelineCursor(params)
 	if err != nil {
-		return nil, "", "", nil, err
+		return ladderTimelineRequest{}, err
 	}
 	store, ok := h.config.(config.LadderTimelineStore)
 	if !ok {
-		return nil, "", "", nil, NewClientError(503, "Ladder timeline storage is unavailable")
+		return ladderTimelineRequest{}, NewClientError(503, "Ladder timeline storage is unavailable")
 	}
-	return store, accountID, provider, cursor, nil
+	return ladderTimelineRequest{store: store, accountID: accountID, provider: provider, cursor: cursor}, nil
 }
 
 func ladderTimelineCursor(params map[string]string) (*config.LadderTimelineCursor, error) {
@@ -64,17 +70,17 @@ func ladderTimelineCursor(params map[string]string) (*config.LadderTimelineCurso
 }
 
 func (h *Handler) getLadderTimeline(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
-	store, accountID, provider, cursor, err := h.ladderTimelineScope(ctx, req)
+	scope, err := h.ladderTimelineScope(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	return store.ListLadderTimeline(ctx, accountID, provider, cursor)
+	return scope.store.ListLadderTimeline(ctx, scope.accountID, scope.provider, scope.cursor)
 }
 
 func (h *Handler) getLadderTimelineRuns(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
-	store, accountID, provider, cursor, err := h.ladderTimelineScope(ctx, req)
+	scope, err := h.ladderTimelineScope(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	return store.ListLadderTimelineRuns(ctx, accountID, provider, cursor)
+	return scope.store.ListLadderTimelineRuns(ctx, scope.accountID, scope.provider, scope.cursor)
 }
