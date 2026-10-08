@@ -1594,11 +1594,12 @@ func filterExecutionsLikeStore(rows []config.PurchaseExecution, statuses []strin
 	}
 	limit = min(limit, config.MaxListLimit)
 	var out []config.PurchaseExecution
-	for _, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		if !slices.Contains(statuses, r.Status) || (r.Status == "completed" && r.Error == "") {
 			continue
 		}
-		out = append(out, r)
+		out = append(out, *r)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].ScheduledDate.After(out[j].ScheduledDate) })
 	if len(out) > limit {

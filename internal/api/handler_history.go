@@ -166,7 +166,9 @@ const approvalExpiryWindow = 7 * 24 * time.Hour
 func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyFilters) ([]config.PurchaseHistoryRecord, []config.PurchaseExecution, bool) {
 	actionable := h.fetchExecutionsByClass(ctx, actionableExecutionStatuses, config.MaxListLimit)
 	terminal := h.fetchExecutionsByClass(ctx, terminalExecutionStatuses, config.DefaultListLimit)
-	executions := append(actionable[:len(actionable):len(actionable)], terminal...)
+	executions := make([]config.PurchaseExecution, 0, len(actionable)+len(terminal))
+	executions = append(executions, actionable...)
+	executions = append(executions, terminal...)
 	if len(executions) == 0 {
 		return nil, nil, false
 	}

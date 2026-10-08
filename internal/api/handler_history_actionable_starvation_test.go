@@ -69,6 +69,20 @@ func TestHandler_getHistory_PendingNotStarvedByNewerTerminalRows(t *testing.T) {
 	assert.EqualValues(t, 1, summary["total_pending"])
 }
 
+func TestHandler_getHistory_ReturnsMoreThanDefaultLimitPendingRows(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	pending := executionsWithStatus(config.DefaultListLimit+50, "pending", now, "pending")
+	store := newStarvationStore(ctx)
+	store.On("GetExecutionsByStatuses", ctx, mock.Anything, mock.Anything).Return(pending, nil)
+
+	body := runStarvationHistory(t, ctx, store)
+
+	assert.Len(t, body["purchases"], config.DefaultListLimit+50)
+	assert.EqualValues(t, config.DefaultListLimit+50, body["summary"].(map[string]any)["total_pending"])
+	assert.Equal(t, false, body["truncated"])
+}
+
 func TestHandler_getHistory_FetchesDisjointClassesWithTheirLimits(t *testing.T) {
 	ctx := context.Background()
 	store := newStarvationStore(ctx)
