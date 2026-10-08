@@ -426,7 +426,8 @@ func (app *Application) persistLadderRun(
 	}
 
 	// L5 APPEND-ONLY: always persist via the plain path, which INSERTS the new
-	// scheduled tranches and NEVER cancels existing ones. In-flight netting
+	// scheduled tranches and never supersedes upcoming ones (it only cancels
+	// tranches that are already overdue, see #544). In-flight netting
 	// (GetInFlightLadderCommitUSDHr, subtracted from the gap in Allocate) has
 	// already removed the config's existing scheduled tranches from the gap, so
 	// trancheRows carries exactly the delta needed to reach target-E:
