@@ -638,13 +638,17 @@ func validateAzureExecuteBody(body AzureExecuteExchangeRequestBody) error {
 	return nil
 }
 
-// toAzureExchangeSources converts the HTTP-shaped sources into the
-// provider-layer shape. Pure field mapping; validateAzureExchangeSources
-// must be called first.
-func toAzureExchangeSources(sources []AzureExchangeSourceBody) []azurecompute.ExchangeableReservation {
+// toAzureExchangeSources keeps the server-listed reservation metadata and
+// applies the requested quantities after requireAzureSourceOwnership succeeds.
+func toAzureExchangeSources(sources []AzureExchangeSourceBody, owned []azurecompute.ExchangeableReservation) []azurecompute.ExchangeableReservation {
+	byID := make(map[string]azurecompute.ExchangeableReservation, len(owned))
+	for i := range owned {
+		byID[strings.ToLower(owned[i].ReservationID)] = owned[i]
+	}
 	out := make([]azurecompute.ExchangeableReservation, len(sources))
 	for i, s := range sources {
-		out[i] = azurecompute.ExchangeableReservation{ReservationID: s.ReservationID, Quantity: s.Quantity}
+		out[i] = byID[strings.ToLower(s.ReservationID)]
+		out[i].Quantity = s.Quantity
 	}
 	return out
 }
@@ -866,12 +870,15 @@ func requireAzureSourceOwnership(owned []azurecompute.ExchangeableReservation, s
 // applies requireAzureSourceOwnership. Split from the pure check so the
 // authorization rule itself is testable without a client, and so both the
 // pricing and execute endpoints share one code path.
-func checkAzureSourceOwnership(ctx context.Context, client azureExchangeClient, sources []AzureExchangeSourceBody, subscriptionID string) error {
+func checkAzureSourceOwnership(ctx context.Context, client azureExchangeClient, sources []AzureExchangeSourceBody, subscriptionID string) ([]azurecompute.ExchangeableReservation, error) {
 	owned, err := listOwnedAzureReservations(ctx, client)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return requireAzureSourceOwnership(owned, sources, subscriptionID)
+	if err := requireAzureSourceOwnership(owned, sources, subscriptionID); err != nil {
+		return nil, err
+	}
+	return toAzureExchangeSources(sources, owned), nil
 }
 
 // listOwnedAzureReservations fetches the tenant-wide reservation listing that
@@ -925,8 +932,9 @@ func (h *Handler) getAzureCompatibleOfferings(ctx context.Context, req *events.L
 		return nil, NewClientError(404, fmt.Sprintf("no Azure account registered for subscription %q", body.SubscriptionID))
 	}
 
-	if ownErr := checkAzureSourceOwnership(ctx, client, body.Sources, body.SubscriptionID); ownErr != nil {
-		return nil, ownErr
+	sources, err := checkAzureSourceOwnership(ctx, client, body.Sources, body.SubscriptionID)
+	if err != nil {
+		return nil, err
 	}
 
 	targets, err := toAzureExchangeTargets(body.Targets, body.SubscriptionID)
@@ -934,7 +942,7 @@ func (h *Handler) getAzureCompatibleOfferings(ctx context.Context, req *events.L
 		return nil, err
 	}
 
-	preview, offerings, err := client.CalculateExchange(ctx, toAzureExchangeSources(body.Sources), targets)
+	preview, offerings, err := client.CalculateExchange(ctx, sources, targets)
 	if err != nil {
 		logging.Errorf("azure compatible offerings failed: %v", err)
 		return nil, mapAzureExchangeError("failed to find compatible offerings", err)
@@ -983,7 +991,7 @@ const azureMaxPurchaseAmountCurrency = "USD"
 //     It also sharpens exchangeRegions: every source reaching it is
 //     known-owned, so unknownRegionConstraint means only "owned, but Azure
 //     reported no region" rather than doubling as "not yours" or "not real".
-func (h *Handler) authorizeAzureExchangeExecution(ctx context.Context, session *Session, body AzureExecuteExchangeRequestBody, maxRat *big.Rat) (azureExchangeClient, error) {
+func (h *Handler) authorizeAzureExchangeExecution(ctx context.Context, session *Session, body AzureExecuteExchangeRequestBody, maxRat *big.Rat) (azureExchangeClient, []azurecompute.ExchangeableReservation, error) {
 	// Scope check MUST precede building the client (mirrors
 	// getAzureCompatibleOfferings): otherwise an unregistered subscription
 	// (distinguishable 404: "no Azure account registered...") and a
@@ -992,35 +1000,35 @@ func (h *Handler) authorizeAzureExchangeExecution(ctx context.Context, session *
 	// and credentials for an out-of-scope account could be resolved before
 	// the denial.
 	if scopeErr := h.requireAzureSubscriptionScope(ctx, session, body.SubscriptionID); scopeErr != nil {
-		return nil, scopeErr
+		return nil, nil, scopeErr
 	}
 
 	client, err := h.buildAzureExchangeClient(ctx, body.SubscriptionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build Azure exchange client: %w", err)
+		return nil, nil, fmt.Errorf("failed to build Azure exchange client: %w", err)
 	}
 	if client == nil {
-		return nil, NewClientError(404, fmt.Sprintf("no Azure account registered for subscription %q", body.SubscriptionID))
+		return nil, nil, NewClientError(404, fmt.Sprintf("no Azure account registered for subscription %q", body.SubscriptionID))
 	}
 
 	owned, err := listOwnedAzureReservations(ctx, client)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if ownErr := requireAzureSourceOwnership(owned, body.Sources, body.SubscriptionID); ownErr != nil {
-		return nil, ownErr
+		return nil, nil, ownErr
 	}
 
 	accountID, err := h.resolveAzureExchangeAccountID(ctx, body.SubscriptionID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := h.checkAzureExecuteConstraints(ctx, session, body, accountID, maxRat, exchangeRegions(body.Targets, body.Sources, owned)); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return client, nil
+	return client, toAzureExchangeSources(body.Sources, owned), nil
 }
 
 // resolveAzureExchangeAccountID looks up the CloudAccount registered for
@@ -1189,7 +1197,7 @@ func (h *Handler) executeAzureExchange(ctx context.Context, req *events.LambdaFu
 	// authorizeAzureExchangeExecution applies every gate: allowed_accounts
 	// scope, source ownership (issue #1527) and the execute:ri-exchange
 	// Constraints, all before the pricing call below.
-	client, err := h.authorizeAzureExchangeExecution(ctx, session, body, maxRat)
+	client, sources, err := h.authorizeAzureExchangeExecution(ctx, session, body, maxRat)
 	if err != nil {
 		return nil, err
 	}
@@ -1199,7 +1207,7 @@ func (h *Handler) executeAzureExchange(ctx context.Context, req *events.LambdaFu
 		return nil, err
 	}
 
-	preview, _, err := client.CalculateExchange(ctx, toAzureExchangeSources(body.Sources), targets)
+	preview, _, err := client.CalculateExchange(ctx, sources, targets)
 	if err != nil {
 		logging.Errorf("azure exchange re-quote failed: %v", err)
 		return nil, mapAzureExchangeError("failed to price the exchange before execution", err)
