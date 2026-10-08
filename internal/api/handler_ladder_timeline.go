@@ -37,7 +37,8 @@ func (h *Handler) ladderTimelineScope(ctx context.Context, req *events.LambdaFun
 		return ladderTimelineRequest{}, NewClientError(404, "account not found")
 	}
 	constraints := []auth.PermissionConstraints{{AccountIDs: []string{accountID}, Providers: []string{provider}, StrictScope: true}}
-	if err = h.requirePermissionConstraints(ctx, session, auth.ActionView, auth.ResourceConfig, constraints); err != nil {
+	err = h.requirePermissionConstraints(ctx, session, auth.ActionView, auth.ResourceConfig, constraints)
+	if err != nil {
 		return ladderTimelineRequest{}, err
 	}
 	if common.ProviderType(provider) != common.ProviderAWS {

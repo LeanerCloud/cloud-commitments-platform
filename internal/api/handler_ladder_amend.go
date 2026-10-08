@@ -67,7 +67,8 @@ func (h *Handler) authorizeLadderAmend(ctx context.Context, req *events.LambdaFu
 		return ladderAmendScope{}, err
 	}
 	constraints := []auth.PermissionConstraints{{AccountIDs: []string{accountID}, Providers: []string{provider}, StrictScope: true}}
-	if err = h.requirePermissionConstraints(ctx, session, auth.ActionUpdate, auth.ResourceConfig, constraints); err != nil {
+	err = h.requirePermissionConstraints(ctx, session, auth.ActionUpdate, auth.ResourceConfig, constraints)
+	if err != nil {
 		return ladderAmendScope{}, err
 	}
 	if common.ProviderType(provider) != common.ProviderAWS {
