@@ -7,6 +7,7 @@
  */
 
 import { apiRequest } from './client';
+import { ladderTotal } from '../ladder-timeline-filters';
 
 /**
  * A single ramp step within a ladder ramp schedule.
@@ -70,5 +71,112 @@ export async function upsertLadderConfig(cfg: LadderConfig): Promise<LadderConfi
   return apiRequest<LadderConfig>('/ladder/configs', {
     method: 'PUT',
     body: JSON.stringify(cfg),
+  });
+}
+
+export interface LadderCursor {
+  created_at: string;
+  id: string;
+}
+
+export interface LadderEvent {
+  id: string;
+  config_id: string;
+  run_id: string;
+  layer_type: string;
+  term: string;
+  payment_option: string;
+  status: string;
+  run_status: string;
+  execution_id?: string;
+  amount_usd_hr: string;
+  scheduled_date: string;
+  created_at: string;
+  revision: number;
+}
+
+export interface LadderRun {
+  id: string;
+  config_id: string;
+  status: string;
+  started_at: string;
+  created_at: string;
+  baseline_usd_hr: string | null;
+  target_usd_hr: string | null;
+  existing_usd_hr: string | null;
+  gap_usd_hr: string | null;
+  total_hourly_commit: string;
+  actions: { action: string; layer: string; rationale: string; data_sources?: string[] }[];
+}
+
+interface TimelinePage {
+  events?: LadderEvent[];
+  runs?: LadderRun[];
+  total_count: number;
+  total_usd_hr?: string;
+  next_cursor?: LadderCursor;
+}
+
+async function completeTimeline<T extends LadderEvent | LadderRun>(
+  endpoint: 'tranches' | 'runs', accountID: string, provider: string,
+): Promise<T[]> {
+  const params = new URLSearchParams({ account_id: accountID, provider });
+  const items: T[] = [];
+  const seen = new Set<string>();
+  let count: number | undefined;
+  let total: string | undefined;
+  while (true) {
+    const page = await apiRequest<TimelinePage>(`/ladder/${endpoint}?${params}`);
+    if (!page || !Number.isSafeInteger(page.total_count) || page.total_count < 0) {
+      throw new Error('Invalid ladder timeline response. Reload to try again.');
+    }
+    if (count !== undefined && count !== page.total_count) {
+      throw new Error('The ladder timeline changed while loading. Reload to try again.');
+    }
+    count = page.total_count;
+    if (endpoint === 'tranches') {
+      if (typeof page.total_usd_hr !== 'string' || (total !== undefined && total !== page.total_usd_hr)) {
+        throw new Error('The ladder timeline changed while loading. Reload to try again.');
+      }
+      total = page.total_usd_hr;
+    }
+    const rows = endpoint === 'tranches' ? page.events : page.runs;
+    if (!Array.isArray(rows)) throw new Error('Ladder timeline rows are unavailable.');
+    for (const row of rows) {
+      if (seen.has(row.id)) throw new Error('The ladder timeline changed while loading. Reload to try again.');
+      seen.add(row.id);
+      items.push(row as T);
+    }
+    if (!page.next_cursor) break;
+    if (rows.length === 0 || items.length >= count) throw new Error('Invalid ladder pagination.');
+    params.set('after_created_at', page.next_cursor.created_at);
+    params.set('after_id', page.next_cursor.id);
+  }
+  if (items.length !== count) throw new Error('The ladder timeline changed while loading. Reload to try again.');
+  if (endpoint === 'tranches' && ladderTotal(items as LadderEvent[]) !== total) {
+    throw new Error('The ladder timeline changed while loading. Reload to try again.');
+  }
+  return items;
+}
+
+export function getLadderEvents(accountID: string, provider: string): Promise<LadderEvent[]> {
+  return completeTimeline<LadderEvent>('tranches', accountID, provider);
+}
+
+export function getLadderRuns(accountID: string, provider: string): Promise<LadderRun[]> {
+  return completeTimeline<LadderRun>('runs', accountID, provider);
+}
+
+export interface LadderAmendment {
+  expected_revision: number;
+  scheduled_date: string;
+  amount_usd_hr: string;
+}
+
+export function amendLadderEvent(id: string, amendment: LadderAmendment): Promise<{
+  id: string; revision: number; scheduled_date: string; amount_usd_hr: string; run_total_usd_hr: string;
+}> {
+  return apiRequest(`/ladder/tranches/${encodeURIComponent(id)}`, {
+    method: 'PATCH', body: JSON.stringify(amendment),
   });
 }

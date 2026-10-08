@@ -17,6 +17,7 @@ import * as api from './api';
 import { escapeHtml, formatDate } from './utils';
 import { showToast } from './toast';
 import { canAccess } from './permissions';
+import { initLadderTimeline } from './ladder-timeline';
 
 // ==========================================
 // MODULE STATE
@@ -57,6 +58,8 @@ export async function initLadderingSettings(globalEnabled: boolean): Promise<voi
   try {
     cachedConfigs = await api.getLadderConfigs();
     renderConfigTable(cachedConfigs);
+    const timeline = document.getElementById('ladder-purchase-timeline');
+    if (timeline) await initLadderTimeline(timeline, cachedConfigs, globalEnabled);
   } catch (err) {
     console.error('Failed to load ladder configs:', err);
     const tableContainer = document.getElementById('ladder-configs-table-container');
@@ -118,6 +121,7 @@ function renderLadderingSection(globalEnabled: boolean): string {
       Add Account Config
     </button>` : ''}
   </div>
+  <div id="ladder-purchase-timeline"></div>
 </fieldset>
 
 <!-- Per-account ladder config modal -->

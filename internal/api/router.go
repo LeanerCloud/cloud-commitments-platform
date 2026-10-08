@@ -322,6 +322,9 @@ func (r *Router) registerRoutes() {
 		// handler), consistent with the RI Exchange config precedent.
 		{ExactPath: "/api/ladder/configs", Method: "GET", Handler: r.getLadderConfigsHandler, Auth: AuthUser},
 		{ExactPath: "/api/ladder/configs", Method: "PUT", Handler: r.upsertLadderConfigHandler, Auth: AuthUser},
+		{ExactPath: "/api/ladder/runs", Method: "GET", Handler: r.getLadderTimelineRunsHandler, Auth: AuthUser},
+		{ExactPath: "/api/ladder/tranches", Method: "GET", Handler: r.getLadderTimelineHandler, Auth: AuthUser},
+		{PathPrefix: "/api/ladder/tranches/", Method: "PATCH", Handler: r.amendLadderTrancheHandler, Auth: AuthUser},
 
 		// Notification one-click unsubscribe (RFC 8058). AuthPublic: the signed
 		// token in the query string is the credential (mirrors approve/cancel).
@@ -997,6 +1000,18 @@ func (r *Router) getLadderConfigsHandler(ctx context.Context, req *events.Lambda
 
 func (r *Router) upsertLadderConfigHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, _ map[string]string) (any, error) {
 	return r.h.upsertLadderConfig(ctx, req)
+}
+
+func (r *Router) getLadderTimelineHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, _ map[string]string) (any, error) {
+	return r.h.getLadderTimeline(ctx, req)
+}
+
+func (r *Router) getLadderTimelineRunsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, _ map[string]string) (any, error) {
+	return r.h.getLadderTimelineRuns(ctx, req)
+}
+
+func (r *Router) amendLadderTrancheHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
+	return r.h.amendLadderTranche(ctx, req, params["id"])
 }
 
 func (r *Router) unsubscribeHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
