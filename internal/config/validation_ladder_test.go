@@ -84,7 +84,10 @@ func TestLadderConfigDB_Validate_Bounds(t *testing.T) {
 		// lookback_days > 0
 		{name: "lookback_days 0 (below min)", mutate: func(c *LadderConfigDB) { c.LookbackDays = 0 }, wantErr: true},
 		{name: "lookback_days -1 (negative)", mutate: func(c *LadderConfigDB) { c.LookbackDays = -1 }, wantErr: true},
-		{name: "lookback_days 1 (lower bound)", mutate: func(c *LadderConfigDB) { c.LookbackDays = 1 }, wantErr: false},
+		{name: "aws lookback_days 1 (below baseline minimum)", mutate: func(c *LadderConfigDB) { c.LookbackDays = 1 }, wantErr: true},
+		{name: "aws lookback_days 6 (below baseline minimum)", mutate: func(c *LadderConfigDB) { c.LookbackDays = 6 }, wantErr: true},
+		{name: "aws lookback_days 7 (baseline minimum)", mutate: func(c *LadderConfigDB) { c.LookbackDays = 7 }, wantErr: false},
+		{name: "azure lookback_days 1 (no provider minimum)", mutate: func(c *LadderConfigDB) { c.Provider = "azure"; c.LookbackDays = 1 }, wantErr: false},
 
 		// max_actions_per_run > 0 and <= 50
 		{name: "max_actions_per_run 0 (below min)", mutate: func(c *LadderConfigDB) { c.MaxActionsPerRun = 0 }, wantErr: true},

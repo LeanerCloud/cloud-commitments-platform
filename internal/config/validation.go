@@ -720,8 +720,17 @@ func (c *LadderConfigDB) validateLadderBaselineBounds() error {
 	if c.LookbackDays <= 0 {
 		return fmt.Errorf("lookback_days %d must be > 0", c.LookbackDays)
 	}
+	if floor := ladderMinLookbackDays[c.Provider]; c.LookbackDays < floor {
+		return fmt.Errorf("lookback_days %d is below the %d-day minimum the %s usage baseline needs", c.LookbackDays, floor, c.Provider)
+	}
 	return nil
 }
+
+// ladderMinLookbackDays is the shortest lookback window each provider's usage
+// baseline can use. AWS GetUsageBaseline rejects fewer than 7 daily points
+// (providers/aws/ladder minBaselineSeriesDays, unexported, so mirrored here).
+// A provider without an entry has no minimum beyond lookback_days > 0.
+var ladderMinLookbackDays = map[string]int{"aws": 7}
 
 // validateLadderCoverageBounds checks the coverage target and buffer fraction.
 // Split out from validateLadderBaselineBounds to keep each function under the
