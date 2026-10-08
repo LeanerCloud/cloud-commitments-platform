@@ -69,8 +69,16 @@ func TestHandler_getHistory_TruncatedWhenCompletedAtCap(t *testing.T) {
 func TestHandler_getHistory_TruncatedWhenExecutionsAtCap(t *testing.T) {
 	// The execution fetch is capped before the in-memory filters run, so a
 	// full page means pending approvals may have been dropped.
-	body := runAdminHistory(t, nil, pendingExecutions(config.DefaultListLimit), map[string]string{})
+	body := runAdminHistory(t, nil, failedExecutions(config.DefaultListLimit), map[string]string{})
 	assert.Equal(t, true, body["truncated"])
+}
+
+func failedExecutions(n int) []config.PurchaseExecution {
+	execs := pendingExecutions(n)
+	for i := range execs {
+		execs[i].Status = "failed"
+	}
+	return execs
 }
 
 func cleanCompletedExecutions(n int) []config.PurchaseExecution {
@@ -90,11 +98,7 @@ func TestHandler_getHistory_NotTruncatedByCleanCompletedExecutions(t *testing.T)
 }
 
 func TestHandler_getHistory_TruncatedByFailedExecutions(t *testing.T) {
-	execs := pendingExecutions(config.DefaultListLimit)
-	for i := range execs {
-		execs[i].Status = "failed"
-	}
-	body := runAdminHistory(t, nil, execs, map[string]string{})
+	body := runAdminHistory(t, nil, failedExecutions(config.DefaultListLimit), map[string]string{})
 	assert.Equal(t, true, body["truncated"])
 }
 
@@ -108,7 +112,7 @@ func TestHandler_getHistory_AuditGapCompletedExecutionsCountTowardCap(t *testing
 }
 
 func TestHandler_getHistory_ExecutionsLimitIsFixed(t *testing.T) {
-	body := runAdminHistory(t, historyRows(2), pendingExecutions(config.DefaultListLimit), map[string]string{"limit": "500"})
+	body := runAdminHistory(t, historyRows(2), failedExecutions(config.DefaultListLimit), map[string]string{"limit": "500"})
 	assert.EqualValues(t, 500, body["limit"])
 	assert.EqualValues(t, config.DefaultListLimit, body["executions_limit"])
 	assert.Equal(t, true, body["truncated"])
@@ -133,7 +137,7 @@ func TestHandler_getHistory_ScopedUserTruncationLeaksNoCounts(t *testing.T) {
 	ctx := context.Background()
 	const scopedUserID = "scoped-user-id"
 	own := scopedUserID
-	execs := pendingExecutions(config.DefaultListLimit)
+	execs := failedExecutions(config.DefaultListLimit)
 	execs[0].CreatedByUserID = &own
 
 	mockStore := new(MockConfigStore)
