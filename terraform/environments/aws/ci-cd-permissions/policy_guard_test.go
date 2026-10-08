@@ -34,6 +34,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -310,14 +311,66 @@ func unreadListElements(stmt string, assignPattern *regexp.Regexp) string {
 	return strings.Join(refs, " ")
 }
 
-// findAwsModuleFiles returns every *.tf file under modulesDir whose
-// directory path contains an "aws" path segment, i.e. the AWS-specific
-// Terraform modules and not their Azure/GCP siblings.
+// moduleBlockPattern matches the opening of a `module "<name>" {` block.
+var moduleBlockPattern = regexp.MustCompile(`(?m)^[ \t]*module\s+"[^"]*"\s*\{`)
+
+// moduleSourcePattern captures the source argument of a module block body.
+var moduleSourcePattern = regexp.MustCompile(`(?m)^[ \t]*source\s*=\s*"([^"]*)"`)
+
+// findAwsModuleFiles returns every *.tf file on the AWS deploy path: those
+// under modulesDir whose directory path contains an "aws" path segment, plus
+// everything deployPathFiles derives from envRootDir.
 func findAwsModuleFiles(t *testing.T) []string {
 	t.Helper()
+	return deployPathFiles(t, modulesDir, envRootDir)
+}
 
-	var files []string
-	err := filepath.WalkDir(modulesDir, func(path string, d fs.DirEntry, walkErr error) error {
+// deployPathFiles returns the *.tf files the deploy actually applies: the
+// "aws" path segment heuristic under modulesDir, unioned with envRoot's own
+// *.tf files and every module they instantiate, followed transitively through
+// local `source = "./..."` / `"../..."` module blocks.
+//
+// The path heuristic alone is how a module without an "aws" segment
+// (modules/build, modules/deployment-checks) and the root *.tf files were left
+// out of every guard that calls this, so an IAM policy added there was never
+// compared against the boundary. Following the module blocks derives the set
+// from what the root instantiates rather than from a directory naming
+// convention. It fails closed: a module source that is not a local directory,
+// or a local one that does not exist, aborts the test, because a module this
+// walk cannot read is a module no guard can see.
+func deployPathFiles(t *testing.T, modules, envRoot string) []string {
+	t.Helper()
+
+	files, err := walkDeployPath(modules, envRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// walkDeployPath is deployPathFiles' body, returning the abort as an error so
+// the fail-closed cases can be asserted: t.Fatalf cannot be observed from the
+// test that triggers it.
+func walkDeployPath(modules, envRoot string) ([]string, error) {
+	seen := map[string]bool{}
+	queued := map[string]bool{}
+	addDir := func(dir string) ([]string, error) {
+		entries, err := filepath.Glob(filepath.Join(dir, "*.tf"))
+		if err != nil {
+			return nil, fmt.Errorf("globbing %s: %w", dir, err)
+		}
+		var added []string
+		for _, e := range entries {
+			seen[e] = true
+			if !queued[e] {
+				queued[e] = true
+				added = append(added, e)
+			}
+		}
+		return added, nil
+	}
+
+	err := filepath.WalkDir(modules, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -326,16 +379,55 @@ func findAwsModuleFiles(t *testing.T) []string {
 		}
 		for _, part := range strings.Split(filepath.ToSlash(filepath.Dir(path)), "/") {
 			if part == "aws" {
-				files = append(files, path)
+				seen[path] = true
 				break
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walking %s for aws module .tf files: %v", modulesDir, err)
+		return nil, fmt.Errorf("walking %s for aws module .tf files: %w", modules, err)
 	}
-	return files
+
+	queue, err := addDir(envRoot)
+	if err != nil {
+		return nil, err
+	}
+	for len(queue) > 0 {
+		f := queue[0]
+		queue = queue[1:]
+		data, err := os.ReadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", f, err)
+		}
+		content := stripCommentLines(string(data))
+		for _, loc := range moduleBlockPattern.FindAllStringIndex(content, -1) {
+			body := content[loc[1]-1 : balancedBraceEnd(content, loc[1]-1)]
+			m := moduleSourcePattern.FindStringSubmatch(body)
+			if m == nil {
+				return nil, fmt.Errorf("%s: module block %q has no literal source; this walk cannot tell which directory it instantiates", f, strings.TrimSpace(content[loc[0]:loc[1]]))
+			}
+			if !strings.HasPrefix(m[1], "./") && !strings.HasPrefix(m[1], "../") {
+				return nil, fmt.Errorf("%s: module source %q is not a local directory; this walk cannot read a remote module's IAM policies, so the boundary guards would not see them", f, m[1])
+			}
+			dir := filepath.Join(filepath.Dir(f), m[1])
+			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+				return nil, fmt.Errorf("%s: module source %q resolves to %s, which is not a readable directory", f, m[1], dir)
+			}
+			added, err := addDir(dir)
+			if err != nil {
+				return nil, err
+			}
+			queue = append(queue, added...)
+		}
+	}
+
+	files := make([]string, 0, len(seen))
+	for f := range seen {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 // readPolicySource reads path and strips its whole-line comments, so every
@@ -1765,5 +1857,131 @@ func TestKMSDataPlaneActionsAreNotUnconditionallyGranted(t *testing.T) {
 	}
 	if scanned == 0 {
 		t.Fatalf("scanned zero statements; this guard would pass vacuously")
+	}
+}
+
+// TestDeployPathWalkReachesModulesWithoutAwsSegment pins the walk behind every
+// module-tree guard to what the environment root instantiates. The fixture is
+// the shape that was invisible to the old "aws" path-segment heuristic: a
+// module reached through a root `module` block whose directory has no "aws"
+// segment, granting an action the boundary does not carry. The guard's own
+// coverage comparison must then report it.
+func TestDeployPathWalkReachesModulesWithoutAwsSegment(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("env/main.tf", "module \"parent\" {\n  source = \"../modules/aws/parent\"\n}\n")
+	write("modules/aws/parent/main.tf", "module \"build\" {\n  source = \"../../build\"\n}\n")
+	write("modules/build/main.tf", `resource "aws_iam_role_policy" "x" {
+  policy = jsonencode({
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ecs:DeleteCluster", "lambda:DeleteFunction"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+`)
+	write("modules/unreferenced/main.tf", "# no aws segment and no module block points here\n")
+
+	files := deployPathFiles(t, filepath.Join(root, "modules"), filepath.Join(root, "env"))
+
+	want := filepath.Join(root, "modules", "build", "main.tf")
+	if !slices.Contains(files, want) {
+		t.Fatalf("deployPathFiles = %v, missing %s, which env/main.tf instantiates through modules/aws/parent", files, want)
+	}
+	if slices.Contains(files, filepath.Join(root, "modules", "unreferenced", "main.tf")) {
+		t.Errorf("deployPathFiles = %v includes a module nothing instantiates", files)
+	}
+
+	allowed := boundaryAllowedActions(t)
+	var uncovered []string
+	for _, f := range files {
+		for _, action := range extractActionListActions(readPolicySource(t, f)) {
+			if !actionPermitted(allowed, action) {
+				uncovered = append(uncovered, action)
+			}
+		}
+	}
+	sort.Strings(uncovered)
+	if got, wantActions := strings.Join(uncovered, ","), "ecs:DeleteCluster,lambda:DeleteFunction"; got != wantActions {
+		t.Errorf("actions reported uncovered by the boundary = %q, want %q", got, wantActions)
+	}
+}
+
+// TestBoundaryInvokeFunctionIsScopedToCudlyFunctions asserts the boundary never
+// allows lambda:InvokeFunction on a Resource wider than cudly-* functions. The
+// only workload role that uses it is the API Lambda's self-invoke, scoped to
+// its own ARN; "*" would let a boundaried role run any function in the account
+// as that function's execution role with a caller-chosen payload.
+func TestBoundaryInvokeFunctionIsScopedToCudlyFunctions(t *testing.T) {
+	const wantResource = "arn:aws:lambda:*:*:function:cudly-*"
+
+	stmts := findStatements(t, boundaryFile, func(stmt string) bool {
+		return statementEffect(stmt) != "Deny" && actionPermitted(extractActionListActions(stmt), "lambda:InvokeFunction")
+	})
+	if len(stmts) == 0 {
+		t.Fatalf("%s no longer allows lambda:InvokeFunction; the API Lambda's async self-invoke (modules/compute/aws/lambda/main.tf) would 403 at runtime", boundaryFile)
+	}
+	for _, stmt := range stmts {
+		if got := statementResources(stmt); !equalStringSets(got, []string{wantResource}) {
+			t.Errorf("%s: statement %q allows lambda:InvokeFunction on Resource %v, want exactly [%q]", boundaryFile, statementSid(stmt), got, wantResource)
+		}
+	}
+}
+
+// TestDeployPathWalkFailsClosed pins the three aborts in walkDeployPath: each
+// must be a returned error, never a silent skip, because a module the walk
+// skips is a module no boundary guard sees.
+func TestDeployPathWalkFailsClosed(t *testing.T) {
+	cases := []struct {
+		name    string
+		module  string
+		wantErr string
+	}{
+		{"no literal source", "module \"m\" {\n  source = var.src\n}\n", "has no literal source"},
+		{"registry source", "module \"m\" {\n  source  = \"terraform-aws-modules/iam/aws\"\n  version = \"5.0.0\"\n}\n", "is not a local directory"},
+		{"git source with ref", "module \"m\" {\n  source = \"git::https://example.com/m.git?ref=v1\"\n}\n", "is not a local directory"},
+		{"remote source in AWS parent", "module \"parent\" {\n  source = \"../modules/aws/parent\"\n}\n", "is not a local directory"},
+		{"missing local directory", "module \"m\" {\n  source = \"../modules/absent\"\n}\n", "not a readable directory"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, d := range []string{"env", "modules"} {
+				if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(root, "env", "main.tf"), []byte(tc.module), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if tc.name == "remote source in AWS parent" {
+				parent := filepath.Join(root, "modules", "aws", "parent")
+				if err := os.MkdirAll(parent, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(parent, "main.tf"), []byte("module \"remote\" {\n  source = \"terraform-aws-modules/iam/aws\"\n}\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			files, err := walkDeployPath(filepath.Join(root, "modules"), filepath.Join(root, "env"))
+			if err == nil {
+				t.Fatalf("walkDeployPath returned %v and no error; want a hard failure containing %q", files, tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("walkDeployPath error = %q, want it to contain %q", err, tc.wantErr)
+			}
+		})
 	}
 }

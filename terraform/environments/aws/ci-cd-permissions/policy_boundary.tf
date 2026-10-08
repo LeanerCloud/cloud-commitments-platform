@@ -127,20 +127,11 @@ resource "aws_iam_policy" "workload_boundary" {
         #     lambda:InvokeFunctionUrl in aws_lambda_permission blocks are
         #     RESOURCE policies granting a service principal, not grants to a
         #     workload role, so this ceiling never gates them.
-        #     lambda:InvokeFunction keeps a RESIDUAL of the same shape as
-        #     ecs:RunTask's, stated here so it is not read as fully closed:
-        #     this statement's Resource is "*", so it permits invoking ANY
-        #     function in the account, which runs that function's code as its
-        #     execution role with an attacker-chosen payload and needs no
-        #     iam:PassRole. Functions this deploy role did not create carry no
-        #     boundary. It is narrower than it looks, because the module grants
-        #     are themselves scoped (modules/compute/aws/lambda/main.tf uses
-        #     aws_lambda_function.main.arn, signing-key.tf uses
-        #     arn:aws:lambda:*:*:function:${stack_name}-api*) and effective
-        #     permissions are the intersection, so the residual is only
-        #     reachable by a role whose own identity policy is wider. Scoping
-        #     this entry to arn:aws:lambda:*:*:function:cudly-* would close it
-        #     and is tracked separately rather than folded into #1723.
+        #     lambda:InvokeFunction is pinned to cudly-* functions in the
+        #     LambdaInvokeCeiling statement below rather than listed here,
+        #     because this statement's Resource is "*" and an invoke runs the
+        #     target's code as its execution role with a caller-chosen payload
+        #     and no iam:PassRole.
         #   - the ssm entries are AmazonSSMManagedInstanceCore v2 verbatim (the
         #     fck-nat instance role in modules/networking/aws is the only role
         #     that carries it, for Session Manager access). No module grants an
@@ -169,7 +160,6 @@ resource "aws_iam_policy" "workload_boundary" {
           "es:*",
           "kms:*",
           "lambda:GetFunctionUrlConfig",
-          "lambda:InvokeFunction",
           "logs:*",
           "memorydb:*",
           "rds:*",
@@ -196,6 +186,18 @@ resource "aws_iam_policy" "workload_boundary" {
           "ssmmessages:*",
         ]
         Resource = "*"
+      },
+      {
+        # The API Lambda's async self-invoke (modules/compute/aws/lambda/main.tf
+        # async_self_invoke, scoped there to the function's own ARN) is the only
+        # workload grant of lambda:InvokeFunction. The deploy role can only
+        # create cudly-* functions (policy_compute.tf), and the function is
+        # named "${stack_name}-api" with stack_name starting with project_name
+        # (default "cudly"), so cudly-* matches it and nothing broader is needed.
+        Sid      = "LambdaInvokeCeiling"
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = "arn:aws:lambda:*:*:function:cudly-*"
       },
       {
         # organizations and sts are narrowed for the same reason ecs, lambda and
