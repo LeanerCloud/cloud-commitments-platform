@@ -367,7 +367,8 @@ func revokeExecutionConstraintSets(execution *config.PurchaseExecution) []auth.P
 		return []auth.PermissionConstraints{revokeConstraintSet("", "", "", "")}
 	}
 	sets := make([]auth.PermissionConstraints, 0, len(execution.Recommendations))
-	for _, rec := range execution.Recommendations {
+	for i := range execution.Recommendations {
+		rec := &execution.Recommendations[i]
 		sets = append(sets, revokeConstraintSet(derefString(rec.CloudAccountID), rec.Provider, rec.Service, rec.Region))
 	}
 	return sets

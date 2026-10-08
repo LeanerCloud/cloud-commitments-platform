@@ -30,10 +30,10 @@ func revokeHistoryRecord() *config.PurchaseHistoryRecord {
 	}
 }
 
-func newRevokeHandler(perms ...auth.Permission) (*Handler, *MockAuthService) {
+func newRevokeHandler(perms ...auth.Permission) *Handler {
 	mockAuth := new(MockAuthService)
 	mockAuth.grantPermissionsScoped(perms, nil)
-	return &Handler{auth: mockAuth, config: &MockConfigStore{}}, mockAuth
+	return &Handler{auth: mockAuth, config: &MockConfigStore{}}
 }
 
 func requireRevokeForbidden(t *testing.T, err error, contains string) {
@@ -65,13 +65,13 @@ func TestAuthorizeSessionRevoke_ConstraintDimensions(t *testing.T) {
 		for dim, c := range denying {
 			t.Run(verb+"/deny/"+dim, func(t *testing.T) {
 				t.Parallel()
-				h, _ := newRevokeHandler(revokePerm(verb, c))
+				h := newRevokeHandler(revokePerm(verb, c))
 				err := h.authorizeSessionRevoke(context.Background(), &Session{UserID: revokeConstraintsUser}, revokeHistoryRecord())
 				requireRevokeForbidden(t, err, constraintDenied)
 			})
 			t.Run(verb+"/allow/"+dim, func(t *testing.T) {
 				t.Parallel()
-				h, _ := newRevokeHandler(revokePerm(verb, allowing[dim]))
+				h := newRevokeHandler(revokePerm(verb, allowing[dim]))
 				require.NoError(t, h.authorizeSessionRevoke(context.Background(), &Session{UserID: revokeConstraintsUser}, revokeHistoryRecord()))
 			})
 		}
@@ -82,14 +82,14 @@ func TestAuthorizeSessionRevoke_StrictScopeUnknownDimensions(t *testing.T) {
 	t.Parallel()
 	t.Run("empty region denies a Regions grant", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, &auth.PermissionConstraints{Regions: []string{"westeurope"}}))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, &auth.PermissionConstraints{Regions: []string{"westeurope"}}))
 		rec := revokeHistoryRecord()
 		rec.Region = ""
 		requireRevokeForbidden(t, h.authorizeSessionRevoke(context.Background(), &Session{UserID: revokeConstraintsUser}, rec), constraintDenied)
 	})
 	t.Run("unattributed account denies an AccountIDs grant", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, &auth.PermissionConstraints{AccountIDs: []string{"acct-uuid"}}))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, &auth.PermissionConstraints{AccountIDs: []string{"acct-uuid"}}))
 		rec := revokeHistoryRecord()
 		rec.CloudAccountID = nil
 		rec.AccountID = "123456789012"
@@ -97,7 +97,7 @@ func TestAuthorizeSessionRevoke_StrictScopeUnknownDimensions(t *testing.T) {
 	})
 	t.Run("unconstrained grant still allows an unattributed region", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, nil))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, nil))
 		rec := revokeHistoryRecord()
 		rec.Region = ""
 		require.NoError(t, h.authorizeSessionRevoke(context.Background(), &Session{UserID: revokeConstraintsUser}, rec))
@@ -111,22 +111,22 @@ func TestAuthorizeSessionRevoke_ConstrainedAnyFallsBackToOwn(t *testing.T) {
 
 	t.Run("unconstrained own is allowed", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, nil))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, nil))
 		require.NoError(t, h.authorizeSessionRevoke(context.Background(), sess, revokeHistoryRecord()))
 	})
 	t.Run("constrained any without own is denied", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained))
 		requireRevokeForbidden(t, h.authorizeSessionRevoke(context.Background(), sess, revokeHistoryRecord()), constraintDenied)
 	})
 	t.Run("both constrained and outside is denied", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, constrained))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, constrained))
 		requireRevokeForbidden(t, h.authorizeSessionRevoke(context.Background(), sess, revokeHistoryRecord()), constraintDenied)
 	})
 	t.Run("fallback re-runs the revoke-own account check", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, nil))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, nil))
 		rec := revokeHistoryRecord()
 		rec.CloudAccountID = nil // unattributed: revoke-any skips the check, revoke-own cannot
 		requireRevokeForbidden(t, h.authorizeSessionRevoke(context.Background(), sess, rec), "cannot verify ownership")
@@ -218,7 +218,7 @@ func TestAuthorizeSessionRevokeExecution_ConstraintDimensions(t *testing.T) {
 		for dim, c := range denying {
 			t.Run(verb+"/"+dim, func(t *testing.T) {
 				t.Parallel()
-				h, _ := newRevokeHandler(revokePerm(verb, c))
+				h := newRevokeHandler(revokePerm(verb, c))
 				err := h.authorizeSessionRevokeExecution(context.Background(), &Session{UserID: revokeConstraintsUser}, execWithRecs(revokeConstraintsUser, rec))
 				requireRevokeForbidden(t, err, constraintDenied)
 			})
@@ -233,7 +233,7 @@ func TestAuthorizeSessionRevokeExecution_EveryRecommendationMustBeCovered(t *tes
 	inside := recFor("a", "azure", "compute", "westeurope")
 	outside := recFor("a", "azure", "compute", "eastus")
 
-	h, _ := newRevokeHandler(grant)
+	h := newRevokeHandler(grant)
 	require.NoError(t, h.authorizeSessionRevokeExecution(context.Background(), sess, execWithRecs("", inside, inside)))
 	requireRevokeForbidden(t, h.authorizeSessionRevokeExecution(context.Background(), sess, execWithRecs("", inside, outside)), constraintDenied)
 }
@@ -243,12 +243,12 @@ func TestAuthorizeSessionRevokeExecution_ZeroRecommendations(t *testing.T) {
 	sess := &Session{UserID: revokeConstraintsUser}
 	t.Run("constrained grant denies", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, &auth.PermissionConstraints{Providers: []string{"azure"}}))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, &auth.PermissionConstraints{Providers: []string{"azure"}}))
 		requireRevokeForbidden(t, h.authorizeSessionRevokeExecution(context.Background(), sess, execWithRecs("")), constraintDenied)
 	})
 	t.Run("unconstrained grant allows", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, nil))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, nil))
 		require.NoError(t, h.authorizeSessionRevokeExecution(context.Background(), sess, execWithRecs("")))
 	})
 }
@@ -261,17 +261,17 @@ func TestAuthorizeSessionRevokeExecution_ConstrainedAnyFallsBackToOwn(t *testing
 
 	t.Run("creator with unconstrained own is allowed", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, nil))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, nil))
 		require.NoError(t, h.authorizeSessionRevokeExecution(context.Background(), sess, execWithRecs(revokeConstraintsUser, rec)))
 	})
 	t.Run("non-creator is denied by the creator check", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, nil))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained), revokePerm(auth.ActionRevokeOwn, nil))
 		requireRevokeForbidden(t, h.authorizeSessionRevokeExecution(context.Background(), sess, execWithRecs("someone-else", rec)), "another user's")
 	})
 	t.Run("constrained any without own is denied", func(t *testing.T) {
 		t.Parallel()
-		h, _ := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained))
+		h := newRevokeHandler(revokePerm(auth.ActionRevokeAny, constrained))
 		requireRevokeForbidden(t, h.authorizeSessionRevokeExecution(context.Background(), sess, execWithRecs(revokeConstraintsUser, rec)), constraintDenied)
 	})
 }
