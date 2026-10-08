@@ -26,10 +26,21 @@ mkdir -p "$WORK/bin"
 cat > "$WORK/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 fwb=0
+fail=0
 for a in "$@"; do
   url="$a"
   [ "$a" = "--fail-with-body" ] && fwb=1
+  # -f/--fail, alone or inside a short cluster such as -fsS.
+  case "$a" in
+    --*) [ "$a" = "--fail" ] && fail=1 ;;
+    -*f*) fail=1 ;;
+  esac
 done
+# Real curl (7.76+) rejects -f/--fail together with --fail-with-body.
+if [ "$fwb" = 1 ] && [ "$fail" = 1 ]; then
+  echo "curl: option --fail-with-body: is badly used here" >&2
+  exit 2
+fi
 # The pre-fix loop's warm-up request to /api/ succeeded silently and consumed no
 # scenario token; only the gate request did.
 case "$url" in
@@ -150,6 +161,61 @@ fi
 # The current gate must reject that same premature pass: a not-ready replica
 # resets the streak, so the gate only passes once answers are CONSISTENTLY ready.
 run_case "rollout race H U H H H passes under the readiness gate" 0 "H U H H H" "Readiness check 5: ready (3/3)"
+
+# Real curl against a throwaway localhost server: the stub above cannot catch
+# flag combinations that the installed curl rejects. Skipped when python3 is
+# missing; curl older than 7.76 has no --fail-with-body and would fail here.
+if command -v python3 > /dev/null; then
+  # Two servers: one always answers 200, the other 503 with a degraded body.
+  python3 - > "$WORK/port" <<'PY' &
+import http.server, sys, threading
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        code = 200 if self.server.mode == "ok" else 503
+        body = b'{"status":"degraded","checks":{"database":{"status":"unhealthy"}}}' if code == 503 else b'{"status":"healthy","checks":{}}'
+        self.send_response(code)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *args):
+        pass
+
+servers = []
+for mode in ("ok", "unready"):
+    s = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    s.mode = mode
+    servers.append(s)
+print(servers[0].server_port, servers[1].server_port, flush=True)
+for s in servers[1:]:
+    threading.Thread(target=s.serve_forever, daemon=True).start()
+servers[0].serve_forever()
+PY
+  SRV_PID=$!
+  trap 'kill "$SRV_PID" 2>/dev/null || true; wait "$SRV_PID" 2>/dev/null || true; rm -rf "$WORK"' EXIT
+  for _ in {1..50}; do [[ -s "$WORK/port" ]] && break; sleep 0.1; done
+  read -r OK_PORT UNREADY_PORT < "$WORK/port"
+
+  out=$(HEALTH_INTERVAL_SECONDS=0 HEALTH_MAX_ATTEMPTS=3 HEALTH_REQUIRED_STREAK=3 \
+    "$SUT" "http://127.0.0.1:${OK_PORT}" 2>&1) && real_ok=0 || real_ok=$?
+  if [[ "$real_ok" -eq 0 && "$out" == *"Service is ready."* ]]; then
+    echo "PASS: real curl accepts a 200 /ready"
+    ((pass++)) || true
+  else
+    echo "FAIL: real curl against a 200 /ready (exit $real_ok)"; echo "$out"
+    ((fail++)) || true
+  fi
+
+  out=$(HEALTH_INTERVAL_SECONDS=0 HEALTH_MAX_ATTEMPTS=2 HEALTH_REQUIRED_STREAK=2 \
+    "$SUT" "http://127.0.0.1:${UNREADY_PORT}" 2>&1) && real_503=0 || real_503=$?
+  if [[ "$real_503" -eq 1 && "$out" == *'"status":"degraded"'* ]]; then
+    echo "PASS: real curl rejects a 503 /ready and prints its body"
+    ((pass++)) || true
+  else
+    echo "FAIL: real curl against a 503 /ready (exit $real_503)"; echo "$out"
+    ((fail++)) || true
+  fi
+fi
 
 echo "passed=$pass failed=$fail"
 [[ "$fail" -eq 0 ]]

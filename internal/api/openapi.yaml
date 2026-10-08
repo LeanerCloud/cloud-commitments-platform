@@ -2122,8 +2122,9 @@ paths:
       description: >-
         Traffic-admission contract: answers 200 with the same payload as
         /health once this replica has completed initialization, 503 while any
-        check is pending or failed. /health is the liveness counterpart and
-        always answers 200.
+        store check is pending or failed or migrations have not run yet. A
+        failed migration run is reported in the body but still answers 200.
+        /health is the liveness counterpart and always answers 200.
       security: []
       responses:
         '200':
@@ -2133,7 +2134,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
         '503':
-          description: Replica is still initializing or a check failed
+          description: Replica is still initializing or a store check failed
           content:
             application/json:
               schema:

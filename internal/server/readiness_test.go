@@ -89,9 +89,9 @@ func TestReadinessPermanentInitializationFailure(t *testing.T) {
 	}
 }
 
-// TestReadinessFailedMigrations pins the migration facet: a replica whose
-// migrations permanently failed must not take traffic even though its stores
-// connected. Pre-fix only the body said "degraded"; readiness now has to agree.
+// TestReadinessFailedMigrations pins the migration facet: a failed migration run
+// is reported as "degraded" but the replica stays ready, because ensureDB never
+// retries migrations and 503 would pull every replica after one transient error.
 func TestReadinessFailedMigrations(t *testing.T) {
 	app := &Application{
 		Version:  "test",
@@ -104,7 +104,7 @@ func TestReadinessFailedMigrations(t *testing.T) {
 	req := httptest.NewRequestWithContext(context.Background(), "GET", "/ready", nil)
 	res := httptest.NewRecorder()
 	app.handleReadinessCheck(res, req)
-	testutil.AssertEqual(t, http.StatusServiceUnavailable, res.Code)
+	testutil.AssertEqual(t, http.StatusOK, res.Code)
 
 	var health HealthStatus
 	testutil.AssertNoError(t, json.Unmarshal(res.Body.Bytes(), &health))

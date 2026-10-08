@@ -639,8 +639,10 @@ func (app *Application) ensureDB(ctx context.Context) error {
 	log.Println("PostgreSQL connection established successfully")
 
 	// Run migrations if AutoMigrate is enabled. Failures are non-fatal:
-	// we log, surface via /health's migrations check, and proceed. The app
-	// stays up; handlers that need the missing schema error at query time.
+	// we log, surface via the migrations check in /health and /ready, and
+	// proceed. The app stays up and ready (/ready only waits for the first
+	// attempt to finish); handlers that need the missing schema error at
+	// query time.
 	// See specs/migration-resilience.md (or the plan) for the rationale.
 	if app.dbConfig.AutoMigrate {
 		log.Println("Running database migrations...")

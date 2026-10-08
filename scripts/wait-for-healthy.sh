@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # wait-for-healthy.sh URL
 #
-# Smoke gate for a just-deployed service. Polls URL/ready until curl -f
-# accepts the response (any status below 400) HEALTH_REQUIRED_STREAK times in
-# a row. A not-ready or failed response inside the polling budget resets the
-# streak instead of failing, because during a
+# Smoke gate for a just-deployed service. Polls URL/ready until curl
+# --fail-with-body accepts the response (any status below 400)
+# HEALTH_REQUIRED_STREAK times in a row. A not-ready or failed response inside
+# the polling budget resets the streak instead of failing, because during a
 # rollout a probe can hit a replica that is still initializing. If the budget
 # (HEALTH_MAX_ATTEMPTS) runs out before the streak is reached, exits 1 and
 # prints the last response (or curl error).
@@ -16,7 +16,8 @@
 # server initializes its database in the background at startup.
 #
 # Requires curl 7.76+ for --fail-with-body, so a 503 still prints the JSON
-# check detail that explains which dependency is not ready.
+# check detail that explains which dependency is not ready. Do not add -f:
+# curl rejects -f/--fail together with --fail-with-body.
 #
 # Env (defaults suit the deploy workflows; tests shrink them):
 #   HEALTH_REQUIRED_STREAK   consecutive ready responses needed (3)
@@ -50,7 +51,7 @@ for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
   # /ready answers 503 until the replica has completed initialization;
   # --fail-with-body keeps the JSON check detail so a failure says WHICH
   # dependency is not ready.
-  if body=$(curl -fsS --fail-with-body --max-time 10 "${URL}/ready" 2>&1); then
+  if body=$(curl -sS --fail-with-body --max-time 10 "${URL}/ready" 2>&1); then
     streak=$((streak + 1))
     echo "Readiness check ${attempt}: ready (${streak}/${REQUIRED_STREAK})"
     if ((streak >= REQUIRED_STREAK)); then

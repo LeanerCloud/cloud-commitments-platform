@@ -47,18 +47,39 @@ func (app *Application) handleHealthCheck(w http.ResponseWriter, r *http.Request
 // required initialization answers 503, so the load balancer stops sending it
 // requests. /health only reported "degraded" in the body while still answering
 // 200, which admitted cold replicas to traffic and broke the deployment smoke
-// gate (#488). Non-degraded is required initialization done; the body carries
+// gate (#488). Ready means required initialization is done; the body carries
 // the same checks as /health so an operator sees which one is still pending.
+// A failed migration run does not make the replica unready (see ready).
 func (app *Application) handleReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	health := app.collectHealth(ctx)
 	status := http.StatusOK
-	if health.Status != "healthy" {
+	if !health.ready() {
 		status = http.StatusServiceUnavailable
 	}
 	writeHealthResponse(w, app.appConfig.CORSAllowedOrigin, status, health)
+}
+
+// ready reports whether the replica may take traffic: the stores are connected
+// and the first migration attempt has finished. A failed migration run stays
+// "degraded" in the body but is still ready. ensureDB never retries migrations,
+// so treating it as unready would pull every replica out of rotation after one
+// transient error (e.g. a lock timeout) with nothing to bring them back.
+func (h HealthStatus) ready() bool {
+	for name, check := range h.Checks {
+		if name == "migrations" {
+			if check.Status == "pending" {
+				return false
+			}
+			continue
+		}
+		if check.Status != "healthy" {
+			return false
+		}
+	}
+	return true
 }
 
 // collectHealth runs every readiness/health check and folds them into one
