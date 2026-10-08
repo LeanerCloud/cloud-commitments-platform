@@ -96,20 +96,20 @@ func TestUpsertLadderConfig_ExplicitZeroTargetCoverageRejected(t *testing.T) {
 }
 
 // TestUpsertLadderConfig_ShortAWSLookbackRejected pins #660: an AWS lookback
-// below the 7-day baseline minimum returns 400 and never reaches the store,
+// below the 10-day baseline minimum returns 400 and never reaches the store,
 // instead of saving a config that fails every planning run.
 func TestUpsertLadderConfig_ShortAWSLookbackRejected(t *testing.T) {
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 
-	body := `{"cloud_account_id":"acct-1","provider":"aws","mode":"email_approval","cadence":"daily","lookback_days":6,` + ladderValidRamp + `}`
+	body := `{"cloud_account_id":"acct-1","provider":"aws","mode":"email_approval","cadence":"daily","lookback_days":9,` + ladderValidRamp + `}`
 	result, err := handler.upsertLadderConfig(ctx, ladderReq(body))
 	require.Error(t, err)
 	assert.Nil(t, result)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
 	assert.Equal(t, 400, ce.code)
-	assert.Contains(t, ce.message, "lookback_days 6")
+	assert.Contains(t, ce.message, "lookback_days 9")
 	mockStore.AssertNotCalled(t, "UpsertLadderConfig", mock.Anything, mock.Anything)
 }
 

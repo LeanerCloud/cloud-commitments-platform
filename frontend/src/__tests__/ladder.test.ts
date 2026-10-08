@@ -63,9 +63,9 @@ describe('ladder.ts', () => {
     mockShowToast.mockReset();
   });
 
-  test('lookback input advertises the 7-day baseline minimum', async () => {
+  test('lookback input advertises the 10-day baseline minimum', async () => {
     await renderSection([baseConfig({ id: 'config-1' })]);
-    expect(document.getElementById('ladder-cfg-lookback-days')).toHaveAttribute('min', '7');
+    expect(document.getElementById('ladder-cfg-lookback-days')).toHaveAttribute('min', '10');
   });
 
   test.each([
