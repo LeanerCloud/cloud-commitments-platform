@@ -571,24 +571,41 @@ func TestPostgresStore_SaveLadderRunWithTranches_CancelsOverdue(t *testing.T) {
 		runID := uuid.New().String()
 		save(t, cfgID, at, newTranche(cfgID, runID, at), newTranche(cfgID, runID, at.Add(14*24*time.Hour)))
 	}
-	// Last run started 7 days ago: its day-0 tranche and one earlier future
-	// tranche are due by now. A final run at "now" cancels every due row.
+	// Overdue rows that are not plain scheduled must survive the sweep: one
+	// fired, one completed, and one scheduled row already linked to an execution.
+	var planID, execID string
+	require.NoError(t, store.db.QueryRow(ctx, `INSERT INTO purchase_plans (name) VALUES ('ladder-544') RETURNING id`).Scan(&planID))
+	require.NoError(t, store.db.QueryRow(ctx,
+		`INSERT INTO purchase_executions (plan_id, scheduled_date) VALUES ($1, NOW()) RETURNING execution_id`, planID).Scan(&execID))
+	fired, completed, linked := newTranche(cfgID, "", start.Add(-24*time.Hour)), newTranche(cfgID, "", start.Add(-24*time.Hour)), newTranche(cfgID, "", start.Add(-24*time.Hour))
+	fired.RunID, completed.RunID, linked.RunID = nil, nil, nil
+	fired.Status, completed.Status, linked.ExecutionID = ladder.TrancheStatusFired, ladder.TrancheStatusCompleted, &execID
+	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{fired, completed, linked}))
+
+	// The final run starts now and sweeps every earlier due row.
 	finalRun := uuid.New().String()
 	save(t, cfgID, start, newTranche(cfgID, finalRun, start), newTranche(cfgID, finalRun, start.Add(14*24*time.Hour)))
 
 	var dueLive int
 	require.NoError(t, store.db.QueryRow(ctx,
-		`SELECT count(*) FROM ladder_tranches WHERE config_id = $1 AND status = 'scheduled' AND scheduled_date <= $2 AND run_id <> $3`,
+		`SELECT count(*) FROM ladder_tranches WHERE config_id = $1 AND status = 'scheduled' AND scheduled_date <= $2 AND execution_id IS NULL AND run_id <> $3`,
 		cfgID, start, finalRun).Scan(&dueLive))
 	assert.Equal(t, 0, dueLive, "no scheduled tranche from an earlier run may be overdue")
 	assert.Equal(t, 1, func() int {
 		var n int
 		require.NoError(t, store.db.QueryRow(ctx,
-			`SELECT count(*) FROM ladder_tranches WHERE config_id = $1 AND status = 'scheduled' AND scheduled_date <= $2`,
+			`SELECT count(*) FROM ladder_tranches WHERE config_id = $1 AND status = 'scheduled' AND execution_id IS NULL AND scheduled_date <= $2`,
 			cfgID, start).Scan(&n))
 		return n
 	}(), "only the current run's own due tranche may remain due")
-	assert.Positive(t, countStatus(t, cfgID, ladder.TrancheStatusCancelled), "overdue rows must be cancelled, not deleted")
+	// 12 day-0 tranches + 11 two-week tranches that are already due; the 12th
+	// two-week tranche is in the future and stays scheduled.
+	assert.Equal(t, 23, countStatus(t, cfgID, ladder.TrancheStatusCancelled), "overdue scheduled rows must be marked canceled, not deleted")
+	assert.Equal(t, 1, countStatus(t, cfgID, ladder.TrancheStatusFired), "an overdue fired row must be left alone")
+	assert.Equal(t, 1, countStatus(t, cfgID, ladder.TrancheStatusCompleted), "an overdue completed row must be left alone")
+	var linkedStatus string
+	require.NoError(t, store.db.QueryRow(ctx, `SELECT status FROM ladder_tranches WHERE id = $1`, linked.ID).Scan(&linkedStatus))
+	assert.Equal(t, string(ladder.TrancheStatusScheduled), linkedStatus, "an overdue row linked to an execution must be left alone")
 	assert.Equal(t, 1, countStatus(t, otherID, ladder.TrancheStatusScheduled), "another config's tranches must be untouched")
 	assert.Equal(t, 0, countStatus(t, otherID, ladder.TrancheStatusCancelled))
 }

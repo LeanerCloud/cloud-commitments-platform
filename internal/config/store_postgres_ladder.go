@@ -319,9 +319,10 @@ func insertLadderTranchesTx(ctx context.Context, tx pgx.Tx, tranches []LadderTra
 }
 
 // cancelOverdueLadderTranchesTx marks the config's scheduled tranches whose
-// scheduled_date is at or before asOf as cancelled. No executor transitions
+// scheduled_date is at or before asOf as canceled. No executor transitions
 // tranches yet (issue #118), so without this the overdue amount grows with
 // every run and a future due-row sweep would buy all of it at once (#544).
+// Rows already linked to an execution are left alone.
 // It runs before the new run's tranches are inserted, so those are never
 // touched. A nil configID has nothing to scope to and is a no-op.
 func cancelOverdueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID *string, asOf time.Time) error {
@@ -333,6 +334,7 @@ func cancelOverdueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID *str
 		SET status = $1
 		WHERE config_id = $2
 		  AND status = $3
+		  AND execution_id IS NULL
 		  AND scheduled_date <= $4
 	`, string(ladder.TrancheStatusCancelled), *configID, string(ladder.TrancheStatusScheduled), asOf)
 	if err != nil {
@@ -360,8 +362,8 @@ func (s *PostgresStore) SaveLadderTranches(ctx context.Context, tranches []Ladde
 // its tranches. This prevents a status=planned run with zero tranches, which
 // the cadence self-gate (keyed on any run's started_at) would otherwise use to
 // suppress the retry for the full cadence window. Scheduled tranches of the
-// same config that are already due at run.StartedAt are cancelled in the same
-// transaction so overdue rows cannot pile up. If run.ID is empty a fresh
+// same config that are already due at run.StartedAt are canceled in the same
+// transaction, so overdue rows are swept at each persisted run. If run.ID is empty a fresh
 // UUID is generated. Returns the persisted run row.
 func (s *PostgresStore) SaveLadderRunWithTranches(ctx context.Context, run *LadderRunDB, tranches []LadderTrancheDB) (*LadderRunDB, error) {
 	if run.ID == "" {
