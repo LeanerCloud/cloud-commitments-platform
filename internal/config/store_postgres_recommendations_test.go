@@ -509,3 +509,23 @@ func TestPostgresStore_SetRecommendationsCollectionError_DoesNotClearOwnerMarker
 }
 
 func float64Ptr(f float64) *float64 { return &f }
+
+func TestPostgresStore_UpsertRecommendations_ReplacesAzureWrongUnits(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := setupRecommendationsStore(ctx, t)
+	defer cleanup()
+	rec := config.RecommendationRecord{ID: "old-units", Provider: "azure", Service: "compute", Region: "westeurope", ResourceType: "Standard_D2s_v3", Count: 1, Term: 3, Payment: "all-upfront", UpfrontCost: 70, MonthlyCost: float64Ptr(10), Savings: 50}
+	collects := []config.SuccessfulCollect{{Provider: "azure"}}
+	now := time.Now().UTC()
+	require.NoError(t, store.UpsertRecommendations(ctx, now, []config.RecommendationRecord{rec}, collects))
+	rec.ID = "corrected"
+	rec.UpfrontCost = 3600
+	rec.MonthlyCost = nil
+	require.NoError(t, store.UpsertRecommendations(ctx, now.Add(time.Minute), []config.RecommendationRecord{rec}, collects))
+	got, err := store.ListStoredRecommendations(ctx, config.RecommendationFilter{Provider: "azure"})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "corrected", got[0].ID)
+	assert.Equal(t, 3600.0, got[0].UpfrontCost)
+	assert.Nil(t, got[0].MonthlyCost)
+}

@@ -124,6 +124,12 @@ func executeRedriveSuccessor(t *testing.T, successor *config.PurchaseExecution) 
 	running.Status = "running"
 
 	store := new(MockConfigStore)
+	for _, rec := range approved.Recommendations {
+		if rec.Provider == "azure" {
+			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(approved.Recommendations, nil).Once()
+			break
+		}
+	}
 	t.Cleanup(func() { store.AssertExpectations(t) })
 
 	store.On("GetExecutionByID", mock.Anything, approved.ExecutionID).Return(&approved, nil).Once()
@@ -287,6 +293,7 @@ func TestRetryOfUnknownProviderRowIsRefused(t *testing.T) {
 // first attempt had in fact landed.
 func TestRetryOfFailedAzureReservationStillPurchasesOnce(t *testing.T) {
 	failed := redriveFailedRow(redriveAzureRIExecID, "azure", "compute")
+	failed.Recommendations[0].ID = "current-azure"
 
 	tokens, err := purchasesFiredByRetry(t, failed, sessionRetryReq())
 

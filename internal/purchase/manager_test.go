@@ -688,9 +688,10 @@ func TestManager_RecoverStrandedApprovals_AzureReservationRedrives(t *testing.T)
 		Status:      "approved",
 		StepNumber:  1,
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "azure", Service: "compute", ResourceType: "Standard_D4s_v3", Region: "eastus", Count: 1, UpfrontCost: 300.0, Selected: true, Purchased: false},
+			{ID: "current-azure", Provider: "azure", Service: "compute", ResourceType: "Standard_D4s_v3", Region: "eastus", Count: 1, UpfrontCost: 300.0, Selected: true, Purchased: false},
 		},
 	}
+	mockStore.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(stranded.Recommendations, nil).Once()
 	runningRow := stranded
 	runningRow.Status = "running"
 

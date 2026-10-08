@@ -2,6 +2,8 @@ package config
 
 import "errors"
 
+var ErrAzurePricingNotReady = errors.New("azure pricing migration not ready")
+
 // ErrNotFound is returned when a requested config-store row does not exist.
 var ErrNotFound = errors.New("not found")
 
