@@ -660,6 +660,12 @@ func (m *MockConfigStore) SaveRIExchangeRecord(ctx context.Context, record *conf
 	return args.Error(0)
 }
 
+func (m *MockConfigStore) ReserveRIExchange(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	m.record("ReserveRIExchange", ctx, record, dailyCapUSD, perExchangeCapUSD)
+	args := m.Called(ctx, record, dailyCapUSD, perExchangeCapUSD)
+	return args.String(0), args.Error(1)
+}
+
 func (m *MockConfigStore) GetRIExchangeRecord(ctx context.Context, id string) (*config.RIExchangeRecord, error) {
 	m.record("GetRIExchangeRecord", ctx, id)
 	args := m.Called(ctx, id)

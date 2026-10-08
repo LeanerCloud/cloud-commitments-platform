@@ -330,6 +330,9 @@ func (m *mockConfigStore) ListStuckExecutions(ctx context.Context, statuses []st
 func (m *mockConfigStore) SaveRIExchangeRecord(ctx context.Context, record *config.RIExchangeRecord) error {
 	return nil
 }
+func (m *mockConfigStore) ReserveRIExchange(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	return "", errors.New("RI exchange reservation not configured in analytics test store")
+}
 func (m *mockConfigStore) GetRIExchangeRecord(ctx context.Context, id string) (*config.RIExchangeRecord, error) {
 	return nil, nil
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -179,6 +180,9 @@ func (m *mockConfigStoreForHealth) ListStuckExecutions(ctx context.Context, stat
 
 func (m *mockConfigStoreForHealth) SaveRIExchangeRecord(ctx context.Context, record *config.RIExchangeRecord) error {
 	return nil
+}
+func (m *mockConfigStoreForHealth) ReserveRIExchange(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	return "", errors.New("RI exchange reservation not configured in test store")
 }
 func (m *mockConfigStoreForHealth) GetRIExchangeRecord(ctx context.Context, id string) (*config.RIExchangeRecord, error) {
 	return nil, nil

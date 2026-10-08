@@ -2234,6 +2234,109 @@ func TestPGXMock_SaveRIExchangeRecord_InsertColumnAlignment(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestPGXMock_ReserveRIExchange_CommitsCeilingBeforeReturn(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	mock.ExpectBegin()
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg()).
+		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0.000001"))
+	mock.ExpectExec("INSERT INTO ri_exchange_history").WithArgs(anyArgsCfg(21)...).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+	record := &RIExchangeRecord{AccountID: "account-a", Region: "us-east-1", PaymentDue: "0.000001", Status: "processing", Mode: "auto"}
+	ceiling, err := store.ReserveRIExchange(context.Background(), record, "1.000000", "1.000000")
+	require.NoError(t, err)
+	assert.Equal(t, "0.999999", ceiling)
+	assert.Equal(t, ceiling, record.PaymentDue)
+	assert.NotEmpty(t, record.ID)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_ReserveRIExchange_RollsBackWhenQuoteExceedsHeadroom(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	mock.ExpectBegin()
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg()).
+		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("101.000000"))
+	mock.ExpectRollback()
+	record := &RIExchangeRecord{PaymentDue: "900", Status: "processing", Mode: "auto"}
+	_, err := store.ReserveRIExchange(context.Background(), record, "1000", "1000")
+	require.ErrorContains(t, err, "daily cap exceeded")
+	assert.Empty(t, record.ID)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_ReserveRIExchange_DatabaseFailuresDoNotReturnCeiling(t *testing.T) {
+	for _, stage := range []string{"begin", "lock", "read", "insert"} {
+		t.Run(stage, func(t *testing.T) {
+			mock := newMock(t)
+			store := storeWith(mock)
+			dbErr := errors.New(stage + " failed")
+			if stage == "begin" {
+				mock.ExpectBegin().WillReturnError(dbErr)
+			} else {
+				mock.ExpectBegin()
+				lock := mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey)
+				if stage == "lock" {
+					lock.WillReturnError(dbErr)
+				} else {
+					lock.WillReturnResult(pgxmock.NewResult("SELECT", 1))
+					read := mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg())
+					if stage == "read" {
+						read.WillReturnError(dbErr)
+					} else {
+						read.WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0"))
+						mock.ExpectExec("INSERT INTO ri_exchange_history").WithArgs(anyArgsCfg(21)...).WillReturnError(dbErr)
+					}
+				}
+				mock.ExpectRollback()
+			}
+			record := &RIExchangeRecord{PaymentDue: "900", Status: "processing", Mode: "auto"}
+			ceiling, err := store.ReserveRIExchange(context.Background(), record, "1000", "1000")
+			require.ErrorIs(t, err, dbErr)
+			assert.Empty(t, ceiling)
+			assert.Empty(t, record.ID)
+			assert.Equal(t, "900", record.PaymentDue)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestPGXMock_ReserveRIExchange_CommitFailureDoesNotReturnCeiling(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	mock.ExpectBegin()
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg()).
+		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0"))
+	mock.ExpectExec("INSERT INTO ri_exchange_history").WithArgs(anyArgsCfg(21)...).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit().WillReturnError(errors.New("commit failed"))
+	mock.ExpectRollback()
+	record := &RIExchangeRecord{PaymentDue: "900", Status: "processing", Mode: "auto"}
+	ceiling, err := store.ReserveRIExchange(context.Background(), record, "1000", "1000")
+	require.ErrorContains(t, err, "commit failed")
+	assert.Empty(t, ceiling)
+	assert.Empty(t, record.ID)
+	assert.Equal(t, "900", record.PaymentDue)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRIExchangeMicros_RejectsInvalidPrecision(t *testing.T) {
+	for _, value := range []string{"", "-1", "1.0000001", "100000000000000", "1/2", "NaN"} {
+		_, err := riExchangeMicros(value)
+		require.Error(t, err, value)
+	}
+	amount, err := riExchangeMicros("0.000001")
+	require.NoError(t, err)
+	assert.Equal(t, "0.000001", riExchangeUSD(amount))
+}
+
 // ─── CleanupOldExecutions ─────────────────────────────────────────────────────
 
 func TestPGXMock_CleanupOldExecutions_Success(t *testing.T) {
