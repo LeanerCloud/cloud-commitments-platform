@@ -11,6 +11,17 @@ import (
 
 var ErrStaleAzurePricing = errors.New("stale Azure recommendation pricing; refresh recommendations and submit a new purchase")
 
+func (m *Manager) loadCurrentAzurePricing(ctx context.Context) ([]config.RecommendationRecord, error) {
+	rows, err := m.config.ListStoredRecommendations(ctx, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true})
+	if err != nil {
+		if errors.Is(err, config.ErrAzurePricingNotReady) {
+			return nil, fmt.Errorf("%w: %w", ErrStaleAzurePricing, err)
+		}
+		return nil, fmt.Errorf("load current Azure recommendation pricing: %w", err)
+	}
+	return rows, nil
+}
+
 func (m *Manager) staleAzurePricingRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
 	var azure []config.RecommendationRecord
 	for i := range exec.Recommendations {
@@ -22,9 +33,9 @@ func (m *Manager) staleAzurePricingRefusal(ctx context.Context, exec *config.Pur
 	if len(azure) == 0 {
 		return nil
 	}
-	rows, err := m.config.ListStoredRecommendations(ctx, config.RecommendationFilter{Provider: "azure"})
+	rows, err := m.loadCurrentAzurePricing(ctx)
 	if err != nil {
-		return fmt.Errorf("load current Azure recommendation pricing: %w", err)
+		return err
 	}
 	byID := make(map[string]config.RecommendationRecord, len(rows))
 	for i := range rows {

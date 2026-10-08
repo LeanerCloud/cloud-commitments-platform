@@ -659,13 +659,14 @@ type PurchaseSuppression struct {
 // query rather than in SQL (avoids a computed column). These two filters are
 // independent and can be combined.
 type RecommendationFilter struct {
-	Provider      string   // "aws" / "azure" / "gcp" / "" (all)
-	Service       string   // "" = all services
-	Region        string   // "" = all regions
-	AccountIDs    []string // nil/empty = all accounts
-	MinSavingsUSD float64  // 0 = no floor on monthly savings dollar amount
-	MinSavingsPct float64  // 0 = no floor on savings percentage (0–100 scale)
-	ID            string   // "" = all ids; non-empty = exact match on the id column
+	RequireAzurePricingMigration bool
+	Provider                     string   // "aws" / "azure" / "gcp" / "" (all)
+	Service                      string   // "" = all services
+	Region                       string   // "" = all regions
+	AccountIDs                   []string // nil/empty = all accounts
+	MinSavingsUSD                float64  // 0 = no floor on monthly savings dollar amount
+	MinSavingsPct                float64  // 0 = no floor on savings percentage (0–100 scale)
+	ID                           string   // "" = all ids; non-empty = exact match on the id column
 }
 
 // PurchasePlanFilter parameterises ListPurchasePlans. Zero-value means "no

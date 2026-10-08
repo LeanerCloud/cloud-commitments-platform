@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -18,6 +19,8 @@ import (
 // 65535 parameter limit (each row has 9 columns → max ≈7280 rows; 500
 // gives 4500 params which stays conservative and leaves headroom).
 const recommendationsBatchSize = 500
+
+const azurePricingMigrationVersion = 106
 
 // ReplaceRecommendations wipes the recommendations table and reinserts the
 // full snapshot inside a single transaction. Used for a force-full-resync
@@ -364,12 +367,34 @@ func recOnDemandBaseline(rec *RecommendationRecord) (float64, bool) {
 	return *rec.MonthlyCost + rec.Savings + amortized, true
 }
 
+func (s *PostgresStore) checkAzurePricingMigration(ctx context.Context, required bool) error {
+	if !required {
+		return nil
+	}
+	var version int
+	var dirty bool
+	err := s.db.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAzurePricingNotReady
+	}
+	if err != nil {
+		return fmt.Errorf("check Azure pricing migration: %w", err)
+	}
+	if version < azurePricingMigrationVersion || dirty {
+		return ErrAzurePricingNotReady
+	}
+	return nil
+}
+
 // ListStoredRecommendations reads recommendations matching the filter.
 // SQL-pushed conditions (Provider, Service, Region, AccountIDs,
 // MinSavingsUSD) are applied in SQL so Postgres prunes the rows; the
 // MinSavingsPct filter is applied in-process because the on-demand
 // baseline lives inside the JSONB payload (not a native column).
 func (s *PostgresStore) ListStoredRecommendations(ctx context.Context, filter RecommendationFilter) ([]RecommendationRecord, error) {
+	if err := s.checkAzurePricingMigration(ctx, filter.RequireAzurePricingMigration); err != nil {
+		return nil, err
+	}
 	whereClause, args := buildRecommendationFilter(filter)
 	rows, err := s.db.Query(ctx, `SELECT payload FROM recommendations`+whereClause, args...)
 	if err != nil {

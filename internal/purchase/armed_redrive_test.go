@@ -204,7 +204,7 @@ func TestFirstAzureSavingsPlanPurchaseStillExecutes(t *testing.T) {
 	exec := armedExecution("azure", "savingsplans", 0, "approved")
 	exec.Recommendations[0].ID = "current-azure"
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
-	store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure"}).Return(exec.Recommendations, nil).Once()
+	store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(exec.Recommendations, nil).Once()
 	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
 	expectClaim(store, exec, []string{"approved", "pending", "notified"}, "running")
 

@@ -126,7 +126,7 @@ func executeRedriveSuccessor(t *testing.T, successor *config.PurchaseExecution) 
 	store := new(MockConfigStore)
 	for _, rec := range approved.Recommendations {
 		if rec.Provider == "azure" {
-			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure"}).Return(approved.Recommendations, nil).Once()
+			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(approved.Recommendations, nil).Once()
 			break
 		}
 	}

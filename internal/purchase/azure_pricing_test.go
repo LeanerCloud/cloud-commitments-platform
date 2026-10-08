@@ -42,6 +42,7 @@ func TestAzurePricingRefusal(t *testing.T) {
 			req.Count, req.UpfrontCost, req.MonthlyCost, stored.MonthlyCost = 1, 100, new(0.0), new(-math.SmallestNonzeroFloat64)
 		}, false, nil},
 		{"store error", nil, false, errors.New("database unavailable")},
+		{"migration not ready", nil, false, fmt.Errorf("readiness: %w", config.ErrAzurePricingNotReady)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -56,12 +57,17 @@ func TestAzurePricingRefusal(t *testing.T) {
 			if tc.missing {
 				rows = nil
 			}
-			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure"}).Return(rows, tc.storeErr).Maybe()
+			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(rows, tc.storeErr).Maybe()
 			err := mgr.executeAndFinalize(context.Background(), exec)
 			assert.Zero(t, recorder.count())
 			assert.Equal(t, "failed", exec.Status)
 			if tc.storeErr != nil {
 				assert.ErrorIs(t, err, tc.storeErr)
+				if errors.Is(tc.storeErr, config.ErrAzurePricingNotReady) {
+					assert.ErrorIs(t, err, ErrStaleAzurePricing)
+				} else {
+					assert.NotErrorIs(t, err, ErrStaleAzurePricing)
+				}
 			} else {
 				assert.ErrorIs(t, err, ErrStaleAzurePricing)
 			}
@@ -78,7 +84,7 @@ func TestAzurePricingRefusalEntryPoints(t *testing.T) {
 				exec.Recommendations[0].ID = ""
 			}
 			mgr, store, recorder := armedHarness(t, common.ServiceCompute)
-			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure"}).Return([]config.RecommendationRecord{}, nil).Maybe()
+			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return([]config.RecommendationRecord{}, nil).Maybe()
 			store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
 			var saved *config.PurchaseExecution
 			store.SavePurchaseExecutionFn = func(_ context.Context, e *config.PurchaseExecution) error {
@@ -132,7 +138,7 @@ func TestAzurePricingUnchangedStillPurchases(t *testing.T) {
 					stored.MonthlyCost = new(*variant.monthly * float64(count) / 2)
 				}
 				if variant.provider == "azure" {
-					store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure"}).Return([]config.RecommendationRecord{stored}, nil).Once()
+					store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return([]config.RecommendationRecord{stored}, nil).Once()
 				}
 				require.NoError(t, mgr.executeAndFinalize(context.Background(), exec))
 				assert.Equal(t, 1, recorder.count())

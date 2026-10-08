@@ -1190,7 +1190,7 @@ func TestAzureCorrectedPriceExceedsOldUnitsCap(t *testing.T) {
 }
 
 func TestStaleAzurePricingErrorMapping(t *testing.T) {
-	stale := purchase.ErrStaleAzurePricing
+	stale := fmt.Errorf("%w: %w", purchase.ErrStaleAzurePricing, config.ErrAzurePricingNotReady)
 	audit := fmt.Errorf("%w: %w", config.ErrAuditLoss, stale)
 	for _, mapped := range []error{executeFailureError("id", "approved", &config.PurchaseExecution{Status: "failed"}, stale), tokenActionError(stale)} {
 		ce, ok := IsClientError(mapped)
