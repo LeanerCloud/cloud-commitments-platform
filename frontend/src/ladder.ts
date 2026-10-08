@@ -194,9 +194,9 @@ function renderLadderingSection(globalEnabled: boolean): string {
         </div>
 
         <div class="form-row">
-          <label for="ladder-cfg-lookback-days">Lookback Days</label>
+          <label for="ladder-cfg-lookback-days">Lookback Days (minimum 10)</label>
           <input type="number" id="ladder-cfg-lookback-days"
-                 value="30" min="1" step="1">
+                 value="30" min="10" step="1">
         </div>
 
         <div class="form-row">
