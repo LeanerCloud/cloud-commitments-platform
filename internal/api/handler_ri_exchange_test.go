@@ -2552,3 +2552,69 @@ func TestExecuteApprovedExchange_LedgerWriteFailure_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "exch-h4-test",
 		"error must include the exchange ID for operator correlation with AWS")
 }
+
+// fourEyesExchangeBody is a valid AWS execute body used by the 4-eyes gate tests.
+const fourEyesExchangeBody = `{"ri_ids":["ri-123"],"target_offering_id":"off-1","target_count":1,"max_payment_due_usd":"250.50","region":"eu-central-1"}`
+
+// newFourEyesExecuteExchangeHandler builds an AWS handler whose session clears
+// permission, account scope and constraints, so the only remaining gate before
+// any exchange side effect is the 4-eyes policy under test.
+func newFourEyesExecuteExchangeHandler(t *testing.T, store *MockConfigStore) *Handler {
+	t.Helper()
+	ctx := context.Background()
+	const deploymentAccountID = "11111111-2222-3333-4444-555555555555"
+
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	mockAuth.On("ValidateSession", ctx, "exchange-token").Return(&Session{UserID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"}, nil)
+	mockAuth.On("HasPermissionAPI", ctx, "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", "execute", "ri-exchange").Return(true, nil)
+	allowAnyAccountScope(mockAuth)
+	mockAuth.On("HasPermissionForConstraintsAPI", ctx, "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", "execute", "ri-exchange", mock.Anything).Return(true, nil)
+
+	return &Handler{
+		auth:   mockAuth,
+		config: store,
+		reshapeAccountResolver: func(_ context.Context) (string, error) {
+			return deploymentAccountID, nil
+		},
+	}
+}
+
+// TestExecuteExchange_FourEyesRefusesDirectExecute pins issue #517: with
+// RequireDifferentApprover on, the direct AWS execute endpoint must refuse
+// before any exchange is attempted. The handler has no exchange client or
+// idempotency store wired, so any code path past the gate would panic.
+func TestExecuteExchange_FourEyesRefusesDirectExecute(t *testing.T) {
+	ctx := context.Background()
+	store := &MockConfigStore{}
+	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{RequireDifferentApprover: true}, nil)
+	h := newFourEyesExecuteExchangeHandler(t, store)
+
+	_, err := h.executeExchange(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"authorization": "Bearer exchange-token"},
+		Body:    fourEyesExchangeBody,
+	})
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a ClientError, got: %v", err)
+	assert.Equal(t, 403, ce.code)
+	assert.Equal(t, "direct RI exchange execution is disabled while 4-eyes approval mode is on; use the approval flow", ce.Error())
+}
+
+// TestExecuteExchange_FourEyesPolicyLookupErrorFailsClosed: an unreadable
+// global config must not be treated as "4-eyes off".
+func TestExecuteExchange_FourEyesPolicyLookupErrorFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := &MockConfigStore{}
+	store.On("GetGlobalConfig", mock.Anything).Return(nil, errors.New("db down"))
+	h := newFourEyesExecuteExchangeHandler(t, store)
+
+	_, err := h.executeExchange(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"authorization": "Bearer exchange-token"},
+		Body:    fourEyesExchangeBody,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "4-eyes policy check")
+	_, isClient := IsClientError(err)
+	assert.False(t, isClient, "a lookup failure is a server error, not a client refusal")
+}
