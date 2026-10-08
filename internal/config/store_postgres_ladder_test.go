@@ -524,3 +524,88 @@ func TestPostgresStore_SaveLadderRunWithTranches_AppendOnly(t *testing.T) {
 	require.NotNil(t, inFlight)
 	assert.InDelta(t, 5.5, *inFlight, 1e-6, "in-flight must sum both live scheduled generations (3.0 + 2.5)")
 }
+
+// TestPostgresStore_SaveLadderRunWithTranches_CancelsOverdue proves #544: with
+// no executor, each run cancels the config's already-due scheduled tranches
+// so the overdue set stays bounded, and a due-row sweep sees only live rows.
+func TestPostgresStore_SaveLadderRunWithTranches_CancelsOverdue(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	store := setupLadderStore(ctx, t)
+	configID := seedLadderConfigWithExtID(ctx, t, store, "444444444444")
+	otherID := seedLadderConfigWithExtID(ctx, t, store, "555555555555")
+	cfgID := configID
+	start := time.Now().UTC().Truncate(time.Microsecond)
+
+	newTranche := func(cfg, runID string, at time.Time) LadderTrancheDB {
+		return LadderTrancheDB{
+			ID: uuid.New().String(), ConfigID: &cfg, RunID: &runID,
+			LayerType: ladder.LayerConvertibleRI, Term: ladder.Term1Year,
+			PaymentOption: ladder.PaymentNoUpfront, Status: ladder.TrancheStatusScheduled,
+			AmountUSDHr: 1.0, ScheduledDate: at,
+		}
+	}
+	save := func(t *testing.T, cfg string, startedAt time.Time, trs ...LadderTrancheDB) {
+		t.Helper()
+		runID := *trs[0].RunID
+		run := &LadderRunDB{ID: runID, ConfigID: &cfg, StartedAt: startedAt, Status: ladder.RunStatusPlanned}
+		_, err := store.SaveLadderRunWithTranches(ctx, run, trs)
+		require.NoError(t, err)
+	}
+	countStatus := func(t *testing.T, cfg string, status ladder.TrancheStatus) int {
+		t.Helper()
+		var n int
+		require.NoError(t, store.db.QueryRow(ctx,
+			`SELECT count(*) FROM ladder_tranches WHERE config_id = $1 AND status = $2`,
+			cfg, string(status)).Scan(&n))
+		return n
+	}
+
+	otherRun := uuid.New().String()
+	save(t, otherID, start.Add(-30*24*time.Hour), newTranche(otherID, otherRun, start.Add(-7*24*time.Hour)))
+
+	// 12 weekly runs, each planning one tranche due at its own start and one
+	// two weeks out, with no executor in between.
+	for week := 0; week < 12; week++ {
+		at := start.Add(time.Duration(week-12) * 7 * 24 * time.Hour)
+		runID := uuid.New().String()
+		save(t, cfgID, at, newTranche(cfgID, runID, at), newTranche(cfgID, runID, at.Add(14*24*time.Hour)))
+	}
+	// Overdue rows that are not plain scheduled must survive the sweep: one
+	// fired, one completed, and one scheduled row already linked to an execution.
+	var planID, execID string
+	require.NoError(t, store.db.QueryRow(ctx, `INSERT INTO purchase_plans (name) VALUES ('ladder-544') RETURNING id`).Scan(&planID))
+	require.NoError(t, store.db.QueryRow(ctx,
+		`INSERT INTO purchase_executions (plan_id, scheduled_date) VALUES ($1, NOW()) RETURNING execution_id`, planID).Scan(&execID))
+	fired, completed, linked := newTranche(cfgID, "", start.Add(-24*time.Hour)), newTranche(cfgID, "", start.Add(-24*time.Hour)), newTranche(cfgID, "", start.Add(-24*time.Hour))
+	fired.RunID, completed.RunID, linked.RunID = nil, nil, nil
+	fired.Status, completed.Status, linked.ExecutionID = ladder.TrancheStatusFired, ladder.TrancheStatusCompleted, &execID
+	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{fired, completed, linked}))
+
+	// The final run starts now and sweeps every earlier due row.
+	finalRun := uuid.New().String()
+	save(t, cfgID, start, newTranche(cfgID, finalRun, start), newTranche(cfgID, finalRun, start.Add(14*24*time.Hour)))
+
+	var dueLive int
+	require.NoError(t, store.db.QueryRow(ctx,
+		`SELECT count(*) FROM ladder_tranches WHERE config_id = $1 AND status = 'scheduled' AND scheduled_date <= $2 AND execution_id IS NULL AND run_id <> $3`,
+		cfgID, start, finalRun).Scan(&dueLive))
+	assert.Equal(t, 0, dueLive, "no scheduled tranche from an earlier run may be overdue")
+	assert.Equal(t, 1, func() int {
+		var n int
+		require.NoError(t, store.db.QueryRow(ctx,
+			`SELECT count(*) FROM ladder_tranches WHERE config_id = $1 AND status = 'scheduled' AND execution_id IS NULL AND scheduled_date <= $2`,
+			cfgID, start).Scan(&n))
+		return n
+	}(), "only the current run's own due tranche may remain due")
+	// 12 day-0 tranches + 11 two-week tranches that are already due; the 12th
+	// two-week tranche is in the future and stays scheduled.
+	assert.Equal(t, 23, countStatus(t, cfgID, ladder.TrancheStatusCancelled), "overdue scheduled rows must be marked canceled, not deleted")
+	assert.Equal(t, 1, countStatus(t, cfgID, ladder.TrancheStatusFired), "an overdue fired row must be left alone")
+	assert.Equal(t, 1, countStatus(t, cfgID, ladder.TrancheStatusCompleted), "an overdue completed row must be left alone")
+	var linkedStatus string
+	require.NoError(t, store.db.QueryRow(ctx, `SELECT status FROM ladder_tranches WHERE id = $1`, linked.ID).Scan(&linkedStatus))
+	assert.Equal(t, string(ladder.TrancheStatusScheduled), linkedStatus, "an overdue row linked to an execution must be left alone")
+	assert.Equal(t, 1, countStatus(t, otherID, ladder.TrancheStatusScheduled), "another config's tranches must be untouched")
+	assert.Equal(t, 0, countStatus(t, otherID, ladder.TrancheStatusCancelled))
+}
