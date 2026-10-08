@@ -44,6 +44,8 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
       await route.fulfill({ json: saved });
     });
 
+    await page.route('**/api/ladder/runs?*', route => route.fulfill({ json: { total_count: 0, runs: [] } }));
+    await page.route('**/api/ladder/tranches?*', route => route.fulfill({ json: { total_count: 0, total_usd_hr: '0.000000', events: [] } }));
     await page.goto('/admin/purchasing');
     const modal = page.locator('#ladder-config-modal');
     const field = (name: string) => page.locator(`#ladder-cfg-${name}`);
