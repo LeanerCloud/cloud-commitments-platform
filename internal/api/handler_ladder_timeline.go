@@ -12,13 +12,13 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
-func (h *Handler) ladderTimelineScope(ctx context.Context, req *events.LambdaFunctionURLRequest) (config.LadderTimelineStore, string, string, *config.LadderTimelineCursor, error) {
+func (h *Handler) ladderTimelineScope(ctx context.Context, req *events.LambdaFunctionURLRequest) (store config.LadderTimelineStore, accountID, provider string, cursor *config.LadderTimelineCursor, err error) {
 	session, err := h.requirePermission(ctx, req, string(auth.ActionView), string(auth.ResourceConfig))
 	if err != nil {
 		return nil, "", "", nil, err
 	}
 	params := req.QueryStringParameters
-	accountID, provider := params["account_id"], params["provider"]
+	accountID, provider = params["account_id"], params["provider"]
 	if accountID == "" || provider == "" {
 		return nil, "", "", nil, NewClientError(400, "account_id and provider are required")
 	}
@@ -29,7 +29,7 @@ func (h *Handler) ladderTimelineScope(ctx context.Context, req *events.LambdaFun
 	if account.Provider != provider {
 		return nil, "", "", nil, NewClientError(404, "account not found")
 	}
-	if err := h.requirePermissionConstraints(ctx, session, auth.ActionView, auth.ResourceConfig, []auth.PermissionConstraints{{
+	if err = h.requirePermissionConstraints(ctx, session, auth.ActionView, auth.ResourceConfig, []auth.PermissionConstraints{{
 		AccountIDs: []string{accountID}, Providers: []string{provider}, StrictScope: true,
 	}}); err != nil {
 		return nil, "", "", nil, err
@@ -37,7 +37,7 @@ func (h *Handler) ladderTimelineScope(ctx context.Context, req *events.LambdaFun
 	if common.ProviderType(provider) != common.ProviderAWS {
 		return nil, "", "", nil, NewClientError(501, "Ladder planning is currently available only for AWS accounts")
 	}
-	cursor, err := ladderTimelineCursor(params)
+	cursor, err = ladderTimelineCursor(params)
 	if err != nil {
 		return nil, "", "", nil, err
 	}

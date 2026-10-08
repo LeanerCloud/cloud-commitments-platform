@@ -43,9 +43,11 @@ for (const width of [1280, 390]) {
     await canvas.scrollIntoViewIfNeeded();
     const box = (await canvas.boundingBox())!;
     const modal = page.locator('.ladder-event-editor');
-    for (let dx = 0; dx <= 48 && !await modal.isVisible(); dx += 4) {
-      for (let dy = -28; dy <= 12 && !await modal.isVisible(); dy += 4) {
-        await canvas.click({ position: { x: box.width / 2 + dx, y: box.height / 2 + dy } });
+    // The editor opens asynchronously; a click that lands on it after it opened is intercepted, which also means the hit was found.
+    search: for (let dx = 0; dx <= 48; dx += 4) {
+      for (let dy = -28; dy <= 12; dy += 4) {
+        await canvas.click({ position: { x: box.width / 2 + dx, y: box.height / 2 + dy }, timeout: 1000 }).catch(() => undefined);
+        if (await modal.isVisible()) break search;
       }
     }
     await expect(modal).toBeVisible();

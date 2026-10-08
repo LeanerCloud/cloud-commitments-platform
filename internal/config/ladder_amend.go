@@ -12,7 +12,7 @@ var (
 	ErrLadderAmendNotFound = errors.New("ladder tranche not found")
 	ErrLadderAmendConflict = errors.New("ladder tranche changed or is no longer editable")
 	ErrLadderAmendInvalid  = errors.New("ladder amendment exceeds the original run total or current per-run cap")
-	ladderAmountPattern    = regexp.MustCompile(`^(0|[1-9][0-9]{0,13})(\.[0-9]{1,6})?$`)
+	ladderAmountPattern    = regexp.MustCompile(`^(0|[1-9]\d{0,13})(\.\d{1,6})?$`)
 )
 
 type LadderAmendment struct {

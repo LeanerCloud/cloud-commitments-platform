@@ -10,9 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *PostgresStore) LadderTrancheScope(ctx context.Context, id string) (string, string, error) {
-	var accountID, provider string
-	err := s.db.QueryRow(ctx, `SELECT c.cloud_account_id,c.provider FROM ladder_tranches t
+func (s *PostgresStore) LadderTrancheScope(ctx context.Context, id string) (accountID, provider string, err error) {
+	err = s.db.QueryRow(ctx, `SELECT c.cloud_account_id,c.provider FROM ladder_tranches t
  JOIN ladder_configs c ON c.id=t.config_id
  JOIN ladder_runs r ON r.id=t.run_id AND r.config_id=c.id
  JOIN cloud_accounts a ON a.id=c.cloud_account_id AND a.provider=c.provider
@@ -72,7 +71,7 @@ func amendLadderTrancheTx(ctx context.Context, tx pgx.Tx, id, accountID, provide
 	if !tranche.editable(run.status, *amendment.ExpectedRevision) {
 		return ErrLadderAmendConflict
 	}
-	if err := checkLadderRunTotal(ctx, tx, run, tranche.amount, amendment.AmountUSDHr, result); err != nil {
+	if err = checkLadderRunTotal(ctx, tx, run, tranche.amount, amendment.AmountUSDHr, result); err != nil {
 		return err
 	}
 	err = tx.QueryRow(ctx, `UPDATE ladder_tranches SET amount_usd_hr=$2::numeric,scheduled_date=$3,revision=revision+1
