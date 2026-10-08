@@ -290,7 +290,22 @@ func newConfigExchangeStoreAdapter(store config.StoreInterface) *configExchangeS
 
 func (a *configExchangeStoreAdapter) SaveRIExchangeRecord(ctx context.Context, record *exchange.ExchangeRecord) error {
 	cfgRecord := exchangeToConfigRecord(record)
-	return a.store.SaveRIExchangeRecord(ctx, cfgRecord)
+	if err := a.store.SaveRIExchangeRecord(ctx, cfgRecord); err != nil {
+		return err
+	}
+	record.ID = cfgRecord.ID
+	return nil
+}
+
+func (a *configExchangeStoreAdapter) ReserveRIExchange(ctx context.Context, record *exchange.ExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	cfgRecord := exchangeToConfigRecord(record)
+	ceiling, err := a.store.ReserveRIExchange(ctx, cfgRecord, dailyCapUSD, perExchangeCapUSD)
+	if err != nil {
+		return "", err
+	}
+	record.ID = cfgRecord.ID
+	record.PaymentDue = cfgRecord.PaymentDue
+	return ceiling, nil
 }
 
 func (a *configExchangeStoreAdapter) CancelAllPendingExchanges(ctx context.Context) (int64, error) {
@@ -320,6 +335,10 @@ func (a *configExchangeStoreAdapter) GetRIExchangeDailySpend(ctx context.Context
 
 func (a *configExchangeStoreAdapter) CompleteRIExchange(ctx context.Context, id, exchangeID string) error {
 	return a.store.CompleteRIExchange(ctx, id, exchangeID)
+}
+
+func (a *configExchangeStoreAdapter) CompleteRIExchangeWithPayment(ctx context.Context, id, exchangeID, acceptedPaymentDue string) error {
+	return a.store.CompleteRIExchangeWithPayment(ctx, id, exchangeID, acceptedPaymentDue)
 }
 
 func (a *configExchangeStoreAdapter) FailRIExchange(ctx context.Context, id, errorMsg string) error {

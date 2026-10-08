@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -193,9 +194,23 @@ func TestConvertForAutoExchange(t *testing.T) {
 
 func TestConfigExchangeStoreAdapter(t *testing.T) {
 	savedRecord := (*config.RIExchangeRecord)(nil)
+	completedID := ""
 	mockStore := &mockConfigStoreForExchange{
 		saveRIExchangeRecordFunc: func(ctx context.Context, record *config.RIExchangeRecord) error {
 			savedRecord = record
+			record.ID = "saved-id"
+			return nil
+		},
+		reserveRIExchangeFunc: func(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+			savedRecord = record
+			record.ID = "reserved-id"
+			record.PaymentDue = "10.000000"
+			return record.PaymentDue, nil
+		},
+		completeWithPaymentFunc: func(ctx context.Context, id, exchangeID, acceptedPaymentDue string) error {
+			completedID = id
+			testutil.AssertEqual(t, "exchange-accepted", exchangeID)
+			testutil.AssertEqual(t, "9.500000", acceptedPaymentDue)
 			return nil
 		},
 		cancelAllPendingFunc: func(ctx context.Context) (int64, error) {
@@ -232,6 +247,23 @@ func TestConfigExchangeStoreAdapter(t *testing.T) {
 		testutil.AssertEqual(t, "123456789", savedRecord.AccountID)
 		testutil.AssertEqual(t, "m5.large", savedRecord.SourceInstanceType)
 		testutil.AssertEqual(t, "m6i.large", savedRecord.TargetInstanceType)
+		testutil.AssertEqual(t, "saved-id", record.ID)
+	})
+
+	t.Run("ReserveRIExchange", func(t *testing.T) {
+		ladderRunID := "ladder-run-1"
+		record := &exchange.ExchangeRecord{PaymentDue: "5", Status: "processing", Mode: "auto", LadderRunID: &ladderRunID}
+		ceiling, err := adapter.ReserveRIExchange(context.Background(), record, "20", "10")
+		testutil.AssertNoError(t, err)
+		testutil.AssertEqual(t, "10.000000", ceiling)
+		testutil.AssertEqual(t, "reserved-id", record.ID)
+		testutil.AssertEqual(t, ceiling, record.PaymentDue)
+		if savedRecord.LadderRunID == nil {
+			t.Fatal("reservation lost ladder run linkage")
+		}
+		testutil.AssertEqual(t, ladderRunID, *savedRecord.LadderRunID)
+		testutil.AssertNoError(t, adapter.CompleteRIExchangeWithPayment(context.Background(), record.ID, "exchange-accepted", "9.500000"))
+		testutil.AssertEqual(t, record.ID, completedID)
 	})
 
 	t.Run("CancelAllPendingExchanges", func(t *testing.T) {
@@ -589,9 +621,25 @@ func TestExecuteRIExchangeReshape_AutoMode(t *testing.T) {
 	ctx := testutil.TestContext(t)
 
 	var savedRecords []*config.RIExchangeRecord
+	reserved := false
 	store := &mockConfigStoreForExchange{
 		saveRIExchangeRecordFunc: func(ctx context.Context, record *config.RIExchangeRecord) error {
 			savedRecords = append(savedRecords, record)
+			return nil
+		},
+		reserveRIExchangeFunc: func(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+			reserved = true
+			record.ID = "auto-reservation-id"
+			record.PaymentDue = "100.000000"
+			savedRecords = append(savedRecords, record)
+			return record.PaymentDue, nil
+		},
+		completeWithPaymentFunc: func(ctx context.Context, id, exchangeID, acceptedPaymentDue string) error {
+			if id != "auto-reservation-id" {
+				return fmt.Errorf("wrong reservation ID: %s", id)
+			}
+			savedRecords[0].Status = "completed"
+			savedRecords[0].PaymentDue = acceptedPaymentDue
 			return nil
 		},
 	}
@@ -646,6 +694,10 @@ func TestExecuteRIExchangeReshape_AutoMode(t *testing.T) {
 				}, nil
 			},
 			executeFunc: func(ctx context.Context, req exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+				if !reserved {
+					t.Error("Execute called before reservation")
+				}
+				testutil.AssertEqual(t, "100.000000", req.MaxPaymentDueUSD.FloatString(6))
 				return "exch-auto-1", &exchange.ExchangeQuoteSummary{
 					IsValidExchange:  true,
 					PaymentDueUSD:    new(big.Rat).SetFloat64(3.50),
@@ -676,20 +728,29 @@ func TestExecuteRIExchangeReshape_AutoMode(t *testing.T) {
 func TestExecuteRIExchangeReshape_DailyCapHitMidRun(t *testing.T) {
 	ctx := testutil.TestContext(t)
 
-	// Track daily spend: increases after each completed exchange
-	dailySpendCalls := 0
+	// The second quote cannot fit after the first reservation is settled.
 	var savedRecords []*config.RIExchangeRecord
 	store := &mockConfigStoreForExchange{
 		saveRIExchangeRecordFunc: func(ctx context.Context, record *config.RIExchangeRecord) error {
 			savedRecords = append(savedRecords, record)
 			return nil
 		},
-		getDailySpendFunc: func(ctx context.Context, date time.Time) (string, error) {
-			dailySpendCalls++
-			if dailySpendCalls == 1 {
-				return "0", nil // first exchange: no prior spend
+		reserveRIExchangeFunc: func(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+			if len(savedRecords) > 0 {
+				return "", fmt.Errorf("RI exchange daily cap exceeded")
 			}
-			return "8.00", nil // second exchange: first exchange's $8 already counted
+			record.ID = "first-reservation"
+			record.PaymentDue = "10.000000"
+			savedRecords = append(savedRecords, record)
+			return record.PaymentDue, nil
+		},
+		completeWithPaymentFunc: func(ctx context.Context, id, exchangeID, acceptedPaymentDue string) error {
+			if id != "first-reservation" {
+				return fmt.Errorf("wrong reservation ID: %s", id)
+			}
+			savedRecords[0].Status = "completed"
+			savedRecords[0].PaymentDue = acceptedPaymentDue
+			return nil
 		},
 	}
 
@@ -783,7 +844,7 @@ func TestExecuteRIExchangeReshape_DailyCapHitMidRun(t *testing.T) {
 		}
 	}
 
-	// Verify records saved: 1 completed + 1 failed
+	// Only the successful exchange creates a ledger row.
 	completedCount := 0
 	failedCount := 0
 	for _, r := range savedRecords {
@@ -795,7 +856,7 @@ func TestExecuteRIExchangeReshape_DailyCapHitMidRun(t *testing.T) {
 		}
 	}
 	testutil.AssertEqual(t, 1, completedCount)
-	testutil.AssertEqual(t, 1, failedCount)
+	testutil.AssertEqual(t, 0, failedCount)
 }
 
 // --- Mock types ---
@@ -805,6 +866,8 @@ type mockConfigStoreForExchange struct {
 	globalConfig              *config.GlobalConfig
 	globalConfigErr           error
 	saveRIExchangeRecordFunc  func(ctx context.Context, record *config.RIExchangeRecord) error
+	reserveRIExchangeFunc     func(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error)
+	completeWithPaymentFunc   func(ctx context.Context, id, exchangeID, acceptedPaymentDue string) error
 	cancelAllPendingFunc      func(ctx context.Context) (int64, error)
 	cancelPendingByOriginFunc func(ctx context.Context, origin common.ExchangeOrigin) (int64, error)
 	getDailySpendFunc         func(ctx context.Context, date time.Time) (string, error)
@@ -823,6 +886,20 @@ func (m *mockConfigStoreForExchange) GetGlobalConfig(ctx context.Context) (*conf
 func (m *mockConfigStoreForExchange) SaveRIExchangeRecord(ctx context.Context, record *config.RIExchangeRecord) error {
 	if m.saveRIExchangeRecordFunc != nil {
 		return m.saveRIExchangeRecordFunc(ctx, record)
+	}
+	return nil
+}
+
+func (m *mockConfigStoreForExchange) ReserveRIExchange(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	if m.reserveRIExchangeFunc != nil {
+		return m.reserveRIExchangeFunc(ctx, record, dailyCapUSD, perExchangeCapUSD)
+	}
+	return "", errors.New("RI exchange reservation not configured in test store")
+}
+
+func (m *mockConfigStoreForExchange) CompleteRIExchangeWithPayment(ctx context.Context, id, exchangeID, acceptedPaymentDue string) error {
+	if m.completeWithPaymentFunc != nil {
+		return m.completeWithPaymentFunc(ctx, id, exchangeID, acceptedPaymentDue)
 	}
 	return nil
 }
