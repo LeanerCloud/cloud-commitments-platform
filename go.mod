@@ -17,7 +17,7 @@ require (
 
 require (
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/compute v1.54.0 // indirect
+	cloud.google.com/go/compute v1.54.0
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.7.0 // indirect
 	cloud.google.com/go/longrunning v0.9.0 // indirect
@@ -51,7 +51,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
-	github.com/googleapis/gax-go/v2 v2.21.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.21.0
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -87,7 +87,7 @@ require (
 	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261008100513-a9a426224031
 	github.com/LeanerCloud/cloud-commitments-go/providers/aws v0.0.0-20261003204812-9962786e0695
 	github.com/LeanerCloud/cloud-commitments-go/providers/azure v0.0.0-20261007130138-e24345ce68f8
-	github.com/LeanerCloud/cloud-commitments-go/providers/gcp v0.0.0-20260928214714-ce9513612901
+	github.com/LeanerCloud/cloud-commitments-go/providers/gcp v0.0.0-20260929223111-a32fd1a178e9
 	github.com/aws/aws-lambda-go v1.47.0
 	github.com/aws/aws-sdk-go-v2/service/kms v1.50.4
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.89.0
