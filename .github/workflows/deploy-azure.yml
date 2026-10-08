@@ -435,42 +435,30 @@ jobs:
           echo "Waiting 30 seconds for Container App to be ready..."
           sleep 30
 
-      - name: Test health endpoint
-        run: |
-          URL="${{ steps.get-url.outputs.url }}"
-          echo "Testing health endpoint: $URL/health"
-
-          for i in {1..5}; do
-            # /health reports but never triggers the lazy DB init on the HTTP
-            # server; any /api/ request does. /health below is the gate.
-            curl -s -o /dev/null --max-time 60 "$URL/api/auth/check-admin" || true
-            # /health returns HTTP 200 even when degraded; the body is the verdict.
-            if RESPONSE=$(curl -fsS --max-time 10 "$URL/health"); then
-              echo "Response: $RESPONSE"
-              if jq -e '.status == "healthy"' > /dev/null <<< "$RESPONSE"; then
-                echo "Health check passed!"
-                exit 0
-              fi
-            fi
-            echo "Attempt $i failed, retrying in 10 seconds..."
-            sleep 10
-          done
-
-          echo "Health check failed after 5 attempts"
-          exit 1
-
-      # Needs the repo for scripts/wait-for-healthy.sh. Rollout race (#513):
-      # a probe can land on the new revision while it is still initializing
-      # (auth_store "not initialized"), so one unhealthy response must not fail
-      # the step. The script requires HEALTH_REQUIRED_STREAK consecutive healthy
-      # responses within HEALTH_MAX_ATTEMPTS rounds and fails with the last body
-      # otherwise.
+      # Needs the repo for scripts/wait-for-healthy.sh, used by both gates below.
       - name: Checkout code
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           sparse-checkout: scripts/wait-for-healthy.sh
 
+      # Fast fail gate: the server initializes its database in the background
+      # at startup, so no warm-up request is needed to make progress (#488).
+      # /ready answers 503 while this replica is still initializing, which
+      # curl -f turns into a failed attempt.
+      - name: Test readiness endpoint
+        env:
+          APP_URL: ${{ steps.get-url.outputs.url }}
+          HEALTH_REQUIRED_STREAK: "1"
+          HEALTH_MAX_ATTEMPTS: "5"
+          HEALTH_INTERVAL_SECONDS: "10"
+        run: bash scripts/wait-for-healthy.sh "$APP_URL"
+
+      # Rollout race (#513): a probe can land on the new revision while it is
+      # still initializing (auth_store "not initialized"), so one not-ready
+      # response must not fail the step. The script requires
+      # HEALTH_REQUIRED_STREAK consecutive ready responses within
+      # HEALTH_MAX_ATTEMPTS rounds and fails with the last body otherwise.
       - name: Run smoke tests
         env:
           APP_URL: ${{ steps.get-url.outputs.url }}

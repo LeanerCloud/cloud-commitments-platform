@@ -7,6 +7,10 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 )
 
 // HealthStatus represents the overall health of the application.
@@ -23,11 +27,65 @@ type CheckResult struct {
 	Message string `json:"message,omitempty"`
 }
 
-// handleHealthCheck returns the health status of the application.
+// handleHealthCheck returns the liveness status of the application.
+//
+// This endpoint is the LIVENESS contract: it always answers HTTP 200 so
+// orchestrator liveness/startup probes never restart or kill a process that is
+// up but whose dependencies are not connected yet. The verdict is in the JSON
+// body ("healthy" / "degraded"). Traffic admission is a separate question
+// answered by handleReadinessCheck (#488).
 func (app *Application) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
+	writeHealthResponse(w, app.appConfig.CORSAllowedOrigin, http.StatusOK, app.collectHealth(ctx))
+}
+
+// handleReadinessCheck returns the READINESS status of the application.
+//
+// Readiness is the traffic-admission contract: a replica that has not completed
+// required initialization answers 503, so the load balancer stops sending it
+// requests. /health only reported "degraded" in the body while still answering
+// 200, which admitted cold replicas to traffic and broke the deployment smoke
+// gate (#488). Ready means required initialization is done; the body carries
+// the same checks as /health so an operator sees which one is still pending.
+// A failed migration run does not make the replica unready (see ready).
+func (app *Application) handleReadinessCheck(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	health := app.collectHealth(ctx)
+	status := http.StatusOK
+	if !health.ready() {
+		status = http.StatusServiceUnavailable
+	}
+	writeHealthResponse(w, app.appConfig.CORSAllowedOrigin, status, health)
+}
+
+// ready reports whether the replica may take traffic: the stores are connected
+// and the first migration attempt has finished. A failed migration run stays
+// "degraded" in the body but is still ready. ensureDB never retries migrations,
+// so treating it as unready would pull every replica out of rotation after one
+// transient error (e.g. a lock timeout) with nothing to bring them back.
+func (h HealthStatus) ready() bool {
+	for name, check := range h.Checks {
+		if name == "migrations" {
+			if check.Status == "pending" {
+				return false
+			}
+			continue
+		}
+		if check.Status != "healthy" {
+			return false
+		}
+	}
+	return true
+}
+
+// collectHealth runs every readiness/health check and folds them into one
+// overall status. Shared by /health and /ready so the two endpoints can never
+// drift on what "initialized" means.
+func (app *Application) collectHealth(ctx context.Context) HealthStatus {
 	health := HealthStatus{
 		Status:    "healthy",
 		Version:   app.Version,
@@ -35,15 +93,28 @@ func (app *Application) handleHealthCheck(w http.ResponseWriter, r *http.Request
 		Checks:    make(map[string]CheckResult),
 	}
 
-	// Check configuration store
-	health.Checks["config_store"] = app.checkConfigStore(ctx)
-	if health.Checks["config_store"].Status != "healthy" {
-		health.Status = "degraded"
-	}
+	// Check configuration and auth stores. ensureDB rewrites Config/Auth/DB
+	// under dbMu and holds it for the full initialization, migrations
+	// included; these endpoints must never block behind that. Snapshot the
+	// pointers when the mutex is free, and while initialization holds it
+	// report both stores as pending rather than race on half-written state.
+	if app.dbMu.TryLock() {
+		configStore, authService, db := app.Config, app.Auth, app.DB
+		app.dbMu.Unlock()
 
-	// Check auth store
-	health.Checks["auth_store"] = app.checkAuthStore(ctx)
-	if health.Checks["auth_store"].Status != "healthy" {
+		health.Checks["config_store"] = app.checkConfigStore(ctx, configStore, db)
+		if health.Checks["config_store"].Status != "healthy" {
+			health.Status = "degraded"
+		}
+
+		health.Checks["auth_store"] = app.checkAuthStore(ctx, authService)
+		if health.Checks["auth_store"].Status != "healthy" {
+			health.Status = "degraded"
+		}
+	} else {
+		pending := CheckResult{Status: "pending", Message: "database initialization in progress"}
+		health.Checks["config_store"] = pending
+		health.Checks["auth_store"] = pending
 		health.Status = "degraded"
 	}
 
@@ -55,14 +126,14 @@ func (app *Application) handleHealthCheck(w http.ResponseWriter, r *http.Request
 		health.Status = "degraded"
 	}
 
-	// Always return 200 for the health endpoint so startup/liveness probes pass.
-	// The actual health status is in the JSON body. "degraded" means the app is
-	// running but some dependencies (like DB) aren't connected yet - this is
-	// expected during cold starts with lazy DB initialization.
+	return health
+}
 
-	// Write response with security headers and CORS
-	setHealthResponseHeaders(w, app.appConfig.CORSAllowedOrigin)
-	w.WriteHeader(http.StatusOK)
+// writeHealthResponse encodes a health payload with the security headers and
+// CORS both health endpoints share.
+func writeHealthResponse(w http.ResponseWriter, corsOrigin string, status int, health HealthStatus) {
+	setHealthResponseHeaders(w, corsOrigin)
+	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(health); err != nil {
 		// Body write failed after headers are sent; log for parity with
 		// handleScheduledHTTP which already logs its encode error (04-L4).
@@ -98,10 +169,12 @@ func (app *Application) checkMigrations() CheckResult {
 	}
 }
 
-// checkConfigStore checks the health of the configuration store.
-func (app *Application) checkConfigStore(ctx context.Context) CheckResult {
+// checkConfigStore checks the health of the configuration store. The store and
+// connection come in as a snapshot taken under dbMu by collectHealth, so this
+// function never reads pointers ensureDB may be rewriting.
+func (app *Application) checkConfigStore(ctx context.Context, configStore config.StoreInterface, db *database.Connection) CheckResult {
 	// Check if config store exists
-	if app.Config == nil {
+	if configStore == nil {
 		// If using PostgreSQL with lazy initialization, DB might not be connected yet
 		if app.dbConfig != nil {
 			return CheckResult{
@@ -116,8 +189,8 @@ func (app *Application) checkConfigStore(ctx context.Context) CheckResult {
 	}
 
 	// If using PostgreSQL, check database connection health
-	if app.DB != nil {
-		if err := app.DB.HealthCheck(ctx); err != nil {
+	if db != nil {
+		if err := db.HealthCheck(ctx); err != nil {
 			return CheckResult{
 				Status:  "unhealthy",
 				Message: fmt.Sprintf("Database health check failed: %v", err),
@@ -154,9 +227,11 @@ func setHealthResponseHeaders(w http.ResponseWriter, corsOrigin string) {
 	}
 }
 
-// checkAuthStore checks the health of the auth store.
-func (app *Application) checkAuthStore(ctx context.Context) CheckResult {
-	if app.Auth == nil {
+// checkAuthStore checks the health of the auth store. The service comes in as
+// a snapshot taken under dbMu by collectHealth, so this function never reads a
+// pointer ensureDB may be rewriting.
+func (app *Application) checkAuthStore(ctx context.Context, authService *auth.Service) CheckResult {
+	if authService == nil {
 		return CheckResult{
 			Status:  "unhealthy",
 			Message: "Auth service not initialized",
@@ -164,7 +239,7 @@ func (app *Application) checkAuthStore(ctx context.Context) CheckResult {
 	}
 
 	// Ping the database to verify connection is healthy
-	if err := app.Auth.Ping(ctx); err != nil {
+	if err := authService.Ping(ctx); err != nil {
 		return CheckResult{
 			Status:  "unhealthy",
 			Message: fmt.Sprintf("Auth store ping failed: %v", err),

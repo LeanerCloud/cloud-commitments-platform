@@ -188,8 +188,12 @@ resource "azurerm_cdn_frontdoor_origin_group" "container_apps" {
     successful_samples_required = 3
   }
 
+  # /ready answers 503 until the origin replica has completed initialization,
+  # so Front Door stops routing to cold origins (#488). When every origin
+  # fails its probe Front Door treats all as healthy, so a transient database
+  # blip cannot hard-outage the site through this probe.
   health_probe {
-    path                = "/health"
+    path                = "/ready"
     request_type        = "GET"
     protocol            = "Https"
     interval_in_seconds = 100

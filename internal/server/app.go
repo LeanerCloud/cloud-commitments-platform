@@ -86,6 +86,11 @@ type Application struct {
 	migrationsTimeout time.Duration
 	migrationMu       sync.Mutex
 
+	// initRetryDelay is the pause between background database-initialization
+	// attempts (see startBackgroundInit). Zero means backgroundInitRetryDelay.
+	// Only tests set it.
+	initRetryDelay time.Duration
+
 	// encKeySource is the env var name that resolved the credential encryption
 	// key (e.g. "CREDENTIAL_ENCRYPTION_KEY_SECRET_NAME"). Set during
 	// reinitializeAfterConnect; surfaced via /health.
@@ -634,8 +639,10 @@ func (app *Application) ensureDB(ctx context.Context) error {
 	log.Println("PostgreSQL connection established successfully")
 
 	// Run migrations if AutoMigrate is enabled. Failures are non-fatal:
-	// we log, surface via /health's migrations check, and proceed. The app
-	// stays up; handlers that need the missing schema error at query time.
+	// we log, surface via the migrations check in /health and /ready, and
+	// proceed. The app stays up and ready (/ready only waits for the first
+	// attempt to finish); handlers that need the missing schema error at
+	// query time.
 	// See specs/migration-resilience.md (or the plan) for the rationale.
 	if app.dbConfig.AutoMigrate {
 		log.Println("Running database migrations...")
@@ -643,6 +650,11 @@ func (app *Application) ensureDB(ctx context.Context) error {
 		adminEmail := os.Getenv("ADMIN_EMAIL")
 		adminPassword, err := app.resolveAdminPassword(ctx)
 		if err != nil {
+			// Same cleanup as the reinitializeAfterConnect failure path below:
+			// the retry loop (and repeated lazy attempts) would otherwise leak
+			// a pool per attempt while secret resolution keeps failing.
+			dbConn.Close()
+			app.DB = nil
 			return err // secret-resolution failure is still fatal — env/config, not a migration runtime error
 		}
 
