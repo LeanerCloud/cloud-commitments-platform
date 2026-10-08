@@ -159,16 +159,18 @@ prompt verbatim.
 
 Merge only at the reviewed SHA, and only when all of these cover it:
 
-- An independent adversarial review of the full PR diff on Opus 5.5
-  (exact model `claude-opus-5-5`; never Fable, a floating alias, or a
-  cross-provider substitute) names the SHA.
+- A capable independent reviewer adversarially reviews the full PR diff
+  and names the SHA.
 - All actionable findings from any reviewer (independent review,
   CodeRabbit, CI) are resolved. CodeRabbit is optional when
   exact-revision local verification plus a thorough independent review
   cover the SHA; otherwise run the loop above. CI is green on the SHA.
 - Local verification exercises the real affected scenario on macOS
-  (Linux via CI; Windows out of scope). Label fixture- or mock-based
-  evidence as such; it does not count as real-scenario verification.
+  (Linux via CI; Windows out of scope). Realistic fixtures, mocks,
+  recorded responses or local integration count when they exercise the
+  actual affected path and data shape, with fail-before/pass-after
+  regression proof where applicable. Label that evidence and any
+  remaining real-account verification gaps honestly.
 - The verdict, the reviewed SHA and the local verification evidence are
   recorded on the PR itself.
 
