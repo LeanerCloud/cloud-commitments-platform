@@ -127,7 +127,7 @@ func lockLadderTranche(ctx context.Context, tx pgx.Tx, id string, run lockedLadd
 
 func checkLadderRunTotal(ctx context.Context, tx pgx.Tx, run lockedLadderRun, oldAmount, newAmount string, result *LadderAmendmentResult) error {
 	var allowed bool
-	err := tx.QueryRow(ctx, `SELECT total::text,total<=$4::numeric AND ($5::numeric IS NULL OR total<=$5::numeric)
+	err := tx.QueryRow(ctx, `SELECT total::text,$3::numeric<=$2::numeric OR (total<=$4::numeric AND ($5::numeric IS NULL OR total<=$5::numeric))
  FROM (SELECT COALESCE(SUM(amount_usd_hr),0)-$2::numeric+$3::numeric AS total
  FROM ladder_tranches WHERE run_id=$1) totals`, run.runID, oldAmount, newAmount, run.originalTotal, run.cap).
 		Scan(&result.RunTotalUSDHr, &allowed)

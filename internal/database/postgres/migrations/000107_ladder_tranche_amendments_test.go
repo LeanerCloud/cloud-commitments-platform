@@ -87,3 +87,24 @@ func TestMigration_LadderTrancheAmendments(t *testing.T) {
 		SELECT 1 FROM information_schema.tables WHERE table_name = 'ladder_tranche_amendments')`).Scan(&hasTable))
 	assert.True(t, hasTable, "amendment table must survive the refused rollback")
 }
+
+func TestMigration_LadderTrancheAmendmentsRollbackWhenEmpty(t *testing.T) {
+	ctx := context.Background()
+	path := getMigrationsPath()
+	container, err := testhelpers.SetupPostgresContainer(ctx, t)
+	require.NoError(t, err)
+	defer container.Cleanup(ctx)
+	pool := container.DB.Pool()
+
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, 107))
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, 106), "empty amendment history must not block rollback")
+
+	var leftovers int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM information_schema.columns
+		WHERE (table_name = 'ladder_tranches' AND column_name = 'revision')`).Scan(&leftovers))
+	assert.Zero(t, leftovers)
+	var hasTable bool
+	require.NoError(t, pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM information_schema.tables WHERE table_name = 'ladder_tranche_amendments')`).Scan(&hasTable))
+	assert.False(t, hasTable)
+}

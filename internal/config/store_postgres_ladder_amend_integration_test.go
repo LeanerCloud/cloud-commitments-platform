@@ -80,18 +80,22 @@ func TestLadderAmendmentAuditAndSiblingConcurrency(t *testing.T) {
 	require.ErrorIs(t, err, ErrLadderAmendNotFound)
 	one := int64(1)
 	amendment.ExpectedRevision = &one
-	amendment.AmountUSDHr = "5.000000"
+	amendment.AmountUSDHr = "7.000000"
 	_, err = store.db.Exec(ctx, "UPDATE ladder_configs SET max_hourly_commit_per_run=8 WHERE id=$1", cfgID)
 	require.NoError(t, err)
 	_, err = store.AmendLadderTranche(ctx, changedID, accountID, "aws", "actor", amendment)
 	require.ErrorIs(t, err, ErrLadderAmendInvalid)
+	amendment.AmountUSDHr = "5.000000"
+	reduced, err := store.AmendLadderTranche(ctx, changedID, accountID, "aws", "actor", amendment)
+	require.NoError(t, err, "a reduction must be allowed even when the run total still exceeds a later-lowered cap")
+	require.Equal(t, "9.000000", reduced.RunTotalUSDHr)
 	_, err = store.db.Exec(ctx, "UPDATE ladder_runs SET status=$2 WHERE id=$1", run.ID, string(ladder.RunStatusAwaitingApproval))
 	require.NoError(t, err)
 	_, err = store.AmendLadderTranche(ctx, changedID, accountID, "aws", "actor", amendment)
 	require.ErrorIs(t, err, ErrLadderAmendConflict)
 	var count int
 	require.NoError(t, store.db.QueryRow(ctx, "SELECT COUNT(*) FROM ladder_tranche_amendments").Scan(&count))
-	require.Equal(t, 1, count)
+	require.Equal(t, 2, count)
 	original, err := store.GetLadderRun(ctx, run.ID)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"original":true}`, string(original.Plan))
