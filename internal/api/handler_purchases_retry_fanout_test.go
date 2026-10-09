@@ -66,7 +66,7 @@ func fanoutRecs() []config.RecommendationRecord {
 // fanoutRootRecs is a root step's rec set: one rec per plan account, because
 // the fan-out buys each account's own recs only (platform#631).
 func fanoutRootRecs() []config.RecommendationRecord {
-	var recs []config.RecommendationRecord
+	recs := make([]config.RecommendationRecord, 0, 3)
 	for _, id := range []string{fanoutAcctA, fanoutAcctB, fanoutAcctC} {
 		rec := fanoutRecs()[0]
 		rec.CloudAccountID = strPtr(id)

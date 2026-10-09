@@ -202,7 +202,7 @@ func rampStepRecommendation() []config.RecommendationRecord {
 // rampStepRecommendationsPerAccount is the step's rec set: one rec per plan
 // account, since the fan-out buys each account's own recs only (platform#631).
 func (f *rampStepFixture) rampStepRecommendationsPerAccount() []config.RecommendationRecord {
-	var recs []config.RecommendationRecord
+	recs := make([]config.RecommendationRecord, 0, len(f.accounts))
 	for i := range f.accounts {
 		id := f.accounts[i].ID
 		rec := rampStepRecommendation()[0]
