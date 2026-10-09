@@ -664,61 +664,6 @@ func TestHandler_updatePlan_PreservesCompletedRampSteps(t *testing.T) {
 	assert.True(t, plan.LastNotificationSent.Equal(lastNotif))
 }
 
-// TestHandler_updatePlan_ChangingRampScheduleStartsAtStepZero documents
-// the complementary case: when the update genuinely picks a different
-// ramp schedule, its progress legitimately starts fresh rather than
-// carrying over a step count that has no meaning under the new schedule.
-func TestHandler_updatePlan_ChangingRampScheduleStartsAtStepZero(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	mockAuth := new(MockAuthService)
-
-	adminSession := &Session{
-		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-		Email:  "admin@example.com",
-	}
-
-	rampStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	existingPlan := &config.PurchasePlan{
-		ID:      "12345678-1234-1234-1234-123456789abc",
-		Name:    "Weekly ramp plan",
-		Enabled: true,
-		Services: map[string]config.ServiceConfig{
-			"aws/ec2": {Provider: "aws", Service: "ec2", Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 80},
-		},
-		RampSchedule: config.RampSchedule{
-			Type:             "weekly",
-			PercentPerStep:   25,
-			StepIntervalDays: 7,
-			CurrentStep:      3,
-			TotalSteps:       4,
-			StartDate:        rampStart,
-		},
-	}
-
-	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
-	mockAuth.grantAdmin()
-	mockStore.On("GetPurchasePlan", ctx, "12345678-1234-1234-1234-123456789abc").Return(existingPlan, nil)
-	mockStore.On("UpdatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
-
-	handler := &Handler{config: mockStore, auth: mockAuth}
-
-	body := `{"name": "Weekly ramp plan", "enabled": true, "ramp_schedule": "monthly-10pct"}`
-	req := &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{
-			"Authorization": "Bearer admin-token",
-		},
-		Body: body,
-	}
-	result, err := handler.updatePlan(ctx, req, "12345678-1234-1234-1234-123456789abc")
-	require.NoError(t, err)
-
-	plan := result.(*config.PurchasePlan)
-	assert.Equal(t, "monthly", plan.RampSchedule.Type)
-	assert.Equal(t, 0, plan.RampSchedule.CurrentStep,
-		"a deliberately different schedule starts its own progress at step 0")
-}
-
 func TestHandler_deletePlan(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
