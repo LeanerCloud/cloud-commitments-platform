@@ -51,6 +51,7 @@ func TestSubmitRegistration_CredentialValidation(t *testing.T) {
 		{"unsupported file path", "gcp_workload_identity_config", unsupportedPath},
 		{"type without payload", "gcp_workload_identity_config", ""},
 		{"payload without type", "", testGCPFileConfig},
+		{"non-gcp type without payload", "aws_access_keys", ""},
 		{"unknown credential type", "unknown_type", testGCPFileConfig},
 		{"service account with unsupported token_uri", "gcp_service_account", `{"type":"service_account","token_uri":"https://example.invalid/token"}`},
 	}
