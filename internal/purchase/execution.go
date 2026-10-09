@@ -1104,8 +1104,11 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 	//
 	// Legacy rows persisted before #453 carry an empty rec.Details —
 	// DecodeServiceDetailsFor returns a zero-valued typed pointer for
-	// those, and the cloud client's buildOfferingFilters substitutes
-	// defaults (Platform=Linux/UNIX, Tenancy=default, etc.). Engine is
+	// those. Most cloud clients' buildOfferingFilters substitute defaults
+	// (Platform=Linux/UNIX, etc.), but the AWS EC2 client no longer does for
+	// Tenancy and Scope: an empty or unknown value is rejected before the
+	// request is sent, so the purchase fails loudly instead of buying a
+	// default configuration. Engine is
 	// preserved on the record column too, so we use it as a last-resort
 	// fallback for DB/Cache services to avoid silently mis-purchasing a
 	// legacy non-default-engine rec as the default engine.
