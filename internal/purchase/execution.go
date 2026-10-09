@@ -191,8 +191,21 @@ var errAllAccountsFailed = errors.New("multi-account execution: all accounts fai
 // callers ACK rather than redeliver, issue #1014); and errAllAccountsFailed
 // (wrapping the per-account errors) when no account committed anything.
 func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.PurchaseExecution, plan *config.PurchasePlan, accounts []config.CloudAccount) error {
-	results := execution.RunForAccountsWithConcurrency(ctx, accounts, func(ctx context.Context, account config.CloudAccount) (bool, error) {
-		return m.executeForAccount(ctx, baseExec, plan, account)
+	// Checked before any account runs: every account would otherwise buy the
+	// whole step, and a step with nothing to buy would return nil below and
+	// be recorded as completed, advancing the ramp (platform#631).
+	scoped, scopeErr := scopeExecutionsByAccount(baseExec, accounts)
+	if scopeErr != nil {
+		return scopeErr
+	}
+	buying := make([]config.CloudAccount, 0, len(scoped))
+	for i := range accounts {
+		if _, ok := scoped[accounts[i].ID]; ok {
+			buying = append(buying, accounts[i])
+		}
+	}
+	results := execution.RunForAccountsWithConcurrency(ctx, buying, func(ctx context.Context, account config.CloudAccount) (bool, error) {
+		return m.executeForAccount(ctx, scoped[account.ID], plan, account)
 	}, getMaxAccountParallelism())
 
 	committed := 0
