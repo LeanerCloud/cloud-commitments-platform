@@ -988,7 +988,12 @@ describe('Plans Module', () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      expect(mockConfirmDialog).toHaveBeenCalled();
+      // The action cancels this scheduled purchase AND disables its plan
+      // (backend deletePlannedPurchase), so the dialog must say both.
+      expect(mockConfirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Cancel this scheduled purchase?',
+        body: expect.stringContaining('plan will be disabled'),
+      }));
       expect(api.deletePlannedPurchase).toHaveBeenCalledWith('purchase-1');
       // Issue #774: after disable the Plans page must refresh so the toggle
       // reflects the backend's new enabled=false. getPlans is the API call
