@@ -348,9 +348,16 @@ body.sidebar-open {
     }
 }
 
-/* Tables scroll inside their own box at every width, so a wide table never
- * widens the page (issue #703). Previously this only applied below 768px. */
-table {
+/* A wide table scrolls inside its container instead of widening the page
+ * (issue #703). The container, not the table, takes the overflow so a short
+ * table keeps display:table and fills the card. The recommendations list is
+ * excluded: its sticky action box must keep sticking to the viewport, so its
+ * table scrolls itself. */
+:where(div, section, fieldset, form, article):has(> table):not(#recommendations-list) {
+    overflow-x: auto;
+}
+
+#recommendations-list > table {
     display: block;
     max-width: 100%;
     overflow-x: auto;

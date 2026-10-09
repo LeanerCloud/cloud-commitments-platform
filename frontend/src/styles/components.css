@@ -1270,8 +1270,7 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     border-color: var(--cudly-text) transparent transparent transparent;
 }
 
-.info-icon:hover .tooltip-text,
-.info-icon:focus-within .tooltip-text {
+.info-icon:hover .tooltip-text {
     display: block;
 }
 

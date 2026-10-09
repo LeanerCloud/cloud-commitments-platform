@@ -10,6 +10,20 @@
 import { test, expect } from '@playwright/test';
 import { mockApi, seedAuth } from './fixtures/recs';
 
+const GROUPS = ['Administrators', 'Purchasers', 'Read-only finance auditors', 'Platform engineering leads'].map((name, i) => ({
+  id: `00000000-0000-5000-8000-00000000000${i + 1}`,
+  name,
+  description: `${name}: a deliberately long description so the group card header has to share its row with the action buttons`,
+  permissions: [{ action: i === 0 ? 'admin' : 'view', resource: i === 0 ? '*' : 'recommendations' }],
+}));
+const USERS = [1, 2, 3].map((n) => ({
+  id: `user-${n}`,
+  email: `long.address.for.user.number.${n}@subdomain.example-company.com`,
+  groups: GROUPS.map((g) => g.id),
+  mfa_enabled: n % 2 === 0,
+  created_at: '2026-07-01T00:00:00Z',
+}));
+
 const PAGES = [
   '/home',
   '/opportunities',
@@ -29,6 +43,14 @@ for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 900 });
       await seedAuth(page);
       await mockApi(page);
+      // Populated users and groups: empty lists hide the group cards, the
+      // permission matrix and the long user rows that overflow on phones.
+      await page.route('**/api/users', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ users: USERS }) }),
+      );
+      await page.route('**/api/groups', (route) =>
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ groups: GROUPS }) }),
+      );
       await page.goto(path);
       await page.waitForLoadState('networkidle');
       const overflow = await page.evaluate(
