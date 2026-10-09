@@ -56,7 +56,7 @@ func fanoutPlanAccounts() []config.CloudAccount {
 func fanoutRecs() []config.RecommendationRecord {
 	return []config.RecommendationRecord{
 		{
-			Provider: "aws", Service: "ec2", ResourceType: "m5.large",
+			Provider: "aws", Service: "rds", ResourceType: "db.r5.large",
 			Region: "us-east-1", Count: 1, Term: 1,
 			UpfrontCost: 300, Selected: true,
 		},

@@ -3767,7 +3767,7 @@ func TestHandler_retryPurchase_Admin_AllowsAny(t *testing.T) {
 		Status:          "failed",
 		Error:           "send failed: transient SES throttle",
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID, Email: "admin@example.com"}
 	// Admin (Administrators-group member) modeled as a retry-any holder; the
@@ -3790,7 +3790,7 @@ func TestHandler_retryPurchase_StoresHashOfEmailedToken(t *testing.T) {
 		ExecutionID:     retryExecID,
 		Status:          "failed",
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100, CloudAccountID: &accountID}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100, CloudAccountID: &accountID}},
 	}
 	session := &Session{UserID: retryCallerID, Email: "admin@example.com"}
 	handler, mockConfig, _ := buildSessionRetryHandler(failed, session, true, false)
@@ -3822,7 +3822,7 @@ func TestHandler_retryPurchase_RetryAny_AllowsAny(t *testing.T) {
 		Status:          "failed",
 		Error:           "send failed: transient SES throttle",
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID, Email: "ops@example.com"}
 	runSessionRetryAllowed(t, failed, session, true, false, sessionRetryReq())
@@ -3836,7 +3836,7 @@ func TestHandler_retryPurchase_RetryOwn_AllowsCreator(t *testing.T) {
 		Error:           "send failed: SES recipient mailbox full",
 		CreatedByUserID: &creator,
 		RetryAttemptN:   2, // already retried twice
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID, Email: "u1@example.com"}
 	newExec, updated := runSessionRetryAllowed(t, failed, session, false, true, sessionRetryReq())
@@ -3946,7 +3946,7 @@ func TestHandler_retryPurchase_PersistentFailure_NoMatch_AllowsRetry(t *testing.
 		Status:          "failed",
 		Error:           "send failed: SES throttle exceeded, please retry",
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID}
 	// Caller owns the row; retry-own authorizes it (issue #907).
@@ -3960,7 +3960,7 @@ func TestHandler_retryPurchase_Threshold_BlocksAtFive_NoForce(t *testing.T) {
 		Status:          "failed",
 		RetryAttemptN:   5, // already at the threshold
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID}
 	// Caller owns the row; retry-own authorizes it (issue #907).
@@ -3983,7 +3983,7 @@ func TestHandler_retryPurchase_Threshold_AllowsWithForce(t *testing.T) {
 		Status:          "failed",
 		RetryAttemptN:   5,
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID}
 	// Caller owns the row; retry-own authorizes it (issue #907).
@@ -3998,7 +3998,7 @@ func TestHandler_retryPurchase_JustUnderThreshold_AllowsNoForce(t *testing.T) {
 		Status:          "failed",
 		RetryAttemptN:   4, // n=4 < threshold=5 → allowed
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID}
 	// Caller owns the row; retry-own authorizes it (issue #907).
@@ -4060,7 +4060,7 @@ func TestHandler_retryPurchase_ConcurrentRetryRace_SecondCASLoses(t *testing.T) 
 		ExecutionID:     retryExecID,
 		Status:          "failed",
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID}
 	// Caller owns the row; retry-own authorizes it (issue #907). Both
@@ -4114,7 +4114,7 @@ func TestHandler_retryPurchase_PreservesPlanMetadata(t *testing.T) {
 		Status:          "failed",
 		Error:           "send failed: transient SES throttle",
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID}
 	// Caller owns the row; retry-own authorizes it (issue #907).
@@ -4181,7 +4181,7 @@ func TestHandler_retryPurchase_PermissionConstraintsDenied(t *testing.T) {
 		Error:           "send failed: transient SES throttle",
 		CreatedByUserID: &creator,
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", Region: "us-east-1", Term: 1, UpfrontCost: 5000},
+			{Provider: "aws", Service: "rds", Region: "us-east-1", Term: 1, UpfrontCost: 5000},
 		},
 	}
 	session := &Session{UserID: retryCallerID, Email: "capped@example.com"}
@@ -4232,7 +4232,7 @@ func TestPersistRetryExecution_ApprovalTokenNotUUID(t *testing.T) {
 		Status:          "failed",
 		Error:           "ses throttle",
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID, Email: "admin@example.com"}
 	// Caller owns the row; retry-own authorizes it (issue #907).
@@ -4261,7 +4261,7 @@ func TestPersistRetryExecution_ApprovalTokenExpiresAtSet(t *testing.T) {
 		Status:          "failed",
 		Error:           "ses throttle",
 		CreatedByUserID: &creator,
-		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100}},
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100}},
 	}
 	session := &Session{UserID: retryCallerID, Email: "admin@example.com"}
 

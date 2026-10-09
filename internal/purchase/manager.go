@@ -395,7 +395,9 @@ func armedRedriveRefusal(exec *config.PurchaseExecution) error {
 // canceled.
 //
 // Safe providers / services (issue #639):
-//   - AWS (all services): tag-guard or ClientToken deduplication (#636/#638).
+//   - AWS RDS, ElastiCache, MemoryDB, OpenSearch and Savings Plans: a
+//     deterministic reservation ID or ClientToken collapses a repeat onto the
+//     first attempt (#636/#638).
 //   - Azure reservations (compute, relational-db, cache, nosql, memorydb,
 //     search, data-warehouse): DoIdempotentPurchaseTwoStep performs a
 //     tag-based lookup before purchasing (#729 / #721).
@@ -403,6 +405,10 @@ func armedRedriveRefusal(exec *config.PurchaseExecution) error {
 //     the token (#654).
 //
 // NOT safe:
+//   - AWS EC2 and Redshift (slugs ec2, compute, redshift, data-warehouse): the
+//     purchase APIs take no client token, so a lost response may have bought the
+//     commitment and a second attempt would buy another (MON-02). The provider
+//     sends the call once and reports "purchase outcome unknown".
 //   - Azure savings-plans: the OrderAlias API uses time.Now().UnixNano() as
 //     the alias name; there is no server-side idempotency key and no
 //     tag-based lookup implemented yet. Re-driving would create a duplicate
@@ -436,7 +442,15 @@ func RedriveRefusalReason(exec *config.PurchaseExecution) string {
 func recRedriveRefusalReason(rec config.RecommendationRecord) string {
 	switch rec.Provider {
 	case "", "aws":
-		// Empty provider is legacy AWS. All AWS services honor IdempotencyToken.
+		// Empty provider is legacy AWS. RDS, ElastiCache, MemoryDB, OpenSearch
+		// and Savings Plans collapse a repeat onto the first attempt. EC2 and
+		// Redshift cannot: their purchase APIs take no client token or caller
+		// ID, and the provider sends them once and reports a lost response as
+		// "purchase outcome unknown". The commitment may exist, so a second
+		// attempt must not be made until someone has checked the account.
+		if awsPurchaseHasNoDuplicateGuard(rec.Service) {
+			return "AWS EC2 and Redshift purchases have no provider-side duplicate guard, and a lost response means the earlier attempt may already have bought the commitment. Check EC2 Reserved Instances or Redshift Reserved Nodes in the target account and region; if it is missing, start a new purchase instead of retrying"
+		}
 		return ""
 	case "azure":
 		// Azure savings-plans uses a timestamp-based alias name and has no
@@ -452,6 +466,25 @@ func recRedriveRefusalReason(rec config.RecommendationRecord) string {
 	default:
 		// Unknown provider: refuse to re-drive rather than risk a double-buy.
 		return fmt.Sprintf("provider %q is not known to reject a duplicate purchase, so re-driving this could buy a second commitment", rec.Provider)
+	}
+}
+
+// awsPurchaseHasNoDuplicateGuard reports whether a recommendation's service
+// slug dispatches to the AWS EC2 or Redshift purchase path. The canonical
+// slugs (compute, data-warehouse) and the legacy ones (ec2, redshift) reach the
+// same client, so all four must be covered or the refusal can be bypassed by
+// spelling. Matching goes through mapServiceSlug, the same table the executor
+// dispatches on, so the two cannot drift.
+func awsPurchaseHasNoDuplicateGuard(service string) bool {
+	svc, ok := mapServiceSlug(service)
+	if !ok {
+		return false
+	}
+	switch svc {
+	case common.ServiceEC2, common.ServiceCompute, common.ServiceRedshift, common.ServiceDataWarehouse:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -558,7 +591,11 @@ func (m *Manager) safeFail(ctx context.Context, exec *config.PurchaseExecution) 
 		return false, fmt.Errorf("failed to transition stranded execution %s to failed: %w", exec.ExecutionID, txErr)
 	}
 
-	updated.Error = "execution was approved but its purchase run was interrupted before completing and never finalized; failed by the recovery sweep so it is not silently stuck (issue #632). Verify on the cloud provider that no commitment was created, then Retry."
+	next := "Verify on the cloud provider that no commitment was created, then Retry."
+	if RedriveRefusalReason(exec) != "" {
+		next = "Retry is refused for this purchase because a repeat could buy a second commitment. Verify on the cloud provider whether the commitment was created; if it was not, start a new purchase."
+	}
+	updated.Error = "execution was approved but its purchase run was interrupted before completing and never finalized; failed by the recovery sweep so it is not silently stuck (issue #632). " + next
 	if saveErr := m.config.SavePurchaseExecution(ctx, updated); saveErr != nil {
 		// The atomic flip to "failed" already landed via TransitionExecutionStatus;
 		// only the explanatory error string failed to persist. Log loudly but

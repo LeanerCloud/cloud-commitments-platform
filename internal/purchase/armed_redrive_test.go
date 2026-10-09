@@ -217,12 +217,13 @@ func TestFirstAzureSavingsPlanPurchaseStillExecutes(t *testing.T) {
 }
 
 // TestSafeProviderRetrySuccessorStillExecutes is the second negative control:
-// the guard must be as narrow as the provider gap. An AWS retry successor
-// reproduces its ClientToken, so the provider collapses a re-drive onto the
-// original and the retry must still execute.
+// the guard must be as narrow as the provider gap. An AWS RDS retry successor
+// reproduces its deterministic reservation ID, so the provider collapses a
+// re-drive onto the original and the retry must still execute. EC2 and
+// Redshift are the AWS services that lack such a guard (see the Refuses tests).
 func TestSafeProviderRetrySuccessorStillExecutes(t *testing.T) {
-	exec := armedExecution("aws", "ec2", 3, "approved")
-	mgr, store, rec := armedHarness(t, common.ServiceEC2)
+	exec := armedExecution("aws", "rds", 3, "approved")
+	mgr, store, rec := armedHarness(t, common.ServiceRDS)
 	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
 	expectClaim(store, exec, []string{"approved", "pending", "notified"}, "running")
 
@@ -231,7 +232,7 @@ func TestSafeProviderRetrySuccessorStillExecutes(t *testing.T) {
 	require.NoError(t, mgr.ProcessMessage(context.Background(), string(body)))
 
 	assert.Equal(t, 1, rec.count(),
-		"an AWS retry successor dedupes at the provider via ClientToken and must still execute; the guard must not widen beyond the providers that lack a duplicate guard")
+		"an AWS RDS retry successor dedupes at the provider via its reservation ID and must still execute; the guard must not widen beyond the providers that lack a duplicate guard")
 }
 
 // TestArmedRowIsDefusedNotLeftArmed pins the disposition of a refused row. A
