@@ -53,6 +53,12 @@ resource "google_service_account_iam_member" "github_actions" {
   service_account_id = google_service_account.cudly_deploy.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository_id/${var.github_repository_id}"
+
+  # The old and new members differ, so both can exist at once; this avoids a
+  # window with no member while the replacement runs.
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 moved {

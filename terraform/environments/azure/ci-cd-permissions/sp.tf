@@ -90,3 +90,47 @@ resource "azuread_application_federated_identity_credential" "github_environment
   issuer         = "https://token.actions.githubusercontent.com"
   subject        = "${local.github_oidc_sub_prefix}:environment:${each.value}"
 }
+
+# Transitional: while var.legacy_github_repo is set, the name-keyed subjects stay
+# trusted next to the ID-keyed ones above, so deploys keep working until the
+# repo's sub claim template is switched. Clear the variable and re-apply after
+# the cutover (docs/deploy-trust-bootstrap.md).
+resource "azuread_application_federated_identity_credential" "legacy_main" {
+  count = var.legacy_github_repo == "" ? 0 : 1
+
+  application_id = azuread_application.cudly_deploy.id
+  display_name   = "github-actions-main-legacy"
+  description    = "Transitional name-keyed trust, ${var.legacy_github_repo} main branch deployments"
+  audiences      = ["api://AzureADTokenExchange"]
+  issuer         = "https://token.actions.githubusercontent.com"
+  subject        = "repo:${var.legacy_github_repo}:ref:refs/heads/main"
+
+  # The ID-keyed credentials above take over the live resource addresses, so
+  # their subjects change in place from the old name-keyed value. Entra requires
+  # issuer+subject+audience to be unique per application: create these only
+  # after those updates finish.
+  depends_on = [
+    azuread_application_federated_identity_credential.github_main,
+    azuread_application_federated_identity_credential.github_environment,
+  ]
+}
+
+resource "azuread_application_federated_identity_credential" "legacy_environment" {
+  for_each = var.legacy_github_repo == "" ? toset([]) : toset(var.github_environments)
+
+  application_id = azuread_application.cudly_deploy.id
+  display_name   = "github-actions-env-${each.value}-legacy"
+  description    = "Transitional name-keyed trust, ${var.legacy_github_repo} ${each.value} environment"
+  audiences      = ["api://AzureADTokenExchange"]
+  issuer         = "https://token.actions.githubusercontent.com"
+  subject        = "repo:${var.legacy_github_repo}:environment:${each.value}"
+
+  # The ID-keyed credentials above take over the live resource addresses, so
+  # their subjects change in place from the old name-keyed value. Entra requires
+  # issuer+subject+audience to be unique per application: create these only
+  # after those updates finish.
+  depends_on = [
+    azuread_application_federated_identity_credential.github_main,
+    azuread_application_federated_identity_credential.github_environment,
+  ]
+}

@@ -67,3 +67,20 @@ variable "github_environments" {
     error_message = "github_environments entries must be non-empty; an empty name yields the unmatchable subject <prefix>:environment:."
   }
 }
+
+variable "legacy_github_repo" {
+  description = <<-EOT
+    Transitional. The repository's current `owner/name`. While set, name-keyed federated
+    credentials (`repo:<owner>/<name>:...`) exist next to the ID-keyed ones, so deploys do not
+    break between this apply and the repo's OIDC sub claim template switch. Set it for the first
+    apply, run scripts/bootstrap-github-deploy-config.sh, confirm a deploy from main, then clear
+    it ("") and re-apply to drop them.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^([A-Za-z0-9-]+/[A-Za-z0-9._-]+)?$", var.legacy_github_repo))
+    error_message = "legacy_github_repo must be empty or owner/name."
+  }
+}

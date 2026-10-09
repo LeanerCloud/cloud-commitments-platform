@@ -30,7 +30,10 @@ var (
 )
 
 // readHCL returns the file with `#` comment lines removed, so prose that
-// mentions the old subject shape cannot satisfy or trip a check.
+// mentions the old subject shape cannot satisfy or trip a check. Lines that
+// reference var.legacy_github_repo are removed too: that variable is the one
+// sanctioned, transitional, empty-by-default name-keyed trust (cutover
+// window only), asserted separately by TestLegacyTrustIsOptIn.
 func readHCL(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -39,7 +42,7 @@ func readHCL(t *testing.T, path string) string {
 	}
 	var kept []string
 	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") && !strings.Contains(line, "legacy_github_repo") {
 			kept = append(kept, line)
 		}
 	}
@@ -138,13 +141,16 @@ func bootstrapEnvironments(t *testing.T, script string) map[string]bool {
 func TestAWSDeployTrustIsKeyedOnRepositoryID(t *testing.T) {
 	oidc := readHCL(t, "aws/ci-cd-permissions/github_oidc.tf")
 	role := readHCL(t, "aws/ci-cd-permissions/role.tf")
+	if !strings.Contains(role, `"token.actions.githubusercontent.com:sub" = local.github_oidc_subs`) {
+		t.Fatal("aws role.tf: sub condition must come from local.github_oidc_subs")
+	}
 	assertNotNameKeyed(t, "aws github_oidc.tf", oidc)
 	assertNotNameKeyed(t, "aws role.tf", role)
 	checkClaimKeysMatchBootstrap(t, "aws", subPrefixClaims(t, "aws github_oidc.tf", oidc))
 
-	m := regexp.MustCompile(`(?s)"token\.actions\.githubusercontent\.com:sub"\s*=\s*\[(.*?)\]`).FindStringSubmatch(role)
+	m := regexp.MustCompile(`(?s)github_oidc_id_subs\s*=\s*\[(.*?)\n  \]`).FindStringSubmatch(oidc)
 	if m == nil {
-		t.Fatal("aws role.tf: no token.actions.githubusercontent.com:sub condition")
+		t.Fatal("aws github_oidc.tf: no github_oidc_id_subs list")
 	}
 	subjects := quoted(m[1])
 	assertPrefixed(t, "aws role.tf", subjects)
@@ -229,4 +235,58 @@ func checkEnvironmentsGated(t *testing.T, cloud string, envs []string) {
 			t.Errorf("%s trusts environment %q, which %s does not limit to main", cloud, e, bootstrap)
 		}
 	}
+}
+
+// The name-keyed trust is opt-in: empty by default (so a plain apply never
+// trusts a repository name) and guarded by a count/for_each/ternary on the
+// variable, in both modules that support the cutover window.
+func TestLegacyTrustIsOptIn(t *testing.T) {
+	for _, cloud := range []string{"aws", "azure"} {
+		vars, err := os.ReadFile(cloud + "/ci-cd-permissions/variables.tf")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !regexp.MustCompile(`(?s)variable "legacy_github_repo".*?default\s*=\s*""`).Match(vars) {
+			t.Errorf("%s: legacy_github_repo must default to empty", cloud)
+		}
+	}
+	aws := readHCLRaw(t, "aws/ci-cd-permissions/github_oidc.tf")
+	if !strings.Contains(aws, `var.legacy_github_repo == "" ? []`) {
+		t.Error("aws: legacy subjects must be empty when legacy_github_repo is unset")
+	}
+	az := readHCLRaw(t, "azure/ci-cd-permissions/sp.tf")
+	if strings.Count(az, `var.legacy_github_repo == ""`) != 2 {
+		t.Error("azure: both legacy credentials must be gated on legacy_github_repo being set")
+	}
+}
+
+// Entra requires unique issuer+subject+audience per application. The legacy
+// credentials reuse subjects the ID-keyed ones are being updated away from, so
+// they must be created only after those updates.
+func TestAzureLegacyCredentialsWaitForIDKeyed(t *testing.T) {
+	sp := readHCLRaw(t, "azure/ci-cd-permissions/sp.tf")
+	for _, name := range []string{"legacy_main", "legacy_environment"} {
+		i := strings.Index(sp, `"`+name+`" {`)
+		if i < 0 {
+			t.Fatalf("azure sp.tf: no %s resource", name)
+		}
+		block := sp[i:]
+		if j := strings.Index(block, "\n}\n"); j >= 0 {
+			block = block[:j]
+		}
+		for _, dep := range []string{"federated_identity_credential.github_main", "federated_identity_credential.github_environment"} {
+			if !strings.Contains(block, "depends_on") || !strings.Contains(block, dep) {
+				t.Errorf("azure %s must depends_on %s", name, dep)
+			}
+		}
+	}
+}
+
+func readHCLRaw(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

@@ -29,3 +29,20 @@ variable "github_repository_owner_id" {
     error_message = "github_repository_owner_id must be the owner's numeric ID (gh api repos/<owner>/<repo> --jq .owner.id), not its login."
   }
 }
+
+variable "legacy_github_repo" {
+  description = <<-EOT
+    Transitional. The repository's current `owner/name`. While set, the deploy role also
+    trusts the old name-keyed subjects (`repo:<owner>/<name>:...`) next to the ID-keyed ones,
+    so deploys do not break between this apply and the repo's OIDC sub claim template switch.
+    Set it for the first apply, run scripts/bootstrap-github-deploy-config.sh, confirm a deploy
+    from main, then clear it ("") and re-apply to drop the name-keyed trust.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^([A-Za-z0-9-]+/[A-Za-z0-9._-]+)?$", var.legacy_github_repo))
+    error_message = "legacy_github_repo must be empty or owner/name."
+  }
+}

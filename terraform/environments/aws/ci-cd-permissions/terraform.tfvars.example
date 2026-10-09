@@ -50,3 +50,8 @@ github_repository_owner_id = "86753534"
 # Leave empty (or omit) if GitHub Actions OIDC is the only deploy path.
 #
 # trust_principal = "user/alice"
+
+# Transitional (first apply only): also trust the old name-keyed subjects until the
+# repo's OIDC sub template is switched. Clear it and re-apply after the cutover.
+# See docs/deploy-trust-bootstrap.md.
+# legacy_github_repo = "LeanerCloud/cloud-commitments-platform"
