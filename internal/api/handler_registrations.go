@@ -13,6 +13,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/google/uuid"
@@ -210,15 +211,64 @@ func (h *Handler) setReviewMetadata(ctx context.Context, reg *config.AccountRegi
 	}
 }
 
-// storeRegistrationCredentials decrypts and stores credentials from the registration
-// record into the account_credentials table. Errors are logged, not propagated.
-func (h *Handler) storeRegistrationCredentials(ctx context.Context, reg *config.AccountRegistration, accountID string) {
-	if reg.RegCredentialPayload == "" || reg.RegCredentialType == "" || h.credStore == nil {
-		return
+// validateRegistrationCredential checks the credential pair submitted with a
+// registration: both fields or neither, a supported type, and for GCP types a
+// supported credential configuration.
+func validateRegistrationCredential(credType, payload string) error {
+	if credType == "" && payload == "" {
+		return nil
+	}
+	if credType == "" || payload == "" {
+		return NewClientError(400, "credential_type and credential_payload must be provided together")
+	}
+	if !validCredentialTypes[credType] {
+		return NewClientError(400, "credential_type must be one of: aws_access_keys, azure_client_secret, gcp_service_account, gcp_workload_identity_config")
+	}
+	return validateGCPCredentialBytes(credType, []byte(payload))
+}
+
+// validateGCPCredentialBytes validates the exact bytes of a GCP credential
+// configuration. Non-GCP credential types are not checked here.
+func validateGCPCredentialBytes(credType string, payload []byte) error {
+	if credType != credentials.CredTypeGCPServiceAccount && credType != credentials.CredTypeGCPWIFConfig {
+		return nil
+	}
+	if err := credentials.ValidateGCPCredentialJSON(credType, payload); err != nil {
+		return NewClientError(400, err.Error())
+	}
+	return nil
+}
+
+// decryptAndValidateRegistrationCredential returns the decrypted credential of
+// a pending registration after checking it is supported. It returns nil bytes
+// when the registration carries no credential. It runs before the registration
+// leaves the pending state so a rejected credential can be corrected or the
+// registration rejected.
+func (h *Handler) decryptAndValidateRegistrationCredential(reg *config.AccountRegistration) ([]byte, error) {
+	if reg.RegCredentialPayload == "" && reg.RegCredentialType == "" {
+		return nil, nil
+	}
+	if reg.RegCredentialPayload == "" || reg.RegCredentialType == "" {
+		return nil, NewClientError(400, "registration has an incomplete credential; reject it and ask the registrant to resubmit")
+	}
+	if h.credStore == nil {
+		return nil, fmt.Errorf("registrations: credential store not configured")
 	}
 	plaintext, err := h.credStore.DecryptPayload(reg.RegCredentialPayload)
 	if err != nil {
-		logging.Warnf("registration %s: failed to decrypt credential payload: %v", reg.ID, err)
+		return nil, fmt.Errorf("registrations: decrypt credential payload: %w", err)
+	}
+	if err := validateGCPCredentialBytes(reg.RegCredentialType, plaintext); err != nil {
+		return nil, err
+	}
+	return plaintext, nil
+}
+
+// storeRegistrationCredentials stores the already decrypted and validated
+// credential from the registration record in the account_credentials table.
+// Errors are logged, not propagated.
+func (h *Handler) storeRegistrationCredentials(ctx context.Context, reg *config.AccountRegistration, accountID string, plaintext []byte) {
+	if plaintext == nil || h.credStore == nil {
 		return
 	}
 	if err := h.credStore.SaveCredential(ctx, accountID, reg.RegCredentialType, plaintext); err != nil {
@@ -263,6 +313,12 @@ func (h *Handler) approveRegistration(ctx context.Context, httpReq *events.Lambd
 		return nil, err
 	}
 
+	// Validate the stored credential before the registration leaves pending.
+	credential, err := h.decryptAndValidateRegistrationCredential(reg)
+	if err != nil {
+		return nil, err
+	}
+
 	// Atomically transition to "approved" first — prevents double-approval.
 	reg.Status = "approved"
 	h.setReviewMetadata(ctx, reg, httpReq)
@@ -285,7 +341,7 @@ func (h *Handler) approveRegistration(ctx context.Context, httpReq *events.Lambd
 	// KMS-backed federated. Without this, every federated-path
 	// approval leaves the account disabled and the operator has to
 	// follow up with a manual PUT enabled=true.
-	account.Enabled = reg.RegCredentialPayload != "" || accountHasCredentialFreePath(account)
+	account.Enabled = credential != nil || accountHasCredentialFreePath(account)
 	account.CreatedAt = now
 	account.UpdatedAt = now
 
@@ -294,7 +350,7 @@ func (h *Handler) approveRegistration(ctx context.Context, httpReq *events.Lambd
 	}
 
 	// Auto-store credentials if the registration included them.
-	h.storeRegistrationCredentials(ctx, reg, account.ID)
+	h.storeRegistrationCredentials(ctx, reg, account.ID, credential)
 
 	// Link the cloud account and wipe the credential payload from the registration record.
 	reg.CloudAccountID = &account.ID
@@ -429,7 +485,7 @@ func validateRegistrationRequest(req *RegistrationRequest) error {
 	if !strings.Contains(req.ContactEmail, "@") || len(req.ContactEmail) < 5 {
 		return NewClientError(400, "contact_email must be a valid email address")
 	}
-	return nil
+	return validateRegistrationCredential(req.CredentialType, req.CredentialPayload)
 }
 
 func buildRegistrationFilter(params map[string]string) config.AccountRegistrationFilter {

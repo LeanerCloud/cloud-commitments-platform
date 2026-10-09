@@ -259,7 +259,7 @@ func TestValidateCredentialPayload(t *testing.T) {
 			map[string]interface{}{
 				"type": "external_account", "audience": "//iam...", "subject_token_type": "urn:...",
 				"token_url":         "https://sts.googleapis.com/v1/token",
-				"credential_source": map[string]interface{}{"environment_id": "aws1"},
+				"credential_source": map[string]interface{}{"file": "/var/run/secrets/azure/tokens/azure-identity-token"},
 			}, ""},
 		{"gcp wif missing audience", "gcp_workload_identity_config",
 			map[string]interface{}{

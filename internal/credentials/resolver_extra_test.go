@@ -317,7 +317,7 @@ func TestResolveGCPTokenSource_InvalidJSON(t *testing.T) {
 	}
 	_, err := ResolveGCPTokenSource(context.Background(), account, store)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "parse gcp credentials")
+	assert.Contains(t, err.Error(), "invalid stored gcp credential configuration")
 }
 
 // ---------------------------------------------------------------------------
@@ -442,7 +442,7 @@ func TestResolveGCPTokenSource_WIF_WithStoredConfig(t *testing.T) {
 	}
 	_, err := ResolveGCPTokenSource(context.Background(), account, store)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "parse gcp credentials")
+	assert.Contains(t, err.Error(), "invalid stored gcp credential configuration")
 }
 
 func TestResolveGCPTokenSource_ServiceAccountKey_ValidJSON(t *testing.T) {

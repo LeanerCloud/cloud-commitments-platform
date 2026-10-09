@@ -454,7 +454,14 @@ func loadStoredGCPTokenSource(
 	if raw == nil {
 		return nil, fmt.Errorf("credentials: no gcp credentials stored for account %s", account.ID)
 	}
-	creds, err := google.CredentialsFromJSON(ctx, raw, gcpCloudPlatformScope) //nolint:staticcheck // SA1019: google.CredentialsFromJSON: replacement API requires GCP SDK upgrade; credentials are operator-controlled bytes
+	if err := ValidateGCPCredentialJSON(credType, raw); err != nil {
+		return nil, fmt.Errorf("credentials: invalid stored gcp credential configuration for account %s: %w", account.ID, err)
+	}
+	googleType := google.ServiceAccount
+	if credType == CredTypeGCPWIFConfig {
+		googleType = google.ExternalAccount
+	}
+	creds, err := google.CredentialsFromJSONWithType(ctx, raw, googleType, gcpCloudPlatformScope)
 	if err != nil {
 		return nil, fmt.Errorf("credentials: parse gcp credentials for account %s: %w", account.ID, err)
 	}
