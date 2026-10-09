@@ -1821,6 +1821,66 @@ func TestManager_ExecuteAndFinalize_HistorySaveFailure_StaysVisible(t *testing.T
 	mockFactory.AssertExpectations(t)
 }
 
+// historyGuardStore applies the real purchase_history validation in front of
+// the mock, so a test sees the error the Postgres store would return.
+type historyGuardStore struct{ *MockConfigStore }
+
+func (s historyGuardStore) SavePurchaseHistory(ctx context.Context, record *config.PurchaseHistoryRecord) error {
+	if err := record.Validate(); err != nil {
+		return err
+	}
+	return s.MockConfigStore.SavePurchaseHistory(ctx, record)
+}
+
+// TestManager_ExecuteAndFinalize_EmptyCommitmentID_CompletesWithAuditGap
+// (#774): a successful purchase whose result carries no CommitmentID cannot be
+// stored in purchase_history. The execution must still complete, with the
+// audit-gap note, never fail and invite a re-approval of a purchase that fired.
+func TestManager_ExecuteAndFinalize_EmptyCommitmentID_CompletesWithAuditGap(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockSTS := new(MockSTSClient)
+	mockFactory := new(MockProviderFactory)
+	mockProviderInst := new(MockProvider)
+	mockServiceClient := new(MockServiceClient)
+
+	exec := &config.PurchaseExecution{
+		ExecutionID: "exec-empty-id",
+		StepNumber:  1,
+		Recommendations: []config.RecommendationRecord{
+			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 500.0, Selected: true},
+		},
+	}
+	// SavePurchaseHistory is deliberately not expected on the mock: the guard
+	// must reject the record before it reaches the store.
+	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
+	mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
+	mockSTS.On("GetCallerIdentity", ctx, mock.AnythingOfType("*sts.GetCallerIdentityInput")).Return(&sts.GetCallerIdentityOutput{
+		Account: aws.String("123456789012"),
+	}, nil)
+	mockFactory.On("CreateAndValidateProvider", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), "aws", mock.Anything).Return(mockProviderInst, nil)
+	mockProviderInst.On("GetServiceClient", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), common.ServiceEC2, "us-east-1").Return(mockServiceClient, nil)
+	mockServiceClient.On("PurchaseCommitment", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions")).Return(common.PurchaseResult{
+		Success:      true,
+		CommitmentID: "",
+	}, nil)
+
+	manager := &Manager{
+		config:          historyGuardStore{mockStore},
+		email:           mockEmail,
+		stsClient:       mockSTS,
+		providerFactory: mockFactory,
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	require.NoError(t, manager.executeAndFinalize(ctx, exec))
+
+	assert.Equal(t, "completed", exec.Status, "the purchase fired, so the execution stays completed")
+	assert.Contains(t, exec.Error, "history record failed to save", "the missing history row must be flagged on the execution")
+	mockStore.AssertNotCalled(t, "SavePurchaseHistory", mock.Anything, mock.Anything)
+}
+
 // TestManager_ExecuteAndFinalize_SingleAccount_PartialSuccess is the issue #642
 // regression guard for the single-account path. A two-rec direct purchase where
 // rec A succeeds and rec B fails must:

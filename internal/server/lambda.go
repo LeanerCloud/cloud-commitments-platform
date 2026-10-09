@@ -148,7 +148,11 @@ func (app *Application) handleLambdaHTTPEvent(ctx context.Context, rawEvent json
 		return app.serveLambdaStatic(reqPath)
 	}
 
-	return app.API.HandleRequest(ctx, &request)
+	resp, err := app.API.HandleRequest(ctx, &request)
+	if err == nil {
+		compressLambdaResponse(&request, resp)
+	}
+	return resp, err
 }
 
 // lambdaSecurityHeaders returns the standard security headers for Lambda responses.

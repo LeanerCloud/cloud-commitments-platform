@@ -1508,7 +1508,7 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 	if err := checkRevokableStatus(execution); err != nil {
 		return nil, err
 	}
-	return h.revokeViaSession(ctx, execution, actor)
+	return h.revokeViaSession(ctx, execution, actor, resolveCreatorUserID(h.tryGetSession(ctx, req)))
 }
 
 // getExecutionOr404 loads an execution, answering 404 for a missing one
@@ -1573,7 +1573,7 @@ func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFun
 		if statusErr := checkRevokableStatus(execution); statusErr != nil {
 			return nil, true, statusErr
 		}
-		res, revokeErr := h.revokeViaSession(ctx, execution, session.Email)
+		res, revokeErr := h.revokeViaSession(ctx, execution, session.Email, resolveCreatorUserID(session))
 		return res, true, revokeErr
 	case fallsThroughToToken(sessErr, token):
 		// Fall through to the token branch.
@@ -1682,11 +1682,14 @@ func revocationWindowClosesAt(execution *config.PurchaseExecution) string {
 // read and this write (e.g. a concurrent transition), zero rows are affected
 // and we return a 409 rather than blindly overwriting. CancelledBy is stamped
 // in a follow-up SavePurchaseExecution on the freshly-returned row.
-func (h *Handler) revokeViaSession(ctx context.Context, execution *config.PurchaseExecution, revokedBy string) (any, error) {
-	actor := &revokedBy
+//
+// transitionedBy is the acting user's UUID (resolveCreatorUserID), or nil when
+// the caller has no user row. It must never be an email: transitioned_by is a
+// UUID foreign key. revokedBy is the email shown as the requester.
+func (h *Handler) revokeViaSession(ctx context.Context, execution *config.PurchaseExecution, revokedBy string, transitionedBy *string) (any, error) {
 	updated, err := h.config.TransitionExecutionStatus(
 		ctx, execution.ExecutionID,
-		[]string{"completed", "partially_completed"}, "revocation_requested", actor)
+		[]string{"completed", "partially_completed"}, "revocation_requested", transitionedBy)
 	if err != nil {
 		if errors.Is(err, config.ErrExecutionNotInExpectedStatus) {
 			return nil, NewClientError(409, fmt.Sprintf(
@@ -1871,7 +1874,7 @@ func (h *Handler) retryPurchase(ctx context.Context, req *events.LambdaFunctionU
 	// successor that fails the same way.
 	if failedExec.PlanID != "" && len(failedExec.Recommendations) == 0 {
 		return nil, NewClientError(409,
-			"this plan step has no recommendations attached, so retrying it would buy nothing (platform#609: plan steps cannot yet carry recommendations)")
+			"this plan step has no recommendations attached, so retrying it would buy nothing (platform#631: plan steps cannot yet carry recommendations)")
 	}
 
 	totalUpfront, totalSavings, err := validateAndTotalRecommendations(failedExec.Recommendations)
@@ -2808,7 +2811,7 @@ func fourEyesActorIdentity(session *Session) string {
 }
 
 // executePurchase handles direct purchase execution from recommendations
-// matchDuplicateInList scans a slice of pending executions for one that
+// matchDuplicateInList scans a slice of recent executions for one that
 // matches creatorID + idempotencyKey within the idempotency window.
 // Returns the first match, or nil when there is no duplicate.
 // Extracted from persistExecutionAndSuppressions to keep cyclomatic
@@ -2833,9 +2836,9 @@ func matchDuplicateInList(pending []config.PurchaseExecution, creatorID, idempot
 
 // persistExecutionAndSuppressions saves the execution + its suppression
 // records in a single transaction. It also performs the duplicate-execution
-// check inside the same transaction (using SELECT ... FOR UPDATE) so that the
-// read and the insert are atomic — closing the TOCTOU race that the pre-tx
-// duplicatePurchaseResponse call could not prevent (#643).
+// check inside the same transaction, behind a per-creator advisory lock, so
+// that the read and the insert are atomic: a plain SELECT ... FOR UPDATE
+// cannot see a concurrent transaction's uncommitted insert (#643, MON-01).
 //
 // Return values:
 //   - (nil, nil)          — no duplicate found; execution was inserted.
@@ -2849,13 +2852,15 @@ func (h *Handler) persistExecutionAndSuppressions(
 	creatorID, idempotencyKey string,
 ) (dup *config.PurchaseExecution, err error) {
 	txErr := h.config.WithTx(ctx, func(tx pgx.Tx) error {
-		// Duplicate check inside the tx (SELECT FOR UPDATE) — atomic with
-		// the insert below.
-		pending, err := h.config.GetPendingExecutionsTx(ctx, tx)
+		// Duplicate check inside the tx, after taking the creator's submit
+		// lock: a concurrent identical submit waits for this tx to commit,
+		// then finds the row. Atomic with the insert below.
+		now := time.Now()
+		recent, err := h.config.ListRecentSubmitsTx(ctx, tx, creatorID, now.Add(-purchaseIdempotencyWindow))
 		if err != nil {
 			return err
 		}
-		if dup = matchDuplicateInList(pending, creatorID, idempotencyKey, time.Now()); dup != nil {
+		if dup = matchDuplicateInList(recent, creatorID, idempotencyKey, now); dup != nil {
 			return nil // found duplicate — skip insert, commit tx (read-only)
 		}
 
@@ -2949,16 +2954,22 @@ func (h *Handler) findDuplicatePendingExecution(ctx context.Context, creatorID, 
 // instead of a freshly-minted duplicate. duplicate=true lets the UI explain
 // why no new approval email was sent.
 func buildDuplicatePurchaseResponse(ex *config.PurchaseExecution) map[string]any {
-	return map[string]any{
+	resp := map[string]any{
 		"execution_id":         ex.ExecutionID,
 		"status":               ex.Status,
 		"recommendation_count": len(ex.Recommendations),
 		"total_upfront_cost":   ex.TotalUpfrontCost,
 		"estimated_savings":    ex.EstimatedSavings,
-		"email_sent":           ex.NotificationSent != nil,
 		"duplicate":            true,
-		"message":              "Duplicate submission collapsed onto the existing pending execution; no new approval request was created.",
+		"message":              "Duplicate submission collapsed onto the existing execution (see status); no new execution or approval request was created.",
 	}
+	// An approval email only exists for a row still awaiting approval. A row
+	// that already moved on (direct execute, approved, completed) never had
+	// one, and email_sent=false would make the client report a failure.
+	if ex.Status == "pending" || ex.Status == "notified" {
+		resp["email_sent"] = ex.NotificationSent != nil
+	}
+	return resp
 }
 
 // newPendingExecution builds a fresh pending PurchaseExecution with a
@@ -3004,7 +3015,7 @@ func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctio
 	// an identical actor + scaled rec set + capacity within a short window must
 	// resolve to the original pending execution rather than minting a second
 	// approvable row (double-spend). The atomic guard lives inside
-	// persistExecutionAndSuppressions (SELECT FOR UPDATE + INSERT in one tx)
+	// persistExecutionAndSuppressions (per-creator lock + read + INSERT in one tx)
 	// which closes the TOCTOU race that a pre-tx read alone cannot prevent.
 	creator := resolveCreatorUserID(session)
 	creatorID := derefStringOrEmpty(creator)

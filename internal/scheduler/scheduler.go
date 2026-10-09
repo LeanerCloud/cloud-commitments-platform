@@ -476,7 +476,10 @@ func expandSuccessfulCollects(providerName string, accountIDs []string) []config
 // (or [""] for the ambient path so the caller can synthesize a nil
 // CloudAccountID for eviction).
 func (s *Scheduler) collectAWSRecommendations(ctx context.Context, globalCfg *config.GlobalConfig) ([]config.RecommendationRecord, []string, error) {
-	accounts := s.enabledAccounts(ctx, "aws")
+	accounts, err := s.enabledAccounts(ctx, "aws")
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Backward-compatible fallback: no registered accounts → ambient credentials
 	if len(accounts) == 0 {
@@ -796,7 +799,10 @@ func (s *Scheduler) collectAWSForAccount(ctx context.Context, globalCfg *config.
 // credentials and tags recommendations with the registered subscription's
 // UUID if found in cloud_accounts.
 func (s *Scheduler) collectAzureRecommendations(ctx context.Context, _ *config.GlobalConfig) ([]config.RecommendationRecord, []string, error) {
-	accounts := s.enabledAccounts(ctx, "azure")
+	accounts, err := s.enabledAccounts(ctx, "azure")
+	if err != nil {
+		return nil, nil, err
+	}
 	if len(accounts) == 0 {
 		// Issue #662: mirror the AWS ambient-path tagging fix for Azure.
 		// When the host subscription matches a registered cloud_accounts row,
@@ -869,7 +875,10 @@ func (s *Scheduler) collectAzureForAccount(ctx context.Context, acct config.Clou
 // and tags recommendations with the registered project's UUID if found
 // in cloud_accounts.
 func (s *Scheduler) collectGCPRecommendations(ctx context.Context, _ *config.GlobalConfig) ([]config.RecommendationRecord, []string, error) {
-	accounts := s.enabledAccounts(ctx, "gcp")
+	accounts, err := s.enabledAccounts(ctx, "gcp")
+	if err != nil {
+		return nil, nil, err
+	}
 	if len(accounts) == 0 {
 		// Issue #662: mirror the AWS ambient-path tagging fix for GCP.
 		// When the host project matches a registered cloud_accounts row,
@@ -932,17 +941,19 @@ func (s *Scheduler) collectGCPForAccount(ctx context.Context, acct config.CloudA
 }
 
 // enabledAccounts returns all enabled cloud accounts for the given provider.
-func (s *Scheduler) enabledAccounts(ctx context.Context, providerName string) []config.CloudAccount {
+// A listing error is returned, never mapped to "no accounts": callers treat an
+// empty list as permission to fall back to ambient credentials, which must
+// not happen because of a transient store failure.
+func (s *Scheduler) enabledAccounts(ctx context.Context, providerName string) ([]config.CloudAccount, error) {
 	enabled := true
 	accounts, err := s.config.ListCloudAccounts(ctx, config.CloudAccountFilter{
 		Provider: &providerName,
 		Enabled:  &enabled,
 	})
 	if err != nil {
-		logging.Errorf("Failed to list %s accounts: %v", providerName, err)
-		return nil
+		return nil, fmt.Errorf("list enabled %s accounts: %w", providerName, err)
 	}
-	return accounts
+	return accounts, nil
 }
 
 // tolerateIncompleteSweep converts an incomplete recommendation collection

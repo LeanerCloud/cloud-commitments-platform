@@ -18,6 +18,7 @@ import {
   DEFAULT_INVENTORY_SUB_SECTION,
 } from './inventory';
 import { isAdmin } from './auth';
+import { confirmDialog } from './confirmDialog';
 import { canAccess } from './permissions';
 
 interface TabMeta {
@@ -123,6 +124,16 @@ function renderNoAccess(tabId: string): void {
 /**
  * Switch between tabs
  */
+function confirmLeaveSettings(): Promise<boolean> {
+  return confirmDialog({
+    title: 'Leave without saving?',
+    body: 'You have unsaved settings changes. Leaving this tab discards them.',
+    confirmLabel: 'Leave without saving',
+    cancelLabel: 'Stay on this tab',
+    destructive: true,
+  });
+}
+
 export function switchTab(tabName: string, opts: SwitchTabOptions = {}): void {
   if (!isKnownKey(TABS, tabName)) tabName = 'home';
 
@@ -134,7 +145,10 @@ export function switchTab(tabName: string, opts: SwitchTabOptions = {}): void {
     tabName !== 'admin' &&
     isUnsavedChanges()
   ) {
-    if (!confirm('You have unsaved settings changes. Leave without saving?')) return;
+    void confirmLeaveSettings().then(leave => {
+      if (leave) switchTab(tabName, { ...opts, skipDirtyGuard: true });
+    });
+    return;
   }
 
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach(btn => {
@@ -359,10 +373,15 @@ export function initRouter(): void {
       target !== 'admin' &&
       isUnsavedChanges()
     ) {
-      if (!confirm('You have unsaved settings changes. Leave without saving?')) {
-        if (delta !== 0) window.history.go(-delta);
-        return;
-      }
+      void confirmLeaveSettings().then(leave => {
+        if (leave) {
+          historyId = newId;
+          switchTab(target, { push: false, skipDirtyGuard: true });
+        } else if (delta !== 0) {
+          window.history.go(-delta);
+        }
+      });
+      return;
     }
 
     historyId = newId;

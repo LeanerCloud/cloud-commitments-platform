@@ -342,6 +342,9 @@ func (m *mockConfigStoreForHealth) ListActiveSuppressions(_ context.Context) ([]
 func (m *mockConfigStoreForHealth) SavePurchaseExecutionTx(ctx context.Context, _ pgx.Tx, e *config.PurchaseExecution) error {
 	return m.SavePurchaseExecution(ctx, e)
 }
+func (m *mockConfigStoreForHealth) ListRecentSubmitsTx(ctx context.Context, _ pgx.Tx, _ string, _ time.Time) ([]config.PurchaseExecution, error) {
+	return m.GetPendingExecutions(ctx)
+}
 func (m *mockConfigStoreForHealth) GetPendingExecutionsTx(ctx context.Context, _ pgx.Tx) ([]config.PurchaseExecution, error) {
 	return m.GetPendingExecutions(ctx)
 }

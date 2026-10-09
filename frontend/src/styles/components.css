@@ -113,72 +113,95 @@
     margin-top: 1rem;
 }
 
-/* Buttons */
+/* Buttons: the default is a quiet outlined button. Only primary and
+ * destructive actions are filled, so the filled colour always means
+ * "this is the main or the dangerous action". */
 button {
     padding: 0.5rem 1rem;
-    border: none;
+    border: 1px solid var(--cudly-border-strong);
     border-radius: 4px;
-    background: var(--cudly-text-muted);
-    color: white;
+    background: var(--cudly-surface);
+    color: var(--cudly-text);
     cursor: pointer;
     font-size: 0.875rem;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s;
 }
 
-button:hover {
-    background: var(--cudly-text-muted);
+/* :where() keeps this at class-level specificity so component classes that
+ * set their own background are not overridden on hover. */
+:where(button):hover {
+    background: var(--cudly-surface-muted);
+    border-color: var(--cudly-text-subtle);
+}
+
+button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 button.primary {
     background: var(--cudly-primary);
+    border-color: var(--cudly-primary);
+    color: white;
 }
 
 button.primary:hover {
     background: var(--cudly-primary-hover);
+    border-color: var(--cudly-primary-hover);
 }
 
 button.success {
     background: var(--cudly-success);
+    border-color: var(--cudly-success);
+    color: white;
 }
 
 button.success:hover {
     background: #166534;
+    border-color: #166534;
 }
 
 button.danger {
     background: var(--cudly-error);
+    border-color: var(--cudly-error);
+    color: white;
 }
 
 button.danger:hover {
     background: var(--cudly-error-fg);
+    border-color: var(--cudly-error-fg);
 }
 
 /* Secondary button style */
-.btn-secondary {
+.btn-secondary,
+button.secondary {
     background: var(--cudly-bg);
     color: var(--cudly-text);
     border: 1px solid var(--cudly-border-strong);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover,
+button.secondary:hover {
     background: #e8e8e8;
     border-color: #bbb;
 }
 
-/* Base btn class */
+/* Base btn class: same quiet outlined look as the bare button, so it can
+ * be combined with the variant classes below. */
 .btn {
     padding: 0.5rem 1rem;
-    border: none;
+    border: 1px solid var(--cudly-border-strong);
     border-radius: 4px;
-    background: var(--cudly-text-muted);
-    color: white;
+    background: var(--cudly-surface);
+    color: var(--cudly-text);
     cursor: pointer;
     font-size: 0.875rem;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s;
 }
 
 .btn:hover {
-    background: var(--cudly-text-muted);
+    background: var(--cudly-surface-muted);
+    border-color: var(--cudly-text-subtle);
 }
 
 .btn-small {
@@ -239,6 +262,47 @@ button.danger:hover {
 .btn-small.danger:hover {
     background: var(--cudly-error);
     color: white;
+}
+
+/* Variants used in markup next to .btn / .btn-small. Outlined by default;
+ * they fill on hover so the destructive action reads as such without being
+ * the loudest element in a row of actions. */
+.btn-danger {
+    background: var(--cudly-error-bg);
+    color: var(--cudly-error-fg);
+    border: 1px solid var(--cudly-error);
+}
+
+.btn-danger:hover {
+    background: var(--cudly-error);
+    border-color: var(--cudly-error);
+    color: white;
+}
+
+.btn-warning {
+    background: var(--cudly-warn-bg);
+    color: var(--cudly-warn-fg);
+    border: 1px solid var(--cudly-warn);
+}
+
+.btn-warning:hover {
+    background: var(--cudly-warn);
+    border-color: var(--cudly-warn);
+    color: var(--cudly-text);
+}
+
+/* Link-style action inside table rows (Approve, Cancel, Retry ...). */
+.btn-link {
+    padding: 0.25rem 0.5rem;
+    background: transparent;
+    color: var(--cudly-primary);
+    border: none;
+    text-decoration: none;
+}
+
+.btn-link:hover {
+    background: var(--cudly-info-bg);
+    text-decoration: underline;
 }
 
 /* Canonical top-level button variants. Existing .btn + .btn-small classes
@@ -702,6 +766,7 @@ th .column-filter-btn.active {
 /* Filter-status bar (Clear-filters badge + aria-live count) above the table. */
 .recommendations-filter-status {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.75rem;
     padding: 0.4rem 0;
@@ -749,7 +814,8 @@ th .column-filter-btn.active {
 .recommendations-action-box {
     position: sticky;
     bottom: 0;
-    height: var(--action-box-height);
+    min-height: var(--action-box-height);
+    flex-wrap: wrap;
     background: var(--cudly-surface);
     border-top: 1px solid var(--cudly-border);
     box-shadow: var(--cudly-shadow-md);
@@ -1238,8 +1304,10 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 }
 
 .info-icon .tooltip-text {
-    visibility: hidden;
-    opacity: 0;
+    /* display:none, not visibility:hidden: a hidden absolutely positioned
+     * box still extends the scrollable area and widens the page (#703). */
+    display: none;
+    max-width: calc(100vw - 2rem);
     position: absolute;
     z-index: 1000;
     bottom: 125%;
@@ -1255,7 +1323,6 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     line-height: 1.4;
     text-align: left;
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    transition: opacity 0.2s, visibility 0.2s;
     white-space: normal;
 }
 
@@ -1271,8 +1338,7 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 }
 
 .info-icon:hover .tooltip-text {
-    visibility: visible;
-    opacity: 1;
+    display: block;
 }
 
 /* Role badge */
@@ -1698,4 +1764,36 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 .apikeys-count-cell {
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+/* Money confirm dialogs: shared stat band (commitmentSummary.ts). */
+.commitment-summary-band {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
+    margin: 0.75rem 0;
+}
+
+.commitment-summary-stat {
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 0.75rem;
+    background: var(--cudly-surface-muted);
+    border-radius: 6px;
+}
+
+.commitment-summary-label {
+    font-size: 0.8rem;
+    color: var(--cudly-text-muted);
+}
+
+.commitment-summary-value {
+    font-size: 1.15rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.commitment-summary-lines {
+    margin: 0.5rem 0 0;
+    padding-left: 1.1rem;
+    font-size: 0.9rem;
 }
