@@ -110,11 +110,20 @@ func (app *Application) backgroundInitDelay() time.Duration {
 // outage at boot does not permanently strand the replica. Lambda does not use
 // this path: cold starts there must stay lazy to avoid paying the database
 // connection cost on invocations that never touch the database.
-func (app *Application) startBackgroundInit(ctx context.Context) {
+//
+// The returned channel is closed once the initializer has exited, so shutdown
+// can wait for it before app.Close reads app.DB.
+func (app *Application) startBackgroundInit(ctx context.Context) <-chan struct{} {
+	done := make(chan struct{})
 	if app.dbConfig == nil {
-		return // Not using PostgreSQL; nothing to initialize.
+		close(done) // Not using PostgreSQL; nothing to initialize.
+		return done
 	}
-	go app.initializeUntilReady(ctx, app.ensureDB)
+	go func() {
+		defer close(done)
+		app.initializeUntilReady(ctx, app.ensureDB)
+	}()
+	return done
 }
 
 // initializeUntilReady calls init until it succeeds or ctx is done, so a
@@ -146,6 +155,10 @@ func (app *Application) initializeUntilReady(ctx context.Context, init func(cont
 	}
 }
 
+// shutdownGracePeriod bounds draining in-flight requests plus waiting for the
+// background initializer. A variable so tests can shorten it.
+var shutdownGracePeriod = 30 * time.Second
+
 // StartHTTPServer starts the HTTP server with graceful shutdown on SIGINT/SIGTERM.
 // It blocks until the server exits cleanly. In container orchestrators (Cloud Run,
 // Container Apps, Fargate) SIGTERM is the normal stop signal; without this wiring
@@ -159,7 +172,7 @@ func StartHTTPServer(app *Application, port int) error {
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	app.startBackgroundInit(sigCtx)
+	initDone := app.startBackgroundInit(sigCtx)
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -177,10 +190,16 @@ func StartHTTPServer(app *Application, port int) error {
 		// Received SIGINT or SIGTERM: drain in-flight requests then close the DB.
 		stop() // release signal resources promptly
 		log.Printf("Shutdown signal received; draining HTTP server (30s grace)...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Printf("HTTP server forced shutdown: %v", err)
+		}
+		// The initializer shares app.DB with app.Close; let it exit first.
+		select {
+		case <-initDone:
+		case <-shutdownCtx.Done():
+			log.Printf("Background database initialization did not stop within the shutdown grace period")
 		}
 		return nil
 	}
