@@ -249,7 +249,8 @@ describe('openExchangeModal', () => {
     const text = document.querySelector('.modal-confirm-body')?.textContent ?? '';
     expect(text).toContain('Pay now: USD 12.50');
     expect(text).toContain('3 \u00d7 m5.large');
-    expect(text).not.toContain(offeringUUID);
+    // The exact offering id stays visible next to the instance type.
+    expect(text).toContain(`3 \u00d7 m5.large (offering ${offeringUUID})`);
     expect(text).toContain('USD 0.1000 \u2192 0.1250 (+0.0250/hr, about +18.25/month)');
     expect(document.activeElement?.textContent).toBe('Cancel');
     document.querySelector<HTMLButtonElement>('.modal-confirm-close')?.click();
