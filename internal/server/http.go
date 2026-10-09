@@ -155,6 +155,10 @@ func (app *Application) initializeUntilReady(ctx context.Context, init func(cont
 	}
 }
 
+// shutdownGracePeriod bounds draining in-flight requests plus waiting for the
+// background initializer. A variable so tests can shorten it.
+var shutdownGracePeriod = 30 * time.Second
+
 // StartHTTPServer starts the HTTP server with graceful shutdown on SIGINT/SIGTERM.
 // It blocks until the server exits cleanly. In container orchestrators (Cloud Run,
 // Container Apps, Fargate) SIGTERM is the normal stop signal; without this wiring
@@ -186,7 +190,7 @@ func StartHTTPServer(app *Application, port int) error {
 		// Received SIGINT or SIGTERM: drain in-flight requests then close the DB.
 		stop() // release signal resources promptly
 		log.Printf("Shutdown signal received; draining HTTP server (30s grace)...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Printf("HTTP server forced shutdown: %v", err)
