@@ -988,7 +988,12 @@ describe('Plans Module', () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      expect(mockConfirmDialog).toHaveBeenCalled();
+      // The action cancels this scheduled purchase AND disables its plan
+      // (backend deletePlannedPurchase), so the dialog must say both.
+      expect(mockConfirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Cancel this scheduled purchase?',
+        body: expect.stringContaining('plan will be disabled'),
+      }));
       expect(api.deletePlannedPurchase).toHaveBeenCalledWith('purchase-1');
       // Issue #774: after disable the Plans page must refresh so the toggle
       // reflects the backend's new enabled=false. getPlans is the API call
@@ -2422,7 +2427,7 @@ describe('Plans Module', () => {
     });
 
     test('submit form shows the 409 refusal message while plan steps cannot carry recommendations (#609)', async () => {
-      const refusal = 'plan steps cannot yet carry recommendations (tracked in platform#609), so no purchases can be added to a plan; purchase from Opportunities instead';
+      const refusal = 'plan steps cannot yet carry recommendations (tracked in platform#631), so no purchases can be added to a plan; purchase from Opportunities instead';
       (api.createPlannedPurchases as jest.Mock).mockRejectedValue(new Error(refusal));
 
       const form = document.getElementById('add-purchases-form') as HTMLFormElement;

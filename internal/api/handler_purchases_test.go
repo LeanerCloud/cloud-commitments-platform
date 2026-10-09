@@ -5695,7 +5695,7 @@ func TestHandler_revokePurchase_ValidToken(t *testing.T) {
 	// revocation_requested, returning the updated row.
 	mockStore.On("TransitionExecutionStatus", ctx, execID,
 		[]string{"completed", "partially_completed"}, "revocation_requested",
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == revokerEmail })).
+		mock.MatchedBy(func(actor *string) bool { return actor == nil })).
 		Return(&config.PurchaseExecution{ExecutionID: execID, Status: "revocation_requested"}, nil)
 	// SetCancelledBy stamps the actor without a full-row overwrite (Finding #5).
 	mockStore.On("SetCancelledBy", ctx, execID, revokerEmail).Return(nil)
@@ -5880,7 +5880,7 @@ func TestHandler_revokePurchase_SessionAdminCancelAny(t *testing.T) {
 	mockStore.On("GetExecutionByID", ctx, execID).Return(exec, nil)
 	mockStore.On("TransitionExecutionStatus", ctx, execID,
 		[]string{"completed", "partially_completed"}, "revocation_requested",
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == adminEmail })).
+		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == adminUserID })).
 		Return(&config.PurchaseExecution{ExecutionID: execID, Status: "revocation_requested"}, nil)
 	// SetCancelledBy replaces the full-row SavePurchaseExecution (Finding #5).
 	mockStore.On("SetCancelledBy", ctx, execID, adminEmail).Return(nil)
@@ -5925,7 +5925,7 @@ func TestHandler_revokePurchase_SessionOwnerCancelOwn(t *testing.T) {
 	mockStore.On("GetExecutionByID", ctx, execID).Return(exec, nil)
 	mockStore.On("TransitionExecutionStatus", ctx, execID,
 		[]string{"completed", "partially_completed"}, "revocation_requested",
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == ownerEmail })).
+		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == ownerUserID })).
 		Return(&config.PurchaseExecution{ExecutionID: execID, Status: "revocation_requested"}, nil)
 	// SetCancelledBy replaces the full-row SavePurchaseExecution (Finding #5).
 	mockStore.On("SetCancelledBy", ctx, execID, ownerEmail).Return(nil)
@@ -6002,11 +6002,11 @@ func TestHandler_revokeViaSession_ConcurrentTransition(t *testing.T) {
 	mockStore := new(MockConfigStore)
 	mockStore.On("TransitionExecutionStatus", ctx, execID,
 		[]string{"completed", "partially_completed"}, "revocation_requested",
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == "someone@example.com" })).
+		mock.MatchedBy(func(actor *string) bool { return actor == nil })).
 		Return(nil, fmt.Errorf("%w: execution %s", config.ErrExecutionNotInExpectedStatus, execID))
 
 	handler := &Handler{config: mockStore}
-	_, err := handler.revokeViaSession(ctx, exec, "someone@example.com")
+	_, err := handler.revokeViaSession(ctx, exec, "someone@example.com", nil)
 	require.Error(t, err, "a concurrent transition must surface an error")
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a client error")
@@ -6088,13 +6088,13 @@ func TestRevokeViaSession_CancelledByFoldsIntoTransition_NoLostUpdate(t *testing
 	mockStore := new(MockConfigStore)
 	mockStore.On("TransitionExecutionStatus", ctx, execID,
 		[]string{"completed", "partially_completed"}, "revocation_requested",
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == revokedBy })).
+		mock.MatchedBy(func(actor *string) bool { return actor == nil })).
 		Return(&config.PurchaseExecution{ExecutionID: execID, Status: "revocation_requested"}, nil)
 	// SetCancelledBy must be called; SavePurchaseExecution must NOT.
 	mockStore.On("SetCancelledBy", ctx, execID, revokedBy).Return(nil)
 
 	handler := &Handler{config: mockStore}
-	result, err := handler.revokeViaSession(ctx, exec, revokedBy)
+	result, err := handler.revokeViaSession(ctx, exec, revokedBy, nil)
 	require.NoError(t, err)
 	resultMap := result.(map[string]string)
 	assert.Equal(t, "revocation_requested", resultMap["status"])
@@ -6332,7 +6332,7 @@ func TestRevokePurchase_POSTPerformsRevoke(t *testing.T) {
 	}
 	mockStore.On("TransitionExecutionStatus", ctx, execID,
 		[]string{"completed", "partially_completed"}, "revocation_requested",
-		mock.MatchedBy(func(actor *string) bool { return actor != nil && *actor == revokerEmail })).
+		mock.MatchedBy(func(actor *string) bool { return actor == nil })).
 		Return(&config.PurchaseExecution{ExecutionID: execID, Status: "revocation_requested"}, nil)
 	// SetCancelledBy replaces the full-row SavePurchaseExecution (Finding #5).
 	mockStore.On("SetCancelledBy", ctx, execID, revokerEmail).Return(nil)

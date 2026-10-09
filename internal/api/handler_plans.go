@@ -454,7 +454,7 @@ func (h *Handler) createPlannedPurchases(ctx context.Context, httpReq *events.La
 	// longer reaches them, so the creator stamp (#950), the single transaction
 	// and the ramp lock (#1861) are exercised through them directly in tests.
 	return nil, NewClientError(409,
-		"plan steps cannot yet carry recommendations (tracked in platform#609), so no purchases can be added to a plan; purchase from Opportunities instead")
+		"plan steps cannot yet carry recommendations (tracked in platform#631), so no purchases can be added to a plan; purchase from Opportunities instead")
 }
 
 // createPlannedPurchasesTx is the transactional body of createPlannedPurchases:
