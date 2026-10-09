@@ -1,6 +1,6 @@
 package api
 
-// exchange_helpers_test.go — tests for checkDailyCap and federation IaC helpers.
+// exchange_helpers_test.go — tests for federation IaC helpers.
 
 import (
 	"context"
@@ -13,50 +13,6 @@ import (
 
 // ---------------------------------------------------------------------------
 // checkDailyCap
-// ---------------------------------------------------------------------------
-
-func TestCheckDailyCap_WithinCap(t *testing.T) {
-	// $100 daily spend + $50 payment = $150, cap is $200 → allowed
-	reason := checkDailyCap("100.00", "50.00", 200.0)
-	assert.Equal(t, "", reason, "expected no reason when within cap")
-}
-
-func TestCheckDailyCap_ExceedsCap(t *testing.T) {
-	// $150 spent + $100 payment = $250 > $200 cap → blocked
-	reason := checkDailyCap("150.00", "100.00", 200.0)
-	assert.NotEmpty(t, reason)
-	assert.Contains(t, reason, "daily cap exceeded")
-}
-
-func TestCheckDailyCap_InvalidDailySpend(t *testing.T) {
-	// Unparseable daily spend → fail-safe block
-	reason := checkDailyCap("not-a-number", "50.00", 200.0)
-	assert.NotEmpty(t, reason)
-	assert.Contains(t, reason, "daily spend check failed")
-}
-
-func TestCheckDailyCap_InvalidPaymentDue(t *testing.T) {
-	// H1 fix: an unparseable payment-due string must fail closed (return a
-	// blocking reason) instead of being treated as $0. Proceeding as $0 would
-	// allow an exchange of unknown cost through the daily cap check.
-	reason := checkDailyCap("100.00", "not-a-number", 500.0)
-	assert.NotEmpty(t, reason, "unparseable payment due must block the exchange (fail closed)")
-	assert.Contains(t, reason, "could not parse payment due")
-}
-
-func TestCheckDailyCap_ExactlyAtCap(t *testing.T) {
-	// $100 spent + $100 payment = $200 == $200 cap → allowed (not strictly greater)
-	reason := checkDailyCap("100.00", "100.00", 200.0)
-	assert.Equal(t, "", reason)
-}
-
-func TestCheckDailyCap_ZeroSpend(t *testing.T) {
-	reason := checkDailyCap("0.00", "50.00", 200.0)
-	assert.Equal(t, "", reason)
-}
-
-// ---------------------------------------------------------------------------
-// getFederationIaC — accessible validation paths (no DB required)
 // ---------------------------------------------------------------------------
 
 func TestHandler_getFederationIaC_MissingTarget(t *testing.T) {

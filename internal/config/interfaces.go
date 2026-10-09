@@ -363,6 +363,10 @@ type StoreInterface interface {
 	// RI Exchange history
 	SaveRIExchangeRecord(ctx context.Context, record *RIExchangeRecord) error
 	ReserveRIExchange(ctx context.Context, record *RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error)
+	// ReserveApprovedRIExchange reserves the execution ceiling for an already
+	// processing (approved) exchange under the shared daily-cap lock, excluding
+	// the row's own amount, and stores the ceiling as its payment_due.
+	ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error)
 	GetRIExchangeRecord(ctx context.Context, id string) (*RIExchangeRecord, error)
 	GetRIExchangeRecordByToken(ctx context.Context, token string) (*RIExchangeRecord, error)
 	GetRIExchangeHistory(ctx context.Context, since time.Time, limit int) ([]RIExchangeRecord, error)

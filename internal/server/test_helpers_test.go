@@ -184,6 +184,10 @@ func (m *mockConfigStoreForHealth) SaveRIExchangeRecord(ctx context.Context, rec
 func (m *mockConfigStoreForHealth) ReserveRIExchange(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
 	return "", errors.New("RI exchange reservation not configured in test store")
 }
+
+func (m *mockConfigStoreForHealth) ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	return "", errors.New("approved RI exchange reservation not configured in test store")
+}
 func (m *mockConfigStoreForHealth) GetRIExchangeRecord(ctx context.Context, id string) (*config.RIExchangeRecord, error) {
 	return nil, nil
 }

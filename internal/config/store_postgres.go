@@ -2911,28 +2911,11 @@ func (s *PostgresStore) ReserveRIExchange(ctx context.Context, record *RIExchang
 	candidate := *record
 	var ceiling string
 	err = s.WithTx(ctx, func(tx pgx.Tx) error {
-		if _, lockErr := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", riExchangeDailySpendLockKey); lockErr != nil {
-			return fmt.Errorf("failed to lock RI exchange daily spend: %w", lockErr)
+		var reserveErr error
+		ceiling, reserveErr = reserveRIExchangeCeiling(ctx, tx, nil, record.PaymentDue, initial, dailyCap, perCap, dailyCapUSD)
+		if reserveErr != nil {
+			return reserveErr
 		}
-		var spendText string
-		if scanErr := tx.QueryRow(ctx, riExchangeDailySpendQuery, time.Now().UTC()).Scan(&spendText); scanErr != nil {
-			return fmt.Errorf("failed to read RI exchange daily spend: %w", scanErr)
-		}
-		spend, parseErr := riExchangeMicros(spendText)
-		if parseErr != nil {
-			return fmt.Errorf("invalid RI exchange daily spend: %w", parseErr)
-		}
-		remaining := new(big.Int).Sub(dailyCap, spend)
-		if remaining.Cmp(perCap) > 0 {
-			remaining.Set(perCap)
-		}
-		if remaining.Sign() < 0 {
-			return fmt.Errorf("RI exchange daily cap exceeded: spend %s exceeds cap %s", spendText, dailyCapUSD)
-		}
-		if initial.Cmp(remaining) > 0 {
-			return fmt.Errorf("RI exchange daily cap exceeded: initial %s, remaining %s", record.PaymentDue, riExchangeUSD(remaining))
-		}
-		ceiling = riExchangeUSD(remaining)
 		candidate.PaymentDue = ceiling
 		return saveRIExchangeRecord(ctx, tx, &candidate)
 	})
@@ -2941,6 +2924,89 @@ func (s *PostgresStore) ReserveRIExchange(ctx context.Context, record *RIExchang
 	}
 	*record = candidate
 	return ceiling, nil
+}
+
+// ReserveApprovedRIExchange reserves the full execution ceiling for an approved
+// exchange whose row is already processing. It runs under the same global
+// advisory lock as ReserveRIExchange, so manual approvals and AUTO exchanges
+// share one headroom protocol, and it leaves the row's own amount out of the
+// spend it checks against. The row's payment_due becomes the reserved ceiling
+// until CompleteRIExchangeWithPayment settles the accepted amount.
+func (s *PostgresStore) ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	dailyCap, err := riExchangeMicros(dailyCapUSD)
+	if err != nil {
+		return "", fmt.Errorf("invalid daily RI exchange cap: %w", err)
+	}
+	perCap, err := riExchangeMicros(perExchangeCapUSD)
+	if err != nil {
+		return "", fmt.Errorf("invalid per-exchange RI cap: %w", err)
+	}
+
+	var ceiling string
+	err = s.WithTx(ctx, func(tx pgx.Tx) error {
+		var initialText string
+		scanErr := tx.QueryRow(ctx,
+			`SELECT payment_due::text FROM ri_exchange_history WHERE id = $1 AND status = 'processing' FOR UPDATE`, id,
+		).Scan(&initialText)
+		if errors.Is(scanErr, pgx.ErrNoRows) {
+			return fmt.Errorf("ri exchange %s is not processing", id)
+		}
+		if scanErr != nil {
+			return fmt.Errorf("failed to read RI exchange %s: %w", id, scanErr)
+		}
+		initial, parseErr := riExchangeMicros(initialText)
+		if parseErr != nil {
+			return fmt.Errorf("invalid initial RI exchange payment: %w", parseErr)
+		}
+		var reserveErr error
+		ceiling, reserveErr = reserveRIExchangeCeiling(ctx, tx, &id, initialText, initial, dailyCap, perCap, dailyCapUSD)
+		if reserveErr != nil {
+			return reserveErr
+		}
+		_, updErr := tx.Exec(ctx,
+			`UPDATE ri_exchange_history SET payment_due = $2::numeric, updated_at = NOW() WHERE id = $1`, id, ceiling)
+		if updErr != nil {
+			return fmt.Errorf("failed to record RI exchange reservation: %w", updErr)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return ceiling, nil
+}
+
+// ErrRIExchangeDailyCapExceeded marks a reservation refused because the
+// initial quote does not fit the remaining daily or per-exchange headroom.
+var ErrRIExchangeDailyCapExceeded = errors.New("RI exchange daily cap exceeded")
+
+// reserveRIExchangeCeiling takes the global daily-spend lock (held until tx ends)
+// and returns min(perExchangeCap, dailyCap - spend) as the execution ceiling,
+// refusing when the initial quote does not fit. excludeID leaves one row's own
+// amount out of spend so an approval does not count itself twice.
+func reserveRIExchangeCeiling(ctx context.Context, tx pgx.Tx, excludeID *string, initialText string, initial, dailyCap, perCap *big.Int, dailyCapUSD string) (string, error) {
+	if _, lockErr := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", riExchangeDailySpendLockKey); lockErr != nil {
+		return "", fmt.Errorf("failed to lock RI exchange daily spend: %w", lockErr)
+	}
+	var spendText string
+	if scanErr := tx.QueryRow(ctx, riExchangeDailySpendQuery, time.Now().UTC(), excludeID).Scan(&spendText); scanErr != nil {
+		return "", fmt.Errorf("failed to read RI exchange daily spend: %w", scanErr)
+	}
+	spend, parseErr := riExchangeMicros(spendText)
+	if parseErr != nil {
+		return "", fmt.Errorf("invalid RI exchange daily spend: %w", parseErr)
+	}
+	remaining := new(big.Int).Sub(dailyCap, spend)
+	if remaining.Cmp(perCap) > 0 {
+		remaining.Set(perCap)
+	}
+	if remaining.Sign() < 0 {
+		return "", fmt.Errorf("%w: spend %s exceeds cap %s", ErrRIExchangeDailyCapExceeded, spendText, dailyCapUSD)
+	}
+	if initial.Cmp(remaining) > 0 {
+		return "", fmt.Errorf("%w: initial %s, remaining %s", ErrRIExchangeDailyCapExceeded, initialText, riExchangeUSD(remaining))
+	}
+	return riExchangeUSD(remaining), nil
 }
 
 func riExchangeReservationMicros(record *RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (initial, dailyCap, perCap *big.Int, err error) {
@@ -3205,7 +3271,7 @@ func (s *PostgresStore) GetRIExchangeDailySpend(ctx context.Context, date time.T
 	query := riExchangeDailySpendQuery
 
 	var total string
-	err := s.db.QueryRow(ctx, query, date).Scan(&total)
+	err := s.db.QueryRow(ctx, query, date, nil).Scan(&total)
 	if err != nil {
 		return "", fmt.Errorf("failed to get ri exchange daily spend: %w", err)
 	}
@@ -3213,12 +3279,18 @@ func (s *PostgresStore) GetRIExchangeDailySpend(ctx context.Context, date time.T
 	return total, nil
 }
 
+// riExchangeDailySpendQuery counts completed exchanges accepted inside the
+// requested UTC day plus every processing reservation. A processing row is an
+// unsettled hold, so it stays counted across UTC midnight until it completes or
+// fails. $2 optionally leaves one row out (an approval's own reservation).
 const riExchangeDailySpendQuery = `
 		SELECT COALESCE(SUM(payment_due), 0)::text
 		FROM ri_exchange_history
-		WHERE status IN ('completed', 'processing')
-		  AND COALESCE(completed_at, updated_at) >= (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
-		  AND COALESCE(completed_at, updated_at) < (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') + INTERVAL '1 day') AT TIME ZONE 'UTC'
+		WHERE ($2::uuid IS NULL OR id <> $2::uuid)
+		  AND (status = 'processing'
+		       OR (status = 'completed'
+		           AND COALESCE(completed_at, updated_at) >= (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+		           AND COALESCE(completed_at, updated_at) < (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') + INTERVAL '1 day') AT TIME ZONE 'UTC'))
 	`
 
 // CancelAllPendingExchanges cancels all pending RI exchange records regardless

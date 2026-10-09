@@ -15,6 +15,14 @@ var (
 	ladderAmountPattern    = regexp.MustCompile(`^(0|[1-9]\d{0,13})(\.\d{1,6})?$`)
 )
 
+// ladderAmendValidationError keeps the Validate message for the caller while
+// matching ErrLadderAmendInvalid, so store callers can map every invalid
+// amendment to a client error with errors.Is.
+type ladderAmendValidationError struct{ err error }
+
+func (e ladderAmendValidationError) Error() string   { return e.err.Error() }
+func (e ladderAmendValidationError) Unwrap() []error { return []error{ErrLadderAmendInvalid, e.err} }
+
 type LadderAmendment struct {
 	ExpectedRevision *int64    `json:"expected_revision"`
 	ScheduledDate    time.Time `json:"scheduled_date"`
