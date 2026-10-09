@@ -2010,9 +2010,14 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 	// potentially a re-drive. purchase.RedriveRefusalReason is the same
 	// predicate the reaper's automatic re-drive gates on: it returns a
 	// reason exactly when the provider offers nothing that would collapse
-	// the second attempt onto the first, which today means Azure
-	// savings-plans (no server-side idempotency key, timestamp-derived
-	// order alias) plus any provider the predicate does not recognize.
+	// the second attempt onto the first, which today means AWS EC2 and
+	// Redshift (no client token; a lost response is reported as outcome
+	// unknown), Azure savings-plans (no server-side idempotency key,
+	// timestamp-derived order alias) plus any provider the predicate does
+	// not recognize. A failed EC2 or Redshift row therefore cannot be
+	// retried; the operator checks the account and starts a new purchase.
+	// If plan steps ever carry recommendations (platform#609), a failed EC2
+	// step will be un-retryable too and needs its own recovery path.
 	//
 	// This gate runs FIRST and, unlike the threshold below, ?force=true
 	// does NOT override it: a savings plan cannot be canceled, so there
