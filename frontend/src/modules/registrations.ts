@@ -245,7 +245,7 @@ async function handleReject(reg: AccountRegistration): Promise<void> {
   const reasonInput = document.createElement('textarea');
   reasonInput.id = 'registration-reject-reason';
   reasonInput.rows = 3;
-  reasonInput.style.width = '100%';
+  reasonInput.className = 'registration-reject-reason';
   body.append(label, reasonInput);
   const ok = await confirmDialog({
     title: `Reject registration for "${reg.account_name}"?`,

@@ -116,12 +116,24 @@ describe('confirmDialog', () => {
     expect(document.activeElement?.classList.contains('modal-confirm-close')).toBe(true);
   });
 
-  it('cycles focus backwards on Shift+Tab', () => {
-    void confirmDialog({ title: 't', body: 'b', destructive: true });
-    // cycle order: confirm, cancel, close; focus starts on cancel
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }));
+  it('cycles focus over all focusables in DOM order, including body inputs', () => {
+    const body = document.createElement('div');
+    const ta = document.createElement('textarea');
+    body.appendChild(ta);
+    void confirmDialog({ title: 't', body, destructive: true });
+    const tab = (shiftKey = false): void => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey }));
+    };
+    // DOM order: close-X, textarea, Cancel, Confirm; focus starts on Cancel.
+    tab(true);
+    expect(document.activeElement).toBe(ta);
+    tab(true);
+    expect(document.activeElement?.classList.contains('modal-confirm-close')).toBe(true);
+    tab();
+    expect(document.activeElement).toBe(ta);
+    tab(); tab();
     expect(document.activeElement?.textContent).toBe('Confirm');
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }));
+    tab();
     expect(document.activeElement?.classList.contains('modal-confirm-close')).toBe(true);
   });
 });

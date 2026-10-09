@@ -15,6 +15,8 @@
  * (aria-describedby).
  */
 
+import { FOCUSABLE_SELECTOR } from './modal';
+
 let dialogSeq = 0;
 
 export interface ConfirmDialogOptions {
@@ -121,14 +123,12 @@ export function confirmDialog(opts: ConfirmDialogOptions): Promise<boolean> {
         e.preventDefault();
         settle(false);
       } else if (e.key === 'Tab') {
-        // Focus trap: cycle Tab between the focusable elements the dialog
-        // actually rendered. When hideCancelButton is true, cycle between
-        // close-X and confirm; otherwise include the dismiss button too.
+        // Focus trap: cycle over every focusable the dialog rendered (close-X,
+        // any inputs in a caller-supplied body, then the action buttons), in
+        // DOM order.
         e.preventDefault();
-        const cycle: HTMLButtonElement[] = hideCancel
-          ? [confirmBtn, closeBtn]
-          : [confirmBtn, cancelBtn, closeBtn];
-        const idx = cycle.indexOf(document.activeElement as HTMLButtonElement);
+        const cycle = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+        const idx = cycle.indexOf(document.activeElement as HTMLElement);
         const step = e.shiftKey ? -1 : 1;
         const next = cycle[(idx + step + cycle.length) % cycle.length] ?? confirmBtn;
         next.focus();
