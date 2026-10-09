@@ -42,7 +42,7 @@ func retryCarveoutFailedExec() *config.PurchaseExecution {
 		Error:           "send failed: transient SES throttle",
 		CreatedByUserID: &creator,
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", Term: 1, UpfrontCost: 100},
+			{Provider: "aws", Service: "rds", Term: 1, UpfrontCost: 100},
 		},
 	}
 }
