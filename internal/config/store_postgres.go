@@ -2075,6 +2075,9 @@ func (s *PostgresStore) CleanupOldExecutions(ctx context.Context, retentionDays 
 // covers rows that predate the unique index from migration 000108; the index
 // and ON CONFLICT cover two concurrent saves. An existing row is left as is.
 func (s *PostgresStore) SavePurchaseHistory(ctx context.Context, record *PurchaseHistoryRecord) error {
+	if err := record.Validate(); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO purchase_history (
 			account_id, purchase_id, timestamp, provider, service, region,
