@@ -1,0 +1,249 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/archera"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/secrets"
+)
+
+const (
+	cmpLineID = "22222222-2222-4222-8222-222222222222"
+	cmpFin    = `{"commitment_cost":{"total":110,"breakdown":{"cloud_provider_cost":{"total":100},"archera_premium":10}},"commitment_savings":{"net":-5.5,"gross":4.5},"covered_ondemand_cost":104.5}`
+	cmpOffer  = `{"is_current":true,"offer_id":"11111111-1111-4111-8111-111111111111","offer_org_id":"public","offer":{"provider":"aws","type":"aws/AmazonEC2","region":"us-east-1","guaranteed_display_name":null},"lease_menu_item_id":null,"selected_amount":3,"commitment_type":"aws/AmazonEC2","contract_term":null,"payment_option":null,"discount_rate":0.3,"breakeven_days":null,"commitment_upfront_cost":1200,"commitment_financials_monthly_rate":` + cmpFin + `,"delta_vs_current":{"monthly_net_savings":0,"upfront_cost":0,"discount_rate":0,"breakeven_days":null}}`
+	cmpBody   = `{"current_totals":{"commitment_financials_monthly_rate":` + cmpFin + `,"commitment_upfront_cost":1200},"hypothetical_totals":[],"data":[{"line_item_id":"` + cmpLineID + `","current":` + cmpOffer + `,"candidates":[]}]}`
+)
+
+type vendorTransport struct {
+	t       *testing.T
+	calls   int
+	status  int
+	body    string
+	headers http.Header
+	lastReq *http.Request
+}
+
+func (v *vendorTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	v.calls++
+	v.lastReq = r
+	assert.Equal(v.t, "https", r.URL.Scheme)
+	assert.Equal(v.t, "api.archera.ai", r.URL.Host)
+	h := v.headers
+	if h == nil {
+		h = http.Header{}
+	}
+	code := v.status
+	if code == 0 {
+		code = 200
+	}
+	return &http.Response{StatusCode: code, Header: h, Body: io.NopCloser(strings.NewReader(v.body)), Request: r}, nil
+}
+
+func adminCtx() context.Context {
+	return contextWithPrincipal(context.Background(), &Principal{Kind: PrincipalAdminAPIKey})
+}
+
+func cmpHandler(t *testing.T, s archera.Settings, vt *vendorTransport) *Handler {
+	t.Helper()
+	p := archera.NewProvider(s, secrets.NewEnvResolver(), &http.Client{Transport: vt})
+	return NewHandler(HandlerConfig{Insurance: p})
+}
+
+func completeEnv(t *testing.T) archera.Settings {
+	t.Helper()
+	t.Setenv(archera.EnvOrgID, insTestOrg)
+	t.Setenv(archera.EnvPlanID, insTestPlan)
+	t.Setenv(archera.EnvKeySecret, insTestRef)
+	t.Setenv(insTestRef, insTestKey)
+	return archera.SettingsFromEnv()
+}
+
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := logging.SetOutput(&buf)
+	logging.SetLevel("debug")
+	t.Cleanup(func() { logging.SetOutput(prev) })
+	return &buf
+}
+
+// Production composition: env -> SettingsFromEnv -> env secret resolver ->
+// lazy insurance.NewClient (only the RoundTripper replaces the network) ->
+// router -> handler -> JSON DTO.
+func TestInsuranceComparison_Composition(t *testing.T) {
+	vt := &vendorTransport{t: t, body: cmpBody}
+	h := cmpHandler(t, completeEnv(t), vt)
+
+	res, err := NewRouter(h).Route(adminCtx(), "GET", "/api/insurance/comparison", &events.LambdaFunctionURLRequest{})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, vt.calls)
+	assert.Equal(t, http.MethodGet, vt.lastReq.Method)
+	assert.Equal(t, "/v1/org/"+insTestOrg+"/commitment-plans/"+insTestPlan+"/comparison", vt.lastReq.URL.Path)
+	assert.Equal(t, insTestKey, vt.lastReq.Header.Get("x-api-key"))
+	assert.Empty(t, vt.lastReq.URL.RawQuery, "no filters are passed")
+
+	dto, ok := res.(*archera.ComparisonDTO)
+	require.True(t, ok)
+	assert.Equal(t, insTestPlan, dto.PlanID)
+	assert.True(t, dto.PremiumIncluded)
+	assert.Equal(t, "supported", dto.Rows[0].Current.ProductSupport.Status)
+	assert.Equal(t, "110", *dto.Current.CommitmentCostTotal)
+}
+
+func TestInsuranceComparison_ProductionPassesNilHTTPClient(t *testing.T) {
+	// app.go must build the provider with hc=nil so the SSRF-hardened default
+	// client is used; only tests inject a transport.
+	src, err := os.ReadFile("../server/app.go")
+	require.NoError(t, err)
+	assert.Contains(t, string(src), "archera.NewProvider(archera.SettingsFromEnv(), deps.SecretResolver, nil)")
+}
+
+func TestInsuranceComparison_NotConfiguredMakesNoRequest(t *testing.T) {
+	vt := &vendorTransport{t: t}
+	for name, s := range map[string]archera.Settings{
+		"off":        {},
+		"incomplete": {OrgID: insTestOrg, KeySecretRef: insTestRef},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := cmpHandler(t, s, vt)
+			_, err := h.getInsuranceComparison(adminCtx(), &events.LambdaFunctionURLRequest{})
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "%v", err)
+			assert.Equal(t, 503, ce.code)
+			for _, missing := range s.Missing() {
+				assert.Contains(t, ce.message, missing)
+			}
+			assert.NotContains(t, ce.message, insTestOrg)
+			assert.Zero(t, vt.calls)
+		})
+	}
+	h := &Handler{insurance: nil}
+	_, err := h.getInsuranceComparison(adminCtx(), &events.LambdaFunctionURLRequest{})
+	ce, _ := IsClientError(err)
+	require.NotNil(t, ce)
+	assert.Equal(t, 503, ce.code)
+}
+
+func TestInsuranceComparison_KeyUnavailableNamesSetting(t *testing.T) {
+	t.Setenv(archera.EnvOrgID, insTestOrg)
+	t.Setenv(archera.EnvPlanID, insTestPlan)
+	t.Setenv(archera.EnvKeySecret, "SYNTHETIC_UNSET_REF")
+	vt := &vendorTransport{t: t}
+	h := cmpHandler(t, archera.SettingsFromEnv(), vt)
+	_, err := h.getInsuranceComparison(adminCtx(), &events.LambdaFunctionURLRequest{})
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 503, ce.code)
+	assert.Contains(t, ce.message, archera.EnvKeySecret)
+	assert.Zero(t, vt.calls)
+}
+
+func TestInsuranceComparison_VendorErrorsAreSanitized(t *testing.T) {
+	fragment := insTestKey[:12]
+	echo := `{"message":"bad key ` + insTestKey + ` fragment ` + fragment + `"}`
+	cases := []struct {
+		name    string
+		status  int
+		body    string
+		headers http.Header
+		code    int
+		retry   string
+	}{
+		{"401 echoing key", 401, echo, nil, 502, ""},
+		{"403", 403, echo, nil, 502, ""},
+		{"404", 404, echo, nil, 502, ""},
+		{"429 with Retry-After", 429, echo, http.Header{"Retry-After": {"120"}}, 429, "120"},
+		{"429 without Retry-After", 429, echo, nil, 429, ""},
+		{"429 zero Retry-After", 429, echo, http.Header{"Retry-After": {"0"}}, 429, ""},
+		{"500", 500, echo, nil, 502, ""},
+		{"oversized body", 200, strings.Repeat(" ", 9<<20), nil, 502, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureLogs(t)
+			vt := &vendorTransport{t: t, status: tc.status, body: tc.body, headers: tc.headers}
+			h := cmpHandler(t, completeEnv(t), vt)
+			_, err := h.getInsuranceComparison(adminCtx(), &events.LambdaFunctionURLRequest{})
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "%v", err)
+			assert.Equal(t, tc.code, ce.code)
+			for _, leak := range []string{insTestKey, fragment, "bad key"} {
+				assert.NotContains(t, ce.message, leak)
+				assert.NotContains(t, logs.String(), leak)
+			}
+			if tc.retry == "" {
+				assert.Empty(t, ce.headers)
+				assert.NotContains(t, ce.Details(), "retry_after_seconds")
+			} else {
+				assert.Equal(t, tc.retry, ce.headers["Retry-After"])
+				assert.Contains(t, ce.Details(), "retry_after_seconds")
+			}
+		})
+	}
+}
+
+func TestInsuranceComparison_RetryAfterHeaderReachesResponse(t *testing.T) {
+	h := &Handler{}
+	err := NewClientErrorWithHeaders(429, "x", map[string]any{"retry_after_seconds": 7}, map[string]string{"Retry-After": "7"})
+	base := map[string]string{"Access-Control-Allow-Origin": "o"}
+	status, body := h.handleRequestError(err)
+	resp := h.buildResponse(status, errorResponseHeaders(err, base), body, nil)
+	assert.Equal(t, "7", resp.Headers["Retry-After"])
+	assert.Equal(t, "o", resp.Headers["Access-Control-Allow-Origin"])
+	assert.Equal(t, 429, resp.StatusCode)
+	assert.Contains(t, resp.Body, `"retry_after_seconds":7`)
+	assert.NotContains(t, base, "Retry-After", "the base header map is not mutated")
+}
+
+func TestInsuranceComparison_TooLargeFailsLoud(t *testing.T) {
+	// 9000 synthetic rows, each ~190 bytes of DTO JSON, exceed 5 MiB
+	// while the vendor body stays under the 8 MiB client bound.
+	var rows []string
+	for i := 0; i < 9000; i++ {
+		rows = append(rows, `{"line_item_id":"`+cmpLineID+`","current":`+cmpOffer+`,"candidates":[]}`)
+	}
+	body := `{"current_totals":{"commitment_financials_monthly_rate":` + cmpFin + `,"commitment_upfront_cost":1200},"hypothetical_totals":[],"data":[` + strings.Join(rows, ",") + `]}`
+	require.Less(t, len(body), 8<<20, "vendor body must stay under the client bound for this test")
+	vt := &vendorTransport{t: t, body: body}
+	h := cmpHandler(t, completeEnv(t), vt)
+	_, err := h.getInsuranceComparison(adminCtx(), &events.LambdaFunctionURLRequest{})
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "%v", err)
+	assert.Equal(t, 502, ce.code)
+	assert.Equal(t, "comparison too large to return", ce.message)
+}
+
+func TestInsuranceComparison_DeniedAndScoped(t *testing.T) {
+	vt := &vendorTransport{t: t, body: cmpBody}
+	s := completeEnv(t)
+	p := archera.NewProvider(s, secrets.NewEnvResolver(), &http.Client{Transport: vt})
+
+	m := new(MockAuthService)
+	m.On("HasPermissionAPI", mock.Anything, "u1", "view", "recommendations").Return(false, nil)
+	_, err := (&Handler{auth: m, insurance: p}).getInsuranceComparison(sessionPrincipalCtx(), &events.LambdaFunctionURLRequest{})
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 403, ce.code)
+
+	m2 := new(MockAuthService)
+	m2.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", "view", "recommendations").Return("u2", "key-1", true, nil)
+	m2.On("GetAllowedAccountsAPI", mock.Anything, "u2").Return([]string{"acct-1"}, nil)
+	ctx := contextWithPrincipal(context.Background(), &Principal{Kind: PrincipalUserAPIKey, UserID: "u2", APIKeyID: "key-1"})
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"x-api-key": "user-key"}}
+	_, err = (&Handler{auth: m2, insurance: p}).getInsuranceComparison(ctx, req)
+	assert.ErrorIs(t, err, errNotFound)
+	assert.Zero(t, vt.calls, "a denied or scoped caller must not cause an outbound request")
+}

@@ -123,6 +123,7 @@ func (r *Router) registerRoutes() {
 		// recommendation feed (handlers still scope rows by account
 		// permission grants).
 		{ExactPath: "/api/recommendations", Method: "GET", Handler: r.getRecommendationsHandler, Auth: AuthUser},
+		{ExactPath: "/api/insurance/comparison", Method: "GET", Handler: r.getInsuranceComparisonHandler, Auth: AuthUser},
 		{ExactPath: "/api/insurance/status", Method: "GET", Handler: r.getInsuranceStatusHandler, Auth: AuthUser},
 		{ExactPath: "/api/recommendations/freshness", Method: "GET", Handler: r.getRecommendationsFreshnessHandler, Auth: AuthUser},
 		// AuthUser: any signed-in user can trigger refresh; the handler
@@ -512,6 +513,10 @@ func (r *Router) refreshRecommendationsHandler(ctx context.Context, req *events.
 
 func (r *Router) getInsuranceStatusHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
 	return r.h.getInsuranceStatus(ctx, req)
+}
+
+func (r *Router) getInsuranceComparisonHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
+	return r.h.getInsuranceComparison(ctx, req)
 }
 
 func (r *Router) getRecommendationsFreshnessHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
