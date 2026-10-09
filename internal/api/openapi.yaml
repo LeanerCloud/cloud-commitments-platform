@@ -361,6 +361,12 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: The plan changed concurrently, or the request changes the ramp schedule of a plan that has already completed a step. Keep the schedule, or create a new plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     patch:
       operationId: patchPlan
       tags: [Plans]

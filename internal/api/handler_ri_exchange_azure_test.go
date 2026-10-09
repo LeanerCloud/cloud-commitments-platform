@@ -2223,3 +2223,32 @@ func TestExchangeRegions(t *testing.T) {
 		})
 	}
 }
+
+// TestExecuteAzureExchange_FourEyesRefusesDirectExecute pins issue #517 for
+// Azure: with RequireDifferentApprover on, the direct execute endpoint refuses
+// after authorization and before any quote or exchange call. The ops client
+// registers only the ownership listing, so a CalculateExchange or
+// ExecuteExchange call would fail the strict mock.
+func TestExecuteAzureExchange_FourEyesRefusesDirectExecute(t *testing.T) {
+	ctx := context.Background()
+	opsClient := new(mockAzureExchangeOpsClient)
+	ownsAzureSource(opsClient)
+	t.Cleanup(func() { opsClient.AssertExpectations(t) })
+
+	h := newAzureExecuteSourceGateHandler(t, opsClient)
+	store, ok := h.config.(*MockConfigStore)
+	require.True(t, ok)
+	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{RequireDifferentApprover: true}, nil)
+
+	_, err := h.executeAzureExchange(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"authorization": "Bearer tok"},
+		Body:    validAzureExecuteBody,
+	})
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected a ClientError, got: %v", err)
+	assert.Equal(t, 403, ce.code)
+	assert.Equal(t, "direct RI exchange execution is disabled while 4-eyes approval mode is on; use the approval flow", ce.Error())
+	opsClient.AssertNotCalled(t, "ExecuteExchange", mock.Anything, mock.Anything)
+	opsClient.AssertNotCalled(t, "CalculateExchange", mock.Anything, mock.Anything, mock.Anything)
+}

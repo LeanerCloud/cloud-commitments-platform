@@ -1202,6 +1202,11 @@ func (h *Handler) executeAzureExchange(ctx context.Context, req *events.LambdaFu
 		return nil, err
 	}
 
+	err = h.requireNoDirectExchangeUnderFourEyes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	targets, err := toAzureExchangeTargets(body.Targets, body.SubscriptionID)
 	if err != nil {
 		return nil, err
@@ -1898,28 +1903,7 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 
 	region := body.Region
 
-	// Enforce the per-permission Constraints configured on the granting
-	// execute:ri-exchange permission (SEC-01, issue #1141). RI exchanges
-	// are AWS EC2 only and region-scoped, and operate on the RIs of the
-	// deployment's own AWS account, so AccountIDs carries the registered
-	// cloud account the running deployment resolves to (fail closed on a
-	// resolution error; unattributedAccountConstraint when the deployment
-	// maps to no registered account, so an AccountIDs-constrained
-	// permission denies). The amount cap is checked against the caller's
-	// max_payment_due_usd guardrail, which ExecuteExchange independently
-	// enforces against the actual quoted payment due.
-	maxPayment, _ := maxRat.Float64()
-	cloudAccountID, err := h.resolveReshapeCloudAccountIDOrUnattributed(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve cloud account scope: %w", err)
-	}
-	err = h.requirePermissionConstraints(ctx, session, "execute", "ri-exchange", []auth.PermissionConstraints{{
-		AccountIDs:        []string{cloudAccountID},
-		Providers:         []string{string(common.ProviderAWS)},
-		Services:          []string{string(common.ServiceEC2)},
-		Regions:           []string{region},
-		MaxPurchaseAmount: maxPayment,
-	}})
+	cloudAccountID, err := h.authorizeAWSExchangeExecution(ctx, session, region, maxRat)
 	if err != nil {
 		return nil, err
 	}
@@ -2483,6 +2467,60 @@ func (h *Handler) authorizeSessionApproveRIExchange(ctx context.Context, session
 		return NewClientError(403, "permission denied: cannot approve another user's pending exchange")
 	}
 
+	return nil
+}
+
+// authorizeAWSExchangeExecution applies the gates on the direct AWS execute
+// endpoint that follow session permission and scope: the permission
+// Constraints, then the 4-eyes policy. It returns the deployment's cloud
+// account ID for the idempotency key.
+func (h *Handler) authorizeAWSExchangeExecution(ctx context.Context, session *Session, region string, maxRat *big.Rat) (string, error) {
+	// Enforce the per-permission Constraints configured on the granting
+	// execute:ri-exchange permission (SEC-01, issue #1141). RI exchanges
+	// are AWS EC2 only and region-scoped, and operate on the RIs of the
+	// deployment's own AWS account, so AccountIDs carries the registered
+	// cloud account the running deployment resolves to (fail closed on a
+	// resolution error; unattributedAccountConstraint when the deployment
+	// maps to no registered account, so an AccountIDs-constrained
+	// permission denies). The amount cap is checked against the caller's
+	// max_payment_due_usd guardrail, which ExecuteExchange independently
+	// enforces against the actual quoted payment due.
+	maxPayment, _ := maxRat.Float64()
+	cloudAccountID, err := h.resolveReshapeCloudAccountIDOrUnattributed(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve cloud account scope: %w", err)
+	}
+	err = h.requirePermissionConstraints(ctx, session, "execute", "ri-exchange", []auth.PermissionConstraints{{
+		AccountIDs:        []string{cloudAccountID},
+		Providers:         []string{string(common.ProviderAWS)},
+		Services:          []string{string(common.ServiceEC2)},
+		Regions:           []string{region},
+		MaxPurchaseAmount: maxPayment,
+	}})
+	if err != nil {
+		return "", err
+	}
+
+	err = h.requireNoDirectExchangeUnderFourEyes(ctx)
+	if err != nil {
+		return "", err
+	}
+	return cloudAccountID, nil
+}
+
+// requireNoDirectExchangeUnderFourEyes refuses the direct execute endpoints
+// while 4-eyes mode is on. A direct execute quotes and runs an irreversible
+// exchange in one request, so there is no pending record and no second person
+// to approve it; the approval flow (pending record + different approver) is the
+// only path that satisfies the policy.
+func (h *Handler) requireNoDirectExchangeUnderFourEyes(ctx context.Context) error {
+	cfg, err := h.config.GetGlobalConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("4-eyes policy check: failed to load global config: %w", err)
+	}
+	if cfg != nil && cfg.RequireDifferentApprover {
+		return NewClientError(403, "direct RI exchange execution is disabled while 4-eyes approval mode is on; use the approval flow")
+	}
 	return nil
 }
 

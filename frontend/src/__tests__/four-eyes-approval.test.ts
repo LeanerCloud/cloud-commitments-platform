@@ -254,6 +254,26 @@ describe('4-eyes approval mode (issue #1005)', () => {
     expect(document.getElementById('four-eyes-banner')?.classList.contains('hidden')).toBe(false);
   });
 
+  test.each([[null], [undefined]])(
+    'creator %p: badge says no creator is recorded, not "awaiting a different approver" (#233)',
+    async (creator) => {
+      (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
+      (api.getConfig as jest.Mock).mockResolvedValue({ global: { require_different_approver: true } });
+      (api.getHistory as jest.Mock).mockResolvedValue({
+        summary: {},
+        purchases: [makeRow({ purchase_id: 'exec-nocreator', created_by_user_id: creator })],
+      });
+
+      await loadHistory();
+
+      const list = document.getElementById('history-list')!;
+      expect(list.querySelectorAll('.history-approve-btn')).toHaveLength(0);
+      const badges = list.querySelectorAll('.badge-muted');
+      expect(badges).toHaveLength(1);
+      expect(badges[0]?.textContent).toBe('No recorded creator - an admin must disable 4-eyes mode');
+    }
+  );
+
   test('null creator (legacy row): approve hidden', async () => {
     (getCurrentUser as jest.Mock).mockReturnValue(REG_USER);
     (api.getConfig as jest.Mock).mockResolvedValue({ global: { require_different_approver: true } });
