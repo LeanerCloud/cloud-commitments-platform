@@ -2,6 +2,7 @@ package purchase
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"cloud.google.com/go/compute/apiv1/computepb"
@@ -27,6 +28,12 @@ func (fakeCommitmentsService) List(context.Context, *computepb.ListRegionCommitm
 
 func (fakeCommitmentsService) Insert(context.Context, *computepb.InsertRegionCommitmentRequest) (computeengine.CommitmentsOperation, error) {
 	return fakeCommitmentOp{}, nil
+}
+
+// Get is only reached when an insert returns 409; this fake never does, so a
+// call means the test no longer drives the path it was written for.
+func (fakeCommitmentsService) Get(context.Context, *computepb.GetRegionCommitmentRequest) (*computepb.Commitment, error) {
+	return nil, errors.New("fakeCommitmentsService.Get is not expected in this test")
 }
 
 func (fakeCommitmentsService) Close() error { return nil }
