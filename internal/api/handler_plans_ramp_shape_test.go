@@ -46,24 +46,28 @@ func putPlan(t *testing.T, existing *config.PurchasePlan, body string) (*events.
 func TestUpdatePlan_RampShapeChange(t *testing.T) {
 	const planID = "12345678-1234-1234-1234-123456789abc"
 	weekly := config.PresetRampSchedules[config.RampWeekly25Pct]
+	custom30 := config.RampSchedule{Type: "custom", PercentPerStep: 30, StepIntervalDays: 7, TotalSteps: 3}
 
 	tests := []struct {
 		name       string
+		stored     config.RampSchedule
 		step       int
 		body       string
 		wantStatus int
 		wantStep   int
 		wantType   string
 	}{
-		{"in-progress ramp, different shape is refused", 3, `{"name":"p","ramp_schedule":"monthly-10pct"}`, 409, 0, ""},
-		{"in-progress ramp, omitted ramp_schedule is refused", 3, `{"name":"renamed"}`, 409, 0, ""},
-		{"in-progress ramp, different percent is refused", 3, `{"name":"p","ramp_schedule":"custom","custom_step_percent":20,"custom_interval_days":7}`, 409, 0, ""},
-		{"in-progress ramp, same shape keeps its step", 3, `{"name":"renamed","ramp_schedule":"weekly-25pct"}`, 200, 3, "weekly"},
-		{"no completed step, different shape is allowed", 0, `{"name":"p","ramp_schedule":"monthly-10pct"}`, 200, 0, "monthly"},
+		{"in-progress ramp, different shape is refused", weekly, 3, `{"name":"p","ramp_schedule":"monthly-10pct"}`, 409, 0, ""},
+		{"in-progress ramp, omitted ramp_schedule is refused", weekly, 3, `{"name":"renamed"}`, 409, 0, ""},
+		{"first completed step, different shape is refused", weekly, 1, `{"name":"p","ramp_schedule":"monthly-10pct"}`, 409, 0, ""},
+		// 30% and 33% both give 3 steps: only PercentPerStep differs.
+		{"in-progress ramp, only the percent differs, is refused", custom30, 2, `{"name":"p","ramp_schedule":"custom","custom_step_percent":33,"custom_interval_days":7}`, 409, 0, ""},
+		{"in-progress ramp, same shape keeps its step", weekly, 3, `{"name":"renamed","ramp_schedule":"weekly-25pct"}`, 200, 3, "weekly"},
+		{"no completed step, different shape is allowed", weekly, 0, `{"name":"p","ramp_schedule":"monthly-10pct"}`, 200, 0, "monthly"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rs := weekly
+			rs := tc.stored
 			rs.CurrentStep = tc.step
 			existing := &config.PurchasePlan{ID: planID, Name: "p", Enabled: true, RampSchedule: rs}
 
