@@ -2593,17 +2593,6 @@ func (h *Handler) retryCompleteWithPayment(ctx context.Context, id, exchangeID, 
 	return err
 }
 
-// handlerChooseEffectiveCap returns the smaller of perExchangeCap and daily
-// headroom (dailyCap - dailySpent), bounding Execute's MaxPaymentDueUSD so a
-// fresh re-quote cannot exceed the remaining daily budget (H2 fix).
-func handlerChooseEffectiveCap(dailyCap, dailySpent, perExchangeCap *big.Rat) *big.Rat {
-	remaining := new(big.Rat).Sub(dailyCap, dailySpent)
-	if remaining.Cmp(perExchangeCap) < 0 {
-		return remaining
-	}
-	return perExchangeCap
-}
-
 // handlerAcceptedAmount extracts the confirmed payment amount from a fresh
 // Execute quote, falling back to fallback when freshQ is nil or empty (H3 fix).
 //
@@ -2620,39 +2609,26 @@ func handlerAcceptedAmount(freshQ *exchange.ExchangeQuoteSummary, fallback strin
 	return fallback
 }
 
-// checkCapsAndComputeHeadroom validates the spending-cap configuration, runs the
-// daily-cap check, and computes the effective MaxPaymentDueUSD that Execute must
-// not exceed (H2: remaining daily headroom vs per-exchange cap, whichever is
-// smaller). Returns a non-empty reason string on any failure so the caller can
-// forward it to failExchange.
-func checkCapsAndComputeHeadroom(dailySpendStr, paymentDue string, cfg *config.GlobalConfig) (effectiveCap *big.Rat, reason string) {
+// exchangeCapStrings validates the spending-cap configuration and returns the
+// daily and per-exchange caps as decimal strings for the atomic reservation.
+// A non-empty reason means the caller must forward it to failExchange.
+func exchangeCapStrings(cfg *config.GlobalConfig) (daily, perExchange, reason string) {
 	if cfg.RIExchangeMaxDailyUSD == 0 {
-		return nil, "daily spending cap is not configured (RIExchangeMaxDailyUSD is 0)"
-	}
-	if reason := checkDailyCap(dailySpendStr, paymentDue, cfg.RIExchangeMaxDailyUSD); reason != "" {
-		return nil, reason
+		return "", "", "daily spending cap is not configured (RIExchangeMaxDailyUSD is 0)"
 	}
 	if cfg.RIExchangeMaxPerExchangeUSD == 0 {
-		return nil, "per-exchange spending cap is not configured (RIExchangeMaxPerExchangeUSD is 0)"
+		return "", "", "per-exchange spending cap is not configured (RIExchangeMaxPerExchangeUSD is 0)"
 	}
-	// checkDailyCap already verified dailySpendStr is parseable; a second failure
-	// is an internal error - fail closed to avoid executing with wrong headroom.
-	dailySpent, err := exchange.ParseDecimalRat(dailySpendStr)
-	if err != nil || dailySpent == nil {
-		return nil, fmt.Sprintf("daily spend re-parse failed (internal error): %v", err)
-	}
-	dailyCap := new(big.Rat).SetFloat64(cfg.RIExchangeMaxDailyUSD)
-	perExchangeCap := new(big.Rat).SetFloat64(cfg.RIExchangeMaxPerExchangeUSD)
-	return handlerChooseEffectiveCap(dailyCap, dailySpent, perExchangeCap), ""
+	daily = new(big.Rat).SetFloat64(cfg.RIExchangeMaxDailyUSD).FloatString(6)
+	perExchange = new(big.Rat).SetFloat64(cfg.RIExchangeMaxPerExchangeUSD).FloatString(6)
+	return daily, perExchange, ""
 }
 
-// executeApprovedExchange checks caps and executes the exchange after approval.
+// executeApprovedExchange reserves the execution ceiling atomically under the
+// shared daily-cap lock, then executes the exchange within that ceiling. The
+// ceiling is the full permitted amount (min of per-exchange cap and daily
+// headroom), so a fresh re-quote cannot push the day over the cap.
 func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record *config.RIExchangeRecord) (any, error) {
-	dailySpendStr, err := h.config.GetRIExchangeDailySpend(ctx, time.Now())
-	if err != nil {
-		return h.failExchange(ctx, id, "daily spending cap check failed")
-	}
-
 	globalCfg, err := h.config.GetGlobalConfig(ctx)
 	if err != nil {
 		return h.failExchange(ctx, id, "config load failed")
@@ -2666,9 +2642,18 @@ func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record
 		return h.failExchange(ctx, id, "exchange record has no region; cannot execute safely")
 	}
 
-	effectiveCap, reason := checkCapsAndComputeHeadroom(dailySpendStr, record.PaymentDue, globalCfg)
+	dailyCapUSD, perExchangeCapUSD, reason := exchangeCapStrings(globalCfg)
 	if reason != "" {
 		return h.failExchange(ctx, id, reason)
+	}
+	ceiling, err := h.config.ReserveApprovedRIExchange(ctx, id, dailyCapUSD, perExchangeCapUSD)
+	if err != nil {
+		logging.Warnf("RI exchange %s reservation refused: %v", id, err)
+		return h.failExchange(ctx, id, "daily spending cap check failed: "+err.Error())
+	}
+	effectiveCap, ok := new(big.Rat).SetString(ceiling)
+	if !ok {
+		return h.failExchange(ctx, id, fmt.Sprintf("reserved ceiling %q is not a decimal", ceiling))
 	}
 
 	execFn := exchange.ExecuteExchange
@@ -2686,9 +2671,8 @@ func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record
 		return h.failExchange(ctx, id, execErr.Error())
 	}
 
-	// H3: persist the amount AWS actually accepted, not the stale pre-execution
-	// quote stored in record.PaymentDue.
-	acceptedPaymentDue := handlerAcceptedAmount(freshQ, record.PaymentDue)
+	// H3: persist the amount AWS actually accepted, not the reserved ceiling.
+	acceptedPaymentDue := handlerAcceptedAmount(freshQ, ceiling)
 
 	// H4: retry the ledger write via retryCompleteWithPayment; persistent
 	// failure is returned as an error (HTTP 500) so the caller knows money
@@ -2701,35 +2685,6 @@ func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record
 	}
 
 	return map[string]any{"status": "completed", "exchange_id": exchangeID}, nil
-}
-
-// checkDailyCap verifies the exchange payment won't exceed the daily spending cap.
-// Returns an empty string if within cap, or a reason string if exceeded or if
-// either input cannot be parsed (fail closed on parse errors).
-func checkDailyCap(dailySpendStr, paymentDueStr string, maxDailyUSD float64) string {
-	dailyCap := new(big.Rat).SetFloat64(maxDailyUSD)
-	dailySpent, err := exchange.ParseDecimalRat(dailySpendStr)
-	if err != nil || dailySpent == nil {
-		// A parse failure means we cannot determine today's spend; treat as a cap
-		// check failure to avoid under-counting spend (fail-safe).
-		logging.Warnf("checkDailyCap: failed to parse daily spend string %q: %v; blocking exchange to avoid exceeding cap", dailySpendStr, err)
-		return fmt.Sprintf("daily spend check failed: could not parse today's spend value %q", dailySpendStr)
-	}
-	paymentDue, err := exchange.ParseDecimalRat(paymentDueStr)
-	if err != nil || paymentDue == nil {
-		// H1 fix: fail closed on an unparseable payment-due string instead of
-		// treating it as $0. An unparseable value means we cannot determine the
-		// true cost of this exchange, so proceeding risks exceeding the cap.
-		logging.Warnf("checkDailyCap: failed to parse payment due string %q: %v; blocking exchange to avoid cap bypass", paymentDueStr, err)
-		return fmt.Sprintf("daily spend check failed: could not parse payment due value %q", paymentDueStr)
-	}
-
-	newTotal := new(big.Rat).Add(dailySpent, paymentDue)
-	if newTotal.Cmp(dailyCap) > 0 {
-		return fmt.Sprintf("daily cap exceeded: spent $%s + payment $%s > cap $%.2f",
-			dailySpent.FloatString(2), paymentDue.FloatString(2), maxDailyUSD)
-	}
-	return ""
 }
 
 // rejectRIExchange handles rejection of a pending RI exchange via token.
