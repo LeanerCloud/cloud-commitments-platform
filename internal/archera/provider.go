@@ -22,7 +22,7 @@ import (
 const (
 	EnvOrgID     = "ARCHERA_ORG_ID"
 	EnvPlanID    = "ARCHERA_PLAN_ID"
-	EnvKeySecret = "ARCHERA_API_KEY_SECRET"
+	EnvKeySecret = "ARCHERA_API_KEY_SECRET" // #nosec G101 -- setting name, not a credential value
 )
 
 // ErrNotConfigured is returned (wrapped, naming the missing settings) when an
