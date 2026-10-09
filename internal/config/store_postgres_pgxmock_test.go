@@ -1531,7 +1531,7 @@ func TestPGXMock_GetRIExchangeDailySpend_Success(t *testing.T) {
 	ctx := context.Background()
 
 	rows := pgxmock.NewRows([]string{"total"}).AddRow("250.00")
-	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg()).WillReturnRows(rows)
+	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg(), nil).WillReturnRows(rows)
 
 	total, err := store.GetRIExchangeDailySpend(ctx, time.Now())
 	require.NoError(t, err)
@@ -1550,7 +1550,7 @@ func TestPGXMock_GetRIExchangeDailySpend_IncludesProcessingStatus(t *testing.T) 
 
 	// Match any SELECT that goes to the DB; the important assertion is below.
 	rows := pgxmock.NewRows([]string{"total"}).AddRow("0")
-	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg()).WillReturnRows(rows)
+	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg(), nil).WillReturnRows(rows)
 
 	_, err := store.GetRIExchangeDailySpend(ctx, time.Now())
 	require.NoError(t, err)
@@ -2240,7 +2240,7 @@ func TestPGXMock_ReserveRIExchange_CommitsCeilingBeforeReturn(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
-	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg()).
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0.000001"))
 	mock.ExpectExec("INSERT INTO ri_exchange_history").WithArgs(anyArgsCfg(21)...).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
@@ -2260,7 +2260,7 @@ func TestPGXMock_ReserveRIExchange_RollsBackWhenQuoteExceedsHeadroom(t *testing.
 	mock.ExpectBegin()
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
-	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg()).
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("101.000000"))
 	mock.ExpectRollback()
 	record := &RIExchangeRecord{PaymentDue: "900", Status: "processing", Mode: "auto"}
@@ -2285,7 +2285,7 @@ func TestPGXMock_ReserveRIExchange_DatabaseFailuresDoNotReturnCeiling(t *testing
 					lock.WillReturnError(dbErr)
 				} else {
 					lock.WillReturnResult(pgxmock.NewResult("SELECT", 1))
-					read := mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg())
+					read := mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg())
 					if stage == "read" {
 						read.WillReturnError(dbErr)
 					} else {
@@ -2312,7 +2312,7 @@ func TestPGXMock_ReserveRIExchange_CommitFailureDoesNotReturnCeiling(t *testing.
 	mock.ExpectBegin()
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
-	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg()).
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0"))
 	mock.ExpectExec("INSERT INTO ri_exchange_history").WithArgs(anyArgsCfg(21)...).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
@@ -3182,5 +3182,59 @@ func TestPGXMock_GetExecutionsByStatuses_ExcludesCleanCompleted(t *testing.T) {
 	execs, err := store.GetExecutionsByStatuses(context.Background(), []string{"pending", "completed"}, 100)
 	require.NoError(t, err)
 	assert.Empty(t, execs)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_ReserveApprovedRIExchange_ReservesCeilingExcludingOwnRow(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	id := "550e8400-e29b-41d4-a716-000000000656"
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT payment_due::text FROM ri_exchange_history").WithArgs(id).
+		WillReturnRows(pgxmock.NewRows([]string{"payment_due"}).AddRow("600.000000"))
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	// The spend read must exclude this row's own id (the legitimate $600 approval).
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), &id).
+		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0.000000"))
+	mock.ExpectExec("UPDATE ri_exchange_history SET payment_due").WithArgs(id, "1000.000000").
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	mock.ExpectCommit()
+
+	ceiling, err := store.ReserveApprovedRIExchange(context.Background(), id, "1000", "1000")
+	require.NoError(t, err)
+	assert.Equal(t, "1000.000000", ceiling)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_ReserveApprovedRIExchange_RefusesWhenInitialExceedsHeadroom(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	id := "550e8400-e29b-41d4-a716-000000000657"
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT payment_due::text FROM ri_exchange_history").WithArgs(id).
+		WillReturnRows(pgxmock.NewRows([]string{"payment_due"}).AddRow("600.000000"))
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), &id).
+		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("500.000000"))
+	mock.ExpectRollback()
+
+	_, err := store.ReserveApprovedRIExchange(context.Background(), id, "1000", "1000")
+	require.ErrorContains(t, err, "daily cap exceeded")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_ReserveApprovedRIExchange_RejectsRowThatIsNotProcessing(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	const id = "550e8400-e29b-41d4-a716-000000000658"
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT payment_due::text FROM ri_exchange_history").WithArgs(id).
+		WillReturnError(pgx.ErrNoRows)
+	mock.ExpectRollback()
+
+	_, err := store.ReserveApprovedRIExchange(context.Background(), id, "1000", "1000")
+	require.ErrorContains(t, err, "is not processing")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

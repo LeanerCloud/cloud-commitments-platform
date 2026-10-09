@@ -897,6 +897,10 @@ func (m *mockConfigStoreForExchange) ReserveRIExchange(ctx context.Context, reco
 	return "", errors.New("RI exchange reservation not configured in test store")
 }
 
+func (m *mockConfigStoreForExchange) ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	return "", errors.New("approved RI exchange reservation not configured in test store")
+}
+
 func (m *mockConfigStoreForExchange) CompleteRIExchangeWithPayment(ctx context.Context, id, exchangeID, acceptedPaymentDue string) error {
 	if m.completeWithPaymentFunc != nil {
 		return m.completeWithPaymentFunc(ctx, id, exchangeID, acceptedPaymentDue)

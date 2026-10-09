@@ -517,7 +517,7 @@ func TestApproveRIExchangeViaSession_RequiresCSRF(t *testing.T) {
 	}, nil).Maybe()
 	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
 		Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-123"}, PaymentDue: "100.00"}, nil).Maybe()
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil).Maybe()
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil).Maybe()
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD:       1000,
 		RIExchangeMaxPerExchangeUSD: 500,
@@ -593,7 +593,7 @@ func TestApproveRIExchange_CSRFFailureDoesNotFallThroughToToken(t *testing.T) {
 	}, nil).Maybe()
 	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
 		Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-123"}, PaymentDue: "100.00"}, nil).Maybe()
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil).Maybe()
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil).Maybe()
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD:       1000,
 		RIExchangeMaxPerExchangeUSD: 500,
@@ -649,7 +649,7 @@ func TestApproveRIExchangeViaSession_PassesCSRF(t *testing.T) {
 	}, nil).Once()
 	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
 		Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-123"}, PaymentDue: "100.00"}, nil)
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD:       1000,
 		RIExchangeMaxPerExchangeUSD: 500,
