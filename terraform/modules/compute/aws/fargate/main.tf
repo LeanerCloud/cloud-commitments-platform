@@ -158,6 +158,8 @@ resource "aws_iam_role_policy" "task_secrets" {
           var.credential_encryption_key_secret_arn != "" ? "${var.credential_encryption_key_secret_arn}*" : "",
           var.scheduled_task_secret_arn,
           var.scheduled_task_secret_arn != "" ? "${var.scheduled_task_secret_arn}*" : "",
+          var.archera_api_key_secret_arn,
+          var.archera_api_key_secret_arn != "" ? "${var.archera_api_key_secret_arn}*" : "",
         ])
       },
       {
@@ -643,6 +645,12 @@ resource "aws_ecs_task_definition" "main" {
           {
             name  = "SCHEDULED_TASK_SECRET_NAME"
             value = var.scheduled_task_secret_name
+          }
+        ],
+        [
+          for k, v in local.archera_env : {
+            name  = k
+            value = v
           }
         ],
         [
@@ -1262,4 +1270,14 @@ resource "aws_iam_role_policy" "eventbridge_fire_scheduled_purchases" {
       }
     ]
   })
+}
+
+locals {
+  # Archera settings, set only when non-empty so an unconfigured deployment
+  # carries no ARCHERA_* variable at all (feature off).
+  archera_env = merge(
+    var.archera_org_id != "" ? { ARCHERA_ORG_ID = var.archera_org_id } : {},
+    var.archera_plan_id != "" ? { ARCHERA_PLAN_ID = var.archera_plan_id } : {},
+    var.archera_api_key_secret_arn != "" ? { ARCHERA_API_KEY_SECRET = var.archera_api_key_secret_arn } : {},
+  )
 }
