@@ -306,11 +306,11 @@ func (h *Handler) approveRegistration(ctx context.Context, httpReq *events.Lambd
 	}
 
 	var acctReq CloudAccountRequest
-	if err := json.Unmarshal([]byte(httpReq.Body), &acctReq); err != nil {
+	if jsonErr := json.Unmarshal([]byte(httpReq.Body), &acctReq); jsonErr != nil {
 		return nil, NewClientError(400, "invalid account request body")
 	}
-	if err := validateCloudAccountRequest(acctReq); err != nil {
-		return nil, err
+	if reqErr := validateCloudAccountRequest(acctReq); reqErr != nil {
+		return nil, reqErr
 	}
 
 	// Validate the stored credential before the registration leaves pending.

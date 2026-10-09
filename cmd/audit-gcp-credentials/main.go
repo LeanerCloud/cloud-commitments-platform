@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -80,7 +81,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("begin read-only transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer rollbackReadOnly(ctx, tx)
 
 	if err := audit(ctx, tx, "account", accountsQuery, key); err != nil {
 		return err
@@ -106,4 +107,11 @@ func audit(ctx context.Context, tx pgx.Tx, source, query string, key []byte) err
 		fmt.Println(credentials.FormatGCPAuditLine(source, id, credType, category))
 	}
 	return rows.Err()
+}
+
+// rollbackReadOnly ends the read-only transaction; there is nothing to commit.
+func rollbackReadOnly(ctx context.Context, tx pgx.Tx) {
+	if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+		log.Printf("audit-gcp-credentials: warning: rollback: %v", err)
+	}
 }

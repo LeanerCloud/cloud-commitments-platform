@@ -64,6 +64,15 @@ func gcpErr(kind GCPCredentialKind, format string, args ...any) error {
 	return &GCPCredentialError{Kind: kind, Message: fmt.Sprintf(format, args...)}
 }
 
+// jsonString returns v when it is a string and "" otherwise.
+func jsonString(v any) string {
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
+}
+
 func keySet(keys ...string) map[string]bool {
 	m := make(map[string]bool, len(keys))
 	for _, k := range keys {
@@ -126,18 +135,18 @@ func scanDuplicateKeys(dec *json.Decoder) error {
 	seen := map[string]bool{}
 	for dec.More() {
 		if d == '{' {
-			kt, err := dec.Token()
-			if err != nil {
-				return err
+			kt, keyErr := dec.Token()
+			if keyErr != nil {
+				return keyErr
 			}
-			k, _ := kt.(string)
+			k := jsonString(kt)
 			if seen[k] {
 				return errDuplicateKey
 			}
 			seen[k] = true
 		}
-		if err := scanDuplicateKeys(dec); err != nil {
-			return err
+		if nestedErr := scanDuplicateKeys(dec); nestedErr != nil {
+			return nestedErr
 		}
 	}
 	_, err = dec.Token()
@@ -148,7 +157,7 @@ func validateServiceAccount(m map[string]any) error {
 	if err := rejectUnknownKeys(m, gcpServiceAccountKeys, "", GCPKindUnsupportedKey); err != nil {
 		return err
 	}
-	if t, _ := m["type"].(string); t != gcpServiceAccountType {
+	if jsonString(m["type"]) != gcpServiceAccountType {
 		return gcpErr(GCPKindOther, `field "type" must be "service_account" for a gcp_service_account credential`)
 	}
 	if v, ok := m["token_uri"]; ok {
@@ -188,7 +197,7 @@ func validateExternalAccountFields(m map[string]any) error {
 			return gcpErr(GCPKindOther, "missing required field %q", k)
 		}
 	}
-	if t, _ := m["type"].(string); t != gcpExternalAccountType {
+	if jsonString(m["type"]) != gcpExternalAccountType {
 		return gcpErr(GCPKindOther, `field "type" must be "external_account" for a gcp_workload_identity_config credential`)
 	}
 	for _, k := range []string{"audience", "subject_token_type", "workforce_pool_user_project", "quota_project_id"} {
@@ -258,7 +267,7 @@ func validateFileSource(src map[string]any) error {
 	if err := rejectUnknownKeys(src, gcpFileSourceKeys, "credential_source.", GCPKindUnsupportedSource); err != nil {
 		return err
 	}
-	file, _ := src["file"].(string)
+	file := jsonString(src["file"])
 	if file == "" || file != filepath.Clean(file) || !strings.HasPrefix(file, gcpFileSourcePrefix) || len(file) == len(gcpFileSourcePrefix) {
 		return gcpErr(GCPKindUnsupportedSource, `field "credential_source.file" must be a clean absolute path under `+gcpFileSourcePrefix)
 	}
@@ -276,7 +285,7 @@ func validateFileFormat(f any) error {
 	if err := rejectUnknownKeys(obj, gcpFileFormatKeys, "credential_source.format.", GCPKindUnsupportedSource); err != nil {
 		return err
 	}
-	if t, _ := obj["type"].(string); t != "text" && t != "json" {
+	if t := jsonString(obj["type"]); t != "text" && t != "json" {
 		return gcpErr(GCPKindUnsupportedSource, `field "credential_source.format.type" must be "text" or "json"`)
 	}
 	if n, has := obj["subject_token_field_name"]; has {
@@ -291,7 +300,7 @@ func validateAWSSource(src map[string]any) error {
 	if err := rejectUnknownKeys(src, gcpAWSSourceKeys, "credential_source.", GCPKindUnsupportedSource); err != nil {
 		return err
 	}
-	if env, _ := src["environment_id"].(string); env != gcpAWSEnvironmentID {
+	if jsonString(src["environment_id"]) != gcpAWSEnvironmentID {
 		return gcpErr(GCPKindUnsupportedSource, `field "credential_source.environment_id" must be "aws1"`)
 	}
 	fixed := []struct {
@@ -311,7 +320,7 @@ func validateAWSSource(src map[string]any) error {
 			return gcpErr(GCPKindUnsupportedSource, "field \"credential_source.%s\" must be exactly %s", f.key, f.want)
 		}
 	}
-	if s, _ := src["regional_cred_verification_url"].(string); !gcpAWSVerificationRe.MatchString(s) {
+	if !gcpAWSVerificationRe.MatchString(jsonString(src["regional_cred_verification_url"])) {
 		return gcpErr(GCPKindUnsupportedSource, `field "credential_source.regional_cred_verification_url" must be https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15`)
 	}
 	return nil

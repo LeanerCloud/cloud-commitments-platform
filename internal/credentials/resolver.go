@@ -454,8 +454,8 @@ func loadStoredGCPTokenSource(
 	if raw == nil {
 		return nil, fmt.Errorf("credentials: no gcp credentials stored for account %s", account.ID)
 	}
-	if err := ValidateGCPCredentialJSON(credType, raw); err != nil {
-		return nil, fmt.Errorf("credentials: invalid stored gcp credential configuration for account %s: %w", account.ID, err)
+	if validateErr := ValidateGCPCredentialJSON(credType, raw); validateErr != nil {
+		return nil, fmt.Errorf("credentials: invalid stored gcp credential configuration for account %s: %w", account.ID, validateErr)
 	}
 	googleType := google.ServiceAccount
 	if credType == CredTypeGCPWIFConfig {
