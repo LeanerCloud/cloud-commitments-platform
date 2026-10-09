@@ -42,6 +42,7 @@ type Handler struct {
 	analyticsCollector AnalyticsCollectorInterface     // Optional: snapshot collector
 	analyticsSnapshots AnalyticsSnapshotStoreInterface // Optional: savings-snapshot time-series store
 	signer             oidc.Signer                     // Optional: OIDC issuer signer (backed by cloud KMS)
+	insurance          InsuranceProvider               // Optional: Archera comparison (nil = off)
 	issuerURL          string                          // Canonical OIDC issuer URL (falls back to dashboardURL / request domain)
 
 	awsCfgOnce sync.Once  // guards one-time loading of the base AWS config
@@ -185,6 +186,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		analyticsSnapshots:  cfg.AnalyticsSnapshots,
 		signer:              cfg.OIDCSigner,
 		issuerURL:           cfg.OIDCIssuerURL,
+		insurance:           cfg.Insurance,
 		commitmentOpts:      cfg.CommitmentOpts,
 		encryptionKeySource: cfg.EncryptionKeySource,
 	}

@@ -19,6 +19,7 @@ import (
 	awsladder "github.com/LeanerCloud/cloud-commitments-go/providers/aws/ladder"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/analytics"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/archera"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/commitmentopts"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -76,6 +77,7 @@ type Application struct {
 	// Lazy initialization fields for PostgreSQL (Lambda ENI readiness)
 	dbConfig          *database.Config
 	secretResolver    secrets.Resolver
+	archera           *archera.Provider
 	dbMu              sync.Mutex
 	dbConnected       bool
 	dbErr             error
@@ -504,6 +506,9 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 	rateLimiter := api.RateLimiterInterface(api.NewInMemoryRateLimiter())
 	log.Println("Initialized temporary in-memory rate limiter until database connection")
 
+	// Archera comparison: default off, key resolved lazily on first explicit request.
+	archeraProvider := archera.NewProvider(archera.SettingsFromEnv(), deps.SecretResolver, nil)
+
 	// Initialize API handler
 	apiHandler := api.NewHandler(api.HandlerConfig{
 		ConfigStore:       deps.ConfigStore,
@@ -519,6 +524,7 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 		DashboardURL:      cfg.DashboardURL,
 		OIDCSigner:        signer,
 		OIDCIssuerURL:     resolveOIDCIssuerURL(cfg),
+		Insurance:         archeraProvider,
 	})
 
 	log.Printf("CUDly Server initialization complete")
@@ -536,6 +542,7 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 		staticDir:         staticDirFromEnv(),
 		dbConfig:          deps.DBConfig,
 		secretResolver:    deps.SecretResolver,
+		archera:           archeraProvider,
 		appConfig:         cfg,
 		signer:            signer,
 		scheduledAuth:     scheduledAuth,
@@ -882,6 +889,7 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 		OIDCIssuerURL:       resolveOIDCIssuerURL(app.appConfig),
 		CommitmentOpts:      commitmentOpts,
 		EncryptionKeySource: app.encKeySource,
+		Insurance:           app.archera,
 	})
 	if app.API == nil {
 		return fmt.Errorf("failed to create API handler")

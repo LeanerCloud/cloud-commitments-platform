@@ -41,6 +41,7 @@ type HandlerConfig struct {
 	AuthService         AuthServiceInterface
 	CommitmentOpts      CommitmentOptsInterface
 	OIDCSigner          oidc.Signer
+	Insurance           InsuranceProvider
 	AnalyticsSnapshots  AnalyticsSnapshotStoreInterface
 	CredentialStore     credentials.CredentialStore
 	EmailNotifier       email.SenderInterface
