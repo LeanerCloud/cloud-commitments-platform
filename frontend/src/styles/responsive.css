@@ -121,11 +121,6 @@ body.sidebar-open {
         width: 100%;
     }
 
-    table {
-        display: block;
-        overflow-x: auto;
-    }
-
     .modal-content {
         width: 95%;
     }
@@ -351,4 +346,12 @@ body.sidebar-open {
         font-size: 0.95rem;
         white-space: nowrap;
     }
+}
+
+/* Tables scroll inside their own box at every width, so a wide table never
+ * widens the page (issue #703). Previously this only applied below 768px. */
+table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
 }
