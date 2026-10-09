@@ -24,7 +24,7 @@ func (s *PostgresStore) LadderTrancheScope(ctx context.Context, id string) (acco
 
 func (s *PostgresStore) AmendLadderTranche(ctx context.Context, id, accountID, provider, actor string, amendment LadderAmendment) (*LadderAmendmentResult, error) {
 	if err := amendment.Validate(); err != nil {
-		return nil, err
+		return nil, ladderAmendValidationError{err}
 	}
 	if actor == "" {
 		return nil, errors.New("ladder amendment actor is required")
