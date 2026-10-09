@@ -87,8 +87,9 @@ var (
 func tfStatements(t *testing.T, raw []byte) []awsPolicyStatement {
 	t.Helper()
 	text := string(raw)
-	var out []awsPolicyStatement
-	for _, loc := range regexp.MustCompile(`Sid\s*=`).FindAllStringIndex(text, -1) {
+	sids := regexp.MustCompile(`Sid\s*=`).FindAllStringIndex(text, -1)
+	out := make([]awsPolicyStatement, 0, len(sids))
+	for _, loc := range sids {
 		start, depth := loc[0], 0
 		for ; start > 0; start-- {
 			if text[start] == '}' {
