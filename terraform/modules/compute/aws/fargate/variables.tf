@@ -328,7 +328,7 @@ variable "email_from_domain" {
   default     = ""
 }
 
-# Archera insured-commitment comparison (default off; see docs/archera-comparison.md).
+# Archera insured-commitment comparison (default off; see the Archera section of docs/DEPLOYMENT.md).
 # All three must be set for the feature to be configured; the key itself is never
 # managed here, the operator creates the secret out-of-band.
 variable "archera_org_id" {

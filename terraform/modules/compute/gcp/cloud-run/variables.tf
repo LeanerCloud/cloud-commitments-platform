@@ -251,7 +251,7 @@ variable "labels" {
   default     = {}
 }
 
-# Archera insured-commitment comparison (default off; see docs/archera-comparison.md).
+# Archera insured-commitment comparison (default off; see the Archera section of docs/DEPLOYMENT.md).
 # All three must be set for the feature to be configured; the key itself is never
 # managed here, the operator creates the secret out-of-band.
 variable "archera_org_id" {
@@ -267,7 +267,11 @@ variable "archera_plan_id" {
 }
 
 variable "archera_api_key_secret_id" {
-  description = "Secret Manager secret ID (full resource name) holding the Archera API key. Passed as ARCHERA_API_KEY_SECRET and bound with a per-secret secretAccessor grant on this one secret only. Empty disables the comparison."
+  validation {
+    condition     = !strcontains(var.archera_api_key_secret_id, "/")
+    error_message = "archera_api_key_secret_id must be the short secret ID, not a projects/<number>/secrets/<id> resource name (the per-secret IAM binding sets project and would be replaced on every apply otherwise)."
+  }
+  description = "Short Secret Manager secret ID (not the projects/<number>/secrets/<id> resource name) holding the Archera API key. Passed as ARCHERA_API_KEY_SECRET and bound with a per-secret secretAccessor grant on this one secret only. Empty disables the comparison."
   type        = string
   default     = ""
 }

@@ -513,7 +513,7 @@ variable "archera_plan_id" {
 }
 
 variable "archera_api_key_secret_id" {
-  description = "Secret Manager secret ID holding the Archera API key (created out-of-band). Empty disables the Archera comparison."
+  description = "Short Secret Manager secret ID (not the full resource name) holding the Archera API key (created out-of-band). Empty disables the Archera comparison."
   type        = string
   default     = ""
 }
