@@ -3,6 +3,8 @@ package mocks
 import (
 	"context"
 	"fmt"
+	"slices"
+	"sort"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -1604,7 +1606,32 @@ func (m *MockConfigStore) GetExecutionsByStatuses(ctx context.Context, statuses 
 	if !ok {
 		panic(fmt.Sprintf("mock: expected []config.PurchaseExecution, got %T", args.Get(0)))
 	}
-	return v, args.Error(1)
+	return filterExecutionsLikeStore(v, statuses, limit), args.Error(1)
+}
+
+// filterExecutionsLikeStore applies the store contract to canned rows: filter by
+// status, drop clean completed rows, order by ScheduledDate DESC, then cap.
+func filterExecutionsLikeStore(rows []config.PurchaseExecution, statuses []string, limit int) []config.PurchaseExecution {
+	if len(statuses) == 0 {
+		return nil
+	}
+	if limit <= 0 {
+		limit = config.DefaultListLimit
+	}
+	limit = min(limit, config.MaxListLimit)
+	var out []config.PurchaseExecution
+	for i := range rows {
+		r := &rows[i]
+		if !slices.Contains(statuses, r.Status) || (r.Status == "completed" && r.Error == "") {
+			continue
+		}
+		out = append(out, *r)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ScheduledDate.After(out[j].ScheduledDate) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }
 
 // CountExecutionsByPlanAndStatus mocks the CountExecutionsByPlanAndStatus operation.

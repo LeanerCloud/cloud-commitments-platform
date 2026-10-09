@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -91,9 +92,11 @@ func (h *Handler) getHistory(ctx context.Context, req *events.LambdaFunctionURLR
 	}, nil
 }
 
-// historyExecutionStatuses enumerates the PurchaseExecution statuses the
-// History view loads alongside completed purchases. Issue #372 assumed
-// approval executes synchronously (approved -> completed/failed inside one
+// actionableExecutionStatuses are the PurchaseExecution statuses a user can still
+// act on or that are in flight. They are fetched separately from the terminal
+// class so newer terminal rows cannot push them out of the capped listing.
+//
+// Issue #372 assumed approval executes synchronously (approved -> completed/failed inside one
 // HTTP request) and so excluded "approved"; issue #621 showed that
 // assumption breaks under interruption: a Lambda timeout or a crash mid-
 // execution leaves the row stuck in "approved"/"running"/"paused", in
@@ -102,6 +105,15 @@ func (h *Handler) getHistory(ctx context.Context, req *events.LambdaFunctionURLR
 // the purchase fired and may re-approve). So we now load those in-flight
 // states too, rendered with a clear "in progress" badge rather than as a
 // (misleading) completed row.
+//
+// "scheduled" is included so Gmail-style pre-fire delayed executions (issue #291
+// wave-2) appear in the History view with a Revoke button before the cloud SDK
+// call fires. Without this entry the row is invisible to the History UI, making
+// the Revoke button unreachable (issue #290, second-wave CR Finding E).
+var actionableExecutionStatuses = []string{"pending", "notified", "scheduled", "approved", "running", "paused"}
+
+// terminalExecutionStatuses are the finished PurchaseExecution statuses the
+// History view loads alongside completed purchases.
 //
 // "completed" is also loaded, but fetchExecutionsAsHistory synthesizes a
 // row for it ONLY when the execution carries a non-empty Error — the
@@ -118,16 +130,12 @@ func (h *Handler) getHistory(ctx context.Context, req *events.LambdaFunctionURLR
 // partial-failure marker and is flagged IsAuditGap so its execution-level
 // dollars are excluded from the dashboard totals — the committed dollars are
 // already counted via the per-rec purchase_history rows that succeeded.
-// "scheduled" is included so Gmail-style pre-fire delayed executions (issue #291
-// wave-2) appear in the History view with a Revoke button before the cloud SDK
-// call fires. Without this entry the row is invisible to the History UI, making
-// the Revoke button unreachable (issue #290, second-wave CR Finding E).
 // Both the US-spelling status (config.StatusCanceled) and the legacy British
 // spelling (config.LegacyStatusCanceled) are listed: during the expand-contract
 // rename (migration 000089) old code may still write the legacy value before
 // the rolling deploy completes. The contract migration (#1278) normalizes the
 // data once the deploy is verified stable; drop the legacy entry here then.
-var historyExecutionStatuses = []string{"pending", "notified", "scheduled", "approved", "running", "paused", "completed", "partially_completed", "failed", "expired", config.StatusCanceled, config.LegacyStatusCanceled}
+var terminalExecutionStatuses = []string{"completed", "partially_completed", "failed", "expired", config.StatusCanceled, config.LegacyStatusCanceled}
 
 // approvalExpiryWindow is how long a pending approval stays actionable
 // before the History view flips it to "expired". Aligns with the
@@ -152,14 +160,15 @@ const approvalExpiryWindow = 7 * 24 * time.Hour
 // provider via the recs' collapsed provider, account via CloudAccountID,
 // date via ScheduledDate.
 //
-// The third return value reports that the fetch reached its cap, so older
-// executions may have been dropped before the filters ran.
+// The third return value reports that either class reached its cap (actionable
+// at MaxListLimit, terminal at DefaultListLimit), so older executions may have
+// been dropped before the filters ran.
 func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyFilters) ([]config.PurchaseHistoryRecord, []config.PurchaseExecution, bool) {
-	executions, err := h.config.GetExecutionsByStatuses(ctx, historyExecutionStatuses, config.DefaultListLimit)
-	if err != nil {
-		logging.Warnf("history: failed to load non-completed executions: %v", err)
-		return nil, nil, false
-	}
+	actionable := h.fetchExecutionsByClass(ctx, actionableExecutionStatuses, config.MaxListLimit)
+	terminal := h.fetchExecutionsByClass(ctx, terminalExecutionStatuses, config.DefaultListLimit)
+	executions := make([]config.PurchaseExecution, 0, len(actionable)+len(terminal))
+	executions = append(executions, actionable...)
+	executions = append(executions, terminal...)
 	if len(executions) == 0 {
 		return nil, nil, false
 	}
@@ -167,9 +176,8 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 	userEmailCache := h.resolveUserEmails(ctx, executions)
 	out := make([]config.PurchaseHistoryRecord, 0, len(executions))
 	var staleExecs []config.PurchaseExecution
-	// Rows the History view can surface; clean completed executions do not
-	// count toward the cap signal (the store already excludes them).
-	surfaced := 0
+	// Terminal-class rows surfaced; drives the terminal cap signal.
+	terminalSurfaced := 0
 	for _rvc := range executions {
 		exec := executions[_rvc]
 		// Dedup: a normal completed execution is already represented by its
@@ -180,7 +188,9 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 		if exec.Status == "completed" && exec.Error == "" {
 			continue
 		}
-		surfaced++
+		if isTerminalExecutionStatus(exec.Status) {
+			terminalSurfaced++
+		}
 		// Collect stale pending/notified executions for the post-assembly
 		// expire sweep. We do NOT mutate status here to keep the GET
 		// read-only: the response reflects current DB state; the sweep
@@ -197,7 +207,23 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 		}
 		out = append(out, executionToHistoryRow(exec, approver, createdByEmail))
 	}
-	return out, staleExecs, surfaced >= config.DefaultListLimit
+	capped := len(actionable) >= config.MaxListLimit || terminalSurfaced >= config.DefaultListLimit
+	return out, staleExecs, capped
+}
+
+// fetchExecutionsByClass lists one status class. A listing error is logged and
+// the class skipped so the other class and completed history still render.
+func (h *Handler) fetchExecutionsByClass(ctx context.Context, statuses []string, limit int) []config.PurchaseExecution {
+	rows, err := h.config.GetExecutionsByStatuses(ctx, statuses, limit)
+	if err != nil {
+		logging.Warnf("history: failed to load executions with statuses %v: %v", statuses, err)
+		return nil
+	}
+	return rows
+}
+
+func isTerminalExecutionStatus(status string) bool {
+	return slices.Contains(terminalExecutionStatuses, status)
 }
 
 // isStaleExecution reports whether the execution is a pending/notified
@@ -234,6 +260,10 @@ func isStaleExecution(exec config.PurchaseExecution) bool {
 func (h *Handler) expireStaleExecutions(staleExecs []config.PurchaseExecution) {
 	if len(staleExecs) == 0 {
 		return
+	}
+	if len(staleExecs) > config.DefaultListLimit {
+		logging.Warnf("history: sweeping %d of %d stale executions", config.DefaultListLimit, len(staleExecs))
+		staleExecs = staleExecs[:config.DefaultListLimit]
 	}
 	if runtime.IsLambda() {
 		h.expireStaleExecutionsSweep(staleExecs)

@@ -147,3 +147,43 @@ test('save errors retain draft and invalid dates do not reach the API', async ()
   expect(document.getElementById('ladder-event-error')!.textContent).toContain('draft is retained');
   expect(date.value).toBe('2030-01-02T00:00');
 });
+
+const flush = async (): Promise<void> => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+
+test('a 409 offers reload, which discards the draft, reloads and refocuses the purchase', async () => {
+  jest.mocked(amendLadderEvent).mockRejectedValue(Object.assign(new Error('Plan changed'), { status: 409 }));
+  await initLadderTimeline(document.getElementById('timeline')!, [], false);
+  document.querySelector<HTMLButtonElement>('[data-event]')!.click();
+  const reload = document.querySelector<HTMLButtonElement>('.ladder-event-editor [data-reload]')!;
+  expect(reload.hidden).toBe(true);
+  document.querySelector<HTMLFormElement>('.ladder-event-editor form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+  await flush();
+  expect(reload.hidden).toBe(false);
+  expect(document.getElementById('ladder-event-error')!.textContent).toContain('reload it');
+  reload.click();
+  await flush();
+  expect(document.querySelector('.ladder-event-editor')).toBeNull();
+  expect(getLadderEvents).toHaveBeenCalledTimes(2);
+  expect(document.activeElement).toBe(document.querySelector('[data-event="one"]'));
+});
+
+test('a non-conflict save error does not offer reload', async () => {
+  jest.mocked(amendLadderEvent).mockRejectedValue(Object.assign(new Error('Server error'), { status: 500 }));
+  await initLadderTimeline(document.getElementById('timeline')!, [], false);
+  document.querySelector<HTMLButtonElement>('[data-event]')!.click();
+  document.querySelector<HTMLFormElement>('.ladder-event-editor form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+  await flush();
+  expect(document.querySelector<HTMLButtonElement>('.ladder-event-editor [data-reload]')!.hidden).toBe(true);
+});
+
+test('focus returns to the edited purchase after a successful save and the canvas is not a tab stop', async () => {
+  jest.mocked(amendLadderEvent).mockResolvedValue({ id: 'one', revision: 1, amount_usd_hr: '1.000000', scheduled_date: '2030-01-02T00:00:00.000Z', run_total_usd_hr: '1.000000' });
+  await initLadderTimeline(document.getElementById('timeline')!, [], false);
+  expect(document.querySelector('canvas')!.hasAttribute('tabindex')).toBe(false);
+  document.querySelector<HTMLButtonElement>('[data-event]')!.click();
+  (document.getElementById('ladder-event-date') as HTMLInputElement).value = '2030-01-02T00:00:00';
+  document.querySelector<HTMLFormElement>('.ladder-event-editor form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+  await flush();
+  expect(document.querySelector('.ladder-event-editor')).toBeNull();
+  expect(document.activeElement).toBe(document.querySelector('[data-event="one"]'));
+});
