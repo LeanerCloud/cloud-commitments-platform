@@ -90,6 +90,7 @@ resource "aws_lambda_function" "main" {
       var.purchase_approved_reap_after != "" ? {
         PURCHASE_APPROVED_REAP_AFTER = var.purchase_approved_reap_after
       } : {},
+      local.archera_env,
       var.additional_env_vars
     )
   }
@@ -260,6 +261,8 @@ resource "aws_iam_role_policy" "secrets_access" {
           var.credential_encryption_key_secret_arn != "" ? "${var.credential_encryption_key_secret_arn}*" : "",
           var.scheduled_task_secret_arn,
           var.scheduled_task_secret_arn != "" ? "${var.scheduled_task_secret_arn}*" : "",
+          var.archera_api_key_secret_arn,
+          var.archera_api_key_secret_arn != "" ? "${var.archera_api_key_secret_arn}*" : "",
         ])
       },
       {
@@ -800,4 +803,14 @@ resource "aws_lambda_permission" "eventbridge_fire_scheduled_purchases" {
   function_name = aws_lambda_function.main.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.fire_scheduled_purchases[0].arn
+}
+
+locals {
+  # Archera settings, set only when non-empty so an unconfigured deployment
+  # carries no ARCHERA_* variable at all (feature off).
+  archera_env = merge(
+    var.archera_org_id != "" ? { ARCHERA_ORG_ID = var.archera_org_id } : {},
+    var.archera_plan_id != "" ? { ARCHERA_PLAN_ID = var.archera_plan_id } : {},
+    var.archera_api_key_secret_arn != "" ? { ARCHERA_API_KEY_SECRET = var.archera_api_key_secret_arn } : {},
+  )
 }

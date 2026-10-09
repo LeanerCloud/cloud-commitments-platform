@@ -327,3 +327,24 @@ variable "email_from_domain" {
   type        = string
   default     = ""
 }
+
+# Archera insured-commitment comparison (default off; see the Archera section of docs/DEPLOYMENT.md).
+# All three must be set for the feature to be configured; the key itself is never
+# managed here, the operator creates the secret out-of-band.
+variable "archera_org_id" {
+  description = "Archera organization UUID, passed as ARCHERA_ORG_ID. Empty disables the comparison."
+  type        = string
+  default     = ""
+}
+
+variable "archera_plan_id" {
+  description = "Archera commitment plan UUID, passed as ARCHERA_PLAN_ID. Empty disables the comparison."
+  type        = string
+  default     = ""
+}
+
+variable "archera_api_key_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the Archera API key. Passed as ARCHERA_API_KEY_SECRET and granted GetSecretValue on this one secret only. Empty disables the comparison."
+  type        = string
+  default     = ""
+}
