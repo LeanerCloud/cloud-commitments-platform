@@ -251,7 +251,7 @@ describe('openExchangeModal', () => {
     expect(text).toContain('3 \u00d7 m5.large');
     // The exact offering id stays visible next to the instance type.
     expect(text).toContain(`3 \u00d7 m5.large (offering ${offeringUUID})`);
-    expect(text).toContain('USD 0.1000 \u2192 0.1250 (+0.0250/hr, about +18.25/month)');
+    expect(text).toContain('USD 0.1000 \u2192 0.1250 (+0.0250 USD/hr, about +18.25 USD/month)');
     expect(document.activeElement?.textContent).toBe('Cancel');
     document.querySelector<HTMLButtonElement>('.modal-confirm-close')?.click();
   });

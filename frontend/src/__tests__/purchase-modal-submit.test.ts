@@ -299,6 +299,20 @@ describe('Issue #251: Execute Now makes no cancellation promise', () => {
     expect(api.executePurchase).not.toHaveBeenCalled();
   });
 
+  test('approval confirm labels the amount as upfront on approval, not charged today', async () => {
+    const rec: LocalRecommendation = { ...buildRows()[0]!, provider: 'aws', service: 'ec2', term: 1 };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    (confirmDialog as jest.Mock).mockClear();
+    await openPurchaseModal([rec]);
+    (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { body: HTMLElement };
+    const text = opts.body.textContent ?? '';
+    expect(text).toContain('Nothing is charged until the approver');
+    expect(text).toContain(`Upfront on approval${formatCurrency(rec.upfront_cost, '$', 2)}`);
+    expect(text).not.toContain('Charged today');
+  });
+
   test('direct-execute confirm dialog makes no cancellation promise', async () => {
     const rec: LocalRecommendation = { ...buildRows()[0]!, provider: 'aws', service: 'ec2', term: 1 };
     (state.getRecommendations as jest.Mock).mockReturnValue([rec]);

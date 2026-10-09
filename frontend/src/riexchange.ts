@@ -1926,7 +1926,7 @@ function buildExchangeConfirmBody({ quote, sources, targets }: ExchangeConfirmPa
     const abs = Math.abs(delta);
     line(
       'Hourly price change',
-      `${quote.CurrencyCode} ${src.toFixed(4)} \u2192 ${tgt.toFixed(4)} (${sign}${abs.toFixed(4)}/hr, about ${sign}${(abs * HOURS_PER_MONTH).toFixed(2)}/month)`,
+      `${quote.CurrencyCode} ${src.toFixed(4)} \u2192 ${tgt.toFixed(4)} (${sign}${abs.toFixed(4)} ${quote.CurrencyCode}/hr, about ${sign}${(abs * HOURS_PER_MONTH).toFixed(2)} ${quote.CurrencyCode}/month)`,
     );
   }
   const warn = document.createElement('p');

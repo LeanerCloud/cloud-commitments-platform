@@ -72,6 +72,13 @@ function stat(label: string, value: string): HTMLElement {
   return el;
 }
 
+// A partial or no-upfront commitment bills monthly; saying only "not
+// reported" would read as "no monthly fee".
+function monthlyUnknownText(lines: readonly CommitmentLine[]): string {
+  const bills = lines.some(l => paymentLabel(l.payment) !== 'All upfront');
+  return bills ? 'Not reported (monthly fees apply)' : 'Not reported';
+}
+
 function describe(l: CommitmentLine): string {
   const where = [l.account, l.region].filter(Boolean).join(', ');
   const what = `${l.count} × ${l.service} ${l.resourceType}`;
@@ -79,7 +86,12 @@ function describe(l: CommitmentLine): string {
   return [what, terms, where].filter(Boolean).join(' · ');
 }
 
-export function buildCommitmentSummary(lines: readonly CommitmentLine[]): HTMLElement {
+export interface SummaryOptions {
+  /** Label for the upfront stat; 'Upfront on approval' when nothing is charged yet. */
+  upfrontLabel?: string;
+}
+
+export function buildCommitmentSummary(lines: readonly CommitmentLine[], opts: SummaryOptions = {}): HTMLElement {
   const totals = commitmentTotals(lines);
   const root = document.createElement('div');
   root.className = 'commitment-summary';
@@ -87,8 +99,8 @@ export function buildCommitmentSummary(lines: readonly CommitmentLine[]): HTMLEl
   const band = document.createElement('div');
   band.className = 'commitment-summary-band';
   band.append(
-    stat('Charged today', formatCurrency(totals.upfront, '$', 2)),
-    stat('Monthly', totals.monthly === null ? 'Not reported' : formatCurrency(totals.monthly, '$', 2)),
+    stat(opts.upfrontLabel ?? 'Charged today', formatCurrency(totals.upfront, '$', 2)),
+    stat('Monthly', totals.monthly === null ? monthlyUnknownText(lines) : formatCurrency(totals.monthly, '$', 2)),
     stat('Total over term', totals.termTotal === null ? 'Not available' : formatCurrency(totals.termTotal, '$', 2)),
   );
   root.appendChild(band);

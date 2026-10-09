@@ -27,6 +27,23 @@ describe('commitmentTotals', () => {
   });
 });
 
+describe('summary options and hints', () => {
+  it('relabels the upfront stat for the approval path', () => {
+    const text = buildCommitmentSummary([line({ upfront: 8400 })], { upfrontLabel: 'Upfront on approval' }).textContent;
+    expect(text).toContain('Upfront on approval$8,400.00');
+    expect(text).not.toContain('Charged today');
+  });
+
+  it('hints that monthly fees apply for non all-upfront lines with no monthly figure', () => {
+    expect(buildCommitmentSummary([line({ monthly: null, payment: 'partial-upfront' })]).textContent)
+      .toContain('MonthlyNot reported (monthly fees apply)');
+    expect(buildCommitmentSummary([line({ monthly: null, payment: 'all-upfront' })]).textContent)
+      .toContain('MonthlyNot reported');
+    expect(buildCommitmentSummary([line({ monthly: null, payment: 'all-upfront' })]).textContent)
+      .not.toContain('fees apply');
+  });
+});
+
 describe('paymentLabel', () => {
   it.each([
     ['all-upfront', 'All upfront'],
