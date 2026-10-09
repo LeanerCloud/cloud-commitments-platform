@@ -412,6 +412,7 @@ export async function handleExecutePurchase(): Promise<void> {
       monthly: r.monthly_cost ?? null,
       ...(r.cloud_account_id ? { account: getAccountName(r.cloud_account_id) } : {}),
     })),
+    isDirect ? {} : { upfrontLabel: 'Upfront on approval' },
   );
   const ok = isDirect
     ? await confirmDialog({
