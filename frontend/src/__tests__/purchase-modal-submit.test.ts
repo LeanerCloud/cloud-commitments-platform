@@ -308,9 +308,12 @@ describe('Issue #251: Execute Now makes no cancellation promise', () => {
     (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
     await flush();
     expect(confirmDialog).toHaveBeenCalledTimes(1);
-    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { title: string; body: string };
-    expect(opts.body).toMatch(/charge the full upfront amount immediately/);
-    expect(`${opts.title} ${opts.body}`).not.toMatch(/AWS|cancell|24 hours/i);
+    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { title: string; body: HTMLElement };
+    const bodyText = opts.body.textContent ?? '';
+    expect(bodyText).toMatch(/charges the amount shown under "Charged today" immediately/);
+    expect(bodyText).toContain('Charged today');
+    expect(bodyText).toContain(formatCurrency(rec.upfront_cost, '$', 2));
+    expect(`${opts.title} ${bodyText}`).not.toMatch(/AWS|cancell|24 hours/i);
   });
 });
 
