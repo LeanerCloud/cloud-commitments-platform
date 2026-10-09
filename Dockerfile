@@ -12,10 +12,10 @@ ARG TARGETOS=linux
 # Build stage
 # Image pinned to a SHA256 digest for reproducible builds — a registry
 # tag mutation (Docker Hub allows re-tagging) cannot poison this build.
-# To refresh: `docker buildx imagetools inspect golang:1.26.6-alpine3.24`
+# To refresh: `docker buildx imagetools inspect golang:1.26.9-alpine3.24`
 # (or use the Docker Hub API tags endpoint) and update the digest below.
 # A Renovate / Dependabot config can automate this if desired.
-FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.24@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.9-alpine3.24@sha256:cdfd4fe2da6b225d8b40c6b7a105736e548e83ff56d5d8f9394446eeb5eb84e0 AS builder
 
 # Re-declare args for use in this stage
 ARG TARGETARCH
