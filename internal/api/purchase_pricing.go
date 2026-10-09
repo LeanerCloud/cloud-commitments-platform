@@ -264,13 +264,12 @@ func checkRequestDetailDiscriminators(req, match *config.RecommendationRecord, i
 // Platform/Scope/AZConfig/MemoryGB) precisely because its true
 // configuration was never recorded, so there is nothing known to
 // contradict. But once origin IS known, an empty match is ALSO a mismatch,
-// not a pass: for most services buildOfferingFilters substitutes the
-// provider default for an empty match field, which can silently buy a
-// different configuration than the one origin recorded (e.g. origin=dedicated
-// tenancy, match=legacy-empty -> the purchase would resolve to the
-// default-tenancy substitute). The AWS EC2 client rejects an empty Tenancy or
-// Scope outright, but this check still has to refuse it here, before the
-// purchase is attempted.
+// not a pass: a client may substitute a default for an empty match field,
+// which can silently buy a different configuration than the one origin
+// recorded (e.g. origin=dedicated tenancy, match=legacy-empty -> the purchase
+// would resolve to the default-tenancy substitute). The AWS EC2 client
+// rejects an empty Platform, Tenancy or Scope outright, but this check still
+// has to refuse it here, before the purchase is attempted.
 // "Unknown" is therefore refused right alongside "different", not treated
 // as compatible.
 func purchaseDetailMismatch(origin, match common.ServiceDetails) string {
