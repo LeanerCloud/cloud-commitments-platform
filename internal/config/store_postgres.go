@@ -1645,7 +1645,7 @@ const submitDedupeStatuses = "'pending', 'notified', 'approved', 'running', 'com
 // concurrent submits both saw nothing and both inserted. The status set is
 // wider than pending/notified because a direct execute moves its row to
 // approved/running/completed within seconds, and a retry arriving then must
-// still be recognised. An empty creatorID matches rows with no creator.
+// still be recognized. An empty creatorID matches rows with no creator.
 func (s *PostgresStore) ListRecentSubmitsTx(ctx context.Context, tx pgx.Tx, creatorID string, since time.Time) ([]PurchaseExecution, error) {
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "purchase-submit:"+creatorID); err != nil {
 		return nil, fmt.Errorf("failed to lock purchase submits: %w", err)
