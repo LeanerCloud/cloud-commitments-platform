@@ -931,6 +931,15 @@ type PurchaseHistoryRecord struct {
 	ListingState string `json:"listing_state,omitempty" dynamodbav:"listing_state,omitempty"`
 }
 
+// Validate rejects a record SavePurchaseHistory cannot store without losing
+// it: one with no purchase id (see ErrEmptyPurchaseID).
+func (r *PurchaseHistoryRecord) Validate() error {
+	if strings.TrimSpace(r.PurchaseID) == "" {
+		return ErrEmptyPurchaseID
+	}
+	return nil
+}
+
 // MarketplaceListingClaim is what ClaimMarketplaceListingSlot reads back from
 // the row it just claimed, so the handler works from the row as it is at claim
 // time instead of a copy read before the claim (issue #525).

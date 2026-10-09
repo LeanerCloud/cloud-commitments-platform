@@ -422,3 +422,8 @@ input:checked + .slider:before {
 tr.selected {
     background: var(--cudly-info-bg) !important;
 }
+
+.registration-reject-reason {
+    width: 100%;
+    box-sizing: border-box;
+}

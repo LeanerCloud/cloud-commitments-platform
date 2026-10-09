@@ -92,6 +92,24 @@ run_case "missing compared file exits 2" 2 --root "$FIX4"
 # unbound variable under set -u.
 run_case "--root without a value exits 2" 2 --root
 
+# Case 6 (#702): a federation file that loses the post-purchase tagging grant
+# must fail, otherwise the purchase idempotency tag silently stops being
+# written in member accounts.
+FIX6="$TMP_BASE/drift-createtags"
+seed_fixture "$FIX6"
+grep -v 'ec2:CreateTags' \
+  "$REPO_ROOT/iac/federation/aws-target/terraform/main.tf" \
+  > "$FIX6/iac/federation/aws-target/terraform/main.tf"
+run_case "federation drift (target TF missing ec2:CreateTags) exits 1" 1 --root "$FIX6"
+
+# Case 7 (#702): same for a CloudFormation federation template.
+FIX7="$TMP_BASE/drift-createtags-cfn"
+seed_fixture "$FIX7"
+grep -v 'ec2:CreateTags' \
+  "$REPO_ROOT/iac/federation/aws-target/cloudformation/template.yaml" \
+  > "$FIX7/iac/federation/aws-target/cloudformation/template.yaml"
+run_case "federation drift (target CFN missing ec2:CreateTags) exits 1" 1 --root "$FIX7"
+
 echo ""
 echo "Results: ${pass} passed, ${fail} failed."
 [[ "$fail" -eq 0 ]]

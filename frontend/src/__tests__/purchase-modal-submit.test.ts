@@ -299,6 +299,20 @@ describe('Issue #251: Execute Now makes no cancellation promise', () => {
     expect(api.executePurchase).not.toHaveBeenCalled();
   });
 
+  test('approval confirm labels the amount as upfront on approval, not charged today', async () => {
+    const rec: LocalRecommendation = { ...buildRows()[0]!, provider: 'aws', service: 'ec2', term: 1 };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    (confirmDialog as jest.Mock).mockClear();
+    await openPurchaseModal([rec]);
+    (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { body: HTMLElement };
+    const text = opts.body.textContent ?? '';
+    expect(text).toContain('Nothing is charged until the approver');
+    expect(text).toContain(`Upfront on approval${formatCurrency(rec.upfront_cost, '$', 2)}`);
+    expect(text).not.toContain('Charged today');
+  });
+
   test('direct-execute confirm dialog makes no cancellation promise', async () => {
     const rec: LocalRecommendation = { ...buildRows()[0]!, provider: 'aws', service: 'ec2', term: 1 };
     (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
@@ -308,9 +322,12 @@ describe('Issue #251: Execute Now makes no cancellation promise', () => {
     (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
     await flush();
     expect(confirmDialog).toHaveBeenCalledTimes(1);
-    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { title: string; body: string };
-    expect(opts.body).toMatch(/charge the full upfront amount immediately/);
-    expect(`${opts.title} ${opts.body}`).not.toMatch(/AWS|cancell|24 hours/i);
+    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { title: string; body: HTMLElement };
+    const bodyText = opts.body.textContent ?? '';
+    expect(bodyText).toMatch(/charges the amount shown under "Charged today" immediately/);
+    expect(bodyText).toContain('Charged today');
+    expect(bodyText).toContain(formatCurrency(rec.upfront_cost, '$', 2));
+    expect(`${opts.title} ${bodyText}`).not.toMatch(/AWS|cancell|24 hours/i);
   });
 });
 
