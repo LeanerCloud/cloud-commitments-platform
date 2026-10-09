@@ -2928,6 +2928,10 @@ func (s *PostgresStore) ReserveApprovedRIExchange(ctx context.Context, id, daily
 	return ceiling, nil
 }
 
+// ErrRIExchangeDailyCapExceeded marks a reservation refused because the
+// initial quote does not fit the remaining daily or per-exchange headroom.
+var ErrRIExchangeDailyCapExceeded = errors.New("RI exchange daily cap exceeded")
+
 // reserveRIExchangeCeiling takes the global daily-spend lock (held until tx ends)
 // and returns min(perExchangeCap, dailyCap - spend) as the execution ceiling,
 // refusing when the initial quote does not fit. excludeID leaves one row's own
@@ -2949,10 +2953,10 @@ func reserveRIExchangeCeiling(ctx context.Context, tx pgx.Tx, excludeID *string,
 		remaining.Set(perCap)
 	}
 	if remaining.Sign() < 0 {
-		return "", fmt.Errorf("RI exchange daily cap exceeded: spend %s exceeds cap %s", spendText, dailyCapUSD)
+		return "", fmt.Errorf("%w: spend %s exceeds cap %s", ErrRIExchangeDailyCapExceeded, spendText, dailyCapUSD)
 	}
 	if initial.Cmp(remaining) > 0 {
-		return "", fmt.Errorf("RI exchange daily cap exceeded: initial %s, remaining %s", initialText, riExchangeUSD(remaining))
+		return "", fmt.Errorf("%w: initial %s, remaining %s", ErrRIExchangeDailyCapExceeded, initialText, riExchangeUSD(remaining))
 	}
 	return riExchangeUSD(remaining), nil
 }

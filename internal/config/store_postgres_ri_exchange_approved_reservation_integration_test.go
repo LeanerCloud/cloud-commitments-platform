@@ -123,7 +123,14 @@ func TestPostgresStoreDB_ReserveApprovedRIExchange_ConcurrentApprovalsStayWithin
 		err     error
 	}
 	results := make([]outcome, 2)
-	start := make(chan struct{})
+	// Deterministic interleave: hold the global lock from a third transaction so both
+	// approvals are provably in flight at once, then release it. Without the advisory
+	// lock in the reservation path neither approval would park, so the wait check fails.
+	lockTx, err := env.poolA.Begin(env.ctx)
+	require.NoError(t, err)
+	defer lockTx.Rollback(env.ctx)
+	_, err = lockTx.Exec(env.ctx, "SELECT pg_advisory_xact_lock($1)", riExchangeDailySpendLockKey)
+	require.NoError(t, err)
 	var wg sync.WaitGroup
 	for i, run := range []struct {
 		store *PostgresStore
@@ -132,12 +139,25 @@ func TestPostgresStoreDB_ReserveApprovedRIExchange_ConcurrentApprovalsStayWithin
 		wg.Add(1)
 		go func(i int, store *PostgresStore, id string) {
 			defer wg.Done()
-			<-start
 			ceiling, err := store.ReserveApprovedRIExchange(env.ctx, id, cap, "800.000000")
 			results[i] = outcome{ceiling, err}
 		}(i, run.store, run.id)
 	}
-	close(start)
+	waiters := 0
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		require.NoError(t, env.poolA.QueryRow(env.ctx, `SELECT COUNT(*) FROM pg_stat_activity
+			WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND query LIKE 'SELECT pg_advisory_xact_lock%'`).Scan(&waiters))
+		if waiters >= 2 {
+			break
+		}
+	}
+	require.Equal(t, 2, waiters, "both approvals must be parked on the global advisory lock at the same time")
+	for _, id := range []string{a.ID, b.ID} {
+		var stored string
+		require.NoError(t, env.poolA.QueryRow(env.ctx, "SELECT payment_due::text FROM ri_exchange_history WHERE id = $1", id).Scan(&stored))
+		require.Equal(t, "100.000000", stored, "no approval may reserve before the lock is released")
+	}
+	require.NoError(t, lockTx.Commit(env.ctx))
 	wg.Wait()
 
 	reserved := new(big.Int)
@@ -153,7 +173,7 @@ func TestPostgresStoreDB_ReserveApprovedRIExchange_ConcurrentApprovalsStayWithin
 	// The headroom is fully reserved, so a later approval is refused.
 	c := env.processing(t, "manual", "810000000003", 1, now)
 	defer env.release(t, c.ID)
-	_, err := env.storeA.ReserveApprovedRIExchange(env.ctx, c.ID, cap, "800.000000")
+	_, err = env.storeA.ReserveApprovedRIExchange(env.ctx, c.ID, cap, "800.000000")
 	require.ErrorContains(t, err, "daily cap exceeded")
 
 	// Each approval settles at its ceiling in the worst case; the day lands exactly on the cap

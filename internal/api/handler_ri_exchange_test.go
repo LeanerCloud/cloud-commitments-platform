@@ -2598,7 +2598,7 @@ func TestExecuteApprovedExchange_ReservationRefused_NoExecute(t *testing.T) {
 		RIExchangeMaxDailyUSD: 1000, RIExchangeMaxPerExchangeUSD: 500,
 	}, nil)
 	mockStore.On("ReserveApprovedRIExchange", ctx, id, "1000.000000", "500.000000").
-		Return("", errors.New("RI exchange daily cap exceeded: initial 600.000000, remaining 400.000000"))
+		Return("", fmt.Errorf("%w: initial 600.000000, remaining 400.000000", config.ErrRIExchangeDailyCapExceeded))
 	mockStore.On("FailRIExchange", ctx, id, mock.MatchedBy(func(r string) bool {
 		return strings.Contains(r, "daily cap exceeded")
 	})).Return(nil)
@@ -2642,4 +2642,33 @@ func TestExecuteApprovedExchange_SettlesAcceptedAmountWithinReservedCeiling(t *t
 	require.NoError(t, err)
 	require.NotNil(t, got.MaxPaymentDueUSD)
 	assert.Equal(t, 0, got.MaxPaymentDueUSD.Cmp(big.NewRat(400, 1)), "ceiling must be the reserved $400, not the $100 initial quote")
+}
+
+// TestExecuteApprovedExchange_ReservationInfrastructureError_HidesDetail asserts
+// that a non-cap reservation error (lock/DB failure) is logged, not echoed to the
+// approver, and the provider is never called.
+func TestExecuteApprovedExchange_ReservationInfrastructureError_HidesDetail(t *testing.T) {
+	ctx := context.Background()
+	const id = "550e8400-e29b-41d4-a716-000000000658"
+
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+		RIExchangeMaxDailyUSD: 1000, RIExchangeMaxPerExchangeUSD: 500,
+	}, nil)
+	mockStore.On("ReserveApprovedRIExchange", ctx, id, "1000.000000", "500.000000").
+		Return("", errors.New("failed to lock RI exchange daily spend: connection reset by peer"))
+	mockStore.On("FailRIExchange", ctx, id, "daily spending cap check failed").Return(nil)
+
+	called := false
+	h := &Handler{config: mockStore, executeExchangeFn: func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+		called = true
+		return "", nil, nil
+	}}
+	resp, err := h.executeApprovedExchange(ctx, id, &config.RIExchangeRecord{
+		ID: id, Region: "us-east-1", SourceRIIDs: []string{"ri-1"}, TargetOfferingID: "o", TargetCount: 1, PaymentDue: "10.00",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "daily spending cap check failed", resp.(map[string]any)["reason"])
+	assert.False(t, called)
 }

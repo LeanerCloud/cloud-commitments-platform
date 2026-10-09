@@ -2649,7 +2649,10 @@ func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record
 	ceiling, err := h.config.ReserveApprovedRIExchange(ctx, id, dailyCapUSD, perExchangeCapUSD)
 	if err != nil {
 		logging.Warnf("RI exchange %s reservation refused: %v", id, err)
-		return h.failExchange(ctx, id, "daily spending cap check failed: "+err.Error())
+		if errors.Is(err, config.ErrRIExchangeDailyCapExceeded) {
+			return h.failExchange(ctx, id, err.Error())
+		}
+		return h.failExchange(ctx, id, "daily spending cap check failed")
 	}
 	effectiveCap, ok := new(big.Rat).SetString(ceiling)
 	if !ok {
