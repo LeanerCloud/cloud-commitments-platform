@@ -34,6 +34,13 @@ describe('summary options and hints', () => {
     expect(text).not.toContain('Charged today');
   });
 
+  it('treats the Azure "upfront" spelling as all upfront (no monthly-fee hint)', () => {
+    const text = buildCommitmentSummary([line({ monthly: null, payment: 'upfront' })]).textContent;
+    expect(text).toContain('MonthlyNot reported');
+    expect(text).not.toContain('fees apply');
+    expect(text).toContain('All upfront');
+  });
+
   it('hints that monthly fees apply for non all-upfront lines with no monthly figure', () => {
     expect(buildCommitmentSummary([line({ monthly: null, payment: 'partial-upfront' })]).textContent)
       .toContain('MonthlyNot reported (monthly fees apply)');
@@ -49,7 +56,9 @@ describe('paymentLabel', () => {
     ['all-upfront', 'All upfront'],
     ['partial_upfront', 'Partial upfront'],
     ['no-upfront', 'No upfront'],
-    ['monthly', 'monthly'],
+    ['upfront', 'All upfront'],
+    ['monthly', 'Monthly'],
+    ['custom', 'custom'],
   ])('%s -> %s', (raw, label) => expect(paymentLabel(raw)).toBe(label));
 });
 
