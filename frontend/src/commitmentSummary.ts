@@ -52,9 +52,11 @@ export function commitmentTotals(lines: readonly CommitmentLine[]): CommitmentTo
 
 export function paymentLabel(payment: string): string {
   switch (payment.replace(/_/g, '-')) {
+    case 'upfront': // Azure spelling of all-upfront
     case 'all-upfront': return 'All upfront';
     case 'partial-upfront': return 'Partial upfront';
     case 'no-upfront': return 'No upfront';
+    case 'monthly': return 'Monthly';
     default: return payment;
   }
 }
