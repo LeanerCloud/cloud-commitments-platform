@@ -60,7 +60,7 @@ var stsOut = sts.GetCallerIdentityOutput{Account: aws.String("123456789012")}
 
 // Test A: the client disconnects while the provider call is in flight. The
 // purchase committed, so exactly one call happened and the terminal row and
-// history record must still be written. Pre-fix the save saw the cancelled
+// history record must still be written. Pre-fix the save saw the canceled
 // request ctx and returned ErrAuditLoss.
 func TestExecuteAndFinalize_ClientDisconnectMidPurchase_StillRecorded(t *testing.T) {
 	f := newDetachFixture(t)
@@ -102,8 +102,8 @@ func TestExecuteAndFinalize_ExpiredCallerDeadline_UsesOwnBudgets(t *testing.T) {
 	assert.Equal(t, []string{"completed"}, f.saved)
 }
 
-// Test C: a failed purchase with a cancelled caller still persists "failed".
-func TestExecuteAndFinalize_ProviderErrorWithCancelledCaller_PersistsFailed(t *testing.T) {
+// Test C: a failed purchase with a canceled caller still persists "failed".
+func TestExecuteAndFinalize_ProviderErrorWithCanceledCaller_PersistsFailed(t *testing.T) {
 	f := newDetachFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	f.svc.On("PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything).
