@@ -109,9 +109,10 @@ for (const multiple of [false, true]) {
     await expect(dialog(page)).toContainText('us-east-1');
     if (multiple) await expect(dialog(page)).toContainText(`3 × ${secondOffering}`);
     expect(state.requests).toHaveLength(0);
-    await expect(confirm(page)).toBeFocused();
-    await page.keyboard.press('Tab');
+    // Destructive dialogs open on the safe action, so a reflex Enter cancels.
     await expect(dialog(page).getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(confirm(page)).toBeFocused();
     await confirm(page).click();
     await expect(page.locator('#modal-exchange-result')).toContainText('Exchange completed. ID: synthetic-exchange');
     expect(state.requests).toEqual([{ path: '/api/ri-exchange/execute', body: {
@@ -143,7 +144,7 @@ for (const action of ['Execute', 'Approve']) {
       await expect(trigger).toBeEnabled();
       await expect(trigger).toBeFocused();
       await trigger.click();
-      await page.keyboard.press('Enter');
+      await confirm(page).click();
       await expect.poll(() => state.requests.length).toBe(1);
       if (action === 'Approve') {
         expect(state.requests[0]).toEqual({ path: `/api/ri-exchange/approve/${state.history.id}`, body: null });
