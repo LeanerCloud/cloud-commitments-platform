@@ -306,6 +306,22 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 			"updatePlan: GetPurchasePlan failed")
 	}
 
+	plan, err := mergeUpdatedPlan(existingPlan, &req, planID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.config.UpdatePurchasePlan(ctx, plan); err != nil {
+		return nil, mapCreatePlanStorageError(err, "plan not found", "failed to update plan", "updatePlan: UpdatePurchasePlan failed")
+	}
+
+	return plan, nil
+}
+
+// mergeUpdatedPlan builds the plan an update request describes, carrying over
+// the state the request cannot express (timestamps, ramp progress, services)
+// from the stored plan, and validates it.
+func mergeUpdatedPlan(existingPlan *config.PurchasePlan, req *PlanRequest, planID string) (*config.PurchasePlan, error) {
 	// Create new plan from request
 	plan := req.toPurchasePlan()
 	plan.ID = planID
@@ -319,7 +335,9 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 	// since it has no way to see the existing plan. Left alone, every PUT
 	// -- including a bare rename -- silently restarts an in-progress ramp,
 	// so the scheduler re-buys steps that already executed (issue #219).
-	preserveRampProgress(existingPlan, plan)
+	if err := preserveRampProgress(existingPlan, plan); err != nil {
+		return nil, err
+	}
 
 	// If no services were created from request, preserve existing services
 	if len(plan.Services) == 0 && len(existingPlan.Services) > 0 {
@@ -330,11 +348,6 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 	if err := plan.Validate(); err != nil {
 		return nil, NewClientError(400, fmt.Sprintf("validation error: %s", err))
 	}
-
-	if err := h.config.UpdatePurchasePlan(ctx, plan); err != nil {
-		return nil, mapCreatePlanStorageError(err, "plan not found", "failed to update plan", "updatePlan: UpdatePurchasePlan failed")
-	}
-
 	return plan, nil
 }
 
@@ -342,13 +355,15 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 // plan onto a freshly rebuilt one (issue #219). LastExecutionDate and
 // LastNotificationSent record real purchase history, so they are always
 // carried over; a rebuild has no way to know either and would otherwise
-// wipe them. CurrentStep, StartDate, and NextExecutionDate are only
-// carried over when the requested ramp schedule has the same shape as
-// the existing one (same type/percent/interval/step-count) -- an
-// unrelated field edit (rename, target coverage, ...) resubmits the same
-// schedule and must not restart it, while a deliberate change to a
-// different schedule starts that schedule's progress at step zero.
-func preserveRampProgress(existingPlan, plan *config.PurchasePlan) {
+// wipe them. CurrentStep, StartDate, and NextExecutionDate are carried
+// over when the requested ramp schedule has the same shape as the existing
+// one (same type/percent/interval/step-count): an unrelated field edit
+// (rename, target coverage, ...) resubmits the same schedule and must not
+// restart it. A different shape is refused once a step has completed,
+// because the rebuilt schedule would restart at step zero and forget the
+// percentage already bought (issue #386); before the first step it is a
+// plain schedule change.
+func preserveRampProgress(existingPlan, plan *config.PurchasePlan) error {
 	plan.LastExecutionDate = existingPlan.LastExecutionDate
 	plan.LastNotificationSent = existingPlan.LastNotificationSent
 
@@ -356,7 +371,15 @@ func preserveRampProgress(existingPlan, plan *config.PurchasePlan) {
 		plan.RampSchedule.CurrentStep = existingPlan.RampSchedule.CurrentStep
 		plan.RampSchedule.StartDate = existingPlan.RampSchedule.StartDate
 		plan.NextExecutionDate = existingPlan.NextExecutionDate
+		return nil
 	}
+	if existingPlan.RampSchedule.CurrentStep > 0 {
+		return NewClientError(http.StatusConflict, fmt.Sprintf(
+			"cannot change the ramp schedule of a plan with %d completed step(s); "+
+				"resend the current ramp_schedule to keep it, or create a new plan",
+			existingPlan.RampSchedule.CurrentStep))
+	}
+	return nil
 }
 
 // rampScheduleShapeUnchanged compares the schedule's shape, deliberately
