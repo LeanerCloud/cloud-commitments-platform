@@ -702,6 +702,7 @@ th .column-filter-btn.active {
 /* Filter-status bar (Clear-filters badge + aria-live count) above the table. */
 .recommendations-filter-status {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.75rem;
     padding: 0.4rem 0;
@@ -749,7 +750,8 @@ th .column-filter-btn.active {
 .recommendations-action-box {
     position: sticky;
     bottom: 0;
-    height: var(--action-box-height);
+    min-height: var(--action-box-height);
+    flex-wrap: wrap;
     background: var(--cudly-surface);
     border-top: 1px solid var(--cudly-border);
     box-shadow: var(--cudly-shadow-md);
@@ -1235,8 +1237,10 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 }
 
 .info-icon .tooltip-text {
-    visibility: hidden;
-    opacity: 0;
+    /* display:none, not visibility:hidden: a hidden absolutely positioned
+     * box still extends the scrollable area and widens the page (#703). */
+    display: none;
+    max-width: calc(100vw - 2rem);
     position: absolute;
     z-index: 1000;
     bottom: 125%;
@@ -1252,7 +1256,6 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     line-height: 1.4;
     text-align: left;
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    transition: opacity 0.2s, visibility 0.2s;
     white-space: normal;
 }
 
@@ -1268,8 +1271,7 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 }
 
 .info-icon:hover .tooltip-text {
-    visibility: visible;
-    opacity: 1;
+    display: block;
 }
 
 /* Role badge */
