@@ -333,6 +333,10 @@ func (m *mockConfigStore) SaveRIExchangeRecord(ctx context.Context, record *conf
 func (m *mockConfigStore) ReserveRIExchange(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
 	return "", errors.New("RI exchange reservation not configured in analytics test store")
 }
+
+func (m *mockConfigStore) ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	return "", errors.New("approved RI exchange reservation not configured in test store")
+}
 func (m *mockConfigStore) GetRIExchangeRecord(ctx context.Context, id string) (*config.RIExchangeRecord, error) {
 	return nil, nil
 }

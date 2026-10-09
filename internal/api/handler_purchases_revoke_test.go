@@ -455,6 +455,8 @@ func TestAuthorizeSessionRevoke_RevokeAny(t *testing.T) {
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
+
+	mockAuth.allowConstraintChecks()
 	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{}, nil)
 
 	h := &Handler{auth: mockAuth}
@@ -496,6 +498,8 @@ func TestAuthorizeSessionRevoke_RevokeAny_AccountScope(t *testing.T) {
 			mockAuth := new(MockAuthService)
 			t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 			mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
+			mockAuth.allowConstraintChecks()
+			mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(false, nil).Maybe()
 			mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return(tc.scope, nil)
 
 			store := &MockConfigStore{
@@ -562,6 +566,8 @@ func TestAuthorizeSessionRevoke_RevokeAny_ProviderAndUUIDAuthority(t *testing.T)
 			mockAuth := new(MockAuthService)
 			t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 			mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
+			mockAuth.allowConstraintChecks()
+			mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(false, nil).Maybe()
 			mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return(tc.scope, nil)
 			store := &MockConfigStore{
 				ListCloudAccountsFn: func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
@@ -600,6 +606,8 @@ func TestRevokePurchase_RevokeAnyOutOfScopeNeverCallsAzure(t *testing.T) {
 	r.CloudAccountID = &otherAccount
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "u-1", Email: "u1@example.com"}, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(true, nil)
+	mockAuth.allowConstraintChecks()
+	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(false, nil)
 	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{"aaaa-1111"}, nil)
 	mockStore.On("GetExecutionByID", ctx, r.PurchaseID).Return(nil, fmt.Errorf("%w: execution", config.ErrNotFound))
 	mockStore.On("GetPurchaseHistoryByPurchaseID", ctx, r.PurchaseID).Return(r, nil)
@@ -634,6 +642,7 @@ func TestAuthorizeSessionRevoke_RevokeOwn_AccountAccessGranted(t *testing.T) {
 	accountUUID := "aaaa-1111"
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(true, nil)
+	mockAuth.allowConstraintChecks()
 	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{accountUUID}, nil)
 
 	h := &Handler{auth: mockAuth, config: &MockConfigStore{}}
@@ -653,6 +662,7 @@ func TestAuthorizeSessionRevoke_RevokeOwn_WrongAccount(t *testing.T) {
 	otherUUID := "bbbb-2222"
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(true, nil)
+	mockAuth.allowConstraintChecks()
 	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{otherUUID}, nil)
 
 	h := &Handler{auth: mockAuth, config: &MockConfigStore{}}
@@ -696,6 +706,7 @@ func TestAuthorizeSessionRevoke_RevokeOwn_NilAccountID(t *testing.T) {
 
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(true, nil)
+	mockAuth.allowConstraintChecks()
 	// Unrestricted scope must not excuse an unattributed revoke-own.
 	mockAuth.On("GetAllowedAccountsAPI", ctx, "u-1").Return([]string{}, nil)
 
@@ -893,6 +904,7 @@ func TestRevokePurchase_ScheduledExecution_RevokeOwnCreator(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "tok").Return(sess, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userID, "revoke-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userID, "revoke-own", "purchases").Return(true, nil)
+	mockAuth.allowConstraintChecks()
 	// requireExecutionAccess (issue #92) runs before RBAC; unrestricted
 	// here since scope is not under test.
 	mockAuth.On("GetAllowedAccountsAPI", ctx, userID).Return([]string{}, nil)
@@ -928,6 +940,7 @@ func TestRevokePurchase_ScheduledExecution_RevokeOwnWrongCreator(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "tok").Return(sess, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userID, "revoke-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, userID, "revoke-own", "purchases").Return(true, nil)
+	mockAuth.allowConstraintChecks()
 
 	exec := scheduledExecution(execID, otherUser)
 	mockStore.On("GetExecutionByID", ctx, execID).Return(exec, nil)
@@ -964,6 +977,7 @@ func TestAuthorizeSessionRevokeExecution_NilCreatorDenied(t *testing.T) {
 
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-any", "purchases").Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").Return(true, nil)
+	mockAuth.allowConstraintChecks()
 
 	h := &Handler{auth: mockAuth}
 	sess := &Session{UserID: "u-1"}
@@ -1064,6 +1078,7 @@ func TestAuthorizeSessionRevokeExecution_Matrix(t *testing.T) {
 				mockAuth.On("HasPermissionAPI", ctx, "u-1", "revoke-own", "purchases").
 					Return(tc.hasOwnReturn, tc.hasOwnErr)
 			}
+			mockAuth.allowConstraintChecks()
 
 			h := &Handler{auth: mockAuth}
 			sess := &Session{UserID: "u-1"}

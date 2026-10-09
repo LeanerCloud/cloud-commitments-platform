@@ -69,7 +69,7 @@ func riStatusHandler(rec riStatusRecord, o riStatusOpts) *Handler {
 	}
 	store.On("TransitionRIExchangeStatus", mock.Anything, riStatusID, "pending", mock.Anything, mock.Anything).
 		Return(transitioned, nil).Maybe()
-	store.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil).Maybe()
+	store.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil).Maybe()
 	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{RequireDifferentApprover: o.fourEyes}, nil).Maybe()
 	store.On("FailRIExchange", mock.Anything, riStatusID, mock.Anything).Return(nil).Maybe()
 	store.On("StampRIExchangeApprovedBy", mock.Anything, riStatusID, mock.Anything).Return(nil).Maybe()
