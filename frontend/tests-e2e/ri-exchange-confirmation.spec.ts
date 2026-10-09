@@ -104,10 +104,10 @@ for (const multiple of [false, true]) {
     }
     await execute(page).click();
     await expect(dialog(page)).toContainText(`USD ${quotedPayment}`);
-    await expect(dialog(page)).toContainText(`2 × ${offering}`);
+    await expect(dialog(page)).toContainText(`2 × m5.xlarge (No Upfront, offering ${offering})`);
     await expect(dialog(page)).toContainText(ri);
     await expect(dialog(page)).toContainText('us-east-1');
-    if (multiple) await expect(dialog(page)).toContainText(`3 × ${secondOffering}`);
+    if (multiple) await expect(dialog(page)).toContainText(`3 × m5.xlarge (No Upfront, offering ${secondOffering})`);
     expect(state.requests).toHaveLength(0);
     // Destructive dialogs open on the safe action, so a reflex Enter cancels.
     await expect(dialog(page).getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
