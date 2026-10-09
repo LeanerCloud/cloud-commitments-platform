@@ -1847,12 +1847,24 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
     try {
       confirmed = await confirmDialog({
         title: 'Execute RI Exchange',
-        body: `Quoted payment: ${quote.CurrencyCode} ${quote.PaymentDueRaw}. `
-          + `Source RIs: ${request.ri_ids.join(', ')}. Region: ${quote.Region}. `
-          + `Targets: ${targets.map(target => `${target.count} × ${target.offering_id}`).join(', ')}. `
-          + 'This exchange executes immediately and cannot be reversed.',
+        body: buildExchangeConfirmBody({
+          quote,
+          sources: request.ri_ids.map(id => {
+            const ri = currentRIs.find(r => r.reserved_instance_id === id);
+            return ri ? `${ri.instance_count} \u00d7 ${ri.instance_type} (${id})` : id;
+          }),
+          targets: targets.map(target => {
+            const o = awsOfferings.find(x => x.offering_id === target.offering_id);
+            if (o) return `${target.count} \u00d7 ${o.instance_type} (${o.offering_type})`;
+            const alt = alternativeTargets?.find(x => x.offering_id === target.offering_id);
+            return alt
+              ? `${target.count} \u00d7 ${alt.instance_type}`
+              : `${target.count} \u00d7 offering ${target.offering_id}`;
+          }),
+        }),
         confirmLabel: 'Execute Exchange',
         destructive: true,
+        initialFocus: 'cancel',
       });
       if (!confirmed) return;
       setResultText(resultContainer, 'Executing exchange...', 'loading');
@@ -1882,6 +1894,45 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
       if (!confirmed) executeBtn.focus();
     }
   }
+}
+
+interface ExchangeConfirmParts {
+  quote: ExchangeQuoteSummary;
+  sources: string[];
+  targets: string[];
+}
+
+// Hours in an average month; only used for the approximate monthly delta.
+const HOURS_PER_MONTH = 730;
+
+function buildExchangeConfirmBody({ quote, sources, targets }: ExchangeConfirmParts): HTMLElement {
+  const root = document.createElement('div');
+  const line = (label: string, value: string): void => {
+    const p = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = value;
+    p.append(`${label}: `, strong);
+    root.appendChild(p);
+  };
+  line('Pay now', `${quote.CurrencyCode} ${quote.PaymentDueRaw}`);
+  line('Exchange', sources.join(', '));
+  line('For', targets.join(', '));
+  line('Region', quote.Region ?? '');
+  const src = Number(quote.SourceHourlyPriceRaw);
+  const tgt = Number(quote.TargetHourlyPriceRaw);
+  if (quote.SourceHourlyPriceRaw && quote.TargetHourlyPriceRaw && Number.isFinite(src) && Number.isFinite(tgt)) {
+    const delta = tgt - src;
+    const sign = delta >= 0 ? '+' : '-';
+    const abs = Math.abs(delta);
+    line(
+      'Hourly price change',
+      `${quote.CurrencyCode} ${src.toFixed(4)} \u2192 ${tgt.toFixed(4)} (${sign}${abs.toFixed(4)}/hr, about ${sign}${(abs * HOURS_PER_MONTH).toFixed(2)}/month)`,
+    );
+  }
+  const warn = document.createElement('p');
+  warn.textContent = 'This exchange executes immediately and cannot be reversed.';
+  root.appendChild(warn);
+  return root;
 }
 
 function setResultText(container: HTMLElement, message: string, cls: string): void {

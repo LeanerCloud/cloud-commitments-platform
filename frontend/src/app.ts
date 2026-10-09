@@ -6,7 +6,7 @@ import * as api from './api';
 import * as state from './state';
 import { showLoginModal, showAdminSetupModal, showResetPasswordModal, updateUserUI } from './auth';
 import { loadDashboard, setupDashboardHandlers } from './dashboard';
-import { setupRecommendationsHandlers, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, getFanOutBuckets, clearFanOutBuckets, getExecuteMode, clearExecuteMode, fanOutBucketAccountLabel, type FanOutBucket } from './recommendations';
+import { setupRecommendationsHandlers, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, getFanOutBuckets, clearFanOutBuckets, getExecuteMode, clearExecuteMode, fanOutBucketAccountLabel, getAccountName, type FanOutBucket } from './recommendations';
 import { switchTab, applyTabFromPath, initRouter, switchSettingsSubTab, canonicalTabPath } from './navigation';
 import { savePlan, setupPlanHandlers, closePlanModal, openNewPlanModal, closePurchaseModal } from './plans';
 import { saveGlobalSettings, setupSettingsHandlers, resetSettings } from './settings';
@@ -18,6 +18,7 @@ import { setupRIExchangeHandlers, saveAutomationSettings } from './riexchange';
 import { showToast } from './toast';
 import { formatPaymentAdjustmentNotice } from './commitmentOptions';
 import { confirmDialog } from './confirmDialog';
+import { buildCommitmentSummary, withIntro } from './commitmentSummary';
 import { handlePurchaseDeeplink } from './purchases-deeplink';
 import { handleArcheraDeeplink, openArcheraOfferModal } from './archera';
 import { closeModal } from './modal';
@@ -398,16 +399,30 @@ export async function handleExecutePurchase(): Promise<void> {
   //   - Approval path: low-friction, non-destructive.
   //   - Direct-execute path: red destructive dialog with cost callout and
   //     immediate-charge callout; no cancellation promise (issue #251).
+  const summary = buildCommitmentSummary(
+    recsWithPayment.map((r) => ({
+      service: r.service,
+      provider: r.provider,
+      region: r.region,
+      resourceType: r.resource_type,
+      count: r.count,
+      term: r.term,
+      payment: r.payment,
+      upfront: r.upfront_cost,
+      monthly: r.monthly_cost ?? null,
+      ...(r.cloud_account_id ? { account: getAccountName(r.cloud_account_id) } : {}),
+    })),
+  );
   const ok = isDirect
     ? await confirmDialog({
         title: `Execute ${localRecs.length} purchase${localRecs.length === 1 ? '' : 's'} now?`,
-        body: 'This will charge the full upfront amount immediately. This bypasses the approval step.',
+        body: withIntro('This charges the amount shown under "Charged today" immediately and bypasses the approval step. The monthly amount, if any, is billed for the whole term.', summary),
         confirmLabel: 'Execute Purchase Now',
         destructive: true,
       })
     : await confirmDialog({
         title: `Send ${localRecs.length} purchase${localRecs.length === 1 ? '' : 's'} for approval?`,
-        body: 'This will email an approval request to the configured approver. Cloud commitments are charged only after the approver clicks the link in that email.',
+        body: withIntro('This emails an approval request to the configured approver. Nothing is charged until the approver clicks the link in that email.', summary),
         confirmLabel: 'Send for approval',
         destructive: false,
       });

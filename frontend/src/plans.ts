@@ -4,6 +4,7 @@
 
 import * as api from './api';
 import * as state from './state';
+import { buildCommitmentSummary, withIntro } from './commitmentSummary';
 import { formatDate, formatTerm, getStatusBadge, escapeHtml, escapeHtmlAttr, formatCurrency, CURRENCY_DEFAULT_DIGITS, providerBadgeHtml } from './utils';
 import { showToast } from './toast';
 import { confirmDialog } from './confirmDialog';
@@ -775,26 +776,58 @@ function getPlannedPurchaseStatusClass(status: string): string {
   }
 }
 
+// Purchase ids whose "Run now" confirm or request is open, so a second click
+// on the row button cannot stack a second dialog or send a second request.
+const runNowInFlight = new Set<string>();
+
+function runNowBody(target: PlannedPurchase | undefined): string | HTMLElement {
+  if (!target) return 'This immediately executes the purchase.';
+  if (target.has_recommendations === false) {
+    return 'This step has no recommendations attached, so running it will not buy anything.';
+  }
+  const summary = buildCommitmentSummary([{
+    service: target.service,
+    provider: target.provider,
+    region: target.region,
+    resourceType: target.resource_type,
+    count: target.count,
+    term: target.term,
+    payment: target.payment,
+    upfront: target.upfront_cost,
+    // Planned purchases carry no recurring-cost breakdown.
+    monthly: null,
+  }]);
+  return withIntro(`This immediately buys the commitment below for plan "${target.plan_name}", scheduled for ${formatDate(target.scheduled_date)}. It cannot be undone.`, summary);
+}
+
+async function runPlannedPurchaseNow(purchaseId: string): Promise<void> {
+  if (runNowInFlight.has(purchaseId)) return;
+  runNowInFlight.add(purchaseId);
+  try {
+    const target = lastLoadedPurchases.find(p => p.id === purchaseId);
+    const ok = await confirmDialog({
+      title: target ? `Run step ${target.step_number}/${target.total_steps} of "${target.plan_name}" now?` : 'Run purchase now?',
+      body: runNowBody(target),
+      confirmLabel: 'Run now',
+      destructive: true,
+    });
+    if (!ok) return;
+    await api.runPlannedPurchase(purchaseId);
+    showToast({ message: 'Purchase executed successfully', kind: 'success', timeout: 5_000 });
+  } finally {
+    runNowInFlight.delete(purchaseId);
+  }
+}
+
 /**
  * Handle planned purchase action
  */
 async function handlePlannedPurchaseAction(action: string, purchaseId: string, planId = ''): Promise<void> {
   try {
     switch (action) {
-      case 'run': {
-        // Use styled async dialog (11-L2) instead of blocking browser confirm().
-        const runOk = await confirmDialog({
-          title: 'Run purchase now?',
-          body: 'This will immediately execute the purchase.',
-          confirmLabel: 'Run now',
-          destructive: true,
-        });
-        if (runOk) {
-          await api.runPlannedPurchase(purchaseId);
-          showToast({ message: 'Purchase executed successfully', kind: 'success', timeout: 5_000 });
-        }
+      case 'run':
+        await runPlannedPurchaseNow(purchaseId);
         break;
-      }
       case 'pause':
         // Pause is reversible and scoped to a single execution: the plan stays
         // enabled (unlike Disable plan) and the row stays listed with a Paused

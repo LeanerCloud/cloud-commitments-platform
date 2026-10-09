@@ -957,6 +957,34 @@ describe('Plans Module', () => {
       expect(api.runPlannedPurchase).not.toHaveBeenCalled();
     });
 
+    test('run confirm names the step and shows the amount charged today', async () => {
+      mockConfirmDialog.mockClear();
+      mockConfirmDialog.mockResolvedValue(false);
+
+      (document.querySelector('[data-action="run"]') as HTMLButtonElement).click();
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const opts = mockConfirmDialog.mock.calls[0]![0] as { title: string; body: HTMLElement };
+      expect(opts.title).toBe('Run step 1/4 of "Test Plan" now?');
+      expect(opts.body.textContent).toMatch(/Charged today\$1,?000/);
+      expect(opts.body.textContent).toContain('5 \u00d7 ec2 t3.medium');
+    });
+
+    test('a second click while the run confirm is open does not stack a second dialog', async () => {
+      mockConfirmDialog.mockClear();
+      let resolveDialog: (v: boolean) => void = () => undefined;
+      mockConfirmDialog.mockReturnValue(new Promise<boolean>(r => { resolveDialog = r; }));
+
+      const runBtn = document.querySelector('[data-action="run"]') as HTMLButtonElement;
+      runBtn.click();
+      runBtn.click();
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(mockConfirmDialog).toHaveBeenCalledTimes(1);
+
+      resolveDialog(false);
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+
     test('pause action pauses purchase', async () => {
       (api.pausePlannedPurchase as jest.Mock).mockResolvedValue({});
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
