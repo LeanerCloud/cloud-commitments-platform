@@ -64,6 +64,22 @@ func startServerWithBlockedInit(t *testing.T) (port int, resolver *blockingResol
 	case <-time.After(5 * time.Second):
 		t.Fatal("background initialization never started")
 	}
+
+	// Wait until the listener is bound. Otherwise a later "port is closed" check
+	// could pass simply because the server had not started listening yet.
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server never started listening on %s: %v", addr, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	return port, resolver, ret
 }
 
