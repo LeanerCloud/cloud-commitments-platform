@@ -87,6 +87,12 @@ resource "aws_iam_policy" "cudly" {
           Resource = "*"
         },
         {
+          Sid      = "EC2ReservedInstanceTagging"
+          Effect   = "Allow"
+          Action   = ["ec2:CreateTags"]
+          Resource = "arn:aws:ec2:*:*:reserved-instances/*"
+        },
+        {
           Sid    = "RDSReservations"
           Effect = "Allow"
           Action = [
