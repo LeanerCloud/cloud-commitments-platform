@@ -1,14 +1,17 @@
 name: deploy-queue-watchdog
 
 # Alerts when a deploy or rollback run has sat in `queued` or `pending` for
-# hours. The per-cloud deploy jobs share a job-level concurrency group
+# hours, or in `waiting` for most of a day. The per-cloud deploy jobs share a
+# job-level concurrency group
 # (`<cloud>-tfstate-<env>`, cancel-in-progress: false), so one run that never
 # starts holds the slot and every later deploy or rollback waits behind it
 # (issue #708: GCP and Azure dev deploys frozen from 2026-10-05).
 #
 # Alert-only on purpose: the job fails (red scheduled run, GitHub notifies) and
-# lists the stuck runs; a human cancels them. `waiting` runs are not reported,
-# they are waiting for an environment approval. The `test` job runs the
+# lists the stuck runs; a human cancels them. `waiting` is how the AWS dev
+# orphan in #708 showed up (no approval gate on dev), but it is also the state
+# of a run awaiting a required environment approval, so it only alerts after
+# 720 minutes and is labeled "approval or orphaned". The `test` job runs the
 # script's self-test when the script or this workflow changes.
 
 on:
@@ -55,18 +58,19 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       STUCK_AFTER_MINUTES: "120"
+      WAITING_AFTER_MINUTES: "720"
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
-      - name: Collect queued and pending runs of the deploy workflows
+      - name: Collect queued, pending and waiting runs of the deploy workflows
         run: |
           set -euo pipefail
           : > runs.jsonl
           for wf in deploy-gcp.yml deploy-azure.yml deploy-aws-lambda.yml deploy-aws-fargate.yml deploy-all.yml rollback.yml; do
-            for status in queued pending; do
+            for status in queued pending waiting; do
               gh run list --workflow "$wf" --status "$status" --limit 50 \
                 --json databaseId,workflowName,status,createdAt,url,headBranch >> runs.jsonl
             done
