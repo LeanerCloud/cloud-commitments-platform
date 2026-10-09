@@ -1855,10 +1855,10 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
           }),
           targets: targets.map(target => {
             const o = awsOfferings.find(x => x.offering_id === target.offering_id);
-            if (o) return `${target.count} \u00d7 ${o.instance_type} (${o.offering_type})`;
+            if (o) return `${target.count} \u00d7 ${o.instance_type} (${o.offering_type}, offering ${target.offering_id})`;
             const alt = alternativeTargets?.find(x => x.offering_id === target.offering_id);
             return alt
-              ? `${target.count} \u00d7 ${alt.instance_type}`
+              ? `${target.count} \u00d7 ${alt.instance_type} (offering ${target.offering_id})`
               : `${target.count} \u00d7 offering ${target.offering_id}`;
           }),
         }),
