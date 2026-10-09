@@ -157,7 +157,7 @@ describe('CSS Styles', () => {
 
   describe('Interactive Elements', () => {
     test('has hover states for buttons', () => {
-      expect(css).toMatch(/button:hover/);
+      expect(css).toMatch(/button\)?:hover/);
     });
 
     test('has hover states for table rows', () => {

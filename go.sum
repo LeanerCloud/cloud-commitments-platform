@@ -94,8 +94,8 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapp
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.54.0/go.mod h1:Mf6O40IAyB9zR/1J8nGDDPirZQQPbYJni8Yisy7NTMc=
 github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261008100513-a9a426224031 h1:e3DVjk0VIGfDTW3flfD7j6aDiae9T8JINQciL3IXPjo=
 github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261008100513-a9a426224031/go.mod h1:ApWBliDXe099f3oDXBz41K/I9v4bHvn1dG/BGoRmHlw=
-github.com/LeanerCloud/cloud-commitments-go/providers/aws v0.0.0-20261003204812-9962786e0695 h1:DfNEBzFS7/MaBZljLGRRRUaarfnXXZyBE/6iozzp9/k=
-github.com/LeanerCloud/cloud-commitments-go/providers/aws v0.0.0-20261003204812-9962786e0695/go.mod h1:d4nsy61/Ptib0SxqMg0ble3yksVm3+QbtUtmGja82PA=
+github.com/LeanerCloud/cloud-commitments-go/providers/aws v0.0.0-20261009122502-bcc0dfc49227 h1:S9pAwtTnwt02+Fo1uVWYgtmGyB1koQAHmBSficHOZ2E=
+github.com/LeanerCloud/cloud-commitments-go/providers/aws v0.0.0-20261009122502-bcc0dfc49227/go.mod h1:yJoe/zCikjjlGsy47BZTTuKUcLkLVDwqgLEYklWjlm4=
 github.com/LeanerCloud/cloud-commitments-go/providers/azure v0.0.0-20261007130138-e24345ce68f8 h1:4qx5bagtW25H5X+whaZ/3tWXP7VGyG/qcypTh8yK7Hc=
 github.com/LeanerCloud/cloud-commitments-go/providers/azure v0.0.0-20261007130138-e24345ce68f8/go.mod h1:iIvPuWLWd+SXqLHAQNdodYMUAAcq7PnwfScXWgARt5A=
 github.com/LeanerCloud/cloud-commitments-go/providers/gcp v0.0.0-20261009093408-2c18f303abfc h1:hCLUvpI5U42BRh4M9EvjKaBg70P2ijbKxO9eNn7wMK0=
