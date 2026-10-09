@@ -47,12 +47,12 @@ func TestAWSCLITemplatesTagReservedInstancesOnly(t *testing.T) {
 			var scoped, wildcardRedshiftTags int
 			for _, stmt := range permissionsPolicy(t, path) {
 				for _, action := range stmt.Action {
-					switch {
-					case action == "ec2:CreateTags":
+					switch action {
+					case "ec2:CreateTags":
 						assert.Equal(t, reservedInstanceARN, stmt.Resource,
 							"ec2:CreateTags must be scoped to reserved instances")
 						scoped++
-					case action == "redshift:CreateTags" || action == "redshift:DescribeTags":
+					case "redshift:CreateTags", "redshift:DescribeTags":
 						assert.Equal(t, "*", stmt.Resource,
 							"redshift tag actions have no reserved-node resource type, so they are granted on *")
 						wildcardRedshiftTags++
