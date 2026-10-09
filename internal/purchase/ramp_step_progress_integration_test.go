@@ -140,7 +140,7 @@ func newRampStepFixture(ctx context.Context, t *testing.T) *rampStepFixture {
 
 	mockEmail.On("SendPurchaseConfirmation", mock.Anything, mock.AnythingOfType("email.NotificationData")).Return(nil).Maybe()
 	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProviderInst, nil).Maybe()
-	mockProviderInst.On("GetServiceClient", mock.Anything, common.ServiceEC2, mock.Anything).Return(mockServiceClient, nil).Maybe()
+	mockProviderInst.On("GetServiceClient", mock.Anything, common.ServiceRDS, mock.Anything).Return(mockServiceClient, nil).Maybe()
 	mockServiceClient.On("PurchaseCommitment", mock.Anything, mock.Anything, mock.AnythingOfType("common.PurchaseOptions")).
 		Run(func(args mock.Arguments) {
 			opts := args.Get(2).(common.PurchaseOptions)
@@ -195,7 +195,7 @@ func (f *rampStepFixture) purchaseCount() int {
 // rampStepRecommendation is the single rec every execution in these tests buys.
 func rampStepRecommendation() []config.RecommendationRecord {
 	return []config.RecommendationRecord{
-		{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+		{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
 	}
 }
 
