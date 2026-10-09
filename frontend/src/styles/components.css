@@ -1698,3 +1698,35 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
+
+/* Money confirm dialogs: shared stat band (commitmentSummary.ts). */
+.commitment-summary-band {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
+    margin: 0.75rem 0;
+}
+
+.commitment-summary-stat {
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 0.75rem;
+    background: var(--cudly-surface-muted);
+    border-radius: 6px;
+}
+
+.commitment-summary-label {
+    font-size: 0.8rem;
+    color: var(--cudly-text-muted);
+}
+
+.commitment-summary-value {
+    font-size: 1.15rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.commitment-summary-lines {
+    margin: 0.5rem 0 0;
+    padding-left: 1.1rem;
+    font-size: 0.9rem;
+}

@@ -223,6 +223,39 @@ describe('openExchangeModal', () => {
     expect(execReq.region).toBe('us-west-2');
   });
 
+  it('names instance types and the hourly price change in the execute confirm', async () => {
+    const mockGetQuote = api.getExchangeQuote as jest.Mock;
+    mockGetQuote.mockResolvedValueOnce({
+      IsValidExchange: true,
+      ValidationFailureReason: '',
+      CurrencyCode: 'USD',
+      PaymentDueRaw: '12.50',
+      SourceHourlyPriceRaw: '0.1000',
+      SourceRemainingUpfrontRaw: '',
+      SourceRemainingTotalRaw: '',
+      TargetHourlyPriceRaw: '0.1250',
+      TargetRemainingUpfrontRaw: '',
+      TargetRemainingTotalRaw: '',
+      Region: 'us-west-2',
+    });
+    const offeringUUID = '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91';
+    openExchangeModal('ri-abc', 3, 'm5.large', [
+      { instance_type: 'm5.large', offering_id: offeringUUID, effective_monthly_cost: 42.5 },
+    ]);
+    Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Get Quote')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Execute Exchange')?.click();
+
+    const text = document.querySelector('.modal-confirm-body')?.textContent ?? '';
+    expect(text).toContain('Pay now: USD 12.50');
+    expect(text).toContain('3 \u00d7 m5.large');
+    // The exact offering id stays visible next to the instance type.
+    expect(text).toContain(`3 \u00d7 m5.large (offering ${offeringUUID})`);
+    expect(text).toContain('USD 0.1000 \u2192 0.1250 (+0.0250 USD/hr, about +18.25 USD/month)');
+    expect(document.activeElement?.textContent).toBe('Cancel');
+    document.querySelector<HTMLButtonElement>('.modal-confirm-close')?.click();
+  });
+
   it('invalidates a fetched quote when the count changes, hiding Execute (issue #244)', async () => {
     const mockGetQuote = api.getExchangeQuote as jest.Mock;
     mockGetQuote.mockResolvedValueOnce({
