@@ -596,6 +596,14 @@ func TestBuildDuplicatePurchaseResponse(t *testing.T) {
 
 	ex.NotificationSent = nil
 	assert.Equal(t, false, buildDuplicatePurchaseResponse(ex)["email_sent"])
+
+	// A row that already left the approval queue never had an approval email.
+	for _, status := range []string{"approved", "running", "completed", "partially_completed"} {
+		ex.Status = status
+		resp = buildDuplicatePurchaseResponse(ex)
+		assert.NotContains(t, resp, "email_sent", status)
+		assert.Equal(t, status, resp["status"])
+	}
 }
 
 // --- #647: capacity_percent consistency with scaled rec counts ---
