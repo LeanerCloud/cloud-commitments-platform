@@ -352,6 +352,9 @@ func (s *Service) UpdateUser(ctx context.Context, actorUserID, userID string, re
 	// (same rules as the self-edit profile path; see updateUserEmail and #868
 	// for the TLD constraint). Issue #892.
 	if req.Email != nil {
+		if err := s.guardEmailChange(ctx, actorUserID, user, priorGroups, *req.Email); err != nil {
+			return nil, err
+		}
 		if err := s.updateUserEmail(ctx, user, *req.Email); err != nil {
 			return nil, err
 		}
@@ -371,6 +374,20 @@ func (s *Service) UpdateUser(ctx context.Context, actorUserID, userID string, re
 	s.revokeSessionsOnDeactivation(ctx, user, priorActive)
 
 	return user, nil
+}
+
+// guardEmailChange caps an email change at the actor's grant ceiling over the
+// target's current membership. An address is an authorization attribute:
+// password reset mails its link there, so whoever sets a user's address can
+// take the account over. Without this cap an update:users holder could retarget
+// an administrator (or Purchaser) to an address they control and reset the
+// password, defeating the #226 ceiling and the #923 separation of duties.
+// Trusted internal callers (actorUserID == "") skip the ceiling.
+func (s *Service) guardEmailChange(ctx context.Context, actorUserID string, user *User, priorGroups []string, email string) error {
+	if actorUserID == "" || email == "" || email == user.Email {
+		return nil
+	}
+	return s.checkMembershipGrantCeiling(ctx, actorUserID, priorGroups)
 }
 
 // guardActiveChange caps a reactivation at the actor's grant ceiling, then
