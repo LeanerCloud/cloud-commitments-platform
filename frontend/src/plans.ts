@@ -755,7 +755,7 @@ function renderPlannedPurchaseRow(purchase: PlannedPurchase): string {
         ${canPauseOrResumePurchase && isPending ? `<button data-action="pause" data-id="${escapeHtmlAttr(purchase.id)}" class="btn-small" title="Pause">⏸</button>` : ''}
         ${canPauseOrResumePurchase && isPaused ? `<button data-action="resume" data-id="${escapeHtmlAttr(purchase.id)}" class="btn-small" title="Resume">⏵</button>` : ''}
         ${canEditPlan ? `<button data-action="edit" data-id="${escapeHtmlAttr(purchase.id)}" data-plan-id="${escapeHtmlAttr(purchase.plan_id)}" class="btn-small" title="Edit Plan">✎</button>` : ''}
-        ${canDisablePlan ? `<button data-action="disable" data-id="${escapeHtmlAttr(purchase.id)}" class="btn-small danger" title="Disable Plan">✕</button>` : ''}
+        ${canDisablePlan ? `<button data-action="disable" data-id="${escapeHtmlAttr(purchase.id)}" class="btn-small danger" title="Cancel this purchase and disable its plan">✕</button>` : ''}
       </td>
     </tr>
   `;
@@ -823,9 +823,10 @@ async function handlePlannedPurchaseAction(action: string, purchaseId: string, p
       case 'disable': {
         // Use styled async dialog (11-L2) instead of blocking browser confirm().
         const disableOk = await confirmDialog({
-          title: 'Disable this plan?',
-          body: 'The plan will be paused and no purchases will be scheduled. You can re-enable it later from the Plans list.',
-          confirmLabel: 'Disable plan',
+          title: 'Cancel this scheduled purchase?',
+          body: 'This scheduled purchase will be canceled, and its plan will be disabled so no further purchases are scheduled from it. You can re-enable the plan later from the Plans list.',
+          confirmLabel: 'Cancel purchase and disable plan',
+          cancelLabel: 'Keep it',
           destructive: true,
         });
         if (disableOk) {
