@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -2067,7 +2068,12 @@ func (s *PostgresStore) CleanupOldExecutions(ctx context.Context, retentionDays 
 // PURCHASE HISTORY
 // ==========================================
 
-// SavePurchaseHistory saves a purchase history record.
+// SavePurchaseHistory saves a purchase history record. It is idempotent per
+// (provider, account_id, purchase_id): a re-drive or root retry that adopts a
+// commitment the first attempt already bought saves the same key again, and a
+// second row would double-count spend and savings (#704). The NOT EXISTS
+// covers rows that predate the unique index from migration 000108; the index
+// and ON CONFLICT cover two concurrent saves. An existing row is left as is.
 func (s *PostgresStore) SavePurchaseHistory(ctx context.Context, record *PurchaseHistoryRecord) error {
 	query := `
 		INSERT INTO purchase_history (
@@ -2075,10 +2081,16 @@ func (s *PostgresStore) SavePurchaseHistory(ctx context.Context, record *Purchas
 			resource_type, count, term, payment, upfront_cost, monthly_cost,
 			estimated_savings, plan_id, plan_name, ramp_step, cloud_account_id,
 			source, revocation_window_closes_at, offering_class
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		)
+		SELECT $1::varchar, $2::varchar, $3, $4::varchar, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+		WHERE NOT EXISTS (
+			SELECT 1 FROM purchase_history
+			WHERE provider = $4 AND account_id = $1 AND purchase_id = $2
+		)
+		ON CONFLICT DO NOTHING
 	`
 
-	_, err := s.db.Exec(ctx, query,
+	tag, err := s.db.Exec(ctx, query,
 		record.AccountID,
 		record.PurchaseID,
 		record.Timestamp,
@@ -2103,6 +2115,9 @@ func (s *PostgresStore) SavePurchaseHistory(ctx context.Context, record *Purchas
 
 	if err != nil {
 		return fmt.Errorf("failed to save purchase history: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		logging.Infof("purchase history for %s/%s/%s already recorded; keeping the existing row", record.Provider, record.AccountID, record.PurchaseID)
 	}
 
 	return nil
