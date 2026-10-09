@@ -377,7 +377,7 @@ func (s *Service) UpdateUser(ctx context.Context, actorUserID, userID string, re
 }
 
 // guardEmailChange caps an email change at the actor's grant ceiling over the
-// target's current membership. An address is an authorization attribute:
+// target's current membership and account scope. An address is an authorization attribute:
 // password reset mails its link there, so whoever sets a user's address can
 // take the account over. Without this cap an update:users holder could retarget
 // an administrator (or Purchaser) to an address they control and reset the
@@ -387,7 +387,27 @@ func (s *Service) guardEmailChange(ctx context.Context, actorUserID string, user
 	if actorUserID == "" || email == "" || email == user.Email {
 		return nil
 	}
-	return s.checkMembershipGrantCeiling(ctx, actorUserID, priorGroups)
+	if err := s.checkMembershipGrantCeiling(ctx, actorUserID, priorGroups); err != nil {
+		return err
+	}
+	if len(priorGroups) == 0 {
+		return nil // holds no privileges, so there is no scope to take over
+	}
+	// Permissions alone do not order two administrators: an admin limited to
+	// some cloud accounts is not above an all-accounts admin. The target's
+	// account scope must be fully contained in the actor's.
+	actorAccounts, err := s.grantCeilingAccounts(ctx, actorUserID)
+	if err != nil {
+		return err
+	}
+	targetAccounts, err := s.grantCeilingAccounts(ctx, user.ID)
+	if err != nil {
+		return err
+	}
+	if gap := accountScopeGap(actorAccounts, targetAccounts); gap != "" {
+		return fmt.Errorf("%w: changing this user's email would hand over %s, beyond your own account scope", ErrPermissionCeiling, gap)
+	}
+	return nil
 }
 
 // guardActiveChange caps a reactivation at the actor's grant ceiling, then
