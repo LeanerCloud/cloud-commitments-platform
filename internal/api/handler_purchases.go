@@ -1508,7 +1508,7 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 	if err := checkRevokableStatus(execution); err != nil {
 		return nil, err
 	}
-	return h.revokeViaSession(ctx, execution, actor)
+	return h.revokeViaSession(ctx, execution, actor, resolveCreatorUserID(h.tryGetSession(ctx, req)))
 }
 
 // getExecutionOr404 loads an execution, answering 404 for a missing one
@@ -1573,7 +1573,7 @@ func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFun
 		if statusErr := checkRevokableStatus(execution); statusErr != nil {
 			return nil, true, statusErr
 		}
-		res, revokeErr := h.revokeViaSession(ctx, execution, session.Email)
+		res, revokeErr := h.revokeViaSession(ctx, execution, session.Email, resolveCreatorUserID(session))
 		return res, true, revokeErr
 	case fallsThroughToToken(sessErr, token):
 		// Fall through to the token branch.
@@ -1682,11 +1682,14 @@ func revocationWindowClosesAt(execution *config.PurchaseExecution) string {
 // read and this write (e.g. a concurrent transition), zero rows are affected
 // and we return a 409 rather than blindly overwriting. CancelledBy is stamped
 // in a follow-up SavePurchaseExecution on the freshly-returned row.
-func (h *Handler) revokeViaSession(ctx context.Context, execution *config.PurchaseExecution, revokedBy string) (any, error) {
-	actor := &revokedBy
+//
+// transitionedBy is the acting user's UUID (resolveCreatorUserID), or nil when
+// the caller has no user row. It must never be an email: transitioned_by is a
+// UUID foreign key. revokedBy is the email shown as the requester.
+func (h *Handler) revokeViaSession(ctx context.Context, execution *config.PurchaseExecution, revokedBy string, transitionedBy *string) (any, error) {
 	updated, err := h.config.TransitionExecutionStatus(
 		ctx, execution.ExecutionID,
-		[]string{"completed", "partially_completed"}, "revocation_requested", actor)
+		[]string{"completed", "partially_completed"}, "revocation_requested", transitionedBy)
 	if err != nil {
 		if errors.Is(err, config.ErrExecutionNotInExpectedStatus) {
 			return nil, NewClientError(409, fmt.Sprintf(
@@ -1871,7 +1874,7 @@ func (h *Handler) retryPurchase(ctx context.Context, req *events.LambdaFunctionU
 	// successor that fails the same way.
 	if failedExec.PlanID != "" && len(failedExec.Recommendations) == 0 {
 		return nil, NewClientError(409,
-			"this plan step has no recommendations attached, so retrying it would buy nothing (platform#609: plan steps cannot yet carry recommendations)")
+			"this plan step has no recommendations attached, so retrying it would buy nothing (platform#631: plan steps cannot yet carry recommendations)")
 	}
 
 	totalUpfront, totalSavings, err := validateAndTotalRecommendations(failedExec.Recommendations)
