@@ -3494,12 +3494,17 @@ components:
             True when a fetch reached its row cap, so older rows (and possibly
             pending approvals) may be missing from purchases and summary. May
             be a false positive when exactly `limit` or `executions_limit` rows exist.
+            Also true when the actionable executions class (pending, approved,
+            running, ...) reached its own cap of 1000 rows.
         limit:
           type: integer
           description: Row cap on completed purchase history rows for this request.
         executions_limit:
           type: integer
-          description: Row cap on non-completed executions (fixed, ignores the limit parameter).
+          description: >-
+            Row cap on terminal executions (failed, expired, canceled, ...),
+            fixed and ignoring the limit parameter. Actionable executions use a
+            separate cap of 1000.
 
     HistorySummary:
       type: object
