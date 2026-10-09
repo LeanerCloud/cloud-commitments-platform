@@ -339,7 +339,7 @@ func (app *Application) handleScheduledHTTP(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Ensure database connection is established (lazy initialization)
-	if err := app.ensureDB(ctx); err != nil {
+	if err = app.ensureDB(ctx); err != nil {
 		log.Printf("Failed to establish database connection: %v", err)
 		http.Error(w, "Database connection failed", http.StatusServiceUnavailable)
 		return

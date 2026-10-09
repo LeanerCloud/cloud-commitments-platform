@@ -1,5 +1,5 @@
 // Contract test for issue #710: every scheduler resource in the compute
-// modules must name a task the server actually recognises. GCP and Azure
+// modules must name a task the server actually recognizes. GCP and Azure
 // pointed at /api/scheduled/recommendations and /api/scheduled/ri-exchange,
 // and the AWS Lambda rule sent {event: "scheduled_recommendations"}; none of
 // those are in the server's task roster, so every scheduled run failed.
@@ -25,7 +25,7 @@ var schedulerRefs = []struct {
 	{"gcp/gke/main.tf", regexp.MustCompile(`/api/scheduled/([A-Za-z0-9_-]+)`), 1},
 	{"azure/container-apps/scheduled-tasks.tf", regexp.MustCompile(`/api/scheduled/([A-Za-z0-9_-]+)`), 3},
 	// Lambda EventBridge targets must send the "action" key; any other key
-	// (the old "event") is not recognised by the Lambda event router.
+	// (the old "event") is not recognized by the Lambda event router.
 	{"aws/lambda/main.tf", regexp.MustCompile(`jsonencode\(\{\s*action\s*=\s*"([^"]+)"`), 6},
 	{"aws/fargate/main.tf", regexp.MustCompile(`"--task",\s*"([^"]+)"`), 4},
 }
@@ -42,7 +42,7 @@ func TestSchedulerTargetsNameKnownServerTasks(t *testing.T) {
 		}
 		for _, m := range matches {
 			if _, err := server.ParseScheduledTaskType(m[1]); err != nil {
-				t.Errorf("%s: scheduler sends task %q which the server does not recognise", ref.file, m[1])
+				t.Errorf("%s: scheduler sends task %q which the server does not recognize", ref.file, m[1])
 			}
 		}
 	}
