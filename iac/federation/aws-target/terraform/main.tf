@@ -74,6 +74,12 @@ resource "aws_iam_policy" "cudly" {
         Resource = "*"
       },
       {
+        Sid      = "EC2ReservedInstanceTagging"
+        Effect   = "Allow"
+        Action   = ["ec2:CreateTags"]
+        Resource = "arn:aws:ec2:*:*:reserved-instances/*"
+      },
+      {
         Sid    = "RDSReservations"
         Effect = "Allow"
         Action = [
@@ -100,6 +106,9 @@ resource "aws_iam_policy" "cudly" {
           "redshift:PurchaseReservedNodeOffering",
           "redshift:DescribeReservedNodeOfferings",
           "redshift:DescribeReservedNodes",
+          # No reserved-node resource type exists for the two tag actions (AWS Service Authorization Reference), so "*" is the narrowest scope.
+          "redshift:CreateTags",
+          "redshift:DescribeTags",
         ]
         Resource = "*"
       },

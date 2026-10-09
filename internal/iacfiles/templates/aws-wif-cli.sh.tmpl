@@ -115,7 +115,7 @@ PERMISSIONS_POLICY=$(cat <<'JSON'
       "elasticache:PurchaseReservedCacheNodesOffering",
       "elasticache:DescribeReservedCacheNodesOfferings","elasticache:DescribeReservedCacheNodes",
       "redshift:PurchaseReservedNodeOffering","redshift:DescribeReservedNodeOfferings",
-      "redshift:DescribeReservedNodes",
+      "redshift:DescribeReservedNodes","redshift:CreateTags","redshift:DescribeTags",
       "memorydb:PurchaseReservedNodesOffering","memorydb:DescribeReservedNodesOfferings",
       "memorydb:DescribeReservedNodes",
       "savingsplans:CreateSavingsPlan","savingsplans:DescribeSavingsPlans",
@@ -124,6 +124,10 @@ PERMISSIONS_POLICY=$(cat <<'JSON'
       "es:DescribeReservedInstances",
       "ec2:DescribeRegions"
     ]
+  },{
+    "Effect": "Allow",
+    "Resource": "arn:aws:ec2:*:*:reserved-instances/*",
+    "Action": ["ec2:CreateTags"]
   }]
 }
 JSON

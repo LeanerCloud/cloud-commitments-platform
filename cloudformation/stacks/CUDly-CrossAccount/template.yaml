@@ -105,6 +105,11 @@ Resources:
               - ec2:DescribeRegions
               - ec2:DescribeInstanceTypeOfferings
             Resource: "*"
+          - Sid: EC2ReservedInstanceTagging
+            Effect: Allow
+            Action:
+              - ec2:CreateTags
+            Resource: "arn:aws:ec2:*:*:reserved-instances/*"
 
           # RDS Reserved Instances
           - Sid: RDSReservedInstances
@@ -141,6 +146,9 @@ Resources:
               - redshift:DescribeReservedNodeOfferings
               - redshift:DescribeReservedNodes
               - redshift:PurchaseReservedNodeOffering
+              # No reserved-node resource type exists for the two tag actions (AWS Service Authorization Reference), so "*" is the narrowest scope.
+              - redshift:CreateTags
+              - redshift:DescribeTags
             Resource: "*"
 
           # MemoryDB Reserved Nodes
