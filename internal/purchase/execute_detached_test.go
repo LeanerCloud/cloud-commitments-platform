@@ -23,6 +23,7 @@ type detachFixture struct {
 	saved   []string
 	history int
 	saveCtx context.Context
+	histCtx context.Context
 }
 
 func newDetachFixture(t *testing.T) *detachFixture {
@@ -46,7 +47,7 @@ func newDetachFixture(t *testing.T) *detachFixture {
 		f.saved = append(f.saved, e.Status)
 		return nil
 	}
-	store.On("SavePurchaseHistory", mock.Anything, mock.Anything).Run(func(mock.Arguments) { f.history++ }).Return(nil)
+	store.On("SavePurchaseHistory", mock.Anything, mock.Anything).Run(func(a mock.Arguments) { f.history++; f.histCtx = a.Get(0).(context.Context) }).Return(nil)
 	email := new(MockEmailSender)
 	email.On("SendPurchaseConfirmation", mock.Anything, mock.Anything).Return(nil)
 	stsMock.On("GetCallerIdentity", mock.Anything, mock.Anything).Return(&stsOut, nil)
@@ -98,7 +99,15 @@ func TestExecuteAndFinalize_ExpiredCallerDeadline_UsesOwnBudgets(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), provDeadline, 30*time.Second)
 	d, ok := f.saveCtx.Deadline()
 	require.True(t, ok, "terminal save needs a deadline")
-	assert.LessOrEqual(t, time.Until(d), terminalSaveTimeout)
+	// Literal durations on purpose: comparing against the constants would
+	// pass whatever their values are.
+	assert.LessOrEqual(t, time.Until(d), 30*time.Second)
+	assert.Greater(t, time.Until(d), 29*time.Second)
+	// SavePurchaseHistory runs inside executePurchase, so it sees the run ctx.
+	rd, ok := f.histCtx.Deadline()
+	require.True(t, ok, "run ctx needs a deadline")
+	assert.LessOrEqual(t, time.Until(rd), 4*time.Minute)
+	assert.Greater(t, time.Until(rd), 3*time.Minute+59*time.Second)
 	assert.Equal(t, []string{"completed"}, f.saved)
 }
 
