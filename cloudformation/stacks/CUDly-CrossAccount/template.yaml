@@ -146,9 +146,6 @@ Resources:
               - redshift:DescribeReservedNodeOfferings
               - redshift:DescribeReservedNodes
               - redshift:PurchaseReservedNodeOffering
-              # No reserved-node resource type exists for the two tag actions (AWS Service Authorization Reference), so "*" is the narrowest scope.
-              - redshift:CreateTags
-              - redshift:DescribeTags
             Resource: "*"
 
           # MemoryDB Reserved Nodes

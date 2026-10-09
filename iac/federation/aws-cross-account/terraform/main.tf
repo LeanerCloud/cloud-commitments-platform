@@ -119,9 +119,6 @@ resource "aws_iam_policy" "cudly" {
             "redshift:PurchaseReservedNodeOffering",
             "redshift:DescribeReservedNodeOfferings",
             "redshift:DescribeReservedNodes",
-            # No reserved-node resource type exists for the two tag actions (AWS Service Authorization Reference), so "*" is the narrowest scope.
-            "redshift:CreateTags",
-            "redshift:DescribeTags",
           ]
           Resource = "*"
         },
