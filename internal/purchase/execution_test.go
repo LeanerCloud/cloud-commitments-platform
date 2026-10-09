@@ -743,7 +743,7 @@ func TestManager_ExecutePurchase_MultiAccount(t *testing.T) {
 		ExecutionID:     "exec-multi",
 		PlanID:          "plan-multi",
 		Status:          "pending",
-		Recommendations: []config.RecommendationRecord{rec},
+		Recommendations: []config.RecommendationRecord{withAccount(rec, "aaaaaaaa-0000-0000-0000-000000000001"), withAccount(rec, "aaaaaaaa-0000-0000-0000-000000000002")},
 	}
 
 	accounts := []config.CloudAccount{
@@ -796,6 +796,14 @@ func TestManager_ExecutePurchase_MultiAccount(t *testing.T) {
 		"aaaaaaaa-0000-0000-0000-000000000001",
 		"aaaaaaaa-0000-0000-0000-000000000002",
 	}, accountIDs)
+
+	// platform#631: each account buys only its own rec (2 calls, not 4) and
+	// its row carries its own totals, not the whole step's.
+	mockServiceClient.AssertNumberOfCalls(t, "PurchaseCommitment", 2)
+	for _, e := range savedExecs {
+		require.Len(t, e.Recommendations, 1)
+		assert.Equal(t, *e.CloudAccountID, *e.Recommendations[0].CloudAccountID)
+	}
 
 	mockStore.AssertExpectations(t)
 	mockEmail.AssertExpectations(t)
@@ -871,7 +879,7 @@ func TestExecuteForAccount_CredentialFailure_MarksFailed(t *testing.T) {
 				ExecutionID:     "exec-credfail",
 				PlanID:          "plan-credfail",
 				Status:          "pending",
-				Recommendations: []config.RecommendationRecord{rec},
+				Recommendations: []config.RecommendationRecord{withAccount(rec, tt.account.ID)},
 			}
 
 			mockStore.On("GetPurchasePlan", ctx, "plan-credfail").Return(plan, nil)
@@ -1032,7 +1040,7 @@ func TestExecuteMultiAccount_PartialFailure_IsolatesAccounts(t *testing.T) {
 		ExecutionID:     "exec-partial",
 		PlanID:          "plan-partial",
 		Status:          "pending",
-		Recommendations: []config.RecommendationRecord{rec},
+		Recommendations: []config.RecommendationRecord{withAccount(rec, accountVID), withAccount(rec, accountIID)},
 	}
 
 	plan := &config.PurchasePlan{
@@ -1203,7 +1211,7 @@ func TestExecuteMultiAccount_RunsAccountsInParallel(t *testing.T) {
 		ExecutionID:     "exec-parallel",
 		PlanID:          "plan-parallel",
 		Status:          "pending",
-		Recommendations: []config.RecommendationRecord{rec},
+		Recommendations: []config.RecommendationRecord{withAccount(rec, accountAID), withAccount(rec, accountBID)},
 	}
 
 	plan := &config.PurchasePlan{

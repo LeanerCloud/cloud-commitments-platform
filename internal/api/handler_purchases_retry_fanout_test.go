@@ -63,6 +63,18 @@ func fanoutRecs() []config.RecommendationRecord {
 	}
 }
 
+// fanoutRootRecs is a root step's rec set: one rec per plan account, because
+// the fan-out buys each account's own recs only (platform#631).
+func fanoutRootRecs() []config.RecommendationRecord {
+	var recs []config.RecommendationRecord
+	for _, id := range []string{fanoutAcctA, fanoutAcctB, fanoutAcctC} {
+		rec := fanoutRecs()[0]
+		rec.CloudAccountID = strPtr(id)
+		recs = append(recs, rec)
+	}
+	return recs
+}
+
 // fanoutCredStore resolves a static AWS access-key blob so per-account
 // credential resolution succeeds without touching the cloud.
 type fanoutCredStore struct {
@@ -329,7 +341,7 @@ func TestRetryOfFailedRootRowStillFansOutToEveryAccount(t *testing.T) {
 		CreatedByUserID: &creator,
 		CapacityPercent: 100,
 		Source:          common.PurchaseSourceWeb,
-		Recommendations: fanoutRecs(),
+		Recommendations: fanoutRootRecs(),
 	}
 
 	successor := retryFailedRow(t, failedRoot)

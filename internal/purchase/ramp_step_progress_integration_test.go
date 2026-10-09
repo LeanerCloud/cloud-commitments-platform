@@ -199,6 +199,19 @@ func rampStepRecommendation() []config.RecommendationRecord {
 	}
 }
 
+// rampStepRecommendationsPerAccount is the step's rec set: one rec per plan
+// account, since the fan-out buys each account's own recs only (platform#631).
+func (f *rampStepFixture) rampStepRecommendationsPerAccount() []config.RecommendationRecord {
+	var recs []config.RecommendationRecord
+	for i := range f.accounts {
+		id := f.accounts[i].ID
+		rec := rampStepRecommendation()[0]
+		rec.CloudAccountID = &id
+		recs = append(recs, rec)
+	}
+	return recs
+}
+
 // saveRootExecution persists the plan-scheduled root row for ramp step
 // stepNumber: no cloud_account_id, so the executor fans it out.
 func (f *rampStepFixture) saveRootExecution(ctx context.Context, t *testing.T, stepNumber int) *config.PurchaseExecution {
@@ -210,7 +223,7 @@ func (f *rampStepFixture) saveRootExecution(ctx context.Context, t *testing.T, s
 		Status:          "pending",
 		StepNumber:      stepNumber,
 		ScheduledDate:   time.Now(),
-		Recommendations: rampStepRecommendation(),
+		Recommendations: f.rampStepRecommendationsPerAccount(),
 	}
 	require.NoError(t, f.store.SavePurchaseExecution(ctx, exec))
 	return exec

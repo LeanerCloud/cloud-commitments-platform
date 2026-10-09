@@ -240,7 +240,8 @@ func TestMultiAccountSeedsStablePerAccountKey(t *testing.T) {
 			PlanID:         "plan-x",
 			Source:         common.PurchaseSourceWeb,
 			Recommendations: []config.RecommendationRecord{
-				{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+				scopedTestRec("acct-A"),
+				scopedTestRec("acct-B"),
 			},
 		}
 		plan := &config.PurchasePlan{ID: "plan-x", Name: "Plan X"}
@@ -385,7 +386,8 @@ func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 		Status:         "pending",
 		PlanID:         "plan-x",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+			scopedTestRec("acct-ok"),
+			scopedTestRec("acct-bad"),
 		},
 	}
 	plan := &config.PurchasePlan{ID: "plan-x", Name: "Plan X", AutoPurchase: true}
@@ -484,7 +486,8 @@ func TestExecuteForAccount_CommittedButUnsavedIsAcked(t *testing.T) {
 		Status:         "pending",
 		PlanID:         "plan-y",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+			scopedTestRec("acct-bad"),
+			scopedTestRec("acct-unsaved"),
 		},
 	}
 	plan := &config.PurchasePlan{ID: "plan-y", Name: "Plan Y", AutoPurchase: true}
@@ -786,7 +789,8 @@ func TestRootKeyStillFansOutThroughExecutePurchase(t *testing.T) {
 		PlanID:         "plan-x",
 		Source:         common.PurchaseSourceWeb,
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+			scopedTestRec("acct-A"),
+			scopedTestRec("acct-B"),
 		},
 	}
 	require.NoError(t, manager.executePurchase(ctx, root),
