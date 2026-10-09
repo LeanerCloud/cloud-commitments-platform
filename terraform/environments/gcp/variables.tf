@@ -499,3 +499,21 @@ variable "max_account_parallelism" {
   type        = number
   default     = 10
 }
+
+variable "archera_org_id" {
+  description = "Archera organization UUID for the explicit insured-commitment comparison. Empty disables it."
+  type        = string
+  default     = ""
+}
+
+variable "archera_plan_id" {
+  description = "Archera commitment plan UUID for the comparison. Empty disables it."
+  type        = string
+  default     = ""
+}
+
+variable "archera_api_key_secret_id" {
+  description = "Secret Manager secret ID holding the Archera API key (created out-of-band). Empty disables the Archera comparison."
+  type        = string
+  default     = ""
+}

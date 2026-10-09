@@ -258,3 +258,24 @@ variable "ri_exchange_schedule" {
   type        = string
   default     = "0 */6 * * *"
 }
+
+# Archera insured-commitment comparison (default off; see docs/archera-comparison.md).
+# All three must be set for the feature to be configured; the key itself is never
+# managed here, the operator creates the secret out-of-band.
+variable "archera_org_id" {
+  description = "Archera organization UUID, passed as ARCHERA_ORG_ID. Empty disables the comparison."
+  type        = string
+  default     = ""
+}
+
+variable "archera_plan_id" {
+  description = "Archera commitment plan UUID, passed as ARCHERA_PLAN_ID. Empty disables the comparison."
+  type        = string
+  default     = ""
+}
+
+variable "archera_api_key_secret_name" {
+  description = "Name of the Key Vault secret holding the Archera API key, passed as ARCHERA_API_KEY_SECRET. The secret lives in the platform vault, where the runtime identity already holds the vault-wide Key Vault Secrets User role, so no role assignment is added here. Empty disables the comparison."
+  type        = string
+  default     = ""
+}

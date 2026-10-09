@@ -85,6 +85,10 @@ module "compute_lambda" {
   fire_scheduled_purchases_schedule        = var.fire_scheduled_purchases_schedule
 
   # Additional environment variables
+  archera_org_id             = var.archera_org_id
+  archera_plan_id            = var.archera_plan_id
+  archera_api_key_secret_arn = var.archera_api_key_secret_arn
+
   additional_env_vars = merge(
     {
       STATIC_DIR                           = "/app/static"
@@ -208,6 +212,10 @@ module "compute_fargate" {
   enable_execute_command = var.fargate_enable_execute_command
 
   # Additional environment variables
+  archera_org_id             = var.archera_org_id
+  archera_plan_id            = var.archera_plan_id
+  archera_api_key_secret_arn = var.archera_api_key_secret_arn
+
   additional_env_vars = merge(
     {
       STATIC_DIR                           = "/app/static"

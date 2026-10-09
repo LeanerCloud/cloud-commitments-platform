@@ -363,3 +363,24 @@ variable "master_authorized_networks" {
     error_message = "master_authorized_networks must not contain 0.0.0.0/0; that reopens the control plane's public endpoint to the whole internet, exactly what this allowlist exists to prevent."
   }
 }
+
+# Archera insured-commitment comparison (default off; see docs/archera-comparison.md).
+# All three must be set for the feature to be configured; the key itself is never
+# managed here, the operator creates the secret out-of-band.
+variable "archera_org_id" {
+  description = "Archera organization UUID, passed as ARCHERA_ORG_ID. Empty disables the comparison."
+  type        = string
+  default     = ""
+}
+
+variable "archera_plan_id" {
+  description = "Archera commitment plan UUID, passed as ARCHERA_PLAN_ID. Empty disables the comparison."
+  type        = string
+  default     = ""
+}
+
+variable "archera_api_key_secret_id" {
+  description = "Secret Manager secret ID (full resource name) holding the Archera API key. Passed as ARCHERA_API_KEY_SECRET and bound with a per-secret secretAccessor grant on this one secret only. Empty disables the comparison."
+  type        = string
+  default     = ""
+}
