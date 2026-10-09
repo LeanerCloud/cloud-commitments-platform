@@ -33,7 +33,7 @@ export async function initLadderTimeline(root: HTMLElement, configs: readonly La
     <button type="button" data-reset>Clear filters</button></div>
     <p>Service, instance type, region and currency filters are unavailable because saved ladder tranches do not contain those fields.</p>
     <p data-summary aria-live="polite"></p><p data-snapshot></p>
-    <div class="ladder-timeline-chart"><canvas tabindex="0" aria-label="Planned purchase timeline. Use the purchase table below to select a purchase with the keyboard." role="img"></canvas></div>
+    <div class="ladder-timeline-chart"><canvas aria-label="Planned purchase timeline. Use the purchase table below to select a purchase with the keyboard." role="img"></canvas></div>
     <div data-table></div></div>`;
   const provider = root.querySelector<HTMLSelectElement>('[data-provider]')!;
   const account = root.querySelector<HTMLSelectElement>('[data-account]')!;
@@ -42,14 +42,17 @@ export async function initLadderTimeline(root: HTMLElement, configs: readonly La
   const summary = root.querySelector<HTMLElement>('[data-summary]')!;
   const table = root.querySelector<HTMLElement>('[data-table]')!;
   root.querySelector<HTMLInputElement>('[data-date="from"]')!.value = filters.from;
+  const focusEvent = (id: string): void => {
+    Array.from(table.querySelectorAll<HTMLButtonElement>('[data-event]')).find(button => button.dataset['event'] === id)?.focus();
+  };
   const selectEvent = (event: LadderEvent): void => {
     selectedID = event.id;
     render();
-    Array.from(table.querySelectorAll<HTMLButtonElement>('[data-event]')).find(button => button.dataset['event'] === event.id)?.focus();
+    focusEvent(event.id);
     const reason = ladderEditReason(event);
     const run = runs.find(item => item.id === event.run_id);
     if (!reason && run && canAccess('update', 'config')) {
-      openLadderEventEditor(event, run, events.filter(item => item.run_id === event.run_id), () => { void load(); });
+      openLadderEventEditor(event, run, events.filter(item => item.run_id === event.run_id), () => { void load().then(() => focusEvent(event.id)); });
     }
   };
   const render = (): void => {

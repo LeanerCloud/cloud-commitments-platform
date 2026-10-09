@@ -1,9 +1,10 @@
+import type { ApiError } from './api/types';
 import { amendLadderEvent, type LadderEvent, type LadderRun } from './api/ladder';
 import { openModal, closeModal } from './modal';
 import { escapeHtml } from './utils';
 import { formatLadderUnits, ladderAmountUnits, ladderTotal } from './ladder-timeline-filters';
 
-export function openLadderEventEditor(event: LadderEvent, run: LadderRun, siblings: readonly LadderEvent[], onSaved: () => void): void {
+export function openLadderEventEditor(event: LadderEvent, run: LadderRun, siblings: readonly LadderEvent[], onReload: () => void): void {
   const modal = document.createElement('div');
   modal.className = 'modal hidden ladder-event-editor';
   modal.setAttribute('role', 'dialog');
@@ -27,6 +28,7 @@ export function openLadderEventEditor(event: LadderEvent, run: LadderRun, siblin
     <p id="ladder-event-error" role="alert"></p>
     <div class="modal-footer"><button type="button" class="btn btn-secondary" data-cancel>Cancel</button>
       <button type="button" class="btn btn-secondary" data-reset>Undo draft changes</button>
+      <button type="button" class="btn btn-secondary" data-reload hidden>Reload and discard draft</button>
       <button type="submit" class="btn btn-primary">Save planned purchase</button></div>
     </form></div>`;
   document.body.append(modal);
@@ -37,6 +39,7 @@ export function openLadderEventEditor(event: LadderEvent, run: LadderRun, siblin
   const error = modal.querySelector<HTMLElement>('#ladder-event-error')!;
   const save = modal.querySelector<HTMLButtonElement>('button[type="submit"]')!;
   const cancel = modal.querySelector<HTMLButtonElement>('[data-cancel]')!;
+  const reload = modal.querySelector<HTMLButtonElement>('[data-reload]')!;
   let pending = false;
   const initialDate = new Date(event.scheduled_date).toISOString().slice(0, 19);
   const originalTotal = ladderAmountUnits(ladderTotal(siblings));
@@ -61,6 +64,7 @@ export function openLadderEventEditor(event: LadderEvent, run: LadderRun, siblin
   const initialControlDate = date.value;
   amount.addEventListener('input', updatePreview);
   modal.querySelector('[data-reset]')!.addEventListener('click', restore);
+  reload.addEventListener('click', () => { closeModal(modal); onReload(); });
   modal.querySelector('[data-cancel]')!.addEventListener('click', () => { if (!pending) closeModal(modal); });
   modal.addEventListener('keydown', e => {
     if (pending && e.key === 'Escape') {
@@ -87,9 +91,11 @@ export function openLadderEventEditor(event: LadderEvent, run: LadderRun, siblin
     try {
       await amendLadderEvent(event.id, { expected_revision: event.revision, scheduled_date: date.value === initialControlDate ? event.scheduled_date : proposed.toISOString(), amount_usd_hr: amount.value });
       closeModal(modal);
-      onSaved();
+      onReload();
     } catch (err) {
-      error.textContent = `${err instanceof Error ? err.message : 'Save failed'}. Your draft is retained. Reload the timeline before retrying a changed plan.`;
+      const conflict = (err as ApiError).status === 409;
+      reload.hidden = !conflict;
+      error.textContent = `${err instanceof Error ? err.message : 'Save failed'}. Your draft is retained.${conflict ? ' The plan changed; reload it to edit the current values.' : ''}`;
     } finally {
       pending = false;
       form.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button').forEach(input => { input.disabled = false; });
