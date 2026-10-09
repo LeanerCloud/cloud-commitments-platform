@@ -113,72 +113,95 @@
     margin-top: 1rem;
 }
 
-/* Buttons */
+/* Buttons: the default is a quiet outlined button. Only primary and
+ * destructive actions are filled, so the filled colour always means
+ * "this is the main or the dangerous action". */
 button {
     padding: 0.5rem 1rem;
-    border: none;
+    border: 1px solid var(--cudly-border-strong);
     border-radius: 4px;
-    background: var(--cudly-text-muted);
-    color: white;
+    background: var(--cudly-surface);
+    color: var(--cudly-text);
     cursor: pointer;
     font-size: 0.875rem;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s;
 }
 
-button:hover {
-    background: var(--cudly-text-muted);
+/* :where() keeps this at class-level specificity so component classes that
+ * set their own background are not overridden on hover. */
+:where(button):hover {
+    background: var(--cudly-surface-muted);
+    border-color: var(--cudly-text-subtle);
+}
+
+button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 button.primary {
     background: var(--cudly-primary);
+    border-color: var(--cudly-primary);
+    color: white;
 }
 
 button.primary:hover {
     background: var(--cudly-primary-hover);
+    border-color: var(--cudly-primary-hover);
 }
 
 button.success {
     background: var(--cudly-success);
+    border-color: var(--cudly-success);
+    color: white;
 }
 
 button.success:hover {
     background: #2d9048;
+    border-color: #2d9048;
 }
 
 button.danger {
     background: var(--cudly-error);
+    border-color: var(--cudly-error);
+    color: white;
 }
 
 button.danger:hover {
     background: #d33426;
+    border-color: #d33426;
 }
 
 /* Secondary button style */
-.btn-secondary {
+.btn-secondary,
+button.secondary {
     background: var(--cudly-bg);
     color: var(--cudly-text);
     border: 1px solid var(--cudly-border-strong);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover,
+button.secondary:hover {
     background: #e8e8e8;
     border-color: #bbb;
 }
 
-/* Base btn class */
+/* Base btn class: same quiet outlined look as the bare button, so it can
+ * be combined with the variant classes below. */
 .btn {
     padding: 0.5rem 1rem;
-    border: none;
+    border: 1px solid var(--cudly-border-strong);
     border-radius: 4px;
-    background: var(--cudly-text-muted);
-    color: white;
+    background: var(--cudly-surface);
+    color: var(--cudly-text);
     cursor: pointer;
     font-size: 0.875rem;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s;
 }
 
 .btn:hover {
-    background: var(--cudly-text-muted);
+    background: var(--cudly-surface-muted);
+    border-color: var(--cudly-text-subtle);
 }
 
 .btn-small {
@@ -239,6 +262,47 @@ button.danger:hover {
 .btn-small.danger:hover {
     background: var(--cudly-error);
     color: white;
+}
+
+/* Variants used in markup next to .btn / .btn-small. Outlined by default;
+ * they fill on hover so the destructive action reads as such without being
+ * the loudest element in a row of actions. */
+.btn-danger {
+    background: var(--cudly-error-bg);
+    color: var(--cudly-error-fg);
+    border: 1px solid var(--cudly-error);
+}
+
+.btn-danger:hover {
+    background: var(--cudly-error);
+    border-color: var(--cudly-error);
+    color: white;
+}
+
+.btn-warning {
+    background: var(--cudly-warn-bg);
+    color: var(--cudly-warn-fg);
+    border: 1px solid var(--cudly-warn);
+}
+
+.btn-warning:hover {
+    background: var(--cudly-warn);
+    border-color: var(--cudly-warn);
+    color: var(--cudly-text);
+}
+
+/* Link-style action inside table rows (Approve, Cancel, Retry ...). */
+.btn-link {
+    padding: 0.25rem 0.5rem;
+    background: transparent;
+    color: var(--cudly-primary);
+    border: none;
+    text-decoration: none;
+}
+
+.btn-link:hover {
+    background: var(--cudly-info-bg);
+    text-decoration: underline;
 }
 
 /* Canonical top-level button variants. Existing .btn + .btn-small classes
