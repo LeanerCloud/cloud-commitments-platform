@@ -64,11 +64,11 @@ func usdMicros(dollars int64) *big.Int {
 	return new(big.Int).Mul(big.NewInt(dollars), riExchangeMicroScale)
 }
 
-// capAbove returns a decimal cap that leaves exactly headroom dollars above the
+// capAbove returns a decimal cap that leaves exactly $1000 of headroom above the
 // spend already on the books at date.
-func (e *riExchangeIntegrationEnv) capAbove(t *testing.T, date time.Time, headroom int64) string {
+func (e *riExchangeIntegrationEnv) capAbove(t *testing.T, date time.Time) string {
 	t.Helper()
-	return riExchangeUSD(new(big.Int).Add(e.spend(t, date), usdMicros(headroom)))
+	return riExchangeUSD(new(big.Int).Add(e.spend(t, date), usdMicros(1000)))
 }
 
 // processing inserts a processing row holding payment dollars, as a manual
@@ -113,7 +113,7 @@ func (e *riExchangeIntegrationEnv) release(t *testing.T, ids ...string) {
 func TestPostgresStoreDB_ReserveApprovedRIExchange_ConcurrentApprovalsStayWithinCap(t *testing.T) {
 	env := newRIExchangeIntegrationEnv(t)
 	now := time.Now().UTC()
-	cap := env.capAbove(t, now, 1000)
+	cap := env.capAbove(t, now)
 	a := env.processing(t, "manual", "810000000001", 100, now)
 	b := env.processing(t, "manual", "810000000002", 100, now)
 	defer env.release(t, a.ID, b.ID)
@@ -139,8 +139,8 @@ func TestPostgresStoreDB_ReserveApprovedRIExchange_ConcurrentApprovalsStayWithin
 		wg.Add(1)
 		go func(i int, store *PostgresStore, id string) {
 			defer wg.Done()
-			ceiling, err := store.ReserveApprovedRIExchange(env.ctx, id, cap, "800.000000")
-			results[i] = outcome{ceiling, err}
+			ceiling, reserveErr := store.ReserveApprovedRIExchange(env.ctx, id, cap, "800.000000")
+			results[i] = outcome{ceiling, reserveErr}
 		}(i, run.store, run.id)
 	}
 	waiters := 0
@@ -163,8 +163,8 @@ func TestPostgresStoreDB_ReserveApprovedRIExchange_ConcurrentApprovalsStayWithin
 	reserved := new(big.Int)
 	for _, r := range results {
 		require.NoError(t, r.err)
-		micros, err := riExchangeMicros(r.ceiling)
-		require.NoError(t, err)
+		micros, parseErr := riExchangeMicros(r.ceiling)
+		require.NoError(t, parseErr)
 		reserved.Add(reserved, micros)
 	}
 	require.Equal(t, 0, reserved.Cmp(usdMicros(1000)),
@@ -189,7 +189,7 @@ func TestPostgresStoreDB_ReserveApprovedRIExchange_ConcurrentApprovalsStayWithin
 func TestPostgresStoreDB_ReserveApprovedRIExchange_DoesNotCountOwnInitialQuote(t *testing.T) {
 	env := newRIExchangeIntegrationEnv(t)
 	now := time.Now().UTC()
-	cap := env.capAbove(t, now, 1000)
+	cap := env.capAbove(t, now)
 	row := env.processing(t, "manual", "820000000001", 600, now)
 	defer env.release(t, row.ID)
 
@@ -207,14 +207,14 @@ func TestPostgresStoreDB_ReserveApprovedRIExchange_RejectsRowThatIsNotProcessing
 	row := env.processing(t, "manual", "830000000001", 10, time.Now().UTC())
 	env.release(t, row.ID)
 
-	_, err := env.storeA.ReserveApprovedRIExchange(env.ctx, row.ID, env.capAbove(t, time.Now().UTC(), 1000), "1000.000000")
+	_, err := env.storeA.ReserveApprovedRIExchange(env.ctx, row.ID, env.capAbove(t, time.Now().UTC()), "1000.000000")
 	require.ErrorContains(t, err, "is not processing")
 }
 
 func TestPostgresStoreDB_ReserveApprovedRIExchange_AutoAndApprovalShareHeadroom(t *testing.T) {
 	env := newRIExchangeIntegrationEnv(t)
 	now := time.Now().UTC()
-	cap := env.capAbove(t, now, 1000)
+	cap := env.capAbove(t, now)
 	approved := env.processing(t, "manual", "840000000001", 100, now)
 	auto := &RIExchangeRecord{AccountID: "840000000002", Region: "eu-west-1", SourceRIIDs: []string{"ri-auto-interleave"},
 		SourceInstanceType: "m5.large", SourceCount: 1, TargetOfferingID: "offering-test", TargetInstanceType: "m6i.large", TargetCount: 1,
@@ -298,7 +298,7 @@ func TestPostgresStoreDB_DailySpend_CompletedRowsFollowAcceptanceDayBoundary(t *
 func TestPostgresStoreDB_ReserveRIExchange_PriorDayInFlightHoldReducesHeadroom(t *testing.T) {
 	env := newRIExchangeIntegrationEnv(t)
 	now := time.Now().UTC()
-	cap := env.capAbove(t, now, 1000)
+	cap := env.capAbove(t, now)
 	hold := env.processing(t, "auto", "870000000001", 1000, now.Add(-30*time.Hour))
 	defer env.release(t, hold.ID)
 
