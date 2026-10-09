@@ -27,7 +27,7 @@ import (
 // recommendations. Nothing attaches recommendations to a plan step yet
 // (platform#609), so such a step can only "succeed" by buying nothing, which
 // would complete it and advance the ramp. It is refused instead.
-var ErrPlanStepNoRecommendations = errors.New("plan step has no recommendations attached, so it cannot buy anything (platform#609: plan steps cannot yet carry recommendations)")
+var ErrPlanStepNoRecommendations = errors.New("plan step has no recommendations attached, so it cannot buy anything (platform#631: plan steps cannot yet carry recommendations)")
 
 // executePurchase performs the actual purchase.
 // When the plan has associated cloud accounts and a credential store is configured,

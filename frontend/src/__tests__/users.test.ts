@@ -1305,13 +1305,13 @@ describe('users/userActions', () => {
 
       await userActions.bulkAddToGroup('admins');
 
-      expect(global.confirm).toHaveBeenCalledWith(
-        expect.stringContaining('Admins')
+      expect(mockConfirmDialog).toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining('Admins') })
       );
     });
 
     it('should not add when cancelled', async () => {
-      (global.confirm as jest.Mock).mockReturnValue(false);
+      mockConfirmDialog.mockResolvedValueOnce(false);
       userState.addSelectedUserId('1');
 
       await userActions.bulkAddToGroup('admins');

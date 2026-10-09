@@ -1532,6 +1532,26 @@ func (m *MockConfigStore) ListActiveSuppressions(ctx context.Context) ([]config.
 	return v, args.Error(1)
 }
 
+// ListRecentSubmitsTx mocks the ListRecentSubmitsTx operation. It falls back
+// to GetPendingExecutions when no expectation is registered (as
+// GetPendingExecutionsTx does) so tests that exercise the WithTx path keep
+// receiving the pending list; the caller filters by creator and window.
+func (m *MockConfigStore) ListRecentSubmitsTx(ctx context.Context, tx pgx.Tx, creatorID string, since time.Time) ([]config.PurchaseExecution, error) {
+	m.record("ListRecentSubmitsTx", ctx, tx, creatorID, since)
+	if !isExpected(&m.Mock, "ListRecentSubmitsTx") {
+		return m.GetPendingExecutions(ctx)
+	}
+	args := m.Called(ctx, tx, creatorID, since)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).([]config.PurchaseExecution)
+	if !ok {
+		panic(fmt.Sprintf("mock: expected []config.PurchaseExecution, got %T", args.Get(0)))
+	}
+	return v, args.Error(1)
+}
+
 // GetPendingExecutionsTx mocks the GetPendingExecutionsTx operation.
 // Falls back to GetPendingExecutions when no explicit expectation is registered
 // (same pattern as SavePurchaseExecutionTx) so existing tests that exercise
