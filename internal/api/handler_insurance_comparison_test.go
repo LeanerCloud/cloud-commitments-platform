@@ -3,12 +3,14 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/insurance"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
@@ -278,4 +280,63 @@ func TestInsuranceComparison_DeniedAndScoped(t *testing.T) {
 	_, err = (&Handler{auth: m2, insurance: p}).getInsuranceComparison(ctx, req)
 	assert.ErrorIs(t, err, errNotFound)
 	assert.Zero(t, vt.calls, "a denied or scoped caller must not cause an outbound request")
+}
+
+// Through the real request path (HandleRequest -> router -> handler ->
+// response), so removing the header plumbing in executeRequest fails.
+func TestInsuranceComparison_RealRequestPath_RetryAfter(t *testing.T) {
+	for name, tc := range map[string]struct {
+		headers http.Header
+		want    string
+	}{
+		"positive Retry-After": {http.Header{"Retry-After": {"120"}}, "120"},
+		"no Retry-After":       {nil, ""},
+		"zero Retry-After":     {http.Header{"Retry-After": {"0"}}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			vt := &vendorTransport{t: t, status: 429, body: `{"message":"slow down"}`, headers: tc.headers}
+			h := cmpHandler(t, completeEnv(t), vt)
+			h.apiKey = "admin-key"
+			req := &events.LambdaFunctionURLRequest{
+				Headers: map[string]string{"x-api-key": "admin-key"},
+				RequestContext: events.LambdaFunctionURLRequestContext{
+					HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{Method: "GET", Path: "/api/insurance/comparison"},
+				},
+			}
+			resp, err := h.HandleRequest(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, 429, resp.StatusCode)
+			require.Equal(t, 1, vt.calls)
+			if tc.want == "" {
+				assert.NotContains(t, resp.Headers, "Retry-After")
+				assert.NotContains(t, resp.Body, "retry_after_seconds")
+				return
+			}
+			assert.Equal(t, tc.want, resp.Headers["Retry-After"])
+			assert.Contains(t, resp.Body, `"retry_after_seconds":`+tc.want)
+		})
+	}
+}
+
+func TestMapInsuranceError_PinsEachStatusMessage(t *testing.T) {
+	for status, want := range map[int]struct {
+		code int
+		msg  string
+	}{
+		401: {502, "Archera rejected the configured credentials"},
+		403: {502, "Archera rejected the configured credentials"},
+		404: {502, "Archera organization or plan was not found"},
+		500: {502, "Archera service error"},
+		503: {502, "Archera service error"},
+		418: {502, "Archera request failed with HTTP 418"},
+	} {
+		ce, ok := IsClientError(mapInsuranceError(&insurance.HTTPError{StatusCode: status, Message: "vendor text"}))
+		require.True(t, ok)
+		assert.Equal(t, want.code, ce.code, status)
+		assert.Equal(t, want.msg, ce.message, status)
+	}
+	ce, _ := IsClientError(mapInsuranceError(errors.New("boom")))
+	assert.Equal(t, "Archera comparison failed", ce.message)
+	ce, _ = IsClientError(mapInsuranceError(&insurance.HTTPError{StatusCode: 429}))
+	assert.Equal(t, "Archera rate limit reached; retry-after not given", ce.message)
 }
