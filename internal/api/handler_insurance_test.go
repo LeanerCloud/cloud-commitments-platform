@@ -33,7 +33,8 @@ func insuranceProvider(t *testing.T, s archera.Settings) *archera.Provider {
 	return archera.NewProvider(s, nil, &http.Client{Transport: panicTransport{t}})
 }
 
-func sessionPrincipalCtx(userID string) context.Context {
+func sessionPrincipalCtx() context.Context {
+	const userID = "u1"
 	return contextWithPrincipal(context.Background(), &Principal{
 		Kind: PrincipalSession, Session: &Session{UserID: userID}, UserID: userID,
 	})
@@ -73,7 +74,7 @@ func TestInsuranceStatus_DeniedUserGets403(t *testing.T) {
 	m := new(MockAuthService)
 	m.On("HasPermissionAPI", mock.Anything, "u1", "view", "recommendations").Return(false, nil)
 	h := &Handler{auth: m, insurance: insuranceProvider(t, archera.Settings{})}
-	_, err := h.getInsuranceStatus(sessionPrincipalCtx("u1"), &events.LambdaFunctionURLRequest{})
+	_, err := h.getInsuranceStatus(sessionPrincipalCtx(), &events.LambdaFunctionURLRequest{})
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "got %v", err)
 	assert.Equal(t, 403, ce.code)
@@ -84,7 +85,7 @@ func TestInsuranceStatus_ScopedSessionGets404(t *testing.T) {
 	m.On("HasPermissionAPI", mock.Anything, "u1", "view", "recommendations").Return(true, nil)
 	m.On("GetAllowedAccountsAPI", mock.Anything, "u1").Return([]string{"acct-1"}, nil)
 	h := &Handler{auth: m, insurance: insuranceProvider(t, archera.Settings{})}
-	_, err := h.getInsuranceStatus(sessionPrincipalCtx("u1"), &events.LambdaFunctionURLRequest{})
+	_, err := h.getInsuranceStatus(sessionPrincipalCtx(), &events.LambdaFunctionURLRequest{})
 	assert.ErrorIs(t, err, errNotFound)
 }
 
@@ -93,7 +94,7 @@ func TestInsuranceStatus_UnrestrictedSessionAllowed(t *testing.T) {
 	m.On("HasPermissionAPI", mock.Anything, "u1", "view", "recommendations").Return(true, nil)
 	m.On("GetAllowedAccountsAPI", mock.Anything, "u1").Return([]string(nil), nil)
 	h := &Handler{auth: m, insurance: insuranceProvider(t, archera.Settings{})}
-	st, err := h.getInsuranceStatus(sessionPrincipalCtx("u1"), &events.LambdaFunctionURLRequest{})
+	st, err := h.getInsuranceStatus(sessionPrincipalCtx(), &events.LambdaFunctionURLRequest{})
 	require.NoError(t, err)
 	assert.False(t, st.Configured)
 }

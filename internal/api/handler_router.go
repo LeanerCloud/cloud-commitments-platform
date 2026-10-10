@@ -42,6 +42,7 @@ func IsNotFoundError(err error) bool {
 // clientError represents an error that should be returned to the client with a specific HTTP status code.
 type clientError struct {
 	details map[string]any
+	headers map[string]string
 	message string
 	code    int
 }
@@ -85,6 +86,16 @@ func NewClientError(code int, message string) error {
 // the error is created don't leak into the response body.
 func NewClientErrorWithDetails(code int, message string, details map[string]any) error {
 	return &clientError{message: message, code: code, details: cloneDetails(details)}
+}
+
+// NewClientErrorWithHeaders is NewClientErrorWithDetails plus extra response
+// headers (for example Retry-After). Both maps are copied at construction.
+func NewClientErrorWithHeaders(code int, message string, details map[string]any, headers map[string]string) error {
+	h := make(map[string]string, len(headers))
+	for k, v := range headers {
+		h[k] = v
+	}
+	return &clientError{message: message, code: code, details: cloneDetails(details), headers: h}
 }
 
 // IsClientError checks if the error is a client error and returns it.
