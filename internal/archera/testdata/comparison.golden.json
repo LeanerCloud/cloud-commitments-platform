@@ -5,7 +5,7 @@
   "currency": null,
   "currency_note": "currency not provided by Archera",
   "premium_included": true,
-  "basis_note": "Monthly figures are 730-hour monthly rates; the Archera premium is already included in commitment cost totals; upfront figures are one-time dollars and are never summed with monthly rates.",
+  "basis_note": "Monthly figures are 730-hour monthly rates; the Archera premium is already included in commitment cost totals; upfront figures are one-time amounts and are never summed with monthly rates.",
   "delta_basis_note": "Hypothetical deltas compare against the current plan, not against on-demand.",
   "current": {
     "monthly_730h_commitment_cost_total": "101",
