@@ -6,7 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -239,4 +242,57 @@ func TestExecuteAndFinalize_SuppressionReleaseFollowsSubmission(t *testing.T) {
 		require.Error(t, err)
 		store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "e")
 	})
+}
+
+// Post-submission failures driven through the real executeAndFinalize path
+// must KEEP the suppressions: the provider may have created a commitment.
+// Marking any post-call error as before-submission makes these fail.
+func TestExecuteAndFinalize_PostSubmissionFailureKeepsSuppressions(t *testing.T) {
+	mk := func(types ...string) []config.RecommendationRecord {
+		recs := make([]config.RecommendationRecord, 0, len(types))
+		for _, rt := range types {
+			recs = append(recs, config.RecommendationRecord{Provider: "aws", Service: "ec2", ResourceType: rt,
+				Region: "us-east-1", Count: 1, UpfrontCost: 100, Selected: true})
+		}
+		return recs
+	}
+	cases := []struct {
+		name    string
+		recs    []config.RecommendationRecord
+		results []error // PurchaseCommitment outcome per call, nil = success
+	}{
+		{"provider failure", mk("m5.large"), []error{errors.New("provider rejected the purchase")}},
+		{"outcome unknown (lost response)", mk("m5.large"), []error{errors.New("purchase outcome unknown: response lost after submission")}},
+		{"partial failure", mk("m5.large", "c5.large"), []error{nil, errors.New("provider rejected the purchase")}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			store := new(MockConfigStore)
+			factory := new(MockProviderFactory)
+			prov := new(MockProvider)
+			svc := new(MockServiceClient)
+			stsMock := new(MockSTSClient)
+			store.On("GetPurchasePlan", mock.Anything, "p").Return(&config.PurchasePlan{ID: "p"}, nil)
+			store.On("GetPlanAccounts", mock.Anything, "p").Return([]config.CloudAccount{}, nil)
+			store.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil)
+			store.On("SavePurchaseHistory", mock.Anything, mock.Anything).Return(nil).Maybe()
+			store.On("DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "e").Return(nil).Maybe()
+			email := new(MockEmailSender)
+			email.On("SendPurchaseConfirmation", mock.Anything, mock.Anything).Return(nil).Maybe()
+			stsMock.On("GetCallerIdentity", mock.Anything, mock.Anything).Return(&sts.GetCallerIdentityOutput{Account: aws.String("123456789012")}, nil).Maybe()
+			factory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(prov, nil)
+			prov.On("GetServiceClient", mock.Anything, mock.Anything, "us-east-1").Return(svc, nil)
+			for _, e := range c.results {
+				res := common.PurchaseResult{Success: e == nil, CommitmentID: "ri-1"}
+				svc.On("PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything).Return(res, e).Once()
+			}
+			exec := &config.PurchaseExecution{ExecutionID: "e", PlanID: "p", Status: "running", Recommendations: c.recs}
+			m := &Manager{config: store, email: email, stsClient: stsMock, providerFactory: factory}
+
+			_ = m.executeAndFinalize(context.Background(), exec)
+
+			store.AssertNotCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "e")
+			svc.AssertExpectations(t)
+		})
+	}
 }
