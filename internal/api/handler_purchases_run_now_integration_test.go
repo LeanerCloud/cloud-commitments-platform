@@ -54,6 +54,9 @@ func (f runNowFactory) CreateAndValidateProvider(context.Context, string, *provi
 func newRunNowFixture(t *testing.T, failOn int32, recs []config.RecommendationRecord) (*pauseClaimFixture, *runNowService) {
 	t.Helper()
 	f := newPauseClaimFixture(t)
+	for i := range recs {
+		recs[i].CloudAccountID = f.execution.CloudAccountID
+	}
 	f.execution.Recommendations = recs
 	require.NoError(t, f.store.SavePurchaseExecution(f.ctx, f.execution))
 	service := &runNowService{failOn: failOn}

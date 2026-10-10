@@ -101,7 +101,7 @@ func newPauseClaimFixture(t *testing.T) *pauseClaimFixture {
 	f.execution = &config.PurchaseExecution{
 		ExecutionID: uuid.NewString(), PlanID: plan.ID, CloudAccountID: &account.ID,
 		Status: "pending", StepNumber: 3, ScheduledDate: time.Now(), IdempotencyKey: uuid.NewString(),
-		CreatedByUserID: &creator, Recommendations: fanoutRecs(),
+		CreatedByUserID: &creator, Recommendations: fanoutRecsForAccount(account.ID),
 	}
 	require.NoError(t, f.store.SavePurchaseExecution(ctx, f.execution))
 	row, err := f.store.GetExecutionByID(ctx, f.execution.ExecutionID)

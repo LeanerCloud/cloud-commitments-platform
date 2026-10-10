@@ -95,6 +95,9 @@ func (m *Manager) executePurchase(ctx context.Context, exec *config.PurchaseExec
 // plain error when nothing committed. Split out of executePurchase to keep that
 // function under the gocyclo budget.
 func (m *Manager) executeSingleAccount(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan) error {
+	if err := requireRecsMatchRowAccount(exec); err != nil {
+		return err
+	}
 	provCfg, targetAccountID, err := m.resolveSingleAccountProvider(ctx, exec)
 	if err != nil {
 		return err

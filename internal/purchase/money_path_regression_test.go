@@ -650,7 +650,7 @@ func scopelessPerAccountRow(accountID string) *config.PurchaseExecution {
 		PlanID:         "plan-x",
 		Source:         common.PurchaseSourceWeb,
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+			scopedTestRec(accountID),
 		},
 	}
 }
