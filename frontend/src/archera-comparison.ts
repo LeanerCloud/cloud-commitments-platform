@@ -210,9 +210,9 @@ function errorText(err: unknown): string {
   const base = typeof e?.message === 'string' && e.message !== '' ? e.message : 'Archera comparison failed';
   const secs = e?.details?.['retry_after_seconds'];
   if ((e as { status?: number })?.status === 429) {
-    return typeof secs === 'number' && secs > 0
-      ? `${base}. Retry after ${secs} seconds.`
-      : `${base}. Retry-after not given.`;
+    if (typeof secs === 'number' && secs > 0) return `${base}. Retry after ${secs} seconds.`;
+    // The server text for a 429 without Retry-After already says so.
+    if (!/retry-after not given/i.test(base)) return `${base}. Retry-after not given.`;
   }
   return base;
 }

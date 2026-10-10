@@ -165,23 +165,122 @@ describe('money', () => {
   });
 });
 
+describe('money in every cell matches the golden value for that column', () => {
+  function grid(t: HTMLTableElement): Array<Record<string, string>> {
+    const heads = Array.from(t.querySelectorAll('thead th')).map(h => h.textContent!);
+    return Array.from(t.querySelectorAll('tbody tr')).map(tr => {
+      const out: Record<string, string> = {};
+      Array.from(tr.children).forEach((c, i) => { out[heads[i]!] = c.textContent!; });
+      return out;
+    });
+  }
+  const tableByCaption = (root: HTMLElement, cap: RegExp) =>
+    Array.from(root.querySelectorAll('table')).find(t => cap.test(t.querySelector('caption')!.textContent!))!;
+
+  it('current plan totals table', async () => {
+    const root = await mount();
+    await clickAndLoad(root, golden);
+    const rows = Array.from(tableByCaption(root, /^Current plan totals/).querySelectorAll('tbody tr'))
+      .map(tr => [tr.children[0]!.textContent, tr.children[1]!.textContent]);
+    const c = golden.current;
+    expect(rows).toEqual([
+      ['Commitment cost total (monthly)', c.monthly_730h_commitment_cost_total],
+      ['Cloud provider cost (monthly)', c.monthly_730h_cloud_provider_cost],
+      ['Archera premium (monthly)', c.monthly_730h_archera_premium],
+      ['Gross savings (monthly)', c.monthly_730h_gross_savings],
+      ['Net savings (monthly)', c.monthly_730h_net_savings],
+      ['Covered on-demand cost (monthly)', c.monthly_730h_covered_on_demand_cost],
+      ['Upfront cost (one-time)', c.upfront_one_time_cost],
+    ]);
+    expect(new Set(rows.map(r => r[1])).size).toBe(7);
+  });
+
+  it('hypotheticals table', async () => {
+    const root = await mount();
+    await clickAndLoad(root, golden);
+    const g = grid(tableByCaption(root, /^Hypothetical/));
+    expect(g).toHaveLength(golden.hypotheticals.length);
+    golden.hypotheticals.forEach((h, i) => {
+      const r = g[i]!;
+      expect(r['Contract term']).toBe(h.contract_term);
+      expect(r['Payment option']).toBe(h.payment_option);
+      expect(r['Commitment cost total (monthly)']).toBe(h.totals.monthly_730h_commitment_cost_total);
+      expect(r['Net savings (monthly)']).toBe(h.totals.monthly_730h_net_savings);
+      expect(r['Upfront cost (one-time)']).toBe(h.totals.upfront_one_time_cost);
+      expect(r['Net savings change vs current plan (monthly)']).toBe(h.delta_vs_current.monthly_730h_net_savings);
+      expect(r['Commitment cost change vs current plan (monthly)']).toBe(h.delta_vs_current.monthly_730h_commitment_cost);
+      expect(r['Upfront change vs current plan (one-time)']).toBe(h.delta_vs_current.upfront_one_time_cost);
+      h.line_items.forEach(li => {
+        expect(r['Line items']).toContain(`${li.line_item_id}: ${li.reason} (term ${li.actual_term}, payment ${li.actual_payment_option}, type ${li.actual_commitment_type})`);
+      });
+    });
+  });
+
+  it('offer tables: current and every candidate', async () => {
+    const root = await mount();
+    await clickAndLoad(root, golden);
+    golden.rows.forEach(row => {
+      const g = grid(tableByCaption(root, new RegExp(`^Offers for line item ${row.line_item_id}$`)));
+      const offers = [row.current, ...row.candidates];
+      expect(g).toHaveLength(offers.length);
+      offers.forEach((o, i) => {
+        const r = g[i]!;
+        expect(r['Offer']).toBe(`${o.offer_id} (${o.is_current ? 'current' : 'candidate'})`);
+        expect(r['Provider / commitment type']).toBe(`${o.provider} / ${o.commitment_type}`);
+        expect(r['Region']).toBe(o.region);
+        expect(r['Term / payment option']).toBe(`${o.contract_term} / ${o.payment_option}`);
+        expect(r['Discount rate']).toBe(o.discount_rate);
+        expect(r['Breakeven days']).toBe(o.breakeven_days);
+        expect(r['Net savings (monthly)']).toBe(o.monthly.monthly_730h_net_savings);
+        expect(r['Upfront cost (one-time)']).toBe(o.upfront_one_time_cost);
+        expect(r['Net savings change vs current plan (monthly)']).toBe(o.delta_vs_current.monthly_730h_net_savings);
+        expect(r['Upfront change vs current plan (one-time)']).toBe(o.delta_vs_current.upfront_one_time_cost);
+      });
+    });
+  });
+
+  it('golden money values are distinct per column so a swap cannot hide', () => {
+    const vals = [golden.current, golden.hypotheticals[0]!.totals].flatMap(t => Object.values(t));
+    expect(new Set(vals).size).toBe(vals.length);
+  });
+});
+
 describe('vendor strings are text only', () => {
-  it('hostile strings create no elements', async () => {
-    const hostile = '<img src=x onerror=alert(1)><script>alert(2)</script>';
-    const c = clone();
-    const o = firstOffer(c);
-    o.offer_id = hostile;
-    o.region = hostile;
-    o.commitment_type = hostile;
-    o.archera_offer_name = hostile;
-    o.archera_product_support.evidence = hostile;
-    c.rows[0]!.line_item_id = hostile;
-    c.hypotheticals[0]!.line_items[0]!.reason = hostile;
+  const HOSTILE = (n: number) => `<img src=x onerror=H${n}><script>S${n}</script><svg onload=V${n}>\u0007\u202e${n}`;
+
+  // Replaces every string leaf except the enum-like ones that gate rendering.
+  function poison(node: unknown, tokens: Map<string, string>, p: string): unknown {
+    if (typeof node === 'string') {
+      if (/(^|\.)(status|fetched_at)$/.test(p)) return node;
+      const v = HOSTILE(tokens.size);
+      tokens.set(p, v);
+      return v;
+    }
+    if (Array.isArray(node)) return node.map((x, i) => poison(x, tokens, `${p}[${i}]`));
+    if (node && typeof node === 'object') {
+      return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, poison(v, tokens, p ? `${p}.${k}` : k)]));
+    }
+    return node;
+  }
+
+  // Leaves the UI deliberately does not display.
+  const NOT_RENDERED = /^(plan_id|rows\[\d+\]\.(current|candidates\[\d+\])\.(monthly\.monthly_730h_(commitment_cost_total|cloud_provider_cost|archera_premium|gross_savings|covered_on_demand_cost)|delta_vs_current\.(discount_rate|breakeven_days)|archera_product_support\.(underwriting_allowance|customer_eligibility))|hypotheticals\[\d+\]\.totals\.monthly_730h_(cloud_provider_cost|archera_premium|gross_savings|covered_on_demand_cost))$/;
+
+  it('every rendered vendor string is text; no element is created from any of them', async () => {
+    const tokens = new Map<string, string>();
+    const c = poison(clone(), tokens, '') as ArcheraComparison;
     const root = await mount();
     await clickAndLoad(root, c);
-    expect(root.querySelector('img')).toBeNull();
-    expect(root.querySelector('script')).toBeNull();
-    expect(root.textContent).toContain(hostile);
+    const rendered = root.textContent!;
+    const missing: string[] = [];
+    for (const [p, v] of tokens) {
+      if (!NOT_RENDERED.test(p) && !rendered.includes(v)) missing.push(p);
+    }
+    expect(missing).toEqual([]);
+    expect(root.querySelectorAll('img, script, svg, iframe, a').length).toBe(0);
+    // Only the structural elements the component itself builds exist.
+    const allowed = new Set(['H2', 'H3', 'P', 'DIV', 'TABLE', 'CAPTION', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'SECTION', 'BUTTON']);
+    root.querySelectorAll('*').forEach(n => expect(allowed.has(n.tagName)).toBe(true));
   });
 });
 
@@ -274,12 +373,23 @@ describe('refresh, errors and accessibility', () => {
     expect(root.querySelector('button')!.disabled).toBe(false);
   });
 
-  it('429 without retry_after_seconds says retry-after not given', async () => {
+  it('429 without retry_after_seconds uses the real server text, saying so exactly once', async () => {
     const root = await mount();
-    comparison.mockRejectedValueOnce(Object.assign(new Error('Archera rate limit reached'), { status: 429 }));
+    // Exact text from mapInsuranceError (internal/api/handler_insurance_comparison.go).
+    comparison.mockRejectedValueOnce(Object.assign(new Error('Archera rate limit reached; retry-after not given'), { status: 429 }));
     root.querySelector('button')!.click();
     await flush();
-    expect(root.querySelector('[aria-live="polite"]')!.textContent).toContain('Retry-after not given');
+    const t = root.querySelector('[aria-live="polite"]')!.textContent!;
+    expect(t).toBe('Archera rate limit reached; retry-after not given');
+    expect(t.match(/retry-after not given/gi)).toHaveLength(1);
+  });
+
+  it('429 whose message lacks the wait text gets it appended once', async () => {
+    const root = await mount();
+    comparison.mockRejectedValueOnce(Object.assign(new Error('Rate limited'), { status: 429 }));
+    root.querySelector('button')!.click();
+    await flush();
+    expect(root.querySelector('[aria-live="polite"]')!.textContent!.match(/retry-after not given/gi)).toHaveLength(1);
   });
 
   it.each([502, 503])('server error %s message shown as text in the live region', async code => {
