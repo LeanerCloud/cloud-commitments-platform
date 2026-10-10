@@ -103,6 +103,38 @@ func TestInsuranceComparison_Composition(t *testing.T) {
 	assert.Equal(t, "110", *dto.Current.CommitmentCostTotal)
 }
 
+// distinctBody has a different value in every numeric vendor field, so a
+// mapping that swaps or drops one cannot pass the composition test.
+func distinctBody() string {
+	fin := func(total, cloud, prem, net, gross, covered string) string {
+		return `{"commitment_cost":{"total":` + total + `,"breakdown":{"cloud_provider_cost":{"total":` + cloud + `},"archera_premium":` + prem + `}},"commitment_savings":{"net":` + net + `,"gross":` + gross + `},"covered_ondemand_cost":` + covered + `}`
+	}
+	offer := `{"is_current":true,"offer_id":"11111111-1111-4111-8111-111111111111","offer_org_id":"public","offer":{"provider":"aws","type":"aws/AmazonEC2","region":"us-east-1","guaranteed_display_name":null},"lease_menu_item_id":null,"selected_amount":3,"commitment_type":"aws/AmazonEC2","contract_term":"one_year_gris","payment_option":"no_upfront","discount_rate":0.18,"breakeven_days":19,"commitment_upfront_cost":17,"commitment_financials_monthly_rate":` + fin("31", "32", "33", "35", "34", "36") + `,"delta_vs_current":{"monthly_net_savings":21,"upfront_cost":22,"discount_rate":0.23,"breakeven_days":24}}`
+	return `{"current_totals":{"commitment_financials_monthly_rate":` + fin("11", "12", "13", "15", "14", "16") + `,"commitment_upfront_cost":10},"hypothetical_totals":[],"data":[{"line_item_id":"` + cmpLineID + `","current":` + offer + `,"candidates":[]}]}`
+}
+
+func TestInsuranceComparison_DistinctValuesReachTheirOwnFields(t *testing.T) {
+	vt := &vendorTransport{t: t, body: distinctBody()}
+	h := cmpHandler(t, completeEnv(t), vt)
+	dto, err := h.getInsuranceComparison(adminCtx(), &events.LambdaFunctionURLRequest{})
+	require.NoError(t, err)
+
+	c := dto.Current
+	assert.Equal(t, []string{"11", "12", "13", "14", "15", "16", "10"}, []string{
+		*c.CommitmentCostTotal, *c.CloudProviderCost, *c.Premium, *c.GrossSavings, *c.NetSavings, *c.CoveredOnDemandCost, *c.UpfrontCost})
+	o := dto.Rows[0].Current
+	m := o.Monthly
+	assert.Equal(t, []string{"31", "32", "33", "34", "35", "36", "17", "0.18", "19"}, []string{
+		*m.CommitmentCostTotal, *m.CloudProviderCost, *m.Premium, *m.GrossSavings, *m.NetSavings, *m.CoveredOnDemandCost,
+		*o.UpfrontCost, *o.DiscountRate, *o.BreakevenDays})
+	d := o.DeltaVsCurrent
+	assert.Equal(t, []string{"21", "22", "0.23", "24"}, []string{*d.MonthlyNetSavings, *d.UpfrontCost, *d.DiscountRate, *d.BreakevenDays})
+	assert.Equal(t, "one_year_gris", *o.ContractTerm)
+	assert.Equal(t, "no_upfront", *o.PaymentOption)
+	assert.True(t, o.IsCurrent)
+	assert.Equal(t, "aws", o.Provider)
+}
+
 func TestInsuranceComparison_ProductionPassesNilHTTPClient(t *testing.T) {
 	// app.go must build the provider with hc=nil so the SSRF-hardened default
 	// client is used; only tests inject a transport.
