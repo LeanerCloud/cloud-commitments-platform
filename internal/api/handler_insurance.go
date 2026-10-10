@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/insurance"
 	"github.com/aws/aws-lambda-go/events"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/archera"
@@ -11,6 +12,8 @@ import (
 // InsuranceProvider is the Archera comparison surface. nil means not wired.
 type InsuranceProvider interface {
 	Status() archera.Status
+	PlanID() string
+	Client(ctx context.Context) (insurance.QuoteClient, error)
 }
 
 // getInsuranceStatus reports whether the Archera comparison settings are
