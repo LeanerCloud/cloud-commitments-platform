@@ -60,34 +60,32 @@ func TestCleanString(t *testing.T) {
 	assert.True(t, strings.HasPrefix(got, "€"))
 }
 
-func offer(provider common.ProviderType, typ string) insurance.OfferEntry {
+func offer(t *testing.T, provider common.ProviderType, typ string) insurance.OfferEntry {
 	name := "Guaranteed\x00 EC2"
 	return insurance.OfferEntry{
 		OfferID: "o\u200b1", CommitmentType: typ, Provider: provider, IsCurrent: true,
 		GuaranteedDisplayName: &name, LeaseMenuItemID: &name,
-		DiscountRate: rat(t0(), "0.3"),
-		Monthly:      insurance.Financials{CommitmentCostTotal: rat(t0(), "110"), Premium: rat(t0(), "10")},
-		UpfrontCost:  rat(t0(), "1200"),
+		DiscountRate: rat(t, "0.3"),
+		Monthly:      insurance.Financials{CommitmentCostTotal: rat(t, "110"), Premium: rat(t, "10")},
+		UpfrontCost:  rat(t, "1200"),
 	}
 }
 
-func t0() *testing.T { return &testing.T{} }
-
-func sample() *insurance.Comparison {
+func sample(t *testing.T) *insurance.Comparison {
 	return &insurance.Comparison{
 		OrgID: "ORG-SECRETISH-ID", PlanID: "plan-1",
-		Current: insurance.Totals{Monthly: insurance.Financials{CommitmentCostTotal: rat(t0(), "110")}, UpfrontCost: rat(t0(), "1200")},
+		Current: insurance.Totals{Monthly: insurance.Financials{CommitmentCostTotal: rat(t, "110")}, UpfrontCost: rat(t, "1200")},
 		Hypotheticals: []insurance.Hypothetical{{
-			PaymentOption: insurance.PaymentNoUpfront, DeltaMonthlyNetSavings: rat(t0(), "7.25"),
+			PaymentOption: insurance.PaymentNoUpfront, DeltaMonthlyNetSavings: rat(t, "7.25"),
 			LineItems: []insurance.HypotheticalLineItem{{LineItemID: "li-1", Reason: insurance.TermReasonNoAlternative}},
 		}},
-		Rows:      []insurance.ComparisonRow{{LineItemID: "li-1", Current: offer(common.ProviderAWS, "aws/AmazonEC2"), Candidates: []insurance.OfferEntry{offer(common.ProviderGCP, "gcp/other")}}},
+		Rows:      []insurance.ComparisonRow{{LineItemID: "li-1", Current: offer(t, common.ProviderAWS, "aws/AmazonEC2"), Candidates: []insurance.OfferEntry{offer(t, common.ProviderGCP, "gcp/other")}}},
 		FetchedAt: time.Date(2026, 10, 9, 12, 0, 0, 0, time.FixedZone("x", 3600)),
 	}
 }
 
 func TestBuildComparison_ShapeAndHonesty(t *testing.T) {
-	dto, err := BuildComparison(sample())
+	dto, err := BuildComparison(sample(t))
 	require.NoError(t, err)
 	raw, err := json.Marshal(dto)
 	require.NoError(t, err)
@@ -126,7 +124,7 @@ func TestBuildComparison_ShapeAndHonesty(t *testing.T) {
 }
 
 func TestBuildComparison_NoOfferNameWhenNil(t *testing.T) {
-	c := sample()
+	c := sample(t)
 	c.Rows[0].Current.GuaranteedDisplayName = nil
 	c.Rows[0].Current.LeaseMenuItemID = nil
 	dto, err := BuildComparison(c)
@@ -137,8 +135,8 @@ func TestBuildComparison_NoOfferNameWhenNil(t *testing.T) {
 }
 
 func TestBuildComparison_UnrepresentableMoneyFailsLoud(t *testing.T) {
-	c := sample()
-	c.Current.UpfrontCost = rat(t0(), "1/3")
+	c := sample(t)
+	c.Current.UpfrontCost = rat(t, "1/3")
 	dto, err := BuildComparison(c)
 	assert.ErrorIs(t, err, ErrUnrepresentable)
 	assert.Nil(t, dto)
@@ -147,15 +145,15 @@ func TestBuildComparison_UnrepresentableMoneyFailsLoud(t *testing.T) {
 // The pkg contract has no division and the DTO must never convert to float:
 // a value that needs more than float64 precision survives exactly.
 func TestBuildComparison_ExactBeyondFloat64(t *testing.T) {
-	c := sample()
-	c.Current.UpfrontCost = rat(t0(), "12345678901234567890.123456789")
+	c := sample(t)
+	c.Current.UpfrontCost = rat(t, "12345678901234567890.123456789")
 	dto, err := BuildComparison(c)
 	require.NoError(t, err)
 	assert.Equal(t, "12345678901234567890.123456789", *dto.Current.UpfrontCost)
 }
 
 func TestBuildComparison_CapsEveryVendorString(t *testing.T) {
-	c := sample()
+	c := sample(t)
 	long := strings.Repeat("x", 400)
 	e := &c.Rows[0].Current
 	e.OfferID, e.CommitmentType, e.GuaranteedDisplayName, e.Region, e.LeaseMenuItemID = long, long, &long, &long, &long
@@ -172,4 +170,13 @@ func TestBuildComparison_CapsEveryVendorString(t *testing.T) {
 	} {
 		assert.LessOrEqual(t, len(v), 256, name)
 	}
+}
+
+func TestBuildComparison_CleansPlanID(t *testing.T) {
+	c := sample(t)
+	c.PlanID = "plan\u200b-\x00" + strings.Repeat("p", 400)
+	dto, err := BuildComparison(c)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(dto.PlanID, "plan-p"))
+	assert.Len(t, dto.PlanID, 256)
 }
