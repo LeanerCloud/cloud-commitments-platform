@@ -173,6 +173,7 @@ resource "google_cloud_run_v2_service" "main" {
             SCHEDULED_TASK_OIDC_AUDIENCE = local.scheduled_task_oidc_audiences
             SCHEDULED_TASK_OIDC_SUBJECTS = local.scheduled_task_oidc_subjects
           },
+          local.archera_env,
           var.additional_env_vars
         )
         content {
@@ -520,4 +521,24 @@ resource "google_logging_project_bucket_config" "cloud_run_logs" {
   location       = "global"
   retention_days = var.log_retention_days
   bucket_id      = "_Default"
+}
+
+locals {
+  # Archera settings, set only when non-empty so an unconfigured deployment
+  # carries no ARCHERA_* variable at all (feature off).
+  archera_env = merge(
+    var.archera_org_id != "" ? { ARCHERA_ORG_ID = var.archera_org_id } : {},
+    var.archera_plan_id != "" ? { ARCHERA_PLAN_ID = var.archera_plan_id } : {},
+    var.archera_api_key_secret_id != "" ? { ARCHERA_API_KEY_SECRET = var.archera_api_key_secret_id } : {},
+  )
+}
+
+# Archera API key: one per-secret reader, only when configured.
+resource "google_secret_manager_secret_iam_member" "archera_key_reader" {
+  count = var.archera_api_key_secret_id != "" ? 1 : 0
+
+  project   = var.project_id
+  secret_id = var.archera_api_key_secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.cloud_run.email}"
 }
