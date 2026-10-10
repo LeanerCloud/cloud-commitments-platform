@@ -286,6 +286,85 @@ describe('fetched-at shows local time and UTC', () => {
   });
 });
 
+describe('captions, notes, live text and unknown money in every cell', () => {
+  const captions = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('caption')).map(c => c.textContent);
+
+  it('offer table captions carry the line item id; empty is "Not given"; hostile stays text', async () => {
+    const root = await mount();
+    await clickAndLoad(root, golden);
+    expect(captions(root)).toContain(`Offers for line item ${golden.rows[0]!.line_item_id}`);
+
+    const empty = clone();
+    empty.rows[0]!.line_item_id = '';
+    const r2 = await mount();
+    await clickAndLoad(r2, empty);
+    expect(captions(r2)).toContain('Offers for line item Not given');
+
+    const hostile = clone();
+    hostile.rows[0]!.line_item_id = '<img src=x onerror=1>';
+    const r3 = await mount();
+    await clickAndLoad(r3, hostile);
+    expect(captions(r3)).toContain('Offers for line item <img src=x onerror=1>');
+    expect(r3.querySelector('img')).toBeNull();
+  });
+
+  it('shows the no-cache note', async () => {
+    const root = await mount();
+    await clickAndLoad(root, golden);
+    expect(root.textContent).toContain('Archera does not document a cache lifetime. Use Refresh to fetch again.');
+  });
+
+  it('live region text: loading, loaded; button stays Refresh after a later error', async () => {
+    const root = await mount();
+    const button = root.querySelector('button')!;
+    const live = root.querySelector('.archera-comparison [aria-live="polite"]') ?? root.querySelector('[aria-live="polite"]')!;
+    let resolve!: (c: ArcheraComparison) => void;
+    comparison.mockReturnValueOnce(new Promise<ArcheraComparison>(r => { resolve = r; }));
+    button.click();
+    expect(live.textContent).toBe('Loading Archera comparison');
+    resolve(golden);
+    await flush();
+    expect(live.textContent).toBe('Archera comparison loaded');
+    expect(button.textContent).toBe('Refresh');
+    comparison.mockRejectedValueOnce(Object.assign(new Error('x'), { status: 502 }));
+    button.click();
+    await flush();
+    expect(button.textContent).toBe('Refresh');
+  });
+
+  function nullMoney(node: unknown, key = ''): unknown {
+    if (Array.isArray(node)) return node.map(x => nullMoney(x, key));
+    if (node && typeof node === 'object') {
+      return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, nullMoney(v, k)]));
+    }
+    return /^(monthly_730h_|upfront_one_time_cost$|discount_rate$|breakeven_days$)/.test(key) ? null : node;
+  }
+
+  it('a null money value renders Unknown in every money cell of every table', async () => {
+    const root = await mount();
+    await clickAndLoad(root, nullMoney(clone()) as ArcheraComparison);
+    const moneyHeads = /savings|cost|upfront|Upfront|Discount|Breakeven|premium|Amount/i;
+    let checked = 0;
+    root.querySelectorAll('table').forEach(t => {
+      const heads = Array.from(t.querySelectorAll('thead th')).map(h => h.textContent!);
+      t.querySelectorAll('tbody tr').forEach(tr => {
+        Array.from(tr.children).forEach((c, i) => {
+          const h = heads[i]!;
+          const rowLabel = tr.children[0]!.textContent!;
+          const isMoneyCell = h === 'Amount' ? true : (moneyHeads.test(h) && h !== 'Line items');
+          if (isMoneyCell && !(h === 'Amount' && c === tr.children[0])) {
+            expect({ h, rowLabel, v: c.textContent }).toEqual({ h, rowLabel, v: 'Unknown' });
+            checked++;
+          }
+        });
+      });
+    });
+    // 7 totals + 7 hypothetical + 6 per offer * 2 offers
+    expect(checked).toBe(7 + 6 + 6 * 2);
+  });
+});
+
 describe('aria-busy and empty vendor strings', () => {
   it('aria-busy is absent after success and after error', async () => {
     const root = await mount();
