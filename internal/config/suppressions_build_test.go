@@ -1,21 +1,18 @@
-package api
+package config
 
 import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func strPtr(s string) *string { return &s }
-
 func TestBuildSuppressions_CreatesOneRowPerTuple(t *testing.T) {
 	now := time.Date(2026, 4, 24, 0, 0, 0, 0, time.UTC)
-	gp := &config.GlobalConfig{GracePeriodDays: map[string]int{"aws": 7, "azure": 7, "gcp": 7}}
+	gp := &GlobalConfig{GracePeriodDays: map[string]int{"aws": 7, "azure": 7, "gcp": 7}}
 
-	sups := buildSuppressions([]config.RecommendationRecord{
+	sups := BuildSuppressions([]RecommendationRecord{
 		{Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "t4g.nano", Count: 3, CloudAccountID: strPtr("acct-1")},
 		{Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "t4g.nano", Count: 2, CloudAccountID: strPtr("acct-1")},
 		{Provider: "aws", Service: "rds", Region: "us-east-1", ResourceType: "db.t4g.micro", Engine: "postgres", Count: 1, CloudAccountID: strPtr("acct-1")},
@@ -34,9 +31,9 @@ func TestBuildSuppressions_CreatesOneRowPerTuple(t *testing.T) {
 
 func TestBuildSuppressions_SkipsProvidersWithGrace0(t *testing.T) {
 	now := time.Now()
-	gp := &config.GlobalConfig{GracePeriodDays: map[string]int{"aws": 7, "azure": 0, "gcp": 14}}
+	gp := &GlobalConfig{GracePeriodDays: map[string]int{"aws": 7, "azure": 0, "gcp": 14}}
 
-	sups := buildSuppressions([]config.RecommendationRecord{
+	sups := BuildSuppressions([]RecommendationRecord{
 		{Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "t4g.nano", Count: 1, CloudAccountID: strPtr("acct-1")},
 		{Provider: "azure", Service: "compute", Region: "eastus", ResourceType: "Standard_D2d_v5", Count: 2, CloudAccountID: strPtr("acct-2")},
 		{Provider: "gcp", Service: "compute", Region: "us-central1", ResourceType: "n1-standard-1", Count: 3, CloudAccountID: strPtr("acct-3")},
@@ -51,9 +48,9 @@ func TestBuildSuppressions_SkipsProvidersWithGrace0(t *testing.T) {
 
 func TestBuildSuppressions_NilAccountIDNormalised(t *testing.T) {
 	now := time.Now()
-	gp := &config.GlobalConfig{}
+	gp := &GlobalConfig{}
 
-	sups := buildSuppressions([]config.RecommendationRecord{
+	sups := BuildSuppressions([]RecommendationRecord{
 		{Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "t4g.nano", Count: 1, CloudAccountID: nil},
 	}, "exec-1", gp, now)
 
@@ -63,9 +60,9 @@ func TestBuildSuppressions_NilAccountIDNormalised(t *testing.T) {
 
 func TestBuildSuppressions_SkipsZeroCountRecs(t *testing.T) {
 	now := time.Now()
-	gp := &config.GlobalConfig{}
+	gp := &GlobalConfig{}
 
-	sups := buildSuppressions([]config.RecommendationRecord{
+	sups := BuildSuppressions([]RecommendationRecord{
 		{Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "t4g.nano", Count: 0, CloudAccountID: strPtr("acct-1")},
 	}, "exec-1", gp, now)
 

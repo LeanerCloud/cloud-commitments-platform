@@ -61,3 +61,24 @@ func describeScopeRec(rec *config.RecommendationRecord) string {
 	}
 	return fmt.Sprintf("%s/%s %s (%s)", rec.Provider, rec.Service, rec.ResourceType, acct)
 }
+
+// requireRecsMatchRowAccount is the single-account path's version of the
+// fan-out scoping: a plan row bound to an account may only buy recs attributed
+// to that same account (strict equality; a rec with no account fails). Direct
+// executes (no plan) and unscoped plan rows keep their existing resolution.
+func requireRecsMatchRowAccount(exec *config.PurchaseExecution) error {
+	if exec.PlanID == "" || exec.CloudAccountID == nil {
+		return nil
+	}
+	for i := range exec.Recommendations {
+		rec := exec.Recommendations[i]
+		if !rec.Selected {
+			continue
+		}
+		if rec.CloudAccountID == nil || *rec.CloudAccountID != *exec.CloudAccountID {
+			return fmt.Errorf("execution %s is bound to account %s but recommendation %s is not attributed to it",
+				exec.ExecutionID, *exec.CloudAccountID, describeScopeRec(&rec))
+		}
+	}
+	return nil
+}

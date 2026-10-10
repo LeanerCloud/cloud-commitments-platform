@@ -268,7 +268,7 @@ func (f *rampStepFixture) saveRetryExecution(ctx context.Context, t *testing.T, 
 		Status:          "approved",
 		StepNumber:      predecessor.StepNumber,
 		ScheduledDate:   time.Now(),
-		Recommendations: rampStepRecommendation(),
+		Recommendations: []config.RecommendationRecord{withAccount(rampStepRecommendation()[0], accountID)},
 		Source:          common.PurchaseSourceWeb,
 		RetryAttemptN:   predecessor.RetryAttemptN + 1,
 	}

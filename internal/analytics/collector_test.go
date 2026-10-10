@@ -859,3 +859,15 @@ func (m *mockConfigStore) UpdateGlobalConfigAtomic(_ context.Context, apply func
 	}
 	return cfg, nil
 }
+
+func (m *mockConfigStore) ListExecutionsForPlanStepTx(_ context.Context, _ pgx.Tx, _ string, _ int) ([]config.PurchaseExecution, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStore) SetExecutionRecommendationsIfEmptyTx(_ context.Context, _ pgx.Tx, _ string, _ []config.RecommendationRecord, _, _ float64) (bool, error) {
+	return false, nil
+}
+
+func (m *mockConfigStore) ExpireExecutionAtomic(_ context.Context, _ pgx.Tx, _ string) (bool, error) {
+	return false, nil
+}
