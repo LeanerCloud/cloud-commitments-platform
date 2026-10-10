@@ -22,7 +22,7 @@ const (
 	unknownVerdict   = "unknown"
 	maxVendorStrLen  = 256
 	offerNameCaveat  = "Archera's name for this offer; a plan comparison is a hypothetical rollup, not a bindable quote, and an insured target is subject to Archera underwriting allowances, not a guarantee."
-	basisNote        = "Monthly figures are 730-hour monthly rates; the Archera premium is already included in commitment cost totals; upfront figures are one-time dollars and are never summed with monthly rates."
+	basisNote        = "Monthly figures are 730-hour monthly rates; the Archera premium is already included in commitment cost totals; upfront figures are one-time amounts and are never summed with monthly rates."
 	deltaBasisNote   = "Hypothetical deltas compare against the current plan, not against on-demand."
 	supportedSummary = "supported"
 )
