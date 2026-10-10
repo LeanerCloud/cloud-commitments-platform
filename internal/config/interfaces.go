@@ -81,6 +81,20 @@ type StoreInterface interface {
 	// transaction; without it the answer is advisory and two concurrent callers
 	// both see the step free.
 	OccupiedRampStepsInRangeTx(ctx context.Context, tx pgx.Tx, planID string, from, to int) ([]int, error)
+	// ListExecutionsForPlanStepTx returns EVERY execution row (any status,
+	// account or retry attempt) recorded for stepNumber of planID. The
+	// get-or-create of a plan step reads it under LockPurchasePlanTx so any
+	// existing row, settled or not, blocks minting a second root (platform#631).
+	ListExecutionsForPlanStepTx(ctx context.Context, tx pgx.Tx, planID string, stepNumber int) ([]PurchaseExecution, error)
+	// SetExecutionRecommendationsIfEmptyTx attaches resolved recommendations
+	// and their totals to a pending/notified execution that has none yet.
+	// Returns false when another resolver already attached them (or the row
+	// left pending/notified); the caller re-reads instead of overwriting.
+	SetExecutionRecommendationsIfEmptyTx(ctx context.Context, tx pgx.Tx, executionID string, recs []RecommendationRecord, upfront, savings float64) (bool, error)
+	// ExpireExecutionAtomic flips a pending/notified execution to expired in
+	// tx so its suppressions can be deleted in the same transaction. Returns
+	// false when the row had already left pending/notified.
+	ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string) (bool, error)
 	// UpdatePurchasePlanTx checks UpdatedAt and replaces it with the returned version.
 	// The caller must discard the transaction-local plan if the transaction rolls back.
 	UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, plan *PurchasePlan) error

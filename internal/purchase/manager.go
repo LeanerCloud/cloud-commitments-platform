@@ -16,6 +16,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/oidc"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/jackc/pgx/v5"
 )
 
 // STSClient interface for AWS STS operations.
@@ -222,7 +223,9 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 	// entry point funnels through here, so one check covers all of them.
 	execErr := armedRedriveRefusal(exec)
 	if execErr == nil {
-		execErr = m.staleAzurePricingRefusal(ctx, exec)
+		if refusal := m.staleAzurePricingRefusal(ctx, exec); refusal != nil {
+			execErr = beforeSubmission(refusal)
+		}
 	}
 	if execErr == nil {
 		execErr = m.executePurchase(ctx, exec)
@@ -231,7 +234,7 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 	if execErr != nil {
 		logging.Errorf("Failed to execute purchase %s: %v", exec.ExecutionID, execErr)
 	}
-	if err := m.config.SavePurchaseExecution(ctx, exec); err != nil {
+	if err := m.saveTerminalExecution(ctx, exec, execErr); err != nil {
 		logging.Errorf("AUDIT LOSS: failed to save execution status: %v", err)
 		// Wrap with ErrAuditLoss regardless of whether executePurchase itself
 		// failed. When execErr != nil (provider/partial error), finalizeExecution
@@ -253,6 +256,39 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 		}
 	}
 	return execErr
+}
+
+// beforeSubmissionError marks a failure that happened before any cloud
+// purchase call was made for the execution: the code path itself proves no
+// commitment can exist, independent of the error text or of provider
+// sentinels (the go outcome-unknown sentinel is not pinned yet). It keeps the
+// wrapped error's message unchanged.
+type beforeSubmissionError struct{ err error }
+
+func (e *beforeSubmissionError) Error() string { return e.err.Error() }
+func (e *beforeSubmissionError) Unwrap() error { return e.err }
+
+func beforeSubmission(err error) error { return &beforeSubmissionError{err: err} }
+
+// saveTerminalExecution persists the finalized row. A plan row releases its
+// suppressions in the same transaction ONLY when it ended failed and execErr
+// proves no purchase call was submitted for any rec (beforeSubmissionError).
+// Every other failure keeps them: a lost response ("outcome unknown"), a
+// refused armed re-drive or a partial run may still have created a
+// commitment, and releasing would let the next step buy it again. Kept
+// suppressions expire with the grace period or are released on explicit
+// cancel or revoke (platform#631).
+func (m *Manager) saveTerminalExecution(ctx context.Context, exec *config.PurchaseExecution, execErr error) error {
+	var notSubmitted *beforeSubmissionError
+	if exec.PlanID == "" || exec.Status != "failed" || anyRecPurchased(exec.Recommendations) || !errors.As(execErr, &notSubmitted) {
+		return m.config.SavePurchaseExecution(ctx, exec)
+	}
+	return m.config.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := m.config.SavePurchaseExecutionTx(ctx, tx, exec); err != nil {
+			return err
+		}
+		return m.config.DeleteSuppressionsByExecutionTx(ctx, tx, exec.ExecutionID)
+	})
 }
 
 // recordRampAdvanceRefusal reports a ramp advance that did not happen, stamping

@@ -63,6 +63,14 @@ func fanoutRecs() []config.RecommendationRecord {
 	}
 }
 
+// fanoutRecsForAccount is a per-account row's rec set, attributed to its own
+// account as the fan-out leaves it (platform#631).
+func fanoutRecsForAccount(accountID string) []config.RecommendationRecord {
+	recs := fanoutRecs()
+	recs[0].CloudAccountID = strPtr(accountID)
+	return recs
+}
+
 // fanoutRootRecs is a root step's rec set: one rec per plan account, because
 // the fan-out buys each account's own recs only (platform#631).
 func fanoutRootRecs() []config.RecommendationRecord {
@@ -251,7 +259,7 @@ func failedPerAccountRow(execID, accountID string) *config.PurchaseExecution {
 		CreatedByUserID: &creator,
 		CapacityPercent: 100,
 		Source:          common.PurchaseSourceWeb,
-		Recommendations: fanoutRecs(),
+		Recommendations: fanoutRecsForAccount(accountID),
 	}
 }
 

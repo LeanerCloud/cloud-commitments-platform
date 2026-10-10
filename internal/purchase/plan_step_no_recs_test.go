@@ -129,13 +129,15 @@ func TestNotificationTickOnBarePlanStepCreatesOneFailedRowAndSendsNoEmail(t *tes
 	// Tick 1 finds no row for the date; tick 2 finds whatever tick 1 saved.
 	var stored config.PurchaseExecution
 	var saves []config.PurchaseExecution
-	mockStore.On("GetExecutionByPlanAndDate", ctx, plan.ID, *plan.NextExecutionDate).
-		Return(nil, config.ErrNotFound).Once()
-	mockStore.On("GetExecutionByPlanAndDate", ctx, plan.ID, *plan.NextExecutionDate).
-		Return(&stored, nil)
+	mockStore.On("LockPurchasePlanTx", mock.Anything, mock.Anything, plan.ID).Return(&plan, nil)
+	mockStore.On("ListExecutionsForPlanStepTx", mock.Anything, mock.Anything, plan.ID, plan.RampSchedule.CurrentStep+1).
+		Return(nil, nil).Once()
 	mockStore.SavePurchaseExecutionFn = func(_ context.Context, exec *config.PurchaseExecution) error {
 		stored = *exec
 		saves = append(saves, *exec)
+		// From now on the step has a row, as the real store would report.
+		mockStore.On("ListExecutionsForPlanStepTx", mock.Anything, mock.Anything, plan.ID, plan.RampSchedule.CurrentStep+1).
+			Return([]config.PurchaseExecution{stored}, nil)
 		return nil
 	}
 	// A $0 approval email must never go out; Maybe() keeps a violation a clean

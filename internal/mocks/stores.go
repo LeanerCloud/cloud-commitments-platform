@@ -251,6 +251,34 @@ func (m *MockConfigStore) LockPurchasePlanTx(ctx context.Context, tx pgx.Tx, pla
 // probe keep exercising the create path: no occupied steps in range is the
 // shape of a plan whose next steps are still unscheduled, which is what those
 // tests set up.
+func (m *MockConfigStore) ListExecutionsForPlanStepTx(ctx context.Context, tx pgx.Tx, planID string, stepNumber int) ([]config.PurchaseExecution, error) {
+	m.record("ListExecutionsForPlanStepTx", ctx, tx, planID, stepNumber)
+	if !isExpected(&m.Mock, "ListExecutionsForPlanStepTx") {
+		return nil, nil
+	}
+	args := m.Called(ctx, tx, planID, stepNumber)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).([]config.PurchaseExecution)
+	if !ok {
+		panic(fmt.Sprintf("mock: expected []config.PurchaseExecution, got %T", args.Get(0)))
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockConfigStore) SetExecutionRecommendationsIfEmptyTx(ctx context.Context, tx pgx.Tx, executionID string, recs []config.RecommendationRecord, upfront, savings float64) (bool, error) {
+	m.record("SetExecutionRecommendationsIfEmptyTx", ctx, tx, executionID, recs, upfront, savings)
+	args := m.Called(ctx, tx, executionID, recs, upfront, savings)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockConfigStore) ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string) (bool, error) {
+	m.record("ExpireExecutionAtomic", ctx, tx, executionID)
+	args := m.Called(ctx, tx, executionID)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockConfigStore) OccupiedRampStepsInRangeTx(ctx context.Context, tx pgx.Tx, planID string, from, to int) ([]int, error) {
 	m.record("OccupiedRampStepsInRangeTx", ctx, tx, planID, from, to)
 	if !isExpected(&m.Mock, "OccupiedRampStepsInRangeTx") {

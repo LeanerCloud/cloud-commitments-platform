@@ -440,3 +440,15 @@ func (m *mockConfigStoreForHealth) UpsertNotificationMute(_ context.Context, _, 
 func (m *mockConfigStoreForHealth) IsNotificationMuted(_ context.Context, _, _ string) (bool, error) {
 	return false, nil
 }
+
+func (m *mockConfigStoreForHealth) ListExecutionsForPlanStepTx(_ context.Context, _ pgx.Tx, _ string, _ int) ([]config.PurchaseExecution, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStoreForHealth) SetExecutionRecommendationsIfEmptyTx(_ context.Context, _ pgx.Tx, _ string, _ []config.RecommendationRecord, _, _ float64) (bool, error) {
+	return false, nil
+}
+
+func (m *mockConfigStoreForHealth) ExpireExecutionAtomic(_ context.Context, _ pgx.Tx, _ string) (bool, error) {
+	return false, nil
+}

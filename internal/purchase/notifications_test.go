@@ -3,7 +3,6 @@ package purchase
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -189,7 +188,7 @@ func TestManager_GetOrCreateExecution(t *testing.T) {
 
 	// No existing execution found
 	var saved *config.PurchaseExecution
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(nil, nil)
+	expectStepRows(mockStore, plan)
 	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).
 		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).Return(nil)
 
@@ -243,7 +242,7 @@ func TestManager_GetOrCreateExecution_ExistingExecution(t *testing.T) {
 	// the returned copy (issue #103 -- a stored hash can never be re-emailed
 	// raw) with the full ApprovalTokenTTL, but persists nothing: no
 	// SavePurchaseExecution expectation, so a write here panics the mock.
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(existingExec, nil)
+	expectStepRows(mockStore, plan, *existingExec)
 
 	manager := &Manager{
 		config:       mockStore,
@@ -284,7 +283,7 @@ func TestManager_GetOrCreateExecution_ExistingBareRowIsFailedNotRotated(t *testi
 		StepNumber:    1,
 		ScheduledDate: nextExec,
 	}
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(bare, nil)
+	expectStepRows(mockStore, plan, *bare)
 	failed := *bare
 	failed.Status = "failed"
 	mockStore.On("TransitionExecutionStatus", ctx, "bare-exec-id", []string{"pending", "notified"}, "failed", (*string)(nil)).Return(&failed, nil)
@@ -313,7 +312,7 @@ func TestManager_GetOrCreateExecution_ExistingBareRowApprovedMeanwhileIsNotOverw
 	stale := &config.PurchaseExecution{
 		ExecutionID: "bare-exec-id", PlanID: "plan-123", Status: "pending", StepNumber: 1, ScheduledDate: nextExec,
 	}
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(stale, nil)
+	expectStepRows(mockStore, plan, *stale)
 	mockStore.On("TransitionExecutionStatus", ctx, "bare-exec-id", []string{"pending", "notified"}, "failed", (*string)(nil)).
 		Return(nil, config.ErrExecutionNotInExpectedStatus)
 	// No SavePurchaseExecution expectation: an upsert here would clobber the approval.
@@ -358,7 +357,7 @@ func TestManager_GetOrCreateExecution_ExistingCompletedNotRotated(t *testing.T) 
 		ApprovalToken: config.HashApprovalToken("live-revocation-token"),
 		ScheduledDate: nextExec,
 	}
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(completedExec, nil)
+	expectStepRows(mockStore, plan, *completedExec)
 	// No SavePurchaseExecution / GetExecutionByID expectation: a completed
 	// row must never be written to by the reminder-notification path.
 
@@ -393,7 +392,7 @@ func TestManager_GetOrCreateExecution_SaveError(t *testing.T) {
 	}
 
 	// No existing execution found
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(nil, nil)
+	expectStepRows(mockStore, plan)
 	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(errors.New("save failed"))
 
 	manager := &Manager{
@@ -423,7 +422,8 @@ func TestManager_GetOrCreateExecution_LookupError(t *testing.T) {
 	}
 
 	// Error looking up existing execution
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(nil, errors.New("db error"))
+	mockStore.On("LockPurchasePlanTx", mock.Anything, mock.Anything, plan.ID).Return(plan, nil)
+	mockStore.On("ListExecutionsForPlanStepTx", mock.Anything, mock.Anything, plan.ID, plan.RampSchedule.CurrentStep+1).Return(nil, errors.New("db error"))
 
 	manager := &Manager{
 		config:       mockStore,
@@ -457,8 +457,7 @@ func TestManager_GetOrCreateExecution_CreatesOnErrNotFound(t *testing.T) {
 	}
 
 	// Store returns ErrNotFound (wrapped), matching the post-fix store behavior.
-	notFoundErr := fmt.Errorf("%w: plan plan-f2 at %v", config.ErrNotFound, nextExec)
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-f2", nextExec).Return(nil, notFoundErr)
+	expectStepRows(mockStore, plan)
 	var saved *config.PurchaseExecution
 	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).
 		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).Return(nil)
@@ -510,7 +509,7 @@ func TestManager_SendUpcomingPurchaseNotifications_WithNotification(t *testing.T
 		ScheduledDate:   nextExec,
 		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Count: 1}},
 	}
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(pendingExec, nil)
+	expectStepRows(mockStore, &plans[0], *pendingExec)
 	mockStore.On("RotatePendingApprovalToken", ctx, "pending-exec-id", mock.Anything, mock.Anything).Return(true, nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(globalCfg, nil)
 	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
@@ -664,7 +663,7 @@ func TestManager_SendUpcomingPurchaseNotifications_EmailFails(t *testing.T) {
 		ScheduledDate:   nextExec,
 		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Count: 1}},
 	}
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-123", nextExec).Return(pendingExec, nil)
+	expectStepRows(mockStore, &plans[0], *pendingExec)
 	mockStore.On("GetGlobalConfig", ctx).Return(globalCfg, nil)
 	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.AnythingOfType("email.NotificationData")).Return(errors.New("email failed"))
 
@@ -687,7 +686,7 @@ func TestManager_SendUpcomingPurchaseNotifications_EmailFails(t *testing.T) {
 // pendingExecForNotification sets up a plan due for a notification whose
 // execution row already exists as "pending" with the hash of the token the
 // previous notification emailed.
-func pendingExecForNotification(ctx context.Context, mockStore *MockConfigStore) (*config.PurchasePlan, *config.PurchaseExecution) {
+func pendingExecForNotification(mockStore *MockConfigStore) (*config.PurchasePlan, *config.PurchaseExecution) {
 	nextExec := time.Now().Add(3 * 24 * time.Hour)
 	plan := &config.PurchasePlan{ID: "plan-rot", Name: "Rotation Plan", NextExecutionDate: &nextExec}
 	existing := &config.PurchaseExecution{
@@ -698,7 +697,9 @@ func pendingExecForNotification(ctx context.Context, mockStore *MockConfigStore)
 		ScheduledDate:   nextExec,
 		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2", Count: 1}},
 	}
-	mockStore.On("GetExecutionByPlanAndDate", ctx, "plan-rot", nextExec).Return(existing, nil).Maybe()
+	mockStore.On("LockPurchasePlanTx", mock.Anything, mock.Anything, plan.ID).Return(plan, nil).Maybe()
+	mockStore.On("ListExecutionsForPlanStepTx", mock.Anything, mock.Anything, plan.ID, plan.RampSchedule.CurrentStep+1).
+		Return([]config.PurchaseExecution{*existing}, nil).Maybe()
 	return plan, existing
 }
 
@@ -710,7 +711,7 @@ func TestManager_SendPlanNotification_NoRecipientLeavesLiveTokenAlone(t *testing
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := new(MockEmailSender)
-	plan, existing := pendingExecForNotification(ctx, mockStore)
+	plan, existing := pendingExecForNotification(mockStore)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{}, nil)
 
 	manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
@@ -727,7 +728,7 @@ func TestManager_SendPlanNotification_SendFailureLeavesLiveTokenAlone(t *testing
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := new(MockEmailSender)
-	plan, _ := pendingExecForNotification(ctx, mockStore)
+	plan, _ := pendingExecForNotification(mockStore)
 	notify := "notify@example.com"
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &notify}, nil)
 	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.AnythingOfType("email.NotificationData")).Return(errors.New("ses down"))
@@ -748,7 +749,7 @@ func TestManager_SendPlanNotification_PersistsEmailedTokenHashAfterSend(t *testi
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := new(MockEmailSender)
-	plan, _ := pendingExecForNotification(ctx, mockStore)
+	plan, _ := pendingExecForNotification(mockStore)
 	notify := "notify@example.com"
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &notify}, nil)
 
@@ -778,7 +779,7 @@ func TestManager_SendPlanNotification_StampFailure(t *testing.T) {
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	sender := new(MockEmailSender)
-	plan, _ := pendingExecForNotification(ctx, store)
+	plan, _ := pendingExecForNotification(store)
 	recipient := "fixture@example.invalid"
 	store.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &recipient}, nil)
 	sender.On("SendScheduledPurchaseNotification", ctx, mock.Anything).Return(nil)

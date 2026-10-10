@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -318,4 +319,57 @@ func (s *PostgresStore) GetStuckRampSteps(ctx context.Context) (map[string]RampS
 		return nil, fmt.Errorf("failed to read stuck ramp steps: %w", err)
 	}
 	return blocks, nil
+}
+
+// ListExecutionsForPlanStepTx implements StoreInterface.
+func (s *PostgresStore) ListExecutionsForPlanStepTx(ctx context.Context, tx pgx.Tx, planID string, stepNumber int) ([]PurchaseExecution, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT plan_id, execution_id, status, step_number, scheduled_date,
+		       notification_sent, approval_token_hash, recommendations,
+		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
+		       cloud_account_id, source, approved_by, canceled_by, capacity_percent,
+		       created_by_user_id, retry_execution_id, retry_attempt_n,
+		       approval_token_expires_at,
+		       executed_by_user_id, executed_at, pre_approval_skip_reason,
+		       idempotency_key, scheduled_execution_at
+		FROM purchase_executions
+		WHERE plan_id = $1 AND step_number = $2
+		ORDER BY retry_attempt_n, execution_id`, planID, stepNumber)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query executions of plan %s step %d: %w", planID, stepNumber, err)
+	}
+	defer rows.Close()
+	return scanExecutionRows(rows)
+}
+
+// SetExecutionRecommendationsIfEmptyTx implements StoreInterface.
+func (s *PostgresStore) SetExecutionRecommendationsIfEmptyTx(ctx context.Context, tx pgx.Tx, executionID string, recs []RecommendationRecord, upfront, savings float64) (bool, error) {
+	if len(recs) == 0 {
+		return false, fmt.Errorf("execution %s: refusing to attach an empty recommendation set", executionID)
+	}
+	payload, err := json.Marshal(recs)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal recommendations: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE purchase_executions
+		   SET recommendations = $2, total_upfront_cost = $3, estimated_savings = $4, updated_at = NOW()
+		 WHERE execution_id = $1
+		   AND status IN ('pending', 'notified')
+		   AND recommendations IN ('[]'::jsonb, 'null'::jsonb)`, executionID, payload, upfront, savings)
+	if err != nil {
+		return false, fmt.Errorf("failed to attach recommendations to execution %s: %w", executionID, err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// ExpireExecutionAtomic implements StoreInterface.
+func (s *PostgresStore) ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string) (bool, error) {
+	tag, err := tx.Exec(ctx, `
+		UPDATE purchase_executions SET status = $2, updated_at = NOW()
+		 WHERE execution_id = $1 AND status IN ('pending', 'notified')`, executionID, StatusExpired)
+	if err != nil {
+		return false, fmt.Errorf("failed to expire execution %s: %w", executionID, err)
+	}
+	return tag.RowsAffected() == 1, nil
 }
