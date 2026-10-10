@@ -245,6 +245,101 @@ describe('money in every cell matches the golden value for that column', () => {
   });
 });
 
+describe('fetched-at shows local time and UTC', () => {
+  const OPTS: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'long' };
+  const instant = new Date(golden.fetched_at);
+  const utcText = new Intl.DateTimeFormat('en-GB', { ...OPTS, timeZone: 'UTC' }).format(instant);
+  const RealDTF = Intl.DateTimeFormat;
+
+  afterEach(() => {
+    Intl.DateTimeFormat = RealDTF;
+  });
+
+  // jest cannot change the process zone, so the browser's default zone is
+  // simulated: formatters built without an explicit timeZone get `tz`.
+  async function fetchedAt(tz: string): Promise<string> {
+    Intl.DateTimeFormat = function (locale?: string | string[], o?: Intl.DateTimeFormatOptions) {
+      return new RealDTF(locale, o?.timeZone ? o : { ...o, timeZone: tz });
+    } as unknown as typeof Intl.DateTimeFormat;
+    const root = await mount();
+    await clickAndLoad(root, golden);
+    return root.querySelector('.archera-fetched-at')!.textContent!;
+  }
+
+  it('non-UTC zone: local text and UTC text are both present and exact', async () => {
+    const got = await fetchedAt('America/New_York');
+    const local = new Intl.DateTimeFormat(undefined, { ...OPTS, timeZone: 'America/New_York' }).format(instant);
+    expect(local).not.toBe(utcText);
+    expect(utcText).toContain('12:00:00');
+    expect(got).toBe(`Fetched at ${local} (${utcText})`);
+  });
+
+  it('UTC zone: exact text', async () => {
+    const got = await fetchedAt('UTC');
+    const local = new Intl.DateTimeFormat(undefined, { ...OPTS, timeZone: 'UTC' }).format(instant);
+    expect(got).toBe(`Fetched at ${local} (${utcText})`);
+  });
+
+  it('UTC part stays in UTC when the browser zone is far away', async () => {
+    const got = await fetchedAt('Pacific/Auckland');
+    expect(got.endsWith(`(${utcText})`)).toBe(true);
+  });
+});
+
+describe('aria-busy and empty vendor strings', () => {
+  it('aria-busy is absent after success and after error', async () => {
+    const root = await mount();
+    const button = root.querySelector('button')!;
+    await clickAndLoad(root, golden);
+    expect(button.hasAttribute('aria-busy')).toBe(false);
+    comparison.mockRejectedValueOnce(Object.assign(new Error('fixed server text'), { status: 502 }));
+    button.click();
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    await flush();
+    expect(button.hasAttribute('aria-busy')).toBe(false);
+  });
+
+  const VENDOR_KEYS = new Set([
+    'offer_id', 'provider', 'commitment_type', 'region', 'contract_term', 'payment_option',
+    'lease_menu_item_id', 'archera_offer_name', 'line_item_id', 'reason', 'actual_term',
+    'actual_payment_option', 'actual_commitment_type',
+  ]);
+  function blank(node: unknown, key = ''): unknown {
+    if (typeof node === 'string') return VENDOR_KEYS.has(key) ? '' : node;
+    if (Array.isArray(node)) return node.map(x => blank(x, key));
+    if (node && typeof node === 'object') {
+      return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, blank(v, k)]));
+    }
+    return node;
+  }
+
+  it('an empty vendor string renders "Not given" in every place it is shown', async () => {
+    const c = blank(clone()) as ArcheraComparison;
+    const root = await mount();
+    await clickAndLoad(root, c);
+    const NG = 'Not given';
+    const hyp = Array.from(root.querySelectorAll('table')).find(t => /^Hypothetical/.test(t.querySelector('caption')!.textContent!))!;
+    const hcells = Array.from(hyp.querySelectorAll('tbody tr')[0]!.children).map(x => x.textContent);
+    expect(hcells[0]).toBe(NG);
+    expect(hcells[1]).toBe(NG);
+    expect(hcells[8]).toBe(`${NG}: ${NG} (term ${NG}, payment ${NG}, type ${NG})`);
+    expect(root.querySelector('h3')!.textContent).toBe(`Line item ${NG}`);
+    expect(root.querySelector('caption + thead')).not.toBeNull();
+    const offers = root.querySelectorAll('table')[2]!;
+    const trs = Array.from(offers.querySelectorAll('tbody tr'));
+    expect(trs.length).toBeGreaterThan(1);
+    trs.forEach((tr, i) => {
+      const cells = Array.from(tr.children).map(x => x.textContent);
+      expect(cells[0]).toBe(`${NG} (${i === 0 ? 'current' : 'candidate'})`);
+      expect(cells[1]).toBe(`${NG} / ${NG}`);
+      expect(cells[2]).toBe(NG);
+      expect(cells[3]).toBe(`${NG} / ${NG}`);
+      expect(cells[4]).toBe(i === 0 ? `lease attached (${NG})` : 'no lease');
+      expect(cells[5]).toBe(NG);
+    });
+  });
+});
+
 describe('vendor strings are text only', () => {
   const HOSTILE = (n: number) => `<img src=x onerror=H${n}><script>S${n}</script><svg onload=V${n}>\u0007\u202e${n}`;
 
