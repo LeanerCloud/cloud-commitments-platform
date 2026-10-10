@@ -167,21 +167,33 @@ func TestExecuteSingleAccount_PlanRowRecsMustMatchRowAccount(t *testing.T) {
 	})
 }
 
-// E3: a plan row that ends failed with nothing bought releases its
-// suppressions in the same tx as the terminal save; a partial or direct row
-// does not.
-func TestSaveTerminalExecution_ReleasesSuppressionsOnCleanFailure(t *testing.T) {
+// E3: a plan row releases its suppressions in the same tx as the terminal
+// save ONLY when it failed before any purchase call was submitted. Outcome
+// unknown, a refused armed re-drive, partial runs and direct executes keep them.
+func TestSaveTerminalExecution_ReleasesSuppressionsOnlyBeforeSubmission(t *testing.T) {
+	failedRow := func() config.PurchaseExecution {
+		return config.PurchaseExecution{ExecutionID: "e", PlanID: "p", Status: "failed", Recommendations: []config.RecommendationRecord{scopedTestRec("acct-A")}}
+	}
 	bought := scopedTestRec("acct-A")
 	bought.Purchased = true
+	boughtRow := failedRow()
+	boughtRow.Recommendations = []config.RecommendationRecord{bought}
+	direct := failedRow()
+	direct.PlanID = ""
+	completed := failedRow()
+	completed.Status = "completed"
 	cases := []struct {
 		name    string
 		exec    config.PurchaseExecution
+		err     error
 		release bool
 	}{
-		{"plan row failed, nothing bought", config.PurchaseExecution{ExecutionID: "e", PlanID: "p", Status: "failed", Recommendations: []config.RecommendationRecord{scopedTestRec("acct-A")}}, true},
-		{"plan row failed but a rec bought", config.PurchaseExecution{ExecutionID: "e", PlanID: "p", Status: "failed", Recommendations: []config.RecommendationRecord{bought}}, false},
-		{"plan row completed", config.PurchaseExecution{ExecutionID: "e", PlanID: "p", Status: "completed"}, false},
-		{"direct execute failed", config.PurchaseExecution{ExecutionID: "e", Status: "failed"}, false},
+		{"failed before any provider call", failedRow(), beforeSubmission(errors.New("credential resolution failed")), true},
+		{"outcome unknown (lost response) stays failed", failedRow(), errors.New("purchase outcome unknown: response lost"), false},
+		{"refused armed re-drive", failedRow(), errors.New("refusing to execute retry attempt 1: unsafe to re-drive"), false},
+		{"pre-submission error but a rec bought", boughtRow, beforeSubmission(errors.New("x")), false},
+		{"direct execute", direct, beforeSubmission(errors.New("x")), false},
+		{"completed", completed, nil, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -190,7 +202,7 @@ func TestSaveTerminalExecution_ReleasesSuppressionsOnCleanFailure(t *testing.T) 
 			store.On("DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "e").Return(nil).Maybe()
 			exec := c.exec
 
-			require.NoError(t, (&Manager{config: store}).saveTerminalExecution(context.Background(), &exec))
+			require.NoError(t, (&Manager{config: store}).saveTerminalExecution(context.Background(), &exec, c.err))
 
 			if c.release {
 				store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "e")
@@ -199,4 +211,32 @@ func TestSaveTerminalExecution_ReleasesSuppressionsOnCleanFailure(t *testing.T) 
 			}
 		})
 	}
+}
+
+// End to end through executeAndFinalize: a rec not attributed to the row's
+// account is refused before the provider (released); a provider failure keeps
+// the suppressions.
+func TestExecuteAndFinalize_SuppressionReleaseFollowsSubmission(t *testing.T) {
+	acct := "acct-A"
+	run := func(rec config.RecommendationRecord) (*MockConfigStore, error) {
+		store := new(MockConfigStore)
+		store.On("GetPurchasePlan", mock.Anything, "p").Return(&config.PurchasePlan{ID: "p"}, nil)
+		store.On("GetPlanAccounts", mock.Anything, "p").Return([]config.CloudAccount{}, nil).Maybe()
+		store.On("GetCloudAccount", mock.Anything, acct).Return(nil, errors.New("account lookup failed")).Maybe()
+		store.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil)
+		store.On("DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "e").Return(nil).Maybe()
+		exec := &config.PurchaseExecution{ExecutionID: "e", PlanID: "p", CloudAccountID: &acct, Status: "running",
+			Recommendations: []config.RecommendationRecord{rec}}
+		return store, (&Manager{config: store}).executeAndFinalize(context.Background(), exec)
+	}
+	t.Run("rec for another account is refused before any call", func(t *testing.T) {
+		store, err := run(scopedTestRec("acct-B"))
+		require.Error(t, err)
+		store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "e")
+	})
+	t.Run("credential failure before any call", func(t *testing.T) {
+		store, err := run(scopedTestRec(acct))
+		require.Error(t, err)
+		store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "e")
+	})
 }

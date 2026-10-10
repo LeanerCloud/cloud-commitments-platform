@@ -59,17 +59,17 @@ func (m *Manager) executePurchase(ctx context.Context, exec *config.PurchaseExec
 	} else {
 		plan, err = m.config.GetPurchasePlan(ctx, exec.PlanID)
 		if err != nil {
-			return fmt.Errorf("failed to get plan: %w", err)
+			return beforeSubmission(fmt.Errorf("failed to get plan: %w", err))
 		}
 		if plan == nil {
-			return fmt.Errorf("plan not found: %s", exec.PlanID)
+			return beforeSubmission(fmt.Errorf("plan not found: %s", exec.PlanID))
 		}
 
 		// Checked once here, before the per-account fan-out: past this point
 		// every account would write its own failed row and strand its own ramp
 		// unit, and credential resolution would mask the real cause.
 		if len(exec.Recommendations) == 0 {
-			return fmt.Errorf("execution %s: %w", exec.ExecutionID, ErrPlanStepNoRecommendations)
+			return beforeSubmission(fmt.Errorf("execution %s: %w", exec.ExecutionID, ErrPlanStepNoRecommendations))
 		}
 
 		// Fan out across plan accounts when accounts are configured.
@@ -96,11 +96,11 @@ func (m *Manager) executePurchase(ctx context.Context, exec *config.PurchaseExec
 // function under the gocyclo budget.
 func (m *Manager) executeSingleAccount(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan) error {
 	if err := requireRecsMatchRowAccount(exec); err != nil {
-		return err
+		return beforeSubmission(err)
 	}
 	provCfg, targetAccountID, err := m.resolveSingleAccountProvider(ctx, exec)
 	if err != nil {
-		return err
+		return beforeSubmission(err)
 	}
 	// #646: stamp the resolved target account on history, not the ambient
 	// AWS host account. resolveSingleAccountProvider returns the target's
@@ -199,7 +199,7 @@ func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.Purc
 	// be recorded as completed, advancing the ramp (platform#631).
 	scoped, scopeErr := scopeExecutionsByAccount(baseExec, accounts)
 	if scopeErr != nil {
-		return scopeErr
+		return beforeSubmission(scopeErr)
 	}
 	buying := make([]config.CloudAccount, 0, len(scoped))
 	for i := range accounts {

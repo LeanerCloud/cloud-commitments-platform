@@ -2093,3 +2093,24 @@ func TestSummarizePurchaseHistory_RevokedExcludedFromKPIs(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// E3: the expiry sweep releases an expired step's suppressions in the same tx
+// as the status flip, and only when the flip won.
+func TestExpireStaleExecutionsSweep_ReleasesSuppressionsOnlyWhenExpired(t *testing.T) {
+	for name, won := range map[string]bool{"flip won": true, "row already moved": false} {
+		t.Run(name, func(t *testing.T) {
+			store := new(MockConfigStore)
+			store.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, "stale-1").Return(won, nil)
+			store.On("DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "stale-1").Return(nil).Maybe()
+			h := &Handler{config: store}
+
+			h.expireStaleExecutionsSweep([]config.PurchaseExecution{{ExecutionID: "stale-1", Status: "pending"}})
+
+			if won {
+				store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "stale-1")
+			} else {
+				store.AssertNotCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "stale-1")
+			}
+		})
+	}
+}

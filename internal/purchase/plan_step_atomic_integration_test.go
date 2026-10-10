@@ -170,3 +170,21 @@ func TestExpireExecutionAtomic_ReleasesSuppressions(t *testing.T) {
 	assert.Empty(t, sups)
 	assert.False(t, expire(), "an already-expired row must not be flipped again")
 }
+
+// The compare-and-set also matches a row stored with an empty JSON array (not
+// only the null that a nil slice marshals to).
+func TestSetExecutionRecommendationsIfEmpty_MatchesEmptyArray(t *testing.T) {
+	ctx := context.Background()
+	store, _ := rampStepStore(ctx, t)
+	plan := atomicStepPlan(ctx, t, store)
+	rootID := uuid.New().String()
+	require.NoError(t, store.SavePurchaseExecution(ctx, &config.PurchaseExecution{
+		PlanID: plan.ID, ExecutionID: rootID, Status: "pending", StepNumber: 1, ScheduledDate: *plan.NextExecutionDate,
+		Recommendations: []config.RecommendationRecord{}}))
+	m := &Manager{config: store}
+
+	ok, err := m.AttachResolvedRecommendations(ctx, &config.PurchaseExecution{ExecutionID: rootID}, []config.RecommendationRecord{scopedTestRec("")})
+
+	require.NoError(t, err)
+	assert.True(t, ok)
+}

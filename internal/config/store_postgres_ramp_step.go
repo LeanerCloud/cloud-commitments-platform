@@ -356,7 +356,7 @@ func (s *PostgresStore) SetExecutionRecommendationsIfEmptyTx(ctx context.Context
 		   SET recommendations = $2, total_upfront_cost = $3, estimated_savings = $4, updated_at = NOW()
 		 WHERE execution_id = $1
 		   AND status IN ('pending', 'notified')
-		   AND (recommendations IS NULL OR recommendations IN ('[]'::jsonb, 'null'::jsonb))`, executionID, payload, upfront, savings)
+		   AND recommendations IN ('[]'::jsonb, 'null'::jsonb)`, executionID, payload, upfront, savings)
 	if err != nil {
 		return false, fmt.Errorf("failed to attach recommendations to execution %s: %w", executionID, err)
 	}
