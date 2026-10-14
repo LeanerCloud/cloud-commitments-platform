@@ -13,9 +13,30 @@ async function expectFeedbackContext(page: Page, date: string): Promise<void> {
 
 test('feedback uses the current SPA route and time on mouse, keyboard, focus and context menu', async ({ page }) => {
   const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
   page.on('pageerror', error => pageErrors.push(String(error)));
+  page.on('console', message => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  page.on('response', response => {
+    if (response.status() >= 400) failedRequests.push(`${response.status()} ${new URL(response.url()).pathname}`);
+  });
+  page.on('requestfailed', request => failedRequests.push(new URL(request.url()).pathname));
   await seedAuth(page);
   await mockApi(page);
+  await page.route('**/api/history?*', route => route.fulfill({ json: [] }));
+  await page.route('**/api/history/analytics?*', route => route.fulfill({ json: {
+    start: '2026-10-01T00:00:00Z', end: '2026-10-14T00:00:00Z', interval: 'day',
+    summary: { total_period_savings: 0, total_upfront_spent: 0, purchase_count: 0, average_savings_per_period: 0, peak_savings: 0 },
+    data_points: [],
+  } }));
+  await page.route('**/api/purchases/planned', route => route.fulfill({ json: { purchases: [] } }));
+  await page.route('**/api/dashboard/upcoming', route => route.fulfill({ json: [] }));
+  await page.route('**/api/dashboard/summary?*', route => route.fulfill({ json: {
+    potential_monthly_savings: 0, total_recommendations: 0, active_commitments: 0,
+    committed_monthly: 0, current_coverage: 0, target_coverage: 0, ytd_savings: 0, by_service: {},
+  } }));
   await page.clock.setFixedTime(new Date('2026-10-13T23:59:00Z'));
   await page.goto('/purchases');
   await expect(page.locator('#purchases-tab.active')).toBeVisible();
@@ -49,4 +70,6 @@ test('feedback uses the current SPA route and time on mouse, keyboard, focus and
   await feedback.focus();
   await expectFeedbackContext(page, '2026-10-14T00:04:00.000Z');
   expect(pageErrors).toEqual([]);
+  expect(failedRequests).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });
