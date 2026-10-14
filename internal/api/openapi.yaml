@@ -3178,8 +3178,8 @@ components:
             Ceiling on the total commitment (upfront + monthly * term) one ramp
             step may auto-purchase. Omit on create for no cap (auto-purchase of
             steps with recommendations is then refused); omit on update to keep
-            the current cap. Explicit null clears a manual plan's cap and is
-            refused while auto_purchase is true.
+            the current cap. On update, explicit null clears a manual plan's
+            cap and is refused while auto_purchase is true.
         provider:
           type: string
         service:
