@@ -420,6 +420,14 @@ resource "kubernetes_deployment" "app" {
           }
 
           dynamic "env" {
+            for_each = local.archera_env
+            content {
+              name  = env.key
+              value = env.value
+            }
+          }
+
+          dynamic "env" {
             for_each = var.additional_env_vars
             content {
               name  = env.key
@@ -779,4 +787,14 @@ data "kubernetes_service" "nginx_ingress" {
     helm_release.nginx_ingress,
     time_sleep.wait_for_lb_ip,
   ]
+}
+
+locals {
+  # Archera settings, set only when non-empty so an unconfigured deployment
+  # carries no ARCHERA_* variable at all (feature off).
+  archera_env = merge(
+    var.archera_org_id != "" ? { ARCHERA_ORG_ID = var.archera_org_id } : {},
+    var.archera_plan_id != "" ? { ARCHERA_PLAN_ID = var.archera_plan_id } : {},
+    var.archera_api_key_secret_name != "" ? { ARCHERA_API_KEY_SECRET = var.archera_api_key_secret_name } : {},
+  )
 }

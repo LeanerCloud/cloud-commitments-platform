@@ -197,9 +197,12 @@ export async function bulkAddToGroup(groupId: string): Promise<void> {
   const group = availableGroups.find(g => g.id === groupId);
   if (!group) return;
 
-  if (!confirm(`Add ${count} user(s) to group "${group.name}"?`)) {
-    return;
-  }
+  const addOk = await confirmDialog({
+    title: `Add ${count} user${count === 1 ? '' : 's'} to "${group.name}"?`,
+    body: `The ${count === 1 ? 'selected user' : 'selected users'} will gain the permissions of the "${group.name}" group.`,
+    confirmLabel: 'Add to group',
+  });
+  if (!addOk) return;
 
   // Partition the selected users by whether adding this group would produce a
   // contradictory combination (view-only group + write-capable group, issue

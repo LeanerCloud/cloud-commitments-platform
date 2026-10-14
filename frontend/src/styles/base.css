@@ -23,21 +23,25 @@
 
     /* Text */
     --cudly-text: #111827;          /* Primary text */
-    --cudly-text-muted: #6b7280;    /* Secondary / hint text */
-    --cudly-text-subtle: #9ca3af;   /* Placeholder / disabled labels */
+    --cudly-text-muted: #4b5563;    /* Secondary / hint text (7.5:1 on white) */
+    --cudly-text-subtle: #6b7280;   /* Placeholder / disabled labels (4.8:1 on white, AA) */
 
     /* Status (semantic) — keep existing palette to avoid surprise drift */
-    --cudly-success: #34a853;
+    --cudly-success: #15803d;       /* 5.0:1 on white, and white text on it passes AA */
     --cudly-success-bg: #e8f5e9;
     --cudly-success-fg: #2e7d32;
     --cudly-warn: #fbbc04;
     --cudly-warn-bg: #fff3e0;
-    --cudly-warn-fg: #e65100;
-    --cudly-error: #ea4335;
+    --cudly-warn-fg: #b45309;
+    --cudly-error: #d93025;         /* white text on it is 4.8:1 */
     --cudly-error-bg: #fce8e6;
     --cudly-error-fg: #c5221f;
     --cudly-info: #2563eb;
     --cudly-info-bg: #eff6ff;
+
+    /* Keyboard focus: a surface-coloured gap then a primary ring, visible on
+     * white and on tinted backgrounds. */
+    --cudly-focus-ring: 0 0 0 2px var(--cudly-surface), 0 0 0 4px var(--cudly-primary);
 
     /* Typography */
     --cudly-font-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -97,6 +101,13 @@ body {
     color: var(--cudly-text);
 }
 
+/* Default keyboard focus ring. Zero specificity (:where) so a component that
+ * draws its own focus style keeps it; everything else gets a visible ring. */
+:where(a[href], button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--cudly-primary);
+    outline-offset: 2px;
+}
+
 /* Generic utilities — prefer these over inline `style="..."` attributes
  * (parsed by HTML, blocked by CSP `style-src 'self'`) and over JS
  * `element.style.*` mutations (not blocked by CSP but harder to restyle). */
@@ -105,7 +116,7 @@ body {
 }
 
 .text-muted {
-    color: var(--cudly-text-subtle);
+    color: var(--cudly-text-muted);
     font-size: 0.85rem;
 }
 

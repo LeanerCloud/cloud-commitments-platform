@@ -121,11 +121,6 @@ body.sidebar-open {
         width: 100%;
     }
 
-    table {
-        display: block;
-        overflow-x: auto;
-    }
-
     .modal-content {
         width: 95%;
     }
@@ -351,4 +346,19 @@ body.sidebar-open {
         font-size: 0.95rem;
         white-space: nowrap;
     }
+}
+
+/* A wide table scrolls inside its container instead of widening the page
+ * (issue #703). The container, not the table, takes the overflow so a short
+ * table keeps display:table and fills the card. The recommendations list is
+ * excluded: its sticky action box must keep sticking to the viewport, so its
+ * table scrolls itself. */
+:where(div, section, fieldset, form, article):has(> table):not(#recommendations-list) {
+    overflow-x: auto;
+}
+
+#recommendations-list > table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
 }

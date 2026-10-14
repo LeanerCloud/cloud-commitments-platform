@@ -36,10 +36,21 @@ func stuckExec(id, status string) config.PurchaseExecution {
 	}
 }
 
-// stuckExecWithAWSRecs builds a stuck execution with a single AWS EC2 rec.
-// allRecsSafeToRedrive returns true for pure-AWS recs, so the reaper's
-// canonical error includes "safe to retry" (F4 fix).
+// stuckExecWithAWSRecs builds a stuck execution with a single AWS RDS rec.
+// RDS honors a deterministic reservation ID, so allRecsSafeToRedrive is true and
+// the reaper's canonical error includes "safe to retry" (F4 fix). EC2 and
+// Redshift are the AWS services that are not safe; see stuckExecWithAWSEC2Rec.
 func stuckExecWithAWSRecs(id, status string) config.PurchaseExecution {
+	e := stuckExec(id, status)
+	e.Recommendations = []config.RecommendationRecord{
+		{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Count: 1},
+	}
+	return e
+}
+
+// stuckExecWithAWSEC2Rec is the unsafe AWS case: EC2 purchases take no client
+// token, so a stuck row may already have bought the commitment.
+func stuckExecWithAWSEC2Rec(id, status string) config.PurchaseExecution {
 	e := stuckExec(id, status)
 	e.Recommendations = []config.RecommendationRecord{
 		{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Count: 1},
@@ -79,6 +90,33 @@ func TestReapStuckExecutions_StaleApprovedFlippedToFailed(t *testing.T) {
 	assert.Equal(t, 0, result.RaceLost)
 	assert.Equal(t, 0, result.Errored)
 	store.AssertExpectations(t)
+}
+
+// TestReapStuckExecutions_EC2RowIsNotAdvertisedAsSafeToRetry: a reaped EC2 row
+// may have bought before the run died, and Retry is refused for it, so the
+// canonical error must not say "safe to retry". The RDS test above is the
+// positive control that keeps an always-refusing predicate from passing.
+func TestReapStuckExecutions_EC2RowIsNotAdvertisedAsSafeToRetry(t *testing.T) {
+	ctx := context.Background()
+	store := new(MockConfigStore)
+	reapAfter := 10 * time.Minute
+
+	row := stuckExecWithAWSEC2Rec("exec-ec2", "running")
+	transitioned := row
+	transitioned.Status = failedStatus
+	store.On("ListStuckExecutions", ctx, stuckStatuses, reapAfter).Return([]config.PurchaseExecution{row}, nil)
+	store.On("TransitionExecutionStatus", ctx, "exec-ec2", stuckStatuses, failedStatus, (*string)(nil)).Return(&transitioned, nil)
+	var saved *config.PurchaseExecution
+	store.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).Return(nil)
+
+	result, err := newReaperManager(store).ReapStuckExecutions(ctx, reapAfter)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Reaped)
+	require.NotNil(t, saved)
+	assert.Contains(t, saved.Error, "reaped after")
+	assert.NotContains(t, saved.Error, "safe to retry")
 }
 
 func TestReapStuckExecutions_StaleRunningFlippedToFailed(t *testing.T) {

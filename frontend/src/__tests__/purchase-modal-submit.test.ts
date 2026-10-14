@@ -299,6 +299,20 @@ describe('Issue #251: Execute Now makes no cancellation promise', () => {
     expect(api.executePurchase).not.toHaveBeenCalled();
   });
 
+  test('approval confirm labels the amount as upfront on approval, not charged today', async () => {
+    const rec: LocalRecommendation = { ...buildRows()[0]!, provider: 'aws', service: 'ec2', term: 1 };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    (confirmDialog as jest.Mock).mockClear();
+    await openPurchaseModal([rec]);
+    (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { body: HTMLElement };
+    const text = opts.body.textContent ?? '';
+    expect(text).toContain('Nothing is charged until the approver');
+    expect(text).toContain(`Upfront on approval${formatCurrency(rec.upfront_cost, '$', 2)}`);
+    expect(text).not.toContain('Charged today');
+  });
+
   test('direct-execute confirm dialog makes no cancellation promise', async () => {
     const rec: LocalRecommendation = { ...buildRows()[0]!, provider: 'aws', service: 'ec2', term: 1 };
     (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
@@ -308,9 +322,12 @@ describe('Issue #251: Execute Now makes no cancellation promise', () => {
     (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
     await flush();
     expect(confirmDialog).toHaveBeenCalledTimes(1);
-    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { title: string; body: string };
-    expect(opts.body).toMatch(/charge the full upfront amount immediately/);
-    expect(`${opts.title} ${opts.body}`).not.toMatch(/AWS|cancell|24 hours/i);
+    const opts = (confirmDialog as jest.Mock).mock.calls[0]![0] as { title: string; body: HTMLElement };
+    const bodyText = opts.body.textContent ?? '';
+    expect(bodyText).toMatch(/charges the amount shown under "Charged today" immediately/);
+    expect(bodyText).toContain('Charged today');
+    expect(bodyText).toContain(formatCurrency(rec.upfront_cost, '$', 2));
+    expect(`${opts.title} ${bodyText}`).not.toMatch(/AWS|cancell|24 hours/i);
   });
 });
 
@@ -475,6 +492,8 @@ describe('Issue #1903: purchase modal re-prices on Term/Payment change', () => {
   test.each<[string, string, string, Record<string, unknown>, unknown]>([
     ['ec2', 'platform', 'm5.large', { instance_type: 'm5.large', platform: 'Linux/UNIX', tenancy: 'default', scope: 'Region' }, 'Windows'],
     ['ec2', 'tenancy', 'm5.large', { instance_type: 'm5.large', platform: 'Linux/UNIX', tenancy: 'default', scope: 'Region' }, 'dedicated'],
+    ['ec2', 'availability_zone', 'm5.large', { instance_type: 'm5.large', platform: 'Linux/UNIX', tenancy: 'default', scope: 'Availability Zone', availability_zone: 'us-east-1a' }, 'us-east-1b'],
+    ['compute', 'availability_zone', 'm5.large', { instance_type: 'm5.large', platform: 'Linux/UNIX', tenancy: 'default', scope: 'Availability Zone', availability_zone: 'us-east-1a' }, 'us-east-1b'],
     ['ec2', 'scope', 'm5.large', { instance_type: 'm5.large', platform: 'Linux/UNIX', tenancy: 'default', scope: 'Region' }, 'Availability Zone'],
     ['compute', 'platform', 'm5.large', { instance_type: 'm5.large', platform: 'Linux/UNIX', tenancy: 'default', scope: 'Region' }, 'Windows'],
     ['rds', 'az_config', 'db.r5.large', { engine: 'postgres', az_config: 'single-az' }, 'multi-az'],
@@ -528,6 +547,18 @@ describe('Issue #1903: purchase modal re-prices on Term/Payment change', () => {
     expect((api.executePurchase as jest.Mock).mock.calls[0]![0]).toEqual([
       expect.objectContaining(matching),
     ]);
+  });
+
+  test('purchase identity keeps a regional EC2 rec (no AZ) matching its own variants', async () => {
+    const details = { instance_type: 'm5.large', platform: 'Linux/UNIX', tenancy: 'default', scope: 'Region' };
+    const original = { ...buildRows()[0]!, details };
+    const sibling = { ...original, id: 'regional-1-all', term: 1, upfront_cost: 12000 };
+    (state.getRecommendations as jest.Mock).mockReturnValue([sibling, original]);
+
+    await openPurchaseModal([original]);
+
+    expect(Array.from(document.querySelector<HTMLSelectElement>('.purchase-row-term')!.options, (option) => option.value).sort())
+      .toEqual(['1', '3']);
   });
 
   test.each([undefined, null, [], 'invalid', { platform: 1 }, {}])('purchase identity does not match populated EC2 details to %j', async (otherDetails) => {

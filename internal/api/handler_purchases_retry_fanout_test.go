@@ -56,11 +56,31 @@ func fanoutPlanAccounts() []config.CloudAccount {
 func fanoutRecs() []config.RecommendationRecord {
 	return []config.RecommendationRecord{
 		{
-			Provider: "aws", Service: "ec2", ResourceType: "m5.large",
+			Provider: "aws", Service: "rds", ResourceType: "db.r5.large",
 			Region: "us-east-1", Count: 1, Term: 1,
 			UpfrontCost: 300, Selected: true,
 		},
 	}
+}
+
+// fanoutRecsForAccount is a per-account row's rec set, attributed to its own
+// account as the fan-out leaves it (platform#631).
+func fanoutRecsForAccount(accountID string) []config.RecommendationRecord {
+	recs := fanoutRecs()
+	recs[0].CloudAccountID = strPtr(accountID)
+	return recs
+}
+
+// fanoutRootRecs is a root step's rec set: one rec per plan account, because
+// the fan-out buys each account's own recs only (platform#631).
+func fanoutRootRecs() []config.RecommendationRecord {
+	recs := make([]config.RecommendationRecord, 0, 3)
+	for _, id := range []string{fanoutAcctA, fanoutAcctB, fanoutAcctC} {
+		rec := fanoutRecs()[0]
+		rec.CloudAccountID = strPtr(id)
+		recs = append(recs, rec)
+	}
+	return recs
 }
 
 // fanoutCredStore resolves a static AWS access-key blob so per-account
@@ -239,7 +259,7 @@ func failedPerAccountRow(execID, accountID string) *config.PurchaseExecution {
 		CreatedByUserID: &creator,
 		CapacityPercent: 100,
 		Source:          common.PurchaseSourceWeb,
-		Recommendations: fanoutRecs(),
+		Recommendations: fanoutRecsForAccount(accountID),
 	}
 }
 
@@ -329,7 +349,7 @@ func TestRetryOfFailedRootRowStillFansOutToEveryAccount(t *testing.T) {
 		CreatedByUserID: &creator,
 		CapacityPercent: 100,
 		Source:          common.PurchaseSourceWeb,
-		Recommendations: fanoutRecs(),
+		Recommendations: fanoutRootRecs(),
 	}
 
 	successor := retryFailedRow(t, failedRoot)

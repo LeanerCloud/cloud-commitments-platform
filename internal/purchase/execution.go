@@ -27,7 +27,7 @@ import (
 // recommendations. Nothing attaches recommendations to a plan step yet
 // (platform#609), so such a step can only "succeed" by buying nothing, which
 // would complete it and advance the ramp. It is refused instead.
-var ErrPlanStepNoRecommendations = errors.New("plan step has no recommendations attached, so it cannot buy anything (platform#609: plan steps cannot yet carry recommendations)")
+var ErrPlanStepNoRecommendations = errors.New("plan step has no recommendations attached, so it cannot buy anything (platform#631: plan steps cannot yet carry recommendations)")
 
 // executePurchase performs the actual purchase.
 // When the plan has associated cloud accounts and a credential store is configured,
@@ -59,17 +59,17 @@ func (m *Manager) executePurchase(ctx context.Context, exec *config.PurchaseExec
 	} else {
 		plan, err = m.config.GetPurchasePlan(ctx, exec.PlanID)
 		if err != nil {
-			return fmt.Errorf("failed to get plan: %w", err)
+			return beforeSubmission(fmt.Errorf("failed to get plan: %w", err))
 		}
 		if plan == nil {
-			return fmt.Errorf("plan not found: %s", exec.PlanID)
+			return beforeSubmission(fmt.Errorf("plan not found: %s", exec.PlanID))
 		}
 
 		// Checked once here, before the per-account fan-out: past this point
 		// every account would write its own failed row and strand its own ramp
 		// unit, and credential resolution would mask the real cause.
 		if len(exec.Recommendations) == 0 {
-			return fmt.Errorf("execution %s: %w", exec.ExecutionID, ErrPlanStepNoRecommendations)
+			return beforeSubmission(fmt.Errorf("execution %s: %w", exec.ExecutionID, ErrPlanStepNoRecommendations))
 		}
 
 		// Fan out across plan accounts when accounts are configured.
@@ -95,9 +95,12 @@ func (m *Manager) executePurchase(ctx context.Context, exec *config.PurchaseExec
 // plain error when nothing committed. Split out of executePurchase to keep that
 // function under the gocyclo budget.
 func (m *Manager) executeSingleAccount(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan) error {
+	if err := requireRecsMatchRowAccount(exec); err != nil {
+		return beforeSubmission(err)
+	}
 	provCfg, targetAccountID, err := m.resolveSingleAccountProvider(ctx, exec)
 	if err != nil {
-		return err
+		return beforeSubmission(err)
 	}
 	// #646: stamp the resolved target account on history, not the ambient
 	// AWS host account. resolveSingleAccountProvider returns the target's
@@ -191,8 +194,21 @@ var errAllAccountsFailed = errors.New("multi-account execution: all accounts fai
 // callers ACK rather than redeliver, issue #1014); and errAllAccountsFailed
 // (wrapping the per-account errors) when no account committed anything.
 func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.PurchaseExecution, plan *config.PurchasePlan, accounts []config.CloudAccount) error {
-	results := execution.RunForAccountsWithConcurrency(ctx, accounts, func(ctx context.Context, account config.CloudAccount) (bool, error) {
-		return m.executeForAccount(ctx, baseExec, plan, account)
+	// Checked before any account runs: every account would otherwise buy the
+	// whole step, and a step with nothing to buy would return nil below and
+	// be recorded as completed, advancing the ramp (platform#631).
+	scoped, scopeErr := scopeExecutionsByAccount(baseExec, accounts)
+	if scopeErr != nil {
+		return beforeSubmission(scopeErr)
+	}
+	buying := make([]config.CloudAccount, 0, len(scoped))
+	for i := range accounts {
+		if _, ok := scoped[accounts[i].ID]; ok {
+			buying = append(buying, accounts[i])
+		}
+	}
+	results := execution.RunForAccountsWithConcurrency(ctx, buying, func(ctx context.Context, account config.CloudAccount) (bool, error) {
+		return m.executeForAccount(ctx, scoped[account.ID], plan, account)
 	}, getMaxAccountParallelism())
 
 	committed := 0
@@ -1104,9 +1120,11 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 	//
 	// Legacy rows persisted before #453 carry an empty rec.Details —
 	// DecodeServiceDetailsFor returns a zero-valued typed pointer for
-	// those, and the cloud client's buildOfferingFilters substitutes
-	// defaults (Platform=Linux/UNIX, Tenancy=default, etc.). Engine is
-	// preserved on the record column too, so we use it as a last-resort
+	// those. The AWS EC2 client does not fill the gaps: an empty Platform
+	// or an empty or unknown Tenancy or Scope is rejected before the request
+	// is sent (providers/aws ec2/client.go buildEC2OfferingQuery), so the
+	// purchase fails loudly instead of buying a default configuration. Engine
+	// is preserved on the record column too, so we use it as a last-resort
 	// fallback for DB/Cache services to avoid silently mis-purchasing a
 	// legacy non-default-engine rec as the default engine.
 	details, detailsErr := common.DecodeServiceDetailsFor(rec.Service, rec.Details)

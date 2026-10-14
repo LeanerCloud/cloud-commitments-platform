@@ -42,6 +42,7 @@ type Handler struct {
 	analyticsCollector AnalyticsCollectorInterface     // Optional: snapshot collector
 	analyticsSnapshots AnalyticsSnapshotStoreInterface // Optional: savings-snapshot time-series store
 	signer             oidc.Signer                     // Optional: OIDC issuer signer (backed by cloud KMS)
+	insurance          InsuranceProvider               // Optional: Archera comparison (nil = off)
 	issuerURL          string                          // Canonical OIDC issuer URL (falls back to dashboardURL / request domain)
 
 	awsCfgOnce sync.Once  // guards one-time loading of the base AWS config
@@ -185,6 +186,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		analyticsSnapshots:  cfg.AnalyticsSnapshots,
 		signer:              cfg.OIDCSigner,
 		issuerURL:           cfg.OIDCIssuerURL,
+		insurance:           cfg.Insurance,
 		commitmentOpts:      cfg.CommitmentOpts,
 		encryptionKeySource: cfg.EncryptionKeySource,
 	}
@@ -802,9 +804,27 @@ func (h *Handler) executeRequest(ctx context.Context, method, path string, req *
 	statusCode := 200
 	if err != nil {
 		statusCode, response = h.handleRequestError(err)
+		corsHeaders = errorResponseHeaders(err, corsHeaders)
 	}
 
 	return h.buildResponse(statusCode, corsHeaders, response, nil), nil
+}
+
+// errorResponseHeaders returns base plus any headers a client error carries
+// (for example Retry-After). base is never mutated.
+func errorResponseHeaders(err error, base map[string]string) map[string]string {
+	ce, ok := IsClientError(err)
+	if !ok || len(ce.headers) == 0 {
+		return base
+	}
+	merged := make(map[string]string, len(base)+len(ce.headers))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range ce.headers {
+		merged[k] = v
+	}
+	return merged
 }
 
 // handleRequestError converts an error to status code and response.
