@@ -3,6 +3,7 @@ package config
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"time"
 
@@ -78,6 +79,26 @@ type GlobalConfig struct {
 	// operator explicitly opts in. Fail-loud: wireLadderWriteSide returns
 	// a typed ErrLadderExecutionDisabled when this is false.
 	LadderExecutionEnabled bool `json:"ladder_execution_enabled" db:"ladder_execution_enabled"`
+
+	// AutoPurchaseEnabled is the global kill switch for AutoPurchase plans
+	// (migration 000112; the scheduling.auto_purchase default). Default false:
+	// no AutoPurchase plan notifies or executes until an operator opts in.
+	// Manual purchases (Opportunities, token approval) are unaffected.
+	AutoPurchaseEnabled bool `json:"auto_purchase_enabled" db:"auto_purchase_enabled"`
+
+	// AutoPurchaseChanged{By,At,Via} stamp the last change of the switch
+	// (migration 000115): actor, time, credential kind. NULL = never changed.
+	// json:"-" so PUT /api/config cannot forge them by unmarshalling onto this
+	// struct; the whole-config upsert round-trips them (read, modify, write).
+	AutoPurchaseChangedBy  *string    `json:"-" db:"auto_purchase_changed_by"`
+	AutoPurchaseChangedAt  *time.Time `json:"-" db:"auto_purchase_changed_at"`
+	AutoPurchaseChangedVia *string    `json:"-" db:"auto_purchase_changed_via"`
+
+	// LadderExecutionChanged{By,At,Via} stamp the last change of
+	// LadderExecutionEnabled (migration 000116); same json:"-" reasoning.
+	LadderExecutionChangedBy  *string    `json:"-" db:"ladder_execution_changed_by"`
+	LadderExecutionChangedAt  *time.Time `json:"-" db:"ladder_execution_changed_at"`
+	LadderExecutionChangedVia *string    `json:"-" db:"ladder_execution_changed_via"`
 
 	// OfferingClass controls the EC2 Reserved Instance offering class used
 	// during purchase. Accepted values: "convertible" (default) and
@@ -211,6 +232,10 @@ type PurchasePlan struct {
 	NextExecutionDate      *time.Time               `json:"next_execution_date,omitempty" dynamodbav:"next_execution_date,omitempty"`
 	LastExecutionDate      *time.Time               `json:"last_execution_date,omitempty" dynamodbav:"last_execution_date,omitempty"`
 	LastNotificationSent   *time.Time               `json:"last_notification_sent,omitempty" dynamodbav:"last_notification_sent,omitempty"`
+	// MaxStepCommitment caps the TOTAL commitment (RecommendationRecord.TotalCommitment)
+	// one ramp step may auto-purchase. nil means no cap is set, and auto-purchase of
+	// recommendation-bearing steps is refused (fail closed). Always > 0 when set.
+	MaxStepCommitment *float64 `json:"max_step_commitment,omitempty" dynamodbav:"max_step_commitment,omitempty"`
 	// Unassigned is true when the plan has zero rows in plan_accounts.
 	// This can happen for legacy plans created before target_accounts was
 	// required (issue #743). Such plans are invisible when an account filter
@@ -252,16 +277,22 @@ var PresetRampSchedules = map[string]RampSchedule{
 	},
 }
 
+// CumulativePercent is the share of the base (0..100) a ramp has bought once
+// step steps are complete: step*PercentPerStep capped at 100, and 100 for an
+// immediate schedule. It is the one definition of cumulative ramp progress.
+func (r *RampSchedule) CumulativePercent(step int) float64 {
+	if r.Type == "immediate" {
+		return 100
+	}
+	return math.Min(100, float64(step)*r.PercentPerStep)
+}
+
 // GetCurrentCoverage calculates the current effective coverage based on ramp progress.
 func (r *RampSchedule) GetCurrentCoverage(baseCoverage float64) float64 {
 	if r.Type == "immediate" {
-		return baseCoverage
+		return baseCoverage // base*100/100 is not exact in floating point
 	}
-	completedPercent := float64(r.CurrentStep) * r.PercentPerStep
-	if completedPercent > 100 {
-		completedPercent = 100
-	}
-	return baseCoverage * completedPercent / 100
+	return baseCoverage * r.CumulativePercent(r.CurrentStep) / 100
 }
 
 // GetNextPurchaseDate calculates when the next purchase step should occur.
@@ -384,6 +415,14 @@ type PurchaseExecution struct {
 	// scheduler fires the actual SDK call when this timestamp is in the past.
 	// NULL on every immediate-execute row. Migration 000065.
 	ScheduledExecutionAt *time.Time `json:"scheduled_execution_at,omitempty" dynamodbav:"scheduled_execution_at,omitempty"`
+	// NoSubmission is the persisted proof that this execution failed before
+	// any cloud purchase call was made (migration 000113). Only the
+	// pre-submission failure paths set it; the reaper and every
+	// outcome-unknown failure leave it false. It is monotone: the upsert can
+	// set it but never clear it, so a stale in-memory copy cannot erase it.
+	// The ladder reconciler treats a failed execution as "nothing was bought"
+	// only when this is true.
+	NoSubmission bool `json:"no_submission,omitempty" dynamodbav:"no_submission,omitempty"`
 }
 
 // StatusCanceled is the canonical US-spelling status value new code writes.
@@ -529,7 +568,15 @@ type RecommendationRecord struct {
 	// carry the full Details, so non-default platforms (Windows EC2,
 	// Postgres RDS, etc.) round-trip correctly.
 	Details json.RawMessage `json:"details,omitempty" dynamodbav:"-"`
-	Count   int             `json:"count" dynamodbav:"count"`
+	// AvailabilityZone is the zonal EC2 reservation's AZ name (e.g.
+	// "us-east-1a"), empty for regional and non-EC2 recs. It mirrors
+	// ComputeDetails.AvailabilityZone inside Details (config must not import
+	// pkg/common) so the identity tuple, the rec ID and the recommendations
+	// natural key can distinguish two zonal recs that differ only by AZ
+	// (issue #792). The scheduler stamps it at collection time; request recs
+	// echo it from the listed rec.
+	AvailabilityZone string `json:"availability_zone,omitempty" dynamodbav:"availability_zone,omitempty"`
+	Count            int    `json:"count" dynamodbav:"count"`
 	// RecommendedCount is the pre-scaling count the collector originally
 	// recommended, before the bulk-purchase Capacity % slider scaled it down.
 	// The web execute path stamps it so the backend can verify the
@@ -931,6 +978,15 @@ type PurchaseHistoryRecord struct {
 	ListingState string `json:"listing_state,omitempty" dynamodbav:"listing_state,omitempty"`
 }
 
+// Validate rejects a record SavePurchaseHistory cannot store without losing
+// it: one with no purchase id (see ErrEmptyPurchaseID).
+func (r *PurchaseHistoryRecord) Validate() error {
+	if strings.TrimSpace(r.PurchaseID) == "" {
+		return ErrEmptyPurchaseID
+	}
+	return nil
+}
+
 // MarketplaceListingClaim is what ClaimMarketplaceListingSlot reads back from
 // the row it just claimed, so the handler works from the row as it is at claim
 // time instead of a copy read before the claim (issue #525).
@@ -1268,6 +1324,9 @@ type LadderTrancheDB struct {
 	ConfigID    *string `json:"config_id,omitempty"`
 	RunID       *string `json:"run_id,omitempty"`
 	ExecutionID *string `json:"execution_id,omitempty"` // references purchase_executions.execution_id
+	// SettledAt is stamped by TransitionLadderTrancheTx when the tranche
+	// becomes completed; a CHECK requires it on every completed row.
+	SettledAt *time.Time `json:"settled_at,omitempty"`
 
 	// Required fields.
 	ID            string               `json:"id"`

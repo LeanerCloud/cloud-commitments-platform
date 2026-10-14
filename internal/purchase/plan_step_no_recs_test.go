@@ -2,11 +2,13 @@ package purchase
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/planstep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -64,6 +66,16 @@ func (r *saveRecorder) save(_ context.Context, exec *config.PurchaseExecution) e
 }
 
 func TestScheduledBarePlanStepFailsOnceAndDoesNotAdvanceRamp(t *testing.T) {
+	// 0 is the immediate-run setting: nothing is notified ahead of time, so
+	// the rec-less row reaches the sweep as "pending" with no notice sent.
+	for _, days := range []int{0, 7} {
+		t.Run(fmt.Sprintf("NotificationDaysBefore=%d", days), func(t *testing.T) {
+			scheduledBarePlanStepFails(t, days)
+		})
+	}
+}
+
+func scheduledBarePlanStepFails(t *testing.T, notificationDaysBefore int) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := new(MockEmailSender)
@@ -73,12 +85,14 @@ func TestScheduledBarePlanStepFailsOnceAndDoesNotAdvanceRamp(t *testing.T) {
 	})
 
 	plan := bareStepPlan()
+	plan.NotificationDaysBefore = notificationDaysBefore
 	exec := bareStepExecution()
 	claimed := exec
 	claimed.Status = "running"
 
 	mockStore.On("GetStaleApprovedExecutions", ctx, mock.Anything).Return([]config.PurchaseExecution{}, nil)
 	mockStore.On("GetPendingExecutions", ctx).Return([]config.PurchaseExecution{exec}, nil)
+	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil)
 	mockStore.On("GetPurchasePlan", ctx, bareStepPlanID).Return(plan, nil)
 	mockStore.On("TransitionExecutionStatus", ctx, bareStepExecID,
 		[]string{"approved", "pending", "notified"}, "running", (*string)(nil)).Return(&claimed, nil)
@@ -121,21 +135,26 @@ func TestNotificationTickOnBarePlanStepCreatesOneFailedRowAndSendsNoEmail(t *tes
 	})
 
 	plan := *bareStepPlan()
+	pastDeadline := time.Now().Add(-180 * time.Hour) // inside the one-day retry window after the grace
+	plan.NextExecutionDate = &pastDeadline
+	plan.Services = map[string]config.ServiceConfig{"azure:compute": {Enabled: true, Provider: "azure", Service: "compute", Term: 1, Payment: "monthly"}}
 	notifyTo := "notify@example.com"
 
 	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).Return([]config.PurchasePlan{plan}, nil)
-	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &notifyTo}, nil)
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &notifyTo, AutoPurchaseEnabled: true}, nil)
 
 	// Tick 1 finds no row for the date; tick 2 finds whatever tick 1 saved.
 	var stored config.PurchaseExecution
 	var saves []config.PurchaseExecution
-	mockStore.On("GetExecutionByPlanAndDate", ctx, plan.ID, *plan.NextExecutionDate).
-		Return(nil, config.ErrNotFound).Once()
-	mockStore.On("GetExecutionByPlanAndDate", ctx, plan.ID, *plan.NextExecutionDate).
-		Return(&stored, nil)
+	mockStore.On("LockPurchasePlanTx", mock.Anything, mock.Anything, plan.ID).Return(&plan, nil)
+	mockStore.On("ListExecutionsForPlanStepTx", mock.Anything, mock.Anything, plan.ID, plan.RampSchedule.CurrentStep+1).
+		Return(nil, nil).Once()
 	mockStore.SavePurchaseExecutionFn = func(_ context.Context, exec *config.PurchaseExecution) error {
 		stored = *exec
 		saves = append(saves, *exec)
+		// From now on the step has a row, as the real store would report.
+		mockStore.On("ListExecutionsForPlanStepTx", mock.Anything, mock.Anything, plan.ID, plan.RampSchedule.CurrentStep+1).
+			Return([]config.PurchaseExecution{stored}, nil)
 		return nil
 	}
 	// A $0 approval email must never go out; Maybe() keeps a violation a clean
@@ -143,7 +162,7 @@ func TestNotificationTickOnBarePlanStepCreatesOneFailedRowAndSendsNoEmail(t *tes
 	mockEmail.On("SendScheduledPurchaseNotification", ctx, mock.Anything).Return(nil).Maybe()
 	mockStore.On("StampPlanNotificationSent", ctx, plan.ID, mock.Anything).Return(nil).Maybe()
 
-	manager := &Manager{config: mockStore, email: mockEmail, notifyDays: 7}
+	manager := &Manager{config: mockStore, email: mockEmail, notifyDays: 7, resolver: &fakeResolver{err: planstep.ErrNoMatch}}
 
 	for tick := 1; tick <= 2; tick++ {
 		result, err := manager.SendUpcomingPurchaseNotifications(ctx)
@@ -155,5 +174,5 @@ func TestNotificationTickOnBarePlanStepCreatesOneFailedRowAndSendsNoEmail(t *tes
 	require.Len(t, saves, 1, "two ticks must leave exactly one row")
 	assert.Equal(t, "failed", saves[0].Status)
 	assert.Equal(t, 1, saves[0].StepNumber)
-	assert.Contains(t, saves[0].Error, "no recommendations")
+	assert.Contains(t, saves[0].Error, "no current recommendation matched")
 }

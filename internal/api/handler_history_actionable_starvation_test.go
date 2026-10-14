@@ -163,9 +163,9 @@ func TestHandler_getHistory_StaleSweepBoundedToDefaultListLimit(t *testing.T) {
 	stale := executionsWithStatus(150, "pending", time.Now().Add(-8*24*time.Hour), "stale")
 	store := newStarvationStore(ctx)
 	store.On("GetExecutionsByStatuses", ctx, mock.Anything, mock.Anything).Return(stale, nil)
-	store.On("TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, "expired", mock.Anything).Return(nil, nil)
+	store.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
 
 	runStarvationHistory(t, ctx, store)
 
-	store.AssertNumberOfCalls(t, "TransitionExecutionStatus", config.DefaultListLimit)
+	store.AssertNumberOfCalls(t, "ExpireExecutionAtomic", config.DefaultListLimit)
 }

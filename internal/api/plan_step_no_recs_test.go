@@ -64,7 +64,7 @@ func TestAddPurchasesToPlanIsRefusedWhileStepsCannotCarryRecommendations(t *test
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a client error, got %v", err)
 	assert.Equal(t, 409, ce.code)
-	assert.Contains(t, ce.Error(), "#609")
+	assert.Contains(t, ce.Error(), "#631")
 	mockStore.AssertNotCalled(t, "SavePurchaseExecutionTx")
 }
 

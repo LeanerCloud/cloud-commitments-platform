@@ -743,7 +743,7 @@ func TestManager_ExecutePurchase_MultiAccount(t *testing.T) {
 		ExecutionID:     "exec-multi",
 		PlanID:          "plan-multi",
 		Status:          "pending",
-		Recommendations: []config.RecommendationRecord{rec},
+		Recommendations: []config.RecommendationRecord{withAccount(rec, "aaaaaaaa-0000-0000-0000-000000000001"), withAccount(rec, "aaaaaaaa-0000-0000-0000-000000000002")},
 	}
 
 	accounts := []config.CloudAccount{
@@ -796,6 +796,14 @@ func TestManager_ExecutePurchase_MultiAccount(t *testing.T) {
 		"aaaaaaaa-0000-0000-0000-000000000001",
 		"aaaaaaaa-0000-0000-0000-000000000002",
 	}, accountIDs)
+
+	// platform#631: each account buys only its own rec (2 calls, not 4) and
+	// its row carries its own totals, not the whole step's.
+	mockServiceClient.AssertNumberOfCalls(t, "PurchaseCommitment", 2)
+	for _, e := range savedExecs {
+		require.Len(t, e.Recommendations, 1)
+		assert.Equal(t, *e.CloudAccountID, *e.Recommendations[0].CloudAccountID)
+	}
 
 	mockStore.AssertExpectations(t)
 	mockEmail.AssertExpectations(t)
@@ -871,7 +879,7 @@ func TestExecuteForAccount_CredentialFailure_MarksFailed(t *testing.T) {
 				ExecutionID:     "exec-credfail",
 				PlanID:          "plan-credfail",
 				Status:          "pending",
-				Recommendations: []config.RecommendationRecord{rec},
+				Recommendations: []config.RecommendationRecord{withAccount(rec, tt.account.ID)},
 			}
 
 			mockStore.On("GetPurchasePlan", ctx, "plan-credfail").Return(plan, nil)
@@ -1032,7 +1040,7 @@ func TestExecuteMultiAccount_PartialFailure_IsolatesAccounts(t *testing.T) {
 		ExecutionID:     "exec-partial",
 		PlanID:          "plan-partial",
 		Status:          "pending",
-		Recommendations: []config.RecommendationRecord{rec},
+		Recommendations: []config.RecommendationRecord{withAccount(rec, accountVID), withAccount(rec, accountIID)},
 	}
 
 	plan := &config.PurchasePlan{
@@ -1203,7 +1211,7 @@ func TestExecuteMultiAccount_RunsAccountsInParallel(t *testing.T) {
 		ExecutionID:     "exec-parallel",
 		PlanID:          "plan-parallel",
 		Status:          "pending",
-		Recommendations: []config.RecommendationRecord{rec},
+		Recommendations: []config.RecommendationRecord{withAccount(rec, accountAID), withAccount(rec, accountBID)},
 	}
 
 	plan := &config.PurchasePlan{
@@ -1819,6 +1827,66 @@ func TestManager_ExecuteAndFinalize_HistorySaveFailure_StaysVisible(t *testing.T
 
 	mockStore.AssertExpectations(t)
 	mockFactory.AssertExpectations(t)
+}
+
+// historyGuardStore applies the real purchase_history validation in front of
+// the mock, so a test sees the error the Postgres store would return.
+type historyGuardStore struct{ *MockConfigStore }
+
+func (s historyGuardStore) SavePurchaseHistory(ctx context.Context, record *config.PurchaseHistoryRecord) error {
+	if err := record.Validate(); err != nil {
+		return err
+	}
+	return s.MockConfigStore.SavePurchaseHistory(ctx, record)
+}
+
+// TestManager_ExecuteAndFinalize_EmptyCommitmentID_CompletesWithAuditGap
+// (#774): a successful purchase whose result carries no CommitmentID cannot be
+// stored in purchase_history. The execution must still complete, with the
+// audit-gap note, never fail and invite a re-approval of a purchase that fired.
+func TestManager_ExecuteAndFinalize_EmptyCommitmentID_CompletesWithAuditGap(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockSTS := new(MockSTSClient)
+	mockFactory := new(MockProviderFactory)
+	mockProviderInst := new(MockProvider)
+	mockServiceClient := new(MockServiceClient)
+
+	exec := &config.PurchaseExecution{
+		ExecutionID: "exec-empty-id",
+		StepNumber:  1,
+		Recommendations: []config.RecommendationRecord{
+			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 500.0, Selected: true},
+		},
+	}
+	// SavePurchaseHistory is deliberately not expected on the mock: the guard
+	// must reject the record before it reaches the store.
+	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
+	mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
+	mockSTS.On("GetCallerIdentity", ctx, mock.AnythingOfType("*sts.GetCallerIdentityInput")).Return(&sts.GetCallerIdentityOutput{
+		Account: aws.String("123456789012"),
+	}, nil)
+	mockFactory.On("CreateAndValidateProvider", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), "aws", mock.Anything).Return(mockProviderInst, nil)
+	mockProviderInst.On("GetServiceClient", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), common.ServiceEC2, "us-east-1").Return(mockServiceClient, nil)
+	mockServiceClient.On("PurchaseCommitment", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions")).Return(common.PurchaseResult{
+		Success:      true,
+		CommitmentID: "",
+	}, nil)
+
+	manager := &Manager{
+		config:          historyGuardStore{mockStore},
+		email:           mockEmail,
+		stsClient:       mockSTS,
+		providerFactory: mockFactory,
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	require.NoError(t, manager.executeAndFinalize(ctx, exec))
+
+	assert.Equal(t, "completed", exec.Status, "the purchase fired, so the execution stays completed")
+	assert.Contains(t, exec.Error, "history record failed to save", "the missing history row must be flagged on the execution")
+	mockStore.AssertNotCalled(t, "SavePurchaseHistory", mock.Anything, mock.Anything)
 }
 
 // TestManager_ExecuteAndFinalize_SingleAccount_PartialSuccess is the issue #642

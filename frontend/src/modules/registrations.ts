@@ -238,8 +238,23 @@ async function handleDelete(reg: AccountRegistration): Promise<void> {
 }
 
 async function handleReject(reg: AccountRegistration): Promise<void> {
-  const reason = prompt(`Reject registration for "${reg.account_name}"?\n\nOptional reason:`);
-  if (reason === null) return; // User cancelled.
+  const body = document.createElement('div');
+  const label = document.createElement('label');
+  label.textContent = 'Reason (optional)';
+  label.htmlFor = 'registration-reject-reason';
+  const reasonInput = document.createElement('textarea');
+  reasonInput.id = 'registration-reject-reason';
+  reasonInput.rows = 3;
+  reasonInput.className = 'registration-reject-reason';
+  body.append(label, reasonInput);
+  const ok = await confirmDialog({
+    title: `Reject registration for "${reg.account_name}"?`,
+    body,
+    confirmLabel: 'Reject registration',
+    destructive: true,
+  });
+  if (!ok) return;
+  const reason = reasonInput.value.trim();
 
   try {
     await api.rejectRegistration(reg.id, reason || undefined);

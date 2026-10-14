@@ -141,6 +141,7 @@ resource "azurerm_container_app" "main" {
             # not emit on the HTTP Connector trigger we use.
             SCHEDULED_TASK_AUTH_MODE = "bearer"
           },
+          local.archera_env,
           var.additional_env_vars
         )
         content {
@@ -342,4 +343,14 @@ resource "azurerm_monitor_diagnostic_setting" "container_app" {
     category = "AllMetrics"
     enabled  = true
   }
+}
+
+locals {
+  # Archera settings, set only when non-empty so an unconfigured deployment
+  # carries no ARCHERA_* variable at all (feature off).
+  archera_env = merge(
+    var.archera_org_id != "" ? { ARCHERA_ORG_ID = var.archera_org_id } : {},
+    var.archera_plan_id != "" ? { ARCHERA_PLAN_ID = var.archera_plan_id } : {},
+    var.archera_api_key_secret_name != "" ? { ARCHERA_API_KEY_SECRET = var.archera_api_key_secret_name } : {},
+  )
 }

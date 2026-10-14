@@ -180,7 +180,7 @@ func TestManager_ProcessScheduledPurchases_DuePurchase(t *testing.T) {
 		{
 			ExecutionID:   "exec-123",
 			PlanID:        "plan-456",
-			Status:        "pending",
+			Status:        "notified",
 			StepNumber:    1,
 			ScheduledDate: pastDate,
 			Recommendations: []config.RecommendationRecord{
@@ -198,9 +198,10 @@ func TestManager_ProcessScheduledPurchases_DuePurchase(t *testing.T) {
 	}
 
 	plan := &config.PurchasePlan{
-		ID:           "plan-456",
-		Name:         "Test Plan",
-		AutoPurchase: true, // required by executableByScheduler gate (F1 fix)
+		ID:                "plan-456",
+		Name:              "Test Plan",
+		AutoPurchase:      true, // required by executableByScheduler gate (F1 fix)
+		MaxStepCommitment: capOf(1e9),
 		RampSchedule: config.RampSchedule{
 			CurrentStep: 0,
 			TotalSteps:  4,
@@ -212,6 +213,7 @@ func TestManager_ProcessScheduledPurchases_DuePurchase(t *testing.T) {
 	claimedExec.Status = "running"
 	mockStore.On("GetStaleApprovedExecutions", ctx, mock.Anything).Return([]config.PurchaseExecution{}, nil)
 	mockStore.On("GetPendingExecutions", ctx).Return(executions, nil)
+	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil)
 	// executableByScheduler calls GetPurchasePlan first (AutoPurchase gate), then
 	// executePurchase calls it again to build purchase options — two calls total.
 	mockStore.On("GetPurchasePlan", ctx, "plan-456").Return(plan, nil)
@@ -314,6 +316,7 @@ func TestManager_ProcessScheduledPurchases_ExecutionFails(t *testing.T) {
 	claimedExec.Status = "running"
 	mockStore.On("GetStaleApprovedExecutions", ctx, mock.Anything).Return([]config.PurchaseExecution{}, nil)
 	mockStore.On("GetPendingExecutions", ctx).Return(executions, nil)
+	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil)
 	// First call: executableByScheduler gate check (AutoPurchase=true -> proceed).
 	// Second call: executePurchase fetches the plan config and returns error to
 	// simulate a purchase failure — this is what drives the row to "failed".
@@ -599,7 +602,7 @@ func TestManager_RecoverStrandedApprovals_AWSOnlyRedrives(t *testing.T) {
 		Status:      "approved",
 		StepNumber:  1,
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
+			{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
 		},
 	}
 	runningRow := stranded
@@ -634,7 +637,7 @@ func TestManager_RecoverStrandedApprovals_AWSOnlyRedrives(t *testing.T) {
 	// executeSinglePurchase wraps ctx in a per-rec WithTimeout before calling
 	// CreateAndValidateProvider, so we must match any context, not ctx itself.
 	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProvider, nil)
-	mockProvider.On("GetServiceClient", mock.Anything, common.ServiceEC2, "us-east-1").Return(mockServiceClient, nil)
+	mockProvider.On("GetServiceClient", mock.Anything, common.ServiceRDS, "us-east-1").Return(mockServiceClient, nil)
 	mockServiceClient.On("PurchaseCommitment", mock.Anything, mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions")).Return(common.PurchaseResult{
 		Success:      true,
 		CommitmentID: "ri-idempotent-12345",
@@ -1097,7 +1100,7 @@ func TestManager_RecoverStrandedApprovals_AWSRedrive_PersistenceFailurePropagate
 		PlanID:      "plan-aws-persist-456",
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
+			{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
 		},
 	}
 	runningRow := stranded
@@ -1130,7 +1133,7 @@ func TestManager_RecoverStrandedApprovals_AWSRedrive_PersistenceFailurePropagate
 		Account: aws.String("123456789012"),
 	}, nil)
 	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProvider, nil)
-	mockProvider.On("GetServiceClient", mock.Anything, common.ServiceEC2, "us-east-1").Return(mockServiceClient, nil)
+	mockProvider.On("GetServiceClient", mock.Anything, common.ServiceRDS, "us-east-1").Return(mockServiceClient, nil)
 	mockServiceClient.On("PurchaseCommitment", mock.Anything, mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions")).Return(common.PurchaseResult{
 		Success:      true,
 		CommitmentID: "ri-persist-fail-12345",
@@ -1178,7 +1181,7 @@ func TestManager_RecoverStrandedApprovals_AWSRedrive_ExecAndPersistBothFail(t *t
 		PlanID:      "plan-aws-both-fail",
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
+			{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
 		},
 	}
 	runningRow := stranded
@@ -1240,7 +1243,7 @@ func TestManager_RecoverStrandedApprovals_AWSClaimLost_NoRedrive(t *testing.T) {
 		PlanID:      "plan-aws-claimed",
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300.0, Selected: true},
+			{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300.0, Selected: true},
 		},
 	}
 

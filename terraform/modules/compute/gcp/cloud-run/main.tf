@@ -66,8 +66,8 @@ locals {
   # that's unique-per-(service, endpoint) satisfies the OIDC
   # recipient-bound contract — the validator only does string-equality
   # against this same value (built once into the env var below).
-  scheduled_task_recommendations_audience = "${var.service_name}/api/scheduled/recommendations"
-  scheduled_task_ri_exchange_audience     = "${var.service_name}/api/scheduled/ri-exchange"
+  scheduled_task_recommendations_audience = "${var.service_name}/api/scheduled/collect_recommendations"
+  scheduled_task_ri_exchange_audience     = "${var.service_name}/api/scheduled/ri_exchange_reshape"
 
   scheduled_task_oidc_audiences = join(",", compact([
     var.enable_scheduled_tasks ? local.scheduled_task_recommendations_audience : "",
@@ -173,6 +173,7 @@ resource "google_cloud_run_v2_service" "main" {
             SCHEDULED_TASK_OIDC_AUDIENCE = local.scheduled_task_oidc_audiences
             SCHEDULED_TASK_OIDC_SUBJECTS = local.scheduled_task_oidc_subjects
           },
+          local.archera_env,
           var.additional_env_vars
         )
         content {
@@ -339,7 +340,7 @@ resource "google_cloud_scheduler_job" "recommendations" {
 
   http_target {
     http_method = "POST"
-    uri         = "${google_cloud_run_v2_service.main.uri}/api/scheduled/recommendations"
+    uri         = "${google_cloud_run_v2_service.main.uri}/api/scheduled/collect_recommendations"
 
     # Auth: oidc_token below is signed by the scheduler's service
     # account at invocation time. Two complementary defences:
@@ -405,7 +406,7 @@ resource "google_cloud_scheduler_job" "ri_exchange" {
 
   http_target {
     http_method = "POST"
-    uri         = "${google_cloud_run_v2_service.main.uri}/api/scheduled/ri-exchange"
+    uri         = "${google_cloud_run_v2_service.main.uri}/api/scheduled/ri_exchange_reshape"
 
     # Same OIDC-only model as the recommendations scheduler above —
     # see #159 for the rationale. Audience pinned to the receiving
@@ -520,4 +521,24 @@ resource "google_logging_project_bucket_config" "cloud_run_logs" {
   location       = "global"
   retention_days = var.log_retention_days
   bucket_id      = "_Default"
+}
+
+locals {
+  # Archera settings, set only when non-empty so an unconfigured deployment
+  # carries no ARCHERA_* variable at all (feature off).
+  archera_env = merge(
+    var.archera_org_id != "" ? { ARCHERA_ORG_ID = var.archera_org_id } : {},
+    var.archera_plan_id != "" ? { ARCHERA_PLAN_ID = var.archera_plan_id } : {},
+    var.archera_api_key_secret_id != "" ? { ARCHERA_API_KEY_SECRET = var.archera_api_key_secret_id } : {},
+  )
+}
+
+# Archera API key: one per-secret reader, only when configured.
+resource "google_secret_manager_secret_iam_member" "archera_key_reader" {
+  count = var.archera_api_key_secret_id != "" ? 1 : 0
+
+  project   = var.project_id
+  secret_id = var.archera_api_key_secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.cloud_run.email}"
 }

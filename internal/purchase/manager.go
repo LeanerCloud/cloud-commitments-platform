@@ -16,6 +16,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/oidc"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/jackc/pgx/v5"
 )
 
 // STSClient interface for AWS STS operations.
@@ -56,6 +57,7 @@ type Manager struct {
 	dashboardURL    string
 	oidcIssuerURL   string
 	notifyDays      int
+	resolver        stepResolver
 }
 
 // PurchaseDefaults holds default purchase settings.
@@ -173,15 +175,29 @@ func (m *Manager) finalizeExecution(exec *config.PurchaseExecution, execErr erro
 // the caller should ack/skip without re-running the purchase. A real DB error
 // during the claim returns (false, err).
 //
+// The claim is pinned to the recommendations snapshot the caller gated on: a row
+// that was empty when gated must still be empty, and a row with recommendations
+// must still have them. A recommendation attach landing between the gate and the
+// claim therefore loses the pin, which is a benign skip (the next tick gates the
+// row again), instead of running recommendations nobody checked against the cap
+// or the notified rule.
+//
+// For a pending/notified row (the ones the AutoPurchase gate applies to) the
+// step cap is re-checked against the claimed row and the current plan; a refusal
+// fails the row with the beforeSubmission class, so its suppressions release.
+//
 // On a won claim it runs executeAndFinalize and returns (true, execErr).
 func (m *Manager) claimAndExecute(ctx context.Context, exec *config.PurchaseExecution) (claimed bool, err error) {
+	gated := exec.Status == "pending" || exec.Status == "notified"
+	gateSawEmpty := len(exec.Recommendations) == 0
 	// System-initiated: SQS/cron executor passes nil so transitioned_by = NULL.
-	updated, claimErr := m.config.TransitionExecutionStatus(ctx, exec.ExecutionID, []string{"approved", "pending", "notified"}, "running", nil)
+	updated, claimErr := m.config.TransitionExecutionStatusPinned(ctx, exec.ExecutionID, []string{"approved", "pending", "notified"}, "running", nil, gateSawEmpty)
 	if claimErr != nil {
 		if errors.Is(claimErr, config.ErrNotFound) || errors.Is(claimErr, config.ErrExecutionNotInExpectedStatus) {
 			// Benign CAS race-loss: another worker/redelivery already owns this
-			// row (or it was deleted). Ack/skip without executing.
-			logging.Warnf("Skipping execution %s (CAS claim lost to concurrent worker): %v", exec.ExecutionID, claimErr)
+			// row (or it was deleted), or its recommendations changed since the
+			// gate. Ack/skip without executing.
+			logging.Warnf("Skipping execution %s (CAS claim lost to concurrent worker or changed recommendations): %v", exec.ExecutionID, claimErr)
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to claim execution %s for execution: %w", exec.ExecutionID, claimErr)
@@ -190,6 +206,11 @@ func (m *Manager) claimAndExecute(ctx context.Context, exec *config.PurchaseExec
 	// the RETURNING clause) onto the caller's struct so the rest of the run
 	// starts from the claimed row rather than the pre-claim snapshot.
 	*exec = *updated
+	if gated && len(exec.Recommendations) > 0 {
+		if capErr := m.recheckStepCap(ctx, exec); capErr != nil {
+			return true, m.failClaimedBeforeSubmission(ctx, exec, capErr)
+		}
+	}
 	return true, m.executeAndFinalize(ctx, exec)
 }
 
@@ -220,10 +241,7 @@ func isMultiAccountAckable(execErr error) bool {
 func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseExecution) error {
 	// Last line of defense before money moves (issue #1718). Every executor
 	// entry point funnels through here, so one check covers all of them.
-	execErr := armedRedriveRefusal(exec)
-	if execErr == nil {
-		execErr = m.staleAzurePricingRefusal(ctx, exec)
-	}
+	execErr := m.preExecutionRefusal(ctx, exec)
 	if execErr == nil {
 		execErr = m.executePurchase(ctx, exec)
 	}
@@ -231,7 +249,7 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 	if execErr != nil {
 		logging.Errorf("Failed to execute purchase %s: %v", exec.ExecutionID, execErr)
 	}
-	if err := m.config.SavePurchaseExecution(ctx, exec); err != nil {
+	if err := m.saveOrRecoverTerminal(ctx, exec, execErr); err != nil {
 		logging.Errorf("AUDIT LOSS: failed to save execution status: %v", err)
 		// Wrap with ErrAuditLoss regardless of whether executePurchase itself
 		// failed. When execErr != nil (provider/partial error), finalizeExecution
@@ -253,6 +271,65 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 		}
 	}
 	return execErr
+}
+
+// preExecutionRefusal runs every check that must pass before any provider call.
+// All refusals except the armed re-drive one are beforeSubmission errors, so
+// the row ends failed with no_submission stamped.
+func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
+	if err := armedRedriveRefusal(exec); err != nil {
+		return err
+	}
+	if refusal := m.staleAzurePricingRefusal(ctx, exec); refusal != nil {
+		return beforeSubmission(refusal)
+	}
+	if refusal := m.ladderExecutionRefusal(ctx, exec); refusal != nil {
+		return beforeSubmission(refusal)
+	}
+	return nil
+}
+
+// beforeSubmissionError marks a failure that happened before any cloud
+// purchase call was made for the execution: the code path itself proves no
+// commitment can exist, independent of the error text or of provider
+// sentinels (the go outcome-unknown sentinel is not pinned yet). It keeps the
+// wrapped error's message unchanged.
+type beforeSubmissionError struct{ err error }
+
+func (e *beforeSubmissionError) Error() string { return e.err.Error() }
+func (e *beforeSubmissionError) Unwrap() error { return e.err }
+
+func beforeSubmission(err error) error { return &beforeSubmissionError{err: err} }
+
+// saveTerminalExecution persists the finalized row. A plan row releases its
+// suppressions in the same transaction ONLY when it ended failed and execErr
+// proves no purchase call was submitted for any rec (beforeSubmissionError).
+// Every other failure keeps them: a lost response ("outcome unknown"), a
+// refused armed re-drive or a partial run may still have created a
+// commitment, and releasing would let the next step buy it again. Kept
+// suppressions expire with the grace period or are released on explicit
+// cancel or revoke (platform#631).
+func (m *Manager) saveTerminalExecution(ctx context.Context, exec *config.PurchaseExecution, execErr error) error {
+	var notSubmitted *beforeSubmissionError
+	provenNotSubmitted := exec.Status == "failed" && !anyRecPurchased(exec.Recommendations) && errors.As(execErr, &notSubmitted)
+	if provenNotSubmitted {
+		// Persist the proof for every row, plan or direct, so a later reader
+		// (the ladder reconciler) can tell this failure from a reaped or
+		// outcome-unknown one.
+		exec.NoSubmission = true
+	}
+	// Guarded on "running": the executor owns the row only while it holds the
+	// claim, so a row the reaper failed or an operator canceled in the meantime
+	// is never silently overwritten (issue #829).
+	if exec.PlanID == "" || !provenNotSubmitted {
+		return m.config.SaveExecutionIfStatus(ctx, exec, executorOwnedStatuses)
+	}
+	return m.config.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := m.config.SaveExecutionIfStatusTx(ctx, tx, exec, executorOwnedStatuses); err != nil {
+			return err
+		}
+		return m.config.DeleteSuppressionsByExecutionTx(ctx, tx, exec.ExecutionID)
+	})
 }
 
 // recordRampAdvanceRefusal reports a ramp advance that did not happen, stamping
@@ -374,7 +451,9 @@ func armedRedriveRefusal(exec *config.PurchaseExecution) error {
 // canceled.
 //
 // Safe providers / services (issue #639):
-//   - AWS (all services): tag-guard or ClientToken deduplication (#636/#638).
+//   - AWS RDS, ElastiCache, MemoryDB, OpenSearch and Savings Plans: a
+//     deterministic reservation ID or ClientToken collapses a repeat onto the
+//     first attempt (#636/#638).
 //   - Azure reservations (compute, relational-db, cache, nosql, memorydb,
 //     search, data-warehouse): DoIdempotentPurchaseTwoStep performs a
 //     tag-based lookup before purchasing (#729 / #721).
@@ -382,6 +461,10 @@ func armedRedriveRefusal(exec *config.PurchaseExecution) error {
 //     the token (#654).
 //
 // NOT safe:
+//   - AWS EC2 and Redshift (slugs ec2, compute, redshift, data-warehouse): the
+//     purchase APIs take no client token, so a lost response may have bought the
+//     commitment and a second attempt would buy another (MON-02). The provider
+//     sends the call once and reports "purchase outcome unknown".
 //   - Azure savings-plans: the OrderAlias API uses time.Now().UnixNano() as
 //     the alias name; there is no server-side idempotency key and no
 //     tag-based lookup implemented yet. Re-driving would create a duplicate
@@ -415,7 +498,15 @@ func RedriveRefusalReason(exec *config.PurchaseExecution) string {
 func recRedriveRefusalReason(rec config.RecommendationRecord) string {
 	switch rec.Provider {
 	case "", "aws":
-		// Empty provider is legacy AWS. All AWS services honor IdempotencyToken.
+		// Empty provider is legacy AWS. RDS, ElastiCache, MemoryDB, OpenSearch
+		// and Savings Plans collapse a repeat onto the first attempt. EC2 and
+		// Redshift cannot: their purchase APIs take no client token or caller
+		// ID, and the provider sends them once and reports a lost response as
+		// "purchase outcome unknown". The commitment may exist, so a second
+		// attempt must not be made until someone has checked the account.
+		if awsPurchaseHasNoDuplicateGuard(rec.Service) {
+			return "AWS EC2 and Redshift purchases have no provider-side duplicate guard, and a lost response means the earlier attempt may already have bought the commitment. Check EC2 Reserved Instances or Redshift Reserved Nodes in the target account and region; if it is missing, start a new purchase instead of retrying"
+		}
 		return ""
 	case "azure":
 		// Azure savings-plans uses a timestamp-based alias name and has no
@@ -431,6 +522,25 @@ func recRedriveRefusalReason(rec config.RecommendationRecord) string {
 	default:
 		// Unknown provider: refuse to re-drive rather than risk a double-buy.
 		return fmt.Sprintf("provider %q is not known to reject a duplicate purchase, so re-driving this could buy a second commitment", rec.Provider)
+	}
+}
+
+// awsPurchaseHasNoDuplicateGuard reports whether a recommendation's service
+// slug dispatches to the AWS EC2 or Redshift purchase path. The canonical
+// slugs (compute, data-warehouse) and the legacy ones (ec2, redshift) reach the
+// same client, so all four must be covered or the refusal can be bypassed by
+// spelling. Matching goes through mapServiceSlug, the same table the executor
+// dispatches on, so the two cannot drift.
+func awsPurchaseHasNoDuplicateGuard(service string) bool {
+	svc, ok := mapServiceSlug(service)
+	if !ok {
+		return false
+	}
+	switch svc {
+	case common.ServiceEC2, common.ServiceCompute, common.ServiceRedshift, common.ServiceDataWarehouse:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -452,7 +562,7 @@ func (m *Manager) claimAndRedrive(ctx context.Context, exec *config.PurchaseExec
 	// on the same approved row. The CAS transitions "approved" -> "running";
 	// only the winner proceeds.
 	// System-initiated: recovery sweep passes nil so transitioned_by = NULL.
-	claimed, claimErr := m.config.TransitionExecutionStatus(ctx, exec.ExecutionID, []string{"approved"}, "running", nil)
+	claimed, claimErr := m.claimRunning(ctx, exec.ExecutionID, []string{"approved"}, nil)
 	if claimErr != nil {
 		// ErrNotFound: row vanished between SELECT and CAS - benign race.
 		// ErrExecutionNotInExpectedStatus: another sweep or the original run
@@ -537,7 +647,11 @@ func (m *Manager) safeFail(ctx context.Context, exec *config.PurchaseExecution) 
 		return false, fmt.Errorf("failed to transition stranded execution %s to failed: %w", exec.ExecutionID, txErr)
 	}
 
-	updated.Error = "execution was approved but its purchase run was interrupted before completing and never finalized; failed by the recovery sweep so it is not silently stuck (issue #632). Verify on the cloud provider that no commitment was created, then Retry."
+	next := "Verify on the cloud provider that no commitment was created, then Retry."
+	if RedriveRefusalReason(exec) != "" {
+		next = "Retry is refused for this purchase because a repeat could buy a second commitment. Verify on the cloud provider whether the commitment was created; if it was not, start a new purchase."
+	}
+	updated.Error = "execution was approved but its purchase run was interrupted before completing and never finalized; failed by the recovery sweep so it is not silently stuck (issue #632). " + next
 	if saveErr := m.config.SavePurchaseExecution(ctx, updated); saveErr != nil {
 		// The atomic flip to "failed" already landed via TransitionExecutionStatus;
 		// only the explanatory error string failed to persist. Log loudly but
@@ -629,6 +743,14 @@ func (m *Manager) RecoverStrandedApprovals(ctx context.Context) (int, error) {
 //   - All other pending/notified rows require the owning plan to have
 //     AutoPurchase=true. A plan-fetch error is propagated so the caller can
 //     fail closed rather than defaulting to "execute".
+//   - The global kill switch (GlobalConfig.AutoPurchaseEnabled) must be on. A
+//     read error is propagated. Only AutoPurchase plans reach this check, so
+//     manual purchases are unaffected.
+//   - A recommendation-bearing row must be "notified" (the notification email is
+//     the human veto window; a "pending" row may never have been emailed) and
+//     must fit the plan's max_step_commitment (CheckStepCommitmentCap, whose
+//     refusal is returned as an error). Rows without recommendations are left
+//     to the no-recommendations refusal in executePurchase.
 //
 // "approved" rows are handled by the session/token approval paths and
 // RecoverStrandedApprovals; this helper is only called for pending/notified.
@@ -644,7 +766,39 @@ func (m *Manager) executableByScheduler(ctx context.Context, exec *config.Purcha
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch plan %s for AutoPurchase gate: %w", exec.PlanID, err)
 	}
-	return plan.AutoPurchase, nil
+	if !plan.AutoPurchase {
+		return false, nil
+	}
+	enabled, err := m.autoPurchaseEnabled(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !enabled {
+		return false, nil
+	}
+	if len(exec.Recommendations) == 0 {
+		return true, nil
+	}
+	if exec.Status != "notified" {
+		return false, nil
+	}
+	if err := CheckStepCommitmentCap(plan, exec.Recommendations); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// autoPurchaseEnabled reads the global auto-purchase kill switch. It fails
+// closed: a read error is returned, never read as "enabled".
+func (m *Manager) autoPurchaseEnabled(ctx context.Context) (bool, error) {
+	cfg, err := m.config.GetGlobalConfig(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to read global config for the auto-purchase kill switch: %w", err)
+	}
+	if cfg == nil {
+		return false, errors.New("global config unavailable for the auto-purchase kill switch")
+	}
+	return cfg.AutoPurchaseEnabled, nil
 }
 
 // processOneExecution runs the full gate+claim+execute pipeline for a single
@@ -665,7 +819,7 @@ func (m *Manager) processOneExecution(ctx context.Context, exec config.PurchaseE
 		return
 	}
 	if !eligible {
-		logging.Infof("Skipping execution %s (AutoPurchase=false or source=web; requires explicit approval)", exec.ExecutionID)
+		logging.Infof("Skipping execution %s (AutoPurchase=false, kill switch off, source=web, or recommendation-bearing row not yet notified; requires explicit approval)", exec.ExecutionID)
 		return
 	}
 

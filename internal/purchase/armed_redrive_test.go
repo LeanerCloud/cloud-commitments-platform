@@ -127,10 +127,10 @@ func armedHarness(t *testing.T, serviceType common.ServiceType) (*Manager, *Mock
 
 // expectClaim wires the CAS the executor paths perform before executing, so the
 // execution reaches executeAndFinalize the way production does.
-func expectClaim(store *MockConfigStore, exec *config.PurchaseExecution, from []string, to string) {
+func expectClaim(store *MockConfigStore, exec *config.PurchaseExecution, from []string) {
 	claimed := *exec
-	claimed.Status = to
-	store.On("TransitionExecutionStatus", mock.Anything, exec.ExecutionID, from, to, (*string)(nil)).
+	claimed.Status = "running"
+	store.On("TransitionExecutionStatus", mock.Anything, exec.ExecutionID, from, "running", (*string)(nil)).
 		Return(&claimed, nil).Once()
 }
 
@@ -142,7 +142,7 @@ func TestApproveAndExecuteRefusesArmedAzureSavingsPlanRetry(t *testing.T) {
 	exec := armedExecution("azure", "savingsplans", 1, "pending")
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
-	expectClaim(store, exec, []string{"pending", "notified"}, "approved")
+	expectClaim(store, exec, []string{"pending", "notified"})
 
 	_, _, err := mgr.ApproveAndExecute(context.Background(), exec.ExecutionID, "operator@example.com", nil)
 
@@ -159,7 +159,7 @@ func TestClaimAndExecuteRefusesArmedAzureSavingsPlanRetry(t *testing.T) {
 	exec := armedExecution("azure", "savingsplans", 2, "approved")
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
-	expectClaim(store, exec, []string{"approved", "pending", "notified"}, "running")
+	expectClaim(store, exec, []string{"approved", "pending", "notified"})
 
 	body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID})
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestFireScheduledDelayedPurchasesRefusesArmedAzureSavingsPlanRetry(t *testi
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 	store.On("GetScheduledExecutionsDue", mock.Anything).
 		Return([]config.PurchaseExecution{*exec}, nil).Once()
-	expectClaim(store, exec, []string{"scheduled"}, "approved")
+	expectClaim(store, exec, []string{"scheduled"})
 
 	result, err := mgr.FireScheduledDelayedPurchases(context.Background())
 
@@ -206,7 +206,7 @@ func TestFirstAzureSavingsPlanPurchaseStillExecutes(t *testing.T) {
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 	store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(exec.Recommendations, nil).Once()
 	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
-	expectClaim(store, exec, []string{"approved", "pending", "notified"}, "running")
+	expectClaim(store, exec, []string{"approved", "pending", "notified"})
 
 	body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID})
 	require.NoError(t, err)
@@ -217,21 +217,22 @@ func TestFirstAzureSavingsPlanPurchaseStillExecutes(t *testing.T) {
 }
 
 // TestSafeProviderRetrySuccessorStillExecutes is the second negative control:
-// the guard must be as narrow as the provider gap. An AWS retry successor
-// reproduces its ClientToken, so the provider collapses a re-drive onto the
-// original and the retry must still execute.
+// the guard must be as narrow as the provider gap. An AWS RDS retry successor
+// reproduces its deterministic reservation ID, so the provider collapses a
+// re-drive onto the original and the retry must still execute. EC2 and
+// Redshift are the AWS services that lack such a guard (see the Refuses tests).
 func TestSafeProviderRetrySuccessorStillExecutes(t *testing.T) {
-	exec := armedExecution("aws", "ec2", 3, "approved")
-	mgr, store, rec := armedHarness(t, common.ServiceEC2)
+	exec := armedExecution("aws", "rds", 3, "approved")
+	mgr, store, rec := armedHarness(t, common.ServiceRDS)
 	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
-	expectClaim(store, exec, []string{"approved", "pending", "notified"}, "running")
+	expectClaim(store, exec, []string{"approved", "pending", "notified"})
 
 	body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID})
 	require.NoError(t, err)
 	require.NoError(t, mgr.ProcessMessage(context.Background(), string(body)))
 
 	assert.Equal(t, 1, rec.count(),
-		"an AWS retry successor dedupes at the provider via ClientToken and must still execute; the guard must not widen beyond the providers that lack a duplicate guard")
+		"an AWS RDS retry successor dedupes at the provider via its reservation ID and must still execute; the guard must not widen beyond the providers that lack a duplicate guard")
 }
 
 // TestArmedRowIsDefusedNotLeftArmed pins the disposition of a refused row. A
@@ -249,7 +250,7 @@ func TestArmedRowIsDefusedNotLeftArmed(t *testing.T) {
 		return nil
 	}
 	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
-	expectClaim(store, exec, []string{"approved", "pending", "notified"}, "running")
+	expectClaim(store, exec, []string{"approved", "pending", "notified"})
 
 	body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID})
 	require.NoError(t, err)

@@ -13,6 +13,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/runtime"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/jackc/pgx/v5"
 )
 
 // History handlers.
@@ -287,7 +288,16 @@ func (h *Handler) expireStaleExecutions(staleExecs []config.PurchaseExecution) {
 func (h *Handler) expireStaleExecutionsSweep(staleExecs []config.PurchaseExecution) {
 	ctx := context.Background()
 	for i := range staleExecs {
-		_, err := h.config.TransitionExecutionStatus(ctx, staleExecs[i].ExecutionID, []string{"pending", "notified"}, "expired", nil)
+		// The suppressions go in the same transaction as the status flip: an
+		// expired step bought nothing, and leaving its rows would keep hiding
+		// recommendations nobody purchased (platform#631).
+		err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
+			expired, expErr := h.config.ExpireExecutionAtomic(ctx, tx, staleExecs[i].ExecutionID)
+			if expErr != nil || !expired {
+				return expErr
+			}
+			return h.config.DeleteSuppressionsByExecutionTx(ctx, tx, staleExecs[i].ExecutionID)
+		})
 		if err != nil {
 			logging.Warnf("history: expire sweep for execution %s failed: %v", staleExecs[i].ExecutionID, err)
 		}

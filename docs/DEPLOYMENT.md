@@ -301,6 +301,34 @@ gcloud compute url-maps invalidate-cdn-cache cudly-url-map --path "/*"
 
 ---
 
+## Archera insured-commitment comparison (optional)
+
+The explicit "Compare with Archera" feature is off by default. It is enabled only when all three settings are set; with none set, the platform makes no Archera request.
+
+| Terraform variable (environment) | Runtime setting | Meaning |
+|---|---|---|
+| `archera_org_id` | `ARCHERA_ORG_ID` | Archera organization UUID |
+| `archera_plan_id` | `ARCHERA_PLAN_ID` | Archera commitment plan UUID (an Archera ID, not a CUDly plan ID) |
+| `archera_api_key_secret_arn` (AWS), `archera_api_key_secret_id` (GCP), `archera_api_key_secret_name` (Azure) | `ARCHERA_API_KEY_SECRET` | Reference to the secret holding the Archera API key |
+
+Create the secret yourself, outside Terraform, so the key never enters Terraform state; Terraform only passes the reference. The platform resolves the key lazily on the first comparison request through the configured secret provider.
+
+Runtime access is scoped to that one secret:
+
+- AWS (Lambda and Fargate): `secretsmanager:GetSecretValue` on the secret ARN only.
+- GCP (Cloud Run and GKE): a per-secret `roles/secretmanager.secretAccessor` binding on that secret only.
+- Azure (Container Apps and AKS): no new role assignment. The secret lives in the platform Key Vault, where the runtime identity already holds the vault-wide Key Vault Secrets User role. For a secret in a different vault, add a secret-scoped role assignment for the runtime identity on that secret; narrowing the vault-wide grant is a separate owner decision.
+
+Required disclosures, shown verbatim wherever Archera is offered (pkg/common `ArcheraNonGatingDisclosure` and `ArcheraSponsorshipDisclosure`):
+
+> This is entirely optional. CUDly's purchase and management features work fully without Archera.
+>
+> For full disclosure, Archera sponsors CUDly's Open Source development from a fraction of their insurance premiums.
+
+The GCP secret variable takes the short secret ID, not the `projects/<number>/secrets/<id>` resource name: the per-secret binding sets the project, and the full name makes the binding be replaced on every apply.
+
+The comparison shows Archera's own figures as returned by its API. Amounts carry no currency (Archera provides none), premiums are already included in totals, and an unknown value is shown as unknown, never as zero. Products Archera does not document as supported are shown as "not known to be supported by Archera". Nothing in this view is a guarantee or a purchase; the existing Archera disclosures stay in place.
+
 ## Deploying Code Updates
 
 When infrastructure already exists and you only need to update application code:

@@ -68,6 +68,9 @@ type rampStepFixture struct {
 
 	mu        sync.Mutex
 	purchased []string // one entry per commitment that reached the fake cloud
+
+	// onPurchase, when set, runs inside each fake provider call (issue #829 tests).
+	onPurchase func()
 }
 
 // newRampStepFixture builds the fixture. accountA is credential-resolvable from
@@ -86,9 +89,10 @@ func newRampStepFixture(ctx context.Context, t *testing.T) *rampStepFixture {
 	store, _ := rampStepStore(ctx, t)
 
 	plan := &config.PurchasePlan{
-		Name:         "Ramp Step Plan",
-		AutoPurchase: true,
-		Services:     map[string]config.ServiceConfig{},
+		Name:              "Ramp Step Plan",
+		AutoPurchase:      true,
+		MaxStepCommitment: capOf(1e9),
+		Services:          map[string]config.ServiceConfig{},
 		RampSchedule: config.RampSchedule{
 			Type:             "weekly",
 			PercentPerStep:   25,
@@ -99,6 +103,12 @@ func newRampStepFixture(ctx context.Context, t *testing.T) *rampStepFixture {
 		},
 	}
 	require.NoError(t, store.CreatePurchasePlan(ctx, plan))
+
+	// The auto-execute gate needs the global kill switch on.
+	globalCfg, err := store.GetGlobalConfig(ctx)
+	require.NoError(t, err)
+	globalCfg.AutoPurchaseEnabled = true
+	require.NoError(t, store.SaveGlobalConfig(ctx, globalCfg))
 
 	authModes := []string{"access_keys", "role_arn", "role_arn"}
 	accountIDs := make([]string, 0, len(authModes))
@@ -140,13 +150,16 @@ func newRampStepFixture(ctx context.Context, t *testing.T) *rampStepFixture {
 
 	mockEmail.On("SendPurchaseConfirmation", mock.Anything, mock.AnythingOfType("email.NotificationData")).Return(nil).Maybe()
 	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProviderInst, nil).Maybe()
-	mockProviderInst.On("GetServiceClient", mock.Anything, common.ServiceEC2, mock.Anything).Return(mockServiceClient, nil).Maybe()
+	mockProviderInst.On("GetServiceClient", mock.Anything, common.ServiceRDS, mock.Anything).Return(mockServiceClient, nil).Maybe()
 	mockServiceClient.On("PurchaseCommitment", mock.Anything, mock.Anything, mock.AnythingOfType("common.PurchaseOptions")).
 		Run(func(args mock.Arguments) {
 			opts := args.Get(2).(common.PurchaseOptions)
 			f.mu.Lock()
 			f.purchased = append(f.purchased, opts.IdempotencyToken)
 			f.mu.Unlock()
+			if f.onPurchase != nil {
+				f.onPurchase()
+			}
 		}).
 		Return(common.PurchaseResult{Success: true, CommitmentID: "ri-ok"}, nil).Maybe()
 
@@ -195,8 +208,21 @@ func (f *rampStepFixture) purchaseCount() int {
 // rampStepRecommendation is the single rec every execution in these tests buys.
 func rampStepRecommendation() []config.RecommendationRecord {
 	return []config.RecommendationRecord{
-		{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+		{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
 	}
+}
+
+// rampStepRecommendationsPerAccount is the step's rec set: one rec per plan
+// account, since the fan-out buys each account's own recs only (platform#631).
+func (f *rampStepFixture) rampStepRecommendationsPerAccount() []config.RecommendationRecord {
+	recs := make([]config.RecommendationRecord, 0, len(f.accounts))
+	for i := range f.accounts {
+		id := f.accounts[i].ID
+		rec := rampStepRecommendation()[0]
+		rec.CloudAccountID = &id
+		recs = append(recs, rec)
+	}
+	return recs
 }
 
 // saveRootExecution persists the plan-scheduled root row for ramp step
@@ -207,10 +233,10 @@ func (f *rampStepFixture) saveRootExecution(ctx context.Context, t *testing.T, s
 		ExecutionID:     uuid.New().String(),
 		IdempotencyKey:  fmt.Sprintf("lineage-step-%d", stepNumber),
 		PlanID:          f.plan.ID,
-		Status:          "pending",
+		Status:          "notified",
 		StepNumber:      stepNumber,
 		ScheduledDate:   time.Now(),
-		Recommendations: rampStepRecommendation(),
+		Recommendations: f.rampStepRecommendationsPerAccount(),
 	}
 	require.NoError(t, f.store.SavePurchaseExecution(ctx, exec))
 	return exec
@@ -255,7 +281,7 @@ func (f *rampStepFixture) saveRetryExecution(ctx context.Context, t *testing.T, 
 		Status:          "approved",
 		StepNumber:      predecessor.StepNumber,
 		ScheduledDate:   time.Now(),
-		Recommendations: rampStepRecommendation(),
+		Recommendations: []config.RecommendationRecord{withAccount(rampStepRecommendation()[0], accountID)},
 		Source:          common.PurchaseSourceWeb,
 		RetryAttemptN:   predecessor.RetryAttemptN + 1,
 	}
