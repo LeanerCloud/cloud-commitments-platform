@@ -23,68 +23,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// buildSuppressions converts the recs on an executePurchase request into
-// purchase_suppressions rows, one per unique 6-tuple (account, provider,
-// service, region, resource_type, engine). Counts for duplicate tuples
-// within the same request are summed (defensive — the UI should collapse
-// them client-side, but the backend doesn't trust that). Providers with
-// a grace period of 0 (feature disabled) contribute no rows.
-func buildSuppressions(recs []config.RecommendationRecord, executionID string, cfg *config.GlobalConfig, now time.Time) []config.PurchaseSuppression {
-	// Aggregate count per 6-tuple before writing suppression rows so
-	// the UNIQUE(execution_id, ...6-tuple) constraint can't fire from
-	// a request that repeated the same tuple.
-	type key struct {
-		accountID, provider, service, region, resourceType, engine string
-	}
-	agg := map[key]int{}
-	order := []key{}
-	for _rvc := range recs {
-		rec := recs[_rvc]
-		if rec.Count <= 0 {
-			continue
-		}
-		accountID := ""
-		if rec.CloudAccountID != nil {
-			accountID = *rec.CloudAccountID
-		}
-		k := key{
-			accountID:    accountID,
-			provider:     rec.Provider,
-			service:      rec.Service,
-			region:       rec.Region,
-			resourceType: rec.ResourceType,
-			engine:       rec.Engine,
-		}
-		if _, seen := agg[k]; !seen {
-			order = append(order, k)
-		}
-		agg[k] += rec.Count
-	}
-
-	out := make([]config.PurchaseSuppression, 0, len(order))
-	for _, k := range order {
-		graceDays := config.DefaultGracePeriodDays
-		if cfg != nil {
-			graceDays = cfg.GracePeriodFor(k.provider)
-		}
-		if graceDays <= 0 {
-			continue // feature disabled for this provider
-		}
-		out = append(out, config.PurchaseSuppression{
-			ExecutionID:     executionID,
-			AccountID:       k.accountID,
-			Provider:        k.provider,
-			Service:         k.service,
-			Region:          k.region,
-			ResourceType:    k.resourceType,
-			Engine:          k.engine,
-			SuppressedCount: agg[k],
-			ExpiresAt:       now.Add(time.Duration(graceDays) * 24 * time.Hour),
-		})
-	}
-	return out
-}
-
 // plannedListStatuses are the execution statuses surfaced in the Scheduled
 // (Planned) Purchases list. It deliberately includes "paused" so a paused
 // execution stays VISIBLE with its badge instead of silently dropping out of
@@ -267,7 +205,7 @@ func (h *Handler) pausePlannedPurchase(ctx context.Context, req *events.LambdaFu
 	}
 
 	// Atomically transition to paused
-	if _, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"pending"}, "paused", resolveCreatorUserID(session)); err != nil {
+	if _, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"pending", "notified"}, "paused", resolveCreatorUserID(session)); err != nil {
 		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be paused: %v", executionID, err))
 	}
 
@@ -290,12 +228,70 @@ func (h *Handler) resumePlannedPurchase(ctx context.Context, req *events.LambdaF
 		return nil, err
 	}
 
+	// A recommendation-bearing row that is past its date is moved to
+	// now + NotificationDaysBefore on resume; a plan without a veto window
+	// would move it to "now", so refuse before changing anything.
+	if checkErr := h.requireResumeVetoWindow(ctx, executionID, time.Now()); checkErr != nil {
+		return nil, checkErr
+	}
+
 	// Atomically transition from paused back to pending
-	if _, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"paused"}, "pending", resolveCreatorUserID(session)); err != nil {
-		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be resumed: %v", executionID, err))
+	resumed, transitionErr := h.config.TransitionExecutionStatus(ctx, executionID, []string{"paused"}, "pending", resolveCreatorUserID(session))
+	if transitionErr != nil {
+		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be resumed: %v", executionID, transitionErr))
+	}
+	if pushErr := h.pushPastScheduledDate(ctx, resumed, time.Now()); pushErr != nil {
+		return nil, pushErr
 	}
 
 	return &StatusResponse{Status: "resumed"}, nil
+}
+
+// requireResumeVetoWindow refuses to resume a recommendation-bearing row whose
+// scheduled_date has passed when its plan has no veto window (S13).
+func (h *Handler) requireResumeVetoWindow(ctx context.Context, executionID string, now time.Time) error {
+	row, err := h.config.GetExecutionByID(ctx, executionID)
+	if err != nil {
+		return fmt.Errorf("failed to read execution %s before resume: %w", executionID, err)
+	}
+	if len(row.Recommendations) == 0 || !row.ScheduledDate.Before(now) {
+		return nil
+	}
+	plan, err := h.config.GetPurchasePlan(ctx, row.PlanID)
+	if err != nil {
+		return fmt.Errorf("failed to read plan %s before resuming execution %s: %w", row.PlanID, executionID, err)
+	}
+	if vetoErr := plan.RequireVetoWindow(); vetoErr != nil {
+		return NewClientError(409, fmt.Sprintf("execution %s cannot be resumed: %v", executionID, vetoErr))
+	}
+	return nil
+}
+
+// pushPastScheduledDate moves a resumed recommendation-bearing row whose
+// scheduled_date has already passed to now + the plan's NotificationDaysBefore
+// days, so that once it is re-notified the scheduler cannot buy it before the
+// veto window has run. The row is pending, which the scheduler does not
+// execute while it carries recommendations, so the gap between the resume
+// and this write cannot buy. Rows without recommendations keep their date
+// (the scheduler fails them).
+func (h *Handler) pushPastScheduledDate(ctx context.Context, row *config.PurchaseExecution, now time.Time) error {
+	if len(row.Recommendations) == 0 || !row.ScheduledDate.Before(now) {
+		return nil
+	}
+	plan, err := h.config.GetPurchasePlan(ctx, row.PlanID)
+	if err != nil {
+		return fmt.Errorf("failed to read plan %s to reschedule resumed execution %s: %w", row.PlanID, row.ExecutionID, err)
+	}
+	if vetoErr := plan.RequireVetoWindow(); vetoErr != nil {
+		return NewClientError(409, fmt.Sprintf("execution %s was resumed but cannot be rescheduled: %v", row.ExecutionID, vetoErr))
+	}
+	// Conditional single-column update, not a full-row save: a cancel or
+	// approve landing after the resume must not be overwritten. A lost
+	// condition is a benign no-op (the row is no longer awaiting approval).
+	if _, err := h.config.RescheduleAwaitingExecution(ctx, row.ExecutionID, now.AddDate(0, 0, plan.NotificationDaysBefore)); err != nil {
+		return fmt.Errorf("failed to reschedule resumed execution %s: %w", row.ExecutionID, err)
+	}
+	return nil
 }
 
 // runPlannedPurchase forces a pending or paused scheduled purchase to
@@ -516,14 +512,21 @@ func (h *Handler) disablePlanIfInScope(ctx context.Context, session *Session, pl
 }
 
 // cancelOrRecoverExecution transitions the execution to "canceled" if it is
-// still in {pending, paused}. If a prior attempt already canceled it
+// still in {pending, notified, paused}. If a prior attempt already canceled it
 // (ErrExecutionNotInExpectedStatus), it fetches the row instead so the caller
 // can still drive the plan-disable side-effect, keeping the operation
 // idempotent across retries.
 // actor is the UUID of the user initiating the cancel (nil for system-initiated paths).
 func (h *Handler) cancelOrRecoverExecution(ctx context.Context, executionID string, actor *string) (*config.PurchaseExecution, error) {
-	canceled, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"pending", "paused"}, "canceled", actor)
+	canceled, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"pending", "notified", "paused"}, "canceled", actor)
 	if err == nil {
+		// A recommendation-bearing row owns suppressions (written with its
+		// recommendations); release them like the other cancel paths. The
+		// delete is idempotent and also runs on the recovery path below, so a
+		// retry heals a failure here.
+		if delErr := h.config.DeleteSuppressionsByExecution(ctx, executionID); delErr != nil {
+			return nil, fmt.Errorf("cancel execution %s: failed to release suppressions: %w", executionID, delErr)
+		}
 		return canceled, nil
 	}
 	if !errors.Is(err, config.ErrExecutionNotInExpectedStatus) {
@@ -561,6 +564,9 @@ func (h *Handler) cancelOrRecoverExecution(ctx context.Context, executionID stri
 	// legacy row.
 	if existing.Status == config.LegacyStatusCanceled {
 		existing.Status = config.StatusCanceled
+	}
+	if delErr := h.config.DeleteSuppressionsByExecution(ctx, executionID); delErr != nil {
+		return nil, fmt.Errorf("cancel execution %s: failed to release suppressions: %w", executionID, delErr)
 	}
 	return existing, nil
 }
@@ -952,35 +958,69 @@ func (h *Handler) authorizeSessionApprove(ctx context.Context, session *Session,
 
 // approveConstraintsForSession is approveViaToken's independent Constraints
 // check (issue #60 review follow-up): it mirrors authorizeSessionApprove's
-// approve-any/approve-own grant-then-constrain matrix, but returns nil
-// (rather than a 403) when the session holds neither verb, or holds only
-// approve-own for an execution it didn't create. Those are not denials here
-// -- a session with no applicable approve-* permission simply has no
-// Constraints to be bound by, and is being authorized entirely through the
-// token flow's separate contact_email mechanism. This function only ever
-// narrows what that mechanism would otherwise allow; it never widens it.
-//
-// session may be nil (a pure email-client click with no browser session at
-// all); that also returns nil, since there is no session-held permission to
-// evaluate. session.UserID == apiKeyAdminUserID or a nil h.auth are treated
-// the same way authorizeSessionApprove treats them.
+// approve-any/approve-own grant-then-constrain matrix. A session with no
+// applicable approve-* verb has no Constraints to be bound by on a
+// user-created row and returns nil (it is authorized through the token
+// flow's contact_email mechanism); this function only narrows, never widens.
+// Plan-step rows (PlanID set, no creator) are tighter (#631): approve-own
+// Constraints apply regardless of creator, and an approver with no verb or no
+// session is held to the plan's step cap (requirePlanStepCap). The admin API
+// key stays exempt.
 func (h *Handler) approveConstraintsForSession(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
-	if session == nil || session.UserID == apiKeyAdminUserID || h.auth == nil {
+	if session != nil && session.UserID == apiKeyAdminUserID {
 		return nil
 	}
+	if session != nil && h.auth != nil {
+		bound, err := h.enforceHeldApproveConstraints(ctx, session, execution)
+		if bound || err != nil {
+			return err
+		}
+	}
+	return h.requirePlanStepCap(ctx, execution)
+}
+
+// enforceHeldApproveConstraints applies the Constraints of the approve verb the
+// session holds (approve-any first, then approve-own). bound is false when no
+// verb applies to this row, so the caller falls back to the plan cap.
+func (h *Handler) enforceHeldApproveConstraints(ctx context.Context, session *Session, execution *config.PurchaseExecution) (bound bool, err error) {
 	hasAny, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionApproveAny, auth.ResourcePurchases)
 	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
+		return false, fmt.Errorf("permission check failed: %w", err)
 	}
 	if hasAny {
-		return h.enforcePurchaseConstraints(ctx, session, auth.ActionApproveAny, execution.Recommendations)
+		return true, h.enforcePurchaseConstraints(ctx, session, auth.ActionApproveAny, execution.Recommendations)
 	}
 	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionApproveOwn, auth.ResourcePurchases)
 	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
+		return false, fmt.Errorf("permission check failed: %w", err)
 	}
-	if hasOwn && execution.CreatedByUserID != nil && *execution.CreatedByUserID == session.UserID {
-		return h.enforcePurchaseConstraints(ctx, session, auth.ActionApproveOwn, execution.Recommendations)
+	// A plan-step row has no creator (plan_step_attach.go), so its approve-own
+	// holder is bound by their Constraints regardless of it.
+	if hasOwn && (execution.PlanID != "" || (execution.CreatedByUserID != nil && *execution.CreatedByUserID == session.UserID)) {
+		return true, h.enforcePurchaseConstraints(ctx, session, auth.ActionApproveOwn, execution.Recommendations)
+	}
+	return false, nil
+}
+
+// requirePlanStepCap applies the plan's max_step_commitment to a plan-step row
+// approved through the email-link flow by someone who holds no approve verb
+// (or no session at all): without it that approver is bound by no cap. A
+// manual-approval plan with no cap keeps its human approval as the only
+// control and approves as before (CheckStepCommitmentCap would refuse it);
+// an auto-purchase plan, or a manual one that sets a cap, is checked.
+func (h *Handler) requirePlanStepCap(ctx context.Context, execution *config.PurchaseExecution) error {
+	if execution.PlanID == "" {
+		return nil
+	}
+	plan, err := h.config.GetPurchasePlan(ctx, execution.PlanID)
+	if err != nil {
+		return fmt.Errorf("failed to read plan %s for the approval cap check: %w", execution.PlanID, err)
+	}
+	if !plan.AutoPurchase && plan.MaxStepCommitment == nil {
+		return nil
+	}
+	if capErr := purchase.CheckStepCommitmentCap(plan, execution.Recommendations); capErr != nil {
+		return NewClientError(403, capErr.Error())
 	}
 	return nil
 }
@@ -1508,7 +1548,7 @@ func (h *Handler) revokeViaEmailToken(ctx context.Context, req *events.LambdaFun
 	if err := checkRevokableStatus(execution); err != nil {
 		return nil, err
 	}
-	return h.revokeViaSession(ctx, execution, actor)
+	return h.revokeViaSession(ctx, execution, actor, resolveCreatorUserID(h.tryGetSession(ctx, req)))
 }
 
 // getExecutionOr404 loads an execution, answering 404 for a missing one
@@ -1573,7 +1613,7 @@ func (h *Handler) tryRevokeViaSession(ctx context.Context, req *events.LambdaFun
 		if statusErr := checkRevokableStatus(execution); statusErr != nil {
 			return nil, true, statusErr
 		}
-		res, revokeErr := h.revokeViaSession(ctx, execution, session.Email)
+		res, revokeErr := h.revokeViaSession(ctx, execution, session.Email, resolveCreatorUserID(session))
 		return res, true, revokeErr
 	case fallsThroughToToken(sessErr, token):
 		// Fall through to the token branch.
@@ -1682,11 +1722,14 @@ func revocationWindowClosesAt(execution *config.PurchaseExecution) string {
 // read and this write (e.g. a concurrent transition), zero rows are affected
 // and we return a 409 rather than blindly overwriting. CancelledBy is stamped
 // in a follow-up SavePurchaseExecution on the freshly-returned row.
-func (h *Handler) revokeViaSession(ctx context.Context, execution *config.PurchaseExecution, revokedBy string) (any, error) {
-	actor := &revokedBy
+//
+// transitionedBy is the acting user's UUID (resolveCreatorUserID), or nil when
+// the caller has no user row. It must never be an email: transitioned_by is a
+// UUID foreign key. revokedBy is the email shown as the requester.
+func (h *Handler) revokeViaSession(ctx context.Context, execution *config.PurchaseExecution, revokedBy string, transitionedBy *string) (any, error) {
 	updated, err := h.config.TransitionExecutionStatus(
 		ctx, execution.ExecutionID,
-		[]string{"completed", "partially_completed"}, "revocation_requested", actor)
+		[]string{"completed", "partially_completed"}, "revocation_requested", transitionedBy)
 	if err != nil {
 		if errors.Is(err, config.ErrExecutionNotInExpectedStatus) {
 			return nil, NewClientError(409, fmt.Sprintf(
@@ -1871,7 +1914,7 @@ func (h *Handler) retryPurchase(ctx context.Context, req *events.LambdaFunctionU
 	// successor that fails the same way.
 	if failedExec.PlanID != "" && len(failedExec.Recommendations) == 0 {
 		return nil, NewClientError(409,
-			"this plan step has no recommendations attached, so retrying it would buy nothing (platform#609: plan steps cannot yet carry recommendations)")
+			"this plan step has no recommendations attached, so retrying it would buy nothing (platform#631: plan steps cannot yet carry recommendations)")
 	}
 
 	totalUpfront, totalSavings, err := validateAndTotalRecommendations(failedExec.Recommendations)
@@ -2010,9 +2053,14 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 	// potentially a re-drive. purchase.RedriveRefusalReason is the same
 	// predicate the reaper's automatic re-drive gates on: it returns a
 	// reason exactly when the provider offers nothing that would collapse
-	// the second attempt onto the first, which today means Azure
-	// savings-plans (no server-side idempotency key, timestamp-derived
-	// order alias) plus any provider the predicate does not recognize.
+	// the second attempt onto the first, which today means AWS EC2 and
+	// Redshift (no client token; a lost response is reported as outcome
+	// unknown), Azure savings-plans (no server-side idempotency key,
+	// timestamp-derived order alias) plus any provider the predicate does
+	// not recognize. A failed EC2 or Redshift row therefore cannot be
+	// retried; the operator checks the account and starts a new purchase.
+	// If plan steps ever carry recommendations (platform#609), a failed EC2
+	// step will be un-retryable too and needs its own recovery path.
 	//
 	// This gate runs FIRST and, unlike the threshold below, ?force=true
 	// does NOT override it: a savings plan cannot be canceled, so there
@@ -2189,7 +2237,7 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 	if g, err := h.config.GetGlobalConfig(ctx); err == nil {
 		gracePeriodCfg = g
 	}
-	suppressions := buildSuppressions(failedExec.Recommendations, newExecutionID, gracePeriodCfg, time.Now())
+	suppressions := config.BuildSuppressions(failedExec.Recommendations, newExecutionID, gracePeriodCfg, time.Now())
 
 	if err := h.persistRetrySuccessorTx(ctx, failedExec, newExecution, suppressions); err != nil {
 		return nil, "", err
@@ -2217,8 +2265,12 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 // persisting an approvable successor and reverting whatever the other
 // writer changed on the original row.
 func (h *Handler) persistRetrySuccessorTx(ctx context.Context, failedExec, newExecution *config.PurchaseExecution, suppressions []config.PurchaseSuppression) error {
-	var lostRace bool
+	var lostRace, settledTranche bool
 	err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := h.guardLadderTrancheForRetry(ctx, tx, failedExec.IdempotencyKey); err != nil {
+			settledTranche = errors.Is(err, errRetryLadderTrancheSettled)
+			return err
+		}
 		if err := h.config.SavePurchaseExecutionTx(ctx, tx, newExecution); err != nil {
 			return err
 		}
@@ -2240,6 +2292,11 @@ func (h *Handler) persistRetrySuccessorTx(ctx context.Context, failedExec, newEx
 	if err == nil {
 		return nil
 	}
+	if settledTranche {
+		return NewClientErrorWithDetails(409,
+			fmt.Sprintf("execution %s belongs to a ladder tranche that is already settled; retrying it could buy the same commitment twice", failedExec.ExecutionID),
+			map[string]any{})
+	}
 	if lostRace {
 		return NewClientErrorWithDetails(409,
 			fmt.Sprintf("execution %s was already retried; act on its descendant instead", failedExec.ExecutionID),
@@ -2255,6 +2312,26 @@ func (h *Handler) persistRetrySuccessorTx(ctx context.Context, failedExec, newEx
 // tx's UPDATE. Never returned to a caller directly; persistRetrySuccessorTx
 // translates it into a 409 ClientError.
 var errRetryLinkRaceLost = errors.New("retry link race lost")
+
+// guardLadderTrancheForRetry locks the ladder tranche named by the execution's
+// idempotency key (if any) before anything else in the retry tx, the same order
+// the reconciler uses (tranche, then execution rows), and refuses when the
+// tranche is settled. A failed tranche no longer nets, so an approvable
+// successor would buy the same slice a second time.
+func (h *Handler) guardLadderTrancheForRetry(ctx context.Context, tx pgx.Tx, idempotencyKey string) error {
+	status, isLadder, err := h.config.LockLadderTrancheForRetryTx(ctx, tx, idempotencyKey)
+	if err != nil {
+		return err
+	}
+	if isLadder && config.LadderTrancheSettled(status) {
+		return errRetryLadderTrancheSettled
+	}
+	return nil
+}
+
+// errRetryLadderTrancheSettled rolls back persistRetrySuccessorTx's tx when the
+// execution's ladder tranche is already completed, failed or canceled.
+var errRetryLadderTrancheSettled = errors.New("ladder tranche is settled")
 
 // authorizeSessionRetry is the retry-side mirror of
 // authorizeSessionCancel. Returns nil when the session is permitted to
@@ -2640,11 +2717,7 @@ func purchaseConstraintSets(recs []config.RecommendationRecord) []auth.Permissio
 // execute path the two cost fields are the store-derived values written by
 // priceRecommendationsFromStore.
 func recTotalCommitment(rec *config.RecommendationRecord) float64 {
-	total := rec.UpfrontCost
-	if rec.Term > 0 && rec.MonthlyCost != nil {
-		total += *rec.MonthlyCost * float64(rec.Term*12)
-	}
-	return total
+	return rec.TotalCommitment()
 }
 
 // requireNonZeroCommitment guards against a purchase batch whose computed
@@ -2808,7 +2881,7 @@ func fourEyesActorIdentity(session *Session) string {
 }
 
 // executePurchase handles direct purchase execution from recommendations
-// matchDuplicateInList scans a slice of pending executions for one that
+// matchDuplicateInList scans a slice of recent executions for one that
 // matches creatorID + idempotencyKey within the idempotency window.
 // Returns the first match, or nil when there is no duplicate.
 // Extracted from persistExecutionAndSuppressions to keep cyclomatic
@@ -2824,7 +2897,15 @@ func matchDuplicateInList(pending []config.PurchaseExecution, creatorID, idempot
 		if ex.CreatedByUserID != nil {
 			exCreator = *ex.CreatedByUserID
 		}
-		if exCreator == creatorID && purchaseIdempotencyKey(exCreator, ex.Recommendations, ex.CapacityPercent) == idempotencyKey {
+		if exCreator != creatorID {
+			continue
+		}
+		exKey, err := purchaseIdempotencyKey(exCreator, ex.Recommendations, ex.CapacityPercent)
+		if err != nil {
+			logging.Errorf("purchase idempotency: skipping pending execution %s, cannot derive its key: %v", ex.ExecutionID, err)
+			continue
+		}
+		if exKey == idempotencyKey {
 			return ex
 		}
 	}
@@ -2833,9 +2914,9 @@ func matchDuplicateInList(pending []config.PurchaseExecution, creatorID, idempot
 
 // persistExecutionAndSuppressions saves the execution + its suppression
 // records in a single transaction. It also performs the duplicate-execution
-// check inside the same transaction (using SELECT ... FOR UPDATE) so that the
-// read and the insert are atomic — closing the TOCTOU race that the pre-tx
-// duplicatePurchaseResponse call could not prevent (#643).
+// check inside the same transaction, behind a per-creator advisory lock, so
+// that the read and the insert are atomic: a plain SELECT ... FOR UPDATE
+// cannot see a concurrent transaction's uncommitted insert (#643, MON-01).
 //
 // Return values:
 //   - (nil, nil)          — no duplicate found; execution was inserted.
@@ -2849,13 +2930,15 @@ func (h *Handler) persistExecutionAndSuppressions(
 	creatorID, idempotencyKey string,
 ) (dup *config.PurchaseExecution, err error) {
 	txErr := h.config.WithTx(ctx, func(tx pgx.Tx) error {
-		// Duplicate check inside the tx (SELECT FOR UPDATE) — atomic with
-		// the insert below.
-		pending, err := h.config.GetPendingExecutionsTx(ctx, tx)
+		// Duplicate check inside the tx, after taking the creator's submit
+		// lock: a concurrent identical submit waits for this tx to commit,
+		// then finds the row. Atomic with the insert below.
+		now := time.Now()
+		recent, err := h.config.ListRecentSubmitsTx(ctx, tx, creatorID, now.Add(-purchaseIdempotencyWindow))
 		if err != nil {
 			return err
 		}
-		if dup = matchDuplicateInList(pending, creatorID, idempotencyKey, time.Now()); dup != nil {
+		if dup = matchDuplicateInList(recent, creatorID, idempotencyKey, now); dup != nil {
 			return nil // found duplicate — skip insert, commit tx (read-only)
 		}
 
@@ -2888,7 +2971,7 @@ const purchaseIdempotencyWindow = 2 * time.Minute
 // ordering can't change the hash. Account scope is implicit: each rec carries
 // its CloudAccountID, so the same recs targeting a different account hash
 // differently. Closes issue #644.
-func purchaseIdempotencyKey(creatorID string, recs []config.RecommendationRecord, capacityPercent int) string {
+func purchaseIdempotencyKey(creatorID string, recs []config.RecommendationRecord, capacityPercent int) (string, error) {
 	tuples := make([]string, 0, len(recs))
 	for _rvc := range recs {
 		r := recs[_rvc]
@@ -2896,15 +2979,43 @@ func purchaseIdempotencyKey(creatorID string, recs []config.RecommendationRecord
 		if r.CloudAccountID != nil {
 			acct = *r.CloudAccountID
 		}
-		tuples = append(tuples, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%d|%s",
+		az, err := recDetailsAvailabilityZone(&r)
+		if err != nil {
+			return "", err
+		}
+		ci, err := r.ComputeIdentity()
+		if err != nil {
+			return "", err
+		}
+		tuples = append(tuples, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s",
 			strings.ToLower(strings.TrimSpace(r.Provider)),
 			r.Service, r.Region, r.ResourceType, r.Engine, acct,
-			r.Count, r.Term, strings.ToLower(strings.TrimSpace(r.Payment))))
+			r.Count, r.Term, strings.ToLower(strings.TrimSpace(r.Payment)), az,
+			ci.Platform, ci.Tenancy))
 	}
 	sort.Strings(tuples)
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x1f%d\x1f%s", creatorID, capacityPercent, strings.Join(tuples, "\x1e"))
-	return hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// recDetailsAvailabilityZone returns the zonal EC2 AZ carried in the rec's
+// Details blob, "" for non-compute recs and for absent or legacy Details.
+// The AZ is read from Details, not RecommendationRecord.AvailabilityZone,
+// because pending executions written before issue #792 carry it only there
+// and the idempotency key is recomputed from them (issue #792).
+func recDetailsAvailabilityZone(r *config.RecommendationRecord) (string, error) {
+	if r.Service != string(common.ServiceEC2) && r.Service != string(common.ServiceCompute) {
+		return "", nil
+	}
+	details, err := common.DecodeServiceDetailsFor(r.Service, r.Details)
+	if err != nil {
+		return "", fmt.Errorf("decode %s details of %s/%s: %w", r.Service, r.Region, r.ResourceType, err)
+	}
+	if cd, ok := details.(*common.ComputeDetails); ok && cd != nil {
+		return strings.TrimSpace(cd.AvailabilityZone), nil
+	}
+	return "", nil
 }
 
 // findDuplicatePendingExecution returns an existing pending/notified execution
@@ -2936,7 +3047,12 @@ func (h *Handler) findDuplicatePendingExecution(ctx context.Context, creatorID, 
 		if exCreator != creatorID {
 			continue
 		}
-		if purchaseIdempotencyKey(exCreator, ex.Recommendations, ex.CapacityPercent) == key {
+		exKey, err := purchaseIdempotencyKey(exCreator, ex.Recommendations, ex.CapacityPercent)
+		if err != nil {
+			logging.Errorf("purchase idempotency: skipping pending execution %s, cannot derive its key: %v", ex.ExecutionID, err)
+			continue
+		}
+		if exKey == key {
 			return ex, nil
 		}
 	}
@@ -2949,16 +3065,22 @@ func (h *Handler) findDuplicatePendingExecution(ctx context.Context, creatorID, 
 // instead of a freshly-minted duplicate. duplicate=true lets the UI explain
 // why no new approval email was sent.
 func buildDuplicatePurchaseResponse(ex *config.PurchaseExecution) map[string]any {
-	return map[string]any{
+	resp := map[string]any{
 		"execution_id":         ex.ExecutionID,
 		"status":               ex.Status,
 		"recommendation_count": len(ex.Recommendations),
 		"total_upfront_cost":   ex.TotalUpfrontCost,
 		"estimated_savings":    ex.EstimatedSavings,
-		"email_sent":           ex.NotificationSent != nil,
 		"duplicate":            true,
-		"message":              "Duplicate submission collapsed onto the existing pending execution; no new approval request was created.",
+		"message":              "Duplicate submission collapsed onto the existing execution (see status); no new execution or approval request was created.",
 	}
+	// An approval email only exists for a row still awaiting approval. A row
+	// that already moved on (direct execute, approved, completed) never had
+	// one, and email_sent=false would make the client report a failure.
+	if ex.Status == "pending" || ex.Status == "notified" {
+		resp["email_sent"] = ex.NotificationSent != nil
+	}
+	return resp
 }
 
 // newPendingExecution builds a fresh pending PurchaseExecution with a
@@ -3004,11 +3126,14 @@ func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctio
 	// an identical actor + scaled rec set + capacity within a short window must
 	// resolve to the original pending execution rather than minting a second
 	// approvable row (double-spend). The atomic guard lives inside
-	// persistExecutionAndSuppressions (SELECT FOR UPDATE + INSERT in one tx)
+	// persistExecutionAndSuppressions (per-creator lock + read + INSERT in one tx)
 	// which closes the TOCTOU race that a pre-tx read alone cannot prevent.
 	creator := resolveCreatorUserID(session)
 	creatorID := derefStringOrEmpty(creator)
-	idempotencyKey := purchaseIdempotencyKey(creatorID, execReq.Recommendations, execReq.CapacityPercent)
+	idempotencyKey, err := purchaseIdempotencyKey(creatorID, execReq.Recommendations, execReq.CapacityPercent)
+	if err != nil {
+		return nil, fmt.Errorf("derive purchase idempotency key: %w", err)
+	}
 
 	execution, rawApprovalToken, err := newPendingExecution(&execReq, totalUpfront, totalSavings)
 	if err != nil {
@@ -3032,7 +3157,7 @@ func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctio
 		gracePeriodCfg = g
 	}
 
-	suppressions := buildSuppressions(execReq.Recommendations, executionID, gracePeriodCfg, time.Now())
+	suppressions := config.BuildSuppressions(execReq.Recommendations, executionID, gracePeriodCfg, time.Now())
 	dupExec, err := h.persistExecutionAndSuppressions(ctx, execution, suppressions, creatorID, idempotencyKey)
 	if err != nil {
 		return nil, err

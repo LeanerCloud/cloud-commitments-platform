@@ -42,6 +42,8 @@ const (
 	redriveUnknownExecID    = "22222222-3333-4444-5555-666666666604"
 	redriveForceExecID      = "22222222-3333-4444-5555-666666666605"
 	redriveMixedExecID      = "22222222-3333-4444-5555-666666666606"
+	redriveAWSNoTokenExecID = "22222222-3333-4444-5555-666666666607"
+	redriveAWSRDSExecID     = "22222222-3333-4444-5555-666666666608"
 
 	redriveLineageKey = "lineage-1668"
 )
@@ -248,7 +250,7 @@ func TestRetryOfLandedAzureSavingsPlanIsNotForceOverridable(t *testing.T) {
 // front of it. The AWS rec here is deliberately first, so a gate that checked
 // only the leading rec would pass this row straight through to Azure.
 func TestRetryOfMixedExecutionWithOneAzureSavingsPlanIsRefused(t *testing.T) {
-	failed := redriveFailedRow(redriveMixedExecID, "aws", "ec2")
+	failed := redriveFailedRow(redriveMixedExecID, "aws", "rds")
 	failed.Recommendations = append(failed.Recommendations, config.RecommendationRecord{
 		Provider:     "azure",
 		Service:      "savingsplans",
@@ -300,4 +302,43 @@ func TestRetryOfFailedAzureReservationStillPurchasesOnce(t *testing.T) {
 	require.NoError(t, err, "an Azure reservation retry is safe and must still be allowed")
 	assert.Equal(t, []string{common.DeriveIdempotencyToken(failed.IdempotencyKey, 0)}, tokens,
 		"the retry must fire exactly one purchase, under the predecessor's token so Azure's two-step lookup dedupes it")
+}
+
+// TestRetryOfFailedAWSEC2OrRedshiftRowIsRefused is the MON-02 platform
+// regression guard. EC2 and Redshift purchases take no client token, so the
+// provider sends them once and reports a lost response as "purchase outcome
+// unknown": the commitment may exist. Retrying such a row must not create a
+// successor that buys again, whatever spelling the row carries (the canonical
+// compute and data-warehouse slugs dispatch to the same clients as ec2 and
+// redshift) and with ?force=true too.
+func TestRetryOfFailedAWSEC2OrRedshiftRowIsRefused(t *testing.T) {
+	for _, tc := range []struct{ provider, service string }{
+		{"aws", "ec2"}, {"aws", "compute"}, {"aws", "redshift"}, {"aws", "data-warehouse"}, {"", "ec2"},
+	} {
+		tc := tc
+		t.Run(tc.provider+"/"+tc.service, func(t *testing.T) {
+			failed := redriveFailedRow(redriveAWSNoTokenExecID, tc.provider, tc.service)
+			failed.Error = "failed to purchase EC2 RI: purchase outcome unknown: the request may have been sent and the commitment may exist; reconcile before retrying"
+
+			for _, req := range []*events.LambdaFunctionURLRequest{sessionRetryReq(), sessionRetryReqWithForce()} {
+				tokens, err := purchasesFiredByRetry(t, failed, req)
+
+				assert.Empty(t, tokens,
+					"a retry of an EC2/Redshift row after an unknown outcome must buy nothing")
+				assertRedriveRefused(t, err, "Check EC2 Reserved Instances or Redshift Reserved Nodes")
+			}
+		})
+	}
+}
+
+// TestRetryOfFailedAWSRDSRowStillPurchasesOnce is the over-blocking control:
+// RDS uses a deterministic reservation ID, so its retry is safe and must keep
+// working. A predicate that refused every AWS row would pass the test above.
+func TestRetryOfFailedAWSRDSRowStillPurchasesOnce(t *testing.T) {
+	failed := redriveFailedRow(redriveAWSRDSExecID, "aws", "rds")
+
+	tokens, err := purchasesFiredByRetry(t, failed, sessionRetryReq())
+
+	require.NoError(t, err, "an AWS RDS retry is idempotent and must still be allowed")
+	assert.Len(t, tokens, 1, "the RDS retry must purchase exactly once")
 }

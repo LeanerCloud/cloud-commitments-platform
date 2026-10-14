@@ -79,12 +79,12 @@ for (const action of actions) {
     fixture.failNextMutation();
     await btn.click();
     await expect(page.locator('.modal-confirm-backdrop')).toHaveCount(1);
-    await page.keyboard.press('Enter');
+    await page.locator('.modal-confirm-actions button').last().click();
     await expect.poll(() => fixture.posts.length).toBe(1);
     await expect(btn).toBeEnabled();
     await btn.click();
     await expect(page.locator('.modal-confirm-backdrop')).toHaveCount(1);
-    await page.keyboard.press('Enter');
+    await page.locator('.modal-confirm-actions button').last().click();
     await expect.poll(() => fixture.posts.length).toBe(2);
     await expect(btn).toHaveCount(0);
     expect(fixture.posts.every(post => post.url.includes(ID))).toBe(true);
@@ -112,7 +112,7 @@ test('actual double-click and second projection cannot duplicate pending approva
   details.release();
   await expect(page.locator('.modal-confirm-backdrop')).toHaveCount(1);
   expect(detailGets).toBe(1);
-  await page.keyboard.press('Enter');
+  await page.locator('.modal-confirm-actions button').last().click();
   await expect.poll(() => fixture.posts.length).toBe(1);
 });
 
@@ -133,7 +133,7 @@ test('approve is not offered when the purchase details cannot be loaded (issue #
   await expect(btn).toBeEnabled();
   await btn.click();
   await expect(page.locator('.modal-confirm-body')).toContainText('$1,200');
-  await page.keyboard.press('Enter');
+  await page.locator('.modal-confirm-actions button').last().click();
   await expect.poll(() => fixture.posts.length).toBe(1);
 });
 
@@ -200,7 +200,7 @@ test('success survives failed refresh, cached redraw and old GET; fresh same-ID 
   await page.locator('#history-list .history-approve-btn').click();
   failHistory = true;
   await expect(page.locator('.modal-confirm-backdrop')).toHaveCount(1);
-  await page.keyboard.press('Enter');
+  await page.locator('.modal-confirm-actions button').last().click();
   await expect(page.locator('#history-list .error')).toBeVisible();
   const oldResponse = page.waitForResponse(response => response.url().includes('/api/history') && response.status() === 200);
   oldGet.release();
@@ -215,7 +215,7 @@ test('success survives failed refresh, cached redraw and old GET; fresh same-ID 
   await page.getByRole('button', { name: 'Load History', exact: true }).click();
   await page.locator('#history-list .history-revoke-btn').click();
   await expect(page.locator('.modal-confirm-backdrop')).toHaveCount(1);
-  await page.keyboard.press('Enter');
+  await page.locator('.modal-confirm-actions button').last().click();
   await expect.poll(() => fixture.posts.length).toBe(2);
   expect(fixture.posts[1]!.url).toContain(`/purchases/${ID}/revoke`);
 });
@@ -241,6 +241,6 @@ test('completed revoke owns its row before refund quote and recovers from quote 
   expect(fixture.posts).toHaveLength(0);
   await btn.click();
   await expect(page.locator('.modal-confirm-body')).toContainText('100.00 USD');
-  await page.keyboard.press('Enter');
+  await page.locator('.modal-confirm-actions button').last().click();
   await expect.poll(() => fixture.posts.length).toBe(1);
 });

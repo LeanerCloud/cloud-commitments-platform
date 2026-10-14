@@ -124,6 +124,10 @@ PERMISSIONS_POLICY=$(cat <<'JSON'
       "es:DescribeReservedInstances",
       "ec2:DescribeRegions"
     ]
+  },{
+    "Effect": "Allow",
+    "Resource": "arn:aws:ec2:*:*:reserved-instances/*",
+    "Action": ["ec2:CreateTags"]
   }]
 }
 JSON

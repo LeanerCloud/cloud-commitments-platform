@@ -79,6 +79,10 @@ module "compute_container_apps" {
   auto_migrate                   = var.auto_migrate
   admin_email                    = var.admin_email
   admin_password_secret_name     = coalesce(module.secrets.admin_password_secret_name, "")
+  archera_org_id                 = var.archera_org_id
+  archera_plan_id                = var.archera_plan_id
+  archera_api_key_secret_name    = var.archera_api_key_secret_name
+
   additional_env_vars = merge(
     {
       STATIC_DIR                            = "/app/static"
@@ -160,9 +164,13 @@ module "compute_aks" {
   key_vault_uri = module.secrets.key_vault_uri
 
   # Application configuration
-  admin_email                = var.admin_email
-  admin_password_secret_name = coalesce(module.secrets.admin_password_secret_name, "")
-  auto_migrate               = var.auto_migrate
+  admin_email                 = var.admin_email
+  admin_password_secret_name  = coalesce(module.secrets.admin_password_secret_name, "")
+  auto_migrate                = var.auto_migrate
+  archera_org_id              = var.archera_org_id
+  archera_plan_id             = var.archera_plan_id
+  archera_api_key_secret_name = var.archera_api_key_secret_name
+
   additional_env_vars = merge(
     {
       STATIC_DIR                            = "/app/static"

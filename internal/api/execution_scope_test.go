@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
@@ -46,7 +47,7 @@ type scopeTestKind struct {
 // the post-scope constraint checks and reaches the mutation.
 func scopeTestRec(id string, account *string) config.RecommendationRecord {
 	return config.RecommendationRecord{
-		ID: id, Provider: "aws", Service: "ec2", Region: "us-east-1",
+		ID: id, Provider: "aws", Service: "rds", Region: "us-east-1",
 		Count: 1, Term: 1, Payment: "all-upfront", UpfrontCost: 100, CloudAccountID: account,
 	}
 }
@@ -160,6 +161,7 @@ func scopeTestExecution(k scopeTestKind, status string) *config.PurchaseExecutio
 		CloudAccountID:  k.cloudAccountID,
 		Recommendations: k.recs,
 		CreatedByUserID: &creator,
+		ScheduledDate:   time.Now().Add(time.Hour), // not due, so resume needs no reschedule
 	}
 }
 

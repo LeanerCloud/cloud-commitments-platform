@@ -172,6 +172,10 @@ func (m *mockConfigStore) GetStuckRampSteps(_ context.Context) (map[string]confi
 	return nil, nil
 }
 
+func (m *mockConfigStore) LockPlanProvidersTx(_ context.Context, _ pgx.Tx, _ []string) error {
+	return nil
+}
+
 func (m *mockConfigStore) LockPurchasePlanTx(_ context.Context, _ pgx.Tx, _ string) (*config.PurchasePlan, error) {
 	return nil, nil
 }
@@ -303,6 +307,14 @@ func (m *mockConfigStore) TransitionExecutionStatus(ctx context.Context, executi
 	return nil, nil
 }
 
+func (m *mockConfigStore) TransitionExecutionStatusPinned(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string, sawEmptyRecommendations bool) (*config.PurchaseExecution, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStore) RescheduleAwaitingExecution(_ context.Context, _ string, _ time.Time) (bool, error) {
+	return false, nil
+}
+
 func (m *mockConfigStore) SetCancelledBy(_ context.Context, _ string, _ string) error {
 	return nil
 }
@@ -313,6 +325,14 @@ func (m *mockConfigStore) RotatePendingApprovalToken(ctx context.Context, execut
 
 func (m *mockConfigStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (bool, error) {
 	return false, nil
+}
+
+func (m *mockConfigStore) LockLadderTrancheForRetryTx(ctx context.Context, tx pgx.Tx, idempotencyKey string) (ladder.TrancheStatus, bool, error) {
+	return "", false, nil
+}
+
+func (m *mockConfigStore) GetLadderExecutionGate(ctx context.Context, idempotencyKey string) (*config.LadderExecutionGate, error) {
+	return nil, nil
 }
 
 func (m *mockConfigStore) CancelExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string, cancelledBy *string) (bool, string, error) {
@@ -332,6 +352,10 @@ func (m *mockConfigStore) SaveRIExchangeRecord(ctx context.Context, record *conf
 }
 func (m *mockConfigStore) ReserveRIExchange(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
 	return "", errors.New("RI exchange reservation not configured in analytics test store")
+}
+
+func (m *mockConfigStore) ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	return "", errors.New("approved RI exchange reservation not configured in test store")
 }
 func (m *mockConfigStore) GetRIExchangeRecord(ctx context.Context, id string) (*config.RIExchangeRecord, error) {
 	return nil, nil
@@ -809,6 +833,21 @@ func (m *mockConfigStore) ListActiveSuppressions(_ context.Context) ([]config.Pu
 func (m *mockConfigStore) SavePurchaseExecutionTx(ctx context.Context, _ pgx.Tx, e *config.PurchaseExecution) error {
 	return m.SavePurchaseExecution(ctx, e)
 }
+func (m *mockConfigStore) SaveExecutionIfStatus(ctx context.Context, e *config.PurchaseExecution, _ []string) error {
+	return m.SavePurchaseExecution(ctx, e)
+}
+func (m *mockConfigStore) SaveExecutionIfStatusTx(ctx context.Context, _ pgx.Tx, e *config.PurchaseExecution, _ []string) error {
+	return m.SavePurchaseExecution(ctx, e)
+}
+func (m *mockConfigStore) RecoverReapedExecution(ctx context.Context, e *config.PurchaseExecution) error {
+	return m.SavePurchaseExecution(ctx, e)
+}
+func (m *mockConfigStore) RecoverReapedExecutionTx(ctx context.Context, _ pgx.Tx, e *config.PurchaseExecution) error {
+	return m.SavePurchaseExecution(ctx, e)
+}
+func (m *mockConfigStore) ListRecentSubmitsTx(ctx context.Context, _ pgx.Tx, _ string, _ time.Time) ([]config.PurchaseExecution, error) {
+	return m.GetPendingExecutions(ctx)
+}
 func (m *mockConfigStore) GetPendingExecutionsTx(ctx context.Context, _ pgx.Tx) ([]config.PurchaseExecution, error) {
 	return m.GetPendingExecutions(ctx)
 }
@@ -826,12 +865,9 @@ func (m *mockConfigStore) UpsertLadderConfig(_ context.Context, cfg *config.Ladd
 func (m *mockConfigStore) SaveLadderRun(_ context.Context, run *config.LadderRunDB) (*config.LadderRunDB, error) {
 	return run, nil
 }
-func (m *mockConfigStore) SaveLadderRunWithTranches(_ context.Context, run *config.LadderRunDB, _ []config.LadderTrancheDB) (*config.LadderRunDB, error) {
-	return run, nil
-}
-func (m *mockConfigStore) GetInFlightLadderCommitUSDHr(_ context.Context, _ string, _ time.Time) (*float64, error) {
-	zero := 0.0
-	return &zero, nil
+func (m *mockConfigStore) PlanAndSaveLadderRun(_ context.Context, _ string, _ time.Time, build config.LadderPlanBuilder) (*config.LadderRunDB, error) {
+	run, _, err := build(0)
+	return run, err
 }
 func (m *mockConfigStore) GetLadderRun(_ context.Context, _ string) (*config.LadderRunDB, error) {
 	return nil, nil
@@ -851,4 +887,32 @@ func (m *mockConfigStore) UpdateGlobalConfigAtomic(_ context.Context, apply func
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func (m *mockConfigStore) ListExecutionsForPlanStepTx(_ context.Context, _ pgx.Tx, _ string, _ int) ([]config.PurchaseExecution, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStore) SetPlanRampBaselineTx(_ context.Context, _ pgx.Tx, _ string, _ config.PlanRampBaseline) (bool, error) {
+	return false, nil
+}
+
+func (m *mockConfigStore) GetPlanRampBaselineTx(_ context.Context, _ pgx.Tx, _ string) (config.PlanRampBaseline, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStore) ListPlanCommittedTx(_ context.Context, _ pgx.Tx, _ string) (map[string]config.PlanRampQuantity, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStore) CompleteTargetMetStepTx(_ context.Context, _ pgx.Tx, _ string, _ int, _, _ string) error {
+	return nil
+}
+
+func (m *mockConfigStore) SetExecutionRecommendationsIfEmptyTx(_ context.Context, _ pgx.Tx, _ string, _ []config.RecommendationRecord, _, _ float64) (bool, error) {
+	return false, nil
+}
+
+func (m *mockConfigStore) ExpireExecutionAtomic(_ context.Context, _ pgx.Tx, _ string) (bool, error) {
+	return false, nil
 }

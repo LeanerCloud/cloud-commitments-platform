@@ -295,5 +295,12 @@ func TestStartBackgroundInitSkipsWhenNoDatabase(t *testing.T) {
 	defer cancel()
 
 	// Returns synchronously; if it started a loop it would block here.
-	app.startBackgroundInit(ctx)
+	done := app.startBackgroundInit(ctx)
+
+	// Nothing to wait for, so shutdown must not stall on a channel nobody closes.
+	select {
+	case <-done:
+	default:
+		t.Fatal("done channel must already be closed when there is no database")
+	}
 }

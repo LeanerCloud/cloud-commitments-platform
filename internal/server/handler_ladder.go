@@ -272,12 +272,16 @@ func (app *Application) processOneLadderConfig(
 // LadderCapability (fake) and a mock store without touching AWS or PostgreSQL.
 //
 // L5 netting: before calling Allocate, the handler fetches the config's in-flight
-// commitment (the sum of its status=scheduled, not-yet-fired ladder tranches
-// ONLY). The Allocate engine subtracts this from the raw gap so each daily run
-// plans only what is still needed, preventing pile-up when prior scheduled
-// tranches have not yet fired. Fired/completed tranches are deliberately NOT
-// counted here: they are executed purchases already reflected in the engine's
+// commitment (scheduled tranches still fireable, plus fired tranches not yet
+// resolved). The Allocate engine subtracts this from the raw gap so each daily
+// run plans only what is still needed, preventing pile-up when prior tranches
+// have not yet been bought. Completed tranches are deliberately NOT counted
+// here: they are executed purchases already reflected in the engine's
 // ExistingUSDPerHour, so counting them again would double-subtract.
+//
+// Units: tranche amounts are stored exactly as Allocate emits them, which is
+// ON-DEMAND-EQUIVALENT $/hr until Allocate converts to commitment dollars
+// (go#349). Do not convert here.
 //
 // Persistence is APPEND-ONLY (see persistLadderRun): every run inserts its new
 // scheduled tranches and NEVER supersedes existing ones. Netting already
@@ -313,146 +317,139 @@ func (app *Application) executeLadderRun(
 		return fmt.Errorf("GetLayerStates: %w", err)
 	}
 
-	// L5: Fetch in-flight commitment BEFORE Allocate so the engine can subtract
-	// it from the gap. In-flight = the config's status=scheduled ladder tranches
-	// whose scheduled_date is still after now ONLY (an elapsed one never fired).
-	// Fired/completed tranches are excluded because they are executed purchases
-	// already counted in ExistingUSDPerHour; netting them
-	// again would double-subtract. Including prior-run scheduled tranches lets
-	// the engine account for en-route commitment and produce a ~zero gap (Hold)
-	// when the scheduled ramp already covers the target.
-	inFlight, err := app.Config.GetInFlightLadderCommitUSDHr(ctx, dbCfg.ID, now)
-	if err != nil {
-		return fmt.Errorf("GetInFlightLadderCommitUSDHr: %w", err)
+	// L5 netting runs inside the persist transaction (PlanAndSaveLadderRun):
+	// the store reads the config's in-flight commitment (scheduled tranches
+	// still within config.LadderFireGrace plus fired, unresolved ones) under
+	// the per-config lock, plus tranches completed after `now` (settled term).
+	// `now` was captured before the GetLayerStates read above, so a tranche that
+	// completed after that read is in neither E nor in-flight without the
+	// settled term; one already in E is counted twice (a safe under-buy). The
+	// provider reads above stay outside the transaction: no lock is held across
+	// network I/O.
+	in := &ladderRunPlanner{
+		dbCfg: dbCfg, engineCfg: engineCfg, baseline: baseline, layerStates: layerStates,
+		layers: capability.SupportedLayers(), term: term, paymentOpt: paymentOpt, now: now,
 	}
-	if inFlight == nil {
-		// The store must return a non-nil value; nil signals an impossible
-		// query state (e.g. driver bug). Treat as fail-loud.
-		return fmt.Errorf("GetInFlightLadderCommitUSDHr returned nil for config %s", dbCfg.ID)
-	}
-
-	supportedLayers := capability.SupportedLayers()
-
-	// Run Allocate with the in-flight figure so the gap is net of the config's
-	// prior scheduled (not-yet-fired) tranches.
-	allocResult, err := pkgladder.Allocate(&pkgladder.AllocationInput{
-		Now:                now,
-		Baseline:           baseline,
-		LayerStates:        layerStates,
-		Layers:             supportedLayers,
-		Config:             engineCfg,
-		DataSources:        []string{dataSourceAWSCostExplorer},
-		InFlightUSDPerHour: inFlight,
-	})
-	if err != nil {
-		return fmt.Errorf("allocate: %w", err)
-	}
-
-	// Run BuildTranches to produce the ramp schedule.
-	runID := uuid.New().String()
-	trancheResult, err := pkgladder.BuildTranches(&pkgladder.TrancheInput{
-		Config:        &engineCfg,
-		RunID:         runID,
-		Term:          term,
-		PaymentOption: paymentOpt,
-		NewID:         func() string { return uuid.New().String() },
-		Now:           now,
-		Allocations:   allocResult.Allocations,
-	})
-	if err != nil {
-		return fmt.Errorf("BuildTranches: %w", err)
-	}
-
-	// Assemble LadderPlan (Q5: interleaves purchases AND reshapes in one JSON).
-	plan := assembleLadderPlan(scope, now, allocResult, layerStates, baseline, engineCfg.TargetCoveragePct, term, paymentOpt)
-
-	// Validate and persist the run row + tranche audit rows. L5 append-only:
-	// SaveLadderRunWithTranches inserts the run and its NEW scheduled tranches
-	// and leaves any existing scheduled tranches untouched (see persistLadderRun).
-	return app.persistLadderRun(ctx, dbCfg, runID, now, plan, baseline, allocResult, trancheResult)
-}
-
-// persistLadderRun validates the assembled plan and writes the ladder_runs row
-// followed by its ladder_tranches audit rows. Split from executeLadderRun so
-// each function stays within the project's cyclomatic-complexity limit (10).
-// A failure at any step returns an error before the next write, so a config
-// is never left with a half-persisted run.
-func (app *Application) persistLadderRun(
-	ctx context.Context,
-	dbCfg *config.LadderConfigDB,
-	runID string,
-	now time.Time,
-	plan *pkgladder.LadderPlan,
-	baseline pkgladder.UsageBaseline,
-	allocResult *pkgladder.AllocateResult,
-	trancheResult *pkgladder.TrancheResult,
-) error {
-	if err := plan.Validate(); err != nil {
-		return fmt.Errorf("LadderPlan.Validate: %w", err)
-	}
-
-	planJSON, err := marshalLadderPlan(plan)
-	if err != nil {
-		return fmt.Errorf("marshal plan: %w", err)
-	}
-
-	// Map *big.Rat monetary snapshot to *float64 (nil stays nil).
-	// These are stored in the run row for dashboards; the authoritative
-	// detail is in plan_json.
-	cfgID := dbCfg.ID
-	modeStr := dbCfg.Mode
-	cadenceStr := dbCfg.Cadence
-	runRow := &config.LadderRunDB{
-		ID:                runID,
-		ConfigID:          &cfgID,
-		StartedAt:         now,
-		Status:            pkgladder.RunStatusPlanned,
-		Mode:              &modeStr,
-		Cadence:           &cadenceStr,
-		Plan:              planJSON,
-		BaselineUSDHr:     baseline.LowWaterUSDPerHour,
-		TargetUSDHr:       ratToFloat64Ptr(plan.TargetUSDPerHour),
-		ExistingUSDHr:     ratToFloat64Ptr(plan.ExistingUSDPerHour),
-		GapUSDHr:          ratToFloat64Ptr(plan.GapUSDPerHour),
-		TotalHourlyCommit: allocTotalHourlyCommit(allocResult.Allocations),
-	}
-
-	// Build the tranche audit rows (status=scheduled; no firing in PR-2). The
-	// run ID is known up front (runRow.ID), so tranches can reference it before
-	// the insert.
-	trancheRows, err := buildTrancheDBRows(trancheResult.Tranches, runRow.ID, &cfgID)
-	if err != nil {
-		return fmt.Errorf("buildTrancheDBRows: %w", err)
-	}
-
-	// L5 APPEND-ONLY: always persist via the plain path, which INSERTS the new
-	// scheduled tranches and never supersedes upcoming ones (it only cancels
-	// tranches that are already overdue, see #544). In-flight netting
-	// (GetInFlightLadderCommitUSDHr, subtracted from the gap in Allocate) has
-	// already removed the config's existing scheduled tranches from the gap, so
-	// trancheRows carries exactly the delta needed to reach target-E:
-	//   - Hold (gap ~0): trancheRows is empty; only the run row is written and
-	//     the existing scheduled ramp is preserved with its original fire dates.
-	//   - Drift-up (gap re-opens): trancheRows is the top-up; appending it brings
-	//     the total scheduled commitment to target-E while leaving (not re-dating
-	//     or discarding) the prior generation intact.
-	// Cancel-and-replace was removed because it fought the netting: on drift-up
-	// it discarded the amount the netting had subtracted, capping coverage below
-	// target and never converging.
-	//
-	// Drift-DOWN note: if usage drops after a ramp is planned, the too-large
-	// scheduled ramp is preserved uncancelled (a Hold). That over-commitment is
-	// an accepted, separately-tracked follow-up (drift-down shrink); it is
-	// bounded by the low-water clamp in Allocate and not handled here.
-	savedRun, err := app.Config.SaveLadderRunWithTranches(ctx, runRow, trancheRows)
+	savedRun, err := app.Config.PlanAndSaveLadderRun(ctx, dbCfg.ID, now, in.plan)
 	if err != nil {
 		return fmt.Errorf("persist ladder run: %w", err)
 	}
-
 	log.Printf("ladder_run: config %s: persisted run %s (status=%s, allocations=%d, tranches=%d, holds=%d)",
-		dbCfg.ID, savedRun.ID, savedRun.Status,
-		len(allocResult.Allocations), len(trancheResult.Tranches), len(allocResult.Holds))
+		dbCfg.ID, savedRun.ID, savedRun.Status, in.allocations, in.tranches, in.holds)
 	return nil
+}
+
+// ladderRunPlanner holds the read-side data of one run and turns the locked
+// in-flight figure into the run row and tranche rows to persist. plan is pure
+// compute (it runs while the per-config lock is held).
+type ladderRunPlanner struct {
+	dbCfg       *config.LadderConfigDB
+	engineCfg   pkgladder.LadderConfig
+	baseline    pkgladder.UsageBaseline
+	layerStates map[pkgladder.LayerType]pkgladder.LayerState
+	layers      []pkgladder.LayerSpec
+	term        pkgladder.Term
+	paymentOpt  pkgladder.PaymentOption
+	now         time.Time
+
+	allocations, tranches, holds int // set by plan, for the log line
+}
+
+func (p *ladderRunPlanner) plan(inFlight float64) (*config.LadderRunDB, []config.LadderTrancheDB, error) {
+	allocResult, err := pkgladder.Allocate(&pkgladder.AllocationInput{
+		Now:                p.now,
+		Baseline:           p.baseline,
+		LayerStates:        p.layerStates,
+		Layers:             p.layers,
+		Config:             p.engineCfg,
+		DataSources:        []string{dataSourceAWSCostExplorer},
+		InFlightUSDPerHour: &inFlight,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("allocate: %w", err)
+	}
+
+	runID := uuid.New().String()
+	trancheResult, err := pkgladder.BuildTranches(&pkgladder.TrancheInput{
+		Config:        &p.engineCfg,
+		RunID:         runID,
+		Term:          p.term,
+		PaymentOption: p.paymentOpt,
+		NewID:         func() string { return uuid.New().String() },
+		Now:           p.now,
+		Allocations:   allocResult.Allocations,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("BuildTranches: %w", err)
+	}
+
+	// The plan is display only: its purchase amounts are the immediate tranches
+	// persisted below, so it never authorizes more than the rows netting sees.
+	immediate, err := immediateTrancheAmounts(trancheResult.Tranches, p.now)
+	if err != nil {
+		return nil, nil, err
+	}
+	plan := assembleLadderPlan(p.engineCfg.Scope, p.now, allocResult, immediate, p.layerStates, p.baseline, p.engineCfg.TargetCoveragePct, p.term, p.paymentOpt)
+	p.allocations, p.tranches, p.holds = len(allocResult.Allocations), len(trancheResult.Tranches), len(allocResult.Holds)
+	return p.buildRows(runID, plan, trancheResult)
+}
+
+// buildRows validates the assembled plan and builds the ladder_runs row and its
+// ladder_tranches rows. L5 APPEND-ONLY: the rows are INSERTED and never
+// supersede upcoming tranches (the store only cancels already-overdue ones,
+// #544). Netting has already removed the config's existing scheduled tranches
+// from the gap, so the rows carry exactly the delta needed to reach target-E:
+//   - Hold (gap ~0): no tranche rows; only the run row is written and the
+//     existing scheduled ramp keeps its original fire dates.
+//   - Drift-up (gap re-opens): the rows are the top-up; the prior generation
+//     stays intact.
+//
+// Cancel-and-replace was removed because it fought the netting: on drift-up it
+// discarded the amount the netting had subtracted, never converging.
+//
+// Drift-DOWN: if usage drops after a ramp is planned, the too-large scheduled
+// ramp is preserved uncancelled (a Hold). That over-commitment is an accepted,
+// separately-tracked follow-up (drift-down shrink), bounded by the low-water
+// clamp in Allocate.
+func (p *ladderRunPlanner) buildRows(runID string, plan *pkgladder.LadderPlan, trancheResult *pkgladder.TrancheResult) (*config.LadderRunDB, []config.LadderTrancheDB, error) {
+	if err := plan.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("LadderPlan.Validate: %w", err)
+	}
+	planJSON, err := marshalLadderPlan(plan)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal plan: %w", err)
+	}
+
+	// Map *big.Rat monetary snapshot to *float64 (nil stays nil). Stored in the
+	// run row for dashboards; the authoritative detail is in plan_json.
+	cfgID := p.dbCfg.ID
+	modeStr := p.dbCfg.Mode
+	cadenceStr := p.dbCfg.Cadence
+	runRow := &config.LadderRunDB{
+		ID:            runID,
+		ConfigID:      &cfgID,
+		StartedAt:     p.now,
+		Status:        pkgladder.RunStatusPlanned,
+		Mode:          &modeStr,
+		Cadence:       &cadenceStr,
+		Plan:          planJSON,
+		BaselineUSDHr: p.baseline.LowWaterUSDPerHour,
+		TargetUSDHr:   ratToFloat64Ptr(plan.TargetUSDPerHour),
+		ExistingUSDHr: ratToFloat64Ptr(plan.ExistingUSDPerHour),
+		GapUSDHr:      ratToFloat64Ptr(plan.GapUSDPerHour),
+	}
+
+	// EVERY ramp step is a row (status=scheduled; nothing fires them yet),
+	// including the immediate one (scheduled_date = run start), so in-flight
+	// netting sees it.
+	trancheRows, err := buildTrancheDBRows(trancheResult.Tranches, runRow.ID, &cfgID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("buildTrancheDBRows: %w", err)
+	}
+	// total_hourly_commit is what this run persists, not the allocation gap, so
+	// it always equals the sum of the rows netting will read back.
+	runRow.TotalHourlyCommit = sumTrancheRowAmounts(trancheRows)
+	return runRow, trancheRows, nil
 }
 
 // ladderWithinCadenceWindow reports whether a new run should be skipped because
@@ -530,7 +527,7 @@ func ladderConfigToEngine(dbCfg *config.LadderConfigDB, accountID string) (pkgla
 
 // assembleLadderPlan builds a LadderPlan from the Allocate result and the
 // collected read-side data. Q5: Actions interleaves both purchases
-// (Allocations) and Reshapes in one authoritative plan JSON. Term and
+// (immediate ramp steps only) and Reshapes in one display-only plan JSON. Term and
 // PaymentOption are stamped on every ActionPurchase entry; they are required
 // by PlannedAction.Validate for purchase actions.
 //
@@ -548,6 +545,7 @@ func assembleLadderPlan(
 	scope pkgladder.Scope,
 	now time.Time,
 	allocResult *pkgladder.AllocateResult,
+	immediate map[pkgladder.LayerType]*big.Rat,
 	layerStates map[pkgladder.LayerType]pkgladder.LayerState,
 	baseline pkgladder.UsageBaseline,
 	targetCoveragePct float64,
@@ -555,12 +553,20 @@ func assembleLadderPlan(
 	paymentOpt pkgladder.PaymentOption,
 ) *pkgladder.LadderPlan {
 	actions := make([]pkgladder.PlannedAction, 0, len(allocResult.Allocations)+len(allocResult.Reshapes)+len(allocResult.Holds))
-	// Purchase allocations come first so approval-email ordering is stable.
+	// Purchase actions come first so approval-email ordering is stable. Each
+	// carries only the immediate ramp step for its layer, not the allocation
+	// gap: the later steps are persisted tranches, and a layer whose ramp has no
+	// immediate step has no purchase action. The plan is display only; the sole
+	// purchase path is tranche -> purchase_executions (not built yet).
 	for _, alloc := range allocResult.Allocations {
+		amount := immediate[alloc.Layer]
+		if amount == nil {
+			continue
+		}
 		actions = append(actions, pkgladder.PlannedAction{
 			Action:           pkgladder.ActionPurchase,
 			Layer:            alloc.Layer,
-			AmountUSDPerHour: alloc.GapUSDPerHour,
+			AmountUSDPerHour: amount,
 			Term:             term,
 			PaymentOption:    paymentOpt,
 			Rationale:        alloc.Rationale,
@@ -642,13 +648,40 @@ func sumAllocationGaps(allocs []pkgladder.Allocation) *big.Rat {
 	return sum
 }
 
-// allocTotalHourlyCommit sums the GapUSDPerHour across all allocations,
-// converting to float64. This is the non-nullable total_hourly_commit stored
-// in the run row; it starts at 0 for a no-op (Hold-only) plan, which is the
-// correct semantic (zero new commitment, not "not computed").
-func allocTotalHourlyCommit(allocs []pkgladder.Allocation) float64 {
-	f, _ := sumAllocationGaps(allocs).Float64()
-	return f
+// sumTrancheRowAmounts sums the amounts of the tranche rows a run persists.
+// This is the non-nullable total_hourly_commit stored in the run row; it is 0
+// for a no-op (Hold-only) plan, which is the correct semantic (zero new
+// commitment, not "not computed"). Units are whatever Allocate emits:
+// on-demand-equivalent $/hr until the commitment-dollar conversion lands
+// (go#349); this code stores amounts unchanged.
+func sumTrancheRowAmounts(rows []config.LadderTrancheDB) float64 {
+	var sum float64
+	for i := range rows {
+		sum += rows[i].AmountUSDHr
+	}
+	return sum
+}
+
+// immediateTrancheAmounts sums, per layer, the tranches that fire at the run
+// start (FireAfter <= now: the AfterDays==0 ramp step). It fails loud on a
+// malformed amount, like buildTrancheDBRows.
+func immediateTrancheAmounts(tranches []pkgladder.Tranche, now time.Time) (map[pkgladder.LayerType]*big.Rat, error) {
+	sums := make(map[pkgladder.LayerType]*big.Rat)
+	for i := range tranches {
+		tr := &tranches[i]
+		if tr.FireAfter.After(now) {
+			continue
+		}
+		r, ok := new(big.Rat).SetString(tr.AmountUSDPerHour)
+		if !ok {
+			return nil, fmt.Errorf("tranche %s: malformed amount_usd_per_hour %q (not a parseable rational)", tr.ID, tr.AmountUSDPerHour)
+		}
+		if sums[tr.Layer] == nil {
+			sums[tr.Layer] = new(big.Rat)
+		}
+		sums[tr.Layer].Add(sums[tr.Layer], r)
+	}
+	return sums, nil
 }
 
 // buildTrancheDBRows converts pkg/ladder Tranche rows to config.LadderTrancheDB

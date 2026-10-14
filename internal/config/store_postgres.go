@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -91,7 +92,10 @@ func getGlobalConfigFrom(ctx context.Context, q globalConfigExecutor) (*GlobalCo
 		       COALESCE(laddering_enabled, false),
 		       COALESCE(ladder_execution_enabled, false),
 		       offering_class,
-		       require_different_approver
+		       require_different_approver,
+		       auto_purchase_enabled,
+		       auto_purchase_changed_by, auto_purchase_changed_at, auto_purchase_changed_via,
+		       ladder_execution_changed_by, ladder_execution_changed_at, ladder_execution_changed_via
 		FROM global_config
 		WHERE id = 1
 	`
@@ -125,6 +129,13 @@ func getGlobalConfigFrom(ctx context.Context, q globalConfigExecutor) (*GlobalCo
 		&config.LadderExecutionEnabled,
 		&config.OfferingClass,
 		&config.RequireDifferentApprover,
+		&config.AutoPurchaseEnabled,
+		&config.AutoPurchaseChangedBy,
+		&config.AutoPurchaseChangedAt,
+		&config.AutoPurchaseChangedVia,
+		&config.LadderExecutionChangedBy,
+		&config.LadderExecutionChangedAt,
+		&config.LadderExecutionChangedVia,
 	)
 
 	if err != nil {
@@ -258,8 +269,10 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 			grace_period_days,
 			recommendations_cache_stale_hours, recommendations_lookback_days,
 			purchase_delay_hours, laddering_enabled, ladder_execution_enabled, offering_class,
-			require_different_approver
-		) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+			require_different_approver, auto_purchase_enabled,
+			auto_purchase_changed_by, auto_purchase_changed_at, auto_purchase_changed_via,
+			ladder_execution_changed_by, ladder_execution_changed_at, ladder_execution_changed_via
+		) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
 		ON CONFLICT (id) DO UPDATE SET
 			enabled_providers = $1,
 			notification_email = $2,
@@ -285,6 +298,13 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 			ladder_execution_enabled = $22,
 			offering_class = $23,
 			require_different_approver = $24,
+			auto_purchase_enabled = $25,
+			auto_purchase_changed_by = $26,
+			auto_purchase_changed_at = $27,
+			auto_purchase_changed_via = $28,
+			ladder_execution_changed_by = $29,
+			ladder_execution_changed_at = $30,
+			ladder_execution_changed_via = $31,
 			updated_at = NOW()
 	`
 
@@ -353,6 +373,13 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 		config.LadderExecutionEnabled,
 		offeringClass,
 		config.RequireDifferentApprover,
+		config.AutoPurchaseEnabled,
+		config.AutoPurchaseChangedBy,
+		config.AutoPurchaseChangedAt,
+		config.AutoPurchaseChangedVia,
+		config.LadderExecutionChangedBy,
+		config.LadderExecutionChangedAt,
+		config.LadderExecutionChangedVia,
 	)
 
 	if err != nil {
@@ -555,8 +582,9 @@ func (s *PostgresStore) CreatePurchasePlan(ctx context.Context, plan *PurchasePl
 		INSERT INTO purchase_plans (
 			id, name, enabled, auto_purchase, notification_days_before,
 			services, ramp_schedule, created_at, updated_at,
-			next_execution_date, last_execution_date, last_notification_sent
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			next_execution_date, last_execution_date, last_notification_sent,
+			max_step_commitment
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING updated_at
 	`
 
@@ -574,6 +602,7 @@ func (s *PostgresStore) CreatePurchasePlan(ctx context.Context, plan *PurchasePl
 		plan.NextExecutionDate,
 		plan.LastExecutionDate,
 		plan.LastNotificationSent,
+		plan.MaxStepCommitment,
 	).Scan(&updatedAt)
 
 	if err != nil {
@@ -587,7 +616,8 @@ func (s *PostgresStore) CreatePurchasePlan(ctx context.Context, plan *PurchasePl
 const purchasePlanSelectCols = `
 	SELECT id, name, enabled, auto_purchase, notification_days_before,
 	       services, ramp_schedule, created_at, updated_at,
-	       next_execution_date, last_execution_date, last_notification_sent
+	       next_execution_date, last_execution_date, last_notification_sent,
+	       max_step_commitment
 	FROM purchase_plans`
 
 // scanPurchasePlanRow deserialises one purchase_plans row returned by QueryRow
@@ -611,6 +641,7 @@ func scanPurchasePlanRow(row pgx.Row) (*PurchasePlan, error) {
 		&nextExecDate,
 		&lastExecDate,
 		&lastNotifSent,
+		&plan.MaxStepCommitment,
 	)
 	if err != nil {
 		return nil, err
@@ -767,7 +798,25 @@ func (s *PostgresStore) persistRampPosition(ctx context.Context, tx pgx.Tx, plan
 func (s *PostgresStore) UpdatePurchasePlan(ctx context.Context, plan *PurchasePlan) error {
 	pending := *plan
 	if err := s.WithTx(ctx, func(tx pgx.Tx) error {
-		return s.UpdatePurchasePlanTx(ctx, tx, &pending)
+		old, err := s.LockPurchasePlanTx(ctx, tx, pending.ID)
+		if err != nil {
+			return err
+		}
+		if updErr := s.UpdatePurchasePlanTx(ctx, tx, &pending); updErr != nil {
+			return updErr
+		}
+		if old == nil || !rampBaselineStale(old, &pending) {
+			return nil
+		}
+		// After the update, never before: clearing bumps updated_at, which
+		// would fail the update's own optimistic-lock check.
+		err = tx.QueryRow(ctx,
+			`UPDATE purchase_plans SET ramp_baseline = NULL WHERE id = $1 AND ramp_baseline IS NOT NULL RETURNING updated_at`,
+			pending.ID).Scan(&pending.UpdatedAt)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("failed to clear ramp baseline of plan %s: %w", pending.ID, err)
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -798,7 +847,8 @@ func (s *PostgresStore) UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, pla
 			ramp_schedule = $7,
 			next_execution_date = $9,
 			last_execution_date = $10,
-			last_notification_sent = $11
+			last_notification_sent = $11,
+			max_step_commitment = $12
 		WHERE id = $1 AND updated_at = $8
 		RETURNING updated_at
 	`
@@ -816,6 +866,7 @@ func (s *PostgresStore) UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, pla
 		plan.NextExecutionDate,
 		plan.LastExecutionDate,
 		plan.LastNotificationSent,
+		plan.MaxStepCommitment,
 	).Scan(&updatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -887,6 +938,7 @@ func buildListPlansQuery(accountIDs []string, includeUnassigned bool) (query str
 			SELECT id, name, enabled, auto_purchase, notification_days_before,
 			       services, ramp_schedule, created_at, updated_at,
 			       next_execution_date, last_execution_date, last_notification_sent,
+			       max_step_commitment,
 			       false AS unassigned
 			FROM purchase_plans
 			ORDER BY created_at DESC
@@ -906,6 +958,7 @@ func buildListPlansQuery(accountIDs []string, includeUnassigned bool) (query str
 		SELECT DISTINCT pp.id, pp.name, pp.enabled, pp.auto_purchase, pp.notification_days_before,
 		       pp.services, pp.ramp_schedule, pp.created_at, pp.updated_at,
 		       pp.next_execution_date, pp.last_execution_date, pp.last_notification_sent,
+		       pp.max_step_commitment,
 		       (NOT EXISTS (SELECT 1 FROM plan_accounts WHERE plan_id = pp.id)) AS unassigned
 		FROM purchase_plans pp
 		LEFT JOIN plan_accounts pa ON pa.plan_id = pp.id
@@ -947,6 +1000,7 @@ func (s *PostgresStore) ListPurchasePlans(ctx context.Context, filter PurchasePl
 			&nextExecDate,
 			&lastExecDate,
 			&lastNotifSent,
+			&plan.MaxStepCommitment,
 			&plan.Unassigned,
 		)
 		if err != nil {
@@ -1038,8 +1092,8 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 			created_by_user_id, retry_execution_id, retry_attempt_n,
 			approval_token_expires_at,
 			executed_by_user_id, executed_at, pre_approval_skip_reason,
-			idempotency_key, scheduled_execution_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+			idempotency_key, scheduled_execution_at, no_submission
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
 		ON CONFLICT (execution_id) DO UPDATE SET
 			status = $3,
 			notification_sent = $6,
@@ -1060,6 +1114,9 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 			executed_at = $24,
 			pre_approval_skip_reason = $25,
 			scheduled_execution_at = $27,
+			no_submission = CASE WHEN $3 = 'failed'
+				THEN purchase_executions.no_submission OR $28
+				ELSE false END,
 			updated_at = NOW()
 	`
 
@@ -1114,6 +1171,7 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 		execution.PreApprovalSkipReason,
 		execution.IdempotencyKey,
 		execution.ScheduledExecutionAt,
+		execution.NoSubmission,
 	)
 
 	if err != nil {
@@ -1154,12 +1212,15 @@ func (s *PostgresStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx,
 	return tag.RowsAffected() == 1, nil
 }
 
-// RotatePendingApprovalToken implements StoreInterface.
+// RotatePendingApprovalToken implements StoreInterface. The same statement
+// that stores the emailed token promotes the row to 'notified' (a no-op for a
+// row already there), so the status never claims a notice that was not sent.
 func (s *PostgresStore) RotatePendingApprovalToken(ctx context.Context, executionID, tokenHash string, expiresAt time.Time) (bool, error) {
 	q := `
 		UPDATE purchase_executions
 		   SET approval_token_hash = $2,
 		       approval_token_expires_at = $3,
+		       status = 'notified',
 		       updated_at = NOW()
 		 WHERE execution_id = $1
 		   AND status IN ('pending', 'notified')
@@ -1180,6 +1241,31 @@ func (s *PostgresStore) RotatePendingApprovalToken(ctx context.Context, executio
 // and the legacy cancelled_by (issue #119), matching what the other cancel paths
 // record and what History reads.
 func (s *PostgresStore) TransitionExecutionStatus(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string) (*PurchaseExecution, error) {
+	return s.transitionExecutionStatus(ctx, executionID, fromStatuses, toStatus, actor, nil)
+}
+
+// TransitionExecutionStatusPinned is TransitionExecutionStatus that also
+// requires the row's recommendations to still be empty (or not empty), as the
+// caller saw them. A recommendation attach landing between a gate check and the
+// claim makes the pin fail with ErrExecutionNotInExpectedStatus, so a row is
+// never run on a snapshot different from the one that was gated.
+func (s *PostgresStore) TransitionExecutionStatusPinned(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string, sawEmptyRecommendations bool) (*PurchaseExecution, error) {
+	return s.transitionExecutionStatus(ctx, executionID, fromStatuses, toStatus, actor, &sawEmptyRecommendations)
+}
+
+// RescheduleAwaitingExecution is a conditional single-column update: the
+// status predicate makes a lost race a benign no-op instead of an overwrite.
+func (s *PostgresStore) RescheduleAwaitingExecution(ctx context.Context, executionID string, scheduledDate time.Time) (bool, error) {
+	tag, err := s.db.Exec(ctx, `
+		UPDATE purchase_executions SET scheduled_date = $2, updated_at = NOW()
+		WHERE execution_id = $1 AND status IN ('pending', 'notified')`, executionID, scheduledDate)
+	if err != nil {
+		return false, fmt.Errorf("reschedule execution %s: %w", executionID, err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+func (s *PostgresStore) transitionExecutionStatus(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string, sawEmpty *bool) (*PurchaseExecution, error) {
 	var cancelActor *string
 	if toStatus == StatusCanceled {
 		cancelActor = actor
@@ -1191,6 +1277,7 @@ func (s *PostgresStore) TransitionExecutionStatus(ctx context.Context, execution
 		    canceled_by = COALESCE((SELECT email FROM users WHERE id = $5), canceled_by),
 		    cancelled_by = COALESCE((SELECT email FROM users WHERE id = $5), cancelled_by)
 		WHERE execution_id = $1 AND status = ANY($3)
+		  AND ($6::boolean IS NULL OR (recommendations IN ('[]'::jsonb, 'null'::jsonb)) = $6)
 		RETURNING plan_id, execution_id, status, step_number, scheduled_date,
 		          notification_sent, approval_token_hash, recommendations,
 		          total_upfront_cost, estimated_savings, completed_at, error, expires_at,
@@ -1198,10 +1285,10 @@ func (s *PostgresStore) TransitionExecutionStatus(ctx context.Context, execution
 		          created_by_user_id, retry_execution_id, retry_attempt_n,
 		          approval_token_expires_at,
 		          executed_by_user_id, executed_at, pre_approval_skip_reason,
-		          idempotency_key, scheduled_execution_at
+		          idempotency_key, scheduled_execution_at, no_submission
 	`
 
-	records, err := s.queryExecutions(ctx, query, executionID, toStatus, fromStatuses, actor, cancelActor)
+	records, err := s.queryExecutions(ctx, query, executionID, toStatus, fromStatuses, actor, cancelActor, sawEmpty)
 	if err != nil {
 		return nil, err
 	}
@@ -1390,7 +1477,7 @@ func (s *PostgresStore) GetExecutionsByStatuses(ctx context.Context, statuses []
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at
+		       idempotency_key, scheduled_execution_at, no_submission
 		FROM purchase_executions
 		WHERE status = ANY($1)
 		  AND NOT (status = 'completed' AND COALESCE(error, '') = '')
@@ -1502,7 +1589,7 @@ func (s *PostgresStore) GetPlannedExecutions(ctx context.Context, statuses []str
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at
+		       idempotency_key, scheduled_execution_at, no_submission
 		FROM purchase_executions
 		WHERE status = ANY($1)
 		ORDER BY scheduled_date ASC NULLS LAST, id ASC
@@ -1527,7 +1614,7 @@ func (s *PostgresStore) GetStaleApprovedExecutions(ctx context.Context, olderTha
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at
+		       idempotency_key, scheduled_execution_at, no_submission
 		FROM purchase_executions
 		WHERE status = 'approved' AND updated_at < NOW() - $1::interval
 	`
@@ -1569,7 +1656,7 @@ func (s *PostgresStore) ListStuckExecutions(ctx context.Context, statuses []stri
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at
+		       idempotency_key, scheduled_execution_at, no_submission
 		FROM purchase_executions
 		WHERE status = ANY($1)
 		  AND updated_at < NOW() - $2::interval
@@ -1590,7 +1677,7 @@ func (s *PostgresStore) GetPendingExecutions(ctx context.Context) ([]PurchaseExe
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at
+		       idempotency_key, scheduled_execution_at, no_submission
 		FROM purchase_executions
 		WHERE status IN ('pending', 'notified')
 		  AND (expires_at IS NULL OR expires_at > NOW())
@@ -1614,7 +1701,7 @@ func (s *PostgresStore) GetPendingExecutionsTx(ctx context.Context, tx pgx.Tx) (
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at
+		       idempotency_key, scheduled_execution_at, no_submission
 		FROM purchase_executions
 		WHERE status IN ('pending', 'notified')
 		  AND (expires_at IS NULL OR expires_at > NOW())
@@ -1625,6 +1712,93 @@ func (s *PostgresStore) GetPendingExecutionsTx(ctx context.Context, tx pgx.Tx) (
 	rows, err := tx.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query pending executions in tx: %w", err)
+	}
+	defer rows.Close()
+	return scanExecutionRows(rows)
+}
+
+// planStepProviderLockPrefix namespaces the per-provider plan-step advisory lock.
+const planStepProviderLockPrefix = "cudly:planstep:"
+
+// planStepLockKeys returns the advisory-lock keys for providers: validated,
+// de-duplicated and sorted. Sorted acquisition keeps two callers with
+// overlapping provider sets from deadlocking on each other.
+func planStepLockKeys(providers []string) ([]string, error) {
+	if len(providers) == 0 {
+		return nil, errors.New("lock plan providers: no providers given")
+	}
+	keys := make([]string, 0, len(providers))
+	seen := make(map[string]struct{}, len(providers))
+	for _, p := range providers {
+		if p == "" {
+			return nil, errors.New("lock plan providers: empty provider name")
+		}
+		if _, dup := seen[p]; !dup {
+			seen[p] = struct{}{}
+			keys = append(keys, planStepProviderLockPrefix+p)
+		}
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
+// LockPlanProvidersTx implements StoreInterface.LockPlanProvidersTx.
+func (s *PostgresStore) LockPlanProvidersTx(ctx context.Context, tx pgx.Tx, providers []string) error {
+	keys, err := planStepLockKeys(providers)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", key); err != nil {
+			return fmt.Errorf("lock plan step key %s: %w", key, err)
+		}
+	}
+	return nil
+}
+
+// submitDedupeStatuses are the execution states that still stand for a
+// commitment the submitter asked for: awaiting approval, being bought, or
+// bought. A failed, expired or canceled row bought nothing, so a resubmit
+// after one of those must create a fresh execution.
+const submitDedupeStatuses = "'pending', 'notified', 'approved', 'running', 'completed', 'partially_completed'"
+
+// ListRecentSubmitsTx serializes concurrent submits by creatorID and returns
+// that creator's web-submitted executions scheduled at or after since, in
+// every state in submitDedupeStatuses. The transaction-scoped advisory lock is
+// held until tx ends, so a second submit by the same creator waits here, then
+// reads the first one's committed row and can collapse onto it. SELECT ...
+// FOR UPDATE could not do this: it locks only rows that already exist, so two
+// concurrent submits both saw nothing and both inserted. The status set is
+// wider than pending/notified because a direct execute moves its row to
+// approved/running/completed within seconds, and a retry arriving then must
+// still be recognized. An empty creatorID matches rows with no creator.
+func (s *PostgresStore) ListRecentSubmitsTx(ctx context.Context, tx pgx.Tx, creatorID string, since time.Time) ([]PurchaseExecution, error) {
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "purchase-submit:"+creatorID); err != nil {
+		return nil, fmt.Errorf("failed to lock purchase submits: %w", err)
+	}
+	var creator *string
+	if creatorID != "" {
+		creator = &creatorID
+	}
+	query := `
+		SELECT plan_id, execution_id, status, step_number, scheduled_date,
+		       notification_sent, approval_token_hash, recommendations,
+		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
+		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
+		       created_by_user_id, retry_execution_id, retry_attempt_n,
+		       approval_token_expires_at,
+		       executed_by_user_id, executed_at, pre_approval_skip_reason,
+		       idempotency_key, scheduled_execution_at, no_submission
+		FROM purchase_executions
+		WHERE source = $3
+		  AND status IN (` + submitDedupeStatuses + `)
+		  AND scheduled_date >= $1
+		  AND created_by_user_id IS NOT DISTINCT FROM $2::uuid
+		ORDER BY scheduled_date ASC
+	`
+	rows, err := tx.Query(ctx, query, since, creator, common.PurchaseSourceWeb)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query recent submits in tx: %w", err)
 	}
 	defer rows.Close()
 	return scanExecutionRows(rows)
@@ -1644,7 +1818,7 @@ func (s *PostgresStore) GetExecutionByID(ctx context.Context, executionID string
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at
+		       idempotency_key, scheduled_execution_at, no_submission
 		FROM purchase_executions
 		WHERE execution_id = $1
 	`
@@ -1671,7 +1845,7 @@ func (s *PostgresStore) GetExecutionByPlanAndDate(ctx context.Context, planID st
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at
+		       idempotency_key, scheduled_execution_at, no_submission
 		FROM purchase_executions
 		WHERE plan_id = $1 AND scheduled_date = $2
 	`
@@ -1839,6 +2013,7 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 			&exec.PreApprovalSkipReason,
 			&idempotencyKey,
 			&scheduledExecutionAt,
+			&exec.NoSubmission,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan execution: %w", err)
@@ -1879,7 +2054,7 @@ func (s *PostgresStore) GetScheduledExecutionsDue(ctx context.Context) ([]Purcha
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at
+		       idempotency_key, scheduled_execution_at, no_submission
 		FROM purchase_executions
 		WHERE status = 'scheduled'
 		  AND scheduled_execution_at IS NOT NULL
@@ -2019,18 +2194,32 @@ func (s *PostgresStore) CleanupOldExecutions(ctx context.Context, retentionDays 
 // PURCHASE HISTORY
 // ==========================================
 
-// SavePurchaseHistory saves a purchase history record.
+// SavePurchaseHistory saves a purchase history record. It is idempotent per
+// (provider, account_id, purchase_id): a re-drive or root retry that adopts a
+// commitment the first attempt already bought saves the same key again, and a
+// second row would double-count spend and savings (#704). The NOT EXISTS
+// covers rows that predate the unique index from migration 000108; the index
+// and ON CONFLICT cover two concurrent saves. An existing row is left as is.
 func (s *PostgresStore) SavePurchaseHistory(ctx context.Context, record *PurchaseHistoryRecord) error {
+	if err := record.Validate(); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO purchase_history (
 			account_id, purchase_id, timestamp, provider, service, region,
 			resource_type, count, term, payment, upfront_cost, monthly_cost,
 			estimated_savings, plan_id, plan_name, ramp_step, cloud_account_id,
 			source, revocation_window_closes_at, offering_class
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		)
+		SELECT $1::varchar, $2::varchar, $3, $4::varchar, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+		WHERE NOT EXISTS (
+			SELECT 1 FROM purchase_history
+			WHERE provider = $4 AND account_id = $1 AND purchase_id = $2
+		)
+		ON CONFLICT DO NOTHING
 	`
 
-	_, err := s.db.Exec(ctx, query,
+	tag, err := s.db.Exec(ctx, query,
 		record.AccountID,
 		record.PurchaseID,
 		record.Timestamp,
@@ -2055,6 +2244,9 @@ func (s *PostgresStore) SavePurchaseHistory(ctx context.Context, record *Purchas
 
 	if err != nil {
 		return fmt.Errorf("failed to save purchase history: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		logging.Infof("purchase history for %s/%s/%s already recorded; keeping the existing row", record.Provider, record.AccountID, record.PurchaseID)
 	}
 
 	return nil
@@ -2863,28 +3055,11 @@ func (s *PostgresStore) ReserveRIExchange(ctx context.Context, record *RIExchang
 	candidate := *record
 	var ceiling string
 	err = s.WithTx(ctx, func(tx pgx.Tx) error {
-		if _, lockErr := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", riExchangeDailySpendLockKey); lockErr != nil {
-			return fmt.Errorf("failed to lock RI exchange daily spend: %w", lockErr)
+		var reserveErr error
+		ceiling, reserveErr = reserveRIExchangeCeiling(ctx, tx, nil, record.PaymentDue, initial, dailyCap, perCap, dailyCapUSD)
+		if reserveErr != nil {
+			return reserveErr
 		}
-		var spendText string
-		if scanErr := tx.QueryRow(ctx, riExchangeDailySpendQuery, time.Now().UTC()).Scan(&spendText); scanErr != nil {
-			return fmt.Errorf("failed to read RI exchange daily spend: %w", scanErr)
-		}
-		spend, parseErr := riExchangeMicros(spendText)
-		if parseErr != nil {
-			return fmt.Errorf("invalid RI exchange daily spend: %w", parseErr)
-		}
-		remaining := new(big.Int).Sub(dailyCap, spend)
-		if remaining.Cmp(perCap) > 0 {
-			remaining.Set(perCap)
-		}
-		if remaining.Sign() < 0 {
-			return fmt.Errorf("RI exchange daily cap exceeded: spend %s exceeds cap %s", spendText, dailyCapUSD)
-		}
-		if initial.Cmp(remaining) > 0 {
-			return fmt.Errorf("RI exchange daily cap exceeded: initial %s, remaining %s", record.PaymentDue, riExchangeUSD(remaining))
-		}
-		ceiling = riExchangeUSD(remaining)
 		candidate.PaymentDue = ceiling
 		return saveRIExchangeRecord(ctx, tx, &candidate)
 	})
@@ -2893,6 +3068,89 @@ func (s *PostgresStore) ReserveRIExchange(ctx context.Context, record *RIExchang
 	}
 	*record = candidate
 	return ceiling, nil
+}
+
+// ReserveApprovedRIExchange reserves the full execution ceiling for an approved
+// exchange whose row is already processing. It runs under the same global
+// advisory lock as ReserveRIExchange, so manual approvals and AUTO exchanges
+// share one headroom protocol, and it leaves the row's own amount out of the
+// spend it checks against. The row's payment_due becomes the reserved ceiling
+// until CompleteRIExchangeWithPayment settles the accepted amount.
+func (s *PostgresStore) ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	dailyCap, err := riExchangeMicros(dailyCapUSD)
+	if err != nil {
+		return "", fmt.Errorf("invalid daily RI exchange cap: %w", err)
+	}
+	perCap, err := riExchangeMicros(perExchangeCapUSD)
+	if err != nil {
+		return "", fmt.Errorf("invalid per-exchange RI cap: %w", err)
+	}
+
+	var ceiling string
+	err = s.WithTx(ctx, func(tx pgx.Tx) error {
+		var initialText string
+		scanErr := tx.QueryRow(ctx,
+			`SELECT payment_due::text FROM ri_exchange_history WHERE id = $1 AND status = 'processing' FOR UPDATE`, id,
+		).Scan(&initialText)
+		if errors.Is(scanErr, pgx.ErrNoRows) {
+			return fmt.Errorf("ri exchange %s is not processing", id)
+		}
+		if scanErr != nil {
+			return fmt.Errorf("failed to read RI exchange %s: %w", id, scanErr)
+		}
+		initial, parseErr := riExchangeMicros(initialText)
+		if parseErr != nil {
+			return fmt.Errorf("invalid initial RI exchange payment: %w", parseErr)
+		}
+		var reserveErr error
+		ceiling, reserveErr = reserveRIExchangeCeiling(ctx, tx, &id, initialText, initial, dailyCap, perCap, dailyCapUSD)
+		if reserveErr != nil {
+			return reserveErr
+		}
+		_, updErr := tx.Exec(ctx,
+			`UPDATE ri_exchange_history SET payment_due = $2::numeric, updated_at = NOW() WHERE id = $1`, id, ceiling)
+		if updErr != nil {
+			return fmt.Errorf("failed to record RI exchange reservation: %w", updErr)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return ceiling, nil
+}
+
+// ErrRIExchangeDailyCapExceeded marks a reservation refused because the
+// initial quote does not fit the remaining daily or per-exchange headroom.
+var ErrRIExchangeDailyCapExceeded = errors.New("RI exchange daily cap exceeded")
+
+// reserveRIExchangeCeiling takes the global daily-spend lock (held until tx ends)
+// and returns min(perExchangeCap, dailyCap - spend) as the execution ceiling,
+// refusing when the initial quote does not fit. excludeID leaves one row's own
+// amount out of spend so an approval does not count itself twice.
+func reserveRIExchangeCeiling(ctx context.Context, tx pgx.Tx, excludeID *string, initialText string, initial, dailyCap, perCap *big.Int, dailyCapUSD string) (string, error) {
+	if _, lockErr := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", riExchangeDailySpendLockKey); lockErr != nil {
+		return "", fmt.Errorf("failed to lock RI exchange daily spend: %w", lockErr)
+	}
+	var spendText string
+	if scanErr := tx.QueryRow(ctx, riExchangeDailySpendQuery, time.Now().UTC(), excludeID).Scan(&spendText); scanErr != nil {
+		return "", fmt.Errorf("failed to read RI exchange daily spend: %w", scanErr)
+	}
+	spend, parseErr := riExchangeMicros(spendText)
+	if parseErr != nil {
+		return "", fmt.Errorf("invalid RI exchange daily spend: %w", parseErr)
+	}
+	remaining := new(big.Int).Sub(dailyCap, spend)
+	if remaining.Cmp(perCap) > 0 {
+		remaining.Set(perCap)
+	}
+	if remaining.Sign() < 0 {
+		return "", fmt.Errorf("%w: spend %s exceeds cap %s", ErrRIExchangeDailyCapExceeded, spendText, dailyCapUSD)
+	}
+	if initial.Cmp(remaining) > 0 {
+		return "", fmt.Errorf("%w: initial %s, remaining %s", ErrRIExchangeDailyCapExceeded, initialText, riExchangeUSD(remaining))
+	}
+	return riExchangeUSD(remaining), nil
 }
 
 func riExchangeReservationMicros(record *RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (initial, dailyCap, perCap *big.Int, err error) {
@@ -3157,7 +3415,7 @@ func (s *PostgresStore) GetRIExchangeDailySpend(ctx context.Context, date time.T
 	query := riExchangeDailySpendQuery
 
 	var total string
-	err := s.db.QueryRow(ctx, query, date).Scan(&total)
+	err := s.db.QueryRow(ctx, query, date, nil).Scan(&total)
 	if err != nil {
 		return "", fmt.Errorf("failed to get ri exchange daily spend: %w", err)
 	}
@@ -3165,12 +3423,18 @@ func (s *PostgresStore) GetRIExchangeDailySpend(ctx context.Context, date time.T
 	return total, nil
 }
 
+// riExchangeDailySpendQuery counts completed exchanges accepted inside the
+// requested UTC day plus every processing reservation. A processing row is an
+// unsettled hold, so it stays counted across UTC midnight until it completes or
+// fails. $2 optionally leaves one row out (an approval's own reservation).
 const riExchangeDailySpendQuery = `
 		SELECT COALESCE(SUM(payment_due), 0)::text
 		FROM ri_exchange_history
-		WHERE status IN ('completed', 'processing')
-		  AND COALESCE(completed_at, updated_at) >= (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
-		  AND COALESCE(completed_at, updated_at) < (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') + INTERVAL '1 day') AT TIME ZONE 'UTC'
+		WHERE ($2::uuid IS NULL OR id <> $2::uuid)
+		  AND (status = 'processing'
+		       OR (status = 'completed'
+		           AND COALESCE(completed_at, updated_at) >= (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+		           AND COALESCE(completed_at, updated_at) < (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') + INTERVAL '1 day') AT TIME ZONE 'UTC'))
 	`
 
 // CancelAllPendingExchanges cancels all pending RI exchange records regardless

@@ -3,6 +3,8 @@ package mocks
 import (
 	"context"
 	"fmt"
+	"slices"
+	"sort"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -244,11 +246,98 @@ func (m *MockConfigStore) LockPurchasePlanTx(ctx context.Context, tx pgx.Tx, pla
 	return v, args.Error(1)
 }
 
+// LockPlanProvidersTx mocks the per-provider advisory lock. A mock cannot hold
+// a lock, so it succeeds unless an expectation says otherwise; the real
+// contract is measured against Postgres in the purchase integration tests.
+func (m *MockConfigStore) LockPlanProvidersTx(ctx context.Context, tx pgx.Tx, providers []string) error {
+	m.record("LockPlanProvidersTx", ctx, tx, providers)
+	if !isExpected(&m.Mock, "LockPlanProvidersTx") {
+		return nil
+	}
+	return m.Called(ctx, tx, providers).Error(0)
+}
+
 // OccupiedRampStepsInRangeTx mocks the already-covered ramp-step probe.
 // Unregistered by default so the many create-purchases tests that predate the
 // probe keep exercising the create path: no occupied steps in range is the
 // shape of a plan whose next steps are still unscheduled, which is what those
 // tests set up.
+func (m *MockConfigStore) ListExecutionsForPlanStepTx(ctx context.Context, tx pgx.Tx, planID string, stepNumber int) ([]config.PurchaseExecution, error) {
+	m.record("ListExecutionsForPlanStepTx", ctx, tx, planID, stepNumber)
+	if !isExpected(&m.Mock, "ListExecutionsForPlanStepTx") {
+		return nil, nil
+	}
+	args := m.Called(ctx, tx, planID, stepNumber)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).([]config.PurchaseExecution)
+	if !ok {
+		panic(fmt.Sprintf("mock: expected []config.PurchaseExecution, got %T", args.Get(0)))
+	}
+	return v, args.Error(1)
+}
+
+// The ramp-ledger mocks default to an empty answer when unregistered so tests
+// that predate them keep exercising their own path.
+func (m *MockConfigStore) SetPlanRampBaselineTx(ctx context.Context, tx pgx.Tx, planID string, baseline config.PlanRampBaseline) (bool, error) {
+	m.record("SetPlanRampBaselineTx", ctx, tx, planID, baseline)
+	if !isExpected(&m.Mock, "SetPlanRampBaselineTx") {
+		return false, nil
+	}
+	args := m.Called(ctx, tx, planID, baseline)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockConfigStore) GetPlanRampBaselineTx(ctx context.Context, tx pgx.Tx, planID string) (config.PlanRampBaseline, error) {
+	m.record("GetPlanRampBaselineTx", ctx, tx, planID)
+	if !isExpected(&m.Mock, "GetPlanRampBaselineTx") {
+		return nil, nil
+	}
+	args := m.Called(ctx, tx, planID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(config.PlanRampBaseline)
+	if !ok {
+		panic(fmt.Sprintf("mock: expected config.PlanRampBaseline, got %T", args.Get(0)))
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockConfigStore) ListPlanCommittedTx(ctx context.Context, tx pgx.Tx, planID string) (map[string]config.PlanRampQuantity, error) {
+	m.record("ListPlanCommittedTx", ctx, tx, planID)
+	if !isExpected(&m.Mock, "ListPlanCommittedTx") {
+		return nil, nil
+	}
+	args := m.Called(ctx, tx, planID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(map[string]config.PlanRampQuantity)
+	if !ok {
+		panic(fmt.Sprintf("mock: expected map[string]config.PlanRampQuantity, got %T", args.Get(0)))
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockConfigStore) CompleteTargetMetStepTx(ctx context.Context, tx pgx.Tx, planID string, stepNumber int, rootID, note string) error {
+	m.record("CompleteTargetMetStepTx", ctx, tx, planID, stepNumber, rootID, note)
+	return m.Called(ctx, tx, planID, stepNumber, rootID, note).Error(0)
+}
+
+func (m *MockConfigStore) SetExecutionRecommendationsIfEmptyTx(ctx context.Context, tx pgx.Tx, executionID string, recs []config.RecommendationRecord, upfront, savings float64) (bool, error) {
+	m.record("SetExecutionRecommendationsIfEmptyTx", ctx, tx, executionID, recs, upfront, savings)
+	args := m.Called(ctx, tx, executionID, recs, upfront, savings)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockConfigStore) ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string) (bool, error) {
+	m.record("ExpireExecutionAtomic", ctx, tx, executionID)
+	args := m.Called(ctx, tx, executionID)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockConfigStore) OccupiedRampStepsInRangeTx(ctx context.Context, tx pgx.Tx, planID string, from, to int) ([]int, error) {
 	m.record("OccupiedRampStepsInRangeTx", ctx, tx, planID, from, to)
 	if !isExpected(&m.Mock, "OccupiedRampStepsInRangeTx") {
@@ -313,6 +402,48 @@ func (m *MockConfigStore) SavePurchaseExecution(ctx context.Context, exec *confi
 	return args.Error(0)
 }
 
+// SaveExecutionIfStatus mocks the guarded save. With no expectation registered
+// it delegates to SavePurchaseExecution so existing tests keep their behavior.
+func (m *MockConfigStore) SaveExecutionIfStatus(ctx context.Context, exec *config.PurchaseExecution, expected []string) error {
+	m.record("SaveExecutionIfStatus", ctx, exec, expected)
+	if !isExpected(&m.Mock, "SaveExecutionIfStatus") {
+		return m.SavePurchaseExecution(ctx, exec)
+	}
+	args := m.Called(ctx, exec, expected)
+	return args.Error(0)
+}
+
+// SaveExecutionIfStatusTx mocks the tx variant; same delegation as above.
+func (m *MockConfigStore) SaveExecutionIfStatusTx(ctx context.Context, tx pgx.Tx, exec *config.PurchaseExecution, expected []string) error {
+	m.record("SaveExecutionIfStatusTx", ctx, tx, exec, expected)
+	if !isExpected(&m.Mock, "SaveExecutionIfStatusTx") {
+		return m.SavePurchaseExecutionTx(ctx, tx, exec)
+	}
+	args := m.Called(ctx, tx, exec, expected)
+	return args.Error(0)
+}
+
+// RecoverReapedExecution mocks the reaped-row recovery. With no expectation it
+// delegates to SavePurchaseExecution.
+func (m *MockConfigStore) RecoverReapedExecution(ctx context.Context, exec *config.PurchaseExecution) error {
+	m.record("RecoverReapedExecution", ctx, exec)
+	if !isExpected(&m.Mock, "RecoverReapedExecution") {
+		return m.SavePurchaseExecution(ctx, exec)
+	}
+	args := m.Called(ctx, exec)
+	return args.Error(0)
+}
+
+// RecoverReapedExecutionTx mocks the tx variant; same delegation as above.
+func (m *MockConfigStore) RecoverReapedExecutionTx(ctx context.Context, tx pgx.Tx, exec *config.PurchaseExecution) error {
+	m.record("RecoverReapedExecutionTx", ctx, tx, exec)
+	if !isExpected(&m.Mock, "RecoverReapedExecutionTx") {
+		return m.RecoverReapedExecution(ctx, exec)
+	}
+	args := m.Called(ctx, tx, exec)
+	return args.Error(0)
+}
+
 // TransitionExecutionStatus mocks the TransitionExecutionStatus operation.
 func (m *MockConfigStore) TransitionExecutionStatus(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string) (*config.PurchaseExecution, error) {
 	m.record("TransitionExecutionStatus", ctx, executionID, fromStatuses, toStatus, actor)
@@ -325,6 +456,32 @@ func (m *MockConfigStore) TransitionExecutionStatus(ctx context.Context, executi
 		panic(fmt.Sprintf("mock: expected *config.PurchaseExecution, got %T", args.Get(0)))
 	}
 	return v, args.Error(1)
+}
+
+// TransitionExecutionStatusPinned mocks the pinned claim. With no expectation
+// registered it delegates to TransitionExecutionStatus, so tests that mock the
+// plain transition keep working; a test exercising a lost pin registers an
+// expectation returning config.ErrExecutionNotInExpectedStatus.
+func (m *MockConfigStore) TransitionExecutionStatusPinned(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string, sawEmptyRecommendations bool) (*config.PurchaseExecution, error) {
+	if !isExpected(&m.Mock, "TransitionExecutionStatusPinned") {
+		return m.TransitionExecutionStatus(ctx, executionID, fromStatuses, toStatus, actor)
+	}
+	m.record("TransitionExecutionStatusPinned", ctx, executionID, fromStatuses, toStatus, actor, sawEmptyRecommendations)
+	args := m.Called(ctx, executionID, fromStatuses, toStatus, actor, sawEmptyRecommendations)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*config.PurchaseExecution)
+	if !ok {
+		panic(fmt.Sprintf("mock: expected *config.PurchaseExecution, got %T", args.Get(0)))
+	}
+	return v, args.Error(1)
+}
+
+// RescheduleAwaitingExecution mocks the conditional scheduled_date update.
+func (m *MockConfigStore) RescheduleAwaitingExecution(ctx context.Context, executionID string, scheduledDate time.Time) (bool, error) {
+	args := m.Called(ctx, executionID, scheduledDate)
+	return args.Bool(0), args.Error(1)
 }
 
 // SetCancelledBy mocks the SetCancelledBy targeted-update operation.
@@ -357,6 +514,39 @@ func (m *MockConfigStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.T
 	}
 	args := m.Called(ctx, tx, executionID, retryExecutionID)
 	return args.Bool(0), args.Error(1)
+}
+
+// LockLadderTrancheForRetryTx mocks the operation. Defaults to (not a ladder
+// execution) when no expectation is registered.
+func (m *MockConfigStore) LockLadderTrancheForRetryTx(ctx context.Context, tx pgx.Tx, idempotencyKey string) (ladder.TrancheStatus, bool, error) {
+	m.record("LockLadderTrancheForRetryTx", ctx, tx, idempotencyKey)
+	if !isExpected(&m.Mock, "LockLadderTrancheForRetryTx") {
+		return "", false, nil
+	}
+	args := m.Called(ctx, tx, idempotencyKey)
+	status, ok := args.Get(0).(ladder.TrancheStatus)
+	if !ok {
+		panic(fmt.Sprintf("mock: expected ladder.TrancheStatus, got %T", args.Get(0)))
+	}
+	return status, args.Bool(1), args.Error(2)
+}
+
+// GetLadderExecutionGate mocks the operation. Defaults to (nil, nil), "not a
+// ladder execution", when no expectation is registered.
+func (m *MockConfigStore) GetLadderExecutionGate(ctx context.Context, idempotencyKey string) (*config.LadderExecutionGate, error) {
+	m.record("GetLadderExecutionGate", ctx, idempotencyKey)
+	if !isExpected(&m.Mock, "GetLadderExecutionGate") {
+		return nil, nil
+	}
+	args := m.Called(ctx, idempotencyKey)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	gate, ok := args.Get(0).(*config.LadderExecutionGate)
+	if !ok {
+		panic(fmt.Sprintf("mock: expected *config.LadderExecutionGate, got %T", args.Get(0)))
+	}
+	return gate, args.Error(1)
 }
 
 // CancelExecutionAtomic mocks the CancelExecutionAtomic operation.
@@ -663,6 +853,12 @@ func (m *MockConfigStore) SaveRIExchangeRecord(ctx context.Context, record *conf
 func (m *MockConfigStore) ReserveRIExchange(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
 	m.record("ReserveRIExchange", ctx, record, dailyCapUSD, perExchangeCapUSD)
 	args := m.Called(ctx, record, dailyCapUSD, perExchangeCapUSD)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockConfigStore) ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	m.record("ReserveApprovedRIExchange", ctx, id, dailyCapUSD, perExchangeCapUSD)
+	args := m.Called(ctx, id, dailyCapUSD, perExchangeCapUSD)
 	return args.String(0), args.Error(1)
 }
 
@@ -1524,6 +1720,26 @@ func (m *MockConfigStore) ListActiveSuppressions(ctx context.Context) ([]config.
 	return v, args.Error(1)
 }
 
+// ListRecentSubmitsTx mocks the ListRecentSubmitsTx operation. It falls back
+// to GetPendingExecutions when no expectation is registered (as
+// GetPendingExecutionsTx does) so tests that exercise the WithTx path keep
+// receiving the pending list; the caller filters by creator and window.
+func (m *MockConfigStore) ListRecentSubmitsTx(ctx context.Context, tx pgx.Tx, creatorID string, since time.Time) ([]config.PurchaseExecution, error) {
+	m.record("ListRecentSubmitsTx", ctx, tx, creatorID, since)
+	if !isExpected(&m.Mock, "ListRecentSubmitsTx") {
+		return m.GetPendingExecutions(ctx)
+	}
+	args := m.Called(ctx, tx, creatorID, since)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).([]config.PurchaseExecution)
+	if !ok {
+		panic(fmt.Sprintf("mock: expected []config.PurchaseExecution, got %T", args.Get(0)))
+	}
+	return v, args.Error(1)
+}
+
 // GetPendingExecutionsTx mocks the GetPendingExecutionsTx operation.
 // Falls back to GetPendingExecutions when no explicit expectation is registered
 // (same pattern as SavePurchaseExecutionTx) so existing tests that exercise
@@ -1578,7 +1794,32 @@ func (m *MockConfigStore) GetExecutionsByStatuses(ctx context.Context, statuses 
 	if !ok {
 		panic(fmt.Sprintf("mock: expected []config.PurchaseExecution, got %T", args.Get(0)))
 	}
-	return v, args.Error(1)
+	return filterExecutionsLikeStore(v, statuses, limit), args.Error(1)
+}
+
+// filterExecutionsLikeStore applies the store contract to canned rows: filter by
+// status, drop clean completed rows, order by ScheduledDate DESC, then cap.
+func filterExecutionsLikeStore(rows []config.PurchaseExecution, statuses []string, limit int) []config.PurchaseExecution {
+	if len(statuses) == 0 {
+		return nil
+	}
+	if limit <= 0 {
+		limit = config.DefaultListLimit
+	}
+	limit = min(limit, config.MaxListLimit)
+	var out []config.PurchaseExecution
+	for i := range rows {
+		r := &rows[i]
+		if !slices.Contains(statuses, r.Status) || (r.Status == "completed" && r.Error == "") {
+			continue
+		}
+		out = append(out, *r)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ScheduledDate.After(out[j].ScheduledDate) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }
 
 // CountExecutionsByPlanAndStatus mocks the CountExecutionsByPlanAndStatus operation.
@@ -1753,15 +1994,17 @@ func (m *MockConfigStore) SaveLadderRun(ctx context.Context, run *config.LadderR
 	return v, args.Error(1)
 }
 
-// SaveLadderRunWithTranches mocks the SaveLadderRunWithTranches operation.
-// Returns the run unchanged (transaction succeeds) when no expectation is
-// registered, so tests that only care about other calls stay green.
-func (m *MockConfigStore) SaveLadderRunWithTranches(ctx context.Context, run *config.LadderRunDB, tranches []config.LadderTrancheDB) (*config.LadderRunDB, error) {
-	m.record("SaveLadderRunWithTranches", ctx, run, tranches)
-	if !isExpected(&m.Mock, "SaveLadderRunWithTranches") {
-		return run, nil
+// PlanAndSaveLadderRun mocks the PlanAndSaveLadderRun operation. With no
+// expectation registered it runs build with zero in-flight and returns the run
+// it produced (transaction succeeds), so tests that only care about other
+// calls stay green.
+func (m *MockConfigStore) PlanAndSaveLadderRun(ctx context.Context, configID string, asOf time.Time, build config.LadderPlanBuilder) (*config.LadderRunDB, error) {
+	m.record("PlanAndSaveLadderRun", ctx, configID, asOf)
+	if !isExpected(&m.Mock, "PlanAndSaveLadderRun") {
+		run, _, err := build(0)
+		return run, err
 	}
-	args := m.Called(ctx, run, tranches)
+	args := m.Called(ctx, configID, asOf)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -1814,26 +2057,6 @@ func (m *MockConfigStore) LatestLadderRunStartedAt(ctx context.Context, configID
 	v, ok := args.Get(0).(*time.Time)
 	if !ok {
 		panic(fmt.Sprintf("mock: expected *time.Time, got %T", args.Get(0)))
-	}
-	return v, args.Error(1)
-}
-
-// GetInFlightLadderCommitUSDHr mocks the GetInFlightLadderCommitUSDHr
-// operation. Returns a pointer to zero (no in-flight commitment) when no
-// expectation is registered, matching the happy-path default.
-func (m *MockConfigStore) GetInFlightLadderCommitUSDHr(ctx context.Context, configID string, asOf time.Time) (*float64, error) {
-	m.record("GetInFlightLadderCommitUSDHr", ctx, configID, asOf)
-	if !isExpected(&m.Mock, "GetInFlightLadderCommitUSDHr") {
-		zero := 0.0
-		return &zero, nil
-	}
-	args := m.Called(ctx, configID, asOf)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	v, ok := args.Get(0).(*float64)
-	if !ok {
-		panic(fmt.Sprintf("mock: expected *float64, got %T", args.Get(0)))
 	}
 	return v, args.Error(1)
 }

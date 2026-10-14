@@ -16,12 +16,11 @@ const lowGroupID = "44444444-4444-4444-8444-444444444444"
 // whoever controls the new address, so it is held to the same grant ceiling as
 // adding the target's groups.
 
-func requireEmailChangeRefused(t *testing.T, err error, sentinel error, grant string, mockStore *MockStore) {
+func requireEmailChangeRefused(t *testing.T, err error, sentinel error, grant string) {
 	t.Helper()
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sentinel)
 	assert.Contains(t, err.Error(), grant)
-	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestEmailChangeCeiling_UpdateUsersOnlyCannotRetargetAdmin(t *testing.T) {
@@ -37,7 +36,8 @@ func TestEmailChangeCeiling_UpdateUsersOnlyCannotRetargetAdmin(t *testing.T) {
 	email := "attacker@example.com"
 	_, err := svc.UpdateUser(ctx, ceilingActorID, ceilingTargetID, UpdateUserRequest{Email: &email})
 
-	requireEmailChangeRefused(t, err, ErrPermissionCeiling, ActionAdmin+":"+ResourceAll, mockStore)
+	requireEmailChangeRefused(t, err, ErrPermissionCeiling, ActionAdmin+":"+ResourceAll)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // Carved-out verbs (#923) are out of reach even for an administrator.
@@ -54,7 +54,8 @@ func TestEmailChangeCeiling_AdminCannotRetargetPurchaser(t *testing.T) {
 	email := "attacker@example.com"
 	_, err := svc.UpdateUser(ctx, ceilingActorID, ceilingTargetID, UpdateUserRequest{Email: &email})
 
-	requireEmailChangeRefused(t, err, ErrPermissionNotGrantable, ActionExecute+":"+ResourcePurchases, mockStore)
+	requireEmailChangeRefused(t, err, ErrPermissionNotGrantable, ActionExecute+":"+ResourcePurchases)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // Negative controls: the ceiling does not block the legitimate cases.
@@ -120,7 +121,8 @@ func TestEmailChangeCeiling_AccountScopedAdminCannotRetargetGlobalAdmin(t *testi
 	email := "attacker@example.com"
 	_, err := svc.UpdateUser(ctx, ceilingActorID, ceilingTargetID, UpdateUserRequest{Email: &email})
 
-	requireEmailChangeRefused(t, err, ErrPermissionCeiling, "account scope", mockStore)
+	requireEmailChangeRefused(t, err, ErrPermissionCeiling, "account scope")
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // A scoped admin may retarget a user whose scope it fully contains.
@@ -161,5 +163,6 @@ func TestEmailChangeCeiling_EmailPlusGroupDowngradeOnAdminRefused(t *testing.T) 
 	email := "attacker@example.com"
 	_, err := svc.UpdateUser(ctx, ceilingActorID, ceilingTargetID, UpdateUserRequest{Email: &email, GroupIDs: []string{lowGroupID}})
 
-	requireEmailChangeRefused(t, err, ErrPermissionCeiling, ActionAdmin+":"+ResourceAll, mockStore)
+	requireEmailChangeRefused(t, err, ErrPermissionCeiling, ActionAdmin+":"+ResourceAll)
+	mockStore.AssertNotCalled(t, "UpdateUserAdminFields", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

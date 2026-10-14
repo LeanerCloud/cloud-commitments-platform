@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -392,8 +393,8 @@ func TestApproveRIExchange_SessionAdmin(t *testing.T) {
 
 	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
 		Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-123"}, PaymentDue: "100.00"}, nil)
-	// executeApprovedExchange calls GetRIExchangeDailySpend + GetGlobalConfig
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	// executeApprovedExchange calls GetGlobalConfig + ReserveApprovedRIExchange
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD:       1000,
 		RIExchangeMaxPerExchangeUSD: 500,
@@ -453,7 +454,7 @@ func TestApproveRIExchange_SessionApproveOwn(t *testing.T) {
 
 		mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
 			Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-1"}, PaymentDue: "50.00"}, nil)
-		mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+		mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil)
 		mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 			RIExchangeMaxDailyUSD:       1000,
 			RIExchangeMaxPerExchangeUSD: 500,
@@ -534,7 +535,7 @@ func TestApproveRIExchange_SessionScope(t *testing.T) {
 		}, nil).Maybe()
 		mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
 			Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-1"}, PaymentDue: "50.00"}, nil).Maybe()
-		mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil).Maybe()
+		mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil).Maybe()
 		mockStore.On("FailRIExchange", ctx, id, mock.AnythingOfType("string")).Return(nil).Maybe()
 		mockStore.On("StampRIExchangeApprovedBy", ctx, id, mock.Anything).Return(nil).Maybe()
 
@@ -627,7 +628,7 @@ func fourEyesRIExchangeFixture(t *testing.T, creatorID *string, approverID strin
 	}, nil)
 	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
 		Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-1"}, PaymentDue: "50.00"}, nil)
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil)
 	mockStore.On("FailRIExchange", ctx, id, mock.AnythingOfType("string")).Return(nil)
 	mockStore.On("StampRIExchangeApprovedBy", ctx, id, mock.Anything).Return(nil)
 
@@ -768,7 +769,7 @@ func TestApproveRIExchange_TokenPathSkipsStampWhenExecutionErrors(t *testing.T) 
 		RIExchangeMaxDailyUSD:       1000,
 		RIExchangeMaxPerExchangeUSD: 500,
 	}, nil)
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil)
 	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", &approver).
 		Return(&config.RIExchangeRecord{ID: id, Status: "processing"}, nil)
 	mockStore.On("CompleteRIExchangeWithPayment", ctx, id, "exch-518", "0").
@@ -807,7 +808,7 @@ func TestApproveRIExchange_LegacyTokenStillWorks(t *testing.T) {
 	}, nil)
 	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing", mock.Anything).
 		Return(&config.RIExchangeRecord{ID: id, Status: "processing"}, nil)
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD:       1000,
 		RIExchangeMaxPerExchangeUSD: 500,
@@ -2238,7 +2239,6 @@ func TestExecuteApprovedExchange_EmptyRecordRegionFails(t *testing.T) {
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	h := &Handler{config: mockStore}
 
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD:       1000,
 		RIExchangeMaxPerExchangeUSD: 500,
@@ -2263,6 +2263,7 @@ func TestExecuteApprovedExchange_EmptyRecordRegionFails(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "failed", respMap["status"])
 	assert.Contains(t, respMap["reason"], "no region")
+	mockStore.AssertNotCalled(t, "ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestClassifyRecsAge pins the staleness classification thresholds for
@@ -2327,7 +2328,7 @@ func TestApproveRIExchange_SessionActorStamped(t *testing.T) {
 	mockStore.On("TransitionRIExchangeStatus", ctx, id, "pending", "processing",
 		mock.MatchedBy(func(a *string) bool { return a != nil && *a == actorID }),
 	).Return(&config.RIExchangeRecord{ID: id, Status: "processing", SourceRIIDs: []string{"ri-1"}, PaymentDue: "10.00"}, nil)
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil).Maybe()
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD: 1000, RIExchangeMaxPerExchangeUSD: 500,
 	}, nil)
@@ -2366,42 +2367,6 @@ func TestRejectRIExchange_TokenPathActorIsNil(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// ─── H1: checkDailyCap fails closed on unparseable paymentDue ─────────────────
-
-// TestCheckDailyCap_UnparseablePaymentDue_FailsClosed is the regression test
-// for H1: checkDailyCap must return a blocking reason when paymentDueStr cannot
-// be parsed, never treat it as $0 (which would allow an unknown-cost exchange
-// to proceed when the daily cap might be exceeded).
-func TestCheckDailyCap_UnparseablePaymentDue_FailsClosed(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name          string
-		paymentDueStr string
-	}{
-		{"not-a-number", "not-a-number"},
-		{"empty string", ""},
-	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			reason := checkDailyCap("100.00", tc.paymentDueStr, 500.0)
-			assert.NotEmpty(t, reason,
-				"checkDailyCap must fail closed when paymentDueStr=%q cannot be parsed", tc.paymentDueStr)
-			assert.Contains(t, reason, "could not parse payment due",
-				"reason must reference the payment-due parsing failure, not treat it as $0")
-		})
-	}
-}
-
-// TestCheckDailyCap_ValidPaymentDue_WithinCap_Passes verifies the happy path:
-// valid parseable amounts within the daily cap must return an empty reason.
-func TestCheckDailyCap_ValidPaymentDue_WithinCap_Passes(t *testing.T) {
-	t.Parallel()
-	reason := checkDailyCap("100.00", "50.00", 500.0)
-	assert.Empty(t, reason, "within-cap exchange must not be blocked")
-}
-
 // ─── H2: effectiveCap bounded by daily headroom ───────────────────────────────
 
 // TestExecuteApprovedExchange_EffectiveCap_BoundedByDailyHeadroom is the
@@ -2416,8 +2381,9 @@ func TestExecuteApprovedExchange_EffectiveCap_BoundedByDailyHeadroom(t *testing.
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
-	// dailySpent=$450, dailyCap=$500, perExchangeCap=$100 -> headroom=$50
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("450.00", nil)
+	// dailySpent=$450, dailyCap=$500, perExchangeCap=$100 -> the store reserves
+	// the $50 headroom as the ceiling.
+	mockStore.On("ReserveApprovedRIExchange", ctx, id, "500.000000", "100.000000").Return("50.000000", nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD:       500,
 		RIExchangeMaxPerExchangeUSD: 100,
@@ -2468,7 +2434,7 @@ func TestExecuteApprovedExchange_AcceptedAmountFromFreshQuote(t *testing.T) {
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD:       1000,
 		RIExchangeMaxPerExchangeUSD: 500,
@@ -2519,7 +2485,7 @@ func TestExecuteApprovedExchange_LedgerWriteFailure_ReturnsError(t *testing.T) {
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
-	mockStore.On("GetRIExchangeDailySpend", mock.Anything, mock.Anything).Return("0", nil)
+	mockStore.On("ReserveApprovedRIExchange", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("500.000000", nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
 		RIExchangeMaxDailyUSD:       1000,
 		RIExchangeMaxPerExchangeUSD: 500,
@@ -2617,4 +2583,92 @@ func TestExecuteExchange_FourEyesPolicyLookupErrorFailsClosed(t *testing.T) {
 	assert.Contains(t, err.Error(), "4-eyes policy check")
 	_, isClient := IsClientError(err)
 	assert.False(t, isClient, "a lookup failure is a server error, not a client refusal")
+}
+
+// TestExecuteApprovedExchange_ReservationRefused_NoExecute asserts that when the
+// atomic reservation refuses (daily headroom gone), the exchange fails and the
+// provider is never called (#656).
+func TestExecuteApprovedExchange_ReservationRefused_NoExecute(t *testing.T) {
+	ctx := context.Background()
+	const id = "550e8400-e29b-41d4-a716-000000000656"
+
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+		RIExchangeMaxDailyUSD: 1000, RIExchangeMaxPerExchangeUSD: 500,
+	}, nil)
+	mockStore.On("ReserveApprovedRIExchange", ctx, id, "1000.000000", "500.000000").
+		Return("", fmt.Errorf("%w: initial 600.000000, remaining 400.000000", config.ErrRIExchangeDailyCapExceeded))
+	mockStore.On("FailRIExchange", ctx, id, mock.MatchedBy(func(r string) bool {
+		return strings.Contains(r, "daily cap exceeded")
+	})).Return(nil)
+
+	called := false
+	h := &Handler{config: mockStore, executeExchangeFn: func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+		called = true
+		return "", nil, nil
+	}}
+	resp, err := h.executeApprovedExchange(ctx, id, &config.RIExchangeRecord{
+		ID: id, Region: "us-east-1", SourceRIIDs: []string{"ri-1"}, TargetOfferingID: "o", TargetCount: 1, PaymentDue: "600.00",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "failed", resp.(map[string]any)["status"])
+	assert.False(t, called, "provider must not be called when the reservation is refused")
+}
+
+// TestExecuteApprovedExchange_SettlesAcceptedAmountWithinReservedCeiling asserts
+// the full reserved ceiling (not the initial quote) bounds Execute, and the fresh
+// accepted amount is what gets settled on the same row (#656).
+func TestExecuteApprovedExchange_SettlesAcceptedAmountWithinReservedCeiling(t *testing.T) {
+	ctx := context.Background()
+	const id = "550e8400-e29b-41d4-a716-000000000657"
+
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+		RIExchangeMaxDailyUSD: 1000, RIExchangeMaxPerExchangeUSD: 500,
+	}, nil)
+	mockStore.On("ReserveApprovedRIExchange", ctx, id, "1000.000000", "500.000000").Return("400.000000", nil)
+	mockStore.On("CompleteRIExchangeWithPayment", ctx, id, "exch-1", "390.000000").Return(nil)
+
+	var got exchange.ExchangeExecuteRequest
+	h := &Handler{config: mockStore, executeExchangeFn: func(_ context.Context, req exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+		got = req
+		return "exch-1", &exchange.ExchangeQuoteSummary{PaymentDueUSDStr: "390.000000"}, nil
+	}}
+	_, err := h.executeApprovedExchange(ctx, id, &config.RIExchangeRecord{
+		ID: id, Region: "us-east-1", SourceRIIDs: []string{"ri-1"}, TargetOfferingID: "o", TargetCount: 1, PaymentDue: "100.00",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got.MaxPaymentDueUSD)
+	assert.Equal(t, 0, got.MaxPaymentDueUSD.Cmp(big.NewRat(400, 1)), "ceiling must be the reserved $400, not the $100 initial quote")
+}
+
+// TestExecuteApprovedExchange_ReservationInfrastructureError_HidesDetail asserts
+// that a non-cap reservation error (lock/DB failure) is logged, not echoed to the
+// approver, and the provider is never called.
+func TestExecuteApprovedExchange_ReservationInfrastructureError_HidesDetail(t *testing.T) {
+	ctx := context.Background()
+	const id = "550e8400-e29b-41d4-a716-000000000658"
+
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+		RIExchangeMaxDailyUSD: 1000, RIExchangeMaxPerExchangeUSD: 500,
+	}, nil)
+	mockStore.On("ReserveApprovedRIExchange", ctx, id, "1000.000000", "500.000000").
+		Return("", errors.New("failed to lock RI exchange daily spend: connection reset by peer"))
+	mockStore.On("FailRIExchange", ctx, id, "daily spending cap check failed").Return(nil)
+
+	called := false
+	h := &Handler{config: mockStore, executeExchangeFn: func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+		called = true
+		return "", nil, nil
+	}}
+	resp, err := h.executeApprovedExchange(ctx, id, &config.RIExchangeRecord{
+		ID: id, Region: "us-east-1", SourceRIIDs: []string{"ri-1"}, TargetOfferingID: "o", TargetCount: 1, PaymentDue: "10.00",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "daily spending cap check failed", resp.(map[string]any)["reason"])
+	assert.False(t, called)
 }

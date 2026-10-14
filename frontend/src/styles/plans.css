@@ -192,8 +192,22 @@
     border-color: var(--cudly-primary);
 }
 
+.ramp-option {
+    position: relative;
+}
+
+/* Visually hidden, not display:none, so the radio stays in the tab order. */
 .ramp-option input[type="radio"] {
-    display: none;
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    pointer-events: none;
+}
+
+.ramp-option:has(input:focus-visible) {
+    box-shadow: var(--cudly-focus-ring);
 }
 
 .ramp-option:has(input:checked) {

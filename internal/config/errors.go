@@ -7,6 +7,11 @@ var ErrAzurePricingNotReady = errors.New("azure pricing migration not ready")
 // ErrNotFound is returned when a requested config-store row does not exist.
 var ErrNotFound = errors.New("not found")
 
+// ErrEmptyPurchaseID is returned by SavePurchaseHistory for a record with no
+// purchase_id. History is saved once per (provider, account_id, purchase_id),
+// so an empty ID would be silently dropped after the first one (#774).
+var ErrEmptyPurchaseID = errors.New("purchase history record has no purchase id")
+
 // ErrPurchasePlanConflict means a plan changed after the caller read it.
 var ErrPurchasePlanConflict = errors.New("purchase plan changed")
 

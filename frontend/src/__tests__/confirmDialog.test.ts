@@ -88,4 +88,52 @@ describe('confirmDialog', () => {
     expect(document.querySelector('.btn-primary')?.textContent).toBe('Reset all');
     expect(document.querySelector('.btn-secondary')?.textContent).toBe('Keep them');
   });
+
+  it('names the dialog by its title and describes it by its body', () => {
+    void confirmDialog({ title: 'Delete?', body: 'Permanent action.' });
+    const backdrop = document.querySelector('.modal-confirm-backdrop')!;
+    const titleId = backdrop.getAttribute('aria-labelledby')!;
+    const bodyId = backdrop.getAttribute('aria-describedby')!;
+    expect(document.getElementById(titleId)?.textContent).toBe('Delete?');
+    expect(document.getElementById(bodyId)?.textContent).toBe('Permanent action.');
+  });
+
+  it('focuses Cancel for destructive dialogs and Confirm otherwise', () => {
+    void confirmDialog({ title: 't', body: 'b', destructive: true });
+    expect(document.activeElement?.textContent).toBe('Cancel');
+    document.body.replaceChildren();
+    void confirmDialog({ title: 't', body: 'b' });
+    expect(document.activeElement?.textContent).toBe('Confirm');
+  });
+
+  it('focuses Cancel when initialFocus is cancel even if not destructive', () => {
+    void confirmDialog({ title: 't', body: 'b', initialFocus: 'cancel' });
+    expect(document.activeElement?.textContent).toBe('Cancel');
+  });
+
+  it('focuses the close-X when the cancel button is hidden and focus is cancel', () => {
+    void confirmDialog({ title: 't', body: 'b', destructive: true, hideCancelButton: true });
+    expect(document.activeElement?.classList.contains('modal-confirm-close')).toBe(true);
+  });
+
+  it('cycles focus over all focusables in DOM order, including body inputs', () => {
+    const body = document.createElement('div');
+    const ta = document.createElement('textarea');
+    body.appendChild(ta);
+    void confirmDialog({ title: 't', body, destructive: true });
+    const tab = (shiftKey = false): void => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey }));
+    };
+    // DOM order: close-X, textarea, Cancel, Confirm; focus starts on Cancel.
+    tab(true);
+    expect(document.activeElement).toBe(ta);
+    tab(true);
+    expect(document.activeElement?.classList.contains('modal-confirm-close')).toBe(true);
+    tab();
+    expect(document.activeElement).toBe(ta);
+    tab(); tab();
+    expect(document.activeElement?.textContent).toBe('Confirm');
+    tab();
+    expect(document.activeElement?.classList.contains('modal-confirm-close')).toBe(true);
+  });
 });

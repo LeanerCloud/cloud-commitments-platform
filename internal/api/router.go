@@ -123,6 +123,8 @@ func (r *Router) registerRoutes() {
 		// recommendation feed (handlers still scope rows by account
 		// permission grants).
 		{ExactPath: "/api/recommendations", Method: "GET", Handler: r.getRecommendationsHandler, Auth: AuthUser},
+		{ExactPath: "/api/insurance/comparison", Method: "GET", Handler: r.getInsuranceComparisonHandler, Auth: AuthUser},
+		{ExactPath: "/api/insurance/status", Method: "GET", Handler: r.getInsuranceStatusHandler, Auth: AuthUser},
 		{ExactPath: "/api/recommendations/freshness", Method: "GET", Handler: r.getRecommendationsFreshnessHandler, Auth: AuthUser},
 		// AuthUser: any signed-in user can trigger refresh; the handler
 		// then enforces requirePermission(view, recommendations) so
@@ -324,6 +326,7 @@ func (r *Router) registerRoutes() {
 		{ExactPath: "/api/ladder/configs", Method: "PUT", Handler: r.upsertLadderConfigHandler, Auth: AuthUser},
 		{ExactPath: "/api/ladder/runs", Method: "GET", Handler: r.getLadderTimelineRunsHandler, Auth: AuthUser},
 		{ExactPath: "/api/ladder/tranches", Method: "GET", Handler: r.getLadderTimelineHandler, Auth: AuthUser},
+		{PathPrefix: "/api/ladder/tranches/", PathSuffix: "/resolve", Method: "POST", Handler: r.resolveLadderTrancheHandler, Auth: AuthUser},
 		{PathPrefix: "/api/ladder/tranches/", Method: "PATCH", Handler: r.amendLadderTrancheHandler, Auth: AuthUser},
 
 		// Notification one-click unsubscribe (RFC 8058). AuthPublic: the signed
@@ -507,6 +510,14 @@ func (r *Router) getRecommendationsHandler(ctx context.Context, req *events.Lamb
 
 func (r *Router) refreshRecommendationsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
 	return r.h.postRefreshRecommendations(ctx, req)
+}
+
+func (r *Router) getInsuranceStatusHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
+	return r.h.getInsuranceStatus(ctx, req)
+}
+
+func (r *Router) getInsuranceComparisonHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
+	return r.h.getInsuranceComparison(ctx, req)
 }
 
 func (r *Router) getRecommendationsFreshnessHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
@@ -1012,6 +1023,10 @@ func (r *Router) getLadderTimelineRunsHandler(ctx context.Context, req *events.L
 
 func (r *Router) amendLadderTrancheHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
 	return r.h.amendLadderTranche(ctx, req, params["id"])
+}
+
+func (r *Router) resolveLadderTrancheHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
+	return r.h.resolveLadderTranche(ctx, req, params["id"])
 }
 
 func (r *Router) unsubscribeHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {

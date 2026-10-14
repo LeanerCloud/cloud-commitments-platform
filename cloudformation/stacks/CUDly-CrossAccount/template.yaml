@@ -105,6 +105,11 @@ Resources:
               - ec2:DescribeRegions
               - ec2:DescribeInstanceTypeOfferings
             Resource: "*"
+          - Sid: EC2ReservedInstanceTagging
+            Effect: Allow
+            Action:
+              - ec2:CreateTags
+            Resource: "arn:aws:ec2:*:*:reserved-instances/*"
 
           # RDS Reserved Instances
           - Sid: RDSReservedInstances

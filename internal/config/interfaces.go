@@ -72,6 +72,17 @@ type StoreInterface interface {
 	// atomically with respect to concurrent completions and creations.
 	// Returns (nil, nil) when the plan does not exist.
 	LockPurchasePlanTx(ctx context.Context, tx pgx.Tx, planID string) (*PurchasePlan, error)
+	// LockPlanProvidersTx takes the transaction-scoped advisory lock of every
+	// named provider, in sorted order, so two plan steps that resolve the same
+	// provider's recommendations cannot both attach the same capacity. Lock
+	// order is advisory lock, then LockPurchasePlanTx. The ladder config lock
+	// (PlanAndSaveLadderRun, ClaimDueLadderTranches, AmendLadderTranche) is always taken BEFORE both:
+	// ClaimDueLadderTranches's create callback may take these locks, so they
+	// come after the ladder lock; code holding an execution or tranche row
+	// (retry linker, reconciler) must never take the ladder lock. No cycle.
+	// Duplicates are taken once; an empty list and an empty provider name are
+	// errors.
+	LockPlanProvidersTx(ctx context.Context, tx pgx.Tx, providers []string) error
 	// OccupiedRampStepsInRangeTx returns the steps in [from, to] of planID that
 	// already have a fan-out unit which bought or is still working, ascending.
 	// Callers about to mint executions for a step range use it to refuse a step
@@ -81,6 +92,36 @@ type StoreInterface interface {
 	// transaction; without it the answer is advisory and two concurrent callers
 	// both see the step free.
 	OccupiedRampStepsInRangeTx(ctx context.Context, tx pgx.Tx, planID string, from, to int) ([]int, error)
+	// ListExecutionsForPlanStepTx returns EVERY execution row (any status,
+	// account or retry attempt) recorded for stepNumber of planID. The
+	// get-or-create of a plan step reads it under LockPurchasePlanTx so any
+	// existing row, settled or not, blocks minting a second root (platform#631).
+	ListExecutionsForPlanStepTx(ctx context.Context, tx pgx.Tx, planID string, stepNumber int) ([]PurchaseExecution, error)
+	// SetPlanRampBaselineTx freezes the plan's ramp baseline if none is set and
+	// reports whether it wrote. Immutable once set; not part of
+	// UpdatePurchasePlanTx, so a stale plan save cannot touch it. The caller
+	// holds LockPurchasePlanTx.
+	SetPlanRampBaselineTx(ctx context.Context, tx pgx.Tx, planID string, baseline PlanRampBaseline) (bool, error)
+	// GetPlanRampBaselineTx returns the frozen baseline, nil when none is set.
+	GetPlanRampBaselineTx(ctx context.Context, tx pgx.Tx, planID string) (PlanRampBaseline, error)
+	// ListPlanCommittedTx returns what the plan's executions already hold per
+	// recommendation identity (see its implementation for the status rules).
+	// The caller holds LockPurchasePlanTx.
+	ListPlanCommittedTx(ctx context.Context, tx pgx.Tx, planID string) (map[string]PlanRampQuantity, error)
+	// CompleteTargetMetStepTx records a plan step whose cumulative target is
+	// already held as a completed no-op row (new, or rootID's empty root row
+	// completed in place) and advances the ramp over it in the same
+	// transaction. The caller holds LockPurchasePlanTx.
+	CompleteTargetMetStepTx(ctx context.Context, tx pgx.Tx, planID string, stepNumber int, rootID, note string) error
+	// SetExecutionRecommendationsIfEmptyTx attaches resolved recommendations
+	// and their totals to a pending/notified execution that has none yet.
+	// Returns false when another resolver already attached them (or the row
+	// left pending/notified); the caller re-reads instead of overwriting.
+	SetExecutionRecommendationsIfEmptyTx(ctx context.Context, tx pgx.Tx, executionID string, recs []RecommendationRecord, upfront, savings float64) (bool, error)
+	// ExpireExecutionAtomic flips a pending/notified execution to expired in
+	// tx so its suppressions can be deleted in the same transaction. Returns
+	// false when the row had already left pending/notified.
+	ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string) (bool, error)
 	// UpdatePurchasePlanTx checks UpdatedAt and replaces it with the returned version.
 	// The caller must discard the transaction-local plan if the transaction rolls back.
 	UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, plan *PurchasePlan) error
@@ -89,6 +130,14 @@ type StoreInterface interface {
 
 	// Purchase executions
 	SavePurchaseExecution(ctx context.Context, execution *PurchaseExecution) error
+	// SaveExecutionIfStatus saves only while the stored status is one of
+	// expected (ErrExecutionNotInExpectedStatus otherwise), so a stale
+	// in-memory copy cannot rewrite a status another writer moved on.
+	SaveExecutionIfStatus(ctx context.Context, execution *PurchaseExecution, expected []string) error
+	// RecoverReapedExecution persists a late completed/partially_completed
+	// outcome over a reaper-failed row that has no retry successor linked
+	// (ErrExecutionRetryLinked when one is).
+	RecoverReapedExecution(ctx context.Context, execution *PurchaseExecution) error
 	GetPendingExecutions(ctx context.Context) ([]PurchaseExecution, error)
 	// GetExecutionsByStatuses returns executions in any of the given states,
 	// newest first, capped at `limit`. Used by the History handler to render
@@ -163,6 +212,17 @@ type StoreInterface interface {
 	// When non-nil the actor is stamped onto transitioned_by + transitioned_at; when nil,
 	// transitioned_by is set to NULL and transitioned_at is still set to NOW() for ordering.
 	TransitionExecutionStatus(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string) (*PurchaseExecution, error)
+	// TransitionExecutionStatusPinned is TransitionExecutionStatus that also
+	// requires the row's recommendations to be empty (sawEmptyRecommendations)
+	// or non-empty exactly as the caller saw them, so a claim cannot land on a
+	// row whose recommendations were attached after the caller's gate check. A
+	// lost pin returns ErrExecutionNotInExpectedStatus like any lost CAS.
+	TransitionExecutionStatusPinned(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string, sawEmptyRecommendations bool) (*PurchaseExecution, error)
+	// RescheduleAwaitingExecution sets scheduled_date on an execution that is
+	// still pending or notified and touches no other column. It returns false
+	// (and writes nothing) when the row has left those statuses, so a cancel or
+	// approve that lands first is never overwritten.
+	RescheduleAwaitingExecution(ctx context.Context, executionID string, scheduledDate time.Time) (bool, error)
 	// SetCancelledBy stamps canceled_by and the legacy cancelled_by column on
 	// an execution without overwriting any other columns. Used after
 	// TransitionExecutionStatus to fold the actor attribution into the same
@@ -181,6 +241,15 @@ type StoreInterface interface {
 	// DB error. Must be called inside the same tx that inserts the
 	// successor row, after that insert.
 	LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error)
+	// LockLadderTrancheForRetryTx row-locks the ladder tranche whose id equals
+	// idempotencyKey (matched as text; found=false for any non-ladder key) so
+	// Retry can refuse a settled tranche before inserting a successor.
+	LockLadderTrancheForRetryTx(ctx context.Context, tx pgx.Tx, idempotencyKey string) (status ladder.TrancheStatus, found bool, err error)
+	// GetLadderExecutionGate returns the ladder config switches and run status
+	// behind the tranche whose id equals idempotencyKey (matched as text), or
+	// (nil, nil) for any non-ladder key. The executor rechecks it before a
+	// provider call and fails closed on error.
+	GetLadderExecutionGate(ctx context.Context, idempotencyKey string) (*LadderExecutionGate, error)
 	// RotatePendingApprovalToken sets approval_token_hash and its expiry only
 	// while the row is still pending/notified, touching no other column, so a
 	// re-notification can never clobber a concurrent approve/cancel the way a
@@ -363,6 +432,10 @@ type StoreInterface interface {
 	// RI Exchange history
 	SaveRIExchangeRecord(ctx context.Context, record *RIExchangeRecord) error
 	ReserveRIExchange(ctx context.Context, record *RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error)
+	// ReserveApprovedRIExchange reserves the execution ceiling for an already
+	// processing (approved) exchange under the shared daily-cap lock, excluding
+	// the row's own amount, and stores the ceiling as its payment_due.
+	ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error)
 	GetRIExchangeRecord(ctx context.Context, id string) (*RIExchangeRecord, error)
 	GetRIExchangeRecordByToken(ctx context.Context, token string) (*RIExchangeRecord, error)
 	GetRIExchangeHistory(ctx context.Context, since time.Time, limit int) ([]RIExchangeRecord, error)
@@ -499,11 +572,23 @@ type StoreInterface interface {
 	// so the execution insert + suppression writes commit atomically.
 	SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, execution *PurchaseExecution) error
 
+	// SaveExecutionIfStatusTx and RecoverReapedExecutionTx are the
+	// tx-accepting variants of SaveExecutionIfStatus and RecoverReapedExecution.
+	SaveExecutionIfStatusTx(ctx context.Context, tx pgx.Tx, execution *PurchaseExecution, expected []string) error
+	RecoverReapedExecutionTx(ctx context.Context, tx pgx.Tx, execution *PurchaseExecution) error
+
 	// GetPendingExecutionsTx is the tx-accepting variant of
-	// GetPendingExecutions. Used inside the executePurchase WithTx block
-	// so the duplicate-detection read and the new-execution insert are
-	// atomic under the same transaction, eliminating the TOCTOU race (#643).
+	// GetPendingExecutions. It row-locks the pending rows it returns; it does
+	// not serialize concurrent inserts (see ListRecentSubmitsTx).
 	GetPendingExecutionsTx(ctx context.Context, tx pgx.Tx) ([]PurchaseExecution, error)
+
+	// ListRecentSubmitsTx takes a per-creator transaction-scoped lock and
+	// returns the creator's web-submitted executions scheduled at or after
+	// since that are pending, in flight or bought. executePurchase's
+	// duplicate guard reads it inside the WithTx block that inserts the new
+	// execution, so concurrent identical submits serialize and a retry
+	// that arrives after a direct execute left "pending" is still seen.
+	ListRecentSubmitsTx(ctx context.Context, tx pgx.Tx, creatorID string, since time.Time) ([]PurchaseExecution, error)
 
 	// WithTx opens a pgx transaction, runs fn, and commits on success or
 	// rolls back on error. fn can call any *Tx method on the store to
@@ -544,33 +629,21 @@ type StoreInterface interface {
 	// current status), so callers can distinguish a race from a hard error.
 	// Statuses are typed ladder.RunStatus so callers cannot pass an arbitrary
 	// string that would never match a stored status.
-	// SaveLadderRunWithTranches inserts the run row and its tranches in ONE
-	// transaction: a tranche-insert failure rolls back the run row too, so a
-	// status=planned run never persists without its tranches (which would let
-	// the cadence gate suppress the retry for a full window).
-	//
-	// L5 append-only: every ladder run persists its new scheduled tranches via
-	// this method and leaves any existing scheduled tranches untouched. In-flight
-	// netting (GetInFlightLadderCommitUSDHr) already subtracts existing
-	// scheduled tranches from the gap, so each run appends exactly the delta
-	// needed to reach target-E. Appending (never superseding) keeps prior
-	// tranches' original fire dates, converges to target on drift-up (run N
-	// tops up the gap the netting leaves), and cannot oscillate.
-	//
-	// GetInFlightLadderCommitUSDHr returns the total hourly USD commitment in
-	// flight for the given config: the sum of amount_usd_hr for tranches with
-	// status = 'scheduled' and scheduled_date after asOf ONLY (an elapsed
-	// tranche was never bought while no executor fires it, issue #118).
-	// Fired/completed tranches are executed
-	// purchases already reflected in the engine's ExistingUSDPerHour (the
-	// provider adapters fold payment-pending and active commitments into E),
-	// so summing them here too would double-count and under-purchase. Returns
-	// a non-nil pointer (zero when no scheduled tranches exist) so callers can
-	// pass it directly to AllocationInput.InFlightUSDPerHour. Never returns
-	// nil without an error.
+	// PlanAndSaveLadderRun is the ladder planning persist: in ONE READ COMMITTED
+	// transaction under the config's advisory lock it reads the in-flight
+	// commitment (scheduled rows within LadderFireGrace plus fired rows), calls
+	// build with it, then inserts the run, sweeps overdue tranches and inserts
+	// the new ones (append-only, L5). Overlapping runs for one config serialize:
+	// the second nets the first's committed rows. build must be pure compute
+	// (no I/O); run.StartedAt must equal asOf. asOf MUST be captured before the
+	// caller reads the existing commitment (E): tranches completed after asOf
+	// are added to the in-flight figure, so one that completes between the E
+	// read and the locked read is netted, never missed (a double count is a
+	// safe under-buy). This holds only if a tranche is marked completed after
+	// its commitment is visible through E's source (executor PR5a). The lock is
+	// also taken first by ClaimDueLadderTranches.
+	PlanAndSaveLadderRun(ctx context.Context, configID string, asOf time.Time, build LadderPlanBuilder) (*LadderRunDB, error)
 	SaveLadderRun(ctx context.Context, run *LadderRunDB) (*LadderRunDB, error)
-	SaveLadderRunWithTranches(ctx context.Context, run *LadderRunDB, tranches []LadderTrancheDB) (*LadderRunDB, error)
-	GetInFlightLadderCommitUSDHr(ctx context.Context, configID string, asOf time.Time) (*float64, error)
 	GetLadderRun(ctx context.Context, id string) (*LadderRunDB, error)
 	SaveLadderTranches(ctx context.Context, tranches []LadderTrancheDB) error
 	LatestLadderRunStartedAt(ctx context.Context, configID string) (*time.Time, error)

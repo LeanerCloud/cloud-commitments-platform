@@ -62,6 +62,10 @@ func (m *mockConfigStoreForHealth) GetStuckRampSteps(_ context.Context) (map[str
 	return nil, nil
 }
 
+func (m *mockConfigStoreForHealth) LockPlanProvidersTx(_ context.Context, _ pgx.Tx, _ []string) error {
+	return nil
+}
+
 func (m *mockConfigStoreForHealth) LockPurchasePlanTx(_ context.Context, _ pgx.Tx, _ string) (*config.PurchasePlan, error) {
 	return nil, nil
 }
@@ -154,6 +158,14 @@ func (m *mockConfigStoreForHealth) TransitionExecutionStatus(ctx context.Context
 	return nil, nil
 }
 
+func (m *mockConfigStoreForHealth) TransitionExecutionStatusPinned(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string, sawEmptyRecommendations bool) (*config.PurchaseExecution, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStoreForHealth) RescheduleAwaitingExecution(_ context.Context, _ string, _ time.Time) (bool, error) {
+	return false, nil
+}
+
 func (m *mockConfigStoreForHealth) SetCancelledBy(_ context.Context, _ string, _ string) error {
 	return nil
 }
@@ -164,6 +176,14 @@ func (m *mockConfigStoreForHealth) RotatePendingApprovalToken(ctx context.Contex
 
 func (m *mockConfigStoreForHealth) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (bool, error) {
 	return false, nil
+}
+
+func (m *mockConfigStoreForHealth) LockLadderTrancheForRetryTx(ctx context.Context, tx pgx.Tx, idempotencyKey string) (ladder.TrancheStatus, bool, error) {
+	return "", false, nil
+}
+
+func (m *mockConfigStoreForHealth) GetLadderExecutionGate(ctx context.Context, idempotencyKey string) (*config.LadderExecutionGate, error) {
+	return nil, nil
 }
 
 func (m *mockConfigStoreForHealth) CancelExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string, cancelledBy *string) (bool, string, error) {
@@ -183,6 +203,10 @@ func (m *mockConfigStoreForHealth) SaveRIExchangeRecord(ctx context.Context, rec
 }
 func (m *mockConfigStoreForHealth) ReserveRIExchange(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
 	return "", errors.New("RI exchange reservation not configured in test store")
+}
+
+func (m *mockConfigStoreForHealth) ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	return "", errors.New("approved RI exchange reservation not configured in test store")
 }
 func (m *mockConfigStoreForHealth) GetRIExchangeRecord(ctx context.Context, id string) (*config.RIExchangeRecord, error) {
 	return nil, nil
@@ -338,6 +362,21 @@ func (m *mockConfigStoreForHealth) ListActiveSuppressions(_ context.Context) ([]
 func (m *mockConfigStoreForHealth) SavePurchaseExecutionTx(ctx context.Context, _ pgx.Tx, e *config.PurchaseExecution) error {
 	return m.SavePurchaseExecution(ctx, e)
 }
+func (m *mockConfigStoreForHealth) SaveExecutionIfStatus(ctx context.Context, e *config.PurchaseExecution, _ []string) error {
+	return m.SavePurchaseExecution(ctx, e)
+}
+func (m *mockConfigStoreForHealth) SaveExecutionIfStatusTx(ctx context.Context, _ pgx.Tx, e *config.PurchaseExecution, _ []string) error {
+	return m.SavePurchaseExecution(ctx, e)
+}
+func (m *mockConfigStoreForHealth) RecoverReapedExecution(ctx context.Context, e *config.PurchaseExecution) error {
+	return m.SavePurchaseExecution(ctx, e)
+}
+func (m *mockConfigStoreForHealth) RecoverReapedExecutionTx(ctx context.Context, _ pgx.Tx, e *config.PurchaseExecution) error {
+	return m.SavePurchaseExecution(ctx, e)
+}
+func (m *mockConfigStoreForHealth) ListRecentSubmitsTx(ctx context.Context, _ pgx.Tx, _ string, _ time.Time) ([]config.PurchaseExecution, error) {
+	return m.GetPendingExecutions(ctx)
+}
 func (m *mockConfigStoreForHealth) GetPendingExecutionsTx(ctx context.Context, _ pgx.Tx) ([]config.PurchaseExecution, error) {
 	return m.GetPendingExecutions(ctx)
 }
@@ -381,12 +420,9 @@ func (m *mockConfigStoreForHealth) UpsertLadderConfig(_ context.Context, cfg *co
 func (m *mockConfigStoreForHealth) SaveLadderRun(_ context.Context, run *config.LadderRunDB) (*config.LadderRunDB, error) {
 	return run, nil
 }
-func (m *mockConfigStoreForHealth) SaveLadderRunWithTranches(_ context.Context, run *config.LadderRunDB, _ []config.LadderTrancheDB) (*config.LadderRunDB, error) {
-	return run, nil
-}
-func (m *mockConfigStoreForHealth) GetInFlightLadderCommitUSDHr(_ context.Context, _ string, _ time.Time) (*float64, error) {
-	zero := 0.0
-	return &zero, nil
+func (m *mockConfigStoreForHealth) PlanAndSaveLadderRun(_ context.Context, _ string, _ time.Time, build config.LadderPlanBuilder) (*config.LadderRunDB, error) {
+	run, _, err := build(0)
+	return run, err
 }
 func (m *mockConfigStoreForHealth) GetLadderRun(_ context.Context, _ string) (*config.LadderRunDB, error) {
 	return nil, nil
@@ -431,5 +467,33 @@ func (m *mockConfigStoreForHealth) UpsertNotificationMute(_ context.Context, _, 
 }
 
 func (m *mockConfigStoreForHealth) IsNotificationMuted(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+
+func (m *mockConfigStoreForHealth) ListExecutionsForPlanStepTx(_ context.Context, _ pgx.Tx, _ string, _ int) ([]config.PurchaseExecution, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStoreForHealth) SetPlanRampBaselineTx(_ context.Context, _ pgx.Tx, _ string, _ config.PlanRampBaseline) (bool, error) {
+	return false, nil
+}
+
+func (m *mockConfigStoreForHealth) GetPlanRampBaselineTx(_ context.Context, _ pgx.Tx, _ string) (config.PlanRampBaseline, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStoreForHealth) ListPlanCommittedTx(_ context.Context, _ pgx.Tx, _ string) (map[string]config.PlanRampQuantity, error) {
+	return nil, nil
+}
+
+func (m *mockConfigStoreForHealth) CompleteTargetMetStepTx(_ context.Context, _ pgx.Tx, _ string, _ int, _, _ string) error {
+	return nil
+}
+
+func (m *mockConfigStoreForHealth) SetExecutionRecommendationsIfEmptyTx(_ context.Context, _ pgx.Tx, _ string, _ []config.RecommendationRecord, _, _ float64) (bool, error) {
+	return false, nil
+}
+
+func (m *mockConfigStoreForHealth) ExpireExecutionAtomic(_ context.Context, _ pgx.Tx, _ string) (bool, error) {
 	return false, nil
 }

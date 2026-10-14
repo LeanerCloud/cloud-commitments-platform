@@ -41,6 +41,7 @@ type HandlerConfig struct {
 	AuthService         AuthServiceInterface
 	CommitmentOpts      CommitmentOptsInterface
 	OIDCSigner          oidc.Signer
+	Insurance           InsuranceProvider
 	AnalyticsSnapshots  AnalyticsSnapshotStoreInterface
 	CredentialStore     credentials.CredentialStore
 	EmailNotifier       email.SenderInterface
@@ -799,8 +800,12 @@ type PlanRequest struct {
 	NotificationDaysBefore int      `json:"notification_days_before"`
 	CustomStepPercent      int      `json:"custom_step_percent,omitempty"`
 	CustomIntervalDays     int      `json:"custom_interval_days,omitempty"`
-	AutoPurchase           bool     `json:"auto_purchase"`
-	Enabled                bool     `json:"enabled"`
+	// MaxStepCommitment caps the total commitment one ramp step may
+	// auto-purchase. Omitted on create = no cap (auto-purchase of steps with
+	// recommendations stays refused); omitted on update = keep the current cap.
+	MaxStepCommitment *float64 `json:"max_step_commitment,omitempty"`
+	AutoPurchase      bool     `json:"auto_purchase"`
+	Enabled           bool     `json:"enabled"`
 }
 
 // toPurchasePlan converts a PlanRequest to a config.PurchasePlan.
@@ -811,6 +816,7 @@ func (r *PlanRequest) toPurchasePlan() *config.PurchasePlan {
 		Enabled:                r.Enabled,
 		AutoPurchase:           r.AutoPurchase,
 		NotificationDaysBefore: r.NotificationDaysBefore,
+		MaxStepCommitment:      r.MaxStepCommitment,
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
@@ -930,12 +936,14 @@ type HistoryResponse struct {
 	Summary   HistorySummary                 `json:"summary"`
 	// Truncated is true when a fetch reached its row cap, so older rows (and
 	// possibly pending approvals) may be missing from Purchases and Summary.
-	// It can be a false positive when exactly Limit (or ExecutionsLimit) rows exist.
+	// It also fires when the actionable execution class hits its MaxListLimit cap.
+	// It can be a false positive when exactly a cap's worth of rows exist.
 	Truncated bool `json:"truncated"`
 	// Limit is the row cap on completed purchase_history rows for this request.
 	Limit int `json:"limit"`
-	// ExecutionsLimit is the row cap on non-completed executions, which is
-	// fixed regardless of the request's limit parameter.
+	// ExecutionsLimit is the row cap on terminal executions (failed, expired,
+	// canceled, ...), fixed regardless of the request's limit parameter.
+	// Actionable executions (pending, approved, ...) use config.MaxListLimit.
 	ExecutionsLimit int `json:"executions_limit"`
 }
 

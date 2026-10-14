@@ -102,6 +102,10 @@ module "compute_cloud_run" {
   billing_account_id = var.billing_account_id
 
   # Additional environment variables
+  archera_org_id            = var.archera_org_id
+  archera_plan_id           = var.archera_plan_id
+  archera_api_key_secret_id = var.archera_api_key_secret_id
+
   additional_env_vars = merge(
     {
       STATIC_DIR                          = "/app/static"
@@ -182,6 +186,10 @@ module "compute_gke" {
     sendgrid_api_key          = module.secrets.sendgrid_api_key_id
     credential_encryption_key = module.secrets.credential_encryption_key_secret_id
   }
+
+  archera_org_id            = var.archera_org_id
+  archera_plan_id           = var.archera_plan_id
+  archera_api_key_secret_id = var.archera_api_key_secret_id
 
   additional_env_vars = merge(
     {

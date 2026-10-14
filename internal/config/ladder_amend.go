@@ -11,9 +11,17 @@ import (
 var (
 	ErrLadderAmendNotFound = errors.New("ladder tranche not found")
 	ErrLadderAmendConflict = errors.New("ladder tranche changed or is no longer editable")
-	ErrLadderAmendInvalid  = errors.New("ladder amendment exceeds the original run total or current per-run cap")
+	ErrLadderAmendInvalid  = errors.New("ladder amendment exceeds the original run total, the current per-run cap or the config commitment ceiling")
 	ladderAmountPattern    = regexp.MustCompile(`^(0|[1-9]\d{0,13})(\.\d{1,6})?$`)
 )
+
+// ladderAmendValidationError keeps the Validate message for the caller while
+// matching ErrLadderAmendInvalid, so store callers can map every invalid
+// amendment to a client error with errors.Is.
+type ladderAmendValidationError struct{ err error }
+
+func (e ladderAmendValidationError) Error() string   { return e.err.Error() }
+func (e ladderAmendValidationError) Unwrap() []error { return []error{ErrLadderAmendInvalid, e.err} }
 
 type LadderAmendment struct {
 	ExpectedRevision *int64    `json:"expected_revision"`

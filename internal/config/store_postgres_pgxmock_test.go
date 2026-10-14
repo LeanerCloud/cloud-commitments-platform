@@ -64,6 +64,9 @@ func TestPGXMock_GetGlobalConfig_Success(t *testing.T) {
 		"ladder_execution_enabled",
 		"offering_class",
 		"require_different_approver",
+		"auto_purchase_enabled",
+		"auto_purchase_changed_by", "auto_purchase_changed_at", "auto_purchase_changed_via",
+		"ladder_execution_changed_by", "ladder_execution_changed_at", "ladder_execution_changed_via",
 	}
 	rows := pgxmock.NewRows(cols).AddRow(
 		[]string{"aws"}, strPtr("ops@example.com"), true,
@@ -78,6 +81,9 @@ func TestPGXMock_GetGlobalConfig_Success(t *testing.T) {
 		false,
 		"convertible",
 		false,
+		false,
+		nil, nil, nil,
+		nil, nil, nil,
 	)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
@@ -124,6 +130,9 @@ func TestPGXMock_GetGlobalConfig_GracePeriodDays(t *testing.T) {
 		"ladder_execution_enabled",
 		"offering_class",
 		"require_different_approver",
+		"auto_purchase_enabled",
+		"auto_purchase_changed_by", "auto_purchase_changed_at", "auto_purchase_changed_via",
+		"ladder_execution_changed_by", "ladder_execution_changed_at", "ladder_execution_changed_via",
 	}
 	baseRow := func(graceJSON string) []any {
 		return []any{
@@ -139,6 +148,9 @@ func TestPGXMock_GetGlobalConfig_GracePeriodDays(t *testing.T) {
 			false,
 			"convertible",
 			false,
+			false,
+			nil, nil, nil,
+			nil, nil, nil,
 		}
 	}
 
@@ -199,6 +211,9 @@ var globalConfigCols = []string{
 	"ladder_execution_enabled",
 	"offering_class",
 	"require_different_approver",
+	"auto_purchase_enabled",
+	"auto_purchase_changed_by", "auto_purchase_changed_at", "auto_purchase_changed_via",
+	"ladder_execution_changed_by", "ladder_execution_changed_at", "ladder_execution_changed_via",
 }
 
 // TestPGXMock_UpdateGlobalConfigAtomic_LockedReadModifyWrite proves the F2
@@ -230,6 +245,9 @@ func TestPGXMock_UpdateGlobalConfigAtomic_LockedReadModifyWrite(t *testing.T) {
 		false,         // ladder_execution_enabled = false
 		"convertible", // offering_class
 		false,         // require_different_approver
+		false,         // auto_purchase_enabled
+		nil, nil, nil, // auto_purchase_changed_by/at/via
+		nil, nil, nil, // ladder_execution_changed_by/at/via
 	)
 
 	// Strict order: the SELECT and the UPSERT must sit between the same
@@ -238,7 +256,7 @@ func TestPGXMock_UpdateGlobalConfigAtomic_LockedReadModifyWrite(t *testing.T) {
 	mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
 	mock.ExpectQuery("FROM global_config").WillReturnRows(seeded)
-	mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(24)...).
+	mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(31)...).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()
 
@@ -287,6 +305,9 @@ func TestPGXMock_UpdateGlobalConfigAtomic_ApplyErrorRollsBack(t *testing.T) {
 		false,
 		"convertible",
 		false,
+		false,
+		nil, nil, nil,
+		nil, nil, nil,
 	)
 
 	mock.ExpectBegin()
@@ -323,6 +344,9 @@ func TestPGXMock_UpdateGlobalConfigAtomic_PropagatesOnlyChangedDefaults(t *testi
 			false,
 			"convertible",
 			false,
+			false,
+			nil, nil, nil,
+			nil, nil, nil,
 		)
 	}
 	setCoverage := func(existing *GlobalConfig) error {
@@ -337,7 +361,7 @@ func TestPGXMock_UpdateGlobalConfigAtomic_PropagatesOnlyChangedDefaults(t *testi
 		mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
 			WillReturnResult(pgxmock.NewResult("SELECT", 1))
 		mock.ExpectQuery("FROM global_config").WillReturnRows(seeded())
-		mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(24)...).
+		mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(31)...).
 			WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		mock.ExpectExec("UPDATE service_configs").
 			WithArgs(false, 1, false, "no-upfront", true, 70.0, false, RampImmediate).
@@ -356,7 +380,7 @@ func TestPGXMock_UpdateGlobalConfigAtomic_PropagatesOnlyChangedDefaults(t *testi
 		mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
 			WillReturnResult(pgxmock.NewResult("SELECT", 1))
 		mock.ExpectQuery("FROM global_config").WillReturnRows(seeded())
-		mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(24)...).
+		mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(31)...).
 			WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		dbErr := errors.New("service_configs update failed")
 		mock.ExpectExec("UPDATE service_configs").WithArgs(anyArgsCfg(8)...).WillReturnError(dbErr)
@@ -447,11 +471,12 @@ func TestPGXMock_GetPurchasePlan_Success(t *testing.T) {
 		"id", "name", "enabled", "auto_purchase", "notification_days_before",
 		"services", "ramp_schedule", "created_at", "updated_at",
 		"next_execution_date", "last_execution_date", "last_notification_sent",
+		"max_step_commitment",
 	}
 	rows := pgxmock.NewRows(cols).AddRow(
 		"plan-id", "My Plan", true, false, 3,
 		svcJSON, rampJSON, now, now,
-		sql.NullTime{Valid: false}, sql.NullTime{Valid: false}, sql.NullTime{Valid: false},
+		sql.NullTime{Valid: false}, sql.NullTime{Valid: false}, sql.NullTime{Valid: false}, (*float64)(nil),
 	)
 	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg()).WillReturnRows(rows)
 
@@ -474,6 +499,7 @@ func TestPGXMock_GetPurchasePlan_WithAllTimestamps(t *testing.T) {
 		"id", "name", "enabled", "auto_purchase", "notification_days_before",
 		"services", "ramp_schedule", "created_at", "updated_at",
 		"next_execution_date", "last_execution_date", "last_notification_sent",
+		"max_step_commitment",
 	}
 	rows := pgxmock.NewRows(cols).AddRow(
 		"plan-id", "My Plan", true, false, 3,
@@ -481,6 +507,7 @@ func TestPGXMock_GetPurchasePlan_WithAllTimestamps(t *testing.T) {
 		sql.NullTime{Valid: true, Time: now},
 		sql.NullTime{Valid: true, Time: now},
 		sql.NullTime{Valid: true, Time: now},
+		(*float64)(nil),
 	)
 	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg()).WillReturnRows(rows)
 
@@ -506,13 +533,14 @@ func TestPGXMock_ListPurchasePlans_Success(t *testing.T) {
 		"id", "name", "enabled", "auto_purchase", "notification_days_before",
 		"services", "ramp_schedule", "created_at", "updated_at",
 		"next_execution_date", "last_execution_date", "last_notification_sent",
+		"max_step_commitment",
 		"unassigned",
 	}
 	rows := pgxmock.NewRows(cols).
 		AddRow("p1", "Plan 1", true, false, 3, svcJSON, rampJSON, now, now,
-			sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, false).
+			sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, (*float64)(nil), false).
 		AddRow("p2", "Plan 2", false, true, 7, svcJSON, rampJSON, now, now,
-			sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, false)
+			sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, (*float64)(nil), false)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	plans, err := store.ListPurchasePlans(ctx, PurchasePlanFilter{})
@@ -552,15 +580,16 @@ func TestPGXMock_ListPurchasePlans_UnassignedIncluded(t *testing.T) {
 		"id", "name", "enabled", "auto_purchase", "notification_days_before",
 		"services", "ramp_schedule", "created_at", "updated_at",
 		"next_execution_date", "last_execution_date", "last_notification_sent",
+		"max_step_commitment",
 		"unassigned",
 	}
 	// The query returns two rows: one assigned (unassigned=false) and one
 	// legacy zero-account plan (unassigned=true).
 	rows := pgxmock.NewRows(cols).
 		AddRow("assigned-id", "Assigned Plan", true, false, 3, svcJSON, rampJSON, now, now,
-			sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, false).
+			sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, (*float64)(nil), false).
 		AddRow("legacy-id", "Legacy Plan", true, false, 3, svcJSON, rampJSON, now, now,
-			sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, true)
+			sql.NullTime{}, sql.NullTime{}, sql.NullTime{}, (*float64)(nil), true)
 	mock.ExpectQuery("SELECT").WithArgs("acc-uuid").WillReturnRows(rows)
 
 	plans, err := store.ListPurchasePlans(ctx, PurchasePlanFilter{AccountIDs: []string{"acc-uuid"}, IncludeUnassigned: true})
@@ -587,7 +616,8 @@ func TestPGXMock_UpdatePurchasePlan_NotFound(t *testing.T) {
 
 	plan := &PurchasePlan{ID: "missing-id", Services: map[string]ServiceConfig{}, RampSchedule: RampSchedule{}}
 	mock.ExpectBegin()
-	mock.ExpectQuery("UPDATE").WithArgs(anyArgsCfg(11)...).
+	mock.ExpectQuery("FOR UPDATE").WithArgs("missing-id").WillReturnError(pgx.ErrNoRows)
+	mock.ExpectQuery("UPDATE").WithArgs(anyArgsCfg(12)...).
 		WillReturnRows(pgxmock.NewRows([]string{"updated_at"}))
 	mock.ExpectQuery("SELECT EXISTS").WithArgs("missing-id").
 		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(false))
@@ -645,6 +675,7 @@ func TestPGXMock_GetExecutionByID_Success(t *testing.T) {
 		"executed_by_user_id", "executed_at", "pre_approval_skip_reason",
 		"idempotency_key",
 		"scheduled_execution_at",
+		"no_submission",
 	}
 	rows := pgxmock.NewRows(cols).AddRow(
 		"plan-1", "exec-1", "pending", 1, now,
@@ -656,6 +687,7 @@ func TestPGXMock_GetExecutionByID_Success(t *testing.T) {
 		nil, sql.NullTime{}, nil,
 		nil,            // idempotency_key (NULL: legacy-row scan path, migration 000066)
 		sql.NullTime{}, // scheduled_execution_at (NULL: not on the pre-fire delay path)
+		false,          // no_submission
 	)
 	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg()).WillReturnRows(rows)
 
@@ -695,6 +727,7 @@ func TestPGXMock_GetExecutionByID_WithTimestamps(t *testing.T) {
 		"executed_by_user_id", "executed_at", "pre_approval_skip_reason",
 		"idempotency_key",
 		"scheduled_execution_at",
+		"no_submission",
 	}
 	successorID := "exec-3"
 	rows := pgxmock.NewRows(cols).AddRow(
@@ -710,6 +743,7 @@ func TestPGXMock_GetExecutionByID_WithTimestamps(t *testing.T) {
 		nil, sql.NullTime{}, nil,
 		"idem-key-exec-2", // idempotency_key non-NULL: exercises the scan path
 		sql.NullTime{},    // scheduled_execution_at (NULL: not on the pre-fire delay path)
+		false,             // no_submission
 	)
 	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg()).WillReturnRows(rows)
 
@@ -761,6 +795,7 @@ func TestPGXMock_GetPlannedExecutions_ProjectsAllScanColumns(t *testing.T) {
 		"approval_token_expires_at",
 		"executed_by_user_id", "executed_at", "pre_approval_skip_reason",
 		"idempotency_key", "scheduled_execution_at",
+		"no_submission",
 	}
 	schedAt := now.Add(2 * time.Hour)
 	rows := pgxmock.NewRows(cols).AddRow(
@@ -773,6 +808,7 @@ func TestPGXMock_GetPlannedExecutions_ProjectsAllScanColumns(t *testing.T) {
 		nil, sql.NullTime{}, nil,
 		"idem-key-planned",
 		sql.NullTime{}, // scheduled_execution_at (NULL: not on the pre-fire delay path)
+		false,          // no_submission
 	).AddRow(
 		"plan-1", "exec-2", "pending", 1, now,
 		sql.NullTime{}, "tok-456", recsJSON,
@@ -783,6 +819,7 @@ func TestPGXMock_GetPlannedExecutions_ProjectsAllScanColumns(t *testing.T) {
 		nil, sql.NullTime{}, nil,
 		"idem-key-delayed",
 		sql.NullTime{Time: schedAt, Valid: true}, // scheduled_execution_at populated (pre-fire delay path)
+		false,                                    // no_submission
 	)
 	// Regexp matcher: only matches if the issued SELECT projects both
 	// idempotency_key and scheduled_execution_at. The alternation forces both
@@ -841,6 +878,7 @@ func TestPGXMock_GetExecutionByID_ProjectsCoalescedCancelledBy(t *testing.T) {
 		"executed_by_user_id", "executed_at", "pre_approval_skip_reason",
 		"idempotency_key",
 		"scheduled_execution_at",
+		"no_submission",
 	}
 	// Simulates the exact row shape the atomic-cancel paths produce: the
 	// actor lives only in canceled_by (legacy cancelled_by is NULL). What
@@ -857,6 +895,7 @@ func TestPGXMock_GetExecutionByID_ProjectsCoalescedCancelledBy(t *testing.T) {
 		nil, sql.NullTime{}, nil,
 		nil,
 		sql.NullTime{},
+		false,
 	)
 	mock.ExpectQuery(`COALESCE\(canceled_by,\s*cancelled_by\)`).
 		WithArgs(pgxmock.AnyArg()).
@@ -1531,7 +1570,7 @@ func TestPGXMock_GetRIExchangeDailySpend_Success(t *testing.T) {
 	ctx := context.Background()
 
 	rows := pgxmock.NewRows([]string{"total"}).AddRow("250.00")
-	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg()).WillReturnRows(rows)
+	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg(), nil).WillReturnRows(rows)
 
 	total, err := store.GetRIExchangeDailySpend(ctx, time.Now())
 	require.NoError(t, err)
@@ -1550,7 +1589,7 @@ func TestPGXMock_GetRIExchangeDailySpend_IncludesProcessingStatus(t *testing.T) 
 
 	// Match any SELECT that goes to the DB; the important assertion is below.
 	rows := pgxmock.NewRows([]string{"total"}).AddRow("0")
-	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg()).WillReturnRows(rows)
+	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg(), nil).WillReturnRows(rows)
 
 	_, err := store.GetRIExchangeDailySpend(ctx, time.Now())
 	require.NoError(t, err)
@@ -2240,7 +2279,7 @@ func TestPGXMock_ReserveRIExchange_CommitsCeilingBeforeReturn(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
-	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg()).
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0.000001"))
 	mock.ExpectExec("INSERT INTO ri_exchange_history").WithArgs(anyArgsCfg(21)...).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
@@ -2260,7 +2299,7 @@ func TestPGXMock_ReserveRIExchange_RollsBackWhenQuoteExceedsHeadroom(t *testing.
 	mock.ExpectBegin()
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
-	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg()).
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("101.000000"))
 	mock.ExpectRollback()
 	record := &RIExchangeRecord{PaymentDue: "900", Status: "processing", Mode: "auto"}
@@ -2285,7 +2324,7 @@ func TestPGXMock_ReserveRIExchange_DatabaseFailuresDoNotReturnCeiling(t *testing
 					lock.WillReturnError(dbErr)
 				} else {
 					lock.WillReturnResult(pgxmock.NewResult("SELECT", 1))
-					read := mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg())
+					read := mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg())
 					if stage == "read" {
 						read.WillReturnError(dbErr)
 					} else {
@@ -2312,7 +2351,7 @@ func TestPGXMock_ReserveRIExchange_CommitFailureDoesNotReturnCeiling(t *testing.
 	mock.ExpectBegin()
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
-	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg()).
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0"))
 	mock.ExpectExec("INSERT INTO ri_exchange_history").WithArgs(anyArgsCfg(21)...).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
@@ -2549,6 +2588,7 @@ func stuckExecRow(execID, status string, scheduled time.Time) []any {
 		nil, sql.NullTime{}, nil,
 		nil,            // idempotency_key (NULL: legacy-row scan path, migration 000066)
 		sql.NullTime{}, // scheduled_execution_at (NULL: not on the pre-fire delay path)
+		false,          // no_submission
 	}
 }
 
@@ -2563,6 +2603,7 @@ func stuckExecCols() []string {
 		"executed_by_user_id", "executed_at", "pre_approval_skip_reason",
 		"idempotency_key",
 		"scheduled_execution_at",
+		"no_submission",
 	}
 }
 
@@ -2756,11 +2797,12 @@ func TestPGXMock_TransitionExecutionStatus_ProbeHardErrorNotMappedToNotFound(t *
 		"approval_token_expires_at",
 		"executed_by_user_id", "executed_at", "pre_approval_skip_reason",
 		"idempotency_key", "scheduled_execution_at",
+		"no_submission",
 	}
 
 	// CAS UPDATE matches zero rows (status already transitioned or row gone).
 	mock.ExpectQuery(`UPDATE purchase_executions`).
-		WithArgs(anyArgsCfg(5)...).
+		WithArgs(anyArgsCfg(6)...).
 		WillReturnRows(pgxmock.NewRows(execCols))
 
 	// Probe fails with a hard DB error, not an empty result.
@@ -2803,6 +2845,7 @@ func TestPGXMock_GetExecutionByPlanAndDate_NotFoundWrapsErrNotFound(t *testing.T
 		"approval_token_expires_at",
 		"executed_by_user_id", "executed_at", "pre_approval_skip_reason",
 		"idempotency_key", "scheduled_execution_at",
+		"no_submission",
 	}
 	emptyRows := pgxmock.NewRows(cols)
 	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnRows(emptyRows)
@@ -3183,4 +3226,106 @@ func TestPGXMock_GetExecutionsByStatuses_ExcludesCleanCompleted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, execs)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_ReserveApprovedRIExchange_ReservesCeilingExcludingOwnRow(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	id := "550e8400-e29b-41d4-a716-000000000656"
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT payment_due::text FROM ri_exchange_history").WithArgs(id).
+		WillReturnRows(pgxmock.NewRows([]string{"payment_due"}).AddRow("600.000000"))
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	// The spend read must exclude this row's own id (the legitimate $600 approval).
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), &id).
+		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0.000000"))
+	mock.ExpectExec("UPDATE ri_exchange_history SET payment_due").WithArgs(id, "1000.000000").
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	mock.ExpectCommit()
+
+	ceiling, err := store.ReserveApprovedRIExchange(context.Background(), id, "1000", "1000")
+	require.NoError(t, err)
+	assert.Equal(t, "1000.000000", ceiling)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_ReserveApprovedRIExchange_RefusesWhenInitialExceedsHeadroom(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	id := "550e8400-e29b-41d4-a716-000000000657"
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT payment_due::text FROM ri_exchange_history").WithArgs(id).
+		WillReturnRows(pgxmock.NewRows([]string{"payment_due"}).AddRow("600.000000"))
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), &id).
+		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("500.000000"))
+	mock.ExpectRollback()
+
+	_, err := store.ReserveApprovedRIExchange(context.Background(), id, "1000", "1000")
+	require.ErrorContains(t, err, "daily cap exceeded")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_ReserveApprovedRIExchange_RejectsRowThatIsNotProcessing(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	const id = "550e8400-e29b-41d4-a716-000000000658"
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT payment_due::text FROM ri_exchange_history").WithArgs(id).
+		WillReturnError(pgx.ErrNoRows)
+	mock.ExpectRollback()
+
+	_, err := store.ReserveApprovedRIExchange(context.Background(), id, "1000", "1000")
+	require.ErrorContains(t, err, "is not processing")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestPGXMock_UpdateGlobalConfigAtomic_PreservesAutoPurchaseStamps proves the
+// whole-config upsert writes back the stamps it read (migration 000115). The RI
+// exchange config path is a read-modify-write of the whole row, so an upsert that
+// omitted them would reset them to NULL on any unrelated config save.
+func TestPGXMock_UpdateGlobalConfigAtomic_PreservesAutoPurchaseStamps(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	ctx := context.Background()
+
+	by, via := "user-1", "user-session"
+	at := time.Date(2026, 10, 13, 1, 2, 3, 0, time.UTC)
+	seeded := pgxmock.NewRows(globalConfigCols).AddRow(
+		[]string{"aws"}, strPtr("ops@example.com"), true,
+		3, "all-upfront", 80.0, RampImmediate,
+		false, "manual", 95.0,
+		0.0, 0.0, 30,
+		true, "daily", 3,
+		"{}",
+		24, 7,
+		0,
+		false,
+		false,
+		"convertible",
+		false,
+		true,
+		&by, &at, &via,
+		&by, &at, &via, // ladder_execution_changed_by/at/via
+	)
+	args := anyArgsCfg(31)
+	args[25], args[26], args[27] = &by, &at, &via
+	args[28], args[29], args[30] = &by, &at, &via
+
+	mock.ExpectBegin()
+	mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectQuery("FROM global_config").WillReturnRows(seeded)
+	mock.ExpectExec("INSERT INTO global_config").WithArgs(args...).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	_, err := store.UpdateGlobalConfigAtomic(ctx, func(existing *GlobalConfig) error {
+		existing.RIExchangeEnabled = true
+		return nil
+	})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
 }

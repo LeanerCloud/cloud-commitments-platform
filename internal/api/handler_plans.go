@@ -178,8 +178,8 @@ func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunction
 	plan := req.toPurchasePlan()
 
 	// Validate the plan
-	if err := plan.Validate(); err != nil {
-		return nil, NewClientError(400, fmt.Sprintf("validation error: %s", err))
+	if err := h.validateAndGatePlan(ctx, httpReq, session, nil, plan); err != nil {
+		return nil, err
 	}
 
 	if err := h.config.CreatePurchasePlan(ctx, plan); err != nil {
@@ -311,6 +311,10 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 		return nil, err
 	}
 
+	if err := h.requirePlanArmGrant(ctx, httpReq, session, existingPlan, plan); err != nil {
+		return nil, err
+	}
+
 	if err := h.config.UpdatePurchasePlan(ctx, plan); err != nil {
 		return nil, mapCreatePlanStorageError(err, "plan not found", "failed to update plan", "updatePlan: UpdatePurchasePlan failed")
 	}
@@ -337,6 +341,10 @@ func mergeUpdatedPlan(existingPlan *config.PurchasePlan, req *PlanRequest, planI
 	// so the scheduler re-buys steps that already executed (issue #219).
 	if err := preserveRampProgress(existingPlan, plan); err != nil {
 		return nil, err
+	}
+
+	if req.MaxStepCommitment == nil {
+		plan.MaxStepCommitment = existingPlan.MaxStepCommitment
 	}
 
 	// If no services were created from request, preserve existing services
@@ -454,7 +462,7 @@ func (h *Handler) createPlannedPurchases(ctx context.Context, httpReq *events.La
 	// longer reaches them, so the creator stamp (#950), the single transaction
 	// and the ramp lock (#1861) are exercised through them directly in tests.
 	return nil, NewClientError(409,
-		"plan steps cannot yet carry recommendations (tracked in platform#609), so no purchases can be added to a plan; purchase from Opportunities instead")
+		"plan steps cannot yet carry recommendations (tracked in platform#631), so no purchases can be added to a plan; purchase from Opportunities instead")
 }
 
 // createPlannedPurchasesTx is the transactional body of createPlannedPurchases:
@@ -704,12 +712,13 @@ func (h *Handler) patchPlan(ctx context.Context, httpReq *events.LambdaFunctionU
 		return nil, NewClientError(404, fmt.Sprintf("plan not found: %s", planID))
 	}
 
+	before := *plan
 	if err := applyPatchFields(plan, req); err != nil {
 		return nil, err
 	}
 
-	if err := plan.Validate(); err != nil {
-		return nil, NewClientError(400, fmt.Sprintf("validation error: %s", err))
+	if err := h.validateAndGatePlan(ctx, httpReq, session, &before, plan); err != nil {
+		return nil, err
 	}
 
 	if err := h.config.UpdatePurchasePlan(ctx, plan); err != nil {

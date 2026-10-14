@@ -57,7 +57,7 @@ import { loadDashboard } from '../dashboard';
 import { loadRecommendations } from '../recommendations';
 import { loadPlans } from '../plans';
 import { initHistoryDateRange, loadHistory } from '../history';
-import { loadGlobalSettings } from '../settings';
+import { loadGlobalSettings, isUnsavedChanges } from '../settings';
 import { loadAutomationSettings } from '../riexchange';
 import { canAccess } from '../permissions';
 import { loadInventory } from '../inventory';
@@ -661,6 +661,36 @@ describe('Navigation Module', () => {
     test('falls back to the default for an unknown sub-tab', () => {
       setPathname('/inventory/bogus');
       expect(getInventorySubTabFromPath()).toBe('active-commitments');
+    });
+  });
+
+  describe('unsaved settings guard', () => {
+    afterEach(() => {
+      (isUnsavedChanges as jest.Mock).mockReturnValue(false);
+    });
+
+    const dialogButton = (label: string): HTMLButtonElement =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('.modal-confirm button')).find(
+        b => b.textContent === label
+      )!;
+
+    test('asks via the styled dialog, stays put on cancel and leaves on confirm', async () => {
+      switchTab('admin');
+      (isUnsavedChanges as jest.Mock).mockReturnValue(true);
+
+      switchTab('home');
+      expect(document.querySelector('.modal-confirm-title')?.textContent).toBe('Leave without saving?');
+      expect(document.getElementById('admin-tab')?.classList.contains('active')).toBe(true);
+      dialogButton('Stay on this tab').click();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(document.getElementById('admin-tab')?.classList.contains('active')).toBe(true);
+
+      switchTab('home');
+      dialogButton('Leave without saving').click();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(document.getElementById('home-tab')?.classList.contains('active')).toBe(true);
     });
   });
 });

@@ -18,6 +18,9 @@ const ACTIONS = ['view', 'create', 'update', 'delete', 'execute', 'approve', 'ad
  */
 function renderEmptyState(container: HTMLElement, message: string): void {
   container.textContent = '';
+  container.removeAttribute('tabindex');
+  container.removeAttribute('role');
+  container.removeAttribute('aria-label');
   const p = document.createElement('p');
   p.className = 'empty-state';
   p.textContent = message;
@@ -74,4 +77,9 @@ export function renderPermissionMatrix(groups: APIGroup[], container: HTMLElemen
       </tbody>
     </table>
   `;
+  // The matrix scrolls sideways on narrow screens and has no focusable
+  // content of its own, so the scroll region must be keyboard-reachable.
+  container.setAttribute('tabindex', '0');
+  container.setAttribute('role', 'region');
+  container.setAttribute('aria-label', 'Permission matrix');
 }

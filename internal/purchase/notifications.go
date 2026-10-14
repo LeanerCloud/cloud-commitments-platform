@@ -10,7 +10,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
-	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // SendUpcomingPurchaseNotifications sends notifications for upcoming automated purchases.
@@ -22,10 +22,22 @@ func (m *Manager) SendUpcomingPurchaseNotifications(ctx context.Context) (*Notif
 		return nil, fmt.Errorf("failed to list purchase plans: %w", err)
 	}
 
+	// Kill switch, read once per tick. A read error fails the tick rather than
+	// defaulting to enabled (fail closed on the money path).
+	autoPurchaseEnabled, err := m.autoPurchaseEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	global, err := m.config.GetGlobalConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read global config for the overdue-plan grace window: %w", err)
+	}
+
 	notified := 0
 	for _rvc := range plans {
 		plan := plans[_rvc]
-		if m.shouldNotifyPlan(plan) {
+		if m.shouldNotifyPlan(plan, autoPurchaseEnabled) || shouldRetryOverduePlan(plan, autoPurchaseEnabled, global, time.Now()) {
 			if m.sendPlanNotification(ctx, &plan) {
 				notified++
 			}
@@ -38,8 +50,9 @@ func (m *Manager) SendUpcomingPurchaseNotifications(ctx context.Context) (*Notif
 }
 
 // shouldNotifyPlan checks if a plan should trigger a notification.
-func (m *Manager) shouldNotifyPlan(plan config.PurchasePlan) bool {
-	if !plan.Enabled || !plan.AutoPurchase {
+// autoPurchaseEnabled is the global scheduling.auto_purchase kill switch.
+func (m *Manager) shouldNotifyPlan(plan config.PurchasePlan, autoPurchaseEnabled bool) bool {
+	if !autoPurchaseEnabled || !plan.Enabled || !plan.AutoPurchase {
 		return false
 	}
 
@@ -61,6 +74,29 @@ func (m *Manager) shouldNotifyPlan(plan config.PurchasePlan) bool {
 	}
 
 	return true
+}
+
+// planGraceDays is the longest grace window among the plan's providers.
+func planGraceDays(plan *config.PurchasePlan, global *config.GlobalConfig) int {
+	grace := 0
+	for _, p := range planProviders(plan) {
+		grace = max(grace, global.GracePeriodFor(p))
+	}
+	return grace
+}
+
+// shouldRetryOverduePlan admits a plan whose next date has passed while its
+// step may still be waiting for a matching recommendation: from the date until
+// one day past the grace window, so the first tick at or after the deadline can
+// write the failed row. A step that already has a row is skipped by the claim.
+func shouldRetryOverduePlan(plan config.PurchasePlan, autoPurchaseEnabled bool, global *config.GlobalConfig, now time.Time) bool {
+	if !autoPurchaseEnabled || !plan.Enabled || !plan.AutoPurchase || plan.NextExecutionDate == nil || !plan.NextExecutionDate.Before(now) {
+		return false
+	}
+	if plan.LastNotificationSent != nil && now.Sub(*plan.LastNotificationSent).Hours() < config.MinHoursBetweenNotifications {
+		return false
+	}
+	return now.Before(plan.NextExecutionDate.AddDate(0, 0, planGraceDays(&plan, global)+1))
 }
 
 // errExecutionNotNotifiable marks an existing execution for the plan's date
@@ -93,6 +129,9 @@ func (m *Manager) sendPlanNotification(ctx context.Context, plan *config.Purchas
 		return false
 	}
 
+	// The row's own date, not the plan's: an attach for an overdue plan is
+	// scheduled NotificationDaysBefore days out.
+	daysUntil = int(time.Until(execution.ScheduledDate).Hours() / config.HoursPerDay)
 	data := m.buildNotificationData(*plan, execution, rawApprovalToken, daysUntil, notifyEmail)
 	if err := m.email.SendScheduledPurchaseNotification(ctx, data); err != nil {
 		logging.Errorf("Failed to send notification: %v", err)
@@ -132,70 +171,81 @@ func (m *Manager) globalNotificationEmail(ctx context.Context) string {
 	return ""
 }
 
-// getOrCreateExecution gets an existing execution or creates a new one, and
-// returns the RAW approval token to embed in the notification about to be
-// sent. Only the token's hash is stored (issue #103), so an existing row
-// never carries an emailable token: a fresh one is minted into the returned
-// copy (hash + ApprovalTokenTTL expiry) but NOT persisted, and
-// rotationPending tells the caller to persist it via
-// RotatePendingApprovalToken once the email has been sent. A new row is
-// saved with its hash up front, since nothing was emailed for it yet.
+// getOrCreateExecution returns the execution to notify for the plan's next
+// step and the RAW approval token to embed in the notification about to be
+// sent. Only the token's hash is stored (issue #103): the token is minted into
+// the returned copy but NOT persisted, and rotationPending tells the caller to
+// persist it via RotatePendingApprovalToken once the email went out, which
+// also promotes the row to 'notified'. A step without recommendations gets
+// them attached first (attachStep); see plan_step_attach.go.
 func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.PurchasePlan) (execution *config.PurchaseExecution, rawToken string, rotationPending bool, err error) {
-	// Check for existing execution for this date to prevent duplicates.
-	// GetExecutionByPlanAndDate wraps ErrNotFound on zero rows; any other
-	// error is a real store failure and must propagate.
-	existing, err := m.config.GetExecutionByPlanAndDate(ctx, plan.ID, *plan.NextExecutionDate)
-	switch {
-	case err == nil && existing != nil:
-		logging.Debugf("Found existing execution %s for plan %s on %s", existing.ExecutionID, plan.ID, plan.NextExecutionDate)
-		// GetExecutionByPlanAndDate filters only on plan_id + scheduled_date,
-		// not status, so this row can already be approved/completed/canceled
-		// by the time a later notification tick re-runs for the same date.
-		// Rotating then would kill whichever link (approval or post-approve
-		// revoke) is currently live.
-		if existing.Status != "pending" && existing.Status != "notified" {
-			return nil, "", false, fmt.Errorf("%w: %s is %s", errExecutionNotNotifiable, existing.ExecutionID, existing.Status)
-		}
-		if len(existing.Recommendations) == 0 {
-			return nil, "", false, m.failExistingBarePlanStep(ctx, existing)
-		}
-		tok, genErr := common.GenerateApprovalToken()
-		if genErr != nil {
-			return nil, "", false, fmt.Errorf("failed to generate approval token: %w", genErr)
-		}
-		expiry := time.Now().Add(config.ApprovalTokenTTL)
-		existing.ApprovalToken = config.HashApprovalToken(tok)
-		existing.ApprovalTokenExpiresAt = &expiry
-		return existing, tok, true, nil
-	case err != nil && !errors.Is(err, config.ErrNotFound):
-		return nil, "", false, fmt.Errorf("failed to check for existing execution: %w", err)
+	var step stepClaim
+	txErr := m.config.WithTx(ctx, func(tx pgx.Tx) error {
+		var claimErr error
+		step, claimErr = m.claimPlanStep(ctx, tx, plan)
+		return claimErr
+	})
+	if txErr != nil {
+		return nil, "", false, txErr
 	}
-	// ErrNotFound (or nil error with nil row): no existing execution for this
-	// plan+date. Nothing attaches recommendations to a plan step yet
-	// (platform#609), so the row is recorded as failed instead of emailing a $0
-	// approval link. The failed row also makes every later tick for this date
-	// return errExecutionNotNotifiable quietly rather than minting another.
-	//
-	// step_number names the step this row will COMPLETE, not the count already
-	// completed, matching api.createPurchaseExecutionsTx (CurrentStep + 1). The
-	// ramp advance is keyed on this value since issue #1669.
-	execution = &config.PurchaseExecution{
-		PlanID:        plan.ID,
-		ExecutionID:   uuid.New().String(),
-		Status:        "pending",
-		StepNumber:    plan.RampSchedule.CurrentStep + 1,
-		ScheduledDate: *plan.NextExecutionDate,
+	if step.failedNew {
+		return nil, "", false, bareStepFailure(plan.ID, step.number, step.failureReason)
 	}
-	return nil, "", false, m.recordFailedBarePlanStep(ctx, execution)
+	if step.blocked != nil {
+		return nil, "", false, step.blocked
+	}
+	if step.emptyRoot != nil {
+		// The claim left an empty pre-created row to fail by compare-and-set,
+		// outside the transaction.
+		return nil, "", false, m.failExistingPlanStep(ctx, step.emptyRoot, step.failureReason)
+	}
+	existing := step.existing
+	tok, genErr := common.GenerateApprovalToken()
+	if genErr != nil {
+		return nil, "", false, fmt.Errorf("failed to generate approval token: %w", genErr)
+	}
+	expiry := time.Now().Add(config.ApprovalTokenTTL)
+	existing.ApprovalToken = config.HashApprovalToken(tok)
+	existing.ApprovalTokenExpiresAt = &expiry
+	return existing, tok, true, nil
 }
 
-// failExistingBarePlanStep fails a pending/notified plan-step row that carries
-// no recommendations. The status change is a compare-and-set, so a human
-// approving the row between this tick's read and now wins: the row is no
-// longer awaiting approval and the tick skips it, instead of an upsert from the
-// stale read overwriting the approval. A won CAS returns the fresh row, which
-// is the one the error text is written onto.
-func (m *Manager) failExistingBarePlanStep(ctx context.Context, exec *config.PurchaseExecution) error {
+// stepClaim is the outcome of claimPlanStep: a freshly recorded failed row, an
+// empty pre-created row to fail, a quiet skip error, or the row to notify.
+type stepClaim struct {
+	number        int
+	existing      *config.PurchaseExecution
+	emptyRoot     *config.PurchaseExecution
+	blocked       error
+	failedNew     bool
+	failureReason string
+}
+
+// adoptableRootRow picks the row a notification tick may notify for a step
+// that already has rows. Only a pending/notified ROOT row (no account, first
+// attempt) qualifies: child and retry rows share the step number, and a step
+// whose root is failed, partially_completed, expired, canceled or in flight
+// must not get a second root, because approving it would buy the step again
+// (E1/E2). The second return value is the quiet skip error when none qualifies.
+func adoptableRootRow(rows []config.PurchaseExecution) (*config.PurchaseExecution, error) {
+	for i := range rows {
+		r := rows[i]
+		if r.CloudAccountID == nil && r.RetryAttemptN == 0 && (r.Status == "pending" || r.Status == "notified") {
+			return &r, nil
+		}
+	}
+	first := rows[0]
+	return nil, fmt.Errorf("%w: step %d of plan %s already has execution %s (%s)",
+		errExecutionNotNotifiable, first.StepNumber, first.PlanID, first.ExecutionID, first.Status)
+}
+
+// failExistingPlanStep fails a pending/notified plan-step row that will never
+// carry recommendations, with reason. The status change is a compare-and-set,
+// so a human approving the row between this tick's read and now wins: the row
+// is no longer awaiting approval and the tick skips it, instead of an upsert
+// from the stale read overwriting the approval. A won CAS returns the fresh
+// row, which is the one the error text is written onto.
+func (m *Manager) failExistingPlanStep(ctx context.Context, exec *config.PurchaseExecution, reason string) error {
 	failed, err := m.config.TransitionExecutionStatus(ctx, exec.ExecutionID, []string{"pending", "notified"}, "failed", nil)
 	if errors.Is(err, config.ErrNotFound) || errors.Is(err, config.ErrExecutionNotInExpectedStatus) {
 		return fmt.Errorf("%w: %s changed state before it could be failed", errExecutionNotNotifiable, exec.ExecutionID)
@@ -203,21 +253,30 @@ func (m *Manager) failExistingBarePlanStep(ctx context.Context, exec *config.Pur
 	if err != nil {
 		return fmt.Errorf("failed to fail plan step %d of plan %s: %w", exec.StepNumber, exec.PlanID, err)
 	}
-	return m.recordFailedBarePlanStep(ctx, failed)
+	stampFailedPlanStep(failed, reason)
+	if err := m.config.SavePurchaseExecution(ctx, failed); err != nil {
+		return fmt.Errorf("failed to record plan step %d of plan %s as failed: %w", failed.StepNumber, failed.PlanID, err)
+	}
+	return bareStepFailure(failed.PlanID, failed.StepNumber, reason)
 }
 
-// recordFailedBarePlanStep stamps the failure reason onto exec (already failed,
-// or a new row), saves it, logs it once, and returns errExecutionNotNotifiable
-// so the notification tick sends nothing for it.
-func (m *Manager) recordFailedBarePlanStep(ctx context.Context, exec *config.PurchaseExecution) error {
+// stampFailedPlanStep marks exec failed with reason and logs it once.
+func stampFailedPlanStep(exec *config.PurchaseExecution, reason string) {
 	exec.Status = "failed"
-	exec.Error = ErrPlanStepNoRecommendations.Error()
-	if err := m.config.SavePurchaseExecution(ctx, exec); err != nil {
-		return fmt.Errorf("failed to record plan step %d of plan %s as failed: %w", exec.StepNumber, exec.PlanID, err)
-	}
-	logging.Errorf("purchase[%s]: plan %s step %d has no recommendations and was marked failed: %v",
-		exec.ExecutionID, exec.PlanID, exec.StepNumber, ErrPlanStepNoRecommendations)
-	return fmt.Errorf("%w: %s has no recommendations", errExecutionNotNotifiable, exec.ExecutionID)
+	exec.NoSubmission = true // a pending/notified step never reaches the executor
+	exec.Error = reason
+	logging.Errorf("purchase[%s]: plan %s step %d was marked failed: %s", exec.ExecutionID, exec.PlanID, exec.StepNumber, reason)
+}
+
+// stampFailedBarePlanStep marks exec failed with the no-recommendations reason.
+func stampFailedBarePlanStep(exec *config.PurchaseExecution) {
+	stampFailedPlanStep(exec, ErrPlanStepNoRecommendations.Error())
+}
+
+// bareStepFailure is the quiet skip error a tick returns after failing a
+// step, so it sends nothing for it.
+func bareStepFailure(planID string, step int, reason string) error {
+	return fmt.Errorf("%w: step %d of plan %s failed: %s", errExecutionNotNotifiable, step, planID, reason)
 }
 
 // buildNotificationData creates notification data from plan and execution.
@@ -239,16 +298,41 @@ func (m *Manager) buildNotificationData(plan config.PurchasePlan, exec *config.P
 		RecipientEmail:    notifyEmail,
 	}
 
+	if plan.MaxStepCommitment != nil {
+		data.StepCap = *plan.MaxStepCommitment
+	}
 	for _rvc := range exec.Recommendations {
 		rec := exec.Recommendations[_rvc]
-		data.Recommendations = append(data.Recommendations, email.RecommendationSummary{
-			Service:        rec.Service,
-			ResourceType:   rec.ResourceType,
-			Engine:         rec.Engine,
-			Region:         rec.Region,
-			Count:          rec.Count,
-			MonthlySavings: rec.Savings,
-		})
+		summary := email.RecommendationSummary{
+			Service:          rec.Service,
+			ResourceType:     rec.ResourceType,
+			Engine:           rec.Engine,
+			Region:           rec.Region,
+			Payment:          rec.Payment,
+			Term:             rec.Term,
+			Count:            rec.Count,
+			MonthlySavings:   rec.Savings,
+			UpfrontCost:      rec.UpfrontCost,
+			Commitment:       rec.TotalCommitment(),
+			AvailabilityZone: rec.AvailabilityZone,
+		}
+		var recurring float64
+		if rec.MonthlyCost != nil {
+			summary.MonthlyCost = *rec.MonthlyCost
+			recurring = *rec.MonthlyCost * float64(rec.Term*12)
+		}
+		// Platform and tenancy are display only; a Details blob that does not
+		// decode is logged and shown without them (the cap and purchase paths
+		// decode it themselves and fail loud).
+		if ci, err := rec.ComputeIdentity(); err != nil {
+			logging.Warnf("purchase[%s]: notification row without platform/tenancy: %v", exec.ExecutionID, err)
+		} else {
+			summary.Platform, summary.Tenancy = ci.Platform, ci.Tenancy
+		}
+		data.TotalCommitment += summary.Commitment
+		data.TotalRecurring += recurring
+		data.TotalUnits += rec.Count
+		data.Recommendations = append(data.Recommendations, summary)
 	}
 
 	return data

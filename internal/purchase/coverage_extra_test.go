@@ -303,9 +303,10 @@ func TestHandleExecutePurchase_SaveError(t *testing.T) {
 	mockSTS := new(MockSTSClient)
 
 	plan := &config.PurchasePlan{
-		ID:           "plan-save-err",
-		Name:         "Plan",
-		AutoPurchase: true,
+		ID:                "plan-save-err",
+		Name:              "Plan",
+		AutoPurchase:      true,
+		MaxStepCommitment: capOf(1e9),
 	}
 
 	rec := config.RecommendationRecord{
@@ -314,16 +315,18 @@ func TestHandleExecutePurchase_SaveError(t *testing.T) {
 		ResourceType: "m5.large",
 		Region:       "us-east-1",
 		Count:        1,
+		UpfrontCost:  100,
 		Selected:     true,
 	}
 
 	exec := &config.PurchaseExecution{
 		ExecutionID:     "exec-save-err",
 		PlanID:          "plan-save-err",
-		Status:          "pending",
+		Status:          "notified",
 		Recommendations: []config.RecommendationRecord{rec},
 	}
 
+	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil)
 	mockStore.On("GetExecutionByID", ctx, "exec-save-err").Return(exec, nil)
 	// claimAndExecute CASes the row to "running" before executing (issue #1013).
 	runningExec := *exec
@@ -400,7 +403,7 @@ func TestProcessMessage_ApproveHappyPath(t *testing.T) {
 	mockStore.On("GetExecutionByID", ctx, "exec-appv").Return(exec, nil).Times(2)
 	mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
 	// Atomic approve transition (issue #372 fix).
-	mockStore.On("TransitionExecutionStatus", ctx, "exec-appv", []string{"pending", "notified"}, "approved", (*string)(nil)).Return(approved, nil)
+	mockStore.On("TransitionExecutionStatus", ctx, "exec-appv", []string{"pending", "notified"}, "running", (*string)(nil)).Return(approved, nil)
 	// Synchronous execute chain: GetPurchasePlan is called with the
 	// approved execution's PlanID — pinning the non-empty id here means a
 	// regression that drops it (e.g. passes "" or exec.ExecutionID by
@@ -513,7 +516,7 @@ func TestProcessMessage_ApproveFourEyesOn_DifferentApproverSucceeds(t *testing.T
 	mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
 	mockStore.On("GetUserEmailByID", ctx, creatorID).Return("owner@example.com", nil)
-	mockStore.On("TransitionExecutionStatus", ctx, "exec-appv-diff", []string{"pending", "notified"}, "approved", (*string)(nil)).Return(approved, nil)
+	mockStore.On("TransitionExecutionStatus", ctx, "exec-appv-diff", []string{"pending", "notified"}, "running", (*string)(nil)).Return(approved, nil)
 	plan := &config.PurchasePlan{ID: planID, Name: "test-plan"}
 	mockStore.On("GetPurchasePlan", ctx, planID).Return(plan, nil)
 	mockEmail.On("SendPurchaseConfirmation", ctx, mock.Anything).Return(nil)
