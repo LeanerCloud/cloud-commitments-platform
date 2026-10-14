@@ -886,6 +886,7 @@ interface BackendPlan {
   name: string;
   enabled: boolean;
   auto_purchase: boolean;
+  max_step_commitment?: number | null;
   notification_days_before: number;
   services?: Record<string, {
     provider: string;
@@ -1335,6 +1336,8 @@ async function editPlan(planId: string): Promise<boolean> {
     // blank so the user sees the field is missing (H-4).
     (document.getElementById('plan-coverage') as HTMLInputElement).value = info.coverage !== null ? String(info.coverage) : '';
     (document.getElementById('plan-auto-purchase') as HTMLInputElement).checked = backendPlan.auto_purchase;
+    const capInput = document.getElementById('plan-max-step-commitment') as HTMLInputElement | null;
+    if (capInput) capInput.value = backendPlan.max_step_commitment == null ? '' : String(backendPlan.max_step_commitment);
     (document.getElementById('plan-notify-days') as HTMLInputElement).value = String(backendPlan.notification_days_before || 3);
     (document.getElementById('plan-enabled') as HTMLInputElement).checked = backendPlan.enabled;
 
@@ -1430,6 +1433,15 @@ export async function savePlan(e: Event): Promise<void> {
     return;
   }
 
+  const autoPurchase = (document.getElementById('plan-auto-purchase') as HTMLInputElement).checked;
+  let maxStepCommitment: number | null;
+  try {
+    maxStepCommitment = parsePlanStepCap((document.getElementById('plan-max-step-commitment') as HTMLInputElement | null)?.value.trim() ?? '', autoPurchase);
+  } catch (error) {
+    showToast({ message: (error as Error).message, kind: 'error' });
+    return;
+  }
+
   const plan: SavePlanData = {
     name: (document.getElementById('plan-name') as HTMLInputElement).value,
     description: (document.getElementById('plan-description') as HTMLTextAreaElement).value,
@@ -1439,7 +1451,8 @@ export async function savePlan(e: Event): Promise<void> {
     payment: (document.getElementById('plan-payment') as HTMLSelectElement).value,
     target_coverage: rawCoverage,
     ramp_schedule: rampSchedule,
-    auto_purchase: (document.getElementById('plan-auto-purchase') as HTMLInputElement).checked,
+    auto_purchase: autoPurchase,
+    max_step_commitment: maxStepCommitment,
     notification_days_before: rawNotifyDays,
     enabled: (document.getElementById('plan-enabled') as HTMLInputElement).checked
   };
@@ -1528,6 +1541,7 @@ function refreshPlanSaveButtonState(): void {
  * Close plan modal
  */
 export function closePlanModal(): void {
+  planAutomationRead += 1;
   const planModal = document.getElementById('plan-modal');
   if (planModal) closeModal(planModal);
   // Invalidate the resolved-target snapshot stamped by openCreatePlanModal
@@ -2002,6 +2016,52 @@ function wirePlanRangeInputs(): void {
   wireRangeInput('ramp-step-percent', 1, 100);
   wireRangeInput('ramp-interval-days', 1, 365);
   wireRangeInput('plan-notify-days', 1, 30);
+  const cap = document.getElementById('plan-max-step-commitment') as HTMLInputElement | null;
+  const auto = document.getElementById('plan-auto-purchase') as HTMLInputElement | null;
+  if (cap && auto) {
+    cap.required = auto.checked;
+    if (!auto.dataset['capWired']) {
+      auto.dataset['capWired'] = '1';
+      auto.addEventListener('change', () => { cap.required = auto.checked; });
+    }
+  }
+  void refreshPlanAutomationState();
+}
+
+function parsePlanStepCap(raw: string, automatic: boolean): number | null {
+  if (raw === '') {
+    if (automatic) throw new Error('Maximum commitment per step is required for Auto-Purchase');
+    return null;
+  }
+  const value = Number(raw);
+  const [whole = '', fraction = ''] = raw.split('.');
+  const normalized = `${whole.replace(/^0+(?=\d)/, '')}.${fraction.padEnd(2, '0')}`;
+  const [wireWhole = '', wireFraction = ''] = String(value).split('.');
+  const wireAmount = `${wireWhole}.${wireFraction.padEnd(2, '0')}`;
+  // Match the backend's decimal-text validation without multiplying binary floats by 100.
+  if (!/^\d+(?:\.\d{1,2})?$/.test(raw) || !Number.isFinite(value) || value < 0.01 || value > 1e15 || wireAmount !== normalized) {
+    throw new Error('Maximum commitment per step must be an exact amount from 0.01 to 1000000000000000 with at most two decimal places');
+  }
+  return value;
+}
+
+let planAutomationRead = 0;
+
+async function refreshPlanAutomationState(): Promise<void> {
+  const request = ++planAutomationRead;
+  const banner = document.getElementById('plan-auto-purchase-state');
+  if (!banner) return;
+  banner.textContent = 'Global Auto-Purchase state is unavailable.';
+  if (!canAccess('view', 'config')) return;
+  try {
+    const config = await api.getConfig();
+    if (request !== planAutomationRead) return;
+    const enabled = config.global?.auto_purchase_enabled;
+    if (enabled === true) banner.textContent = 'Global Auto-Purchase is enabled. Automatic plans still require a per-step cap and purchase permission.';
+    if (enabled === false) banner.textContent = 'Global Auto-Purchase is off. Automatic plans will not execute until it is enabled.';
+  } catch {
+    if (request === planAutomationRead) banner.textContent = 'Global Auto-Purchase state could not be loaded.';
+  }
 }
 
 /**

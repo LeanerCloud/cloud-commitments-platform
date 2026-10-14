@@ -182,6 +182,7 @@ export interface SavePlanData {
   target_coverage: number;
   ramp_schedule: string;
   auto_purchase: boolean;
+  max_step_commitment?: number | null;
   notification_days_before: number;
   enabled: boolean;
   custom_step_percent?: number;
@@ -377,6 +378,7 @@ export interface ConfigResponse {
 }
 
 export interface GlobalConfig {
+  auto_purchase_enabled?: boolean;
   enabled_providers?: string[];
   notification_email?: string;
   auto_collect?: boolean;
