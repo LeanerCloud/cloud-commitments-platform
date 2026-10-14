@@ -222,6 +222,7 @@ export interface Plan {
   name: string;
   enabled: boolean;
   auto_purchase: boolean;
+  max_step_commitment?: number | null;
   notification_days_before: number;
   services: Record<string, ServiceConfig>;
   ramp_schedule: PlanRampSchedule;
@@ -257,6 +258,7 @@ export interface CreatePlanRequest {
   name: string;
   enabled: boolean;
   auto_purchase: boolean;
+  max_step_commitment?: number | null;
   notification_days_before: number;
   services: Record<string, ServiceConfig>;
   ramp_schedule: PlanRampSchedule;
