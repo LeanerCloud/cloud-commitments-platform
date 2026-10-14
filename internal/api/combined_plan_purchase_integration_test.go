@@ -352,3 +352,23 @@ func TestCombinedPlanPurchase_AutomaticAttachmentOverCapRefuses(t *testing.T) {
 	assert.Zero(t, plan.RampSchedule.CurrentStep)
 	assert.True(t, plan.NextExecutionDate.Equal(f.first))
 }
+
+func TestCombinedPlanPurchase_PlannedProjectionReportsUnits(t *testing.T) {
+	f := newCombinedPlanFixture(t, false, nil)
+	f.assertAttached(t)
+	response := combinedRoute(t, f.handler, "GET", "/api/purchases/planned", nil)
+	require.Equal(t, 200, response.StatusCode, response.Body)
+	var planned PlannedPurchasesResponse
+	require.NoError(t, json.Unmarshal([]byte(response.Body), &planned))
+	for _, row := range planned.Purchases {
+		if row.ID != f.root.ExecutionID {
+			continue
+		}
+		assert.Equal(t, 20, row.Count, response.Body)
+		assert.Equal(t, "Standard_D2s_v3", row.ResourceType, response.Body)
+		assert.Equal(t, "westeurope", row.Region, response.Body)
+		assert.Empty(t, f.service.recorded())
+		return
+	}
+	t.Fatal("attached root absent from real planned-purchases API")
+}
