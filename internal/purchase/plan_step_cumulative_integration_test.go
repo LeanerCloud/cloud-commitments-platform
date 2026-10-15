@@ -4,6 +4,7 @@ package purchase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -170,8 +171,10 @@ func TestCumulativeAttach_WeeklyRampBuysTwentyEachStep(t *testing.T) {
 				f.buy(step)
 			}
 			assert.Equal(t, 4, f.plan().RampSchedule.CurrentStep)
-			base, err := f.baseline()
-			require.NoError(t, err)
+			var raw []byte
+			require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT ramp_baseline FROM purchase_plans WHERE id=$1`, f.planID).Scan(&raw))
+			var base config.PlanRampBaseline
+			require.NoError(t, json.Unmarshal(raw, &base))
 			require.Len(t, base, 1)
 			for _, q := range base {
 				assert.Equal(t, 100, q.Count, "frozen at step 1 from shown")
