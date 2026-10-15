@@ -147,6 +147,7 @@ func (r *Router) registerRoutes() {
 		{PathPrefix: "/api/plans/", PathSuffix: "/purchases", Method: "POST", Handler: r.createPlannedPurchasesHandler, Auth: AuthUser},
 		{PathPrefix: "/api/plans/", PathSuffix: "/accounts", Method: "GET", Handler: r.listPlanAccountsHandler, Auth: AuthUser},
 		{PathPrefix: "/api/plans/", PathSuffix: "/accounts", Method: "PUT", Handler: r.setPlanAccountsHandler, Auth: AuthUser},
+		{PathPrefix: "/api/plans/", PathSuffix: "/editor", Method: "GET", Handler: r.getPlanEditorHandler, Auth: AuthUser},
 		{PathPrefix: "/api/plans/", Method: "GET", Handler: r.getPlanHandler, Auth: AuthUser},
 		{PathPrefix: "/api/plans/", Method: "PUT", Handler: r.updatePlanHandler, Auth: AuthUser},
 		{PathPrefix: "/api/plans/", Method: "PATCH", Handler: r.patchPlanHandler, Auth: AuthUser},
