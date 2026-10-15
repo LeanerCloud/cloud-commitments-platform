@@ -776,17 +776,14 @@ func (s *PostgresStore) UpdatePurchasePlan(ctx context.Context, plan *PurchasePl
 
 // UpdatePurchasePlanTx rejects snapshots that lost a race with another plan writer.
 func (s *PostgresStore) UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, plan *PurchasePlan) error {
-	// Marshal services and ramp_schedule to JSONB
-	servicesJSON, err := json.Marshal(plan.Services)
+	_, servicesJSON, rampScheduleJSON, err := s.purchasePlanJSONForUpdateTx(ctx, tx, plan)
 	if err != nil {
-		return fmt.Errorf("failed to marshal services: %w", err)
+		return err
 	}
+	return s.updatePurchasePlanJSONTx(ctx, tx, plan, servicesJSON, rampScheduleJSON)
+}
 
-	rampScheduleJSON, err := json.Marshal(plan.RampSchedule)
-	if err != nil {
-		return fmt.Errorf("failed to marshal ramp_schedule: %w", err)
-	}
-
+func (s *PostgresStore) updatePurchasePlanJSONTx(ctx context.Context, tx pgx.Tx, plan *PurchasePlan, servicesJSON, rampScheduleJSON []byte) error {
 	query := `
 		UPDATE purchase_plans SET
 			name = $2,
@@ -804,7 +801,7 @@ func (s *PostgresStore) UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, pla
 	`
 
 	var updatedAt time.Time
-	err = tx.QueryRow(ctx, query,
+	err := tx.QueryRow(ctx, query,
 		plan.ID,
 		plan.Name,
 		plan.Enabled,
