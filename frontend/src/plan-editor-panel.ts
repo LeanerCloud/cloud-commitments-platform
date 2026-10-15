@@ -1,9 +1,9 @@
 import { wirePlanDateInteraction } from './plan-date-interaction';
-import { buildLocalScheduleIntent, PlanSchedulePreviewInput } from './plan-schedule-preview';
+import { buildLocalScheduleIntent, PlanScheduleIntentInput } from './plan-schedule-intent';
 import { createEditorDraft, draftDateChanges, EditorDraft, redistributeEditorBlock, resetEditorDraft, selectDraftStep, setDraftDate } from './lib/plan-editor-draft';
 import { renderSchedulePlot, schedulePlotFrame, updateSchedulePlot, SchedulePlotFrame } from './plan-schedule-plot';
 
-export function readPlanScheduleInput(form: HTMLFormElement): PlanSchedulePreviewInput {
+export function readPlanScheduleInput(form: HTMLFormElement): PlanScheduleIntentInput {
   const value = (id: string): string => form.querySelector<HTMLInputElement | HTMLSelectElement>(`#${id}`)?.value ?? '';
   return { name: value('plan-name'), preset: form.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked')?.value ?? '',
     coverage: value('plan-coverage'), stepPercent: value('ramp-step-percent'), intervalDays: value('ramp-interval-days'),

@@ -147,7 +147,7 @@ describe('Plans Module', () => {
     document.body.innerHTML = `
       <div id="plans-list"></div>
       <div id="planned-purchases-list"></div>
-      <div id="plan-modal" class="modal hidden">
+      <div id="plan-modal" class="modal hidden" role="dialog" aria-modal="true">
         <h3 id="plan-modal-title">Create Plan</h3>
         <aside id="plan-editor-panel" hidden></aside>
         <form id="plan-form">
@@ -234,6 +234,8 @@ describe('Plans Module', () => {
       (getPlanEditor as jest.Mock).mockResolvedValue(editorResponse());
       (await load()).click(); await flush();
       const form = document.getElementById('plan-form') as HTMLFormElement;
+      expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+      expect(document.getElementById('plan-schedule-preview')).toBeNull();
       expect(form.hidden).toBe(true);
       expect(document.querySelector('[data-edit="heading"]')).toBe(document.activeElement);
       expect(form.querySelector('button')!.disabled).toBe(true);
@@ -290,15 +292,22 @@ describe('Plans Module', () => {
   });
 
   describe('loadPlans', () => {
-    test('wires actual form values to the no-write schedule preview', () => {
-      const button = document.createElement('button');
-      button.id = 'preview-plan-schedule-btn';
-      document.getElementById('plan-modal')!.appendChild(button);
-      (document.querySelector('input[value="custom"]') as HTMLInputElement).checked = true;
-      (document.getElementById('ramp-step-percent') as HTMLInputElement).value = '33';
-      setupPlanHandlers();
-      button.click();
-      expect(document.querySelectorAll('[data-preview-step]')).toHaveLength(3);
+    test('renders the schedule preview inline with actual form values and no second dialog', () => {
+      openNewPlanModal();
+      const modal = document.getElementById('plan-modal')!;
+      expect(modal).not.toHaveClass('hidden');
+      expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+      expect(document.getElementById('plan-schedule-preview')).toBeNull();
+      expect(document.getElementById('preview-plan-schedule-btn')).toBeNull();
+      const panel = document.getElementById('plan-editor-panel')!;
+      expect(panel.hidden).toBe(false);
+      expect(panel.querySelectorAll('[data-preview-step]')).toHaveLength(1);
+      const coverage = document.getElementById('plan-coverage') as HTMLInputElement;
+      coverage.value = '40'; coverage.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(panel.querySelector('[data-preview-step="0"]')?.getAttribute('aria-label')).toContain('target 40%');
+      const custom = document.querySelector('input[value="custom"]') as HTMLInputElement;
+      custom.checked = true; custom.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(panel.querySelectorAll('[data-preview-step]')).toHaveLength(5);
       expect(api.createPlan).not.toHaveBeenCalled();
       expect(api.updatePlan).not.toHaveBeenCalled();
       expect(api.createPlannedPurchases).not.toHaveBeenCalled();

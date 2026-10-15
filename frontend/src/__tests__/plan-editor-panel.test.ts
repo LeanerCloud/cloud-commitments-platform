@@ -10,6 +10,7 @@ beforeEach(() => {
   jest.useFakeTimers({ now: new Date('2026-10-15T23:59:00Z') });
   document.body.innerHTML = `<div class="modal"><div class="plan-editor-layout"><section hidden></section><form>
     <input id="plan-name" value="Compute"><input name="ramp-schedule" type="radio" value="custom" checked>
+    <input name="ramp-schedule" type="radio" value="immediate">
     <input id="plan-coverage" value="80"><input id="ramp-step-percent" value="33"><input id="ramp-interval-days" value="7">
     <input id="plan-notify-days" value="3"><input id="plan-term" value="1"><input id="plan-payment" value="monthly"></form></div></div>`;
   form = document.querySelector('form')!; host = document.querySelector('section')!; dispose = mountPlanEditorPanel(host, form);
@@ -66,6 +67,59 @@ test.each(['plan-coverage', 'ramp-step-percent', 'plan-notify-days'])('preserves
   expect(field('date').value).toBe('2026-10-21'); expect(field('error').textContent).not.toBe(reason);
 });
 
+
+test('mounts inline with honest labels and never creates a second dialog element', () => {
+  expect(host.textContent).toContain('These dates are not scheduled');
+  expect(host.textContent).toContain('Amount unavailable');
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(0);
+  expect(document.getElementById('plan-schedule-preview')).toBeNull();
+  expect(host.querySelector('svg')).not.toBeNull();
+});
+
+test('keeps the graph stable and error-free when term or payment change', () => {
+  const before = host.querySelector('svg')!.innerHTML;
+  const term = form.querySelector<HTMLInputElement>('#plan-term')!;
+  term.value = '3'; term.dispatchEvent(new Event('change', { bubbles: true }));
+  const payment = form.querySelector<HTMLInputElement>('#plan-payment')!;
+  payment.value = 'all-upfront'; payment.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(field('error').textContent).toBe('');
+  expect(host.querySelector('svg')!.innerHTML).toBe(before);
+  expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(3);
+});
+
+test('single-step schedules hide the end control and follow the start input', () => {
+  const immediate = form.querySelector<HTMLInputElement>('input[name="ramp-schedule"][value="immediate"]')!;
+  immediate.checked = true; immediate.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(1);
+  expect(host.querySelector('[data-preview-boundary]')).toBeNull();
+  expect(host.querySelector<HTMLElement>('[data-editor="end-label"]')!.hidden).toBe(true);
+  expect(field('end').disabled).toBe(true);
+  change('start', '2026-10-21');
+  expect(host.querySelector('[data-preview-step="0"]')?.getAttribute('aria-label')).toContain('2026-10-21, target 80%');
+  expect(field('date').value).toBe('2026-10-21');
+});
+
+test('exposes overlapping points through the Step selector when targets coincide', () => {
+  const coverage = form.querySelector<HTMLInputElement>('#plan-coverage')!;
+  coverage.value = '0'; coverage.dispatchEvent(new Event('change', { bubbles: true }));
+  change('end', '2027-10-20');
+  change('step', '1'); change('date', '2026-10-21');
+  const left = (index: number): number => Number(host.querySelector(`[data-preview-step="${index}"] circle`)!.getAttribute('cx'));
+  expect(left(1) - left(0)).toBeLessThan(3);
+  for (const [index, date] of [[0, '2026-10-20'], [1, '2026-10-21'], [2, '2027-10-20']] as const) {
+    change('step', String(index));
+    expect(host.querySelector(`[data-preview-step="${index}"]`)?.getAttribute('aria-pressed')).toBe('true');
+    expect(field('date').value).toBe(date);
+  }
+});
+
+test('rechecks operation-time UTC midnight on date edits', () => {
+  jest.setSystemTime(new Date('2026-10-28T00:00:00Z'));
+  change('step', '1');
+  change('date', '2026-10-28');
+  expect(field('error').textContent).toMatch(/future/);
+  expect(host.querySelector('[data-preview-step="1"]')?.getAttribute('aria-label')).toContain('2026-10-27');
+});
 
 test('actual Create pointer ownership guards submission, cancels on geometry change and restores model', () => {
   const svg = host.querySelector<SVGSVGElement>('svg')!, point = host.querySelector<SVGGElement>('[data-preview-step="1"]')!;
