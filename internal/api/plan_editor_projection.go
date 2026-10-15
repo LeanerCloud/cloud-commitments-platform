@@ -21,8 +21,9 @@ func buildPlanEditorProjection(s *config.PlanEditorSnapshot, authority PlanEdito
 	ramp := &s.Plan.RampSchedule
 	g := &PlanEditorProjection{PlanID: s.Plan.ID, Revision: revision, CurrentStep: ramp.CurrentStep, TotalSteps: ramp.TotalSteps,
 		StructuralShapeChangeAllowed: true, Steps: make([]PlanEditorSlot, 0, ramp.TotalSteps), History: history}
+	incoming := planEditorCapturedIncoming(s)
 	for ordinal := 1; ordinal <= ramp.TotalSteps; ordinal++ {
-		p := buildPlanEditorStepPolicy(s.Executions, ordinal, authority, evaluatedAt)
+		p := buildPlanEditorStepPolicy(s.Executions, ordinal, authority, evaluatedAt, incoming)
 		g.Steps = append(g.Steps, planEditorGraphSlot(s.Plan, ordinal, p))
 		if !p.StructuralChangeAllowed && ordinal > ramp.CurrentStep && g.ShapeLockReason == nil {
 			g.StructuralShapeChangeAllowed, g.ShapeLockReason = false, p.Reason
@@ -92,4 +93,15 @@ func planEditorGraphDateOrder(g *PlanEditorProjection) {
 		}
 		previous = i
 	}
+}
+
+func planEditorCapturedIncoming(s *config.PlanEditorSnapshot) map[string]bool {
+	incoming := make(map[string]bool)
+	for i := range s.Executions {
+		id := s.Executions[i].ExecutionID
+		if s.HasIncomingRetryRoot(id) {
+			incoming[id] = true
+		}
+	}
+	return incoming
 }

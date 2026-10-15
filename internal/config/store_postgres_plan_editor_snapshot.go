@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,14 +21,17 @@ var (
 
 // PlanEditorSnapshot is internal state for the editor projection, not an HTTP DTO.
 type PlanEditorSnapshot struct {
-	Plan              *PurchasePlan
-	AccountIDs        []string
-	Executions        []PurchaseExecution
-	LedgerState       PlanEditorLedgerState
-	Baseline          PlanRampBaseline
-	Committed         map[string]PlanRampQuantity
-	Accounts          []PlanEditorAccount
-	executionVersions []planEditorExecutionVersion
+	Plan                 *PurchasePlan
+	AccountIDs           []string
+	Executions           []PurchaseExecution
+	LedgerState          PlanEditorLedgerState
+	Baseline             PlanRampBaseline
+	Committed            map[string]PlanRampQuantity
+	Accounts             []PlanEditorAccount
+	servicesJSON         json.RawMessage
+	rampScheduleJSON     json.RawMessage
+	incomingRetryRootIDs []string
+	executionVersions    []planEditorExecutionVersion
 }
 
 // PlanEditorAccount contains resolved provenance, without credentials or grants.
@@ -35,39 +39,52 @@ type PlanEditorAccount struct{ ID, Name, Provider string }
 
 // ReadPlanEditorSnapshot resolves retained provenance; the caller must authorize it.
 func (s *PostgresStore) ReadPlanEditorSnapshot(ctx context.Context, planID string) (*PlanEditorSnapshot, error) {
-	out := &PlanEditorSnapshot{}
+	var out *PlanEditorSnapshot
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`); err != nil {
 			return err
 		}
 		var err error
-		out.Plan, err = scanPurchasePlanRow(tx.QueryRow(ctx, purchasePlanSelectCols+` WHERE id=$1`, planID))
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		rows, err := tx.Query(ctx, `SELECT account_id::text FROM plan_accounts WHERE plan_id=$1 ORDER BY account_id`, planID)
-		if err != nil {
-			return err
-		}
-		out.AccountIDs, err = pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			return err
-		}
-		if stateErr := s.readPlanEditorExecutionStateTx(ctx, tx, out); stateErr != nil {
-			return stateErr
-		}
-		ids, err := planEditorAccountIDs(out)
-		if err != nil {
-			return err
-		}
-		out.Accounts, err = resolvePlanEditorAccountsTx(ctx, tx, ids)
+		out, err = s.readPlanEditorSnapshotTx(ctx, tx, planID)
 		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read plan editor snapshot: %w", err)
+	}
+	return out, nil
+}
+
+func (s *PostgresStore) readPlanEditorSnapshotTx(ctx context.Context, tx pgx.Tx, planID string) (*PlanEditorSnapshot, error) {
+	out := &PlanEditorSnapshot{}
+	var err error
+	out.Plan, err = scanPurchasePlanRow(tx.QueryRow(ctx, purchasePlanSelectCols+` WHERE id=$1`, planID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if rawErr := tx.QueryRow(ctx, `SELECT services, ramp_schedule FROM purchase_plans WHERE id=$1`, planID).Scan(&out.servicesJSON, &out.rampScheduleJSON); rawErr != nil {
+		return nil, rawErr
+	}
+	rows, err := tx.Query(ctx, `SELECT account_id::text FROM plan_accounts WHERE plan_id=$1 ORDER BY account_id`, planID)
+	if err != nil {
+		return nil, err
+	}
+	out.AccountIDs, err = pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	if stateErr := s.readPlanEditorExecutionStateTx(ctx, tx, out); stateErr != nil {
+		return nil, stateErr
+	}
+	ids, err := planEditorAccountIDs(out)
+	if err != nil {
+		return nil, err
+	}
+	out.Accounts, err = resolvePlanEditorAccountsTx(ctx, tx, ids)
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -98,6 +115,14 @@ func (s *PostgresStore) readPlanEditorExecutionStateTx(ctx context.Context, tx p
 		return err
 	}
 	out.executionVersions, err = pgx.CollectRows(rows, pgx.RowToStructByPos[planEditorExecutionVersion])
+	if err != nil {
+		return err
+	}
+	rows, err = tx.Query(ctx, `SELECT own.execution_id::text FROM purchase_executions own WHERE own.plan_id=$1 AND EXISTS (SELECT 1 FROM purchase_executions incoming WHERE incoming.retry_execution_id=own.execution_id) ORDER BY own.execution_id`, out.Plan.ID)
+	if err != nil {
+		return err
+	}
+	out.incomingRetryRootIDs, err = pgx.CollectRows(rows, pgx.RowTo[string])
 	return err
 }
 
@@ -231,4 +256,9 @@ func planEditorQuantityFieldsValid(fields map[string]json.RawMessage) bool {
 		}
 	}
 	return true
+}
+
+func (s *PlanEditorSnapshot) HasIncomingRetryRoot(executionID string) bool {
+	_, found := slices.BinarySearch(s.incomingRetryRootIDs, executionID)
+	return found
 }

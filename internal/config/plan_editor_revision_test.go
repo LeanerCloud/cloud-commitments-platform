@@ -167,3 +167,47 @@ func TestPlanEditorRevision_LedgerStateIsCapturedInput(t *testing.T) {
 		require.Equal(t, revision, repeated)
 	}
 }
+
+func TestPlanEditorRevision_RawPlanJSON(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, before, after string
+		ramp                bool
+	}{
+		{"filter null versus empty", `{"compute":{"provider":"aws","service":"ec2","term":1,"include_types":null}}`, `{"compute":{"provider":"aws","service":"ec2","term":1,"include_types":[]}}`, false},
+		{"unknown service", `{"compute":{"future":1}}`, `{"compute":{"future":2}}`, false},
+		{"large persisted number", `{"compute":{"future":9007199254740992}}`, `{"compute":{"future":9007199254740993}}`, false},
+		{"unknown ramp", `{"type":"weekly","future":1}`, `{"type":"weekly","future":2}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshots := []*PlanEditorSnapshot{editorRevisionFixture(), editorRevisionFixture()}
+			var revisions []string
+			for i, raw := range []string{tc.before, tc.after} {
+				s := snapshots[i]
+				if tc.ramp {
+					s.rampScheduleJSON = json.RawMessage(raw)
+					require.NoError(t, json.Unmarshal(s.rampScheduleJSON, &s.Plan.RampSchedule))
+				} else {
+					s.servicesJSON = json.RawMessage(raw)
+					require.NoError(t, json.Unmarshal(s.servicesJSON, &s.Plan.Services))
+				}
+				revision, err := s.Revision()
+				require.NoError(t, err)
+				revisions = append(revisions, revision)
+			}
+			require.Equal(t, snapshots[0].Plan.UpdatedAt, snapshots[1].Plan.UpdatedAt)
+			require.NotEqual(t, revisions[0], revisions[1], "same-version captured JSON must remain observable")
+		})
+	}
+	s := editorRevisionFixture()
+	s.servicesJSON = json.RawMessage(`{"b":2,"a":1}`)
+	first, err := s.Revision()
+	require.NoError(t, err)
+	s.servicesJSON = json.RawMessage(`{ "a":1, "b":2 }`)
+	second, err := s.Revision()
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	s.servicesJSON = json.RawMessage(`{`)
+	_, err = s.Revision()
+	require.Error(t, err)
+}
