@@ -13,15 +13,18 @@ export function readPlanScheduleInput(form: HTMLFormElement): PlanSchedulePrevie
 export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): () => void {
   host.hidden = false;
   host.closest('.plan-editor-layout')?.classList.add('has-editor-draft');
-  host.innerHTML = `<h3>Proposed purchase dates</h3><p>Local draft. These dates are not scheduled. Save Plan does not save date changes.</p>
+  host.innerHTML = `<h3>Proposed purchase dates</h3><p class="editor-draft-notice">Local draft. These dates are not scheduled. Save Plan does not save date changes.</p>
     <div class="schedule-preview-scroll" tabindex="0" aria-label="Proposed purchase calendar"></div>
-    <p>Drag dates or Start/End handles. Arrow keys select; Alt+Left/Right moves a date. Enter on a handle opens its date input. Escape cancels a drag. Use Step/date inputs when points overlap.</p>
-    <p class="editor-target"></p><p>Amount unavailable. Saved purchases and history are not shown.</p>
+    <p class="editor-target help-text"></p><p class="help-text">Drag a point to change its date, or Start/End to space the dates.</p>
+    <details class="editor-help"><summary>Keyboard and touch help</summary>
+      <p class="help-text">Drag dates or Start/End handles. Arrow keys select; Alt+Left/Right moves a date. Enter on a handle opens its date input. Escape cancels a drag. Use Step/date inputs when points overlap.</p>
+    </details>
+    <p class="help-text">Amount unavailable. Saved purchases and history are not shown.</p>
     <label>Step<select data-editor="step"></select></label><label>Date (UTC)<input data-editor="date" type="date"></label>
     <div class="form-row"><label>Proposed start (UTC)<input data-editor="start" type="date"></label>
     <label data-editor="end-label">Proposed end (UTC)<input data-editor="end" type="date"></label></div>
     <button type="button" data-editor="reset">Reset draft dates</button><button type="button" data-editor="rebuild" hidden>Rebuild proposed dates</button>
-    <p data-editor="error" role="alert"></p><details><summary>Local date changes</summary><ul></ul></details>`;
+    <p data-editor="error" role="alert"></p><details data-editor="changes"><summary>Local date changes</summary><ul></ul></details>`;
   const field = <T extends HTMLElement>(key: string): T => host.querySelector<T>(`[data-editor="${key}"]`)!;
   const step = field<HTMLSelectElement>('step'), date = field<HTMLInputElement>('date');
   const start = field<HTMLInputElement>('start'), end = field<HTMLInputElement>('end');
@@ -60,8 +63,8 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     field('end-label').hidden = dates.length === 1; end.disabled ||= dates.length === 1;
     host.querySelector('.editor-target')!.textContent = `Proposed cumulative coverage (%), target ${coverage}%. All dates use UTC.`;
     const changes = draftDateChanges(state);
-    host.querySelector('summary')!.textContent = `Local date changes (${changes.length})`;
-    host.querySelector('ul')!.replaceChildren(...changes.map(change => {
+    field('changes').querySelector('summary')!.textContent = `Local date changes (${changes.length})`;
+    field('changes').querySelector('ul')!.replaceChildren(...changes.map(change => {
       const item = document.createElement('li'); item.textContent = `Step ${change.step}: ${change.before} → ${change.after}`; return item;
     }));
   };

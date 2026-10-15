@@ -6,7 +6,7 @@ import { mockApi, seedAuth } from './fixtures/recs';
 for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`, () => {
   test.use({ isMobile: width <= 390 });
   test(`local Create/Edit preview at ${width}px (mock API, no writes)`, async ({ page, isMobile }, testInfo) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     await page.setViewportSize({ width, height: 900 });
     const errors: string[] = [], writes: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -33,6 +33,16 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
       const parent = page.locator('#plan-modal');
       await expect(parent).toBeVisible();
       await expect(parent.locator('#plan-name')).toBeFocused();
+      const advanced = parent.locator('#plan-advanced-settings'), summary = advanced.locator(':scope > summary');
+      await expect(advanced).not.toHaveAttribute('open', '');
+      await summary.focus(); await summary.press('Enter'); await expect(advanced).toHaveAttribute('open', '');
+      await expect(parent.locator('#plan-description')).toBeDisabled();
+      await expect(advanced).toContainText('Descriptions are unavailable and are not saved');
+      const payment = await parent.locator('#plan-payment').inputValue();
+      await advanced.scrollIntoViewIfNeeded(); await page.screenshot({ path: testInfo.outputPath(mode.toLowerCase() + '-advanced.png'), fullPage: true });
+      await summary.press('Space'); await expect(advanced).not.toHaveAttribute('open', '');
+      expect(await parent.locator('#plan-payment').inputValue()).toBe(payment);
+
       if (mode === 'Create') {
         await page.locator('#plan-name').fill('Capacity ladder');
         await parent.locator('label.ramp-option').filter({ hasText: 'Weekly 25%' }).click();
@@ -49,10 +59,21 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
         const next = new Date(Date.parse(`${initial}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
         await date.fill(next); await date.press('Enter');
         await expect(date).toBeFocused(); expect(await node!.evaluate(element => element.isConnected)).toBe(true);
-        await expect(panel.locator('summary')).toHaveText('Local date changes (1)');
+        await expect(panel.locator('[data-editor="changes"] summary')).toHaveText('Local date changes (1)');
         await expect(panel.locator('[data-preview-step="0"]')).toHaveAttribute('aria-label', new RegExp(next));
         await parent.locator('#plan-account-search').fill('AWS');
         await parent.locator('.account-suggestion-item').first().click(); await expect(parent.locator('button[type="submit"]')).toBeEnabled();
+        await summary.click();
+        await parent.locator('#plan-notify-days').fill('1.5'); await summary.click();
+        await parent.locator('button[type="submit"]').click();
+        await expect(advanced).toHaveAttribute('open', '');
+        await expect(parent.locator('#plan-notify-days')).toBeFocused();
+        expect(await parent.locator('#plan-notify-days').evaluate(element => element.validity.stepMismatch)).toBe(true);
+        await parent.locator('#plan-notify-days').fill('3'); await summary.click();
+        await parent.locator('#plan-name').fill(''); await parent.locator('button[type="submit"]').click();
+        await expect(advanced).not.toHaveAttribute('open', '');
+        await expect(parent.locator('#plan-name')).toBeFocused(); await parent.locator('#plan-name').fill('Capacity ladder');
+        await expect(panel.locator('.editor-help summary')).toHaveText('Keyboard and touch help');
         const svg = panel.locator('svg'), point = panel.locator('[data-preview-step="1"]');
         const originalDate = next.slice(0, 10), add = (value: string, days: number) => new Date(Date.parse(value) + days * 86400000).toISOString().slice(0, 10);
         const hit = point.locator('.preview-hit'); await hit.scrollIntoViewIfNeeded();
@@ -102,6 +123,7 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
         expect(await parent.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
         await parent.locator('.plan-editor-layout').evaluate(element => { element.scrollTop = 0; });
         await page.screenshot({ path: testInfo.outputPath('create-inline-graph.png'), fullPage: true });
+        await panel.locator('.editor-help').scrollIntoViewIfNeeded(); await page.screenshot({ path: testInfo.outputPath('create-inline-help.png'), fullPage: true });
         await parent.locator('#close-plan-modal-btn').scrollIntoViewIfNeeded();
         const footer = (await parent.locator('.modal-buttons').boundingBox())!;
         expect(footer.y + footer.height).toBeLessThanOrEqual(900);
@@ -111,6 +133,7 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
         await expect(panel.locator('.schedule-preview-scroll')).toBeFocused();
         await page.keyboard.press('Shift+Tab'); await expect(parent.locator('button[type="submit"]')).toBeFocused();
         await page.keyboard.press('Shift+Tab'); await expect(parent.locator('#preview-plan-schedule-btn')).toBeFocused();
+        await summary.click(); await expect(advanced).toHaveAttribute('open', '');
         await hit.scrollIntoViewIfNeeded(); const closeBox = (await hit.boundingBox())!;
         await page.mouse.move(closeBox.x + 22, closeBox.y + 22); await page.mouse.down();
         expect(await parent.locator('#plan-form').evaluate(element => element.inert)).toBe(true);
@@ -118,8 +141,9 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
         await page.mouse.up(); await expect(parent).toBeHidden();
         expect(await parent.locator('#plan-form').evaluate(element => element.inert)).toBe(false);
         await page.locator('#new-plan-btn').click(); await parent.locator('#plan-name').fill('Capacity ladder');
+        await expect(advanced).not.toHaveAttribute('open', '');
         await parent.locator('label.ramp-option').filter({ hasText: 'Weekly 25%' }).click();
-        await expect(panel.locator('summary')).toHaveText('Local date changes (0)');
+        await expect(panel.locator('[data-editor="changes"] summary')).toHaveText('Local date changes (0)');
         await expect(panel.locator('[data-editor="date"]')).toBeEnabled();
 
       } else {
