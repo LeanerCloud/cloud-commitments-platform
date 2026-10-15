@@ -238,3 +238,39 @@ func TestPlanEditorRevision_ActualPersistedABA(t *testing.T) {
 	require.NotEqual(t, executionChangedRevision, executionRestoredRevision)
 	require.NotEqual(t, restoredRevision, executionRestoredRevision, "observed execution version change survives restored content")
 }
+
+func TestPlanEditorSnapshot_NullableExecutionError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	f := newRampFixture(ctx, t, 1, 0, 4)
+	row := f.row(ctx, t, 1, nil, StatusCanceled)
+	for _, tc := range []struct {
+		name   string
+		stored any
+		want   string
+	}{
+		{"null", nil, ""}, {"empty", "", ""}, {"text", "historical diagnostic", "historical diagnostic"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := f.store.db.Exec(ctx, "UPDATE purchase_executions SET error=$2 WHERE execution_id=$1", row.ExecutionID, tc.stored)
+			require.NoError(t, err)
+			stored := func() string {
+				var raw string
+				require.NoError(t, f.store.db.QueryRow(ctx, "SELECT row_to_json(e)::text FROM purchase_executions e WHERE execution_id=$1", row.ExecutionID).Scan(&raw))
+				return raw
+			}
+			before := stored()
+			snapshot, err := f.store.ReadPlanEditorSnapshot(ctx, f.planID)
+			require.NoError(t, err)
+			require.Len(t, snapshot.Executions, 1)
+			require.Equal(t, row.ExecutionID, snapshot.Executions[0].ExecutionID)
+			require.Equal(t, StatusCanceled, snapshot.Executions[0].Status)
+			require.Equal(t, tc.want, snapshot.Executions[0].Error)
+			single, err := f.store.GetExecutionByID(ctx, row.ExecutionID)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, single.Error)
+			require.Equal(t, row.ExecutionID, single.ExecutionID)
+			require.Equal(t, before, stored(), "both readers must leave complete stored row unchanged")
+		})
+	}
+}
