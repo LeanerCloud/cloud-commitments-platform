@@ -15,10 +15,13 @@ func (s *PlanEditorSnapshot) Revision() (string, error) {
 		return "", errors.New("plan editor snapshot and plan are required")
 	}
 	state := struct {
-		Domain            string
-		Snapshot          *PlanEditorSnapshot
-		ExecutionVersions []planEditorExecutionVersion
-	}{"plan-editor-state-v1", s, s.executionVersions}
+		Domain             string
+		Snapshot           *PlanEditorSnapshot
+		ExecutionVersions  []planEditorExecutionVersion
+		Services           json.RawMessage
+		Ramp               json.RawMessage
+		IncomingRetryRoots []string
+	}{"plan-editor-state-v2", s, s.executionVersions, s.servicesJSON, s.rampScheduleJSON, s.incomingRetryRootIDs}
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return "", fmt.Errorf("marshal plan editor state: %w", err)
