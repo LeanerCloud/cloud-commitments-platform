@@ -149,4 +149,13 @@ describe('controlled editor dates', () => {
     const state = edit([slot(1, '2026-10-20'), slot(2, '2026-10-22', { capability: 'fixed', editable: false })]);
     expect(() => setDraftDate(state, 0, '2026-10-23')).toThrow('order');
   });
+  test('typed context reuse cannot carry persisted identity into Create or local fields into Edit', () => {
+    const persisted = { kind: 'edit' as const, planId: 'persisted', revision: 'revision', totalSteps: 1, slots: [slot(1, '2026-10-20')] };
+    const reused = { ...persisted, kind: 'create' as const, shares: [100], dates: [null] };
+    const fresh = createEditorDraft(reused);
+    expect(fresh.context).toEqual({ kind: 'create', totalSteps: 1, shares: [100], dates: [null] });
+    const returning = createEditorDraft({ ...reused, kind: 'edit', slots: persisted.slots });
+    expect(returning.context).toEqual(persisted);
+    expect(returning.approvedEdits).toBe(false);
+  });
 });
