@@ -32,6 +32,7 @@ type ComparisonIdentity struct {
 	IsCurrent                                                         bool
 	LineItemID, CurrentOfferID, Provider, CurrentType, CurrentPayment string
 	CurrentSelectedAmount                                             *big.Rat
+	Candidates                                                        []CandidateIdentity
 }
 
 type MatchStatus string
@@ -44,6 +45,7 @@ const (
 type RecommendationMatch struct {
 	Status                                               MatchStatus
 	LineItemID, Reason, AmountProvenance, EconomicStatus string
+	Candidates                                           []CandidateAssociation
 }
 
 func MatchRecommendation(planID string, rec *RecommendationIdentity, rows []ComparisonIdentity, items []LineItemIdentity) (RecommendationMatch, error) {
@@ -80,6 +82,9 @@ func MatchRecommendation(planID string, rec *RecommendationIdentity, rows []Comp
 	result := RecommendationMatch{
 		Status: ResourceAssociated, LineItemID: row.LineItemID,
 		AmountProvenance: "stored_decimal_only", EconomicStatus: "unavailable_source_precision",
+	}
+	for i := range row.Candidates {
+		result.Candidates = append(result.Candidates, associateCandidate(rec, &row.Candidates[i]))
 	}
 	return result, nil
 }
