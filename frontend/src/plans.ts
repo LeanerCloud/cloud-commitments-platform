@@ -17,8 +17,7 @@ import { showSkeletonTiles, showSkeletonRows, teardownSkeleton } from './lib/ske
 import { canAccess } from './permissions';
 import { parseNumericFilter, applyColumnFilters as applyColumnFiltersLib } from './lib/column-filters';
 import { suggestedPurchaseStartDate } from './lib/calendar-date';
-import { openPlanSchedulePreview } from './plan-schedule-preview';
-import { mountPlanEditorPanel, readPlanScheduleInput } from './plan-editor-panel';
+import { mountPlanEditorPanel } from './plan-editor-panel';
 import { getPlanEditor, PlanEditorResponse } from './api/plan-editor';
 import { mountPlanEditorEditPanel } from './plan-editor-edit-panel';
 import { adaptPlanEditor } from './plan-editor-adapter';
@@ -1261,8 +1260,7 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
   planEditorMode = editor ? 'complete-edit' : 'create';
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
   const advanced = modal.querySelector<HTMLDetailsElement>('#plan-advanced-settings');
-  const preview = modal.querySelector<HTMLElement>('#preview-plan-schedule-btn');
-  const wasHidden = form?.hidden ?? false, previewHidden = preview?.hidden ?? false;
+  const wasHidden = form?.hidden ?? false;
   const disabled = new Map<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, boolean>();
   if (editor && form) {
     form.hidden = true;
@@ -1270,7 +1268,6 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
       disabled.set(control, control.disabled); control.disabled = true;
     });
   }
-  if (preview) preview.hidden = editor !== undefined;
   if (advanced) advanced.open = false;
   const revealInvalid = (event: Event): void => {
     if (advanced?.contains(event.target as Node)) advanced.open = true;
@@ -1288,7 +1285,6 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
       form?.removeEventListener('invalid', revealInvalid, true); form?.removeEventListener('submit', blockSubmit, true);
       if (form) form.hidden = wasHidden;
       disabled.forEach((value, control) => { control.disabled = value; });
-      if (preview) preview.hidden = previewHidden;
       modal.classList.remove('complete-plan-editor');
     }
   };
@@ -2321,15 +2317,6 @@ let _unsubAccount: (() => void) | null = null;
  * the page level.
  */
 export function setupPlanHandlers(): void {
-  const preview = document.getElementById('preview-plan-schedule-btn');
-  if (preview) preview.onclick = () => {
-    if (planEditorMode === 'complete-edit') { showToast({ message: editSaveUnavailable, kind: 'error' }); return; }
-    const parent = document.getElementById('plan-modal'), form = document.getElementById('plan-form') as HTMLFormElement | null;
-    if (!parent || !form) return;
-    try {
-      openPlanSchedulePreview(readPlanScheduleInput(form), parent);
-    } catch (error) { showToast({ message: (error as Error).message, kind: 'error' }); }
-  };
   // Drop any previous subscriptions before re-registering so we don't
   // accumulate duplicate loadPlans() calls on each invocation.
   _unsubProvider?.();
