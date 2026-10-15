@@ -247,6 +247,15 @@ describe('Plans Module', () => {
       expect((document.getElementById('plan-name') as HTMLInputElement).disabled).toBe(false);
       expect(document.querySelector('[data-edit="heading"]')).toBeNull();
     });
+    test('renders a stored pre-#608 service slug without a toast or a legacy write', async () => {
+      (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({ id: 'plan-id', name: 'Legacy', services: { vm: { provider: 'azure', service: 'vm', enabled: true, coverage: 80 } } }));
+      (await load()).click(); await flush();
+      const panel = document.getElementById('plan-editor-panel')!;
+      expect(panel.textContent).toContain('azure / vm');
+      expect(panel.textContent).toContain('azure/vm:');
+      expect(mockShowToast).not.toHaveBeenCalled();
+      expect(api.updatePlan).not.toHaveBeenCalled();
+    });
     test.each(['new', 'close', 'newer edit'])('ignores a delayed GET after %s replaces its context', async action => {
       let resolve!: (value: PlanEditorResponse) => void;
       (getPlanEditor as jest.Mock).mockImplementationOnce(() => new Promise<PlanEditorResponse>(done => { resolve = done; }));
