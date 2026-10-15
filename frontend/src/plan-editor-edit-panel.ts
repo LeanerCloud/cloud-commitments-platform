@@ -10,7 +10,7 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
   host.hidden = false;
   host.closest('.plan-editor-layout')?.classList.add('has-editor-draft');
   host.innerHTML = `<h3 tabindex="-1" data-edit="heading">Purchase schedule</h3>
-    <p class="editor-draft-notice">Local date proposals are not saved. Atomic Save is not available in this local editor yet.</p>
+    <p class="editor-draft-notice" id="plan-editor-save-unavailable">Local date proposals are not saved. Saving changes is not available in this local editor yet.</p>
     <p>${escapeHtml(response.plan.name)}</p>
     <label>Stored service for coverage display<select data-edit="service"></select></label>
     <p class="help-text" data-edit="target"></p><div class="schedule-preview-scroll" tabindex="0" aria-label="Stored calendar and local date proposals"></div>
@@ -38,9 +38,12 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
   }));
   const filters = (value: readonly string[] | null): string => value === null ? 'unspecified' : value.length ? value.join(', ') : 'none';
   field('settings').textContent = `Plan ${response.plan.enabled ? 'enabled' : 'disabled'}; automatic purchase ${response.plan.auto_purchase ? 'on' : 'off'}; notification lead ${response.plan.notification_days_before} days. Target accounts: ${response.account_ids.map(id => response.accounts.find(account => account.id === id)?.name ?? id).join(', ') || 'none'}.`;
+  const ramp = response.plan.ramp_schedule, rampInfo = document.createElement('p');
+  rampInfo.textContent = `Stored ramp: ${ramp.type}; ${ramp.percent_per_step}% per step; ${ramp.step_interval_days} day interval; step ${ramp.current_step} of ${ramp.total_steps}; start ${ramp.start_date ?? 'unavailable'}; commitment cap ${response.plan.max_step_commitment ?? 'unavailable'}.`;
+  field('settings').appendChild(rampInfo);
   services.forEach(([, item]) => {
     const details = document.createElement('p');
-    details.textContent = `${item.provider}/${item.service}: ${item.term} year(s), ${item.payment}, coverage ${item.coverage}%, ramp ${item.ramp_schedule}, minimum count ${item.min_count}. Engine include/exclude: ${filters(item.include_engines)} / ${filters(item.exclude_engines)}. Region include/exclude: ${filters(item.include_regions)} / ${filters(item.exclude_regions)}. Type include/exclude: ${filters(item.include_types)} / ${filters(item.exclude_types)}.`;
+    details.textContent = `${item.provider}/${item.service}: ${item.term > 0 ? item.term + ' year(s)' : 'term unavailable'}, ${item.payment || 'payment unavailable'}, coverage ${item.coverage}%, ramp ${item.ramp_schedule}, minimum count ${item.min_count}. Engine include/exclude: ${filters(item.include_engines)} / ${filters(item.exclude_engines)}. Region include/exclude: ${filters(item.include_regions)} / ${filters(item.exclude_regions)}. Type include/exclude: ${filters(item.include_types)} / ${filters(item.exclude_types)}.`;
     field('settings').appendChild(details);
   });
   list('history', response.history.map(row => `Step ${row.step_number}; ${row.status}; date ${row.scheduled_date ?? 'unavailable'}; attempt ${row.retry_attempt_n}; approval ${row.approval_state}.`));

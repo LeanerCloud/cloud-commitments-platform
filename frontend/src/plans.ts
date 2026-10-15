@@ -19,6 +19,9 @@ import { parseNumericFilter, applyColumnFilters as applyColumnFiltersLib } from 
 import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { openPlanSchedulePreview } from './plan-schedule-preview';
 import { mountPlanEditorPanel, readPlanScheduleInput } from './plan-editor-panel';
+import { getPlanEditor, PlanEditorResponse } from './api/plan-editor';
+import { mountPlanEditorEditPanel } from './plan-editor-edit-panel';
+import { adaptPlanEditor } from './plan-editor-adapter';
 
 // pendingPlanRecommendations holds the resolved plan target captured at
 // "Plan from N selected" button-click time. The Plan flow used to re-derive
@@ -853,7 +856,7 @@ async function handlePlannedPurchaseAction(action: string, purchaseId: string, p
         // If the plan can't be loaded (deleted or no longer accessible while
         // the row was on screen), reconcile the list so the orphaned row is
         // dropped instead of leaving a dead Edit button (issue #1403).
-        if (!(await editPlan(planId))) {
+        if ((await editPlan(planId)) === 'unavailable') {
           await loadPlannedPurchases();
         }
         return;
@@ -983,23 +986,6 @@ function healthBadgeHtml(plan: BackendPlan): string {
   const tooltip = [`Plan health: ${plan.health_score}/100`, ...factorLines].join('\n');
   return `<span class="status-badge ${healthBadgeClass(plan.health_score)}" title="${escapeHtmlAttr(tooltip)}">Health: ${plan.health_score}</span>`;
 }
-
-// Pretty label for a service slug used inside the plan card.
-//
-// SP slugs are abbreviated ("Compute SP") rather than spelled out
-// ("Compute Savings Plans") so a multi-SP plan with 3-4 entries still
-// fits in the summary line. Non-SP slugs pass through unchanged so
-// existing single-service plans render exactly as before.
-// Plans saved before #608 carry the modal's old per-provider option ids, which
-// the backend's mapServiceSlug never accepted. Map them to the canonical slug
-// so editing such a plan selects the right option instead of a blank one.
-const LEGACY_PLAN_SERVICE_IDS: Readonly<Record<string, string>> = {
-  'azure/vm': 'compute',
-  'azure/sql': 'relational-db',
-  'azure/redis': 'cache',
-  'gcp/cloudsql': 'relational-db',
-  'gcp/memorystore': 'cache',
-};
 
 function planServiceLabel(slug: string): string {
   switch (slug) {
@@ -1268,130 +1254,73 @@ async function togglePlan(planId: string, enabled: boolean): Promise<void> {
 }
 
 let disposePlanEditor: (() => void) | undefined;
-function openPlanForm(modal: HTMLElement, create: boolean): void {
+let planEditorMode: 'create' | 'complete-edit' = 'create';
+const editSaveUnavailable = 'Saving changes is not available in this local editor yet.';
+function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
   disposePlanEditor?.(); disposePlanEditor = undefined;
+  planEditorMode = editor ? 'complete-edit' : 'create';
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
   const advanced = modal.querySelector<HTMLDetailsElement>('#plan-advanced-settings');
+  const preview = modal.querySelector<HTMLElement>('#preview-plan-schedule-btn');
+  const wasHidden = form?.hidden ?? false, previewHidden = preview?.hidden ?? false;
+  const disabled = new Map<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, boolean>();
+  if (editor && form) {
+    form.hidden = true;
+    form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select,textarea').forEach(control => {
+      disabled.set(control, control.disabled); control.disabled = true;
+    });
+  }
+  if (preview) preview.hidden = editor !== undefined;
   if (advanced) advanced.open = false;
   const revealInvalid = (event: Event): void => {
     if (advanced?.contains(event.target as Node)) advanced.open = true;
   };
+  const blockSubmit = (event: Event): void => {
+    event.preventDefault(); event.stopImmediatePropagation(); showToast({ message: editSaveUnavailable, kind: 'error' });
+  };
   form?.addEventListener('invalid', revealInvalid, true);
-  const disposePanel = create && host && form ? mountPlanEditorPanel(host, form) : undefined;
+  if (editor) form?.addEventListener('submit', blockSubmit, true);
+  let disposePanel: (() => void) | undefined;
+  modal.classList.toggle('complete-plan-editor', editor !== undefined);
   disposePlanEditor = () => {
     try { disposePanel?.(); }
-    finally { form?.removeEventListener('invalid', revealInvalid, true); }
+    finally {
+      form?.removeEventListener('invalid', revealInvalid, true); form?.removeEventListener('submit', blockSubmit, true);
+      if (form) form.hidden = wasHidden;
+      disabled.forEach((value, control) => { control.disabled = value; });
+      if (preview) preview.hidden = previewHidden;
+      modal.classList.remove('complete-plan-editor');
+    }
   };
-  openModal(modal, { initialFocus: '#plan-name', onClose: () => { disposePlanEditor?.(); disposePlanEditor = undefined; } });
+  try { disposePanel = host && form ? editor ? mountPlanEditorEditPanel(host, editor) : mountPlanEditorPanel(host, form) : undefined; }
+  catch (error) { disposePlanEditor(); disposePlanEditor = undefined; throw error; }
+  refreshPlanSaveButtonState();
+  openModal(modal, { initialFocus: editor ? '[data-edit="heading"]' : '#plan-name', onClose: () => {
+    planModalSession++; disposePlanEditor?.(); disposePlanEditor = undefined;
+  } });
 }
 
-// editPlan loads the plan and opens the edit modal pre-filled. Returns true
-// when the modal opened, false when the plan could not be loaded (e.g. it was
-// deleted or is no longer accessible). Callers that render the plan in a list
-// use the false result to reconcile a now-stale row (issue #1403).
-async function editPlan(planId: string): Promise<boolean> {
+async function editPlan(planId: string): Promise<'opened' | 'stale' | 'unavailable' | 'failed'> {
+  const session = ++planModalSession;
   try {
-    const backendPlan = await api.getPlan(planId) as unknown as BackendPlan;
-
-    // Extract info from the backend plan format
-    const info = extractPlanInfo(backendPlan);
-    const rampSchedule = backendPlan.ramp_schedule || { type: 'immediate', percent_per_step: 100, step_interval_days: 0 };
-
-    // Map ramp schedule type to frontend value
-    let rampValue = 'immediate';
-    if (rampSchedule.type === 'weekly' && rampSchedule.percent_per_step === 25) {
-      rampValue = 'weekly-25pct';
-    } else if (rampSchedule.type === 'monthly' && rampSchedule.percent_per_step === 10) {
-      rampValue = 'monthly-10pct';
-    } else if (rampSchedule.type === 'custom' || (rampSchedule.type !== 'immediate' && rampSchedule.type !== 'weekly' && rampSchedule.type !== 'monthly')) {
-      rampValue = 'custom';
-    }
-
-    // Get payment option from services and normalize for provider.
-    // H-5: do not pre-select 'no-upfront' when the payment field is absent.
-    // An absent payment field leaves the select empty so the user must
-    // explicitly choose rather than silently inheriting a fabricated default
-    // that could change the plan's payment type on re-save.
-    const firstService = Object.values(backendPlan.services || {})[0];
-    const rawPayment = firstService?.payment || null;
-    const payment = rawPayment !== null ? normalizePaymentValue(rawPayment, info.provider ?? '') : '';
-
-    const titleEl = document.getElementById('plan-modal-title');
-    if (titleEl) titleEl.textContent = 'Edit Purchase Plan';
-
-    (document.getElementById('plan-id') as HTMLInputElement).value = backendPlan.id;
-    (document.getElementById('plan-name') as HTMLInputElement).value = backendPlan.name;
-    (document.getElementById('plan-description') as HTMLTextAreaElement).value = '';
-
-    // Set provider and service first. When provider is absent from the API
-    // response, leave the select at its default empty/first option rather
-    // than fabricating 'aws' (H-4: never default provider silently).
-    const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement;
-    providerSelect.value = info.provider ?? '';
-    const planService = LEGACY_PLAN_SERVICE_IDS[`${info.provider}/${info.service}`] ?? info.service;
-    const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement;
-    serviceSelect.value = planService;
-    if (serviceSelect.selectedIndex === -1 || serviceSelect.value === '') {
-      serviceSelect.selectedIndex = -1;
-      showToast({
-        message: `This plan uses a service that is no longer supported (${info.provider ?? 'unknown provider'}/${info.service}). Recreate the plan, or choose a supported service before saving.`,
-        kind: 'error',
-      });
-    }
-
-    // Update term/payment options based on provider/service
-    const termSelect = document.getElementById('plan-term') as HTMLSelectElement;
-    const paymentSelect = document.getElementById('plan-payment') as HTMLSelectElement;
-    populateTermSelect(termSelect, info.provider ?? '', planService);
-    populatePaymentSelect(paymentSelect, info.provider ?? '', planService);
-
-    // Set term only when present; absent term leaves the select unset so
-    // the user must explicitly choose rather than silently inheriting a
-    // fabricated 3yr default (H-4).
-    termSelect.value = info.term !== null ? String(info.term) : '';
-
-    paymentSelect.value = payment;
-
-    // Set coverage only when present; absent coverage leaves the input
-    // blank so the user sees the field is missing (H-4).
-    (document.getElementById('plan-coverage') as HTMLInputElement).value = info.coverage !== null ? String(info.coverage) : '';
-    (document.getElementById('plan-auto-purchase') as HTMLInputElement).checked = backendPlan.auto_purchase;
-    (document.getElementById('plan-notify-days') as HTMLInputElement).value = String(backendPlan.notification_days_before || 3);
-    (document.getElementById('plan-enabled') as HTMLInputElement).checked = backendPlan.enabled;
-
-    const rampRadio = document.querySelector<HTMLInputElement>(`input[name="ramp-schedule"][value="${rampValue}"]`);
-    if (rampRadio) rampRadio.checked = true;
-
-    const customConfig = document.getElementById('custom-ramp-config');
-    if (customConfig) {
-      customConfig.classList.toggle('hidden', rampValue !== 'custom');
-    }
-
-    if (rampValue === 'custom') {
-      (document.getElementById('ramp-step-percent') as HTMLInputElement).value = String(rampSchedule.percent_per_step || 20);
-      (document.getElementById('ramp-interval-days') as HTMLInputElement).value = String(rampSchedule.step_interval_days || 7);
-    }
-
-    void setupPlanAccountsSection(backendPlan.id);
-    // Wire live range validation on all five numeric inputs (#702).
-    wirePlanRangeInputs();
-    const planModal = document.getElementById('plan-modal');
-    if (planModal) openPlanForm(planModal, false);
-    return true;
+    const editor = await getPlanEditor(planId);
+    if (session !== planModalSession) return 'stale';
+    if (editor.plan.id !== planId) throw new Error('Plan editor identity does not match the requested plan.');
+    adaptPlanEditor(editor);
+    pendingPlanRecommendations = [];
+    const title = document.getElementById('plan-modal-title');
+    if (title) title.textContent = 'Edit Purchase Plan';
+    (document.getElementById('plan-id') as HTMLInputElement).value = editor.plan.id;
+    const modal = document.getElementById('plan-modal');
+    if (!modal) throw new Error('Plan dialog is unavailable.');
+    openPlanForm(modal, editor);
+    return 'opened';
   } catch (error) {
+    if (session !== planModalSession) return 'stale';
     console.error('Failed to load plan:', error);
-    // A missing/inaccessible plan comes back as 404 (issue #1403): the
-    // scheduled-purchase row outlived its plan (deleted, or the caller's
-    // account scope changed). Surface an actionable message instead of the
-    // generic "Failed to load plan details", and signal failure so the
-    // caller can reconcile the stale row. Other errors keep the generic
-    // message (network blip, transient 5xx) since the plan may still exist.
     const status = (error as { status?: number }).status;
-    const message = status === 404
-      ? 'This plan is no longer available. It may have been deleted.'
-      : 'Failed to load plan details';
-    showToast({ message, kind: 'error' });
-    return false;
+    showToast({ message: status === 404 ? 'This plan is no longer available. It may have been deleted.' : 'Failed to load plan details', kind: 'error' });
+    return status === 404 ? 'unavailable' : 'failed';
   }
 }
 
@@ -1419,6 +1348,7 @@ async function deletePlanAction(planId: string): Promise<void> {
  */
 export async function savePlan(e: Event): Promise<void> {
   e.preventDefault();
+  if (planEditorMode === 'complete-edit') { showToast({ message: editSaveUnavailable, kind: 'error' }); return; }
 
   const planId = (document.getElementById('plan-id') as HTMLInputElement).value;
   const rampScheduleRadio = document.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked');
@@ -1541,14 +1471,17 @@ function refreshPlanSaveButtonState(): void {
   const submitBtn = Array.from(form.elements).find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement && element.type === 'submit');
   if (!submitBtn) return;
   const hasAccounts = planSelectedAccounts.length > 0;
-  submitBtn.disabled = !hasAccounts;
-  submitBtn.title = hasAccounts ? '' : 'Select at least one Target Account to save the plan';
+  submitBtn.disabled = planEditorMode === 'complete-edit' || !hasAccounts;
+  submitBtn.title = planEditorMode === 'complete-edit' ? editSaveUnavailable : hasAccounts ? '' : 'Select at least one Target Account to save the plan';
+  if (planEditorMode === 'complete-edit') submitBtn.setAttribute('aria-describedby', 'plan-editor-save-unavailable');
+  else submitBtn.removeAttribute('aria-describedby');
 }
 
 /**
  * Close plan modal
  */
 export function closePlanModal(): void {
+  planModalSession++;
   const planModal = document.getElementById('plan-modal');
   if (planModal) closeModal(planModal);
   // Invalidate the resolved-target snapshot stamped by openCreatePlanModal
@@ -1835,7 +1768,7 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
 
   const planModal = document.getElementById('plan-modal');
   if (planModal) {
-    openPlanForm(planModal, true);
+    openPlanForm(planModal);
   }
 }
 
@@ -1843,6 +1776,7 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
  * Open new plan modal (without pre-selected recommendations)
  */
 export function openNewPlanModal(): void {
+  planModalSession++;
   // No pre-resolved target — this is the "New Plan from scratch" path.
   // Clear any stale snapshot from a prior openCreatePlanModal call so a
   // subsequent savePlan doesn't accidentally inherit a previous flow's
@@ -1867,7 +1801,7 @@ export function openNewPlanModal(): void {
 
   const planModal = document.getElementById('plan-modal');
   if (planModal) {
-    openPlanForm(planModal, true);
+    openPlanForm(planModal);
   }
 }
 
@@ -2389,6 +2323,7 @@ let _unsubAccount: (() => void) | null = null;
 export function setupPlanHandlers(): void {
   const preview = document.getElementById('preview-plan-schedule-btn');
   if (preview) preview.onclick = () => {
+    if (planEditorMode === 'complete-edit') { showToast({ message: editSaveUnavailable, kind: 'error' }); return; }
     const parent = document.getElementById('plan-modal'), form = document.getElementById('plan-form') as HTMLFormElement | null;
     if (!parent || !form) return;
     try {
@@ -2474,5 +2409,6 @@ function updateServiceDropdownForProvider(provider: string): void {
  * Must NOT be called in production code.
  */
 export function _resetRampHandlersForTest(): void {
+  disposePlanEditor?.(); disposePlanEditor = undefined; planEditorMode = 'create'; planModalSession++;
   rampHandlersInstalled = false;
 }

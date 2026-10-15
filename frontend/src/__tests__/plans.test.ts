@@ -126,6 +126,16 @@ jest.mock('../utils', () => ({
 }));
 
 import * as api from '../api';
+import { getPlanEditor, PlanEditorResponse, PlanEditorService } from '../api/plan-editor';
+import { response as editorResponse, service as editorService } from './fixtures/plan-editor';
+jest.mock('../api/plan-editor', () => ({ getPlanEditor: jest.fn() }));
+
+const storedEditor = (plan: { id: string; name: string; services?: Record<string, Partial<PlanEditorService>>; ramp_schedule?: Partial<PlanEditorResponse['plan']['ramp_schedule']>; enabled?: boolean; auto_purchase?: boolean; notification_days_before?: number }): PlanEditorResponse => {
+  const base = editorResponse();
+  return { ...base, graph: null, graph_unavailable_reason: 'unsupported_schedule', plan: { ...base.plan, ...plan,
+    services: Object.fromEntries(Object.entries(plan.services ?? {}).map(([key, value]) => [key, { ...editorService(0), term: 0, payment: '', ...value }])),
+    ramp_schedule: { ...base.plan.ramp_schedule, current_step: 0, total_steps: 0, ...plan.ramp_schedule } } };
+};
 import * as state from '../state';
 import { viewPlanHistory } from '../history';
 import { populateTermSelect, populatePaymentSelect, isValidCombination } from '../commitmentOptions';
@@ -137,8 +147,9 @@ describe('Plans Module', () => {
     document.body.innerHTML = `
       <div id="plans-list"></div>
       <div id="planned-purchases-list"></div>
-      <div id="plan-modal" class="hidden">
+      <div id="plan-modal" class="modal hidden">
         <h3 id="plan-modal-title">Create Plan</h3>
+        <aside id="plan-editor-panel" hidden></aside>
         <form id="plan-form">
           <input type="hidden" id="plan-id">
           <input type="text" id="plan-name">
@@ -209,6 +220,73 @@ describe('Plans Module', () => {
     // Reset ramp-handlers install-once guard: DOM is rebuilt each beforeEach,
     // so static modal elements are fresh and need listeners re-attached (H3 fix).
     _resetRampHandlersForTest();
+  });
+
+  describe('complete editor lifecycle', () => {
+    const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+    const load = async (): Promise<HTMLButtonElement> => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [{ id: 'plan-id', name: 'Stored', services: {} }] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      await loadPlans();
+      return document.querySelector<HTMLButtonElement>('[data-action="edit-plan"]')!;
+    };
+    test('blocks direct and native legacy Save and restores Create controls after close', async () => {
+      (getPlanEditor as jest.Mock).mockResolvedValue(editorResponse());
+      (await load()).click(); await flush();
+      const form = document.getElementById('plan-form') as HTMLFormElement;
+      expect(form.hidden).toBe(true);
+      expect(document.querySelector('[data-edit="heading"]')).toBe(document.activeElement);
+      expect(form.querySelector('button')!.disabled).toBe(true);
+      expect(form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))).toBe(false);
+      await savePlan(new Event('submit')); closePlanModal(); await savePlan(new Event('submit'));
+      expect(api.updatePlan).not.toHaveBeenCalled(); expect(api.createPlan).not.toHaveBeenCalled();
+      openNewPlanModal();
+      expect(form.hidden).toBe(false);
+      expect((document.getElementById('plan-name') as HTMLInputElement).disabled).toBe(false);
+      expect(document.querySelector('[data-edit="heading"]')).toBeNull();
+    });
+    test.each(['new', 'close', 'newer edit'])('ignores a delayed GET after %s replaces its context', async action => {
+      let resolve!: (value: PlanEditorResponse) => void;
+      (getPlanEditor as jest.Mock).mockImplementationOnce(() => new Promise<PlanEditorResponse>(done => { resolve = done; }));
+      const button = await load(); button.click();
+      if (action === 'new') openNewPlanModal();
+      else if (action === 'close') closePlanModal();
+      else { (getPlanEditor as jest.Mock).mockResolvedValue({ ...editorResponse(), plan: { ...editorResponse().plan, name: 'Latest' } }); button.click(); await flush(); }
+      resolve({ ...editorResponse(), plan: { ...editorResponse().plan, name: 'Obsolete response' } }); await flush();
+      if (action === 'newer edit') expect(document.getElementById('plan-editor-panel')?.textContent).toContain('Latest');
+      expect(document.getElementById('plan-editor-panel')?.textContent).not.toContain('Obsolete response');
+    });
+    test('keeps the useful draft when a malformed projection fails and recovers New', async () => {
+      const button = await load(); openNewPlanModal();
+      (document.getElementById('plan-name') as HTMLInputElement).value = 'Keep draft';
+      const malformed = editorResponse();
+      (getPlanEditor as jest.Mock).mockResolvedValue({ ...malformed, graph: { ...malformed.graph!, total_steps: 6 } });
+      button.click(); await flush();
+      expect((document.getElementById('plan-name') as HTMLInputElement).value).toBe('Keep draft');
+      expect((document.getElementById('plan-form') as HTMLFormElement).hidden).toBe(false);
+      openNewPlanModal();
+      expect((document.getElementById('plan-name') as HTMLInputElement).disabled).toBe(false);
+    });
+    test.each([403, 500])('does not render history after GET status %s', async status => {
+      (getPlanEditor as jest.Mock).mockRejectedValue(Object.assign(new Error('Read refused'), { status }));
+      (await load()).click(); await flush();
+      expect(document.querySelector('[data-edit="history"]')).toBeNull();
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Failed to load plan details' }));
+    });
+    test('ignores a late GET error after New replaces the context', async () => {
+      let reject!: (error: Error) => void;
+      (getPlanEditor as jest.Mock).mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+      (await load()).click(); openNewPlanModal(); mockShowToast.mockClear();
+      reject(Object.assign(new Error('Gone'), { status: 404 })); await flush();
+      expect(mockShowToast).not.toHaveBeenCalled(); expect(document.getElementById('plan-modal')).not.toHaveClass('hidden');
+    });
+    test('rejects a mismatched complete response without opening or writing', async () => {
+      (getPlanEditor as jest.Mock).mockResolvedValue({ ...editorResponse(), plan: { ...editorResponse().plan, id: 'other' } });
+      (await load()).click(); await flush();
+      expect(document.getElementById('plan-modal')).toHaveClass('hidden');
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Failed to load plan details' }));
+      expect(api.updatePlan).not.toHaveBeenCalled();
+    });
   });
 
   describe('loadPlans', () => {
@@ -1105,7 +1183,7 @@ describe('Plans Module', () => {
       // The purchase row has id="purchase-1" and plan_id="plan-1".
       // Before the fix, editPlan received "purchase-1", causing GET /plans/purchase-1
       // to return 404 and surfacing "Failed to load plan details".
-      (api.getPlan as jest.Mock).mockResolvedValue({
+      (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({
         id: 'plan-1',
         name: 'Test Plan',
         enabled: true,
@@ -1115,7 +1193,7 @@ describe('Plans Module', () => {
           ec2: { provider: 'aws', service: 'ec2', enabled: true, term: 1, payment: 'all-upfront', coverage: 80 },
         },
         ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0 },
-      });
+      }));
 
       const editBtn = document.querySelector('[data-action="edit"]') as HTMLButtonElement;
       editBtn?.click();
@@ -1123,8 +1201,8 @@ describe('Plans Module', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Must use the plan FK, not the purchase PK.
-      expect(api.getPlan).toHaveBeenCalledWith('plan-1');
-      expect(api.getPlan).not.toHaveBeenCalledWith('purchase-1');
+      expect(getPlanEditor).toHaveBeenCalledWith('plan-1');
+      expect(getPlanEditor).not.toHaveBeenCalledWith('purchase-1');
       // No error toast should fire.
       expect(mockShowToast).not.toHaveBeenCalledWith(
         expect.objectContaining({ message: 'Failed to load plan details' }),
@@ -1145,7 +1223,7 @@ describe('Plans Module', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // getPlan must NOT be called when planId is empty.
-      expect(api.getPlan).not.toHaveBeenCalled();
+      expect(getPlanEditor).not.toHaveBeenCalled();
     });
 
     test('edit action reconciles the list when the plan is gone (#1403)', async () => {
@@ -1156,7 +1234,7 @@ describe('Plans Module', () => {
       // the planned-purchases list so the orphaned row is dropped, instead of
       // dead-ending on the generic "Failed to load plan details" toast.
       const notFound = Object.assign(new Error('HTTP 404'), { status: 404 });
-      (api.getPlan as jest.Mock).mockRejectedValue(notFound);
+      (getPlanEditor as jest.Mock).mockRejectedValue(notFound);
       // Clear the getPlannedPurchases call made during beforeEach's loadPlans
       // so the assertion below counts only the reconcile triggered by the edit.
       (api.getPlannedPurchases as jest.Mock).mockClear();
@@ -1167,7 +1245,7 @@ describe('Plans Module', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // The right plan FK was used (guards against a #773-class regression).
-      expect(api.getPlan).toHaveBeenCalledWith('plan-1');
+      expect(getPlanEditor).toHaveBeenCalledWith('plan-1');
       // Actionable, plan-gone message — NOT the generic dead-end.
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'This plan is no longer available. It may have been deleted.', kind: 'error' }),
@@ -2056,7 +2134,7 @@ describe('Plans Module', () => {
         ]
       });
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
+      (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({
         id: 'plan-1',
         name: 'Test Plan',
         enabled: true,
@@ -2077,7 +2155,7 @@ describe('Plans Module', () => {
           percent_per_step: 100,
           step_interval_days: 0
         }
-      });
+      }));
 
       await loadPlans();
 
@@ -2086,10 +2164,10 @@ describe('Plans Module', () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      expect(api.getPlan).toHaveBeenCalledWith('plan-1');
+      expect(getPlanEditor).toHaveBeenCalledWith('plan-1');
       const modal = document.getElementById('plan-modal');
       expect(modal?.classList.contains('hidden')).toBe(false);
-      expect((document.getElementById('plan-name') as HTMLInputElement).value).toBe('Test Plan');
+      expect(document.getElementById('plan-editor-panel')?.textContent).toContain('Test Plan');
     });
 
     test('edit plan with weekly-25pct ramp schedule', async () => {
@@ -2105,7 +2183,7 @@ describe('Plans Module', () => {
         ]
       });
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
+      (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({
         id: 'plan-1',
         name: 'Weekly Plan',
         enabled: true,
@@ -2125,7 +2203,7 @@ describe('Plans Module', () => {
           percent_per_step: 25,
           step_interval_days: 7
         }
-      });
+      }));
 
       await loadPlans();
 
@@ -2134,8 +2212,7 @@ describe('Plans Module', () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const weeklyRadio = document.querySelector('input[value="weekly-25pct"]') as HTMLInputElement;
-      expect(weeklyRadio.checked).toBe(true);
+      expect(document.querySelector('[data-edit="settings"]')?.textContent).toContain('Stored ramp: weekly; 25% per step; 7 day interval');
     });
 
     test('edit plan with monthly-10pct ramp schedule', async () => {
@@ -2151,7 +2228,7 @@ describe('Plans Module', () => {
         ]
       });
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
+      (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({
         id: 'plan-1',
         name: 'Monthly Plan',
         enabled: true,
@@ -2171,7 +2248,7 @@ describe('Plans Module', () => {
           percent_per_step: 10,
           step_interval_days: 30
         }
-      });
+      }));
 
       await loadPlans();
 
@@ -2180,8 +2257,7 @@ describe('Plans Module', () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const monthlyRadio = document.querySelector('input[value="monthly-10pct"]') as HTMLInputElement;
-      expect(monthlyRadio.checked).toBe(true);
+      expect(document.querySelector('[data-edit="settings"]')?.textContent).toContain('Stored ramp: monthly; 10% per step; 30 day interval');
     });
 
     test('edit plan with custom ramp schedule populates custom fields', async () => {
@@ -2206,7 +2282,7 @@ describe('Plans Module', () => {
         ]
       });
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
+      (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({
         id: 'plan-1',
         name: 'Test Plan',
         enabled: true,
@@ -2227,7 +2303,7 @@ describe('Plans Module', () => {
           percent_per_step: 25,
           step_interval_days: 14
         }
-      });
+      }));
 
       await loadPlans();
 
@@ -2236,8 +2312,7 @@ describe('Plans Module', () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      expect((document.getElementById('ramp-step-percent') as HTMLInputElement).value).toBe('25');
-      expect((document.getElementById('ramp-interval-days') as HTMLInputElement).value).toBe('14');
+      expect(document.querySelector('[data-edit="settings"]')?.textContent).toContain('Stored ramp: custom; 25% per step; 14 day interval');
     });
 
     test('edit plan shows error on failure', async () => {
@@ -2262,7 +2337,7 @@ describe('Plans Module', () => {
         ]
       });
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockRejectedValue(new Error('API Error'));
+      (getPlanEditor as jest.Mock).mockRejectedValue(new Error('API Error'));
       console.error = jest.fn();
 
       await loadPlans();
@@ -3160,24 +3235,20 @@ describe('Plans Module', () => {
         plans: [{ ...planBase, id: 'plan-1', services: { ec2: { provider: 'aws', service: 'ec2', coverage: 80 } } }]
       });
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
+      (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({
         ...planBase,
         id: 'plan-1',
         notification_days_before: 3,
         services: { ec2: { provider: 'aws', service: 'ec2', coverage: 80 } },
         ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0 }
-      });
+      }));
 
       await loadPlans();
       const editBtn = document.querySelector('[data-action="edit-plan"]') as HTMLButtonElement;
       editBtn?.click();
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const termSelect = document.getElementById('plan-term') as HTMLSelectElement;
-      // Pre-fix: termSelect.value === '3' (hardcoded fallback)
-      // Post-fix: termSelect.value === '' (unset, user must choose)
-      expect(termSelect.value).not.toBe('3');
-      expect(termSelect.value).toBe('');
+      expect(document.querySelector('[data-edit="settings"]')?.textContent).toContain('term unavailable');
     });
   });
 
@@ -3204,7 +3275,7 @@ describe('Plans Module', () => {
         }]
       });
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
+      (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({
         ...planBase,
         services: {
           ec2: {
@@ -3215,18 +3286,14 @@ describe('Plans Module', () => {
             // payment deliberately absent
           }
         }
-      });
+      }));
 
       await loadPlans();
       const editBtn = document.querySelector('[data-action="edit-plan"]') as HTMLButtonElement;
       editBtn?.click();
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const paymentSelect = document.getElementById('plan-payment') as HTMLSelectElement;
-      // Pre-fix: paymentSelect.value === 'no-upfront' (hardcoded default)
-      // Post-fix: paymentSelect.value === '' (unset, user must choose)
-      expect(paymentSelect.value).not.toBe('no-upfront');
-      expect(paymentSelect.value).toBe('');
+      expect(document.querySelector('[data-edit="settings"]')?.textContent).toContain('payment unavailable');
     });
 
     test('present payment field is correctly pre-selected in edit modal', async () => {
@@ -3238,21 +3305,19 @@ describe('Plans Module', () => {
         }]
       });
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
+      (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({
         ...planBase,
         services: {
           ec2: { provider: 'aws', service: 'ec2', term: 1, payment: 'all-upfront', coverage: 80 }
         }
-      });
+      }));
 
       await loadPlans();
       const editBtn = document.querySelector('[data-action="edit-plan"]') as HTMLButtonElement;
       editBtn?.click();
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const paymentSelect = document.getElementById('plan-payment') as HTMLSelectElement;
-      // When payment IS present, it should be correctly pre-selected
-      expect(paymentSelect.value).toBe('all-upfront');
+      expect(document.querySelector('[data-edit="settings"]')?.textContent).toContain('all-upfront');
     });
   });
 
