@@ -4,6 +4,8 @@ package api
 
 import (
 	"encoding/json"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func editorGET(t *testing.T, f editorReadFixture, req *events.LambdaFunctionURLRequest, id string, status int) map[string]json.RawMessage {
@@ -341,4 +344,61 @@ func TestPlanEditorGETNullableLegacyError(t *testing.T) {
 	require.NoError(t, json.Unmarshal(body["history"], &history))
 	require.Len(t, history, 1)
 	require.Equal(t, row.ExecutionID, history[0].ExecutionID)
+}
+
+func TestPlanEditorGETSchemaContract(t *testing.T) {
+	data, err := os.ReadFile("openapi.yaml")
+	require.NoError(t, err)
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string                  `yaml:"required"`
+				Properties map[string]map[string]any `yaml:"properties"`
+				Enum       []string                  `yaml:"enum"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &spec))
+	types := map[string]any{
+		"PlanEditorResponse": PlanEditorResponse{}, "PlanEditorStoredPlan": PlanEditorStoredPlan{},
+		"PlanEditorService": PlanEditorService{}, "PlanEditorRamp": PlanEditorRamp{},
+		"PlanEditorAccount": PlanEditorAccount{}, "PlanEditorGraph": PlanEditorGraph{},
+		"PlanEditorLedgerWitness": PlanEditorLedgerWitness{}, "PlanEditorExecution": PlanEditorExecution{},
+		"PlanEditorSlot": PlanEditorSlot{}, "PlanEditorDisplay": PlanEditorDisplay{},
+		"PlanEditorFieldPolicy": PlanEditorFieldPolicy{}, "PlanEditorFieldRule": PlanEditorFieldRule{},
+	}
+	for name, value := range types {
+		schema, exists := spec.Components.Schemas[name]
+		require.True(t, exists, name)
+		fields := reflect.TypeOf(value)
+		keys := make([]string, 0, fields.NumField())
+		for i := 0; i < fields.NumField(); i++ {
+			field := fields.Field(i)
+			key := field.Tag.Get("json")
+			require.NotContains(t, key, ",", name+"."+field.Name)
+			keys = append(keys, key)
+			property, exists := schema.Properties[key]
+			require.True(t, exists, name+"."+key)
+			isNullable := field.Type.Kind() == reflect.Pointer || name == "PlanEditorService" && field.Type.Kind() == reflect.Slice || name == "PlanEditorStoredPlan" && key == "services"
+			require.Equal(t, isNullable, property["nullable"] == true, name+"."+key)
+			if field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Struct && field.Type.Elem() != reflect.TypeFor[time.Time]() {
+				require.NotEmpty(t, property["allOf"], name+"."+key)
+			}
+		}
+		require.ElementsMatch(t, keys, schema.Required, name)
+		require.Len(t, schema.Properties, len(keys), name)
+	}
+	require.ElementsMatch(t, []string{string(PlanEditorApprovalNotApproved), string(PlanEditorApprovalFuture), string(PlanEditorApprovalDue), string(PlanEditorApprovalLegacyUncertain), string(PlanEditorApprovalNotApplicable), string(PlanEditorApprovalUnknown)}, spec.Components.Schemas["PlanEditorApprovalState"].Enum)
+	require.ElementsMatch(t, []string{string(PlanEditorValueStoredSnapshot), string(PlanEditorValueUnavailable)}, spec.Components.Schemas["PlanEditorValueSource"].Enum)
+	properties := spec.Components.Schemas["PlanEditorSlot"].Properties
+	require.ElementsMatch(t, []string{string(PlanEditorRootMissing), string(PlanEditorRootUnique), string(PlanEditorRootAmbiguous)}, properties["root_state"]["enum"])
+	require.ElementsMatch(t, []string{string(PlanEditorFixed), string(PlanEditorReplacePending), string(PlanEditorApprovedToggleRequired), string(PlanEditorNeedsCreation), string(PlanEditorDenied)}, properties["capability"]["enum"])
+	require.ElementsMatch(t, []string{string(PlanEditorCompletionPlanProgress)}, properties["logical_completion_source"]["enum"])
+	require.ElementsMatch(t, []string{string(PlanEditorQuantityInstances), string(PlanEditorQuantityReservationUnits), string(PlanEditorQuantityVCPU)}, spec.Components.Schemas["PlanEditorDisplay"].Properties["quantity_unit"]["enum"])
+	for _, line := range strings.Split(string(data), "\n") {
+		if _, target, ok := strings.Cut(line, "$ref: '#/components/schemas/PlanEditor"); ok {
+			_, exists := spec.Components.Schemas["PlanEditor"+strings.TrimSuffix(target, "'")]
+			require.True(t, exists, line)
+		}
+	}
 }

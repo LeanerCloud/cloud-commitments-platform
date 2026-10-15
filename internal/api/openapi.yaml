@@ -422,6 +422,54 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWithCode'
 
+  /api/plans/{id}/editor:
+    parameters:
+      - $ref: '#/components/parameters/ResourceID'
+    get:
+      operationId: getPlanEditor
+      tags: [Plans]
+      summary: Get the complete authorized purchase plan editor
+      description: Returns captured plan values, complete retained history and field policy without changing purchase domain state. Existing API key usage telemetry remains enabled.
+      responses:
+        '200':
+          description: Complete sanitized editor snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanEditorResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Stored editor state or account attribution cannot be resolved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Retained history exceeds the supported editor size.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Editor snapshot storage is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: The editor snapshot could not be loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /api/plans/{id}/purchases:
     parameters:
       - $ref: '#/components/parameters/ResourceID'
@@ -3242,6 +3290,51 @@ components:
             type: string
             format: uuid
 
+    PlanEditorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - plan
+        - account_ids
+        - accounts
+        - revision
+        - history
+        - graph
+        - graph_unavailable_reason
+        - ledger_witness
+        - field_policy
+      properties:
+        plan:
+          $ref: '#/components/schemas/PlanEditorStoredPlan'
+        account_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanEditorAccount'
+        revision:
+          type: string
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanEditorExecution'
+        graph:
+          allOf:
+            - $ref: '#/components/schemas/PlanEditorGraph'
+          nullable: true
+          type: object
+        graph_unavailable_reason:
+          allOf:
+            - $ref: '#/components/schemas/PlanEditorReason'
+          nullable: true
+          type: string
+        ledger_witness:
+          $ref: '#/components/schemas/PlanEditorLedgerWitness'
+        field_policy:
+          $ref: '#/components/schemas/PlanEditorFieldPolicy'
     PlanEditorStoredPlan:
       type: object
       additionalProperties: false
@@ -3417,6 +3510,186 @@ components:
           type: boolean
         baseline_present:
           type: boolean
+    PlanEditorGraph:
+      type: object
+      additionalProperties: false
+      required:
+        - current_step
+        - total_steps
+        - structural_shape_change_allowed
+        - shape_lock_reason
+        - steps
+      properties:
+        current_step:
+          type: integer
+        total_steps:
+          type: integer
+        structural_shape_change_allowed:
+          type: boolean
+        shape_lock_reason:
+          allOf:
+            - $ref: '#/components/schemas/PlanEditorReason'
+          nullable: true
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanEditorSlot'
+    PlanEditorExecution:
+      type: object
+      additionalProperties: false
+      required:
+        - execution_id
+        - status
+        - step_number
+        - retry_attempt_n
+        - scheduled_date
+        - retry_execution_id
+        - approval_state
+        - display
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        step_number:
+          type: integer
+        retry_attempt_n:
+          type: integer
+        scheduled_date:
+          type: string
+          format: date
+          nullable: true
+        retry_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        approval_state:
+          $ref: '#/components/schemas/PlanEditorApprovalState'
+        display:
+          $ref: '#/components/schemas/PlanEditorDisplay'
+    PlanEditorSlot:
+      type: object
+      additionalProperties: false
+      required:
+        - step_number
+        - logical_completed
+        - logical_completion_source
+        - execution_id
+        - scheduled_date
+        - status
+        - cumulative_target_percent
+        - root_state
+        - approval_state
+        - capability
+        - lock_reason
+        - editable
+        - requires_approved_edits
+        - display
+      properties:
+        step_number:
+          type: integer
+        logical_completed:
+          type: boolean
+        logical_completion_source:
+          type: string
+          enum:
+            - plan_progress
+        execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        scheduled_date:
+          type: string
+          format: date
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        cumulative_target_percent:
+          type: number
+        root_state:
+          type: string
+          enum:
+            - missing
+            - unique
+            - ambiguous
+        approval_state:
+          $ref: '#/components/schemas/PlanEditorApprovalState'
+        capability:
+          type: string
+          enum:
+            - fixed
+            - replace_pending
+            - approved_toggle_required
+            - needs_creation
+            - denied
+        lock_reason:
+          allOf:
+            - $ref: '#/components/schemas/PlanEditorReason'
+          nullable: true
+          type: string
+        editable:
+          type: boolean
+        requires_approved_edits:
+          type: boolean
+        display:
+          allOf:
+            - $ref: '#/components/schemas/PlanEditorDisplay'
+          nullable: true
+          type: object
+    PlanEditorDisplay:
+      type: object
+      additionalProperties: false
+      required:
+        - resource_type
+        - region
+        - quantity
+        - quantity_unit
+        - full_term_commitment
+        - commitment_currency
+        - quantity_source
+        - commitment_source
+      properties:
+        resource_type:
+          type: string
+        region:
+          type: string
+        quantity:
+          type: integer
+          nullable: true
+        quantity_unit:
+          type: string
+          enum:
+            - instances
+            - reservation_units
+            - vcpu
+          nullable: true
+        full_term_commitment:
+          type: number
+          nullable: true
+        commitment_currency:
+          type: string
+          nullable: true
+        quantity_source:
+          $ref: '#/components/schemas/PlanEditorValueSource'
+        commitment_source:
+          $ref: '#/components/schemas/PlanEditorValueSource'
+    PlanEditorValueSource:
+      type: string
+      enum:
+        - stored_snapshot
+        - unavailable
+    PlanEditorApprovalState:
+      type: string
+      enum:
+        - not_approved
+        - approved_future
+        - approved_due
+        - legacy_uncertain
+        - not_applicable
+        - unknown
     PlanEditorReason:
       type: string
     PlanEditorFieldPolicy:
