@@ -277,8 +277,8 @@
     .schedule-preview-body { padding: 16px; }
 }
 
-#plan-schedule-preview [data-preview-step]:focus-visible, #plan-schedule-preview [data-preview-boundary]:focus-visible { outline: none; }
-#plan-schedule-preview [data-preview-step]:focus-visible .preview-touch-target, #plan-schedule-preview [data-preview-boundary]:focus-visible .preview-touch-target { outline: 2px solid var(--cudly-primary); outline-offset: -2px; }
+:is(#plan-schedule-preview, #plan-editor-panel) [data-preview-step]:focus-visible, :is(#plan-schedule-preview, #plan-editor-panel) [data-preview-boundary]:focus-visible { outline: none; }
+:is(#plan-schedule-preview, #plan-editor-panel) [data-preview-step]:focus-visible .preview-touch-target, :is(#plan-schedule-preview, #plan-editor-panel) [data-preview-boundary]:focus-visible .preview-touch-target { outline: 2px solid var(--cudly-primary); outline-offset: -2px; }
 
 #plan-modal .modal-content { width: min(1280px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; overflow: hidden; }
 #plan-form { min-width: 0; display: flex; flex-direction: column; min-height: 0; }
