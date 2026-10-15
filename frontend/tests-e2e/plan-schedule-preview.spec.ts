@@ -2,6 +2,7 @@ import { test, expect, type Locator } from '@playwright/test';
 
 test.use({ hasTouch: true });
 import { mockApi, seedAuth } from './fixtures/recs';
+import { response as editorResponse } from '../src/__tests__/fixtures/plan-editor';
 
 for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`, () => {
   test.use({ isMobile: width <= 390 });
@@ -20,14 +21,16 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     const plan = { id: 'draft-plan', name: 'Existing plan', enabled: true, auto_purchase: false, notification_days_before: 3,
       services: { ec2: { provider: 'aws', service: 'ec2', enabled: true, term: 1, payment: 'no-upfront', coverage: 80 } },
       ramp_schedule: { type: 'weekly', current_step: 1, total_steps: 4, step_interval_days: 7, percent_per_step: 25 } };
+    const editor = { ...editorResponse(), plan: { ...editorResponse().plan, id: plan.id, name: plan.name } };
     await page.route('**/api/plans**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/accounts') ? []
+      : new URL(route.request().url()).pathname.endsWith('/draft-plan/editor') ? editor
       : new URL(route.request().url()).pathname.endsWith('/draft-plan') ? plan : { plans: [plan] } }));
     await page.route('**/api/purchases/planned', route => route.fulfill({ json: { purchases: [] } }));
     await page.route('**/api/commitment-options**', route => route.fulfill({ json: { status: 'ok', aws: {} } }));
     await page.goto('/plans');
     const scripts = await page.locator('script[src]').evaluateAll(elements => elements.map(element => (element as HTMLScriptElement).src));
     expect(scripts.some(source => /app\.[a-f0-9]+\.js/.test(source))).toBe(true);
-    for (const mode of ['Create', 'Edit']) {
+    for (const mode of ['Create']) {
       await page.emulateMedia({ reducedMotion: mode === 'Create' && width > 390 ? 'no-preference' : 'reduce' });
       await page.locator(mode === 'Create' ? '#new-plan-btn' : '[data-action="edit-plan"][data-id="draft-plan"]').click();
       const parent = page.locator('#plan-modal');
@@ -292,6 +295,41 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
       expect(await parent.locator('input, select, textarea').evaluateAll(elements => elements.map(element => (element as HTMLInputElement).value))).toEqual(before);
       await page.locator('#close-plan-modal-btn').click();
     }
+    await page.locator('[data-action="edit-plan"][data-id="draft-plan"]').click();
+    const edit = page.locator('#plan-modal'), stored = edit.locator('#plan-editor-panel');
+    await expect(stored.locator('[data-edit="heading"]')).toBeFocused();
+    await expect(edit.locator('#plan-form')).toBeHidden();
+    await expect(edit.locator('button[type="submit"]')).toBeDisabled();
+    await expect(stored).toContainText('Saving changes is not available');
+    await expect(stored.locator('[data-edit="service"] option')).toHaveCount(2);
+    await expect(stored.locator('[data-edit="slots"] li')).toHaveCount(5);
+    const selected = stored.locator('[data-edit="step"]'), proposed = stored.locator('[data-edit="date"]');
+    await expect(proposed).toBeDisabled();
+    await selected.selectOption('1'); await expect(proposed).toBeEnabled();
+    await expect(proposed).toHaveValue('2026-11-06');
+    await stored.locator('[data-edit="service"]').selectOption('disabledOther');
+    await expect(stored.locator('[data-preview-step="1"]')).toHaveAttribute('aria-label', /target 30%/);
+    await selected.selectOption('2'); await expect(proposed).toBeDisabled();
+    const consent = stored.locator('[data-edit="approved"]'); await expect(consent).not.toBeChecked();
+    await consent.check(); await expect(proposed).toBeEnabled();
+    await proposed.fill('2026-11-10'); await proposed.dispatchEvent('change');
+    await consent.uncheck(); await expect(proposed).toBeDisabled();
+    await expect(stored.locator('[data-edit="status"]')).toContainText('Re-enable approved edits');
+    await stored.locator('[data-edit="reset"]').click(); await expect(proposed).toHaveValue('2026-11-09');
+    await selected.selectOption('3'); await expect(proposed).toHaveValue('');
+    await proposed.fill('2026-11-12'); await proposed.dispatchEvent('change');
+    await expect(stored.locator('[data-edit="slots"]')).toContainText('2026-11-12');
+    await selected.selectOption('4'); await expect(proposed).toBeDisabled();
+    await stored.getByText('Retained execution history', { exact: true }).click();
+    await expect(stored.locator('[data-edit="history"]')).toContainText('Step 8; failed');
+    await stored.getByText('Stored settings and accounts', { exact: true }).click();
+    await expect(stored.locator('[data-edit="settings"]')).toContainText('unspecified / none');
+    expect(await edit.locator('#plan-form').evaluate(element => element.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))).toBe(false);
+    await expect(edit).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('edit-complete-get.png'), fullPage: true });
+    expect(await edit.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.keyboard.press('Escape'); await expect(edit).toBeHidden();
+    await page.getByRole('button', { name: 'Dismiss notification' }).click();
     await page.locator('#new-plan-btn').click();
     await page.locator('#plan-modal label.ramp-option').filter({ hasText: 'Define your own schedule' }).click();
     await page.locator('#ramp-step-percent').fill('1');
