@@ -39,7 +39,7 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
         const panel = parent.locator('#plan-editor-panel'), date = panel.locator('[data-editor="date"]');
         await expect(panel).toBeVisible(); await expect(panel).toContainText('Save Plan does not save date changes');
         await expect(panel.locator('[data-preview-step]')).toHaveCount(4);
-        await expect(panel.locator('svg [role="button"], .preview-touch-target')).toHaveCount(0);
+        await expect(panel.locator('svg [role="button"]')).toHaveCount(6);
         const node = await date.elementHandle(), initial = await date.inputValue();
         await date.focus(); await date.press('ArrowLeft'); await date.press('Backspace');
         expect(await date.evaluate(element => element.validity.badInput)).toBe(true);
@@ -51,6 +51,54 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
         await expect(date).toBeFocused(); expect(await node!.evaluate(element => element.isConnected)).toBe(true);
         await expect(panel.locator('summary')).toHaveText('Local date changes (1)');
         await expect(panel.locator('[data-preview-step="0"]')).toHaveAttribute('aria-label', new RegExp(next));
+        await parent.locator('#plan-account-search').fill('AWS');
+        await parent.locator('.account-suggestion-item').first().click(); await expect(parent.locator('button[type="submit"]')).toBeEnabled();
+        const svg = panel.locator('svg'), point = panel.locator('[data-preview-step="1"]');
+        const originalDate = next.slice(0, 10), add = (value: string, days: number) => new Date(Date.parse(value) + days * 86400000).toISOString().slice(0, 10);
+        const hit = point.locator('.preview-hit'); await hit.scrollIntoViewIfNeeded();
+        const box = (await hit.boundingBox())!, plot = (await svg.boundingBox())!;
+        const span = (Date.parse(await panel.locator('[data-editor="end"]').inputValue()) - Date.parse(await panel.locator('[data-editor="start"]').inputValue())) / 86400000 + 8;
+        const day = plot.width * 544 / 640 / span, x = box.x + box.width / 2, y = box.y + box.height / 2;
+        await page.mouse.move(x, y); await page.mouse.down();
+        await page.mouse.move(x + day, y); await expect(date).toBeDisabled();
+        expect(await parent.locator('#plan-form').evaluate(element => element.inert)).toBe(true);
+        const dragDate = await date.inputValue();
+        expect(await parent.locator('#preview-plan-schedule-btn').evaluate(element => !!element.closest('[inert]'))).toBe(true);
+        expect(await parent.locator('#plan-form').evaluate(element => element.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))).toBe(false);
+        await page.keyboard.press('Escape'); await page.mouse.up();
+        await expect(parent).toBeVisible(); await expect(date).toBeEnabled();
+        expect(await parent.locator('#plan-form').evaluate(element => element.inert)).toBe(false);
+        await expect(parent.locator('button[type="submit"]')).toBeEnabled();
+        await point.press('Alt+ArrowRight'); await expect(date).toHaveValue(dragDate);
+        const handle = panel.locator('[data-preview-boundary="end"]'); await handle.press('Enter');
+        await expect(panel.locator('[data-editor="end"]')).toBeFocused();
+        const endHit = handle.locator('.preview-handle-hit'); await endHit.scrollIntoViewIfNeeded();
+        const endBox = (await endHit.boundingBox())!, endBefore = await panel.locator('[data-editor="end"]').inputValue();
+        await page.mouse.move(endBox.x + 22, endBox.y + 22); await page.mouse.down();
+        await page.mouse.move(endBox.x + 22 + day, endBox.y + 22); await page.mouse.up();
+        await expect(panel.locator('[data-editor="end"]')).toHaveValue(add(endBefore, 1));
+        await hit.scrollIntoViewIfNeeded(); const cancelBox = (await hit.boundingBox())!;
+        await page.mouse.move(cancelBox.x + 22, cancelBox.y + 22); await page.mouse.down();
+        await parent.locator('.plan-editor-layout').evaluate(element => { element.scrollTop += 30; });
+        await expect(date).toBeEnabled(); await expect(panel.locator('[data-editor="error"]')).toContainText('Graph moved'); await page.mouse.up();
+        if (width <= 390) {
+          await hit.scrollIntoViewIfNeeded(); const touchBox = (await hit.boundingBox())!;
+          const session = await page.context().newCDPSession(page), beforeTouch = await date.inputValue();
+          try {
+            const tx = touchBox.x + touchBox.width / 2, ty = touchBox.y + touchBox.height / 2;
+            await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tx, y: ty, id: 1 }] });
+            await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: tx + day, y: ty, id: 1 }] });
+            await expect(date).toHaveValue(add(beforeTouch, 1));
+            await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+            await expect(date).toHaveValue(beforeTouch); await expect(date).toBeEnabled();
+            await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tx, y: ty, id: 1 }] });
+            await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: tx + day, y: ty, id: 1 }] });
+            await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await expect(date).toHaveValue(add(beforeTouch, 1)); await expect(date).toBeEnabled();
+          } finally { await session.detach(); }
+        }
+        await panel.locator('[data-editor="reset"]').click();
+        await expect(panel.locator('[data-editor="start"]')).toHaveValue(add(originalDate, -1));
         expect(await parent.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
         await parent.locator('.plan-editor-layout').evaluate(element => { element.scrollTop = 0; });
         await page.screenshot({ path: testInfo.outputPath('create-inline-graph.png'), fullPage: true });
@@ -59,8 +107,21 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
         expect(footer.y + footer.height).toBeLessThanOrEqual(900);
         await page.screenshot({ path: testInfo.outputPath('create-inline-actions.png'), fullPage: true });
         await parent.locator('#preview-plan-schedule-btn').focus(); await page.keyboard.press('Tab');
+        await expect(parent.locator('button[type="submit"]')).toBeFocused(); await page.keyboard.press('Tab');
         await expect(panel.locator('.schedule-preview-scroll')).toBeFocused();
+        await page.keyboard.press('Shift+Tab'); await expect(parent.locator('button[type="submit"]')).toBeFocused();
         await page.keyboard.press('Shift+Tab'); await expect(parent.locator('#preview-plan-schedule-btn')).toBeFocused();
+        await hit.scrollIntoViewIfNeeded(); const closeBox = (await hit.boundingBox())!;
+        await page.mouse.move(closeBox.x + 22, closeBox.y + 22); await page.mouse.down();
+        expect(await parent.locator('#plan-form').evaluate(element => element.inert)).toBe(true);
+        await parent.locator('#close-plan-modal-btn').evaluate(element => (element as HTMLButtonElement).click());
+        await page.mouse.up(); await expect(parent).toBeHidden();
+        expect(await parent.locator('#plan-form').evaluate(element => element.inert)).toBe(false);
+        await page.locator('#new-plan-btn').click(); await parent.locator('#plan-name').fill('Capacity ladder');
+        await parent.locator('label.ramp-option').filter({ hasText: 'Weekly 25%' }).click();
+        await expect(panel.locator('summary')).toHaveText('Local date changes (0)');
+        await expect(panel.locator('[data-editor="date"]')).toBeEnabled();
+
       } else {
         await expect(parent.locator('#plan-editor-panel')).toBeHidden();
         await expect(parent.locator('#plan-editor-panel')).toBeEmpty();
