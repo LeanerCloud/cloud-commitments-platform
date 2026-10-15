@@ -79,13 +79,10 @@ func envProblems(modVars, envVars, compute, blockName string, wired map[string]b
 		passed[m[1]] = m[2]
 	}
 	for _, task := range server.ScheduledTaskNames() {
-		tv, hasVars := taskVars[task]
 		if !wired[task] {
 			continue
-		} else if !hasVars {
-			problems = append(problems, task+": wired but has no taskVars entry")
-			continue
 		}
+		tv := taskVars[task]
 		for _, v := range []string{tv.enable, tv.schedule} {
 			if !strings.Contains(modVars, `variable "`+v+`"`) {
 				problems = append(problems, "module variables.tf does not declare "+v)
@@ -105,9 +102,6 @@ func envProblems(modVars, envVars, compute, blockName string, wired map[string]b
 		} else if prob := envDefaultProblem(task, m[1]); prob != "" {
 			problems = append(problems, prob)
 		}
-	}
-	for dim := range gaps {
-		gaps[dim] = slices.Compact(gaps[dim])
 	}
 	return problems, gaps
 }
@@ -165,7 +159,14 @@ func TestAWSEnvWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range platforms {
+		if p.aws != strings.HasPrefix(p.name, "aws-") {
+			t.Errorf("%s: aws flag does not match the platform name", p.name)
+		}
 		if !p.aws {
+			continue
+		}
+		if p.envBlock == "" {
+			t.Errorf("%s: aws platform has no envBlock", p.name)
 			continue
 		}
 		files, err := scanDir(p.dir)
@@ -241,6 +242,9 @@ func TestEnvChecksNegatives(t *testing.T) {
 		"commented-out env declaration": {cr, "true", func(m, e, c string) (string, string, string) {
 			return m, strings.Replace(e, `variable "recommendation_schedule" {`, `# variable "recommendation_schedule" {`, 1), c
 		}, false, dimDefault},
+		"ternary is not a name-identical pass-through": {cr, "true", func(m, e, c string) (string, string, string) {
+			return m, e, strings.Replace(c, "= var.recommendation_schedule", "= var.recommendation_schedule ? 1 : 0", 1)
+		}, false, dimPass},
 		"not passed by the module block": {cr, "true", func(m, e, c string) (string, string, string) {
 			return m, e, strings.Replace(c, "recommendation_schedule = var.recommendation_schedule", "", 1)
 		}, false, dimPass},
