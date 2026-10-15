@@ -103,10 +103,10 @@ type planEditorStepPolicy struct {
 	Editable, RequiresApprovedEdits bool
 }
 
-func buildPlanEditorStepPolicy(rows []config.PurchaseExecution, step int, authority PlanEditorAuthority, evaluatedAt time.Time) planEditorStepPolicy {
+func buildPlanEditorStepPolicy(rows []config.PurchaseExecution, step int, authority PlanEditorAuthority, evaluatedAt time.Time, capturedIncoming map[string]bool) planEditorStepPolicy {
 	p := planEditorStepPolicy{RootState: PlanEditorRootMissing, ApprovalState: PlanEditorApprovalUnknown, Capability: PlanEditorFixed}
 	var blocked bool
-	p.Root, p.RootState, blocked = planEditorSelectRoot(rows, step)
+	p.Root, p.RootState, blocked = planEditorSelectRoot(rows, step, capturedIncoming)
 	if p.RootState == PlanEditorRootAmbiguous {
 		p.Root = nil
 		return planEditorFixedPolicy(p, PlanEditorAmbiguousRoot)
@@ -186,18 +186,21 @@ func planEditorOperationPolicy(p planEditorStepPolicy, authority PlanEditorAutho
 	return p
 }
 
-func planEditorIncomingRetries(rows []config.PurchaseExecution) map[string]bool {
+func planEditorIncomingRetries(rows []config.PurchaseExecution, capturedIncoming map[string]bool) map[string]bool {
 	incoming := make(map[string]bool)
 	for i := range rows {
 		if rows[i].RetryExecutionID != nil {
 			incoming[*rows[i].RetryExecutionID] = true
 		}
 	}
+	for id, present := range capturedIncoming {
+		incoming[id] = incoming[id] || present
+	}
 	return incoming
 }
 
-func planEditorSelectRoot(rows []config.PurchaseExecution, step int) (*config.PurchaseExecution, PlanEditorRootState, bool) {
-	incoming := planEditorIncomingRetries(rows)
+func planEditorSelectRoot(rows []config.PurchaseExecution, step int, capturedIncoming map[string]bool) (*config.PurchaseExecution, PlanEditorRootState, bool) {
+	incoming := planEditorIncomingRetries(rows, capturedIncoming)
 	var root *config.PurchaseExecution
 	state := PlanEditorRootMissing
 	blocked := false

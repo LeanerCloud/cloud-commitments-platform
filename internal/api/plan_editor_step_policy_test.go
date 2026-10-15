@@ -193,7 +193,7 @@ func TestPlanEditorStepPolicyRoots(t *testing.T) {
 			require.NoError(t, err)
 			before, err := json.Marshal(tc.rows)
 			require.NoError(t, err)
-			p := buildPlanEditorStepPolicy(tc.rows, 1, grants, approvalNow)
+			p := buildPlanEditorStepPolicy(tc.rows, 1, grants, approvalNow, nil)
 			if tc.state == "unique" {
 				require.NotNil(t, p.Root, "unique pending root must retain its original identity")
 			}
@@ -227,10 +227,10 @@ func TestPlanEditorStepPolicyRoots(t *testing.T) {
 			grantAfter, err := json.Marshal(grants)
 			require.NoError(t, err)
 			require.Equal(t, grantBefore, grantAfter)
-			require.Equal(t, p, buildPlanEditorStepPolicy(tc.rows, 1, grants, approvalNow))
+			require.Equal(t, p, buildPlanEditorStepPolicy(tc.rows, 1, grants, approvalNow, nil))
 			reversed := slices.Clone(tc.rows)
 			slices.Reverse(reversed)
-			require.Equal(t, p, buildPlanEditorStepPolicy(reversed, 1, grants, approvalNow))
+			require.Equal(t, p, buildPlanEditorStepPolicy(reversed, 1, grants, approvalNow, nil))
 		})
 	}
 }
@@ -270,7 +270,7 @@ func TestPlanEditorStepPolicyEligibility(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			row := config.PurchaseExecution{ExecutionID: "root", StepNumber: 1, Status: tc.status, ScheduledDate: tc.date, ScheduledExecutionAt: tc.delay, NoSubmission: true}
 			rows := []config.PurchaseExecution{row}
-			p := buildPlanEditorStepPolicy(rows, 1, PlanEditorAuthority{Rows: map[string]PlanEditorRowAuthority{"root": {true, true}}}, approvalNow)
+			p := buildPlanEditorStepPolicy(rows, 1, PlanEditorAuthority{Rows: map[string]PlanEditorRowAuthority{"root": {true, true}}}, approvalNow, nil)
 			require.Same(t, &rows[0], p.Root)
 			require.Equal(t, tc.status, p.Root.Status)
 			require.Equal(t, tc.approval, p.ApprovalState)
@@ -312,7 +312,7 @@ func TestPlanEditorStepPolicyAuthority(t *testing.T) {
 				if status == "scheduled" {
 					rows[0].ScheduledExecutionAt = new(approvalNow.Add(time.Hour))
 				}
-				p := buildPlanEditorStepPolicy(rows, 1, PlanEditorAuthority{AddMissingRoot: true, Rows: grant.rows}, approvalNow)
+				p := buildPlanEditorStepPolicy(rows, 1, PlanEditorAuthority{AddMissingRoot: true, Rows: grant.rows}, approvalNow, nil)
 				require.True(t, p.StructuralChangeAllowed)
 				require.Equal(t, PlanEditorDenied, p.Capability)
 				require.NotNil(t, p.Reason)
@@ -323,7 +323,7 @@ func TestPlanEditorStepPolicyAuthority(t *testing.T) {
 		}
 	}
 	for _, add := range []bool{false, true} {
-		p := buildPlanEditorStepPolicy(nil, 1, PlanEditorAuthority{AddMissingRoot: add}, approvalNow)
+		p := buildPlanEditorStepPolicy(nil, 1, PlanEditorAuthority{AddMissingRoot: add}, approvalNow, nil)
 		require.True(t, p.StructuralChangeAllowed)
 		require.Nil(t, p.Root)
 		require.False(t, p.Editable)
@@ -342,7 +342,7 @@ func TestPlanEditorStepPolicyAuthority(t *testing.T) {
 func TestPlanEditorStepPolicyOrdinal(t *testing.T) {
 	t.Parallel()
 	rows := []config.PurchaseExecution{stepPolicyRow("first", "running", 1), stepPolicyRow("second", "pending", 2)}
-	p := buildPlanEditorStepPolicy(rows, 2, PlanEditorAuthority{Rows: map[string]PlanEditorRowAuthority{"second": {ReplacePending: true}}}, approvalNow)
+	p := buildPlanEditorStepPolicy(rows, 2, PlanEditorAuthority{Rows: map[string]PlanEditorRowAuthority{"second": {ReplacePending: true}}}, approvalNow, nil)
 	require.Same(t, &rows[1], p.Root)
 	require.True(t, p.StructuralChangeAllowed)
 	require.Equal(t, PlanEditorReplacePending, p.Capability)
