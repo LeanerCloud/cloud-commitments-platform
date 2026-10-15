@@ -83,15 +83,7 @@ func (s *PostgresStore) GetPlanRampBaselineTx(ctx context.Context, tx pgx.Tx, pl
 // The caller must hold the plan's lock (LockPurchasePlanTx) in tx or the
 // answer is advisory.
 func (s *PostgresStore) ListPlanCommittedTx(ctx context.Context, tx pgx.Tx, planID string) (map[string]PlanRampQuantity, error) {
-	rows, err := tx.Query(ctx, `
-		SELECT plan_id, execution_id, status, step_number, scheduled_date,
-		       notification_sent, approval_token_hash, recommendations,
-		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
-		       cloud_account_id, source, approved_by, canceled_by, capacity_percent,
-		       created_by_user_id, retry_execution_id, retry_attempt_n,
-		       approval_token_expires_at,
-		       executed_by_user_id, executed_at, pre_approval_skip_reason,
-		       idempotency_key, scheduled_execution_at, no_submission
+	rows, err := tx.Query(ctx, planExecutionSelectCols+`
 		FROM purchase_executions
 		WHERE plan_id = $1`, planID)
 	if err != nil {
@@ -104,6 +96,15 @@ func (s *PostgresStore) ListPlanCommittedTx(ctx context.Context, tx pgx.Tx, plan
 	}
 	return sumPlanCommitted(execs)
 }
+
+const planExecutionSelectCols = `SELECT plan_id, execution_id, status, step_number, scheduled_date,
+		       notification_sent, approval_token_hash, recommendations,
+		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
+		       cloud_account_id, source, approved_by, canceled_by, capacity_percent,
+		       created_by_user_id, retry_execution_id, retry_attempt_n,
+		       approval_token_expires_at,
+		       executed_by_user_id, executed_at, pre_approval_skip_reason,
+		       idempotency_key, scheduled_execution_at, no_submission`
 
 // holdsCapacity reports whether an execution row may hold bought or in-flight
 // capacity. See ListPlanCommittedTx for the rule.
