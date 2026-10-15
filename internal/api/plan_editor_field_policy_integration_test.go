@@ -246,3 +246,174 @@ func TestPlanEditorField_RevocationAndInfrastructure(t *testing.T) {
 	require.True(t, result.CanUpdatePlan, "disarming is still possible")
 	require.False(t, result.CanArmOrRaiseCap, "infrastructure credential cannot arm")
 }
+
+func TestPlanEditorField_StoredState(t *testing.T) {
+	f := newEditorReadFixture(t)
+	permissions := editorFieldPermissions(auth.Permission{Action: auth.ActionAdmin, Resource: "*"})
+	req, user, _ := f.credential(t, permissions, permissions, []string{"*"})
+	base := editorFieldSnapshot(t, f, user)
+	for i := range base.Executions {
+		base.Executions[i].Status, base.Executions[i].ScheduledExecutionAt = "pending", nil
+	}
+	session, err := f.h.requirePlanEditorReadSession(t.Context(), req)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name                              string
+		change                            func(*config.PlanEditorSnapshot)
+		shape, effective, approved, graph bool
+	}{
+		{"ordinary pending", func(*config.PlanEditorSnapshot) {}, true, true, false, true},
+		{"nonempty baseline", func(s *config.PlanEditorSnapshot) {
+			key, keyErr := config.RecIdentityKey(&s.Executions[0].Recommendations[0])
+			require.NoError(t, keyErr)
+			s.Baseline = config.PlanRampBaseline{key: {Count: 1}}
+		}, false, true, false, true},
+		{"empty baseline", func(s *config.PlanEditorSnapshot) { s.Baseline = config.PlanRampBaseline{} }, false, true, false, true},
+		{"legacy canceled history", func(s *config.PlanEditorSnapshot) {
+			s.Executions[0].StepNumber, s.Executions[0].Status = 0, config.LegacyStatusCanceled
+		}, true, true, false, true},
+		{"expired history", func(s *config.PlanEditorSnapshot) {
+			s.Executions[0].StepNumber, s.Executions[0].Status = 5, config.StatusExpired
+		}, true, true, false, true},
+		{"zero completed timestamp", func(s *config.PlanEditorSnapshot) {
+			s.Plan.RampSchedule.CurrentStep = 1
+			s.Executions[0].Status, s.Executions[0].CompletedAt = config.StatusCompleted, new(time.Time)
+		}, false, false, false, true},
+		{"fixed", func(s *config.PlanEditorSnapshot) { s.Executions[0].Status = "running" }, false, false, false, true},
+		{"step zero", func(s *config.PlanEditorSnapshot) { s.Executions[0].StepNumber = 0 }, false, false, false, true},
+		{"beyond total", func(s *config.PlanEditorSnapshot) { s.Executions[0].StepNumber = 5 }, false, false, false, true},
+		{"actionable prefix", func(s *config.PlanEditorSnapshot) { s.Plan.RampSchedule.CurrentStep = 1 }, false, false, false, true},
+		{"completed prefix", func(s *config.PlanEditorSnapshot) {
+			s.Plan.RampSchedule.CurrentStep = 1
+			s.Executions[0].Status = config.StatusCompleted
+			s.Executions[0].CompletedAt = new(time.Now())
+		}, false, true, false, true},
+		{"harmless history", func(s *config.PlanEditorSnapshot) {
+			s.Executions[0].StepNumber = 0
+			s.Executions[0].Status = config.StatusCanceled
+		}, true, true, false, true},
+		{"bought canceled history", func(s *config.PlanEditorSnapshot) {
+			s.Executions[0].StepNumber = 0
+			s.Executions[0].Status = config.StatusCanceled
+			s.Executions[0].Recommendations[0].Purchased = true
+		}, false, false, false, true},
+		{"approved needs toggle", func(s *config.PlanEditorSnapshot) {
+			s.Executions[0].Status = "scheduled"
+			s.Executions[0].ScheduledExecutionAt = new(time.Now().Add(48 * time.Hour))
+		}, false, false, true, true},
+		{"approved and fixed", func(s *config.PlanEditorSnapshot) {
+			s.Executions[0].Status, s.Executions[0].ScheduledExecutionAt = "scheduled", new(time.Now().Add(48*time.Hour))
+			s.Executions[1].Status = "running"
+		}, false, false, false, true},
+		{"ordinary zero", func(s *config.PlanEditorSnapshot) {
+			s.Plan.RampSchedule.TotalSteps = 0
+			s.Executions = nil
+		}, false, true, false, false},
+		{"ordinary zero harmless", func(s *config.PlanEditorSnapshot) {
+			s.Plan.RampSchedule.TotalSteps = 0
+			s.Executions[0].Status = config.StatusExpired
+			s.Executions = s.Executions[:1]
+		}, false, true, false, false},
+		{"ordinary zero with action", func(s *config.PlanEditorSnapshot) { s.Plan.RampSchedule.TotalSteps = 0 }, false, false, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, marshalErr := json.Marshal(base)
+			require.NoError(t, marshalErr)
+			var snapshot config.PlanEditorSnapshot
+			require.NoError(t, json.Unmarshal(raw, &snapshot))
+			tc.change(&snapshot)
+			before, copyErr := json.Marshal(snapshot)
+			require.NoError(t, copyErr)
+			evaluatedAt := time.Now().UTC()
+			result, policyErr := f.h.buildPlanEditorFieldPolicy(t.Context(), req, session, &snapshot, evaluatedAt)
+			require.NoError(t, policyErr)
+			require.Equal(t, tc.shape, result.Fields.CanChangeShape)
+			require.Equal(t, tc.effective, result.Fields.Controls["notification_days_before"].Editable)
+			require.Equal(t, tc.effective, result.Fields.Services["primary"]["coverage"].Editable)
+			require.Equal(t, tc.approved, result.Fields.Controls["notification_days_before"].RequiresApprovedEdits)
+			require.Equal(t, tc.graph, result.Graph != nil)
+			require.True(t, result.Fields.Controls["name"].Editable)
+			require.Equal(t, planEditorLockedField(PlanEditorUnsupportedField), result.Fields.Controls["description"])
+			require.Equal(t, planEditorLockedField(PlanEditorUnsupportedField), result.Fields.Controls["dates_managed"])
+			require.False(t, result.Fields.Controls["allocation_mode"].Editable)
+			require.ElementsMatch(t, []string{"name", "description", "enabled", "auto_purchase", "max_step_commitment", "notification_days_before", "step_count", "ramp_type", "percent_per_step", "step_interval_days", "start_date", "target_accounts", "allocation_mode", "dates_managed"}, editorFieldKeys(result.Fields.Controls))
+			for _, rules := range result.Fields.Services {
+				require.ElementsMatch(t, []string{"provider", "service", "enabled", "term", "payment", "coverage", "ramp_schedule", "include_engines", "exclude_engines", "include_regions", "exclude_regions", "include_types", "exclude_types", "min_count"}, editorFieldKeys(rules))
+			}
+			require.Contains(t, result.Fields.Services, "disabled")
+			identity := tc.effective && snapshot.Baseline == nil && snapshot.Plan.RampSchedule.CurrentStep == 0
+			require.Equal(t, identity, result.Fields.Controls["target_accounts"].Editable)
+			require.Equal(t, identity, result.Fields.Services["primary"]["term"].Editable)
+			if !tc.graph {
+				require.Equal(t, new(PlanEditorUnsupportedSchedule), result.GraphUnavailableReason)
+			} else {
+				grants, grantErr := f.h.buildPlanEditorMutationAuthority(t.Context(), req, session, &snapshot)
+				require.NoError(t, grantErr)
+				expected, graphErr := buildPlanEditorProjection(&snapshot, grants.Roots, evaluatedAt)
+				require.NoError(t, graphErr)
+				require.Equal(t, expected, result.Graph)
+			}
+			if tc.effective || tc.approved {
+				require.True(t, result.Fields.Controls["notification_days_before"].RequiresProposedValueRevalidation)
+			}
+			if identity {
+				require.True(t, result.Fields.Services["primary"]["term"].RequiresProposedValueRevalidation)
+			}
+			after, copyErr := json.Marshal(snapshot)
+			require.NoError(t, copyErr)
+			require.JSONEq(t, string(before), string(after))
+			require.True(t, result.Fields.Controls["max_step_commitment"].RequiresProposedValueRevalidation)
+		})
+	}
+}
+
+func editorFieldKeys(rules map[string]PlanEditorFieldRule) []string {
+	keys := make([]string, 0, len(rules))
+	for key := range rules {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func TestPlanEditorField_OrdinaryControlsAndInvalidBounds(t *testing.T) {
+	f := newEditorReadFixture(t)
+	permissions := editorFieldPermissions(auth.Permission{Action: auth.ActionUpdate, Resource: auth.ResourcePlans})
+	req, user, _ := f.credential(t, permissions, permissions, []string{"*"})
+	snapshot := editorFieldSnapshot(t, f, user)
+	session, err := f.h.requirePlanEditorReadSession(t.Context(), req)
+	require.NoError(t, err)
+	f.h.config = nil
+	result, err := f.h.buildPlanEditorFieldPolicy(t.Context(), req, session, snapshot, time.Now().UTC())
+	require.NoError(t, err)
+	require.False(t, result.Fields.CanArmOrRaiseCap)
+	for _, key := range []string{"name", "enabled", "auto_purchase", "max_step_commitment"} {
+		require.True(t, result.Fields.Controls[key].Editable, key)
+	}
+	require.True(t, result.Fields.Controls["auto_purchase"].RequiresProposedValueRevalidation)
+	require.False(t, result.Fields.CanChangeShape)
+	for _, bounds := range [][2]int{{-1, 0}, {config.MaxTotalSteps + 1, 0}, {4, 5}, {4, -1}} {
+		snapshot.Plan.RampSchedule.TotalSteps, snapshot.Plan.RampSchedule.CurrentStep = bounds[0], bounds[1]
+		invalid, stateErr := f.h.buildPlanEditorFieldPolicy(t.Context(), req, session, snapshot, time.Now().UTC())
+		require.ErrorIs(t, stateErr, ErrPlanEditorProjectionState)
+		require.Nil(t, invalid)
+	}
+}
+
+func TestPlanEditorField_ReadOnlyOrdinary(t *testing.T) {
+	f := newEditorReadFixture(t)
+	req, user, _ := f.credential(t, editorReadPermissions(nil), editorReadPermissions(nil), []string{"*"})
+	snapshot := editorFieldSnapshot(t, f, user)
+	snapshot.Plan.RampSchedule.TotalSteps, snapshot.Executions = 0, nil
+	session, err := f.h.requirePlanEditorReadSession(t.Context(), req)
+	require.NoError(t, err)
+	result, err := f.h.buildPlanEditorFieldPolicy(t.Context(), req, session, snapshot, time.Now().UTC())
+	require.NoError(t, err)
+	for _, key := range []string{"name", "enabled", "auto_purchase", "max_step_commitment", "notification_days_before", "target_accounts"} {
+		require.False(t, result.Fields.Controls[key].Editable, key)
+		require.Equal(t, new(PlanEditorPermissionDenied), result.Fields.Controls[key].Reason, key)
+	}
+	require.False(t, result.Fields.Services["primary"]["term"].Editable)
+	require.False(t, result.Fields.CanChangeShape)
+	require.Nil(t, result.Graph)
+	require.Equal(t, new(PlanEditorUnsupportedSchedule), result.GraphUnavailableReason)
+}
