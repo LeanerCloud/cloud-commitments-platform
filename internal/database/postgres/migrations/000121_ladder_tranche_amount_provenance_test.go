@@ -22,6 +22,9 @@ func TestMigration_LadderTrancheAmountProvenance(t *testing.T) {
  (layer_type,amount_usd_hr,term,payment_option,scheduled_date,status)
  VALUES ('compute-sp',12.5,'1y','no_upfront',NOW(),'scheduled') RETURNING id`).Scan(&id))
 	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, 121))
+	var validated bool
+	require.NoError(t, pool.QueryRow(ctx, `SELECT convalidated FROM pg_constraint WHERE conname='ladder_tranche_amount_provenance'`).Scan(&validated))
+	require.False(t, validated)
 	var amount string
 	var basis, rate *string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT amount_usd_hr::text,amount_basis,commitment_rate
@@ -37,6 +40,14 @@ func TestMigration_LadderTrancheAmountProvenance(t *testing.T) {
 		_, err := pool.Exec(ctx, `UPDATE ladder_tranches SET amount_basis=$2,commitment_rate=$3 WHERE id=$1`, id, pair[0], pair[1])
 		require.Error(t, err, "invalid provenance pair %v", pair)
 	}
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, 122))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT convalidated FROM pg_constraint WHERE conname='ladder_tranche_amount_provenance'`).Scan(&validated))
+	require.True(t, validated)
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, 121))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT convalidated FROM pg_constraint WHERE conname='ladder_tranche_amount_provenance'`).Scan(&validated))
+	require.False(t, validated)
+	_, err := pool.Exec(ctx, `UPDATE ladder_tranches SET amount_basis='commitment' WHERE id=$1`, id)
+	require.Error(t, err)
 	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, 120))
 	var columns int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns
@@ -44,5 +55,11 @@ func TestMigration_LadderTrancheAmountProvenance(t *testing.T) {
 	require.Zero(t, columns)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT amount_usd_hr::text FROM ladder_tranches WHERE id=$1`, id).Scan(&amount))
 	require.Equal(t, "12.500000", amount)
-	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, 121))
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, 122))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT convalidated FROM pg_constraint WHERE conname='ladder_tranche_amount_provenance'`).Scan(&validated))
+	require.True(t, validated)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT amount_usd_hr::text,amount_basis,commitment_rate FROM ladder_tranches WHERE id=$1`, id).Scan(&amount, &basis, &rate))
+	require.Equal(t, "12.500000", amount)
+	require.Nil(t, basis)
+	require.Nil(t, rate)
 }
