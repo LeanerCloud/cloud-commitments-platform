@@ -1271,7 +1271,17 @@ let disposePlanEditor: (() => void) | undefined;
 function openPlanForm(modal: HTMLElement, create: boolean): void {
   disposePlanEditor?.(); disposePlanEditor = undefined;
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
-  if (create && host && form) disposePlanEditor = mountPlanEditorPanel(host, form);
+  const advanced = modal.querySelector<HTMLDetailsElement>('#plan-advanced-settings');
+  if (advanced) advanced.open = false;
+  const revealInvalid = (event: Event): void => {
+    if (advanced?.contains(event.target as Node)) advanced.open = true;
+  };
+  form?.addEventListener('invalid', revealInvalid, true);
+  const disposePanel = create && host && form ? mountPlanEditorPanel(host, form) : undefined;
+  disposePlanEditor = () => {
+    try { disposePanel?.(); }
+    finally { form?.removeEventListener('invalid', revealInvalid, true); }
+  };
   openModal(modal, { initialFocus: '#plan-name', onClose: () => { disposePlanEditor?.(); disposePlanEditor = undefined; } });
 }
 
