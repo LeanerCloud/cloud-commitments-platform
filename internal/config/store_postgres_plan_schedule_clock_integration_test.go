@@ -50,10 +50,6 @@ func TestManagedCompletionKeepsNextRootAndRawPlan(t *testing.T) {
 			if targetMet {
 				current := f.row(ctx, t, 2, nil, "pending")
 				require.NoError(t, f.store.WithTx(ctx, func(tx pgx.Tx) error {
-					_, err := f.store.LockPurchasePlanTx(ctx, tx, f.planID)
-					if err != nil {
-						return err
-					}
 					return f.store.CompleteTargetMetStepTx(ctx, tx, f.planID, 2, current.ExecutionID, "target already held")
 				}))
 			} else {
