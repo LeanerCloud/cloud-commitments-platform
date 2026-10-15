@@ -16,11 +16,13 @@ beforeEach(() => {
 });
 afterEach(() => { dispose(); jest.useRealTimers(); });
 
-test('renders the real Create intent without history or interactive plot affordances', () => {
+test('renders real Create intent and follows unedited notification settings', () => {
   expect(host.hidden).toBe(false); expect(host.textContent).toContain('Save Plan does not save date changes');
   expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(3);
   expect(host.querySelector('[data-preview-step="2"]')?.getAttribute('aria-label')).toContain('target 79.2%');
   expect(host.querySelector('svg [role=button], .preview-touch-target')).toBeNull();
+  const notice = form.querySelector<HTMLInputElement>('#plan-notify-days')!; notice.value = '10'; notice.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(field('date').value).toBe('2026-10-27');
 });
 test('preserves focused fields and rejects collisions before paired range correction', () => {
   const input = field('date'), point = host.querySelector('[data-preview-step]');
@@ -39,11 +41,12 @@ test('Enter commits only local dates and reset restores the baseline', () => {
   expect(host.querySelector('summary')?.textContent).toContain('(1)'); field('reset').click();
   expect(field('date').value).toBe('2026-10-20'); expect(host.querySelector('summary')?.textContent).toContain('(0)');
 });
-test('requires an explicit rebuild when ramp settings change after local edits', () => {
-  change('date', '2026-10-21'); const percent = form.querySelector<HTMLInputElement>('#ramp-step-percent')!;
-  percent.value = '25'; percent.dispatchEvent(new Event('change', { bubbles: true }));
+test.each([['ramp-step-percent', '25', 4], ['plan-notify-days', '10', 3]])('requires explicit rebuild after edited %s changes', (id, value, count) => {
+  change('date', '2026-10-21'); const percent = form.querySelector<HTMLInputElement>(`#${id}`)!;
+  percent.value = String(value); percent.dispatchEvent(new Event('change', { bubbles: true }));
   expect(field('rebuild').hidden).toBe(false); field('reset').click(); expect(field('error').textContent).toContain('Rebuild');
-  field('rebuild').click(); expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(4);
+  field('rebuild').click(); expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(count);
+  if (id === 'plan-notify-days') expect(field('date').value).toBe('2026-10-27');
   expect(field('rebuild').hidden).toBe(true); expect(form.querySelector<HTMLInputElement>('#plan-name')?.value).toBe('Compute');
 });
 test('unmount removes Create state and listeners before another modal context', () => {
@@ -52,7 +55,7 @@ test('unmount removes Create state and listeners before another modal context', 
   form.querySelector('#plan-coverage')!.dispatchEvent(new Event('change', { bubbles: true })); expect(host.childElementCount).toBe(0);
 });
 
-test.each(['plan-coverage', 'ramp-step-percent'])('preserves invalid %s reason across local edits and reset', id => {
+test.each(['plan-coverage', 'ramp-step-percent', 'plan-notify-days'])('preserves invalid %s reason across local edits and reset', id => {
   const setting = form.querySelector<HTMLInputElement>(`#${id}`)!;
   const original = setting.value; setting.value = ''; setting.dispatchEvent(new Event('input', { bubbles: true }));
   const reason = field('error').textContent; expect(reason).not.toBe('');
