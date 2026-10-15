@@ -4,6 +4,7 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +66,23 @@ func TestPlanEditorGETCompleteStoredValues(t *testing.T) {
 	require.Equal(t, "[]", string(body["account_ids"]))
 	require.Equal(t, "[]", string(body["accounts"]))
 	require.Equal(t, "[]", string(body["history"]))
+	var policy map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body["field_policy"], &policy))
+	require.ElementsMatch(t, []string{"controls", "services", "can_change_shape", "shape_lock_reason", "can_arm_or_raise_cap"}, editorJSONKeys(policy))
+	var controls map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(policy["controls"], &controls))
+	require.ElementsMatch(t, []string{"name", "description", "enabled", "auto_purchase", "max_step_commitment", "notification_days_before", "step_count", "ramp_type", "percent_per_step", "step_interval_days", "start_date", "target_accounts", "allocation_mode", "dates_managed"}, editorJSONKeys(controls))
+	var serviceRules map[string]map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(policy["services"], &serviceRules))
+	require.Len(t, serviceRules, 1)
+	require.ElementsMatch(t, editorJSONKeys(service), editorJSONKeys(serviceRules["disabled"]))
+	for _, rule := range controls {
+		var fields map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(rule, &fields))
+		require.ElementsMatch(t, []string{"editable", "reason", "requires_approved_edits", "requires_proposed_value_revalidation"}, editorJSONKeys(fields))
+	}
+	require.Equal(t, "false", string(policy["can_change_shape"]))
+	require.Equal(t, "false", string(policy["can_arm_or_raise_cap"]))
 	var ramp map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(stored["ramp_schedule"], &ramp))
 	require.ElementsMatch(t, []string{"type", "percent_per_step", "step_interval_days", "current_step", "total_steps", "start_date"}, editorJSONKeys(ramp))
@@ -179,4 +197,148 @@ func TestPlanEditorGETReadAuthority(t *testing.T) {
 	_, err := f.db.Exec(t.Context(), `UPDATE purchase_plans SET ramp_schedule=jsonb_set(ramp_schedule,'{current_step}','2') WHERE id=$1`, plan.ID)
 	require.NoError(t, err)
 	editorGET(t, f, bearer, plan.ID, 409)
+}
+
+func TestPlanEditorGETHistoryWitnessAndPresentValues(t *testing.T) {
+	f := newEditorReadFixture(t)
+	req, user, _ := f.credential(t, editorReadPermissions(nil), nil, []string{"*"})
+	account := &config.CloudAccount{Name: "captured label", Provider: "aws", ExternalID: uuid.NewString()}
+	require.NoError(t, f.store.CreateCloudAccount(t.Context(), account))
+	date := time.Now().UTC().AddDate(0, 0, 14).Truncate(time.Microsecond)
+	capValue := 12.34
+	plan := &config.PurchasePlan{Name: "history", Enabled: true, AutoPurchase: true, NotificationDaysBefore: 3,
+		Services: map[string]config.ServiceConfig{
+			"one":      {Provider: "aws", Service: "ec2", Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 75, RampSchedule: "weekly", IncludeEngines: []string{"mysql"}, ExcludeEngines: []string{"oracle"}, IncludeRegions: []string{"us-east-1"}, ExcludeRegions: []string{"us-west-2"}, IncludeTypes: []string{"m5.large"}, ExcludeTypes: []string{"t3.small"}, MinCount: 2},
+			"disabled": {Provider: "azure", Service: "compute", Enabled: false},
+		}, RampSchedule: config.RampSchedule{Type: "weekly", TotalSteps: 3, PercentPerStep: 33, StepIntervalDays: 7, StartDate: date},
+		NextExecutionDate: &date, LastExecutionDate: &date, LastNotificationSent: &date, MaxStepCommitment: &capValue}
+	require.NoError(t, f.store.CreatePurchasePlan(t.Context(), plan))
+	require.NoError(t, f.store.SetPlanAccounts(t.Context(), plan.ID, []string{account.ID}))
+	recommendation := config.RecommendationRecord{CloudAccountID: &account.ID, Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large", Term: 1, Payment: "no-upfront", Count: 4, Selected: true}
+	ids := []string{uuid.NewString(), uuid.NewString(), uuid.NewString()}
+	statuses := []string{config.StatusCanceled, "failed", "scheduled"}
+	for _, i := range []int{2, 1, 0} {
+		status := statuses[i]
+		row := &config.PurchaseExecution{PlanID: plan.ID, ExecutionID: ids[i], Status: status, StepNumber: i + 1, ScheduledDate: date.AddDate(0, 0, i), CreatedByUserID: &user,
+			ApprovalToken: strings.Repeat("a", 64), Recommendations: []config.RecommendationRecord{recommendation}}
+		if i == 1 {
+			row.CloudAccountID, row.RetryExecutionID = &account.ID, &ids[2]
+		}
+		if i == 2 {
+			row.RetryAttemptN, row.ScheduledExecutionAt = 1, &date
+		}
+		require.NoError(t, f.store.SavePurchaseExecution(t.Context(), row))
+	}
+	purchases, scheduler := &MockPurchaseManager{}, &MockScheduler{}
+	notifier := &recordingEmailNotifier{}
+	f.h.purchase, f.h.scheduler, f.h.emailNotifier = purchases, scheduler, notifier
+	identity, err := config.RecIdentityKey(&recommendation)
+	require.NoError(t, err)
+	baseline, err := json.Marshal(config.PlanRampBaseline{identity: {Count: 10}})
+	require.NoError(t, err)
+	for _, ledger := range []struct {
+		state, baseline  string
+		present, trusted bool
+	}{
+		{"new", "null", false, false}, {"trusted", string(baseline), true, true}, {"legacy", "{}", true, false}, {"legacy", "null", false, false},
+	} {
+		_, updateErr := f.db.Exec(t.Context(), `UPDATE purchase_plans SET ramp_ledger_state=$2,ramp_baseline=CASE WHEN $3='null' THEN NULL ELSE $3::jsonb END WHERE id=$1`, plan.ID, ledger.state, ledger.baseline)
+		require.NoError(t, updateErr)
+		before := editorDomainState(t, f)
+		body := editorGET(t, f, req, plan.ID, 200)
+		require.Equal(t, before, editorDomainState(t, f))
+		require.NotContains(t, string(body["history"]), user)
+		require.NotContains(t, string(body["history"]), strings.Repeat("a", 64))
+		var witness PlanEditorLedgerWitness
+		require.NoError(t, json.Unmarshal(body["ledger_witness"], &witness))
+		require.Equal(t, ledger.state, witness.LedgerState)
+		require.Equal(t, ledger.present, witness.BaselinePresent)
+		require.Equal(t, ledger.trusted, witness.HasTrustedRampLedger)
+		var stored PlanEditorStoredPlan
+		require.NoError(t, json.Unmarshal(body["plan"], &stored))
+		require.Equal(t, plan.Name, stored.Name)
+		require.Equal(t, plan.Enabled, stored.Enabled)
+		require.Equal(t, plan.AutoPurchase, stored.AutoPurchase)
+		require.Equal(t, plan.NotificationDaysBefore, stored.NotificationDaysBefore)
+		require.Equal(t, plan.MaxStepCommitment, stored.MaxStepCommitment)
+		require.True(t, date.Equal(*stored.NextExecutionDate))
+		require.True(t, date.Equal(*stored.LastExecutionDate))
+		require.True(t, date.Equal(*stored.LastNotificationSent))
+		require.Len(t, stored.Services, 2)
+		expected, marshalErr := json.Marshal(plan.Services["one"])
+		require.NoError(t, marshalErr)
+		actual, marshalErr := json.Marshal(stored.Services["one"])
+		require.NoError(t, marshalErr)
+		require.JSONEq(t, string(expected), string(actual))
+		var history []map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(body["history"], &history))
+		require.Len(t, history, 3)
+		for i, row := range history {
+			require.ElementsMatch(t, []string{"execution_id", "status", "step_number", "retry_attempt_n", "scheduled_date", "retry_execution_id", "approval_state", "display"}, editorJSONKeys(row))
+			require.JSONEq(t, `"`+ids[i]+`"`, string(row["execution_id"]))
+			var display map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(row["display"], &display))
+			require.ElementsMatch(t, []string{"resource_type", "region", "quantity", "quantity_unit", "full_term_commitment", "commitment_currency", "quantity_source", "commitment_source"}, editorJSONKeys(display))
+			require.Equal(t, "null", string(display["full_term_commitment"]))
+			require.Equal(t, "null", string(display["commitment_currency"]))
+			require.JSONEq(t, `"unavailable"`, string(display["commitment_source"]))
+		}
+	}
+	require.Empty(t, purchases.Calls, "recording purchase fake must receive no calls")
+	require.Empty(t, scheduler.Calls, "recording scheduler fake must receive no calls")
+	require.Empty(t, notifier.captured, "recording approval email fake must receive no notification")
+	snapshot, err := f.store.ReadPlanEditorSnapshot(t.Context(), plan.ID)
+	require.NoError(t, err)
+	session, err := f.h.requirePlanEditorReadSession(t.Context(), req)
+	require.NoError(t, err)
+	policy, err := f.h.buildPlanEditorFieldPolicy(t.Context(), req, session, snapshot, time.Now().UTC())
+	require.NoError(t, err)
+	snapshot.LedgerState = "unknown-lineage"
+	response := buildPlanEditorResponse(snapshot, policy, []PlanEditorExecution{}, "synthetic-mapper-witness")
+	require.Equal(t, "unknown-lineage", response.LedgerWitness.LedgerState, "synthetic mapper proof; database CHECK excludes unknown persisted states")
+	require.False(t, response.LedgerWitness.HasTrustedRampLedger)
+}
+
+func TestPlanEditorGETRefusals(t *testing.T) {
+	f := newEditorReadFixture(t)
+	req, _, _ := f.credential(t, editorReadPermissions(nil), nil, []string{"*"})
+	plan := &config.PurchasePlan{Name: "refusals", RampSchedule: config.RampSchedule{TotalSteps: 1}}
+	require.NoError(t, f.store.CreatePurchasePlan(t.Context(), plan))
+	f.h.config = &MockConfigStore{}
+	editorGET(t, f, req, plan.ID, 503)
+	f.h.config = f.store
+	for _, raw := range []string{`{"total_steps":-1}`, `{"total_steps":1,"current_step":2}`, `{"total_steps":100000}`} {
+		_, err := f.db.Exec(t.Context(), `UPDATE purchase_plans SET ramp_schedule=$2 WHERE id=$1`, plan.ID, raw)
+		require.NoError(t, err)
+		editorGET(t, f, req, plan.ID, 409)
+	}
+	_, err := f.db.Exec(t.Context(), `UPDATE purchase_plans SET ramp_schedule='{"total_steps":1}' WHERE id=$1`, plan.ID)
+	require.NoError(t, err)
+	missing := uuid.NewString()
+	rec := config.RecommendationRecord{CloudAccountID: &missing, Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large", Term: 1, Payment: "no-upfront"}
+	row := &config.PurchaseExecution{PlanID: plan.ID, ExecutionID: uuid.NewString(), Status: config.StatusCanceled, Recommendations: []config.RecommendationRecord{rec}}
+	require.NoError(t, f.store.SavePurchaseExecution(t.Context(), row))
+	editorGET(t, f, req, plan.ID, 409)
+	_, err = f.db.Exec(t.Context(), `INSERT INTO purchase_executions(execution_id,plan_id,status,step_number,scheduled_date,error) SELECT gen_random_uuid(),$1,'canceled',1,now(),'' FROM generate_series(1,$2)`, plan.ID, config.MaxListLimit)
+	require.NoError(t, err)
+	editorGET(t, f, req, plan.ID, 413)
+}
+
+func TestPlanEditorGETNullableLegacyError(t *testing.T) {
+	f := newEditorReadFixture(t)
+	req, _, _ := f.credential(t, editorReadPermissions(nil), nil, []string{"*"})
+	account := &config.CloudAccount{Name: uuid.NewString(), Provider: "aws", ExternalID: uuid.NewString()}
+	require.NoError(t, f.store.CreateCloudAccount(t.Context(), account))
+	plan := &config.PurchasePlan{Name: "nullable legacy history", RampSchedule: config.RampSchedule{TotalSteps: 1}}
+	require.NoError(t, f.store.CreatePurchasePlan(t.Context(), plan))
+	require.NoError(t, f.store.SetPlanAccounts(t.Context(), plan.ID, []string{account.ID}))
+	row := &config.PurchaseExecution{PlanID: plan.ID, ExecutionID: uuid.NewString(), Status: config.StatusCanceled, StepNumber: 1}
+	require.NoError(t, f.store.SavePurchaseExecution(t.Context(), row))
+	_, err := f.db.Exec(t.Context(), `UPDATE purchase_executions SET error=NULL WHERE execution_id=$1`, row.ExecutionID)
+	require.NoError(t, err)
+	body := editorGET(t, f, req, plan.ID, 200)
+	var history []PlanEditorExecution
+	require.NoError(t, json.Unmarshal(body["history"], &history))
+	require.Len(t, history, 1)
+	require.Equal(t, row.ExecutionID, history[0].ExecutionID)
 }

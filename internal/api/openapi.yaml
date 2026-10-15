@@ -3242,6 +3242,233 @@ components:
             type: string
             format: uuid
 
+    PlanEditorStoredPlan:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - enabled
+        - auto_purchase
+        - notification_days_before
+        - services
+        - ramp_schedule
+        - created_at
+        - updated_at
+        - next_execution_date
+        - last_execution_date
+        - last_notification_sent
+        - max_step_commitment
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        enabled:
+          type: boolean
+        auto_purchase:
+          type: boolean
+        notification_days_before:
+          type: integer
+        services:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PlanEditorService'
+          nullable: true
+        ramp_schedule:
+          $ref: '#/components/schemas/PlanEditorRamp'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        next_execution_date:
+          type: string
+          format: date-time
+          nullable: true
+        last_execution_date:
+          type: string
+          format: date-time
+          nullable: true
+        last_notification_sent:
+          type: string
+          format: date-time
+          nullable: true
+        max_step_commitment:
+          type: number
+          nullable: true
+    PlanEditorService:
+      type: object
+      additionalProperties: false
+      required:
+        - provider
+        - service
+        - enabled
+        - term
+        - payment
+        - coverage
+        - ramp_schedule
+        - include_engines
+        - exclude_engines
+        - include_regions
+        - exclude_regions
+        - include_types
+        - exclude_types
+        - min_count
+      properties:
+        provider:
+          type: string
+        service:
+          type: string
+        enabled:
+          type: boolean
+        term:
+          type: integer
+        payment:
+          type: string
+        coverage:
+          type: number
+        ramp_schedule:
+          type: string
+        include_engines:
+          type: array
+          nullable: true
+          items:
+            type: string
+        exclude_engines:
+          type: array
+          nullable: true
+          items:
+            type: string
+        include_regions:
+          type: array
+          nullable: true
+          items:
+            type: string
+        exclude_regions:
+          type: array
+          nullable: true
+          items:
+            type: string
+        include_types:
+          type: array
+          nullable: true
+          items:
+            type: string
+        exclude_types:
+          type: array
+          nullable: true
+          items:
+            type: string
+        min_count:
+          type: integer
+    PlanEditorRamp:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - percent_per_step
+        - step_interval_days
+        - current_step
+        - total_steps
+        - start_date
+      properties:
+        type:
+          type: string
+        percent_per_step:
+          type: number
+        step_interval_days:
+          type: integer
+        current_step:
+          type: integer
+        total_steps:
+          type: integer
+        start_date:
+          type: string
+          format: date-time
+    PlanEditorAccount:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - provider
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        provider:
+          type: string
+    PlanEditorLedgerWitness:
+      type: object
+      additionalProperties: false
+      required:
+        - ledger_state
+        - has_trusted_ramp_ledger
+        - baseline_present
+      properties:
+        ledger_state:
+          type: string
+        has_trusted_ramp_ledger:
+          type: boolean
+        baseline_present:
+          type: boolean
+    PlanEditorReason:
+      type: string
+    PlanEditorFieldPolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - controls
+        - services
+        - can_change_shape
+        - shape_lock_reason
+        - can_arm_or_raise_cap
+      properties:
+        controls:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PlanEditorFieldRule'
+        services:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              $ref: '#/components/schemas/PlanEditorFieldRule'
+        can_change_shape:
+          type: boolean
+        shape_lock_reason:
+          allOf:
+            - $ref: '#/components/schemas/PlanEditorReason'
+          nullable: true
+          type: string
+        can_arm_or_raise_cap:
+          type: boolean
+    PlanEditorFieldRule:
+      type: object
+      additionalProperties: false
+      required:
+        - editable
+        - reason
+        - requires_approved_edits
+        - requires_proposed_value_revalidation
+      properties:
+        editable:
+          type: boolean
+        reason:
+          allOf:
+            - $ref: '#/components/schemas/PlanEditorReason'
+          nullable: true
+          type: string
+        requires_approved_edits:
+          type: boolean
+        requires_proposed_value_revalidation:
+          type: boolean
+
     PurchasePlan:
       type: object
       properties:
