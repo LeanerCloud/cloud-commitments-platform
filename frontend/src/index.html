@@ -819,9 +819,11 @@
         <div id="plan-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="plan-modal-title">
             <div class="modal-content modal-wide">
                 <h2 id="plan-modal-title">Create Purchase Plan</h2>
-                <form id="plan-form">
-                    <input type="hidden" id="plan-id">
-
+                <div class="plan-editor-layout">
+                    <section id="plan-editor-panel" aria-label="Proposed purchase dates" hidden></section>
+                    <form id="plan-form">
+                        <input type="hidden" id="plan-id">
+                        <div class="plan-editor-settings">
                     <div class="form-section">
                         <h3>Plan Details</h3>
                         <label>Plan Name: <input type="text" id="plan-name" required placeholder="Monthly EC2 RI Purchase"></label>
@@ -966,12 +968,15 @@
                         <input type="hidden" id="plan-account-ids" value="">
                     </div>
 
-                    <div class="modal-buttons">
-                        <button type="button" id="close-plan-modal-btn">Cancel</button>
-                        <button type="button" id="preview-plan-schedule-btn">Preview schedule</button>
-                        <button type="submit" class="primary">Save Plan</button>
-                    </div>
-                </form>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="modal-buttons">
+                    <button type="button" id="close-plan-modal-btn">Cancel</button>
+                    <button type="button" id="preview-plan-schedule-btn">Preview schedule</button>
+                    <button type="submit" form="plan-form" class="primary">Save Plan</button>
+                </div>
             </div>
         </div>
 

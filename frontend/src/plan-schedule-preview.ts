@@ -1,4 +1,5 @@
 import { closeModal, openModal } from './modal';
+import { renderSchedulePlot, updateSchedulePlot, schedulePlotFrame, schedulePlotX } from './plan-schedule-plot';
 import { escapeHtml } from './utils';
 import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { draftDateDay, redistributeDraftDates, validateDraftDates } from './lib/plan-draft-dates';
@@ -20,7 +21,7 @@ function integer(value: string, label: string, min: number, max: number): number
   return parsed;
 }
 
-export function openPlanSchedulePreview(input: PlanSchedulePreviewInput, parent: HTMLElement): void {
+export function buildLocalScheduleIntent(input: PlanSchedulePreviewInput): { coverage: number; notificationDays: number; dates: string[]; shares: number[] } {
   const coverage = integer(input.coverage, 'Target coverage', 0, 100);
   const notice = integer(input.notificationDays, 'Notification days', 1, 30);
   // Mirrors presets/shares in internal/config/types.go and custom
@@ -32,10 +33,14 @@ export function openPlanSchedulePreview(input: PlanSchedulePreviewInput, parent:
   const interval = preset?.[1] ?? integer(input.intervalDays, 'Interval days', 1, 365);
   const count = Math.floor(100 / percent);
   const start = Date.parse(`${suggestedPurchaseStartDate(notice)}T00:00:00Z`);
-  const points = Array.from({ length: count }, (_, index) => ({
-    date: new Date(start + index * interval * 86_400_000).toISOString().slice(0, 10),
-    target: coverage * Math.min(100, (index + 1) * percent) / 100,
-  }));
+  const dates = Array.from({ length: count }, (_, index) => new Date(start + index * interval * 86_400_000).toISOString().slice(0, 10));
+  return { coverage, notificationDays: notice, dates, shares: dates.map((_, index) => Math.min(100, (index + 1) * percent)) };
+}
+
+export function openPlanSchedulePreview(input: PlanSchedulePreviewInput, parent: HTMLElement): void {
+  const { coverage, notificationDays: notice, dates: proposedDates, shares } = buildLocalScheduleIntent(input);
+  const count = proposedDates.length;
+  const points = proposedDates.map((date, index) => ({ date, target: coverage * shares[index]! / 100 }));
   const initialDates = points.map(point => point.date);
   let dates = [...initialDates], selected = 0;
   let dirty: 'step' | 'range' | null = null;
@@ -49,17 +54,11 @@ export function openPlanSchedulePreview(input: PlanSchedulePreviewInput, parent:
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
   modal.setAttribute('aria-labelledby', 'schedule-preview-title');
-  const width = Math.max(640, count * 48 + 96);
-  const domain = (): [number, number] => [draftDateDay(dates[0]!) - 3,
-    draftDateDay(dates[count - 1]!) - draftDateDay(dates[0]!) + 8];
-  const x = (index: number): number => {
-    const [startDay, span] = gesture ? [gesture.domainStart, gesture.span] : domain();
-    return 48 + (draftDateDay(dates[index]!) - startDay) / span * (width - 96);
-  };
+  const width = schedulePlotFrame(dates).width;
+  const frame = () => ({ ...schedulePlotFrame(dates), ...(gesture ? { startDay: gesture.domainStart, span: gesture.span } : {}) });
+  const domain = (): [number, number] => { const current = frame(); return [current.startDay, current.span]; };
+  const x = (index: number): number => schedulePlotX(dates[index]!, frame());
   const dateAt = (day: number): string => new Date(day * 86_400_000).toISOString().slice(0, 10);
-  const y = (target: number): number => 260 - target * 2.2;
-  let path = `M 48 ${y(0)}`;
-  points.forEach((point, index) => { path += ` H ${x(index)} V ${y(point.target)}`; });
   modal.innerHTML = `
     <div class="modal-content schedule-preview-panel">
       <header><h2 id="schedule-preview-title">Schedule preview</h2><p>${escapeHtml(input.name)}</p></header>
@@ -71,23 +70,7 @@ export function openPlanSchedulePreview(input: PlanSchedulePreviewInput, parent:
             <h3>Planned cumulative target (%)</h3>
             <p class="help-text">Hypothetical dates, not observed utilization. All dates use UTC.</p>
             <div class="schedule-preview-scroll" tabindex="0" aria-label="Scrollable draft calendar">
-              <svg viewBox="0 0 ${width} 370" width="${width}" role="group" aria-label="Hypothetical purchase dates">
-                ${[0, 20, 40, 60, 80, 100].map(value => `<path class="preview-grid" d="M 48 ${y(value)} H ${width - 24}"/><text x="8" y="${y(value) + 4}">${value}</text>`).join('')}
-                <path class="preview-staircase" d="${path}"/>
-                ${points.map((point, index) => `<g role="button" tabindex="${index === 0 ? 0 : -1}" data-preview-step="${index}" aria-pressed="${index === 0}" aria-label="Step ${index + 1}, ${point.date}, target ${point.target}%">
-                  <foreignObject class="preview-hit" x="${x(index) - 22}" y="${y(point.target) - 22}" width="44" height="44"><div xmlns="http://www.w3.org/1999/xhtml" class="preview-touch-target"></div></foreignObject>
-                  <circle class="preview-marker" cx="${x(index)}" cy="${y(point.target)}" r="6"/>
-                  ${index % Math.ceil(count / 5) === 0 || index === count - 1 ? `<text x="${x(index)}" y="292" text-anchor="middle">${point.date.slice(5)}</text>` : ''}
-                </g>`).join('')}
-                ${count > 1 ? `<path class="preview-interval" d="M ${x(0)} 336 H ${x(count - 1)}"/>
-                  ${(['start', 'end'] as const).map((boundary, i) => {
-                    const left = x(i === 0 ? 0 : count - 1);
-                    return `<g data-preview-boundary="${boundary}" role="button" tabindex="0">
-                      <foreignObject class="preview-handle-hit" x="${left - 22}" y="314" width="44" height="44"><div xmlns="http://www.w3.org/1999/xhtml" class="preview-touch-target"></div></foreignObject>
-                      <rect class="preview-handle-marker" x="${left - 6}" y="330" width="12" height="12"/>
-                      <text x="${left}" y="365" text-anchor="middle">${i === 0 ? 'Start' : 'End'}</text></g>`;
-                  }).join('')}` : ''}
-              </svg>
+              ${renderSchedulePlot(points, frame(), selected, true)}
             </div>
             <p class="help-text">○ Draft date · Drag dates or interval handles horizontally inside the plot. Arrow keys select steps; Alt+Left/Right moves a date one day. Handle arrows move a day; Enter edits its date. Use the Step selector or date inputs when points overlap or dates are farther away.</p>
             <details id="preview-date-changes"><summary>Draft date changes (0)</summary><ul></ul></details>
@@ -133,7 +116,7 @@ export function openPlanSchedulePreview(input: PlanSchedulePreviewInput, parent:
     if (dirty || (gesture && index !== selected)) return;
     selected = index;
     const point = points[index]!;
-    buttons.forEach((button, i) => { button.setAttribute('aria-pressed', String(i === index)); button.setAttribute('tabindex', i === index ? '0' : '-1'); });
+    updateSchedulePlot(svg, points.map((point, i) => ({ ...point, date: dates[i]! })), frame(), selected, true);
     modal.querySelector('#preview-selected-step')!.textContent = `Step ${index + 1}`;
     if (dateInput.value !== dates[index]) dateInput.value = dates[index]!;
     stepSelect.value = String(index);
@@ -141,25 +124,6 @@ export function openPlanSchedulePreview(input: PlanSchedulePreviewInput, parent:
     if (focus) buttons[index]!.focus();
   };
   const renderDates = (): void => {
-    let staircase = `M 48 ${y(0)}`;
-    buttons.forEach((button, index) => {
-      const left = x(index), date = dates[index]!;
-      staircase += ` H ${left} V ${y(points[index]!.target)}`;
-      button.querySelector('.preview-hit')!.setAttribute('x', String(left - 22));
-      button.querySelector('.preview-marker')!.setAttribute('cx', String(left));
-      const tick = button.querySelector('text');
-      if (tick) { tick.setAttribute('x', String(left)); tick.textContent = date.slice(5); }
-      button.setAttribute('aria-label', `Step ${index + 1}, ${date}, target ${points[index]!.target}%`);
-    });
-    modal.querySelector('.preview-staircase')!.setAttribute('d', staircase);
-    handles.forEach(handle => {
-      const boundary = handle.dataset.previewBoundary!, index = boundary === 'start' ? 0 : count - 1, left = x(index);
-      handle.querySelector('.preview-handle-hit')!.setAttribute('x', String(left - 22));
-      handle.querySelector('.preview-handle-marker')!.setAttribute('x', String(left - 6));
-      handle.querySelector('text')!.setAttribute('x', String(left));
-      handle.setAttribute('aria-label', `Interval ${boundary}, ${dates[index]}, UTC. Arrows move a day; Enter edits date.`);
-    });
-    modal.querySelector('.preview-interval')?.setAttribute('d', `M ${x(0)} 336 H ${x(count - 1)}`);
     modal.querySelector('#preview-start')!.textContent = dates[0]!;
     modal.querySelector('#preview-end')!.textContent = dates[count - 1]!;
     if (rangeStart.value !== dates[0]) rangeStart.value = dates[0]!;
