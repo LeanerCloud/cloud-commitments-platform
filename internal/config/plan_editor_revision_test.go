@@ -151,3 +151,19 @@ func TestPlanEditorRevision_InvalidStateFails(t *testing.T) {
 		require.Empty(t, revision)
 	}
 }
+
+func TestPlanEditorRevision_LedgerStateIsCapturedInput(t *testing.T) {
+	t.Parallel()
+	s := editorRevisionFixture()
+	seen := map[string]bool{}
+	for _, state := range []PlanEditorLedgerState{"", PlanEditorLedgerLegacy, PlanEditorLedgerNew, PlanEditorLedgerTrusted, "future"} {
+		s.LedgerState = state
+		revision, err := s.Revision()
+		require.NoError(t, err)
+		require.False(t, seen[revision], "changing only the persisted marker must change the revision")
+		seen[revision] = true
+		repeated, err := s.Revision()
+		require.NoError(t, err)
+		require.Equal(t, revision, repeated)
+	}
+}
