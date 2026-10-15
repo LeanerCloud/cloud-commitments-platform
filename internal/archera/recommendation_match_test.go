@@ -136,7 +136,7 @@ func TestMatchRecommendationRefusesUnprovenAssociation(t *testing.T) {
 		}},
 		{"missing_current_region", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) { c.Region = nil }},
 		{"current_offer", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) {
-			c.CurrentOfferID = "different"
+			c.CurrentOfferID = "faadf00d-ffff-4aba-8ada-abcdefabcdef"
 		}},
 	}
 	for _, tt := range tests {
@@ -168,7 +168,7 @@ func TestMatchRecommendationRejectsAmbiguousVendorRows(t *testing.T) {
 }
 
 func TestMatchRecommendationRejectsEqualMalformedUUIDReferences(t *testing.T) {
-	for _, bad := range []string{"", "not-a-uuid", strings.ReplaceAll(matchItem, "-", "")} {
+	for _, bad := range []string{"", "not-a-uuid", strings.ReplaceAll(matchItem, "-", ""), "zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz"} {
 		for _, field := range []string{"plan", "item", "offer"} {
 			t.Run(field+"_"+bad, func(t *testing.T) {
 				r, rows, items := matchFixture()
