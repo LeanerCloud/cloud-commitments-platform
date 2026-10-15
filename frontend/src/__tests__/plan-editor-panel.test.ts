@@ -8,10 +8,10 @@ const change = (key: string, value: string): void => {
 };
 beforeEach(() => {
   jest.useFakeTimers({ now: new Date('2026-10-15T23:59:00Z') });
-  document.body.innerHTML = `<div class="plan-editor-layout"><section hidden></section><form>
+  document.body.innerHTML = `<div class="modal"><div class="plan-editor-layout"><section hidden></section><form>
     <input id="plan-name" value="Compute"><input name="ramp-schedule" type="radio" value="custom" checked>
     <input id="plan-coverage" value="80"><input id="ramp-step-percent" value="33"><input id="ramp-interval-days" value="7">
-    <input id="plan-notify-days" value="3"><input id="plan-term" value="1"><input id="plan-payment" value="monthly"></form></div>`;
+    <input id="plan-notify-days" value="3"><input id="plan-term" value="1"><input id="plan-payment" value="monthly"></form></div></div>`;
   form = document.querySelector('form')!; host = document.querySelector('section')!; dispose = mountPlanEditorPanel(host, form);
 });
 afterEach(() => { dispose(); jest.useRealTimers(); });
@@ -20,7 +20,7 @@ test('renders real Create intent and follows unedited notification settings', ()
   expect(host.hidden).toBe(false); expect(host.textContent).toContain('Save Plan does not save date changes');
   expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(3);
   expect(host.querySelector('[data-preview-step="2"]')?.getAttribute('aria-label')).toContain('target 79.2%');
-  expect(host.querySelector('svg [role=button], .preview-touch-target')).toBeNull();
+  expect(host.querySelectorAll('svg [role=button]')).toHaveLength(5);
   const notice = form.querySelector<HTMLInputElement>('#plan-notify-days')!; notice.value = '10'; notice.dispatchEvent(new Event('change', { bubbles: true }));
   expect(field('date').value).toBe('2026-10-27');
 });
@@ -63,4 +63,26 @@ test.each(['plan-coverage', 'ramp-step-percent', 'plan-notify-days'])('preserves
   field('reset').click(); expect(field('error').textContent).toBe(reason);
   change('date', '2026-10-21'); setting.value = original; setting.dispatchEvent(new Event('change', { bubbles: true }));
   expect(field('date').value).toBe('2026-10-21'); expect(field('error').textContent).not.toBe(reason);
+});
+
+
+test('actual Create pointer ownership guards submission, cancels on geometry change and restores model', () => {
+  const svg = host.querySelector<SVGSVGElement>('svg')!, point = host.querySelector<SVGGElement>('[data-preview-step="1"]')!;
+  let captured = false, left = 0;
+  Object.assign(svg, { getScreenCTM: () => ({ e: left, inverse: () => ({}) }),
+    createSVGPoint: () => ({ x: 0, y: 0, matrixTransform() { return { x: this.x }; } }),
+    setPointerCapture: () => { captured = true; }, hasPointerCapture: () => captured, releasePointerCapture: () => { captured = false; } });
+  const send = (type: string, target: Element, x: number): void => { target.dispatchEvent(Object.assign(new Event(type, { bubbles: true, cancelable: true }),
+    { pointerId: 1, isPrimary: true, button: 0, clientX: x, clientY: 0 })); };
+  const x = Number(point.querySelector('circle')!.getAttribute('cx')), day = 544 / 22;
+  send('pointerdown', point, x); send('pointermove', svg, x + day);
+  expect(field('date').value).toBe('2026-10-28'); expect(form.inert).toBe(true); expect(document.activeElement).toBe(point);
+  const submit = new Event('submit', { bubbles: true, cancelable: true }); form.dispatchEvent(submit); expect(submit.defaultPrevented).toBe(true);
+  window.dispatchEvent(new Event('scroll')); expect(form.inert).toBe(true);
+  left = 1; window.dispatchEvent(new Event('resize'));
+  expect(field('date').value).toBe('2026-10-27'); expect(form.inert).toBeFalsy(); expect(captured).toBe(false);
+  expect(field('error').textContent).toContain('Graph moved');
+  point.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }));
+  expect(field('date').value).toBe('2026-10-28'); expect(form.querySelector<HTMLInputElement>('#plan-name')?.value).toBe('Compute');
+  send('pointerdown', point, x); dispose(); expect(form.inert).toBeFalsy(); expect(captured).toBe(false);
 });
