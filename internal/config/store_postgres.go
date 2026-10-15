@@ -793,17 +793,14 @@ func (s *PostgresStore) updatePurchasePlanGuardedTx(ctx context.Context, tx pgx.
 	if err := requireManagedPlanUpdateTx(old, plan); err != nil {
 		return err
 	}
-	// Marshal services and ramp_schedule to JSONB
-	servicesJSON, err := json.Marshal(plan.Services)
+	_, servicesJSON, rampScheduleJSON, err := s.purchasePlanJSONForUpdateTx(ctx, tx, plan)
 	if err != nil {
-		return fmt.Errorf("failed to marshal services: %w", err)
+		return err
 	}
+	return s.updatePurchasePlanJSONTx(ctx, tx, plan, servicesJSON, rampScheduleJSON)
+}
 
-	rampScheduleJSON, err := json.Marshal(plan.RampSchedule)
-	if err != nil {
-		return fmt.Errorf("failed to marshal ramp_schedule: %w", err)
-	}
-
+func (s *PostgresStore) updatePurchasePlanJSONTx(ctx context.Context, tx pgx.Tx, plan *PurchasePlan, servicesJSON, rampScheduleJSON []byte) error {
 	query := `
 		UPDATE purchase_plans SET
 			name = $2,
@@ -821,7 +818,7 @@ func (s *PostgresStore) updatePurchasePlanGuardedTx(ctx context.Context, tx pgx.
 	`
 
 	var updatedAt time.Time
-	err = tx.QueryRow(ctx, query,
+	err := tx.QueryRow(ctx, query,
 		plan.ID,
 		plan.Name,
 		plan.Enabled,

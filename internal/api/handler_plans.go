@@ -141,6 +141,9 @@ func mapCreatePlanStorageError(err error, notFoundMsg, genericMsg, logFmt string
 	if errors.Is(err, config.ErrNotFound) {
 		return NewClientError(http.StatusNotFound, notFoundMsg)
 	}
+	if errors.Is(err, config.ErrPlanJSONUnsupported) {
+		return NewClientError(http.StatusConflict, "service replacement requires editor reconciliation")
+	}
 	if errors.Is(err, config.ErrPurchasePlanConflict) {
 		return NewClientError(http.StatusConflict, "plan changed; refresh the plan and try again")
 	}
@@ -365,11 +368,28 @@ func mergeUpdatedPlan(existingPlan *config.PurchasePlan, req *PlanRequest, planI
 		plan.Services = existingPlan.Services
 	}
 
+	preserveUnrepresentedPlanServices(existingPlan, plan)
+
 	// Validate the plan
 	if err := plan.Validate(); err != nil {
 		return nil, NewClientError(400, fmt.Sprintf("validation error: %s", err))
 	}
 	return plan, nil
+}
+
+func preserveUnrepresentedPlanServices(existingPlan, plan *config.PurchasePlan) {
+	for key := range plan.Services {
+		stored, ok := existingPlan.Services[key]
+		if !ok {
+			continue
+		}
+		service := plan.Services[key]
+		service.Enabled, service.RampSchedule, service.MinCount = stored.Enabled, stored.RampSchedule, stored.MinCount
+		service.IncludeEngines, service.ExcludeEngines = stored.IncludeEngines, stored.ExcludeEngines
+		service.IncludeRegions, service.ExcludeRegions = stored.IncludeRegions, stored.ExcludeRegions
+		service.IncludeTypes, service.ExcludeTypes = stored.IncludeTypes, stored.ExcludeTypes
+		plan.Services[key] = service
+	}
 }
 
 // preserveRampProgress carries ramp-in-progress state from the existing
