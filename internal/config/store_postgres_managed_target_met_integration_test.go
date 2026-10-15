@@ -22,7 +22,7 @@ func TestManagedTargetMetRefusesBeforeWrite(t *testing.T) {
 	for _, which := range []string{"missing", "foreign", "finished", "wrong step", "occupied", "scheduled", "duplicate", "legacy foreign", "legacy other step", "beside root", "other step root"} {
 		t.Run(which, func(t *testing.T) {
 			ctx := t.Context()
-			f := managedClockFixture(ctx, t, 1, 3)
+			f := managedClockFixture(ctx, t, 1)
 			ids := []string{f.planID}
 			step, rootID := 2, ""
 			if which != "missing" {
