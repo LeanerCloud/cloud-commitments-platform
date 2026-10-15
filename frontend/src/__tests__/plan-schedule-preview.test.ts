@@ -25,7 +25,7 @@ test('shows truthful hypothetical dates, preserves parent values, and restores f
   expect(preview.querySelectorAll('[data-preview-step]')).toHaveLength(4);
   expect(parent.inert).toBe(true);
   const point = preview.querySelector('[data-preview-step="3"]') as unknown as HTMLElement;
-  point.dispatchEvent(new Event('click'));
+  point.dispatchEvent(new Event('click', { bubbles: true }));
   expect((document.getElementById('preview-selected-date') as HTMLInputElement).value).toBe('2026-11-10');
   point.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
   expect(document.getElementById('preview-selected-step')?.textContent).toBe('Step 3');
@@ -85,7 +85,7 @@ test('edits actual draft dates, guards collisions and preserves nodes, shares an
   expect(first.getAttribute('aria-label')).toContain('2026-10-22');
   expect(input.value).toBe('2026-10-27');
   expect(field('preview-range-start').disabled).toBe(true);
-  point(2).dispatchEvent(new Event('click'));
+  point(2).dispatchEvent(new Event('click', { bubbles: true }));
   expect(field(input.id)).toBe(input);
   expect(document.activeElement).toBe(input);
   expect(document.getElementById('preview-selected-step')?.textContent).toBe('Step 1');
@@ -149,7 +149,7 @@ test('rechecks operation-time UTC midnight and refuses stale reset without repla
   field('preview-reset-dates').click();
   expect(point(0).getAttribute('aria-label')).toContain('2026-10-21');
   expect(document.getElementById('preview-date-error')?.textContent).toMatch(/reopen/i);
-  point(2).dispatchEvent(new Event('click'));
+  point(2).dispatchEvent(new Event('click', { bubbles: true }));
   jest.setSystemTime(new Date('2026-10-21T00:00:00Z'));
   point(2).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }));
   expect(point(2).getAttribute('aria-label')).toContain('2026-11-04');
