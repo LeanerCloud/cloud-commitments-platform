@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func managedClockFixture(ctx context.Context, t *testing.T, current, total int) *rampFixture {
+func managedClockFixture(ctx context.Context, t *testing.T, current int) *rampFixture {
 	t.Helper()
-	f := newRampFixture(ctx, t, 0, current, total)
+	f := newRampFixture(ctx, t, 0, current, 3)
 	_, err := f.store.db.Exec(ctx, `UPDATE purchase_plans SET
 		ramp_schedule = ramp_schedule || '{"dates_managed":true,"future_metadata":{"nested":9007199254740993}}',
 		services = '{"future_service":{"enabled":false,"unknown_filter":["retained"]}}',
@@ -38,7 +38,7 @@ func TestManagedCompletionKeepsNextRootAndRawPlan(t *testing.T) {
 	for _, targetMet := range []bool{false, true} {
 		t.Run(map[bool]string{false: "bought", true: "target met"}[targetMet], func(t *testing.T) {
 			ctx := context.Background()
-			f := managedClockFixture(ctx, t, 1, 3)
+			f := managedClockFixture(ctx, t, 1)
 			root := nextClockRoot(ctx, t, f, "pending")
 			heldRec := baselineRec(uuid.NewString(), "m5.large", 17)
 			f.rowWithRecs(ctx, t, 1, nil, StatusCompleted, false, heldRec)
@@ -50,10 +50,6 @@ func TestManagedCompletionKeepsNextRootAndRawPlan(t *testing.T) {
 			if targetMet {
 				current := f.row(ctx, t, 2, nil, "pending")
 				require.NoError(t, f.store.WithTx(ctx, func(tx pgx.Tx) error {
-					_, err := f.store.LockPurchasePlanTx(ctx, tx, f.planID)
-					if err != nil {
-						return err
-					}
 					return f.store.CompleteTargetMetStepTx(ctx, tx, f.planID, 2, current.ExecutionID, "target already held")
 				}))
 			} else {
@@ -108,7 +104,7 @@ func TestManagedCompletionStopsAtBlockedNextRoot(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			f := managedClockFixture(ctx, t, 1, 3)
+			f := managedClockFixture(ctx, t, 1)
 			f.row(ctx, t, 2, nil, StatusCompleted)
 			var root *PurchaseExecution
 			if tc.status != "" {
@@ -153,7 +149,11 @@ func managedClockSibling(ctx context.Context, t *testing.T, f *rampFixture, root
 		step = 1
 	}
 	if extra == "incoming plan" {
-		owner = newRampFixture(ctx, t, 0, 0, 3)
+		other, err := f.store.GetPurchasePlan(ctx, f.planID)
+		require.NoError(t, err)
+		other.ID, other.Name = "", "Other "+uuid.NewString()[:8]
+		require.NoError(t, f.store.CreatePurchasePlan(ctx, other))
+		owner = &rampFixture{store: f.store, planID: other.ID}
 	}
 	sibling := owner.row(ctx, t, step, nil, status)
 	var err error
@@ -172,7 +172,7 @@ func managedClockSibling(ctx context.Context, t *testing.T, f *rampFixture, root
 
 func TestManagedCompletionFinishedAndLegacyClock(t *testing.T) {
 	ctx := context.Background()
-	f := managedClockFixture(ctx, t, 2, 3)
+	f := managedClockFixture(ctx, t, 2)
 	f.row(ctx, t, 3, nil, StatusCompleted)
 	require.NoError(t, f.store.CompletePlanStep(ctx, f.planID, 3))
 	plan, err := f.store.GetPurchasePlan(ctx, f.planID)
