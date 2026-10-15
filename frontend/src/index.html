@@ -827,7 +827,6 @@
                     <div class="form-section">
                         <h3>Plan Details</h3>
                         <label>Plan Name: <input type="text" id="plan-name" required placeholder="Monthly EC2 RI Purchase"></label>
-                        <label>Description: <textarea id="plan-description" placeholder="Describe this purchase plan..."></textarea></label>
                     </div>
 
                     <div class="form-section">
@@ -877,15 +876,19 @@
                                     <option value="3" selected>3 Years</option>
                                 </select>
                             </label>
-                            <label>Payment:
-                                <select id="plan-payment">
-                                    <option value="no-upfront" selected>No Upfront</option>
-                                    <option value="partial-upfront">Partial Upfront</option>
-                                    <option value="all-upfront">All Upfront</option>
-                                </select>
-                            </label>
                         </div>
                         <label>Target Coverage (%): <input type="number" id="plan-coverage" value="80" min="0" max="100" inputmode="decimal" autocomplete="off"></label>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>Target Accounts <span aria-hidden="true" class="required-asterisk">*</span></h3>
+                        <p class="help-text">Required. Select at least one account this plan will purchase for. The Save button stays disabled until you add one.</p>
+                        <div class="plan-accounts-search">
+                            <input type="text" id="plan-account-search" placeholder="Search accounts to add...">
+                            <div id="plan-account-suggestions" class="account-suggestions hidden"></div>
+                        </div>
+                        <div id="plan-accounts-selected" class="selected-accounts"></div>
+                        <input type="hidden" id="plan-account-ids" value="">
                     </div>
 
                     <div class="form-section">
@@ -921,6 +924,19 @@
                         </div>
                     </div>
 
+                    <details id="plan-advanced-settings">
+                        <summary>Advanced settings</summary>
+                        <div class="form-section">
+                            <label>Payment:
+                                <select id="plan-payment">
+                                    <option value="no-upfront" selected>No Upfront</option>
+                                    <option value="partial-upfront">Partial Upfront</option>
+                                    <option value="all-upfront">All Upfront</option>
+                                </select>
+                            </label>
+                            <label>Description: <textarea id="plan-description" disabled aria-describedby="plan-description-help"></textarea></label>
+                            <p id="plan-description-help" class="help-text">Descriptions are unavailable and are not saved.</p>
+                        </div>
                     <div class="form-section">
                         <h3>Automation Settings</h3>
                         <div class="setting-row">
@@ -956,17 +972,7 @@
                             </div>
                         </div>
                     </div>
-
-                    <div class="form-section">
-                        <h3>Target Accounts <span aria-hidden="true" class="required-asterisk">*</span></h3>
-                        <p class="help-text">Required. Select at least one account this plan will purchase for. The Save button stays disabled until you add one.</p>
-                        <div class="plan-accounts-search">
-                            <input type="text" id="plan-account-search" placeholder="Search accounts to add...">
-                            <div id="plan-account-suggestions" class="account-suggestions hidden"></div>
-                        </div>
-                        <div id="plan-accounts-selected" class="selected-accounts"></div>
-                        <input type="hidden" id="plan-account-ids" value="">
-                    </div>
+                    </details>
 
                         </div>
                     </form>
