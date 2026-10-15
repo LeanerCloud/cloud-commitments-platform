@@ -26,7 +26,7 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
   const rebuild = field<HTMLButtonElement>('rebuild'), reset = field<HTMLButtonElement>('reset');
   let coverage: number;
   let state: EditorDraft | null = null, dirty: 'step' | 'range' | null = null;
-  const rebuildMessage = "Ramp changed. Rebuild proposed dates to replace your local date edits.";
+  const rebuildMessage = "Schedule settings changed. Rebuild proposed dates to replace your local date edits.";
   const error = (message: string): void => {
     try { buildLocalScheduleIntent(readPlanScheduleInput(form)); }
     catch (failure) { message = (failure as Error).message; }
@@ -90,10 +90,10 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     if (target.id === 'plan-coverage') {
       try { coverage = buildLocalScheduleIntent(readPlanScheduleInput(form)).coverage; if (!dirty && rebuild.hidden) error(''); paint(); }
       catch (failure) { error((failure as Error).message); }
-    } else if (target.name === 'ramp-schedule' || ['ramp-step-percent', 'ramp-interval-days'].includes(target.id)) {
+    } else if (target.name === 'ramp-schedule' || ['ramp-step-percent', 'ramp-interval-days', 'plan-notify-days'].includes(target.id)) {
       if (state && (dirty || draftDateChanges(state).length)) { rebuild.hidden = false; error(rebuildMessage); }
       else build();
-    } else if (!state && target.id === 'plan-notify-days') build();
+    }
   };
   const keydown = (event: KeyboardEvent): void => {
     if (event.key === 'Enter' && [date, start, end].includes(event.target as HTMLInputElement)) { event.preventDefault(); commit(); }
