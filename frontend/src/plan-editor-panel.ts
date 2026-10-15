@@ -48,7 +48,7 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     const dates = state.dates.map(value => { if (value === null) throw new Error('Enter a proposed date for every step.'); return value; });
     const context = state.context;
     if (context.kind !== 'create') throw new Error('Create draft context required.');
-    const points = dates.map((value, index) => ({ date: value, target: coverage * context.shares[index]! / 100 }));
+    const points = dates.map((value, index) => ({ step: index + 1, date: value, target: coverage * context.shares[index]! / 100 }));
     const frame = gestureFrame ?? schedulePlotFrame(dates), plot = host.querySelector('.schedule-preview-scroll')!;
     const svg = plot.querySelector<SVGSVGElement>('svg');
     if (svg && svg.querySelectorAll('[data-preview-step]').length === points.length) updateSchedulePlot(svg, points, frame, state.selected, true);

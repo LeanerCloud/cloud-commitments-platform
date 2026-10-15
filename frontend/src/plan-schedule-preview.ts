@@ -41,7 +41,7 @@ export function buildLocalScheduleIntent(input: PlanSchedulePreviewInput): { cov
 export function openPlanSchedulePreview(input: PlanSchedulePreviewInput, parent: HTMLElement): void {
   const { coverage, notificationDays: notice, dates: proposedDates, shares } = buildLocalScheduleIntent(input);
   const count = proposedDates.length;
-  const points = proposedDates.map((date, index) => ({ date, target: coverage * shares[index]! / 100 }));
+  const points = proposedDates.map((date, index) => ({ step: index + 1, date, target: coverage * shares[index]! / 100 }));
   const initialDates = points.map(point => point.date);
   let dates = [...initialDates], selected = 0;
   let dirty: 'step' | 'range' | null = null;
