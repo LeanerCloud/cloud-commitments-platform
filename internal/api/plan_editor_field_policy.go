@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -128,4 +130,153 @@ func (h *Handler) planEditorScheduledRevocationGrant(ctx context.Context, req *e
 		return h.planEditorOptionalGrant(ctx, req, session, auth.ActionRevokeOwn, auth.ResourcePurchases, sets)
 	}
 	return allowed, err
+}
+
+const (
+	PlanEditorUnsupportedField    PlanEditorReason = "unsupported_field"
+	PlanEditorUnsupportedSchedule PlanEditorReason = "unsupported_schedule"
+	PlanEditorAffectedRootFixed   PlanEditorReason = "affected_root_fixed"
+)
+
+type PlanEditorFieldRule struct {
+	Editable                          bool              `json:"editable"`
+	Reason                            *PlanEditorReason `json:"reason"`
+	RequiresApprovedEdits             bool              `json:"requires_approved_edits"`
+	RequiresProposedValueRevalidation bool              `json:"requires_proposed_value_revalidation"`
+}
+
+type PlanEditorFieldPolicy struct {
+	Controls         map[string]PlanEditorFieldRule            `json:"controls"`
+	Services         map[string]map[string]PlanEditorFieldRule `json:"services"`
+	CanChangeShape   bool                                      `json:"can_change_shape"`
+	ShapeLockReason  *PlanEditorReason                         `json:"shape_lock_reason"`
+	CanArmOrRaiseCap bool                                      `json:"can_arm_or_raise_cap"`
+}
+
+type planEditorFieldPolicyResult struct {
+	Fields                 PlanEditorFieldPolicy
+	Graph                  *PlanEditorProjection
+	GraphUnavailableReason *PlanEditorReason
+}
+
+func (h *Handler) buildPlanEditorFieldPolicy(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, snapshot *config.PlanEditorSnapshot, evaluatedAt time.Time) (*planEditorFieldPolicyResult, error) {
+	authority, err := h.buildPlanEditorMutationAuthority(ctx, req, session, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	graph, err := buildPlanEditorProjection(snapshot, authority.Roots, evaluatedAt)
+	if err != nil && !errors.Is(err, ErrPlanEditorUnsupportedSchedule) {
+		return nil, err
+	}
+	out := &planEditorFieldPolicyResult{Graph: graph}
+	if graph == nil {
+		out.GraphUnavailableReason = new(PlanEditorUnsupportedSchedule)
+	}
+	effective := planEditorEffectiveFieldRule(snapshot, graph, authority.CanUpdatePlan)
+	identity := planEditorIdentityFieldRule(snapshot, effective)
+	shape := identity
+	if graph == nil {
+		shape = planEditorLockedField(PlanEditorUnsupportedSchedule)
+	} else if !graph.StructuralShapeChangeAllowed {
+		shape = planEditorLockedField(*graph.ShapeLockReason)
+	}
+	ordinary := PlanEditorFieldRule{Editable: authority.CanUpdatePlan}
+	if !ordinary.Editable {
+		ordinary.Reason = new(PlanEditorPermissionDenied)
+	}
+	revalidated := ordinary
+	revalidated.RequiresProposedValueRevalidation = true
+	unsupported := planEditorLockedField(PlanEditorUnsupportedField)
+	out.Fields = PlanEditorFieldPolicy{
+		Controls: map[string]PlanEditorFieldRule{
+			"name": ordinary, "description": unsupported, "enabled": revalidated, "auto_purchase": revalidated,
+			"max_step_commitment": revalidated, "notification_days_before": effective,
+			"step_count": shape, "ramp_type": shape, "percent_per_step": shape, "step_interval_days": shape,
+			"start_date": shape, "target_accounts": identity, "allocation_mode": unsupported, "dates_managed": unsupported,
+		},
+		Services:       make(map[string]map[string]PlanEditorFieldRule, len(snapshot.Plan.Services)),
+		CanChangeShape: shape.Editable, ShapeLockReason: shape.Reason, CanArmOrRaiseCap: authority.CanArmOrRaiseCap,
+	}
+	for key := range snapshot.Plan.Services {
+		out.Fields.Services[key] = map[string]PlanEditorFieldRule{
+			"provider": identity, "service": identity, "enabled": effective, "term": identity, "payment": identity,
+			"coverage": effective, "ramp_schedule": shape, "include_engines": effective, "exclude_engines": effective,
+			"include_regions": effective, "exclude_regions": effective, "include_types": effective, "exclude_types": effective, "min_count": effective,
+		}
+	}
+	return out, nil
+}
+
+func planEditorLockedField(reason PlanEditorReason) PlanEditorFieldRule {
+	return PlanEditorFieldRule{Reason: &reason}
+}
+
+func planEditorEffectiveFieldRule(snapshot *config.PlanEditorSnapshot, graph *PlanEditorProjection, canUpdate bool) PlanEditorFieldRule {
+	if !canUpdate {
+		return planEditorLockedField(PlanEditorPermissionDenied)
+	}
+	if planEditorUnmappedAction(snapshot) {
+		return planEditorLockedField(PlanEditorAffectedRootFixed)
+	}
+	rule := PlanEditorFieldRule{Editable: true, RequiresProposedValueRevalidation: true}
+	if graph == nil {
+		if snapshot.Baseline != nil {
+			return planEditorLockedField(PlanEditorProgressOrBaseline)
+		}
+		return rule
+	}
+	for i := range graph.Steps {
+		slot := &graph.Steps[i]
+		if slot.LogicalCompleted {
+			continue
+		}
+		switch slot.Capability {
+		case PlanEditorReplacePending, PlanEditorNeedsCreation:
+		case PlanEditorApprovedToggleRequired:
+			rule.Editable, rule.RequiresApprovedEdits, rule.Reason = false, true, new(PlanEditorApprovedEditsDisabled)
+		default:
+			return planEditorLockedField(PlanEditorAffectedRootFixed)
+		}
+	}
+	return rule
+}
+
+func planEditorUnmappedAction(snapshot *config.PlanEditorSnapshot) bool {
+	ramp := &snapshot.Plan.RampSchedule
+	for i := range snapshot.Executions {
+		row := &snapshot.Executions[i]
+		if row.StepNumber > ramp.CurrentStep && row.StepNumber <= ramp.TotalSteps {
+			continue
+		}
+		if planEditorHarmlessTerminal(row) {
+			continue
+		}
+		if planEditorTerminalPrefix(row, ramp.CurrentStep) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func planEditorHarmlessTerminal(row *config.PurchaseExecution) bool {
+	switch row.Status {
+	case config.StatusCanceled, config.LegacyStatusCanceled, config.StatusExpired:
+		return !planEditorPriorAction(row)
+	default:
+		return false
+	}
+}
+
+func planEditorIdentityFieldRule(snapshot *config.PlanEditorSnapshot, effective PlanEditorFieldRule) PlanEditorFieldRule {
+	if snapshot.Plan.RampSchedule.CurrentStep > 0 || snapshot.Baseline != nil {
+		return planEditorLockedField(PlanEditorProgressOrBaseline)
+	}
+	return effective
+}
+
+func planEditorTerminalPrefix(row *config.PurchaseExecution, current int) bool {
+	return row.StepNumber > 0 && row.StepNumber <= current &&
+		(row.Status == config.StatusCompleted || row.Status == config.StatusPartiallyCompleted) &&
+		row.CompletedAt != nil && !row.CompletedAt.IsZero()
 }
