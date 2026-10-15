@@ -28,7 +28,10 @@ func (s *PostgresStore) createPurchasePlan(ctx context.Context, executor globalC
 	if err != nil {
 		return fmt.Errorf("failed to marshal ramp_schedule: %w", err)
 	}
+	return s.insertPurchasePlanJSON(ctx, executor, plan, servicesJSON, rampScheduleJSON)
+}
 
+func (s *PostgresStore) insertPurchasePlanJSON(ctx context.Context, executor globalConfigExecutor, plan *PurchasePlan, servicesJSON, rampScheduleJSON []byte) error {
 	query := `
 		INSERT INTO purchase_plans (
 			id, name, enabled, auto_purchase, notification_days_before,
@@ -40,7 +43,7 @@ func (s *PostgresStore) createPurchasePlan(ctx context.Context, executor globalC
 	`
 
 	var updatedAt time.Time
-	err = executor.QueryRow(ctx, query,
+	err := executor.QueryRow(ctx, query,
 		plan.ID,
 		plan.Name,
 		plan.Enabled,
