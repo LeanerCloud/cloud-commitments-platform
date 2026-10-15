@@ -166,6 +166,13 @@ func TestPGXMock_CompletePlanStep_LocksAndAdvances(t *testing.T) {
 	mock.ExpectQuery(`SELECT[\s\S]*FROM purchase_plans[\s\S]*WHERE id = \$1 FOR UPDATE`).
 		WithArgs("plan-123").
 		WillReturnRows(rampPlanRows(t, "plan-123", ramp, now, stale, sql.NullTime{Valid: false}))
+	// The guard locks the row, then the JSON merge re-locks it and reads its stored JSON before the UPDATE.
+	mock.ExpectQuery(`SELECT[\s\S]*FROM purchase_plans[\s\S]*WHERE id = \$1 FOR UPDATE`).
+		WithArgs("plan-123").
+		WillReturnRows(rampPlanRows(t, "plan-123", ramp, now, stale, sql.NullTime{Valid: false}))
+	mock.ExpectQuery(`SELECT services,ramp_schedule FROM purchase_plans`).
+		WithArgs("plan-123").
+		WillReturnRows(pgxmock.NewRows([]string{"services", "ramp_schedule"}).AddRow([]byte(`{}`), mustJSON(t, ramp)))
 	mock.ExpectQuery(`UPDATE purchase_plans`).
 		WithArgs(completeStepUpdateArgs(2, stale, false)...).
 		WillReturnRows(pgxmock.NewRows([]string{"updated_at"}).AddRow(now))
@@ -365,6 +372,13 @@ func TestPGXMock_CompletePlanStep_CompletedRampClearsNextDate(t *testing.T) {
 		WillReturnRows(rampPlanRows(t, "plan-done", ramp, now, stale, sql.NullTime{Valid: true, Time: now}))
 	// Step stays at 4 (already complete), updated_at refreshed, and
 	// next_execution_date is cleared.
+	// UpdatePurchasePlanTx re-locks the row and reads its stored JSON before the UPDATE.
+	mock.ExpectQuery(`SELECT[\s\S]*FROM purchase_plans[\s\S]*WHERE id = \$1 FOR UPDATE`).
+		WithArgs("plan-done").
+		WillReturnRows(rampPlanRows(t, "plan-done", ramp, now, stale, sql.NullTime{Valid: true, Time: now}))
+	mock.ExpectQuery(`SELECT services,ramp_schedule FROM purchase_plans`).
+		WithArgs("plan-done").
+		WillReturnRows(pgxmock.NewRows([]string{"services", "ramp_schedule"}).AddRow([]byte(`{}`), mustJSON(t, ramp)))
 	mock.ExpectQuery(`UPDATE purchase_plans`).
 		WithArgs(completeStepUpdateArgs(4, stale, true)...).
 		WillReturnRows(pgxmock.NewRows([]string{"updated_at"}).AddRow(now))
@@ -388,4 +402,11 @@ func TestPGXMock_CompletePlanStep_LockErrorRollsBack(t *testing.T) {
 	err := store.CompletePlanStep(ctx, "plan-err", 2)
 	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func mustJSON(t *testing.T, v interface{}) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
 }

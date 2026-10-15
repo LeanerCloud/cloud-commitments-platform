@@ -616,11 +616,11 @@ func TestPGXMock_UpdatePurchasePlan_NotFound(t *testing.T) {
 
 	plan := &PurchasePlan{ID: "missing-id", Services: map[string]ServiceConfig{}, RampSchedule: RampSchedule{}}
 	mock.ExpectBegin()
+	// UpdatePurchasePlan locks, then UpdatePurchasePlanTx locks again to read
+	// the stored JSON; both miss, and the second maps the miss to ErrNotFound
+	// before any UPDATE is issued.
 	mock.ExpectQuery("FOR UPDATE").WithArgs("missing-id").WillReturnError(pgx.ErrNoRows)
-	mock.ExpectQuery("UPDATE").WithArgs(anyArgsCfg(12)...).
-		WillReturnRows(pgxmock.NewRows([]string{"updated_at"}))
-	mock.ExpectQuery("SELECT EXISTS").WithArgs("missing-id").
-		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery("FOR UPDATE").WithArgs("missing-id").WillReturnError(pgx.ErrNoRows)
 	mock.ExpectRollback()
 
 	err := store.UpdatePurchasePlan(ctx, plan)
