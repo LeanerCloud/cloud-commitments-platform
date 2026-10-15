@@ -167,7 +167,7 @@ func TestPlanEditorProjectionShapeAndComposition(t *testing.T) {
 			s.Executions = append(s.Executions, duplicate)
 		}
 		g = graphResult(t, s, a, now)
-		p := buildPlanEditorStepPolicy(s.Executions, 1, a, now)
+		p := buildPlanEditorStepPolicy(s.Executions, 1, a, now, nil)
 		require.Equal(t, p.Capability, g.Steps[0].Capability)
 		require.Equal(t, p.RequiresApprovedEdits, g.Steps[0].RequiresApprovedEdits)
 		if !p.StructuralChangeAllowed {
