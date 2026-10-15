@@ -55,10 +55,19 @@ func TestAWSRecommendationSourceAccountPersistence(t *testing.T) {
 	require.NoError(t, container.DB.Pool().QueryRow(ctx, "SELECT source_account_key FROM recommendations").Scan(&key))
 	require.Equal(t, *records[0].SourceAccountID, key)
 	require.Error(t, store.UpsertRecommendations(ctx, at.Add(time.Hour), records[:2], nil))
+	require.Error(t, store.UpsertRecommendations(ctx, at.Add(time.Hour), records[1:2], nil))
 	rows, err = store.ListStoredRecommendations(ctx, config.RecommendationFilter{})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, records[0].SourceAccountID, rows[0].SourceAccountID)
+	sameSource := records[0]
+	sameSource.Count = 7
+	require.NoError(t, store.UpsertRecommendations(ctx, at.Add(time.Hour), []config.RecommendationRecord{sameSource}, nil))
+	rows, err = store.ListStoredRecommendations(ctx, config.RecommendationFilter{})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, 7, rows[0].Count)
+	require.Equal(t, sameSource.SourceAccountID, rows[0].SourceAccountID)
 	for _, req := range fixture.requests {
 		if req.Operation == "AWSInsightsIndexService.GetReservationPurchaseRecommendation" {
 			require.Equal(t, "LINKED", req.AccountScope)

@@ -3,6 +3,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -1116,6 +1117,9 @@ func recommendationID(rec config.RecommendationRecord) (string, error) {
 		// AWS platform is the raw CE string, so the ID can contain "/" and
 		// spaces.
 		id += "|" + ci.Platform + "|" + ci.Tenancy
+	}
+	if rec.SourceAccountID != nil && *rec.SourceAccountID != "" {
+		return "source-v1:" + base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(len(id))+":"+id+*rec.SourceAccountID)), nil
 	}
 	return id, nil
 }

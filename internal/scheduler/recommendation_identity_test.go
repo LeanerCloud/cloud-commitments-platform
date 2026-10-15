@@ -89,7 +89,9 @@ func TestRecommendationIdentity_Tagging(t *testing.T) {
 			assert.Equal(t, want, s.tagAccount(first, *first[0].CloudAccountID)[0].ID)
 			rec.Account = "provider-reported-account"
 			changed := s.convertRecommendations([]common.Recommendation{rec}, cloud)
-			assert.Equal(t, want, s.tagAccount(changed, *first[0].CloudAccountID)[0].ID)
+			known := s.tagAccount(changed, *first[0].CloudAccountID)
+			assert.NotEqual(t, want, known[0].ID)
+			assert.Equal(t, known[0].ID, s.tagAccount(known, *first[0].CloudAccountID)[0].ID)
 			retagged := s.tagAccount(first, "22222222-2222-4222-8222-222222222222")
 			assert.Equal(t, cloud+"|22222222-2222-4222-8222-222222222222|ec2|region|sku||1|"+payment, retagged[0].ID)
 		})

@@ -64,7 +64,8 @@ func (s *PostgresStore) ReplaceRecommendations(ctx context.Context, collectedAt 
 
 // UpsertRecommendations is the incremental write path: it upserts each row
 // by natural key (cloud_account_id, provider, service, region,
-// resource_type, engine, term, payment_option, availability_zone, platform, tenancy) and then evicts stale rows for the
+// resource_type, engine, term, payment_option, availability_zone, platform, tenancy, source_account_key)
+// and then evicts stale rows for the
 // set of (provider, account) pairs that successfully collected in this run.
 // Pairs whose collection failed are NOT in successfulCollects and their
 // stale rows stay — callers see older data with a banner rather than a
@@ -74,8 +75,8 @@ func (s *PostgresStore) ReplaceRecommendations(ctx context.Context, collectedAt 
 // so per-rec ON CONFLICT no longer collides on SQLSTATE 21000. Migration
 // 000109 added availability_zone, a GENERATED column derived from payload that
 // is never written here. Migration 000111 added the platform and tenancy
-// generated columns the same way; the upsert arbiter is the 11-column
-// recommendations_natural_key_az_tp_idx (issues #792, #806).
+// generated columns the same way; migration 000120 adds source_account_key.
+// The upsert arbiter is recommendations_natural_key_source_idx.
 //
 // The eviction predicate uses (provider, account_key) IN (unnest($2, $3))
 // where account_key matches the generated column on the table — nil
@@ -232,7 +233,7 @@ func insertRecommendationsBatch(ctx context.Context, tx pgx.Tx, collectedAt time
 
 	if onConflict {
 		query += `
-			ON CONFLICT (account_key, provider, service, region, resource_type, engine, term, payment_option, availability_zone, platform, tenancy)
+			ON CONFLICT (account_key, provider, service, region, resource_type, engine, term, payment_option, availability_zone, platform, tenancy, source_account_key)
 			DO UPDATE SET
 			    payload         = EXCLUDED.payload,
 			    upfront_cost    = EXCLUDED.upfront_cost,
