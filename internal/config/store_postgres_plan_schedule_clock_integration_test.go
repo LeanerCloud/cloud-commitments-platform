@@ -184,5 +184,5 @@ func TestManagedCompletionFinishedAndLegacyClock(t *testing.T) {
 	plan, err = legacy.store.GetPurchasePlan(ctx, legacy.planID)
 	require.NoError(t, err)
 	require.NotNil(t, plan.NextExecutionDate)
-	require.True(t, plan.RampSchedule.GetNextPurchaseDate().Equal(*plan.NextExecutionDate))
+	require.WithinDuration(t, plan.RampSchedule.GetNextPurchaseDate(), *plan.NextExecutionDate, time.Millisecond) // Postgres stores microseconds
 }
