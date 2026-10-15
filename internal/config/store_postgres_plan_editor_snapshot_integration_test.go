@@ -193,3 +193,48 @@ func TestPlanEditorSnapshot_CompleteOrFailBound(t *testing.T) {
 	require.Nil(t, s, "oversize history must not return a partial graph")
 	require.Empty(t, f.committed(ctx, t), "existing unbounded ledger still succeeds")
 }
+
+func TestPlanEditorRevision_ActualPersistedABA(t *testing.T) {
+	ctx := context.Background()
+	f := newRampFixture(ctx, t, 1, 0, 4)
+	e := f.rowWithRecs(ctx, t, 1, &f.accounts[0], "pending", false, baselineRec(f.accounts[0], "m5.large", 20))
+	read := func() (*PlanEditorSnapshot, string) {
+		s, err := f.store.ReadPlanEditorSnapshot(ctx, f.planID)
+		require.NoError(t, err)
+		revision, err := s.Revision()
+		require.NoError(t, err)
+		return s, revision
+	}
+	initial, initialRevision := read()
+	repeated, repeatedRevision := read()
+	require.Equal(t, initial, repeated)
+	require.Equal(t, initialRevision, repeatedRevision)
+	edited := *initial.Plan
+	edited.Name += " changed"
+	require.NoError(t, f.store.UpdatePurchasePlan(ctx, &edited))
+	changed, changedRevision := read()
+	require.True(t, changed.Plan.UpdatedAt.After(initial.Plan.UpdatedAt))
+	require.NotEqual(t, initialRevision, changedRevision)
+	edited.Name = initial.Plan.Name
+	require.NoError(t, f.store.UpdatePurchasePlan(ctx, &edited))
+	restored, restoredRevision := read()
+	require.True(t, restored.Plan.UpdatedAt.After(changed.Plan.UpdatedAt))
+	require.NotEqual(t, changedRevision, restoredRevision)
+	require.NotEqual(t, initialRevision, restoredRevision, "restored plan content retains its advanced row version")
+	content := *restored.Plan
+	content.UpdatedAt = initial.Plan.UpdatedAt
+	require.Equal(t, initial.Plan, &content)
+	e.Error = "intermediate execution state"
+	require.NoError(t, f.store.SavePurchaseExecution(ctx, e))
+	executionChanged, executionChangedRevision := read()
+	require.False(t, executionChanged.executionVersions[0].UpdatedAt.Equal(restored.executionVersions[0].UpdatedAt))
+	require.NotEqual(t, restoredRevision, executionChangedRevision)
+	e.Error = ""
+	require.NoError(t, f.store.SavePurchaseExecution(ctx, e))
+	executionRestored, executionRestoredRevision := read()
+	require.False(t, executionRestored.executionVersions[0].UpdatedAt.Equal(executionChanged.executionVersions[0].UpdatedAt))
+	require.Equal(t, restored.Executions, executionRestored.Executions)
+	require.Equal(t, restored.Plan, executionRestored.Plan)
+	require.NotEqual(t, executionChangedRevision, executionRestoredRevision)
+	require.NotEqual(t, restoredRevision, executionRestoredRevision, "observed execution version change survives restored content")
+}
