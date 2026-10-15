@@ -24,6 +24,7 @@ import type { RecommendationsResponse, LocalRecommendation, RecommendationsSumma
 import { openModal } from './modal';
 import { showSkeletonRows, teardownSkeleton } from './lib/skeleton';
 import { canAccess } from './permissions';
+import { mountRecommendationArchera } from './recommendation-archera-comparison';
 
 // Issue #869: true when the current session can take any action on
 // recommendations (purchase or plan). Readonly/viewer sessions have neither
@@ -5020,6 +5021,7 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
       renderRecommendationsList(loadedRecs);
     });
   });
+  void mountRecommendationArchera(container);
 }
 
 // Resolve a priced override, valid own payment, or priced legacy fallback.

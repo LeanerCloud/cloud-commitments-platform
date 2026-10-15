@@ -3,7 +3,7 @@
  */
 
 import { apiRequest } from './client';
-import type { ArcheraComparison, InsuranceStatus } from './types';
+import type { ArcheraComparison, InsuranceStatus, RecommendationArcheraComparison } from './types';
 
 /** Reports whether the comparison is configured. Makes no vendor call. */
 export async function getInsuranceStatus(): Promise<InsuranceStatus> {
@@ -13,4 +13,8 @@ export async function getInsuranceStatus(): Promise<InsuranceStatus> {
 /** Fetches the Archera comparison now. One vendor request per call, no caching. */
 export async function getInsuranceComparison(): Promise<ArcheraComparison> {
   return apiRequest<ArcheraComparison>('/insurance/comparison');
+}
+
+export async function getRecommendationInsuranceComparison(id: string): Promise<RecommendationArcheraComparison> {
+  return apiRequest<RecommendationArcheraComparison>(`/insurance/comparison?recommendation_id=${encodeURIComponent(id)}`);
 }
