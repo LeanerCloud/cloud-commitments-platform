@@ -1,7 +1,9 @@
 package config
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -21,6 +23,7 @@ type PlanEditorSnapshot struct {
 	Plan              *PurchasePlan
 	AccountIDs        []string
 	Executions        []PurchaseExecution
+	LedgerState       PlanEditorLedgerState
 	Baseline          PlanRampBaseline
 	Committed         map[string]PlanRampQuantity
 	Accounts          []PlanEditorAccount
@@ -82,7 +85,7 @@ func (s *PostgresStore) readPlanEditorExecutionStateTx(ctx context.Context, tx p
 	if len(out.Executions) > MaxListLimit {
 		return ErrPlanEditorUnsupportedSize
 	}
-	out.Baseline, err = s.GetPlanRampBaselineTx(ctx, tx, out.Plan.ID)
+	err = readPlanEditorBaselineTx(ctx, tx, out)
 	if err != nil {
 		return err
 	}
@@ -183,4 +186,49 @@ func planEditorIdentityAccount(key string) (string, error) {
 type planEditorExecutionVersion struct {
 	ID        string
 	UpdatedAt time.Time
+}
+
+func readPlanEditorBaselineTx(ctx context.Context, tx pgx.Tx, out *PlanEditorSnapshot) error {
+	var raw []byte
+	if err := tx.QueryRow(ctx, `SELECT ramp_baseline, ramp_ledger_state FROM purchase_plans WHERE id=$1`, out.Plan.ID).Scan(&raw, &out.LedgerState); err != nil {
+		return err
+	}
+	var err error
+	out.Baseline, err = decodePlanEditorBaseline(raw)
+	return err
+}
+
+func decodePlanEditorBaseline(raw []byte) (PlanRampBaseline, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	var fields map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, errors.New("plan editor baseline must be an object")
+	}
+	for _, quantity := range fields {
+		if !planEditorQuantityFieldsValid(quantity) {
+			return nil, errors.New("plan editor baseline quantity has invalid fields")
+		}
+	}
+	var baseline PlanRampBaseline
+	if err := json.Unmarshal(raw, &baseline); err != nil {
+		return nil, err
+	}
+	return baseline, nil
+}
+
+func planEditorQuantityFieldsValid(fields map[string]json.RawMessage) bool {
+	if fields["count"] == nil {
+		return false
+	}
+	for name, raw := range fields {
+		if name != "count" && name != "hourly" || bytes.Equal(raw, []byte("null")) {
+			return false
+		}
+	}
+	return true
 }
