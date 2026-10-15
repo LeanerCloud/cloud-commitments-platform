@@ -1934,6 +1934,7 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 		// approval_token_hash is NULL on rows migration 000100 found with no
 		// raw token (every canceled row among them).
 		var approvalTokenHash sql.NullString
+		var executionError sql.NullString
 
 		err := rows.Scan(
 			&planID,
@@ -1947,7 +1948,7 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 			&exec.TotalUpfrontCost,
 			&exec.EstimatedSavings,
 			&completedAt,
-			&exec.Error,
+			&executionError,
 			&expiresAt,
 			&exec.CloudAccountID,
 			&exec.Source,
@@ -1976,6 +1977,7 @@ func scanExecutionRows(rows pgx.Rows) ([]PurchaseExecution, error) {
 			exec.IdempotencyKey = idempotencyKey.String
 		}
 		exec.ApprovalToken = approvalTokenHash.String
+		exec.Error = executionError.String
 
 		// Unmarshal recommendations
 		if err := json.Unmarshal(recommendationsJSON, &exec.Recommendations); err != nil {
