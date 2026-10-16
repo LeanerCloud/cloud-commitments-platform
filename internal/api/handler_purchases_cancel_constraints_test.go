@@ -420,3 +420,24 @@ func TestDeletePlannedPurchase_ConstraintStoreErrorDoesNotFallBack(t *testing.T)
 	require.ErrorIs(t, err, boom)
 	store.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
+
+func TestDeletePlannedPurchase_APIKeyVerbProbeErrorRefuses(t *testing.T) {
+	t.Parallel()
+	boom := errors.New("key store down")
+	owner, keyID := revokeConstraintsUser, "key-1"
+	exec := cancelRouteExec("pending")
+	exec.CreatedByUserID = &owner
+	store := new(MockConfigStore)
+	store.On("GetExecutionByID", mock.Anything, cancelExecID).Return(exec, nil)
+	m := new(MockAuthService)
+	m.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key-value", auth.ActionDelete, auth.ResourcePurchases).Return(owner, keyID, true, nil)
+	m.On("GetAllowedAccountsAPI", mock.Anything, owner).Return([]string{}, nil)
+	m.On("HasPermissionAPI", mock.Anything, owner, mock.Anything, auth.ResourcePurchases).Return(false, nil).Maybe()
+	m.On("HasAPIKeyPermissionForConstraintsAPI", mock.Anything, keyID, owner, auth.ActionCancelOwn, auth.ResourcePurchases, []auth.PermissionConstraints{{}}).Return(false, boom)
+
+	h := &Handler{config: store, auth: m}
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"x-api-key": "user-key-value"}}
+	_, err := h.deletePlannedPurchase(context.Background(), req, cancelExecID)
+	require.ErrorIs(t, err, boom)
+	store.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
