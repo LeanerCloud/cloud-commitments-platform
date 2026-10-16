@@ -157,7 +157,7 @@ func TestPlanScheduleCommandSlotsMatchThePoolMinusOne(t *testing.T) {
 	ctx := context.Background()
 	f := newPersistFixture(ctx, t)
 	maxConns := f.store.db.(*database.Connection).Pool().Config().MaxConns
-	require.Equal(t, max(1, int(maxConns)-1), cap(f.store.commandSlots))
+	require.Equal(t, int(maxConns)-1, cap(f.store.commandSlots))
 }
 
 // blockingCommand holds the store's only slot inside build until release is closed.
