@@ -154,6 +154,7 @@ type PlanEditorFieldPolicy struct {
 }
 
 type planEditorFieldPolicyResult struct {
+	CanUpdatePlan          bool
 	Fields                 PlanEditorFieldPolicy
 	Graph                  *PlanEditorProjection
 	GraphUnavailableReason *PlanEditorReason
@@ -168,7 +169,7 @@ func (h *Handler) buildPlanEditorFieldPolicy(ctx context.Context, req *events.La
 	if err != nil && !errors.Is(err, ErrPlanEditorUnsupportedSchedule) {
 		return nil, err
 	}
-	out := &planEditorFieldPolicyResult{Graph: graph}
+	out := &planEditorFieldPolicyResult{Graph: graph, CanUpdatePlan: authority.CanUpdatePlan}
 	if graph == nil {
 		out.GraphUnavailableReason = new(PlanEditorUnsupportedSchedule)
 	}

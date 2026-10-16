@@ -6,7 +6,11 @@ import "net/http"
 // legacy write refused because the plan is owned by the schedule editor.
 const codeEditorReconciliationRequired = "editor_reconciliation_required"
 
-const codeInvalidRequest = "invalid_request"
+const (
+	codeInvalidRequest    = "invalid_request"
+	codePermissionDenied  = "permission_denied"
+	codeEditorFieldLocked = "editor_field_locked"
+)
 
 // planEditorInvalid is a 400 for a request the editor cannot apply as written.
 func planEditorInvalid(msg string) error {
