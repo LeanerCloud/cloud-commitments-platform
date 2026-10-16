@@ -192,10 +192,12 @@ describe('Plans Module', () => {
           <input type="number" id="plan-notify-days" value="3">
           <input type="checkbox" id="plan-enabled" checked>
           <input type="text" id="plan-max-step-commitment" value="No cap" disabled>
+          <div class="ramp-options">
           <input type="radio" name="ramp-schedule" value="immediate" checked>
           <input type="radio" name="ramp-schedule" value="weekly-25pct">
           <input type="radio" name="ramp-schedule" value="monthly-10pct">
           <input type="radio" name="ramp-schedule" value="custom">
+          </div>
           <div id="custom-ramp-config" class="hidden">
             <input type="number" id="ramp-step-percent" value="20">
             <input type="number" id="ramp-interval-days" value="7">

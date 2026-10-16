@@ -31,6 +31,29 @@ function restoreSavingsPlanOptions(select: HTMLSelectElement | null): void {
   });
 }
 
+const RAMP_PRESETS: ReadonlyArray<readonly [string, number, number]> = [['immediate', 100, 0], ['weekly-25pct', 25, 7], ['monthly-10pct', 10, 30]];
+const RAMP_UNAVAILABLE = 'Changing the ramp of an existing plan is not available yet';
+
+function fillEditRamp(form: HTMLFormElement, ramp: PlanEditorResponse['plan']['ramp_schedule']): HTMLInputElement {
+  const equal = ramp.allocation_mode === 'equal_count';
+  const preset = ramp.type === 'immediate' ? 'immediate' : equal ? 'custom' : RAMP_PRESETS.find(([, percent, days]) => percent === ramp.percent_per_step && days === ramp.step_interval_days)?.[0] ?? 'custom';
+  const radios = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="ramp-schedule"]'));
+  radios.forEach(radio => { radio.checked = radio.value === preset; });
+  const field = (id: string): HTMLInputElement => form.querySelector<HTMLInputElement>(`#${id}`)!;
+  field('ramp-step-percent').value = String(equal ? Math.round(ramp.percent_per_step * 100) / 100 : ramp.percent_per_step); field('ramp-interval-days').value = String(ramp.step_interval_days);
+  form.querySelector('#custom-ramp-config')?.classList.toggle('hidden', preset !== 'custom');
+  return radios.find(radio => radio.checked)!;
+}
+
+function resetEditRamp(form: HTMLFormElement): void {
+  form.querySelectorAll<HTMLInputElement>('input[name="ramp-schedule"],#ramp-step-percent,#ramp-interval-days').forEach(item => {
+    item.checked = item.defaultChecked; item.value = item.defaultValue;
+  });
+  form.querySelector('#custom-ramp-config')?.classList.add('hidden');
+  const group = form.querySelector('.ramp-options');
+  ['role', 'aria-labelledby', 'aria-describedby'].forEach(name => group?.removeAttribute(name));
+}
+
 export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse, hooks: EditFormHooks): EditFormHandle {
   const control = (id: string): HTMLInputElement => {
     const found = form.querySelector<HTMLInputElement>(`#${id}`);
@@ -39,6 +62,7 @@ export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse
   };
   const wasDisabled = new Map(Array.from(form.querySelectorAll<HTMLInputElement>('input,select,textarea')).map(item => [item, item.disabled]));
   const planReasons: HTMLElement[] = [], serviceReasons: HTMLElement[] = [];
+  let rampRadio: HTMLInputElement | undefined;
   const listeners = new Set<() => void>(), cleanups: Array<() => void> = [];
   const clear = (bucket: HTMLElement[]): void => bucket.splice(0).forEach(reason => {
     document.getElementById(reason.id.replace(/-reason$/, ''))?.removeAttribute('aria-describedby'); reason.remove();
@@ -59,6 +83,7 @@ export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse
   const dispose = (): void => {
     cleanups.splice(0).forEach(cleanup => cleanup());
     clear(planReasons); clear(serviceReasons); restoreSavingsPlanOptions(form.querySelector<HTMLSelectElement>('#plan-service'));
+    if (rampRadio) { rampRadio.removeAttribute('id'); resetEditRamp(form); }
     wasDisabled.forEach((value, item) => { item.disabled = value; });
   };
   try {
@@ -122,6 +147,14 @@ export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse
     const accounts = policy.controls['target_accounts'] ?? lockedByDefault;
     apply(control('plan-account-search'), accounts, planReasons, form.querySelector('.plan-accounts-search'), 'Target accounts');
     form.querySelectorAll<HTMLButtonElement>('.selected-accounts button').forEach(button => { button.disabled = !accounts.editable; });
+    rampRadio = fillEditRamp(form, plan.ramp_schedule); rampRadio.id = 'plan-ramp-schedule';
+    const rampLock = policy.controls['step_count'];
+    const group = form.querySelector('.ramp-options')!, ramp = plan.ramp_schedule;
+    apply(rampRadio, rampLock && !rampLock.editable ? rampLock : lockedByDefault, planReasons, group, 'Ramp-up schedule', rampLock && !rampLock.editable ? undefined : RAMP_UNAVAILABLE);
+    const rampReason = planReasons[planReasons.length - 1]!;
+    if (ramp.allocation_mode === 'equal_count') rampReason.textContent += `${rampReason.textContent!.endsWith('.') ? '' : '.'} Equal-count ramp: ${ramp.total_steps} ${ramp.total_steps === 1 ? 'step' : 'steps'}.`;
+    rampRadio.removeAttribute('aria-describedby');
+    group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-labelledby', 'plan-ramp-heading'); group.setAttribute('aria-describedby', rampReason.id);
     if (current) paint(current);
     last = JSON.stringify(patch());
     const record = (): void => {

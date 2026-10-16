@@ -121,6 +121,18 @@ describe('Edit then Create', () => {
     expect(el<HTMLSelectElement>('plan-term').disabled).toBe(false);
   });
 
+  test('an Edit ramp does not leak into New Plan', async () => {
+    await openEdit(editorResponse());
+    expect((document.querySelector('input[name="ramp-schedule"]:checked') as HTMLInputElement).value).toBe('custom');
+    closePlanModal();
+    openNewPlanModal();
+    expect((document.querySelector('input[name="ramp-schedule"]:checked') as HTMLInputElement).value).toBe('immediate');
+    expect(Array.from(document.querySelectorAll<HTMLInputElement>('input[name="ramp-schedule"],#ramp-step-percent,#ramp-interval-days')).some(item => item.disabled)).toBe(false);
+    expect(el('custom-ramp-config').classList.contains('hidden')).toBe(true);
+    expect(el<HTMLInputElement>('ramp-interval-days').value).toBe('7');
+    expect(document.getElementById('plan-ramp-schedule-reason')).toBeNull();
+  });
+
   test('New Plan after an Azure Edit opens with Create defaults', async () => {
     await openEdit(azureEditor());
     expect(el<HTMLSelectElement>('plan-provider').value).toBe('azure');

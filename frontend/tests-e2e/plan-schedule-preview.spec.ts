@@ -200,6 +200,8 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     await expect(edit.locator('#plan-form')).toBeVisible();
     await expect(edit.locator('#plan-name')).toHaveValue('Existing plan');
     await expect(edit.locator('#plan-term')).toBeDisabled();
+    const card = edit.locator('label.ramp-option').first();
+    expect(await card.evaluate(element => { const style = getComputedStyle(element); return [style.opacity, style.cursor]; })).toEqual(['0.6', 'not-allowed']);
     await expect(edit.locator('#plan-max-step-commitment-reason')).toHaveText('Per-step cap editing is not available yet');
     const storedBox = (await stored.boundingBox())!, formBox = (await edit.locator('#plan-form').boundingBox())!;
     if (width > 800) { expect(storedBox.x + storedBox.width).toBeLessThanOrEqual(formBox.x); expect(Math.round(formBox.width)).toBe(300); }
@@ -240,6 +242,7 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     await expect(page.locator('#plan-provider')).toHaveValue('aws');
     await expect(page.locator('#plan-term')).toHaveValue('3');
     await expect(page.locator('#plan-payment')).toHaveValue('no-upfront');
+    expect(await parent.locator('label.ramp-option').first().evaluate(element => { const style = getComputedStyle(element); return [style.opacity, style.cursor]; })).toEqual(['1', 'pointer']);
     const dense = parent.locator('#plan-editor-panel');
     await parent.locator('label.ramp-option').filter({ hasText: 'Define your own schedule' }).click();
     await page.locator('#ramp-step-percent').fill('1');

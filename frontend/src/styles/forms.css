@@ -309,6 +309,15 @@ input:checked + .slider:before {
     background: var(--cudly-info-bg);
 }
 
+.ramp-option:has(input:disabled) {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.ramp-option:has(input:disabled):hover:not(:has(input:checked)) {
+    border-color: var(--cudly-border-strong);
+}
+
 .ramp-label {
     font-weight: 600;
     color: var(--cudly-text);
