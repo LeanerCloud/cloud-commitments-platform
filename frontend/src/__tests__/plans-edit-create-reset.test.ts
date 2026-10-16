@@ -53,6 +53,7 @@ const openEdit = async (editor: PlanEditorResponse): Promise<void> => {
   await loadPlans();
   document.querySelector<HTMLButtonElement>('[data-action="edit-plan"]')!.click(); await flush();
 };
+const createReasons = (): string[] => Array.from(document.querySelectorAll('#plan-form p[id$="-reason"]:not(#plan-max-step-commitment-reason)')).map(node => node.id);
 const createDefaults = (): void => {
   expect(el<HTMLSelectElement>('plan-provider').value).toBe('aws');
   expect(el<HTMLSelectElement>('plan-service').value).toBe('ec2');
@@ -106,9 +107,9 @@ describe('Edit then Create', () => {
     expect(document.getElementById('plan-account-search-reason')).toBeNull();
     closePlanModal();
     openNewPlanModal();
-    expect(sp.disabled).toBe(false); expect(sp.textContent).toBe('Compute SP');
-    expect(document.querySelectorAll('#plan-form p[id$="-reason"]:not(#plan-max-step-commitment-reason)')).toHaveLength(0);
-    expect(document.querySelectorAll('#plan-form [aria-describedby$="-reason"]:not(#plan-max-step-commitment)')).toHaveLength(0);
+    expect(sp.disabled).toBe(true); expect(sp.textContent).toBe('Compute SP (Savings Plans are not supported yet)');
+    expect(createReasons()).toEqual(['plan-auto-purchase-reason']);
+    expect(document.querySelectorAll(`#plan-form [aria-describedby$="-reason"]:not(#plan-max-step-commitment):not(#plan-auto-purchase)`)).toHaveLength(0);
     expect(el<HTMLInputElement>('plan-coverage').disabled).toBe(false);
   });
 
@@ -117,8 +118,31 @@ describe('Edit then Create', () => {
     expect(el('plan-term-reason')).not.toBeNull();
     closePlanModal();
     openNewPlanModal();
-    expect(document.querySelectorAll('#plan-form p[id$="-reason"]:not(#plan-max-step-commitment-reason)')).toHaveLength(0);
+    expect(createReasons()).toEqual(['plan-auto-purchase-reason']);
     expect(el<HTMLSelectElement>('plan-term').disabled).toBe(false);
+  });
+
+  test('Create shows the SP note even with no account selected', () => {
+    openNewPlanModal();
+    const select = el<HTMLSelectElement>('plan-service');
+    select.value = 'savings-plans-compute'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(el('plan-create-reason').textContent).toBe('Savings Plans are not supported in the schedule editor');
+    expect((Array.from(el<HTMLFormElement>('plan-form').elements).find(item => (item as HTMLButtonElement).type === 'submit') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('the Create guards are removed on close and do not reach the next Edit', async () => {
+    openNewPlanModal();
+    expect(el<HTMLInputElement>('plan-auto-purchase').disabled).toBe(true);
+    const sp = Array.from(el<HTMLSelectElement>('plan-service').options).find(option => option.value === 'savings-plans-compute')!;
+    expect(sp.disabled).toBe(true);
+    closePlanModal();
+    expect(el<HTMLInputElement>('plan-auto-purchase').disabled).toBe(false);
+    expect(sp.disabled).toBe(false); expect(sp.textContent).toBe('Compute SP');
+    expect(document.getElementById('plan-create-reason')).toBeNull();
+    expect(createReasons()).toEqual([]);
+    await openEdit(editorResponse());
+    expect(document.getElementById('plan-create-reason')).toBeNull();
+    expect(el<HTMLInputElement>('plan-auto-purchase').disabled).toBe(true); // Edit's own policy, not a Create guard
   });
 
   test('an Edit ramp does not leak into New Plan', async () => {

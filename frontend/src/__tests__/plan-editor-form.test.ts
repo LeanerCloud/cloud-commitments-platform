@@ -10,7 +10,7 @@ const rule = (editable: boolean, reason: string | null = null, approved = false)
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const withControls = (controls: Record<string, PlanEditorFieldRule>) => {
   const base = response();
-  return { ...base, field_policy: { ...base.field_policy, controls } };
+  return { ...base, plan: { ...base.plan, max_step_commitment: 100 }, field_policy: { ...base.field_policy, controls, can_arm_or_raise_cap: true } };
 };
 const open = (controls: Record<string, PlanEditorFieldRule>, hooks?: Partial<EditFormHooks>) => {
   const spies = { selectService: jest.fn(), setAccounts: jest.fn() };
@@ -81,7 +81,7 @@ test('shows the cap disabled with a reason and the stored value', () => {
   expect(el('plan-max-step-commitment-reason').textContent).toBe('Per-step cap editing is not available yet');
   expect(cap.getAttribute('aria-describedby')).toBe('plan-max-step-commitment-reason');
   open(allEditable);
-  expect(cap.value).toBe('No cap');
+  expect(cap.value).toBe('100');
 });
 
 test('undo re-enables the controls and removes the reasons', () => {

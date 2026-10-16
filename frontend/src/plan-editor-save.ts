@@ -1,6 +1,7 @@
 import { planEditorFailure, previewPlanEditor, type PlanEditorFailure, type PlanEditorResponse } from './api/plan-editor';
 import type { PlanEditorEditHandle } from './plan-editor-edit-panel';
-import type { EditFormModel } from './lib/plan-editor-form';
+import type { EditFormModel, EditFormPatch } from './lib/plan-editor-form';
+import { isSavingsPlanSlug, resolvePlanService } from './lib/plan-service-ids';
 import { canReviewEditorDraft, draftDateChanges } from './lib/plan-editor-draft';
 import { buildEditRequest, serializeRequest } from './lib/plan-editor-request';
 import { newUuid } from './lib/uuid';
@@ -19,6 +20,28 @@ export interface PlanReviewHandle { review(): void; dispose(): void }
 const previewUncertainText = 'The preview did not complete. Nothing was saved; try Review changes again.';
 export const previewFailureText = (failure: PlanEditorFailure): string => failure.kind === 'uncertain' ? previewUncertainText : failure.message;
 
+// An enabled stored service the editor cannot handle makes the whole view read-only (root ACK Q4). Disabled entries are preserved untouched.
+export function unsupportedServiceBlocker(response: PlanEditorResponse): string | null {
+  for (const item of Object.values(response.plan.services ?? {})) {
+    if (item.enabled && !isSavingsPlanSlug(item.service) && resolvePlanService(item.provider, item.service).state === 'unsupported') {
+      return `This plan uses a service the editor does not support (${item.provider}/${item.service}). It cannot be saved here.`;
+    }
+  }
+  return null;
+}
+
+export function saveBlockers(response: PlanEditorResponse, patch: EditFormPatch): string | null {
+  const unsupported = unsupportedServiceBlocker(response);
+  if (unsupported) return unsupported;
+  const services = Object.values(response.plan.services ?? {});
+  if (response.plan.ramp_schedule.total_steps > 1 && services.some(item => item.enabled && isSavingsPlanSlug(item.service))) {
+    return 'Savings Plans cannot be laddered, so a plan with more than one step cannot be saved here.';
+  }
+  if ((patch.target_accounts ?? response.account_ids).length === 0) return 'Choose at least one target account.';
+  if (patch.plan['auto_purchase'] === true && response.plan.max_step_commitment === null) return 'Automatic purchase needs a per-step cap, which cannot be set yet';
+  return null;
+}
+
 export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
   const { response, host, button, edit, form } = deps;
   const original = { label: button.textContent, disabled: button.disabled, describedBy: button.getAttribute('aria-describedby') };
@@ -31,6 +54,8 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
   let disposed = false;
 
   const current = (): { key: string; body: string } | { blocked: string } => {
+    const blocker = saveBlockers(response, form.patch());
+    if (blocker) return { blocked: blocker };
     const draft = edit.draft();
     const built = buildEditRequest({ response, formPatch: form.patch(), draft, commandId });
     if ('unavailable' in built) return { blocked: built.unavailable };
@@ -69,6 +94,8 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
     pending = { key: now.key, abort };
   };
 
+  const readOnly = unsupportedServiceBlocker(response);
+  if (readOnly) { edit.setReadOnly(readOnly); form.lockAll(readOnly); }
   const unsubscribe = [edit.subscribe(sync), form.onChange(sync)];
   sync();
   return {

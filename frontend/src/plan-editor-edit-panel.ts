@@ -6,12 +6,12 @@ import { wirePlanDateInteraction } from './plan-date-interaction';
 import { escapeHtml } from './utils';
 import { planEditorReason } from './lib/plan-editor-reasons';
 
-export interface PlanEditorEditHandle { dispose(): void; draft(): EditorDraft | null; subscribe(listener: () => void): () => void }
+export interface PlanEditorEditHandle { dispose(): void; draft(): EditorDraft | null; subscribe(listener: () => void): () => void; setReadOnly(reason: string): void }
 
 export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditorResponse): PlanEditorEditHandle {
   let state = adaptPlanEditor(response).graphDraft, dirty: 'date' | 'range' | null = null;
   let gestureFrame: SchedulePlotFrame | null = null, gestureDraft: EditorDraft | null = null, plotKey = '';
-  let disposeInteraction: (() => void) | undefined;
+  let disposeInteraction: (() => void) | undefined, readOnly = '';
   const listeners = new Set<() => void>(), inertBefore = new Map<HTMLElement, boolean>();
   const services = Object.entries(response.plan.services ?? {});
   host.hidden = false;
@@ -20,6 +20,7 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
     <p class="editor-draft-notice" id="plan-editor-save-unavailable">Local date proposals are not saved. Saving changes is not available in this local editor yet.</p>
     <p>${escapeHtml(response.plan.name)}</p>
     <label>Stored service for coverage display<select data-edit="service"></select></label>
+    <p class="help-text" data-edit="readonly" hidden></p>
     <p class="help-text" data-edit="target"></p><div class="schedule-preview-scroll" tabindex="0" aria-label="Stored calendar and local date proposals"></div>
     <fieldset data-edit="controls"><legend>Local date proposals</legend>
       <label><input type="checkbox" data-edit="approved"> Allow edits to eligible approved future steps</label>
@@ -85,7 +86,7 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
   const wire = (svg: SVGSVGElement): (() => void) => wirePlanDateInteraction(svg, {
     read: () => {
       const dates = state!.dates, span = draftBlock(state!);
-      return { dates, blocked: dirty !== null, plotted: dates.flatMap((value, index) => value === null ? [] : [index]),
+      return { dates, blocked: dirty !== null || readOnly !== '', plotted: dates.flatMap((value, index) => value === null ? [] : [index]),
         block: span && dates.slice(span[0], span[1] + 1).every(value => value !== null) ? span : null, movable: index => canDraftStep(state!, index) };
     },
     validate: () => assertEditorDraftValid(state!),
@@ -154,6 +155,7 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
       return;
     }
     paintPlot(state); paintSelection(state); paintRange(state); paintDescription(state);
+    if (readOnly) [step, date, start, end, approved, field<HTMLButtonElement>('reset')].forEach(item => { item.disabled = true; });
     listeners.forEach(listener => listener());
   };
   const commit = (): void => {
@@ -195,5 +197,8 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
     host.replaceChildren(); host.hidden = true; host.closest('.plan-editor-layout')?.classList.remove('has-editor-draft');
     state = null;
   };
-  return { dispose, draft: () => state, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; } };
+  const setReadOnly = (reason: string): void => {
+    readOnly = reason; field('readonly').textContent = reason; field('readonly').hidden = false; paint();
+  };
+  return { dispose, setReadOnly, draft: () => state, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; } };
 }

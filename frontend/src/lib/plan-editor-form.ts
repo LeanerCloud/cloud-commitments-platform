@@ -1,6 +1,6 @@
 import type { PlanEditorFieldRule, PlanEditorResponse } from '../api/plan-editor';
 import { planEditorReason } from './plan-editor-reasons';
-import { isSavingsPlanService, resolvePlanService } from './plan-service-ids';
+import { isSavingsPlanService, isSavingsPlanSlug, resolvePlanService } from './plan-service-ids';
 
 export interface EditFormHooks {
   readonly selectService: (provider: string, service: string, term: number, payment: string, serviceLabel?: string) => void;
@@ -15,6 +15,8 @@ export interface EditFormPatch {
 }
 export interface EditFormModel {
   patch(): EditFormPatch;
+  // Read-only view: every control is disabled and stays disabled across service switches.
+  lockAll(reason: string): void;
   onChange(listener: () => void): () => void;
 }
 export interface EditFormHandle { readonly model: EditFormModel; dispose(): void }
@@ -24,6 +26,17 @@ const PLAN_FIELDS = [['name', 'plan-name'], ['enabled', 'plan-enabled'], ['auto_
 const SERVICE_FIELDS = [['provider', 'plan-provider'], ['service', 'plan-service'], ['term', 'plan-term'], ['payment', 'plan-payment'], ['coverage', 'plan-coverage']] as const;
 const NUMERIC = new Set(['term', 'coverage']);
 const SAVINGS_PLANS_NOTE = ' (Savings Plans are not supported yet)';
+
+const AUTO_NEEDS_CAP = 'Automatic purchase needs a per-step cap, which cannot be set yet';
+const AUTO_NO_PERMISSION = 'You do not have permission to enable automatic purchase';
+const CREATE_SP_BLOCKED = 'Savings Plans are not supported in the schedule editor';
+
+export function disableSavingsPlanOptions(select: HTMLSelectElement): void {
+  select.querySelectorAll<HTMLOptionElement>('option').forEach(option => {
+    if (!isSavingsPlanService(option.value) || option.dataset['spLabel'] !== undefined) return;
+    option.dataset['spLabel'] = option.textContent ?? ''; option.textContent += SAVINGS_PLANS_NOTE; option.disabled = true;
+  });
+}
 
 function restoreSavingsPlanOptions(select: HTMLSelectElement | null): void {
   select?.querySelectorAll<HTMLOptionElement>('option[data-sp-label]').forEach(option => {
@@ -63,6 +76,8 @@ export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse
   const wasDisabled = new Map(Array.from(form.querySelectorAll<HTMLInputElement>('input,select,textarea')).map(item => [item, item.disabled]));
   const planReasons: HTMLElement[] = [], serviceReasons: HTMLElement[] = [];
   let rampRadio: HTMLInputElement | undefined;
+  let locked = false;
+  const lockEverything = (): void => form.querySelectorAll<HTMLInputElement>('input,select,textarea,.selected-accounts button').forEach(item => { item.disabled = true; });
   const listeners = new Set<() => void>(), cleanups: Array<() => void> = [];
   const clear = (bucket: HTMLElement[]): void => bucket.splice(0).forEach(reason => {
     document.getElementById(reason.id.replace(/-reason$/, ''))?.removeAttribute('aria-describedby'); reason.remove();
@@ -115,9 +130,9 @@ export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse
     const paint = (key: string): void => {
       clear(serviceReasons);
       const item = services[key]!, resolved = resolvePlanService(item.provider, item.service);
-      const unsupported = resolved.state === 'unsupported';
+      const sp = isSavingsPlanSlug(item.service), unsupported = resolved.state === 'unsupported';
       const show = (provider: string, service: string, term: number, payment: string): void => hooks.selectService(provider, service, term, payment,
-        unsupported ? `Unsupported: ${item.provider}/${item.service} (read-only)` : undefined);
+        sp ? `Savings Plans: ${item.provider}/${item.service} (not supported yet)` : unsupported ? `Unsupported: ${item.provider}/${item.service} (read-only)` : undefined);
       show(item.provider, resolved.canonical ?? item.service, item.term, item.payment);
       control('plan-coverage').value = String(item.coverage);
       for (const [field, id] of SERVICE_FIELDS) baseline[field] = control(id).value;
@@ -126,14 +141,12 @@ export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse
         show(edit['provider'] ?? baseline['provider']!, edit['service'] ?? baseline['service']!, Number(edit['term'] ?? baseline['term']), edit['payment'] ?? baseline['payment']!);
         control('plan-coverage').value = edit['coverage'] ?? baseline['coverage']!;
       }
-      const blocked = unsupported ? 'This service is not supported by the plan editor.' : isSavingsPlanService(item.service) ? 'Savings Plans are not supported yet.' : undefined;
+      const blocked = sp ? 'Savings Plans are not supported yet.' : unsupported ? 'This service is not supported by the plan editor.' : undefined;
       for (const [field, id] of SERVICE_FIELDS) apply(control(id), blocked ? lockedByDefault : policy.services[key]?.[field] ?? lockedByDefault, serviceReasons, undefined, labelOf(control(id)), blocked);
       const picker = control('plan-service') as unknown as HTMLSelectElement;
       restoreSavingsPlanOptions(picker);
-      if (!picker.disabled) picker.querySelectorAll<HTMLOptionElement>('option').forEach(option => {
-        if (!isSavingsPlanService(option.value)) return;
-        option.dataset['spLabel'] = option.textContent ?? ''; option.textContent += SAVINGS_PLANS_NOTE; option.disabled = true;
-      });
+      if (!picker.disabled) disableSavingsPlanOptions(picker);
+      if (locked) lockEverything();
     };
     control('plan-name').value = plan.name;
     control('plan-enabled').checked = plan.enabled;
@@ -143,7 +156,11 @@ export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse
     control('plan-account-ids').value = response.account_ids.join(',');
     control('plan-max-step-commitment').value = plan.max_step_commitment === null ? 'No cap' : String(plan.max_step_commitment);
     form.querySelectorAll<HTMLInputElement>('input,select,textarea,.selected-accounts button').forEach(item => { item.disabled = true; });
-    for (const [key, id] of PLAN_FIELDS) apply(control(id), policy.controls[key] ?? lockedByDefault, planReasons);
+    const autoReason = plan.auto_purchase ? undefined : plan.max_step_commitment === null ? AUTO_NEEDS_CAP : policy.can_arm_or_raise_cap ? undefined : AUTO_NO_PERMISSION;
+    for (const [key, id] of PLAN_FIELDS) {
+      const gated = key === 'auto_purchase' && autoReason !== undefined;
+      apply(control(id), gated ? lockedByDefault : policy.controls[key] ?? lockedByDefault, planReasons, undefined, undefined, gated ? autoReason : undefined);
+    }
     const accounts = policy.controls['target_accounts'] ?? lockedByDefault;
     apply(control('plan-account-search'), accounts, planReasons, form.querySelector('.plan-accounts-search'), 'Target accounts');
     form.querySelectorAll<HTMLButtonElement>('.selected-accounts button').forEach(button => { button.disabled = !accounts.editable; });
@@ -173,6 +190,36 @@ export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse
     const layout = form.closest('.plan-editor-layout');
     form.addEventListener('input', record); form.addEventListener('change', record); layout?.addEventListener('change', pick);
     cleanups.push(() => { form.removeEventListener('input', record); form.removeEventListener('change', record); layout?.removeEventListener('change', pick); }, hooks.onAccountsChange(notify));
-    return { dispose, model: { patch, onChange: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; } } };
+    const lockAll = (reason: string): void => {
+      locked = true; lockEverything();
+      const note = document.createElement('p');
+      note.id = 'plan-readonly-reason'; note.className = 'help-text'; note.textContent = reason;
+      form.prepend(note); planReasons.push(note);
+    };
+    return { dispose, model: { patch, lockAll, onChange: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; } } };
   } catch (error) { dispose(); throw error; }
+}
+
+export interface CreateGuards { dispose(): void; sync(): string }
+
+// Create: Savings Plans options visibly disabled, auto-purchase off with its reason, and a visible reason for a programmatically selected SP service.
+export function mountCreateGuards(form: HTMLFormElement, onChange: () => void): CreateGuards {
+  const select = form.querySelector<HTMLSelectElement>('#plan-service')!, auto = form.querySelector<HTMLInputElement>('#plan-auto-purchase')!;
+  const wasDisabled = auto.disabled, wasChecked = auto.checked;
+  disableSavingsPlanOptions(select);
+  auto.disabled = true; auto.checked = false;
+  const autoNote = document.createElement('p'), note = document.createElement('p');
+  autoNote.id = 'plan-auto-purchase-reason'; autoNote.className = 'help-text'; autoNote.textContent = AUTO_NEEDS_CAP;
+  auto.setAttribute('aria-describedby', autoNote.id); (auto.closest('.setting-row') ?? auto).after(autoNote);
+  note.id = 'plan-create-reason'; note.className = 'help-text';
+  const button = Array.from(form.elements).find((item): item is HTMLButtonElement => item instanceof HTMLButtonElement && item.type === 'submit');
+  (button?.closest('.modal-buttons') ?? form).before(note);
+  select.addEventListener('change', onChange);
+  return {
+    sync: () => { note.textContent = isSavingsPlanSlug(select.value) ? CREATE_SP_BLOCKED : ''; return note.textContent; },
+    dispose: () => {
+      select.removeEventListener('change', onChange); restoreSavingsPlanOptions(select);
+      auto.removeAttribute('aria-describedby'); auto.disabled = wasDisabled; auto.checked = wasChecked; autoNote.remove(); note.remove();
+    },
+  };
 }

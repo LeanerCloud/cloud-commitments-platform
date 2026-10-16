@@ -20,7 +20,7 @@ import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { mountPlanEditorPanel } from './plan-editor-panel';
 import { getPlanEditor, PlanEditorResponse } from './api/plan-editor';
 import { mountPlanEditorEditPanel } from './plan-editor-edit-panel';
-import { fillEditForm } from './lib/plan-editor-form';
+import { fillEditForm, mountCreateGuards, type CreateGuards } from './lib/plan-editor-form';
 import { mountPlanReview, type PlanReviewHandle } from './plan-editor-save';
 import { adaptPlanEditor } from './plan-editor-adapter';
 
@@ -1286,6 +1286,7 @@ function setEditAccounts(accounts: readonly { id: string; name: string }[]): voi
 }
 
 let disposePlanEditor: (() => void) | undefined;
+let createGuards: CreateGuards | undefined;
 let planEditorMode: 'create' | 'complete-edit' = 'create';
 const editSaveUnavailable = 'Saving changes is not available in this local editor yet.';
 function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
@@ -1309,10 +1310,11 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
     try { disposePanel?.(); }
     finally {
       form?.removeEventListener('invalid', revealInvalid, true); form?.removeEventListener('submit', reviewSubmit, true);
-      planReview?.dispose(); editForm?.dispose();
+      planReview?.dispose(); editForm?.dispose(); createGuards?.dispose(); createGuards = undefined;
     }
   };
   try {
+    if (!editor && form) createGuards = mountCreateGuards(form, refreshPlanSaveButtonState);
     if (editor && form) editForm = fillEditForm(form, editor, { selectService: selectEditService, setAccounts: setEditAccounts, onAccountsChange: onEditAccountsChange });
     if (host && form && editor) {
       const edit = mountPlanEditorEditPanel(host, editor);
@@ -1499,7 +1501,8 @@ function refreshPlanSaveButtonState(): void {
   if (!submitBtn) return;
   const hasAccounts = planSelectedAccounts.length > 0;
   if (planEditorMode === 'complete-edit') return; // the review module owns the button in Edit
-  submitBtn.disabled = !hasAccounts;
+  const blocked = createGuards?.sync() ?? '';
+  submitBtn.disabled = !hasAccounts || blocked !== '';
   submitBtn.title = hasAccounts ? '' : 'Select at least one Target Account to save the plan';
   submitBtn.removeAttribute('aria-describedby');
 }

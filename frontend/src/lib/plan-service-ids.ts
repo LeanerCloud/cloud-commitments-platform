@@ -24,6 +24,9 @@ const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined
 export const isSavingsPlanService = (service: string): boolean =>
   CANONICAL_PLAN_SERVICES.aws.includes(service) && service.startsWith('savings-plans-');
 
+// Every spelling the backend maps to a Savings Plans type (internal/purchase/execution.go mapSavingsPlansSlug).
+export const isSavingsPlanSlug = (service: string): boolean => /^savings-?plans(-|$)/.test(service);
+
 export const resolvePlanService = (provider: string, service: string): PlanServiceResolution => {
   if (own(CANONICAL_PLAN_SERVICES, provider)?.includes(service)) return { state: 'canonical', canonical: service };
   const legacy = own(LEGACY_PLAN_SERVICES, `${provider}/${service}`);

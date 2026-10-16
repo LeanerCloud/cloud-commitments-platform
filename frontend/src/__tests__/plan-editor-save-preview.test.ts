@@ -28,10 +28,11 @@ const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0)
 
 let r: PlanEditorResponse, draft: EditorDraft | null, patch: EditFormPatch, generation: number;
 let editListeners: Set<() => void>, formListeners: Set<() => void>, handle: PlanReviewHandle, button: HTMLButtonElement, host: HTMLElement;
+const readOnlySpy = jest.fn(), lockAllSpy = jest.fn();
 const mount = (response: PlanEditorResponse = r): void => {
   handle = mountPlanReview({ response, host, button, generation: () => generation,
-    edit: { dispose: () => undefined, draft: () => draft, subscribe: l => { editListeners.add(l); return () => editListeners.delete(l); } },
-    form: { patch: () => patch, onChange: l => { formListeners.add(l); return () => formListeners.delete(l); } } });
+    edit: { dispose: () => undefined, setReadOnly: readOnlySpy, draft: () => draft, subscribe: l => { editListeners.add(l); return () => editListeners.delete(l); } },
+    form: { patch: () => patch, lockAll: lockAllSpy, onChange: l => { formListeners.add(l); return () => formListeners.delete(l); } } });
 };
 const moveStep2 = (date: string): void => { draft = setDraftDate(draft!, 1, date); editListeners.forEach(l => l()); };
 const status = (): string => document.querySelector('#plan-review-feedback [role="status"]')!.textContent ?? '';
