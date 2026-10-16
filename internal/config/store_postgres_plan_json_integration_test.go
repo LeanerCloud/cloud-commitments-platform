@@ -33,8 +33,12 @@ func TestPurchasePlanUpdatePreservesRawJSON(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"aws/ec2":{"provider":"aws","service":"ec2","enabled":false,"term":1,"payment":"no-upfront","coverage":50,"ramp_schedule":"","include_engines":null,"exclude_engines":[],"include_regions":[],"exclude_regions":null,"include_types":[],"exclude_types":[],"min_count":0,"future":{"count":9007199254740993}}}`, string(after.servicesJSON))
 	require.JSONEq(t, string(before.rampScheduleJSON), string(after.rampScheduleJSON))
+	_, err = f.store.db.Exec(ctx, `UPDATE purchase_plans SET ramp_schedule=jsonb_set(ramp_schedule,'{dates_managed}','true') WHERE id=$1`, f.planID)
+	require.NoError(t, err)
+	after, err = f.store.ReadPlanEditorSnapshot(ctx, f.planID)
+	require.NoError(t, err)
 	plan.Services = map[string]ServiceConfig{"replacement": svc}
-	require.Error(t, f.store.UpdatePurchasePlan(ctx, plan))
+	require.ErrorIs(t, f.store.UpdatePurchasePlan(ctx, plan), ErrPlanJSONUnsupported)
 	unchanged, err := f.store.ReadPlanEditorSnapshot(ctx, f.planID)
 	require.NoError(t, err)
 	require.Equal(t, after, unchanged)
