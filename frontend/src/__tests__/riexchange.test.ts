@@ -1115,6 +1115,46 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
     expect(instancesEl.textContent).toContain('HTTP 500');
   });
 
+  it('fails loudly when the selected account has no external_id', async () => {
+    (api.listAccountsMinimal as jest.Mock).mockResolvedValueOnce([
+      { id: 'uuid-1', name: 'Prod', external_id: '', provider: 'aws' },
+    ]);
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
+    await loadRIExchange();
+    expect(api.listConvertibleRIs).not.toHaveBeenCalled();
+    expect(instancesEl.querySelector('.error')).not.toBeNull();
+  });
+
+  it('in-flight loaders from a superseded load cannot overwrite a later resolve error', async () => {
+    const pending = <T,>() => {
+      let resolve: (v: T) => void = () => undefined;
+      const promise = new Promise<T>(r => { resolve = r; });
+      return { promise, resolve };
+    };
+    const ris = pending<unknown[]>();
+    const recs = pending<unknown>();
+    const hist = pending<unknown[]>();
+    (api.listConvertibleRIs as jest.Mock).mockReturnValueOnce(ris.promise);
+    (api.getReshapeRecommendations as jest.Mock).mockReturnValueOnce(recs.promise);
+    (api.getRIExchangeHistory as jest.Mock).mockReturnValueOnce(hist.promise);
+    const loadA = loadRIExchange();
+    await new Promise(r => setTimeout(r, 0));
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-missing']);
+    await loadRIExchange();
+    ris.resolve([{
+      reserved_instance_id: 'ri-old', instance_type: 'm5.large', availability_zone: 'us-east-1a',
+      instance_count: 1, start: '2026-01-01T00:00:00Z', end: '2027-01-01T00:00:00Z',
+      offering_type: 'Convertible', fixed_price: 0, usage_price: 0, state: 'active', normalization_factor: 4,
+    }]);
+    recs.resolve({ recommendations: [], recs_staleness: '', recs_collected_at: null });
+    hist.resolve([]);
+    await loadA;
+    expect(instancesEl.querySelector('.error')).not.toBeNull();
+    expect(instancesEl.textContent).not.toContain('ri-old');
+    expect(recsEl.textContent).toContain('Select a valid account');
+    expect(historyEl.textContent).toContain('Select a valid account');
+  });
+
   it('forwards undefined and skips the account lookup when no account is selected', async () => {
     await loadRIExchange();
     expect(api.listAccountsMinimal).not.toHaveBeenCalled();
