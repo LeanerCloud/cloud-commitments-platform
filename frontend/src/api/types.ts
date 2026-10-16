@@ -215,6 +215,7 @@ export interface PlanRampSchedule {
   current_step: number;
   total_steps: number;
   start_date?: string;
+  dates_managed?: boolean;
 }
 
 export interface Plan {

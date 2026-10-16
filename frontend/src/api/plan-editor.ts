@@ -240,6 +240,16 @@ const conflictKinds: Readonly<Record<string, PlanEditorFailureKind>> = {
 const uncertainText = 'The server did not confirm the result, so the change may have been saved. Reload the plan to check before saving again.';
 const signInText = 'Your session has ended. Reload the page and sign in again; the draft is not kept.';
 
+const managedSentences: Readonly<Record<string, string>> = {
+  editor_reconciliation_required: 'This plan is managed by the schedule editor. Use Edit to change its dates and settings.',
+  managed_plan_has_live_executions: 'This plan still has scheduled or unsettled purchases. Cancel or revoke them, then delete the plan.',
+};
+// Sentence for the two 409 codes the legacy plan routes answer for an editor-managed plan, or null for any other failure.
+export function managedPlanRefusal(error: unknown): string | null {
+  const { code } = planEditorFailure(error);
+  return (error as ApiError | undefined)?.status === 409 && code !== null && Object.prototype.hasOwnProperty.call(managedSentences, code) ? managedSentences[code]! : null;
+}
+
 export function planEditorFailure(error: unknown): PlanEditorFailure {
   const failure = error as ApiError, status = typeof failure?.status === 'number' ? failure.status : 0;
   const rawCode = failure?.details?.['code'], code = typeof rawCode === 'string' ? rawCode : null;

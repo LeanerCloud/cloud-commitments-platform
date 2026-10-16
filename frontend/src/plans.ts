@@ -18,7 +18,7 @@ import { canAccess } from './permissions';
 import { parseNumericFilter, applyColumnFilters as applyColumnFiltersLib } from './lib/column-filters';
 import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { mountPlanEditorPanel } from './plan-editor-panel';
-import { getPlanEditor, PlanEditorResponse } from './api/plan-editor';
+import { getPlanEditor, managedPlanRefusal, PlanEditorResponse } from './api/plan-editor';
 import { mountPlanEditorEditPanel } from './plan-editor-edit-panel';
 import { fillEditForm, mountCreateGuards, type CreateGuards } from './lib/plan-editor-form';
 import { mountPlanReview, type PlanReviewHandle } from './plan-editor-save';
@@ -883,7 +883,7 @@ async function handlePlannedPurchaseAction(action: string, purchaseId: string, p
   } catch (error) {
     console.error(`Failed to ${action} planned purchase:`, error);
     const err = error as Error;
-    showToast({ message: `Failed to ${action} purchase: ${err.message}`, kind: 'error' });
+    showToast({ message: managedPlanRefusal(error) ?? `Failed to ${action} purchase: ${err.message}`, kind: 'error' });
   }
 }
 
@@ -908,6 +908,7 @@ interface BackendPlan {
     step_interval_days: number;
     current_step: number;
     total_steps: number;
+    dates_managed?: boolean;
   };
   next_execution_date?: string;
   // unassigned is true for legacy plans that have zero plan_accounts rows
@@ -1058,6 +1059,8 @@ function isPlanOverdue(plan: BackendPlan): boolean {
 }
 
 // Format ramp schedule from backend struct
+const managedAddPurchasesText = "This plan's schedule is managed by the editor. Use Edit to change dates.";
+
 function formatBackendRampSchedule(ramp: BackendPlan['ramp_schedule']): string {
   if (!ramp) return 'Immediate';
   switch (ramp.type) {
@@ -1095,6 +1098,7 @@ function renderPlanCard(plan: BackendPlan, canManagePlan: boolean, canDeletePlan
   const status = getStatusBadge(plan.enabled, plan.auto_purchase);
   const rampSchedule = plan.ramp_schedule || { type: 'immediate', current_step: 0, total_steps: 1 };
   const overdue = isPlanOverdue(plan);
+  const managed = plan.ramp_schedule?.dates_managed === true;
   // Hide the stale next_execution_date for disabled plans — keeping it
   // visible implies the plan will still run on that date, which it won't.
   const showNextDate = Boolean(plan.next_execution_date) && plan.enabled;
@@ -1155,11 +1159,12 @@ function renderPlanCard(plan: BackendPlan, canManagePlan: boolean, canDeletePlan
           ` : ''}
         </div>
         <div class="plan-actions">
-          ${canAddPurchases && !isUnassigned ? `<button data-action="add-purchases" data-id="${escapeHtmlAttr(plan.id)}" data-name="${escapeHtmlAttr(plan.name)}" data-notification-days="${escapeHtmlAttr(String(plan.notification_days_before))}" class="primary">Add Purchases</button>` : ''}
+          ${canAddPurchases && !isUnassigned ? `<button data-action="add-purchases" data-id="${escapeHtmlAttr(plan.id)}" data-name="${escapeHtmlAttr(plan.name)}" data-notification-days="${escapeHtmlAttr(String(plan.notification_days_before))}" class="primary"${managed ? ` disabled aria-describedby="plan-managed-${escapeHtmlAttr(plan.id)}"` : ''}>Add Purchases</button>` : ''}
           ${canManagePlan && !isUnassigned ? `<button data-action="edit-plan" data-id="${escapeHtmlAttr(plan.id)}">Edit</button>` : ''}
           <button data-action="view-history" data-id="${escapeHtmlAttr(plan.id)}" class="secondary">History</button>
           ${canDeletePlan ? `<button data-action="delete-plan" data-id="${escapeHtmlAttr(plan.id)}" class="danger">Delete</button>` : ''}
         </div>
+        ${managed && canAddPurchases && !isUnassigned ? `<p class="help-text" id="plan-managed-${escapeHtmlAttr(plan.id)}">${escapeHtml(managedAddPurchasesText)}</p>` : ''}
       </div>
     </div>
   `;
@@ -1368,7 +1373,7 @@ async function deletePlanAction(planId: string): Promise<void> {
     showToast({ message: 'Plan deleted', kind: 'success', timeout: 5_000 });
   } catch (error) {
     console.error('Failed to delete plan:', error);
-    showToast({ message: 'Failed to delete plan', kind: 'error' });
+    showToast({ message: managedPlanRefusal(error) ?? 'Failed to delete plan', kind: 'error' });
   }
 }
 
@@ -2349,7 +2354,7 @@ async function handleAddPurchases(e: Event): Promise<void> {
   } catch (error) {
     const err = error as Error;
     if (errorDiv) {
-      errorDiv.textContent = err.message;
+      errorDiv.textContent = managedPlanRefusal(error) ?? err.message;
       errorDiv.classList.remove('hidden');
     }
   }
