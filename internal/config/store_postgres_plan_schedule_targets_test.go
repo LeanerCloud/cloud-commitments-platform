@@ -102,12 +102,11 @@ func TestMergePlanScheduleRamp(t *testing.T) {
 		intent PlanScheduleIntent
 		create bool
 	}{
-		"create without count":      {`{}`, PlanScheduleIntent{}, true},
-		"count below current step":  {legacy, PlanScheduleIntent{StepCount: new(1)}, false},
-		"zero count":                {`{"current_step":0}`, PlanScheduleIntent{StepCount: new(0)}, false},
-		"count above max":           {legacy, PlanScheduleIntent{StepCount: new(MaxTotalSteps + 1)}, false},
-		"percent with count":        {legacy, PlanScheduleIntent{StepCount: new(3), Ramp: PlanScheduleRampPatch{PercentPerStep: new(50.0)}}, false},
-		"percent under equal count": {`{"allocation_mode":"equal_count","total_steps":2}`, PlanScheduleIntent{Ramp: PlanScheduleRampPatch{PercentPerStep: new(50.0)}}, false},
+		"create without count":     {`{}`, PlanScheduleIntent{}, true},
+		"count below current step": {legacy, PlanScheduleIntent{StepCount: new(1)}, false},
+		"zero count":               {`{"current_step":0}`, PlanScheduleIntent{StepCount: new(0)}, false},
+		"count above max":          {legacy, PlanScheduleIntent{StepCount: new(MaxTotalSteps + 1)}, false},
+		"percent with count":       {legacy, PlanScheduleIntent{StepCount: new(3), Ramp: PlanScheduleRampPatch{PercentPerStep: new(50.0)}}, false},
 	} {
 		_, err = mergeRamp(tc.raw, tc.intent, tc.create, false)
 		require.ErrorIs(t, err, ErrPurchasePlanConflict, name)

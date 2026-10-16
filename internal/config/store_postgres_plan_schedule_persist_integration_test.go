@@ -270,3 +270,54 @@ func TestPlanScheduleMetadataOnlyEditWithNoRootsKeepsTheScheduleAndLedger(t *tes
 	require.Empty(t, f.mapping)
 	require.Equal(t, []int{1, 1, 3, 1}, f.counts(ctx, t))
 }
+
+func TestPlanScheduleCumulativeConversionKeepsTheUnstartedLedgerNew(t *testing.T) {
+	ctx := context.Background()
+	f := newPersistFixture(ctx, t)
+	f.created(ctx, t)
+	convert := func(before *PlanEditorSnapshot) *PlanScheduleMutation {
+		plan := *before.Plan
+		plan.RampSchedule.PercentPerStep, plan.RampSchedule.TotalSteps, plan.RampSchedule.AllocationMode = 25, 4, ""
+		plan.RampSchedule.DatesManaged = true
+		roots := make([]PlanScheduleRootChange, 4)
+		for i := range roots {
+			date := f.day.AddDate(0, 0, 7*i+1)
+			roots[i] = PlanScheduleRootChange{StepNumber: i + 1, ScheduledDate: &date}
+			if i < len(before.Executions) {
+				roots[i].OldExecutionID = &before.Executions[slices.IndexFunc(before.Executions, func(e PurchaseExecution) bool { return e.StepNumber == i+1 })].ExecutionID
+			}
+		}
+		return &PlanScheduleMutation{Plan: &plan, AccountIDs: []string{f.account}, Roots: roots, Scope: PlanScheduleScope{AccountIDs: []string{f.account}},
+			Intent: PlanScheduleIntent{Ramp: PlanScheduleRampPatch{PercentPerStep: new(25.0)}}}
+	}
+	_, err := f.run(ctx, t, convert, nil)
+	require.NoError(t, err)
+	row := f.row(ctx, t)
+	require.Equal(t, []any{"new", 3}, []any{row.ledger, row.canceled})
+	require.Len(t, f.mapping, 4)
+}
+
+func TestPlanSchedulePercentReshapeOfATrustedPlanIsRefusedAndLeavesTheLedger(t *testing.T) {
+	ctx := context.Background()
+	f := newPersistFixture(ctx, t)
+	f.created(ctx, t)
+	key := strings.Join([]string{"aws", f.account, "ec2", "us-east-1", "m5.large", "1", "no-upfront", "", "", "", ""}, "\x1f")
+	baseline, err := json.Marshal(PlanRampBaseline{key: {Count: 100}})
+	require.NoError(t, err)
+	_, err = f.store.db.Exec(ctx, `UPDATE purchase_plans SET ramp_baseline=$2::jsonb, ramp_ledger_state='trusted' WHERE id=$1`, f.identity.PlanID, baseline)
+	require.NoError(t, err)
+	_, err = f.store.db.Exec(ctx, `UPDATE purchase_plans SET ramp_schedule=jsonb_set(ramp_schedule,'{current_step}','1') WHERE id=$1`, f.identity.PlanID)
+	require.NoError(t, err)
+	before := f.row(ctx, t)
+	require.Equal(t, "trusted", before.ledger)
+	reshape := func(snapshot *PlanEditorSnapshot) *PlanScheduleMutation {
+		plan := *snapshot.Plan
+		plan.RampSchedule.PercentPerStep, plan.RampSchedule.TotalSteps, plan.RampSchedule.AllocationMode = 25, 4, ""
+		return &PlanScheduleMutation{Plan: &plan, AccountIDs: []string{f.account}, Scope: PlanScheduleScope{AccountIDs: []string{f.account}},
+			Intent: PlanScheduleIntent{Ramp: PlanScheduleRampPatch{PercentPerStep: new(25.0)}}}
+	}
+	_, err = f.run(ctx, t, reshape, nil)
+	require.ErrorIs(t, err, ErrPurchasePlanConflict)
+	after := f.row(ctx, t)
+	require.Equal(t, []any{"trusted", before.baseline, 1}, []any{after.ledger, after.baseline, after.step})
+}

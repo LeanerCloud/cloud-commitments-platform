@@ -1,6 +1,18 @@
 package config
 
-import "time"
+import (
+	"math"
+	"time"
+)
+
+// CumulativeStepCount derives a cumulative ramp's step count, tolerant of float noise (100/31 is 31).
+// It returns 0 outside (0, 100]; callers bound the result by MaxTotalSteps.
+func CumulativeStepCount(percent float64) int {
+	if !(percent > 0 && percent <= 100) {
+		return 0
+	}
+	return int(min(math.Ceil(100/percent-1e-9), math.MaxInt32))
+}
 
 type PlanScheduleServicePatch struct {
 	Provider       *string   `json:"provider,omitempty"`
