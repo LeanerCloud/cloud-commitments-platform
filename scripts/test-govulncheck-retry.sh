@@ -49,5 +49,7 @@ run_case "transient fetch failures then success pass" "1:$RESET|1:$RESET|0" 0 3
 run_case "persistent transient failure fails after 3 attempts" "1:$RESET" 1 3
 run_case "non-network error is not retried" "1:govulncheck: loading packages: no go.mod" 1 1
 run_case "fetch error without a network cause is not retried" "1:govulncheck: fetching vulnerabilities: invalid JSON" 1 1
+run_case "network token without fetch text is not retried" "1:dial tcp: i/o timeout" 1 1
+run_case "exit 2 with fetch text is not retried" "2:$RESET" 2 1
 
 exit "$fail"

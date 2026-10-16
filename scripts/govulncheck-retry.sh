@@ -8,7 +8,10 @@
 # 0 clean, 3 vulnerabilities found, 2 usage error, 1 any other error. A real
 # finding (3) is never retried. Exit 1 is retried only when stderr shows the DB
 # fetch failing on a network error, so a genuine tool or config error fails on
-# the first attempt. After MAX_ATTEMPTS the last exit code is returned.
+# the first attempt. Only exit 1 is retried. Stdout of a failed attempt is
+# passed through unbuffered, so with -format json/sarif the output of several
+# attempts can be concatenated (CI does not use -format). After MAX_ATTEMPTS the last exit
+# code is returned.
 #
 # GOVULNCHECK_RETRY_SLEEP: seconds of backoff per attempt number (default 15).
 
@@ -30,7 +33,7 @@ while :; do
   if [[ "$rc" -eq 0 || "$rc" -eq 3 ]]; then
     exit "$rc"
   fi
-  if ! grep -q 'fetching vulnerabilities' "$errfile" || ! grep -Eqi "$TRANSIENT" "$errfile"; then
+  if [[ "$rc" -ne 1 ]] || ! grep -q 'fetching vulnerabilities' "$errfile" || ! grep -Eqi "$TRANSIENT" "$errfile"; then
     echo "govulncheck-retry: exit $rc is not a transient vulnerability-DB fetch failure; not retrying" >&2
     exit "$rc"
   fi
