@@ -289,6 +289,76 @@ func guardPlanScheduleClockTx(ctx context.Context, tx pgx.Tx, windows planSchedu
 	return err
 }
 
+// persistPlanScheduleMutationTx writes one command's plan, accounts and roots. An existing plan is updated after
+// its replaced roots are canceled and before the new roots exist, so the ramp ledger guard sees no retained
+// capacity-holding root and an unstarted shape edit stays 'new' instead of degrading to 'legacy'.
+func (s *PostgresStore) persistPlanScheduleMutationTx(ctx context.Context, tx pgx.Tx, before *PlanEditorSnapshot, windows planScheduleWindows, mutation *PlanScheduleMutation, actor *string, now time.Time) ([]PlanScheduleMapping, error) {
+	services, ramp, err := preparePlanScheduleTargets(before, mutation.Intent, mutation.Plan, len(mutation.Roots) > 0)
+	if err != nil {
+		return nil, err
+	}
+	if before == nil {
+		mutation.Plan.CreatedAt, mutation.Plan.UpdatedAt = now, now
+		err = s.insertPurchasePlanJSON(ctx, tx, mutation.Plan, services, ramp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = s.persistPlanScheduleAccountsTx(ctx, tx, before, mutation)
+	if err != nil {
+		return nil, err
+	}
+	err = s.cancelAndUpdatePlanScheduleTx(ctx, tx, before, windows, mutation, actor, services, ramp)
+	if err != nil {
+		return nil, err
+	}
+	mapping, err := s.insertPlanScheduleMappingTx(ctx, tx, mutation, actor)
+	if err != nil || (before != nil && len(mutation.Roots) == 0) {
+		return mapping, err
+	}
+	return mapping, s.setPlanScheduleNextDateTx(ctx, tx, mutation.Plan)
+}
+
+func (s *PostgresStore) cancelAndUpdatePlanScheduleTx(ctx context.Context, tx pgx.Tx, before *PlanEditorSnapshot, windows planScheduleWindows, mutation *PlanScheduleMutation, actor *string, services, ramp []byte) error {
+	err := s.cancelPlanScheduleRootsTx(ctx, tx, windows, mutation.Roots, actor)
+	if err != nil || before == nil {
+		return err
+	}
+	return s.updatePurchasePlanJSONTx(ctx, tx, mutation.Plan, services, ramp)
+}
+
+func (s *PostgresStore) setPlanScheduleNextDateTx(ctx context.Context, tx pgx.Tx, plan *PurchasePlan) error {
+	next, err := s.planScheduleNextDateTx(ctx, tx, plan)
+	if err != nil {
+		return err
+	}
+	plan.NextExecutionDate = next
+	_, err = tx.Exec(ctx, `UPDATE purchase_plans SET next_execution_date=$2 WHERE id=$1`, plan.ID, next)
+	return err
+}
+
+func (s *PostgresStore) insertPlanScheduleMappingTx(ctx context.Context, tx pgx.Tx, mutation *PlanScheduleMutation, actor *string) ([]PlanScheduleMapping, error) {
+	ids, err := insertPlanScheduleRootsTx(ctx, tx, mutation.Plan.ID, mutation.Roots, actor)
+	if err != nil {
+		return nil, err
+	}
+	mapping := make([]PlanScheduleMapping, len(ids))
+	for i, change := range mutation.Roots {
+		mapping[i] = PlanScheduleMapping{StepNumber: change.StepNumber, OldExecutionID: change.OldExecutionID, NewExecutionID: ids[i], ScheduledDate: change.ScheduledDate}
+	}
+	return mapping, nil
+}
+
+func (s *PostgresStore) persistPlanScheduleAccountsTx(ctx context.Context, tx pgx.Tx, before *PlanEditorSnapshot, mutation *PlanScheduleMutation) error {
+	if before == nil || mutation.Intent.AccountIDs != nil {
+		return s.setPlanAccountsTx(ctx, tx, mutation.Plan.ID, mutation.AccountIDs)
+	}
+	if !samePlanScheduleSet(before.AccountIDs, mutation.AccountIDs) {
+		return ErrPurchasePlanConflict
+	}
+	return nil
+}
+
 // readPlanScheduleReceiptTx returns nil when the command has no receipt. A receipt for a different principal, plan, hash or base revision conflicts without revealing its result.
 func readPlanScheduleReceiptTx(ctx context.Context, tx pgx.Tx, identity PlanScheduleCommandIdentity, authorize AuthorizePlanScheduleReplay) (*PlanScheduleCommandResult, error) {
 	var matches bool
