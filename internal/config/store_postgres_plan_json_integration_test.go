@@ -38,7 +38,7 @@ func TestPurchasePlanUpdatePreservesRawJSON(t *testing.T) {
 	after, err = f.store.ReadPlanEditorSnapshot(ctx, f.planID)
 	require.NoError(t, err)
 	plan.Services = map[string]ServiceConfig{"replacement": svc}
-	require.ErrorIs(t, f.store.UpdatePurchasePlan(ctx, plan), ErrPlanJSONUnsupported)
+	require.ErrorIs(t, f.store.UpdatePurchasePlan(ctx, plan), ErrEditorReconciliationRequired)
 	unchanged, err := f.store.ReadPlanEditorSnapshot(ctx, f.planID)
 	require.NoError(t, err)
 	require.Equal(t, after, unchanged)

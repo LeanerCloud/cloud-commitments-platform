@@ -4,13 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
 )
-
-var ErrPlanJSONUnsupported = errors.New("plan service replacement requires editor reconciliation")
 
 func (s *PostgresStore) purchasePlanJSONForUpdateTx(ctx context.Context, tx pgx.Tx, next *PurchasePlan) (previous *PurchasePlan, mergedServices, mergedRamp []byte, mergeErr error) {
 	old, err := s.LockPurchasePlanTx(ctx, tx, next.ID)
@@ -24,7 +21,7 @@ func (s *PostgresStore) purchasePlanJSONForUpdateTx(ctx context.Context, tx pgx.
 	if readErr := tx.QueryRow(ctx, `SELECT services,ramp_schedule FROM purchase_plans WHERE id=$1`, next.ID).Scan(&services, &ramp); readErr != nil {
 		return nil, nil, nil, readErr
 	}
-	services, err = mergePlanServicesJSON(services, old.Services, next.Services, old.RampSchedule.DatesManaged)
+	services, err = mergePlanServicesJSON(services, old.Services, next.Services)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -43,7 +40,7 @@ func (s *PostgresStore) purchasePlanJSONForUpdateTx(ctx context.Context, tx pgx.
 	return old, services, ramp, nil
 }
 
-func mergePlanServicesJSON(raw []byte, old, next map[string]ServiceConfig, datesManaged bool) ([]byte, error) {
+func mergePlanServicesJSON(raw []byte, old, next map[string]ServiceConfig) ([]byte, error) {
 	if len(old) == 0 && len(next) == 0 {
 		return raw, nil
 	}
@@ -57,9 +54,6 @@ func mergePlanServicesJSON(raw []byte, old, next map[string]ServiceConfig, dates
 	for key := range old {
 		if _, ok := next[key]; ok {
 			continue
-		}
-		if datesManaged {
-			return nil, ErrPlanJSONUnsupported
 		}
 		delete(objects, key)
 	}
