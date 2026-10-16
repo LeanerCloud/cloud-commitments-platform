@@ -15,9 +15,12 @@ import (
 // statement by no more than that; the caller's own deadline wins when sooner.
 const planScheduleCommandWait = 5 * time.Second
 
-// ErrPlanScheduleBusy means no command slot freed up in time. Slots are max(1, poolMax-1): with poolMax >= 2
-// one pool connection stays free for other work. Callbacks that read through the pool are bounded by the caller's ctx, not the tx timeouts.
+// ErrPlanScheduleBusy means no command slot freed up in time. Slots are poolMax-1, so one pool connection
+// stays free for other work. Callbacks that read through the pool are bounded by the caller's ctx, not the tx timeouts.
 var ErrPlanScheduleBusy = errors.New("plan schedule editor busy")
+
+// ErrPlanSchedulePoolTooSmall means the store has no pool of at least 2 connections, so a command could starve its own callbacks.
+var ErrPlanSchedulePoolTooSmall = errors.New("plan schedule commands need a database pool of at least 2 connections")
 
 func (s *PostgresStore) ExecutePlanScheduleCommand(ctx context.Context, identity PlanScheduleCommandIdentity, build BuildAuthorizedPlanScheduleMutation, authorizeReplay AuthorizePlanScheduleReplay, project ProjectCommittedPlanSchedule) (*PlanScheduleCommandResult, error) {
 	if err := validatePlanScheduleIdentity(identity); err != nil {
@@ -56,7 +59,7 @@ func (s *PostgresStore) attemptPlanScheduleCommand(ctx context.Context, identity
 
 func (s *PostgresStore) acquirePlanScheduleSlot(ctx context.Context) (release func(), err error) {
 	if s.commandSlots == nil {
-		return nil, ErrPlanScheduleBusy
+		return nil, ErrPlanSchedulePoolTooSmall
 	}
 	timer := time.NewTimer(cmp.Or(s.commandWait, planScheduleCommandWait))
 	defer timer.Stop()

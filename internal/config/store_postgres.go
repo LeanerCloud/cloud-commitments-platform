@@ -35,7 +35,7 @@ type dbConn interface {
 type PostgresStore struct {
 	db dbConn
 	// commandSlots bounds concurrent plan schedule commands; see ErrPlanScheduleBusy.
-	// nil (no pool) never admits a command.
+	// nil (no pool, or a pool under 2 connections) never admits a command.
 	commandSlots chan struct{}
 	commandWait  time.Duration // test hook; zero means planScheduleCommandWait
 }
@@ -43,8 +43,8 @@ type PostgresStore struct {
 // NewPostgresStore creates a new PostgreSQL-backed config store.
 func NewPostgresStore(db *database.Connection) *PostgresStore {
 	store := &PostgresStore{db: db}
-	if db != nil && db.Pool() != nil {
-		store.commandSlots = make(chan struct{}, max(1, int(db.Pool().Config().MaxConns)-1))
+	if db != nil && db.Pool() != nil && db.Pool().Config().MaxConns >= 2 {
+		store.commandSlots = make(chan struct{}, int(db.Pool().Config().MaxConns)-1)
 	}
 	return store
 }

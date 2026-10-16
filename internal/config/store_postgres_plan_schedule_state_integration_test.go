@@ -88,3 +88,14 @@ func TestLockPlanScheduleStateRefusesRoutingThatChangedWhileWaitingForThePlanLoc
 	require.NoError(t, contender.Commit(ctx))
 	require.ErrorIs(t, <-done, ErrPurchasePlanConflict, "providers discovered after the wait were never locked")
 }
+
+func TestLockPlanScheduleStateLocksAProviderThatOnlyTheProposalNames(t *testing.T) {
+	ctx := context.Background()
+	f := newRampFixture(ctx, t, 1, 0, 3)
+	identity := PlanScheduleCommandIdentity{PlanID: f.planID, ProposedProviders: []string{"oracle"}}
+	require.NoError(t, lockedState(ctx, f, identity, func(*PlanEditorSnapshot, []PlanEditorAccount) {
+		var free bool
+		require.NoError(t, f.store.db.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended($1,0))`, planStepProviderLockPrefix+"oracle").Scan(&free))
+		require.False(t, free)
+	}))
+}
