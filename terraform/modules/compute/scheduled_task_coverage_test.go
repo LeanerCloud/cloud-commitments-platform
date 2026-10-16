@@ -80,7 +80,7 @@ var commentLinePattern = regexp.MustCompile(`(?m)^[ \t]*(?:#|//).*$`)
 
 // stripComments blanks whole-line comments, then trailing `#` and `//`
 // comments that start outside a quoted string (so `https://` and ARN globs in
-// strings survive).
+// strings survive). Heredocs and quotes nested inside ${} are not handled.
 func stripComments(s string) string {
 	lines := strings.Split(commentLinePattern.ReplaceAllString(s, ""), "\n")
 	for n, line := range lines {
@@ -106,14 +106,17 @@ func stripComments(s string) string {
 
 // schedulerHeaders match the resources that actually send a task to the
 // server. A task name elsewhere (locals, env vars, permissions) is not a
-// schedule. cfnRule scopes a CloudFormation AWS::Events::Rule resource.
+// schedule. A literal anywhere in the body counts, even in a description.
+// cfnRule scopes a CloudFormation AWS::Events::Rule resource.
 var (
 	schedulerHeaders = []string{
 		`resource\s+"aws_cloudwatch_event_target"\s+"[^"]+"\s*\{`,
 		`resource\s+"google_cloud_scheduler_job"\s+"[^"]+"\s*\{`,
 		`resource\s+"azurerm_logic_app_action_custom"\s+"[^"]+"\s*\{`,
 	}
-	cfnRule  = regexp.MustCompile(`(?s)Type:\s*AWS::Events::Rule\b.*?(?:\n  \S|\z)`)
+	cfnRule = regexp.MustCompile(`(?s)Type:\s*AWS::Events::Rule\b.*?(?:\n  \S|\z)`)
+	// Only a local's first-line value resolves, with no local-to-local recursion;
+	// an unresolved local leaves the task unwired (an undocumented gap).
 	localRef = regexp.MustCompile(`\blocal\.(\w+)`)
 	// literalRes are the task-name patterns of the contract test (schedulerRefs)
 	// plus the CloudFormation Input JSON.
@@ -148,13 +151,14 @@ func blocks(src, header string) []string {
 
 // schedulerScopes returns the text of each scheduler resource in src. A
 // `local.x` reference inside one (a job whose uri is a local) is resolved by
-// appending the local's definition from all.
+// appending its definition from the locals blocks of all.
 func schedulerScopes(src, all string) []string {
 	var scopes []string
+	locals := strings.Join(blocks(all, `\blocals\s*\{`), "\n")
 	for _, h := range schedulerHeaders {
 		for _, body := range blocks(src, h) {
 			for _, ref := range localRef.FindAllStringSubmatch(body, -1) {
-				if def := regexp.MustCompile(`(?m)^\s*` + ref[1] + `\s*=\s*(.+)$`).FindStringSubmatch(all); def != nil {
+				if def := regexp.MustCompile(`(?m)^\s*` + ref[1] + `\s*=\s*(.+)$`).FindStringSubmatch(locals); def != nil {
 					body += "\n" + def[1]
 				}
 			}
@@ -331,6 +335,7 @@ func TestCheckerNegatives(t *testing.T) {
 		"# inside single quotes is content":              {job("note = 'say # " + collectURI + "'"), []string{"collect_recommendations"}, nil},
 		"trailing comment after a real uri":              {job(collectURI + " # note"), []string{"collect_recommendations"}, nil},
 		"literal only in locals is not wired":            {aud + job(`uri = "x"`), nil, nil},
+		"local name clash with a plain attribute":        {"resource \"x\" \"r\" {\n  name = \"x/api/scheduled/cleanup\"\n}\nlocals {\n  name = \"zzz\"\n}\n" + job("uri = local.name"), nil, nil},
 		"job uri resolved through a local":               {aud + job("uri = local.aud"), []string{"collect_recommendations"}, nil},
 		"literal outside a scheduler block":              {"resource \"aws_lambda_permission\" \"p\" {\n" + finalize + "\n}\n", nil, nil},
 		"unknown task in a scheduler block":              {target(`input = jsonencode({ action = "bogus_task" })`), nil, []string{"bogus_task"}},
