@@ -1,52 +1,145 @@
 import type { PlanEditorFieldRule, PlanEditorResponse } from '../api/plan-editor';
 import { planEditorReason } from './plan-editor-reasons';
+import { isSavingsPlanService, resolvePlanService } from './plan-service-ids';
 
 export interface EditFormHooks {
-  readonly selectService: (provider: string, service: string, term: number, payment: string) => void;
+  readonly selectService: (provider: string, service: string, term: number, payment: string, serviceLabel?: string) => void;
   readonly setAccounts: (accounts: readonly { readonly id: string; readonly name: string }[]) => void;
+  readonly onAccountsChange: (listener: () => void) => () => void;
 }
 
-const lockedByDefault: PlanEditorFieldRule = { editable: false, reason: 'unsupported_field', requires_approved_edits: false, requires_proposed_value_revalidation: false };
+export interface EditFormPatch {
+  readonly plan: Readonly<Record<string, string | number | boolean>>;
+  readonly services: Readonly<Record<string, Readonly<Record<string, string | number>>>>;
+  readonly target_accounts?: readonly string[];
+}
+export interface EditFormModel {
+  patch(): EditFormPatch;
+  onChange(listener: () => void): () => void;
+}
+export interface EditFormHandle { readonly model: EditFormModel; dispose(): void }
 
-export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse, hooks: EditFormHooks): () => void {
+const lockedByDefault: PlanEditorFieldRule = { editable: false, reason: 'unsupported_field', requires_approved_edits: false, requires_proposed_value_revalidation: false };
+const PLAN_FIELDS = [['name', 'plan-name'], ['enabled', 'plan-enabled'], ['auto_purchase', 'plan-auto-purchase'], ['notification_days_before', 'plan-notify-days']] as const;
+const SERVICE_FIELDS = [['provider', 'plan-provider'], ['service', 'plan-service'], ['term', 'plan-term'], ['payment', 'plan-payment'], ['coverage', 'plan-coverage']] as const;
+const NUMERIC = new Set(['term', 'coverage']);
+const SAVINGS_PLANS_NOTE = ' (Savings Plans are not supported yet)';
+
+function restoreSavingsPlanOptions(select: HTMLSelectElement | null): void {
+  select?.querySelectorAll<HTMLOptionElement>('option[data-sp-label]').forEach(option => {
+    option.textContent = option.dataset['spLabel']!; option.disabled = false; delete option.dataset['spLabel'];
+  });
+}
+
+export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse, hooks: EditFormHooks): EditFormHandle {
   const control = (id: string): HTMLInputElement => {
     const found = form.querySelector<HTMLInputElement>(`#${id}`);
     if (!found) throw new Error(`Plan form control #${id} is missing.`);
     return found;
   };
-  const all = Array.from(form.querySelectorAll<HTMLInputElement>('input,select,textarea'));
-  const wasDisabled = new Map(all.map(item => [item, item.disabled]));
-  const reasons: HTMLElement[] = [];
-  const undo = (): void => {
-    reasons.forEach(reason => { document.getElementById(reason.id.replace(/-reason$/, ''))?.removeAttribute('aria-describedby'); reason.remove(); });
+  const wasDisabled = new Map(Array.from(form.querySelectorAll<HTMLInputElement>('input,select,textarea')).map(item => [item, item.disabled]));
+  const planReasons: HTMLElement[] = [], serviceReasons: HTMLElement[] = [];
+  const listeners = new Set<() => void>(), cleanups: Array<() => void> = [];
+  const clear = (bucket: HTMLElement[]): void => bucket.splice(0).forEach(reason => {
+    document.getElementById(reason.id.replace(/-reason$/, ''))?.removeAttribute('aria-describedby'); reason.remove();
+  });
+  const labelOf = (item: HTMLElement): string => Array.from(item.closest('label')?.childNodes ?? []).filter(node => node.nodeType === Node.TEXT_NODE)
+    .map(node => node.textContent ?? '').join('').trim().replace(/:$/, '');
+  const apply = (item: HTMLInputElement, rule: PlanEditorFieldRule, bucket: HTMLElement[], anchor?: Element | null, label?: string, sentence?: string): void => {
+    item.disabled = !rule.editable;
+    if (rule.editable) return;
+    const reason = document.createElement('p');
+    reason.id = `${item.id}-reason`; reason.className = 'help-text';
+    const text = sentence ?? planEditorReason(rule.reason, planEditorReason(rule.requires_approved_edits ? 'approved_edits_disabled' : 'unsupported_field', ''));
+    reason.textContent = label ? `${label}: ${text}` : text;
+    item.setAttribute('aria-describedby', reason.id);
+    (anchor ?? item.closest('.setting-row') ?? item.closest('.form-row') ?? item.closest('label') ?? item).after(reason);
+    bucket.push(reason);
+  };
+  const dispose = (): void => {
+    cleanups.splice(0).forEach(cleanup => cleanup());
+    clear(planReasons); clear(serviceReasons); restoreSavingsPlanOptions(form.querySelector<HTMLSelectElement>('#plan-service'));
     wasDisabled.forEach((value, item) => { item.disabled = value; });
   };
   try {
     const { plan, field_policy: policy } = response;
+    const services = plan.services ?? {}, edits: Record<string, Record<string, string>> = {}, baseline: Record<string, string> = {};
+    let current: string | undefined = Object.keys(services)[0];
+    const accountIds = (): string[] => control('plan-account-ids').value.split(',').filter(Boolean);
+    const patch = (): EditFormPatch => {
+      const stored: Record<string, string | number | boolean> = { name: plan.name, enabled: plan.enabled, auto_purchase: plan.auto_purchase, notification_days_before: plan.notification_days_before };
+      const planPatch: Record<string, string | number | boolean> = {};
+      for (const [key, id] of PLAN_FIELDS) {
+        const item = control(id), value = typeof stored[key] === 'boolean' ? item.checked : key === 'notification_days_before' ? Number(item.value) : item.value;
+        if (value !== stored[key]) planPatch[key] = value;
+      }
+      const servicePatch: Record<string, Record<string, string | number>> = {};
+      for (const [key, fields] of Object.entries(edits)) {
+        const entries = Object.entries(fields).map(([field, value]) => [field, NUMERIC.has(field) ? Number(value) : value] as const);
+        if (entries.length) servicePatch[key] = Object.fromEntries(entries);
+      }
+      const ids = accountIds(), same = ids.length === response.account_ids.length && ids.every(id => response.account_ids.includes(id));
+      return same ? { plan: planPatch, services: servicePatch } : { plan: planPatch, services: servicePatch, target_accounts: ids };
+    };
+    let last = '';
+    const notify = (): void => {
+      const signature = JSON.stringify(patch());
+      if (signature === last) return;
+      last = signature; listeners.forEach(listener => listener());
+    };
+    const paint = (key: string): void => {
+      clear(serviceReasons);
+      const item = services[key]!, resolved = resolvePlanService(item.provider, item.service);
+      const unsupported = resolved.state === 'unsupported';
+      const show = (provider: string, service: string, term: number, payment: string): void => hooks.selectService(provider, service, term, payment,
+        unsupported ? `Unsupported: ${item.provider}/${item.service} (read-only)` : undefined);
+      show(item.provider, resolved.canonical ?? item.service, item.term, item.payment);
+      control('plan-coverage').value = String(item.coverage);
+      for (const [field, id] of SERVICE_FIELDS) baseline[field] = control(id).value;
+      const edit = edits[key];
+      if (edit && Object.keys(edit).length) {
+        show(edit['provider'] ?? baseline['provider']!, edit['service'] ?? baseline['service']!, Number(edit['term'] ?? baseline['term']), edit['payment'] ?? baseline['payment']!);
+        control('plan-coverage').value = edit['coverage'] ?? baseline['coverage']!;
+      }
+      const blocked = unsupported ? 'This service is not supported by the plan editor.' : isSavingsPlanService(item.service) ? 'Savings Plans are not supported yet.' : undefined;
+      for (const [field, id] of SERVICE_FIELDS) apply(control(id), blocked ? lockedByDefault : policy.services[key]?.[field] ?? lockedByDefault, serviceReasons, undefined, labelOf(control(id)), blocked);
+      const picker = control('plan-service') as unknown as HTMLSelectElement;
+      restoreSavingsPlanOptions(picker);
+      if (!picker.disabled) picker.querySelectorAll<HTMLOptionElement>('option').forEach(option => {
+        if (!isSavingsPlanService(option.value)) return;
+        option.dataset['spLabel'] = option.textContent ?? ''; option.textContent += SAVINGS_PLANS_NOTE; option.disabled = true;
+      });
+    };
     control('plan-name').value = plan.name;
     control('plan-enabled').checked = plan.enabled;
     control('plan-auto-purchase').checked = plan.auto_purchase;
     control('plan-notify-days').value = String(plan.notification_days_before);
-    const stored = Object.values(plan.services ?? {})[0];
-    if (stored) {
-      hooks.selectService(stored.provider, stored.service, stored.term, stored.payment);
-      control('plan-coverage').value = String(stored.coverage);
-    }
     hooks.setAccounts(response.account_ids.map(id => ({ id, name: response.accounts.find(account => account.id === id)?.name ?? id })));
-    const cap = control('plan-max-step-commitment');
-    cap.value = plan.max_step_commitment === null ? 'No cap' : String(plan.max_step_commitment);
+    control('plan-account-ids').value = response.account_ids.join(',');
+    control('plan-max-step-commitment').value = plan.max_step_commitment === null ? 'No cap' : String(plan.max_step_commitment);
     form.querySelectorAll<HTMLInputElement>('input,select,textarea,.selected-accounts button').forEach(item => { item.disabled = true; });
-    for (const [key, id] of [['name', 'plan-name'], ['enabled', 'plan-enabled'], ['auto_purchase', 'plan-auto-purchase'], ['notification_days_before', 'plan-notify-days']] as const) {
-      const rule = policy.controls[key] ?? lockedByDefault, item = control(id);
-      item.disabled = !rule.editable;
-      if (rule.editable) continue;
-      const reason = document.createElement('p');
-      reason.id = `${id}-reason`; reason.className = 'help-text';
-      reason.textContent = planEditorReason(rule.reason, rule.requires_approved_edits ? planEditorReason('approved_edits_disabled', '') : planEditorReason('unsupported_field', ''));
-      item.setAttribute('aria-describedby', reason.id);
-      (item.closest('.setting-row') ?? item.closest('label') ?? item).after(reason);
-      reasons.push(reason);
-    }
-  } catch (error) { undo(); throw error; }
-  return undo;
+    for (const [key, id] of PLAN_FIELDS) apply(control(id), policy.controls[key] ?? lockedByDefault, planReasons);
+    const accounts = policy.controls['target_accounts'] ?? lockedByDefault;
+    apply(control('plan-account-search'), accounts, planReasons, form.querySelector('.plan-accounts-search'), 'Target accounts');
+    form.querySelectorAll<HTMLButtonElement>('.selected-accounts button').forEach(button => { button.disabled = !accounts.editable; });
+    if (current) paint(current);
+    last = JSON.stringify(patch());
+    const record = (): void => {
+      if (current) for (const [field, id] of SERVICE_FIELDS) {
+        const item = control(id), fields = edits[current] ??= {};
+        if (item.disabled || item.value === baseline[field]) delete fields[field]; else fields[field] = item.value;
+      }
+      notify();
+    };
+    const pick = (event: Event): void => {
+      const target = event.target as HTMLElement;
+      if (!target.matches('[data-edit="service"]')) return;
+      const key = (target as HTMLSelectElement).value;
+      if (key in services) { current = key; paint(key); notify(); }
+    };
+    const layout = form.closest('.plan-editor-layout');
+    form.addEventListener('input', record); form.addEventListener('change', record); layout?.addEventListener('change', pick);
+    cleanups.push(() => { form.removeEventListener('input', record); form.removeEventListener('change', record); layout?.removeEventListener('change', pick); }, hooks.onAccountsChange(notify));
+    return { dispose, model: { patch, onChange: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; } } };
+  } catch (error) { dispose(); throw error; }
 }

@@ -97,6 +97,30 @@ describe('Edit then Create', () => {
     createDefaults();
   });
 
+  test('Edit-only DOM from the settings form does not leak into New Plan', async () => {
+    const base = editorResponse(), open = { editable: true, reason: null, requires_approved_edits: false, requires_proposed_value_revalidation: false };
+    await openEdit({ ...base, field_policy: { ...base.field_policy, controls: { ...base.field_policy.controls, target_accounts: open },
+      services: { first: Object.fromEntries(['provider', 'service', 'term', 'payment', 'coverage'].map(field => [field, open])) } } });
+    const sp = Array.from(el<HTMLSelectElement>('plan-service').options).find(option => option.value === 'savings-plans-compute')!;
+    expect(sp.disabled).toBe(true);
+    expect(document.getElementById('plan-account-search-reason')).toBeNull();
+    closePlanModal();
+    openNewPlanModal();
+    expect(sp.disabled).toBe(false); expect(sp.textContent).toBe('Compute SP');
+    expect(document.querySelectorAll('#plan-form p[id$="-reason"]:not(#plan-max-step-commitment-reason)')).toHaveLength(0);
+    expect(document.querySelectorAll('#plan-form [aria-describedby$="-reason"]:not(#plan-max-step-commitment)')).toHaveLength(0);
+    expect(el<HTMLInputElement>('plan-coverage').disabled).toBe(false);
+  });
+
+  test('a locked Edit leaves reasons that New Plan removes', async () => {
+    await openEdit(editorResponse());
+    expect(el('plan-term-reason')).not.toBeNull();
+    closePlanModal();
+    openNewPlanModal();
+    expect(document.querySelectorAll('#plan-form p[id$="-reason"]:not(#plan-max-step-commitment-reason)')).toHaveLength(0);
+    expect(el<HTMLSelectElement>('plan-term').disabled).toBe(false);
+  });
+
   test('New Plan after an Azure Edit opens with Create defaults', async () => {
     await openEdit(azureEditor());
     expect(el<HTMLSelectElement>('plan-provider').value).toBe('azure');

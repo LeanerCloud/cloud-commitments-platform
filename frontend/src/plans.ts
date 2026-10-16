@@ -1253,7 +1253,7 @@ async function togglePlan(planId: string, enabled: boolean): Promise<void> {
   }
 }
 
-function selectEditService(provider: string, service: string, term: number, payment: string): void {
+function selectEditService(provider: string, service: string, term: number, payment: string, serviceLabel?: string): void {
   const select = (id: string): HTMLSelectElement => document.getElementById(id) as HTMLSelectElement;
   const show = (control: HTMLSelectElement, value: string, label: string): void => {
     control.value = value;
@@ -1261,19 +1261,27 @@ function selectEditService(provider: string, service: string, term: number, paym
     const stored = new Option(label, value); stored.disabled = true; stored.dataset['stored'] = 'true';
     control.add(stored); control.value = value;
   };
+  document.querySelectorAll('#plan-service option[data-stored],#plan-term option[data-stored],#plan-payment option[data-stored]').forEach(option => option.remove());
   select('plan-provider').value = provider;
   updateServiceDropdownForProvider(provider);
-  show(select('plan-service'), service, service);
+  show(select('plan-service'), service, serviceLabel ?? service);
   populateTermSelect(select('plan-term'), provider, service);
   populatePaymentSelect(select('plan-payment'), provider, service);
   if (term > 0) show(select('plan-term'), String(term), `${term} Year${term === 1 ? '' : 's'}`);
   if (payment) show(select('plan-payment'), normalizePaymentValue(payment, provider), payment);
 }
 
+let planAccountsListener: (() => void) | undefined;
+function onEditAccountsChange(listener: () => void): () => void {
+  planAccountsListener = listener;
+  return () => { if (planAccountsListener === listener) planAccountsListener = undefined; };
+}
+
 function setEditAccounts(accounts: readonly { id: string; name: string }[]): void {
   planSelectedAccounts = accounts.map(account => ({ id: account.id, name: account.name, external_id: '' }));
   renderPlanAccountChips();
   updatePlanAccountIdsField();
+  wirePlanAccountSearch();
 }
 
 let disposePlanEditor: (() => void) | undefined;
@@ -1284,7 +1292,7 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
   planEditorMode = editor ? 'complete-edit' : 'create';
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
   const advanced = modal.querySelector<HTMLDetailsElement>('#plan-advanced-settings');
-  let undoForm: (() => void) | undefined;
+  let editForm: ReturnType<typeof fillEditForm> | undefined;
   if (advanced) advanced.open = editor !== undefined;
   const revealInvalid = (event: Event): void => {
     if (advanced?.contains(event.target as Node)) advanced.open = true;
@@ -1299,11 +1307,11 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
     try { disposePanel?.(); }
     finally {
       form?.removeEventListener('invalid', revealInvalid, true); form?.removeEventListener('submit', blockSubmit, true);
-      undoForm?.();
+      editForm?.dispose();
     }
   };
   try {
-    if (editor && form) undoForm = fillEditForm(form, editor, { selectService: selectEditService, setAccounts: setEditAccounts });
+    if (editor && form) editForm = fillEditForm(form, editor, { selectService: selectEditService, setAccounts: setEditAccounts, onAccountsChange: onEditAccountsChange });
     disposePanel = host && form ? editor ? mountPlanEditorEditPanel(host, editor) : mountPlanEditorPanel(host, form) : undefined;
   } catch (error) { disposePlanEditor(); disposePlanEditor = undefined; throw error; }
   refreshPlanSaveButtonState();
@@ -1546,6 +1554,7 @@ function updatePlanAccountIdsField(): void {
   // Recalc Save-button disabled state every time the account list changes
   // so the user gets immediate feedback when they remove the last chip.
   refreshPlanSaveButtonState();
+  planAccountsListener?.();
 }
 
 let planAccountSearchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1620,20 +1629,23 @@ async function setupPlanAccountsSection(planId?: string): Promise<void> {
   updatePlanAccountIdsField();
 
   const searchInput = document.getElementById('plan-account-search') as HTMLInputElement | null;
-  if (searchInput) {
-    // Disable the search input until a provider is selected.
-    searchInput.disabled = !planProvider;
+  // Disable the search input until a provider is selected.
+  if (searchInput) searchInput.disabled = !planProvider;
+  wirePlanAccountSearch();
+}
 
-    // Remove previous listeners by replacing node
-    const newInput = searchInput.cloneNode(true) as HTMLInputElement;
-    searchInput.parentNode?.replaceChild(newInput, searchInput);
-    newInput.addEventListener('input', () => {
-      if (planAccountSearchTimer) clearTimeout(planAccountSearchTimer);
-      planAccountSearchTimer = setTimeout(() => {
-        void handlePlanAccountSearch(newInput.value);
-      }, 300);
-    });
-  }
+function wirePlanAccountSearch(): void {
+  const searchInput = document.getElementById('plan-account-search') as HTMLInputElement | null;
+  if (!searchInput) return;
+  // Remove previous listeners by replacing node
+  const newInput = searchInput.cloneNode(true) as HTMLInputElement;
+  searchInput.parentNode?.replaceChild(newInput, searchInput);
+  newInput.addEventListener('input', () => {
+    if (planAccountSearchTimer) clearTimeout(planAccountSearchTimer);
+    planAccountSearchTimer = setTimeout(() => {
+      void handlePlanAccountSearch(newInput.value);
+    }, 300);
+  });
 }
 
 /**

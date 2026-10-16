@@ -204,6 +204,7 @@ describe('Plans Module', () => {
                plan-account-ids field is the contract between renderPlan
                AccountChips and savePlan; the submit button's disabled
                state is recomputed every time the chip list changes. -->
+          <div class="plan-accounts-search"><input type="text" id="plan-account-search"></div>
           <div id="plan-accounts-selected" class="selected-accounts"></div>
           <input type="hidden" id="plan-account-ids" value="">
           <button type="submit">Save Plan</button>
@@ -2923,6 +2924,7 @@ describe('Plans Module', () => {
       // Inject account-search elements into the existing form using safe DOM API calls.
       const form = document.getElementById('plan-form');
       if (form) {
+        document.querySelector('.plan-accounts-search')?.remove();
         const accountSection = document.createElement('div');
         accountSection.className = 'plan-accounts-search';
 

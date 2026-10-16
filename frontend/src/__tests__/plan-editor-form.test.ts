@@ -14,8 +14,8 @@ const withControls = (controls: Record<string, PlanEditorFieldRule>) => {
 };
 const open = (controls: Record<string, PlanEditorFieldRule>, hooks?: Partial<EditFormHooks>) => {
   const spies = { selectService: jest.fn(), setAccounts: jest.fn() };
-  const used: EditFormHooks = { ...spies, ...hooks };
-  return { undo: fillEditForm(el<HTMLFormElement>('plan-form'), withControls(controls), used), hooks: spies };
+  const used: EditFormHooks = { ...spies, onAccountsChange: () => () => undefined, ...hooks };
+  return { undo: fillEditForm(el<HTMLFormElement>('plan-form'), withControls(controls), used).dispose, hooks: spies };
 };
 const allEditable = { name: rule(true), enabled: rule(true), auto_purchase: rule(true), notification_days_before: rule(true) };
 
@@ -41,7 +41,7 @@ test.each([
   expect(control.disabled).toBe(true);
   expect(reason.textContent).toBe('You do not have permission to change this.');
   expect(control.getAttribute('aria-describedby')).toBe(reason.id);
-  expect(document.querySelectorAll(`[id$="-reason"]:not(#plan-max-step-commitment-reason)`)).toHaveLength(1);
+  expect(['plan-name', 'plan-enabled', 'plan-auto-purchase', 'plan-notify-days'].filter(other => document.getElementById(`${other}-reason`))).toEqual([id]);
 });
 
 test('uses the approved-edits wording when no reason code is given, and never injects markup', () => {
@@ -59,7 +59,7 @@ test('a missing policy rule locks the control instead of leaving it open', () =>
 
 test('shows the stored service, term, coverage and accounts disabled', () => {
   const { hooks } = open(allEditable);
-  expect(hooks.selectService).toHaveBeenCalledWith('aws', 'ec2', 3, 'all-upfront');
+  expect(hooks.selectService).toHaveBeenCalledWith('aws', 'ec2', 3, 'all-upfront', undefined);
   expect(el<HTMLInputElement>('plan-coverage').value).toBe('40');
   expect(hooks.setAccounts).toHaveBeenCalledWith([{ id: 'current-account', name: 'Current' }]);
   for (const id of ['plan-provider', 'plan-service', 'plan-term', 'plan-payment', 'plan-coverage', 'plan-description', 'plan-account-search', 'ramp-step-percent', 'ramp-interval-days']) {
@@ -75,7 +75,7 @@ test('chip remove buttons are disabled once the hook has rendered them', () => {
 
 test('shows the cap disabled with a reason and the stored value', () => {
   const base = response();
-  fillEditForm(el<HTMLFormElement>('plan-form'), { ...base, plan: { ...base.plan, max_step_commitment: 1500 } }, { selectService: jest.fn(), setAccounts: jest.fn() });
+  fillEditForm(el<HTMLFormElement>('plan-form'), { ...base, plan: { ...base.plan, max_step_commitment: 1500 } }, { selectService: jest.fn(), setAccounts: jest.fn(), onAccountsChange: () => () => undefined });
   const cap = el<HTMLInputElement>('plan-max-step-commitment');
   expect(cap.value).toBe('1500'); expect(cap.disabled).toBe(true);
   expect(el('plan-max-step-commitment-reason').textContent).toBe('Per-step cap editing is not available yet');
@@ -95,7 +95,7 @@ test('undo re-enables the controls and removes the reasons', () => {
 
 test('a plan without stored services does not call the service hook', () => {
   const base = response();
-  const hooks = { selectService: jest.fn(), setAccounts: jest.fn() };
+  const hooks = { selectService: jest.fn(), setAccounts: jest.fn(), onAccountsChange: () => () => undefined };
   fillEditForm(el<HTMLFormElement>('plan-form'), { ...base, plan: { ...base.plan, services: null } }, hooks);
   expect(hooks.selectService).not.toHaveBeenCalled();
 });
