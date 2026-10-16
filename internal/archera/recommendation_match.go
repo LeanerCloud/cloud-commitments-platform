@@ -94,7 +94,7 @@ func validRecommendation(r *RecommendationIdentity) bool {
 	if r.NativeDurationSeconds != awsSPYearSeconds && r.NativeDurationSeconds != awsSPThreeYearSeconds {
 		return false
 	}
-	return validDimensions(r) && validPayment(r.Payment) && sameAmount(r.HourlyCommitment, r.HourlyCommitment)
+	return validDimensions(r) && validPayment(r.Payment)
 }
 
 func validDimensions(r *RecommendationIdentity) bool {
@@ -183,7 +183,7 @@ func validMatchUUID(id string) bool {
 }
 
 func validLineReference(planID string, item *LineItemIdentity) bool {
-	return validMatchUUID(item.ID) && validMatchUUID(item.OfferID) && validMatchUUID(item.PlanID) && strings.EqualFold(planID, item.PlanID)
+	return validMatchUUID(item.ID) && validMatchUUID(item.PlanID) && strings.EqualFold(planID, item.PlanID)
 }
 
 func validComparisonReference(row *ComparisonIdentity, items map[string]*LineItemIdentity) bool {
