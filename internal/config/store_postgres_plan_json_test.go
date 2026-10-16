@@ -45,3 +45,19 @@ func TestMergePlanServiceJSONFilterPresence(t *testing.T) {
 		})
 	}
 }
+
+func TestMergePlanServicesJSONKeyRemoval(t *testing.T) {
+	old := map[string]ServiceConfig{"aws/ec2": {Provider: "aws", Service: "ec2"}}
+	next := map[string]ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds"}}
+	raw := []byte(`{"aws/ec2":{"future":1}}`)
+
+	_, err := mergePlanServicesJSON(raw, old, next, true)
+	require.ErrorIs(t, err, ErrPlanJSONUnsupported)
+
+	merged, err := mergePlanServicesJSON(raw, old, next, false)
+	require.NoError(t, err)
+	var objects map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(merged, &objects))
+	require.Len(t, objects, 1)
+	require.Contains(t, objects, "aws/rds")
+}

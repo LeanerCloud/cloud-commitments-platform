@@ -20,14 +20,11 @@ func (s *PostgresStore) purchasePlanJSONForUpdateTx(ctx context.Context, tx pgx.
 	if old == nil {
 		return nil, nil, nil, ErrNotFound
 	}
-	if !old.UpdatedAt.Equal(next.UpdatedAt) {
-		return nil, nil, nil, ErrPurchasePlanConflict
-	}
 	var services, ramp json.RawMessage
 	if readErr := tx.QueryRow(ctx, `SELECT services,ramp_schedule FROM purchase_plans WHERE id=$1`, next.ID).Scan(&services, &ramp); readErr != nil {
 		return nil, nil, nil, readErr
 	}
-	services, err = mergePlanServicesJSON(services, old.Services, next.Services)
+	services, err = mergePlanServicesJSON(services, old.Services, next.Services, old.RampSchedule.DatesManaged)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -46,7 +43,7 @@ func (s *PostgresStore) purchasePlanJSONForUpdateTx(ctx context.Context, tx pgx.
 	return old, services, ramp, nil
 }
 
-func mergePlanServicesJSON(raw []byte, old, next map[string]ServiceConfig) ([]byte, error) {
+func mergePlanServicesJSON(raw []byte, old, next map[string]ServiceConfig, datesManaged bool) ([]byte, error) {
 	if len(old) == 0 && len(next) == 0 {
 		return raw, nil
 	}
@@ -58,9 +55,13 @@ func mergePlanServicesJSON(raw []byte, old, next map[string]ServiceConfig) ([]by
 		objects = make(map[string]json.RawMessage)
 	}
 	for key := range old {
-		if _, ok := next[key]; !ok {
+		if _, ok := next[key]; ok {
+			continue
+		}
+		if datesManaged {
 			return nil, ErrPlanJSONUnsupported
 		}
+		delete(objects, key)
 	}
 	for key := range next {
 		svc := next[key]

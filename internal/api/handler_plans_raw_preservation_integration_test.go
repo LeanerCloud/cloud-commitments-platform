@@ -40,10 +40,23 @@ func TestLegacyPlanPUTPreservesStoredServiceJSON(t *testing.T) {
 	var payload map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal([]byte(response.Body), &payload))
 	require.JSONEq(t, `"rename"`, string(payload["name"]))
-	req.Body = `{"name":"lossy replacement","provider":"aws","service":"rds","ramp_schedule":"immediate","notification_days_before":0}`
+	swap := `{"name":"swap","provider":"aws","service":"rds","ramp_schedule":"immediate","notification_days_before":0}`
+
+	_, err = f.db.Pool().Exec(ctx, `UPDATE purchase_plans SET ramp_schedule=jsonb_set(ramp_schedule,'{dates_managed}','true') WHERE id=$1`, plan.ID)
+	require.NoError(t, err)
+	req.Body = swap
 	response, err = f.h.HandleRequest(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, 409, response.StatusCode, response.Body)
 	require.NoError(t, f.db.Pool().QueryRow(ctx, `SELECT services::text FROM purchase_plans WHERE id=$1`, plan.ID).Scan(&stored))
 	require.JSONEq(t, raw, stored)
+
+	_, err = f.db.Pool().Exec(ctx, `UPDATE purchase_plans SET ramp_schedule=jsonb_set(ramp_schedule,'{dates_managed}','false') WHERE id=$1`, plan.ID)
+	require.NoError(t, err)
+	response, err = f.h.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 200, response.StatusCode, response.Body)
+	var keys []string
+	require.NoError(t, f.db.Pool().QueryRow(ctx, `SELECT array_agg(k) FROM purchase_plans, jsonb_object_keys(services) k WHERE id=$1`, plan.ID).Scan(&keys))
+	require.Equal(t, []string{"aws/rds"}, keys)
 }
