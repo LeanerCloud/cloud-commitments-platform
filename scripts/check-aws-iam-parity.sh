@@ -151,6 +151,29 @@ for f in "$FED_XACC_TF" "$FED_WIF_CFN" "$FED_WIF_TF" "$FED_XACC_CLI" "$FED_WIF_C
   compare_pair "federation core" "$FED_XACC_CFN" "$fed_core_ref" "$f" "$(extract_actions "$f" no-orgs)"
 done
 
+# --- 4. required customer-account reads ----------------------------------------
+# Parity only proves the files agree with each other, so a read the code calls
+# in customer accounts that every flavor omits (#289) passes it. List those
+# reads explicitly; each customer-facing policy and CLI template must grant all.
+
+REQUIRED_CUSTOMER_ACTIONS=(
+  ce:GetCostAndUsage
+  ce:GetReservationPurchaseRecommendation ce:GetReservationUtilization ce:GetReservationCoverage
+  ce:GetSavingsPlansPurchaseRecommendation ce:GetSavingsPlansUtilization ce:GetSavingsPlansCoverage
+  ec2:DescribeInstanceTypeOfferings ec2:DescribeInstanceTypes
+)
+
+for f in "$FED_XACC_CFN" "$FED_XACC_TF" "$FED_WIF_CFN" "$FED_WIF_TF" "$FED_XACC_CLI" "$FED_WIF_CLI" \
+  "$REPO_ROOT/cloudformation/stacks/CUDly-CrossAccount/template.yaml"; do
+  granted=$(extract_actions "$f")
+  for a in "${REQUIRED_CUSTOMER_ACTIONS[@]}"; do
+    if ! grep -qxF "$a" <<<"$granted"; then
+      echo "ERROR [required customer actions]: $f does not grant $a" >&2
+      FAILURES=$((FAILURES + 1))
+    fi
+  done
+done
+
 # --- result --------------------------------------------------------------------
 
 if [[ "$FAILURES" -gt 0 ]]; then
