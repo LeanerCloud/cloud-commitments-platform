@@ -24,6 +24,35 @@ import { handleArcheraDeeplink, openArcheraOfferModal } from './archera';
 import { closeModal } from './modal';
 
 /**
+ * describeDuplicateSubmit words the outcome of a submit the backend collapsed
+ * onto an earlier execution (duplicate=true, #758). It names that execution
+ * and its real state, so a direct-mode submit that joined a still-pending
+ * approval never claims it executed immediately (#759).
+ */
+function describeDuplicateSubmit(result: api.PurchaseResult): string {
+  const id = result.execution_id.slice(0, 8);
+  let state: string;
+  switch (result.status) {
+    case 'pending':
+    case 'notified':
+    case 'scheduled':
+      state = 'it is still awaiting approval';
+      break;
+    case 'approved':
+    case 'running':
+      state = 'it is being executed';
+      break;
+    case 'completed':
+    case 'partially_completed':
+      state = `it was already executed (${result.status})`;
+      break;
+    default:
+      state = `its status is ${result.status}`;
+  }
+  return `This matches an existing execution ${id}, so no new request was created; ${state}. Check Purchase History.`;
+}
+
+/**
  * Initialize app
  */
 export async function init(): Promise<void> {
@@ -465,7 +494,13 @@ export async function handleExecutePurchase(): Promise<void> {
     clearPurchaseModalRecommendations();
     clearExecuteMode();
 
-    if (isDirect) {
+    if (result.duplicate) {
+      showToast({
+        message: describeDuplicateSubmit(result),
+        kind: result.status === 'failed' ? 'warning' : 'info',
+        timeout: 15_000,
+      });
+    } else if (isDirect) {
       // Direct-execute: purchase is already committed; inform the user.
       showToast({
         message: `Purchase executed immediately (id ${result.execution_id.slice(0, 8)}). Check Purchase History for the result.`,
@@ -636,7 +671,14 @@ async function submitFanOutBuckets(buckets: FanOutBucket[]): Promise<void> {
     // name a recipient whose email never arrived. Multi-bucket purchases can
     // route to different approvers; dedupe so the toast is compact.
     const recipients = new Set<string>();
+    const joined: string[] = [];
+    let fresh = 0;
     for (const r of fulfilled) {
+      if (r.value.duplicate) {
+        joined.push(describeDuplicateSubmit(r.value));
+        continue;
+      }
+      fresh++;
       if (
         r.value.email_sent !== false &&
         r.value.status !== 'failed' &&
@@ -645,20 +687,25 @@ async function submitFanOutBuckets(buckets: FanOutBucket[]): Promise<void> {
         recipients.add(r.value.approval_recipient);
       }
     }
-    const noun = succeeded === 1 ? 'purchase' : 'purchases';
-    let message: string;
-    if (recipients.size === 0) {
-      message = `${succeeded} ${noun} submitted — check your email to approve each.`;
-    } else if (recipients.size === 1) {
-      message = `${succeeded} ${noun} sent for approval to ${[...recipients][0]}.`;
-    } else {
-      message = `${succeeded} ${noun} sent for approval to ${recipients.size} recipients (${[...recipients].sort().join(', ')}).`;
+    for (const message of joined) {
+      showToast({ message, kind: 'info', timeout: 15_000 });
     }
-    showToast({
-      message,
-      kind: 'success',
-      timeout: 15_000,
-    });
+    if (fresh > 0) {
+      const noun = fresh === 1 ? 'purchase' : 'purchases';
+      let message: string;
+      if (recipients.size === 0) {
+        message = `${fresh} ${noun} submitted — check your email to approve each.`;
+      } else if (recipients.size === 1) {
+        message = `${fresh} ${noun} sent for approval to ${[...recipients][0]}.`;
+      } else {
+        message = `${fresh} ${noun} sent for approval to ${recipients.size} recipients (${[...recipients].sort().join(', ')}).`;
+      }
+      showToast({
+        message,
+        kind: 'success',
+        timeout: 15_000,
+      });
+    }
   } else {
     // Prefix each failure with its bucket's account so the user knows what to
     // retry when one account's bucket fails and another's succeeds (issue #333).
