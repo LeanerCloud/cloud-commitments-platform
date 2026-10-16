@@ -43,6 +43,33 @@ func requireFieldsCovered[C any](t *testing.T, req any, checks map[string]C) {
 	require.Equal(t, fields, tracked, "table lists fields that %s no longer has", v.Type().Name())
 }
 
+// constrainedPermissions is what constrainedAPIPermissions must convert to.
+var constrainedPermissions = []Permission{{
+	Action: ActionView, Resource: ResourceRecommendations,
+	Constraints: &PermissionConstraints{
+		AccountIDs: []string{"acct-1"}, Providers: []string{"aws"}, Services: []string{"ec2"},
+		Regions: []string{"us-east-1"}, MaxPurchaseAmount: 1234.5,
+	},
+}}
+
+// constrainedAPIPermissions sets every APIPermission and constraint field; the
+// constraints are the tenant boundary, so a dropped one must fail.
+func constrainedAPIPermissions(t *testing.T) []APIPermission {
+	t.Helper()
+	perm := APIPermission{
+		Action: ActionView, Resource: ResourceRecommendations,
+		Constraints: &APIPermissionConstraint{
+			Accounts: []string{"acct-1"}, Providers: []string{"aws"}, Services: []string{"ec2"},
+			Regions: []string{"us-east-1"}, MaxAmount: 1234.5,
+		},
+	}
+	requireFieldsCovered(t, perm, map[string]struct{}{"Action": {}, "Resource": {}, "Constraints": {}})
+	requireFieldsCovered(t, *perm.Constraints, map[string]struct{}{
+		"Accounts": {}, "Providers": {}, "Services": {}, "Regions": {}, "MaxAmount": {},
+	})
+	return []APIPermission{perm}
+}
+
 func TestAPIAdapters_CreateUser_AllFieldsReachStore(t *testing.T) {
 	ctx := context.Background()
 	req := APICreateUserRequest{Email: "new@example.com", Password: "SecurePass@123", Groups: []string{"group-1", "group-2"}}
@@ -118,14 +145,14 @@ func TestAPIAdapters_CreateGroup_AllFieldsReachStore(t *testing.T) {
 	req := APICreateGroupRequest{
 		Name:            "Test Group",
 		Description:     "Test description",
-		Permissions:     []APIPermission{{Action: ActionView, Resource: ResourceRecommendations}},
+		Permissions:     constrainedAPIPermissions(t),
 		AllowedAccounts: []string{"acct-1"},
 	}
 	checks := map[string]func(*testing.T, *Group){
 		"Name":        func(t *testing.T, g *Group) { assert.Equal(t, req.Name, g.Name) },
 		"Description": func(t *testing.T, g *Group) { assert.Equal(t, req.Description, g.Description) },
 		"Permissions": func(t *testing.T, g *Group) {
-			assert.Equal(t, []Permission{{Action: ActionView, Resource: ResourceRecommendations}}, g.Permissions)
+			assert.Equal(t, constrainedPermissions, g.Permissions)
 		},
 		"AllowedAccounts": func(t *testing.T, g *Group) { assert.Equal(t, req.AllowedAccounts, g.AllowedAccounts) },
 	}
@@ -169,14 +196,14 @@ func TestAPIAdapters_UpdateGroup_AllFieldsReachStore(t *testing.T) {
 	req := APIUpdateGroupRequest{
 		Name:            "New",
 		Description:     "New description",
-		Permissions:     []APIPermission{{Action: ActionView, Resource: ResourceRecommendations}},
+		Permissions:     constrainedAPIPermissions(t),
 		AllowedAccounts: []string{"acct-1"},
 	}
 	checks := map[string]func(*testing.T, *Group){
 		"Name":        func(t *testing.T, g *Group) { assert.Equal(t, req.Name, g.Name) },
 		"Description": func(t *testing.T, g *Group) { assert.Equal(t, req.Description, g.Description) },
 		"Permissions": func(t *testing.T, g *Group) {
-			assert.Equal(t, []Permission{{Action: ActionView, Resource: ResourceRecommendations}}, g.Permissions)
+			assert.Equal(t, constrainedPermissions, g.Permissions)
 		},
 		"AllowedAccounts": func(t *testing.T, g *Group) { assert.Equal(t, req.AllowedAccounts, g.AllowedAccounts) },
 	}
