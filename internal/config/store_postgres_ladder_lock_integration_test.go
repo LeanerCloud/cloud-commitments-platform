@@ -124,9 +124,9 @@ func TestLadderLock_ReleasedOnBuildErrorPanicAndCancel(t *testing.T) {
 	defer cancel()
 	store := setupLadderStore(ctx, t)
 	cfgID := seedLadderConfigWithExtID(ctx, t, store, "731111111111")
-	ok := func([]LadderInFlightRow) (*LadderRunDB, []LadderTrancheDB, error) {
+	ok := func([]LadderInFlightRow) (*LadderRunDB, []LadderTrancheDB, error) { //nolint:unparam // matches LadderPlanBuilder
 		return lockTestRun(cfgID), nil, nil
-	} //nolint:unparam // matches LadderPlanBuilder
+	}
 	plan := func(c context.Context, b LadderPlanBuilder) error {
 		_, err := store.PlanAndSaveLadderRun(c, cfgID, lockTestAsOf, b)
 		return err
