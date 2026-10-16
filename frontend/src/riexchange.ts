@@ -103,6 +103,17 @@ export async function loadRIExchange(): Promise<void> {
     scope = await resolveScope();
   } catch (error) {
     if (generation !== scopeGeneration) return;
+    utilizationGeneration++;
+    currentRIs = [];
+    currentUtilization = new Map();
+    currentRecommendations = [];
+    currentRIAccountID = undefined;
+    const message = 'Select a valid account to load this section.';
+    for (const id of ['ri-exchange-recommendations-list', 'ri-exchange-history-list']) {
+      const el = document.getElementById(id);
+      if (el) renderEmptyState(el, message);
+    }
+    renderReshapeStalenessBanner('', null);
     const container = document.getElementById('ri-exchange-instances-list');
     if (container) {
       container.innerHTML = `<p class="error">Failed to resolve the selected account: ${escapeHtml((error as Error).message)}</p>`;

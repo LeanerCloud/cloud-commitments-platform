@@ -1073,6 +1073,48 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
     expect(instancesEl.querySelector('.error')).not.toBeNull();
   });
 
+  it('a pending utilization fetch from a prior scope cannot overwrite the resolve error', async () => {
+    const sampleRI = {
+      reserved_instance_id: 'ri-old', instance_type: 'm5.large', availability_zone: 'us-east-1a',
+      instance_count: 1, start: '2026-01-01T00:00:00Z', end: '2027-01-01T00:00:00Z',
+      offering_type: 'Convertible', fixed_price: 0, usage_price: 0, state: 'active', normalization_factor: 4,
+    };
+    let releaseUtil: (v: unknown) => void = () => undefined;
+    (api.getRIUtilization as jest.Mock).mockReturnValueOnce(new Promise(r => { releaseUtil = r; }));
+    (api.listConvertibleRIs as jest.Mock).mockResolvedValue([sampleRI]);
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
+    await loadRIExchange();
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-missing']);
+    await loadRIExchange();
+    releaseUtil([]);
+    await new Promise(r => setTimeout(r, 0));
+    expect(instancesEl.querySelector('.error')).not.toBeNull();
+    expect(instancesEl.textContent).not.toContain('ri-old');
+    expect(recsEl.textContent).toContain('Select a valid account');
+    expect(historyEl.textContent).toContain('Select a valid account');
+  });
+
+  it('drops a superseded failing resolve instead of rendering its error', async () => {
+    let rejectLookup: (e: Error) => void = () => undefined;
+    (api.listAccountsMinimal as jest.Mock).mockReturnValueOnce(new Promise((_, rej) => { rejectLookup = rej; }));
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
+    const first = loadRIExchange();
+    stateMod().getCurrentAccountIDs.mockReturnValue([]);
+    await loadRIExchange();
+    rejectLookup(new Error('boom'));
+    await first;
+    expect(instancesEl.querySelector('.error')).toBeNull();
+    expect(instancesEl.textContent).not.toContain('boom');
+  });
+
+  it('shows the request failure and makes no list call when listAccountsMinimal rejects', async () => {
+    (api.listAccountsMinimal as jest.Mock).mockRejectedValueOnce(new Error('HTTP 500'));
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
+    await loadRIExchange();
+    expect(api.listConvertibleRIs).not.toHaveBeenCalled();
+    expect(instancesEl.textContent).toContain('HTTP 500');
+  });
+
   it('forwards undefined and skips the account lookup when no account is selected', async () => {
     await loadRIExchange();
     expect(api.listAccountsMinimal).not.toHaveBeenCalled();
