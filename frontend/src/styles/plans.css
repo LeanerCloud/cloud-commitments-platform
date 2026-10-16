@@ -276,3 +276,10 @@
 #plan-editor-panel .editor-draft-notice { padding: 12px; background: var(--cudly-info-bg); border-radius: 8px; }
 #plan-editor-panel .editor-help { margin-bottom: 16px; }
 #plan-editor-panel [data-editor="changes"] { margin-top: 16px; border-top: 1px solid var(--cudly-border); }
+#plan-review { margin: 16px 0; padding: 12px; border: 2px solid var(--cudly-primary); border-radius: 8px; overflow-wrap: anywhere; }
+#plan-review h3 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 8px 0; background: var(--cudly-surface); } /* the scroller is .plan-editor-layout */
+#plan-review h4 { margin: 12px 0 4px; }
+#plan-review ul { margin: 0; padding-left: 20px; }
+#plan-review fieldset { margin: 12px 0; padding: 4px 12px 8px; border: 1px solid var(--cudly-border); border-radius: 6px; min-width: 0; }
+#plan-review legend { padding: 0 6px; font-weight: 600; }
+#plan-review label { display: block; margin: 4px 0; }

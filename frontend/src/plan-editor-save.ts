@@ -5,6 +5,7 @@ import { isSavingsPlanSlug, resolvePlanService } from './lib/plan-service-ids';
 import { canReviewEditorDraft, draftDateChanges } from './lib/plan-editor-draft';
 import { buildEditRequest, serializeRequest } from './lib/plan-editor-request';
 import { newUuid } from './lib/uuid';
+import { createReviewRegion, plural, type ReviewAcknowledgments, type ReviewRegion } from './plan-editor-review';
 
 export interface PlanReviewDeps {
   readonly response: PlanEditorResponse;
@@ -15,7 +16,8 @@ export interface PlanReviewDeps {
   // The dialog session counter: any open, close or reload bumps it, which drops a late preview.
   readonly generation: () => number;
 }
-export interface PlanReviewHandle { review(): void; dispose(): void }
+// ready() is the acknowledged "ready to save" state E4b-3 reads; it is null until every required acknowledgment is checked.
+export interface PlanReviewHandle { review(): void; ready(): ReviewAcknowledgments | null; dispose(): void }
 
 const previewUncertainText = 'The preview did not complete. Nothing was saved; try Review changes again.';
 export const previewFailureText = (failure: PlanEditorFailure): string => failure.kind === 'uncertain' ? previewUncertainText : failure.message;
@@ -66,7 +68,14 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
     if (unchanged) return { blocked: 'No changes to review' };
     return { key: serializeRequest({ ...built, command_id: '' }), body: serializeRequest(built) };
   };
-  const supersede = (): void => { pending?.abort.abort(); pending = undefined; totals.textContent = ''; alert.textContent = ''; };
+  let region: ReviewRegion | undefined;
+  const clearRegion = (): void => {
+    if (!region) return;
+    const hadFocus = region.element.contains(document.activeElement);
+    region.element.remove(); region = undefined;
+    if (hadFocus) button.focus();
+  };
+  const supersede = (): void => { pending?.abort.abort(); pending = undefined; totals.textContent = ''; alert.textContent = ''; clearRegion(); };
   const sync = (): void => {
     if (disposed) return;
     const now = current(), key = 'key' in now ? now.key : '';
@@ -81,12 +90,19 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
     sync();
     const now = current();
     if ('blocked' in now || pending?.key === now.key) return;
+    clearRegion(); totals.textContent = ''; alert.textContent = '';
     const generation = deps.generation(), abort = new AbortController();
     const fresh = (): boolean => !disposed && !abort.signal.aborted && generation === deps.generation();
     void previewPlanEditor(response.plan.id, now.body, abort.signal).then(result => {
       if (!fresh()) return;
       const t = result.diff.totals;
-      totals.textContent = `${t.moved} dates moved; ${t.canceled} steps removed; ${t.approvals_affected} approvals affected`;
+      totals.textContent = `${plural(t.moved, 'date', 'dates')} moved; ${plural(t.canceled, 'step', 'steps')} removed; ${plural(t.approvals_affected, 'approval', 'approvals')} affected`;
+      region = createReviewRegion(result);
+      const anchor = host.querySelector('.schedule-preview-scroll');
+      if (anchor) anchor.after(region.element); else host.append(region.element);
+      region.heading.focus({ preventScroll: true });
+      // Bring the actions (checkboxes, Confirm, status) into view; jsdom has no scrollIntoView.
+      region.element.scrollIntoView?.({ block: 'end' });
     }, (error: unknown) => {
       if (!fresh()) return;
       alert.textContent = previewFailureText(planEditorFailure(error));
@@ -100,8 +116,9 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
   sync();
   return {
     review,
+    ready: () => region?.ready() ?? null,
     dispose: () => {
-      disposed = true; pending?.abort.abort(); unsubscribe.forEach(off => off()); feedback.remove();
+      disposed = true; region?.element.remove(); pending?.abort.abort(); unsubscribe.forEach(off => off()); feedback.remove();
       button.textContent = original.label; button.disabled = original.disabled;
       if (original.describedBy === null) button.removeAttribute('aria-describedby'); else button.setAttribute('aria-describedby', original.describedBy);
     },

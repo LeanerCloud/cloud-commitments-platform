@@ -106,7 +106,7 @@ describe('preview lifecycle', () => {
     expect(sent.command_id).toMatch(UUID); expect(sent.expected_revision).toBe('opaque-revision');
     expect(sent.plan).toEqual({}); expect(sent.steps[0]).toEqual({ step_number: 2, scheduled_date: '2026-11-07' });
     gate.resolve(result(3)); await flush();
-    expect(status()).toBe('3 dates moved; 1 steps removed; 2 approvals affected');
+    expect(status()).toBe('3 dates moved; 1 step removed; 2 approvals affected');
     preview.mockResolvedValueOnce(result(3)); handle.review(); await flush();
     expect(preview.mock.calls[1]![1]).toBe(body);
   });
@@ -122,7 +122,7 @@ describe('preview lifecycle', () => {
     a.resolve(result(1)); await flush();
     expect(status()).toBe('');
     b.resolve(result(2)); await flush();
-    expect(status()).toBe('2 dates moved; 1 steps removed; 2 approvals affected');
+    expect(status()).toBe('2 dates moved; 1 step removed; 2 approvals affected');
     a.resolve(result(9)); await flush();
     expect(status()).toContain('2 dates moved');
   });
