@@ -1,8 +1,8 @@
 # Additional scheduled sweeps. Each entry becomes an EventBridge rule that
 # invokes the server task named by the map key. `rule` is the short rule-name
 # suffix: rule names are "<stack_name>-sweep-<rule>", so the longest suffix
-# (at most 15 chars) fits the 64-char EventBridge limit; the module's stack_name
-# maximum (39) is set by the longer "-fire-scheduled-purchases" rule in main.tf.
+# (at most 15 chars) fits the 64-char EventBridge limit for any stack_name the
+# module accepts (at most 30, set by the IAM role name_prefix in main.tf).
 # The "sweep-" infix keeps these names clear of the older per-task rules.
 # Retries stay at the EventBridge default: a re-run is safe under the per-task advisory lock and row CAS in the server.
 locals {
