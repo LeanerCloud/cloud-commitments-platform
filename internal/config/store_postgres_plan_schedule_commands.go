@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -286,4 +287,71 @@ func guardPlanScheduleClockTx(ctx context.Context, tx pgx.Tx, windows planSchedu
 		err = ErrPurchasePlanConflict
 	}
 	return err
+}
+
+// readPlanScheduleReceiptTx returns nil when the command has no receipt. A receipt for a different principal, plan, hash or base revision conflicts without revealing its result.
+func readPlanScheduleReceiptTx(ctx context.Context, tx pgx.Tx, identity PlanScheduleCommandIdentity, authorize AuthorizePlanScheduleReplay) (*PlanScheduleCommandResult, error) {
+	var matches bool
+	var status int
+	var body, evidence []byte
+	err := tx.QueryRow(ctx, `SELECT plan_id=$2::uuid AND actor_kind=$3
+		AND actor_user_id IS NOT DISTINCT FROM $4::uuid
+		AND actor_key_id IS NOT DISTINCT FROM $5::uuid AND request_hash=$6
+		AND base_revision IS NOT DISTINCT FROM $7::text,
+		status_code, result_json::text, scope_evidence
+		FROM plan_schedule_command_receipts WHERE command_id=$1 FOR SHARE`,
+		identity.CommandID, identity.PlanID, identity.Actor.Kind, identity.Actor.UserID,
+		identity.Actor.KeyID, identity.RequestHash, identity.ExpectedRevision).Scan(&matches, &status, &body, &evidence)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !matches {
+		return nil, ErrPurchasePlanConflict
+	}
+	var scope PlanScheduleScope
+	err = json.Unmarshal(evidence, &scope)
+	if err != nil {
+		return nil, err
+	}
+	accounts, err := lockPlanScheduleAccountsTx(ctx, tx, scope.AccountIDs)
+	if err != nil {
+		return nil, err
+	}
+	err = authorize(ctx, scope, accounts)
+	if err != nil {
+		return nil, err
+	}
+	return &PlanScheduleCommandResult{Status: status, Body: body, Replayed: true}, nil
+}
+
+func insertPlanScheduleReceiptTx(ctx context.Context, tx pgx.Tx, identity PlanScheduleCommandIdentity, after *PlanEditorSnapshot, scope PlanScheduleScope, body json.RawMessage) (*PlanScheduleCommandResult, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil || object == nil {
+		return nil, fmt.Errorf("invalid committed command response")
+	}
+	revision, err := after.Revision()
+	if err != nil {
+		return nil, err
+	}
+	evidence, err := json.Marshal(scope)
+	if err != nil {
+		return nil, err
+	}
+	status := 200
+	if identity.ExpectedRevision == nil {
+		status = 201
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO plan_schedule_command_receipts
+		(command_id,plan_id,actor_kind,actor_user_id,actor_key_id,request_hash,
+		 base_revision,result_revision,status_code,result_json,scope_evidence)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::json,$11::jsonb)`,
+		identity.CommandID, identity.PlanID, identity.Actor.Kind, identity.Actor.UserID,
+		identity.Actor.KeyID, identity.RequestHash, identity.ExpectedRevision, revision, status, body, evidence)
+	if err != nil {
+		return nil, err
+	}
+	return &PlanScheduleCommandResult{Status: status, Body: slices.Clone(body)}, nil
 }
