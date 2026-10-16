@@ -9,13 +9,13 @@ import (
 	"slices"
 )
 
-func preparePlanScheduleTargets(before *PlanEditorSnapshot, intent PlanScheduleIntent, plan *PurchasePlan, replaceRoots bool) ([]byte, []byte, error) {
-	services, ramp := []byte(`{}`), []byte(`{}`)
+func preparePlanScheduleTargets(before *PlanEditorSnapshot, intent PlanScheduleIntent, plan *PurchasePlan, replaceRoots bool) (services, ramp []byte, err error) {
+	services, ramp = []byte(`{}`), []byte(`{}`)
 	if before != nil {
 		services = slices.Clone(before.servicesJSON)
 		ramp = slices.Clone(before.rampScheduleJSON)
 	}
-	services, err := mergePlanScheduleServices(services, intent.Services, before == nil)
+	services, err = mergePlanScheduleServices(services, intent.Services, before == nil)
 	if err == nil {
 		ramp, err = mergePlanScheduleRamp(ramp, intent, before == nil, replaceRoots)
 	}
@@ -34,7 +34,8 @@ func preparePlanScheduleTargets(before *PlanEditorSnapshot, intent PlanScheduleI
 		return nil, nil, fmt.Errorf("%w: authorized target differs from stored patch", ErrPurchasePlanConflict)
 	}
 	if before == nil {
-		if err = plan.Validate(); err != nil {
+		err = plan.Validate()
+		if err != nil {
 			return nil, nil, err
 		}
 	}
@@ -67,7 +68,7 @@ func mergePlanScheduleServices(raw []byte, patches map[string]PlanScheduleServic
 	return marshalPlanScheduleRaw(services)
 }
 
-func mergePlanScheduleService(key string, old json.RawMessage, patch PlanScheduleServicePatch, create bool) (string, []byte, error) {
+func mergePlanScheduleService(key string, old json.RawMessage, patch PlanScheduleServicePatch, create bool) (patchedKey string, target []byte, err error) {
 	if old == nil {
 		if !create {
 			return "", nil, fmt.Errorf("%w: unknown service patch", ErrPurchasePlanConflict)
@@ -75,14 +76,16 @@ func mergePlanScheduleService(key string, old json.RawMessage, patch PlanSchedul
 		old = json.RawMessage(`{}`)
 	}
 	var original, service ServiceConfig
-	if err := json.Unmarshal(old, &original); err != nil {
-		return "", nil, err
-	}
-	target, err := mergePlanScheduleObject(old, patch)
+	err = json.Unmarshal(old, &original)
 	if err != nil {
 		return "", nil, err
 	}
-	if err = json.Unmarshal(target, &service); err != nil {
+	target, err = mergePlanScheduleObject(old, patch)
+	if err != nil {
+		return "", nil, err
+	}
+	err = json.Unmarshal(target, &service)
+	if err != nil {
 		return "", nil, err
 	}
 	if service.Provider != original.Provider || service.Service != original.Service {
@@ -138,7 +141,8 @@ func mergePlanScheduleObject(raw []byte, patch any) ([]byte, error) {
 	if err = json.Unmarshal(raw, &stored); err != nil || stored == nil {
 		return nil, fmt.Errorf("%w: stored schedule value must be an object", ErrPurchasePlanConflict)
 	}
-	if err = json.Unmarshal(updates, &fields); err != nil {
+	err = json.Unmarshal(updates, &fields)
+	if err != nil {
 		return nil, err
 	}
 	maps.Copy(stored, fields)
