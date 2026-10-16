@@ -93,8 +93,8 @@ func TestNewLadderInFlightRow_FloatFieldsFeedAllocate(t *testing.T) {
 	for _, text := range []string{"1/10", "1/3", "1/2"} {
 		exact, ok := new(big.Rat).SetString(text)
 		require.True(t, ok)
-		row, err := newLadderInFlightRow("1", &LadderTrancheDB{AmountBasis: &native, CommitmentRate: &text})
-		require.NoError(t, err, text)
+		row, rowErr := newLadderInFlightRow("1", &LadderTrancheDB{AmountBasis: &native, CommitmentRate: &text})
+		require.NoError(t, rowErr, text)
 		require.LessOrEqual(t, new(big.Rat).SetFloat64(row.Rate).Cmp(exact), 0, text)
 		require.Greater(t, new(big.Rat).SetFloat64(math.Nextafter(row.Rate, 2)).Cmp(exact), 0, text)
 	}
