@@ -187,6 +187,7 @@ func (h *Handler) buildPlanEditorFieldPolicy(ctx context.Context, req *events.La
 	revalidated := ordinary
 	revalidated.RequiresProposedValueRevalidation = true
 	unsupported := planEditorLockedField(PlanEditorUnsupportedField)
+	filter := planEditorFilterFieldRule(snapshot, effective)
 	out.Fields = PlanEditorFieldPolicy{
 		Controls: map[string]PlanEditorFieldRule{
 			"name": ordinary, "description": unsupported, "enabled": revalidated, "auto_purchase": revalidated,
@@ -200,8 +201,8 @@ func (h *Handler) buildPlanEditorFieldPolicy(ctx context.Context, req *events.La
 	for key := range snapshot.Plan.Services {
 		out.Fields.Services[key] = map[string]PlanEditorFieldRule{
 			"provider": identity, "service": identity, "enabled": effective, "term": identity, "payment": identity,
-			"coverage": effective, "ramp_schedule": shape, "include_engines": effective, "exclude_engines": effective,
-			"include_regions": effective, "exclude_regions": effective, "include_types": effective, "exclude_types": effective, "min_count": effective,
+			"coverage": effective, "ramp_schedule": shape, "include_engines": filter, "exclude_engines": filter,
+			"include_regions": filter, "exclude_regions": filter, "include_types": filter, "exclude_types": filter, "min_count": filter,
 		}
 	}
 	return out, nil
@@ -239,6 +240,27 @@ func planEditorEffectiveFieldRule(snapshot *config.PlanEditorSnapshot, graph *Pl
 		}
 	}
 	return rule
+}
+
+// planEditorFilterFieldRule locks the filter lists and min_count once a step is
+// scheduled: planstep.Precheck refuses any scheduled plan that carries one, so
+// offering the edit would only fail at Save.
+func planEditorFilterFieldRule(snapshot *config.PlanEditorSnapshot, effective PlanEditorFieldRule) PlanEditorFieldRule {
+	if (effective.Editable || effective.RequiresApprovedEdits) && planEditorHasScheduledStep(snapshot) {
+		return planEditorLockedField(PlanEditorAffectedRootFixed)
+	}
+	return effective
+}
+
+func planEditorHasScheduledStep(snapshot *config.PlanEditorSnapshot) bool {
+	ramp := &snapshot.Plan.RampSchedule
+	for i := range snapshot.Executions {
+		row := &snapshot.Executions[i]
+		if row.StepNumber > ramp.CurrentStep && row.StepNumber <= ramp.TotalSteps && !planEditorHarmlessTerminal(row) {
+			return true
+		}
+	}
+	return false
 }
 
 func planEditorUnmappedAction(snapshot *config.PlanEditorSnapshot) bool {

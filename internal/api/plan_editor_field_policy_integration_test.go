@@ -331,6 +331,20 @@ func TestPlanEditorField_StoredState(t *testing.T) {
 			require.Equal(t, tc.effective, result.Fields.Controls["notification_days_before"].Editable)
 			require.Equal(t, tc.effective, result.Fields.Services["primary"]["coverage"].Editable)
 			require.Equal(t, tc.approved, result.Fields.Controls["notification_days_before"].RequiresApprovedEdits)
+			scheduled := slices.ContainsFunc(snapshot.Executions, func(row config.PurchaseExecution) bool {
+				return row.StepNumber > snapshot.Plan.RampSchedule.CurrentStep && row.StepNumber <= snapshot.Plan.RampSchedule.TotalSteps &&
+					(row.Status == "pending" || row.Status == "scheduled")
+			})
+			if scheduled && (tc.effective || tc.approved) {
+				for _, field := range []string{"include_engines", "exclude_engines", "include_regions", "exclude_regions", "include_types", "exclude_types", "min_count"} {
+					require.Equal(t, planEditorLockedField(PlanEditorAffectedRootFixed), result.Fields.Services["primary"][field], field)
+				}
+				require.True(t, result.Fields.Services["primary"]["coverage"].Editable == tc.effective)
+			}
+			if !scheduled && tc.effective {
+				require.True(t, result.Fields.Services["primary"]["min_count"].Editable)
+				require.True(t, result.Fields.Services["primary"]["include_regions"].Editable)
+			}
 			require.Equal(t, tc.graph, result.Graph != nil)
 			require.True(t, result.Fields.Controls["name"].Editable)
 			require.Equal(t, planEditorLockedField(PlanEditorUnsupportedField), result.Fields.Controls["description"])
