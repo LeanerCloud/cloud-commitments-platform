@@ -97,6 +97,18 @@ describe('Create request', () => {
     expect(dates.slice(1).map((date: number, i: number) => (date - dates[i]) / 86_400_000)).toEqual([9, 9, 9, 9]);
   });
 
+  it('sends a non-AWS provider from the form: azure/compute, 1 year, monthly', async () => {
+    setValue('plan-provider', 'azure');
+    const service = el<HTMLSelectElement>('plan-service'); service.value = 'compute'; fire(service);
+    el<HTMLSelectElement>('plan-term').value = '1'; el<HTMLSelectElement>('plan-payment').value = 'monthly'; fire(el('plan-payment'));
+    pickAccount();
+    await review();
+    expect(el('plan-review-reason').textContent).toBe('');
+    expect(bodyOf(preview.mock.calls[0]!).plan.services).toEqual({
+      'azure/compute': { provider: 'azure', service: 'compute', enabled: true, term: 1, payment: 'monthly', coverage: 80, ramp_schedule: expect.any(String) },
+    });
+  });
+
   it('names a Savings Plans service once, in the described reason, and disables review', async () => {
     const select = el<HTMLSelectElement>('plan-service');
     select.value = 'savings-plans-compute'; fire(select);
