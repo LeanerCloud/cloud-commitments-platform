@@ -78,8 +78,15 @@ func TestPlanWriteBodiesOuterTransaction(t *testing.T) {
 			require.Len(t, accounts, 1)
 			require.Equal(t, account.ID, accounts[0].ID)
 			var baseline []byte
-			require.NoError(t, store.db.QueryRow(ctx, `SELECT ramp_baseline FROM purchase_plans WHERE id=$1`, plan.ID).Scan(&baseline))
+			var ledgerState string
+			require.NoError(t, store.db.QueryRow(ctx, `SELECT ramp_baseline, ramp_ledger_state FROM purchase_plans WHERE id=$1`, plan.ID).Scan(&baseline, &ledgerState))
 			require.Nil(t, baseline)
+			require.Equal(t, "new", ledgerState, "caller transaction must preserve the foundation's new-plan ledger lifecycle")
+			wrapperPlan := *plan
+			wrapperPlan.ID = uuid.NewString()
+			require.NoError(t, store.CreatePurchasePlan(ctx, &wrapperPlan))
+			require.NoError(t, store.db.QueryRow(ctx, `SELECT ramp_ledger_state FROM purchase_plans WHERE id=$1`, wrapperPlan.ID).Scan(&ledgerState))
+			require.Equal(t, "new", ledgerState, "pool wrapper must retain new protected-ramp state")
 			duplicate := *plan
 			duplicate.Name = "must not replace original"
 			var pgErr *pgconn.PgError
@@ -99,6 +106,9 @@ func TestPlanWriteBodiesAssociationCompatibility(t *testing.T) {
 	id := plan.ID
 	require.NoError(t, store.CreatePurchasePlan(ctx, plan))
 	require.Equal(t, id, plan.ID)
+	var ledgerState string
+	require.NoError(t, store.db.QueryRow(ctx, `SELECT ramp_ledger_state FROM purchase_plans WHERE id=$1`, plan.ID).Scan(&ledgerState))
+	require.Equal(t, "legacy", ledgerState, "ordinary zero-step plans retain the foundation's legacy ledger state")
 	ids := make([]string, 0, 3)
 	for _, provider := range []string{"aws", "aws", "azure"} {
 		account := &CloudAccount{Name: provider, Provider: provider, ExternalID: uuid.NewString()}
