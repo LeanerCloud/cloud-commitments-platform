@@ -34,11 +34,19 @@ type dbConn interface {
 // PostgresStore implements StoreInterface using PostgreSQL.
 type PostgresStore struct {
 	db dbConn
+	// commandSlots bounds concurrent plan schedule commands; see ErrPlanScheduleBusy.
+	// nil (no pool) never admits a command.
+	commandSlots chan struct{}
+	commandWait  time.Duration // test hook; zero means planScheduleCommandWait
 }
 
 // NewPostgresStore creates a new PostgreSQL-backed config store.
 func NewPostgresStore(db *database.Connection) *PostgresStore {
-	return &PostgresStore{db: db}
+	store := &PostgresStore{db: db}
+	if db != nil && db.Pool() != nil {
+		store.commandSlots = make(chan struct{}, max(1, int(db.Pool().Config().MaxConns)-1))
+	}
+	return store
 }
 
 // Verify PostgresStore implements StoreInterface.
