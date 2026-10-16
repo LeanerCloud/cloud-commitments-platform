@@ -276,3 +276,77 @@ func TestRevokeViaEmailToken_SessionBranchEnforcesCancelConstraints(t *testing.T
 		store.AssertCalled(t, "TransitionExecutionStatus", mock.Anything, cancelExecID, mock.Anything, "revocation_requested", mock.Anything)
 	})
 }
+
+func deletePlannedReq() *events.LambdaFunctionURLRequest {
+	return &events.LambdaFunctionURLRequest{Headers: map[string]string{"authorization": "Bearer sess-tok"}}
+}
+
+func TestDeletePlannedPurchase_CancelConstraints(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	creator := revokeConstraintsUser
+	del := auth.Permission{Action: auth.ActionDelete, Resource: auth.ResourcePurchases}
+	run := func(creatorID *string, perms ...auth.Permission) (*DeletePlannedPurchaseResponse, *MockConfigStore, error) {
+		exec := cancelRouteExec("pending")
+		exec.CreatedByUserID = creatorID
+		h, store := cancelRouteHandler(exec, perms...)
+		resp, err := h.deletePlannedPurchase(ctx, deletePlannedReq(), cancelExecID)
+		return resp, store, err
+	}
+	notTransitioned := func(t *testing.T, store *MockConfigStore) {
+		t.Helper()
+		store.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	}
+
+	t.Run("constrained cancel-any out of scope is denied", func(t *testing.T) {
+		t.Parallel()
+		_, store, err := run(nil, awsOnly(auth.ActionCancelAny))
+		requireRevokeForbidden(t, err, constraintDenied)
+		notTransitioned(t, store)
+	})
+	t.Run("unconstrained and in-scope cancel-any cancel", func(t *testing.T) {
+		t.Parallel()
+		for _, c := range []*auth.PermissionConstraints{nil, {Providers: []string{"azure"}}} {
+			resp, _, err := run(nil, revokePerm(auth.ActionCancelAny, c))
+			require.NoError(t, err)
+			assert.Equal(t, "canceled", resp.Status)
+		}
+	})
+	t.Run("constrained any falls back to creator with unconstrained own", func(t *testing.T) {
+		t.Parallel()
+		resp, _, err := run(&creator, awsOnly(auth.ActionCancelAny), revokePerm(auth.ActionCancelOwn, nil))
+		require.NoError(t, err)
+		assert.Equal(t, "canceled", resp.Status)
+	})
+	t.Run("constrained any for a non-creator keeps the constraint message", func(t *testing.T) {
+		t.Parallel()
+		other := "someone-else"
+		_, store, err := run(&other, awsOnly(auth.ActionCancelAny), revokePerm(auth.ActionCancelOwn, nil))
+		requireRevokeForbidden(t, err, constraintDenied)
+		notTransitioned(t, store)
+	})
+	t.Run("creator with constrained cancel-own out of scope is denied", func(t *testing.T) {
+		t.Parallel()
+		_, store, err := run(&creator, awsOnly(auth.ActionCancelOwn))
+		requireRevokeForbidden(t, err, constraintDenied)
+		notTransitioned(t, store)
+	})
+	t.Run("creator with delete and no cancel-own still deletes", func(t *testing.T) {
+		t.Parallel()
+		resp, _, err := run(&creator, del)
+		require.NoError(t, err)
+		assert.Equal(t, "canceled", resp.Status)
+	})
+	t.Run("row with no creator is denied for delete-only callers", func(t *testing.T) {
+		t.Parallel()
+		_, store, err := run(nil, del)
+		requireRevokeForbidden(t, err, "another user's scheduled purchase")
+		notTransitioned(t, store)
+	})
+	t.Run("update-any is unchanged and unconstrained", func(t *testing.T) {
+		t.Parallel()
+		resp, _, err := run(nil, revokePerm(auth.ActionUpdateAny, &auth.PermissionConstraints{Providers: []string{"aws"}}))
+		require.NoError(t, err)
+		assert.Equal(t, "canceled", resp.Status)
+	})
+}
