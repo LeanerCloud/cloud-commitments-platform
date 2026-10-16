@@ -127,9 +127,10 @@ export function draftDateChanges(state: EditorDraft): DraftDateChange[] {
     requiresReapproval: state.context.kind === 'edit' && state.context.slots[i]!.requires_approved_edits,
   }]);
 }
+const changedIndexes = (state: EditorDraft): number[] => state.context.kind === 'create'
+  ? state.dates.map((_, i) => i) : draftDateChanges(state).map(change => change.step - 1);
+export function assertEditorDraftValid(state: EditorDraft): void { validateProposal(state, state.dates, changedIndexes(state)); }
 export function canReviewEditorDraft(state: EditorDraft): boolean {
-  const changed = state.context.kind === 'create'
-    ? state.dates.map((_, i) => i) : draftDateChanges(state).map(change => change.step - 1);
   if (state.dates.some((date, i) => date === null && canDraftStep(state, i))) return false;
-  try { validateProposal(state, state.dates, changed); return true; } catch { return false; }
+  try { assertEditorDraftValid(state); return true; } catch { return false; }
 }

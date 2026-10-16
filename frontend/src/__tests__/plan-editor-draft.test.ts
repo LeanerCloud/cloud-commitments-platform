@@ -1,5 +1,5 @@
 import {
-  canDraftStep, canReviewEditorDraft, createEditorDraft, draftBlock, draftDateChanges,
+  assertEditorDraftValid, canDraftStep, canReviewEditorDraft, createEditorDraft, draftBlock, draftDateChanges,
   EditorSlot, redistributeEditorBlock, resetEditorDraft, selectDraftStep, setApprovedDraftEdits, setDraftDate,
 } from '../lib/plan-editor-draft';
 
@@ -34,6 +34,12 @@ describe('controlled editor dates', () => {
     expect(canReviewEditorDraft(today)).toBe(false);
     expect(canReviewEditorDraft(resetEditorDraft(today))).toBe(false);
     expect(canReviewEditorDraft(local(['2026-10-20', '2026-10-19']))).toBe(false);
+  });
+  test('assertEditorDraftValid throws the model message that canReviewEditorDraft swallows', () => {
+    expect(() => assertEditorDraftValid(local(['2026-10-14']))).toThrow('Choose a future UTC date.');
+    expect(() => assertEditorDraftValid(local(['2026-10-20', '2026-10-19']))).toThrow('Keep dates in step order');
+    expect(() => assertEditorDraftValid(local(['2026-10-20', '2026-10-27']))).not.toThrow();
+    expect(() => assertEditorDraftValid(edit([slot(1, '2026-10-20'), slot(2, null, { editable: false })]))).not.toThrow();
   });
   test('Create missing dates are explicit proposals and cannot be redistributed as placeholders', () => {
     const state = local([null, null]);

@@ -1,3 +1,4 @@
+import { validateDraftDates } from './lib/plan-draft-dates';
 import { wirePlanDateInteraction } from './plan-date-interaction';
 import { buildLocalScheduleIntent, PlanScheduleIntentInput } from './plan-schedule-intent';
 import { createEditorDraft, draftDateChanges, EditorDraft, redistributeEditorBlock, resetEditorDraft, selectDraftStep, setDraftDate } from './lib/plan-editor-draft';
@@ -40,6 +41,7 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     catch (failure) { message = (failure as Error).message; }
     field('error').textContent = message;
   };
+  const block = (count: number): [number, number] | null => (count > 1 ? [0, count - 1] : null);
   const paint = (): void => {
     step.disabled = !state || !!gestureFrame || dirty !== null; date.disabled = !state || !!gestureFrame || dirty === 'range';
     start.disabled = !state || !!gestureFrame || dirty === 'step'; end.disabled = !state || !!gestureFrame || dirty === 'step';
@@ -51,9 +53,9 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     const points = dates.map((value, index) => ({ step: index + 1, date: value, target: coverage * context.shares[index]! / 100 }));
     const frame = gestureFrame ?? schedulePlotFrame(dates), plot = host.querySelector('.schedule-preview-scroll')!;
     const svg = plot.querySelector<SVGSVGElement>('svg');
-    if (svg && svg.querySelectorAll('[data-preview-step]').length === points.length) updateSchedulePlot(svg, points, frame, state.selected, true);
+    if (svg && svg.querySelectorAll('[data-preview-step]').length === points.length) updateSchedulePlot(svg, points, frame, state.selected, true, block(dates.length));
     else {
-      disposeInteraction?.(); plot.innerHTML = renderSchedulePlot(points, frame, state.selected, true);
+      disposeInteraction?.(); plot.innerHTML = renderSchedulePlot(points, frame, state.selected, true, block(dates.length));
       disposeInteraction = wire(plot.querySelector<SVGSVGElement>('svg')!);
     }
     if (step.options.length !== dates.length) step.replaceChildren(...dates.map((_, index) => new Option(`Step ${index + 1}`, String(index))));
@@ -69,7 +71,11 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     }));
   };
   const wire = (svg: SVGSVGElement): (() => void) => wirePlanDateInteraction(svg, {
-    read: () => ({ dates: state!.dates.map(value => value!), blocked: dirty !== null }),
+    read: () => {
+      const dates = state!.dates.map(value => value!);
+      return { dates, blocked: dirty !== null, plotted: dates.map((_, index) => index), block: block(dates.length), movable: () => true };
+    },
+    validate: () => validateDraftDates(state!.dates.map(value => value!)),
     select: index => { state = selectDraftStep(state!, index); paint(); },
     gesture: current => {
       gestureFrame = current;

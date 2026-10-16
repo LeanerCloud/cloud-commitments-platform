@@ -141,3 +141,9 @@ test('actual Create pointer ownership guards submission, cancels on geometry cha
   expect(field('date').value).toBe('2026-10-28'); expect(form.querySelector<HTMLInputElement>('#plan-name')?.value).toBe('Compute');
   send('pointerdown', point, x); dispose(); expect(form.inert).toBeFalsy(); expect(captured).toBe(false);
 });
+
+test('Create boundary handle keyboard focuses the range date input', () => {
+  const handle = host.querySelector('[data-preview-boundary="start"]')!;
+  handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  expect(document.activeElement).toBe(field('start'));
+});

@@ -64,8 +64,8 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
       return;
     }
     const frame = schedulePlotFrame(points.map(point => point.date)), svg = plot.querySelector<SVGSVGElement>('svg');
-    if (svg && svg.querySelectorAll('[data-preview-step]').length === points.length) updateSchedulePlot(svg, points, frame, draft.selected, false);
-    else plot.innerHTML = renderSchedulePlot(points, frame, draft.selected, false);
+    if (svg && svg.querySelectorAll('[data-preview-step]').length === points.length) updateSchedulePlot(svg, points, frame, draft.selected, false, null);
+    else plot.innerHTML = renderSchedulePlot(points, frame, draft.selected, false, null);
     plot.querySelector('svg')!.setAttribute('aria-label', 'Stored schedule with local date proposals');
   };
   const paintRangeValues = (draft: EditorDraft, block: readonly [number, number] | null): void => {

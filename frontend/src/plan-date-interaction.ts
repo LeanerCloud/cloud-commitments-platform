@@ -1,21 +1,22 @@
-import { draftDateDay, validateDraftDates } from './lib/plan-draft-dates';
+import { draftDateDay } from './lib/plan-draft-dates';
 import { schedulePlotFrame, schedulePlotX, SchedulePlotFrame } from './plan-schedule-plot';
 
 type Boundary = 'start' | 'end';
-export interface PlanDateIntent { index: number; boundary: Boundary | null; date: string; before: readonly string[] }
+export interface PlanDateIntent { index: number; boundary: Boundary | null; date: string; before: readonly (string | null)[] }
 export interface PlanDateInteraction {
-  read(): { dates: readonly string[]; blocked: boolean };
+  read(): { dates: readonly (string | null)[]; blocked: boolean; plotted: readonly number[]; block: readonly [number, number] | null; movable(index: number): boolean };
   select(index: number): void;
   gesture(frame: SchedulePlotFrame | null): void;
   apply(intent: PlanDateIntent): void;
-  restore(before: readonly string[]): void;
+  restore(before: readonly (string | null)[]): void;
+  validate(): void;
   focusDate(boundary: Boundary): void;
   error(message: string): void;
 }
 
 export function wirePlanDateInteraction(svg: SVGSVGElement, binding: PlanDateInteraction): () => void {
   const modal = svg.closest<HTMLElement>('.modal')!;
-  let gesture: { id: number; index: number; boundary: Boundary | null; before: string[]; startX: number;
+  let gesture: { id: number; index: number; boundary: Boundary | null; before: (string | null)[]; startX: number;
     anchorX: number; day: number; frame: SchedulePlotFrame; matrix: DOMMatrix; inverse: DOMMatrix } | null = null;
   const dateAt = (day: number): string => new Date(day * 86_400_000).toISOString().slice(0, 10);
   const owner = (event: Event): SVGGElement | null => event.target instanceof Element
@@ -35,7 +36,7 @@ export function wirePlanDateInteraction(svg: SVGSVGElement, binding: PlanDateInt
     }
     if (cancel) {
       binding.error('');
-      try { validateDraftDates(binding.read().dates); }
+      try { binding.validate(); }
       catch { binding.error('Draft dates are no longer future dates. Close and reopen for fresh dates.'); }
     }
   };
@@ -65,14 +66,18 @@ export function wirePlanDateInteraction(svg: SVGSVGElement, binding: PlanDateInt
     const target = owner(event);
     if (!target) return;
     attempt(() => {
-      const { dates } = binding.read(), boundary = target.dataset.previewBoundary as Boundary | undefined;
-      const index = boundary === 'end' ? dates.length - 1 : boundary === 'start' ? 0 : Number(target.dataset.previewStep);
-      if (!Number.isInteger(index) || index < 0 || index >= dates.length) return;
-      if (!boundary) select(index, false);
+      const { dates, plotted, block, movable } = binding.read(), boundary = target.dataset.previewBoundary as Boundary | undefined;
+      if (boundary && !block) return;
+      const index = boundary === 'end' ? block![1] : boundary === 'start' ? block![0] : Number(target.dataset.previewStep);
+      if (!Number.isInteger(index) || !plotted.includes(index) || dates[index] == null) return;
+      if (!boundary) {
+        select(index, false);
+        if (!movable(index)) return;
+      }
       target.focus({ preventScroll: true });
       const matrix = svg.getScreenCTM();
       if (!matrix) throw new Error('Drag coordinates unavailable. Use date inputs.');
-      const inverse = matrix.inverse(), frame = schedulePlotFrame(dates);
+      const inverse = matrix.inverse(), frame = schedulePlotFrame(plotted.flatMap(at => dates[at] ?? []));
       gesture = { id: event.pointerId, index, boundary: boundary ?? null, before: [...dates], frame, matrix, inverse,
         startX: pointerX(event, inverse), anchorX: schedulePlotX(dates[index]!, frame), day: draftDateDay(dates[index]!) };
       svg.setPointerCapture(event.pointerId); binding.gesture(frame); event.preventDefault();
@@ -83,7 +88,7 @@ export function wirePlanDateInteraction(svg: SVGSVGElement, binding: PlanDateInt
     if (gesture?.id !== event.pointerId) return;
     attempt(() => {
       move(event);
-      try { validateDraftDates(binding.read().dates); }
+      try { binding.validate(); }
       catch { throw new Error('Draft dates are no longer future dates. Close and reopen for fresh dates.'); }
       stop(false);
     });
@@ -99,14 +104,18 @@ export function wirePlanDateInteraction(svg: SVGSVGElement, binding: PlanDateInt
     event.preventDefault();
     if (gesture || binding.read().blocked) return;
     attempt(() => {
-      const { dates } = binding.read(), boundary = target.dataset.previewBoundary as Boundary | undefined;
-      const index = boundary === 'end' ? dates.length - 1 : boundary === 'start' ? 0 : Number(target.dataset.previewStep);
+      const { dates, plotted, block, movable } = binding.read(), boundary = target.dataset.previewBoundary as Boundary | undefined;
+      if (boundary && !block) return;
+      const index = boundary === 'end' ? block![1] : boundary === 'start' ? block![0] : Number(target.dataset.previewStep);
       if (boundary && ['Enter', ' '].includes(event.key)) { binding.focusDate(boundary); return; }
+      const position = plotted.indexOf(index);
+      if (position < 0 || dates[index] == null) return;
       if (boundary || event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        if (!boundary && !movable(index)) return;
         binding.apply({ index, boundary: boundary ?? null, before: [...dates],
           date: dateAt(draftDateDay(dates[index]!) + (event.key === 'ArrowRight' ? 1 : -1)) });
-      } else select(event.key === 'ArrowLeft' ? Math.max(0, index - 1)
-        : event.key === 'ArrowRight' ? Math.min(dates.length - 1, index + 1) : index, true);
+      } else select(plotted[event.key === 'ArrowLeft' ? Math.max(0, position - 1)
+        : event.key === 'ArrowRight' ? Math.min(plotted.length - 1, position + 1) : position]!, true);
     });
   };
   const modalKey = (event: KeyboardEvent): void => {
