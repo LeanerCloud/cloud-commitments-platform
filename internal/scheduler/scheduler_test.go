@@ -945,7 +945,9 @@ func TestScheduler_ListRecommendations(t *testing.T) {
 // returned channel and fails, which ends the refresh immediately.
 func staleListRecommendations(t *testing.T, staleHours int) <-chan struct{} {
 	t.Helper()
-	ctx := context.Background()
+	// Only unrestricted readers may kick a refresh (#932); mark the context so
+	// the sentinel, not the missing marker, is what the zero case exercises.
+	ctx := WithBackgroundCollection(context.Background())
 	mockStore := new(MockConfigStore)
 
 	old := time.Now().Add(-72 * time.Hour)
