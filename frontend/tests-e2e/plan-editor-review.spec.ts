@@ -13,7 +13,11 @@ const preview = {
     totals: { moved: 1, created: 0, canceled: 1, approvals_affected: 1 },
   },
 };
+const puts: string[] = [];
+let failEditorGets = false;
+const mapping = [{ step_number: 2, old_execution_id: 'old-2', new_execution_id: null, scheduled_date: null }, { step_number: 3, old_execution_id: 'old-3', new_execution_id: 'new-3', scheduled_date: '2026-11-12' }];
 const open = async (page: Page): Promise<void> => {
+  failEditorGets = false;
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.fallback() : route.abort());
   await seedAuth(page); await mockApi(page);
   const base = editorResponse(), s2 = base.graph!.steps[1]!, plan = { id: 'draft-plan', name: 'Existing plan', enabled: true, services: {}, ramp_schedule: base.plan.ramp_schedule };
@@ -21,6 +25,8 @@ const open = async (page: Page): Promise<void> => {
     graph: { ...base.graph!, steps: base.graph!.steps.map(s => s.step_number === 4 ? { ...s2, step_number: 4, execution_id: 'root-4', scheduled_date: '2026-11-12', cumulative_target_percent: 80 } : s) } };
   await page.route('**/api/plans**', route => {
     const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === 'PUT' && path.endsWith('/draft-plan/editor')) { puts.push(route.request().postData() ?? ''); return route.fulfill({ json: { replayed: false, mapping, diff: preview.diff, editor } }); }
+    if (failEditorGets && path.endsWith('/draft-plan/editor')) return route.fulfill({ status: 500, json: { error: 'down', code: 'internal' } });
     return route.fulfill({ json: path.endsWith('/accounts') ? [] : path.endsWith('/preview') ? preview : path.endsWith('/draft-plan/editor') ? editor : { plans: [plan] } });
   });
   await page.route('**/api/purchases/planned', route => route.fulfill({ json: { purchases: [] } }));
@@ -42,11 +48,11 @@ for (const width of [1440, 320]) test.describe(`viewport ${width}px`, () => {
     await page.locator('[data-action="edit-plan"][data-id="draft-plan"]').click();
     await page.locator('#plan-name').fill('Renamed plan');
     await page.locator('#plan-modal button[type="submit"]').click();
-    const confirm = page.locator('#plan-review-confirm');
+    const footerButton = page.locator('#plan-modal button[type="submit"]');
     await expect(page.locator('#plan-review-heading')).toBeFocused();
-    await expect(confirm).toBeDisabled();
+    await expect(footerButton).toHaveText('Review changes');
     await inViewport(page, '#plan-review-heading');
-    await inViewport(page, '#plan-review-confirm'); await inViewport(page, '#plan-review [role="status"]');
+    await inViewport(page, '#plan-review [role="status"]');
     const head = (await page.locator('#plan-review-heading').boundingBox())!, scroller = (await page.locator('.plan-editor-layout').boundingBox())!;
     expect(head.y).toBeGreaterThanOrEqual(scroller.y - 1); expect(head.y + head.height).toBeLessThanOrEqual(scroller.y + scroller.height);
     await expect(page.locator('#plan-review-heading')).toBeFocused();
@@ -56,16 +62,59 @@ for (const width of [1440, 320]) test.describe(`viewport ${width}px`, () => {
     await page.locator('#plan-review fieldset').first().scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath('review-unacknowledged.png') });
     await boxes.first().focus(); await page.keyboard.press('Space');
-    await expect(confirm).toBeDisabled();
+    await expect(footerButton).toHaveText('Review changes');
     await boxes.nth(1).check();
-    await expect(confirm).toBeEnabled();
-    await expect(page.locator('#plan-review [role="status"]')).toHaveText('Ready to save.');
-    await inViewport(page, '#plan-review-confirm'); await inViewport(page, '#plan-review [role="status"]'); await inViewport(page, '#plan-review input[type="checkbox"] >> nth=1');
+    await expect(footerButton).toHaveText('Save changes'); await expect(footerButton).toBeEnabled(); await inViewport(page, '#plan-modal button[type="submit"]');
+    await expect(page.locator('#plan-review [role="status"]')).toHaveText('Ready to save. Use Save changes.');
+    await inViewport(page, '#plan-review [role="status"]'); await inViewport(page, '#plan-review input[type="checkbox"] >> nth=1');
     await page.screenshot({ path: testInfo.outputPath('review-acknowledged.png') });
     const status = (await page.locator('#plan-review [role="status"]').boundingBox())!, footer = (await page.locator('#plan-review-feedback').boundingBox())!;
     expect(status.y + status.height).toBeLessThanOrEqual(footer.y); // not clipped by the scroller edge
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.locator('#plan-name').fill('Another name');
+    puts.length = 0;
+    await footerButton.focus(); await page.keyboard.press('Enter');
+    await expect(page.locator('#plan-review-feedback [role="status"]')).toHaveText('Saved. 1 date moved; 1 step removed; 1 approval affected.');
+    await inViewport(page, '#plan-review-feedback [role="status"]');
+    await expect(page.locator('#plan-review-mapping')).toHaveText('2 purchases changed: step 2 canceled; step 3 replaced, now 2026-11-12.');
+    await inViewport(page, '#plan-review-mapping');
+    expect(await page.locator('#plan-review-feedback').evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
+    expect(puts).toHaveLength(1);
+    expect(JSON.parse(puts[0]!)).toMatchObject({ reviewed_diff: preview.reviewed_diff, acknowledged_cancellation_ids: ['old-2'], acknowledged_reapproval_ids: ['old-3'], plan: { name: 'Renamed plan' } });
     await expect(page.locator('#plan-review')).toHaveCount(0);
+    await expect(page.locator('.plan-editor-layout')).not.toHaveAttribute('inert', /.*/);
+    await page.screenshot({ path: testInfo.outputPath('saved.png') });
+  });
+
+  test('a failed reload after a successful Save keeps the result, offers Reload and remounts on retry', async ({ page }, testInfo) => {
+    await open(page);
+    await page.locator('[data-action="edit-plan"][data-id="draft-plan"]').click();
+    await page.locator('#plan-name').fill('Renamed plan');
+    const footerButton = page.locator('#plan-modal button[type="submit"]');
+    await footerButton.click();
+    await page.locator('#plan-review input[type="checkbox"]').first().check(); await page.locator('#plan-review input[type="checkbox"]').nth(1).check();
+    failEditorGets = true;
+    await footerButton.click();
+    await expect(page.locator('#plan-review-feedback [role="alert"]')).toHaveText('Saved, but reloading failed. Reload to keep editing.');
+    const reload = page.locator('#plan-review-reload');
+    await inViewport(page, '#plan-review-feedback [role="alert"]'); await inViewport(page, '#plan-review-reload');
+    await expect(page.locator('#plan-review-feedback [role="status"]')).toHaveText(/^Saved\./);
+    expect(await page.locator('#plan-review-feedback').evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true); // nothing clipped by the cap
+    await expect(footerButton).toBeDisabled();
+    await expect(page.locator('.plan-editor-layout')).toHaveAttribute('inert', '');
+    await page.screenshot({ path: testInfo.outputPath('reload-failed.png') });
+    failEditorGets = false;
+    await reload.focus(); await page.keyboard.press('Enter');
+    await expect(page.locator('#plan-review-reload')).toHaveCount(0);
+    await expect(page.locator('.plan-editor-layout')).not.toHaveAttribute('inert', /.*/);
+    await expect(page.locator('#plan-name')).toBeEnabled();
+    await expect(page.locator('#plan-review-feedback [role="status"]')).toHaveText(/^Saved\./);
+  });
+
+  test('Escape closes the Edit dialog', async ({ page }) => {
+    await open(page);
+    await page.locator('[data-action="edit-plan"][data-id="draft-plan"]').click();
+    await expect(page.locator('#plan-modal')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#plan-modal')).toBeHidden();
   });
 });

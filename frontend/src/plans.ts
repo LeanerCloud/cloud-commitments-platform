@@ -21,7 +21,7 @@ import { mountPlanEditorPanel } from './plan-editor-panel';
 import { getPlanEditor, managedPlanRefusal, PlanEditorResponse } from './api/plan-editor';
 import { mountPlanEditorEditPanel } from './plan-editor-edit-panel';
 import { fillEditForm, mountCreateGuards, type CreateGuards } from './lib/plan-editor-form';
-import { mountPlanReview, type PlanReviewHandle } from './plan-editor-save';
+import { mountPlanReview, savedLines, type PlanReviewHandle } from './plan-editor-save';
 import { adaptPlanEditor } from './plan-editor-adapter';
 
 // pendingPlanRecommendations holds the resolved plan target captured at
@@ -1293,8 +1293,8 @@ function setEditAccounts(accounts: readonly { id: string; name: string }[]): voi
 let disposePlanEditor: (() => void) | undefined;
 let createGuards: CreateGuards | undefined;
 let planEditorMode: 'create' | 'complete-edit' = 'create';
-const editSaveUnavailable = 'Saving changes is not available in this local editor yet.';
-function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
+let activePlanReview: PlanReviewHandle | undefined;
+function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse, notice?: readonly string[]): void {
   disposePlanEditor?.(); disposePlanEditor = undefined;
   planEditorMode = editor ? 'complete-edit' : 'create';
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
@@ -1315,7 +1315,7 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
     try { disposePanel?.(); }
     finally {
       form?.removeEventListener('invalid', revealInvalid, true); form?.removeEventListener('submit', reviewSubmit, true);
-      planReview?.dispose(); editForm?.dispose(); createGuards?.dispose(); createGuards = undefined;
+      planReview?.dispose(); activePlanReview = undefined; editForm?.dispose(); createGuards?.dispose(); createGuards = undefined;
     }
   };
   try {
@@ -1325,7 +1325,10 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
       const edit = mountPlanEditorEditPanel(host, editor);
       disposePanel = edit.dispose;
       const button = Array.from(form.elements).find((item): item is HTMLButtonElement => item instanceof HTMLButtonElement && item.type === 'submit');
-      if (button && editForm) planReview = mountPlanReview({ response: editor, host, button, edit, form: editForm.model, generation: () => planModalSession });
+      if (button && editForm) planReview = mountPlanReview({ response: editor, host, button, edit, form: editForm.model, generation: () => planModalSession, notice,
+        onSaved: (_saved, open) => { void loadPlans(); if (!open) showToast({ message: 'Plan saved', kind: 'success' }); },
+        reload: async saved => (await editPlan(editor.plan.id, savedLines(saved))) === 'opened' });
+      activePlanReview = planReview;
     } else disposePanel = host && form ? mountPlanEditorPanel(host, form) : undefined;
   } catch (error) { disposePlanEditor(); disposePlanEditor = undefined; throw error; }
   refreshPlanSaveButtonState();
@@ -1334,7 +1337,7 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
   } });
 }
 
-async function editPlan(planId: string): Promise<'opened' | 'stale' | 'unavailable' | 'failed'> {
+async function editPlan(planId: string, notice?: readonly string[]): Promise<'opened' | 'stale' | 'unavailable' | 'failed'> {
   const session = ++planModalSession;
   try {
     const editor = await getPlanEditor(planId);
@@ -1347,7 +1350,7 @@ async function editPlan(planId: string): Promise<'opened' | 'stale' | 'unavailab
     (document.getElementById('plan-id') as HTMLInputElement).value = editor.plan.id;
     const modal = document.getElementById('plan-modal');
     if (!modal) throw new Error('Plan dialog is unavailable.');
-    openPlanForm(modal, editor);
+    openPlanForm(modal, editor, notice);
     return 'opened';
   } catch (error) {
     if (session !== planModalSession) return 'stale';
@@ -1382,7 +1385,7 @@ async function deletePlanAction(planId: string): Promise<void> {
  */
 export async function savePlan(e: Event): Promise<void> {
   e.preventDefault();
-  if (planEditorMode === 'complete-edit') { showToast({ message: editSaveUnavailable, kind: 'error' }); return; }
+  if (planEditorMode === 'complete-edit') { activePlanReview?.review(); return; } // never the legacy writers below
 
   const planId = (document.getElementById('plan-id') as HTMLInputElement).value;
   const rampScheduleRadio = document.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked');

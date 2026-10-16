@@ -30,7 +30,7 @@ let r: PlanEditorResponse, draft: EditorDraft | null, patch: EditFormPatch, gene
 let editListeners: Set<() => void>, formListeners: Set<() => void>, handle: PlanReviewHandle, button: HTMLButtonElement, host: HTMLElement;
 const readOnlySpy = jest.fn(), lockAllSpy = jest.fn();
 const mount = (response: PlanEditorResponse = r): void => {
-  handle = mountPlanReview({ response, host, button, generation: () => generation,
+  handle = mountPlanReview({ response, host, button, generation: () => generation, onSaved: jest.fn(), reload: async () => true,
     edit: { dispose: () => undefined, setReadOnly: readOnlySpy, draft: () => draft, subscribe: l => { editListeners.add(l); return () => editListeners.delete(l); } },
     form: { patch: () => patch, lockAll: lockAllSpy, onChange: l => { formListeners.add(l); return () => formListeners.delete(l); } } });
 };
@@ -105,9 +105,9 @@ describe('preview lifecycle', () => {
     const sent = JSON.parse(body as string);
     expect(sent.command_id).toMatch(UUID); expect(sent.expected_revision).toBe('opaque-revision');
     expect(sent.plan).toEqual({}); expect(sent.steps[0]).toEqual({ step_number: 2, scheduled_date: '2026-11-07' });
-    gate.resolve(result(3)); await flush();
-    expect(status()).toBe('3 dates moved; 1 step removed; 2 approvals affected');
+    gate.reject(Object.assign(new Error('x'), { status: 0 })); await flush();
     preview.mockResolvedValueOnce(result(3)); handle.review(); await flush();
+    expect(status()).toBe('3 dates moved; 1 step removed; 2 approvals affected');
     expect(preview.mock.calls[1]![1]).toBe(body);
   });
   it('drops a late preview A after the intent changed and shows B', async () => {

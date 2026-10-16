@@ -55,7 +55,7 @@ describe('Edit of a plan with an enabled unsupported service', () => {
     const fill = fillEditForm(form, r, { selectService: jest.fn(), setAccounts: jest.fn(), onAccountsChange: () => () => undefined });
     const edit = mountPlanEditorEditPanel(host, r);
     const button = Array.from(form.elements).find((item): item is HTMLButtonElement => item instanceof HTMLButtonElement && item.type === 'submit')!;
-    const review = mountPlanReview({ response: r, host, button, edit, form: fill.model, generation: () => 1 });
+    const review = mountPlanReview({ response: r, host, button, edit, form: fill.model, onSaved: jest.fn(), reload: async () => true, generation: () => 1 });
     return { button, edit, review, fill };
   };
   const clickStep = (n: number): void => { el('plan-editor-panel').querySelector(`[data-preview-step="${n}"]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true })); };

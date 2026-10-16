@@ -32,7 +32,6 @@ const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0)
 let r: PlanEditorResponse, draft: EditorDraft | null, patch: EditFormPatch, handle: PlanReviewHandle, button: HTMLButtonElement, host: HTMLElement, editListeners: Set<() => void>;
 const move = (date: string): void => { draft = setDraftDate(draft!, 1, date); editListeners.forEach(l => l()); };
 const region = (): HTMLElement | null => document.getElementById('plan-review');
-const confirm = (): HTMLButtonElement => document.getElementById('plan-review-confirm') as HTMLButtonElement;
 const boxes = (): HTMLInputElement[] => Array.from(document.querySelectorAll<HTMLInputElement>('#plan-review input[type="checkbox"]'));
 const tick = (box: HTMLInputElement): void => { box.checked = !box.checked; box.dispatchEvent(new Event('change', { bubbles: true })); };
 const start = async (value: PlanEditorPreviewResponse): Promise<void> => {
@@ -46,29 +45,29 @@ beforeEach(() => {
   const s2 = baseResponse().graph!.steps[1]!, b = baseResponse();
   r = { ...b, graph: { ...b.graph!, steps: b.graph!.steps.map(s => s.step_number === 4 ? { ...s2, step_number: 4, execution_id: 'root-4', scheduled_date: '2026-11-12', cumulative_target_percent: 80 } : s) } };
   draft = adaptPlanEditor(r).graphDraft; patch = { plan: {}, services: {} };
-  handle = mountPlanReview({ response: r, host, button, generation: () => 1,
+  handle = mountPlanReview({ response: r, host, button, generation: () => 1, onSaved: jest.fn(), reload: async () => true,
     edit: { dispose: () => undefined, setReadOnly: () => undefined, draft: () => draft, subscribe: l => { editListeners.add(l); return () => editListeners.delete(l); } },
     form: { patch: () => patch, lockAll: () => undefined, onChange: () => () => undefined } });
 });
 
 describe('acknowledgment gating', () => {
-  it('keeps confirm disabled until every cancellation and re-approval is checked, then returns the server sets', async () => {
+  it('keeps the footer on Review changes until every cancellation and re-approval is checked, then returns the server sets', async () => {
     await start(impactful());
-    expect(confirm().disabled).toBe(true); expect(handle.ready()).toBeNull();
+    expect(button.textContent).toBe('Review changes'); expect(handle.ready()).toBeNull();
     expect(boxes()).toHaveLength(3);
     tick(boxes()[0]!); tick(boxes()[1]!);
-    expect(confirm().disabled).toBe(true); expect(handle.ready()).toBeNull();
+    expect(button.textContent).toBe('Review changes'); expect(handle.ready()).toBeNull();
     expect(region()!.querySelector('[role="status"]')!.textContent).toBe('Acknowledge 1 more item to continue.');
     tick(boxes()[2]!);
-    expect(confirm().disabled).toBe(false);
+    expect(button.textContent).toBe('Save changes');
     expect(handle.ready()).toEqual({ reviewedDiff: 'sha256:' + 'b'.repeat(64), cancellationIds: ['c-2', 'c-1'], reapprovalIds: ['r-3'] });
-    expect(region()!.querySelector('[role="status"]')!.textContent).toBe('Ready to save.');
+    expect(region()!.querySelector('[role="status"]')!.textContent).toBe('Ready to save. Use Save changes.');
     tick(boxes()[0]!);
-    expect(confirm().disabled).toBe(true); expect(handle.ready()).toBeNull();
+    expect(button.textContent).toBe('Review changes'); expect(handle.ready()).toBeNull();
   });
   it('is ready at once for a zero-impact preview', async () => {
     await start(result());
-    expect(boxes()).toHaveLength(0); expect(confirm().disabled).toBe(false);
+    expect(boxes()).toHaveLength(0); expect(button.textContent).toBe('Save changes');
     expect(handle.ready()).toEqual({ reviewedDiff: 'sha256:' + 'b'.repeat(64), cancellationIds: [], reapprovalIds: [] });
     expect(region()!.textContent).toContain('No step changes.');
   });
@@ -103,9 +102,9 @@ describe('ids with no matching step', () => {
     await start(result({ required_cancellation_ids: ['ghost-c'], required_reapproval_ids: ['ghost-r'] }));
     expect(boxes().map(box => box.closest('label')!.textContent!.trim())).toEqual([
       'I understand a purchase without a listed step will be canceled.', 'I understand a purchase without a listed step will need approval again.']);
-    expect(confirm().disabled).toBe(true);
-    tick(boxes()[0]!); expect(confirm().disabled).toBe(true); expect(handle.ready()).toBeNull();
-    tick(boxes()[1]!); expect(confirm().disabled).toBe(false);
+    expect(button.textContent).toBe('Review changes');
+    tick(boxes()[0]!); expect(button.textContent).toBe('Review changes'); expect(handle.ready()).toBeNull();
+    tick(boxes()[1]!); expect(button.textContent).toBe('Save changes');
     expect(handle.ready()).toMatchObject({ cancellationIds: ['ghost-c'], reapprovalIds: ['ghost-r'] });
   });
 });
@@ -136,11 +135,11 @@ describe('consent lifecycle', () => {
     move('2026-11-08');
     expect(region()).toBeNull(); expect(handle.ready()).toBeNull(); expect(document.activeElement).toBe(button);
     preview.mockResolvedValueOnce(impactful()); handle.review(); await flush();
-    expect(boxes().every(box => !box.checked)).toBe(true); expect(confirm().disabled).toBe(true);
+    expect(boxes().every(box => !box.checked)).toBe(true); expect(button.textContent).toBe('Review changes');
   });
   it('clears a previous region when a new review starts, and a re-review never inherits ticks', async () => {
     await start(impactful());
-    boxes().forEach(tick);
+    tick(boxes()[0]!);
     preview.mockReturnValueOnce(new Promise(() => undefined)); handle.review();
     expect(region()).toBeNull(); expect(handle.ready()).toBeNull();
   });

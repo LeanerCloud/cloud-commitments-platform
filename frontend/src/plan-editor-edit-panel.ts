@@ -17,7 +17,7 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
   host.hidden = false;
   host.closest('.plan-editor-layout')?.classList.add('has-editor-draft');
   host.innerHTML = `<h3 tabindex="-1" data-edit="heading">Purchase schedule</h3>
-    <p class="editor-draft-notice" id="plan-editor-save-unavailable">Local date proposals are not saved. Saving changes is not available in this local editor yet.</p>
+    <p class="editor-draft-notice" id="plan-editor-save-unavailable">Date changes are saved only after you review them with Review changes.</p>
     <p>${escapeHtml(response.plan.name)}</p>
     <label>Stored service for coverage display<select data-edit="service"></select></label>
     <p class="help-text" data-edit="readonly" hidden></p>

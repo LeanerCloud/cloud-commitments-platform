@@ -33,7 +33,7 @@ function list(title: string, rows: readonly HTMLElement[]): HTMLElement {
   return section;
 }
 
-export function createReviewRegion(preview: PlanEditorPreviewResponse): ReviewRegion {
+export function createReviewRegion(preview: PlanEditorPreviewResponse, onChange: () => void): ReviewRegion {
   const { diff } = preview, element = document.createElement('section');
   element.id = 'plan-review'; element.className = 'plan-review';
   const heading = text('h3', 'Review changes');
@@ -60,7 +60,7 @@ export function createReviewRegion(preview: PlanEditorPreviewResponse): ReviewRe
     set.append(text('legend', legend));
     for (const id of ids) {
       const step = byExecution.get(id), label = document.createElement('label'), box = document.createElement('input');
-      box.type = 'checkbox'; box.addEventListener('change', () => { sync(); });
+      box.type = 'checkbox'; box.addEventListener('change', () => { sync(); onChange(); });
       boxes.push(box);
       label.append(box, document.createTextNode(` I understand ${step ? stepLabel(step) : 'a purchase without a listed step'} ${sentence}`));
       set.append(label);
@@ -70,16 +70,13 @@ export function createReviewRegion(preview: PlanEditorPreviewResponse): ReviewRe
   group(preview.required_cancellation_ids, `${plural(preview.required_cancellation_ids.length, 'purchase', 'purchases')} will be canceled`, 'will be canceled.');
   group(preview.required_reapproval_ids, `${preview.required_reapproval_ids.length} approved ${preview.required_reapproval_ids.length === 1 ? 'purchase needs' : 'purchases need'} approval again`, 'will need approval again.');
 
-  const confirm = text('button', 'Confirm and save') as HTMLButtonElement;
-  confirm.type = 'button'; confirm.id = 'plan-review-confirm';
   const note = text('p', '', 'help-text');
   note.setAttribute('role', 'status');
-  element.append(confirm, note);
+  element.append(note);
   const done = (): boolean => boxes.every(box => box.checked);
   function sync(): void {
-    confirm.disabled = !done();
     const left = boxes.filter(box => !box.checked).length;
-    note.textContent = left ? `Acknowledge ${plural(left, 'more item', 'more items')} to continue.` : 'Ready to save.';
+    note.textContent = left ? `Acknowledge ${plural(left, 'more item', 'more items')} to continue.` : 'Ready to save. Use Save changes.';
   }
   sync();
   return {

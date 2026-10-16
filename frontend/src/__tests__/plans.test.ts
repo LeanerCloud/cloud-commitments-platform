@@ -126,9 +126,9 @@ jest.mock('../utils', () => ({
 }));
 
 import * as api from '../api';
-import { getPlanEditor, previewPlanEditor, PlanEditorResponse, PlanEditorService } from '../api/plan-editor';
+import { getPlanEditor, previewPlanEditor, savePlanEditor, PlanEditorResponse, PlanEditorService } from '../api/plan-editor';
 import { response as editorResponse, service as editorService } from './fixtures/plan-editor';
-jest.mock('../api/plan-editor', () => ({ ...jest.requireActual('../api/plan-editor'), getPlanEditor: jest.fn(), previewPlanEditor: jest.fn() }));
+jest.mock('../api/plan-editor', () => ({ ...jest.requireActual('../api/plan-editor'), getPlanEditor: jest.fn(), previewPlanEditor: jest.fn(), savePlanEditor: jest.fn() }));
 
 const storedEditor = (plan: { id: string; name: string; services?: Record<string, Partial<PlanEditorService>>; ramp_schedule?: Partial<PlanEditorResponse['plan']['ramp_schedule']>; enabled?: boolean; auto_purchase?: boolean; notification_days_before?: number }): PlanEditorResponse => {
   const base = editorResponse();
@@ -274,6 +274,59 @@ describe('Plans Module', () => {
       expect(api.updatePlan).not.toHaveBeenCalled(); expect(api.createPlan).not.toHaveBeenCalled();
       closePlanModal(); openNewPlanModal();
       expect(submit.textContent).toBe('Save Plan');
+    });
+    test('Save changes sends one frozen PUT, rebuilds the dialog from a fresh GET and never reaches the legacy writers', async () => {
+      const stored = editorResponse(), step2 = stored.graph!.steps[1]!;
+      const dated = { ...stored, graph: { ...stored.graph!, steps: stored.graph!.steps.map(slot => slot.step_number === 4
+        ? { ...step2, step_number: 4, execution_id: 'root-4', scheduled_date: '2026-11-12', cumulative_target_percent: 80 } : slot) } };
+      (getPlanEditor as jest.Mock).mockReset().mockResolvedValue(dated);
+      (previewPlanEditor as jest.Mock).mockReset().mockResolvedValue({ reviewed_diff: 'sha256:x', required_cancellation_ids: [], required_reapproval_ids: [],
+        diff: { plan: [], services: [], accounts: { added: [], removed: [] }, steps: [], totals: { moved: 1, created: 0, canceled: 0, approvals_affected: 0 } } });
+      (savePlanEditor as jest.Mock).mockReset().mockResolvedValue({ replayed: false, mapping: [], editor: dated,
+        diff: { plan: [], services: [], accounts: { added: [], removed: [] }, steps: [], totals: { moved: 1, created: 0, canceled: 0, approvals_affected: 0 } } });
+      (await load()).click(); await flush();
+      const form = document.getElementById('plan-form') as HTMLFormElement, name = document.getElementById('plan-name') as HTMLInputElement;
+      const submit = Array.from(form.elements).find((item): item is HTMLButtonElement => item instanceof HTMLButtonElement && item.type === 'submit')!;
+      name.value = 'Renamed'; name.dispatchEvent(new Event('input', { bubbles: true })); name.dispatchEvent(new Event('change', { bubbles: true }));
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flush();
+      expect(submit.textContent).toBe('Save changes'); expect(savePlanEditor).not.toHaveBeenCalled();
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flush();
+      expect(savePlanEditor).toHaveBeenCalledTimes(1);
+      expect(JSON.parse((savePlanEditor as jest.Mock).mock.calls[0][1])).toMatchObject({ plan: { name: 'Renamed' }, reviewed_diff: 'sha256:x' });
+      expect(getPlanEditor).toHaveBeenCalledTimes(2);
+      expect(document.querySelector('#plan-review-feedback [role="status"]')!.textContent).toBe('Saved. 1 date moved; 0 steps removed; 0 approvals affected.');
+      expect(api.updatePlan).not.toHaveBeenCalled(); expect(api.setPlanAccounts).not.toHaveBeenCalled(); expect(api.createPlan).not.toHaveBeenCalled();
+    });
+    test('closing the dialog mid-save shows only a toast when the PUT succeeds and never rebuilds the editor', async () => {
+      const stored = editorResponse(), step2 = stored.graph!.steps[1]!;
+      (getPlanEditor as jest.Mock).mockReset().mockResolvedValue({ ...stored, graph: { ...stored.graph!, steps: stored.graph!.steps.map(slot => slot.step_number === 4
+        ? { ...step2, step_number: 4, execution_id: 'root-4', scheduled_date: '2026-11-12', cumulative_target_percent: 80 } : slot) } });
+      const diff = { plan: [], services: [], accounts: { added: [], removed: [] }, steps: [], totals: { moved: 0, created: 0, canceled: 0, approvals_affected: 0 } };
+      (previewPlanEditor as jest.Mock).mockReset().mockResolvedValue({ reviewed_diff: 'sha256:x', required_cancellation_ids: [], required_reapproval_ids: [], diff });
+      let finish!: (value: unknown) => void;
+      (savePlanEditor as jest.Mock).mockReset().mockReturnValue(new Promise(done => { finish = done; }));
+      (await load()).click(); await flush();
+      const form = document.getElementById('plan-form') as HTMLFormElement, name = document.getElementById('plan-name') as HTMLInputElement;
+      name.value = 'Renamed'; name.dispatchEvent(new Event('input', { bubbles: true })); name.dispatchEvent(new Event('change', { bubbles: true }));
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flush();
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flush();
+      expect(savePlanEditor).toHaveBeenCalledTimes(1);
+      closePlanModal(); mockShowToast.mockClear();
+      finish({ replayed: false, mapping: [], diff, editor: stored }); await flush();
+      expect(getPlanEditor).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledWith({ message: 'Plan saved', kind: 'success' });
+    });
+    test('a direct savePlan call in Edit mode reviews and never reaches the legacy writers', async () => {
+      const stored = editorResponse(), step2 = stored.graph!.steps[1]!;
+      (getPlanEditor as jest.Mock).mockReset().mockResolvedValue({ ...stored, graph: { ...stored.graph!, steps: stored.graph!.steps.map(slot => slot.step_number === 4
+        ? { ...step2, step_number: 4, execution_id: 'root-4', scheduled_date: '2026-11-12', cumulative_target_percent: 80 } : slot) } });
+      (previewPlanEditor as jest.Mock).mockReset().mockRejectedValue(new Error('stop'));
+      (await load()).click(); await flush();
+      const name = document.getElementById('plan-name') as HTMLInputElement;
+      name.value = 'Renamed'; name.dispatchEvent(new Event('input', { bubbles: true })); name.dispatchEvent(new Event('change', { bubbles: true }));
+      await savePlan(new Event('submit')); await flush();
+      expect(api.updatePlan).not.toHaveBeenCalled(); expect(api.setPlanAccounts).not.toHaveBeenCalled(); expect(api.createPlan).not.toHaveBeenCalled();
+      expect(previewPlanEditor).toHaveBeenCalledTimes(1); expect(mockShowToast).not.toHaveBeenCalled();
     });
     test('renders a stored pre-#608 service slug without a toast or a legacy write', async () => {
       (getPlanEditor as jest.Mock).mockResolvedValue(storedEditor({ id: 'plan-id', name: 'Legacy', services: { vm: { provider: 'azure', service: 'vm', enabled: true, coverage: 80 } } }));

@@ -261,7 +261,8 @@
 .plan-editor-layout.has-editor-draft { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
 .plan-editor-settings, #plan-editor-panel { min-width: 0; }
 #plan-modal .modal-buttons { flex-shrink: 0; }
-#plan-review-feedback { flex-shrink: 0; margin-top: 12px; max-height: 7rem; overflow-y: auto; }
+#plan-review-feedback { flex-shrink: 0; margin-top: 12px; max-height: 10rem; overflow-y: auto; }
+#plan-review-feedback.needs-reload { max-height: 16rem; }
 #plan-review-feedback p { margin: 4px 0; overflow-wrap: anywhere; }
 #plan-review-feedback p:empty { display: none; }
 #plan-editor-panel [data-selected] .preview-marker { fill: var(--cudly-primary); stroke: var(--cudly-text); stroke-width: 3; }

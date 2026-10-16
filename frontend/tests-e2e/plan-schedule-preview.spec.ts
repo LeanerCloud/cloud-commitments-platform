@@ -229,7 +229,7 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     else expect(formBox.y).toBeGreaterThanOrEqual(storedBox.y + storedBox.height);
     expect(await edit.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expect(edit.locator('button[type="submit"]')).toBeDisabled();
-    await expect(stored).toContainText('Saving changes is not available');
+    await expect(stored).toContainText('Date changes are saved only after you review them');
     const reason = page.locator('#plan-review-reason');
     await expect(reason).toHaveText('Choose a date for step 4.'); await inViewport(reason);
     await expect(edit.locator('button[type="submit"]')).toHaveAttribute('aria-describedby', 'plan-review-reason');
