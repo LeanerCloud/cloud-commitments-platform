@@ -63,11 +63,11 @@ func decodePlanEditorEnvelope(body string) (*planEditorIntentWire, error) {
 	if identityErr := validatePlanEditorEnvelopeIdentity(fields, &wire); identityErr != nil {
 		return nil, identityErr
 	}
-	wire.AcknowledgedCancellationIDs, err = planEditorUUIDs(wire.AcknowledgedCancellationIDs)
+	wire.AcknowledgedCancellationIDs, err = planEditorUUIDs(wire.AcknowledgedCancellationIDs, config.MaxTotalSteps)
 	if err != nil {
 		return nil, err
 	}
-	wire.AcknowledgedReapprovalIDs, err = planEditorUUIDs(wire.AcknowledgedReapprovalIDs)
+	wire.AcknowledgedReapprovalIDs, err = planEditorUUIDs(wire.AcknowledgedReapprovalIDs, config.MaxTotalSteps)
 	if err != nil {
 		return nil, err
 	}
