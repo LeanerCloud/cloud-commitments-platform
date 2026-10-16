@@ -945,7 +945,9 @@ func TestScheduler_ListRecommendations(t *testing.T) {
 // returned channel and fails, which ends the refresh immediately.
 func staleListRecommendations(t *testing.T, staleHours int) <-chan struct{} {
 	t.Helper()
-	ctx := context.Background()
+	// Only a WithBackgroundCollection ctx may kick a refresh (issue #627); without
+	// it both twins would pass or fail for the wrong reason.
+	ctx := WithBackgroundCollection(context.Background())
 	mockStore := new(MockConfigStore)
 
 	old := time.Now().Add(-72 * time.Hour)
