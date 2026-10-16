@@ -1,5 +1,5 @@
 variable "stack_name" {
-  description = "Name of the stack. At most 39 chars: the longest rule suffix is \"-fire-scheduled-purchases\" (25 chars) and EventBridge caps rule names at 64. The sweep rules (\"-sweep-<rule>\", up to 15 chars) fit well inside that."
+  description = "Name of the stack. At most 30 chars: the Lambda IAM role uses name_prefix \"<stack_name>-lambda-\", which the AWS provider caps at 38 chars. Rule names (longest \"-fire-scheduled-purchases\", sweeps \"-sweep-<rule>\" up to 15 chars) fit well inside EventBridge's 64."
   type        = string
 }
 

@@ -4,7 +4,7 @@
 mock_provider "aws" {}
 
 variables {
-  # Worst case for the 64-char EventBridge rule-name limit.
+  # A long production-style name; rule names are asserted against the 64-char limit.
   stack_name                   = "cudly-production-abcd1234"
   permissions_boundary_arn     = "arn:aws:iam::123456789012:policy/cudly-boundary"
   environment                  = "production"
