@@ -189,7 +189,7 @@ func scanDir(dir string) (map[string]string, error) {
 // scheduler resources, and the names the server does not recognize.
 func wiredFrom(files map[string]string) (wired map[string]bool, unknown []string) {
 	wired = map[string]bool{}
-	var stripped []string
+	stripped := make([]string, 0, len(files))
 	for _, raw := range files {
 		stripped = append(stripped, stripComments(raw))
 	}
