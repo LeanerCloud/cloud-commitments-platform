@@ -6,6 +6,13 @@ import "net/http"
 // legacy write refused because the plan is owned by the schedule editor.
 const codeEditorReconciliationRequired = "editor_reconciliation_required"
 
+const codeInvalidRequest = "invalid_request"
+
+// planEditorInvalid is a 400 for a request the editor cannot apply as written.
+func planEditorInvalid(msg string) error {
+	return planEditorRefusal(http.StatusBadRequest, codeInvalidRequest, msg)
+}
+
 // planEditorRefusal builds a client error carrying a machine-readable code.
 func planEditorRefusal(status int, code, msg string) error {
 	return NewClientErrorWithDetails(status, msg, map[string]any{"code": code})
