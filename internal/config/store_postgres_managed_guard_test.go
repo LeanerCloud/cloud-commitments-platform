@@ -14,6 +14,8 @@ func TestSameAccountSet(t *testing.T) {
 		{"removed", []string{"a", "b"}, []string{"a"}, false},
 		{"replaced", []string{"a"}, []string{"b"}, false},
 		{"both empty", nil, []string{}, true},
+		{"mixed case", []string{"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}, []string{"AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"}, true},
+		{"mixed case duplicate", []string{"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}, []string{"AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}, true},
 	}
 	for _, tc := range cases {
 		if got := sameAccountSet(tc.a, tc.b); got != tc.want {

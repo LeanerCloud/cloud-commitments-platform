@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,6 +79,7 @@ func TestAssignAccountsOnManagedPlan(t *testing.T) {
 	setPlanManaged(ctx, t, f, true)
 
 	require.NoError(t, f.assign(ctx, f.handler, current, current), "identical set with a duplicate passes")
+	require.NoError(t, f.assign(ctx, f.handler, strings.ToUpper(current)), "identical set in upper-case hex passes")
 	for name, ids := range map[string][]string{"added": {current, other}, "replaced": {other}} {
 		requireEditorRefusal(t, f.assign(ctx, f.handler, ids...))
 		require.Equal(t, 1, f.count(ctx, t, acctCount), name)

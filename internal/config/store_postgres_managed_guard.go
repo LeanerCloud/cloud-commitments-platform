@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -95,12 +96,14 @@ func requireManagedAccountsTx(ctx context.Context, tx pgx.Tx, planID string, acc
 }
 
 // sameAccountSet compares account id lists as sets, so request duplicates
-// collapse the way ON CONFLICT DO NOTHING collapses them on write.
+// collapse the way ON CONFLICT DO NOTHING collapses them on write. Ids are
+// lower-cased because the uuid column returns lower-case text while request
+// validation accepts upper-case hex.
 func sameAccountSet(a, b []string) bool {
 	set := func(ids []string) map[string]struct{} {
 		m := make(map[string]struct{}, len(ids))
 		for _, id := range ids {
-			m[id] = struct{}{}
+			m[strings.ToLower(id)] = struct{}{}
 		}
 		return m
 	}
