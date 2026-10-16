@@ -41,6 +41,9 @@ func newEditorReadFixture(t *testing.T) editorReadFixture {
 	service := auth.NewService(auth.ServiceConfig{Store: authStore, CSRFKey: csrf})
 	h := NewHandler(HandlerConfig{ConfigStore: store, AuthService: &marketplaceAuthFixture{service: service}})
 	h.apiKey = uuid.NewString()
+	h.extraRoutes = func(r *Router) []Route {
+		return []Route{{PathPrefix: "/api/plans/", PathSuffix: "/editor", Method: "GET", Handler: r.getPlanEditorHandler, Auth: AuthUser}}
+	}
 	return editorReadFixture{h, store, authStore, service, csrf, pg.DB}
 }
 
