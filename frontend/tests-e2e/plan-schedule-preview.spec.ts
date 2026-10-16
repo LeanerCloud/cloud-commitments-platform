@@ -18,12 +18,21 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
   test(`inline Create/Edit schedule preview at ${width}px (mock API, no writes)`, async ({ page, isMobile }, testInfo) => {
     test.setTimeout(90_000);
     await page.setViewportSize({ width, height: 900 });
-    const errors: string[] = [], writes: string[] = [];
+    const errors: string[] = [], writes: string[] = [], previews: string[] = [];
+    const inViewport = async (locator: Locator): Promise<void> => {
+      await expect(locator).toBeVisible();
+      const box = (await locator.boundingBox())!, view = page.viewportSize()!;
+      expect(box.x).toBeGreaterThanOrEqual(0); expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(view.width); expect(box.y + box.height).toBeLessThanOrEqual(view.height);
+    };
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     page.on('requestfailed', request => errors.push(request.url()));
     page.on('response', response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`); });
-    page.on('request', request => { if (request.url().includes('/api/') && request.method() !== 'GET') writes.push(request.url()); });
+    page.on('request', request => {
+      if (!request.url().includes('/api/') || request.method() === 'GET') return;
+      (request.url().endsWith('/editor/preview') ? previews : writes).push(request.url());
+    });
     await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.fallback() : route.abort());
     await seedAuth(page);
     await mockApi(page);
@@ -221,6 +230,10 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     expect(await edit.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expect(edit.locator('button[type="submit"]')).toBeDisabled();
     await expect(stored).toContainText('Saving changes is not available');
+    const reason = page.locator('#plan-review-reason');
+    await expect(reason).toHaveText('Choose a date for step 4.'); await inViewport(reason);
+    await expect(edit.locator('button[type="submit"]')).toHaveAttribute('aria-describedby', 'plan-review-reason');
+    await page.screenshot({ path: testInfo.outputPath('edit-review-disabled-reason.png') });
     await expect(stored.locator('[data-edit="service"] option')).toHaveCount(2);
     await expect(stored.locator('[data-edit="slots"] li')).toHaveCount(5);
     const selected = stored.locator('[data-edit="step"]'), proposed = stored.locator('[data-edit="date"]');
@@ -267,12 +280,20 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     await expect(stored.locator('[data-edit="history"]')).toContainText('Step 8; failed');
     await stored.getByText('Stored settings and accounts', { exact: true }).click();
     await expect(stored.locator('[data-edit="settings"]')).toContainText('unspecified / none');
-    expect(await edit.locator('#plan-form').evaluate(element => element.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))).toBe(false);
+    await expect(edit.locator('button[type="submit"]')).toHaveText('Review changes');
+    await page.route('**/api/plans/draft-plan/editor/preview', route => route.fulfill({ json: { reviewed_diff: 'sha256:' + 'a'.repeat(64),
+      required_cancellation_ids: [], required_reapproval_ids: [], diff: { plan: [], services: [], accounts: { added: [], removed: [] }, steps: [],
+        totals: { moved: 3, created: 0, canceled: 0, approvals_affected: 0 } } } }));
+    await expect(edit.locator('button[type="submit"]')).toBeEnabled();
+    await edit.locator('button[type="submit"]').click();
+    const totals = page.locator('#plan-review-feedback [role="status"]');
+    await expect(totals).toHaveText('3 dates moved; 0 steps removed; 0 approvals affected'); await inViewport(totals);
+    await page.screenshot({ path: testInfo.outputPath('edit-review-totals.png') });
+    expect(previews).toHaveLength(1);
     await expect(edit).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('edit-complete-get.png'), fullPage: true });
     expect(await edit.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await page.keyboard.press('Escape'); await expect(edit).toBeHidden();
-    await page.getByRole('button', { name: 'Dismiss notification' }).click();
     await page.locator('#new-plan-btn').click();
     await expect(page.locator('#plan-provider')).toHaveValue('aws');
     await expect(page.locator('#plan-term')).toHaveValue('3');

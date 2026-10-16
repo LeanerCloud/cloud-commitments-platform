@@ -21,6 +21,7 @@ import { mountPlanEditorPanel } from './plan-editor-panel';
 import { getPlanEditor, PlanEditorResponse } from './api/plan-editor';
 import { mountPlanEditorEditPanel } from './plan-editor-edit-panel';
 import { fillEditForm } from './lib/plan-editor-form';
+import { mountPlanReview, type PlanReviewHandle } from './plan-editor-save';
 import { adaptPlanEditor } from './plan-editor-adapter';
 
 // pendingPlanRecommendations holds the resolved plan target captured at
@@ -1297,22 +1298,28 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
   const revealInvalid = (event: Event): void => {
     if (advanced?.contains(event.target as Node)) advanced.open = true;
   };
-  const blockSubmit = (event: Event): void => {
-    event.preventDefault(); event.stopImmediatePropagation(); showToast({ message: editSaveUnavailable, kind: 'error' });
+  let planReview: PlanReviewHandle | undefined;
+  const reviewSubmit = (event: Event): void => {
+    event.preventDefault(); event.stopImmediatePropagation(); planReview?.review();
   };
   form?.addEventListener('invalid', revealInvalid, true);
-  if (editor) form?.addEventListener('submit', blockSubmit, true);
+  if (editor) form?.addEventListener('submit', reviewSubmit, true);
   let disposePanel: (() => void) | undefined;
   disposePlanEditor = () => {
     try { disposePanel?.(); }
     finally {
-      form?.removeEventListener('invalid', revealInvalid, true); form?.removeEventListener('submit', blockSubmit, true);
-      editForm?.dispose();
+      form?.removeEventListener('invalid', revealInvalid, true); form?.removeEventListener('submit', reviewSubmit, true);
+      planReview?.dispose(); editForm?.dispose();
     }
   };
   try {
     if (editor && form) editForm = fillEditForm(form, editor, { selectService: selectEditService, setAccounts: setEditAccounts, onAccountsChange: onEditAccountsChange });
-    disposePanel = host && form ? editor ? mountPlanEditorEditPanel(host, editor).dispose : mountPlanEditorPanel(host, form) : undefined;
+    if (host && form && editor) {
+      const edit = mountPlanEditorEditPanel(host, editor);
+      disposePanel = edit.dispose;
+      const button = Array.from(form.elements).find((item): item is HTMLButtonElement => item instanceof HTMLButtonElement && item.type === 'submit');
+      if (button && editForm) planReview = mountPlanReview({ response: editor, host, button, edit, form: editForm.model, generation: () => planModalSession });
+    } else disposePanel = host && form ? mountPlanEditorPanel(host, form) : undefined;
   } catch (error) { disposePlanEditor(); disposePlanEditor = undefined; throw error; }
   refreshPlanSaveButtonState();
   openModal(modal, { initialFocus: editor ? '[data-edit="heading"]' : '#plan-name', onClose: () => {
@@ -1491,10 +1498,10 @@ function refreshPlanSaveButtonState(): void {
   const submitBtn = Array.from(form.elements).find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement && element.type === 'submit');
   if (!submitBtn) return;
   const hasAccounts = planSelectedAccounts.length > 0;
-  submitBtn.disabled = planEditorMode === 'complete-edit' || !hasAccounts;
-  submitBtn.title = planEditorMode === 'complete-edit' ? editSaveUnavailable : hasAccounts ? '' : 'Select at least one Target Account to save the plan';
-  if (planEditorMode === 'complete-edit') submitBtn.setAttribute('aria-describedby', 'plan-editor-save-unavailable');
-  else submitBtn.removeAttribute('aria-describedby');
+  if (planEditorMode === 'complete-edit') return; // the review module owns the button in Edit
+  submitBtn.disabled = !hasAccounts;
+  submitBtn.title = hasAccounts ? '' : 'Select at least one Target Account to save the plan';
+  submitBtn.removeAttribute('aria-describedby');
 }
 
 /**
