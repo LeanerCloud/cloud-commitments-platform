@@ -40,10 +40,8 @@ const (
 )
 
 var (
-	validDims     = []string{dimTask, dimPass, dimDefault}
-	lambdaEnvGaps = []string{"analytics_collect", "finalize_revocations", "process_scheduled_purchases",
-		"reap_stuck_purchases", "send_notifications"}
-	allEight = []string{"analytics_collect", "cleanup", "collect_recommendations", "finalize_revocations",
+	validDims = []string{dimTask, dimPass, dimDefault}
+	allEight  = []string{"analytics_collect", "cleanup", "collect_recommendations", "finalize_revocations",
 		"fire_scheduled_purchases", "process_scheduled_purchases", "reap_stuck_purchases", "send_notifications"}
 	sevenGCP = []string{"analytics_collect", "cleanup", "finalize_revocations", "fire_scheduled_purchases",
 		"process_scheduled_purchases", "reap_stuck_purchases", "send_notifications"}
@@ -54,11 +52,7 @@ var (
 // aws/cleanup-lambda and gcp/cleanup-function run cleanup outside the server
 // task and are not scanned, so cleanup shows as a gap on AWS and GCP.
 var knownGaps = map[string]map[string][]string{
-	"aws-lambda": {
-		dimTask:    {"cleanup"},
-		dimPass:    lambdaEnvGaps,
-		dimDefault: lambdaEnvGaps,
-	},
+	"aws-lambda": {dimTask: {"cleanup"}},
 	"aws-fargate": {dimTask: {"analytics_collect", "cleanup", "finalize_revocations",
 		"process_scheduled_purchases", "reap_stuck_purchases", "send_notifications"}},
 	"cloudformation": {dimTask: {"analytics_collect", "cleanup", "finalize_revocations",
