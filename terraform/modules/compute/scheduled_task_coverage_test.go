@@ -327,6 +327,8 @@ func TestCheckerNegatives(t *testing.T) {
 		"https uri survives, whole-line comments do not": {job("# \"--task\", \"cleanup\"\n// /api/scheduled/cleanup\n" + collectURI), []string{"collect_recommendations"}, nil},
 		"ARN glob and cron do not truncate":              {target("a = \"arn:aws:events:*:*:rule/*\"\n" + finalize + "\nb = \"cron(0 */6 * * ? *)\""), []string{"finalize_revocations"}, nil},
 		"trailing comment does not count":                {job("description = \"x\" # " + collectURI + "\nb = 1 // " + collectURI), nil, nil},
+		"escaped quote does not end the string":          {job("a = \"q\\\"\" # /api/scheduled/collect_recommendations \"x\""), nil, nil},
+		"# inside single quotes is content":              {job("note = 'say # " + collectURI + "'"), []string{"collect_recommendations"}, nil},
 		"trailing comment after a real uri":              {job(collectURI + " # note"), []string{"collect_recommendations"}, nil},
 		"literal only in locals is not wired":            {aud + job(`uri = "x"`), nil, nil},
 		"job uri resolved through a local":               {aud + job("uri = local.aud"), []string{"collect_recommendations"}, nil},
