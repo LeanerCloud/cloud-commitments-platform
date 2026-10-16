@@ -3,6 +3,7 @@ import { adaptPlanEditor, editorServiceTargets } from './plan-editor-adapter';
 import { canDraftStep, canReviewEditorDraft, EditorDraft, draftBlock, draftDateChanges, redistributeEditorBlock, resetEditorDraft, selectDraftStep, setApprovedDraftEdits, setDraftDate } from './lib/plan-editor-draft';
 import { renderSchedulePlot, schedulePlotFrame, updateSchedulePlot } from './plan-schedule-plot';
 import { escapeHtml } from './utils';
+import { planEditorReason } from './lib/plan-editor-reasons';
 
 export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditorResponse): () => void {
   let state = adaptPlanEditor(response).graphDraft, dirty: 'date' | 'range' | null = null;
@@ -93,8 +94,8 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
   };
   const paintDescription = (draft: EditorDraft): void => {
     const selected = response.graph!.steps[draft.selected]!;
-    field('selected').textContent = `${canDraftStep(draft, draft.selected) ? 'Local date proposal allowed; server verification still required.' : selected.lock_reason ?? 'This step is fixed.'} ${quantityText(selected.display)} Amount unavailable.`;
-    list('slots', response.graph!.steps.map((slot, index) => `Step ${slot.step_number}: ${draft.dates[index] ?? 'date unavailable'}; ramp share ${slot.cumulative_target_percent}%; ${slot.status ?? (slot.root_state === 'missing' ? 'no current root' : 'status unavailable')}; ${(canDraftStep(draft, index) ? 'local proposal enabled' : slot.lock_reason ?? slot.capability).replace(/_/g, ' ')}.`));
+    field('selected').textContent = `${canDraftStep(draft, draft.selected) ? 'Local date proposal allowed; server verification still required.' : planEditorReason(selected.lock_reason, 'This step is fixed.')} ${quantityText(selected.display)} Amount unavailable.`;
+    list('slots', response.graph!.steps.map((slot, index) => `Step ${slot.step_number}: ${draft.dates[index] ?? 'date unavailable'}; ramp share ${slot.cumulative_target_percent}%; ${slot.status ?? (slot.root_state === 'missing' ? 'no current root' : 'status unavailable')}. ${canDraftStep(draft, index) ? 'Local proposal enabled.' : planEditorReason(slot.lock_reason, `${slot.capability.replace(/_/g, ' ')}.`)}`));
     const changes = draftDateChanges(draft);
     list('changes', changes.map(change => `Step ${change.step}: ${change.before ?? 'no date'} → ${change.after ?? 'no date'}${change.requiresReapproval ? '; reapproval required' : ''}`));
     field('status').textContent = !draft.approvedEdits && changes.some(change => change.requiresReapproval)

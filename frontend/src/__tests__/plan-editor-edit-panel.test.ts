@@ -161,3 +161,12 @@ test('keeps a legacy 99-percent ramp distinct from selected service coverage', (
   expect(host.querySelector('[data-preview-step="2"]')?.getAttribute('aria-label')).toContain('target 74.25%');
   expect(field('slots').textContent).toContain('ramp share 99%');
 });
+
+test('explains locked and executed steps with sentences instead of raw codes', () => {
+  dispose = mountPlanEditorEditPanel(host, response());
+  const sentence = 'This step already ran and cannot be changed.';
+  expect(field('slots').children[0]!.textContent).toContain(sentence);
+  expect(field('selected').textContent).toContain(sentence);
+  expect(field('slots').children[0]!.textContent).not.toContain('completed prefix');
+  expect(field('slots').children[4]!.textContent).toContain('You do not have permission to change this.');
+});
