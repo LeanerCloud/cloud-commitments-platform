@@ -82,7 +82,7 @@ func (s *PostgresStore) readPlanEditorSnapshotTx(ctx context.Context, tx pgx.Tx,
 	if err != nil {
 		return nil, err
 	}
-	out.Accounts, err = resolvePlanEditorAccountsTx(ctx, tx, ids)
+	out.Accounts, err = resolvePlanEditorAccountsTx(ctx, tx, ids, false)
 	if err != nil {
 		return nil, err
 	}
@@ -126,8 +126,12 @@ func (s *PostgresStore) readPlanEditorExecutionStateTx(ctx context.Context, tx p
 	return err
 }
 
-func resolvePlanEditorAccountsTx(ctx context.Context, tx pgx.Tx, ids []string) ([]PlanEditorAccount, error) {
-	rows, err := tx.Query(ctx, `SELECT id::text, name, provider FROM cloud_accounts WHERE id::text=ANY($1) ORDER BY id`, ids)
+func resolvePlanEditorAccountsTx(ctx context.Context, tx pgx.Tx, ids []string, forShare bool) ([]PlanEditorAccount, error) {
+	query := `SELECT id::text, name, provider FROM cloud_accounts WHERE id::text=ANY($1) ORDER BY id`
+	if forShare {
+		query += " FOR SHARE"
+	}
+	rows, err := tx.Query(ctx, query, ids)
 	if err != nil {
 		return nil, err
 	}
