@@ -2119,6 +2119,9 @@ func TestExpireStaleExecutionsSweep_ReleasesSuppressionsOnlyWhenExpired(t *testi
 // retry endpoint would always refuse carries ops_hint + redrive_unsafe so the
 // History UI hides Retry, and the refusal wins over a failure-reason hint.
 func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
+	withStatus := func(status string, recs ...config.RecommendationRecord) config.PurchaseExecution {
+		return config.PurchaseExecution{ExecutionID: "e-1", Status: status, Recommendations: recs}
+	}
 	failed := func(provider, service, errMsg string) config.PurchaseExecution {
 		return config.PurchaseExecution{
 			ExecutionID: "e-1",
@@ -2138,6 +2141,11 @@ func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
 	}{
 		{"azure savings plans", failed("azure", "savingsplans", "boom"), true, ""},
 		{"unrecognized provider", failed("oracle", "compute", "boom"), true, ""},
+		{"failed aws ec2", failed("aws", "ec2", "boom"), true, ""},
+		{"failed aws redshift", failed("aws", "redshift", "boom"), true, ""},
+		{"failed mixed ec2+rds basket", config.PurchaseExecution{ExecutionID: "e-1", Status: "failed", Error: "boom", Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds"}, {Provider: "aws", Service: "ec2"}}}, true, ""},
+		{"pending ec2 gets no hint", withStatus("pending", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), false, ""},
+		{"canceled ec2 gets no hint", withStatus("canceled", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), false, ""},
 		{"aws rds is retryable", failed("aws", "rds", "boom"), false, ""},
 		{"refusal wins over failure-reason hint", failed("azure", "savingsplans", persistent), true, ""},
 		{"failure-reason hint kept when re-drive is safe", failed("aws", "rds", persistent), false, resolveOpsHint(persistent)},
