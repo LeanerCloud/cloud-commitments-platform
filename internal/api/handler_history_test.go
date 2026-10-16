@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -2109,6 +2110,47 @@ func TestExpireStaleExecutionsSweep_ReleasesSuppressionsOnlyWhenExpired(t *testi
 				store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "stale-1")
 			} else {
 				store.AssertNotCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "stale-1")
+			}
+		})
+	}
+}
+
+// TestExecutionToHistoryRow_RedriveUnsafe pins issue #161: a failed row the
+// retry endpoint would always refuse carries ops_hint + redrive_unsafe so the
+// History UI hides Retry, and the refusal wins over a failure-reason hint.
+func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
+	failed := func(provider, service, errMsg string) config.PurchaseExecution {
+		return config.PurchaseExecution{
+			ExecutionID: "e-1",
+			Status:      "failed",
+			Error:       errMsg,
+			Recommendations: []config.RecommendationRecord{
+				{Provider: provider, Service: service, Region: "r"},
+			},
+		}
+	}
+	const persistent = "FROM_EMAIL not configured"
+	tests := []struct {
+		name       string
+		exec       config.PurchaseExecution
+		wantUnsafe bool
+		wantHint   string
+	}{
+		{"azure savings plans", failed("azure", "savingsplans", "boom"), true, ""},
+		{"unrecognized provider", failed("oracle", "compute", "boom"), true, ""},
+		{"aws rds is retryable", failed("aws", "rds", "boom"), false, ""},
+		{"refusal wins over failure-reason hint", failed("azure", "savingsplans", persistent), true, ""},
+		{"failure-reason hint kept when re-drive is safe", failed("aws", "rds", persistent), false, resolveOpsHint(persistent)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			row := executionToHistoryRow(tt.exec, "", "")
+			assert.Equal(t, tt.wantUnsafe, row.RedriveUnsafe)
+			if tt.wantUnsafe {
+				assert.Equal(t, purchase.RedriveRefusalReason(&tt.exec), row.OpsHint)
+				assert.NotEmpty(t, row.OpsHint)
+			} else {
+				assert.Equal(t, tt.wantHint, row.OpsHint)
 			}
 		})
 	}

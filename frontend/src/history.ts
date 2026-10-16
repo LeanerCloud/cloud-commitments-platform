@@ -937,7 +937,10 @@ function renderActionCell(p: HistoryPurchase): string {
   // misconfig is guaranteed to fail again.
   if ((p.status || '').toLowerCase() === 'failed') {
     if (p.ops_hint) {
-      return `<span class="history-ops-hint" title="Operator action required — Retry will not help until this is fixed">⚠ ${escapeHtml(p.ops_hint)}</span>`;
+      const title = p.redrive_unsafe
+        ? 'Permanent — this purchase can never be retried; start a new purchase instead'
+        : 'Operator action required — Retry will not help until this is fixed';
+      return `<span class="history-ops-hint" title="${title}">⚠ ${escapeHtml(p.ops_hint)}</span>`;
     }
     if (canRetryFailedRow(p) && p.purchase_id) {
       const overThreshold = retryThresholdReached(p);
