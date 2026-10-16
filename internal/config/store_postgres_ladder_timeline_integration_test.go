@@ -126,7 +126,7 @@ func TestLadderTimelineMixedBasisOnDemand(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "14.500002", page.TotalUSDHr)
 	require.Equal(t, "22.500004", page.TotalODUSDHr)
-	var od, native []string
+	od, native := make([]string, 0, len(page.Events)), make([]string, 0, len(page.Events))
 	for _, e := range page.Events {
 		od, native = append(od, e.ODUSDHr), append(native, e.AmountUSDHr)
 	}

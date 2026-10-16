@@ -21,7 +21,7 @@ func ladderTimelineODMicro(amount string, basis *LadderAmountBasis, rate *string
 	tr := assumeOnDemandIfUnknown(&LadderTrancheDB{AmountBasis: basis, CommitmentRate: rate})
 	od, err := nettingOnDemand(amount, tr)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrLadderTimelineRate, err)
+		return nil, fmt.Errorf("%w: %w", ErrLadderTimelineRate, err)
 	}
 	scaled := new(big.Rat).Mul(od, new(big.Rat).SetInt(ladderMicro))
 	q, m := new(big.Int).QuoRem(scaled.Num(), scaled.Denom(), new(big.Int))
