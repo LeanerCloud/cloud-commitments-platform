@@ -1,8 +1,17 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Locator } from '@playwright/test';
 
 test.use({ hasTouch: true });
 import { mockApi, seedAuth } from './fixtures/recs';
 import { response as editorResponse } from '../src/__tests__/fixtures/plan-editor';
+
+const noTickOverlap = async (plot: Locator, expectThinned = false): Promise<void> => {
+  const boxes = await plot.locator('.preview-tick:not([hidden])').evaluateAll(ticks => ticks.map(tick => { const box = tick.getBoundingClientRect(); return [box.left, box.right]; }));
+  expect(boxes.length).toBeGreaterThan(0);
+  const thinned = await plot.locator('.preview-tick[hidden]').evaluateAll(ticks => ticks.map(tick => { const box = tick.getBoundingClientRect(); return box.width * box.height; }));
+  if (expectThinned) expect(thinned.length).toBeGreaterThan(0);
+  expect(thinned.every(area => area === 0)).toBe(true);
+  boxes.sort((a, b) => a[0]! - b[0]!).slice(1).forEach((box, i) => expect(box[0]!).toBeGreaterThanOrEqual(boxes[i]![1]!));
+};
 
 for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`, () => {
   test.use({ isMobile: width <= 390 });
@@ -50,6 +59,7 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     const panel = parent.locator('#plan-editor-panel'), date = panel.locator('[data-editor="date"]');
     await expect(panel).toBeVisible(); await expect(panel).toContainText('Save Plan does not save date changes');
     await expect(panel.locator('[data-preview-step]')).toHaveCount(4);
+    await noTickOverlap(panel);
     await expect(panel.locator('svg [role="button"]')).toHaveCount(6);
     const node = await date.elementHandle(), initial = await date.inputValue();
     await date.focus(); await date.press('ArrowLeft'); await date.press('Backspace');
@@ -200,6 +210,8 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     await expect(edit.locator('#plan-form')).toBeVisible();
     await expect(edit.locator('#plan-name')).toHaveValue('Existing plan');
     await expect(edit.locator('#plan-term')).toBeDisabled();
+    await expect(stored.locator('.preview-tick[hidden]')).toHaveCount(1);
+    await noTickOverlap(stored, true);
     const card = edit.locator('label.ramp-option').first();
     expect(await card.evaluate(element => { const style = getComputedStyle(element); return [style.opacity, style.cursor]; })).toEqual(['0.6', 'not-allowed']);
     await expect(edit.locator('#plan-max-step-commitment-reason')).toHaveText('Per-step cap editing is not available yet');
@@ -247,6 +259,7 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     await parent.locator('label.ramp-option').filter({ hasText: 'Define your own schedule' }).click();
     await page.locator('#ramp-step-percent').fill('1');
     await expect(dense.locator('[data-preview-step]')).toHaveCount(100);
+    await noTickOverlap(dense);
     expect((await dense.locator('svg').boundingBox())!.width).toBeGreaterThanOrEqual(4896);
     expect(await dense.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     if (width <= 390) {

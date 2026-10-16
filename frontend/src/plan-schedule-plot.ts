@@ -12,6 +12,17 @@ export function schedulePlotFrame(dates: readonly string[]): SchedulePlotFrame {
 export function schedulePlotX(date: string, frame: SchedulePlotFrame): number {
   return 48 + (draftDateDay(date) - frame.startDay) / frame.span * (frame.width - 96);
 }
+const LABEL_GAP = 44;
+/** Which x-axis date labels fit without overlapping (12px "MM-DD" text); the last point always keeps its label. */
+function thinLabels(points: readonly SchedulePlotPoint[], frame: SchedulePlotFrame): boolean[] {
+  const xs = points.map(point => schedulePlotX(point.date, frame)), kept: number[] = [];
+  xs.forEach((at, index) => {
+    const last = index === xs.length - 1;
+    while (last && kept.length && at - xs[kept[kept.length - 1]!]! < LABEL_GAP) kept.pop();
+    if (!kept.length || at - xs[kept[kept.length - 1]!]! >= LABEL_GAP) kept.push(index);
+  });
+  return xs.map((_, index) => kept.includes(index));
+}
 const y = (target: number): number => 260 - target * 2.2;
 function staircase(points: readonly SchedulePlotPoint[], frame: SchedulePlotFrame): string {
   let path = points[0]?.step === 1 ? `M 48 ${y(0)}` : '';
@@ -31,14 +42,14 @@ function handleSpan(points: readonly SchedulePlotPoint[], block: SchedulePlotBlo
 
 export function renderSchedulePlot(points: readonly SchedulePlotPoint[], frame: SchedulePlotFrame, selected: number, interactive: boolean, block: SchedulePlotBlock): string {
   const { width } = frame, count = points.length, x = (index: number): number => schedulePlotX(points[index]!.date, frame);
-  const path = staircase(points, frame), span = handleSpan(points, block), hidden = span.visible ? '' : ' hidden';
+  const path = staircase(points, frame), labels = thinLabels(points, frame), span = handleSpan(points, block), hidden = span.visible ? '' : ' hidden';
   return `<svg viewBox="0 0 ${width} 370" width="${width}" role="${interactive ? "group" : "img"}" aria-label="Hypothetical purchase dates">
                 ${[0, 20, 40, 60, 80, 100].map(value => `<path class="preview-grid" d="M 48 ${y(value)} H ${width - 24}"/><text x="8" y="${y(value) + 4}">${value}</text>`).join('')}
                 <path class="preview-staircase" d="${path}"/>
                 ${points.map((point, index) => `<g ${interactive ? `role="button" tabindex="${point.step - 1 === selected ? 0 : -1}"` : ""} data-preview-step="${point.step - 1}" ${point.fixed ? 'data-fixed' : ''} ${point.step - 1 === selected ? 'data-selected' : ''} ${interactive ? `aria-pressed="${point.step - 1 === selected}"` : ""} aria-label="Step ${point.step}, ${escapeHtml(point.date)}, target ${point.target}%">
 ${interactive && !point.fixed ? `                  <foreignObject class="preview-hit" x="${x(index) - 22}" y="${y(point.target) - 22}" width="44" height="44"><div xmlns="http://www.w3.org/1999/xhtml" class="preview-touch-target"></div></foreignObject>` : ""}
                   <circle class="preview-marker" cx="${x(index)}" cy="${y(point.target)}" r="6"/>
-                  ${index % Math.ceil(count / 5) === 0 || index === count - 1 ? `<text x="${x(index)}" y="292" text-anchor="middle">${escapeHtml(point.date.slice(5))}</text>` : ''}
+                  <text class="preview-tick" x="${x(index)}" y="292" text-anchor="middle"${labels[index] ? '' : ' hidden'}>${escapeHtml(point.date.slice(5))}</text>
                 </g>`).join('')}
                 ${interactive && count > 1 ? `<path class="preview-interval"${hidden} d="M ${x(span.at[0])} 336 H ${x(span.at[1])}"/>
                   ${(['start', 'end'] as const).map((boundary, i) => {
@@ -53,15 +64,15 @@ ${interactive && !point.fixed ? `                  <foreignObject class="preview
 
 export function updateSchedulePlot(svg: SVGSVGElement, points: readonly SchedulePlotPoint[], frame: SchedulePlotFrame, selected: number, interactive: boolean, block: SchedulePlotBlock): void {
   const span = handleSpan(points, block);
-  const buttons = svg.querySelectorAll<SVGGElement>('[data-preview-step]');
+  const labels = thinLabels(points, frame), buttons = svg.querySelectorAll<SVGGElement>('[data-preview-step]');
   buttons.forEach((button, index) => {
     const point = points[index]!, left = schedulePlotX(point.date, frame);
     button.querySelector('.preview-hit')?.setAttribute('x', String(left - 22));
     button.querySelector('.preview-hit')?.setAttribute('y', String(y(point.target) - 22));
     button.querySelector('.preview-marker')!.setAttribute('cx', String(left));
     button.querySelector('.preview-marker')!.setAttribute('cy', String(y(point.target)));
-    const tick = button.querySelector('text');
-    if (tick) { tick.setAttribute('x', String(left)); tick.textContent = point.date.slice(5); }
+    const tick = button.querySelector('.preview-tick')!;
+    tick.setAttribute('x', String(left)); tick.textContent = point.date.slice(5); tick.toggleAttribute('hidden', !labels[index]);
     button.dataset.previewStep = String(point.step - 1);
     button.setAttribute('aria-label', `Step ${point.step}, ${point.date}, target ${point.target}%`);
     button.toggleAttribute('data-fixed', !!point.fixed);
