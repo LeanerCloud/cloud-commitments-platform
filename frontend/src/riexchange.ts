@@ -41,6 +41,10 @@ const exchangePaymentPattern = /^\d+(?:\.\d+)?$/;
 // Generation counter to prevent stale utilization data from overwriting fresh data
 let utilizationGeneration = 0;
 
+// Generation counter so a superseded loadRIExchange (chip changed while the
+// account lookup was in flight) never issues its list call.
+let scopeGeneration = 0;
+
 // The AWS account the convertible-RI list is currently scoped to (the
 // single-select account chip value, or undefined for all-accounts). Tracked
 // at module scope so the asynchronous utilization re-render preserves the
@@ -58,13 +62,17 @@ function providerLabel(provider: string): string {
 
 // resolveScope reads the Main Header global Provider/Account chips so every
 // RI Exchange load is scoped consistently with the other Inventory sub-tabs
-// (issue #871). The account chip is single-select; an account_id is forwarded
-// only when exactly one account is active.
-function resolveScope(): { provider: Provider | ''; accountID?: string } {
+// (issue #871). The account chip holds a CloudAccount UUID, but the RI
+// endpoints expect the provider account number / subscription GUID
+// (external_id), so the single selected account is translated here.
+async function resolveScope(): Promise<{ provider: Provider | ''; accountID?: string }> {
   const provider = state.getCurrentProvider();
   const accountIDs = state.getCurrentAccountIDs();
-  const accountID = accountIDs.length === 1 ? accountIDs[0] : undefined;
-  return { provider, accountID };
+  if (accountIDs.length !== 1) return { provider };
+  const accounts = await api.listAccountsMinimal();
+  const account = accounts.find(a => a.id === accountIDs[0]);
+  if (!account) throw new Error(`Selected account ${accountIDs[0]} was not found`);
+  return { provider, accountID: account.external_id };
 }
 
 // Mode label mapping — single source of truth
@@ -89,7 +97,20 @@ void MODE_VALUES;
  *            for GCP" empty state and no list endpoint is called.
  */
 export async function loadRIExchange(): Promise<void> {
-  const { provider, accountID } = resolveScope();
+  const generation = ++scopeGeneration;
+  let scope: Awaited<ReturnType<typeof resolveScope>>;
+  try {
+    scope = await resolveScope();
+  } catch (error) {
+    if (generation !== scopeGeneration) return;
+    const container = document.getElementById('ri-exchange-instances-list');
+    if (container) {
+      container.innerHTML = `<p class="error">Failed to resolve the selected account: ${escapeHtml((error as Error).message)}</p>`;
+    }
+    return;
+  }
+  if (generation !== scopeGeneration) return;
+  const { provider, accountID } = scope;
 
   if (provider === 'gcp') {
     renderGCPEmptyStates();

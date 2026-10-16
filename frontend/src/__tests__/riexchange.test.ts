@@ -5,6 +5,7 @@
 // Mock the api module defensively (riexchange.ts imports it)
 jest.mock('../api', () => ({
   listConvertibleRIs: jest.fn(),
+  listAccountsMinimal: jest.fn(),
   listExchangeableAzureRIs: jest.fn(),
   getRIUtilization: jest.fn(),
   getReshapeRecommendations: jest.fn(),
@@ -1024,6 +1025,11 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
 
     (api.listConvertibleRIs as jest.Mock).mockResolvedValue([]);
     (api.listExchangeableAzureRIs as jest.Mock).mockResolvedValue([]);
+    (api.listAccountsMinimal as jest.Mock).mockResolvedValue([
+      { id: 'uuid-1', name: 'Prod', external_id: '123456789012', provider: 'aws' },
+      { id: 'uuid-2', name: 'Other', external_id: '210987654321', provider: 'aws' },
+      { id: 'uuid-az', name: 'Sub', external_id: 'aaaaaaaa-0000-0000-0000-bbbbbbbbbbbb', provider: 'azure' },
+    ]);
     (api.getRIUtilization as jest.Mock).mockResolvedValue([]);
     (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null });
     (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([]);
@@ -1047,9 +1053,44 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
   });
 
   it('forwards the single selected account to the AWS list endpoint', async () => {
-    stateMod().getCurrentAccountIDs.mockReturnValue(['123456789012']);
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
     await loadRIExchange();
     expect(api.listConvertibleRIs).toHaveBeenCalledWith('123456789012');
+  });
+
+  it('forwards the Azure subscription GUID (external_id), not the account UUID', async () => {
+    stateMod().getCurrentProvider.mockReturnValue('azure');
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-az']);
+    await loadRIExchange();
+    expect(api.listExchangeableAzureRIs).toHaveBeenCalledWith('aaaaaaaa-0000-0000-0000-bbbbbbbbbbbb');
+  });
+
+  it('shows an error and calls no list endpoint when the selected account is unknown', async () => {
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-missing']);
+    await loadRIExchange();
+    expect(api.listConvertibleRIs).not.toHaveBeenCalled();
+    expect(instancesEl.textContent).toContain('uuid-missing');
+    expect(instancesEl.querySelector('.error')).not.toBeNull();
+  });
+
+  it('forwards undefined and skips the account lookup when no account is selected', async () => {
+    await loadRIExchange();
+    expect(api.listAccountsMinimal).not.toHaveBeenCalled();
+    expect(api.listConvertibleRIs).toHaveBeenCalledWith(undefined);
+  });
+
+  it('drops a superseded load when the account chip changes mid-lookup', async () => {
+    let release: (v: unknown) => void = () => undefined;
+    (api.listAccountsMinimal as jest.Mock).mockReturnValueOnce(new Promise(r => { release = r; }));
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
+    const first = loadRIExchange();
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-2']);
+    const second = loadRIExchange();
+    await second;
+    release([{ id: 'uuid-1', name: 'Prod', external_id: '123456789012', provider: 'aws' }]);
+    await first;
+    expect(api.listConvertibleRIs).toHaveBeenCalledTimes(1);
+    expect(api.listConvertibleRIs).toHaveBeenCalledWith('210987654321');
   });
 
   it('does not forward an account id when more than one account is selected', async () => {
@@ -1059,7 +1100,7 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
   });
 
   it('renders a scoped empty-state naming the AWS account', async () => {
-    stateMod().getCurrentAccountIDs.mockReturnValue(['123456789012']);
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
     (api.listConvertibleRIs as jest.Mock).mockResolvedValue([]);
     await loadRIExchange();
     expect(instancesEl.textContent).toContain('123456789012');
@@ -1081,11 +1122,11 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
 
   it('shows a provider-aware empty state for Azure with no reservations', async () => {
     stateMod().getCurrentProvider.mockReturnValue('azure');
-    stateMod().getCurrentAccountIDs.mockReturnValue(['sub-abc']);
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-az']);
     (api.listExchangeableAzureRIs as jest.Mock).mockResolvedValue([]);
     await loadRIExchange();
-    expect(api.listExchangeableAzureRIs).toHaveBeenCalledWith('sub-abc');
-    expect(instancesEl.textContent).toContain('No exchangeable reservations for Azure subscription sub-abc');
+    expect(api.listExchangeableAzureRIs).toHaveBeenCalledWith('aaaaaaaa-0000-0000-0000-bbbbbbbbbbbb');
+    expect(instancesEl.textContent).toContain('No exchangeable reservations for Azure subscription aaaaaaaa-0000-0000-0000-bbbbbbbbbbbb');
   });
 
   it('shows the not-available empty state for GCP and calls no list endpoint', async () => {
