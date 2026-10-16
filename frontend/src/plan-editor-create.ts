@@ -20,7 +20,6 @@ export interface CreateReviewDeps {
 // Create goes through the same preview, review and atomic Save as Edit, with expected_revision null and a client-chosen plan id.
 // The plan id is fixed for the dialog session, so a second Create after an uncertain failure collides with the first (409) instead of duplicating it;
 // only the command id changes when the request does.
-const MAYBE_CREATED = 'This plan may already have been created. Check the plans list before saving again.';
 export function mountCreateReview(deps: CreateReviewDeps): PlanReviewHandle {
   const { form, panel } = deps;
   const input = (id: string): HTMLInputElement => form.querySelector<HTMLInputElement>(`#${id}`)!;
@@ -30,7 +29,7 @@ export function mountCreateReview(deps: CreateReviewDeps): PlanReviewHandle {
   };
   const planId = newUuid();
   return mountReview({ ...deps, planId: () => planId,
-    failureText: failure => (failure.kind === 'uncertain' || failure.kind === 'stale' ? MAYBE_CREATED : null),
+    create: true,
     subscribe: sync => {
       form.addEventListener('input', sync); form.addEventListener('change', sync);
       return [panel.subscribe(sync), () => { form.removeEventListener('input', sync); form.removeEventListener('change', sync); }];

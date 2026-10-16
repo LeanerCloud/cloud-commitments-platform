@@ -86,7 +86,7 @@ describe('frozen command', () => {
   });
   it('requires a new review after a definite refusal', async () => {
     await ready();
-    save.mockRejectedValueOnce(failure(409, 'plan_changed'));
+    save.mockRejectedValueOnce(failure(409, 'editor_plan_unsupported'));
     handle.review(); await flush();
     expect(text('alert')).toBe('boom'); expect(handle.ready()).toBeNull(); expect(button.textContent).toBe('Review changes');
     expect(document.getElementById('plan-review')).toBeNull(); expect(layout.hasAttribute('inert')).toBe(false);
@@ -97,9 +97,9 @@ describe('re-review after a refusal', () => {
   it('sends the new preview reviewed_diff and acknowledgments, never the frozen first command', async () => {
     await ready();
     save.mockRejectedValueOnce(failure(409, 'editor_review_required'));
+    preview.mockResolvedValueOnce({ ...reviewed(['n-1']), reviewed_diff: 'sha256:' + 'e'.repeat(64) });
     handle.review(); await flush();
-    expect(button.textContent).toBe('Review changes');
-    preview.mockResolvedValueOnce({ ...reviewed(['n-1']), reviewed_diff: 'sha256:' + 'e'.repeat(64) }); handle.review(); await flush(); boxes().forEach(tick);
+    expect(button.textContent).toBe('Review changes'); boxes().forEach(tick);
     save.mockResolvedValueOnce(saved()); handle.review(); await flush();
     expect(save).toHaveBeenCalledTimes(2);
     expect(JSON.parse(save.mock.calls[1]![1] as string)).toMatchObject({ reviewed_diff: 'sha256:' + 'e'.repeat(64), acknowledged_cancellation_ids: ['n-1'] });

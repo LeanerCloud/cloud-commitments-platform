@@ -1,4 +1,5 @@
-import { planEditorFailure, previewPlanEditor, savePlanEditor, type PlanEditorFailure, type PlanEditorRequest, type PlanEditorResponse, type PlanEditorSaveResponse } from './api/plan-editor';
+import { describeFailure } from './plan-editor-errors';
+import { planEditorFailure, previewPlanEditor, savePlanEditor, type PlanEditorRequest, type PlanEditorResponse, type PlanEditorSaveResponse } from './api/plan-editor';
 import type { PlanEditorEditHandle } from './plan-editor-edit-panel';
 import type { EditFormModel, EditFormPatch } from './lib/plan-editor-form';
 import { isSavingsPlanSlug, resolvePlanService } from './lib/plan-service-ids';
@@ -15,8 +16,14 @@ export interface ReviewCore {
   // The request for the current form and draft, or the reason it cannot be built. `commandId` is the frozen id of this intent.
   readonly build: (commandId: string) => { readonly request: PlanEditorRequest } | { readonly blocked: string };
   readonly subscribe: (listener: () => void) => Array<() => void>;
-  // Create only: replaces the server's message for a failed Save.
-  readonly failureText?: (failure: PlanEditorFailure) => string | null;
+  // Create has no plan to reload and its 404 is a missing account, not a missing plan.
+  readonly create?: boolean;
+  // Edit only: what a reload would discard, as notice lines for the rebuilt dialog.
+  readonly discarded?: () => readonly string[];
+  // Edit only: re-fetches the editor GET and rebuilds the dialog (which disposes this module), listing `notice`; resolves false when the GET failed.
+  readonly reloadFresh?: (notice: readonly string[]) => Promise<boolean>;
+  // Edit only: the plan is gone, so the list needs a reload.
+  readonly onGone?: () => void;
   // The dialog session counter: any open, close or reload bumps it, which drops a late preview.
   readonly generation: () => number;
   // Called once a Save succeeded; `open` is false when the dialog changed while it was in flight (then nothing else runs).
@@ -26,7 +33,7 @@ export interface ReviewCore {
   // [summary, mapping] shown in the footer of a freshly rebuilt dialog after a Save.
   readonly notice?: readonly string[];
 }
-export interface PlanReviewDeps extends Omit<ReviewCore, 'planId' | 'build' | 'subscribe' | 'failureText'> {
+export interface PlanReviewDeps extends Omit<ReviewCore, 'planId' | 'build' | 'subscribe' | 'create' | 'discarded'> {
   readonly response: PlanEditorResponse;
   readonly edit: PlanEditorEditHandle;
   readonly form: EditFormModel;
@@ -34,7 +41,6 @@ export interface PlanReviewDeps extends Omit<ReviewCore, 'planId' | 'build' | 's
 // ready() is the acknowledged "ready to save" state E4b-3 reads; it is null until every required acknowledgment is checked.
 export interface PlanReviewHandle { review(): void; ready(): ReviewAcknowledgments | null; refresh(): void; dispose(): void }
 
-const previewUncertainText = 'The preview did not complete. Nothing was saved; try Review changes again.';
 const reloadFailedText = 'Saved, but reloading failed. Reload to keep editing.';
 // Summary line, then one compact line of what became of each purchase (dates only, never raw ids).
 export const savedLines = (saved: PlanEditorSaveResponse): string[] => {
@@ -47,7 +53,6 @@ export const savedLines = (saved: PlanEditorSaveResponse): string[] => {
 // Created steps lead the line only when there are any, so an Edit without new steps reads as before.
 const totalsText = (t: { moved: number; created: number; canceled: number; approvals_affected: number }): string =>
   `${t.created > 0 ? `${plural(t.created, 'step', 'steps')} created; ` : ''}${plural(t.moved, 'date', 'dates')} moved; ${plural(t.canceled, 'step', 'steps')} removed; ${plural(t.approvals_affected, 'approval', 'approvals')} affected`;
-export const previewFailureText = (failure: PlanEditorFailure): string => failure.kind === 'uncertain' ? previewUncertainText : failure.message;
 
 // An enabled stored service the editor cannot handle makes the whole view read-only (root ACK Q4). Disabled entries are preserved untouched.
 export function unsupportedServiceBlocker(response: PlanEditorResponse): string | null {
@@ -75,7 +80,16 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
   const { response, host, edit, form } = deps;
   const readOnly = unsupportedServiceBlocker(response);
   if (readOnly) { edit.setReadOnly(readOnly); form.lockAll(readOnly); }
-  return mountReview({ ...deps, planId: () => response.plan.id,
+  // What a reload would throw away, so the new dialog can say so instead of dropping it silently.
+  const discarded = (): string[] => {
+    const dates = edit.draft(), count = dates ? draftDateChanges(dates).length : 0, patch = form.patch();
+    const others = [Object.keys(patch.plan).length > 0 ? 'plan settings' : '', Object.values(patch.services).some(fields => Object.keys(fields).length > 0) ? 'service settings' : '',
+      patch.target_accounts !== undefined ? 'target accounts' : ''].filter(Boolean);
+    const named = others.length > 1 ? `${others.slice(0, -1).join(', ')} and ${others[others.length - 1]}` : others.join('');
+    const parts = [count > 0 ? plural(count, 'date change', 'date changes') : '', named ? `${count > 0 ? 'plus ' : ''}changes to ${named}` : ''].filter(Boolean);
+    return parts.length ? [`Not applied: ${parts.join(', ')}.`] : [];
+  };
+  return mountReview({ ...deps, planId: () => response.plan.id, discarded,
     subscribe: sync => [edit.subscribe(sync), form.onChange(sync)],
     build: commandId => {
       const blocker = saveBlockers(response, form.patch());
@@ -96,9 +110,13 @@ export function mountReview(core: ReviewCore): PlanReviewHandle {
   const original = { label: button.textContent, disabled: button.disabled, describedBy: button.getAttribute('aria-describedby') };
   // In the dialog footer, which stays on screen while the editor scrolls.
   const feedback = document.createElement('div'), mapping = document.createElement('p'), totals = document.createElement('p'), alert = document.createElement('p'), reason = document.createElement('p');
-  feedback.id = 'plan-review-feedback'; totals.setAttribute('role', 'status'); alert.setAttribute('role', 'alert'); reason.className = 'help-text'; reason.id = 'plan-review-reason'; reason.setAttribute('aria-live', 'polite');
+  feedback.id = 'plan-review-feedback'; totals.setAttribute('role', 'status'); alert.setAttribute('role', 'alert'); feedback.tabIndex = 0; feedback.setAttribute('role', 'group'); feedback.setAttribute('aria-label', 'Review and save feedback'); reason.className = 'help-text'; reason.id = 'plan-review-reason'; reason.setAttribute('aria-live', 'polite');
   mapping.className = 'help-text'; mapping.id = 'plan-review-mapping'; feedback.append(totals, mapping, alert, reason);
   (button.closest('.modal-buttons') ?? host).before(feedback);
+  // The one action button under the alert: Reload after a Save, Reload changes after a refusal.
+  const retry = document.createElement('button');
+  retry.type = 'button'; retry.textContent = 'Reload'; retry.id = 'plan-review-reload';
+  let halted = false;
   let intentKey = '', commandId = newUuid(), pending: { key: string; abort: AbortController } | undefined;
   let disposed = false;
 
@@ -118,9 +136,9 @@ export function mountReview(core: ReviewCore): PlanReviewHandle {
     region.element.remove(); region = undefined;
     if (hadFocus) button.focus();
   };
-  const supersede = (): void => { pending?.abort.abort(); pending = undefined; totals.textContent = ''; mapping.textContent = ''; alert.textContent = ''; clearRegion(); frozen = undefined; };
+  const supersede = (): void => { pending?.abort.abort(); pending = undefined; totals.textContent = ''; mapping.textContent = ''; alert.textContent = ''; retry.remove(); clearRegion(); frozen = undefined; };
   const sync = (): void => {
-    if (disposed || saving) return;
+    if (disposed || saving || halted) return;
     const now = current(), key = 'key' in now ? now.key : '';
     if (key !== intentKey) { supersede(); intentKey = key; commandId = newUuid(); }
     button.textContent = region?.ready() ? 'Save changes' : 'Review changes';
@@ -128,16 +146,28 @@ export function mountReview(core: ReviewCore): PlanReviewHandle {
     reason.textContent = 'blocked' in now ? now.blocked : '';
     if ('blocked' in now) button.setAttribute('aria-describedby', reason.id); else button.removeAttribute('aria-describedby');
   };
-  // The Save is done; the dialog stays read-only until a fresh GET rebuilds it (which disposes this module).
-  const retry = document.createElement('button');
-  retry.type = 'button'; retry.textContent = 'Reload'; retry.id = 'plan-review-reload';
   const reload = async (saved: PlanEditorSaveResponse): Promise<void> => {
-    retry.disabled = true;
+    retry.disabled = true; retry.textContent = 'Reload';
     retry.onclick = () => void reload(saved);
     const ok = await deps.reload(saved);
     if (ok || disposed) return;
     button.textContent = 'Review changes'; button.disabled = true; alert.textContent = reloadFailedText;
     retry.disabled = false; alert.after(retry); feedback.classList.add('needs-reload');
+  };
+  // Shows the table's sentence, then does its action. The frozen request survives only where a same-bytes resend is safe.
+  const fail = (error: unknown, phase: 'preview' | 'save'): void => {
+    const failure = planEditorFailure(error), view = describeFailure(failure, phase, core.create === true);
+    alert.textContent = view.text; retry.remove(); feedback.classList.remove('needs-reload');
+    if (view.action !== 'retry') { clearRegion(); frozen = undefined; }
+    const halt = (): void => { halted = true; button.textContent = 'Review changes'; button.disabled = true; };
+    if (view.action === 'sign-in') halt();
+    else if (view.action === 'gone') { halt(); (host.closest<HTMLElement>('.plan-editor-layout') ?? host).setAttribute('inert', ''); core.onGone?.(); }
+    else if (view.action === 'reload' && core.reloadFresh) {
+      retry.textContent = 'Reload changes'; retry.disabled = false; alert.after(retry); feedback.classList.add('needs-reload');
+      retry.onclick = () => { retry.disabled = true; void core.reloadFresh!(core.discarded?.() ?? []).then(ok => { if (!ok && !disposed) retry.disabled = false; }); };
+    } else if (view.action === 'focus-date') host.querySelector<HTMLElement>('[data-edit="date"], [data-editor="date"]')?.focus();
+    if (!halted) sync();
+    if (view.action === 'review') { commandId = newUuid(); start(true); }
   };
   const save = (): void => {
     const acks = region?.ready(), layout = host.closest<HTMLElement>('.plan-editor-layout') ?? host;
@@ -156,20 +186,17 @@ export function mountReview(core: ReviewCore): PlanReviewHandle {
     }, (error: unknown) => {
       if (disposed) return;
       unlock();
-      const failure = planEditorFailure(error);
-      alert.textContent = core.failureText?.(failure) ?? failure.message;
-      // An uncertain outcome keeps the frozen command so the retry is byte-identical; any other failure needs a new review.
-      if (failure.kind !== 'uncertain') { clearRegion(); frozen = undefined; }
-      sync();
+      fail(error, 'save');
     });
   };
-  const review = (): void => {
-    if (disposed || saving) return;
-    if (region?.ready()) { save(); return; }
+  const review = (): void => { start(false); };
+  const start = (keepAlert: boolean): void => {
+    if (disposed || saving || halted) return;
+    if (!keepAlert && region?.ready()) { save(); return; }
     sync();
     const now = current();
     if ('blocked' in now || pending?.key === now.key) return;
-    clearRegion(); totals.textContent = ''; alert.textContent = '';
+    clearRegion(); totals.textContent = ''; if (!keepAlert) { alert.textContent = ''; retry.remove(); }
     const generation = deps.generation(), abort = new AbortController();
     const fresh = (): boolean => !disposed && !abort.signal.aborted && generation === deps.generation();
     void previewPlanEditor(core.planId(), now.body, abort.signal).then(result => {
@@ -186,7 +213,7 @@ export function mountReview(core: ReviewCore): PlanReviewHandle {
       sync();
     }, (error: unknown) => {
       if (!fresh()) return;
-      alert.textContent = previewFailureText(planEditorFailure(error));
+      fail(error, 'preview');
     }).finally(() => { if (pending?.abort === abort) pending = undefined; });
     pending = { key: now.key, abort };
   };

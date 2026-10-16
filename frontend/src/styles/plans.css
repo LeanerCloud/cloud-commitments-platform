@@ -264,7 +264,7 @@
 #plan-review-feedback { flex-shrink: 0; margin-top: 12px; max-height: 10rem; overflow-y: auto; }
 #plan-review-feedback.needs-reload { max-height: 16rem; }
 #plan-review-feedback p { margin: 4px 0; overflow-wrap: anywhere; }
-#plan-review-feedback p:empty { display: none; }
+#plan-review-feedback p:empty { margin: 0; }
 #plan-editor-panel [data-selected] .preview-marker { fill: var(--cudly-primary); stroke: var(--cudly-text); stroke-width: 3; }
 @media (max-width: 800px) { .plan-editor-layout.has-editor-draft { display: block; } }
 

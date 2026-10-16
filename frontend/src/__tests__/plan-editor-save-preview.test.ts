@@ -161,7 +161,7 @@ describe('preview errors', () => {
     return alertText();
   };
   it('classifies server answers and keeps the draft', async () => {
-    const text = await fail(Object.assign(new Error('plan changed'), { status: 409, details: { code: 'plan_changed' } }));
+    const text = await fail(Object.assign(new Error('plan changed'), { status: 409, details: { code: 'editor_plan_unsupported' } }));
     expect(text).toBe('plan changed');
     expect(draft!.dates[1]).toBe('2026-11-07'); expect(button.disabled).toBe(false);
   });

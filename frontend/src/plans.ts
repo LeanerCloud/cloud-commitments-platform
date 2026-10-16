@@ -1326,7 +1326,8 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse, notice?: 
       const button = Array.from(form.elements).find((item): item is HTMLButtonElement => item instanceof HTMLButtonElement && item.type === 'submit');
       if (button && editForm) planReview = mountPlanReview({ response: editor, host, button, edit, form: editForm.model, generation: () => planModalSession, notice,
         onSaved: (_saved, open) => { void loadPlans(); if (!open) showToast({ message: 'Plan saved', kind: 'success' }); },
-        reload: async saved => (await editPlan(editor.plan.id, savedLines(saved))) === 'opened' });
+        reload: async saved => (await editPlan(editor.plan.id, savedLines(saved))) === 'opened',
+        reloadFresh: async lines => (await editPlan(editor.plan.id, lines)) === 'opened', onGone: () => void loadPlans() });
       activePlanReview = planReview;
     } else if (host && form) {
       const panel = mountPlanEditorPanel(host, form);
