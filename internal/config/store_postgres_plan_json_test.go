@@ -51,10 +51,7 @@ func TestMergePlanServicesJSONKeyRemoval(t *testing.T) {
 	next := map[string]ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds"}}
 	raw := []byte(`{"aws/ec2":{"future":1}}`)
 
-	_, err := mergePlanServicesJSON(raw, old, next, true)
-	require.ErrorIs(t, err, ErrPlanJSONUnsupported)
-
-	merged, err := mergePlanServicesJSON(raw, old, next, false)
+	merged, err := mergePlanServicesJSON(raw, old, next)
 	require.NoError(t, err)
 	var objects map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(merged, &objects))

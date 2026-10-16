@@ -141,9 +141,6 @@ func mapCreatePlanStorageError(err error, notFoundMsg, genericMsg, logFmt string
 	if errors.Is(err, config.ErrNotFound) {
 		return NewClientError(http.StatusNotFound, notFoundMsg)
 	}
-	if errors.Is(err, config.ErrPlanJSONUnsupported) {
-		return NewClientError(http.StatusConflict, "service replacement requires editor reconciliation")
-	}
 	if errors.Is(err, config.ErrPurchasePlanConflict) {
 		return NewClientError(http.StatusConflict, "plan changed; refresh the plan and try again")
 	}

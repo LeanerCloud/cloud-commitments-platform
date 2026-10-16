@@ -48,6 +48,7 @@ func TestLegacyPlanPUTPreservesStoredServiceJSON(t *testing.T) {
 	response, err = f.h.HandleRequest(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, 409, response.StatusCode, response.Body)
+	require.Contains(t, response.Body, `"code":"editor_reconciliation_required"`)
 	require.NoError(t, f.db.Pool().QueryRow(ctx, `SELECT services::text FROM purchase_plans WHERE id=$1`, plan.ID).Scan(&stored))
 	require.JSONEq(t, raw, stored)
 
