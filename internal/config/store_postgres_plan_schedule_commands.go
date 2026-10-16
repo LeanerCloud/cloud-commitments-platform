@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"reflect"
 	"slices"
 	"time"
@@ -16,15 +17,7 @@ import (
 )
 
 func preparePlanScheduleTargets(before *PlanEditorSnapshot, intent PlanScheduleIntent, plan *PurchasePlan, replaceRoots bool) (services, ramp []byte, err error) {
-	services, ramp = []byte(`{}`), []byte(`{}`)
-	if before != nil {
-		services = slices.Clone(before.servicesJSON)
-		ramp = slices.Clone(before.rampScheduleJSON)
-	}
-	services, err = mergePlanScheduleServices(services, intent.Services, before == nil)
-	if err == nil {
-		ramp, err = mergePlanScheduleRamp(ramp, intent, before == nil, replaceRoots)
-	}
+	services, ramp, err = mergePlanScheduleTargets(before, intent, replaceRoots)
 	var storedServices map[string]ServiceConfig
 	var storedRamp RampSchedule
 	if err == nil {
@@ -46,6 +39,37 @@ func preparePlanScheduleTargets(before *PlanEditorSnapshot, intent PlanScheduleI
 		}
 	}
 	return services, ramp, nil
+}
+
+// refusePlanScheduleStartedShapeChange: a percent-only reshape must never reach a plan with progress or a baseline (ledger demotion).
+func refusePlanScheduleStartedShapeChange(before *PlanEditorSnapshot, intent PlanScheduleIntent) error {
+	if before == nil {
+		return nil
+	}
+	var captured RampSchedule
+	if err := json.Unmarshal(before.rampScheduleJSON, &captured); err != nil {
+		return err
+	}
+	if rederivesCumulativeSteps(captured, intent) && (captured.CurrentStep > 0 || before.Baseline != nil) {
+		return fmt.Errorf("%w: percent per step cannot reshape a plan with progress or a baseline", ErrPurchasePlanConflict)
+	}
+	return nil
+}
+
+func mergePlanScheduleTargets(before *PlanEditorSnapshot, intent PlanScheduleIntent, replaceRoots bool) (services, ramp []byte, err error) {
+	services, ramp = []byte(`{}`), []byte(`{}`)
+	if before != nil {
+		services = slices.Clone(before.servicesJSON)
+		ramp = slices.Clone(before.rampScheduleJSON)
+	}
+	if refuseErr := refusePlanScheduleStartedShapeChange(before, intent); refuseErr != nil {
+		return nil, nil, refuseErr
+	}
+	if services, err = mergePlanScheduleServices(services, intent.Services, before == nil); err != nil {
+		return nil, nil, err
+	}
+	ramp, err = mergePlanScheduleRamp(ramp, intent, before == nil, replaceRoots)
+	return services, ramp, err
 }
 
 func mergePlanScheduleServices(raw []byte, patches map[string]PlanScheduleServicePatch, create bool) ([]byte, error) {
@@ -101,8 +125,8 @@ func mergePlanScheduleService(key string, old json.RawMessage, patch PlanSchedul
 }
 
 func mergePlanScheduleRamp(raw []byte, intent PlanScheduleIntent, create, replaceRoots bool) ([]byte, error) {
-	if create && intent.StepCount == nil {
-		return nil, fmt.Errorf("%w: create requires step count", ErrPurchasePlanConflict)
+	if create && intent.StepCount == nil && intent.Ramp.PercentPerStep == nil {
+		return nil, fmt.Errorf("%w: create requires a step count or percent per step", ErrPurchasePlanConflict)
 	}
 	var captured RampSchedule
 	if err := json.Unmarshal(raw, &captured); err != nil {
@@ -115,6 +139,16 @@ func mergePlanScheduleRamp(raw []byte, intent PlanScheduleIntent, create, replac
 	if err != nil {
 		return nil, err
 	}
+	cumulative := rederivesCumulativeSteps(captured, intent)
+	fields := planScheduleRampFields(intent, captured, create, replaceRoots)
+	merged, err := mergePlanScheduleObject(ramp, fields)
+	if err != nil || !cumulative {
+		return merged, err
+	}
+	return dropPlanScheduleAllocationMode(merged)
+}
+
+func planScheduleRampFields(intent PlanScheduleIntent, captured RampSchedule, create, replaceRoots bool) map[string]any {
 	fields := map[string]any{}
 	if create {
 		fields["current_step"] = 0
@@ -122,17 +156,41 @@ func mergePlanScheduleRamp(raw []byte, intent PlanScheduleIntent, create, replac
 	if count := intent.StepCount; count != nil {
 		fields["total_steps"], fields["percent_per_step"] = *count, 100/float64(*count)
 		fields["allocation_mode"] = RampAllocationEqualCount
+	} else if rederivesCumulativeSteps(captured, intent) {
+		fields["total_steps"] = CumulativeStepCount(*intent.Ramp.PercentPerStep)
 	}
 	if replaceRoots {
 		fields["dates_managed"] = true
 	}
-	return mergePlanScheduleObject(ramp, fields)
+	return fields
+}
+
+func dropPlanScheduleAllocationMode(raw []byte) ([]byte, error) {
+	var stored map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return nil, err
+	}
+	delete(stored, "allocation_mode")
+	return marshalPlanScheduleRaw(stored)
+}
+
+// rederivesCumulativeSteps: a percent-only intent reshapes the ramp unless it equals the stored percent of a cumulative plan.
+func rederivesCumulativeSteps(captured RampSchedule, intent PlanScheduleIntent) bool {
+	percent := intent.Ramp.PercentPerStep
+	return intent.StepCount == nil && percent != nil &&
+		(captured.AllocationMode == RampAllocationEqualCount || math.Abs(*percent-captured.PercentPerStep) > 1e-9)
 }
 
 func invalidPlanScheduleRampCount(captured RampSchedule, intent PlanScheduleIntent) bool {
-	count := intent.StepCount
-	return intent.Ramp.PercentPerStep != nil && (count != nil || captured.AllocationMode == RampAllocationEqualCount) ||
-		count != nil && (*count < max(1, captured.CurrentStep) || *count > MaxTotalSteps)
+	count, percent := intent.StepCount, intent.Ramp.PercentPerStep
+	if count == nil && percent != nil {
+		if derived := CumulativeStepCount(*percent); derived == 0 || rederivesCumulativeSteps(captured, intent) {
+			count = &derived
+		}
+	} else if percent != nil {
+		return true
+	}
+	return count != nil && (*count < max(1, captured.CurrentStep) || *count > MaxTotalSteps)
 }
 
 func mergePlanScheduleObject(raw []byte, patch any) ([]byte, error) {
