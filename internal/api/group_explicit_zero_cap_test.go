@@ -16,6 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// MockStore aliases auth.MockStore so the mock assertion guard, which only
+// resolves receivers built from a bare type name, can check this file's
+// AssertNotCalled sites.
+type MockStore = auth.MockStore
+
 const zeroCapGroupID = "33333333-3333-3333-3333-333333333333"
 
 // realGroupAuth routes the group writes to a real auth.Service and leaves
@@ -50,7 +55,7 @@ func TestGroupWritesHTTP_ExplicitZeroSpendCap(t *testing.T) {
 	}
 	for _, tc := range cases {
 		run := func(t *testing.T, write func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error)) {
-			store := new(auth.MockStore)
+			store := new(MockStore)
 			store.On("GetGroup", mock.Anything, zeroCapGroupID).Return(&auth.Group{ID: zeroCapGroupID, Name: "Team"}, nil).Maybe()
 			store.On("CreateGroup", mock.Anything, mock.Anything).Return(nil).Maybe()
 			store.On("UpdateGroup", mock.Anything, mock.Anything).Return(nil).Maybe()
