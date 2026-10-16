@@ -2161,7 +2161,11 @@ func (s *PostgresStore) CleanupOldExecutions(ctx context.Context, retentionDays 
 	// a status added to the plan health score extends this exclusion
 	// automatically and the two cannot drift. `status` is NOT NULL
 	// (migration 000001), so `<> ALL` is not exposed to three-valued logic.
+	// The CTE prunes command receipts in the same statement with the same window; its rows are not counted.
 	query := `
+		WITH receipts AS (
+		    DELETE FROM plan_schedule_command_receipts WHERE created_at < NOW() - INTERVAL '1 day' * $1
+		)
 		DELETE FROM purchase_executions
 		WHERE (
 		        status = 'completed'
