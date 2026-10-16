@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/server"
@@ -44,6 +45,8 @@ var (
 
 // knownGaps documents what is not wired yet, per platform and dimension. Each
 // PR that wires a task removes it here; the test fails when actual != documented.
+// aws/cleanup-lambda and gcp/cleanup-function run cleanup outside the server
+// task and are not scanned, so cleanup shows as a gap on AWS and GCP.
 var knownGaps = map[string]map[string][]string{
 	"aws-lambda": {dimTask: {"cleanup", "finalize_revocations", "process_scheduled_purchases", "send_notifications"}},
 	"aws-fargate": {dimTask: {"analytics_collect", "cleanup", "finalize_revocations",
@@ -75,12 +78,43 @@ var platforms = []platform{
 // declarations; the comment on the original explains the history.
 var commentLinePattern = regexp.MustCompile(`(?m)^[ \t]*(?:#|//).*$`)
 
-func stripComments(s string) string { return commentLinePattern.ReplaceAllString(s, "") }
+// stripComments blanks whole-line comments, then trailing `#` and `//`
+// comments that start outside a quoted string (so `https://` and ARN globs in
+// strings survive).
+func stripComments(s string) string {
+	lines := strings.Split(commentLinePattern.ReplaceAllString(s, ""), "\n")
+	for n, line := range lines {
+		var quote byte
+		for i := 0; i < len(line); i++ {
+			switch c := line[i]; {
+			case quote != 0 && c == '\\':
+				i++
+			case quote != 0:
+				if c == quote {
+					quote = 0
+				}
+			case c == '"' || c == '\'':
+				quote = c
+			case c == '#' || strings.HasPrefix(line[i:], "//"):
+				lines[n] = line[:i]
+				i = len(line)
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
 
-// sweepKeyRe reads the keys of the sweep_tasks map: entries must stay on one
-// line each (`key = { rule = ... }`), the shape the plan fixes.
+// schedulerHeaders match the resources that actually send a task to the
+// server. A task name elsewhere (locals, env vars, permissions) is not a
+// schedule. cfnRule scopes a CloudFormation AWS::Events::Rule resource.
 var (
-	sweepKeyRe = regexp.MustCompile(`(?m)^\s*(\w+)\s*=\s*\{`)
+	schedulerHeaders = []string{
+		`resource\s+"aws_cloudwatch_event_target"\s+"[^"]+"\s*\{`,
+		`resource\s+"google_cloud_scheduler_job"\s+"[^"]+"\s*\{`,
+		`resource\s+"azurerm_logic_app_action_custom"\s+"[^"]+"\s*\{`,
+	}
+	cfnRule  = regexp.MustCompile(`(?s)Type:\s*AWS::Events::Rule\b.*?(?:\n  \S|\z)`)
+	localRef = regexp.MustCompile(`\blocal\.(\w+)`)
 	// literalRes are the task-name patterns of the contract test (schedulerRefs)
 	// plus the CloudFormation Input JSON.
 	literalRes = func() []*regexp.Regexp {
@@ -93,24 +127,41 @@ var (
 	}()
 )
 
-// block returns the brace-balanced body after the first match of header, a
-// pattern that ends at the opening brace.
-func block(src, header string) (string, bool) {
-	loc := regexp.MustCompile(header).FindStringIndex(src)
-	if loc == nil {
-		return "", false
-	}
-	for i, depth := loc[1]-1, 0; i < len(src); i++ {
-		switch src[i] {
-		case '{':
-			depth++
-		case '}':
-			if depth--; depth == 0 {
-				return src[loc[1]:i], true
+// blocks returns the brace-balanced body of every match of header, a pattern
+// that ends at the opening brace.
+func blocks(src, header string) []string {
+	var out []string
+	for _, loc := range regexp.MustCompile(header).FindAllStringIndex(src, -1) {
+		for i, depth := loc[1]-1, 0; i < len(src); i++ {
+			if src[i] == '{' {
+				depth++
+			} else if src[i] == '}' {
+				if depth--; depth == 0 {
+					out = append(out, src[loc[1]:i])
+					break
+				}
 			}
 		}
 	}
-	return "", false
+	return out
+}
+
+// schedulerScopes returns the text of each scheduler resource in src. A
+// `local.x` reference inside one (a job whose uri is a local) is resolved by
+// appending the local's definition from all.
+func schedulerScopes(src, all string) []string {
+	var scopes []string
+	for _, h := range schedulerHeaders {
+		for _, body := range blocks(src, h) {
+			for _, ref := range localRef.FindAllStringSubmatch(body, -1) {
+				if def := regexp.MustCompile(`(?m)^\s*` + ref[1] + `\s*=\s*(.+)$`).FindStringSubmatch(all); def != nil {
+					body += "\n" + def[1]
+				}
+			}
+			scopes = append(scopes, body)
+		}
+	}
+	return append(scopes, cfnRule.FindAllString(src, -1)...)
 }
 
 // scanDir reads the non-test *.tf files (or template.yaml) directly in dir.
@@ -134,27 +185,25 @@ func scanDir(dir string) (map[string]string, error) {
 	return files, nil
 }
 
-// wiredFrom returns the tasks the files schedule and the names the server
-// does not recognize (task literals and sweep_tasks keys).
+// wiredFrom returns the tasks the files schedule, counting only names inside
+// scheduler resources, and the names the server does not recognize.
 func wiredFrom(files map[string]string) (wired map[string]bool, unknown []string) {
 	wired = map[string]bool{}
-	add := func(name string) {
-		if _, err := server.ParseScheduledTaskType(name); err != nil {
-			unknown = append(unknown, name)
-			return
-		}
-		wired[name] = true
-	}
+	var stripped []string
 	for _, raw := range files {
-		src := stripComments(raw)
-		for _, re := range literalRes {
-			for _, m := range re.FindAllStringSubmatch(src, -1) {
-				add(m[1])
-			}
-		}
-		if body, ok := block(src, `sweep_tasks\s*=\s*\{`); ok {
-			for _, m := range sweepKeyRe.FindAllStringSubmatch(body, -1) {
-				add(m[1])
+		stripped = append(stripped, stripComments(raw))
+	}
+	all := strings.Join(stripped, "\n")
+	for _, src := range stripped {
+		for _, scope := range schedulerScopes(src, all) {
+			for _, re := range literalRes {
+				for _, m := range re.FindAllStringSubmatch(scope, -1) {
+					if _, err := server.ParseScheduledTaskType(m[1]); err != nil {
+						unknown = append(unknown, m[1])
+					} else {
+						wired[m[1]] = true
+					}
+				}
 			}
 		}
 	}
@@ -263,15 +312,28 @@ func writeFiles(t *testing.T, files map[string]string) string {
 
 func TestCheckerNegatives(t *testing.T) {
 	const finalize = `input = jsonencode({ action = "finalize_revocations" })`
+	const collectURI = `uri = "https://h/api/scheduled/collect_recommendations"`
+	const aud = "locals {\n  aud = \"x/api/scheduled/collect_recommendations\"\n}\n"
+	job := func(body string) string { return "resource \"google_cloud_scheduler_job\" \"j\" {\n" + body + "\n}\n" }
+	target := func(body string) string { return "resource \"aws_cloudwatch_event_target\" \"t\" {\n" + body + "\n}\n" }
+	cfn := func(typ string) string {
+		return "  R:\n    Type: " + typ + "\n    Properties:\n      Input: '{\"action\": \"finalize_revocations\"}'\n  Other:\n    Type: X\n"
+	}
 	for name, c := range map[string]struct {
 		src     string
 		wired   []string
 		unknown []string
 	}{
-		"https uri survives, whole-line comments do not": {"# \"--task\", \"cleanup\"\n// /api/scheduled/cleanup\n  uri = \"https://h/api/scheduled/finalize_revocations\"\n", []string{"finalize_revocations"}, nil},
-		"ARN glob and cron do not truncate":              {"a = \"arn:aws:events:*:*:rule/*\"\n" + finalize + "\nb = \"cron(0 */6 * * ? *)\"\n", []string{"finalize_revocations"}, nil},
-		"sweep key unknown to the server":                {"sweep_tasks = {\n  bogus_task = { rule = \"x\" }\n  cleanup = { rule = \"c\" }\n}\n", []string{"cleanup"}, []string{"bogus_task"}},
-		"CloudFormation input JSON":                      {"Input: '{\"action\": \"finalize_revocations\"}'\n", []string{"finalize_revocations"}, nil},
+		"https uri survives, whole-line comments do not": {job("# \"--task\", \"cleanup\"\n// /api/scheduled/cleanup\n" + collectURI), []string{"collect_recommendations"}, nil},
+		"ARN glob and cron do not truncate":              {target("a = \"arn:aws:events:*:*:rule/*\"\n" + finalize + "\nb = \"cron(0 */6 * * ? *)\""), []string{"finalize_revocations"}, nil},
+		"trailing comment does not count":                {job("description = \"x\" # " + collectURI + "\nb = 1 // " + collectURI), nil, nil},
+		"trailing comment after a real uri":              {job(collectURI + " # note"), []string{"collect_recommendations"}, nil},
+		"literal only in locals is not wired":            {aud + job(`uri = "x"`), nil, nil},
+		"job uri resolved through a local":               {aud + job("uri = local.aud"), []string{"collect_recommendations"}, nil},
+		"literal outside a scheduler block":              {"resource \"aws_lambda_permission\" \"p\" {\n" + finalize + "\n}\n", nil, nil},
+		"unknown task in a scheduler block":              {target(`input = jsonencode({ action = "bogus_task" })`), nil, []string{"bogus_task"}},
+		"CloudFormation rule input":                      {cfn("AWS::Events::Rule"), []string{"finalize_revocations"}, nil},
+		"CloudFormation literal outside a rule":          {cfn("AWS::Lambda::Function"), nil, nil},
 	} {
 		wired, unknown := wiredFrom(map[string]string{"a.tf": c.src})
 		if !slices.Equal(slices.Sorted(maps.Keys(wired)), c.wired) || !slices.Equal(unknown, c.unknown) {
@@ -279,7 +341,7 @@ func TestCheckerNegatives(t *testing.T) {
 		}
 	}
 	files, err := scanDir(writeFiles(t, map[string]string{
-		"tests/x.tftest.hcl": finalize, "x.tftest.hcl": finalize, ".terraform/m.tf": finalize, "notes.md": finalize, "dir.tf/y.tf": finalize,
+		"tests/x.tftest.hcl": target(finalize), "x.tftest.hcl": target(finalize), ".terraform/m.tf": target(finalize), "notes.md": target(finalize), "dir.tf/y.tf": target(finalize),
 	}))
 	if wired, _ := wiredFrom(files); err != nil || len(wired) != 0 {
 		t.Errorf("tests/, .terraform/, *.tftest.hcl and non-tf files must not count: wired = %v, err = %v", wired, err)
