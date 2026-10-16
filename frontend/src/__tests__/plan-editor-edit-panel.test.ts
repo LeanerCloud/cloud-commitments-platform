@@ -170,3 +170,17 @@ test('explains locked and executed steps with sentences instead of raw codes', (
   expect(field('slots').children[0]!.textContent).not.toContain('completed prefix');
   expect(field('slots').children[4]!.textContent).toContain('You do not have permission to change this.');
 });
+
+test('separates the slot status from its lock sentence with ". " and falls back without a reason code', () => {
+  const original = response();
+  dispose = mountPlanEditorEditPanel(host, { ...original, graph: { ...original.graph!, steps: original.graph!.steps.map((slot, index) =>
+    index === 3 ? { ...slot, capability: 'fixed', editable: false, lock_reason: null } : slot) } });
+  const slots = field('slots').children;
+  expect(slots[0]!.textContent).toBe('Step 1: 2026-10-01; ramp share 20%; pending. This step already ran and cannot be changed.');
+  expect(slots[3]!.textContent).toBe('Step 4: date unavailable; ramp share 80%; no current root. fixed.');
+  expect(slots[1]!.textContent).toBe('Step 2: 2026-11-06; ramp share 40%; pending. Local proposal enabled.');
+  input('step', '3');
+  expect(field('selected').textContent).toBe('This step is fixed. Quantity unavailable. Amount unavailable.');
+  input('step', '0');
+  expect(field('selected').textContent).toMatch(/^This step already ran and cannot be changed\. Quantity unavailable\./);
+});

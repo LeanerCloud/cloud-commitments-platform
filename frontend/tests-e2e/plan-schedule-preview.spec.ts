@@ -197,7 +197,14 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     await expect(page.locator('#plan-schedule-preview')).toHaveCount(0);
     await expect(page.locator('#preview-plan-schedule-btn')).toHaveCount(0);
     await expect(stored.locator('[data-edit="heading"]')).toBeFocused();
-    await expect(edit.locator('#plan-form')).toBeHidden();
+    await expect(edit.locator('#plan-form')).toBeVisible();
+    await expect(edit.locator('#plan-name')).toHaveValue('Existing plan');
+    await expect(edit.locator('#plan-term')).toBeDisabled();
+    await expect(edit.locator('#plan-max-step-commitment-reason')).toHaveText('Per-step cap editing is not available yet');
+    const storedBox = (await stored.boundingBox())!, formBox = (await edit.locator('#plan-form').boundingBox())!;
+    if (width > 800) { expect(storedBox.x + storedBox.width).toBeLessThanOrEqual(formBox.x); expect(Math.round(formBox.width)).toBe(300); }
+    else expect(formBox.y).toBeGreaterThanOrEqual(storedBox.y + storedBox.height);
+    expect(await edit.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expect(edit.locator('button[type="submit"]')).toBeDisabled();
     await expect(stored).toContainText('Saving changes is not available');
     await expect(stored.locator('[data-edit="service"] option')).toHaveCount(2);
@@ -230,6 +237,9 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     await page.keyboard.press('Escape'); await expect(edit).toBeHidden();
     await page.getByRole('button', { name: 'Dismiss notification' }).click();
     await page.locator('#new-plan-btn').click();
+    await expect(page.locator('#plan-provider')).toHaveValue('aws');
+    await expect(page.locator('#plan-term')).toHaveValue('3');
+    await expect(page.locator('#plan-payment')).toHaveValue('no-upfront');
     const dense = parent.locator('#plan-editor-panel');
     await parent.locator('label.ramp-option').filter({ hasText: 'Define your own schedule' }).click();
     await page.locator('#ramp-step-percent').fill('1');

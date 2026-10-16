@@ -1,7 +1,7 @@
 import type { PlanEditorResponse, PlanEditorService, PlanEditorSlot } from '../../api/plan-editor';
 
 export const service = (coverage: number): PlanEditorService => ({
-  provider: 'aws', service: 'ec2', enabled: false, term: 3, payment: 'All Upfront', coverage,
+  provider: 'aws', service: 'ec2', enabled: false, term: 3, payment: 'all-upfront', coverage,
   ramp_schedule: 'legacy', include_engines: null, exclude_engines: [], include_regions: ['region-a'],
   exclude_regions: null, include_types: [], exclude_types: ['type-b'], min_count: 2,
 });
@@ -30,7 +30,8 @@ export const response = (): PlanEditorResponse => ({
     slot(5, { capability: 'denied', editable: false, lock_reason: 'permission_denied' }),
   ] }, graph_unavailable_reason: null,
   ledger_witness: { ledger_state: 'trusted', has_trusted_ramp_ledger: true, baseline_present: true },
-  field_policy: { controls: { name: { editable: true, reason: null, requires_approved_edits: false, requires_proposed_value_revalidation: false } },
+  field_policy: { controls: Object.fromEntries(['name', 'enabled', 'auto_purchase', 'notification_days_before'].map(key =>
+      [key, { editable: true, reason: null, requires_approved_edits: false, requires_proposed_value_revalidation: false }])),
     services: { disabledOther: { coverage: { editable: false, reason: 'affected_root_fixed', requires_approved_edits: false, requires_proposed_value_revalidation: false } } },
     can_change_shape: false, shape_lock_reason: 'completed_prefix', can_arm_or_raise_cap: false },
 });

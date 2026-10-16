@@ -20,6 +20,7 @@ import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { mountPlanEditorPanel } from './plan-editor-panel';
 import { getPlanEditor, PlanEditorResponse } from './api/plan-editor';
 import { mountPlanEditorEditPanel } from './plan-editor-edit-panel';
+import { fillEditForm } from './lib/plan-editor-form';
 import { adaptPlanEditor } from './plan-editor-adapter';
 
 // pendingPlanRecommendations holds the resolved plan target captured at
@@ -1252,6 +1253,29 @@ async function togglePlan(planId: string, enabled: boolean): Promise<void> {
   }
 }
 
+function selectEditService(provider: string, service: string, term: number, payment: string): void {
+  const select = (id: string): HTMLSelectElement => document.getElementById(id) as HTMLSelectElement;
+  const show = (control: HTMLSelectElement, value: string, label: string): void => {
+    control.value = value;
+    if (control.value === value) return;
+    const stored = new Option(label, value); stored.disabled = true; stored.dataset['stored'] = 'true';
+    control.add(stored); control.value = value;
+  };
+  select('plan-provider').value = provider;
+  updateServiceDropdownForProvider(provider);
+  show(select('plan-service'), service, service);
+  populateTermSelect(select('plan-term'), provider, service);
+  populatePaymentSelect(select('plan-payment'), provider, service);
+  if (term > 0) show(select('plan-term'), String(term), `${term} Year${term === 1 ? '' : 's'}`);
+  if (payment) show(select('plan-payment'), normalizePaymentValue(payment, provider), payment);
+}
+
+function setEditAccounts(accounts: readonly { id: string; name: string }[]): void {
+  planSelectedAccounts = accounts.map(account => ({ id: account.id, name: account.name, external_id: '' }));
+  renderPlanAccountChips();
+  updatePlanAccountIdsField();
+}
+
 let disposePlanEditor: (() => void) | undefined;
 let planEditorMode: 'create' | 'complete-edit' = 'create';
 const editSaveUnavailable = 'Saving changes is not available in this local editor yet.';
@@ -1260,15 +1284,8 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
   planEditorMode = editor ? 'complete-edit' : 'create';
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
   const advanced = modal.querySelector<HTMLDetailsElement>('#plan-advanced-settings');
-  const wasHidden = form?.hidden ?? false;
-  const disabled = new Map<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, boolean>();
-  if (editor && form) {
-    form.hidden = true;
-    form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select,textarea').forEach(control => {
-      disabled.set(control, control.disabled); control.disabled = true;
-    });
-  }
-  if (advanced) advanced.open = false;
+  let undoForm: (() => void) | undefined;
+  if (advanced) advanced.open = editor !== undefined;
   const revealInvalid = (event: Event): void => {
     if (advanced?.contains(event.target as Node)) advanced.open = true;
   };
@@ -1278,18 +1295,17 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
   form?.addEventListener('invalid', revealInvalid, true);
   if (editor) form?.addEventListener('submit', blockSubmit, true);
   let disposePanel: (() => void) | undefined;
-  modal.classList.toggle('complete-plan-editor', editor !== undefined);
   disposePlanEditor = () => {
     try { disposePanel?.(); }
     finally {
       form?.removeEventListener('invalid', revealInvalid, true); form?.removeEventListener('submit', blockSubmit, true);
-      if (form) form.hidden = wasHidden;
-      disabled.forEach((value, control) => { control.disabled = value; });
-      modal.classList.remove('complete-plan-editor');
+      undoForm?.();
     }
   };
-  try { disposePanel = host && form ? editor ? mountPlanEditorEditPanel(host, editor) : mountPlanEditorPanel(host, form) : undefined; }
-  catch (error) { disposePlanEditor(); disposePlanEditor = undefined; throw error; }
+  try {
+    if (editor && form) undoForm = fillEditForm(form, editor, { selectService: selectEditService, setAccounts: setEditAccounts });
+    disposePanel = host && form ? editor ? mountPlanEditorEditPanel(host, editor) : mountPlanEditorPanel(host, form) : undefined;
+  } catch (error) { disposePlanEditor(); disposePlanEditor = undefined; throw error; }
   refreshPlanSaveButtonState();
   openModal(modal, { initialFocus: editor ? '[data-edit="heading"]' : '#plan-name', onClose: () => {
     planModalSession++; disposePlanEditor?.(); disposePlanEditor = undefined;
@@ -1506,7 +1522,7 @@ function renderPlanAccountChips(): void {
   planSelectedAccounts.forEach(acct => {
     const chip = document.createElement('span');
     chip.className = 'account-chip';
-    chip.textContent = `${acct.name} (${acct.external_id})`;
+    chip.textContent = acct.external_id ? `${acct.name} (${acct.external_id})` : acct.name;
 
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
@@ -1694,6 +1710,18 @@ async function prefillAccountChipFromId(accountId: string, session: number): Pro
   }
 }
 
+function resetCreateCommitmentFields(): void {
+  const select = (id: string): HTMLSelectElement | null => document.getElementById(id) as HTMLSelectElement | null;
+  const provider = select('plan-provider'), term = select('plan-term'), payment = select('plan-payment');
+  if (!provider || !term || !payment) return;
+  document.querySelectorAll('#plan-service option[data-stored],#plan-term option[data-stored],#plan-payment option[data-stored]').forEach(option => option.remove());
+  updateServiceDropdownForProvider(provider.value);
+  updateCommitmentOptions();
+  for (const [control, value] of [[term, '3'], [payment, 'no-upfront']] as const) {
+    if (Array.from(control.options).some(option => option.value === value)) control.value = value;
+  }
+}
+
 /**
  * Open create plan modal with selected recommendations.
  *
@@ -1718,6 +1746,7 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   }
   (document.getElementById('plan-id') as HTMLInputElement).value = '';
   (document.getElementById('plan-form') as HTMLFormElement | null)?.reset();
+  resetCreateCommitmentFields();
 
   // When one or more commitments are selected, prefill the Purchase
   // Configuration fields so the user does not have to re-enter them. The
@@ -1783,6 +1812,7 @@ export function openNewPlanModal(): void {
   if (titleEl) titleEl.textContent = 'New Purchase Plan';
   (document.getElementById('plan-id') as HTMLInputElement).value = '';
   (document.getElementById('plan-form') as HTMLFormElement | null)?.reset();
+  resetCreateCommitmentFields();
 
   // Set up ramp schedule change handlers for dynamic plan name
   setupRampScheduleHandlers();

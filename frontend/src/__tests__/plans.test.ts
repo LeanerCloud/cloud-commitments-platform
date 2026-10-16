@@ -191,6 +191,7 @@ describe('Plans Module', () => {
           <input type="checkbox" id="plan-auto-purchase">
           <input type="number" id="plan-notify-days" value="3">
           <input type="checkbox" id="plan-enabled" checked>
+          <input type="text" id="plan-max-step-commitment" value="No cap" disabled>
           <input type="radio" name="ramp-schedule" value="immediate" checked>
           <input type="radio" name="ramp-schedule" value="weekly-25pct">
           <input type="radio" name="ramp-schedule" value="monthly-10pct">
@@ -236,7 +237,9 @@ describe('Plans Module', () => {
       const form = document.getElementById('plan-form') as HTMLFormElement;
       expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
       expect(document.getElementById('plan-schedule-preview')).toBeNull();
-      expect(form.hidden).toBe(true);
+      expect(form.hidden).toBe(false);
+      expect((document.getElementById('plan-name') as HTMLInputElement).value).toBe('Original');
+      expect((document.getElementById('plan-term') as HTMLSelectElement).disabled).toBe(true);
       expect(document.querySelector('[data-edit="heading"]')).toBe(document.activeElement);
       expect(form.querySelector('button')!.disabled).toBe(true);
       expect(form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))).toBe(false);
@@ -1853,7 +1856,7 @@ describe('Plans Module', () => {
 
         expect(api.listAccountsMinimal).toHaveBeenCalled();
         const chips = document.getElementById('plan-accounts-selected');
-        expect(chips?.textContent).toContain('Prod AWS');
+        expect(chips?.querySelector('.account-chip')?.firstChild?.textContent).toBe('Prod AWS (123456789012)');
         const hiddenIds = (document.getElementById('plan-account-ids') as HTMLInputElement).value;
         expect(hiddenIds).toContain('acct-uuid-123');
       });
