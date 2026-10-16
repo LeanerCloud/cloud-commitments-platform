@@ -130,6 +130,22 @@ for f in iac/federation/aws-cross-account/cloudformation/template.yaml iac/feder
 done
 run_case "required action missing from all flavors (parity holds) exits 1" 1 --root "$FIX9"
 
+# Case 10: a commented-out action is not a grant.
+FIX10="$TMP_BASE/commented-out"
+seed_fixture "$FIX10"
+sed 's/^\( *\)- ec2:DescribeInstanceTypes$/\1# - ec2:DescribeInstanceTypes/' \
+  "$REPO_ROOT/cloudformation/stacks/CUDly-CrossAccount/template.yaml" \
+  > "$FIX10/cloudformation/stacks/CUDly-CrossAccount/template.yaml"
+run_case "commented-out required action exits 1" 1 --root "$FIX10"
+
+# Case 11: a required read missing from all three runtime copies (parity holds) must fail.
+FIX11="$TMP_BASE/drift-required-runtime"
+seed_fixture "$FIX11"
+for f in cloudformation/stacks/CUDly/template.yaml terraform/modules/compute/aws/lambda/main.tf terraform/modules/compute/aws/fargate/main.tf; do
+  sed 's/ce:GetCostAndUsage//' "$REPO_ROOT/$f" > "$FIX11/$f"
+done
+run_case "required action missing from all runtime copies exits 1" 1 --root "$FIX11"
+
 echo ""
 echo "Results: ${pass} passed, ${fail} failed."
 [[ "$fail" -eq 0 ]]

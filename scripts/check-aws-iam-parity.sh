@@ -76,7 +76,8 @@ extract_actions() {
   fi
 
   local actions
-  actions=$(grep -oE "(^|[^A-Za-z])(${ACTION_PREFIXES}):[A-Z][A-Za-z]+" "$file" \
+  actions=$(grep -vE '^[[:space:]]*(#|//)' "$file" \
+    | grep -oE "(^|[^A-Za-z])(${ACTION_PREFIXES}):[A-Z][A-Za-z]+" \
     | sed 's/^[^a-zA-Z]//' \
     | sort -u)
 
@@ -164,7 +165,8 @@ REQUIRED_CUSTOMER_ACTIONS=(
 )
 
 for f in "$FED_XACC_CFN" "$FED_XACC_TF" "$FED_WIF_CFN" "$FED_WIF_TF" "$FED_XACC_CLI" "$FED_WIF_CLI" \
-  "$REPO_ROOT/cloudformation/stacks/CUDly-CrossAccount/template.yaml"; do
+  "$REPO_ROOT/cloudformation/stacks/CUDly-CrossAccount/template.yaml" \
+  "$CFN_STACK" "$TF_LAMBDA" "$TF_FARGATE"; do
   granted=$(extract_actions "$f")
   for a in "${REQUIRED_CUSTOMER_ACTIONS[@]}"; do
     if ! grep -qxF "$a" <<<"$granted"; then
