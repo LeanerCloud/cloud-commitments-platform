@@ -13,6 +13,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// Decoder bounds (#631 C1e): they run before any lookup or hash input.
+const (
+	planEditorMaxServices      = 32
+	planEditorMaxKeyBytes      = 128
+	planEditorMaxFilterValues  = 200
+	planEditorMaxFilterElement = 128
+)
+
 func decodePlanEditorPlan(raw json.RawMessage) (*config.PlanScheduleIntent, error) {
 	fields, err := planEditorObject(raw, "name enabled auto_purchase notification_days_before max_step_commitment target_accounts services ramp_schedule", "max_step_commitment")
 	if err != nil {
@@ -28,7 +36,7 @@ func decodePlanEditorPlan(raw json.RawMessage) (*config.PlanScheduleIntent, erro
 		if decodeErr := json.Unmarshal(fields["target_accounts"], &accounts); decodeErr != nil {
 			return nil, decodeErr
 		}
-		accounts, err = planEditorUUIDs(accounts)
+		accounts, err = planEditorUUIDs(accounts, MaxAccountIDsPerRequest)
 		if err != nil {
 			return nil, err
 		}
@@ -51,8 +59,14 @@ func decodePlanEditorServices(raw json.RawMessage) (map[string]config.PlanSchedu
 	if err != nil {
 		return nil, err
 	}
+	if len(fields) > planEditorMaxServices {
+		return nil, errors.New("too many services")
+	}
 	out := make(map[string]config.PlanScheduleServicePatch, len(fields))
 	for key, value := range fields {
+		if len(key) > planEditorMaxKeyBytes {
+			return nil, errors.New("service key too long")
+		}
 		patch, patchErr := decodePlanEditorService(value)
 		if patchErr != nil {
 			return nil, patchErr
@@ -182,14 +196,20 @@ func planEditorCanonicalUUID(value string) bool {
 	return err == nil && id != uuid.Nil && id.String() == value
 }
 
-func planEditorUUIDs(values []string) ([]string, error) {
+// planEditorUUIDs returns the sorted, de-duplicated canonical UUIDs; the limit
+// applies to the compacted count.
+func planEditorUUIDs(values []string, limit int) ([]string, error) {
 	for _, value := range values {
 		if !planEditorCanonicalUUID(value) {
 			return nil, errors.New("invalid editor UUID")
 		}
 	}
 	slices.Sort(values)
-	return slices.Compact(values), nil
+	values = slices.Compact(values)
+	if len(values) > limit {
+		return nil, errors.New("too many editor UUIDs")
+	}
+	return values, nil
 }
 
 func planEditorServiceSyntax(patch config.PlanScheduleServicePatch) bool {
@@ -215,6 +235,9 @@ func planEditorFilterValues(raw json.RawMessage) (*[]string, error) {
 	if err := json.Unmarshal(raw, &elements); err != nil {
 		return nil, err
 	}
+	if len(elements) > planEditorMaxFilterValues {
+		return nil, errors.New("too many filter values")
+	}
 	var values []string
 	if elements != nil {
 		values = make([]string, len(elements))
@@ -222,6 +245,9 @@ func planEditorFilterValues(raw json.RawMessage) (*[]string, error) {
 	for i, element := range elements {
 		if element == nil {
 			return nil, errors.New("null filter element")
+		}
+		if len(*element) > planEditorMaxFilterElement {
+			return nil, errors.New("filter value too long")
 		}
 		values[i] = *element
 	}

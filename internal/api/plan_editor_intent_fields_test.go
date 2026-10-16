@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,4 +93,105 @@ func TestPlanEditorFieldIntentRejectsMalformed(t *testing.T) {
 		_, err := decodePlanEditorService([]byte(`{"` + key + `":null}`))
 		require.Error(t, err, key)
 	}
+}
+
+func editorBoundUUIDs(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = fmt.Sprintf("%08x-0000-4000-8000-000000000000", i+1)
+	}
+	return out
+}
+
+func editorBoundFilters(count, size int) []string {
+	out := make([]string, count)
+	for i := range out {
+		out[i] = strings.Repeat("a", size)
+	}
+	return out
+}
+
+func TestPlanEditorDecoderBounds(t *testing.T) {
+	filterBody := func(key string, values []string) func(map[string]any) {
+		return func(b map[string]any) {
+			b["plan"].(map[string]any)["services"] = map[string]any{"aws/ec2": map[string]any{key: values}}
+		}
+	}
+	type boundCase struct {
+		name         string
+		atLimit, big func(map[string]any)
+	}
+	cases := append(make([]boundCase, 0, 19), []boundCase{
+		{"accounts", func(b map[string]any) {
+			b["plan"].(map[string]any)["target_accounts"] = editorBoundUUIDs(MaxAccountIDsPerRequest)
+		},
+			func(b map[string]any) {
+				b["plan"].(map[string]any)["target_accounts"] = editorBoundUUIDs(MaxAccountIDsPerRequest + 1)
+			}},
+		{"services", func(b map[string]any) { b["plan"].(map[string]any)["services"] = editorBoundServices(32, "k") },
+			func(b map[string]any) { b["plan"].(map[string]any)["services"] = editorBoundServices(33, "k") }},
+		{"service key multibyte", func(b map[string]any) {
+			b["plan"].(map[string]any)["services"] = editorBoundServices(1, strings.Repeat("é", 63)+"a")
+		},
+			func(b map[string]any) {
+				b["plan"].(map[string]any)["services"] = editorBoundServices(1, strings.Repeat("é", 64)+"a")
+			}},
+		{"filter element multibyte", filterBody("include_types", []string{strings.Repeat("é", 64)}),
+			filterBody("include_types", []string{strings.Repeat("é", 65)})},
+		{"service key bytes", func(b map[string]any) {
+			b["plan"].(map[string]any)["services"] = editorBoundServices(1, strings.Repeat("k", 127))
+		},
+			func(b map[string]any) {
+				b["plan"].(map[string]any)["services"] = editorBoundServices(1, strings.Repeat("k", 128))
+			}},
+		{"cancellation acknowledgements", func(b map[string]any) { b["acknowledged_cancellation_ids"] = editorBoundUUIDs(config.MaxTotalSteps) },
+			func(b map[string]any) {
+				b["acknowledged_cancellation_ids"] = editorBoundUUIDs(config.MaxTotalSteps + 1)
+			}},
+		{"reapproval acknowledgements", func(b map[string]any) { b["acknowledged_reapproval_ids"] = editorBoundUUIDs(config.MaxTotalSteps) },
+			func(b map[string]any) { b["acknowledged_reapproval_ids"] = editorBoundUUIDs(config.MaxTotalSteps + 1) }},
+	}...)
+	for _, key := range []string{"include_engines", "exclude_engines", "include_regions", "exclude_regions", "include_types", "exclude_types"} {
+		cases = append(cases,
+			boundCase{key + " count", filterBody(key, editorBoundFilters(200, 1)), filterBody(key, editorBoundFilters(201, 1))},
+			boundCase{key + " element bytes", filterBody(key, editorBoundFilters(1, 128)), filterBody(key, editorBoundFilters(1, 129))})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := decodePlanEditorIntent(editorIntentBody(t, tc.atLimit))
+			require.NoError(t, err)
+			_, err = decodePlanEditorIntent(editorIntentBody(t, tc.big))
+			require.Error(t, err)
+			var clientErr *clientError
+			require.ErrorAs(t, err, &clientErr)
+			require.Equal(t, 400, clientErr.code)
+		})
+	}
+}
+
+func editorBoundServices(n int, key string) map[string]any {
+	out := make(map[string]any, n)
+	for i := range n {
+		out[fmt.Sprintf("%s%d", key, i)] = map[string]any{}
+	}
+	return out
+}
+
+// Duplicates are removed before the account bound applies: 250 entries that
+// compact to 200 pass, 201 distinct entries fail.
+func TestPlanEditorAccountBoundCountsAfterCompaction(t *testing.T) {
+	ids := editorBoundUUIDs(MaxAccountIDsPerRequest)
+	body := editorIntentBody(t, func(b map[string]any) {
+		b["plan"].(map[string]any)["target_accounts"] = append(append([]string{}, ids...), ids[:50]...)
+	})
+	intent, err := decodePlanEditorIntent(body)
+	require.NoError(t, err)
+	require.Len(t, *intent.AccountIDs, MaxAccountIDsPerRequest)
+}
+
+func TestPlanEditorAccountsRefuseUpperCaseUUID(t *testing.T) {
+	_, err := decodePlanEditorPlan([]byte(`{"target_accounts":["AAAAAAAA-1111-4111-8111-111111111111"]}`))
+	require.Error(t, err)
+	_, err = decodePlanEditorPlan([]byte(`{"target_accounts":["aaaaaaaa-1111-4111-8111-111111111111"]}`))
+	require.NoError(t, err)
 }
