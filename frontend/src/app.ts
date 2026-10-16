@@ -29,27 +29,29 @@ import { closeModal } from './modal';
  * and its real state, so a direct-mode submit that joined a still-pending
  * approval never claims it executed immediately (#759).
  */
-function describeDuplicateSubmit(result: api.PurchaseResult): string {
-  const id = result.execution_id.slice(0, 8);
-  let state: string;
-  switch (result.status) {
+function duplicateState(status: string): string {
+  // Exactly the statuses the duplicate lookup can return
+  // (internal/config/store_postgres.go); anything else gets a neutral line so
+  // a backend change cannot produce a false claim.
+  switch (status) {
     case 'pending':
     case 'notified':
-    case 'scheduled':
-      state = 'it is still awaiting approval';
-      break;
+      return 'it is still awaiting approval';
     case 'approved':
     case 'running':
-      state = 'it is being executed';
-      break;
+      return 'it is being executed';
     case 'completed':
+      return 'it was already executed';
     case 'partially_completed':
-      state = `it was already executed (${result.status})`;
-      break;
+      return 'it was partially executed';
     default:
-      state = `its status is ${result.status}`;
+      return `its status is ${status}`;
   }
-  return `This matches an existing execution ${id}, so no new request was created; ${state}. Check Purchase History.`;
+}
+
+function describeDuplicateSubmit(result: api.PurchaseResult): string {
+  const id = result.execution_id.slice(0, 8);
+  return `This matches an existing execution ${id}, so no new request was created; ${duplicateState(result.status)}. Check Purchase History.`;
 }
 
 /**
@@ -497,7 +499,7 @@ export async function handleExecutePurchase(): Promise<void> {
     if (result.duplicate) {
       showToast({
         message: describeDuplicateSubmit(result),
-        kind: result.status === 'failed' ? 'warning' : 'info',
+        kind: 'info',
         timeout: 15_000,
       });
     } else if (isDirect) {
@@ -730,15 +732,26 @@ async function submitFanOutBuckets(buckets: FanOutBucket[]): Promise<void> {
     let submittedNote = '';
     if (succeeded > 0 && succeeded < results.length) {
       const submittedLabels: string[] = [];
+      const joinedLabels: string[] = [];
       results.forEach((r, i) => {
         const ok =
           r.status === 'fulfilled' &&
           r.value.email_sent !== false &&
           r.value.status !== 'failed';
-        if (ok && buckets[i]) submittedLabels.push(fanOutBucketLabel(buckets[i]));
+        if (!ok || !buckets[i]) return;
+        if (r.value.duplicate) {
+          joinedLabels.push(
+            `${fanOutBucketLabel(buckets[i])} (existing ${r.value.execution_id.slice(0, 8)}: ${duplicateState(r.value.status).replace(/^(it was|it is|it) /, '')})`,
+          );
+        } else {
+          submittedLabels.push(fanOutBucketLabel(buckets[i]));
+        }
       });
+      if (joinedLabels.length > 0) {
+        submittedNote += ` Joined existing: ${joinedLabels.join(', ')}.`;
+      }
       if (submittedLabels.length > 0) {
-        submittedNote = ` Submitted (awaiting approval): ${submittedLabels.slice(0, 5).join(', ')}${
+        submittedNote += ` Submitted (awaiting approval): ${submittedLabels.slice(0, 5).join(', ')}${
           submittedLabels.length > 5 ? ` +${submittedLabels.length - 5} more` : ''
         }.`;
       }

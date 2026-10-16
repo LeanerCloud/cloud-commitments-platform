@@ -114,4 +114,41 @@ describe('submit toast', () => {
     expect(all).toMatch(/already executed/);
     expect(all).not.toMatch(/2 purchases/);
   });
+
+  it.each([
+    ['pending', 'still awaiting approval'],
+    ['notified', 'still awaiting approval'],
+    ['approved', 'being executed'],
+    ['running', 'being executed'],
+    ['completed', 'already executed'],
+    ['partially_completed', 'partially executed'],
+    ['scheduled', 'its status is scheduled'],
+    ['weird_new_status', 'its status is weird_new_status'],
+  ])('duplicate wording for %s', async (status, phrase) => {
+    submit({ duplicate: true, status });
+    await handleExecutePurchase();
+    const all = messages().join('\n');
+    expect(all).toContain(phrase);
+    if (phrase !== 'still awaiting approval') expect(all).not.toMatch(/awaiting approval/);
+    if (status === 'partially_completed') expect(all).not.toContain('already executed');
+    expect(showToast.mock.calls[0][0].kind).toBe('info');
+  });
+
+  it('fan-out partial failure: a duplicate bucket is never listed as awaiting approval', async () => {
+    fanOutBuckets = [
+      { provider: 'aws', service: 'ec2', term: 1, payment: 'no-upfront', capacityPercent: 100, paymentSource: 'toolbar', recs: [{ service: 'ec2' }] },
+      { provider: 'aws', service: 'rds', term: 1, payment: 'no-upfront', capacityPercent: 100, paymentSource: 'toolbar', recs: [{ service: 'rds' }] },
+      { provider: 'aws', service: 'elasticache', term: 1, payment: 'no-upfront', capacityPercent: 100, paymentSource: 'toolbar', recs: [{ service: 'elasticache' }] },
+    ];
+    (api.executePurchase as jest.Mock)
+      .mockResolvedValueOnce({ execution_id: 'ffff0000-1', status: 'pending', email_sent: true })
+      .mockResolvedValueOnce({ execution_id: execId, status: 'completed', duplicate: true })
+      .mockRejectedValueOnce(new Error('boom'));
+    await handleExecutePurchase();
+    const msg = messages().find((m) => m.includes('failed'))!;
+    const awaiting = msg.match(/Submitted \(awaiting approval\): ([^.]*)\./)![1];
+    expect(awaiting).toContain('ec2');
+    expect(awaiting).not.toContain('rds');
+    expect(msg).toMatch(/rds.*abcd1234.*already executed/);
+  });
 });
