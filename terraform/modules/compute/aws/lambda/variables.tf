@@ -1,5 +1,5 @@
 variable "stack_name" {
-  description = "Name of the stack"
+  description = "Name of the stack. At most 39 chars: the longest rule suffix is \"-fire-scheduled-purchases\" (25 chars) and EventBridge caps rule names at 64. The sweep rules (\"-sweep-<rule>\", up to 15 chars) fit well inside that."
   type        = string
 }
 
@@ -229,6 +229,42 @@ variable "fire_scheduled_purchases_schedule" {
   description = "EventBridge schedule for the fire_scheduled_purchases sweep. Frequent cadence (default rate(15 minutes)) ensures delayed purchases fire close to their scheduled time between daily ladder runs."
   type        = string
   default     = "rate(15 minutes)"
+}
+
+variable "enable_process_scheduled_purchases_schedule" {
+  description = "Enable the scheduled process_scheduled_purchases sweep (proposes purchases that are due). Opt-in: default false so no purchase proposal runs unless an operator asks for it. Note (#894): the stuck-purchase reaper can fail stranded approved rows before process re-drives them."
+  type        = bool
+  default     = false
+}
+
+variable "process_scheduled_purchases_schedule" {
+  description = "EventBridge schedule for the process_scheduled_purchases sweep."
+  type        = string
+  default     = "rate(1 hour)"
+}
+
+variable "enable_send_notifications_schedule" {
+  description = "Enable the scheduled send_notifications sweep. Opt-in: default false; enable it together with process_scheduled_purchases."
+  type        = bool
+  default     = false
+}
+
+variable "send_notifications_schedule" {
+  description = "EventBridge schedule for the send_notifications sweep."
+  type        = string
+  default     = "rate(1 day)"
+}
+
+variable "enable_finalize_revocations_schedule" {
+  description = "Enable the scheduled finalize_revocations sweep (idempotent audit repair of revoked purchases)."
+  type        = bool
+  default     = true
+}
+
+variable "finalize_revocations_schedule" {
+  description = "EventBridge schedule for the finalize_revocations sweep."
+  type        = string
+  default     = "rate(1 hour)"
 }
 
 variable "purchase_approved_reap_after" {
