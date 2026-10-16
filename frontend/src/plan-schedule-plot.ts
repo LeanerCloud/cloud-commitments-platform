@@ -23,6 +23,8 @@ function thinLabels(points: readonly SchedulePlotPoint[], frame: SchedulePlotFra
   });
   return xs.map((_, index) => kept.includes(index));
 }
+/** Roving tabindex: the selected point if it is plotted, else the first plotted point. */
+const tabbable = (points: readonly SchedulePlotPoint[], selected: number): number => Math.max(0, points.findIndex(point => point.step - 1 === selected));
 const y = (target: number): number => 260 - target * 2.2;
 function staircase(points: readonly SchedulePlotPoint[], frame: SchedulePlotFrame): string {
   let path = points[0]?.step === 1 ? `M 48 ${y(0)}` : '';
@@ -46,7 +48,7 @@ export function renderSchedulePlot(points: readonly SchedulePlotPoint[], frame: 
   return `<svg viewBox="0 0 ${width} 370" width="${width}" role="${interactive ? "group" : "img"}" aria-label="Hypothetical purchase dates">
                 ${[0, 20, 40, 60, 80, 100].map(value => `<path class="preview-grid" d="M 48 ${y(value)} H ${width - 24}"/><text x="8" y="${y(value) + 4}">${value}</text>`).join('')}
                 <path class="preview-staircase" d="${path}"/>
-                ${points.map((point, index) => `<g ${interactive ? `role="button" tabindex="${point.step - 1 === selected ? 0 : -1}"` : ""} data-preview-step="${point.step - 1}" ${point.fixed ? 'data-fixed' : ''} ${point.step - 1 === selected ? 'data-selected' : ''} ${interactive ? `aria-pressed="${point.step - 1 === selected}"` : ""} aria-label="Step ${point.step}, ${escapeHtml(point.date)}, target ${point.target}%">
+                ${points.map((point, index) => `<g ${interactive ? `role="button" tabindex="${index === tabbable(points, selected) ? 0 : -1}"` : ""} data-preview-step="${point.step - 1}" ${point.fixed ? 'data-fixed' : ''} ${point.step - 1 === selected ? 'data-selected' : ''} ${interactive ? `aria-pressed="${point.step - 1 === selected}"` : ""} aria-label="Step ${point.step}, ${escapeHtml(point.date)}, target ${point.target}%">
 ${interactive && !point.fixed ? `                  <foreignObject class="preview-hit" x="${x(index) - 22}" y="${y(point.target) - 22}" width="44" height="44"><div xmlns="http://www.w3.org/1999/xhtml" class="preview-touch-target"></div></foreignObject>` : ""}
                   <circle class="preview-marker" cx="${x(index)}" cy="${y(point.target)}" r="6"/>
                   <text class="preview-tick" x="${x(index)}" y="292" text-anchor="middle"${labels[index] ? '' : ' hidden'}>${escapeHtml(point.date.slice(5))}</text>
@@ -77,7 +79,7 @@ export function updateSchedulePlot(svg: SVGSVGElement, points: readonly Schedule
     button.setAttribute('aria-label', `Step ${point.step}, ${point.date}, target ${point.target}%`);
     button.toggleAttribute('data-fixed', !!point.fixed);
     button.toggleAttribute('data-selected', point.step - 1 === selected);
-    if (interactive) { button.setAttribute('aria-pressed', String(point.step - 1 === selected)); button.setAttribute('tabindex', point.step - 1 === selected ? '0' : '-1'); }
+    if (interactive) { button.setAttribute('aria-pressed', String(point.step - 1 === selected)); button.setAttribute('tabindex', index === tabbable(points, selected) ? '0' : '-1'); }
   });
   svg.querySelector('.preview-staircase')!.setAttribute('d', staircase(points, frame));
   svg.querySelectorAll<SVGGElement>('[data-preview-boundary]').forEach(handle => {

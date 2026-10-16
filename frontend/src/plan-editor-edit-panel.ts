@@ -1,12 +1,18 @@
 import type { PlanEditorResponse, PlanEditorDisplay } from './api/plan-editor';
 import { adaptPlanEditor, editorServiceTargets } from './plan-editor-adapter';
-import { canDraftStep, canReviewEditorDraft, EditorDraft, draftBlock, draftDateChanges, redistributeEditorBlock, resetEditorDraft, selectDraftStep, setApprovedDraftEdits, setDraftDate } from './lib/plan-editor-draft';
-import { renderSchedulePlot, schedulePlotFrame, updateSchedulePlot } from './plan-schedule-plot';
+import { assertEditorDraftValid, canDraftStep, canReviewEditorDraft, EditorDraft, draftBlock, draftDateChanges, redistributeEditorBlock, resetEditorDraft, selectDraftStep, setApprovedDraftEdits, setDraftDate } from './lib/plan-editor-draft';
+import { renderSchedulePlot, schedulePlotFrame, updateSchedulePlot, SchedulePlotFrame } from './plan-schedule-plot';
+import { wirePlanDateInteraction } from './plan-date-interaction';
 import { escapeHtml } from './utils';
 import { planEditorReason } from './lib/plan-editor-reasons';
 
-export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditorResponse): () => void {
+export interface PlanEditorEditHandle { dispose(): void; draft(): EditorDraft | null; subscribe(listener: () => void): () => void }
+
+export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditorResponse): PlanEditorEditHandle {
   let state = adaptPlanEditor(response).graphDraft, dirty: 'date' | 'range' | null = null;
+  let gestureFrame: SchedulePlotFrame | null = null, gestureDraft: EditorDraft | null = null, plotKey = '';
+  let disposeInteraction: (() => void) | undefined;
+  const listeners = new Set<() => void>(), inertBefore = new Map<HTMLElement, boolean>();
   const services = Object.entries(response.plan.services ?? {});
   host.hidden = false;
   host.closest('.plan-editor-layout')?.classList.add('has-editor-draft');
@@ -54,20 +60,58 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
     const targets = services.length ? editorServiceTargets(response, service.value) : null;
     const supported = targets !== null && targets.every(target => Number.isFinite(target) && target >= 0 && target <= 100);
     const points = draft.dates.flatMap((value, index) => value === null || !supported ? [] : [{
-      step: index + 1, date: value, target: targets![index]!,
+      step: index + 1, date: value, target: targets![index]!, fixed: !canDraftStep(draft, index),
     }]);
     field('target').textContent = supported
       ? `Cumulative coverage (%) for ${service.selectedOptions[0]!.textContent}. Stored ramp share × service coverage. All dates use UTC.`
       : 'Coverage plot unavailable for this stored service. Dates and all logical steps remain available.';
     if (!points.length) {
+      disposeInteraction?.(); disposeInteraction = undefined; plotKey = '';
       plot.textContent = supported ? 'No dated points to place on the calendar. Enter eligible missing dates explicitly below.' : 'The selected service has no supported coverage plot.';
       return;
     }
-    const frame = schedulePlotFrame(points.map(point => point.date)), svg = plot.querySelector<SVGSVGElement>('svg');
-    if (svg && svg.querySelectorAll('[data-preview-step]').length === points.length) updateSchedulePlot(svg, points, frame, draft.selected, false, null);
-    else plot.innerHTML = renderSchedulePlot(points, frame, draft.selected, false, null);
-    plot.querySelector('svg')!.setAttribute('aria-label', 'Stored schedule with local date proposals');
+    const frame = gestureFrame ?? schedulePlotFrame(points.map(point => point.date)), key = points.map(point => `${point.step}${point.fixed ? 'f' : ''}`).join();
+    const span = draftBlock(draft), block = span && draft.dates.slice(span[0], span[1] + 1).every(value => value !== null) ? span : null;
+    let svg = plot.querySelector<SVGSVGElement>('svg');
+    if (svg && key === plotKey) updateSchedulePlot(svg, points, frame, draft.selected, true, block);
+    else if (!gestureFrame) {
+      disposeInteraction?.(); plot.innerHTML = renderSchedulePlot(points, frame, draft.selected, true, block); plotKey = key;
+      svg = plot.querySelector<SVGSVGElement>('svg')!; disposeInteraction = wire(svg);
+    }
+    plot.querySelector('svg')?.setAttribute('aria-label', 'Stored schedule with local date proposals');
   };
+  const layout = host.closest<HTMLElement>('.plan-editor-layout');
+  const inertTargets = [layout?.querySelector<HTMLElement>('form'), ...(host.closest('.modal')?.querySelectorAll<HTMLElement>('.modal-buttons button:not(#close-plan-modal-btn)') ?? [])].flatMap(item => item ? [item] : []);
+  const wire = (svg: SVGSVGElement): (() => void) => wirePlanDateInteraction(svg, {
+    read: () => {
+      const dates = state!.dates, span = draftBlock(state!);
+      return { dates, blocked: dirty !== null, plotted: dates.flatMap((value, index) => value === null ? [] : [index]),
+        block: span && dates.slice(span[0], span[1] + 1).every(value => value !== null) ? span : null, movable: index => canDraftStep(state!, index) };
+    },
+    validate: () => assertEditorDraftValid(state!),
+    select: index => { state = selectDraftStep(state!, index); paint(); },
+    gesture: current => {
+      gestureFrame = current;
+      if (current) {
+        gestureDraft = state;
+        inertTargets.forEach(target => { inertBefore.set(target, target.inert); target.inert = true; });
+      } else {
+        inertBefore.forEach((value, target) => { target.inert = value; }); inertBefore.clear(); gestureDraft = null;
+      }
+      paint();
+    },
+    apply: ({ index, boundary, date: proposed, before }) => {
+      try {
+        const base = gestureDraft ?? state!, span = draftBlock(base);
+        state = boundary && span ? redistributeEditorBlock(base, boundary === 'start' ? proposed : before[span[0]]!, boundary === 'end' ? proposed : before[span[1]]!)
+          : setDraftDate(base, index, proposed);
+        dirty = null; message(''); paint();
+      } catch (failure) { message((failure as Error).message); }
+    },
+    restore: () => { if (gestureDraft) state = gestureDraft; paint(); },
+    focusDate: boundary => (boundary === 'start' ? start : end).focus(),
+    error: message,
+  });
   const paintRangeValues = (draft: EditorDraft, block: readonly [number, number] | null): void => {
     if (dirty === 'range') return;
     start.value = block ? draft.dates[block[0]] ?? '' : '';
@@ -110,6 +154,7 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
       return;
     }
     paintPlot(state); paintSelection(state); paintRange(state); paintDescription(state);
+    listeners.forEach(listener => listener());
   };
   const commit = (): void => {
     if (!state) return;
@@ -119,12 +164,14 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
     } catch (error) { message((error as Error).message); paint(); }
   };
   const input = (event: Event): void => {
+    if (gestureFrame) return;
     if (event.target === date) dirty = 'date';
     else if (event.target === start || event.target === end) dirty = 'range';
     else return;
     paint();
   };
   const change = (event: Event): void => {
+    if (gestureFrame) return;
     if (event.target === service) { paint(); return; }
     if (!state) return;
     if (event.target === step && !dirty) state = selectDraftStep(state, Number(step.value));
@@ -135,12 +182,18 @@ export function mountPlanEditorEditPanel(host: HTMLElement, response: PlanEditor
   const keydown = (event: KeyboardEvent): void => {
     if (event.key === 'Enter' && [date, start, end].includes(event.target as HTMLInputElement)) { event.preventDefault(); commit(); }
   };
-  field<HTMLButtonElement>('reset').onclick = () => { if (state) { state = resetEditorDraft(state); dirty = null; message(''); paint(); } };
+  field<HTMLButtonElement>('reset').onclick = () => { if (state && !gestureFrame) { state = resetEditorDraft(state); dirty = null; message(''); paint(); } };
   host.addEventListener('input', input); host.addEventListener('change', change); host.addEventListener('keydown', keydown);
+  const submit = (event: Event): void => {
+    if (gestureFrame) { event.preventDefault(); event.stopImmediatePropagation(); message('Finish or cancel the date drag before saving.'); }
+  };
+  layout?.addEventListener('submit', submit, true);
   paint();
-  return () => {
+  const dispose = (): void => {
+    disposeInteraction?.(); layout?.removeEventListener('submit', submit, true); listeners.clear();
     host.removeEventListener('input', input); host.removeEventListener('change', change); host.removeEventListener('keydown', keydown);
     host.replaceChildren(); host.hidden = true; host.closest('.plan-editor-layout')?.classList.remove('has-editor-draft');
     state = null;
   };
+  return { dispose, draft: () => state, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; } };
 }

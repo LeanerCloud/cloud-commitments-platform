@@ -227,6 +227,29 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
     await expect(proposed).toBeDisabled();
     await selected.selectOption('1'); await expect(proposed).toBeEnabled();
     await expect(proposed).toHaveValue('2026-11-06');
+    const handles = stored.locator('[data-preview-boundary]');
+    await expect(handles).toHaveCount(2);
+    for (const handle of await handles.all()) expect(await handle.evaluate(element => getComputedStyle(element).display)).toBe('none');
+    await stored.locator('[data-preview-step="1"]').focus();
+    for (let presses = 0; presses < 6; presses++) {
+      await page.keyboard.press('Tab');
+      expect(await page.evaluate(() => document.activeElement?.closest('[data-preview-boundary]') !== null)).toBe(false);
+    }
+    const marker = stored.locator('[data-preview-step="1"] .preview-marker');
+    await marker.scrollIntoViewIfNeeded();
+    const mark = (await marker.boundingBox())!, tick = (await stored.locator('[data-preview-step="2"] .preview-marker').boundingBox())!;
+    const dayPx = (tick.x - mark.x) / 3, startX = mark.x + mark.width / 2, startY = mark.y + mark.height / 2;
+    await page.mouse.move(startX, startY); await page.mouse.down(); await page.mouse.move(startX + dayPx * 1.2, startY, { steps: 4 });
+    await expect(proposed).toHaveValue('2026-11-07');
+    await page.screenshot({ path: testInfo.outputPath('edit-during-drag.png') });
+    await page.mouse.up();
+    await expect(proposed).toHaveValue('2026-11-07');
+    await expect(stored.locator('[data-edit="changes"]')).toContainText('Step 2: 2026-11-06 → 2026-11-07');
+    await page.screenshot({ path: testInfo.outputPath('edit-after-drag.png'), fullPage: true });
+    const fixed = stored.locator('[data-preview-step="0"]');
+    expect(await fixed.evaluate(element => element.hasAttribute('data-fixed'))).toBe(true);
+    await stored.locator('[data-edit="reset"]').click();
+    await expect(proposed).toHaveValue('2026-11-06');
     await stored.locator('[data-edit="service"]').selectOption('disabledOther');
     await expect(stored.locator('[data-preview-step="1"]')).toHaveAttribute('aria-label', /target 30%/);
     await selected.selectOption('2'); await expect(proposed).toBeDisabled();

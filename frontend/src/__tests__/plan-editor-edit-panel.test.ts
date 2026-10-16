@@ -13,14 +13,14 @@ const toggle = (checked: boolean): void => {
 };
 beforeEach(() => {
   jest.useFakeTimers({ now: new Date('2026-10-15T12:00:00Z') });
-  document.body.innerHTML = '<div class="plan-editor-layout"><aside id="editor"></aside><form><input value="untouched"></form></div>';
+  document.body.innerHTML = '<div class="modal"><div class="plan-editor-layout"><aside id="editor"></aside><form><input value="untouched"></form></div></div>';
   host = document.getElementById('editor')!;
 });
 afterEach(() => { dispose?.(); jest.useRealTimers(); });
 
 test('shows every logical slot/history and truthful per-service coverage without changing stored data', () => {
   const original = response(), before = JSON.stringify(original);
-  dispose = mountPlanEditorEditPanel(host, original);
+  dispose = mountPlanEditorEditPanel(host, original).dispose;
   expect(field('slots').children).toHaveLength(5);
   expect(field('slots').children[3]!.textContent).toContain('no current root');
   expect(host.querySelector('[data-preview-step="0"]')?.getAttribute('aria-label')).toContain('target 8%');
@@ -34,11 +34,13 @@ test('shows every logical slot/history and truthful per-service coverage without
   expect(JSON.stringify(original)).toBe(before);
   expect(document.querySelector('form input')?.getAttribute('value')).toBe('untouched');
   expect(field<HTMLInputElement>('date').form).toBeNull();
-  expect(host.querySelector('[role="button"]')).toBeNull();
+  expect(host.querySelectorAll('[data-preview-step][role="button"]')).toHaveLength(4);
+  expect(host.querySelector('[data-preview-step="0"]')?.hasAttribute('data-fixed')).toBe(true);
+  expect(host.querySelector('[data-preview-step="1"]')?.hasAttribute('data-fixed')).toBe(false);
 });
 
 test('keeps completed and approved steps fixed until explicit eligible consent, then retains dirty consent warnings', () => {
-  dispose = mountPlanEditorEditPanel(host, response());
+  dispose = mountPlanEditorEditPanel(host, response()).dispose;
   expect(field<HTMLInputElement>('approved').checked).toBe(false);
   expect(field<HTMLInputElement>('date').disabled).toBe(true);
   input('step', '2');
@@ -58,7 +60,7 @@ test('keeps completed and approved steps fixed until explicit eligible consent, 
 });
 
 test('requires explicit missing dates before block redistribution and preserves paired correction and focus nodes', () => {
-  dispose = mountPlanEditorEditPanel(host, response());
+  dispose = mountPlanEditorEditPanel(host, response()).dispose;
   toggle(true); input('step', '3');
   expect(field<HTMLInputElement>('date').value).toBe('');
   expect(field<HTMLInputElement>('date').disabled).toBe(false);
@@ -82,7 +84,7 @@ test('refuses unknown fixed neighbors and UTC rollover while preserving the last
   const original = response();
   const modified: PlanEditorResponse = { ...original, graph: { ...original.graph!, steps: original.graph!.steps.map((slot, index) =>
     index === 4 ? { ...slot, scheduled_date: null, capability: 'fixed', editable: false } : slot) } };
-  dispose = mountPlanEditorEditPanel(host, modified);
+  dispose = mountPlanEditorEditPanel(host, modified).dispose;
   input('step', '3'); input('date', '2026-11-12');
   expect(field('error').textContent).toContain('fixed date is unavailable');
   expect(field('changes').children).toHaveLength(0);
@@ -99,7 +101,7 @@ test('renders an empty calendar and complete missing-slot list without manufactu
     ...slot, logical_completed: false, scheduled_date: null, execution_id: null, root_state: 'missing',
     capability: 'needs_creation', editable: false, requires_approved_edits: false,
   })) } };
-  dispose = mountPlanEditorEditPanel(host, missing);
+  dispose = mountPlanEditorEditPanel(host, missing).dispose;
   expect(host.querySelector('svg')).toBeNull();
   expect(host.textContent).toContain('No dated points');
   expect(field('slots').children).toHaveLength(5);
@@ -108,13 +110,13 @@ test('renders an empty calendar and complete missing-slot list without manufactu
 
 test('preserves ordinary-plan metadata and cleans up without fabricating a graph or carrying consent', () => {
   const original = response();
-  dispose = mountPlanEditorEditPanel(host, { ...original, plan: { ...original.plan, ramp_schedule: { ...original.plan.ramp_schedule, current_step: 0, total_steps: 0 } }, graph: null, graph_unavailable_reason: 'unsupported_schedule' });
+  dispose = mountPlanEditorEditPanel(host, { ...original, plan: { ...original.plan, ramp_schedule: { ...original.plan.ramp_schedule, current_step: 0, total_steps: 0 } }, graph: null, graph_unavailable_reason: 'unsupported_schedule' }).dispose;
   expect(field('controls').hidden).toBe(true);
   expect(host.textContent).toContain('unsupported_schedule');
   expect(field('settings').textContent).toContain('azure/compute');
   dispose();
   expect(host.hidden).toBe(true); expect(host.children).toHaveLength(0);
-  dispose = mountPlanEditorEditPanel(host, response());
+  dispose = mountPlanEditorEditPanel(host, response()).dispose;
   expect(field<HTMLInputElement>('approved').checked).toBe(false);
 });
 
@@ -123,7 +125,7 @@ test('labels quantity only with returned snapshot provenance and never infers cu
   const mount = (source: 'stored_snapshot' | 'unavailable'): (() => void) => mountPlanEditorEditPanel(host, {
     ...original, graph: { ...original.graph!, steps: original.graph!.steps.map((slot, index) => index === 1
       ? { ...slot, display: { ...slot.display!, quantity: 4, quantity_unit: 'instances', quantity_source: source } } : slot) },
-  });
+  }).dispose;
   dispose = mount('unavailable'); input('step', '1');
   expect(field('selected').textContent).toContain('Quantity unavailable');
   expect(field('selected').textContent).not.toContain('4 instances');
@@ -142,7 +144,7 @@ test('keeps ambiguous null-status roots unavailable and fixed while retaining co
       capability: 'fixed', editable: false, lock_reason: 'ambiguous_root',
     } : slot) },
   };
-  dispose = mountPlanEditorEditPanel(host, ambiguous);
+  dispose = mountPlanEditorEditPanel(host, ambiguous).dispose;
   expect(field('slots').children[1]!.textContent).toContain('status unavailable');
   expect(field('slots').children[1]!.textContent).not.toContain('no retained root');
   expect(field('history').children).toHaveLength(2);
@@ -154,7 +156,7 @@ test('keeps ambiguous null-status roots unavailable and fixed while retaining co
 test('keeps a legacy 99-percent ramp distinct from selected service coverage', () => {
   const original = response();
   dispose = mountPlanEditorEditPanel(host, { ...original, plan: { ...original.plan, ramp_schedule: { ...original.plan.ramp_schedule, type: 'custom', percent_per_step: 33, total_steps: 3 } }, graph: { ...original.graph!, total_steps: 3,
-    steps: original.graph!.steps.slice(0, 3).map((slot, index) => ({ ...slot, cumulative_target_percent: (index + 1) * 33 })) } });
+    steps: original.graph!.steps.slice(0, 3).map((slot, index) => ({ ...slot, cumulative_target_percent: (index + 1) * 33 })) } }).dispose;
   expect(field('slots').textContent).toContain('ramp share 99%');
   expect(host.querySelector('[data-preview-step="2"]')?.getAttribute('aria-label')).toContain('target 39.6%');
   input('service', 'disabledOther');
@@ -163,7 +165,7 @@ test('keeps a legacy 99-percent ramp distinct from selected service coverage', (
 });
 
 test('explains locked and executed steps with sentences instead of raw codes', () => {
-  dispose = mountPlanEditorEditPanel(host, response());
+  dispose = mountPlanEditorEditPanel(host, response()).dispose;
   const sentence = 'This step already ran and cannot be changed.';
   expect(field('slots').children[0]!.textContent).toContain(sentence);
   expect(field('selected').textContent).toContain(sentence);
@@ -174,7 +176,7 @@ test('explains locked and executed steps with sentences instead of raw codes', (
 test('separates the slot status from its lock sentence with ". " and falls back without a reason code', () => {
   const original = response();
   dispose = mountPlanEditorEditPanel(host, { ...original, graph: { ...original.graph!, steps: original.graph!.steps.map((slot, index) =>
-    index === 3 ? { ...slot, capability: 'fixed', editable: false, lock_reason: null } : slot) } });
+    index === 3 ? { ...slot, capability: 'fixed', editable: false, lock_reason: null } : slot) } }).dispose;
   const slots = field('slots').children;
   expect(slots[0]!.textContent).toBe('Step 1: 2026-10-01; ramp share 20%; pending. This step already ran and cannot be changed.');
   expect(slots[3]!.textContent).toBe('Step 4: date unavailable; ramp share 80%; no current root. fixed.');

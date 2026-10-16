@@ -1312,7 +1312,7 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse): void {
   };
   try {
     if (editor && form) editForm = fillEditForm(form, editor, { selectService: selectEditService, setAccounts: setEditAccounts, onAccountsChange: onEditAccountsChange });
-    disposePanel = host && form ? editor ? mountPlanEditorEditPanel(host, editor) : mountPlanEditorPanel(host, form) : undefined;
+    disposePanel = host && form ? editor ? mountPlanEditorEditPanel(host, editor).dispose : mountPlanEditorPanel(host, form) : undefined;
   } catch (error) { disposePlanEditor(); disposePlanEditor = undefined; throw error; }
   refreshPlanSaveButtonState();
   openModal(modal, { initialFocus: editor ? '[data-edit="heading"]' : '#plan-name', onClose: () => {
