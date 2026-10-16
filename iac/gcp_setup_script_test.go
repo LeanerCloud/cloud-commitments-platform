@@ -3,6 +3,7 @@ package iac
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -312,6 +313,18 @@ func TestSetupScriptEmptyExistingMappingFailsCleanly(t *testing.T) {
 	if _, err := os.Stat(bashPath); err != nil {
 		t.Fatalf("%s is required: %v", bashPath, err)
 	}
+	verOut, verErr := exec.Command(bashPath, "-c", `echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"`).Output()
+	if verErr != nil {
+		t.Fatalf("detect %s version: %v", bashPath, verErr)
+	}
+	var major, minor int
+	if _, err := fmt.Sscanf(string(verOut), "%d %d", &major, &minor); err != nil {
+		t.Fatalf("parse %s version %q: %v", bashPath, verOut, err)
+	}
+	if major > 4 || (major == 4 && minor >= 4) {
+		t.Skipf("%s is bash %d.%d; the empty-array unbound-variable bug only exists on bash < 4.4", bashPath, major, minor)
+	}
+
 	dir := t.TempDir()
 	stubDir := filepath.Join(dir, "bin")
 	if err := os.Mkdir(stubDir, 0o700); err != nil {

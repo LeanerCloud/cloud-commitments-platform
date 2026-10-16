@@ -482,6 +482,12 @@ func TestGCPWIFCLI_IssuerValidated(t *testing.T) {
 		{"trailing slash", "https://cudly.example.com/oidc/"},
 		{"no scheme", "cudly.example.com/oidc"},
 		{"scheme without host", "https://"},
+		{"uppercase scheme", "HTTPS://cudly.example.com/oidc"},
+		{"userinfo", "https://a@b.com"},
+		{"query", "https://a.com/oidc?x=1"},
+		{"fragment", "https://a.com/oidc#f"},
+		{"embedded newline", "https://a.com\nhttps://b.com"},
+		{"IPv6 literal", "https://[::1]/oidc"},
 	}
 	for _, tc := range reject {
 		t.Run("reject/"+tc.name, func(t *testing.T) {
