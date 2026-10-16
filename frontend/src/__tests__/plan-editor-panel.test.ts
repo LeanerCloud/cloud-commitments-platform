@@ -19,9 +19,9 @@ afterEach(() => { dispose(); jest.useRealTimers(); });
 
 test('renders real Create intent and follows unedited notification settings', () => {
   expect(host.hidden).toBe(false); expect(host.textContent).toContain('Save Plan does not save date changes');
-  expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(3);
+  expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(4);
   expect(host.querySelector('[data-preview-step="2"]')?.getAttribute('aria-label')).toContain('target 79.2%');
-  expect(host.querySelectorAll('svg [role=button]')).toHaveLength(5);
+  expect(host.querySelectorAll('svg [role=button]')).toHaveLength(6);
   const notice = form.querySelector<HTMLInputElement>('#plan-notify-days')!; notice.value = '10'; notice.dispatchEvent(new Event('change', { bubbles: true }));
   expect(field('date').value).toBe('2026-10-27');
 });
@@ -43,7 +43,7 @@ test('Enter commits only local dates and reset restores the baseline', () => {
   expect(host.querySelector('.editor-help summary')?.textContent).toBe('Keyboard and touch help');
   expect(field('date').value).toBe('2026-10-20'); expect(host.querySelector('[data-editor="changes"] summary')?.textContent).toContain('(0)');
 });
-test.each([['ramp-step-percent', '25', 4], ['plan-notify-days', '10', 3]])('requires explicit rebuild after edited %s changes', (id, value, count) => {
+test.each([['ramp-step-percent', '25', 4], ['plan-notify-days', '10', 4]])('requires explicit rebuild after edited %s changes', (id, value, count) => {
   change('date', '2026-10-21'); const percent = form.querySelector<HTMLInputElement>(`#${id}`)!;
   percent.value = String(value); percent.dispatchEvent(new Event('change', { bubbles: true }));
   expect(field('rebuild').hidden).toBe(false); field('reset').click(); expect(field('error').textContent).toContain('Rebuild');
@@ -84,7 +84,7 @@ test('keeps the graph stable and error-free when term or payment change', () => 
   payment.value = 'all-upfront'; payment.dispatchEvent(new Event('change', { bubbles: true }));
   expect(field('error').textContent).toBe('');
   expect(host.querySelector('svg')!.innerHTML).toBe(before);
-  expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(3);
+  expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(4);
 });
 
 test('single-step schedules hide the end control and follow the start input', () => {
@@ -106,7 +106,7 @@ test('exposes overlapping points through the Step selector when targets coincide
   change('step', '1'); change('date', '2026-10-21');
   const left = (index: number): number => Number(host.querySelector(`[data-preview-step="${index}"] circle`)!.getAttribute('cx'));
   expect(left(1) - left(0)).toBeLessThan(3);
-  for (const [index, date] of [[0, '2026-10-20'], [1, '2026-10-21'], [2, '2027-10-20']] as const) {
+  for (const [index, date] of [[0, '2026-10-20'], [1, '2026-10-21'], [3, '2027-10-20']] as const) {
     change('step', String(index));
     expect(host.querySelector(`[data-preview-step="${index}"]`)?.getAttribute('aria-pressed')).toBe('true');
     expect(field('date').value).toBe(date);

@@ -19,14 +19,24 @@ test.each([
   expect(intent.dates.slice(0, dates.length)).toEqual(dates);
 });
 
-test('keeps legacy custom shares and dense one-percent step counting', () => {
-  const legacy = buildLocalScheduleIntent({ ...draft, preset: 'custom', stepPercent: '33' });
-  expect(legacy.shares).toEqual([33, 66, 99]);
-  expect(legacy.dates).toEqual(['2026-10-20', '2026-10-27', '2026-11-03']);
+test('counts custom steps with ceil and ends the last share at exactly 100', () => {
+  const custom = buildLocalScheduleIntent({ ...draft, preset: 'custom', stepPercent: '33' });
+  expect(custom.shares).toEqual([33, 66, 99, 100]);
+  expect(custom.dates).toEqual(['2026-10-20', '2026-10-27', '2026-11-03', '2026-11-10']);
   const dense = buildLocalScheduleIntent({ ...draft, preset: 'custom', stepPercent: '1', intervalDays: '1' });
   expect(dense.dates).toHaveLength(100);
   expect(dense.shares).toHaveLength(100);
+  expect(dense.shares[99]).toBe(100);
+  expect(buildLocalScheduleIntent({ ...draft, preset: 'custom', stepPercent: '100' }).shares).toEqual([100]);
   expect(buildLocalScheduleIntent({ ...draft, coverage: '0' }).coverage).toBe(0);
+});
+
+test('every whole percent 1..100 has ceil(100/p) points and ends at 100', () => {
+  for (let percent = 1; percent <= 100; percent++) {
+    const { shares, dates } = buildLocalScheduleIntent({ ...draft, preset: 'custom', stepPercent: String(percent), intervalDays: '1' });
+    expect([percent, shares.length, dates.length, shares[shares.length - 1]]).toEqual([percent, Math.ceil(100 / percent), Math.ceil(100 / percent), 100]);
+    expect(shares.slice(0, -1)).toEqual(Array.from({ length: shares.length - 1 }, (_, i) => (i + 1) * percent));
+  }
 });
 
 test.each([
