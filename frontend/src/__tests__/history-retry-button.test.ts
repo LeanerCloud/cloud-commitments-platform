@@ -268,7 +268,7 @@ describe('History inline Retry button (issue #47)', () => {
     expect(document.querySelectorAll('.history-retry-btn')).toHaveLength(0);
     const hint = document.querySelector('.history-ops-hint');
     expect(hint?.textContent).toContain('Azure savings plans');
-    expect(hint?.getAttribute('title')).toContain('Permanent');
+    expect(hint?.getAttribute('title')).toContain('Permanent: this execution can never be retried; check the account');
     expect(hint?.getAttribute('title')).not.toContain('Operator action required');
   });
 

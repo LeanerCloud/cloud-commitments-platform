@@ -938,7 +938,7 @@ function renderActionCell(p: HistoryPurchase): string {
   if ((p.status || '').toLowerCase() === 'failed') {
     if (p.ops_hint) {
       const title = p.redrive_unsafe
-        ? 'Permanent — this purchase can never be retried; start a new purchase instead'
+        ? 'Permanent: this execution can never be retried; check the account, then start a new purchase if needed'
         : 'Operator action required — Retry will not help until this is fixed';
       return `<span class="history-ops-hint" title="${title}">⚠ ${escapeHtml(p.ops_hint)}</span>`;
     }
