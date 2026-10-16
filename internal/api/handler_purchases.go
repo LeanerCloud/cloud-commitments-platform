@@ -459,6 +459,7 @@ func (h *Handler) authorizePlannedPurchaseCancel(ctx context.Context, session *S
 	// to the creator branch exactly as authorizeSessionCancel does.
 	var anyErr error
 	if hasAny {
+		// Wrapped for consistency; DELETE planned has no token fall-through.
 		anyErr = wrapConstraintDenied(h.requirePermissionConstraints(ctx, session, auth.ActionCancelAny, auth.ResourcePurchases, revokeExecutionConstraintSets(execution)))
 		if anyErr == nil || !isForbidden(anyErr) {
 			return anyErr
@@ -495,14 +496,33 @@ func (h *Handler) authorizePlannedCreatorCancel(ctx context.Context, session *Se
 	}
 	// A creator match alone is enough (delete:purchases holders need no
 	// cancel-own, #961); a creator who also holds cancel-own is bounded by it.
-	hasOwn, err := h.auth.HasPermissionAPI(ctx, session.UserID, auth.ActionCancelOwn, auth.ResourcePurchases)
+	hasOwn, err := h.sessionHoldsVerb(ctx, session, auth.ActionCancelOwn)
 	if err != nil {
-		return fmt.Errorf("permission check failed: %w", err)
+		return err
 	}
 	if !hasOwn {
 		return nil
 	}
 	return wrapConstraintDenied(h.requirePermissionConstraints(ctx, session, auth.ActionCancelOwn, auth.ResourcePurchases, revokeExecutionConstraintSets(execution)))
+}
+
+// sessionHoldsVerb reports whether the principal that requirePermissionConstraints
+// evaluates holds verb on purchases: the owner for a user session, the KEY's
+// effective permissions for a user-API-key session. The key path probes with an
+// empty, non-strict set, which any held permission satisfies whatever its
+// Constraints, so a denial means the verb is not held.
+func (h *Handler) sessionHoldsVerb(ctx context.Context, session *Session, verb string) (bool, error) {
+	var has bool
+	var err error
+	if session.UserAPIKeyID != "" {
+		has, err = h.auth.HasAPIKeyPermissionForConstraintsAPI(ctx, session.UserAPIKeyID, session.UserID, verb, auth.ResourcePurchases, []auth.PermissionConstraints{{}})
+	} else {
+		has, err = h.auth.HasPermissionAPI(ctx, session.UserID, verb, auth.ResourcePurchases)
+	}
+	if err != nil {
+		return false, fmt.Errorf("permission check failed: %w", err)
+	}
+	return has, nil
 }
 
 func (h *Handler) deletePlannedPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID string) (*DeletePlannedPurchaseResponse, error) {

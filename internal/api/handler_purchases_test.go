@@ -5385,7 +5385,9 @@ func TestHandler_deletePlannedPurchase_UserAPIKey_Allowed(t *testing.T) {
 	// since the owning user holds neither update-any nor cancel-any.
 	mockAuth.On("HasPermissionAPI", ctx, ownerUserID, auth.ActionUpdateAny, auth.ResourcePurchases).Return(false, nil)
 	mockAuth.On("HasPermissionAPI", ctx, ownerUserID, auth.ActionCancelAny, auth.ResourcePurchases).Return(false, nil)
-	mockAuth.On("HasPermissionAPI", ctx, ownerUserID, auth.ActionCancelOwn, auth.ResourcePurchases).Return(false, nil)
+	// The key holds delete:purchases only: probing its cancel-own is denied.
+	mockAuth.On("HasAPIKeyPermissionForConstraintsAPI", ctx, keyID, ownerUserID, auth.ActionCancelOwn, auth.ResourcePurchases, []auth.PermissionConstraints{{}}).
+		Return(false, nil)
 
 	creator := ownerUserID
 	execution := &config.PurchaseExecution{ExecutionID: execID, Status: "pending", CreatedByUserID: &creator}
