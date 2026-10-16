@@ -27,6 +27,9 @@ import (
 
 // Handler processes HTTP requests.
 type Handler struct {
+	// extraRoutes is a test-only seam: routes it returns are matched before
+	// the production table. Production leaves it nil.
+	extraRoutes        func(*Router) []Route
 	config             config.StoreInterface
 	credStore          credentials.CredentialStore
 	purchase           PurchaseManagerInterface

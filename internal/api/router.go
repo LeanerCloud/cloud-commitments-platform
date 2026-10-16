@@ -73,6 +73,9 @@ type Router struct {
 func NewRouter(h *Handler) *Router {
 	r := &Router{h: h}
 	r.registerRoutes()
+	if h.extraRoutes != nil {
+		r.routes = append(h.extraRoutes(r), r.routes...)
+	}
 	validateRoutes(r.routes)
 	return r
 }
