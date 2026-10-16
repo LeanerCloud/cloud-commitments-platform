@@ -245,6 +245,9 @@ func TestEnvChecksNegatives(t *testing.T) {
 		"ternary is not a name-identical pass-through": {cr, "true", func(m, e, c string) (string, string, string) {
 			return m, e, strings.Replace(c, "= var.recommendation_schedule", "= var.recommendation_schedule ? 1 : 0", 1)
 		}, false, dimPass},
+		"duplicated module block": {cr, "true", func(m, e, c string) (string, string, string) {
+			return m, e, c + c
+		}, true, ""},
 		"not passed by the module block": {cr, "true", func(m, e, c string) (string, string, string) {
 			return m, e, strings.Replace(c, "recommendation_schedule = var.recommendation_schedule", "", 1)
 		}, false, dimPass},
