@@ -126,7 +126,8 @@ describe('Edit then Create', () => {
     openNewPlanModal();
     const select = el<HTMLSelectElement>('plan-service');
     select.value = 'savings-plans-compute'; select.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(el('plan-create-reason').textContent).toBe('Savings Plans are not supported in the schedule editor');
+    expect(Array.from(document.querySelectorAll('#plan-modal p')).filter(node => node.textContent === 'Savings Plans are not supported in the schedule editor').map(node => node.id)).toEqual(['plan-review-reason']);
+    expect(el('plan-review-reason').getAttribute('aria-live')).toBe('polite');
     expect((Array.from(el<HTMLFormElement>('plan-form').elements).find(item => (item as HTMLButtonElement).type === 'submit') as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -138,10 +139,8 @@ describe('Edit then Create', () => {
     closePlanModal();
     expect(el<HTMLInputElement>('plan-auto-purchase').disabled).toBe(false);
     expect(sp.disabled).toBe(false); expect(sp.textContent).toBe('Compute SP');
-    expect(document.getElementById('plan-create-reason')).toBeNull();
     expect(createReasons()).toEqual([]);
     await openEdit(editorResponse());
-    expect(document.getElementById('plan-create-reason')).toBeNull();
     expect(el<HTMLInputElement>('plan-auto-purchase').disabled).toBe(true); // Edit's own policy, not a Create guard
   });
 

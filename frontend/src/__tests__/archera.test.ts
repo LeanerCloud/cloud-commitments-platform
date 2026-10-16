@@ -36,7 +36,6 @@ jest.mock('../api', () => ({
   getPlans: jest.fn(),
   getPlannedPurchases: jest.fn().mockResolvedValue({ purchases: [] }),
   listPlanAccounts: jest.fn().mockResolvedValue([]),
-  setPlanAccounts: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../api/recommendations', () => ({

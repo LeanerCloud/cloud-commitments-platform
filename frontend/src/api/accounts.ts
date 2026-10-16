@@ -237,10 +237,3 @@ export async function getFederationIaC(
 export async function listPlanAccounts(planId: string): Promise<CloudAccount[]> {
   return apiRequest<CloudAccount[]>(`/plans/${planId}/accounts`);
 }
-
-export async function setPlanAccounts(planId: string, accountIds: string[]): Promise<void> {
-  return apiRequest<void>(`/plans/${planId}/accounts`, {
-    method: 'PUT',
-    body: JSON.stringify({ account_ids: accountIds })
-  });
-}

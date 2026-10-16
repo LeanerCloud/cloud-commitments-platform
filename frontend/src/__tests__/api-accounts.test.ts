@@ -13,8 +13,7 @@ import {
   listAccountServiceOverrides,
   saveAccountServiceOverride,
   deleteAccountServiceOverride,
-  listPlanAccounts,
-  setPlanAccounts
+  listPlanAccounts
 } from '../api/accounts';
 import { apiRequest } from '../api/client';
 
@@ -397,30 +396,6 @@ describe('Accounts API Module', () => {
 
       expect(apiRequest).toHaveBeenCalledWith('/plans/plan-99/accounts');
       expect(result).toEqual([]);
-    });
-  });
-
-  describe('setPlanAccounts', () => {
-    test('calls apiRequest with PUT and account_ids body', async () => {
-      (apiRequest as jest.Mock).mockResolvedValue(undefined);
-
-      await setPlanAccounts('plan-1', ['acc-1', 'acc-2']);
-
-      expect(apiRequest).toHaveBeenCalledWith('/plans/plan-1/accounts', {
-        method: 'PUT',
-        body: JSON.stringify({ account_ids: ['acc-1', 'acc-2'] })
-      });
-    });
-
-    test('handles empty account list', async () => {
-      (apiRequest as jest.Mock).mockResolvedValue(undefined);
-
-      await setPlanAccounts('plan-1', []);
-
-      expect(apiRequest).toHaveBeenCalledWith('/plans/plan-1/accounts', {
-        method: 'PUT',
-        body: JSON.stringify({ account_ids: [] })
-      });
     });
   });
 });

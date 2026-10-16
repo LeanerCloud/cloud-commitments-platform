@@ -146,11 +146,9 @@ describe('Create guards', () => {
     select.value = 'savings-plans-compute'; select.dispatchEvent(new Event('change'));
     expect(onChange).toHaveBeenCalled();
     expect(guards.sync()).toBe('Savings Plans are not supported in the schedule editor');
-    expect(el('plan-create-reason').textContent).toBe('Savings Plans are not supported in the schedule editor');
     select.value = 'ec2';
     expect(guards.sync()).toBe('');
     guards.dispose();
-    expect(document.getElementById('plan-create-reason')).toBeNull();
     expect(el<HTMLInputElement>('plan-auto-purchase').disabled).toBe(false);
   });
 });

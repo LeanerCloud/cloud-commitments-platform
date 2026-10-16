@@ -118,8 +118,6 @@ export {
 export {
   getPlans,
   getPlan,
-  createPlan,
-  updatePlan,
   patchPlan,
   deletePlan
 } from './plans';
@@ -250,7 +248,6 @@ export {
   deleteAccountServiceOverride,
   discoverOrgAccounts,
   listPlanAccounts,
-  setPlanAccounts,
   getFederationIaC
 } from './accounts';
 

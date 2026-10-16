@@ -202,24 +202,21 @@ export function fillEditForm(form: HTMLFormElement, response: PlanEditorResponse
 
 export interface CreateGuards { dispose(): void; sync(): string }
 
-// Create: Savings Plans options visibly disabled, auto-purchase off with its reason, and a visible reason for a programmatically selected SP service.
+// Create: Savings Plans options visibly disabled, auto-purchase off with its reason; sync() names a programmatically selected SP service for the review footer.
 export function mountCreateGuards(form: HTMLFormElement, onChange: () => void): CreateGuards {
   const select = form.querySelector<HTMLSelectElement>('#plan-service')!, auto = form.querySelector<HTMLInputElement>('#plan-auto-purchase')!;
   const wasDisabled = auto.disabled, wasChecked = auto.checked;
   disableSavingsPlanOptions(select);
   auto.disabled = true; auto.checked = false;
-  const autoNote = document.createElement('p'), note = document.createElement('p');
+  const autoNote = document.createElement('p');
   autoNote.id = 'plan-auto-purchase-reason'; autoNote.className = 'help-text'; autoNote.textContent = AUTO_NEEDS_CAP;
   auto.setAttribute('aria-describedby', autoNote.id); (auto.closest('.setting-row') ?? auto).after(autoNote);
-  note.id = 'plan-create-reason'; note.className = 'help-text';
-  const button = Array.from(form.elements).find((item): item is HTMLButtonElement => item instanceof HTMLButtonElement && item.type === 'submit');
-  (button?.closest('.modal-buttons') ?? form).before(note);
   select.addEventListener('change', onChange);
   return {
-    sync: () => { note.textContent = isSavingsPlanSlug(select.value) ? CREATE_SP_BLOCKED : ''; return note.textContent; },
+    sync: () => (isSavingsPlanSlug(select.value) ? CREATE_SP_BLOCKED : ''),
     dispose: () => {
       select.removeEventListener('change', onChange); restoreSavingsPlanOptions(select);
-      auto.removeAttribute('aria-describedby'); auto.disabled = wasDisabled; auto.checked = wasChecked; autoNote.remove(); note.remove();
+      auto.removeAttribute('aria-describedby'); auto.disabled = wasDisabled; auto.checked = wasChecked; autoNote.remove();
     },
   };
 }

@@ -13,12 +13,12 @@ beforeEach(() => {
     <input name="ramp-schedule" type="radio" value="immediate">
     <input id="plan-coverage" value="80"><input id="ramp-step-percent" value="33"><input id="ramp-interval-days" value="7">
     <input id="plan-notify-days" value="3"><input id="plan-term" value="1"><input id="plan-payment" value="monthly"></form></div></div>`;
-  form = document.querySelector('form')!; host = document.querySelector('section')!; dispose = mountPlanEditorPanel(host, form);
+  form = document.querySelector('form')!; host = document.querySelector('section')!; dispose = mountPlanEditorPanel(host, form).dispose;
 });
 afterEach(() => { dispose(); jest.useRealTimers(); });
 
 test('renders real Create intent and follows unedited notification settings', () => {
-  expect(host.hidden).toBe(false); expect(host.textContent).toContain('Save Plan does not save date changes');
+  expect(host.hidden).toBe(false); expect(host.textContent).toContain('not scheduled until you review and save');
   expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(4);
   expect(host.querySelector('[data-preview-step="2"]')?.getAttribute('aria-label')).toContain('target 79.2%');
   expect(host.querySelectorAll('svg [role=button]')).toHaveLength(6);

@@ -11,10 +11,18 @@ export function readPlanScheduleInput(form: HTMLFormElement): PlanScheduleIntent
     notificationDays: value('plan-notify-days'), term: value('plan-term'), payment: value('plan-payment') };
 }
 
-export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): () => void {
+export interface PlanEditorPanelHandle {
+  dispose(): void;
+  draft(): EditorDraft | null;
+  // The ramp the draft was built from; null while the settings changed since (Rebuild needed) or there is no draft.
+  ramp(): { percent: number; intervalDays: number } | null;
+  subscribe(listener: () => void): () => void;
+}
+
+export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): PlanEditorPanelHandle {
   host.hidden = false;
   host.closest('.plan-editor-layout')?.classList.add('has-editor-draft');
-  host.innerHTML = `<h3>Proposed purchase dates</h3><p class="editor-draft-notice">Local draft. These dates are not scheduled. Save Plan does not save date changes.</p>
+  host.innerHTML = `<h3>Proposed purchase dates</h3><p class="editor-draft-notice">Local draft. These dates are not scheduled until you review and save the plan.</p>
     <div class="schedule-preview-scroll" tabindex="0" aria-label="Proposed purchase calendar"></div>
     <p class="editor-target help-text"></p><p class="help-text">Drag a point to change its date, or Start/End to space the dates.</p>
     <details class="editor-help"><summary>Keyboard and touch help</summary>
@@ -34,7 +42,8 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
   let disposeInteraction: (() => void) | undefined;
   const inertBefore = new Map<HTMLElement, boolean>();
   const inertTargets = [form, ...host.closest('.modal')!.querySelectorAll<HTMLElement>('.modal-buttons button:not(#close-plan-modal-btn)')];
-  let state: EditorDraft | null = null, dirty: 'step' | 'range' | null = null;
+  let state: EditorDraft | null = null, dirty: 'step' | 'range' | null = null, built: { percent: number; intervalDays: number } | null = null;
+  const listeners = new Set<() => void>();
   const rebuildMessage = "Schedule settings changed. Rebuild proposed dates to replace your local date edits.";
   const error = (message: string): void => {
     try { buildLocalScheduleIntent(readPlanScheduleInput(form)); }
@@ -42,7 +51,8 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     field('error').textContent = message;
   };
   const block = (count: number): [number, number] | null => (count > 1 ? [0, count - 1] : null);
-  const paint = (): void => {
+  const paint = (): void => { try { paintNow(); } finally { listeners.forEach(listener => listener()); } };
+  const paintNow = (): void => {
     step.disabled = !state || !!gestureFrame || dirty !== null; date.disabled = !state || !!gestureFrame || dirty === 'range';
     start.disabled = !state || !!gestureFrame || dirty === 'step'; end.disabled = !state || !!gestureFrame || dirty === 'step';
     reset.disabled = !state || !!gestureFrame; rebuild.disabled = !!gestureFrame;
@@ -104,8 +114,8 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     try {
       const intent = buildLocalScheduleIntent(readPlanScheduleInput(form));
       state = createEditorDraft({ kind: 'create', totalSteps: intent.dates.length, shares: intent.shares, dates: intent.dates });
-      coverage = intent.coverage; dirty = null; rebuild.hidden = true; error(''); paint();
-    } catch (failure) { error((failure as Error).message); paint(); }
+      coverage = intent.coverage; built = { percent: intent.percent, intervalDays: intent.intervalDays }; dirty = null; rebuild.hidden = true; error(''); paint();
+    } catch (failure) { built = null; error((failure as Error).message); paint(); }
   };
   const commit = (): void => {
     if (!state || gestureFrame) return;
@@ -137,7 +147,7 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
       try { coverage = buildLocalScheduleIntent(readPlanScheduleInput(form)).coverage; if (!dirty && rebuild.hidden) error(''); paint(); }
       catch (failure) { error((failure as Error).message); }
     } else if (target.name === 'ramp-schedule' || ['ramp-step-percent', 'ramp-interval-days', 'plan-notify-days'].includes(target.id)) {
-      if (state && (dirty || draftDateChanges(state).length)) { rebuild.hidden = false; error(rebuildMessage); }
+      if (state && (dirty || draftDateChanges(state).length)) { rebuild.hidden = false; error(rebuildMessage); listeners.forEach(listener => listener()); }
       else build();
     }
   };
@@ -153,11 +163,12 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
   };
   form.addEventListener('submit', submit, true);
   build();
-  return () => {
+  const dispose = (): void => {
     host.removeEventListener('input', input); host.removeEventListener('change', change); host.removeEventListener('keydown', keydown);
     form.removeEventListener('input', settings); form.removeEventListener('change', settings);
     disposeInteraction?.(); form.removeEventListener('submit', submit, true);
     host.replaceChildren(); host.hidden = true; host.closest('.plan-editor-layout')?.classList.remove('has-editor-draft');
-    state = null;
+    state = null; listeners.clear();
   };
+  return { dispose, draft: () => state, ramp: () => (rebuild.hidden ? built : null), subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; } };
 }

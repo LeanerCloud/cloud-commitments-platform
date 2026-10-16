@@ -6,7 +6,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { openCreatePlanModal, setupPlanHandlers, savePlan, _resetRampHandlersForTest } from '../plans';
+import { openCreatePlanModal, setupPlanHandlers, _resetRampHandlersForTest } from '../plans';
 
 jest.mock('../api', () => ({
   getPlans: jest.fn(),
@@ -42,7 +42,6 @@ jest.mock('../toast', () => ({ showToast: jest.fn(() => ({ dismiss: jest.fn() })
 jest.mock('../confirmDialog', () => ({ confirmDialog: jest.fn(() => Promise.resolve(true)) }));
 
 import * as api from '../api';
-import { showToast } from '../toast';
 import { CANONICAL_PLAN_SERVICES } from '../lib/plan-service-ids';
 
 function loadRealIndexBody(): string {
@@ -94,20 +93,5 @@ describe('plan modal service ids (#608)', () => {
     expect(chosen.value).toBe(service);
     expect(chosen.parentElement).toBe(azureOptgroup());
     expect(chosen.textContent).toBe(label);
-  });
-
-  test('savePlan with no service selected does not call the API and shows an error', async () => {
-    (document.getElementById('plan-service') as HTMLSelectElement).selectedIndex = -1;
-    const save = jest.fn();
-    (api as unknown as Record<string, unknown>)['createPlan'] = save;
-    (api as unknown as Record<string, unknown>)['updatePlan'] = save;
-
-    await savePlan(new Event('submit'));
-
-    expect(save).not.toHaveBeenCalled();
-    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'error',
-      message: expect.stringContaining('Service is required'),
-    }));
   });
 });

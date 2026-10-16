@@ -8,7 +8,7 @@ import { buildCommitmentSummary, withIntro } from './commitmentSummary';
 import { formatDate, formatTerm, getStatusBadge, escapeHtml, escapeHtmlAttr, formatCurrency, CURRENCY_DEFAULT_DIGITS, providerBadgeHtml } from './utils';
 import { showToast } from './toast';
 import { confirmDialog } from './confirmDialog';
-import type { PlansResponse, LocalPlan, SavePlanData } from './types';
+import type { PlansResponse, LocalPlan } from './types';
 import { viewPlanHistory } from './history';
 import type { PlannedPurchase } from './api';
 import { populateTermSelect, populatePaymentSelect, isValidCombination, normalizePaymentValue } from './commitmentOptions';
@@ -18,6 +18,7 @@ import { canAccess } from './permissions';
 import { parseNumericFilter, applyColumnFilters as applyColumnFiltersLib } from './lib/column-filters';
 import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { mountPlanEditorPanel } from './plan-editor-panel';
+import { mountCreateReview } from './plan-editor-create';
 import { getPlanEditor, managedPlanRefusal, PlanEditorResponse } from './api/plan-editor';
 import { mountPlanEditorEditPanel } from './plan-editor-edit-panel';
 import { fillEditForm, mountCreateGuards, type CreateGuards } from './lib/plan-editor-form';
@@ -1292,11 +1293,9 @@ function setEditAccounts(accounts: readonly { id: string; name: string }[]): voi
 
 let disposePlanEditor: (() => void) | undefined;
 let createGuards: CreateGuards | undefined;
-let planEditorMode: 'create' | 'complete-edit' = 'create';
 let activePlanReview: PlanReviewHandle | undefined;
 function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse, notice?: readonly string[]): void {
   disposePlanEditor?.(); disposePlanEditor = undefined;
-  planEditorMode = editor ? 'complete-edit' : 'create';
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
   const advanced = modal.querySelector<HTMLDetailsElement>('#plan-advanced-settings');
   let editForm: ReturnType<typeof fillEditForm> | undefined;
@@ -1329,7 +1328,15 @@ function openPlanForm(modal: HTMLElement, editor?: PlanEditorResponse, notice?: 
         onSaved: (_saved, open) => { void loadPlans(); if (!open) showToast({ message: 'Plan saved', kind: 'success' }); },
         reload: async saved => (await editPlan(editor.plan.id, savedLines(saved))) === 'opened' });
       activePlanReview = planReview;
-    } else disposePanel = host && form ? mountPlanEditorPanel(host, form) : undefined;
+    } else if (host && form) {
+      const panel = mountPlanEditorPanel(host, form);
+      disposePanel = panel.dispose;
+      const button = Array.from(form.elements).find((item): item is HTMLButtonElement => item instanceof HTMLButtonElement && item.type === 'submit');
+      if (button) planReview = mountCreateReview({ form, host, button, panel, accountIds: () => (document.getElementById('plan-account-ids') as HTMLInputElement).value.split(',').filter(Boolean),
+        guard: () => createGuards?.sync() ?? '', generation: () => planModalSession,
+        onSaved: (_saved, open) => { void loadPlans(); showToast({ message: 'Plan created successfully', kind: 'success', timeout: 5_000 }); if (open) closePlanModal(); } });
+      activePlanReview = planReview;
+    }
   } catch (error) { disposePlanEditor(); disposePlanEditor = undefined; throw error; }
   refreshPlanSaveButtonState();
   openModal(modal, { initialFocus: editor ? '[data-edit="heading"]' : '#plan-name', onClose: () => {
@@ -1381,138 +1388,15 @@ async function deletePlanAction(planId: string): Promise<void> {
 }
 
 /**
- * Save plan (create or update)
+ * Save plan: both modes go through the plan editor review
  */
 export async function savePlan(e: Event): Promise<void> {
   e.preventDefault();
-  if (planEditorMode === 'complete-edit') { activePlanReview?.review(); return; } // never the legacy writers below
-
-  const planId = (document.getElementById('plan-id') as HTMLInputElement).value;
-  const rampScheduleRadio = document.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked');
-  const rampSchedule = rampScheduleRadio?.value || 'immediate';
-
-  const service = (document.getElementById('plan-service') as HTMLSelectElement).value;
-  if (!service) {
-    showToast({ message: 'Service is required: choose a supported service before saving the plan', kind: 'error' });
-    return;
-  }
-
-  // Parse and validate integer fields up front. Use Number() not parseInt so
-  // fractions like "2.5" fail Number.isInteger() rather than silently truncating
-  // to 2. Mirrors the strict parse pattern from handleAddPurchases and settings.ts
-  // validatePurchasingSettings (feedback_strict_int_parse, finding 11-M1).
-  const rawTerm = Number((document.getElementById('plan-term') as HTMLSelectElement).value);
-  const rawCoverage = Number((document.getElementById('plan-coverage') as HTMLInputElement).value);
-  const rawNotifyDays = Number((document.getElementById('plan-notify-days') as HTMLInputElement).value);
-
-  if (!Number.isFinite(rawTerm) || !Number.isInteger(rawTerm) || rawTerm < 1) {
-    showToast({ message: 'Term must be a valid whole number of years', kind: 'error' });
-    return;
-  }
-  if (!Number.isFinite(rawCoverage) || !Number.isInteger(rawCoverage) || rawCoverage < 0 || rawCoverage > 100) {
-    showToast({ message: 'Target Coverage must be a whole number between 0 and 100', kind: 'error' });
-    return;
-  }
-  if (!Number.isFinite(rawNotifyDays) || !Number.isInteger(rawNotifyDays) || rawNotifyDays < 1 || rawNotifyDays > 30) {
-    showToast({ message: 'Notification Days must be a whole number between 1 and 30', kind: 'error' });
-    return;
-  }
-
-  const plan: SavePlanData = {
-    name: (document.getElementById('plan-name') as HTMLInputElement).value,
-    description: (document.getElementById('plan-description') as HTMLTextAreaElement).value,
-    provider: (document.getElementById('plan-provider') as HTMLSelectElement).value,
-    service,
-    term: rawTerm,
-    payment: (document.getElementById('plan-payment') as HTMLSelectElement).value,
-    target_coverage: rawCoverage,
-    ramp_schedule: rampSchedule,
-    auto_purchase: (document.getElementById('plan-auto-purchase') as HTMLInputElement).checked,
-    notification_days_before: rawNotifyDays,
-    enabled: (document.getElementById('plan-enabled') as HTMLInputElement).checked
-  };
-
-  if (rampSchedule === 'custom') {
-    const rawStepPercent = Number((document.getElementById('ramp-step-percent') as HTMLInputElement).value);
-    const rawIntervalDays = Number((document.getElementById('ramp-interval-days') as HTMLInputElement).value);
-    if (!Number.isFinite(rawStepPercent) || !Number.isInteger(rawStepPercent) || rawStepPercent < 1 || rawStepPercent > 100) {
-      showToast({ message: 'Ramp Step Percent must be a whole number between 1 and 100', kind: 'error' });
-      return;
-    }
-    if (!Number.isFinite(rawIntervalDays) || !Number.isInteger(rawIntervalDays) || rawIntervalDays < 1 || rawIntervalDays > 365) {
-      showToast({ message: 'Ramp Interval Days must be a whole number between 1 and 365', kind: 'error' });
-      return;
-    }
-    plan.custom_step_percent = rawStepPercent;
-    plan.custom_interval_days = rawIntervalDays;
-  }
-
-  // Use the snapshot stamped at Plan-button click time (#273 CR follow-up).
-  // Reading state.getVisibleRecommendations() / getSelectedRecommendation
-  // IDs() here would re-derive the target at Save time — racing Refresh,
-  // filter changes, and deselections that happen while the modal is open.
-  // openCreatePlanModal(snapshot) freezes the Plan target the moment the
-  // user clicked "Plan from N selected"; we read it back here.
-  // openNewPlanModal() clears the snapshot for the New-Plan-from-scratch
-  // path (no pre-resolved target — plan submits without `recommendations`).
-  if (pendingPlanRecommendations.length > 0) {
-    plan.recommendations = [...pendingPlanRecommendations];
-  }
-
-  // Universal-plans fix: read the selected account chips and reject submit
-  // when the list is empty. The Save button is also disabled in the same
-  // condition via refreshPlanSaveButtonState() so this branch is mostly a
-  // belt-and-suspenders against scripted form submission; the toast keeps
-  // the failure mode loud either way.
-  const accountIdsField = document.getElementById('plan-account-ids') as HTMLInputElement | null;
-  const accountIds = accountIdsField?.value ? accountIdsField.value.split(',').filter(Boolean) : [];
-  if (accountIds.length === 0) {
-    showToast({
-      message: 'Target Accounts is required: pick at least one account before saving the plan.',
-      kind: 'error',
-    });
-    return;
-  }
-  plan.target_accounts = accountIds;
-
-  try {
-    if (planId) {
-      await api.updatePlan(planId, plan as unknown as api.CreatePlanRequest);
-      // Update flow: push the selected account list via the dedicated endpoint.
-      await api.setPlanAccounts(planId, accountIds);
-    } else {
-      await api.createPlan(plan as unknown as api.CreatePlanRequest);
-      // Create flow: backend inserted plan_accounts atomically from
-      // target_accounts in the POST body (see internal/api/handler_plans.go
-      // createPlan). No follow-up account-write needed.
-    }
-
-    closePlanModal();
-    await loadPlans();
-    showToast({ message: planId ? 'Plan updated successfully' : 'Plan created successfully', kind: 'success', timeout: 5_000 });
-  } catch (error) {
-    console.error('Failed to save plan:', error);
-    const err = error as Error;
-    showToast({ message: `Failed to save plan: ${err.message}`, kind: 'error' });
-  }
+  activePlanReview?.review(); // preview, review and the atomic Save: never a legacy write
 }
 
-// refreshPlanSaveButtonState toggles the Save button's disabled state based
-// on whether at least one Target Account is selected. Universal plans (rows
-// in purchase_plans with no plan_accounts row) are no longer allowed by the
-// API; surfacing the failure in the disabled state is friendlier than
-// letting the user fill in every other field and get rejected at submit.
 function refreshPlanSaveButtonState(): void {
-  const form = document.getElementById('plan-form') as HTMLFormElement | null;
-  if (!form) return;
-  const submitBtn = Array.from(form.elements).find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement && element.type === 'submit');
-  if (!submitBtn) return;
-  const hasAccounts = planSelectedAccounts.length > 0;
-  if (planEditorMode === 'complete-edit') return; // the review module owns the button in Edit
-  const blocked = createGuards?.sync() ?? '';
-  submitBtn.disabled = !hasAccounts || blocked !== '';
-  submitBtn.title = hasAccounts ? '' : 'Select at least one Target Account to save the plan';
-  submitBtn.removeAttribute('aria-describedby');
+  activePlanReview?.refresh(); // the review module owns the submit button in Create and Edit
 }
 
 /**
@@ -2456,6 +2340,6 @@ function updateServiceDropdownForProvider(provider: string): void {
  * Must NOT be called in production code.
  */
 export function _resetRampHandlersForTest(): void {
-  disposePlanEditor?.(); disposePlanEditor = undefined; planEditorMode = 'create'; planModalSession++;
+  disposePlanEditor?.(); disposePlanEditor = undefined; planModalSession++;
   rampHandlersInstalled = false;
 }

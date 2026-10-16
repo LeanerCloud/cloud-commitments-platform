@@ -18,7 +18,7 @@ function integer(value: string, label: string, min: number, max: number): number
   return parsed;
 }
 
-export function buildLocalScheduleIntent(input: PlanScheduleIntentInput): { coverage: number; notificationDays: number; dates: string[]; shares: number[] } {
+export function buildLocalScheduleIntent(input: PlanScheduleIntentInput): { coverage: number; notificationDays: number; dates: string[]; shares: number[]; percent: number; intervalDays: number } {
   const coverage = integer(input.coverage, 'Target coverage', 0, 100);
   const notice = integer(input.notificationDays, 'Notification days', 1, 30);
   // Mirrors presets in internal/config/types.go; custom counting is the server's ceil(100/p) with the last share at exactly 100.
@@ -30,5 +30,5 @@ export function buildLocalScheduleIntent(input: PlanScheduleIntentInput): { cove
   const count = cumulativeStepCount(percent);
   const start = Date.parse(`${suggestedPurchaseStartDate(notice)}T00:00:00Z`);
   const dates = Array.from({ length: count }, (_, index) => new Date(start + index * interval * 86_400_000).toISOString().slice(0, 10));
-  return { coverage, notificationDays: notice, dates, shares: dates.map((_, index) => (index === count - 1 ? 100 : (index + 1) * percent)) };
+  return { coverage, notificationDays: notice, percent, intervalDays: interval, dates, shares: dates.map((_, index) => (index === count - 1 ? 100 : (index + 1) * percent)) };
 }

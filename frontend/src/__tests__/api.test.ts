@@ -23,8 +23,6 @@ import {
   refreshRecommendations,
   getPlans,
   getPlan,
-  createPlan,
-  updatePlan,
   patchPlan,
   deletePlan,
   getHistory,
@@ -36,7 +34,7 @@ import {
   getPublicInfo,
   getDeploymentInfo
 } from '../api';
-import type { CreatePlanRequest, Config, Recommendation } from '../api';
+import type { Config, Recommendation } from '../api';
 
 describe('Authentication', () => {
   beforeEach(() => {
@@ -806,52 +804,6 @@ describe('Plans API', () => {
     test('fetches single plan by ID', async () => {
       await getPlan('plan-123');
       expect(fetchMock).toHaveBeenCalledWith('/api/plans/plan-123', expect.anything());
-    });
-  });
-
-  describe('createPlan', () => {
-    test('sends POST with plan data', async () => {
-      const plan: CreatePlanRequest = {
-        name: 'Test Plan',
-        enabled: true,
-        auto_purchase: false,
-        notification_days_before: 3,
-        services: { 'aws:ec2': { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 80 } },
-        ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1 },
-        target_accounts: ['11111111-1111-1111-1111-111111111111'],
-      };
-      await createPlan(plan);
-
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/plans',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify(plan)
-        })
-      );
-    });
-  });
-
-  describe('updatePlan', () => {
-    test('sends PUT with plan data', async () => {
-      const plan: CreatePlanRequest = {
-        name: 'Updated Plan',
-        enabled: true,
-        auto_purchase: true,
-        notification_days_before: 5,
-        services: { 'aws:rds': { provider: 'aws', service: 'rds', enabled: true, term: 1, payment: 'no-upfront', coverage: 70 } },
-        ramp_schedule: { type: 'weekly', percent_per_step: 25, step_interval_days: 7, current_step: 0, total_steps: 4 },
-        target_accounts: ['22222222-2222-2222-2222-222222222222'],
-      };
-      await updatePlan('plan-123', plan);
-
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/plans/plan-123',
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify(plan)
-        })
-      );
     });
   });
 

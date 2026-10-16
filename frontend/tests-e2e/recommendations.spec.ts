@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { response as editorResponse } from '../src/__tests__/fixtures/plan-editor';
 import { mockApi, RECS, seedAuth, type MockHandle, type SmokeRec } from './fixtures/recs';
 
 async function openOpportunities(page: Page): Promise<void> {
@@ -99,10 +100,18 @@ test('selection updates the sticky action summary and submits the selected purch
   });
 });
 
-test('submits a plan with the selected recommendation snapshot', async ({ page }) => {
-  const api = await mockApi(page);
+test('creates a plan through the plan editor with the selected recommendation prefilled', async ({ page }) => {
+  await mockApi(page);
+  const sent: Array<{ method: string; path: string; body: string }> = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() !== 'GET' && path.startsWith('/api/plans')) sent.push({ method: request.method(), path, body: request.postData() ?? '' });
+  });
+  const diff = { plan: [], services: [], accounts: { added: [], removed: [] }, steps: [], totals: { moved: 0, created: 1, canceled: 0, approvals_affected: 0 } };
+  await page.route('**/api/plans/*/editor/preview', (route) => route.fulfill({ json: { reviewed_diff: 'sha256:' + 'a'.repeat(64), required_cancellation_ids: [], required_reapproval_ids: [], diff } }));
+  await page.route('**/api/plans/*/editor', (route) => route.fulfill({ json: { replayed: false, mapping: [], diff, editor: editorResponse() } }));
   await openOpportunities(page);
-  const selected = RECS.find((rec) => rec.id === 'r01') as SmokeRec;
+  const selected = RECS.find((rec) => rec.id === 'r10') as SmokeRec;
 
   await selectRecommendation(page, selected.id);
   await page.getByRole('button', { name: 'Plan from 1 selected' }).click();
@@ -113,24 +122,16 @@ test('submits a plan with the selected recommendation snapshot', async ({ page }
   await expect(modal.getByLabel('Term:')).toHaveValue(String(selected.term));
   await expect(modal.getByLabel('Payment:')).toHaveValue(selected.payment);
   await expect(modal.locator('#plan-account-ids')).toHaveValue(selected.cloud_account_id);
-  await modal.getByRole('button', { name: 'Save Plan' }).click();
-
-  await expect.poll(() => callsTo(api, '/api/plans').length).toBe(1);
-  const body = callsTo(api, '/api/plans')[0] as {
-    provider: string;
-    service: string;
-    term: number;
-    payment: string;
-    target_accounts: string[];
-    recommendations: SmokeRec[];
-  };
-  expect(body).toMatchObject({
-    provider: selected.provider,
-    service: selected.service,
-    term: selected.term,
-    payment: selected.payment,
-    target_accounts: [selected.cloud_account_id],
-  });
-  expect(body.recommendations).toEqual([selected]);
+  await modal.getByRole('button', { name: 'Review changes' }).click();
+  await modal.getByRole('button', { name: 'Save changes' }).click();
   await expect(modal).toBeHidden();
+
+  expect(sent.map((call) => `${call.method} ${call.path.replace(/[0-9a-f-]{36}/, '<id>')}`)).toEqual(['POST /api/plans/<id>/editor/preview', 'PUT /api/plans/<id>/editor']);
+  const body = JSON.parse(sent[1]!.body) as { expected_revision: null; plan: { services: Record<string, unknown>; target_accounts: string[] } };
+  expect(body.expected_revision).toBeNull();
+  expect(body.plan.services).toEqual({
+    [`${selected.provider}/${selected.service}`]: expect.objectContaining({ provider: selected.provider, service: selected.service, term: selected.term, payment: selected.payment, enabled: true }),
+  });
+  expect(body.plan.target_accounts).toEqual([selected.cloud_account_id]);
+  expect(sent[1]!.body).not.toContain('recommendations');
 });

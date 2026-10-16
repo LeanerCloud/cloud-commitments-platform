@@ -7,12 +7,16 @@ import { buildEditRequest, serializeRequest, withReview } from './lib/plan-edito
 import { newUuid } from './lib/uuid';
 import { createReviewRegion, plural, type ReviewAcknowledgments, type ReviewRegion } from './plan-editor-review';
 
-export interface PlanReviewDeps {
-  readonly response: PlanEditorResponse;
+// What the review/Save lifecycle needs; Edit and Create each supply their own request source.
+export interface ReviewCore {
   readonly host: HTMLElement;
   readonly button: HTMLButtonElement;
-  readonly edit: PlanEditorEditHandle;
-  readonly form: EditFormModel;
+  readonly planId: () => string;
+  // The request for the current form and draft, or the reason it cannot be built. `commandId` is the frozen id of this intent.
+  readonly build: (commandId: string) => { readonly request: PlanEditorRequest } | { readonly blocked: string };
+  readonly subscribe: (listener: () => void) => Array<() => void>;
+  // Create only: replaces the server's message for a failed Save.
+  readonly failureText?: (failure: PlanEditorFailure) => string | null;
   // The dialog session counter: any open, close or reload bumps it, which drops a late preview.
   readonly generation: () => number;
   // Called once a Save succeeded; `open` is false when the dialog changed while it was in flight (then nothing else runs).
@@ -22,8 +26,13 @@ export interface PlanReviewDeps {
   // [summary, mapping] shown in the footer of a freshly rebuilt dialog after a Save.
   readonly notice?: readonly string[];
 }
+export interface PlanReviewDeps extends Omit<ReviewCore, 'planId' | 'build' | 'subscribe' | 'failureText'> {
+  readonly response: PlanEditorResponse;
+  readonly edit: PlanEditorEditHandle;
+  readonly form: EditFormModel;
+}
 // ready() is the acknowledged "ready to save" state E4b-3 reads; it is null until every required acknowledgment is checked.
-export interface PlanReviewHandle { review(): void; ready(): ReviewAcknowledgments | null; dispose(): void }
+export interface PlanReviewHandle { review(): void; ready(): ReviewAcknowledgments | null; refresh(): void; dispose(): void }
 
 const previewUncertainText = 'The preview did not complete. Nothing was saved; try Review changes again.';
 const reloadFailedText = 'Saved, but reloading failed. Reload to keep editing.';
@@ -32,9 +41,12 @@ export const savedLines = (saved: PlanEditorSaveResponse): string[] => {
   const t = saved.diff.totals, changes = saved.mapping.flatMap(item => item.new_execution_id !== null
     ? [`step ${item.step_number} ${item.old_execution_id !== null ? 'replaced' : 'created'}, now ${item.scheduled_date ?? 'undated'}`]
     : item.old_execution_id !== null ? [`step ${item.step_number} canceled`] : []);
-  return [`${saved.replayed ? 'Already applied.' : 'Saved.'} ${plural(t.moved, 'date', 'dates')} moved; ${plural(t.canceled, 'step', 'steps')} removed; ${plural(t.approvals_affected, 'approval', 'approvals')} affected.`,
+  return [`${saved.replayed ? 'Already applied.' : 'Saved.'} ${totalsText(t)}.`,
     changes.length ? `${plural(changes.length, 'purchase', 'purchases')} changed: ${changes.join('; ')}.` : ''];
 };
+// Created steps lead the line only when there are any, so an Edit without new steps reads as before.
+const totalsText = (t: { moved: number; created: number; canceled: number; approvals_affected: number }): string =>
+  `${t.created > 0 ? `${plural(t.created, 'step', 'steps')} created; ` : ''}${plural(t.moved, 'date', 'dates')} moved; ${plural(t.canceled, 'step', 'steps')} removed; ${plural(t.approvals_affected, 'approval', 'approvals')} affected`;
 export const previewFailureText = (failure: PlanEditorFailure): string => failure.kind === 'uncertain' ? previewUncertainText : failure.message;
 
 // An enabled stored service the editor cannot handle makes the whole view read-only (root ACK Q4). Disabled entries are preserved untouched.
@@ -60,28 +72,40 @@ export function saveBlockers(response: PlanEditorResponse, patch: EditFormPatch)
 }
 
 export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
-  const { response, host, button, edit, form } = deps;
+  const { response, host, edit, form } = deps;
+  const readOnly = unsupportedServiceBlocker(response);
+  if (readOnly) { edit.setReadOnly(readOnly); form.lockAll(readOnly); }
+  return mountReview({ ...deps, planId: () => response.plan.id,
+    subscribe: sync => [edit.subscribe(sync), form.onChange(sync)],
+    build: commandId => {
+      const blocker = saveBlockers(response, form.patch());
+      if (blocker) return { blocked: blocker };
+      const draft = edit.draft();
+      const built = buildEditRequest({ response, formPatch: form.patch(), draft, commandId });
+      if ('unavailable' in built) return { blocked: built.unavailable };
+      if (draft && !canReviewEditorDraft(draft)) {
+        return { blocked: host.querySelector('[data-edit="status"]')?.textContent || host.querySelector('[data-edit="error"]')?.textContent || 'Fix the draft dates before reviewing.' };
+      }
+      const unchanged = Object.keys(built.plan).length === 0 && (draft === null || draftDateChanges(draft).length === 0);
+      return unchanged ? { blocked: 'No changes to review' } : { request: built };
+    } });
+}
+
+export function mountReview(core: ReviewCore): PlanReviewHandle {
+  const { host, button } = core, deps = core;
   const original = { label: button.textContent, disabled: button.disabled, describedBy: button.getAttribute('aria-describedby') };
   // In the dialog footer, which stays on screen while the editor scrolls.
   const feedback = document.createElement('div'), mapping = document.createElement('p'), totals = document.createElement('p'), alert = document.createElement('p'), reason = document.createElement('p');
-  feedback.id = 'plan-review-feedback'; totals.setAttribute('role', 'status'); alert.setAttribute('role', 'alert'); reason.className = 'help-text'; reason.id = 'plan-review-reason';
+  feedback.id = 'plan-review-feedback'; totals.setAttribute('role', 'status'); alert.setAttribute('role', 'alert'); reason.className = 'help-text'; reason.id = 'plan-review-reason'; reason.setAttribute('aria-live', 'polite');
   mapping.className = 'help-text'; mapping.id = 'plan-review-mapping'; feedback.append(totals, mapping, alert, reason);
   (button.closest('.modal-buttons') ?? host).before(feedback);
   let intentKey = '', commandId = newUuid(), pending: { key: string; abort: AbortController } | undefined;
   let disposed = false;
 
   const current = (): { key: string; body: string; request: PlanEditorRequest } | { blocked: string } => {
-    const blocker = saveBlockers(response, form.patch());
-    if (blocker) return { blocked: blocker };
-    const draft = edit.draft();
-    const built = buildEditRequest({ response, formPatch: form.patch(), draft, commandId });
-    if ('unavailable' in built) return { blocked: built.unavailable };
-    if (draft && !canReviewEditorDraft(draft)) {
-      return { blocked: host.querySelector('[data-edit="status"]')?.textContent || host.querySelector('[data-edit="error"]')?.textContent || 'Fix the draft dates before reviewing.' };
-    }
-    const unchanged = Object.keys(built.plan).length === 0 && (draft === null || draftDateChanges(draft).length === 0);
-    if (unchanged) return { blocked: 'No changes to review' };
-    return { key: serializeRequest({ ...built, command_id: '' }), body: serializeRequest(built), request: built };
+    const built = core.build(commandId);
+    if ('blocked' in built) return built;
+    return { key: serializeRequest({ ...built.request, command_id: '' }), body: serializeRequest(built.request), request: built.request };
   };
   const showLines = (lines: readonly string[]): void => { totals.textContent = lines[0] ?? ''; mapping.textContent = lines[1] ?? ''; };
   if (deps.notice) showLines(deps.notice);
@@ -123,7 +147,7 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
     saving = true; layout.setAttribute('inert', ''); button.disabled = true; button.textContent = 'Saving...'; alert.textContent = '';
     const unlock = (): void => { saving = false; restoreInert?.(); restoreInert = undefined; };
     restoreInert = () => { layout.toggleAttribute('inert', wasInert); };
-    void savePlanEditor(response.plan.id, sent.bodyJson).then(saved => {
+    void savePlanEditor(core.planId(), sent.bodyJson).then(saved => {
       const open = !disposed && generation === deps.generation();
       if (!open) { deps.onSaved(saved, false); return; }
       showLines(savedLines(saved)); clearRegion(); frozen = undefined; reviewed = undefined;
@@ -133,7 +157,7 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
       if (disposed) return;
       unlock();
       const failure = planEditorFailure(error);
-      alert.textContent = failure.message;
+      alert.textContent = core.failureText?.(failure) ?? failure.message;
       // An uncertain outcome keeps the frozen command so the retry is byte-identical; any other failure needs a new review.
       if (failure.kind !== 'uncertain') { clearRegion(); frozen = undefined; }
       sync();
@@ -148,10 +172,10 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
     clearRegion(); totals.textContent = ''; alert.textContent = '';
     const generation = deps.generation(), abort = new AbortController();
     const fresh = (): boolean => !disposed && !abort.signal.aborted && generation === deps.generation();
-    void previewPlanEditor(response.plan.id, now.body, abort.signal).then(result => {
+    void previewPlanEditor(core.planId(), now.body, abort.signal).then(result => {
       if (!fresh()) return;
       const t = result.diff.totals;
-      totals.textContent = `${plural(t.moved, 'date', 'dates')} moved; ${plural(t.canceled, 'step', 'steps')} removed; ${plural(t.approvals_affected, 'approval', 'approvals')} affected`;
+      totals.textContent = totalsText(t);
       reviewed = now.request;
       region = createReviewRegion(result, sync);
       const anchor = host.querySelector('.schedule-preview-scroll');
@@ -167,12 +191,10 @@ export function mountPlanReview(deps: PlanReviewDeps): PlanReviewHandle {
     pending = { key: now.key, abort };
   };
 
-  const readOnly = unsupportedServiceBlocker(response);
-  if (readOnly) { edit.setReadOnly(readOnly); form.lockAll(readOnly); }
-  const unsubscribe = [edit.subscribe(sync), form.onChange(sync)];
+  const unsubscribe = core.subscribe(sync);
   sync();
   return {
-    review,
+    review, refresh: sync,
     ready: () => region?.ready() ?? null,
     dispose: () => {
       disposed = true; restoreInert?.(); region?.element.remove(); pending?.abort.abort(); unsubscribe.forEach(off => off()); feedback.remove();

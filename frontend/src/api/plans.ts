@@ -30,26 +30,6 @@ export async function getPlan(planId: string): Promise<Plan> {
 }
 
 /**
- * Create a new plan
- */
-export async function createPlan(plan: CreatePlanRequest): Promise<Plan> {
-  return apiRequest<Plan>('/plans', {
-    method: 'POST',
-    body: JSON.stringify(plan)
-  });
-}
-
-/**
- * Update a plan
- */
-export async function updatePlan(planId: string, plan: CreatePlanRequest): Promise<Plan> {
-  return apiRequest<Plan>(`/plans/${planId}`, {
-    method: 'PUT',
-    body: JSON.stringify(plan)
-  });
-}
-
-/**
  * Patch a plan (partial update)
  */
 export async function patchPlan(planId: string, data: Partial<CreatePlanRequest>): Promise<Plan> {
