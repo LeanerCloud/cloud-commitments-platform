@@ -7,9 +7,11 @@ import "net/http"
 const codeEditorReconciliationRequired = "editor_reconciliation_required"
 
 const (
-	codeInvalidRequest    = "invalid_request"
-	codePermissionDenied  = "permission_denied"
-	codeEditorFieldLocked = "editor_field_locked"
+	codeInvalidRequest         = "invalid_request"
+	codePermissionDenied       = "permission_denied"
+	codeEditorFieldLocked      = "editor_field_locked"
+	codeEditorSequenceInvalid  = "editor_sequence_invalid"
+	codeEditorStateUnsupported = "editor_state_unsupported"
 )
 
 // planEditorInvalid is a 400 for a request the editor cannot apply as written.
