@@ -19,7 +19,7 @@ import (
 )
 
 // The vendor here is synthetic transport behind the real archera.Provider and insurance.Client; it is not
-// a live Archera organisation.
+// a live Archera organization.
 
 const contractOrg = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
