@@ -163,11 +163,11 @@ func TestRecommendationDTOCandidateMismatchAndUnrepresentable(t *testing.T) {
 		"candidate": func(c *insurance.Comparison) { c.Rows[0].Candidates[1].Monthly.Premium = big.NewRat(1, 3) },
 	} {
 		t.Run(name, func(t *testing.T) {
-			c, items := contractMatchFixture(t)
-			fn(c)
-			got, err := buildFixture(t, c, items)
-			require.ErrorIs(t, err, ErrUnrepresentable)
-			require.Nil(t, got)
+			sub, subItems := contractMatchFixture(t)
+			fn(sub)
+			subGot, subErr := buildFixture(t, sub, subItems)
+			require.ErrorIs(t, subErr, ErrUnrepresentable)
+			require.Nil(t, subGot)
 		})
 	}
 	_, err = buildFixture(t, nil, items)
@@ -224,7 +224,7 @@ func TestRecommendationDTOIgnoresUnrelatedRows(t *testing.T) {
 
 func TestRecommendationDTOSanitizesVendorStrings(t *testing.T) {
 	c, items := contractMatchFixture(t)
-	hostile := "one_year‮\n<script>" + strings.Repeat("界", 100)
+	hostile := "one_year\u202e\n<script>" + strings.Repeat("界", 100)
 	c.Rows[0].Current.ContractTerm = &hostile
 	c.Rows[0].Candidates[0].OfferID = hostile
 	c.Rows[0].Candidates[0].CommitmentType = hostile
@@ -233,7 +233,7 @@ func TestRecommendationDTOSanitizesVendorStrings(t *testing.T) {
 	require.Equal(t, CleanString(hostile), *got.Current.EffectiveContractTerm)
 	require.Equal(t, CleanString(hostile), got.Candidates[0].OfferID)
 	require.LessOrEqual(t, len(got.Candidates[0].OfferID), maxVendorStrLen)
-	require.NotContains(t, got.Candidates[0].OfferID, "‮")
+	require.NotContains(t, got.Candidates[0].OfferID, "\u202e")
 	require.Equal(t, hostile, c.Rows[0].Candidates[0].OfferID)
 }
 
