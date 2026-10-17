@@ -521,6 +521,9 @@ func (r *Router) getInsuranceStatusHandler(ctx context.Context, req *events.Lamb
 }
 
 func (r *Router) getInsuranceComparisonHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
+	if insuranceRecommendationRequested(req) {
+		return r.h.getInsuranceRecommendation(ctx, req)
+	}
 	return r.h.getInsuranceComparison(ctx, req)
 }
 
