@@ -152,7 +152,7 @@ func TestCumulativeAttach_UntrustedHistoryCannotSizeOrNotify(t *testing.T) {
 			require.Len(t, rows, 1)
 			if tc.rootStatus == "" {
 				require.Equal(t, config.StatusFailed, rows[0].Status)
-				require.Contains(t, rows[0].Error, "reconcile prior commitments")
+				require.Contains(t, rows[0].Error, "cannot be verified")
 				require.Empty(t, rows[0].Recommendations)
 			} else {
 				require.ErrorIs(t, err, errExecutionNotNotifiable, "a durable refusal is a quiet skip, not a raw error")

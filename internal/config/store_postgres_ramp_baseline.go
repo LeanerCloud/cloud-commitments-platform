@@ -32,7 +32,7 @@ func (s rampLedgerState) allowsSizing(raw []byte, current int) bool {
 	return s == rampLedgerTrusted && raw != nil || s == rampLedgerNew && raw == nil && current == 0
 }
 
-var ErrRampLedgerUntrusted = errors.New("ramp purchase history cannot be verified; reconcile prior commitments before attaching another step")
+var ErrRampLedgerUntrusted = errors.New("this ramp's purchase history from before the retention ledger cannot be verified, so it cannot size further steps")
 
 // SetPlanRampBaselineTx freezes a baseline only while retention can prove its lineage.
 // The caller holds the plan lock; full-row plan writes cannot promote trust.

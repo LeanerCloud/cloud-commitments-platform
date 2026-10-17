@@ -66,8 +66,14 @@ const cumCoverage = 80
 
 func newCumFixture(t *testing.T, stored ...int) *cumFixture {
 	t.Helper()
+	store, pool := rampStepStore(context.Background(), t)
+	return newCumFixtureOn(t, store, pool, stored...)
+}
+
+// newCumFixtureOn builds the fixture on an already migrated store.
+func newCumFixtureOn(t *testing.T, store *config.PostgresStore, pool *pgxpool.Pool, stored ...int) *cumFixture {
+	t.Helper()
 	ctx := context.Background()
-	store, pool := rampStepStore(ctx, t)
 	attachGlobal(ctx, t, store)
 	acct := &config.CloudAccount{Name: "cum-acct", Provider: "aws", ExternalID: "111111111110", Enabled: true,
 		AWSAuthMode: "role_arn", AWSRoleARN: "arn:aws:iam::111111111110:role/cudly"}
