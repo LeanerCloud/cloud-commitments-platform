@@ -152,7 +152,8 @@ gcloud iam workload-identity-pools providers describe github-actions \
 To change the allowed repo, update `github_owner_id` and `github_repo_id` in `terraform.tfvars`
 (`gh api repos/<owner>/<repo> --jq '.owner.id, .id'`) and re-apply. The `principalSet` member is
 keyed on `attribute.repository_id`; the `attribute.repository` mapping is kept so the old member
-keeps resolving while the replacement is created first.
+keeps resolving while the replacement is created first. `github_repo` is still the skip toggle
+(empty disables WIF setup) but no longer feeds the condition or the member.
 
 AWS and Azure match the GitHub immutable OIDC subject (`repo:<owner>@<owner_id>/<repo>@<repo_id>:...`),
 which depends on the repository setting `use_immutable_subject` (Settings, Actions, OIDC). Check it with

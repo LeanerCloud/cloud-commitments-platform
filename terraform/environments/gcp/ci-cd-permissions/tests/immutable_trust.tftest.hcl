@@ -122,3 +122,46 @@ run "rejects_empty_deploy_ref" {
 
   expect_failures = [var.deploy_ref]
 }
+
+run "rejects_leading_zero_repo_id" {
+  command = plan
+
+  variables {
+    github_repo_id = "0123"
+  }
+
+  expect_failures = [var.github_repo_id]
+}
+
+run "rejects_github_repo_with_quote" {
+  command = plan
+
+  variables {
+    github_repo = "a/b'c"
+  }
+
+  expect_failures = [var.github_repo]
+}
+
+run "rejects_github_repo_without_slash" {
+  command = plan
+
+  variables {
+    github_repo = "noslash"
+  }
+
+  expect_failures = [var.github_repo]
+}
+
+run "skip_mode_creates_no_wif" {
+  command = apply
+
+  variables {
+    github_repo = ""
+  }
+
+  assert {
+    condition     = length(google_iam_workload_identity_pool.github) == 0 && length(google_iam_workload_identity_pool_provider.github) == 0 && length(google_service_account_iam_member.github_actions) == 0
+    error_message = "empty github_repo must disable WIF resources"
+  }
+}
