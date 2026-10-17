@@ -29,7 +29,7 @@ func ProjectContract(c *insurance.Comparison, items []insurance.LineItem) ([]Com
 
 // vendorEntries drops the entry the vendor flags as the current offer, which is never an alternative.
 func vendorEntries(entries []insurance.OfferEntry) []*insurance.OfferEntry {
-	var out []*insurance.OfferEntry
+	out := make([]*insurance.OfferEntry, 0, len(entries))
 	for i := range entries {
 		if !entries[i].IsCurrent {
 			out = append(out, &entries[i])
