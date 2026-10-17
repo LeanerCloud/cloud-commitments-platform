@@ -134,9 +134,15 @@ func TestCumulativeAttach_UntrustedHistoryCannotSizeOrNotify(t *testing.T) {
 				rec.Count, rec.Selected = tc.held, true
 				require.NoError(t, f.store.SavePurchaseExecution(f.ctx, &config.PurchaseExecution{PlanID: f.planID, ExecutionID: uuid.NewString(), Status: config.StatusCompleted, StepNumber: 1, ScheduledDate: time.Now(), Recommendations: []config.RecommendationRecord{rec}}))
 			}
+			var rootID string
 			if tc.rootStatus != "" {
 				rec.Selected = true
-				require.NoError(t, f.store.SavePurchaseExecution(f.ctx, &config.PurchaseExecution{PlanID: f.planID, ExecutionID: uuid.NewString(), Status: tc.rootStatus, StepNumber: tc.progress + 1, ScheduledDate: time.Now().Add(40 * 24 * time.Hour), Recommendations: []config.RecommendationRecord{rec}}))
+				rootID = uuid.NewString()
+				require.NoError(t, f.store.SavePurchaseExecution(f.ctx, &config.PurchaseExecution{PlanID: f.planID, ExecutionID: rootID, Status: tc.rootStatus, StepNumber: tc.progress + 1, ScheduledDate: time.Now().Add(40 * 24 * time.Hour), Recommendations: []config.RecommendationRecord{rec}}))
+				for _, id := range []string{rootID} {
+					require.NoError(t, f.store.CreateSuppression(f.ctx, &config.PurchaseSuppression{ExecutionID: id, AccountID: "sup-acct", Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.t0", SuppressedCount: 1, ExpiresAt: time.Now().Add(time.Hour)}))
+				}
+				require.NoError(t, f.store.CreateSuppression(f.ctx, &config.PurchaseSuppression{ExecutionID: uuid.NewString(), AccountID: "other-acct", Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.t0", SuppressedCount: 1, ExpiresAt: time.Now().Add(time.Hour)}))
 			}
 			calls := 0
 			f.src.shown = func() []config.RecommendationRecord { calls++; return []config.RecommendationRecord{rec} }
@@ -149,8 +155,17 @@ func TestCumulativeAttach_UntrustedHistoryCannotSizeOrNotify(t *testing.T) {
 				require.Contains(t, rows[0].Error, "reconcile prior commitments")
 				require.Empty(t, rows[0].Recommendations)
 			} else {
-				require.ErrorIs(t, err, config.ErrRampLedgerUntrusted)
-				require.Equal(t, tc.rootStatus, rows[0].Status)
+				require.ErrorIs(t, err, errExecutionNotNotifiable, "a durable refusal is a quiet skip, not a raw error")
+				require.NotErrorIs(t, err, config.ErrRampLedgerUntrusted)
+				require.Equal(t, config.StatusFailed, rows[0].Status)
+				require.True(t, rows[0].NoSubmission)
+				require.Contains(t, rows[0].Error, config.ErrRampLedgerUntrusted.Error())
+				require.NotEmpty(t, rows[0].Recommendations, "the attached recommendations stay on the failed row")
+				var released, others int
+				require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT COUNT(*) FROM purchase_suppressions WHERE execution_id = $1`, rootID).Scan(&released))
+				require.Zero(t, released, "a proven not-submitted failure releases its suppressions")
+				require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT COUNT(*) FROM purchase_suppressions WHERE account_id = 'other-acct'`).Scan(&others))
+				require.Equal(t, 1, others, "another execution's suppressions are untouched")
 			}
 			require.False(t, f.m.sendPlanNotification(f.ctx, f.plan()))
 			require.Zero(t, calls, "no new sizing or resizing")
@@ -201,4 +216,21 @@ func TestCumulativeAttach_AuthorizedLegacyQuantityRemainsImmutable(t *testing.T)
 			require.Zero(t, resolver.calls.Load())
 		})
 	}
+}
+
+func TestFailExistingPlanStep_LostRaceKeepsSuppressions(t *testing.T) {
+	f := newCumFixture(t, 100)
+	rec := cumRec(f.account, "m5.t0", 100)
+	rec.Selected = true
+	root := &config.PurchaseExecution{PlanID: f.planID, ExecutionID: uuid.NewString(), Status: "pending", StepNumber: 1, ScheduledDate: time.Now().Add(40 * 24 * time.Hour), Recommendations: []config.RecommendationRecord{rec}}
+	require.NoError(t, f.store.SavePurchaseExecution(f.ctx, root))
+	require.NoError(t, f.store.CreateSuppression(f.ctx, &config.PurchaseSuppression{ExecutionID: root.ExecutionID, AccountID: "sup-acct", Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.t0", SuppressedCount: 1, ExpiresAt: time.Now().Add(time.Hour)}))
+	_, err := f.pool.Exec(f.ctx, `UPDATE purchase_executions SET status='approved' WHERE execution_id=$1`, root.ExecutionID)
+	require.NoError(t, err, "a human approves after the tick read the row")
+
+	err = f.m.failExistingPlanStep(f.ctx, root, "reason")
+	require.ErrorIs(t, err, errExecutionNotNotifiable)
+	var n int
+	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT COUNT(*) FROM purchase_suppressions WHERE execution_id = $1`, root.ExecutionID).Scan(&n))
+	require.Equal(t, 1, n, "the approved row keeps its suppressions")
 }

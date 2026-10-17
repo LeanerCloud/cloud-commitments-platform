@@ -97,6 +97,9 @@ func (m *Manager) claimFromRows(ctx context.Context, tx pgx.Tx, locked *config.P
 		}
 		if len(root.Recommendations) > 0 {
 			if _, err := m.config.GetPlanRampBaselineTx(ctx, tx, locked.ID); err != nil {
+				if errors.Is(err, config.ErrRampLedgerUntrusted) {
+					return m.failStep(ctx, tx, locked, claim, root, err.Error())
+				}
 				return stepClaim{}, err
 			}
 			if locked.NextExecutionDate.Before(time.Now()) {
