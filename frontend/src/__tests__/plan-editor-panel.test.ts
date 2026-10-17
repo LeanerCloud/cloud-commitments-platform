@@ -12,7 +12,7 @@ beforeEach(() => {
     <input id="plan-name" value="Compute"><input name="ramp-schedule" type="radio" value="custom" checked>
     <input id="plan-coverage" value="80"><input id="ramp-step-percent" value="33"><input id="ramp-interval-days" value="7">
     <input id="plan-notify-days" value="3"><input id="plan-term" value="1"><input id="plan-payment" value="monthly"></form></div></div>`;
-  form = document.querySelector('form')!; host = document.querySelector('section')!; dispose = mountPlanEditorPanel(host, form);
+  form = document.querySelector('form')!; host = document.querySelector('section')!; dispose = mountPlanEditorPanel(host, form, { editableDates: true });
 });
 afterEach(() => { dispose(); jest.useRealTimers(); });
 
@@ -86,4 +86,29 @@ test('actual Create pointer ownership guards submission, cancels on geometry cha
   point.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }));
   expect(field('date').value).toBe('2026-10-28'); expect(form.querySelector<HTMLInputElement>('#plan-name')?.value).toBe('Compute');
   send('pointerdown', point, x); dispose(); expect(form.inert).toBeFalsy(); expect(captured).toBe(false);
+});
+
+describe('display-only default (Create dates are not saved yet)', () => {
+  beforeEach(() => { dispose(); dispose = mountPlanEditorPanel(host, form); });
+  test('shows the graph and dates but disables every date control with a reason', () => {
+    expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(3);
+    expect(host.querySelectorAll('svg [role=button]')).toHaveLength(0);
+    expect(host.querySelector('.preview-hit, [data-preview-boundary]')).toBeNull();
+    for (const key of ['step', 'date', 'start', 'end', 'reset']) expect(field(key).disabled).toBe(true);
+    expect(field('date').value).toBe('2026-10-20');
+    expect(host.textContent).toContain('Custom step dates can be set once saving them is supported');
+    expect(host.textContent).not.toContain('does not save date changes');
+  });
+  test('dragging a point is inert and typed input changes nothing', () => {
+    const point = host.querySelector('[data-preview-step="0"]')!, label = point.getAttribute('aria-label');
+    const svg = host.querySelector('svg')!;
+    point.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10 }));
+    svg.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 200, clientY: 10 }));
+    svg.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: 200, clientY: 10 }));
+    expect(host.querySelector('[data-preview-step="0"]')!.getAttribute('aria-label')).toBe(label);
+    expect(form.inert).toBeFalsy();
+    change('date', '2026-10-30');
+    expect(host.querySelector('[data-preview-step="0"]')!.getAttribute('aria-label')).toBe(label);
+    expect(host.querySelector('[data-editor="changes"] summary')!.textContent).toBe('Local date changes (0)');
+  });
 });
