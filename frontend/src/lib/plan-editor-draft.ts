@@ -35,13 +35,13 @@ export function createEditorDraft(input: DraftContext): EditorDraft {
   let context: DraftContext;
   if (input.kind === 'create') {
     if (input.shares.length !== count || input.dates.length !== count) throw new Error('Incomplete local schedule.');
-    context = Object.freeze({ ...input, shares: Object.freeze([...input.shares]), dates: Object.freeze([...input.dates]) });
+    context = Object.freeze({ kind: 'create', totalSteps: input.totalSteps, shares: Object.freeze([...input.shares]), dates: Object.freeze([...input.dates]) });
   } else {
     if (input.slots.length !== count) throw new Error('Incomplete schedule projection.');
     if (!input.planId || !input.revision) throw new Error('Missing plan revision.');
     if (input.slots.some((slot, i) => slot.step_number !== i + 1 || !capabilities.includes(slot.capability)
       || !['missing', 'unique', 'ambiguous'].includes(slot.root_state))) throw new Error('Unsupported schedule projection.');
-    context = Object.freeze({ ...input, slots: Object.freeze(input.slots.map(slot => Object.freeze({ ...slot }))) });
+    context = Object.freeze({ kind: 'edit', planId: input.planId, revision: input.revision, totalSteps: input.totalSteps, slots: Object.freeze(input.slots.map(slot => Object.freeze({ ...slot }))) });
   }
   const shares = context.kind === 'create' ? context.shares : context.slots.map(slot => slot.cumulative_target_percent);
   if (shares.some((share, i) => !Number.isFinite(share) || share < 0 || share > 100
