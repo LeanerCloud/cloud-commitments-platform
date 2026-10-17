@@ -10,15 +10,23 @@ export function readPlanScheduleInput(form: HTMLFormElement): PlanSchedulePrevie
     notificationDays: value('plan-notify-days'), term: value('plan-term'), payment: value('plan-payment') };
 }
 
-export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): () => void {
+export interface PlanEditorPanelOptions {
+  // Create Save does not persist step dates yet, so the graph stays display-only until it does.
+  editableDates?: boolean;
+}
+
+const readOnlyReason = 'Custom step dates can be set once saving them is supported.';
+
+export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement, options: PlanEditorPanelOptions = {}): () => void {
+  const editable = options.editableDates ?? false;
   host.hidden = false;
   host.closest('.plan-editor-layout')?.classList.add('has-editor-draft');
-  host.innerHTML = `<h3>Proposed purchase dates</h3><p class="editor-draft-notice">Local draft. These dates are not scheduled. Save Plan does not save date changes.</p>
+  host.innerHTML = `<h3>Proposed purchase dates</h3><p class="editor-draft-notice">${editable ? 'Local draft. These dates are not scheduled. Save Plan does not save date changes.' : readOnlyReason}</p>
     <div class="schedule-preview-scroll" tabindex="0" aria-label="Proposed purchase calendar"></div>
-    <p class="editor-target help-text"></p><p class="help-text">Drag a point to change its date, or Start/End to space the dates.</p>
+    <p class="editor-target help-text"></p>${editable ? `<p class="help-text">Drag a point to change its date, or Start/End to space the dates.</p>
     <details class="editor-help"><summary>Keyboard and touch help</summary>
       <p class="help-text">Drag dates or Start/End handles. Arrow keys select; Alt+Left/Right moves a date. Enter on a handle opens its date input. Escape cancels a drag. Use Step/date inputs when points overlap.</p>
-    </details>
+    </details>` : ''}
     <p class="help-text">Amount unavailable. Saved purchases and history are not shown.</p>
     <label>Step<select data-editor="step"></select></label><label>Date (UTC)<input data-editor="date" type="date"></label>
     <div class="form-row"><label>Proposed start (UTC)<input data-editor="start" type="date"></label>
@@ -41,9 +49,13 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     field('error').textContent = message;
   };
   const paint = (): void => {
-    step.disabled = !state || !!gestureFrame || dirty !== null; date.disabled = !state || !!gestureFrame || dirty === 'range';
-    start.disabled = !state || !!gestureFrame || dirty === 'step'; end.disabled = !state || !!gestureFrame || dirty === 'step';
-    reset.disabled = !state || !!gestureFrame; rebuild.disabled = !!gestureFrame;
+    if (!editable) {
+      step.disabled = date.disabled = start.disabled = end.disabled = reset.disabled = rebuild.disabled = true;
+    } else {
+      step.disabled = !state || !!gestureFrame || dirty !== null; date.disabled = !state || !!gestureFrame || dirty === 'range';
+      start.disabled = !state || !!gestureFrame || dirty === 'step'; end.disabled = !state || !!gestureFrame || dirty === 'step';
+      reset.disabled = !state || !!gestureFrame; rebuild.disabled = !!gestureFrame;
+    }
     if (!state) return;
     const dates = state.dates.map(value => { if (value === null) throw new Error('Enter a proposed date for every step.'); return value; });
     const context = state.context;
@@ -51,10 +63,10 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     const points = dates.map((value, index) => ({ step: index + 1, date: value, target: coverage * context.shares[index]! / 100 }));
     const frame = gestureFrame ?? schedulePlotFrame(dates), plot = host.querySelector('.schedule-preview-scroll')!;
     const svg = plot.querySelector<SVGSVGElement>('svg');
-    if (svg && svg.querySelectorAll('[data-preview-step]').length === points.length) updateSchedulePlot(svg, points, frame, state.selected, true);
+    if (svg && svg.querySelectorAll('[data-preview-step]').length === points.length) updateSchedulePlot(svg, points, frame, state.selected, editable);
     else {
-      disposeInteraction?.(); plot.innerHTML = renderSchedulePlot(points, frame, state.selected, true);
-      disposeInteraction = wire(plot.querySelector<SVGSVGElement>('svg')!);
+      disposeInteraction?.(); plot.innerHTML = renderSchedulePlot(points, frame, state.selected, editable);
+      if (editable) disposeInteraction = wire(plot.querySelector<SVGSVGElement>('svg')!);
     }
     if (step.options.length !== dates.length) step.replaceChildren(...dates.map((_, index) => new Option(`Step ${index + 1}`, String(index))));
     step.value = String(state.selected);
@@ -109,14 +121,14 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     } catch (failure) { error((failure as Error).message); paint(); }
   };
   const input = (event: Event): void => {
-    if (gestureFrame) return;
+    if (!editable || gestureFrame) return;
     if (event.target === date) dirty = 'step';
     else if (event.target === start || event.target === end) dirty = 'range';
     else return;
     paint();
   };
   const change = (event: Event): void => {
-    if (gestureFrame) return;
+    if (!editable || gestureFrame) return;
     if (event.target === step && state && !dirty) {
       try { state = selectDraftStep(state, step.value === '' ? NaN : Number(step.value)); paint(); }
       catch (failure) { error((failure as Error).message); }
@@ -136,9 +148,9 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement): 
     }
   };
   const keydown = (event: KeyboardEvent): void => {
-    if (event.key === 'Enter' && [date, start, end].includes(event.target as HTMLInputElement)) { event.preventDefault(); commit(); }
+    if (editable && event.key === 'Enter' && [date, start, end].includes(event.target as HTMLInputElement)) { event.preventDefault(); commit(); }
   };
-  reset.onclick = () => { if (state && !gestureFrame) { state = resetEditorDraft(state); dirty = null; error(rebuild.hidden ? '' : rebuildMessage); paint(); } };
+  reset.onclick = () => { if (editable && state && !gestureFrame) { state = resetEditorDraft(state); dirty = null; error(rebuild.hidden ? '' : rebuildMessage); paint(); } };
   rebuild.onclick = build;
   host.addEventListener('input', input); host.addEventListener('change', change); host.addEventListener('keydown', keydown);
   form.addEventListener('input', settings); form.addEventListener('change', settings);
