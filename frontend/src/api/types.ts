@@ -1056,3 +1056,41 @@ export interface ArcheraComparison {
   non_gating_disclosure: string;
   sponsorship_disclosure: string;
 }
+
+export interface RecommendationArcheraOffer {
+  offer_id: string;
+  provider: string;
+  commitment_type: string;
+  hourly_selected_commitment: string | null;
+  native_duration_seconds: string | null;
+  native_plan_type: string | null;
+  native_instance_family: string | null;
+  effective_contract_term: string | null;
+  payment_option: string | null;
+  lease_attached: boolean;
+  monthly: ArcheraFinancials;
+  upfront_one_time_cost: string | null;
+}
+
+export interface RecommendationArcheraComparison {
+  recommendation_id: string;
+  status: string;
+  reason: string;
+  amount_provenance: string;
+  economic_status: string;
+  fetched_at: string;
+  currency: string | null;
+  currency_note: string;
+  comparable_delta: string | null;
+  premium_included: boolean;
+  current: RecommendationArcheraOffer | null;
+  candidates: Array<{
+    offer_id: string;
+    status: string;
+    reason: string;
+    native_identity_status: string;
+    figures: RecommendationArcheraOffer | null;
+  }>;
+  non_gating_disclosure: string;
+  sponsorship_disclosure: string;
+}
