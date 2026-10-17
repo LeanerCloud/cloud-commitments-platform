@@ -39,8 +39,9 @@ func vendorEntries(entries []insurance.OfferEntry) []*insurance.OfferEntry {
 }
 
 func vendorAlternatives(entries []insurance.OfferEntry) []CandidateIdentity {
-	var out []CandidateIdentity
-	for _, e := range vendorEntries(entries) {
+	vendor := vendorEntries(entries)
+	out := make([]CandidateIdentity, 0, len(vendor))
+	for _, e := range vendor {
 		out = append(out, contractCandidate(e))
 	}
 	return out
