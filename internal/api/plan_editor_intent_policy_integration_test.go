@@ -71,6 +71,13 @@ func TestPlanEditorIntentPolicy(t *testing.T) {
 			}
 		}
 	})
+	t.Run("a step_count change on a plan with progress is locked before the store", func(t *testing.T) {
+		started := func(s *config.PlanEditorSnapshot) { s.Plan.RampSchedule.CurrentStep = 1 }
+		count := func(s *config.PlanEditorSnapshot) *planEditorIntent {
+			return &planEditorIntent{PlanScheduleIntent: config.PlanScheduleIntent{StepCount: new(s.Plan.RampSchedule.TotalSteps + 1)}}
+		}
+		requireEditorPolicyRefusal(t, run(t, all, started, count), http.StatusConflict, codeEditorFieldLocked, "step_count")
+	})
 	t.Run("approved rows need allow_approved_edits for an ordinary service field", func(t *testing.T) {
 		requireEditorPolicyRefusal(t, run(t, all, nil, service("coverage", false)), http.StatusConflict, codeEditorFieldLocked, "without consent")
 		require.NoError(t, run(t, all, nil, service("coverage", true)))
