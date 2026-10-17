@@ -159,12 +159,18 @@ the `az` CLI context for all subsequent steps.
 
 ### Federated credential subjects
 
+Subjects use GitHub's immutable form `repo:<owner>@<owner_id>/<repo>@<repo_id>:...`, built from
+`github_repo` plus the required `github_owner_id` and `github_repo_id`. A deleted and re-created owner or repo
+name gets new ids and cannot inherit this trust. This depends on the repo's OIDC setting `use_immutable_subject`
+(GitHub only, not managed here): if it is switched off, no subject matches and every deploy fails closed. A
+rename also stops the subjects matching until `github_repo` is updated and the root re-applied.
+
 Azure federated credentials allow no wildcards, so one resource is required per subject:
 
 | Credential | Subject | Use case |
 | --- | --- | --- |
-| `github-actions-main` | `repo:LeanerCloud/cloud-commitments-platform:ref:refs/heads/main` | Deployments from main |
-| `github-actions-env-<name>` | `repo:LeanerCloud/cloud-commitments-platform:environment:<name>` | Jobs bound to a deployment environment (one per `var.github_environments`) |
+| `github-actions-main` | `repo:LeanerCloud@86753534/cloud-commitments-platform@1391259743:ref:refs/heads/main` | Deployments from main |
+| `github-actions-env-<name>` | `repo:LeanerCloud@86753534/cloud-commitments-platform@1391259743:environment:<name>` | Jobs bound to a deployment environment (one per `var.github_environments`) |
 
 No `pull_request`-subject credential is provisioned: it is not scoped to any
 branch or environment protection, and no workflow in this repo runs

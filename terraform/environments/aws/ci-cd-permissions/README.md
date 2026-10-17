@@ -148,14 +148,20 @@ for temporary AWS credentials via `sts:AssumeRoleWithWebIdentity`, and injects `
 
 ### Trust policy conditions
 
-The trust policy does **not** allow all workflows from the repo: `repo:LeanerCloud/cloud-commitments-platform:*` would
+The trust policy does **not** allow all workflows from the repo: `repo:<owner>@<owner_id>/<repo>@<repo_id>:*` would
 let any branch, including an unprotected feature branch, mint valid deploy credentials. Instead the
 OIDC `sub` claim is checked against an explicit, enumerated allowlist (`role.tf`'s
 `token.actions.githubusercontent.com:sub` condition):
 
-- `repo:LeanerCloud/cloud-commitments-platform:ref:refs/heads/main`, for workflows dispatched on `main` with no
+Subjects use GitHub's immutable form `repo:<owner>@<owner_id>/<repo>@<repo_id>:...`, built from
+`github_repo` plus the required `github_owner_id` and `github_repo_id`. A deleted and re-created owner or repo
+name gets new ids and cannot inherit this trust. This depends on the repo's OIDC setting `use_immutable_subject`
+(GitHub only, not managed here): if it is switched off, no subject matches and every deploy fails closed. A
+rename also stops the subjects matching until `github_repo` is updated and the root re-applied.
+
+- `repo:LeanerCloud@86753534/cloud-commitments-platform@1391259743:ref:refs/heads/main`, for workflows dispatched on `main` with no
   `environment:` binding.
-- `repo:LeanerCloud/cloud-commitments-platform:environment:<name>`, one entry per exact environment name a job that
+- `repo:LeanerCloud@86753534/cloud-commitments-platform@1391259743:environment:<name>`, one entry per exact environment name a job that
   assumes this role binds to. A job's `environment:` **replaces** the ref-based subject with an
   environment-scoped one (never both), so every such value must be listed explicitly or that job
   cannot authenticate. See the comment above the `sub` list in `role.tf` for the full derivation:
@@ -187,7 +193,7 @@ implements only the first of them:
 `ref:refs/heads/main` in the allowlist enforces (2) on its own for a job with no `environment:`
 binding: no environment, no policy needed, the ref check *is* the restriction. `environment:<name>`
 subjects enforce **neither (2) nor (3)** on their own, because the OIDC `sub` for those is
-`repo:<repo>:environment:<name>`, which is ref-agnostic: it says which environment the job bound to,
+`<immutable repo prefix>:environment:<name>`, which is ref-agnostic: it says which environment the job bound to,
 nothing about which branch triggered the run. A `workflow_dispatch` fired from any branch against an
 environment-bound job presents the exact same subject a `main` run would, so this allowlist admits
 it. The only control that reattaches the branch requirement is a deployment branch policy

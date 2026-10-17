@@ -22,6 +22,15 @@ aws_region = "us-east-1"
 #
 github_repo = "LeanerCloud/cloud-commitments-platform"
 
+# ─── github_owner_id / github_repo_id ──────────────────────────────────────────
+# Immutable numeric GitHub ids; the deploy trust is keyed on them, so a deleted
+# and re-created owner or repo name cannot inherit it. Requires the repo's OIDC
+# setting use_immutable_subject=true (see .github/workflows/README.md).
+#   gh api repos/<owner>/<name> --jq '.owner.id, .id'
+#
+github_owner_id = "86753534"
+github_repo_id  = "1391259743"
+
 # ─── trust_principal ───────────────────────────────────────────────────────────
 # (Optional) IAM principal in the same account allowed to assume the deploy
 # role via sts:AssumeRole — useful for local developer deployments.

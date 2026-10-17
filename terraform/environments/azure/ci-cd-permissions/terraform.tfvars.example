@@ -20,8 +20,8 @@ subscription_id = "00000000-0000-0000-0000-000000000000"
 # via Azure AD Federated Identity Credentials (keyless — no client secrets).
 #
 # Federated credentials are created for:
-#   - main branch deployments: repo:<owner>/<name>:ref:refs/heads/main
-#   - each entry in github_environments: repo:<owner>/<name>:environment:<name>
+#   - main branch deployments: repo:<owner>@<owner_id>/<name>@<repo_id>:ref:refs/heads/main
+#   - each entry in github_environments: repo:<owner>@<owner_id>/<name>@<repo_id>:environment:<name>
 #
 # No pull_request-subject credential is created (see #90): it is not scoped to
 # any branch or environment protection, and nothing in this repo authenticates
@@ -30,3 +30,12 @@ subscription_id = "00000000-0000-0000-0000-000000000000"
 # Set to "" to skip federated credential and service principal creation.
 #
 github_repo = "LeanerCloud/cloud-commitments-platform"
+
+# ─── github_owner_id / github_repo_id ──────────────────────────────────────────
+# Immutable numeric GitHub ids; the deploy trust is keyed on them, so a deleted
+# and re-created owner or repo name cannot inherit it. Requires the repo's OIDC
+# setting use_immutable_subject=true (see .github/workflows/README.md).
+#   gh api repos/<owner>/<name> --jq '.owner.id, .id'
+#
+github_owner_id = "86753534"
+github_repo_id  = "1391259743"

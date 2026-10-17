@@ -44,7 +44,7 @@ resource "azuread_application_federated_identity_credential" "github_main" {
   description    = "GitHub Actions OIDC — ${var.github_repo} main branch deployments"
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:${var.github_repo}:ref:refs/heads/main"
+  subject        = "${local.github_oidc_sub_prefix}:ref:refs/heads/main"
 }
 
 # No `pull_request`-subject credential: this service principal holds
@@ -74,5 +74,13 @@ resource "azuread_application_federated_identity_credential" "github_environment
   description    = "GitHub Actions OIDC — ${var.github_repo} ${each.value} environment"
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:${var.github_repo}:environment:${each.value}"
+  subject        = "${local.github_oidc_sub_prefix}:environment:${each.value}"
+}
+
+locals {
+  # GitHub "immutable subject" form (repo setting use_immutable_subject, see
+  # .github/workflows/README.md): repo:<owner>@<owner_id>/<repo>@<repo_id>.
+  # Mirrored in ../../aws/ci-cd-permissions/role.tf. The ternary is lazy so
+  # split() never indexes an empty github_repo (skip mode).
+  github_oidc_sub_prefix = var.github_repo == "" ? "" : "repo:${split("/", var.github_repo)[0]}@${var.github_owner_id}/${split("/", var.github_repo)[1]}@${var.github_repo_id}"
 }
