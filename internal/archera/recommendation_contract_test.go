@@ -66,6 +66,7 @@ func TestProjectContractPreservesMissingOrContradictoryEvidence(t *testing.T) {
 		}},
 		{"current_flag", func(c *insurance.Comparison, _ *insurance.LineItem) { c.Rows[0].Current.IsCurrent = false }},
 		{"current_region", func(c *insurance.Comparison, _ *insurance.LineItem) { c.Rows[0].Current.Region = nil }},
+		{"current_type", func(c *insurance.Comparison, _ *insurance.LineItem) { c.Rows[0].Current.CommitmentType = "ri" }},
 		{"amount", func(c *insurance.Comparison, _ *insurance.LineItem) {
 			c.Rows[0].Current.SelectedAmount = big.NewRat(1, 2)
 		}},
