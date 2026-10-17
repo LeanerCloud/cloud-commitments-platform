@@ -77,7 +77,7 @@ func planEditorControlChanges(before *config.PlanEditorSnapshot, intent *planEdi
 		"notification_days_before": planEditorValueChanged(patch.NotificationDaysBefore, plan.NotificationDaysBefore),
 		"max_step_commitment":      patch.CapSupplied && !reflect.DeepEqual(patch.MaxStepCommitment, plan.MaxStepCommitment),
 		"ramp_type":                planEditorValueChanged(ramp.Type, plan.RampSchedule.Type),
-		"percent_per_step":         planEditorValueChanged(ramp.PercentPerStep, plan.RampSchedule.PercentPerStep),
+		"percent_per_step":         planEditorValueChanged(ramp.PercentPerStep, plan.RampSchedule.PercentPerStep) || config.RederivesCumulativeSteps(plan.RampSchedule, intent.PlanScheduleIntent),
 		"step_interval_days":       planEditorValueChanged(ramp.StepIntervalDays, plan.RampSchedule.StepIntervalDays),
 		"start_date":               ramp.StartDate != nil && !ramp.StartDate.Equal(plan.RampSchedule.StartDate),
 		"step_count":               intent.StepCount != nil,

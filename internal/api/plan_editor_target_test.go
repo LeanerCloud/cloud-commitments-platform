@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -43,6 +45,7 @@ func requireInvalid(t *testing.T, err error) {
 func TestPlanEditorTargetPlanFields(t *testing.T) {
 	start := time.Date(2027, 1, 2, 0, 0, 0, 0, time.UTC)
 	before := targetBefore()
+	before.Plan.RampSchedule.CurrentStep = 0
 	target, err := planEditorTarget(before, "plan", targetIntent(func(i *planEditorIntent) {
 		i.Plan = config.PlanSchedulePlanPatch{Name: new("new"), Enabled: new(false), AutoPurchase: new(false), NotificationDaysBefore: new(9),
 			CapSupplied: true, MaxStepCommitment: new(750.0)}
@@ -59,7 +62,7 @@ func TestPlanEditorTargetPlanFields(t *testing.T) {
 	require.Equal(t, 5, target.RampSchedule.StepIntervalDays)
 	require.Equal(t, start, target.RampSchedule.StartDate)
 	require.Equal(t, 4, target.RampSchedule.TotalSteps)
-	require.Equal(t, 1, target.RampSchedule.CurrentStep)
+	require.Zero(t, target.RampSchedule.CurrentStep)
 	require.Equal(t, 500.0, *before.Plan.MaxStepCommitment, "the source cap pointer is not aliased")
 	require.Equal(t, "old", before.Plan.Name)
 }
@@ -281,4 +284,100 @@ func TestPlanEditorTargetPatchedListsAreDetached(t *testing.T) {
 	}), targetNow)
 	require.NoError(t, err)
 	require.Equal(t, targetBefore().Plan.Services, before.Plan.Services, "patching must not write through the source backing arrays")
+}
+
+func TestPlanEditorTargetCumulativeSharedVectors(t *testing.T) {
+	raw, err := os.ReadFile("../../frontend/src/__tests__/fixtures/cumulative-step-count.json")
+	require.NoError(t, err)
+	var rows []struct {
+		Percent float64 `json:"percent"`
+		Steps   int     `json:"steps"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &rows))
+	require.NotEmpty(t, rows)
+	for _, row := range rows {
+		create := func(i *planEditorIntent) { i.Ramp.PercentPerStep = &row.Percent }
+		target, targetErr := planEditorTarget(nil, "new", targetIntent(create), targetNow)
+		if row.Steps > config.MaxTotalSteps {
+			requireInvalid(t, targetErr)
+			continue
+		}
+		require.NoError(t, targetErr, "percent %v", row.Percent)
+		require.Equal(t, row.Steps, target.RampSchedule.TotalSteps, "percent %v", row.Percent)
+		require.Empty(t, target.RampSchedule.AllocationMode)
+		require.Equal(t, row.Percent, target.RampSchedule.PercentPerStep)
+	}
+}
+
+func TestPlanEditorTargetCumulativeModes(t *testing.T) {
+	unstarted := func(mode config.RampAllocationMode, percent float64, total int) *config.PlanEditorSnapshot {
+		before := targetBefore()
+		before.Plan.RampSchedule = config.RampSchedule{Type: "weekly", PercentPerStep: percent, StepIntervalDays: 7, TotalSteps: total, AllocationMode: mode}
+		return before
+	}
+	percent := func(p float64) func(*planEditorIntent) {
+		return func(i *planEditorIntent) { i.Ramp.PercentPerStep = &p }
+	}
+	for name, tc := range map[string]struct {
+		before  *config.PlanEditorSnapshot
+		mutate  func(*planEditorIntent)
+		total   int
+		mode    config.RampAllocationMode
+		percent float64
+	}{
+		"changed percent derives steps":       {unstarted("", 25, 4), percent(20), 5, "", 20},
+		"changed percent drops no-op count":   {unstarted("", 33, 3), percent(25), 4, "", 25},
+		"unchanged percent is a no-op":        {unstarted("", 33, 3), percent(33), 3, "", 33},
+		"unchanged within epsilon is a no-op": {unstarted("", 33, 3), percent(33 + 1e-12), 3, "", 33 + 1e-12},
+		"changed beyond epsilon rederives":    {unstarted("", 33, 3), percent(33 + 1e-7), 4, "", 33 + 1e-7},
+		"equal_count converts":                {unstarted(config.RampAllocationEqualCount, 25, 4), percent(25), 4, "", 25},
+		"equal_count converts and reshapes":   {unstarted(config.RampAllocationEqualCount, 100.0/3, 3), percent(25), 4, "", 25},
+		"step_count selects equal_count":      {unstarted("", 25, 4), func(i *planEditorIntent) { i.StepCount = new(3) }, 3, config.RampAllocationEqualCount, 100.0 / 3},
+	} {
+		t.Run(name, func(t *testing.T) {
+			target, err := planEditorTarget(tc.before, "plan", targetIntent(tc.mutate), targetNow)
+			require.NoError(t, err)
+			require.Equal(t, tc.total, target.RampSchedule.TotalSteps)
+			require.Equal(t, tc.mode, target.RampSchedule.AllocationMode)
+			require.Equal(t, tc.percent, target.RampSchedule.PercentPerStep)
+		})
+	}
+
+	started := unstarted("", 25, 4)
+	started.Plan.RampSchedule.CurrentStep = 1
+	baseline := unstarted("", 25, 4)
+	baseline.Baseline = config.PlanRampBaseline{}
+	equalStarted := unstarted(config.RampAllocationEqualCount, 25, 4)
+	equalStarted.Plan.RampSchedule.CurrentStep = 1
+	for name, tc := range map[string]struct {
+		before *config.PlanEditorSnapshot
+		mutate func(*planEditorIntent)
+	}{
+		"changed percent after progress":        {started, percent(20)},
+		"changed percent with a baseline":       {baseline, percent(20)},
+		"equal_count conversion after progress": {equalStarted, percent(25)},
+		"percent with step_count":               {unstarted("", 25, 4), func(i *planEditorIntent) { i.StepCount = new(5); i.Ramp.PercentPerStep = new(20.0) }},
+		"percent over the step cap":             {unstarted("", 25, 4), percent(0.5)},
+		"create with neither":                   {nil, func(i *planEditorIntent) { i.Plan.Name = new("n") }},
+		"create with step_count 0":              {nil, func(i *planEditorIntent) { i.StepCount = new(0) }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := planEditorTarget(tc.before, "plan", targetIntent(tc.mutate), targetNow)
+			requireInvalid(t, err)
+		})
+	}
+	target, err := planEditorTarget(started, "plan", targetIntent(percent(25)), targetNow)
+	require.NoError(t, err, "an unchanged percent never reshapes a started plan")
+	require.Equal(t, 4, target.RampSchedule.TotalSteps)
+}
+
+func TestPlanEditorTargetCreatedKeysCannotCollide(t *testing.T) {
+	service := func() config.PlanScheduleServicePatch {
+		return config.PlanScheduleServicePatch{Provider: new("aws"), Service: new("ec2"), Enabled: new(true)}
+	}
+	_, err := planEditorTarget(nil, "new", targetIntent(func(i *planEditorIntent) {
+		i.StepCount = new(2)
+		i.Services = map[string]config.PlanScheduleServicePatch{"a": service(), "aws/ec2": service()}
+	}), targetNow)
+	requireInvalid(t, err)
 }

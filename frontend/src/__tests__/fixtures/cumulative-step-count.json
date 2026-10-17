@@ -104,5 +104,10 @@
 {"percent":33.33,"steps":4},
 {"percent":100,"steps":1},
 {"percent":10,"steps":10},
-{"percent":0.5,"steps":200}
+{"percent":0.5,"steps":200},
+{"percent":24.999999999375,"steps":4},
+{"percent":24.999999375000012,"steps":5},
+{"percent":25.000000625000016,"steps":4},
+{"percent":12.49999999984375,"steps":8},
+{"percent":12.499999843750002,"steps":9}
 ]

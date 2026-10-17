@@ -50,7 +50,7 @@ func refusePlanScheduleStartedShapeChange(before *PlanEditorSnapshot, intent Pla
 	if err := json.Unmarshal(before.rampScheduleJSON, &captured); err != nil {
 		return err
 	}
-	if rederivesCumulativeSteps(captured, intent) && (captured.CurrentStep > 0 || before.Baseline != nil) {
+	if RederivesCumulativeSteps(captured, intent) && (captured.CurrentStep > 0 || before.Baseline != nil) {
 		return fmt.Errorf("%w: percent per step cannot reshape a plan with progress or a baseline", ErrPurchasePlanConflict)
 	}
 	return nil
@@ -139,7 +139,7 @@ func mergePlanScheduleRamp(raw []byte, intent PlanScheduleIntent, create, replac
 	if err != nil {
 		return nil, err
 	}
-	cumulative := rederivesCumulativeSteps(captured, intent)
+	cumulative := RederivesCumulativeSteps(captured, intent)
 	fields := planScheduleRampFields(intent, captured, create, replaceRoots)
 	merged, err := mergePlanScheduleObject(ramp, fields)
 	if err != nil || !cumulative {
@@ -156,7 +156,7 @@ func planScheduleRampFields(intent PlanScheduleIntent, captured RampSchedule, cr
 	if count := intent.StepCount; count != nil {
 		fields["total_steps"], fields["percent_per_step"] = *count, 100/float64(*count)
 		fields["allocation_mode"] = RampAllocationEqualCount
-	} else if rederivesCumulativeSteps(captured, intent) {
+	} else if RederivesCumulativeSteps(captured, intent) {
 		fields["total_steps"] = CumulativeStepCount(*intent.Ramp.PercentPerStep)
 	}
 	if replaceRoots {
@@ -174,8 +174,8 @@ func dropPlanScheduleAllocationMode(raw []byte) ([]byte, error) {
 	return marshalPlanScheduleRaw(stored)
 }
 
-// rederivesCumulativeSteps: a percent-only intent reshapes the ramp unless it equals the stored percent of a cumulative plan.
-func rederivesCumulativeSteps(captured RampSchedule, intent PlanScheduleIntent) bool {
+// RederivesCumulativeSteps (also used by the API target): a percent-only intent reshapes the ramp unless it equals the stored percent of a cumulative plan.
+func RederivesCumulativeSteps(captured RampSchedule, intent PlanScheduleIntent) bool {
 	percent := intent.Ramp.PercentPerStep
 	return intent.StepCount == nil && percent != nil &&
 		(captured.AllocationMode == RampAllocationEqualCount || math.Abs(*percent-captured.PercentPerStep) > 1e-9)
@@ -184,7 +184,7 @@ func rederivesCumulativeSteps(captured RampSchedule, intent PlanScheduleIntent) 
 func invalidPlanScheduleRampCount(captured RampSchedule, intent PlanScheduleIntent) bool {
 	count, percent := intent.StepCount, intent.Ramp.PercentPerStep
 	if count == nil && percent != nil {
-		if derived := CumulativeStepCount(*percent); derived == 0 || rederivesCumulativeSteps(captured, intent) {
+		if derived := CumulativeStepCount(*percent); derived == 0 || RederivesCumulativeSteps(captured, intent) {
 			count = &derived
 		}
 	} else if percent != nil {

@@ -28,29 +28,58 @@ func planEditorTarget(before *config.PlanEditorSnapshot, planID string, intent *
 	if err := applyPlanEditorServices(target, intent.Services, before == nil); err != nil {
 		return nil, err
 	}
-	if err := applyPlanEditorShape(target, intent); err != nil {
+	if err := applyPlanEditorShape(target, intent, before); err != nil {
 		return nil, err
 	}
 	return target, nil
 }
 
-func applyPlanEditorShape(target *config.PurchasePlan, intent *planEditorIntent) error {
+func applyPlanEditorShape(target *config.PurchasePlan, intent *planEditorIntent, before *config.PlanEditorSnapshot) error {
 	ramp := &target.RampSchedule
-	if intent.Ramp.PercentPerStep != nil && (intent.StepCount != nil || ramp.AllocationMode == config.RampAllocationEqualCount) {
-		return planEditorInvalid("percent_per_step conflicts with the equal-count allocation")
+	if before == nil && intent.StepCount == nil && intent.Ramp.PercentPerStep == nil {
+		return planEditorInvalid("a new plan needs step_count or percent_per_step")
 	}
+	started := before != nil && (before.Plan.RampSchedule.CurrentStep > 0 || before.Baseline != nil)
+	if intent.Ramp.PercentPerStep != nil && intent.StepCount != nil {
+		return planEditorInvalid("percent_per_step conflicts with step_count")
+	}
+	captured := *ramp
 	if err := applyPlanEditorPatch(ramp, intent.Ramp); err != nil {
 		return err
 	}
 	if intent.StepCount != nil {
-		count := *intent.StepCount
-		if count < max(1, ramp.CurrentStep) || count > config.MaxTotalSteps {
-			return planEditorInvalid("step_count is outside the allowed range")
-		}
-		ramp.TotalSteps = count
-		ramp.PercentPerStep = 100 / float64(count)
-		ramp.AllocationMode = config.RampAllocationEqualCount
+		return applyPlanEditorStepCount(ramp, *intent.StepCount)
 	}
+	return applyPlanEditorCumulative(ramp, captured, intent, started)
+}
+
+func applyPlanEditorStepCount(ramp *config.RampSchedule, count int) error {
+	if count < max(1, ramp.CurrentStep) || count > config.MaxTotalSteps {
+		return planEditorInvalid("step_count is outside the allowed range")
+	}
+	ramp.TotalSteps = count
+	ramp.PercentPerStep = 100 / float64(count)
+	ramp.AllocationMode = config.RampAllocationEqualCount
+	return nil
+}
+
+// applyPlanEditorCumulative mirrors the store's cumulative merge: steps are derived only when the percent changed or an equal_count plan converts.
+func applyPlanEditorCumulative(ramp *config.RampSchedule, captured config.RampSchedule, intent *planEditorIntent, started bool) error {
+	percent := intent.Ramp.PercentPerStep
+	if percent == nil {
+		return nil
+	}
+	derived := config.CumulativeStepCount(*percent)
+	if derived == 0 || !config.RederivesCumulativeSteps(captured, intent.PlanScheduleIntent) {
+		return nil
+	}
+	if started {
+		return planEditorInvalid("percent_per_step cannot reshape a plan with progress or a baseline")
+	}
+	if derived > config.MaxTotalSteps {
+		return planEditorInvalid("percent_per_step needs more steps than allowed")
+	}
+	ramp.TotalSteps, ramp.AllocationMode = derived, ""
 	return nil
 }
 

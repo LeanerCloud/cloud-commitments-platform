@@ -253,3 +253,25 @@ func TestPlanEditorRequireIntentWriter(t *testing.T) {
 	delete(typo.Services, "k")
 	requireEditorPolicyRefusal(t, planEditorRequireIntent(policy, before, typo), http.StatusConflict, codeEditorFieldLocked, "service key with no policy entry")
 }
+
+func TestPlanEditorRequireIntentPercentOnEqualCountPlan(t *testing.T) {
+	locked := &planEditorFieldPolicyResult{CanUpdatePlan: true, Fields: PlanEditorFieldPolicy{Controls: map[string]PlanEditorFieldRule{}}}
+	for _, field := range []string{"percent_per_step", "step_count", "ramp_type"} {
+		locked.Fields.Controls[field] = PlanEditorFieldRule{}
+	}
+	same := func(before *config.PlanEditorSnapshot) *planEditorIntent {
+		return &planEditorIntent{PlanScheduleIntent: config.PlanScheduleIntent{Ramp: config.PlanScheduleRampPatch{PercentPerStep: new(before.Plan.RampSchedule.PercentPerStep)}}}
+	}
+	equal := editorPolicyBefore()
+	equal.Plan.RampSchedule.AllocationMode = config.RampAllocationEqualCount
+	require.True(t, planEditorControlChanges(equal, same(equal))["percent_per_step"], "the same percent converts an equal_count plan")
+	requireEditorPolicyRefusal(t, planEditorRequireIntent(locked, equal, same(equal)), http.StatusConflict, codeEditorFieldLocked, "equal_count")
+
+	cumulative := editorPolicyBefore()
+	require.False(t, planEditorControlChanges(cumulative, same(cumulative))["percent_per_step"])
+	require.NoError(t, planEditorRequireIntent(locked, cumulative, same(cumulative)), "an unchanged percent on a cumulative plan passes a locked policy")
+
+	drift := &planEditorIntent{PlanScheduleIntent: config.PlanScheduleIntent{Ramp: config.PlanScheduleRampPatch{PercentPerStep: new(cumulative.Plan.RampSchedule.PercentPerStep + 1e-12)}}}
+	require.True(t, planEditorControlChanges(cumulative, drift)["percent_per_step"], "a sub-epsilon drift is still a written change")
+	requireEditorPolicyRefusal(t, planEditorRequireIntent(locked, cumulative, drift), http.StatusConflict, codeEditorFieldLocked, "drift")
+}

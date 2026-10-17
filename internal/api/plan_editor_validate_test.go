@@ -85,7 +85,7 @@ func TestValidatePlanEditorTarget_EnableAndImmediate(t *testing.T) {
 	t.Run("switching a multi-step plan to immediate is unsupported on Edit", func(t *testing.T) {
 		before := editorPolicyBefore()
 		before.Plan.AutoPurchase, before.Plan.RampSchedule.TotalSteps = false, 4
-		intent := &planEditorIntent{PlanScheduleIntent: config.PlanScheduleIntent{Ramp: config.PlanScheduleRampPatch{Type: new("immediate"), PercentPerStep: new(100.0)}}}
+		intent := &planEditorIntent{PlanScheduleIntent: config.PlanScheduleIntent{Ramp: config.PlanScheduleRampPatch{Type: new("immediate")}}}
 		requireEditorPolicyRefusal(t, editorValidateRun(t, before, intent), http.StatusConflict, codeEditorPlanUnsupported, "immediate")
 	})
 	t.Run("a step_count above one on an immediate plan is refused by the equal-count rule", func(t *testing.T) {
@@ -103,7 +103,7 @@ func TestValidatePlanEditorTarget_EnableAndImmediate(t *testing.T) {
 	t.Run("an immediate ramp with no steps yet is not refused on Edit", func(t *testing.T) {
 		before := editorPolicyBefore()
 		before.Plan.AutoPurchase, before.Plan.RampSchedule.TotalSteps = false, 0
-		intent := &planEditorIntent{PlanScheduleIntent: config.PlanScheduleIntent{Ramp: config.PlanScheduleRampPatch{Type: new("immediate"), PercentPerStep: new(100.0)}}}
+		intent := &planEditorIntent{PlanScheduleIntent: config.PlanScheduleIntent{Ramp: config.PlanScheduleRampPatch{Type: new("immediate")}}}
 		require.NoError(t, editorValidateRun(t, before, intent))
 	})
 }
