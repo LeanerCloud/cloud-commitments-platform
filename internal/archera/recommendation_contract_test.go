@@ -134,3 +134,22 @@ func TestProjectContractCarriesPaymentOptions(t *testing.T) {
 	require.Equal(t, "all_upfront", identities[0].Payment)
 	require.Equal(t, "partial_upfront", rows[0].CurrentPayment)
 }
+
+func TestProjectContractUnselectedTwinDoesNotCreateAmbiguity(t *testing.T) {
+	comparison, items := contractMatchFixture(t)
+	twin := items[0]
+	twin.ID = "eaadf00d-ffff-4aba-8ada-abcdefabcdef"
+	twin.IsSelected = false
+	items = append(items, twin)
+	record := storedMatchFixture()
+	rec, err := ProjectRecommendation(&record)
+	require.NoError(t, err)
+	_, identities, err := ProjectContract(comparison, items)
+	require.NoError(t, err)
+	require.Empty(t, identities[1].Type)
+	id, status := SelectLineItem(rec, identities)
+	require.Equal(t, SelectOne, status)
+	require.Equal(t, matchItem, id)
+	_, status = SelectLineItem(rec, identities[1:])
+	require.Equal(t, SelectNone, status)
+}
