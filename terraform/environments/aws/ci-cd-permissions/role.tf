@@ -89,7 +89,7 @@ resource "aws_iam_role" "cudly_deploy" {
             #     caller is ever added, this must be revisited before that
             #     caller can authenticate.
             "token.actions.githubusercontent.com:sub" = [
-              "repo:${var.github_repo}:ref:refs/heads/main",
+              "${local.github_oidc_sub_prefix}:ref:refs/heads/main",
 
               # Bare deployment environments. Bound directly by
               # deploy-aws-lambda.yml's build-and-deploy / test-deployment jobs
@@ -101,9 +101,9 @@ resource "aws_iam_role" "cudly_deploy" {
               # Live check (`gh api repos/.../environments`): `dev` exists,
               # `staging`/`prod` do not. None has a deployment branch policy or
               # protection rules -- see the top-of-list note.
-              "repo:${var.github_repo}:environment:dev",
-              "repo:${var.github_repo}:environment:staging",
-              "repo:${var.github_repo}:environment:prod",
+              "${local.github_oidc_sub_prefix}:environment:dev",
+              "${local.github_oidc_sub_prefix}:environment:staging",
+              "${local.github_oidc_sub_prefix}:environment:prod",
 
               # deploy-aws-fargate.yml's `deploy` job binds to
               # `aws-fargate-${{ needs.prepare.outputs.environment }}`, and that
@@ -113,9 +113,9 @@ resource "aws_iam_role" "cudly_deploy" {
               # Live check: `aws-fargate-dev` and `aws-fargate-staging` exist,
               # `aws-fargate-prod` does not. Same "no branch policy, no
               # protection rules" caveat as above applies to all three.
-              "repo:${var.github_repo}:environment:aws-fargate-dev",
-              "repo:${var.github_repo}:environment:aws-fargate-staging",
-              "repo:${var.github_repo}:environment:aws-fargate-prod",
+              "${local.github_oidc_sub_prefix}:environment:aws-fargate-dev",
+              "${local.github_oidc_sub_prefix}:environment:aws-fargate-staging",
+              "${local.github_oidc_sub_prefix}:environment:aws-fargate-prod",
 
               # database-migration.yml's `migrate-aws` job binds to
               # `aws-db-${{ inputs.environment }}` on its `workflow_dispatch`
@@ -123,9 +123,9 @@ resource "aws_iam_role" "cudly_deploy" {
               # constrained to dev/staging/prod. See the workflow_call caveat
               # above for what is deliberately excluded. Live check: none of
               # the three exist yet.
-              "repo:${var.github_repo}:environment:aws-db-dev",
-              "repo:${var.github_repo}:environment:aws-db-staging",
-              "repo:${var.github_repo}:environment:aws-db-prod",
+              "${local.github_oidc_sub_prefix}:environment:aws-db-dev",
+              "${local.github_oidc_sub_prefix}:environment:aws-db-staging",
+              "${local.github_oidc_sub_prefix}:environment:aws-db-prod",
 
               # rollback.yml's rollback-aws-lambda binds to plain
               # dev/staging/prod (covered above) and rollback-aws-fargate
@@ -171,4 +171,12 @@ resource "aws_iam_role_policy_attachment" "data" {
 resource "aws_iam_role_policy_attachment" "iam" {
   role       = aws_iam_role.cudly_deploy.name
   policy_arn = aws_iam_policy.iam.arn
+}
+
+locals {
+  # GitHub "immutable subject" form (repo setting use_immutable_subject, see
+  # .github/workflows/README.md): repo:<owner>@<owner_id>/<repo>@<repo_id>.
+  # Mirrored in ../../azure/ci-cd-permissions/sp.tf. The ternary is lazy so
+  # split() never indexes an empty github_repo (skip mode).
+  github_oidc_sub_prefix = var.github_repo == "" ? "" : "repo:${split("/", var.github_repo)[0]}@${var.github_owner_id}/${split("/", var.github_repo)[1]}@${var.github_repo_id}"
 }

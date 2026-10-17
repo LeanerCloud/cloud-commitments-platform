@@ -553,6 +553,12 @@ this section exists to prevent (see #141). The list below is generated from the 
    - **AWS** (`terraform/environments/aws/ci-cd-permissions/role.tf`): a literal `sub` list inlined
      in the role's assume-role policy, not a variable -- add the subject there and re-apply, or
      `configure-aws-credentials` fails with `AssumeRoleWithWebIdentity` denied.
+   - **Immutable subjects (AWS and Azure)**: both roots key the trust on
+     `repo:<owner>@<owner_id>/<repo>@<repo_id>:...` (required `github_owner_id`/`github_repo_id`
+     variables). This depends on the repo's OIDC setting `use_immutable_subject: true`
+     (`gh api repos/<owner>/<repo>/actions/oidc/customization/sub`), which is GitHub-side only:
+     if it is switched off, no subject matches and AWS/Azure deploys fail closed. A repo rename
+     also needs a `github_repo` update plus re-apply.
    - **GCP** (`terraform/environments/gcp/ci-cd-permissions/github_oidc.tf`): ref-based, not
      environment-based -- its `attribute_condition` checks `repository`/`ref` only, never `sub`, so
      no GCP-side change is needed for a new environment name (see #141 for why that's its own,
