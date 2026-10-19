@@ -674,6 +674,25 @@ describe('Add Purchases modal: start-date picker enforces future-only dates (QA 
   });
 });
 
+describe('Add Purchases rejects a past start date client-side (#50)', () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    document.body.replaceChildren();
+    await openAddPurchasesModal('plan-past', 'Past plan', 3);
+  });
+
+  it('blocks a date before today without calling the API and shows an inline error', async () => {
+    const date = document.getElementById('add-purchases-start-date') as HTMLInputElement;
+    date.value = '2020-01-01';
+    document.getElementById('add-purchases-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(api.createPlannedPurchases).not.toHaveBeenCalled();
+    const err = document.getElementById('add-purchases-error');
+    expect(err?.classList.contains('hidden')).toBe(false);
+    expect(err?.textContent).toMatch(/today or later/i);
+  });
+});
+
 describe('Add Purchases configured notice lead time', () => {
   beforeEach(() => {
     jest.clearAllMocks();

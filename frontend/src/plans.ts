@@ -2358,6 +2358,13 @@ async function handleAddPurchases(e: Event): Promise<void> {
     }
     const count = rawCount;
     const startDate = (document.getElementById('add-purchases-start-date') as HTMLInputElement).value;
+    if (startDate < toLocalDateInputValue(new Date())) {
+      if (errorDiv) {
+        errorDiv.textContent = 'Start date must be today or later';
+        errorDiv.classList.remove('hidden');
+      }
+      return;
+    }
 
     await api.createPlannedPurchases(planId, count, startDate);
 
