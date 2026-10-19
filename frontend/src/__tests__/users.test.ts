@@ -3234,3 +3234,53 @@ describe('users table checkbox names (issue #746)', () => {
     expect(labels).toEqual(['Select a@test.com', 'Select b@test.com']);
   });
 });
+
+describe('group toggle confirmation (issue #736)', () => {
+  const ADMIN = '00000000-0000-5000-8000-000000000001';
+  const users = [
+    { id: '1', email: 'me@test.com', groups: [ADMIN], mfa_enabled: false },
+    { id: '2', email: 'bob@test.com', groups: [ADMIN], mfa_enabled: false },
+  ];
+  const groups = [{ id: ADMIN, name: 'Administrators', permissions: [], description: '', allowed_accounts: [] }];
+
+  const toggle = async (userId: string, checked: boolean) => {
+    document.querySelector<HTMLButtonElement>(`.user-expand-btn[data-user-id="${userId}"]`)!.click();
+    const cb = document.querySelector<HTMLInputElement>(`.group-assign-checkbox[data-user-id="${userId}"]`)!;
+    cb.checked = checked;
+    cb.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    return cb;
+  };
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="users-list"></div>';
+    userState.setAllUsers(users as any);
+    userState.setFilteredUsers(users as any);
+    userState.setAvailableGroups(groups as any);
+    (api.updateUser as jest.Mock).mockReset().mockResolvedValue({});
+    mockConfirmDialog.mockReset().mockResolvedValue(true);
+    require('../state').setCurrentUser({ id: '1', email: 'me@test.com', groups: [ADMIN] });
+    userList.renderUsers(users as any);
+  });
+
+  it('asks before changing membership and skips the API when declined', async () => {
+    mockConfirmDialog.mockResolvedValueOnce(false);
+    const cb = await toggle('2', false);
+    expect(mockConfirmDialog).toHaveBeenCalledTimes(1);
+    expect(api.updateUser).not.toHaveBeenCalled();
+    expect(cb.checked).toBe(true);
+  });
+
+  it('applies the change once confirmed', async () => {
+    await toggle('2', false);
+    expect(api.updateUser).toHaveBeenCalledWith('2', { groups: [] });
+  });
+
+  it('warns when the admin removes their own Administrators membership', async () => {
+    await toggle('1', false);
+    expect(mockConfirmDialog.mock.calls[0]![0]).toMatchObject({
+      body: expect.stringContaining('removing yourself'),
+      destructive: true,
+    });
+  });
+});

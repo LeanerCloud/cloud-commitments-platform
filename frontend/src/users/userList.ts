@@ -17,6 +17,8 @@ import {
 import { escapeHtml, formatRelativeTime, formatDate, showSuccess, showError, validateGroupCombination } from './utils';
 import { openEditUserModal, deleteUser } from './userActions';
 import { ADMINISTRATORS_GROUP_ID } from '../permissions';
+import { confirmDialog } from '../confirmDialog';
+import { getCurrentUser } from '../state';
 
 // Placeholder row id withCurrentUser prepends when the API omits the caller.
 const SYNTHETIC_USER_ID = 'current';
@@ -240,6 +242,29 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
   if (combinationError) {
     showError(combinationError);
     // Revert the checkbox immediately so the DOM reflects reality.
+    const cb = document.querySelector<HTMLInputElement>(
+      `.group-assign-checkbox[data-user-id="${userId}"][data-group-id="${groupId}"]`,
+    );
+    if (cb) cb.checked = !checked;
+    return;
+  }
+
+  const selfDemotion = !checked
+    && groupId === ADMINISTRATORS_GROUP_ID
+    && user.email === getCurrentUser()?.email;
+  const ok = await confirmDialog({
+    title: checked
+      ? `Add ${user.email} to "${groupLabel}"?`
+      : `Remove ${user.email} from "${groupLabel}"?`,
+    body: selfDemotion
+      ? 'You are removing yourself from Administrators. You will lose access to administration, and another administrator must restore it.'
+      : checked
+        ? `${user.email} will gain the permissions of the "${groupLabel}" group.`
+        : `${user.email} will lose the permissions of the "${groupLabel}" group.`,
+    confirmLabel: checked ? 'Add to group' : 'Remove from group',
+    destructive: !checked,
+  });
+  if (!ok) {
     const cb = document.querySelector<HTMLInputElement>(
       `.group-assign-checkbox[data-user-id="${userId}"][data-group-id="${groupId}"]`,
     );
