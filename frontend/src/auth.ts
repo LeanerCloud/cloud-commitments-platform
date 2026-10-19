@@ -907,6 +907,7 @@ export function updateUserUI(): void {
     // Update the user email display with click-to-edit functionality
     if (userEmailEl) {
       userEmailEl.textContent = currentUser.email;
+      userEmailEl.removeAttribute('aria-label');
       userEmailEl.title = 'Click to edit your profile';
       userEmailEl.classList.add('cursor-pointer');
       // Replace element to avoid duplicate listeners on repeated calls
