@@ -966,13 +966,15 @@ export function renderSavingsByService(
             label: (ctx) => {
               const svc = ctx.label ?? '';
               const s = stats.get(svc);
-              if (!s) return '';
               // The current-savings dataset gets a focused, single-line
-              // tooltip; the range datasets share the full breakdown.
+              // tooltip; the range datasets share the full breakdown. This
+              // runs before the stats guard: committed services without a
+              // recommendation have no stats but still have a bar.
               if (ctx.dataset?.label === 'Current / Committed') {
                 const current = byService[svc]?.current_savings ?? 0;
                 return `Current / Committed: ${formatCurrency(current)}`;
               }
+              if (!s) return '';
               const current = byService[svc]?.current_savings ?? 0;
               const maxRec = s?.max ?? 0;
               const minRec = s?.min ?? 0;

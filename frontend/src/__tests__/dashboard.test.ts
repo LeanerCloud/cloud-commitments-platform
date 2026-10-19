@@ -1651,6 +1651,20 @@ describe('Dashboard Module', () => {
         expect(totalLine).toMatch(/\$400/);
       });
 
+      test('tooltip shows the committed value for a service with a commitment but no recommendation (#752)', () => {
+        buildDOM();
+        renderSavingsByService(
+          [rec('ec2', 100, 1, 'no_upfront')],
+          { sqldb: { potential_savings: 0, current_savings: 250 } },
+        );
+        const chartCtor = Chart as unknown as jest.Mock;
+        const lastCall = chartCtor.mock.calls[chartCtor.mock.calls.length - 1];
+        const label = (lastCall?.[1] as {
+          options: { plugins: { tooltip: { callbacks: { label: (ctx: { label: string; dataset: { label: string } }) => string } } } };
+        }).options.plugins.tooltip.callbacks.label;
+        expect(label({ label: 'sqldb', dataset: { label: 'Current / Committed' } })).toMatch(/Current \/ Committed: \$250/);
+      });
+
       // Issue #908: merged chart draws a current-savings bottom layer per service.
       test('renders Current / Committed layer from byService.current_savings', () => {
         buildDOM();
