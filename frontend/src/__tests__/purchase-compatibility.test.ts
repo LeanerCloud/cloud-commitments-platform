@@ -44,15 +44,15 @@ describe('isPaymentSupported', () => {
 });
 
 describe('paymentOptionsFor', () => {
-  test('AWS EC2 yields all 4 options', () => {
+  test('AWS EC2 yields the 3 AWS options, never monthly', () => {
     expect(paymentOptionsFor('aws', 'ec2', 1)).toEqual(
-      ['all-upfront', 'partial-upfront', 'no-upfront', 'monthly'],
+      ['all-upfront', 'partial-upfront', 'no-upfront'],
     );
   });
 
   test('AWS RDS 3yr omits no-upfront', () => {
     expect(paymentOptionsFor('aws', 'rds', 3)).toEqual(
-      ['all-upfront', 'partial-upfront', 'monthly'],
+      ['all-upfront', 'partial-upfront'],
     );
   });
 

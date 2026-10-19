@@ -28,6 +28,12 @@ export function isPaymentSupported(
   payment: Payment,
 ): boolean {
   if (provider === 'aws') {
+    // The backend accepts only these three tokens for AWS
+    // (config.ValidPaymentOptionsByProvider); 'monthly' and 'upfront'
+    // are Azure/GCP tokens and would be rejected with a 400.
+    if (payment !== 'all-upfront' && payment !== 'partial-upfront' && payment !== 'no-upfront') {
+      return false;
+    }
     // AWS RDS 3-year RIs don't support no-upfront — only all-upfront
     // and partial-upfront are offered by the provider. Surfacing
     // no-upfront here would produce zero recommendations for the
