@@ -282,7 +282,7 @@ export function addPermission(permission?: Permission): void {
           <input type="text" class="perm-regions" value="${escapeHtml(permission?.constraints?.regions?.join(', ') || '')}" placeholder="us-east-1, us-west-2">
         </label>
         <label>Max Amount ($):
-          <input type="number" class="perm-max-amount" value="${escapeHtml(String(permission?.constraints?.max_amount || ''))}" placeholder="10000" min="0">
+          <input type="number" class="perm-max-amount" value="${escapeHtml(String(permission?.constraints?.max_amount ?? ''))}" placeholder="10000" min="0">
         </label>
       </div>
     </div>
@@ -397,6 +397,14 @@ function unrepresentablePermissionErrors(): string[] {
         errors.push(`${label} has a "${dimension}" value with no usable entries`);
       }
     }
+
+    const rawAmount = (item.querySelector('.perm-max-amount') as HTMLInputElement | null)?.value ?? '';
+    if (rawAmount.trim() !== '') {
+      const amount = Number(rawAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        errors.push(`${label} has a Max Amount that must be a number greater than 0 (leave blank for no limit)`);
+      }
+    }
   });
   return errors;
 }
@@ -463,17 +471,7 @@ function collectPermissions(): Permission[] {
       if (providersList.length > 0) permission.constraints.providers = providersList;
       if (servicesList.length > 0) permission.constraints.services = servicesList;
       if (regionsList.length > 0) permission.constraints.regions = regionsList;
-      if (maxAmount) {
-        const parsed = parseFloat(maxAmount);
-        // Reject non-finite or negative values (feedback_nullable_not_zero).
-        // A malformed entry is silently skipped so the rest of the constraints
-        // still reach the API; the input's type="number" min="0" already
-        // prevents browser submission of non-numeric values, but the JS
-        // path must guard too.
-        if (Number.isFinite(parsed) && parsed >= 0) {
-          permission.constraints.max_amount = parsed;
-        }
-      }
+      if ((maxAmount ?? '').trim() !== '') permission.constraints.max_amount = Number(maxAmount);
       // Nothing survived: the permission carries no restriction, so send no
       // constraints object rather than an empty one.
       if (Object.keys(permission.constraints).length === 0) {
