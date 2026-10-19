@@ -3308,6 +3308,41 @@ describe('group toggle confirmation (issue #736)', () => {
   });
 });
 
+describe('group toggle re-validation after confirm (issue #736)', () => {
+  const viewOnly = { id: 'v1', name: 'Viewers', permissions: [{ action: 'view', resource: 'aws' }], description: '', allowed_accounts: [] };
+  const writer = { id: 'w1', name: 'Editors', permissions: [{ action: 'create', resource: 'aws' }], description: '', allowed_accounts: [] };
+  const user = { id: '2', email: 'bob@test.com', groups: [], mfa_enabled: false };
+
+  it('refuses to save when a concurrent change makes the combination contradictory', async () => {
+    document.body.innerHTML = '<div id="users-list"></div>';
+    userState.setAllUsers([user] as any);
+    userState.setFilteredUsers([user] as any);
+    userState.setAvailableGroups([viewOnly, writer] as any);
+    (api.updateUser as jest.Mock).mockReset().mockResolvedValue({});
+    let release!: (v: boolean) => void;
+    mockConfirmDialog.mockReset().mockReturnValueOnce(new Promise<boolean>((r) => { release = r; }));
+    userList.renderUsers([user] as any);
+    document.querySelector<HTMLButtonElement>('.user-expand-btn[data-user-id="2"]')!.click();
+    const cb = document.querySelector<HTMLInputElement>('.group-assign-checkbox[data-user-id="2"][data-group-id="w1"]')!;
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change', { bubbles: true }));
+    userState.setAllUsers([{ ...user, groups: ['v1'] }] as any);
+    release(true);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(api.updateUser).not.toHaveBeenCalled();
+    expect(cb.checked).toBe(false);
+    expect(document.querySelector('.toast-error .toast-message')?.textContent).toContain('Contradictory');
+  });
+});
+
+describe('select-all with only the synthetic current-user row (issue #274)', () => {
+  it('disables the select-all checkbox when no row is selectable', () => {
+    document.body.innerHTML = '<div id="users-list"></div>';
+    userList.renderUsers([{ id: 'current', email: 'me@test.com', groups: [], mfa_enabled: false }] as any);
+    expect((document.getElementById('select-all-users') as HTMLInputElement).disabled).toBe(true);
+  });
+});
+
 describe('saveUser submit button (issue #735)', () => {
   it('disables Save User while the request is in flight and re-enables it after', async () => {
     document.body.innerHTML = `

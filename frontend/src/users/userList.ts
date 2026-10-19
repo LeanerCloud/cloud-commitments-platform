@@ -85,7 +85,7 @@ export function renderUsers(users: APIUser[]): void {
       <thead>
         <tr>
           <th width="40">
-            <input type="checkbox" id="select-all-users" aria-label="Select all users" ${selectedUserIds.size > 0 && selectedUserIds.size === selectableCount ? 'checked' : ''}>
+            <input type="checkbox" id="select-all-users" aria-label="Select all users" ${selectableCount === 0 ? 'disabled' : ''} ${selectedUserIds.size > 0 && selectedUserIds.size === selectableCount ? 'checked' : ''}>
           </th>
           <th width="32"></th>
           <th>Email</th>
@@ -239,14 +239,16 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
   // Validate the resulting group combination before hitting the API.
   // A view-only group (all permissions are view:*) combined with a
   // write-capable group is semantically contradictory (issue #1405).
-  const combinationError = validateGroupCombination(next, availableGroups);
-  if (combinationError) {
-    showError(combinationError);
-    // Revert the checkbox immediately so the DOM reflects reality.
+  const revertCheckbox = (): void => {
     const cb = document.querySelector<HTMLInputElement>(
       `.group-assign-checkbox[data-user-id="${userId}"][data-group-id="${groupId}"]`,
     );
     if (cb) cb.checked = !checked;
+  };
+  const combinationError = validateGroupCombination(next, availableGroups);
+  if (combinationError) {
+    showError(combinationError);
+    revertCheckbox();
     return;
   }
 
@@ -266,16 +268,19 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
     destructive: !checked,
   });
   if (!ok) {
-    const cb = document.querySelector<HTMLInputElement>(
-      `.group-assign-checkbox[data-user-id="${userId}"][data-group-id="${groupId}"]`,
-    );
-    if (cb) cb.checked = !checked;
+    revertCheckbox();
     return;
   }
 
   // A concurrent toggle may have changed the user while the dialog was open.
   const latest = allUsers.find(u => u.id === userId) ?? user;
   const groupsToSave = nextFor(latest);
+  const latestError = validateGroupCombination(groupsToSave, availableGroups);
+  if (latestError) {
+    showError(latestError);
+    revertCheckbox();
+    return;
+  }
 
   try {
     await api.updateUser(userId, { groups: groupsToSave });
