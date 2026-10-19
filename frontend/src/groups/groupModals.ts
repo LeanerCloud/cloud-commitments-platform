@@ -415,7 +415,14 @@ function unrepresentablePermissionErrors(): string[] {
 function maxAmountInputErrors(): string[] {
   const errors: string[] = [];
   document.querySelectorAll('#permissions-list .permission-item').forEach((item, index) => {
-    const raw = (item.querySelector('.perm-max-amount') as HTMLInputElement | null)?.value ?? '';
+    const input = item.querySelector('.perm-max-amount') as HTMLInputElement | null;
+    // A number input reports unparsable text ("abc", "1e") as value "", which
+    // would read as blank and save with no cap; badInput is the only signal.
+    if (input?.validity?.badInput) {
+      errors.push(`permission ${index}`);
+      return;
+    }
+    const raw = input?.value ?? '';
     if (raw.trim() === '') return;
     const amount = Number(raw);
     if (!Number.isFinite(amount) || amount <= 0) {
