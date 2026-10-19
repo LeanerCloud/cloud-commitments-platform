@@ -202,15 +202,18 @@ export async function loadDashboard(): Promise<void> {
     if (summaryResult.status === 'rejected') {
       throw summaryResult.reason as Error;
     }
+    if (summaryData == null) {
+      throw new Error('Dashboard summary response was empty');
+    }
 
     // Build a human-readable filter description for filter-aware empty states
     // on the Home chart. Mirrors the pattern from loadSavingsTrendChart (#747).
     const filterDesc = buildFilterDesc(currentProvider, currentAccountIDs);
 
-    renderDashboardSummary(summaryData!, recs);
+    renderDashboardSummary(summaryData, recs);
     // Single merged per-service chart (#908): potential range from recs +
     // current-savings underlay from the summary's by_service map.
-    renderSavingsByService(recs, summaryData!.by_service || {}, filterDesc);
+    renderSavingsByService(recs, summaryData.by_service || {}, filterDesc);
     renderUpcomingPurchases(upcomingData?.purchases || []);
     // Load the savings-over-time widget independently -- failure shouldn't
     // block the rest of the dashboard (e.g. analytics not configured).

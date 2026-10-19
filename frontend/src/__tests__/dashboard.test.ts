@@ -310,6 +310,17 @@ describe('Dashboard Module', () => {
       expect(summary?.innerHTML).toContain('Failed to load dashboard');
     });
 
+    test('names an empty summary response instead of throwing a TypeError (#280)', async () => {
+      (api.getDashboardSummary as jest.Mock).mockResolvedValue(null);
+      console.error = jest.fn();
+
+      await loadDashboard();
+
+      const text = document.getElementById('summary')?.textContent ?? '';
+      expect(text).toContain('Dashboard summary response was empty');
+      expect(text).not.toContain('Cannot read properties of null');
+    });
+
     // Issue #344 T3: skeleton lifecycle — skeleton renders synchronously
     // at fetch start, then is replaced by the success render (clean
     // handoff) or torn down on error so it never sits next to a stale
