@@ -51,10 +51,11 @@ export function isPaymentSupported(
     return payment === 'all-upfront' || payment === 'upfront' || payment === 'monthly';
   }
 
-  // GCP CUDs accept the same three options as Azure per
-  // providers/gcp/services/computeengine/client.go:554.
+  // GCP CUDs are billed monthly only: the backend accepts just 'monthly' and
+  // rewrites every other token to it (config.ValidPaymentOptionsByProvider,
+  // internal/config/validation.go), so offering an upfront option misleads.
   if (provider === 'gcp') {
-    return payment === 'all-upfront' || payment === 'upfront' || payment === 'monthly';
+    return payment === 'monthly';
   }
 
   return true;
