@@ -7752,6 +7752,14 @@ describe('Column filters localStorage persistence (issue #163)', () => {
       expect(Object.keys(result)).toHaveLength(0);
     });
 
+    test('restores a filter for every column in COLUMN_DEFS, including capacity', () => {
+      const filters: Record<string, unknown> = {};
+      for (const c of COLUMN_DEFS) filters[c.key] = { kind: 'set', values: ['x'] };
+      localStorageMock.getItem.mockReturnValue(JSON.stringify({ schemaVersion: 1, filters }));
+      const result = loadColumnFilters();
+      expect(Object.keys(result).sort()).toEqual(COLUMN_DEFS.map((c) => c.key).sort());
+    });
+
     test('restores a categorical (set) filter correctly', () => {
       localStorageMock.getItem.mockReturnValue(
         JSON.stringify({
