@@ -581,7 +581,7 @@ describe('Recommendations Module', () => {
       expect(label('rec-np')).not.toBe(label('rec-au'));
     });
 
-    test('engine-only and unmapped-payment rows get distinct clean checkbox names (issue #746)', async () => {
+    test('engine-only rows get distinct and unmapped-payment rows get clean checkbox names (issue #746)', async () => {
       const base = { provider: 'aws', cloud_account_id: 'a1', service: 'rds', resource_type: 'db.r5.large', region: 'us-east-1', count: 1, term: 1, savings: 150, upfront_cost: 0 };
       const recs = [
         { ...base, id: 'rec-my', engine: 'mysql', payment: 'no-upfront' },
@@ -604,7 +604,7 @@ describe('Recommendations Module', () => {
         document.querySelector<HTMLInputElement>(`input[data-rec-id="${id}"]`)?.getAttribute('aria-label') ?? '';
       expect(label('rec-my')).toContain('db.r5.large (mysql)');
       expect(label('rec-my')).not.toBe(label('rec-pg'));
-      expect(label('rec-x')).toContain('weird-option');
+      expect(label('rec-x')).not.toContain('weird-option');
       for (const id of ['rec-my', 'rec-pg', 'rec-x', 'rec-none']) {
         expect(label(id)).not.toMatch(/\s{2,}|\s$/);
       }

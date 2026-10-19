@@ -3202,7 +3202,7 @@ function buildVariantRowMarkup(
       rec.region,
       accountName,
       formatTerm(rec.term),
-      rec.payment ? formatPayment(rec.payment) : '',
+      PAYMENT_DISPLAY_LABELS[rec.payment ?? ''] ?? '',
     ].filter(part => part).join(' '),
   );
   const checkboxCell = showCheckboxes
