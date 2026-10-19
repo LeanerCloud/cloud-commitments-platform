@@ -3500,17 +3500,15 @@ components:
           nullable: true
           description: Set while a collection is in flight.
         last_collection_partial:
-          type: object
-          nullable: true
-          description: >
-            Non-null when the most recent persisted collection kept rows from
-            at least one incomplete sweep. Cleared by the next collection whose
-            sweeps are all complete. Carries counts and reason categories only.
-          allOf:
-            - $ref: '#/components/schemas/RecommendationsCollectionPartial'
+          $ref: '#/components/schemas/RecommendationsCollectionPartial'
 
     RecommendationsCollectionPartial:
       type: object
+      nullable: true
+      description: >
+        Non-null when the most recent persisted collection kept rows from
+        at least one incomplete sweep. Cleared by the next collection whose
+        sweeps are all complete. Carries counts and reason categories only.
       required: [providers]
       properties:
         providers:
