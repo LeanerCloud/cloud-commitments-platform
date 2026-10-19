@@ -3690,7 +3690,9 @@ const COLUMN_FILTERS_SCHEMA_VERSION = 1;
 
 // Full set of valid column ids, used as an allowlist when loading from
 // localStorage so stale or hand-edited keys are silently dropped.
-const VALID_COLUMN_IDS = new Set<state.RecommendationsColumnId>(COLUMN_DEFS.map((c) => c.key));
+const VALID_COLUMN_IDS = new Set<state.RecommendationsColumnId>(
+  COLUMN_DEFS.filter((c) => c.kind !== 'visual').map((c) => c.key),
+);
 
 interface ColumnFiltersSchema {
   schemaVersion: number;
