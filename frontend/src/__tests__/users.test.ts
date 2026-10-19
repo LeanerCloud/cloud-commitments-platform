@@ -3284,3 +3284,40 @@ describe('group toggle confirmation (issue #736)', () => {
     });
   });
 });
+
+describe('saveUser submit button (issue #735)', () => {
+  it('disables Save User while the request is in flight and re-enables it after', async () => {
+    document.body.innerHTML = `
+      <div id="user-modal" class="hidden">
+        <h2 id="user-modal-title"></h2>
+        <form id="user-form">
+          <input type="hidden" id="user-id" />
+          <input type="email" id="user-email" />
+          <div id="password-fields"><input type="password" id="user-password" /></div>
+          <select id="user-groups" multiple></select>
+          <button type="submit">Save</button>
+        </form>
+      </div>
+      <div id="users-list"></div><div id="groups-list"></div><div id="user-stats"></div>`;
+    userState.setAvailableGroups([{ id: 'users', name: 'Users', permissions: [], description: '' }] as any);
+    userState.setCurrentEditingUser(null);
+    userModals.openCreateUserModal();
+    const btn = document.querySelector<HTMLButtonElement>('#user-form button[type="submit"]')!;
+    (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+    (document.getElementById('user-password') as HTMLInputElement).value = 'SecurePass123!';
+    const gs = document.getElementById('user-groups') as HTMLSelectElement;
+    if (gs.options.length > 0) gs.options[0]!.selected = true;
+    let resolve!: (v: unknown) => void;
+    (api.createUser as jest.Mock).mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+    (api.listUsers as jest.Mock).mockResolvedValue({ users: [] });
+    (api.listGroups as jest.Mock).mockResolvedValue({ groups: [] });
+
+    const event = new Event('submit');
+    event.preventDefault = jest.fn();
+    const pending = userModals.saveUser(event);
+    expect(btn.disabled).toBe(true);
+    resolve({});
+    await pending;
+    expect(btn.disabled).toBe(false);
+  });
+});
