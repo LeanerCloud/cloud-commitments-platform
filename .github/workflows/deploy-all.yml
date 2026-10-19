@@ -315,18 +315,22 @@ jobs:
         run: |
           FAILED=false
 
-          # Allowlist, not denylist: determine-deployment must be "success" and
-          # each deploy job "success" or "skipped" (not selected). Anything else,
-          # including "cancelled", counts as a failed run.
-          for result in \
-            "${{ needs.deploy-aws-lambda.result }}" \
-            "${{ needs.deploy-aws-fargate.result }}" \
-            "${{ needs.deploy-gcp.result }}" \
-            "${{ needs.deploy-azure.result }}"; do
-            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
-              FAILED=true
+          # Allowlist, not denylist: determine-deployment must be "success". A
+          # selected deploy job must be "success"; "skipped" is only ok for a
+          # job that was not selected. Anything else, including "cancelled",
+          # counts as a failed run.
+          check_job() {
+            local selected="$1" result="$2"
+            if [[ "$selected" == "true" ]]; then
+              [[ "$result" == "success" ]]
+            else
+              [[ "$result" == "skipped" || "$result" == "success" ]]
             fi
-          done
+          }
+          check_job "${{ needs.determine-deployment.outputs.deploy-aws-lambda }}" "${{ needs.deploy-aws-lambda.result }}" || FAILED=true
+          check_job "${{ needs.determine-deployment.outputs.deploy-aws-fargate }}" "${{ needs.deploy-aws-fargate.result }}" || FAILED=true
+          check_job "${{ needs.determine-deployment.outputs.deploy-gcp }}" "${{ needs.deploy-gcp.result }}" || FAILED=true
+          check_job "${{ needs.determine-deployment.outputs.deploy-azure }}" "${{ needs.deploy-azure.result }}" || FAILED=true
           if [[ "${{ needs.determine-deployment.result }}" != "success" ]]; then
             FAILED=true
           fi
