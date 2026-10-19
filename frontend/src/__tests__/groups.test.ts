@@ -1350,7 +1350,10 @@ describe('11-M3 max_amount validation in collectPermissions', () => {
 
     // Negative value must be refused, not silently dropped (#133).
     expect(api.createGroup).not.toHaveBeenCalled();
-    expect(document.querySelector('.toast-error')?.textContent).toContain('greater than 0');
+    expect(document.querySelector('.toast-error')?.textContent).toContain(
+      'Max Amount must be greater than 0; leave it blank for no limit (permission 0).'
+    );
+    expect(document.querySelector('.toast-error')?.textContent).not.toContain('Repair');
   });
 
   it.each(['0', '-100', '1e999'])('refuses max_amount %s instead of saving without the cap (#133)', async raw => {
@@ -1368,7 +1371,10 @@ describe('11-M3 max_amount validation in collectPermissions', () => {
     `;
     await groupModals.saveGroup(new Event('submit', { cancelable: true }));
     expect(api.createGroup).not.toHaveBeenCalled();
-    expect(document.querySelector('.toast-error')?.textContent).toContain('greater than 0');
+    expect(document.querySelector('.toast-error')?.textContent).toContain(
+      'Max Amount must be greater than 0; leave it blank for no limit (permission 0).'
+    );
+    expect(document.querySelector('.toast-error')?.textContent).not.toContain('Repair');
   });
 
   it('shows a stored max_amount of 0 in the edit form (#133)', () => {

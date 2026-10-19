@@ -102,6 +102,14 @@ export async function saveGroup(e: Event): Promise<void> {
     return;
   }
 
+  const badAmounts = maxAmountInputErrors();
+  if (badAmounts.length > 0) {
+    showError(
+      `Max Amount must be greater than 0; leave it blank for no limit (${badAmounts.join(', ')}).`
+    );
+    return;
+  }
+
   const name = (document.getElementById('group-name') as HTMLInputElement).value;
   const description = (document.getElementById('group-description') as HTMLTextAreaElement).value;
   const permissions = collectPermissions();
@@ -397,13 +405,21 @@ function unrepresentablePermissionErrors(): string[] {
         errors.push(`${label} has a "${dimension}" value with no usable entries`);
       }
     }
+  });
+  return errors;
+}
 
-    const rawAmount = (item.querySelector('.perm-max-amount') as HTMLInputElement | null)?.value ?? '';
-    if (rawAmount.trim() !== '') {
-      const amount = Number(rawAmount);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        errors.push(`${label} has a Max Amount that must be a number greater than 0 (leave blank for no limit)`);
-      }
+// Max Amount is typed by the admin, unlike the stored-value problems above, so
+// its message tells them how to fix the field instead of pointing at the API.
+// 0 would read as "no cap" at enforcement, so it is refused rather than sent.
+function maxAmountInputErrors(): string[] {
+  const errors: string[] = [];
+  document.querySelectorAll('#permissions-list .permission-item').forEach((item, index) => {
+    const raw = (item.querySelector('.perm-max-amount') as HTMLInputElement | null)?.value ?? '';
+    if (raw.trim() === '') return;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      errors.push(`permission ${index}`);
     }
   });
   return errors;
