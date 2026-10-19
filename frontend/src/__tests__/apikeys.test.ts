@@ -602,6 +602,10 @@ describe('API Keys Module', () => {
   });
 
   describe('handleCreateApiKey', () => {
+    beforeEach(() => {
+      document.getElementById('create-apikey-modal')?.classList.remove('hidden');
+    });
+
     test('prevents default form submission', async () => {
       (api.createApiKey as jest.Mock).mockResolvedValue({
         api_key: 'test-key',
@@ -940,6 +944,17 @@ describe('API Keys Module', () => {
       expect(api.getApiKeys).toHaveBeenCalledTimes(2); // Initial load + after revoke
     });
 
+    test('toasts a failure while the hidden create modal still has its error element (issue #717)', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+      (api.revokeApiKey as jest.Mock).mockRejectedValue(new Error('Revoke failed'));
+
+      await revokeApiKey('key-1');
+
+      expect(document.querySelector('.toast-error')?.querySelector('.toast-message')?.textContent).toBe('Failed to revoke API key');
+      expect(document.getElementById('create-apikey-error')?.classList.contains('hidden')).toBe(true);
+      consoleError.mockRestore();
+    });
+
     test('shows error on API failure', async () => {
       // Remove the create-apikey-error element so showError falls back to alert
       document.getElementById('create-apikey-error')?.remove();
@@ -1081,6 +1096,7 @@ describe('API Keys Module', () => {
 
   describe('Error display', () => {
     test('shows error in error element when available', async () => {
+      document.getElementById('create-apikey-modal')?.classList.remove('hidden');
       const event = { preventDefault: jest.fn() } as unknown as Event;
       await handleCreateApiKey(event);
 

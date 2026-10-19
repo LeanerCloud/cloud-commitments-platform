@@ -555,7 +555,8 @@ export function initApiKeys(): void {
  */
 function showError(message: string): void {
   const errorEl = document.getElementById('create-apikey-error');
-  if (errorEl) {
+  const createModalOpen = !document.getElementById('create-apikey-modal')?.classList.contains('hidden');
+  if (errorEl && createModalOpen) {
     errorEl.textContent = message;
     errorEl.classList.remove('hidden');
   } else {
