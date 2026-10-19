@@ -3195,7 +3195,15 @@ function buildVariantRowMarkup(
     ? `<button type="button" class="btn btn-small rec-plan-btn" data-rec-id="${recId}" data-action="plan" aria-label="Create plan for this recommendation" title="Create a purchase plan from this recommendation">Plan</button>`
     : '';
   const selectLabel = escapeHtml(
-    `Select ${rec.service} ${rec.resource_type} ${rec.region} ${accountName} ${formatTerm(rec.term)} ${PAYMENT_DISPLAY_LABELS[rec.payment ?? ''] ?? ''}`,
+    [
+      'Select',
+      rec.service,
+      rec.engine ? `${rec.resource_type} (${rec.engine})` : rec.resource_type,
+      rec.region,
+      accountName,
+      formatTerm(rec.term),
+      rec.payment ? formatPayment(rec.payment) : '',
+    ].filter(part => part).join(' '),
   );
   const checkboxCell = showCheckboxes
     ? `<td class="checkbox-col"><input type="checkbox" data-rec-id="${recId}" ${isSelected ? 'checked' : ''} aria-label="${selectLabel}">${planBtnHtml}</td>`
