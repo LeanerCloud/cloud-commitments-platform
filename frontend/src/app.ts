@@ -954,9 +954,9 @@ export function setupMobileNav(): void {
     if (document.body.classList.contains('sidebar-open')) closeDrawer();
   });
   // The profile button opens a modal. Close the drawer in the capture phase,
-  // before the button's own handler records its return-focus trigger and
-  // moves focus into the modal: closing afterwards would pull focus back to
-  // the hamburger and leave the trigger inside the inert sidebar.
+  // before the button's own handler runs: closing afterwards would pull focus
+  // from the modal back to the hamburger. Closing first lets the handler
+  // record the hamburger, not the now-inert button, as the return-focus trigger.
   extras?.addEventListener('click', (e: MouseEvent) => {
     if (!(e.target as HTMLElement | null)?.closest('#user-email-display')) return;
     if (document.body.classList.contains('sidebar-open')) closeDrawer();
