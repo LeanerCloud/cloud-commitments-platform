@@ -1913,8 +1913,7 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
         max_payment_due_usd: quote.PaymentDueRaw,
         region: quote.Region,
       });
-      void loadConvertibleRIs();
-      void loadExchangeHistory();
+      void loadRIExchange();
       if (!sessionOpen) return;
       setResultText(resultContainer, 'Exchange completed. ID: ' + result.exchange_id, 'success-message');
       executeBtn.classList.add('hidden');

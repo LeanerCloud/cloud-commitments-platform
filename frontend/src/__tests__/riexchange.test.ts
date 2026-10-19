@@ -1058,6 +1058,32 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
     expect(api.listConvertibleRIs).toHaveBeenCalledWith('123456789012');
   });
 
+  it('keeps the account scope and refreshes reshape recs after a successful exchange (closes #285)', async () => {
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
+    (api.listTargetOfferings as jest.Mock).mockResolvedValue([]);
+    const modal = createModal();
+    (api.getExchangeQuote as jest.Mock).mockResolvedValueOnce({
+      IsValidExchange: true, ValidationFailureReason: '', CurrencyCode: 'USD', PaymentDueRaw: '12.50',
+      SourceHourlyPriceRaw: '', SourceRemainingUpfrontRaw: '', SourceRemainingTotalRaw: '',
+      TargetHourlyPriceRaw: '', TargetRemainingUpfrontRaw: '', TargetRemainingTotalRaw: '', Region: 'us-west-2',
+    });
+    (api.executeExchange as jest.Mock).mockResolvedValueOnce({ exchange_id: 'exch-1', quote: {} });
+    openExchangeModal('ri-abc', 3, 'm5.large', [
+      { instance_type: 'm5.large', offering_id: '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91', effective_monthly_cost: 42.5 },
+    ]);
+    Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Get Quote')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Execute Exchange')?.click();
+    document.querySelector<HTMLButtonElement>('.modal-confirm-actions .btn-destructive')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(api.executeExchange).toHaveBeenCalledTimes(1);
+    expect(api.listConvertibleRIs).toHaveBeenCalledWith('123456789012');
+    expect(api.listConvertibleRIs).not.toHaveBeenCalledWith(undefined);
+    expect(api.getReshapeRecommendations).toHaveBeenCalled();
+  });
+
   it('forwards the Azure subscription GUID (external_id), not the account UUID', async () => {
     stateMod().getCurrentProvider.mockReturnValue('azure');
     stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-az']);
