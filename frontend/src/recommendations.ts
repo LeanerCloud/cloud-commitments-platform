@@ -4280,6 +4280,16 @@ export function clearExecuteMode(): void {
   currentExecuteMode = '';
 }
 
+// Resets the mode and the submit button label together so the label never
+// promises a different action than the radio (issue #754).
+function resetExecuteModeAndLabel(): void {
+  currentExecuteMode = '';
+  const executeBtn = document.getElementById('execute-purchase-btn') as HTMLButtonElement | null;
+  if (executeBtn && executeBtn.dataset['submitting'] !== 'true') {
+    executeBtn.textContent = 'Send for Approval';
+  }
+}
+
 // resolveBucketPaymentSeed picks the default Payment value for a
 // bucket per issue #111 sub-option (ii):
 //   - When all recs in the bucket share one non-empty cloud_account_id
@@ -4374,6 +4384,7 @@ async function openFanOutModal(
   toolbar: BulkPurchaseToolbarState,
 ): Promise<void> {
   const openToken = ++purchaseModalOpenToken;
+  resetExecuteModeAndLabel();
   // Pre-fetch service-overrides for every distinct account referenced by
   // any rec in any bucket; overridesByAccount seeds the bucket-level
   // payment (issue #111). One fetch per distinct accountID; cached for the lifetime of this
@@ -4465,6 +4476,7 @@ async function openFanOutModal(
     onClose: () => {
       clearPurchaseModalRecommendations();
       clearFanOutBuckets();
+      resetExecuteModeAndLabel();
     },
   });
 }
@@ -5171,7 +5183,7 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
 
   // Reset the execute mode for this modal session so a prior direct-execute
   // choice does not carry over to a freshly opened modal (issue #289).
-  currentExecuteMode = '';
+  resetExecuteModeAndLabel();
 
   // Execute-mode toggle (issue #289): shown only to sessions with
   // execute-any:purchases or execute-own:purchases. Everyone else sees only
@@ -5336,6 +5348,7 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
       onClose: () => {
         clearPurchaseModalRecommendations();
         clearFanOutBuckets();
+        resetExecuteModeAndLabel();
       },
     });
   }
