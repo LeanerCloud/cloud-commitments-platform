@@ -33,8 +33,9 @@ const VALID_PROVIDERS: api.Provider[] = ['aws', 'azure', 'gcp'];
 const AWS_MARKETPLACE_FEE_PERCENT = 12;
 // awsMarketplaceNetFactor: fraction of list price the seller receives after the fee.
 const AWS_MARKETPLACE_NET_FACTOR = 1 - AWS_MARKETPLACE_FEE_PERCENT / 100;
-// awsMarketplaceBuyerDiscountFactor: applied to residual RI value to compute the default list price.
-const AWS_MARKETPLACE_BUYER_DISCOUNT = 0.95;
+// awsMarketplaceBuyerDiscountPercent: discount off residual RI value for the default list price.
+const AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT = 5;
+const AWS_MARKETPLACE_BUYER_DISCOUNT = 1 - AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT / 100;
 
 type StatusFilter = 'all' | 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
 
@@ -1595,7 +1596,7 @@ function wireRowActionHandlers(container: HTMLElement): void {
 
         const noteEl = document.createElement('p');
         noteEl.className = 'marketplace-pricing-note';
-        noteEl.textContent = `AWS charges a ${AWS_MARKETPLACE_FEE_PERCENT}% transaction fee on proceeds. The default schedule prices the listing at ${(1 - AWS_MARKETPLACE_BUYER_DISCOUNT) * 100}% below remaining value. You can adjust pricing by contacting your administrator or modifying the schedule via the API. This action cannot be undone without cancelling the listing.`;
+        noteEl.textContent = `AWS charges a ${AWS_MARKETPLACE_FEE_PERCENT}% transaction fee on proceeds. The default schedule prices the listing at ${AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT}% below remaining value. You can adjust pricing by contacting your administrator or modifying the schedule via the API. This action cannot be undone without cancelling the listing.`;
         bodyEl.appendChild(noteEl);
 
         const ok = await confirmDialog({
