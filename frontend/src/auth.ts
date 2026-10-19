@@ -1083,6 +1083,7 @@ async function openProfileModal(): Promise<void> {
   // (Re-)render the MFA section so its state reflects whatever the
   // user's mfa_enabled flag is right now (could have flipped since
   // the modal was last opened). See renderMFASection below.
+  setProfileSecretPending(false);
   renderMFASection();
 
   // Reset live indicators and any stale error so the previous open
@@ -1298,6 +1299,16 @@ async function handleMFAEnrollVerify(): Promise<void> {
   }
 }
 
+function setProfileSecretPending(pending: boolean): void {
+  const modal = document.getElementById('profile-modal');
+  if (modal) {
+    if (pending) modal.dataset.requireAck = 'true';
+    else delete modal.dataset.requireAck;
+  }
+  const cancel = document.getElementById('profile-cancel') as HTMLButtonElement | null;
+  if (cancel) cancel.disabled = pending;
+}
+
 /**
  * Step 3 of enrollment: display the plaintext recovery codes. Shown
  * exactly once; backend stores only bcrypt hashes. Offers a download
@@ -1321,10 +1332,12 @@ function renderMFAEnrollCodesStep(codes: string[]): void {
       </div>
     </div>
   `;
+  setProfileSecretPending(true);
   document.getElementById('mfa-codes-download')?.addEventListener('click', () => downloadRecoveryCodes(codes));
   document.getElementById('mfa-codes-done')?.addEventListener('click', () => {
     // Acknowledged — re-render the section so it now shows the
     // Enabled view (Disable / Regenerate buttons).
+    setProfileSecretPending(false);
     renderMFASection();
   });
 }

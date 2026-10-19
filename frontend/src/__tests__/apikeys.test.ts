@@ -1094,6 +1094,38 @@ describe('API Keys Module', () => {
     });
   });
 
+  describe('secret handling (issue #732)', () => {
+    test('a second submit while the first is in flight mints only one key and disables submit', async () => {
+      document.getElementById('create-apikey-modal')?.classList.remove('hidden');
+      (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
+      (document.getElementById('apikey-password') as HTMLInputElement).value = 'pw';
+      (document.getElementById('apikey-expires-at') as HTMLInputElement).value = '2999-01-01';
+      let resolve!: (v: unknown) => void;
+      (api.createApiKey as jest.Mock).mockReturnValue(new Promise((r) => { resolve = r; }));
+      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: [] });
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+
+      const first = handleCreateApiKey(event);
+      await handleCreateApiKey(event);
+      expect((document.getElementById('create-apikey-submit-btn') as HTMLButtonElement).disabled).toBe(true);
+      resolve({ api_key: 'k', key_id: 'key-1', key: { id: 'key-1', name: 'Test Key', key_prefix: 'abc' } });
+      await first;
+
+      expect(api.createApiKey).toHaveBeenCalledTimes(1);
+    });
+
+    test('Escape does not dismiss the created-key modal; the button does', () => {
+      showKeyCreatedModal('secret-key');
+      const modal = document.getElementById('apikey-created-modal')!;
+      modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(document.getElementById('apikey-created-modal')).not.toBeNull();
+      expect(modal.classList.contains('hidden')).toBe(false);
+
+      document.getElementById('close-apikey-created-btn')!.click();
+      expect(document.getElementById('apikey-created-modal')).toBeNull();
+    });
+  });
+
   describe('Error display', () => {
     test('shows error in error element when available', async () => {
       document.getElementById('create-apikey-modal')?.classList.remove('hidden');

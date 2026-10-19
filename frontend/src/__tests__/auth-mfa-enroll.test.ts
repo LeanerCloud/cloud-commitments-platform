@@ -200,4 +200,22 @@ describe('MFA regenerate-recovery-codes flow', () => {
     expect(api.regenerateMFARecoveryCodes).toHaveBeenCalledWith('123456');
     expect(document.body.textContent).toContain('NEW1-XXXX');
   });
+
+  test('Escape and Cancel cannot discard recovery codes until acknowledged (issue #732)', async () => {
+    (api.regenerateMFARecoveryCodes as jest.Mock).mockResolvedValue({ recovery_codes: ['NEW1-XXXX'] });
+    await openProfile();
+    document.getElementById('mfa-regenerate-btn')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    (document.getElementById('mfa-regen-code') as HTMLInputElement).value = '123456';
+    document.getElementById('mfa-regen-submit')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 10));
+
+    const modal = document.getElementById('profile-modal')!;
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(modal.classList.contains('hidden')).toBe(false);
+    expect((document.getElementById('profile-cancel') as HTMLButtonElement).disabled).toBe(true);
+
+    document.getElementById('mfa-codes-done')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(modal.classList.contains('hidden')).toBe(true);
+  });
 });
