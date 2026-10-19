@@ -1317,6 +1317,8 @@ function setProfileSecretPending(pending: boolean): void {
   }
   const cancel = document.getElementById('profile-cancel') as HTMLButtonElement | null;
   if (cancel) cancel.disabled = pending;
+  const save = document.querySelector<HTMLButtonElement>('#profile-form button[type="submit"]');
+  if (save) save.disabled = pending;
 }
 
 /**
@@ -1479,6 +1481,7 @@ async function handleMFARegenerateSubmit(): Promise<void> {
  */
 async function saveProfile(e: Event): Promise<void> {
   e.preventDefault();
+  if (document.getElementById('profile-modal')?.dataset.requireAck === 'true') return;
 
   const email = (document.getElementById('profile-email') as HTMLInputElement).value;
   const currentPassword = (document.getElementById('profile-current-password') as HTMLInputElement).value;

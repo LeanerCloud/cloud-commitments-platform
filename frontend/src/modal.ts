@@ -13,7 +13,7 @@
  *
  * A modal holding a one-time secret sets `data-require-ack="true"` so
  * Escape does not dismiss it; the caller removes the attribute once the user
- * acknowledges.
+ * acknowledges; until then closeModal is a no-op.
  *
  * The helper toggles the existing `.hidden` CSS class so it slots into the
  * established show/hide convention without touching the stylesheet.
@@ -112,7 +112,6 @@ export function openModal(
   const keydownHandler = (e: KeyboardEvent): void => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      if (el.dataset.requireAck === 'true') return;
       closeModal(el);
       return;
     }
@@ -162,6 +161,7 @@ export function openModal(
  * legacy code paths that call closeModal directly from a callback safe.
  */
 export function closeModal(el: HTMLElement): void {
+  if (el.dataset.requireAck === 'true') return;
   const state = openModals.get(el);
   teardown(el);
   el.classList.add('hidden');
