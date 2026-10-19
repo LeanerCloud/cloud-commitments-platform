@@ -666,6 +666,29 @@ describe('Recommendations Module', () => {
       (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set());
     });
 
+    test('re-render after a sort click keeps the loaded total in "Showing X of Y" (closes #287)', async () => {
+      const allRecs = [
+        { id: 'r1', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment_option: 'no-upfront', savings: 100, upfront_cost: 0 },
+        { id: 'r2', provider: 'aws', cloud_account_id: 'a1', service: 'rds', resource_type: 'db.t3', region: 'us-east-1', count: 1, term: 1, payment_option: 'no-upfront', savings: 200, upfront_cost: 0 },
+      ];
+      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: allRecs, regions: [] });
+      (state.getRecommendations as jest.Mock).mockReturnValue(allRecs);
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue([allRecs[0]]);
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({ service: { kind: 'set', values: ['ec2'] } });
+      (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set());
+
+      await loadRecommendations();
+      const liveText = (): string =>
+        document.querySelector('.recommendations-filter-live')?.textContent ?? '';
+      expect(liveText()).toMatch(/Showing 1 of 2 recommendations$/);
+
+      document.querySelector<HTMLElement>('th.sortable')?.click();
+      expect(liveText()).toMatch(/Showing 1 of 2 recommendations$/);
+
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue([]);
+    });
+
     test('renders recommendations list', async () => {
       (api.getRecommendations as jest.Mock).mockResolvedValue({
         summary: {},

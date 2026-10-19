@@ -4868,7 +4868,7 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
       // common UX surprise of "I sorted by Account, refreshed, now I'm back
       // at Savings desc".
       writeSortToUrl({ column: col as state.RecommendationsSortColumn, direction });
-      renderRecommendationsList(recommendations);
+      renderRecommendationsList(loadedRecs);
     };
     th.addEventListener('click', onActivate);
     th.addEventListener('keydown', (e) => {
@@ -4909,7 +4909,7 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
         } else {
           state.clearSelectedRecommendations();
         }
-        renderRecommendationsList(recommendations);
+        renderRecommendationsList(loadedRecs);
       });
     }
 
@@ -4945,7 +4945,7 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
         } else {
           state.removeSelectedRecommendation(id);
         }
-        renderRecommendationsList(recommendations);
+        renderRecommendationsList(loadedRecs);
       });
     });
 
