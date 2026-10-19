@@ -1191,6 +1191,8 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
 
   if (!purchases || purchases.length === 0) {
     container.innerHTML = '<p class="empty">No purchase history found for the selected period.</p>';
+    mountAmortizeCheckbox('history-controls', 'history-amortize-checkbox');
+    applyExecutionDeepLink();
     return;
   }
 
