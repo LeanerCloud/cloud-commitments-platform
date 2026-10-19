@@ -27,6 +27,7 @@ function buildDOM(): void {
     </header>
     <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
     <aside id="sidebar" aria-label="Primary navigation" aria-hidden="true">
+      <button type="button" class="app-sidebar-toggle" aria-label="Toggle sidebar"></button>
       <a class="tab-btn" href="/home" data-tab="home">Home</a>
       <a class="tab-btn" href="/plans" data-tab="plans">Plans</a>
       <div class="app-sidebar-extras" id="sidebar-extras"></div>
@@ -151,10 +152,8 @@ describe('setupMobileNav', () => {
     setupMobileNav();
     hamburger().click();
     const firstLink = sidebar().querySelector<HTMLElement>('.tab-btn');
-    // jsdom doesn't implement layout so focus() is a no-op, but we can
-    // verify the call was attempted by checking that no error was thrown
-    // and the structure is correct
     expect(firstLink).not.toBeNull();
+    expect(document.activeElement).toBe(firstLink);
   });
 
   test('no-op when hamburger element is missing from DOM', () => {

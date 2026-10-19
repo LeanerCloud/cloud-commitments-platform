@@ -859,9 +859,10 @@ export function setupMobileNav(): void {
     sidebar!.removeAttribute('inert');
     if (overlay) overlay.setAttribute('aria-hidden', 'false');
 
-    // Focus the first focusable element in the sidebar
+    // The desktop collapse toggle is display:none below the drawer
+    // breakpoint, where focus() on it is a no-op, so skip it.
     const firstFocusable = sidebar!.querySelector<HTMLElement>(
-      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      'a[href], button:not([disabled]):not(.app-sidebar-toggle), [tabindex]:not([tabindex="-1"])',
     );
     firstFocusable?.focus();
   }
