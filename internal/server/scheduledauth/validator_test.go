@@ -894,6 +894,13 @@ func TestNew_OIDCJWKSURLScheme(t *testing.T) {
 		{"ftp rejected", "ftp://jwks.example.com/keys", true},
 		{"https accepted", "https://jwks.example.com/keys", false},
 		{"http loopback accepted for local test doubles", "http://127.0.0.1:8080/keys", false},
+		{"localhost subdomain rejected", "http://localhost.evil.com/keys", true},
+		{"loopback userinfo trick rejected", "http://127.0.0.1@evil.com/keys", true},
+		{"localhost trailing dot rejected", "http://localhost./x", true},
+		{"loopback lookalike domain rejected", "http://127.0.0.1.nip.io/keys", true},
+		{"http ipv6 loopback accepted", "http://[::1]:8080", false},
+		{"http LOCALHOST accepted", "http://LOCALHOST", false},
+		{"http 127.0.0.2 accepted", "http://127.0.0.2", false},
 		{"empty falls back to Google JWKS URL", "", false},
 	}
 	for _, tc := range cases {
