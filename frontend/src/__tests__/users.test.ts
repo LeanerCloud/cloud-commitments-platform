@@ -3287,6 +3287,25 @@ describe('group toggle confirmation (issue #736)', () => {
       destructive: true,
     });
   });
+
+  it('detects self-demotion by user id, not email', async () => {
+    require('../state').setCurrentUser({ id: '1', email: 'ME@test.com', groups: [ADMIN] });
+    await toggle('1', false);
+    expect(mockConfirmDialog.mock.calls[0]![0]).toMatchObject({ body: expect.stringContaining('removing yourself') });
+  });
+
+  it('saves against the groups current after the confirm resolves', async () => {
+    let release!: (v: boolean) => void;
+    mockConfirmDialog.mockReturnValueOnce(new Promise<boolean>((r) => { release = r; }));
+    document.querySelector<HTMLButtonElement>('.user-expand-btn[data-user-id="2"]')!.click();
+    const cb = document.querySelector<HTMLInputElement>('.group-assign-checkbox[data-user-id="2"]')!;
+    cb.checked = false;
+    cb.dispatchEvent(new Event('change', { bubbles: true }));
+    userState.setAllUsers(users.map(u => (u.id === '2' ? { ...u, groups: [ADMIN, 'g-new'] } : u)) as any);
+    release(true);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(api.updateUser).toHaveBeenCalledWith('2', { groups: ['g-new'] });
+  });
 });
 
 describe('saveUser submit button (issue #735)', () => {

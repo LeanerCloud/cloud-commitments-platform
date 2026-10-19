@@ -231,9 +231,10 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
   const group = availableGroups.find(g => g.id === groupId);
   const groupLabel = group ? group.name : groupId;
 
-  const next = checked
-    ? [...new Set([...user.groups, groupId])]
-    : user.groups.filter(g => g !== groupId);
+  const nextFor = (u: APIUser): string[] => (checked
+    ? [...new Set([...u.groups, groupId])]
+    : u.groups.filter(g => g !== groupId));
+  const next = nextFor(user);
 
   // Validate the resulting group combination before hitting the API.
   // A view-only group (all permissions are view:*) combined with a
@@ -251,7 +252,7 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
 
   const selfDemotion = !checked
     && groupId === ADMINISTRATORS_GROUP_ID
-    && user.email === getCurrentUser()?.email;
+    && user.id === getCurrentUser()?.id;
   const ok = await confirmDialog({
     title: checked
       ? `Add ${user.email} to "${groupLabel}"?`
@@ -272,12 +273,16 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
     return;
   }
 
+  // A concurrent toggle may have changed the user while the dialog was open.
+  const latest = allUsers.find(u => u.id === userId) ?? user;
+  const groupsToSave = nextFor(latest);
+
   try {
-    await api.updateUser(userId, { groups: next });
+    await api.updateUser(userId, { groups: groupsToSave });
 
     // Patch the user in-memory so subsequent renders and effectivePermissions
     // calculations reflect the change without a full round-trip re-render.
-    const updatedUser: APIUser = { ...user, groups: next };
+    const updatedUser: APIUser = { ...latest, groups: groupsToSave };
     setAllUsers(allUsers.map(u => (u.id === userId ? updatedUser : u)));
 
     // Re-render the expand panel in place so the checkboxes and permissions
