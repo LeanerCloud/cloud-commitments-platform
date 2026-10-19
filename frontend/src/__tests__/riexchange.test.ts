@@ -1272,3 +1272,44 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
     expect(modal.classList.contains('hidden')).toBe(true);
   });
 });
+
+describe('exchange history table counts (issue #286)', () => {
+  beforeEach(() => {
+    for (const id of ['ri-exchange-instances-list', 'ri-exchange-recommendations-list', 'ri-exchange-history-list']) {
+      const el = document.createElement('div');
+      el.id = id;
+      document.body.appendChild(el);
+    }
+    const s = jest.requireMock('../state') as { getCurrentProvider: jest.Mock; getCurrentAccountIDs: jest.Mock; getRiExchangeColumnFilters: jest.Mock; getActiveRiColumnFilters: jest.Mock };
+    s.getCurrentProvider.mockReturnValue('aws');
+    s.getCurrentAccountIDs.mockReturnValue([]);
+    s.getRiExchangeColumnFilters.mockReturnValue({});
+    s.getActiveRiColumnFilters.mockReturnValue({});
+    (api.listConvertibleRIs as jest.Mock).mockResolvedValue([]);
+    (api.getRIUtilization as jest.Mock).mockResolvedValue([]);
+    (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    jest.clearAllMocks();
+  });
+
+  it('shows each count once, inside the type cells, with no duplicate Count column', async () => {
+    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([{
+      id: 'h1', account_id: 'a', exchange_id: 'exch-1', region: 'us-east-1', source_ri_ids: ['ri-1'],
+      source_instance_type: 'm5.large', source_count: 4, target_offering_id: 'o', target_instance_type: 'm5.4xlarge',
+      target_count: 1, payment_due: '1.00', status: 'completed', mode: 'manual',
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+    }]);
+    await loadRIExchange();
+    const table = document.querySelector('#ri-exchange-history-list table')!;
+    const headers = Array.from(table.querySelectorAll('th')).map((h) => h.textContent);
+    expect(headers).not.toContain('Count');
+    const cells = Array.from(table.querySelectorAll('tbody tr td')).map((c) => c.textContent);
+    expect(cells).toHaveLength(headers.length);
+    expect(cells).toContain('4x m5.large');
+    expect(cells).toContain('1x m5.4xlarge');
+    expect(cells).not.toContain('4');
+  });
+});
