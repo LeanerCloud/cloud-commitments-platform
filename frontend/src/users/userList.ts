@@ -42,7 +42,7 @@ export function renderUserStats(): void {
   const adminUsers = allUsers.filter(u =>
     Array.isArray(u.groups) && u.groups.includes(ADMINISTRATORS_GROUP_ID)
   ).length;
-  const mfaEnabled = allUsers.filter(u => u.id !== SYNTHETIC_USER_ID && u.mfa_enabled).length;
+  const mfaEnabled = allUsers.filter(u => u.mfa_enabled).length;
   const showing = filteredUsers.length;
 
   statsContainer.innerHTML = `

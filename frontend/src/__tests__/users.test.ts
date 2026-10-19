@@ -3213,11 +3213,15 @@ describe('synthetic current-user row (issue #274)', () => {
     expect([...userState.selectedUserIds]).toEqual(['1']);
   });
 
-  it('excludes the synthetic row from the MFA stat', () => {
-    userState.setAllUsers([{ ...synthetic, mfa_enabled: true }, { ...real, mfa_enabled: false }] as any);
-    userList.renderUserStats();
+  it('carries the session user mfa_enabled into the synthetic row and the MFA stat', async () => {
+    require('../state').setCurrentUser({ id: 'u9', email: 'me@test.com', groups: [], mfa_enabled: true });
+    (api.listUsers as jest.Mock).mockResolvedValue({ users: [{ ...real, mfa_enabled: false }] });
+    (api.listGroups as jest.Mock).mockResolvedValue({ groups: [] });
+    await userActions.loadUsers();
+    const row = document.querySelector('tr.user-row[data-user-id="current"]')!;
+    expect(row.textContent).toContain('Enabled');
     const card = [...document.querySelectorAll('.stat-card')].find(c => c.textContent!.includes('MFA Enabled'))!;
-    expect(card.querySelector('.stat-value')!.textContent).toBe('0');
+    expect(card.querySelector('.stat-value')!.textContent).toBe('1');
   });
 });
 
