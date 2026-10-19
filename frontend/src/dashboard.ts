@@ -189,8 +189,9 @@ export async function loadDashboard(): Promise<void> {
     // match what the Opportunities page does (cast to RecommendationsResponse
     // and read .recommendations). A flat-array result is also accepted so
     // test fixtures that resolve with a plain array continue to work.
-    // #304: apiRequest's catch block returns `null` on a 2xx with empty/non-JSON
-    // body; guard against null / unexpected shapes to avoid "X is not iterable".
+    // #304: apiRequest resolves `null` for a 204 or content-length 0 response
+    // (a malformed 2xx body rejects, #273); guard against null / unexpected
+    // shapes to avoid "X is not iterable".
     const rawRecs = recsResult.status === 'fulfilled' ? recsResult.value : null;
     const recsArray = Array.isArray(rawRecs)
       ? rawRecs
