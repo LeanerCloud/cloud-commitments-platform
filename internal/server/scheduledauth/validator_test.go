@@ -901,6 +901,9 @@ func TestNew_OIDCJWKSURLScheme(t *testing.T) {
 		{"http ipv6 loopback accepted", "http://[::1]:8080", false},
 		{"http LOCALHOST accepted", "http://LOCALHOST", false},
 		{"http 127.0.0.2 accepted", "http://127.0.0.2", false},
+		{"http unspecified ip rejected", "http://0.0.0.0/k", true},
+		{"http private ip rejected", "http://10.0.0.1/k", true},
+		{"http link-local metadata ip rejected", "http://169.254.169.254/k", true},
 		{"empty falls back to Google JWKS URL", "", false},
 	}
 	for _, tc := range cases {
