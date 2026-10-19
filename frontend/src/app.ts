@@ -7,7 +7,7 @@ import * as state from './state';
 import { showLoginModal, showAdminSetupModal, showResetPasswordModal, updateUserUI } from './auth';
 import { loadDashboard, setupDashboardHandlers } from './dashboard';
 import { setupRecommendationsHandlers, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, getFanOutBuckets, clearFanOutBuckets, getExecuteMode, clearExecuteMode, fanOutBucketAccountLabel, getAccountName, type FanOutBucket } from './recommendations';
-import { switchTab, applyTabFromPath, initRouter, switchSettingsSubTab, canonicalTabPath } from './navigation';
+import { switchTab, setActiveNav, applyTabFromPath, initRouter, switchSettingsSubTab, canonicalTabPath } from './navigation';
 import { savePlan, setupPlanHandlers, closePlanModal, openNewPlanModal, closePurchaseModal } from './plans';
 import { saveGlobalSettings, setupSettingsHandlers, resetSettings } from './settings';
 import { setupUserHandlers } from './users';
@@ -74,6 +74,10 @@ export async function init(): Promise<void> {
     await showResetPasswordModal(resetToken);
     return;
   }
+
+  // The server-rendered markup marks Home active; correct it from the URL
+  // now instead of after the async fetches below.
+  setActiveNav(applyTabFromPath());
 
   if (!api.isAuthenticated()) {
     try {
