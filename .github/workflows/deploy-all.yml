@@ -315,25 +315,19 @@ jobs:
         run: |
           FAILED=false
 
-          # determine-deployment is checked for anything other than success, not
-          # just "failure". When it stops the run the four deploy jobs are
-          # SKIPPED rather than failed, so testing only those would report "all
-          # deployments completed successfully" for a run that deployed nothing.
-          #
-          # The four deploy jobs are deliberately still tested for "failure"
-          # only. A CANCELLED run leaves them `cancelled` and reaches the
-          # success line, which is the same false report. That predates this
-          # change, so it is tracked in #1810 rather than fixed here.
-          #
-          # Note this step is the only success-by-default check in the repo. All
-          # four per-cloud `summary` jobs allowlist on `== "success"` instead,
-          # so an unenumerated result falls to their failure branch and errs
-          # safe. This denylist is the outlier, not the pattern.
-          if [[ "${{ needs.determine-deployment.result }}" != "success" ]] || \
-             [[ "${{ needs.deploy-aws-lambda.result }}" == "failure" ]] || \
-             [[ "${{ needs.deploy-aws-fargate.result }}" == "failure" ]] || \
-             [[ "${{ needs.deploy-gcp.result }}" == "failure" ]] || \
-             [[ "${{ needs.deploy-azure.result }}" == "failure" ]]; then
+          # Allowlist, not denylist: determine-deployment must be "success" and
+          # each deploy job "success" or "skipped" (not selected). Anything else,
+          # including "cancelled", counts as a failed run.
+          for result in \
+            "${{ needs.deploy-aws-lambda.result }}" \
+            "${{ needs.deploy-aws-fargate.result }}" \
+            "${{ needs.deploy-gcp.result }}" \
+            "${{ needs.deploy-azure.result }}"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              FAILED=true
+            fi
+          done
+          if [[ "${{ needs.determine-deployment.result }}" != "success" ]]; then
             FAILED=true
           fi
 
