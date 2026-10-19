@@ -18,6 +18,9 @@ import { escapeHtml, formatRelativeTime, formatDate, showSuccess, showError, val
 import { openEditUserModal, deleteUser } from './userActions';
 import { ADMINISTRATORS_GROUP_ID } from '../permissions';
 
+// Placeholder row id withCurrentUser prepends when the API omits the caller.
+const SYNTHETIC_USER_ID = 'current';
+
 /**
  * Single AbortController for the document-level group-assign-checkbox
  * change listener. Replaced on every renderUsers() call so only one
@@ -37,7 +40,7 @@ export function renderUserStats(): void {
   const adminUsers = allUsers.filter(u =>
     Array.isArray(u.groups) && u.groups.includes(ADMINISTRATORS_GROUP_ID)
   ).length;
-  const mfaEnabled = allUsers.filter(u => u.mfa_enabled).length;
+  const mfaEnabled = allUsers.filter(u => u.id !== SYNTHETIC_USER_ID && u.mfa_enabled).length;
   const showing = filteredUsers.length;
 
   statsContainer.innerHTML = `
@@ -74,12 +77,13 @@ export function renderUsers(users: APIUser[]): void {
     return;
   }
 
+  const selectableCount = users.filter(u => u.id !== SYNTHETIC_USER_ID).length;
   const table = `
     <table class="data-table users-table">
       <thead>
         <tr>
           <th width="40">
-            <input type="checkbox" id="select-all-users" ${selectedUserIds.size > 0 && selectedUserIds.size === users.length ? 'checked' : ''}>
+            <input type="checkbox" id="select-all-users" ${selectedUserIds.size > 0 && selectedUserIds.size === selectableCount ? 'checked' : ''}>
           </th>
           <th width="32"></th>
           <th>Email</th>
@@ -94,7 +98,7 @@ export function renderUsers(users: APIUser[]): void {
         ${users.map(user => `
           <tr class="user-row ${selectedUserIds.has(user.id) ? 'row-selected' : ''}" data-user-id="${escapeHtml(user.id)}">
             <td>
-              <input type="checkbox" class="user-checkbox" data-user-id="${escapeHtml(user.id)}" ${selectedUserIds.has(user.id) ? 'checked' : ''}>
+              <input type="checkbox" class="user-checkbox" data-user-id="${escapeHtml(user.id)}" ${selectedUserIds.has(user.id) ? 'checked' : ''} ${user.id === SYNTHETIC_USER_ID ? 'disabled' : ''}>
             </td>
             <td>
               <button class="btn-small btn-icon user-expand-btn" data-user-id="${escapeHtml(user.id)}" title="Expand" aria-label="Expand user ${escapeHtml(user.email)}" aria-expanded="false">&#x25B8;</button>
@@ -102,7 +106,7 @@ export function renderUsers(users: APIUser[]): void {
             <td>
               <div class="user-email">
                 <strong>${escapeHtml(user.email)}</strong>
-                ${user.id === 'current' ? '<span class="badge badge-info">You</span>' : ''}
+                ${user.id === SYNTHETIC_USER_ID ? '<span class="badge badge-info">You</span>' : ''}
               </div>
             </td>
             <td>
@@ -119,8 +123,8 @@ export function renderUsers(users: APIUser[]): void {
             <td><span class="text-muted">${user.last_login ? formatRelativeTime(user.last_login) : 'Never'}</span></td>
             <td>
               <div class="action-buttons">
-                <button class="btn-small edit-user-btn" data-user-id="${escapeHtml(user.id)}" aria-label="Edit user ${escapeHtml(user.email)}">Edit</button>
-                <button class="btn-small btn-danger delete-user-btn" data-user-id="${escapeHtml(user.id)}" aria-label="Delete user ${escapeHtml(user.email)}">Delete</button>
+                <button class="btn-small edit-user-btn" data-user-id="${escapeHtml(user.id)}" ${user.id === SYNTHETIC_USER_ID ? 'disabled' : ''} aria-label="Edit user ${escapeHtml(user.email)}">Edit</button>
+                <button class="btn-small btn-danger delete-user-btn" data-user-id="${escapeHtml(user.id)}" ${user.id === SYNTHETIC_USER_ID ? 'disabled' : ''} aria-label="Delete user ${escapeHtml(user.email)}">Delete</button>
               </div>
             </td>
           </tr>
@@ -191,7 +195,7 @@ function renderUserExpandPanel(user: APIUser): string {
                   <input type="checkbox" class="group-assign-checkbox"
                     data-user-id="${escapeHtml(user.id)}"
                     data-group-id="${escapeHtml(g.id)}"
-                    ${userGroups.has(g.id) ? 'checked' : ''}>
+                    ${userGroups.has(g.id) ? 'checked' : ''} ${user.id === SYNTHETIC_USER_ID ? 'disabled' : ''}>
                   <span>${escapeHtml(g.name)}</span>
                 </label>
               `).join('')}
@@ -301,13 +305,13 @@ function setupUserTableListeners(): void {
     selectAllCheckbox.addEventListener('change', (e) => {
       const checked = (e.target as HTMLInputElement).checked;
       if (checked) {
-        filteredUsers.forEach(user => addSelectedUserId(user.id));
+        filteredUsers.filter(u => u.id !== SYNTHETIC_USER_ID).forEach(user => addSelectedUserId(user.id));
       } else {
         clearSelectedUserIds();
       }
       // Patch each row's selected class and its individual checkbox without
       // re-rendering the whole table (preserves open expand panels).
-      filteredUsers.forEach(user => {
+      filteredUsers.filter(u => u.id !== SYNTHETIC_USER_ID).forEach(user => {
         const row = document.querySelector<HTMLElement>(
           `tr.user-row[data-user-id="${user.id}"]`,
         );
@@ -352,7 +356,8 @@ function setupUserTableListeners(): void {
       const selectAll = document.getElementById('select-all-users') as HTMLInputElement | null;
       if (selectAll) {
         selectAll.checked =
-          selectedUserIds.size > 0 && selectedUserIds.size === filteredUsers.length;
+          selectedUserIds.size > 0 &&
+          selectedUserIds.size === filteredUsers.filter(u => u.id !== SYNTHETIC_USER_ID).length;
       }
 
       updateBulkActionsBar();

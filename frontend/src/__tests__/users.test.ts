@@ -3184,3 +3184,39 @@ describe('contradictory group combination validation (issue #1405)', () => {
     });
   });
 });
+
+describe('synthetic current-user row (issue #274)', () => {
+  const real = { id: '1', email: 'a@test.com', groups: [], mfa_enabled: true };
+  const synthetic = { id: 'current', email: 'me@test.com', groups: [], mfa_enabled: false };
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="users-list"></div><div id="user-stats"></div>';
+    userState.setAllUsers([synthetic, real] as any);
+    userState.setFilteredUsers([synthetic, real] as any);
+    userState.clearSelectedUserIds();
+  });
+
+  it('disables select, Edit and Delete on the synthetic row only', () => {
+    userList.renderUsers([synthetic, real] as any);
+    const row = (id: string) => document.querySelector(`tr.user-row[data-user-id="${id}"]`)!;
+    expect(row('current').querySelector<HTMLInputElement>('.user-checkbox')!.disabled).toBe(true);
+    expect(row('current').querySelector<HTMLButtonElement>('.edit-user-btn')!.disabled).toBe(true);
+    expect(row('current').querySelector<HTMLButtonElement>('.delete-user-btn')!.disabled).toBe(true);
+    expect(row('1').querySelector<HTMLButtonElement>('.edit-user-btn')!.disabled).toBe(false);
+  });
+
+  it('select-all skips the synthetic row', () => {
+    userList.renderUsers([synthetic, real] as any);
+    const all = document.getElementById('select-all-users') as HTMLInputElement;
+    all.checked = true;
+    all.dispatchEvent(new Event('change'));
+    expect([...userState.selectedUserIds]).toEqual(['1']);
+  });
+
+  it('excludes the synthetic row from the MFA stat', () => {
+    userState.setAllUsers([{ ...synthetic, mfa_enabled: true }, { ...real, mfa_enabled: false }] as any);
+    userList.renderUserStats();
+    const card = [...document.querySelectorAll('.stat-card')].find(c => c.textContent!.includes('MFA Enabled'))!;
+    expect(card.querySelector('.stat-value')!.textContent).toBe('0');
+  });
+});
