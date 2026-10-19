@@ -33,7 +33,8 @@ const VALID_PROVIDERS: api.Provider[] = ['aws', 'azure', 'gcp'];
 const AWS_MARKETPLACE_FEE_PERCENT = 12;
 // awsMarketplaceNetFactor: fraction of list price the seller receives after the fee.
 const AWS_MARKETPLACE_NET_FACTOR = 1 - AWS_MARKETPLACE_FEE_PERCENT / 100;
-// awsMarketplaceBuyerDiscountPercent: discount off residual RI value for the default list price.
+// Discount off residual RI value for the default list price; 1 - 5/100 mirrors
+// awsMarketplaceBuyerDiscountFactor (0.95) in internal/api/handler_marketplace.go.
 const AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT = 5;
 const AWS_MARKETPLACE_BUYER_DISCOUNT = 1 - AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT / 100;
 
