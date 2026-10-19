@@ -2358,9 +2358,11 @@ async function handleAddPurchases(e: Event): Promise<void> {
     }
     const count = rawCount;
     const startDate = (document.getElementById('add-purchases-start-date') as HTMLInputElement).value;
-    if (startDate < toLocalDateInputValue(new Date())) {
+    // Mirrors the server: the date is midnight UTC and must be after now, so
+    // tomorrow (UTC) is the first accepted day (handler_plans.go, #50).
+    if (startDate <= new Date().toISOString().slice(0, 10)) {
       if (errorDiv) {
-        errorDiv.textContent = 'Start date must be today or later';
+        errorDiv.textContent = 'Start date must be in the future (after today UTC)';
         errorDiv.classList.remove('hidden');
       }
       return;

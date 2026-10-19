@@ -674,22 +674,52 @@ describe('Add Purchases modal: start-date picker enforces future-only dates (QA 
   });
 });
 
-describe('Add Purchases rejects a past start date client-side (#50)', () => {
-  beforeEach(async () => {
+describe('Add Purchases start date matches the server rule: after today UTC (#50)', () => {
+  afterEach(() => jest.useRealTimers());
+
+  async function submitWith(now: string, date: string): Promise<void> {
     jest.clearAllMocks();
     document.body.replaceChildren();
-    await openAddPurchasesModal('plan-past', 'Past plan', 3);
-  });
-
-  it('blocks a date before today without calling the API and shows an inline error', async () => {
-    const date = document.getElementById('add-purchases-start-date') as HTMLInputElement;
-    date.value = '2020-01-01';
+    jest.useFakeTimers({ now: new Date(now) });
+    (api.createPlannedPurchases as jest.Mock).mockResolvedValue({});
+    (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+    await openAddPurchasesModal('plan-past', 'Past plan', 0);
+    (document.getElementById('add-purchases-start-date') as HTMLInputElement).value = date;
     document.getElementById('add-purchases-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  function expectRejected(): void {
     expect(api.createPlannedPurchases).not.toHaveBeenCalled();
     const err = document.getElementById('add-purchases-error');
     expect(err?.classList.contains('hidden')).toBe(false);
-    expect(err?.textContent).toMatch(/today or later/i);
+    expect(err?.textContent).toMatch(/after today UTC/i);
+  }
+
+  it('rejects yesterday (UTC)', async () => {
+    await submitWith('2026-10-15T12:00:00Z', '2026-10-14');
+    expectRejected();
+  });
+
+  it('rejects today (UTC)', async () => {
+    await submitWith('2026-10-15T12:00:00Z', '2026-10-15');
+    expectRejected();
+  });
+
+  it('accepts tomorrow (UTC)', async () => {
+    await submitWith('2026-10-15T12:00:00Z', '2026-10-16');
+    expect(api.createPlannedPurchases).toHaveBeenCalledWith('plan-past', 1, '2026-10-16');
+  });
+
+  it('uses the UTC day when the local day is ahead (23:30 at UTC-5 is already Oct 16 UTC)', async () => {
+    await submitWith('2026-10-16T04:30:00Z', '2026-10-16');
+    expectRejected();
+  });
+
+  it('uses the UTC day when the local day is behind (00:30 at UTC+14 is still Oct 14 UTC)', async () => {
+    await submitWith('2026-10-14T10:30:00Z', '2026-10-15');
+    expect(api.createPlannedPurchases).toHaveBeenCalledWith('plan-past', 1, '2026-10-15');
   });
 });
 
