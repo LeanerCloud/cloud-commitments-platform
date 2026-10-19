@@ -3220,3 +3220,17 @@ describe('synthetic current-user row (issue #274)', () => {
     expect(card.querySelector('.stat-value')!.textContent).toBe('0');
   });
 });
+
+describe('users table checkbox names (issue #746)', () => {
+  it('labels select-all and each row checkbox with the user email', () => {
+    document.body.innerHTML = '<div id="users-list"></div>';
+    const users = [
+      { id: 'u1', email: 'a@test.com', groups: [], mfa_enabled: false },
+      { id: 'u2', email: 'b@test.com', groups: [], mfa_enabled: false },
+    ];
+    userList.renderUsers(users as any);
+    expect(document.getElementById('select-all-users')!.getAttribute('aria-label')).toBe('Select all users');
+    const labels = [...document.querySelectorAll('.user-checkbox')].map(c => c.getAttribute('aria-label'));
+    expect(labels).toEqual(['Select a@test.com', 'Select b@test.com']);
+  });
+});

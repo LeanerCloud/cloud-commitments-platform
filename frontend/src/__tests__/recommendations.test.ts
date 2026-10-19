@@ -533,6 +533,30 @@ describe('Recommendations Module', () => {
       expect(cardValue(/Recommendations/)).toBe('1');
     });
 
+    test('row checkboxes carry distinct accessible names (issue #746)', async () => {
+      const recs = [
+        { id: 'rec-a', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'no-upfront', savings: 150, upfront_cost: 1000 },
+        { id: 'rec-b', provider: 'aws', cloud_account_id: 'a1', service: 'rds', resource_type: 'db.t3', region: 'eu-west-1', count: 1, term: 3, payment: 'all-upfront', savings: 200, upfront_cost: 0 },
+      ];
+      (api.getRecommendations as jest.Mock).mockResolvedValue({
+        summary: { total_count: 2, total_monthly_savings: 350, total_upfront_cost: 1000, avg_payback_months: 1 },
+        recommendations: recs,
+        regions: [],
+      });
+      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+      await loadRecommendations();
+
+      const label = (id: string) =>
+        document.querySelector<HTMLInputElement>(`input[data-rec-id="${id}"]`)?.getAttribute('aria-label') ?? '';
+      expect(label('rec-a')).toContain('ec2');
+      expect(label('rec-a')).toContain('t3.medium');
+      expect(label('rec-a')).toContain('us-east-1');
+      expect(label('rec-b')).toContain('rds');
+      expect(label('rec-a')).not.toBe(label('rec-b'));
+    });
+
     test('select-all change event updates summary cards in place (PR #283 CR pass-2)', async () => {
       // Verifies the select-all checkbox event path: after checking select-all,
       // summary cards reflect the picked-best-per-cell selection WITHOUT a

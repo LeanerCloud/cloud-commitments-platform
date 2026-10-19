@@ -83,7 +83,7 @@ export function renderUsers(users: APIUser[]): void {
       <thead>
         <tr>
           <th width="40">
-            <input type="checkbox" id="select-all-users" ${selectedUserIds.size > 0 && selectedUserIds.size === selectableCount ? 'checked' : ''}>
+            <input type="checkbox" id="select-all-users" aria-label="Select all users" ${selectedUserIds.size > 0 && selectedUserIds.size === selectableCount ? 'checked' : ''}>
           </th>
           <th width="32"></th>
           <th>Email</th>
@@ -98,7 +98,7 @@ export function renderUsers(users: APIUser[]): void {
         ${users.map(user => `
           <tr class="user-row ${selectedUserIds.has(user.id) ? 'row-selected' : ''}" data-user-id="${escapeHtml(user.id)}">
             <td>
-              <input type="checkbox" class="user-checkbox" data-user-id="${escapeHtml(user.id)}" ${selectedUserIds.has(user.id) ? 'checked' : ''} ${user.id === SYNTHETIC_USER_ID ? 'disabled' : ''}>
+              <input type="checkbox" class="user-checkbox" data-user-id="${escapeHtml(user.id)}" aria-label="Select ${escapeHtml(user.email)}" ${selectedUserIds.has(user.id) ? 'checked' : ''} ${user.id === SYNTHETIC_USER_ID ? 'disabled' : ''}>
             </td>
             <td>
               <button class="btn-small btn-icon user-expand-btn" data-user-id="${escapeHtml(user.id)}" title="Expand" aria-label="Expand user ${escapeHtml(user.email)}" aria-expanded="false">&#x25B8;</button>
