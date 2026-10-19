@@ -1048,18 +1048,6 @@ function extractPlanInfo(plan: BackendPlan): { provider: string | null; service:
   return { provider: null, service: '—', term: null, coverage: null };
 }
 
-// Format a Date as YYYY-MM-DD in the user's *local* calendar — the format
-// expected by <input type="date"> .value and .min. Built from local
-// year/month/day components so we don't shift by the user's UTC offset
-// (e.g. a US user at 6pm local already crosses into UTC's next day, so
-// toISOString() would return the wrong calendar day for a date-picker).
-function toLocalDateInputValue(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 // Returns true when the plan's next_execution_date is strictly before today.
 function isPlanOverdue(plan: BackendPlan): boolean {
   if (!plan.next_execution_date) return false;
@@ -2268,7 +2256,7 @@ export async function openAddPurchasesModal(planId: string, planName: string, no
   const startDateInput = document.getElementById('add-purchases-start-date') as HTMLInputElement;
   const now = new Date();
   const validNotice = Number.isInteger(notificationDays) && notificationDays >= 0 && notificationDays <= 30;
-  startDateInput.min = toLocalDateInputValue(now);
+  startDateInput.min = earliestStartDate(now);
   if (validNotice) {
     // The API parses date-only values at UTC midnight. The extra calendar
     // day avoids opening just before the notification/veto overlap ends.
@@ -2336,6 +2324,14 @@ function closeAddPurchasesModal(): void {
 }
 
 /**
+ * First accepted start date. The server parses start_date as midnight UTC and
+ * requires it after now, so tomorrow (UTC) is the earliest (handler_plans.go, #50).
+ */
+function earliestStartDate(now: Date): string {
+  return new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
  * Handle form submission for adding planned purchases
  */
 async function handleAddPurchases(e: Event): Promise<void> {
@@ -2358,9 +2354,7 @@ async function handleAddPurchases(e: Event): Promise<void> {
     }
     const count = rawCount;
     const startDate = (document.getElementById('add-purchases-start-date') as HTMLInputElement).value;
-    // Mirrors the server: the date is midnight UTC and must be after now, so
-    // tomorrow (UTC) is the first accepted day (handler_plans.go, #50).
-    if (startDate <= new Date().toISOString().slice(0, 10)) {
+    if (startDate < earliestStartDate(new Date())) {
       if (errorDiv) {
         errorDiv.textContent = 'Start date must be in the future (after today UTC)';
         errorDiv.classList.remove('hidden');
