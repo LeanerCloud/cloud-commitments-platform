@@ -780,6 +780,10 @@ function showMFACodeStep(): void {
 // same Function — arrow IIFEs would create a new function each time.
 const handleLoginSubmitListener = (e: Event): void => { void handleLogin(e); };
 const handleMFACodeSubmitListener = (e: Event): void => { void handleMFACodeSubmit(e); };
+const handlePasswordResetSubmitListener = (e: Event): void => {
+  e.preventDefault();
+  void handlePasswordReset();
+};
 
 async function handleMFACodeSubmit(e: Event): Promise<void> {
   e.preventDefault();
@@ -823,11 +827,14 @@ function showForgotPasswordForm(modal: HTMLElement): void {
     </label>
     <p class="help-text">We'll send you a link to reset your password.</p>
     <div id="login-error" class="error-message hidden"></div>
-    <button type="button" id="send-reset-btn" class="primary">Send Reset Link</button>
+    <button type="submit" id="send-reset-btn" class="primary">Send Reset Link</button>
     <p><a href="#" id="back-to-login-link">Back to login</a></p>
   `;
 
-  document.getElementById('send-reset-btn')?.addEventListener('click', () => void handlePasswordReset());
+  // Keep the inline "enter your email" message instead of the native bubble.
+  (form as HTMLFormElement).noValidate = true;
+  form.removeEventListener('submit', handleLoginSubmitListener);
+  form.addEventListener('submit', handlePasswordResetSubmitListener);
   document.getElementById('back-to-login-link')?.addEventListener('click', (e) => {
     e.preventDefault();
     reloadPage();
@@ -850,6 +857,8 @@ async function handlePasswordReset(): Promise<void> {
     return;
   }
 
+  const sendBtn = document.getElementById('send-reset-btn') as HTMLButtonElement | null;
+  if (sendBtn) sendBtn.disabled = true;
   try {
     await api.requestPasswordReset(email);
     // Issue #457: previously this surfaced as an alert() that, when
@@ -864,6 +873,7 @@ async function handlePasswordReset(): Promise<void> {
       errorDiv.textContent = 'Failed to send reset email. Please try again.';
       errorDiv.classList.remove('hidden');
     }
+    if (sendBtn) sendBtn.disabled = false;
   }
 }
 

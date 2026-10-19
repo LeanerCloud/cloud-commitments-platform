@@ -287,6 +287,22 @@ describe('Auth Module', () => {
       expect(sendBtn).toBeTruthy();
     });
 
+    test('submitting the reset form (Enter) sends the reset, not a login error (issue #733)', async () => {
+      (api.requestPasswordReset as jest.Mock).mockResolvedValue({});
+      await showLoginModal();
+      document.getElementById('forgot-password-link')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      (document.getElementById('reset-email') as HTMLInputElement).value = 'test@example.com';
+      document.getElementById('login-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(api.requestPasswordReset).toHaveBeenCalledWith('test@example.com');
+      expect(api.login).not.toHaveBeenCalled();
+      expect(document.body.textContent).not.toContain('Enter email and password');
+    });
+
     test('password reset swaps modal body to confirmation panel (issue #457)', async () => {
       (api.requestPasswordReset as jest.Mock).mockResolvedValue({});
       await showLoginModal();
