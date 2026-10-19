@@ -950,9 +950,17 @@ export function setupMobileNav(): void {
   const extras = document.getElementById('sidebar-extras');
   extras?.addEventListener('click', (e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
-    if (!target?.closest('#user-info a, #user-info button')) return;
+    if (!target?.closest('#user-info a, #user-info button:not(#user-email-display)')) return;
     if (document.body.classList.contains('sidebar-open')) closeDrawer();
   });
+  // The profile button opens a modal. Close the drawer in the capture phase,
+  // before the button's own handler records its return-focus trigger and
+  // moves focus into the modal: closing afterwards would pull focus back to
+  // the hamburger and leave the trigger inside the inert sidebar.
+  extras?.addEventListener('click', (e: MouseEvent) => {
+    if (!(e.target as HTMLElement | null)?.closest('#user-email-display')) return;
+    if (document.body.classList.contains('sidebar-open')) closeDrawer();
+  }, true);
 
   // Clicking any sidebar link closes the drawer (SPA navigation)
   sidebar.querySelectorAll<HTMLElement>('.tab-btn').forEach(link => {

@@ -788,6 +788,8 @@ describe('HTML Structure', () => {
       const el = document.getElementById('user-email-display');
       expect(el?.tagName.toLowerCase()).toBe('button');
       expect(el?.getAttribute('type')).toBe('button');
+      // Inert until updateUserUI shows it with the signed-in email.
+      expect(el?.hasAttribute('hidden')).toBe(true);
     });
   });
 });
