@@ -32,6 +32,8 @@ for (const [width, height] of [[1440, 900], [1280, 900], [1280, 768], [1024, 900
       await page.locator(mode === 'Create' ? '#new-plan-btn' : '[data-action="edit-plan"][data-id="draft-plan"]').click();
       const parent = page.locator('#plan-modal');
       await expect(parent).toBeVisible();
+      await expect(page.locator('#preview-plan-schedule-btn')).toHaveCount(0);
+      await expect(page.locator('#plan-schedule-preview')).toHaveCount(0);
       await expect(parent.locator('#plan-name')).toBeFocused();
       const advanced = parent.locator('#plan-advanced-settings'), summary = advanced.locator(':scope > summary');
       await expect(advanced).not.toHaveAttribute('open', '');
