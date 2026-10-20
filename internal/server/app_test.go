@@ -104,7 +104,7 @@ func TestHttpToLambdaRequest_XForwardedFor(t *testing.T) {
 		testutil.AssertEqual(t, "10.0.0.9", lambdaReq.RequestContext.HTTP.SourceIP)
 	})
 	t.Run("separate header lines count as one list", func(t *testing.T) {
-		// A client-supplied first line must not shadow the proxy-appended one.
+		// Only the configured trusted hops are honored, counted across all header lines.
 		lambdaReq := convert(newReq("6.6.6.6", "5.6.7.8"), 1)
 		testutil.AssertEqual(t, "5.6.7.8", lambdaReq.RequestContext.HTTP.SourceIP)
 		lambdaReq = convert(newReq("6.6.6.6", "5.6.7.8"), 2)

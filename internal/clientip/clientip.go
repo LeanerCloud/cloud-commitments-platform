@@ -63,12 +63,20 @@ func Resolve(remoteAddr, xff string, trustedHops int) string {
 	if trustedHops <= 0 || strings.TrimSpace(xff) == "" {
 		return peer
 	}
-	entries := strings.Split(xff, ",")
-	if len(entries) < trustedHops {
-		return peer
+	// Scan from the right, at most trustedHops entries, so the work does not
+	// grow with the header length.
+	end := len(xff)
+	for i := 1; ; i++ {
+		comma := strings.LastIndexByte(xff[:end], ',')
+		if i == trustedHops {
+			if a, ok := parseAddr(xff[comma+1 : end]); ok {
+				return a.String()
+			}
+			return peer
+		}
+		if comma < 0 {
+			return peer
+		}
+		end = comma
 	}
-	if a, ok := parseAddr(entries[len(entries)-trustedHops]); ok {
-		return a.String()
-	}
-	return peer
 }

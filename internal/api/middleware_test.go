@@ -911,5 +911,5 @@ func TestHandler_checkRateLimitStrict_SharedBudgetAcrossOneV6Prefix(t *testing.T
 			break
 		}
 	}
-	assert.True(t, denied, "rotating the low 64 bits must not reset the login budget")
+	assert.True(t, denied, "addresses in one /64 share a single login bucket")
 }
