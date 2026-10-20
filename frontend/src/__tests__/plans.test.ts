@@ -3435,6 +3435,7 @@ describe('Plans Module', () => {
     });
   });
   describe('inline schedule preview', () => {
+    const restartNotice = 'restarts from today for a plan already in progress; executed purchases are not shown';
     const host = (): HTMLElement => document.getElementById('plan-editor-panel')!;
     const points = (): number => host().querySelectorAll('[data-preview-step]').length;
     const backendPlan = (ramp: Record<string, unknown>, coverage: number | null = 80) => ({
@@ -3467,10 +3468,11 @@ describe('Plans Module', () => {
       ['weekly 25%', { type: 'weekly', percent_per_step: 25, step_interval_days: 7 }, 4],
       ['custom 33% / 14 days', { type: 'custom', percent_per_step: 33, step_interval_days: 14 }, 3],
       ['monthly 10%', { type: 'monthly', percent_per_step: 10, step_interval_days: 30 }, 10],
-    ])('Edit shows the %s schedule preview', async (_name, ramp, count) => {
+    ])('Edit shows the %s schedule preview and the restart notice', async (_name, ramp, count) => {
       await openEdit(backendPlan(ramp));
       expect(points()).toBe(count);
       expect(host().hidden).toBe(false);
+      expect(host().querySelector('.editor-draft-notice')!.textContent).toContain(restartNotice);
       expect(api.createPlan).not.toHaveBeenCalled(); expect(api.updatePlan).not.toHaveBeenCalled();
       expect(api.createPlannedPurchases).not.toHaveBeenCalled();
     });
@@ -3487,12 +3489,18 @@ describe('Plans Module', () => {
       expect(host().querySelector('[data-editor="summary"]')!.textContent).not.toBe('');
     });
 
-    test('reopening Create after Edit shows a fresh preview', async () => {
+    test('reopening Create after Edit shows the Create notice without leftover state', async () => {
       await openEdit(backendPlan({ type: 'weekly', percent_per_step: 25, step_interval_days: 7 }));
       closePlanModal();
       openCreatePlanModal();
+      expect(host().querySelector('.editor-draft-notice')!.textContent).not.toContain('restarts from today');
       expect(host().querySelector('[data-editor="summary"]')!.textContent).not.toBe('');
     });
 
+    test('Create previews without the restart notice', () => {
+      openCreatePlanModal();
+      expect(host().hidden).toBe(false);
+      expect(host().querySelector('.editor-draft-notice')!.textContent).not.toContain('restarts from today');
+    });
   });
 });
