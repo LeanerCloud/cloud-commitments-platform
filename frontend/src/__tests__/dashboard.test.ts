@@ -285,6 +285,39 @@ describe('Dashboard Module', () => {
       expect(upcomingList?.innerHTML).toContain('Step 1 of 4');
     });
 
+    test('shows an inline error with Retry, not the empty state, when the upcoming fetch fails (#713)', async () => {
+      (api.getDashboardSummary as jest.Mock).mockResolvedValue({
+        potential_monthly_savings: 1000,
+        by_service: {}
+      });
+      (api.getUpcomingPurchases as jest.Mock).mockRejectedValueOnce(new Error('API error: 503 Service Unavailable'));
+
+      await loadDashboard();
+
+      const upcomingList = document.getElementById('upcoming-list');
+      expect(upcomingList?.textContent).not.toContain('No upcoming scheduled purchases');
+      expect(upcomingList?.querySelector('.error')?.textContent).toContain('Failed to load upcoming purchases');
+      // The summary is unaffected by the upcoming failure.
+      expect(document.getElementById('summary')?.querySelector('.error')).toBeNull();
+
+      (api.getUpcomingPurchases as jest.Mock).mockResolvedValueOnce({
+        purchases: [{
+          execution_id: 'exec-1', plan_id: 'plan-1', plan_name: 'Retry Plan',
+          scheduled_date: '2025-01-15', provider: 'aws', service: 'ec2',
+          step_number: 1, total_steps: 2, estimated_savings: 120,
+        }]
+      });
+      const retry = upcomingList?.querySelector('button[data-action="retry-upcoming"]') as HTMLButtonElement;
+      expect(retry).not.toBeNull();
+      retry.click();
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(api.getUpcomingPurchases).toHaveBeenCalledTimes(2);
+      expect(api.getDashboardSummary).toHaveBeenCalledTimes(1);
+      expect(upcomingList?.innerHTML).toContain('Retry Plan');
+      expect(upcomingList?.querySelector('.error')).toBeNull();
+    });
+
     test('shows empty message when no upcoming purchases', async () => {
       (api.getDashboardSummary as jest.Mock).mockResolvedValue({
         potential_monthly_savings: 1000,

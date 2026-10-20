@@ -215,7 +215,12 @@ export async function loadDashboard(): Promise<void> {
     // Single merged per-service chart (#908): potential range from recs +
     // current-savings underlay from the summary's by_service map.
     renderSavingsByService(recs, summaryData.by_service || {}, filterDesc);
-    renderUpcomingPurchases(upcomingData?.purchases || []);
+    if (upcomingResult.status === 'rejected') {
+      console.error('Failed to load upcoming purchases:', upcomingResult.reason);
+      renderUpcomingError();
+    } else {
+      renderUpcomingPurchases(upcomingData?.purchases || []);
+    }
     // Load the savings-over-time widget independently -- failure shouldn't
     // block the rest of the dashboard (e.g. analytics not configured).
     void loadSavingsTrendChart();
@@ -426,6 +431,37 @@ export function canCancelUpcomingPurchase(purchase: UpcomingPurchase): boolean {
   if (!purchase.created_by_user_id) return false;
   if (purchase.created_by_user_id !== user.id) return false;
   return canAccess('delete', 'purchases') || canAccess('cancel-own', 'purchases');
+}
+
+// A failed fetch must not read as "nothing scheduled" (#713): show an inline
+// error with a Retry that refetches only this widget.
+function renderUpcomingError(): void {
+  const container = document.getElementById('upcoming-list');
+  if (!container) return;
+  teardownSkeleton(container);
+  container.textContent = '';
+  const msg = document.createElement('p');
+  msg.className = 'error';
+  msg.textContent = 'Failed to load upcoming purchases.';
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'btn btn-secondary';
+  retry.dataset['action'] = 'retry-upcoming';
+  retry.textContent = 'Retry';
+  retry.addEventListener('click', () => { void retryUpcomingPurchases(); });
+  container.append(msg, retry);
+}
+
+async function retryUpcomingPurchases(): Promise<void> {
+  const container = document.getElementById('upcoming-list');
+  if (container) showSkeletonBlock(container, '100%', '6rem');
+  try {
+    const data = (await api.getUpcomingPurchases()) as { purchases?: UpcomingPurchase[] } | null;
+    renderUpcomingPurchases(data?.purchases || []);
+  } catch (error) {
+    console.error('Failed to load upcoming purchases:', error);
+    renderUpcomingError();
+  }
 }
 
 function renderUpcomingPurchases(purchases: UpcomingPurchase[]): void {
