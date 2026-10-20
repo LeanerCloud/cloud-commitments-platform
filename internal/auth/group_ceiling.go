@@ -406,19 +406,23 @@ func accountScopeGap(outer, requested []string) string {
 // grantCeilingAllows reports whether actorPerms holds req in full. Action and
 // resource matching mirrors permissionsAllow exactly, including the admin:*
 // carve-out, so the ceiling can never be looser than enforcement. It adds one
-// requirement enforcement does not need: a constrained holder cannot hand out
-// an unconstrained (or differently scoped) copy of their own permission.
+// requirement enforcement does not need: a constrained holder, admin:*
+// included, cannot hand out an unconstrained (or differently scoped) copy of
+// their own permission.
 func grantCeilingAllows(actorPerms []Permission, req Permission) bool {
 	for _, held := range actorPerms {
 		if checkAdminPermission(held) {
-			// admin:* carries no constraints, so it covers any requested
-			// constraint set. Carved-out pairs never reach here (the caller
-			// rejects them first), but mirror permissionsAllow anyway so the
-			// two stay in lockstep if the carve-out set grows (#1644).
+			// Carved-out pairs never reach here (the caller rejects them
+			// first), but mirror permissionsAllow anyway so the two stay in
+			// lockstep if the carve-out set grows (#1644).
 			if coversCarvedOut(req) {
 				continue
 			}
-			return true
+			// A held admin:* covers the request only within its own constraints.
+			if constraintsCover(held.Constraints, req.Constraints) {
+				return true
+			}
+			continue
 		}
 		if !checkPermissionMatch(held, req.Action, req.Resource) {
 			continue
