@@ -3479,6 +3479,7 @@ describe('Plans Module', () => {
 
     test('weekly 20% plan currently prefills as immediate and previews 1 step (#1156)', async () => {
       // Documents current behaviour of the Edit prefill, which maps weekly != 25% to `immediate`; see #1156.
+      // Invert this expectation (weekly 20% should preview 5 steps) when #1156 is fixed.
       await openEdit(backendPlan({ type: 'weekly', percent_per_step: 20, step_interval_days: 7 }));
       expect(points()).toBe(1);
     });
@@ -3489,12 +3490,44 @@ describe('Plans Module', () => {
       expect(host().querySelector('[data-editor="summary"]')!.textContent).not.toBe('');
     });
 
-    test('reopening Create after Edit shows the Create notice without leftover state', async () => {
+    // Panel and modal listeners on the form (input/change bubble, invalid/submit capture), keyed by type:capture.
+    const trackFormListeners = () => {
+      const form = document.getElementById('plan-form')!;
+      const owned = new Set(['input:false', 'change:false', 'invalid:true', 'submit:true']);
+      const key = (type: string, o?: boolean | AddEventListenerOptions): string => `${type}:${o === true || (typeof o === 'object' && o.capture === true)}`;
+      const entries: { key: string; fn: unknown }[] = [];
+      const add = form.addEventListener.bind(form), remove = form.removeEventListener.bind(form);
+      jest.spyOn(form, 'addEventListener').mockImplementation((type: string, fn: EventListenerOrEventListenerObject, o?: boolean | AddEventListenerOptions) => {
+        if (owned.has(key(type, o))) entries.push({ key: key(type, o), fn });
+        add(type, fn, o);
+      });
+      jest.spyOn(form, 'removeEventListener').mockImplementation((type: string, fn: EventListenerOrEventListenerObject, o?: boolean | AddEventListenerOptions) => {
+        const index = entries.findIndex(entry => entry.key === key(type, o) && entry.fn === fn);
+        if (index >= 0) entries.splice(index, 1);
+        remove(type, fn, o);
+      });
+      return entries;
+    };
+
+    test('closing the Edit modal removes every listener the panel and the modal added', async () => {
+      const entries = trackFormListeners();
       await openEdit(backendPlan({ type: 'weekly', percent_per_step: 25, step_interval_days: 7 }));
+      expect(entries.map(entry => entry.key).sort()).toEqual(['change:false', 'input:false', 'invalid:true', 'submit:true']);
       closePlanModal();
+      expect(entries).toEqual([]);
+      expect(host().hidden).toBe(true); expect(host().childElementCount).toBe(0);
+      expect(host().closest('.plan-editor-layout')!.classList.contains('has-editor-draft')).toBe(false);
+    });
+
+    test('Edit then Create without closing leaves exactly one panel listening and no Edit notice', async () => {
+      const entries = trackFormListeners();
+      await openEdit(backendPlan({ type: 'weekly', percent_per_step: 25, step_interval_days: 7 }));
       openCreatePlanModal();
+      expect(entries.map(entry => entry.key).sort()).toEqual(['change:false', 'input:false', 'invalid:true', 'submit:true']);
       expect(host().querySelector('.editor-draft-notice')!.textContent).not.toContain('restarts from today');
-      expect(host().querySelector('[data-editor="summary"]')!.textContent).not.toBe('');
+      const coverage = document.getElementById('plan-coverage') as HTMLInputElement;
+      coverage.value = '60'; coverage.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(host().querySelector('[data-editor="summary"]')!.textContent).toContain('Target 60%');
     });
 
     test('Create previews without the restart notice', () => {
