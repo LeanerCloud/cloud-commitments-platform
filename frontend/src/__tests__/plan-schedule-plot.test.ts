@@ -29,3 +29,11 @@ test('sizes the plot frame from the point count and rejects an empty schedule', 
   expect(schedulePlotFrame(Array.from({ length: 5 }, () => '2026-10-22')).width).toBe(640);
   expect(schedulePlotFrame(Array.from({ length: 100 }, () => '2026-10-22')).width).toBe(4896);
 });
+
+test('starts the staircase at zero for contiguous steps from step 1', () => {
+  const points = [{ step: 1, date: '2026-10-22', target: 25 }, { step: 2, date: '2026-10-29', target: 50 }];
+  const frame = schedulePlotFrame(points.map(point => point.date));
+  const host = document.createElement('div');
+  host.innerHTML = renderSchedulePlot(points, frame, 0, false);
+  expect(host.querySelector('.preview-staircase')?.getAttribute('d')).toBe(`M 48 260 H ${schedulePlotX(points[0]!.date, frame)} V 205 H ${schedulePlotX(points[1]!.date, frame)} V 150`);
+});

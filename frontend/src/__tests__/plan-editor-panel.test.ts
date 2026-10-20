@@ -192,10 +192,11 @@ describe('editable date gestures', () => {
     send('pointerdown', step(1), x(1)); send('pointermove', svg, x(1) + day);
     expect(field('date').value).toBe('2026-10-28'); expect(changes()).toContain('(1)');
     const key = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    const parentKey = jest.fn(); host.closest('.modal')!.addEventListener('keydown', parentKey);
     if (reason === 'Escape') step(1).dispatchEvent(key); else send(reason, svg, x(1) + day);
     expect(field('date').value).toBe('2026-10-27'); expect(changes()).toContain('(0)');
     expect(release).toHaveBeenCalled(); expect(form.inert).toBeFalsy();
-    if (reason === 'Escape') expect(key.defaultPrevented).toBe(true);
+    if (reason === 'Escape') { expect(key.defaultPrevented).toBe(true); expect(parentKey).not.toHaveBeenCalled(); }
     const later = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     step(1).dispatchEvent(later); expect(later.defaultPrevented).toBe(false);
   });
