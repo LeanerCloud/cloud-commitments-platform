@@ -974,7 +974,7 @@ func TestGetReshapeRecommendations_EmptyRegionUsesConfigRegion(t *testing.T) {
 		reshapeEC2Factory: func(_ aws.Config) reshapeEC2Client {
 			return &fakeReshapeEC2Stub{
 				instances: []ec2svc.ConvertibleRI{
-					{ReservedInstanceID: "ri-1", InstanceType: "m5.xlarge", InstanceCount: 1, CurrencyCode: "USD"},
+					{ReservedInstanceID: "ri-1", InstanceType: "m5.xlarge", InstanceCount: 1, CurrencyCode: "USD", Duration: 31536000},
 				},
 			}
 		},
@@ -1060,7 +1060,7 @@ func TestGetReshapeRecommendations_AlternativeCurrencyFromRIs(t *testing.T) {
 				auth:   &mockAuthForExchange{},
 				reshapeEC2Factory: func(_ aws.Config) reshapeEC2Client {
 					return &fakeReshapeEC2Stub{instances: []ec2svc.ConvertibleRI{
-						{ReservedInstanceID: "ri-1", InstanceType: "m5.xlarge", InstanceCount: 1, CurrencyCode: tc.riCurrency},
+						{ReservedInstanceID: "ri-1", InstanceType: "m5.xlarge", InstanceCount: 1, CurrencyCode: tc.riCurrency, Duration: 31536000},
 					}}
 				},
 				reshapeRecsFactory: func(_ aws.Config) reshapeRecsClient {
@@ -2717,4 +2717,37 @@ func TestExecuteApprovedExchange_ReservationInfrastructureError_HidesDetail(t *t
 	require.NoError(t, err)
 	assert.Equal(t, "daily spending cap check failed", resp.(map[string]any)["reason"])
 	assert.False(t, called)
+}
+
+// A convertible RI with a non-positive Duration has no computable monthly
+// cost. Converting it to MonthlyCost=0 would make reshape's pricing gate
+// treat it as free and skip the dollar-units check, so it must be excluded.
+func TestConvertToExchangeTypes_ExcludesNonPositiveDuration(t *testing.T) {
+	valid := ec2svc.ConvertibleRI{
+		ReservedInstanceID: "ri-valid", InstanceType: "m5.large", InstanceCount: 2,
+		NormalizationFactor: 4, FixedPrice: 8760, UsagePrice: 0.01, Duration: 31536000, CurrencyCode: "USD",
+	}
+	instances := []ec2svc.ConvertibleRI{
+		{ReservedInstanceID: "ri-zero", InstanceType: "m5.large", InstanceCount: 1, FixedPrice: 8760, Duration: 0},
+		valid,
+		{ReservedInstanceID: "ri-neg", InstanceType: "c5.large", InstanceCount: 1, FixedPrice: 8760, Duration: -1},
+	}
+
+	riInfos, _ := convertToExchangeTypes(instances, nil)
+
+	require.Len(t, riInfos, 1)
+	assert.Equal(t, "ri-valid", riInfos[0].ID)
+	assert.InDelta(t, (8760.0/8760+0.01)*730, riInfos[0].MonthlyCost, 1e-6)
+	assert.Equal(t, int64(31536000), riInfos[0].TermSeconds)
+}
+
+func TestMonthlyCostFromConvertibleRI_NonPositiveDurationErrors(t *testing.T) {
+	for _, d := range []int64{0, -1} {
+		_, err := monthlyCostFromConvertibleRI(ec2svc.ConvertibleRI{ReservedInstanceID: "ri-x", FixedPrice: 100, Duration: d})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ri-x")
+	}
+	cost, err := monthlyCostFromConvertibleRI(ec2svc.ConvertibleRI{FixedPrice: 8760, Duration: 31536000})
+	require.NoError(t, err)
+	assert.InDelta(t, 730.0, cost, 1e-6)
 }
