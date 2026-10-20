@@ -49,3 +49,26 @@ func RateLimitKey(sourceIP string) string {
 	}
 	return p.String()
 }
+
+// Resolve returns the client address for a request that crossed trustedHops
+// appending proxies. With n X-Forwarded-For entries it uses entry n-hops;
+// with hops <= 0, fewer entries than hops, or an unparsable or empty entry it
+// falls back to the peer address, so unparsable text is never used as a key.
+// IPv6 stays full-width; use RateLimitKey for the /64 key.
+func Resolve(remoteAddr, xff string, trustedHops int) string {
+	peer := remoteAddr
+	if a, ok := parseAddr(remoteAddr); ok {
+		peer = a.String()
+	}
+	if trustedHops <= 0 || strings.TrimSpace(xff) == "" {
+		return peer
+	}
+	entries := strings.Split(xff, ",")
+	if len(entries) < trustedHops {
+		return peer
+	}
+	if a, ok := parseAddr(entries[len(entries)-trustedHops]); ok {
+		return a.String()
+	}
+	return peer
+}

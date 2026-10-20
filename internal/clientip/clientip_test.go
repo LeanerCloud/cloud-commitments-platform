@@ -38,3 +38,38 @@ func TestRateLimitKey_RotationAcross56StillWorks(t *testing.T) {
 		t.Fatal("adjacent /64s inside one /56 must remain distinct keys")
 	}
 }
+
+func TestResolve(t *testing.T) {
+	tests := []struct {
+		name   string
+		remote string
+		xff    string
+		hops   int
+		want   string
+	}{
+		{"hops 1 takes rightmost", "10.0.0.1:1000", "1.1.1.1, 2.2.2.2", 1, "2.2.2.2"},
+		{"hops 2 takes n-2", "10.0.0.1:1000", "9.9.9.9, 1.1.1.1, 2.2.2.2", 2, "1.1.1.1"},
+		{"hops 0 ignores spoofed xff", "10.0.0.1:1000", "6.6.6.6", 0, "10.0.0.1"},
+		{"fewer entries than hops uses peer", "10.0.0.1:1000", "2.2.2.2", 2, "10.0.0.1"},
+		{"no xff uses peer", "10.0.0.1:1000", "", 1, "10.0.0.1"},
+		{"garbage entry uses peer", "10.0.0.1:1000", "1.1.1.1, garbage", 1, "10.0.0.1"},
+		{"ip:port entry", "10.0.0.1:1000", "1.1.1.1:5555", 1, "1.1.1.1"},
+		{"bracketed v6 port entry", "10.0.0.1:1000", "[2001:db8::1]:80", 1, "2001:db8::1"},
+		{"bare v6 entry without port", "10.0.0.1:1000", "2001:db8::7", 1, "2001:db8::7"},
+		{"bracketed v6 without port", "10.0.0.1:1000", "[2001:db8::7]", 1, "2001:db8::7"},
+		{"v4-mapped entry unmapped", "10.0.0.1:1000", "::ffff:1.2.3.4", 1, "1.2.3.4"},
+		{"v4-mapped with zone", "10.0.0.1:1000", "::ffff:1.2.3.4%eth0", 1, "1.2.3.4"},
+		{"empty entry in the middle, hops 1", "10.0.0.1:1000", "1.1.1.1,,2.2.2.2", 1, "2.2.2.2"},
+		{"empty entry selected uses peer", "10.0.0.1:1000", "1.1.1.1,,2.2.2.2", 2, "10.0.0.1"},
+		{"peer v6 with port", "[2001:db8::5]:443", "", 1, "2001:db8::5"},
+		{"peer without port", "10.0.0.1", "", 0, "10.0.0.1"},
+		{"whitespace around entries", "10.0.0.1:1000", " 1.1.1.1 ,  2.2.2.2 ", 1, "2.2.2.2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Resolve(tt.remote, tt.xff, tt.hops); got != tt.want {
+				t.Fatalf("Resolve(%q, %q, %d) = %q, want %q", tt.remote, tt.xff, tt.hops, got, tt.want)
+			}
+		})
+	}
+}
