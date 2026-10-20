@@ -2733,12 +2733,64 @@ func TestConvertToExchangeTypes_ExcludesNonPositiveDuration(t *testing.T) {
 		{ReservedInstanceID: "ri-neg", InstanceType: "c5.large", InstanceCount: 1, FixedPrice: 8760, Duration: -1},
 	}
 
-	riInfos, _ := convertToExchangeTypes(instances, nil)
+	riInfos, _, excluded := convertToExchangeTypes(instances, nil)
 
 	require.Len(t, riInfos, 1)
 	assert.Equal(t, "ri-valid", riInfos[0].ID)
 	assert.InDelta(t, (8760.0/8760+0.01)*730, riInfos[0].MonthlyCost, 1e-6)
 	assert.Equal(t, int64(31536000), riInfos[0].TermSeconds)
+	require.Len(t, excluded, 2)
+	assert.Equal(t, "ri-zero", excluded[0].RIID)
+	assert.Equal(t, "ri-neg", excluded[1].RIID)
+	assert.Contains(t, excluded[0].Reason, "term length")
+}
+
+// The reshape response must name RIs left out of cost-based analysis so the
+// UI can show them instead of silently giving them no recommendation.
+func TestGetReshapeRecommendations_ReportsExcludedRIs(t *testing.T) {
+	mockStore := &MockConfigStore{}
+	mockStore.On("ListStoredRecommendations", mock.Anything, mock.Anything).
+		Return([]config.RecommendationRecord(nil), nil)
+	h := &Handler{
+		config: mockStore,
+		auth:   &mockAuthForExchange{},
+		reshapeEC2Factory: func(_ aws.Config) reshapeEC2Client {
+			return &fakeReshapeEC2Stub{instances: []ec2svc.ConvertibleRI{
+				{ReservedInstanceID: "ri-bad", InstanceType: "m5.xlarge", InstanceCount: 1, FixedPrice: 8760, Duration: 0, CurrencyCode: "USD"},
+				{ReservedInstanceID: "ri-ok", InstanceType: "m5.xlarge", InstanceCount: 1, FixedPrice: 8760, Duration: 31536000, CurrencyCode: "USD"},
+			}}
+		},
+		reshapeRecsFactory: func(_ aws.Config) reshapeRecsClient {
+			return &fakeReshapeRecsStub{utilization: []recommendations.RIUtilization{
+				{ReservedInstanceID: "ri-bad", UtilizationPercent: 50.0},
+				{ReservedInstanceID: "ri-ok", UtilizationPercent: 50.0},
+			}}
+		},
+		reshapeAccountResolver: func(_ context.Context) (string, error) { return "", nil },
+	}
+	h.awsCfgOnce.Do(func() { h.awsCfg = aws.Config{Region: "us-east-1"} })
+
+	req := &events.LambdaFunctionURLRequest{
+		Headers:               map[string]string{"authorization": "Bearer test-token"},
+		QueryStringParameters: map[string]string{"lookback_days": "30", "threshold": "95.0"},
+	}
+	out, err := h.getReshapeRecommendations(context.Background(), req)
+	require.NoError(t, err)
+	resp, ok := out.(*ReshapeRecommendationsResponse)
+	require.True(t, ok)
+
+	require.Len(t, resp.ExcludedRIs, 1)
+	assert.Equal(t, "ri-bad", resp.ExcludedRIs[0].RIID)
+	assert.NotEmpty(t, resp.ExcludedRIs[0].Reason)
+	require.NotEmpty(t, resp.Recommendations)
+	for _, r := range resp.Recommendations {
+		assert.NotEqual(t, "ri-bad", r.SourceRIID)
+	}
+	assert.Contains(t, resp.Recommendations[0].SourceRIID, "ri-ok")
+
+	raw, err := json.Marshal(resp)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"excluded_ris":[{"ri_id":"ri-bad"`)
 }
 
 func TestMonthlyCostFromConvertibleRI_NonPositiveDurationErrors(t *testing.T) {

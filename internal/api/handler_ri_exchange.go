@@ -1614,13 +1614,17 @@ func monthlyCostFromConvertibleRI(ri ec2svc.ConvertibleRI) (float64, error) {
 }
 
 // convertToExchangeTypes converts provider-specific types to the exchange package types.
-func convertToExchangeTypes(instances []ec2svc.ConvertibleRI, utilData []recommendations.RIUtilization) ([]exchange.RIInfo, []exchange.UtilizationInfo) {
+// RIs whose monthly cost cannot be computed are returned as excluded rather
+// than dropped silently, so the response can surface them.
+func convertToExchangeTypes(instances []ec2svc.ConvertibleRI, utilData []recommendations.RIUtilization) ([]exchange.RIInfo, []exchange.UtilizationInfo, []ExcludedRI) {
+	var excluded []ExcludedRI
 	riInfos := make([]exchange.RIInfo, 0, len(instances))
 	for i := range instances {
 		inst := instances[i]
 		monthlyCost, err := monthlyCostFromConvertibleRI(inst)
 		if err != nil {
 			logging.Warnf("convertToExchangeTypes: excluding RI from reshape: %v", err)
+			excluded = append(excluded, ExcludedRI{RIID: inst.ReservedInstanceID, Reason: "AWS returned no term length (duration), so its monthly cost cannot be computed"})
 			continue
 		}
 		riInfos = append(riInfos, exchange.RIInfo{
@@ -1647,7 +1651,7 @@ func convertToExchangeTypes(instances []ec2svc.ConvertibleRI, utilData []recomme
 		}
 	}
 
-	return riInfos, utilInfos
+	return riInfos, utilInfos, excluded
 }
 
 // reshapeRequestParams groups parsed query parameters for getReshapeRecommendations.
@@ -1726,7 +1730,7 @@ func (h *Handler) getReshapeRecommendations(ctx context.Context, req *events.Lam
 		return nil, fmt.Errorf("failed to get RI utilization: %w", err)
 	}
 
-	riInfos, utilInfos := convertToExchangeTypes(instances, utilData)
+	riInfos, utilInfos, excluded := convertToExchangeTypes(instances, utilData)
 	// Cross-family alternatives are sourced from the cached AWS Cost
 	// Explorer purchase recommendations table in Postgres — no per-rec
 	// DescribeReservedInstancesOfferings fan-out, no hand-curated
@@ -1745,7 +1749,7 @@ func (h *Handler) getReshapeRecommendations(ctx context.Context, req *events.Lam
 	lookup := purchaseRecLookupFromStore(h.config, cloudAccountID)
 	recs := exchange.AnalyzeReshapingWithRecs(ctx, riInfos, utilInfos, p.threshold, p.region, currencyCode, lookup)
 
-	resp := &ReshapeRecommendationsResponse{Recommendations: recs}
+	resp := &ReshapeRecommendationsResponse{Recommendations: recs, ExcludedRIs: excluded}
 	h.attachReshapeStaleness(ctx, resp)
 	return resp, nil
 }
@@ -2043,6 +2047,15 @@ type ReshapeRecommendationsResponse struct {
 	RecsCollectedAt *time.Time                       `json:"recs_collected_at,omitempty"`
 	RecsStaleness   string                           `json:"recs_staleness,omitempty"`
 	Recommendations []exchange.ReshapeRecommendation `json:"recommendations"`
+	// ExcludedRIs lists RIs left out of cost-based analysis (and so have no
+	// recommendation) because their monthly cost could not be computed.
+	ExcludedRIs []ExcludedRI `json:"excluded_ris,omitempty"`
+}
+
+// ExcludedRI names a convertible RI omitted from reshape analysis and why.
+type ExcludedRI struct {
+	RIID   string `json:"ri_id"`
+	Reason string `json:"reason"`
 }
 
 // reshapeSoftStaleThreshold is the age at which the reshape recs banner

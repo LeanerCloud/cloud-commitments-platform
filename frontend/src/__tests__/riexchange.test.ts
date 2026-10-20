@@ -64,6 +64,7 @@ import {
   loadReshapeRecommendations,
   loadRIExchange,
   openExchangeModal,
+  renderExcludedRIsNotice,
   renderReshapeStalenessBanner,
   setupRIExchangeHandlers,
 } from '../riexchange';
@@ -1311,5 +1312,54 @@ describe('exchange history table counts (issue #286)', () => {
     expect(cells).toContain('4x m5.large');
     expect(cells).toContain('1x m5.4xlarge');
     expect(cells).not.toContain('4');
+  });
+});
+
+// Issue #1181: RIs left out of reshape analysis must be visible in the UI.
+describe('excluded RIs notice', () => {
+  let listEl: HTMLDivElement;
+
+  beforeEach(() => {
+    const wrapper = document.createElement('div');
+    listEl = document.createElement('div');
+    listEl.id = 'ri-exchange-recommendations-list';
+    wrapper.appendChild(listEl);
+    document.body.appendChild(wrapper);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    jest.resetAllMocks();
+  });
+
+  it('lists the excluded ids as text when excluded_ris is non-empty', async () => {
+    (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({
+      recommendations: [],
+      excluded_ris: [
+        { ri_id: 'ri-0', reason: 'no term' },
+        { ri_id: '<img src=x onerror=alert(1)>', reason: 'no term' },
+      ],
+    });
+
+    await loadReshapeRecommendations();
+
+    const notice = document.getElementById('ri-exchange-recommendations-excluded');
+    expect(notice?.textContent).toContain('2 convertible RIs were left out because AWS returned no term length');
+    expect(notice?.textContent).toContain('ri-0');
+    expect(notice?.textContent).toContain('<img src=x onerror=alert(1)>');
+    expect(notice?.querySelector('img')).toBeNull();
+  });
+
+  it('shows no notice when excluded_ris is empty or absent, and clears a stale one', () => {
+    renderExcludedRIsNotice([{ ri_id: 'ri-0', reason: 'x' }]);
+    expect(document.getElementById('ri-exchange-recommendations-excluded')?.textContent).toContain('1 convertible RI was left out');
+    renderExcludedRIsNotice(undefined);
+    expect(document.getElementById('ri-exchange-recommendations-excluded')?.textContent).toBe('');
+  });
+
+  it('does not render a notice for an empty list on load', async () => {
+    (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], excluded_ris: [] });
+    await loadReshapeRecommendations();
+    expect(document.getElementById('ri-exchange-recommendations-excluded')?.textContent ?? '').toBe('');
   });
 });
