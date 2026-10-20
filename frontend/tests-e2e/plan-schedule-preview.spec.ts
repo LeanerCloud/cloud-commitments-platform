@@ -101,9 +101,25 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
         await expect(panel.locator('[data-editor="controls"]')).toBeHidden();
 
       } else {
-        await expect(parent.locator('#plan-editor-panel')).toBeHidden();
-        await expect(parent.locator('#plan-editor-panel')).toBeEmpty();
+        const panel = parent.locator('#plan-editor-panel');
+        await expect(panel).toBeVisible();
+        await expect(panel.locator('[data-preview-step]')).toHaveCount(4);
+        await expect(panel.locator('.editor-draft-notice')).toContainText('restarts from today for a plan already in progress; executed purchases are not shown');
+        await expect(panel.locator('[data-editor="controls"]')).toBeHidden();
+        await page.screenshot({ path: testInfo.outputPath('edit-inline-graph.png'), fullPage: true });
       }
+      const layoutForm = (await parent.locator('#plan-form').boundingBox())!, layoutPanel = (await parent.locator('#plan-editor-panel').boundingBox())!;
+      if (width > 860) {
+        expect(layoutForm.width).toBeGreaterThanOrEqual(360); expect(layoutPanel.x).toBeGreaterThanOrEqual(layoutForm.x + layoutForm.width);
+        expect(layoutPanel.width).toBeGreaterThan(layoutForm.width);
+        expect(await parent.locator('#plan-editor-panel').evaluate(element => getComputedStyle(element).position)).toBe('sticky');
+      } else expect(layoutPanel.y).toBeGreaterThanOrEqual(layoutForm.y + layoutForm.height - 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      await parent.locator('#close-plan-modal-btn').scrollIntoViewIfNeeded();
+      const cancel = (await parent.locator('#close-plan-modal-btn').boundingBox())!;
+      expect(cancel.x).toBeGreaterThanOrEqual(0); expect(cancel.x + cancel.width).toBeLessThanOrEqual(width);
+      const footerBox = (await parent.locator('.modal-buttons').boundingBox())!;
+      expect(footerBox.y + footerBox.height).toBeLessThanOrEqual(900);
       const before = await parent.locator('input, select, textarea').evaluateAll(elements => elements.map(element => (element as HTMLInputElement).value));
       const trigger = page.locator('#preview-plan-schedule-btn');
       await trigger.click();
