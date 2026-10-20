@@ -116,6 +116,7 @@ export async function loadRIExchange(): Promise<void> {
       if (el) renderEmptyState(el, message);
     }
     renderReshapeStalenessBanner('', null);
+    renderExcludedRIsNotice(undefined);
     const container = document.getElementById('ri-exchange-instances-list');
     if (container) {
       container.innerHTML = `<p class="error">Failed to resolve the selected account: ${escapeHtml((error as Error).message)}</p>`;
@@ -168,6 +169,7 @@ function renderGCPEmptyStates(): void {
   if (history) renderEmptyState(history, "RI Exchange isn't available for GCP.");
 
   renderReshapeStalenessBanner('', null);
+  renderExcludedRIsNotice(undefined);
 }
 
 /**
@@ -182,6 +184,7 @@ function renderReshapeNotApplicable(provider: string): void {
     renderEmptyState(container, `Reshape recommendations are not available for ${providerLabel(provider)}.`);
   }
   renderReshapeStalenessBanner('', null);
+  renderExcludedRIsNotice(undefined);
 }
 
 /**
@@ -538,6 +541,7 @@ export async function loadReshapeRecommendations(generation: number = scopeGener
   } catch (error) {
     if (generation !== scopeGeneration) return;
     teardownSkeleton(container);
+    renderExcludedRIsNotice(undefined);
     const err = error as Error;
     container.innerHTML = `<p class="error">Failed to load recommendations: ${escapeHtml(err.message)}</p>`;
   }

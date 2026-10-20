@@ -1272,6 +1272,44 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
     // Modal is closed synchronously on the chip event.
     expect(modal.classList.contains('hidden')).toBe(true);
   });
+
+  describe('excluded-RI notice lifecycle (issue #1181)', () => {
+    const noticeText = (): string => document.getElementById('ri-exchange-recommendations-excluded')?.textContent ?? '';
+
+    beforeEach(async () => {
+      (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({
+        recommendations: [],
+        excluded_ris: [{ ri_id: 'ri-noterm', reason: 'no term' }],
+      });
+      await loadRIExchange();
+      expect(noticeText()).toContain('ri-noterm');
+    });
+
+    it('clears after a failed reload', async () => {
+      (api.getReshapeRecommendations as jest.Mock).mockRejectedValue(new Error('boom'));
+      await loadReshapeRecommendations();
+      expect(noticeText()).toBe('');
+    });
+
+    it('clears when switching to GCP', async () => {
+      stateMod().getCurrentProvider.mockReturnValue('gcp');
+      await loadRIExchange();
+      expect(noticeText()).toBe('');
+    });
+
+    it('clears when switching to Azure', async () => {
+      stateMod().getCurrentProvider.mockReturnValue('azure');
+      stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-az']);
+      await loadRIExchange();
+      expect(noticeText()).toBe('');
+    });
+
+    it('clears on an account-resolution error', async () => {
+      stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-missing']);
+      await loadRIExchange();
+      expect(noticeText()).toBe('');
+    });
+  });
 });
 
 describe('exchange history table counts (issue #286)', () => {
