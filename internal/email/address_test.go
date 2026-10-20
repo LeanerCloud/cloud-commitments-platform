@@ -10,6 +10,12 @@ func TestSameAddress(t *testing.T) {
 		{"Admin@Example.com", " admin@example.COM ", true},
 		{"admin@example.com", "other@example.com", false},
 		{"admin@example.com", "admİn@example.com", false},
+		{"admin@example.com", "admin@example.com", true},
+		{"s@example.com", "\u017f@example.com", false},
+		{"k@example.com", "\u212a@example.com", false},
+		{"i@example.com", "\u0130@example.com", false},
+		{"user@example.com", "u\u017fer@example.com", false},
+		{"user@example.com", "user@example.co", false},
 		{"", "", true},
 	}
 	for _, tc := range cases {

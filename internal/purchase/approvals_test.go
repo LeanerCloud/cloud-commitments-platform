@@ -1465,15 +1465,15 @@ func TestMaskActor(t *testing.T) {
 	}
 }
 
-// TestManager_ApproveExecution_FourEyesOn_UsesSharedEmailComparison pins that
+// TestManager_ApproveExecution_FourEyesOn_ASCIICaseOnly pins that
 // the creator check and the approver match agree on which addresses are equal.
-func TestManager_ApproveExecution_FourEyesOn_UsesSharedEmailComparison(t *testing.T) {
+func TestManager_ApproveExecution_FourEyesOn_ASCIICaseOnly(t *testing.T) {
 	cases := []struct {
 		name, creator, actor string
 		wantDenied           bool
 	}{
 		{"same address, different case and padding", "Admin@Example.com", "  admin@example.COM ", true},
-		{"different spelling", "admin@example.com", "admİn@example.com", false},
+		{"non-ASCII letters are not folded", "Mus@Example.com", "mu\u017f@example.com", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

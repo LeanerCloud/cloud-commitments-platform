@@ -7027,17 +7027,17 @@ func TestNewPendingExecution_NotSystemCreated(t *testing.T) {
 	assert.False(t, exec.CreatedBySystem)
 }
 
-func TestHandler_authorizeApprovalAction_UsesSharedEmailComparison(t *testing.T) {
+func TestHandler_authorizeApprovalAction_NonASCIILettersNotFolded(t *testing.T) {
 	ctx := context.Background()
 	execID := "12345678-1234-1234-1234-123456789abc"
-	approver := "admin@example.com"
+	approver := "mus@example.com"
 
 	mockConfig := new(MockConfigStore)
 	exec := approvalTestExec(execID, approver, mockConfig)
 	mockConfig.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &approver}, nil)
 
 	mockAuth := new(MockAuthService)
-	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: "admİn@example.com"}, nil)
+	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: "mu\u017f@example.com"}, nil)
 
 	handler := &Handler{config: mockConfig, auth: mockAuth}
 	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"authorization": "Bearer sess-tok"}}
