@@ -478,6 +478,7 @@ function renderUpcomingError(): void {
   container.textContent = '';
   const msg = document.createElement('p');
   msg.className = 'error';
+  msg.setAttribute('role', 'alert');
   msg.textContent = 'Failed to load upcoming purchases.';
   const retry = document.createElement('button');
   retry.type = 'button';
@@ -490,7 +491,12 @@ function renderUpcomingError(): void {
 
 async function retryUpcomingPurchases(): Promise<void> {
   const container = document.getElementById('upcoming-list');
-  if (container) showSkeletonBlock(container, '100%', '6rem');
+  if (container) {
+    // The Retry button is about to be replaced; keep focus in the widget.
+    container.tabIndex = -1;
+    container.focus();
+    showSkeletonBlock(container, '100%', '6rem');
+  }
   try {
     const data = (await api.getUpcomingPurchases()) as { purchases?: UpcomingPurchase[] } | null;
     renderUpcomingPurchases(data?.purchases || []);

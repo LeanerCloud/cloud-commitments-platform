@@ -318,6 +318,25 @@ describe('Dashboard Module', () => {
       expect(upcomingList?.querySelector('.error')).toBeNull();
     });
 
+    test('upcoming error is announced and Retry keeps keyboard focus in the widget (#713)', async () => {
+      (api.getDashboardSummary as jest.Mock).mockResolvedValue({ potential_monthly_savings: 1000, by_service: {} });
+      (api.getUpcomingPurchases as jest.Mock).mockRejectedValueOnce(new Error('API error: 503'));
+      await loadDashboard();
+
+      const upcomingList = document.getElementById('upcoming-list') as HTMLElement;
+      expect(upcomingList.querySelector('.error')?.getAttribute('role')).toBe('alert');
+
+      (api.getUpcomingPurchases as jest.Mock).mockResolvedValueOnce({ purchases: [] });
+      const retry = upcomingList.querySelector('button[data-action="retry-upcoming"]') as HTMLButtonElement;
+      retry.focus();
+      retry.click();
+      // Retry replaces its own button; focus must land on the container, not <body>.
+      expect(upcomingList.getAttribute('tabindex')).toBe('-1');
+      expect(document.activeElement).toBe(upcomingList);
+      await new Promise(r => setTimeout(r, 0));
+      expect(document.activeElement).toBe(upcomingList);
+    });
+
     test('shows empty message when no upcoming purchases', async () => {
       (api.getDashboardSummary as jest.Mock).mockResolvedValue({
         potential_monthly_savings: 1000,
