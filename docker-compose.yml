@@ -81,6 +81,8 @@ services:
       ENVIRONMENT: development
       LOG_LEVEL: debug
       CORS_ALLOWED_ORIGIN: http://localhost:3001
+      # nginx on :3001 appends one X-Forwarded-For entry; the app is also published on :8080 directly.
+      CUDLY_TRUSTED_PROXY_HOPS: "1"
 
       # Optional: set initial admin password (skips password reset)
       # ADMIN_PASSWORD: "YourSecureP@ss1"

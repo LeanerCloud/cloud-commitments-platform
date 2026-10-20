@@ -135,6 +135,7 @@ module "compute_cloud_run" {
       CORS_ALLOWED_ORIGIN                 = local.dashboard_url != "" ? local.dashboard_url : "http://localhost:3000"
       CUDLY_MAX_ACCOUNT_PARALLELISM       = tostring(var.max_account_parallelism)
       CUDLY_SOURCE_CLOUD                  = "gcp"
+      CUDLY_TRUSTED_PROXY_HOPS            = tostring(var.trusted_proxy_hops)
     },
     var.additional_env_vars,
     local.db_pool_env
@@ -238,6 +239,8 @@ module "compute_gke" {
       CORS_ALLOWED_ORIGIN                 = local.dashboard_url != "" ? local.dashboard_url : "http://localhost:3000"
       CUDLY_MAX_ACCOUNT_PARALLELISM       = tostring(var.max_account_parallelism)
       CUDLY_SOURCE_CLOUD                  = "gcp"
+      # The GCE ingress appends "client, lb-ip", so 2 is the intended follow-up for GKE.
+      CUDLY_TRUSTED_PROXY_HOPS = tostring(var.trusted_proxy_hops)
     },
     var.additional_env_vars,
     local.db_pool_env
