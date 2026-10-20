@@ -1717,6 +1717,54 @@ describe('Dashboard Module', () => {
           expect(new Set([ec2Before, rdsBefore, cacheBefore]).size).toBe(3);
         });
 
+        test('every known service slug has a distinct colour per family, twins share one', () => {
+          const { serviceBarColor } = require('../dashboard') as { serviceBarColor: (s: string) => string };
+          const families: string[][] = [
+            ['compute', 'ec2', 'vm'],
+            ['relational-db', 'rds', 'sql', 'cloudsql'],
+            ['cache', 'elasticache', 'redis', 'memorystore'],
+            ['savingsplans', 'savings-plans', 'savings-plans-compute', 'savings-plans-ec2instance', 'savings-plans-sagemaker', 'savings-plans-database'],
+            ['search', 'opensearch'],
+            ['data-warehouse', 'redshift'],
+            ['memorydb'],
+          ];
+          const colours = families.map((slugs) => {
+            const set = new Set(slugs.map((x) => serviceBarColor(x)));
+            expect([...set]).toHaveLength(1);
+            return [...set][0];
+          });
+          expect(new Set(colours).size).toBe(families.length);
+        });
+
+        test('unknown slugs never reuse a known family colour', () => {
+          const { serviceBarColor } = require('../dashboard') as { serviceBarColor: (s: string) => string };
+          // Fallback colours must not reuse a known family's colour.
+          const known = new Set(['compute', 'relational-db', 'cache', 'savingsplans', 'search', 'data-warehouse', 'memorydb'].map((x) => serviceBarColor(x)));
+          for (const unknown of ['alpha', 'zeta-service', 'nosuch', 'x1', 'foo-bar']) {
+            expect(known.has(serviceBarColor(unknown))).toBe(false);
+          }
+        });
+
+        test('an unknown slug gets a deterministic colour from the name hash', () => {
+          const { serviceBarColor } = require('../dashboard') as { serviceBarColor: (s: string) => string };
+          expect(serviceBarColor('mystery-service')).toBe(serviceBarColor('mystery-service'));
+          expect(serviceBarColor('Mystery-Service')).toBe(serviceBarColor('mystery-service'));
+          // The hash must actually vary: a fixed slot for every unknown slug is a bug.
+          const seen = new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((x) => serviceBarColor(`svc-${x}`)));
+          expect(seen.size).toBeGreaterThan(1);
+        });
+
+        test('legend swatches carry a border so the pale Upside swatch stays visible', () => {
+          buildDOM();
+          renderSavingsByService([rec('ec2', 500)]);
+          const cfg = lastCfg();
+          const items = cfg.options.plugins.legend.labels.generateLabels?.({ data: { datasets: cfg.data.datasets }, isDatasetVisible: () => true }) as unknown as { strokeStyle: string; lineWidth: number }[];
+          for (const item of items) {
+            expect(item.lineWidth).toBeGreaterThanOrEqual(1);
+            expect(item.strokeStyle).toBe('#546e7a');
+          }
+        });
+
         test('legend swatches use neutral tones matching the three bar layers, not the first bar colour', () => {
           buildDOM();
           renderSavingsByService([rec('ec2', 500), rec('rds', 300)]);
