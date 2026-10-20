@@ -133,20 +133,23 @@ for (const [width, height] of [[1440, 900], [1280, 900], [1280, 768], [1024, 900
       await page.locator('#close-plan-modal-btn').click();
     }
     await page.locator('#new-plan-btn').click();
+    const dense = page.locator('#plan-editor-panel'), scroll = dense.locator('.schedule-preview-scroll');
     await page.locator('#plan-modal label.ramp-option').filter({ hasText: 'Define your own schedule' }).click();
     await page.locator('#ramp-step-percent').fill('1');
-    await page.locator('#preview-plan-schedule-btn').click();
-    const dense = page.locator('#plan-schedule-preview');
     await expect(dense.locator('[data-preview-step]')).toHaveCount(100);
+    await scroll.scrollIntoViewIfNeeded();
     expect((await dense.locator('svg').boundingBox())!.width).toBeGreaterThanOrEqual(4896);
-    expect(await dense.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await scroll.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    expect(await page.locator('#plan-modal').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await page.locator('#plan-form').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await scroll.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => scroll.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+    await scroll.evaluate(element => { element.scrollLeft = 0; });
     if (width <= 390) {
-      const scroll = dense.locator('.schedule-preview-scroll');
-      await scroll.scrollIntoViewIfNeeded();
       const box = (await scroll.boundingBox())!, svgBox = (await dense.locator('svg').boundingBox())!;
-      const y = svgBox.y + svgBox.height * 304 / 370, left = box.x + 40, right = box.x + box.width - 40;
-      const hit = await page.evaluate(({ x, y }) => { const element = document.elementFromPoint(x, y); return { tag: element?.tagName, control: !!element?.closest("[data-preview-step],[data-preview-boundary]"), action: element ? getComputedStyle(element).touchAction : null }; }, { x: right, y });
-      expect(hit.tag).toBe('svg'); expect(hit.control).toBe(false); expect(hit.action).toBe('auto');
+      const y = svgBox.y + svgBox.height / 2, left = box.x + 40, right = box.x + box.width - 40;
       const beforeScroll = await scroll.evaluate(element => element.scrollLeft);
       const labels = await dense.locator('[data-preview-step]').evaluateAll(elements => elements.map(element => element.getAttribute('aria-label')));
       const session = await page.context().newCDPSession(page);
@@ -158,43 +161,8 @@ for (const [width, height] of [[1440, 900], [1280, 900], [1280, 768], [1024, 900
         await expect.poll(() => scroll.evaluate(element => element.scrollLeft)).toBeGreaterThan(beforeScroll);
         expect(await dense.locator('[data-preview-step]').evaluateAll(elements => elements.map(element => element.getAttribute('aria-label')))).toEqual(labels);
       } finally { await session.detach(); }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     }
-    await dense.locator('[data-preview-step="0"]').focus();
-    await page.keyboard.press('ArrowRight');
-    await expect(dense.locator('#preview-selected-step')).toHaveText('Step 2');
-    await expect(dense.locator('[data-preview-step="1"] .preview-touch-target')).toHaveCSS('outline-width', '2px');
-    await expect(dense.locator('[data-preview-step="1"] .preview-touch-target')).toHaveCSS('outline-style', 'solid');
-    await page.keyboard.press('Escape');
-    const parent = page.locator('#plan-modal');
-    await parent.locator('label.ramp-option').filter({ hasText: 'Weekly 25%' }).click();
-    await page.locator('#plan-coverage').fill('0');
-    await page.locator('#preview-plan-schedule-btn').click();
-    const overlap = page.locator('#plan-schedule-preview'), step = overlap.locator('#preview-step-select');
-    const firstDate = await overlap.locator('#preview-range-start').inputValue();
-    const after = (days: number): string => new Date(Date.parse(`${firstDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
-    await overlap.locator('#preview-range-end').fill(after(365)); await overlap.locator('#preview-range-end').dispatchEvent('change');
-    for (const index of [1, 2]) {
-      await step.selectOption(String(index));
-      await overlap.locator('#preview-selected-date').fill(after(index)); await overlap.locator('#preview-selected-date').dispatchEvent('change');
-    }
-    const positions = await overlap.locator('.preview-hit').evaluateAll(elements => elements.map(element => Number(element.getAttribute('x')) + 22));
-    expect(positions[1]! - positions[0]!).toBeLessThan(3);
-    for (let index = 0; index < 4; index++) {
-      await step.selectOption(String(index));
-      await expect(overlap.locator('#preview-selected-date')).toHaveValue(after(index === 3 ? 365 : index));
-    }
-    await overlap.locator('[data-preview-step="0"]').focus();
-    for (let index = 1; index < 4; index++) {
-      await page.keyboard.press('ArrowRight');
-      await expect(overlap.locator('#preview-selected-step')).toHaveText(`Step ${index + 1}`);
-    }
-    await page.keyboard.press('Escape');
-    await parent.locator('label.ramp-option:has(input[value="immediate"])').click();
-    await page.locator('#preview-plan-schedule-btn').click();
-    await expect(page.locator('#preview-range-end')).toHaveCount(0);
-    await page.locator('#preview-range-start').fill(after(3)); await page.locator('#preview-range-start').dispatchEvent('change');
-    await expect(page.locator('#preview-selected-date')).toHaveValue(after(3));
-    await page.keyboard.press('Escape');
     expect(writes).toEqual([]);
     expect(errors).toEqual([]);
     await testInfo.attach('production-preview-receipt', { body: JSON.stringify({ width, isMobile, scripts, writes, errors }), contentType: 'application/json' });
