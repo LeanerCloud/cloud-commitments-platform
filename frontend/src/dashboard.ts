@@ -31,8 +31,8 @@ let savingsByServiceChart: Chart | null = null;
 // Maximum number of services to show in the bar chart before truncating.
 const SAVINGS_BY_SERVICE_MAX = 10;
 
-// Default palette for per-service bars. Cycles if there are more services
-// than colours; alpha variant is computed inline so the array stays short.
+// Palette for per-service bars. A service's colour is fixed by its name (see
+// serviceBarColor), never by its rank, so it survives data refreshes (#700).
 const SERVICE_BAR_COLORS = [
   '#1a73e8', // blue
   '#34a853', // green
@@ -45,6 +45,36 @@ const SERVICE_BAR_COLORS = [
   '#795548', // brown
   '#4caf50', // light-green
 ];
+
+// Known services get a fixed palette slot so common services never collide;
+// anything else falls back to a name hash.
+const KNOWN_SERVICE_COLOR_INDEX: Record<string, number> = {
+  ec2: 0, compute: 0, computeengine: 0,
+  rds: 1, sqldb: 1, cloudsql: 1,
+  elasticache: 2, redis: 2,
+  savingsplans: 3,
+  opensearch: 4,
+  redshift: 5,
+  memorydb: 6,
+  lambda: 7,
+};
+
+/** Stable colour for a service name: identical on every render, regardless of rank. */
+export function serviceBarColor(service: string): string {
+  const key = service.toLowerCase();
+  let idx = KNOWN_SERVICE_COLOR_INDEX[key];
+  if (idx === undefined) {
+    let h = 0;
+    for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+    idx = h;
+  }
+  return SERVICE_BAR_COLORS[idx % SERVICE_BAR_COLORS.length] ?? '#1a73e8';
+}
+
+// The legend names the three stacked layers, which every service shares, so
+// its swatches are neutral tones that mirror the bar shading (dark / solid /
+// 35% alpha) instead of the first bar's service colour.
+const LEGEND_SWATCH_COLORS = ['#37474f', '#78909c', 'rgba(120,144,156,0.35)'];
 
 /**
  * Parse a #rrggbb hex string into its r/g/b components. Falls back to the
@@ -943,8 +973,8 @@ export function renderSavingsByService(
 
   const totalSavings = positive.reduce((acc, e) => acc + e.visibleTotal, 0);
 
-  // Colour palette: one base colour per service, then derive lighter/darker shades.
-  const bgColors = visible.map((_, i) => SERVICE_BAR_COLORS[i % SERVICE_BAR_COLORS.length] ?? '#1a73e8');
+  // Colour: one stable base colour per service name, then derive lighter/darker shades.
+  const bgColors = visible.map(e => serviceBarColor(e.svc));
 
   // Current / Committed: darkest shade (30% darker than base).
   const currentColors = bgColors.map(c => darkenHexColor(c));
@@ -996,7 +1026,17 @@ export function renderSavingsByService(
         legend: {
           display: true,
           position: 'top',
-          labels: { boxWidth: 12 },
+          labels: {
+            boxWidth: 12,
+            generateLabels: (chart) => chart.data.datasets.map((ds, i) => ({
+              text: ds.label ?? '',
+              fillStyle: LEGEND_SWATCH_COLORS[i] ?? LEGEND_SWATCH_COLORS[1] ?? '#78909c',
+              strokeStyle: LEGEND_SWATCH_COLORS[i] ?? LEGEND_SWATCH_COLORS[1] ?? '#78909c',
+              lineWidth: 0,
+              hidden: !chart.isDatasetVisible(i),
+              datasetIndex: i,
+            })),
+          },
         },
         tooltip: {
           callbacks: {
@@ -1037,6 +1077,8 @@ export function renderSavingsByService(
         x: {
           stacked: true,
           title: { display: true, text: 'Service' },
+          // Keep every service label on narrow screens (rotate instead of skipping).
+          ticks: { autoSkip: false, maxRotation: 60 },
         },
         y: {
           stacked: true,

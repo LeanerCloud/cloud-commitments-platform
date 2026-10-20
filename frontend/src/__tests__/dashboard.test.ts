@@ -1684,6 +1684,53 @@ describe('Dashboard Module', () => {
         expect(totalLine).toMatch(/\$400/);
       });
 
+      describe('stable per-service colours and matching legend (#700)', () => {
+        type ChartCfg = {
+          data: { labels: string[]; datasets: { label: string; backgroundColor: string[] }[] };
+          options: { plugins: { legend: { labels: { generateLabels?: (c: unknown) => { text: string; fillStyle: string }[] } } } };
+        };
+        const lastCfg = (): ChartCfg => {
+          const calls = (Chart as unknown as jest.Mock).mock.calls;
+          return calls[calls.length - 1]?.[1] as ChartCfg;
+        };
+        const colourOf = (cfg: ChartCfg, svc: string): string => {
+          const ds = cfg.data.datasets.find((d) => d.label === 'Lowest option');
+          return ds?.backgroundColor[cfg.data.labels.indexOf(svc)] ?? '';
+        };
+
+        test('a service keeps its colour when its rank changes between renders', () => {
+          buildDOM();
+          renderSavingsByService([rec('ec2', 500), rec('rds', 300), rec('elasticache', 100)]);
+          const before = lastCfg();
+          expect(before.data.labels[0]).toBe('ec2');
+          const ec2Before = colourOf(before, 'ec2');
+          const rdsBefore = colourOf(before, 'rds');
+          const cacheBefore = colourOf(before, 'elasticache');
+
+          // Data refresh: rds overtakes ec2, elasticache jumps to rank 2.
+          renderSavingsByService([rec('ec2', 120), rec('rds', 900), rec('elasticache', 400)]);
+          const after = lastCfg();
+          expect(after.data.labels[0]).toBe('rds');
+          expect(colourOf(after, 'ec2')).toBe(ec2Before);
+          expect(colourOf(after, 'rds')).toBe(rdsBefore);
+          expect(colourOf(after, 'elasticache')).toBe(cacheBefore);
+          expect(new Set([ec2Before, rdsBefore, cacheBefore]).size).toBe(3);
+        });
+
+        test('legend swatches use neutral tones matching the three bar layers, not the first bar colour', () => {
+          buildDOM();
+          renderSavingsByService([rec('ec2', 500), rec('rds', 300)]);
+          const cfg = lastCfg();
+          const gen = cfg.options.plugins.legend.labels.generateLabels;
+          expect(typeof gen).toBe('function');
+          const items = gen?.({ data: { datasets: cfg.data.datasets }, isDatasetVisible: () => true }) ?? [];
+          expect(items.map((i) => i.text)).toEqual(['Current / Committed', 'Lowest option', 'Upside']);
+          const barColours = cfg.data.datasets.flatMap((d) => d.backgroundColor);
+          for (const item of items) expect(barColours).not.toContain(item.fillStyle);
+          expect(new Set(items.map((i) => i.fillStyle)).size).toBe(3);
+        });
+      });
+
       test('tooltip shows the committed value for a service with a commitment but no recommendation (#752)', () => {
         buildDOM();
         renderSavingsByService(
