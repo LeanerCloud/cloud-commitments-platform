@@ -24,7 +24,7 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement, o
   host.closest('.plan-editor-layout')?.classList.add('has-editor-draft');
   const statusId = `${host.id || 'plan-editor'}-status`;
   host.innerHTML = `<h3>Proposed purchase dates</h3><p class="editor-draft-notice">${editable ? 'Local draft. These dates are not scheduled. Save Plan does not save date changes.' : readOnlyNotice}</p>
-    ${editable ? '' : `<p class="editor-status" data-editor="status" id="${statusId}" role="status" aria-live="polite"></p>`}
+    ${editable ? '' : `<p class="editor-status" data-editor="summary" id="${statusId}"></p><p class="sr-only" data-editor="status" role="status" aria-live="polite"></p>`}
     <div class="schedule-preview-scroll" role="region" tabindex="0" aria-label="Proposed purchase calendar"${editable ? '' : ` aria-describedby="${statusId}"`}></div>
     <p class="editor-target help-text"></p>${editable ? `<p class="help-text">Drag a point to change its date, or Start/End to space the dates.</p>
     <details class="editor-help"><summary>Keyboard and touch help</summary>
@@ -38,7 +38,8 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement, o
     <button type="button" data-editor="reset">Reset draft dates</button><button type="button" data-editor="rebuild" hidden>Rebuild proposed dates</button>
     <p data-editor="error"${editable ? ' role="alert"' : ''}></p><details data-editor="changes"><summary>Local date changes</summary><ul></ul></details></div>`;
   const field = <T extends HTMLElement>(key: string): T => host.querySelector<T>(`[data-editor="${key}"]`)!;
-  const status = editable ? null : field('status');
+  const status = editable ? null : field('status'), summary = editable ? null : field('summary');
+  const plotHost = host.querySelector<HTMLElement>('.schedule-preview-scroll')!, caption = host.querySelector<HTMLElement>('.editor-target')!;
   const step = field<HTMLSelectElement>('step'), date = field<HTMLInputElement>('date');
   const start = field<HTMLInputElement>('start'), end = field<HTMLInputElement>('end');
   const rebuild = field<HTMLButtonElement>('rebuild'), reset = field<HTMLButtonElement>('reset');
@@ -118,14 +119,17 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement, o
       coverage = intent.coverage; dirty = null; rebuild.hidden = true;
       if (editable) error('');
       paint();
-      if (status && announce) {
-        const last = intent.dates[intent.dates.length - 1]!, count = intent.dates.length;
-        status.textContent = `Target ${coverage}% in ${count} ${count === 1 ? 'step' : 'steps'}, ${count === 1 ? intent.dates[0] : `${intent.dates[0]} to ${last}`} (UTC)`;
+      if (status && summary) {
+        const count = intent.dates.length;
+        const text = `Target ${coverage}% in ${count} ${count === 1 ? 'step' : 'steps'}, ${count === 1 ? intent.dates[0] : `${intent.dates[0]} to ${intent.dates[count - 1]}`} (UTC)`;
+        summary.textContent = text; plotHost.hidden = caption.hidden = false;
+        if (announce) status.textContent = text;
       }
     } catch (failure) {
       if (editable) { error((failure as Error).message); paint(); return; }
-      disposeInteraction?.(); state = null; host.querySelector('.schedule-preview-scroll')!.replaceChildren();
-      status!.textContent = (failure as Error).message;
+      disposeInteraction?.(); state = null; plotHost.replaceChildren(); plotHost.hidden = caption.hidden = true;
+      summary!.textContent = (failure as Error).message;
+      if (announce) status!.textContent = (failure as Error).message;
     }
   };
   const commit = (): void => {

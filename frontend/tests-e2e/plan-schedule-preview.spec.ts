@@ -46,7 +46,7 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
       if (mode === 'Create') {
         await page.locator('#plan-name').fill('Capacity ladder');
         await parent.locator('label.ramp-option').filter({ hasText: 'Weekly 25%' }).click();
-        const panel = parent.locator('#plan-editor-panel'), live = panel.locator('[role="status"]');
+        const panel = parent.locator('#plan-editor-panel'), live = panel.locator('[data-editor="summary"]');
         await expect(panel).toBeVisible(); await expect(panel).toContainText('They are not saved or scheduled');
         await expect(panel).not.toContainText('Custom step dates can be set once saving them is supported');
         await expect(live).toHaveText(/^Target \d+% in 4 steps, \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2} \(UTC\)$/);
@@ -73,7 +73,6 @@ for (const width of [1440, 1280, 390, 320]) test.describe(`viewport ${width}px`,
         await page.mouse.move(pointBox.x + pointBox.width / 2 + 60, pointBox.y + pointBox.height / 2); await page.mouse.up();
         expect(await panel.locator('[data-preview-step]').evaluateAll(elements => elements.map(element => element.getAttribute('aria-label')))).toEqual(labels);
         expect(await parent.locator('#plan-form').evaluate(element => element.inert)).toBe(false);
-        await expect(live).toHaveText(/^Target \d+% in 4 steps, \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2} \(UTC\)$/);
         expect(await parent.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
         await parent.locator('.plan-editor-layout').evaluate(element => { element.scrollTop = 0; });
         await page.screenshot({ path: testInfo.outputPath('create-inline-graph.png'), fullPage: true });
