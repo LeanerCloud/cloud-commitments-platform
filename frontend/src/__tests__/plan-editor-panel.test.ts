@@ -229,6 +229,25 @@ describe('editable date gestures', () => {
     expect(field('error').textContent).toMatch(/plot/i); expect(field('date').value).toBe('2026-10-27'); expect(form.inert).toBeFalsy();
   });
 
+  test('selects points by click and arrow keys', () => {
+    step(2).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(field('step').value).toBe('2'); expect(field('date').value).toBe('2026-11-03');
+    step(2).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    expect(field('step').value).toBe('1'); expect(document.activeElement).toBe(step(1));
+    step(1).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(field('step').value).toBe('2'); expect(field('date').value).toBe('2026-11-03');
+  });
+
+  test('rechecks midnight on release and rolls back exactly with a reopen warning', () => {
+    const { svg, send, day, x } = harness();
+    send('pointerdown', step(1), x(1)); send('pointermove', svg, x(1) + day);
+    expect(field('date').value).toBe('2026-10-28');
+    jest.setSystemTime(new Date('2026-10-20T00:00:00Z'));
+    send('pointerup', svg, x(1) + day);
+    expect(field('date').value).toBe('2026-10-27'); expect(field('error').textContent).toMatch(/reopen/i);
+    expect(field('date').disabled).toBe(false); expect(form.inert).toBeFalsy();
+  });
+
   test('reports capture failure and leaves dates and date-input access intact', () => {
     const { svg, send, x } = harness();
     Object.assign(svg, { setPointerCapture: () => { throw new Error('Capture unavailable'); } });
