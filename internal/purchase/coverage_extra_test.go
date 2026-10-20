@@ -1645,3 +1645,32 @@ func TestExecuteForAccount_NonHostRoleARN_StoredErrorOmitsHostIdentity(t *testin
 	}
 	assert.Contains(t, saved[len(saved)-1].Error, credentials.ErrNotHostAccount.Error())
 }
+
+// TestProcessMessage_ApproveUsesSharedEmailComparison pins that the approver
+// match treats a differently-spelled address as a different address.
+func TestProcessMessage_ApproveUsesSharedEmailComparison(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+
+	accountID := "acct-1"
+	exec := &config.PurchaseExecution{
+		ExecutionID:   "exec-cmp",
+		Status:        "pending",
+		ApprovalToken: config.HashApprovalToken("correct-token"),
+		Recommendations: []config.RecommendationRecord{
+			{CloudAccountID: &accountID},
+		},
+	}
+	account := &config.CloudAccount{ID: accountID, ContactEmail: "admin@example.com"}
+
+	mockStore.On("GetExecutionByID", ctx, "exec-cmp").Return(exec, nil)
+	mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
+
+	manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
+
+	err := manager.ProcessMessage(ctx, "{\"type\":\"approve\",\"execution_id\":\"exec-cmp\",\"token\":\"correct-token\",\"actor_email\":\"adm\\u0130n@example.com\"}")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not an authorized approver")
+	mockStore.AssertNotCalled(t, "SavePurchaseExecution")
+}

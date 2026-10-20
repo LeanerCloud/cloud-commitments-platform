@@ -7026,3 +7026,23 @@ func TestNewPendingExecution_NotSystemCreated(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, exec.CreatedBySystem)
 }
+
+func TestHandler_authorizeApprovalAction_UsesSharedEmailComparison(t *testing.T) {
+	ctx := context.Background()
+	execID := "12345678-1234-1234-1234-123456789abc"
+	approver := "admin@example.com"
+
+	mockConfig := new(MockConfigStore)
+	exec := approvalTestExec(execID, approver, mockConfig)
+	mockConfig.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &approver}, nil)
+
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: "admİn@example.com"}, nil)
+
+	handler := &Handler{config: mockConfig, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"authorization": "Bearer sess-tok"}}
+
+	_, err := handler.authorizeApprovalAction(ctx, req, exec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not the authorized approver")
+}
