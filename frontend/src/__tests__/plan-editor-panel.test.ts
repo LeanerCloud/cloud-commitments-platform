@@ -89,15 +89,60 @@ test('actual Create pointer ownership guards submission, cancels on geometry cha
 });
 
 describe('display-only default (Create dates are not saved yet)', () => {
-  beforeEach(() => { dispose(); dispose = mountPlanEditorPanel(host, form); });
-  test('shows the graph and dates but disables every date control with a reason', () => {
+  const status = (): HTMLElement => host.querySelector('[data-editor="status"]')!;
+  const setting = (id: string, value: string, events: string[] = ['input', 'change']): void => {
+    const input = form.querySelector<HTMLInputElement>(`#${id}`)!; input.value = value;
+    for (const type of events) input.dispatchEvent(new Event(type, { bubbles: true }));
+  };
+  const remount = (): void => { dispose(); dispose = mountPlanEditorPanel(host, form); };
+  beforeEach(() => {
+    form.insertAdjacentHTML('beforeend', '<input name="ramp-schedule" type="radio" value="weekly-25pct">'); remount();
+  });
+  test('shows the graph and dates read-only with the controls hidden', () => {
     expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(3);
     expect(host.querySelectorAll('svg [role=button]')).toHaveLength(0);
     expect(host.querySelector('.preview-hit, [data-preview-boundary]')).toBeNull();
-    for (const key of ['step', 'date', 'start', 'end', 'reset']) expect(field(key).disabled).toBe(true);
-    expect(field('date').value).toBe('2026-10-20');
-    expect(host.textContent).toContain('Custom step dates can be set once saving them is supported');
+    const controls = host.querySelector<HTMLElement>('[data-editor="controls"]')!;
+    expect(controls.hidden).toBe(true); expect(controls.contains(field('date'))).toBe(true);
+    expect(host.textContent).not.toContain('Custom step dates can be set once saving them is supported');
     expect(host.textContent).not.toContain('does not save date changes');
+  });
+  test('invalid input clears the plot and shows the message; a valid value renders again', () => {
+    setting('plan-coverage', '');
+    expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(0);
+    expect(status().textContent).toContain('Target coverage must be a whole number');
+    setting('plan-coverage', '150'); expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(0);
+    setting('plan-coverage', '70');
+    expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(3);
+    expect(host.querySelector('[data-preview-step="2"]')?.getAttribute('aria-label')).toContain('target 69.3%');
+    expect(status().textContent).toBe('Target 70% in 3 steps, 2026-10-20 to 2026-11-03 (UTC)');
+  });
+  test('a ramp radio change rebuilds after an invalid start', () => {
+    form.querySelector<HTMLInputElement>('input[value="custom"]')!.checked = false; remount();
+    expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(0);
+    const weekly = form.querySelector<HTMLInputElement>('input[value="weekly-25pct"]')!; weekly.checked = true;
+    weekly.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(4);
+  });
+  test('settings that do not affect the schedule never rebuild', () => {
+    const svg = host.querySelector('svg'), text = status().textContent;
+    setting('plan-term', '3'); setting('plan-payment', 'upfront'); setting('plan-name', 'Other');
+    expect(host.querySelector('svg')).toBe(svg); expect(status().textContent).toBe(text);
+    setting('plan-coverage', ''); const message = status(), shown = message.textContent;
+    setting('plan-name', 'Another'); expect(status()).toBe(message); expect(message.textContent).toBe(shown);
+  });
+  test('one polite live region carries the summary; the plot follows input, the status follows change', () => {
+    expect(status().getAttribute('role')).toBe('status'); expect(status().getAttribute('aria-live')).toBe('polite');
+    expect(host.querySelectorAll('[role=status], [aria-live]')).toHaveLength(1);
+    expect(status().textContent).toBe('Target 80% in 3 steps, 2026-10-20 to 2026-11-03 (UTC)');
+    expect(host.querySelector('[data-editor="error"]')?.getAttribute('role')).toBeNull();
+    const region = host.querySelector('.schedule-preview-scroll')!;
+    expect(region.getAttribute('role')).toBe('region'); expect(region.getAttribute('aria-describedby')).toBe(status().id);
+    setting('plan-coverage', '60', ['input']);
+    expect(host.querySelector('[data-preview-step="2"]')?.getAttribute('aria-label')).toContain('target 59.4%');
+    expect(status().textContent).toContain('Target 80%');
+    form.querySelector('#plan-coverage')!.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(status().textContent).toContain('Target 60%');
   });
   test('dragging a point is inert and typed input changes nothing', () => {
     const point = host.querySelector('[data-preview-step="0"]')!, label = point.getAttribute('aria-label');
