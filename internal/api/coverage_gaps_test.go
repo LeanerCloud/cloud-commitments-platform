@@ -332,6 +332,7 @@ func TestHandler_requireAdmin_AdminRole(t *testing.T) {
 	// An Administrators-group member holds {admin, *}; HasPermissionAPI(admin, *)
 	// returns true and requireAdmin grants access.
 	mockAuth.On("HasPermissionAPI", ctx, "admin-uid", auth.ActionAdmin, auth.ResourceAll).Return(true, nil)
+	mockAuth.On("HasPermissionForConstraintsAPI", ctx, "admin-uid", auth.ActionAdmin, auth.ResourceAll, mock.Anything).Return(true, nil)
 	h := &Handler{auth: mockAuth}
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer admin-token"},

@@ -219,6 +219,7 @@ func TestHandleRequest_MixedCredentialsAuthAdminRetainsAPIKeyRestrictions(t *tes
 	mockAuth.On("ValidateUserAPIKeyAPI", ctx, "user-key").Return(&auth.UserAPIKey{ID: "key-1"}, apiUser, nil).Once()
 	mockAuth.On("ValidateSession", ctx, "admin-session-token").Return(session, nil).Once()
 	mockAuth.On("HasPermissionAPI", mock.Anything, "admin-session-user", auth.ActionAdmin, auth.ResourceAll).Return(true, nil).Once()
+	mockAuth.On("HasPermissionForConstraintsAPI", mock.Anything, "admin-session-user", auth.ActionAdmin, auth.ResourceAll, mock.Anything).Return(true, nil).Once()
 	mockAuth.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", auth.ActionView, auth.ResourceUsers).
 		Return("api-key-user", "key-id", false, nil).Once()
 	h := &Handler{auth: mockAuth}

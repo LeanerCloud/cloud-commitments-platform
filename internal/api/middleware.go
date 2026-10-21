@@ -416,6 +416,29 @@ func (h *Handler) requireSessionPrincipal(ctx context.Context, req *events.Lambd
 	return session, nil
 }
 
+// adminCandidateSession resolves who is asking: the stateless admin API key
+// (isKey, sentinel session) or the session principal to be checked.
+func (h *Handler) adminCandidateSession(ctx context.Context, req *events.LambdaFunctionURLRequest) (session *Session, isKey bool, err error) {
+	if principal, ok := principalFromContext(ctx); ok {
+		if principal.Kind == PrincipalAdminAPIKey {
+			return &Session{UserID: apiKeyAdminUserID}, true, nil
+		}
+		if principal.Session == nil {
+			return nil, false, NewClientError(401, "session authentication required")
+		}
+		return principal.Session, false, nil
+	}
+	// Check admin API key first (stateless auth).
+	if h.checkAdminAPIKey(extractAPIKey(req)) {
+		return &Session{UserID: apiKeyAdminUserID}, true, nil
+	}
+	if h.auth == nil {
+		return nil, false, fmt.Errorf("authentication service not configured")
+	}
+	session, err = h.requireSessionPrincipal(ctx, req)
+	return session, false, err
+}
+
 // requireAdmin gates the coarse admin-only routes (AuthAdmin). "Admin" is now
 // defined as holding the full-access {admin, *} capability, i.e. membership in
 // the Administrators group. Accepts both the stateless admin API key (which
@@ -423,29 +446,12 @@ func (h *Handler) requireSessionPrincipal(ctx context.Context, req *events.Lambd
 // permissions include {admin, *}. Fail closed: a missing auth service, an
 // invalid session, or a permission-lookup error denies access.
 func (h *Handler) requireAdmin(ctx context.Context, req *events.LambdaFunctionURLRequest) (*Session, error) {
-	var session *Session
-	if principal, ok := principalFromContext(ctx); ok {
-		if principal.Kind == PrincipalAdminAPIKey {
-			return &Session{UserID: apiKeyAdminUserID}, nil
-		}
-		if principal.Session == nil {
-			return nil, NewClientError(401, "session authentication required")
-		}
-		session = principal.Session
-	} else {
-		// Check admin API key first (stateless auth).
-		apiKey := extractAPIKey(req)
-		if h.checkAdminAPIKey(apiKey) {
-			return &Session{UserID: apiKeyAdminUserID}, nil
-		}
-		if h.auth == nil {
-			return nil, fmt.Errorf("authentication service not configured")
-		}
-		var err error
-		session, err = h.requireSessionPrincipal(ctx, req)
-		if err != nil {
-			return nil, err
-		}
+	session, isKey, err := h.adminCandidateSession(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if isKey {
+		return session, nil
 	}
 
 	if h.auth == nil {
@@ -460,6 +466,16 @@ func (h *Handler) requireAdmin(ctx context.Context, req *events.LambdaFunctionUR
 		return nil, fmt.Errorf("admin permission check failed: %w", err)
 	}
 	if !isAdmin {
+		return nil, NewClientError(403, "admin access required")
+	}
+	// An {admin, *} grant that carries constraints is a scoped grant, not the
+	// deployment-wide administration this gate stands for.
+	unconstrained, err := h.auth.HasPermissionForConstraintsAPI(ctx, session.UserID, auth.ActionAdmin, auth.ResourceAll,
+		[]auth.PermissionConstraints{auth.GlobalConstraints()})
+	if err != nil {
+		return nil, fmt.Errorf("admin permission check failed: %w", err)
+	}
+	if !unconstrained {
 		return nil, NewClientError(403, "admin access required")
 	}
 
