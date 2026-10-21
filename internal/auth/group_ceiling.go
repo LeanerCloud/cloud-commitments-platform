@@ -143,7 +143,7 @@ func (s *Service) checkMembershipGrantCeilingWithPerms(ctx context.Context, acto
 		for i := range group.Permissions {
 			perm := group.Permissions[i]
 			if coversCarvedOut(perm) {
-				if permissionsAllow(actorPerms, perm.Action, perm.Resource, nil) {
+				if carvedOutHeld(actorPerms, perm) {
 					continue
 				}
 				return fmt.Errorf(
