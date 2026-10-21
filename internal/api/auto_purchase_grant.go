@@ -113,17 +113,19 @@ type armingGrants struct {
 // effective permissions just as the in-transaction checks did.
 func (h *Handler) resolveArmingGrants(ctx context.Context, req *events.LambdaFunctionURLRequest) armingGrants {
 	return armingGrants{
-		purchases:  h.requireGlobalPermission(ctx, req, auth.ActionExecute, auth.ResourcePurchases, autoPurchaseSwitchScopeMsg),
-		riExchange: h.resolveGrant(ctx, req, auth.ResourceRIExchange),
+		purchases:  h.resolveGrant(ctx, req, auth.ResourcePurchases, autoPurchaseSwitchScopeMsg),
+		riExchange: h.resolveGrant(ctx, req, auth.ResourceRIExchange, riExchangeAutoModeScopeMsg),
 	}
 }
 
-// resolveGrant returns the requirePermission outcome for execute on resource.
-func (h *Handler) resolveGrant(ctx context.Context, req *events.LambdaFunctionURLRequest, resource string) error {
-	_, err := h.requirePermission(ctx, req, auth.ActionExecute, resource)
-	return err
+// resolveGrant returns the outcome of an unconstrained execute grant on
+// resource (requireGlobalPermission): both gated writes arm unattended spend
+// across every account. msg is the 403 text for a restricted scope.
+func (h *Handler) resolveGrant(ctx context.Context, req *events.LambdaFunctionURLRequest, resource, msg string) error {
+	return h.requireGlobalPermission(ctx, req, auth.ActionExecute, resource, msg)
 }
 
+const riExchangeAutoModeScopeMsg = "permission denied: enabling RI exchange auto mode requires unrestricted account access"
 const autoPurchaseSwitchScopeMsg = "permission denied: arming a global switch requires unrestricted account access"
 
 // requirePlanArmGrant gates a plan write. before is nil on create.
