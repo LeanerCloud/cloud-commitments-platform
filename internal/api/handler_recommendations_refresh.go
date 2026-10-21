@@ -109,14 +109,24 @@ const refreshScopeMsg = "permission denied: refreshing recommendations covers ev
 
 // recommendationsReadContext returns the context to pass to
 // ListRecommendations for a caller with the given (already resolved) account
-// scope. Only an unrestricted scope may let the read kick the cold-start
-// collection or the stale-cache refresh: both collect for every registered
-// account and the cold-start kick holds the same in-flight marker as the
-// refresh above (issue #627). A scoped caller gets a pure cache read. Callers
+// scope. Only a caller who could also refresh (unrestricted scope and an
+// unconstrained view:recommendations grant) may let the read kick the
+// cold-start collection or the stale-cache refresh: both collect for every
+// registered account and the cold-start kick holds the same in-flight marker as
+// the refresh above (issue #627). Anyone else gets a pure cache read; a failed
+// grant probe is logged and treated the same, never as an error. Callers
 // resolve the scope once and return a lookup error before reading, so a scope
 // that cannot be established never reaches here.
-func recommendationsReadContext(ctx context.Context, scope auth.AccountScope) context.Context {
+func (h *Handler) recommendationsReadContext(ctx context.Context, session *Session, scope auth.AccountScope) context.Context {
 	if !scope.AllowsAll() {
+		return ctx
+	}
+	err := h.requirePermissionConstraints(ctx, session, auth.ActionView, auth.ResourceRecommendations,
+		[]auth.PermissionConstraints{auth.GlobalConstraints()})
+	if err != nil {
+		if ce, _ := IsClientError(err); ce == nil {
+			logging.Warnf("recommendations read: collection-kick grant check failed, serving cache only: %v", err)
+		}
 		return ctx
 	}
 	return scheduler.WithBackgroundCollection(ctx)

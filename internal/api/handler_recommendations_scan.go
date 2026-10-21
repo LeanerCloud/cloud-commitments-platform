@@ -45,7 +45,7 @@ func (h *Handler) getRecommendationsPage(ctx context.Context, scope auth.Account
 // own filters and the page order once more; a disagreement returns
 // scheduler.ErrRecommendationsPageNeedsScan rather than a wrong page.
 func (h *Handler) getRecommendationsPageFromSQL(ctx context.Context, scope auth.AccountScope, rows recommendationsRowScope, page recommendationsPage) (*RecommendationsResponse, error) {
-	pg, err := h.scheduler.PageRecommendations(recommendationsReadContext(ctx, scope), rows.sql, page.afterID, page.limit+1)
+	pg, err := h.scheduler.PageRecommendations(ctx, rows.sql, page.afterID, page.limit+1)
 	if err != nil {
 		if errors.Is(err, scheduler.ErrRecommendationsPageNeedsScan) {
 			return nil, err
@@ -70,7 +70,7 @@ func (h *Handler) getRecommendationsPageFromSQL(ctx context.Context, scope auth.
 // set; only the memory held stays bounded.
 func (h *Handler) getRecommendationsPageByScan(ctx context.Context, scope auth.AccountScope, filter config.RecommendationFilter, keep func([]config.RecommendationRecord) []config.RecommendationRecord, page recommendationsPage) (*RecommendationsResponse, error) {
 	collector := newRecommendationsPageCollector(page)
-	err := h.scheduler.ScanRecommendations(recommendationsReadContext(ctx, scope), filter, recommendationsScanChunkSize,
+	err := h.scheduler.ScanRecommendations(ctx, filter, recommendationsScanChunkSize,
 		func(chunk []config.RecommendationRecord) error {
 			return collector.add(keep(chunk))
 		})
