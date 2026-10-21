@@ -113,7 +113,7 @@ type armingGrants struct {
 // effective permissions just as the in-transaction checks did.
 func (h *Handler) resolveArmingGrants(ctx context.Context, req *events.LambdaFunctionURLRequest) armingGrants {
 	return armingGrants{
-		purchases:  h.resolveGrant(ctx, req, auth.ResourcePurchases),
+		purchases:  h.requireGlobalPermission(ctx, req, auth.ActionExecute, auth.ResourcePurchases, autoPurchaseSwitchScopeMsg),
 		riExchange: h.resolveGrant(ctx, req, auth.ResourceRIExchange),
 	}
 }
@@ -123,6 +123,8 @@ func (h *Handler) resolveGrant(ctx context.Context, req *events.LambdaFunctionUR
 	_, err := h.requirePermission(ctx, req, auth.ActionExecute, resource)
 	return err
 }
+
+const autoPurchaseSwitchScopeMsg = "permission denied: arming a global switch requires unrestricted account access"
 
 // requirePlanArmGrant gates a plan write. before is nil on create.
 func (h *Handler) requirePlanArmGrant(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, before, after *config.PurchasePlan) error {
