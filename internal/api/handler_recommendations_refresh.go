@@ -63,12 +63,8 @@ type RefreshResponse struct {
 // Lambda SDK is unavailable or the invoke call fails — in those cases the error
 // is surfaced directly rather than silently swallowed.
 func (h *Handler) postRefreshRecommendations(ctx context.Context, req *events.LambdaFunctionURLRequest) (*RefreshResponse, error) {
-	session, err := h.requirePermission(ctx, req, "view", "recommendations")
-	if err != nil {
+	if err := h.requireGlobalPermission(ctx, req, auth.ActionView, auth.ResourceRecommendations, refreshScopeMsg); err != nil {
 		return nil, err
-	}
-	if scopeErr := h.requireUnrestrictedAccountScope(ctx, session); scopeErr != nil {
-		return nil, scopeErr
 	}
 
 	// Pre-check freshness store is reachable before acquiring the collection slot.
@@ -109,21 +105,7 @@ func (h *Handler) postRefreshRecommendations(ctx context.Context, req *events.La
 	}, nil
 }
 
-// requireUnrestrictedAccountScope refuses sessions limited to a subset of
-// accounts. The refresh takes no account parameter: it collects for every
-// enabled provider and registered account, rewrites the shared recommendation
-// cache and holds the global in-flight marker, so it cannot be narrowed to the
-// caller's accounts.
-func (h *Handler) requireUnrestrictedAccountScope(ctx context.Context, session *Session) error {
-	scope, err := h.getAccountScope(ctx, session)
-	if err != nil {
-		return fmt.Errorf("failed to get allowed accounts: %w", err)
-	}
-	if !scope.AllowsAll() {
-		return NewClientError(403, "permission denied: refreshing recommendations covers every account and requires unrestricted account access")
-	}
-	return nil
-}
+const refreshScopeMsg = "permission denied: refreshing recommendations covers every account and requires unrestricted account access"
 
 // recommendationsReadContext returns the context to pass to
 // ListRecommendations for a caller with the given (already resolved) account

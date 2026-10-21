@@ -119,7 +119,7 @@ func autoGateSessionRouter(t *testing.T, perms []auth.Permission, stored config.
 func autoGateKeyRouter(t *testing.T, keyPerms, userPerms []auth.Permission, stored config.GlobalConfig) (*Router, *mocks.MockConfigStore) {
 	t.Helper()
 	mockAuth := new(MockAuthService)
-	sets := []auth.PermissionConstraints{{StrictScope: true}}
+	sets := []auth.PermissionConstraints{auth.GlobalConstraints()}
 	keyAllowed, err := auth.PermissionsAllowForConstraintSets(keyPerms, auth.ActionUpdate, auth.ResourceConfig, sets)
 	require.NoError(t, err)
 	ownerAllowed, err := auth.PermissionsAllowForConstraintSets(userPerms, auth.ActionUpdate, auth.ResourceConfig, sets)
