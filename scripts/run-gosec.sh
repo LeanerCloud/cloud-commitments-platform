@@ -18,6 +18,11 @@
 # where <tag> is "root" for the root module and the module path with slashes
 # turned into dashes otherwise (tests/e2e -> tests-e2e).
 #
+# The gosec version is read from .gosec-version at the repo root, the single
+# source of truth that the Makefile's install-dev-tools also reads (issue
+# #347). A missing or malformed file (anything but one vMAJOR.MINOR.PATCH line)
+# is a setup failure, caught before Go runs or the cache is touched.
+#
 # Exit codes: 0 clean, 1 findings or a scan error, 2 setup/usage failure.
 #
 # The gosec binary is cached per (gosec version, effective Go version), because
@@ -28,7 +33,6 @@
 
 set -euo pipefail
 
-GOSEC_VERSION="v2.28.0"
 # Every module in go.work.
 MODULES=(. tests/e2e)
 
@@ -66,6 +70,16 @@ done
 if [[ ${#scan_mods[@]} -eq 0 ]]; then
     scan_mods=("${MODULES[@]}")
     for _ in "${MODULES[@]}"; do scan_pkgs+=(""); done
+fi
+
+# Validate the pin before it reaches `go install` or the cache path: an empty
+# or garbage value must not install some other gosec or escape the cache dir.
+version_file="${REPO_ROOT}/.gosec-version"
+[[ -f "$version_file" ]] || { echo "run-gosec: $version_file not found" >&2; exit 2; }
+GOSEC_VERSION="$(cat "$version_file")"
+if [[ ! "$GOSEC_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "run-gosec: $version_file must be one line like vMAJOR.MINOR.PATCH, got '${GOSEC_VERSION}'" >&2
+    exit 2
 fi
 
 if [[ -z "${GOTOOLCHAIN:-}" ]]; then
