@@ -173,15 +173,14 @@ func TestApproveRegistration_EmptyRoleARNRequiresHostAccount(t *testing.T) {
 				Return(&config.AccountRegistration{ID: hostCheckRegID, Status: "pending", Provider: "aws", ExternalID: tc.externalID}, nil)
 			// Registered so a regression fails on the assertions below
 			// instead of panicking on an unexpected call.
-			store.On("TransitionRegistrationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-				Return(errors.New("registration must not be transitioned"))
+			store.On("ApproveAccountRegistration", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+				Return(errors.New("registration must not be approved"))
 			h := hostCheckHandler(store, tc.fake, tc.cfgErr)
 			req := &events.LambdaFunctionURLRequest{Body: roleARNBody(tc.externalID, "")}
 			result, err := h.approveRegistration(ctx, req, hostCheckRegID)
 			assert.Nil(t, result)
 			requireNotHost400(t, err)
-			store.AssertNotCalled(t, "TransitionRegistrationStatus")
-			store.AssertNotCalled(t, "CreateCloudAccount")
+			store.AssertNotCalled(t, "ApproveAccountRegistration")
 		})
 	}
 
@@ -189,12 +188,11 @@ func TestApproveRegistration_EmptyRoleARNRequiresHostAccount(t *testing.T) {
 		store := new(MockConfigStore)
 		store.On("GetAccountRegistration", mock.Anything, hostCheckRegID).
 			Return(&config.AccountRegistration{ID: hostCheckRegID, Status: "pending", Provider: "aws", ExternalID: probeHostAcct}, nil)
-		store.On("TransitionRegistrationStatus", mock.Anything, mock.Anything, "pending", mock.Anything).Return(nil)
-		store.On("UpdateAccountRegistration", mock.Anything, mock.Anything).Return(nil)
+		store.On("ApproveAccountRegistration", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 		h := hostCheckHandler(store, &probeSTS{}, nil)
 		req := &events.LambdaFunctionURLRequest{Body: roleARNBody(probeHostAcct, "")}
 		_, err := h.approveRegistration(ctx, req, hostCheckRegID)
 		require.NoError(t, err)
-		store.AssertCalled(t, "CreateCloudAccount")
+		store.AssertCalled(t, "ApproveAccountRegistration", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 }
