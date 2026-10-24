@@ -20,9 +20,11 @@ enable_docker_build = true # Build image via Terraform build module (no separate
 # Lambda Configuration
 # lambda_reserved_concurrency caps concurrent execution environments, each of
 # which holds its own DB pool (#718): 20 x db_max_connections (3) = 60 fits
-# database_max_connections (80, db.t4g.micro) minus the 10 reserved
-# connections. Reserving 20 needs an account concurrency quota of at least 120
-# (Lambda keeps 100 unreserved).
+# database_max_connections (default 80) minus the 10 reserved connections.
+# 80 is the db.t4g.micro figure and a conservative floor for db.m7g.large
+# (#719); raise it only after checking SHOW max_connections on the instance.
+# Reserving 20 needs an account concurrency quota of at least 120 (Lambda
+# keeps 100 unreserved).
 lambda_memory_size          = 1024
 lambda_timeout              = 300
 lambda_reserved_concurrency = 20
@@ -50,10 +52,15 @@ db_min_connections = 1
 # ==============================================
 # Database (RDS PostgreSQL)
 # ==============================================
+# Non-burstable and Multi-AZ (#719): 2 vCPU / 8 GiB with a standby in a second
+# AZ, matching GCP prod (db-custom-2-7680, REGIONAL) and Azure prod
+# (GP_Standard_D2s_v3, ZoneRedundant).
 
 database_name                  = "cudly"
 database_username              = "cudly"
 database_engine_version        = "16"
+database_instance_class        = "db.m7g.large"
+database_multi_az              = true
 database_backup_retention_days = 30
 database_deletion_protection   = true
 database_skip_final_snapshot   = false
