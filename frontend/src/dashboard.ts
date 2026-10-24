@@ -14,6 +14,7 @@ import { canAccess } from './permissions';
 import { groupRecsByCell, pageLevelRange, formatSavingsRange, triggerAutoRefreshIfStale } from './recommendations';
 import { showSkeletonTiles, showSkeletonBlock, teardownSkeleton } from './lib/skeleton';
 import { formatTrendAxisTick, formatTrendTooltipTitle } from './modules/chart-utils';
+import { applyChartDefaults, chartColor, withAlpha } from './lib/chart-theme';
 // Re-export for backward compatibility (tests and other callers import from dashboard.ts).
 export { formatTrendAxisTick } from './modules/chart-utils';
 
@@ -35,13 +36,17 @@ const SAVINGS_BY_SERVICE_MAX = 10;
 // are exactly the colours drawn (#189). The x axis already names each service,
 // so hue encodes the layer, not the service: no colour can change with rank
 // (#700) and the layers differ by hue rather than by shades of one (#744).
-// Slots 1-3 of the validated categorical palette, CVD-distinct in every pair.
-// Upside (aqua) sits below 3:1 on white; the tooltip carries its value.
-export const SAVINGS_LAYER_COLORS = {
-  current: '#2a78d6',      // blue
-  lowestOption: '#eb6834', // orange
-  upside: '#1baf7a',       // aqua
-} as const;
+// Defaults are slots 1-3 of the validated categorical palette, CVD-distinct in
+// every pair; Upside (aqua) sits below 3:1 on white, so the tooltip carries its
+// value. The colours are the --cudly-chart-layer-* design tokens (issue #699,
+// lib/chart-theme.ts), read at render time so a theme reaches the chart.
+export function savingsLayerColors(): { current: string; lowestOption: string; upside: string } {
+  return {
+    current: chartColor('--cudly-chart-layer-current'),
+    lowestOption: chartColor('--cudly-chart-layer-lowest'),
+    upside: chartColor('--cudly-chart-layer-upside'),
+  };
+}
 
 // In-memory index of the currently-rendered upcoming purchases, keyed by
 // execution_id. The "View Details" affordance renders from this — the
@@ -917,6 +922,8 @@ export function renderSavingsByService(
 
   const totalSavings = positive.reduce((acc, e) => acc + e.visibleTotal, 0);
 
+  const layerColors = savingsLayerColors();
+  applyChartDefaults(Chart.defaults);
   savingsByServiceChart = new Chart(canvas, {
     type: 'bar',
     data: {
@@ -928,21 +935,21 @@ export function renderSavingsByService(
         {
           label: 'Current / Committed',
           data: currentData,
-          backgroundColor: SAVINGS_LAYER_COLORS.current,
+          backgroundColor: layerColors.current,
           borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 4, bottomRight: 4 },
           stack: 'savings',
         },
         {
           label: 'Lowest option',
           data: lowestOptionData,
-          backgroundColor: SAVINGS_LAYER_COLORS.lowestOption,
+          backgroundColor: layerColors.lowestOption,
           borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 },
           stack: 'savings',
         },
         {
           label: 'Upside',
           data: upsideData,
-          backgroundColor: SAVINGS_LAYER_COLORS.upside,
+          backgroundColor: layerColors.upside,
           borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
           stack: 'savings',
         },
@@ -1115,14 +1122,16 @@ export async function loadSavingsTrendChart(): Promise<void> {
 
     if (savingsTrendChart) savingsTrendChart.destroy();
 
+    const trendColor = chartColor('--cudly-chart-1');
+    applyChartDefaults(Chart.defaults);
     savingsTrendChart = new Chart(canvas, {
       type: 'line',
       data: {
         datasets: [{
           label: 'Cumulative savings',
           data: chartData,
-          borderColor: '#1a73e8',
-          backgroundColor: 'rgba(26, 115, 232, 0.1)',
+          borderColor: trendColor,
+          backgroundColor: withAlpha(trendColor, 0.1),
           fill: true,
           tension: 0.25,
           pointRadius: 2,

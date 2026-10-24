@@ -1469,11 +1469,11 @@ describe('Dashboard Module', () => {
     // Import the public helpers from dashboard. The module is already
     // loaded above via the jest.mock chain, so we can import directly.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { renderSavingsByService, computeServiceStats, computeServiceStatsFromRecs, SAVINGS_LAYER_COLORS } = require('../dashboard') as {
+    const { renderSavingsByService, computeServiceStats, computeServiceStatsFromRecs, savingsLayerColors } = require('../dashboard') as {
       renderSavingsByService: (recs: unknown[], byService?: Record<string, { potential_savings: number; current_savings: number }>, filterDesc?: string) => void;
       computeServiceStats: (dataPoints: unknown[]) => Map<string, { min: number; max: number; sum: number; count: number; samples: number[] }>;
       computeServiceStatsFromRecs: (recs: unknown[]) => Map<string, { min: number; max: number; sum: number; count: number; samples: number[]; minLabel?: string; maxLabel?: string }>;
-      SAVINGS_LAYER_COLORS: { current: string; lowestOption: string; upside: string };
+      savingsLayerColors: () => { current: string; lowestOption: string; upside: string };
     };
 
     function buildDOM(): void {
@@ -1767,9 +1767,9 @@ describe('Dashboard Module', () => {
           const cfg = lastCfg();
           const colours = Object.fromEntries(cfg.data.datasets.map((d) => [d.label, d.backgroundColor]));
           expect(colours).toEqual({
-            'Current / Committed': SAVINGS_LAYER_COLORS.current,
-            'Lowest option': SAVINGS_LAYER_COLORS.lowestOption,
-            Upside: SAVINGS_LAYER_COLORS.upside,
+            'Current / Committed': savingsLayerColors().current,
+            'Lowest option': savingsLayerColors().lowestOption,
+            Upside: savingsLayerColors().upside,
           });
           // A single string (not a per-bar array) is what Chart.js's default
           // legend draws, so swatch and bars cannot diverge.
@@ -1778,7 +1778,7 @@ describe('Dashboard Module', () => {
         });
 
         test('the three layers use three distinct colours', () => {
-          expect(new Set(Object.values(SAVINGS_LAYER_COLORS)).size).toBe(3);
+          expect(new Set(Object.values(savingsLayerColors())).size).toBe(3);
         });
 
         test('colours do not change when a service changes rank', () => {
