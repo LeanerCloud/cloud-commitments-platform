@@ -2296,7 +2296,10 @@ func (h *Handler) retryPurchase(ctx context.Context, req *events.LambdaFunctionU
 	// the original row is unaffected (it points at the failed-again
 	// successor, which is exactly the audit trail we want).
 	emailSent, emailReason, recipient := h.sendPurchaseApprovalEmail(ctx, req, newExecution, rawApprovalToken, failedExec.Recommendations, totalUpfront, totalSavings)
-	status := h.finalizePurchaseStatus(ctx, newExecution, emailSent, emailReason)
+	status, err := h.finalizePurchaseStatus(ctx, newExecution, emailSent, emailReason)
+	if err != nil {
+		return nil, err
+	}
 
 	resp := map[string]any{
 		"execution_id":         newExecution.ExecutionID,
@@ -3133,20 +3136,68 @@ func validateExecutePurchaseRecommendations(recs []config.RecommendationRecord) 
 
 // finalizePurchaseStatus flips an execution's stored status to "failed" if
 // the approval email couldn't send, and returns the status string the API
-// response should carry. Returns the original "pending" when email_sent is
-// true or when the failed-state write itself fails (best-effort — the UI
-// still gets email_sent=false and can point the user at History).
-func (h *Handler) finalizePurchaseStatus(ctx context.Context, execution *config.PurchaseExecution, emailSent bool, emailReason string) string {
+// response should carry. Returns "pending" when email_sent is true.
+//
+// The write is guarded on the row still being "pending" (issue #1232). A
+// session approve, cancel or pause can land while the email is being sent;
+// an unguarded write would then stamp "failed" over a row that was already
+// approved and bought, which makes it eligible for retry and a second
+// purchase. A lost guard is a no-op: the row keeps the status the other
+// writer gave it, and that status is what the response carries.
+//
+// Any other save error is returned as a 500 (issue #54). The row then
+// still reads "pending" with no error text and a valid approval token while
+// no approval email exists, so answering "pending" would make it look like
+// a healthy request waiting on its approver. The error names the execution
+// so the caller can cancel it.
+func (h *Handler) finalizePurchaseStatus(ctx context.Context, execution *config.PurchaseExecution, emailSent bool, emailReason string) (string, error) {
 	if emailSent {
+		return "pending", nil
+	}
+	failed := *execution
+	failed.Status = "failed"
+	failed.Error = emailReason
+	err := h.config.SaveExecutionIfStatus(ctx, &failed, []string{"pending"})
+	switch {
+	case err == nil:
+		execution.Status, execution.Error = failed.Status, failed.Error
+		return "failed", nil
+	case errors.Is(err, config.ErrExecutionNotInExpectedStatus):
+		logging.Warnf("execution %s left pending while its approval email was being sent; not marking it failed: %v", execution.ExecutionID, err)
+		return h.currentExecutionStatus(ctx, execution.ExecutionID), nil
+	default:
+		logging.Errorf("AUDIT LOSS: failed to mark execution %s as failed after email send error (%s): %v", execution.ExecutionID, emailReason, err)
+		return "", emailFailureNotRecordedError(execution.ExecutionID, emailReason, err)
+	}
+}
+
+// emailFailureNotRecordedError is the 500 finalizePurchaseStatus returns when
+// the approval email failed and the write recording that failure failed too
+// (issue #54). The body names the execution and carries the email reason so
+// the caller can find the row and cancel it. The store error stays out of
+// the body but is wrapped so it remains reachable with errors.Is.
+func emailFailureNotRecordedError(executionID, emailReason string, saveErr error) error {
+	ce := NewClientErrorWithDetails(500,
+		fmt.Sprintf("AUDIT LOSS: the approval email for execution %s could not be sent, and saving that failure on the execution also failed; "+
+			"it may still show as pending with no approval email on the way, so cancel it from History", executionID),
+		map[string]any{
+			"execution_id": executionID,
+			"email_sent":   false,
+			"email_reason": emailReason,
+		})
+	return fmt.Errorf("%w: %w", ce, saveErr)
+}
+
+// currentExecutionStatus re-reads an execution's stored status for a response
+// whose in-memory copy went stale. Falls back to "pending" (the status the row
+// was created with) when the read fails.
+func (h *Handler) currentExecutionStatus(ctx context.Context, executionID string) string {
+	row, err := h.config.GetExecutionByID(ctx, executionID)
+	if err != nil || row == nil {
+		logging.Errorf("failed to re-read execution %s status: %v", executionID, err)
 		return "pending"
 	}
-	execution.Status = "failed"
-	execution.Error = emailReason
-	if err := h.config.SavePurchaseExecution(ctx, execution); err != nil {
-		logging.Errorf("failed to mark execution %s as failed after email send error: %v", execution.ExecutionID, err)
-		return "pending"
-	}
-	return "failed"
+	return row.Status
 }
 
 // validateAndTotalRecommendations validates each recommendation and returns
@@ -3534,11 +3585,24 @@ func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctio
 	// actual outcome. The DB write above is the source of truth — email is
 	// best-effort and never blocks the response body; the returned
 	// email_sent / email_reason fields let the UI tell the user whether they
-	// should wait for an inbox or cancel/retry manually.
-	emailSent, emailReason, recipient := h.sendPurchaseApprovalEmail(ctx, req, execution, rawApprovalToken, execReq.Recommendations, totalUpfront, totalSavings)
-	status := h.finalizePurchaseStatus(ctx, execution, emailSent, emailReason)
+	// should wait for an inbox or cancel/retry manually. The one exception is
+	// a send failure that cannot be recorded on the row: that answers 500
+	// (issue #54).
+	return h.sendApprovalAndFinalize(ctx, req, execution, rawApprovalToken, execReq.Recommendations, totalUpfront, totalSavings, paymentAdjustments)
+}
 
-	return withPaymentAdjustments(buildApprovalPendingResponse(executionID, status, len(execReq.Recommendations), totalUpfront, totalSavings, emailSent, emailReason, recipient), paymentAdjustments), nil
+// sendApprovalAndFinalize sends the approval email for a freshly persisted
+// pending execution, records a send failure on the row through
+// finalizePurchaseStatus, and builds the approval-pending response. A failed
+// failure write comes back as an error rather than a response (issue #54).
+// Extracted from executePurchase to keep it under the gocyclo budget.
+func (h *Handler) sendApprovalAndFinalize(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, rawApprovalToken string, recs []config.RecommendationRecord, totalUpfront, totalSavings float64, paymentAdjustments []PaymentAdjustment) (any, error) {
+	emailSent, emailReason, recipient := h.sendPurchaseApprovalEmail(ctx, req, execution, rawApprovalToken, recs, totalUpfront, totalSavings)
+	status, err := h.finalizePurchaseStatus(ctx, execution, emailSent, emailReason)
+	if err != nil {
+		return nil, err
+	}
+	return withPaymentAdjustments(buildApprovalPendingResponse(execution.ExecutionID, status, len(recs), totalUpfront, totalSavings, emailSent, emailReason, recipient), paymentAdjustments), nil
 }
 
 // withPaymentAdjustments attaches the payment-option coercion notices to an
