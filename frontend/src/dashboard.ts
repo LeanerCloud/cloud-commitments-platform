@@ -18,7 +18,7 @@ import { buildFirstRunEmptyState, isScopeFiltered } from './first-run-empty-stat
 import { showSkeletonTiles, showSkeletonBlock, teardownSkeleton } from './lib/skeleton';
 import { buildKpiTile } from './lib/kpi-tile';
 import { scopeUpcomingToProvider, upcomingEmptyMessage, UPCOMING_ACCOUNT_SCOPE_NOTE } from './lib/upcoming-scope';
-import { formatTrendAxisTick, formatTrendTooltipTitle, formatSparseTrendMessage, MIN_TREND_POINTS } from './modules/chart-utils';
+import { formatTrendAxisTick, formatTrendTooltipTitle, formatSparseTrendMessage, MIN_TREND_POINTS, upsertChart } from './modules/chart-utils';
 import { setChartSummary, renderChartTable, removeChartTable } from './lib/chart-a11y';
 // Re-export for backward compatibility (tests and other callers import from dashboard.ts).
 export { formatTrendAxisTick } from './modules/chart-utils';
@@ -30,6 +30,8 @@ Chart.register(...registerables);
 // the per-service savings chart instance below.
 let savingsTrendChart: Chart | null = null;
 let savingsTrendRange: '7' | '30' | '90' | 'all' = '90';
+// Request generation for loadSavingsTrendChart; see the stale guard there (#747).
+let savingsTrendGeneration = 0;
 
 // Chart instance for the per-service savings-range bar chart (issue #765).
 let savingsByServiceChart: Chart | null = null;
@@ -881,12 +883,6 @@ export function renderSavingsByService(
   const section = document.getElementById('savings-by-service-section');
   if (!canvas) return;
 
-  // Destroy existing chart before rebuilding.
-  if (savingsByServiceChart) {
-    savingsByServiceChart.destroy();
-    savingsByServiceChart = null;
-  }
-
   const stats = computeServiceStatsFromRecs(recs);
   const heading = section?.querySelector('h3');
 
@@ -933,6 +929,8 @@ export function renderSavingsByService(
 
   if (positive.length === 0) {
     if (heading) heading.textContent = 'Potential savings range per service';
+    savingsByServiceChart?.destroy();
+    savingsByServiceChart = null;
     canvas.classList.add('hidden');
     removeChartTable(SAVINGS_BY_SERVICE_TABLE_ID);
     if (emptyEl) {
@@ -988,7 +986,8 @@ export function renderSavingsByService(
       formatCurrency(e.upside), formatCurrency(e.visibleTotal)]),
   });
 
-  savingsByServiceChart = new Chart(canvas, {
+  // #747: update in place so a filter change doesn't replay the entry animation.
+  savingsByServiceChart = upsertChart(savingsByServiceChart, canvas, {
     type: 'bar',
     data: {
       labels,
@@ -1102,6 +1101,9 @@ export async function loadSavingsTrendChart(): Promise<void> {
   const canvas = document.getElementById('savings-trend-chart') as HTMLCanvasElement | null;
   const empty = document.getElementById('savings-trend-empty');
   if (!canvas) return;
+  // #747: quick range or filter changes overlap requests; only the latest
+  // may paint, or an older response landing last would show the wrong range.
+  const generation = ++savingsTrendGeneration;
 
   const now = new Date();
   const nowMs = now.getTime();
@@ -1135,6 +1137,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
       ...(provider ? { provider } : {}),
       ...(accountIDs.length > 0 ? { account_ids: accountIDs } : {}),
     });
+    if (generation !== savingsTrendGeneration) return;
 
     const points = data.data_points ?? [];
 
@@ -1198,8 +1201,6 @@ export async function loadSavingsTrendChart(): Promise<void> {
     canvas.classList.remove('hidden');
     empty?.classList.add('hidden');
 
-    if (savingsTrendChart) savingsTrendChart.destroy();
-
     // #744: summarize the plotted series and list every point as text.
     const rangeText = isAllRange ? 'the last year' : `the last ${days} days`;
     const latest = chartData[chartData.length - 1]!;
@@ -1213,7 +1214,8 @@ export async function loadSavingsTrendChart(): Promise<void> {
       rows: chartData.map(p => [formatTrendAxisTick(p.x, interval), formatCurrency(p.y)]),
     });
 
-    savingsTrendChart = new Chart(canvas, {
+    // #747: update in place so a range click doesn't replay the entry animation.
+    savingsTrendChart = upsertChart(savingsTrendChart, canvas, {
       type: 'line',
       data: {
         datasets: [{
@@ -1263,6 +1265,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
       },
     });
   } catch (err) {
+    if (generation !== savingsTrendGeneration) return;
     // Analytics is Postgres-backed now, but the endpoint still guards with
     // a 503 when the analytics client isn't wired. Don't break the rest of
     // the dashboard — hide the widget and fall back to a neutral message.
