@@ -3342,7 +3342,9 @@ func riExchangeUSD(micros *big.Int) string {
 	return fmt.Sprintf("%s.%06d", whole, fractional)
 }
 
-// GetRIExchangeRecord retrieves an RI exchange record by ID.
+// GetRIExchangeRecord retrieves an RI exchange record by ID. A missing record
+// is a wrapped ErrNotFound, so callers can tell it from a failed query and
+// answer it as a client error rather than a 500 (issue #601).
 func (s *PostgresStore) GetRIExchangeRecord(ctx context.Context, id string) (*RIExchangeRecord, error) {
 	query := `
 		SELECT id, account_id, exchange_id, region, source_ri_ids,
@@ -3361,7 +3363,7 @@ func (s *PostgresStore) GetRIExchangeRecord(ctx context.Context, id string) (*RI
 	}
 
 	if len(records) == 0 {
-		return nil, fmt.Errorf("ri exchange record not found: %s", id)
+		return nil, fmt.Errorf("ri exchange record %s: %w", id, ErrNotFound)
 	}
 
 	return &records[0], nil
@@ -3437,7 +3439,8 @@ func (s *PostgresStore) GetRIExchangeHistoryForAccounts(ctx context.Context, sin
 
 // TransitionRIExchangeStatus atomically transitions an RI exchange record status.
 // Uses a single UPDATE...WHERE...RETURNING for atomicity, then diagnoses failure
-// only if zero rows are returned.
+// only if zero rows are returned (ErrRIExchangeExpired or
+// ErrRIExchangeNotInExpectedStatus, wrapped, for an existing record).
 // actor is the UUID of the user performing the transition (nil for system-initiated paths).
 func (s *PostgresStore) TransitionRIExchangeStatus(ctx context.Context, id, fromStatus, toStatus string, actor *string) (*RIExchangeRecord, error) {
 	query := `
@@ -3480,9 +3483,9 @@ func (s *PostgresStore) diagnoseTransitionFailure(ctx context.Context, id, fromS
 		return fmt.Errorf("failed to diagnose transition failure: %w", err)
 	}
 	if expired {
-		return fmt.Errorf("ri exchange has expired")
+		return fmt.Errorf("%w: %s", ErrRIExchangeExpired, id)
 	}
-	return fmt.Errorf("ri exchange status transition failed: expected status %q but current status is %q", fromStatus, currentStatus)
+	return fmt.Errorf("%w: expected status %q but current status is %q", ErrRIExchangeNotInExpectedStatus, fromStatus, currentStatus)
 }
 
 // CompleteRIExchange marks an RI exchange as completed.

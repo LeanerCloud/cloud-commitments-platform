@@ -467,6 +467,7 @@ type StoreInterface interface {
 	// processing (approved) exchange under the shared daily-cap lock, excluding
 	// the row's own amount, and stores the ceiling as its payment_due.
 	ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error)
+	// GetRIExchangeRecord returns a wrapped ErrNotFound when no record has id.
 	GetRIExchangeRecord(ctx context.Context, id string) (*RIExchangeRecord, error)
 	GetRIExchangeRecordByToken(ctx context.Context, token string) (*RIExchangeRecord, error)
 	GetRIExchangeHistory(ctx context.Context, since time.Time, limit int) ([]RIExchangeRecord, error)
@@ -476,6 +477,8 @@ type StoreInterface interface {
 	GetRIExchangeHistoryForAccounts(ctx context.Context, since time.Time, limit int, accountIDs []string) ([]RIExchangeRecord, error)
 	// TransitionRIExchangeStatus atomically transitions an RI exchange record status.
 	// actor is the UUID of the user performing the transition (nil for system-initiated paths).
+	// A lost transition returns a wrapped ErrRIExchangeExpired when the record
+	// has expired, or ErrRIExchangeNotInExpectedStatus when its status moved on.
 	TransitionRIExchangeStatus(ctx context.Context, id string, fromStatus string, toStatus string, actor *string) (*RIExchangeRecord, error)
 	CompleteRIExchange(ctx context.Context, id string, exchangeID string) error
 	// CompleteRIExchangeWithPayment marks an RI exchange as completed and
