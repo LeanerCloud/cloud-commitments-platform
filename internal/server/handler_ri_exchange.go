@@ -277,22 +277,38 @@ func buildExchangeNotificationData(result *exchange.AutoExchangeResult, dashboar
 //
 //	monthly = (FixedPrice / hours_per_term + UsagePrice + recurring_hourly) × 730
 //
-// Returns an error when Duration is non-positive: a zero cost would read
-// as a free RI and skip the pricing gate, so callers must exclude the RI.
+// Returns an error when Duration is non-positive or when the computed cost
+// is not positive (for example FixedPrice, UsagePrice and
+// RecurringHourlyAmount all zero, which means AWS returned no pricing, not a
+// free RI): a zero cost would read as a free RI and skip the pricing gate,
+// so callers must exclude the RI.
 //
 // Used to populate exchange.RIInfo.MonthlyCost so the cross-family
 // dollar-units pre-filter compares apples-to-apples against per-target
 // offering costs.
+//
+// Keep in sync with the copy in internal/api/handler_ri_exchange.go. That
+// copy also wraps errRINonPositiveDuration / errRINoPricing so the API can
+// report a per-RI reason; this one does not, because the callers here only
+// log and drop the RI.
 func monthlyCostFromConvertibleRI(ri ec2svc.ConvertibleRI) (float64, error) {
 	if ri.Duration <= 0 {
 		return 0, fmt.Errorf("convertible RI %s has non-positive duration %d: monthly cost is not computable", ri.ReservedInstanceID, ri.Duration)
 	}
 	hoursPerTerm := float64(ri.Duration) / 3600
-	return ((ri.FixedPrice / hoursPerTerm) + ri.UsagePrice + ri.RecurringHourlyAmount) * 730, nil
+	cost := ((ri.FixedPrice / hoursPerTerm) + ri.UsagePrice + ri.RecurringHourlyAmount) * 730
+	// !(cost > 0) also rejects NaN, which is no usable price either.
+	if !(cost > 0) {
+		return 0, fmt.Errorf("convertible RI %s has no positive price (fixed %v, usage %v, recurring hourly %v): monthly cost is not computable",
+			ri.ReservedInstanceID, ri.FixedPrice, ri.UsagePrice, ri.RecurringHourlyAmount)
+	}
+	return cost, nil
 }
 
 // convertForAutoExchange converts provider-specific types to exchange package types,
-// including RI metadata needed for offering lookup.
+// including RI metadata needed for offering lookup. It serves both the
+// auto-exchange run and the ladder write path (ladder_write.go); an RI whose
+// monthly cost is not computable is logged and dropped on both.
 func convertForAutoExchange(instances []ec2svc.ConvertibleRI, utilData []recommendations.RIUtilization) ([]exchange.RIInfo, []exchange.UtilizationInfo, map[string]exchange.RIMetadataInfo) {
 	riInfos := make([]exchange.RIInfo, 0, len(instances))
 	riMetadata := make(map[string]exchange.RIMetadataInfo, len(instances))
@@ -301,7 +317,7 @@ func convertForAutoExchange(instances []ec2svc.ConvertibleRI, utilData []recomme
 		inst := instances[i]
 		monthlyCost, err := monthlyCostFromConvertibleRI(inst)
 		if err != nil {
-			logging.Warnf("convertForAutoExchange: excluding RI from auto-exchange: %v", err)
+			logging.Warnf("convertForAutoExchange: excluding RI from auto-exchange and ladder reshaping: %v", err)
 			continue
 		}
 		riInfos = append(riInfos, exchange.RIInfo{
