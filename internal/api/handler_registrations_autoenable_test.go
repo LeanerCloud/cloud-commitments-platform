@@ -1,7 +1,14 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"testing"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
@@ -80,4 +87,50 @@ func TestAccountHasCredentialFreePath(t *testing.T) {
 			}
 		})
 	}
+}
+
+// saveFailingCredStore returns err from SaveCredential.
+type saveFailingCredStore struct {
+	MockCredentialStore
+	err error
+}
+
+func (s *saveFailingCredStore) SaveCredential(context.Context, string, string, []byte) error {
+	return s.err
+}
+
+// approveWithStoredPayload approves a registration that carries an encrypted
+// credential and returns the registration the handler passed to
+// UpdateAccountRegistration.
+func approveWithStoredPayload(t *testing.T, saveErr error) *config.AccountRegistration {
+	t.Helper()
+	ctx := context.Background()
+	store := new(MockConfigStore)
+	store.On("GetAccountRegistration", mock.Anything, hostCheckRegID).Return(&config.AccountRegistration{
+		ID: hostCheckRegID, Status: "pending", Provider: "aws", ExternalID: probeHostAcct,
+		RegCredentialType: "aws_access_keys", RegCredentialPayload: "encrypted-payload",
+	}, nil)
+	store.On("TransitionRegistrationStatus", mock.Anything, mock.Anything, "pending", mock.Anything).Return(nil)
+	var updated config.AccountRegistration
+	store.On("UpdateAccountRegistration", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		updated = *args.Get(1).(*config.AccountRegistration)
+	}).Return(nil)
+	h := hostCheckHandler(store, &probeSTS{}, nil)
+	h.credStore = &saveFailingCredStore{err: saveErr}
+	req := &events.LambdaFunctionURLRequest{Body: roleARNBody(probeHostAcct, "")}
+	_, err := h.approveRegistration(ctx, req, hostCheckRegID)
+	require.NoError(t, err)
+	store.AssertCalled(t, "UpdateAccountRegistration", mock.Anything, mock.Anything)
+	return &updated
+}
+
+func TestApproveRegistration_ClearsPayloadAfterSavedCredentials(t *testing.T) {
+	updated := approveWithStoredPayload(t, nil)
+	assert.Empty(t, updated.RegCredentialPayload)
+}
+
+// A failed save must not cost the operator the only copy of the credential.
+func TestApproveRegistration_KeepsPayloadWhenSaveFails(t *testing.T) {
+	updated := approveWithStoredPayload(t, errors.New("db down"))
+	assert.Equal(t, "encrypted-payload", updated.RegCredentialPayload)
 }

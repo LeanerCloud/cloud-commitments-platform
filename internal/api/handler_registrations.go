@@ -234,18 +234,36 @@ func (h *Handler) setReviewMetadata(ctx context.Context, reg *config.AccountRegi
 }
 
 // storeRegistrationCredentials decrypts and stores credentials from the registration
-// record into the account_credentials table. Errors are logged, not propagated.
-func (h *Handler) storeRegistrationCredentials(ctx context.Context, reg *config.AccountRegistration, accountID string) {
-	if reg.RegCredentialPayload == "" || reg.RegCredentialType == "" || h.credStore == nil {
-		return
+// record into the account_credentials table. It returns true when the registration
+// holds no credential or the credential was saved, and false when the encrypted
+// payload must be kept because the save did not happen. Failures are logged at
+// ERROR, not propagated: the account already exists and the approval stands.
+func (h *Handler) storeRegistrationCredentials(ctx context.Context, reg *config.AccountRegistration, accountID string) bool {
+	if reg.RegCredentialPayload == "" {
+		return true
+	}
+	if reg.RegCredentialType == "" || h.credStore == nil {
+		logging.Errorf("registration %s: credential payload kept, nothing to save it with (type %q, store configured: %t)", reg.ID, reg.RegCredentialType, h.credStore != nil)
+		return false
 	}
 	plaintext, err := h.credStore.DecryptPayload(reg.RegCredentialPayload)
 	if err != nil {
-		logging.Warnf("registration %s: failed to decrypt credential payload: %v", reg.ID, err)
-		return
+		logging.Errorf("registration %s: credential payload kept, failed to decrypt it: %v", reg.ID, err)
+		return false
 	}
 	if err := h.credStore.SaveCredential(ctx, accountID, reg.RegCredentialType, plaintext); err != nil {
-		logging.Warnf("registration %s: failed to store credential: %v", reg.ID, err)
+		logging.Errorf("registration %s: credential payload kept, failed to store credential: %v", reg.ID, err)
+		return false
+	}
+	return true
+}
+
+// storeAndClearRegistrationCredentials saves the registration's credentials and,
+// only when that succeeded, blanks the in-memory payload so the following update
+// writes NULL (don't keep encrypted credentials longer than needed).
+func (h *Handler) storeAndClearRegistrationCredentials(ctx context.Context, reg *config.AccountRegistration, accountID string) {
+	if h.storeRegistrationCredentials(ctx, reg, accountID) {
+		reg.RegCredentialPayload = ""
 	}
 }
 
@@ -321,11 +339,11 @@ func (h *Handler) approveRegistration(ctx context.Context, httpReq *events.Lambd
 	}
 
 	// Auto-store credentials if the registration included them.
-	h.storeRegistrationCredentials(ctx, reg, account.ID)
+	// The payload is wiped from the registration record once saved; a failed
+	// save keeps it, as the only copy.
+	h.storeAndClearRegistrationCredentials(ctx, reg, account.ID)
 
-	// Link the cloud account and wipe the credential payload from the registration record.
 	reg.CloudAccountID = &account.ID
-	reg.RegCredentialPayload = "" // Don't keep encrypted credentials longer than needed.
 	if err := h.config.UpdateAccountRegistration(ctx, reg); err != nil {
 		logging.Warnf("registration %s approved but failed to link cloud_account_id: %v", reg.ID, err)
 	}
