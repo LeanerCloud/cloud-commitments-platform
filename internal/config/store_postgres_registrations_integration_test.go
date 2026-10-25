@@ -65,3 +65,29 @@ func TestCreateAccountRegistration_UniquenessPostgres(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, store.CreateAccountRegistration(ctx, newPendingRegistration("tok-137-d", "111111111111")))
 }
+
+// Approval keeps the encrypted credential only until it is saved to the
+// account: after UpdateAccountRegistration with a cleared payload the column
+// is NULL, not just blank in memory.
+func TestUpdateAccountRegistration_ClearsCredentialPayloadPostgres(t *testing.T) {
+	ctx := context.Background()
+	container := testhelpers.RequireMigratedDatabase(ctx, t, getTestMigrationsPath())
+	store := NewPostgresStore(container.DB)
+
+	reg := newPendingRegistration("tok-cred-a", "444444444444")
+	reg.RegCredentialType = "aws_access_keys"
+	reg.RegCredentialPayload = "encrypted-payload"
+	require.NoError(t, store.CreateAccountRegistration(ctx, reg))
+
+	var stored *string
+	query := `SELECT reg_credential_payload FROM account_registrations WHERE id = $1`
+	require.NoError(t, container.DB.Pool().QueryRow(ctx, query, reg.ID).Scan(&stored))
+	require.NotNil(t, stored, "the pending registration holds its payload")
+
+	reg.Status = "approved"
+	reg.RegCredentialPayload = ""
+	require.NoError(t, store.UpdateAccountRegistration(ctx, reg))
+
+	require.NoError(t, container.DB.Pool().QueryRow(ctx, query, reg.ID).Scan(&stored))
+	assert.Nil(t, stored, "the approved registration must not keep the encrypted payload")
+}

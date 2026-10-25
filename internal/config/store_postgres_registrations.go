@@ -166,6 +166,8 @@ func (s *PostgresStore) ListAccountRegistrations(ctx context.Context, filter Acc
 }
 
 // UpdateAccountRegistration updates the mutable workflow fields of a registration.
+// It also persists reg.RegCredentialPayload, so a caller that has saved the
+// credentials elsewhere clears the stored encrypted copy by blanking it (NULL).
 func (s *PostgresStore) UpdateAccountRegistration(ctx context.Context, reg *AccountRegistration) error {
 	reg.UpdatedAt = time.Now()
 
@@ -176,7 +178,8 @@ func (s *PostgresStore) UpdateAccountRegistration(ctx context.Context, reg *Acco
 			cloud_account_id = $4,
 			reviewed_by      = $5,
 			reviewed_at      = $6,
-			updated_at       = $7
+			updated_at       = $7,
+			reg_credential_payload = $8
 		WHERE id = $1
 	`
 
@@ -193,6 +196,7 @@ func (s *PostgresStore) UpdateAccountRegistration(ctx context.Context, reg *Acco
 		nullStringFromPtr(reg.ReviewedBy),
 		reviewedAt,
 		reg.UpdatedAt,
+		nullStringFromString(reg.RegCredentialPayload),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update account registration: %w", err)
