@@ -347,8 +347,8 @@ func (h *Handler) updatePlanGated(ctx context.Context, httpReq *events.LambdaFun
 	if err == nil {
 		return nil
 	}
-	if _, ok := IsClientError(err); ok {
-		return err
+	if ce, ok := IsClientError(err); ok {
+		return ce
 	}
 	return mapCreatePlanStorageError(err, "plan not found", "failed to update plan", "%s: UpdatePurchasePlan failed", op)
 }

@@ -1474,8 +1474,8 @@ func (h *Handler) storePlanAccounts(ctx context.Context, httpReq *events.LambdaF
 	if err == nil {
 		return nil
 	}
-	if _, ok := IsClientError(err); ok {
-		return err
+	if ce, ok := IsClientError(err); ok {
+		return ce
 	}
 	if errors.Is(err, config.ErrNotFound) {
 		return NewClientError(404, err.Error())
