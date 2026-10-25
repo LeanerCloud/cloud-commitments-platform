@@ -91,3 +91,33 @@ func TestUpdateAccountRegistration_ClearsCredentialPayloadPostgres(t *testing.T)
 	require.NoError(t, container.DB.Pool().QueryRow(ctx, query, reg.ID).Scan(&stored))
 	assert.Nil(t, stored, "the approved registration must not keep the encrypted payload")
 }
+
+// A rejected registration will never be approved, so it must not keep the
+// encrypted credential; a transition to any other status leaves it alone.
+func TestTransitionRegistrationStatus_RejectClearsCredentialPayloadPostgres(t *testing.T) {
+	ctx := context.Background()
+	container := testhelpers.RequireMigratedDatabase(ctx, t, getTestMigrationsPath())
+	store := NewPostgresStore(container.DB)
+	query := `SELECT reg_credential_payload FROM account_registrations WHERE id = $1`
+
+	for _, tc := range []struct {
+		status    string
+		wantStore bool
+	}{{"rejected", false}, {"approved", true}} {
+		reg := newPendingRegistration("tok-rej-"+tc.status, "55555555555"+map[string]string{"rejected": "1", "approved": "2"}[tc.status])
+		reg.RegCredentialType = "aws_access_keys"
+		reg.RegCredentialPayload = "encrypted-payload"
+		require.NoError(t, store.CreateAccountRegistration(ctx, reg))
+
+		reg.Status = tc.status
+		require.NoError(t, store.TransitionRegistrationStatus(ctx, reg, "pending", nil))
+
+		var stored *string
+		require.NoError(t, container.DB.Pool().QueryRow(ctx, query, reg.ID).Scan(&stored))
+		if tc.wantStore {
+			assert.NotNil(t, stored, "%s keeps the payload for the approve flow to save", tc.status)
+		} else {
+			assert.Nil(t, stored, "%s must not keep the encrypted payload", tc.status)
+		}
+	}
+}

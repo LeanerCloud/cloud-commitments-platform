@@ -219,6 +219,7 @@ func (s *PostgresStore) TransitionRegistrationStatus(ctx context.Context, reg *A
 			reviewed_by      = $5,
 			reviewed_at      = $6,
 			updated_at       = $7,
+			reg_credential_payload = CASE WHEN $10::boolean THEN NULL ELSE reg_credential_payload END,
 			transitioned_by  = $9,
 			transitioned_at  = NOW()
 		WHERE id = $1 AND status = $8
@@ -239,6 +240,7 @@ func (s *PostgresStore) TransitionRegistrationStatus(ctx context.Context, reg *A
 		reg.UpdatedAt,
 		fromStatus,
 		actor,
+		reg.Status == "rejected", // a rejected registration never saves its credential
 	)
 	if err != nil {
 		return fmt.Errorf("failed to transition account registration status: %w", err)
