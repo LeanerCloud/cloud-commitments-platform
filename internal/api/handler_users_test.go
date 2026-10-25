@@ -488,3 +488,71 @@ func TestHandler_users_ContradictoryGroupsMessageForUserAPIKey(t *testing.T) {
 		})
 	}
 }
+
+// A refused group grant keeps the 403 status; it names the group and the
+// permission only for a caller who may view groups.
+func TestHandler_users_GroupGrantRefusalMessageDependsOnViewGroups(t *testing.T) {
+	ctx := context.Background()
+	session := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "ops@example.com"}
+	groups := `["00000000-0000-5000-8000-000000000004"]`
+	const userID = "11111111-1111-1111-1111-111111111111"
+	refusals := map[string]error{
+		"ceiling": fmt.Errorf(`%w: granting membership in "Plan Authors" would grant create:plans, beyond your own permissions`, auth.ErrPermissionCeiling),
+		"reserved": fmt.Errorf(`%w: granting membership in "Plan Authors" would grant create:plans, which is reserved`,
+			auth.ErrPermissionNotGrantable),
+	}
+	writeOnly := []auth.Permission{
+		{Action: auth.ActionCreate, Resource: auth.ResourceUsers},
+		{Action: auth.ActionUpdate, Resource: auth.ResourceUsers},
+	}
+	withView := append([]auth.Permission{{Action: auth.ActionView, Resource: auth.ResourceGroups}}, writeOnly...)
+	callers := map[string]struct {
+		perms   []auth.Permission
+		apiKey  bool
+		detail  bool
+		headers map[string]string
+	}{
+		"without view groups": {perms: writeOnly, headers: map[string]string{"Authorization": "Bearer tok"}},
+		"with view groups":    {perms: withView, detail: true, headers: map[string]string{"Authorization": "Bearer tok"}},
+		"admin api key":       {apiKey: true, detail: true, headers: map[string]string{"X-API-Key": "admin-secret"}},
+	}
+	for refName, refusal := range refusals {
+		for _, op := range []string{"create", "update"} {
+			for callerName, c := range callers {
+				t.Run(refName+"/"+op+"/"+callerName, func(t *testing.T) {
+					mockAuth := new(MockAuthService)
+					h := &Handler{auth: mockAuth}
+					if c.apiKey {
+						h.apiKey = "admin-secret"
+					} else {
+						mockAuth.On("ValidateSession", ctx, "tok").Return(session, nil)
+						mockAuth.grantPermissions(c.perms)
+					}
+					var err error
+					if op == "create" {
+						mockAuth.On("CreateUserAPI", ctx, mock.Anything, mock.Anything).Return(nil, refusal).Once()
+						password := base64.StdEncoding.EncodeToString([]byte("password123"))
+						_, err = h.createUser(ctx, &events.LambdaFunctionURLRequest{Headers: c.headers,
+							Body: `{"email": "new@example.com", "password": "` + password + `", "groups": ` + groups + `}`})
+					} else {
+						mockAuth.On("UpdateUserAPI", ctx, mock.Anything, userID, mock.Anything).Return(nil, refusal).Once()
+						_, err = h.updateUser(ctx, &events.LambdaFunctionURLRequest{Headers: c.headers, Body: `{"groups": ` + groups + `}`}, userID)
+					}
+
+					ce, ok := IsClientError(err)
+					require.True(t, ok)
+					assert.Equal(t, 403, ce.code)
+					if c.detail {
+						assert.Contains(t, err.Error(), `"Plan Authors"`)
+						assert.Contains(t, err.Error(), "create:plans")
+						return
+					}
+					assert.Equal(t, groupGrantDeniedMessage, err.Error())
+					for _, leaked := range []string{"Plan Authors", "create:plans", "plans", "reserved", "beyond"} {
+						assert.NotContains(t, err.Error(), leaked)
+					}
+				})
+			}
+		}
+	}
+}
