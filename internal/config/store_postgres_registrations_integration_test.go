@@ -121,3 +121,13 @@ func TestTransitionRegistrationStatus_RejectClearsCredentialPayloadPostgres(t *t
 		}
 	}
 }
+
+// The not-found error of GetRIExchangeRecord is the sentinel the API maps to 404.
+func TestGetRIExchangeRecord_MissingIsSentinelPostgres(t *testing.T) {
+	ctx := context.Background()
+	container := testhelpers.RequireMigratedDatabase(ctx, t, getTestMigrationsPath())
+	store := NewPostgresStore(container.DB)
+
+	_, err := store.GetRIExchangeRecord(ctx, "6f1c2a8e-0d4b-4c1e-9a3f-692000000009")
+	require.ErrorIs(t, err, ErrRIExchangeRecordNotFound)
+}

@@ -3274,6 +3274,9 @@ func (s *PostgresStore) ReserveApprovedRIExchange(ctx context.Context, id, daily
 
 // ErrRIExchangeDailyCapExceeded marks a reservation refused because the
 // initial quote does not fit the remaining daily or per-exchange headroom.
+// ErrRIExchangeRecordNotFound is wrapped by GetRIExchangeRecord when no row has the id.
+var ErrRIExchangeRecordNotFound = errors.New("ri exchange record not found")
+
 var ErrRIExchangeDailyCapExceeded = errors.New("RI exchange daily cap exceeded")
 
 // reserveRIExchangeCeiling takes the global daily-spend lock (held until tx ends)
@@ -3367,7 +3370,7 @@ func (s *PostgresStore) GetRIExchangeRecord(ctx context.Context, id string) (*RI
 	}
 
 	if len(records) == 0 {
-		return nil, fmt.Errorf("ri exchange record not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrRIExchangeRecordNotFound, id)
 	}
 
 	return &records[0], nil

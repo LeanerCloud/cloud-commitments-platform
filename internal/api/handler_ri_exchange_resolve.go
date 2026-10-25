@@ -137,6 +137,9 @@ func (h *Handler) requireRIExchangeResolveConstraints(ctx context.Context, sessi
 		return otherErr
 	}
 	record, err := h.config.GetRIExchangeRecord(ctx, id)
+	if errors.Is(err, config.ErrRIExchangeRecordNotFound) {
+		return errNotFound
+	}
 	if err != nil {
 		return fmt.Errorf("failed to look up exchange record: %w", err)
 	}

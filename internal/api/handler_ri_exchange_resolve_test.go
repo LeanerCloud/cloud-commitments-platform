@@ -256,3 +256,16 @@ func TestResolveRIExchange_HonoursMaxPurchaseAmount(t *testing.T) {
 		})
 	}
 }
+
+// For a capped holder the hold is read before the store runs; a missing record
+// is the same not-found as the store's, not a 500.
+func TestResolveRIExchange_CappedHolderMissingRecordIsNotFound(t *testing.T) {
+	store := &resolveRIStore{MockConfigStore: new(MockConfigStore)}
+	store.On("GetRIExchangeRecord", mock.Anything, resolveRIID).
+		Return(nil, fmt.Errorf("%w: %s", config.ErrRIExchangeRecordNotFound, resolveRIID))
+	perms := []auth.Permission{{Action: auth.ActionExecute, Resource: "ri-exchange",
+		Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 5000}}}
+	_, err := riResolveCall(t, apgCaller{perms: perms}, store, riResolveFailedBody)
+	require.ErrorIs(t, err, errNotFound)
+	assert.Zero(t, store.called)
+}
