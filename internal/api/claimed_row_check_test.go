@@ -102,6 +102,56 @@ func TestClaimedRowCheck_RunNow_UnmodifiedRowRuns(t *testing.T) {
 	mp.AssertNumberOfCalls(t, "RunPlannedPurchaseNow", 1)
 }
 
+// A scoped caller passes the pre-claim scope check on an in-scope snapshot. If
+// the claimed row's recommendations have moved to an account outside the scope
+// by the time the claim returns, the run is refused and nothing is bought.
+func runNowScopeClaimHarness(t *testing.T, mp *MockPurchaseManager, claimedAccount string) error {
+	t.Helper()
+	ctx := context.Background()
+	execID := "11111111-1111-1111-1111-111111111112"
+	creator := scopedUserID
+	withAccount := func(account string) []config.RecommendationRecord {
+		recs := claimRecs(claimUnder)
+		recs[0].CloudAccountID = &account
+		return recs
+	}
+	snapshot := &config.PurchaseExecution{ExecutionID: execID, Status: "pending", CreatedByUserID: &creator, Recommendations: withAccount(scopedInAccount)}
+	h, store := scopedHandler(t)
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", mock.Anything, scopedToken).Return(&Session{UserID: scopedUserID}, nil).Maybe()
+	mockAuth.grantPermissionsScoped([]auth.Permission{{Action: auth.ActionExecute, Resource: auth.ResourcePurchases}}, []string{scopedInAccount})
+	h.auth = mockAuth
+	h.purchase = mp
+	store.On("GetExecutionByID", mock.Anything, execID).Return(snapshot, nil)
+	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
+		return &config.CloudAccount{ID: id, Name: "acct-" + id, Provider: "aws"}, nil
+	}
+	claimed := *snapshot
+	claimed.Recommendations = withAccount(claimedAccount)
+	mp.ClaimedRow = &claimed
+	mp.On("RunPlannedPurchaseNow", mock.Anything, execID, mock.Anything, mock.Anything).
+		Return(&config.PurchaseExecution{ExecutionID: execID, Status: "completed"}, "", nil).Maybe()
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"Authorization": "Bearer " + scopedToken}}
+	_, err := h.runPlannedPurchase(ctx, req, execID)
+	return err
+}
+
+func TestClaimedRowCheck_RunNow_RowMovedOutOfScopeRefused(t *testing.T) {
+	mp := &MockPurchaseManager{}
+	err := runNowScopeClaimHarness(t, mp, scopedOutAccount)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nothing was bought")
+	requireOneCheck(t, mp)
+	mp.AssertNotCalled(t, "RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestClaimedRowCheck_RunNow_RowStillInScopeRuns(t *testing.T) {
+	mp := &MockPurchaseManager{}
+	require.NoError(t, runNowScopeClaimHarness(t, mp, scopedInAccount))
+	mp.AssertNumberOfCalls(t, "RunPlannedPurchaseNow", 1)
+}
+
 // --- Session approve -------------------------------------------------------
 
 func sessionApproveClaimHarness(t *testing.T, mp *MockPurchaseManager, claimedUpfront float64) error {

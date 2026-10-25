@@ -22,10 +22,19 @@ import (
 // no_submission set (see purchase.ClaimedRowCheck).
 
 // runNowClaimCheck is runPlannedPurchase's update-any / creator check
-// (issue #1129) and execute:purchases Constraints check, against the claimed
-// row.
+// (issue #1129), account-scope check and execute:purchases Constraints check,
+// against the claimed row. The scope is re-run because an edit between the
+// pre-claim read and the claim can move the row's recommendations to an
+// account the caller may not act on.
 func (h *Handler) runNowClaimCheck(session *Session) purchase.ClaimedRowCheck {
 	return func(ctx context.Context, claimed *config.PurchaseExecution) error {
+		scope, err := h.getAccountScope(ctx, session)
+		if err != nil {
+			return fmt.Errorf("failed to get allowed accounts: %w", err)
+		}
+		if err := h.requireExecutionInScope(ctx, scope, claimed, nil); err != nil {
+			return err
+		}
 		if err := h.authorizeClaimedRowManagement(ctx, session, claimed); err != nil {
 			return err
 		}
