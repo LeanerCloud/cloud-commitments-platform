@@ -96,7 +96,7 @@ func TestPostCASSave_ConcurrentStatusChangeSurvives(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.True(t, counted, "the flip to failed landed, so the sweep still counts it")
-		f.email.AssertNotCalled(t, "SendPurchaseFailedNotification", mock.Anything, mock.Anything)
+		f.email.AssertNumberOfCalls(t, "SendPurchaseFailedNotification", 0)
 		got := rowStatus(ctx, t, f, row.ExecutionID)
 		assert.Equal(t, config.StatusCompleted, got.Status, "the recovered purchase must not be reverted to failed")
 		assert.NotContains(t, got.Error, "failed by the recovery sweep")
