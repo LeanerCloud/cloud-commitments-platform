@@ -176,3 +176,30 @@ func TestBuildSuppressions_LegacyEC2WithoutDetailsIsWildcard(t *testing.T) {
 	require.Len(t, sups, 1)
 	assert.Equal(t, &SuppressionVariant{"us-east-1a", "Linux/UNIX", "default"}, sups[0].Variant)
 }
+
+// TestBuildSuppressions_ComputeSlugEC2: AWS EC2 recs under the canonical
+// "compute" slug follow the same wildcard rule as "ec2"; a rec with only a
+// platform or only a tenancy keeps its narrow variant.
+func TestBuildSuppressions_ComputeSlugEC2(t *testing.T) {
+	base := RecommendationRecord{Provider: "aws", Service: "compute", Region: "us-east-1", ResourceType: "m5.large", Count: 1, AvailabilityZone: "us-east-1a"}
+	sups := BuildSuppressions([]RecommendationRecord{base}, "exec-1", &GlobalConfig{}, time.Now())
+	require.Len(t, sups, 1)
+	assert.Nil(t, sups[0].Variant)
+	assert.True(t, sups[0].AppliesTo(&SuppressionVariant{"us-east-1a", "Linux/UNIX", "default"}))
+
+	for name, tc := range map[string]struct {
+		details []byte
+		want    SuppressionVariant
+	}{
+		"platform only": {[]byte(`{"platform":"Linux/UNIX"}`), SuppressionVariant{"us-east-1a", "Linux/UNIX", ""}},
+		"tenancy only":  {[]byte(`{"tenancy":"default"}`), SuppressionVariant{"us-east-1a", "", "default"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := base
+			rec.Details = tc.details
+			sups := BuildSuppressions([]RecommendationRecord{rec}, "exec-1", &GlobalConfig{}, time.Now())
+			require.Len(t, sups, 1)
+			assert.Equal(t, &tc.want, sups[0].Variant)
+		})
+	}
+}
