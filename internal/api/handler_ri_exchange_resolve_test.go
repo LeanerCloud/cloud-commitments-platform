@@ -222,3 +222,37 @@ func TestResolveRIExchange_RouteIsAuthUser(t *testing.T) {
 	}
 	t.Fatal("POST /api/ri-exchange/resolve/{id} is not registered")
 }
+
+// A holder whose execute:ri-exchange cap is below the hold's payment_due must
+// not resolve it; at or above the cap, or uncapped, the call goes through.
+func TestResolveRIExchange_HonoursMaxPurchaseAmount(t *testing.T) {
+	capped := func(max float64) []auth.Permission {
+		return []auth.Permission{{Action: auth.ActionExecute, Resource: "ri-exchange",
+			Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: max}}}
+	}
+	tests := []struct {
+		name  string
+		perms []auth.Permission
+		want  int // 0 = allowed
+	}{
+		{"cap below the hold", capped(999.99), 403},
+		{"cap equal to the hold", capped(1000), 0},
+		{"cap above the hold", capped(5000), 0},
+		{"unconstrained", riExecute, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &resolveRIStore{MockConfigStore: new(MockConfigStore)}
+			store.On("GetRIExchangeRecord", mock.Anything, resolveRIID).
+				Return(&config.RIExchangeRecord{ID: resolveRIID, PaymentDue: "1000.000000"}, nil).Maybe()
+			_, err := riResolveCall(t, apgCaller{perms: tc.perms}, store, riResolveFailedBody)
+			if tc.want == 0 {
+				require.NoError(t, err)
+				assert.Equal(t, 1, store.called)
+				return
+			}
+			assert.Equal(t, tc.want, clientCode(t, err))
+			assert.Zero(t, store.called, "a refused caller must not reach the store")
+		})
+	}
+}
