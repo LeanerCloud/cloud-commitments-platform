@@ -328,15 +328,29 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 		return nil, err
 	}
 
-	if err := h.requirePlanArmGrant(ctx, httpReq, session, existingPlan, plan, nil); err != nil {
+	if err := h.updatePlanGated(ctx, httpReq, session, existingPlan, plan, "updatePlan"); err != nil {
 		return nil, err
 	}
 
-	if err := h.config.UpdatePurchasePlan(ctx, plan); err != nil {
-		return nil, mapCreatePlanStorageError(err, "plan not found", "failed to update plan", "updatePlan: UpdatePurchasePlan failed")
-	}
-
 	return plan, nil
+}
+
+// updatePlanGated writes plan with the arming gate evaluated under the plan's
+// row lock, so the plan's accounts cannot be retargeted between the grant check
+// and the write (setPlanAccounts takes the same lock). before is the snapshot
+// plan was built from; if the row moved on, the write fails its optimistic
+// check instead.
+func (h *Handler) updatePlanGated(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, session *Session, before, plan *config.PurchasePlan, op string) error {
+	err := h.config.UpdatePurchasePlanGated(ctx, plan, func(ctx context.Context) error {
+		return h.requirePlanArmGrant(ctx, httpReq, session, before, plan, nil)
+	})
+	if err == nil {
+		return nil
+	}
+	if _, ok := IsClientError(err); ok {
+		return err
+	}
+	return mapCreatePlanStorageError(err, "plan not found", "failed to update plan", "%s: UpdatePurchasePlan failed", op)
 }
 
 func (h *Handler) loadPlanForUpdate(ctx context.Context, planID string, expectedUpdatedAt *string) (*config.PurchasePlan, error) {
@@ -877,12 +891,12 @@ func (h *Handler) patchPlan(ctx context.Context, httpReq *events.LambdaFunctionU
 		return nil, err
 	}
 
-	if err := h.validateAndGatePlan(ctx, httpReq, session, &before, plan, nil); err != nil {
-		return nil, err
+	if err := plan.Validate(); err != nil {
+		return nil, NewClientError(400, fmt.Sprintf("validation error: %s", err))
 	}
 
-	if err := h.config.UpdatePurchasePlan(ctx, plan); err != nil {
-		return nil, mapCreatePlanStorageError(err, "plan not found", "failed to update plan", "patchPlan: UpdatePurchasePlan failed")
+	if err := h.updatePlanGated(ctx, httpReq, session, &before, plan, "patchPlan"); err != nil {
+		return nil, err
 	}
 
 	return plan, nil

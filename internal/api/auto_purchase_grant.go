@@ -267,7 +267,9 @@ func logAutoPurchaseSwitchChange(ctx context.Context, session *Session, before b
 // requireRetargetOfArmedPlan gates PUT /api/plans/{id}/accounts: moving an
 // armed plan to other accounts changes where it buys without an approver, so
 // the caller needs the arming grant for the new account set. Unarmed plans
-// need only the ordinary update:plans check.
+// need only the ordinary update:plans check. It runs as the gate of
+// SetPlanAccountsGated, so the plan and its armed state are read under the
+// plan's row lock.
 func (h *Handler) requireRetargetOfArmedPlan(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, planID string, accountIDs []string) error {
 	plan, err := h.getPlanForAccountProviderValidation(ctx, planID)
 	if err != nil {

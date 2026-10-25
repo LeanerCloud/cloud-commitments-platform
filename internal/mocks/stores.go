@@ -428,6 +428,18 @@ func (m *MockConfigStore) UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, p
 	return args.Error(0)
 }
 
+// UpdatePurchasePlanGated runs gate, then delegates to UpdatePurchasePlan, the
+// order the real store uses under the plan lock.
+func (m *MockConfigStore) UpdatePurchasePlanGated(ctx context.Context, plan *config.PurchasePlan, gate config.PlanWriteGate) error {
+	m.record("UpdatePurchasePlanGated", ctx, plan)
+	if gate != nil {
+		if err := gate(ctx); err != nil {
+			return err
+		}
+	}
+	return m.UpdatePurchasePlan(ctx, plan)
+}
+
 // DeletePurchasePlan mocks the DeletePurchasePlan operation.
 func (m *MockConfigStore) DeletePurchasePlan(ctx context.Context, planID string) error {
 	m.record("DeletePurchasePlan", ctx, planID)
@@ -1783,6 +1795,17 @@ func (m *MockConfigStore) SetPlanAccounts(ctx context.Context, planID string, ac
 	}
 	args := m.Called(ctx, planID, accountIDs)
 	return args.Error(0)
+}
+
+// SetPlanAccountsGated runs gate, then delegates to SetPlanAccounts.
+func (m *MockConfigStore) SetPlanAccountsGated(ctx context.Context, planID string, accountIDs []string, gate config.PlanWriteGate) error {
+	m.record("SetPlanAccountsGated", ctx, planID, accountIDs)
+	if gate != nil {
+		if err := gate(ctx); err != nil {
+			return err
+		}
+	}
+	return m.SetPlanAccounts(ctx, planID, accountIDs)
 }
 
 func (m *MockConfigStore) GetPlanAccounts(ctx context.Context, planID string) ([]config.CloudAccount, error) {

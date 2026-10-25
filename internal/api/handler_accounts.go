@@ -1449,36 +1449,41 @@ func (h *Handler) setPlanAccounts(ctx context.Context, httpReq *events.LambdaFun
 		return nil, err
 	}
 
-	if err := h.requirePlanAccountsWrite(ctx, httpReq, session, id, body.AccountIDs); err != nil {
+	if err := h.requirePlanAccountsAccess(ctx, session, id, body.AccountIDs); err != nil {
 		return nil, err
 	}
 
-	// Provider-match validation (issue #209). Extracted to keep
-	// setPlanAccounts under the gocyclo budget (10).
+	// Provider-match validation (issue #209), before the arming gate so a
+	// malformed request is a 400 whatever the plan's armed state. Extracted to
+	// keep setPlanAccounts under the gocyclo budget (10).
 	if err := h.validatePlanAccountProviders(ctx, id, body.AccountIDs); err != nil {
 		return nil, err
 	}
 
-	if err := h.config.SetPlanAccounts(ctx, id, body.AccountIDs); err != nil {
-		if errors.Is(err, config.ErrNotFound) {
-			return nil, NewClientError(404, err.Error())
-		}
-		if errors.Is(err, config.ErrEditorReconciliationRequired) {
-			return nil, editorReconciliationError()
-		}
-		return nil, fmt.Errorf("accounts: %w", err)
-	}
-
-	return nil, nil
+	return nil, h.storePlanAccounts(ctx, httpReq, session, id, body.AccountIDs)
 }
 
-// requirePlanAccountsWrite is requirePlanAccountsAccess plus the arming gate
-// for retargeting an armed plan.
-func (h *Handler) requirePlanAccountsWrite(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, session *Session, planID string, accountIDs []string) error {
-	if err := h.requirePlanAccountsAccess(ctx, session, planID, accountIDs); err != nil {
+// storePlanAccounts writes the plan's accounts with the retarget gate running
+// under the plan's row lock, so it cannot be overtaken by a concurrent arm
+// (updatePlan / patchPlan take the same lock).
+func (h *Handler) storePlanAccounts(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, session *Session, id string, accountIDs []string) error {
+	gate := func(ctx context.Context) error {
+		return h.requireRetargetOfArmedPlan(ctx, httpReq, session, id, accountIDs)
+	}
+	err := h.config.SetPlanAccountsGated(ctx, id, accountIDs, gate)
+	if err == nil {
+		return nil
+	}
+	if _, ok := IsClientError(err); ok {
 		return err
 	}
-	return h.requireRetargetOfArmedPlan(ctx, httpReq, session, planID, accountIDs)
+	if errors.Is(err, config.ErrNotFound) {
+		return NewClientError(404, err.Error())
+	}
+	if errors.Is(err, config.ErrEditorReconciliationRequired) {
+		return editorReconciliationError()
+	}
+	return fmt.Errorf("accounts: %w", err)
 }
 
 // validatePlanAccountIDs rejects a missing/empty account_ids payload and
