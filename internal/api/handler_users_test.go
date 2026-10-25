@@ -556,3 +556,61 @@ func TestHandler_users_GroupGrantRefusalMessageDependsOnViewGroups(t *testing.T)
 		}
 	}
 }
+
+// A refused change to the caller's own group membership keeps the 403 status;
+// it names the group, permission or account only for a caller who may view groups.
+func TestHandler_users_SelfEditRefusalMessageDependsOnViewGroups(t *testing.T) {
+	ctx := context.Background()
+	const selfID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	session := &Session{UserID: selfID, Email: "ops@example.com"}
+	groups := `["00000000-0000-5000-8000-000000000004"]`
+	refusals := map[string]struct {
+		err    error
+		detail string
+	}{
+		"reserved verb": {
+			err: fmt.Errorf(`%w: joining "Plan Authors" would grant you create:plans, which is reserved; ask another administrator to add you`,
+				auth.ErrSelfEscalation),
+			detail: `"Plan Authors"`,
+		},
+		"account gap": {
+			err: fmt.Errorf(`%w: this change would give you access to cloud account "acct-4242", beyond your current account scope`,
+				auth.ErrSelfEscalation),
+			detail: `"acct-4242"`,
+		},
+	}
+	writeOnly := []auth.Permission{{Action: auth.ActionUpdate, Resource: auth.ResourceUsers}}
+	withView := append([]auth.Permission{{Action: auth.ActionView, Resource: auth.ResourceGroups}}, writeOnly...)
+
+	for refName, r := range refusals {
+		for callerName, c := range map[string]struct {
+			perms  []auth.Permission
+			detail bool
+		}{"without view groups": {writeOnly, false}, "with view groups": {withView, true}} {
+			t.Run(refName+"/"+callerName, func(t *testing.T) {
+				mockAuth := new(MockAuthService)
+				mockAuth.On("ValidateSession", ctx, "tok").Return(session, nil)
+				mockAuth.grantPermissions(c.perms)
+				mockAuth.On("UpdateUserAPI", ctx, mock.Anything, selfID, mock.Anything).Return(nil, r.err).Once()
+				h := &Handler{auth: mockAuth}
+
+				_, err := h.updateUser(ctx, &events.LambdaFunctionURLRequest{
+					Headers: map[string]string{"Authorization": "Bearer tok"},
+					Body:    `{"groups": ` + groups + `}`,
+				}, selfID)
+
+				ce, ok := IsClientError(err)
+				require.True(t, ok)
+				assert.Equal(t, 403, ce.code)
+				if c.detail {
+					assert.Contains(t, err.Error(), r.detail)
+					return
+				}
+				assert.Equal(t, groupGrantDeniedMessage, err.Error())
+				for _, leaked := range []string{"Plan Authors", "create:plans", "acct-4242", "account", "reserved"} {
+					assert.NotContains(t, err.Error(), leaked)
+				}
+			})
+		}
+	}
+}

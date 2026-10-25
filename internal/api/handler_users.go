@@ -84,7 +84,7 @@ const groupCombinationDeniedMessage = "this group combination is not allowed"
 const groupGrantDeniedMessage = "you cannot grant one or more of the requested groups"
 
 // mapUserWriteError maps a user create/update failure like mapAuthError, except
-// that a refused group combination or group grant only carries its
+// that a refused group combination, group grant or self-escalation only carries its
 // group-specific explanation when the caller may view groups. A failed or
 // erroring permission check gets the generic message.
 func (h *Handler) mapUserWriteError(ctx context.Context, req *events.LambdaFunctionURLRequest, err error) error {
@@ -92,7 +92,8 @@ func (h *Handler) mapUserWriteError(ctx context.Context, req *events.LambdaFunct
 	switch {
 	case errors.Is(err, auth.ErrContradictoryGroups):
 		status, generic = 400, groupCombinationDeniedMessage
-	case errors.Is(err, auth.ErrPermissionCeiling), errors.Is(err, auth.ErrPermissionNotGrantable):
+	case errors.Is(err, auth.ErrPermissionCeiling), errors.Is(err, auth.ErrPermissionNotGrantable),
+		errors.Is(err, auth.ErrSelfEscalation):
 		status, generic = 403, groupGrantDeniedMessage
 	default:
 		return mapAuthError(err)
