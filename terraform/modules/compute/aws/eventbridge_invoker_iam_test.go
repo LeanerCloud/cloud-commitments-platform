@@ -17,6 +17,7 @@
 package aws_test
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -330,4 +331,55 @@ resource "aws_iam_role_policy" "eventbridge" {
 			}
 		})
 	}
+}
+
+// The four invoker roles' trust policies must pin events.amazonaws.com to this
+// account and to the role's own rule (confused-deputy hardening). The walk is
+// over the role resources of fargate/main.tf named in knownInvokerPolicies,
+// and a missing resource fails rather than reads as clean.
+func TestInvokerRoleTrustPoliciesPinSourceAccountAndRule(t *testing.T) {
+	code := readFargateMain(t)
+	for _, name := range knownInvokerPolicies {
+		block, ok := resourceBlock(code, "aws_iam_role", name)
+		if !ok {
+			t.Errorf("%s: no aws_iam_role %q to check", fargateMainTF, name)
+			continue
+		}
+		rule := strings.TrimPrefix(name, "eventbridge_")
+		if name == "eventbridge" {
+			rule = "recommendations"
+		}
+		wantAccount := regexp.MustCompile(`\bStringEquals\s*=\s*\{\s*"aws:SourceAccount"\s*=\s*data\.aws_caller_identity\.\w+\.account_id\s*\}`)
+		wantRule := regexp.MustCompile(`\bArnEquals\s*=\s*\{\s*"aws:SourceArn"\s*=\s*aws_cloudwatch_event_rule\.` + rule + `\[0\]\.arn\s*\}`)
+		if !wantAccount.MatchString(block) {
+			t.Errorf("aws_iam_role.%s trusts events.amazonaws.com without Condition StringEquals \"aws:SourceAccount\" = data.aws_caller_identity.<name>.account_id", name)
+		}
+		if !wantRule.MatchString(block) {
+			t.Errorf("aws_iam_role.%s trusts events.amazonaws.com without Condition ArnEquals \"aws:SourceArn\" = aws_cloudwatch_event_rule.%s[0].arn", name, rule)
+		}
+	}
+}
+
+func readFargateMain(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(repoRoot(t), fargateMainTF))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stripCommentLines(string(b))
+}
+
+// resourceBlock returns the text from the resource header to the next
+// top-level resource header or end of file.
+func resourceBlock(code, typ, name string) (string, bool) {
+	header := regexp.MustCompile(`(?m)^resource\s+"` + typ + `"\s+"` + name + `"`)
+	loc := header.FindStringIndex(code)
+	if loc == nil {
+		return "", false
+	}
+	rest := code[loc[1]:]
+	if next := regexp.MustCompile(`(?m)^(?:resource|data|locals|variable|output)\b`).FindStringIndex(rest); next != nil {
+		rest = rest[:next[0]]
+	}
+	return code[loc[0]:loc[1]] + rest, true
 }
