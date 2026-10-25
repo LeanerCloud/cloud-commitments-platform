@@ -250,3 +250,48 @@ func TestAutoPurchaseScope_ServicesAndRegionsConstraints(t *testing.T) {
 		})
 	}
 }
+
+func TestPlanArmEscalates_ProviderAndServiceWidening(t *testing.T) {
+	plan := func(keys ...string) *config.PurchasePlan {
+		p := apgStoredPlan(true, apgCap(1000))
+		p.Services = map[string]config.ServiceConfig{}
+		for _, k := range keys {
+			p.Services[k] = config.ServiceConfig{}
+		}
+		return p
+	}
+	for _, tc := range []struct {
+		name  string
+		after *config.PurchasePlan
+		want  bool
+	}{
+		{"unchanged services", plan("aws/rds"), false},
+		{"same service name under a new provider", plan("aws/rds", "azure/rds"), true},
+		{"new service under the same provider", plan("aws/rds", "aws/ec2"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, planArmEscalates(plan("aws/rds"), tc.after))
+		})
+	}
+	t.Run("narrowing does not escalate", func(t *testing.T) {
+		assert.False(t, planArmEscalates(plan("aws/rds", "azure/vm"), plan("aws/rds")))
+	})
+}
+
+// A provider mismatch is a malformed request, so it is a 400 whatever the
+// plan's armed state; the 403 arming gate must not mask it.
+func TestAutoPurchaseScope_RetargetProviderMismatchBeforeArmingGate(t *testing.T) {
+	nonHolder := []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}}
+	store := new(MockConfigStore)
+	store.On("GetPurchasePlan", mock.Anything, apgPlanID).Return(apgStoredPlan(true, apgCap(1000)), nil)
+	store.On("SetPlanAccounts", mock.Anything, apgPlanID, mock.Anything).Return(nil).Maybe()
+	store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
+		return &config.CloudAccount{ID: id, Provider: "azure"}, nil
+	}
+	h, req := apgCaller{perms: nonHolder}.handlerAndReq(store, `{"account_ids":["`+apsAcctA+`"]}`)
+
+	_, err := h.setPlanAccounts(context.Background(), req, apgPlanID)
+
+	assert.Equal(t, 400, clientCode(t, err))
+	assert.False(t, apgCalled(store, "SetPlanAccounts"))
+}
