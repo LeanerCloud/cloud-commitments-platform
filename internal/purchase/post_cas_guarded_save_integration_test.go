@@ -19,6 +19,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,6 +83,9 @@ func TestPostCASSave_ConcurrentStatusChangeSurvives(t *testing.T) {
 	// that buys a second commitment.
 	t.Run("safeFail stamp after a late recovery", func(t *testing.T) {
 		row := claimRaceRow(ctx, t, f, "approved")
+		// safeFail won the flip to failed, so it sends the purchase-failed
+		// email (#1195) even though the late recovery then completes the row.
+		f.email.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).Return(nil).Once()
 		f.interleave(t, func() {
 			late := rowStatusCopy(row)
 			late.Status = config.StatusCompleted
@@ -95,6 +99,7 @@ func TestPostCASSave_ConcurrentStatusChangeSurvives(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.True(t, counted, "the flip to failed landed, so the sweep still counts it")
+		f.email.AssertNumberOfCalls(t, "SendPurchaseFailedNotification", 1)
 		got := rowStatus(ctx, t, f, row.ExecutionID)
 		assert.Equal(t, config.StatusCompleted, got.Status, "the recovered purchase must not be reverted to failed")
 		assert.NotContains(t, got.Error, "failed by the recovery sweep")
