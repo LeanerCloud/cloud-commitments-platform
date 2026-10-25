@@ -15,7 +15,7 @@ import (
 // against a row read by GetExecutionByID, then calls the purchase funnel,
 // which buys the row its claim CAS returns. A repricing, an edit or a plan
 // step recommendation attach landing between that read and the CAS would be
-// bought unchecked. Each check below re-runs the same Constraints the entry
+// bought without the check having seen it. Each check below re-runs the same Constraints the entry
 // point already ran, on the claimed row, before any provider call. The
 // pre-CAS check stays: it refuses an over-cap request on an unchanged row
 // without touching the row. A post-claim refusal ends the row "failed" with
@@ -23,9 +23,9 @@ import (
 
 // runNowClaimCheck is runPlannedPurchase's update-any / creator check
 // (issue #1129), account-scope check and execute:purchases Constraints check,
-// against the claimed row. The scope is re-run because an edit between the
-// pre-claim read and the claim can move the row's recommendations to an
-// account the caller may not act on.
+// against the claimed row. The scope is re-run because the claimed row can
+// differ from the pre-claim read: the caller's account scope must hold for the
+// row that is bought.
 func (h *Handler) runNowClaimCheck(session *Session) purchase.ClaimedRowCheck {
 	return func(ctx context.Context, claimed *config.PurchaseExecution) error {
 		if err := h.requireClaimedRowInScope(ctx, session, claimed); err != nil {

@@ -334,7 +334,7 @@ resource "aws_iam_role_policy" "eventbridge" {
 }
 
 // The four invoker roles' trust policies must pin events.amazonaws.com to this
-// account and to the role's own rule (confused-deputy hardening). The walk is
+// account and to the role's own rule. The walk is
 // over the role resources of fargate/main.tf named in knownInvokerPolicies,
 // and a missing resource fails rather than reads as clean.
 func TestInvokerRoleTrustPoliciesPinSourceAccountAndRule(t *testing.T) {

@@ -139,8 +139,7 @@ run "invoker_roles_are_scoped" {
 }
 
 # Trust policies: events.amazonaws.com may assume each invoker role only for
-# this account and only on behalf of that role's own rule, so another account's
-# rule (or another rule in this account) cannot borrow the role.
+# this account and only on behalf of that role's own rule.
 run "invoker_roles_trust_is_scoped_to_account_and_rule" {
   command = apply
 
