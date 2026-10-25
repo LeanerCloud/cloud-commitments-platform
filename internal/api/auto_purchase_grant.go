@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -126,6 +127,18 @@ func (h *Handler) requireAutoPurchaseGrantFor(ctx context.Context, req *events.L
 		[]auth.PermissionConstraints{{AccountIDs: accountIDs, Providers: providers, Services: services, StrictScope: true}})
 }
 
+// requireAutoPurchaseGrantForPlan is requireAutoPurchaseGrantFor for the
+// providers and services the plan targets. A plan whose providers cannot be
+// derived fails closed: an empty provider set would read as no restriction.
+func (h *Handler) requireAutoPurchaseGrantForPlan(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, accountIDs []string, plan *config.PurchasePlan) error {
+	providers, err := config.DerivePlanProviders(plan)
+	if err != nil {
+		logging.Errorf("requireAutoPurchaseGrantForPlan: %v", err)
+		return NewClientError(500, "failed to check the arming grant")
+	}
+	return h.requireAutoPurchaseGrantFor(ctx, req, session, accountIDs, providers, config.DerivePlanServices(plan))
+}
+
 // planArmAccountIDs returns the accounts the plan targets: the request's own
 // list on create (the plan has no id yet), the stored association otherwise.
 func (h *Handler) planArmAccountIDs(ctx context.Context, plan *config.PurchasePlan, targets []string) ([]string, error) {
@@ -193,13 +206,13 @@ func (h *Handler) requirePlanArmGrant(ctx context.Context, req *events.LambdaFun
 	if err != nil {
 		return err
 	}
-	providers, err := config.DerivePlanProviders(after)
-	if err != nil {
-		// An empty provider set would read as "no restriction", so fail closed.
-		logging.Errorf("requirePlanArmGrant: %v", err)
-		return NewClientError(500, "failed to check the arming grant")
-	}
-	if err := h.requireAutoPurchaseGrantFor(ctx, req, session, accountIDs, providers, config.DerivePlanServices(after)); err != nil {
+	return h.requirePlanArmGrantFor(ctx, req, session, before, after, accountIDs)
+}
+
+// requirePlanArmGrantFor is requirePlanArmGrant for an escalating write whose
+// target accounts are already resolved.
+func (h *Handler) requirePlanArmGrantFor(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, before, after *config.PurchasePlan, accountIDs []string) error {
+	if err := h.requireAutoPurchaseGrantForPlan(ctx, req, session, accountIDs, after); err != nil {
 		return err
 	}
 	var oldCap *float64
@@ -270,18 +283,22 @@ func logAutoPurchaseSwitchChange(ctx context.Context, session *Session, before b
 // need only the ordinary update:plans check. It runs as the gate of
 // SetPlanAccountsGated, so the plan and its armed state are read under the
 // plan's row lock.
-func (h *Handler) requireRetargetOfArmedPlan(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, planID string, accountIDs []string) error {
+func (h *Handler) requireRetargetOfArmedPlan(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, planID string, accountIDs []string) (*config.PurchasePlan, error) {
 	plan, err := h.getPlanForAccountProviderValidation(ctx, planID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !planArmed(plan) {
-		return nil
+		return plan, nil
 	}
-	providers, err := config.DerivePlanProviders(plan)
-	if err != nil {
-		logging.Errorf("requireRetargetOfArmedPlan: %v", err)
-		return NewClientError(500, "failed to check the arming grant")
-	}
-	return h.requireAutoPurchaseGrantFor(ctx, req, session, accountIDs, providers, config.DerivePlanServices(plan))
+	return plan, h.requireAutoPurchaseGrantForPlan(ctx, req, session, accountIDs, plan)
 }
+
+// errPlanMovedUnderGate means the plan changed between the grant check and the
+// plan row lock, so the check no longer describes what would be written.
+var errPlanMovedUnderGate = errors.New("plan changed under the arming gate")
+
+// planGateAttempts bounds the re-checks after errPlanMovedUnderGate.
+const planGateAttempts = 3
+
+var errPlanGateContended = NewClientError(409, "plan changed; refresh the plan and try again")

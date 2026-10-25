@@ -816,7 +816,7 @@ func (s *PostgresStore) UpdatePurchasePlanGated(ctx context.Context, plan *Purch
 			return err
 		}
 		if gate != nil && old != nil {
-			if gateErr := gate(ctx); gateErr != nil {
+			if gateErr := s.runPlanGateTx(ctx, tx, old, gate); gateErr != nil {
 				return gateErr
 			}
 		}
@@ -829,6 +829,20 @@ func (s *PostgresStore) UpdatePurchasePlanGated(ctx context.Context, plan *Purch
 	}
 	plan.UpdatedAt = pending.UpdatedAt
 	return nil
+}
+
+// runPlanGateTx hands gate the locked plan and its sorted account ids, read on
+// tx.
+func (s *PostgresStore) runPlanGateTx(ctx context.Context, tx pgx.Tx, locked *PurchasePlan, gate PlanWriteGate) error {
+	rows, err := tx.Query(ctx, `SELECT account_id::text FROM plan_accounts WHERE plan_id = $1 ORDER BY 1`, locked.ID)
+	if err != nil {
+		return fmt.Errorf("failed to read plan accounts: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return fmt.Errorf("failed to read plan accounts: %w", err)
+	}
+	return gate(locked, ids)
 }
 
 // clearStaleRampBaselineTx drops the ramp baseline an update made stale. It runs
@@ -4535,7 +4549,14 @@ func (s *PostgresStore) SetPlanAccountsGated(ctx context.Context, planID string,
 		return err
 	}
 	if gate != nil {
-		if gateErr := gate(ctx); gateErr != nil {
+		locked, lockErr := s.LockPurchasePlanTx(ctx, tx, planID)
+		if lockErr != nil {
+			return lockErr
+		}
+		if locked == nil {
+			return fmt.Errorf("%w: plan %s", ErrNotFound, planID)
+		}
+		if gateErr := s.runPlanGateTx(ctx, tx, locked, gate); gateErr != nil {
 			return gateErr
 		}
 	}

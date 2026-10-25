@@ -19,6 +19,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
 	"github.com/stretchr/testify/require"
 )
@@ -119,4 +120,71 @@ func TestArmAndRetargetNeverLeaveArmedPlanOutsideGrant(t *testing.T) {
 		}
 	}
 	require.Zero(t, bothWon, "arm and retarget must not both succeed")
+}
+
+// The gate runs inside the plan's locked transaction, so it must not need a
+// second pool connection: production pools are small (3 on Lambda), and N
+// requests each holding one connection while waiting for another would
+// exhaust the pool. With a pool of 2 and 8 concurrent gated writes, every
+// request must finish.
+func TestGatedPlanWritesNeedOnlyTheirOwnConnection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	container := testhelpers.RequireMigratedDatabase(ctx, t, getMigrationsPath())
+	seed := config.NewPostgresStore(container.DB)
+
+	small := *container.Config
+	small.MaxConnections, small.MinConnections = 2, 0
+	conn, err := database.NewConnection(ctx, &small, nil)
+	require.NoError(t, err)
+	t.Cleanup(conn.Close)
+
+	newAccount := func(name, ext string) string {
+		acct := &config.CloudAccount{Name: name, Provider: "aws", ExternalID: ext, Enabled: true}
+		require.NoError(t, seed.CreateCloudAccount(ctx, acct))
+		return acct.ID
+	}
+	acctA, acctB := newAccount("pool-a", "333333333333"), newAccount("pool-b", "444444444444")
+
+	h, armReq := apgCaller{perms: apsGrant(&auth.PermissionConstraints{AccountIDs: []string{acctA}})}.handlerAndReq(nil, `{"auto_purchase":true}`)
+	h.config = config.NewPostgresStore(conn)
+	retargetBody, err := json.Marshal(map[string][]string{"account_ids": {acctB}})
+	require.NoError(t, err)
+	retargetReq := *armReq
+	retargetReq.Body = string(retargetBody)
+
+	const writers = 8
+	errs := make([]error, writers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		capUSD := 1000.0
+		plan := &config.PurchasePlan{
+			Name: "pool-gate", Enabled: true, MaxStepCommitment: &capUSD, NotificationDaysBefore: 2,
+			Services: map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 80}},
+			RampSchedule: config.RampSchedule{
+				Type: "weekly", PercentPerStep: 25, StepIntervalDays: 7,
+				CurrentStep: 0, TotalSteps: 4, StartDate: time.Now().AddDate(0, 0, 1),
+			},
+		}
+		require.NoError(t, seed.CreatePurchasePlan(ctx, plan))
+		require.NoError(t, seed.SetPlanAccounts(ctx, plan.ID, []string{acctA}))
+		wg.Add(1)
+		go func(i int, planID string) {
+			defer wg.Done()
+			<-start
+			if i%2 == 0 {
+				_, errs[i] = h.patchPlan(ctx, armReq, planID)
+			} else {
+				_, errs[i] = h.setPlanAccounts(ctx, &retargetReq, planID)
+			}
+		}(i, plan.ID)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, e := range errs {
+		require.NoError(t, e, "writer %d", i)
+	}
+	require.NoError(t, ctx.Err(), "gated writes must not wait on each other for pool connections")
 }

@@ -1463,14 +1463,32 @@ func (h *Handler) setPlanAccounts(ctx context.Context, httpReq *events.LambdaFun
 	return nil, h.storePlanAccounts(ctx, httpReq, session, id, body.AccountIDs)
 }
 
-// storePlanAccounts writes the plan's accounts with the retarget gate running
-// under the plan's row lock, so it cannot be overtaken by a concurrent arm
-// (updatePlan / patchPlan take the same lock).
+// storePlanAccounts writes the plan's accounts. The retarget grant is decided
+// first, outside any transaction, against the plan as read then; the gate under
+// the plan's row lock only confirms the plan has not changed since (an arm via
+// updatePlan / patchPlan takes the same lock), and the decision is redone if it
+// has.
 func (h *Handler) storePlanAccounts(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, session *Session, id string, accountIDs []string) error {
-	gate := func(ctx context.Context) error {
-		return h.requireRetargetOfArmedPlan(ctx, httpReq, session, id, accountIDs)
+	for attempt := 0; attempt < planGateAttempts; attempt++ {
+		seen, err := h.requireRetargetOfArmedPlan(ctx, httpReq, session, id, accountIDs)
+		if err != nil {
+			return err
+		}
+		err = h.config.SetPlanAccountsGated(ctx, id, accountIDs, func(locked *config.PurchasePlan, _ []string) error {
+			if !locked.UpdatedAt.Equal(seen.UpdatedAt) {
+				return errPlanMovedUnderGate
+			}
+			return nil
+		})
+		if errors.Is(err, errPlanMovedUnderGate) {
+			continue
+		}
+		return mapSetPlanAccountsError(err)
 	}
-	err := h.config.SetPlanAccountsGated(ctx, id, accountIDs, gate)
+	return errPlanGateContended
+}
+
+func mapSetPlanAccountsError(err error) error {
 	if err == nil {
 		return nil
 	}

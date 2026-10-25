@@ -11,10 +11,13 @@ import (
 )
 
 // PlanWriteGate decides whether a plan write may proceed. The store runs it with
-// the plan row locked, so state it reads through the store (the plan, its
-// accounts) cannot change before the write commits. A non-nil error aborts the
-// write and is returned unchanged.
-type PlanWriteGate func(ctx context.Context) error
+// the plan row locked, handing it the plan as stored and its account ids
+// (sorted), both read on the write's own transaction. It is pure on purpose: it
+// gets no context and no store, so it cannot take a second pool connection
+// while the transaction holds one. Whatever needs the database or the auth
+// service is resolved before the write and compared here against what the lock
+// shows. A non-nil error aborts the write and is returned unchanged.
+type PlanWriteGate func(locked *PurchasePlan, accountIDs []string) error
 
 // StoreInterface defines the methods required for configuration storage.
 type StoreInterface interface {
