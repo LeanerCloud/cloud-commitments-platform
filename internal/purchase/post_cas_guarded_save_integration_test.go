@@ -83,9 +83,6 @@ func TestPostCASSave_ConcurrentStatusChangeSurvives(t *testing.T) {
 	// that buys a second commitment.
 	t.Run("safeFail stamp after a late recovery", func(t *testing.T) {
 		row := claimRaceRow(ctx, t, f, "approved")
-		// safeFail won the flip to failed, so it sends the purchase-failed
-		// email (#1195) even though the late recovery then completes the row.
-		f.email.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).Return(nil).Once()
 		f.interleave(t, func() {
 			late := rowStatusCopy(row)
 			late.Status = config.StatusCompleted
@@ -99,12 +96,26 @@ func TestPostCASSave_ConcurrentStatusChangeSurvives(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.True(t, counted, "the flip to failed landed, so the sweep still counts it")
-		f.email.AssertNumberOfCalls(t, "SendPurchaseFailedNotification", 1)
+		f.email.AssertNotCalled(t, "SendPurchaseFailedNotification", mock.Anything, mock.Anything)
 		got := rowStatus(ctx, t, f, row.ExecutionID)
 		assert.Equal(t, config.StatusCompleted, got.Status, "the recovered purchase must not be reverted to failed")
 		assert.NotContains(t, got.Error, "failed by the recovery sweep")
 		require.Len(t, got.Recommendations, 1)
 		assert.True(t, got.Recommendations[0].Purchased)
+	})
+
+	// Without the interleaved recovery the same flip stays failed and is
+	// announced exactly once (#1195).
+	t.Run("safeFail flip without a recovery notifies once", func(t *testing.T) {
+		row := claimRaceRow(ctx, t, f, "approved")
+		f.email.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).Return(nil).Once()
+
+		counted, err := f.manager.safeFail(ctx, rowStatusCopy(row))
+
+		require.NoError(t, err)
+		assert.True(t, counted)
+		assert.Equal(t, config.StatusFailed, rowStatus(ctx, t, f, row.ExecutionID).Status)
+		f.email.AssertNumberOfCalls(t, "SendPurchaseFailedNotification", 1)
 	})
 
 	// A session revoke (revokeViaSession's CAS) lands right after the terminal
