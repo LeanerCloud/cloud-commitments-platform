@@ -395,7 +395,7 @@ func TestUpdatePlan_CapPresencePostgres(t *testing.T) {
 
 type concurrentCapStore struct{ config.StoreInterface }
 
-func (s concurrentCapStore) UpdatePurchasePlan(ctx context.Context, plan *config.PurchasePlan) error {
+func (s concurrentCapStore) UpdatePurchasePlanGated(ctx context.Context, plan *config.PurchasePlan, gate config.PlanWriteGate) error {
 	winner, err := s.GetPurchasePlan(ctx, plan.ID)
 	if err != nil {
 		return err
@@ -405,7 +405,7 @@ func (s concurrentCapStore) UpdatePurchasePlan(ctx context.Context, plan *config
 	if err = s.StoreInterface.UpdatePurchasePlan(ctx, winner); err != nil {
 		return err
 	}
-	return s.StoreInterface.UpdatePurchasePlan(ctx, plan)
+	return s.StoreInterface.UpdatePurchasePlanGated(ctx, plan, gate)
 }
 
 func TestUpdatePlan_CapNullPreservesConcurrentWinner(t *testing.T) {
