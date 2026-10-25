@@ -402,7 +402,7 @@ func (s concurrentCapStore) UpdatePurchasePlanGated(ctx context.Context, plan *c
 	}
 	cap80 := 80.0
 	winner.MaxStepCommitment = &cap80
-	if err = s.StoreInterface.UpdatePurchasePlan(ctx, winner); err != nil {
+	if err = s.UpdatePurchasePlan(ctx, winner); err != nil {
 		return err
 	}
 	return s.StoreInterface.UpdatePurchasePlanGated(ctx, plan, gate)
