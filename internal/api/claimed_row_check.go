@@ -28,11 +28,7 @@ import (
 // account the caller may not act on.
 func (h *Handler) runNowClaimCheck(session *Session) purchase.ClaimedRowCheck {
 	return func(ctx context.Context, claimed *config.PurchaseExecution) error {
-		scope, err := h.getAccountScope(ctx, session)
-		if err != nil {
-			return fmt.Errorf("failed to get allowed accounts: %w", err)
-		}
-		if err := h.requireExecutionInScope(ctx, scope, claimed, nil); err != nil {
+		if err := h.requireClaimedRowInScope(ctx, session, claimed); err != nil {
 			return err
 		}
 		if err := h.authorizeClaimedRowManagement(ctx, session, claimed); err != nil {
@@ -42,10 +38,23 @@ func (h *Handler) runNowClaimCheck(session *Session) purchase.ClaimedRowCheck {
 	}
 }
 
-// sessionApproveClaimCheck is approvePurchaseViaSession's approve-any /
-// approve-own check, against the claimed row.
+// requireClaimedRowInScope runs the account-scope check on the claimed row.
+func (h *Handler) requireClaimedRowInScope(ctx context.Context, session *Session, claimed *config.PurchaseExecution) error {
+	scope, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+	return h.requireExecutionInScope(ctx, scope, claimed, nil)
+}
+
+// sessionApproveClaimCheck is approvePurchaseViaSession's account-scope and
+// approve-any / approve-own check, against the claimed row (the same two gates
+// as authorizeScopedSessionApprove).
 func (h *Handler) sessionApproveClaimCheck(session *Session) purchase.ClaimedRowCheck {
 	return func(ctx context.Context, claimed *config.PurchaseExecution) error {
+		if err := h.requireClaimedRowInScope(ctx, session, claimed); err != nil {
+			return err
+		}
 		return h.authorizeSessionApprove(ctx, session, claimed)
 	}
 }

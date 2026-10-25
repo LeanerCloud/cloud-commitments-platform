@@ -240,6 +240,55 @@ func requireClaimedRowRefusedAnyBody(t *testing.T, mp *MockPurchaseManager, err 
 	requireOneCheck(t, mp)
 }
 
+// A scoped approver passes the pre-claim scope check on an in-scope snapshot;
+// if the claimed row's recommendations have moved to an account outside the
+// scope by then, the approval is refused and nothing is bought.
+func sessionApproveScopeClaimHarness(t *testing.T, mp *MockPurchaseManager, claimedAccount string) error {
+	t.Helper()
+	ctx := context.Background()
+	execID := "abcdefab-cdef-abcd-efab-cdefabcdef02"
+	withAccount := func(account string) []config.RecommendationRecord {
+		recs := claimRecs(claimUnder)
+		recs[0].CloudAccountID = &account
+		return recs
+	}
+	snapshot := &config.PurchaseExecution{ExecutionID: execID, Status: "pending", Recommendations: withAccount(scopedInAccount)}
+	h, store := scopedHandler(t)
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", mock.Anything, scopedToken).Return(&Session{UserID: scopedUserID}, nil).Maybe()
+	mockAuth.On("ValidateCSRFToken", mock.Anything, scopedToken, "").Return(nil).Maybe()
+	mockAuth.grantPermissionsScoped([]auth.Permission{{Action: auth.ActionApproveAny, Resource: auth.ResourcePurchases}}, []string{scopedInAccount})
+	h.auth = mockAuth
+	h.purchase = mp
+	store.On("GetExecutionByID", mock.Anything, execID).Return(snapshot, nil)
+	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
+		return &config.CloudAccount{ID: id, Name: "acct-" + id, Provider: "aws"}, nil
+	}
+	claimed := *snapshot
+	claimed.Recommendations = withAccount(claimedAccount)
+	mp.ClaimedRow = &claimed
+	mp.On("ApproveAndExecute", mock.Anything, execID, mock.Anything, mock.Anything).Return(nil, "", nil).Maybe()
+	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"authorization": "Bearer " + scopedToken}}
+	_, err := h.approvePurchase(ctx, req, execID, "")
+	return err
+}
+
+func TestClaimedRowCheck_SessionApprove_RowMovedOutOfScopeRefused(t *testing.T) {
+	mp := &MockPurchaseManager{}
+	err := sessionApproveScopeClaimHarness(t, mp, scopedOutAccount)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nothing was bought")
+	requireOneCheck(t, mp)
+	mp.AssertNotCalled(t, "ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestClaimedRowCheck_SessionApprove_RowStillInScopeRuns(t *testing.T) {
+	mp := &MockPurchaseManager{}
+	require.NoError(t, sessionApproveScopeClaimHarness(t, mp, scopedInAccount))
+	mp.AssertNumberOfCalls(t, "ApproveAndExecute", 1)
+}
+
 // --- Direct execute ----------------------------------------------------------
 
 func directExecuteClaimHarness(t *testing.T, mp *MockPurchaseManager, claimedUpfront float64) error {
