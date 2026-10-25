@@ -591,7 +591,9 @@ export function renderExcludedRIsNotice(excluded: ExcludedRI[] | undefined): voi
   const byReason = new Map<string, string[]>();
   for (const e of excluded) {
     const reason = e.reason || 'AWS returned no term length';
-    byReason.set(reason, [...(byReason.get(reason) ?? []), e.ri_id]);
+    const ids = byReason.get(reason);
+    if (ids) ids.push(e.ri_id);
+    else byReason.set(reason, [e.ri_id]);
   }
   notice.className = 'freshness-banner warning';
   // textContent keeps server-provided reasons and ids inert.
