@@ -17,7 +17,6 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
-	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
 	"github.com/stretchr/testify/require"
 )
@@ -35,12 +34,9 @@ var (
 
 func cleanupTestDB(ctx context.Context, t *testing.T) *database.Connection {
 	t.Helper()
-	c := testhelpers.RequirePostgresContainer(ctx, t)
-	t.Cleanup(func() { _ = c.Cleanup(context.Background()) })
 	_, file, _, _ := runtime.Caller(0)
 	path := filepath.Join(filepath.Dir(file), "..", "..", "internal", "database", "postgres", "migrations")
-	require.NoError(t, migrations.RunMigrations(ctx, c.DB.Pool(), path, "", ""))
-	return c.DB
+	return testhelpers.RequireMigratedDatabase(ctx, t, path).DB
 }
 
 // insertExecution adds a plan-less execution whose expires_at is offset from
