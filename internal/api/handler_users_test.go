@@ -425,3 +425,66 @@ func TestHandler_users_ContradictoryGroupsMessageDependsOnViewGroups(t *testing.
 		}
 	}
 }
+
+// A permission check that itself errors must not be read as "may view groups":
+// the caller gets the plain refusal.
+func TestHandler_users_ContradictoryGroupsGenericWhenViewGroupsCheckErrors(t *testing.T) {
+	ctx := context.Background()
+	session := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "ops@example.com"}
+	refusal := fmt.Errorf(`%w: "Viewers" is view-only but "Plan Authors" grants write permissions`, auth.ErrContradictoryGroups)
+
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", ctx, "tok").Return(session, nil)
+	mockAuth.On("HasPermissionAPI", ctx, session.UserID, "view", "groups").Return(false, fmt.Errorf("store unavailable")).Once()
+	mockAuth.On("HasPermissionAPI", ctx, session.UserID, "create", "users").Return(true, nil)
+	mockAuth.On("HasPermissionAPI", ctx, session.UserID, "update", "users").Return(true, nil)
+	mockAuth.On("HasPermissionAPI", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil).Maybe()
+	mockAuth.On("UpdateUserAPI", ctx, mock.Anything, "11111111-1111-1111-1111-111111111111", mock.Anything).Return(nil, refusal).Once()
+	h := &Handler{auth: mockAuth}
+
+	_, err := h.updateUser(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer tok"},
+		Body:    `{"groups": ["00000000-0000-5000-8000-000000000004"]}`,
+	}, "11111111-1111-1111-1111-111111111111")
+
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 400, ce.code)
+	assert.Equal(t, groupCombinationDeniedMessage, err.Error())
+}
+
+// A user API key is judged by its own effective permissions: a key without
+// view:groups gets the plain refusal even if its owner could view groups.
+func TestHandler_users_ContradictoryGroupsMessageForUserAPIKey(t *testing.T) {
+	ctx := context.Background()
+	refusal := fmt.Errorf(`%w: "Viewers" is view-only but "Plan Authors" grants write permissions`, auth.ErrContradictoryGroups)
+	const userID = "11111111-1111-1111-1111-111111111111"
+
+	for name, canViewGroups := range map[string]bool{"key without view groups": false, "key with view groups": true} {
+		t.Run(name, func(t *testing.T) {
+			mockAuth := new(MockAuthService)
+			mockAuth.On("HasAPIKeyPermissionAPI", ctx, "user-key", "view", "groups").
+				Return("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "key-1", canViewGroups, nil)
+			mockAuth.On("HasAPIKeyPermissionAPI", ctx, "user-key", "update", "users").
+				Return("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "key-1", true, nil)
+			mockAuth.On("HasAPIKeyPermissionForConstraintsAPI", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+				Return(true, nil).Maybe()
+			mockAuth.On("UpdateUserAPI", ctx, mock.Anything, userID, mock.Anything).Return(nil, refusal).Once()
+			h := &Handler{auth: mockAuth}
+
+			_, err := h.updateUser(ctx, &events.LambdaFunctionURLRequest{
+				Headers: map[string]string{"X-API-Key": "user-key"},
+				Body:    `{"groups": ["00000000-0000-5000-8000-000000000004"]}`,
+			}, userID)
+
+			ce, ok := IsClientError(err)
+			require.True(t, ok)
+			assert.Equal(t, 400, ce.code)
+			if canViewGroups {
+				assert.Contains(t, err.Error(), `"Viewers" is view-only`)
+				return
+			}
+			assert.Equal(t, groupCombinationDeniedMessage, err.Error())
+		})
+	}
+}
