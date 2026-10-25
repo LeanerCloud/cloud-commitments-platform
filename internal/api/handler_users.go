@@ -69,10 +69,27 @@ func (h *Handler) createUser(ctx context.Context, req *events.LambdaFunctionURLR
 	// requested groups at the actor's own grant ceiling (issue #226).
 	user, err := h.auth.CreateUserAPI(ctx, session.UserID, createReq)
 	if err != nil {
-		return nil, mapAuthError(err)
+		return nil, h.mapUserWriteError(ctx, req, err)
 	}
 
 	return user, nil
+}
+
+// groupCombinationDeniedMessage is what a caller who cannot view groups is
+// told about a refused group combination: no group name and no view/write split.
+const groupCombinationDeniedMessage = "this group combination is not allowed"
+
+// mapUserWriteError maps a user create/update failure like mapAuthError, except
+// that a refused group combination only carries its group-by-group explanation
+// when the caller may view groups. A failed or erroring permission check gets
+// the generic message.
+func (h *Handler) mapUserWriteError(ctx context.Context, req *events.LambdaFunctionURLRequest, err error) error {
+	if errors.Is(err, auth.ErrContradictoryGroups) {
+		if _, permErr := h.requirePermission(ctx, req, "view", "groups"); permErr != nil {
+			return NewClientError(400, groupCombinationDeniedMessage)
+		}
+	}
+	return mapAuthError(err)
 }
 
 // mapAuthError maps internal/auth sentinel errors to the appropriate
@@ -143,7 +160,7 @@ func (h *Handler) updateUser(ctx context.Context, req *events.LambdaFunctionURLR
 	// the self-escalation guard (issue #907).
 	user, err := h.auth.UpdateUserAPI(ctx, session.UserID, userID, updateReq)
 	if err != nil {
-		return nil, mapAuthError(err)
+		return nil, h.mapUserWriteError(ctx, req, err)
 	}
 
 	return user, nil
