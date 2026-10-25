@@ -152,3 +152,27 @@ func TestPurchaseSuppression_AppliesTo(t *testing.T) {
 	assert.True(t, legacy.AppliesTo(&SuppressionVariant{"us-east-1b", "Windows", "dedicated"}), "a legacy row is a wildcard")
 	assert.True(t, legacy.AppliesTo(nil))
 }
+
+// TestBuildSuppressions_LegacyEC2WithoutDetailsIsWildcard: an EC2 rec saved
+// before Details existed has an unknown platform and tenancy, so it must
+// suppress every variant (issue #1232). Non-EC2 and fully detailed recs keep
+// their known variant.
+func TestBuildSuppressions_LegacyEC2WithoutDetailsIsWildcard(t *testing.T) {
+	base := RecommendationRecord{Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large", Count: 1, AvailabilityZone: "us-east-1a"}
+	for name, details := range map[string][]byte{"nil": nil, "empty": {}, "null": []byte(`null`), "no keys": []byte(`{}`)} {
+		t.Run(name, func(t *testing.T) {
+			rec := base
+			rec.Details = details
+			sups := BuildSuppressions([]RecommendationRecord{rec}, "exec-1", &GlobalConfig{}, time.Now())
+			require.Len(t, sups, 1)
+			assert.Nil(t, sups[0].Variant)
+			assert.True(t, sups[0].AppliesTo(&SuppressionVariant{"us-east-1a", "Linux/UNIX", "default"}))
+		})
+	}
+
+	full := base
+	full.Details = []byte(`{"platform":"Linux/UNIX","tenancy":"default"}`)
+	sups := BuildSuppressions([]RecommendationRecord{full}, "exec-1", &GlobalConfig{}, time.Now())
+	require.Len(t, sups, 1)
+	assert.Equal(t, &SuppressionVariant{"us-east-1a", "Linux/UNIX", "default"}, sups[0].Variant)
+}
