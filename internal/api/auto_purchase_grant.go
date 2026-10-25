@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"time"
 
@@ -55,7 +56,29 @@ func planArmEscalates(before, after *config.PurchasePlan) bool {
 	if !planArmed(before) {
 		return true
 	}
-	return capCents(after.MaxStepCommitment) > capCents(before.MaxStepCommitment)
+	if capCents(after.MaxStepCommitment) > capCents(before.MaxStepCommitment) {
+		return true
+	}
+	// New providers or services widen what the armed plan buys, so the grant's
+	// provider and service constraints must be checked again.
+	// A plan whose provider cannot be derived fails closed as an escalation;
+	// requirePlanArmGrant then refuses it.
+	afterProviders, errAfter := config.DerivePlanProviders(after)
+	beforeProviders, errBefore := config.DerivePlanProviders(before)
+	if errAfter != nil || errBefore != nil {
+		return true
+	}
+	return !subsetOf(afterProviders, beforeProviders) ||
+		!subsetOf(config.DerivePlanServices(after), config.DerivePlanServices(before))
+}
+
+func subsetOf(sub, super []string) bool {
+	for _, v := range sub {
+		if !slices.Contains(super, v) {
+			return false
+		}
+	}
+	return true
 }
 
 // credentialKind labels the credential behind a session for logs and stamps.
@@ -91,14 +114,16 @@ func refuseAutoPurchaseCredential(session *Session) error {
 
 // requireAutoPurchaseGrantFor is requireAutoPurchaseGrant plus the grant's own
 // account and provider constraints, checked against the accounts and providers
-// the arming write targets. An empty accountIDs is a request with no known
+// the arming write targets. Regions are never sent: a plan's region filters
+// are optional, so a regions-constrained grant cannot be shown to cover it and
+// fails closed under StrictScope. An empty accountIDs is a request with no known
 // account, which only an unconstrained grant covers.
-func (h *Handler) requireAutoPurchaseGrantFor(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, accountIDs, providers []string) error {
+func (h *Handler) requireAutoPurchaseGrantFor(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, accountIDs, providers, services []string) error {
 	if err := h.requireAutoPurchaseGrant(ctx, req, session); err != nil {
 		return err
 	}
 	return h.requirePermissionConstraints(ctx, session, auth.ActionExecute, auth.ResourcePurchases,
-		[]auth.PermissionConstraints{{AccountIDs: accountIDs, Providers: providers, StrictScope: true}})
+		[]auth.PermissionConstraints{{AccountIDs: accountIDs, Providers: providers, Services: services, StrictScope: true}})
 }
 
 // planArmAccountIDs returns the accounts the plan targets: the request's own
@@ -174,7 +199,7 @@ func (h *Handler) requirePlanArmGrant(ctx context.Context, req *events.LambdaFun
 		logging.Errorf("requirePlanArmGrant: %v", err)
 		return NewClientError(500, "failed to check the arming grant")
 	}
-	if err := h.requireAutoPurchaseGrantFor(ctx, req, session, accountIDs, providers); err != nil {
+	if err := h.requireAutoPurchaseGrantFor(ctx, req, session, accountIDs, providers, config.DerivePlanServices(after)); err != nil {
 		return err
 	}
 	var oldCap *float64
@@ -237,4 +262,24 @@ func logAutoPurchaseSwitchChange(ctx context.Context, session *Session, before b
 		return
 	}
 	logging.Infof("auto-purchase kill switch changed: actor=%s via=%s %t -> %t", session.UserID, credentialKind(ctx, session), before, after.AutoPurchaseEnabled)
+}
+
+// requireRetargetOfArmedPlan gates PUT /api/plans/{id}/accounts: moving an
+// armed plan to other accounts changes where it buys without an approver, so
+// the caller needs the arming grant for the new account set. Unarmed plans
+// need only the ordinary update:plans check.
+func (h *Handler) requireRetargetOfArmedPlan(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, planID string, accountIDs []string) error {
+	plan, err := h.getPlanForAccountProviderValidation(ctx, planID)
+	if err != nil {
+		return err
+	}
+	if !planArmed(plan) {
+		return nil
+	}
+	providers, err := config.DerivePlanProviders(plan)
+	if err != nil {
+		logging.Errorf("requireRetargetOfArmedPlan: %v", err)
+		return NewClientError(500, "failed to check the arming grant")
+	}
+	return h.requireAutoPurchaseGrantFor(ctx, req, session, accountIDs, providers, config.DerivePlanServices(plan))
 }

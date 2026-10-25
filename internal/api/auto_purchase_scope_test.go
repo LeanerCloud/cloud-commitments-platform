@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -116,7 +117,7 @@ func TestAutoPurchaseScope_LadderConfigArm(t *testing.T) {
 		{"unconstrained: allowed", nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store, err := lgCall(apgCaller{perms: apsGrant(tc.constraints)}, nil, lgBody(true, "auto_approve", "1"))
+			store, err := lgCall(t, apgCaller{perms: apsGrant(tc.constraints)}, nil, lgBody(true, "auto_approve", "1"))
 			if tc.wantRefused {
 				apgRefused(t, err)
 				assert.False(t, apgCalled(store, "UpsertLadderConfig"))
@@ -147,6 +148,105 @@ func TestAutoPurchaseScope_LadderResolve(t *testing.T) {
 			}
 			assert.Equal(t, tc.want, clientCode(t, err))
 			assert.Zero(t, store.called)
+		})
+	}
+}
+
+func apsSetAccounts(t *testing.T, perms []auth.Permission, stored *config.PurchasePlan, accounts ...string) (*MockConfigStore, error) {
+	t.Helper()
+	store := new(MockConfigStore)
+	store.On("GetPurchasePlan", mock.Anything, apgPlanID).Return(stored, nil)
+	store.On("SetPlanAccounts", mock.Anything, apgPlanID, mock.Anything).Return(nil).Maybe()
+	store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
+		return &config.CloudAccount{ID: id, Provider: "aws"}, nil
+	}
+	body, err := json.Marshal(map[string][]string{"account_ids": accounts})
+	require.NoError(t, err)
+	h, req := apgCaller{perms: perms}.handlerAndReq(store, string(body))
+	_, err = h.setPlanAccounts(context.Background(), req, apgPlanID)
+	return store, err
+}
+
+func TestAutoPurchaseScope_RetargetArmedPlan(t *testing.T) {
+	onlyA := apsGrant(&auth.PermissionConstraints{AccountIDs: []string{apsAcctA}})
+	nonHolder := []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}}
+	for _, tc := range []struct {
+		name        string
+		perms       []auth.Permission
+		stored      *config.PurchasePlan
+		accounts    []string
+		wantRefused bool
+	}{
+		{"A-scoped holder widens armed plan to B: refused", onlyA, apgStoredPlan(true, apgCap(1000)), []string{apsAcctA, apsAcctB}, true},
+		{"A-scoped holder retargets armed plan to B: refused", onlyA, apgStoredPlan(true, apgCap(1000)), []string{apsAcctB}, true},
+		{"A-scoped holder stays within A: allowed", onlyA, apgStoredPlan(true, apgCap(1000)), []string{apsAcctA}, false},
+		{"unarmed plan is unaffected", onlyA, apgStoredPlan(false, apgCap(1000)), []string{apsAcctB}, false},
+		{"unconstrained holder: allowed", apsGrant(nil), apgStoredPlan(true, apgCap(1000)), []string{apsAcctB}, false},
+		{"non-holder retargets armed plan: refused", nonHolder, apgStoredPlan(true, apgCap(1000)), []string{apsAcctA}, true},
+		{"non-holder retargets unarmed plan: allowed", nonHolder, apgStoredPlan(false, apgCap(1000)), []string{apsAcctA}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := apsSetAccounts(t, tc.perms, tc.stored, tc.accounts...)
+			if tc.wantRefused {
+				apgRefused(t, err)
+				assert.False(t, apgCalled(store, "SetPlanAccounts"))
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, apgCalled(store, "SetPlanAccounts"))
+		})
+	}
+}
+
+func TestAutoPurchaseScope_ProviderChangeOnArmedPlan(t *testing.T) {
+	put := `{"name":"p","enabled":true,"auto_purchase":true,"provider":"azure","service":"vm","term":3,"payment":"monthly"}`
+	for _, tc := range []struct {
+		name        string
+		constraints *auth.PermissionConstraints
+		wantRefused bool
+	}{
+		{"aws-only grant adds an azure service: refused", &auth.PermissionConstraints{Providers: []string{"aws"}}, true},
+		{"grant covering both providers: allowed", &auth.PermissionConstraints{Providers: []string{"aws", "azure"}}, false},
+		{"unconstrained grant: allowed", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := new(MockConfigStore)
+			store.On("GetPurchasePlan", mock.Anything, apgPlanID).Return(apgStoredPlan(true, apgCap(1000)), nil)
+			store.On("GetPlanAccounts", mock.Anything, apgPlanID).Return([]config.CloudAccount{{ID: apsAcctA}}, nil).Maybe()
+			store.On("UpdatePurchasePlan", mock.Anything, mock.Anything).Return(nil).Maybe()
+			h, req := apgCaller{perms: apsGrant(tc.constraints)}.handlerAndReq(store, put)
+			_, err := h.updatePlan(context.Background(), req, apgPlanID)
+			if tc.wantRefused {
+				apgRefused(t, err)
+				assert.False(t, apgCalled(store, "UpdatePurchasePlan"))
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// The plan's services are sent with the arming request; its regions are not
+// (a plan with no region filter covers every region), so a regions-constrained
+// grant keeps failing closed.
+func TestAutoPurchaseScope_ServicesAndRegionsConstraints(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		constraints *auth.PermissionConstraints
+		wantRefused bool
+	}{
+		{"services grant covering the plan's service: allowed", &auth.PermissionConstraints{Services: []string{"rds"}}, false},
+		{"services grant for another service: refused", &auth.PermissionConstraints{Services: []string{"ec2"}}, true},
+		{"regions-constrained grant: refused", &auth.PermissionConstraints{Regions: []string{"us-east-1"}}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := apsPlanCall(t, apsGrant(tc.constraints), []string{apsAcctA})
+			if tc.wantRefused {
+				apgRefused(t, err)
+				assert.False(t, apgCalled(store, "UpdatePurchasePlan"))
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }

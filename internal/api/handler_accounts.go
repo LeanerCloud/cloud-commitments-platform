@@ -1449,7 +1449,7 @@ func (h *Handler) setPlanAccounts(ctx context.Context, httpReq *events.LambdaFun
 		return nil, err
 	}
 
-	if err := h.requirePlanAccountsAccess(ctx, session, id, body.AccountIDs); err != nil {
+	if err := h.requirePlanAccountsWrite(ctx, httpReq, session, id, body.AccountIDs); err != nil {
 		return nil, err
 	}
 
@@ -1470,6 +1470,15 @@ func (h *Handler) setPlanAccounts(ctx context.Context, httpReq *events.LambdaFun
 	}
 
 	return nil, nil
+}
+
+// requirePlanAccountsWrite is requirePlanAccountsAccess plus the arming gate
+// for retargeting an armed plan.
+func (h *Handler) requirePlanAccountsWrite(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, session *Session, planID string, accountIDs []string) error {
+	if err := h.requirePlanAccountsAccess(ctx, session, planID, accountIDs); err != nil {
+		return err
+	}
+	return h.requireRetargetOfArmedPlan(ctx, httpReq, session, planID, accountIDs)
 }
 
 // validatePlanAccountIDs rejects a missing/empty account_ids payload and

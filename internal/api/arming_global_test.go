@@ -94,13 +94,13 @@ func TestPerAccountArming_ConstrainedExecuteStillWorks(t *testing.T) {
 			{Action: auth.ActionUpdate, Resource: auth.ResourceConfig, Constraints: acctScoped},
 			{Action: auth.ActionExecute, Resource: auth.ResourcePurchases, Constraints: acctScoped},
 		}}
-		store, err := lgCall(caller, nil, lgBody(true, "auto_approve", "1"))
+		store, err := lgCall(t, caller, nil, lgBody(true, "auto_approve", "1"))
 		require.NoError(t, err)
 		assert.True(t, apgCalled(store, "UpsertLadderConfig"))
 	})
 	t.Run("ladder config write without arming", func(t *testing.T) {
 		caller := apgCaller{perms: []auth.Permission{{Action: auth.ActionUpdate, Resource: auth.ResourceConfig, Constraints: acctScoped}}}
-		store, err := lgCall(caller, nil, lgBody(false, "email_approval", ""))
+		store, err := lgCall(t, caller, nil, lgBody(false, "email_approval", ""))
 		require.NoError(t, err)
 		assert.True(t, apgCalled(store, "UpsertLadderConfig"))
 	})

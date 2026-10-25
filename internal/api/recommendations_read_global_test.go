@@ -36,7 +36,7 @@ func TestRecommendationsRead_ConstrainedGrantReadsWithoutKick(t *testing.T) {
 		for _, ep := range recsReadEndpoints {
 			t.Run(name+"/"+ep.name, func(t *testing.T) {
 				var allowed []bool
-				h := &Handler{config: recsReadStore(), scheduler: capturingScheduler(&allowed), auth: constrainedViewer(held)}
+				h := &Handler{config: recsReadStore(), scheduler: capturingScheduler(t, &allowed), auth: constrainedViewer(held)}
 
 				require.NoError(t, ep.call(h, context.Background(), scopedRequest("")))
 
@@ -51,7 +51,7 @@ func TestRecommendationsRead_UnconstrainedGrantStillKicks(t *testing.T) {
 	for _, ep := range recsReadEndpoints {
 		t.Run(ep.name, func(t *testing.T) {
 			var allowed []bool
-			h := &Handler{config: recsReadStore(), scheduler: capturingScheduler(&allowed), auth: constrainedViewer(nil)}
+			h := &Handler{config: recsReadStore(), scheduler: capturingScheduler(t, &allowed), auth: constrainedViewer(nil)}
 
 			require.NoError(t, ep.call(h, context.Background(), scopedRequest("")))
 
@@ -69,7 +69,7 @@ func TestRecommendationsRead_ProbeErrorReadsWithoutKick(t *testing.T) {
 	mockAuth.On("HasPermissionForConstraintsAPI", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(false, errors.New("lookup failed"))
 	var allowed []bool
-	h := &Handler{config: recsReadStore(), scheduler: capturingScheduler(&allowed), auth: mockAuth}
+	h := &Handler{config: recsReadStore(), scheduler: capturingScheduler(t, &allowed), auth: mockAuth}
 
 	_, err := h.getRecommendations(context.Background(), scopedRequest(""), map[string]string{})
 
@@ -86,7 +86,7 @@ func TestRecommendationsRead_UserAPIKeyProbeUsesGlobalSetAndKeyID(t *testing.T) 
 		mockAuth.On("HasAPIKeyPermissionForConstraintsAPI", mock.Anything, "key-1", "u2", "view", "recommendations",
 			mock.MatchedBy(isGlobalSet)).Return(keyAllowed, nil).Once()
 		var allowed []bool
-		h := &Handler{config: recsReadStore(), scheduler: capturingScheduler(&allowed), auth: mockAuth}
+		h := &Handler{config: recsReadStore(), scheduler: capturingScheduler(t, &allowed), auth: mockAuth}
 		ctx := contextWithPrincipal(context.Background(), &Principal{Kind: PrincipalUserAPIKey, UserID: "u2", APIKeyID: "key-1"})
 
 		_, err := h.getRecommendations(ctx, &events.LambdaFunctionURLRequest{Headers: map[string]string{"x-api-key": "user-key"}}, map[string]string{})
