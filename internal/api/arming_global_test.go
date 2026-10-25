@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
 // The two global arming switches need an unconstrained execute:purchases
@@ -113,6 +114,7 @@ func TestPerAccountArming_ConstrainedExecuteStillWorks(t *testing.T) {
 	t.Run("plan arm", func(t *testing.T) {
 		store := new(MockConfigStore)
 		store.On("GetPurchasePlan", mock.Anything, apgPlanID).Return(apgStoredPlan(false, apgCap(1000)), nil)
+		store.On("GetPlanAccounts", mock.Anything, apgPlanID).Return([]config.CloudAccount{{ID: lgAcct, Provider: "aws"}}, nil)
 		store.On("UpdatePurchasePlan", mock.Anything, mock.Anything).Return(nil).Maybe()
 		caller := apgCaller{perms: []auth.Permission{
 			{Action: auth.ActionUpdate, Resource: auth.ResourcePlans},

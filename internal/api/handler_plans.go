@@ -195,7 +195,7 @@ func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunction
 	plan := req.toPurchasePlan()
 
 	// Validate the plan
-	if err := h.validateAndGatePlan(ctx, httpReq, session, nil, plan); err != nil {
+	if err := h.validateAndGatePlan(ctx, httpReq, session, nil, plan, req.TargetAccounts); err != nil {
 		return nil, err
 	}
 
@@ -328,7 +328,7 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 		return nil, err
 	}
 
-	if err := h.requirePlanArmGrant(ctx, httpReq, session, existingPlan, plan); err != nil {
+	if err := h.requirePlanArmGrant(ctx, httpReq, session, existingPlan, plan, nil); err != nil {
 		return nil, err
 	}
 
@@ -877,7 +877,7 @@ func (h *Handler) patchPlan(ctx context.Context, httpReq *events.LambdaFunctionU
 		return nil, err
 	}
 
-	if err := h.validateAndGatePlan(ctx, httpReq, session, &before, plan); err != nil {
+	if err := h.validateAndGatePlan(ctx, httpReq, session, &before, plan, nil); err != nil {
 		return nil, err
 	}
 

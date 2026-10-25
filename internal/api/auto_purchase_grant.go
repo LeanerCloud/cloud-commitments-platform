@@ -70,7 +70,8 @@ func credentialKind(ctx context.Context, session *Session) string {
 }
 
 // requireAutoPurchaseGrant refuses the admin API key and otherwise requires
-// execute:purchases, evaluated against the credential presented.
+// execute:purchases, evaluated against the credential presented. It checks the
+// verb only; callers that know the target accounts use requireAutoPurchaseGrantFor.
 func (h *Handler) requireAutoPurchaseGrant(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session) error {
 	if err := refuseAutoPurchaseCredential(session); err != nil {
 		return err
@@ -86,6 +87,35 @@ func refuseAutoPurchaseCredential(session *Session) error {
 		return NewClientError(403, autoPurchaseGrantDenied)
 	}
 	return nil
+}
+
+// requireAutoPurchaseGrantFor is requireAutoPurchaseGrant plus the grant's own
+// account and provider constraints, checked against the accounts and providers
+// the arming write targets. An empty accountIDs is a request with no known
+// account, which only an unconstrained grant covers.
+func (h *Handler) requireAutoPurchaseGrantFor(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, accountIDs, providers []string) error {
+	if err := h.requireAutoPurchaseGrant(ctx, req, session); err != nil {
+		return err
+	}
+	return h.requirePermissionConstraints(ctx, session, auth.ActionExecute, auth.ResourcePurchases,
+		[]auth.PermissionConstraints{{AccountIDs: accountIDs, Providers: providers, StrictScope: true}})
+}
+
+// planArmAccountIDs returns the accounts the plan targets: the request's own
+// list on create (the plan has no id yet), the stored association otherwise.
+func (h *Handler) planArmAccountIDs(ctx context.Context, plan *config.PurchasePlan, targets []string) ([]string, error) {
+	if len(targets) > 0 {
+		return targets, nil
+	}
+	accounts, err := h.config.GetPlanAccounts(ctx, plan.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get plan accounts: %w", err)
+	}
+	ids := make([]string, 0, len(accounts))
+	for i := range accounts {
+		ids = append(ids, accounts[i].ID)
+	}
+	return ids, nil
 }
 
 // armingGrants holds the outcome (nil = granted) of the two requirePermission
@@ -128,12 +158,23 @@ func (h *Handler) resolveGrant(ctx context.Context, req *events.LambdaFunctionUR
 const riExchangeAutoModeScopeMsg = "permission denied: enabling RI exchange auto mode requires unrestricted account access"
 const autoPurchaseSwitchScopeMsg = "permission denied: arming a global switch requires unrestricted account access"
 
-// requirePlanArmGrant gates a plan write. before is nil on create.
-func (h *Handler) requirePlanArmGrant(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, before, after *config.PurchasePlan) error {
+// requirePlanArmGrant gates a plan write. before is nil on create. targets is
+// the request's target_accounts on create and nil when the plan already exists.
+func (h *Handler) requirePlanArmGrant(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, before, after *config.PurchasePlan, targets []string) error {
 	if !planArmEscalates(before, after) {
 		return nil
 	}
-	if err := h.requireAutoPurchaseGrant(ctx, req, session); err != nil {
+	accountIDs, err := h.planArmAccountIDs(ctx, after, targets)
+	if err != nil {
+		return err
+	}
+	providers, err := config.DerivePlanProviders(after)
+	if err != nil {
+		// An empty provider set would read as "no restriction", so fail closed.
+		logging.Errorf("requirePlanArmGrant: %v", err)
+		return NewClientError(500, "failed to check the arming grant")
+	}
+	if err := h.requireAutoPurchaseGrantFor(ctx, req, session, accountIDs, providers); err != nil {
 		return err
 	}
 	var oldCap *float64
@@ -147,11 +188,11 @@ func (h *Handler) requirePlanArmGrant(ctx context.Context, req *events.LambdaFun
 
 // validateAndGatePlan validates the plan (400) and then applies the arming
 // gate (403), in that order so a malformed write never reveals grant state.
-func (h *Handler) validateAndGatePlan(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, before, after *config.PurchasePlan) error {
+func (h *Handler) validateAndGatePlan(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, before, after *config.PurchasePlan, targets []string) error {
 	if err := after.Validate(); err != nil {
 		return NewClientError(400, fmt.Sprintf("validation error: %s", err))
 	}
-	return h.requirePlanArmGrant(ctx, req, session, before, after)
+	return h.requirePlanArmGrant(ctx, req, session, before, after, targets)
 }
 
 func formatCap(v *float64) string {
