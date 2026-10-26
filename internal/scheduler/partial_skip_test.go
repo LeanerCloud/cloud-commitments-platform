@@ -121,3 +121,22 @@ func TestGCPPartialResult_UnparsableCountStillRecorded(t *testing.T) {
 	require.NotNil(t, gap)
 	assert.Zero(t, gap.skippedRecommendations)
 }
+
+// A truncated Azure Advisor walk (page error or page cap) is reported by the
+// azure provider as a PartialResultError whose skip entry is
+// "advisor: <errAdvisorTruncated>: page error after N recommendations: ...".
+// A transient 429/503 mid-walk must stay a hard failure with no eviction.
+func TestAzureTruncatedAdvisorWalk_StaysHard(t *testing.T) {
+	t.Setenv("AZURE_SUBSCRIPTION_ID", "sub-a")
+	azErr := &azureprovider.PartialResultError{Skipped: []string{
+		"advisor: azure advisor: recommendation list is incomplete: page error after 40 recommendations: 503 service unavailable",
+	}}
+	s, _ := newPartialSweepScheduler(t, "azure", azErr)
+
+	recs, roster, gap, err := s.collectAzureRecommendations(context.Background(), &config.GlobalConfig{})
+
+	require.Error(t, err)
+	assert.Empty(t, recs)
+	assert.Empty(t, roster, "a truncated walk must not authorize stale-row eviction")
+	assert.Nil(t, gap)
+}
