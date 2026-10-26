@@ -205,12 +205,32 @@ func TestBuildSuppressions_ComputeSlugEC2(t *testing.T) {
 }
 
 func TestCanonicalSuppressionService(t *testing.T) {
-	assert.Equal(t, "compute", CanonicalSuppressionService("aws", "ec2"))
-	assert.Equal(t, "compute", CanonicalSuppressionService("aws", "compute"))
-	assert.Equal(t, "rds", CanonicalSuppressionService("aws", "rds"))
-	assert.Equal(t, "compute", CanonicalSuppressionService("azure", "compute"))
-	assert.Equal(t, "ec2", CanonicalSuppressionService("azure", "ec2"))
-	assert.Equal(t, "compute", CanonicalSuppressionService("gcp", "compute"))
+	cases := []struct{ provider, service, want string }{
+		{"aws", "ec2", "compute"},
+		{"aws", "rds", "relational-db"},
+		{"aws", "elasticache", "cache"},
+		{"aws", "opensearch", "search"},
+		{"aws", "redshift", "data-warehouse"},
+		{"aws", "compute", "compute"},
+		{"aws", "relational-db", "relational-db"},
+		{"aws", "cache", "cache"},
+		{"aws", "search", "search"},
+		{"aws", "data-warehouse", "data-warehouse"},
+		{"aws", "memorydb", "memorydb"},
+		{"azure", "compute", "compute"},
+		{"azure", "ec2", "ec2"},
+		{"azure", "rds", "rds"},
+		{"gcp", "compute", "compute"},
+		{"gcp", "redshift", "redshift"},
+		{"gcp", "elasticache", "elasticache"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.provider+"/"+tc.service, func(t *testing.T) {
+			got := CanonicalSuppressionService(tc.provider, tc.service)
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, got, CanonicalSuppressionService(tc.provider, got), "idempotent")
+		})
+	}
 }
 
 // Issue #1412: AWS "ec2" and "compute" recs in one request share a bucket and
