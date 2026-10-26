@@ -99,7 +99,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/pashagolub/pgxmock/v4 v4.9.0
+	github.com/pashagolub/pgxmock/v5 v5.2.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 )
