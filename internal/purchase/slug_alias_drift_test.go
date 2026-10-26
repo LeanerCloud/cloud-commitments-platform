@@ -20,6 +20,11 @@ func TestLegacyAWSSlugsMatchSuppressionAliases(t *testing.T) {
 		"opensearch":  common.ServiceSearch,
 		"redshift":    common.ServiceDataWarehouse,
 	}
+	// Deleting an entry from legacyAWSServiceSlugs must not pass silently.
+	for key := range canonicalFamily {
+		require.Contains(t, legacyAWSServiceSlugs, key, "legacy slug %q was removed from legacyAWSServiceSlugs", key)
+	}
+	require.Contains(t, legacyAWSServiceSlugs, string(common.ServiceMemoryDB), "legacy slug memorydb was removed from legacyAWSServiceSlugs")
 	for key := range legacyAWSServiceSlugs {
 		t.Run(key, func(t *testing.T) {
 			canonical := config.CanonicalSuppressionService("aws", key)
