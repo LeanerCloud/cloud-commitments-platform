@@ -142,7 +142,7 @@ func TestAnalytics_AccountIDs_UppercasePaddedCanonical(t *testing.T) {
 	upper := " " + strings.ToUpper(idA) + " , " + strings.ToUpper(idB)
 	lower := idA + "," + idB
 	for _, path := range analyticsPaths {
-		for name, scope := range map[string][]string{"unrestricted": nil, "scoped": {"a", "b"}} {
+		for name, scope := range map[string][]string{"unrestricted": nil, "scoped": {idA, idB}} {
 			t.Run(path+" "+name, func(t *testing.T) {
 				t.Parallel()
 				wantStatus, wantUUIDs, wantExt := analyticsParamsCall(t, path, scope, map[string]string{"account_ids": lower}, accounts)
