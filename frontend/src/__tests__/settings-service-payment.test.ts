@@ -291,6 +291,16 @@ describe('Settings Save payment tokens (issue #545)', () => {
     expect((api.updateServiceConfig as jest.Mock).mock.calls).toEqual([['gcp', 'compute', body]]);
   });
 
+  it('an emptied Savings Plan coverage card shows an inline error', async () => {
+    await loadGlobalSettings();
+    setupSettingsHandlers();
+    const card = document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement;
+    card.value = '';
+    card.dispatchEvent(new Event('blur'));
+
+    expect(card.getAttribute('aria-invalid')).toBe('true');
+  });
+
   it('never falls back to upfront when a payment select has no matching option at Save', async () => {
     await loadGlobalSettings();
     (document.getElementById('azure-vm-payment') as HTMLSelectElement).value = 'junk';
