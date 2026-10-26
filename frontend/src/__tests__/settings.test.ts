@@ -910,6 +910,27 @@ describe('Settings Module', () => {
         expect(api.updateServiceConfig).not.toHaveBeenCalled();
       });
 
+      test('an edited SP coverage cleared to empty blocks the save and stays dirty', async () => {
+        await loadStaleTab();
+        const card = document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement;
+        card.value = '';
+        mockShowToast.mockClear();
+
+        await save();
+
+        expect(api.updateConfig).not.toHaveBeenCalled();
+        expect(api.updateServiceConfig).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+          message: expect.stringContaining('Target coverage must be a whole number between 0 and 100'),
+          kind: 'error',
+        }));
+        expect(isUnsavedChanges()).toBe(true);
+
+        card.value = '65';
+        await save();
+        expect(api.updateServiceConfig).toHaveBeenCalledWith('aws', 'savings-plans-compute', expect.objectContaining({ coverage: 65 }));
+      });
+
       test('a second save after a service PUT succeeded resends nothing', async () => {
         await loadStaleTab();
         (document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value = '65';
