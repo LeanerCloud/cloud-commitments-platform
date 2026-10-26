@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"testing"
-	"unsafe"
 
 	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -120,20 +118,12 @@ func TestGCPPartialResult_FanOutKeepsAccountEvictable(t *testing.T) {
 	assert.Equal(t, 1, outcome.Gap.incompleteAccounts)
 }
 
-// withSkips sets PartialSubscriptionFailureError's unexported skips field. The
-// library fills it only from a live multi-subscription sweep, so the real type
-// cannot otherwise be built with skips from outside the module.
-func withSkips(e *azureprovider.PartialSubscriptionFailureError, skipped ...string) {
-	f := reflect.ValueOf(e).Elem().FieldByName("skipped")
-	p := reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
-	p.Set(reflect.ValueOf(&azureprovider.PartialResultError{Skipped: skipped}))
-}
-
 // go#641: a mixed Azure sweep (lost subscriptions plus dropped recs) records
 // the skipped count for the user warning but still holds eviction back.
 func TestAzureMixedSweep_RecordsSkipsAndHoldsEviction(t *testing.T) {
-	failure := partialSweepErr("sub-b")
-	withSkips(failure, "sub-a: non-USD", "sub-a: bad term")
+	failure := azureprovider.NewPartialSubscriptionFailure(2,
+		[]azureprovider.SubscriptionFailure{{SubscriptionID: "sub-b", Err: errors.New("throttled")}},
+		[]string{"sub-a: non-USD", "sub-a: bad term"})
 
 	gap, err := tolerateIncompleteSweep("azure", failure)
 
@@ -161,4 +151,16 @@ func TestAzureTruncatedAdvisorWalk_StaysHard(t *testing.T) {
 	assert.Empty(t, recs)
 	assert.Empty(t, roster, "a truncated walk must not authorize stale-row eviction")
 	assert.Nil(t, gap)
+}
+
+func TestAzureFailureWithoutSkips_RecordsNoSkippedCount(t *testing.T) {
+	failure := azureprovider.NewPartialSubscriptionFailure(2,
+		[]azureprovider.SubscriptionFailure{{SubscriptionID: "sub-b", Err: errors.New("throttled")}}, nil)
+
+	gap, err := tolerateIncompleteSweep("azure", failure)
+
+	require.NoError(t, err)
+	require.NotNil(t, gap)
+	assert.Zero(t, gap.skippedRecommendations)
+	assert.True(t, gap.holdsEviction())
 }

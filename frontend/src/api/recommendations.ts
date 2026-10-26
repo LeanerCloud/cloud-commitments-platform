@@ -82,7 +82,7 @@ export interface PartialProviderSweep {
   attempted_scopes: number;
   failed_scopes: number;
   failed_details: number;
-  /** Recommendations the provider dropped as invalid (GCP only: non-USD, malformed, unknown term). */
+  /** Recommendations the provider dropped as invalid (non-USD, malformed, unknown term): GCP partial results and Azure skips alongside a partial subscription failure. */
   skipped_recommendations?: number;
   reasons: Record<string, number>;
 }

@@ -6708,9 +6708,10 @@ components:
         skipped_recommendations:
           type: integer
           description: >
-            Recommendations the provider dropped as invalid (GCP only: non-USD,
+            Recommendations the provider dropped as invalid (non-USD,
             malformed amount or plan, unrecognized term) while returning the
-            rest. Their accounts' sweeps were complete.
+            rest: GCP partial results, plus Azure skips reported alongside a
+            partial subscription failure.
         reasons:
           type: object
           description: >
