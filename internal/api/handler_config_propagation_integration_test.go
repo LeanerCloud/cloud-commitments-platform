@@ -99,3 +99,52 @@ func TestUpdateConfigPropagatesOnlyChangedDefaults(t *testing.T) {
 	require.Equal(t, 1, after.DefaultTerm, "global change must roll back with the failed propagation")
 	require.Equal(t, ec2, service("ec2"))
 }
+
+// TestUpdateConfigPaymentDefaultSkipsAzureAndGCP: the global default payment is
+// an AWS token, so changing it must not rewrite Azure or GCP rows (an Azure
+// monthly row would turn upfront; a GCP row would fail validation forever).
+func TestUpdateConfigPaymentDefaultSkipsAzureAndGCP(t *testing.T) {
+	ctx := context.Background()
+	pg := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
+	store := config.NewPostgresStore(pg.DB)
+
+	global, err := store.GetGlobalConfig(ctx)
+	require.NoError(t, err)
+	global.EnabledProviders = []string{"aws", "azure", "gcp"}
+	global.DefaultTerm, global.DefaultPayment, global.DefaultCoverage = 1, "no-upfront", 80
+	global.DefaultRampSchedule = config.RampImmediate
+	require.NoError(t, store.SaveGlobalConfig(ctx, global))
+	for _, svc := range []config.ServiceConfig{
+		{Provider: "aws", Service: "ec2", Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 80, RampSchedule: config.RampImmediate},
+		{Provider: "azure", Service: "compute", Enabled: true, Term: 1, Payment: "monthly", Coverage: 80, RampSchedule: config.RampImmediate},
+		{Provider: "gcp", Service: "compute", Enabled: true, Term: 1, Payment: "monthly", Coverage: 80, RampSchedule: config.RampImmediate},
+	} {
+		svc := svc
+		require.NoError(t, store.SaveServiceConfig(ctx, &svc))
+	}
+
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", ctx, "admin-token").Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}, nil)
+	mockAuth.grantAdmin()
+	handler := &Handler{config: store, auth: mockAuth}
+	headers := map[string]string{"Authorization": "Bearer admin-token"}
+
+	_, err = handler.updateConfig(ctx, &events.LambdaFunctionURLRequest{Headers: headers, Body: `{"default_payment": "all-upfront"}`})
+	require.NoError(t, err)
+
+	payment := func(provider string) string {
+		name := "compute"
+		if provider == "aws" {
+			name = "ec2"
+		}
+		svc, getErr := store.GetServiceConfig(ctx, provider, name)
+		require.NoError(t, getErr)
+		return svc.Payment
+	}
+	require.Equal(t, "all-upfront", payment("aws"))
+	require.Equal(t, "monthly", payment("azure"))
+	require.Equal(t, "monthly", payment("gcp"))
+
+	_, err = handler.updateServiceConfig(ctx, &events.LambdaFunctionURLRequest{Headers: headers, Body: `{"term": 3}`}, "gcp/compute")
+	require.NoError(t, err)
+}

@@ -360,10 +360,10 @@ func (h *Handler) updateServiceConfig(ctx context.Context, req *events.LambdaFun
 		cfg.Service = parts[1]
 	}
 
-	// Merge: overlay the scalar UI fields unconditionally and the
-	// recommendation-filter fields only when the body carried them, so a
-	// partial PUT never zeroes a filter (ramp_schedule, or a filter set
-	// out-of-band) the request didn't mean to touch.
+	// Merge: overlay each field (the scalars and the recommendation filters)
+	// only when the body carried its key, so a partial PUT never reverts or
+	// zeroes a field (ramp_schedule, a filter set out-of-band) it didn't mean
+	// to touch. Validation below runs on the merged row.
 	merged, mergeErr := mergeServiceConfig(ctx, h.config, cfg, req.Body)
 	if mergeErr != nil {
 		return nil, mergeErr
