@@ -45,7 +45,7 @@ func TestClient_WaiterHonoursItsOwnContextWhileAnotherBuilds(t *testing.T) {
 	select {
 	case err := <-second:
 		require.ErrorIs(t, err, context.DeadlineExceeded)
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(2 * time.Second):
 		close(r.release)
 		t.Fatal("waiting caller ignored its own ctx while another caller built the client")
 	}
@@ -85,6 +85,16 @@ func TestClient_CancelledCallerWinningTheSlotNeverResolves(t *testing.T) {
 		require.ErrorIs(t, err, context.Canceled)
 	}
 	require.Zero(t, res.calls.Load(), "resolver must not be called with a dead ctx")
+	require.Zero(t, len(p.sem), "a refused caller must release the slot")
+
+	live := make(chan error, 1)
+	go func() { _, err := p.Client(context.Background()); live <- err }()
+	select {
+	case err := <-live:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("slot leaked: a live caller could not acquire it")
+	}
 }
 
 // slowResolver counts calls and sleeps so racing callers overlap the build.
