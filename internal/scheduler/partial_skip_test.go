@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,8 @@ type skipErr struct {
 func (e *skipErr) Error() string { return e.msg }
 func (e *skipErr) Partial() bool { return e.partial }
 
+// skipMsg mirrors recskip.PartialResultError.Error() in the gcp provider
+// (internal package, not constructible from here).
 const skipMsg = "gcp recommendations: 3 recommendation(s) skipped: computeengine us-east1: non-USD; cloudsql us-east1: bad plan"
 
 func gcpAmbient(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error) {
@@ -29,7 +32,7 @@ func gcpAmbient(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGa
 
 func TestGCPPartialResult_KeepsRecsAndRecordsSkips(t *testing.T) {
 	t.Setenv("GCP_PROJECT_ID", "proj-a")
-	s, _ := newPartialSweepScheduler(t, "gcp", fmt.Errorf("collect: %w", &skipErr{msg: skipMsg, partial: true}))
+	s, _ := newPartialSweepScheduler(t, "gcp", &skipErr{msg: skipMsg, partial: true})
 
 	recs, roster, gap, err := gcpAmbient(s)
 
@@ -60,6 +63,35 @@ func TestGCPPartialResult_NonPartialErrorsStayHard(t *testing.T) {
 			assert.Nil(t, gap)
 		})
 	}
+}
+
+// A hard error that merely wraps or joins a partial one is still hard.
+func TestGCPPartialResult_WrappedOrJoinedStaysHard(t *testing.T) {
+	partial := &skipErr{msg: skipMsg, partial: true}
+	for name, err := range map[string]error{
+		"wrapped": fmt.Errorf("collect: %w", partial),
+		"joined":  errors.Join(errors.New("hard"), partial),
+	} {
+		gap, got := tolerateIncompleteSweep("gcp", err)
+		require.Error(t, got, name)
+		assert.Nil(t, gap, name)
+	}
+}
+
+// Azure's PartialResultError also has Partial() but is a hard failure on main:
+// the real exported type must not be tolerated, and the account stays out of
+// the eviction roster.
+func TestAzurePartialResultError_StaysHard(t *testing.T) {
+	t.Setenv("AZURE_SUBSCRIPTION_ID", "sub-a")
+	azErr := &azureprovider.PartialResultError{Skipped: []string{"sub-a: non-USD"}}
+	s, _ := newPartialSweepScheduler(t, "azure", azErr)
+
+	recs, roster, gap, err := s.collectAzureRecommendations(context.Background(), &config.GlobalConfig{})
+
+	require.Error(t, err)
+	assert.Empty(t, recs)
+	assert.Empty(t, roster)
+	assert.Nil(t, gap)
 }
 
 func TestGCPPartialResult_FanOutKeepsAccountEvictable(t *testing.T) {

@@ -957,7 +957,7 @@ type PartialProviderSweep struct {
 	// rejected inside scopes that otherwise answered (AWS only).
 	FailedDetails int `json:"failed_details"`
 	// SkippedRecommendations is how many recommendations the provider
-	// dropped as invalid (GCP: non-USD, malformed amount or plan, unknown
+	// dropped as invalid (GCP only: non-USD, malformed amount or plan, unknown
 	// term) while returning the rest. Those accounts' sweeps were complete.
 	SkippedRecommendations int `json:"skipped_recommendations"`
 	// Reasons counts the failure causes by PartialReason* category.

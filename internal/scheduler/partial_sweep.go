@@ -55,21 +55,28 @@ func (g *sweepGap) holdsEviction() bool {
 var skippedCountRE = regexp.MustCompile(`(\d+) recommendation\(s\) skipped`)
 
 // partialResult is implemented by provider errors that accompany usable
-// results (GCP's skipped recommendations). Matching the method, not the
-// provider's internal type, keeps this provider-agnostic.
+// results. Only GCP's skipped-recommendation error is tolerated: Azure's
+// PartialResultError has the same method but stays a hard failure.
 type partialResult interface{ Partial() bool }
 
 // tolerateSkippedRecommendations keeps the recommendations returned alongside
-// a Partial() error and records how many were skipped. Any other error is
-// returned unchanged.
+// a GCP Partial() error and records how many were skipped. Any other provider,
+// and any error that is not itself the partial error, is returned unchanged.
+// The assertion is deliberately top-level (no errors.As): the library's "hard
+// error wins" contract returns the hard error alone, and unwrapping would let
+// an errors.Join or wrap of a hard error plus a partial one be swallowed.
 func tolerateSkippedRecommendations(providerName string, err error) (*sweepGap, error) {
-	var p partialResult
-	if err == nil || !errors.As(err, &p) || !p.Partial() {
+	if providerName != "gcp" || err == nil {
+		return nil, err
+	}
+	p, ok := err.(partialResult) //nolint:errorlint // top-level only, see above
+	if !ok || !p.Partial() {
 		return nil, err
 	}
 	logging.Warnf("%s recommendations partial, keeping the rest: %v", providerName, err)
-	// The count is parsed from the message because the contract exposes only
-	// Partial(); an unparsable message still yields a gap, with count 0.
+	// The count is parsed from recskip.PartialResultError.Error() in the gcp
+	// provider ("N recommendation(s) skipped: ...") because the contract exposes
+	// only Partial(); replace with SkippedCount() if the library adds it; an unparsable message still yields a gap, with count 0.
 	n := 0
 	if m := skippedCountRE.FindStringSubmatch(err.Error()); m != nil {
 		if v, convErr := strconv.Atoi(m[1]); convErr == nil {
