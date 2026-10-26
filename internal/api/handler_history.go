@@ -721,9 +721,12 @@ type historyFilters struct {
 	ExternalIDsByProvider map[string][]string
 	Provider              string
 	LegacyAccountID       string
-	AccountIDs            []string
-	Limit                 int
-	HasDate               bool
+	// PlanID narrows the history to one purchase plan's purchases and
+	// executions (the plan-history view's plan_id); empty means no plan filter.
+	PlanID     string
+	AccountIDs []string
+	Limit      int
+	HasDate    bool
 	// Cursor is the stream position the page starts after (issue #674); nil
 	// for the first page.
 	Cursor *config.HistoryPageKey
@@ -752,6 +755,12 @@ func parseHistoryFilters(params map[string]string) (historyFilters, error) {
 	f.AccountIDs = accountIDs
 	f.LegacyAccountID = params["account_id"]
 
+	planID, err := parseHistoryPlanID(params["plan_id"])
+	if err != nil {
+		return f, err
+	}
+	f.PlanID = planID
+
 	start, end, hasDate, err := parseHistoryDateRange(params["start"], params["end"])
 	if err != nil {
 		return f, err
@@ -760,19 +769,9 @@ func parseHistoryFilters(params map[string]string) (historyFilters, error) {
 	f.Start = start
 	f.End = end
 
-	limit := config.DefaultListLimit
-	if s := params["limit"]; s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			return f, NewClientError(400, "invalid limit: must be a positive integer")
-		}
-		limit = n
-	}
-	if limit < 1 {
-		limit = config.DefaultListLimit
-	}
-	if limit > config.MaxListLimit {
-		limit = config.MaxListLimit
+	limit, err := parseHistoryLimit(params["limit"])
+	if err != nil {
+		return f, err
 	}
 	f.Limit = limit
 
@@ -783,6 +782,37 @@ func parseHistoryFilters(params map[string]string) (historyFilters, error) {
 	f.Cursor = cursor
 
 	return f, nil
+}
+
+// parseHistoryLimit parses the optional limit, clamped to [1, MaxListLimit]
+// with DefaultListLimit for empty or non-positive values.
+func parseHistoryLimit(raw string) (int, error) {
+	limit := config.DefaultListLimit
+	if raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			return 0, NewClientError(400, "invalid limit: must be a positive integer")
+		}
+		limit = n
+	}
+	if limit < 1 {
+		limit = config.DefaultListLimit
+	}
+	if limit > config.MaxListLimit {
+		limit = config.MaxListLimit
+	}
+	return limit, nil
+}
+
+// parseHistoryPlanID validates the optional plan_id filter; empty means none.
+func parseHistoryPlanID(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	if err := validateUUID(raw); err != nil {
+		return "", NewClientError(400, "invalid plan_id: must be a UUID")
+	}
+	return raw, nil
 }
 
 // parseHistoryDateRange parses optional YYYY-MM-DD start/end strings. Both
@@ -876,6 +906,9 @@ func parseHistoryDateBounds(startStr, endStr string) (time.Time, time.Time, erro
 //     both sides; End is the end-of-day for YYYY-MM-DD inputs.
 func (f historyFilters) matchesExecution(exec config.PurchaseExecution) bool {
 	if !f.matchesExecutionProviderAndAccount(exec) {
+		return false
+	}
+	if f.PlanID != "" && exec.PlanID != f.PlanID {
 		return false
 	}
 	if f.HasDate {
@@ -1016,6 +1049,7 @@ func (h *Handler) fetchPurchaseHistory(ctx context.Context, filters *historyFilt
 func (f historyFilters) purchaseHistoryFilter() config.PurchaseHistoryFilter {
 	out := config.PurchaseHistoryFilter{
 		Provider:              f.Provider,
+		PlanID:                f.PlanID,
 		AccountIDs:            f.AccountIDs,
 		ExternalIDsByProvider: f.ExternalIDsByProvider,
 		Limit:                 f.Limit,
