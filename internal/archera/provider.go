@@ -144,15 +144,18 @@ func (p *Provider) Client(ctx context.Context) (insurance.QuoteClient, error) {
 	return c, nil
 }
 
-// build resolves the key and constructs the client. A failure caused by the
-// caller's own ctx ending is returned as ctx.Err(), not as a credential fault.
+// build resolves the key and constructs the client. A secret lookup that fails
+// because the caller's ctx ended is returned as ctx.Err(), not a credential
+// fault. NewClient takes no ctx, so its failures are always ErrKeyUnavailable.
 func (p *Provider) build(ctx context.Context) (*insurance.Client, error) {
 	if p.resolver == nil {
 		return nil, ErrKeyUnavailable
 	}
 	key, err := p.resolver.GetSecret(ctx, p.settings.KeySecretRef)
 	if err != nil {
+		// Check ctx itself: some backends' errors do not wrap the ctx error.
 		if ctxErr := ctx.Err(); ctxErr != nil {
+			logging.Info("archera: client build abandoned: request context ended")
 			return nil, ctxErr
 		}
 		logging.Warn("archera: credential resolution failed")
@@ -160,9 +163,6 @@ func (p *Provider) build(ctx context.Context) (*insurance.Client, error) {
 	}
 	c, err := insurance.NewClient(insurance.Config{APIKey: insurance.NewSecret(strings.TrimSpace(key)), OrgID: p.settings.OrgID}, p.hc)
 	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, ctxErr
-		}
 		logging.Warn("archera: client initialization failed")
 		return nil, ErrKeyUnavailable
 	}

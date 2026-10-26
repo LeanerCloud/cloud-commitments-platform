@@ -350,19 +350,32 @@ func (ctxBlockedResolver) GetSecret(ctx context.Context, _ string) (string, erro
 	return "", ctx.Err()
 }
 
-func TestInsuranceComparison_CancelledKeyBuildIsTheDeadlineStatus(t *testing.T) {
-	logs := captureLogs(t)
-	s := completeEnv(t)
-	vt := &vendorTransport{t: t}
-	p := archera.NewProvider(s, ctxBlockedResolver{secrets.NewEnvResolver()}, &http.Client{Transport: vt})
-	h := NewHandler(HandlerConfig{Insurance: p})
-	ctx, cancel := context.WithTimeout(adminCtx(), 20*time.Millisecond)
-	defer cancel()
-	_, err := h.getInsuranceComparison(ctx, &events.LambdaFunctionURLRequest{})
-	ce, ok := IsClientError(err)
-	require.True(t, ok)
-	assert.Equal(t, 504, ce.code)
-	assert.NotContains(t, ce.message, archera.EnvKeySecret)
-	assert.NotContains(t, logs.String(), "credential resolution failed")
-	assert.Zero(t, vt.calls)
+func TestInsuranceComparison_EndedKeyBuildIsTheDeadlineStatus(t *testing.T) {
+	for name, mk := range map[string]func() (context.Context, context.CancelFunc){
+		"deadline": func() (context.Context, context.CancelFunc) {
+			return context.WithTimeout(adminCtx(), 20*time.Millisecond)
+		},
+		"canceled": func() (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(adminCtx())
+			time.AfterFunc(20*time.Millisecond, cancel)
+			return ctx, cancel
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			logs := captureLogs(t)
+			s := completeEnv(t)
+			vt := &vendorTransport{t: t}
+			p := archera.NewProvider(s, ctxBlockedResolver{secrets.NewEnvResolver()}, &http.Client{Transport: vt})
+			h := NewHandler(HandlerConfig{Insurance: p})
+			ctx, cancel := mk()
+			defer cancel()
+			_, err := h.getInsuranceComparison(ctx, &events.LambdaFunctionURLRequest{})
+			ce, ok := IsClientError(err)
+			require.True(t, ok)
+			assert.Equal(t, 504, ce.code)
+			assert.Equal(t, insuranceTimeoutMessage, ce.message)
+			assert.NotContains(t, logs.String(), "credential resolution failed")
+			assert.Zero(t, vt.calls)
+		})
+	}
 }

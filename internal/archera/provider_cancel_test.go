@@ -188,26 +188,26 @@ func TestClient_CancelDuringResolveReportsCancellationAndCachesNothing(t *testin
 	require.NotNil(t, c)
 }
 
-// cancellingResolver cancels the caller's ctx and returns an unusable key, so
-// the failure surfaces in insurance.NewClient with a dead ctx.
-type cancellingResolver struct {
+// badKeyDoneCtxResolver returns an unusable key while the caller's ctx is
+// already done.
+type badKeyDoneCtxResolver struct {
 	flakyResolver
 	cancel context.CancelFunc
 }
 
-func (r *cancellingResolver) GetSecret(context.Context, string) (string, error) {
+func (r *badKeyDoneCtxResolver) GetSecret(context.Context, string) (string, error) {
 	r.cancel()
 	return testKey + "\x01suffix", nil
 }
 
-func TestClient_CancelDuringConstructionReportsCancellation(t *testing.T) {
+func TestClient_ConstructionFailureUnderDoneCtxStaysKeyUnavailable(t *testing.T) {
 	logs := captureWarnings(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	p := NewProvider(fullSettings(), &cancellingResolver{cancel: cancel}, nil)
+	p := NewProvider(fullSettings(), &badKeyDoneCtxResolver{cancel: cancel}, nil)
 	_, err := p.Client(ctx)
-	require.ErrorIs(t, err, context.Canceled)
-	require.NotErrorIs(t, err, ErrKeyUnavailable)
-	require.Empty(t, logs.String())
+	require.ErrorIs(t, err, ErrKeyUnavailable)
+	require.NotErrorIs(t, err, context.Canceled)
+	require.Contains(t, logs.String(), "archera: client initialization failed")
 	require.Nil(t, p.client.Load())
 }
 
