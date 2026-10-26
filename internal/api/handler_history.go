@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
@@ -192,7 +193,7 @@ const approvalExpiryWindow = 7 * 24 * time.Hour
 // the class reached its MaxListLimit cap, so older executions may have been
 // dropped before the filters ran, or its listing failed (issue #686).
 func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyFilters) ([]config.PurchaseHistoryRecord, []config.PurchaseExecution, bool) {
-	executions, ok := h.fetchExecutionsByClass(ctx, actionableExecutionStatuses, config.MaxListLimit)
+	executions, ok := h.fetchExecutionsByClass(ctx, actionableExecutionStatuses, filters.PlanID, config.MaxListLimit)
 	incomplete := !ok || len(executions) >= config.MaxListLimit
 	if len(executions) == 0 {
 		return nil, nil, incomplete
@@ -222,8 +223,17 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 // the class skipped (ok=false) so the other class and completed history still
 // render; the caller flags the response as incomplete so the hidden rows are
 // not silent (issue #686).
-func (h *Handler) fetchExecutionsByClass(ctx context.Context, statuses []string, limit int) ([]config.PurchaseExecution, bool) {
-	rows, err := h.config.GetExecutionsByStatuses(ctx, statuses, limit)
+//
+// A non-empty planID selects only that plan's executions in SQL, so a plan view
+// is not crowded out by other plans' rows under the limit.
+func (h *Handler) fetchExecutionsByClass(ctx context.Context, statuses []string, planID string, limit int) ([]config.PurchaseExecution, bool) {
+	var rows []config.PurchaseExecution
+	var err error
+	if planID != "" {
+		rows, err = h.config.ListHistoryExecutionsPage(ctx, config.HistoryExecutionsPageQuery{Statuses: statuses, PlanID: planID, Limit: limit})
+	} else {
+		rows, err = h.config.GetExecutionsByStatuses(ctx, statuses, limit)
+	}
 	if err != nil {
 		logging.Warnf("history: failed to load executions with statuses %v: %v", statuses, err)
 		return nil, false
@@ -805,14 +815,17 @@ func parseHistoryLimit(raw string) (int, error) {
 }
 
 // parseHistoryPlanID validates the optional plan_id filter; empty means none.
+// The value is trimmed and lowercased so the SQL predicate and the in-memory
+// execution check compare the same canonical text.
 func parseHistoryPlanID(raw string) (string, error) {
-	if raw == "" {
+	id := strings.TrimSpace(raw)
+	if id == "" {
 		return "", nil
 	}
-	if err := validateUUID(raw); err != nil {
+	if err := validateUUID(id); err != nil {
 		return "", NewClientError(400, "invalid plan_id: must be a UUID")
 	}
-	return raw, nil
+	return strings.ToLower(id), nil
 }
 
 // parseHistoryDateRange parses optional YYYY-MM-DD start/end strings. Both

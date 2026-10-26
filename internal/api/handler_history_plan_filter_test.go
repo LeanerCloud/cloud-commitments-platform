@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -21,6 +22,10 @@ func TestParseHistoryFilters_PlanID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, f.PlanID, "absent plan_id means no plan filter")
 
+	f, err = parseHistoryFilters(map[string]string{"plan_id": "  " + strings.ToUpper(planFilterUUID) + "\t"})
+	require.NoError(t, err)
+	assert.Equal(t, planFilterUUID, f.PlanID, "padded and uppercase plan_id is canonicalised")
+
 	for _, bad := range []string{"not-a-uuid", "' OR 1=1 --", "11111111-1111-4111-8111-11111111111"} {
 		_, err = parseHistoryFilters(map[string]string{"plan_id": bad})
 		require.Error(t, err, bad)
@@ -36,7 +41,7 @@ func TestHistoryFilters_PlanIDMatchesExecution(t *testing.T) {
 	assert.True(t, f.matchesExecution(config.PurchaseExecution{PlanID: planFilterUUID}))
 	assert.False(t, f.matchesExecution(config.PurchaseExecution{PlanID: "22222222-2222-4222-8222-222222222222"}))
 	assert.False(t, f.matchesExecution(config.PurchaseExecution{}), "a planless execution is not in any plan's history")
-	assert.True(t, historyFilters{}.matchesExecution(config.PurchaseExecution{}), "no plan filter keeps every execution")
+	assert.True(t, historyFilters{}.matchesExecution(config.PurchaseExecution{PlanID: planFilterUUID}), "no plan filter keeps a plan's execution")
 }
 
 // TestGetHistory_PlanIDReachesStoreFilters checks that plan_id reaches both the
