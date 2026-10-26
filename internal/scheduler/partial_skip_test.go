@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
+	"unsafe"
 
 	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -17,13 +19,16 @@ import (
 type skipErr struct {
 	msg     string
 	partial bool
+	count   int
 }
 
-func (e *skipErr) Error() string { return e.msg }
-func (e *skipErr) Partial() bool { return e.partial }
+func (e *skipErr) Error() string         { return e.msg }
+func (e *skipErr) Partial() bool         { return e.partial }
+func (e *skipErr) SkippedCount() int     { return e.count }
+func (e *skipErr) SkipReasons() []string { return nil }
 
 // skipMsg mirrors recskip.PartialResultError.Error() in the gcp provider
-// (internal package, not constructible from here).
+// (internal package, not constructible from here); only logged.
 const skipMsg = "gcp recommendations: 3 recommendation(s) skipped: computeengine us-east1: non-USD; cloudsql us-east1: bad plan"
 
 func gcpAmbient(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error) {
@@ -32,7 +37,7 @@ func gcpAmbient(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGa
 
 func TestGCPPartialResult_KeepsRecsAndRecordsSkips(t *testing.T) {
 	t.Setenv("GCP_PROJECT_ID", "proj-a")
-	s, _ := newPartialSweepScheduler(t, "gcp", &skipErr{msg: skipMsg, partial: true})
+	s, _ := newPartialSweepScheduler(t, "gcp", &skipErr{msg: skipMsg, partial: true, count: 3})
 
 	recs, roster, gap, err := gcpAmbient(s)
 
@@ -67,7 +72,7 @@ func TestGCPPartialResult_NonPartialErrorsStayHard(t *testing.T) {
 
 // A hard error that merely wraps or joins a partial one is still hard.
 func TestGCPPartialResult_WrappedOrJoinedStaysHard(t *testing.T) {
-	partial := &skipErr{msg: skipMsg, partial: true}
+	partial := &skipErr{msg: skipMsg, partial: true, count: 3}
 	for name, err := range map[string]error{
 		"wrapped": fmt.Errorf("collect: %w", partial),
 		"joined":  errors.Join(errors.New("hard"), partial),
@@ -97,7 +102,7 @@ func TestAzurePartialResultError_StaysHard(t *testing.T) {
 func TestGCPPartialResult_FanOutKeepsAccountEvictable(t *testing.T) {
 	accounts := []config.CloudAccount{{ID: "a1", Name: "a1", ExternalID: "p1"}, {ID: "a2", Name: "a2", ExternalID: "p2"}}
 	fn := func(_ context.Context, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
-		gap, err := tolerateIncompleteSweep("gcp", &skipErr{msg: skipMsg, partial: true})
+		gap, err := tolerateIncompleteSweep("gcp", &skipErr{msg: skipMsg, partial: true, count: 3})
 		if acct.ID == "a2" {
 			// A lost project in the same account hold back eviction as before.
 			gap = mergeSweepGaps(gap, gapFromPartialSubscriptions(partialSweepErr("p-x")))
@@ -115,11 +120,28 @@ func TestGCPPartialResult_FanOutKeepsAccountEvictable(t *testing.T) {
 	assert.Equal(t, 1, outcome.Gap.incompleteAccounts)
 }
 
-func TestGCPPartialResult_UnparsableCountStillRecorded(t *testing.T) {
-	gap, err := tolerateIncompleteSweep("gcp", &skipErr{msg: "something skipped", partial: true})
+// withSkips sets PartialSubscriptionFailureError's unexported skips field. The
+// library fills it only from a live multi-subscription sweep, so the real type
+// cannot otherwise be built with skips from outside the module.
+func withSkips(e *azureprovider.PartialSubscriptionFailureError, skipped ...string) {
+	f := reflect.ValueOf(e).Elem().FieldByName("skipped")
+	p := reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+	p.Set(reflect.ValueOf(&azureprovider.PartialResultError{Skipped: skipped}))
+}
+
+// go#641: a mixed Azure sweep (lost subscriptions plus dropped recs) records
+// the skipped count for the user warning but still holds eviction back.
+func TestAzureMixedSweep_RecordsSkipsAndHoldsEviction(t *testing.T) {
+	failure := partialSweepErr("sub-b")
+	withSkips(failure, "sub-a: non-USD", "sub-a: bad term")
+
+	gap, err := tolerateIncompleteSweep("azure", failure)
+
 	require.NoError(t, err)
 	require.NotNil(t, gap)
-	assert.Zero(t, gap.skippedRecommendations)
+	assert.Equal(t, 2, gap.skippedRecommendations)
+	assert.True(t, gap.holdsEviction(), "lost subscriptions still hold stale-row eviction")
+	assert.Equal(t, 1, gap.forAccount().incompleteAccounts)
 }
 
 // A truncated Azure Advisor walk (page error or page cap) is reported by the
