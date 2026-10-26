@@ -74,6 +74,19 @@ func TestUpdateConfigPropagatesOnlyChangedDefaults(t *testing.T) {
 	require.Equal(t, ec2, service("ec2"))
 	require.Equal(t, rds, service("rds"))
 
+	// A partial PUT of an unrelated key (#539) leaves the stored defaults and
+	// every service row untouched.
+	defaultsBefore, err := store.GetGlobalConfig(ctx)
+	require.NoError(t, err)
+	require.NoError(t, put(`{"notification_email": "ops@example.com"}`))
+	defaultsAfter, err := store.GetGlobalConfig(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []any{defaultsBefore.DefaultTerm, defaultsBefore.DefaultPayment, defaultsBefore.DefaultCoverage},
+		[]any{defaultsAfter.DefaultTerm, defaultsAfter.DefaultPayment, defaultsAfter.DefaultCoverage})
+	require.Equal(t, "ops@example.com", *defaultsAfter.NotificationEmail)
+	require.Equal(t, ec2, service("ec2"))
+	require.Equal(t, rds, service("rds"))
+
 	_, err = pg.DB.Pool().Exec(ctx, `
 		CREATE FUNCTION reject_service_config_update() RETURNS trigger AS $$
 		BEGIN RAISE EXCEPTION 'service_configs update rejected'; END $$ LANGUAGE plpgsql;
