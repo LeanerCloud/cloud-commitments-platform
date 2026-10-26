@@ -236,3 +236,16 @@ func TestApproveConstraintsForSession_PlanStep_PlanReadErrorFailsClosed(t *testi
 	err := f.handler.approveConstraintsForSession(context.Background(), nil, exec)
 	require.ErrorIs(t, err, assert.AnError)
 }
+
+func TestApproveViaToken_PlanStep_NonUSDCappedPlan(t *testing.T) {
+	exec, total := planStepExecution(t)
+	capAmount := total + 1
+
+	usd := newTokenApprove(t, nil, autoPlan(&capAmount))
+	requireApproveReached(t, usd.purchase, usd.approve(exec))
+
+	exec.Recommendations[0].CommitmentCurrency = "EUR"
+	eur := newTokenApprove(t, nil, autoPlan(&capAmount))
+	requireApproveRefused(t, eur.purchase, eur.approve(exec), 403)
+	assert.Equal(t, "pending", exec.Status)
+}
