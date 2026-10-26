@@ -3420,10 +3420,12 @@ function changedServiceFields(
     if (filters.min_count !== (base?.min_count ?? 0)) changes.min_count = filters.min_count;
   }
   if (Object.keys(changes).length === 0) return null;
-  if (!changes.payment && field.paymentId && base) {
+  if (!changes.payment && base) {
     // A stored payment the card normalises on load (#545) goes out with any
     // PUT of the row, or the backend validates the legacy token and rejects it.
-    const shown = byId<HTMLSelectElement>(field.paymentId)?.value;
+    // GCP cards have no payment control and GCP only accepts monthly, so a row
+    // holding another token (an AWS default copied onto it) is repaired too.
+    const shown = field.paymentId ? byId<HTMLSelectElement>(field.paymentId)?.value : field.provider === 'gcp' ? 'monthly' : undefined;
     if (shown && shown !== base.payment) changes.payment = shown;
   }
   return changes;
