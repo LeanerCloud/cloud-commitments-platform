@@ -15,7 +15,7 @@ ARG TARGETOS=linux
 # To refresh: `docker buildx imagetools inspect golang:1.26.10-alpine3.24`
 # (or use the Docker Hub API tags endpoint) and update the digest below.
 # A Renovate / Dependabot config can automate this if desired.
-FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine3.24@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca AS builder
 
 # Re-declare args for use in this stage
 ARG TARGETARCH
@@ -128,7 +128,7 @@ RUN npm run build
 # Runtime stage - multi-arch base image
 # ==============================================
 # Image pinned to a SHA256 digest for reproducible builds.
-# To refresh: `docker buildx imagetools inspect alpine:3.24.1` and update the
+# To refresh: `docker buildx imagetools inspect alpine:3.24.2` and update the
 # digest below. This is the multi-arch index digest, not a per-platform one, so
 # it stays correct for every TARGETARCH this image is built for.
 FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
