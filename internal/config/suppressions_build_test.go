@@ -313,16 +313,22 @@ func TestPurchaseSuppression_AppliesTo_LegacySharedTenancy(t *testing.T) {
 }
 
 func TestRecommendationRecord_SuppressionVariant_DetailsAZ(t *testing.T) {
-	mk := func(details string) RecommendationRecord {
-		return RecommendationRecord{Provider: "aws", Service: "ec2", Details: []byte(details)}
-	}
 	for name, tc := range map[string]struct{ details, want string }{
 		"padded AZ is trimmed":   {`{"availability_zone":" us-east-1a "}`, "us-east-1a"},
 		"non-string AZ is empty": {`{"availability_zone":5}`, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
-			rec := mk(tc.details)
-			assert.Equal(t, tc.want, rec.detailsAvailabilityZone())
+			rec := RecommendationRecord{Provider: "aws", Service: "ec2", Details: []byte(tc.details)}
+			v, err := rec.SuppressionVariant()
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, v.AvailabilityZone)
 		})
 	}
+}
+
+func TestCanonicalSuppressionTenancy(t *testing.T) {
+	assert.Equal(t, "default", canonicalSuppressionTenancy(" Shared "))
+	assert.Equal(t, "default", canonicalSuppressionTenancy("shared"))
+	assert.Equal(t, "Dedicated", canonicalSuppressionTenancy("Dedicated"))
+	assert.Equal(t, "default", canonicalSuppressionTenancy("default"))
 }

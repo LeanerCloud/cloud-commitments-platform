@@ -99,15 +99,15 @@ func isAWSEC2(provider, service string) bool {
 // common.NormalizeTenancyName is not used: it also case-folds and maps every
 // unknown value to "", which would make distinct unknown tenancies match.
 func canonicalSuppressionTenancy(t string) string {
-	if t == "shared" {
+	if strings.EqualFold(strings.TrimSpace(t), "shared") {
 		return "default"
 	}
 	return t
 }
 
 // detailsAvailabilityZone reads the zonal AZ from Details; "" when absent or
-// unreadable (ComputeIdentity has already reported a decode error), trimmed
-// like the other Details-AZ readers. A non-string zone yields "".
+// unreadable, trimmed like the other Details-AZ readers. A non-string zone is
+// treated as absent (regional), which can under-suppress; no producer writes one.
 func (r *RecommendationRecord) detailsAvailabilityZone() string {
 	var d struct {
 		AvailabilityZone string `json:"availability_zone"`
