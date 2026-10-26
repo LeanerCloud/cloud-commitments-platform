@@ -762,7 +762,8 @@ type SuppressionVariant struct {
 
 // awsLegacyServiceSlugs maps the AWS service slugs that rec rows persisted
 // before slug normalisation still carry to their canonical spelling.
-// memorydb has no canonical slug and is deliberately absent.
+// memorydb has no canonical slug and is deliberately absent. Mirrors the legacy
+// entries of mapServiceSlug in internal/purchase/execution.go.
 var awsLegacyServiceSlugs = map[string]string{
 	"ec2":         "compute",
 	"rds":         "relational-db",

@@ -359,11 +359,11 @@ func TestApplySuppressions_UnreadableRecDetailsMatchEveryRow(t *testing.T) {
 	assert.Equal(t, 3, out[0].Count)
 }
 
-// TestApplySuppressions_EC2SlugSpellings covers issues #1412 and #1420: AWS
+// TestApplySuppressions_AWSLegacySlugSpellings covers issues #1412 and #1420: AWS
 // recs and suppressions can be stored under a legacy or canonical slug, and a
 // suppression hides the rec whichever spelling each uses. Azure and GCP
 // "compute" stay distinct from "ec2".
-func TestApplySuppressions_EC2SlugSpellings(t *testing.T) {
+func TestApplySuppressions_AWSLegacySlugSpellings(t *testing.T) {
 	cases := []struct {
 		name, provider, recService, supService string
 		wantCount                              int
