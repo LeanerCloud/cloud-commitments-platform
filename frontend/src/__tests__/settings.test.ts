@@ -921,7 +921,7 @@ describe('Settings Module', () => {
         expect(api.updateConfig).not.toHaveBeenCalled();
         expect(api.updateServiceConfig).not.toHaveBeenCalled();
         expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
-          message: expect.stringContaining('Target coverage must be a whole number between 0 and 100'),
+          message: expect.stringContaining('coverage must be a whole number between 0 and 100 (savings-plans-compute)'),
           kind: 'error',
         }));
         expect(isUnsavedChanges()).toBe(true);
