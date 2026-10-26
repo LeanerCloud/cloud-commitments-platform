@@ -132,7 +132,12 @@ describe('Settings Save payment tokens (issue #545)', () => {
     editEveryServiceTerm();
     await saveGlobalSettings(new Event('submit'));
     // gcp/compute has a stored row, so only its term goes out; the new rows carry monthly.
-    expect(serviceCalls().filter(c => c.provider === 'gcp').every(c => c.payment === undefined || c.payment === 'monthly')).toBe(true);
+    const gcp = serviceCalls().filter(c => c.provider === 'gcp');
+    expect(gcp.map(c => [c.service, c.payment])).toEqual([
+      ['compute', undefined],
+      ['relational-db', 'monthly'],
+      ['cache', 'monthly'],
+    ]);
     expect(serviceCalls().some(c => c.service === 'storage')).toBe(false);
   });
 
@@ -255,6 +260,20 @@ describe('Settings Save payment tokens (issue #545)', () => {
 
     expect((document.getElementById('azure-vm-payment') as HTMLSelectElement).value).toBe(expected);
     expect(serviceCalls().find(c => c.provider === 'azure' && c.service === 'compute')!.payment).toBe(expected);
+  });
+
+  it('a stored legacy payment the card normalised on load goes out with a partial PUT of its row', async () => {
+    (api.getConfig as jest.Mock).mockResolvedValue({
+      global: { enabled_providers: ['azure'], default_term: 3, default_payment: 'all-upfront', default_coverage: 80 },
+      services: [{ provider: 'azure', service: 'compute', term: 3, payment: 'no-upfront', enabled: true, coverage: 80 }],
+    });
+    await loadGlobalSettings();
+    (document.getElementById('azure-vm-term') as HTMLSelectElement).value = '1';
+    await saveGlobalSettings(new Event('submit'));
+
+    expect((api.updateServiceConfig as jest.Mock).mock.calls).toEqual([
+      ['azure', 'compute', { provider: 'azure', service: 'compute', term: 1, payment: 'monthly' }],
+    ]);
   });
 
   it('never falls back to upfront when a payment select has no matching option at Save', async () => {

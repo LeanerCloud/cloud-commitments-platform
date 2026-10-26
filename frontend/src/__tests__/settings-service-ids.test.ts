@@ -151,6 +151,27 @@ describe('Settings Azure/GCP service ids (issue #613)', () => {
     expect(puts.find(c => c.provider === 'gcp' && c.service === 'cache')!.cfg['term']).toBe(1);
   });
 
+  it('writes a re-keyed row in full once, then only its changed fields', async () => {
+    mockConfig([
+      { provider: 'azure', service: 'vm', term: 1, payment: 'monthly', enabled: true, coverage: 80, ramp_schedule: 'r1' },
+    ]);
+    await loadGlobalSettings();
+    await saveGlobalSettings(new Event('submit'));
+    const first = servicePuts().filter(c => c.provider === 'azure' && c.service === 'compute');
+    expect(first).toHaveLength(1);
+    expect(first[0]!.cfg).toEqual(expect.objectContaining({ ramp_schedule: 'r1', coverage: 80 }));
+    (api.updateServiceConfig as jest.Mock).mockClear();
+
+    await saveGlobalSettings(new Event('submit'));
+    expect(servicePuts()).toEqual([]);
+
+    (document.getElementById('azure-vm-term') as HTMLSelectElement).value = '3';
+    await saveGlobalSettings(new Event('submit'));
+    const second = servicePuts();
+    expect(second).toHaveLength(1);
+    expect(Object.keys(second[0]!.cfg).sort()).toEqual(['provider', 'service', 'term']);
+  });
+
   it('prefers a row already stored under the current id over its legacy twin', async () => {
     mockConfig([
       { provider: 'azure', service: 'vm', term: 1, payment: 'monthly', enabled: true, coverage: 80 },

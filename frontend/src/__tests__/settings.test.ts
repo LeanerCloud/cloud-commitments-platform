@@ -895,6 +895,21 @@ describe('Settings Module', () => {
         });
       });
 
+      test('a filter saved by one Save is not resent by the next', async () => {
+        await loadStaleTab();
+        const regions = document.createElement('input');
+        regions.id = 'aws-ec2-include-regions';
+        regions.value = 'us-east-1';
+        document.getElementById('global-settings-form')!.appendChild(regions);
+        await save();
+        expect(api.updateServiceConfig).toHaveBeenCalledTimes(1);
+        (api.updateServiceConfig as jest.Mock).mockClear();
+
+        await save();
+
+        expect(api.updateServiceConfig).not.toHaveBeenCalled();
+      });
+
       test('a second save after a service PUT succeeded resends nothing', async () => {
         await loadStaleTab();
         (document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value = '65';
