@@ -62,6 +62,9 @@ func (h *Handler) insuranceClient(ctx context.Context) (insurance.QuoteClient, e
 		if errors.Is(err, archera.ErrNotConfigured) {
 			return nil, notConfiguredError(h.insurance.Status().Missing)
 		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, NewClientError(504, "Archera comparison timed out")
+		}
 		return nil, NewClientError(503, "Archera API key could not be resolved from "+archera.EnvKeySecret)
 	}
 	return client, nil
