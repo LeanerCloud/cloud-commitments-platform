@@ -128,12 +128,11 @@ func (p *Provider) Client(ctx context.Context) (insurance.QuoteClient, error) {
 	if c := p.client.Load(); c != nil {
 		return c, nil
 	}
-	select {
-	case p.sem <- struct{}{}:
-		defer func() { <-p.sem }()
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	release, err := p.acquire(ctx)
+	if err != nil {
+		return nil, err
 	}
+	defer release()
 	if c := p.client.Load(); c != nil {
 		return c, nil
 	}
@@ -152,4 +151,19 @@ func (p *Provider) Client(ctx context.Context) (insurance.QuoteClient, error) {
 	}
 	p.client.Store(c)
 	return c, nil
+}
+
+// acquire takes the build slot, or returns ctx.Err() if ctx ends first.
+func (p *Provider) acquire(ctx context.Context) (func(), error) {
+	select {
+	case p.sem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	// select picks randomly when both cases are ready; never resolve with a dead ctx.
+	if err := ctx.Err(); err != nil {
+		<-p.sem
+		return nil, err
+	}
+	return func() { <-p.sem }, nil
 }

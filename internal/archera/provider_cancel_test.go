@@ -2,6 +2,8 @@ package archera
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -71,4 +73,52 @@ func TestClient_CachedClientSkipsHeldSemaphore(t *testing.T) {
 	got, err := p.Client(ctx)
 	require.NoError(t, err)
 	require.Equal(t, c, got)
+}
+
+func TestClient_CancelledCallerWinningTheSlotNeverResolves(t *testing.T) {
+	res := &flakyResolver{}
+	p := NewProvider(fullSettings(), res, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for i := 0; i < 200; i++ {
+		_, err := p.Client(ctx)
+		require.ErrorIs(t, err, context.Canceled)
+	}
+	require.Zero(t, res.calls.Load(), "resolver must not be called with a dead ctx")
+}
+
+// slowResolver counts calls and sleeps so racing callers overlap the build.
+type slowResolver struct {
+	flakyResolver
+	n atomic.Int32
+}
+
+func (s *slowResolver) GetSecret(context.Context, string) (string, error) {
+	s.n.Add(1)
+	time.Sleep(100 * time.Millisecond)
+	return testKey, nil
+}
+
+func TestClient_ConcurrentCallersShareOneBuild(t *testing.T) {
+	r := &slowResolver{}
+	p := NewProvider(fullSettings(), r, nil)
+	const n = 20
+	got := make([]any, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, err := p.Client(context.Background())
+			if err == nil {
+				got[i] = c
+			}
+		}()
+	}
+	wg.Wait()
+	require.EqualValues(t, 1, r.n.Load(), "resolver called exactly once")
+	require.NotNil(t, got[0])
+	for i := range got {
+		require.Same(t, got[0], got[i])
+	}
 }
