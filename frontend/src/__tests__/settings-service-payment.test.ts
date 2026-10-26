@@ -48,6 +48,12 @@ function mountRealIndexHtml(): void {
   document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
 }
 
+// Flip every per-service term card so each row counts as edited and is PUT.
+function editEveryServiceTerm(): void {
+  document.querySelectorAll<HTMLSelectElement>('select[id^="aws-"][id$="-term"], select[id^="azure-"][id$="-term"], select[id^="gcp-"][id$="-term"]')
+    .forEach(sel => { sel.value = sel.value === '1' ? '3' : '1'; });
+}
+
 type ServiceCall = { provider: string; service: string; payment: string };
 
 function serviceCalls(): ServiceCall[] {
@@ -76,6 +82,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
 
   async function save(): Promise<void> {
     await loadGlobalSettings();
+    editEveryServiceTerm();
     await saveGlobalSettings(new Event('submit'));
   }
 
@@ -93,6 +100,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
 
   it('sends the Azure option the user picked, and GCP monthly whatever the global default is', async () => {
     await loadGlobalSettings();
+    editEveryServiceTerm();
     (document.getElementById('azure-vm-payment') as HTMLSelectElement).value = 'monthly';
     (document.getElementById('setting-default-payment') as HTMLSelectElement).value = 'partial-upfront';
     await saveGlobalSettings(new Event('submit'));
@@ -121,8 +129,10 @@ describe('Settings Save payment tokens (issue #545)', () => {
     await expect(loadGlobalSettings()).resolves.not.toThrow();
     expect(document.getElementById('gcp-storage-term')).toBeNull();
     expect((document.getElementById('gcp-compute-term') as HTMLSelectElement).value).toBe('1');
+    editEveryServiceTerm();
     await saveGlobalSettings(new Event('submit'));
-    expect(serviceCalls().filter(c => c.provider === 'gcp').every(c => c.payment === 'monthly')).toBe(true);
+    // gcp/compute has a stored row, so only its term goes out; the new rows carry monthly.
+    expect(serviceCalls().filter(c => c.provider === 'gcp').every(c => c.payment === undefined || c.payment === 'monthly')).toBe(true);
     expect(serviceCalls().some(c => c.service === 'storage')).toBe(false);
   });
 
@@ -160,7 +170,8 @@ describe('Settings Save payment tokens (issue #545)', () => {
 
     await saveGlobalSettings(new Event('submit'));
 
-    expect(api.updateServiceConfig).toHaveBeenCalledTimes(17);
+    // Only the two edited rows are PUT (#539).
+    expect(api.updateServiceConfig).toHaveBeenCalledTimes(2);
     expect(mockShowToast).toHaveBeenCalledTimes(1);
     expect(mockShowToast).toHaveBeenCalledWith({
       message: 'Settings saved, but 1 service failed: azure/compute: invalid payment option',
@@ -203,6 +214,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
       throw provider === 'aws' && service === 'ec2' ? new Error('boom') : denied();
     });
     await loadGlobalSettings();
+    editEveryServiceTerm();
 
     await saveGlobalSettings(new Event('submit'));
 
@@ -218,6 +230,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
     await loadGlobalSettings();
     const notify = document.getElementById('setting-notification-days') as HTMLInputElement;
     notify.value = '9';
+    editEveryServiceTerm();
 
     await saveGlobalSettings(new Event('submit'));
 

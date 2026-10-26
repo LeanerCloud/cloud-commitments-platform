@@ -113,6 +113,9 @@ describe('Settings Azure/GCP service ids (issue #613)', () => {
 
   it('every Azure/GCP id the cards save and the override list offers is a backend service slug', async () => {
     await loadGlobalSettings();
+    // Only edited rows are saved (#539): edit each Azure/GCP term.
+    document.querySelectorAll<HTMLSelectElement>('select[id^="azure-"][id$="-term"], select[id^="gcp-"][id$="-term"]')
+      .forEach(sel => { sel.value = sel.value === '1' ? '3' : '1'; });
     await saveGlobalSettings(new Event('submit'));
     const slugs = backendServiceSlugs();
     const offered: string[] = [];
