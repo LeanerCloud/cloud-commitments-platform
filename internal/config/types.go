@@ -798,7 +798,9 @@ func (s *PurchaseSuppression) AppliesTo(v *SuppressionVariant) bool {
 		return true
 	}
 	a, b := *s.Variant, *v
-	a.Tenancy, b.Tenancy = canonicalSuppressionTenancy(a.Tenancy), canonicalSuppressionTenancy(b.Tenancy)
+	if isAWSEC2(s.Provider, s.Service) {
+		a.Tenancy, b.Tenancy = canonicalSuppressionTenancy(a.Tenancy), canonicalSuppressionTenancy(b.Tenancy)
+	}
 	return a == b
 }
 
