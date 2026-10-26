@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -42,4 +43,31 @@ func TestMapExecutionSettleError(t *testing.T) {
 	}
 	other := errors.New("db down")
 	require.Equal(t, other, mapExecutionSettleError(other), "an internal error is not a client error")
+}
+
+// settleSpyStore records whether the settle write was reached.
+type settleSpyStore struct {
+	*MockConfigStore
+	settleCalls int
+}
+
+func (s *settleSpyStore) SettleFailedExecution(context.Context, config.ExecutionSettleRequest) (*config.ExecutionSettlement, error) {
+	s.settleCalls++
+	return nil, NewClientError(418, "test sentinel: settle reached")
+}
+
+// The settlement is stamped as outcome_settled_by, so the stateless admin key,
+// which has no user identity, is refused before anything is read or written.
+func TestSettleExecution_AdminAPIKeyRefused(t *testing.T) {
+	ctx := context.Background()
+	store := &settleSpyStore{MockConfigStore: new(MockConfigStore)}
+	handler := &Handler{config: store, apiKey: fourEyesAdminKey}
+
+	_, err := handler.settleExecution(ctx, adminKeyRequest(`{"reason":"checked the subscription: nothing was bought","acknowledge_unknown_outcome":true}`), "11111111-1111-4111-8111-111111111111")
+
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+	require.Equal(t, 403, ce.code)
+	require.Contains(t, ce.message, "signed-in user or a user API key")
+	require.Zero(t, store.settleCalls)
 }

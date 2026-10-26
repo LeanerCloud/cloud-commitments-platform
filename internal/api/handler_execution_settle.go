@@ -56,6 +56,11 @@ func (h *Handler) settleExecution(ctx context.Context, req *events.LambdaFunctio
 	if err != nil {
 		return nil, err
 	}
+	// The settlement is stamped as outcome_settled_by and retires a possibly-bought
+	// row from retry, so it needs an identified person, not the stateless admin key.
+	if session.UserID == apiKeyAdminUserID {
+		return nil, NewClientError(403, "settling an execution needs a signed-in user or a user API key")
+	}
 	body, err := decodeExecutionSettle(req.Body)
 	if err != nil {
 		return nil, err
