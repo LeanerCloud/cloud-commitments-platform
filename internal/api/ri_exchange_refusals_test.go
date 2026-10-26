@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -77,12 +78,13 @@ func TestExecuteExchange_NonUSDQuoteRefusedAs422(t *testing.T) {
 func TestMapExchangeErrors_Refusals(t *testing.T) {
 	notUSD := fmt.Errorf("aborting exchange at accept time: %w", fmt.Errorf("%w: quote is in %q", exchange.ErrQuoteNotUSD, "EUR"))
 	scope := fmt.Errorf("azure: CalculateExchange: sources[0]: %w", azurecompute.ErrUnsupportedAppliedScope)
+	currency := fmt.Errorf("azure: CalculateExchange: calculateExchange bills in EUR but the expected currency is USD; refusing to exchange: %w", common.ErrCurrencyNotAccepted)
 	mappers := map[string]func(string, error) error{
 		"aws":   mapAWSExchangeError,
 		"azure": mapAzureExchangeError,
 	}
 	for name, mapErr := range mappers {
-		for _, refusal := range []error{notUSD, scope} {
+		for _, refusal := range []error{notUSD, scope, currency} {
 			t.Run(name+"/"+refusal.Error(), func(t *testing.T) {
 				ce, ok := IsClientError(mapErr("op failed", refusal))
 				require.True(t, ok)
