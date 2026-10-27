@@ -86,6 +86,53 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright.outputs.version }}-chromium
 
+      # Cache the .deb files, not /var/cache/apt/archives itself (root-owned, and
+      # the cache action cannot write there). #1538: `install-deps` pulls ~26 MB
+      # from azure.archive.ubuntu.com, which sometimes serves at 20-50 KB/s and
+      # busts the step timeout. Same split restore/save as the browser, for the
+      # same reason.
+      - name: Restore Chromium system deps
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/playwright-apt
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright.outputs.version }}-chromium-apt
+
+      - name: Install Chromium system deps
+        # Same 8-minute cap and rationale as the #1869 fix: a wedge must fail
+        # this step by name instead of cancelling the job. The mirror stall in
+        # #1538 hit this cap three times on 2026-10-27; with the debs restored
+        # apt only refreshes its index.
+        timeout-minutes: 8
+        env:
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          # Make sure apt keeps what it downloads, or the miss path below has
+          # nothing to save. The snippet sorts after docker-clean, so it also
+          # overrides that file's Keep-Downloaded-Packages=false; docker-clean's
+          # post-invoke hook would still delete the debs, so drop it if present.
+          echo 'APT::Keep-Downloaded-Packages "true";' | sudo tee /etc/apt/apt.conf.d/99-keep-debs >/dev/null
+          sudo rm -f /etc/apt/apt.conf.d/docker-clean
+          if [ -d "${HOME}/.cache/playwright-apt" ]; then
+            sudo cp -n "${HOME}"/.cache/playwright-apt/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          fi
+          npx playwright install-deps chromium
+          if [ "${APT_CACHE_HIT}" != 'true' ]; then
+            mkdir -p "${HOME}/.cache/playwright-apt"
+            cp /var/cache/apt/archives/*.deb "${HOME}/.cache/playwright-apt/" 2>/dev/null || true
+            echo "debs to cache: $(find "${HOME}/.cache/playwright-apt" -name '*.deb' | wc -l)"
+          fi
+
+      - name: Save Chromium system deps
+        # Skipped on a hit, and on an install failure (an untaken `if:` still
+        # implies success()), so only debs from a completed install reach the key.
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/playwright-apt
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
+
       - name: Install Chromium
         # This step timeout is the fix for #1869, where this install wedged
         # five times on 2026-08-19 (#1864, #1868) and ran until the job cap,
@@ -100,10 +147,14 @@ jobs:
         # Above the healthy maximum, below every wedge, under the job cap.
         # That gap is also why there is no retry: an attempt capped under 381s
         # fails healthy runs, and two capped above it do not fit in the job.
+        # Kept at 8 now that apt is a separate step: those measurements were
+        # taken on the combined step, so there is no data yet for a tighter cap
+        # on the browser download alone.
         timeout-minutes: 8
         # Idempotent on a cache hit: skips the download when the restored
-        # browser is complete and re-fetches when it is not.
-        run: npx playwright install --with-deps chromium
+        # browser is complete and re-fetches when it is not. System deps are
+        # the previous step's job.
+        run: npx playwright install chromium
 
       - name: Save Chromium
         # Skipped on a hit, and on an install failure (an untaken `if:` still
