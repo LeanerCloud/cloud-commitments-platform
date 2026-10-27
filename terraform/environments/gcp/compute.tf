@@ -101,6 +101,9 @@ module "compute_cloud_run" {
   # Billing account (for billing.viewer IAM binding at account level)
   billing_account_id = var.billing_account_id
 
+  # OIDC signing key: create-time only, see the variable (#324)
+  signing_key_destroy_scheduled_duration = var.signing_key_destroy_scheduled_duration
+
   # Additional environment variables
   archera_org_id            = var.archera_org_id
   archera_plan_id           = var.archera_plan_id
@@ -117,7 +120,8 @@ module "compute_cloud_run" {
       CUDLY_MAX_ACCOUNT_PARALLELISM       = tostring(var.max_account_parallelism)
       CUDLY_SOURCE_CLOUD                  = "gcp"
     },
-    var.additional_env_vars
+    var.additional_env_vars,
+    local.db_pool_env
   )
 
   labels = local.common_labels
@@ -202,7 +206,8 @@ module "compute_gke" {
       CUDLY_MAX_ACCOUNT_PARALLELISM       = tostring(var.max_account_parallelism)
       CUDLY_SOURCE_CLOUD                  = "gcp"
     },
-    var.additional_env_vars
+    var.additional_env_vars,
+    local.db_pool_env
   )
 
   labels = local.common_labels

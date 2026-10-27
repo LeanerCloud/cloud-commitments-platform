@@ -158,6 +158,17 @@ describe('HTML Structure', () => {
       const upcoming = document.getElementById('upcoming-purchases');
       expect(upcoming).toBeTruthy();
     });
+
+    // Issue #52: the longest savings-trend range is capped at 365 days by the
+    // analytics API, so its button must not promise "All" history.
+    test('labels the longest savings-trend range 1y, not All (issue #52)', () => {
+      const labels = Array.from(document.querySelectorAll<HTMLButtonElement>('.trend-range'))
+        .map(b => b.textContent?.trim());
+      expect(labels).toEqual(['7d', '30d', '90d', '1y']);
+      const longest = document.querySelector<HTMLButtonElement>('.trend-range[data-range="all"]');
+      expect(longest?.textContent?.trim()).toBe('1y');
+      expect(longest?.title).toBe('Last 365 days');
+    });
   });
 
   describe('Recommendations Tab', () => {
@@ -283,6 +294,30 @@ describe('HTML Structure', () => {
       const payment = document.getElementById('setting-default-payment');
       expect(payment).toBeTruthy();
     });
+
+    // Issue #345: settings coverage only drives the Dashboard target and its
+    // savings scaling; purchase plans size by their own Target Coverage.
+    test('labels settings coverage as a Dashboard target, not purchase sizing', () => {
+      const labelFor = (id: string) =>
+        document.querySelector(`label[for="${id}"]`)?.textContent?.trim()
+        ?? document.getElementById(id)?.closest('label')?.textContent?.trim();
+
+      expect(labelFor('setting-default-coverage')).toBe('Dashboard Coverage Target (%)');
+      for (const sp of ['compute', 'ec2instance', 'sagemaker', 'database']) {
+        expect(labelFor(`aws-savings-plans-${sp}-coverage`)).toBe('Dashboard coverage %:');
+      }
+      expect(labelFor('override-coverage')).toBe('Dashboard coverage (%):');
+
+      const help = document.getElementById('coverage-display-only-help');
+      expect(help?.textContent).toContain('do not change how much CUDly buys');
+      expect(document.getElementById('setting-default-coverage')?.getAttribute('aria-describedby'))
+        .toBe('coverage-display-only-help');
+    });
+
+    test('keeps the plan form Target Coverage label, which sizes plan steps', () => {
+      const plan = document.getElementById('plan-coverage');
+      expect(plan?.closest('label')?.textContent?.trim()).toBe('Target Coverage (%):');
+    });
   });
 
   describe('Modals', () => {
@@ -355,6 +390,14 @@ describe('HTML Structure', () => {
         const href = link.getAttribute('href');
         expect(href).toBeTruthy();
       });
+    });
+
+    // Issue #729 (UX-36): aria-label on a role-less div is ignored by
+    // assistive tech (axe: aria-allowed-attr / aria-prohibited-attr).
+    test('the global filter container is a labelled group', () => {
+      const filters = document.getElementById('topbar-filters');
+      expect(filters?.getAttribute('role')).toBe('group');
+      expect(filters?.getAttribute('aria-label')).toBe('Global filters');
     });
   });
 
@@ -782,6 +825,22 @@ describe('HTML Structure', () => {
       expect(link?.getAttribute('rel') ?? '').toMatch(/noopener/);
       // Link target must be the AWS console role-creation wizard.
       expect(link?.getAttribute('href')).toBe('https://console.aws.amazon.com/iam/home#/roles$new');
+    });
+
+    test('profile entry point is a keyboard-focusable button (#715)', () => {
+      const el = document.getElementById('user-email-display');
+      expect(el?.tagName.toLowerCase()).toBe('button');
+      expect(el?.getAttribute('type')).toBe('button');
+      // Inert until updateUserUI shows it with the signed-in email.
+      expect(el?.hasAttribute('hidden')).toBe(true);
+    });
+
+    test('every target="_blank" link sets rel="noopener noreferrer" (#136)', () => {
+      const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[target="_blank"]'));
+      expect(links.length).toBeGreaterThan(0);
+      for (const link of links) {
+        expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+      }
     });
   });
 });

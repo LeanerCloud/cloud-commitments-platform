@@ -22,7 +22,7 @@ type MockProviderFactory struct {
 	mock.Mock
 }
 
-func (m *MockProviderFactory) CreateAndValidateProvider(ctx context.Context, name string, cfg *provider.ProviderConfig) (provider.Provider, error) {
+func (m *MockProviderFactory) CreateAndValidateProvider(ctx context.Context, name string, cfg *provider.Config) (provider.Provider, error) {
 	args := m.Called(ctx, name, cfg)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -194,6 +194,15 @@ func (m *MockEmailSender) SendPurchaseConfirmation(ctx context.Context, data ema
 func (m *MockEmailSender) SendPurchaseFailedNotification(ctx context.Context, data email.NotificationData) error {
 	args := m.Called(ctx, data)
 	return args.Error(0)
+}
+
+// allowFailedNotification lets a test whose execution ends failed or
+// partially_completed receive the purchase-failed email that outcome now sends
+// (issue #714) without asserting on it. Tests that pin the notification itself
+// register their own expectation instead (failure_notify_test.go).
+func allowFailedNotification(s *MockEmailSender) *MockEmailSender {
+	s.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).Return(nil).Maybe()
+	return s
 }
 
 func (m *MockEmailSender) SendPasswordResetEmail(ctx context.Context, emailAddr, resetURL string) error {
