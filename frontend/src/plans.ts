@@ -1072,10 +1072,7 @@ async function editPlan(planId: string): Promise<boolean> {
     const rampRadio = document.querySelector<HTMLInputElement>(`input[name="ramp-schedule"][value="${rampValue}"]`);
     if (rampRadio) rampRadio.checked = true;
 
-    const customConfig = document.getElementById('custom-ramp-config');
-    if (customConfig) {
-      customConfig.classList.toggle('hidden', rampValue !== 'custom');
-    }
+    setCustomRampConfigVisible(rampValue === 'custom');
 
     if (rampValue === 'custom') {
       (document.getElementById('ramp-step-percent') as HTMLInputElement).value = String(rampSchedule.percent_per_step || 20);
@@ -1514,6 +1511,7 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
 
   // Set up ramp schedule change handlers for dynamic plan name
   setupRampScheduleHandlers();
+  syncCustomRampConfigToSelection();
 
   // Wire live range validation on all five numeric inputs (#702).
   wirePlanRangeInputs();
@@ -1568,6 +1566,7 @@ export function openNewPlanModal(): void {
 
   // Set up ramp schedule change handlers for dynamic plan name
   setupRampScheduleHandlers();
+  syncCustomRampConfigToSelection();
 
   // Wire live range validation on all five numeric inputs (#702).
   wirePlanRangeInputs();
@@ -1748,10 +1747,7 @@ function setupRampScheduleHandlers(): void {
       updatePlanNameFromSchedule();
 
       // Show/hide custom config
-      const customConfig = document.getElementById('custom-ramp-config');
-      if (customConfig) {
-        customConfig.classList.toggle('hidden', radio.value !== 'custom');
-      }
+      setCustomRampConfigVisible(radio.value === 'custom');
     });
   });
 
@@ -1890,6 +1886,24 @@ function validateAndFixCombination(): void {
   if (!isValidCombination(provider, service, term, payment)) {
     // Invalid combination - update payment to first valid option
     updatePaymentOptionsForTerm();
+  }
+}
+
+function syncCustomRampConfigToSelection(): void {
+  const checked = document.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked');
+  setCustomRampConfigVisible(checked?.value === 'custom');
+}
+
+/**
+ * Show or hide the custom ramp config. A hidden input is disabled so its value,
+ * which a preset fills with 0 days, is skipped by native validation instead of
+ * blocking Save on a control the user cannot reach (#1536).
+ */
+function setCustomRampConfigVisible(visible: boolean): void {
+  document.getElementById('custom-ramp-config')?.classList.toggle('hidden', !visible);
+  for (const id of ['ramp-step-percent', 'ramp-interval-days']) {
+    const input = document.getElementById(id) as HTMLInputElement | null;
+    if (input) input.disabled = !visible;
   }
 }
 
