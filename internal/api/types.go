@@ -841,6 +841,15 @@ type PlanRequest struct {
 	Enabled           bool     `json:"enabled"`
 }
 
+// validateTargetCoverage refuses an explicit target outside 1..100: the plan
+// executor rejects 0, so a stored 0% plan would fail on every tick.
+func (r *PlanRequest) validateTargetCoverage() error {
+	if r.TargetCoverage != nil && (*r.TargetCoverage < 1 || *r.TargetCoverage > 100) {
+		return NewClientError(400, "target_coverage must be between 1 and 100 for a purchase plan")
+	}
+	return nil
+}
+
 // toPurchasePlan converts a PlanRequest to a config.PurchasePlan.
 func (r *PlanRequest) toPurchasePlan() *config.PurchasePlan {
 	now := time.Now()
@@ -920,7 +929,7 @@ func (r *PlanRequest) buildServiceConfig() map[string]config.ServiceConfig {
 		payment = "no-upfront"
 	}
 
-	// nil is an omitted field (API clients get the default); an explicit 0 is a real 0% target.
+	// nil is an omitted field (create defaults it to 80); an explicit value is kept as sent.
 	coverage := float64(config.DefaultCoveragePercent)
 	if r.TargetCoverage != nil {
 		coverage = float64(*r.TargetCoverage)

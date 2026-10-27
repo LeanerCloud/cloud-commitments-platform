@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { mockApi, seedAuth } from './fixtures/recs';
 
-// Issue #523: a 0% target is a real value, so it is sent as 0, and an emptied
-// coverage field is refused instead of becoming 0 (Number('') is 0).
-test('Create plan sends a 0% target as 0 and refuses an empty coverage field', async ({ page }) => {
+// Issue #523: the plan executor rejects a 0% target, so the form refuses 0 and an
+// emptied field (Number('') is 0) and posts the lowest valid target, 1, as 1.
+test('Create plan refuses an empty or 0% coverage and posts 1 as 1', async ({ page }) => {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1'
     ? route.fallback() : route.abort());
   await seedAuth(page);
@@ -29,13 +29,22 @@ test('Create plan sends a 0% target as 0 and refuses an empty coverage field', a
   const save = page.getByRole('button', { name: 'Save Plan' });
   await expect(save).toBeEnabled();
 
-  await modal.locator('#plan-coverage').fill('');
+  const coverage = modal.locator('#plan-coverage');
+  await coverage.fill('');
   await save.click();
-  await expect(page.locator('.toast, [role="status"]').filter({ hasText: 'Target Coverage must be a whole number' }).first()).toBeVisible();
+  await expect(page.locator('.toast, [role="status"]').filter({ hasText: 'Target Coverage must be a whole number between 1 and 100' }).first()).toBeVisible();
   expect(posts).toHaveLength(0);
 
-  await modal.locator('#plan-coverage').fill('0');
+  // Clicking Save would blur the field and clamp 0 up to 1, so submit with Enter:
+  // the min=1 constraint must stop the 0 before any request is made.
+  await coverage.fill('0');
+  expect(await coverage.evaluate((el: HTMLInputElement) => el.validity.rangeUnderflow)).toBe(true);
+  await coverage.press('Enter');
+  await page.waitForTimeout(300);
+  expect(posts).toHaveLength(0);
+
+  await modal.locator('#plan-coverage').fill('1');
   await save.click();
   await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0]).toMatchObject({ target_coverage: 0 });
+  expect(posts[0]).toMatchObject({ target_coverage: 1 });
 });

@@ -3,7 +3,7 @@
  * inputs (issue #702).
  *
  * Covers wireRangeInput (via wirePlanRangeInputs) for:
- *   #plan-coverage       min=0  max=100
+ *   #plan-coverage       min=1  max=100
  *   #ramp-step-percent   min=1  max=100
  *   #ramp-interval-days  min=1  max=365  (max attr was previously missing)
  *   #plan-notify-days    min=1  max=30
@@ -178,7 +178,7 @@ function buildPlanModalDOM(): void {
   ]);
 
   // The five numeric inputs under test (min/max match HTML spec + issue #702)
-  addInput(form, 'plan-coverage', 'number', '80', { min: '0', max: '100' });
+  addInput(form, 'plan-coverage', 'number', '80', { min: '1', max: '100' });
 
   const autoPurchase = document.createElement('input');
   autoPurchase.id = 'plan-auto-purchase';
@@ -247,8 +247,9 @@ describe('plan numeric inputs: live range validation (#702)', () => {
   // --- out-of-range values show inline error --------------------------------
 
   it.each([
-    ['plan-coverage', '101', 'Must be a whole number between 0 and 100'],
-    ['plan-coverage', '-1', 'Must be a whole number between 0 and 100'],
+    ['plan-coverage', '101', 'Must be a whole number between 1 and 100'],
+    ['plan-coverage', '0', 'Must be a whole number between 1 and 100'],
+    ['plan-coverage', '-1', 'Must be a whole number between 1 and 100'],
     ['ramp-step-percent', '0', 'Must be a whole number between 1 and 100'],
     ['ramp-step-percent', '101', 'Must be a whole number between 1 and 100'],
     ['ramp-interval-days', '0', 'Must be a whole number between 1 and 365'],
@@ -300,7 +301,7 @@ describe('plan numeric inputs: live range validation (#702)', () => {
 
   it.each([
     ['plan-coverage', '80'],
-    ['plan-coverage', '0'],
+    ['plan-coverage', '1'],
     ['plan-coverage', '100'],
     ['ramp-step-percent', '25'],
     ['ramp-interval-days', '7'],

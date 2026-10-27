@@ -1146,7 +1146,7 @@ export async function savePlan(e: Event): Promise<void> {
   // validatePurchasingSettings (feedback_strict_int_parse, finding 11-M1).
   const rawTerm = Number((document.getElementById('plan-term') as HTMLSelectElement).value);
   const coverageText = (document.getElementById('plan-coverage') as HTMLInputElement).value.trim();
-  // Number('') is 0, which the server keeps as a real 0% target.
+  // Number('') is 0, so an emptied field must not reach the range check as 0.
   const rawCoverage = coverageText === '' ? NaN : Number(coverageText);
   const rawNotifyDays = Number((document.getElementById('plan-notify-days') as HTMLInputElement).value);
 
@@ -1154,8 +1154,8 @@ export async function savePlan(e: Event): Promise<void> {
     showToast({ message: 'Term must be a valid whole number of years', kind: 'error' });
     return;
   }
-  if (!Number.isFinite(rawCoverage) || !Number.isInteger(rawCoverage) || rawCoverage < 0 || rawCoverage > 100) {
-    showToast({ message: 'Target Coverage must be a whole number between 0 and 100', kind: 'error' });
+  if (!Number.isFinite(rawCoverage) || !Number.isInteger(rawCoverage) || rawCoverage < 1 || rawCoverage > 100) {
+    showToast({ message: 'Target Coverage must be a whole number between 1 and 100', kind: 'error' });
     return;
   }
   if (!Number.isFinite(rawNotifyDays) || !Number.isInteger(rawNotifyDays) || rawNotifyDays < 1 || rawNotifyDays > 30) {
@@ -1733,7 +1733,7 @@ function wireRangeInput(inputId: string, min: number, max: number): void {
  * the create and edit flows.
  */
 function wirePlanRangeInputs(): void {
-  wireRangeInput('plan-coverage', 0, 100);
+  wireRangeInput('plan-coverage', 1, 100);
   wireRangeInput('ramp-step-percent', 1, 100);
   wireRangeInput('ramp-interval-days', 1, 365);
   wireRangeInput('plan-notify-days', 1, 30);

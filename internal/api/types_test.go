@@ -205,14 +205,14 @@ func planFromBody(t *testing.T, body string) *PlanRequest {
 	return &req
 }
 
-func TestPlanRequest_TargetCoverageAbsentVersusZero(t *testing.T) {
+func TestPlanRequest_TargetCoverageDefault(t *testing.T) {
 	const base = `{"name":"p","provider":"aws","service":"ec2"`
 	tests := []struct {
 		name string
 		body string
 		want float64
 	}{
-		{"explicit 0 is kept", base + `,"target_coverage":0}`, 0},
+		{"explicit 1 is kept", base + `,"target_coverage":1}`, 1},
 		{"omitted defaults to 80", base + `}`, 80},
 		{"explicit value is kept", base + `,"target_coverage":55}`, 55},
 	}
@@ -224,23 +224,30 @@ func TestPlanRequest_TargetCoverageAbsentVersusZero(t *testing.T) {
 	}
 }
 
-func TestMergeUpdatedPlan_KeepsZeroTargetCoverage(t *testing.T) {
-	req := planFromBody(t, `{"name":"renamed","provider":"aws","service":"ec2","term":3,"payment":"no-upfront",`+
-		`"target_coverage":0,"ramp_schedule":"immediate","notification_days_before":3,"enabled":true}`)
-	plan, err := mergeUpdatedPlan(multiServicePlan(), req, spPlanID, false)
-	require.NoError(t, err)
-	assert.Equal(t, 0.0, plan.Services["aws/ec2"].Coverage)
-}
-
-func TestMergeUpdatedPlan_RejectsOutOfRangeTargetCoverage(t *testing.T) {
-	for _, cov := range []string{"101", "-1"} {
-		t.Run(cov, func(t *testing.T) {
-			req := planFromBody(t, `{"name":"n","provider":"aws","service":"ec2","target_coverage":`+cov+
-				`,"ramp_schedule":"immediate","notification_days_before":3,"enabled":true}`)
-			_, err := mergeUpdatedPlan(multiServicePlan(), req, spPlanID, false)
+func TestPlanRequest_validateTargetCoverage(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{"omitted is allowed", `{"name":"p"}`, false},
+		{"1 is allowed", `{"target_coverage":1}`, false},
+		{"100 is allowed", `{"target_coverage":100}`, false},
+		{"0 is refused", `{"target_coverage":0}`, true},
+		{"-1 is refused", `{"target_coverage":-1}`, true},
+		{"101 is refused", `{"target_coverage":101}`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := planFromBody(t, tt.body).validateTargetCoverage()
+			if !tt.wantErr {
+				require.NoError(t, err)
+				return
+			}
 			ce, ok := IsClientError(err)
 			require.True(t, ok)
 			assert.Equal(t, 400, ce.code)
+			assert.Equal(t, "target_coverage must be between 1 and 100 for a purchase plan", ce.message)
 		})
 	}
 }
