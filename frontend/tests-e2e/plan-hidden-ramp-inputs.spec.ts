@@ -71,6 +71,8 @@ test('Edit as the first modal, then Custom, lets the user type custom ramp value
   const modal = page.locator('#plan-modal');
   await expect(modal).toBeVisible();
 
+  await expect(modal.locator('#plan-term')).toHaveValue('1');
+  await expect(modal.locator('#plan-payment')).toHaveValue('no-upfront');
   await modal.locator('.ramp-option').filter({ hasText: 'Custom' }).click();
   await expect(modal.locator('#custom-ramp-config')).toBeVisible();
   await expect(modal.locator('#ramp-step-percent')).toBeEnabled();

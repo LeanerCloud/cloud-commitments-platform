@@ -149,6 +149,29 @@ describe('custom ramp inputs when Edit is the first plan modal (#1536)', () => {
     expect(intervalInput().disabled).toBe(false);
   });
 
+  async function editFirst(term: number | null, payment: string): Promise<void> {
+    const stored = plan('weekly', 25, 7) as { services: { ec2: Record<string, unknown> } };
+    if (term === null) delete stored.services.ec2['term']; else stored.services.ec2['term'] = term;
+    stored.services.ec2['payment'] = payment;
+    (api.getPlans as jest.Mock).mockResolvedValue({ plans: [stored] });
+    (api.getPlan as jest.Mock).mockResolvedValue(stored);
+    setupPlanHandlers();
+    await loadPlans();
+    (document.querySelector('[data-action="edit-plan"]') as HTMLButtonElement).click();
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  test('Edit-first leaves an absent stored term unset', async () => {
+    await editFirst(null, 'no-upfront');
+    expect((document.getElementById('plan-term') as HTMLSelectElement).value).toBe('');
+  });
+
+  test('Edit-first keeps the stored term and a non-default payment', async () => {
+    await editFirst(1, 'all-upfront');
+    expect((document.getElementById('plan-term') as HTMLSelectElement).value).toBe('1');
+    expect((document.getElementById('plan-payment') as HTMLSelectElement).value).toBe('all-upfront');
+  });
+
   test('Create opens with the hidden custom inputs disabled', () => {
     setupPlanHandlers();
     openCreatePlanModal();
