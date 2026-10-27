@@ -73,6 +73,8 @@ jobs:
           version="$(jq -re '.packages["node_modules/@playwright/test"].version' package-lock.json)"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Playwright ${version}"
+          # The env context lacks runner-provided variables, so surface the image.
+          echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
       # Split restore/save rather than the combined actions/cache, whose save is
       # a post step gated on `post-if: success()` and so skips the run being
@@ -94,9 +96,12 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/playwright-apt
-          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright.outputs.version }}-chromium-apt
+          # Keyed on the runner image too: the packages come partly from
+          # noble-updates, so debs cached on an older image can go stale.
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.image }}-chromium-apt
 
       - name: Install Chromium system deps
+        id: apt-deps
         # Same 8-minute cap and rationale as the #1869 fix: a wedge must fail
         # this step by name instead of cancelling the job. The mirror stall in
         # #1538 hit this cap three times on 2026-10-27; with the debs restored
@@ -119,13 +124,16 @@ jobs:
           if [ "${APT_CACHE_HIT}" != 'true' ]; then
             mkdir -p "${HOME}/.cache/playwright-apt"
             cp /var/cache/apt/archives/*.deb "${HOME}/.cache/playwright-apt/" 2>/dev/null || true
-            echo "debs to cache: $(find "${HOME}/.cache/playwright-apt" -name '*.deb' | wc -l)"
+            count="$(find "${HOME}/.cache/playwright-apt" -name '*.deb' | wc -l | tr -d ' ')"
+            echo "debs to cache: ${count}"
+            echo "count=${count}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Save Chromium system deps
         # Skipped on a hit, and on an install failure (an untaken `if:` still
         # implies success()), so only debs from a completed install reach the key.
-        if: steps.apt-cache.outputs.cache-hit != 'true'
+        # Also skipped when apt kept no debs: an empty save would hit forever.
+        if: steps.apt-cache.outputs.cache-hit != 'true' && steps.apt-deps.outputs.count != '0' && steps.apt-deps.outputs.count != ''
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/playwright-apt
