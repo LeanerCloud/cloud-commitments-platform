@@ -1072,6 +1072,8 @@ async function editPlan(planId: string): Promise<boolean> {
     const rampRadio = document.querySelector<HTMLInputElement>(`input[name="ramp-schedule"][value="${rampValue}"]`);
     if (rampRadio) rampRadio.checked = true;
 
+    // Edit can be the first modal opened; without the handlers a later Custom pick would leave the inputs disabled (#1536).
+    setupRampScheduleHandlers();
     setCustomRampConfigVisible(rampValue === 'custom');
 
     if (rampValue === 'custom') {
