@@ -2317,6 +2317,17 @@ paths:
             schema:
               type: object
               required: [ri_ids]
+              anyOf:
+                - required: [targets]
+                  properties:
+                    targets:
+                      minItems: 1
+                - required: [target_offering_id, target_count]
+                  properties:
+                    target_offering_id:
+                      minLength: 1
+                    target_count:
+                      minimum: 1
               description: >
                 One of `targets` or `target_offering_id` with `target_count`
                 is required, otherwise 400. When both are present, `targets`
@@ -2337,7 +2348,6 @@ paths:
                 target_count:
                   type: integer
                   format: int32
-                  minimum: 1
                   description: Legacy single-target form. Needs `target_offering_id`.
                 region:
                   type: string
@@ -2406,6 +2416,17 @@ paths:
             schema:
               type: object
               required: [ri_ids, max_payment_due_usd, region]
+              anyOf:
+                - required: [targets]
+                  properties:
+                    targets:
+                      minItems: 1
+                - required: [target_offering_id, target_count]
+                  properties:
+                    target_offering_id:
+                      minLength: 1
+                    target_count:
+                      minimum: 1
               description: >
                 One of `targets` or `target_offering_id` with `target_count`
                 is required, otherwise 400. When both are present, `targets`
@@ -2426,7 +2447,6 @@ paths:
                 target_count:
                   type: integer
                   format: int32
-                  minimum: 1
                   description: Legacy single-target form. Needs `target_offering_id`.
                 max_payment_due_usd:
                   type: string
