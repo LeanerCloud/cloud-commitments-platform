@@ -31,16 +31,14 @@ jobs:
   playwright:
     name: Playwright Chromium
     runs-on: ubuntu-latest
-    # Raised from 10 so the install step's own 8-minute cap is always what
-    # fires. Every other step at its worst across all attempts sums to 78s
-    # (75s if you look only at green runs, which understates it, and no sample
-    # exercised the spec-failure path at all), plus roughly 30s for the cache
-    # restore and save. So a full 480s install lands at ~600s: exactly the old
-    # cap, leaving nothing for the job timeout to be a backstop with. And a
-    # job timeout cancels, which is the conclusion #1869 is about. A cap is
-    # not a cost: the median successful job takes 69s, and only pathological
-    # runs ever approach either limit.
-    timeout-minutes: 12
+    # Leave room for both separately capped Chromium installs to run
+    # sequentially, then finish the remaining steps and retain a job-level
+    # backstop. Each install can take 8 minutes, and the other steps need up to
+    # about 108s based on measured worst cases, so 20 minutes leaves a small
+    # margin without changing either step's fail-fast cap. A cap is not a cost:
+    # the median successful job takes 69s, and only pathological runs approach
+    # either limit.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
