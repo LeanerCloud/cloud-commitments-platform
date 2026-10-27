@@ -2316,6 +2316,33 @@ paths:
           application/json:
             schema:
               type: object
+              required: [ri_ids]
+              description: >
+                One of `targets` or `target_offering_id` with `target_count`
+                is required, otherwise 400. When both are present, `targets`
+                wins.
+              properties:
+                ri_ids:
+                  type: array
+                  items:
+                    type: string
+                targets:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ExchangeTarget'
+                target_offering_id:
+                  type: string
+                  description: Legacy single-target form. Needs `target_count`.
+                target_count:
+                  type: integer
+                  minimum: 1
+                  description: Legacy single-target form. Needs `target_offering_id`.
+                region:
+                  type: string
+                  minLength: 1
+                  description: >
+                    AWS region to price the quote in. Defaults to the
+                    deployment's region.
       responses:
         '200':
           description: Exchange quote
@@ -2327,6 +2354,7 @@ paths:
                 properties:
                   Region:
                     type: string
+                    minLength: 1
                     description: >
                       AWS region the quote was priced in. Always set. Send
                       this same value as `region` on
@@ -2376,7 +2404,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [ri_ids, targets, max_payment_due_usd, region]
+              required: [ri_ids, max_payment_due_usd, region]
+              description: >
+                One of `targets` or `target_offering_id` with `target_count`
+                is required, otherwise 400. When both are present, `targets`
+                wins.
               properties:
                 ri_ids:
                   type: array
@@ -2385,12 +2417,20 @@ paths:
                 targets:
                   type: array
                   items:
-                    type: object
+                    $ref: '#/components/schemas/ExchangeTarget'
+                target_offering_id:
+                  type: string
+                  description: Legacy single-target form. Needs `target_count`.
+                target_count:
+                  type: integer
+                  minimum: 1
+                  description: Legacy single-target form. Needs `target_offering_id`.
                 max_payment_due_usd:
                   type: string
                   description: Spend-cap guardrail (decimal string, e.g. "1000.00")
                 region:
                   type: string
+                  minLength: 1
                   description: >
                     AWS region to execute in. Required: a missing region is
                     rejected with 400 rather than defaulted, since an exchange
@@ -5929,6 +5969,17 @@ components:
         display_name:
           type: string
 
+    ExchangeTarget:
+      type: object
+      description: One AWS RI offering to acquire in an exchange.
+      required: [offering_id, count]
+      properties:
+        offering_id:
+          type: string
+        count:
+          type: integer
+          minimum: 1
+
     AzureExchangeTarget:
       type: object
       description: One Azure VM reservation to acquire in an exchange.
@@ -6217,6 +6268,7 @@ components:
             type: string
         system_managed:
           type: boolean
+          readOnly: true
           description: >
             True for a built-in group seeded and maintained by migrations
             (for example Administrators and Purchaser). Updating or deleting
