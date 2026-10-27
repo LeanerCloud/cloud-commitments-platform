@@ -3468,15 +3468,18 @@ function showPropagatedCoverage(coverage: number, sentFields: Record<string, str
 
 const GRACE_INPUTS = [['aws', 'setting-grace-aws'], ['azure', 'setting-grace-azure'], ['gcp', 'setting-grace-gcp']] as const;
 
-const isFieldChanged = (id: string): boolean => getFieldValue(id) !== savedSnapshot[id];
 
 /**
  * grace_period_days and enabled_providers are replaced whole by the backend, so
  * a tab opened before another admin's save would revert that admin's providers
  * (#539). Re-read the server's current value and overlay only the fields this
- * user changed. Rejects, leaving nothing sent, if the server value is unavailable.
+ * user changed, judged by the values captured at Save (the form may change while
+ * the read is pending). Rejects, leaving nothing sent, if the server value is unavailable.
  */
-async function rebaseMultiFieldKeys(changedGlobal: Partial<api.Config>): Promise<void> {
+async function rebaseMultiFieldKeys(
+  changedGlobal: Partial<api.Config>,
+  isFieldChanged: (id: string) => boolean,
+): Promise<void> {
   const fresh = await api.getConfig();
   if (!fresh?.global) throw new Error('could not load the current settings to merge into');
   if ('grace_period_days' in changedGlobal) {
@@ -3487,13 +3490,13 @@ async function rebaseMultiFieldKeys(changedGlobal: Partial<api.Config>): Promise
     changedGlobal.grace_period_days = merged;
   }
   if ('enabled_providers' in changedGlobal) {
-    const merged: api.Provider[] = [...((fresh.global.enabled_providers ?? []) as api.Provider[])];
+    let merged: api.Provider[] = [...((fresh.global.enabled_providers ?? []) as api.Provider[])];
     for (const provider of ['aws', 'azure', 'gcp'] as const) {
       if (!isFieldChanged(`provider-${provider}`)) continue;
       const at = merged.indexOf(provider);
       const checked = changedGlobal.enabled_providers!.includes(provider);
       if (checked && at < 0) merged.push(provider);
-      if (!checked && at >= 0) merged.splice(at, 1);
+      if (!checked) merged = merged.filter(p => p !== provider);
     }
     changedGlobal.enabled_providers = merged;
   }
@@ -3643,13 +3646,14 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
     // saves itself (ladder.ts). Multi-field keys (grace map, enabled_providers)
     // are replaced whole by the backend, so rebaseMultiFieldKeys merges them first.
     const changedGlobal: Partial<api.Config> = { ...settings };
+    const isFieldChanged = (id: string): boolean => sentFields[id] !== savedSnapshot[id];
     for (const [key, ids] of GLOBAL_CONFIG_FIELDS) {
       if (!ids.some(isFieldChanged)) delete changedGlobal[key];
     }
     const globalSent = Object.keys(changedGlobal).length > 0;
     if (globalSent) {
       if ('grace_period_days' in changedGlobal || 'enabled_providers' in changedGlobal) {
-        await rebaseMultiFieldKeys(changedGlobal);
+        await rebaseMultiFieldKeys(changedGlobal, isFieldChanged);
       }
       await api.updateConfig(changedGlobal);
       // Persisted: advance the snapshot now, so a later validation failure or

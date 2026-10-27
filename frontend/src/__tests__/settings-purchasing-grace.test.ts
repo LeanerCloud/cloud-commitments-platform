@@ -472,6 +472,50 @@ describe('Settings → stale-tab Save rebases multi-field keys onto the server (
     expect(sent()).toEqual({ notification_email: 'new@test.com' });
   });
 
+  // Holds the server read open so the form can change between click and PUT.
+  const holdServerRead = (server: Record<string, unknown>): (() => void) => {
+    let release!: () => void;
+    (api.getConfig as jest.Mock).mockReset().mockImplementation(() => new Promise(r => {
+      release = () => r({ global: { ...baseGlobal, ...server }, services: [] });
+    }));
+    return () => release();
+  };
+
+  it('judges grace changes by the values captured at Save, not the form after the read', async () => {
+    await loadStaleTab({ enabled_providers: ['aws'], grace_period_days: { aws: 7, azure: 7, gcp: 7 } }, {});
+    input('setting-grace-azure').value = '9';
+    const release = holdServerRead({ enabled_providers: ['aws'], grace_period_days: { aws: 3, azure: 7, gcp: 7 } });
+
+    const saving = submit();
+    input('setting-grace-aws').value = '12';
+    release();
+    await saving;
+
+    expect(sent()).toEqual({ grace_period_days: { aws: 3, azure: 9, gcp: 7 } });
+  });
+
+  it('judges provider changes by the values captured at Save, not the form after the read', async () => {
+    await loadStaleTab({ enabled_providers: ['aws', 'azure'] }, {});
+    input('provider-azure').checked = false;
+    const release = holdServerRead({ enabled_providers: ['aws', 'azure', 'gcp'] });
+
+    const saving = submit();
+    input('provider-gcp').checked = true;
+    release();
+    await saving;
+
+    expect(sent()).toEqual({ enabled_providers: ['aws', 'gcp'] });
+  });
+
+  it('removes every copy of an unchecked provider the server lists twice', async () => {
+    await loadStaleTab({ enabled_providers: ['aws', 'azure'] }, { enabled_providers: ['aws', 'aws', 'azure'] });
+    input('provider-aws').checked = false;
+
+    await submit();
+
+    expect(sent()).toEqual({ enabled_providers: ['azure'] });
+  });
+
   it('omits a provider the server has no grace value for when it is unchanged', async () => {
     await loadStaleTab(
       { enabled_providers: ['aws'], grace_period_days: { aws: 7, azure: 7, gcp: 7 } },
