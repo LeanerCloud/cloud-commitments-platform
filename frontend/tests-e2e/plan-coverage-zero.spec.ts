@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { mockApi, seedAuth } from './fixtures/recs';
 
-// Issue #523: the plan executor rejects a 0% target, so the form refuses 0 and an
+// Issue #523: the plan executor rejects a 0% target, so the form refuses 0 (without clamping it to 1) and an
 // emptied field (Number('') is 0) and posts the lowest valid target, 1, as 1.
 test('Create plan refuses an empty or 0% coverage and posts 1 as 1', async ({ page }) => {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1'
@@ -35,12 +35,11 @@ test('Create plan refuses an empty or 0% coverage and posts 1 as 1', async ({ pa
   await expect(page.locator('.toast, [role="status"]').filter({ hasText: 'Target Coverage must be a whole number between 1 and 100' }).first()).toBeVisible();
   expect(posts).toHaveLength(0);
 
-  // Clicking Save would blur the field and clamp 0 up to 1, so submit with Enter:
-  // the min=1 constraint must stop the 0 before any request is made.
+  // Clicking Save blurs the field; it must keep 0 and be refused, not clamped to 1.
   await coverage.fill('0');
-  expect(await coverage.evaluate((el: HTMLInputElement) => el.validity.rangeUnderflow)).toBe(true);
-  await coverage.press('Enter');
-  await page.waitForTimeout(300);
+  await save.click();
+  await expect(page.locator('.toast, [role="status"]').filter({ hasText: 'Target Coverage must be a whole number between 1 and 100' }).first()).toBeVisible();
+  await expect(coverage).toHaveValue('0');
   expect(posts).toHaveLength(0);
 
   await modal.locator('#plan-coverage').fill('1');

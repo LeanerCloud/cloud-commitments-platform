@@ -343,13 +343,25 @@ describe('plan numeric inputs: live range validation (#702)', () => {
   // --- blur clamps the value to [min, max] ---------------------------------
 
   it('out-of-range value is clamped to max on blur', () => {
-    const input = document.getElementById('plan-coverage') as HTMLInputElement;
+    const input = document.getElementById('ramp-step-percent') as HTMLInputElement;
     input.value = '150';
     fire(input, 'blur');
 
     expect(input.value).toBe('100');
     expect(input.getAttribute('aria-invalid')).toBeNull();
-    expect(errorEl('plan-coverage')!.classList.contains('hidden')).toBe(true);
+    expect(errorEl('ramp-step-percent')!.classList.contains('hidden')).toBe(true);
+  });
+
+  // A clamped 0 would silently become a 1% plan that buys (#523).
+  it.each(['0', '150'])('plan-coverage %s is not rewritten on blur and keeps its error', (value) => {
+    const input = document.getElementById('plan-coverage') as HTMLInputElement;
+    input.value = value;
+    fire(input, 'input');
+    fire(input, 'blur');
+
+    expect(input.value).toBe(value);
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(errorEl('plan-coverage')!.classList.contains('hidden')).toBe(false);
   });
 
   it('below-min value is clamped to min on blur', () => {

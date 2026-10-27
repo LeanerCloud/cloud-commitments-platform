@@ -1655,7 +1655,7 @@ function updatePlanNameFromSchedule(): void {
  * `max` parameters are used instead of reading HTML attributes so callers are
  * the source of truth and the helper stays self-contained.
  */
-function wireRangeInput(inputId: string, min: number, max: number): void {
+function wireRangeInput(inputId: string, min: number, max: number, clamp = true): void {
   const input = document.getElementById(inputId) as HTMLInputElement | null;
   if (!input) return;
 
@@ -1724,7 +1724,7 @@ function wireRangeInput(inputId: string, min: number, max: number): void {
   };
 
   input.addEventListener('input', check);
-  input.addEventListener('blur', clampOnBlur);
+  if (clamp) input.addEventListener('blur', clampOnBlur);
 }
 
 /**
@@ -1733,7 +1733,8 @@ function wireRangeInput(inputId: string, min: number, max: number): void {
  * the create and edit flows.
  */
 function wirePlanRangeInputs(): void {
-  wireRangeInput('plan-coverage', 1, 100);
+  // No clamp: a clamped 0 would silently become a 1% plan that buys; savePlan refuses it.
+  wireRangeInput('plan-coverage', 1, 100, false);
   wireRangeInput('ramp-step-percent', 1, 100);
   wireRangeInput('ramp-interval-days', 1, 365);
   wireRangeInput('plan-notify-days', 1, 30);
