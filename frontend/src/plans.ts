@@ -1145,7 +1145,9 @@ export async function savePlan(e: Event): Promise<void> {
   // to 2. Mirrors the strict parse pattern from handleAddPurchases and settings.ts
   // validatePurchasingSettings (feedback_strict_int_parse, finding 11-M1).
   const rawTerm = Number((document.getElementById('plan-term') as HTMLSelectElement).value);
-  const rawCoverage = Number((document.getElementById('plan-coverage') as HTMLInputElement).value);
+  const coverageText = (document.getElementById('plan-coverage') as HTMLInputElement).value.trim();
+  // Number('') is 0, which the server keeps as a real 0% target.
+  const rawCoverage = coverageText === '' ? NaN : Number(coverageText);
   const rawNotifyDays = Number((document.getElementById('plan-notify-days') as HTMLInputElement).value);
 
   if (!Number.isFinite(rawTerm) || !Number.isInteger(rawTerm) || rawTerm < 1) {

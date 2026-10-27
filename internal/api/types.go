@@ -828,7 +828,7 @@ type PlanRequest struct {
 	Provider               string   `json:"provider,omitempty"`
 	Service                string   `json:"service,omitempty"`
 	TargetAccounts         []string `json:"target_accounts,omitempty"`
-	TargetCoverage         int      `json:"target_coverage,omitempty"`
+	TargetCoverage         *int     `json:"target_coverage,omitempty"`
 	Term                   int      `json:"term,omitempty"`
 	NotificationDaysBefore int      `json:"notification_days_before"`
 	CustomStepPercent      int      `json:"custom_step_percent,omitempty"`
@@ -920,9 +920,10 @@ func (r *PlanRequest) buildServiceConfig() map[string]config.ServiceConfig {
 		payment = "no-upfront"
 	}
 
-	coverage := float64(r.TargetCoverage)
-	if coverage == 0 {
-		coverage = 80
+	// nil is an omitted field (API clients get the default); an explicit 0 is a real 0% target.
+	coverage := float64(config.DefaultCoveragePercent)
+	if r.TargetCoverage != nil {
+		coverage = float64(*r.TargetCoverage)
 	}
 
 	return map[string]config.ServiceConfig{

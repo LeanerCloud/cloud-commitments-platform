@@ -1583,6 +1583,27 @@ describe('Plans Module', () => {
         expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
       });
 
+      test('rejects an empty target_coverage instead of sending 0 (#523)', async () => {
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+          message: 'Target Coverage must be a whole number between 0 and 100',
+          kind: 'error',
+        }));
+      });
+
+      test('sends an explicit target_coverage of 0 as 0 (#523)', async () => {
+        (api.createPlan as jest.Mock).mockResolvedValue({});
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '0';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).toHaveBeenCalledWith(expect.objectContaining({ target_coverage: 0 }));
+      });
+
       test('rejects NaN notification_days_before (e.g. empty string after clear)', async () => {
         (document.getElementById('plan-notify-days') as HTMLInputElement).value = 'abc';
         const event = { preventDefault: jest.fn() } as unknown as Event;

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -57,7 +58,7 @@ func TestPlanRequest_toPurchasePlan(t *testing.T) {
 			Service:        "ec2",
 			Term:           1,
 			Payment:        "all-upfront",
-			TargetCoverage: 90,
+			TargetCoverage: ptr(90),
 		}
 
 		plan := req.toPurchasePlan()
@@ -195,4 +196,51 @@ func TestPlanRequest_toPurchasePlan(t *testing.T) {
 			})
 		}
 	})
+}
+
+func planFromBody(t *testing.T, body string) *PlanRequest {
+	t.Helper()
+	var req PlanRequest
+	require.NoError(t, json.Unmarshal([]byte(body), &req))
+	return &req
+}
+
+func TestPlanRequest_TargetCoverageAbsentVersusZero(t *testing.T) {
+	const base = `{"name":"p","provider":"aws","service":"ec2"`
+	tests := []struct {
+		name string
+		body string
+		want float64
+	}{
+		{"explicit 0 is kept", base + `,"target_coverage":0}`, 0},
+		{"omitted defaults to 80", base + `}`, 80},
+		{"explicit value is kept", base + `,"target_coverage":55}`, 55},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := planFromBody(t, tt.body).toPurchasePlan()
+			assert.Equal(t, tt.want, plan.Services["aws/ec2"].Coverage)
+		})
+	}
+}
+
+func TestMergeUpdatedPlan_KeepsZeroTargetCoverage(t *testing.T) {
+	req := planFromBody(t, `{"name":"renamed","provider":"aws","service":"ec2","term":3,"payment":"no-upfront",`+
+		`"target_coverage":0,"ramp_schedule":"immediate","notification_days_before":3,"enabled":true}`)
+	plan, err := mergeUpdatedPlan(multiServicePlan(), req, spPlanID, false)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, plan.Services["aws/ec2"].Coverage)
+}
+
+func TestMergeUpdatedPlan_RejectsOutOfRangeTargetCoverage(t *testing.T) {
+	for _, cov := range []string{"101", "-1"} {
+		t.Run(cov, func(t *testing.T) {
+			req := planFromBody(t, `{"name":"n","provider":"aws","service":"ec2","target_coverage":`+cov+
+				`,"ramp_schedule":"immediate","notification_days_before":3,"enabled":true}`)
+			_, err := mergeUpdatedPlan(multiServicePlan(), req, spPlanID, false)
+			ce, ok := IsClientError(err)
+			require.True(t, ok)
+			assert.Equal(t, 400, ce.code)
+		})
+	}
 }
