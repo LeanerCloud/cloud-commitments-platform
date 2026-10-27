@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -450,55 +449,6 @@ func (s *PostgresStore) CreateAdminIfNone(ctx context.Context, user *User) (bool
 	return tag.RowsAffected() > 0, nil
 }
 
-// DeleteGroup deletes a group.
-func (s *PostgresStore) DeleteGroup(ctx context.Context, groupID string) error {
-	query := `DELETE FROM groups WHERE id = $1`
-
-	result, err := s.db.Exec(ctx, query, groupID)
-	if err != nil {
-		return fmt.Errorf("failed to delete group: %w", err)
-	}
-
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("group not found: %s", groupID)
-	}
-
-	return nil
-}
-
-// ListGroups lists all groups.
-func (s *PostgresStore) ListGroups(ctx context.Context) ([]Group, error) {
-	// LIMIT provides a safety cap against unbounded memory allocation.
-	// Pagination support should be added if this limit proves insufficient.
-	query := `
-		SELECT id, name, description, permissions, allowed_accounts,
-		       system_managed, created_at, updated_at, created_by
-		FROM groups
-		ORDER BY created_at DESC
-		LIMIT 10000
-	`
-
-	rows, err := s.db.Query(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list groups: %w", err)
-	}
-	defer rows.Close()
-
-	groups := make([]Group, 0)
-	for rows.Next() {
-		group, err := s.scanGroup(rows)
-		if err != nil {
-			return nil, err
-		}
-		if group == nil {
-			continue
-		}
-		groups = append(groups, *group)
-	}
-
-	return groups, rows.Err()
-}
-
 // ==========================================
 // SESSION OPERATIONS
 // ==========================================
@@ -678,48 +628,6 @@ func (s *PostgresStore) scanUser(scanner Scanner) (*User, error) {
 	user.DeactivatedAt = nullTimePtr(deactivatedAt)
 
 	return &user, nil
-}
-
-// scanGroup scans a group from a database row.
-func (s *PostgresStore) scanGroup(scanner Scanner) (*Group, error) {
-	var group Group
-	var permissionsJSON []byte
-	var allowedAccounts []string
-	var createdBy sql.NullString
-
-	err := scanner.Scan(
-		&group.ID,
-		&group.Name,
-		&group.Description,
-		&permissionsJSON,
-		&allowedAccounts,
-		&group.SystemManaged,
-		&group.CreatedAt,
-		&group.UpdatedAt,
-		&createdBy,
-	)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, pgx.ErrNoRows
-		}
-		return nil, fmt.Errorf("failed to scan group: %w", err)
-	}
-
-	// Unmarshal permissions — guard against NULL column, consistent with scanAPIKey
-	if len(permissionsJSON) > 0 {
-		if err := json.Unmarshal(permissionsJSON, &group.Permissions); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal permissions: %w", err)
-		}
-	}
-
-	group.AllowedAccounts = allowedAccounts
-
-	if createdBy.Valid {
-		group.CreatedBy = createdBy.String
-	}
-
-	return &group, nil
 }
 
 // Ping checks the database connection health.
