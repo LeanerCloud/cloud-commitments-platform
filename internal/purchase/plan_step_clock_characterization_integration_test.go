@@ -68,7 +68,7 @@ func b3C1Read(f *cumFixture) b3C1Snapshot {
 		require.NotEmpty(f.t, suppression.ID)
 		require.False(f.t, suppression.CreatedAt.IsZero())
 		require.True(f.t, suppression.ExpiresAt.After(suppression.CreatedAt))
-		require.Equal(f.t, config.PurchaseSuppression{ID: suppression.ID, ExecutionID: s.rows[2][0].ExecutionID, AccountID: f.account, Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.t0", SuppressedCount: 20, CreatedAt: suppression.CreatedAt, ExpiresAt: suppression.ExpiresAt}, suppression)
+		require.Equal(f.t, config.PurchaseSuppression{ID: suppression.ID, ExecutionID: s.rows[2][0].ExecutionID, AccountID: f.account, Provider: "aws", Service: "compute", Region: "us-east-1", ResourceType: "m5.t0", SuppressedCount: 20, CreatedAt: suppression.CreatedAt, ExpiresAt: suppression.ExpiresAt}, suppression)
 	}
 	return s
 }
