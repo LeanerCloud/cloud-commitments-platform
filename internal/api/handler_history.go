@@ -159,12 +159,7 @@ var actionableExecutionStatuses = []string{"pending", "notified", "scheduled", "
 // partial-failure marker and is flagged IsAuditGap so its execution-level
 // dollars are excluded from the dashboard totals — the committed dollars are
 // already counted via the per-rec purchase_history rows that succeeded.
-// Both the US-spelling status (config.StatusCanceled) and the legacy British
-// spelling (config.LegacyStatusCanceled) are listed: during the expand-contract
-// rename (migration 000089) old code may still write the legacy value before
-// the rolling deploy completes. The contract migration (#1278) normalizes the
-// data once the deploy is verified stable; drop the legacy entry here then.
-var terminalExecutionStatuses = []string{"completed", "partially_completed", "failed", "expired", config.StatusCanceled, config.LegacyStatusCanceled}
+var terminalExecutionStatuses = []string{"completed", "partially_completed", "failed", "expired", config.StatusCanceled}
 
 // approvalExpiryWindow is how long a pending approval stays actionable
 // before the History view flips it to "expired". Aligns with the
@@ -430,10 +425,7 @@ func annotateHistoryRowByStatus(row *config.PurchaseHistoryRecord, exec config.P
 		row.StatusDescription = exec.Error
 	case "expired":
 		row.StatusDescription = "approval link expired (not approved within 7 days)"
-	case config.StatusCanceled, config.LegacyStatusCanceled:
-		// The legacy British spelling is still matched during the
-		// expand-contract rename (migration 000089) until the contract
-		// migration (#1278) normalizes and drops it.
+	case config.StatusCanceled:
 		annotateCancelled(row, exec, approver)
 	default:
 		// In-flight (approved/running/scheduled/paused) and audit-gap
@@ -1231,14 +1223,10 @@ func addNonCompletedRowToSummary(summary *HistorySummary, status string, n int) 
 		summary.TotalFailed += n
 	case "expired":
 		summary.TotalExpired += n
-	case config.StatusCanceled, config.LegacyStatusCanceled:
+	case config.StatusCanceled:
 		// A canceled purchase represents zero committed spend and zero
 		// realized savings (issue #736). Exclude from all dollar KPIs and
-		// from TotalCompleted -- the money was never committed. The legacy
-		// British spelling is matched alongside the US one during the
-		// expand-contract rename (migration 000089) so legacy rows can't
-		// inflate KPIs mid-deploy; the contract migration (#1278) drops it
-		// once the deploy is stable.
+		// from TotalCompleted -- the money was never committed.
 	default:
 		return false
 	}
