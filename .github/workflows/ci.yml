@@ -1068,7 +1068,8 @@ jobs:
           done
 
       # Each database module must default to deletion protection and honor
-      # an explicit opt-out (#293). Skips a cloud until it has a tests dir.
+      # an explicit opt-out (#293); AWS's multi_az must default off and reach
+      # aws_db_instance.main (#719). Skips a cloud until it has a tests dir.
       - name: Test database module
         env:
           CLOUD: ${{ matrix.cloud }}
