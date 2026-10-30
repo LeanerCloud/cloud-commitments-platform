@@ -2900,10 +2900,10 @@ describe('Bundle B: column header filter triggers', () => {
       document.querySelectorAll<HTMLLabelElement>('.column-filter-popover .column-filter-item'),
     );
     const labels = items.map((l) => l.querySelector('span')?.textContent);
-    expect(labels.sort()).toEqual(['1 Year', '3 Years']);
+    expect(labels.sort()).toEqual(['1 yr', '3 yr']);
     // Both boxes start checked (no active filter → all included). Untick
     // "1 Year"; remaining checked = ["3"] → filter narrows to that.
-    const oneYearLabel = items.find((l) => l.textContent === '1 Year');
+    const oneYearLabel = items.find((l) => l.textContent === '1 yr');
     const cb = oneYearLabel?.querySelector<HTMLInputElement>('input[type="checkbox"]');
     expect(cb?.dataset['value']).toBe('1');
     expect(cb?.checked).toBe(true);
@@ -7623,6 +7623,40 @@ describe('Issue #483: popover stays open while user scrolls its contents', () =>
     const scrollEvt = new Event('scroll', { bubbles: true });
     document.body.dispatchEvent(scrollEvt);
     expect(document.querySelector('.column-filter-popover')).toBeNull();
+  });
+
+  test('a commit that re-renders the table keeps the new trigger expanded', async () => {
+    await loadRecommendations();
+    const oldTrigger = document.querySelector<HTMLButtonElement>('th .column-filter-btn[data-column="resource_type"]')!;
+    oldTrigger.click();
+    const popover = document.querySelector<HTMLElement>('.column-filter-popover')!;
+    const box = popover.querySelector<HTMLInputElement>('input[data-value="t3.medium"]')!;
+    box.checked = false;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    const newTrigger = document.querySelector<HTMLButtonElement>('th .column-filter-btn[data-column="resource_type"]')!;
+    expect(newTrigger).not.toBe(oldTrigger);
+    expect(document.querySelector('.column-filter-popover')).toBe(popover);
+    expect(newTrigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  test('a scroll while the trigger stays on screen keeps the popover open and re-anchors it', async () => {
+    // Clicking a funnel at the table scroller's clipped edge scrolls the
+    // table (and the mirrored strip a frame later); those scroll events
+    // must not close the popover the click just opened.
+    await loadRecommendations();
+    const trigger = document.querySelector<HTMLButtonElement>('th .column-filter-btn[data-column="resource_type"]')!;
+    let left = 400;
+    trigger.getBoundingClientRect = () => ({
+      left, top: 300, width: 24, height: 24, right: left + 24, bottom: 324, x: left, y: 300, toJSON: () => ({}),
+    }) as DOMRect;
+    trigger.click();
+    const popover = document.querySelector<HTMLElement>('.column-filter-popover');
+    expect(popover).not.toBeNull();
+    expect(popover!.style.left).toBe('400px');
+    left = 250;
+    document.body.dispatchEvent(new Event('scroll', { bubbles: true }));
+    expect(document.querySelector('.column-filter-popover')).toBe(popover);
+    expect(popover!.style.left).toBe('250px');
   });
 });
 
