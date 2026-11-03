@@ -1624,6 +1624,7 @@ func TestHandler_updateConfig_EnabledProvidersWrite(t *testing.T) {
 	}{
 		{"empty list refused", []string{"aws"}, `{"enabled_providers": []}`, true, false},
 		{"null refused", []string{"aws"}, `{"enabled_providers": null}`, true, false},
+		{"duplicate key differing in case refused", []string{"aws"}, `{"enabled_providers":["aws"],"ENABLED_PROVIDERS":[]}`, true, false},
 		{"mixed-case key refused", []string{"aws"}, `{"Enabled_Providers": []}`, true, false},
 		{"omitted key on stored empty row accepted", []string{}, `{"laddering_enabled": false}`, false, true},
 		{"one provider accepted", []string{}, `{"enabled_providers": ["aws"]}`, false, true},
@@ -1654,6 +1655,9 @@ func TestHandler_updateConfig_EnabledProvidersWrite(t *testing.T) {
 			if tc.wantErr {
 				require.Error(t, err)
 				assert.Nil(t, result)
+				ce, ok := IsClientError(err)
+				require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+				assert.Equal(t, 400, ce.code)
 				assert.Contains(t, err.Error(), "enabled_providers must list at least one provider")
 				mockStore.AssertNotCalled(t, "SaveGlobalConfig", mock.Anything, mock.Anything)
 				return
@@ -1662,4 +1666,29 @@ func TestHandler_updateConfig_EnabledProvidersWrite(t *testing.T) {
 			assert.Equal(t, "updated", result.Status)
 		})
 	}
+}
+
+func TestHandler_updateConfig_EmptyEnabledProvidersWithoutPermissionIs403(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockStore.AssertExpectations(t); mockAuth.AssertExpectations(t) })
+
+	userSession := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd", Email: "standard@example.com"}
+	mockAuth.On("ValidateSession", ctx, "user-token").Return(userSession, nil)
+	mockAuth.On("HasPermissionAPI", ctx, userSession.UserID, mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+		Return(false, nil).Maybe()
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer user-token"},
+		Body:    `{"enabled_providers": []}`,
+	}
+	result, err := handler.updateConfig(ctx, req)
+	require.Error(t, err)
+	assert.Nil(t, result)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+	assert.Equal(t, 403, ce.code)
+	mockStore.AssertNotCalled(t, "SaveGlobalConfig", mock.Anything, mock.Anything)
 }
