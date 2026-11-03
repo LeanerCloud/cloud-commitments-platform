@@ -24,7 +24,7 @@ import { LADDER_CONFIG_TABLE_COLUMNS, renderLadderConfigTable } from './ladder-c
 import { renderLadderConfigModal } from './ladder-config-modal';
 import { listAccountsMinimal, type AccountSummary } from './api/accounts';
 import { readLadderNumbers } from './ladder-form-numbers';
-import { showFieldError } from './lib/field-errors';
+import { clearFieldErrors, showFieldError } from './lib/field-errors';
 import { showSkeletonRows, teardownSkeleton } from './lib/skeleton';
 
 // ==========================================
@@ -228,7 +228,13 @@ function openLadderConfigModal(existing?: api.LadderConfig): void {
   // Clone before populating: select values do not survive cloneNode.
   const form = document.getElementById('ladder-config-form');
   if (form) {
+    // A cancelled save can leave a field error behind; cloneNode copies the
+    // message and aria state but not the listeners that clear it, so drop both
+    // and let showFieldError rewire the clone's fields.
+    clearFieldErrors(form);
     const newForm = form.cloneNode(true) as HTMLElement;
+    newForm.querySelectorAll<HTMLElement>('[data-field-error-wired]')
+      .forEach(el => delete el.dataset['fieldErrorWired']);
     form.replaceWith(newForm);
     newForm.addEventListener('submit', (e) => {
       e.preventDefault();
