@@ -891,6 +891,25 @@ describe('Auth Module', () => {
       expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Profile updated successfully', kind: 'success' }));
     });
 
+    test('save profile refreshes the avatar initials with the new email', async () => {
+      (api.apiRequest as jest.Mock).mockResolvedValue({});
+      updateUserUI();
+
+      const userEmail = document.getElementById('user-email-display') as HTMLElement;
+      const before = userEmail.dataset['initials'];
+      userEmail.click();
+      await flushPromises();
+
+      (document.getElementById('profile-email') as HTMLInputElement).value = 'newemail@example.com';
+      (document.getElementById('profile-current-password') as HTMLInputElement).value = 'oldpassword';
+      document.getElementById('profile-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+      await flushPromises();
+
+      expect(userEmail.textContent).toBe('newemail@example.com');
+      expect(userEmail.dataset['initials']).toBe('NE');
+      expect(before).not.toBe('NE');
+    });
+
     test('save profile handles API errors', async () => {
       (api.apiRequest as jest.Mock).mockRejectedValue(new Error('Update failed'));
       console.error = jest.fn();

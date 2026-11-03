@@ -1600,7 +1600,10 @@ async function saveProfile(e: Event): Promise<void> {
     if (currentUser) {
       state.setCurrentUser({ ...currentUser, email });
       const userEmailEl = document.getElementById('user-email-display');
-      if (userEmailEl) userEmailEl.textContent = email;
+      if (userEmailEl) {
+        userEmailEl.textContent = email;
+        userEmailEl.dataset['initials'] = emailInitials(email);
+      }
     }
 
     closeProfileModal();
