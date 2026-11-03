@@ -60,6 +60,11 @@ type HandlerConfig struct {
 	// refresh, stale-execution sweep) that would freeze mid-flight on Lambda.
 	// The handler never re-reads the environment itself (issue #110).
 	IsLambda bool
+	// RecommendationSchedule is the deployment's recommendation-collection
+	// schedule (RECOMMENDATION_SCHEDULE, set by Terraform). Empty means
+	// scheduled collection is off or the deployment predates the variable.
+	// It feeds next_collection_at on GET /api/recommendations/freshness.
+	RecommendationSchedule string
 }
 
 // CommitmentOptsInterface lets us swap the real *commitmentopts.Service for
@@ -167,6 +172,11 @@ type SchedulerInterface interface {
 	// byte-wise ID order, chunkSize store rows at a time, calling fn with
 	// each chunk's survivors (issue #981).
 	ScanRecommendations(ctx context.Context, filter config.RecommendationFilter, chunkSize int, fn func([]config.RecommendationRecord) error) error
+	// PageRecommendations returns one page of the list and the summary of
+	// the whole filtered set with every filter evaluated in SQL (issue
+	// #981). An error wrapping scheduler.ErrRecommendationsPageNeedsScan
+	// means the request must be served by ScanRecommendations instead.
+	PageRecommendations(ctx context.Context, scope config.RecommendationListScope, afterID string, limit int) (*config.RecommendationPage, error)
 	// GetRecommendationByID fetches a single rec by its application-level id,
 	// bypassing account-override filtering so deep-linked URLs to override-
 	// hidden recs resolve. hiddenBy is non-nil when the rec would be dropped by
@@ -288,6 +298,9 @@ type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"` //nolint:gosec // G117: intentional credential field in request/response struct -- value is supplied by the authenticated caller or returned once at creation; not re-stored downstream
 	MFACode  string `json:"mfa_code,omitempty"`
+	// MFAToken is the continuation token from an mfa_required answer
+	// (issue #134), sent with Email and MFACode in place of Password.
+	MFAToken string `json:"mfa_token,omitempty"`
 }
 
 // LoginResponse carries the JWT token and user summary returned after a successful login.

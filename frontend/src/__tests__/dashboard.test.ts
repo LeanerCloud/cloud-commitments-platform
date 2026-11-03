@@ -121,6 +121,7 @@ jest.mock('../utils', () => ({
 
 import * as api from '../api';
 import * as state from '../state';
+import { flushPromises } from './flush-promises';
 
 describe('Dashboard Module', () => {
   beforeEach(() => {
@@ -631,7 +632,7 @@ describe('Dashboard Module', () => {
       const cancelBtn = document.querySelector('[data-action="cancel-purchase"]') as HTMLButtonElement;
       cancelBtn?.click();
 
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await flushPromises();
 
       expect(api.deletePlannedPurchase).toHaveBeenCalledWith('exec-123');
       // Cancel must NOT delete the entire plan — that was the wrong fix
@@ -669,7 +670,7 @@ describe('Dashboard Module', () => {
       const cancelBtn = document.querySelector('[data-action="cancel-purchase"]') as HTMLButtonElement;
       cancelBtn?.click();
 
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await flushPromises();
 
       expect(api.deletePlannedPurchase).not.toHaveBeenCalled();
     });
@@ -702,7 +703,7 @@ describe('Dashboard Module', () => {
       const cancelBtn = document.querySelector('[data-action="cancel-purchase"]') as HTMLButtonElement;
       cancelBtn?.click();
 
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await flushPromises();
 
       expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
         message: 'Failed to cancel purchase',
@@ -764,7 +765,7 @@ describe('Dashboard Module', () => {
 
         (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
         finishDelete();
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await flushPromises();
         expect(document.getElementById('purchase-details-modal')).toBeNull();
         expect(api.deletePlannedPurchase).toHaveBeenCalledWith('exec-731');
       });
@@ -2050,9 +2051,10 @@ describe('Dashboard Module', () => {
           buildDOM();
           renderSavingsByService([rec('ec2', 100), rec('ec2', 300, 3)], { ec2: { potential_savings: 300, current_savings: 40 } });
           const calls = (Chart as unknown as jest.Mock).mock.calls;
-          const datasets = (calls[calls.length - 1]?.[1] as { data: { datasets: { borderWidth: { top: number }; borderColor: string }[] } }).data.datasets;
+          // The bars are horizontal, so each segment's gap is on its right (end) edge.
+          const datasets = (calls[calls.length - 1]?.[1] as { data: { datasets: { borderWidth: { right: number }; borderColor: string }[] } }).data.datasets;
           for (const d of datasets) {
-            expect(d.borderWidth.top).toBe(2);
+            expect(d.borderWidth.right).toBe(2);
             expect(d.borderColor).toBe('#ffffff');
           }
         });
