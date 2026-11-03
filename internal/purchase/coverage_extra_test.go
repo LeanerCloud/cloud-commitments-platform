@@ -1649,28 +1649,36 @@ func TestExecuteForAccount_NonHostRoleARN_StoredErrorOmitsHostIdentity(t *testin
 // TestProcessMessage_Approve_NonASCIILettersNotFolded pins that the approver
 // match treats a differently-spelled address as a different address.
 func TestProcessMessage_Approve_NonASCIILettersNotFolded(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	mockEmail := new(MockEmailSender)
-
-	accountID := "acct-1"
-	exec := &config.PurchaseExecution{
-		ExecutionID:   "exec-cmp",
-		Status:        "pending",
-		ApprovalToken: config.HashApprovalToken("correct-token"),
-		Recommendations: []config.RecommendationRecord{
-			{CloudAccountID: &accountID},
-		},
+	cases := []struct{ name, contact, actorJSON string }{
+		{"long_s", "mus@example.com", `mu\u017f@example.com`},
+		{"dotted_capital_i", "admin@example.com", `adm\u0130n@example.com`},
 	}
-	account := &config.CloudAccount{ID: accountID, ContactEmail: "mus@example.com"}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			mockStore := new(MockConfigStore)
+			mockEmail := new(MockEmailSender)
 
-	mockStore.On("GetExecutionByID", ctx, "exec-cmp").Return(exec, nil)
-	mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
+			accountID := "acct-1"
+			exec := &config.PurchaseExecution{
+				ExecutionID:   "exec-cmp",
+				Status:        "pending",
+				ApprovalToken: config.HashApprovalToken("correct-token"),
+				Recommendations: []config.RecommendationRecord{
+					{CloudAccountID: &accountID},
+				},
+			}
+			account := &config.CloudAccount{ID: accountID, ContactEmail: tc.contact}
 
-	manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
+			mockStore.On("GetExecutionByID", ctx, "exec-cmp").Return(exec, nil)
+			mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
 
-	err := manager.ProcessMessage(ctx, "{\"type\":\"approve\",\"execution_id\":\"exec-cmp\",\"token\":\"correct-token\",\"actor_email\":\"mu\\u017f@example.com\"}")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not an authorized approver")
-	mockStore.AssertNotCalled(t, "SavePurchaseExecution")
+			manager := &Manager{config: mockStore, email: mockEmail, dashboardURL: "https://dashboard.example.com"}
+
+			err := manager.ProcessMessage(ctx, `{"type":"approve","execution_id":"exec-cmp","token":"correct-token","actor_email":"`+tc.actorJSON+`"}`)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "not an authorized approver")
+			mockStore.AssertNotCalled(t, "SavePurchaseExecution")
+		})
+	}
 }
