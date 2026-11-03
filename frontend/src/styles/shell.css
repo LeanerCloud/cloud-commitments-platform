@@ -348,19 +348,16 @@
     display: none;
 }
 
-/* Phone drawer: who is signed in stays first, the avatar sits beside the
- * email (one size down so a typical address still fits on one line), and
- * Log out keeps a gap between its icon and its label. */
+/* Phone drawer: the avatar sits beside the email (one size down so a typical
+ * address still fits on one line), and Log out keeps a gap between its icon
+ * and its label. Who is signed in is first in the DOM here (the drawer order
+ * is set by nav/mobile-nav.ts:syncHeaderPlacement, not by CSS `order`, so
+ * keyboard order matches what is painted). */
 .app-sidebar-extras #user-email-display {
     display: flex;
     align-items: center;
     gap: var(--cudly-sp-2);
-    order: -2;
     font-size: var(--cudly-fs-sm);
-}
-
-.app-sidebar-extras #user-role-display {
-    order: -1;
 }
 
 .app-sidebar-extras #logout-btn {
