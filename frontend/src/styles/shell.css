@@ -502,6 +502,13 @@ body:has(> .auth-screen) #app {
     display: none;
 }
 
+/* index.html ships <body class="auth-pending"> and init() removes it once the
+ * auth state is known, so a signed-out visitor never sees a frame of the
+ * shell before .auth-screen exists. */
+body.auth-pending #app {
+    display: none;
+}
+
 .auth-screen .modal-overlay {
     flex-direction: column;
     align-items: center;
