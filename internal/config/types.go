@@ -921,11 +921,15 @@ type PurchasePlanFilter struct {
 // kept rows from a sweep that did not cover everything it was asked to (for
 // example 9 of 10 Azure subscriptions answered). It is cleared by the next
 // collection whose every sweep is complete.
+// NextCollectionAt is not stored: the API handler computes it from the
+// deployment's schedule (issue #756) and leaves it nil when scheduled
+// collection is off or its next run cannot be known.
 type RecommendationsFreshness struct {
 	LastCollectedAt         *time.Time                        `json:"last_collected_at"`
 	LastCollectionError     *string                           `json:"last_collection_error"`
 	LastCollectionStartedAt *time.Time                        `json:"last_collection_started_at"`
 	LastCollectionPartial   *RecommendationsCollectionPartial `json:"last_collection_partial"`
+	NextCollectionAt        *time.Time                        `json:"next_collection_at"`
 }
 
 // RecommendationsCollectionPartial records that the most recent collection
@@ -1290,6 +1294,24 @@ type MarketplaceListingSettlement struct {
 	// could not be determined; the row is then polled again.
 	ProceedsReceived *float64
 	FeePaid          *float64
+}
+
+// MarketplaceListingProceedsTotal is one RI's RI Marketplace sales summed over
+// every listing it has had (issue #1494), in one currency.
+type MarketplaceListingProceedsTotal struct {
+	// PurchaseID is the RI (reservation) id.
+	PurchaseID string
+	// Currency is the ISO code of the amounts; the poller records USD only.
+	Currency string
+	// ProceedsReceived is the seller's net proceeds and FeePaid the AWS fee,
+	// summed over the settled listings.
+	ProceedsReceived float64
+	FeePaid          float64
+	// SettledListings counts the listings whose amounts are recorded, and
+	// UnsettledListings those still without amounts (not ended yet, ended
+	// with an unknown price, or ended before the poller saw them).
+	SettledListings   int
+	UnsettledListings int
 }
 
 // AWS EC2 ReservedInstancesListing status values, mirroring the

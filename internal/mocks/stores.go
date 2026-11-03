@@ -1031,6 +1031,21 @@ func (m *MockConfigStore) SettleMarketplaceListing(ctx context.Context, settleme
 	return args.Bool(0), args.Error(1)
 }
 
+// GetMarketplaceListingProceedsTotals mocks the per-RI marketplace proceeds totals (issue #1494).
+func (m *MockConfigStore) GetMarketplaceListingProceedsTotals(ctx context.Context, purchaseIDs []string) ([]config.MarketplaceListingProceedsTotal, error) {
+	m.record("GetMarketplaceListingProceedsTotals", ctx, purchaseIDs)
+	args := m.Called(ctx, purchaseIDs)
+	var totals []config.MarketplaceListingProceedsTotal
+	if v := args.Get(0); v != nil {
+		t, ok := v.([]config.MarketplaceListingProceedsTotal)
+		if !ok {
+			m.reporter.wrongReturnType("GetMarketplaceListingProceedsTotals", "[]config.MarketplaceListingProceedsTotal", v)
+		}
+		totals = t
+	}
+	return totals, args.Error(1)
+}
+
 // ClaimRIExchangeIdempotencyKey mocks the atomic RI exchange submit claim
 // (issue #1642). With no registered expectation it defaults to "this call won
 // the claim" so the many pre-existing execute-path tests, whose subject is a
@@ -1295,6 +1310,32 @@ func (m *MockAuthStore) ClearPendingMFASecret(ctx context.Context, userID string
 
 func (m *MockAuthStore) ClaimTOTPCounter(ctx context.Context, userID string, counter int64) (bool, error) {
 	args := m.Called(ctx, userID, counter)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockAuthStore) CreateMFALoginToken(ctx context.Context, tokenHash, userID string, passwordVersion int64, ttl time.Duration) (time.Time, error) {
+	args := m.Called(ctx, tokenHash, userID, passwordVersion, ttl)
+	expiresAt, ok := args.Get(0).(time.Time)
+	if !ok {
+		m.reporter.wrongReturnType("CreateMFALoginToken", "time.Time", args.Get(0))
+	}
+	return expiresAt, args.Error(1)
+}
+
+func (m *MockAuthStore) ClaimMFALoginTokenAttempt(ctx context.Context, tokenHash string, maxAttempts int) (*auth.MFALoginToken, error) {
+	args := m.Called(ctx, tokenHash, maxAttempts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	tok, ok := args.Get(0).(*auth.MFALoginToken)
+	if !ok {
+		m.reporter.wrongReturnType("ClaimMFALoginTokenAttempt", "*auth.MFALoginToken", args.Get(0))
+	}
+	return tok, args.Error(1)
+}
+
+func (m *MockAuthStore) ConsumeMFALoginToken(ctx context.Context, tokenHash string) (bool, error) {
+	args := m.Called(ctx, tokenHash)
 	return args.Bool(0), args.Error(1)
 }
 
@@ -1789,6 +1830,19 @@ func (m *MockConfigStore) UpsertRecommendations(ctx context.Context, collectedAt
 	return args.Error(0)
 }
 
+func (m *MockConfigStore) PruneStaleRecommendations(ctx context.Context, retentionDays int) (int64, error) {
+	m.record("PruneStaleRecommendations", ctx, retentionDays)
+	if !isExpected(&m.Mock, "PruneStaleRecommendations") {
+		return 0, nil
+	}
+	args := m.Called(ctx, retentionDays)
+	v, ok := args.Get(0).(int64)
+	if !ok {
+		m.reporter.wrongReturnType("PruneStaleRecommendations", "int64", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
 func (m *MockConfigStore) ListStoredRecommendations(ctx context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error) {
 	m.record("ListStoredRecommendations", ctx, filter)
 	if !isExpected(&m.Mock, "ListStoredRecommendations") {
@@ -1814,6 +1868,37 @@ func (m *MockConfigStore) ListStoredRecommendationsChunk(ctx context.Context, fi
 	v, ok := args.Get(0).(config.RecommendationChunk)
 	if !ok {
 		m.reporter.wrongReturnType("ListStoredRecommendationsChunk", "config.RecommendationChunk", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockConfigStore) ListStoredRecommendationTriples(ctx context.Context, scope config.RecommendationListScope) ([]config.RecommendationTriple, error) {
+	m.record("ListStoredRecommendationTriples", ctx, scope)
+	if !isExpected(&m.Mock, "ListStoredRecommendationTriples") {
+		return nil, nil
+	}
+	args := m.Called(ctx, scope)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).([]config.RecommendationTriple)
+	if !ok {
+		m.reporter.wrongReturnType("ListStoredRecommendationTriples", "[]config.RecommendationTriple", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// PageStoredRecommendations defaults to an empty cache: an empty page with a
+// zero summary.
+func (m *MockConfigStore) PageStoredRecommendations(ctx context.Context, q config.RecommendationPageQuery) (config.RecommendationPage, error) {
+	m.record("PageStoredRecommendations", ctx, q)
+	if !isExpected(&m.Mock, "PageStoredRecommendations") {
+		return config.RecommendationPage{}, nil
+	}
+	args := m.Called(ctx, q)
+	v, ok := args.Get(0).(config.RecommendationPage)
+	if !ok {
+		m.reporter.wrongReturnType("PageStoredRecommendations", "config.RecommendationPage", args.Get(0))
 	}
 	return v, args.Error(1)
 }
