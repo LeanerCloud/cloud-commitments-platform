@@ -31,6 +31,10 @@ type FireResult struct {
 	// due more than the due-row age cap ago (ErrDueRowTooOld, issue #712). They
 	// end failed with no_submission and are not counted in Errored.
 	Stale int `json:"stale"`
+	// Deferred is the number of due rows left untouched (still scheduled)
+	// because less than purchaseRunBudget remained on the context deadline.
+	// The next sweep picks them up (issue #1582).
+	Deferred int `json:"deferred"`
 }
 
 // fireOutcome is what fireOneDue did with one due row.
@@ -74,6 +78,16 @@ func (m *Manager) FireScheduledDelayedPurchases(ctx context.Context) (*FireResul
 	logging.Infof("FireScheduledDelayedPurchases: found %d row(s) due for execution", len(due))
 
 	for i := range due {
+		// Checked before the claim: fireOneDue's purchase ignores the sweep
+		// deadline, so a row started without purchaseRunBudget left would be
+		// cut off by the Lambda timeout and strand in running. An unclaimed row
+		// stays scheduled for the next tick (issue #1582).
+		if !enoughTimeFor(ctx, purchaseRunBudget) {
+			result.Deferred = len(due) - i
+			logging.Warnf("FireScheduledDelayedPurchases: less than %s left, deferring %d of %d due row(s) to the next sweep (fired=%d)",
+				purchaseRunBudget, result.Deferred, len(due), result.Fired)
+			break
+		}
 		switch m.fireOneDue(ctx, &due[i]) {
 		case fireFired:
 			result.Fired++
@@ -86,8 +100,8 @@ func (m *Manager) FireScheduledDelayedPurchases(ctx context.Context) (*FireResul
 		}
 	}
 
-	logging.Infof("FireScheduledDelayedPurchases: found=%d fired=%d race_lost=%d stale=%d errored=%d",
-		result.Found, result.Fired, result.RaceLost, result.Stale, result.Errored)
+	logging.Infof("FireScheduledDelayedPurchases: found=%d fired=%d race_lost=%d stale=%d errored=%d deferred=%d",
+		result.Found, result.Fired, result.RaceLost, result.Stale, result.Errored, result.Deferred)
 	return result, nil
 }
 
