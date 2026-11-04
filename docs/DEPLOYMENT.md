@@ -222,6 +222,8 @@ use_lockfile   = true
 ```bash
 cd terraform/environments/aws
 
+# With enable_cdn = true the raw Function URL is AWS_IAM and returns 403;
+# use the CloudFront URL instead: FUNCTION_URL=$(terraform output -raw frontend_url)
 FUNCTION_URL=$(terraform output -raw lambda_function_url)
 curl "$FUNCTION_URL/health"
 # Expected: {"status":"healthy","version":"...","timestamp":"...","checks":{"config_store":{"status":"healthy"},"auth_store":{"status":"healthy"}}}
@@ -429,7 +431,8 @@ terraform output frontend_url
 ```bash
 cd terraform/environments/aws
 
-# Lambda (1-2s cold start, then fast)
+# Lambda (1-2s cold start, then fast); use `terraform output -raw frontend_url`
+# instead when enable_cdn = true (the raw Function URL then returns 403)
 time curl $(terraform output -raw lambda_function_url)/health
 
 # Fargate (consistent ~100-200ms)
