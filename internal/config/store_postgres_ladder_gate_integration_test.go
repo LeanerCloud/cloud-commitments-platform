@@ -27,6 +27,7 @@ func TestGetLadderExecutionGate(t *testing.T) {
 	require.NoError(t, err)
 	tr := lifecycleTranche(cfgID, 1, ladder.TrancheStatusFired, time.Now().UTC())
 	tr.RunID = &run.ID
+	tr.LayerType = ladder.LayerConvertibleRI // not lifecycleTranche's default, so a hard-coded layer fails
 	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{tr}))
 
 	t.Run("ladder key returns the config switches and run status", func(t *testing.T) {
@@ -41,6 +42,7 @@ func TestGetLadderExecutionGate(t *testing.T) {
 		assert.Equal(t, "executing", *g.RunStatus)
 		require.NotNil(t, g.TrancheStatus)
 		assert.Equal(t, "fired", *g.TrancheStatus)
+		assert.Equal(t, tr.LayerType, g.LayerType)
 	})
 
 	t.Run("non-ladder keys are not an error", func(t *testing.T) {
