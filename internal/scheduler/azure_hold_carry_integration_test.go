@@ -36,14 +36,22 @@ func heldAzureAccounts(t *testing.T, store config.StoreInterface) []string {
 	return nil
 }
 
+func registerAzure(t *testing.T, store config.StoreInterface, enabled bool) string {
+	t.Helper()
+	acct := &config.CloudAccount{Name: "azure-" + uuid.NewString(), Provider: "azure", ExternalID: uuid.NewString(), Enabled: enabled}
+	require.NoError(t, store.CreateCloudAccount(context.Background(), acct))
+	return acct.ID
+}
+
 // The hold marker lasts as long as the held rows: it survives every cycle that
 // does not re-price the account, and is dropped only by a cycle that does.
 func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 	ctx := context.Background()
-	acctA, acctB := uuid.NewString(), uuid.NewString()
+	var acctA, acctB string
 	newScheduler := func(t *testing.T) (*Scheduler, config.StoreInterface) {
 		container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 		store := config.NewPostgresStore(container.DB)
+		acctA, acctB = registerAzure(t, store, true), registerAzure(t, store, true)
 		s := &Scheduler{config: store}
 		s.persistCollection(ctx, nil, nil, nil, heldPartial(acctA))
 		require.Equal(t, []string{acctA}, heldAzureAccounts(t, store))
@@ -88,6 +96,38 @@ func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 		require.Equal(t, []string{acctB}, heldAzureAccounts(t, store))
 	})
 
+	t.Run("a deleted account's hold drops", func(t *testing.T) {
+		s, store := newScheduler(t)
+		require.NoError(t, store.DeleteCloudAccount(ctx, acctA))
+		s.persistCollection(ctx, nil, azureOK(acctB), nil, nil)
+		require.Empty(t, heldAzureAccounts(t, store))
+	})
+
+	t.Run("a disabled account's hold drops", func(t *testing.T) {
+		s, store := newScheduler(t)
+		acct, err := store.GetCloudAccount(ctx, acctA)
+		require.NoError(t, err)
+		acct.Enabled = false
+		require.NoError(t, store.UpdateCloudAccount(ctx, acct))
+		s.persistCollection(ctx, nil, azureOK(acctB), nil, nil)
+		require.Empty(t, heldAzureAccounts(t, store))
+	})
+
+	t.Run("an ambient hold clears once accounts are registered", func(t *testing.T) {
+		container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
+		store := config.NewPostgresStore(container.DB)
+		s := &Scheduler{config: store}
+		s.persistCollection(ctx, nil, nil, nil, heldPartial())
+		fresh, err := store.GetRecommendationsFreshness(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, fresh.LastCollectionPartial)
+		registered := registerAzure(t, store, true)
+		s.persistCollection(ctx, nil, azureOK(registered), nil, nil)
+		fresh, err = store.GetRecommendationsFreshness(ctx)
+		require.NoError(t, err)
+		require.Nil(t, fresh.LastCollectionPartial)
+	})
+
 	t.Run("an unresolved ambient hold survives an outright failure", func(t *testing.T) {
 		container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 		store := config.NewPostgresStore(container.DB)
@@ -113,7 +153,7 @@ func TestPersistCollection_FailedMarkerWriteRollsBackUpsert(t *testing.T) {
 	container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(container.DB)
 	s := &Scheduler{config: store}
-	acctA := uuid.NewString()
+	acctA := registerAzure(t, store, true)
 	seedAdvisorRow(t, store)
 	s.persistCollection(ctx, nil, nil, nil, heldPartial(acctA))
 	require.Equal(t, []string{acctA}, heldAzureAccounts(t, store))
