@@ -66,6 +66,19 @@
 #    for anything already tagged, ours or not), so it can only ever
 #    perform the initial tag-on-create and can't be used to claim an
 #    existing key.
+#
+#  - CloudFrontTagOnCreate: the provider creates a tagged distribution with
+#    CreateDistributionWithTags, which AWS authorizes with
+#    cloudfront:TagResource as well. A distribution that does not exist yet
+#    has no resource tag, so CloudFrontMutateTaggedOnly's
+#    aws:ResourceTag/Project gate (policy_compute.tf) can never match and the
+#    first enable_cdn apply is denied after the Function URL has already
+#    flipped to AWS_IAM. Same shape and reasoning as KMSTagOnCreate above:
+#    a separate aws:RequestTag-gated statement (folding it into the
+#    ResourceTag one would AND two unsatisfiable conditions), Resource "*"
+#    because the ARN is unknown until create returns, and the Null condition
+#    on aws:ResourceTag/Project so it can only perform the initial tag and
+#    cannot claim an existing, unrelated distribution.
 
 resource "aws_iam_policy" "compute_b" {
   name        = "cudly-deploy-compute-b"
@@ -216,6 +229,25 @@ resource "aws_iam_policy" "compute_b" {
         Sid      = "KMSTagOnCreate"
         Effect   = "Allow"
         Action   = ["kms:TagResource"]
+        Resource = "*"
+        Condition = {
+          StringEqualsIgnoreCase = {
+            "aws:RequestTag/Project" = "CUDly"
+          }
+          Null = {
+            "aws:ResourceTag/Project" = "true"
+          }
+        }
+      },
+      {
+        # Tag-on-create for aws_cloudfront_distribution. See the
+        # CloudFrontTagOnCreate note in the file header comment above.
+        Sid    = "CloudFrontTagOnCreate"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateDistributionWithTags",
+          "cloudfront:TagResource",
+        ]
         Resource = "*"
         Condition = {
           StringEqualsIgnoreCase = {
