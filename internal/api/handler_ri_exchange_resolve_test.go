@@ -279,3 +279,11 @@ func TestResolveRIExchange_CappedGrantRefusesUnreadableAmount(t *testing.T) {
 		})
 	}
 }
+func TestResolveRIExchange_CappedGrantMissingHoldIsNotFound(t *testing.T) {
+	store := &resolveRIStore{MockConfigStore: new(MockConfigStore)}
+	store.On("GetRIExchangeRecord", mock.Anything, resolveRIID).
+		Return(nil, fmt.Errorf("ri exchange record %s: %w", resolveRIID, config.ErrNotFound))
+	_, err := riResolveCall(t, apgCaller{perms: riCapped(5000)}, store, riResolveFailedBody)
+	require.ErrorIs(t, err, errNotFound)
+	assert.Zero(t, store.called)
+}

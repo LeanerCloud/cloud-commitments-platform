@@ -146,6 +146,9 @@ func (h *Handler) requireRIExchangeResolveConstraints(ctx context.Context, sessi
 // not a finite non-negative number.
 func (h *Handler) riExchangeHoldAmount(ctx context.Context, id string) (float64, error) {
 	record, err := h.config.GetRIExchangeRecord(ctx, id)
+	if errors.Is(err, config.ErrNotFound) {
+		return 0, errNotFound
+	}
 	if err != nil {
 		return 0, fmt.Errorf("failed to look up exchange record: %w", err)
 	}
