@@ -402,6 +402,8 @@ export async function triggerAutoRefreshIfStale(
 // POLL_MAX_ATTEMPTS checks total, so the longest wait matches the backend's
 // own detached-collection budget (5 min in internal/scheduler/scheduler.go).
 const COLLECTION_POLL_INTERVAL_MS = 5_000;
+const REFRESH_FAILED_MESSAGE =
+  'Recommendations refresh failed: the collection reported errors. The previous recommendations are still shown.';
 const COLLECTION_POLL_MAX_ATTEMPTS = 60; // 60 * 5s = 5 min
 
 function delay(ms: number): Promise<void> {
@@ -473,8 +475,10 @@ export function startRecommendationsRefresh(
       return;
     }
     if (cleared.last_collection_error) {
+      // last_collection_error can hold raw provider error text, so the toast
+      // names the outcome only (cf. #748).
       showToast({
-        message: `Recommendations refresh failed: ${cleared.last_collection_error}`,
+        message: REFRESH_FAILED_MESSAGE,
         kind: 'error',
       });
     } else {

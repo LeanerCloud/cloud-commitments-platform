@@ -1835,9 +1835,13 @@ describe('Recommendations Module', () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Recommendations refresh failed: aws: cost explorer throttled',
+          message: 'Recommendations refresh failed: the collection reported errors. The previous recommendations are still shown.',
           kind: 'error',
         }),
+      );
+      // Raw provider error text never reaches the refresh outcome toast.
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringMatching(/^Recommendations refresh.*cost explorer throttled/) }),
       );
       expect(mockShowToast).not.toHaveBeenCalledWith(
         expect.objectContaining({ message: 'Recommendations refreshed' }),
@@ -1871,9 +1875,13 @@ describe('Recommendations Module', () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Recommendations refresh failed: aws: cost explorer throttled',
+          message: 'Recommendations refresh failed: the collection reported errors. The previous recommendations are still shown.',
           kind: 'error',
         }),
+      );
+      // Raw provider error text never reaches the refresh outcome toast.
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringMatching(/^Recommendations refresh.*cost explorer throttled/) }),
       );
       expect(mockShowToast).not.toHaveBeenCalledWith(
         expect.objectContaining({ message: 'Recommendations refreshed' }),
