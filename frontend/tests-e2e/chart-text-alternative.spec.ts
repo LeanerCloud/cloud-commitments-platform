@@ -5,6 +5,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { mockApi, seedAuth, RECS } from './fixtures/recs';
+import { serviceLabel } from '../src/lib/service-labels';
 
 async function openHome(page: Page): Promise<void> {
   await seedAuth(page);
@@ -47,8 +48,9 @@ test('the per-service chart has a value summary and a keyboard-operable table', 
   await page.keyboard.press('Enter');
   await expect(table).toBeVisible();
   await expect(table.locator('tbody tr')).toHaveCount(services.size);
+  // #1649: the rows use the same display names as the chart axis.
   for (const svc of services) {
-    await expect(table.getByRole('rowheader', { name: svc, exact: true })).toBeVisible();
+    await expect(table.getByRole('rowheader', { name: serviceLabel(svc), exact: true })).toBeVisible();
   }
 });
 
