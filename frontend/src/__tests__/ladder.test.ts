@@ -324,7 +324,7 @@ describe('ladder.ts', () => {
       (document.getElementById('ladder-cfg-account') as HTMLSelectElement).value = 'acct-1';
     }
 
-    test('a JSON error left by a cancelled save is gone on reopen and clears on the next edit', async () => {
+    test('initRampEditor resets the JSON error a cancelled save left in the cloned form, and the field still clears on edit', async () => {
       await renderSection();
       await openAdd();
       ramp().value = '{ not json';
@@ -336,6 +336,7 @@ describe('ladder.ts', () => {
       await openAdd();
 
       expect(document.querySelector('.field-error:not([hidden])')).toBeNull();
+      expect(document.getElementById('ladder-cfg-ramp-schedule-error')!.textContent).toBe('');
       expect(ramp()).not.toHaveAttribute('aria-invalid');
       expect(ramp().getAttribute('aria-describedby')).toBe('ladder-cfg-ramp-schedule-hint ladder-cfg-ramp-schedule-error');
 
