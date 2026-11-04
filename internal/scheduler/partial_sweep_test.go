@@ -303,3 +303,20 @@ func TestGapFromPartialSubscriptions_PricingOutageSkipsHoldAccount(t *testing.T)
 	assert.Positive(t, sweep.Reasons[config.PartialReasonPricingUnavailable])
 	assert.Equal(t, []string{"acct-1"}, sweep.HeldAccountIDs)
 }
+
+// A skips-only multi-subscription sweep returns a plain PartialResultError
+// (recommendations_multi_subscription.go:421 at 61111428) whose skips carry the
+// same "<subscription ID>: " prefix; its outage must hold the account too.
+func TestTolerateIncompleteSweep_PrefixedPricingOutageSkipsHoldAccount(t *testing.T) {
+	skips := []string{
+		`0f4c1a52-8d3e-4b7a-9c61-2e5d7a9b3c10: advisor: azure advisor: advisor compute reservation price for "Standard_D2s_v3" in "westeurope" (1y): get: retail prices fetch failed: EOF`,
+		`0f4c1a52-8d3e-4b7a-9c61-2e5d7a9b3c10: advisor: price lookup unavailable: azure advisor: advisor compute reservation price for "Standard_D2s_v3" in "westeurope" (1y): get: retail prices fetch failed: EOF`,
+	}
+	gap, err := tolerateIncompleteSweep("azure", &azureprovider.PartialResultError{Skipped: skips})
+	require.NoError(t, err)
+
+	held := gap.forAccount().withHeld("acct-1")
+	assert.True(t, held.pricingUnavailable)
+	assert.True(t, held.holdsEviction(), "the held rows must survive eviction")
+	assert.Equal(t, []string{"acct-1"}, held.heldAccountIDs)
+}

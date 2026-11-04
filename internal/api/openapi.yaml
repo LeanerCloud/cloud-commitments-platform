@@ -7042,6 +7042,9 @@ components:
             previous-cycle Azure Advisor rows are held because the price
             catalog was unreachable (reason pricing_unavailable). Their
             reservations cannot be purchased until a collection re-prices them.
+            The nil UUID (00000000-0000-0000-0000-000000000000) stands for the
+            ambient identity, which has no registered account. It is returned
+            only to callers with an unrestricted account scope.
           items:
             type: string
             format: uuid

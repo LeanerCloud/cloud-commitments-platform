@@ -980,7 +980,9 @@ type PartialProviderSweep struct {
 	Reasons map[string]int `json:"reasons"`
 	// HeldAccountIDs lists the platform cloud-account UUIDs (not cloud
 	// account numbers) whose previous-cycle rows are held through a pricing
-	// outage; the purchase path refuses their recommendations.
+	// outage; the purchase path refuses their recommendations. It can contain
+	// the nil UUID (all zeros) for the ambient identity, which has no account;
+	// the API shows it only to callers with an unrestricted account scope.
 	HeldAccountIDs []string `json:"held_account_ids,omitempty"`
 }
 
