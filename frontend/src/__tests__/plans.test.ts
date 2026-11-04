@@ -816,17 +816,33 @@ describe('Plans Module', () => {
         await loadPlans();
       });
 
-      test('renders the run button disabled with an explanatory title', () => {
+      test('renders the run button aria-disabled (still focusable) with an explanatory title', () => {
         const runBtn = document.querySelector('[data-action="run"]') as HTMLButtonElement;
-        expect(runBtn.disabled).toBe(true);
+        expect(runBtn.disabled).toBe(false);
+        expect(runBtn.getAttribute('aria-disabled')).toBe('true');
+        expect(runBtn.classList.contains('is-disabled')).toBe(true);
         expect(runBtn.title).toBe('Run now: this step has no recommendations, so there is nothing to run');
         expect(runBtn.getAttribute('aria-label')).toBe('Run now: this step has no recommendations, so there is nothing to run');
         expect(runBtn.getAttribute('data-id')).toBe('purchase-bare');
       });
 
+      test('placeholder dashes share one muted style in the numeric columns (#1680)', () => {
+        const cells = Array.from(document.querySelectorAll('tr.planned-purchase-row td.num'));
+        expect(cells).toHaveLength(3);
+        cells.forEach(td => {
+          expect(td.innerHTML.trim()).toBe('<span class="cell-placeholder">\u2014</span>');
+        });
+      });
+
+      test('the plan name is not clamped to the small truncate width (#1680)', () => {
+        const name = document.querySelector('.plan-name') as HTMLElement;
+        expect(name.classList.contains('cell-truncate--sm')).toBe(false);
+        expect(name.classList.contains('plan-name-cell')).toBe(true);
+        expect(name.title).toBe('Azure compute 80% weekly');
+      });
+
       test('the run action never calls the API or opens a confirm', async () => {
         const runBtn = document.querySelector('[data-action="run"]') as HTMLButtonElement;
-        runBtn.disabled = false;
         runBtn.click();
         await flushPromises();
 

@@ -141,8 +141,26 @@ describe('Planned Purchases column filters (issue #166 follow-up)', () => {
     );
     const cols = Array.from(buttons).map((b) => b.dataset['column']);
     expect(cols.sort()).toEqual(
-      ['count', 'estimated_savings', 'payment', 'provider', 'resource_type', 'service', 'status', 'term', 'upfront_cost'].sort(),
+      ['count', 'estimated_savings', 'payment', 'plan_name', 'provider', 'resource_type', 'scheduled_date', 'service', 'status', 'term', 'upfront_cost'].sort(),
     );
+  });
+
+  test('plan name and scheduled date filter narrow rows (#1680)', async () => {
+    await loadPlans();
+    const uncheck = (column: string, value: string): void => {
+      document.querySelector<HTMLButtonElement>(
+        `#planned-purchases-list th .column-filter-btn[data-column="${column}"]`,
+      )?.click();
+      const cb = Array.from(document.querySelectorAll<HTMLInputElement>('.column-filter-popover input[type="checkbox"]'))
+        .find((i) => i.dataset['value'] === value);
+      expect(cb).toBeDefined();
+      cb!.checked = false;
+      cb!.dispatchEvent(new Event('change'));
+    };
+    uncheck('plan_name', 'Plan B');
+    expect(countRows()).toBe(2);
+    uncheck('scheduled_date', '2026-06-02');
+    expect(countRows()).toBe(1);
   });
 
   test('clicking a trigger opens a popover detached to document.body', async () => {
