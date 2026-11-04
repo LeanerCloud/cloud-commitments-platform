@@ -70,6 +70,10 @@ func TestArmingSwitches_UserAPIKeyUsesGlobalSetAndKeyID(t *testing.T) {
 	mockAuth.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", "update", "config").Return("u2", "key-1", true, nil)
 	mockAuth.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", "execute", "purchases").Return("u2", "key-1", true, nil)
 	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, "u2").Return([]string(nil), nil)
+	// The config save also resolves the RI exchange grant ahead of the transaction.
+	mockAuth.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", "execute", "ri-exchange").Return("u2", "key-1", true, nil)
+	mockAuth.On("HasAPIKeyPermissionForConstraintsAPI", mock.Anything, "key-1", "u2", "execute", "ri-exchange",
+		mock.MatchedBy(isGlobalSet)).Return(true, nil)
 	mockAuth.On("HasAPIKeyPermissionForConstraintsAPI", mock.Anything, "key-1", "u2", "update", "config",
 		mock.MatchedBy(isGlobalSet)).Return(true, nil)
 	mockAuth.On("HasAPIKeyPermissionForConstraintsAPI", mock.Anything, "key-1", "u2", "execute", "purchases",

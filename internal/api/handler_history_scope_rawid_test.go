@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -23,7 +24,12 @@ func historyScopeResponse(t *testing.T, scope []string, accounts []config.CloudA
 	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, "u-1").Return(scope, nil)
 
 	store := new(MockConfigStore)
-	store.On("GetAllPurchaseHistory", mock.Anything, mock.Anything).Return(append([]config.PurchaseHistoryRecord(nil), rows...), nil)
+	pageRows := make([]config.PurchaseHistoryPageRow, len(rows))
+	for i := range rows {
+		pageRows[i] = config.PurchaseHistoryPageRow{PurchaseHistoryRecord: rows[i], RowID: fmt.Sprintf("row-%d", i)}
+	}
+	store.On("ListPurchaseHistoryPage", mock.Anything, mock.Anything, mock.Anything).Return(pageRows, nil)
+	store.On("ListHistoryExecutionsPage", mock.Anything, mock.Anything).Return([]config.PurchaseExecution{}, nil)
 	store.On("GetExecutionsByStatuses", mock.Anything, mock.Anything, mock.Anything).Return([]config.PurchaseExecution{}, nil)
 	store.On("HistorySummaryAggregate", mock.Anything, mock.Anything).Return(&config.HistorySummaryGroups{Purchases: groups}, nil)
 	store.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
@@ -72,8 +78,9 @@ func TestHandleRequest_History_RawExternalIDGrantIsProviderScoped(t *testing.T) 
 		t.Parallel()
 		gcpAcct := config.CloudAccount{ID: "u-gcp", Name: "other", Provider: "gcp", ExternalID: "111"}
 		got := historyScopeResponse(t, []string{"u-aws"}, []config.CloudAccount{awsAcct, gcpAcct}, rows, groups)
-		require.Len(t, got.Purchases, 0, "a UUID grant does not match rows by their external id")
-		assert.Equal(t, 0, got.Summary.TotalPurchases)
+		require.Len(t, got.Purchases, 1, "a UUID grant covers the owning provider's rows by external id, not the other provider's")
+		assert.Equal(t, "aws-row", got.Purchases[0].PurchaseID)
+		assert.Equal(t, 2, got.Summary.TotalPurchases)
 	})
 
 	t.Run("legacy row without provider on a registered id still matches", func(t *testing.T) {
