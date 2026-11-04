@@ -24,6 +24,16 @@
 locals {
   lambda_function_url_auth_type = var.enable_cdn ? "AWS_IAM" : "NONE"
 
+  # Behind CloudFront the Function URL's sourceIp is a shared edge address, so
+  # the app takes the client IP from X-Forwarded-For. CloudFront appends the
+  # viewer address (CloudFront developer guide, "Request and response behavior
+  # for custom origins", section "Client IP addresses"), so one trusted hop
+  # selects the viewer; the app also drops a trailing entry equal to sourceIp
+  # in case Lambda appends the edge address (the Lambda "Invoking function
+  # URLs" page does not say). Only set with the CDN: on a public Function URL
+  # the header is client-controlled and must stay ignored.
+  lambda_cdn_env = var.enable_cdn ? { CUDLY_TRUSTED_PROXY_HOPS = "1" } : {}
+
   # Function URL CORS origins: the static list from tfvars plus the deployed
   # Function URL's own origin, which the workflows read from state (#324).
   lambda_cors_origins = distinct(concat(
@@ -120,6 +130,7 @@ module "compute_lambda" {
       CUDLY_MAX_ACCOUNT_PARALLELISM        = tostring(var.max_account_parallelism)
       CUDLY_SOURCE_CLOUD                   = "aws"
     },
+    local.lambda_cdn_env,
     var.additional_env_vars,
     local.db_pool_env
   )
