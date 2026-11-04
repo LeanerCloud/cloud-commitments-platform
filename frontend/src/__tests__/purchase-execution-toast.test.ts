@@ -43,6 +43,7 @@ jest.mock('../navigation', () => ({
 jest.mock('../recommendations', () => ({
   setupRecommendationsHandlers: jest.fn(),
   getPurchaseModalRecommendations: jest.fn(),
+  getPurchaseModalSession: jest.fn().mockReturnValue(1),
   clearPurchaseModalRecommendations: jest.fn(),
   getFanOutBuckets: jest.fn(),
   clearFanOutBuckets: jest.fn(),
@@ -339,7 +340,7 @@ describe('handleExecutePurchase — single-record path', () => {
     btn.click();
     await new Promise((r) => setTimeout(r, 0));
     // The user closed the modal and opened a new purchase while the first was in flight.
-    (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([{ id: 'newer' }]);
+    (recs.getPurchaseModalSession as jest.Mock).mockReturnValue(2);
     reject(Object.assign(new Error('refused'), { status: 403, details: { execution_id: 'exec-old' } }));
     await new Promise((r) => setTimeout(r, 0));
 
