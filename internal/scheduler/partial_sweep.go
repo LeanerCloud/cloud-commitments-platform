@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -52,12 +50,14 @@ func (g *sweepGap) holdsEviction() bool {
 	return g != nil && !g.skippedOnly
 }
 
-var skippedCountRE = regexp.MustCompile(`(\d+) recommendation\(s\) skipped`)
-
 // partialResult is implemented by provider errors that accompany usable
 // results (GCP's skipped recommendations). Matching the method, not the
 // provider's internal type, keeps this provider-agnostic.
-type partialResult interface{ Partial() bool }
+type partialResult interface {
+	Partial() bool
+	SkippedCount() int
+	SkipReasons() []string
+}
 
 // tolerateSkippedRecommendations keeps the recommendations returned alongside
 // a Partial() error and records how many were skipped. Any other error is
@@ -68,15 +68,7 @@ func tolerateSkippedRecommendations(providerName string, err error) (*sweepGap, 
 		return nil, err
 	}
 	logging.Warnf("%s recommendations partial, keeping the rest: %v", providerName, err)
-	// The count is parsed from the message because the contract exposes only
-	// Partial(); an unparsable message still yields a gap, with count 0.
-	n := 0
-	if m := skippedCountRE.FindStringSubmatch(err.Error()); m != nil {
-		if v, convErr := strconv.Atoi(m[1]); convErr == nil {
-			n = v
-		}
-	}
-	return &sweepGap{skippedRecommendations: n, skippedOnly: true, reasons: map[string]int{}}, nil
+	return &sweepGap{skippedRecommendations: p.SkippedCount(), skippedOnly: true, reasons: map[string]int{}}, nil
 }
 
 // gapFromAWSIncomplete summarizes an AWS IncompleteRecommendationsError.

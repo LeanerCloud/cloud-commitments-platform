@@ -16,10 +16,14 @@ import (
 type skipErr struct {
 	msg     string
 	partial bool
+	count   int
+	reasons []string
 }
 
-func (e *skipErr) Error() string { return e.msg }
-func (e *skipErr) Partial() bool { return e.partial }
+func (e *skipErr) Error() string         { return e.msg }
+func (e *skipErr) Partial() bool         { return e.partial }
+func (e *skipErr) SkippedCount() int     { return e.count }
+func (e *skipErr) SkipReasons() []string { return e.reasons }
 
 const skipMsg = "gcp recommendations: 3 recommendation(s) skipped: computeengine us-east1: non-USD; cloudsql us-east1: bad plan"
 
@@ -29,7 +33,7 @@ func gcpAmbient(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGa
 
 func TestGCPPartialResult_KeepsRecsAndRecordsSkips(t *testing.T) {
 	t.Setenv("GCP_PROJECT_ID", "proj-a")
-	s, _ := newPartialSweepScheduler(t, "gcp", fmt.Errorf("collect: %w", &skipErr{msg: skipMsg, partial: true}))
+	s, _ := newPartialSweepScheduler(t, "gcp", fmt.Errorf("collect: %w", &skipErr{msg: skipMsg, partial: true, count: 3}))
 
 	recs, roster, gap, err := gcpAmbient(s)
 
@@ -65,7 +69,7 @@ func TestGCPPartialResult_NonPartialErrorsStayHard(t *testing.T) {
 func TestGCPPartialResult_FanOutKeepsAccountEvictable(t *testing.T) {
 	accounts := []config.CloudAccount{{ID: "a1", Name: "a1", ExternalID: "p1"}, {ID: "a2", Name: "a2", ExternalID: "p2"}}
 	fn := func(_ context.Context, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
-		gap, err := tolerateIncompleteSweep("gcp", &skipErr{msg: skipMsg, partial: true})
+		gap, err := tolerateIncompleteSweep("gcp", &skipErr{msg: skipMsg, partial: true, count: 3})
 		if acct.ID == "a2" {
 			// A lost project in the same account hold back eviction as before.
 			gap = mergeSweepGaps(gap, gapFromPartialSubscriptions(partialSweepErr("p-x")))
@@ -83,9 +87,10 @@ func TestGCPPartialResult_FanOutKeepsAccountEvictable(t *testing.T) {
 	assert.Equal(t, 1, outcome.Gap.incompleteAccounts)
 }
 
-func TestGCPPartialResult_UnparsableCountStillRecorded(t *testing.T) {
-	gap, err := tolerateIncompleteSweep("gcp", &skipErr{msg: "something skipped", partial: true})
+// The count comes from SkippedCount(), never from the message text.
+func TestGCPPartialResult_CountComesFromTypedMethod(t *testing.T) {
+	gap, err := tolerateIncompleteSweep("gcp", &skipErr{msg: "something skipped", partial: true, count: 5})
 	require.NoError(t, err)
 	require.NotNil(t, gap)
-	assert.Zero(t, gap.skippedRecommendations)
+	assert.Equal(t, 5, gap.skippedRecommendations)
 }
