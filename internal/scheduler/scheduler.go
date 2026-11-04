@@ -372,7 +372,7 @@ func (s *Scheduler) collectAllProviders(ctx context.Context, globalCfg *config.G
 		}
 		if out.err != nil {
 			logging.Errorf("Failed to collect %s recommendations: %v", providerName, out.err)
-			failedProviders[providerName] = out.err.Error()
+			_, failedProviders[providerName] = purchase.SummarizeFailure(out.err)
 			continue
 		}
 		successfulProviders = append(successfulProviders, providerName)
