@@ -68,6 +68,11 @@ on:
         description: 'Image tag to rollback to (e.g., sha-abc123, v1.2.3)'
         required: true
         type: string
+      disable_cdn:
+        description: 'aws-lambda only: roll the env back to the public Function URL (AuthType NONE, enable_cdn=false)'
+        required: false
+        type: boolean
+        default: false
       reason:
         description: 'Reason for rollback'
         required: false
@@ -95,6 +100,7 @@ jobs:
         env:
           CLOUD: ${{ inputs.cloud }}
           IMAGE_TAG: ${{ inputs.image_tag }}
+          DISABLE_CDN: ${{ inputs.disable_cdn }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
@@ -119,6 +125,13 @@ jobs:
           # rest of the URI comes from admin-controlled repository variables.
           if [[ ! "$IMAGE_TAG" =~ ^[a-zA-Z0-9._-]+$ ]]; then
             echo "::error::Invalid image tag format: only [a-zA-Z0-9._-] are allowed"
+            exit 1
+          fi
+
+          # disable_cdn only has a meaning for the AWS Lambda path; fail rather
+          # than silently ignore it for another target.
+          if [ "$DISABLE_CDN" = "true" ] && [ "$CLOUD" != "aws-lambda" ]; then
+            echo "::error::disable_cdn is only supported for cloud=aws-lambda"
             exit 1
           fi
 
@@ -299,6 +312,7 @@ jobs:
           TF_BACKEND: ${{ secrets.TF_BACKEND_AWS }}
           ENVIRONMENT: ${{ inputs.environment }}
           IMAGE_URI: ${{ needs.validate.outputs.image_uri }}
+          DISABLE_CDN: ${{ inputs.disable_cdn }}
         run: |
           set -euo pipefail
           printf '%s\nkey = "github-%s/terraform.tfstate"\n' "$TF_BACKEND" "$ENVIRONMENT" > /tmp/backend.tfbackend
@@ -310,18 +324,48 @@ jobs:
           TF_VAR_lambda_deployed_function_url=$(../../../scripts/read-lambda-function-url.sh .)
           export TF_VAR_lambda_deployed_function_url
 
+          # AuthType derives from enable_cdn, so reopening the public Function
+          # URL means overriding it after the tfvars file.
+          cdn_args=()
+          if [ "$DISABLE_CDN" = "true" ]; then
+            cdn_args=(-var="enable_cdn=false")
+          fi
+
           terraform apply -auto-approve \
             -var-file="github-${ENVIRONMENT}.tfvars" \
             -var="image_uri=${IMAGE_URI}" \
-            -var="compute_platform=lambda"
+            -var="compute_platform=lambda" \
+            "${cdn_args[@]}"
 
       - name: Verify rollback
+        env:
+          DISABLE_CDN: ${{ inputs.disable_cdn }}
         run: |
           set -euo pipefail
           sleep 30  # Wait for Lambda to update
           cd terraform/environments/aws
           # Not silenced: if the output is missing, the real terraform error is
           # what tells the operator why the rollback cannot be verified.
+          if [ "$DISABLE_CDN" = "true" ]; then
+            # Public mode: the raw Function URL must be open (NONE) and healthy.
+            FUNCTION_URL=$(terraform output -raw lambda_function_url)
+            FUNCTION_NAME=$(terraform output -raw lambda_function_name)
+            AUTH_TYPE=$(aws lambda get-function-url-config \
+              --function-name "$FUNCTION_NAME" \
+              --query 'AuthType' --output text)
+            if [ "$AUTH_TYPE" != "NONE" ]; then
+              echo "❌ Rollback verification failed - Function URL AuthType is '$AUTH_TYPE', expected NONE"
+              exit 1
+            fi
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${FUNCTION_URL%/}/health" || true)
+            if [ "$CODE" != "200" ]; then
+              echo "❌ Rollback verification failed - raw Function URL /health returned '$CODE'"
+              exit 1
+            fi
+            echo "✅ Rollback successful - public Function URL healthy (AuthType NONE)"
+            exit 0
+          fi
+
           # frontend_url is the CloudFront URL when enable_cdn is on (the raw
           # Function URL is then AWS_IAM and answers 403), else the Function URL.
           FRONTEND_URL=$(terraform output -raw frontend_url)
