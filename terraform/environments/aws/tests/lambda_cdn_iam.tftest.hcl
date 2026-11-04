@@ -66,6 +66,18 @@ override_module {
   }
 }
 
+# The distribution ARN is unknown at plan time; pin it so source_arn is assertable.
+# The real frontend module is covered by modules/frontend/aws/tests.
+override_module {
+  target = module.frontend
+  outputs = {
+    cloudfront_distribution_arn = "arn:aws:cloudfront::123456789012:distribution/E123EXAMPLE"
+    cloudfront_distribution_id  = "E123EXAMPLE"
+    cloudfront_domain_name      = "d111111abcdef8.cloudfront.net"
+    frontend_url                = "https://d111111abcdef8.cloudfront.net"
+  }
+}
+
 override_module {
   target = module.deployment_checks
 }
@@ -109,5 +121,13 @@ run "lambda_with_cdn_is_iam_gated_behind_oac" {
   assert {
     condition     = aws_lambda_permission.function_url_cloudfront[0].statement_id != aws_lambda_permission.function_invoke_cloudfront[0].statement_id
     error_message = "Lambda rejects duplicate statement ids; the two permissions must use different ones."
+  }
+
+  assert {
+    condition = alltrue([
+      for p in [aws_lambda_permission.function_url_cloudfront[0], aws_lambda_permission.function_invoke_cloudfront[0]] :
+      p.principal == "cloudfront.amazonaws.com" && p.source_arn == "arn:aws:cloudfront::123456789012:distribution/E123EXAMPLE"
+    ])
+    error_message = "Both permissions must be granted to the CloudFront service principal and scoped to the distribution ARN."
   }
 }
