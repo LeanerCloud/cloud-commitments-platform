@@ -1202,6 +1202,43 @@ describe('reshape recommendations empty state', () => {
       expect(instancesEl.textContent).toContain("isn't available for GCP");
       expect(recsEl.textContent).toContain("isn't available for GCP");
     });
+
+    it('drops the previous values when a same-scope reload fails to load utilization', async () => {
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([{ ...sampleRI, reserved_instance_id: 'ri-reload' }]);
+      (api.getRIUtilization as jest.Mock).mockResolvedValueOnce([utilFor('ri-reload')]);
+      await loadRIExchange();
+      await flushPromises();
+      expect(utilizationCell()).toBe('99.0%');
+
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      (api.getRIUtilization as jest.Mock).mockRejectedValueOnce(new Error('ce timeout'));
+      await loadRIExchange();
+      await flushPromises();
+
+      expect(utilizationCell()).toBe('No data');
+      expect(recsEl.textContent).toContain('Utilization data is unavailable for 1 of 1 convertible RI');
+      expect(recsEl.textContent).not.toContain('meet your utilization threshold');
+    });
+
+    it('ignores a utilization result that lands while the next scope resolves its account', async () => {
+      const stateMod = jest.requireMock('../state') as { getCurrentAccountIDs: jest.Mock };
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([{ ...sampleRI, reserved_instance_id: 'ri-resolving' }]);
+      const util = deferredUtilization();
+      await loadRIExchange();
+
+      let releaseAccounts: (v: unknown) => void = () => undefined;
+      (api.listAccountsMinimal as jest.Mock).mockReturnValueOnce(new Promise(r => { releaseAccounts = r; }));
+      stateMod.getCurrentAccountIDs.mockReturnValue(['uuid-1']);
+      const next = loadRIExchange();
+      util.resolve([utilFor('ri-resolving')]);
+      await flushPromises();
+
+      // The previous scope's late result must not render while the new scope is pending.
+      expect(instancesEl.querySelector('.loading-inline')).not.toBeNull();
+
+      releaseAccounts([{ id: 'uuid-1', name: 'Payer', external_id: '123456789012', provider: 'aws' }]);
+      await next;
+    });
   });
 });
 

@@ -114,12 +114,14 @@ const MODE_LABELS: Record<string, string> = { manual: "Manual Approval", auto: "
  */
 export async function loadRIExchange(): Promise<void> {
   const generation = ++scopeGeneration;
+  // Supersede any in-flight utilization load from the previous scope, before
+  // the account lookup, so a late result can't re-render over the new view.
+  utilizationGeneration++;
   let scope: Awaited<ReturnType<typeof resolveScope>>;
   try {
     scope = await resolveScope();
   } catch (error) {
     if (generation !== scopeGeneration) return;
-    utilizationGeneration++;
     currentRIs = [];
     currentRIsLoaded = false;
     currentUtilization = new Map();
@@ -142,9 +144,6 @@ export async function loadRIExchange(): Promise<void> {
   }
   if (generation !== scopeGeneration) return;
   const { provider, accountID } = scope;
-  // Supersede any in-flight utilization load from the previous scope, so a
-  // late AWS result can't re-render over the Azure or GCP view.
-  utilizationGeneration++;
 
   if (provider === 'gcp') {
     renderGCPEmptyStates();
@@ -418,6 +417,8 @@ async function loadUtilization(generation: number): Promise<void> {
   } catch (error) {
     if (generation !== utilizationGeneration) return;
     console.error('Failed to load RI utilization:', error);
+    // Values from an earlier load are no longer current (same-scope reload).
+    currentUtilization = new Map();
     utilizationStatus = 'failed';
   }
   // Re-render table with utilization data, preserving the active account
