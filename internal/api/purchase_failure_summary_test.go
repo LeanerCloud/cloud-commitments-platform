@@ -3,8 +3,12 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,6 +60,16 @@ func TestProviderDenial_NeverReachesUserSurfaces(t *testing.T) {
 			"the hint still resolves from the raw text")
 	})
 
+	t.Run("partially completed and audit-gap rows", func(t *testing.T) {
+		for _, status := range []string{"partially_completed", "completed"} {
+			row := executionToHistoryRow(config.PurchaseExecution{
+				ExecutionID: execID, Status: status, Error: "t4g.nano: " + fakeAWSDenied,
+			}, "", "")
+			assert.NotEmpty(t, row.StatusDescription, status)
+			assertNoProviderText(t, status+" status_description", row.StatusDescription)
+		}
+	})
+
 	t.Run("purchase details", func(t *testing.T) {
 		exec := &config.PurchaseExecution{ExecutionID: execID, Status: "failed", Error: fakeAWSDenied,
 			Recommendations: []config.RecommendationRecord{rec}}
@@ -97,4 +111,55 @@ func TestExecuteFailureError_PartialAndAuditLossHideProviderText(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, 500, ce.code)
 	assertNoProviderText(t, "audit loss", ce.Error())
+}
+
+const (
+	fakeSubID  = "00000000-0000-0000-0000-000000000000"
+	fakeTenant = "11111111-1111-1111-1111-111111111111"
+)
+
+func azureHTTPError(t *testing.T, status int, path string) error {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPut, "https://management.azure.com"+path, nil)
+	require.NoError(t, err)
+	return runtime.NewResponseError(&http.Response{
+		StatusCode: status, Status: http.StatusText(status), Request: req,
+		Header: http.Header{"Content-Type": {"text/html"}},
+		Body:   io.NopCloser(strings.NewReader("<html>gateway error</html>")),
+	})
+}
+
+func assertNoAzureText(t *testing.T, where, s string) {
+	t.Helper()
+	for _, n := range []string{fakeSubID, fakeTenant, "management.azure.com", "gateway", "ERROR CODE"} {
+		assert.NotContains(t, s, n, where)
+	}
+}
+
+func TestCodelessAzureError_NeverReachesUserSurfaces(t *testing.T) {
+	for _, status := range []int{400, 409, 412} {
+		raw := azureHTTPError(t, status, "/subscriptions/"+fakeSubID+"/providers/Microsoft.BillingBenefits/savingsPlanOrderAliases/x")
+		rec := config.RecommendationRecord{Provider: "azure", Service: "savingsplans", Error: raw.Error()}
+		ce, ok := IsClientError(executeFailureError("e1", "executed", &config.PurchaseExecution{Status: "failed"}, raw))
+		require.True(t, ok)
+		assertNoAzureText(t, "live", ce.Error())
+		row := executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: raw.Error(), Recommendations: []config.RecommendationRecord{rec}}, "", "")
+		assert.NotEmpty(t, row.StatusDescription)
+		assertNoAzureText(t, "history", row.StatusDescription)
+		resp, err := json.Marshal(buildPurchaseDetailsResponse(&config.PurchaseExecution{Status: "failed", Error: raw.Error(), Recommendations: []config.RecommendationRecord{rec}}, "plan"))
+		require.NoError(t, err)
+		assertNoAzureText(t, "details", string(resp))
+	}
+}
+
+func TestAzureIdentityText_NeverReachesUserSurfaces(t *testing.T) {
+	raw := "ClientSecretCredential authentication failed. POST https://login.microsoftonline.com/" + fakeTenant + "/oauth2/v2.0/token\n" +
+		"RESPONSE 400: 400 Bad Request\n{\"error_description\":\"AADSTS700016: Application not found. Trace ID: 22222222 Correlation ID: 33333333\"}"
+	ce, ok := IsClientError(executeFailureError("e1", "executed", &config.PurchaseExecution{Status: "failed"}, errors.New(raw)))
+	require.True(t, ok)
+	for _, s := range []string{ce.Error(), executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: raw}, "", "").StatusDescription} {
+		for _, n := range []string{fakeTenant, "login.microsoftonline.com", "AADSTS", "Trace ID", "Correlation ID"} {
+			assert.NotContains(t, s, n)
+		}
+	}
 }
