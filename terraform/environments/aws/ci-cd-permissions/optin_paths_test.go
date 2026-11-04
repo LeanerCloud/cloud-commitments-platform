@@ -34,3 +34,16 @@ func TestPutRetentionPolicyIsPairedWithDelete(t *testing.T) {
 		t.Fatal("no statement grants logs:PutRetentionPolicy; the pairing check would pass vacuously")
 	}
 }
+
+// TestDeployPolicyGrantsHostedZoneLifecycle covers create_subdomain_zone = true
+// (environments/aws/route53.tf). CreateHostedZone has no resource type; the
+// hostedzone ARN carries an opaque id and the SAR defines no condition keys for
+// it, so neither a name scope nor a tag gate is possible (#157).
+func TestDeployPolicyGrantsHostedZoneLifecycle(t *testing.T) {
+	const zone = "arn:aws:route53:::hostedzone/Z0123456789ABCDEFGHIJ"
+	assertGranted(t, "route53 zone", []grantNeed{
+		{"route53:CreateHostedZone", ""},
+		{"route53:ChangeTagsForResource", zone},
+		{"route53:DeleteHostedZone", zone},
+	})
+}
