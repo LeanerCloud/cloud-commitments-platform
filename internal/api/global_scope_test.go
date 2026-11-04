@@ -192,3 +192,44 @@ func TestInsuranceStatus_ConstrainedViewerGets404(t *testing.T) {
 
 	assert.ErrorIs(t, err, errNotFound)
 }
+
+// A holder capped only by MaxPurchaseAmount keeps its reads: the deployment-wide
+// gate applies to writes (and to the collection kick), not to these actions.
+func TestCapOnlyHolder_ReadsStillServed(t *testing.T) {
+	reads := map[string]struct {
+		perm auth.Permission
+		call func(*Handler) (any, error)
+	}{
+		"ri-exchange config": {
+			auth.Permission{Action: auth.ActionView, Resource: auth.ResourceConfig, Constraints: capOnly()},
+			func(h *Handler) (any, error) { return h.getRIExchangeConfig(context.Background(), scopedRequest("")) },
+		},
+		"ladder configs": {
+			auth.Permission{Action: auth.ActionView, Resource: auth.ResourceConfig, Constraints: capOnly()},
+			func(h *Handler) (any, error) { return h.getLadderConfigs(context.Background(), scopedRequest("")) },
+		},
+		"plans": {
+			auth.Permission{Action: auth.ActionView, Resource: auth.ResourcePlans, Constraints: capOnly()},
+			func(h *Handler) (any, error) {
+				return h.listPlans(context.Background(), scopedRequest(""), map[string]string{})
+			},
+		},
+	}
+	for name, read := range reads {
+		t.Run(name, func(t *testing.T) {
+			mockAuth := new(MockAuthService)
+			mockAuth.On("ValidateSession", mock.Anything, scopedToken).Return(&Session{UserID: scopedUserID}, nil).Maybe()
+			mockAuth.grantPermissionsScoped([]auth.Permission{read.perm}, nil)
+			store := new(MockConfigStore)
+			store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+			store.On("GetLadderConfigs", mock.Anything).Return([]config.LadderConfigDB{}, nil).Maybe()
+			store.On("ListPurchasePlans", mock.Anything, mock.Anything).Return([]config.PurchasePlan{}, nil).Maybe()
+			h := &Handler{config: store, auth: mockAuth}
+
+			res, err := read.call(h)
+
+			require.NoError(t, err)
+			assert.NotNil(t, res)
+		})
+	}
+}
