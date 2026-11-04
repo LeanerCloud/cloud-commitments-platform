@@ -184,3 +184,18 @@ describe('9. users table date cells do not wrap', () => {
       .toMatch(/\.user-date-cell\s*\{[^}]*white-space:\s*nowrap/);
   });
 });
+
+describe('10. help-text typography', () => {
+  test('no ASCII double hyphen in user-visible copy', () => {
+    expect(indexHtml).not.toMatch(/ -- /);
+  });
+  test('lookback help does not expose the API parameter name', () => {
+    expect(indexHtml).not.toContain('LookbackPeriodInDays');
+  });
+  test('RI class options are short', () => {
+    const labels = Array.from(
+      indexHtml.matchAll(/<option value="(?:convertible|standard)"[^>]*>([^<]*)<\/option>/g),
+    ).map((m) => m[1]);
+    expect(labels).toEqual(['Convertible (default)', 'Standard (~5% cheaper)']);
+  });
+});
