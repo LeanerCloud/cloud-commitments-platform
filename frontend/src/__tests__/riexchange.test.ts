@@ -936,6 +936,17 @@ describe('reshape recommendations empty state', () => {
     normalization_factor: 4,
   };
 
+  const utilFor = (id: string) => ({
+    reserved_instance_id: id,
+    utilization_percent: 99,
+    purchased_hours: 720,
+    total_actual_hours: 713,
+    unused_hours: 7,
+  });
+
+  const utilizationCell = (): string =>
+    instancesEl.querySelector('tbody tr td:nth-child(7)')?.textContent?.trim() ?? '';
+
   beforeEach(() => {
     instancesEl = document.createElement('div');
     instancesEl.id = 'ri-exchange-instances-list';
@@ -983,8 +994,10 @@ describe('reshape recommendations empty state', () => {
 
   it('claims all RIs meet the threshold only when RIs actually exist', async () => {
     (api.listConvertibleRIs as jest.Mock).mockResolvedValue([sampleRI]);
+    (api.getRIUtilization as jest.Mock).mockResolvedValue([utilFor('ri-1')]);
 
     await loadRIExchange();
+    await flushPromises();
 
     expect(recsEl.textContent).toContain('meet your utilization threshold');
     expect(recsEl.textContent).toContain('1 convertible RI ');
@@ -994,8 +1007,10 @@ describe('reshape recommendations empty state', () => {
   // Issue #1135: the three loads race. An empty reshape response that lands
   // before the RI list must not keep the previous scope's count.
   it('re-renders the empty-state count when recommendations resolve before the RI list', async () => {
+    (api.getRIUtilization as jest.Mock).mockResolvedValue(['ri-1', 'ri-2', 'ri-3'].map(utilFor));
     (api.listConvertibleRIs as jest.Mock).mockResolvedValueOnce([sampleRI]);
     await loadRIExchange();
+    await flushPromises();
     expect(recsEl.textContent).toContain('All 1 convertible RI ');
 
     let releaseRIs: (v: unknown) => void = () => undefined;
@@ -1009,6 +1024,7 @@ describe('reshape recommendations empty state', () => {
 
     releaseRIs([sampleRI, { ...sampleRI, reserved_instance_id: 'ri-2' }, { ...sampleRI, reserved_instance_id: 'ri-3' }]);
     await reload;
+    await flushPromises();
     expect(recsEl.textContent).toContain('All 3 convertible RIs meet your utilization threshold');
   });
 
@@ -1031,6 +1047,72 @@ describe('reshape recommendations empty state', () => {
     await reload;
     expect(recsEl.querySelector('.error')?.textContent).toContain('Failed to load recommendations: ce down');
     expect(recsEl.textContent).not.toContain('utilization threshold');
+  });
+
+  // Issue #1687: an RI with no utilization data was shown as "..." forever
+  // while the reshape panel claimed it met the utilization threshold.
+  describe('unknown utilization (issue #1687)', () => {
+    it('shows "No data" and makes no threshold claim when utilization has no entry for the RI', async () => {
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([sampleRI]);
+      (api.getRIUtilization as jest.Mock).mockResolvedValue([]);
+
+      await loadRIExchange();
+      await flushPromises();
+
+      expect(utilizationCell()).toBe('No data');
+      expect(instancesEl.querySelector('.loading-inline')).toBeNull();
+      expect(recsEl.textContent).not.toContain('meet your utilization threshold');
+      expect(recsEl.textContent).toContain('Utilization data is unavailable for 1 of 1 convertible RI');
+    });
+
+    it('shows "No data" and makes no threshold claim when the utilization load fails', async () => {
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([sampleRI]);
+      (api.getRIUtilization as jest.Mock).mockRejectedValue(new Error('ce down'));
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await loadRIExchange();
+      await flushPromises();
+
+      expect(utilizationCell()).toBe('No data');
+      expect(recsEl.textContent).not.toContain('meet your utilization threshold');
+      expect(recsEl.textContent).toContain('Utilization data is unavailable for 1 of 1 convertible RI');
+    });
+
+    it('counts only the RIs without utilization when some have it', async () => {
+      const ri2 = { ...sampleRI, reserved_instance_id: 'ri-2' };
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([sampleRI, ri2]);
+      (api.getRIUtilization as jest.Mock).mockResolvedValue([utilFor('ri-1')]);
+
+      await loadRIExchange();
+      await flushPromises();
+
+      expect(recsEl.textContent).toContain('Utilization data is unavailable for 1 of 2 convertible RIs');
+      expect(recsEl.textContent).not.toContain('meet your utilization threshold');
+    });
+
+    it('keeps the loading placeholder and makes no claim while utilization is still loading', async () => {
+      // A fresh id: module state keeps the last known utilization per RI.
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([{ ...sampleRI, reserved_instance_id: 'ri-pending' }]);
+      (api.getRIUtilization as jest.Mock).mockReturnValue(new Promise(() => undefined));
+
+      await loadRIExchange();
+      await flushPromises();
+
+      expect(instancesEl.querySelector('.loading-inline')).not.toBeNull();
+      expect(recsEl.textContent).not.toContain('meet your utilization threshold');
+      expect(recsEl.textContent).toContain('No reshape recommendations right now.');
+    });
+
+    it('keeps a reshape load error when utilization arrives afterwards', async () => {
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([sampleRI]);
+      (api.getReshapeRecommendations as jest.Mock).mockRejectedValueOnce(new Error('ce down'));
+      (api.getRIUtilization as jest.Mock).mockResolvedValue([utilFor('ri-1')]);
+
+      await loadRIExchange();
+      await flushPromises();
+
+      expect(recsEl.querySelector('.error')?.textContent).toContain('Failed to load recommendations: ce down');
+    });
   });
 });
 
