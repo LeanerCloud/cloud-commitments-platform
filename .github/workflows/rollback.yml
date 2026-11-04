@@ -322,9 +322,11 @@ jobs:
           cd terraform/environments/aws
           # Not silenced: if the output is missing, the real terraform error is
           # what tells the operator why the rollback cannot be verified.
-          FUNCTION_URL=$(terraform output -raw lambda_function_url)
+          # frontend_url is the CloudFront URL when enable_cdn is on (the raw
+          # Function URL is then AWS_IAM and answers 403), else the Function URL.
+          FRONTEND_URL=$(terraform output -raw frontend_url)
 
-          if curl -f -s "$FUNCTION_URL/health" > /dev/null; then
+          if curl -f -s "${FRONTEND_URL%/}/health" > /dev/null; then
             echo "✅ Rollback successful - health check passed"
           else
             echo "❌ Rollback verification failed - health check failed"
