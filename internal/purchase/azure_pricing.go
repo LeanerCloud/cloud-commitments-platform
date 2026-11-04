@@ -60,8 +60,11 @@ func (m *Manager) staleAzurePricingRefusal(ctx context.Context, exec *config.Pur
 // collection state cannot be read.
 func (m *Manager) heldAzurePricingRefusal(ctx context.Context, azure []config.RecommendationRecord) error {
 	fresh, err := m.config.GetRecommendationsFreshness(ctx)
-	if err != nil || fresh == nil {
-		return fmt.Errorf("%w: cannot read the latest collection state to confirm Azure prices are current: %v", ErrStaleAzurePricing, err)
+	if err != nil {
+		return fmt.Errorf("%w: cannot read the latest collection state to confirm Azure prices are current: %w", ErrStaleAzurePricing, err)
+	}
+	if fresh == nil {
+		return fmt.Errorf("%w: the latest collection state is missing, so Azure prices cannot be confirmed current", ErrStaleAzurePricing)
 	}
 	if fresh.LastCollectionPartial == nil {
 		return nil
