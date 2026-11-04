@@ -131,11 +131,14 @@ func TestHasPricingOutageSkip(t *testing.T) {
 		reasons []string
 		want    bool
 	}{
-		"first failed row":       {[]string{"advisor: azure advisor: advisor compute reservation price: get: retail prices fetch failed"}, true},
-		"later rows":             {[]string{"advisor: non-USD", "advisor: price lookup unavailable: x"}, true},
-		"invalid recommendation": {[]string{"advisor: row is in EUR, not USD", "computeengine us-east1: non-USD"}, false},
-		"mid-string mention":     {[]string{"computeengine: price lookup unavailable: x"}, false},
-		"none":                   {nil, false},
+		"first failed row":                {[]string{"advisor: azure advisor: advisor compute reservation price: get: retail prices fetch failed"}, true},
+		"later rows":                      {[]string{"advisor: non-USD", "advisor: price lookup unavailable: x"}, true},
+		"invalid recommendation":          {[]string{"advisor: row is in EUR, not USD", "computeengine us-east1: non-USD"}, false},
+		"mid-string mention":              {[]string{"computeengine: price lookup unavailable: x"}, false},
+		"truncated walk is not an outage": {[]string{"advisor: azure advisor: recommendation list is incomplete"}, false},
+		"truncated walk plus outage":      {[]string{"advisor: azure advisor: recommendation list is incomplete", "advisor: azure advisor: get: retail prices fetch failed"}, true},
+		"prefix mid-string":               {[]string{"sub-1: advisor: price lookup unavailable: x"}, false},
+		"none":                            {nil, false},
 	} {
 		t.Run(name, func(t *testing.T) { assert.Equal(t, tc.want, hasPricingOutageSkip(tc.reasons)) })
 	}

@@ -83,16 +83,26 @@ func tolerateSkippedRecommendations(providerName string, err error) (*sweepGap, 
 // go#663). The library exports no constant for them: RecordSkip stores
 // "<service>: <err>" strings. The first failed row is recorded with the
 // collection-failure wrapper "azure advisor: "; every later row of the call
-// gets "price lookup unavailable: ". The wrapper also marks a truncated
-// Advisor walk, whose missing rows must survive too.
+// gets "price lookup unavailable: ".
 var pricingOutageSkipPrefixes = []string{
 	"advisor: price lookup unavailable: ",
 	"advisor: azure advisor: ",
 }
 
+// advisorTruncatedSkipPrefix starts the skip recorded for an Advisor walk that
+// hit the page cap or a page error (collectAdvisorOrSkip,
+// providers/azure/recommendations.go:471 at 61111428). It shares the
+// "advisor: azure advisor: " prefix but is not a pricing outage: a walk over
+// the page cap is always truncated, so holding eviction would keep that
+// account's stale rows forever.
+const advisorTruncatedSkipPrefix = "advisor: azure advisor: recommendation list is incomplete"
+
 // hasPricingOutageSkip reports whether any skip reason is a pricing outage.
 func hasPricingOutageSkip(reasons []string) bool {
 	for _, reason := range reasons {
+		if strings.HasPrefix(reason, advisorTruncatedSkipPrefix) {
+			continue
+		}
 		for _, prefix := range pricingOutageSkipPrefixes {
 			if strings.HasPrefix(reason, prefix) {
 				return true
