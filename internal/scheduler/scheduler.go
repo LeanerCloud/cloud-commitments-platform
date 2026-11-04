@@ -468,7 +468,7 @@ func (s *Scheduler) persistCollection(ctx context.Context, recs []config.Recomme
 // the cause is logged.
 const (
 	collectionStoppedLoadingSettings = "recommendations collection stopped before saving: could not load settings"
-	collectionStoppedIncomplete      = "recommendations collection stopped before saving: it was cancelled or ran out of time"
+	collectionStoppedIncomplete      = "recommendations collection stopped before saving: it was canceled or ran out of time"
 )
 
 // recordCollectionStoppedBestEffort records why a collection ended without

@@ -466,7 +466,7 @@ func TestScheduler_CollectRecommendations_ParallelProviders(t *testing.T) {
 		// #1679: a run cut short records why. The write uses its own context,
 		// since the run's context is already done.
 		mockStore.On("SetRecommendationsCollectionError", mock.MatchedBy(func(c context.Context) bool { return c.Err() == nil }),
-			"recommendations collection stopped before saving: it was cancelled or ran out of time").Return(nil).Once()
+			"recommendations collection stopped before saving: it was canceled or ran out of time").Return(nil).Once()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // cancel BEFORE the call
