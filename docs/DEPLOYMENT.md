@@ -219,12 +219,20 @@ use_lockfile   = true
 
 ### Rolling back the CDN cut-over
 
-With `enable_cdn = true` the Function URL is `AWS_IAM`. To go back to the public Function URL:
+With `enable_cdn = true` the Function URL is `AWS_IAM`. To go back to the public Function URL, in this order:
 
-1. Run the Rollback workflow with `cloud = aws-lambda` and `disable_cdn = true`. It applies `enable_cdn=false` and checks that AuthType is `NONE` and the raw URL's `/health` returns 200.
-2. Set the `DASHBOARD_URL` secret back to the raw Function URL (`terraform output -raw lambda_function_url`) and redeploy. The OIDC issuer falls back to `DASHBOARD_URL` (`resolveOIDCIssuerURL`), so this restores it.
-3. Re-register any Azure or GCP federation that was moved to the CloudFront issuer.
-4. To make it permanent, revert `enable_cdn` in `github-<env>.tfvars`. Otherwise the next deploy turns the CDN back on.
+1. Run the Rollback workflow with `cloud = aws-lambda` and `disable_cdn = true`. It applies `enable_cdn=false` and checks that AuthType is `NONE` and the raw URL's `/health` returns 200 (up to 5 tries). The rollback apply passes no `DASHBOARD_URL`, so the Lambda env loses it; the OIDC issuer then falls back to the Lambda self-lookup and the request host, which is the raw Function URL. Invite and password-reset emails stay broken until step 3.
+2. Merge the revert of `enable_cdn` in `github-<env>.tfvars` (`lambda_allowed_origins` is unchanged by the cut-over PR, so nothing else to revert), and set the `DASHBOARD_URL` secret to the raw Function URL (`terraform output -raw lambda_function_url`). Without the revert, the next deploy turns the CDN back on.
+3. Run a normal deploy so `DASHBOARD_URL` and `CORS_ALLOWED_ORIGIN` are applied again.
+4. Re-register any Azure or GCP federation that was moved to the CloudFront issuer against the raw-URL issuer.
+
+Ordering caveat: in the rollback apply Terraform disables, waits for and deletes the distribution before it reopens the Function URL, so the outage lasts at least the CloudFront disable time, and if the distribution delete fails the URL stays closed. To reopen the URL first, run this by hand before the workflow (use the same backend, tfvars and image as the workflow):
+
+```bash
+cd terraform/environments/aws
+terraform apply -var-file=github-<env>.tfvars -var=compute_platform=lambda \
+  -var=enable_cdn=false -var=image_uri=<image-uri> -target=module.compute_lambda
+```
 
 ### Verify Deployment
 
