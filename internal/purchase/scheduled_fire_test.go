@@ -445,3 +445,10 @@ func TestFireScheduledDelayedPurchases_FirstRowFiresThenDefers(t *testing.T) {
 	svc.AssertNumberOfCalls(t, "PurchaseCommitment", 1)
 	store.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, ids[1], []string{"scheduled"}, "running", (*string)(nil))
 }
+
+func TestNothingCouldFire(t *testing.T) {
+	assert.True(t, nothingCouldFire(&FireResult{Found: 3, Deferred: 3}), "all rows deferred, none fired")
+	assert.False(t, nothingCouldFire(&FireResult{Found: 3, Fired: 1, Deferred: 2}), "a fired row means the deadline works")
+	assert.False(t, nothingCouldFire(&FireResult{Found: 3, Errored: 1, Deferred: 2}), "not every row was deferred")
+	assert.False(t, nothingCouldFire(&FireResult{}), "no due rows")
+}

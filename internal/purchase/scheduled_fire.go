@@ -84,7 +84,11 @@ func (m *Manager) FireScheduledDelayedPurchases(ctx context.Context) (*FireResul
 		// stays scheduled for the next tick (issue #1582).
 		if !enoughTimeFor(ctx, purchaseRunBudget) {
 			result.Deferred = len(due) - i
-			logging.Warnf("FireScheduledDelayedPurchases: less than %s left, deferring %d of %d due row(s) to the next sweep (fired=%d)",
+			logDeferred := logging.Warnf
+			if nothingCouldFire(result) {
+				logDeferred = logging.Errorf
+			}
+			logDeferred("FireScheduledDelayedPurchases: less than %s left, deferring %d of %d due row(s) to the next sweep (fired=%d)",
 				purchaseRunBudget, result.Deferred, len(due), result.Fired)
 			break
 		}
@@ -103,6 +107,14 @@ func (m *Manager) FireScheduledDelayedPurchases(ctx context.Context) (*FireResul
 	logging.Infof("FireScheduledDelayedPurchases: found=%d fired=%d race_lost=%d stale=%d errored=%d deferred=%d",
 		result.Found, result.Fired, result.RaceLost, result.Stale, result.Errored, result.Deferred)
 	return result, nil
+}
+
+// nothingCouldFire reports a sweep that deferred every due row without firing
+// any: the task deadline is shorter than one purchase, so the same happens on
+// every sweep until the 24h cap fails the rows. That is a misconfiguration,
+// logged at Error rather than Warn.
+func nothingCouldFire(r *FireResult) bool {
+	return r.Found > 0 && r.Fired == 0 && r.Deferred == r.Found
 }
 
 // fireOneDue attempts to fire a single due scheduled execution. It returns
