@@ -36,9 +36,9 @@ func heldAzureAccounts(t *testing.T, store config.StoreInterface) []string {
 	return nil
 }
 
-func registerAzure(t *testing.T, store config.StoreInterface, enabled bool) string {
+func registerAzure(t *testing.T, store config.StoreInterface) string {
 	t.Helper()
-	acct := &config.CloudAccount{Name: "azure-" + uuid.NewString(), Provider: "azure", ExternalID: uuid.NewString(), Enabled: enabled}
+	acct := &config.CloudAccount{Name: "azure-" + uuid.NewString(), Provider: "azure", ExternalID: uuid.NewString(), Enabled: true}
 	require.NoError(t, store.CreateCloudAccount(context.Background(), acct))
 	return acct.ID
 }
@@ -51,7 +51,7 @@ func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 	newScheduler := func(t *testing.T) (*Scheduler, config.StoreInterface) {
 		container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 		store := config.NewPostgresStore(container.DB)
-		acctA, acctB = registerAzure(t, store, true), registerAzure(t, store, true)
+		acctA, acctB = registerAzure(t, store), registerAzure(t, store)
 		s := &Scheduler{config: store}
 		s.persistCollection(ctx, nil, nil, nil, heldPartial(acctA))
 		require.Equal(t, []string{acctA}, heldAzureAccounts(t, store))
@@ -121,7 +121,7 @@ func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 		fresh, err := store.GetRecommendationsFreshness(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, fresh.LastCollectionPartial)
-		registered := registerAzure(t, store, true)
+		registered := registerAzure(t, store)
 		s.persistCollection(ctx, nil, azureOK(registered), nil, nil)
 		fresh, err = store.GetRecommendationsFreshness(ctx)
 		require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestPersistCollection_FailedMarkerWriteRollsBackUpsert(t *testing.T) {
 	container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(container.DB)
 	s := &Scheduler{config: store}
-	acctA := registerAzure(t, store, true)
+	acctA := registerAzure(t, store)
 	seedAdvisorRow(t, store)
 	s.persistCollection(ctx, nil, nil, nil, heldPartial(acctA))
 	require.Equal(t, []string{acctA}, heldAzureAccounts(t, store))

@@ -83,13 +83,9 @@ func (s *PostgresStore) UpsertRecommendationsWithPartial(ctx context.Context, co
 
 	// The state row lock is taken last, after the row writes, so the lock order
 	// is unchanged from the plain UPDATE this replaced.
-	partial, err = carryHoldInTx(ctx, tx, partial, successfulCollects)
-	if err != nil {
-		return err
-	}
-	partialJSON, err := encodeCollectionPartial(partial)
-	if err != nil {
-		return err
+	partialJSON, markerErr := lockedMarkerJSON(ctx, tx, partial, successfulCollects)
+	if markerErr != nil {
+		return markerErr
 	}
 
 	// last_collected_at only moves forward (issue #111). Two collections can
@@ -126,6 +122,16 @@ func encodeCollectionPartial(partial *RecommendationsCollectionPartial) ([]byte,
 		return nil, fmt.Errorf("failed to encode collection partial: %w", err)
 	}
 	return encoded, nil
+}
+
+// lockedMarkerJSON returns the encoded marker to write: partial with the
+// previous Azure hold merged in under the state row lock.
+func lockedMarkerJSON(ctx context.Context, tx pgx.Tx, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) ([]byte, error) {
+	merged, err := carryHoldInTx(ctx, tx, partial, collects)
+	if err != nil {
+		return nil, err
+	}
+	return encodeCollectionPartial(merged)
 }
 
 // carryHoldInTx locks the state row, then merges the previous Azure pricing
