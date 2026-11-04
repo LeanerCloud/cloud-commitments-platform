@@ -54,7 +54,7 @@ var serverNotePatterns = []string{
 // categoryNotePatterns matches a collection failure stored as "<provider>:
 // <category message>" per failed provider.
 func categoryNotePatterns() []string {
-	var out []string
+	out := make([]string, 0, 4)
 	for _, c := range []string{ErrCategoryAccessDenied, ErrCategoryUnavailable, ErrCategoryLimit, ErrCategoryUnknown} {
 		out = append(out, regexp.QuoteMeta(ErrCategoryMessage(c)))
 	}
