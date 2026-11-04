@@ -7,6 +7,7 @@ import * as state from './state';
 import type { CostPeriod } from './state';
 import { formatCurrency, formatTerm, escapeHtml, CURRENCY_DEFAULT_DIGITS, NO_VALUE } from './utils';
 import { filterByEnabledProviders } from './lib/enabled-providers';
+import { serviceLabel } from './lib/service-labels';
 import { getRecommendationsFreshness, refreshRecommendations as refreshRecommendationsAPI } from './api/recommendations';
 import type { RecommendationsFreshness } from './api/recommendations';
 import { showToast } from './toast';
@@ -895,7 +896,7 @@ async function onLookbackChange(rawValue: string): Promise<void> {
 function savingsScopeText(visibleCount: number, loadedCount: number): string | null {
   const active = Object.keys(state.getRecommendationsColumnFilters());
   if (loadedServerFilters.length > 0) {
-    const pushed = loadedServerFilters.map((f) => `${columnLabel(f.column)}: ${f.value}`);
+    const pushed = loadedServerFilters.map((f) => `${columnLabel(f.column)}: ${categoricalDisplayLabel(f.column, f.value)}`);
     const others = active.filter((col) => !loadedServerFilters.some((f) => f.column === col)).length;
     if (others > 0) pushed.push(`+${others} more ${others === 1 ? 'filter' : 'filters'}`);
     return `Filtered: ${visibleCount} recommendations (${pushed.join(', ')})`;
@@ -2276,6 +2277,9 @@ function categoricalDisplayLabel(
   if (column === 'provider') {
     return providerDisplayName(value);
   }
+  if (column === 'service') {
+    return serviceLabel(value);
+  }
   return value;
 }
 
@@ -3284,7 +3288,7 @@ function renderColumnCell(key: state.RecommendationsColumnId, rec: LocalRecommen
     case 'account':
       return `<td><span class="cell-truncate cell-truncate--sm" title="${escapeHtml(ctx.accountName)}">${escapeHtml(ctx.accountName)}</span></td>`;
     case 'service':
-      return `<td><span class="service-badge" title="${escapeHtml(rec.service)}">${escapeHtml(rec.service)}</span></td>`;
+      return `<td><span class="service-badge" title="${escapeHtml(serviceLabel(rec.service))}">${escapeHtml(serviceLabel(rec.service))}</span></td>`;
     case 'resource_type':
       return `<td title="${escapeHtml(rec.resource_type)}"><span class="cell-truncate cell-truncate--sm" title="${escapeHtml(rec.engine ? `${rec.resource_type} (${rec.engine})` : rec.resource_type)}">${escapeHtml(rec.resource_type)}${rec.engine ? ` (${escapeHtml(rec.engine)})` : ''}</span>${ctx.badge}</td>`;
     case 'capacity': {
@@ -3549,7 +3553,7 @@ function buildListMarkup(
     </td>
     <td><span class="provider-badge ${providerBadgeClass(childRep.provider)}">${escapeHtml(providerDisplayName(childRep.provider))}</span></td>
     <td>${escapeHtml(childAccountName)}</td>
-    <td><span class="service-badge">${escapeHtml(childRep.service)}</span></td>
+    <td><span class="service-badge">${escapeHtml(serviceLabel(childRep.service))}</span></td>
     <td colspan="${summaryColspan}" class="rec-cell-summary-content">
       <span class="rec-cell-identity">${childIdentityParts.join(' &mdash; ')}</span>
       ${childRangeParts.length > 0 ? `<span class="rec-cell-range">${childRangeParts.join(' &middot; ')}</span>` : ''}
@@ -3633,7 +3637,7 @@ function buildListMarkup(
     ${chevronCell}
     <td><span class="provider-badge ${providerBadgeClass(rep.provider)}">${escapeHtml(providerDisplayName(rep.provider))}</span></td>
     <td>${escapeHtml(accountName)}</td>
-    <td><span class="service-badge">${escapeHtml(rep.service)}</span></td>
+    <td><span class="service-badge">${escapeHtml(serviceLabel(rep.service))}</span></td>
     <td colspan="${summaryColspan}" class="rec-cell-summary-content">
       <span class="rec-cell-identity">${identityParts.join(' &mdash; ')}</span>
       ${rangeParts.length > 0 ? `<span class="rec-cell-range">${rangeParts.join(' &middot; ')}</span>` : ''}
