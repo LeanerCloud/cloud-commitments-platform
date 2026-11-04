@@ -49,7 +49,7 @@ var bareNotePatterns = []string{
 	// The operator's stale-exchange resolve note (api/handler_ri_exchange_resolve.go
 	// note()): fixed fields in a fixed order, then the admin's own reason as a Go
 	// quoted string, which is text typed on purpose and closed by its quotes.
-	`operator:(?:completed|failed): account="\d{12}" region="[a-z0-9-]{1,32}" checked_at=\d{4}-\d{2}-\d{2}T[0-9:.]+(?:Z|[+-]\d{2}:\d{2})(?: ack=true)?(?: exchange_id="(?:[^"\\\n]|\\.)*")? reason="(?:[^"\\\n]|\\.)*"`,
+	`operator:(?:completed|failed): account="\d{12}" region="[a-z0-9-]{1,32}" checked_at=\d{4}-\d{2}-\d{2}T[0-9:.]+(?:Z|[+-]\d{2}:\d{2})(?: ack=true)?(?: exchange_id="[A-Za-z0-9-]{1,100}")? reason="(?:[^"\\\n]|\\.)*"`,
 	`config load failed`,
 	`exchange record has no region; cannot execute safely`,
 	`(?:daily|per-exchange) spending cap is not configured \(RIExchange(?:MaxDaily|MaxPerExchange)USD is 0\)`,
@@ -106,18 +106,25 @@ var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + reg
 	`|provider "[^"]*" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`
 
 // resourceTypePattern is the "<resourceType>: " head the executor's per-rec join
-// adds (execution.go: fmt.Sprintf("%s: %v", rec.ResourceType, err)). Only these
-// instance, node and plan type shapes are accepted, each with a digit in its
-// family part so an account number, IPv4 address, hostname or DB user never fits:
-//   - AWS: [db.|cache.]<family>.<size>[.search], family [a-z]{1,4}<digit>..., size
-//     nano|micro|small|medium|large|[N]xlarge|xlplus|metal (m5.large, db.t4g.micro,
-//     cache.t3.micro, dc2.large, ra3.xlplus, t3.small.search)
-//   - Azure: Standard_|Basic_ + letters, a digit, then [A-Za-z0-9_-] (Standard_D2_v3)
-//   - GCP: <letter><digit>[letter]-<word>[-<digits>] (n2-standard-2, e2-micro)
+// adds (execution.go: fmt.Sprintf("%s: %v", rec.ResourceType, err)). The head is
+// closed: a Savings Plan type from a fixed list, or an instance, node or machine
+// type shape whose family carries a digit, so an account number, IPv4 address,
+// hostname, DB user or ARN never fits:
+//   - Savings Plan types: Compute, EC2Instance, SageMaker (aws-sdk SavingsPlanType)
+//     and Database, plus Azure's "Compute"
+//   - AWS: [db.|cache.]<family>.<size>[.search] (m5.large, u-6tb1.metal,
+//     mac2-m2pro.metal, ultrawarm1.medium.search, m7i.metal-24xl) and db.serverless
+//   - Azure SQL: GP_Gen5_8 vCore SKUs and the tier names GENERAL_PURPOSE, BUSINESS_CRITICAL, HYPERSCALE
+//   - Azure: Standard_|Basic_ sizes (Standard_D2, Standard_NV24ads_A10_v5) and the
+//     unprefixed forms the provider sends (D2, D2s_v3, NC6s_v3)
+//   - GCP: <family>-<series word>[-<digits or suffix>]... with a closed series word
+//     (n2-standard-2, n2d-custom-2-8192-ext, a2-ultragpu-8g, c3d-highmem-360-lssd, e2-micro)
 const resourceTypePattern = `(?:` +
-	`(?:db\.|cache\.)?[a-z]{1,4}[0-9][a-z0-9]{0,5}\.(?:nano|micro|small|medium|large|[0-9]{0,2}xlarge|xlplus|metal)(?:\.search)?` +
+	`Compute|EC2Instance|SageMaker|Database|db\.serverless` +
+	`|(?:db\.|cache\.)?(?:[a-z]{1,4}[0-9][a-z0-9]{0,5}(?:-[a-z][a-z0-9]{1,7})?|u-[0-9]{1,2}tb[0-9]|ultrawarm1)\.(?:nano|micro|small|medium|large|[0-9]{0,3}xlarge|xlplus|metal(?:-[0-9]{1,2}xl)?)(?:\.search)?` +
 	`|(?:Standard|Basic)_[A-Za-z]{1,4}[0-9][A-Za-z0-9_-]{0,24}` +
-	`|[a-z][0-9][a-z]?-[a-z]{2,12}(?:-[0-9]{1,4})?` +
+	`|[A-Z]{1,3}[0-9]{1,3}[a-z]{0,4}(?:_[A-Za-z0-9]{1,4}){0,2}|[A-Z]{1,3}_Gen[0-9]_[0-9]{1,3}|GENERAL_PURPOSE|BUSINESS_CRITICAL|HYPERSCALE` +
+	`|[a-z][0-9][a-z]{0,2}-(?:standard|highmem|highcpu|highgpu|ultragpu|megagpu|megamem|ultramem|hypermem|custom|micro|small|medium)(?:-[a-z0-9]{1,8}){0,3}` +
 	`)`
 
 // providerHeadPattern is the collection writer's "<provider>: " head.

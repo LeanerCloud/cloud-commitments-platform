@@ -152,6 +152,14 @@ func TestSanitizeStoredError_HeadsAreClosed(t *testing.T) {
 	for _, h := range []string{
 		"m5.large", "db.t4g.micro", "cache.t3.micro", "dc2.large", "ra3.xlplus", "ra3.16xlarge",
 		"t3.small.search", "Standard_D2_v3", "Basic_A1", "n2-standard-2", "e2-micro", "c3-highcpu-8",
+		// Savings Plan types (aws-sdk SavingsPlanType, azure computeResourceType).
+		"Compute", "EC2Instance", "SageMaker", "Database",
+		"db.serverless", "u-6tb1.metal", "u-6tb1.112xlarge", "mac2-m2pro.metal", "ultrawarm1.medium.search",
+		"m7i.metal-24xl", "n2-custom-4-8192", "n2d-custom-2-8192-ext", "e2-custom-4-8192", "e2-custom-medium-2048",
+		"a2-ultragpu-8g", "a2-highgpu-1g", "a3-megagpu-8g", "c3d-highmem-360-lssd", "m1-ultramem-40", "h4d-highmem-192",
+		"Standard_D2", "Standard_B2ats_v2", "Standard_NV24ads_A10_v5", "Standard_NC6s_v3", "Basic_C0",
+		"D2", "D2s_v3", "NC6s_v3", "A1",
+		"GP_Gen5_8", "BC_Gen5_16", "GENERAL_PURPOSE", "c7i-flex.large",
 	} {
 		assert.Equal(t, h+": "+note, SanitizeStoredError(h+": "+note), h)
 		assert.Equal(t, h+": "+category, SanitizeStoredError(h+": "+category), h)
@@ -178,5 +186,15 @@ func TestSanitizeStoredError_HeadsAreClosed(t *testing.T) {
 		out := SanitizeStoredError(in)
 		assert.NotContains(t, out, ": ", in)
 		assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), out, in)
+	}
+}
+
+func TestSanitizeStoredError_ResolveNoteExchangeIDIsClosed(t *testing.T) {
+	base := `operator:completed: account="` + "1234" + "56789012" + `" region="us-east-1" checked_at=2026-01-02T03:04:05Z`
+	ok := base + ` exchange_id="abc-123" reason="done"`
+	assert.Equal(t, ok, SanitizeStoredError(ok))
+	for _, id := range []string{`a b`, `db-prod.internal`, `x\"y`, `a_b`, ``} {
+		in := base + ` exchange_id="` + id + `" reason="done"`
+		assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), SanitizeStoredError(in), id)
 	}
 }
