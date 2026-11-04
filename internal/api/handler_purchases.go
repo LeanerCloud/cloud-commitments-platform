@@ -527,18 +527,38 @@ func executeFailureError(executionID, action string, final *config.PurchaseExecu
 	}
 	switch {
 	case errors.Is(err, config.ErrAuditLoss):
-		return NewClientError(500, fmt.Sprintf("execution %s ran but its final status could not be saved: %v", executionID, err))
+		logRawExecuteFailure(executionID, err)
+		return NewClientError(500, fmt.Sprintf("execution %s ran but its final status could not be saved (reference: execution %s)", executionID, executionID))
 	case errors.Is(err, purchase.ErrClaimedRowRefused):
 		return claimedRowRefusalError(final, err)
 	case errors.Is(err, purchase.ErrStaleAzurePricing):
 		return NewClientError(409, err.Error())
 	case purchase.IsCommittedPartialRun(final, err):
-		return NewClientErrorWithDetails(502, fmt.Sprintf("execution %s partially completed: some commitments were purchased and can be revoked, others failed: %v", executionID, err),
-			map[string]any{"execution_id": executionID, "status": final.Status})
+		category, msg := summarizeExecuteFailure(executionID, err)
+		return NewClientErrorWithDetails(502, fmt.Sprintf("execution %s partially completed: some commitments were purchased and can be revoked, others failed: %s (reference: execution %s)", executionID, msg, executionID),
+			map[string]any{"execution_id": executionID, "status": final.Status, "category": category})
 	default:
-		return NewClientErrorWithDetails(502, fmt.Sprintf("execution %s failed: %v", executionID, err),
-			map[string]any{"execution_id": executionID, "status": final.Status})
+		category, msg := summarizeExecuteFailure(executionID, err)
+		return NewClientErrorWithDetails(502, fmt.Sprintf("execution %s failed: %s (reference: execution %s)", executionID, msg, executionID),
+			map[string]any{"execution_id": executionID, "status": final.Status, "category": category})
 	}
+}
+
+// logRawExecuteFailure keeps the provider's own error text in the server log
+// only; responses carry a category message and the execution ID.
+func logRawExecuteFailure(executionID string, err error) {
+	logging.Errorf("purchase[%s]: execution failed: %v", executionID, err)
+}
+
+func summarizeExecuteFailure(executionID string, err error) (category, message string) {
+	logRawExecuteFailure(executionID, err)
+	category, message = purchase.SummarizeProviderError(err)
+	if category == purchase.ErrCategoryUnknown {
+		// Server-authored refusals (for example "re-fetch the recommendation")
+		// carry no provider text and stay readable.
+		message = purchase.SanitizeStoredError(err.Error())
+	}
+	return category, message
 }
 
 // unclaimedExecuteError answers a failure where the funnel returned no row:
@@ -2638,7 +2658,7 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 	if hint := resolveOpsHint(failedExec.Error); hint != "" {
 		return NewClientErrorWithDetails(409,
 			"this failure is operator-fixable; retrying without changing configuration will fail again",
-			map[string]any{"ops_hint": hint, "failure_reason": failedExec.Error})
+			map[string]any{"ops_hint": hint, "failure_reason": purchase.SanitizeStoredError(failedExec.Error)})
 	}
 
 	// Threshold soft-block (Q2). force=true (set by the frontend
@@ -3076,6 +3096,17 @@ func (h *Handler) tryGetSession(ctx context.Context, req *events.LambdaFunctionU
 	return session
 }
 
+// sanitizedRecommendationErrors copies recs with provider text in Error
+// replaced, leaving the stored slice untouched.
+func sanitizedRecommendationErrors(recs []config.RecommendationRecord) []config.RecommendationRecord {
+	out := make([]config.RecommendationRecord, len(recs))
+	copy(out, recs)
+	for i := range out {
+		out[i].Error = purchase.SanitizeStoredError(out[i].Error)
+	}
+	return out
+}
+
 // buildPurchaseDetailsResponse builds the response map for a purchase execution.
 func buildPurchaseDetailsResponse(execution *config.PurchaseExecution, planName string) map[string]any {
 	response := map[string]any{
@@ -3087,7 +3118,7 @@ func buildPurchaseDetailsResponse(execution *config.PurchaseExecution, planName 
 		"scheduled_date":     execution.ScheduledDate.Format("2006-01-02"),
 		"total_upfront_cost": execution.TotalUpfrontCost,
 		"estimated_savings":  execution.EstimatedSavings,
-		"recommendations":    execution.Recommendations,
+		"recommendations":    sanitizedRecommendationErrors(execution.Recommendations),
 	}
 
 	if execution.NotificationSent != nil {
@@ -3097,7 +3128,7 @@ func buildPurchaseDetailsResponse(execution *config.PurchaseExecution, planName 
 		response["completed_at"] = execution.CompletedAt.Format("2006-01-02T15:04:05Z")
 	}
 	if execution.Error != "" {
-		response["error"] = execution.Error
+		response["error"] = purchase.SanitizeStoredError(execution.Error)
 	}
 	return response
 }

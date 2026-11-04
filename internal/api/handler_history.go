@@ -428,7 +428,7 @@ func annotateHistoryRowByStatus(row *config.PurchaseHistoryRecord, exec config.P
 	case "pending", "notified":
 		row.Approver = approver
 	case "failed":
-		row.StatusDescription = exec.Error
+		row.StatusDescription = purchase.SanitizeStoredError(exec.Error)
 	case "expired":
 		row.StatusDescription = "approval link expired (not approved within 7 days)"
 	case config.StatusCanceled, config.LegacyStatusCanceled:
@@ -482,7 +482,7 @@ func annotateInFlightOrAuditGapRow(row *config.PurchaseHistoryRecord, exec confi
 		// double-count guard as the audit-gap completed case below.
 		row.IsAuditGap = true
 		annotateApproved(row, exec, approver)
-		row.StatusDescription = "partially completed — some commitments succeeded, others failed: " + exec.Error
+		row.StatusDescription = "partially completed — some commitments succeeded, others failed: " + purchase.SanitizeStoredError(exec.Error)
 	case "completed":
 		// Only audit-gap completed executions reach here (fetchExecutionsAsHistory
 		// skips clean completed rows). exec.Error carries why the history write
@@ -494,7 +494,7 @@ func annotateInFlightOrAuditGapRow(row *config.PurchaseHistoryRecord, exec confi
 		row.IsAuditGap = true
 		annotateApproved(row, exec, approver)
 		if exec.Error != "" {
-			row.StatusDescription = "purchase completed but its history record could not be saved: " + exec.Error
+			row.StatusDescription = "purchase completed but its history record could not be saved: " + purchase.SanitizeStoredError(exec.Error)
 		}
 	}
 }
