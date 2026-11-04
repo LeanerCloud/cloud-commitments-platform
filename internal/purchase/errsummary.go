@@ -221,8 +221,8 @@ func IsDefiniteAWSRefusal(recs []config.RecommendationRecord, stored string) boo
 func SanitizeStoredError(s string) string {
 	rest := strings.TrimPrefix(s, partialRunPrefix)
 	prefix := s[:len(s)-len(rest)]
-	if onlyServerNotes(rest) {
-		return s
+	if out, ok := renderServerNotes(rest); ok {
+		return prefix + out
 	}
 	return prefix + ErrCategoryMessage(classifyStoredText(rest))
 }
