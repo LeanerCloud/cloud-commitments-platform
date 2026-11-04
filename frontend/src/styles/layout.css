@@ -66,6 +66,12 @@
     flex-direction: column;
     gap: var(--cudly-sp-2);
     transition: width var(--cudly-dur) var(--cudly-ease);
+    /* Stays in view on long pages; scrolls itself when the window is short. */
+    position: sticky;
+    top: var(--cudly-topbar-h);
+    align-self: flex-start;
+    max-height: calc(100vh - var(--cudly-topbar-h));
+    overflow-y: auto;
 }
 
 .app-sidebar.collapsed {

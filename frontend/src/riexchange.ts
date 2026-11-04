@@ -741,7 +741,11 @@ export function renderReshapeStalenessBanner(
     const ms = Date.now() - new Date(collectedAt).getTime();
     const hours = Math.floor(ms / (1000 * 60 * 60));
     const mins = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-    ageLabel = hours > 0 ? ` (last collected ${hours}h${mins > 0 ? ` ${mins}m` : ''} ago)` : ` (last collected ${mins}m ago)`;
+    let age: string;
+    if (hours >= 48) age = `${Math.floor(hours / 24)} days`;
+    else if (hours > 0) age = `${hours}h${mins > 0 ? ` ${mins}m` : ''}`;
+    else age = `${mins}m`;
+    ageLabel = ` (last collected ${age} ago)`;
   }
 
   const isSoft = staleness === 'soft';

@@ -650,8 +650,15 @@ th .history-column-filter-btn:focus-visible {
 }
 
 .table-callout.error {
+    /* The generic div.error box adds its own alert icon and the padding for
+     * it; the callout already carries an icon element. */
+    padding: var(--cudly-sp-2) var(--cudly-sp-3);
     border-color: color-mix(in srgb, var(--cudly-error) 35%, transparent);
     background: var(--cudly-error-bg);
+}
+
+.table-callout.error::before {
+    content: none;
 }
 
 .table-callout.error > .icon {

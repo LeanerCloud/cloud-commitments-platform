@@ -179,6 +179,7 @@ body.sidebar-open {
         top: 0;
         left: 0;
         height: 100%;
+        max-height: none;
         z-index: 100;
         /* The drawer always opens with full labels, even when the desktop
          * sidebar is collapsed (issue #1682). */

@@ -22,6 +22,7 @@ import { renderGroups } from '../groups/groupList';
 import { renderUsers } from '../users/userList';
 import * as userState from '../users/state';
 import type { APIGroup } from '../api';
+import { renderReshapeStalenessBanner } from '../riexchange';
 
 describe('1. accountDisplayLabel', () => {
   test('appends the id when the name lacks it', () => {
@@ -197,5 +198,49 @@ describe('10. help-text typography', () => {
       indexHtml.matchAll(/<option value="(?:convertible|standard)"[^>]*>([^<]*)<\/option>/g),
     ).map((m) => m[1]);
     expect(labels).toEqual(['Convertible (default)', 'Standard (~5% cheaper)']);
+  });
+});
+
+describe('12. sticky sidebar', () => {
+  const rule = (css: string, selector: string): string =>
+    css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.]/g, '\\.')} \\{[^}]*\\}`))?.[0] ?? '';
+  test('desktop sidebar sticks below the topbar', () => {
+    const r = rule(readSrc('styles/layout.css'), '.app-sidebar');
+    expect(r).toMatch(/position:\s*sticky/);
+    expect(r).toMatch(/top:\s*var\(--cudly-topbar-h\)/);
+    expect(r).toMatch(/align-self:\s*flex-start/);
+    expect(r).toMatch(/overflow-y:\s*auto/);
+  });
+  test('mobile drawer drops the sticky height cap', () => {
+    const css = readSrc('styles/responsive.css');
+    const block = css.match(/\.app-sidebar,\s*\.app-sidebar\.collapsed \{[^}]*\}/)![0];
+    expect(block).toMatch(/max-height:\s*none/);
+  });
+});
+
+describe('13. RI Exchange staleness banner', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="ri-exchange-recommendations-list"></div>';
+  });
+  const text = (): string => document.getElementById('ri-exchange-recommendations-freshness')!.textContent!;
+  const hoursAgo = (h: number, extraMin = 0): string =>
+    new Date(Date.now() - (h * 60 + extraMin) * 60 * 1000).toISOString();
+
+  test('48 hours or more is reported in days', () => {
+    renderReshapeStalenessBanner('hard', hoursAgo(203, 42));
+    expect(text()).toContain('last collected 8 days ago');
+    expect(text()).not.toContain('203h');
+  });
+  test('exactly 48 hours is 2 days', () => {
+    renderReshapeStalenessBanner('hard', hoursAgo(48, 1));
+    expect(text()).toContain('last collected 2 days ago');
+  });
+  test('under 48 hours keeps hours and minutes', () => {
+    renderReshapeStalenessBanner('hard', hoursAgo(47, 30));
+    expect(text()).toContain('last collected 47h 30m ago');
+  });
+  test('the error callout suppresses the generic circle icon', () => {
+    const css = readSrc('styles/tables.css');
+    expect(css.match(/\.table-callout\.error::before[^{]*\{[^}]*\}/)?.[0]).toMatch(/content:\s*none/);
   });
 });
