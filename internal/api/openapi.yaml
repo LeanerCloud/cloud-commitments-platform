@@ -6985,8 +6985,11 @@ components:
       nullable: true
       description: >
         Non-null when the most recent persisted collection kept rows from
-        at least one incomplete sweep. Cleared by the next collection whose
-        sweeps are all complete. Carries counts and reason categories only.
+        at least one incomplete sweep, or while a pricing hold carries
+        forward from an earlier collection. Cleared by the next collection
+        whose sweeps are all complete and that leaves no hold. Carries counts
+        and reason categories, plus held_account_ids filtered to the
+        caller's account scope.
       required: [providers]
       properties:
         providers:
