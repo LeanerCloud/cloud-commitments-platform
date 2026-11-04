@@ -412,8 +412,14 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 		// fixing the config makes Retry work). Same call and input as the
 		// retry handler's gate so the two cannot disagree (issue #161).
 		if reason := purchase.RedriveRefusalReason(&exec); reason != "" {
-			row.OpsHint = reason
 			row.RedriveUnsafe = true
+			// A definite provider refusal means nothing was bought, so the
+			// duplicate-purchase warning would mislead.
+			if purchase.IsDefiniteRefusal(purchase.SummarizeStoredError(exec.Error)) {
+				row.OpsHint = ""
+			} else {
+				row.OpsHint = reason
+			}
 		}
 	}
 	annotateHistoryRowByStatus(&row, exec, approver)
