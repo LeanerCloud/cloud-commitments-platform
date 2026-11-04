@@ -3,6 +3,7 @@ package purchase
 import (
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -36,6 +37,28 @@ var serverNotePatterns = []string{
 	`email notifier not configured for this deployment`,
 	`no notification email set in Settings \x{2192} General(?: and no account contact emails configured)?`,
 	`FROM_EMAIL not configured for this deployment`,
+	// RI exchange record errors (api/handler_ri_exchange.go failExchange callers and
+	// the exchange package's auto-exchange reservation notes).
+	`config load failed`,
+	`exchange record has no region; cannot execute safely`,
+	`(?:daily|per-exchange) spending cap is not configured \(RIExchange(?:MaxDaily|MaxPerExchange)USD is 0\)`,
+	`RI exchange daily cap exceeded: (?:spend [^;\s]+ exceeds cap [^;\s]+|initial [^;\s]+, remaining [^;\s]+)`,
+	`daily spending cap check failed`,
+	`reserved ceiling "[^"]*" is not a decimal`,
+	`exchange reservation returned no record ID`,
+	`exchange reservation returned invalid ceiling "[^"]*"`,
+	// Scheduler note for a provider name it does not know.
+	`unknown provider "[^"]*" \(valid: aws, azure, gcp\)`,
+}
+
+// categoryNotePatterns matches a collection failure stored as "<provider>:
+// <category message>" per failed provider.
+func categoryNotePatterns() []string {
+	var out []string
+	for _, c := range []string{ErrCategoryAccessDenied, ErrCategoryUnavailable, ErrCategoryLimit, ErrCategoryUnknown} {
+		out = append(out, regexp.QuoteMeta(ErrCategoryMessage(c)))
+	}
+	return out
 }
 
 const (
@@ -60,7 +83,7 @@ var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + reg
 	`|provider "[^"]*" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`
 
 // A rec's "<resourceType>: " head, as the writer's per-rec join adds it.
-var serverNoteRE = regexp.MustCompile(`^(?:[A-Za-z0-9][A-Za-z0-9._-]*: )?(?:` + strings.Join(serverNotePatterns, "|") + `)(?:; |$)`)
+var serverNoteRE = regexp.MustCompile(`^(?:[A-Za-z0-9][A-Za-z0-9._-]*: )?(?:` + strings.Join(append(slices.Clone(serverNotePatterns), categoryNotePatterns()...), "|") + `)(?:; |$)`)
 
 var serverNoteHeadRE = regexp.MustCompile(`^((?:[A-Za-z0-9][A-Za-z0-9._-]*: )?(?:` + strings.Join(serverNoteHeads, "|") + `))(?:: [^;]*)?(?:; |$)`)
 

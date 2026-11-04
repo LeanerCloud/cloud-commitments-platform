@@ -55,6 +55,18 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		"no notification email set in Settings → General and no account contact emails configured",
 		"no notification email set in Settings → General",
 		"FROM_EMAIL not configured for this deployment",
+		"config load failed",
+		"exchange record has no region; cannot execute safely",
+		"daily spending cap is not configured (RIExchangeMaxDailyUSD is 0)",
+		"per-exchange spending cap is not configured (RIExchangeMaxPerExchangeUSD is 0)",
+		"RI exchange daily cap exceeded: spend 900.000000 exceeds cap 800.000000",
+		"RI exchange daily cap exceeded: initial 10.000000, remaining 5.000000",
+		"daily spending cap check failed",
+		`reserved ceiling "x" is not a decimal`,
+		"exchange reservation returned no record ID",
+		`exchange reservation returned invalid ceiling "x"`,
+		`unknown provider "AWS" (valid: aws, azure, gcp)`,
+		ErrCategoryMessage(ErrCategoryAccessDenied),
 	}
 	for _, n := range notes {
 		assert.NotEmpty(t, n)
@@ -86,4 +98,12 @@ const legacyPlanStepNoRecommendationsNote = "plan step has no recommendations at
 
 func TestErrPlanStepNoRecommendations_NamesNoInternalIssue(t *testing.T) {
 	assert.NotContains(t, ErrPlanStepNoRecommendations.Error(), "#")
+}
+
+// A recommendation collection failure is stored as one "<provider>: <category
+// message>" item per failed provider.
+func TestSanitizeStoredError_CollectionCategoryForm(t *testing.T) {
+	stored := "aws: " + ErrCategoryMessage(ErrCategoryAccessDenied) + "; azure: " + ErrCategoryMessage(ErrCategoryUnknown)
+	assert.Equal(t, stored, SanitizeStoredError(stored))
+	assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), SanitizeStoredError(stored+"; gcp: raw text for project my-project"))
 }
