@@ -178,6 +178,8 @@ and `sub_claim_prefix` equal to the prefix above; otherwise no token matches.
 
 This module is bootstrap-only: a privileged human applies it, staging first. Agents never apply.
 
+If your existing `terraform.tfvars` has `github_repo = "owner@id/repo@id"` (the 2026-09 hand-applied form), set it back to `owner/name` and add the two id vars; the subjects stay identical.
+
 If you fork CUDly or use a different repo, set `github_repo`, `github_owner_id` and `github_repo_id` in `terraform.tfvars` to the new
 repo's values and re-apply; the prefix changes, the enumerated suffixes do not. If you add a
 new workflow job that assumes this role and binds to a not-yet-listed `environment:`, add its exact

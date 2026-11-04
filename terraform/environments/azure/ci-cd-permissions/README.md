@@ -183,10 +183,9 @@ and `sub_claim_prefix` equal to the prefix above; otherwise no token matches.
 
 This module is bootstrap-only: a privileged human applies it, staging first. Agents never apply.
 
-Apply note: the provider treats a credential's `subject` as immutable, so changing it forces
-replacement of the `github_main` and `github_environment` credentials (same resource addresses,
-destroy then create). The live credentials were already re-pointed to the immutable subject by hand;
-after a refresh the plan should show no subject change. Check the plan before applying.
+If your existing `terraform.tfvars` has `github_repo = "owner@id/repo@id"` (the 2026-09 hand-applied form), set it back to `owner/name` and add the two id vars; the subjects stay identical.
+
+Apply note: with the pinned azuread provider, `subject` and `description` changes are in-place updates (only `display_name` and the application id force replacement). The live state already has the id form, so the plan should show no subject diff, only an in-place description diff if the old tfvars used the `@` form.
 
 No `pull_request`-subject credential is provisioned: it is not scoped to any
 branch or environment protection, and no workflow in this repo runs
