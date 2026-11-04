@@ -8,18 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func constrainedAdminService(t *testing.T, c *PermissionConstraints) (*Service, *User) {
+func constrainedAdminService(t *testing.T, c *PermissionConstraints) *Service {
 	t.Helper()
 	mockStore := new(MockStore)
 	svc := createTestService(mockStore, new(MockEmailSender))
 	ctx := context.Background()
-	user := &User{ID: "u1", GroupIDs: []string{"g1"}}
-	mockStore.On("GetUserByID", ctx, "u1").Return(user, nil)
+	mockStore.On("GetUserByID", ctx, "u1").Return(&User{ID: "u1", GroupIDs: []string{"g1"}}, nil)
 	mockStore.On("GetGroup", ctx, "g1").Return(&Group{
 		ID:          "g1",
 		Permissions: []Permission{{Action: ActionAdmin, Resource: ResourceAll, Constraints: c}},
 	}, nil)
-	return svc, user
+	return svc
 }
 
 func TestAdminCapability_RequiresUnconstrainedGrant(t *testing.T) {
@@ -39,7 +38,7 @@ func TestAdminCapability_RequiresUnconstrainedGrant(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			svc, _ := constrainedAdminService(t, tc.c)
+			svc := constrainedAdminService(t, tc.c)
 			has, err := svc.HasPermissionAPI(ctx, "u1", ActionAdmin, ResourceAll)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, has, "HasPermissionAPI(admin,*)")
@@ -52,8 +51,25 @@ func TestAdminCapability_RequiresUnconstrainedGrant(t *testing.T) {
 }
 
 func TestAdminCapability_ConstrainedGrantKeepsScopedMeaning(t *testing.T) {
-	svc, _ := constrainedAdminService(t, &PermissionConstraints{AccountIDs: []string{"a"}})
-	has, err := svc.HasPermissionAPI(context.Background(), "u1", ActionView, ResourcePlans)
-	require.NoError(t, err)
-	assert.True(t, has)
+	for _, tc := range []struct {
+		name string
+		c    *PermissionConstraints
+	}{
+		{"account scoped", &PermissionConstraints{AccountIDs: []string{"a"}}},
+		{"amount capped", &PermissionConstraints{MaxPurchaseAmount: 10}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := constrainedAdminService(t, tc.c)
+			for _, p := range []Permission{
+				{Action: ActionView, Resource: ResourcePlans},
+				{Action: ActionUpdate, Resource: ResourceConfig},
+				{Action: ActionUpdate, Resource: ResourcePlans},
+				{Action: ActionView, Resource: ResourcePurchases},
+			} {
+				has, err := svc.HasPermissionAPI(context.Background(), "u1", p.Action, p.Resource)
+				require.NoError(t, err)
+				assert.True(t, has, "%s:%s", p.Action, p.Resource)
+			}
+		})
+	}
 }
