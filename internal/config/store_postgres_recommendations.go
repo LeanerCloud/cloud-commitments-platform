@@ -45,6 +45,23 @@ const azurePricingMigrationVersion = 106
 // insert. This collapses ambient and registered identities consistently
 // on both sides of the join.
 func (s *PostgresStore) UpsertRecommendations(ctx context.Context, collectedAt time.Time, recs []RecommendationRecord, successfulCollects []SuccessfulCollect) error {
+	return s.UpsertRecommendationsWithPartial(ctx, collectedAt, recs, successfulCollects, nil)
+}
+
+// UpsertRecommendationsWithPartial is UpsertRecommendations that records the
+// collection's incomplete-sweep summary in the same transaction (nil clears
+// it). Writing the marker separately left a window in which a failed second
+// write dropped the Azure pricing hold while the held rows were already
+// committed.
+func (s *PostgresStore) UpsertRecommendationsWithPartial(ctx context.Context, collectedAt time.Time, recs []RecommendationRecord, successfulCollects []SuccessfulCollect, partial *RecommendationsCollectionPartial) error {
+	var partialJSON []byte
+	if partial != nil {
+		encoded, err := json.Marshal(partial)
+		if err != nil {
+			return fmt.Errorf("failed to encode collection partial: %w", err)
+		}
+		partialJSON = encoded
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin tx: %w", err)
@@ -83,9 +100,9 @@ func (s *PostgresStore) UpsertRecommendations(ctx context.Context, collectedAt t
 		UPDATE recommendations_state
 		   SET last_collected_at       = GREATEST(last_collected_at, $1),
 		       last_collection_error   = NULL,
-		       last_collection_partial = NULL
+		       last_collection_partial = $2::jsonb
 		 WHERE id = 1
-	`, collectedAt); err != nil {
+	`, collectedAt, partialJSON); err != nil {
 		return fmt.Errorf("failed to update state: %w", err)
 	}
 

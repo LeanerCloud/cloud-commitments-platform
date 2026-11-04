@@ -692,6 +692,10 @@ type StoreInterface interface {
 	// SuccessfulCollect for the per-row semantics. There is deliberately no
 	// unscoped "replace everything" method (issue #159).
 	UpsertRecommendations(ctx context.Context, collectedAt time.Time, recs []RecommendationRecord, successfulCollects []SuccessfulCollect) error
+	// UpsertRecommendationsWithPartial is UpsertRecommendations that also
+	// records the collection's incomplete-sweep summary (nil clears it) in the
+	// same transaction, so the rows and the marker commit or roll back together.
+	UpsertRecommendationsWithPartial(ctx context.Context, collectedAt time.Time, recs []RecommendationRecord, successfulCollects []SuccessfulCollect, partial *RecommendationsCollectionPartial) error
 	// PruneStaleRecommendations deletes the rows of every (provider,
 	// account) pair with no row collected in the last retentionDays days,
 	// leaving every pair that collected inside the window untouched, and

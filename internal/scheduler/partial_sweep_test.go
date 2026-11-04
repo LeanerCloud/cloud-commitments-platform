@@ -189,15 +189,17 @@ func expectScheduledCollection(store *MockConfigStore, providers ...string) (*[]
 	store.On("UpsertRecommendations", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
 			upserted = args.Get(2).([]config.RecommendationRecord)
-		}).Return(nil).Once()
+		}).Return(nil).Maybe()
 
-	// Registered as Maybe so an unwanted call is RECORDED: MockConfigStore
-	// short-circuits unexpected methods before mock.Called, which would
-	// make AssertNotCalled pass vacuously.
+	// A partial collection writes its marker in the same transaction as the
+	// rows. Registered as Maybe so an unwanted call is RECORDED:
+	// MockConfigStore short-circuits unexpected methods before mock.Called,
+	// which would make AssertNotCalled pass vacuously.
 	var recorded *config.RecommendationsCollectionPartial
-	store.On("SetRecommendationsCollectionPartial", mock.Anything, mock.Anything).
+	store.On("UpsertRecommendationsWithPartial", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
-			recorded = args.Get(1).(*config.RecommendationsCollectionPartial)
+			upserted = args.Get(2).([]config.RecommendationRecord)
+			recorded = args.Get(4).(*config.RecommendationsCollectionPartial)
 		}).Return(nil).Maybe()
 	return &upserted, &recorded
 }
@@ -241,7 +243,7 @@ func TestCollectRecommendations_CompleteSweepLeavesPartialCleared(t *testing.T) 
 
 	require.NoError(t, err)
 	assert.Len(t, *upserted, 1)
-	store.AssertNotCalled(t, "SetRecommendationsCollectionPartial", mock.Anything, mock.Anything)
+	store.AssertNotCalled(t, "UpsertRecommendationsWithPartial", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestCollectRecommendations_TotalFailureUnchanged: a hard provider failure
@@ -260,7 +262,7 @@ func TestCollectRecommendations_TotalFailureUnchanged(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, result.FailedProviders, "azure")
 	assert.Contains(t, recordedErr, "azure: ")
-	store.AssertNotCalled(t, "SetRecommendationsCollectionPartial", mock.Anything, mock.Anything)
+	store.AssertNotCalled(t, "UpsertRecommendationsWithPartial", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // A partial provider and a complete one: only the partial provider appears.

@@ -433,11 +433,10 @@ func (s *Scheduler) clearCollectionStartedBestEffort(ctx context.Context, ownerT
 // recorded in recommendations_state so the frontend banner renders while
 // the user still sees the valid rows we managed to upsert.
 //
-// UpsertRecommendations also resets last_collection_partial, so a complete
-// collection clears the previous run's partial marker; a non-nil partial
-// re-records it straight after (issue #87). The two writes mirror the
-// existing error-column pattern and are not atomic: if the second write
-// fails, the run is logged and reads as complete until the next collection.
+// The rows and last_collection_partial commit in one transaction: a complete
+// collection clears the previous run's marker, a non-nil partial replaces it
+// (issue #87). A failed marker write rolls the rows back too, so the Azure
+// pricing hold cannot be lost while the held rows stay.
 //
 // After a successful write it prunes the rows of (provider, account) pairs
 // that have not collected for CUDLY_STALE_RECOMMENDATION_RETENTION_DAYS
@@ -454,7 +453,7 @@ func (s *Scheduler) persistCollection(ctx context.Context, recs []config.Recomme
 		}
 		return
 	}
-	if err := s.config.UpsertRecommendations(ctx, time.Now().UTC(), recs, successfulCollects); err != nil {
+	if err := s.upsertWithMarker(ctx, recs, successfulCollects, partial); err != nil {
 		logging.Errorf("Failed to persist recommendations: %v", err)
 		if setErr := s.config.SetRecommendationsCollectionError(ctx, err.Error()); setErr != nil {
 			logging.Errorf("Failed to record write error: %v", setErr)
@@ -468,13 +467,17 @@ func (s *Scheduler) persistCollection(ctx context.Context, recs []config.Recomme
 		}
 	}
 
-	if partial != nil {
-		if err := s.config.SetRecommendationsCollectionPartial(ctx, partial); err != nil {
-			logging.Errorf("Failed to record partial collection: %v", err)
-		}
-	}
-
 	s.pruneStaleRecommendationsBestEffort(ctx)
+}
+
+// upsertWithMarker writes the rows and the collection's partial marker in one
+// transaction. A complete collection (nil partial) needs only
+// UpsertRecommendations, which clears the marker in its own transaction.
+func (s *Scheduler) upsertWithMarker(ctx context.Context, recs []config.RecommendationRecord, successfulCollects []config.SuccessfulCollect, partial *config.RecommendationsCollectionPartial) error {
+	if partial == nil {
+		return s.config.UpsertRecommendations(ctx, time.Now().UTC(), recs, successfulCollects)
+	}
+	return s.config.UpsertRecommendationsWithPartial(ctx, time.Now().UTC(), recs, successfulCollects, partial)
 }
 
 // joinProviderErrors formats a "provider: err; provider: err" string for

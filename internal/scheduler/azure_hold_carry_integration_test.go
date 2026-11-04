@@ -103,3 +103,37 @@ func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 		require.Nil(t, fresh.LastCollectionPartial)
 	})
 }
+
+// The rows and the hold marker are written in one transaction: when writing the
+// new marker fails, the upsert rolls back too, so the old rows and the old hold
+// both stay. Before, the upsert committed and reset the marker first, and a
+// failing second write left the held rows purchasable.
+func TestPersistCollection_FailedMarkerWriteRollsBackUpsert(t *testing.T) {
+	ctx := context.Background()
+	container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
+	store := config.NewPostgresStore(container.DB)
+	s := &Scheduler{config: store}
+	acctA := uuid.NewString()
+	seedAdvisorRow(t, store)
+	s.persistCollection(ctx, nil, nil, nil, heldPartial(acctA))
+	require.Equal(t, []string{acctA}, heldAzureAccounts(t, store))
+
+	_, err := container.DB.Exec(ctx, `
+		CREATE FUNCTION fail_poisoned_marker() RETURNS trigger AS $$
+		BEGIN
+			IF NEW.last_collection_partial::text LIKE '%poison%' THEN
+				RAISE EXCEPTION 'injected marker write failure';
+			END IF;
+			RETURN NEW;
+		END $$ LANGUAGE plpgsql;
+		CREATE TRIGGER fail_poisoned_marker BEFORE UPDATE ON recommendations_state
+			FOR EACH ROW EXECUTE FUNCTION fail_poisoned_marker();`)
+	require.NoError(t, err)
+
+	newRow := config.RecommendationRecord{ID: "new-row", Provider: "azure", Service: "compute", Region: "eastus", ResourceType: "Standard_D4s_v3",
+		Savings: 10, Count: 1, Term: 12, Payment: "upfront"}
+	s.persistCollection(ctx, []config.RecommendationRecord{newRow}, nil, nil, heldPartial("poison"))
+
+	require.Equal(t, []string{"prev-advisor-row"}, storedAzureIDs(t, store), "the upsert must roll back with the marker")
+	require.Equal(t, []string{acctA}, heldAzureAccounts(t, store), "the old hold must survive a failed marker write")
+}
