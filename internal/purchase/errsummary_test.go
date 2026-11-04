@@ -25,21 +25,6 @@ func TestSanitizeStoredError_AWS403(t *testing.T) {
 	}
 }
 
-func TestSanitizeStoredError_PassThrough(t *testing.T) {
-	for _, s := range []string{
-		"history_write_failed: db timeout",
-		"recovered after reap; provider purchase succeeded",
-		"ramp not advanced: ladder step missing",
-		"reaped after 30m in running state, executor did not complete",
-		"refusing to execute retry attempt 2: AWS EC2 and Redshift purchases have no provider-side duplicate guard",
-		ErrStaleAzurePricing.Error(),
-		"stranded in approved state",
-		"",
-	} {
-		assert.Equal(t, s, SanitizeStoredError(s))
-	}
-}
-
 func TestSanitizeStoredError_Samples(t *testing.T) {
 	cases := map[string]string{
 		"RESPONSE 403: 403 Forbidden\nERROR CODE: AuthorizationFailed":          ErrCategoryAccessDenied,
@@ -57,10 +42,8 @@ func TestSanitizeStoredError_PartialRun(t *testing.T) {
 	in := partialRunPrefix + "rec a: " + fakeAWS403 + "; rec b failed locally; " + "api error LimitExceeded: x arn:aws:iam::123456789012:role/r"
 	out := SanitizeStoredError(in)
 	assert.True(t, strings.HasPrefix(out, partialRunPrefix))
-	assert.Contains(t, out, "rec b failed locally")
-	assert.Contains(t, out, ErrCategoryMessage(ErrCategoryLimit))
+	assert.Equal(t, partialRunPrefix+ErrCategoryMessage(ErrCategoryAccessDenied), out)
 	assert.NotContains(t, out, "123456789012")
-	assert.NotContains(t, out, "arn:")
 }
 
 func TestSummarizeProviderError_Typed(t *testing.T) {
@@ -82,20 +65,5 @@ func TestSummarizeProviderError_Typed(t *testing.T) {
 		assert.Equal(t, c.cat, cat, c.err.Error())
 		assert.Equal(t, ErrCategoryMessage(c.cat), msg)
 		assert.NotEmpty(t, msg)
-	}
-}
-
-func TestIsDefiniteStoredRefusal(t *testing.T) {
-	cases := map[string]bool{
-		fakeAWS403: true,
-		"t4g.nano: " + fakeAWS403 + "; t4g.micro: " + fakeAWS403:       true,
-		partialRunPrefix + "t4g.nano: " + fakeAWS403:                   true,
-		"t4g.nano: purchase outcome unknown; t4g.micro: " + fakeAWS403: false,
-		"purchase outcome unknown":                                     false,
-		"history_write_failed: commitment purchased":                   false,
-		"": false,
-	}
-	for in, want := range cases {
-		assert.Equal(t, want, IsDefiniteStoredRefusal(in), in)
 	}
 }

@@ -554,9 +554,11 @@ func summarizeExecuteFailure(executionID string, err error) (category, message s
 	logRawExecuteFailure(executionID, err)
 	category, message = purchase.SummarizeProviderError(err)
 	if category == purchase.ErrCategoryUnknown {
-		// Server-authored refusals (for example "re-fetch the recommendation")
-		// carry no provider text and stay readable.
-		message = purchase.SanitizeStoredError(err.Error())
+		// Only known server-authored refusals (for example "re-fetch the
+		// recommendation") stay readable; any other text is the category message.
+		if text, ok := purchase.ServerNoteMessage(err); ok {
+			message = text
+		}
 	}
 	return category, message
 }

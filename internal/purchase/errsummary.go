@@ -3,9 +3,12 @@ package purchase
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"google.golang.org/api/googleapi"
 )
 
@@ -35,18 +38,12 @@ func ErrCategoryMessage(category string) string {
 	return errCategoryMessages[ErrCategoryUnknown]
 }
 
-// IsDefiniteRefusal reports whether the provider clearly refused the
-// purchase, so nothing was bought.
-func IsDefiniteRefusal(category string) bool {
-	return category == ErrCategoryAccessDenied || category == ErrCategoryUnavailable || category == ErrCategoryLimit
-}
-
-// SummarizeProviderError classifies a live error by type and returns its
-// category and fixed message.
+// SummarizeProviderError classifies a live error by its type or explicit code
+// fields and returns its category and fixed message.
 func SummarizeProviderError(err error) (category, message string) {
 	category = classifyTypedError(err)
 	if category == ErrCategoryUnknown && err != nil {
-		category = classifyText(err.Error())
+		category = classifyStoredText(err.Error())
 	}
 	return category, ErrCategoryMessage(category)
 }
@@ -55,17 +52,25 @@ func classifyTypedError(err error) string {
 	var apiErr interface{ ErrorCode() string }
 	var azErr *azcore.ResponseError
 	var gErr *googleapi.Error
+	var authErr *azidentity.AuthenticationFailedError
 	switch {
+	case errors.As(err, &authErr):
+		return ErrCategoryAccessDenied
 	case errors.As(err, &apiErr):
-		if c := classifyText(apiErr.ErrorCode()); c != ErrCategoryUnknown {
+		if c := classifyCode(apiErr.ErrorCode()); c != ErrCategoryUnknown {
 			return c
 		}
 	case errors.As(err, &azErr):
-		if c := classifyText(azErr.ErrorCode); c != ErrCategoryUnknown {
+		if c := classifyCode(azErr.ErrorCode); c != ErrCategoryUnknown {
 			return c
 		}
 		return categoryForStatus(azErr.StatusCode)
 	case errors.As(err, &gErr):
+		for _, item := range gErr.Errors {
+			if c := classifyCode(item.Reason); c != ErrCategoryUnknown {
+				return c
+			}
+		}
 		return categoryForStatus(gErr.Code)
 	}
 	var httpErr interface{ HTTPStatusCode() int }
@@ -88,15 +93,9 @@ func categoryForStatus(code int) string {
 }
 
 var (
-	deniedNeedles = []string{"accessdenied", "unauthorized", "authorizationfailed", "forbidden",
-		"encoded authorization", "statuscode: 401", "statuscode: 403", "response 401", "response 403", "error 403"}
-	limitNeedles   = []string{"limitexceeded", "quota", "throttl", "toomanyrequests", "statuscode: 429", "response 429", "error 429"}
-	unavailNeedles = []string{"capacity", "offeringnotfound", "notfound", "not available",
-		"notavailable", "statuscode: 404", "response 404", "error 404"}
-	// Substrings that only appear in provider-authored error text.
-	providerMarkers = []string{"operation error", "api error", "statuscode:", "requestid", "arn:aws",
-		"encoded authorization", "accessdenied", "unauthorizedoperation", "authorizationfailed",
-		"googleapi", "error code:", "response 401", "response 403", "response 404", "response 429", "response 5"}
+	deniedCodes  = []string{"accessdenied", "unauthorized", "authorizationfailed", "forbidden"}
+	limitCodes   = []string{"limitexceeded", "quota", "throttl", "toomanyrequests", "ratelimit"}
+	unavailCodes = []string{"capacity", "offeringnotfound", "notfound", "notavailable"}
 )
 
 func containsAny(lower string, needles []string) bool {
@@ -108,53 +107,122 @@ func containsAny(lower string, needles []string) bool {
 	return false
 }
 
-func classifyText(s string) string {
-	lower := strings.ToLower(s)
+// classifyCode classifies one short error code or reason, never free text.
+func classifyCode(code string) string {
+	lower := strings.ToLower(code)
 	switch {
-	case containsAny(lower, deniedNeedles):
+	case containsAny(lower, deniedCodes):
 		return ErrCategoryAccessDenied
-	case containsAny(lower, limitNeedles):
+	case containsAny(lower, limitCodes):
 		return ErrCategoryLimit
-	case containsAny(lower, unavailNeedles):
+	case containsAny(lower, unavailCodes):
 		return ErrCategoryUnavailable
 	}
 	return ErrCategoryUnknown
 }
 
-func hasProviderMarker(s string) bool {
-	return containsAny(strings.ToLower(s), providerMarkers)
+// Explicit code fields in the providers' own error formats. Words elsewhere
+// (URLs, resource names, bodies) never count.
+var (
+	awsCodeRE     = regexp.MustCompile(`api error ([A-Za-z0-9_.]+):`)
+	awsStatusRE   = regexp.MustCompile(`StatusCode: (\d{3})`)
+	azCodeRE      = regexp.MustCompile(`ERROR CODE: ([A-Za-z0-9_.-]+)`)
+	azStatusRE    = regexp.MustCompile(`RESPONSE (\d{3}):`)
+	gcpReasonRE   = regexp.MustCompile(`Reason: ([A-Za-z]+), Message:`)
+	gcpErrorRE    = regexp.MustCompile(`googleapi: Error (\d{3}): [^\n]*?(?:, ([A-Za-z]+))?(?:\n|$)`)
+	definiteAWSRE = regexp.MustCompile(`^(?:[A-Za-z0-9][A-Za-z0-9._-]*: )?operation error [^\n]*StatusCode: (4\d{2}),[^\n]*api error ([A-Za-z0-9_.]+): [^\n]*$`)
+)
+
+func statusOf(re *regexp.Regexp, s string) int {
+	m := re.FindStringSubmatch(s)
+	if m == nil {
+		return 0
+	}
+	n := 0
+	for _, c := range m[1] {
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
-// IsDefiniteStoredRefusal reports whether every "; "-joined segment of a stored
-// error is a definite provider refusal. One unknown or server-authored segment
-// means that rec's outcome is not proven, so the answer is false.
-func IsDefiniteStoredRefusal(s string) bool {
-	s = strings.TrimPrefix(s, partialRunPrefix)
-	for _, seg := range strings.Split(s, "; ") {
-		if !hasProviderMarker(seg) || !IsDefiniteRefusal(classifyText(seg)) {
+// classifyStoredText classifies a stored error string from its explicit code
+// fields only; no code field means unknown.
+func classifyStoredText(s string) string {
+	for _, re := range []*regexp.Regexp{awsCodeRE, azCodeRE, gcpErrorRE, gcpReasonRE} {
+		if c := classifyCode(lastGroup(re, s)); c != ErrCategoryUnknown {
+			return c
+		}
+	}
+	for _, re := range []*regexp.Regexp{awsStatusRE, azStatusRE, gcpErrorRE} {
+		if c := categoryForStatus(statusOf(re, s)); c != ErrCategoryUnknown {
+			return c
+		}
+	}
+	return ErrCategoryUnknown
+}
+
+// lastGroup returns the last capture group of re's first match, or "".
+func lastGroup(re *regexp.Regexp, s string) string {
+	m := re.FindStringSubmatch(s)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[len(m)-1]
+}
+
+// definiteAWSCodes are the AWS error codes returned before anything is
+// created: refused credentials, throttling and rejected parameters.
+var definiteAWSCodes = map[string]bool{
+	"AccessDenied": true, "AccessDeniedException": true, "UnauthorizedOperation": true, "AuthFailure": true,
+	"UnrecognizedClientException": true, "InvalidClientTokenId": true, "ExpiredToken": true, "ExpiredTokenException": true,
+	"Throttling": true, "ThrottlingException": true, "RequestLimitExceeded": true, "TooManyRequestsException": true,
+	"LimitExceeded": true, "ReservedInstanceLimitExceeded": true, "ReservedInstancesLimitExceeded": true,
+	"ReservedDBInstanceQuotaExceeded": true, "ReservedCacheNodeQuotaExceeded": true,
+	"InvalidParameterValue": true, "InvalidParameterCombination": true, "InvalidParameter": true,
+	"ValidationError": true, "ValidationException": true, "MissingParameter": true,
+	"InvalidReservedInstancesOfferingId": true, "ReservedInstancesOfferingNotFound": true,
+	"ReservedDBInstancesOfferingNotFound": true, "ReservedCacheNodesOfferingNotFound": true,
+}
+
+func definiteAWSSegment(seg string) bool {
+	if strings.Contains(seg, "outcome unknown") {
+		return false
+	}
+	m := definiteAWSRE.FindStringSubmatch(seg)
+	return len(m) == 3 && definiteAWSCodes[m[2]]
+}
+
+// IsDefiniteAWSRefusal reports whether a stored error proves nothing was
+// bought: every rec is AWS and every "; "-separated segment is an AWS 4xx
+// with a listed pre-send code. Azure, GCP, 5xx, a missing code or a server
+// note anywhere means the outcome is not proven, so the answer is false.
+func IsDefiniteAWSRefusal(recs []config.RecommendationRecord, stored string) bool {
+	if len(recs) == 0 {
+		return false
+	}
+	for i := range recs {
+		if recs[i].Provider != "" && recs[i].Provider != "aws" {
 			return false
 		}
 	}
-	return s != ""
-}
-
-// SanitizeStoredError rewrites provider error text in an already-stored
-// error string into its category message. Strings and "; "-joined segments
-// without provider markers pass through unchanged.
-func SanitizeStoredError(s string) string {
-	if !hasProviderMarker(s) {
-		return s
-	}
-	prefix := ""
-	if strings.HasPrefix(s, partialRunPrefix) {
-		prefix = partialRunPrefix
-		s = strings.TrimPrefix(s, partialRunPrefix)
-	}
-	segs := strings.Split(s, "; ")
-	for i, seg := range segs {
-		if hasProviderMarker(seg) {
-			segs[i] = ErrCategoryMessage(classifyText(seg))
+	stored = strings.TrimPrefix(stored, partialRunPrefix)
+	for _, seg := range strings.Split(stored, "; ") {
+		if !definiteAWSSegment(seg) {
+			return false
 		}
 	}
-	return prefix + strings.Join(segs, "; ")
+	return stored != ""
+}
+
+// SanitizeStoredError turns a stored error string into text safe to show: it
+// passes through only when every item is an allowlisted server note, and
+// otherwise the whole remainder becomes one category message. The partial-run
+// prefix is kept.
+func SanitizeStoredError(s string) string {
+	rest := strings.TrimPrefix(s, partialRunPrefix)
+	prefix := s[:len(s)-len(rest)]
+	if onlyServerNotes(rest) {
+		return s
+	}
+	return prefix + ErrCategoryMessage(classifyStoredText(rest))
 }

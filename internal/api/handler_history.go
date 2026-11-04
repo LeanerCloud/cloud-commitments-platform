@@ -413,9 +413,9 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 		// retry handler's gate so the two cannot disagree (issue #161).
 		if reason := purchase.RedriveRefusalReason(&exec); reason != "" {
 			row.RedriveUnsafe = true
-			// A definite provider refusal on every rec means nothing was
-			// bought, so the duplicate-purchase warning would mislead.
-			if purchase.IsDefiniteStoredRefusal(exec.Error) {
+			// Only a proven pre-send AWS refusal on every rec means nothing was
+			// bought; for any other outcome the duplicate-purchase warning stays.
+			if purchase.IsDefiniteAWSRefusal(exec.Recommendations, exec.Error) {
 				row.OpsHint = ""
 			} else {
 				row.OpsHint = reason
