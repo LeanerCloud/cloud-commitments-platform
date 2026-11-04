@@ -23,7 +23,8 @@ var ambientAccountKey = uuid.Nil.String()
 // hold; a disabled account keeps its rows, so it stays held. A hold with no
 // account IDs (an unresolved ambient identity) covers the ambient rows, keyed
 // by the nil UUID, and carries until an ambient Azure collection succeeds or
-// none remain.
+// none remain. Once the hold also names accounts, the ambient part is recorded
+// as the nil UUID in the held IDs, so it outlives the named accounts' re-pricing.
 func carryAzureHold(prev, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect, stored map[string]bool) *RecommendationsCollectionPartial {
 	held := previousAzureHold(prev)
 	if held == nil {
@@ -33,11 +34,16 @@ func carryAzureHold(prev, partial *RecommendationsCollectionPartial, collects []
 	if len(carried) == 0 && !unresolved {
 		return partial
 	}
+	if unresolved {
+		carried = append(carried, ambientAccountKey)
+	}
 	return mergeCarriedHold(partial, carried)
 }
 
 // mergeCarriedHold adds the carried account IDs and the pricing_unavailable
 // reason to partial's Azure entry, creating the entry when this cycle had none.
+// An entry that already records the pricing reason with no account IDs is this
+// cycle's ambient outage; it gains the nil UUID so it survives a named hold.
 func mergeCarriedHold(partial *RecommendationsCollectionPartial, carried []string) *RecommendationsCollectionPartial {
 	if partial == nil {
 		partial = &RecommendationsCollectionPartial{}
@@ -53,6 +59,8 @@ func mergeCarriedHold(partial *RecommendationsCollectionPartial, carried []strin
 	}
 	if sweep.Reasons[PartialReasonPricingUnavailable] == 0 {
 		sweep.Reasons[PartialReasonPricingUnavailable] = 1
+	} else if len(sweep.HeldAccountIDs) == 0 {
+		carried = append(carried, ambientAccountKey)
 	}
 	held := slices.Concat(sweep.HeldAccountIDs, carried)
 	slices.Sort(held)
@@ -86,6 +94,7 @@ func stillHeld(prev *PartialProviderSweep, collects []SuccessfulCollect, stored 
 		case sc.Provider != "azure":
 		case sc.CloudAccountID == nil:
 			ambientRepriced = true
+			repriced[ambientAccountKey] = true
 		default:
 			repriced[*sc.CloudAccountID] = true
 		}
