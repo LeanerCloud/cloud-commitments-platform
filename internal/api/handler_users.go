@@ -69,10 +69,52 @@ func (h *Handler) createUser(ctx context.Context, req *events.LambdaFunctionURLR
 	// requested groups at the actor's own grant ceiling (issue #226).
 	user, err := h.auth.CreateUserAPI(ctx, session.UserID, createReq)
 	if err != nil {
-		return nil, mapAuthError(err)
+		return nil, h.mapUserWriteError(ctx, req, err)
 	}
 
 	return user, nil
+}
+
+const (
+	groupCombinationDeniedMessage = "this group combination is not allowed"
+	groupGrantDeniedMessage       = "you cannot grant one or more of the requested groups"
+)
+
+// groupDetailRefusal reports the status and plain text for the refusals whose
+// message carries group-specific detail.
+func groupDetailRefusal(err error) (status int, plain string, ok bool) {
+	switch {
+	case errors.Is(err, auth.ErrContradictoryGroups):
+		return 400, groupCombinationDeniedMessage, true
+	case errors.Is(err, auth.ErrPermissionCeiling),
+		errors.Is(err, auth.ErrPermissionNotGrantable),
+		errors.Is(err, auth.ErrSelfEscalation):
+		return 403, groupGrantDeniedMessage, true
+	}
+	return 0, "", false
+}
+
+// plainGroupRefusal returns (else nil) the plain client error for a group-detail refusal
+// unless the caller holds view:groups. A failing permission check counts as
+// not holding it.
+func (h *Handler) plainGroupRefusal(ctx context.Context, req *events.LambdaFunctionURLRequest, err error) error {
+	status, plain, ok := groupDetailRefusal(err)
+	if !ok {
+		return nil
+	}
+	if _, permErr := h.requirePermission(ctx, req, "view", "groups"); permErr != nil {
+		return NewClientError(status, plain)
+	}
+	return nil
+}
+
+// mapUserWriteError is mapAuthError for user create/update, with group
+// detail shown only to callers who may view groups.
+func (h *Handler) mapUserWriteError(ctx context.Context, req *events.LambdaFunctionURLRequest, err error) error {
+	if plain := h.plainGroupRefusal(ctx, req, err); plain != nil {
+		return plain
+	}
+	return mapAuthError(err)
 }
 
 // mapAuthError maps internal/auth sentinel errors to the appropriate
@@ -146,7 +188,7 @@ func (h *Handler) updateUser(ctx context.Context, req *events.LambdaFunctionURLR
 	// the self-escalation guard (issue #907).
 	user, err := h.auth.UpdateUserAPI(ctx, session.UserID, userID, updateReq)
 	if err != nil {
-		return nil, mapAuthError(err)
+		return nil, h.mapUserWriteError(ctx, req, err)
 	}
 
 	return user, nil

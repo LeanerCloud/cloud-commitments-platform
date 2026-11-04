@@ -131,6 +131,11 @@ func (h *Handler) updateGroup(ctx context.Context, req *events.LambdaFunctionURL
 
 	group, err := h.auth.UpdateGroupAPI(ctx, session.UserID, groupID, updateReq)
 	if err != nil {
+		if errors.Is(err, auth.ErrContradictoryGroups) {
+			if plain := h.plainGroupRefusal(ctx, req, err); plain != nil {
+				return nil, plain
+			}
+		}
 		return nil, mapGroupAuthError(err)
 	}
 

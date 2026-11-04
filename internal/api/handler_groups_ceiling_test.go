@@ -171,3 +171,41 @@ func TestUpdateGroup_ContradictoryMembersMaps400(t *testing.T) {
 	assert.Equal(t, 400, ce.code)
 	assert.Contains(t, err.Error(), "2 of its members")
 }
+
+// A group update refused as a contradictory member combination names other
+// groups and member counts; a caller without view:groups gets the 400 without them.
+func TestUpdateGroup_ContradictoryMembersTextDependsOnViewGroups(t *testing.T) {
+	ctx := context.Background()
+	session := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}
+	refusal := fmt.Errorf("%w: group %q would grant write permissions, but 2 of its members also belong to a view-only group",
+		auth.ErrContradictoryGroups, "Team")
+	writeOnly := []auth.Permission{{Action: auth.ActionUpdate, Resource: auth.ResourceGroups}}
+	withView := append([]auth.Permission{{Action: auth.ActionView, Resource: auth.ResourceGroups}}, writeOnly...)
+
+	for name, c := range map[string]struct {
+		perms  []auth.Permission
+		detail bool
+	}{"without view groups": {writeOnly, false}, "with view groups": {withView, true}} {
+		t.Run(name, func(t *testing.T) {
+			mockAuth := new(MockAuthService)
+			mockAuth.On("ValidateSession", ctx, "tok").Return(session, nil)
+			mockAuth.grantPermissions(c.perms)
+			mockAuth.On("UpdateGroupAPI", ctx, session.UserID, ceilingGroupID, mock.Anything).Return(nil, refusal).Once()
+
+			_, err := (&Handler{auth: mockAuth}).updateGroup(ctx, &events.LambdaFunctionURLRequest{
+				Headers: map[string]string{"Authorization": "Bearer tok"},
+				Body:    `{"permissions":[{"action":"create","resource":"plans"}]}`,
+			}, ceilingGroupID)
+
+			ce, ok := IsClientError(err)
+			require.True(t, ok)
+			assert.Equal(t, 400, ce.code)
+			if c.detail {
+				assert.Contains(t, err.Error(), "2 of its members")
+				return
+			}
+			assert.NotContains(t, err.Error(), "Team")
+			assert.NotContains(t, err.Error(), "members")
+		})
+	}
+}
