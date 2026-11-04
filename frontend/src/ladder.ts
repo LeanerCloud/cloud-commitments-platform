@@ -24,6 +24,7 @@ import { LADDER_CONFIG_TABLE_COLUMNS, renderLadderConfigTable } from './ladder-c
 import { renderLadderConfigModal } from './ladder-config-modal';
 import { listAccountsMinimal, type AccountSummary } from './api/accounts';
 import { readLadderNumbers } from './ladder-form-numbers';
+import { clearFieldErrors } from './lib/field-errors';
 import { initRampEditor, rampScheduleProblem, showRampJsonError } from './ladder-ramp-editor';
 import { DEFAULT_RAMP_STEPS, formatRampJson } from './ladder-ramp-schedule';
 import { showSkeletonRows, teardownSkeleton } from './lib/skeleton';
@@ -136,7 +137,7 @@ function renderLadderingSection(globalEnabled: boolean): string {
   </div>
 
   <div id="ladder-configs-section">
-    <h4>Per-Account Configurations</h4>
+    <h4 class="ladder-configs-heading">Per-Account Configurations</h4>
     <div id="ladder-configs-table-container"></div>
     ${canEdit ? `
     <button type="button" id="ladder-add-config-btn" class="btn btn-secondary">
@@ -229,7 +230,13 @@ function openLadderConfigModal(existing?: api.LadderConfig): void {
   // Clone before populating: select values do not survive cloneNode.
   const form = document.getElementById('ladder-config-form');
   if (form) {
+    // A cancelled save can leave a field error behind; cloneNode copies the
+    // message and aria state but not the listeners that clear it, so drop both
+    // and let showFieldError rewire the clone's fields.
+    clearFieldErrors(form);
     const newForm = form.cloneNode(true) as HTMLElement;
+    newForm.querySelectorAll<HTMLElement>('[data-field-error-wired]')
+      .forEach(el => delete el.dataset['fieldErrorWired']);
     form.replaceWith(newForm);
     newForm.addEventListener('submit', (e) => {
       e.preventDefault();
