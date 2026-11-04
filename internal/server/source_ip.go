@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aws/aws-lambda-go/events"
+
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/clientip"
 )
 
@@ -32,4 +34,43 @@ func requestSourceIP(r *http.Request, trustedHops int) string {
 		})
 	}
 	return clientip.Resolve(r.RemoteAddr, xff, trustedHops)
+}
+
+// lambdaSourceIP returns the client address for a Function URL event.
+//
+// Behind CloudFront (CUDLY_TRUSTED_PROXY_HOPS=1, set only when enable_cdn is
+// on) sourceIp is a CloudFront edge address shared by many users, so keying
+// the per-IP limits on it would let one user lock out everyone at that edge.
+// CloudFront appends the viewer address to X-Forwarded-For, so the rightmost
+// entry is the viewer ("Request and response behavior for custom origins",
+// section "Client IP addresses", in the CloudFront developer guide). The
+// Lambda "Invoking function URLs" page defines sourceIp as the immediate TCP
+// peer and does not say whether Lambda appends that peer to X-Forwarded-For,
+// so trailing entries equal to the peer are dropped first: the result is the
+// viewer whether or not Lambda appended the edge address. With 0 hops the
+// header is ignored, so a direct caller of a public Function URL cannot
+// spoof it.
+func lambdaSourceIP(req *events.LambdaFunctionURLRequest, trustedHops int) string {
+	peer := req.RequestContext.HTTP.SourceIP
+	var xff string
+	for k, v := range req.Headers {
+		if strings.EqualFold(k, "X-Forwarded-For") {
+			xff = v
+			break
+		}
+	}
+	if trustedHops <= 0 {
+		if xff != "" {
+			warnXFFIgnored.Do(func() {
+				log.Printf("WARN: X-Forwarded-For received but CUDLY_TRUSTED_PROXY_HOPS=0; using the peer address. Set it to the number of appending proxies in front of the app.")
+			})
+		}
+		return peer
+	}
+	normalizedPeer := clientip.Resolve(peer, "", 0)
+	entries := strings.Split(xff, ",")
+	for len(entries) > 0 && clientip.Resolve(strings.TrimSpace(entries[len(entries)-1]), "", 0) == normalizedPeer {
+		entries = entries[:len(entries)-1]
+	}
+	return clientip.Resolve(peer, strings.Join(entries, ","), trustedHops)
 }

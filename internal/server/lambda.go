@@ -111,6 +111,10 @@ func (app *Application) handleLambdaHTTPEvent(ctx context.Context, rawEvent json
 		}, nil
 	}
 
+	// Per-IP rate limits key on SourceIP; behind CloudFront that is the edge
+	// address, so replace it with the viewer address (lambdaSourceIP).
+	request.RequestContext.HTTP.SourceIP = lambdaSourceIP(&request, app.appConfig.TrustedProxyHops)
+
 	// Lambda Function URL base64-encodes the request body whenever its
 	// Content-Type isn't recognized as text (the inbound mirror of the
 	// isTextContentType decision this file already makes for outbound
