@@ -610,9 +610,10 @@ export async function handleExecutePurchase(): Promise<void> {
     const err = error as Error;
     const verb = isDirect ? 'execute' : 'send for approval';
     showToast({ message: `Failed to ${verb} purchase: ${err.message}`, kind: 'error' });
-    // The server recorded a failed execution (it returns its id), so the
-    // attempt is final: close the modal so one more click can't start another.
-    if ((err as { details?: { execution_id?: unknown } }).details?.execution_id) {
+    // A recorded execution, a 409 after the claim or any 5xx may follow a real
+    // purchase: close the modal so one more click can't start another. Only
+    // act on the modal session that sent this request.
+    if (attemptMayHaveRun(err) && getPurchaseModalRecommendations() === localRecs) {
       closePurchaseModal();
       clearPurchaseModalRecommendations();
       clearExecuteMode();
@@ -620,6 +621,14 @@ export async function handleExecutePurchase(): Promise<void> {
   } finally {
     setExecutePurchaseSubmitting(executeBtn, false, executeButtonLabel(getExecuteMode() === 'direct'));
   }
+}
+
+// attemptMayHaveRun is false only for transport failures and 4xx refusals
+// other than 409, which the server answers before any execution.
+function attemptMayHaveRun(err: unknown): boolean {
+  const e = err as { status?: number; details?: { execution_id?: unknown } };
+  const status = e.status ?? 0;
+  return Boolean(e.details?.execution_id) || status >= 500 || status === 409;
 }
 
 /**
