@@ -99,7 +99,7 @@ func (c *raceReturnClient) Post(ctx context.Context, _ string, _ armreservations
 // finalize_revocations sweep's reach.
 //
 // Now exactly one request posts a Return and records the revocation, the
-// other answers RECONCILE_PENDING without posting one, and the flag stays set
+// other answers REVOCATION_PENDING_CONFIRMATION without posting one, and the flag stays set
 // until the holder's MarkPurchaseRevoked clears it.
 func TestRevokeAzure_ConcurrentFirstRevokes_OneReturn(t *testing.T) {
 	_, store := setupSubmitDB(t)

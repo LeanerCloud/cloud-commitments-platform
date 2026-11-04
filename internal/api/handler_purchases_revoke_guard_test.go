@@ -185,7 +185,7 @@ func confirmedQuote(amount float64, currency string) revokeConfirmBody {
 // this one loaded the row, so no second Return is posted and the answer is
 // already_revoked. Since issue #1518 the flip is also the claim that lets one
 // request post the Return: a row another request holds answers
-// RECONCILE_PENDING, and any other flip failure stops before the Return.
+// REVOCATION_PENDING_CONFIRMATION (RECONCILE_PENDING with the stamp), and any other flip failure stops before the Return.
 func TestCallAzureReturn_FlipFindsRowRevoked(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -219,8 +219,8 @@ func TestCallAzureReturn_FlipFindsRowRevoked(t *testing.T) {
 
 	// Issue #1518: another request holds the claim. This one must neither
 	// post a Return nor touch the flag (clearing it would orphan the holder's
-	// refund from the finalize sweep), and answers RECONCILE_PENDING like the
-	// up-front in-flight check.
+	// refund from the finalize sweep), and answers REVOCATION_PENDING_CONFIRMATION
+	// (no stamp), like the up-front in-flight check.
 	t.Run("in flight: no Return, no clear, REVOCATION_PENDING_CONFIRMATION", func(t *testing.T) {
 		t.Parallel()
 		mockStore := new(MockConfigStore)
