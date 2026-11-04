@@ -94,6 +94,11 @@ func gapFromPartialSubscriptions(p *azureprovider.PartialSubscriptionFailureErro
 		failedScopes:    max(p.Attempted-p.Succeeded, len(p.Failed)),
 		reasons:         map[string]int{},
 	}
+	// A mixed sweep also lost invalid recommendations; the count is for the
+	// user warning only and does not affect eviction (skippedOnly stays false).
+	if sk := p.Skips(); sk != nil {
+		g.skippedRecommendations = sk.SkippedCount()
+	}
 	for _, f := range p.Failed {
 		g.reasons[classifySweepCause(f.Err)]++
 	}

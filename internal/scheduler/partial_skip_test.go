@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,4 +94,34 @@ func TestGCPPartialResult_CountComesFromTypedMethod(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, gap)
 	assert.Equal(t, 5, gap.skippedRecommendations)
+}
+
+// A mixed Azure sweep (lost subscriptions plus recommendations dropped on the
+// reachable ones) reports the skipped count for the user warning, but the lost
+// subscriptions still hold stale-row eviction back.
+func TestAzureMixedSweep_RecordsSkipsAndHoldsEviction(t *testing.T) {
+	failure := azureprovider.NewPartialSubscriptionFailure(2,
+		[]azureprovider.SubscriptionFailure{{SubscriptionID: "sub-b", Err: errors.New("throttled")}},
+		[]string{"sub-a: non-USD", "sub-a: bad term"})
+
+	gap, err := tolerateIncompleteSweep("azure", failure)
+
+	require.NoError(t, err)
+	require.NotNil(t, gap)
+	assert.Equal(t, 2, gap.skippedRecommendations)
+	assert.Equal(t, 2, gap.toProviderSweep("azure").SkippedRecommendations)
+	assert.True(t, gap.holdsEviction(), "lost subscriptions still hold stale-row eviction")
+	assert.Equal(t, 1, gap.forAccount().incompleteAccounts)
+}
+
+func TestAzureFailureWithoutSkips_RecordsNoSkippedCount(t *testing.T) {
+	failure := azureprovider.NewPartialSubscriptionFailure(2,
+		[]azureprovider.SubscriptionFailure{{SubscriptionID: "sub-b", Err: errors.New("throttled")}}, nil)
+
+	gap, err := tolerateIncompleteSweep("azure", failure)
+
+	require.NoError(t, err)
+	require.NotNil(t, gap)
+	assert.Zero(t, gap.skippedRecommendations)
+	assert.True(t, gap.holdsEviction())
 }

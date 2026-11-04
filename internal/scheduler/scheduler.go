@@ -1114,11 +1114,15 @@ func tolerateIncompleteSweep(providerName string, err error) (*sweepGap, error) 
 	if partial == nil {
 		return tolerateSkippedRecommendations(providerName, err)
 	}
+	skipped := 0
+	if sk := partial.Skips(); sk != nil {
+		skipped = sk.SkippedCount()
+	}
 	logging.Warnf(
-		"%s recommendations incomplete: %d of %d subscriptions succeeded; not queried: %s (keeping the %d that did, "+
-			"and holding back stale-row eviction so the un-queried subscriptions' previous rows survive)",
+		"%s recommendations incomplete: %d of %d subscriptions succeeded; not queried: %s; %d recommendation(s) skipped as invalid "+
+			"(keeping the %d that did, and holding back stale-row eviction so the un-queried subscriptions' previous rows survive)",
 		providerName, partial.Succeeded, partial.Attempted,
-		strings.Join(partial.FailedSubscriptionIDs(), ", "), partial.Succeeded)
+		strings.Join(partial.FailedSubscriptionIDs(), ", "), skipped, partial.Succeeded)
 	return gapFromPartialSubscriptions(partial), nil
 }
 
