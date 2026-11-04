@@ -1983,15 +1983,6 @@ func (m *MockConfigStore) SetRecommendationsCollectionError(ctx context.Context,
 	return args.Error(0)
 }
 
-func (m *MockConfigStore) SetRecommendationsCollectionPartial(ctx context.Context, partial *config.RecommendationsCollectionPartial) error {
-	m.record("SetRecommendationsCollectionPartial", ctx, partial)
-	if !isExpected(&m.Mock, "SetRecommendationsCollectionPartial") {
-		return nil
-	}
-	args := m.Called(ctx, partial)
-	return args.Error(0)
-}
-
 func (m *MockConfigStore) GetRIUtilizationCache(ctx context.Context, key config.RIUtilizationCacheKey) (*config.RIUtilizationCacheEntry, error) {
 	m.record("GetRIUtilizationCache", ctx, key)
 	if !isExpected(&m.Mock, "GetRIUtilizationCache") {
