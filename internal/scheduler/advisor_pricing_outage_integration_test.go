@@ -46,7 +46,7 @@ func storedAzureIDs(t *testing.T, store config.StoreInterface) []string {
 	t.Helper()
 	rows, err := store.ListStoredRecommendations(context.Background(), config.RecommendationFilter{})
 	require.NoError(t, err)
-	ids := []string{}
+	ids := make([]string, 0, len(rows))
 	for _, row := range rows {
 		ids = append(ids, row.ID)
 	}
