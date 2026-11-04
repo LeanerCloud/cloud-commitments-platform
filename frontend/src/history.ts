@@ -101,11 +101,25 @@ async function refreshFourEyesMode(): Promise<void> {
 // Rows that bought nothing must not show their estimate as a realized saving.
 const NO_SAVINGS_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'expired']);
 
+// A revoked purchase keeps its "completed" status but no longer saves anything.
+function boughtNothing(p: HistoryPurchase): boolean {
+  return Boolean(p.revoked_at) || NO_SAVINGS_STATUSES.has(normalizeStatus(p).toLowerCase());
+}
+
 function noSavingsCell(p: HistoryPurchase, empty: boolean): string {
-  if (empty || NO_SAVINGS_STATUSES.has(normalizeStatus(p).toLowerCase())) {
+  if (empty || boughtNothing(p)) {
     return `<td class="num" data-label="Monthly Savings">${MUTED_DASH}</td>`;
   }
   return `<td class="num savings" data-label="Monthly Savings">${formatCurrency(p.estimated_savings)}</td>`;
+}
+
+// About what the 4-line clamp shows; longer text also gets a disclosure, since
+// a title tooltip is unreachable by keyboard and touch.
+const STATUS_CLAMP_CHARS = 160;
+
+function statusFullTextHtml(text: string): string {
+  if (text.length <= STATUS_CLAMP_CHARS) return '';
+  return `<details class="history-status-full"><summary>Full message</summary><div>${escapeHtml(text)}</div></details>`;
 }
 
 function normalizeStatus(p: HistoryPurchase): string {
@@ -1221,14 +1235,14 @@ function purchaseHistoryCategoricalCellValue(
   }
 }
 
-function purchaseHistoryNumericCellValue(
+export function purchaseHistoryNumericCellValue(
   p: HistoryPurchase,
   col: PurchaseHistoryColumnId,
 ): number {
   switch (col) {
     case 'count':         return p.count ?? 0;
     case 'upfront_cost':  return p.upfront_cost ?? Number.NaN;
-    case 'savings':       return p.estimated_savings ?? 0;
+    case 'savings':       return boughtNothing(p) ? 0 : p.estimated_savings ?? 0;
     case 'provider':
     case 'service':
     case 'resource_type':
@@ -1418,7 +1432,7 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
         return `${badge}<div class="history-approver">awaiting approval from <strong>${escapeHtml(p.approver)}</strong></div>`;
       }
       if (p.status_description) {
-        return `${badge}<div class="history-approver history-status-desc" title="${escapeHtmlAttr(p.status_description)}">${escapeHtml(p.status_description)}</div>${opsHintHtml(p)}`;
+        return `${badge}<div class="history-approver history-status-desc" title="${escapeHtmlAttr(p.status_description)}">${escapeHtml(p.status_description)}</div>${statusFullTextHtml(p.status_description)}${opsHintHtml(p)}`;
       }
       return `${badge}${opsHintHtml(p)}`;
     })();

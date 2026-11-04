@@ -3,7 +3,7 @@
  * clamped status text, muted savings on rows that bought nothing, and the
  * Total Purchases card counting completed purchases only.
  */
-import { loadHistory } from '../history';
+import { loadHistory, purchaseHistoryNumericCellValue } from '../history';
 
 jest.mock('../api', () => ({
   getHistory: jest.fn(),
@@ -67,6 +67,34 @@ describe('status description (issue #1694)', () => {
     expect(el).not.toBeNull();
     expect(el?.getAttribute('title')).toBe(long);
   });
+
+  test('a long description is also reachable by keyboard and touch via a disclosure', async () => {
+    (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [
+      row({ status: 'failed', status_description: long }),
+    ] });
+    await loadHistory();
+    const details = document.querySelector('#history-list td[data-label="Status"] details.history-status-full');
+    expect(details?.querySelector('summary')).not.toBeNull();
+    expect(details?.textContent).toContain(long);
+  });
+
+  test('a short description has no disclosure', async () => {
+    (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [
+      row({ status: 'failed', status_description: 'the provider returned an error' }),
+    ] });
+    await loadHistory();
+    expect(document.querySelector('#history-list details.history-status-full')).toBeNull();
+  });
+});
+
+describe('savings value used by sort and filter (issue #1694)', () => {
+  test.each([
+    ['failed', { status: 'failed' }],
+    ['revoked', { status: 'completed', revoked_at: '2026-11-04T01:00:00Z' }],
+  ])('%s row counts as no saving', (_name, o) => {
+    expect(purchaseHistoryNumericCellValue(row(o) as never, 'savings')).toBe(0);
+    expect(purchaseHistoryNumericCellValue(row({}) as never, 'savings')).toBe(10);
+  });
 });
 
 describe('Monthly Savings on rows that bought nothing (issue #1694)', () => {
@@ -81,6 +109,15 @@ describe('Monthly Savings on rows that bought nothing (issue #1694)', () => {
     expect(cell('x')?.textContent).toBe('—');
     expect(cell('ok')?.classList.contains('savings')).toBe(true);
     expect(cell('ok')?.textContent).toBe('$10');
+  });
+
+  test('a revoked completed row is not styled as a saving', async () => {
+    (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [
+      row({ purchase_id: 'rv', status: 'completed', revoked_at: '2026-11-04T01:00:00Z' }),
+    ] });
+    await loadHistory();
+    const cell = document.querySelector('#history-list tr[data-execution-id="rv"] td[data-label="Monthly Savings"]');
+    expect(cell?.classList.contains('savings')).toBe(false);
   });
 });
 

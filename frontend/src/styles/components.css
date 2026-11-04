@@ -1516,7 +1516,8 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     overflow-wrap: anywhere;
 }
 
-/* Clamp long failure text; the full text is in the title attribute. */
+/* Clamp long failure text; the full text is in the title and, when clamped,
+   in a keyboard- and touch-reachable disclosure below it. */
 .history-status-desc {
     max-width: 18rem;
     overflow: hidden;
@@ -1525,6 +1526,17 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 4;
     line-clamp: 4;
+}
+
+.history-status-full {
+    max-width: 18rem;
+    font-size: 0.85em;
+    overflow-wrap: anywhere;
+}
+
+.history-status-full > div {
+    max-height: 12rem;
+    overflow-y: auto;
 }
 
 .history-approver strong {
