@@ -262,11 +262,12 @@ func TestResolveRIExchange_AmountCapCoversHold(t *testing.T) {
 }
 
 func TestResolveRIExchange_UncappedGrantDoesNoLookup(t *testing.T) {
-	store := &resolveRIStore{MockConfigStore: new(MockConfigStore)}
+	mockStore := new(MockConfigStore)
+	store := &resolveRIStore{MockConfigStore: mockStore}
 	_, err := riResolveCall(t, apgCaller{perms: riExecute}, store, riResolveFailedBody)
 	require.NoError(t, err)
 	assert.Equal(t, 1, store.called)
-	store.AssertNotCalled(t, "GetRIExchangeRecord", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "GetRIExchangeRecord", mock.Anything, mock.Anything)
 }
 
 func TestResolveRIExchange_CappedGrantRefusesUnreadableAmount(t *testing.T) {
