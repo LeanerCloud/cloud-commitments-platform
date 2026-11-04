@@ -98,6 +98,16 @@ async function refreshFourEyesMode(): Promise<void> {
   if (banner) banner.classList.toggle('hidden', !_fourEyesMode);
 }
 
+// Rows that bought nothing must not show their estimate as a realized saving.
+const NO_SAVINGS_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'expired']);
+
+function noSavingsCell(p: HistoryPurchase, empty: boolean): string {
+  if (empty || NO_SAVINGS_STATUSES.has(normalizeStatus(p).toLowerCase())) {
+    return `<td class="num" data-label="Monthly Savings">${MUTED_DASH}</td>`;
+  }
+  return `<td class="num savings" data-label="Monthly Savings">${formatCurrency(p.estimated_savings)}</td>`;
+}
+
 function normalizeStatus(p: HistoryPurchase): string {
   // Absent status → legacy DB row → counts as completed for filtering.
   return p.status || 'completed';
@@ -537,17 +547,19 @@ function renderHistorySummary(summary: HistorySummary | null): void {
   // summary renders sensibly against an older API deploy that hasn't shipped
   // the new counters yet.
   const total = summary.total_purchases ?? null;
-  const totalDisplay = total !== null ? String(total) : NO_VALUE;
+  // Failed, cancelled and expired rows bought nothing, so the card counts
+  // completed purchases only (matches Total Upfront Spent).
   const completed = summary.total_completed ?? total;
+  const completedDisplay = completed !== null ? String(completed) : NO_VALUE;
   const pending = summary.total_pending ?? 0;
   const detail = (total !== null && pending > 0)
-    ? `<p class="detail">${completed} completed · ${pending} pending</p>`
+    ? `<p class="detail">${pending} pending</p>`
     : '';
 
   container.innerHTML = `
     <div class="card">
       <h3>Total Purchases</h3>
-      <p class="value">${totalDisplay}</p>
+      <p class="value">${completedDisplay}</p>
       ${detail}
     </div>
     <div class="card">
@@ -1406,7 +1418,7 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
         return `${badge}<div class="history-approver">awaiting approval from <strong>${escapeHtml(p.approver)}</strong></div>`;
       }
       if (p.status_description) {
-        return `${badge}<div class="history-approver">${escapeHtml(p.status_description)}</div>${opsHintHtml(p)}`;
+        return `${badge}<div class="history-approver history-status-desc" title="${escapeHtmlAttr(p.status_description)}">${escapeHtml(p.status_description)}</div>${opsHintHtml(p)}`;
       }
       return `${badge}${opsHintHtml(p)}`;
     })();
@@ -1433,7 +1445,7 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
         <td data-label="Term">${termCell(p)}</td>
         ${empty ? `<td class="num" data-label="Upfront Cost">${MUTED_DASH}</td>` : upfrontCell(p, amortize)}
         <td class="num" data-label="${amortize ? 'Monthly Cost (amortized)' : 'Monthly Cost'}">${dashOr(monthlyCostCell)}</td>
-        <td class="num savings" data-label="Monthly Savings">${dashOr(formatCurrency(p.estimated_savings))}</td>
+        ${noSavingsCell(p, empty)}
         <td class="history-plan-cell" data-label="Plan">${planCellContent}</td>
       </tr>
     `;

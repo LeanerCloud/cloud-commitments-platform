@@ -410,6 +410,9 @@ button.secondary:hover {
 .toast-message {
     line-height: 1.35;
     word-break: break-word;
+    /* A provider error body can be huge; scroll instead of covering the page. */
+    max-height: 8rem;
+    overflow-y: auto;
 }
 
 .toast-actions {
@@ -1511,6 +1514,17 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 .status-detail {
     max-width: 18rem;
     overflow-wrap: anywhere;
+}
+
+/* Clamp long failure text; the full text is in the title attribute. */
+.history-status-desc {
+    max-width: 18rem;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
 }
 
 .history-approver strong {
