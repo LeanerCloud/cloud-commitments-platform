@@ -131,3 +131,25 @@ run "lambda_with_cdn_is_iam_gated_behind_oac" {
     error_message = "Both permissions must be granted to the CloudFront service principal and scoped to the distribution ARN."
   }
 }
+
+run "trusted_proxy_hops_is_set_only_with_the_cdn" {
+  command = plan
+
+  assert {
+    condition     = lookup(local.lambda_cdn_env, "CUDLY_TRUSTED_PROXY_HOPS", "") == "1"
+    error_message = "With enable_cdn the Lambda must trust exactly one proxy hop (CloudFront) for X-Forwarded-For."
+  }
+}
+
+run "no_trusted_proxy_hops_without_the_cdn" {
+  command = plan
+
+  variables {
+    enable_cdn = false
+  }
+
+  assert {
+    condition     = !contains(keys(local.lambda_cdn_env), "CUDLY_TRUSTED_PROXY_HOPS")
+    error_message = "Without a CDN the Function URL is public and X-Forwarded-For is client-controlled; the hops variable must not be set."
+  }
+}
