@@ -45,7 +45,9 @@ var cdnApplyActions = []struct {
 
 func TestDeployPolicyGrantsEveryActionTheCDNApplyNeeds(t *testing.T) {
 	var allow []string // statement blocks that Allow
-	for _, f := range guardedPolicyFiles(t) {
+	// Deploy-role documents only: the boundary caps the workload roles, and its
+	// broad grants (logs:*, rds:*) would mask a missing deploy grant.
+	for _, f := range deployPolicyFiles(t) {
 		for _, stmt := range extractStatementBlocks(readPolicySource(t, f)) {
 			if statementEffect(stmt) == "Allow" {
 				allow = append(allow, stmt)
