@@ -41,6 +41,9 @@ var serverNotePatterns = []string{
 // bareNotePatterns are server-authored RI exchange record and collection notes.
 // They are written bare, never behind a resource or provider head, so none is allowed.
 var bareNotePatterns = []string{
+	// Scheduler notes recorded when a collection ends before saving
+	// (scheduler.go collectionStopped*); the cause is logged, never stored.
+	`recommendations collection stopped before saving: (?:could not load settings|it was canceled or ran out of time|could not save the collected recommendations)`,
 	// RI exchange record errors (api/handler_ri_exchange.go failExchange callers and
 	// the exchange package's auto-exchange reservation notes).
 	// The operator's stale-exchange resolve note (api/handler_ri_exchange_resolve.go
