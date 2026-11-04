@@ -1834,7 +1834,9 @@ function buildAutoWarningBanner(): HTMLDivElement {
   const strong = document.createElement('strong');
   strong.textContent = 'Warning:';
   banner.appendChild(strong);
-  banner.appendChild(document.createTextNode(' Fully Automated mode will execute RI exchanges without manual approval. Ensure spending caps are configured properly.'));
+  // fourEyesExchangeMode runs every mode as manual while 4-eyes is on.
+  banner.appendChild(document.createTextNode(' Fully Automated mode will execute RI exchanges without manual approval, '
+    + 'unless Require different approver (4-eyes mode) is on. Ensure spending caps are configured properly.'));
   return banner;
 }
 

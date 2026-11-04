@@ -288,6 +288,18 @@ describe('loadAutomationSettings: every field explains itself (issue #1689)', ()
     expect(hintFor(id)).not.toMatch(/\s{2,}/);
   });
 
+  test('the Fully Automated warning names the 4-eyes override and keeps the cap guidance', async () => {
+    setupContainer();
+    (api.getRIExchangeConfig as jest.Mock).mockResolvedValueOnce({
+      auto_exchange_enabled: true, mode: 'auto', utilization_threshold: 95,
+      max_payment_per_exchange_usd: 100, max_payment_daily_usd: 500, lookback_days: 30,
+    });
+    await loadAutomationSettings();
+    const banner = document.querySelector('#ri-exchange-warning-slot .warning-message')?.textContent ?? '';
+    expect(banner).toContain('without manual approval, unless Require different approver (4-eyes mode) is on.');
+    expect(banner).toContain('Ensure spending caps are configured properly.');
+  });
+
   test('the Enable hint says the mode decides whether exchanges are proposed or run', async () => {
     await loadWithZeroCaps();
     expect(hintFor('ri-exchange-enabled')).toMatch(/propose or run exchanges/);
