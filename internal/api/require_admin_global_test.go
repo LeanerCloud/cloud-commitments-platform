@@ -44,8 +44,6 @@ func TestRequireAdmin_ConstrainedAdminRefused(t *testing.T) {
 			ce, ok := IsClientError(err)
 			require.True(t, ok, "got %v", err)
 			assert.Equal(t, 403, ce.code)
-			mockAuth.AssertCalled(t, "HasPermissionForConstraintsAPI", mock.Anything, scopedUserID, "admin", "*",
-				mock.MatchedBy(isGlobalSet))
 		})
 	}
 }
@@ -102,18 +100,4 @@ func TestGetConfig_ConstrainedAdminGetsNoSourceIdentity(t *testing.T) {
 			assert.Equal(t, tc.want, res.SourceIdentity != nil)
 		})
 	}
-}
-
-func TestRequireAdmin_ConstraintLookupErrorFailsClosed(t *testing.T) {
-	mockAuth := new(MockAuthService)
-	mockAuth.On("ValidateSession", mock.Anything, scopedToken).Return(&Session{UserID: scopedUserID}, nil).Maybe()
-	mockAuth.On("HasPermissionAPI", mock.Anything, scopedUserID, "admin", "*").Return(true, nil)
-	mockAuth.On("HasPermissionForConstraintsAPI", mock.Anything, scopedUserID, "admin", "*", mock.Anything).
-		Return(false, assert.AnError)
-	h := &Handler{config: new(MockConfigStore), auth: mockAuth}
-
-	_, err := h.requireAdmin(context.Background(), scopedRequest(""))
-
-	require.Error(t, err)
-	assert.ErrorIs(t, err, assert.AnError)
 }

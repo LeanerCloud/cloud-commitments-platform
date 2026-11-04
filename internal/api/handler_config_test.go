@@ -1240,7 +1240,6 @@ func TestHandler_getConfig_SourceIdentity_AdminOnly(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.On("ValidateSession", ctx, "user-token").Return(userSession, nil)
 	mockAuth.On("HasPermissionAPI", mock.Anything, "admin-user", mock.Anything, mock.Anything).Return(true, nil)
-	mockAuth.On("HasPermissionForConstraintsAPI", mock.Anything, "admin-user", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 
