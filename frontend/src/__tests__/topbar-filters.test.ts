@@ -78,6 +78,65 @@ describe('Topbar filters', () => {
     expect(optionValues).toContain('acct-2');
   });
 
+  // #1693: a failed account list must not look like "no accounts". The open
+  // menu says the list could not load, and opening it again retries.
+  describe('account list load failure (#1693)', () => {
+    const openAccountMenu = (): void => {
+      const triggers = document.querySelectorAll<HTMLButtonElement>('.chip-select');
+      (triggers[1] as HTMLButtonElement).click();
+    };
+    const closeMenu = (): void => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    };
+    const noticeText = (): string | null =>
+      document.querySelector('.chip-select-notice')?.textContent ?? null;
+
+    test('shows a load error in the open menu instead of a bare "All Accounts"', async () => {
+      jest.spyOn(console, 'warn').mockImplementation(() => {});
+      (api.listAccountsMinimal as jest.Mock).mockRejectedValue(new Error('HTTP 502'));
+
+      initTopbarFilters();
+      await new Promise((r) => setTimeout(r, 0));
+      openAccountMenu();
+
+      expect(noticeText()).toBe("Couldn't load accounts. Close and reopen this menu to try again.");
+      const notice = document.querySelector('.chip-select-notice');
+      expect(notice?.getAttribute('aria-disabled')).toBe('true');
+    });
+
+    test('reopening the menu after a failure retries and shows the accounts', async () => {
+      jest.spyOn(console, 'warn').mockImplementation(() => {});
+      (api.listAccountsMinimal as jest.Mock)
+        .mockRejectedValueOnce(new Error('HTTP 401'))
+        .mockResolvedValue([{ id: 'acct-1', name: 'Prod', external_id: '111', provider: 'aws' }]);
+
+      initTopbarFilters();
+      await new Promise((r) => setTimeout(r, 0));
+      openAccountMenu();
+      closeMenu();
+      openAccountMenu();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(api.listAccountsMinimal).toHaveBeenCalledTimes(2);
+      expect(noticeText()).toBeNull();
+      const values = Array.from(document.querySelectorAll<HTMLLIElement>('.chip-select-option'))
+        .map((el) => el.dataset['value']);
+      expect(values).toContain('acct-1');
+    });
+
+    test('a successful load does not refetch on every open', async () => {
+      initTopbarFilters();
+      await new Promise((r) => setTimeout(r, 0));
+      openAccountMenu();
+      closeMenu();
+      openAccountMenu();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(api.listAccountsMinimal).toHaveBeenCalledTimes(1);
+      expect(noticeText()).toBeNull();
+    });
+  });
+
   // Issue #477: URL hydration + writeback tests.
   //
   // jsdom honours history.replaceState() — setting it before initTopbarFilters
