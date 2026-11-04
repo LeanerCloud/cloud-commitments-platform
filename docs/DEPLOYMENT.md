@@ -217,6 +217,15 @@ use_lockfile   = true
 ./scripts/tf-deploy.sh aws prod
 ```
 
+### Rolling back the CDN cut-over
+
+With `enable_cdn = true` the Function URL is `AWS_IAM`. To go back to the public Function URL:
+
+1. Run the Rollback workflow with `cloud = aws-lambda` and `disable_cdn = true`. It applies `enable_cdn=false` and checks that AuthType is `NONE` and the raw URL's `/health` returns 200.
+2. Set the `DASHBOARD_URL` secret back to the raw Function URL (`terraform output -raw lambda_function_url`) and redeploy. The OIDC issuer falls back to `DASHBOARD_URL` (`resolveOIDCIssuerURL`), so this restores it.
+3. Re-register any Azure or GCP federation that was moved to the CloudFront issuer.
+4. To make it permanent, revert `enable_cdn` in `github-<env>.tfvars`. Otherwise the next deploy turns the CDN back on.
+
 ### Verify Deployment
 
 ```bash
