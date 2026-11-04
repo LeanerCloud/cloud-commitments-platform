@@ -1100,6 +1100,7 @@ describe('reshape recommendations empty state', () => {
 
       expect(instancesEl.querySelector('.loading-inline')).not.toBeNull();
       expect(recsEl.textContent).not.toContain('meet your utilization threshold');
+      expect(recsEl.textContent).not.toContain('unavailable');
       expect(recsEl.textContent).toContain('No reshape recommendations right now.');
     });
 
@@ -1112,6 +1113,94 @@ describe('reshape recommendations empty state', () => {
       await flushPromises();
 
       expect(recsEl.querySelector('.error')?.textContent).toContain('Failed to load recommendations: ce down');
+    });
+
+    // Slow Cost Explorer: utilization lands after loadRIExchange has already
+    // rendered the neutral reshape copy.
+    const deferredUtilization = () => {
+      let resolve: (v: unknown) => void = () => undefined;
+      let reject: (e: unknown) => void = () => undefined;
+      (api.getRIUtilization as jest.Mock).mockReturnValueOnce(new Promise((res, rej) => { resolve = res; reject = rej; }));
+      return { resolve: (v: unknown) => resolve(v), reject: (e: unknown) => reject(e) };
+    };
+
+    it('re-renders the reshape copy when utilization lands after the page loaded', async () => {
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([{ ...sampleRI, reserved_instance_id: 'ri-late' }]);
+      const util = deferredUtilization();
+
+      await loadRIExchange();
+      expect(recsEl.textContent).toContain('No reshape recommendations right now.');
+
+      util.resolve([utilFor('ri-late')]);
+      await flushPromises();
+      expect(recsEl.textContent).toContain('All 1 convertible RI meet your utilization threshold');
+    });
+
+    it('re-renders the reshape copy when a late utilization load fails', async () => {
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([{ ...sampleRI, reserved_instance_id: 'ri-late-fail' }]);
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const util = deferredUtilization();
+
+      await loadRIExchange();
+      util.reject(new Error('ce timeout'));
+      await flushPromises();
+
+      expect(recsEl.textContent).toContain('Utilization data is unavailable for 1 of 1 convertible RI');
+      expect(utilizationCell()).toBe('No data');
+      expect(instancesEl.querySelector('td span[title]')?.getAttribute('title')).toBe('Utilization could not be loaded');
+    });
+
+    it('ignores a superseded utilization failure', async () => {
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([{ ...sampleRI, reserved_instance_id: 'ri-superseded' }]);
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const first = deferredUtilization();
+      await loadRIExchange();
+      deferredUtilization(); // the second load's utilization stays pending
+      await loadRIExchange();
+
+      first.reject(new Error('stale ce timeout'));
+      await flushPromises();
+
+      expect(instancesEl.querySelector('.loading-inline')).not.toBeNull();
+      expect(recsEl.textContent).not.toContain('unavailable');
+    });
+
+    it.each([
+      ['fails', (u: ReturnType<typeof deferredUtilization>) => u.reject(new Error('ce timeout'))],
+      ['succeeds', (u: ReturnType<typeof deferredUtilization>) => u.resolve([utilFor('ri-switch')])],
+    ])('a late AWS utilization load that %s leaves the Azure view alone', async (_label, settle) => {
+      const stateMod = jest.requireMock('../state') as { getCurrentProvider: jest.Mock };
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([{ ...sampleRI, reserved_instance_id: 'ri-switch' }]);
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const util = deferredUtilization();
+      await loadRIExchange();
+
+      stateMod.getCurrentProvider.mockReturnValue('azure');
+      (api.listExchangeableAzureRIs as jest.Mock).mockResolvedValue([
+        { reservation_order_id: 'o1', reservation_id: 'r1', sku: 'Standard_D2s_v3', quantity: 2, region: 'eastus', term: 'P1Y', instance_flexibility: 'On', display_name: 'web-rsv' },
+      ]);
+      await loadRIExchange();
+      settle(util);
+      await flushPromises();
+
+      expect(instancesEl.textContent).toContain('web-rsv');
+      expect(recsEl.textContent).toContain('not available for Azure');
+    });
+
+    it('a late failed AWS utilization load leaves the GCP view alone', async () => {
+      const stateMod = jest.requireMock('../state') as { getCurrentProvider: jest.Mock };
+      (api.listConvertibleRIs as jest.Mock).mockResolvedValue([{ ...sampleRI, reserved_instance_id: 'ri-gcp' }]);
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const util = deferredUtilization();
+      await loadRIExchange();
+
+      stateMod.getCurrentProvider.mockReturnValue('gcp');
+      await loadRIExchange();
+      util.reject(new Error('ce timeout'));
+      await flushPromises();
+
+      expect(instancesEl.textContent).toContain("isn't available for GCP");
+      expect(recsEl.textContent).toContain("isn't available for GCP");
     });
   });
 });

@@ -142,6 +142,9 @@ export async function loadRIExchange(): Promise<void> {
   }
   if (generation !== scopeGeneration) return;
   const { provider, accountID } = scope;
+  // Supersede any in-flight utilization load from the previous scope, so a
+  // late AWS result can't re-render over the Azure or GCP view.
+  utilizationGeneration++;
 
   if (provider === 'gcp') {
     renderGCPEmptyStates();
@@ -486,7 +489,7 @@ function renderRIsTable(container: HTMLElement, accountID?: string): void {
             ? `${utilPct.toFixed(1)}%`
             : utilizationStatus === 'loading'
               ? '<span class="loading-inline">...</span>'
-              : '<span class="text-muted" title="No utilization data was returned for this RI">No data</span>';
+              : `<span class="text-muted" title="${utilizationStatus === 'failed' ? 'Utilization could not be loaded' : 'No utilization data was returned for this RI'}">No data</span>`;
           return `
           <tr>
             <td class="monospace">${escapeHtml(ri.reserved_instance_id)}</td>
