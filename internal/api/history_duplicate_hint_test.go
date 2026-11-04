@@ -51,3 +51,28 @@ func TestHistoryRow_DuplicateHintKeptOutsideDefiniteAWSRefusals(t *testing.T) {
 		assert.Contains(t, row.OpsHint, "duplicate guard", c.name)
 	}
 }
+
+func TestHistoryRow_ExecutorStoredAWSRefusalDropsDuplicateHint(t *testing.T) {
+	const ec2Stored = "m5.large: purchase failed: failed to purchase EC2 RI: operation error EC2: PurchaseReservedInstancesOffering, https response error StatusCode: 403, RequestID: 11111111-2222-3333-4444-555555555555, api error UnauthorizedOperation: You are not authorized (account 123456789012)"
+	const rdsStored = "db.r6g.large: purchase failed: failed to purchase RDS RI: operation error RDS: PurchaseReservedDBInstancesOffering, https response error StatusCode: 403, RequestID: 11111111-2222-3333-4444-555555555555, api error AccessDenied: denied"
+	ec2 := config.RecommendationRecord{Provider: "aws", Service: "ec2"}
+	redshift := config.RecommendationRecord{Provider: "aws", Service: "redshift"}
+	for name, stored := range map[string]string{"ec2": ec2Stored, "rds beside ec2": ec2Stored + "; " + rdsStored} {
+		row := executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: stored, Recommendations: []config.RecommendationRecord{ec2, redshift}}, "", "")
+		assert.NotContains(t, row.OpsHint, "duplicate guard", name)
+		assert.NotEmpty(t, row.OpsHint, name+": ops_hint stays set so Retry stays hidden")
+		assert.True(t, row.RedriveUnsafe, name)
+	}
+	for name, c := range map[string]struct {
+		recs   []config.RecommendationRecord
+		stored string
+	}{
+		"unknown head":   {[]config.RecommendationRecord{ec2}, strings.Replace(ec2Stored, "failed to purchase EC2 RI", "failed to purchase GPU RI", 1)},
+		"5xx":            {[]config.RecommendationRecord{ec2}, strings.Replace(ec2Stored, "StatusCode: 403", "StatusCode: 503", 1)},
+		"empty provider": {[]config.RecommendationRecord{{Service: "ec2"}}, fakeAWSDenied},
+		"mixed run":      {[]config.RecommendationRecord{ec2}, ec2Stored + "; t4g.nano: purchase failed: purchase outcome unknown"},
+	} {
+		row := executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: c.stored, Recommendations: c.recs}, "", "")
+		assert.Contains(t, row.OpsHint, "duplicate guard", name)
+	}
+}

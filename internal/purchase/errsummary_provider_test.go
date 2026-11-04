@@ -145,6 +145,8 @@ func TestIsDefiniteAWSRefusal(t *testing.T) {
 	aws := func(status, code string) string {
 		return "operation error EC2: X, https response error StatusCode: " + status + ", RequestID: r, api error " + code + ": msg"
 	}
+	storedEC2 := "m5.large: purchase failed: failed to purchase EC2 RI: operation error EC2: PurchaseReservedInstancesOffering, https response error StatusCode: 403, RequestID: 11111111-2222-3333-4444-555555555555, api error UnauthorizedOperation: You are not authorized to perform this operation (account 123456789012)"
+	storedRDS := "db.r6g.large: purchase failed: failed to purchase RDS RI: operation error RDS: PurchaseReservedDBInstancesOffering, https response error StatusCode: 403, RequestID: 11111111-2222-3333-4444-555555555555, api error AccessDenied: User is not authorized"
 	azure429 := "PUT https://management.azure.com/x\nRESPONSE 429: 429 Too Many\nERROR CODE: TooManyRequests"
 	gcp := "commitment creation failed: googleapi: Error 403: Rate Limit Exceeded, rateLimitExceeded"
 	cases := []struct {
@@ -154,7 +156,19 @@ func TestIsDefiniteAWSRefusal(t *testing.T) {
 		want bool
 	}{
 		{"aws 403 denied", []string{"aws"}, aws("403", "UnauthorizedOperation"), true},
-		{"legacy empty provider", []string{""}, aws("403", "AccessDenied"), true},
+		{"empty provider is not aws", []string{""}, aws("403", "AccessDenied"), false},
+		{"empty provider beside aws", []string{"aws", ""}, aws("403", "AccessDenied"), false},
+		{"ec2 stored shape", []string{"aws"}, storedEC2, true},
+		{"rds stored shape", []string{"aws"}, storedRDS, true},
+		{"stored shape without resource type", []string{"aws"}, "purchase failed: failed to purchase EC2 RI: " + aws("403", "AccessDenied"), true},
+		{"stored shape without purchase failed", []string{"aws"}, "m5.large: failed to purchase EC2 RI: " + aws("403", "AccessDenied"), true},
+		{"stored shape, two recs", []string{"aws", "aws"}, storedEC2 + "; " + storedRDS, true},
+		{"stored shape, partial prefix", []string{"aws"}, partialRunPrefix + storedEC2, true},
+		{"unknown head before operation error", []string{"aws"}, "m5.large: purchase failed: something else: " + aws("403", "AccessDenied"), false},
+		{"unknown library head", []string{"aws"}, "m5.large: purchase failed: failed to purchase GPU RI: " + aws("403", "AccessDenied"), false},
+		{"head after another head", []string{"aws"}, "purchase failed: purchase failed: " + aws("403", "AccessDenied"), false},
+		{"stored shape 5xx", []string{"aws"}, strings.Replace(storedEC2, "StatusCode: 403", "StatusCode: 503", 1), false},
+		{"stored shape outcome unknown", []string{"aws"}, "m5.large: purchase failed: purchase outcome unknown: " + aws("403", "AccessDenied"), false},
 		{"aws throttle 400", []string{"aws"}, aws("400", "Throttling"), true},
 		{"aws invalid offering", []string{"aws"}, aws("400", "InvalidParameterValue"), true},
 		{"per-rec segments", []string{"aws", "aws"}, "a: " + aws("403", "AccessDenied") + "; b: " + aws("400", "Throttling"), true},

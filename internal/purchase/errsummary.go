@@ -148,13 +148,14 @@ func classifyCode(code string) string {
 // Explicit code fields in the providers' own error formats. Words elsewhere
 // (URLs, resource names, bodies) never count.
 var (
-	awsCodeRE     = regexp.MustCompile(`api error ([A-Za-z0-9_.]+):`)
-	awsStatusRE   = regexp.MustCompile(`StatusCode: (\d{3})`)
-	azCodeRE      = regexp.MustCompile(`ERROR CODE: ([A-Za-z0-9_.-]+)`)
-	azStatusRE    = regexp.MustCompile(`RESPONSE (\d{3}):`)
-	gcpReasonRE   = regexp.MustCompile(`Reason: ([A-Za-z]+), Message:`)
-	gcpErrorRE    = regexp.MustCompile(`googleapi: Error (\d{3}): [^\n]*?(?:, ([A-Za-z]+))?(?:\n|$)`)
-	definiteAWSRE = regexp.MustCompile(`^(?:[A-Za-z0-9][A-Za-z0-9._-]*: )?operation error [^\n]*StatusCode: (4\d{2}),[^\n]*api error ([A-Za-z0-9_.]+): [^\n]*$`)
+	awsCodeRE      = regexp.MustCompile(`api error ([A-Za-z0-9_.]+):`)
+	awsStatusRE    = regexp.MustCompile(`StatusCode: (\d{3})`)
+	azCodeRE       = regexp.MustCompile(`ERROR CODE: ([A-Za-z0-9_.-]+)`)
+	azStatusRE     = regexp.MustCompile(`RESPONSE (\d{3}):`)
+	gcpReasonRE    = regexp.MustCompile(`Reason: ([A-Za-z]+), Message:`)
+	gcpErrorRE     = regexp.MustCompile(`googleapi: Error (\d{3}): [^\n]*?(?:, ([A-Za-z]+))?(?:\n|$)`)
+	resourceHeadRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*: `)
+	definiteAWSRE  = regexp.MustCompile(`^operation error [^\n]*StatusCode: (4\d{2}),[^\n]*api error ([A-Za-z0-9_.]+): [^\n]*$`)
 )
 
 func statusOf(re *regexp.Regexp, s string) int {
@@ -214,10 +215,42 @@ var definiteAWSCodes = map[string]bool{
 	"ReservedDBInstancesOfferingNotFound": true, "ReservedCacheNodesOfferingNotFound": true,
 }
 
+// executorPurchaseFailedHead is the wrapper the executor adds around a provider
+// error (internal/purchase/execution.go, "purchase failed: %w").
+const executorPurchaseFailedHead = "purchase failed: "
+
+// awsLibraryHeads are the exact heads the AWS provider library puts in front of
+// the SDK error, one per service purchase path. Each mirrors a fmt.Errorf in
+// cloud-commitments-go providers/aws/services at the pinned version.
+var awsLibraryHeads = []string{
+	"failed to purchase EC2 RI: ",                  // ec2/client.go:185
+	"failed to purchase RDS RI: ",                  // rds/client.go:194
+	"failed to purchase Reserved Cache Node: ",     // elasticache/client.go:195
+	"failed to purchase OpenSearch RI: ",           // opensearch/client.go:225
+	"failed to purchase Redshift Reserved Node: ",  // redshift/client.go:165
+	"failed to purchase MemoryDB Reserved Nodes: ", // memorydb/client.go:196
+	"failed to purchase Savings Plan: ",            // savingsplans/client.go:272
+}
+
+// stripKnownHeads removes the executor's per-rec resource token, its
+// "purchase failed: " wrapper and one library head, each optional and in that
+// order. Any other text is left in place so the caller's match fails.
+func stripKnownHeads(seg string) string {
+	seg = resourceHeadRE.ReplaceAllString(seg, "")
+	seg = strings.TrimPrefix(seg, executorPurchaseFailedHead)
+	for _, h := range awsLibraryHeads {
+		if strings.HasPrefix(seg, h) {
+			return seg[len(h):]
+		}
+	}
+	return seg
+}
+
 func definiteAWSSegment(seg string) bool {
 	if strings.Contains(seg, "outcome unknown") {
 		return false
 	}
+	seg = stripKnownHeads(seg)
 	m := definiteAWSRE.FindStringSubmatch(seg)
 	return len(m) == 3 && definiteAWSCodes[m[2]]
 }
@@ -231,7 +264,7 @@ func IsDefiniteAWSRefusal(recs []config.RecommendationRecord, stored string) boo
 		return false
 	}
 	for i := range recs {
-		if recs[i].Provider != "" && recs[i].Provider != "aws" {
+		if recs[i].Provider != "aws" {
 			return false
 		}
 	}
