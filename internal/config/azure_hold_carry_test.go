@@ -83,3 +83,29 @@ func TestCarryAzureHold_ThisCycleAmbientKeptWithCarriedNamed(t *testing.T) {
 	require.NotNil(t, got)
 	assert.ElementsMatch(t, []string{"a", ambientAccountKey}, got.Providers[0].HeldAccountIDs)
 }
+
+// Carried accounts add to the incomplete count instead of being absorbed into a
+// larger count that came from other failures this cycle.
+func TestCarryAzureHold_IncompleteAccountsCountsEachCarriedAccount(t *testing.T) {
+	stored := map[string]bool{"a": true, "b": true, "x": true, ambientAccountKey: true}
+	for name, tc := range map[string]struct {
+		prev, partial *RecommendationsCollectionPartial
+		want          int
+	}{
+		"carried on top of other failures": {holdOf("a", "b"), withIncomplete(holdOf("x"), 3), 5},
+		"own ambient outage counted once":  {holdOf("a"), withIncomplete(holdOf(), 1), 2},
+		"nothing this cycle":               {holdOf("a", "b"), nil, 2},
+		"ambient carried":                  {holdOf(), nil, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := carryAzureHold(tc.prev, tc.partial, nil, stored)
+			require.NotNil(t, got)
+			assert.Equal(t, tc.want, got.Providers[0].IncompleteAccounts)
+		})
+	}
+}
+
+func withIncomplete(p *RecommendationsCollectionPartial, n int) *RecommendationsCollectionPartial {
+	p.Providers[0].IncompleteAccounts = n
+	return p
+}

@@ -54,6 +54,7 @@ func mergeCarriedHold(partial *RecommendationsCollectionPartial, carried []strin
 		idx = len(partial.Providers) - 1
 	}
 	sweep := &partial.Providers[idx]
+	ownAmbient := false
 	if sweep.Reasons == nil {
 		sweep.Reasons = map[string]int{}
 	}
@@ -61,11 +62,18 @@ func mergeCarriedHold(partial *RecommendationsCollectionPartial, carried []strin
 		sweep.Reasons[PartialReasonPricingUnavailable] = 1
 	} else if len(sweep.HeldAccountIDs) == 0 {
 		carried = append(carried, ambientAccountKey)
+		ownAmbient = true
 	}
+	before := len(sweep.HeldAccountIDs)
 	held := slices.Concat(sweep.HeldAccountIDs, carried)
 	slices.Sort(held)
 	sweep.HeldAccountIDs = slices.Compact(held)
-	sweep.IncompleteAccounts = max(sweep.IncompleteAccounts, len(sweep.HeldAccountIDs))
+	// Each newly held account adds to the incomplete count; this cycle's own
+	// ambient outage was already counted.
+	sweep.IncompleteAccounts += len(sweep.HeldAccountIDs) - before
+	if ownAmbient {
+		sweep.IncompleteAccounts--
+	}
 	return partial
 }
 
