@@ -26,6 +26,11 @@ run "oac_attached_and_sha256_forwarded" {
   }
 
   assert {
+    condition     = aws_cloudfront_origin_access_control.lambda[0].origin_access_control_origin_type == "lambda" && aws_cloudfront_origin_access_control.lambda[0].signing_behavior == "always"
+    error_message = "The OAC must sign Lambda origins on every request."
+  }
+
+  assert {
     condition     = alltrue([for o in aws_cloudfront_distribution.frontend.origin : o.origin_access_control_id == aws_cloudfront_origin_access_control.lambda[0].id])
     error_message = "Every origin must be signed with the Lambda origin access control."
   }
