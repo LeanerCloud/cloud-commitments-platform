@@ -3601,6 +3601,17 @@ describe('Bundle B: column header filter triggers', () => {
       expect(paybackText()).toContain('Up to 6.0 months');
       expect(paybackText()).not.toContain('0.0 \u2013');
     });
+
+    test('payback card treats a negative lower bound as no payback', async () => {
+      const credit = { ...base, resource_type: 'db.r6g.xlarge' };
+      // A negative upfront (a credit) gives -1 / 100 = -0.01 months, which rounds to "-0.0".
+      await load([
+        { ...credit, id: 'v1705-credit', term: 1, payment: 'partial-upfront', savings: 100, upfront_cost: -1 },
+        { ...credit, id: 'v1705-paid', term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 600 },
+      ]);
+      expect(paybackText()).toContain('Up to 6.0 months');
+      expect(paybackText()).not.toContain('-0.0');
+    });
   });
 
   // Issue #164: cross-column-aware (cascading) distinct values.
