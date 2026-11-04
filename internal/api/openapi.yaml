@@ -762,6 +762,12 @@ paths:
             occupied. Automatic plans also require a valid commitment cap and
             the global automatic purchasing switch. A plan managed by the
             schedule editor is refused whole (code editor_reconciliation_required).
+            A future start_date earlier than now plus the plan's notice window
+            plus one day (notification_days_before + 1 days of 24 hours) is
+            refused with code start_date_inside_notice_margin, because the
+            notification job could not attach recommendations to its first
+            step in time. The message ends "choose a start date on or after
+            YYYY-MM-DD", the first UTC midnight that is accepted.
           content:
             application/json:
               schema:

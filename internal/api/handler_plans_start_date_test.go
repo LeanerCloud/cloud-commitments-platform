@@ -94,10 +94,14 @@ func TestCreatePlannedPurchases_StartDateMustBeInTheFuture(t *testing.T) {
 		{"yesterday is refused", midday, "2026-03-09", 400, "start_date must be in the future"},
 		{"long past date is refused", midday, "2020-01-01", 400, "start_date must be in the future"},
 		{"today is refused", midday, "2026-03-10", 400, "start_date must be in the future"},
-		{"tomorrow is accepted", midday, "2026-03-11", 200, ""},
+		// bareStepAPIPlan has a 2-day notice window, so D5 (#631) refuses dates
+		// before now+3d and accepts the first midnight at or after it.
+		{"tomorrow is inside the notice margin", midday, "2026-03-11", 409, noticeMarginMessage("2026-03-14")},
+		{"three days out is still inside the margin", midday, "2026-03-13", 409, noticeMarginMessage("2026-03-14")},
+		{"the first date past the margin is accepted", midday, "2026-03-14", 200, ""},
 		{"malformed date keeps the format error", midday, "03/11/2026", 400, "invalid start_date format, expected YYYY-MM-DD"},
 		{"today is refused one second after UTC midnight", time.Date(2026, 3, 10, 0, 0, 1, 0, time.UTC), "2026-03-10", 400, "start_date must be in the future"},
-		{"tomorrow is accepted one second before UTC midnight", time.Date(2026, 3, 10, 23, 59, 59, 0, time.UTC), "2026-03-11", 200, ""},
+		{"the first date past the margin is accepted one second before UTC midnight", time.Date(2026, 3, 10, 23, 59, 59, 0, time.UTC), "2026-03-14", 200, ""},
 		{"the date is refused exactly at its own UTC midnight", time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC), "2026-03-11", 400, "start_date must be in the future"},
 		// 20:00 on 10 March in Los Angeles is 03:00 UTC on 11 March. The
 		// caller's local "tomorrow" is already today in UTC, so it is refused:
@@ -114,9 +118,49 @@ func TestCreatePlannedPurchases_StartDateMustBeInTheFuture(t *testing.T) {
 				store.AssertNumberOfCalls(t, "SavePurchaseExecution", 1)
 				return
 			}
-			assert.JSONEq(t, `{"error":"`+tc.message+`"}`, resp.Body)
+			if tc.status == 409 {
+				assert.JSONEq(t, `{"error":"`+tc.message+`","code":"start_date_inside_notice_margin"}`, resp.Body)
+			} else {
+				assert.JSONEq(t, `{"error":"`+tc.message+`"}`, resp.Body)
+			}
 			store.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
 			store.AssertNotCalled(t, "UpdatePurchasePlan", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+// noticeMarginMessage is the fixed D5 refusal text for the first accepted date.
+func noticeMarginMessage(earliest string) string {
+	return "start_date leaves too little notice before the first purchase; choose a start date on or after " + earliest
+}
+
+// TestCreatePlannedPurchases_StartDateNoticeMargin pins D5 of #631: a start date
+// D is refused with a 409 when D < now + (N+1) x 24h. The tick sees a root only
+// when D-now < (N+1)d and attaches only when D >= now+N d, so a root attaches
+// from a tick in the 24h slice (D-(N+1)d, D-Nd]; D >= now+(N+1)d keeps that
+// whole slice in the future. N is 2 here. For each clock the latest midnight
+// below now+3d is refused and the first midnight at or after it is accepted;
+// the message names that first accepted midnight (a ceiling, so a threshold
+// that is itself a midnight names that day, not the next).
+func TestCreatePlannedPurchases_StartDateNoticeMargin(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		now              time.Time
+		refused, firstOK string
+	}{
+		{"one second before UTC midnight", time.Date(2026, 3, 10, 23, 59, 59, 0, time.UTC), "2026-03-13", "2026-03-14"},
+		{"one second after UTC midnight", time.Date(2026, 3, 10, 0, 0, 1, 0, time.UTC), "2026-03-13", "2026-03-14"},
+		{"exactly at UTC midnight", time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC), "2026-03-12", "2026-03-13"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, store := postPlannedPurchaseAt(t, tc.now, tc.refused, false)
+			assert.Equal(t, 409, resp.StatusCode, "body: %s", resp.Body)
+			assert.JSONEq(t, `{"error":"`+noticeMarginMessage(tc.firstOK)+`","code":"start_date_inside_notice_margin"}`, resp.Body)
+			store.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+			store.AssertNotCalled(t, "UpdatePurchasePlan", mock.Anything, mock.Anything)
+
+			resp, _ = postPlannedPurchaseAt(t, tc.now, tc.firstOK, true)
+			assert.Equal(t, 200, resp.StatusCode, "body: %s", resp.Body)
 		})
 	}
 }
