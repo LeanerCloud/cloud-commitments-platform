@@ -154,6 +154,7 @@ resource "aws_iam_policy" "networking" {
           "acm:DescribeCertificate",
           "acm:GetCertificate",
           "acm:ListTagsForCertificate",
+          "acm:RemoveTagsFromCertificate",
           "acm:RequestCertificate",
         ]
         Resource = "*"
