@@ -10,8 +10,12 @@
 module "deployment_checks" {
   source = "../../modules/deployment-checks"
 
+  # With enable_cdn the Lambda Function URL is AWS_IAM and answers 403 to
+  # direct callers, so the probes go through CloudFront.
   api_base_url = trimsuffix(
-    var.compute_platform == "lambda"
+    var.compute_platform == "lambda" && var.enable_cdn
+    ? one(module.frontend[*].frontend_url)
+    : var.compute_platform == "lambda"
     ? one(module.compute_lambda[*].function_url)
     : one(module.compute_fargate[*].api_url),
     "/"
