@@ -486,13 +486,18 @@ func (h *Handler) emailCommittedPartialRun(ctx context.Context, req *events.Lamb
 // approver is not scoped to every account on the execution, so the run
 // error's text stays in the server log. Statuses and details are unchanged.
 func tokenFailureError(executionID string, final *config.PurchaseExecution, err error) error {
-	if final == nil || errors.Is(err, purchase.ErrFourEyesDenied) || errors.Is(err, purchase.ErrStaleAzurePricing) {
+	if final == nil || errors.Is(err, purchase.ErrFourEyesDenied) {
+		// No row, or a static policy denial: nothing from the run to hide.
 		return executeFailureError(executionID, "approved", final, err)
 	}
+	// Every branch below is fixed text; audit loss is first because it wraps
+	// whatever else the run failed with.
 	details := map[string]any{"execution_id": executionID, "status": final.Status}
 	switch {
 	case errors.Is(err, config.ErrAuditLoss):
 		return NewClientError(500, "purchase audit could not be completed")
+	case errors.Is(err, purchase.ErrStaleAzurePricing):
+		return NewClientErrorWithDetails(409, purchase.ErrStaleAzurePricing.Error(), details)
 	case errors.Is(err, purchase.ErrClaimedRowRefused):
 		code := 500
 		if ce, ok := IsClientError(err); ok {
@@ -1461,6 +1466,11 @@ func (h *Handler) approveWithDelay(ctx context.Context, execution *config.Purcha
 			// is no longer in a schedulable status. Return 409 so the client knows to
 			// reload and not retry with the same payload.
 			return nil, NewClientError(409, "purchase no longer schedulable: state changed concurrently (concurrent cancel)")
+		}
+		if approvalToken != "" {
+			// A token approver is not scoped to the store's error text.
+			logging.Errorf("purchase[%s]: token approve failed to schedule: %v", execution.ExecutionID, err)
+			return nil, NewClientError(500, "failed to schedule execution")
 		}
 		return nil, NewClientError(500, fmt.Sprintf("failed to schedule execution %s: %v", execution.ExecutionID, err))
 	}
