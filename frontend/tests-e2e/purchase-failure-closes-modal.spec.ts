@@ -31,6 +31,7 @@ async function executeWith(page: Page, status: number, body: Record<string, unkn
 
 for (const [name, status, body] of [
   ['a recorded failure (502 with execution_id)', 502, { error: 'execution x failed', execution_id: 'exec-1', status: 'failed' }],
+  ['a refusal recorded as an execution (403 with execution_id)', 403, { error: 'execution x failed', execution_id: 'exec-2', status: 'failed' }],
   ['an audit-loss 500 without execution_id', 500, { error: 'execution x ran but its final status could not be saved' }],
   ['a 409 after the claim', 409, { error: 'pricing changed' }],
 ] as const) {

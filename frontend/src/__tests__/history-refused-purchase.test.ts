@@ -78,6 +78,15 @@ describe('status description (issue #1694)', () => {
     expect(details?.textContent).toContain(long);
   });
 
+  test('a description clamped only in the phone layout (~100 chars) also has a disclosure', async () => {
+    const medium = 'purchase failed: '.repeat(6);
+    (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [
+      row({ status: 'failed', status_description: medium }),
+    ] });
+    await loadHistory();
+    expect(document.querySelector('#history-list details.history-status-full')?.textContent).toContain(medium);
+  });
+
   test('a short description has no disclosure', async () => {
     (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [
       row({ status: 'failed', status_description: 'the provider returned an error' }),

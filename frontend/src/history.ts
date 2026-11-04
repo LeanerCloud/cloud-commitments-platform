@@ -113,9 +113,10 @@ function noSavingsCell(p: HistoryPurchase, empty: boolean): string {
   return `<td class="num savings" data-label="Monthly Savings">${formatCurrency(p.estimated_savings)}</td>`;
 }
 
-// About what the 4-line clamp shows; longer text also gets a disclosure, since
-// a title tooltip is unreachable by keyboard and touch.
-const STATUS_CLAMP_CHARS = 160;
+// About what the 4-line clamp shows in the narrowest (phone card) layout;
+// longer text also gets a disclosure, since a title tooltip is unreachable by
+// keyboard and touch.
+const STATUS_CLAMP_CHARS = 80;
 
 function statusFullTextHtml(text: string): string {
   if (text.length <= STATUS_CLAMP_CHARS) return '';
