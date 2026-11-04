@@ -156,3 +156,27 @@ func TestTolerateSkipped_PricingOutageHoldsEviction(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, gap.holdsEviction())
 }
+
+// The held account's platform ID travels with the gap through the fan-out;
+// accounts whose skips are ordinary invalid rows are not held.
+func TestPricingOutageGap_FanOutRecordsHeldAccounts(t *testing.T) {
+	accounts := []config.CloudAccount{{ID: "held", Name: "held"}, {ID: "plain", Name: "plain"}}
+	fn := func(_ context.Context, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
+		reason := "advisor: non-USD"
+		if acct.ID == "held" {
+			reason = "advisor: price lookup unavailable: x"
+		}
+		gap, err := tolerateIncompleteSweep("azure", &skipErr{partial: true, count: 1, reasons: []string{reason}})
+		return []config.RecommendationRecord{{ID: acct.ID}}, gap, err
+	}
+
+	_, outcome := fanOutPerAccount(context.Background(), "Azure", accounts, fn)
+
+	require.NotNil(t, outcome.Gap)
+	sweep := outcome.Gap.toProviderSweep("azure")
+	assert.Equal(t, []string{"held"}, sweep.HeldAccountIDs)
+	assert.Equal(t, 1, sweep.IncompleteAccounts)
+	assert.Equal(t, 1, sweep.Reasons[config.PartialReasonPricingUnavailable])
+	assert.Equal(t, []string{"held"}, outcome.IncompleteAccountIDs)
+	assert.Equal(t, []string{"plain"}, outcome.SucceededAccountIDs)
+}

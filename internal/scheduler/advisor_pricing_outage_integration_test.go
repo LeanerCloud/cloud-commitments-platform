@@ -11,6 +11,7 @@ import (
 	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -36,9 +37,9 @@ func collectAzureAmbientCycle(t *testing.T, store config.StoreInterface, recs []
 	factory.On("CreateAndValidateProvider", mock.Anything, "azure", mock.Anything).Return(prov, nil).Once()
 	s := &Scheduler{config: store, providerFactory: factory}
 
-	got, ids, _, err := s.collectAzureRecommendations(ctx, &config.GlobalConfig{})
+	got, ids, gap, err := s.collectAzureRecommendations(ctx, &config.GlobalConfig{})
 	require.NoError(t, err)
-	s.persistCollection(ctx, got, expandSuccessfulCollects("azure", ids), nil, nil)
+	s.persistCollection(ctx, got, expandSuccessfulCollects("azure", ids), nil, appendPartialProvider(nil, "azure", gap))
 	return got
 }
 
@@ -100,4 +101,31 @@ func TestAzureAdvisorPricingOutage_HoldsEviction(t *testing.T) {
 		collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: []string{"advisor: row is in EUR, not USD"}})
 		require.NotContains(t, storedAzureIDs(t, store), "prev-advisor-row")
 	})
+}
+
+// The freshness payload names the account whose Advisor rows are held through
+// a pricing outage, with the closed pricing_unavailable reason, and a good
+// cycle clears it. The purchase path reads this to refuse the held rows.
+func TestAzureAdvisorPricingOutage_FreshnessListsHeldAccount(t *testing.T) {
+	ctx := context.Background()
+	container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
+	store := config.NewPostgresStore(container.DB)
+	acct := config.CloudAccount{ID: uuid.NewString(), Name: "host", Provider: "azure", ExternalID: "sub-a", AzureSubscriptionID: "sub-a", Enabled: false}
+	require.NoError(t, store.CreateCloudAccount(ctx, &acct))
+
+	collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips})
+	fresh, err := store.GetRecommendationsFreshness(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, fresh.LastCollectionPartial)
+	require.Len(t, fresh.LastCollectionPartial.Providers, 1)
+	sweep := fresh.LastCollectionPartial.Providers[0]
+	require.Equal(t, "azure", sweep.Provider)
+	require.Equal(t, []string{acct.ID}, sweep.HeldAccountIDs)
+	require.Equal(t, 1, sweep.IncompleteAccounts)
+	require.Positive(t, sweep.Reasons[config.PartialReasonPricingUnavailable])
+
+	collectAzureAmbientCycle(t, store, []common.Recommendation{partialSweepRec()}, nil)
+	fresh, err = store.GetRecommendationsFreshness(ctx)
+	require.NoError(t, err)
+	require.Nil(t, fresh.LastCollectionPartial, "a good cycle clears the hold")
 }

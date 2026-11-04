@@ -567,7 +567,7 @@ func (s *Scheduler) collectAWSRecommendations(ctx context.Context, globalCfg *co
 		// in those cases.
 		if acctID := s.resolveAmbientHostAccountID(ctx); acctID != "" {
 			recs = s.tagAccount(recs, acctID)
-			return recs, ambientEvictionRoster(!gap.holdsEviction(), acctID), gap.forAccount(), nil
+			return recs, ambientEvictionRoster(!gap.holdsEviction(), acctID), gap.forAccount().withHeld(acctID), nil
 		}
 		return recs, ambientEvictionRoster(!gap.holdsEviction(), ""), gap.forAccount(), nil
 	}
@@ -678,7 +678,7 @@ func fanOutPerAccount(
 			} else {
 				outcome.SucceededAccountIDs = append(outcome.SucceededAccountIDs, acct.ID)
 			}
-			outcome.Gap = mergeSweepGaps(outcome.Gap, gap.forAccount())
+			outcome.Gap = mergeSweepGaps(outcome.Gap, gap.forAccount().withHeld(acct.ID))
 			mu.Unlock()
 			return nil
 		})
@@ -918,7 +918,7 @@ func (s *Scheduler) collectAzureRecommendations(ctx context.Context, _ *config.G
 		}
 		if acctID := s.resolveAmbientAccountID(ctx, "azure", subscriptionID); acctID != "" {
 			recs = s.tagAccount(recs, acctID)
-			return recs, ambientEvictionRoster(!gap.holdsEviction(), acctID), gap.forAccount(), nil
+			return recs, ambientEvictionRoster(!gap.holdsEviction(), acctID), gap.forAccount().withHeld(acctID), nil
 		}
 		return recs, ambientEvictionRoster(!gap.holdsEviction(), ""), gap.forAccount(), nil
 	}
@@ -993,7 +993,7 @@ func (s *Scheduler) collectGCPRecommendations(ctx context.Context, _ *config.Glo
 		}
 		if acctID := s.resolveAmbientAccountID(ctx, "gcp", projectID); acctID != "" {
 			recs = s.tagAccount(recs, acctID)
-			return recs, ambientEvictionRoster(!gap.holdsEviction(), acctID), gap.forAccount(), nil
+			return recs, ambientEvictionRoster(!gap.holdsEviction(), acctID), gap.forAccount().withHeld(acctID), nil
 		}
 		return recs, ambientEvictionRoster(!gap.holdsEviction(), ""), gap.forAccount(), nil
 	}

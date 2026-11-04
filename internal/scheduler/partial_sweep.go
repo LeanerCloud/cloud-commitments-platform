@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -39,6 +40,12 @@ type sweepGap struct {
 	// but invalid recommendations, so the account's sweep itself was complete.
 	skippedOnly bool
 	reasons     map[string]int
+	// pricingUnavailable is set when a skip meant the price could not be
+	// fetched, so the previous cycle's rows are held (see hasPricingOutageSkip).
+	pricingUnavailable bool
+	// heldAccountIDs are the platform account UUIDs whose rows are held for
+	// that reason; the collector that knows the account fills them in.
+	heldAccountIDs []string
 }
 
 // holdsEviction reports whether the sweep must stay out of the succeeded-
@@ -68,13 +75,30 @@ func tolerateSkippedRecommendations(providerName string, err error) (*sweepGap, 
 		return nil, err
 	}
 	logging.Warnf("%s recommendations partial, keeping the rest: %v", providerName, err)
-	return &sweepGap{
+	// A skip that means "the price could not be fetched" says nothing about
+	// the row being invalid, so its previous-cycle row must survive.
+	outage := countPricingOutageSkips(p.SkipReasons())
+	g := &sweepGap{
 		skippedRecommendations: p.SkippedCount(),
-		// A skip that means "the price could not be fetched" says nothing about
-		// the row being invalid, so its previous-cycle row must survive.
-		skippedOnly: !hasPricingOutageSkip(p.SkipReasons()),
-		reasons:     map[string]int{},
-	}, nil
+		skippedOnly:            outage == 0,
+		pricingUnavailable:     outage > 0,
+		reasons:                map[string]int{},
+	}
+	if outage > 0 {
+		g.reasons[config.PartialReasonPricingUnavailable] = outage
+	}
+	return g, nil
+}
+
+// withHeld records accountID as held when the gap is a pricing outage. An
+// empty accountID (an unresolved ambient identity) cannot be named.
+func (g *sweepGap) withHeld(accountID string) *sweepGap {
+	if g == nil || !g.pricingUnavailable || accountID == "" {
+		return g
+	}
+	out := mergeSweepGaps(nil, g)
+	out.heldAccountIDs = append(out.heldAccountIDs, accountID)
+	return out
 }
 
 // Skip-reason prefixes cloud-commitments-go records when Azure Advisor rows
@@ -99,17 +123,23 @@ const advisorTruncatedSkipPrefix = "advisor: azure advisor: recommendation list 
 
 // hasPricingOutageSkip reports whether any skip reason is a pricing outage.
 func hasPricingOutageSkip(reasons []string) bool {
+	return countPricingOutageSkips(reasons) > 0
+}
+
+func countPricingOutageSkips(reasons []string) int {
+	n := 0
 	for _, reason := range reasons {
 		if strings.HasPrefix(reason, advisorTruncatedSkipPrefix) {
 			continue
 		}
 		for _, prefix := range pricingOutageSkipPrefixes {
 			if strings.HasPrefix(reason, prefix) {
-				return true
+				n++
+				break
 			}
 		}
 	}
-	return false
+	return n
 }
 
 // gapFromAWSIncomplete summarizes an AWS IncompleteRecommendationsError.
@@ -172,6 +202,8 @@ func mergeSweepGaps(a, b *sweepGap) *sweepGap {
 			continue
 		}
 		out.skippedOnly = out.skippedOnly && g.skippedOnly
+		out.pricingUnavailable = out.pricingUnavailable || g.pricingUnavailable
+		out.heldAccountIDs = append(out.heldAccountIDs, g.heldAccountIDs...)
 		out.skippedRecommendations += g.skippedRecommendations
 		out.incompleteAccounts += g.incompleteAccounts
 		out.attemptedScopes += g.attemptedScopes
@@ -198,6 +230,7 @@ func (g *sweepGap) toProviderSweep(providerName string) config.PartialProviderSw
 		FailedDetails:          g.failedDetails,
 		SkippedRecommendations: g.skippedRecommendations,
 		Reasons:                reasons,
+		HeldAccountIDs:         slices.Sorted(slices.Values(g.heldAccountIDs)),
 	}
 }
 
