@@ -97,7 +97,8 @@ describe('Topbar filters', () => {
 
       initTopbarFilters();
       await new Promise((r) => setTimeout(r, 0));
-      openAccountMenu();
+      openAccountMenu(); // retries, and the retry fails too
+      await new Promise((r) => setTimeout(r, 0));
 
       expect(noticeText()).toBe("Couldn't load accounts. Close and reopen this menu to try again.");
       const notice = document.querySelector('.chip-select-notice');
@@ -122,6 +123,47 @@ describe('Topbar filters', () => {
       const values = Array.from(document.querySelectorAll<HTMLLIElement>('.chip-select-option'))
         .map((el) => el.dataset['value']);
       expect(values).toContain('acct-1');
+    });
+
+    // Review on #1727: focus stays on the trigger, so the notice must be tied
+    // to it for a screen reader to announce it.
+    test('the focused host is described by the notice while it shows', async () => {
+      jest.spyOn(console, 'warn').mockImplementation(() => {});
+      (api.listAccountsMinimal as jest.Mock).mockRejectedValue(new Error('HTTP 502'));
+
+      initTopbarFilters();
+      await new Promise((r) => setTimeout(r, 0));
+      openAccountMenu();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const trigger = document.querySelectorAll<HTMLButtonElement>('.chip-select')[1] as HTMLButtonElement;
+      const describedBy = trigger.getAttribute('aria-describedby');
+      expect(describedBy).toBeTruthy();
+      expect(document.getElementById(describedBy as string)?.textContent)
+        .toBe("Couldn't load accounts. Close and reopen this menu to try again.");
+
+      closeMenu();
+      expect(trigger.hasAttribute('aria-describedby')).toBe(false);
+    });
+
+    test('reopening while a retry is in flight sends nothing and says it is loading', async () => {
+      jest.spyOn(console, 'warn').mockImplementation(() => {});
+      let resolveRetry!: (v: unknown) => void;
+      (api.listAccountsMinimal as jest.Mock)
+        .mockRejectedValueOnce(new Error('HTTP 502'))
+        .mockReturnValueOnce(new Promise((r) => { resolveRetry = r; }));
+
+      initTopbarFilters();
+      await new Promise((r) => setTimeout(r, 0));
+      openAccountMenu(); // starts the retry
+      expect(noticeText()).toBe('Loading accounts…');
+      closeMenu();
+      openAccountMenu(); // retry still pending
+      expect(api.listAccountsMinimal).toHaveBeenCalledTimes(2);
+
+      resolveRetry([{ id: 'acct-1', name: 'Prod', external_id: '111', provider: 'aws' }]);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(noticeText()).toBeNull();
     });
 
     test('a successful load does not refetch on every open', async () => {
