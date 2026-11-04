@@ -39,6 +39,9 @@ func TestAzurePricingHold(t *testing.T) {
 		{"unheld account unaffected", &other, heldFreshness(acct), nil, false},
 		{"unreadable hold state refuses", &acct, nil, errors.New("database unavailable"), true},
 		{"unresolved ambient rec refused during an outage", nil, heldFreshness(), nil, true},
+		// Fail-closed by design: a rec without an account cannot be matched to the
+		// hold list, so any Azure hold refuses it.
+		{"accountless rec refused while other accounts are held", nil, heldFreshness(acct), nil, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

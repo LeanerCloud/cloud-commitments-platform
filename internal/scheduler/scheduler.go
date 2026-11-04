@@ -445,6 +445,15 @@ func (s *Scheduler) clearCollectionStartedBestEffort(ctx context.Context, ownerT
 // stops showing instead of staying forever (issue #120). A failed write skips
 // the prune.
 func (s *Scheduler) persistCollection(ctx context.Context, recs []config.RecommendationRecord, successfulCollects []config.SuccessfulCollect, failedProviders map[string]string, partial *config.RecommendationsCollectionPartial) {
+	partial, err := s.carryForwardAzureHold(ctx, partial, successfulCollects)
+	if err != nil {
+		// Upserting would reset the hold marker for rows that are still held.
+		logging.Errorf("Not persisting recommendations: %v", err)
+		if setErr := s.config.SetRecommendationsCollectionError(ctx, err.Error()); setErr != nil {
+			logging.Errorf("Failed to record collection error: %v", setErr)
+		}
+		return
+	}
 	if err := s.config.UpsertRecommendations(ctx, time.Now().UTC(), recs, successfulCollects); err != nil {
 		logging.Errorf("Failed to persist recommendations: %v", err)
 		if setErr := s.config.SetRecommendationsCollectionError(ctx, err.Error()); setErr != nil {
