@@ -67,7 +67,7 @@ resource "aws_cloudfront_distribution" "frontend" {
     forwarded_values {
       query_string = true
       headers = [
-        "Authorization",
+        "x-amz-content-sha256",
         "X-Authorization",
         "X-API-Key",
         "X-CSRF-Token",
@@ -89,14 +89,6 @@ resource "aws_cloudfront_distribution" "frontend" {
       event_type   = "viewer-response"
       function_arn = aws_cloudfront_function.security_headers.arn
     }
-  }
-
-  # SPA routing: serve index.html for 404s from the origin
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 10
   }
 
   restrictions {
