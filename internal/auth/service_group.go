@@ -365,7 +365,7 @@ func isFullAdminGrant(perm Permission) bool {
 
 // adminGrantSatisfies reports whether an {admin, *} grant may answer a
 // request for action/resource. Asking for the admin capability itself needs
-// an unconstrained grant; every other request keeps the scoped behaviour.
+// an unconstrained grant; every other request keeps the scoped behavior.
 func adminGrantSatisfies(perm Permission, action, resource string) bool {
 	if action == ActionAdmin && resource == ResourceAll {
 		return isFullAdminGrant(perm)
