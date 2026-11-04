@@ -27,6 +27,7 @@ import { initLadderingSettings } from './ladder';
 import { showSkeletonText } from './lib/skeleton';
 import { canonicalizeServiceConfigs, legacySettingsServiceTarget } from './lib/settings-service-ids';
 import { buildLastUpdatedStamp } from './lib/last-updated';
+import { accountDisplayLabel } from './lib/account-label';
 
 /**
  * Issue #196 — after any mutation to an `account_service_overrides` row
@@ -603,7 +604,7 @@ function renderAccountsList(
   const tbody = document.createElement('tbody');
 
   visible.forEach((account) => {
-    const accountLabel = `${account.name} (${account.external_id})`;
+    const accountLabel = accountDisplayLabel(account.name, account.external_id);
     const tr = document.createElement('tr');
 
     const nameTd = document.createElement('td');

@@ -20,6 +20,7 @@
 import * as api from './api';
 import * as state from './state';
 import { createChipSelect, type ChipSelectHandle, type ChipSelectOption } from './lib/chip-select';
+import { accountDisplayLabel } from './lib/account-label';
 
 const PROVIDER_OPTIONS: ChipSelectOption[] = [
   { value: '', label: 'All Providers' },
@@ -111,7 +112,7 @@ async function populateAccountOptions(provider: string): Promise<void> {
       { value: '', label: 'All Accounts' },
       ...accounts.map((a) => ({
         value: a.id,
-        label: `${a.name} (${a.external_id})`,
+        label: accountDisplayLabel(a.name, a.external_id),
       })),
     ];
     accountsLoadFailed = false;

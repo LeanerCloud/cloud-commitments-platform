@@ -39,6 +39,7 @@ import { showToast } from './toast';
 import { getCurrentUser } from './state';
 import { attachAzureExchangeToolbar, buildAzureSelectCell, buildAzureSelectHeader, canPreviewAzureExchange } from './riexchange-azure';
 import { formatDecimalStringCurrency, formatIsoTermShort, formatPaymentOption } from './lib/table-format';
+import { accountDisplayLabel } from './lib/account-label';
 
 // Module state
 let currentRIs: ConvertibleRI[] = [];
@@ -404,7 +405,7 @@ function riAccountLabel(accountID: string | undefined): string {
   if (!accountID) return 'could not be determined';
   const name = riAccountNames.get(accountID);
   if (!name) return `AWS account ${accountID}`;
-  return name.includes(accountID) ? name : `${name} (${accountID})`;
+  return accountDisplayLabel(name, accountID);
 }
 
 async function loadUtilization(generation: number): Promise<void> {
