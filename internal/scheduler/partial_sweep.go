@@ -81,6 +81,22 @@ func tolerateSkippedRecommendations(providerName string, err error) (*sweepGap, 
 	return g, nil
 }
 
+// trimSubscriptionPrefixes drops the "<subscription ID>: " that the Azure
+// multi-subscription client puts before each skip it aggregates
+// (recommendations_multi_subscription.go:399 at 61111428), so the reasons match
+// the same prefixes as a single-subscription sweep. Only a leading segment
+// followed by an Advisor skip is removed; the single-sweep path never calls it.
+func trimSubscriptionPrefixes(reasons []string) []string {
+	out := make([]string, len(reasons))
+	for i, reason := range reasons {
+		out[i] = reason
+		if sub, rest, ok := strings.Cut(reason, ": "); ok && sub != "" && !strings.ContainsAny(sub, " :") && strings.HasPrefix(rest, "advisor: ") {
+			out[i] = rest
+		}
+	}
+	return out
+}
+
 // recordSkips adds dropped recommendations to the gap. A skip that means "the
 // price could not be fetched" says nothing about the row being invalid, so its
 // previous-cycle row must survive: it marks the gap pricingUnavailable.
@@ -171,7 +187,7 @@ func gapFromPartialSubscriptions(p *azureprovider.PartialSubscriptionFailureErro
 	// user warning only and does not affect eviction (skippedOnly stays false),
 	// but a pricing outage among them holds the account like a skips-only one.
 	if sk := p.Skips(); sk != nil {
-		g.recordSkips(sk.SkippedCount(), sk.SkipReasons())
+		g.recordSkips(sk.SkippedCount(), trimSubscriptionPrefixes(sk.SkipReasons()))
 	}
 	for _, f := range p.Failed {
 		g.reasons[classifySweepCause(f.Err)]++

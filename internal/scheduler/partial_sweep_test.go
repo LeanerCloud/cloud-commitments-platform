@@ -285,7 +285,14 @@ func TestGapFromPartialSubscriptions_PricingOutageSkipsHoldAccount(t *testing.T)
 	}
 	failed := []azureprovider.SubscriptionFailure{{SubscriptionID: "sub-b", Err: errors.New("403 authorization failed")}}
 
-	gap, err := tolerateIncompleteSweep("azure", azureprovider.NewPartialSubscriptionFailure(2, failed, outage))
+	// The multi-subscription client Provider.GetRecommendationsClient returns
+	// when scope is ambiguous builds each skip as "<subscription ID>: <skip>"
+	// (recommendations_multi_subscription.go:399 at 61111428).
+	prefixed := make([]string, len(outage))
+	for i, r := range outage {
+		prefixed[i] = "0f4c1a52-8d3e-4b7a-9c61-2e5d7a9b3c10: " + r
+	}
+	gap, err := tolerateIncompleteSweep("azure", azureprovider.NewPartialSubscriptionFailure(2, failed, prefixed))
 	require.NoError(t, err)
 
 	held := gap.forAccount().withHeld("acct-1")
