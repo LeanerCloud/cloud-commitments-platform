@@ -159,7 +159,7 @@ describe('Planned Purchases column filters (issue #166 follow-up)', () => {
     };
     uncheck('plan_name', 'Plan B');
     expect(countRows()).toBe(2);
-    uncheck('scheduled_date', 'Jun 2, 2026');
+    uncheck('scheduled_date', '2026-06-02');
     expect(countRows()).toBe(1);
   });
 
@@ -173,6 +173,20 @@ describe('Planned Purchases column filters (issue #166 follow-up)', () => {
       '#planned-purchases-list th .column-filter-btn[data-column="scheduled_date"]',
     )?.click();
     expect(document.querySelectorAll('.column-filter-popover .column-filter-item')).toHaveLength(1);
+  });
+
+  test('scheduled date options are in chronological order, labelled by date', async () => {
+    const dates = ['2026-12-01', '2026-01-10', '2026-01-02', '2026-06-02'];
+    (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: dates.map((d, i) => (
+      { ...seedPurchases[0], id: `o${i}`, scheduled_date: d }
+    )) });
+    await loadPlans();
+    document.querySelector<HTMLButtonElement>(
+      '#planned-purchases-list th .column-filter-btn[data-column="scheduled_date"]',
+    )?.click();
+    const labels = Array.from(document.querySelectorAll('.column-filter-popover .column-filter-item'))
+      .map((l) => l.textContent?.trim());
+    expect(labels).toEqual(['Jan 2, 2026', 'Jan 10, 2026', 'Jun 2, 2026', 'Dec 1, 2026']);
   });
 
   test('clicking a trigger opens a popover detached to document.body', async () => {

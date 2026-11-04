@@ -250,8 +250,8 @@ function applyPlansColumnFilters(
 function categoricalCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): string {
   switch (col) {
     case 'plan_name':      return p.plan_name ?? '';
-    // Keyed by the displayed local day so same-day steps share one option.
-    case 'scheduled_date': return formatDate(p.scheduled_date);
+    // Keyed by local YYYY-MM-DD: same-day steps share one option and keys sort chronologically.
+    case 'scheduled_date': return localDayKey(p.scheduled_date);
     case 'provider':       return p.provider ?? '';
     case 'service':        return p.service ?? '';
     case 'resource_type':  return p.resource_type ?? '';
@@ -264,6 +264,15 @@ function categoricalCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnI
     case 'estimated_savings':
       return '';
   }
+}
+
+function localDayKey(date: string | null | undefined): string {
+  if (!date) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function numericCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): number {
@@ -342,6 +351,7 @@ function plansColumnLabel(column: state.PlansColumnId): string {
 
 function plansCategoricalDisplayLabel(column: state.PlansColumnId, value: string): string {
   if (value === '') return '(empty)';
+  if (column === 'scheduled_date') return formatDate(value);
   if (column === 'term') {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? formatTermShort(n) : value;
