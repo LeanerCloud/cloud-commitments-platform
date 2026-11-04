@@ -295,28 +295,22 @@ func scopedBearer() *events.LambdaFunctionURLRequest {
 }
 
 type scopedClaimPath struct {
-	name string
-	call string // purchase manager method that buys
-	// notBought asserts, with literal method names, that it was never called.
-	notBought func(t *testing.T, mp *MockPurchaseManager)
-	perm      auth.Permission
-	execID    string
-	run       func(t *testing.T, f *scopedClaimFixture) error
+	name   string
+	call   string // purchase manager method that buys
+	perm   auth.Permission
+	execID string
+	run    func(t *testing.T, f *scopedClaimFixture) error
 }
 
 func scopedClaimPaths() []scopedClaimPath {
 	return []scopedClaimPath{
-		{"run now", "RunPlannedPurchaseNow", func(t *testing.T, mp *MockPurchaseManager) {
-			mp.AssertNotCalled(t, "RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-		}, auth.Permission{Action: auth.ActionExecute, Resource: auth.ResourcePurchases},
+		{"run now", "RunPlannedPurchaseNow", auth.Permission{Action: auth.ActionExecute, Resource: auth.ResourcePurchases},
 			"11111111-1111-1111-1111-111111111112",
 			func(_ *testing.T, f *scopedClaimFixture) error {
 				_, err := f.h.runPlannedPurchase(context.Background(), scopedBearer(), f.execID)
 				return err
 			}},
-		{"session approve", "ApproveAndExecute", func(t *testing.T, mp *MockPurchaseManager) {
-			mp.AssertNotCalled(t, "ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-		}, auth.Permission{Action: auth.ActionApproveAny, Resource: auth.ResourcePurchases},
+		{"session approve", "ApproveAndExecute", auth.Permission{Action: auth.ActionApproveAny, Resource: auth.ResourcePurchases},
 			"abcdefab-cdef-abcd-efab-cdefabcdef02",
 			func(_ *testing.T, f *scopedClaimFixture) error {
 				_, err := f.h.approvePurchase(context.Background(), scopedBearer(), f.execID, "")
@@ -344,7 +338,14 @@ func TestClaimedRowCheck_AccountScope(t *testing.T) {
 				if tc.refused {
 					require.Error(t, err)
 					assert.Contains(t, err.Error(), "nothing was bought")
-					p.notBought(t, mp)
+					switch p.call {
+					case "RunPlannedPurchaseNow":
+						mp.AssertNotCalled(t, "RunPlannedPurchaseNow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+					case "ApproveAndExecute":
+						mp.AssertNotCalled(t, "ApproveAndExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+					default:
+						t.Fatalf("unknown purchase call %q", p.call)
+					}
 					return
 				}
 				require.NoError(t, err)
