@@ -38,11 +38,15 @@ var serverNotePatterns = []string{
 	`FROM_EMAIL not configured for this deployment`,
 }
 
-// exchangeNotePatterns are server-authored RI exchange record notes. They are
-// written bare, never behind a resource or provider head, so none is allowed.
-var exchangeNotePatterns = []string{
+// bareNotePatterns are server-authored RI exchange record and collection notes.
+// They are written bare, never behind a resource or provider head, so none is allowed.
+var bareNotePatterns = []string{
 	// RI exchange record errors (api/handler_ri_exchange.go failExchange callers and
 	// the exchange package's auto-exchange reservation notes).
+	// The operator's stale-exchange resolve note (api/handler_ri_exchange_resolve.go
+	// note()): fixed fields in a fixed order, then the admin's own reason as a Go
+	// quoted string, which is text typed on purpose and closed by its quotes.
+	`operator:(?:completed|failed): account="\d{12}" region="[a-z0-9-]{1,32}" checked_at=\d{4}-\d{2}-\d{2}T[0-9:.]+(?:Z|[+-]\d{2}:\d{2})(?: ack=true)?(?: exchange_id="(?:[^"\\\n]|\\.)*")? reason="(?:[^"\\\n]|\\.)*"`,
 	`config load failed`,
 	`exchange record has no region; cannot execute safely`,
 	`(?:daily|per-exchange) spending cap is not configured \(RIExchange(?:MaxDaily|MaxPerExchange)USD is 0\)`,
@@ -125,7 +129,7 @@ func joinAlt(parts []string) string { return strings.Join(parts, "|") }
 
 var serverNoteRE = regexp.MustCompile(`^(?:` +
 	resourceHead + `(?:` + joinAlt(serverNotePatterns) + `)` +
-	`|` + `(?:` + joinAlt(exchangeNotePatterns) + `)` +
+	`|` + `(?:` + joinAlt(bareNotePatterns) + `)` +
 	`|` + categoryHead + `(?:` + joinAlt(categoryNotePatterns()) + `)` +
 	`)(?:; |$)`)
 
