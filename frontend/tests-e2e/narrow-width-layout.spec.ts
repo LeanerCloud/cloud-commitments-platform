@@ -6,7 +6,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { mockApi, seedAuth } from './fixtures/recs';
+import { ACCOUNTS, mockApi, seedAuth } from './fixtures/recs';
 
 const PLAN = {
   id: 'p1', name: 'RDS Full Coverage Purchase', enabled: true, auto_purchase: false, notification_days_before: 3, services: {},
@@ -19,13 +19,15 @@ const PLANNED = [1, 2].map((n) => ({
   status: 'pending', step_number: n, total_steps: 2,
 }));
 
-async function openPlans(page: Page, width: number): Promise<void> {
+async function openPlans(page: Page, width: number, query = '', accounts: unknown[] = ACCOUNTS): Promise<void> {
   await page.setViewportSize({ width, height: 900 });
   await seedAuth(page);
   await mockApi(page);
+  // After mockApi: Playwright tries the last-registered route first.
+  await page.route('**/api/accounts**', (route) => route.fulfill({ json: accounts }));
   await page.route('**/api/plans**', (route) => route.fulfill({ json: { plans: [PLAN] } }));
   await page.route('**/api/purchases/planned', (route) => route.fulfill({ json: { purchases: PLANNED } }));
-  await page.goto('/plans');
+  await page.goto(`/plans${query}`);
   await expect(page.locator('.planned-purchases-table tbody tr')).toHaveCount(PLANNED.length);
 }
 
@@ -43,6 +45,7 @@ for (const width of [915, 1100]) {
 test('sidebar keeps its labels at 1280px', async ({ page }) => {
   await openPlans(page, 1280);
   expect(await sidebarWidth(page)).toBe(232);
+  await expect(page.locator('.app-sidebar .sidebar-label').first()).toBeVisible();
 });
 
 for (const width of [780, 915, 1100]) {
@@ -53,6 +56,7 @@ for (const width of [780, 915, 1100]) {
     for (const chip of await chips.all()) {
       const lines = await chip.locator('.chip-select-value').evaluate((el) => el.getClientRects().length);
       expect(lines).toBe(1);
+      await expect(chip.locator('.chip-select-label')).toBeHidden();
       const { top, bottom } = await chip.evaluate((el) => {
         const r = el.getBoundingClientRect();
         return { top: r.top, bottom: r.bottom };
@@ -107,3 +111,26 @@ test('the phone drawer shows full labels even with a stored collapsed sidebar', 
   await expect.poll(() => sidebarWidth(page)).toBe(232);
   await expect(page.locator('.app-sidebar .sidebar-label').first()).toBeVisible();
 });
+
+const LONG_ACCOUNT = {
+  id: 'acct-long', provider: 'aws', external_id: '333333333333',
+  name: 'Shared production platform account for the payments and ledger teams',
+};
+
+for (const width of [900, 1280]) {
+  test(`a long selected account truncates inside its chip at ${width}px`, async ({ page }) => {
+    await openPlans(page, width, `?account=${LONG_ACCOUNT.id}`, [...ACCOUNTS, LONG_ACCOUNT]);
+    const value = page.locator('.app-topbar .chip-select-value').filter({ hasText: 'Shared production' });
+    await expect(value).toBeVisible();
+    const box = await value.evaluate((el) => ({
+      clipped: el.scrollWidth > el.clientWidth,
+      overflow: getComputedStyle(el).textOverflow,
+      chipRight: el.closest('.chip-select')!.getBoundingClientRect().right,
+      rootRight: el.closest('.chip-select-root')!.getBoundingClientRect().right,
+    }));
+    expect(box).toMatchObject({ clipped: true, overflow: 'ellipsis' });
+    expect(box.chipRight).toBeLessThanOrEqual(box.rootRight + 1);
+    expect(await page.locator('.app-topbar').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+}
