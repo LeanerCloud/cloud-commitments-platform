@@ -28,6 +28,10 @@ func TestUpsertRecommendationsWithPartial_ConcurrentCollectionKeepsHold(t *testi
 	seedRecommendationCloudAccount(ctx, t, store, acctX, "azure", "sub-hold-x")
 	seedRecommendationCloudAccount(ctx, t, store, acctY, "azure", "sub-hold-y")
 
+	// The hold protects X's stored rows, which must exist for it to carry.
+	require.NoError(t, store.UpsertRecommendations(ctx, time.Now().Add(-time.Hour),
+		[]config.RecommendationRecord{azureAccountRec("row-x", acctX, "D2")}, nil))
+
 	holder, err := db.Begin(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = holder.Rollback(ctx) })

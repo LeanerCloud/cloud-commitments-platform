@@ -146,23 +146,23 @@ func carryHoldInTx(ctx context.Context, tx pgx.Tx, partial *RecommendationsColle
 	if previousAzureHold(prev) == nil {
 		return partial, nil
 	}
-	rows, err := tx.Query(ctx, `SELECT id::text FROM cloud_accounts WHERE provider = 'azure' AND enabled`)
+	rows, err := tx.Query(ctx, `SELECT DISTINCT account_key::text FROM recommendations WHERE provider = 'azure'`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list enabled azure accounts: %w", err)
+		return nil, fmt.Errorf("failed to list azure accounts with stored rows: %w", err)
 	}
 	defer rows.Close()
-	enabled := map[string]bool{}
+	stored := map[string]bool{}
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("failed to scan azure account id: %w", err)
+			return nil, fmt.Errorf("failed to scan azure account key: %w", err)
 		}
-		enabled[id] = true
+		stored[id] = true
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to list enabled azure accounts: %w", err)
+		return nil, fmt.Errorf("failed to list azure accounts with stored rows: %w", err)
 	}
-	return carryAzureHold(prev, partial, collects, enabled), nil
+	return carryAzureHold(prev, partial, collects, stored), nil
 }
 
 // successfulCollectArrays converts the SuccessfulCollect slice into the two

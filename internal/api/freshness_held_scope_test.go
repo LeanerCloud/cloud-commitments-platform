@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -56,4 +57,28 @@ func TestFreshness_HeldAccountsScopedToCaller(t *testing.T) {
 		heldIDsFor(t, []string{heldInScope}, s)
 		assert.Equal(t, []string{heldInScope, heldOutScope}, s.LastCollectionPartial.Providers[0].HeldAccountIDs)
 	})
+}
+
+// A scope that cannot be established must fail closed: an error, never the
+// unfiltered held IDs.
+func TestFreshness_ScopeLookupFailureFailsClosed(t *testing.T) {
+	mockAuth := new(MockAuthService)
+	mockAuth.On("ValidateSession", mock.Anything, scopedToken).Return(&Session{UserID: scopedUserID}, nil).Maybe()
+	mockAuth.grantPermissionsScoped(viewRecommendationsOnly(), []string{heldInScope})
+	kept := mockAuth.ExpectedCalls[:0]
+	for _, c := range mockAuth.ExpectedCalls {
+		if c.Method != "GetAllowedAccountsAPI" {
+			kept = append(kept, c)
+		}
+	}
+	mockAuth.ExpectedCalls = kept
+	mockAuth.On("GetAllowedAccountsAPI", mock.Anything, mock.Anything).Return(nil, errors.New("auth store unavailable"))
+	f := newRefreshFixtureWithAuth(t, mockAuth)
+	f.store.ExpectedCalls = nil
+	f.store.On("GetRecommendationsFreshness", mock.Anything).Return(heldFreshness(heldInScope, heldOutScope), nil)
+
+	res, err := NewRouter(f.handler).Route(t.Context(), "GET", "/api/recommendations/freshness", scopedRequest(""))
+
+	require.Error(t, err)
+	assert.Nil(t, res)
 }

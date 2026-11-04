@@ -5,6 +5,7 @@ package scheduler
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
@@ -43,6 +44,18 @@ func registerAzure(t *testing.T, store config.StoreInterface) string {
 	return acct.ID
 }
 
+// seedAzureAccountRows stores an old Azure row for each account, the rows a
+// hold protects.
+func seedAzureAccountRows(t *testing.T, store config.StoreInterface, accounts ...string) {
+	t.Helper()
+	recs := make([]config.RecommendationRecord, 0, len(accounts))
+	for _, id := range accounts {
+		recs = append(recs, config.RecommendationRecord{ID: "row-" + id, CloudAccountID: &id, Provider: "azure", Service: "compute",
+			Region: "westeurope", ResourceType: "Standard_D2s_v3", Savings: 40, Count: 1, Term: 12, Payment: "upfront"})
+	}
+	require.NoError(t, store.UpsertRecommendations(context.Background(), time.Now().Add(-time.Hour), recs, nil))
+}
+
 // The hold marker lasts as long as the held rows: it survives every cycle that
 // does not re-price the account, and is dropped only by a cycle that does.
 func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
@@ -52,6 +65,7 @@ func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 		container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 		store := config.NewPostgresStore(container.DB)
 		acctA, acctB = registerAzure(t, store), registerAzure(t, store)
+		seedAzureAccountRows(t, store, acctA, acctB)
 		s := &Scheduler{config: store}
 		s.persistCollection(ctx, nil, nil, nil, heldPartial(acctA))
 		require.Equal(t, []string{acctA}, heldAzureAccounts(t, store))
@@ -103,27 +117,42 @@ func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 		require.Empty(t, heldAzureAccounts(t, store))
 	})
 
-	t.Run("a disabled account's hold drops", func(t *testing.T) {
+	t.Run("a disabled account with rows stays held", func(t *testing.T) {
 		s, store := newScheduler(t)
 		acct, err := store.GetCloudAccount(ctx, acctA)
 		require.NoError(t, err)
 		acct.Enabled = false
 		require.NoError(t, store.UpdateCloudAccount(ctx, acct))
 		s.persistCollection(ctx, nil, azureOK(acctB), nil, nil)
-		require.Empty(t, heldAzureAccounts(t, store))
+		require.Equal(t, []string{acctA}, heldAzureAccounts(t, store))
 	})
 
-	t.Run("an ambient hold clears once accounts are registered", func(t *testing.T) {
+	ambientHold := func(t *testing.T, withRows bool) (*Scheduler, config.StoreInterface) {
 		container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 		store := config.NewPostgresStore(container.DB)
+		if withRows {
+			seedAdvisorRow(t, store)
+		}
 		s := &Scheduler{config: store}
 		s.persistCollection(ctx, nil, nil, nil, heldPartial())
 		fresh, err := store.GetRecommendationsFreshness(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, fresh.LastCollectionPartial)
-		registered := registerAzure(t, store)
-		s.persistCollection(ctx, nil, azureOK(registered), nil, nil)
-		fresh, err = store.GetRecommendationsFreshness(ctx)
+		return s, store
+	}
+
+	t.Run("an ambient hold stays while ambient rows exist, even once accounts are registered", func(t *testing.T) {
+		s, store := ambientHold(t, true)
+		s.persistCollection(ctx, nil, azureOK(registerAzure(t, store)), nil, nil)
+		fresh, err := store.GetRecommendationsFreshness(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, fresh.LastCollectionPartial)
+	})
+
+	t.Run("an ambient hold drops once no ambient rows remain", func(t *testing.T) {
+		s, store := ambientHold(t, false)
+		s.persistCollection(ctx, nil, azureOK(registerAzure(t, store)), nil, nil)
+		fresh, err := store.GetRecommendationsFreshness(ctx)
 		require.NoError(t, err)
 		require.Nil(t, fresh.LastCollectionPartial)
 	})
@@ -132,6 +161,7 @@ func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 		container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 		store := config.NewPostgresStore(container.DB)
 		s := &Scheduler{config: store}
+		seedAdvisorRow(t, store)
 		collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips})
 		s.persistCollection(ctx, nil, nil, map[string]string{"azure": "boom"}, nil)
 		fresh, err := store.GetRecommendationsFreshness(ctx)

@@ -2,7 +2,12 @@ package config
 
 import (
 	"slices"
+
+	"github.com/google/uuid"
 )
+
+// ambientAccountKey is the account_key of rows with no registered account.
+var ambientAccountKey = uuid.Nil.String()
 
 // carryAzureHold keeps the Azure pricing hold alive for as long as the held
 // rows are. Every upsert replaces last_collection_partial, but an account's
@@ -12,17 +17,19 @@ import (
 // ones are added, the rest carry over. That covers another outage, an outright
 // Azure failure and a run that skips Azure.
 //
-// A held account that is no longer an enabled registered Azure account (enabled
-// holds its IDs) is dropped, since it will never be collected again. A hold
-// with no account IDs (an unresolved ambient identity) carries until an
-// ambient Azure collection succeeds or registered Azure accounts exist, after
-// which the ambient identity is no longer collected.
-func carryAzureHold(prev, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect, enabled map[string]bool) *RecommendationsCollectionPartial {
+// A hold lasts only while stored Azure rows it protects exist: stored holds the
+// account_key of every provider=azure row, read in the same transaction. A
+// deleted account's rows cascade and pruned rows disappear, which ends the
+// hold; a disabled account keeps its rows, so it stays held. A hold with no
+// account IDs (an unresolved ambient identity) covers the ambient rows, keyed
+// by the nil UUID, and carries until an ambient Azure collection succeeds or
+// none remain.
+func carryAzureHold(prev, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect, stored map[string]bool) *RecommendationsCollectionPartial {
 	held := previousAzureHold(prev)
 	if held == nil {
 		return partial
 	}
-	carried, unresolved := stillHeld(held, collects, enabled)
+	carried, unresolved := stillHeld(held, collects, stored)
 	if len(carried) == 0 && !unresolved {
 		return partial
 	}
@@ -68,10 +75,10 @@ func previousAzureHold(partial *RecommendationsCollectionPartial) *PartialProvid
 	return nil
 }
 
-// stillHeld returns the previously held accounts this cycle did not re-price,
-// that are still enabled, and whether an account-less (ambient) hold is still
+// stillHeld returns the previously held accounts this cycle did not re-price
+// that still have stored Azure rows, and whether an account-less (ambient) hold is still
 // unresolved.
-func stillHeld(prev *PartialProviderSweep, collects []SuccessfulCollect, enabled map[string]bool) (carried []string, unresolved bool) {
+func stillHeld(prev *PartialProviderSweep, collects []SuccessfulCollect, stored map[string]bool) (carried []string, unresolved bool) {
 	repriced := map[string]bool{}
 	ambientRepriced := false
 	for _, sc := range collects {
@@ -84,9 +91,9 @@ func stillHeld(prev *PartialProviderSweep, collects []SuccessfulCollect, enabled
 		}
 	}
 	for _, id := range prev.HeldAccountIDs {
-		if !repriced[id] && enabled[id] {
+		if !repriced[id] && stored[id] {
 			carried = append(carried, id)
 		}
 	}
-	return carried, len(prev.HeldAccountIDs) == 0 && !ambientRepriced && len(enabled) == 0
+	return carried, len(prev.HeldAccountIDs) == 0 && !ambientRepriced && stored[ambientAccountKey]
 }
