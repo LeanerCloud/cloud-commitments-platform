@@ -15,4 +15,10 @@ func TestHistoryRow_DuplicateGuardHint(t *testing.T) {
 	unknown := executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: "purchase outcome unknown", Recommendations: ec2}, "", "")
 	assert.Contains(t, unknown.OpsHint, "duplicate guard")
 	assert.True(t, unknown.RedriveUnsafe)
+
+	// One refused rec does not prove that another, whose outcome is unknown, bought nothing.
+	mixed := executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: "t4g.nano: purchase outcome unknown; t4g.micro: " + fakeAWSDenied, Recommendations: ec2}, "", "")
+	assert.Contains(t, mixed.OpsHint, "duplicate guard", "a mixed failure keeps the warning")
+	allDenied := executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: "t4g.nano: " + fakeAWSDenied + "; t4g.micro: " + fakeAWSDenied, Recommendations: ec2}, "", "")
+	assert.NotContains(t, allDenied.OpsHint, "duplicate guard", "every rec refused hides the warning")
 }

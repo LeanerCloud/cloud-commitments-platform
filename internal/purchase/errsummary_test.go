@@ -84,3 +84,18 @@ func TestSummarizeProviderError_Typed(t *testing.T) {
 		assert.NotEmpty(t, msg)
 	}
 }
+
+func TestIsDefiniteStoredRefusal(t *testing.T) {
+	cases := map[string]bool{
+		fakeAWS403: true,
+		"t4g.nano: " + fakeAWS403 + "; t4g.micro: " + fakeAWS403:       true,
+		partialRunPrefix + "t4g.nano: " + fakeAWS403:                   true,
+		"t4g.nano: purchase outcome unknown; t4g.micro: " + fakeAWS403: false,
+		"purchase outcome unknown":                                     false,
+		"history_write_failed: commitment purchased":                   false,
+		"": false,
+	}
+	for in, want := range cases {
+		assert.Equal(t, want, IsDefiniteStoredRefusal(in), in)
+	}
+}

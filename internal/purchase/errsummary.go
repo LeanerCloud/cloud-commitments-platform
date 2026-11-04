@@ -125,13 +125,17 @@ func hasProviderMarker(s string) bool {
 	return containsAny(strings.ToLower(s), providerMarkers)
 }
 
-// SummarizeStoredError returns the category of a stored error string, or ""
-// when the string carries no provider text (a server-authored note).
-func SummarizeStoredError(s string) string {
-	if !hasProviderMarker(s) {
-		return ""
+// IsDefiniteStoredRefusal reports whether every "; "-joined segment of a stored
+// error is a definite provider refusal. One unknown or server-authored segment
+// means that rec's outcome is not proven, so the answer is false.
+func IsDefiniteStoredRefusal(s string) bool {
+	s = strings.TrimPrefix(s, partialRunPrefix)
+	for _, seg := range strings.Split(s, "; ") {
+		if !hasProviderMarker(seg) || !IsDefiniteRefusal(classifyText(seg)) {
+			return false
+		}
 	}
-	return classifyText(s)
+	return s != ""
 }
 
 // SanitizeStoredError rewrites provider error text in an already-stored
