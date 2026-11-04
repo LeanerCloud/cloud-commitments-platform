@@ -472,10 +472,38 @@ func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunc
 // completed run does, before the 502 (issue #532). final is the row the
 // funnel returned, carrying the per-rec outcome and completed_at.
 func (h *Handler) executeFailure(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID, action string, final *config.PurchaseExecution, revocationToken, executedBy string, err error) error {
+	h.emailCommittedPartialRun(ctx, req, final, revocationToken, executedBy, err)
+	return executeFailureError(executionID, action, final, err)
+}
+
+func (h *Handler) emailCommittedPartialRun(ctx context.Context, req *events.LambdaFunctionURLRequest, final *config.PurchaseExecution, revocationToken, executedBy string, err error) {
 	if purchase.IsCommittedPartialRun(final, err) {
 		h.sendPurchaseExecutedEmail(ctx, req, final, revocationToken, executedBy)
 	}
-	return executeFailureError(executionID, action, final, err)
+}
+
+// tokenFailureError is executeFailureError with fixed messages: a token
+// approver is not scoped to every account on the execution, so the run
+// error's text stays in the server log. Statuses and details are unchanged.
+func tokenFailureError(executionID string, final *config.PurchaseExecution, err error) error {
+	if final == nil || errors.Is(err, purchase.ErrFourEyesDenied) || errors.Is(err, purchase.ErrStaleAzurePricing) {
+		return executeFailureError(executionID, "approved", final, err)
+	}
+	details := map[string]any{"execution_id": executionID, "status": final.Status}
+	switch {
+	case errors.Is(err, config.ErrAuditLoss):
+		return NewClientError(500, "purchase audit could not be completed")
+	case errors.Is(err, purchase.ErrClaimedRowRefused):
+		code := 500
+		if ce, ok := IsClientError(err); ok {
+			code = ce.code
+		}
+		return NewClientErrorWithDetails(code, "the purchase changed after it was authorized and no longer passes your permission checks, so nothing was bought and it is now marked failed", details)
+	case purchase.IsCommittedPartialRun(final, err):
+		return NewClientErrorWithDetails(502, "purchase partially completed: some commitments were purchased and can be revoked, others failed", details)
+	default:
+		return NewClientErrorWithDetails(502, "purchase execution failed", details)
+	}
 }
 
 // Stale Azure prices are refused before purchase, even after a successful claim.
@@ -1131,7 +1159,9 @@ func (h *Handler) tokenApproveFailure(ctx context.Context, req *events.LambdaFun
 	if final == nil && !errors.Is(err, purchase.ErrFourEyesDenied) {
 		return tokenActionError(err)
 	}
-	return h.executeFailure(ctx, req, executionID, "approved", final, revocationToken, actor, err)
+	logging.Errorf("purchase[%s]: token approve failed: %v", executionID, err)
+	h.emailCommittedPartialRun(ctx, req, final, revocationToken, actor, err)
+	return tokenFailureError(executionID, final, err)
 }
 
 // emailTokenApproveOutcome sends the executed email for a token approve that
