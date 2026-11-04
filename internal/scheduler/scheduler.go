@@ -1119,7 +1119,7 @@ func tolerateIncompleteSweep(providerName string, err error) (*sweepGap, error) 
 		skipped = sk.SkippedCount()
 	}
 	logging.Warnf(
-		"%s recommendations incomplete: %d of %d subscriptions succeeded; not queried: %s; %d recommendation(s) skipped as invalid "+
+		"%s recommendations incomplete: %d of %d subscriptions succeeded; not queried: %s; %d recommendation(s) skipped "+
 			"(keeping the %d that did, and holding back stale-row eviction so the un-queried subscriptions' previous rows survive)",
 		providerName, partial.Succeeded, partial.Attempted,
 		strings.Join(partial.FailedSubscriptionIDs(), ", "), skipped, partial.Succeeded)
