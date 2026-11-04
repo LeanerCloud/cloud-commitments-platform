@@ -221,7 +221,7 @@ func TestCallAzureReturn_FlipFindsRowRevoked(t *testing.T) {
 	// post a Return nor touch the flag (clearing it would orphan the holder's
 	// refund from the finalize sweep), and answers RECONCILE_PENDING like the
 	// up-front in-flight check.
-	t.Run("in flight: no Return, no clear, RECONCILE_PENDING", func(t *testing.T) {
+	t.Run("in flight: no Return, no clear, REVOCATION_PENDING_CONFIRMATION", func(t *testing.T) {
 		t.Parallel()
 		mockStore := new(MockConfigStore)
 		t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -231,13 +231,14 @@ func TestCallAzureReturn_FlipFindsRowRevoked(t *testing.T) {
 		// Registered only so a regression fails on the assertions below
 		// rather than on an unexpected-call panic.
 		mockStore.On("MarkPurchaseRevoked", ctx, r.PurchaseID, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		mockStore.On("GetPurchaseHistoryByPurchaseID", ctx, r.PurchaseID).Return(inFlightRow(nil), nil)
 		returnClient := &stubReturnClient{}
 
 		h := &Handler{config: mockStore}
 		result, err := h.callAzureReturn(ctx, &countingCalcRefundClient{price: quote}, returnClient, r, "order-abc", "res-xyz", confirmedQuote(10, "USD"))
 		require.NoError(t, err)
 		assert.Zero(t, returnClient.calls, "the request that loses the claim must not post a Return")
-		assert.Equal(t, revocationInFlightResult(), result)
+		assert.Equal(t, newRevokePendingConfirmation(), result)
 		mockStore.AssertNotCalled(t, "ClearRevocationInFlight", mock.Anything, mock.Anything)
 		mockStore.AssertNotCalled(t, "MarkPurchaseRevoked", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})

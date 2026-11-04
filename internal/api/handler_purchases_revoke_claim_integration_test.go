@@ -161,15 +161,15 @@ func runConcurrentFirstRevokes(t *testing.T, store *config.PostgresStore, round 
 		case *revokePurchaseResult:
 			assert.Equal(t, "revoked", res.Status, "request %d", i)
 			revoked++
-		case *revokeReconcilePendingResult:
-			assert.Equal(t, revocationInFlightResult(), res, "request %d", i)
+		case *revokePendingConfirmationResult:
+			assert.Equal(t, newRevokePendingConfirmation(), res, "request %d", i)
 			inFlight++
 		default:
 			t.Errorf("request %d: unexpected result %T %+v", i, results[i], results[i])
 		}
 	}
 	assert.Equal(t, 1, revoked, "one request revokes")
-	assert.Equal(t, 1, inFlight, "the other answers in flight (RECONCILE_PENDING)")
+	assert.Equal(t, 1, inFlight, "the other answers in flight (REVOCATION_PENDING_CONFIRMATION, no stamp yet)")
 
 	got, err := store.GetPurchaseHistoryByPurchaseID(ctx, record.PurchaseID)
 	require.NoError(t, err)
