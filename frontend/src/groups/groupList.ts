@@ -59,7 +59,7 @@ export function renderGroups(groups: APIGroup[]): void {
     return `
       <div class="group-card">
         <div class="group-card-header">
-          <div>
+          <div class="group-card-info">
             <h4>${escapeHtml(group.name)}</h4>
             ${description}
           </div>

@@ -18,6 +18,10 @@ jest.mock('../recommendations', () => ({ loadRecommendations: jest.fn() }));
 
 import * as api from '../api';
 import { initTopbarFilters } from '../topbar-filters';
+import { renderGroups } from '../groups/groupList';
+import { renderUsers } from '../users/userList';
+import * as userState from '../users/state';
+import type { APIGroup } from '../api';
 
 describe('1. accountDisplayLabel', () => {
   test('appends the id when the name lacks it', () => {
@@ -144,5 +148,39 @@ describe('6. account modal autofill hints', () => {
       const want = (f as HTMLInputElement).type === 'password' ? 'new-password' : f.getAttribute('autocomplete') === 'email' ? 'email' : 'off';
       expect([f.id, f.getAttribute('autocomplete')]).toEqual([f.id, want]);
     });
+  });
+});
+
+describe('7. group card header layout', () => {
+  const longDesc = 'Runs RI exchanges '.repeat(20);
+  test('every card puts the description in a shrinkable info block', () => {
+    document.body.innerHTML = '<div id="groups-list"></div>';
+    userState.setAllUsers([]);
+    const g = (name: string, description: string): APIGroup => ({
+      id: name, name, description, permissions: [], system_managed: false,
+    });
+    renderGroups([g('Short', 'x'), g('RI Exchanger', longDesc)]);
+    document.querySelectorAll('.group-card-header').forEach((h) => {
+      expect(h.firstElementChild?.classList.contains('group-card-info')).toBe(true);
+    });
+  });
+  test('css lets the info block shrink and keeps actions from wrapping under it', () => {
+    const css = readSrc('styles/settings.css');
+    expect(css.match(/\.group-card-info \{[^}]*\}/)?.[0]).toMatch(/min-width:\s*0/);
+    expect(css.match(/\.group-card-actions \{[^}]*\}/)?.[0]).toMatch(/flex:\s*0 0 auto/);
+  });
+});
+
+describe('9. users table date cells do not wrap', () => {
+  test('Created and Last Login cells carry the nowrap class', () => {
+    document.body.innerHTML = '<div id="users-list"></div>';
+    userState.setAllUsers([]);
+    userState.setAvailableGroups([]);
+    renderUsers([
+      { id: 'u1', email: 'a@b.c', groups: [], mfa_enabled: false, created_at: '2026-06-05T10:00:00Z', last_login: '' } as never,
+    ]);
+    expect(document.querySelectorAll('td.user-date-cell')).toHaveLength(2);
+    expect(readSrc('styles/settings.css') + readSrc('styles/tables.css') + readSrc('styles/components.css'))
+      .toMatch(/\.user-date-cell\s*\{[^}]*white-space:\s*nowrap/);
   });
 });
