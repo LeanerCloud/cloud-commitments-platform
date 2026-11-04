@@ -285,6 +285,32 @@ describe('handleExecutePurchase — single-record path', () => {
     expect(archera.openArcheraOfferModal).toHaveBeenCalledWith('purchase');
   });
 
+  // Issue #1694: a recorded failed execution must not leave Execute armed.
+  test('definite failure with an execution_id closes the modal', async () => {
+    const err = Object.assign(new Error('AWS refused the purchase'), {
+      status: 403, details: { execution_id: 'exec-failed' },
+    });
+    (api.executePurchase as jest.Mock).mockRejectedValue(err);
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(plans.closePurchaseModal).toHaveBeenCalledTimes(1);
+    expect(recs.clearPurchaseModalRecommendations).toHaveBeenCalled();
+    expect(lastToastKind()).toBe('error');
+  });
+
+  test('failure without an execution_id keeps the modal open for retry', async () => {
+    (api.executePurchase as jest.Mock).mockRejectedValue(new Error('network down'));
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(plans.closePurchaseModal).not.toHaveBeenCalled();
+  });
+
   test('does NOT open Archera offer modal when the approval submission throws', async () => {
     (api.executePurchase as jest.Mock).mockRejectedValue(new Error('boom'));
 
