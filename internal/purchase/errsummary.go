@@ -179,8 +179,9 @@ func classifyStoredText(s string) string {
 
 // lastGroups returns the last capture group of every match of re in s.
 func lastGroups(re *regexp.Regexp, s string) []string {
-	var out []string
-	for _, m := range re.FindAllStringSubmatch(s, -1) {
+	matches := re.FindAllStringSubmatch(s, -1)
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
 		out = append(out, m[len(m)-1])
 	}
 	return out
