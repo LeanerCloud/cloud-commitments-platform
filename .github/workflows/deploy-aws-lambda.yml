@@ -241,6 +241,7 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
     outputs:
       function_url: ${{ steps.outputs.outputs.function_url }}
+      cloudfront_distribution_id: ${{ steps.outputs.outputs.cloudfront_distribution_id }}
       function_name: ${{ steps.outputs.outputs.function_name }}
       log_group: ${{ steps.outputs.outputs.log_group }}
 
@@ -347,6 +348,7 @@ jobs:
           cd terraform/environments/aws
           {
             echo "function_url=$(terraform output -raw lambda_function_url 2>/dev/null | grep -v '::' || echo "")"
+            echo "cloudfront_distribution_id=$(terraform output -raw cloudfront_distribution_id 2>/dev/null | grep -v '::' || echo "")"
             echo "function_name=$(terraform output -raw lambda_function_name 2>/dev/null | grep -v '::' || echo "")"
             echo "log_group=$(terraform output -raw lambda_log_group_name 2>/dev/null | grep -v '::' || echo "")"
           } >> "$GITHUB_OUTPUT"
@@ -435,6 +437,9 @@ jobs:
         id: get-url
         env:
           FUNCTION_NAME: ${{ needs.build-and-deploy.outputs.function_name }}
+          # Not frontend_url: once DASHBOARD_URL holds that value, Actions masks
+          # a job output equal to a secret and it arrives empty.
+          DISTRIBUTION_ID: ${{ needs.build-and-deploy.outputs.cloudfront_distribution_id }}
         run: |
           if [ -z "$FUNCTION_NAME" ]; then
             echo "Failed to get function name from deploy outputs"
@@ -450,6 +455,30 @@ jobs:
           fi
           echo "url=$FUNCTION_URL" >> "$GITHUB_OUTPUT"
 
+          # AWS_IAM means enable_cdn put CloudFront in front: the raw URL answers
+          # 403 and the app is probed through the distribution's domain.
+          AUTH_TYPE=$(aws lambda get-function-url-config \
+            --function-name "$FUNCTION_NAME" \
+            --query 'AuthType' \
+            --output text)
+          if [ "$AUTH_TYPE" = "AWS_IAM" ]; then
+            if [ -z "$DISTRIBUTION_ID" ]; then
+              echo "Function URL is AWS_IAM but no cloudfront_distribution_id was exported"
+              exit 1
+            fi
+            DOMAIN=$(aws cloudfront get-distribution --id "$DISTRIBUTION_ID" \
+              --query 'Distribution.DomainName' --output text)
+            if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "None" ]; then
+              echo "Could not resolve the domain of distribution $DISTRIBUTION_ID"
+              exit 1
+            fi
+            echo "cdn=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=https://$DOMAIN" >> "$GITHUB_OUTPUT"
+          else
+            echo "cdn=false" >> "$GITHUB_OUTPUT"
+            echo "frontend=$FUNCTION_URL" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Wait for Lambda to be ready
         run: |
           echo "Waiting 30 seconds for Lambda to be fully ready..."
@@ -458,9 +487,22 @@ jobs:
       - name: Test health endpoint
         env:
           FUNCTION_URL_RAW: ${{ steps.get-url.outputs.url }}
+          FRONTEND_URL_RAW: ${{ steps.get-url.outputs.frontend }}
+          CDN: ${{ steps.get-url.outputs.cdn }}
         run: |
-          URL="${FUNCTION_URL_RAW%/}"
+          URL="${FRONTEND_URL_RAW%/}"
           echo "Testing health endpoint: $URL/health"
+
+          # With CDN on, the raw Function URL must be closed (AWS_IAM). Exact
+          # 403 only: a timeout or any other code means the gate is not as expected.
+          if [ "$CDN" = "true" ]; then
+            RAW_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${FUNCTION_URL_RAW%/}/health" || true)
+            if [ "$RAW_CODE" != "403" ]; then
+              echo "Raw Function URL returned '$RAW_CODE', expected 403 with enable_cdn"
+              exit 1
+            fi
+            echo "Raw Function URL correctly returns 403"
+          fi
 
           for i in {1..5}; do
             # /health returns HTTP 200 even when degraded; the body is the verdict.
@@ -480,9 +522,9 @@ jobs:
 
       - name: Run smoke tests
         env:
-          FUNCTION_URL_RAW: ${{ steps.get-url.outputs.url }}
+          FRONTEND_URL_RAW: ${{ steps.get-url.outputs.frontend }}
         run: |
-          URL="${FUNCTION_URL_RAW%/}"
+          URL="${FRONTEND_URL_RAW%/}"
 
           echo "Running basic smoke tests..."
 
