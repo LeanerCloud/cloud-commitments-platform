@@ -63,18 +63,30 @@ const SERVICE_CHART_CHROME_PX = 84;
 const SAVINGS_BY_SERVICE_TABLE_ID = 'savings-by-service-table';
 const SAVINGS_TREND_TABLE_ID = 'savings-trend-table';
 const SAVINGS_TREND_LOADING_ID = 'savings-trend-loading';
+const TREND_LOAD_FAILED_TEXT = 'Savings history could not be loaded. Reload the page to try again.';
 
 /**
  * #1686: put a skeleton where a chart card's canvas will be, but only before
  * its first chart is drawn; later reloads keep the current chart on screen.
  * The card's renderer un-hides the canvas once it has data.
  */
-function showChartSkeleton(loadingId: string, canvasId: string, chart: Chart | null): HTMLElement | null {
+function showChartSkeleton(loadingId: string, canvasId: string, emptyId: string, chart: Chart | null): HTMLElement | null {
   const loadingEl = document.getElementById(loadingId);
   if (!loadingEl || chart || isSkeletonActive(loadingEl)) return loadingEl;
   document.getElementById(canvasId)?.classList.add('hidden');
+  // A previous range's empty-state text must not sit next to this load.
+  document.getElementById(emptyId)?.classList.add('hidden');
   showSkeletonBlock(loadingEl, '100%', '12rem');
   return loadingEl;
+}
+
+// Shown in a chart card whose data never arrived because the dashboard load
+// failed, so the card is not left as a bare heading (#1686).
+function showChartLoadFailed(emptyId: string, text: string): void {
+  const empty = document.getElementById(emptyId);
+  if (!empty) return;
+  empty.textContent = text;
+  empty.classList.remove('hidden');
 }
 
 // One colour per stacked layer, the same on every bar, so the legend swatches
@@ -176,8 +188,8 @@ export async function loadDashboard(): Promise<void> {
   if (upcomingEl) showSkeletonBlock(upcomingEl, '100%', '6rem');
   // #1686: the two chart cards share the same loading treatment. The trend
   // loader clears its own; the per-service one is cleared in finally below.
-  const trendLoadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', savingsTrendChart);
-  const byServiceLoadingEl = showChartSkeleton('savings-by-service-loading', 'savings-by-service-chart', savingsByServiceChart);
+  const trendLoadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', 'savings-trend-empty', savingsTrendChart);
+  const byServiceLoadingEl = showChartSkeleton('savings-by-service-loading', 'savings-by-service-chart', 'savings-by-service-empty', savingsByServiceChart);
 
   try {
     const currentProvider = state.getCurrentProvider();
@@ -295,6 +307,10 @@ export async function loadDashboard(): Promise<void> {
     if (upcoming) teardownSkeleton(upcoming);
     // The trend loader never runs on this path, so clear its skeleton here.
     if (trendLoadingEl) teardownSkeleton(trendLoadingEl);
+    if (!savingsTrendChart) showChartLoadFailed('savings-trend-empty', TREND_LOAD_FAILED_TEXT);
+    if (!savingsByServiceChart) {
+      showChartLoadFailed('savings-by-service-empty', 'Potential savings could not be loaded. Reload the page to try again.');
+    }
   } finally {
     if (byServiceLoadingEl) teardownSkeleton(byServiceLoadingEl);
   }
@@ -1209,7 +1225,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
   // #747: quick range or filter changes overlap requests; only the latest
   // may paint, or an older response landing last would show the wrong range.
   const generation = ++savingsTrendGeneration;
-  const loadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', savingsTrendChart);
+  const loadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', 'savings-trend-empty', savingsTrendChart);
 
   const now = new Date();
   const nowMs = now.getTime();
@@ -1386,7 +1402,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
     removeChartTable(SAVINGS_TREND_TABLE_ID);
     canvas.classList.add('hidden');
     if (empty) {
-      empty.textContent = 'Savings history could not be loaded. Reload the page to try again.';
+      empty.textContent = TREND_LOAD_FAILED_TEXT;
       empty.classList.remove('hidden');
     }
   } finally {

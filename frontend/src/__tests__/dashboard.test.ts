@@ -236,6 +236,9 @@ describe('Dashboard Module', () => {
       await loadDashboard();
 
       expect(loading.querySelector('.skeleton')).toBeNull();
+      const empty = document.getElementById('savings-by-service-empty');
+      expect(empty?.classList.contains('hidden')).toBe(false);
+      expect(empty?.textContent).toBe('Potential savings could not be loaded. Reload the page to try again.');
     });
 
     test('renders dashboard summary', async () => {
@@ -1247,6 +1250,80 @@ describe('Dashboard Module', () => {
         resolve({ data_points: [] });
         await done;
         expect(loading.querySelector('.skeleton')).toBeNull();
+      });
+
+      const addLoading = (): HTMLElement => {
+        const loading = document.createElement('div');
+        loading.id = 'savings-trend-loading';
+        document.body.appendChild(loading);
+        return loading;
+      };
+      const pending = (): ((v: unknown) => void) => {
+        let resolve!: (v: unknown) => void;
+        (api.getSavingsAnalytics as jest.Mock).mockReturnValueOnce(new Promise(r => { resolve = r; }));
+        return (v) => resolve(v);
+      };
+      const points = [
+        { timestamp: '2026-01-01T00:00:00Z', cumulative_savings: 100 },
+        { timestamp: '2026-01-02T00:00:00Z', cumulative_savings: 150 },
+      ];
+
+      test('a reload with a chart already drawn keeps the chart and shows no skeleton', async () => {
+        const loading = addLoading();
+        (api.getSavingsAnalytics as jest.Mock).mockResolvedValueOnce({ data_points: points });
+        await loadSavingsTrendChart();
+        expect(document.getElementById('savings-trend-chart')?.classList.contains('hidden')).toBe(false);
+
+        const resolve = pending();
+        const done = loadSavingsTrendChart();
+        expect(loading.querySelector('.skeleton')).toBeNull();
+        expect(document.getElementById('savings-trend-chart')?.classList.contains('hidden')).toBe(false);
+        resolve({ data_points: points });
+        await done;
+      });
+
+      test('an older load settling after a newer one leaves the newer load\'s skeleton', async () => {
+        const loading = addLoading();
+        await loadSavingsTrendChart(); // empty: no chart drawn
+        const resolveOld = pending();
+        const older = loadSavingsTrendChart();
+        const resolveNew = pending();
+        const newer = loadSavingsTrendChart();
+
+        resolveOld({ data_points: [] });
+        await older;
+        expect(loading.querySelector('.skeleton')).not.toBeNull();
+
+        resolveNew({ data_points: [] });
+        await newer;
+        expect(loading.querySelector('.skeleton')).toBeNull();
+      });
+
+      test('the previous range\'s empty text is hidden while the next range loads', async () => {
+        addLoading();
+        await loadSavingsTrendChart(); // empty state shown
+        expect(document.getElementById('savings-trend-empty')?.classList.contains('hidden')).toBe(false);
+
+        const resolve = pending();
+        const done = loadSavingsTrendChart();
+        expect(document.getElementById('savings-trend-empty')?.classList.contains('hidden')).toBe(true);
+        resolve({ data_points: [] });
+        await done;
+      });
+
+      test('a failed dashboard load clears the trend skeleton and says the load failed', async () => {
+        const loading = addLoading();
+        await loadSavingsTrendChart(); // no chart drawn
+        (api.getDashboardSummary as jest.Mock).mockRejectedValue(new Error('boom'));
+        (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        const summary = document.createElement('div');
+        summary.id = 'summary';
+        document.body.appendChild(summary);
+
+        await loadDashboard();
+
+        expect(loading.querySelector('.skeleton')).toBeNull();
+        expect(emptyText()).toBe('Savings history could not be loaded. Reload the page to try again.');
       });
     });
 
