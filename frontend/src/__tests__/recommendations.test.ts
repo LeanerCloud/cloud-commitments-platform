@@ -1921,6 +1921,39 @@ describe('Recommendations Module', () => {
       expect(api.getRecommendations).toHaveBeenCalledTimes(2);
     });
 
+    test('202 accepted — explicit failure when the started collect outlasts the poll budget', async () => {
+      mockGetRecs();
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValueOnce({
+        last_collected_at: null,
+        last_collection_error: null,
+      });
+      (recsApi.refreshRecommendations as jest.Mock).mockResolvedValue({
+        started_at: new Date().toISOString(),
+        last_collected_at: null,
+      });
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+        last_collected_at: null,
+        last_collection_error: null,
+        last_collection_started_at: new Date().toISOString(),
+      });
+
+      await loadRecommendations();
+      await Promise.resolve();
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(60 * 5_000);
+
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Recommendations refresh is taking longer than expected; try again shortly',
+          kind: 'error',
+        }),
+      );
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Recommendations refreshed' }),
+      );
+      expect(api.getRecommendations).toHaveBeenCalledTimes(1);
+    });
+
     test('dedup — concurrent stale loads fire refreshRecommendations only once', async () => {
       mockGetRecs();
       (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
