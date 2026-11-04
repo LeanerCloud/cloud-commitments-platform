@@ -250,7 +250,8 @@ function applyPlansColumnFilters(
 function categoricalCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): string {
   switch (col) {
     case 'plan_name':      return p.plan_name ?? '';
-    case 'scheduled_date': return p.scheduled_date ?? '';
+    // Keyed by the displayed local day so same-day steps share one option.
+    case 'scheduled_date': return formatDate(p.scheduled_date);
     case 'provider':       return p.provider ?? '';
     case 'service':        return p.service ?? '';
     case 'resource_type':  return p.resource_type ?? '';
@@ -341,7 +342,6 @@ function plansColumnLabel(column: state.PlansColumnId): string {
 
 function plansCategoricalDisplayLabel(column: state.PlansColumnId, value: string): string {
   if (value === '') return '(empty)';
-  if (column === 'scheduled_date') return formatDate(value);
   if (column === 'term') {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? formatTermShort(n) : value;
@@ -536,14 +536,15 @@ function runNowBody(target: PlannedPurchase | undefined): string | HTMLElement {
   return withIntro(`This immediately buys the commitment below for plan "${target.plan_name}", scheduled for ${formatDate(target.scheduled_date)}. It cannot be undone.`, summary);
 }
 
-async function runPlannedPurchaseNow(purchaseId: string): Promise<void> {
-  if (runNowInFlight.has(purchaseId)) return;
+/** Resolves false when nothing ran and the list needs no reload. */
+async function runPlannedPurchaseNow(purchaseId: string): Promise<boolean> {
+  if (runNowInFlight.has(purchaseId)) return true;
   runNowInFlight.add(purchaseId);
   try {
     const target = lastLoadedPurchases.find(p => p.id === purchaseId);
     if (target?.has_recommendations === false) {
       showToast({ message: 'This step has no recommendations attached, so there is nothing to run.', kind: 'info', timeout: 5_000 });
-      return;
+      return false;
     }
     const ok = await confirmDialog({
       title: target ? `Run step ${target.step_number}/${target.total_steps} of "${target.plan_name}" now?` : 'Run purchase now?',
@@ -551,9 +552,10 @@ async function runPlannedPurchaseNow(purchaseId: string): Promise<void> {
       confirmLabel: 'Run now',
       destructive: true,
     });
-    if (!ok) return;
+    if (!ok) return true;
     await api.runPlannedPurchase(purchaseId);
     showToast({ message: 'Purchase executed successfully', kind: 'success', timeout: 5_000 });
+    return true;
   } finally {
     runNowInFlight.delete(purchaseId);
   }
@@ -566,7 +568,8 @@ async function handlePlannedPurchaseAction(action: string, purchaseId: string, p
   try {
     switch (action) {
       case 'run':
-        await runPlannedPurchaseNow(purchaseId);
+        // An empty step only toasts; a reload would drop keyboard focus.
+        if (!(await runPlannedPurchaseNow(purchaseId))) return;
         break;
       case 'pause':
         // Pause is reversible and scoped to a single execution: the plan stays

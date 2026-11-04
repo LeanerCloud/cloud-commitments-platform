@@ -159,8 +159,20 @@ describe('Planned Purchases column filters (issue #166 follow-up)', () => {
     };
     uncheck('plan_name', 'Plan B');
     expect(countRows()).toBe(2);
-    uncheck('scheduled_date', '2026-06-02');
+    uncheck('scheduled_date', 'Jun 2, 2026');
     expect(countRows()).toBe(1);
+  });
+
+  test('scheduled date options are one per displayed day', async () => {
+    (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [
+      { ...seedPurchases[0], id: 'd1', scheduled_date: '2026-06-01T10:00:00' },
+      { ...seedPurchases[1], id: 'd2', scheduled_date: '2026-06-01T15:00:00' },
+    ] });
+    await loadPlans();
+    document.querySelector<HTMLButtonElement>(
+      '#planned-purchases-list th .column-filter-btn[data-column="scheduled_date"]',
+    )?.click();
+    expect(document.querySelectorAll('.column-filter-popover .column-filter-item')).toHaveLength(1);
   });
 
   test('clicking a trigger opens a popover detached to document.body', async () => {

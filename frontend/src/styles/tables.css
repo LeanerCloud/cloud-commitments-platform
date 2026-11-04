@@ -142,11 +142,12 @@ tr.history-row-highlight:hover {
     text-align: right;
 }
 
-/* Wide enough for typical plan names; still truncates (full name in title)
-   when the viewport is narrow. */
+/* A plain length: auto table layout ignores a percentage max-width, so a
+   100-char name would widen the column. Longer names truncate (full name in
+   title). */
 .planned-purchase-row .plan-name-cell {
     display: inline-block;
-    max-width: min(24rem, 100%);
+    max-width: 24rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

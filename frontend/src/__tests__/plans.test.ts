@@ -841,6 +841,26 @@ describe('Plans Module', () => {
         expect(name.title).toBe('Azure compute 80% weekly');
       });
 
+      test('clicking the aria-disabled run button keeps focus and does not re-fetch', async () => {
+        const runBtn = document.querySelector('[data-action="run"]') as HTMLButtonElement;
+        runBtn.focus();
+        (api.getPlannedPurchases as jest.Mock).mockClear();
+        runBtn.click();
+        await flushPromises();
+
+        expect(api.getPlannedPurchases).not.toHaveBeenCalled();
+        expect(document.activeElement).toBe(runBtn);
+      });
+
+      test('an all-upfront step with $0 upfront shows the placeholder dash', async () => {
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [
+          { ...bare, has_recommendations: true, payment: 'all-upfront', upfront_cost: 0, count: 2, estimated_savings: 5 },
+        ] });
+        await loadPlans();
+        const cells = document.querySelectorAll('tr.planned-purchase-row td.num');
+        expect(cells[1]!.innerHTML.trim()).toBe('<span class="cell-placeholder">\u2014</span>');
+      });
+
       test('the run action never calls the API or opens a confirm', async () => {
         const runBtn = document.querySelector('[data-action="run"]') as HTMLButtonElement;
         runBtn.click();
