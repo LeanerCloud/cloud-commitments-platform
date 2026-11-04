@@ -5,7 +5,12 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { mockApi, seedAuth, RECS } from './fixtures/recs';
-import { serviceLabel } from '../src/lib/service-labels';
+
+// Expected row headers, written out so a broken label helper can't pass its
+// own check (#1649). Slugs without a display name pass through.
+const SERVICE_NAMES: Record<string, string> = {
+  aks: 'aks', compute: 'Compute', ec2: 'EC2', gce: 'gce', lambda: 'lambda', opensearch: 'OpenSearch', rds: 'RDS',
+};
 
 async function openHome(page: Page): Promise<void> {
   await seedAuth(page);
@@ -50,7 +55,8 @@ test('the per-service chart has a value summary and a keyboard-operable table', 
   await expect(table.locator('tbody tr')).toHaveCount(services.size);
   // #1649: the rows use the same display names as the chart axis.
   for (const svc of services) {
-    await expect(table.getByRole('rowheader', { name: serviceLabel(svc), exact: true })).toBeVisible();
+    expect(SERVICE_NAMES[svc], `add ${svc} to SERVICE_NAMES`).toBeDefined();
+    await expect(table.getByRole('rowheader', { name: SERVICE_NAMES[svc]!, exact: true })).toBeVisible();
   }
 });
 

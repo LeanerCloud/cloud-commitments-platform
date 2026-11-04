@@ -6,6 +6,7 @@ describe('serviceLabel', () => {
     ['ec2', 'EC2'],
     ['rds', 'RDS'],
     ['relational-db', 'Relational DB'],
+    ['data-warehouse', 'Data Warehouse'],
     ['compute', 'Compute'],
     ['savings-plans-compute', 'Compute Savings Plans'],
     ['savingsplans', 'Savings Plans'],

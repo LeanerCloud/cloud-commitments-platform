@@ -1,7 +1,9 @@
 // Display names for service slugs, shared by every page that shows a service
 // (issues #1649, #1683). Slugs shared across providers (compute, cache,
 // relational-db) get a provider-neutral name; the Provider column next to them
-// carries the provider. Unknown slugs pass through unchanged.
+// carries the provider. Unknown slugs pass through unchanged. A Go test
+// (internal/config/service_labels_frontend_test.go) checks every library
+// ServiceType has an entry here.
 const SERVICE_LABELS: Readonly<Record<string, string>> = {
   ec2: 'EC2',
   rds: 'RDS',
@@ -19,6 +21,10 @@ const SERVICE_LABELS: Readonly<Record<string, string>> = {
   cache: 'Cache',
   search: 'Search',
   nosql: 'NoSQL',
+  'data-warehouse': 'Data Warehouse',
+  storage: 'Storage',
+  commitments: 'Commitments',
+  other: 'Other',
 };
 
 /** Display name for a service slug; `compact` abbreviates "Savings Plans" to "SP". */
