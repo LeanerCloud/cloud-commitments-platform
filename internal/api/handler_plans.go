@@ -46,7 +46,7 @@ func (h *Handler) listPlans(ctx context.Context, req *events.LambdaFunctionURLRe
 	}
 
 	// Ensure all enabled plans have NextExecutionDate calculated
-	now := time.Now()
+	now := h.clock()
 	for i := range plans {
 		if plans[i].Enabled && plans[i].NextExecutionDate == nil {
 			plans[i].NextExecutionDate = calculateNextExecutionDate(&plans[i], now)
@@ -114,8 +114,16 @@ func (h *Handler) attachPlanHealth(ctx context.Context, plans []config.PurchaseP
 		return result
 	}
 
+	// Same reasoning: a doomed root is worth 25 points and only subtracts, so
+	// an unreadable report withholds every score instead of erring healthy.
+	doomedByPlan, err := h.config.GetDoomedNextRoots(ctx, now)
+	if err != nil {
+		logging.Warnf("listPlans: GetDoomedNextRoots failed, plan health reported as unknown: %v", err)
+		return result
+	}
+
 	for i := range plans {
-		score, factors := computePlanHealth(plans[i], now, countsByPlan[plans[i].ID], stuckByPlan[plans[i].ID])
+		score, factors := computePlanHealth(plans[i], now, countsByPlan[plans[i].ID], stuckByPlan[plans[i].ID], doomedByPlan[plans[i].ID])
 		result[i].HealthScore = &score
 		result[i].HealthFactors = factors
 	}

@@ -7207,9 +7207,14 @@ components:
             behind_schedule: it means the step cannot complete because one of
             its executions (one per cloud account, once the step has fanned
             out) failed with no retry in flight, as opposed to the plan merely
-            running late. The remaining codes are derived from the plan's
-            current attributes and ramp schedule.
-          enum: [overdue, failed_executions, canceled_executions, ramp_blocked, stalled, behind_schedule, disabled_midway]
+            running late. step_will_not_attach means the plan's next step has
+            an empty root dated where the notification job can never attach
+            recommendations (inside the plan's notice window, or any future
+            date when the plan has no notice window), so it will fail on its
+            date; roots whose date has already passed are covered by overdue
+            instead. The remaining codes are derived from the plan's current
+            attributes and ramp schedule.
+          enum: [overdue, failed_executions, canceled_executions, ramp_blocked, stalled, behind_schedule, disabled_midway, step_will_not_attach]
         penalty:
           type: integer
           description: Points subtracted from 100 by this factor.
