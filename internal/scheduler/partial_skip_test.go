@@ -125,3 +125,31 @@ func TestAzureFailureWithoutSkips_RecordsNoSkippedCount(t *testing.T) {
 	assert.Zero(t, gap.skippedRecommendations)
 	assert.True(t, gap.holdsEviction())
 }
+
+func TestHasPricingOutageSkip(t *testing.T) {
+	for name, tc := range map[string]struct {
+		reasons []string
+		want    bool
+	}{
+		"first failed row":       {[]string{"advisor: azure advisor: advisor compute reservation price: get: retail prices fetch failed"}, true},
+		"later rows":             {[]string{"advisor: non-USD", "advisor: price lookup unavailable: x"}, true},
+		"invalid recommendation": {[]string{"advisor: row is in EUR, not USD", "computeengine us-east1: non-USD"}, false},
+		"mid-string mention":     {[]string{"computeengine: price lookup unavailable: x"}, false},
+		"none":                   {nil, false},
+	} {
+		t.Run(name, func(t *testing.T) { assert.Equal(t, tc.want, hasPricingOutageSkip(tc.reasons)) })
+	}
+}
+
+// A pricing outage holds eviction; ordinary invalid-row skips do not.
+func TestTolerateSkipped_PricingOutageHoldsEviction(t *testing.T) {
+	gap, err := tolerateIncompleteSweep("azure", &skipErr{partial: true, count: 1,
+		reasons: []string{"advisor: price lookup unavailable: x"}})
+	require.NoError(t, err)
+	assert.True(t, gap.holdsEviction())
+	assert.Equal(t, 1, gap.skippedRecommendations)
+
+	gap, err = tolerateIncompleteSweep("azure", &skipErr{partial: true, count: 1, reasons: []string{"advisor: non-USD"}})
+	require.NoError(t, err)
+	assert.False(t, gap.holdsEviction())
+}

@@ -68,7 +68,38 @@ func tolerateSkippedRecommendations(providerName string, err error) (*sweepGap, 
 		return nil, err
 	}
 	logging.Warnf("%s recommendations partial, keeping the rest: %v", providerName, err)
-	return &sweepGap{skippedRecommendations: p.SkippedCount(), skippedOnly: true, reasons: map[string]int{}}, nil
+	return &sweepGap{
+		skippedRecommendations: p.SkippedCount(),
+		// A skip that means "the price could not be fetched" says nothing about
+		// the row being invalid, so its previous-cycle row must survive.
+		skippedOnly: !hasPricingOutageSkip(p.SkipReasons()),
+		reasons:     map[string]int{},
+	}, nil
+}
+
+// Skip-reason prefixes cloud-commitments-go records when Azure Advisor rows
+// cannot be priced because the Retail Prices catalog is unreachable
+// (providers/azure/recommendations_advisor_pricing.go, priceAdvisorReservations,
+// go#663). The library exports no constant for them: RecordSkip stores
+// "<service>: <err>" strings. The first failed row is recorded with the
+// collection-failure wrapper "azure advisor: "; every later row of the call
+// gets "price lookup unavailable: ". The wrapper also marks a truncated
+// Advisor walk, whose missing rows must survive too.
+var pricingOutageSkipPrefixes = []string{
+	"advisor: price lookup unavailable: ",
+	"advisor: azure advisor: ",
+}
+
+// hasPricingOutageSkip reports whether any skip reason is a pricing outage.
+func hasPricingOutageSkip(reasons []string) bool {
+	for _, reason := range reasons {
+		for _, prefix := range pricingOutageSkipPrefixes {
+			if strings.HasPrefix(reason, prefix) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // gapFromAWSIncomplete summarizes an AWS IncompleteRecommendationsError.
