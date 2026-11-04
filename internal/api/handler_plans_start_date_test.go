@@ -22,6 +22,13 @@ const startDateProbePlanID = "11111111-1111-1111-1111-111111111111"
 // The execution and plan writes are expected only when the date is accepted.
 func postPlannedPurchaseAt(t *testing.T, now time.Time, startDate string, accepted bool) (*events.LambdaFunctionURLResponse, *MockConfigStore) {
 	t.Helper()
+	return postPlannedPurchaseForPlan(t, now, startDate, accepted, nil)
+}
+
+// postPlannedPurchaseForPlan is postPlannedPurchaseAt with a hook that edits the
+// fixture plan before the request is sent.
+func postPlannedPurchaseForPlan(t *testing.T, now time.Time, startDate string, accepted bool, edit func(*config.PurchasePlan)) (*events.LambdaFunctionURLResponse, *MockConfigStore) {
+	t.Helper()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -35,6 +42,9 @@ func postPlannedPurchaseAt(t *testing.T, now time.Time, startDate string, accept
 	plan := bareStepAPIPlan()
 	plan.ID = startDateProbePlanID
 	plan.AutoPurchase = false
+	if edit != nil {
+		edit(plan)
+	}
 	// Maybe: a malformed date is refused before the plan is read; a
 	// well-formed past date is refused after it.
 	mockStore.On("GetPurchasePlan", mock.Anything, startDateProbePlanID).Return(plan, nil).Maybe()
@@ -163,6 +173,22 @@ func TestCreatePlannedPurchases_StartDateNoticeMargin(t *testing.T) {
 			assert.Equal(t, 200, resp.StatusCode, "body: %s", resp.Body)
 		})
 	}
+}
+
+// TestCreatePlannedPurchases_NoNoticeWindowIsRefused pins that a plan with
+// notification_days_before 0 can't schedule purchases at all, however far out
+// the start date is. Attach refuses every root of such a plan (RequireVetoWindow),
+// so each one would fail on its date; validateScheduledRamp returns the 409
+// before the D5 margin is computed.
+func TestCreatePlannedPurchases_NoNoticeWindowIsRefused(t *testing.T) {
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	resp, store := postPlannedPurchaseForPlan(t, now, "2026-06-01", false, func(p *config.PurchasePlan) {
+		p.NotificationDaysBefore = 0
+	})
+	assert.Equal(t, 409, resp.StatusCode, "body: %s", resp.Body)
+	assert.Contains(t, resp.Body, "notification_days_before=0, need at least 1")
+	store.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+	store.AssertNotCalled(t, "UpdatePurchasePlan", mock.Anything, mock.Anything)
 }
 
 // TestHandlerClock_DefaultsToWallClock checks that a Handler built without an
