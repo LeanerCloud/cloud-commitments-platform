@@ -240,3 +240,59 @@ describe('loadAutomationSettings: number fields are escaped into value attribute
     expect(value('ri-exchange-lookback')).toBe('30');
   });
 });
+
+// Issue #1689: the caps showed a bare 0 with no help text, which reads as
+// "no limit" while 0 refuses approved exchanges and skips automated ones.
+describe('loadAutomationSettings: every field explains itself (issue #1689)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const fieldIDs = [
+    'ri-exchange-enabled',
+    'ri-exchange-mode',
+    'ri-exchange-threshold',
+    'ri-exchange-max-per-exchange',
+    'ri-exchange-max-daily',
+    'ri-exchange-lookback',
+  ];
+
+  const hintFor = (id: string): string => {
+    const describedBy = document.getElementById(id)?.getAttribute('aria-describedby') ?? '';
+    return describedBy ? document.getElementById(describedBy)?.textContent ?? '' : '';
+  };
+
+  const loadWithZeroCaps = async (): Promise<void> => {
+    setupContainer();
+    (api.getRIExchangeConfig as jest.Mock).mockResolvedValueOnce({
+      auto_exchange_enabled: false,
+      mode: 'manual',
+      utilization_threshold: 95,
+      max_payment_per_exchange_usd: 0,
+      max_payment_daily_usd: 0,
+      lookback_days: 30,
+    });
+    await loadAutomationSettings();
+  };
+
+  test.each(fieldIDs)('%s has a visible hint linked by aria-describedby', async (id) => {
+    await loadWithZeroCaps();
+    expect(hintFor(id).trim().length).toBeGreaterThan(20);
+  });
+
+  test.each(['ri-exchange-max-per-exchange', 'ri-exchange-max-daily'])(
+    '%s says what 0 means and that dialog exchanges use their own limit',
+    async (id) => {
+      await loadWithZeroCaps();
+      const hint = hintFor(id);
+      expect(hint).toMatch(/\b0\b/);
+      expect(hint).toMatch(/refused/);
+      expect(hint).toMatch(/Exchange dialog/);
+    },
+  );
+
+  test('the daily cap names its window', async () => {
+    await loadWithZeroCaps();
+    expect(hintFor('ri-exchange-max-daily')).toContain('UTC day');
+  });
+});

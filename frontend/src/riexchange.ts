@@ -1847,6 +1847,29 @@ function numberAttr(value: number | null | undefined): string {
   return escapeHtmlAttr(String(value ?? ''));
 }
 
+// Help text for each Exchange Automation field (issue #1689). The caps only
+// gate automated and approved exchanges; executeExchange (the Exchange
+// dialog) uses the limit entered in the dialog.
+const CAP_ZERO_NOTE = 'At 0, approved exchanges are refused and automated ones with a payment due do not run. '
+  + 'Exchanges started from the Exchange dialog use the limit entered there instead.';
+const AUTOMATION_HINTS: Record<string, string> = {
+  'ri-exchange-enabled': 'Lets CUDly check convertible RI utilization on its schedule and propose exchanges for underutilized RIs.',
+  'ri-exchange-mode': 'Manual Approval queues each proposed exchange for someone to approve. Fully Automated runs it without approval, within the payment limits below.',
+  'ri-exchange-threshold': 'Convertible RIs whose utilization over the lookback window is below this percentage are candidates for an exchange.',
+  'ri-exchange-max-per-exchange': 'Largest payment due allowed for one automated or approved exchange. ' + CAP_ZERO_NOTE,
+  'ri-exchange-max-daily': 'Total payment due allowed per UTC day across automated and approved exchanges. ' + CAP_ZERO_NOTE,
+  'ri-exchange-lookback': 'Days of utilization history used to judge whether a convertible RI is underutilized.',
+};
+
+// One settings row; the control must carry aria-describedby="<id>-hint".
+function automationRow(id: string, label: string, controlHTML: string): string {
+  return '<div class="setting-row">'
+    + '<div class="setting-info"><label for="' + id + '">' + escapeHtml(label) + '</label>'
+    + '<p class="setting-hint" id="' + id + '-hint">' + escapeHtml(AUTOMATION_HINTS[id]) + '</p></div>'
+    + '<div class="setting-input">' + controlHTML + '</div>'
+    + '</div>';
+}
+
 function renderAutomationSettings(container: HTMLElement, config: RIExchangeConfig): void {
   const modeOptions = Object.entries(MODE_LABELS)
     .map(([value, label]) => {
@@ -1861,33 +1884,21 @@ function renderAutomationSettings(container: HTMLElement, config: RIExchangeConf
     + '<fieldset class="settings-category">'
     + '<legend>Exchange Automation</legend>'
     + '<div id="ri-exchange-warning-slot"></div>'
-    + '<div class="setting-row">'
-    +   '<div class="setting-info"><label for="ri-exchange-enabled">Enable Automated Exchange</label></div>'
-    +   '<div class="setting-input"><label class="toggle-label">'
-    +     '<input type="checkbox" id="ri-exchange-enabled"' + (config.auto_exchange_enabled ? ' checked' : '') + '>'
-    +     '<span class="slider"></span>'
-    +   '</label></div>'
-    + '</div>'
-    + '<div class="setting-row">'
-    +   '<div class="setting-info"><label for="ri-exchange-mode">Mode</label></div>'
-    +   '<div class="setting-input"><select id="ri-exchange-mode">' + modeOptions + '</select></div>'
-    + '</div>'
-    + '<div class="setting-row">'
-    +   '<div class="setting-info"><label for="ri-exchange-threshold">Utilization Threshold (%)</label></div>'
-    +   '<div class="setting-input"><input type="number" id="ri-exchange-threshold" value="' + numberAttr(config.utilization_threshold) + '" min="0" max="100" step="0.1"></div>'
-    + '</div>'
-    + '<div class="setting-row">'
-    +   '<div class="setting-info"><label for="ri-exchange-max-per-exchange">Max Payment Per Exchange (USD)</label></div>'
-    +   '<div class="setting-input"><input type="number" id="ri-exchange-max-per-exchange" value="' + numberAttr(config.max_payment_per_exchange_usd) + '" min="0" step="0.01"></div>'
-    + '</div>'
-    + '<div class="setting-row">'
-    +   '<div class="setting-info"><label for="ri-exchange-max-daily">Max Payment Daily (USD)</label></div>'
-    +   '<div class="setting-input"><input type="number" id="ri-exchange-max-daily" value="' + numberAttr(config.max_payment_daily_usd) + '" min="0" step="0.01"></div>'
-    + '</div>'
-    + '<div class="setting-row">'
-    +   '<div class="setting-info"><label for="ri-exchange-lookback">Lookback Days</label></div>'
-    +   '<div class="setting-input"><input type="number" id="ri-exchange-lookback" value="' + numberAttr(config.lookback_days) + '" min="1" max="365"></div>'
-    + '</div>'
+    + automationRow('ri-exchange-enabled', 'Enable Automated Exchange',
+        '<label class="toggle-label">'
+        + '<input type="checkbox" id="ri-exchange-enabled" aria-describedby="ri-exchange-enabled-hint"' + (config.auto_exchange_enabled ? ' checked' : '') + '>'
+        + '<span class="slider"></span>'
+        + '</label>')
+    + automationRow('ri-exchange-mode', 'Mode',
+        '<select id="ri-exchange-mode" aria-describedby="ri-exchange-mode-hint">' + modeOptions + '</select>')
+    + automationRow('ri-exchange-threshold', 'Utilization Threshold (%)',
+        '<input type="number" id="ri-exchange-threshold" aria-describedby="ri-exchange-threshold-hint" value="' + numberAttr(config.utilization_threshold) + '" min="0" max="100" step="0.1">')
+    + automationRow('ri-exchange-max-per-exchange', 'Max Payment Per Exchange (USD)',
+        '<input type="number" id="ri-exchange-max-per-exchange" aria-describedby="ri-exchange-max-per-exchange-hint" value="' + numberAttr(config.max_payment_per_exchange_usd) + '" min="0" step="0.01">')
+    + automationRow('ri-exchange-max-daily', 'Max Payment Daily (USD)',
+        '<input type="number" id="ri-exchange-max-daily" aria-describedby="ri-exchange-max-daily-hint" value="' + numberAttr(config.max_payment_daily_usd) + '" min="0" step="0.01">')
+    + automationRow('ri-exchange-lookback', 'Lookback Days',
+        '<input type="number" id="ri-exchange-lookback" aria-describedby="ri-exchange-lookback-hint" value="' + numberAttr(config.lookback_days) + '" min="1" max="365">')
     + '</fieldset>'
     + '<div id="ri-exchange-settings-message" class="mt-3"></div>'
     + '</form>';
