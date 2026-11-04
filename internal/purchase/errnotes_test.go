@@ -2,6 +2,7 @@ package purchase
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -68,10 +69,15 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		`unknown provider "AWS" (valid: aws, azure, gcp)`,
 		ErrCategoryMessage(ErrCategoryAccessDenied),
 	}
+	exchangeNotes := notes[slices.Index(notes, "config load failed"):slices.Index(notes, ErrCategoryMessage(ErrCategoryAccessDenied))]
 	for _, n := range notes {
 		assert.NotEmpty(t, n)
 		assert.Equal(t, n, SanitizeStoredError(n), n)
-		assert.Equal(t, n, SanitizeStoredError(partialRunPrefix + "x: " + n)[len(partialRunPrefix)+3:], "behind a resource head: "+n)
+		if slices.Contains(exchangeNotes, n) {
+			continue
+		}
+		head := "m5.large: "
+		assert.Equal(t, n, SanitizeStoredError(partialRunPrefix + head + n)[len(partialRunPrefix)+len(head):], "behind a resource head: "+n)
 	}
 	joined := notes[0] + "; " + notes[1] + "; " + notes[6]
 	assert.Equal(t, joined, SanitizeStoredError(joined))
@@ -134,5 +140,43 @@ func TestSanitizeStoredError_ExchangeNoteTailsAreClosed(t *testing.T) {
 		"aws: " + ErrCategoryMessage(ErrCategoryUnknown) + "\nraw",
 	} {
 		assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), SanitizeStoredError(in), in)
+	}
+}
+
+// The head ahead of a note must be a real resource type (per-rec notes) or
+// aws|azure|gcp (collection notes); an account number, address, host or DB user
+// in that slot is never shown.
+func TestSanitizeStoredError_HeadsAreClosed(t *testing.T) {
+	note := "plan step refused by commitment cap"
+	category := ErrCategoryMessage(ErrCategoryUnavailable)
+	for _, h := range []string{
+		"m5.large", "db.t4g.micro", "cache.t3.micro", "dc2.large", "ra3.xlplus", "ra3.16xlarge",
+		"t3.small.search", "Standard_D2_v3", "Basic_A1", "n2-standard-2", "e2-micro", "c3-highcpu-8",
+	} {
+		assert.Equal(t, h+": "+note, SanitizeStoredError(h+": "+note), h)
+		assert.Equal(t, h+": "+category, SanitizeStoredError(h+": "+category), h)
+	}
+	for _, h := range []string{"aws", "azure", "gcp"} {
+		assert.Equal(t, h+": "+category, SanitizeStoredError(h+": "+category), h)
+	}
+	for _, h := range []string{
+		"123456789012", "10.20.30.40", "db-prod.internal", "db.internal.example", "cudly_app", "web1.prod.example",
+		"m5.large.example.com", "ec2.large.example", "arn:aws:iam::123456789012:role/x", "evil", "AWS",
+	} {
+		unknown := ErrCategoryMessage(ErrCategoryUnknown)
+		assert.Equal(t, unknown, SanitizeStoredError(h+": "+category), h)
+		assert.Equal(t, unknown, SanitizeStoredError(h+": "+note), h)
+	}
+	for _, in := range []string{
+		"123456789012: config load failed",
+		"10.20.30.40: config load failed",
+		"db-prod.internal: daily spending cap check failed",
+		"cudly_app: the requested commitment is not available from the provider",
+		"m5.large: config load failed",
+		"aws: " + note,
+	} {
+		out := SanitizeStoredError(in)
+		assert.NotContains(t, out, ": ", in)
+		assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), out, in)
 	}
 }

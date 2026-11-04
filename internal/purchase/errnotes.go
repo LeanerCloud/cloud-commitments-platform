@@ -3,7 +3,6 @@ package purchase
 import (
 	"errors"
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -37,6 +36,11 @@ var serverNotePatterns = []string{
 	`email notifier not configured for this deployment`,
 	`no notification email set in Settings \x{2192} General(?: and no account contact emails configured)?`,
 	`FROM_EMAIL not configured for this deployment`,
+}
+
+// exchangeNotePatterns are server-authored RI exchange record notes. They are
+// written bare, never behind a resource or provider head, so none is allowed.
+var exchangeNotePatterns = []string{
 	// RI exchange record errors (api/handler_ri_exchange.go failExchange callers and
 	// the exchange package's auto-exchange reservation notes).
 	`config load failed`,
@@ -81,6 +85,10 @@ var serverNoteHeads = []string{
 	`plan step refused by commitment cap`,
 	`purchase refused after claim: the claimed execution no longer passes the authorization checks`,
 	`scheduled purchase skipped: it was due too long ago`,
+}
+
+// exchangeNoteHeads are the fixed heads of the exchange notes whose tail is not closed.
+var exchangeNoteHeads = []string{
 	`RI exchange daily cap exceeded`,
 	`reserved ceiling`,
 	`exchange reservation returned invalid ceiling`,
@@ -90,10 +98,38 @@ var serverNoteHeads = []string{
 var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + regexp.QuoteMeta(redriveReasonAzureSavingsPlan) +
 	`|provider "[^"]*" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`
 
-// A rec's "<resourceType>: " head, as the writer's per-rec join adds it.
-var serverNoteRE = regexp.MustCompile(`^(?:[A-Za-z0-9][A-Za-z0-9._-]*: )?(?:` + strings.Join(append(slices.Clone(serverNotePatterns), categoryNotePatterns()...), "|") + `)(?:; |$)`)
+// resourceTypePattern is the "<resourceType>: " head the executor's per-rec join
+// adds (execution.go: fmt.Sprintf("%s: %v", rec.ResourceType, err)). Only these
+// instance, node and plan type shapes are accepted, each with a digit in its
+// family part so an account number, IPv4 address, hostname or DB user never fits:
+//   - AWS: [db.|cache.]<family>.<size>[.search], family [a-z]{1,4}<digit>..., size
+//     nano|micro|small|medium|large|[N]xlarge|xlplus|metal (m5.large, db.t4g.micro,
+//     cache.t3.micro, dc2.large, ra3.xlplus, t3.small.search)
+//   - Azure: Standard_|Basic_ + letters, a digit, then [A-Za-z0-9_-] (Standard_D2_v3)
+//   - GCP: <letter><digit>[letter]-<word>[-<digits>] (n2-standard-2, e2-micro)
+const resourceTypePattern = `(?:` +
+	`(?:db\.|cache\.)?[a-z]{1,4}[0-9][a-z0-9]{0,5}\.(?:nano|micro|small|medium|large|[0-9]{0,2}xlarge|xlplus|metal)(?:\.search)?` +
+	`|(?:Standard|Basic)_[A-Za-z]{1,4}[0-9][A-Za-z0-9_-]{0,24}` +
+	`|[a-z][0-9][a-z]?-[a-z]{2,12}(?:-[0-9]{1,4})?` +
+	`)`
 
-var serverNoteHeadRE = regexp.MustCompile(`^((?:[A-Za-z0-9][A-Za-z0-9._-]*: )?(?:` + strings.Join(serverNoteHeads, "|") + `))(?:(?:: | ")[^;]*)?(?:; |$)`)
+// providerHeadPattern is the collection writer's "<provider>: " head.
+const providerHeadPattern = `(?:aws|azure|gcp)`
+
+const (
+	resourceHead = `(?:` + resourceTypePattern + `: )?`
+	categoryHead = `(?:(?:` + providerHeadPattern + `|` + resourceTypePattern + `): )?`
+)
+
+func joinAlt(parts []string) string { return strings.Join(parts, "|") }
+
+var serverNoteRE = regexp.MustCompile(`^(?:` +
+	resourceHead + `(?:` + joinAlt(serverNotePatterns) + `)` +
+	`|` + `(?:` + joinAlt(exchangeNotePatterns) + `)` +
+	`|` + categoryHead + `(?:` + joinAlt(categoryNotePatterns()) + `)` +
+	`)(?:; |$)`)
+
+var serverNoteHeadRE = regexp.MustCompile(`^(` + resourceHead + `(?:` + joinAlt(serverNoteHeads) + `)|(?:` + joinAlt(exchangeNoteHeads) + `))(?:(?:: | ")[^;]*)?(?:; |$)`)
 
 // renderServerNotes returns s with every "; "-separated item either kept
 // verbatim (a closed allowlisted note) or cut to its fixed head (a known note
