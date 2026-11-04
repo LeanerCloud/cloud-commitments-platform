@@ -274,3 +274,25 @@ func TestAppendPartialProvider(t *testing.T) {
 	assert.Equal(t, "azure", got.Providers[0].Provider)
 	assert.NotNil(t, got.Providers[0].Reasons, "reasons must encode as {} rather than null")
 }
+
+// A mixed Azure sweep (a lost subscription plus Advisor pricing-outage skips on
+// a reachable one) must hold the account like a skips-only outage does, or its
+// rows stay purchasable at the previous cycle's price.
+func TestGapFromPartialSubscriptions_PricingOutageSkipsHoldAccount(t *testing.T) {
+	outage := []string{
+		`advisor: azure advisor: advisor compute reservation price for "Standard_D2s_v3" in "westeurope" (1y): get: retail prices fetch failed: EOF`,
+		`advisor: price lookup unavailable: azure advisor: advisor compute reservation price for "Standard_D2s_v3" in "westeurope" (1y): get: retail prices fetch failed: EOF`,
+	}
+	failed := []azureprovider.SubscriptionFailure{{SubscriptionID: "sub-b", Err: errors.New("403 authorization failed")}}
+
+	gap, err := tolerateIncompleteSweep("azure", azureprovider.NewPartialSubscriptionFailure(2, failed, outage))
+	require.NoError(t, err)
+
+	held := gap.forAccount().withHeld("acct-1")
+	assert.True(t, held.pricingUnavailable)
+	assert.Equal(t, []string{"acct-1"}, held.heldAccountIDs)
+	assert.True(t, held.holdsEviction(), "the lost subscription still holds eviction")
+	sweep := held.toProviderSweep("azure")
+	assert.Positive(t, sweep.Reasons[config.PartialReasonPricingUnavailable])
+	assert.Equal(t, []string{"acct-1"}, sweep.HeldAccountIDs)
+}

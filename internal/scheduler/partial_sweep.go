@@ -75,19 +75,21 @@ func tolerateSkippedRecommendations(providerName string, err error) (*sweepGap, 
 		return nil, err
 	}
 	logging.Warnf("%s recommendations partial, keeping the rest: %v", providerName, err)
-	// A skip that means "the price could not be fetched" says nothing about
-	// the row being invalid, so its previous-cycle row must survive.
-	outage := countPricingOutageSkips(p.SkipReasons())
-	g := &sweepGap{
-		skippedRecommendations: p.SkippedCount(),
-		skippedOnly:            outage == 0,
-		pricingUnavailable:     outage > 0,
-		reasons:                map[string]int{},
-	}
-	if outage > 0 {
-		g.reasons[config.PartialReasonPricingUnavailable] = outage
-	}
+	g := &sweepGap{reasons: map[string]int{}}
+	g.recordSkips(p.SkippedCount(), p.SkipReasons())
+	g.skippedOnly = !g.pricingUnavailable
 	return g, nil
+}
+
+// recordSkips adds dropped recommendations to the gap. A skip that means "the
+// price could not be fetched" says nothing about the row being invalid, so its
+// previous-cycle row must survive: it marks the gap pricingUnavailable.
+func (g *sweepGap) recordSkips(count int, reasons []string) {
+	g.skippedRecommendations += count
+	if outage := countPricingOutageSkips(reasons); outage > 0 {
+		g.pricingUnavailable = true
+		g.reasons[config.PartialReasonPricingUnavailable] += outage
+	}
 }
 
 // withHeld records accountID as held when the gap is a pricing outage. An
@@ -165,10 +167,11 @@ func gapFromPartialSubscriptions(p *azureprovider.PartialSubscriptionFailureErro
 		failedScopes:    max(p.Attempted-p.Succeeded, len(p.Failed)),
 		reasons:         map[string]int{},
 	}
-	// A mixed sweep also lost invalid recommendations; the count is for the
-	// user warning only and does not affect eviction (skippedOnly stays false).
+	// A mixed sweep also lost invalid recommendations. The count is for the
+	// user warning only and does not affect eviction (skippedOnly stays false),
+	// but a pricing outage among them holds the account like a skips-only one.
 	if sk := p.Skips(); sk != nil {
-		g.skippedRecommendations = sk.SkippedCount()
+		g.recordSkips(sk.SkippedCount(), sk.SkipReasons())
 	}
 	for _, f := range p.Failed {
 		g.reasons[classifySweepCause(f.Err)]++
