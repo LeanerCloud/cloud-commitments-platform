@@ -192,6 +192,9 @@ export function switchTab(tabName: string, opts: SwitchTabOptions = {}): void {
 
   setActiveNav(tabName);
 
+  // Admin pages never read the global Provider/Account chips.
+  document.getElementById('topbar-filters')?.classList.toggle('hidden', tabName === 'admin');
+
   // Leaving Settings: release the ladder chart and its listeners (#667).
   if (tabName !== 'admin') disposeLadderTimeline();
 

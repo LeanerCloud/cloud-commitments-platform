@@ -115,6 +115,18 @@ describe('Navigation Module', () => {
   });
 
   describe('switchTab', () => {
+    test('hides the global filter chips on Admin and shows them elsewhere (#1691)', () => {
+      const slot = document.createElement('div');
+      slot.id = 'topbar-filters';
+      document.body.appendChild(slot);
+
+      switchTab('admin', { skipDefaultLoad: true });
+      expect(slot.classList.contains('hidden')).toBe(true);
+
+      switchTab('plans');
+      expect(slot.classList.contains('hidden')).toBe(false);
+    });
+
     test('switches to dashboard tab and loads dashboard', () => {
       switchTab('home');
 
