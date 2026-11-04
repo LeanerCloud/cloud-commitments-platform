@@ -591,6 +591,14 @@ function renderAccountsList(
 
   const table = document.createElement('table');
   table.className = 'accounts-table';
+  // Same widths for every provider so stacked tables line up.
+  const colgroup = document.createElement('colgroup');
+  ['30%', '30%', '14%', '26%'].forEach((width) => {
+    const col = document.createElement('col');
+    col.style.width = width;
+    colgroup.appendChild(col);
+  });
+  table.appendChild(colgroup);
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
   ['Name', 'Account ID', 'Status', 'Actions'].forEach((label) => {

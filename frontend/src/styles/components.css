@@ -626,6 +626,8 @@ button.secondary:hover {
  */
 .accounts-table {
     width: 100%;
+    min-width: 36rem;
+    table-layout: fixed;
     border-collapse: collapse;
     margin-top: 0.5rem;
 }

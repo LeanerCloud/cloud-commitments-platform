@@ -197,31 +197,62 @@ function buildTargetCloudPills(
 
   const buttons: HTMLButtonElement[] = [];
 
-  for (const cloud of TARGET_CLOUDS) {
+  const select = (index: number, focus: boolean): void => {
+    buttons.forEach((b, i) => {
+      const selected = i === index;
+      b.setAttribute('aria-checked', selected ? 'true' : 'false');
+      b.tabIndex = selected ? 0 : -1;
+      b.classList.toggle('selected', selected);
+    });
+    const chosen = buttons[index];
+    const cloud = TARGET_CLOUDS[index];
+    if (focus && chosen) chosen.focus();
+    if (cloud) onSelect(cloud.value);
+  };
+
+  TARGET_CLOUDS.forEach((cloud, index) => {
     const pill = document.createElement('button');
     pill.type = 'button';
     pill.className = 'btn btn-small target-cloud-pill';
     pill.textContent = cloud.label;
     pill.setAttribute('data-target', cloud.value);
-    pill.setAttribute('aria-pressed', 'false');
-    pill.addEventListener('click', () => {
-      for (const b of buttons) {
-        const selected = b === pill;
-        b.setAttribute('aria-pressed', selected ? 'true' : 'false');
-        b.classList.toggle('selected', selected);
+    pill.setAttribute('role', 'radio');
+    pill.addEventListener('click', () => select(index, false));
+    pill.addEventListener('keydown', (e: KeyboardEvent) => {
+      const last = buttons.length - 1;
+      let next: number;
+      switch (e.key) {
+        case 'ArrowRight':
+        case 'ArrowDown':
+          next = index === last ? 0 : index + 1;
+          break;
+        case 'ArrowLeft':
+        case 'ArrowUp':
+          next = index === 0 ? last : index - 1;
+          break;
+        case 'Home':
+          next = 0;
+          break;
+        case 'End':
+          next = last;
+          break;
+        default:
+          return;
       }
-      onSelect(cloud.value);
+      e.preventDefault();
+      select(next, true);
     });
     buttons.push(pill);
     container.appendChild(pill);
-  }
+  });
 
-  // Default selection: AWS (first option).
-  const first = buttons[0];
-  if (first) {
-    first.setAttribute('aria-pressed', 'true');
-    first.classList.add('selected');
-  }
+  // Default selection: AWS (first option). Set directly so onSelect does not
+  // fire before the caller's own initial render.
+  buttons.forEach((b, i) => {
+    b.setAttribute('aria-checked', i === 0 ? 'true' : 'false');
+    b.tabIndex = i === 0 ? 0 : -1;
+    b.classList.toggle('selected', i === 0);
+  });
 }
 
 // ---------------------------------------------------------------------------
