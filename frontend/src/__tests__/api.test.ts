@@ -871,6 +871,13 @@ describe('Recommendations API', () => {
         expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(200);
       });
 
+      test('an empty (204) page after a cursor fails instead of returning a partial list', async () => {
+        fetchMock
+          .mockResolvedValueOnce(page({ recommendations: [{ id: 'a' }], next_cursor: 'c1' }))
+          .mockResolvedValueOnce({ ok: true, status: 204, headers: { get: () => null }, json: () => Promise.reject(new Error('no body')) });
+        await expect(getRecommendations()).rejects.toThrow(/empty page/i);
+      });
+
       test('an empty (204) first page still resolves null', async () => {
         fetchMock.mockResolvedValueOnce({ ok: true, status: 204, headers: { get: () => null }, json: () => Promise.reject(new Error('no body')) });
         await expect(getRecommendations()).resolves.toBeNull();

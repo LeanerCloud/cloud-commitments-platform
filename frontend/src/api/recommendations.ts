@@ -18,7 +18,11 @@ function isPositiveFinite(value: number | undefined): value is number {
 
 /** Page size for the list read; the server's MaxRecommendationsPageSize. */
 const RECOMMENDATIONS_PAGE_SIZE = 1000;
-/** 200 pages of 1000 rows is far past any tenant; reaching it means a paging bug. */
+/**
+ * A runaway-walk guard, not a row cap: the server also cuts a page at its
+ * 4 MiB byte budget, so a page can hold fewer than 1000 rows. 200 pages of
+ * up to 4 MiB is far past any real list; reaching it means a paging bug.
+ */
 const RECOMMENDATIONS_MAX_PAGES = 200;
 
 /** One page of GET /api/recommendations, as the server sends it. */
@@ -62,8 +66,11 @@ export async function getRecommendations(filters: RecommendationFilters = {}): P
     seen.add(cursor);
     params.set('cursor', cursor);
     const next = await apiRequest<RecommendationsPage | null>(`/recommendations?${params.toString()}`);
-    rows.push(...(next?.recommendations ?? []));
-    cursor = next?.next_cursor;
+    // An empty body is valid only as the first page; mid-walk it would
+    // silently drop every later row.
+    if (!next) throw new Error('Recommendations paging returned an empty page after a cursor');
+    rows.push(...(next.recommendations ?? []));
+    cursor = next.next_cursor;
   }
   return { ...merged, recommendations: rows } as unknown as Recommendation[];
 }

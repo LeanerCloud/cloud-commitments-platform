@@ -20,7 +20,7 @@ func TestRecommendationsPageCollector_StampsComputeCapacity(t *testing.T) {
 	require.NoError(t, err)
 	rows := func() []config.RecommendationRecord {
 		return []config.RecommendationRecord{
-			{ID: "a-compute", Service: "ec2", Region: "us-east-1", Details: json.RawMessage(details)},
+			{ID: "a-compute", Service: "ec2", Region: "us-east-1", Details: details},
 			{ID: "b-database", Service: "rds", Region: "us-east-1", Details: json.RawMessage(`{"engine":"postgres"}`)},
 		}
 	}
