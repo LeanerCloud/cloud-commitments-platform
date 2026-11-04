@@ -77,3 +77,33 @@ test('sticky Actions column shows a visible hint while columns hide behind it', 
   await expect.poll(() => cell.evaluate((td) => getComputedStyle(td, '::before').opacity)).toBe('1');
   expect(await cell.evaluate((td) => parseFloat(getComputedStyle(td, '::before').width))).toBeGreaterThanOrEqual(16);
 });
+
+const toggleState = async (page: Page) => ({
+  width: await sidebarWidth(page),
+  expanded: await page.locator('.app-sidebar-toggle').getAttribute('aria-expanded'),
+});
+
+for (const [width, start] of [[1024, 64], [1280, 232]] as const) {
+  test(`sidebar toggle expands and collapses at ${width}px and aria-expanded follows`, async ({ page }) => {
+    await openPlans(page, width);
+    const other = start === 64 ? 232 : 64;
+    const states = [await toggleState(page)];
+    for (let i = 0; i < 2; i++) {
+      await page.locator('.app-sidebar-toggle').click();
+      // The width animates; wait for it to settle on the target.
+      await expect.poll(() => sidebarWidth(page)).toBe(i === 0 ? other : start);
+      states.push(await toggleState(page));
+    }
+    const expected = (w: number) => ({ width: w, expanded: String(w === 232) });
+    expect(states).toEqual([expected(start), expected(other), expected(start)]);
+  });
+}
+
+test('the phone drawer shows full labels even with a stored collapsed sidebar', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('cudly_sidebar_collapsed', '1'));
+  await openPlans(page, 600);
+  await page.locator('.app-topbar .hamburger').click();
+  await expect(page.locator('body')).toHaveClass(/sidebar-open/);
+  await expect.poll(() => sidebarWidth(page)).toBe(232);
+  await expect(page.locator('.app-sidebar .sidebar-label').first()).toBeVisible();
+});

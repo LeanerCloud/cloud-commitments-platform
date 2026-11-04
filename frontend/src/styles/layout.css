@@ -180,18 +180,6 @@
     margin: 0;     /* override the legacy `main` rule below */
 }
 
-/* Narrow viewports: collapse sidebar to icon-only automatically. Up to
- * 1100px the full-width rail left wide tables a few columns (issue #1682);
- * below 769px the drawer in responsive.css takes over. */
-@media (max-width: 1100px) {
-    .app-sidebar {
-        width: var(--cudly-sidebar-w-collapsed);
-    }
-    .app-sidebar .sidebar-label {
-        display: none;
-    }
-}
-
 /* ------------------------------------------------------------------------- */
 
 header {
