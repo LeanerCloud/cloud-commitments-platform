@@ -22,12 +22,12 @@ const (
 	fakeTenant = "11111111-1111-1111-1111-111111111111"
 )
 
-var providerLeakNeedles = []string{fakeSub, fakeTenant, "management.azure.com", "login.microsoftonline.com",
+var providerDetailNeedles = []string{fakeSub, fakeTenant, "management.azure.com", "login.microsoftonline.com",
 	"Trace ID", "Correlation ID", "AADSTS", "123456789012", "gateway"}
 
-func assertNoProviderLeak(t *testing.T, where, s string) {
+func assertNoProviderDetail(t *testing.T, where, s string) {
 	t.Helper()
-	for _, n := range providerLeakNeedles {
+	for _, n := range providerDetailNeedles {
 		assert.NotContains(t, s, n, where)
 	}
 }
@@ -69,10 +69,10 @@ func TestAzureCodelessErrors_StoredAndLiveAreSanitized(t *testing.T) {
 		err := azureResponseError(t, status, "/subscriptions/"+fakeSub+"/providers/Microsoft.Capacity/reservationOrders", "text/html", "<html>gateway error</html>")
 		require.Contains(t, err.Error(), "ERROR CODE UNAVAILABLE")
 		stored := SanitizeStoredError(err.Error())
-		assertNoProviderLeak(t, "stored", stored)
+		assertNoProviderDetail(t, "stored", stored)
 		assert.NotEmpty(t, stored)
 		_, live := SummarizeProviderError(err)
-		assertNoProviderLeak(t, "live", live)
+		assertNoProviderDetail(t, "live", live)
 		_, liveStored := SummarizeProviderError(err)
 		assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), liveStored)
 	}
@@ -83,10 +83,10 @@ func TestAzureIdentityFailure_StoredAndLiveAreSanitized(t *testing.T) {
 	var afe *azidentity.AuthenticationFailedError
 	require.ErrorAs(t, err, &afe)
 	require.Contains(t, err.Error(), "AADSTS700016")
-	assertNoProviderLeak(t, "stored", SanitizeStoredError(err.Error()))
+	assertNoProviderDetail(t, "stored", SanitizeStoredError(err.Error()))
 	cat, msg := SummarizeProviderError(err)
 	assert.Equal(t, ErrCategoryAccessDenied, cat)
-	assertNoProviderLeak(t, "live", msg)
+	assertNoProviderDetail(t, "live", msg)
 }
 
 // A 500 whose URL names Microsoft.Capacity is an unknown outcome, never "not available".
