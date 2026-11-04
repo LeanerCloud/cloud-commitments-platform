@@ -295,4 +295,21 @@ describe('loadAutomationSettings: every field explains itself (issue #1689)', ()
     await loadWithZeroCaps();
     expect(hintFor('ri-exchange-max-daily')).toContain('UTC day');
   });
+
+  // fourEyesExchangeMode runs every mode as manual while 4-eyes is on.
+  test('the Mode hint says 4-eyes mode overrides Fully Automated', async () => {
+    await loadWithZeroCaps();
+    const hint = hintFor('ri-exchange-mode');
+    expect(hint).toContain('4-eyes');
+    expect(hint).toMatch(/every exchange waits for approval in either mode/);
+  });
+
+  // The per-exchange cap is checked before the mode branch (pkg/exchange
+  // auto.go), so it limits proposals in Manual Approval mode too.
+  test('the per-exchange hint says a higher payment is not proposed in either mode', async () => {
+    await loadWithZeroCaps();
+    const hint = hintFor('ri-exchange-max-per-exchange');
+    expect(hint).toMatch(/not proposed in either mode/);
+    expect(hint).toMatch(/At 0, no exchange with a payment due is proposed/);
+  });
 });
