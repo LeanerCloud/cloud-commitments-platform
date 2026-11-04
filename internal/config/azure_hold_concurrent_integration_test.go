@@ -61,3 +61,22 @@ func TestUpsertRecommendationsWithPartial_ConcurrentCollectionKeepsHold(t *testi
 	require.NotNil(t, fresh.LastCollectionPartial, "the later commit dropped the other run's hold")
 	require.Equal(t, []string{acctX}, fresh.LastCollectionPartial.Providers[0].HeldAccountIDs)
 }
+
+// The stored-rows read must be limited to Azure: an ambient Azure hold ends when
+// no Azure ambient rows remain, even if another provider's ambient rows exist.
+func TestUpsertRecommendationsWithPartial_AmbientHoldIgnoresOtherProviderRows(t *testing.T) {
+	ctx := context.Background()
+	store := config.NewPostgresStore(testhelpers.RequireMigratedDatabase(ctx, t, getMigrationsPath()).DB)
+	require.NoError(t, store.UpsertRecommendations(ctx, time.Now().Add(-time.Hour),
+		[]config.RecommendationRecord{ambientRec("aws-ambient", "aws", "m5.large")}, nil))
+	ambientHold := &config.RecommendationsCollectionPartial{Providers: []config.PartialProviderSweep{{
+		Provider: "azure", IncompleteAccounts: 1, Reasons: map[string]int{config.PartialReasonPricingUnavailable: 1},
+	}}}
+	require.NoError(t, store.UpsertRecommendationsWithPartial(ctx, time.Now().UTC(), nil, nil, ambientHold))
+
+	require.NoError(t, store.UpsertRecommendations(ctx, time.Now().UTC(), nil, nil))
+
+	fresh, err := store.GetRecommendationsFreshness(ctx)
+	require.NoError(t, err)
+	require.Nil(t, fresh.LastCollectionPartial, "AWS ambient rows must not keep an Azure hold alive")
+}

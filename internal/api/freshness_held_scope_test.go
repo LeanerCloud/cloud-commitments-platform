@@ -79,6 +79,10 @@ func TestFreshness_ScopeLookupFailureFailsClosed(t *testing.T) {
 
 	res, err := NewRouter(f.handler).Route(t.Context(), "GET", "/api/recommendations/freshness", scopedRequest(""))
 
-	require.Error(t, err)
-	assert.Nil(t, res)
+	require.Error(t, err, "a failed scope lookup must not produce a payload: got %v", res)
+	assert.Nil(t, res, "nothing, filtered or not, may be returned")
+	assert.NotContains(t, err.Error(), heldOutScope)
+	assert.NotContains(t, err.Error(), heldInScope)
+	_, isClient := IsClientError(err)
+	assert.False(t, isClient, "a lookup failure is a server error, not a client one")
 }
