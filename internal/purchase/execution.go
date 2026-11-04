@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -14,6 +15,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/ctxutil"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/execution"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/providerfactory"
@@ -245,7 +247,9 @@ func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.Purc
 			buying = append(buying, accounts[i])
 		}
 	}
+	var started sync.Map
 	results := execution.RunForAccountsWithConcurrency(ctx, buying, func(ctx context.Context, account config.CloudAccount) (bool, error) {
+		started.Store(account.ID, true)
 		return m.executeForAccount(ctx, scoped[account.ID], plan, account)
 	}, getMaxAccountParallelism())
 
@@ -268,6 +272,7 @@ func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.Purc
 		// Some accounts committed real purchases; the per-account rows already
 		// recorded the truth. Surface a partial sentinel so the entry points
 		// ack and never mislabel the run as a flat failure (issue #1014).
+		errs = append(errs, m.recordSkippedAccounts(ctx, scoped, results, &started)...)
 		return &multiAccountPartialError{committed: committed, errors: errs}
 	}
 	return fmt.Errorf("%w: %s", errAllAccountsFailed, strings.Join(errs, "; "))
@@ -295,22 +300,7 @@ func (m *Manager) saveExecutionStatusBestEffort(ctx context.Context, exec *confi
 func (m *Manager) executeForAccount(ctx context.Context, baseExec *config.PurchaseExecution, plan *config.PurchasePlan, account config.CloudAccount) (committed bool, err error) {
 	// Create a per-account copy of the execution record with an independent
 	// Recommendations slice so concurrent goroutines don't race on writes.
-	acctID := account.ID
-	acctExec := *baseExec
-	// ExecutionID is the per-account row identity (still a fresh UUID), but the
-	// per-rec provider idempotency token must NOT derive from it: a re-drive of
-	// the root execution would mint new UUIDs and lose the provider dedupe,
-	// double-buying every account (issue #1012 / H1). Seed a STABLE per-account
-	// idempotency key from the root's lineage key + the account ID so a re-drive
-	// reproduces the identical token per account. The account ID is the cloud
-	// account's stable config ID, not the (also stable) ExternalID — either is
-	// durable, but account.ID is the value that uniquely keys the fan-out unit.
-	acctExec.ExecutionID = uuid.New().String()
-	acctExec.IdempotencyKey = idempotencyLineageKey(baseExec) + ":" + account.ID
-	acctExec.CloudAccountID = &acctID
-	recs := make([]config.RecommendationRecord, len(baseExec.Recommendations))
-	copy(recs, baseExec.Recommendations)
-	acctExec.Recommendations = recs
+	acctExec := newAccountExecution(baseExec, account.ID)
 	// Runs on every return path below, once the row's terminal status is
 	// stamped; a no-op unless it ended failed or partially_completed (#714).
 	defer m.notifyExecutionFailure(ctx, &acctExec)
@@ -370,6 +360,60 @@ func (m *Manager) executeForAccount(ctx context.Context, baseExec *config.Purcha
 		return committed, fmt.Errorf("some purchases failed: %v", purchaseErrors)
 	}
 	return committed, nil
+}
+
+// newAccountExecution is the per-account copy of baseExec, with an independent
+// Recommendations slice so concurrent goroutines don't race on writes.
+//
+// ExecutionID is the per-account row identity (still a fresh UUID), but the
+// per-rec provider idempotency token must NOT derive from it: a re-drive of
+// the root execution would mint new UUIDs and lose the provider dedupe,
+// double-buying every account (issue #1012 / H1). Seed a STABLE per-account
+// idempotency key from the root's lineage key + the account ID so a re-drive
+// reproduces the identical token per account. The account ID is the cloud
+// account's stable config ID, not the (also stable) ExternalID — either is
+// durable, but account.ID is the value that uniquely keys the fan-out unit.
+func newAccountExecution(baseExec *config.PurchaseExecution, accountID string) config.PurchaseExecution {
+	acctExec := *baseExec
+	acctExec.ExecutionID = uuid.New().String()
+	acctExec.IdempotencyKey = idempotencyLineageKey(baseExec) + ":" + accountID
+	acctExec.CloudAccountID = &accountID
+	recs := make([]config.RecommendationRecord, len(baseExec.Recommendations))
+	copy(recs, baseExec.Recommendations)
+	acctExec.Recommendations = recs
+	return acctExec
+}
+
+// recordSkippedAccounts writes a failed row for each account the fan-out
+// skipped before executeForAccount ran (the run context ended first), so the
+// acked partial run does not silently drop its purchases (issue #1672).
+// Nothing was submitted for it, so the row carries NoSubmission and the
+// ordinary retry can re-run it. Only the acked partial path calls this: a flat
+// failure is redelivered and re-runs these accounts under their stable keys,
+// where a failed row would invite a second, undeduped retry beside it. The
+// context has ended, so the saves run detached. It returns the save failures.
+func (m *Manager) recordSkippedAccounts(ctx context.Context, scoped map[string]*config.PurchaseExecution, results []execution.Result[bool], started *sync.Map) []string {
+	var lost []string
+	for _, r := range results {
+		if r.Err == nil {
+			continue
+		}
+		if _, ran := started.Load(r.AccountID); ran {
+			continue
+		}
+		row := newAccountExecution(scoped[r.AccountID], r.AccountID)
+		row.Status = "failed"
+		row.NoSubmission = true
+		row.Error = fmt.Sprintf("the run ended before account %s started, so nothing was submitted for it; retry to buy it: %v", r.AccountID, r.Err)
+		saveCtx, cancel := ctxutil.DetachedWithTimeout(ctx, m.budgets.terminalSaveTimeout())
+		if err := m.config.SavePurchaseExecution(saveCtx, &row); err != nil {
+			lost = append(lost, fmt.Sprintf("AUDIT LOSS: failed to save the skipped-account record for account %s: %v", r.AccountID, err))
+		} else {
+			m.notifyExecutionFailure(saveCtx, &row)
+		}
+		cancel()
+	}
+	return lost
 }
 
 // persistFailedAccountExecution writes a per-account execution row that the
