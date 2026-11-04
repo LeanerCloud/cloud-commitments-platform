@@ -345,11 +345,16 @@ jobs:
           sleep 30  # Wait for Lambda to update
           cd terraform/environments/aws
           # Not silenced: if the output is missing, the real terraform error is
-          # what tells the operator why the rollback cannot be verified.
+          # what tells the operator why the rollback cannot be verified. The
+          # grep drops the `::` workflow-command lines the setup-terraform
+          # wrapper can add (same filter as deploy-aws-lambda.yml); with
+          # pipefail an empty result fails the step.
+          tf_out() { terraform output -raw "$1" | grep -v '::'; }
+
           if [ "$DISABLE_CDN" = "true" ]; then
             # Public mode: the raw Function URL must be open (NONE) and healthy.
-            FUNCTION_URL=$(terraform output -raw lambda_function_url)
-            FUNCTION_NAME=$(terraform output -raw lambda_function_name)
+            FUNCTION_URL=$(tf_out lambda_function_url)
+            FUNCTION_NAME=$(tf_out lambda_function_name)
             AUTH_TYPE=$(aws lambda get-function-url-config \
               --function-name "$FUNCTION_NAME" \
               --query 'AuthType' --output text)
@@ -357,25 +362,26 @@ jobs:
               echo "❌ Rollback verification failed - Function URL AuthType is '$AUTH_TYPE', expected NONE"
               exit 1
             fi
-            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${FUNCTION_URL%/}/health" || true)
-            if [ "$CODE" != "200" ]; then
-              echo "❌ Rollback verification failed - raw Function URL /health returned '$CODE'"
-              exit 1
-            fi
-            echo "✅ Rollback successful - public Function URL healthy (AuthType NONE)"
-            exit 0
-          fi
-
-          # frontend_url is the CloudFront URL when enable_cdn is on (the raw
-          # Function URL is then AWS_IAM and answers 403), else the Function URL.
-          FRONTEND_URL=$(terraform output -raw frontend_url)
-
-          if curl -f -s "${FRONTEND_URL%/}/health" > /dev/null; then
-            echo "✅ Rollback successful - health check passed"
+            PROBE_URL="${FUNCTION_URL%/}/health"
           else
-            echo "❌ Rollback verification failed - health check failed"
-            exit 1
+            # frontend_url is the CloudFront URL when enable_cdn is on (the raw
+            # Function URL is then AWS_IAM and answers 403), else the Function URL.
+            PROBE_URL="$(tf_out frontend_url | sed 's:/*$::')/health"
           fi
+
+          # Exact 200, a few tries apart so a cold start does not fail the run.
+          CODE=""
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$PROBE_URL" || true)
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Rollback successful - $PROBE_URL returned 200"
+              exit 0
+            fi
+            echo "Attempt $i: $PROBE_URL returned '$CODE', retrying in 10 seconds..."
+            sleep 10
+          done
+          echo "❌ Rollback verification failed - $PROBE_URL last returned '$CODE'"
+          exit 1
 
   # Rollback AWS Fargate
   rollback-aws-fargate:
