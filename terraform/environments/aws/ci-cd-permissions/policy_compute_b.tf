@@ -85,6 +85,29 @@ resource "aws_iam_policy" "compute_b" {
         Resource = "arn:aws:cloudfront::*:function/cudly-*"
       },
       {
+        # modules/frontend/aws creates an origin access control for the
+        # AWS_IAM Lambda Function URL (enable_cdn). Create and List take no
+        # resource ARN; the rest act on the OAC by its generated ID, which
+        # cannot be name-scoped, so they are limited to OACs.
+        Sid    = "CloudFrontOACCreateAndList"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateOriginAccessControl",
+          "cloudfront:ListOriginAccessControls",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "CloudFrontOACManage"
+        Effect = "Allow"
+        Action = [
+          "cloudfront:DeleteOriginAccessControl",
+          "cloudfront:GetOriginAccessControl",
+          "cloudfront:UpdateOriginAccessControl",
+        ]
+        Resource = "arn:aws:cloudfront::*:origin-access-control/*"
+      },
+      {
         Sid    = "ECSListTasks"
         Effect = "Allow"
         Action = [
