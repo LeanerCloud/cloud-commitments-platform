@@ -280,6 +280,19 @@ describe('loadAutomationSettings: every field explains itself (issue #1689)', ()
     expect(hintFor(id).trim().length).toBeGreaterThan(20);
   });
 
+  // The hints are built by concatenation; a dropped space ran two sentences
+  // together ("exchange.A recommendation").
+  test.each(fieldIDs)('%s hint separates its sentences with a space', async (id) => {
+    await loadWithZeroCaps();
+    expect(hintFor(id)).not.toMatch(/[.!?][A-Z]/);
+    expect(hintFor(id)).not.toMatch(/\s{2,}/);
+  });
+
+  test('the Enable hint says the mode decides whether exchanges are proposed or run', async () => {
+    await loadWithZeroCaps();
+    expect(hintFor('ri-exchange-enabled')).toMatch(/propose or run exchanges/);
+  });
+
   test.each(['ri-exchange-max-per-exchange', 'ri-exchange-max-daily'])(
     '%s says what 0 means and that dialog exchanges use their own limit',
     async (id) => {

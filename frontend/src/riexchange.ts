@@ -1855,11 +1855,11 @@ function numberAttr(value: number | null | undefined): string {
 // (exchangeCapStrings). 4-eyes runs every mode as manual (fourEyesExchangeMode).
 const DIALOG_NOTE = 'Exchanges started from the Exchange dialog use the limit entered there instead.';
 const AUTOMATION_HINTS: Record<string, string> = {
-  'ri-exchange-enabled': 'Lets CUDly check convertible RI utilization on its schedule and propose exchanges for underutilized RIs.',
+  'ri-exchange-enabled': 'Lets CUDly check convertible RI utilization on its schedule and propose or run exchanges for underutilized RIs, depending on the mode below.',
   'ri-exchange-mode': 'Manual Approval queues each proposed exchange for someone to approve. Fully Automated runs it without approval, within the payment limits below. '
     + 'While Require different approver (4-eyes mode) is on, every exchange waits for approval in either mode.',
   'ri-exchange-threshold': 'Convertible RIs whose utilization over the lookback window is below this percentage are candidates for an exchange.',
-  'ri-exchange-max-per-exchange': 'Largest payment due allowed for one scheduled or approved exchange.A recommendation with a higher payment due is not proposed in either mode. '
+  'ri-exchange-max-per-exchange': 'Largest payment due allowed for one scheduled or approved exchange. A recommendation with a higher payment due is not proposed in either mode. '
     + 'At 0, no exchange with a payment due is proposed, and approving any exchange is refused. ' + DIALOG_NOTE,
   'ri-exchange-max-daily': 'Total payment due allowed per UTC day across scheduled and approved exchanges. '
     + 'At 0, Fully Automated exchanges with a payment due do not run, and approving any exchange is refused. ' + DIALOG_NOTE,
