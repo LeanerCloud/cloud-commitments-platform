@@ -38,6 +38,12 @@ func TestAzurePricingHold(t *testing.T) {
 		{"hold cleared by a good cycle", &acct, &config.RecommendationsFreshness{}, nil, false},
 		{"unheld account unaffected", &other, heldFreshness(acct), nil, false},
 		{"unreadable hold state refuses", &acct, nil, errors.New("database unavailable"), true},
+		{"missing collection state refuses", &acct, nil, nil, true},
+		// The reason gate: only a pricing_unavailable sweep holds rows. A sweep that
+		// is partial for another reason (here throttling) must not refuse a purchase.
+		{"partial sweep without the pricing reason does not refuse", &acct, &config.RecommendationsFreshness{LastCollectionPartial: &config.RecommendationsCollectionPartial{
+			Providers: []config.PartialProviderSweep{{Provider: "azure", HeldAccountIDs: []string{acct}, Reasons: map[string]int{config.PartialReasonThrottled: 1}}},
+		}}, nil, false},
 		{"unresolved ambient rec refused during an outage", nil, heldFreshness(), nil, true},
 		// Fail-closed by design: a rec without an account cannot be matched to the
 		// hold list, so any Azure hold refuses it.
