@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -54,4 +56,26 @@ func TestTailedNotesWithStoreErrors_NeverReachUserSurfaces(t *testing.T) {
 			assert.NotEmpty(t, ce.Details()["failure_reason"])
 		})
 	}
+}
+
+func TestExecuteFailure_SentinelWrappingProviderErrorShowsOnlySentinelText(t *testing.T) {
+	for _, sentinel := range []error{purchase.ErrStaleAzurePricing, purchase.ErrClaimedRowRefused} {
+		err := fmt.Errorf("%w: %w", sentinel, errors.New(fakeConnectErr))
+		_, msg := summarizeExecuteFailure("e-1", err)
+		assert.Equal(t, sentinel.Error(), msg)
+		out := executeFailureError("e-1", "executed", &config.PurchaseExecution{Status: "failed"}, err)
+		require.Error(t, out)
+		// Non-client errors render as a generic 500 (handler.go), so only
+		// structured client errors can carry text to the caller.
+		if ce, ok := IsClientError(out); ok {
+			assertNoConnectText(t, "live", ce.Error())
+		}
+	}
+}
+
+func TestTokenActionError_StalePricingShowsOnlySentinelText(t *testing.T) {
+	err := tokenActionError(fmt.Errorf("%w: %w", purchase.ErrStaleAzurePricing, errors.New(fakeConnectErr)))
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, purchase.ErrStaleAzurePricing.Error(), ce.Error())
 }

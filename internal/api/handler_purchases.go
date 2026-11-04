@@ -532,7 +532,7 @@ func executeFailureError(executionID, action string, final *config.PurchaseExecu
 	case errors.Is(err, purchase.ErrClaimedRowRefused):
 		return claimedRowRefusalError(final, err)
 	case errors.Is(err, purchase.ErrStaleAzurePricing):
-		return NewClientError(409, err.Error())
+		return NewClientError(409, purchase.ErrStaleAzurePricing.Error())
 	case purchase.IsCommittedPartialRun(final, err):
 		category, msg := summarizeExecuteFailure(executionID, err)
 		return NewClientErrorWithDetails(502, fmt.Sprintf("execution %s partially completed: some commitments were purchased and can be revoked, others failed: %s (reference: execution %s)", executionID, msg, executionID),
@@ -1081,7 +1081,7 @@ func tokenActionError(err error) error {
 	case errors.Is(err, purchase.ErrClaimedRowRefused):
 		return claimedRowRefusalError(nil, err)
 	case errors.Is(err, purchase.ErrStaleAzurePricing):
-		return NewClientError(409, err.Error())
+		return NewClientError(409, purchase.ErrStaleAzurePricing.Error())
 	case errors.Is(err, purchase.ErrInvalidApprovalToken), errors.Is(err, config.ErrApprovalTokenChanged):
 		return NewClientError(403, "invalid approval token")
 	case errors.Is(err, purchase.ErrApprovalTokenExpired):

@@ -1,6 +1,8 @@
 package purchase
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -48,4 +50,24 @@ func TestSanitizeStoredError_NoPatternMatchesANewline(t *testing.T) {
 	} {
 		assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), SanitizeStoredError(in), in)
 	}
+}
+
+// A sentinel yields only its own text, never the wrapped chain.
+func TestServerNoteMessage_SentinelReturnsOnlyItsOwnText(t *testing.T) {
+	for _, sentinel := range []error{ErrPlanStepNoRecommendations, ErrStaleAzurePricing, ErrStepCommitmentCap,
+		ErrDueRowTooOld, ErrClaimedRowRefused, errAmbiguousAccountScope} {
+		for _, err := range []error{
+			fmt.Errorf("%w: %w", sentinel, errors.New(fakeConnectError)),
+			fmt.Errorf("%w: cannot read the latest collection state to confirm Azure prices are current: %w", sentinel, errors.New(fakeConnectError)),
+			fmt.Errorf("execution e-1: %w: %s", sentinel, fakeConnectError),
+		} {
+			msg, ok := ServerNoteMessage(err)
+			assert.True(t, ok)
+			assert.Equal(t, sentinel.Error(), msg)
+			assertNoConnectDetail(t, sentinel.Error(), msg)
+		}
+	}
+	msg, ok := ServerNoteMessage(errors.New("ramp not advanced: " + fakeConnectError))
+	assert.True(t, ok)
+	assert.Equal(t, "ramp not advanced", msg)
 }

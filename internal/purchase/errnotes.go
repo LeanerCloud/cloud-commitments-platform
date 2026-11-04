@@ -100,7 +100,7 @@ func ServerNoteMessage(err error) (string, bool) {
 	for _, sentinel := range []error{ErrPlanStepNoRecommendations, ErrStaleAzurePricing, ErrStepCommitmentCap,
 		ErrDueRowTooOld, ErrClaimedRowRefused, errAmbiguousAccountScope} {
 		if errors.Is(err, sentinel) {
-			return err.Error(), true
+			return sentinel.Error(), true
 		}
 	}
 	return renderServerNotes(err.Error())
