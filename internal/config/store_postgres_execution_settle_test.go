@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -37,4 +38,17 @@ func TestSettlementRecordReplayMatchesOnlyTheSameReason(t *testing.T) {
 	require.True(t, settlementHasReason(record, req.Reason))
 	require.False(t, settlementHasReason(record, "account"))
 	require.False(t, settlementHasReason(record, `checked "eu" account2`))
+}
+
+// The handler and the store count the reason the same way, in characters
+// (review on #1241: 300 four-byte characters passed the handler, then the
+// store refused them as more than 1000 bytes).
+func TestValidateSettleRequestCountsCharacters(t *testing.T) {
+	base := ExecutionSettleRequest{ExecutionID: "e", Actor: "a", Acknowledge: true}
+	ok := base
+	ok.Reason = strings.Repeat("\U0001F600", ExecutionSettleReasonMax)
+	require.NoError(t, validateSettleRequest(ok))
+	long := base
+	long.Reason = strings.Repeat("x", ExecutionSettleReasonMax+1)
+	require.ErrorIs(t, validateSettleRequest(long), ErrExecutionSettleInvalid)
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,7 +61,7 @@ func (s *settleSpyStore) SettleFailedExecution(context.Context, config.Execution
 // which has no user identity, is refused before anything is read or written.
 func TestSettleExecution_AdminAPIKeyRefused(t *testing.T) {
 	ctx := context.Background()
-	store := &settleSpyStore{MockConfigStore: new(MockConfigStore)}
+	store := settleSpyForAdminKey()
 	handler := &Handler{config: store, apiKey: fourEyesAdminKey}
 
 	_, err := handler.settleExecution(ctx, adminKeyRequest(`{"reason":"checked the subscription: nothing was bought","acknowledge_unknown_outcome":true}`), "11111111-1111-4111-8111-111111111111")
@@ -69,5 +70,32 @@ func TestSettleExecution_AdminAPIKeyRefused(t *testing.T) {
 	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
 	require.Equal(t, 403, ce.code)
 	require.Contains(t, ce.message, "signed-in user or a user API key")
+	require.Zero(t, store.settleCalls)
+}
+
+// settleSpyForAdminKey answers the execution read too, so a handler that lost
+// the admin-key refusal fails the 403 assertion instead of a mock panic.
+func settleSpyForAdminKey() *settleSpyStore {
+	store := &settleSpyStore{MockConfigStore: new(MockConfigStore)}
+	store.MockConfigStore.On("GetExecutionByID", mock.Anything, mock.Anything).
+		Return(nil, errors.New("test sentinel: execution read reached")).Maybe()
+	return store
+}
+
+// The same refusal through the router, so a route wired to another handler
+// (or one that skips this check) cannot reintroduce the admin key.
+func TestSettleRoute_AdminAPIKeyRefused(t *testing.T) {
+	store := settleSpyForAdminKey()
+	r := NewRouter(&Handler{config: store, apiKey: fourEyesAdminKey})
+	const path = "/api/purchases/11111111-1111-4111-8111-111111111111/settle"
+	req := adminKeyRequest(`{"reason":"checked the subscription: nothing was bought","acknowledge_unknown_outcome":true}`)
+	req.RequestContext.HTTP.Method = "POST"
+	req.RequestContext.HTTP.Path = path
+
+	_, err := r.Route(context.Background(), "POST", path, req)
+
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+	require.Equal(t, 403, ce.code)
 	require.Zero(t, store.settleCalls)
 }

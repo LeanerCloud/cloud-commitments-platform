@@ -18,7 +18,7 @@ import (
 
 const (
 	executionSettleReasonMin = 10
-	executionSettleReasonMax = 300
+	executionSettleReasonMax = config.ExecutionSettleReasonMax
 	executionSettleBodyMax   = 2048
 )
 

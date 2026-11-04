@@ -262,3 +262,30 @@ func TestSettlementPathsBeforeTheMigration(t *testing.T) {
 	require.ErrorIs(t, err, ErrExecutionSettleNotReady)
 	f.retryInOneTx(ctx, t, failed, uuid.NewString(), StatusCompleted) // the retry link still works
 }
+
+// A repeat by another operator is a conflict, not a replay of the first
+// operator's settlement (review on #1241).
+func TestSettleRepeatByAnotherActorConflicts(t *testing.T) {
+	ctx := context.Background()
+	f := managedSettleFixture(ctx, t)
+	failed := f.rowWithRecs(ctx, t, 1, &f.accounts[0], StatusFailed, false, baselineRec(f.accounts[0], "m5.large", 4))
+	_, err := f.settle(ctx, failed.ExecutionID, "checked the account")
+	require.NoError(t, err)
+
+	_, err = f.store.SettleFailedExecution(ctx, ExecutionSettleRequest{ExecutionID: failed.ExecutionID,
+		Actor: "00000000-0000-0000-0000-0000000000b1", Reason: "checked the account", Acknowledge: true})
+	require.ErrorIs(t, err, ErrExecutionSettleConflict)
+}
+
+// Settling exists to unblock the delete of an editor-managed plan. On any
+// other plan it would only retire Retry for good, so it is refused (review
+// on #1241).
+func TestSettleRefusesARowOfANonManagedPlan(t *testing.T) {
+	ctx := context.Background()
+	f := newRampFixture(ctx, t, 1, 1, 4)
+	failed := f.rowWithRecs(ctx, t, 1, &f.accounts[0], StatusFailed, false, baselineRec(f.accounts[0], "m5.large", 4))
+
+	_, err := f.settle(ctx, failed.ExecutionID, "checked the account")
+	require.ErrorIs(t, err, ErrExecutionSettleConflict)
+	require.False(t, f.settled(ctx, t, failed.ExecutionID))
+}

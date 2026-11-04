@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -19,8 +20,9 @@ var (
 	ErrExecutionSettleNotReady = errors.New("execution settlement is not available until the database migration is applied")
 )
 
-// executionSettleReasonMax bounds the stored record; the column has no CHECK.
-const executionSettleReasonMax = 1000
+// ExecutionSettleReasonMax bounds the reason in characters, the unit the API
+// handler checks too; the column has no CHECK.
+const ExecutionSettleReasonMax = 300
 
 // ExecutionSettleRequest asks to settle a failed plan execution whose outcome
 // is unknown. Actor is the acting principal's id. Acknowledge must be true:
@@ -47,6 +49,7 @@ type ExecutionSettlement struct {
 
 // settleTarget is the locked row SettleFailedExecution judges.
 type settleTarget struct {
+	managed      bool // the plan's dates are editor-managed
 	status       string
 	noSubmission bool
 	retryID      *string
@@ -115,8 +118,8 @@ func validateSettleRequest(req ExecutionSettleRequest) error {
 		return fmt.Errorf("%w: the operator must acknowledge the unknown outcome", ErrExecutionSettleInvalid)
 	case req.Actor == "":
 		return fmt.Errorf("%w: settling needs an actor", ErrExecutionSettleInvalid)
-	case req.Reason == "" || len(req.Reason) > executionSettleReasonMax:
-		return fmt.Errorf("%w: reason must be 1 to %d bytes", ErrExecutionSettleInvalid, executionSettleReasonMax)
+	case req.Reason == "" || utf8.RuneCountInString(req.Reason) > ExecutionSettleReasonMax:
+		return fmt.Errorf("%w: reason must be 1 to %d characters", ErrExecutionSettleInvalid, ExecutionSettleReasonMax)
 	}
 	return nil
 }
@@ -136,10 +139,15 @@ func lockSettleTarget(ctx context.Context, tx pgx.Tx, executionID string) (*sett
 	if planID == nil {
 		return nil, fmt.Errorf("%w: only an execution of a purchase plan can be settled", ErrExecutionSettleConflict)
 	}
-	if _, lockErr := tx.Exec(ctx, `SELECT 1 FROM purchase_plans WHERE id = $1 FOR SHARE`, *planID); lockErr != nil {
+	var t settleTarget
+	lockErr := tx.QueryRow(ctx, `SELECT COALESCE(ramp_schedule->>'dates_managed' = 'true', false)
+		FROM purchase_plans WHERE id = $1 FOR SHARE`, *planID).Scan(&t.managed)
+	if errors.Is(lockErr, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("%w: the execution's plan no longer exists", ErrExecutionSettleConflict)
+	}
+	if lockErr != nil {
 		return nil, fmt.Errorf("lock plan %s: %w", *planID, lockErr)
 	}
-	var t settleTarget
 	err = tx.QueryRow(ctx, `SELECT status, no_submission, retry_execution_id::text, plan_id::text,
 		outcome_settled_at, outcome_settled_by, outcome_settlement
 		FROM purchase_executions WHERE execution_id = $1 FOR UPDATE`, executionID).Scan(
@@ -156,6 +164,10 @@ func lockSettleTarget(ctx context.Context, tx pgx.Tx, executionID string) (*sett
 // checkSettleTarget allows only the rows that block a managed delete for an
 // unknown outcome: failed without a no_submission proof.
 func checkSettleTarget(t *settleTarget) error {
+	if !t.managed {
+		// Elsewhere settling unblocks nothing and only retires Retry for good.
+		return fmt.Errorf("%w: only an execution of an editor-managed plan can be settled", ErrExecutionSettleConflict)
+	}
 	if t.status != StatusFailed {
 		return fmt.Errorf("%w: execution is %s; only a failed execution can be settled", ErrExecutionSettleConflict, t.status)
 	}

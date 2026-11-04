@@ -7,8 +7,8 @@
 -- detach the row, and it stops the row from being retried (a retry of a row
 -- detached from its plan would buy with no plan).
 --
--- outcome_settled_by is the acting principal as text (a users.id, or the admin
--- API key sentinel), so the audit survives the user being deleted.
+-- outcome_settled_by is the acting person's users.id as text, so the audit
+-- survives the user being deleted.
 -- outcome_settlement is the complete, fixed-format record the store wrote.
 ALTER TABLE purchase_executions
     ADD COLUMN IF NOT EXISTS outcome_settled_at TIMESTAMPTZ NULL,
