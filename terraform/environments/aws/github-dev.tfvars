@@ -72,7 +72,7 @@ secret_recovery_window_days = 7
 # Frontend / CDN
 # ==============================================
 
-enable_cdn            = false
+enable_cdn            = true
 frontend_price_class  = "PriceClass_100"
 create_subdomain_zone = false
 
@@ -103,16 +103,17 @@ cross_account_target_account_ids = []
 # Variables provided by GitHub Actions:
 #   TF_VAR_admin_email    = ${{ secrets.ADMIN_EMAIL }}
 #   TF_VAR_image_uri      = (from build step)
-#   TF_VAR_subdomain_zone_name    = cudly.leanercloud.com
-#   TF_VAR_frontend_domain_names  = ["lambda-dev.cudly.leanercloud.com"]
-#   TF_VAR_dashboard_url  = "https://<lambda-function-url-host>"
-#     # Set this only when serving from a raw Lambda Function URL — i.e.
-#     # frontend_domain_names is not pointing at a Route53/ACM-fronted
-#     # custom domain. Bootstrap: run `terraform apply` once, then
-#     # `terraform output frontend_url` gives the value; copy it in here
-#     # and re-apply so DASHBOARD_URL is persisted in the Lambda env (the
-#     # auth Service refuses to send invite/password-reset emails when
-#     # DASHBOARD_URL is empty — see #355).
+#   TF_VAR_dashboard_url  = ${{ secrets.DASHBOARD_URL }}
+#     # With enable_cdn = true the Function URL is AWS_IAM and answers 403 to
+#     # browsers, so DASHBOARD_URL must be the CloudFront frontend_url, not the
+#     # raw Function URL. A human updates the DASHBOARD_URL environment secret
+#     # after the first apply (`terraform output -raw frontend_url`) and
+#     # re-runs the deploy so DASHBOARD_URL and CORS_ALLOWED_ORIGIN are
+#     # persisted in the Lambda env (the auth Service refuses to send
+#     # invite/password-reset emails when DASHBOARD_URL is empty, see #355).
+#     # No workflow sets TF_VAR_subdomain_zone_name or
+#     # TF_VAR_frontend_domain_names, so the app is served from the
+#     # distribution's default *.cloudfront.net domain.
 #   TF_VAR_from_email     = ${{ secrets.FROM_EMAIL }}
 #     # Required when subdomain_zone_name is unset. Must be an SES-verified
 #     # identity in the target account. Without it, FROM_EMAIL reaches the
