@@ -42,13 +42,13 @@ var serverNotePatterns = []string{
 	`config load failed`,
 	`exchange record has no region; cannot execute safely`,
 	`(?:daily|per-exchange) spending cap is not configured \(RIExchange(?:MaxDaily|MaxPerExchange)USD is 0\)`,
-	`RI exchange daily cap exceeded: (?:spend [^;\s]+ exceeds cap [^;\s]+|initial [^;\s]+, remaining [^;\s]+)`,
+	`RI exchange daily cap exceeded: (?:spend ` + amountPattern + ` exceeds cap ` + amountPattern + `|initial ` + amountPattern + `, remaining ` + amountPattern + `)`,
 	`daily spending cap check failed`,
-	`reserved ceiling "[^"]*" is not a decimal`,
+	`reserved ceiling "` + shortValuePattern + `" is not a decimal`,
 	`exchange reservation returned no record ID`,
-	`exchange reservation returned invalid ceiling "[^"]*"`,
+	`exchange reservation returned invalid ceiling "` + shortValuePattern + `"`,
 	// Scheduler note for a provider name it does not know.
-	`unknown provider "[^"]*" \(valid: aws, azure, gcp\)`,
+	`unknown provider "` + shortValuePattern + `" \(valid: aws, azure, gcp\)`,
 }
 
 // categoryNotePatterns matches a collection failure stored as "<provider>:
@@ -62,6 +62,10 @@ func categoryNotePatterns() []string {
 }
 
 const (
+	// amountPattern is a decimal amount; shortValuePattern is a short value with no
+	// whitespace, quotes or newline. Anything wider falls back to the fixed head.
+	amountPattern      = `\d+(?:\.\d+)?`
+	shortValuePattern  = `[A-Za-z0-9._+-]{1,32}`
 	idPattern          = `[^;\s,()]+`
 	idListPattern      = idPattern + `(?:, ` + idPattern + `)*`
 	skippedNotePattern = `\d+ recommendation\(s\) without a frozen baseline skipped \(under-buy\): ` + idListPattern
@@ -77,6 +81,10 @@ var serverNoteHeads = []string{
 	`plan step refused by commitment cap`,
 	`purchase refused after claim: the claimed execution no longer passes the authorization checks`,
 	`scheduled purchase skipped: it was due too long ago`,
+	`RI exchange daily cap exceeded`,
+	`reserved ceiling`,
+	`exchange reservation returned invalid ceiling`,
+	`unknown provider`,
 }
 
 var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + regexp.QuoteMeta(redriveReasonAzureSavingsPlan) +
@@ -85,7 +93,7 @@ var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + reg
 // A rec's "<resourceType>: " head, as the writer's per-rec join adds it.
 var serverNoteRE = regexp.MustCompile(`^(?:[A-Za-z0-9][A-Za-z0-9._-]*: )?(?:` + strings.Join(append(slices.Clone(serverNotePatterns), categoryNotePatterns()...), "|") + `)(?:; |$)`)
 
-var serverNoteHeadRE = regexp.MustCompile(`^((?:[A-Za-z0-9][A-Za-z0-9._-]*: )?(?:` + strings.Join(serverNoteHeads, "|") + `))(?:: [^;]*)?(?:; |$)`)
+var serverNoteHeadRE = regexp.MustCompile(`^((?:[A-Za-z0-9][A-Za-z0-9._-]*: )?(?:` + strings.Join(serverNoteHeads, "|") + `))(?:(?:: | ")[^;]*)?(?:; |$)`)
 
 // renderServerNotes returns s with every "; "-separated item either kept
 // verbatim (a closed allowlisted note) or cut to its fixed head (a known note

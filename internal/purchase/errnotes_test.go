@@ -107,3 +107,32 @@ func TestSanitizeStoredError_CollectionCategoryForm(t *testing.T) {
 	assert.Equal(t, stored, SanitizeStoredError(stored))
 	assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), SanitizeStoredError(stored+"; gcp: raw text for project my-project"))
 }
+
+// A variable part outside its closed alphabet (a newline, a provider or DB
+// error text) never reaches the output: only the fixed head or nothing shows.
+func TestSanitizeStoredError_ExchangeNoteTailsAreClosed(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"RI exchange daily cap exceeded: spend 1\nDETAIL pq: boom exceeds cap 2", "RI exchange daily cap exceeded"},
+		{"RI exchange daily cap exceeded: initial 1.0, remaining pq: connection refused", "RI exchange daily cap exceeded"},
+		{"RI exchange daily cap exceeded: spend x y exceeds cap 2.0", "RI exchange daily cap exceeded"},
+		{"reserved ceiling \"a\nb\" is not a decimal", "reserved ceiling"},
+		{"reserved ceiling \"pq: boom\" is not a decimal", "reserved ceiling"},
+		{"exchange reservation returned invalid ceiling \"x\ny\"", "exchange reservation returned invalid ceiling"},
+		{"unknown provider \"evil\nprovider\" (valid: aws, azure, gcp)", "unknown provider"},
+		{"unknown provider \"db error: password for x\" (valid: aws, azure, gcp)", "unknown provider"},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, SanitizeStoredError(c.in), c.in)
+	}
+	for _, in := range []string{
+		"config load failed\nsecret",
+		"config load failed: pq: boom",
+		"exchange record has no region; cannot execute safely\nx",
+		"daily spending cap check failed: pq: boom",
+		"exchange reservation returned no record ID: pq: boom",
+		"daily spending cap is not configured (RIExchangeMaxDailyUSD is 0)\nx",
+		"aws: " + ErrCategoryMessage(ErrCategoryUnknown) + "\nraw",
+	} {
+		assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), SanitizeStoredError(in), in)
+	}
+}
