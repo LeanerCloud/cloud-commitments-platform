@@ -295,10 +295,13 @@ module "compute_fargate" {
 }
 
 # ==============================================
-# Lambda Function URL: CloudFront OAC permission
+# Lambda Function URL: CloudFront OAC permissions
 # ==============================================
 #
-# This permission lives at the environment layer (not inside the lambda module)
+# Since Oct 2025 an AWS_IAM Function URL requires both lambda:InvokeFunctionUrl
+# and lambda:InvokeFunction for the caller, so two permissions are created.
+#
+# These permissions live at the environment layer (not inside the lambda module)
 # because both module.compute_lambda and module.frontend must be fully resolved
 # before the permission can reference both the Lambda function name and the
 # CloudFront distribution ARN. Placing it inside either module would create a
@@ -323,4 +326,14 @@ resource "aws_lambda_permission" "function_url_cloudfront" {
   principal              = "cloudfront.amazonaws.com"
   source_arn             = module.frontend[0].cloudfront_distribution_arn
   function_url_auth_type = "AWS_IAM"
+}
+
+resource "aws_lambda_permission" "function_invoke_cloudfront" {
+  count = var.compute_platform == "lambda" && var.enable_cdn ? 1 : 0
+
+  statement_id  = "FunctionInvokeAllowCloudFront"
+  action        = "lambda:InvokeFunction"
+  function_name = module.compute_lambda[0].function_name
+  principal     = "cloudfront.amazonaws.com"
+  source_arn    = module.frontend[0].cloudfront_distribution_arn
 }
