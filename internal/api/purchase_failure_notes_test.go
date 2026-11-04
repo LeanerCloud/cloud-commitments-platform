@@ -79,3 +79,18 @@ func TestTokenActionError_StalePricingShowsOnlySentinelText(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, purchase.ErrStaleAzurePricing.Error(), ce.Error())
 }
+
+// A refused AWS purchase keeps ops_hint (the History UI hides Retry on it) but
+// carries no duplicate-purchase warning.
+func TestHistoryRow_DefiniteAWSRefusalKeepsOpsHintWithoutDuplicateWarning(t *testing.T) {
+	denied := "operation error EC2: X, https response error StatusCode: 403, RequestID: r, api error UnauthorizedOperation: msg"
+	row := executionToHistoryRow(config.PurchaseExecution{
+		ExecutionID: "e-1", Status: "failed", Error: denied,
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2"}},
+	}, "", "")
+	assert.True(t, row.RedriveUnsafe)
+	assert.NotEmpty(t, row.OpsHint)
+	assert.NotContains(t, strings.ToLower(row.OpsHint), "duplicate guard")
+	assert.NotEqual(t, purchase.RedriveRefusalReason(&config.PurchaseExecution{
+		Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2"}}}), row.OpsHint)
+}

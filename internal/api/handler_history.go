@@ -415,8 +415,9 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 			row.RedriveUnsafe = true
 			// Only a proven pre-send AWS refusal on every rec means nothing was
 			// bought; for any other outcome the duplicate-purchase warning stays.
+			// ops_hint stays set either way: the History UI hides Retry on it.
 			if purchase.IsDefiniteAWSRefusal(exec.Recommendations, exec.Error) {
-				row.OpsHint = ""
+				row.OpsHint = definiteRefusalOpsHint
 			} else {
 				row.OpsHint = reason
 			}
@@ -425,6 +426,10 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 	annotateHistoryRowByStatus(&row, exec, approver)
 	return row
 }
+
+// definiteRefusalOpsHint replaces the duplicate-purchase warning when AWS
+// refused the purchase before making it.
+const definiteRefusalOpsHint = "AWS refused this purchase before it was made; start a new purchase after fixing the cause"
 
 // annotateHistoryRowByStatus fills in Approver + StatusDescription on the
 // row based on exec.Status. Split from executionToHistoryRow to keep the
