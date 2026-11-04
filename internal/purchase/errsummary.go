@@ -28,6 +28,14 @@ var errCategoryMessages = map[string]string{
 	ErrCategoryUnknown:      "the provider returned an error",
 }
 
+// outcomeUnconfirmedMessage replaces the category message when the provider had
+// already accepted the request and only the wait for its result failed.
+const outcomeUnconfirmedMessage = "the provider accepted the request but its outcome could not be confirmed; check the account before trying again"
+
+// postInsertWaitMarker is the cloud-commitments-go GCP wrapper around a failed
+// wait on an operation whose Insert was accepted.
+const postInsertWaitMarker = "commitment creation failed: "
+
 const partialRunPrefix = "some purchases failed (partial success): "
 
 // ErrCategoryMessage returns the fixed user message for a category.
@@ -41,6 +49,9 @@ func ErrCategoryMessage(category string) string {
 // SummarizeProviderError classifies a live error by its type or explicit code
 // fields and returns its category and fixed message.
 func SummarizeProviderError(err error) (category, message string) {
+	if err != nil && strings.Contains(err.Error(), postInsertWaitMarker) {
+		return ErrCategoryUnknown, outcomeUnconfirmedMessage
+	}
 	category = classifyTypedError(err)
 	if category == ErrCategoryUnknown && err != nil {
 		category = classifyStoredText(err.Error())
@@ -148,9 +159,14 @@ func statusOf(re *regexp.Regexp, s string) int {
 // classifyStoredText classifies a stored error string from its explicit code
 // fields only; no code field means unknown.
 func classifyStoredText(s string) string {
+	if strings.Contains(s, postInsertWaitMarker) {
+		return ErrCategoryUnknown
+	}
 	for _, re := range []*regexp.Regexp{awsCodeRE, azCodeRE, gcpErrorRE, gcpReasonRE} {
-		if c := classifyCode(lastGroup(re, s)); c != ErrCategoryUnknown {
-			return c
+		for _, code := range lastGroups(re, s) {
+			if c := classifyCode(code); c != ErrCategoryUnknown {
+				return c
+			}
 		}
 	}
 	for _, re := range []*regexp.Regexp{awsStatusRE, azStatusRE, gcpErrorRE} {
@@ -161,13 +177,13 @@ func classifyStoredText(s string) string {
 	return ErrCategoryUnknown
 }
 
-// lastGroup returns the last capture group of re's first match, or "".
-func lastGroup(re *regexp.Regexp, s string) string {
-	m := re.FindStringSubmatch(s)
-	if len(m) < 2 {
-		return ""
+// lastGroups returns the last capture group of every match of re in s.
+func lastGroups(re *regexp.Regexp, s string) []string {
+	var out []string
+	for _, m := range re.FindAllStringSubmatch(s, -1) {
+		out = append(out, m[len(m)-1])
 	}
-	return m[len(m)-1]
+	return out
 }
 
 // definiteAWSCodes are the AWS error codes returned before anything is
@@ -223,6 +239,9 @@ func SanitizeStoredError(s string) string {
 	prefix := s[:len(s)-len(rest)]
 	if out, ok := renderServerNotes(rest); ok {
 		return prefix + out
+	}
+	if strings.Contains(rest, postInsertWaitMarker) {
+		return prefix + outcomeUnconfirmedMessage
 	}
 	return prefix + ErrCategoryMessage(classifyStoredText(rest))
 }

@@ -2,6 +2,8 @@ package purchase
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -177,5 +179,31 @@ func TestIsDefiniteAWSRefusal(t *testing.T) {
 			recs = append(recs, config.RecommendationRecord{Provider: p})
 		}
 		assert.Equal(t, c.want, IsDefiniteAWSRefusal(recs, c.err), c.name)
+	}
+}
+
+func TestClassifyStoredText_ReadsEveryGoogleReason(t *testing.T) {
+	multi := &googleapi.Error{Code: 403, Message: "m", Errors: []googleapi.ErrorItem{{Reason: "x", Message: "a"}, {Reason: "rateLimitExceeded", Message: "b"}}}
+	assert.Contains(t, multi.Error(), "Reason: rateLimitExceeded")
+	assert.Equal(t, ErrCategoryLimit, classifyStoredText(multi.Error()))
+	cat, _ := SummarizeProviderError(multi)
+	assert.Equal(t, ErrCategoryLimit, cat)
+}
+
+// After an accepted Insert the commitment may exist, so a failed wait is never
+// a definite category.
+func TestPostInsertWaitFailure_IsUnconfirmed(t *testing.T) {
+	for _, g := range []*googleapi.Error{
+		{Code: 404, Message: "operations/op-1 was not found", Errors: []googleapi.ErrorItem{{Reason: "notFound", Message: "operations/op-1 was not found"}}},
+		{Code: 403, Message: "denied", Errors: []googleapi.ErrorItem{{Reason: "forbidden", Message: "denied"}}},
+	} {
+		err := fmt.Errorf("%w: commitment creation failed: %w", errors.New("retry: permanent error, do not retry"), g)
+		cat, msg := SummarizeProviderError(err)
+		assert.Equal(t, ErrCategoryUnknown, cat)
+		assert.Contains(t, msg, "outcome could not be confirmed")
+		assert.Equal(t, ErrCategoryUnknown, classifyStoredText(err.Error()))
+		assert.Contains(t, SanitizeStoredError(err.Error()), "outcome could not be confirmed")
+		assert.Contains(t, SanitizeStoredError(partialRunPrefix+"x: "+err.Error()), "outcome could not be confirmed")
+		assert.NotContains(t, SanitizeStoredError(err.Error()), "not available")
 	}
 }
