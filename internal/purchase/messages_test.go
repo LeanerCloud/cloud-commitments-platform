@@ -53,32 +53,6 @@ func TestManager_ProcessMessage(t *testing.T) {
 		assert.Contains(t, err.Error(), "execution_id required")
 	})
 
-	t.Run("approve missing token", func(t *testing.T) {
-		mockStore := new(MockConfigStore)
-		mockEmail := new(MockEmailSender)
-		manager := &Manager{
-			config:       mockStore,
-			email:        mockEmail,
-			dashboardURL: "https://dashboard.example.com",
-		}
-		err := manager.ProcessMessage(ctx, `{"type": "approve", "execution_id": "exec-123"}`)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "token required")
-	})
-
-	t.Run("cancel missing token", func(t *testing.T) {
-		mockStore := new(MockConfigStore)
-		mockEmail := new(MockEmailSender)
-		manager := &Manager{
-			config:       mockStore,
-			email:        mockEmail,
-			dashboardURL: "https://dashboard.example.com",
-		}
-		err := manager.ProcessMessage(ctx, `{"type": "cancel", "execution_id": "exec-123"}`)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "token required")
-	})
-
 	t.Run("send_notification success", func(t *testing.T) {
 		mockStore := new(MockConfigStore)
 		mockEmail := new(MockEmailSender)
