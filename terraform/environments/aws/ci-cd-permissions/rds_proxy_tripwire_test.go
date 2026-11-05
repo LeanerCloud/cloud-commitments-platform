@@ -10,12 +10,15 @@ import (
 )
 
 const rdsProxyGrantsNeeded = `enable_rds_proxy is no longer a literal false, so the RDS proxy can be created, and the deploy role cannot manage it (#157).
-Before enabling it, add to the deploy policy (policy_data.tf):
-  - db-proxy:* with StringEqualsIgnoreCase aws:ResourceTag/Project = CUDly: rds:ModifyDBProxy, rds:DeleteDBProxy,
-    rds:DeregisterDBProxyTargets, rds:AddTagsToResource, rds:RemoveTagsFromResource, and rds:ListTagsForResource
+Decision A (#157): first run the real-AWS check that the default target group inherits the proxy's Project tag
+(create a proxy with tags in staging, then rds list-tags-for-resource on its target-group ARN). If it is
+untagged, go back to the owner; do not grant target-group:* without a gate. If tagged, add to the deploy policy
+(policy_data.tf), both gated by StringEqualsIgnoreCase aws:ResourceTag/Project = CUDly:
+  - db-proxy:*: rds:ModifyDBProxy, rds:DeleteDBProxy, rds:DeregisterDBProxyTargets, rds:AddTagsToResource,
+    rds:RemoveTagsFromResource, and rds:ListTagsForResource
     (the provider reads tags on every refresh, proxy.go @Tags(identifierAttribute="arn"))
-  - target-group:* (no tag condition; the default target group has no tags argument): rds:ModifyDBProxyTargetGroup,
-    rds:RegisterDBProxyTargets (also needs db:cudly-*), rds:DeregisterDBProxyTargets
+  - target-group:*: rds:ModifyDBProxyTargetGroup, rds:RegisterDBProxyTargets (also needs db:cudly-*),
+    rds:DeregisterDBProxyTargets
   - rds:CreateDBProxy stays on "*" (tags travel inside the create call)
 Then exercise it once in staging (create, no-op re-plan, destroy) and update this tripwire.`
 

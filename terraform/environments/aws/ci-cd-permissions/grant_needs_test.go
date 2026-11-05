@@ -3,11 +3,13 @@ package cicdpermissions_test
 import "testing"
 
 // grantNeed is one action a Terraform apply performs, with a sample real ARN
-// of the resource it runs against. An empty arn means the action has no
-// resource type (action-only).
+// of the resource it runs against. noResource marks an action the SAR gives no
+// resource type (action-only); without it an empty arn is a bug in the need and
+// fails instead of matching any statement.
 type grantNeed struct {
-	action string
-	arn    string
+	action     string
+	arn        string
+	noResource bool
 }
 
 // grantedBy reports whether any statement in allow authorizes need.
@@ -16,8 +18,11 @@ func grantedBy(allow []string, need grantNeed) bool {
 		if !actionPermitted(statementActions(stmt), need.action) {
 			continue
 		}
-		if need.arn == "" {
+		if need.noResource {
 			return true
+		}
+		if need.arn == "" {
+			return false
 		}
 		for _, r := range statementResources(stmt) {
 			if iamARNMatches(r, need.arn) {
@@ -75,10 +80,11 @@ func TestGrantedBy(t *testing.T) {
 		need grantNeed
 		want bool
 	}{
-		{"action only", stmt(`"*"`), grantNeed{"rds:ModifyDBProxy", ""}, true},
-		{"wrong action", stmt(`"*"`), grantNeed{"rds:DeleteDBProxy", ""}, false},
-		{"real arn", stmt(`["arn:aws:rds:*:*:db-proxy:*"]`), grantNeed{"rds:ModifyDBProxy", proxy}, true},
-		{"dead arn scope", stmt(`["arn:aws:rds:*:*:proxy:cudly-*"]`), grantNeed{"rds:ModifyDBProxy", proxy}, false},
+		{"action only", stmt(`"*"`), grantNeed{action: "rds:ModifyDBProxy", noResource: true}, true},
+		{"wrong action", stmt(`"*"`), grantNeed{action: "rds:DeleteDBProxy", noResource: true}, false},
+		{"real arn", stmt(`["arn:aws:rds:*:*:db-proxy:*"]`), grantNeed{action: "rds:ModifyDBProxy", arn: proxy}, true},
+		{"dead arn scope", stmt(`["arn:aws:rds:*:*:proxy:cudly-*"]`), grantNeed{action: "rds:ModifyDBProxy", arn: proxy}, false},
+		{"empty arn is not action-only", stmt(`"*"`), grantNeed{action: "rds:ModifyDBProxy"}, false},
 	}
 	for _, c := range cases {
 		if got := grantedBy([]string{c.stmt}, c.need); got != c.want {

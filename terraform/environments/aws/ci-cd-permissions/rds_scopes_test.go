@@ -87,7 +87,9 @@ func TestRDSKeptActionsHaveEveryRequiredResourceType(t *testing.T) {
 	// A newly granted action must get a table entry, or it goes unchecked.
 	for _, stmt := range allow {
 		for _, a := range statementActions(stmt) {
-			if _, ok := requiredRDSTypes[a]; !ok && !strings.HasPrefix(a, "rds:Describe") && a != "rds:CreateDBProxy" {
+			_, kept := requiredRDSTypes[a]
+			_, proxy := requiredRDSProxyTypes[a]
+			if !kept && !proxy && !strings.HasPrefix(a, "rds:Describe") && a != "rds:CreateDBProxy" {
 				t.Errorf("statement %q grants %s, which has no entry in requiredRDSTypes; add its required resource types", statementSid(stmt), a)
 			}
 		}
@@ -107,29 +109,53 @@ func TestRDSKeptActionsHaveEveryRequiredResourceType(t *testing.T) {
 	}
 }
 
-// TestRDSProxyMutatingActionsNeedProxyARNs: these four need db-proxy and
-// target-group ARNs (opaque ids), which a cudly-* name scope cannot express.
-// They stay out of the deploy policy until enable_rds_proxy is turned on and
-// the working grants are added (see rds_proxy_tripwire_test.go).
+// requiredRDSProxyTypes lists the resource types the SAR (Amazon RDS actions
+// table, https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonrds.html,
+// machine-readable https://servicereference.us-east-1.amazonaws.com/v1/rds/rds.json,
+// read 2026-11-05) requires for each proxy action. rds.json names the proxy
+// type "proxy" (ARN segment db-proxy) and does not mark required types;
+// DeregisterDBProxyTargets lists cluster, db, proxy and target-group, of which
+// the proxy and target group are the ones a proxy-scoped grant must cover.
+// These ids are opaque (prx-..., prx-tg-...), so a cudly-* name scope cannot
+// express them. Not granted until enable_rds_proxy is turned on (see
+// rds_proxy_tripwire_test.go).
+var requiredRDSProxyTypes = map[string][]string{
+	"rds:DeleteDBProxy":            {"db-proxy"},
+	"rds:ModifyDBProxy":            {"db-proxy"},
+	"rds:RegisterDBProxyTargets":   {"db", "target-group"},
+	"rds:DeregisterDBProxyTargets": {"db-proxy", "target-group"},
+	"rds:ModifyDBProxyTargetGroup": {"target-group"},
+}
+
+// TestRDSProxyMutatingActionsNeedProxyARNs: a proxy action, once granted, must
+// be authorizable against every resource type it requires, and no statement
+// granting it may match none of them (a dead grant).
 func TestRDSProxyMutatingActionsNeedProxyARNs(t *testing.T) {
 	allow := deployAllowStatements(t)
-	for _, action := range []string{
-		"rds:DeleteDBProxy",
-		"rds:ModifyDBProxy",
-		"rds:RegisterDBProxyTargets",
-		"rds:DeregisterDBProxyTargets",
-	} {
+	for action, types := range requiredRDSProxyTypes {
+		var holders []string
 		for _, stmt := range allow {
-			if !actionPermitted(statementActions(stmt), action) {
-				continue
+			if actionPermitted(statementActions(stmt), action) {
+				holders = append(holders, stmt)
 			}
-			var proxy, targetGroup bool
-			for _, r := range statementResources(stmt) {
-				proxy = proxy || iamARNMatches(r, realRDSARNs["db-proxy"])
-				targetGroup = targetGroup || iamARNMatches(r, realRDSARNs["target-group"])
+		}
+		if len(holders) == 0 {
+			continue // not granted yet; the tripwire covers that
+		}
+		for _, stmt := range holders {
+			matched := false
+			for _, typ := range types {
+				for _, r := range statementResources(stmt) {
+					matched = matched || iamARNMatches(r, realRDSARNs[typ])
+				}
 			}
-			if !proxy || !targetGroup {
-				t.Errorf("statement %q grants %s without both db-proxy and target-group Resource entries that match real ARNs; it is a dead grant (#157)", statementSid(stmt), action)
+			if !matched {
+				t.Errorf("statement %q grants %s but its Resource matches none of %v; it is a dead grant (#157)", statementSid(stmt), action, types)
+			}
+		}
+		for _, typ := range types {
+			if !grantedBy(holders, grantNeed{action: action, arn: realRDSARNs[typ]}) {
+				t.Errorf("%s: required resource type %s (%s) is not granted", action, typ, realRDSARNs[typ])
 			}
 		}
 	}

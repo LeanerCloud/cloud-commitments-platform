@@ -36,7 +36,9 @@ func TestDeployPolicyGrantsEveryActionTheMonitoringModuleNeeds(t *testing.T) {
 	add(lambdaLG, "logs:PutMetricFilter", "logs:DeleteMetricFilter")
 	add(ecsLG, "logs:PutMetricFilter", "logs:DeleteMetricFilter")
 	// No resource-level permissions for these.
-	add("", "logs:DescribeMetricFilters", "logs:PutQueryDefinition", "logs:DescribeQueryDefinitions", "logs:DeleteQueryDefinition")
+	for _, a := range []string{"logs:DescribeMetricFilters", "logs:PutQueryDefinition", "logs:DescribeQueryDefinitions", "logs:DeleteQueryDefinition"} {
+		needs = append(needs, grantNeed{action: a, noResource: true})
+	}
 	assertGranted(t, "monitoring", needs)
 
 	for _, stmt := range findStatements(t, "policy_monitoring.tf", func(string) bool { return true }) {
