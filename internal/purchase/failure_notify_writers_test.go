@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
@@ -133,7 +134,8 @@ func fanOutRun(t *testing.T, other config.CloudAccount, loadRaw func(string) ([]
 	plan := &config.PurchasePlan{ID: "plan-x", Name: "Plan X", AutoPurchase: true, MaxStepCommitment: capOf(1e9)}
 
 	store.On("GetGlobalConfig", mock.Anything).Return(failureNotifyCfg(), nil)
-	store.On("GetExecutionByID", ctx, "root-1195").Return(exec, nil)
+	exec.ScheduledDate = time.Now().Add(-time.Minute)
+	expectSweepOf(ctx, store, *exec)
 	running := *exec
 	running.Status = "running"
 	store.On("TransitionExecutionStatus", ctx, "root-1195",
@@ -167,7 +169,10 @@ func fanOutRun(t *testing.T, other config.CloudAccount, loadRaw func(string) ([]
 	}}
 
 	m := &Manager{config: store, email: sender, providerFactory: factory, credStore: creds}
-	require.NoError(t, m.handleExecutePurchase(ctx, &AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: "root-1195"}))
+	result, err := m.ProcessScheduledPurchases(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Executed, "a partial multi-account run counts as executed")
+	require.Equal(t, 0, result.Failed)
 
 	mu.Lock()
 	defer mu.Unlock()

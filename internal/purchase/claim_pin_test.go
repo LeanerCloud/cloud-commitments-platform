@@ -19,17 +19,13 @@ import (
 
 var errPinLost = errors.New("pin lost")
 
-// newPinManager wires store for one due plan row on the cron and SQS paths. The
-// plan the gate reads is gatePlan; every later GetPurchasePlan read (the
-// post-claim re-check) returns claimPlan.
+// newPinManager wires store for one due plan row on the cron path. The plan the
+// gate reads is gatePlan; every later GetPurchasePlan read (the post-claim
+// re-check) returns claimPlan. The claim and save calls each test adds are the
+// required ones.
 func newPinManager(ctx context.Context, store *MockConfigStore, factory *MockProviderFactory, exec config.PurchaseExecution, gatePlan, claimPlan *config.PurchasePlan) *Manager {
-	// Entry reads are per path: the cron path lists the stale and pending rows,
-	// the SQS path loads the row by ID. A test drives one path, so the other
-	// path's reads stay unused (.Maybe). The claim and save calls each test adds
-	// are the required ones.
 	store.On("GetStaleApprovedExecutions", ctx, mock.Anything).Return([]config.PurchaseExecution{}, nil).Maybe()
 	store.On("GetPendingExecutions", ctx).Return([]config.PurchaseExecution{exec}, nil).Maybe()
-	store.On("GetExecutionByID", ctx, exec.ExecutionID).Return(&exec, nil).Maybe()
 	store.On("GetPurchasePlan", ctx, exec.PlanID).Return(gatePlan, nil).Once()
 	store.On("GetPurchasePlan", ctx, exec.PlanID).Return(claimPlan, nil)
 	store.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil)
@@ -43,32 +39,24 @@ func autoPlan(c *float64) *config.PurchasePlan {
 }
 
 // S2: an attach landing between the gate (which saw an empty row) and the claim
-// makes the pinned claim lose; nothing runs, on both the cron and SQS paths.
+// makes the pinned claim lose; nothing runs.
 func TestClaimPin_AttachBetweenGateAndClaimIsRefused(t *testing.T) {
 	ctx := context.Background()
-	for _, path := range []string{"cron", "sqs"} {
-		t.Run(path, func(t *testing.T) {
-			store, factory := new(MockConfigStore), new(MockProviderFactory)
-			assertMocksOnCleanup(t, store, factory)
-			manager := newPinManager(ctx, store, factory, dueRecExec("notified"), autoPlan(f64(1000)), autoPlan(f64(1000)))
-			store.On("TransitionExecutionStatusPinned", ctx, "exec-gate", []string{"approved", "pending", "notified"}, "running", (*string)(nil), true).
-				Return(nil, config.ErrExecutionNotInExpectedStatus)
+	store, factory := new(MockConfigStore), new(MockProviderFactory)
+	assertMocksOnCleanup(t, store, factory)
+	manager := newPinManager(ctx, store, factory, dueRecExec("notified"), autoPlan(f64(1000)), autoPlan(f64(1000)))
+	store.On("TransitionExecutionStatusPinned", ctx, "exec-gate", []string{"approved", "pending", "notified"}, "running", (*string)(nil), true).
+		Return(nil, config.ErrExecutionNotInExpectedStatus)
 
-			if path == "cron" {
-				result, err := manager.ProcessScheduledPurchases(ctx)
-				require.NoError(t, err)
-				assert.Equal(t, 0, result.Executed)
-				assert.Equal(t, 0, result.Failed, "a lost pin is a benign skip")
-			} else {
-				require.NoError(t, manager.handleExecutePurchase(ctx, &AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: "exec-gate"}))
-			}
+	result, err := manager.ProcessScheduledPurchases(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.Executed)
+	assert.Equal(t, 0, result.Failed, "a lost pin is a benign skip")
 
-			store.AssertCalled(t, "TransitionExecutionStatusPinned", ctx, "exec-gate", []string{"approved", "pending", "notified"}, "running", (*string)(nil), true)
-			store.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-			store.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
-			factory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
-		})
-	}
+	store.AssertCalled(t, "TransitionExecutionStatusPinned", ctx, "exec-gate", []string{"approved", "pending", "notified"}, "running", (*string)(nil), true)
+	store.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	store.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
+	factory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // A row the gate saw WITH recommendations is claimed with the opposite pin.
@@ -104,38 +92,53 @@ func TestClaimPin_ClaimErrorIsFailure(t *testing.T) {
 // call is made.
 func TestClaimPin_PostClaimCapRecheckFailsBeforeSubmission(t *testing.T) {
 	ctx := context.Background()
-	for _, path := range []string{"cron", "sqs"} {
-		t.Run(path, func(t *testing.T) {
-			exec := dueRecExec("notified", upfrontRec(10))
-			exec.Recommendations[0].ID = "rec-1"
-			store, factory := new(MockConfigStore), new(MockProviderFactory)
-			assertMocksOnCleanup(t, store, factory)
-			manager := newPinManager(ctx, store, factory, exec, autoPlan(f64(1000)), autoPlan(f64(5)))
-			claimed := exec
-			claimed.Status = "running"
-			store.On("TransitionExecutionStatusPinned", ctx, "exec-gate", mock.Anything, "running", (*string)(nil), false).Return(&claimed, nil)
-			var saved *config.PurchaseExecution
-			store.On("SaveExecutionIfStatusTx", ctx, mock.Anything, mock.Anything, []string{"running"}).
-				Run(func(args mock.Arguments) { saved = args.Get(2).(*config.PurchaseExecution) }).Return(nil)
-			store.On("DeleteSuppressionsByExecutionTx", ctx, mock.Anything, "exec-gate").Return(nil)
+	exec := dueRecExec("notified", upfrontRec(10))
+	exec.Recommendations[0].ID = "rec-1"
+	store, factory := new(MockConfigStore), new(MockProviderFactory)
+	assertMocksOnCleanup(t, store, factory)
+	manager := newPinManager(ctx, store, factory, exec, autoPlan(f64(1000)), autoPlan(f64(5)))
+	claimed := exec
+	claimed.Status = "running"
+	store.On("TransitionExecutionStatusPinned", ctx, "exec-gate", mock.Anything, "running", (*string)(nil), false).Return(&claimed, nil)
+	var saved *config.PurchaseExecution
+	store.On("SaveExecutionIfStatusTx", ctx, mock.Anything, mock.Anything, []string{"running"}).
+		Run(func(args mock.Arguments) { saved = args.Get(2).(*config.PurchaseExecution) }).Return(nil)
+	store.On("DeleteSuppressionsByExecutionTx", ctx, mock.Anything, "exec-gate").Return(nil)
 
-			if path == "cron" {
-				result, err := manager.ProcessScheduledPurchases(ctx)
-				require.NoError(t, err)
-				assert.Equal(t, 1, result.Failed)
-				assert.Equal(t, 0, result.Executed)
-			} else {
-				err := manager.handleExecutePurchase(ctx, &AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: "exec-gate"})
-				require.ErrorIs(t, err, ErrStepCommitmentCap)
-			}
+	result, err := manager.ProcessScheduledPurchases(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Failed)
+	assert.Equal(t, 0, result.Executed)
 
-			require.NotNil(t, saved)
-			assert.Equal(t, "failed", saved.Status)
-			assert.Contains(t, saved.Error, "exceeds max_step_commitment")
-			store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", ctx, mock.Anything, "exec-gate")
-			factory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
-		})
-	}
+	require.NotNil(t, saved)
+	assert.Equal(t, "failed", saved.Status)
+	assert.Contains(t, saved.Error, "exceeds max_step_commitment")
+	store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", ctx, mock.Anything, "exec-gate")
+	factory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// The claim funnel itself returns the cap refusal, so a caller that gates a row
+// by other means still gets ErrStepCommitmentCap and no provider call.
+func TestClaimPin_ClaimFunnelReturnsCapRefusal(t *testing.T) {
+	ctx := context.Background()
+	exec := dueRecExec("notified", upfrontRec(10))
+	exec.Recommendations[0].ID = "rec-1"
+	store, factory := new(MockConfigStore), new(MockProviderFactory)
+	sender := allowFailedNotification(new(MockEmailSender))
+	assertMocksOnCleanup(t, store, factory, sender)
+	store.On("GetPurchasePlan", ctx, exec.PlanID).Return(autoPlan(f64(5)), nil)
+	store.On("GetGlobalConfig", mock.Anything).Return(autoPurchaseOnCfg(), nil).Maybe()
+	claimed := exec
+	claimed.Status = "running"
+	store.On("TransitionExecutionStatusPinned", ctx, "exec-gate", mock.Anything, "running", (*string)(nil), false).Return(&claimed, nil)
+	store.On("SaveExecutionIfStatusTx", ctx, mock.Anything, mock.Anything, []string{"running"}).Return(nil)
+	store.On("DeleteSuppressionsByExecutionTx", ctx, mock.Anything, "exec-gate").Return(nil)
+	manager := &Manager{config: store, email: sender, providerFactory: factory}
+
+	didClaim, err := manager.claimAndExecuteWithin(ctx, &exec, 0)
+	require.True(t, didClaim)
+	require.ErrorIs(t, err, ErrStepCommitmentCap)
+	factory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // A post-claim plan read failure also fails the claimed row closed rather than
@@ -155,7 +158,7 @@ func TestClaimPin_PostClaimPlanReadErrorFailsClosed(t *testing.T) {
 	assertMocksOnCleanup(t, store, sender)
 	manager := &Manager{config: store, email: sender, providerFactory: new(MockProviderFactory)}
 
-	didClaim, err := manager.claimAndExecute(ctx, &exec)
+	didClaim, err := manager.claimAndExecuteWithin(ctx, &exec, 0)
 	require.True(t, didClaim)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "post-claim cap check")
@@ -163,29 +166,6 @@ func TestClaimPin_PostClaimPlanReadErrorFailsClosed(t *testing.T) {
 	assert.Equal(t, "failed", saved.Status)
 	sender.AssertNumberOfCalls(t, "SendPurchaseFailedNotification", 1) // issue #1195
 	store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", ctx, mock.Anything, exec.ExecutionID)
-}
-
-// Manual / approved purchases are unchanged: an approved row is claimed and run
-// with no cap re-check, even on a plan that has no cap (the cap error class
-// never appears and the plan is read once, by executePurchase itself).
-func TestClaimPin_ApprovedRowSkipsCapRecheck(t *testing.T) {
-	ctx := context.Background()
-	exec := dueRecExec("approved", upfrontRec(1e9))
-	store := new(MockConfigStore)
-	assertMocksOnCleanup(t, store)
-	store.On("GetPurchasePlan", mock.Anything, exec.PlanID).Return(autoPlan(nil), nil)
-	store.On("GetPlanAccounts", mock.Anything, exec.PlanID).Return(nil, errors.New("accounts unavailable"))
-	claimed := exec
-	claimed.Status = "running"
-	store.On("TransitionExecutionStatusPinned", ctx, exec.ExecutionID, mock.Anything, "running", (*string)(nil), false).Return(&claimed, nil)
-	store.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil)
-	manager := &Manager{config: store, email: allowFailedNotification(new(MockEmailSender)), providerFactory: new(MockProviderFactory)}
-
-	didClaim, err := manager.claimAndExecute(ctx, &exec)
-	require.True(t, didClaim)
-	require.Error(t, err)
-	assert.NotErrorIs(t, err, ErrStepCommitmentCap)
-	store.AssertNumberOfCalls(t, "GetPurchasePlan", 1)
 }
 
 // S1: when the notification email fails nothing is promoted, and the scheduler

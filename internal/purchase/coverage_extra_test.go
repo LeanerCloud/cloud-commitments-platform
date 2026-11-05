@@ -208,8 +208,8 @@ func TestResolveGCPProvider_ApplicationDefault(t *testing.T) {
 	assert.Nil(t, result)
 }
 
-// Tests for handleExecutePurchase: execution found + status "approved" → success path.
-func TestHandleExecutePurchase_ApprovedStatus(t *testing.T) {
+// Tests for the claim funnel: a claimed notified row runs to a successful purchase.
+func TestClaimAndExecuteWithin_NotifiedRowExecutes(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := new(MockEmailSender)
@@ -217,8 +217,10 @@ func TestHandleExecutePurchase_ApprovedStatus(t *testing.T) {
 	mockSTS := new(MockSTSClient)
 
 	plan := &config.PurchasePlan{
-		ID:   "plan-approved",
-		Name: "Approved Plan",
+		ID:                "plan-approved",
+		Name:              "Approved Plan",
+		AutoPurchase:      true,
+		MaxStepCommitment: capOf(1e9),
 		RampSchedule: config.RampSchedule{
 			TotalSteps:  4,
 			CurrentStep: 0,
@@ -228,16 +230,16 @@ func TestHandleExecutePurchase_ApprovedStatus(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID: "exec-approved",
 		PlanID:      "plan-approved",
-		Status:      "approved",
+		Status:      "notified",
 		StepNumber:  1,
 		Recommendations: []config.RecommendationRecord{{
 			Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
-			Count: 1, Selected: true,
+			Count: 1, UpfrontCost: 100, Selected: true,
 		}},
 	}
 
-	mockStore.On("GetExecutionByID", ctx, "exec-approved").Return(exec, nil)
-	// claimAndExecute CASes the row to "running" before executing (issue #1013).
+	mockStore.On("GetGlobalConfig", mock.Anything).Return(autoPurchaseOnCfg(), nil).Maybe()
+	// claimAndExecuteWithin CASes the row to "running" before executing (issue #1013).
 	runningExec := *exec
 	runningExec.Status = "running"
 	mockStore.On("TransitionExecutionStatus", ctx, "exec-approved",
@@ -264,42 +266,15 @@ func TestHandleExecutePurchase_ApprovedStatus(t *testing.T) {
 		dashboardURL:    "https://dashboard.example.com",
 	}
 
-	msg := AsyncMessage{
-		Type:        MessageTypeExecutePurchase,
-		ExecutionID: "exec-approved",
-	}
-	err := manager.handleExecutePurchase(ctx, &msg)
+	claimed, err := manager.claimAndExecuteWithin(ctx, exec, 0)
 	require.NoError(t, err)
+	require.True(t, claimed)
 
 	mockStore.AssertExpectations(t)
 }
 
-// Tests for handleExecutePurchase: GetExecutionByID returns error.
-func TestHandleExecutePurchase_GetError(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	assertMocksOnCleanup(t, mockStore)
-	mockEmail := new(MockEmailSender)
-
-	mockStore.On("GetExecutionByID", ctx, "exec-err").Return(nil, errors.New("db error"))
-
-	manager := &Manager{
-		config:       mockStore,
-		email:        mockEmail,
-		dashboardURL: "https://dashboard.example.com",
-	}
-
-	msg := AsyncMessage{
-		Type:        MessageTypeExecutePurchase,
-		ExecutionID: "exec-err",
-	}
-	err := manager.handleExecutePurchase(ctx, &msg)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get execution")
-}
-
-// Tests for handleExecutePurchase: SavePurchaseExecution error after failed purchase.
-func TestHandleExecutePurchase_SaveError(t *testing.T) {
+// Tests for the claim funnel: SavePurchaseExecution error after failed purchase.
+func TestClaimAndExecuteWithin_SaveError(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := allowFailedNotification(new(MockEmailSender))
@@ -331,10 +306,8 @@ func TestHandleExecutePurchase_SaveError(t *testing.T) {
 		Recommendations: []config.RecommendationRecord{rec},
 	}
 
-	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil).Once()
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(autoPurchaseOnCfg(), nil)
-	mockStore.On("GetExecutionByID", ctx, "exec-save-err").Return(exec, nil)
-	// claimAndExecute CASes the row to "running" before executing (issue #1013).
+	// claimAndExecuteWithin CASes the row to "running" before executing (issue #1013).
 	runningExec := *exec
 	runningExec.Status = "running"
 	mockStore.On("TransitionExecutionStatus", ctx, "exec-save-err",
@@ -354,15 +327,12 @@ func TestHandleExecutePurchase_SaveError(t *testing.T) {
 		dashboardURL:    "https://dashboard.example.com",
 	}
 
-	msg := AsyncMessage{
-		Type:        MessageTypeExecutePurchase,
-		ExecutionID: "exec-save-err",
-	}
-	err := manager.handleExecutePurchase(ctx, &msg)
-	// The terminal-save failure now surfaces from executeAndFinalize as
-	// ErrAuditLoss (the row is stranded in "running"). The SQS handler returns
-	// it so the message is redelivered. A single-account provider failure with
-	// no committed recs is not multi-account-ackable, so it is returned.
+	claimed, err := manager.claimAndExecuteWithin(ctx, exec, 0)
+	require.True(t, claimed)
+	// The terminal-save failure surfaces from executeAndFinalize as
+	// ErrAuditLoss (the row is stranded in "running"). A single-account
+	// provider failure with no committed recs is not multi-account-ackable,
+	// so it is returned.
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, config.ErrAuditLoss)
 }
