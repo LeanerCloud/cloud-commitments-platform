@@ -62,6 +62,10 @@ type MockConfigStore struct {
 	PinExecutionFanOutShapeFn           func(ctx context.Context, lineageKey, shape string) (string, error)
 	GetExecutionFanOutShapeFn           func(ctx context.Context, lineageKey string) (string, error)
 	GetUserEmailByIDFn                  func(ctx context.Context, userID string) (string, error)
+	// NameTakenFixture, when set, stands in for an existing plan of the same
+	// name: CreatePurchasePlanWithAccounts passes its Accounts to the visible
+	// predicate and refuses with a PlanNameTakenError when it reports true.
+	NameTakenFixture *PlanNameFixture
 	mock.Mock
 	// callLog records every invocation, including the ones served from a
 	// default without reaching mock.Called. See assertions.go.
@@ -219,6 +223,28 @@ func (m *MockConfigStore) CreatePurchasePlan(ctx context.Context, plan *config.P
 	m.record("CreatePurchasePlan", ctx, plan)
 	args := m.Called(ctx, plan)
 	return args.Error(0)
+}
+
+// PlanNameFixture describes an existing plan for NameTakenFixture.
+type PlanNameFixture struct {
+	ID       string
+	Name     string
+	Accounts []config.CloudAccount
+}
+
+// CreatePurchasePlanWithAccounts mocks the operation. It calls visible with
+// NameTakenFixture's accounts, so a handler test fails if the predicate is
+// wrong. With the fixture unset or invisible it uses a registered expectation
+// (arguments: ctx, plan, accountIDs, the predicate) and otherwise returns nil.
+func (m *MockConfigStore) CreatePurchasePlanWithAccounts(ctx context.Context, plan *config.PurchasePlan, accountIDs []string, visible func(accounts []config.CloudAccount) bool) error {
+	m.record("CreatePurchasePlanWithAccounts", ctx, plan, accountIDs)
+	if f := m.NameTakenFixture; f != nil && visible(f.Accounts) {
+		return &config.PlanNameTakenError{ExistingID: f.ID, ExistingName: f.Name}
+	}
+	if !isExpected(&m.Mock, "CreatePurchasePlanWithAccounts") {
+		return nil
+	}
+	return m.Called(ctx, plan, accountIDs, visible).Error(0)
 }
 
 // GetPurchasePlan mocks the GetPurchasePlan operation. When GetPurchasePlanFn is

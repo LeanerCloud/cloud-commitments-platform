@@ -118,3 +118,26 @@ var ErrRampStepAlreadyCounted = errors.New("ramp step already counted")
 // claimAndRedrive) must propagate this sentinel so the sweep surfaces the
 // persistence failure rather than silently dropping the stranded row.
 var ErrAuditLoss = errors.New("audit loss: execution persistence failed after purchase")
+
+// ErrPlanNameTaken is returned (as *PlanNameTakenError) by
+// CreatePurchasePlanWithAccounts when a plan the caller can see already has
+// the same name (issue #1734).
+var ErrPlanNameTaken = errors.New("a plan with this name already exists")
+
+// PlanNameTakenError names the plan that blocked a create. ExistingName is the
+// stored name, which may differ from the requested one in case or surrounding
+// spaces, so a caller can show the plan it would open.
+type PlanNameTakenError struct {
+	ExistingID   string
+	ExistingName string
+}
+
+func (e *PlanNameTakenError) Error() string {
+	return fmt.Sprintf("%s: %q (%s)", ErrPlanNameTaken, e.ExistingName, e.ExistingID)
+}
+
+func (e *PlanNameTakenError) Unwrap() error { return ErrPlanNameTaken }
+
+// ErrPlanProviderMismatch is returned (wrapped) when an account attached to a
+// plan belongs to a provider the plan's services do not use.
+var ErrPlanProviderMismatch = errors.New("plan provider mismatch")
