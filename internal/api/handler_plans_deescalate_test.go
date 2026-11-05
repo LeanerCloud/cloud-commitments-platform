@@ -28,9 +28,27 @@ func TestPatchPlan_StoppingABoundPlanSkipsGroupChecks(t *testing.T) {
 		require.NoError(t, err, body)
 		assert.True(t, apgCalled(store, "UpdatePurchasePlan"), body)
 	}
-	// Any other write still runs every check.
-	store, err := boundPatch(t, conflictedBoundPlan(), `{"name":"renamed"}`)
+	// A PATCH that turns anything on is not a stop, even if it also disarms:
+	// re-enabling a disabled conflicted plan must run the group checks
+	// (ui-fix-1's repro on #1774).
+	disabled := conflictedBoundPlan()
+	disabled.Enabled = false
+	store, err := boundPatch(t, disabled, `{"enabled":true,"auto_purchase":false}`)
 	ce, ok := IsClientError(err)
+	require.True(t, ok, "must be a client error: %v", err)
+	assert.Equal(t, 400, ce.code)
+	assert.False(t, apgCalled(store, "UpdatePurchasePlan"))
+
+	// Arming while disabling isn't a stop either.
+	store, err = boundPatch(t, conflictedBoundPlan(), `{"enabled":false,"auto_purchase":true}`)
+	ce, ok = IsClientError(err)
+	require.True(t, ok, "must be a client error: %v", err)
+	assert.Equal(t, 400, ce.code)
+	assert.False(t, apgCalled(store, "UpdatePurchasePlan"))
+
+	// Any other write still runs every check.
+	store, err = boundPatch(t, conflictedBoundPlan(), `{"name":"renamed"}`)
+	ce, ok = IsClientError(err)
 	require.True(t, ok, "must be a client error: %v", err)
 	assert.Equal(t, 400, ce.code)
 	assert.False(t, apgCalled(store, "UpdatePurchasePlan"))

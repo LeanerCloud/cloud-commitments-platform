@@ -874,11 +874,14 @@ type PatchPlanRequest struct {
 	NotificationDaysBefore *int    `json:"notification_days_before,omitempty"`
 }
 
-// patchDeescalates reports whether a PATCH disables or disarms the plan. Such a
-// write skips the bound-group checks (ValidateDeescalation), so a plan can
-// always be stopped.
+// patchDeescalates reports whether a PATCH only stops the plan: it disables or
+// disarms it and turns nothing on. Such a write skips the bound-group checks
+// (ValidateDeescalation), so a plan can always be stopped; a PATCH that also
+// enables or arms the plan runs every check.
 func patchDeescalates(req PatchPlanRequest) bool {
-	return (req.Enabled != nil && !*req.Enabled) || (req.AutoPurchase != nil && !*req.AutoPurchase)
+	off := func(b *bool) bool { return b != nil && !*b }
+	on := func(b *bool) bool { return b != nil && *b }
+	return (off(req.Enabled) || off(req.AutoPurchase)) && !on(req.Enabled) && !on(req.AutoPurchase)
 }
 
 func validatePatchedPlan(plan *config.PurchasePlan, req PatchPlanRequest) error {
