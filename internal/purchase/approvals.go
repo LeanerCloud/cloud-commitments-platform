@@ -34,20 +34,19 @@ const runNowSkipReason = "run-now"
 const directExecuteSkipReason = "direct-execute permission"
 
 // ApproveExecution is the token-authenticated approve entry point used by
-// the legacy email-link flow and the SQS approve worker. After validating
+// the legacy email-link flow. After validating
 // the approval token it hands off to the ApproveAndExecute funnel
 // (transitionApproveAndExecute), which performs the atomic status transition
 // with the token pinned inside it, runs the AWS purchase synchronously, and
 // mints the fresh revocation token returned here.
 //
 // actor carries the email of the operator who triggered the approval
-// (session-authed click on the HTTP path; verified actor_email on the SQS
-// path) so it can be stamped onto ApprovedBy. Empty actor is recorded as
+// (the session-authed click on the HTTP path) so it can be stamped onto ApprovedBy. Empty actor is recorded as
 // NULL — the column is nullable TEXT and we don't want to claim "approved
 // by nobody".
 //
 // check is the caller's ClaimedRowCheck, run against the claimed row before
-// any provider call (issue #415); the SQS approve worker passes nil.
+// any provider call (issue #415); the token path passes nil.
 //
 // Returns the same row and token as ApproveAndExecute (issue #532): the row
 // carries the run's final status, also on an execution error, and is nil when
@@ -84,7 +83,7 @@ func (m *Manager) ApproveExecution(ctx context.Context, executionID, token, acto
 		return nil, "", checkErr
 	}
 
-	// Token/SQS path: no authenticated session UUID is available, so the
+	// Token path: no authenticated session UUID is available, so the
 	// transition is recorded as system-initiated (transitioned_by = NULL).
 	// The token check above read a snapshot; the claim pins the same token
 	// inside its status CAS so a re-notification that rotated it since cannot
@@ -186,16 +185,14 @@ func OrphanExecutionError(execution *config.PurchaseExecution) error {
 //
 //   - approvePurchaseViaSession (session-authed dashboard approve)
 //   - directExecutePurchase (execute_mode="direct" -- issue #289)
-//   - ApproveExecution (email-token deep-link approve AND the SQS async
-//     approve worker, both of which funnel into ApproveAndExecute)
+//   - ApproveExecution (email-token deep-link approve, which funnels into
+//     ApproveAndExecute)
 //
 // Adversarial review of PR #1500 found that requireDifferentApprover in
 // internal/api was wired into only 2 of these 4 entry points, leaving
 // execute_mode="direct" (HIGH: the requester always equals the creator on
-// this path, so this is unconditional self-authorization) and the SQS
-// approve worker (MEDIUM: token + actor_email verification never compared
-// the actor against the creator) able to bypass dual control entirely. This
-// method closes both gaps by running at the one place all four paths share.
+// this path, so this is unconditional self-authorization) able to bypass
+// dual control entirely. This method closes that gap by running at the one place all four paths share.
 //
 // Identity comparison has two tiers, checked in order of precision:
 //
@@ -214,11 +211,10 @@ func OrphanExecutionError(execution *config.PurchaseExecution) error {
 //     email domain entirely for these two callers and cannot be fooled by an
 //     empty or substituted email string.
 //  2. actorEmail: used only when actorUserID is nil -- the token
-//     (approveViaToken) and SQS (handleApproveMessage) callers into
-//     ApproveExecution, which always pass transitionedBy=nil (see
-//     ApproveExecution's own doc comment), so the RBAC/contact-email-
-//     verified actor identity from authorizeApprovalAction /
-//     verifyAsyncApprovalActor is the only signal available there.
+//     (approveViaToken) caller into ApproveExecution, which always passes
+//     transitionedBy=nil (see ApproveExecution's own doc comment), so the
+//     RBAC/contact-email-verified actor identity from
+//     authorizeApprovalAction is the only signal available there.
 //     execution.CreatedByUserID is a UUID; internal/purchase cannot resolve
 //     it through internal/auth directly (internal/auth already imports
 //     internal/config, so the reverse import would cycle), so
@@ -299,7 +295,7 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 		return nil
 	}
 
-	// Tier 2: no actor UUID available (token/SQS callers) -- fall back to
+	// Tier 2: no actor UUID available (token callers) -- fall back to
 	// resolving and comparing emails.
 	actorEmail = strings.TrimSpace(actorEmail)
 	if actorEmail == "" {
@@ -331,7 +327,7 @@ func (m *Manager) checkDifferentApprover(ctx context.Context, executionID string
 // synchronously. Callers MUST have already authorized the actor — this
 // method does no RBAC or token validation; it is shared between:
 //
-//   - ApproveExecution (token/SQS path: token validated by the caller and
+//   - ApproveExecution (token path: token validated by the caller and
 //     pinned inside the CAS; it calls transitionApproveAndExecute directly)
 //   - approvePurchaseViaSession (session path: RBAC validated by the caller)
 //   - directExecutePurchase (execute_mode="direct": RBAC validated by the caller)
@@ -370,7 +366,7 @@ func (m *Manager) DirectExecute(ctx context.Context, executionID, actor string, 
 // was told it ran.
 //
 // Sharing transitionApproveAndExecute's CAS with ApproveAndExecute and
-// claimAndExecute is also what makes this idempotent: a second "Run now"
+// claimAndExecuteWithin is also what makes this idempotent: a second "Run now"
 // click, or the scheduler racing the same pending row, loses the atomic
 // UPDATE ... WHERE status IN (...) and gets a clean "cannot transition"
 // error rather than executing the purchase a second time.
@@ -417,7 +413,7 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 
 	// Universal 4-eyes gate (issue #1005 / PR #1500 adversarial review): runs
 	// before any state mutation so every caller -- session approve, direct
-	// execute, run-now, token approve, SQS approve -- is covered by one
+	// execute, run-now, token approve -- is covered by one
 	// policy check. transitionedBy doubles as the actor's own UUID for this
 	// check when the caller has one (session-based callers); see
 	// enforceFourEyesPolicy's doc comment for the full rationale.
@@ -427,11 +423,11 @@ func (m *Manager) transitionApproveAndExecute(ctx context.Context, executionID, 
 	}
 
 	// transitionedBy carries the session user's UUID for human-initiated
-	// approvals (stamped onto transitioned_by); it is nil for token/SQS/system
+	// approvals (stamped onto transitioned_by); it is nil for token/system
 	// flows so transitioned_by = NULL on those hops. The human-readable actor
 	// email is recorded separately onto approved_by (below).
 	// One CAS straight to "running": winning it is the claim, so no other
-	// executor (SQS, cron, re-drive, scheduler) can run this row, and there is
+	// executor (cron, re-drive, scheduler) can run this row, and there is
 	// no window where the row sits "approved" with a stale copy in flight
 	// (issue #829). A lost CAS surfaces ErrExecutionNotInExpectedStatus.
 	updated, err := m.claimAndCheck(ctx, executionID, fromStatuses, transitionedBy, approvalToken, check, t0)
@@ -504,8 +500,7 @@ func (m *Manager) runClaimedAndMint(ctx context.Context, updated *config.Purchas
 
 // CancelExecution cancels a pending execution. actor carries the email of
 // the session-authenticated user who clicked cancel; verified by the
-// caller (HTTP path: authorizeApprovalAction; SQS path:
-// verifyAsyncApprovalActor) before reaching here. Same empty-actor
+// caller (HTTP path: authorizeApprovalAction) before reaching here. Same empty-actor
 // rationale as ApproveExecution.
 //
 // Concurrency: CancelExecutionAtomicTokenPinned uses a conditional UPDATE

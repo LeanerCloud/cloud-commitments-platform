@@ -104,7 +104,7 @@ func TestNoSubmission_NonFailedWriteClearsProof(t *testing.T) {
 
 // Replays the approve-path sequence at the store level (approvals.go:392-421):
 // the approve path keeps a stale copy of the approved row; a concurrent
-// claimAndExecute fails the row before submission (proof true); the approve
+// claimAndExecuteWithin fails the row before submission (proof true); the approve
 // path's audit upsert puts the row back to approved; the approve path then
 // calls the provider and the row ends failed with outcome unknown (flag
 // false). The proof must not survive on a row that reached the provider.
@@ -114,7 +114,7 @@ func TestNoSubmission_StaleApproveUpsertDoesNotKeepProofOnSubmittedRow(t *testin
 	exec := newNoSubmissionExec(ctx, t, store, "approved")
 	staleApproved := *exec
 
-	exec.Status = "failed" // claimAndExecute: refused before submission
+	exec.Status = "failed" // claimAndExecuteWithin: refused before submission
 	exec.NoSubmission = true
 	require.NoError(t, store.SavePurchaseExecution(ctx, exec))
 

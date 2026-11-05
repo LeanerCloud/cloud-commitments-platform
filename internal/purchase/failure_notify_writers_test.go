@@ -107,7 +107,7 @@ func TestNotifyRootFailure_FanOutRootLogsMarkerWithoutEmail(t *testing.T) {
 	})
 }
 
-// fanOutRun drives a two-account plan through the SQS executor. Account
+// fanOutRun drives a two-account plan through the scheduled sweep. Account
 // "acct-ok" buys; the other account's behavior is set by the caller through the
 // credential store and the save hook. It returns the root's saved status and
 // every purchase-failed email.

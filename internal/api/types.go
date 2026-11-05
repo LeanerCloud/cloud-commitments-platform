@@ -141,7 +141,7 @@ type BreakdownValue struct {
 //
 // `transitionedBy` (ApproveAndExecute) is the session user's UUID stamped
 // onto purchase_executions.transitioned_by for human-initiated approvals;
-// pass nil for token/SQS/system flows so transitioned_by = NULL (issue #1009).
+// pass nil for token/system flows so transitioned_by = NULL (issue #1009).
 //
 // ApproveExecution, ApproveAndExecute and RunPlannedPurchaseNow return the
 // raw revocation token minted on a successful execute (issue #103: only its

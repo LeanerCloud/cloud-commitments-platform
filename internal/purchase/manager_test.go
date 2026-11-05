@@ -208,7 +208,7 @@ func TestManager_ProcessScheduledPurchases_DuePurchase(t *testing.T) {
 		},
 	}
 
-	// claimAndExecute CASes the due row to "running" before executing (issue #1013).
+	// claimAndExecuteWithin CASes the due row to "running" before executing (issue #1013).
 	claimedExec := executions[0]
 	claimedExec.Status = "running"
 	mockStore.On("GetStaleApprovedExecutions", ctx, mock.Anything).Return([]config.PurchaseExecution{}, nil)

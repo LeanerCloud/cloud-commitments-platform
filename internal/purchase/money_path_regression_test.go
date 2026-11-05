@@ -301,13 +301,13 @@ func TestMultiAccountSeedsStablePerAccountKey(t *testing.T) {
 
 // TestScheduledSweepOverlapDoesNotDoubleExecute is the issue #1013 (C2) regression
 // guard: overlapping scheduled sweeps must NOT execute the same row a
-// second time. The first delivery wins the CAS to "running"; the redelivery
-// loses the CAS (the row is no longer in an executable state) and is acked
-// without touching the cloud.
+// second time. The first sweep wins the CAS to "running"; the second loses the
+// CAS (the row is no longer in an executable state) and skips without touching
+// the cloud.
 //
-// Pre-fix, handleExecutePurchase only checked status in (approved,pending) with
-// no atomic transition, so both deliveries would execute. This test asserts the
-// purchase runs exactly once and the second delivery is a benign no-op.
+// Pre-fix, the executor only checked status in (approved,pending) with no
+// atomic transition, so both sweeps would execute. This test asserts the
+// purchase runs exactly once and the second sweep is a benign no-op.
 func TestScheduledSweepOverlapDoesNotDoubleExecute(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
@@ -334,9 +334,8 @@ func TestScheduledSweepOverlapDoesNotDoubleExecute(t *testing.T) {
 		}
 	}
 
-	// Both deliveries read the row as "pending" from the DB (at-least-once SQS:
-	// pre-fix nothing CASes it to running before the cloud call, so a redelivery
-	// re-reads a still-claimable row). Each GetExecutionByID returns a FRESH
+	// Both deliveries read the row as "pending" from the DB (pre-fix nothing CASes it to running
+	// before the cloud call, so an overlapping sweep re-reads a still-claimable row). Each GetExecutionByID returns a FRESH
 	// pending copy, faithfully modeling the real double-delivery scenario.
 	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil).Once()
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(autoPurchaseOnCfg(), nil).Maybe()
@@ -391,8 +390,8 @@ func TestScheduledSweepOverlapDoesNotDoubleExecute(t *testing.T) {
 
 // TestMultiAccountPartialSuccessIsAcked is the issue #1014 regression guard: a
 // multi-account run where at least one account committed must NOT surface as a
-// flat failure to the SQS handler (which would trigger redelivery and a
-// double-buy). The handler must return nil (ack) when committed >= 1.
+// flat failure to the sweep (which would retry and double-buy). The sweep
+// must count it Executed when committed >= 1.
 func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
@@ -487,10 +486,10 @@ func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 // place where it returns committed==true together with an error -- the cloud
 // purchase succeeded but the per-account SavePurchaseExecution call failed
 // (execution.go:269-270, "AUDIT LOSS: failed to save execution record"). That
-// return value is what stops the SQS message from being redelivered and the
+// return value is what stops the row from being retried and the
 // commitment from being bought twice: executeMultiAccount folds a committed
 // account with an error into *multiAccountPartialError, which
-// handleExecutePurchase acks rather than surfacing as a flat failure.
+// the sweep counts as executed rather than surfacing as a flat failure.
 //
 // acct-bad deliberately fails credential resolution (committed=false, like
 // TestMultiAccountPartialSuccessIsAcked's acct-bad) so acct-unsaved is the
@@ -498,8 +497,8 @@ func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 // the AUDIT LOSS return to "return false, ..." (reading it as "we failed,
 // report failure"), committed would drop to 0 across both accounts and the
 // aggregator would return errAllAccountsFailed instead of
-// *multiAccountPartialError, which handleExecutePurchase does NOT ack --
-// this test would then fail on require.NoError. Every other
+// *multiAccountPartialError, which the sweep does NOT count as executed --
+// this test would then fail on the Executed assertion. Every other
 // SavePurchaseExecutionFn stub in this package returns nil on a committed
 // account, and the only stub that errors (execution_test.go:923) drives the
 // credential-failure AUDIT LOSS site at execution.go:300, not this one.

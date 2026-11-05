@@ -206,8 +206,8 @@ func anyRecPurchased(recs []config.RecommendationRecord) bool {
 // failed (issue #1014). It is the multi-account analog of partialPurchaseError:
 // the executor entry points must NOT treat this as a flat failure — the
 // per-account rows already own their authoritative status (partially_completed /
-// completed / failed) and real commitments exist, so an SQS/cron caller must ACK
-// the message (not redeliver) to avoid re-running the fan-out and double-buying
+// completed / failed) and real commitments exist, so the cron sweep must count it as
+// executed (not retry it) to avoid re-running the fan-out and double-buying
 // the accounts that already succeeded (which #1012's stable key would otherwise
 // dedupe, but the contract should not depend on that second line of defense).
 type multiAccountPartialError struct {

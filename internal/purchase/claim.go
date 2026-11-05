@@ -27,12 +27,12 @@ var ErrClaimedRowRefused = errors.New("purchase refused after claim: the claimed
 // earlier check ran on a snapshot read before the CAS, so a repricing or a
 // recommendation attach landing in between would otherwise be bought
 // unchecked (issue #415). A nil check skips the re-check; only callers with
-// no pre-CAS Constraints check (the SQS approve worker) pass nil.
+// no pre-CAS Constraints check (the token approve) pass nil.
 type ClaimedRowCheck func(ctx context.Context, claimed *config.PurchaseExecution) error
 
 // claimRunning is the single claim primitive: an atomic CAS from one of from
 // to "running". Winning it is the right to call the provider; every executor
-// (approve, scheduler, SQS, cron, re-drive) claims before any provider call.
+// (approve, scheduler, cron, re-drive) claims before any provider call.
 // A lost CAS returns an error satisfying
 // errors.Is(err, config.ErrExecutionNotInExpectedStatus) or config.ErrNotFound.
 // actor is the transitioned_by user UUID, nil for system-initiated claims.
@@ -41,7 +41,7 @@ func (m *Manager) claimRunning(ctx context.Context, executionID string, from []s
 }
 
 // claimRunningForApprove is claimRunning for transitionApproveAndExecute. A
-// non-empty approvalToken (the email-link and SQS token approve) is pinned in
+// non-empty approvalToken (the email-link token approve) is pinned in
 // the same UPDATE as the claim: the row's stored token hash must still match
 // it and be unexpired, so a re-notification that rotated the token after
 // ApproveExecution validated its snapshot refuses the claim with
