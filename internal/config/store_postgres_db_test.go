@@ -80,7 +80,7 @@ func TestPostgresStoreDB_GlobalConfig(t *testing.T) {
 		assert.NotNil(t, cfg)
 		assert.True(t, cfg.ApprovalRequired)
 		assert.Equal(t, 3, cfg.DefaultTerm)
-		assert.Equal(t, "all-upfront", cfg.DefaultPayment)
+		assert.Equal(t, "no-upfront", cfg.DefaultPayment)
 		assert.Equal(t, 80.0, cfg.DefaultCoverage)
 		assert.Equal(t, "immediate", cfg.DefaultRampSchedule)
 	})
