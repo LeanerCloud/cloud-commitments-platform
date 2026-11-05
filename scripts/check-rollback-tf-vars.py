@@ -37,6 +37,14 @@ EXCEPTIONS = {
     "TF_VAR_lambda_deployed_function_url": VALUE,
 }
 
+# Deploys name the environment TARGET_ENVIRONMENT (a prepare-job output) and
+# rollbacks name it ENVIRONMENT (inputs.environment); both are the environment
+# being deployed. Their definitions legitimately differ, so -var-file text is
+# aliased to one name and that name's definitions are not compared.
+ENV_ALIASES = {"TARGET_ENVIRONMENT": "ENVIRONMENT"}
+ALIASED_NAMES = set(ENV_ALIASES.values())
+
+VAR_FILE = re.compile(r"""-var-file(?:=|\s+)(?:"([^"]*)"|'([^']*)'|(\S+))""")
 VAR_FLAG = re.compile(
     r"""-var(?:=|\s+)(?:"([^"=]+)=([^"]*)"|'([^'=]+)=([^']*)'|([^\s"'=]+)=(\S*))"""
 )
@@ -74,7 +82,7 @@ def find_step(doc, jobs, needle, where):
 
 def collect(doc, jname, step):
     """Return ({key: value-or-None}, {env name: definition}) for one step."""
-    pairs = {}
+    pairs, files = {}, []
     for k, v in (step.get("env") or {}).items():
         if str(k).startswith("TF_VAR_"):
             pairs[str(k)] = str(v)
@@ -82,9 +90,16 @@ def collect(doc, jname, step):
         for m in VAR_FLAG.finditer(line):
             g = [x for x in m.groups() if x is not None]
             pairs[f"-var {g[0]}"] = g[1]
+        for m in VAR_FILE.finditer(line):
+            text = next(x for x in m.groups() if x is not None)
+            for old, new in ENV_ALIASES.items():
+                text = text.replace("${%s}" % old, "${%s}" % new).replace("$" + old, "$" + new)
+            files.append(text)
         m = EXPORT.match(line)
         if m:
             pairs.setdefault(m.group(1), "<shell export>")
+    if files:
+        pairs["-var-file"] = ",".join(sorted(files))
     defs = {}
     for scope in (doc.get("env"), doc["jobs"][jname].get("env"), step.get("env")):
         for k, v in (scope or {}).items():
@@ -110,6 +125,8 @@ def compare(job, deploy_file, r, d):
         if key not in dp or key in EXCEPTIONS:
             continue
         for ref in sorted(set(ENV_REF.findall(rval))):
+            if key == "-var-file" and ref in ALIASED_NAMES:
+                continue
             if rdefs.get(ref) != ddefs.get(ref):
                 errs.append(f"{job} vs {deploy_file}: env {ref} (used by {key}): value differs")
     return errs
@@ -124,6 +141,11 @@ def check_pair(wdir, rollback_doc, job, deploy_file):
     djob, dstep = find_step(deploy_doc, list(deploy_doc["jobs"]), "terraform plan", deploy_file)
     r = collect(rollback_doc, job, rstep)
     d = collect(deploy_doc, djob, dstep)
+    for side, pairs in (("rollback", r[0]), ("deploy", d[0])):
+        if "-var-file" not in pairs:
+            raise CheckError(f"{job} vs {deploy_file}: {side} passes no -var-file")
+    if "-var image_uri" not in r[0]:
+        raise CheckError(f"{job}: rollback does not pass -var image_uri")
     if not r[0] or not d[0]:
         raise CheckError(f"{job} vs {deploy_file}: extracted no variables from one side")
     return compare(job, deploy_file, r, d)

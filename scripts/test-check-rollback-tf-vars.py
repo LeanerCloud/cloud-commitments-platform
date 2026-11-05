@@ -61,7 +61,28 @@ def probe_no_job(rb):
     rb["jobs"]["rollback-gcp-renamed"] = rb["jobs"].pop("rollback-gcp")
 
 
+def strip_lines(job, needle):
+    def probe(rb):
+        s = apply_step(rb, job)
+        s["run"] = "\n".join(l for l in s["run"].splitlines() if needle not in l)
+    return probe
+
+
+def probe_varfile_hardcoded(rb):
+    s = apply_step(rb, "rollback-aws-lambda")
+    s["run"] = s["run"].replace('github-${ENVIRONMENT}.tfvars', "github-prod.tfvars")
+
+
+def probe_varfile_template(rb):
+    s = apply_step(rb, "rollback-gcp")
+    s["run"] = s["run"].replace('github-${ENVIRONMENT}.tfvars', "${ENVIRONMENT}.tfvars")
+
+
 MUTATIONS = {
+    "-var-file dropped": strip_lines("rollback-aws-fargate", "-var-file"),
+    "-var-file hardcoded to prod": probe_varfile_hardcoded,
+    "-var-file template changed": probe_varfile_template,
+    "image_uri removed": strip_lines("rollback-azure", "image_uri"),
     "TF_VAR_ source secrets. -> vars.": probe_source,
     "rollback-only TF_VAR_extra": probe_extra,
     "deploy var only in a comment": probe_comment,
