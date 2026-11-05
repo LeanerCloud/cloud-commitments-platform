@@ -93,9 +93,9 @@ func TestRedshiftDispatchGate_ConflictRollsBackStamp(t *testing.T) {
 	open := f.redshiftRow(ctx, t, "running")
 	_, err := f.pool.Exec(ctx, `UPDATE purchase_executions SET first_dispatch_at = now() WHERE execution_id = $1`, open.ExecutionID)
 	require.NoError(t, err)
-	refused := f.redshiftRow(ctx, t, "approved")
+	refused := f.redshiftRow(ctx, t, "notified")
 
-	claimed, _ := f.mgr.claimAndExecute(ctx, rowStatusCopy(refused))
+	claimed, _ := f.mgr.claimAndExecuteWithin(ctx, rowStatusCopy(refused), 0)
 	require.True(t, claimed)
 
 	assert.Zero(t, f.bought.Load(), "a refused lineage never reaches the provider")
@@ -113,7 +113,7 @@ func TestRedshiftDispatchGate_TwoLineagesRaceOnlyOneBuys(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	f := newRedshiftGateFixture(ctx, t)
-	f.raceOnlyOneBuys(ctx, t, f.redshiftRow(ctx, t, "approved"), f.redshiftRow(ctx, t, "approved"))
+	f.raceOnlyOneBuys(ctx, t, f.redshiftRow(ctx, t, "notified"), f.redshiftRow(ctx, t, "notified"))
 }
 
 // A root row (key R) and a per-account successor (key R:acct) share one
@@ -124,8 +124,8 @@ func TestRedshiftDispatchGate_RootAndAccountSuccessorsOfOneFamilyDoNotBothBuy(t 
 	f := newRedshiftGateFixture(ctx, t)
 	family := uuid.New().String()
 	f.raceOnlyOneBuys(ctx, t,
-		f.redshiftRowKeyed(ctx, t, "approved", family, true),
-		f.redshiftRowKeyed(ctx, t, "approved", family+":"+f.accounts[0].ID, false))
+		f.redshiftRowKeyed(ctx, t, "notified", family, true),
+		f.redshiftRowKeyed(ctx, t, "notified", family+":"+f.accounts[0].ID, false))
 }
 
 func (f *redshiftGateFixture) raceOnlyOneBuys(ctx context.Context, t *testing.T, rows ...*config.PurchaseExecution) {
@@ -158,7 +158,7 @@ func (f *redshiftGateFixture) raceOnlyOneBuys(ctx context.Context, t *testing.T,
 		go func() {
 			defer wg.Done()
 			<-start
-			_, _ = f.mgr.claimAndExecute(ctx, rowStatusCopy(row))
+			_, _ = f.mgr.claimAndExecuteWithin(ctx, rowStatusCopy(row), 0)
 		}()
 	}
 	close(start)
