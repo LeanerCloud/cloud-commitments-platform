@@ -193,6 +193,11 @@ func TestIsDefiniteAWSRefusal(t *testing.T) {
 		{"mixed recs", []string{"aws", "gcp"}, ec2("403", "AccessDenied"), false},
 		{"server note", []string{"aws"}, "history_write_failed: commitment c purchased but its history record failed to save", false},
 		{"unknown outcome wrapper", []string{"aws"}, "purchase outcome unknown: the request may have been sent; reconcile before retrying: " + ec2("400", "Throttling"), false},
+		{"partial prefix", []string{"aws"}, partialRunPrefix + "a: " + ec2("403", "AccessDenied"), true},
+		{"one unknown segment", []string{"aws", "aws"}, "a: " + ec2("403", "AccessDenied") + "; b: purchase outcome unknown", false},
+		{"semicolon in message", []string{"aws"}, ec2("400", "InvalidParameterValue") + "; reserved elsewhere", false},
+		{"no recs", nil, ec2("403", "AccessDenied"), false},
+		{"empty", []string{"aws"}, "", false},
 	}
 	// Token-carrying services keep the SDK retries, so neither a single-attempt
 	// looking 4xx nor a retry-exhausted one proves nothing was bought.
