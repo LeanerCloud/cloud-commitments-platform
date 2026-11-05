@@ -2188,6 +2188,18 @@ describe('Override modal Inherit labels (issue #112)', () => {
     expect(covInput.placeholder).toBe('Inherit (currently: 80%)');
   });
 
+  test('before the config loads, the payment inherit label shows No Upfront (issue #1758)', () => {
+    buildOverrideModalDOM();
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fresh = require('../settings') as typeof import('../settings');
+      fresh.openOverrideModal('acc-1', 'aws', [], document.createElement('div'));
+    });
+
+    const payInherit = document.querySelector<HTMLOptionElement>('#override-payment option[value=""]');
+    expect(payInherit?.textContent).toBe('Inherit (currently: No Upfront)');
+  });
+
   test('inherit labels update when globals differ from defaults (1yr / no-upfront / 70%)', () => {
     buildOverrideModalDOM();
     setGlobalDefaultsForTest({ term: 1, payment: 'no-upfront', coverage: 70 });

@@ -4078,8 +4078,8 @@ describe('Issue #111: per-bucket Payment seed from per-account service override'
     const buckets = getFanOutBuckets();
     expect(buckets).not.toBeNull();
     for (const b of buckets!) {
-      // Toolbar default is 'all-upfront' (loadBulkPurchaseState's
-      // defaultBulkPurchaseState).
+      // The rec's own payment seeds the bucket (the toolbar default only
+      // applies when a rec has none).
       expect(b.payment).toBe('all-upfront');
       expect(b.paymentSource).toBe('toolbar');
     }

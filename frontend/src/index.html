@@ -575,9 +575,9 @@
                             </div>
                             <div class="setting-input">
                                 <select id="setting-default-payment">
-                                    <option value="no-upfront">No Upfront</option>
+                                    <option value="no-upfront" selected>No Upfront</option>
                                     <option value="partial-upfront">Partial Upfront</option>
-                                    <option value="all-upfront" selected>All Upfront</option>
+                                    <option value="all-upfront">All Upfront</option>
                                 </select>
                             </div>
                         </div>
@@ -686,33 +686,33 @@
                             <div class="service-default-card">
                                 <h5>EC2 Reserved Instances</h5>
                                 <label>Term: <select id="aws-ec2-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="aws-ec2-payment"><option value="no-upfront">No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront" selected>All Upfront</option></select></label>
+                                <label>Payment: <select id="aws-ec2-payment"><option value="no-upfront" selected>No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront">All Upfront</option></select></label>
                             </div>
                             <div class="service-default-card">
                                 <h5>RDS Reserved Instances</h5>
                                 <label>Term: <select id="aws-rds-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="aws-rds-payment"><option value="no-upfront">No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront" selected>All Upfront</option></select></label>
+                                <label>Payment: <select id="aws-rds-payment"><option value="no-upfront" selected>No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront">All Upfront</option></select></label>
                             </div>
                             <div class="service-default-card">
                                 <h5>ElastiCache Reserved Nodes</h5>
                                 <label>Term: <select id="aws-elasticache-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="aws-elasticache-payment"><option value="no-upfront">No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront" selected>All Upfront</option></select></label>
+                                <label>Payment: <select id="aws-elasticache-payment"><option value="no-upfront" selected>No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront">All Upfront</option></select></label>
                             </div>
                             <div class="service-default-card">
                                 <h5>OpenSearch Reserved Instances</h5>
                                 <label>Term: <select id="aws-opensearch-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="aws-opensearch-payment"><option value="no-upfront">No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront" selected>All Upfront</option></select></label>
+                                <label>Payment: <select id="aws-opensearch-payment"><option value="no-upfront" selected>No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront">All Upfront</option></select></label>
                             </div>
                             <div class="service-default-card">
                                 <h5>Redshift Reserved Nodes</h5>
                                 <label>Term: <select id="aws-redshift-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="aws-redshift-payment"><option value="no-upfront">No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront" selected>All Upfront</option></select></label>
+                                <label>Payment: <select id="aws-redshift-payment"><option value="no-upfront" selected>No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront">All Upfront</option></select></label>
                             </div>
                             <div class="service-default-card">
                                 <h5>Compute Savings Plans</h5>
                                 <p class="service-default-hint">EC2, Fargate, Lambda — most flexible</p>
                                 <label>Term: <select id="aws-savings-plans-compute-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="aws-savings-plans-compute-payment"><option value="no-upfront">No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront" selected>All Upfront</option></select></label>
+                                <label>Payment: <select id="aws-savings-plans-compute-payment"><option value="no-upfront" selected>No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront">All Upfront</option></select></label>
                                 <label>Dashboard coverage %: <input type="number" id="aws-savings-plans-compute-coverage" min="0" max="100" value="80" inputmode="decimal" autocomplete="off"></label>
                                 <label class="toggle-label"><input type="checkbox" id="aws-savings-plans-compute-enabled" checked> Enabled</label>
                             </div>
@@ -720,7 +720,7 @@
                                 <h5>EC2 Instance Savings Plans</h5>
                                 <p class="service-default-hint">EC2 only, region-locked — deepest discount</p>
                                 <label>Term: <select id="aws-savings-plans-ec2instance-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="aws-savings-plans-ec2instance-payment"><option value="no-upfront">No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront" selected>All Upfront</option></select></label>
+                                <label>Payment: <select id="aws-savings-plans-ec2instance-payment"><option value="no-upfront" selected>No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront">All Upfront</option></select></label>
                                 <label>Dashboard coverage %: <input type="number" id="aws-savings-plans-ec2instance-coverage" min="0" max="100" value="80" inputmode="decimal" autocomplete="off"></label>
                                 <label class="toggle-label"><input type="checkbox" id="aws-savings-plans-ec2instance-enabled" checked> Enabled</label>
                             </div>
@@ -728,7 +728,7 @@
                                 <h5>SageMaker Savings Plans</h5>
                                 <p class="service-default-hint">SageMaker training/inference</p>
                                 <label>Term: <select id="aws-savings-plans-sagemaker-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="aws-savings-plans-sagemaker-payment"><option value="no-upfront">No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront" selected>All Upfront</option></select></label>
+                                <label>Payment: <select id="aws-savings-plans-sagemaker-payment"><option value="no-upfront" selected>No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront">All Upfront</option></select></label>
                                 <label>Dashboard coverage %: <input type="number" id="aws-savings-plans-sagemaker-coverage" min="0" max="100" value="80" inputmode="decimal" autocomplete="off"></label>
                                 <label class="toggle-label"><input type="checkbox" id="aws-savings-plans-sagemaker-enabled" checked> Enabled</label>
                             </div>
@@ -736,7 +736,7 @@
                                 <h5>Database Savings Plans</h5>
                                 <p class="service-default-hint">Reserved for future AWS Database Savings Plans (currently not GA; defaults stored for forward-compatibility)</p>
                                 <label>Term: <select id="aws-savings-plans-database-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="aws-savings-plans-database-payment"><option value="no-upfront">No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront" selected>All Upfront</option></select></label>
+                                <label>Payment: <select id="aws-savings-plans-database-payment"><option value="no-upfront" selected>No Upfront</option><option value="partial-upfront">Partial</option><option value="all-upfront">All Upfront</option></select></label>
                                 <label>Dashboard coverage %: <input type="number" id="aws-savings-plans-database-coverage" min="0" max="100" value="80" inputmode="decimal" autocomplete="off"></label>
                                 <label class="toggle-label"><input type="checkbox" id="aws-savings-plans-database-enabled" checked> Enabled</label>
                             </div>
@@ -755,27 +755,27 @@
                             <div class="service-default-card">
                                 <h5>Virtual Machine Reservations</h5>
                                 <label>Term: <select id="azure-vm-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="azure-vm-payment"><option value="upfront" selected>Upfront</option><option value="monthly">Monthly</option></select></label>
+                                <label>Payment: <select id="azure-vm-payment"><option value="upfront">Upfront</option><option value="monthly" selected>Monthly</option></select></label>
                             </div>
                             <div class="service-default-card">
                                 <h5>SQL Database Reservations</h5>
                                 <label>Term: <select id="azure-sql-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="azure-sql-payment"><option value="upfront" selected>Upfront</option><option value="monthly">Monthly</option></select></label>
+                                <label>Payment: <select id="azure-sql-payment"><option value="upfront">Upfront</option><option value="monthly" selected>Monthly</option></select></label>
                             </div>
                             <div class="service-default-card">
                                 <h5>CosmosDB Reservations</h5>
                                 <label>Term: <select id="azure-cosmosdb-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="azure-cosmosdb-payment"><option value="upfront" selected>Upfront</option><option value="monthly">Monthly</option></select></label>
+                                <label>Payment: <select id="azure-cosmosdb-payment"><option value="upfront">Upfront</option><option value="monthly" selected>Monthly</option></select></label>
                             </div>
                             <div class="service-default-card">
                                 <h5>Redis Cache Reservations</h5>
                                 <label>Term: <select id="azure-redis-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="azure-redis-payment"><option value="upfront" selected>Upfront</option><option value="monthly">Monthly</option></select></label>
+                                <label>Payment: <select id="azure-redis-payment"><option value="upfront">Upfront</option><option value="monthly" selected>Monthly</option></select></label>
                             </div>
                             <div class="service-default-card">
                                 <h5>Cognitive Search Reservations</h5>
                                 <label>Term: <select id="azure-search-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
-                                <label>Payment: <select id="azure-search-payment"><option value="upfront" selected>Upfront</option><option value="monthly">Monthly</option></select></label>
+                                <label>Payment: <select id="azure-search-payment"><option value="upfront">Upfront</option><option value="monthly" selected>Monthly</option></select></label>
                             </div>
                         </div>
                         </details>
