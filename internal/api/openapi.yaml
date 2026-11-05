@@ -4403,9 +4403,12 @@ paths:
       tags: [Accounts]
       summary: Create or replace an account's override for one service (admin only)
       description: >
-        Upserts the override for this account, provider and service. The
-        override is replaced as a whole: fields omitted from the body are
-        cleared and inherit the global service configuration.
+        Upserts the override for this account, provider and service. The body
+        is merged into the stored override: a field omitted from the body keeps
+        its stored value, a field sent as null is cleared and inherits the
+        global service configuration, and any other value replaces it. With no
+        stored override, only the fields sent are set. The AWS term and payment
+        combination is checked on the merged result.
       parameters:
         - $ref: '#/components/parameters/CSRFToken'
       requestBody:
@@ -8148,7 +8151,9 @@ components:
 
     AccountServiceOverrideRequest:
       type: object
-      description: Fields to override. Omitted fields inherit the global value.
+      description: >
+        Fields to override. Omitted fields keep their stored value (or inherit
+        the global value when nothing is stored); null clears a field.
       properties:
         enabled:
           type: boolean

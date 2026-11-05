@@ -79,6 +79,16 @@ type AccountServiceOverrideRequest struct {
 	ExcludeTypes   []string `json:"exclude_types,omitempty"`
 }
 
+// serviceOverrideOverlayKeys are the JSON keys of AccountServiceOverrideRequest.
+// A key present in the PUT body replaces the stored value (null clears it); an
+// absent key keeps it.
+var serviceOverrideOverlayKeys = []string{
+	"enabled", "term", "payment", "coverage", "ramp_schedule",
+	"include_engines", "exclude_engines",
+	"include_regions", "exclude_regions",
+	"include_types", "exclude_types",
+}
+
 // validCredentialTypes is the set of accepted credential type names.
 var validCredentialTypes = map[string]bool{
 	"aws_access_keys":              true,
@@ -1182,15 +1192,20 @@ func (h *Handler) saveAccountServiceOverride(ctx context.Context, httpReq *event
 		return nil, NewClientError(400, "invalid request body")
 	}
 
+	present, err := presentKeys(httpReq.Body, serviceOverrideOverlayKeys)
+	if err != nil {
+		return nil, err
+	}
+
 	now := time.Now()
 	existing, err := h.config.GetAccountServiceOverride(ctx, accountID, provider, service)
 	if err != nil {
 		return nil, fmt.Errorf("accounts: get existing override: %w", err)
 	}
 
-	override := buildServiceOverride(accountID, provider, service, req, existing, now)
+	override := buildServiceOverride(accountID, provider, service, req, existing, present, now)
 
-	// Defense-in-depth: reject invalid (term, payment) combos before persisting.
+	// Defense-in-depth: reject invalid (term, payment) combos on the merged row before persisting.
 	// checkCommitmentOptionCombo is permissive when commitmentOpts is nil or
 	// probe data is absent (ErrNoData) — the frontend's hardcoded rules are the
 	// primary gate in those cases.
@@ -1214,69 +1229,62 @@ func (h *Handler) saveAccountServiceOverride(ctx context.Context, httpReq *event
 	return override, nil
 }
 
-// buildServiceOverride constructs an AccountServiceOverride from request and existing data.
-func buildServiceOverride(accountID, provider, service string, req AccountServiceOverrideRequest, existing *config.AccountServiceOverride, now time.Time) *config.AccountServiceOverride {
-	override := &config.AccountServiceOverride{
-		AccountID: accountID,
-		Provider:  provider,
-		Service:   service,
-		UpdatedAt: now,
-	}
-
+// buildServiceOverride constructs an AccountServiceOverride by overlaying the
+// request onto the stored row (or an empty one). present names the request
+// keys the body carried: only those replace the stored value, so a one-field
+// PUT keeps the rest (#1775). A present key with a null value clears it.
+func buildServiceOverride(accountID, provider, service string, req AccountServiceOverrideRequest, existing *config.AccountServiceOverride, present map[string]bool, now time.Time) *config.AccountServiceOverride {
+	override := &config.AccountServiceOverride{}
 	if existing != nil {
-		override.ID = existing.ID
-		override.CreatedAt = existing.CreatedAt
+		*override = *existing
 	} else {
 		override.ID = uuid.New().String()
 		override.CreatedAt = now
 	}
+	override.AccountID, override.Provider, override.Service = accountID, provider, service
+	override.UpdatedAt = now
 
-	applyServiceOverrideFields(override, req)
+	overlayOverrideScalars(override, req, present)
+	overlayOverrideSlices(override, req, present)
 
 	return override
 }
 
-// applyServiceOverrideFields copies sparse request fields onto an override.
-func applyServiceOverrideFields(o *config.AccountServiceOverride, req AccountServiceOverrideRequest) {
-	applyOverrideScalars(o, req)
-	applyOverrideSlices(o, req)
-}
-
-func applyOverrideScalars(o *config.AccountServiceOverride, req AccountServiceOverrideRequest) {
-	if req.Enabled != nil {
+func overlayOverrideScalars(o *config.AccountServiceOverride, req AccountServiceOverrideRequest, present map[string]bool) {
+	if present["enabled"] {
 		o.Enabled = req.Enabled
 	}
-	if req.Term != nil {
+	if present["term"] {
 		o.Term = req.Term
 	}
-	if req.Payment != nil {
+	if present["payment"] {
 		o.Payment = req.Payment
 	}
-	if req.Coverage != nil {
+	if present["coverage"] {
 		o.Coverage = req.Coverage
 	}
-	if req.RampSchedule != nil {
+	if present["ramp_schedule"] {
 		o.RampSchedule = req.RampSchedule
 	}
 }
 
-func applyOverrideSlices(o *config.AccountServiceOverride, req AccountServiceOverrideRequest) {
-	if req.IncludeEngines != nil {
+func overlayOverrideSlices(o *config.AccountServiceOverride, req AccountServiceOverrideRequest, present map[string]bool) {
+	if present["include_engines"] {
 		o.IncludeEngines = req.IncludeEngines
 	}
-	if req.ExcludeEngines != nil {
+	if present["exclude_engines"] {
 		o.ExcludeEngines = req.ExcludeEngines
 	}
-	if req.IncludeRegions != nil {
+	if present["include_regions"] {
 		o.IncludeRegions = req.IncludeRegions
 	}
-	if req.ExcludeRegions != nil {
+	if present["exclude_regions"] {
 		o.ExcludeRegions = req.ExcludeRegions
 	}
-	if req.IncludeTypes != nil {
+	if present["include_types"] {
 		o.IncludeTypes = req.IncludeTypes
 	}
-	if req.ExcludeTypes != nil {
+	if present["exclude_types"] {
 		o.ExcludeTypes = req.ExcludeTypes
 	}
 }
