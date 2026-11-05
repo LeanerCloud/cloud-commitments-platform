@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -189,6 +191,51 @@ func TestGenerateRecoveryCodes(t *testing.T) {
 		assert.NotContains(t, seen, c, "recovery code collision is astronomically unlikely")
 		seen[c] = struct{}{}
 	}
+}
+
+// A byte at or above the largest multiple of the alphabet size is redrawn,
+// not folded onto the low characters (issue #1768).
+func TestGenerateRecoveryCodesFrom_RedrawsBiasedBytes(t *testing.T) {
+	codes, err := generateRecoveryCodesFrom(bytes.NewReader([]byte{248, 255, 0, 1, 2, 3, 4, 5, 6, 7}), 1)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ABCD-EFGH"}, codes)
+}
+
+// A redraw at the position where the dash goes must not put the dash in twice.
+func TestGenerateRecoveryCodesFrom_RedrawAtTheDashPosition(t *testing.T) {
+	codes, err := generateRecoveryCodesFrom(bytes.NewReader([]byte{0, 1, 2, 3, 250, 4, 5, 6, 7}), 1)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ABCD-EFGH"}, codes)
+}
+
+// Every accepted byte value maps to one character, so the accepted values
+// cover the alphabet the same number of times each. The rejected values come first, so
+// folding them in instead of redrawing skews the counts.
+func TestGenerateRecoveryCodesFrom_Uniform(t *testing.T) {
+	all := make([]byte, 0, 256)
+	for i := recoveryCodeByteLimit; i < 256; i++ {
+		all = append(all, byte(i))
+	}
+	for i := 0; i < recoveryCodeByteLimit; i++ {
+		all = append(all, byte(i))
+	}
+	codes, err := generateRecoveryCodesFrom(bytes.NewReader(all), recoveryCodeByteLimit/recoveryCodeLength)
+	require.NoError(t, err)
+	counts := map[rune]int{}
+	for _, c := range codes {
+		for _, r := range strings.ReplaceAll(c, "-", "") {
+			counts[r]++
+		}
+	}
+	require.Len(t, counts, len(recoveryCodeAlphabet))
+	for r, n := range counts {
+		assert.Equal(t, recoveryCodeByteLimit/len(recoveryCodeAlphabet), n, "character %q", r)
+	}
+}
+
+func TestGenerateRecoveryCodesFrom_ReadError(t *testing.T) {
+	_, err := generateRecoveryCodesFrom(bytes.NewReader([]byte{1, 2, 3}), 1)
+	require.ErrorIs(t, err, io.EOF)
 }
 
 func TestNormalizeRecoveryCode(t *testing.T) {
