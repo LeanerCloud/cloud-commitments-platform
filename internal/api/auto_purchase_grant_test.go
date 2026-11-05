@@ -165,20 +165,16 @@ func TestAutoPurchaseGate_CreatePlan(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			store := new(MockConfigStore)
 			t.Cleanup(func() { store.AssertExpectations(t) })
-			store.On("CreatePurchasePlan", mock.Anything, mock.Anything).Return(nil).Maybe()
-			store.On("SetPlanAccounts", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-			store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
-				return &config.CloudAccount{ID: id, Provider: "aws"}, nil
-			}
+			store.On("CreatePurchasePlanWithAccounts", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 			h, req := tc.caller.handlerAndReq(store, armedBody)
 			_, err := h.createPlan(context.Background(), req)
 			if tc.wantRefused {
 				apgRefused(t, err)
-				assert.False(t, apgCalled(store, "CreatePurchasePlan"))
+				assert.False(t, apgCalled(store, "CreatePurchasePlanWithAccounts"))
 				return
 			}
 			require.NoError(t, err)
-			assert.True(t, apgCalled(store, "CreatePurchasePlan"))
+			assert.True(t, apgCalled(store, "CreatePurchasePlanWithAccounts"))
 		})
 	}
 }

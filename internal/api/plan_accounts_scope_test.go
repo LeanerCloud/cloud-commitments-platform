@@ -287,8 +287,12 @@ func TestRouterDispatch_ListPlanAccounts_ScopedCallerFiltered(t *testing.T) {
 func seedCreatePlanStore(store *MockConfigStore) (*planAccountsWrite, *bool) {
 	write := seedPlanAccountsStore(store, nil)
 	created := false
-	store.On("CreatePurchasePlan", mock.Anything, mock.AnythingOfType("*config.PurchasePlan")).
-		Run(func(mock.Arguments) { created = true }).Return(nil).Maybe()
+	store.On("CreatePurchasePlanWithAccounts", mock.Anything, mock.AnythingOfType("*config.PurchasePlan"), mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			created = true
+			write.called = true
+			write.ids, _ = args.Get(2).([]string)
+		}).Return(nil).Maybe()
 	return write, &created
 }
 
@@ -310,8 +314,8 @@ func TestCreatePlan_ScopedCallerCannotTargetOutOfScopeAccount(t *testing.T) {
 
 	require.Error(t, err)
 	assert.True(t, IsNotFoundError(err), "expected the enumeration-safe not-found refusal, got %v", err)
-	assert.False(t, *created, "CreatePurchasePlan must not run for an out-of-scope target account")
-	assert.False(t, write.called, "SetPlanAccounts must not run for an out-of-scope target account")
+	assert.False(t, *created, "CreatePurchasePlanWithAccounts must not run for an out-of-scope target account")
+	assert.False(t, write.called, "the account write must not run for an out-of-scope target account")
 }
 
 func TestCreatePlan_ScopedCallerMixedTargetsRefusedWhole(t *testing.T) {
