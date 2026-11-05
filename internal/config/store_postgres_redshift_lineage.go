@@ -36,7 +36,7 @@ type RedshiftLineageConflict struct {
 // FindOpenRedshiftLineageConflictsTx returns the other open executions that
 // could buy or adopt a node for one of tuples, so a second lineage must not
 // dispatch. The row side account is the row's, else the rec's; the candidate
-// side is the tuple's, else accountID. A NULL on either side matches any.
+// side is the tuple's, else accountID. A NULL on either side matches any; a rec account that is not a uuid counts as NULL.
 // A stamped running row is open at any age (the reaper bounds it); the other
 // open statuses only while their stamp is within horizon, judged on the
 // database clock. Same-family rows conflict only while running.
@@ -69,9 +69,9 @@ func (s *PostgresStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, 
 		        JOIN jsonb_to_recordset($5::jsonb) AS t(region text, node_type text, term int, payment text, count int, cloud_account_id uuid)
 		          ON r->>'region' = t.region AND r->>'resource_type' = t.node_type
 		         AND r->>'term' = t.term::text AND r->>'payment' = t.payment AND r->>'count' = t.count::text
-		         AND (COALESCE(e.cloud_account_id, NULLIF(r->>'cloud_account_id', '')::uuid) IS NULL
+		         AND (COALESCE(e.cloud_account_id, CASE WHEN r->>'cloud_account_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (r->>'cloud_account_id')::uuid END) IS NULL
 		              OR COALESCE(t.cloud_account_id, $4::uuid) IS NULL
-		              OR COALESCE(e.cloud_account_id, NULLIF(r->>'cloud_account_id', '')::uuid) = COALESCE(t.cloud_account_id, $4::uuid))
+		              OR COALESCE(e.cloud_account_id, CASE WHEN r->>'cloud_account_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (r->>'cloud_account_id')::uuid END) = COALESCE(t.cloud_account_id, $4::uuid))
 		        WHERE r->>'selected' = 'true'
 		          AND COALESCE(r->>'provider', '') IN ('', 'aws')
 		          AND r->>'service' IN ('redshift', 'data-warehouse'))

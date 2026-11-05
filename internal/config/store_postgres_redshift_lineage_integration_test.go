@@ -172,6 +172,122 @@ func TestFindOpenRedshiftLineageConflicts(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-l"))
 	})
+	// candidate runs the query for self/family with one tuple and account arg.
+	candidate := func(self, family string, tp RedshiftTuple, arg *string) []RedshiftLineageConflict {
+		var got []RedshiftLineageConflict
+		require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
+			var e error
+			got, e = store.FindOpenRedshiftLineageConflictsTx(ctx, tx, self, family, []RedshiftTuple{tp}, arg, lineageTestHorizon)
+			return e
+		}))
+		return got
+	}
+	setRec := func(t *testing.T, id, expr string, args ...any) {
+		t.Helper()
+		_, err := store.db.Exec(ctx, `UPDATE purchase_executions SET recommendations = `+expr+` WHERE execution_id = $1`, append([]any{id}, args...)...)
+		require.NoError(t, err)
+	}
+
+	t.Run("tuple_field_mismatch_does_not_conflict", func(t *testing.T) {
+		cases := map[string]func(*RedshiftTuple){
+			"region":     func(tp *RedshiftTuple) { tp.Region = "eu-west-1" },
+			"node_type":  func(tp *RedshiftTuple) { tp.NodeType = "ra3.4xlarge" },
+			"term":       func(tp *RedshiftTuple) { tp.Term = 3 },
+			"payment":    func(tp *RedshiftTuple) { tp.Payment = "no-upfront" },
+			"count_up":   func(tp *RedshiftTuple) { tp.Count = 3 },
+			"count_down": func(tp *RedshiftTuple) { tp.Count = 1 },
+		}
+		for name, mutate := range cases {
+			reset(t)
+			self := seedLineageRow(ctx, t, store, "fam-m", "running", recent)
+			seedLineageRow(ctx, t, store, "fam-m-other", "running", recent)
+			tp := lineageTuple
+			mutate(&tp)
+			assert.Empty(t, candidate(self.ExecutionID, "fam-m", tp, nil), name)
+		}
+	})
+	t.Run("row_count_3_vs_candidate_2_and_reverse_do_not_conflict", func(t *testing.T) {
+		reset(t)
+		self := seedLineageRow(ctx, t, store, "fam-n", "running", recent)
+		other := seedLineageRow(ctx, t, store, "fam-n-other", "running", recent)
+		setRec(t, other.ExecutionID, `jsonb_set(recommendations, '{0,count}', '3')`)
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-n"))
+		tp := lineageTuple
+		tp.Count = 3
+		assert.Equal(t, []string{other.ExecutionID}, conflictIDs(candidate(self.ExecutionID, "fam-n", tp, nil)))
+		tp.Count = 4
+		assert.Empty(t, candidate(self.ExecutionID, "fam-n", tp, nil))
+		setRec(t, other.ExecutionID, `jsonb_set(recommendations, '{0,count}', '2')`)
+		tp.Count = 3
+		assert.Empty(t, candidate(self.ExecutionID, "fam-n", tp, nil))
+	})
+	t.Run("unselected_rec_does_not_conflict", func(t *testing.T) {
+		reset(t)
+		self := seedLineageRow(ctx, t, store, "fam-o", "running", recent)
+		other := seedLineageRow(ctx, t, store, "fam-o-other", "running", recent)
+		setRec(t, other.ExecutionID, `jsonb_set(recommendations, '{0,selected}', 'false')`)
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-o"))
+	})
+	t.Run("provider_and_service_filters", func(t *testing.T) {
+		reset(t)
+		self := seedLineageRow(ctx, t, store, "fam-p", "running", recent)
+		az := seedLineageRow(ctx, t, store, "fam-p-az", "running", recent)
+		setRec(t, az.ExecutionID, `jsonb_set(jsonb_set(recommendations, '{0,provider}', '"azure"'), '{0,service}', '"data-warehouse"')`)
+		other := seedLineageRow(ctx, t, store, "fam-p-ec2", "running", recent)
+		setRec(t, other.ExecutionID, `jsonb_set(recommendations, '{0,service}', '"ec2"')`)
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-p"))
+		aws := seedLineageRow(ctx, t, store, "fam-p-aws", "running", recent)
+		setRec(t, aws.ExecutionID, `jsonb_set(recommendations, '{0,service}', '"data-warehouse"')`)
+		assert.Equal(t, []string{aws.ExecutionID}, conflictIDs(findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-p")))
+	})
+	t.Run("account_matrix", func(t *testing.T) {
+		a1, a2 := "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+		for _, a := range []string{a1, a2} {
+			_, err := store.db.Exec(ctx, `INSERT INTO cloud_accounts (id, name, provider, external_id) VALUES ($1::uuid, $1::text, 'aws', $1::text) ON CONFLICT DO NOTHING`, a)
+			require.NoError(t, err)
+		}
+		// Each of the four slots is nil, a1 or a2. The row account, else the rec
+		// account, is compared with the tuple account, else the argument.
+		slots := []*string{nil, &a1, &a2}
+		eff := func(first, second *string) *string {
+			if first != nil {
+				return first
+			}
+			return second
+		}
+		for _, rowA := range slots {
+			for _, recA := range slots {
+				for _, tupA := range slots {
+					for _, argA := range slots {
+						reset(t)
+						self := seedLineageRow(ctx, t, store, "fam-q", "running", recent)
+						other := seedLineageRow(ctx, t, store, "fam-q-other", "running", recent)
+						_, err := store.db.Exec(ctx, `UPDATE purchase_executions SET cloud_account_id = $2 WHERE execution_id = $1`, other.ExecutionID, rowA)
+						require.NoError(t, err)
+						if recA != nil {
+							setRec(t, other.ExecutionID, `jsonb_set(recommendations, '{0,cloud_account_id}', to_jsonb($2::text))`, *recA)
+						}
+						tp := lineageTuple
+						tp.CloudAccountID = tupA
+						l, r := eff(rowA, recA), eff(tupA, argA)
+						want := l == nil || r == nil || *l == *r
+						got := candidate(self.ExecutionID, "fam-q", tp, argA)
+						assert.Equal(t, want, len(got) == 1, "row=%v rec=%v tuple=%v arg=%v", rowA, recA, tupA, argA)
+					}
+				}
+			}
+		}
+	})
+	t.Run("non_uuid_rec_account_is_a_wildcard_not_an_error", func(t *testing.T) {
+		reset(t)
+		a1 := "11111111-1111-1111-1111-111111111111"
+		self := seedLineageRow(ctx, t, store, "fam-r", "running", recent)
+		other := seedLineageRow(ctx, t, store, "fam-r-other", "running", recent)
+		setRec(t, other.ExecutionID, `jsonb_set(recommendations, '{0,cloud_account_id}', '"not-a-uuid"')`)
+		tp := lineageTuple
+		tp.CloudAccountID = &a1
+		assert.Equal(t, []string{other.ExecutionID}, conflictIDs(candidate(self.ExecutionID, "fam-r", tp, nil)))
+	})
 	t.Run("empty_family_is_rejected", func(t *testing.T) {
 		reset(t)
 		require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
