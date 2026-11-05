@@ -38,15 +38,13 @@ func (app *Application) HandleLambdaEvent(ctx context.Context, rawEvent json.Raw
 	switch eventType {
 	case "http":
 		return app.handleLambdaHTTPEvent(ctx, rawEvent)
-	case "sqs":
-		return app.handleLambdaSQSEvent(ctx, rawEvent)
 	case "scheduled":
 		return app.handleLambdaScheduledEvent(ctx, rawEvent)
 	default:
 		// Return a distinct error instead of silently treating an unrecognized
 		// payload as a scheduled event. Masking the event shape as "unknown
 		// scheduled task action" makes the real cause hard to diagnose (04-N4).
-		return nil, fmt.Errorf("unrecognized Lambda event shape (size %d bytes); not an HTTP/SQS/scheduled event", len(rawEvent))
+		return nil, fmt.Errorf("unrecognized Lambda event shape (size %d bytes); not an HTTP/scheduled event", len(rawEvent))
 	}
 }
 
@@ -64,18 +62,6 @@ func detectLambdaEventType(rawEvent json.RawMessage) string {
 	if err := json.Unmarshal(rawEvent, &httpEvent); err == nil {
 		if httpEvent.RequestContext.HTTP.Method != "" || httpEvent.HTTPMethod != "" {
 			return "http"
-		}
-	}
-
-	// Check for SQS event
-	var sqsEvent struct {
-		Records []struct {
-			EventSource string `json:"eventSource"`
-		} `json:"Records"`
-	}
-	if err := json.Unmarshal(rawEvent, &sqsEvent); err == nil {
-		if len(sqsEvent.Records) > 0 && sqsEvent.Records[0].EventSource == "aws:sqs" {
-			return "sqs"
 		}
 	}
 

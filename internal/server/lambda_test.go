@@ -49,7 +49,7 @@ func TestDetectLambdaEventType(t *testing.T) {
 					}
 				]
 			}`,
-			expectedType: "sqs",
+			expectedType: "unknown",
 		},
 		{
 			name: "EventBridge scheduled event",
@@ -528,6 +528,24 @@ func TestHandleLambdaEvent_UnknownEventReturnsError(t *testing.T) {
 		"expected 'unrecognised' in error, got: "+err.Error())
 }
 
+// TestHandleLambdaEvent_SQSEventIsUnrecognized pins that an aws:sqs event no
+// longer reaches purchase execution: nothing in this repo produces one, so a
+// stray event-source mapping must fail loudly instead of running the purchase
+// path without the gates the HTTP path enforces (issue #399).
+func TestHandleLambdaEvent_SQSEventIsUnrecognized(t *testing.T) {
+	ctx := testutil.TestContext(t)
+
+	app := &Application{
+		API:      api.NewHandler(api.HandlerConfig{}),
+		Purchase: &testutil.MockPurchaseManager{},
+	}
+
+	_, err := app.HandleLambdaEvent(ctx, json.RawMessage(`{"Records":[{"eventSource":"aws:sqs","messageId":"m","body":"{}"}]}`))
+	testutil.AssertError(t, err)
+	testutil.AssertTrue(t, strings.Contains(err.Error(), "unrecognized Lambda event shape"),
+		"expected 'unrecognized Lambda event shape' in error, got: "+err.Error())
+}
+
 func TestHandleLambdaEvent(t *testing.T) {
 	tests := []struct {
 		setupApp    func(*Application)
@@ -548,21 +566,14 @@ func TestHandleLambdaEvent(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "SQS event routing",
+			name: "SQS event is rejected",
 			rawEvent: `{
 				"Records": [{
 					"eventSource": "aws:sqs",
 					"body": "{}"
 				}]
 			}`,
-			setupApp: func(app *Application) {
-				app.Purchase = &testutil.MockPurchaseManager{
-					ProcessMessageFunc: func(ctx context.Context, body string) error {
-						return nil
-					},
-				}
-			},
-			expectError: false,
+			expectError: true,
 		},
 		{
 			name:     "Scheduled event routing",
