@@ -212,3 +212,26 @@ func TestAccountServiceOverrideRequest_EveryFieldIsMerged(t *testing.T) {
 		assert.Contains(t, row, k)
 	}
 }
+
+// The store locks on the id it is given, so a mixed-case path id must reach it
+// as the stored account's canonical id.
+func TestSaveAccountServiceOverride_UsesCanonicalAccountID(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	setupAdminAuth(ctx, mockAuth)
+	store := new(MockConfigStore)
+	const canonical = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	store.GetCloudAccountFn = func(_ context.Context, _ string) (*config.CloudAccount, error) {
+		return &config.CloudAccount{ID: canonical, Provider: "aws"}, nil
+	}
+	var gotID string
+	store.On("UpdateAccountServiceOverrideAtomic", ctx, mock.Anything, "aws", "rds", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) { gotID = args.String(1) }).
+		Return(&config.AccountServiceOverride{}, nil)
+	h := &Handler{auth: mockAuth, config: store}
+
+	_, err := h.saveAccountServiceOverride(ctx, adminRequest(`{"term":1}`), strings.ToUpper(canonical)+"/service-overrides/aws/rds")
+	require.NoError(t, err)
+	assert.Equal(t, canonical, gotID)
+}

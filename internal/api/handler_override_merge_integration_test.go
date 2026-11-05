@@ -10,6 +10,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -100,4 +101,46 @@ func TestOverrideMerge_ConcurrentSingleKeyPutsKeepBothKeys(t *testing.T) {
 		require.Equal(t, ovPtr("all-upfront"), got.Payment, "round %d: untouched field must survive", round)
 	}
 	require.Zero(t, lost, "%d of %d rounds lost one of two concurrent PUTs", lost, overrideMergeRaceRounds)
+}
+
+// Two spellings of one account id must take the same lock: with the raw path id
+// in the lock key, a first-time override raced by a lower- and an upper-case PUT
+// merged both onto an empty row and the second write NULLed the first's field.
+func TestOverrideMerge_ConcurrentFirstPutsAcrossIDSpellingsKeepBothKeys(t *testing.T) {
+	ctx := context.Background()
+	f := newOverrideAuditFixture(ctx, t)
+
+	lost := 0
+	for round := 1; round <= overrideMergeRaceRounds; round++ {
+		_, err := f.pg.DB.Pool().Exec(ctx, `DELETE FROM account_service_overrides WHERE account_id = $1`, f.acct.ID)
+		require.NoError(t, err)
+		region := fmt.Sprintf("r-%d", round)
+		paths := []string{f.acct.ID, strings.ToUpper(f.acct.ID)}
+		bodies := []string{fmt.Sprintf(`{"exclude_regions":[%q]}`, region), `{"term":3}`}
+
+		start := make(chan struct{})
+		errs := make([]error, len(bodies))
+		var wg sync.WaitGroup
+		for i := range bodies {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				<-start
+				_, errs[i] = f.h.saveAccountServiceOverride(ctx, adminRequest(bodies[i]), paths[i]+"/service-overrides/aws/rds")
+			}(i)
+		}
+		close(start)
+		wg.Wait()
+		for i, e := range errs {
+			require.NoError(t, e, "PUT %d (%s)", i, bodies[i])
+		}
+
+		got, err := f.store.GetAccountServiceOverride(ctx, f.acct.ID, "aws", "rds")
+		require.NoError(t, err)
+		if got.Term == nil || *got.Term != 3 || len(got.ExcludeRegions) != 1 || got.ExcludeRegions[0] != region {
+			lost++
+			t.Logf("round %d: term=%v exclude_regions=%v (want 3, [%s])", round, got.Term, got.ExcludeRegions, region)
+		}
+	}
+	require.Zero(t, lost, "%d of %d rounds lost one of two concurrent first PUTs", lost, overrideMergeRaceRounds)
 }

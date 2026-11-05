@@ -1181,10 +1181,13 @@ func (h *Handler) saveAccountServiceOverride(ctx context.Context, httpReq *event
 		return nil, err
 	}
 
-	_, err = h.requireAccountAccess(ctx, session, accountID)
+	account, err := h.requireAccountAccess(ctx, session, accountID)
 	if err != nil {
 		return nil, err
 	}
+	// The store's lock key is built from the id, so every spelling of one
+	// account must reach it as the stored (canonical) one.
+	accountID = account.ID
 
 	var req AccountServiceOverrideRequest
 	err = json.Unmarshal([]byte(httpReq.Body), &req)

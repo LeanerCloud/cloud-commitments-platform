@@ -4498,7 +4498,7 @@ paths:
     put:
       operationId: saveAccountServiceOverride
       tags: [Accounts]
-      summary: Create or replace an account's override for one service (admin only)
+      summary: Create or update an account's override for one service (admin only)
       description: >
         Upserts the override for this account, provider and service. The body
         is merged into the stored override: a field omitted from the body keeps
@@ -8258,37 +8258,48 @@ components:
         the global value when nothing is stored); null clears a field.
       properties:
         enabled:
+          nullable: true
           type: boolean
         term:
+          nullable: true
           type: integer
         payment:
+          nullable: true
           type: string
         coverage:
+          nullable: true
           type: number
           format: double
         ramp_schedule:
+          nullable: true
           type: string
         include_engines:
+          nullable: true
           type: array
           items:
             type: string
         exclude_engines:
+          nullable: true
           type: array
           items:
             type: string
         include_regions:
+          nullable: true
           type: array
           items:
             type: string
         exclude_regions:
+          nullable: true
           type: array
           items:
             type: string
         include_types:
+          nullable: true
           type: array
           items:
             type: string
         exclude_types:
+          nullable: true
           type: array
           items:
             type: string
