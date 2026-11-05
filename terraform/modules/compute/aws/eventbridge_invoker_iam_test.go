@@ -333,53 +333,74 @@ resource "aws_iam_role_policy" "eventbridge" {
 	}
 }
 
-// The four invoker roles' trust policies must pin events.amazonaws.com to this
-// account and to the role's own rule (confused-deputy hardening). The walk is
-// over the role resources of fargate/main.tf named in knownInvokerPolicies,
-// and a missing resource fails rather than reads as clean.
+// Every role in the fargate module that trusts events.amazonaws.com must pin
+// it to this account and to the rules that use the role. The roles are discovered by scanning every .tf file of the
+// module, so a role added later is held to the same rule, and finding none
+// fails rather than reads as clean.
+var (
+	fargateDir = filepath.Join("terraform", "modules", "compute", "aws", "fargate")
+
+	eventsTrust = regexp.MustCompile(`"events\.amazonaws\.com"`)
+
+	sourceAccountCondition = regexp.MustCompile(`\bStringEquals\s*=\s*\{\s*"aws:SourceAccount"\s*=\s*data\.aws_caller_identity\.\w+\.account_id\s*\}`)
+
+	// SourceArn must reference event rules, singly or as a for-expression over
+	// a rule resource; a literal or wildcard pattern would pass a presence check.
+	sourceRuleCondition = regexp.MustCompile(`\bArnEquals\s*=\s*\{\s*"aws:SourceArn"\s*=\s*(?:aws_cloudwatch_event_rule\.\w+(?:\[\d+\])?\.arn|\[\s*for\s+\w+\s+in\s+aws_cloudwatch_event_rule\.\w+\s*:\s*\w+\.arn\s*\])\s*\}`)
+
+	roleHeader     = regexp.MustCompile(`(?m)^resource\s+"aws_iam_role"\s+"(\w+)"`)
+	topLevelHeader = regexp.MustCompile(`(?m)^(?:resource|data|locals|variable|output)\b`)
+)
+
 func TestInvokerRoleTrustPoliciesPinSourceAccountAndRule(t *testing.T) {
-	code := readFargateMain(t)
-	for _, name := range knownInvokerPolicies {
-		block, ok := resourceBlock(code, "aws_iam_role", name)
-		if !ok {
-			t.Errorf("%s: no aws_iam_role %q to check", fargateMainTF, name)
-			continue
-		}
-		rule := strings.TrimPrefix(name, "eventbridge_")
-		if name == "eventbridge" {
-			rule = "recommendations"
-		}
-		wantAccount := regexp.MustCompile(`\bStringEquals\s*=\s*\{\s*"aws:SourceAccount"\s*=\s*data\.aws_caller_identity\.\w+\.account_id\s*\}`)
-		wantRule := regexp.MustCompile(`\bArnEquals\s*=\s*\{\s*"aws:SourceArn"\s*=\s*aws_cloudwatch_event_rule\.` + rule + `\[0\]\.arn\s*\}`)
-		if !wantAccount.MatchString(block) {
-			t.Errorf("aws_iam_role.%s trusts events.amazonaws.com without Condition StringEquals \"aws:SourceAccount\" = data.aws_caller_identity.<name>.account_id", name)
-		}
-		if !wantRule.MatchString(block) {
-			t.Errorf("aws_iam_role.%s trusts events.amazonaws.com without Condition ArnEquals \"aws:SourceArn\" = aws_cloudwatch_event_rule.%s[0].arn", name, rule)
-		}
-	}
+	checkInvokerRoleTrusts(t, filepath.Join(repoRoot(t), fargateDir))
 }
 
-func readFargateMain(t *testing.T) string {
+func checkInvokerRoleTrusts(t *testing.T, dir string) {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(repoRoot(t), fargateMainTF))
+	files, err := filepath.Glob(filepath.Join(dir, "*.tf"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return stripCommentLines(string(b))
-}
-
-// resourceBlock returns the text from the resource header to the next
-// top-level resource header or end of file.
-func resourceBlock(code, typ, name string) (string, bool) {
-	header := regexp.MustCompile(`(?m)^resource\s+"` + typ + `"\s+"` + name + `"`)
-	loc := header.FindStringIndex(code)
-	if loc == nil {
-		return "", false
+	checked := 0
+	for _, path := range files {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		code := stripCommentLines(string(b))
+		var covered [][2]int
+		for _, loc := range roleHeader.FindAllStringSubmatchIndex(code, -1) {
+			rest := code[loc[1]:]
+			if next := topLevelHeader.FindStringIndex(rest); next != nil {
+				rest = rest[:next[0]]
+			}
+			if !eventsTrust.MatchString(rest) {
+				continue
+			}
+			checked++
+			covered = append(covered, [2]int{loc[0], loc[1] + len(rest)})
+			name := code[loc[2]:loc[3]]
+			if !sourceAccountCondition.MatchString(rest) {
+				t.Errorf("%s: aws_iam_role.%s trusts events.amazonaws.com without Condition StringEquals \"aws:SourceAccount\" = data.aws_caller_identity.<name>.account_id", path, name)
+			}
+			if !sourceRuleCondition.MatchString(rest) {
+				t.Errorf("%s: aws_iam_role.%s trusts events.amazonaws.com without Condition ArnEquals \"aws:SourceArn\" naming aws_cloudwatch_event_rule ARNs", path, name)
+			}
+		}
+		// A trust written elsewhere (for example a data aws_iam_policy_document)
+		// is not inside a role block, so name it instead of skipping it.
+		for _, m := range eventsTrust.FindAllStringIndex(code, -1) {
+			inRole := false
+			for _, c := range covered {
+				inRole = inRole || (m[0] >= c[0] && m[0] < c[1])
+			}
+			if !inRole {
+				t.Errorf("%s:%d: events.amazonaws.com trusted outside an inline aws_iam_role assume_role_policy; extend the guard", path, 1+strings.Count(code[:m[0]], "\n"))
+			}
+		}
 	}
-	rest := code[loc[1]:]
-	if next := regexp.MustCompile(`(?m)^(?:resource|data|locals|variable|output)\b`).FindStringIndex(rest); next != nil {
-		rest = rest[:next[0]]
+	if checked == 0 {
+		t.Fatalf("%s: found no aws_iam_role trusting events.amazonaws.com; the module moved or the trust is spelled in a form this guard misses, and it would report clean while inspecting nothing", dir)
 	}
-	return code[loc[0]:loc[1]] + rest, true
 }
