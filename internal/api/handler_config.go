@@ -75,7 +75,7 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 	_, gracePresent := present["grace_period_days"]
 	modeSent := riExchangeModeSent(present)
 	providersSent := bodyHasKey(present, "enabled_providers")
-	delaySent := bodyWritesKey(present, "purchase_delay_hours")
+	delayRefused := h.refusesDelay(present)
 	if err := h.requireGlobalConfigScope(ctx, session); err != nil {
 		return nil, err
 	}
@@ -116,13 +116,8 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 		if uErr := json.Unmarshal([]byte(req.Body), existing); uErr != nil {
 			return NewClientError(400, "invalid request body")
 		}
-		if vErr := validateGlobalConfigWrite(existing, modeSent || existing.RIExchangeMode != before.mode, providersSent); vErr != nil {
+		if vErr := validateGlobalConfigWrite(existing, modeSent || existing.RIExchangeMode != before.mode, providersSent, delayRefused); vErr != nil {
 			return vErr
-		}
-		// Presence-based like the checks above: a stored delay must not block
-		// an unrelated partial save.
-		if h.fireSweepOff && delaySent && existing.PurchaseDelayHours > 0 {
-			return NewClientError(400, "purchase_delay_hours must be 0: this deployment schedules no fire_scheduled_purchases sweep, so a delayed purchase would never execute")
 		}
 		if gErr := requireRIExchangeAutoModeGrant(before, riExchangeArmStateOf(existing), grants.riExchange); gErr != nil {
 			return gErr
@@ -189,7 +184,7 @@ func bodyWritesKey(present map[string]json.RawMessage, name string) bool {
 // such as "Auto". Such a row keeps its value until a caller sends a valid one,
 // and armed() keeps treating it as auto. Runs before the arming gates so a
 // malformed write never reveals grant state.
-func validateGlobalConfigWrite(cfg *config.GlobalConfig, modeSent, providersSent bool) error {
+func validateGlobalConfigWrite(cfg *config.GlobalConfig, modeSent, providersSent, delayRefused bool) error {
 	// Presence-based, not in Validate: a fresh install stores [] and partial
 	// saves that omit the key must keep working.
 	if providersSent && len(cfg.EnabledProviders) == 0 {
@@ -201,7 +196,18 @@ func validateGlobalConfigWrite(cfg *config.GlobalConfig, modeSent, providersSent
 	if err := cfg.Validate(); err != nil {
 		return NewClientError(400, fmt.Sprintf("validation error: %s", err))
 	}
+	if delayRefused && cfg.PurchaseDelayHours > 0 {
+		return NewClientError(400, "purchase_delay_hours must be 0: this deployment schedules no fire_scheduled_purchases sweep, so a delayed purchase would never execute")
+	}
 	return nil
+}
+
+// refusesDelay reports whether this write must keep the delay at 0: the
+// deployment has no fire sweep and the body writes purchase_delay_hours.
+// Presence-based like the checks in validateGlobalConfigWrite, so a stored
+// delay does not block an unrelated partial save.
+func (h *Handler) refusesDelay(present map[string]json.RawMessage) bool {
+	return h.fireSweepOff && bodyWritesKey(present, "purchase_delay_hours")
 }
 
 // requireSwitchGrants chains the arming gates of the two money-spending
