@@ -27,6 +27,7 @@ import {
 import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { badgeHtml, statusBadgeHtml } from './lib/status-badge';
 import { isPastScheduledDate } from './lib/purchase-row-guards';
+import { serviceLabel } from './lib/service-labels';
 import { mountPlanEditorPanel } from './plan-editor-panel';
 
 // pendingPlanRecommendations holds the resolved plan target captured at
@@ -179,8 +180,8 @@ function renderPlannedPurchasesInternal(): void {
     <table class="planned-purchases-table table-compact table-sticky-end">
       <thead>
         <tr>
-          <th>Plan</th>
-          <th>Scheduled Date</th>
+          <th><span>Plan</span>${filterBtn('plan_name', 'Plan')}</th>
+          <th><span>Scheduled Date</span>${filterBtn('scheduled_date', 'Scheduled Date')}</th>
           <th><span>Provider</span>${filterBtn('provider', 'Provider')}</th>
           <th><span>Service</span>${filterBtn('service', 'Service')}</th>
           <th><span>Resource Type</span>${filterBtn('resource_type', 'Resource Type')}</th>
@@ -248,6 +249,9 @@ function applyPlansColumnFilters(
 
 function categoricalCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): string {
   switch (col) {
+    case 'plan_name':      return p.plan_name ?? '';
+    // Keyed by local YYYY-MM-DD: same-day steps share one option and keys sort chronologically.
+    case 'scheduled_date': return localDayKey(p.scheduled_date);
     case 'provider':       return p.provider ?? '';
     case 'service':        return p.service ?? '';
     case 'resource_type':  return p.resource_type ?? '';
@@ -262,11 +266,22 @@ function categoricalCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnI
   }
 }
 
+function localDayKey(date: string | null | undefined): string {
+  if (!date) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function numericCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): number {
   switch (col) {
     case 'count':              return p.count ?? 0;
     case 'upfront_cost':       return p.upfront_cost ?? 0;
     case 'estimated_savings':  return p.estimated_savings ?? 0;
+    case 'plan_name':
+    case 'scheduled_date':
     case 'provider':
     case 'service':
     case 'resource_type':
@@ -288,6 +303,8 @@ function displayPrecisionForPlan(col: state.PlansColumnId): number {
     case 'upfront_cost':
     case 'estimated_savings':
       return CURRENCY_DEFAULT_DIGITS;
+    case 'plan_name':
+    case 'scheduled_date':
     case 'provider':
     case 'service':
     case 'resource_type':
@@ -318,6 +335,8 @@ const PLANS_NUMERIC_COLUMNS: ReadonlySet<state.PlansColumnId> = new Set<state.Pl
 
 function plansColumnLabel(column: state.PlansColumnId): string {
   switch (column) {
+    case 'plan_name':          return 'Plan';
+    case 'scheduled_date':     return 'Scheduled Date';
     case 'provider':           return 'Provider';
     case 'service':            return 'Service';
     case 'resource_type':      return 'Resource Type';
@@ -332,6 +351,7 @@ function plansColumnLabel(column: state.PlansColumnId): string {
 
 function plansCategoricalDisplayLabel(column: state.PlansColumnId, value: string): string {
   if (value === '') return '(empty)';
+  if (column === 'scheduled_date') return formatDate(value);
   if (column === 'term') {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? formatTermShort(n) : value;
@@ -420,9 +440,10 @@ function renderPlannedPurchaseRow(purchase: PlannedPurchase): string {
   const resourceCell = hasNoRecommendations
     ? '<span class="no-recommendations" title="This step has no recommendations attached, so it cannot buy anything.">No recommendations attached</span>'
     : `${escapeHtml(purchase.resource_type)} <span class="cell-sub">(${escapeHtml(purchase.region)})</span>`;
-  const countCell = hasNoRecommendations ? '—' : escapeHtml(String(purchase.count ?? ''));
-  const upfrontShown = hasNoRecommendations ? '—' : upfrontCell;
-  const savingsCell = hasNoRecommendations ? '—' : `${formatCurrency(purchase.estimated_savings)}/mo`;
+  const placeholder = `<span class="cell-placeholder">${NO_VALUE}</span>`;
+  const countCell = hasNoRecommendations ? placeholder : escapeHtml(String(purchase.count ?? ''));
+  const upfrontShown = hasNoRecommendations || upfrontCell === NO_VALUE ? placeholder : upfrontCell;
+  const savingsCell = hasNoRecommendations ? placeholder : `${formatCurrency(purchase.estimated_savings)}/mo`;
 
   // Issue #365: gate row actions by the same plan-management permissions
   // a click on each button would require. Readonly users see no buttons
@@ -454,8 +475,9 @@ function renderPlannedPurchaseRow(purchase: PlannedPurchase): string {
 
   // #181: a pending step whose date has passed did not run; "pending" alone
   // reads as on schedule. Flag it and name the next action the user can take.
+  const runLabel = hasNoRecommendations ? 'Run now: this step has no recommendations, so there is nothing to run' : 'Run now';
   const overdue = isPending && isPastScheduledDate(purchase.scheduled_date);
-  const overdueHint = canRunPurchase ? 'Not run on its date. Run now or pause.' : 'Not run on its date.';
+  const overdueHint = canRunPurchase && !hasNoRecommendations ? 'Not run on its date. Run now or pause.' : 'Not run on its date.';
   const overdueBadge = overdue
     ? badgeHtml('danger', 'Overdue', 'Scheduled date has passed')
     : '';
@@ -464,12 +486,12 @@ function renderPlannedPurchaseRow(purchase: PlannedPurchase): string {
   return `
     <tr class="planned-purchase-row ${statusClass}">
       <td>
-        <span class="plan-name cell-truncate cell-truncate--sm" title="${escapeHtmlAttr(purchase.plan_name)}">${escapeHtml(purchase.plan_name)}</span>
+        <span class="plan-name plan-name-cell" title="${escapeHtmlAttr(purchase.plan_name)}">${escapeHtml(purchase.plan_name)}</span>
         <span class="step-info">Step ${purchase.step_number}/${purchase.total_steps}</span>
       </td>
       <td>${formatDate(purchase.scheduled_date)}</td>
       <td>${providerBadgeHtml(purchase.provider)}</td>
-      <td>${escapeHtml(purchase.service)}</td>
+      <td>${escapeHtml(serviceLabel(purchase.service, true))}</td>
       <td>${resourceCell}</td>
       <td class="num">${countCell}</td>
       <td>${termCell}</td>
@@ -478,7 +500,7 @@ function renderPlannedPurchaseRow(purchase: PlannedPurchase): string {
       <td class="num savings">${savingsCell}</td>
       <td><span class="status-badges">${statusBadgeHtml(purchase.status)}${overdueBadge}</span>${overdueHintHtml}</td>
       <td class="actions"><span class="row-actions">
-        ${canRunPurchase ? `<button data-action="run" data-id="${escapeHtmlAttr(purchase.id)}" class="btn-small primary icon-label row-action-run" title="Run now" aria-label="Run now">${iconSvg('play')}<span>Run now</span></button>` : ''}
+        ${canRunPurchase ? `<button data-action="run" data-id="${escapeHtmlAttr(purchase.id)}" class="btn-small primary icon-label row-action-run${hasNoRecommendations ? ' is-disabled' : ''}"${hasNoRecommendations ? ' aria-disabled="true"' : ''} title="${runLabel}" aria-label="${runLabel}">${iconSvg('play')}<span>Run now</span></button>` : ''}
         ${canPauseOrResumePurchase && isPending ? `<button data-action="pause" data-id="${escapeHtmlAttr(purchase.id)}" class="btn-small icon-btn" title="Pause" aria-label="Pause">${iconSvg('pause')}</button>` : ''}
         ${canPauseOrResumePurchase && isPaused ? `<button data-action="resume" data-id="${escapeHtmlAttr(purchase.id)}" class="btn-small icon-btn" title="Resume" aria-label="Resume">${iconSvg('play')}</button>` : ''}
         ${canEditPlan ? `<button data-action="edit" data-id="${escapeHtmlAttr(purchase.id)}" data-plan-id="${escapeHtmlAttr(purchase.plan_id)}" class="btn-small icon-btn" title="Edit Plan" aria-label="Edit Plan">${iconSvg('edit')}</button>` : ''}
@@ -509,9 +531,6 @@ const runNowInFlight = new Set<string>();
 
 function runNowBody(target: PlannedPurchase | undefined): string | HTMLElement {
   if (!target) return 'This immediately executes the purchase.';
-  if (target.has_recommendations === false) {
-    return 'This step has no recommendations attached, so running it will not buy anything.';
-  }
   const summary = buildCommitmentSummary([{
     service: target.service,
     provider: target.provider,
@@ -527,20 +546,26 @@ function runNowBody(target: PlannedPurchase | undefined): string | HTMLElement {
   return withIntro(`This immediately buys the commitment below for plan "${target.plan_name}", scheduled for ${formatDate(target.scheduled_date)}. It cannot be undone.`, summary);
 }
 
-async function runPlannedPurchaseNow(purchaseId: string): Promise<void> {
-  if (runNowInFlight.has(purchaseId)) return;
+/** Resolves false when nothing ran and the list needs no reload. */
+async function runPlannedPurchaseNow(purchaseId: string): Promise<boolean> {
+  if (runNowInFlight.has(purchaseId)) return true;
   runNowInFlight.add(purchaseId);
   try {
     const target = lastLoadedPurchases.find(p => p.id === purchaseId);
+    if (target?.has_recommendations === false) {
+      showToast({ message: 'This step has no recommendations attached, so there is nothing to run.', kind: 'info', timeout: 5_000 });
+      return false;
+    }
     const ok = await confirmDialog({
       title: target ? `Run step ${target.step_number}/${target.total_steps} of "${target.plan_name}" now?` : 'Run purchase now?',
       body: runNowBody(target),
       confirmLabel: 'Run now',
       destructive: true,
     });
-    if (!ok) return;
+    if (!ok) return true;
     await api.runPlannedPurchase(purchaseId);
     showToast({ message: 'Purchase executed successfully', kind: 'success', timeout: 5_000 });
+    return true;
   } finally {
     runNowInFlight.delete(purchaseId);
   }
@@ -553,7 +578,8 @@ async function handlePlannedPurchaseAction(action: string, purchaseId: string, p
   try {
     switch (action) {
       case 'run':
-        await runPlannedPurchaseNow(purchaseId);
+        // An empty step only toasts; a reload would drop keyboard focus.
+        if (!(await runPlannedPurchaseNow(purchaseId))) return;
         break;
       case 'pause':
         // Pause is reversible and scoped to a single execution: the plan stays
@@ -724,16 +750,6 @@ const LEGACY_PLAN_SERVICE_IDS: Readonly<Record<string, string>> = {
   'gcp/memorystore': 'cache',
 };
 
-function planServiceLabel(slug: string): string {
-  switch (slug) {
-    case 'savings-plans-compute':     return 'Compute SP';
-    case 'savings-plans-ec2instance': return 'EC2 Instance SP';
-    case 'savings-plans-sagemaker':   return 'SageMaker SP';
-    case 'savings-plans-database':    return 'Database SP';
-    default:                          return slug;
-  }
-}
-
 // Extract provider/service info from plan's services map.
 //
 // `service` is now a comma-separated list of all services covered by
@@ -747,28 +763,31 @@ function planServiceLabel(slug: string): string {
 // are plan-level today, not per-service, so picking any entry is
 // correct. If the model ever differentiates per service, this needs
 // to render the same way.
-function extractPlanInfo(plan: BackendPlan): { provider: string | null; service: string; term: number | null; coverage: number | null } {
+//
+// `service` holds the raw slugs (the edit flow selects the service option by
+// it); `serviceDisplay` holds the display names for the card (#1683).
+function extractPlanInfo(plan: BackendPlan): { provider: string | null; service: string; serviceDisplay: string; term: number | null; coverage: number | null } {
   const services = plan.services || {};
   const serviceValues = Object.values(services);
   const firstService = serviceValues[0];
   if (firstService) {
-    const service = serviceValues.length === 0
-      ? '—'
-      : serviceValues
-          .map(s => planServiceLabel(s.service || '—'))
-          .join(', ');
+    const service = serviceValues.map(s => s.service || '—').join(', ');
+    const serviceDisplay = serviceValues
+      .map(s => (s.service ? serviceLabel(s.service, true) : '—'))
+      .join(', ');
     // H-4: never fabricate provider/term/coverage when absent.
     // Return null so callers can surface NO_VALUE/'Unknown' in the display
     // layer rather than silently committing to aws/3yr/80% defaults.
     return {
       provider: firstService.provider || null,
       service,
+      serviceDisplay,
       term: firstService.term || null,
       coverage: firstService.coverage ?? null
     };
   }
   // No services at all: all fields are unknown.
-  return { provider: null, service: '—', term: null, coverage: null };
+  return { provider: null, service: '—', serviceDisplay: '—', term: null, coverage: null };
 }
 
 // Returns true when the plan's next_execution_date is strictly before today.
@@ -866,7 +885,7 @@ function renderPlanCard(plan: BackendPlan, canManagePlan: boolean, canDeletePlan
           </div>
           <div class="plan-detail">
             <span class="plan-detail-label">Service</span>
-            <span class="plan-detail-value">${escapeHtml(info.service)}</span>
+            <span class="plan-detail-value">${escapeHtml(info.serviceDisplay)}</span>
           </div>
           <div class="plan-detail">
             <span class="plan-detail-label">Term</span>
@@ -2034,8 +2053,10 @@ export async function openAddPurchasesModal(planId: string, planName: string, no
     document.getElementById('add-purchases-date-help')!.textContent = `This plan has a ${notificationDays}-day notification window. Dates use midnight UTC; subsequent purchases follow the plan's interval.`;
     const updateDateWarning = (): void => {
       const selected = Date.parse(`${startDateInput.value}T00:00:00Z`);
-      document.getElementById('add-purchases-date-warning')!.textContent = selected < Date.now() + notificationDays * 24 * 60 * 60 * 1000
-        ? `This date may leave too little notice for recommendations to attach. Suggested start date: ${suggested}.`
+      // Mirrors the server's start_date_inside_notice_margin rule (D5 of #631):
+      // a date before now + (N+1) days is refused.
+      document.getElementById('add-purchases-date-warning')!.textContent = selected < Date.now() + (notificationDays + 1) * 24 * 60 * 60 * 1000
+        ? `This date leaves too little notice for recommendations to attach and will be refused. Suggested start date: ${suggested}.`
         : '';
     };
     startDateInput.addEventListener('input', updateDateWarning);

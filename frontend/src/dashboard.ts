@@ -15,7 +15,8 @@ import { canAccess } from './permissions';
 import { groupRecsByCell, pageLevelRange, formatSavingsRange, triggerAutoRefreshIfStale, startRecommendationsRefresh } from './recommendations';
 import { getRecommendationsFreshness } from './api/recommendations';
 import { buildFirstRunEmptyState, isScopeFiltered } from './first-run-empty-state';
-import { showSkeletonTiles, showSkeletonBlock, teardownSkeleton } from './lib/skeleton';
+import { serviceLabel } from './lib/service-labels';
+import { showSkeletonTiles, showSkeletonBlock, teardownSkeleton, isSkeletonActive } from './lib/skeleton';
 import { buildErrorCallout } from './lib/error-callout';
 import { filterByEnabledProviders } from './lib/enabled-providers';
 import { buildKpiTile } from './lib/kpi-tile';
@@ -50,33 +51,6 @@ function segmentGap() {
   return { borderColor: surfaceColor(), borderWidth: { top: 0, right: 2, bottom: 0, left: 0 } } as const;
 }
 
-// Display names for the per-service chart's axis and tooltips. The chart
-// groups by service slug across providers, so shared slugs (compute, cache,
-// relational-db) get a provider-neutral name. Unknown slugs pass through.
-const SERVICE_CHART_LABELS: Readonly<Record<string, string>> = {
-  ec2: 'EC2',
-  rds: 'RDS',
-  elasticache: 'ElastiCache',
-  opensearch: 'OpenSearch',
-  memorydb: 'MemoryDB',
-  redshift: 'Redshift',
-  'savings-plans-compute': 'Compute Savings Plans',
-  'savings-plans-ec2instance': 'EC2 Instance Savings Plans',
-  'savings-plans-sagemaker': 'SageMaker Savings Plans',
-  'savings-plans-database': 'Database Savings Plans',
-  compute: 'Compute',
-  'relational-db': 'Relational DB',
-  cache: 'Cache',
-  search: 'Search',
-  nosql: 'NoSQL',
-};
-
-export function serviceChartLabel(slug: string, compact = false): string {
-  const label = SERVICE_CHART_LABELS[slug] ?? slug;
-  // Narrow charts abbreviate "Savings Plans" the way plan cards do ("Compute SP").
-  return compact ? label.replace(/ Savings Plans$/, ' SP') : label;
-}
-
 // Below this chart width the category labels use the compact names.
 const SERVICE_CHART_COMPACT_PX = 560;
 
@@ -88,6 +62,32 @@ const SERVICE_CHART_CHROME_PX = 84;
 // Ids of the "View as table" text alternatives for the Home charts (#744).
 const SAVINGS_BY_SERVICE_TABLE_ID = 'savings-by-service-table';
 const SAVINGS_TREND_TABLE_ID = 'savings-trend-table';
+const SAVINGS_TREND_LOADING_ID = 'savings-trend-loading';
+const TREND_LOAD_FAILED_TEXT = 'Savings history could not be loaded. Reload the page to try again.';
+
+/**
+ * #1686: put a skeleton where a chart card's canvas will be, but only before
+ * its first chart is drawn; later reloads keep the current chart on screen.
+ * The card's renderer un-hides the canvas once it has data.
+ */
+function showChartSkeleton(loadingId: string, canvasId: string, emptyId: string, chart: Chart | null): HTMLElement | null {
+  const loadingEl = document.getElementById(loadingId);
+  if (!loadingEl || chart || isSkeletonActive(loadingEl)) return loadingEl;
+  document.getElementById(canvasId)?.classList.add('hidden');
+  // A previous range's empty-state text must not sit next to this load.
+  document.getElementById(emptyId)?.classList.add('hidden');
+  showSkeletonBlock(loadingEl, '100%', '12rem');
+  return loadingEl;
+}
+
+// Shown in a chart card whose data never arrived because the dashboard load
+// failed, so the card is not left as a bare heading (#1686).
+function showChartLoadFailed(emptyId: string, text: string): void {
+  const empty = document.getElementById(emptyId);
+  if (!empty) return;
+  empty.textContent = text;
+  empty.classList.remove('hidden');
+}
 
 // One colour per stacked layer, the same on every bar, so the legend swatches
 // are exactly the colours drawn (#189). The x axis already names each service,
@@ -186,6 +186,10 @@ export async function loadDashboard(): Promise<void> {
   if (summaryEl) showSkeletonTiles(summaryEl, 4);
   const upcomingEl = document.getElementById('upcoming-list');
   if (upcomingEl) showSkeletonBlock(upcomingEl, '100%', '6rem');
+  // #1686: the two chart cards share the same loading treatment. The trend
+  // loader clears its own; the per-service one is cleared in finally below.
+  const trendLoadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', 'savings-trend-empty', savingsTrendChart);
+  const byServiceLoadingEl = showChartSkeleton('savings-by-service-loading', 'savings-by-service-chart', 'savings-by-service-empty', savingsByServiceChart);
 
   try {
     const currentProvider = state.getCurrentProvider();
@@ -301,6 +305,14 @@ export async function loadDashboard(): Promise<void> {
     // error reads as a fresh fetch in-flight, which is misleading.
     const upcoming = document.getElementById('upcoming-list');
     if (upcoming) teardownSkeleton(upcoming);
+    // The trend loader never runs on this path, so clear its skeleton here.
+    if (trendLoadingEl) teardownSkeleton(trendLoadingEl);
+    if (!savingsTrendChart) showChartLoadFailed('savings-trend-empty', TREND_LOAD_FAILED_TEXT);
+    if (!savingsByServiceChart) {
+      showChartLoadFailed('savings-by-service-empty', 'Potential savings could not be loaded. Reload the page to try again.');
+    }
+  } finally {
+    if (byServiceLoadingEl) teardownSkeleton(byServiceLoadingEl);
   }
 }
 
@@ -404,11 +416,14 @@ function renderDashboardSummary(
       // #180: count the same rows the range sums (and the Opportunities page
       // counts); the backend total ignores the Enabled Providers setting.
       detail: `${recsCount ?? data.total_recommendations ?? NO_VALUE} recommendations` },
+    // #1709: committed_monthly is the active commitments' estimated monthly
+    // savings, not what they cost.
     { kpi: 'commitments', title: 'Active Commitments', value: data.active_commitments != null ? String(data.active_commitments) : NO_VALUE,
-      detail: `${formatCurrency(data.committed_monthly)}/mo committed` },
+      detail: `${formatCurrency(data.committed_monthly)}/mo estimated savings` },
     { kpi: 'coverage',    title: 'Current Coverage', value: coverageValue, detail: coverageDetail },
+    // #1686: monthly estimated savings times elapsed months, not recorded savings.
     { kpi: 'ytd',         title: 'YTD Savings', value: formatCurrency(data.ytd_savings), valueSavings: true,
-      detail: 'From commitment purchases' },
+      detail: 'Estimated from active commitments' },
   ];
   // Shared with the Opportunities summary (issue #743). buildKpiTile keeps an
   // absent (NO_VALUE) figure neutral rather than green (issue #739).
@@ -688,7 +703,8 @@ function viewPurchaseDetails(executionId: string): void {
   document.body.appendChild(modal);
   // Focus moves into the dialog, Tab is trapped, Escape closes it and focus
   // returns to View Details (#731). Every close path removes the element.
-  openModal(modal, { onClose: () => modal.remove() });
+  // Initial focus goes to Close, not the destructive Cancel Purchase (#1653).
+  openModal(modal, { initialFocus: '#close-purchase-details-btn', onClose: () => modal.remove() });
 }
 
 // buildUpcomingDetailsModal constructs the dialog via DOM-API, not
@@ -1063,13 +1079,15 @@ export function renderSavingsByService(
   // including any beyond the SAVINGS_BY_SERVICE_MAX bars drawn.
   const top = positive[0]!;
   setChartSummary(canvas,
-    `Stacked bar chart of monthly savings for ${positive.length} service${positive.length === 1 ? '' : 's'}, `
-    + `${formatCurrency(totalSavings)} in total. Largest: ${top.svc} at ${formatCurrency(top.visibleTotal)}. `
+    `Stacked bar chart of monthly savings for ${positive.length} service${positive.length === 1 ? '' : 's'}. `
+    + `The bars add up to ${formatCurrency(totalSavings)}: current committed savings plus each service's `
+    + 'highest-savings option, so this is not the Potential Monthly Savings range. '
+    + `Largest: ${serviceLabel(top.svc)} at ${formatCurrency(top.visibleTotal)}. `
     + 'Layers: Current / Committed, Lowest option, Upside. Values are in the table below the chart.');
   renderChartTable(canvas, SAVINGS_BY_SERVICE_TABLE_ID, {
     caption: 'Potential savings range per service (monthly)',
     columns: ['Service', 'Current / Committed', 'Lowest option', 'Upside', 'Total'],
-    rows: positive.map(e => [e.svc, formatCurrency(e.current), formatCurrency(e.lowestOption),
+    rows: positive.map(e => [serviceLabel(e.svc), formatCurrency(e.current), formatCurrency(e.lowestOption),
       formatCurrency(e.upside), formatCurrency(e.visibleTotal)]),
   });
 
@@ -1127,7 +1145,7 @@ export function renderSavingsByService(
         },
         tooltip: {
           callbacks: {
-            title: (items) => serviceChartLabel(items[0]?.label ?? ''),
+            title: (items) => serviceLabel(items[0]?.label ?? ''),
             label: (ctx) => {
               const svc = ctx.label ?? '';
               const s = stats.get(svc);
@@ -1148,7 +1166,7 @@ export function renderSavingsByService(
               const total = current + lowestOption + upside;
               const pct = totalSavings > 0 ? ((total / totalSavings) * 100).toFixed(1) : '0.0';
               const lines = [
-                `Service: ${serviceChartLabel(svc)}`,
+                `Service: ${serviceLabel(svc)}`,
                 `Total: ${formatCurrency(total)} (${pct}% of all services)`,
                 `Current / Committed: ${formatCurrency(current)}`,
                 `Lowest option: ${formatCurrency(lowestOption)}`,
@@ -1179,7 +1197,7 @@ export function renderSavingsByService(
           ticks: {
             autoSkip: false,
             callback(value) {
-              return serviceChartLabel(this.getLabelForValue(value as number), this.chart.width < SERVICE_CHART_COMPACT_PX);
+              return serviceLabel(this.getLabelForValue(value as number), this.chart.width < SERVICE_CHART_COMPACT_PX);
             },
           },
         },
@@ -1194,12 +1212,11 @@ export function renderSavingsByService(
  * a line chart of cumulative savings spanning the full selected window on
  * the x-axis (QA row 405, step 3.1). When the response is empty (QA 2.3
  * supersedes QA 3.1's earlier empty-axes suggestion), the canvas is hidden
- * and an empty-state banner is shown: a filter-aware "No savings history
- * for <filter>" when a provider or account chip is active, otherwise the
- * generic "No purchase history yet." A single data point is too sparse to
- * draw a trend, so it gets a "Not enough history yet" message carrying that
- * point's value instead of a lone dot on a blank canvas (#188). Fetch failures
- * hide the canvas and show the "Savings history is not available yet." stub.
+ * and an empty-state banner names the range (and the active provider or
+ * account chip): "No savings recorded in the last 90 days." (#1686). A single
+ * data point is too sparse to draw a trend, so it gets a "Not enough history
+ * yet" message carrying that point's value instead of a lone dot on a blank
+ * canvas (#188). Fetch failures hide the canvas and say the load failed.
  */
 export async function loadSavingsTrendChart(): Promise<void> {
   const canvas = document.getElementById('savings-trend-chart') as HTMLCanvasElement | null;
@@ -1208,6 +1225,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
   // #747: quick range or filter changes overlap requests; only the latest
   // may paint, or an older response landing last would show the wrong range.
   const generation = ++savingsTrendGeneration;
+  const loadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', 'savings-trend-empty', savingsTrendChart);
 
   const now = new Date();
   const nowMs = now.getTime();
@@ -1267,8 +1285,8 @@ export async function loadSavingsTrendChart(): Promise<void> {
     // Policy (QA 2.3, supersedes QA 3.1 empty-axis approach):
     // - No data + active account filter: show empty-state with the filter
     //   name so the user understands why the chart is blank.
-    // - No data + no filter active: show a generic "No purchase history yet"
-    //   message rather than blank axes.
+    // - No data + no filter active: name the empty range rather than show
+    //   blank axes; it says nothing about older history (#1686).
     // - Data present: always show the chart (hide empty-state).
     // The stub is also shown on fetch errors (catch block below).
     if (points.length === 0) {
@@ -1278,9 +1296,9 @@ export async function loadSavingsTrendChart(): Promise<void> {
         // above), so naming the active filter in the empty-state is accurate
         // (issue #498). buildFilterDesc returns '' when no filter is active.
         const filterDesc = buildFilterDesc(provider, accountIDs);
-        empty.textContent = filterDesc
-          ? `No savings history for ${filterDesc}.`
-          : 'No purchase history yet.';
+        const rangeDesc = isAllRange ? 'the last year' : `the last ${days} days`;
+        empty.textContent = `No savings recorded in ${rangeDesc}${filterDesc ? ` for ${filterDesc}` : ''}.`
+          + (isAllRange ? '' : ' Older savings may show in the 1y range.');
         empty.classList.remove('hidden');
       }
       if (savingsTrendChart) { savingsTrendChart.destroy(); savingsTrendChart = null; }
@@ -1377,15 +1395,18 @@ export async function loadSavingsTrendChart(): Promise<void> {
     if (generation !== savingsTrendGeneration) return;
     // Analytics is Postgres-backed now, but the endpoint still guards with
     // a 503 when the analytics client isn't wired. Don't break the rest of
-    // the dashboard — hide the widget and fall back to a neutral message.
+    // the dashboard — hide the widget and say the load failed, so it does not
+    // read as "no history" (#1686).
     console.warn('Savings trend chart unavailable:', err);
     if (savingsTrendChart) { savingsTrendChart.destroy(); savingsTrendChart = null; }
     removeChartTable(SAVINGS_TREND_TABLE_ID);
     canvas.classList.add('hidden');
     if (empty) {
-      empty.textContent = 'Savings history is not available yet.';
+      empty.textContent = TREND_LOAD_FAILED_TEXT;
       empty.classList.remove('hidden');
     }
+  } finally {
+    if (loadingEl && generation === savingsTrendGeneration) teardownSkeleton(loadingEl);
   }
 }
 

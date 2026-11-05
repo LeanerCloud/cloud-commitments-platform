@@ -65,6 +65,11 @@ type HandlerConfig struct {
 	// scheduled collection is off or the deployment predates the variable.
 	// It feeds next_collection_at on GET /api/recommendations/freshness.
 	RecommendationSchedule string
+	// FireSweepOff is true when Terraform says no fire_scheduled_purchases
+	// sweep runs (FIRE_SWEEP_SCHEDULED=false). A delayed approval would then
+	// sit in "scheduled" forever, so PUT /api/config refuses a delay (#1588).
+	// False when the variable is unset, so older deployments keep saving.
+	FireSweepOff bool
 }
 
 // CommitmentOptsInterface lets us swap the real *commitmentopts.Service for
@@ -664,7 +669,9 @@ type DashboardSummaryResponse struct {
 	PotentialMonthlySavings float64                   `json:"potential_monthly_savings"`
 	TotalRecommendations    int                       `json:"total_recommendations"`
 	ActiveCommitments       int                       `json:"active_commitments"`
-	CommittedMonthly        float64                   `json:"committed_monthly"`
+	// CommittedMonthly is the estimated monthly savings of the active
+	// commitments (the sum of their EstimatedSavings), not their cost (#1709).
+	CommittedMonthly float64 `json:"committed_monthly"`
 	// CurrentCoverage is null when there is neither committed nor potential
 	// savings to measure (0/0), instead of a fabricated 100% (issue #72).
 	CurrentCoverage *float64 `json:"current_coverage"`

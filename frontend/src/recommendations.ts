@@ -7,6 +7,7 @@ import * as state from './state';
 import type { CostPeriod } from './state';
 import { formatCurrency, formatTerm, escapeHtml, CURRENCY_DEFAULT_DIGITS, NO_VALUE } from './utils';
 import { filterByEnabledProviders } from './lib/enabled-providers';
+import { serviceLabel } from './lib/service-labels';
 import { getRecommendationsFreshness, refreshRecommendations as refreshRecommendationsAPI } from './api/recommendations';
 import type { RecommendationsFreshness } from './api/recommendations';
 import { showToast } from './toast';
@@ -69,6 +70,11 @@ let checkedPurchaseModalInitialised = false;
 // it after its override fetch so only the newest open renders and sets
 // submit state (issue #430).
 let purchaseModalOpenToken = 0;
+
+/** Identifies the current purchase-modal session; changes on every open. */
+export function getPurchaseModalSession(): number {
+  return purchaseModalOpenToken;
+}
 // Cache of account ID → name for column display
 let accountNamesCache: Map<string, string> = new Map();
 // Whether the last account-list fetch returned any accounts; null when it
@@ -402,6 +408,8 @@ export async function triggerAutoRefreshIfStale(
 // POLL_MAX_ATTEMPTS checks total, so the longest wait matches the backend's
 // own detached-collection budget (5 min in internal/scheduler/scheduler.go).
 const COLLECTION_POLL_INTERVAL_MS = 5_000;
+const REFRESH_FAILED_MESSAGE =
+  'Recommendations refresh failed: the collection reported errors. The previous recommendations are still shown.';
 const COLLECTION_POLL_MAX_ATTEMPTS = 60; // 60 * 5s = 5 min
 
 function delay(ms: number): Promise<void> {
@@ -431,8 +439,8 @@ async function pollUntilCollectionClears(): Promise<RecommendationsFreshness | n
 
 /**
  * Kick off a recommendations re-collect, surface the three-stage toast
- * (in-flight / success / failure), and reload the page-specific UI on
- * success. Dedups against a refresh already in flight (#284) so the
+ * (in-flight / success / failure), and reload the page-specific UI once the
+ * collection finishes. Dedups against a refresh already in flight (#284) so the
  * stale-on-open path and the lookback-change path (#909) can never run
  * two concurrent collects. Returns the in-flight promise (or the existing
  * one when a refresh is already running) so callers that need to await
@@ -459,50 +467,47 @@ export function startRecommendationsRefresh(
     timeout: null,
   });
 
-  autoRefreshInFlight = refreshRecommendationsAPI()
-    .then(() => {
-      inFlight.dismiss();
+  // The POST only starts the collection (202 in Lambda mode), and a 409 means
+  // one is already running; either way the outcome is known only once the
+  // in-flight marker clears (issue #1679).
+  const settleWhenCollectionClears = async (): Promise<void> => {
+    const cleared = await pollUntilCollectionClears();
+    inFlight.dismiss();
+    if (!cleared) {
+      showToast({
+        message: 'Recommendations refresh is taking longer than expected; try again shortly',
+        kind: 'error',
+      });
+      return;
+    }
+    if (cleared.last_collection_error) {
+      // last_collection_error can hold raw provider error text, so the toast
+      // names the outcome only (cf. #748).
+      showToast({
+        message: REFRESH_FAILED_MESSAGE,
+        kind: 'error',
+      });
+    } else {
       showToast({
         message: 'Recommendations refreshed',
         kind: 'success',
         timeout: 5_000,
       });
-      // Reload UI data so users see fresh content. Caller passes a
-      // page-specific reload (loadDashboard from Home, loadRecommend-
-      // ations from Opportunities) so we don't force a recs render on
-      // a page that doesn't display them.
-      return onReload();
-    })
+    }
+    // Reload either way: a partially failed collect may still have persisted
+    // rows. Callers pass a page-specific reload (loadDashboard from Home,
+    // loadRecommendations from Opportunities).
+    await onReload();
+  };
+
+  autoRefreshInFlight = refreshRecommendationsAPI()
+    .then(settleWhenCollectionClears)
     .catch(async (err: unknown) => {
       const status = err !== null && typeof err === 'object' && 'status' in err
         ? (err as { status?: unknown }).status
         : undefined;
       if (status === 409) {
-        const cleared = await pollUntilCollectionClears();
-        if (cleared) {
-          inFlight.dismiss();
-          if (cleared.last_collection_error) {
-            showToast({
-              message: `Recommendations refresh failed: ${cleared.last_collection_error}`,
-              kind: 'error',
-            });
-          } else {
-            showToast({
-              message: 'Recommendations refreshed',
-              kind: 'success',
-              timeout: 5_000,
-            });
-          }
-          // Reload either way: a partially failed collect may still have
-          // persisted rows.
-          await onReload();
-          return;
-        }
-        inFlight.dismiss();
-        showToast({
-          message: 'Recommendations refresh is taking longer than expected; try again shortly',
-          kind: 'error',
-        });
+        await settleWhenCollectionClears();
         return;
       }
       inFlight.dismiss();
@@ -895,7 +900,7 @@ async function onLookbackChange(rawValue: string): Promise<void> {
 function savingsScopeText(visibleCount: number, loadedCount: number): string | null {
   const active = Object.keys(state.getRecommendationsColumnFilters());
   if (loadedServerFilters.length > 0) {
-    const pushed = loadedServerFilters.map((f) => `${columnLabel(f.column)}: ${f.value}`);
+    const pushed = loadedServerFilters.map((f) => `${columnLabel(f.column)}: ${categoricalDisplayLabel(f.column, f.value)}`);
     const others = active.filter((col) => !loadedServerFilters.some((f) => f.column === col)).length;
     if (others > 0) pushed.push(`+${others} more ${others === 1 ? 'filter' : 'filters'}`);
     return `Filtered: ${visibleCount} recommendations (${pushed.join(', ')})`;
@@ -1595,11 +1600,16 @@ export function formatSavingsRange(min: number, max: number): string {
 
 /** Format a payback-months range, collapsing identical endpoints to a
  * single value and rounding to 1 decimal. Used by the Payback Period
- * summary card after #279 broadened it to a range. */
+ * summary card after #279 broadened it to a range. A 0 lower bound is a
+ * no-upfront choice, which has no payback (shown as NO_VALUE on its own),
+ * so the range reads "Up to X months" instead of "0.0 – X" (issue #1684). */
 function formatPaybackRange(min: number, max: number): string {
   const lo = min.toFixed(1);
   const hi = max.toFixed(1);
-  return lo === hi ? `${lo} months` : `${lo} – ${hi} months`;
+  if (lo === hi) return `${lo} months`;
+  // Decide on the rounded value: a positive bound under 0.05 prints "0.0" and a
+  // negative one "-0.0" or below, and none of them is a payback period (#1705).
+  return Number(lo) <= 0 ? `Up to ${hi} months` : `${lo} – ${hi} months`;
 }
 
 /** Format a term range, collapsing "1 yr – 1 yr" to "1 yr". */
@@ -1807,6 +1817,11 @@ export function periodSuffix(period: CostPeriod): string {
     case 'monthly': return '/ mo';
     case 'yearly':  return '/ yr';
   }
+}
+
+/** Suffix appended directly to a value ("$20/mo"); periodSuffix spaces it for labels. */
+function periodUnit(period: CostPeriod): string {
+  return periodSuffix(period).replace('/ ', '/');
 }
 
 /**
@@ -2275,6 +2290,9 @@ function categoricalDisplayLabel(
   }
   if (column === 'provider') {
     return providerDisplayName(value);
+  }
+  if (column === 'service') {
+    return serviceLabel(value);
   }
   return value;
 }
@@ -3284,7 +3302,7 @@ function renderColumnCell(key: state.RecommendationsColumnId, rec: LocalRecommen
     case 'account':
       return `<td><span class="cell-truncate cell-truncate--sm" title="${escapeHtml(ctx.accountName)}">${escapeHtml(ctx.accountName)}</span></td>`;
     case 'service':
-      return `<td><span class="service-badge" title="${escapeHtml(rec.service)}">${escapeHtml(rec.service)}</span></td>`;
+      return `<td><span class="service-badge" title="${escapeHtml(serviceLabel(rec.service))}">${escapeHtml(serviceLabel(rec.service))}</span></td>`;
     case 'resource_type':
       return `<td title="${escapeHtml(rec.resource_type)}"><span class="cell-truncate cell-truncate--sm" title="${escapeHtml(rec.engine ? `${rec.resource_type} (${rec.engine})` : rec.resource_type)}">${escapeHtml(rec.resource_type)}${rec.engine ? ` (${escapeHtml(rec.engine)})` : ''}</span>${ctx.badge}</td>`;
     case 'capacity': {
@@ -3323,6 +3341,16 @@ function renderColumnCell(key: state.RecommendationsColumnId, rec: LocalRecommen
   }
 }
 
+// 'flat' is a single-variant cell, 'sp-child' a single-variant cell under a
+// Savings Plans group row, and 'variant' one of several variants of a cell
+// whose summary row already shows its identity (issue #1684).
+type VariantRowNesting = 'flat' | 'sp-child' | 'variant';
+
+// Columns every variant of a cell shares (cellKey), left blank on 'variant' rows.
+const CELL_IDENTITY_KEYS: ReadonlySet<state.RecommendationsColumnId> = new Set(
+  ['provider', 'account', 'service', 'resource_type', 'region'] as state.RecommendationsColumnId[],
+);
+
 // Helper: render one variant row (a single LocalRecommendation) with optional
 // indentation styling for multi-variant cells.
 //
@@ -3331,7 +3359,7 @@ function renderColumnCell(key: state.RecommendationsColumnId, rec: LocalRecommen
 function buildVariantRowMarkup(
   rec: LocalRecommendation,
   selectedRecs: ReadonlySet<string>,
-  isNested: boolean,
+  nesting: VariantRowNesting,
   cols: readonly ColumnDef[] = COLUMN_DEFS,
   showCheckboxes = true,
 ): string {
@@ -3347,7 +3375,7 @@ function buildVariantRowMarkup(
   const pct = displaySavingsPct(rec);
   const pctClass = pct !== null && pct < 0 ? ' class="num effective-pct-negative"' : ' class="num"';
   const pctText = pct === null ? '\u2014' : pct.toFixed(1) + '%';
-  const nestedClass = isNested ? ' rec-variant-row' : '';
+  const nestedClass = nesting === 'flat' ? '' : ' rec-variant-row';
   const cellCtx = { accountName, badge, pct, pctClass, pctText, period };
   // Issue #869: viewer (readonly) sessions get no checkbox or action buttons
   // in the leading column; the cell is still emitted so column widths align
@@ -3375,10 +3403,19 @@ function buildVariantRowMarkup(
   return `
   <tr class="recommendation-row${nestedClass} ${savingsClass} ${isSelected ? 'selected' : ''}" data-rec-id="${recId}">
     ${checkboxCell}
-    ${cols.map((c) => renderColumnCell(c.key, rec, cellCtx)).join('')}
+    ${cols.map((c) => (nesting === 'variant' && CELL_IDENTITY_KEYS.has(c.key)
+      ? '<td class="rec-variant-identity"></td>'
+      : renderColumnCell(c.key, rec, cellCtx))).join('')}
   </tr>`;
 }
 
+
+// Escaped "resource type (engine)" for a group summary row; empty when the
+// provider sends no resource type (e.g. Azure savings plans).
+function cellIdentityLabel(rec: LocalRecommendation): string {
+  if (!rec.resource_type) return '';
+  return `${escapeHtml(rec.resource_type)}${rec.engine ? ` (${escapeHtml(rec.engine)})` : ''}`;
+}
 
 function buildListMarkup(
   recommendations: LocalRecommendation[],
@@ -3475,7 +3512,7 @@ function buildListMarkup(
       const spLabel = savingsPlansBucketLabel(spSlugs);
       const planTypeCount = childCellKeys.length;
       // Aggregate savings: sum the best-variant savings across all child cells.
-      const sfxLabel = periodSuffix(period);
+      const sfxLabel = periodUnit(period);
       let spSavingsTotal = 0;
       for (const ck of childCellKeys) {
         const cv = groups.get(ck)!;
@@ -3506,7 +3543,7 @@ function buildListMarkup(
       for (const ck of childCellKeys) {
         const childVariants = groups.get(ck)!;
         if (childVariants.length === 1) {
-          rows.push(buildVariantRowMarkup(childVariants[0]!, selectedRecs, true, visibleCols, showCheckboxes));
+          rows.push(buildVariantRowMarkup(childVariants[0]!, selectedRecs, 'sp-child', visibleCols, showCheckboxes));
           continue;
         }
 
@@ -3530,9 +3567,7 @@ function buildListMarkup(
           ? formatTermShort(selectedChildVariant.term) || NO_VALUE
           : formatTermRange(childSummary.termMin, childSummary.termMax);
         const cellChevron = iconSvg(isCellExpanded ? 'chevron-down' : 'chevron-right');
-        const childIdentityParts = [
-          `${escapeHtml(childRep.resource_type)}${childRep.engine ? ` (${escapeHtml(childRep.engine)})` : ''}`,
-        ];
+        const childIdentityParts = [cellIdentityLabel(childRep)];
         if (visibleKeys.has('region')) childIdentityParts.push(escapeHtml(childRep.region));
         childIdentityParts.push(`${childVariants.length} variants`);
         const childRangeParts: string[] = [];
@@ -3549,16 +3584,18 @@ function buildListMarkup(
     </td>
     <td><span class="provider-badge ${providerBadgeClass(childRep.provider)}">${escapeHtml(providerDisplayName(childRep.provider))}</span></td>
     <td>${escapeHtml(childAccountName)}</td>
-    <td><span class="service-badge">${escapeHtml(childRep.service)}</span></td>
+    <td><span class="service-badge">${escapeHtml(serviceLabel(childRep.service))}</span></td>
     <td colspan="${summaryColspan}" class="rec-cell-summary-content">
-      <span class="rec-cell-identity">${childIdentityParts.join(' &mdash; ')}</span>
-      ${childRangeParts.length > 0 ? `<span class="rec-cell-range">${childRangeParts.join(' &middot; ')}</span>` : ''}
+      <div class="rec-cell-summary-inner">
+        <span class="rec-cell-identity">${childIdentityParts.filter(Boolean).join(' &mdash; ')}</span>
+        ${childRangeParts.length > 0 ? `<span class="rec-cell-range">${childRangeParts.join(' &middot; ')}</span>` : ''}
+      </div>
     </td>
   </tr>`);
         if (isCellExpanded) {
           const sortedChildVariants = sortVariantsInCell(childVariants);
           for (const v of sortedChildVariants) {
-            rows.push(buildVariantRowMarkup(v, selectedRecs, true, visibleCols, showCheckboxes));
+            rows.push(buildVariantRowMarkup(v, selectedRecs, 'variant', visibleCols, showCheckboxes));
           }
         }
       }
@@ -3568,7 +3605,7 @@ function buildListMarkup(
     // Non-SP cell (or SP singleton scope -- only one plan type in scope).
     if (variants.length === 1) {
       // Single-variant: render flat, no group header, no indent.
-      rows.push(buildVariantRowMarkup(variants[0]!, selectedRecs, false, visibleCols, showCheckboxes));
+      rows.push(buildVariantRowMarkup(variants[0]!, selectedRecs, 'flat', visibleCols, showCheckboxes));
       continue;
     }
 
@@ -3584,7 +3621,7 @@ function buildListMarkup(
     // Summary row savings display: selected variant value if one is selected;
     // otherwise the range across all variants.
     // issue #319: scale savings by the active period.
-    const sfxLabel = periodSuffix(period);
+    const sfxLabel = periodUnit(period);
     const scaledSavingsMin = scaleCost(summary.savingsMin, period) ?? summary.savingsMin;
     const scaledSavingsMax = scaleCost(summary.savingsMax, period) ?? summary.savingsMax;
     const savingsDisplay = selectedVariant
@@ -3600,9 +3637,7 @@ function buildListMarkup(
       : formatTermRange(summary.termMin, summary.termMax);
 
     const chevron = iconSvg(isExpanded ? 'chevron-down' : 'chevron-right');
-    const identityParts = [
-      `${escapeHtml(rep.resource_type)}${rep.engine ? ` (${escapeHtml(rep.engine)})` : ''}`,
-    ];
+    const identityParts = [cellIdentityLabel(rep)];
     if (visibleKeys.has('region')) {
       identityParts.push(escapeHtml(rep.region));
     }
@@ -3633,17 +3668,19 @@ function buildListMarkup(
     ${chevronCell}
     <td><span class="provider-badge ${providerBadgeClass(rep.provider)}">${escapeHtml(providerDisplayName(rep.provider))}</span></td>
     <td>${escapeHtml(accountName)}</td>
-    <td><span class="service-badge">${escapeHtml(rep.service)}</span></td>
+    <td><span class="service-badge">${escapeHtml(serviceLabel(rep.service))}</span></td>
     <td colspan="${summaryColspan}" class="rec-cell-summary-content">
-      <span class="rec-cell-identity">${identityParts.join(' &mdash; ')}</span>
-      ${rangeParts.length > 0 ? `<span class="rec-cell-range">${rangeParts.join(' &middot; ')}</span>` : ''}
+      <div class="rec-cell-summary-inner">
+        <span class="rec-cell-identity">${identityParts.filter(Boolean).join(' &mdash; ')}</span>
+        ${rangeParts.length > 0 ? `<span class="rec-cell-range">${rangeParts.join(' &middot; ')}</span>` : ''}
+      </div>
     </td>
   </tr>`);
 
     if (isExpanded) {
       const sortedVariants = sortVariantsInCell(variants);
       for (const v of sortedVariants) {
-        rows.push(buildVariantRowMarkup(v, selectedRecs, true, visibleCols, showCheckboxes));
+        rows.push(buildVariantRowMarkup(v, selectedRecs, 'variant', visibleCols, showCheckboxes));
       }
     }
   }
@@ -4226,7 +4263,7 @@ function updateBottomActionBox(visibleCount: number, loadedCount: number): void 
     } else if (visibleCount === 0) {
       summary.textContent = '(0 visible — adjust filters)';
     } else if (selectedVisibleCount === 0) {
-      summary.textContent = '(Select cells to act on)';
+      summary.textContent = '(Select rows to act on)';
     } else if (targetRange.cellCount > 0) {
       const savingsText = targetRange.savingsMax > 0
         ? formatSavingsRange(targetRange.savingsMin, targetRange.savingsMax)
@@ -4234,8 +4271,8 @@ function updateBottomActionBox(visibleCount: number, loadedCount: number): void 
       const upfrontText = targetRange.upfrontMax > 0
         ? formatSavingsRange(targetRange.upfrontMin, targetRange.upfrontMax)
         : formatCurrency(0);
-      const cellWord = targetRange.cellCount === 1 ? 'cell' : 'cells';
-      summary.textContent = `(${savingsText}/mo · ${upfrontText} upfront across ${targetRange.cellCount} ${cellWord})`;
+      const rowWord = targetRange.cellCount === 1 ? 'row' : 'rows';
+      summary.textContent = `(${savingsText}/mo · ${upfrontText} upfront across ${targetRange.cellCount} ${rowWord})`;
     } else {
       // Shouldn't happen given the gating above, but defensive.
       summary.textContent = `(${selectedVisibleCount} selected)`;
@@ -4250,7 +4287,7 @@ function updateBottomActionBox(visibleCount: number, loadedCount: number): void 
     ? 'No recommendations loaded'
     : visibleCount === 0
       ? 'No rows visible — adjust filters'
-      : 'Select at least one cell to enable';
+      : 'Select at least one row to enable';
 
   // Compute the selected-visible slice once; both the plan-button gating and
   // the hint span need it.

@@ -142,6 +142,29 @@ tr.history-row-highlight:hover {
     text-align: right;
 }
 
+/* A plain length: auto table layout ignores a percentage max-width, so a
+   100-char name would widen the column. Longer names truncate (full name in
+   title). */
+.planned-purchase-row .plan-name-cell {
+    display: inline-block;
+    max-width: 24rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+/* One muted dash for every empty numeric cell (td.num right-aligns it). */
+.planned-purchases-table .cell-placeholder {
+    color: var(--cudly-text-subtle);
+}
+
+/* aria-disabled keeps the button focusable so keyboard users can read why. */
+.planned-purchases-table button.is-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .planned-purchases-table tbody tr:hover {
     background: var(--cudly-surface-muted);
 }
@@ -505,20 +528,21 @@ th .history-column-filter-btn:focus-visible {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 8px;
+    /* Wide and dark enough to read as "more columns" at a glance (#1682). */
+    width: 16px;
     pointer-events: none;
     opacity: 0;
     transition: opacity var(--cudly-dur-fast) var(--cudly-ease);
 }
 
 .table-sticky-start tr > :first-child::after {
-    right: -8px;
-    background: linear-gradient(to right, color-mix(in srgb, var(--cudly-text) 8%, transparent), transparent);
+    right: -16px;
+    background: linear-gradient(to right, color-mix(in srgb, var(--cudly-text) 18%, transparent), transparent);
 }
 
 .table-sticky-end tr > :last-child::before {
-    left: -8px;
-    background: linear-gradient(to left, color-mix(in srgb, var(--cudly-text) 8%, transparent), transparent);
+    left: -16px;
+    background: linear-gradient(to left, color-mix(in srgb, var(--cudly-text) 18%, transparent), transparent);
 }
 
 :is(.scroll-hint-left .table-sticky-start, .table-sticky-start.scroll-hint-left) tr > :first-child::after,
