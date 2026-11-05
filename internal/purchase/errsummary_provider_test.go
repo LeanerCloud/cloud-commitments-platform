@@ -159,7 +159,14 @@ func TestIsDefiniteAWSRefusal(t *testing.T) {
 		err  string
 		want bool
 	}
-	cases := []tc{
+	retrying := []struct{ head, svc string }{
+		{"failed to purchase RDS RI: ", "RDS"},
+		{"failed to purchase Reserved Cache Node: ", "ElastiCache"},
+		{"failed to purchase OpenSearch RI: ", "OpenSearch"},
+		{"failed to purchase MemoryDB Reserved Nodes: ", "MemoryDB"},
+		{"failed to purchase Savings Plan: ", "savingsplans"},
+	}
+	base := []tc{
 		{"ec2 403 denied", []string{"aws"}, ec2("403", "UnauthorizedOperation"), true},
 		{"empty provider is not aws", []string{""}, ec2("403", "AccessDenied"), false},
 		{"empty provider beside aws", []string{"aws", ""}, ec2("403", "AccessDenied"), false},
@@ -199,15 +206,11 @@ func TestIsDefiniteAWSRefusal(t *testing.T) {
 		{"no recs", nil, ec2("403", "AccessDenied"), false},
 		{"empty", []string{"aws"}, "", false},
 	}
+	cases := make([]tc, 0, len(base)+2*len(retrying))
+	cases = append(cases, base...)
 	// Token-carrying services keep the SDK retries, so neither a single-attempt
 	// looking 4xx nor a retry-exhausted one proves nothing was bought.
-	for _, r := range []struct{ head, svc string }{
-		{"failed to purchase RDS RI: ", "RDS"},
-		{"failed to purchase Reserved Cache Node: ", "ElastiCache"},
-		{"failed to purchase OpenSearch RI: ", "OpenSearch"},
-		{"failed to purchase MemoryDB Reserved Nodes: ", "MemoryDB"},
-		{"failed to purchase Savings Plan: ", "savingsplans"},
-	} {
+	for _, r := range retrying {
 		cases = append(cases,
 			tc{r.svc + " 4xx keeps the hint", []string{"aws"}, "x.large: purchase failed: " + r.head + sdk(r.svc, "403", "AccessDenied"), false},
 			tc{r.svc + " retried 4xx keeps the hint", []string{"aws"}, "x.large: purchase failed: " + r.head + retried(r.svc, "400", "ThrottlingException"), false},
