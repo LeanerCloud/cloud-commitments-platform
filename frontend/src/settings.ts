@@ -55,7 +55,7 @@ let cachedSourceCloud: string | undefined;
 // see what they'd be overriding without switching tabs.
 let cachedGlobalDefaults: { term: number; payment: string; coverage: number } = {
   term: 3,
-  payment: 'all-upfront',
+  payment: 'no-upfront',
   coverage: 80,
 };
 
@@ -3114,7 +3114,7 @@ export async function loadGlobalSettings(): Promise<void> {
       if (termSelect) termSelect.value = String(data.global.default_term || 3);
 
       const paymentSelect = document.getElementById('setting-default-payment') as HTMLSelectElement | null;
-      if (paymentSelect) paymentSelect.value = data.global.default_payment || 'all-upfront';
+      if (paymentSelect) paymentSelect.value = data.global.default_payment || 'no-upfront';
 
       const coverageInput = document.getElementById('setting-default-coverage') as HTMLInputElement | null;
       if (coverageInput) coverageInput.value = String(data.global.default_coverage ?? 80);
@@ -3124,7 +3124,7 @@ export async function loadGlobalSettings(): Promise<void> {
       // after a Settings save reflects any in-session changes.
       cachedGlobalDefaults = {
         term: data.global.default_term || 3,
-        payment: data.global.default_payment || 'all-upfront',
+        payment: data.global.default_payment || 'no-upfront',
         coverage: data.global.default_coverage ?? 80,
       };
 
@@ -3626,7 +3626,7 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
     auto_collect: byId<HTMLInputElement>('setting-auto-collect')?.checked ?? true,
     collection_schedule: byId<HTMLSelectElement>('setting-collection-schedule')?.value || 'daily',
     default_term: parseInt(byId<HTMLSelectElement>('setting-default-term')?.value || '3', 10),
-    default_payment: (byId<HTMLSelectElement>('setting-default-payment')?.value || 'all-upfront') as api.PaymentOption,
+    default_payment: (byId<HTMLSelectElement>('setting-default-payment')?.value || 'no-upfront') as api.PaymentOption,
     default_coverage: rawCoverage,
     notification_days_before: rawNotifyDays,
     grace_period_days: gracePeriodDays,
@@ -3812,7 +3812,7 @@ export async function resetSettings(): Promise<void> {
   if (termSelect) termSelect.value = '3';
 
   const paymentSelect = document.getElementById('setting-default-payment') as HTMLSelectElement | null;
-  if (paymentSelect) paymentSelect.value = 'all-upfront';
+  if (paymentSelect) paymentSelect.value = 'no-upfront';
 
   const coverageInput = document.getElementById('setting-default-coverage') as HTMLInputElement | null;
   if (coverageInput) coverageInput.value = '80';
