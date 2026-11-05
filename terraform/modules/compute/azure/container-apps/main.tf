@@ -146,6 +146,9 @@ resource "azurerm_container_app" "main" {
             # the real next run (next_collection_at, #756). Empty when the
             # Logic App is not created.
             RECOMMENDATION_SCHEDULE = var.enable_scheduled_tasks ? "0 ${local.schedule_hour} * * *" : ""
+            # Whether the fire_scheduled_purchases sweep is scheduled; the API
+            # refuses purchase_delay_hours > 0 on "false" (#1588).
+            FIRE_SWEEP_SCHEDULED = var.enable_scheduled_tasks && var.enable_fire_scheduled_purchases_schedule ? "true" : "false"
           },
           local.archera_env,
           var.additional_env_vars

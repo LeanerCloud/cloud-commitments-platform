@@ -593,6 +593,13 @@ resource "kubernetes_deployment" "app" {
             value = var.enable_scheduled_tasks ? var.recommendation_schedule : ""
           }
 
+          # Whether the fire_scheduled_purchases sweep is scheduled; the API
+          # refuses purchase_delay_hours > 0 on "false" (#1588).
+          env {
+            name  = "FIRE_SWEEP_SCHEDULED"
+            value = var.enable_scheduled_tasks && var.enable_fire_scheduled_purchases_schedule ? "true" : "false"
+          }
+
           dynamic "env" {
             for_each = local.archera_env
             content {
