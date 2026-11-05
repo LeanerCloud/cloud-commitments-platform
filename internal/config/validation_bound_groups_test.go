@@ -35,8 +35,15 @@ func TestValidate_BoundGroups(t *testing.T) {
 		want    string // substring of the error; "" = valid
 	}{
 		{"two groups differing in term", map[string]ServiceConfig{"aws/ec2#g1": ec2a, "aws/ec2#g2": ec2b}, ""},
+		{"two groups differing only in payment", map[string]ServiceConfig{"aws/ec2#g1": ec2a, "aws/ec2#g2": groupEntry("g2", "ec2", 1, "all-upfront", "k3")}, ""},
+		{"two groups differing only in service", map[string]ServiceConfig{"aws/ec2#g1": ec2a, "aws/rds#g2": groupEntry("g2", "rds", 1, "no-upfront", "k3")}, ""},
+		{"two groups differing only in provider", map[string]ServiceConfig{"azure/compute#g1": azureEntry("g1", "monthly", "k1"), "gcp/compute#g2": gcpEntry("g2", "k2")}, ""},
 		{"two groups differing only in term", map[string]ServiceConfig{"aws/ec2#g1": ec2a, "aws/ec2#g2": groupEntry("g2", "ec2", 3, "no-upfront", "k3")}, ""},
-		{"duplicate group id", map[string]ServiceConfig{"aws/ec2#g1": ec2a, "aws/ec2#g2": withGroup(ec2b, "g1")}, `group "g1"`},
+		{"duplicate group id", map[string]ServiceConfig{"aws/ec2#g1": ec2a, "aws/rds#g1": groupEntry("g1", "rds", 3, "all-upfront", "k3")}, `group "g1"`},
+		{"key suffix differs from group_id", map[string]ServiceConfig{"aws/ec2#g1": withGroup(ec2a, "g2")}, `must be keyed`},
+		{"bound entry without a # key", map[string]ServiceConfig{"aws/ec2": ec2a}, `must be keyed`},
+		{"bound entry without a group_id", map[string]ServiceConfig{"aws/ec2#g1": withGroup(ec2a, "")}, `must be keyed`},
+		{"exactly 1000 identities is accepted", map[string]ServiceConfig{"aws/ec2#g1": groupEntry("g1", "ec2", 1, "no-upfront", many[:MaxBoundIdentitiesPerGroup]...)}, ""},
 		{"duplicate identity", map[string]ServiceConfig{"aws/ec2#g1": ec2a, "aws/ec2#g2": groupEntry("g2", "ec2", 1, "no-upfront", "k3")}, "same provider, service, term and payment"},
 		{"same identity on another provider", map[string]ServiceConfig{"azure/compute#g1": azureEntry("g1", "monthly", "k1"), "azure/compute#g2": azureEntry("g2", "monthly", "k2")}, "same provider, service, term and payment"},
 		{"disabled duplicate identity is fine", map[string]ServiceConfig{"aws/ec2#g1": ec2a, "aws/ec2#g2": disabled(groupEntry("g2", "ec2", 1, "no-upfront", "k3"))}, ""},
@@ -98,3 +105,20 @@ func azureEntry(gid, payment string, ids ...string) ServiceConfig {
 
 func withGroup(s ServiceConfig, gid string) ServiceConfig { s.GroupID = gid; return s }
 func disabled(s ServiceConfig) ServiceConfig              { s.Enabled = false; return s }
+
+func gcpEntry(gid string, ids ...string) ServiceConfig {
+	e := groupEntry(gid, "compute", 1, "monthly", ids...)
+	e.Provider = "gcp"
+	return e
+}
+
+// A write that only stops the plan skips the bound-group checks, and keeps
+// every other check.
+func TestValidateDeescalation_SkipsOnlyBoundGroupChecks(t *testing.T) {
+	g := groupEntry("g1", "ec2", 1, "no-upfront", "k1", "k1")
+	p := boundGroupsPlan(map[string]ServiceConfig{"aws/ec2#g1": g})
+	require.ErrorIs(t, p.Validate(), ErrInvalidBoundGroup)
+	assert.NoError(t, p.ValidateDeescalation())
+	p.Name = ""
+	assert.ErrorContains(t, p.ValidateDeescalation(), "plan name is required")
+}

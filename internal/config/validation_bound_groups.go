@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // MaxBoundIdentitiesPerGroup caps the recommendations one bound group may
@@ -42,6 +43,9 @@ func (p *PurchasePlan) validateBoundGroups() error {
 	bound := map[string]string{}      // bound identity -> group
 	for _, k := range keys {
 		svc := p.Services[k]
+		if err := checkGroupKey(k, &svc); err != nil {
+			return err
+		}
 		gid := svc.EffectiveGroupID(k)
 		if prev, dup := groups[gid]; dup {
 			return fmt.Errorf("%w: group %q is used by both %q and %q", ErrInvalidBoundGroup, gid, prev, k)
@@ -89,6 +93,17 @@ func checkGroupBindings(svc *ServiceConfig, gid string, seen map[string]string) 
 			return fmt.Errorf("%w: recommendation %q is bound by group %q and group %q", ErrInvalidBoundGroup, ident, prev, gid)
 		}
 		seen[ident] = gid
+	}
+	return nil
+}
+
+// checkGroupKey requires a bound plan's entry to be keyed
+// "provider/service#<group_id>" with that same GroupID, so the key and the
+// field can never name different groups.
+func checkGroupKey(key string, svc *ServiceConfig) error {
+	_, suffix, ok := strings.Cut(key, BoundKeySeparator)
+	if !ok || svc.GroupID == "" || suffix != svc.GroupID {
+		return fmt.Errorf("%w: entry %q must be keyed \"provider/service%s<group_id>\" with a matching group_id (got %q)", ErrInvalidBoundGroup, key, BoundKeySeparator, svc.GroupID)
 	}
 	return nil
 }

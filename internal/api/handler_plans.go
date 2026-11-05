@@ -874,6 +874,20 @@ type PatchPlanRequest struct {
 	NotificationDaysBefore *int    `json:"notification_days_before,omitempty"`
 }
 
+// patchDeescalates reports whether a PATCH disables or disarms the plan. Such a
+// write skips the bound-group checks (ValidateDeescalation), so a plan can
+// always be stopped.
+func patchDeescalates(req PatchPlanRequest) bool {
+	return (req.Enabled != nil && !*req.Enabled) || (req.AutoPurchase != nil && !*req.AutoPurchase)
+}
+
+func validatePatchedPlan(plan *config.PurchasePlan, req PatchPlanRequest) error {
+	if patchDeescalates(req) {
+		return plan.ValidateDeescalation()
+	}
+	return plan.Validate()
+}
+
 // applyPatchFields applies validated partial-update fields to a plan.
 func applyPatchFields(plan *config.PurchasePlan, req PatchPlanRequest) error {
 	if req.Name != nil {
@@ -941,7 +955,7 @@ func (h *Handler) patchPlan(ctx context.Context, httpReq *events.LambdaFunctionU
 		return nil, err
 	}
 
-	if err := plan.Validate(); err != nil {
+	if err := validatePatchedPlan(plan, req); err != nil {
 		return nil, NewClientError(400, fmt.Sprintf("validation error: %s", err))
 	}
 

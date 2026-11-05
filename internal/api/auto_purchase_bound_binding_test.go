@@ -97,3 +97,43 @@ func TestRetargetArmedPlan_RefusesStrippedBoundPlan(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, apgCalled(store, "SetPlanAccounts"))
 }
+
+// (guard) The re-enable gate applies only while the plan stays armed: an
+// unarmed stripped plan can still re-enable an entry.
+func TestUpdatePlanGated_UnarmedReenableIsAccepted(t *testing.T) {
+	before := strippedBoundPlan(false)
+	before.Services = map[string]config.ServiceConfig{"aws/rds#g2": {Provider: "aws", Service: "rds", Enabled: false, MinCount: 1}}
+	after := *before
+	after.Services = map[string]config.ServiceConfig{"aws/rds#g2": {Provider: "aws", Service: "rds", Enabled: true, MinCount: 1}}
+	store := new(MockConfigStore)
+	store.On("UpdatePurchasePlan", mock.Anything, mock.Anything).Return(nil)
+	h, req := apgCaller{perms: apsGrant(nil)}.handlerAndReq(store, `{}`)
+	require.NoError(t, h.updatePlanGated(context.Background(), req, &Session{UserID: apgUserID}, before, &after, "updatePlan"))
+	assert.True(t, apgCalled(store, "UpdatePurchasePlan"))
+}
+
+// A new entry counts as enabled: an armed bound plan gaining a second group of a
+// service it already has (DerivePlanServices unchanged, so no escalation) is
+// refused when that group has no binding.
+func TestUpdatePlanGated_RefusesNewUnboundGroupOnArmedPlan(t *testing.T) {
+	before := strippedBoundPlan(true)
+	before.RampSchedule.AllocationMode = config.RampAllocationBoundGroups
+	before.Services = map[string]config.ServiceConfig{
+		"aws/ec2#g1": {Provider: "aws", Service: "ec2", Enabled: true, MinCount: 1, GroupID: "g1", BoundIdentities: []string{"k1"}},
+	}
+	after := *before
+	after.Services = map[string]config.ServiceConfig{
+		"aws/ec2#g1": before.Services["aws/ec2#g1"],
+		"aws/ec2#g2": {Provider: "aws", Service: "ec2", Enabled: true, MinCount: 1, GroupID: "g2"},
+	}
+	// Pinned directly: once DerivePlanServices drops the "#" suffix (slice A
+	// step A2), this gate is the only save-time refusal for a new group.
+	require.True(t, enablesEntry(before, &after), "a newly added enabled entry counts as enabling")
+	store := new(MockConfigStore)
+	h, req := apgCaller{perms: apsGrant(nil)}.handlerAndReq(store, `{}`)
+	err := h.updatePlanGated(context.Background(), req, &Session{UserID: apgUserID}, before, &after, "updatePlan")
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "must be a client error: %v", err)
+	assert.Equal(t, 409, ce.code)
+	assert.False(t, apgCalled(store, "UpdatePurchasePlan"))
+}

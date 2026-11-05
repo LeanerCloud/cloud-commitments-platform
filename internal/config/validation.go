@@ -621,6 +621,24 @@ func (p *PurchasePlan) validateNotificationAndCap() error {
 
 // Validate validates the PurchasePlan.
 func (p *PurchasePlan) Validate() error {
+	return p.validate(true)
+}
+
+// ValidateDeescalation is Validate without the bound-group checks, for a write
+// that only disables or disarms the plan: stopping a plan must never be blocked
+// by a group conflict it already stores (issue #1746). Every other check runs.
+func (p *PurchasePlan) ValidateDeescalation() error {
+	return p.validate(false)
+}
+
+func (p *PurchasePlan) checkBoundGroups(enabled bool) error {
+	if !enabled {
+		return nil
+	}
+	return p.validateBoundGroups()
+}
+
+func (p *PurchasePlan) validate(boundGroups bool) error {
 	// Name is required
 	if p.Name == "" {
 		return fmt.Errorf("plan name is required")
@@ -648,7 +666,7 @@ func (p *PurchasePlan) Validate() error {
 			return fmt.Errorf("invalid service config '%s': %w", key, err)
 		}
 	}
-	if err := p.validateBoundGroups(); err != nil {
+	if err := p.checkBoundGroups(boundGroups); err != nil {
 		return err
 	}
 
