@@ -417,57 +417,6 @@ func TestHandleScheduledTaskReleasesMarkerWhenSkipped(t *testing.T) {
 	})
 }
 
-func TestHandleSQSMessage(t *testing.T) {
-	tests := []struct {
-		setupMocks  func(*testutil.MockPurchaseManager)
-		name        string
-		messageBody string
-		expectError bool
-	}{
-		{
-			name:        "valid message",
-			messageBody: `{"purchase_id": "123"}`,
-			setupMocks: func(p *testutil.MockPurchaseManager) {
-				p.ProcessMessageFunc = func(ctx context.Context, body string) error {
-					return nil
-				}
-			},
-			expectError: false,
-		},
-		{
-			name:        "invalid message",
-			messageBody: `{"invalid": "data"}`,
-			setupMocks: func(p *testutil.MockPurchaseManager) {
-				p.ProcessMessageFunc = func(ctx context.Context, body string) error {
-					return errors.New("invalid message format")
-				}
-			},
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := testutil.TestContext(t)
-
-			mockPurchase := &testutil.MockPurchaseManager{}
-			tt.setupMocks(mockPurchase)
-
-			app := &Application{
-				Purchase: mockPurchase,
-			}
-
-			err := app.HandleSQSMessage(ctx, tt.messageBody)
-
-			if tt.expectError {
-				testutil.AssertError(t, err)
-			} else {
-				testutil.AssertNoError(t, err)
-			}
-		})
-	}
-}
-
 // TestParseScheduledEvent_MalformedTokenNotEchoedInError pins that the
 // rejection error for a malformed owner_token never carries any of the
 // rejected value. The 45-character input below is the one shape where

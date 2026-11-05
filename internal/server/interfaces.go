@@ -30,7 +30,6 @@ type SchedulerInterface interface {
 type PurchaseManagerInterface interface {
 	ProcessScheduledPurchases(ctx context.Context) (*purchase.ProcessResult, error)
 	SendUpcomingPurchaseNotifications(ctx context.Context) (*purchase.NotificationResult, error)
-	ProcessMessage(ctx context.Context, body string) error
 	// ApproveExecution, ApproveAndExecute and RunPlannedPurchaseNow return the
 	// raw revocation token minted on a successful execute (issue #103: only
 	// its hash is stored, so a re-read cannot yield an emailable token).

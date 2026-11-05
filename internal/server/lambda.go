@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"strconv"
 	"strings"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
@@ -213,30 +211,6 @@ func isTextContentType(ct string) bool {
 		}
 	}
 	return false
-}
-
-// loadReportSQSBatchItemFailures parses SQS_REPORT_BATCH_ITEM_FAILURES at
-// startup (called once from NewApplication). Unset means false: keep the
-// old all-or-nothing batch behavior, which is safe (if noisier) until an
-// operator confirms the SQS event source mapping's function_response_types
-// actually includes "ReportBatchItemFailures" -- a Terraform resource that
-// does not exist anywhere in this repo today (issue #108 follow-up: no
-// aws_sqs_queue / AWS::SQS::Queue / EventSourceMapping / batch_size found
-// across terraform/, cloudformation/, iac/, or arm/). A set but
-// unparseable value is a startup error rather than a silently-ignored
-// typo: flipping this flag is a deploy-time contract with that Terraform
-// setting, and getting it wrong risks silently dropping failed purchase
-// messages instead of redelivering them (see handleLambdaSQSEvent).
-func loadReportSQSBatchItemFailures() (bool, error) {
-	raw := os.Getenv("SQS_REPORT_BATCH_ITEM_FAILURES")
-	if raw == "" {
-		return false, nil
-	}
-	val, err := strconv.ParseBool(raw)
-	if err != nil {
-		return false, fmt.Errorf("invalid SQS_REPORT_BATCH_ITEM_FAILURES %q: must be a boolean: %w", raw, err)
-	}
-	return val, nil
 }
 
 // handleLambdaScheduledEvent processes scheduled/cron events.

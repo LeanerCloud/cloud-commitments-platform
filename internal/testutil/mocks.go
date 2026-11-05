@@ -60,7 +60,6 @@ func (m *MockScheduler) GetRecommendationByID(ctx context.Context, id string) (*
 type MockPurchaseManager struct {
 	ProcessScheduledPurchasesFunc         func(ctx context.Context) (*purchase.ProcessResult, error)
 	SendUpcomingPurchaseNotificationsFunc func(ctx context.Context) (*purchase.NotificationResult, error)
-	ProcessMessageFunc                    func(ctx context.Context, body string) error
 	ApproveExecutionFunc                  func(ctx context.Context, execID, token, actor string, check purchase.ClaimedRowCheck) (*config.PurchaseExecution, string, error)
 	ApproveAndExecuteFunc                 func(ctx context.Context, execID, actor string, transitionedBy *string, check purchase.ClaimedRowCheck) (*config.PurchaseExecution, string, error)
 	DirectExecuteFunc                     func(ctx context.Context, execID, actor string, transitionedBy *string, check purchase.ClaimedRowCheck) (*config.PurchaseExecution, string, error)
@@ -83,13 +82,6 @@ func (m *MockPurchaseManager) SendUpcomingPurchaseNotifications(ctx context.Cont
 		return m.SendUpcomingPurchaseNotificationsFunc(ctx)
 	}
 	return &purchase.NotificationResult{}, nil
-}
-
-func (m *MockPurchaseManager) ProcessMessage(ctx context.Context, body string) error {
-	if m.ProcessMessageFunc != nil {
-		return m.ProcessMessageFunc(ctx, body)
-	}
-	return nil
 }
 
 func (m *MockPurchaseManager) ApproveExecution(ctx context.Context, execID, token, actor string, check purchase.ClaimedRowCheck) (*config.PurchaseExecution, string, error) {

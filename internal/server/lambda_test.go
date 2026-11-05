@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 
@@ -128,48 +127,6 @@ func TestHandleLambdaHTTPEvent(t *testing.T) {
 				if resp != nil {
 					testutil.AssertEqual(t, tt.expectedStatus, resp.StatusCode)
 				}
-			}
-		})
-	}
-}
-
-// TestLoadReportSQSBatchItemFailures pins the "error on garbage" contract
-// for SQS_REPORT_BATCH_ITEM_FAILURES: unset defaults to false (fail
-// closed), a recognized boolean parses, and anything else is a startup
-// error rather than a silently-ignored typo.
-func TestLoadReportSQSBatchItemFailures(t *testing.T) {
-	t.Cleanup(func() { os.Unsetenv("SQS_REPORT_BATCH_ITEM_FAILURES") })
-
-	tests := []struct {
-		name      string
-		envValue  string
-		unset     bool
-		wantVal   bool
-		wantError bool
-	}{
-		{name: "unset defaults to false", unset: true, wantVal: false},
-		{name: "true", envValue: "true", wantVal: true},
-		{name: "false", envValue: "false", wantVal: false},
-		{name: "garbage errors", envValue: "yes-please", wantError: true},
-		{name: "empty string treated as unset", envValue: "", wantVal: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.unset {
-				os.Unsetenv("SQS_REPORT_BATCH_ITEM_FAILURES")
-			} else {
-				os.Setenv("SQS_REPORT_BATCH_ITEM_FAILURES", tt.envValue)
-			}
-
-			got, err := loadReportSQSBatchItemFailures()
-			if tt.wantError {
-				testutil.AssertError(t, err)
-				return
-			}
-			testutil.AssertNoError(t, err)
-			if got != tt.wantVal {
-				t.Fatalf("expected %v, got %v", tt.wantVal, got)
 			}
 		})
 	}
