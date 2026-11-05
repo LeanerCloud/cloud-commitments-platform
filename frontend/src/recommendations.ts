@@ -165,7 +165,7 @@ export const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 // issue #223: resolved GlobalConfig defaults, seeded on page load by
 // loadRecommendations(). Initial values mirror the historical hardcoded
 // defaults so the module is usable before the first API round-trip.
-let cachedGlobalDefaultPayment: CompatPayment = 'all-upfront';
+let cachedGlobalDefaultPayment: CompatPayment = 'no-upfront';
 let cachedGlobalDefaultTerm: 1 | 3 = 1;
 
 // Issue #909: the most-recent full GlobalConfig from /api/config, cached so
@@ -3762,7 +3762,7 @@ const BULK_PURCHASE_LS_KEY = 'cudly.recommendations.bulkPurchase.v1';
 // purchased with its own per-row term (see term-aware bucketing in
 // handleBulkPurchaseClick). Issue #282 drops the global Payment dropdown
 // from the toolbar: the `payment` field is kept internally (seeded from
-// GlobalConfig or 'all-upfront') so the fan-out modal's override/fallback
+// GlobalConfig or 'no-upfront') so the fan-out modal's override/fallback
 // logic continues to work, but it is no longer exposed in the UI or
 // persisted to localStorage. loadBulkPurchaseState explicitly picks known
 // fields so any legacy `term` or `payment` from older localStorage values
@@ -3803,7 +3803,7 @@ function normalizeBulkPayment(payment: string | undefined): BulkPurchasePayment 
 // flag buckets the user has built but won't be allowed to submit.
 // A rec's own supported payment also qualifies: the single-bucket modal seeds
 // from it (resolvePerRecPaymentSeed), so a GCP rec priced monthly must not be
-// forced into fan-out by the all-upfront toolbar default.
+// forced into fan-out by the toolbar default.
 function isBucketPaymentCompatible(
   recs: readonly LocalRecommendation[],
   payment: BulkPurchasePayment,
@@ -3822,15 +3822,15 @@ interface BulkPurchaseToolbarState {
   capacity: number; // 1..100
 }
 
-const defaultBulkPurchaseState: BulkPurchaseToolbarState = {
-  payment: 'all-upfront',
-  capacity: 100,
-};
+// payment follows the global default (no-upfront until the config loads).
+function defaultBulkPurchaseState(): BulkPurchaseToolbarState {
+  return { payment: cachedGlobalDefaultPayment as BulkPurchasePayment, capacity: 100 };
+}
 
 function loadBulkPurchaseState(): BulkPurchaseToolbarState {
   try {
     const raw = localStorage.getItem(BULK_PURCHASE_LS_KEY);
-    if (!raw) return { ...defaultBulkPurchaseState };
+    if (!raw) return defaultBulkPurchaseState();
     const parsed = JSON.parse(raw) as Partial<BulkPurchaseToolbarState> & { term?: unknown };
     // Explicit field-pick rather than spread-and-omit — avoids leaking a
     // legacy `term` or `payment` from older localStorage values at runtime.
@@ -3845,7 +3845,7 @@ function loadBulkPurchaseState(): BulkPurchaseToolbarState {
       capacity: Number.isInteger(capacity) && capacity > 0 ? Math.min(100, capacity) : 100,
     };
   } catch {
-    return { ...defaultBulkPurchaseState };
+    return defaultBulkPurchaseState();
   }
 }
 
@@ -4414,7 +4414,7 @@ function handleBulkPurchaseClick(recommendations: LocalRecommendation[]): void {
   // identical (provider, service, term) but different per-rec payment
   // values must also land in separate buckets so each bucket is payment-
   // uniform and resolveBucketPaymentSeed can seed from recs[0].payment
-  // rather than falling back to the toolbar default ('all-upfront').
+  // rather than falling back to the toolbar default (the global default payment).
   //
   // Issue #132: SP recs (savings-plans-{compute,ec2instance,sagemaker,
   // database}) collapse into a single bucket per (provider, term) so an
@@ -4661,7 +4661,7 @@ function resolveBucketPaymentSeed(
   // is payment-uniform (all recs share the same rec.payment). Seed from
   // recs[0].payment when it's a supported value for this (provider, service,
   // term) cell instead of blindly falling back to toolbar.payment
-  // ('all-upfront'). Multi-account buckets, missing-payment recs, and
+  // (the global default payment). Multi-account buckets, missing-payment recs, and
   // unsupported payment values still fall through to toolbar.
   //
   // Normalize first so upstream synonym forms ('upfront', 'monthly') map to

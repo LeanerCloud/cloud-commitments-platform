@@ -243,8 +243,8 @@ export function setupPurchaseModalTest(): void {
 
   // loadBulkPurchaseState() (setup.ts's localStorage mock defaults getItem to
   // null) only reads cachedGlobalDefaultPayment when a raw value is present —
-  // otherwise it falls back to the hardcoded 'all-upfront' default and never
-  // consults GlobalConfig. Seed a truthy (capacity-only) value so the
+  // otherwise it uses the cached global default (no-upfront until the config
+  // loads) and never consults the mocked GlobalConfig. Seed a truthy (capacity-only) value so the
   // bulk-purchase toolbar picks up the mocked getConfig() default_payment;
   // tests that need a specific capacity override this per-test.
   (localStorage.getItem as jest.Mock).mockReturnValue('{}');
