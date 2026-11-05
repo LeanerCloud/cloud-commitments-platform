@@ -59,11 +59,11 @@ func (h *Handler) parseUpcomingFilter(ctx context.Context, session *Session, par
 
 // matches reports whether an upcoming row passes the filter. The provider is
 // compared with the row's provider (its plan's first service, as shown in the
-// widget). An execution matches the account filter when any account it can buy
+// widget), or for a bound plan with any of its group providers (#1746). An execution matches the account filter when any account it can buy
 // in is selected: a plan-level parent fans out to every plan account, so it is
 // relevant to each of them, while a fan-out child carries its single account.
 func (f upcomingFilter) matches(ctx context.Context, h *Handler, row *UpcomingPurchase, exec *config.PurchaseExecution, planAccounts map[string][]config.CloudAccount) (bool, error) {
-	if f.provider != "" && !strings.EqualFold(row.Provider, f.provider) {
+	if f.provider != "" && !rowHasProvider(row, f.provider) {
 		return false, nil
 	}
 	if f.accounts == nil {
@@ -92,6 +92,18 @@ func (s *dualColumnAccountSet) matchesAny(accounts []config.CloudAccount) bool {
 		}
 		if stringInSlice(a.ExternalID, s.externalIDsByProvider[a.Provider]) ||
 			stringInSlice(a.ExternalID, s.externalIDsByProvider[""]) {
+			return true
+		}
+	}
+	return false
+}
+
+func rowHasProvider(row *UpcomingPurchase, provider string) bool {
+	if strings.EqualFold(row.Provider, provider) {
+		return true
+	}
+	for _, p := range row.Providers {
+		if strings.EqualFold(p, provider) {
 			return true
 		}
 	}
