@@ -179,12 +179,14 @@ resource "google_cloud_run_v2_service" "main" {
             # GET /api/recommendations/freshness can report the next run
             # (next_collection_at, #756). Empty when the job is not created.
             RECOMMENDATION_SCHEDULE = var.enable_scheduled_tasks ? var.recommendation_schedule : ""
-            # Whether the fire_scheduled_purchases sweep is scheduled; the API
-            # refuses purchase_delay_hours > 0 on "false" (#1588).
-            FIRE_SWEEP_SCHEDULED = var.enable_scheduled_tasks && var.enable_fire_scheduled_purchases_schedule ? "true" : "false"
           },
           local.archera_env,
-          var.additional_env_vars
+          var.additional_env_vars,
+          # Last, so an operator-supplied additional_env_vars entry cannot
+          # re-enable purchase delays on a deployment with no fire sweep (#1588).
+          {
+            FIRE_SWEEP_SCHEDULED = var.enable_scheduled_tasks && var.enable_fire_scheduled_purchases_schedule ? "true" : "false"
+          }
         )
         content {
           name  = env.key

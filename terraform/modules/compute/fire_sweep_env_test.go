@@ -54,3 +54,21 @@ func TestFireSweepEnvWiring(t *testing.T) {
 		})
 	}
 }
+
+// The modules that merge additional_env_vars into the env map must apply
+// FIRE_SWEEP_SCHEDULED last, or an operator entry of the same name would
+// override the derived flag (#1588).
+func TestFireSweepEnvAppliedAfterAdditionalEnvVars(t *testing.T) {
+	for _, file := range []string{"aws/lambda/main.tf", "azure/container-apps/main.tf", "gcp/cloud-run/main.tf"} {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := stripComments(string(raw))
+		extra := strings.Index(src, "var.additional_env_vars")
+		fire := strings.Index(src, "FIRE_SWEEP_SCHEDULED")
+		if extra < 0 || fire < 0 || fire < extra {
+			t.Errorf("%s: FIRE_SWEEP_SCHEDULED (at %d) must come after var.additional_env_vars (at %d)", file, fire, extra)
+		}
+	}
+}

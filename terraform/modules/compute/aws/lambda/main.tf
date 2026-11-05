@@ -86,10 +86,6 @@ resource "aws_lambda_function" "main" {
         # GET /api/recommendations/freshness can report the next run
         # (next_collection_at, #756). Empty when the rule is not created.
         RECOMMENDATION_SCHEDULE = var.enable_scheduled_tasks ? var.recommendation_schedule : ""
-        # Whether the fire_scheduled_purchases sweep is scheduled. The API refuses
-        # purchase_delay_hours > 0 on "false" because a delayed approval would
-        # never execute (#1588).
-        FIRE_SWEEP_SCHEDULED = var.enable_fire_scheduled_purchases_schedule ? "true" : "false"
       },
       # Stuck-purchase reaper threshold (#678). Only set when the
       # operator overrides the default — empty string means "use the
@@ -99,7 +95,12 @@ resource "aws_lambda_function" "main" {
         PURCHASE_APPROVED_REAP_AFTER = var.purchase_approved_reap_after
       } : {},
       local.archera_env,
-      var.additional_env_vars
+      var.additional_env_vars,
+      # Last, so an operator-supplied additional_env_vars entry cannot
+      # re-enable purchase delays on a deployment with no fire sweep (#1588).
+      {
+        FIRE_SWEEP_SCHEDULED = var.enable_fire_scheduled_purchases_schedule ? "true" : "false"
+      }
     )
   }
 
