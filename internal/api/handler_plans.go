@@ -345,6 +345,11 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 // same lock). before is the snapshot plan was built from; if the row moved on,
 // the write fails its optimistic check instead.
 func (h *Handler) updatePlanGated(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, session *Session, before, plan *config.PurchasePlan, op string) error {
+	if planArmed(plan) && enablesEntry(before, plan) {
+		if err := refuseUnboundBinding(plan); err != nil {
+			return err
+		}
+	}
 	if !planArmEscalates(before, plan) {
 		return h.mapPlanUpdateError(h.config.UpdatePurchasePlan(ctx, plan), op)
 	}

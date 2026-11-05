@@ -648,6 +648,9 @@ func (p *PurchasePlan) Validate() error {
 			return fmt.Errorf("invalid service config '%s': %w", key, err)
 		}
 	}
+	if err := p.validateBoundGroups(); err != nil {
+		return err
+	}
 
 	return p.CheckNoMultiStepSavingsPlans()
 }
