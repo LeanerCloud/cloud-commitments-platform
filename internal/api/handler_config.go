@@ -75,6 +75,7 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 	_, gracePresent := present["grace_period_days"]
 	modeSent := riExchangeModeSent(present)
 	providersSent := bodyHasKey(present, "enabled_providers")
+	delaySent := bodyWritesKey(present, "purchase_delay_hours")
 	if err := h.requireGlobalConfigScope(ctx, session); err != nil {
 		return nil, err
 	}
@@ -118,6 +119,11 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 		if vErr := validateGlobalConfigWrite(existing, modeSent || existing.RIExchangeMode != before.mode, providersSent); vErr != nil {
 			return vErr
 		}
+		// Presence-based like the checks above: a stored delay must not block
+		// an unrelated partial save.
+		if h.fireSweepOff && delaySent && existing.PurchaseDelayHours > 0 {
+			return NewClientError(400, "purchase_delay_hours must be 0: this deployment schedules no fire_scheduled_purchases sweep, so a delayed purchase would never execute")
+		}
 		if gErr := requireRIExchangeAutoModeGrant(before, riExchangeArmStateOf(existing), grants.riExchange); gErr != nil {
 			return gErr
 		}
@@ -160,8 +166,13 @@ func bodyHasKey(present map[string]json.RawMessage, name string) bool {
 // riExchangeModeSent reports whether the body writes ri_exchange_mode. A JSON
 // null does not: json.Unmarshal leaves the stored value in place for it.
 func riExchangeModeSent(present map[string]json.RawMessage) bool {
+	return bodyWritesKey(present, "ri_exchange_mode")
+}
+
+// bodyWritesKey is bodyHasKey minus JSON null, which json.Unmarshal ignores.
+func bodyWritesKey(present map[string]json.RawMessage, name string) bool {
 	for key, raw := range present {
-		if strings.EqualFold(key, "ri_exchange_mode") && string(raw) != "null" {
+		if strings.EqualFold(key, name) && string(raw) != "null" {
 			return true
 		}
 	}
