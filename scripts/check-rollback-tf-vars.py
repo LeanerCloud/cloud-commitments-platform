@@ -83,9 +83,6 @@ def find_step(doc, jobs, needle, where):
 def collect(doc, jname, step):
     """Return ({key: value-or-None}, {env name: definition}) for one step."""
     pairs, files = {}, []
-    for k, v in (step.get("env") or {}).items():
-        if str(k).startswith("TF_VAR_"):
-            pairs[str(k)] = str(v)
     for line in code_lines(step.get("run")):
         for m in VAR_FLAG.finditer(line):
             g = [x for x in m.groups() if x is not None]
@@ -100,10 +97,14 @@ def collect(doc, jname, step):
             pairs.setdefault(m.group(1), "<shell export>")
     if files:
         pairs["-var-file"] = ",".join(sorted(files))
+    # Later scopes override earlier ones, as in GitHub Actions.
     defs = {}
     for scope in (doc.get("env"), doc["jobs"][jname].get("env"), step.get("env")):
         for k, v in (scope or {}).items():
             defs[str(k)] = str(v)
+    for k, v in defs.items():
+        if k.startswith("TF_VAR_"):
+            pairs[k] = v
     return pairs, defs
 
 

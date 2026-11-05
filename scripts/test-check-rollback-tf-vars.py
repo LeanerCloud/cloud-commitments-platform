@@ -78,7 +78,31 @@ def probe_varfile_template(rb):
     s["run"] = s["run"].replace('github-${ENVIRONMENT}.tfvars', "${ENVIRONMENT}.tfvars")
 
 
+def probe_job_level(rb):
+    rb["jobs"]["rollback-aws-lambda"].setdefault("env", {})["TF_VAR_extra"] = "x"
+
+
+def probe_workflow_level(rb):
+    rb.setdefault("env", {})["TF_VAR_extra"] = "x"
+
+
+def probe_step_to_job_same(rb):
+    s = apply_step(rb, "rollback-aws-lambda")
+    v = s["env"].pop("TF_VAR_dashboard_url")
+    rb["jobs"]["rollback-aws-lambda"].setdefault("env", {})["TF_VAR_dashboard_url"] = v
+
+
+def probe_step_to_job_diff(rb):
+    probe_step_to_job_same(rb)
+    rb["jobs"]["rollback-aws-lambda"]["env"]["TF_VAR_dashboard_url"] = "other"
+
+
+PASSES = {"TF_VAR_ moved step -> job, same value": probe_step_to_job_same}
+
 MUTATIONS = {
+    "TF_VAR_ at job level": probe_job_level,
+    "TF_VAR_ at workflow level": probe_workflow_level,
+    "TF_VAR_ moved step -> job, new value": probe_step_to_job_diff,
     "-var-file dropped": strip_lines("rollback-aws-fargate", "-var-file"),
     "-var-file hardcoded to prod": probe_varfile_hardcoded,
     "-var-file template changed": probe_varfile_template,
@@ -122,6 +146,9 @@ if run() != 0:
 for label, fn in MUTATIONS.items():
     if run(fn) != 1:
         failed.append(f"must fail: {label}")
+for label, fn in PASSES.items():
+    if run(fn) != 0:
+        failed.append(f"must pass: {label}")
 for n in NAMES[1:]:
     if run(drop=n) != 1:
         failed.append(f"must fail: missing {n}")
