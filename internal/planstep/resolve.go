@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
@@ -61,6 +63,9 @@ type Result struct {
 	// what the plan already holds. Set only with ErrTargetMet, for the no-op
 	// row's note.
 	Target, Committed int
+	// MissingBound lists bound identities (issue #1746) the strict read did
+	// not show, through churn or suppression. They are not bought this step.
+	MissingBound []string
 }
 
 // ramp carries the cumulative-sizing inputs and accumulates its outputs.
@@ -146,7 +151,11 @@ func (r *ramp) resolveServices(ctx context.Context, src Source, store Store, pla
 		if !svc.Enabled {
 			continue
 		}
-		recs, err := resolveService(ctx, src, store, &svc, plan.RampSchedule.PercentPerStep, r, accountIDs, allowed, enabledProviders)
+		recs, missing, err := resolveService(ctx, src, store, &svc, plan.RampSchedule.PercentPerStep, r, accountIDs, allowed, enabledProviders)
+		if len(missing) > 0 {
+			logging.Warnf("plan %s service %q: %d bound recommendation(s) not shown, not bought this step: %v", plan.ID, k, len(missing), missing)
+			r.out.MissingBound = append(r.out.MissingBound, missing...)
+		}
 		if err == nil {
 			err = claimIdentities(seen, recs)
 		}
@@ -190,9 +199,14 @@ func (r *ramp) targetMet(plan *config.PurchasePlan) (bool, error) {
 	return judged > 0, nil
 }
 
-// planServiceOf finds the enabled plan service an identity key belongs to
-// (provider, service and term are fields 0, 2 and 6 of the key).
+// planServiceOf finds the enabled plan service an identity key belongs to. On
+// a bound plan (issue #1746) that is the group whose bound identities hold the
+// key, and a key no group bound is not judged. Otherwise it is the first entry
+// with the key's provider, service and term (fields 0, 2 and 6), as before.
 func planServiceOf(plan *config.PurchasePlan, key string) (config.ServiceConfig, bool) {
+	if plan.RampSchedule.AllocationMode == config.RampAllocationBoundGroups {
+		return boundServiceOf(plan, key)
+	}
 	f := strings.Split(key, "\x1f")
 	if len(f) < 7 {
 		return config.ServiceConfig{}, false
@@ -200,6 +214,18 @@ func planServiceOf(plan *config.PurchasePlan, key string) (config.ServiceConfig,
 	for _, k := range sortedKeys(plan.Services) {
 		svc := plan.Services[k]
 		if svc.Enabled && strings.EqualFold(svc.Provider, f[0]) && svc.Service == f[2] && strconv.Itoa(svc.Term) == f[6] {
+			return svc, true
+		}
+	}
+	return config.ServiceConfig{}, false
+}
+
+// boundServiceOf is planServiceOf for a bound plan: the enabled group whose
+// bound identities hold key.
+func boundServiceOf(plan *config.PurchasePlan, key string) (config.ServiceConfig, bool) {
+	for _, k := range sortedKeys(plan.Services) {
+		svc := plan.Services[k]
+		if svc.Enabled && slices.Contains(svc.BoundIdentities, key) {
 			return svc, true
 		}
 	}
@@ -246,41 +272,98 @@ func claimIdentities(seen map[string]struct{}, recs []config.RecommendationRecor
 	return nil
 }
 
+// resolveService sizes one plan service. A bound group (issue #1746) only
+// considers its bound identities, and returns those the strict read did not
+// show as missing.
 func resolveService(ctx context.Context, src Source, store Store, svc *config.ServiceConfig, percentPerStep float64, r *ramp,
-	accountIDs []string, allowed map[string]struct{}, enabledProviders []string) ([]config.RecommendationRecord, error) {
+	accountIDs []string, allowed map[string]struct{}, enabledProviders []string) ([]config.RecommendationRecord, []string, error) {
 	wantPayment, err := r.validateInputs(svc, percentPerStep)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	filter := config.RecommendationFilter{Provider: svc.Provider, Service: svc.Service, AccountIDs: accountIDs}
 	shown, err := src.ListRecommendationsStrict(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	shown = config.FilterRecommendationsByEnabledProviders(shown, enabledProviders)
 	stored, err := storedByIdentity(ctx, store, filter)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	bound := newBoundSet(svc.BoundIdentities)
+	if shown, err = bound.filter(shown); err != nil {
+		return nil, nil, err
 	}
 	var out []config.RecommendationRecord
 	for i := range shown {
 		rec := shown[i]
 		match, err := matchesPlan(&rec, svc.Term, wantPayment, allowed)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if !match {
 			continue
 		}
 		sized, keep, err := r.sizeFromStored(&rec, stored, svc.Coverage, percentPerStep)
 		if err != nil {
-			return nil, fmt.Errorf("recommendation %s: %w", rec.ID, err)
+			return nil, nil, fmt.Errorf("recommendation %s: %w", rec.ID, err)
 		}
 		if keep {
 			out = append(out, sized)
 		}
 	}
-	return out, nil
+	return out, bound.missing(), nil
+}
+
+// boundSet restricts a bound group to its bound identities and records which
+// of them the strict read showed. A nil set (an unbound entry) admits every rec.
+type boundSet struct {
+	ids  []string
+	want map[string]bool // identity -> shown
+}
+
+func newBoundSet(ids []string) *boundSet {
+	if len(ids) == 0 {
+		return nil
+	}
+	b := &boundSet{ids: ids, want: make(map[string]bool, len(ids))}
+	for _, id := range ids {
+		b.want[id] = false
+	}
+	return b
+}
+
+// filter keeps the recs whose identity is bound and marks them shown.
+func (b *boundSet) filter(recs []config.RecommendationRecord) ([]config.RecommendationRecord, error) {
+	if b == nil {
+		return recs, nil
+	}
+	var kept []config.RecommendationRecord
+	for i := range recs {
+		key, err := config.RecIdentityKey(&recs[i])
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := b.want[key]; ok {
+			b.want[key] = true
+			kept = append(kept, recs[i])
+		}
+	}
+	return kept, nil
+}
+
+func (b *boundSet) missing() []string {
+	if b == nil {
+		return nil
+	}
+	var out []string
+	for _, id := range b.ids {
+		if !b.want[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // validateInputs rejects sizing inputs outside (0,100] (custom ramps too) and
