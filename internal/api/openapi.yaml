@@ -167,8 +167,9 @@ paths:
         - name: provider
           in: query
           description: >
-            Filter by the row's provider (its plan's first service). "all" or
-            no value means every provider. Any other value is a 400.
+            Filter by the row's provider (its plan's first service), or for a
+            bound plan (#1746) any of its group providers. "all" or no value
+            means every provider. Any other value is a 400.
           schema:
             type: string
             enum: [aws, azure, gcp, all]
@@ -6825,6 +6826,14 @@ components:
           format: date
         provider:
           type: string
+        providers:
+          type: array
+          items:
+            type: string
+          description: >
+            Set only for a bound plan (#1746): the distinct providers of its
+            enabled groups. Such a plan shows "multiple" for provider, service
+            or payment, and term 0, when its groups differ.
         service:
           type: string
         step_number:
@@ -7365,6 +7374,14 @@ components:
           format: date
         provider:
           type: string
+        providers:
+          type: array
+          items:
+            type: string
+          description: >
+            Set only for a bound plan (#1746): the distinct providers of its
+            enabled groups. Such a plan shows "multiple" for provider, service
+            or payment, and term 0, when its groups differ.
         service:
           type: string
         resource_type:

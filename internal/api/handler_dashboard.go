@@ -519,8 +519,10 @@ func firstServiceConfig(plan *config.PurchasePlan) config.ServiceConfig {
 // Step number comes from the execution row directly (already stamped by the
 // scheduler at instance-create time).
 func upcomingFromExecution(plan *config.PurchasePlan, exec *config.PurchaseExecution) UpcomingPurchase {
-	svc := firstServiceConfig(plan)
+	display := planDisplayFor(plan)
+	svc := display.svc
 	return UpcomingPurchase{
+		Providers:        display.providers,
 		ExecutionID:      exec.ExecutionID,
 		PlanID:           plan.ID,
 		PlanName:         plan.Name,

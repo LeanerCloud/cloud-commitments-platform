@@ -794,6 +794,8 @@ type UpcomingPurchase struct {
 	StepNumber       int     `json:"step_number"`
 	TotalSteps       int     `json:"total_steps"`
 	EstimatedSavings float64 `json:"estimated_savings"`
+	// Providers lists a bound plan's group providers (#1746); omitted otherwise.
+	Providers []string `json:"providers,omitempty"`
 	// HasRecommendations is false for a step that carries no recommendations,
 	// whose EstimatedSavings is then a placeholder, not data (platform#609).
 	HasRecommendations bool `json:"has_recommendations"`
@@ -810,23 +812,25 @@ type PlannedPurchase struct {
 	// purchase, mirroring PurchaseHistoryRecord.CreatedByUserID. The
 	// frontend gates the row action buttons on creator-scope ownership
 	// (issue #950); omitted for legacy rows with a NULL creator.
-	CreatedByUserID  *string `json:"created_by_user_id,omitempty"`
-	Status           string  `json:"status"`
-	PlanID           string  `json:"plan_id"`
-	PlanName         string  `json:"plan_name"`
-	ScheduledDate    string  `json:"scheduled_date"`
-	Provider         string  `json:"provider"`
-	Service          string  `json:"service"`
-	ResourceType     string  `json:"resource_type"`
-	Region           string  `json:"region"`
-	ID               string  `json:"id"`
-	Payment          string  `json:"payment"`
-	Count            int     `json:"count"`
-	UpfrontCost      float64 `json:"upfront_cost"`
-	EstimatedSavings float64 `json:"estimated_savings"`
-	StepNumber       int     `json:"step_number"`
-	TotalSteps       int     `json:"total_steps"`
-	Term             int     `json:"term"`
+	CreatedByUserID *string `json:"created_by_user_id,omitempty"`
+	Status          string  `json:"status"`
+	PlanID          string  `json:"plan_id"`
+	PlanName        string  `json:"plan_name"`
+	ScheduledDate   string  `json:"scheduled_date"`
+	Provider        string  `json:"provider"`
+	Service         string  `json:"service"`
+	// Providers lists a bound plan's group providers (#1746); omitted otherwise.
+	Providers        []string `json:"providers,omitempty"`
+	ResourceType     string   `json:"resource_type"`
+	Region           string   `json:"region"`
+	ID               string   `json:"id"`
+	Payment          string   `json:"payment"`
+	Count            int      `json:"count"`
+	UpfrontCost      float64  `json:"upfront_cost"`
+	EstimatedSavings float64  `json:"estimated_savings"`
+	StepNumber       int      `json:"step_number"`
+	TotalSteps       int      `json:"total_steps"`
+	Term             int      `json:"term"`
 	// HasRecommendations is false for a step that carries no recommendations,
 	// whose Count, UpfrontCost, EstimatedSavings and ResourceType are then
 	// placeholders, not data (platform#609).
