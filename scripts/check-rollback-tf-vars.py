@@ -35,6 +35,9 @@ EXCEPTIONS = {
     # Both read the live function URL, deploy through a step output and the
     # rollback through a shell export of the same script.
     "TF_VAR_lambda_deployed_function_url": VALUE,
+    # Break-glass only: the disable_cdn input passes enable_cdn=false to reopen
+    # the public Function URL (AuthType NONE); deploys take it from tfvars.
+    "-var enable_cdn": MISSING_DEPLOY,
 }
 
 # Deploys name the environment TARGET_ENVIRONMENT (a prepare-job output) and
