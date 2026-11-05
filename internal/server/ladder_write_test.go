@@ -88,3 +88,43 @@ func TestWireLadderWriteSide_ExecutionDisabled_RealAWSLadder_RefusesWithoutAWSCa
 	assert.ErrorIs(t, reshapeErr, awsladder.ErrLadderExecutionDisabled,
 		"kill-switch OFF must refuse ReshapeBuffer with ErrLadderExecutionDisabled, not an AWS error")
 }
+
+// TestPlanningCapability_RealAWSLadder_RefusesPurchases pins that ladder_run plans
+// with a capability whose write side is always the disabled one. Planning must
+// never hold a purchase-capable capability, whatever ladder_execution_enabled
+// says; only the reshape sweep may wire real clients (#70 S3).
+func TestPlanningCapability_RealAWSLadder_RefusesPurchases(t *testing.T) {
+	// No credentials can be found, so a regression that wired real clients
+	// fails on a credentials error instead of buying with the caller's account.
+	// t.Setenv rules out t.Parallel.
+	for k, v := range map[string]string{
+		"AWS_CONFIG_FILE": "/dev/null", "AWS_SHARED_CREDENTIALS_FILE": "/dev/null",
+		"AWS_PROFILE": "", "AWS_ACCESS_KEY_ID": "", "AWS_SECRET_ACCESS_KEY": "",
+		"AWS_SESSION_TOKEN": "", "AWS_EC2_METADATA_DISABLED": "true",
+		"AWS_WEB_IDENTITY_TOKEN_FILE": "", "AWS_ROLE_ARN": "",
+		"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": "", "AWS_CONTAINER_CREDENTIALS_FULL_URI": "",
+		"AWS_CONTAINER_AUTHORIZATION_TOKEN": "",
+	} {
+		t.Setenv(k, v)
+	}
+	ctx := context.Background()
+	const (
+		region    = "us-east-1"
+		accountID = "123456789012"
+	)
+	app := &Application{LadderCapabilityFactory: func(ctx context.Context, region, accountID string) (pkgladder.LadderCapability, error) {
+		return awsladder.NewFromAWSConfig(ctx, region, accountID)
+	}}
+	capability, err := app.planningCapability(ctx, region, accountID)
+	require.NoError(t, err)
+
+	rec := pkgcommon.Recommendation{
+		ResourceType:  "m5.large",
+		Count:         1,
+		Term:          "1yr",
+		PaymentOption: "no-upfront",
+		Details:       &pkgcommon.ComputeDetails{InstanceType: "m5.large", Platform: "linux", Tenancy: "default", Scope: "regional"},
+	}
+	_, purchaseErr := capability.PurchaseLayer(ctx, pkgladder.LayerConvertibleRI, rec, pkgcommon.PurchaseOptions{Source: pkgcommon.PurchaseSourceWeb, IdempotencyToken: "ladder-plan-tok"})
+	assert.ErrorIs(t, purchaseErr, awsladder.ErrLadderExecutionDisabled, "the planning capability must refuse every purchase")
+}

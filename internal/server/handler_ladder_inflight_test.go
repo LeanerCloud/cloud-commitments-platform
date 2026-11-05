@@ -125,7 +125,7 @@ func TestRunLadderConfigs_InFlightFetchError_CountsErrored(t *testing.T) {
 		},
 	}
 
-	result := app.runLadderConfigs(ctx, []config.LadderConfigDB{dbCfg}, inFlightTestAccount, "us-east-1", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now, false)
+	result := app.runLadderConfigs(ctx, []config.LadderConfigDB{dbCfg}, inFlightTestAccount, "us-east-1", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
 
 	assert.Equal(t, LadderRunResult{Errored: 1}, *result, "an in-flight fetch error must count the config Errored and nothing else")
 	assertNothingPersistedOrSubmitted(t, store, fakeCap)
