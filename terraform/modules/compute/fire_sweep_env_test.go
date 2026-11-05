@@ -72,3 +72,17 @@ func TestFireSweepEnvAppliedAfterAdditionalEnvVars(t *testing.T) {
 		}
 	}
 }
+
+// The list-style modules cannot apply the flag last the way the map-merge
+// ones do, so they filter the key out of additional_env_vars instead (#1588).
+func TestFireSweepEnvFilteredFromAdditionalEnvVars(t *testing.T) {
+	for _, file := range []string{"aws/fargate/main.tf", "azure/aks/main.tf", "gcp/gke/main.tf"} {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(stripComments(string(raw)), `if k != "FIRE_SWEEP_SCHEDULED"`) {
+			t.Errorf(`%s: additional_env_vars must filter out "FIRE_SWEEP_SCHEDULED"`, file)
+		}
+	}
+}

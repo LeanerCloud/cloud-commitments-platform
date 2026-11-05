@@ -608,8 +608,9 @@ resource "kubernetes_deployment" "app" {
             }
           }
 
+          # The derived FIRE_SWEEP_SCHEDULED stays authoritative (#1588).
           dynamic "env" {
-            for_each = var.additional_env_vars
+            for_each = { for k, v in var.additional_env_vars : k => v if k != "FIRE_SWEEP_SCHEDULED" }
             content {
               name  = env.key
               value = env.value

@@ -794,6 +794,7 @@ locals {
       },
     ],
     [for k, v in local.archera_env : { name = k, value = v, secret_ref = null }],
-    [for k, v in var.additional_env_vars : { name = k, value = v, secret_ref = null }],
+    # The derived FIRE_SWEEP_SCHEDULED stays authoritative (#1588).
+    [for k, v in var.additional_env_vars : { name = k, value = v, secret_ref = null } if k != "FIRE_SWEEP_SCHEDULED"],
   )
 }

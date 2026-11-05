@@ -669,10 +669,11 @@ resource "aws_ecs_task_definition" "main" {
           }
         ],
         [
+          # The derived FIRE_SWEEP_SCHEDULED stays authoritative (#1588).
           for k, v in var.additional_env_vars : {
             name  = k
             value = v
-          }
+          } if k != "FIRE_SWEEP_SCHEDULED"
         ]
       )
 
