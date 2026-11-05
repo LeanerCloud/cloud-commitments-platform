@@ -4,7 +4,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -63,7 +62,6 @@ type pauseClaimFixture struct {
 	manager   *purchase.Manager
 	execution *config.PurchaseExecution
 	request   *events.LambdaFunctionURLRequest
-	body      string
 	workers   sync.WaitGroup
 }
 
@@ -71,12 +69,14 @@ type pauseClaimFixture struct {
 var pauseClaimCap = 1e9
 
 // markNotified moves the row to "notified", the only state in which the
-// scheduler and SQS paths will auto-execute a recommendation-bearing plan row
-// (the notification email is the veto window). pause only applies to "pending",
-// so tests call this after pausing and resuming and before the worker runs.
+// scheduler sweep will auto-execute a recommendation-bearing plan row
+// (the notification email is the veto window) and due. Resume pushes a past
+// scheduled date forward, which the sweep honors, so this also makes the row
+// due again. pause only applies to "pending", so tests call this after pausing
+// and resuming and before the worker runs.
 func (f *pauseClaimFixture) markNotified(t *testing.T) {
 	t.Helper()
-	_, err := f.pool.Exec(f.ctx, `UPDATE purchase_executions SET status = 'notified' WHERE execution_id = $1`, f.execution.ExecutionID)
+	_, err := f.pool.Exec(f.ctx, `UPDATE purchase_executions SET status = 'notified', scheduled_date = now() - interval '1 minute' WHERE execution_id = $1`, f.execution.ExecutionID)
 	require.NoError(t, err)
 }
 
@@ -133,9 +133,6 @@ func newPauseClaimFixture(t *testing.T) *pauseClaimFixture {
 	require.Equal(t, f.execution.CloudAccountID, row.CloudAccountID)
 	require.NotEqual(t, common.PurchaseSourceWeb, row.Source)
 	f.request = &events.LambdaFunctionURLRequest{Headers: map[string]string{"Authorization": "Bearer admin-token"}}
-	body, err := json.Marshal(purchase.AsyncMessage{Type: purchase.MessageTypeExecutePurchase, ExecutionID: row.ExecutionID})
-	require.NoError(t, err)
-	f.body = string(body)
 	t.Cleanup(func() { f.service.unblock(); cancel(); f.workers.Wait() })
 	return f
 }
@@ -143,8 +140,20 @@ func newPauseClaimFixture(t *testing.T) *pauseClaimFixture {
 func (f *pauseClaimFixture) startWorker() <-chan error {
 	done := make(chan error, 1)
 	f.workers.Add(1)
-	go func() { defer f.workers.Done(); done <- f.manager.ProcessMessage(f.ctx, f.body) }()
+	go func() {
+		defer f.workers.Done()
+		_, err := f.manager.ProcessScheduledPurchases(f.ctx)
+		done <- err
+	}()
 	return done
+}
+
+// sweep runs one scheduler tick, the production worker for a due plan row.
+func (f *pauseClaimFixture) sweep(t *testing.T) *purchase.ProcessResult {
+	t.Helper()
+	result, err := f.manager.ProcessScheduledPurchases(f.ctx)
+	require.NoError(t, err)
+	return result
 }
 
 func (f *pauseClaimFixture) waitWorker(t *testing.T, done <-chan error) {
@@ -219,11 +228,11 @@ func TestPauseClaim_RunningWorkerCannotBeReclaimed(t *testing.T) {
 	before := f.state(t)
 	require.Equal(t, "running", before.Status)
 	require.Nil(t, before.Actor)
-	require.NoError(t, f.manager.ProcessMessage(f.ctx, f.body))
+	f.sweep(t)
 	require.EqualValues(t, 1, f.service.calls.Load())
 	pauseErr, resumeErr := f.pause(), f.resume()
 	// Reach the purchase counter even when the old handler incorrectly accepts both actions.
-	require.NoError(t, f.manager.ProcessMessage(f.ctx, f.body))
+	f.sweep(t)
 	assert.EqualValues(t, 1, f.service.calls.Load(), "pause/resume must not allow a second provider entry")
 	assertPauseConflict(t, pauseErr)
 	assertPauseConflict(t, resumeErr)
@@ -240,19 +249,19 @@ func TestPauseClaim_PausedQueueResumesExactlyOnce(t *testing.T) {
 	require.Equal(t, "paused", paused.Status)
 	require.Equal(t, f.execution.CreatedByUserID, paused.Actor)
 	require.NotNil(t, paused.TransitionedAt)
-	require.NoError(t, f.manager.ProcessMessage(f.ctx, f.body))
+	f.sweep(t)
 	require.Zero(t, f.service.calls.Load())
 	require.Equal(t, paused, f.state(t))
 	require.NoError(t, f.resume())
 	require.Equal(t, "pending", f.state(t).Status)
-	// A resumed row is pending again, so auto-execution still refuses it until
-	// a notification has gone out.
-	require.Error(t, f.manager.ProcessMessage(f.ctx, f.body))
+	// A resumed row is pending again, so the sweep still skips it until a
+	// notification has gone out.
+	require.Zero(t, f.sweep(t).Executed)
 	require.Zero(t, f.service.calls.Load())
 	f.markNotified(t)
 	f.service.unblock()
-	require.NoError(t, f.manager.ProcessMessage(f.ctx, f.body))
-	require.NoError(t, f.manager.ProcessMessage(f.ctx, f.body))
+	f.sweep(t)
+	f.sweep(t)
 	f.assertCompleted(t)
 }
 
@@ -277,7 +286,12 @@ func TestPauseClaim_ConcurrentPauseAndWorker(t *testing.T) {
 	worker := make(chan error, 1)
 	f.workers.Add(2)
 	go func() { defer f.workers.Done(); <-start; paused <- f.pause() }()
-	go func() { defer f.workers.Done(); <-start; worker <- f.manager.ProcessMessage(f.ctx, f.body) }()
+	go func() {
+		defer f.workers.Done()
+		<-start
+		_, err := f.manager.ProcessScheduledPurchases(f.ctx)
+		worker <- err
+	}()
 	close(start)
 	select {
 	case err := <-paused:
@@ -295,6 +309,6 @@ func TestPauseClaim_ConcurrentPauseAndWorker(t *testing.T) {
 	require.NoError(t, f.resume())
 	f.markNotified(t)
 	f.service.unblock()
-	require.NoError(t, f.manager.ProcessMessage(f.ctx, f.body))
+	f.sweep(t)
 	f.assertCompleted(t)
 }
