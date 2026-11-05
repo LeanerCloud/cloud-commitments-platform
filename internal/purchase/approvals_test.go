@@ -1498,3 +1498,41 @@ func TestManager_ApproveExecution_FourEyesOn_ASCIICaseOnly(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateApprovalToken_TTLAndPrecedence pins the TTL guard on the shared
+// token check (issue #268) and that a wrong token on an expired row reports
+// invalid, not expired, so expiry never leaks token validity.
+func TestValidateApprovalToken_TTLAndPrecedence(t *testing.T) {
+	past := time.Now().Add(-time.Hour)
+	future := time.Now().Add(time.Hour)
+
+	tests := []struct {
+		name      string
+		expiresAt *time.Time
+		token     string
+		wantErr   error
+	}{
+		{name: "expired token is rejected", expiresAt: &past, token: "correct-token", wantErr: ErrApprovalTokenExpired},
+		{name: "unexpired token is accepted", expiresAt: &future, token: "correct-token"},
+		{name: "legacy row without expiry is accepted", expiresAt: nil, token: "correct-token"},
+		{name: "wrong token is rejected", expiresAt: &future, token: "wrong-token", wantErr: ErrInvalidApprovalToken},
+		{name: "wrong token on expired row reports invalid, not expired", expiresAt: &past, token: "wrong-token", wantErr: ErrInvalidApprovalToken},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec := &config.PurchaseExecution{
+				ExecutionID:            "exec-ttl",
+				Status:                 "pending",
+				ApprovalToken:          config.HashApprovalToken("correct-token"),
+				ApprovalTokenExpiresAt: tt.expiresAt,
+			}
+			err := ValidateApprovalToken(exec, tt.token)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}

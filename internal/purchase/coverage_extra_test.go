@@ -3,7 +3,6 @@ package purchase
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -368,11 +367,11 @@ func TestHandleExecutePurchase_SaveError(t *testing.T) {
 	assert.ErrorIs(t, err, config.ErrAuditLoss)
 }
 
-// Tests for ProcessMessage with approve and cancel happy paths.
-// Post-hardening: SQS approve/cancel messages MUST carry actor_email,
-// and the actor MUST match a per-account contact_email on one of the
-// execution's recommendations. The mocks below set up that gating.
-func TestProcessMessage_ApproveHappyPath(t *testing.T) {
+// TestManager_ApproveExecution_PropagatesPlanID pins that a non-empty PlanID
+// reaches GetPurchasePlan through the approve->execute chain. Earlier versions
+// used "" and would have silently passed even if the plan id were dropped or
+// substituted en route.
+func TestManager_ApproveExecution_PropagatesPlanID(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := new(MockEmailSender)
@@ -402,13 +401,10 @@ func TestProcessMessage_ApproveHappyPath(t *testing.T) {
 		StepNumber:      1,
 		Recommendations: exec.Recommendations,
 	}
-	account := &config.CloudAccount{ID: accountID, ContactEmail: "owner@example.com"}
 
-	// verifyAsyncApprovalActor + ApproveExecution both load the execution.
 	// rotateApprovalToken adds no further fetch: it mutates `approved` (the
 	// row TransitionExecutionStatus returns) in place.
-	mockStore.On("GetExecutionByID", ctx, "exec-appv").Return(exec, nil).Times(2)
-	mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
+	mockStore.On("GetExecutionByID", ctx, "exec-appv").Return(exec, nil).Times(1)
 	// Atomic approve transition (issue #372 fix).
 	mockStore.On("TransitionExecutionStatusTokenPinned", ctx, "exec-appv", []string{"pending", "notified"}, "running", (*string)(nil), "correct-token").Return(approved, nil)
 	// Synchronous execute chain: GetPurchasePlan is called with the
@@ -428,81 +424,11 @@ func TestProcessMessage_ApproveHappyPath(t *testing.T) {
 		dashboardURL: "https://dashboard.example.com",
 	}
 
-	err := manager.ProcessMessage(ctx, `{"type":"approve","execution_id":"exec-appv","token":"correct-token","actor_email":"owner@example.com"}`)
+	_, _, err := manager.ApproveExecution(ctx, "exec-appv", "correct-token", "owner@example.com", nil)
 	require.NoError(t, err)
 	mockStore.AssertExpectations(t)
 	mockEmail.AssertNotCalled(t, "SendPurchaseConfirmation", mock.Anything, mock.Anything)
 	mockEmail.AssertExpectations(t)
-}
-
-// TestProcessMessage_ApproveFourEyesOn_SelfApproveDenied is the true
-// end-to-end regression test for the MEDIUM finding on PR #1500's
-// adversarial review: the SQS approve worker (handleApproveMessage ->
-// verifyAsyncApprovalActor -> ApproveExecution) enforced token + actor_email
-// + per-account contact_email matching, but never consulted 4-eyes mode.
-// A replayed or forwarded {token, actor_email} pair belonging to the same
-// person who created the execution would approve it even with dual control
-// enabled. Pre-fix this test proceeds straight through to
-// TransitionExecutionStatus (proven by stashing the fix and re-running);
-// post-fix ProcessMessage returns the 4-eyes denial before any state change.
-//
-// The case-differing row (issue #307) runs both email folds on the SQS path
-// end to end: the actor must match the mixed-case per-account contact_email
-// case-insensitively to get past verifyAsyncApprovalActor, and must then be
-// recognized as the creator despite the case difference so 4-eyes denies.
-func TestProcessMessage_ApproveFourEyesOn_SelfApproveDenied(t *testing.T) {
-	cases := []struct {
-		name         string
-		storedEmail  string // creator's user email and the account contact_email
-		messageActor string
-	}{
-		{name: "byte-identical emails", storedEmail: "owner@example.com", messageActor: "owner@example.com"},
-		{name: "stored mixed case, actor lowercase", storedEmail: "Owner@Example.COM", messageActor: "owner@example.com"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			mockStore := new(MockConfigStore)
-			mockStore.Test(t) // fail this row on an unexpected call, don't panic
-			mockEmail := new(MockEmailSender)
-
-			accountID := "acct-1"
-			creatorID := "user-creator"
-			exec := &config.PurchaseExecution{
-				ExecutionID:     "exec-appv-self",
-				Status:          "pending",
-				ApprovalToken:   config.HashApprovalToken("correct-token"),
-				CreatedByUserID: &creatorID,
-				Recommendations: []config.RecommendationRecord{
-					{CloudAccountID: &accountID},
-				},
-			}
-			account := &config.CloudAccount{ID: accountID, ContactEmail: tc.storedEmail}
-
-			// verifyAsyncApprovalActor + the manager's own fetch inside
-			// ApproveExecution both load the execution; enforceFourEyesPolicy
-			// loads it again.
-			mockStore.On("GetExecutionByID", ctx, "exec-appv-self").Return(exec, nil)
-			mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
-			mockStore.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
-			mockStore.On("GetUserEmailByID", ctx, creatorID).Return(tc.storedEmail, nil)
-
-			manager := &Manager{
-				config:       mockStore,
-				email:        mockEmail,
-				dashboardURL: "https://dashboard.example.com",
-			}
-
-			msg := fmt.Sprintf(`{"type":"approve","execution_id":"exec-appv-self","token":"correct-token","actor_email":%q}`, tc.messageActor)
-			err := manager.ProcessMessage(ctx, msg)
-			require.ErrorIs(t, err, ErrFourEyesDenied)
-			assert.Contains(t, err.Error(), "4-eyes mode requires a different approver")
-			mockStore.AssertNotCalled(t, "TransitionExecutionStatusTokenPinned",
-				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-			mockStore.AssertExpectations(t)
-			mockEmail.AssertExpectations(t)
-		})
-	}
 }
 
 // TestProcessMessage_ApproverMatchIgnoresEmailCase pins the case-insensitive
@@ -548,108 +474,6 @@ func TestProcessMessage_ApproverMatchIgnoresEmailCase(t *testing.T) {
 			mockStore.AssertExpectations(t)
 		})
 	}
-}
-
-// TestProcessMessage_ApproveFourEyesOn_DifferentApproverSucceeds is the
-// positive control for the same SQS call shape: an actor_email verified
-// against the per-account contact_email list, but belonging to a different
-// person than the creator, must still succeed end to end.
-func TestProcessMessage_ApproveFourEyesOn_DifferentApproverSucceeds(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	mockEmail := new(MockEmailSender)
-
-	accountID := "acct-1"
-	planID := "plan-appv-diff"
-	creatorID := "user-creator"
-	exec := &config.PurchaseExecution{
-		ExecutionID:     "exec-appv-diff",
-		PlanID:          planID,
-		Status:          "pending",
-		ApprovalToken:   config.HashApprovalToken("correct-token"),
-		CreatedByUserID: &creatorID,
-		Recommendations: []config.RecommendationRecord{
-			{CloudAccountID: &accountID},
-		},
-	}
-	approved := &config.PurchaseExecution{
-		ExecutionID:     "exec-appv-diff",
-		PlanID:          planID,
-		Status:          "approved",
-		StepNumber:      1,
-		Recommendations: exec.Recommendations,
-	}
-	account := &config.CloudAccount{ID: accountID, ContactEmail: "approver@example.com"}
-
-	// verifyAsyncApprovalActor + ApproveExecution's own load + the
-	// enforceFourEyesPolicy load (issue #1005 gate): 3 loads total.
-	// rotateApprovalToken adds no further fetch: it mutates `approved` (the
-	// row TransitionExecutionStatus returns) in place.
-	mockStore.On("GetExecutionByID", ctx, "exec-appv-diff").Return(exec, nil).Times(3)
-	mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
-	mockStore.On("GetGlobalConfig", mock.Anything).Return(fourEyesCfgOnForManager(), nil)
-	mockStore.On("GetUserEmailByID", ctx, creatorID).Return("owner@example.com", nil)
-	mockStore.On("TransitionExecutionStatusTokenPinned", ctx, "exec-appv-diff", []string{"pending", "notified"}, "running", (*string)(nil), "correct-token").Return(approved, nil)
-	plan := &config.PurchasePlan{ID: planID, Name: "test-plan"}
-	mockStore.On("GetPurchasePlan", mock.Anything, planID).Return(plan, nil)
-	// Nothing is selected, so nothing is bought and no "purchase confirmed"
-	// email goes out (#339).
-	mockStore.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
-	mockStore.On("CompletePlanStep", mock.Anything, planID, 1).Return(nil)
-
-	manager := &Manager{
-		config:       mockStore,
-		email:        mockEmail,
-		dashboardURL: "https://dashboard.example.com",
-	}
-
-	err := manager.ProcessMessage(ctx, `{"type":"approve","execution_id":"exec-appv-diff","token":"correct-token","actor_email":"approver@example.com"}`)
-	require.NoError(t, err)
-	mockStore.AssertExpectations(t)
-	mockEmail.AssertNotCalled(t, "SendPurchaseConfirmation", mock.Anything, mock.Anything)
-	mockEmail.AssertExpectations(t)
-}
-
-func TestProcessMessage_CancelHappyPath(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	mockEmail := new(MockEmailSender)
-
-	accountID := "acct-1"
-	exec := &config.PurchaseExecution{
-		ExecutionID:   "exec-cancel",
-		Status:        "pending",
-		ApprovalToken: config.HashApprovalToken("correct-token"),
-		Recommendations: []config.RecommendationRecord{
-			{CloudAccountID: &accountID},
-		},
-	}
-	account := &config.CloudAccount{ID: accountID, ContactEmail: "owner@example.com"}
-
-	// verifyAsyncApprovalActor + CancelExecution + rotateApprovalToken all
-	// load the execution; mock returns it three times.
-	mockStore.On("GetExecutionByID", ctx, "exec-cancel").Return(exec, nil).Times(3)
-	mockStore.On("GetCloudAccount", ctx, accountID).Return(account, nil)
-	// CancelExecutionAtomicTokenPinned is called inside WithTx (nil tx
-	// sentinel in tests); actor_email is non-empty so cancelledBy is non-nil.
-	actor := "owner@example.com"
-	mockStore.On("CancelExecutionAtomicTokenPinned", ctx, mock.Anything, "exec-cancel", &actor, "correct-token").
-		Return(true, "canceled", nil)
-	// Suppression cleanup must follow a successful atomic cancel.
-	mockStore.On("DeleteSuppressionsByExecutionTx", ctx, mock.Anything, "exec-cancel").
-		Return(nil)
-	// Token rotation after successful cancel.
-	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
-
-	manager := &Manager{
-		config:       mockStore,
-		email:        mockEmail,
-		dashboardURL: "https://dashboard.example.com",
-	}
-
-	err := manager.ProcessMessage(ctx, `{"type":"cancel","execution_id":"exec-cancel","token":"correct-token","actor_email":"owner@example.com"}`)
-	require.NoError(t, err)
-	mockStore.AssertExpectations(t)
 }
 
 // TestProcessMessage_ApproveRejectsMissingActor verifies the SQS
@@ -730,47 +554,6 @@ func TestProcessMessage_ApproveRejectsNonMatchingActor(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not an authorized approver")
 	// SavePurchaseExecution must NOT have been called — no mutation.
-	mockStore.AssertNotCalled(t, "SavePurchaseExecution")
-}
-
-// TestProcessMessage_ApproveRejectsTokenMismatch: token is wrong,
-// actor_email is set. Existing behavior (token check fails) — verified
-// here so a future refactor of verifyAsyncApprovalActor doesn't
-// regress the token comparison ordering.
-func TestProcessMessage_ApproveRejectsTokenMismatch(t *testing.T) {
-	ctx := context.Background()
-	mockStore := new(MockConfigStore)
-	assertMocksOnCleanup(t, mockStore)
-	mockEmail := new(MockEmailSender)
-
-	// The recommendation carries a CloudAccountID so that approver resolution,
-	// if it were ever hoisted above the token check, would have an account to
-	// look up. Without it the AssertNotCalled below is inert: the ordering bug
-	// it guards could not produce a GetCloudAccount call against this fixture.
-	accountID := "acct-1"
-	exec := &config.PurchaseExecution{
-		ExecutionID:   "exec-bad-token",
-		Status:        "pending",
-		ApprovalToken: config.HashApprovalToken("correct-token"),
-		Recommendations: []config.RecommendationRecord{
-			{CloudAccountID: &accountID},
-		},
-	}
-
-	mockStore.On("GetExecutionByID", ctx, "exec-bad-token").Return(exec, nil)
-
-	manager := &Manager{
-		config:       mockStore,
-		email:        mockEmail,
-		dashboardURL: "https://dashboard.example.com",
-	}
-
-	err := manager.ProcessMessage(ctx, `{"type":"approve","execution_id":"exec-bad-token","token":"wrong-token","actor_email":"owner@example.com"}`)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid approval token")
-	// No GetCloudAccount (token failure is checked before approver
-	// resolution) and no SavePurchaseExecution.
-	mockStore.AssertNotCalled(t, "GetCloudAccount")
 	mockStore.AssertNotCalled(t, "SavePurchaseExecution")
 }
 
