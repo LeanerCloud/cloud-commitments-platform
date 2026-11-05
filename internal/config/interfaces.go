@@ -81,6 +81,12 @@ type StoreInterface interface {
 	// nothing stuck are absent from the map. Feeds the plan-health
 	// ramp_blocked factor (issue #1861).
 	GetStuckRampSteps(ctx context.Context) (map[string]RampStepBlock, error)
+	// GetDoomedNextRoots returns, keyed by plan ID, the plans whose next
+	// empty root row is dated where the notification tick can never attach
+	// recommendations (inside the notice window, or any future date when the
+	// plan has no window), evaluated at now. Plans with nothing doomed are
+	// absent. Feeds the plan-health step_will_not_attach factor.
+	GetDoomedNextRoots(ctx context.Context, now time.Time) (map[string]DoomedRoot, error)
 	// LockPurchasePlanTx reads a plan under a row lock held for the rest of tx.
 	// It is the per-plan ramp lock CompletePlanStep takes, exposed so a caller
 	// that reads a plan's ramp position and then writes against it does so
@@ -278,6 +284,13 @@ type StoreInterface interface {
 	// status returns ErrApprovalTokenChanged; a lost status CAS returns
 	// ErrExecutionNotInExpectedStatus as usual.
 	TransitionExecutionStatusTokenPinned(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string, rawToken string) (*PurchaseExecution, error)
+	// ScheduleApprovedExecution moves a delayed approval to "scheduled" and
+	// stamps scheduled_execution_at (and approved_by when non-nil) in one
+	// transaction, so a failed stamp can never leave a scheduled row that no
+	// scheduler run picks up (#348 F6). A non-empty rawToken pins the approval
+	// token as TransitionExecutionStatusTokenPinned does; the errors match the
+	// two transition methods.
+	ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, rawToken string, scheduledAt time.Time, approvedBy *string) (*PurchaseExecution, error)
 	// RescheduleAwaitingExecution sets scheduled_date on an execution that is
 	// still pending or notified and touches no other column. It returns false
 	// (and writes nothing) when the row has left those statuses, so a cancel or

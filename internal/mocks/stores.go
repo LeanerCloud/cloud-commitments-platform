@@ -283,6 +283,25 @@ func (m *MockConfigStore) GetStuckRampSteps(ctx context.Context) (map[string]con
 	return v, args.Error(1)
 }
 
+// GetDoomedNextRoots mocks the doomed-root report backing plan health.
+// Unregistered by default, like GetStuckRampSteps: no doomed root is the shape
+// of a plan with nothing wrong with it.
+func (m *MockConfigStore) GetDoomedNextRoots(ctx context.Context, now time.Time) (map[string]config.DoomedRoot, error) {
+	m.record("GetDoomedNextRoots", ctx, now)
+	if !isExpected(&m.Mock, "GetDoomedNextRoots") {
+		return map[string]config.DoomedRoot{}, nil
+	}
+	args := m.Called(ctx, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(map[string]config.DoomedRoot)
+	if !ok {
+		m.reporter.wrongReturnType("GetDoomedNextRoots", "map[string]config.DoomedRoot", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
 // LockPurchasePlanTx mocks the per-plan ramp lock. Falls back to
 // GetPurchasePlan when no expectation is registered, so tests that only care
 // about what the transaction writes keep working: the lock is a concurrency
@@ -617,6 +636,21 @@ func (m *MockConfigStore) TransitionExecutionStatusTokenPinned(ctx context.Conte
 	v, ok := args.Get(0).(*config.PurchaseExecution)
 	if !ok {
 		m.reporter.wrongReturnType("TransitionExecutionStatusTokenPinned", "*config.PurchaseExecution", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// ScheduleApprovedExecution mocks the atomic delayed-approval schedule. It has
+// no default: a test of the delayed-approve path must register it.
+func (m *MockConfigStore) ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, rawToken string, scheduledAt time.Time, approvedBy *string) (*config.PurchaseExecution, error) {
+	m.record("ScheduleApprovedExecution", ctx, executionID, fromStatuses, transitionedBy, rawToken, scheduledAt, approvedBy)
+	args := m.Called(ctx, executionID, fromStatuses, transitionedBy, rawToken, scheduledAt, approvedBy)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*config.PurchaseExecution)
+	if !ok {
+		m.reporter.wrongReturnType("ScheduleApprovedExecution", "*config.PurchaseExecution", args.Get(0))
 	}
 	return v, args.Error(1)
 }

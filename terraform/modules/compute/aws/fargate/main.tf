@@ -1,6 +1,8 @@
 # AWS Fargate Compute Module
 # ECS Fargate with Application Load Balancer
 
+data "aws_caller_identity" "current" {}
+
 locals {
   name_prefix = "${var.stack_name}-fargate"
 
@@ -654,6 +656,12 @@ resource "aws_ecs_task_definition" "main" {
           {
             name  = "RECOMMENDATION_SCHEDULE"
             value = var.enable_scheduled_tasks ? var.recommendation_schedule : ""
+          },
+          # Whether the fire_scheduled_purchases sweep is scheduled; the API
+          # refuses purchase_delay_hours > 0 on "false" (#1588).
+          {
+            name  = "FIRE_SWEEP_SCHEDULED"
+            value = var.enable_fire_scheduled_purchases_schedule ? "true" : "false"
           }
         ],
         [
@@ -663,10 +671,11 @@ resource "aws_ecs_task_definition" "main" {
           }
         ],
         [
+          # The derived FIRE_SWEEP_SCHEDULED stays authoritative (#1588).
           for k, v in var.additional_env_vars : {
             name  = k
             value = v
-          }
+          } if k != "FIRE_SWEEP_SCHEDULED"
         ]
       )
 
@@ -926,6 +935,10 @@ resource "aws_iam_role" "eventbridge" {
           Service = "events.amazonaws.com"
         }
         Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+          ArnEquals    = { "aws:SourceArn" = aws_cloudwatch_event_rule.recommendations[0].arn }
+        }
       }
     ]
   })
@@ -1037,6 +1050,10 @@ resource "aws_iam_role" "eventbridge_ri_exchange" {
           Service = "events.amazonaws.com"
         }
         Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+          ArnEquals    = { "aws:SourceArn" = aws_cloudwatch_event_rule.ri_exchange[0].arn }
+        }
       }
     ]
   })
@@ -1153,6 +1170,10 @@ resource "aws_iam_role" "eventbridge_ladder_run" {
           Service = "events.amazonaws.com"
         }
         Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+          ArnEquals    = { "aws:SourceArn" = aws_cloudwatch_event_rule.ladder_run[0].arn }
+        }
       }
     ]
   })
@@ -1263,6 +1284,10 @@ resource "aws_iam_role" "eventbridge_fire_scheduled_purchases" {
           Service = "events.amazonaws.com"
         }
         Action = "sts:AssumeRole"
+        Condition = {
+          StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+          ArnEquals    = { "aws:SourceArn" = aws_cloudwatch_event_rule.fire_scheduled_purchases[0].arn }
+        }
       }
     ]
   })
