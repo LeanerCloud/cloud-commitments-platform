@@ -1602,59 +1602,6 @@ func (h *Handler) scheduleApprovedExecution(ctx context.Context, execution *conf
 	return updated, nil
 }
 
-// buildScheduledEmailData constructs the email.NotificationData from the execution
-// and global config, pulled out of sendPurchaseScheduledEmail to keep that function
-// under the cyclomatic limit.
-func buildScheduledEmailData(dashboardURL string, execution *config.PurchaseExecution, globalCfg *config.GlobalConfig, actor string) email.NotificationData {
-	var windowClosesAt string
-	if execution.ScheduledExecutionAt != nil {
-		windowClosesAt = execution.ScheduledExecutionAt.UTC().Format("2006-01-02 15:04 UTC")
-	}
-
-	revokeURL := ""
-	if dashboardURL != "" {
-		revokeURL = dashboardURL + "/purchases#history?execution=" + execution.ExecutionID
-	}
-
-	// Build a minimal summaries slice from the stored recommendations.
-	summaries := make([]email.RecommendationSummary, 0, len(execution.Recommendations))
-	for _rvc := range execution.Recommendations {
-		r := execution.Recommendations[_rvc]
-		summaries = append(summaries, email.RecommendationSummary{
-			Service:      r.Service,
-			ResourceType: r.ResourceType,
-			Region:       r.Region,
-			Count:        r.Count,
-			Term:         r.Term,
-			Payment:      r.Payment,
-			UpfrontCost:  r.UpfrontCost,
-		})
-	}
-
-	data := email.NotificationData{
-		DashboardURL:             dashboardURL,
-		ExecutionID:              execution.ExecutionID,
-		TotalUpfrontCost:         execution.TotalUpfrontCost,
-		TotalSavings:             execution.EstimatedSavings,
-		Recommendations:          summaries,
-		RevocationWindowClosesAt: windowClosesAt,
-		RevokeURL:                revokeURL,
-	}
-
-	// Use the global notification email as the recipient (same as approval).
-	var globalNotify string
-	if globalCfg.NotificationEmail != nil {
-		globalNotify = *globalCfg.NotificationEmail
-	}
-	if globalNotify != "" {
-		data.RecipientEmail = globalNotify
-	} else if actor != "" {
-		data.RecipientEmail = actor
-	}
-
-	return data
-}
-
 // sendPurchaseScheduledEmail fires the Gmail-style scheduled-delay notification
 // email immediately after scheduling. Best-effort: errors are logged and never
 // returned to the caller (the purchase state is already committed).
@@ -1674,10 +1621,8 @@ func (h *Handler) sendPurchaseScheduledEmail(ctx context.Context, execution *con
 		return
 	}
 
-	data := buildScheduledEmailData(h.dashboardURL, execution, globalCfg, actor)
-
-	if sendErr := h.emailNotifier.SendPurchaseScheduledNotification(ctx, data); sendErr != nil {
-		logging.Errorf("sendPurchaseScheduledEmail: send failed for execution %s: %v", execution.ExecutionID, sendErr)
+	if sendErr := purchase.SendScheduledNotice(ctx, h.emailNotifier, globalCfg, h.dashboardURL, execution, actor); sendErr != nil {
+		logging.Errorf("sendPurchaseScheduledEmail: %v", sendErr)
 	}
 }
 
