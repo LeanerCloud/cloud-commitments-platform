@@ -316,6 +316,12 @@
     margin-top: var(--cudly-sp-4);
 }
 
+/* The table scrolls sideways here; its absolutely positioned .sr-only header
+ * label needs this scroller as containing block or it widens the page. */
+#ladder-configs-table-container {
+    position: relative;
+}
+
 #ladder-configs-table-container > .settings-help {
     margin: 0;
 }
