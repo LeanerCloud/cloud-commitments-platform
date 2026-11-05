@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Migration 000158 adds the nullable purchase_executions.first_dispatch_at:
+// Migration 000154 adds the nullable purchase_executions.first_dispatch_at:
 // existing rows stay NULL and the down migration drops it.
-func TestMigration_0158_FirstDispatchAt(t *testing.T) {
+func TestMigration_0154_FirstDispatchAt(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	migrationsPath := getMigrationsPath()
@@ -30,19 +30,19 @@ func TestMigration_0158_FirstDispatchAt(t *testing.T) {
 		return exists
 	}
 
-	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, previousMigrationVersion(t, 158)))
-	assert.False(t, columnExists(), "column absent before 000158")
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, previousMigrationVersion(t, 154)))
+	assert.False(t, columnExists(), "column absent before 000154")
 	_, err := pool.Exec(ctx, `INSERT INTO purchase_executions (status, scheduled_date) VALUES ('pending', NOW())`)
 	require.NoError(t, err)
 
-	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, 158))
-	assert.True(t, columnExists(), "column present after 000158")
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, 154))
+	assert.True(t, columnExists(), "column present after 000154")
 	var nullRows, total int
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT count(*) FILTER (WHERE first_dispatch_at IS NULL), count(*) FROM purchase_executions`).Scan(&nullRows, &total))
 	assert.Equal(t, 1, total)
 	assert.Equal(t, total, nullRows, "existing rows stay NULL")
 
-	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, previousMigrationVersion(t, 158)))
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, previousMigrationVersion(t, 154)))
 	assert.False(t, columnExists(), "the down migration drops the column")
 }
