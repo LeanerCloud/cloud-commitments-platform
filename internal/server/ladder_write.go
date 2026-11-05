@@ -111,6 +111,14 @@ func (app *Application) buildAndWireCapability(ctx context.Context, region, acco
 	return app.wireLadderWriteSide(ctx, executionEnabled, region, accountID, capability)
 }
 
+// planningCapability builds the capability ladder_run plans with. Planning never
+// buys, so its write side is always the disabled one, whatever
+// ladder_execution_enabled says; only a sweep that buys or reshapes may wire the
+// real clients (#70).
+func (app *Application) planningCapability(ctx context.Context, region, accountID string) (pkgladder.LadderCapability, error) {
+	return app.buildAndWireCapability(ctx, region, accountID, false)
+}
+
 // wireLadderWriteSide wires the write side of a LadderCapability if and only if
 // cap is a *awsladder.AWSLadder. For test fakes (non-AWSLadder implementations)
 // it returns cap unchanged so existing handler tests continue to work without

@@ -88,3 +88,31 @@ func TestWireLadderWriteSide_ExecutionDisabled_RealAWSLadder_RefusesWithoutAWSCa
 	assert.ErrorIs(t, reshapeErr, awsladder.ErrLadderExecutionDisabled,
 		"kill-switch OFF must refuse ReshapeBuffer with ErrLadderExecutionDisabled, not an AWS error")
 }
+
+// TestPlanningCapability_RealAWSLadder_RefusesPurchases pins that ladder_run plans
+// with a capability whose write side is always the disabled one. Planning must
+// never hold a purchase-capable capability, whatever ladder_execution_enabled
+// says; only the reshape sweep may wire real clients (#70 S3).
+func TestPlanningCapability_RealAWSLadder_RefusesPurchases(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const (
+		region    = "us-east-1"
+		accountID = "123456789012"
+	)
+	app := &Application{LadderCapabilityFactory: func(ctx context.Context, region, accountID string) (pkgladder.LadderCapability, error) {
+		return awsladder.NewFromAWSConfig(ctx, region, accountID)
+	}}
+	capability, err := app.planningCapability(ctx, region, accountID)
+	require.NoError(t, err)
+
+	rec := pkgcommon.Recommendation{
+		ResourceType:  "m5.large",
+		Count:         1,
+		Term:          "1yr",
+		PaymentOption: "no-upfront",
+		Details:       &pkgcommon.ComputeDetails{InstanceType: "m5.large", Platform: "linux", Tenancy: "default", Scope: "regional"},
+	}
+	_, purchaseErr := capability.PurchaseLayer(ctx, pkgladder.LayerConvertibleRI, rec, pkgcommon.PurchaseOptions{Source: pkgcommon.PurchaseSourceWeb, IdempotencyToken: "ladder-plan-tok"})
+	assert.ErrorIs(t, purchaseErr, awsladder.ErrLadderExecutionDisabled, "the planning capability must refuse every purchase")
+}
