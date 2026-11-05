@@ -297,3 +297,33 @@ func TestFindOpenRedshiftLineageConflicts(t *testing.T) {
 		}))
 	})
 }
+
+func TestLockRedshiftTuplesTx_BlocksSameTupleAndSetsReadCommitted(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+	other := lineageTuple
+	other.Count = 9
+	tx1, err := store.db.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx1.Rollback(ctx) }()
+	_, err = tx1.Exec(ctx, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+	require.NoError(t, err, "start above read committed so the lock helper's own SET is what is proven")
+	require.NoError(t, store.LockRedshiftTuplesTx(ctx, tx1, []RedshiftTuple{lineageTuple, other}))
+	var iso string
+	require.NoError(t, tx1.QueryRow(ctx, "SHOW transaction_isolation").Scan(&iso))
+	assert.Equal(t, "read committed", iso)
+
+	tx2, err := store.db.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx2.Rollback(ctx) }()
+	short, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	assert.Error(t, store.LockRedshiftTuplesTx(short, tx2, []RedshiftTuple{lineageTuple}), "a held tuple blocks a second transaction")
+
+	tx3, err := store.db.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx3.Rollback(ctx) }()
+	third := lineageTuple
+	third.Count = 11
+	assert.NoError(t, store.LockRedshiftTuplesTx(ctx, tx3, []RedshiftTuple{third}), "a different tuple does not block")
+}

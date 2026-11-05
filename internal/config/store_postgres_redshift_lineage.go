@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,40 @@ type RedshiftTuple struct {
 	Count    int    `json:"count"`
 	// CloudAccountID is the rec's own account; nil falls back to the accountID argument.
 	CloudAccountID *string `json:"cloud_account_id,omitempty"`
+}
+
+// LockKey is the advisory lock key of the tuple. It leaves the account out
+// because a NULL account on either side of the conflict query matches any.
+func (t RedshiftTuple) LockKey() string {
+	return fmt.Sprintf("redshift-tuple:%s|%s|%d|%s|%d", t.Region, t.NodeType, t.Term, t.Payment, t.Count)
+}
+
+// LockRedshiftTuplesTx takes a transaction-scoped advisory lock per tuple in
+// sorted key order, so two dispatches in different sessions cannot deadlock.
+// It must be the first thing run in tx (the isolation level can only be set
+// before any query). Parallels planStepLockKeys + LockPlanProvidersTx.
+func (s *PostgresStore) LockRedshiftTuplesTx(ctx context.Context, tx pgx.Tx, tuples []RedshiftTuple) error {
+	keys := make([]string, 0, len(tuples))
+	for _, t := range tuples {
+		keys = append(keys, t.LockKey())
+	}
+	sort.Strings(keys)
+	if _, err := tx.Exec(ctx, "SET TRANSACTION ISOLATION LEVEL READ COMMITTED"); err != nil {
+		return fmt.Errorf("lock redshift tuples: set isolation: %w", err)
+	}
+	if _, err := tx.Exec(ctx, fmt.Sprintf("SET LOCAL lock_timeout = %d", ladderLockTimeout.Milliseconds())); err != nil {
+		return fmt.Errorf("lock redshift tuples: set lock_timeout: %w", err)
+	}
+	for _, k := range keys {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, k); err != nil {
+			return fmt.Errorf("lock redshift tuple %q: %w", k, err)
+		}
+	}
+	// The timeout was for the advisory waits only; do not leak it into later statements.
+	if _, err := tx.Exec(ctx, "SET LOCAL lock_timeout TO DEFAULT"); err != nil {
+		return fmt.Errorf("lock redshift tuples: reset lock_timeout: %w", err)
+	}
+	return nil
 }
 
 // RedshiftLineageConflict is an open execution whose Redshift rec matches a

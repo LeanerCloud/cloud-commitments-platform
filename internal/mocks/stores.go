@@ -569,6 +569,12 @@ func (m *MockConfigStore) StampFirstDispatchTx(ctx context.Context, tx pgx.Tx, e
 	return res, args.Error(1)
 }
 
+// LockRedshiftTuplesTx mocks the Redshift tuple advisory locks (no default: testify panics if unexpected).
+func (m *MockConfigStore) LockRedshiftTuplesTx(ctx context.Context, tx pgx.Tx, tuples []config.RedshiftTuple) error {
+	m.record("LockRedshiftTuplesTx", ctx, tx, tuples)
+	return m.Called(ctx, tx, tuples).Error(0)
+}
+
 // FindOpenRedshiftLineageConflictsTx mocks the Redshift lineage conflict query (no default: testify panics if unexpected).
 func (m *MockConfigStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []config.RedshiftTuple, accountID *string, horizon time.Duration) ([]config.RedshiftLineageConflict, error) {
 	m.record("FindOpenRedshiftLineageConflictsTx", ctx, tx, selfID, family, tuples, accountID, horizon)

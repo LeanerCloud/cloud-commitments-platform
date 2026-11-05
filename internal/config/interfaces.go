@@ -819,6 +819,10 @@ type StoreInterface interface {
 	// whether it is within horizon on the database clock.
 	StampFirstDispatchTx(ctx context.Context, tx pgx.Tx, executionID string, horizon time.Duration) (StampResult, error)
 
+	// LockRedshiftTuplesTx takes a transaction-scoped advisory lock per
+	// distinct tuple, in sorted order, serializing dispatches that share one.
+	LockRedshiftTuplesTx(ctx context.Context, tx pgx.Tx, tuples []RedshiftTuple) error
+
 	// FindOpenRedshiftLineageConflictsTx returns the other open executions
 	// holding a Redshift rec for one of tuples that a dispatch of family must
 	// not race (see the implementation for the predicate).
