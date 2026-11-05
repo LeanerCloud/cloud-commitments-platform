@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/commitmentopts"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
@@ -140,6 +141,16 @@ func TestSaveAccountServiceOverride_KeyMatchIsCaseInsensitive(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+// [] sets an empty list, which is not the same as null clearing the key.
+func TestSaveAccountServiceOverride_EmptyListSetsEmptyNotNil(t *testing.T) {
+	want := fullStoredOverride()
+	want.IncludeRegions = []string{}
+	got, err := putOverride(t, fullStoredOverride(), `{"include_regions":[]}`, nil)
+	require.NoError(t, err)
+	got.UpdatedAt = time.Time{}
+	assert.Equal(t, want, got)
+}
+
 // With no stored row the result carries only the sent fields.
 func TestSaveAccountServiceOverride_NoExistingRowKeepsOnlySentFields(t *testing.T) {
 	got, err := putOverride(t, nil, `{"term":1,"include_regions":["us-east-1"]}`, nil)
@@ -161,12 +172,11 @@ func TestSaveAccountServiceOverride_ComboCheckedOnMergedRow(t *testing.T) {
 		ID: "ov-1", AccountID: overrideMergeAccount, Provider: "aws", Service: "rds",
 		Payment: ovPtr("no-upfront"),
 	}
-	var checkedTerm int
-	var checkedPayment string
+	// The options offer only 1yr no-upfront: the merged 3yr no-upfront is
+	// refused, though the sent term alone (no payment) would pass.
 	opts := &stubCommitmentOpts{
-		validateFn: func(_ context.Context, _, _ string, term int, payment string) (bool, error) {
-			checkedTerm, checkedPayment = term, payment
-			return term != 3 || payment != "no-upfront", nil
+		getFn: func(context.Context) (commitmentopts.Options, error) {
+			return commitmentopts.Options{"aws": {"rds": {{Provider: "aws", Service: "rds", TermYears: 1, Payment: "no-upfront"}}}}, nil
 		},
 	}
 	got, err := putOverride(t, existing, `{"term":3}`, opts)
@@ -174,8 +184,7 @@ func TestSaveAccountServiceOverride_ComboCheckedOnMergedRow(t *testing.T) {
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
 	assert.Equal(t, 400, ce.code)
-	assert.Equal(t, 3, checkedTerm)
-	assert.Equal(t, "no-upfront", checkedPayment)
+	assert.Contains(t, ce.message, "3yr no-upfront")
 	assert.Nil(t, got, "a refused combo must not be saved")
 }
 

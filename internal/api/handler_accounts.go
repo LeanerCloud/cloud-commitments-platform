@@ -1197,19 +1197,34 @@ func (h *Handler) saveAccountServiceOverride(ctx context.Context, httpReq *event
 		return nil, err
 	}
 
-	now := time.Now()
-	existing, err := h.config.GetAccountServiceOverride(ctx, accountID, provider, service)
+	// Fetch the commitment options before the transaction opens: the merge
+	// callback runs while it holds a pooled connection, so it must not take
+	// another (see commitmentOptsSnapshot).
+	combos := h.prefetchCommitmentOptions(ctx, provider)
+
+	// The read, merge and write run in one locked transaction (issue #1775),
+	// so two single-field PUTs cannot merge onto the same stale row and lose
+	// one change. The audit event commits with the write (issue #1493).
+	audit := config.AuditContext{Actor: configAuditActor(session)}
+	override, err := h.config.UpdateAccountServiceOverrideAtomic(ctx, accountID, provider, service, audit,
+		func(existing *config.AccountServiceOverride) (*config.AccountServiceOverride, error) {
+			return mergeAndValidateServiceOverride(accountID, provider, service, req, existing, present, combos)
+		})
 	if err != nil {
-		return nil, fmt.Errorf("accounts: get existing override: %w", err)
+		return nil, fmt.Errorf("accounts: %w", err)
 	}
 
-	override := buildServiceOverride(accountID, provider, service, req, existing, present, now)
+	return override, nil
+}
 
-	// Defense-in-depth: reject invalid (term, payment) combos on the merged row before persisting.
-	// checkCommitmentOptionCombo is permissive when commitmentOpts is nil or
-	// probe data is absent (ErrNoData) — the frontend's hardcoded rules are the
-	// primary gate in those cases.
-	if err := h.checkCommitmentOptionCombo(ctx, config.ServiceConfig{
+// mergeAndValidateServiceOverride is the read-merge step of an override PUT,
+// run inside the store's locked transaction: it merges the request onto the
+// stored row, then rejects an invalid (term, payment) combo on the merged
+// result. The check is permissive when no probe data exists, as for the
+// service-config PUT. It does no I/O.
+func mergeAndValidateServiceOverride(accountID, provider, service string, req AccountServiceOverrideRequest, existing *config.AccountServiceOverride, present map[string]bool, combos commitmentOptsSnapshot) (*config.AccountServiceOverride, error) {
+	override := buildServiceOverride(accountID, provider, service, req, existing, present, time.Now())
+	if err := combos.check(config.ServiceConfig{
 		Provider: override.Provider,
 		Service:  override.Service,
 		Term:     derefInt(override.Term),
@@ -1217,15 +1232,6 @@ func (h *Handler) saveAccountServiceOverride(ctx context.Context, httpReq *event
 	}); err != nil {
 		return nil, err
 	}
-
-	// The write and its config_audit_events row commit together (issue #1493).
-	audit := config.AuditContext{Actor: configAuditActor(session)}
-	if err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
-		return h.config.SaveAccountServiceOverrideAuditedTx(ctx, tx, override, audit)
-	}); err != nil {
-		return nil, fmt.Errorf("accounts: %w", err)
-	}
-
 	return override, nil
 }
 
