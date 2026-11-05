@@ -75,7 +75,6 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 	_, gracePresent := present["grace_period_days"]
 	modeSent := riExchangeModeSent(present)
 	providersSent := bodyHasKey(present, "enabled_providers")
-	delayRefused := h.refusesDelay(present)
 	if err := h.requireGlobalConfigScope(ctx, session); err != nil {
 		return nil, err
 	}
@@ -105,6 +104,7 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 		before := riExchangeArmStateOf(existing)
 		switchBefore = existing.AutoPurchaseEnabled
 		ladderBefore = existing.LadderExecutionEnabled
+		delayBefore := existing.PurchaseDelayHours
 
 		// grace_period_days is a map: json.Unmarshal into a non-nil map MERGES
 		// keys (an omitted key can never be deleted). When the caller sends the
@@ -116,7 +116,7 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 		if uErr := json.Unmarshal([]byte(req.Body), existing); uErr != nil {
 			return NewClientError(400, "invalid request body")
 		}
-		if vErr := validateGlobalConfigWrite(existing, modeSent || existing.RIExchangeMode != before.mode, providersSent, delayRefused); vErr != nil {
+		if vErr := validateGlobalConfigWrite(existing, modeSent || existing.RIExchangeMode != before.mode, providersSent, h.refusesDelay(present, delayBefore, existing.PurchaseDelayHours)); vErr != nil {
 			return vErr
 		}
 		if gErr := requireRIExchangeAutoModeGrant(before, riExchangeArmStateOf(existing), grants.riExchange); gErr != nil {
@@ -203,11 +203,12 @@ func validateGlobalConfigWrite(cfg *config.GlobalConfig, modeSent, providersSent
 }
 
 // refusesDelay reports whether this write must keep the delay at 0: the
-// deployment has no fire sweep and the body writes purchase_delay_hours.
-// Presence-based like the checks in validateGlobalConfigWrite, so a stored
-// delay does not block an unrelated partial save.
-func (h *Handler) refusesDelay(present map[string]json.RawMessage) bool {
-	return h.fireSweepOff && bodyWritesKey(present, "purchase_delay_hours")
+// deployment has no fire sweep and the body writes purchase_delay_hours, or
+// the decode changed the stored value (a later duplicate key of null hides
+// an earlier write from the presence map). Presence-based, so a stored delay
+// does not block an unrelated partial save.
+func (h *Handler) refusesDelay(present map[string]json.RawMessage, before, after int) bool {
+	return h.fireSweepOff && (bodyWritesKey(present, "purchase_delay_hours") || after != before)
 }
 
 // requireSwitchGrants chains the arming gates of the two money-spending
