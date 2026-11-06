@@ -1,11 +1,10 @@
 package api
 
 import (
-	"encoding/json"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,15 +15,54 @@ import (
 // Field-drop guards (#19): a field added to an API request struct must reach
 // the store struct, or be listed with a reason in the adapter's allowlist.
 
-var timestampRE = regexp.MustCompile(`"\d{4}-\d{2}-\d{2}T[^"]*"`)
+var timeType = reflect.TypeOf(time.Time{})
 
-// jsonShape renders v with timestamps masked, so two conversions made at
-// different moments compare equal unless a field value differs.
-func jsonShape(t *testing.T, v any) string {
-	t.Helper()
-	b, err := json.Marshal(v)
-	require.NoError(t, err)
-	return timestampRE.ReplaceAllString(string(b), `"T"`)
+// zeroTimes clears every settable time.Time reachable from v, so two
+// conversions made at different moments compare equal unless a field value
+// differs. It compares by reflection, not JSON, so json:"-" store fields
+// (credentials, tokens) are seen too.
+func zeroTimes(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		if !v.IsNil() {
+			zeroTimes(v.Elem())
+		}
+	case reflect.Struct:
+		if v.Type() == timeType {
+			if v.CanSet() {
+				v.Set(reflect.Zero(timeType))
+			}
+			return
+		}
+		for i := 0; i < v.NumField(); i++ {
+			zeroTimes(v.Field(i))
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			zeroTimes(v.Index(i))
+		}
+	}
+}
+
+func normalized[Out any](out Out) Out {
+	zeroTimes(reflect.ValueOf(&out).Elem())
+	return out
+}
+
+// requestFieldName is the JSON key encoding/json binds the field to: its tag
+// name, or its Go name when untagged. Fields json never binds return "".
+func requestFieldName(f reflect.StructField) string {
+	if !f.IsExported() {
+		return ""
+	}
+	name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+	switch name {
+	case "-":
+		return ""
+	case "":
+		return f.Name
+	}
+	return name
 }
 
 // setDistinct sets f to a non-zero value derived from tag, so it differs from
@@ -51,7 +89,7 @@ func setDistinct(t *testing.T, f reflect.Value, tag string) {
 	}
 }
 
-// requireFieldsReach sets each json-tagged field of the request on top of
+// requireFieldsReach sets each JSON-bindable field of the request on top of
 // base, one at a time, and requires convert's output to change unless the
 // field is allowlisted. An allowlisted field must NOT change the output, so a
 // fixed drop leaves a stale entry that fails.
@@ -60,21 +98,20 @@ func requireFieldsReach[Req, Out any](t *testing.T, base Req, convert func(Req) 
 	typ := reflect.TypeOf(base)
 	tags := map[string]int{}
 	for i := 0; i < typ.NumField(); i++ {
-		tag, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
-		if tag != "" && tag != "-" {
-			tags[tag] = i
+		if name := requestFieldName(typ.Field(i)); name != "" {
+			tags[name] = i
 		}
 	}
 	for tag := range notMapped {
 		_, ok := tags[tag]
 		require.Truef(t, ok, "allowlist entry %q is not a json field of %s", tag, typ.Name())
 	}
-	baseShape := jsonShape(t, convert(base))
+	baseOut := normalized(convert(base))
 	for tag, idx := range tags {
 		t.Run(tag, func(t *testing.T) {
 			req := base
 			setDistinct(t, reflect.ValueOf(&req).Elem().Field(idx), tag)
-			changed := jsonShape(t, convert(req)) != baseShape
+			changed := !reflect.DeepEqual(normalized(convert(req)), baseOut)
 			if reason, skip := notMapped[tag]; skip {
 				assert.Falsef(t, changed, "%s now reaches the target; remove its allowlist entry (%s)", tag, reason)
 				return
