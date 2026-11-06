@@ -860,6 +860,31 @@ func (app *Application) startRateLimiterCleanup(rl cleanupWorkerStarter) {
 	rl.StartCleanupWorker(workerCtx)
 }
 
+// postDBPurchaseManagerConfig is the purchase Manager config once the database
+// is connected. pgStore is the attempt journal (cloud-commitments-go#107); the
+// pre-DB Manager leaves it nil on purpose and is replaced by this one.
+func postDBPurchaseManagerConfig(app *Application, pgStore *config.PostgresStore, credStore credentials.CredentialStore, awsCfg aws.Config) purchase.ManagerConfig {
+	return purchase.ManagerConfig{
+		ConfigStore:            app.Config,
+		EmailSender:            app.Email,
+		STSClient:              sts.NewFromConfig(awsCfg),
+		AssumeRoleSTS:          sts.NewFromConfig(awsCfg),
+		BastionSTSFactory:      credentials.NewSTSClientFactory(awsCfg),
+		AmbientAWSCreds:        awsCfg.Credentials,
+		CredentialStore:        credStore,
+		AttemptJournal:         pgStore,
+		NotificationDaysBefore: app.appConfig.NotificationDaysBefore,
+		MaxDueRowAge:           app.appConfig.ScheduledPurchaseMaxOverdue,
+		DefaultTerm:            app.appConfig.DefaultTerm,
+		DefaultPaymentOption:   app.appConfig.DefaultPaymentOption,
+		DefaultCoverage:        app.appConfig.DefaultCoverage,
+		DefaultRampSchedule:    app.appConfig.DefaultRampSchedule,
+		DashboardURL:           app.appConfig.DashboardURL,
+		OIDCSigner:             app.signer,
+		OIDCIssuerURL:          resolveOIDCIssuerURL(app.appConfig),
+	}
+}
+
 // reinitializeAfterConnect re-creates all stores and services that depend on the
 // database connection. This is called after the lazy DB connect succeeds.
 // Returns an error if any store or service initialization fails.
@@ -926,24 +951,7 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config for cross-account STS: %w", err)
 	}
-	reinitPurchase := purchase.NewManager(purchase.ManagerConfig{
-		ConfigStore:            app.Config,
-		EmailSender:            app.Email,
-		STSClient:              sts.NewFromConfig(awsCfg),
-		AssumeRoleSTS:          sts.NewFromConfig(awsCfg),
-		BastionSTSFactory:      credentials.NewSTSClientFactory(awsCfg),
-		AmbientAWSCreds:        awsCfg.Credentials,
-		CredentialStore:        credStore,
-		NotificationDaysBefore: app.appConfig.NotificationDaysBefore,
-		MaxDueRowAge:           app.appConfig.ScheduledPurchaseMaxOverdue,
-		DefaultTerm:            app.appConfig.DefaultTerm,
-		DefaultPaymentOption:   app.appConfig.DefaultPaymentOption,
-		DefaultCoverage:        app.appConfig.DefaultCoverage,
-		DefaultRampSchedule:    app.appConfig.DefaultRampSchedule,
-		DashboardURL:           app.appConfig.DashboardURL,
-		OIDCSigner:             app.signer,
-		OIDCIssuerURL:          resolveOIDCIssuerURL(app.appConfig),
-	})
+	reinitPurchase := purchase.NewManager(postDBPurchaseManagerConfig(app, pgStore, credStore, awsCfg))
 	app.Purchase = reinitPurchase
 	log.Println("Re-initialized purchase manager with credential store and cross-account STS")
 

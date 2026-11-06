@@ -86,3 +86,64 @@ func TestSMTPSender_SendPurchaseFailedNotification_OutcomeUnknown(t *testing.T) 
 		})
 	}
 }
+
+func unrecordedCommitmentData() NotificationData {
+	data := outcomeUnknownData()
+	data.UnrecordedCommitment = true
+	data.Recommendations = []RecommendationSummary{
+		{Service: "redshift", ResourceType: "ra3.xlplus", Region: "us-east-1", Count: 2, UnrecordedCommitmentID: "rn-123"},
+		{Service: "rds", ResourceType: "db.m5.large", Region: "us-west-2", Count: 1},
+	}
+	return data
+}
+
+// cloud-commitments-go#107: a commitment the provider returned but CUDly could
+// not record is named, the opening says why, and the email never says "retry".
+func TestRenderPurchaseFailedEmail_UnrecordedCommitment(t *testing.T) {
+	body, err := RenderPurchaseFailedEmail(unrecordedCommitmentData())
+	require.NoError(t, err)
+
+	assert.Contains(t, body, "execution exec-1 (plan plan-1) ended because the provider returned a commitment that CUDly could not record.")
+	assert.Contains(t, body, "Redshift reserved node rn-123 was bought but CUDly could not record it; verify it in the cloud provider's console before buying again.")
+	assert.Equal(t, 1, strings.Count(body, "Redshift reserved node"), "only the rec that carries an ID gets the line")
+	assert.NotContains(t, body, "recovery sweep")
+	assert.NotContains(t, body, "was interrupted")
+	assert.NotContains(t, strings.ToLower(body), "retry")
+}
+
+func TestRenderPurchaseFailedEmail_UnrecordedCommitmentAbsent(t *testing.T) {
+	body, err := RenderPurchaseFailedEmail(outcomeUnknownData())
+	require.NoError(t, err)
+
+	assert.Contains(t, body, "recovery sweep")
+	assert.Contains(t, body, "was interrupted")
+	assert.NotContains(t, body, "could not record")
+	assert.NotContains(t, body, "Redshift reserved node")
+}
+
+// A caller that resets OutcomeUnknown after building the data must not turn an
+// unrecorded commitment back into the "retry" email.
+func TestPurchaseFailedEmail_UnrecordedCommitmentImpliesOutcomeUnknown(t *testing.T) {
+	data := unrecordedCommitmentData()
+	data.OutcomeUnknown = false
+
+	body, err := RenderPurchaseFailedEmail(data)
+	require.NoError(t, err)
+	assert.Contains(t, body, "Purchase Outcome Unknown")
+	assert.Contains(t, body, "Redshift reserved node rn-123 was bought but CUDly could not record it")
+	assert.NotContains(t, strings.ToLower(body), "retry")
+	assert.Equal(t, purchaseOutcomeUnknownSubject, purchaseFailedSubject(data, "CUDly Purchase Failed"))
+}
+
+// The ID line names a non-Redshift commitment generically.
+func TestRenderPurchaseFailedEmail_UnrecordedCommitmentNonRedshift(t *testing.T) {
+	data := unrecordedCommitmentData()
+	data.Recommendations = []RecommendationSummary{
+		{Service: "rds", ResourceType: "db.m5.large", Region: "us-west-2", Count: 1, UnrecordedCommitmentID: "ri-77"},
+	}
+	body, err := RenderPurchaseFailedEmail(data)
+	require.NoError(t, err)
+	assert.Contains(t, body, "Commitment ri-77 was bought but CUDly could not record it; verify it in the cloud provider's console before buying again.")
+	assert.NotContains(t, body, "Redshift")
+	assert.NotContains(t, strings.ToLower(body), "retry")
+}

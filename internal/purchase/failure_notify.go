@@ -92,7 +92,8 @@ func (m *Manager) sendFailureNoticeUntil(ctx context.Context, exec *config.Purch
 	ctx, cancel := ctxutil.DetachedWithDeadline(ctx, until)
 	defer cancel()
 	data := m.buildPurchaseFailedData(ctx, exec)
-	data.OutcomeUnknown = outcomeUnknown
+	// buildPurchaseFailedData may already have set it (an unrecorded commitment).
+	data.OutcomeUnknown = data.OutcomeUnknown || outcomeUnknown
 	if err := m.email.SendPurchaseFailedNotification(ctx, data); err != nil {
 		logging.Errorf("Failed to send purchase-failed notification for execution %s: %v", exec.ExecutionID, err)
 	}
@@ -145,13 +146,21 @@ func (m *Manager) buildPurchaseFailedData(ctx context.Context, exec *config.Purc
 		if !rec.Selected || rec.Purchased {
 			continue
 		}
-		data.Recommendations = append(data.Recommendations, email.RecommendationSummary{
+		summary := email.RecommendationSummary{
 			Service:      rec.Service,
 			ResourceType: rec.ResourceType,
 			Engine:       rec.Engine,
 			Region:       rec.Region,
 			Count:        rec.Count,
-		})
+		}
+		if rec.PurchaseID != "" {
+			// A commitment exists that this rec's failure never recorded
+			// (cloud-commitments-go#107): the email must say verify, not retry.
+			summary.UnrecordedCommitmentID = rec.PurchaseID
+			data.OutcomeUnknown = true
+			data.UnrecordedCommitment = true
+		}
+		data.Recommendations = append(data.Recommendations, summary)
 	}
 	return data
 }
@@ -162,9 +171,26 @@ func logExecutionFailure(exec *config.PurchaseExecution) bool {
 	if exec.Status != "failed" && exec.Status != "partially_completed" {
 		return false
 	}
-	logging.Errorf("%s execution_id=%s plan_id=%s status=%s",
-		PurchaseFailedLogMarker, exec.ExecutionID, exec.PlanID, exec.Status)
+	suffix := ""
+	if ids := unrecordedCommitmentIDs(exec); len(ids) > 0 {
+		// Carries the IDs to deployments with no email sender (go#107).
+		suffix = " unrecorded_commitment_ids=" + strings.Join(ids, ",")
+	}
+	logging.Errorf("%s execution_id=%s plan_id=%s status=%s%s",
+		PurchaseFailedLogMarker, exec.ExecutionID, exec.PlanID, exec.Status, suffix)
 	return true
+}
+
+// unrecordedCommitmentIDs lists the commitments that exist at the provider but
+// that a selected rec's failure never recorded as purchased.
+func unrecordedCommitmentIDs(exec *config.PurchaseExecution) []string {
+	var ids []string
+	for i := range exec.Recommendations {
+		if rec := exec.Recommendations[i]; rec.Selected && !rec.Purchased && rec.PurchaseID != "" {
+			ids = append(ids, rec.PurchaseID)
+		}
+	}
+	return ids
 }
 
 // notifyRootFailure is executeAndFinalize's notification for the root row. A
