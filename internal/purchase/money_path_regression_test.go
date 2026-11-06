@@ -334,16 +334,16 @@ func TestScheduledSweepOverlapDoesNotDoubleExecute(t *testing.T) {
 		}
 	}
 
-	// Both deliveries read the row as "pending" from the DB (pre-fix nothing CASes it to running
-	// before the cloud call, so an overlapping sweep re-reads a still-claimable row). Each GetExecutionByID returns a FRESH
-	// pending copy, faithfully modeling the real double-delivery scenario.
+	// Both sweeps read the row as claimable from the DB (pre-fix nothing CASes it to running
+	// before the cloud call, so an overlapping sweep re-reads a still-claimable row). Each
+	// GetPendingExecutions call returns a FRESH copy, modeling the real overlapping-tick scenario.
 	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil).Once()
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(autoPurchaseOnCfg(), nil).Maybe()
 	mockStore.On("GetStaleApprovedExecutions", ctx, mock.Anything).Return([]config.PurchaseExecution{}, nil)
 	mockStore.On("GetPendingExecutions", ctx).Return([]config.PurchaseExecution{*newPending()}, nil).Twice()
 
 	// First claim wins: pending -> running, returns the running row. The second
-	// claim (redelivery) loses with ErrExecutionNotInExpectedStatus, because the
+	// claim (the overlapping tick) loses with ErrExecutionNotInExpectedStatus, because the
 	// row already left the executable set. testify replays Once() expectations in
 	// declaration order, so the first call gets the win and the second the loss.
 	running := newPending()
@@ -385,7 +385,7 @@ func TestScheduledSweepOverlapDoesNotDoubleExecute(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal(t, 1, purchaseCalls, "the cloud purchase must run EXACTLY once across both deliveries (issue #1013)")
+	assert.Equal(t, 1, purchaseCalls, "the cloud purchase must run EXACTLY once across both sweeps (issue #1013)")
 }
 
 // TestMultiAccountPartialSuccessIsAcked is the issue #1014 regression guard: a
@@ -473,7 +473,7 @@ func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 	result, err := manager.ProcessScheduledPurchases(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.Executed,
-		"a multi-account run with >=1 committed account must be ACKed (counted Executed), not a flat failure (issue #1014)")
+		"a multi-account run with >=1 committed account must be counted Executed, not a flat failure (issue #1014)")
 	assert.Equal(t, 0, result.Failed)
 
 	require.NotNil(t, savedRoot, "the root row must be saved with its aggregate status (H2)")

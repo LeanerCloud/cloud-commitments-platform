@@ -41,9 +41,9 @@ const directExecuteSkipReason = "direct-execute permission"
 // mints the fresh revocation token returned here.
 //
 // actor carries the email of the operator who triggered the approval
-// (the session-authed click on the HTTP path) so it can be stamped onto ApprovedBy. Empty actor is recorded as
-// NULL — the column is nullable TEXT and we don't want to claim "approved
-// by nobody".
+// (the session-authed click on the HTTP path) so it can be stamped onto
+// ApprovedBy. Empty actor is recorded as NULL — the column is nullable TEXT and
+// we don't want to claim "approved by nobody".
 //
 // check is the caller's ClaimedRowCheck, run against the claimed row before
 // any provider call (issue #415); the token path passes nil.
@@ -189,10 +189,11 @@ func OrphanExecutionError(execution *config.PurchaseExecution) error {
 //     ApproveAndExecute)
 //
 // Adversarial review of PR #1500 found that requireDifferentApprover in
-// internal/api was wired into only 2 of these 4 entry points, leaving
+// internal/api was wired into only 2 of the 4 entry points then in use, leaving
 // execute_mode="direct" (HIGH: the requester always equals the creator on
 // this path, so this is unconditional self-authorization) able to bypass
-// dual control entirely. This method closes that gap by running at the one place all four paths share.
+// dual control entirely. This method closes that gap by running at the one place
+// all of them share.
 //
 // Identity comparison has two tiers, checked in order of precision:
 //

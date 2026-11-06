@@ -221,7 +221,7 @@ func (e *multiAccountPartialError) Error() string {
 }
 
 // errAllAccountsFailed is returned by executeMultiAccount when no account
-// committed any purchase — a flat failure that callers may redeliver/retry.
+// committed any purchase — a flat failure that callers may retry.
 var errAllAccountsFailed = errors.New("multi-account execution: all accounts failed")
 
 // executeMultiAccount fans out executePurchase across all plan accounts in parallel.
@@ -229,7 +229,7 @@ var errAllAccountsFailed = errors.New("multi-account execution: all accounts fai
 //
 // Returns nil when every account fully succeeded; a *multiAccountPartialError
 // when at least one account committed a purchase and at least one failed (so
-// callers ACK rather than redeliver, issue #1014); and errAllAccountsFailed
+// callers treat it as handled rather than retry, issue #1014); and errAllAccountsFailed
 // (wrapping the per-account errors) when no account committed anything.
 func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.PurchaseExecution, plan *config.PurchasePlan, accounts []config.CloudAccount) error {
 	// Checked before any account runs: every account would otherwise buy the

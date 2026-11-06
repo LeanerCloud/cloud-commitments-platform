@@ -189,7 +189,7 @@ func (m *Manager) finalizeExecution(exec *config.PurchaseExecution, execErr erro
 // only proceeds when it wins that CAS. A lost CAS (row already claimed by a
 // concurrent worker, an overlapping cron tick, or the row
 // vanishing mid-flight) is benign: the function returns (claimed=false, nil) and
-// the caller should ack/skip without re-running the purchase. A real DB error
+// the caller should skip without re-running the purchase. A real DB error
 // during the claim returns (false, err).
 //
 // The claim is pinned to the recommendations snapshot the caller gated on: a row
@@ -217,9 +217,9 @@ func (m *Manager) claimAndExecuteWithin(ctx context.Context, exec *config.Purcha
 	updated, claimErr := m.config.TransitionExecutionStatusPinned(ctx, exec.ExecutionID, []string{"approved", "pending", "notified"}, "running", nil, gateSawEmpty)
 	if claimErr != nil {
 		if errors.Is(claimErr, config.ErrNotFound) || errors.Is(claimErr, config.ErrExecutionNotInExpectedStatus) {
-			// Benign CAS race-loss: another worker/redelivery already owns this
-			// row (or it was deleted), or its recommendations changed since the
-			// gate. Ack/skip without executing.
+			// Benign CAS race-loss: an overlapping sweep or approve already owns
+			// this row (or it was deleted), or its recommendations changed since
+			// the gate. Skip without executing.
 			logging.Warnf("Skipping execution %s (CAS claim lost to concurrent worker or changed recommendations): %v", exec.ExecutionID, claimErr)
 			return false, nil
 		}
@@ -250,11 +250,11 @@ func (m *Manager) claimedRowRefusal(ctx context.Context, exec *config.PurchaseEx
 	return nil
 }
 
-// isMultiAccountAckable reports whether a multi-account execErr should be ACKed
-// (not redelivered/recounted as a flat failure) because at least one account
+// isMultiAccountAckable reports whether a multi-account execErr should be
+// treated as handled (not retried or counted as a flat failure) because at least one account
 // committed a real purchase (issue #1014). A nil error (full success) is also
 // ackable. errAllAccountsFailed is NOT ackable — nothing committed, so a
-// redelivery is safe and useful.
+// retry is safe and useful.
 func isMultiAccountAckable(execErr error) bool {
 	if execErr == nil {
 		return true
