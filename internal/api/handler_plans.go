@@ -91,7 +91,7 @@ func (h *Handler) scopedPlanFilter(ctx context.Context, session *Session, accoun
 func (h *Handler) attachPlanHealth(ctx context.Context, plans []config.PurchasePlan, now time.Time) []PlanWithHealth {
 	result := make([]PlanWithHealth, len(plans))
 	for i := range plans {
-		result[i] = PlanWithHealth{PurchasePlan: plans[i]}
+		result[i] = PlanWithHealth{PurchasePlan: *planForResponse(&plans[i])}
 	}
 	if len(plans) == 0 {
 		return result
@@ -240,7 +240,7 @@ func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunction
 			plan.ID, len(req.TargetAccounts), err)
 	}
 
-	return plan, nil
+	return planForResponse(plan), nil
 }
 
 // validateTargetAccounts rejects a missing/empty target_accounts payload and
@@ -297,7 +297,7 @@ func (h *Handler) getPlan(ctx context.Context, req *events.LambdaFunctionURLRequ
 		plan.NextExecutionDate = calculateNextExecutionDate(plan, time.Now())
 	}
 
-	return plan, nil
+	return planForResponse(plan), nil
 }
 
 func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, planID string) (any, error) {
@@ -342,7 +342,7 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 		return nil, err
 	}
 
-	return plan, nil
+	return planForResponse(plan), nil
 }
 
 // updatePlanGated writes plan with the arming gate decided against the plan's
@@ -998,5 +998,5 @@ func (h *Handler) patchPlan(ctx context.Context, httpReq *events.LambdaFunctionU
 		return nil, err
 	}
 
-	return plan, nil
+	return planForResponse(plan), nil
 }

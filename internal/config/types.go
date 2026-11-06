@@ -246,6 +246,10 @@ type ServiceConfig struct {
 	GroupID           string   `json:"group_id,omitempty" dynamodbav:"group_id,omitempty"`
 	BoundIdentities   []string `json:"bound_identities,omitempty" dynamodbav:"bound_identities,omitempty"`
 	MaxStepCommitment *float64 `json:"max_step_commitment,omitempty" dynamodbav:"max_step_commitment,omitempty"`
+	// BoundCount is response-only: plan responses replace BoundIdentities with
+	// its length so a large selection does not bloat every plan read. It is
+	// never stored or read from a request.
+	BoundCount int `json:"bound_count,omitempty" dynamodbav:"-"`
 }
 
 // PurchasePlan represents a saved purchase plan for automated execution.

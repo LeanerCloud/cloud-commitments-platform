@@ -505,7 +505,7 @@ func (h *Handler) updateServiceConfig(ctx context.Context, req *events.LambdaFun
 	cfg.CreatedAt, cfg.UpdatedAt = nil, nil
 	// The plan-group fields (#1746) belong only to purchase plan entries; a
 	// global service setting never carries them, even on a first save.
-	cfg.GroupID, cfg.BoundIdentities, cfg.MaxStepCommitment = "", nil, nil
+	cfg.GroupID, cfg.BoundIdentities, cfg.MaxStepCommitment, cfg.BoundCount = "", nil, nil, 0
 
 	parts := strings.SplitN(service, "/", 2)
 	if len(parts) == 2 {
