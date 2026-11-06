@@ -2076,10 +2076,10 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 		if errors.Is(err, common.ErrOutcomeUnknown) {
 			mapped = directExchangeOutcomeUnknown(body.RIIDs)
 		}
-		h.finalizeDirectExchange(ctx, auditID, awsDirectExchangeOutcome(exchangeID, quote, err, mapped))
+		h.finalizeDirectExchange(ctx, auditID, awsDirectExchangeOutcome(exchangeID, quote, err))
 		return nil, mapped
 	}
-	h.finalizeDirectExchange(ctx, auditID, awsDirectExchangeOutcome(exchangeID, quote, nil, nil))
+	h.finalizeDirectExchange(ctx, auditID, awsDirectExchangeOutcome(exchangeID, quote, nil))
 
 	return &ExchangeExecuteResponse{
 		ExchangeID: exchangeID,
@@ -2120,8 +2120,9 @@ func mapAWSExchangeError(opMsg string, err error) error {
 
 // directExchangeOutcomeUnknown is the error for an accept whose response was
 // lost: AWS may have exchanged the RIs, so the operator must check before
-// retrying (#1050). It stays 5xx so the audit records the outcome as unknown,
-// and it names only the caller's own RI ids, never provider text.
+// retrying (#1050). The audit status is decided from the library's error,
+// which must keep its wrapping (awsDirectFailureStatus), not from this status.
+// It names only the caller's own RI ids, never provider text.
 func directExchangeOutcomeUnknown(riIDs []string) error {
 	return NewClientError(502, fmt.Sprintf("the exchange outcome is unknown: AWS may already have exchanged RI(s) %s; check them at AWS before retrying", strings.Join(riIDs, ", ")))
 }
