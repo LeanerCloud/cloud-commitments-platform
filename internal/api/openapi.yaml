@@ -6818,6 +6818,23 @@ components:
             Minimum instance/node count a recommendation must carry to be
             surfaced (GUI/persisted equivalent of the CLI --min-count flag).
             0 (default) disables the filter.
+        group_id:
+          type: string
+          readOnly: true
+          description: |
+            A bound plan's group id (#1746). Set only on a bound plan's services
+            entries; omitted elsewhere.
+        bound_count:
+          type: integer
+          readOnly: true
+          description: |
+            How many recommendations a bound plan's group (#1746) is bound to.
+            Plan responses report this count instead of the bound identities.
+        max_step_commitment:
+          type: number
+          description: |
+            A bound plan group's own per-step cap (#1746); the effective cap is
+            the lower of this and the plan's max_step_commitment.
         created_at:
           type: string
           format: date-time
