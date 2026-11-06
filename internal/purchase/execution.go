@@ -879,6 +879,13 @@ func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.Pu
 		if v.err != nil {
 			logging.Errorf("Failed to purchase %s: %v", rec.ResourceType, v.err)
 			exec.Recommendations[i].Error = v.err.Error()
+			// The provider returned a commitment it could not record (go#107):
+			// keep its ID on the rec, still Purchased=false, so the failure
+			// email names it. A failure without an ID leaves any ID the rec
+			// already carried (a Retry predecessor's) untouched.
+			if v.purchase.CommitmentID != "" {
+				exec.Recommendations[i].PurchaseID = v.purchase.CommitmentID
+			}
 			purchaseErrors = append(purchaseErrors, fmt.Sprintf("%s: %v", rec.ResourceType, v.err))
 			continue
 		}

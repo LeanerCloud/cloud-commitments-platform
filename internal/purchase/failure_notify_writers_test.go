@@ -222,3 +222,23 @@ func TestFanOutAuditLossChildStillNotifiesAndRootAddsMarker(t *testing.T) {
 	assert.Equal(t, []string{childID}, emailed, "one email, for the child, none for the root")
 	assert.Equal(t, 1, logs.count("root-1195"))
 }
+
+// go#107: the marker carries the unrecorded commitment IDs so the alarm and the
+// log name them even with no email sender; a plain failure keeps the old line.
+func TestLogExecutionFailure_AppendsUnrecordedCommitmentIDs(t *testing.T) {
+	logs := captureMarkers(t)
+	exec := &config.PurchaseExecution{
+		ExecutionID: "exec-u", PlanID: "plan-1", Status: "failed",
+		Recommendations: []config.RecommendationRecord{
+			{Selected: true, PurchaseID: "rn-1"},
+			{Selected: true, PurchaseID: "rn-2"},
+			{Selected: true, Purchased: true, PurchaseID: "rn-done"},
+			{Selected: true},
+		},
+	}
+	require.True(t, logExecutionFailure(exec))
+	assert.Contains(t, logs.buf.String(), "execution_id=exec-u plan_id=plan-1 status=failed unrecorded_commitment_ids=rn-1,rn-2")
+
+	logExecutionFailure(&config.PurchaseExecution{ExecutionID: "exec-p", PlanID: "plan-1", Status: "failed"})
+	assert.NotContains(t, logs.buf.String(), "execution_id=exec-p plan_id=plan-1 status=failed unrecorded")
+}

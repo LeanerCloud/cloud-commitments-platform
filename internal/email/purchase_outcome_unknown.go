@@ -13,8 +13,8 @@ const purchaseOutcomeUnknownSubject = "CUDly - Purchase Outcome Unknown - Verify
 const purchaseOutcomeUnknownTemplate = `CUDly - Purchase Outcome Unknown
 ================================
 
-The purchase run for execution {{.ExecutionID}}{{if .PlanID}} (plan {{.PlanID}}){{end}} was interrupted
-before it recorded a result, and a recovery sweep marked it failed. CUDly
+The purchase run for execution {{.ExecutionID}}{{if .PlanID}} (plan {{.PlanID}}){{end}} {{if .UnrecordedCommitment}}ended because the provider returned a commitment that CUDly could not record.{{else}}was interrupted
+before it recorded a result, and a recovery sweep marked it failed.{{end}} CUDly
 cannot tell whether the commitments below were bought: the cloud provider
 may already have created them.
 
@@ -24,7 +24,8 @@ Buying it again without checking can create a duplicate commitment.
 Outcome unknown:
 {{range .Recommendations}}
 - {{.Count}}x {{.ResourceType}}{{if .Engine}} ({{.Engine}}){{end}} in {{.Region}}
-  Service: {{.Service}}
+  Service: {{.Service}}{{if .UnrecordedCommitmentID}}
+  Redshift reserved node {{.UnrecordedCommitmentID}} was bought but CUDly could not record it; verify it in the cloud provider's console before buying again.{{end}}
 {{end}}
 
 Execution details:
