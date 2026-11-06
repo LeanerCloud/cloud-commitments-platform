@@ -68,14 +68,12 @@ type RedshiftLineageConflict struct {
 	Recommendations []RecommendationRecord
 }
 
-// FindOpenRedshiftLineageConflictsTx returns the other open executions that
-// could buy or adopt a node for one of tuples, so a second lineage must not
-// dispatch. The row side account is the row's, else the rec's; the candidate
-// side is the tuple's, else accountID. A NULL on either side matches any; a rec account that is not a uuid counts as NULL.
-// A stamped running row is open at any age (the reaper bounds it); the other
-// open statuses only while their stamp is within horizon, judged on the
-// database clock. Same-family rows conflict only while running.
-func (s *PostgresStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []RedshiftTuple, accountID *string, horizon time.Duration) ([]RedshiftLineageConflict, error) {
+// FindOpenRedshiftLineageConflictsTx returns the other executions whose node this lineage could
+// buy twice or adopt. Account: row's else rec's vs execution's else tuple's; NULL matches any.
+// Running rows conflict at any age; other open rows while their stamp is within horizon.
+// Other-family finished rows conflict while updated_at is within window of stamp, since go's
+// dedupe adopts their node. Same-family rows conflict only while running.
+func (s *PostgresStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []RedshiftTuple, accountID *string, horizon time.Duration, stamp time.Time, window time.Duration) ([]RedshiftLineageConflict, error) {
 	if family == "" {
 		return nil, fmt.Errorf("find open redshift lineage conflicts: empty family")
 	}
@@ -97,6 +95,9 @@ func (s *PostgresStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, 
 		        OR (split_part(COALESCE(NULLIF(e.idempotency_key, ''), e.execution_id::text), ':', 1) <> $2
 		            AND e.status IN ('approved', 'scheduled', 'pending', 'notified', 'paused')
 		            AND e.first_dispatch_at > now() - make_interval(secs => $3))
+		        OR (split_part(COALESCE(NULLIF(e.idempotency_key, ''), e.execution_id::text), ':', 1) <> $2
+		            AND e.status IN ('completed', 'partially_completed', 'revocation_requested')
+		            AND e.updated_at >= $6::timestamptz - make_interval(secs => $7))
 		      )
 		  AND EXISTS (
 		        SELECT 1
@@ -105,13 +106,13 @@ func (s *PostgresStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, 
 		          ON r->>'region' = t.region AND r->>'resource_type' = t.node_type
 		         AND r->>'term' = t.term::text AND r->>'payment' = t.payment AND r->>'count' = t.count::text
 		         AND (COALESCE(e.cloud_account_id, CASE WHEN r->>'cloud_account_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (r->>'cloud_account_id')::uuid END) IS NULL
-		              OR COALESCE(t.cloud_account_id, $4::uuid) IS NULL
-		              OR COALESCE(e.cloud_account_id, CASE WHEN r->>'cloud_account_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (r->>'cloud_account_id')::uuid END) = COALESCE(t.cloud_account_id, $4::uuid))
+		              OR COALESCE($4::uuid, t.cloud_account_id) IS NULL
+		              OR COALESCE(e.cloud_account_id, CASE WHEN r->>'cloud_account_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (r->>'cloud_account_id')::uuid END) = COALESCE($4::uuid, t.cloud_account_id))
 		        WHERE r->>'selected' = 'true'
 		          AND COALESCE(r->>'provider', '') IN ('', 'aws')
 		          AND r->>'service' IN ('redshift', 'data-warehouse'))
 		ORDER BY e.created_at, e.execution_id`,
-		selfID, family, horizon.Seconds(), accountID, tuplesJSON)
+		selfID, family, horizon.Seconds(), accountID, tuplesJSON, stamp, window.Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("find open redshift lineage conflicts: %w", err)
 	}

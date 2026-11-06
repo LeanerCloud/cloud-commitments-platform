@@ -42,7 +42,7 @@ func stepRowsInDB(ctx context.Context, t *testing.T, store *config.PostgresStore
 	return rows
 }
 
-// A4: concurrent ticks (SQS redelivery, cron overlap, scheduler retries) must
+// A4: concurrent ticks (cron overlap, scheduler retries) must
 // leave exactly one row for the step. Without the plan lock every tick reads
 // "nothing there" and inserts its own.
 func TestGetOrCreateExecution_ConcurrentTicksMintOneRow(t *testing.T) {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // ComputeIdentity is the EC2 platform and tenancy of a recommendation, the two
@@ -41,16 +43,64 @@ func (r *RecommendationRecord) ComputeIdentity() (ComputeIdentity, error) {
 	return ComputeIdentity{Platform: d.Platform, Tenancy: d.Tenancy}, nil
 }
 
-// RecIdentityKey is the tuple a price is a function of: the same eleven
+// DetailsAZConfig reads the database AZ configuration (RDS "single-az" /
+// "multi-az", Azure SQL "zoneRedundant" / "none") from the rec's Details
+// blob, VERBATIM. Single-AZ and Multi-AZ RDS reservations are different
+// offerings with different prices, yet share every other identity field
+// (issue #408). For AWS RDS rows it mirrors the generated az_config column of
+// migration 000158 (COALESCE(payload->'details'->>'az_config', ”); the column
+// is ” for every other rec, like IdentityAZConfig) and is pinned to it by the
+// shared vectors in TestDetailsAZConfig_Vectors: absent Details, JSON null, a
+// missing key and a null value all yield "". Only DatabaseDetails carries the
+// key. A non-string value is an error.
+func (r *RecommendationRecord) DetailsAZConfig() (string, error) {
+	if len(r.Details) == 0 {
+		return "", nil
+	}
+	var d struct {
+		AZConfig string `json:"az_config"`
+	}
+	if err := json.Unmarshal(r.Details, &d); err != nil {
+		return "", fmt.Errorf("decode az_config of %s/%s details: %w", r.Region, r.ResourceType, err)
+	}
+	return d.AZConfig, nil
+}
+
+// isAWSRDS is the scope of the az_config identity component: only AWS RDS has
+// Single-AZ and Multi-AZ offerings of one class that Cost Explorer returns as
+// separate recs. Azure SQL's az_config is a subscription-wide "dominant" value
+// that is "" when the server lookup is incomplete, so keying on it would flip
+// IDs between collections with no benefit (issue #408).
+func isAWSRDS(provider, service string) bool {
+	p := strings.ToLower(provider)
+	return p == "aws" && CanonicalSuppressionService(p, service) == string(common.ServiceRelationalDB)
+}
+
+// IdentityAZConfig is the az_config component of the rec ID, identity key,
+// purchase fingerprint and suppression variant: DetailsAZConfig for AWS RDS,
+// "" for every other rec.
+func (r *RecommendationRecord) IdentityAZConfig() (string, error) {
+	if !isAWSRDS(r.Provider, r.Service) {
+		return "", nil
+	}
+	return r.DetailsAZConfig()
+}
+
+// RecIdentityKey is the tuple a price is a function of: the same twelve
 // components (the ninth is the zonal EC2 availability zone, "" for every
 // other rec, issue #792; the tenth and eleventh are the EC2 platform and
-// tenancy read from Details, "" when absent, issue #806) behind
+// tenancy read from Details, "" when absent, issue #806; the twelfth is the
+// database az_config read from Details, "" when absent, issue #408) behind
 // RecommendationRecord.ID, with a nil
 // and an empty CloudAccountID collapsed together (as purchaseConstraintSets
 // and the store's account_key both do). Provider and payment are lowercased
 // because validatePurchaseRecommendation canonicalises the request side.
 func RecIdentityKey(rec *RecommendationRecord) (string, error) {
 	ci, err := rec.ComputeIdentity()
+	if err != nil {
+		return "", err
+	}
+	azConfig, err := rec.IdentityAZConfig()
 	if err != nil {
 		return "", err
 	}
@@ -61,12 +111,13 @@ func RecIdentityKey(rec *RecommendationRecord) (string, error) {
 	return strings.Join([]string{
 		strings.ToLower(rec.Provider), account, rec.Service, rec.Region, rec.ResourceType,
 		rec.Engine, strconv.Itoa(rec.Term), strings.ToLower(rec.Payment),
-		rec.AvailabilityZone, ci.Platform, ci.Tenancy,
+		rec.AvailabilityZone, ci.Platform, ci.Tenancy, azConfig,
 	}, "\x1f"), nil
 }
 
-// SuppressionVariant is the rec's availability zone, platform and tenancy as
-// the purchase suppression key carries them (issue #816): the platform and
+// SuppressionVariant is the rec's availability zone, platform, tenancy and
+// (AWS RDS only) az_config as the purchase suppression key carries them
+// (issues #816, #408): the platform and
 // tenancy come from the same Details read (ComputeIdentity) as RecIdentityKey,
 // so the write side (BuildSuppressions) and the read side (the scheduler's
 // subtraction pass) cannot drift from it or from each other. For AWS EC2 only,
@@ -77,7 +128,11 @@ func (r *RecommendationRecord) SuppressionVariant() (SuppressionVariant, error) 
 	if err != nil {
 		return SuppressionVariant{}, err
 	}
-	v := SuppressionVariant{AvailabilityZone: r.AvailabilityZone, Platform: ci.Platform, Tenancy: ci.Tenancy}
+	azConfig, err := r.IdentityAZConfig()
+	if err != nil {
+		return SuppressionVariant{}, err
+	}
+	v := SuppressionVariant{AvailabilityZone: r.AvailabilityZone, Platform: ci.Platform, Tenancy: ci.Tenancy, AZConfig: azConfig}
 	if isAWSEC2(r.Provider, r.Service) {
 		v.Tenancy = canonicalSuppressionTenancy(v.Tenancy)
 		if v.AvailabilityZone == "" {

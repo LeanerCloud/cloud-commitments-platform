@@ -233,7 +233,7 @@ func TestClaimedRowCheck_PlanRowReleasesSuppressions(t *testing.T) {
 	store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, planRow.ExecutionID)
 }
 
-// A nil check (the SQS approve worker, which has no session Constraints)
+// A nil check (the token approve, which has no session Constraints)
 // keeps the previous behavior.
 func TestClaimedRowCheck_NilCheckSkipsRecheck(t *testing.T) {
 	ep := claimEntryPoints()[3]

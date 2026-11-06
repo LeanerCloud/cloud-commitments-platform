@@ -196,7 +196,11 @@ func TestCumulativeAttach_AuthorizedLegacyQuantityRemainsImmutable(t *testing.T)
 				require.Equal(t, 1, result.Fired)
 				require.Zero(t, result.Errored)
 			} else {
-				require.NoError(t, f.execute(ctx, root))
+				// An approved row is only ever executed by the stranded-approval
+				// re-drive funnel (RecoverStrandedApprovals).
+				claimed, redriveErr := f.manager.claimAndRedrive(ctx, rowStatusCopy(root))
+				require.NoError(t, redriveErr)
+				require.True(t, claimed)
 			}
 			f.mu.Lock()
 			counts := append([]int(nil), f.counts...)

@@ -7068,3 +7068,33 @@ func TestHandler_authorizeApprovalAction_NonASCIILettersNotFolded(t *testing.T) 
 		})
 	}
 }
+
+// The approver comparison ignores letter case and surrounding whitespace on
+// either side (issue #307), so a session email that differs from the stored
+// contact_email only by case is the authorized approver.
+func TestHandler_authorizeApprovalAction_ApproverMatchIgnoresEmailCase(t *testing.T) {
+	cases := []struct{ name, contact, session string }{
+		{"mixed_case_contact_lower_session", "  Owner@Example.COM ", "owner@example.com"},
+		{"lower_contact_mixed_case_session", "owner@example.com", "Owner@Example.COM"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			execID := "12345678-1234-1234-1234-123456789abc"
+
+			mockConfig := new(MockConfigStore)
+			exec := approvalTestExec(execID, tc.contact, mockConfig)
+			mockConfig.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{}, nil)
+
+			mockAuth := new(MockAuthService)
+			mockAuth.On("ValidateSession", ctx, "sess-tok").Return(&Session{Email: tc.session}, nil)
+
+			handler := &Handler{config: mockConfig, auth: mockAuth}
+			req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"authorization": "Bearer sess-tok"}}
+
+			actor, err := handler.authorizeApprovalAction(ctx, req, exec)
+			require.NoError(t, err)
+			assert.Equal(t, tc.session, actor)
+		})
+	}
+}

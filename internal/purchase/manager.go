@@ -180,17 +180,16 @@ func (m *Manager) finalizeExecution(exec *config.PurchaseExecution, execErr erro
 	}
 }
 
-// claimAndExecute is the single atomic claim-then-execute funnel for the
-// non-synchronous executor entry points (SQS execute_purchase and the cron
-// ProcessScheduledPurchases sweep), mirroring the guard the synchronous approve
-// path already gets from ApproveAndExecute's CAS (issue #1013).
+// claimAndExecuteWithin is the single atomic claim-then-execute funnel for the
+// cron ProcessScheduledPurchases sweep, mirroring the guard the synchronous
+// approve path already gets from ApproveAndExecute's CAS (issue #1013).
 //
 // It atomically transitions the row from an executable state
 // (approved/pending/notified) to "running" via TransitionExecutionStatus and
 // only proceeds when it wins that CAS. A lost CAS (row already claimed by a
-// concurrent worker, an overlapping cron tick, an SQS redelivery, or the row
+// concurrent worker, an overlapping cron tick, or the row
 // vanishing mid-flight) is benign: the function returns (claimed=false, nil) and
-// the caller should ack/skip without re-running the purchase. A real DB error
+// the caller should skip without re-running the purchase. A real DB error
 // during the claim returns (false, err).
 //
 // The claim is pinned to the recommendations snapshot the caller gated on: a row
@@ -204,27 +203,23 @@ func (m *Manager) finalizeExecution(exec *config.PurchaseExecution, execErr erro
 // step cap is re-checked against the claimed row and the current plan; a refusal
 // fails the row with the beforeSubmission class, so its suppressions release.
 //
-// On a won claim it runs executeAndFinalize and returns (true, execErr).
-func (m *Manager) claimAndExecute(ctx context.Context, exec *config.PurchaseExecution) (claimed bool, err error) {
-	return m.claimAndExecuteWithin(ctx, exec, 0)
-}
-
-// claimAndExecuteWithin is claimAndExecute with a due-row age cap: when maxAge
-// is positive, a claimed row that was due more than maxAge ago is refused
-// before submission (ErrDueRowTooOld) instead of bought (issue #712). The
-// check runs on the claimed row, so a concurrent sweep that lost the claim
+// When maxAge is positive, a claimed row that was due more than maxAge ago is
+// refused before submission (ErrDueRowTooOld) instead of bought (issue #712).
+// The check runs on the claimed row, so a concurrent sweep that lost the claim
 // never reaches it and the row is failed and reported exactly once. Only the
-// process sweep passes a cap; the SQS execute_purchase path passes 0.
+// process sweep passes a cap.
+//
+// On a won claim it runs executeAndFinalize and returns (true, execErr).
 func (m *Manager) claimAndExecuteWithin(ctx context.Context, exec *config.PurchaseExecution, maxAge time.Duration) (claimed bool, err error) {
 	gated := exec.Status == "pending" || exec.Status == "notified"
 	gateSawEmpty := len(exec.Recommendations) == 0
-	// System-initiated: SQS/cron executor passes nil so transitioned_by = NULL.
+	// System-initiated: cron executor passes nil so transitioned_by = NULL.
 	updated, claimErr := m.config.TransitionExecutionStatusPinned(ctx, exec.ExecutionID, []string{"approved", "pending", "notified"}, "running", nil, gateSawEmpty)
 	if claimErr != nil {
 		if errors.Is(claimErr, config.ErrNotFound) || errors.Is(claimErr, config.ErrExecutionNotInExpectedStatus) {
-			// Benign CAS race-loss: another worker/redelivery already owns this
-			// row (or it was deleted), or its recommendations changed since the
-			// gate. Ack/skip without executing.
+			// Benign CAS race-loss: an overlapping sweep or approve already owns
+			// this row (or it was deleted), or its recommendations changed since
+			// the gate. Skip without executing.
 			logging.Warnf("Skipping execution %s (CAS claim lost to concurrent worker or changed recommendations): %v", exec.ExecutionID, claimErr)
 			return false, nil
 		}
@@ -255,11 +250,11 @@ func (m *Manager) claimedRowRefusal(ctx context.Context, exec *config.PurchaseEx
 	return nil
 }
 
-// isMultiAccountAckable reports whether a multi-account execErr should be ACKed
-// (not redelivered/recounted as a flat failure) because at least one account
+// isMultiAccountAckable reports whether a multi-account execErr should be
+// treated as handled (not retried or counted as a flat failure) because at least one account
 // committed a real purchase (issue #1014). A nil error (full success) is also
 // ackable. errAllAccountsFailed is NOT ackable — nothing committed, so a
-// redelivery is safe and useful.
+// retry is safe and useful.
 func isMultiAccountAckable(execErr error) bool {
 	if execErr == nil {
 		return true
@@ -269,9 +264,12 @@ func isMultiAccountAckable(execErr error) bool {
 }
 
 const (
-	// The two budgets run back to back, and for a failed or partial row the
-	// failure alert follows them with its own failureNotifyTimeout (30s), so a
-	// run can take 3m30s + 30s + 30s = 270s. On AWS Lambda the function timeout
+	// The budgets are anchored on the execution deadline E (3m30s), not on
+	// when the previous phase ended: account rows save by E+T/2, the root and
+	// the skip rows by E+T, and one batched email for the skipped and late
+	// accounts goes out by E+T+N, so the worst case is 3m30s + 30s + 30s =
+	// 270s however many accounts are in flight at E (#1672). A late account
+	// sends no email of its own (executeForAccountLate). On AWS Lambda the function timeout
 	// ends the invocation whatever these deadlines say, so the Lambda timeout
 	// must cover that sum plus a 30s margin (lambda_timeout >= 300, enforced by
 	// Terraform validation and TestLambdaTimeoutCoversPurchaseBudget, #913,
@@ -289,8 +287,16 @@ const (
 // purchaseBudgets overrides deadlines for tests. A zero field means the
 // production default, so a Manager built by NewManager uses the constants.
 type purchaseBudgets struct {
+	execTimeout  time.Duration
 	terminalSave time.Duration
 	perRec       time.Duration
+}
+
+func (b purchaseBudgets) executionTimeout() time.Duration {
+	if b.execTimeout > 0 {
+		return b.execTimeout
+	}
+	return purchaseExecutionTimeout
 }
 
 func (b purchaseBudgets) terminalSaveTimeout() time.Duration {
@@ -316,13 +322,14 @@ func (b purchaseBudgets) perRecTimeout() time.Duration {
 // (completed / partially_completed / failed, classified by finalizeExecution
 // from the typed sentinel). The previous `!wasMultiAccount` save-skip left the
 // root in whatever pre-execution status it carried, which, now that
-// claimAndExecute claims the root to "running" first (issue #1013), would strand
+// claimAndExecuteWithin claims the root to "running" first (issue #1013), would strand
 // the root row in "running" until the reaper failed it.
 func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseExecution) error {
 	// A disconnected caller must not cancel a purchase after the claim.
 	// Its terminal outcome must survive an exhausted execution budget too.
-	execCtx, cancelExec := ctxutil.DetachedWithTimeout(ctx, purchaseExecutionTimeout)
+	execCtx, cancelExec := ctxutil.DetachedWithTimeout(ctx, m.budgets.executionTimeout())
 	defer cancelExec()
+	execDeadline, _ := execCtx.Deadline() // always set: DetachedWithTimeout
 	// Last line of defense before money moves (issue #1718). Every executor
 	// entry point funnels through here, so one check covers all of them.
 	execErr := m.preExecutionRefusal(execCtx, exec)
@@ -336,13 +343,16 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 	if execErr != nil {
 		logging.Errorf("Failed to execute purchase %s: %v", exec.ExecutionID, execErr)
 	}
-	saveCtx, cancelSave := ctxutil.DetachedWithTimeout(ctx, m.budgets.terminalSaveTimeout())
+	// Anchored on the execution deadline, not "now": the late accounts' row
+	// saves end at execDeadline+T/2 (saveAccountRow), so the root always keeps
+	// the rest of its slice and the whole run ends by execDeadline+T+N (#1672).
+	saveCtx, cancelSave := ctxutil.DetachedWithDeadline(ctx, execDeadline.Add(m.budgets.terminalSaveTimeout()))
 	defer cancelSave()
 	// Operators hear about every failed or partial row (issue #714), even
 	// when the terminal save below fails. A fan-out root logs the alarm
 	// marker without an email (issue #1195; see notifyRootFailure).
 	defer m.notifyRootFailure(saveCtx, exec, execErr)
-	if err := m.saveOrRecoverTerminal(saveCtx, exec, execErr); err != nil {
+	if err := m.saveTerminalAndSkipped(saveCtx, exec, execErr); err != nil {
 		logging.Errorf("AUDIT LOSS: failed to save execution status: %v", err)
 		// Wrap with ErrAuditLoss regardless of whether executePurchase itself
 		// failed. When execErr != nil (provider/partial error), finalizeExecution
@@ -364,6 +374,39 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 		}
 	}
 	return execErr
+}
+
+// saveTerminalAndSkipped saves the root row, then the rows of accounts a
+// fan-out skipped, all on ctx's single terminal-save deadline, then sends one
+// email for the skipped rows and the late accounts' rows (issue #1672). The
+// root goes first and its result is the return value: a skip row that does
+// not fit in the deadline is logged as AUDIT LOSS and never fails the root.
+func (m *Manager) saveTerminalAndSkipped(ctx context.Context, exec *config.PurchaseExecution, execErr error) error {
+	err := m.saveOrRecoverTerminal(ctx, exec, execErr)
+	var partial *multiAccountPartialError
+	var saved []*config.PurchaseExecution
+	if errors.As(execErr, &partial) {
+		saved = m.saveSkippedRows(ctx, exec, partial.skipped)
+	}
+	m.notifyBatchedAccounts(ctx, exec, saved, lateRowsOf(execErr))
+	return err
+}
+
+// saveSkippedRows saves each skip row until ctx ends and returns the saved ones.
+func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExecution, rows []*config.PurchaseExecution) []*config.PurchaseExecution {
+	var saved []*config.PurchaseExecution
+	for _, row := range rows {
+		err := ctx.Err()
+		if err == nil {
+			err = m.config.SavePurchaseExecution(ctx, row)
+		}
+		if err != nil {
+			logging.Errorf("AUDIT LOSS: failed to save the skipped-account record for account %s of execution %s: %v", accountIDOf(row), root.ExecutionID, err)
+			continue
+		}
+		saved = append(saved, row)
+	}
+	return saved
 }
 
 // preExecutionRefusal runs every check that must pass before any provider call.
@@ -501,7 +544,7 @@ func allRecsSafeToRedrive(exec *config.PurchaseExecution) bool {
 //
 // It is placed in executeAndFinalize rather than at the individual executors
 // because that function is the single funnel every executor reaches money
-// through: claimAndExecute (SQS + cron), ApproveAndExecute (token + session
+// through: claimAndExecuteWithin (cron), ApproveAndExecute (token + session
 // approve), fireOneDue (the scheduled pre-fire delay sweep) and claimAndRedrive
 // (the reaper). One gate at the funnel cannot be missed by a future executor
 // the way three copies at three call sites can. executePurchase has exactly one
@@ -865,13 +908,13 @@ func (m *Manager) RecoverStrandedApprovals(ctx context.Context) (int, error) {
 }
 
 // executableByScheduler reports whether a pending or notified execution may be
-// auto-executed by the cron sweep or an SQS execute_purchase message, without
+// auto-executed by the cron sweep, without
 // an explicit human approval action (fail closed on money paths).
 //
 // Rules:
 //   - web-submitted rows (Source == common.PurchaseSourceWeb, "cudly-web") must
-//     wait for the token-link approval path; the scheduler and SQS paths must
-//     never bypass that gate.
+//     wait for the token-link approval path; the scheduler must never
+//     bypass that gate.
 //   - All other pending/notified rows require the owning plan to have
 //     AutoPurchase=true. A plan-fetch error, or a missing plan, is propagated
 //     so the caller can fail closed rather than defaulting to "execute". A
@@ -1007,8 +1050,8 @@ func (m *Manager) processOneExecution(ctx context.Context, exec config.PurchaseE
 
 	// Atomically claim the row before executing (issue #1013). Overlapping
 	// cron ticks (a tick that runs longer than the interval, EventBridge
-	// duplicate/overlapping deliveries, or cron racing the SQS path) would
-	// otherwise both execute the same due row. claimAndExecute CASes the row
+	// duplicate/overlapping deliveries, or cron racing a manual run) would
+	// otherwise both execute the same due row. claimAndExecuteWithin CASes the row
 	// to "running" and only the winner runs; a lost claim is skipped without
 	// re-executing.
 	claimed, execErr := m.claimAndExecuteWithin(ctx, &exec, m.dueRowMaxAge())

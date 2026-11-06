@@ -888,7 +888,7 @@ func (c *LadderConfigDB) validateLadderBaselineBounds() error {
 // baseline can use reliably. A window of N days returns at most N daily points
 // and Cost Explorer lags 24-48h, so AWS needs the 7-point floor
 // (providers/aws ladder/baseline.go:17 minBaselineSeriesDays, pinned
-// 9962786e0695, unexported) plus its 3-day missing-day tolerance
+// c83aef8b18a9, unexported) plus its 3-day missing-day tolerance
 // (maxMissingDays): 10. Recheck when the aws provider module is bumped.
 // A provider without an entry has no minimum beyond lookback_days > 0.
 var ladderMinLookbackDays = map[string]int{"aws": 10}

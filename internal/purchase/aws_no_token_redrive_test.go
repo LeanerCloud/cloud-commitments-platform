@@ -2,7 +2,6 @@ package purchase
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -95,18 +94,15 @@ func TestAWSNoTokenRetrySuccessorIsRefusedAndFirstBuyStillExecutes(t *testing.T)
 		t.Run(service, func(t *testing.T) {
 			svcType := m.mapServiceType(service)
 
-			retry := armedExecution("aws", service, 2, "approved")
+			retry := armedExecution("aws", service, 2, "notified")
 			mgr, store, rec := armedHarness(t, svcType)
 			var saved []config.PurchaseExecution
 			store.SavePurchaseExecutionFn = func(_ context.Context, e *config.PurchaseExecution) error {
 				saved = append(saved, *e)
 				return nil
 			}
-			store.On("GetExecutionByID", mock.Anything, retry.ExecutionID).Return(retry, nil).Maybe()
 			expectClaim(store, retry, []string{"approved", "pending", "notified"})
-			body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: retry.ExecutionID})
-			require.NoError(t, err)
-			_ = mgr.ProcessMessage(context.Background(), string(body))
+			_, _ = mgr.claimAndExecuteWithin(context.Background(), retry, 0)
 
 			assert.Equal(t, 0, rec.count(), "a retry after a possibly-landed %s purchase must not buy again", service)
 			require.NotEmpty(t, saved)
@@ -114,11 +110,12 @@ func TestAWSNoTokenRetrySuccessorIsRefusedAndFirstBuyStillExecutes(t *testing.T)
 			assert.Equal(t, "failed", final.Status)
 			assert.Contains(t, final.Error, "Check EC2 Reserved Instances or Redshift Reserved Nodes")
 
-			first := armedExecution("aws", service, 0, "approved")
+			first := armedExecution("aws", service, 0, "notified")
 			mgr, store, rec = armedHarness(t, svcType)
-			store.On("GetExecutionByID", mock.Anything, first.ExecutionID).Return(first, nil).Maybe()
 			expectClaim(store, first, []string{"approved", "pending", "notified"})
-			require.NoError(t, mgr.ProcessMessage(context.Background(), string(body)))
+			claimed, err := mgr.claimAndExecuteWithin(context.Background(), first, 0)
+			require.NoError(t, err)
+			require.True(t, claimed)
 			assert.Equal(t, 1, rec.count(), "a first %s purchase must still go through; the guard is for retries only", service)
 		})
 	}
@@ -162,8 +159,8 @@ func TestRecoverStrandedApprovals_EC2RowIsFailedNotRedriven(t *testing.T) {
 }
 
 // TestApproveAndExecuteRefusesAWSNoTokenRetrySuccessor pins the refusal on the
-// approval entry points (issue #780). The ProcessMessage test above covers the
-// SQS/cron executor; this drives the two ways an operator approves a pending
+// approval entry points (issue #780). The claim-funnel test above covers the
+// cron claim funnel; this drives the two ways an operator approves a pending
 // row: the email-link token path (ApproveExecution, which calls
 // ApproveAndExecute with no session UUID) and the session path
 // (ApproveAndExecute with the session user's UUID as transitionedBy).

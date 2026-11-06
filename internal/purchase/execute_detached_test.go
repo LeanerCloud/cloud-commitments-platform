@@ -90,10 +90,13 @@ func TestExecuteAndFinalize_SlowRunGetsFreshTerminalSaveBudget(t *testing.T) {
 	const (
 		budget   = 2 * time.Second         // terminal save and per-rec cap
 		callTime = 1200 * time.Millisecond // each call fits its cap; two exceed the save budget
+		// The root save deadline is execDeadline+budget (#1672), so the
+		// execution budget is scaled down too; the run ends well inside it.
+		execTimeout = 10 * time.Second
 	)
 	t.Setenv("CUDLY_MAX_ACCOUNT_PARALLELISM", "1")
 	f := newDetachFixture(t)
-	f.manager.budgets = purchaseBudgets{terminalSave: budget, perRec: budget}
+	f.manager.budgets = purchaseBudgets{execTimeout: execTimeout, terminalSave: budget, perRec: budget}
 	f.exec.Recommendations = append(f.exec.Recommendations, f.exec.Recommendations[0])
 	f.exec.Recommendations[1].ResourceType = "m5.xlarge"
 	var active atomic.Int32
@@ -124,7 +127,7 @@ func TestExecuteAndFinalize_SlowRunGetsFreshTerminalSaveBudget(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"completed"}, f.saved)
 	assert.Greater(t, f.saveRemaining, budget-time.Second)
-	assert.LessOrEqual(t, f.saveRemaining, budget)
+	assert.LessOrEqual(t, f.saveRemaining, execTimeout+budget)
 }
 
 var stsOut = sts.GetCallerIdentityOutput{Account: aws.String("123456789012")}
@@ -171,8 +174,10 @@ func TestExecuteAndFinalize_ExpiredCallerDeadline_UsesOwnBudgets(t *testing.T) {
 	require.True(t, ok, "terminal save needs a deadline")
 	// Literal durations on purpose: comparing against the constants would
 	// pass whatever their values are.
-	assert.LessOrEqual(t, f.saveRemaining, 30*time.Second)
-	assert.Greater(t, f.saveRemaining, 29*time.Second)
+	// The root save ends at the run deadline plus the 30s save budget (#1672),
+	// so a run that finishes at once has almost 3m30s + 30s left.
+	assert.LessOrEqual(t, f.saveRemaining, 4*time.Minute)
+	assert.Greater(t, f.saveRemaining, 3*time.Minute+59*time.Second)
 	// SavePurchaseHistory runs inside executePurchase, so it sees the run ctx.
 	_, ok = f.histCtx.Deadline()
 	require.True(t, ok, "run ctx needs a deadline")

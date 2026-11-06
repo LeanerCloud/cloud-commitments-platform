@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"sort"
 	"sync"
 	"testing"
@@ -167,27 +166,27 @@ func (f *fanoutProviderFactory) CreateAndValidateProvider(_ context.Context, _ s
 }
 
 // executeSuccessorForReal runs the retry successor through the REAL
-// purchase.Manager the way production does: the approved row is picked up from
-// the execute_purchase queue message, claimed, and executed. It returns the
+// purchase.Manager the way production does: the pending row is approved by
+// an operator, claimed, and executed. It returns the
 // sorted idempotency tokens of every commitment purchase that reached the
 // cloud — one entry per real purchase.
 func executeSuccessorForReal(t *testing.T, successor *config.PurchaseExecution) []string {
 	t.Helper()
 	ctx := context.Background()
 
-	// The row as the DB holds it once the operator has clicked the approval
-	// link: same fields the retry handler persisted, status "approved".
-	approved := *successor
-	approved.Status = "approved"
-	running := approved
+	// The row as the retry handler persisted it (status pending), awaiting the
+	// operator's approval.
+	pending := *successor
+	running := pending
 	running.Status = "running"
 
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 
-	store.On("GetExecutionByID", mock.Anything, approved.ExecutionID).Return(&approved, nil).Once()
-	store.On("TransitionExecutionStatus", mock.Anything, approved.ExecutionID,
-		[]string{"approved", "pending", "notified"}, "running", (*string)(nil)).Return(&running, nil).Once()
+	store.On("GetExecutionByID", mock.Anything, pending.ExecutionID).Return(&pending, nil).Maybe()
+	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	store.On("TransitionExecutionStatus", mock.Anything, pending.ExecutionID,
+		[]string{"pending", "notified"}, "running", (*string)(nil)).Return(&running, nil).Once()
 	store.On("SavePurchaseHistory", mock.Anything, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil)
 	// Plan progress advances only on a fully clean run; .Maybe() so a run that
 	// ends partial/failed does not turn into a mock-expectation failure that
@@ -223,12 +222,9 @@ func executeSuccessorForReal(t *testing.T, successor *config.PurchaseExecution) 
 		DashboardURL:    "https://dashboard.example.com",
 	})
 
-	body, err := json.Marshal(purchase.AsyncMessage{
-		Type:        purchase.MessageTypeExecutePurchase,
-		ExecutionID: approved.ExecutionID,
-	})
-	require.NoError(t, err)
-	require.NoError(t, mgr.ProcessMessage(ctx, string(body)),
+	// Human approval of the persisted pending successor, as the retry flow does.
+	_, _, err := mgr.ApproveAndExecute(ctx, pending.ExecutionID, "", nil, nil)
+	require.NoError(t, err,
 		"the successor must execute cleanly; a non-nil error would make the purchase tally meaningless")
 
 	return svc.purchasedTokens()

@@ -21,6 +21,8 @@ var ratesTestNow = time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 func runWithRates(t *testing.T, store *ladderTestStore, cap pkgladder.LadderCapability) error {
 	t.Helper()
 	dbCfg := validTestDBConfig("cfg-rates")
+	// Capped so the fail-closed Compute SP refusal does not fire for fakes that list it.
+	dbCfg.MaxHourlyCommitPerRun = f64(100)
 	app := &Application{Config: store}
 	return app.executeLadderRun(testutil.TestContext(t), &dbCfg, cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, ratesTestNow)
 }

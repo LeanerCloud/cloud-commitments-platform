@@ -262,7 +262,7 @@ func (f *rampStepFixture) failedAccountExecution(ctx context.Context, t *testing
 // saveRetryExecution persists the successor row an operator's Retry produces
 // for one failed per-account row, mirroring api.persistRetryExecution: the
 // PlanID, StepNumber, CloudAccountID and idempotency lineage all propagate from
-// the predecessor, the row arrives already approved by the human who clicked
+// the predecessor, the row arrives pending, awaiting approval by the human who clicked
 // Retry, and the predecessor is stamped with retry_execution_id pointing at the
 // successor. That last write is what marks the failed row as superseded, so
 // omitting it would model a retry no production path can produce.
@@ -275,7 +275,7 @@ func (f *rampStepFixture) saveRetryExecution(ctx context.Context, t *testing.T, 
 		IdempotencyKey:  predecessor.IdempotencyKey,
 		PlanID:          f.plan.ID,
 		CloudAccountID:  &acctID,
-		Status:          "approved",
+		Status:          "pending",
 		StepNumber:      predecessor.StepNumber,
 		ScheduledDate:   time.Now(),
 		Recommendations: []config.RecommendationRecord{withAccount(rampStepRecommendation()[0], accountID)},
@@ -300,10 +300,25 @@ func (f *rampStepFixture) saveRetryExecution(ctx context.Context, t *testing.T, 
 	return exec
 }
 
-// execute drives the real async executor entry point for one row.
-func (f *rampStepFixture) execute(ctx context.Context, exec *config.PurchaseExecution) error {
-	msg := AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID}
-	return f.manager.handleExecutePurchase(ctx, &msg)
+// executeRoot runs the due root row through the scheduler sweep, the production
+// path for a notified plan row. A partial multi-account run counts as executed
+// (the sweep's ack, #1014), so a clean tick is one executed row and no failures.
+func (f *rampStepFixture) executeRoot(ctx context.Context) error {
+	result, err := f.manager.ProcessScheduledPurchases(ctx)
+	if err != nil {
+		return err
+	}
+	if result.Executed != 1 || result.Failed != 0 {
+		return fmt.Errorf("sweep executed %d and failed %d rows (errors: %v), want 1 and 0", result.Executed, result.Failed, result.Errors)
+	}
+	return nil
+}
+
+// executeRetry approves the pending successor an operator's Retry persisted,
+// the production path for a per-account retry row.
+func (f *rampStepFixture) executeRetry(ctx context.Context, exec *config.PurchaseExecution) error {
+	_, _, err := f.manager.ApproveAndExecute(ctx, exec.ExecutionID, "", nil, nil)
+	return err
 }
 
 // TestRampStepAdvancesOncePerStepAcrossPerAccountRetries is the issue #1669
@@ -322,8 +337,8 @@ func TestRampStepAdvancesOncePerStepAcrossPerAccountRetries(t *testing.T) {
 	require.Equal(t, 2, f.currentStep(ctx, t), "fixture must start on step 2 of 4")
 
 	// Step 3 fans out: A commits, B and C fail credential resolution.
-	root := f.saveRootExecution(ctx, t, 3)
-	require.NoError(t, f.execute(ctx, root),
+	f.saveRootExecution(ctx, t, 3)
+	require.NoError(t, f.executeRoot(ctx),
 		"a partial multi-account run must be acked, not surfaced as a flat failure (#1014)")
 
 	require.Equal(t, 1, f.purchaseCount(), "exactly one account (A) may commit on the first pass")
@@ -334,13 +349,13 @@ func TestRampStepAdvancesOncePerStepAcrossPerAccountRetries(t *testing.T) {
 	f.repairAccounts(ctx, t)
 
 	retryB := f.saveRetryExecution(ctx, t, f.accounts[1].ID)
-	require.NoError(t, f.execute(ctx, retryB))
+	require.NoError(t, f.executeRetry(ctx, retryB))
 	require.Equal(t, 2, f.purchaseCount(), "B's retry must commit")
 	assert.Equal(t, 2, f.currentStep(ctx, t),
 		"B bought but C has not, so step 3 is not complete (issue #1861)")
 
 	retryC := f.saveRetryExecution(ctx, t, f.accounts[2].ID)
-	require.NoError(t, f.execute(ctx, retryC))
+	require.NoError(t, f.executeRetry(ctx, retryC))
 	require.Equal(t, 3, f.purchaseCount(), "C's retry must commit")
 
 	assert.Equal(t, 3, f.currentStep(ctx, t),
@@ -368,8 +383,8 @@ func TestRampStepAdvancesOncePerStepAcrossPerAccountRetries(t *testing.T) {
 	// And the 4th step still counts. Pre-fix the ramp was already sitting at 4
 	// here, so this step's completion changed nothing and the plan finished
 	// having bought three steps while reporting four.
-	step4 := f.saveRootExecution(ctx, t, 4)
-	require.NoError(t, f.execute(ctx, step4))
+	f.saveRootExecution(ctx, t, 4)
+	require.NoError(t, f.executeRoot(ctx))
 	assert.Equal(t, 4, f.currentStep(ctx, t), "step 4 completes the ramp")
 	assert.Equal(t, 6, f.purchaseCount(), "step 4 commits once per account")
 }
@@ -392,15 +407,15 @@ func TestRampStepWaitsForEveryAccountBeforeAdvancing(t *testing.T) {
 
 	require.Equal(t, 2, f.currentStep(ctx, t), "fixture must start on step 2 of 4")
 
-	root := f.saveRootExecution(ctx, t, 3)
-	require.NoError(t, f.execute(ctx, root))
+	f.saveRootExecution(ctx, t, 3)
+	require.NoError(t, f.executeRoot(ctx))
 	require.Equal(t, 1, f.purchaseCount(), "exactly one account (A) may commit on the first pass")
 	require.Equal(t, 2, f.currentStep(ctx, t), "a partially-failed step must not advance the ramp")
 
 	// The operator repairs B only, and retries B only. C stays broken.
 	f.repairAccount(ctx, t, 1)
 	retryB := f.saveRetryExecution(ctx, t, f.accounts[1].ID)
-	require.NoError(t, f.execute(ctx, retryB))
+	require.NoError(t, f.executeRetry(ctx, retryB))
 	require.Equal(t, 2, f.purchaseCount(), "B's retry must commit")
 
 	assert.Equal(t, 2, f.currentStep(ctx, t),
@@ -419,7 +434,7 @@ func TestRampStepWaitsForEveryAccountBeforeAdvancing(t *testing.T) {
 	// exactly now the ramp advances.
 	f.repairAccount(ctx, t, 2)
 	retryC := f.saveRetryExecution(ctx, t, f.accounts[2].ID)
-	require.NoError(t, f.execute(ctx, retryC))
+	require.NoError(t, f.executeRetry(ctx, retryC))
 	require.Equal(t, 3, f.purchaseCount(), "C's retry must commit")
 
 	assert.Equal(t, 3, f.currentStep(ctx, t),
@@ -442,8 +457,8 @@ func TestStuckRampStepIsReportedForPlanHealth(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, stuck, f.plan.ID, "a plan with no executions yet is not stuck")
 
-	root := f.saveRootExecution(ctx, t, 3)
-	require.NoError(t, f.execute(ctx, root))
+	f.saveRootExecution(ctx, t, 3)
+	require.NoError(t, f.executeRoot(ctx))
 
 	stuck, err = f.store.GetStuckRampSteps(ctx)
 	require.NoError(t, err)
@@ -459,9 +474,9 @@ func TestStuckRampStepIsReportedForPlanHealth(t *testing.T) {
 	assert.Equal(t, config.RampStepBlock{StepNumber: 3, StuckExecutions: 1}, stuck[f.plan.ID],
 		"only C is still stuck once B has a retry pending")
 
-	require.NoError(t, f.execute(ctx, retryB))
+	require.NoError(t, f.executeRetry(ctx, retryB))
 	retryC := f.saveRetryExecution(ctx, t, f.accounts[2].ID)
-	require.NoError(t, f.execute(ctx, retryC))
+	require.NoError(t, f.executeRetry(ctx, retryC))
 
 	stuck, err = f.store.GetStuckRampSteps(ctx)
 	require.NoError(t, err)
