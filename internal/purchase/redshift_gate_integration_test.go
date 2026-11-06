@@ -181,3 +181,65 @@ func (f *redshiftGateFixture) raceOnlyOneBuys(ctx context.Context, t *testing.T,
 	assert.Equal(t, 1, winners)
 	assert.Equal(t, 1, losers)
 }
+
+// finishedRow saves a completed per-account row in its own lineage with a stamp.
+func (f *redshiftGateFixture) finishedRow(ctx context.Context, t *testing.T, key string) *config.PurchaseExecution {
+	t.Helper()
+	row := f.redshiftRowKeyed(ctx, t, config.StatusCompleted, key, false)
+	_, err := f.pool.Exec(ctx, `UPDATE purchase_executions SET first_dispatch_at = now() WHERE execution_id = $1`, row.ExecutionID)
+	require.NoError(t, err)
+	return row
+}
+
+// A node another lineage bought seconds ago is indistinguishable to AWS from a
+// new buy, so the dispatch is refused before any provider call.
+func TestRedshiftDispatchGate_RecentCompletedBuyRefusedBeforeSubmission(t *testing.T) {
+	ctx := context.Background()
+	f := newRedshiftGateFixture(ctx, t)
+	f.finishedRow(ctx, t, uuid.New().String()+":"+f.accounts[0].ID)
+	refused := f.redshiftRow(ctx, t, "approved")
+
+	claimed, _ := f.mgr.claimAndExecute(ctx, rowStatusCopy(refused))
+	require.True(t, claimed)
+
+	assert.Zero(t, f.bought.Load(), "a refused lineage never reaches the provider")
+	got := rowStatus(ctx, t, f.rampStepFixture, refused.ExecutionID)
+	assert.Equal(t, config.StatusFailed, got.Status)
+	assert.True(t, got.NoSubmission)
+	assert.Equal(t, redshiftRecentBuyRefusal, SanitizeStoredError(got.Error), "users see the fixed text verbatim")
+	assert.Nil(t, f.stampOf(ctx, t, refused.ExecutionID), "the refusal rolled the stamp back")
+}
+
+// A lineage whose stamp is more than the window after the other buy finished
+// dispatches: the stamp is seeded in the future of the finished row's updated_at.
+func TestRedshiftDispatchGate_SecondLineageAfterWindowDispatches(t *testing.T) {
+	ctx := context.Background()
+	f := newRedshiftGateFixture(ctx, t)
+	f.finishedRow(ctx, t, uuid.New().String()+":"+f.accounts[0].ID)
+	later := f.redshiftRow(ctx, t, "approved")
+	_, err := f.pool.Exec(ctx, `UPDATE purchase_executions SET first_dispatch_at = now() + $2 * interval '1 second' WHERE execution_id = $1`,
+		later.ExecutionID, (redshiftAdoptionWindow + time.Minute).Seconds())
+	require.NoError(t, err)
+
+	claimed, _ := f.mgr.claimAndExecute(ctx, rowStatusCopy(later))
+	require.True(t, claimed)
+
+	assert.Equal(t, int32(1), f.bought.Load())
+	assert.Equal(t, config.StatusCompleted, rowStatus(ctx, t, f.rampStepFixture, later.ExecutionID).Status)
+}
+
+// A completed row of the same family (a retry's earlier per-account row) is
+// not another lineage, so the retry successor is not refused.
+func TestRedshiftDispatchGate_SameFamilyCompletedRowNotRefused(t *testing.T) {
+	ctx := context.Background()
+	f := newRedshiftGateFixture(ctx, t)
+	family := uuid.New().String()
+	f.finishedRow(ctx, t, family+":"+f.accounts[0].ID)
+	successor := f.redshiftRowKeyed(ctx, t, "approved", family, true)
+
+	claimed, _ := f.mgr.claimAndExecute(ctx, rowStatusCopy(successor))
+	require.True(t, claimed)
+
+	assert.NotEqual(t, redshiftRecentBuyRefusal, SanitizeStoredError(rowStatus(ctx, t, f.rampStepFixture, successor.ExecutionID).Error))
+	assert.Positive(t, f.bought.Load(), "the same-family retry reaches the provider")
+}
