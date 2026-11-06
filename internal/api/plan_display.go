@@ -24,8 +24,8 @@ func planDisplayFor(plan *config.PurchasePlan) planDisplay {
 		return planDisplay{svc: firstServiceConfig(plan)}
 	}
 	keys := make([]string, 0, len(plan.Services))
-	for k, svc := range plan.Services {
-		if svc.Enabled {
+	for k := range plan.Services {
+		if plan.Services[k].Enabled {
 			keys = append(keys, k)
 		}
 	}

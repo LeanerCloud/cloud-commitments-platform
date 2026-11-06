@@ -14,7 +14,8 @@ func planForResponse(plan *config.PurchasePlan) *config.PurchasePlan {
 	}
 	out := *plan
 	out.Services = make(map[string]config.ServiceConfig, len(plan.Services))
-	for k, svc := range plan.Services {
+	for k := range plan.Services {
+		svc := plan.Services[k]
 		svc.BoundCount = len(svc.BoundIdentities)
 		svc.BoundIdentities = nil
 		out.Services[k] = svc
@@ -23,8 +24,8 @@ func planForResponse(plan *config.PurchasePlan) *config.PurchasePlan {
 }
 
 func hasBoundIdentities(plan *config.PurchasePlan) bool {
-	for _, svc := range plan.Services {
-		if len(svc.BoundIdentities) > 0 {
+	for k := range plan.Services {
+		if len(plan.Services[k].BoundIdentities) > 0 {
 			return true
 		}
 	}

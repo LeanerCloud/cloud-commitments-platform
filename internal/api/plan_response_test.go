@@ -2,11 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,7 +61,11 @@ func TestPlanForResponse_UnboundPlanIsUnchanged(t *testing.T) {
 
 func TestPlanResponses_UseTheCountedCopy(t *testing.T) {
 	stored := boundResponsePlan(3)
-	h := &Handler{}
+	// The health lookup fails, so attachPlanHealth returns the response copies as they are.
+	store := new(MockConfigStore)
+	store.On("CountExecutionsByPlanAndStatus", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("health unavailable"))
+	h := &Handler{config: store}
 	list := h.attachPlanHealth(t.Context(), []config.PurchasePlan{*stored}, stored.CreatedAt)
 	require.Len(t, list, 1)
 	g := list[0].Services["aws/ec2#g1"]
