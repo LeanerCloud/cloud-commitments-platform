@@ -99,7 +99,7 @@ func TestLadderTrancheProvenance_InsertClaimAndReconcile(t *testing.T) {
 			return execErr
 		}))
 	}
-	fired, err := store.ListFiredLadderTranches(ctx, 10)
+	fired, err := store.ListFiredLadderTranches(ctx, nil, 10)
 	require.NoError(t, err)
 	require.Len(t, fired, len(rows))
 	for i := range fired {

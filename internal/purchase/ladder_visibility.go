@@ -270,12 +270,13 @@ func describeIDs(ctx context.Context, desc SPDescriber, ids []string, found map[
 
 // LadderReconcileDeps is what one scheduled reconcile run needs.
 type LadderReconcileDeps struct {
-	Store ladderReconcileDB
+	Store LadderReconcileRunStore
 	SP    LadderSPDescriberFactory
 	Now   func() time.Time
 }
 
-type ladderReconcileDB interface {
+// LadderReconcileRunStore is what RunLadderReconcile needs from the store.
+type LadderReconcileRunStore interface {
 	LadderReconcileStore
 	GetExecutionByID(ctx context.Context, id string) (*config.PurchaseExecution, error)
 }
@@ -283,7 +284,11 @@ type ladderReconcileDB interface {
 // RunLadderReconcile is the entry point the ladder_reconcile scheduled task
 // runs: prefetch visibility, then ReconcileLadderTranches against the map. With no fired tranche it touches no provider API.
 func RunLadderReconcile(ctx context.Context, d LadderReconcileDeps) (LadderReconcileResult, error) {
-	fired, err := d.Store.ListFiredLadderTranches(ctx, ladderReconcileBatch)
+	var fired []config.LadderTrancheDB
+	err := forEachFiredPage(ctx, d.Store, ladderReconcileBatch, func(page []config.LadderTrancheDB) error {
+		fired = append(fired, page...)
+		return nil
+	})
 	if err != nil {
 		return LadderReconcileResult{}, err
 	}

@@ -40,7 +40,7 @@ type CommitmentVisibility interface {
 
 // LadderReconcileStore is the slice of the Postgres store the reconciler uses.
 type LadderReconcileStore interface {
-	ListFiredLadderTranches(ctx context.Context, limit int) ([]config.LadderTrancheDB, error)
+	ListFiredLadderTranches(ctx context.Context, after *config.LadderFiredCursor, limit int) ([]config.LadderTrancheDB, error)
 	WithTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 	LockLadderTrancheChainTx(ctx context.Context, tx pgx.Tx, trancheID string) ([]config.LadderChainNode, error)
 	TransitionLadderTrancheTx(ctx context.Context, tx pgx.Tx, id string, from, to ladder.TrancheStatus, reason string) (bool, error)
@@ -48,7 +48,7 @@ type LadderReconcileStore interface {
 
 // LadderReconcileResult counts what one sweep did.
 type LadderReconcileResult struct {
-	Checked, Completed, Failed, Unresolved, Stale, LostRace int
+	Checked, Completed, Failed, Unresolved, Stale, LostRace, Errored int
 }
 
 type ladderVerdict struct {
@@ -127,20 +127,56 @@ func failedIfPredecessorsProven(chain []config.LadderChainNode, reason string) l
 // that holds the tranche row and the retry-chain tail row, so a concurrent
 // Retry cannot link a successor between the decision and the write. Tranches
 // it cannot prove stay fired and keep netting; those older than
-// LadderFiredStaleAfter are logged as errors. The ladder_reconcile task runs it.
+// LadderFiredStaleAfter are logged as errors. A tranche whose reconcile errors
+// is counted in Errored and logged, and the sweep goes on; after the last
+// tranche the run returns a summary error so the task shows as failed. All
+// fired tranches are visited, page by page. The ladder_reconcile task runs it.
 func ReconcileLadderTranches(ctx context.Context, store LadderReconcileStore, vis CommitmentVisibility, now time.Time) (LadderReconcileResult, error) {
+	return reconcileFiredTranches(ctx, store, vis, now, ladderReconcileBatch)
+}
+
+func reconcileFiredTranches(ctx context.Context, store LadderReconcileStore, vis CommitmentVisibility, now time.Time, batch int) (LadderReconcileResult, error) {
 	var res LadderReconcileResult
-	tranches, err := store.ListFiredLadderTranches(ctx, ladderReconcileBatch)
+	err := forEachFiredPage(ctx, store, batch, func(page []config.LadderTrancheDB) error {
+		for i := range page {
+			res.Checked++
+			if err := reconcileOne(ctx, store, vis, now, page[i], &res); err != nil {
+				res.Errored++
+				logging.Errorf("ladder_reconcile: tranche %s: %v", page[i].ID, err)
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return res, err
 	}
-	for i := range tranches {
-		res.Checked++
-		if err := reconcileOne(ctx, store, vis, now, tranches[i], &res); err != nil {
-			return res, err
-		}
+	if res.Errored > 0 {
+		return res, fmt.Errorf("ladder_reconcile: %d tranche(s) errored", res.Errored)
 	}
 	return res, nil
+}
+
+// forEachFiredPage walks every fired tranche in (scheduled_date, id) order with
+// keyset pagination, so unresolvable tranches at the front cannot starve the
+// ones behind them. It stops at the first short page.
+func forEachFiredPage(ctx context.Context, store LadderReconcileStore, batch int, fn func([]config.LadderTrancheDB) error) error {
+	var after *config.LadderFiredCursor
+	for {
+		page, err := store.ListFiredLadderTranches(ctx, after, batch)
+		if err != nil {
+			return err
+		}
+		if len(page) > 0 {
+			if err := fn(page); err != nil {
+				return err
+			}
+		}
+		if len(page) < batch {
+			return nil
+		}
+		last := page[len(page)-1]
+		after = &config.LadderFiredCursor{ScheduledDate: last.ScheduledDate, ID: last.ID}
+	}
 }
 
 func reconcileOne(ctx context.Context, store LadderReconcileStore, vis CommitmentVisibility, now time.Time, tr config.LadderTrancheDB, res *LadderReconcileResult) error {
