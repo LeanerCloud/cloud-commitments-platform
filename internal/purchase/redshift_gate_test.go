@@ -91,7 +91,7 @@ func TestRedshiftDispatchGate_RecentFinishedBuyRefusedWithFixedText(t *testing.T
 		assert.NotContains(t, run.err.Error(), "other-id")
 		assert.Nil(t, exec.FirstDispatchAt, "a refused dispatch records no stamp")
 		assert.True(t, stamp.At.Equal(run.stamp), "the window is anchored on the lineage stamp")
-		assert.Equal(t, redshiftAdoptionWindow, run.window)
+		assert.Equal(t, 10*time.Minute, run.window, "go's 5m Redshift dedupe skew plus a 5m clock margin")
 	}
 }
 
@@ -225,4 +225,11 @@ func TestRedshiftTuple_LockKeyIgnoresAccount(t *testing.T) {
 
 func TestRedshiftHorizonRefusal_NamesTheHorizon(t *testing.T) {
 	assert.Contains(t, redshiftHorizonRefusal, fmt.Sprintf(" %.0fh ", redshiftRedriveHorizon.Hours()))
+}
+
+// go adopts a node started up to 5 minutes before RequestedAt (dedupe.go redshiftClockSkew at the
+// pinned version); a window below that skew plus a 5-minute clock margin reopens the adoption.
+func TestRedshiftAdoptionWindow_CoversGoSkewPlusMargin(t *testing.T) {
+	const goRedshiftClockSkew, clockMargin = 5 * time.Minute, 5 * time.Minute
+	assert.GreaterOrEqual(t, redshiftAdoptionWindow, goRedshiftClockSkew+clockMargin)
 }

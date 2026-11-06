@@ -183,12 +183,11 @@ func (f *redshiftGateFixture) raceOnlyOneBuys(ctx context.Context, t *testing.T,
 }
 
 // finishedRow saves a completed per-account row in its own lineage with a stamp.
-func (f *redshiftGateFixture) finishedRow(ctx context.Context, t *testing.T, key string) *config.PurchaseExecution {
+func (f *redshiftGateFixture) finishedRow(ctx context.Context, t *testing.T, key string) {
 	t.Helper()
 	row := f.redshiftRowKeyed(ctx, t, config.StatusCompleted, key, false)
 	_, err := f.pool.Exec(ctx, `UPDATE purchase_executions SET first_dispatch_at = now() WHERE execution_id = $1`, row.ExecutionID)
 	require.NoError(t, err)
-	return row
 }
 
 // A node another lineage bought seconds ago is indistinguishable to AWS from a
