@@ -421,10 +421,29 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 			} else {
 				row.OpsHint = reason
 			}
+		} else {
+			applyRedshiftRetryHint(&row, &exec)
 		}
 	}
 	annotateHistoryRowByStatus(&row, exec, approver)
 	return row
+}
+
+// applyRedshiftRetryHint hides Retry for a Redshift row the gate refuses for good; the stamp age
+// is an app-clock hint, so near 24h Retry may show and then 409 from the database-clock gate.
+func applyRedshiftRetryHint(row *config.PurchaseHistoryRecord, exec *config.PurchaseExecution) {
+	if !purchase.IsRedshiftExecution(exec) {
+		return
+	}
+	var sinceStamp *time.Duration
+	if exec.FirstDispatchAt != nil {
+		age := max(0, time.Since(*exec.FirstDispatchAt))
+		sinceStamp = &age
+	}
+	if reason := purchase.RedshiftRetryPermanentRefusal(exec, sinceStamp); reason != "" {
+		row.RedriveUnsafe = true
+		row.OpsHint = reason
+	}
 }
 
 // definiteRefusalOpsHint replaces the duplicate-purchase warning when AWS
