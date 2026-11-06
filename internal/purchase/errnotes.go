@@ -68,6 +68,12 @@ var bareNotePatterns = []string{
 	`exchange reservation returned invalid ceiling "` + shortValuePattern + `"`,
 	// Scheduler note for a provider name it does not know.
 	`unknown provider "` + shortValuePattern + `" \(valid: aws, azure, gcp\)`,
+	// The source-RI guard's refusal (config refuseRIExchangeSourceInFlight): only
+	// the shared RI ids, never the blocking exchange (#1050, #1428).
+	`RI exchange source RI is held by an exchange in progress: source RI\(s\) ` + riIDListPattern + ` already have an exchange in progress; resolve that exchange first`,
+	// The outcome-unknown note (api leaveExchangeOutcomeUnknown): fixed text, the
+	// sanitized SummarizeFailure reason and the exchange id to resolve (#1050).
+	`outcome unknown: (?:` + joinAlt(append(categoryNotePatterns(), regexp.QuoteMeta(outcomeUnconfirmedMessage))) + `); verify the source RIs and target reservation at AWS, then POST /api/ri-exchange/resolve/` + uuidPattern,
 }
 
 // categoryNotePatterns matches a collection failure stored as "<provider>:
@@ -92,6 +98,8 @@ const (
 	commitmentIDPattern = `[A-Za-z0-9._:/-]{1,256}`
 	identityKeyPattern  = `[A-Za-z0-9._:/+-]{1,256}`
 	idListPattern       = identityKeyPattern + `(?:, ` + identityKeyPattern + `)*`
+	// riIDListPattern is the ", "-joined source RI ids of an RI exchange.
+	riIDListPattern = `[A-Za-z0-9-]{1,64}(?:, [A-Za-z0-9-]{1,64})*`
 	// quotedTextPattern is the body of a Go %q string: printable characters
 	// other than '"' and '\\', ASCII space, or an escape.
 	quotedTextPattern  = `(?:[^"\\\p{C}\p{Z}]| |\\[ -~])*`
