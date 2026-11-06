@@ -146,6 +146,49 @@ run "persistent_eni_is_attachable_by_every_instance" {
   }
 }
 
+# The instance role's ModifyNetworkInterfaceAttribute grant (#1763) was
+# Resource "*". fck-nat only modifies the persistent ENI (by ARN) and its own
+# primary ENI (ID unknown at plan time, so matched by the Name tag the launch
+# template puts on it). A wrong tag match fails silently: upstream fck-nat.sh
+# ignores that call's failure and return traffic is dropped.
+run "modify_eni_attribute_is_scoped" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for s in jsondecode(aws_iam_role_policy.fck_nat_ec2[0].policy).Statement :
+      !contains(flatten([s.Resource]), "*")
+    ])
+    error_message = "No fck-nat instance role statement may use Resource \"*\"; ec2:ModifyNetworkInterfaceAttribute must be scoped to its own ENIs (#1763)."
+  }
+
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_role_policy.fck_nat_ec2[0].policy).Statement :
+      s if contains(flatten([s.Action]), "ec2:ModifyNetworkInterfaceAttribute") && !can(s.Condition) && flatten([s.Resource]) == [aws_network_interface.fck_nat[0].arn]
+    ]) == 1
+    error_message = "ec2:ModifyNetworkInterfaceAttribute must be granted on exactly the persistent ENI's ARN."
+  }
+
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_role_policy.fck_nat_ec2[0].policy).Statement :
+      s if contains(flatten([s.Action]), "ec2:ModifyNetworkInterfaceAttribute") && can(s.Condition) &&
+      startswith(flatten([s.Resource])[0], "arn:") && endswith(flatten([s.Resource])[0], ":network-interface/*") &&
+      try(s.Condition.StringEquals["ec2:ResourceTag/Name"], null) == one([for t in aws_launch_template.fck_nat[0].tag_specifications : t.tags["Name"] if t.resource_type == "network-interface"])
+    ]) == 1
+    error_message = "The primary-ENI ModifyNetworkInterfaceAttribute grant must be conditioned on ec2:ResourceTag/Name equal to the Name tag the launch template sets on the network-interface (#1763)."
+  }
+
+  assert {
+    condition = alltrue([
+      for s in jsondecode(aws_iam_role_policy.fck_nat_ec2[0].policy).Statement :
+      !contains(flatten([s.Action]), "ec2:ModifyNetworkInterfaceAttribute") || can(s.Condition) || flatten([s.Resource]) == [aws_network_interface.fck_nat[0].arn]
+    ])
+    error_message = "Every unconditioned ModifyNetworkInterfaceAttribute grant must be on the persistent ENI ARN."
+  }
+}
+
 # A running instance never re-reads user data, so when the ENI it must attach
 # changes (the upgrade that introduces it, or the ENI being replaced later),
 # the ASG itself has to be replaced to launch an instance that attaches the
