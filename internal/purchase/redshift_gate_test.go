@@ -3,6 +3,7 @@ package purchase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -65,7 +66,7 @@ func TestRedshiftDispatchGate_ConflictRefusesBeforeSubmission(t *testing.T) {
 
 		require.Error(t, run.err)
 		assert.True(t, isBeforeSubmission(run.err), "attempt %d", attempt)
-		assert.Contains(t, run.err.Error(), "other")
+		assert.Equal(t, redshiftConflictRefusal, run.err.Error(), "the text names no other execution")
 		assert.Nil(t, exec.FirstDispatchAt, "a refused dispatch records no stamp")
 		assert.Equal(t, "fam-1", run.family)
 	}
@@ -110,7 +111,7 @@ func TestRedshiftDispatchGate_PastHorizonRefusedAtEveryAttempt(t *testing.T) {
 
 		require.Error(t, run.err)
 		assert.False(t, isBeforeSubmission(run.err), "attempt %d: an old stamp proves an earlier dispatch", attempt)
-		assert.Contains(t, run.err.Error(), "horizon")
+		assert.Equal(t, redshiftHorizonRefusal, run.err.Error())
 		assert.Nil(t, exec.FirstDispatchAt)
 	}
 }
@@ -189,4 +190,8 @@ func TestRedshiftTuple_LockKeyIgnoresAccount(t *testing.T) {
 	assert.Equal(t, t1.LockKey(), t2.LockKey())
 	t2.Count = 3
 	assert.NotEqual(t, t1.LockKey(), t2.LockKey())
+}
+
+func TestRedshiftHorizonRefusal_NamesTheHorizon(t *testing.T) {
+	assert.Contains(t, redshiftHorizonRefusal, fmt.Sprintf(" %.0fh ", redshiftRedriveHorizon.Hours()))
 }

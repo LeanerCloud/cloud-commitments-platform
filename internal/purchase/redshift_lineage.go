@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/jackc/pgx/v5"
 )
@@ -39,9 +40,17 @@ func hasRedshiftRec(exec *config.PurchaseExecution) bool {
 // stamp. Tests set it to observe the lock wait; it is nil in production.
 var afterRedshiftStampHook func()
 
+// Fixed refusal texts: the NULL-account wildcard can match another account's row,
+// so they never name another execution. errnotes.go allowlists each one.
+const (
+	redshiftConflictRefusal = "refusing to dispatch: another open purchase of the same Redshift reservation (region, node type, term, payment, count) may still complete, so wait for it to finish and then retry"
+	redshiftHorizonRefusal  = "refusing to dispatch: this Redshift purchase was first dispatched more than 24h ago, so check the account in AWS and start a new purchase"
+	redshiftNoStampRefusal  = "refusing to dispatch: this Redshift purchase has no first dispatch time recorded, so check the account in AWS and start a new purchase"
+)
+
 // errRedshiftPastHorizon marks a stamp older than the horizon. It is never
 // beforeSubmission: an old stamp proves an earlier dispatch may have landed.
-var errRedshiftPastHorizon = errors.New("outside the re-drive horizon")
+var errRedshiftPastHorizon = errors.New(redshiftHorizonRefusal)
 
 // redshiftTuples lists the tuples of the selected Redshift recs.
 func redshiftTuples(exec *config.PurchaseExecution) []config.RedshiftTuple {
@@ -99,10 +108,12 @@ func (m *Manager) redshiftGate(ctx context.Context, tx pgx.Tx, exec *config.Purc
 		return res, err
 	}
 	if res.At == nil {
-		return res, fmt.Errorf("execution %s has no first dispatch time and none can be minted", exec.ExecutionID)
+		logging.Warnf("Redshift gate: execution %s has no first dispatch time and none can be minted", exec.ExecutionID)
+		return res, errors.New(redshiftNoStampRefusal)
 	}
 	if !res.WithinHorizon {
-		return res, fmt.Errorf("execution %s first dispatched at %s: %w", exec.ExecutionID, res.At.UTC().Format(time.RFC3339), errRedshiftPastHorizon)
+		logging.Warnf("Redshift gate: execution %s first dispatched at %s, past the horizon", exec.ExecutionID, res.At.UTC().Format(time.RFC3339))
+		return res, errRedshiftPastHorizon
 	}
 	if afterRedshiftStampHook != nil {
 		afterRedshiftStampHook()
@@ -113,7 +124,8 @@ func (m *Manager) redshiftGate(ctx context.Context, tx pgx.Tx, exec *config.Purc
 		return res, err
 	}
 	if len(conflicts) > 0 {
-		return res, beforeSubmission(fmt.Errorf("another open purchase (execution %s, %s) holds a matching Redshift node; this one was not sent", conflicts[0].ExecutionID, conflicts[0].Status))
+		logging.Warnf("Redshift gate: execution %s refused, conflicts with execution %s (%s)", exec.ExecutionID, conflicts[0].ExecutionID, conflicts[0].Status)
+		return res, beforeSubmission(errors.New(redshiftConflictRefusal))
 	}
 	return res, nil
 }
