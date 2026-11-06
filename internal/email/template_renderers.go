@@ -111,7 +111,7 @@ func RenderPurchaseConfirmationEmail(data NotificationData) (string, error) {
 // template, or its outcome-unknown variant when data.OutcomeUnknown is set
 // (issue #1415).
 func RenderPurchaseFailedEmail(data NotificationData) (string, error) {
-	if data.OutcomeUnknown {
+	if data.outcomeUnknownVariant() {
 		return renderTextTemplate("outcome-unknown", purchaseOutcomeUnknownTemplate, data)
 	}
 	return renderTextTemplate("failed", purchaseFailedTemplate, data)

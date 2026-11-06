@@ -25,7 +25,7 @@ Outcome unknown:
 {{range .Recommendations}}
 - {{.Count}}x {{.ResourceType}}{{if .Engine}} ({{.Engine}}){{end}} in {{.Region}}
   Service: {{.Service}}{{if .UnrecordedCommitmentID}}
-  Redshift reserved node {{.UnrecordedCommitmentID}} was bought but CUDly could not record it; verify it in the cloud provider's console before buying again.{{end}}
+  {{if eq .Service "redshift"}}Redshift reserved node{{else}}Commitment{{end}} {{.UnrecordedCommitmentID}} was bought but CUDly could not record it; verify it in the cloud provider's console before buying again.{{end}}
 {{end}}
 
 Execution details:
@@ -38,8 +38,15 @@ This is an automated message from CUDly.
 // purchase-failed subject, or the outcome-unknown subject when data is for a
 // row whose purchase may already exist.
 func purchaseFailedSubject(data NotificationData, failedSubject string) string {
-	if data.OutcomeUnknown {
+	if data.outcomeUnknownVariant() {
 		return purchaseOutcomeUnknownSubject
 	}
 	return failedSubject
+}
+
+// outcomeUnknownVariant reports whether the purchase-failed email is the
+// outcome-unknown one. An unrecorded commitment implies it, so a caller that
+// later assigns OutcomeUnknown cannot switch the email back to "retry".
+func (d NotificationData) outcomeUnknownVariant() bool {
+	return d.OutcomeUnknown || d.UnrecordedCommitment
 }

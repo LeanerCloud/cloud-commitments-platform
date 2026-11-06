@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -234,10 +235,13 @@ func TestLogExecutionFailure_AppendsUnrecordedCommitmentIDs(t *testing.T) {
 			{Selected: true, PurchaseID: "rn-2"},
 			{Selected: true, Purchased: true, PurchaseID: "rn-done"},
 			{Selected: true},
+			{PurchaseID: "rn-unselected"},
 		},
 	}
 	require.True(t, logExecutionFailure(exec))
-	assert.Contains(t, logs.buf.String(), "execution_id=exec-u plan_id=plan-1 status=failed unrecorded_commitment_ids=rn-1,rn-2")
+	m := regexp.MustCompile(`execution_id=exec-u plan_id=plan-1 status=failed unrecorded_commitment_ids=(\S*)`).FindStringSubmatch(logs.buf.String())
+	require.Len(t, m, 2)
+	assert.Equal(t, "rn-1,rn-2", m[1], "purchased and unselected recs are not listed")
 
 	logExecutionFailure(&config.PurchaseExecution{ExecutionID: "exec-p", PlanID: "plan-1", Status: "failed"})
 	assert.NotContains(t, logs.buf.String(), "execution_id=exec-p plan_id=plan-1 status=failed unrecorded")
