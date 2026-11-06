@@ -315,7 +315,7 @@ test('a missing design token fails loudly instead of painting a default color (#
 // FIXTURE: hand-written tranches reproducing the gate finding (status filter cleared so all statuses are visible).
 test('cancelled, failed and unknown tranches stay visible but are not counted in chart, summary or table (#698 gate)', async () => {
   const row = (id: string, status: string, amount: string, day: number) => ({ ...event, id, status, amount_usd_hr: amount, scheduled_date: `2030-01-0${day}T00:00:00Z` });
-  jest.mocked(getLadderEvents).mockResolvedValue([row('s', 'scheduled', '1.000000', 1), row('c', 'cancelled', '5.000000', 2), row('f', 'failed', '7.000000', 3), row('x', 'weird', '9.000000', 4)]);
+  jest.mocked(getLadderEvents).mockResolvedValue([row('s', 'scheduled', '1.000000', 1), row('c', 'canceled', '5.000000', 2), row('f', 'failed', '7.000000', 3), row('x', 'weird', '9.000000', 4)]);
   await initLadderTimeline(document.getElementById('timeline')!, [], false);
   const status = document.querySelector<HTMLSelectElement>('[data-filter="status"]')!;
   status.value = ''; status.dispatchEvent(new Event('change'));
@@ -336,7 +336,7 @@ test('layers are told apart by point shape as well as color, and a selection wit
   await initLadderTimeline(document.getElementById('timeline')!, [], false);
   const config = jest.mocked(Chart).mock.calls[0]![1] as { data: { datasets: { pointStyle: string }[] } };
   expect(new Set(config.data.datasets.map(d => d.pointStyle)).size).toBe(2);
-  jest.mocked(getLadderEvents).mockResolvedValue([{ ...event, status: 'cancelled' }]);
+  jest.mocked(getLadderEvents).mockResolvedValue([{ ...event, status: 'canceled' }]);
   document.body.innerHTML = '<section id="timeline"></section>';
   jest.mocked(Chart).mockClear();
   await initLadderTimeline(document.getElementById('timeline')!, [], false);
