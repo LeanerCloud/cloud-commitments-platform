@@ -382,21 +382,23 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 }
 
 // saveTerminalAndSkipped saves the root row, then the rows of accounts a
-// fan-out skipped, all on ctx's single terminal-save deadline (issue #1672).
-// The root goes first and its result is the return value: a skip row that does
+// fan-out skipped, all on ctx's single terminal-save deadline, then sends one
+// email for the skipped rows and the late accounts' rows (issue #1672). The
+// root goes first and its result is the return value: a skip row that does
 // not fit in the deadline is logged as AUDIT LOSS and never fails the root.
 func (m *Manager) saveTerminalAndSkipped(ctx context.Context, exec *config.PurchaseExecution, execErr error) error {
 	err := m.saveOrRecoverTerminal(ctx, exec, execErr)
 	var partial *multiAccountPartialError
+	var saved []*config.PurchaseExecution
 	if errors.As(execErr, &partial) {
-		m.saveSkippedRows(ctx, exec, partial.skipped)
+		saved = m.saveSkippedRows(ctx, exec, partial.skipped)
 	}
+	m.notifyBatchedAccounts(ctx, exec, saved, lateRowsOf(execErr))
 	return err
 }
 
-// saveSkippedRows saves each skip row until ctx ends and sends one email for
-// the rows it saved.
-func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExecution, rows []*config.PurchaseExecution) {
+// saveSkippedRows saves each skip row until ctx ends and returns the saved ones.
+func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExecution, rows []*config.PurchaseExecution) []*config.PurchaseExecution {
 	var saved []*config.PurchaseExecution
 	for _, row := range rows {
 		err := ctx.Err()
@@ -409,7 +411,7 @@ func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExec
 		}
 		saved = append(saved, row)
 	}
-	m.notifySkippedAccounts(ctx, root, saved)
+	return saved
 }
 
 // preExecutionRefusal runs every check that must pass before any provider call.

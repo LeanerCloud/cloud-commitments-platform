@@ -252,11 +252,18 @@ func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.Purc
 		}
 	}
 	var started sync.Map
+	late := &lateRows{}
 	results := execution.RunForAccountsWithConcurrency(ctx, buying, func(ctx context.Context, account config.CloudAccount) (bool, error) {
 		started.Store(account.ID, true)
-		return m.executeForAccount(ctx, scoped[account.ID], plan, account)
+		return m.executeForAccountLate(ctx, scoped[account.ID], plan, account, late)
 	}, getMaxAccountParallelism())
+	return withLateRows(summarizeFanOut(scoped, results, &started), late.take())
+}
 
+// summarizeFanOut turns the per-account results into the fan-out's error (see
+// executeMultiAccount for the contract). Split out to keep both under the
+// gocyclo budget.
+func summarizeFanOut(scoped map[string]*config.PurchaseExecution, results []execution.Result[bool], started *sync.Map) error {
 	committed := 0
 	var errs []string
 	for _, r := range results {
@@ -276,7 +283,7 @@ func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.Purc
 		// Some accounts committed real purchases; the per-account rows already
 		// recorded the truth. Surface a partial sentinel so the entry points
 		// ack and never mislabel the run as a flat failure (issue #1014).
-		return &multiAccountPartialError{committed: committed, errors: errs, skipped: skippedAccountRows(scoped, results, &started)}
+		return &multiAccountPartialError{committed: committed, errors: errs, skipped: skippedAccountRows(scoped, results, started)}
 	}
 	return fmt.Errorf("%w: %s", errAllAccountsFailed, strings.Join(errs, "; "))
 }
@@ -331,12 +338,20 @@ func accountIDOf(row *config.PurchaseExecution) string {
 // failed, but the authoritative per-account row has already been saved with the
 // correct status (partially_completed / failed) before it surfaces.
 func (m *Manager) executeForAccount(ctx context.Context, baseExec *config.PurchaseExecution, plan *config.PurchasePlan, account config.CloudAccount) (committed bool, err error) {
+	return m.executeForAccountLate(ctx, baseExec, plan, account, nil)
+}
+
+// executeForAccountLate is executeForAccount for the fan-out: when the account
+// finishes after ctx ended it hands its failed row to late instead of sending
+// its own email, and executeAndFinalize sends one batched email after the root
+// save (issue #1672). A nil late keeps the per-account email.
+func (m *Manager) executeForAccountLate(ctx context.Context, baseExec *config.PurchaseExecution, plan *config.PurchasePlan, account config.CloudAccount, late *lateRows) (committed bool, err error) {
 	// Create a per-account copy of the execution record with an independent
 	// Recommendations slice so concurrent goroutines don't race on writes.
 	acctExec := newAccountExecution(baseExec, account.ID)
 	// Runs on every return path below, once the row's terminal status is
 	// stamped; a no-op unless it ended failed or partially_completed (#714).
-	defer m.notifyExecutionFailure(ctx, &acctExec)
+	defer m.notifyAccountOutcome(ctx, &acctExec, late)
 
 	provCfg, err := m.resolveAccountProvider(ctx, account)
 	if err != nil {
@@ -393,6 +408,16 @@ func (m *Manager) executeForAccount(ctx context.Context, baseExec *config.Purcha
 		return committed, fmt.Errorf("some purchases failed: %v", purchaseErrors)
 	}
 	return committed, nil
+}
+
+// notifyAccountOutcome is executeForAccountLate's failure alert: the account's
+// own email, unless the run context already ended, in which case a failed row
+// goes to late for the batched email.
+func (m *Manager) notifyAccountOutcome(ctx context.Context, row *config.PurchaseExecution, late *lateRows) {
+	if ctx.Err() != nil && late.add(row) {
+		return
+	}
+	m.notifyExecutionFailure(ctx, row)
 }
 
 // newAccountExecution is the per-account copy of baseExec, with an independent
@@ -1320,7 +1345,7 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 		logRecCtxErr(opts.ExecutionID, recTuple, elapsed, recCtx.Err())
 		logging.Errorf("purchase[%s]: %s/%s/%s/%s PurchaseCommitment failed after %s: %v",
 			opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, elapsed, err)
-		return result, fmt.Errorf("purchase failed: %w", err)
+		return result, purchaseCallError(ctx, err)
 	}
 
 	if !result.Success {
@@ -1341,6 +1366,16 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 	logging.Infof("purchase[%s]: %s/%s/%s/%s PurchaseCommitment succeeded in %s (commitmentID=%s, cost=%s)",
 		opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, elapsed, result.CommitmentID, cost)
 	return result, nil
+}
+
+// purchaseCallError wraps a failed PurchaseCommitment. When the run context
+// ended mid-call the request may have landed, so the error also carries
+// ErrOutcomeUnknown: the row records an unknown outcome, never a plain failure.
+func purchaseCallError(ctx context.Context, err error) error {
+	if ctx.Err() != nil && !errors.Is(err, common.ErrOutcomeUnknown) {
+		return fmt.Errorf("purchase failed: %w: %w", common.ErrOutcomeUnknown, err)
+	}
+	return fmt.Errorf("purchase failed: %w", err)
 }
 
 // mapServiceType maps a service string to common.ServiceType. Both the

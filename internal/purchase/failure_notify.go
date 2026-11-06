@@ -79,23 +79,33 @@ func (m *Manager) sendFailureNotice(ctx context.Context, exec *config.PurchaseEx
 	}
 }
 
-// notifySkippedAccounts logs the marker for each saved skip row and sends ONE
-// purchase-failed email listing all their recs, so a run that skipped many
-// accounts costs one failureNotifyTimeout window, not one per row (#1672).
-func (m *Manager) notifySkippedAccounts(ctx context.Context, root *config.PurchaseExecution, rows []*config.PurchaseExecution) {
+// notifyBatchedAccounts logs the marker for each skipped and late row and sends
+// ONE purchase-failed email listing all their recs, so a run that skipped many
+// accounts costs one failureNotifyTimeout window, not one per row (#1672). The
+// late rows are accounts that finished after the run context ended; they were
+// cut off mid-call, so the email says "outcome unknown" when any of them
+// carries an outcome-unknown rec error. The window starts after the root save,
+// which ends by execDeadline+T, so the email ends by execDeadline+T+N.
+func (m *Manager) notifyBatchedAccounts(ctx context.Context, root *config.PurchaseExecution, skipped, late []*config.PurchaseExecution) {
 	batch := &config.PurchaseExecution{ExecutionID: root.ExecutionID, PlanID: root.PlanID}
-	for _, row := range rows {
+	outcomeUnknown := false
+	for _, row := range append(append([]*config.PurchaseExecution{}, skipped...), late...) {
 		if logExecutionFailure(row) {
 			batch.Recommendations = append(batch.Recommendations, row.Recommendations...)
 		}
+	}
+	for _, row := range late {
+		outcomeUnknown = outcomeUnknown || hasOutcomeUnknownRec(row)
 	}
 	if len(batch.Recommendations) == 0 || m.email == nil {
 		return
 	}
 	ctx, cancel := ctxutil.DetachedWithTimeout(ctx, failureNotifyTimeout)
 	defer cancel()
-	if err := m.email.SendPurchaseFailedNotification(ctx, m.buildPurchaseFailedData(ctx, batch)); err != nil {
-		logging.Errorf("Failed to send skipped-accounts notification for execution %s: %v", root.ExecutionID, err)
+	data := m.buildPurchaseFailedData(ctx, batch)
+	data.OutcomeUnknown = outcomeUnknown
+	if err := m.email.SendPurchaseFailedNotification(ctx, data); err != nil {
+		logging.Errorf("Failed to send batched account notification for execution %s: %v", root.ExecutionID, err)
 	}
 }
 
