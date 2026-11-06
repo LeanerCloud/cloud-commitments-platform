@@ -619,6 +619,9 @@ type StoreInterface interface {
 	// the approval came from a session-authed user rather than an email token.
 	StampRIExchangeApprovedBy(ctx context.Context, id string, approverEmail string) error
 	FailRIExchange(ctx context.Context, id string, errorMsg string) error
+	// NoteRIExchangeOutcomeUnknown sets the error note on a row that is still
+	// processing, leaving it processing for the operator to resolve (#1050).
+	NoteRIExchangeOutcomeUnknown(ctx context.Context, id, note string) error
 	GetRIExchangeDailySpend(ctx context.Context, date time.Time) (string, error)
 	CancelAllPendingExchanges(ctx context.Context) (int64, error)
 	// CancelPendingExchangesByOrigin cancels only pending records whose origin

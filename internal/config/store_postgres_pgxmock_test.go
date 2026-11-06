@@ -3568,13 +3568,16 @@ func TestPGXMock_ReserveApprovedRIExchange_ReservesCeilingExcludingOwnRow(t *tes
 	store := storeWith(mock)
 	id := "550e8400-e29b-41d4-a716-000000000656"
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT payment_due::text FROM ri_exchange_history").WithArgs(id).
-		WillReturnRows(pgxmock.NewRows([]string{"payment_due"}).AddRow("600.000000"))
+	mock.ExpectQuery("SELECT payment_due::text, source_ri_ids FROM ri_exchange_history").WithArgs(id).
+		WillReturnRows(pgxmock.NewRows([]string{"payment_due", "source_ri_ids"}).AddRow("600.000000", []string{"ri-1"}))
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
 	// The spend read must exclude this row's own id (the legitimate $600 approval).
 	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), &id).
 		WillReturnRows(pgxmock.NewRows([]string{"spend"}).AddRow("0.000000"))
+	// No other processing row shares ri-1, so the source-RI guard (#1050) passes.
+	mock.ExpectQuery("SELECT id::text, ARRAY").WithArgs([]string{"ri-1"}, &id).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
 	mock.ExpectExec("UPDATE ri_exchange_history SET payment_due").WithArgs(id, "1000.000000").
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 	mock.ExpectCommit()
@@ -3590,8 +3593,8 @@ func TestPGXMock_ReserveApprovedRIExchange_RefusesWhenInitialExceedsHeadroom(t *
 	store := storeWith(mock)
 	id := "550e8400-e29b-41d4-a716-000000000657"
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT payment_due::text FROM ri_exchange_history").WithArgs(id).
-		WillReturnRows(pgxmock.NewRows([]string{"payment_due"}).AddRow("600.000000"))
+	mock.ExpectQuery("SELECT payment_due::text, source_ri_ids FROM ri_exchange_history").WithArgs(id).
+		WillReturnRows(pgxmock.NewRows([]string{"payment_due", "source_ri_ids"}).AddRow("600.000000", []string{"ri-1"}))
 	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
 	mock.ExpectQuery("SELECT COALESCE\\(SUM\\(payment_due\\), 0\\)::text").WithArgs(pgxmock.AnyArg(), &id).
@@ -3608,7 +3611,7 @@ func TestPGXMock_ReserveApprovedRIExchange_RejectsRowThatIsNotProcessing(t *test
 	store := storeWith(mock)
 	const id = "550e8400-e29b-41d4-a716-000000000658"
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT payment_due::text FROM ri_exchange_history").WithArgs(id).
+	mock.ExpectQuery("SELECT payment_due::text, source_ri_ids FROM ri_exchange_history").WithArgs(id).
 		WillReturnError(pgx.ErrNoRows)
 	mock.ExpectRollback()
 
