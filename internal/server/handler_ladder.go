@@ -320,8 +320,8 @@ func (app *Application) executeLadderRun(
 	scope := engineCfg.Scope
 
 	layers := capability.SupportedLayers()
-	if err := ladderComputeCapRefusal(dbCfg, layers); err != nil {
-		return err
+	if refusal := ladderComputeCapRefusal(dbCfg, layers); refusal != nil {
+		return refusal
 	}
 
 	// Collect read-side data. All three calls are independent; errors are

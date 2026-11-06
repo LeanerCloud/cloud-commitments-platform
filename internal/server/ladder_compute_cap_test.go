@@ -84,7 +84,7 @@ func runComputeCapConfig(t *testing.T, cap *float64) (*LadderRunResult, *persist
 	reads := &providerReadCounter{fakeLadderCapability: &fakeLadderCapability{
 		t: t, baseline: testBaselineLowWater(12.5), layerStates: states, rates: rates, supportedLayers: awsPlanningLayers,
 	}}
-	store := &persistCountingStore{ladderTestStore: &ladderTestStore{cloudAcct: validTestCloudAccount("123456789012")}}
+	store := &persistCountingStore{ladderTestStore: &ladderTestStore{cloudAcct: validTestCloudAccount(computeCapAccount)}}
 	app := &Application{
 		Config: store,
 		LadderCapabilityFactory: func(_ context.Context, _, _ string) (pkgladder.LadderCapability, error) {
@@ -93,10 +93,13 @@ func runComputeCapConfig(t *testing.T, cap *float64) (*LadderRunResult, *persist
 	}
 	dbCfg := validTestDBConfig("cfg-compute-cap")
 	dbCfg.MaxHourlyCommitPerRun = cap
-	result := app.runLadderConfigs(testutil.TestContext(t), []config.LadderConfigDB{dbCfg}, "123456789012", "us-east-1",
+	result := app.runLadderConfigs(testutil.TestContext(t), []config.LadderConfigDB{dbCfg}, computeCapAccount, "us-east-1",
 		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, ratesTestNow, false)
 	return result, store, reads
 }
+
+// computeCapAccount is the lambda and cloud account of the cap tests.
+const computeCapAccount = "210987654321"
 
 // awsPlanningLayers mirrors the AWS capability's SupportedLayers, one base layer
 // only, so a capped run can allocate.
