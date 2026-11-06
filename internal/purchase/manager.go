@@ -269,12 +269,12 @@ func isMultiAccountAckable(execErr error) bool {
 }
 
 const (
-	// The two budgets run back to back, and for a failed or partial row the
-	// failure alert follows them with its own failureNotifyTimeout (30s), so a
-	// run can take 3m30s + 30s + 30s = 270s. The failed rows of accounts a
-	// fan-out skipped (#1672) add no window: they are saved after the root, on
-	// the root's terminal-save deadline, and announced in one email inside the
-	// failure-alert window. On AWS Lambda the function timeout
+	// The budgets are anchored on the execution deadline E (3m30s), not on
+	// when the previous phase ended: account rows save by E+T/2, the root and
+	// the skip rows by E+T, and one batched email for the skipped and late
+	// accounts goes out by E+T+N, so the worst case is 3m30s + 30s + 30s =
+	// 270s however many accounts are in flight at E (#1672). A late account
+	// sends no email of its own (executeForAccountLate). On AWS Lambda the function timeout
 	// ends the invocation whatever these deadlines say, so the Lambda timeout
 	// must cover that sum plus a 30s margin (lambda_timeout >= 300, enforced by
 	// Terraform validation and TestLambdaTimeoutCoversPurchaseBudget, #913,
@@ -292,8 +292,16 @@ const (
 // purchaseBudgets overrides deadlines for tests. A zero field means the
 // production default, so a Manager built by NewManager uses the constants.
 type purchaseBudgets struct {
+	execTimeout  time.Duration
 	terminalSave time.Duration
 	perRec       time.Duration
+}
+
+func (b purchaseBudgets) executionTimeout() time.Duration {
+	if b.execTimeout > 0 {
+		return b.execTimeout
+	}
+	return purchaseExecutionTimeout
 }
 
 func (b purchaseBudgets) terminalSaveTimeout() time.Duration {
@@ -324,8 +332,9 @@ func (b purchaseBudgets) perRecTimeout() time.Duration {
 func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseExecution) error {
 	// A disconnected caller must not cancel a purchase after the claim.
 	// Its terminal outcome must survive an exhausted execution budget too.
-	execCtx, cancelExec := ctxutil.DetachedWithTimeout(ctx, purchaseExecutionTimeout)
+	execCtx, cancelExec := ctxutil.DetachedWithTimeout(ctx, m.budgets.executionTimeout())
 	defer cancelExec()
+	execDeadline, _ := execCtx.Deadline() // always set: DetachedWithTimeout
 	// Last line of defense before money moves (issue #1718). Every executor
 	// entry point funnels through here, so one check covers all of them.
 	execErr := m.preExecutionRefusal(execCtx, exec)
@@ -339,7 +348,10 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 	if execErr != nil {
 		logging.Errorf("Failed to execute purchase %s: %v", exec.ExecutionID, execErr)
 	}
-	saveCtx, cancelSave := ctxutil.DetachedWithTimeout(ctx, m.budgets.terminalSaveTimeout())
+	// Anchored on the execution deadline, not "now": the late accounts' row
+	// saves end at execDeadline+T/2 (saveAccountRow), so the root always keeps
+	// the rest of its slice and the whole run ends by execDeadline+T+N (#1672).
+	saveCtx, cancelSave := ctxutil.DetachedWithDeadline(ctx, execDeadline.Add(m.budgets.terminalSaveTimeout()))
 	defer cancelSave()
 	// Operators hear about every failed or partial row (issue #714), even
 	// when the terminal save below fails. A fan-out root logs the alarm
@@ -392,7 +404,7 @@ func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExec
 			err = m.config.SavePurchaseExecution(ctx, row)
 		}
 		if err != nil {
-			logging.Errorf("AUDIT LOSS: failed to save the skipped-account record for account %v of execution %s: %v", row.CloudAccountID, root.ExecutionID, err)
+			logging.Errorf("AUDIT LOSS: failed to save the skipped-account record for account %s of execution %s: %v", accountIDOf(row), root.ExecutionID, err)
 			continue
 		}
 		saved = append(saved, row)

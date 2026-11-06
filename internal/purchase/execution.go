@@ -291,13 +291,33 @@ func (m *Manager) saveExecutionStatusBestEffort(ctx context.Context, exec *confi
 }
 
 // saveAccountRow saves a started account's terminal row on a context detached
-// from the run's cancellation and bounded by the terminal-save budget, so a run
-// context that ended mid-account still leaves the History row and its Retry
-// (issue #1672). Same pattern as the root's terminal save.
+// from the run's cancellation, so a run context that ended mid-account still
+// leaves the History row and its Retry (issue #1672). The deadline is half the
+// terminal-save budget past the run's own deadline (execDeadline+T/2), so
+// every account in flight when the run ends shares one slice and the root keeps
+// the other half. A row that misses it is logged as AUDIT LOSS.
 func (m *Manager) saveAccountRow(ctx context.Context, exec *config.PurchaseExecution) error {
-	saveCtx, cancel := ctxutil.DetachedWithTimeout(ctx, m.budgets.terminalSaveTimeout())
+	deadline := time.Now().Add(m.budgets.terminalSaveTimeout())
+	if runDeadline, ok := ctx.Deadline(); ok {
+		// ctx is the run context. Without a deadline (tests, callers outside
+		// executeAndFinalize) the fallback is a fresh full budget.
+		deadline = runDeadline.Add(m.budgets.terminalSaveTimeout() / 2)
+	}
+	saveCtx, cancel := ctxutil.DetachedWithDeadline(ctx, deadline)
 	defer cancel()
-	return m.config.SavePurchaseExecution(saveCtx, exec)
+	err := m.config.SavePurchaseExecution(saveCtx, exec)
+	if err != nil {
+		logging.Errorf("AUDIT LOSS: failed to save the record of execution %s for account %s: %v", exec.ExecutionID, accountIDOf(exec), err)
+	}
+	return err
+}
+
+// accountIDOf is the row's cloud account ID for log lines ("" for a root row).
+func accountIDOf(row *config.PurchaseExecution) string {
+	if row.CloudAccountID == nil {
+		return ""
+	}
+	return *row.CloudAccountID
 }
 
 // executeForAccount runs a single plan execution for one cloud account.
