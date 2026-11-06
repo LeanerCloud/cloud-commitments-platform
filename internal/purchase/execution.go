@@ -1158,7 +1158,7 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 
 	// Get the service client for this region
 	t0 = time.Now()
-	serviceClient, err := cloudProvider.GetServiceClient(recCtx, serviceType, rec.Region)
+	serviceClient, err := cloudProvider.GetServiceClient(recCtx, purchaseClientService(rec.Provider, serviceType), rec.Region)
 	if err != nil {
 		logging.Errorf("purchase[%s]: service client lookup failed for %s/%s in %s after %s: %v",
 			opts.ExecutionID, rec.Provider, serviceType, rec.Region, time.Since(t0), err)
@@ -1285,6 +1285,18 @@ func resolveEC2OfferingClass(s string) (ec2types.OfferingClassType, error) {
 		return "", fmt.Errorf("%w %q: must be %q or %q", errUnknownOfferingClass, s,
 			ec2types.OfferingClassTypeConvertible, ec2types.OfferingClassTypeStandard)
 	}
+}
+
+// purchaseClientService is the service whose client buys a recommendation of
+// service. Azure Redis recommendations are labeled ServiceCache, but only the
+// managedredis client (ServiceMemoryDB) buys RedisCache reservations; the
+// Azure cache client refuses every purchase (cloud-commitments-go#694, #1801).
+// Labels in history and suppressions keep the recommendation's own service.
+func purchaseClientService(providerName string, service common.ServiceType) common.ServiceType {
+	if providerName == string(common.ProviderAzure) && service == common.ServiceCache {
+		return common.ServiceMemoryDB
+	}
+	return service
 }
 
 // mapServiceSlug returns the common.ServiceType for a canonical or legacy
