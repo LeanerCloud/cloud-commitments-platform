@@ -162,17 +162,21 @@ func allFailed(conflicts []config.RedshiftLineageConflict) bool {
 	return len(conflicts) > 0
 }
 
-// dropPersistentFailures removes failed rows whose error names an operator fix: History
-// hides Retry for them, so they would hold the tuple for the whole horizon with no way out.
+// dropPersistentFailures removes failed rows Retry can never re-drive (an operator-fix error or a
+// refused provider): they would hold the tuple for the whole horizon with no way out.
 func dropPersistentFailures(conflicts []config.RedshiftLineageConflict) []config.RedshiftLineageConflict {
 	kept := make([]config.RedshiftLineageConflict, 0, len(conflicts))
 	for _, c := range conflicts {
-		if c.Status == config.StatusFailed && ResolveOpsHint(c.Error) != "" {
+		if c.Status == config.StatusFailed && (ResolveOpsHint(c.Error) != "" || retryRefusedForRecs(c)) {
 			continue
 		}
 		kept = append(kept, c)
 	}
 	return kept
+}
+
+func retryRefusedForRecs(c config.RedshiftLineageConflict) bool {
+	return RedriveRefusalReason(&config.PurchaseExecution{Recommendations: c.Recommendations}) != ""
 }
 
 // redshiftFinishedStatus reports the statuses whose node may already sit in AWS.

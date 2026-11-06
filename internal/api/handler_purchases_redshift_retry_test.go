@@ -100,17 +100,17 @@ func TestCheckRedshiftRetryGate_ClockErrorFailsClosed(t *testing.T) {
 	assert.False(t, isClient, "a store failure is a 500, not a refusal the UI would render as permanent")
 }
 
-// Until the old guard is lifted it refuses every Redshift Retry first, so the
-// new gate must not even read the clock.
-func TestLoadAndValidateRetry_OldRedriveRefusalStillWinsForRedshift(t *testing.T) {
+// The provider-level refusal no longer covers Redshift, so a Redshift Retry reaches the new gate.
+func TestLoadAndValidateRetry_RedshiftReachesTheNewGate(t *testing.T) {
 	failed := redshiftFailedRow(1, false)
 	session := &Session{UserID: retryCallerID, Email: "operator@example.com"}
 	h, store, _ := buildSessionRetryHandler(t, failed, session, false, true)
+	store.On("GetRedshiftRetryClock", mock.Anything, failed.ExecutionID).Return(config.RedshiftRetryClock{SinceUpdate: time.Hour}, nil)
 
 	_, _, err := h.loadAndValidateRetryRequest(context.Background(), sessionRetryReqWithForce(), failed.ExecutionID)
 
-	assertRedriveRefused(t, err, "Check EC2 Reserved Instances or Redshift Reserved Nodes")
-	store.AssertNotCalled(t, "GetRedshiftRetryClock", mock.Anything, mock.Anything)
+	assertRedriveRefused(t, err, "no first dispatch time recorded")
+	store.AssertCalled(t, "GetRedshiftRetryClock", mock.Anything, failed.ExecutionID)
 }
 
 func persistedSuccessor(t *testing.T, failed *config.PurchaseExecution) *config.PurchaseExecution {

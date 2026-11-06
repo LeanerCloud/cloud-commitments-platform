@@ -2192,7 +2192,7 @@ func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
 		{"azure savings plans", failed("azure", "savingsplans", "boom"), true, ""},
 		{"unrecognized provider", failed("oracle", "compute", "boom"), true, ""},
 		{"failed aws ec2", failed("aws", "ec2", "boom"), true, ""},
-		{"failed aws redshift", failed("aws", "redshift", "boom"), true, ""},
+		{"failed aws redshift is not refused by the provider guard", failed("aws", "redshift", "boom"), false, ""},
 		{"failed mixed ec2+rds basket", config.PurchaseExecution{ExecutionID: "e-1", Status: "failed", Error: "boom", Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds"}, {Provider: "aws", Service: "ec2"}}}, true, ""},
 		{"pending ec2 gets no hint", withStatus("pending", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), false, ""},
 		{"canceled ec2 gets no hint", withStatus("canceled", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), false, ""},

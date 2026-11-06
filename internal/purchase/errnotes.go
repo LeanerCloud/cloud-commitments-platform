@@ -119,7 +119,7 @@ var exchangeNoteHeads = []string{
 	`unknown provider`,
 }
 
-var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + regexp.QuoteMeta(redriveReasonAzureSavingsPlan) +
+var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + regexp.QuoteMeta(redriveReasonAWSNoGuardLegacy) + `|` + regexp.QuoteMeta(redriveReasonAzureSavingsPlan) +
 	`|provider "[A-Za-z0-9._+-]{0,32}" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`
 
 // resourceTypePattern is the "<resourceType>: " head the executor's per-rec join

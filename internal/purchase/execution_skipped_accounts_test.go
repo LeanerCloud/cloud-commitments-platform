@@ -157,9 +157,9 @@ func TestSkippedAccountNote_MatchesRetryEligibility(t *testing.T) {
 		want              string
 	}{
 		{"aws", "ec2", skippedAccountNoRetryNote},
-		{"aws", "redshift", skippedAccountNoRetryNote},
 		{"azure", "savingsplans", skippedAccountNoRetryNote},
 		{"aws", "rds", skippedAccountRetryNote},
+		{"aws", "redshift", skippedAccountRetryNote},
 		{"gcp", "compute", skippedAccountRetryNote},
 	}
 	for _, c := range cases {

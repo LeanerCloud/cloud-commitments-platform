@@ -27,6 +27,7 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		strandedRecoveryError(&config.PurchaseExecution{}),
 		strandedRecoveryError(retry),
 		armedRedriveRefusal(retry).Error(),
+		"refusing to execute retry attempt 2: " + redriveReasonAWSNoGuardLegacy,
 		armedRedriveRefusal(azSP).Error(),
 		armedRedriveRefusal(gcpRetry).Error(),
 		ErrStaleAzurePricing.Error(),

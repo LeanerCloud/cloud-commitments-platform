@@ -149,6 +149,14 @@ func TestRedshiftDispatchGate_PicksTheRefusalTextByConflictKind(t *testing.T) {
 	}
 }
 
+func TestRedshiftDispatchGate_FailedRowWithRefusedProviderRecDropped(t *testing.T) {
+	both := []config.RecommendationRecord{{Provider: "aws", Service: "ec2"}, gateRec("acct-A", 2)}
+	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "mixed", Status: config.StatusFailed, Recommendations: both}})
+
+	require.NoError(t, run.err, "Retry refuses the EC2 rec for good, so the row cannot be retried")
+}
+
 func TestRedshiftDispatchGate_QueriesOnlySelectedRedshiftTuples(t *testing.T) {
 	unselected := gateRec("acct-A", 7)
 	unselected.Selected = false
