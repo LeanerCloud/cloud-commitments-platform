@@ -831,6 +831,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 			// mutation across goroutines).
 			recOpts := opts
 			recOpts.IdempotencyToken = common.DeriveIdempotencyToken(idempotencyLineageKey(exec), i)
+			recOpts.AttemptJournal = m.attemptJournal
 			purchaseResult, err := m.executeSinglePurchase(ctx, rec, provCfg, recOpts)
 			return recPurchaseOutcome{index: i, purchase: purchaseResult, err: err}, nil
 		}, getMaxAccountParallelism())
