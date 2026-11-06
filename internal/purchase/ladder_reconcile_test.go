@@ -54,6 +54,7 @@ func TestDecideFiredTranche(t *testing.T) {
 		{"scheduled tail due in the future waits", []config.LadderChainNode{scheduledNode(testNow.Add(time.Hour))}, visibleAlways, "", "", true},
 		{"scheduled tail overdue within grace waits", []config.LadderChainNode{scheduledNode(testNow.Add(-LadderFiredStaleAfter + time.Minute))}, visibleAlways, "", "", true},
 		{"scheduled tail overdue past grace does not wait", []config.LadderChainNode{scheduledNode(testNow.Add(-LadderFiredStaleAfter - time.Minute))}, visibleAlways, "", "", false},
+		{"scheduled tail exactly at the end of its grace does not wait", []config.LadderChainNode{scheduledNode(testNow.Add(-LadderFiredStaleAfter))}, visibleAlways, "", "", false},
 		{"chain cut short (tail still linked)", []config.LadderChainNode{linked}, visibleAlways, "", "", false},
 	}
 	for _, c := range cases {
