@@ -387,18 +387,14 @@ resource "aws_iam_role_policy" "fck_nat_ec2" {
         Resource = [aws_network_interface.fck_nat[0].arn, "arn:aws:ec2:${var.region}:*:instance/*"]
       },
       {
-        # fck-nat disables source/destination checking on the persistent ENI
-        # it attaches. Scoped by ARN.
-        Sid      = "DisableSourceDestCheckPersistentENI"
-        Effect   = "Allow"
-        Action   = ["ec2:ModifyNetworkInterfaceAttribute"]
-        Resource = aws_network_interface.fck_nat[0].arn
-      },
-      {
-        # ...and on the instance's own primary ENI, whose ID is only known at
-        # boot. Matched by the Name tag the launch template sets on it, as
-        # upstream RaJiska/terraform-aws-fck-nat does (iam.tf, statement
-        # "ManageNetworkInterface": StringEquals ec2:ResourceTag/Name).
+        # fck-nat disables source/dest check only on the instance's primary
+        # ENI, resolved from IMDS at boot, so its ID is unknown at plan time and
+        # it is matched by the Name tag the launch template sets on it. The
+        # persistent ENI's check is turned off by Terraform at creation
+        # (source_dest_check = false), so it needs no instance grant.
+        # Upstream AndrewGuenther/fck-nat service/fck-nat.sh modifies
+        # $outbound_eni_id only; the RaJiska module's ManageNetworkInterface
+        # statement is tag-conditioned only.
         Sid      = "DisableSourceDestCheckPrimaryENI"
         Effect   = "Allow"
         Action   = ["ec2:ModifyNetworkInterfaceAttribute"]

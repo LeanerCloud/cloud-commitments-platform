@@ -147,10 +147,11 @@ run "persistent_eni_is_attachable_by_every_instance" {
 }
 
 # The instance role's ModifyNetworkInterfaceAttribute grant (#1763) was
-# Resource "*". fck-nat only modifies the persistent ENI (by ARN) and its own
-# primary ENI (ID unknown at plan time, so matched by the Name tag the launch
-# template puts on it). A wrong tag match fails silently: upstream fck-nat.sh
-# ignores that call's failure and return traffic is dropped.
+# Resource "*". fck-nat only modifies its own primary ENI (ID unknown at plan
+# time, so matched by the Name tag the launch template puts on it); the
+# persistent ENI gets source_dest_check = false from Terraform. A wrong tag
+# match fails silently: upstream fck-nat.sh ignores that call's failure and
+# return traffic is dropped.
 run "modify_eni_attribute_is_scoped" {
   command = apply
 
@@ -163,11 +164,28 @@ run "modify_eni_attribute_is_scoped" {
   }
 
   assert {
+    condition = one([for t in aws_launch_template.fck_nat[0].tag_specifications : t.tags["Name"] if t.resource_type == "network-interface"]) != null && alltrue([
+      for s in jsondecode(aws_iam_role_policy.fck_nat_ec2[0].policy).Statement :
+      try(s.Condition.StringEquals["ec2:ResourceTag/Name"], null) == one([for t in aws_launch_template.fck_nat[0].tag_specifications : t.tags["Name"] if t.resource_type == "network-interface"])
+      if contains(flatten([s.Action]), "ec2:ModifyNetworkInterfaceAttribute")
+    ])
+    error_message = "Every ec2:ModifyNetworkInterfaceAttribute grant must carry StringEquals ec2:ResourceTag/Name equal to the primary ENI Name tag; none may be unconditioned (#1763)."
+  }
+
+  assert {
     condition = length([
       for s in jsondecode(aws_iam_role_policy.fck_nat_ec2[0].policy).Statement :
-      s if contains(flatten([s.Action]), "ec2:ModifyNetworkInterfaceAttribute") && !can(s.Condition) && flatten([s.Resource]) == [aws_network_interface.fck_nat[0].arn]
+      s if contains(flatten([s.Action]), "ec2:ModifyNetworkInterfaceAttribute")
     ]) == 1
-    error_message = "ec2:ModifyNetworkInterfaceAttribute must be granted on exactly the persistent ENI's ARN."
+    error_message = "Exactly one ec2:ModifyNetworkInterfaceAttribute statement is expected (primary ENI, tag-conditioned); the persistent ENI needs none because Terraform sets source_dest_check = false (#1763)."
+  }
+
+  assert {
+    condition = !anytrue([
+      for s in jsondecode(aws_iam_role_policy.fck_nat_ec2[0].policy).Statement :
+      contains(flatten([s.Action]), "ec2:ModifyNetworkInterfaceAttribute") && contains(flatten([s.Resource]), aws_network_interface.fck_nat[0].arn)
+    ])
+    error_message = "ec2:ModifyNetworkInterfaceAttribute must not be granted on the persistent ENI ARN; fck-nat only modifies the primary ENI (#1763)."
   }
 
   assert {
@@ -178,14 +196,6 @@ run "modify_eni_attribute_is_scoped" {
       try(s.Condition.StringEquals["ec2:ResourceTag/Name"], null) == one([for t in aws_launch_template.fck_nat[0].tag_specifications : t.tags["Name"] if t.resource_type == "network-interface"])
     ]) == 1
     error_message = "The primary-ENI ModifyNetworkInterfaceAttribute grant must be conditioned on ec2:ResourceTag/Name equal to the Name tag the launch template sets on the network-interface (#1763)."
-  }
-
-  assert {
-    condition = alltrue([
-      for s in jsondecode(aws_iam_role_policy.fck_nat_ec2[0].policy).Statement :
-      !contains(flatten([s.Action]), "ec2:ModifyNetworkInterfaceAttribute") || can(s.Condition) || flatten([s.Resource]) == [aws_network_interface.fck_nat[0].arn]
-    ])
-    error_message = "Every unconditioned ModifyNetworkInterfaceAttribute grant must be on the persistent ENI ARN."
   }
 }
 
