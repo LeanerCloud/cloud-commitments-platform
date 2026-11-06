@@ -241,7 +241,15 @@ paths:
               example:
                 status: updated
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >
+            The body fails validation. On a deployment that schedules no
+            fire_scheduled_purchases sweep, a body that writes
+            purchase_delay_hours above 0 is also refused here, since a
+            delayed purchase would never execute.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1025,7 +1033,10 @@ paths:
             resolvable cloud account, a status other than pending or notified
             (in token mode the status check is the atomic transition, so a
             concurrent change answers the same way, and in either mode a
-            lost claim answers 409 as well).
+            lost claim answers 409 as well), or a purchase delay above 0
+            (stored, or the default when no configuration is saved) on a
+            deployment that schedules no fire_scheduled_purchases sweep;
+            set purchase_delay_hours to 0 first.
           content:
             application/json:
               schema:
