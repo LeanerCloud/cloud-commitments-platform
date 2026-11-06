@@ -225,3 +225,18 @@ func TestRunLadderReconcile_PartialVisibilityStaysFired(t *testing.T) {
 	assert.Empty(t, f.completed)
 	assert.Equal(t, []string{"acct-a"}, f.factoryAccts)
 }
+
+// A tail still scheduled is waiting for its fire time, not stuck, so it never
+// counts as stale however old the chain head is; a running tail does.
+func TestRunLadderReconcile_ScheduledTailIsNotStale(t *testing.T) {
+	for status, wantStale := range map[string]int{"scheduled": 0, "running": 1} {
+		t.Run(status, func(t *testing.T) {
+			f := &visFake{}
+			f.addTranche("t1", "acct-a", "sp-1", ladder.LayerComputeSP)
+			f.execs["exec-t1"].Status = status
+			res := f.run(t)
+			assert.Equal(t, 1, res.Unresolved)
+			assert.Equal(t, wantStale, res.Stale)
+		})
+	}
+}

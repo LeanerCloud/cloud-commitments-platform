@@ -19,6 +19,10 @@ const LadderFiredStaleAfter = 6 * time.Hour
 
 const ladderReconcileBatch = 200
 
+// ladderExecutionScheduled is the purchase_executions status of a chain tail
+// that waits for its fire time.
+const ladderExecutionScheduled = "scheduled"
+
 // Reasons stored in ladder_tranches.status_reason by the reconciler.
 const (
 	ladderReasonNoSubmission      = "no_submission"
@@ -51,6 +55,9 @@ type ladderVerdict struct {
 	to     ladder.TrancheStatus // empty: leave the tranche fired
 	reason string
 	note   string // why it stays fired (for the log)
+	// waiting marks a tranche whose execution has not been due yet, so being
+	// unresolved is expected and never counts as stale.
+	waiting bool
 }
 
 // decideFiredTranche maps a locked retry chain (head first) to a verdict. The
@@ -65,14 +72,7 @@ func decideFiredTranche(chain []config.LadderChainNode, visible func(executionID
 	}
 	switch tail.Status {
 	case config.StatusCompleted:
-		ok, err := visible(tail.ExecutionID)
-		if err != nil {
-			return ladderVerdict{note: fmt.Sprintf("commitment visibility check failed: %v", err)}
-		}
-		if !ok {
-			return ladderVerdict{note: "completed, commitment not yet visible"}
-		}
-		return ladderVerdict{to: ladder.TrancheStatusCompleted, reason: ladderReasonCommitmentVisible}
+		return completedVerdict(tail.ExecutionID, visible)
 	case config.StatusPartiallyCompleted:
 		return ladderVerdict{note: "partially completed: some recommendations may have been bought"}
 	case config.StatusFailed:
@@ -84,9 +84,23 @@ func decideFiredTranche(chain []config.LadderChainNode, visible func(executionID
 		return failedIfPredecessorsProven(chain, ladderReasonApprovalCanceled)
 	case config.StatusExpired:
 		return failedIfPredecessorsProven(chain, ladderReasonApprovalExpired)
+	case ladderExecutionScheduled:
+		return ladderVerdict{note: "execution is scheduled and not yet due", waiting: true}
 	default:
 		return ladderVerdict{note: "execution is " + tail.Status}
 	}
+}
+
+// completedVerdict completes the tranche only once its commitment is visible.
+func completedVerdict(executionID string, visible func(executionID string) (bool, error)) ladderVerdict {
+	ok, err := visible(executionID)
+	if err != nil {
+		return ladderVerdict{note: fmt.Sprintf("commitment visibility check failed: %v", err)}
+	}
+	if !ok {
+		return ladderVerdict{note: "completed, commitment not yet visible"}
+	}
+	return ladderVerdict{to: ladder.TrancheStatusCompleted, reason: ladderReasonCommitmentVisible}
 }
 
 func failedIfPredecessorsProven(chain []config.LadderChainNode, reason string) ladderVerdict {
@@ -103,7 +117,7 @@ func failedIfPredecessorsProven(chain []config.LadderChainNode, reason string) l
 // that holds the tranche row and the retry-chain tail row, so a concurrent
 // Retry cannot link a successor between the decision and the write. Tranches
 // it cannot prove stay fired and keep netting; those older than
-// LadderFiredStaleAfter are logged as errors. Not scheduled anywhere yet.
+// LadderFiredStaleAfter are logged as errors. The ladder_reconcile task runs it.
 func ReconcileLadderTranches(ctx context.Context, store LadderReconcileStore, vis CommitmentVisibility, now time.Time) (LadderReconcileResult, error) {
 	var res LadderReconcileResult
 	tranches, err := store.ListFiredLadderTranches(ctx, ladderReconcileBatch)
@@ -146,7 +160,7 @@ func reconcileOne(ctx context.Context, store LadderReconcileStore, vis Commitmen
 		return fmt.Errorf("reconcile ladder_tranche %s: %w", tr.ID, err)
 	case verdict.to == "":
 		res.Unresolved++
-		if now.Sub(head) > LadderFiredStaleAfter {
+		if !verdict.waiting && now.Sub(head) > LadderFiredStaleAfter {
 			res.Stale++
 			logging.Errorf("ladder tranche %s fired %s ago is unresolved: %s", tr.ID, now.Sub(head).Round(time.Minute), verdict.note)
 		}

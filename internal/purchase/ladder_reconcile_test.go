@@ -40,6 +40,7 @@ func TestDecideFiredTranche(t *testing.T) {
 		{"completed and visible", []config.LadderChainNode{chainNode("e1", "completed", false)}, visibleAlways, ladder.TrancheStatusCompleted, "commitment_visible"},
 		{"completed not visible", []config.LadderChainNode{chainNode("e1", "completed", false)}, func(string) (bool, error) { return false, nil }, "", ""},
 		{"completed visibility error", []config.LadderChainNode{chainNode("e1", "completed", false)}, func(string) (bool, error) { return false, errors.New("boom") }, "", ""},
+		{"scheduled tail waits", []config.LadderChainNode{chainNode("e1", "scheduled", false)}, visibleAlways, "", ""},
 		{"chain cut short (tail still linked)", []config.LadderChainNode{linked}, visibleAlways, "", ""},
 	}
 	for _, c := range cases {
