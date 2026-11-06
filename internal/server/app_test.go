@@ -156,6 +156,14 @@ func TestLoadApplicationConfig_FireSweepOff(t *testing.T) {
 		{"true", true, "true", false},
 		{"false", true, "false", true},
 	}
+	// Clear every input LoadApplicationConfig can reject, so an inherited bad
+	// value fails no subtest before FireSweepOff is checked.
+	for _, key := range []string{
+		"DEFAULT_TERM", "DEFAULT_COVERAGE", "SCHEDULED_PURCHASE_MAX_OVERDUE", "CUDLY_TRUSTED_PROXY_HOPS",
+		"ANALYTICS_COLLECTION_ENABLED", "ANALYTICS_RETENTION_MONTHS", "ANALYTICS_PARTITIONS_AHEAD",
+	} {
+		t.Setenv(key, "")
+	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("FIRE_SWEEP_SCHEDULED", tc.value)
