@@ -19,6 +19,7 @@
 - A lineage whose purchase record never landed (the child bought but its row save failed, `execution.go:351` and `:383`) leaves no completed row for the gate to see.
 - The go-side narrowing in LeanerCloud/cloud-commitments-go#700 and the real fix in #515 are open.
 - The window is measured from the other row's last save, so a later save of that row (for example a revocation request) restarts it. That only refuses longer; it never allows a double buy.
+- A `failed` row without the no-submission proof (reaped mid-buy, or an unknown outcome) may hold a real node but is not refused by this window; if go adopts that node, the accounting stays one node and one completed row. PR3 counts such rows as open lineages.
 - After the Redshift re-drive guard is lifted, a retry can be refused for up to 24h while another lineage's completed node sits inside its window (liveness only, no double buy).
 
 **Status:** Mitigated for platform-recorded buys. Tracked in #702 and LeanerCloud/cloud-commitments-go#515.
