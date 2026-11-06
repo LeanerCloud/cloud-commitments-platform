@@ -86,3 +86,37 @@ func TestSMTPSender_SendPurchaseFailedNotification_OutcomeUnknown(t *testing.T) 
 		})
 	}
 }
+
+func unrecordedCommitmentData() NotificationData {
+	data := outcomeUnknownData()
+	data.UnrecordedCommitment = true
+	data.Recommendations = []RecommendationSummary{
+		{Service: "redshift", ResourceType: "ra3.xlplus", Region: "us-east-1", Count: 2, UnrecordedCommitmentID: "rn-123"},
+		{Service: "rds", ResourceType: "db.m5.large", Region: "us-west-2", Count: 1},
+	}
+	return data
+}
+
+// cloud-commitments-go#107: a commitment the provider returned but CUDly could
+// not record is named, the opening says why, and the email never says "retry".
+func TestRenderPurchaseFailedEmail_UnrecordedCommitment(t *testing.T) {
+	body, err := RenderPurchaseFailedEmail(unrecordedCommitmentData())
+	require.NoError(t, err)
+
+	assert.Contains(t, body, "execution exec-1 (plan plan-1) ended because the provider returned a commitment that CUDly could not record.")
+	assert.Contains(t, body, "Redshift reserved node rn-123 was bought but CUDly could not record it; verify it in the cloud provider's console before buying again.")
+	assert.Equal(t, 1, strings.Count(body, "Redshift reserved node"), "only the rec that carries an ID gets the line")
+	assert.NotContains(t, body, "recovery sweep")
+	assert.NotContains(t, body, "was interrupted")
+	assert.NotContains(t, strings.ToLower(body), "retry")
+}
+
+func TestRenderPurchaseFailedEmail_UnrecordedCommitmentAbsent(t *testing.T) {
+	body, err := RenderPurchaseFailedEmail(outcomeUnknownData())
+	require.NoError(t, err)
+
+	assert.Contains(t, body, "recovery sweep")
+	assert.Contains(t, body, "was interrupted")
+	assert.NotContains(t, body, "could not record")
+	assert.NotContains(t, body, "Redshift reserved node")
+}

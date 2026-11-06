@@ -614,6 +614,11 @@ type NotificationData struct {
 	// interrupted: the commitment may already exist, so the email asks the
 	// operator to verify in the cloud console instead of retrying (issue #1415).
 	OutcomeUnknown bool
+	// UnrecordedCommitment, with OutcomeUnknown, says the provider returned a
+	// commitment CUDly could not record (a recommendation carries its ID in
+	// UnrecordedCommitmentID), instead of a recovery sweep having interrupted
+	// the run (cloud-commitments-go#107).
+	UnrecordedCommitment bool
 }
 
 // RecommendationSummary is a simplified recommendation for email display.
@@ -628,6 +633,9 @@ type RecommendationSummary struct {
 	MonthlySavings float64
 	Term           int
 	UpfrontCost    float64
+	// UnrecordedCommitmentID is a commitment the provider created but CUDly
+	// could not record; the outcome-unknown email names it.
+	UnrecordedCommitmentID string
 	// MonthlyCost, Commitment, AvailabilityZone, Platform and Tenancy are the
 	// per-row detail of a scheduled plan step. Commitment is upfront plus
 	// monthly over the term, so a no-upfront (Azure monthly) row does not read
