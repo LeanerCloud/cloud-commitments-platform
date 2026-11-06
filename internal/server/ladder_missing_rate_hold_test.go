@@ -86,7 +86,7 @@ func TestExecuteLadderRun_MissingDiscountRatePersistsHoldWithReason(t *testing.T
 			assert.Equal(t, string(missing), hold.Layer)
 			assert.Regexp(t, `^Can't size this yet because layer `+string(missing)+` `, hold.Rationale)
 			assert.Contains(t, hold.Rationale, "2.5 commitment USD/hr, 0.5 expiring")
-			assert.Contains(t, hold.Rationale, "no discount rate")
+			assert.Contains(t, hold.Rationale, "neither an observed rate from the commitments held nor a new-purchase rate")
 			assert.Contains(t, hold.Rationale, "1yr no-upfront")
 			assert.NotContains(t, hold.Rationale, "already met")
 		})
