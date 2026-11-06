@@ -406,7 +406,7 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 	// failed rows can carry a hint — the resolver returns "" for empty
 	// inputs, so this is safe to call unconditionally.
 	if exec.Status == "failed" {
-		row.OpsHint = resolveOpsHint(exec.Error)
+		row.OpsHint = purchase.ResolveOpsHint(exec.Error)
 		// A re-drive the backend will always refuse is permanent, so it wins
 		// over the operator-fixable failure-reason hint (which promises that
 		// fixing the config makes Retry work). Same call and input as the

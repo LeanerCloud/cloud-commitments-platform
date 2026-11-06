@@ -2198,7 +2198,7 @@ func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
 		{"canceled ec2 gets no hint", withStatus("canceled", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), false, ""},
 		{"aws rds is retryable", failed("aws", "rds", "boom"), false, ""},
 		{"refusal wins over failure-reason hint", failed("azure", "savingsplans", persistent), true, ""},
-		{"failure-reason hint kept when re-drive is safe", failed("aws", "rds", persistent), false, resolveOpsHint(persistent)},
+		{"failure-reason hint kept when re-drive is safe", failed("aws", "rds", persistent), false, purchase.ResolveOpsHint(persistent)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
