@@ -8,9 +8,21 @@
 
 **Description:** The platform stamps `PurchaseOptions.RequestedAt` at dispatch. go's Redshift dedupe matches an existing reserved node through `DescribeReservedNodes` when its start time is at or after `RequestedAt - 5min`, and the window has no upper bound. A later purchase with the same account, region, offering and node count made within about 5 minutes of a completed one finds the earlier node, adopts it and reports success without buying anything.
 
-**Why deferred:** The fix belongs in go (an upper bound or an identity stronger than the tuple), tracked in LeanerCloud/cloud-commitments-go#515. The platform only supplies `RequestedAt` (#702).
+**Why deferred:** The full fix belongs in go (an upper bound or an identity stronger than the tuple), tracked in LeanerCloud/cloud-commitments-go#515. The platform mitigates it for buys it records (below).
 
-**Status:** Open. Tracked in #702 and LeanerCloud/cloud-commitments-go#515.
+**Mitigation (platform-recorded buys):** The Redshift dispatch gate now refuses a purchase when another lineage's completed, partially completed or revocation-requested row for the same tuple was last saved within 10 minutes of the new lineage's first dispatch time. The refusal is recorded before submission with a fixed text that names no execution, and the user starts a new purchase at least 10 minutes after the other one completed.
+
+**Remaining:**
+
+- Buys made outside the platform are invisible to the gate.
+- Two identical-tuple recs in one execution still adopt each other (platform #1809).
+- A lineage whose purchase record never landed (the child bought but its row save failed, `execution.go:351` and `:383`) leaves no completed row for the gate to see.
+- The go-side narrowing in LeanerCloud/cloud-commitments-go#700 and the real fix in #515 are open.
+- The window is measured from the other row's last save, so a later save of that row (for example a revocation request) restarts it. That only refuses longer; it never allows a double buy.
+- A `failed` row without the no-submission proof (reaped mid-buy, or an unknown outcome) may hold a real node but is not refused by this window; if go adopts that node, the accounting stays one node and one completed row. PR3 counts such rows as open lineages.
+- After the Redshift re-drive guard is lifted, a retry can be refused for up to 24h while another lineage's completed node sits inside its window (liveness only, no double buy).
+
+**Status:** Mitigated for platform-recorded buys. Tracked in #702 and LeanerCloud/cloud-commitments-go#515.
 
 ## LOW: unknown outcome followed by a new same-tuple purchase outside the window can double-buy
 

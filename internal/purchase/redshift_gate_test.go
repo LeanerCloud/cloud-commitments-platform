@@ -25,6 +25,8 @@ type gateRun struct {
 	finds  []config.RedshiftTuple
 	family string
 	locked []config.RedshiftTuple
+	stamp  time.Time
+	window time.Duration
 }
 
 // runGate drives the gate with a stamp result and the conflicts the query returns.
@@ -36,8 +38,13 @@ func runGate(t *testing.T, exec *config.PurchaseExecution, stamp config.StampRes
 		Run(func(a mock.Arguments) { run.locked = a.Get(2).([]config.RedshiftTuple) }).Return(nil)
 	store.On("StampFirstDispatchTx", mock.Anything, mock.Anything, exec.ExecutionID, redshiftRedriveHorizon).Return(stamp, nil)
 	store.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, exec.ExecutionID, mock.Anything,
-		mock.Anything, mock.Anything, redshiftRedriveHorizon).
-		Run(func(a mock.Arguments) { run.family = a.String(3); run.finds = a.Get(4).([]config.RedshiftTuple) }).
+		mock.Anything, mock.Anything, redshiftRedriveHorizon, mock.Anything, mock.Anything).
+		Run(func(a mock.Arguments) {
+			run.family = a.String(3)
+			run.finds = a.Get(4).([]config.RedshiftTuple)
+			run.stamp = a.Get(7).(time.Time)
+			run.window = a.Get(8).(time.Duration)
+		}).
 		Return(conflicts, nil).Maybe()
 	run.err = (&Manager{config: store}).stampRedshiftDispatch(context.Background(), exec)
 	return run
@@ -70,6 +77,30 @@ func TestRedshiftDispatchGate_ConflictRefusesBeforeSubmission(t *testing.T) {
 		assert.Nil(t, exec.FirstDispatchAt, "a refused dispatch records no stamp")
 		assert.Equal(t, "fam-1", run.family)
 	}
+}
+
+func TestRedshiftDispatchGate_RecentFinishedBuyRefusedWithFixedText(t *testing.T) {
+	for _, status := range []string{config.StatusCompleted, config.StatusPartiallyCompleted, config.StatusRevocationRequested} {
+		exec := gateExec(0, gateRec("acct-A", 2))
+		stamp := stamped()
+		run := runGate(t, exec, stamp, []config.RedshiftLineageConflict{{ExecutionID: "other-id", Status: status}})
+
+		require.Error(t, run.err, status)
+		assert.True(t, isBeforeSubmission(run.err), status)
+		assert.Equal(t, redshiftRecentBuyRefusal, run.err.Error(), "the text names no execution")
+		assert.NotContains(t, run.err.Error(), "other-id")
+		assert.Nil(t, exec.FirstDispatchAt, "a refused dispatch records no stamp")
+		assert.True(t, stamp.At.Equal(run.stamp), "the window is anchored on the lineage stamp")
+		assert.Equal(t, 10*time.Minute, run.window, "go's 5m Redshift dedupe skew plus a 5m clock margin")
+	}
+}
+
+func TestRedshiftDispatchGate_FinishedConflictWinsOverOpenOne(t *testing.T) {
+	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "open", Status: "running"}, {ExecutionID: "done", Status: config.StatusCompleted}})
+
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftRecentBuyRefusal, run.err.Error())
 }
 
 func TestRedshiftDispatchGate_QueriesOnlySelectedRedshiftTuples(t *testing.T) {
@@ -142,7 +173,7 @@ func TestRedshiftDispatchGate_StoreErrorsByAttempt(t *testing.T) {
 			store.On("LockRedshiftTuplesTx", mock.Anything, mock.Anything, mock.Anything).Return(lockErr)
 			store.On("StampFirstDispatchTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(stamped(), nil).Maybe()
 			store.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-				mock.Anything, mock.Anything, mock.Anything).Return(nil, findErr).Maybe()
+				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, findErr).Maybe()
 			exec := gateExec(attempt, gateRec("acct-A", 2))
 
 			err := (&Manager{config: store}).stampRedshiftDispatch(context.Background(), exec)
@@ -161,7 +192,7 @@ func TestRedshiftDispatchGate_CallOrderIsLockStampFind(t *testing.T) {
 	store.On("LockRedshiftTuplesTx", mock.Anything, mock.Anything, mock.Anything).Run(note("lock")).Return(nil)
 	store.On("StampFirstDispatchTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(note("stamp")).Return(stamped(), nil)
 	store.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		mock.Anything, mock.Anything, mock.Anything).Run(note("find")).Return(nil, nil)
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(note("find")).Return(nil, nil)
 
 	require.NoError(t, (&Manager{config: store}).stampRedshiftDispatch(context.Background(), gateExec(0, gateRec("acct-A", 2))))
 	assert.Equal(t, []string{"lock", "stamp", "find"}, order)
@@ -194,4 +225,11 @@ func TestRedshiftTuple_LockKeyIgnoresAccount(t *testing.T) {
 
 func TestRedshiftHorizonRefusal_NamesTheHorizon(t *testing.T) {
 	assert.Contains(t, redshiftHorizonRefusal, fmt.Sprintf(" %.0fh ", redshiftRedriveHorizon.Hours()))
+}
+
+// go adopts a node started up to 5 minutes before RequestedAt (dedupe.go redshiftClockSkew at the
+// pinned version); a window below that skew plus a 5-minute clock margin reopens the adoption.
+func TestRedshiftAdoptionWindow_CoversGoSkewPlusMargin(t *testing.T) {
+	const goRedshiftClockSkew, clockMargin = 5 * time.Minute, 5 * time.Minute
+	assert.GreaterOrEqual(t, redshiftAdoptionWindow, goRedshiftClockSkew+clockMargin)
 }

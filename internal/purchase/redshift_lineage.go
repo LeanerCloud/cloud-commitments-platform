@@ -43,10 +43,15 @@ var afterRedshiftStampHook func()
 // Fixed refusal texts: the NULL-account wildcard can match another account's row,
 // so they never name another execution. errnotes.go allowlists each one.
 const (
-	redshiftConflictRefusal = "refusing to dispatch: another open purchase of the same Redshift reservation (region, node type, term, payment, count) may still complete, so wait for it to finish and then retry"
-	redshiftHorizonRefusal  = "refusing to dispatch: this Redshift purchase was first dispatched more than 24h ago, so check the account in AWS and start a new purchase"
-	redshiftNoStampRefusal  = "refusing to dispatch: this Redshift purchase has no first dispatch time recorded, so check the account in AWS and start a new purchase"
+	redshiftConflictRefusal  = "refusing to dispatch: another open purchase of the same Redshift reservation (region, node type, term, payment, count) may still complete, so wait for it to finish and then retry"
+	redshiftHorizonRefusal   = "refusing to dispatch: this Redshift purchase was first dispatched more than 24h ago, so check the account in AWS and start a new purchase"
+	redshiftNoStampRefusal   = "refusing to dispatch: this Redshift purchase has no first dispatch time recorded, so check the account in AWS and start a new purchase"
+	redshiftRecentBuyRefusal = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) completed too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one completed"
 )
+
+// redshiftAdoptionWindow mirrors cloud-commitments-go's 5m Redshift dedupe skew
+// (providers/aws/services/redshift/dedupe.go redshiftClockSkew) plus a 5m clock margin.
+const redshiftAdoptionWindow = 10 * time.Minute
 
 // errRedshiftPastHorizon marks a stamp older than the horizon. It is never
 // beforeSubmission: an old stamp proves an earlier dispatch may have landed.
@@ -119,15 +124,30 @@ func (m *Manager) redshiftGate(ctx context.Context, tx pgx.Tx, exec *config.Purc
 		afterRedshiftStampHook()
 	}
 	family, _, _ := strings.Cut(idempotencyLineageKey(exec), ":")
-	conflicts, err := m.config.FindOpenRedshiftLineageConflictsTx(ctx, tx, exec.ExecutionID, family, tuples, exec.CloudAccountID, redshiftRedriveHorizon)
+	conflicts, err := m.config.FindOpenRedshiftLineageConflictsTx(ctx, tx, exec.ExecutionID, family, tuples, exec.CloudAccountID, redshiftRedriveHorizon, *res.At, redshiftAdoptionWindow)
 	if err != nil {
 		return res, err
+	}
+	for _, c := range conflicts {
+		if redshiftFinishedStatus(c.Status) {
+			logging.Warnf("Redshift gate: execution %s refused, another purchase of the tuple finished within the adoption window (execution %s, %s)", exec.ExecutionID, c.ExecutionID, c.Status)
+			return res, beforeSubmission(errors.New(redshiftRecentBuyRefusal))
+		}
 	}
 	if len(conflicts) > 0 {
 		logging.Warnf("Redshift gate: execution %s refused, conflicts with execution %s (%s)", exec.ExecutionID, conflicts[0].ExecutionID, conflicts[0].Status)
 		return res, beforeSubmission(errors.New(redshiftConflictRefusal))
 	}
 	return res, nil
+}
+
+// redshiftFinishedStatus reports the statuses whose node may already sit in AWS.
+func redshiftFinishedStatus(status string) bool {
+	switch status {
+	case config.StatusCompleted, config.StatusPartiallyCompleted, config.StatusRevocationRequested:
+		return true
+	}
+	return false
 }
 
 // withDispatchTime defaults RequestedAt to now. A Redshift rec must arrive
