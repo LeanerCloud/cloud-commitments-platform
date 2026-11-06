@@ -174,8 +174,10 @@ func TestExecuteAndFinalize_ExpiredCallerDeadline_UsesOwnBudgets(t *testing.T) {
 	require.True(t, ok, "terminal save needs a deadline")
 	// Literal durations on purpose: comparing against the constants would
 	// pass whatever their values are.
-	assert.LessOrEqual(t, f.saveRemaining, 30*time.Second)
-	assert.Greater(t, f.saveRemaining, 29*time.Second)
+	// The root save ends at the run deadline plus the 30s save budget (#1672),
+	// so a run that finishes at once has almost 3m30s + 30s left.
+	assert.LessOrEqual(t, f.saveRemaining, 4*time.Minute)
+	assert.Greater(t, f.saveRemaining, 3*time.Minute+59*time.Second)
 	// SavePurchaseHistory runs inside executePurchase, so it sees the run ctx.
 	_, ok = f.histCtx.Deadline()
 	require.True(t, ok, "run ctx needs a deadline")

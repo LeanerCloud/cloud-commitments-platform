@@ -77,8 +77,8 @@ func newLateFixture(t *testing.T, parallelism string, acctSave func(context.Cont
 
 	ids := []string{skipAcctA, skipAcctB, skipAcctC, lateAcctD}
 	types := []string{"a.large", "b.large", "c.large", "d.large"}
-	var accounts []config.CloudAccount
-	var recs []config.RecommendationRecord
+	accounts := make([]config.CloudAccount, 0, len(ids))
+	recs := make([]config.RecommendationRecord, 0, len(ids))
 	for i, id := range ids {
 		accounts = append(accounts, config.CloudAccount{ID: id, Name: id[:1], Provider: "aws", ExternalID: strings.Repeat(string(rune('1'+i)), 12), AWSAuthMode: "access_keys"})
 		recs = append(recs, withAccount(config.RecommendationRecord{Provider: "aws", Service: "ec2", ResourceType: types[i], Region: "us-east-1",
@@ -173,7 +173,7 @@ func TestExecuteAndFinalize_LateAccountBatchedIntoOneOutcomeUnknownEmail(t *test
 	assert.False(t, b.exec.NoSubmission, "nothing proves B submitted nothing")
 	assert.Contains(t, b.exec.Error, common.ErrOutcomeUnknown.Error(), "B's call was cut off: outcome unknown, not a retryable failure")
 	assert.WithinDuration(t, start.Add(lateExecTimeout+lateTerminalT/2), b.deadline, 80*time.Millisecond, "account slice is E+T/2")
-	assert.True(t, b.done.Before(root.done), "the root saves after the late account it summarises")
+	assert.True(t, b.done.Before(root.done), "the root saves after the late account it summarizes")
 
 	for _, id := range []string{skipAcctC, lateAcctD} {
 		s, ok := f.save(id, true)
