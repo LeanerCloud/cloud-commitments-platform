@@ -43,10 +43,11 @@ var afterRedshiftStampHook func()
 // Fixed refusal texts: the NULL-account wildcard can match another account's row,
 // so they never name another execution. errnotes.go allowlists each one.
 const (
-	redshiftConflictRefusal  = "refusing to dispatch: another open purchase of the same Redshift reservation (region, node type, term, payment, count) may still complete, so wait for it to finish and then retry"
-	redshiftHorizonRefusal   = "refusing to dispatch: this Redshift purchase was first dispatched more than 24h ago, so check the account in AWS and start a new purchase"
-	redshiftNoStampRefusal   = "refusing to dispatch: this Redshift purchase has no first dispatch time recorded, so check the account in AWS and start a new purchase"
-	redshiftRecentBuyRefusal = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) completed too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one completed"
+	redshiftConflictRefusal       = "refusing to dispatch: another open purchase of the same Redshift reservation (region, node type, term, payment, count) may still complete, so wait for it to finish and then retry"
+	redshiftHorizonRefusal        = "refusing to dispatch: this Redshift purchase was first dispatched more than 24h ago, so check the account in AWS and start a new purchase"
+	redshiftNoStampRefusal        = "refusing to dispatch: this Redshift purchase has no first dispatch time recorded, so check the account in AWS and start a new purchase"
+	redshiftFailedConflictRefusal = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) failed and may still be retried, so retry or settle that purchase, or start this one at least 24h after its first dispatch"
+	redshiftRecentBuyRefusal      = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) completed too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one completed"
 )
 
 // redshiftAdoptionWindow mirrors cloud-commitments-go's 5m Redshift dedupe skew
@@ -128,17 +129,50 @@ func (m *Manager) redshiftGate(ctx context.Context, tx pgx.Tx, exec *config.Purc
 	if err != nil {
 		return res, err
 	}
+	return res, conflictRefusal(exec.ExecutionID, dropPersistentFailures(conflicts))
+}
+
+// conflictRefusal picks the fixed refusal for the remaining conflicts: a recent finished buy first,
+// then any open lineage, then failed rows only. The other execution's id goes to the log only.
+func conflictRefusal(executionID string, conflicts []config.RedshiftLineageConflict) error {
 	for _, c := range conflicts {
 		if redshiftFinishedStatus(c.Status) {
-			logging.Warnf("Redshift gate: execution %s refused, another purchase of the tuple finished within the adoption window (execution %s, %s)", exec.ExecutionID, c.ExecutionID, c.Status)
-			return res, beforeSubmission(errors.New(redshiftRecentBuyRefusal))
+			logging.Warnf("Redshift gate: execution %s refused, another purchase of the tuple finished within the adoption window (execution %s, %s)", executionID, c.ExecutionID, c.Status)
+			return beforeSubmission(errors.New(redshiftRecentBuyRefusal))
 		}
 	}
-	if len(conflicts) > 0 {
-		logging.Warnf("Redshift gate: execution %s refused, conflicts with execution %s (%s)", exec.ExecutionID, conflicts[0].ExecutionID, conflicts[0].Status)
-		return res, beforeSubmission(errors.New(redshiftConflictRefusal))
+	if allFailed(conflicts) {
+		logging.Warnf("Redshift gate: execution %s refused, only failed purchases conflict (first %s)", executionID, conflicts[0].ExecutionID)
+		return beforeSubmission(errors.New(redshiftFailedConflictRefusal))
 	}
-	return res, nil
+	if len(conflicts) > 0 {
+		logging.Warnf("Redshift gate: execution %s refused, conflicts with execution %s (%s)", executionID, conflicts[0].ExecutionID, conflicts[0].Status)
+		return beforeSubmission(errors.New(redshiftConflictRefusal))
+	}
+	return nil
+}
+
+// allFailed reports a non-empty conflict list made only of failed rows.
+func allFailed(conflicts []config.RedshiftLineageConflict) bool {
+	for _, c := range conflicts {
+		if c.Status != config.StatusFailed {
+			return false
+		}
+	}
+	return len(conflicts) > 0
+}
+
+// dropPersistentFailures removes failed rows whose error names an operator fix: History
+// hides Retry for them, so they would hold the tuple for the whole horizon with no way out.
+func dropPersistentFailures(conflicts []config.RedshiftLineageConflict) []config.RedshiftLineageConflict {
+	kept := make([]config.RedshiftLineageConflict, 0, len(conflicts))
+	for _, c := range conflicts {
+		if c.Status == config.StatusFailed && ResolveOpsHint(c.Error) != "" {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	return kept
 }
 
 // redshiftFinishedStatus reports the statuses whose node may already sit in AWS.

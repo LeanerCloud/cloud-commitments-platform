@@ -103,6 +103,52 @@ func TestRedshiftDispatchGate_FinishedConflictWinsOverOpenOne(t *testing.T) {
 	assert.Equal(t, redshiftRecentBuyRefusal, run.err.Error())
 }
 
+func TestRedshiftDispatchGate_PersistentFailureCandidateDropped(t *testing.T) {
+	exec := gateExec(0, gateRec("acct-A", 2))
+	run := runGate(t, exec, stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "stuck", Status: config.StatusFailed, Error: "send failed: SES sandbox active"}})
+
+	require.NoError(t, run.err, "History hides Retry for this row, so it must not hold the tuple")
+	assert.NotNil(t, exec.FirstDispatchAt)
+}
+
+func TestRedshiftDispatchGate_RunningRowWithHintTextStillConflicts(t *testing.T) {
+	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "live", Status: "running", Error: "SES sandbox"}})
+
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftConflictRefusal, run.err.Error())
+}
+
+func TestRedshiftDispatchGate_DefiniteRefusalFailedRowStillConflicts(t *testing.T) {
+	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "refused", Status: config.StatusFailed, Error: redshiftConflictRefusal, Recommendations: []config.RecommendationRecord{gateRec("acct-A", 2)}}})
+
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftFailedConflictRefusal, run.err.Error())
+	assert.True(t, isBeforeSubmission(run.err))
+}
+
+func TestRedshiftDispatchGate_PicksTheRefusalTextByConflictKind(t *testing.T) {
+	rs := []config.RecommendationRecord{gateRec("acct-A", 2)}
+	failed := config.RedshiftLineageConflict{ExecutionID: "f", Status: config.StatusFailed, Recommendations: rs}
+	running := config.RedshiftLineageConflict{ExecutionID: "r", Status: "running", Recommendations: rs}
+	done := config.RedshiftLineageConflict{ExecutionID: "d", Status: config.StatusCompleted, Recommendations: rs}
+	for name, tc := range map[string]struct {
+		conflicts []config.RedshiftLineageConflict
+		want      string
+	}{
+		"only failed":           {[]config.RedshiftLineageConflict{failed}, redshiftFailedConflictRefusal},
+		"failed beside running": {[]config.RedshiftLineageConflict{failed, running}, redshiftConflictRefusal},
+		"running":               {[]config.RedshiftLineageConflict{running}, redshiftConflictRefusal},
+		"finished wins":         {[]config.RedshiftLineageConflict{failed, running, done}, redshiftRecentBuyRefusal},
+	} {
+		run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), tc.conflicts)
+		require.Error(t, run.err, name)
+		assert.Equal(t, tc.want, run.err.Error(), name)
+	}
+}
+
 func TestRedshiftDispatchGate_QueriesOnlySelectedRedshiftTuples(t *testing.T) {
 	unselected := gateRec("acct-A", 7)
 	unselected.Selected = false
