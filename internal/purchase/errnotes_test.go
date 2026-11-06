@@ -44,11 +44,11 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		"refusing to execute ladder purchase: global config unreadable",
 		"scheduled plan step reached its scheduled date without recommendations; no purchase was submitted",
 		"no current recommendation matched plan 00000000-0000-0000-0000-000000000000 step 2 by 2026-01-02 (3-day grace after the plan date)",
-		"no current recommendation matched plan p step 2 by 2026-01-02 (3-day grace after the plan date); " + skippedNote([]string{"a\x1fb", "c"}),
+		"no current recommendation matched plan 00000000-0000-0000-0000-000000000000 step 2 by 2026-01-02 (3-day grace after the plan date); " + skippedNote([]string{"a\x1fb", "c"}),
 		"target already met: target 10, committed 12; 0 failed row(s) of unknown outcome counted as committed",
 		"target already met: target 10, committed 12; " + skippedNote([]string{"a"}) + "; 1 failed row(s) of unknown outcome counted as committed",
-		fmt.Errorf("%w: 2 selected recommendation(s) target 2 cloud accounts (a, b); submit one purchase per account", errAmbiguousAccountScope).Error(),
-		fmt.Errorf("%w: 1 selected recommendation(s) carry no cloud_account_id while 2 target account a", errAmbiguousAccountScope).Error(),
+		fmt.Errorf("%w: 2 selected recommendation(s) target 2 cloud accounts (00000000-0000-0000-0000-00000000000a, 00000000-0000-0000-0000-00000000000b); submit one purchase per account", errAmbiguousAccountScope).Error(),
+		fmt.Errorf("%w: 1 selected recommendation(s) carry no cloud_account_id while 2 target account 00000000-0000-0000-0000-00000000000a", errAmbiguousAccountScope).Error(),
 		"purchase was not successful",
 		skippedAccountRetryNote,
 		skippedAccountNoRetryNote,
@@ -217,5 +217,47 @@ func TestSanitizeStoredError_RedshiftGateRefusalsAreClosed(t *testing.T) {
 		} {
 			assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), SanitizeStoredError(variant), variant)
 		}
+	}
+}
+
+// Every variable slot in a closed note admits only its writer's alphabet, so
+// whitespace, a line break or a control or format character never passes
+// verbatim, whichever writer later fills the slot.
+func TestSanitizeStoredError_SlotsRejectWhitespaceAndControls(t *testing.T) {
+	const id = "00000000-0000-0000-0000-000000000000"
+	resolve := `operator:completed: account="` + "1234" + "56789012" + `" region="us-east-1" checked_at=2026-01-02T03:04:05Z reason="%s"`
+	slots := []string{
+		"history_write_failed: commitment %s purchased but its history record failed to save",
+		"execution %s: " + ErrPlanStepNoRecommendations.Error(),
+		"no current recommendation matched plan %s step 2 by 2026-01-02 (3-day grace after the plan date)",
+		"no current recommendation matched plan " + id + " step 2 by 2026-01-02 (3-day grace after the plan date); 1 recommendation(s) without a frozen baseline skipped (under-buy): %s",
+		errAmbiguousAccountScope.Error() + ": 2 selected recommendation(s) target 2 cloud accounts (%s, " + id + "); submit one purchase per account",
+		errAmbiguousAccountScope.Error() + ": 1 selected recommendation(s) carry no cloud_account_id while 2 target account %s",
+		"EC2 recommendation for %s has zonal scope but no AvailabilityZone: refusing to buy a zonal RI in an arbitrary AZ; re-fetch the recommendation",
+		`refusing to execute retry attempt 1: provider "%s" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`,
+		resolve,
+	}
+	for _, bad := range []string{"a b", "a\nb", "a\rb", "a\tb", "a\vb", "a\fb", "a\u0085b", "a\u00a0b", "a\u2028b", "a\u200bb", "a\x00b"} {
+		for _, slot := range slots {
+			if slot == resolve && bad == "a b" {
+				continue // %q keeps an ASCII space; the admin's reason may have one
+			}
+			in := fmt.Sprintf(slot, bad)
+			assert.NotEqual(t, in, SanitizeStoredError(in), "%q", in)
+		}
+	}
+	// The real alphabets still pass verbatim.
+	for _, in := range []string{
+		fmt.Sprintf(slots[0], "arn:aws:ec2:us-east-1:reserved/ri-0a1b.c_2"),
+		fmt.Sprintf(slots[1], id),
+		fmt.Sprintf(slots[2], id),
+		fmt.Sprintf(slots[3], id+"/ec2/us-east-1/m5.large//1/no-upfront//Linux/UNIX/default"),
+		fmt.Sprintf(slots[4], id),
+		fmt.Sprintf(slots[5], id),
+		fmt.Sprintf(slots[6], "m5.large"),
+		fmt.Sprintf(slots[7], "oracle-cloud"),
+		fmt.Sprintf(resolve, `done, see ticket \"7\"\n`),
+	} {
+		assert.Equal(t, in, SanitizeStoredError(in), in)
 	}
 }
