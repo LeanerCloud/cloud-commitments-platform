@@ -196,9 +196,9 @@ func TestRedshiftDispatchGate_RecentCompletedBuyRefusedBeforeSubmission(t *testi
 	ctx := context.Background()
 	f := newRedshiftGateFixture(ctx, t)
 	f.finishedRow(ctx, t, uuid.New().String()+":"+f.accounts[0].ID)
-	refused := f.redshiftRow(ctx, t, "approved")
+	refused := f.redshiftRow(ctx, t, "notified")
 
-	claimed, _ := f.mgr.claimAndExecute(ctx, rowStatusCopy(refused))
+	claimed, _ := f.mgr.claimAndExecuteWithin(ctx, rowStatusCopy(refused), 0)
 	require.True(t, claimed)
 
 	assert.Zero(t, f.bought.Load(), "a refused lineage never reaches the provider")
@@ -215,12 +215,12 @@ func TestRedshiftDispatchGate_SecondLineageAfterWindowDispatches(t *testing.T) {
 	ctx := context.Background()
 	f := newRedshiftGateFixture(ctx, t)
 	f.finishedRow(ctx, t, uuid.New().String()+":"+f.accounts[0].ID)
-	later := f.redshiftRow(ctx, t, "approved")
+	later := f.redshiftRow(ctx, t, "notified")
 	_, err := f.pool.Exec(ctx, `UPDATE purchase_executions SET first_dispatch_at = now() + $2 * interval '1 second' WHERE execution_id = $1`,
 		later.ExecutionID, (redshiftAdoptionWindow + time.Minute).Seconds())
 	require.NoError(t, err)
 
-	claimed, _ := f.mgr.claimAndExecute(ctx, rowStatusCopy(later))
+	claimed, _ := f.mgr.claimAndExecuteWithin(ctx, rowStatusCopy(later), 0)
 	require.True(t, claimed)
 
 	assert.Equal(t, int32(1), f.bought.Load())
@@ -234,9 +234,9 @@ func TestRedshiftDispatchGate_SameFamilyCompletedRowNotRefused(t *testing.T) {
 	f := newRedshiftGateFixture(ctx, t)
 	family := uuid.New().String()
 	f.finishedRow(ctx, t, family+":"+f.accounts[0].ID)
-	successor := f.redshiftRowKeyed(ctx, t, "approved", family, true)
+	successor := f.redshiftRowKeyed(ctx, t, "notified", family, true)
 
-	claimed, _ := f.mgr.claimAndExecute(ctx, rowStatusCopy(successor))
+	claimed, _ := f.mgr.claimAndExecuteWithin(ctx, rowStatusCopy(successor), 0)
 	require.True(t, claimed)
 
 	assert.NotEqual(t, redshiftRecentBuyRefusal, SanitizeStoredError(rowStatus(ctx, t, f.rampStepFixture, successor.ExecutionID).Error))
