@@ -1225,6 +1225,10 @@ func recommendationID(rec config.RecommendationRecord) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	azConfig, err := rec.IdentityAZConfig()
+	if err != nil {
+		return "", err
+	}
 	accountID := ""
 	if rec.CloudAccountID != nil {
 		accountID = *rec.CloudAccountID
@@ -1243,6 +1247,13 @@ func recommendationID(rec config.RecommendationRecord) (string, error) {
 		// AWS platform is the raw CE string, so the ID can contain "/" and
 		// spaces.
 		id += "|" + ci.Platform + "|" + ci.Tenancy
+	}
+	if azConfig != "" {
+		// Appended only for AWS RDS recs whose Details carry it
+		// (single-az/multi-az), so every other rec keeps its ID (issue #408).
+		// Azure SQL is excluded: its az_config is a subscription-wide value
+		// that is "" on an incomplete server lookup, so it would only flip IDs.
+		id += "|" + azConfig
 	}
 	return id, nil
 }
