@@ -319,6 +319,11 @@ func (app *Application) executeLadderRun(
 	}
 	scope := engineCfg.Scope
 
+	layers := capability.SupportedLayers()
+	if err := ladderComputeCapRefusal(dbCfg, layers); err != nil {
+		return err
+	}
+
 	// Collect read-side data. All three calls are independent; errors are
 	// fail-loud (not silently defaulted to empty).
 	baseline, err := capability.GetUsageBaseline(ctx, scope, engineCfg.LookbackDays, engineCfg.BaselinePercentile)
@@ -371,7 +376,7 @@ func (app *Application) executeLadderRun(
 	// network I/O.
 	in := &ladderRunPlanner{
 		dbCfg: dbCfg, engineCfg: engineCfg, baseline: baseline, layerStates: layerStates, rates: rates,
-		layers: capability.SupportedLayers(), term: term, paymentOpt: paymentOpt, now: now, missing: missing,
+		layers: layers, term: term, paymentOpt: paymentOpt, now: now, missing: missing,
 	}
 	savedRun, err := app.Config.PlanAndSaveLadderRun(ctx, dbCfg.ID, now, in.build)
 	if err != nil {
