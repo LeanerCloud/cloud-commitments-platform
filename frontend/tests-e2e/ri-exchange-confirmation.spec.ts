@@ -64,7 +64,9 @@ async function setup(page: Page) {
         history.status = 'completed';
         exchanged = true;
       }
-      await route.fulfill({ status: failed ? 500 : 200, json: failed ? { error: 'exchange refused' } : { exchange_id: 'synthetic-exchange', quote } });
+      // The approve endpoint executes, then replies with its status body (#1050).
+      const ok = end === 'execute' ? { exchange_id: 'synthetic-exchange', quote } : { status: 'completed', exchange_id: 'synthetic-exchange' };
+      await route.fulfill({ status: failed ? 500 : 200, json: failed ? { error: 'exchange refused' } : ok });
       return;
     }
     const responses: Record<string, unknown> = {
@@ -152,6 +154,7 @@ for (const action of ['Execute', 'Approve']) {
       if (action === 'Approve') {
         expect(state.requests[0]).toEqual({ path: `/api/ri-exchange/approve/${state.history.id}`, body: null });
         await expect(page.locator('#ri-exchange-history-list')).toContainText('Completed');
+        await expect(page.getByText('RI exchange approved and executed.')).toBeVisible();
       }
       expect(state.errors).toEqual([]);
     });
