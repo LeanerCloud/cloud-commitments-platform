@@ -50,6 +50,8 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		fmt.Errorf("%w: 2 selected recommendation(s) target 2 cloud accounts (a, b); submit one purchase per account", errAmbiguousAccountScope).Error(),
 		fmt.Errorf("%w: 1 selected recommendation(s) carry no cloud_account_id while 2 target account a", errAmbiguousAccountScope).Error(),
 		"purchase was not successful",
+		skippedAccountRetryNote,
+		skippedAccountNoRetryNote,
 		redshiftConflictRefusal,
 		redshiftHorizonRefusal,
 		redshiftNoStampRefusal,

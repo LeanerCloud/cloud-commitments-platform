@@ -31,6 +31,8 @@ var serverNotePatterns = []string{
 	`target already met: target \d+, committed \d+(?:; ` + skippedNotePattern + `)?; \d+ failed row\(s\) of unknown outcome counted as committed`,
 	`selected recommendations do not resolve to a single cloud account: (?:\d+ selected recommendation\(s\) target \d+ cloud accounts \(` + idListPattern + `\); submit one purchase per account|\d+ selected recommendation\(s\) carry no cloud_account_id while \d+ target account ` + idPattern + `)`,
 	`purchase was not successful`,
+	regexp.QuoteMeta(skippedAccountRetryNote),
+	regexp.QuoteMeta(skippedAccountNoRetryNote),
 	regexp.QuoteMeta(redshiftConflictRefusal),
 	regexp.QuoteMeta(redshiftHorizonRefusal),
 	regexp.QuoteMeta(redshiftNoStampRefusal),
