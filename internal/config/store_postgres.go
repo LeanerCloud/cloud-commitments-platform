@@ -3359,6 +3359,9 @@ func (s *PostgresStore) ReserveRIExchange(ctx context.Context, record *RIExchang
 		if reserveErr != nil {
 			return reserveErr
 		}
+		if guardErr := refuseRIExchangeSourceInFlight(ctx, tx, nil, record.SourceRIIDs); guardErr != nil {
+			return guardErr
+		}
 		candidate.PaymentDue = ceiling
 		return saveRIExchangeRecord(ctx, tx, &candidate)
 	})
@@ -3388,9 +3391,10 @@ func (s *PostgresStore) ReserveApprovedRIExchange(ctx context.Context, id, daily
 	var ceiling string
 	err = s.WithTx(ctx, func(tx pgx.Tx) error {
 		var initialText string
+		var sources []string
 		scanErr := tx.QueryRow(ctx,
-			`SELECT payment_due::text FROM ri_exchange_history WHERE id = $1 AND status = 'processing' FOR UPDATE`, id,
-		).Scan(&initialText)
+			`SELECT payment_due::text, source_ri_ids FROM ri_exchange_history WHERE id = $1 AND status = 'processing' FOR UPDATE`, id,
+		).Scan(&initialText, &sources)
 		if errors.Is(scanErr, pgx.ErrNoRows) {
 			return fmt.Errorf("ri exchange %s is not processing", id)
 		}
@@ -3406,6 +3410,9 @@ func (s *PostgresStore) ReserveApprovedRIExchange(ctx context.Context, id, daily
 		if reserveErr != nil {
 			return reserveErr
 		}
+		if guardErr := refuseRIExchangeSourceInFlight(ctx, tx, &id, sources); guardErr != nil {
+			return guardErr
+		}
 		_, updErr := tx.Exec(ctx,
 			`UPDATE ri_exchange_history SET payment_due = $2::numeric, updated_at = NOW() WHERE id = $1`, id, ceiling)
 		if updErr != nil {
@@ -3417,6 +3424,40 @@ func (s *PostgresStore) ReserveApprovedRIExchange(ctx context.Context, id, daily
 		return "", err
 	}
 	return ceiling, nil
+}
+
+// ErrRIExchangeSourceInFlight marks a reservation refused because another
+// exchange still holds one of its source RIs in processing, so that exchange
+// may already have happened at AWS (issue #1050).
+var ErrRIExchangeSourceInFlight = errors.New("RI exchange source RI is held by an exchange in progress")
+
+// refuseRIExchangeSourceInFlight refuses when another processing row shares a
+// source RI. It must run under the daily-spend advisory lock that
+// reserveRIExchangeCeiling takes, so two reservations cannot both pass.
+// excludeID is the approving row itself. The error names only the shared RIs,
+// which the caller already holds; the blocking row's id goes only to the log,
+// because other users' exchanges are not revealed (#1428).
+func refuseRIExchangeSourceInFlight(ctx context.Context, tx pgx.Tx, excludeID *string, sources []string) error {
+	if len(sources) == 0 {
+		return nil
+	}
+	var blocker string
+	var shared []string
+	err := tx.QueryRow(ctx, `
+		SELECT id::text, ARRAY(SELECT unnest(source_ri_ids) INTERSECT SELECT unnest($1::text[]) ORDER BY 1)
+		FROM ri_exchange_history
+		WHERE status = 'processing' AND source_ri_ids && $1::text[] AND ($2::uuid IS NULL OR id <> $2::uuid)
+		ORDER BY created_at, id
+		LIMIT 1`, sources, excludeID).Scan(&blocker, &shared)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		logging.Errorf("RI exchange reservation: source RI check failed: %v", err)
+		return errors.New("failed to check RI exchange source RIs in progress")
+	}
+	logging.Warnf("RI exchange reservation refused: source RI(s) %v are held by processing exchange %s", shared, blocker)
+	return fmt.Errorf("%w: source RI(s) %s already have an exchange in progress; resolve that exchange first", ErrRIExchangeSourceInFlight, strings.Join(shared, ", "))
 }
 
 // ErrRIExchangeDailyCapExceeded marks a reservation refused because the
@@ -3724,6 +3765,21 @@ func (s *PostgresStore) FailRIExchange(ctx context.Context, id, errorMsg string)
 		return fmt.Errorf("ri exchange record not found: %s", id)
 	}
 
+	return nil
+}
+
+// NoteRIExchangeOutcomeUnknown records why a processing exchange was left
+// processing: AWS may have accepted it (#1050). It touches only a row that is
+// still processing, so it never rewrites a settled one.
+func (s *PostgresStore) NoteRIExchangeOutcomeUnknown(ctx context.Context, id, note string) error {
+	result, err := s.db.Exec(ctx,
+		`UPDATE ri_exchange_history SET error = $2, updated_at = NOW() WHERE id = $1 AND status = 'processing'`, id, note)
+	if err != nil {
+		return fmt.Errorf("failed to note ri exchange outcome unknown: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("ri exchange %s is not processing", id)
+	}
 	return nil
 }
 

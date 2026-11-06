@@ -1274,6 +1274,12 @@ func (m *MockConfigStore) FailRIExchange(ctx context.Context, id, errorMsg strin
 	return args.Error(0)
 }
 
+func (m *MockConfigStore) NoteRIExchangeOutcomeUnknown(ctx context.Context, id, note string) error {
+	m.record("NoteRIExchangeOutcomeUnknown", ctx, id, note)
+	args := m.Called(ctx, id, note)
+	return args.Error(0)
+}
+
 func (m *MockConfigStore) GetRIExchangeDailySpend(ctx context.Context, date time.Time) (string, error) {
 	m.record("GetRIExchangeDailySpend", ctx, date)
 	args := m.Called(ctx, date)
