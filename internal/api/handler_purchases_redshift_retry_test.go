@@ -20,18 +20,18 @@ func redshiftFailedRow(attempt int, noSubmission bool) *config.PurchaseExecution
 	return failed
 }
 
-func gateWithClock(t *testing.T, failed *config.PurchaseExecution, clock config.RedshiftRetryClock) (*Handler, *MockConfigStore) {
+func gateWithClock(t *testing.T, failed *config.PurchaseExecution, clock config.RedshiftRetryClock) *Handler {
 	t.Helper()
 	store := new(MockConfigStore)
 	store.On("GetRedshiftRetryClock", mock.Anything, failed.ExecutionID).Return(clock, nil)
-	return &Handler{config: store}, store
+	return &Handler{config: store}
 }
 
 func ageOf(d time.Duration) *time.Duration { return &d }
 
 func TestCheckRedshiftRetryGate_LegacyStamplessPermanent(t *testing.T) {
 	failed := redshiftFailedRow(1, false)
-	h, _ := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: time.Hour})
+	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: time.Hour})
 
 	err := h.checkRedshiftRetryGate(context.Background(), failed)
 
@@ -42,7 +42,7 @@ func TestCheckRedshiftRetryGate_LegacyStamplessPermanent(t *testing.T) {
 
 func TestCheckRedshiftRetryGate_PastHorizonPermanent(t *testing.T) {
 	failed := redshiftFailedRow(1, false)
-	h, _ := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: time.Hour, SinceStamp: ageOf(24 * time.Hour)})
+	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: time.Hour, SinceStamp: ageOf(24 * time.Hour)})
 
 	assertRedriveRefused(t, h.checkRedshiftRetryGate(context.Background(), failed), "at least 24h ago")
 }
@@ -50,7 +50,7 @@ func TestCheckRedshiftRetryGate_PastHorizonPermanent(t *testing.T) {
 func TestCheckRedshiftRetryGate_InsideSettleRetryAfter(t *testing.T) {
 	failed := redshiftFailedRow(1, false)
 	// 9m59.5s since update leaves 500ms to wait, which must round up to 1s.
-	h, _ := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: 10*time.Minute - 500*time.Millisecond, SinceStamp: ageOf(time.Hour)})
+	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: 10*time.Minute - 500*time.Millisecond, SinceStamp: ageOf(time.Hour)})
 
 	err := h.checkRedshiftRetryGate(context.Background(), failed)
 
@@ -64,14 +64,14 @@ func TestCheckRedshiftRetryGate_InsideSettleRetryAfter(t *testing.T) {
 
 func TestCheckRedshiftRetryGate_AfterSettleAllowed(t *testing.T) {
 	failed := redshiftFailedRow(1, false)
-	h, _ := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: 10 * time.Minute, SinceStamp: ageOf(time.Hour)})
+	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: 10 * time.Minute, SinceStamp: ageOf(time.Hour)})
 
 	assert.NoError(t, h.checkRedshiftRetryGate(context.Background(), failed))
 }
 
 func TestCheckRedshiftRetryGate_NoSubmissionAttempt0Skipped(t *testing.T) {
 	failed := redshiftFailedRow(0, true)
-	h, _ := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: 0, SinceStamp: nil})
+	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: 0, SinceStamp: nil})
 
 	assert.NoError(t, h.checkRedshiftRetryGate(context.Background(), failed))
 }
