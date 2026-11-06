@@ -1,6 +1,6 @@
 jest.mock('../api/client', () => ({ apiRequest: jest.fn() }));
 
-import { getLadderEvents, type LadderEvent } from '../api/ladder';
+import { getLadderEvents, getLadderRuns, type LadderEvent, type LadderRun } from '../api/ladder';
 import { apiRequest } from '../api/client';
 
 beforeEach(() => jest.resetAllMocks());
@@ -30,4 +30,14 @@ test('OD cross-check compares the displayed od_usd_hr values and tolerates a pre
   const { od_usd_hr: _od, amount_basis: _basis, commitment_rate: _rate, ...legacy } = base;
   jest.mocked(apiRequest).mockResolvedValueOnce({ total_count: 1, total_usd_hr: '5.000000', events: [legacy] });
   expect(await getLadderEvents('account', 'aws')).toHaveLength(1);
+});
+
+// #1792: legacy rows say "cancelled", new ones "canceled"; the loader returns one spelling.
+test('loaders normalize both stored spellings of canceled', async () => {
+  const event: LadderEvent = { id: 'old', config_id: 'config', run_id: 'run', layer_type: 'compute-sp', term: '1yr', payment_option: 'no-upfront', status: 'cancelled', run_status: 'cancelled', revision: 0, amount_usd_hr: '1.000000', scheduled_date: '2030-01-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z' };
+  jest.mocked(apiRequest).mockResolvedValueOnce({ total_count: 3, total_usd_hr: '3.000000', events: [event, { ...event, id: 'new', status: 'canceled', run_status: 'canceled' }, { ...event, id: 'live', status: 'scheduled', run_status: 'planned' }] });
+  expect((await getLadderEvents('account', 'aws')).map(e => [e.status, e.run_status])).toEqual([['canceled', 'canceled'], ['canceled', 'canceled'], ['scheduled', 'planned']]);
+  const run = { id: 'r1', config_id: 'config', status: 'cancelled', started_at: '2026-01-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z', baseline_usd_hr: null, target_usd_hr: null, existing_usd_hr: null, actions: [] } as unknown as LadderRun;
+  jest.mocked(apiRequest).mockResolvedValueOnce({ total_count: 2, runs: [run, { ...run, id: 'r2', status: 'executing' }] });
+  expect((await getLadderRuns('account', 'aws')).map(r => r.status)).toEqual(['canceled', 'executing']);
 });

@@ -9337,10 +9337,12 @@ components:
           enum: [all-upfront, partial-upfront, no-upfront]
         status:
           type: string
-          enum: [scheduled, fired, completed, cancelled, failed]
+          description: New rows write "canceled"; rows written before cloud-commitments-go#554 keep "cancelled".
+          enum: [scheduled, fired, completed, canceled, cancelled, failed]
         run_status:
           type: string
-          enum: [planned, awaiting_approval, approved, executing, completed, failed, cancelled, expired]
+          description: New rows write "canceled"; rows written before cloud-commitments-go#554 keep "cancelled".
+          enum: [planned, awaiting_approval, approved, executing, completed, failed, canceled, cancelled, expired]
         execution_id:
           type: string
           description: Omitted until the tranche has an execution.
@@ -9393,7 +9395,8 @@ components:
           format: uuid
         status:
           type: string
-          enum: [planned, awaiting_approval, approved, executing, completed, failed, cancelled, expired]
+          description: New rows write "canceled"; rows written before cloud-commitments-go#554 keep "cancelled".
+          enum: [planned, awaiting_approval, approved, executing, completed, failed, canceled, cancelled, expired]
         started_at:
           type: string
           format: date-time

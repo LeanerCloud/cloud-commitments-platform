@@ -30,7 +30,7 @@ func ladderGraceCutoff(asOf time.Time) time.Time {
 // unknown stays fired (and keeps netting) until it is resolved to completed or
 // failed.
 var ladderTrancheEdges = map[ladder.TrancheStatus][]ladder.TrancheStatus{
-	ladder.TrancheStatusScheduled: {ladder.TrancheStatusFired, ladder.TrancheStatusCancelled},
+	ladder.TrancheStatusScheduled: {ladder.TrancheStatusFired, ladder.TrancheStatusCanceled},
 	ladder.TrancheStatusFired:     {ladder.TrancheStatusCompleted, ladder.TrancheStatusFailed},
 }
 
@@ -70,7 +70,7 @@ func (s *PostgresStore) TransitionLadderTrancheTx(ctx context.Context, tx pgx.Tx
 	if from == ladder.TrancheStatusScheduled && to == ladder.TrancheStatusFired {
 		return false, fmt.Errorf("ladder tranche %s: scheduled -> fired must go through ClaimDueLadderTranches", id)
 	}
-	if reason == "" && (to == ladder.TrancheStatusFailed || to == ladder.TrancheStatusCancelled) {
+	if reason == "" && (to == ladder.TrancheStatusFailed || to == ladder.TrancheStatusCanceled) {
 		return false, fmt.Errorf("ladder tranche %s: a %s transition needs a status reason", id, to)
 	}
 	tag, err := tx.Exec(ctx, `
