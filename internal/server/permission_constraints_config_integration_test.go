@@ -42,7 +42,7 @@ func TestConfigPermissionConstraintsHTTP(t *testing.T) {
 	initial, err := store.GetGlobalConfig(ctx)
 	require.NoError(t, err)
 	initial.LadderingEnabled, initial.RIExchangeEnabled, initial.RIExchangeMode = false, false, "manual"
-	ladderBody := fmt.Sprintf(`{"cloud_account_id":%q,"provider":"aws","enabled":true,"mode":"email_approval","cadence":"daily","ramp_schedule":{"steps":[{"after_days":0,"fraction":1}]}}`, accounts[0])
+	ladderBody := fmt.Sprintf(`{"cloud_account_id":%q,"provider":"aws","enabled":true,"mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,"ramp_schedule":{"steps":[{"after_days":0,"fraction":1}]}}`, accounts[0])
 	for _, route := range []struct{ name, path, body string }{
 		{"ladder", "/api/ladder/configs", ladderBody},
 		{"global", "/api/config", `{"laddering_enabled":true}`},

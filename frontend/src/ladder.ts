@@ -26,6 +26,7 @@ import { listAccountsMinimal, type AccountSummary } from './api/accounts';
 import { readLadderNumbers } from './ladder-form-numbers';
 import { initRampEditor, rampScheduleProblem, showRampJsonError } from './ladder-ramp-editor';
 import { DEFAULT_RAMP_STEPS, formatRampJson } from './ladder-ramp-schedule';
+import { showFieldError, clearFieldErrors } from './lib/field-errors';
 import { showSkeletonRows, teardownSkeleton } from './lib/skeleton';
 
 // ==========================================
@@ -231,6 +232,7 @@ function openLadderConfigModal(existing?: api.LadderConfig): void {
   if (form) {
     const newForm = form.cloneNode(true) as HTMLElement;
     form.replaceWith(newForm);
+    clearFieldErrors(newForm);
     newForm.addEventListener('submit', (e) => {
       e.preventDefault();
       saveLadderConfig();
@@ -278,10 +280,11 @@ export async function saveLadderConfig(): Promise<void> {
     return;
   }
 
-  const maxHourlyRaw = (document.getElementById('ladder-cfg-max-hourly') as HTMLInputElement | null)?.value?.trim() ?? '';
+  const maxHourlyField = document.getElementById('ladder-cfg-max-hourly') as HTMLInputElement | null;
+  const maxHourlyRaw = maxHourlyField?.value?.trim() ?? '';
   const maxHourly: number | null = maxHourlyRaw === '' ? null : Number(maxHourlyRaw);
   if (maxHourlyRaw !== '' && (!Number.isFinite(maxHourly) || (maxHourly as number) <= 0)) {
-    showToast({ message: 'Max hourly commit must be a positive number (or blank for no cap).', kind: 'error' });
+    showToast({ message: 'Max hourly commit must be a positive number.', kind: 'error' });
     return;
   }
 
@@ -309,6 +312,14 @@ export async function saveLadderConfig(): Promise<void> {
   if (!numbers.ok) {
     showToast({ message: numbers.message, kind: 'error' });
     numbers.field?.focus();
+    return;
+  }
+
+  // The backend refuses an AWS config without a cap (#1815); say so here too.
+  if (maxHourlyRaw === '' && identity.provider === 'aws' && maxHourlyField) {
+    showFieldError(maxHourlyField, 'max_hourly_commit_per_run is required for AWS. Enter a positive $/hr cap.');
+    showToast({ message: 'Max hourly commit is required for an AWS ladder config.', kind: 'error' });
+    maxHourlyField.focus();
     return;
   }
 

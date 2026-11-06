@@ -36,14 +36,19 @@ func lgBody(enabled bool, mode, capJSON string) string {
 
 func lgCall(t *testing.T, caller apgCaller, stored *config.LadderConfigDB, body string) (*MockConfigStore, error) {
 	t.Helper()
+	return lgCallFor(t, "aws", caller, stored, body)
+}
+
+func lgCallFor(t *testing.T, provider string, caller apgCaller, stored *config.LadderConfigDB, body string) (*MockConfigStore, error) {
+	t.Helper()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	// Maybe: a body that fails validation is refused before the stored config
 	// is read; callers assert the outcome through the error and the upsert.
-	store.On("GetLadderConfig", mock.Anything, lgAcct, "aws").Return(stored, nil).Maybe()
+	store.On("GetLadderConfig", mock.Anything, lgAcct, provider).Return(stored, nil).Maybe()
 	store.On("UpsertLadderConfig", mock.Anything, mock.Anything).Return(&config.LadderConfigDB{ID: "cfg-1"}, nil).Maybe()
 	store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
-		return &config.CloudAccount{ID: id, Provider: "aws"}, nil
+		return &config.CloudAccount{ID: id, Provider: provider}, nil
 	}
 	h, req := caller.handlerAndReq(store, body)
 	_, err := h.upsertLadderConfig(context.Background(), req)
@@ -68,7 +73,7 @@ func TestLadderArmingGate_ConfigWrites(t *testing.T) {
 		{"create armed: admin API key refused", key, nil, lgBody(true, auto, "1"), true},
 		{"create armed: execute:purchases allowed", granted, nil, lgBody(true, auto, "1"), false},
 		{"create disabled auto: admin allowed", admin, nil, lgBody(false, auto, "1"), false},
-		{"create enabled email_approval: admin allowed", admin, nil, lgBody(true, email, ""), false},
+		{"create enabled email_approval: admin allowed", admin, nil, lgBody(true, email, "1"), false},
 		{"enable a disabled auto config: admin refused", admin, lgStored(false, auto, cap1), lgBody(true, auto, "1"), true},
 		{"enable a disabled auto config: admin API key refused", key, lgStored(false, auto, cap1), lgBody(true, auto, "1"), true},
 		{"email_approval to auto: admin refused", admin, lgStored(true, email, cap1), lgBody(true, auto, "1"), true},
@@ -77,13 +82,10 @@ func TestLadderArmingGate_ConfigWrites(t *testing.T) {
 		{"raise cap: admin API key refused", key, lgStored(true, auto, cap1), lgBody(true, auto, "2"), true},
 		{"raise cap: execute:purchases allowed", granted, lgStored(true, auto, cap1), lgBody(true, auto, "2"), false},
 		{"raise by one micro: admin refused", admin, lgStored(true, auto, cap1), lgBody(true, auto, "1.000001"), true},
-		{"clear cap: admin refused", admin, lgStored(true, auto, cap1), lgBody(true, auto, ""), true},
-		{"clear cap: admin API key refused", key, lgStored(true, auto, cap1), lgBody(true, auto, ""), true},
 		{"same cap: admin allowed", admin, lgStored(true, auto, cap1), lgBody(true, auto, "1"), false},
 		{"same cap 0.3 (binary-float trap): admin allowed", admin, lgStored(true, auto, cap03), lgBody(true, auto, "0.30"), false},
 		{"lower cap: admin API key allowed", key, lgStored(true, auto, cap1), lgBody(true, auto, "0.5"), false},
 		{"set a cap on an uncapped armed config: admin API key allowed", key, lgStored(true, auto, nil), lgBody(true, auto, "5"), false},
-		{"uncapped stays uncapped: admin allowed", admin, lgStored(true, auto, nil), lgBody(true, auto, ""), false},
 		{"disarm (disable): admin API key allowed", key, lgStored(true, auto, cap1), lgBody(false, auto, "1"), false},
 		{"switch to email_approval: admin API key allowed", key, lgStored(true, auto, cap1), lgBody(true, email, "1"), false},
 		{"raise cap while disabled: admin allowed", admin, lgStored(false, auto, cap1), lgBody(false, auto, "9"), false},
@@ -112,6 +114,57 @@ func TestLadderArmingGate_ConfigLookupErrorFailsClosed(t *testing.T) {
 	h, req := apgCaller{perms: apgAdminPlus}.handlerAndReq(store, lgBody(true, "auto_approve", "1"))
 	_, err := h.upsertLadderConfig(context.Background(), req)
 	require.Error(t, err)
+	assert.False(t, apgCalled(store, "UpsertLadderConfig"))
+}
+
+// Clearing or omitting the cap is still legal for non-AWS providers, so the
+// gate's clear-cap rules stay pinned here with gcp (the gate is
+// provider-agnostic). AWS can no longer reach them (#1815).
+func TestLadderArmingGate_ClearCapNonAWS(t *testing.T) {
+	admin := apgCaller{perms: apgAdminOnly}
+	key := apgCaller{key: true}
+	cap1 := apgCap(1)
+	gcpStored := func(c *float64) *config.LadderConfigDB {
+		s := lgStored(true, "auto_approve", c)
+		s.Provider = "gcp"
+		return s
+	}
+	gcpBody := func() string {
+		return fmt.Sprintf(`{"cloud_account_id":"%s","provider":"gcp","enabled":true,"mode":"auto_approve","cadence":"daily",%s}`, lgAcct, ladderValidRamp)
+	}
+	tests := []struct {
+		name        string
+		caller      apgCaller
+		stored      *config.LadderConfigDB
+		wantRefused bool
+	}{
+		{"clear cap: admin refused", admin, gcpStored(cap1), true},
+		{"clear cap: admin API key refused", key, gcpStored(cap1), true},
+		{"uncapped stays uncapped: admin allowed", admin, gcpStored(nil), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := lgCallFor(t, "gcp", tc.caller, tc.stored, gcpBody())
+			if tc.wantRefused {
+				apgRefused(t, err)
+				assert.False(t, apgCalled(store, "UpsertLadderConfig"))
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, apgCalled(store, "UpsertLadderConfig"))
+		})
+	}
+}
+
+// Clearing the cap on an AWS config is now a 400 at validation (#1815), before
+// the arming gate is consulted, so it can no longer be a 403 case above.
+func TestLadderArmingGate_ClearingAWSCapIsValidationError(t *testing.T) {
+	store, err := lgCall(t, apgCaller{perms: apgAdminPlus}, lgStored(true, "auto_approve", apgCap(1)), lgBody(true, "auto_approve", ""))
+	require.Error(t, err)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "%v", err)
+	assert.Equal(t, 400, ce.code)
+	assert.Contains(t, ce.message, "max_hourly_commit_per_run")
 	assert.False(t, apgCalled(store, "UpsertLadderConfig"))
 }
 

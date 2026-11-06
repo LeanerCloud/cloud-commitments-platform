@@ -51,7 +51,7 @@ func TestConfigInfrastructureKeyHTTP(t *testing.T) {
 	initial.LadderingEnabled, initial.RIExchangeEnabled, initial.RIExchangeMode = false, false, "manual"
 	require.NoError(t, store.SaveGlobalConfig(ctx, initial))
 	for _, route := range []struct{ path, body string }{
-		{"/api/ladder/configs", fmt.Sprintf(`{"cloud_account_id":%q,"provider":"aws","enabled":true,"mode":"email_approval","cadence":"daily","ramp_schedule":{"steps":[{"after_days":0,"fraction":1}]}}`, account)},
+		{"/api/ladder/configs", fmt.Sprintf(`{"cloud_account_id":%q,"provider":"aws","enabled":true,"mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,"ramp_schedule":{"steps":[{"after_days":0,"fraction":1}]}}`, account)},
 		{"/api/config", `{"laddering_enabled":true}`},
 		{"/api/ri-exchange/config", `{"auto_exchange_enabled":true,"mode":"manual","utilization_threshold":50,"lookback_days":30}`},
 	} {

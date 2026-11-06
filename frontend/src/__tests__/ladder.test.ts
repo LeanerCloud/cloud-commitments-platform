@@ -50,7 +50,7 @@ function baseConfig(overrides: Partial<LadderConfig> = {}): LadderConfig {
     baseline_percentile: 5,
     lookback_days: 30,
     buffer_utilization_threshold: 90,
-    max_hourly_commit_per_run: null,
+    max_hourly_commit_per_run: 5,
     max_actions_per_run: 10,
     ramp_schedule: { steps: [{ after_days: 0, fraction: 1.0 }] },
     updated_at: '2026-01-15T10:00:00Z',
@@ -281,9 +281,32 @@ describe('ladder.ts', () => {
       (document.getElementById('ladder-cfg-max-hourly') as HTMLInputElement).value = maxHourly;
     }
 
-    test('blank max-hourly serializes to null in the payload', async () => {
+    test('blank max-hourly on an AWS config is blocked with an inline error naming the field', async () => {
       await primeValidForm('');
-      (api.upsertLadderConfig as jest.Mock).mockResolvedValue(baseConfig());
+
+      await saveLadderConfig();
+
+      expect(api.upsertLadderConfig).not.toHaveBeenCalled();
+      const field = document.getElementById('ladder-cfg-max-hourly') as HTMLInputElement;
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      const noteId = field.dataset['fieldErrorId']!;
+      expect(document.getElementById(noteId)).toHaveTextContent('max_hourly_commit_per_run is required');
+      expect(document.activeElement).toBe(field);
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+
+      field.value = '5';
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(document.getElementById(noteId)).toBeNull();
+      expect(field).not.toHaveAttribute('aria-invalid');
+    });
+
+    test('blank max-hourly on a non-AWS config still serializes to null', async () => {
+      await primeValidForm('');
+      const provider = document.getElementById('ladder-cfg-provider') as HTMLSelectElement;
+      provider.value = 'gcp';
+      provider.dispatchEvent(new Event('change'));
+      (document.getElementById('ladder-cfg-account') as HTMLSelectElement).value = 'gcp-id';
+      (api.upsertLadderConfig as jest.Mock).mockResolvedValue(baseConfig({ provider: 'gcp' }));
 
       await saveLadderConfig();
 
@@ -359,6 +382,7 @@ describe('ladder.ts', () => {
       (document.getElementById('ladder-cfg-account') as HTMLSelectElement).value = 'acct-1';
       (document.getElementById('ladder-cfg-ramp-schedule') as HTMLTextAreaElement).value =
         '{"steps":[{"after_days":0,"fraction":1.0}]}';
+      (document.getElementById('ladder-cfg-max-hourly') as HTMLInputElement).value = '5';
     }
 
     test('a cleared Buffer Fraction blocks the save instead of sending 0 (no buffer)', async () => {
@@ -561,6 +585,7 @@ describe('ladder.ts', () => {
       document.getElementById('ladder-add-config-btn')!.click();
       await waitFor(() => expect(document.getElementById('ladder-cfg-account')).toBeEnabled());
       (document.getElementById('ladder-cfg-account') as HTMLSelectElement).value = 'acct-1';
+      (document.getElementById('ladder-cfg-max-hourly') as HTMLInputElement).value = '5';
       (api.upsertLadderConfig as jest.Mock).mockImplementation(async (cfg: LadderConfig) => cfg);
     }
 
@@ -570,6 +595,18 @@ describe('ladder.ts', () => {
       expect(cell).toHaveTextContent('AWS account (aws-external)');
       expect(cell).toHaveAttribute('title', 'acct-1');
       expect(document.querySelector('#ladder-configs-table-container th')).toHaveTextContent('Account');
+    });
+
+    test('an uncapped AWS config shows why runs are refused; capped and non-AWS configs do not', async () => {
+      await renderSection([
+        baseConfig({ cloud_account_id: 'acct-1', max_hourly_commit_per_run: null }),
+        baseConfig({ cloud_account_id: 'azure-id', provider: 'azure', max_hourly_commit_per_run: null }),
+        baseConfig({ cloud_account_id: 'capped', max_hourly_commit_per_run: 5 }),
+      ]);
+      const notices = document.querySelectorAll('#ladder-configs-table-container .ladder-uncapped-notice');
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toHaveTextContent('AWS account (aws-external)');
+      expect(notices[0]).toHaveTextContent('Ladder runs are refused until max_hourly_commit_per_run is set.');
     });
 
     test('table falls back to the stored ID when the account list fails', async () => {

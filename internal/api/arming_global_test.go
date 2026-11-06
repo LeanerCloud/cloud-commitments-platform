@@ -104,7 +104,7 @@ func TestPerAccountArming_ConstrainedExecuteStillWorks(t *testing.T) {
 	})
 	t.Run("ladder config write without arming", func(t *testing.T) {
 		caller := apgCaller{perms: []auth.Permission{{Action: auth.ActionUpdate, Resource: auth.ResourceConfig, Constraints: acctScoped}}}
-		store, err := lgCall(t, caller, nil, lgBody(false, "email_approval", ""))
+		store, err := lgCall(t, caller, nil, lgBody(false, "email_approval", "5"))
 		require.NoError(t, err)
 		assert.True(t, apgCalled(store, "UpsertLadderConfig"))
 	})

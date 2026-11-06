@@ -113,8 +113,8 @@ export function renderLadderConfigModal(): string {
         <div class="ladder-field">
           <label for="ladder-cfg-max-hourly">Max Hourly Commit Per Run ($/hr)</label>
           <input type="number" id="ladder-cfg-max-hourly" aria-describedby="ladder-cfg-max-hourly-hint"
-                 placeholder="No cap" min="0.000001" step="any">
-          <span id="ladder-cfg-max-hourly-hint" class="form-hint">Leave blank for no cap</span>
+                 placeholder="Required for AWS" min="0.000001" step="any">
+          <span id="ladder-cfg-max-hourly-hint" class="form-hint">Required for AWS. Other providers: leave blank for no cap</span>
         </div>
 
         <div class="ladder-field">

@@ -29,7 +29,7 @@ function config(ramp: unknown): LadderConfig {
     id: 'config-1', cloud_account_id: 'acct-1', provider: 'aws', enabled: false,
     mode: 'email_approval', cadence: 'daily', target_coverage: 100, buffer_fraction: 0.1,
     baseline_percentile: 5, lookback_days: 30, buffer_utilization_threshold: 90,
-    max_hourly_commit_per_run: null, max_actions_per_run: 10,
+    max_hourly_commit_per_run: 5, max_actions_per_run: 10,
     ramp_schedule: ramp as LadderConfig['ramp_schedule'],
   };
 }
@@ -63,6 +63,7 @@ async function openNew(): Promise<void> {
   $('ladder-add-config-btn').click();
   await waitFor(() => expect($('ladder-cfg-account')).toBeEnabled());
   $<HTMLSelectElement>('ladder-cfg-account').value = 'acct-1';
+  $<HTMLInputElement>('ladder-cfg-max-hourly').value = '5';
 }
 
 const sentRamp = (): unknown => ((api.upsertLadderConfig as jest.Mock).mock.calls[0][0] as LadderConfig).ramp_schedule;
