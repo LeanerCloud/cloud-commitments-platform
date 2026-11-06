@@ -384,14 +384,29 @@ func newAccountExecution(baseExec *config.PurchaseExecution, accountID string) c
 	return acctExec
 }
 
+// Skip-row notes, shared with the stored-error allowlist (errnotes.go).
+const (
+	skippedAccountRetryNote   = "the run ended before this account's purchase started, so nothing was submitted; retry it to buy it"
+	skippedAccountNoRetryNote = "the run ended before this account's purchase started, so nothing was submitted; this purchase type cannot be retried automatically, so start a new purchase for this account if it is still wanted"
+)
+
+// skippedAccountNote words the skip row by whether Retry accepts it:
+// RedriveRefusalReason refuses EC2, Redshift and Azure savings plans whatever
+// NoSubmission says, so those rows point at a new purchase instead.
+func skippedAccountNote(row *config.PurchaseExecution) string {
+	if RedriveRefusalReason(row) != "" {
+		return skippedAccountNoRetryNote
+	}
+	return skippedAccountRetryNote
+}
+
 // recordSkippedAccounts writes a failed row for each account the fan-out
 // skipped before executeForAccount ran (the run context ended first), so the
 // acked partial run does not silently drop its purchases (issue #1672).
-// Nothing was submitted for it, so the row carries NoSubmission and the
-// ordinary retry can re-run it. Only the acked partial path calls this: a flat
-// failure is redelivered and re-runs these accounts under their stable keys,
-// where a failed row would invite a second, undeduped retry beside it. The
-// context has ended, so the saves run detached. It returns the save failures.
+// Nothing was submitted for it, so the row carries NoSubmission. Only the
+// acked partial path calls this: a flat failure finalizes the root as failed,
+// and a root Retry re-runs every account. The context has ended, so the saves
+// run detached. It returns the save failures.
 func (m *Manager) recordSkippedAccounts(ctx context.Context, scoped map[string]*config.PurchaseExecution, results []execution.Result[bool], started *sync.Map) []string {
 	var lost []string
 	for _, r := range results {
@@ -404,7 +419,8 @@ func (m *Manager) recordSkippedAccounts(ctx context.Context, scoped map[string]*
 		row := newAccountExecution(scoped[r.AccountID], r.AccountID)
 		row.Status = "failed"
 		row.NoSubmission = true
-		row.Error = fmt.Sprintf("the run ended before account %s started, so nothing was submitted for it; retry to buy it: %v", r.AccountID, r.Err)
+		row.Error = skippedAccountNote(&row)
+		logging.Warnf("execution %s: account %s skipped before it started: %v", row.ExecutionID, r.AccountID, r.Err)
 		saveCtx, cancel := ctxutil.DetachedWithTimeout(ctx, m.budgets.terminalSaveTimeout())
 		if err := m.config.SavePurchaseExecution(saveCtx, &row); err != nil {
 			lost = append(lost, fmt.Sprintf("AUDIT LOSS: failed to save the skipped-account record for account %s: %v", r.AccountID, err))

@@ -126,7 +126,7 @@ func TestExecuteMultiAccount_RecordsAccountsSkippedAfterACommit(t *testing.T) {
 		r := rows[0]
 		assert.Equal(t, "failed", r.Status, id)
 		assert.True(t, r.NoSubmission, "%s: the skip proves nothing was submitted", id)
-		assert.Contains(t, r.Error, "nothing was submitted", id)
+		assert.Equal(t, skippedAccountNoRetryNote, r.Error, "%s: Retry refuses EC2, so the row must not promise one", id)
 		assert.Equal(t, "lineage-skip:"+id, r.IdempotencyKey, "%s: the stable per-account key", id)
 		assert.NotEqual(t, "exec-skip", r.ExecutionID, id)
 		require.Len(t, r.Recommendations, 1, "%s: the row keeps only its own account's recs, so a retry buys exactly them", id)
@@ -136,10 +136,27 @@ func TestExecuteMultiAccount_RecordsAccountsSkippedAfterACommit(t *testing.T) {
 	}
 }
 
-// Without a commit the run is a flat failure that is redelivered, which re-runs
-// the skipped accounts under their stable keys. A failed row for them would
-// invite a manual retry beside that re-run (a new approval lineage, so no
-// provider dedupe), so none is written.
+// The skip row promises a retry only where Retry accepts the row.
+func TestSkippedAccountNote_MatchesRetryEligibility(t *testing.T) {
+	cases := []struct {
+		provider, service string
+		want              string
+	}{
+		{"aws", "ec2", skippedAccountNoRetryNote},
+		{"aws", "redshift", skippedAccountNoRetryNote},
+		{"azure", "savingsplans", skippedAccountNoRetryNote},
+		{"aws", "rds", skippedAccountRetryNote},
+		{"gcp", "compute", skippedAccountRetryNote},
+	}
+	for _, c := range cases {
+		row := &config.PurchaseExecution{Recommendations: []config.RecommendationRecord{{Provider: c.provider, Service: c.service}}}
+		assert.Equal(t, c.want, skippedAccountNote(row), c.provider+"/"+c.service)
+		assert.Equal(t, RedriveRefusalReason(row) == "", c.want == skippedAccountRetryNote, c.provider+"/"+c.service)
+	}
+}
+
+// Without a commit the run is a flat failure: the root is finalized failed and
+// a root Retry re-runs every account, so no per-account skip rows are written.
 func TestExecuteMultiAccount_NoSkipRowsWhenNothingCommitted(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
