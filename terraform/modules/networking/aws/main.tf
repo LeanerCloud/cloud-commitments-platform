@@ -230,6 +230,15 @@ resource "aws_network_interface" "fck_nat" {
   })
 }
 
+locals {
+  # Name tag the launch template puts on the instance's primary ENI and the
+  # instance role's DisableSourceDestCheck grant matches on.
+  fck_nat_primary_eni_name = "${var.stack_name}-fck-nat-primary-eni"
+}
+
+data "aws_partition" "current" {}
+data "aws_caller_identity" "current" {}
+
 # Launch template for fck-nat instance
 resource "aws_launch_template" "fck_nat" {
   count = var.enable_nat_gateway ? 1 : 0
@@ -288,6 +297,15 @@ resource "aws_launch_template" "fck_nat" {
     resource_type = "volume"
     tags = merge(var.tags, {
       Name = "${var.stack_name}-fck-nat-volume"
+    })
+  }
+
+  # Tags the instance's primary ENI, whose ID is unknown until boot, so the
+  # instance role can be scoped to it by tag (DisableSourceDestCheck below).
+  tag_specifications {
+    resource_type = "network-interface"
+    tags = merge(var.tags, {
+      Name = local.fck_nat_primary_eni_name
     })
   }
 
@@ -369,12 +387,23 @@ resource "aws_iam_role_policy" "fck_nat_ec2" {
         Resource = [aws_network_interface.fck_nat[0].arn, "arn:aws:ec2:${var.region}:*:instance/*"]
       },
       {
-        # Disable source/destination checking on the instance's own primary
-        # ENI, whose ID is only known at boot.
-        Sid      = "DisableSourceDestCheck"
+        # fck-nat disables source/dest check only on the instance's primary
+        # ENI, resolved from IMDS at boot, so its ID is unknown at plan time and
+        # it is matched by the Name tag the launch template sets on it. The
+        # persistent ENI's check is turned off by Terraform at creation
+        # (source_dest_check = false), so it needs no instance grant.
+        # Upstream AndrewGuenther/fck-nat service/fck-nat.sh modifies
+        # $outbound_eni_id only; the RaJiska module's ManageNetworkInterface
+        # statement is tag-conditioned only.
+        Sid      = "DisableSourceDestCheckPrimaryENI"
         Effect   = "Allow"
         Action   = ["ec2:ModifyNetworkInterfaceAttribute"]
-        Resource = "*"
+        Resource = "arn:${data.aws_partition.current.partition}:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:network-interface/*"
+        Condition = {
+          StringEquals = {
+            "ec2:ResourceTag/Name" = local.fck_nat_primary_eni_name
+          }
+        }
       },
     ]
   })
