@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -148,7 +149,7 @@ func TestIsFanOutOutcome(t *testing.T) {
 	assert.False(t, isFanOutOutcome(fmt.Errorf("%w: wrapped", config.ErrAuditLoss)))
 }
 
-// End to end through the SQS executor: a multi-account run where one account
+// End to end through the scheduled sweep: a multi-account run where one account
 // buys and one fails sends exactly one purchase-failed email, for the failed
 // account's row, and none for the aggregate root row.
 func TestMultiAccountFailureNotifiesOncePerFailedAccountNotRoot(t *testing.T) {
@@ -172,7 +173,8 @@ func TestMultiAccountFailureNotifiesOncePerFailedAccountNotRoot(t *testing.T) {
 	plan := &config.PurchasePlan{ID: "plan-x", Name: "Plan X", AutoPurchase: true, MaxStepCommitment: capOf(1e9)}
 
 	store.On("GetGlobalConfig", mock.Anything).Return(failureNotifyCfg(), nil)
-	store.On("GetExecutionByID", ctx, "root-714").Return(exec, nil)
+	exec.ScheduledDate = time.Now().Add(-time.Minute)
+	expectSweepOf(ctx, store, *exec)
 	running := *exec
 	running.Status = "running"
 	store.On("TransitionExecutionStatus", ctx, "root-714",
@@ -201,7 +203,10 @@ func TestMultiAccountFailureNotifiesOncePerFailedAccountNotRoot(t *testing.T) {
 		Return(common.PurchaseResult{Success: true, CommitmentID: "ri-ok"}, nil).Once()
 
 	m := &Manager{config: store, email: sender, providerFactory: factory, credStore: awsAccessKeyCredStore()}
-	require.NoError(t, m.handleExecutePurchase(ctx, &AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: "root-714"}))
+	result, err := m.ProcessScheduledPurchases(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Executed, "a partial multi-account run counts as executed")
+	require.Equal(t, 0, result.Failed)
 
 	assert.Equal(t, "partially_completed", rootStatus)
 	require.Len(t, failedRows, 1)

@@ -211,7 +211,7 @@ func TestProcessScheduledPurchases_CapNeverTouchesRowsAwaitingApproval(t *testin
 	assert.Equal(t, ProcessResult{}, *result)
 }
 
-// The SQS execute_purchase path shares the claim funnel but passes no cap.
+// Callers that pass no cap share the claim funnel but never refuse a stale row.
 func TestClaimedRowRefusal_NoCapWithoutMaxAge(t *testing.T) {
 	ancient := &config.PurchaseExecution{ScheduledDate: time.Now().Add(-365 * 24 * time.Hour)}
 	require.NoError(t, (&Manager{}).claimedRowRefusal(context.Background(), ancient, false, 0))

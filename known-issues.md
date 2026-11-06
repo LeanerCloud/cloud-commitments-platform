@@ -5,6 +5,15 @@ action. Resolved items are moved to the Resolved section at the bottom.
 
 ## Outstanding
 
+### `claimAndExecuteWithin` still claims from `approved` (issue #399 follow-up)
+
+The claim funnel's from-set is `approved, pending, notified`. With the
+execute-by-ID path gone, no executor reaches it with an `approved` row (the
+approve paths claim `pending, notified` and stranded `approved` rows go
+through the re-drive), so the `approved` entry is unreachable in production.
+Left in place by issue #399 to keep that change a pure removal; dropping it
+needs its own change and test review.
+
 ### Existing Azure deployments carry a tenant-wide reservation grant (issue #1545)
 
 Until issue #1545 was fixed, `arm/CUDly-CrossSubscription/template.json`

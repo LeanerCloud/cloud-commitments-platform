@@ -515,7 +515,7 @@ func annotateInFlightOrAuditGapRow(row *config.PurchaseHistoryRecord, exec confi
 //     exact session-authed click attribution.
 //  2. approver — the notification inbox that received the cancel token;
 //     authoritative accountable party but not necessarily the clicker.
-//     Used on legacy token-only paths (async workers, old email clicks).
+//     Used on legacy token-only paths (old email clicks).
 func annotateCancelled(row *config.PurchaseHistoryRecord, exec config.PurchaseExecution, approver string) {
 	if exec.CancelledBy != nil && *exec.CancelledBy != "" {
 		row.Approver = *exec.CancelledBy

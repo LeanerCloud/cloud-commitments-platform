@@ -72,6 +72,11 @@ are the full record until the next release.
 
 ### Removed
 
+- The async SQS purchase-execution path (issue #399). Nothing produced SQS
+  messages, so the Lambda no longer accepts an `aws:sqs` event (it now fails
+  with "unrecognized Lambda event shape"), and the
+  `SQS_REPORT_BATCH_ITEM_FAILURES` environment variable is no longer read.
+
 - The CloudFormation install stack (`cloudformation/stacks/CUDly`). It still
   created DynamoDB tables and set no `DB_HOST`, so the Postgres-only server it
   deployed failed at startup and the stack could not serve any request or

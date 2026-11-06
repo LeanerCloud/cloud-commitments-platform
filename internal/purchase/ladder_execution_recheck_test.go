@@ -2,7 +2,6 @@ package purchase
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -37,7 +36,7 @@ func ladderGlobal(planning, execution bool) *config.GlobalConfig {
 // replaced by the case under test.
 func ladderHarness(t *testing.T, key string, gate *config.LadderExecutionGate, gateErr error, global *config.GlobalConfig, globalErr error) (*Manager, *MockConfigStore, *armedPurchaseRecorder, *config.PurchaseExecution) {
 	t.Helper()
-	exec := armedExecution("aws", "savingsplans", 0, "approved")
+	exec := armedExecution("aws", "savingsplans", 0, "notified")
 	exec.IdempotencyKey = key
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 	kept := store.ExpectedCalls[:0]
@@ -49,16 +48,15 @@ func ladderHarness(t *testing.T, key string, gate *config.LadderExecutionGate, g
 	store.ExpectedCalls = kept
 	store.On("GetGlobalConfig", mock.Anything).Return(global, globalErr).Maybe()
 	store.On("GetLadderExecutionGate", mock.Anything, key).Return(gate, gateErr).Maybe()
-	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
 	return mgr, store, rec, exec
 }
 
-func runViaSQS(t *testing.T, mgr *Manager, store *MockConfigStore, exec *config.PurchaseExecution) {
+// runViaClaimFunnel runs exec through the claim funnel the cron sweep calls
+// after its gate, with the from-set that production passes.
+func runViaClaimFunnel(t *testing.T, mgr *Manager, store *MockConfigStore, exec *config.PurchaseExecution) {
 	t.Helper()
 	expectClaim(store, exec, []string{"approved", "pending", "notified"})
-	body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID})
-	require.NoError(t, err)
-	_ = mgr.ProcessMessage(context.Background(), string(body))
+	_, _ = mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 }
 
 // TestLadderRecheck_RefusesBeforeProviderCall covers every way the switches can
@@ -102,7 +100,7 @@ func TestLadderRecheck_RefusesBeforeProviderCall(t *testing.T) {
 				saved = append(saved, *e)
 				return nil
 			}
-			runViaSQS(t, mgr, store, exec)
+			runViaClaimFunnel(t, mgr, store, exec)
 
 			assert.Equal(t, 0, rec.count(), "a refused ladder execution must reach no provider")
 			require.NotEmpty(t, saved)
@@ -120,7 +118,7 @@ func TestLadderRecheck_AllowsWhenEverythingIsOn(t *testing.T) {
 			gate := openGate()
 			gate.TrancheStatus = ptr(string(status))
 			mgr, store, rec, exec := ladderHarness(t, ladderTrancheKey, gate, nil, ladderGlobal(true, true), nil)
-			runViaSQS(t, mgr, store, exec)
+			runViaClaimFunnel(t, mgr, store, exec)
 			assert.Equal(t, 1, rec.count(), "an armed ladder execution on a %s tranche must still buy exactly once", status)
 		})
 	}
@@ -137,15 +135,15 @@ func TestLadderRecheck_NonLadderKeysUnaffected(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			mgr, store, rec, exec := ladderHarness(t, key, nil, nil, ladderGlobal(false, false), nil)
-			runViaSQS(t, mgr, store, exec)
+			runViaClaimFunnel(t, mgr, store, exec)
 			assert.Equal(t, 1, rec.count(), "a non-ladder purchase must not be gated by the ladder switches")
 		})
 	}
 }
 
 // Every executor entry point reaches executeAndFinalize, so the recheck must
-// stop each one. ProcessScheduledPurchases and the SQS message both land in
-// claimAndExecute, the first case below.
+// stop each one. ProcessScheduledPurchases lands in claimAndExecuteWithin,
+// the first case below.
 func TestLadderRecheck_EveryExecutorEntryRefuses(t *testing.T) {
 	off := ladderGlobal(true, false)
 	t.Run("approve", func(t *testing.T) {
@@ -157,9 +155,9 @@ func TestLadderRecheck_EveryExecutorEntryRefuses(t *testing.T) {
 		require.Error(t, err)
 		assert.Equal(t, 0, rec.count())
 	})
-	t.Run("claimAndExecute (SQS and cron sweep)", func(t *testing.T) {
+	t.Run("claimAndExecute (cron sweep funnel)", func(t *testing.T) {
 		mgr, store, rec, exec := ladderHarness(t, ladderTrancheKey, openGate(), nil, off, nil)
-		runViaSQS(t, mgr, store, exec)
+		runViaClaimFunnel(t, mgr, store, exec)
 		assert.Equal(t, 0, rec.count())
 	})
 	t.Run("scheduler fire", func(t *testing.T) {

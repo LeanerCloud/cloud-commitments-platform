@@ -2,7 +2,6 @@ package purchase
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -101,7 +100,7 @@ func armedHarness(t *testing.T, serviceType common.ServiceType) (*Manager, *Mock
 	// precisely what is under test.
 	store.SavePurchaseExecutionFn = func(_ context.Context, _ *config.PurchaseExecution) error { return nil }
 	store.GetPurchasePlanFn = func(_ context.Context, id string) (*config.PurchasePlan, error) {
-		return &config.PurchasePlan{ID: id, Name: "Plan 1718"}, nil
+		return &config.PurchasePlan{ID: id, Name: "Plan 1718", AutoPurchase: true, MaxStepCommitment: capOf(1e9)}, nil
 	}
 	store.GetPlanAccountsFn = func(_ context.Context, _ string) ([]config.CloudAccount, error) { return nil, nil }
 
@@ -160,20 +159,18 @@ func TestApproveAndExecuteRefusesArmedAzureSavingsPlanRetry(t *testing.T) {
 	assert.Contains(t, err.Error(), "second savings plan")
 }
 
-// TestClaimAndExecuteRefusesArmedAzureSavingsPlanRetry covers the SQS
-// execute_purchase and cron sweep path into the same armed row.
+// TestClaimAndExecuteRefusesArmedAzureSavingsPlanRetry covers the cron sweep's
+// claim funnel into the same armed row. The fixture row is web-sourced, which
+// the sweep's own gate would skip, so the funnel is driven directly.
 func TestClaimAndExecuteRefusesArmedAzureSavingsPlanRetry(t *testing.T) {
-	exec := armedExecution("azure", "savingsplans", 2, "approved")
+	exec := armedExecution("azure", "savingsplans", 2, "notified")
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
-	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
 	expectClaim(store, exec, []string{"approved", "pending", "notified"})
 
-	body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID})
-	require.NoError(t, err)
-	_ = mgr.ProcessMessage(context.Background(), string(body))
+	_, _ = mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 
 	assert.Equal(t, 0, rec.count(),
-		"the SQS/cron executor must not buy a second savings plan for an armed retry successor (issue #1718)")
+		"the cron claim funnel must not buy a second savings plan for an armed retry successor (issue #1718)")
 }
 
 // TestFireScheduledDelayedPurchasesRefusesArmedAzureSavingsPlanRetry covers the
@@ -208,16 +205,15 @@ func TestFireScheduledDelayedPurchasesRefusesArmedAzureSavingsPlanRetry(t *testi
 // block every legitimate first savings-plan purchase and still pass every test
 // above.
 func TestFirstAzureSavingsPlanPurchaseStillExecutes(t *testing.T) {
-	exec := armedExecution("azure", "savingsplans", 0, "approved")
+	exec := armedExecution("azure", "savingsplans", 0, "notified")
 	exec.Recommendations[0].ID = "current-azure"
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 	store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(exec.Recommendations, nil).Once()
-	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
 	expectClaim(store, exec, []string{"approved", "pending", "notified"})
 
-	body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID})
+	claimed, err := mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 	require.NoError(t, err)
-	require.NoError(t, mgr.ProcessMessage(context.Background(), string(body)))
+	require.True(t, claimed)
 
 	assert.Equal(t, 1, rec.count(),
 		"a first Azure savings-plans purchase (retry_attempt_n = 0) must still go through; blocking it would be a worse bug than the one being fixed")
@@ -229,14 +225,13 @@ func TestFirstAzureSavingsPlanPurchaseStillExecutes(t *testing.T) {
 // re-drive onto the original and the retry must still execute. EC2 and
 // Redshift are the AWS services that lack such a guard (see the Refuses tests).
 func TestSafeProviderRetrySuccessorStillExecutes(t *testing.T) {
-	exec := armedExecution("aws", "rds", 3, "approved")
+	exec := armedExecution("aws", "rds", 3, "notified")
 	mgr, store, rec := armedHarness(t, common.ServiceRDS)
-	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
 	expectClaim(store, exec, []string{"approved", "pending", "notified"})
 
-	body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID})
+	claimed, err := mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 	require.NoError(t, err)
-	require.NoError(t, mgr.ProcessMessage(context.Background(), string(body)))
+	require.True(t, claimed)
 
 	assert.Equal(t, 1, rec.count(),
 		"an AWS RDS retry successor dedupes at the provider via its reservation ID and must still execute; the guard must not widen beyond the providers that lack a duplicate guard")
@@ -248,7 +243,7 @@ func TestSafeProviderRetrySuccessorStillExecutes(t *testing.T) {
 // "failed" with the reason and executeAndFinalize persists it. Once failed, the
 // #1668 creation-time gate refuses to retry it, so it cannot be re-armed.
 func TestArmedRowIsDefusedNotLeftArmed(t *testing.T) {
-	exec := armedExecution("azure", "savingsplans", 1, "approved")
+	exec := armedExecution("azure", "savingsplans", 1, "notified")
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 
 	var saved []config.PurchaseExecution
@@ -256,12 +251,9 @@ func TestArmedRowIsDefusedNotLeftArmed(t *testing.T) {
 		saved = append(saved, *e)
 		return nil
 	}
-	store.On("GetExecutionByID", mock.Anything, exec.ExecutionID).Return(exec, nil).Maybe()
 	expectClaim(store, exec, []string{"approved", "pending", "notified"})
 
-	body, err := json.Marshal(AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: exec.ExecutionID})
-	require.NoError(t, err)
-	_ = mgr.ProcessMessage(context.Background(), string(body))
+	_, _ = mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 
 	require.Equal(t, 0, rec.count())
 	require.NotEmpty(t, saved, "the refused row must be persisted, not left in its claimed status")

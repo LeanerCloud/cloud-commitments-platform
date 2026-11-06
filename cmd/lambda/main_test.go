@@ -124,16 +124,16 @@ func TestHandler_ScheduledEvent(t *testing.T) {
 	assert.NotNil(t, result)
 }
 
-func TestHandler_SQSEvent(t *testing.T) {
+func TestHandler_SQSEventIsRejected(t *testing.T) {
 	origApp := app
 	defer func() { app = origApp }()
 
 	app = createTestApp()
 
 	rawEvent := json.RawMessage(`{"Records":[{"eventSource":"aws:sqs","messageId":"msg-1","body":"{}"}]}`)
-	result, err := Handler(context.Background(), rawEvent)
-	require.NoError(t, err)
-	assert.NotNil(t, result)
+	_, err := Handler(context.Background(), rawEvent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unrecognized")
 }
 
 func TestHandler_HTTPEvent(t *testing.T) {

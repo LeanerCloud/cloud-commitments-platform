@@ -466,7 +466,7 @@ func TestLoadApplicationConfig(t *testing.T) {
 }
 
 func TestNewApplicationRejectsMalformedEnvDefaults(t *testing.T) {
-	for _, key := range []string{"DEFAULT_TERM", "DEFAULT_COVERAGE", "SCHEDULED_PURCHASE_MAX_OVERDUE", "ANALYTICS_COLLECTION_ENABLED", "ANALYTICS_RETENTION_MONTHS", "ANALYTICS_PARTITIONS_AHEAD", "SQS_REPORT_BATCH_ITEM_FAILURES", "DB_HOST"} {
+	for _, key := range []string{"DEFAULT_TERM", "DEFAULT_COVERAGE", "SCHEDULED_PURCHASE_MAX_OVERDUE", "ANALYTICS_COLLECTION_ENABLED", "ANALYTICS_RETENTION_MONTHS", "ANALYTICS_PARTITIONS_AHEAD", "DB_HOST"} {
 		t.Setenv(key, "")
 	}
 	for _, tc := range []struct{ key, value string }{

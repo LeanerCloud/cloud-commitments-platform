@@ -38,7 +38,7 @@ func rowStatus(ctx context.Context, t *testing.T, f *rampStepFixture, id string)
 	return row
 }
 
-// Both orderings of the approve/claimAndExecute race: the second executor loses
+// Both orderings of the approve/claim-funnel race: the second executor loses
 // the claim and never reaches the provider. Before the fix the approve path ran
 // an "approved" row unclaimed, so the second ordering bought it twice.
 func TestSingleClaim_BothOrderingsBuyOnce(t *testing.T) {
@@ -48,10 +48,10 @@ func TestSingleClaim_BothOrderingsBuyOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, global.AutoPurchaseEnabled)
 
-	t.Run("claimAndExecute then approve", func(t *testing.T) {
+	t.Run("claim funnel then approve", func(t *testing.T) {
 		row := claimRaceRow(ctx, t, f, "notified")
 		before := f.purchaseCount()
-		claimed, execErr := f.manager.claimAndExecute(ctx, rowStatusCopy(row))
+		claimed, execErr := f.manager.claimAndExecuteWithin(ctx, rowStatusCopy(row), 0)
 		require.NoError(t, execErr)
 		require.True(t, claimed)
 		_, _, err := f.manager.ApproveAndExecute(ctx, row.ExecutionID, "approver@example.invalid", nil, nil)
@@ -60,12 +60,12 @@ func TestSingleClaim_BothOrderingsBuyOnce(t *testing.T) {
 		assert.Equal(t, "completed", rowStatus(ctx, t, f, row.ExecutionID).Status)
 	})
 
-	t.Run("approve then claimAndExecute", func(t *testing.T) {
+	t.Run("approve then claim funnel", func(t *testing.T) {
 		row := claimRaceRow(ctx, t, f, "notified")
 		before := f.purchaseCount()
 		_, _, err := f.manager.ApproveAndExecute(ctx, row.ExecutionID, "approver@example.invalid", nil, nil)
 		require.NoError(t, err)
-		claimed, execErr := f.manager.claimAndExecute(ctx, rowStatusCopy(row))
+		claimed, execErr := f.manager.claimAndExecuteWithin(ctx, rowStatusCopy(row), 0)
 		require.NoError(t, execErr)
 		assert.False(t, claimed, "the approved-and-run row must not be claimable again")
 		assert.Equal(t, 1, f.purchaseCount()-before)
@@ -90,7 +90,9 @@ func TestSingleClaim_ConcurrentExecutorsBuyOnce(t *testing.T) {
 	direct := func(row *config.PurchaseExecution) {
 		_, _, _ = f.manager.DirectExecute(ctx, row.ExecutionID, "a@example.invalid", nil, nil)
 	}
-	cron := func(row *config.PurchaseExecution) { _, _ = f.manager.claimAndExecute(ctx, rowStatusCopy(row)) }
+	cron := func(row *config.PurchaseExecution) {
+		_, _ = f.manager.claimAndExecuteWithin(ctx, rowStatusCopy(row), 0)
+	}
 	redrive := func(row *config.PurchaseExecution) { _, _ = f.manager.claimAndRedrive(ctx, rowStatusCopy(row)) }
 	fire := func(row *config.PurchaseExecution) { f.manager.fireOneDue(ctx, rowStatusCopy(row)) }
 	cases["notified"] = []func(*config.PurchaseExecution){approve, direct, cron}
@@ -187,7 +189,7 @@ func TestSingleClaim_ReaperInterleavingRecoversPurchasedRow(t *testing.T) {
 }
 
 // Deterministic replay of the #829 race: while the approve path is inside its
-// provider call, another executor (cron/SQS) tries to claim the same row. On the
+// provider call, another executor ((cron)) tries to claim the same row. On the
 // old code the row sat "approved" and the second executor bought it again.
 func TestSingleClaim_ExecutorArrivingMidApproveCannotBuyAgain(t *testing.T) {
 	ctx := context.Background()
@@ -201,7 +203,7 @@ func TestSingleClaim_ExecutorArrivingMidApproveCannotBuyAgain(t *testing.T) {
 		}
 		c := rowStatusCopy(row)
 		c.Status = "approved"
-		midClaimed, _ = f.manager.claimAndExecute(ctx, c)
+		midClaimed, _ = f.manager.claimAndExecuteWithin(ctx, c, 0)
 	}
 	_, _, err := f.manager.ApproveAndExecute(ctx, row.ExecutionID, "a@example.invalid", nil, nil)
 	require.NoError(t, err)

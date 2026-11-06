@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Real PostgreSQL. Issue #73: the token/SQS cancel of a scheduled row used to
+// Real PostgreSQL. Issue #73: the token cancel of a scheduled row used to
 // reach CancelExecutionAtomic (status IN pending/notified), match zero rows and
 // report a "concurrent operation" that never happened.
 
