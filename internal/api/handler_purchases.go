@@ -2556,6 +2556,9 @@ func (h *Handler) loadAndValidateRetryRequest(ctx context.Context, req *events.L
 	if err := checkRetryEligibilityGates(failedExec, req); err != nil {
 		return nil, nil, err
 	}
+	if err := h.checkRedshiftRetryGate(ctx, failedExec); err != nil {
+		return nil, nil, err
+	}
 
 	return failedExec, session, nil
 }
@@ -2784,6 +2787,7 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 		CapacityPercent:        failedExec.CapacityPercent,
 		CreatedByUserID:        resolveCreatorUserID(session),
 		RetryAttemptN:          failedExec.RetryAttemptN + 1,
+		FirstDispatchAt:        retrySuccessorFirstDispatchAt(failedExec),
 	}
 
 	graceCfg, err := h.gracePeriodConfig(ctx)
@@ -2821,6 +2825,9 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 // The successor is a web-source pending row for the retrying user, so it
 // also goes through the submit dedupe (issue #760): see writeRetrySuccessorTx.
 func (h *Handler) persistRetrySuccessorTx(ctx context.Context, failedExec, newExecution *config.PurchaseExecution, suppressions []config.PurchaseSuppression) error {
+	if err := h.requireAZConfigSchema(ctx); err != nil {
+		return err
+	}
 	err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
 		return h.writeRetrySuccessorTx(ctx, tx, failedExec, newExecution, suppressions)
 	})
@@ -3666,6 +3673,9 @@ func (h *Handler) persistExecutionAndSuppressions(
 	suppressions []config.PurchaseSuppression,
 	creatorID, idempotencyKey string,
 ) (dup *config.PurchaseExecution, err error) {
+	if err := h.requireAZConfigSchema(ctx); err != nil {
+		return nil, err
+	}
 	txErr := h.config.WithTx(ctx, func(tx pgx.Tx) error {
 		// Duplicate check inside the tx, after taking the creator's submit
 		// lock: a concurrent identical submit waits for this tx to commit,
@@ -3724,11 +3734,17 @@ func purchaseIdempotencyKey(creatorID string, recs []config.RecommendationRecord
 		if err != nil {
 			return "", err
 		}
-		tuples = append(tuples, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s",
+		// Single-AZ and Multi-AZ RDS buys of the same class are different
+		// purchases and must not dedupe into one (issue #408).
+		azConfig, err := r.IdentityAZConfig()
+		if err != nil {
+			return "", err
+		}
+		tuples = append(tuples, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s",
 			strings.ToLower(strings.TrimSpace(r.Provider)),
 			r.Service, r.Region, r.ResourceType, r.Engine, acct,
 			r.Count, r.Term, strings.ToLower(strings.TrimSpace(r.Payment)), az,
-			ci.Platform, ci.Tenancy))
+			ci.Platform, ci.Tenancy, azConfig))
 	}
 	sort.Strings(tuples)
 	h := sha256.New()

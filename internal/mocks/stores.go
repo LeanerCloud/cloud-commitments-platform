@@ -589,6 +589,17 @@ func (m *MockConfigStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context
 	return res, args.Error(1)
 }
 
+// GetRedshiftRetryClock mocks the Redshift retry clock read (no default: testify panics if unexpected).
+func (m *MockConfigStore) GetRedshiftRetryClock(ctx context.Context, executionID string) (config.RedshiftRetryClock, error) {
+	m.record("GetRedshiftRetryClock", ctx, executionID)
+	args := m.Called(ctx, executionID)
+	clock, ok := args.Get(0).(config.RedshiftRetryClock)
+	if !ok {
+		m.reporter.wrongReturnType("GetRedshiftRetryClock", "config.RedshiftRetryClock", args.Get(0))
+	}
+	return clock, args.Error(1)
+}
+
 // TransitionExecutionStatus mocks the TransitionExecutionStatus operation.
 func (m *MockConfigStore) TransitionExecutionStatus(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string) (*config.PurchaseExecution, error) {
 	m.record("TransitionExecutionStatus", ctx, executionID, fromStatuses, toStatus, actor)
