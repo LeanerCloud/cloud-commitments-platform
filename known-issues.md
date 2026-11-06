@@ -12,7 +12,7 @@ execute-by-ID path gone, no executor reaches it with an `approved` row (the
 approve paths claim `pending, notified` and stranded `approved` rows go
 through the re-drive), so the `approved` entry is unreachable in production.
 Left in place by issue #399 to keep that change a pure removal; dropping it
-needs its own change and test review.
+needs its own change and test review, tracked in issue #1814.
 
 ### Existing Azure deployments carry a tenant-wide reservation grant (issue #1545)
 
