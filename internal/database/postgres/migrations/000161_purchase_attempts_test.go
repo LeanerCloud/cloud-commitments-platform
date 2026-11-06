@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Migration 000158 creates purchase_attempts; the down migration drops it.
-func TestMigration_0158_PurchaseAttempts(t *testing.T) {
+// Migration 000161 creates purchase_attempts; the down migration drops it.
+func TestMigration_0161_PurchaseAttempts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	migrationsPath := getMigrationsPath()
@@ -28,11 +28,11 @@ func TestMigration_0158_PurchaseAttempts(t *testing.T) {
 		return exists
 	}
 
-	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, previousMigrationVersion(t, 158)))
-	assert.False(t, tableExists(), "table absent before 000158")
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, previousMigrationVersion(t, 161)))
+	assert.False(t, tableExists(), "table absent before 000161")
 
-	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, 158))
-	assert.True(t, tableExists(), "table present after 000158")
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, 161))
+	assert.True(t, tableExists(), "table present after 000161")
 
 	_, err := pool.Exec(ctx, `INSERT INTO purchase_attempts (idempotency_token, execution_id, state) VALUES ('t', 'e', 'bogus')`)
 	require.Error(t, err, "state CHECK rejects unknown states")
@@ -45,6 +45,6 @@ func TestMigration_0158_PurchaseAttempts(t *testing.T) {
 	_, err = pool.Exec(ctx, `INSERT INTO purchase_attempts (idempotency_token, execution_id, state) VALUES ('t', 'e', 'sending')`)
 	require.Error(t, err, "primary key (token, execution)")
 
-	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, previousMigrationVersion(t, 158)))
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, previousMigrationVersion(t, 161)))
 	assert.False(t, tableExists(), "the down migration drops the table")
 }

@@ -1,4 +1,4 @@
--- Migration 000158: durable purchase attempt journal (cloud-commitments-go#107).
+-- Migration 000161: durable purchase attempt journal (cloud-commitments-go#107).
 --
 -- One row per (idempotency token, execution): the Redshift provider records
 -- "sending" immediately before the AWS call and "purchased" or
