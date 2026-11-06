@@ -67,10 +67,29 @@ func (m *Manager) notifyOutcomeUnknown(ctx context.Context, exec *config.Purchas
 // sendFailureNotice logs the marker and sends the purchase-failed email,
 // flagged outcome-unknown when outcomeUnknown is set.
 func (m *Manager) sendFailureNotice(ctx context.Context, exec *config.PurchaseExecution, outcomeUnknown bool) {
+	m.sendFailureNoticeUntil(ctx, exec, outcomeUnknown, time.Now().Add(failureNotifyTimeout))
+}
+
+// notifyFanOutFailure is notifyExecutionFailure for a fan-out account's own
+// row. The email shares the account slice (run deadline + T/2) instead of
+// opening a fresh failureNotifyTimeout window, so an account that fails just
+// before the run deadline cannot keep the fan-out busy past the root's save
+// slice (#1672). Without a run deadline it keeps the fresh window.
+func (m *Manager) notifyFanOutFailure(ctx context.Context, exec *config.PurchaseExecution) {
+	until := time.Now().Add(failureNotifyTimeout)
+	if runDeadline, ok := ctx.Deadline(); ok {
+		if slice := runDeadline.Add(m.budgets.terminalSaveTimeout() / 2); slice.Before(until) {
+			until = slice
+		}
+	}
+	m.sendFailureNoticeUntil(ctx, exec, false, until)
+}
+
+func (m *Manager) sendFailureNoticeUntil(ctx context.Context, exec *config.PurchaseExecution, outcomeUnknown bool, until time.Time) {
 	if !logExecutionFailure(exec) || m.email == nil {
 		return
 	}
-	ctx, cancel := ctxutil.DetachedWithTimeout(ctx, failureNotifyTimeout)
+	ctx, cancel := ctxutil.DetachedWithDeadline(ctx, until)
 	defer cancel()
 	data := m.buildPurchaseFailedData(ctx, exec)
 	data.OutcomeUnknown = outcomeUnknown

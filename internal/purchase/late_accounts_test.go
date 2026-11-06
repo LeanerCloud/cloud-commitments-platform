@@ -58,6 +58,12 @@ type lateFixture struct {
 	saves []lateSave
 	mails []email.NotificationData
 	logs  *lateLogBuf
+
+	client *MockServiceClient
+	// blockCMail makes the email about account C alone wait for its context
+	// (at most 2s) and records when it ended in cMailEnd.
+	blockCMail bool
+	cMailEnd   time.Time
 }
 
 // newLateFixture builds the fan-out. acctSave handles the saves of started
@@ -74,6 +80,7 @@ func newLateFixture(t *testing.T, parallelism string, acctSave func(context.Cont
 	factory := new(MockProviderFactory)
 	prov := new(MockProvider)
 	client := new(MockServiceClient)
+	f.client = client
 
 	ids := []string{skipAcctA, skipAcctB, skipAcctC, lateAcctD}
 	types := []string{"a.large", "b.large", "c.large", "d.large"}
@@ -104,10 +111,21 @@ func newLateFixture(t *testing.T, parallelism string, acctSave func(context.Cont
 	mailer.On("SendPurchaseConfirmation", mock.Anything, mock.Anything).Return(nil).Maybe()
 	mailer.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
-			time.Sleep(lateMailDelay)
+			d := args.Get(1).(email.NotificationData)
+			if f.blockCMail && len(d.Recommendations) == 1 && d.Recommendations[0].ResourceType == "c.large" {
+				select {
+				case <-time.After(2 * time.Second):
+				case <-args.Get(0).(context.Context).Done():
+				}
+				f.mu.Lock()
+				f.cMailEnd = time.Now()
+				f.mu.Unlock()
+			} else {
+				time.Sleep(lateMailDelay)
+			}
 			f.mu.Lock()
 			defer f.mu.Unlock()
-			f.mails = append(f.mails, args.Get(1).(email.NotificationData))
+			f.mails = append(f.mails, d)
 		}).Return(nil).Maybe()
 	factory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(prov, nil).Maybe()
 	prov.On("GetServiceClient", mock.Anything, common.ServiceEC2, "us-east-1").Return(client, nil).Maybe()
@@ -263,4 +281,31 @@ func TestCutOffCallText_HistoryAndRefusalUnchanged(t *testing.T) {
 	assert.Equal(t, SanitizeStoredError(old), SanitizeStoredError(cut))
 	recs := []config.RecommendationRecord{{Provider: "aws", Service: "ec2"}}
 	assert.False(t, IsDefiniteAWSRefusal(recs, "ec2 m5.large: "+cut))
+}
+
+// An account that fails just before the run deadline sends its own email, and a
+// slow mailer must not keep the fan-out busy past the account slice: the email
+// is cut at E+T/2 and the root still saves with its status inside its own slice.
+func TestExecuteAndFinalize_AccountFailureEmailSharesTheAccountSlice(t *testing.T) {
+	f := newLateFixture(t, "2", nil)
+	f.blockCMail = true
+	start := time.Now()
+	failAt := start.Add(lateExecTimeout - 30*time.Millisecond)
+	f.client.On("PurchaseCommitment", mock.Anything, mock.MatchedBy(func(r common.Recommendation) bool { return r.ResourceType == "c.large" }), mock.Anything).
+		Run(func(mock.Arguments) { time.Sleep(time.Until(failAt)) }).
+		Return(common.PurchaseResult{}, errors.New("insufficient capacity")).Maybe()
+
+	err := f.m.executeAndFinalize(context.Background(), f.exec)
+	elapsed := time.Since(start)
+
+	var partial *multiAccountPartialError
+	require.ErrorAs(t, err, &partial)
+	root, ok := f.save("", false)
+	require.True(t, ok, "the root is saved")
+	assert.Equal(t, "partially_completed", root.exec.Status)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	require.False(t, f.cMailEnd.IsZero(), "C failed before the deadline and emailed on its own")
+	assert.WithinDuration(t, start.Add(lateExecTimeout+lateTerminalT/2), f.cMailEnd, 80*time.Millisecond, "C's email is cut at E+T/2")
+	assert.Less(t, elapsed, lateExecTimeout+lateTerminalT+lateMailDelay+150*time.Millisecond, "inside E+T+N")
 }

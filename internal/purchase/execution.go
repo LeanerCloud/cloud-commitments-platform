@@ -417,7 +417,7 @@ func (m *Manager) notifyAccountOutcome(ctx context.Context, row *config.Purchase
 	if ctx.Err() != nil && late.add(row) {
 		return
 	}
-	m.notifyExecutionFailure(ctx, row)
+	m.notifyFanOutFailure(ctx, row)
 }
 
 // newAccountExecution is the per-account copy of baseExec, with an independent
