@@ -415,8 +415,8 @@ func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExec
 }
 
 // preExecutionRefusal runs every check that must pass before any provider call.
-// All refusals except the armed re-drive one are beforeSubmission errors, so
-// the row ends failed with no_submission stamped.
+// All refusals except the armed re-drive and missing-journal ones are
+// beforeSubmission errors, so the row ends failed with no_submission stamped.
 func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
 	if err := armedRedriveRefusal(exec); err != nil {
 		return err
@@ -426,6 +426,10 @@ func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.Purchase
 	}
 	if refusal := m.ladderExecutionRefusal(ctx, exec); refusal != nil {
 		return beforeSubmission(refusal)
+	}
+	// A Redshift retry reuses the first attempt's request time; only the journal lets go's dedupe tell its node from another's.
+	if hasRedshiftRec(exec) && exec.RetryAttemptN > 0 && m.attemptJournal == nil {
+		return errors.New(redshiftNoJournalRefusal)
 	}
 	return nil
 }

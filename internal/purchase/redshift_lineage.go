@@ -47,6 +47,7 @@ const (
 	redshiftHorizonRefusal        = "refusing to dispatch: this Redshift purchase was first dispatched more than 24h ago, so check the account in AWS and start a new purchase"
 	redshiftNoStampRefusal        = "refusing to dispatch: this Redshift purchase has no first dispatch time recorded, so check the account in AWS and start a new purchase"
 	redshiftFailedConflictRefusal = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) failed and may still be retried, so retry or settle that purchase, or start this one at least 24h after its first dispatch"
+	redshiftNoJournalRefusal      = "refusing to dispatch: this Redshift retry needs the purchase attempt journal, which is not configured, so check the account in AWS and start a new purchase"
 	redshiftRecentBuyRefusal      = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) completed too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one completed"
 )
 
