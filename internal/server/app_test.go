@@ -142,6 +142,41 @@ func TestLoadApplicationConfig_TrustedProxyHops(t *testing.T) {
 	}
 }
 
+// Unset must stay unrestricted so deployments that predate the variable keep
+// accepting delayed approvals (#1780).
+func TestLoadApplicationConfig_FireSweepOff(t *testing.T) {
+	cases := []struct {
+		name  string
+		set   bool
+		value string
+		want  bool
+	}{
+		{"unset", false, "", false},
+		{"empty", true, "", false},
+		{"true", true, "true", false},
+		{"false", true, "false", true},
+	}
+	// Clear every input LoadApplicationConfig can reject, so an inherited bad
+	// value fails no subtest before FireSweepOff is checked.
+	for _, key := range []string{
+		"DEFAULT_TERM", "DEFAULT_COVERAGE", "SCHEDULED_PURCHASE_MAX_OVERDUE", "CUDLY_TRUSTED_PROXY_HOPS",
+		"ANALYTICS_COLLECTION_ENABLED", "ANALYTICS_RETENTION_MONTHS", "ANALYTICS_PARTITIONS_AHEAD",
+	} {
+		t.Setenv(key, "")
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("FIRE_SWEEP_SCHEDULED", tc.value)
+			if !tc.set {
+				testutil.AssertNoError(t, os.Unsetenv("FIRE_SWEEP_SCHEDULED"))
+			}
+			cfg, err := LoadApplicationConfig()
+			testutil.AssertNoError(t, err)
+			testutil.AssertEqual(t, tc.want, cfg.FireSweepOff)
+		})
+	}
+}
+
 func TestHttpToLambdaRequest_NilBody(t *testing.T) {
 	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/test", nil)
 	req.Body = nil
