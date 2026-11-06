@@ -50,6 +50,9 @@ type ManagerConfig struct {
 	// sweeps may still buy a row (issue #712); an older row is failed
 	// unbought instead. Zero means DefaultMaxDueRowAge.
 	MaxDueRowAge time.Duration
+	// AttemptJournal records each purchase attempt durably (go#107). Nil keeps
+	// the provider's own window dedupe.
+	AttemptJournal common.AttemptJournal
 }
 
 // Manager handles purchase workflow.
@@ -61,6 +64,7 @@ type Manager struct {
 	bastionSTS      credentials.STSClientFactory
 	ambientAWSCreds aws.CredentialsProvider
 	credStore       credentials.CredentialStore
+	attemptJournal  common.AttemptJournal
 	providerFactory provider.FactoryInterface
 	oidcSigner      oidc.Signer
 	defaults        PurchaseDefaults
@@ -131,6 +135,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 		bastionSTS:      cfg.BastionSTSFactory,
 		ambientAWSCreds: cfg.AmbientAWSCreds,
 		credStore:       cfg.CredentialStore,
+		attemptJournal:  cfg.AttemptJournal,
 		providerFactory: factory,
 		notifyDays:      cfg.NotificationDaysBefore,
 		defaults: PurchaseDefaults{

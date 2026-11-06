@@ -18,6 +18,13 @@ import (
 // returns the PurchaseOptions every PurchaseCommitment call received.
 func runFanOutCapturingOpts(t *testing.T, service common.ServiceType, mk func(string) config.RecommendationRecord) []common.PurchaseOptions {
 	t.Helper()
+	return runFanOutCapturingOptsWithJournal(t, service, mk, nil)
+}
+
+// runFanOutCapturingOptsWithJournal is runFanOutCapturingOpts on a Manager
+// whose attempt journal is journal.
+func runFanOutCapturingOptsWithJournal(t *testing.T, service common.ServiceType, mk func(string) config.RecommendationRecord, journal common.AttemptJournal) []common.PurchaseOptions {
+	t.Helper()
 	ctx := context.Background()
 	accounts := []config.CloudAccount{
 		{ID: "acct-A", Name: "A", Provider: "aws", ExternalID: "111111111111", AWSAuthMode: "access_keys"},
@@ -56,6 +63,7 @@ func runFanOutCapturingOpts(t *testing.T, service common.ServiceType, mk func(st
 	manager := &Manager{
 		config: mockStore, email: mockEmail, providerFactory: mockFactory,
 		credStore: awsAccessKeyCredStore(), dashboardURL: "https://dashboard.example.com",
+		attemptJournal: journal,
 	}
 	require.NoError(t, manager.executeMultiAccount(ctx, exec, &config.PurchasePlan{ID: "plan-x", Name: "Plan X"}, accounts))
 	return got
@@ -359,4 +367,38 @@ func TestExecuteSinglePurchase_RedshiftWithoutRequestedAtRefuses(t *testing.T) {
 
 	require.Error(t, err)
 	mockServiceClient.AssertNotCalled(t, "PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// fakeAttemptJournal is a never-called journal; the test only checks identity.
+type fakeAttemptJournal struct{}
+
+func (*fakeAttemptJournal) PriorAttempts(context.Context, string) ([]common.AttemptRecord, error) {
+	return nil, nil
+}
+func (*fakeAttemptJournal) RecordAttempt(context.Context, common.AttemptRecord) error { return nil }
+
+// The journal reaches every per-rec dispatch together with the per-account
+// ExecutionID the provider keys its attempt rows on (go#107).
+func TestExecuteMultiAccount_PassesAttemptJournalAndPerAccountExecutionID(t *testing.T) {
+	journal := &fakeAttemptJournal{}
+	got := runFanOutCapturingOptsWithJournal(t, common.ServiceRedshift, func(acct string) config.RecommendationRecord {
+		r := scopedTestRec(acct)
+		r.Service, r.ResourceType = "redshift", "ra3.xlplus"
+		return r
+	}, journal)
+	require.Len(t, got, 2)
+	seen := map[string]bool{}
+	for _, o := range got {
+		assert.Same(t, journal, o.AttemptJournal)
+		assert.NotEmpty(t, o.ExecutionID)
+		assert.NotEqual(t, "root-exec", o.ExecutionID, "per-account row ID, not the root's")
+		seen[o.ExecutionID] = true
+	}
+	assert.Len(t, seen, 2, "each account dispatches under its own ExecutionID")
+}
+
+func TestExecuteMultiAccount_NilJournalStaysNil(t *testing.T) {
+	for _, o := range runFanOutCapturingOpts(t, common.ServiceEC2, scopedTestRec) {
+		assert.Nil(t, o.AttemptJournal)
+	}
 }
