@@ -215,6 +215,10 @@ func anyRecPurchased(recs []config.RecommendationRecord) bool {
 type multiAccountPartialError struct {
 	errors    []string
 	committed int
+	// skipped are the failed rows for accounts that never started. They are
+	// saved and announced by executeAndFinalize, inside the root's terminal
+	// windows, not here (issue #1672).
+	skipped []*config.PurchaseExecution
 }
 
 func (e *multiAccountPartialError) Error() string {
@@ -272,8 +276,7 @@ func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.Purc
 		// Some accounts committed real purchases; the per-account rows already
 		// recorded the truth. Surface a partial sentinel so the entry points
 		// ack and never mislabel the run as a flat failure (issue #1014).
-		errs = append(errs, m.recordSkippedAccounts(ctx, scoped, results, &started)...)
-		return &multiAccountPartialError{committed: committed, errors: errs}
+		return &multiAccountPartialError{committed: committed, errors: errs, skipped: skippedAccountRows(scoped, results, &started)}
 	}
 	return fmt.Errorf("%w: %s", errAllAccountsFailed, strings.Join(errs, "; "))
 }
@@ -282,9 +285,19 @@ func (m *Manager) executeMultiAccount(ctx context.Context, baseExec *config.Purc
 // Used in error paths where we need to persist the failure status but cannot
 // propagate the save error (the original error is already being returned).
 func (m *Manager) saveExecutionStatusBestEffort(ctx context.Context, exec *config.PurchaseExecution) {
-	if err := m.config.SavePurchaseExecution(ctx, exec); err != nil {
+	if err := m.saveAccountRow(ctx, exec); err != nil {
 		logging.Warnf("execution: failed to persist error status for account %v: %v", exec.CloudAccountID, err)
 	}
+}
+
+// saveAccountRow saves a started account's terminal row on a context detached
+// from the run's cancellation and bounded by the terminal-save budget, so a run
+// context that ended mid-account still leaves the History row and its Retry
+// (issue #1672). Same pattern as the root's terminal save.
+func (m *Manager) saveAccountRow(ctx context.Context, exec *config.PurchaseExecution) error {
+	saveCtx, cancel := ctxutil.DetachedWithTimeout(ctx, m.budgets.terminalSaveTimeout())
+	defer cancel()
+	return m.config.SavePurchaseExecution(saveCtx, exec)
 }
 
 // executeForAccount runs a single plan execution for one cloud account.
@@ -337,7 +350,7 @@ func (m *Manager) executeForAccount(ctx context.Context, baseExec *config.Purcha
 	// (#642), and learn whether any rec committed (#1014).
 	_, committed = applyAccountOutcome(&acctExec, purchaseErrors)
 
-	if saveErr := m.config.SavePurchaseExecution(ctx, &acctExec); saveErr != nil {
+	if saveErr := m.saveAccountRow(ctx, &acctExec); saveErr != nil {
 		return committed, fmt.Errorf("AUDIT LOSS: failed to save execution record for account %s: %w", account.ID, saveErr)
 	}
 
@@ -400,15 +413,15 @@ func skippedAccountNote(row *config.PurchaseExecution) string {
 	return skippedAccountRetryNote
 }
 
-// recordSkippedAccounts writes a failed row for each account the fan-out
-// skipped before executeForAccount ran (the run context ended first), so the
-// acked partial run does not silently drop its purchases (issue #1672).
-// Nothing was submitted for it, so the row carries NoSubmission. Only the
-// acked partial path calls this: a flat failure finalizes the root as failed,
-// and a root Retry re-runs every account. The context has ended, so the saves
-// run detached. It returns the save failures.
-func (m *Manager) recordSkippedAccounts(ctx context.Context, scoped map[string]*config.PurchaseExecution, results []execution.Result[bool], started *sync.Map) []string {
-	var lost []string
+// skippedAccountRows builds a failed row for each account the fan-out skipped
+// before executeForAccount ran (the run context ended first), so the acked
+// partial run does not silently drop its purchases (issue #1672). Nothing was
+// submitted for it, so the row carries NoSubmission. Only the acked partial
+// path calls this: a flat failure finalizes the root as failed, and a root
+// Retry re-runs every account. It only builds the rows; executeAndFinalize
+// saves them after the root, on the root's terminal-save deadline.
+func skippedAccountRows(scoped map[string]*config.PurchaseExecution, results []execution.Result[bool], started *sync.Map) []*config.PurchaseExecution {
+	var rows []*config.PurchaseExecution
 	for _, r := range results {
 		if r.Err == nil {
 			continue
@@ -421,15 +434,9 @@ func (m *Manager) recordSkippedAccounts(ctx context.Context, scoped map[string]*
 		row.NoSubmission = true
 		row.Error = skippedAccountNote(&row)
 		logging.Warnf("execution %s: account %s skipped before it started: %v", row.ExecutionID, r.AccountID, r.Err)
-		saveCtx, cancel := ctxutil.DetachedWithTimeout(ctx, m.budgets.terminalSaveTimeout())
-		if err := m.config.SavePurchaseExecution(saveCtx, &row); err != nil {
-			lost = append(lost, fmt.Sprintf("AUDIT LOSS: failed to save the skipped-account record for account %s: %v", r.AccountID, err))
-		} else {
-			m.notifyExecutionFailure(saveCtx, &row)
-		}
-		cancel()
+		rows = append(rows, &row)
 	}
-	return lost
+	return rows
 }
 
 // persistFailedAccountExecution writes a per-account execution row that the
@@ -439,7 +446,7 @@ func (m *Manager) recordSkippedAccounts(ctx context.Context, scoped map[string]*
 // #1184 / COR-10). Extracted from executeForAccount so the new branch keeps
 // that function under the gocyclo:10 budget.
 func (m *Manager) persistFailedAccountExecution(ctx context.Context, acctExec *config.PurchaseExecution, account config.CloudAccount, cause error) error {
-	if saveErr := m.config.SavePurchaseExecution(ctx, acctExec); saveErr != nil {
+	if saveErr := m.saveAccountRow(ctx, acctExec); saveErr != nil {
 		return errors.Join(
 			fmt.Errorf("AUDIT LOSS: failed to save execution record for account %s: %w", account.ID, saveErr),
 			cause,

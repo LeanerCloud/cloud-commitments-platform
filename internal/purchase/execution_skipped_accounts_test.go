@@ -3,12 +3,15 @@ package purchase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/ctxutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -21,6 +24,7 @@ import (
 // error instead of the skip.
 type skipFixture struct {
 	saved    []config.PurchaseExecution
+	live     []bool // live[i]: saved[i]'s save context was not done
 	mu       sync.Mutex
 	saveHook func(context.Context)
 	// cancelAtB moves the cancel from A's purchase to B's credential load, so B
@@ -63,6 +67,7 @@ func (f *skipFixture) run(t *testing.T, ctx context.Context, cancel context.Canc
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.saved = append(f.saved, *e)
+		f.live = append(f.live, saveCtx.Err() == nil)
 		return nil
 	}
 	store.On("SavePurchaseHistory", mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -92,7 +97,16 @@ func (f *skipFixture) run(t *testing.T, ctx context.Context, cancel context.Canc
 			return nil, nil
 		},
 	}}
-	return m.executeMultiAccount(ctx, exec, plan, accounts)
+	err := m.executeMultiAccount(ctx, exec, plan, accounts)
+	// executeAndFinalize saves the skip rows after the root, on the root's
+	// terminal-save deadline; here only that step is replayed.
+	var partial *multiAccountPartialError
+	if errors.As(err, &partial) {
+		saveCtx, cancelSave := ctxutil.DetachedWithTimeout(ctx, m.budgets.terminalSaveTimeout())
+		defer cancelSave()
+		m.saveSkippedRows(saveCtx, exec, partial.skipped)
+	}
+	return err
 }
 
 func (f *skipFixture) rowsFor(id string) []config.PurchaseExecution {
@@ -209,4 +223,119 @@ func TestExecuteMultiAccount_StartedAccountGetsNoSkipRow(t *testing.T) {
 	c := f.rowsFor(skipAcctC)
 	require.Len(t, c, 1)
 	assert.Contains(t, c[0].Error, "nothing was submitted")
+}
+
+// B started, then the run context ended at its credential load. B's failed row
+// is its only History row and Retry, so it must be saved on a live context.
+func TestExecuteMultiAccount_StartedAccountRowSavedOnLiveContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f := &skipFixture{cancelAtB: true}
+	require.Error(t, f.run(t, ctx, cancel, true))
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	found := false
+	for i, row := range f.saved {
+		if row.CloudAccountID != nil && *row.CloudAccountID == skipAcctB {
+			found = true
+			assert.Equal(t, "failed", row.Status)
+			assert.True(t, f.live[i], "B's failed row must not be saved on the ended run context")
+		}
+	}
+	require.True(t, found, "B's failed row was saved")
+}
+
+// skipBatchHarness drives saveTerminalAndSkipped with n skip rows. Every save
+// is recorded in order; skip-row saves sleep perSkipSave.
+type skipBatchHarness struct {
+	m        *Manager
+	mu       sync.Mutex
+	order    []string // "root" or the skip row's account id
+	sent     []email.NotificationData
+	lastSkip time.Time
+}
+
+func newSkipBatchHarness(t *testing.T, terminalSave, perSkipSave time.Duration) *skipBatchHarness {
+	t.Helper()
+	h := &skipBatchHarness{}
+	store := new(MockConfigStore)
+	mailer := new(MockEmailSender)
+	store.SavePurchaseExecutionFn = func(_ context.Context, e *config.PurchaseExecution) error {
+		time.Sleep(perSkipSave)
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		h.order = append(h.order, *e.CloudAccountID)
+		h.lastSkip = time.Now()
+		return nil
+	}
+	store.On("SaveExecutionIfStatus", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(mock.Arguments) {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			h.order = append(h.order, "root")
+		}).Return(nil)
+	store.On("GetGlobalConfig", mock.Anything).Return(failureNotifyCfg(), nil).Maybe()
+	mailer.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			h.sent = append(h.sent, args.Get(1).(email.NotificationData))
+		}).Return(nil).Maybe()
+	h.m = &Manager{config: store, email: mailer, budgets: purchaseBudgets{terminalSave: terminalSave}}
+	return h
+}
+
+func skipBatchRows(n int) []*config.PurchaseExecution {
+	var rows []*config.PurchaseExecution
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("acct-%d", i)
+		rows = append(rows, &config.PurchaseExecution{
+			ExecutionID: "skip-" + id, Status: "failed", NoSubmission: true, CloudAccountID: &id,
+			Recommendations: []config.RecommendationRecord{{Service: "rds", ResourceType: "db.m5.large", Region: "us-east-1", Count: 1, Selected: true}},
+		})
+	}
+	return rows
+}
+
+// The root saves first, the skip rows share its one deadline, and one email
+// covers every saved row (issue #1672).
+func TestSaveTerminalAndSkipped_RootFirstOneEmail(t *testing.T) {
+	h := newSkipBatchHarness(t, time.Second, 0)
+	root := &config.PurchaseExecution{ExecutionID: "root", PlanID: "plan", Status: "partially_completed"}
+	partial := &multiAccountPartialError{committed: 1, skipped: skipBatchRows(3)}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, h.m.saveTerminalAndSkipped(ctx, root, partial))
+
+	assert.Equal(t, []string{"root", "acct-0", "acct-1", "acct-2"}, h.order, "root first, then the skip rows")
+	require.Len(t, h.sent, 1, "one batched email, not one per row")
+	assert.Equal(t, "root", h.sent[0].ExecutionID)
+	assert.Len(t, h.sent[0].Recommendations, 3)
+}
+
+// Rows that do not fit in the root's terminal-save window are AUDIT LOSS and
+// never extend it or fail the root.
+func TestSaveTerminalAndSkipped_SharedDeadline(t *testing.T) {
+	h := newSkipBatchHarness(t, 50*time.Millisecond, 30*time.Millisecond)
+	root := &config.PurchaseExecution{ExecutionID: "root", PlanID: "plan", Status: "partially_completed"}
+	partial := &multiAccountPartialError{committed: 1, skipped: skipBatchRows(5)}
+
+	ctx, cancel := ctxutil.DetachedWithTimeout(context.Background(), h.m.budgets.terminalSaveTimeout())
+	defer cancel()
+	start := time.Now()
+	require.NoError(t, h.m.saveTerminalAndSkipped(ctx, root, partial), "a lost skip row never fails the root")
+	elapsed := time.Since(start)
+
+	require.NotEmpty(t, h.order)
+	assert.Equal(t, "root", h.order[0])
+	saved := len(h.order) - 1
+	assert.Less(t, saved, 5, "rows past the deadline are not saved")
+	// Deadline plus at most one in-flight save and scheduling slack.
+	assert.Less(t, elapsed, 50*time.Millisecond+30*time.Millisecond+100*time.Millisecond, "one shared window, not one per row")
+	if saved > 0 {
+		require.Len(t, h.sent, 1)
+		assert.Len(t, h.sent[0].Recommendations, saved, "the email covers only the saved rows")
+	}
 }

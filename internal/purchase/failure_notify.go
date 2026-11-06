@@ -79,6 +79,26 @@ func (m *Manager) sendFailureNotice(ctx context.Context, exec *config.PurchaseEx
 	}
 }
 
+// notifySkippedAccounts logs the marker for each saved skip row and sends ONE
+// purchase-failed email listing all their recs, so a run that skipped many
+// accounts costs one failureNotifyTimeout window, not one per row (#1672).
+func (m *Manager) notifySkippedAccounts(ctx context.Context, root *config.PurchaseExecution, rows []*config.PurchaseExecution) {
+	batch := &config.PurchaseExecution{ExecutionID: root.ExecutionID, PlanID: root.PlanID}
+	for _, row := range rows {
+		if logExecutionFailure(row) {
+			batch.Recommendations = append(batch.Recommendations, row.Recommendations...)
+		}
+	}
+	if len(batch.Recommendations) == 0 || m.email == nil {
+		return
+	}
+	ctx, cancel := ctxutil.DetachedWithTimeout(ctx, failureNotifyTimeout)
+	defer cancel()
+	if err := m.email.SendPurchaseFailedNotification(ctx, m.buildPurchaseFailedData(ctx, batch)); err != nil {
+		logging.Errorf("Failed to send skipped-accounts notification for execution %s: %v", root.ExecutionID, err)
+	}
+}
+
 // buildPurchaseFailedData lists the selected recommendations that did not
 // purchase (or, for an outcome-unknown row, whose purchase is unconfirmed) and
 // addresses the email to the global notification address (the

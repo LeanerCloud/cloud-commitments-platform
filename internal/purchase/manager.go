@@ -271,7 +271,10 @@ func isMultiAccountAckable(execErr error) bool {
 const (
 	// The two budgets run back to back, and for a failed or partial row the
 	// failure alert follows them with its own failureNotifyTimeout (30s), so a
-	// run can take 3m30s + 30s + 30s = 270s. On AWS Lambda the function timeout
+	// run can take 3m30s + 30s + 30s = 270s. The failed rows of accounts a
+	// fan-out skipped (#1672) add no window: they are saved after the root, on
+	// the root's terminal-save deadline, and announced in one email inside the
+	// failure-alert window. On AWS Lambda the function timeout
 	// ends the invocation whatever these deadlines say, so the Lambda timeout
 	// must cover that sum plus a 30s margin (lambda_timeout >= 300, enforced by
 	// Terraform validation and TestLambdaTimeoutCoversPurchaseBudget, #913,
@@ -342,7 +345,7 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 	// when the terminal save below fails. A fan-out root logs the alarm
 	// marker without an email (issue #1195; see notifyRootFailure).
 	defer m.notifyRootFailure(saveCtx, exec, execErr)
-	if err := m.saveOrRecoverTerminal(saveCtx, exec, execErr); err != nil {
+	if err := m.saveTerminalAndSkipped(saveCtx, exec, execErr); err != nil {
 		logging.Errorf("AUDIT LOSS: failed to save execution status: %v", err)
 		// Wrap with ErrAuditLoss regardless of whether executePurchase itself
 		// failed. When execErr != nil (provider/partial error), finalizeExecution
@@ -364,6 +367,37 @@ func (m *Manager) executeAndFinalize(ctx context.Context, exec *config.PurchaseE
 		}
 	}
 	return execErr
+}
+
+// saveTerminalAndSkipped saves the root row, then the rows of accounts a
+// fan-out skipped, all on ctx's single terminal-save deadline (issue #1672).
+// The root goes first and its result is the return value: a skip row that does
+// not fit in the deadline is logged as AUDIT LOSS and never fails the root.
+func (m *Manager) saveTerminalAndSkipped(ctx context.Context, exec *config.PurchaseExecution, execErr error) error {
+	err := m.saveOrRecoverTerminal(ctx, exec, execErr)
+	var partial *multiAccountPartialError
+	if errors.As(execErr, &partial) {
+		m.saveSkippedRows(ctx, exec, partial.skipped)
+	}
+	return err
+}
+
+// saveSkippedRows saves each skip row until ctx ends and sends one email for
+// the rows it saved.
+func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExecution, rows []*config.PurchaseExecution) {
+	var saved []*config.PurchaseExecution
+	for _, row := range rows {
+		err := ctx.Err()
+		if err == nil {
+			err = m.config.SavePurchaseExecution(ctx, row)
+		}
+		if err != nil {
+			logging.Errorf("AUDIT LOSS: failed to save the skipped-account record for account %v of execution %s: %v", row.CloudAccountID, root.ExecutionID, err)
+			continue
+		}
+		saved = append(saved, row)
+	}
+	m.notifySkippedAccounts(ctx, root, saved)
 }
 
 // preExecutionRefusal runs every check that must pass before any provider call.
