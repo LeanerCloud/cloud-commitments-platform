@@ -157,6 +157,7 @@ test('table names the account, Auto Approve warns and confirms, and save errors 
   await expect(warning).toBeHidden();
   await page.locator('#ladder-cfg-account').selectOption('registered-aws');
   await page.locator('#ladder-cfg-mode').selectOption('auto_approve');
+  await page.locator('#ladder-cfg-max-hourly').fill('5');
   await expect(warning).toBeVisible();
   await expect(warning).toContainText('skips human approval');
   await page.locator('#ladder-cfg-enabled').check();
@@ -227,6 +228,7 @@ test('a cleared Buffer Fraction blocks the save instead of sending a zero buffer
   await page.locator('#ladder-add-config-btn').click();
   await expect(page.locator('#ladder-cfg-account')).toBeEnabled();
   await page.locator('#ladder-cfg-account').selectOption('registered-aws');
+  await page.locator('#ladder-cfg-max-hourly').fill('5');
   await page.locator('#ladder-cfg-buffer-fraction').fill('');
   await page.locator('#ladder-config-save-btn').click();
   await expect(page.getByText('Buffer fraction is required. Enter a number before saving.')).toBeVisible();
@@ -260,6 +262,7 @@ for (const [width, height] of [[1280, 720], [390, 844]]) {
     await page.locator('#ladder-add-config-btn').click();
     await expect(page.locator('#ladder-cfg-account')).toBeEnabled();
     await page.locator('#ladder-cfg-account').selectOption('registered-aws');
+    await page.locator('#ladder-cfg-max-hourly').fill('5');
     await page.locator('#ladder-config-save-btn').click();
     const toast = page.getByRole('alert').filter({ hasText: 'Failed to save ladder config: max_actions_per_run must be between 1 and 50' });
     await expect(toast).toBeVisible();
@@ -284,6 +287,7 @@ test('a toast stays off the Auto Approve confirm stacked over the ladder modal a
   await page.locator('#ladder-add-config-btn').click();
   await expect(page.locator('#ladder-cfg-account')).toBeEnabled();
   await page.locator('#ladder-cfg-account').selectOption('registered-aws');
+  await page.locator('#ladder-cfg-max-hourly').fill('5');
   await page.locator('#ladder-cfg-buffer-fraction').fill('');
   await page.locator('#ladder-config-save-btn').click();
   const toast = page.getByRole('alert').filter({ hasText: 'Buffer fraction is required.' });

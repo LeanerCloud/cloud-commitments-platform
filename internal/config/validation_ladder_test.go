@@ -13,6 +13,7 @@ import (
 // bounds test below clones this and mutates exactly one field so a failure
 // pinpoints the single offending invariant.
 func validLadderConfigDB() LadderConfigDB {
+	capUSD := 5.0
 	return LadderConfigDB{
 		CloudAccountID:             "11111111-1111-1111-1111-111111111111",
 		Provider:                   "aws",
@@ -25,7 +26,7 @@ func validLadderConfigDB() LadderConfigDB {
 		LookbackDays:               30,
 		BufferUtilizationThreshold: 90,
 		MaxActionsPerRun:           10,
-		MaxHourlyCommitPerRun:      nil, // nil = no cap (valid)
+		MaxHourlyCommitPerRun:      &capUSD,
 		RampSchedule:               json.RawMessage(`{"steps":[{"after_days":0,"fraction":1.0}]}`),
 	}
 }
@@ -112,8 +113,8 @@ func TestLadderConfigDB_Validate_Bounds(t *testing.T) {
 }
 
 // TestLadderConfigDB_Validate_MaxHourlyCommitPerRun covers the pointer-typed
-// optional cap: nil = no cap (valid), a positive value is valid, and
-// non-positive / NaN / Inf are rejected.
+// cap: nil is rejected for AWS (#1815) but valid for other providers, a
+// positive value is valid, and non-positive / NaN / Inf are rejected.
 func TestLadderConfigDB_Validate_MaxHourlyCommitPerRun(t *testing.T) {
 	f := func(v float64) *float64 { return &v }
 	cases := []struct {
@@ -121,7 +122,7 @@ func TestLadderConfigDB_Validate_MaxHourlyCommitPerRun(t *testing.T) {
 		name    string
 		wantErr bool
 	}{
-		{name: "nil (no cap)", val: nil, wantErr: false},
+		{name: "nil (AWS requires a cap)", val: nil, wantErr: true},
 		{name: "positive", val: f(12.5), wantErr: false},
 		{name: "zero", val: f(0), wantErr: true},
 		{name: "negative", val: f(-1), wantErr: true},
@@ -175,4 +176,19 @@ func TestLadderConfigDB_Validate_EnumsAndProvider(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLadderConfigDB_Validate_UncappedAWSNamesField(t *testing.T) {
+	c := validLadderConfigDB()
+	c.MaxHourlyCommitPerRun = nil
+	err := c.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_hourly_commit_per_run")
+}
+
+func TestLadderConfigDB_Validate_UncappedNonAWSValid(t *testing.T) {
+	c := validLadderConfigDB()
+	c.Provider = "gcp"
+	c.MaxHourlyCommitPerRun = nil
+	assert.NoError(t, c.Validate())
 }

@@ -33,6 +33,11 @@ export function renderLadderConfigTable(container: HTMLElement, configs: readonl
     return;
   }
 
+  const uncapped = configs
+    .filter(cfg => cfg.provider === 'aws' && cfg.max_hourly_commit_per_run == null)
+    .map(cfg => `<p class="warning-message ladder-uncapped-notice" role="status"><strong>${escapeHtml(ladderAccountLabel(cfg, options.accounts))}:</strong> Ladder runs are refused until max_hourly_commit_per_run is set.</p>`)
+    .join('');
+
   const rows = configs.map(cfg => {
     const label = ladderAccountLabel(cfg, options.accounts);
     return `
@@ -56,6 +61,7 @@ export function renderLadderConfigTable(container: HTMLElement, configs: readonl
   }).join('');
 
   container.innerHTML = `
+    ${uncapped}
     <table class="data-table" aria-label="Per-account ladder configurations">
       <thead>
         <tr>

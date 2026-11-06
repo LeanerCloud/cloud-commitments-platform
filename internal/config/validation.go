@@ -913,6 +913,10 @@ func (c *LadderConfigDB) validateLadderRunLimits() error {
 		if _, err := LadderCapMicros(*v); err != nil {
 			return err
 		}
+	} else if c.Provider == "aws" {
+		// The Compute SP layer is sized from an account-wide blended rate; only
+		// a per-run cap bounds it, and executeLadderRun refuses uncapped runs.
+		return fmt.Errorf("max_hourly_commit_per_run is required for an AWS ladder config")
 	}
 	if c.MaxActionsPerRun <= 0 {
 		return fmt.Errorf("max_actions_per_run %d must be > 0", c.MaxActionsPerRun)

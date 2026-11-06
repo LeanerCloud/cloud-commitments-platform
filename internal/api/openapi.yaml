@@ -9182,7 +9182,7 @@ components:
         max_hourly_commit_per_run:
           type: number
           format: double
-          description: Omitted when there is no cap.
+          description: Omitted when there is no cap. Saving an aws config requires a cap, but an aws config saved before that rule can still have none, and then it is omitted; ladder runs for it are refused until a cap is set.
         max_actions_per_run:
           type: integer
         ramp_schedule:
@@ -9261,7 +9261,8 @@ components:
           maximum: 1.0e+12
           description: >
             Cap on the hourly commitment one run may buy, with at most 6
-            decimal places. Omit or send null for no cap.
+            decimal places. Required for provider aws (a save without it is
+            refused with 400); omit or send null for no cap on other providers.
         max_actions_per_run:
           type: integer
           minimum: 1

@@ -92,7 +92,7 @@ func TestUpsertLadderConfig_NonUUIDAccountIDIs400(t *testing.T) {
 	handler, mockStore, _ := newLadderHandler(t)
 	failNonUUIDLookups(mockStore)
 
-	body := `{"cloud_account_id":"` + ladderBadAccountID + `","provider":"aws","mode":"email_approval","cadence":"daily",` + ladderValidRamp + `}`
+	body := `{"cloud_account_id":"` + ladderBadAccountID + `","provider":"aws","mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,` + ladderValidRamp + `}`
 	result, err := handler.upsertLadderConfig(ctx, ladderReq(body))
 	requireInvalidAccountID(t, mockStore, result, err)
 }
@@ -104,7 +104,7 @@ func TestUpsertLadderConfig_BufferFractionExplicitZeroSurvives(t *testing.T) {
 	ctx := context.Background()
 	handler, _, captured := newLadderHandler(t)
 
-	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","buffer_fraction":0,` + ladderValidRamp + `}`
+	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,"buffer_fraction":0,` + ladderValidRamp + `}`
 	_, err := handler.upsertLadderConfig(ctx, ladderReq(body))
 	require.NoError(t, err)
 	require.NotNil(t, *captured, "store should have been reached")
@@ -118,7 +118,7 @@ func TestUpsertLadderConfig_BufferFractionOmittedDefaults(t *testing.T) {
 	ctx := context.Background()
 	handler, _, captured := newLadderHandler(t)
 
-	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily",` + ladderValidRamp + `}`
+	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,` + ladderValidRamp + `}`
 	_, err := handler.upsertLadderConfig(ctx, ladderReq(body))
 	require.NoError(t, err)
 	require.NotNil(t, *captured, "store should have been reached")
@@ -133,7 +133,7 @@ func TestUpsertLadderConfig_ExplicitZeroTargetCoverageRejected(t *testing.T) {
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 
-	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","target_coverage":0,` + ladderValidRamp + `}`
+	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,"target_coverage":0,` + ladderValidRamp + `}`
 	result, err := handler.upsertLadderConfig(ctx, ladderReq(body))
 	require.Error(t, err)
 	assert.Nil(t, result)
@@ -150,7 +150,7 @@ func TestUpsertLadderConfig_ShortAWSLookbackRejected(t *testing.T) {
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 
-	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","lookback_days":9,` + ladderValidRamp + `}`
+	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,"lookback_days":9,` + ladderValidRamp + `}`
 	result, err := handler.upsertLadderConfig(ctx, ladderReq(body))
 	require.Error(t, err)
 	assert.Nil(t, result)
@@ -171,7 +171,7 @@ func TestUpsertLadderConfig_MultiStepRampAccepted(t *testing.T) {
 	handler, _, captured := newLadderHandler(t)
 
 	const ramp = `"ramp_schedule":{"steps":[{"after_days":0,"fraction":0.5},{"after_days":30,"fraction":0.3},{"after_days":60,"fraction":0.2}]}`
-	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily",` + ramp + `}`
+	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,` + ramp + `}`
 	result, err := handler.upsertLadderConfig(ctx, ladderReq(body))
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -230,7 +230,7 @@ func TestUpsertLadderConfig_NonexistentAccountRejected(t *testing.T) {
 	handler, mockStore, _ := newLadderHandler(t)
 	mockStore.On("GetCloudAccount", ctx, ladderGhostAccount).Return(nil, nil)
 
-	body := `{"cloud_account_id":"` + ladderGhostAccount + `","provider":"aws","mode":"email_approval","cadence":"daily",` + ladderValidRamp + `}`
+	body := `{"cloud_account_id":"` + ladderGhostAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,` + ladderValidRamp + `}`
 	result, err := handler.upsertLadderConfig(ctx, ladderReq(body))
 	require.Error(t, err)
 	assert.Nil(t, result)
@@ -265,7 +265,7 @@ func ladderScopedReq(body string) *events.LambdaFunctionURLRequest {
 // grant (covered in ladder_arming_grant_test.go).
 func ladderScopedBody(accountID string) string {
 	return `{"cloud_account_id":"` + accountID + `","provider":"aws","enabled":false,` +
-		`"mode":"auto_approve","cadence":"daily",` + ladderValidRamp + `}`
+		`"mode":"auto_approve","cadence":"daily","max_hourly_commit_per_run":5,` + ladderValidRamp + `}`
 }
 
 // ladderScopedHandler wires a handler whose session is restricted to
@@ -332,4 +332,22 @@ func TestUpsertLadderConfig_UnrestrictedSessionUnaffected(t *testing.T) {
 	require.NoError(t, err, "an unrestricted session must be unaffected by the #1539 scope check")
 	require.NotNil(t, result)
 	mockStore.AssertCalled(t, "UpsertLadderConfig")
+}
+
+// TestUpsertLadderConfig_UncappedAWSRejected pins #1815: an AWS config without
+// max_hourly_commit_per_run returns 400 naming the field and never reaches the
+// store, instead of saving a config every run will refuse.
+func TestUpsertLadderConfig_UncappedAWSRejected(t *testing.T) {
+	ctx := context.Background()
+	handler, mockStore, _ := newLadderHandler(t)
+
+	body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily",` + ladderValidRamp + `}`
+	result, err := handler.upsertLadderConfig(ctx, ladderReq(body))
+	require.Error(t, err)
+	assert.Nil(t, result)
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+	assert.Equal(t, 400, ce.code)
+	assert.Contains(t, ce.message, "max_hourly_commit_per_run")
+	mockStore.AssertNotCalled(t, "UpsertLadderConfig", mock.Anything, mock.Anything)
 }
