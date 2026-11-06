@@ -32,6 +32,7 @@ type visFake struct {
 	execs        map[string]*config.PurchaseExecution
 	completed    []string
 	lastStates   []sptypes.SavingsPlanState
+	scheduledAt  *time.Time // due time reported on every chain node
 }
 
 func (f *visFake) ListFiredLadderTranches(context.Context, int) ([]config.LadderTrancheDB, error) {
@@ -45,7 +46,7 @@ func (f *visFake) WithTx(_ context.Context, fn func(pgx.Tx) error) error {
 func (f *visFake) LockLadderTrancheChainTx(_ context.Context, _ pgx.Tx, id string) ([]config.LadderChainNode, error) {
 	for _, tr := range f.fired {
 		if tr.ID == id {
-			return []config.LadderChainNode{{ExecutionID: *tr.ExecutionID, Status: f.execs[*tr.ExecutionID].Status, CreatedAt: time.Unix(0, 0)}}, nil
+			return []config.LadderChainNode{{ExecutionID: *tr.ExecutionID, Status: f.execs[*tr.ExecutionID].Status, ScheduledExecutionAt: f.scheduledAt, CreatedAt: time.Unix(0, 0)}}, nil
 		}
 	}
 	return nil, config.ErrLadderTrancheNotFired
@@ -226,17 +227,32 @@ func TestRunLadderReconcile_PartialVisibilityStaysFired(t *testing.T) {
 	assert.Equal(t, []string{"acct-a"}, f.factoryAccts)
 }
 
-// A tail still scheduled is waiting for its fire time, not stuck, so it never
-// counts as stale however old the chain head is; a running tail does.
+// A tail scheduled for the future is waiting for its fire time, not stuck, so
+// it is not stale however old the chain head is. Once overdue by more than
+// LadderFiredStaleAfter (or with no due time) it counts as stale, like a
+// running tail, so a fire sweep that never runs is still reported.
 func TestRunLadderReconcile_ScheduledTailIsNotStale(t *testing.T) {
-	for status, wantStale := range map[string]int{"scheduled": 0, "running": 1} {
-		t.Run(status, func(t *testing.T) {
-			f := &visFake{}
+	future := time.Now().Add(time.Hour)
+	overdue := time.Now().Add(-LadderFiredStaleAfter - time.Hour)
+	cases := []struct {
+		name      string
+		status    string
+		due       *time.Time
+		wantStale int
+	}{
+		{"scheduled in the future", "scheduled", &future, 0},
+		{"scheduled overdue", "scheduled", &overdue, 1},
+		{"scheduled without due time", "scheduled", nil, 1},
+		{"running", "running", nil, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := &visFake{scheduledAt: c.due}
 			f.addTranche("t1", "acct-a", "sp-1", ladder.LayerComputeSP)
-			f.execs["exec-t1"].Status = status
+			f.execs["exec-t1"].Status = c.status
 			res := f.run(t)
 			assert.Equal(t, 1, res.Unresolved)
-			assert.Equal(t, wantStale, res.Stale)
+			assert.Equal(t, c.wantStale, res.Stale)
 		})
 	}
 }

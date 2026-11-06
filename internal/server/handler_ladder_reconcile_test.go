@@ -82,3 +82,12 @@ func TestLadderReconcile_FailsLoudWhenStoreCannotReconcile(t *testing.T) {
 
 	require.Error(t, err)
 }
+
+func TestLadderReconcile_FailsLoudWhenPurchaseCannotDescribeSavingsPlans(t *testing.T) {
+	app := &Application{Config: &reconcileFakeStore{}, Purchase: struct{ PurchaseManagerInterface }{}}
+
+	_, err := app.handleLadderReconcile(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot describe Savings Plans")
+}

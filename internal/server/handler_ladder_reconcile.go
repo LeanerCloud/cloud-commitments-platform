@@ -5,20 +5,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
-	"github.com/jackc/pgx/v5"
 )
 
 // ladderReconcileStore is the slice of the Postgres store RunLadderReconcile
 // needs beyond config.StoreInterface.
 type ladderReconcileStore interface {
-	ListFiredLadderTranches(ctx context.Context, limit int) ([]config.LadderTrancheDB, error)
-	WithTx(ctx context.Context, fn func(tx pgx.Tx) error) error
-	LockLadderTrancheChainTx(ctx context.Context, tx pgx.Tx, trancheID string) ([]config.LadderChainNode, error)
-	TransitionLadderTrancheTx(ctx context.Context, tx pgx.Tx, id string, from, to ladder.TrancheStatus, reason string) (bool, error)
+	purchase.LadderReconcileStore
 	GetExecutionByID(ctx context.Context, id string) (*config.PurchaseExecution, error)
 }
 

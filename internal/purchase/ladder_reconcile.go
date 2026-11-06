@@ -65,7 +65,7 @@ type ladderVerdict struct {
 // becomes failed only when nothing in the whole chain can have reached the
 // provider; anything else stays fired, because fired keeps netting and failed
 // does not.
-func decideFiredTranche(chain []config.LadderChainNode, visible func(executionID string) (bool, error)) ladderVerdict {
+func decideFiredTranche(chain []config.LadderChainNode, now time.Time, visible func(executionID string) (bool, error)) ladderVerdict {
 	tail := chain[len(chain)-1]
 	if tail.RetryExecutionID != nil {
 		return ladderVerdict{note: fmt.Sprintf("retry chain unresolved after %d executions", len(chain))}
@@ -85,10 +85,20 @@ func decideFiredTranche(chain []config.LadderChainNode, visible func(executionID
 	case config.StatusExpired:
 		return failedIfPredecessorsProven(chain, ladderReasonApprovalExpired)
 	case ladderExecutionScheduled:
-		return ladderVerdict{note: "execution is scheduled and not yet due", waiting: true}
+		if scheduledTailWaiting(tail, now) {
+			return ladderVerdict{note: "execution is scheduled and not yet due", waiting: true}
+		}
+		return ladderVerdict{note: "execution is scheduled but overdue or has no due time"}
 	default:
 		return ladderVerdict{note: "execution is " + tail.Status}
 	}
+}
+
+// scheduledTailWaiting reports whether a scheduled tail is still inside its
+// own due time plus LadderFiredStaleAfter. Past that (the fire sweep is not
+// running) or with no due time it is no longer waiting and can go stale.
+func scheduledTailWaiting(tail config.LadderChainNode, now time.Time) bool {
+	return tail.ScheduledExecutionAt != nil && now.Before(tail.ScheduledExecutionAt.Add(LadderFiredStaleAfter))
 }
 
 // completedVerdict completes the tranche only once its commitment is visible.
@@ -143,7 +153,7 @@ func reconcileOne(ctx context.Context, store LadderReconcileStore, vis Commitmen
 			return err
 		}
 		head = chain[0].CreatedAt
-		verdict = decideFiredTranche(chain, func(execID string) (bool, error) {
+		verdict = decideFiredTranche(chain, now, func(execID string) (bool, error) {
 			return vis.CommitmentVisible(ctx, tr, execID)
 		})
 		if verdict.to == "" {

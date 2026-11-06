@@ -215,3 +215,22 @@ func TestReconcileLadderTranches_StaleUnresolvedIsAlertedNotChanged(t *testing.T
 		assert.Equal(t, "fired", status)
 	}
 }
+
+func TestLockLadderTrancheChainTx_ReadsScheduledExecutionAt(t *testing.T) {
+	r := newLadderRig(t)
+	id, exec := r.firedTranche("scheduled", false, time.Minute)
+	due := time.Now().Add(2 * time.Hour).UTC().Truncate(time.Millisecond)
+	_, err := r.pool.Exec(r.ctx, `UPDATE purchase_executions SET scheduled_execution_at = $2 WHERE execution_id = $1`, exec, due)
+	require.NoError(t, err)
+
+	var chain []config.LadderChainNode
+	require.NoError(t, r.store.WithTx(r.ctx, func(tx pgx.Tx) error {
+		var e error
+		chain, e = r.store.LockLadderTrancheChainTx(r.ctx, tx, id)
+		return e
+	}))
+
+	require.Len(t, chain, 1)
+	require.NotNil(t, chain[0].ScheduledExecutionAt)
+	assert.WithinDuration(t, due, *chain[0].ScheduledExecutionAt, time.Millisecond)
+}
