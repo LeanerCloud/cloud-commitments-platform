@@ -50,9 +50,12 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		fmt.Errorf("%w: 2 selected recommendation(s) target 2 cloud accounts (a, b); submit one purchase per account", errAmbiguousAccountScope).Error(),
 		fmt.Errorf("%w: 1 selected recommendation(s) carry no cloud_account_id while 2 target account a", errAmbiguousAccountScope).Error(),
 		"purchase was not successful",
+		skippedAccountRetryNote,
+		skippedAccountNoRetryNote,
 		redshiftConflictRefusal,
 		redshiftHorizonRefusal,
 		redshiftNoStampRefusal,
+		redshiftRecentBuyRefusal,
 		"EC2 recommendation for m5.large has zonal scope but no AvailabilityZone: refusing to buy a zonal RI in an arbitrary AZ; re-fetch the recommendation",
 		"zonal RI offering needs an availability zone; re-fetch the recommendation",
 		"email notifier not configured for this deployment",
@@ -205,7 +208,7 @@ func TestSanitizeStoredError_ResolveNoteExchangeIDIsClosed(t *testing.T) {
 // The Redshift gate texts are fixed: an appended execution id or raw text must
 // not pass verbatim.
 func TestSanitizeStoredError_RedshiftGateRefusalsAreClosed(t *testing.T) {
-	for _, text := range []string{redshiftConflictRefusal, redshiftHorizonRefusal, redshiftNoStampRefusal} {
+	for _, text := range []string{redshiftConflictRefusal, redshiftHorizonRefusal, redshiftNoStampRefusal, redshiftRecentBuyRefusal} {
 		assert.Equal(t, text, SanitizeStoredError(text))
 		for _, variant := range []string{
 			text + " (execution 00000000-0000-0000-0000-000000000000, running)",

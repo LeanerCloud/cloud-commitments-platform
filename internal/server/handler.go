@@ -418,17 +418,6 @@ func (app *Application) handleRefreshAnalytics(ctx context.Context) (map[string]
 	return result, nil
 }
 
-// HandleSQSMessage processes an SQS message for async purchase processing.
-func (app *Application) HandleSQSMessage(ctx context.Context, body string) error {
-	log.Printf("Processing SQS message (size: %d bytes)", len(body))
-	if err := app.Purchase.ProcessMessage(ctx, body); err != nil {
-		log.Printf("Failed to process SQS message: %v", err)
-		return err
-	}
-	log.Println("SQS message processed successfully")
-	return nil
-}
-
 // ScheduledEvent represents a generic scheduled event.
 type ScheduledEvent struct {
 	Source     string          `json:"source"`

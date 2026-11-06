@@ -2556,6 +2556,9 @@ func (h *Handler) loadAndValidateRetryRequest(ctx context.Context, req *events.L
 	if err := checkRetryEligibilityGates(failedExec, req); err != nil {
 		return nil, nil, err
 	}
+	if err := h.checkRedshiftRetryGate(ctx, failedExec); err != nil {
+		return nil, nil, err
+	}
 
 	return failedExec, session, nil
 }
@@ -2784,6 +2787,7 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 		CapacityPercent:        failedExec.CapacityPercent,
 		CreatedByUserID:        resolveCreatorUserID(session),
 		RetryAttemptN:          failedExec.RetryAttemptN + 1,
+		FirstDispatchAt:        retrySuccessorFirstDispatchAt(failedExec),
 	}
 
 	graceCfg, err := h.gracePeriodConfig(ctx)

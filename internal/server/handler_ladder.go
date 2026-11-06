@@ -285,8 +285,10 @@ func (app *Application) processOneLadderConfig(
 // below): a safe under-buy, and a deliberate deviation from go's InFlight doc.
 //
 // Units: the provider's existing and expiring coverage arrive in commitment
-// dollars and are first converted to on-demand-equivalent dollars with the
-// same rates (ladderLayerStatesOnDemand). Coverage on a layer with no rate
+// dollars and are first converted to on-demand-equivalent dollars at the
+// observed rate of the commitments held when the provider reports one, else at
+// the new-purchase rate (ladderConversionRates, ladderLayerStatesOnDemand).
+// New tranches are always sized at the new-purchase rate. Coverage on a layer with no rate
 // cannot be converted, so the gap cannot be sized: the run is persisted as a
 // Hold-only run with reason_code missing_discount_rate that buys nothing
 // (planMissingRateHold), not an Errored run. Allocate sizes the gap in
@@ -317,6 +319,11 @@ func (app *Application) executeLadderRun(
 	}
 	scope := engineCfg.Scope
 
+	layers := capability.SupportedLayers()
+	if refusal := ladderComputeCapRefusal(dbCfg, layers); refusal != nil {
+		return refusal
+	}
+
 	// Collect read-side data. All three calls are independent; errors are
 	// fail-loud (not silently defaulted to empty).
 	baseline, err := capability.GetUsageBaseline(ctx, scope, engineCfg.LookbackDays, engineCfg.BaselinePercentile)
@@ -331,7 +338,8 @@ func (app *Application) executeLadderRun(
 
 	// Rates are provider data, fetched outside the transaction. No capability or
 	// a fetch error fails the run: the allocator never gets a guessed rate. An
-	// empty map is valid and yields a Hold-only run.
+	// empty map is valid and yields a Hold-only run. Observed rates are
+	// optional: a capability without them converts at the marginal rates.
 	rater, ok := capability.(pkgladder.CommitmentRateCapability)
 	if !ok {
 		return fmt.Errorf("capability %T does not provide commitment rates", capability)
@@ -343,9 +351,16 @@ func (app *Application) executeLadderRun(
 
 	// Providers report existing coverage in commitment dollars; Allocate and
 	// the plan snapshot compare it with an on-demand-equivalent target (#946).
-	// Layers holding coverage with no rate come back in missing; the run is
-	// then a Hold that buys nothing and says why.
-	layerStates, missing, err := ladderLayerStatesOnDemand(layerStates, rates)
+	// Existing coverage converts at observed rates where reported, else at the
+	// marginal rates; the planner below keeps the marginal rates for new
+	// tranches. Layers holding coverage with no rate at all come back in
+	// missing; the run is then a Hold that buys nothing and says why.
+	conv, observed, err := ladderConversionRates(ctx, capability, scope, rates)
+	if err != nil {
+		return fmt.Errorf("observed commitment rates: %w", err)
+	}
+	logObservedOverrides(dbCfg.ID, observed, rates)
+	layerStates, missing, err := ladderLayerStatesOnDemand(layerStates, conv)
 	if err != nil {
 		return fmt.Errorf("existing coverage: %w", err)
 	}
@@ -361,7 +376,7 @@ func (app *Application) executeLadderRun(
 	// network I/O.
 	in := &ladderRunPlanner{
 		dbCfg: dbCfg, engineCfg: engineCfg, baseline: baseline, layerStates: layerStates, rates: rates,
-		layers: capability.SupportedLayers(), term: term, paymentOpt: paymentOpt, now: now, missing: missing,
+		layers: layers, term: term, paymentOpt: paymentOpt, now: now, missing: missing,
 	}
 	savedRun, err := app.Config.PlanAndSaveLadderRun(ctx, dbCfg.ID, now, in.build)
 	if err != nil {
@@ -414,7 +429,7 @@ func (p *ladderRunPlanner) reasonCode() string {
 // not a failure, and the run counts as planned.
 func (p *ladderRunPlanner) logPersisted(run *config.LadderRunDB) {
 	if len(p.missing) > 0 {
-		logging.Warnf("ladder_run: config %s: persisted Hold-only run %s (reason_code=%s): %d layer(s) hold existing coverage with no discount rate; nothing bought",
+		logging.Warnf("ladder_run: config %s: persisted Hold-only run %s (reason_code=%s): %d layer(s) hold existing coverage with no observed or new-purchase rate; nothing bought",
 			p.dbCfg.ID, run.ID, ladderHoldMissingDiscountRate, len(p.missing))
 		return
 	}

@@ -151,13 +151,6 @@ type ApplicationConfig struct {
 	// X-Forwarded-For before the app (CUDLY_TRUSTED_PROXY_HOPS). 0 ignores
 	// the header and uses the peer address.
 	TrustedProxyHops int
-	// ReportSQSBatchItemFailures gates whether handleLambdaSQSEvent returns
-	// the partial events.SQSEventResponse{BatchItemFailures} shape (true) or
-	// the old whole-batch aggregate error (false, default). See
-	// loadReportSQSBatchItemFailures for why this must stay false until the
-	// SQS event source mapping's function_response_types actually includes
-	// "ReportBatchItemFailures" (issue #108 follow-up).
-	ReportSQSBatchItemFailures bool
 	// RecommendationSchedule is RECOMMENDATION_SCHEDULE: the schedule
 	// Terraform gave the deployment's recommendation-collection trigger
 	// (EventBridge rate()/cron() or five-field cron), empty when scheduled
@@ -665,12 +658,6 @@ func NewApplication(ctx context.Context, version string) (*Application, error) {
 	if err = cfg.Analytics.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid analytics configuration: %w", err)
 	}
-
-	reportSQSBatchItemFailures, err := loadReportSQSBatchItemFailures()
-	if err != nil {
-		return nil, fmt.Errorf("invalid SQS configuration: %w", err)
-	}
-	cfg.ReportSQSBatchItemFailures = reportSQSBatchItemFailures
 
 	log.Printf("CUDly Server initializing, version: %s", cfg.Version)
 

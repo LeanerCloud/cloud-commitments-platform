@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -113,30 +112,29 @@ func purchasesFiredByRetry(t *testing.T, failed *config.PurchaseExecution, req *
 }
 
 // executeRedriveSuccessor runs a retry successor through the real
-// purchase.Manager the way production does: the row is picked up from the
-// execute_purchase queue message once the operator has approved it, claimed,
-// and executed. Returns the idempotency token of every purchase that reached
+// purchase.Manager the way production does: the persisted pending row is
+// approved by an operator, claimed, and executed. Returns the idempotency token of every purchase that reached
 // the cloud.
 func executeRedriveSuccessor(t *testing.T, successor *config.PurchaseExecution) []string {
 	t.Helper()
 
-	approved := *successor
-	approved.Status = "approved"
-	running := approved
+	pending := *successor
+	running := pending
 	running.Status = "running"
 
 	store := new(MockConfigStore)
-	for _, rec := range approved.Recommendations {
+	for _, rec := range pending.Recommendations {
 		if rec.Provider == "azure" {
-			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(approved.Recommendations, nil).Once()
+			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(pending.Recommendations, nil).Once()
 			break
 		}
 	}
 	t.Cleanup(func() { store.AssertExpectations(t) })
 
-	store.On("GetExecutionByID", mock.Anything, approved.ExecutionID).Return(&approved, nil).Once()
-	store.On("TransitionExecutionStatus", mock.Anything, approved.ExecutionID,
-		[]string{"approved", "pending", "notified"}, "running", (*string)(nil)).Return(&running, nil).Once()
+	store.On("GetExecutionByID", mock.Anything, pending.ExecutionID).Return(&pending, nil).Maybe()
+	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{}, nil).Maybe()
+	store.On("TransitionExecutionStatus", mock.Anything, pending.ExecutionID,
+		[]string{"pending", "notified"}, "running", (*string)(nil)).Return(&running, nil).Once()
 	store.On("SavePurchaseHistory", mock.Anything, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil)
 	store.SavePurchaseExecutionFn = func(_ context.Context, _ *config.PurchaseExecution) error { return nil }
 
@@ -149,12 +147,9 @@ func executeRedriveSuccessor(t *testing.T, successor *config.PurchaseExecution) 
 		DashboardURL:    "https://dashboard.example.com",
 	})
 
-	body, err := json.Marshal(purchase.AsyncMessage{
-		Type:        purchase.MessageTypeExecutePurchase,
-		ExecutionID: approved.ExecutionID,
-	})
-	require.NoError(t, err)
-	require.NoError(t, mgr.ProcessMessage(context.Background(), string(body)),
+	// Human approval of the persisted pending successor, as the retry flow does.
+	_, _, err := mgr.ApproveAndExecute(context.Background(), pending.ExecutionID, "", nil, nil)
+	require.NoError(t, err,
 		"the successor must execute cleanly; a non-nil error would make the purchase tally meaningless")
 
 	return svc.purchasedTokens()

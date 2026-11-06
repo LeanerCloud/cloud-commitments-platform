@@ -17,3 +17,13 @@ import (
 func DetachedWithTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), d)
 }
+
+// DetachedWithDeadline is DetachedWithTimeout with an absolute deadline: ctx's
+// values are kept, its cancellation and deadline are dropped, and the result
+// ends at deadline. Use it when several detached phases must share one
+// schedule anchored on an earlier deadline instead of each starting a fresh
+// timeout from "now". A deadline already in the past yields a context that is
+// already done. Always defer the returned CancelFunc.
+func DetachedWithDeadline(ctx context.Context, deadline time.Time) (context.Context, context.CancelFunc) {
+	return context.WithDeadline(context.WithoutCancel(ctx), deadline)
+}

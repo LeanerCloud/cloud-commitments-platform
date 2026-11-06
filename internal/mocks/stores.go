@@ -576,9 +576,9 @@ func (m *MockConfigStore) LockRedshiftTuplesTx(ctx context.Context, tx pgx.Tx, t
 }
 
 // FindOpenRedshiftLineageConflictsTx mocks the Redshift lineage conflict query (no default: testify panics if unexpected).
-func (m *MockConfigStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []config.RedshiftTuple, accountID *string, horizon time.Duration) ([]config.RedshiftLineageConflict, error) {
-	m.record("FindOpenRedshiftLineageConflictsTx", ctx, tx, selfID, family, tuples, accountID, horizon)
-	args := m.Called(ctx, tx, selfID, family, tuples, accountID, horizon)
+func (m *MockConfigStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []config.RedshiftTuple, accountID *string, horizon time.Duration, stamp time.Time, window time.Duration) ([]config.RedshiftLineageConflict, error) {
+	m.record("FindOpenRedshiftLineageConflictsTx", ctx, tx, selfID, family, tuples, accountID, horizon, stamp, window)
+	args := m.Called(ctx, tx, selfID, family, tuples, accountID, horizon, stamp, window)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -587,6 +587,17 @@ func (m *MockConfigStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context
 		m.reporter.wrongReturnType("FindOpenRedshiftLineageConflictsTx", "[]config.RedshiftLineageConflict", args.Get(0))
 	}
 	return res, args.Error(1)
+}
+
+// GetRedshiftRetryClock mocks the Redshift retry clock read (no default: testify panics if unexpected).
+func (m *MockConfigStore) GetRedshiftRetryClock(ctx context.Context, executionID string) (config.RedshiftRetryClock, error) {
+	m.record("GetRedshiftRetryClock", ctx, executionID)
+	args := m.Called(ctx, executionID)
+	clock, ok := args.Get(0).(config.RedshiftRetryClock)
+	if !ok {
+		m.reporter.wrongReturnType("GetRedshiftRetryClock", "config.RedshiftRetryClock", args.Get(0))
+	}
+	return clock, args.Error(1)
 }
 
 // TransitionExecutionStatus mocks the TransitionExecutionStatus operation.

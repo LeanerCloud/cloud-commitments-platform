@@ -6,6 +6,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -298,16 +299,16 @@ func TestMultiAccountSeedsStablePerAccountKey(t *testing.T) {
 	assert.Equal(t, run1, run2, "two runs of the same root must reproduce identical per-account idempotency keys (issue #1012/H1)")
 }
 
-// TestSQSRedeliveryDoesNotDoubleExecute is the issue #1013 (C2) regression
-// guard: a redelivered execute_purchase SQS message must NOT execute the row a
-// second time. The first delivery wins the CAS to "running"; the redelivery
-// loses the CAS (the row is no longer in an executable state) and is acked
-// without touching the cloud.
+// TestScheduledSweepOverlapDoesNotDoubleExecute is the issue #1013 (C2) regression
+// guard: overlapping scheduled sweeps must NOT execute the same row a
+// second time. The first sweep wins the CAS to "running"; the second loses the
+// CAS (the row is no longer in an executable state) and skips without touching
+// the cloud.
 //
-// Pre-fix, handleExecutePurchase only checked status in (approved,pending) with
-// no atomic transition, so both deliveries would execute. This test asserts the
-// purchase runs exactly once and the second delivery is a benign no-op.
-func TestSQSRedeliveryDoesNotDoubleExecute(t *testing.T) {
+// Pre-fix, the executor only checked status in (approved,pending) with no
+// atomic transition, so both sweeps would execute. This test asserts the
+// purchase runs exactly once and the second sweep is a benign no-op.
+func TestScheduledSweepOverlapDoesNotDoubleExecute(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := new(MockEmailSender)
@@ -326,23 +327,23 @@ func TestSQSRedeliveryDoesNotDoubleExecute(t *testing.T) {
 			PlanID:         "plan-dup", // a plan-less row is never auto-executed
 			IdempotencyKey: "lineage-dup",
 			Status:         "notified",
+			ScheduledDate:  time.Now().Add(-time.Minute),
 			Recommendations: []config.RecommendationRecord{
 				{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
 			},
 		}
 	}
 
-	// Both deliveries read the row as "pending" from the DB (at-least-once SQS:
-	// pre-fix nothing CASes it to running before the cloud call, so a redelivery
-	// re-reads a still-claimable row). Each GetExecutionByID returns a FRESH
-	// pending copy, faithfully modeling the real double-delivery scenario.
+	// Both sweeps read the row as claimable from the DB (pre-fix nothing CASes it to running
+	// before the cloud call, so an overlapping sweep re-reads a still-claimable row). Each
+	// GetPendingExecutions call returns a FRESH copy, modeling the real overlapping-tick scenario.
 	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil).Once()
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(autoPurchaseOnCfg(), nil).Maybe()
-	mockStore.On("GetExecutionByID", ctx, "exec-dup").Return(newPending(), nil).Once()
-	mockStore.On("GetExecutionByID", ctx, "exec-dup").Return(newPending(), nil).Once()
+	mockStore.On("GetStaleApprovedExecutions", ctx, mock.Anything).Return([]config.PurchaseExecution{}, nil)
+	mockStore.On("GetPendingExecutions", ctx).Return([]config.PurchaseExecution{*newPending()}, nil).Twice()
 
 	// First claim wins: pending -> running, returns the running row. The second
-	// claim (redelivery) loses with ErrExecutionNotInExpectedStatus, because the
+	// claim (the overlapping tick) loses with ErrExecutionNotInExpectedStatus, because the
 	// row already left the executable set. testify replays Once() expectations in
 	// declaration order, so the first call gets the win and the second the loss.
 	running := newPending()
@@ -374,19 +375,23 @@ func TestSQSRedeliveryDoesNotDoubleExecute(t *testing.T) {
 		dashboardURL:    "https://dashboard.example.com",
 	}
 
-	msg := AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: "exec-dup"}
-	require.NoError(t, manager.handleExecutePurchase(ctx, &msg), "first delivery executes cleanly")
-	require.NoError(t, manager.handleExecutePurchase(ctx, &msg), "redelivery is a benign no-op (acked)")
+	first, err := manager.ProcessScheduledPurchases(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, first.Executed, "first sweep executes cleanly")
+	second, err := manager.ProcessScheduledPurchases(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, second.Executed, "the overlapping sweep loses the claim and is a benign no-op")
+	assert.Equal(t, 0, second.Failed)
 
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal(t, 1, purchaseCalls, "the cloud purchase must run EXACTLY once across both deliveries (issue #1013)")
+	assert.Equal(t, 1, purchaseCalls, "the cloud purchase must run EXACTLY once across both sweeps (issue #1013)")
 }
 
 // TestMultiAccountPartialSuccessIsAcked is the issue #1014 regression guard: a
 // multi-account run where at least one account committed must NOT surface as a
-// flat failure to the SQS handler (which would trigger redelivery and a
-// double-buy). The handler must return nil (ack) when committed >= 1.
+// flat failure to the sweep (which would retry and double-buy). The sweep
+// must count it Executed when committed >= 1.
 func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
@@ -422,7 +427,8 @@ func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 
 	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil).Once()
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(autoPurchaseOnCfg(), nil).Maybe()
-	mockStore.On("GetExecutionByID", ctx, "root-partial").Return(exec, nil)
+	exec.ScheduledDate = time.Now().Add(-time.Minute)
+	expectSweepOf(ctx, mockStore, *exec)
 	running := *exec
 	running.Status = "running"
 	mockStore.On("TransitionExecutionStatus", ctx, "root-partial",
@@ -464,10 +470,11 @@ func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 		dashboardURL:    "https://dashboard.example.com",
 	}
 
-	msg := AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: "root-partial"}
-	err := manager.handleExecutePurchase(ctx, &msg)
-	require.NoError(t, err,
-		"a multi-account run with >=1 committed account must be ACKed (return nil), not redelivered (issue #1014)")
+	result, err := manager.ProcessScheduledPurchases(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Executed,
+		"a multi-account run with >=1 committed account must be counted Executed, not a flat failure (issue #1014)")
+	assert.Equal(t, 0, result.Failed)
 
 	require.NotNil(t, savedRoot, "the root row must be saved with its aggregate status (H2)")
 	assert.Equal(t, "partially_completed", savedRoot.Status,
@@ -479,10 +486,10 @@ func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 // place where it returns committed==true together with an error -- the cloud
 // purchase succeeded but the per-account SavePurchaseExecution call failed
 // (execution.go:269-270, "AUDIT LOSS: failed to save execution record"). That
-// return value is what stops the SQS message from being redelivered and the
+// return value is what stops the row from being retried and the
 // commitment from being bought twice: executeMultiAccount folds a committed
 // account with an error into *multiAccountPartialError, which
-// handleExecutePurchase acks rather than surfacing as a flat failure.
+// the sweep counts as executed rather than surfacing as a flat failure.
 //
 // acct-bad deliberately fails credential resolution (committed=false, like
 // TestMultiAccountPartialSuccessIsAcked's acct-bad) so acct-unsaved is the
@@ -490,8 +497,8 @@ func TestMultiAccountPartialSuccessIsAcked(t *testing.T) {
 // the AUDIT LOSS return to "return false, ..." (reading it as "we failed,
 // report failure"), committed would drop to 0 across both accounts and the
 // aggregator would return errAllAccountsFailed instead of
-// *multiAccountPartialError, which handleExecutePurchase does NOT ack --
-// this test would then fail on require.NoError. Every other
+// *multiAccountPartialError, which the sweep does NOT count as executed --
+// this test would then fail on the Executed assertion. Every other
 // SavePurchaseExecutionFn stub in this package returns nil on a committed
 // account, and the only stub that errors (execution_test.go:923) drives the
 // credential-failure AUDIT LOSS site at execution.go:300, not this one.
@@ -527,7 +534,8 @@ func TestExecuteForAccount_CommittedButUnsavedIsAcked(t *testing.T) {
 
 	mockStore.On("GetGlobalConfig", ctx).Return(autoPurchaseOnCfg(), nil).Once()
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(autoPurchaseOnCfg(), nil).Maybe()
-	mockStore.On("GetExecutionByID", ctx, "root-unsaved").Return(exec, nil)
+	exec.ScheduledDate = time.Now().Add(-time.Minute)
+	expectSweepOf(ctx, mockStore, *exec)
 	running := *exec
 	running.Status = "running"
 	mockStore.On("TransitionExecutionStatus", ctx, "root-unsaved",
@@ -575,10 +583,11 @@ func TestExecuteForAccount_CommittedButUnsavedIsAcked(t *testing.T) {
 		dashboardURL:    "https://dashboard.example.com",
 	}
 
-	msg := AsyncMessage{Type: MessageTypeExecutePurchase, ExecutionID: "root-unsaved"}
-	err := manager.handleExecutePurchase(ctx, &msg)
-	require.NoError(t, err,
-		"a committed-but-unsaved account must still ACK (return nil), never redeliver and double-buy (#258/A16-006)")
+	result, err := manager.ProcessScheduledPurchases(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Executed,
+		"a committed-but-unsaved account must still count as executed, never retried and double-bought (#258/A16-006)")
+	assert.Equal(t, 0, result.Failed)
 
 	require.NotNil(t, savedRoot, "the root row must be saved with its aggregate status")
 	assert.Equal(t, "partially_completed", savedRoot.Status,

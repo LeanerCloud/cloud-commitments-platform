@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"maps"
 	"math"
 	"math/big"
@@ -25,11 +27,11 @@ import (
 //
 //	od = commitment / r
 //
-// so 5 commitment $/hr at r = 0.5 covers 10 OD $/hr. The rate is today's
-// new-purchase rate for the config's term and payment option, from
-// GetCommitmentRates (option 2 on #946): DescribeSavingsPlans does not expose
-// each plan's own rate, so plans bought at a different discount are
-// approximated.
+// so 5 commitment $/hr at r = 0.5 covers 10 OD $/hr. The rate is the observed
+// rate of the commitments held, from GetObservedCommitmentRates, when the
+// provider reports one for the layer; otherwise today's new-purchase rate for
+// the config's term and payment option, from GetCommitmentRates, which
+// approximates plans bought at a different discount (ladderConversionRates).
 //
 // Rounding favors under-buying. When the exact quotient is not a float64,
 // existing is rounded up and expiring down, so the net existing coverage
@@ -47,6 +49,47 @@ import (
 type ladderMissingRate struct {
 	layer              pkgladder.LayerType
 	existing, expiring *float64
+}
+
+// ladderConversionRates returns the rates used to convert existing coverage
+// to on-demand-equivalent dollars: the marginal rates, overridden per layer by
+// the observed rates when the capability reports them. observed is the set of
+// overrides (nil when the capability has none). An observed-rates error fails
+// the run; a missing observed rate for a layer falls back to its marginal rate.
+func ladderConversionRates(
+	ctx context.Context,
+	capability pkgladder.LadderCapability,
+	scope pkgladder.Scope,
+	marginal map[pkgladder.LayerType]float64,
+) (conv, observed map[pkgladder.LayerType]float64, err error) {
+	conv = make(map[pkgladder.LayerType]float64, len(marginal))
+	for k, v := range marginal {
+		conv[k] = v
+	}
+	oc, ok := capability.(pkgladder.ObservedCommitmentRateCapability)
+	if !ok {
+		return conv, nil, nil
+	}
+	observed, err = oc.GetObservedCommitmentRates(ctx, scope)
+	if err != nil {
+		return nil, nil, err
+	}
+	for k, v := range observed {
+		conv[k] = v
+	}
+	return conv, observed, nil
+}
+
+// logObservedOverrides records, per layer, the observed rate that replaced the
+// marginal one. Nothing else persists the conversion rate.
+func logObservedOverrides(cfgID string, observed, marginal map[pkgladder.LayerType]float64) {
+	for _, layer := range slices.Sorted(maps.Keys(observed)) {
+		if m, ok := marginal[layer]; ok {
+			log.Printf("ladder_run: config %s: layer %s converts existing coverage at observed rate %v (marginal %v)", cfgID, layer, observed[layer], m)
+			continue
+		}
+		log.Printf("ladder_run: config %s: layer %s converts existing coverage at observed rate %v (marginal: none)", cfgID, layer, observed[layer])
+	}
 }
 
 // ladderLayerStatesOnDemand returns a copy of states with ExistingUSDPerHour
@@ -205,7 +248,7 @@ func (p *ladderRunPlanner) planMissingRateHold() (*config.LadderRunDB, []config.
 // as "covered", so it is not mistaken for a target-met Hold.
 func (m ladderMissingRate) rationale(term pkgladder.Term, payment pkgladder.PaymentOption) string {
 	return fmt.Sprintf("Can't size this yet because layer %s holds existing coverage (%s commitment USD/hr, %s expiring) "+
-		"and the provider returned no discount rate for it at %s %s, so that coverage cannot be converted to on-demand-equivalent dollars. "+
+		"and has no rate: neither an observed rate from the commitments held nor a new-purchase rate at %s %s, so that coverage cannot be converted to on-demand-equivalent dollars. "+
 		"Nothing is bought this run: the rate is never estimated or assumed 1:1. The ladder sizes the gap once a rate is available.",
 		m.layer, fmtFloatPtr(m.existing), fmtFloatPtr(m.expiring), term, payment)
 }

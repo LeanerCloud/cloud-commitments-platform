@@ -514,11 +514,12 @@ func TestManager_ApproveExecution_ReturnsRowOnExecutionFailure(t *testing.T) {
 // ApproveAndExecute is the ONE place every approve/execute entry point
 // funnels through: approvePurchaseViaSession, directExecutePurchase
 // (execute_mode="direct", issue #289), and ApproveExecution (both the
-// email-token deep-link caller and the SQS async approve worker). The
+// email-token deep-link caller, which passes an actor email and no
+// transitionedBy). The
 // tests below exercise the manager-layer gate directly with the exact
 // (actor, transitionedBy) shapes each real caller passes, proving the two
 // bypasses adversarial review found on PR #1500 -- execute_mode="direct"
-// (HIGH) and the SQS approve worker (MEDIUM) -- are now closed at the
+// (HIGH) and the token-link approve call shape (MEDIUM) -- are now closed at the
 // shared choke point rather than only at the 2 HTTP handler call sites the
 // original PR wired requireDifferentApprover into.
 
@@ -697,8 +698,8 @@ func TestManager_ApproveAndExecute_FourEyesOff_AllowsSelfApprove(t *testing.T) {
 	sender.AssertExpectations(t)
 }
 
-// TestManager_ApproveExecution_FourEyesOn_SQSActorEqualsCreator_Denied models
-// the SQS async approve worker call shape (MEDIUM finding): ApproveExecution
+// TestManager_ApproveExecution_FourEyesOn_TokenActorEqualsCreator_Denied models
+// the token-link approve call shape (MEDIUM finding): ApproveExecution
 // always passes transitionedBy=nil, and the only identity signal is the
 // verified actor email. Pre-fix, ApproveExecution/ApproveAndExecute had no
 // awareness of 4-eyes mode at all, so a replayed or forwarded token+actor
@@ -710,7 +711,7 @@ func TestManager_ApproveAndExecute_FourEyesOff_AllowsSelfApprove(t *testing.T) {
 // approval flow, so a creator whose stored email differs from the actor's
 // only in letter case is the same person and must still be denied. A
 // regression that swaps strings.EqualFold for == fails those rows.
-func TestManager_ApproveExecution_FourEyesOn_SQSActorEqualsCreator_Denied(t *testing.T) {
+func TestManager_ApproveExecution_FourEyesOn_TokenActorEqualsCreator_Denied(t *testing.T) {
 	cases := []struct {
 		name         string
 		creatorEmail string
@@ -730,18 +731,18 @@ func TestManager_ApproveExecution_FourEyesOn_SQSActorEqualsCreator_Denied(t *tes
 
 			creatorID := "user-creator"
 			execution := &config.PurchaseExecution{
-				ExecutionID:     "exec-sqs-self",
+				ExecutionID:     "exec-token-self",
 				PlanID:          "plan-fourEyes",
 				Status:          "pending",
 				ApprovalToken:   config.HashApprovalToken("valid-token"),
 				CreatedByUserID: &creatorID,
 			}
 
-			store.On("GetExecutionByID", ctx, "exec-sqs-self").Return(execution, nil)
+			store.On("GetExecutionByID", ctx, "exec-token-self").Return(execution, nil)
 			store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
 			store.On("GetUserEmailByID", ctx, creatorID).Return(tc.creatorEmail, nil)
 
-			_, _, err := manager.ApproveExecution(ctx, "exec-sqs-self", "valid-token", tc.actorEmail, nil)
+			_, _, err := manager.ApproveExecution(ctx, "exec-token-self", "valid-token", tc.actorEmail, nil)
 			require.ErrorIs(t, err, ErrFourEyesDenied)
 			assert.Contains(t, err.Error(), "4-eyes mode requires a different approver")
 			store.AssertNotCalled(t, "TransitionExecutionStatusTokenPinned",
@@ -752,7 +753,7 @@ func TestManager_ApproveExecution_FourEyesOn_SQSActorEqualsCreator_Denied(t *tes
 }
 
 // TestManager_ApproveExecution_FourEyesOn_DifferentActor_Allowed is the
-// positive control for the SQS/token call shape: an actor that resolves to
+// positive control for the token-link call shape: an actor that resolves to
 // a different email than the creator must still succeed.
 func TestManager_ApproveExecution_FourEyesOn_DifferentActor_Allowed(t *testing.T) {
 	ctx := context.Background()
@@ -760,14 +761,14 @@ func TestManager_ApproveExecution_FourEyesOn_DifferentActor_Allowed(t *testing.T
 
 	creatorID := "user-creator"
 	execution := &config.PurchaseExecution{
-		ExecutionID:     "exec-sqs-diff",
+		ExecutionID:     "exec-token-diff",
 		PlanID:          "plan-fourEyes",
 		Status:          "pending",
 		ApprovalToken:   config.HashApprovalToken("valid-token"),
 		CreatedByUserID: &creatorID,
 	}
 	updated := &config.PurchaseExecution{
-		ExecutionID:     "exec-sqs-diff",
+		ExecutionID:     "exec-token-diff",
 		PlanID:          "plan-fourEyes",
 		Status:          "approved",
 		ApprovalToken:   config.HashApprovalToken("valid-token"),
@@ -775,13 +776,13 @@ func TestManager_ApproveExecution_FourEyesOn_DifferentActor_Allowed(t *testing.T
 		Recommendations: approvalTestRecs(),
 	}
 
-	store.On("GetExecutionByID", ctx, "exec-sqs-diff").Return(execution, nil)
+	store.On("GetExecutionByID", ctx, "exec-token-diff").Return(execution, nil)
 	store.On("GetGlobalConfig", mock.Anything).Return(fourEyesCfgOnForManager(), nil)
 	store.On("GetUserEmailByID", ctx, creatorID).Return("creator@example.com", nil)
-	store.On("TransitionExecutionStatusTokenPinned", ctx, "exec-sqs-diff", approveFromStatuses, "running", (*string)(nil), "valid-token").Return(updated, nil)
+	store.On("TransitionExecutionStatusTokenPinned", ctx, "exec-token-diff", approveFromStatuses, "running", (*string)(nil), "valid-token").Return(updated, nil)
 	stubExecuteChain(t, store, sender, "plan-fourEyes")
 
-	_, _, err := manager.ApproveExecution(ctx, "exec-sqs-diff", "valid-token", "approver@example.com", nil)
+	_, _, err := manager.ApproveExecution(ctx, "exec-token-diff", "valid-token", "approver@example.com", nil)
 	require.NoError(t, err)
 	require.NotNil(t, updated.ApprovedBy)
 	assert.Equal(t, "approver@example.com", *updated.ApprovedBy)
@@ -804,7 +805,7 @@ func TestManager_ApproveExecution_FourEyesOn_UnresolvableCreator_Denied(t *testi
 	creatorID := "user-creator-deleted"
 	baseExecution := func() *config.PurchaseExecution {
 		return &config.PurchaseExecution{
-			ExecutionID:     "exec-sqs-unresolvable",
+			ExecutionID:     "exec-token-unresolvable",
 			PlanID:          "plan-fourEyes",
 			Status:          "pending",
 			ApprovalToken:   config.HashApprovalToken("valid-token"),
@@ -816,13 +817,13 @@ func TestManager_ApproveExecution_FourEyesOn_UnresolvableCreator_Denied(t *testi
 		ctx := context.Background()
 		manager, store, _ := newApproveManager(t)
 
-		store.On("GetExecutionByID", ctx, "exec-sqs-unresolvable").Return(baseExecution(), nil)
+		store.On("GetExecutionByID", ctx, "exec-token-unresolvable").Return(baseExecution(), nil)
 		store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
 		// Mirrors the real Postgres store's ("", nil) result for
 		// pgx.ErrNoRows -- a deleted/nonexistent creator user row.
 		store.On("GetUserEmailByID", ctx, creatorID).Return("", nil)
 
-		_, _, err := manager.ApproveExecution(ctx, "exec-sqs-unresolvable", "valid-token", "approver@example.com", nil)
+		_, _, err := manager.ApproveExecution(ctx, "exec-token-unresolvable", "valid-token", "approver@example.com", nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "creator's account could not be resolved")
 		store.AssertNotCalled(t, "TransitionExecutionStatusTokenPinned",
@@ -835,11 +836,11 @@ func TestManager_ApproveExecution_FourEyesOn_UnresolvableCreator_Denied(t *testi
 		manager, store, _ := newApproveManager(t)
 		lookupErr := errors.New("connection reset by peer")
 
-		store.On("GetExecutionByID", ctx, "exec-sqs-unresolvable").Return(baseExecution(), nil)
+		store.On("GetExecutionByID", ctx, "exec-token-unresolvable").Return(baseExecution(), nil)
 		store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
 		store.On("GetUserEmailByID", ctx, creatorID).Return("", lookupErr)
 
-		_, _, err := manager.ApproveExecution(ctx, "exec-sqs-unresolvable", "valid-token", "approver@example.com", nil)
+		_, _, err := manager.ApproveExecution(ctx, "exec-token-unresolvable", "valid-token", "approver@example.com", nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to resolve creator identity")
 		store.AssertNotCalled(t, "TransitionExecutionStatusTokenPinned",
@@ -1164,7 +1165,7 @@ func TestManager_ApproveExecution_NilExpiresAt_LegacyRow(t *testing.T) {
 
 // TestManager_ApproveExecution_NonAWSOrphanReturnsError is the regression
 // guard for issue #609 on the token-authenticated ApproveExecution path (used
-// by the SQS approve worker and the legacy email-link flow). An execution
+// by the token-link and legacy email-link flows). An execution
 // whose CloudAccountID is nil and whose provider is non-AWS must return a
 // descriptive error before the execute chain is entered, instead of surfacing
 // an opaque cloud-SDK credential error at runtime.
@@ -1495,6 +1496,44 @@ func TestManager_ApproveExecution_FourEyesOn_ASCIICaseOnly(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+// TestValidateApprovalToken_TTLAndPrecedence pins the TTL guard on the shared
+// token check (issue #268) and that a wrong token on an expired row reports
+// invalid, not expired, so expiry never leaks token validity.
+func TestValidateApprovalToken_TTLAndPrecedence(t *testing.T) {
+	past := time.Now().Add(-time.Hour)
+	future := time.Now().Add(time.Hour)
+
+	tests := []struct {
+		name      string
+		expiresAt *time.Time
+		token     string
+		wantErr   error
+	}{
+		{name: "expired token is rejected", expiresAt: &past, token: "correct-token", wantErr: ErrApprovalTokenExpired},
+		{name: "unexpired token is accepted", expiresAt: &future, token: "correct-token"},
+		{name: "legacy row without expiry is accepted", expiresAt: nil, token: "correct-token"},
+		{name: "wrong token is rejected", expiresAt: &future, token: "wrong-token", wantErr: ErrInvalidApprovalToken},
+		{name: "wrong token on expired row reports invalid, not expired", expiresAt: &past, token: "wrong-token", wantErr: ErrInvalidApprovalToken},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec := &config.PurchaseExecution{
+				ExecutionID:            "exec-ttl",
+				Status:                 "pending",
+				ApprovalToken:          config.HashApprovalToken("correct-token"),
+				ApprovalTokenExpiresAt: tt.expiresAt,
+			}
+			err := ValidateApprovalToken(exec, tt.token)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }
