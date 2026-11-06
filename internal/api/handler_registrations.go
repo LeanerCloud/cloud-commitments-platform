@@ -54,6 +54,33 @@ type RejectRequest struct {
 	Reason string `json:"reason"`
 }
 
+// registrationFromRequest maps a validated RegistrationRequest to a pending
+// config.AccountRegistration. The credential fields are not mapped here: they
+// are encrypted and attached by submitRegistration.
+func registrationFromRequest(req RegistrationRequest, token string) *config.AccountRegistration {
+	return &config.AccountRegistration{
+		ReferenceToken:      token,
+		Status:              "pending",
+		Provider:            req.Provider,
+		ExternalID:          req.ExternalID,
+		AccountName:         req.AccountName,
+		ContactEmail:        req.ContactEmail,
+		Description:         req.Description,
+		SourceProvider:      req.SourceProvider,
+		AWSRoleARN:          req.AWSRoleARN,
+		AWSAuthMode:         req.AWSAuthMode,
+		AWSExternalID:       req.AWSExternalID,
+		AzureSubscriptionID: req.AzureSubscriptionID,
+		AzureTenantID:       req.AzureTenantID,
+		AzureClientID:       req.AzureClientID,
+		AzureAuthMode:       req.AzureAuthMode,
+		GCPProjectID:        req.GCPProjectID,
+		GCPClientEmail:      req.GCPClientEmail,
+		GCPAuthMode:         req.GCPAuthMode,
+		GCPWIFAudience:      req.GCPWIFAudience,
+	}
+}
+
 // submitRegistration handles POST /api/register.
 func (h *Handler) submitRegistration(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
 	if err := h.checkRateLimit(ctx, req, "register"); err != nil {
@@ -74,27 +101,7 @@ func (h *Handler) submitRegistration(ctx context.Context, req *events.LambdaFunc
 		return nil, fmt.Errorf("registrations: generate token: %w", err)
 	}
 
-	reg := &config.AccountRegistration{
-		ReferenceToken:      token,
-		Status:              "pending",
-		Provider:            body.Provider,
-		ExternalID:          body.ExternalID,
-		AccountName:         body.AccountName,
-		ContactEmail:        body.ContactEmail,
-		Description:         body.Description,
-		SourceProvider:      body.SourceProvider,
-		AWSRoleARN:          body.AWSRoleARN,
-		AWSAuthMode:         body.AWSAuthMode,
-		AWSExternalID:       body.AWSExternalID,
-		AzureSubscriptionID: body.AzureSubscriptionID,
-		AzureTenantID:       body.AzureTenantID,
-		AzureClientID:       body.AzureClientID,
-		AzureAuthMode:       body.AzureAuthMode,
-		GCPProjectID:        body.GCPProjectID,
-		GCPClientEmail:      body.GCPClientEmail,
-		GCPAuthMode:         body.GCPAuthMode,
-		GCPWIFAudience:      body.GCPWIFAudience,
-	}
+	reg := registrationFromRequest(body, token)
 
 	encrypted, encErr := h.encryptRegistrationCredential(body.CredentialPayload)
 	if encErr != nil {
@@ -307,7 +314,13 @@ func (h *Handler) approveRegistration(ctx context.Context, httpReq *events.Lambd
 	}
 
 	// Auto-store credentials if the registration included them.
-	h.storeRegistrationCredentials(ctx, reg, account.ID, regCred)
+	// The registration's copy is dropped only after the save succeeds; until
+	// then it is the only copy. The account exists, so a failed clear is logged.
+	if h.storeRegistrationCredentials(ctx, reg, account.ID, regCred) {
+		if err := h.config.ClearRegistrationCredentialPayload(ctx, reg.ID); err != nil {
+			logging.Errorf("registration %s: failed to clear stored credential payload: %v", reg.ID, err)
+		}
+	}
 
 	h.notifyRegistrant(reg, email.RegistrationDecisionData{
 		AccountName: reg.AccountName, Provider: reg.Provider,

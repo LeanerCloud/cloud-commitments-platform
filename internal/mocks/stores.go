@@ -569,6 +569,26 @@ func (m *MockConfigStore) StampFirstDispatchTx(ctx context.Context, tx pgx.Tx, e
 	return res, args.Error(1)
 }
 
+// LockRedshiftTuplesTx mocks the Redshift tuple advisory locks (no default: testify panics if unexpected).
+func (m *MockConfigStore) LockRedshiftTuplesTx(ctx context.Context, tx pgx.Tx, tuples []config.RedshiftTuple) error {
+	m.record("LockRedshiftTuplesTx", ctx, tx, tuples)
+	return m.Called(ctx, tx, tuples).Error(0)
+}
+
+// FindOpenRedshiftLineageConflictsTx mocks the Redshift lineage conflict query (no default: testify panics if unexpected).
+func (m *MockConfigStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []config.RedshiftTuple, accountID *string, horizon time.Duration) ([]config.RedshiftLineageConflict, error) {
+	m.record("FindOpenRedshiftLineageConflictsTx", ctx, tx, selfID, family, tuples, accountID, horizon)
+	args := m.Called(ctx, tx, selfID, family, tuples, accountID, horizon)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	res, ok := args.Get(0).([]config.RedshiftLineageConflict)
+	if !ok {
+		m.reporter.wrongReturnType("FindOpenRedshiftLineageConflictsTx", "[]config.RedshiftLineageConflict", args.Get(0))
+	}
+	return res, args.Error(1)
+}
+
 // TransitionExecutionStatus mocks the TransitionExecutionStatus operation.
 func (m *MockConfigStore) TransitionExecutionStatus(ctx context.Context, executionID string, fromStatuses []string, toStatus string, actor *string) (*config.PurchaseExecution, error) {
 	m.record("TransitionExecutionStatus", ctx, executionID, fromStatuses, toStatus, actor)
@@ -1806,6 +1826,40 @@ func (m *MockConfigStore) SaveAccountServiceOverrideAuditedTx(ctx context.Contex
 	return args.Error(0)
 }
 
+// UpdateAccountServiceOverrideAtomic mocks the locked read-merge-write of one
+// override. With an expectation it dispatches through m.Called; otherwise it
+// emulates the store via the mocked WithTx, GetAccountServiceOverride, merge
+// and SaveAccountServiceOverrideAuditedTx, so tests that seed those keep working.
+func (m *MockConfigStore) UpdateAccountServiceOverrideAtomic(ctx context.Context, accountID, provider, service string, audit config.AuditContext, merge func(*config.AccountServiceOverride) (*config.AccountServiceOverride, error)) (*config.AccountServiceOverride, error) {
+	m.record("UpdateAccountServiceOverrideAtomic", ctx, accountID, provider, service, audit, merge)
+	if isExpected(&m.Mock, "UpdateAccountServiceOverrideAtomic") {
+		args := m.Called(ctx, accountID, provider, service, audit, merge)
+		if args.Get(0) == nil {
+			return nil, args.Error(1)
+		}
+		v, ok := args.Get(0).(*config.AccountServiceOverride)
+		if !ok {
+			m.reporter.wrongReturnType("UpdateAccountServiceOverrideAtomic", "*config.AccountServiceOverride", args.Get(0))
+		}
+		return v, args.Error(1)
+	}
+	var next *config.AccountServiceOverride
+	err := m.WithTx(ctx, func(tx pgx.Tx) error {
+		existing, err := m.GetAccountServiceOverride(ctx, accountID, provider, service)
+		if err != nil {
+			return err
+		}
+		if next, err = merge(existing); err != nil {
+			return err
+		}
+		return m.SaveAccountServiceOverrideAuditedTx(ctx, tx, next, audit)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return next, nil
+}
+
 // DeleteAccountServiceOverrideAuditedTx falls back to
 // DeleteAccountServiceOverride when no expectation is registered.
 func (m *MockConfigStore) DeleteAccountServiceOverrideAuditedTx(ctx context.Context, tx pgx.Tx, accountID, provider, service string, audit config.AuditContext) error {
@@ -2107,6 +2161,12 @@ func (m *MockConfigStore) UpdateAccountRegistration(ctx context.Context, reg *co
 func (m *MockConfigStore) TransitionRegistrationStatus(ctx context.Context, reg *config.AccountRegistration, fromStatus string, actor *string) error {
 	m.record("TransitionRegistrationStatus", ctx, reg, fromStatus, actor)
 	args := m.Called(ctx, reg, fromStatus, actor)
+	return args.Error(0)
+}
+
+func (m *MockConfigStore) ClearRegistrationCredentialPayload(ctx context.Context, registrationID string) error {
+	m.record("ClearRegistrationCredentialPayload", ctx, registrationID)
+	args := m.Called(ctx, registrationID)
 	return args.Error(0)
 }
 
