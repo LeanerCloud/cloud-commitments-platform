@@ -2073,6 +2073,9 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 	if err != nil {
 		logging.Errorf("exchange execution failed: %v", err)
 		mapped := mapAWSExchangeError("exchange execution failed", err)
+		if errors.Is(err, common.ErrOutcomeUnknown) {
+			mapped = directExchangeOutcomeUnknown(body.RIIDs)
+		}
 		h.finalizeDirectExchange(ctx, auditID, awsDirectExchangeOutcome(exchangeID, quote, err, mapped))
 		return nil, mapped
 	}
@@ -2113,6 +2116,14 @@ func mapAWSExchangeError(opMsg string, err error) error {
 		return NewClientError(400, exchangeRejectedMessage)
 	}
 	return NewClientError(500, opMsg)
+}
+
+// directExchangeOutcomeUnknown is the error for an accept whose response was
+// lost: AWS may have exchanged the RIs, so the operator must check before
+// retrying (#1050). It stays 5xx so the audit records the outcome as unknown,
+// and it names only the caller's own RI ids, never provider text.
+func directExchangeOutcomeUnknown(riIDs []string) error {
+	return NewClientError(502, fmt.Sprintf("the exchange outcome is unknown: AWS may already have exchanged RI(s) %s; check them at AWS before retrying", strings.Join(riIDs, ", ")))
 }
 
 // exchangeRejectedMessage is the provider-neutral text for a client-fault
@@ -2893,6 +2904,43 @@ func (h *Handler) failExchange(ctx context.Context, id, reason string) (any, err
 	return map[string]any{"status": "failed", "reason": reason}, nil
 }
 
+// reserveApprovedExchange reserves the approval's spend ceiling under the caps
+// and returns it as text and as a decimal. A non-empty refusal is the
+// caller-safe reason to fail the exchange with: the cap figures, or only the
+// shared source RI ids, never the blocking exchange (#1050, #1428).
+func (h *Handler) reserveApprovedExchange(ctx context.Context, id string, globalCfg *config.GlobalConfig) (ceiling string, effectiveCap *big.Rat, refusal string) {
+	dailyCapUSD, perExchangeCapUSD, reason := exchangeCapStrings(globalCfg)
+	if reason != "" {
+		return "", nil, reason
+	}
+	ceiling, err := h.config.ReserveApprovedRIExchange(ctx, id, dailyCapUSD, perExchangeCapUSD)
+	if err != nil {
+		logging.Warnf("RI exchange %s reservation refused: %v", id, err)
+		if errors.Is(err, config.ErrRIExchangeDailyCapExceeded) || errors.Is(err, config.ErrRIExchangeSourceInFlight) {
+			return "", nil, err.Error()
+		}
+		return "", nil, "daily spending cap check failed"
+	}
+	effectiveCap, ok := new(big.Rat).SetString(ceiling)
+	if !ok {
+		return "", nil, fmt.Sprintf("reserved ceiling %q is not a decimal", ceiling)
+	}
+	return ceiling, effectiveCap, ""
+}
+
+// leaveExchangeOutcomeUnknown keeps a row whose accept response was lost in
+// processing with its reserved ceiling: AWS may have exchanged the RIs, so a
+// failed, retryable row would invite a duplicate exchange (#1050). The note is
+// fixed text plus the sanitized reason; the raw error stays in the log. A
+// failed note write is logged and the outcome is still reported.
+func (h *Handler) leaveExchangeOutcomeUnknown(ctx context.Context, id, reason string) map[string]any {
+	note := fmt.Sprintf("outcome unknown: %s; verify the source RIs and target reservation at AWS, then POST /api/ri-exchange/resolve/%s", reason, id)
+	if err := h.config.NoteRIExchangeOutcomeUnknown(ctx, id, note); err != nil {
+		logging.Errorf("failed to note outcome unknown on RI exchange %s: %v", id, err)
+	}
+	return map[string]any{"status": "outcome_unknown", "message": note}
+}
+
 // retryCompleteWithPayment calls CompleteRIExchangeWithPayment up to
 // maxLedgerAttempts times, logging retries. Returns a non-nil error if all
 // attempts fail. Extracted from executeApprovedExchange to reduce its
@@ -2962,21 +3010,9 @@ func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record
 		return h.failExchange(ctx, id, "exchange record has no region; cannot execute safely")
 	}
 
-	dailyCapUSD, perExchangeCapUSD, reason := exchangeCapStrings(globalCfg)
-	if reason != "" {
-		return h.failExchange(ctx, id, reason)
-	}
-	ceiling, err := h.config.ReserveApprovedRIExchange(ctx, id, dailyCapUSD, perExchangeCapUSD)
-	if err != nil {
-		logging.Warnf("RI exchange %s reservation refused: %v", id, err)
-		if errors.Is(err, config.ErrRIExchangeDailyCapExceeded) {
-			return h.failExchange(ctx, id, err.Error())
-		}
-		return h.failExchange(ctx, id, "daily spending cap check failed")
-	}
-	effectiveCap, ok := new(big.Rat).SetString(ceiling)
-	if !ok {
-		return h.failExchange(ctx, id, fmt.Sprintf("reserved ceiling %q is not a decimal", ceiling))
+	ceiling, effectiveCap, refusal := h.reserveApprovedExchange(ctx, id, globalCfg)
+	if refusal != "" {
+		return h.failExchange(ctx, id, refusal)
 	}
 
 	// The provider call and the terminal ledger write that records its outcome
@@ -2995,6 +3031,9 @@ func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record
 	if execErr != nil {
 		logging.Errorf("RI exchange %s execution failed: %v", id, execErr)
 		_, reason := purchase.SummarizeFailure(execErr)
+		if errors.Is(execErr, common.ErrOutcomeUnknown) {
+			return h.leaveExchangeOutcomeUnknown(saveCtx, id, reason), nil
+		}
 		return h.failExchange(saveCtx, id, reason)
 	}
 
