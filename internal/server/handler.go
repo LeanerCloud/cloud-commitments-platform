@@ -78,6 +78,10 @@ const (
 	// purchases, no emails, no reshapes, no approval tokens are issued in this
 	// plan-only phase (PR-2). Execution arrives in a later PR.
 	TaskLadderRun ScheduledTaskType = "ladder_run"
+	// TaskLadderReconcile settles fired ladder tranches from their executions.
+	// It is not gated by the ladder switches, so in-flight tranches keep
+	// settling after a switch is turned off.
+	TaskLadderReconcile ScheduledTaskType = "ladder_reconcile"
 )
 
 // scheduledEventActions maps a raw scheduled-event action string to its
@@ -96,6 +100,7 @@ var scheduledEventActions = map[string]ScheduledTaskType{
 	"fire_scheduled_purchases":    TaskFireScheduledPurchases,
 	"finalize_revocations":        TaskFinalizeRevocations,
 	"ladder_run":                  TaskLadderRun,
+	"ladder_reconcile":            TaskLadderReconcile,
 }
 
 // runScheduledTask runs a scheduled task by type.
@@ -207,6 +212,7 @@ func (app *Application) dispatchTask(ctx context.Context, taskType ScheduledTask
 		},
 		TaskFinalizeRevocations: func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleFinalizeSweep(c) },
 		TaskLadderRun:           func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleLadderRun(c) },
+		TaskLadderReconcile:     func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleLadderReconcile(c) },
 	}
 	handler, ok := handlers[taskType]
 	if !ok {

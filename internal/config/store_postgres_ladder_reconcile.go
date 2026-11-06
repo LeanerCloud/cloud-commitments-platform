@@ -26,8 +26,11 @@ type LadderChainNode struct {
 	Status           string
 	NoSubmission     bool
 	RetryExecutionID *string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// ScheduledExecutionAt is when the fire sweep should run a scheduled
+	// execution; nil when unset.
+	ScheduledExecutionAt *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // ListFiredLadderTranches returns fired tranches that have an execution,
@@ -103,13 +106,13 @@ func (s *PostgresStore) LockLadderTrancheChainTx(ctx context.Context, tx pgx.Tx,
 }
 
 func readChainNode(ctx context.Context, tx pgx.Tx, executionID string, forUpdate bool) (LadderChainNode, error) {
-	q := `SELECT execution_id::text, status, no_submission, retry_execution_id::text, created_at, updated_at
+	q := `SELECT execution_id::text, status, no_submission, retry_execution_id::text, scheduled_execution_at, created_at, updated_at
 	      FROM purchase_executions WHERE execution_id = $1`
 	if forUpdate {
 		q += ` FOR UPDATE`
 	}
 	var n LadderChainNode
-	err := tx.QueryRow(ctx, q, executionID).Scan(&n.ExecutionID, &n.Status, &n.NoSubmission, &n.RetryExecutionID, &n.CreatedAt, &n.UpdatedAt)
+	err := tx.QueryRow(ctx, q, executionID).Scan(&n.ExecutionID, &n.Status, &n.NoSubmission, &n.RetryExecutionID, &n.ScheduledExecutionAt, &n.CreatedAt, &n.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return n, fmt.Errorf("%w: execution %s", ErrNotFound, executionID)
 	}

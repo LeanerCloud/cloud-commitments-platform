@@ -26,6 +26,7 @@ var taskVars = map[string]taskVar{
 	"analytics_collect":           {"enable_analytics_collect_schedule", "analytics_collect_schedule"},
 	"fire_scheduled_purchases":    {"enable_fire_scheduled_purchases_schedule", "fire_scheduled_purchases_schedule"},
 	"ladder_run":                  {"enable_ladder_run_schedule", "ladder_run_schedule"},
+	"ladder_reconcile":            {"enable_ladder_reconcile_schedule", "ladder_reconcile_schedule"},
 	"ri_exchange_reshape":         {"enable_ri_exchange_schedule", "ri_exchange_schedule"},
 	"process_scheduled_purchases": {"enable_process_scheduled_purchases_schedule", "process_scheduled_purchases_schedule"},
 	"send_notifications":          {"enable_send_notifications_schedule", "send_notifications_schedule"},

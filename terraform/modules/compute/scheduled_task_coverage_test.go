@@ -21,6 +21,7 @@ var exemptTasks = map[string]string{
 	"analytics_refresh":   "analytics_collect already refreshes the views",
 	"ri_exchange_reshape": "opt-in feature, off by default",
 	"ladder_run":          "opt-in feature, off by default",
+	"ladder_reconcile":    "scheduled by #70 S6",
 }
 
 // optInRequired tasks must be wired but default to off (no live purchasing or

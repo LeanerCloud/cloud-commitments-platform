@@ -280,9 +280,8 @@ type ladderReconcileDB interface {
 	GetExecutionByID(ctx context.Context, id string) (*config.PurchaseExecution, error)
 }
 
-// RunLadderReconcile is the entry point for the future scheduled reconcile
-// task: prefetch visibility, then ReconcileLadderTranches against the map.
-// Nothing schedules it yet. With no fired tranche it touches no provider API.
+// RunLadderReconcile is the entry point the ladder_reconcile scheduled task
+// runs: prefetch visibility, then ReconcileLadderTranches against the map. With no fired tranche it touches no provider API.
 func RunLadderReconcile(ctx context.Context, d LadderReconcileDeps) (LadderReconcileResult, error) {
 	fired, err := d.Store.ListFiredLadderTranches(ctx, ladderReconcileBatch)
 	if err != nil {
