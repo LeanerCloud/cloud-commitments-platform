@@ -59,6 +59,24 @@ func TestPlanArmEscalates_BoundGroups(t *testing.T) {
 		assert.True(t, planArmEscalates(before, armedBoundPlan()))
 		assert.False(t, planArmEscalates(armedBoundPlan(), before), "disabling a group narrows")
 	})
+	t.Run("arming a disarmed bound plan escalates even when it narrows", func(t *testing.T) {
+		disarmed := armedBoundPlan()
+		disarmed.AutoPurchase = false
+		assert.True(t, planArmEscalates(disarmed, armedBoundPlan()), "unchanged")
+		narrowed := edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.BoundIdentities = []string{"k1"} })
+		assert.True(t, planArmEscalates(disarmed, narrowed), "narrowed")
+	})
+	t.Run("a disabled group buys nothing, so its edits wait for re-enabling", func(t *testing.T) {
+		withG2 := func(enabled bool, ids ...string) *config.PurchasePlan {
+			return edited(func(p *config.PurchasePlan, _ *config.ServiceConfig) {
+				p.Services["aws/ec2#g2"] = config.ServiceConfig{Provider: "aws", Service: "ec2", Enabled: enabled, Term: 1, Payment: "no-upfront", GroupID: "g2", BoundIdentities: ids}
+			})
+		}
+		assert.False(t, planArmEscalates(armedBoundPlan(), withG2(false, "k9")), "new disabled group")
+		assert.False(t, planArmEscalates(withG2(false, "k9"), withG2(false, "k9", "k8")), "disabled group widened")
+		assert.True(t, planArmEscalates(withG2(false, "k9"), withG2(true, "k9")), "enabling it")
+		assert.True(t, planArmEscalates(armedBoundPlan(), withG2(true, "k9")), "new enabled group")
+	})
 	t.Run("a group cap added where none was set narrows", func(t *testing.T) {
 		before := edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.MaxStepCommitment = nil })
 		assert.False(t, planArmEscalates(before, armedBoundPlan()))

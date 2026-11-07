@@ -27,6 +27,10 @@ func boundGroupsEscalate(before, after *config.PurchasePlan) bool {
 	}
 	for k := range after.Services {
 		svc := after.Services[k]
+		// A disabled group buys nothing; enabling it later is checked then.
+		if !svc.Enabled {
+			continue
+		}
 		prev, ok := old[svc.EffectiveGroupID(k)]
 		if !ok || groupWidens(&prev, &svc) {
 			return true
