@@ -3488,8 +3488,9 @@ func normaliseRIExchangeSourceIDs(sources []string) []string {
 // refuseRIExchangeSourceInFlightDirect is the sibling guard for direct
 // executes: an AWS ri_exchange_direct_executions row still submitted (the
 // accept may be committing) or unknown (it may have committed) holds its
-// source RIs. It normalises its own input and compares against the stored ids
-// normalised the same way, so spelling and padding cannot slip an RI past it.
+// source RIs until an operator resolves it (resolved_at set, #1836). It
+// normalises its own input and compares against the stored ids normalised the
+// same way, so spelling and padding cannot slip an RI past it.
 // Like refuseRIExchangeSourceInFlight it runs under the daily-spend advisory
 // lock, fails closed on a lookup error, and logs the blocking row's id rather
 // than returning it (#1428).
@@ -3505,7 +3506,7 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 		FROM (
 			SELECT id, created_at, ARRAY(SELECT lower(btrim(x, E' \t\n\r\f\x0B')) FROM unnest(source_ids) x) AS ids
 			FROM ri_exchange_direct_executions
-			WHERE provider = 'aws' AND status IN ('submitted', 'unknown')
+			WHERE provider = 'aws' AND status IN ('submitted', 'unknown') AND resolved_at IS NULL
 		) d
 		WHERE ids && $1::text[]
 		ORDER BY created_at, id
