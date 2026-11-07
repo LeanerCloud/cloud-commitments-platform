@@ -28,7 +28,7 @@ func (f *reconcileFakeStore) GetGlobalConfig(context.Context) (*config.GlobalCon
 	f.global++
 	return &config.GlobalConfig{LadderingEnabled: false, LadderExecutionEnabled: false}, nil
 }
-func (f *reconcileFakeStore) ListFiredLadderTranches(context.Context, int) ([]config.LadderTrancheDB, error) {
+func (f *reconcileFakeStore) ListFiredLadderTranches(context.Context, *config.LadderFiredCursor, int) ([]config.LadderTrancheDB, error) {
 	f.listed++
 	return f.fired, f.firedErr
 }
