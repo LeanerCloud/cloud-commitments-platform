@@ -72,7 +72,8 @@ func planArmEscalates(before, after *config.PurchasePlan) bool {
 		return true
 	}
 	return !subsetOf(afterProviders, beforeProviders) ||
-		!subsetOf(config.DerivePlanServices(after), config.DerivePlanServices(before))
+		!subsetOf(config.DerivePlanServices(after), config.DerivePlanServices(before)) ||
+		boundGroupsEscalate(before, after)
 }
 
 func subsetOf(sub, super []string) bool {

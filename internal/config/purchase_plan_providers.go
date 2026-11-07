@@ -53,12 +53,14 @@ func serviceEntryProvider(key, fieldProvider string) string {
 
 // DerivePlanServices extracts the distinct service names a plan targets from
 // the "provider/service" and "provider:service" keys of plan.Services, sorted.
+// A bound entry's "#<group_id>" suffix is not part of its service name.
 func DerivePlanServices(plan *PurchasePlan) []string {
 	if plan == nil {
 		return nil
 	}
 	seen := make(map[string]struct{}, len(plan.Services))
 	for k := range plan.Services {
+		k, _, _ = strings.Cut(k, BoundKeySeparator)
 		if i := strings.IndexAny(k, "/:"); i > 0 && i < len(k)-1 {
 			seen[k[i+1:]] = struct{}{}
 		}
