@@ -91,3 +91,20 @@ func TestUpcomingFilter_MatchesAnyBoundProvider(t *testing.T) {
 	assert.True(t, rowHasProvider(&UpcomingPurchase{Provider: "aws"}, "aws"))
 	assert.False(t, rowHasProvider(&UpcomingPurchase{Provider: "aws"}, "azure"))
 }
+
+func TestPlanDisplayFor_AllGroupsDisabledFallsBackToFirstService(t *testing.T) {
+	off := displayEntry("aws", "ec2", 1, "no-upfront")
+	off.Enabled = false
+	plan := displayPlan(true, map[string]config.ServiceConfig{"aws/ec2#g1": off})
+	d := planDisplayFor(plan)
+	assert.Equal(t, firstServiceConfig(plan), d.svc)
+	assert.Equal(t, "ec2", d.svc.Service)
+	assert.Nil(t, d.providers)
+}
+
+func TestPlanDisplayFor_KeyPrefixIsTheProvider(t *testing.T) {
+	stale := displayEntry("gcp", "ec2", 1, "no-upfront")
+	d := planDisplayFor(displayPlan(true, map[string]config.ServiceConfig{"aws/ec2#g1": stale}))
+	assert.Equal(t, "aws", d.svc.Provider)
+	assert.Equal(t, []string{"aws"}, d.providers)
+}

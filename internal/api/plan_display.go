@@ -34,22 +34,24 @@ func planDisplayFor(plan *config.PurchasePlan) planDisplay {
 	}
 	sort.Strings(keys)
 	out := plan.Services[keys[0]]
+	out.Provider = config.ServiceEntryProvider(keys[0], out.Provider)
 	seen := map[string]struct{}{}
 	var providers []string
 	for _, k := range keys {
 		svc := plan.Services[k]
-		if _, dup := seen[svc.Provider]; !dup {
-			seen[svc.Provider] = struct{}{}
-			providers = append(providers, svc.Provider)
+		provider := config.ServiceEntryProvider(k, svc.Provider)
+		if _, dup := seen[provider]; !dup {
+			seen[provider] = struct{}{}
+			providers = append(providers, provider)
 		}
-		out.Provider = sharedOrMultiple(out.Provider, svc.Provider)
+		out.Provider = sharedOrMultiple(out.Provider, provider)
 		out.Service = sharedOrMultiple(out.Service, svc.Service)
 		out.Payment = sharedOrMultiple(out.Payment, svc.Payment)
 		if out.Term != svc.Term {
 			out.Term = 0
 		}
 	}
-	// Keys start with their provider, so sorted keys give sorted providers.
+	// The key prefix is the provider, so sorted keys give sorted providers.
 	return planDisplay{svc: out, providers: providers}
 }
 

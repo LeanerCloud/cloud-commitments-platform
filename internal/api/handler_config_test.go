@@ -1692,3 +1692,34 @@ func TestHandler_updateConfig_EmptyEnabledProvidersWithoutPermissionIs403(t *tes
 	assert.Equal(t, 403, ce.code)
 	mockStore.AssertNotCalled(t, "SaveGlobalConfig", mock.Anything, mock.Anything)
 }
+
+// bound_count is response-only (issue #1746); a first save returns the decoded
+// body as it is, so a client that echoes bound_count must not get it stored.
+func TestHandler_updateServiceConfig_FirstSaveDropsBoundCount(t *testing.T) {
+	ctx := context.Background()
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+	mockAuth.On("ValidateSession", ctx, "admin-token").Return(&Session{
+		UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com",
+	}, nil)
+	mockAuth.grantAdmin()
+	store := new(MockConfigStore)
+	t.Cleanup(func() { store.AssertExpectations(t) })
+	var written *config.ServiceConfig
+	store.On("UpdateServiceConfigAtomic", ctx, "aws", "rds", mock.Anything).
+		Run(func(args mock.Arguments) {
+			apply := args.Get(3).(func(*config.ServiceConfig) (*config.ServiceConfig, error))
+			var err error
+			written, err = apply(nil)
+			require.NoError(t, err)
+		}).Return(nil, nil)
+	h := &Handler{config: store, auth: mockAuth}
+
+	_, err := h.updateServiceConfig(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer admin-token"},
+		Body:    `{"enabled":true,"term":1,"payment":"no-upfront","coverage":80,"bound_count":9}`,
+	}, "aws/rds")
+	require.NoError(t, err)
+	require.NotNil(t, written)
+	assert.Zero(t, written.BoundCount)
+}

@@ -85,7 +85,8 @@ func (s *PostgresStore) setPlanAccountsTx(ctx context.Context, tx pgx.Tx, planID
 // without the read-only service_configs stamps (issue #8). A plan's services
 // map is a copy of settings, not a service_configs row, so a created_at or
 // updated_at on an entry would be a caller-supplied value the database never
-// wrote; it is dropped instead of stored.
+// wrote; it is dropped instead of stored. BoundCount is response-only and
+// dropped the same way.
 func marshalPlanServices(services map[string]ServiceConfig) ([]byte, error) {
 	var stripped map[string]ServiceConfig
 	if services != nil {
@@ -94,6 +95,7 @@ func marshalPlanServices(services map[string]ServiceConfig) ([]byte, error) {
 			svc := services[key]
 			svc.CreatedAt = nil
 			svc.UpdatedAt = nil
+			svc.BoundCount = 0
 			stripped[key] = svc
 		}
 	}

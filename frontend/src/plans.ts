@@ -18,6 +18,7 @@ import { showSkeletonTiles, showSkeletonRows, teardownSkeleton } from './lib/ske
 import { renderErrorCallout } from './lib/error-callout';
 import { canAccess } from './permissions';
 import { applyColumnFilters as applyColumnFiltersLib } from './lib/column-filters';
+import { rowMatchesProvider } from './lib/upcoming-scope';
 import { formatPaymentOption, formatTermShort } from './lib/table-format';
 import {
   openColumnFilterPopover,
@@ -237,14 +238,18 @@ function applyPlansColumnFilters(
   purchases: readonly PlannedPurchase[],
   filters: state.PlansColumnFilters,
 ): PlannedPurchase[] {
-  return applyColumnFiltersLib<PlannedPurchase, state.PlansColumnId>(
+  const { provider: providerFilter, ...rest } = filters;
+  const narrowed = applyColumnFiltersLib<PlannedPurchase, state.PlansColumnId>(
     purchases,
-    filters,
+    rest,
     {
       categorical: categoricalCellValueForPlan,
       numeric: (p, col) => roundForDisplay(numericCellValueForPlan(p, col), displayPrecisionForPlan(col)),
     },
   );
+  if (providerFilter?.kind !== 'set') return narrowed;
+  const values = providerFilter.values;
+  return narrowed.filter(p => values.some(v => rowMatchesProvider(p, v)));
 }
 
 function categoricalCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): string {

@@ -95,3 +95,16 @@ func TestPGXMock_UpdatePurchasePlan_StoresServicesWithoutStamps(t *testing.T) {
 	assertNoStampKeys(t, servicesArg.raw)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// bound_count is response-only (issue #1746); a services map that carries it
+// must not store it.
+func TestMarshalPlanServices_DropsBoundCount(t *testing.T) {
+	svc := stampedService()
+	svc.BoundCount = 7
+	services := map[string]ServiceConfig{"aws/ec2#g1": svc}
+
+	raw, err := marshalPlanServices(services)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "bound_count")
+	assert.Equal(t, 7, services["aws/ec2#g1"].BoundCount, "the caller's map is not modified")
+}
