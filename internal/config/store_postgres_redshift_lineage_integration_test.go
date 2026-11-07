@@ -606,15 +606,17 @@ func TestFindOpenRedshiftLineageConflicts_FailedRows(t *testing.T) {
 		self, _ := seedFailed(t, "fam-f0:acct", recent, "no_submission = true, retry_attempt_n = 1")
 		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
 	})
-	t.Run("same_family_completed_inside_settle_conflicts", func(t *testing.T) {
-		_, err := store.db.Exec(ctx, `DELETE FROM purchase_executions`)
-		require.NoError(t, err)
-		self := seedLineageRow(ctx, t, store, "fam-f0", "running", recent)
-		done := seedLineageRow(ctx, t, store, "fam-f0:acct", "completed", recent)
-		got := findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")
-		assert.Equal(t, []string{done.ExecutionID}, conflictIDs(got))
-		assert.True(t, got[0].SameFamily)
-	})
+	for _, status := range []string{"completed", "partially_completed", "revocation_requested"} {
+		t.Run("same_family_"+status+"_inside_settle_conflicts", func(t *testing.T) {
+			_, err := store.db.Exec(ctx, `DELETE FROM purchase_executions`)
+			require.NoError(t, err)
+			self := seedLineageRow(ctx, t, store, "fam-f0", "running", recent)
+			done := seedLineageRow(ctx, t, store, "fam-f0:acct", status, recent)
+			got := findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")
+			assert.Equal(t, []string{done.ExecutionID}, conflictIDs(got))
+			assert.True(t, got[0].SameFamily)
+		})
+	}
 	t.Run("same_family_completed_after_settle_passes", func(t *testing.T) {
 		_, err := store.db.Exec(ctx, `DELETE FROM purchase_executions`)
 		require.NoError(t, err)
