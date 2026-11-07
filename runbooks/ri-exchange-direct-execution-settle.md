@@ -51,17 +51,18 @@ UPDATE ri_exchange_direct_executions
  WHERE id = :'id'
    AND provider = 'aws'
    AND status IN ('submitted', 'unknown')
-   AND (status = 'unknown' OR created_at < now() - interval '5 minutes');
+   AND (status = 'unknown' OR created_at < now() - interval '10 minutes');
 -- Expect exactly 1 row updated. 0 rows means: wrong id, already settled, or a 'submitted' row younger
--- than 5 minutes that may still be in flight. Do NOT widen the WHERE clause; wait and re-check.
+-- than 10 minutes that may still be in flight. Do NOT widen the WHERE clause; wait and re-check.
 ```
 
-- **Why the age check:** the AWS call can run for 4 minutes (`riExchangeExecutionTimeout`),
-  so a `submitted` row younger than 5 minutes (4 minutes plus 1 minute of margin) may
-  still be in flight. Marking it `failed` would release the RI while AWS might still
+- **Why the age check:** the claim and the AWS call share one deadline of 4 minutes
+  (`riExchangeExecutionTimeout`) measured from just before the row is saved, so a
+  `submitted` row younger than 10 minutes (about 4 minutes plus 6 minutes of margin for
+  clock skew and finalize) may still be in flight. Marking it `failed` would release the RI while AWS might still
   commit the accept, and the handler's own finalize would then lose the real outcome.
 - **Why `created_at` can be trusted:** it is taken with `clock_timestamp()` after the
   guard lock is acquired, so a lock wait does not age the row. A `submitted` row older
-  than 5 minutes is past the execution window plus the claim.
+  than 10 minutes is past the execution window, claim included.
 - **Why `error` is appended:** it keeps the original failure text.
 - An `unknown` row is settled at any age: its accept already returned.

@@ -49,12 +49,12 @@ func TestRIExchangeDirectRunbook_SettleStatement(t *testing.T) {
 	require.NoError(t, env.reserve(t, testAccountID(850000000001), "ri-g1829-rb-unknown"), "a settled row stops blocking the guard")
 
 	old := env.directRow(t, "aws", "submitted", "ri-g1829-rb-old")
-	age(old, "6 minutes")
-	assert.EqualValues(t, 1, settle(old), "a submitted row older than 5 minutes is settled")
+	age(old, "11 minutes")
+	assert.EqualValues(t, 1, settle(old), "a submitted row older than 10 minutes is settled")
 
 	young := env.directRow(t, "aws", "submitted", "ri-g1829-rb-young")
-	age(young, "1 minute")
-	assert.EqualValues(t, 0, settle(young), "a submitted row that may still be in flight is not settled")
+	age(young, "6 minutes")
+	assert.EqualValues(t, 0, settle(young), "a submitted row inside the 10 minute window is not settled")
 
 	assert.EqualValues(t, 0, settle(env.directRow(t, "azure", "unknown", "ri-g1829-rb-azure")), "Azure rows are untouched")
 	assert.EqualValues(t, 0, settle(env.directRow(t, "aws", "completed", "ri-g1829-rb-done")), "a completed row is final")
