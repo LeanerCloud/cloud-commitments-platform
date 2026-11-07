@@ -1294,16 +1294,18 @@ func (h *Handler) executeAzureExchange(ctx context.Context, req *events.LambdaFu
 	// mid-LRO and retries commits the exchange twice, each half individually
 	// under the cap. Taken here, last, so no gate rejection ever leaves a
 	// claim behind.
+	// The execution window is measured from just before the audit save (#1840).
+	deadline := time.Now().Add(h.exchangeExecutionTimeout())
 	auditID, err := h.beginDirectExchange(ctx,
 		azureDirectExchangeAudit(session, accountID, body, maxRat, preview),
-		azureExchangeIdempotencyKey(body))
+		azureExchangeIdempotencyKey(body), deadline)
 	if err != nil {
 		return nil, err
 	}
 
 	// Past the claim the exchange may commit at Azure; a cancelled request must
 	// not abort the submit or its long-running-operation poll (#790).
-	execCtx, cancelExec := ctxutil.DetachedWithTimeout(ctx, riExchangeExecutionTimeout)
+	execCtx, cancelExec := ctxutil.DetachedWithDeadline(ctx, deadline)
 	defer cancelExec()
 	result, err := client.ExecuteExchange(execCtx, preview.SessionID)
 	if err != nil {
@@ -2051,16 +2053,20 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 	// retries otherwise double-spends with each half individually under the
 	// cap. Taken last, after every gate, so no rejected request leaves a
 	// claim behind.
+	//
+	// The execution window is measured from just before the audit save (#1840):
+	// one deadline bounds both the claim and the provider call.
+	deadline := time.Now().Add(h.exchangeExecutionTimeout())
 	auditID, err := h.beginDirectExchange(ctx,
 		awsDirectExchangeAudit(session, cloudAccountID, body, maxRat),
-		awsExchangeIdempotencyKey(cloudAccountID, body))
+		awsExchangeIdempotencyKey(cloudAccountID, body), deadline)
 	if err != nil {
 		return nil, err
 	}
 
 	// Past the claim the exchange may commit at AWS; a cancelled request must
 	// not abort it midway (#790).
-	execCtx, cancelExec := ctxutil.DetachedWithTimeout(ctx, riExchangeExecutionTimeout)
+	execCtx, cancelExec := ctxutil.DetachedWithDeadline(ctx, deadline)
 	defer cancelExec()
 	exchangeID, quote, err := h.awsExchangeExecutor()(execCtx, exchange.ExchangeExecuteRequest{
 		Region:           region,

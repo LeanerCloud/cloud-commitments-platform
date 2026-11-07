@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/big"
 	"strconv"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
@@ -37,11 +38,19 @@ import (
 // the submit-time idempotency claim for claimKey. It returns the audit row's
 // ID, which the caller finalizes with the provider's outcome.
 //
+// deadline is the end of the whole execution window, computed by the caller
+// just before the audit save (#1840): the claim is bounded by it, and the
+// caller runs the provider call to the same instant, so the exchange cannot
+// outlive created_at + riExchangeExecutionTimeout however slow the claim is
+// (the runbook's settle age relies on that bound). A claim that has not
+// answered by then fails like any other claim failure and never reaches the
+// provider; the row is finalized as failed.
+//
 // A claim refusal (an identical submit inside the window, or a claim store
 // failure) finalizes the row as failed: the request never reached the
 // provider, and the row records that an identical execute was attempted and
 // refused.
-func (h *Handler) beginDirectExchange(ctx context.Context, audit *config.RIExchangeDirectExecution, claimKey string) (string, error) {
+func (h *Handler) beginDirectExchange(ctx context.Context, audit *config.RIExchangeDirectExecution, claimKey string, deadline time.Time) (string, error) {
 	if err := audit.Validate(); err != nil {
 		return "", fmt.Errorf("invalid RI exchange audit record, exchange not executed: %w", err)
 	}
@@ -53,7 +62,14 @@ func (h *Handler) beginDirectExchange(ctx context.Context, audit *config.RIExcha
 		logging.Errorf("ri-exchange direct execute: failed to record audit row, refusing to execute: %v", err)
 		return "", fmt.Errorf("failed to record the RI exchange audit trail, exchange not executed: %w", err)
 	}
-	if err := h.claimExchangeSubmit(ctx, claimKey); err != nil {
+	claimCtx, cancelClaim := context.WithDeadline(ctx, deadline)
+	defer cancelClaim()
+	err := h.claimExchangeSubmit(claimCtx, claimKey)
+	if err == nil && claimCtx.Err() != nil {
+		// Claimed, but too late to leave the provider call any of its window.
+		err = fmt.Errorf("RI exchange claim finished after the execution deadline: %w", claimCtx.Err())
+	}
+	if err != nil {
 		h.finalizeDirectExchange(ctx, audit.ID, config.RIExchangeDirectOutcome{
 			Status: config.RIExchangeDirectStatusFailed,
 			Error:  "not submitted to the provider: " + err.Error(),
