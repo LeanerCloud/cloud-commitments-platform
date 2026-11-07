@@ -52,7 +52,15 @@ type ManagerConfig struct {
 	MaxDueRowAge time.Duration
 	// AttemptJournal records each purchase attempt durably (go#107). Nil keeps
 	// the provider's own window dedupe.
-	AttemptJournal common.AttemptJournal
+	AttemptJournal AttemptJournal
+}
+
+// AttemptJournal is the journal the manager hands to providers. It must also
+// read claims (go#700), so a wrapper that hides ClaimedByOthers fails to
+// compile instead of silently disabling the cross-lineage exclusion.
+type AttemptJournal interface {
+	common.AttemptJournal
+	common.ClaimReader
 }
 
 // Manager handles purchase workflow.
@@ -64,7 +72,7 @@ type Manager struct {
 	bastionSTS      credentials.STSClientFactory
 	ambientAWSCreds aws.CredentialsProvider
 	credStore       credentials.CredentialStore
-	attemptJournal  common.AttemptJournal
+	attemptJournal  AttemptJournal
 	providerFactory provider.FactoryInterface
 	oidcSigner      oidc.Signer
 	defaults        PurchaseDefaults
