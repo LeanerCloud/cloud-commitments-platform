@@ -117,8 +117,10 @@ func (h *Handler) isExecutionInScope(ctx context.Context, scope auth.AccountScop
 // Provider/service/term/payment are taken from firstServiceConfig (lexicographic key order)
 // so the result is deterministic regardless of map iteration order.
 func buildPlannedPurchase(plan *config.PurchasePlan, exec *config.PurchaseExecution) PlannedPurchase {
-	svc := firstServiceConfig(plan)
+	display := planDisplayFor(plan)
+	svc := display.svc
 	row := PlannedPurchase{
+		Providers:        display.providers,
 		ID:               exec.ExecutionID,
 		PlanID:           exec.PlanID,
 		PlanName:         plan.Name,

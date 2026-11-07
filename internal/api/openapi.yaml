@@ -167,8 +167,9 @@ paths:
         - name: provider
           in: query
           description: >
-            Filter by the row's provider (its plan's first service). "all" or
-            no value means every provider. Any other value is a 400.
+            Filter by the row's provider (its plan's first service), or for a
+            bound plan (#1746) any of its group providers. "all" or no value
+            means every provider. Any other value is a 400.
           schema:
             type: string
             enum: [aws, azure, gcp, all]
@@ -6817,6 +6818,23 @@ components:
             Minimum instance/node count a recommendation must carry to be
             surfaced (GUI/persisted equivalent of the CLI --min-count flag).
             0 (default) disables the filter.
+        group_id:
+          type: string
+          readOnly: true
+          description: |
+            A bound plan's group id (#1746). Set only on a bound plan's services
+            entries; omitted elsewhere.
+        bound_count:
+          type: integer
+          readOnly: true
+          description: |
+            How many recommendations a bound plan's group (#1746) is bound to.
+            Plan responses report this count instead of the bound identities.
+        max_step_commitment:
+          type: number
+          description: |
+            A bound plan group's own per-step cap (#1746); the effective cap is
+            the lower of this and the plan's max_step_commitment.
         created_at:
           type: string
           format: date-time
@@ -6936,6 +6954,14 @@ components:
           format: date
         provider:
           type: string
+        providers:
+          type: array
+          items:
+            type: string
+          description: >
+            Set only for a bound plan (#1746): the distinct providers of its
+            enabled groups. Such a plan shows "multiple" for provider, service
+            or payment, and term 0, when its groups differ.
         service:
           type: string
         step_number:
@@ -7481,6 +7507,14 @@ components:
           format: date
         provider:
           type: string
+        providers:
+          type: array
+          items:
+            type: string
+          description: >
+            Set only for a bound plan (#1746): the distinct providers of its
+            enabled groups. Such a plan shows "multiple" for provider, service
+            or payment, and term 0, when its groups differ.
         service:
           type: string
         resource_type:
