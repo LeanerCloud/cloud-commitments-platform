@@ -96,6 +96,11 @@ func tokenCapture(t *testing.T, providerName string, exec *config.PurchaseExecut
 	store.On("SavePurchaseHistory", ctx, mock.Anything).Return(nil)
 	factory.On("CreateAndValidateProvider", mock.Anything, providerName, mock.Anything).Return(prov, nil)
 	prov.On("GetServiceClient", mock.Anything, mock.Anything, mock.Anything).Return(svc, nil)
+	if providerName == "gcp" {
+		// The GCP recent-commitment check (#682) lists live commitments before
+		// buying; none exist here, so every rec proceeds to PurchaseCommitment.
+		svc.On("GetExistingCommitments", mock.Anything).Return([]common.Commitment(nil), nil)
+	}
 	var mu sync.Mutex
 	tokens := map[string]string{}
 	svc.On("PurchaseCommitment", mock.Anything, mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions")).

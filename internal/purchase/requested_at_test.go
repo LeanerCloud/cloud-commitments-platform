@@ -128,7 +128,7 @@ func TestExecuteSinglePurchase_EmptyTokenOptsOtherwiseUntouched(t *testing.T) {
 	in := common.PurchaseOptions{Source: common.PurchaseSourceWeb, ExecutionID: "exec-1"}
 
 	before := time.Now()
-	_, err := m.executeSinglePurchase(context.Background(), scopedTestRec("acct-A"), nil, in)
+	_, err := m.executeSinglePurchase(context.Background(), scopedTestRec("acct-A"), nil, in, nil)
 	after := time.Now()
 
 	require.NoError(t, err)
@@ -363,7 +363,7 @@ func TestExecuteSinglePurchase_RedshiftWithoutRequestedAtRefuses(t *testing.T) {
 	mockProviderInst.On("GetServiceClient", mock.Anything, common.ServiceRedshift, mock.Anything).Return(mockServiceClient, nil).Maybe()
 	m := &Manager{providerFactory: mockFactory}
 
-	_, err := m.executeSinglePurchase(context.Background(), redshiftScopedRec("acct-A"), nil, common.PurchaseOptions{ExecutionID: "e"})
+	_, err := m.executeSinglePurchase(context.Background(), redshiftScopedRec("acct-A"), nil, common.PurchaseOptions{ExecutionID: "e"}, nil)
 
 	require.Error(t, err)
 	mockServiceClient.AssertNotCalled(t, "PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything)

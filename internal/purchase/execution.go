@@ -781,6 +781,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 	// Build the list of selected indices once so the fan-out closure only
 	// has to look up rec[i] (no second pass over the full slice).
 	selected := selectedIndices(exec.Recommendations)
+	ownGCPNames := gcpOwnCommitmentNames(exec, selected)
 	if len(selected) == 0 {
 		logging.Infof("purchase[%s]: no selected recommendations, nothing to execute (account=%s plan=%q)",
 			exec.ExecutionID, accountID, plan.Name)
@@ -833,7 +834,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 			recOpts := opts
 			recOpts.IdempotencyToken = common.DeriveIdempotencyToken(idempotencyLineageKey(exec), i)
 			recOpts.AttemptJournal = m.attemptJournal
-			purchaseResult, err := m.executeSinglePurchase(ctx, rec, provCfg, recOpts)
+			purchaseResult, err := m.executeSinglePurchase(ctx, rec, provCfg, recOpts, ownGCPNames)
 			return recPurchaseOutcome{index: i, purchase: purchaseResult, err: err}, nil
 		}, getMaxAccountParallelism())
 
@@ -1247,7 +1248,7 @@ func logRecCtxErr(executionID, recTuple string, elapsed time.Duration, recCtxErr
 // provCfg carries optional per-account credentials; pass nil to use ambient credentials.
 // opts carries execution-level metadata (the source surface) that providers stamp
 // onto the commitment they create.
-func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.RecommendationRecord, provCfg *provider.Config, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.RecommendationRecord, provCfg *provider.Config, opts common.PurchaseOptions, ownGCPNames map[string]bool) (common.PurchaseResult, error) {
 	// Per-purchase Info logs tagged with the owning execution ID so a
 	// CloudWatch filter on the execution UUID surfaces every step of the
 	// purchase attempt -- provider construction, service-client lookup,
@@ -1345,13 +1346,11 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 	// CloudWatch shows whether a failure came from the SDK call itself
 	// (which the AWS SDK retries up to 3× × 30s by default) versus
 	// something earlier in the flow — issue #667.
-	tCall := time.Now()
-	// go's Redshift dedupe bounds its DescribeReservedNodes match window by RequestedAt, which must
-	// be the lineage's first dispatch time, never this call's.
-	opts, err = withDispatchTime(rec, opts)
+	opts, err = preSubmitChecks(recCtx, serviceClient, rec, recommendation, opts, ownGCPNames)
 	if err != nil {
 		return common.PurchaseResult{}, err
 	}
+	tCall := time.Now()
 	result, err := serviceClient.PurchaseCommitment(recCtx, recommendation, opts)
 	elapsed := time.Since(tCall)
 	if err != nil {
@@ -1379,6 +1378,18 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 	logging.Infof("purchase[%s]: %s/%s/%s/%s PurchaseCommitment succeeded in %s (commitmentID=%s, cost=%s)",
 		opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, elapsed, result.CommitmentID, cost)
 	return result, nil
+}
+
+// preSubmitChecks runs what must hold before PurchaseCommitment: the GCP
+// recent-commitment refusal (platform#682, a beforeSubmission error) and go's
+// Redshift dispatch time, which bounds its DescribeReservedNodes match window
+// by RequestedAt and must be the lineage's first dispatch time, never this
+// call's.
+func preSubmitChecks(ctx context.Context, client provider.ServiceClient, rec config.RecommendationRecord, recommendation common.Recommendation, opts common.PurchaseOptions, ownGCPNames map[string]bool) (common.PurchaseOptions, error) {
+	if err := gcpRecentCommitmentRefusal(ctx, client, recommendation, ownGCPNames); err != nil {
+		return opts, err
+	}
+	return withDispatchTime(rec, opts)
 }
 
 // purchaseCallError wraps a failed PurchaseCommitment. When the run context

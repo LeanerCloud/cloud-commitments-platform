@@ -774,6 +774,9 @@ func TestManager_RecoverStrandedApprovals_GCPRedrives(t *testing.T) {
 	t.Cleanup(func() { mockFactory.AssertExpectations(t) })
 	t.Cleanup(func() { mockProvider.AssertExpectations(t) })
 	t.Cleanup(func() { mockServiceClient.AssertExpectations(t) })
+	// The GCP recent-commitment check (#682) lists live commitments first;
+	// none exist, so the re-drive proceeds to the purchase.
+	mockServiceClient.On("GetExistingCommitments", mock.Anything).Return([]common.Commitment(nil), nil)
 
 	stranded := config.PurchaseExecution{
 		ExecutionID: "exec-gcp-stranded",

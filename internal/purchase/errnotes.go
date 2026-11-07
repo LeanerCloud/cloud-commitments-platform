@@ -39,6 +39,8 @@ var serverNotePatterns = []string{
 	regexp.QuoteMeta(redshiftHorizonRefusal),
 	regexp.QuoteMeta(redshiftNoStampRefusal),
 	regexp.QuoteMeta(redshiftRecentBuyRefusal),
+	regexp.QuoteMeta(gcpDuplicateCheckFailedNote),
+	regexp.QuoteMeta(gcpRecentCommitmentNote),
 	`EC2 recommendation for ` + resourceTypePattern + ` has zonal scope but no AvailabilityZone: refusing to buy a zonal RI in an arbitrary AZ; re-fetch the recommendation`,
 	`zonal RI offering needs an availability zone; re-fetch the recommendation`,
 	`email notifier not configured for this deployment`,
