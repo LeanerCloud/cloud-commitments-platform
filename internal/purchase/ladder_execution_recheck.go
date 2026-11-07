@@ -74,7 +74,18 @@ func ladderGateRefusal(gate *config.LadderExecutionGate) error {
 		return fmt.Errorf("refusing to execute ladder purchase: ladder config mode is %q, not auto_approve", *gate.ConfigMode)
 	case gate.RunStatus == nil:
 		return errors.New("refusing to execute ladder purchase: its ladder run no longer exists")
-	case ladder.RunStatus(*gate.RunStatus) == ladder.RunStatusCancelled:
+	}
+	return ladderRunRefusal(*gate.RunStatus)
+}
+
+// ladderRunRefusal parses the stored run status, so both stored spellings of
+// canceled refuse (#1792), and a status the code does not know fails closed.
+func ladderRunRefusal(status string) error {
+	run, err := ladder.ParseRunStatus(status)
+	if err != nil {
+		return fmt.Errorf("refusing to execute ladder purchase: its ladder run status %q is unknown", status)
+	}
+	if run == ladder.RunStatusCanceled {
 		return errors.New("refusing to execute ladder purchase: its ladder run was canceled")
 	}
 	return nil

@@ -340,3 +340,17 @@ func TestCanonicalSuppressionTenancy(t *testing.T) {
 	assert.Equal(t, "Dedicated", canonicalSuppressionTenancy("Dedicated"))
 	assert.Equal(t, "default", canonicalSuppressionTenancy("default"))
 }
+
+func TestCanonicalSuppressionEngine(t *testing.T) {
+	for _, tc := range []struct{ provider, service, engine, want string }{
+		{"azure", "cache", "", "redis"},
+		{"azure", "cache", "redis", "redis"},
+		{"azure", "cache", "valkey", "valkey"},
+		{"aws", "cache", "", ""},
+		{"azure", "compute", "", ""},
+	} {
+		assert.Equal(t, tc.want, CanonicalSuppressionEngine(tc.provider, tc.service, tc.engine), tc.provider+"/"+tc.service+"/"+tc.engine)
+	}
+	assert.Equal(t, []string{"redis", ""}, SuppressionEngineSpellings("azure", "cache", "redis"))
+	assert.Equal(t, []string{""}, SuppressionEngineSpellings("aws", "cache", ""))
+}

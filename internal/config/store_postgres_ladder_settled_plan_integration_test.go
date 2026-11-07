@@ -55,7 +55,7 @@ func TestPostgresStoreDB_PlanAndSaveSettledTerm(t *testing.T) {
 	add(ladder.TrancheStatusCompleted, 8, at(ladderSettleSkewMargin-time.Second))
 	assert.InDelta(t, 12, planned(), 1e-9, "settled within the skew margin before asOf counts")
 	add(ladder.TrancheStatusFailed, 16, nil)
-	add(ladder.TrancheStatusCancelled, 32, nil)
+	add(ladder.TrancheStatusCanceled, 32, nil)
 	assert.InDelta(t, 12, planned(), 1e-9, "failed and canceled never count")
 	add(ladder.TrancheStatusFired, 64, nil)
 	assert.InDelta(t, 76, planned(), 1e-9, "fired still counts as in-flight, added to the settled term")

@@ -39,8 +39,8 @@ test('eligibility covers status, execution, deadline, and unavailable revision A
 test('ladder labels cover every known enum and show unknown codes raw', () => {
   expect(['ec2-instance-sp', 'compute-sp', 'convertible-ri', 'azure-reservation', 'azure-savings-plan'].map(v => ladderLabel('layer_type', v)))
     .toEqual(['EC2 Instance Savings Plan', 'Compute Savings Plan', 'Convertible RI', 'Azure Reservation', 'Azure Savings Plan']);
-  expect(['scheduled', 'fired', 'completed', 'cancelled', 'failed'].map(v => ladderLabel('status', v)))
-    .toEqual(['Scheduled', 'Fired', 'Completed', 'Cancelled', 'Failed']);
+  expect(['scheduled', 'fired', 'completed', 'canceled', 'failed'].map(v => ladderLabel('status', v)))
+    .toEqual(['Scheduled', 'Fired', 'Completed', 'Canceled', 'Failed']);
   expect(['1yr', '3yr'].map(v => ladderLabel('term', v))).toEqual(['1 Year', '3 Years']);
   expect(['no-upfront', 'partial-upfront', 'all-upfront'].map(v => ladderLabel('payment_option', v))).toEqual(['No Upfront', 'Partial Upfront', 'All Upfront']);
   expect(ladderLabel('layer_type', 'new-thing')).toBe('new-thing');
@@ -66,7 +66,7 @@ test('sub-0.0001 amounts are not shown as $0.0000 and edit reasons use readable 
   expect(formatLadderAmount('0.000040')).toBe('<$0.0001/hr');
   expect(formatLadderAmount('0.000100')).toBe('$0.0001/hr');
   expect(ladderEditReason({ ...event, run_status: 'awaiting_approval' })).toBe('Run is awaiting approval.');
-  expect(ladderEditReason({ ...event, status: 'cancelled' })).toBe('Tranche is cancelled.');
+  expect(ladderEditReason({ ...event, status: 'canceled' })).toBe('Tranche is canceled.');
 });
 
 // FIXTURE: hand-written tranches.
@@ -81,15 +81,15 @@ test('ladderCumulative carries each layer forward on shared times and keeps zero
   expect([...result.rowTotals]).toEqual([['a', 2500000n], ['b', 3500000n], ['c', 3500000n]]);
 });
 
-// FIXTURE: hand-written statuses; the gate repro was scheduled 1.0 + cancelled 5.0 + failed 7.0 showing $13.00/hr instead of $1.00/hr.
+// FIXTURE: hand-written statuses; the gate repro was scheduled 1.0 + canceled 5.0 + failed 7.0 showing $13.00/hr instead of $1.00/hr.
 test('ladderCumulative counts only scheduled, fired and completed tranches (#698 gate)', () => {
   const at = (id: string, status: string, amount: string, day: number) => ({ ...event, id, status, amount_usd_hr: amount, scheduled_date: `2030-01-0${day}T00:00:00Z` });
-  const rows = [at('s', 'scheduled', '1.000000', 1), at('c', 'cancelled', '5.000000', 2), at('f', 'failed', '7.000000', 3), at('x', 'weird', '9.000000', 4), at('fi', 'fired', '2.000000', 5), at('d', 'completed', '3.000000', 6)];
+  const rows = [at('s', 'scheduled', '1.000000', 1), at('c', 'canceled', '5.000000', 2), at('f', 'failed', '7.000000', 3), at('x', 'weird', '9.000000', 4), at('fi', 'fired', '2.000000', 5), at('d', 'completed', '3.000000', 6)];
   const result = ladderCumulative(rows, 0n);
   expect(result.totals).toEqual([1000000n, 3000000n, 6000000n]);
   expect([...result.rowTotals]).toEqual([['s', 1000000n], ['c', null], ['f', null], ['x', null], ['fi', 3000000n], ['d', 6000000n]]);
   expect(rows.map(ladderNotCountedNote)).toEqual([undefined, 'Not counted', 'Not counted', 'Not counted (unknown status)', undefined, undefined]);
-  expect(ladderCumulative([at('c', 'cancelled', '5.000000', 1)], 0n).times).toEqual([]);
+  expect(ladderCumulative([at('c', 'canceled', '5.000000', 1)], 0n).times).toEqual([]);
 });
 
 test('typed UTC filter dates parse strictly and whole days cover both edges (issue #753)', () => {
