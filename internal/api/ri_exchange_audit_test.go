@@ -582,9 +582,17 @@ type slowClaimStore struct {
 	lateSuccess bool
 	// saveDelay slows the audit save.
 	saveDelay time.Duration
+	// saveStartedAt is taken at the start of the save, before saveDelay, and
+	// claimReturnedAt when the claim answers; the handler's deadline is
+	// computed before the first, so tests compare against them, not slack.
+	saveStartedAt   time.Time
+	claimReturnedAt time.Time
 }
 
 func (s *slowClaimStore) SaveRIExchangeDirectExecution(ctx context.Context, record *config.RIExchangeDirectExecution) error {
+	s.mu.Lock()
+	s.saveStartedAt = time.Now()
+	s.mu.Unlock()
 	time.Sleep(s.saveDelay)
 	return s.directExchangeAuditStore.SaveRIExchangeDirectExecution(ctx, record)
 }
@@ -593,6 +601,11 @@ func (s *slowClaimStore) ClaimRIExchangeIdempotencyKey(ctx context.Context, key 
 	s.mu.Lock()
 	s.claimDeadline, s.claimHasDL = ctx.Deadline()
 	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.claimReturnedAt = time.Now()
+		s.mu.Unlock()
+	}()
 	if s.lateSuccess {
 		<-ctx.Done()
 		return s.directExchangeAuditStore.ClaimRIExchangeIdempotencyKey(context.WithoutCancel(ctx), key, window)
@@ -625,15 +638,14 @@ func TestExecuteExchange_DirectExecDeadlineAnchoredBeforeSave(t *testing.T) {
 	h.executionTimeoutOverride = budget
 	time.AfterFunc(claimDelay, func() { close(store.release) })
 
-	before := time.Now()
 	_, err := h.executeExchange(auditRequest(context.Background(), awsAuditBody))
-	after := time.Now()
 	require.NoError(t, err)
 
 	require.True(t, execHasDL)
-	assert.False(t, execDeadline.After(before.Add(budget).Add(50*time.Millisecond)),
-		"exec deadline %v must be anchored before the save, not after the %v claim", execDeadline.Sub(before), claimDelay)
-	assert.True(t, execDeadline.Before(after.Add(budget)), "exec deadline must not be claim-end + budget")
+	assert.False(t, execDeadline.After(store.saveStartedAt.Add(budget)),
+		"exec deadline must be taken no later than the save start")
+	assert.True(t, execDeadline.Before(store.claimReturnedAt.Add(budget)),
+		"exec deadline must not be anchored after the %v claim", claimDelay)
 	require.True(t, store.claimHasDL, "the claim must be bounded")
 	assert.WithinDuration(t, execDeadline, store.claimDeadline, time.Millisecond, "claim and exec share one deadline")
 }
@@ -696,11 +708,10 @@ func TestExecuteExchange_DirectExecDeadlineNotMovedBySlowSave(t *testing.T) {
 	h.config = store
 	h.executionTimeoutOverride = budget
 
-	before := time.Now()
 	_, err := h.executeExchange(auditRequest(context.Background(), awsAuditBody))
 	require.NoError(t, err)
-	assert.False(t, execDeadline.After(before.Add(budget).Add(100*time.Millisecond)),
-		"exec deadline %v after start must not include the 250ms save", execDeadline.Sub(before))
+	assert.False(t, execDeadline.After(store.saveStartedAt.Add(budget)),
+		"exec deadline must not move later by the 250ms save")
 }
 
 func azureSlowClaimHandler(t *testing.T, store *slowClaimStore, opsClient *mockAzureExchangeOpsClient, budget time.Duration) *Handler {
@@ -725,15 +736,14 @@ func TestExecuteAzureExchange_DirectExecDeadlineAnchoredBeforeSave(t *testing.T)
 	h := azureSlowClaimHandler(t, store, opsClient, budget)
 	time.AfterFunc(claimDelay, func() { close(store.release) })
 
-	before := time.Now()
 	_, err := h.executeAzureExchange(auditRequest(context.Background(), azureAuditBody))
-	after := time.Now()
 	require.NoError(t, err)
 
 	require.True(t, execHasDL)
-	assert.False(t, execDeadline.After(before.Add(budget).Add(50*time.Millisecond)),
-		"exec deadline %v must be anchored before the save, not after the %v claim", execDeadline.Sub(before), claimDelay)
-	assert.True(t, execDeadline.Before(after.Add(budget)), "exec deadline must not be claim-end + budget")
+	assert.False(t, execDeadline.After(store.saveStartedAt.Add(budget)),
+		"exec deadline must be taken no later than the save start")
+	assert.True(t, execDeadline.Before(store.claimReturnedAt.Add(budget)),
+		"exec deadline must not be anchored after the %v claim", claimDelay)
 	require.True(t, store.claimHasDL, "the claim must be bounded")
 	assert.WithinDuration(t, execDeadline, store.claimDeadline, time.Millisecond, "claim and exec share one deadline")
 }
