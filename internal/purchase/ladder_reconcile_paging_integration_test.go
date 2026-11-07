@@ -91,6 +91,8 @@ func (b *barrierStore) ListFiredLadderTranches(ctx context.Context, after *confi
 // The tranche row lock serializes the two sweeps. The loser blocks in
 // LockLadderTrancheChainTx, then re-reads the row as no longer fired and gets
 // ErrLadderTrancheNotFired, which counts as LostRace (not Errored).
+// The transition compare-and-swap is a second guard: this test reaches it only
+// if the row lock is removed, so the lock is what it pins.
 func TestReconcileLadderTranches_ConcurrentSweepsTransitionOnce(t *testing.T) {
 	r := newLadderRig(t)
 	id, _ := r.firedTranche("failed", true, time.Minute)

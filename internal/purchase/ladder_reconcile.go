@@ -139,6 +139,11 @@ func reconcileFiredTranches(ctx context.Context, store LadderReconcileStore, vis
 	var res LadderReconcileResult
 	err := forEachFiredPage(ctx, store, batch, func(page []config.LadderTrancheDB) error {
 		for i := range page {
+			// A canceled run stops here instead of counting every remaining
+			// tranche as errored.
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			res.Checked++
 			if err := reconcileOne(ctx, store, vis, now, page[i], &res); err != nil {
 				res.Errored++

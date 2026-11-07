@@ -104,3 +104,18 @@ type stubVis struct{}
 func (stubVis) CommitmentVisible(context.Context, config.LadderTrancheDB, string) (bool, error) {
 	return true, nil
 }
+
+func TestReconcile_CanceledContextStopsWithoutCountingErrored(t *testing.T) {
+	f := &pagingFake{
+		tranches: pagingTranches("t1", "t2"),
+		status:   map[string]string{"t1": "failed", "t2": "failed"},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := ReconcileLadderTranches(ctx, f, stubVis{}, testNow)
+
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, f.moved)
+	assert.Equal(t, LadderReconcileResult{}, res)
+}
