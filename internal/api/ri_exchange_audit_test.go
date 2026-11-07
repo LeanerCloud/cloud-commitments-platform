@@ -577,12 +577,26 @@ type slowClaimStore struct {
 	release       chan struct{}
 	claimDeadline time.Time
 	claimHasDL    bool
+	// lateSuccess makes the claim wait for its context to end and then still
+	// report success, as a store that answers just after the deadline would.
+	lateSuccess bool
+	// saveDelay slows the audit save.
+	saveDelay time.Duration
+}
+
+func (s *slowClaimStore) SaveRIExchangeDirectExecution(ctx context.Context, record *config.RIExchangeDirectExecution) error {
+	time.Sleep(s.saveDelay)
+	return s.directExchangeAuditStore.SaveRIExchangeDirectExecution(ctx, record)
 }
 
 func (s *slowClaimStore) ClaimRIExchangeIdempotencyKey(ctx context.Context, key string, window time.Duration) (bool, error) {
 	s.mu.Lock()
 	s.claimDeadline, s.claimHasDL = ctx.Deadline()
 	s.mu.Unlock()
+	if s.lateSuccess {
+		<-ctx.Done()
+		return s.directExchangeAuditStore.ClaimRIExchangeIdempotencyKey(context.WithoutCancel(ctx), key, window)
+	}
 	select {
 	case <-s.release:
 		return s.directExchangeAuditStore.ClaimRIExchangeIdempotencyKey(ctx, key, window)
@@ -645,4 +659,97 @@ func TestExecuteExchange_DirectClaimOutlivingDeadlineNeverExecutes(t *testing.T)
 	require.True(t, finalized)
 	assert.Equal(t, config.RIExchangeDirectStatusFailed, outcome.Status)
 	assert.Contains(t, outcome.Error, "not submitted to the provider")
+}
+
+// A claim that reports success only after the deadline leaves the provider
+// call none of its window: it must not execute, and the row is finalized failed.
+func TestExecuteExchange_DirectLateClaimSuccessNeverExecutes(t *testing.T) {
+	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), lateSuccess: true}
+	executed := false
+	h := awsAuditHandler(t, store.directExchangeAuditStore, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+		executed = true
+		return "", nil, nil
+	})
+	h.config = store
+	h.executionTimeoutOverride = 100 * time.Millisecond
+
+	_, err := h.executeExchange(auditRequest(context.Background(), awsAuditBody))
+	require.Error(t, err)
+	assert.False(t, executed, "a claim that succeeded after the deadline must not reach the executor")
+
+	_, outcome, finalized := store.onlyRow(t)
+	require.True(t, finalized)
+	assert.Equal(t, config.RIExchangeDirectStatusFailed, outcome.Status)
+}
+
+// The deadline is taken before the save: a slow save must not push the exec
+// deadline later by the save's duration.
+func TestExecuteExchange_DirectExecDeadlineNotMovedBySlowSave(t *testing.T) {
+	const budget = 600 * time.Millisecond
+	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{}), saveDelay: 250 * time.Millisecond}
+	close(store.release)
+	var execDeadline time.Time
+	h := awsAuditHandler(t, store.directExchangeAuditStore, func(ctx context.Context, _ exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+		execDeadline, _ = ctx.Deadline()
+		return "riex-1840", &exchange.ExchangeQuoteSummary{PaymentDueUSDStr: "1.000000", PaymentDueRaw: "1", CurrencyCode: "USD"}, nil
+	})
+	h.config = store
+	h.executionTimeoutOverride = budget
+
+	before := time.Now()
+	_, err := h.executeExchange(auditRequest(context.Background(), awsAuditBody))
+	require.NoError(t, err)
+	assert.False(t, execDeadline.After(before.Add(budget).Add(100*time.Millisecond)),
+		"exec deadline %v after start must not include the 250ms save", execDeadline.Sub(before))
+}
+
+func azureSlowClaimHandler(t *testing.T, store *slowClaimStore, opsClient *mockAzureExchangeOpsClient, budget time.Duration) *Handler {
+	h := azureAuditHandler(t, store.directExchangeAuditStore, opsClient)
+	h.config = store
+	h.executionTimeoutOverride = budget
+	return h
+}
+
+// Azure shares beginDirectExchange: its exec must end at the pre-save deadline
+// shared with the claim, not claim-end + the budget.
+func TestExecuteAzureExchange_DirectExecDeadlineAnchoredBeforeSave(t *testing.T) {
+	const budget = 400 * time.Millisecond
+	const claimDelay = 150 * time.Millisecond
+	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{})}
+	var execDeadline time.Time
+	var execHasDL bool
+	opsClient := new(mockAzureExchangeOpsClient)
+	opsClient.On("ExecuteExchange", mock.Anything, "sess-quoted").Run(func(args mock.Arguments) {
+		execDeadline, execHasDL = args.Get(0).(context.Context).Deadline()
+	}).Return(&azurecompute.ExchangeResult{SessionID: "sess-quoted", Status: "Succeeded"}, nil).Once()
+	h := azureSlowClaimHandler(t, store, opsClient, budget)
+	time.AfterFunc(claimDelay, func() { close(store.release) })
+
+	before := time.Now()
+	_, err := h.executeAzureExchange(auditRequest(context.Background(), azureAuditBody))
+	after := time.Now()
+	require.NoError(t, err)
+
+	require.True(t, execHasDL)
+	assert.False(t, execDeadline.After(before.Add(budget).Add(50*time.Millisecond)),
+		"exec deadline %v must be anchored before the save, not after the %v claim", execDeadline.Sub(before), claimDelay)
+	assert.True(t, execDeadline.Before(after.Add(budget)), "exec deadline must not be claim-end + budget")
+	require.True(t, store.claimHasDL, "the claim must be bounded")
+	assert.WithinDuration(t, execDeadline, store.claimDeadline, time.Millisecond, "claim and exec share one deadline")
+}
+
+// An Azure claim that outlives the deadline never reaches ExecuteExchange.
+func TestExecuteAzureExchange_DirectClaimOutlivingDeadlineNeverExecutes(t *testing.T) {
+	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{})}
+	opsClient := new(mockAzureExchangeOpsClient) // no ExecuteExchange expectation: a call panics
+	h := azureSlowClaimHandler(t, store, opsClient, 100*time.Millisecond)
+
+	_, err := h.executeAzureExchange(auditRequest(context.Background(), azureAuditBody))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	opsClient.AssertNotCalled(t, "ExecuteExchange", mock.Anything, mock.Anything)
+
+	_, outcome, finalized := store.onlyRow(t)
+	require.True(t, finalized)
+	assert.Equal(t, config.RIExchangeDirectStatusFailed, outcome.Status)
 }
