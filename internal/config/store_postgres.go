@@ -3526,7 +3526,7 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 var ErrRIExchangeDailyCapExceeded = errors.New("RI exchange daily cap exceeded")
 
 // lockRIExchangeSpend takes the transaction-scoped advisory lock every RI
-// exchange reservation and direct-execute save serialises on.
+// exchange reservation and direct-execute save serializes on.
 func lockRIExchangeSpend(ctx context.Context, tx pgx.Tx) error {
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", riExchangeDailySpendLockKey); err != nil {
 		return fmt.Errorf("failed to lock RI exchange daily spend: %w", err)
