@@ -3585,6 +3585,9 @@ func TestPGXMock_ReserveApprovedRIExchange_ReservesCeilingExcludingOwnRow(t *tes
 	// No other processing row shares ri-1, so the source-RI guard (#1050) passes.
 	mock.ExpectQuery("SELECT id::text, ARRAY").WithArgs([]string{"ri-1"}, &id).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
+	// Nor does an in-flight direct execute (#1829).
+	mock.ExpectQuery("FROM ri_exchange_direct_executions").WithArgs([]string{"ri-1"}).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
 	mock.ExpectExec("UPDATE ri_exchange_history SET payment_due").WithArgs(id, "1000.000000").
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 	mock.ExpectCommit()

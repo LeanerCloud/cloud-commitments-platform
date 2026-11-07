@@ -17,7 +17,7 @@ import (
 var ErrLadderRunCancelActorRequired = errors.New("canceling a ladder run requires the actor's email")
 
 // ErrLadderRunCancelViaTransition is returned by TransitionLadderRunStatus for
-// a transition to RunStatusCancelled: that path cannot stamp the canceled-by
+// a transition to RunStatusCanceled: that path cannot stamp the canceled-by
 // audit column, so cancels must go through CancelLadderRun (issue #542).
 var ErrLadderRunCancelViaTransition = errors.New("ladder run cancel must use CancelLadderRun so the actor is recorded")
 
@@ -50,7 +50,7 @@ func ladderRunStatusStrings(statuses []ladder.RunStatus) []string {
 }
 
 // CancelLadderRun atomically transitions a ladder_runs row from one of
-// fromStatuses to RunStatusCancelled and stamps the canceled-by audit column
+// fromStatuses to RunStatusCanceled and stamps the canceled-by audit column
 // with the actor's email in the same UPDATE. Returns the updated row on success, or (nil, nil)
 // when zero rows are affected (race lost or unexpected current status). An
 // empty actor is rejected with ErrLadderRunCancelActorRequired before any
@@ -60,7 +60,7 @@ func (s *PostgresStore) CancelLadderRun(ctx context.Context, id string, fromStat
 	if actor == "" {
 		return nil, ErrLadderRunCancelActorRequired
 	}
-	row := s.db.QueryRow(ctx, ladderRunCancelQuery, id, string(ladder.RunStatusCancelled), ladderRunStatusStrings(fromStatuses), actor)
+	row := s.db.QueryRow(ctx, ladderRunCancelQuery, id, string(ladder.RunStatusCanceled), ladderRunStatusStrings(fromStatuses), actor)
 	result, err := scanLadderRun(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

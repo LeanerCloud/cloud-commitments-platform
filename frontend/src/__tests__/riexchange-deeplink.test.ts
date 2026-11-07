@@ -58,7 +58,7 @@ describe('handleRIExchangeDeeplink', () => {
     document.body.innerHTML = '';
     jest.clearAllMocks();
     (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([RECORD]);
-    (apiRequest as jest.Mock).mockResolvedValue({ status: 'ok' });
+    (apiRequest as jest.Mock).mockResolvedValue({ status: 'completed', exchange_id: 'exch-1' });
   });
 
   it('does nothing outside a deep link', async () => {
@@ -91,7 +91,7 @@ describe('handleRIExchangeDeeplink', () => {
       `/ri-exchange/approve/${ID}?token=tok%2Babc`,
       expect.objectContaining({ method: 'POST' }),
     );
-    expect(document.querySelector('[role="status"]')?.textContent).toContain('RI exchange approved and executing.');
+    expect(document.querySelector('[role="status"]')?.textContent).toContain('RI exchange approved and executed.');
     expect(window.location.pathname).toBe(RI_EXCHANGE_LANDING_PATH);
     expect(window.location.search).toBe('');
   });
@@ -107,6 +107,33 @@ describe('handleRIExchangeDeeplink', () => {
 
     expect(apiRequest).toHaveBeenCalledWith(`/ri-exchange/reject/${ID}?token=tok-r`, expect.objectContaining({ method: 'POST' }));
     expect(document.querySelector('[role="status"]')?.textContent).toContain('RI exchange rejected.');
+  });
+
+  // #1050: a 200 approve body can carry a failed exchange or an unknown outcome;
+  // only "completed" may read as success.
+  it.each([
+    ['outcome_unknown', { status: 'outcome_unknown', message: 'outcome unknown: check ri-1 at AWS' }, '.toast--warning', 'outcome unknown: check ri-1 at AWS'],
+    ['failed', { status: 'failed', reason: 'daily cap exceeded' }, '.toast--error', 'RI exchange failed: daily cap exceeded'],
+    ['a missing status', {}, '.toast--error', 'unexpected approve response'],
+  ])('shows %s on approve, never success', async (_label, body, selector, text) => {
+    (apiRequest as jest.Mock).mockResolvedValue(body);
+    window.history.replaceState({}, '', `/inventory/ri-exchange/approve/${ID}?token=tok-1`);
+    const done = handleRIExchangeDeeplink();
+    await flush();
+    dialogButton('Approve exchange')!.click();
+    await done;
+    expect(document.querySelector(selector)?.textContent).toContain(text);
+    expect(document.querySelector('.toast--success')).toBeNull();
+  });
+
+  it('reads no status on reject: the reject body is not an approve outcome', async () => {
+    (apiRequest as jest.Mock).mockResolvedValue({ status: 'canceled' });
+    window.history.replaceState({}, '', `/inventory/ri-exchange/reject/${ID}?token=tok-r`);
+    const done = handleRIExchangeDeeplink();
+    await flush();
+    dialogButton('Reject exchange')!.click();
+    await done;
+    expect(document.querySelector('.toast--success')?.textContent).toContain('RI exchange rejected.');
   });
 
   it('does not POST when the user dismisses the dialog, and leaves the deep link', async () => {

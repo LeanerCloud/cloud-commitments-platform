@@ -881,7 +881,7 @@ type StoreInterface interface {
 	// current status), so callers can distinguish a race from a hard error.
 	// Statuses are typed ladder.RunStatus so callers cannot pass an arbitrary
 	// string that would never match a stored status. A transition to
-	// RunStatusCancelled is refused (ErrLadderRunCancelViaTransition).
+	// RunStatusCanceled is refused (ErrLadderRunCancelViaTransition).
 	//
 	// CancelLadderRun is the only way to cancel a ladder run: a CAS UPDATE
 	// from one of fromStatuses to cancelled that stamps cancelled_by with the

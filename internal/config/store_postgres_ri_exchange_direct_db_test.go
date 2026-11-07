@@ -49,6 +49,11 @@ func newDirectExec(provider string) *RIExchangeDirectExecution {
 		MaxPaymentCurrency: "USD",
 		ExecutedBy:         "alice@example.com",
 	}
+	if provider == "aws" {
+		// The in-flight guard (#1829) refuses a second AWS row on a held RI, and
+		// these subtests share one database, so each gets its own source RI.
+		rec.SourceIDs = []string{"src-" + rec.ID}
+	}
 	if provider == "azure" {
 		rec.ProviderAccountID = strPtr("sub-1")
 		rec.Sources = json.RawMessage(`[{"reservation_id":"src-1","quantity":4}]`)

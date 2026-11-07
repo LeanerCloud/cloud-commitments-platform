@@ -27,7 +27,7 @@ var serverNotePatterns = []string{
 	`plan step refused by commitment cap(?:: plan has no max_step_commitment set \(auto-purchase of steps with recommendations is refused until one is set\)|: step total commitment \d+\.\d{2} exceeds max_step_commitment \d+\.\d{2})?`,
 	`scheduled purchase skipped: it was due too long ago(?:: it was due at \d{4}-\d{2}-\d{2}T[0-9:.]+Z, [0-9a-z.]+ ago, which is more than the [0-9a-z.]+ limit \(SCHEDULED_PURCHASE_MAX_OVERDUE\); nothing was submitted, retry it if the purchase is still wanted)?`,
 	`purchase refused after claim: the claimed execution no longer passes the authorization checks`,
-	`refusing to execute ladder purchase: (?:global config unavailable|ladder planning is switched off|ladder execution is switched off|its tranche status is unknown|its tranche is [a-z_]+|its ladder config no longer exists|its ladder config is disabled|ladder config mode is "[a-z_]*", not auto_approve|its ladder run no longer exists|its ladder run was canceled)`,
+	`refusing to execute ladder purchase: (?:global config unavailable|ladder planning is switched off|ladder execution is switched off|its tranche status is unknown|its tranche is [a-z_]+|its ladder config no longer exists|its ladder config is disabled|ladder config mode is "[a-z_]*", not auto_approve|its ladder run no longer exists|its ladder run was canceled|its ladder run status "[a-z_]{1,32}" is unknown)`,
 	`scheduled plan step reached its scheduled date without recommendations; no purchase was submitted`,
 	`no current recommendation matched plan ` + uuidPattern + ` step \d+ by \d{4}-\d{2}-\d{2} \(\d+-day grace after the plan date\)(?:; ` + skippedNotePattern + `)?`,
 	`target already met: target \d+, committed \d+(?:; ` + skippedNotePattern + `)?; \d+ failed row\(s\) of unknown outcome counted as committed`,
@@ -66,6 +66,9 @@ var bareNotePatterns = []string{
 	`reserved ceiling "` + shortValuePattern + `" is not a decimal`,
 	`exchange reservation returned no record ID`,
 	`exchange reservation returned invalid ceiling "` + shortValuePattern + `"`,
+	// config.refuseRIExchangeSourceInFlightDirect refusal, stored whole from
+	// err.Error() (sentinel text first); only the shared RI ids vary.
+	`RI exchange source RI is held by an exchange in progress: source RI\(s\) ` + directGuardIDListPattern + ` are held by a direct exchange that may have reached AWS; an operator must verify the outcome at AWS and settle the record`,
 	// Scheduler note for a provider name it does not know.
 	`unknown provider "` + shortValuePattern + `" \(valid: aws, azure, gcp\)`,
 }
@@ -97,6 +100,9 @@ const (
 	quotedTextPattern  = `(?:[^"\\\p{C}\p{Z}]| |\\[ -~])*`
 	skippedNotePattern = `\d+ recommendation\(s\) without a frozen baseline skipped \(under-buy\): ` + idListPattern
 )
+
+// directGuardIDListPattern is the ", "-joined lowercase RI ids the direct-execute guard names.
+const directGuardIDListPattern = `[A-Za-z0-9-]{1,64}(?:, [A-Za-z0-9-]{1,64})*`
 
 // serverNoteHeads are server notes whose tail can carry a wrapped store or
 // config error. Only the fixed head is ever shown; the tail is dropped.

@@ -11,16 +11,16 @@ import (
 
 var allLadderTrancheStatuses = []ladder.TrancheStatus{
 	ladder.TrancheStatusScheduled, ladder.TrancheStatusFired, ladder.TrancheStatusCompleted,
-	ladder.TrancheStatusCancelled, ladder.TrancheStatusFailed,
+	ladder.TrancheStatusCanceled, ladder.TrancheStatusFailed,
 }
 
 // Pure unit test (no database): the edge table is the whole state machine.
 func TestLadderTrancheEdges_OnlyDocumentedTransitionsAreLegal(t *testing.T) {
 	legal := map[[2]ladder.TrancheStatus]bool{
-		{ladder.TrancheStatusScheduled, ladder.TrancheStatusFired}:     true,
-		{ladder.TrancheStatusScheduled, ladder.TrancheStatusCancelled}: true,
-		{ladder.TrancheStatusFired, ladder.TrancheStatusCompleted}:     true,
-		{ladder.TrancheStatusFired, ladder.TrancheStatusFailed}:        true,
+		{ladder.TrancheStatusScheduled, ladder.TrancheStatusFired}:    true,
+		{ladder.TrancheStatusScheduled, ladder.TrancheStatusCanceled}: true,
+		{ladder.TrancheStatusFired, ladder.TrancheStatusCompleted}:    true,
+		{ladder.TrancheStatusFired, ladder.TrancheStatusFailed}:       true,
 	}
 	for _, from := range allLadderTrancheStatuses {
 		for _, to := range allLadderTrancheStatuses {
@@ -60,7 +60,7 @@ func TestTransitionLadderTranche_RequiresReasonForFailedAndCanceled(t *testing.T
 	s := &PostgresStore{}
 	for _, c := range []struct{ from, to ladder.TrancheStatus }{
 		{ladder.TrancheStatusFired, ladder.TrancheStatusFailed},
-		{ladder.TrancheStatusScheduled, ladder.TrancheStatusCancelled},
+		{ladder.TrancheStatusScheduled, ladder.TrancheStatusCanceled},
 	} {
 		applied, err := s.TransitionLadderTrancheTx(context.Background(), nil, "id", c.from, c.to, "")
 		assert.ErrorContains(t, err, "needs a status reason", "%s -> %s", c.from, c.to)

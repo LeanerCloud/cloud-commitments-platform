@@ -86,7 +86,7 @@ func TestLadderNetting_SelectionBoundaries(t *testing.T) {
 	add(ladder.TrancheStatusCompleted, 32, lockTestAsOf, &anchor, "")
 	add(ladder.TrancheStatusCompleted, 64, lockTestAsOf, &before, "")
 	add(ladder.TrancheStatusFailed, 128, lockTestAsOf, nil, "")
-	add(ladder.TrancheStatusCancelled, 256, lockTestAsOf, nil, "")
+	add(ladder.TrancheStatusCanceled, 256, lockTestAsOf, nil, "")
 	other := seedLadderConfigWithExtID(ctx, t, store, "fixture-other")
 	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{lifecycleTranche(other, 512, ladder.TrancheStatusFired, lockTestAsOf)}))
 	_, err := store.PlanAndSaveLadderRun(ctx, cfg, lockTestAsOf, func(rows []LadderInFlightRow) (*LadderRunDB, []LadderTrancheDB, error) {
@@ -95,7 +95,7 @@ func TestLadderNetting_SelectionBoundaries(t *testing.T) {
 	})
 	require.NoError(t, err)
 	var overdue int
-	require.NoError(t, store.db.QueryRow(ctx, "SELECT count(*) FROM ladder_tranches WHERE config_id=$1 AND status='cancelled' AND amount_usd_hr IN (4,8)", cfg).Scan(&overdue))
+	require.NoError(t, store.db.QueryRow(ctx, "SELECT count(*) FROM ladder_tranches WHERE config_id=$1 AND status=$2 AND amount_usd_hr IN (4,8)", cfg, string(ladder.TrancheStatusCanceled)).Scan(&overdue))
 	require.Equal(t, 2, overdue)
 }
 

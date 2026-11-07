@@ -174,12 +174,18 @@ async function completeTimeline<T extends LadderEvent | LadderRun>(
   return items;
 }
 
-export function getLadderEvents(accountID: string, provider: string): Promise<LadderEvent[]> {
-  return completeTimeline<LadderEvent>('tranches', accountID, provider);
+// Rows written before cloud-commitments-go#554 keep the legacy "cancelled";
+// one spelling here keeps labels, filters and counts on a single value (#1792).
+const canceledSpelling = (status: string): string => (status === 'cancelled' ? 'canceled' : status);
+
+export async function getLadderEvents(accountID: string, provider: string): Promise<LadderEvent[]> {
+  const events = await completeTimeline<LadderEvent>('tranches', accountID, provider);
+  return events.map(event => ({ ...event, status: canceledSpelling(event.status), run_status: canceledSpelling(event.run_status) }));
 }
 
-export function getLadderRuns(accountID: string, provider: string): Promise<LadderRun[]> {
-  return completeTimeline<LadderRun>('runs', accountID, provider);
+export async function getLadderRuns(accountID: string, provider: string): Promise<LadderRun[]> {
+  const runs = await completeTimeline<LadderRun>('runs', accountID, provider);
+  return runs.map(run => ({ ...run, status: canceledSpelling(run.status) }));
 }
 
 export interface LadderAmendment {

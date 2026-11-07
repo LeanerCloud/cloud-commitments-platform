@@ -1449,10 +1449,12 @@ func TestExecutePurchase_AzureCanonicalServiceTypes(t *testing.T) {
 			expectedType: common.ServiceCompute,
 		},
 		{
-			name:         "cache_canonical",
-			service:      "cache",
-			resource:     "Standard_C1",
-			expectedType: common.ServiceCache,
+			name:     "cache_canonical",
+			service:  "cache",
+			resource: "Standard_C1",
+			// Azure Redis is bought by the managedredis client; the cache
+			// client refuses purchases (cloud-commitments-go#694, #1801).
+			expectedType: common.ServiceMemoryDB,
 		},
 		{
 			name:         "relational_db_canonical",
