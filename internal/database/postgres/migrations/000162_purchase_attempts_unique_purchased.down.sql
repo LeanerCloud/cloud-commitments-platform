@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS uq_purchase_attempts_purchased_reservation;
