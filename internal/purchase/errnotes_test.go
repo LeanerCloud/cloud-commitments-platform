@@ -60,6 +60,7 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		redshiftFailedConflictRefusal,
 		redshiftNoJournalRefusal,
 		redshiftRecentBuyRefusal,
+		redshiftRecentBuyRefusalLegacy,
 		redshiftSettleRefusal,
 		"EC2 recommendation for m5.large has zonal scope but no AvailabilityZone: refusing to buy a zonal RI in an arbitrary AZ; re-fetch the recommendation",
 		"zonal RI offering needs an availability zone; re-fetch the recommendation",

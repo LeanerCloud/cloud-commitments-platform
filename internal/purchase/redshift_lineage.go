@@ -48,8 +48,10 @@ const (
 	redshiftNoStampRefusal        = "refusing to dispatch: this Redshift purchase has no first dispatch time recorded, so check the account in AWS and start a new purchase"
 	redshiftFailedConflictRefusal = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) failed and may still be retried, so retry or settle that purchase, or start this one at least 24h after its first dispatch"
 	redshiftNoJournalRefusal      = "refusing to dispatch: this Redshift retry needs the purchase attempt journal, which is not configured, so check the account in AWS and start a new purchase"
-	redshiftRecentBuyRefusal      = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) completed too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one completed"
-	redshiftSettleRefusal         = "refusing to dispatch: another attempt of this Redshift purchase ended less than 10 minutes ago and may have bought, so wait 10 minutes and then retry"
+	redshiftRecentBuyRefusal      = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) ended too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one ended, or, if it failed and can still be retried, retry or settle it"
+	// redshiftRecentBuyRefusalLegacy is the text stored before failed rows joined the adoption window.
+	redshiftRecentBuyRefusalLegacy = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) completed too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one completed"
+	redshiftSettleRefusal          = "refusing to dispatch: another attempt of this Redshift purchase ended less than 10 minutes ago and may have bought, so wait 10 minutes and then retry"
 )
 
 // redshiftAdoptionWindow mirrors cloud-commitments-go's 5m Redshift dedupe skew
@@ -144,13 +146,13 @@ func conflictRefusal(executionID string, conflicts []config.RedshiftLineageConfl
 	return beforeSubmission(errors.New(refusal))
 }
 
-// conflictRules is the refusal precedence: another family's recent buy, any open lineage, a
+// conflictRules is the refusal precedence: another family's row that may have bought recently, any open lineage, a
 // same-family attempt inside the settle. Failed rows only fall through to pickConflict's last case.
 var conflictRules = []struct {
 	match   func(config.RedshiftLineageConflict) bool
 	refusal string
 }{
-	{func(c config.RedshiftLineageConflict) bool { return !c.SameFamily && redshiftFinishedStatus(c.Status) }, redshiftRecentBuyRefusal},
+	{func(c config.RedshiftLineageConflict) bool { return c.RecentBuy }, redshiftRecentBuyRefusal},
 	{func(c config.RedshiftLineageConflict) bool {
 		return c.Status != config.StatusFailed && (!c.SameFamily || c.Status == "running")
 	}, redshiftConflictRefusal},
@@ -183,11 +185,12 @@ func allFailed(conflicts []config.RedshiftLineageConflict) bool {
 }
 
 // dropPersistentFailures removes failed rows Retry can never re-drive (an operator-fix error or a
-// refused provider): they would hold the tuple for the whole horizon with no way out.
+// refused provider): they would hold the tuple for the whole horizon with no way out. A row inside
+// the adoption window stays: it may have bought, and only waiting clears it.
 func dropPersistentFailures(conflicts []config.RedshiftLineageConflict) []config.RedshiftLineageConflict {
 	kept := make([]config.RedshiftLineageConflict, 0, len(conflicts))
 	for _, c := range conflicts {
-		if !c.SameFamily && c.Status == config.StatusFailed && (ResolveOpsHint(c.Error) != "" || retryRefusedForRecs(c)) {
+		if !c.SameFamily && !c.RecentBuy && c.Status == config.StatusFailed && (ResolveOpsHint(c.Error) != "" || retryRefusedForRecs(c)) {
 			continue
 		}
 		kept = append(kept, c)
@@ -197,15 +200,6 @@ func dropPersistentFailures(conflicts []config.RedshiftLineageConflict) []config
 
 func retryRefusedForRecs(c config.RedshiftLineageConflict) bool {
 	return RedriveRefusalReason(&config.PurchaseExecution{Recommendations: c.Recommendations}) != ""
-}
-
-// redshiftFinishedStatus reports the statuses whose node may already sit in AWS.
-func redshiftFinishedStatus(status string) bool {
-	switch status {
-	case config.StatusCompleted, config.StatusPartiallyCompleted, config.StatusRevocationRequested:
-		return true
-	}
-	return false
 }
 
 // withDispatchTime defaults RequestedAt to now. A Redshift rec must arrive

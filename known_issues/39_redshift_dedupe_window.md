@@ -10,7 +10,7 @@
 
 **Why deferred:** The full fix belongs in go (an upper bound or an identity stronger than the tuple), tracked in LeanerCloud/cloud-commitments-go#515. The platform mitigates it for buys it records (below).
 
-**Mitigation (platform-recorded buys):** The Redshift dispatch gate now refuses a purchase when another lineage's completed, partially completed or revocation-requested row for the same tuple was last saved within 10 minutes of the new lineage's first dispatch time. The refusal is recorded before submission with a fixed text that names no execution, and the user starts a new purchase at least 10 minutes after the other one completed.
+**Mitigation (platform-recorded buys):** The Redshift dispatch gate now refuses a purchase when another lineage's completed, partially completed or revocation-requested row, or a failed row without the no-submission proof (settled or not, and whether or not Retry is refused), for the same tuple was last saved within 10 minutes of the new lineage's first dispatch time. The refusal is recorded before submission with a fixed text that names no execution, and the user starts a new purchase at least 10 minutes after the other one ended, or retries or settles it if it failed and can still be retried.
 
 **Remaining:**
 
@@ -19,11 +19,13 @@
 - A lineage whose purchase record never landed (the child bought but its row save failed, `execution.go:351` and `:383`) leaves no completed row for the gate to see.
 - The go-side narrowing in LeanerCloud/cloud-commitments-go#700 and the real fix in #515 are open.
 - The window is measured from the other row's last save, so a later save of that row (for example a revocation request) restarts it. That only refuses longer; it never allows a double buy.
-- A `failed` row without the no-submission proof (reaped mid-buy, or an unknown outcome) may hold a real node but is not refused by this window; if go adopts that node, the accounting stays one node and one completed row. The gate counts such rows as open lineages (below).
+- A `failed` row without the no-submission proof (reaped mid-buy, or an unknown outcome) may hold a real node. Inside the window the gate refuses it like a finished row, settled or not and whether or not Retry is refused (#1839); outside it, the gate counts it as an open lineage only while Retry can still re-drive it (below).
 - Now that the Redshift re-drive guard is lifted, a retry can be refused for up to 24h while another lineage's completed node sits inside its window (liveness only, no double buy).
 - Plan rows that PR2b refused before submission (failed, `no_submission`, attempt 0) used to hold their ramp step until the account was detached. They are now retryable, so that hold clears with a Retry once the other node leaves its window.
 
 **Status:** Mitigated for platform-recorded buys. Tracked in #702 and LeanerCloud/cloud-commitments-go#515.
+
+**History:** #1839 extended the adoption-window refusal to failed rows that may have bought, including settled rows and rows Retry refuses for good.
 
 ## LOW: unknown outcome followed by a new same-tuple purchase outside the window can double-buy
 
