@@ -29,6 +29,7 @@ const (
 	recUnknown
 	recPlainFail
 	recRefusedUnknown
+	recPanics
 )
 
 func (b recBehavior) result() (common.PurchaseResult, error) {
@@ -78,9 +79,15 @@ func refusalManager(t *testing.T, behaviors map[string]recBehavior, saved *sync.
 	prov.On("GetServiceClient", mock.Anything, common.ServiceEC2, "us-east-1").Return(client, nil)
 	for rt, b := range behaviors {
 		res, err := b.result()
-		client.On("PurchaseCommitment", mock.Anything,
+		call := client.On("PurchaseCommitment", mock.Anything,
 			mock.MatchedBy(func(r common.Recommendation) bool { return r.ResourceType == rt }),
-			mock.AnythingOfType("common.PurchaseOptions")).Return(res, err)
+			mock.AnythingOfType("common.PurchaseOptions"))
+		if b == recPanics {
+			// The fan-out recovers this into a closure-level error after the
+			// call may have reached the provider.
+			call = call.Run(func(mock.Arguments) { panic("lost after submitting") })
+		}
+		call.Return(res, err)
 	}
 	return &Manager{config: store, email: mailer, providerFactory: factory, credStore: awsAccessKeyCredStore()}, store
 }
@@ -100,6 +107,7 @@ func refusalCases() map[string]struct {
 		"unknown outcome plus refused": {map[string]recBehavior{"a": recUnknown, "b": recRefused}, false, false},
 		"plain failure plus refused":   {map[string]recBehavior{"a": recPlainFail, "b": recRefused}, false, false},
 		"refused with unknown outcome": {map[string]recBehavior{"a": recRefusedUnknown, "b": recRefused}, false, false},
+		"panic plus refused":           {map[string]recBehavior{"a": recPanics, "b": recRefused}, false, false},
 	}
 }
 
