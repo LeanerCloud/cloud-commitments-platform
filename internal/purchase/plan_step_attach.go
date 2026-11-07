@@ -184,7 +184,7 @@ func (m *Manager) attachStep(ctx context.Context, tx pgx.Tx, locked *config.Purc
 }
 
 func (m *Manager) attachWithinCap(ctx context.Context, tx pgx.Tx, locked *config.PurchasePlan, claim stepClaim, root *config.PurchaseExecution, recs []config.RecommendationRecord) (stepClaim, error) {
-	if locked.AutoPurchase || locked.MaxStepCommitment != nil {
+	if StepCapApplies(locked) {
 		if capErr := CheckStepCommitmentCap(locked, recs); capErr != nil {
 			return m.failStep(ctx, tx, locked, claim, root, fmt.Sprintf("%v (recommendations: %s)", capErr, recIDs(recs)))
 		}
