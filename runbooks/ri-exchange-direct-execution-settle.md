@@ -26,14 +26,15 @@ Do not guess. Marking a row `failed` releases the RIs for another exchange.
 ## Step 2: find the audit row id
 
 The refusal hides the blocking row's id. Find it in the server log (search for
-"held by direct execute"), or query by the RI id named in the refusal (`:ri`):
+"held by direct execute"), or query by the RI id named in the refusal (`:'ri'`; set the psql variables first, for example
+`psql -v ri=ri-0abc -v id=<uuid> -v new_status=failed -v note='checked at AWS'`, or `\set id '<uuid>'`):
 
 ```sql
 SELECT id, status, created_at
   FROM ri_exchange_direct_executions
  WHERE provider = 'aws' AND status IN ('submitted', 'unknown')
    AND EXISTS (SELECT 1 FROM unnest(source_ids) x
-                WHERE lower(btrim(x, E' \t\n\r\f\x0B')) = lower(btrim(:ri, E' \t\n\r\f\x0B')));
+                WHERE lower(btrim(x, E' \t\n\r\f\x0B')) = lower(btrim(:'ri', E' \t\n\r\f\x0B')));
 ```
 
 ## Step 3: settle the row (the interim DBA step)
@@ -42,12 +43,12 @@ This rewrites rows that the audit design otherwise treats as final. It is the
 interim until the resolve path (#1836) exists. Run only after Step 1.
 
 ```sql
--- :id = the audit row id; :new_status = 'failed' (AWS shows no exchange) or 'completed' (AWS shows it happened)
+-- :'id' = the audit row id; :'new_status' = 'failed' (AWS shows no exchange) or 'completed' (AWS shows it happened)
 UPDATE ri_exchange_direct_executions
-   SET status       = :new_status,
+   SET status       = :'new_status',
        completed_at = COALESCE(completed_at, now()),
-       error        = concat_ws(E'\n', error, 'operator-settled ' || now()::text || ': ' || :note)
- WHERE id = :id
+       error        = concat_ws(E'\n', error, 'operator-settled ' || now()::text || ': ' || :'note')
+ WHERE id = :'id'
    AND provider = 'aws'
    AND status IN ('submitted', 'unknown')
    AND (status = 'unknown' OR created_at < now() - interval '5 minutes');

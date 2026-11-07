@@ -13,15 +13,15 @@ import (
 )
 
 // runbookSettleSQL reads the settle statement from the runbook itself, so the
-// operator's copy and the tested statement cannot drift. The :name placeholders
-// become positional parameters.
+// operator's copy and the tested statement cannot drift. The :'name' psql
+// placeholders become positional parameters.
 func runbookSettleSQL(t *testing.T) string {
 	t.Helper()
 	raw, err := os.ReadFile("../../runbooks/ri-exchange-direct-execution-settle.md")
 	require.NoError(t, err)
-	m := regexp.MustCompile("(?s)```sql\n(-- :id[^`]*)```").FindSubmatch(raw)
+	m := regexp.MustCompile("(?s)```sql\n(-- :'id'[^`]*)```").FindSubmatch(raw)
 	require.NotNil(t, m, "runbook has no sql block")
-	return strings.NewReplacer(":new_status", "$1::text", ":id", "$2::uuid", ":note", "$3::text").Replace(string(m[1]))
+	return strings.NewReplacer(":'new_status'", "$1::text", ":'id'", "$2::uuid", ":'note'", "$3::text").Replace(string(m[1]))
 }
 
 // #1829 runbook: the settle statement releases only rows it is safe to release.
