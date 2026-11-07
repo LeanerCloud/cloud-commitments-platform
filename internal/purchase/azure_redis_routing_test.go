@@ -15,10 +15,10 @@ import (
 // reservations; the Azure cache client refuses every purchase
 // (cloud-commitments-go#694). A recommendation labeled "cache" must reach the
 // right client for its provider, and keep its own label everywhere else.
-func purchaseCacheRecThrough(t *testing.T, providerName, region string, want common.ServiceType) *MockProvider {
+func purchaseCacheRecThrough(t *testing.T, prov *MockProvider, providerName, region string, want common.ServiceType) {
 	t.Helper()
 	ctx := context.Background()
-	store, sender, factory, prov, svc := new(MockConfigStore), new(MockEmailSender), new(MockProviderFactory), new(MockProvider), new(MockServiceClient)
+	store, sender, factory, svc := new(MockConfigStore), new(MockEmailSender), new(MockProviderFactory), new(MockServiceClient)
 	assertMocksOnCleanup(t, store, sender, factory, prov, svc)
 	store.SavePurchaseExecutionFn = func(context.Context, *config.PurchaseExecution) error { return nil }
 	store.On("SavePurchaseHistory", ctx, mock.Anything).Return(nil)
@@ -36,19 +36,20 @@ func purchaseCacheRecThrough(t *testing.T, providerName, region string, want com
 	require.NoError(t, err)
 	require.Empty(t, errs)
 	require.True(t, exec.Recommendations[0].Purchased, "the purchase must reach the %s client", want)
-	return prov
 }
 
 // [fail-first] On main the Azure lookup asks for ServiceCache, which this
 // mock provider does not serve, so the purchase fails.
 func TestAzureCachePurchaseUsesTheManagedRedisClient(t *testing.T) {
-	prov := purchaseCacheRecThrough(t, "azure", "westeurope", common.ServiceMemoryDB)
+	prov := new(MockProvider)
+	purchaseCacheRecThrough(t, prov, "azure", "westeurope", common.ServiceMemoryDB)
 	prov.AssertNotCalled(t, "GetServiceClient", mock.Anything, common.ServiceCache, mock.Anything)
 }
 
 // [guard] AWS "cache" stays on the cache (ElastiCache) client.
 func TestAWSCachePurchaseKeepsTheCacheClient(t *testing.T) {
-	prov := purchaseCacheRecThrough(t, "aws", "us-east-1", common.ServiceCache)
+	prov := new(MockProvider)
+	purchaseCacheRecThrough(t, prov, "aws", "us-east-1", common.ServiceCache)
 	prov.AssertNotCalled(t, "GetServiceClient", mock.Anything, common.ServiceMemoryDB, mock.Anything)
 }
 
