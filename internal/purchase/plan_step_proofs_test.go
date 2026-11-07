@@ -105,7 +105,7 @@ func tokenCapture(t *testing.T, providerName string, exec *config.PurchaseExecut
 			mu.Unlock()
 		}).Return(common.PurchaseResult{Success: true, CommitmentID: "c"}, nil)
 	m := &Manager{config: store, email: sender, providerFactory: factory}
-	_, _, errs, err := m.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "p"}, "acct", (*provider.Config)(nil), "")
+	_, _, errs, _, err := m.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "p"}, "acct", (*provider.Config)(nil), "")
 	require.NoError(t, err)
 	require.Empty(t, errs)
 	return tokens
