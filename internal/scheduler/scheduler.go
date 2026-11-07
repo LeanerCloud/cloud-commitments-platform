@@ -1824,7 +1824,7 @@ func (s *Scheduler) convertRecommendations(recs []common.Recommendation, provide
 		record := config.RecommendationRecord{
 			SourceAccountID:   sourceAccountID,
 			Provider:          providerName,
-			Service:           string(rec.Service),
+			Service:           config.StoredRecommendationService(providerName, rec.Service),
 			Region:            rec.Region,
 			ResourceType:      rec.ResourceType,
 			Engine:            engine,

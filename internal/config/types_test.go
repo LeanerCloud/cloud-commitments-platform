@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -492,5 +493,25 @@ func TestIsUSDCommitmentCurrency(t *testing.T) {
 		if got := IsUSDCommitmentCurrency(in); got != want {
 			t.Errorf("IsUSDCommitmentCurrency(%q) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+func TestStoredRecommendationService(t *testing.T) {
+	cases := []struct {
+		provider string
+		service  common.ServiceType
+		want     string
+	}{
+		{"azure", common.ServiceMemoryDB, "cache"},
+		{"azure", common.ServiceCache, "cache"},
+		{"azure", common.ServiceCompute, string(common.ServiceCompute)},
+		{"aws", common.ServiceMemoryDB, "memorydb"},
+		{"aws", common.ServiceCache, "cache"},
+		{"aws", common.ServiceEC2, "ec2"},
+		{"gcp", common.ServiceMemoryDB, "memorydb"},
+		{"gcp", common.ServiceCache, "cache"},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, StoredRecommendationService(c.provider, c.service), "%s/%s", c.provider, c.service)
 	}
 }
