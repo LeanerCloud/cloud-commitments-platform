@@ -12,7 +12,7 @@ import (
 
 // #1792: LockLadderTrancheForRetryTx returns the stored tranche status raw
 // (store_postgres_ladder_reconcile.go). Rows written before
-// cloud-commitments-go#554 keep "cancelled", new ones write "canceled"; Retry
+// cloud-commitments-go#554 keep the double-l spelling, new ones write "canceled"; Retry
 // must refuse a canceled tranche under either spelling.
 func TestGuardLadderTrancheForRetry_RefusesBothCanceledSpellings(t *testing.T) {
 	for _, stored := range []string{"canceled", "cancelled"} { //nolint:misspell // legacy stored ladder status value
