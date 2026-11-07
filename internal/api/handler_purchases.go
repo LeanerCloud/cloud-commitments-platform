@@ -1457,7 +1457,7 @@ func (h *Handler) requirePlanStepCap(ctx context.Context, execution *config.Purc
 	if err != nil {
 		return fmt.Errorf("failed to read plan %s for the approval cap check: %w", execution.PlanID, err)
 	}
-	if !plan.AutoPurchase && plan.MaxStepCommitment == nil {
+	if !purchase.StepCapApplies(plan) {
 		return nil
 	}
 	if capErr := purchase.CheckStepCommitmentCap(plan, execution.Recommendations); capErr != nil {
