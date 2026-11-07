@@ -21,7 +21,8 @@ func boundGroupsEscalate(before, after *config.PurchasePlan) bool {
 		return true // the marker was removed
 	}
 	old := make(map[string]config.ServiceConfig, len(before.Services))
-	for k, svc := range before.Services {
+	for k := range before.Services {
+		svc := before.Services[k]
 		old[svc.EffectiveGroupID(k)] = svc
 	}
 	for k := range after.Services {
