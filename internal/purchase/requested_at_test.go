@@ -23,7 +23,7 @@ func runFanOutCapturingOpts(t *testing.T, service common.ServiceType, mk func(st
 
 // runFanOutCapturingOptsWithJournal is runFanOutCapturingOpts on a Manager
 // whose attempt journal is journal.
-func runFanOutCapturingOptsWithJournal(t *testing.T, service common.ServiceType, mk func(string) config.RecommendationRecord, journal common.AttemptJournal) []common.PurchaseOptions {
+func runFanOutCapturingOptsWithJournal(t *testing.T, service common.ServiceType, mk func(string) config.RecommendationRecord, journal AttemptJournal) []common.PurchaseOptions {
 	t.Helper()
 	ctx := context.Background()
 	accounts := []config.CloudAccount{
@@ -376,6 +376,9 @@ func (*fakeAttemptJournal) PriorAttempts(context.Context, string) ([]common.Atte
 	return nil, nil
 }
 func (*fakeAttemptJournal) RecordAttempt(context.Context, common.AttemptRecord) error { return nil }
+func (*fakeAttemptJournal) ClaimedByOthers(context.Context, string, []string) ([]string, error) {
+	return nil, nil
+}
 
 // The journal reaches every per-rec dispatch together with the per-account
 // ExecutionID the provider keys its attempt rows on (go#107).
