@@ -57,7 +57,7 @@ func TestGetLadderExecutionGate(t *testing.T) {
 		g, err := store.GetLadderExecutionGate(ctx, tr.ID)
 		require.NoError(t, err)
 		require.NotNil(t, g.RunStatus)
-		assert.Equal(t, string(ladder.RunStatusCancelled), *g.RunStatus)
+		assert.Equal(t, string(ladder.RunStatusCanceled), *g.RunStatus)
 	})
 
 	t.Run("deleted config and run come back nil, not false", func(t *testing.T) {

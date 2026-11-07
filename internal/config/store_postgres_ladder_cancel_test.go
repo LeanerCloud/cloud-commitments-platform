@@ -39,9 +39,9 @@ func TestCancelLadderRun_StampsCancelledBy(t *testing.T) {
 	now := time.Now().UTC()
 	actor := "alice@example.com"
 	pool.ExpectQuery(regexp.QuoteMeta(ladderRunCancelQuery)).
-		WithArgs("run-1", string(ladder.RunStatusCancelled), []string{"awaiting_approval", "approved"}, actor).
+		WithArgs("run-1", string(ladder.RunStatusCanceled), []string{"awaiting_approval", "approved"}, actor).
 		WillReturnRows(pgxmock.NewRows(ladderRunMockColumns).AddRow(
-			"run-1", nil, now, nil, ladder.RunStatusCancelled, nil, nil,
+			"run-1", nil, now, nil, ladder.RunStatusCanceled, nil, nil,
 			nil, nil, nil, nil,
 			[]byte(`{}`), 0.0, 0.0, 0.0,
 			nil, nil,
@@ -53,7 +53,7 @@ func TestCancelLadderRun_StampsCancelledBy(t *testing.T) {
 		[]ladder.RunStatus{ladder.RunStatusAwaitingApproval, ladder.RunStatusApproved}, "  "+actor+" ")
 	require.NoError(t, err)
 	require.NotNil(t, run)
-	assert.Equal(t, ladder.RunStatusCancelled, run.Status)
+	assert.Equal(t, ladder.RunStatusCanceled, run.Status)
 	require.NotNil(t, run.CancelledBy, "a canceled run must record who canceled it")
 	assert.Equal(t, actor, *run.CancelledBy)
 	require.NoError(t, pool.ExpectationsWereMet())
@@ -62,7 +62,7 @@ func TestCancelLadderRun_StampsCancelledBy(t *testing.T) {
 func TestCancelLadderRun_CASLostReturnsNil(t *testing.T) {
 	store, pool := newLadderCancelMockStore(t)
 	pool.ExpectQuery(regexp.QuoteMeta(ladderRunCancelQuery)).
-		WithArgs("run-1", string(ladder.RunStatusCancelled), []string{"approved"}, "bob@example.com").
+		WithArgs("run-1", string(ladder.RunStatusCanceled), []string{"approved"}, "bob@example.com").
 		WillReturnRows(pgxmock.NewRows(ladderRunMockColumns))
 
 	run, err := store.CancelLadderRun(context.Background(), "run-1",
@@ -86,7 +86,7 @@ func TestCancelLadderRun_RequiresActor(t *testing.T) {
 func TestTransitionLadderRunStatus_RefusesCancel(t *testing.T) {
 	store, pool := newLadderCancelMockStore(t)
 	run, err := store.TransitionLadderRunStatus(context.Background(), "run-1",
-		[]ladder.RunStatus{ladder.RunStatusExecuting}, ladder.RunStatusCancelled)
+		[]ladder.RunStatus{ladder.RunStatusExecuting}, ladder.RunStatusCanceled)
 	require.ErrorIs(t, err, ErrLadderRunCancelViaTransition)
 	assert.Nil(t, run)
 	require.NoError(t, pool.ExpectationsWereMet(), "a cancel must not bypass the canceled-by stamp")

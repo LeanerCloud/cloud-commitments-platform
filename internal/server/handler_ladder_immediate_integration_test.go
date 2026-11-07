@@ -202,8 +202,8 @@ func TestLadderB1_NextRunNetsImmediateRowWithinGrace(t *testing.T) {
 	}{
 		{"1h", time.Hour, 0, string(pkgladder.TrancheStatusScheduled)},
 		{"grace minus 1us", config.LadderFireGrace - time.Microsecond, 0, string(pkgladder.TrancheStatusScheduled)},
-		{"exactly grace", config.LadderFireGrace, 5, string(pkgladder.TrancheStatusCancelled)},
-		{"grace plus 1us", config.LadderFireGrace + time.Microsecond, 5, string(pkgladder.TrancheStatusCancelled)},
+		{"exactly grace", config.LadderFireGrace, 5, string(pkgladder.TrancheStatusCanceled)},
+		{"grace plus 1us", config.LadderFireGrace + time.Microsecond, 5, string(pkgladder.TrancheStatusCanceled)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
