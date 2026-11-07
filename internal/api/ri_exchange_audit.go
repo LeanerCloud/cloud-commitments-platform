@@ -46,6 +46,10 @@ func (h *Handler) beginDirectExchange(ctx context.Context, audit *config.RIExcha
 		return "", fmt.Errorf("invalid RI exchange audit record, exchange not executed: %w", err)
 	}
 	if err := h.config.SaveRIExchangeDirectExecution(ctx, audit); err != nil {
+		if errors.Is(err, config.ErrRIExchangeSourceInFlight) {
+			logging.Warnf("ri-exchange direct execute refused: %v", err)
+			return "", NewClientError(409, err.Error())
+		}
 		logging.Errorf("ri-exchange direct execute: failed to record audit row, refusing to execute: %v", err)
 		return "", fmt.Errorf("failed to record the RI exchange audit trail, exchange not executed: %w", err)
 	}

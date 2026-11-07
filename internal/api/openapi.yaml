@@ -2545,6 +2545,11 @@ paths:
         not part of that fingerprint: raising the cap does not make it a
         different purchase. See the 409 response: it does not assert that the
         earlier submit succeeded, only that it claimed the window.
+        The 409 also means a source RI is held by an exchange in progress: an
+        in-flight approve or AUTO exchange row, or an unresolved direct
+        execution (submitted, or unknown after a lost accept response). Nothing
+        is sent to AWS or claimed in that case; verify the outcome at AWS and
+        have an operator settle the held record before retrying.
         The exchange runs in the deployment's own AWS account, so a session
         whose allowed accounts do not cover that account gets 403.
         A quote that is not denominated in USD, or names no currency, is
@@ -2624,7 +2629,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          $ref: '#/components/responses/Conflict'
+          description: >-
+            Either an identical submit is already inside the 15 minute dedup
+            window, or a source RI is held by an exchange in progress (an
+            in-flight approve or AUTO row, or an unresolved direct execution).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
 
