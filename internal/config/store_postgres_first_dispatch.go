@@ -18,12 +18,13 @@ type StampResult struct {
 }
 
 // provenUnsentPredecessorSelect selects a no_submission attempt 0 row whose
-// retry_execution_id equals the expression appended to it. NS is set only on
-// failed rows, so it implies failed. Shared by the stamp mint rule and
-// PredecessorProvenUnsent so the two cannot drift.
+// retry_execution_id equals the expression appended to it. The status is
+// checked explicitly because only the upsert's update path ties NS to failed.
+// Shared by the stamp mint rule and PredecessorProvenUnsent so the two cannot
+// drift.
 const provenUnsentPredecessorSelect = `
 				SELECT 1 FROM purchase_executions p
-				WHERE p.no_submission AND p.retry_attempt_n = 0
+				WHERE p.no_submission AND p.retry_attempt_n = 0 AND p.status = 'failed'
 				  AND p.retry_execution_id = `
 
 // PredecessorProvenUnsent reports whether executionID is the retry successor
