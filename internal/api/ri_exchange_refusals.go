@@ -33,9 +33,11 @@ var exchangeRefusals = []error{
 // exchangeRefusalError returns a 422 carrying err's message when err wraps
 // one of exchangeRefusals, or nil otherwise. 422 matches the Azure execute
 // guardrails (checkAzureExchangeMoneyGuardrails), which refuse a currency
-// mismatch the same way, and a 4xx makes directExchangeFailureStatus record
-// the audit row as failed rather than unknown, which is correct because these
-// refusals all happen before the provider's commit call.
+// mismatch the same way. On Azure a 4xx makes directExchangeFailureStatus
+// record the audit row as failed rather than unknown.
+// On AWS the row is failed because the refusal error is not wrapped in
+// common.ErrOutcomeUnknown (awsDirectFailureStatus). Both are correct because
+// these refusals all happen before the provider's commit call.
 func exchangeRefusalError(err error) error {
 	for _, sentinel := range exchangeRefusals {
 		if errors.Is(err, sentinel) {

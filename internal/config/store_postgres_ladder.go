@@ -352,7 +352,7 @@ func cancelOverdueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID *str
 		  AND status = $3
 		  AND execution_id IS NULL
 		  AND scheduled_date <= $4
-	`, string(ladder.TrancheStatusCancelled), *configID, string(ladder.TrancheStatusScheduled), ladderGraceCutoff(asOf))
+	`, string(ladder.TrancheStatusCanceled), *configID, string(ladder.TrancheStatusScheduled), ladderGraceCutoff(asOf))
 	if err != nil {
 		return fmt.Errorf("failed to cancel overdue ladder_tranches config_id=%s: %w", *configID, err)
 	}
@@ -438,11 +438,11 @@ func (s *PostgresStore) LatestLadderRunStartedAt(ctx context.Context, configID s
 // one of fromStatuses to toStatus via a CAS UPDATE. Returns the updated row
 // on success, or (nil, nil) when zero rows are affected (race lost or
 // unexpected current status). A hard DB error is returned as a non-nil error.
-// A transition to RunStatusCancelled is refused with
+// A transition to RunStatusCanceled is refused with
 // ErrLadderRunCancelViaTransition: cancels go through CancelLadderRun, which
 // stamps cancelled_by in the same UPDATE.
 func (s *PostgresStore) TransitionLadderRunStatus(ctx context.Context, id string, fromStatuses []ladder.RunStatus, toStatus ladder.RunStatus) (*LadderRunDB, error) {
-	if toStatus == ladder.RunStatusCancelled {
+	if toStatus == ladder.RunStatusCanceled {
 		return nil, ErrLadderRunCancelViaTransition
 	}
 	// Typed public signature; the stringly-typed shape stays at the DB boundary.

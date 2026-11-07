@@ -160,14 +160,19 @@ func TestLadderAmendCeiling_SnapshotAndCoverage(t *testing.T) {
 }
 
 func TestLadderAmendCeiling_LatestRunDecides(t *testing.T) {
-	f := newCeilingFixture(t)
-	_, ids := f.plan(fptr(10), fptr(0), fptr(100), 1, 1)
-	f.plan(fptr(3), fptr(0), fptr(100), 1)
-	require.ErrorIs(t, f.amend(ids[0], 2), ErrLadderAmendInvalid, "latest run's ceiling 3 < 4 in flight, older run's 10 must not apply")
-	runID, _ := f.plan(fptr(50), fptr(0), fptr(100))
-	_, err := f.store.db.Exec(f.ctx, "UPDATE ladder_runs SET status='cancelled' WHERE id=$1", runID)
-	require.NoError(t, err)
-	require.ErrorIs(t, f.amend(ids[0], 2), ErrLadderAmendInvalid, "a canceled latest run is ignored")
+	// Both stored spellings of canceled must be skipped (#1792).
+	for _, canceled := range []string{"canceled", "cancelled"} { //nolint:misspell // legacy stored ladder status value
+		t.Run(canceled, func(t *testing.T) {
+			f := newCeilingFixture(t)
+			_, ids := f.plan(fptr(10), fptr(0), fptr(100), 1, 1)
+			f.plan(fptr(3), fptr(0), fptr(100), 1)
+			require.ErrorIs(t, f.amend(ids[0], 2), ErrLadderAmendInvalid, "latest run's ceiling 3 < 4 in flight, older run's 10 must not apply")
+			runID, _ := f.plan(fptr(50), fptr(0), fptr(100))
+			_, err := f.store.db.Exec(f.ctx, "UPDATE ladder_runs SET status=$2 WHERE id=$1", runID, canceled)
+			require.NoError(t, err)
+			require.ErrorIs(t, f.amend(ids[0], 2), ErrLadderAmendInvalid, "a canceled latest run is ignored")
+		})
+	}
 }
 
 func TestLadderAmendCeiling_WaitsForPlanner(t *testing.T) {
@@ -266,7 +271,7 @@ func TestLadderAmendCeiling_CancelsOverdueBeforeCounting(t *testing.T) {
 	require.NoError(t, f.amend(ids[1], 10), "X is not in flight, so 10 fits the ceiling")
 	var status ladder.TrancheStatus
 	require.NoError(t, f.store.db.QueryRow(f.ctx, "SELECT status FROM ladder_tranches WHERE id=$1", ids[0]).Scan(&status))
-	require.Equal(t, ladder.TrancheStatusCancelled, status, "the overdue row must be canceled, not left for a claim with an older asOf")
+	require.Equal(t, ladder.TrancheStatusCanceled, status, "the overdue row must be canceled, not left for a claim with an older asOf")
 	claimed, err := f.store.ClaimDueLadderTranches(f.ctx, f.cfgID, time.Now().Add(-time.Minute), 10,
 		func(context.Context, pgx.Tx, LadderTrancheDB) (string, error) { return uuid.NewString(), nil })
 	require.NoError(t, err)

@@ -2,14 +2,24 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// uniquePurchasedReservationIndex is created by migration 000162: one
+// purchased row per reservation_id across every token and execution.
+const uniquePurchasedReservationIndex = "uq_purchase_attempts_purchased_reservation"
 
 // PostgresStore is the platform's common.AttemptJournal (cloud-commitments-go#107).
 var _ common.AttemptJournal = (*PostgresStore)(nil)
+
+// PostgresStore also reads other lineages' purchase claims (go#700). Deleting
+// ClaimedByOthers breaks the build instead of silently disabling the exclusion.
+var _ common.ClaimReader = (*PostgresStore)(nil)
 
 // recordAttemptSQL is one autocommit upsert. The WHERE clause is the
 // transition table and mirrors validTransition in cloud-commitments-go's
@@ -50,6 +60,11 @@ func (s *PostgresStore) RecordAttempt(ctx context.Context, rec common.AttemptRec
 	tag, err := s.db.Exec(ctx, recordAttemptSQL,
 		rec.IdempotencyToken, rec.ExecutionID, string(rec.State), rec.ReservationID, rec.OfferingID)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == uniquePurchasedReservationIndex {
+			return fmt.Errorf("record purchase attempt %s: reservation already recorded as purchased by another attempt",
+				common.MaskToken(rec.IdempotencyToken))
+		}
 		return fmt.Errorf("record purchase attempt %s: %w", common.MaskToken(rec.IdempotencyToken), err)
 	}
 	if tag.RowsAffected() == 0 {
@@ -83,4 +98,28 @@ func (s *PostgresStore) PriorAttempts(ctx context.Context, token string) ([]comm
 		return nil, fmt.Errorf("scan purchase attempts %s: %w", common.MaskToken(token), err)
 	}
 	return recs, nil
+}
+
+// ClaimedByOthers returns the ids that an attempt under a token other than
+// token recorded as purchased (go#700). It runs on its own pool connection,
+// like RecordAttempt, and must not be called inside a caller's transaction.
+func (s *PostgresStore) ClaimedByOthers(ctx context.Context, token string, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT DISTINCT reservation_id
+		FROM purchase_attempts
+		-- state lets Postgres use the partial unique index; the table CHECK already limits reservation_id to purchased rows.
+		WHERE state = 'purchased'
+		  AND reservation_id = ANY($2)
+		  AND idempotency_token <> $1`, token, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list claimed reservations %s: %w", common.MaskToken(token), err)
+	}
+	claimed, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("scan claimed reservations %s: %w", common.MaskToken(token), err)
+	}
+	return claimed, nil
 }

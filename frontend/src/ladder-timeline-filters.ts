@@ -62,12 +62,12 @@ const layerLabels: Record<string, string> = {
   'azure-reservation': 'Azure Reservation', 'azure-savings-plan': 'Azure Savings Plan',
 };
 const statusLabels: Record<string, string> = {
-  scheduled: 'Scheduled', fired: 'Fired', completed: 'Completed', cancelled: 'Cancelled', failed: 'Failed',
+  scheduled: 'Scheduled', fired: 'Fired', completed: 'Completed', canceled: 'Canceled', failed: 'Failed',
 };
 
 const runStatusLabels: Record<string, string> = {
   planned: 'planned', awaiting_approval: 'awaiting approval', approved: 'approved', executing: 'executing',
-  completed: 'completed', failed: 'failed', cancelled: 'cancelled', expired: 'expired',
+  completed: 'completed', failed: 'failed', canceled: 'canceled', expired: 'expired',
 };
 
 /** Label for a ladder enum code. An unknown code is shown raw so it stays visible. */
@@ -130,9 +130,9 @@ export function formatLadderUtcInput(value: string): string {
   return `${date} ${time.endsWith(':00') ? time.slice(0, 5) : time}`;
 }
 
-/** Statuses that count toward cumulative commitment; cancelled and failed tranches were never bought. */
+/** Statuses that count toward cumulative commitment; canceled and failed tranches were never bought. */
 export const ladderCountedStatuses: readonly string[] = ['scheduled', 'fired', 'completed'];
-export const LADDER_COUNTED_NOTE = 'Counts scheduled, fired and completed tranches; cancelled, failed and unrecognised statuses are excluded.';
+export const LADDER_COUNTED_NOTE = 'Counts scheduled, fired and completed tranches; canceled, failed and unrecognised statuses are excluded.';
 
 /** Note for a row that is excluded from the cumulative, or undefined when it is counted. */
 export function ladderNotCountedNote(event: LadderEvent): string | undefined {
