@@ -171,3 +171,32 @@ func TestStampFirstDispatch_ExactHorizonIsOutside(t *testing.T) {
 	require.NotNil(t, res.At)
 	assert.False(t, res.WithinHorizon)
 }
+
+func TestPredecessorProvenUnsent(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+
+	cases := []struct {
+		name     string
+		attemptN int
+		ns       bool
+		seed     bool
+		want     bool
+	}{
+		{"no_submission attempt 0", 0, true, true, true},
+		{"no_submission attempt 1", 1, true, true, false},
+		{"submitted attempt 0", 0, false, true, false},
+		{"no predecessor", 0, false, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			succ := seedRunningSuccessor(ctx, t, store, tc.attemptN+1, nil)
+			if tc.seed {
+				seedPredecessor(ctx, t, store, succ.ExecutionID, tc.attemptN, tc.ns)
+			}
+			got, err := store.PredecessorProvenUnsent(ctx, succ.ExecutionID)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

@@ -569,6 +569,13 @@ func (m *MockConfigStore) StampFirstDispatchTx(ctx context.Context, tx pgx.Tx, e
 	return res, args.Error(1)
 }
 
+// PredecessorProvenUnsent mocks the predecessor proof lookup (no default: testify panics if unexpected).
+func (m *MockConfigStore) PredecessorProvenUnsent(ctx context.Context, executionID string) (bool, error) {
+	m.record("PredecessorProvenUnsent", ctx, executionID)
+	args := m.Called(ctx, executionID)
+	return args.Bool(0), args.Error(1)
+}
+
 // LockRedshiftTuplesTx mocks the Redshift tuple advisory locks (no default: testify panics if unexpected).
 func (m *MockConfigStore) LockRedshiftTuplesTx(ctx context.Context, tx pgx.Tx, tuples []config.RedshiftTuple) error {
 	m.record("LockRedshiftTuplesTx", ctx, tx, tuples)

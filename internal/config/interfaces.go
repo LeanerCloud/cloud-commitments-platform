@@ -821,6 +821,10 @@ type StoreInterface interface {
 	// whether it is within horizon on the database clock.
 	StampFirstDispatchTx(ctx context.Context, tx pgx.Tx, executionID string, horizon time.Duration) (StampResult, error)
 
+	// PredecessorProvenUnsent reports whether executionID's retry predecessor
+	// is a no_submission attempt 0 row (the lineage provably sent nothing).
+	PredecessorProvenUnsent(ctx context.Context, executionID string) (bool, error)
+
 	// LockRedshiftTuplesTx takes a transaction-scoped advisory lock per
 	// distinct tuple, in sorted order, serializing dispatches that share one.
 	LockRedshiftTuplesTx(ctx context.Context, tx pgx.Tx, tuples []RedshiftTuple) error
