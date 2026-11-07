@@ -89,6 +89,10 @@ func TestRedriveGuardReachMatchesDispatchReach(t *testing.T) {
 			dispatchesToSavingsPlans := m.mapServiceType(service) == common.ServiceSavingsPlansAll
 			// Does the money guard refuse it?
 			guardRefuses := recRedriveRefusalReason(rec) != ""
+			// The Retry predicate must not widen the reach: for a row that is
+			// not provably unsent it refuses exactly what the re-drive guard does.
+			retryRefuses := retryRefusalReason(&config.PurchaseExecution{Recommendations: []config.RecommendationRecord{rec}}, false) != ""
+			assert.Equal(t, guardRefuses, retryRefuses, "retry reach must match re-drive reach for %q", service)
 
 			assert.Equal(t, dispatchesToSavingsPlans, guardRefuses,
 				"guard reach and dispatch reach must be identical for %q: dispatchesToSavingsPlans=%v guardRefuses=%v. "+
