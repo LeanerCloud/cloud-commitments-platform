@@ -28,6 +28,7 @@ const (
 	recRefused
 	recUnknown
 	recPlainFail
+	recRefusedUnknown
 )
 
 func (b recBehavior) result() (common.PurchaseResult, error) {
@@ -36,6 +37,10 @@ func (b recBehavior) result() (common.PurchaseResult, error) {
 		return common.PurchaseResult{}, beforeSubmission(errors.New("refused before submission"))
 	case recUnknown:
 		return common.PurchaseResult{}, fmt.Errorf("lost response: %w", common.ErrOutcomeUnknown)
+	case recRefusedUnknown:
+		// A pre-submission class that still wraps an unknown outcome may have
+		// reached the cloud, so it must not count as refused.
+		return common.PurchaseResult{}, beforeSubmission(fmt.Errorf("guard: %w", common.ErrOutcomeUnknown))
 	case recPlainFail:
 		return common.PurchaseResult{}, errors.New("offering not available")
 	}
@@ -94,6 +99,7 @@ func refusalCases() map[string]struct {
 		"purchased plus refused":       {map[string]recBehavior{"a": recBuys, "b": recRefused}, false, false},
 		"unknown outcome plus refused": {map[string]recBehavior{"a": recUnknown, "b": recRefused}, false, false},
 		"plain failure plus refused":   {map[string]recBehavior{"a": recPlainFail, "b": recRefused}, false, false},
+		"refused with unknown outcome": {map[string]recBehavior{"a": recRefusedUnknown, "b": recRefused}, false, false},
 	}
 }
 
