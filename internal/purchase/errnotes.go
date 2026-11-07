@@ -66,6 +66,9 @@ var bareNotePatterns = []string{
 	`reserved ceiling "` + shortValuePattern + `" is not a decimal`,
 	`exchange reservation returned no record ID`,
 	`exchange reservation returned invalid ceiling "` + shortValuePattern + `"`,
+	// config.refuseRIExchangeSourceInFlightDirect refusal, stored whole from
+	// err.Error() (sentinel text first); only the shared RI ids vary.
+	`RI exchange source RI is held by an exchange in progress: source RI\(s\) ` + directGuardIDListPattern + ` are held by a direct exchange that may have reached AWS; an operator must verify the outcome at AWS and settle the record`,
 	// Scheduler note for a provider name it does not know.
 	`unknown provider "` + shortValuePattern + `" \(valid: aws, azure, gcp\)`,
 }
@@ -97,6 +100,9 @@ const (
 	quotedTextPattern  = `(?:[^"\\\p{C}\p{Z}]| |\\[ -~])*`
 	skippedNotePattern = `\d+ recommendation\(s\) without a frozen baseline skipped \(under-buy\): ` + idListPattern
 )
+
+// directGuardIDListPattern is the ", "-joined lowercase RI ids the direct-execute guard names.
+const directGuardIDListPattern = `[A-Za-z0-9-]{1,64}(?:, [A-Za-z0-9-]{1,64})*`
 
 // serverNoteHeads are server notes whose tail can carry a wrapped store or
 // config error. Only the fixed head is ever shown; the tail is dropped.
