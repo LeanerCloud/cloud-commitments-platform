@@ -180,7 +180,7 @@ func runRedshiftFinalizeWithJournal(t *testing.T, exec *config.PurchaseExecution
 	if stamp != nil {
 		mockStore.On("LockRedshiftTuplesTx", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 		mockStore.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 		res, stampErr := stamp()
 		mockStore.On("StampFirstDispatchTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Run(func(args mock.Arguments) {

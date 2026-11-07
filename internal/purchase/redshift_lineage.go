@@ -49,6 +49,7 @@ const (
 	redshiftFailedConflictRefusal = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) failed and may still be retried, so retry or settle that purchase, or start this one at least 24h after its first dispatch"
 	redshiftNoJournalRefusal      = "refusing to dispatch: this Redshift retry needs the purchase attempt journal, which is not configured, so check the account in AWS and start a new purchase"
 	redshiftRecentBuyRefusal      = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) completed too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one completed"
+	redshiftSettleRefusal         = "refusing to dispatch: another attempt of this Redshift purchase ended less than 10 minutes ago and may have bought, so wait 10 minutes and then retry"
 )
 
 // redshiftAdoptionWindow mirrors cloud-commitments-go's 5m Redshift dedupe skew
@@ -126,31 +127,49 @@ func (m *Manager) redshiftGate(ctx context.Context, tx pgx.Tx, exec *config.Purc
 		afterRedshiftStampHook()
 	}
 	family, _, _ := strings.Cut(idempotencyLineageKey(exec), ":")
-	conflicts, err := m.config.FindOpenRedshiftLineageConflictsTx(ctx, tx, exec.ExecutionID, family, tuples, exec.CloudAccountID, redshiftRedriveHorizon, *res.At, redshiftAdoptionWindow)
+	conflicts, err := m.config.FindOpenRedshiftLineageConflictsTx(ctx, tx, exec.ExecutionID, family, tuples, exec.CloudAccountID, redshiftRedriveHorizon, *res.At, redshiftAdoptionWindow, redshiftRetrySettle)
 	if err != nil {
 		return res, err
 	}
 	return res, conflictRefusal(exec.ExecutionID, dropPersistentFailures(conflicts))
 }
 
-// conflictRefusal picks the fixed refusal for the remaining conflicts: a recent finished buy first,
-// then any open lineage, then failed rows only. The other execution's id goes to the log only.
+// conflictRefusal wraps pickConflict's refusal as before-submission; the other id goes to the log only.
 func conflictRefusal(executionID string, conflicts []config.RedshiftLineageConflict) error {
-	for _, c := range conflicts {
-		if redshiftFinishedStatus(c.Status) {
-			logging.Warnf("Redshift gate: execution %s refused, another purchase of the tuple finished within the adoption window (execution %s, %s)", executionID, c.ExecutionID, c.Status)
-			return beforeSubmission(errors.New(redshiftRecentBuyRefusal))
+	refusal, culprit, ok := pickConflict(conflicts)
+	if !ok {
+		return nil
+	}
+	logging.Warnf("Redshift gate: execution %s refused (%s, execution %s, %s)", executionID, refusal, culprit.ExecutionID, culprit.Status)
+	return beforeSubmission(errors.New(refusal))
+}
+
+// conflictRules is the refusal precedence: another family's recent buy, any open lineage, a
+// same-family attempt inside the settle. Failed rows only fall through to pickConflict's last case.
+var conflictRules = []struct {
+	match   func(config.RedshiftLineageConflict) bool
+	refusal string
+}{
+	{func(c config.RedshiftLineageConflict) bool { return !c.SameFamily && redshiftFinishedStatus(c.Status) }, redshiftRecentBuyRefusal},
+	{func(c config.RedshiftLineageConflict) bool {
+		return c.Status != config.StatusFailed && (!c.SameFamily || c.Status == "running")
+	}, redshiftConflictRefusal},
+	{func(c config.RedshiftLineageConflict) bool { return c.SameFamily }, redshiftSettleRefusal},
+}
+
+// pickConflict returns the refusal for the first rule any conflict matches, then failed rows only.
+func pickConflict(conflicts []config.RedshiftLineageConflict) (string, config.RedshiftLineageConflict, bool) {
+	for _, rule := range conflictRules {
+		for _, c := range conflicts {
+			if rule.match(c) {
+				return rule.refusal, c, true
+			}
 		}
 	}
 	if allFailed(conflicts) {
-		logging.Warnf("Redshift gate: execution %s refused, only failed purchases conflict (first %s)", executionID, conflicts[0].ExecutionID)
-		return beforeSubmission(errors.New(redshiftFailedConflictRefusal))
+		return redshiftFailedConflictRefusal, conflicts[0], true
 	}
-	if len(conflicts) > 0 {
-		logging.Warnf("Redshift gate: execution %s refused, conflicts with execution %s (%s)", executionID, conflicts[0].ExecutionID, conflicts[0].Status)
-		return beforeSubmission(errors.New(redshiftConflictRefusal))
-	}
-	return nil
+	return "", config.RedshiftLineageConflict{}, false
 }
 
 // allFailed reports a non-empty conflict list made only of failed rows.
@@ -168,7 +187,7 @@ func allFailed(conflicts []config.RedshiftLineageConflict) bool {
 func dropPersistentFailures(conflicts []config.RedshiftLineageConflict) []config.RedshiftLineageConflict {
 	kept := make([]config.RedshiftLineageConflict, 0, len(conflicts))
 	for _, c := range conflicts {
-		if c.Status == config.StatusFailed && (ResolveOpsHint(c.Error) != "" || retryRefusedForRecs(c)) {
+		if !c.SameFamily && c.Status == config.StatusFailed && (ResolveOpsHint(c.Error) != "" || retryRefusedForRecs(c)) {
 			continue
 		}
 		kept = append(kept, c)

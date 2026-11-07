@@ -83,6 +83,7 @@
 - The History hint does not show the 10 minute settle wait; the Retry button answers 409 with `retry_after_seconds` instead.
 - The console and `cudly-mcp` buyers were not checked for the stamp and journal wiring; only the platform dispatch path is covered.
 - A child that bought but whose row save failed (`execution.go:351`, `:383`) leaves no row for the gate, unless its root is a retryable failed row.
+- Same-family successors of one token (for example a root retry's fan-out child and a retried child, same key) now also wait out the 10 minute settle at dispatch (a sibling that failed after a possible send, or finished, within 10 minutes); the Retry-creation check alone did not cover two successors of one token.
 - Related go work: LeanerCloud/cloud-commitments-go#700 (claimed reservations) and #515 (identity stronger than the tuple).
 
 **Status:** Open. Tracked in #702.

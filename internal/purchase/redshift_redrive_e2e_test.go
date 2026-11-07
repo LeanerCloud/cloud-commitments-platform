@@ -101,7 +101,7 @@ func newRedriveRig(t *testing.T, stamps map[string]time.Time, conflicts []config
 	}
 	rig.store.On("LockRedshiftTuplesTx", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	rig.store.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(conflicts, nil)
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(conflicts, nil)
 	rig.minted, rig.rows = stamps, map[string]*config.PurchaseExecution{}
 	rig.store.On("SavePurchaseHistory", mock.Anything, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil).Maybe()
 	email.On("SendPurchaseConfirmation", mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -161,6 +161,39 @@ func TestRedshiftRedrive_SecondLineageRefusedWhileFirstRetryable(t *testing.T) {
 	assert.True(t, isBeforeSubmission(err))
 	assert.Empty(t, rig.client.opts)
 	assert.True(t, second.NoSubmission)
+}
+
+// Pins the refusal text and no-provider-call precedence for a fixed same-family conflict; the SQL is
+// covered by the lineage integration test.
+func TestRedshiftRedrive_SameFamilyConflictRefusesWithSettleText(t *testing.T) {
+	stamp := time.Now().UTC().Add(-30 * time.Minute).Truncate(time.Microsecond)
+	rig := newRedriveRig(t, nil, nil)
+	rig.client.nodeStart, rig.client.loseResponse = stamp.Add(time.Minute), true
+
+	xPrime := rig.track(redriveExec("x-prime", 1, &stamp))
+	xPrime.IdempotencyKey = "root:acct"
+	require.Error(t, rig.mgr.executeAndFinalize(context.Background(), xPrime))
+	require.Len(t, rig.client.opts, 1)
+
+	kept := rig.store.ExpectedCalls[:0]
+	for _, c := range rig.store.ExpectedCalls {
+		if c.Method != "FindOpenRedshiftLineageConflictsTx" {
+			kept = append(kept, c)
+		}
+	}
+	rig.store.ExpectedCalls = kept
+	rig.store.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return([]config.RedshiftLineageConflict{{ExecutionID: "x-prime", Status: config.StatusFailed, SameFamily: true}}, nil)
+
+	x1 := rig.track(redriveExec("x1", 1, &stamp))
+	x1.IdempotencyKey = "root:acct"
+	err := rig.mgr.executeAndFinalize(context.Background(), x1)
+
+	require.Error(t, err)
+	assert.Equal(t, redshiftSettleRefusal, err.Error())
+	assert.True(t, isBeforeSubmission(err))
+	assert.Len(t, rig.client.opts, 1, "X1 never reached the provider")
 }
 
 func strandedRedshiftRow(id string, attempt int, stamp *time.Time) config.PurchaseExecution {
