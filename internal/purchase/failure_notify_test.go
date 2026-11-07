@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -216,4 +217,69 @@ func TestMultiAccountFailureNotifiesOncePerFailedAccountNotRoot(t *testing.T) {
 	assert.Equal(t, "acct-bad", failedRows[sent[0].ExecutionID], "the email is for the failed account's row")
 	assert.Equal(t, failureNotifyRecipient, sent[0].RecipientEmail)
 	require.Len(t, sent[0].Recommendations, 1)
+}
+
+func unrecordedCommitmentExec() *config.PurchaseExecution {
+	return &config.PurchaseExecution{
+		ExecutionID: "exec-1", PlanID: "plan-1", Status: "failed",
+		Recommendations: []config.RecommendationRecord{
+			{Service: "redshift", ResourceType: "ra3.xlplus", Region: "us-east-1", Count: 2, Selected: true, PurchaseID: "rn-123", Error: "purchase failed: bought but not recorded"},
+			{Service: "rds", ResourceType: "db.r5.large", Region: "eu-west-1", Count: 1, Selected: true, Error: "purchase failed"},
+		},
+	}
+}
+
+// go#107: a failed rec that carries a commitment ID switches the failed email
+// to the outcome-unknown variant and names the ID; a plain failure stays plain.
+func TestNotifyExecutionFailure_UnrecordedCommitmentIsOutcomeUnknown(t *testing.T) {
+	store := new(MockConfigStore)
+	store.On("GetGlobalConfig", mock.Anything).Return(failureNotifyCfg(), nil)
+	sender := new(MockEmailSender)
+	assertMocksOnCleanup(t, store, sender)
+	rec := &failedEmailRecorder{}
+	rec.expect(sender)
+	m := &Manager{config: store, email: sender}
+
+	m.notifyExecutionFailure(context.Background(), unrecordedCommitmentExec())
+
+	sent := rec.all()
+	require.Len(t, sent, 1)
+	assert.True(t, sent[0].OutcomeUnknown)
+	assert.True(t, sent[0].UnrecordedCommitment)
+	require.Len(t, sent[0].Recommendations, 2)
+	assert.Equal(t, "rn-123", sent[0].Recommendations[0].UnrecordedCommitmentID)
+	assert.Empty(t, sent[0].Recommendations[1].UnrecordedCommitmentID)
+}
+
+func TestNotifyExecutionFailure_NoPurchaseIDStaysPlainFailure(t *testing.T) {
+	store := new(MockConfigStore)
+	store.On("GetGlobalConfig", mock.Anything).Return(failureNotifyCfg(), nil)
+	sender := new(MockEmailSender)
+	assertMocksOnCleanup(t, store, sender)
+	rec := &failedEmailRecorder{}
+	rec.expect(sender)
+	m := &Manager{config: store, email: sender}
+
+	exec := unrecordedCommitmentExec()
+	exec.Recommendations[0].PurchaseID = ""
+	m.notifyExecutionFailure(context.Background(), exec)
+
+	sent := rec.all()
+	require.Len(t, sent, 1)
+	assert.False(t, sent[0].OutcomeUnknown)
+	assert.False(t, sent[0].UnrecordedCommitment)
+	assert.Empty(t, sent[0].Recommendations[0].UnrecordedCommitmentID)
+}
+
+// The rendered email for that execution names the node and never says "retry".
+func TestNotifyExecutionFailure_UnrecordedCommitmentRendersVerifyNotRetry(t *testing.T) {
+	store := new(MockConfigStore)
+	store.On("GetGlobalConfig", mock.Anything).Return(failureNotifyCfg(), nil)
+	assertMocksOnCleanup(t, store)
+	m := &Manager{config: store}
+	data := m.buildPurchaseFailedData(context.Background(), unrecordedCommitmentExec())
+	body, err := email.RenderPurchaseFailedEmail(data)
+	require.NoError(t, err)
+	assert.Contains(t, body, "Redshift reserved node rn-123 was bought but CUDly could not record it")
+	assert.NotContains(t, strings.ToLower(body), "retry")
 }
