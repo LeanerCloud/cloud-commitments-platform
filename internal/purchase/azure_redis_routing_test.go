@@ -32,7 +32,7 @@ func purchaseCacheRecThrough(t *testing.T, prov *MockProvider, providerName, reg
 		Recommendations: []config.RecommendationRecord{{ID: "rec-1", Provider: providerName, Service: "cache",
 			ResourceType: "cache.r6g.large", Region: region, Count: 1, Term: 1, Selected: true}}}
 	m := &Manager{config: store, email: sender, providerFactory: factory}
-	_, _, errs, err := m.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "p"}, "acct", (*provider.Config)(nil), "")
+	_, _, errs, _, err := m.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "p"}, "acct", (*provider.Config)(nil), "")
 	require.NoError(t, err)
 	require.Empty(t, errs)
 	require.True(t, exec.Recommendations[0].Purchased, "the purchase must reach the %s client", want)

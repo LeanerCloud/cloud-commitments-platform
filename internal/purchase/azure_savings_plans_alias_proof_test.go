@@ -108,7 +108,7 @@ func purchaseThroughPinnedAzureClient(t *testing.T, exec *config.PurchaseExecuti
 	prov.On("GetServiceClient", mock.Anything, common.ServiceSavingsPlansAll, mock.Anything).Return(provider.ServiceClient(client), nil)
 
 	m := &Manager{config: store, email: sender, providerFactory: factory}
-	_, _, errs, err := m.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "p"}, "acct", (*provider.Config)(nil), "")
+	_, _, errs, _, err := m.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "p"}, "acct", (*provider.Config)(nil), "")
 	require.NoError(t, err)
 	require.Empty(t, errs)
 	for i, rec := range exec.Recommendations {
