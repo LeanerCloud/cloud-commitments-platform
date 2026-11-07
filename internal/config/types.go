@@ -860,6 +860,16 @@ func CanonicalSuppressionService(provider, service string) string {
 	return service
 }
 
+// CanonicalSuppressionEngine reads an Azure cache engine "" as "redis" so a
+// suppression and a rec match across go#702, which gave Advisor-sourced Azure
+// Redis recs an engine (they had none before). Other tuples are unchanged.
+func CanonicalSuppressionEngine(provider, service, engine string) string {
+	if provider == string(common.ProviderAzure) && service == string(common.ServiceCache) && engine == "" {
+		return "redis"
+	}
+	return engine
+}
+
 // StoredRecommendationService is the service slug the platform stores and keys
 // a provider recommendation under. go#702 relabelled Azure Redis recs from
 // cache to memorydb; the platform's IDs, suppressions and per-account config

@@ -39,6 +39,7 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		dueRowAgeRefusal(&config.PurchaseExecution{ScheduledDate: time.Now().Add(-100 * time.Hour)}, time.Hour, time.Now()).Error(),
 		ErrClaimedRowRefused.Error(),
 		"refusing to execute ladder purchase: its ladder run was canceled",
+		`refusing to execute ladder purchase: its ladder run status "weird_state" is unknown`,
 		"refusing to execute ladder purchase: its tranche is paused",
 		"refusing to execute: ladder tranche lookup failed",
 		"refusing to execute ladder purchase: global config unreadable",
@@ -235,8 +236,11 @@ func TestSanitizeStoredError_SlotsRejectWhitespaceAndControls(t *testing.T) {
 		errAmbiguousAccountScope.Error() + ": 1 selected recommendation(s) carry no cloud_account_id while 2 target account %s",
 		"EC2 recommendation for %s has zonal scope but no AvailabilityZone: refusing to buy a zonal RI in an arbitrary AZ; re-fetch the recommendation",
 		`refusing to execute retry attempt 1: provider "%s" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`,
+		`refusing to execute ladder purchase: its ladder run status "%s" is unknown`,
 		resolve,
 	}
+	quoted := `refusing to execute ladder purchase: its ladder run status "a\"b" is unknown`
+	assert.NotEqual(t, quoted, SanitizeStoredError(quoted))
 	for _, bad := range []string{"a b", "a\nb", "a\rb", "a\tb", "a\vb", "a\fb", "a\u0085b", "a\u00a0b", "a\u2028b", "a\u200bb", "a\x00b"} {
 		for _, slot := range slots {
 			if slot == resolve && bad == "a b" {
