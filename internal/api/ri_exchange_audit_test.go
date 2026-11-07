@@ -567,3 +567,82 @@ func TestAWSDirectFailureStatus(t *testing.T) {
 	assert.Equal(t, config.RIExchangeDirectStatusFailed, awsDirectFailureStatus(errors.New("send request failed")))
 	assert.Equal(t, config.RIExchangeDirectStatusFailed, awsDirectFailureStatus(&smithy.GenericAPIError{Code: "InternalError", Fault: smithy.FaultServer}))
 }
+
+// --- #1840: one deadline for the claim and the provider call ---
+
+// slowClaimStore blocks the submit claim until release closes or the claim's
+// own context ends, recording the deadline the claim ran under.
+type slowClaimStore struct {
+	*directExchangeAuditStore
+	release       chan struct{}
+	claimDeadline time.Time
+	claimHasDL    bool
+}
+
+func (s *slowClaimStore) ClaimRIExchangeIdempotencyKey(ctx context.Context, key string, window time.Duration) (bool, error) {
+	s.mu.Lock()
+	s.claimDeadline, s.claimHasDL = ctx.Deadline()
+	s.mu.Unlock()
+	select {
+	case <-s.release:
+		return s.directExchangeAuditStore.ClaimRIExchangeIdempotencyKey(ctx, key, window)
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-time.After(2 * time.Second):
+		// An unbounded claim (the regression) must fail the test, not hang it.
+		return true, nil
+	}
+}
+
+// A slow claim must not push the provider call past created_at + the budget:
+// the exec context ends at the deadline taken before the save, not at
+// claim-end + the budget.
+func TestExecuteExchange_DirectExecDeadlineAnchoredBeforeSave(t *testing.T) {
+	const budget = 400 * time.Millisecond
+	const claimDelay = 150 * time.Millisecond
+	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{})}
+	var execDeadline time.Time
+	var execHasDL bool
+	h := awsAuditHandler(t, store.directExchangeAuditStore, func(ctx context.Context, _ exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+		execDeadline, execHasDL = ctx.Deadline()
+		return "riex-1840", &exchange.ExchangeQuoteSummary{PaymentDueUSDStr: "1.000000", PaymentDueRaw: "1", CurrencyCode: "USD"}, nil
+	})
+	h.config = store
+	h.executionTimeoutOverride = budget
+	time.AfterFunc(claimDelay, func() { close(store.release) })
+
+	before := time.Now()
+	_, err := h.executeExchange(auditRequest(context.Background(), awsAuditBody))
+	after := time.Now()
+	require.NoError(t, err)
+
+	require.True(t, execHasDL)
+	assert.False(t, execDeadline.After(before.Add(budget).Add(50*time.Millisecond)),
+		"exec deadline %v must be anchored before the save, not after the %v claim", execDeadline.Sub(before), claimDelay)
+	assert.True(t, execDeadline.Before(after.Add(budget)), "exec deadline must not be claim-end + budget")
+	require.True(t, store.claimHasDL, "the claim must be bounded")
+	assert.WithinDuration(t, execDeadline, store.claimDeadline, time.Millisecond, "claim and exec share one deadline")
+}
+
+// A claim that outlives the deadline never reaches the provider, fails as a
+// claim failure, and leaves the row finalized as failed.
+func TestExecuteExchange_DirectClaimOutlivingDeadlineNeverExecutes(t *testing.T) {
+	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{})}
+	executed := false
+	h := awsAuditHandler(t, store.directExchangeAuditStore, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
+		executed = true
+		return "", nil, nil
+	})
+	h.config = store
+	h.executionTimeoutOverride = 100 * time.Millisecond
+
+	_, err := h.executeExchange(auditRequest(context.Background(), awsAuditBody))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.False(t, executed, "a timed-out claim must not reach the executor")
+
+	_, outcome, finalized := store.onlyRow(t)
+	require.True(t, finalized)
+	assert.Equal(t, config.RIExchangeDirectStatusFailed, outcome.Status)
+	assert.Contains(t, outcome.Error, "not submitted to the provider")
+}

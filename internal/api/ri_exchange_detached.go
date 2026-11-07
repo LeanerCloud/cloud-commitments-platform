@@ -19,6 +19,11 @@ import (
 // the sum of both budgets plus a 30s margin (lambda_timeout >= 300, enforced
 // by Terraform validation and TestLambdaTimeoutCoversRIExchangeBudget, #913).
 //
+// For the direct executes the execution budget is a deadline, not a fresh
+// timeout: it is computed just before the audit row is saved and bounds the
+// submit claim and the provider call together (#1840), so the call ends about
+// riExchangeExecutionTimeout after the row's created_at.
+//
 // The detaching itself is ctxutil.DetachedWithTimeout, shared with the
 // purchase path (#706 / #789).
 const (
@@ -42,4 +47,13 @@ func (h *Handler) awsExchangeQuoter() func(context.Context, exchange.ExchangeQuo
 		return h.exchangeQuoteFn
 	}
 	return exchange.GetExchangeQuote
+}
+
+// exchangeExecutionTimeout is riExchangeExecutionTimeout unless a test shrank
+// it through the handler.
+func (h *Handler) exchangeExecutionTimeout() time.Duration {
+	if h.executionTimeoutOverride > 0 {
+		return h.executionTimeoutOverride
+	}
+	return riExchangeExecutionTimeout
 }
