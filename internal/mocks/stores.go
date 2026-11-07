@@ -576,9 +576,9 @@ func (m *MockConfigStore) LockRedshiftTuplesTx(ctx context.Context, tx pgx.Tx, t
 }
 
 // FindOpenRedshiftLineageConflictsTx mocks the Redshift lineage conflict query (no default: testify panics if unexpected).
-func (m *MockConfigStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []config.RedshiftTuple, accountID *string, horizon time.Duration, stamp time.Time, window time.Duration) ([]config.RedshiftLineageConflict, error) {
-	m.record("FindOpenRedshiftLineageConflictsTx", ctx, tx, selfID, family, tuples, accountID, horizon, stamp, window)
-	args := m.Called(ctx, tx, selfID, family, tuples, accountID, horizon, stamp, window)
+func (m *MockConfigStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []config.RedshiftTuple, accountID *string, horizon time.Duration, stamp time.Time, window, settle time.Duration) ([]config.RedshiftLineageConflict, error) {
+	m.record("FindOpenRedshiftLineageConflictsTx", ctx, tx, selfID, family, tuples, accountID, horizon, stamp, window, settle)
+	args := m.Called(ctx, tx, selfID, family, tuples, accountID, horizon, stamp, window, settle)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

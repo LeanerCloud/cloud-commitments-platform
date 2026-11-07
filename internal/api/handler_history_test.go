@@ -2192,13 +2192,12 @@ func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
 		{"azure savings plans", failed("azure", "savingsplans", "boom"), true, ""},
 		{"unrecognized provider", failed("oracle", "compute", "boom"), true, ""},
 		{"failed aws ec2", failed("aws", "ec2", "boom"), true, ""},
-		{"failed aws redshift", failed("aws", "redshift", "boom"), true, ""},
 		{"failed mixed ec2+rds basket", config.PurchaseExecution{ExecutionID: "e-1", Status: "failed", Error: "boom", Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds"}, {Provider: "aws", Service: "ec2"}}}, true, ""},
 		{"pending ec2 gets no hint", withStatus("pending", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), false, ""},
 		{"canceled ec2 gets no hint", withStatus("canceled", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), false, ""},
 		{"aws rds is retryable", failed("aws", "rds", "boom"), false, ""},
 		{"refusal wins over failure-reason hint", failed("azure", "savingsplans", persistent), true, ""},
-		{"failure-reason hint kept when re-drive is safe", failed("aws", "rds", persistent), false, resolveOpsHint(persistent)},
+		{"failure-reason hint kept when re-drive is safe", failed("aws", "rds", persistent), false, purchase.ResolveOpsHint(persistent)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2212,6 +2211,46 @@ func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The Redshift hint is a presentation hint on the app clock; the Retry gate stays authoritative.
+func TestExecutionToHistoryRow_RedshiftHistoryHintUsesAppClock(t *testing.T) {
+	const legacyArmedRefusal = "refusing to execute retry attempt 1: AWS EC2 and Redshift purchases have no provider-side duplicate guard, and a lost response means the earlier attempt may already have bought the commitment. Check EC2 Reserved Instances or Redshift Reserved Nodes in the target account and region; if it is missing, start a new purchase instead of retrying"
+	stampedAgo := func(d time.Duration) *time.Time { ts := time.Now().Add(-d); return &ts }
+	row := func(status string, attempt int, noSubmission bool, stamp *time.Time, errMsg string) config.PurchaseExecution {
+		return config.PurchaseExecution{
+			ExecutionID: "rs-1", Status: status, Error: errMsg, RetryAttemptN: attempt, NoSubmission: noSubmission, FirstDispatchAt: stamp,
+			Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "redshift", Region: "r", Selected: true}},
+		}
+	}
+	tests := []struct {
+		name       string
+		exec       config.PurchaseExecution
+		wantReason string
+	}{
+		{"stampless legacy failed row", row("failed", 1, false, nil, "boom"), "no first dispatch time recorded"},
+		{"stampless attempt 0 that sent", row("failed", 0, false, nil, "boom"), "no first dispatch time recorded"},
+		{"legacy armed refusal row", row("failed", 1, false, nil, legacyArmedRefusal), "no first dispatch time recorded"},
+		{"past the 24h horizon", row("failed", 1, false, stampedAgo(25*time.Hour), "boom"), "at least 24h ago"},
+		{"inside the horizon stays retryable", row("failed", 1, false, stampedAgo(time.Hour), "boom"), ""},
+		{"never submitted attempt 0 skips the stamp rules", row("failed", 0, true, nil, "boom"), ""},
+		{"never submitted attempt 0 past the horizon", row("failed", 0, true, stampedAgo(48*time.Hour), "boom"), ""},
+		{"failure-reason hint kept inside the horizon", row("failed", 1, false, stampedAgo(time.Hour), "FROM_EMAIL not configured"), ""},
+		{"pending row gets no hint", row("pending", 1, false, nil, ""), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := executionToHistoryRow(tt.exec, "", "")
+			if tt.wantReason == "" {
+				assert.False(t, got.RedriveUnsafe)
+				assert.Equal(t, purchase.ResolveOpsHint(tt.exec.Error), got.OpsHint)
+				return
+			}
+			assert.True(t, got.RedriveUnsafe)
+			assert.Contains(t, got.OpsHint, tt.wantReason)
+		})
+	}
+	assert.Equal(t, legacyArmedRefusal, purchase.SanitizeStoredError(legacyArmedRefusal), "the legacy stored error still renders next to the new hint")
 }
 
 // TestHandler_getHistory_ProjectsCreatedBySystem: the History UI needs the #233 marker.
