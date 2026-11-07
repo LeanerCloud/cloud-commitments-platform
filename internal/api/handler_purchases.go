@@ -235,7 +235,8 @@ func (h *Handler) authorizeBoundedExecutionManagement(ctx context.Context, sessi
 	if err != nil {
 		return err
 	}
-	return h.authorizeUpdateAnyOnRow(ctx, session, execution)
+	_, err = h.authorizeUpdateAnyOnRow(ctx, session, execution)
+	return err
 }
 
 // authorizeUpdateAnyOnRow checks a session holding update-any against the
@@ -245,15 +246,15 @@ func (h *Handler) authorizeBoundedExecutionManagement(ctx context.Context, sessi
 // denial falls back to the creator match and otherwise stays the refusal; any
 // other error (a probe or constraint-store failure) is returned and never read
 // as a denial, so it cannot fall through to a weaker branch.
-func (h *Handler) authorizeUpdateAnyOnRow(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+func (h *Handler) authorizeUpdateAnyOnRow(ctx context.Context, session *Session, execution *config.PurchaseExecution) (creatorFallback bool, err error) {
 	anyErr := h.requirePermissionConstraints(ctx, session, auth.ActionUpdateAny, auth.ResourcePurchases, revokeExecutionConstraintSets(execution))
 	if anyErr == nil || !isForbidden(anyErr) {
-		return anyErr
+		return false, anyErr
 	}
 	if isExecutionCreator(session, execution) {
-		return nil
+		return true, nil
 	}
-	return anyErr
+	return false, anyErr
 }
 
 // authorizeClaimedRowManagement re-runs authorizeBoundedExecutionManagement's
@@ -261,20 +262,41 @@ func (h *Handler) authorizeUpdateAnyOnRow(ctx context.Context, session *Session,
 // (issue #415), so an edit landing between the pre-claim read and the claim
 // cannot carry the row out of a bounded update-any's scope.
 func (h *Handler) authorizeClaimedRowManagement(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	_, err := h.authorizeRowManagement(ctx, session, execution)
+	return err
+}
+
+// authorizeRowManagement is the decision behind authorizeClaimedRowManagement
+// that also reports the verb that authorized the caller: "" for the admin API
+// key (unrestricted), auth.ActionUpdateAny when the update-any scope check
+// passed, auth.ActionUpdate when the session has no update-any or the creator
+// match won after an update-any scope denial. Resume bounds the row's amount
+// by that verb's cap.
+func (h *Handler) authorizeRowManagement(ctx context.Context, session *Session, execution *config.PurchaseExecution) (verb string, err error) {
 	if session.UserID == apiKeyAdminUserID {
-		return nil
+		return "", nil
+	}
+	if h.auth == nil {
+		return "", NewClientError(500, "authentication service not configured")
 	}
 	hasAny, err := h.sessionHoldsVerb(ctx, session, auth.ActionUpdateAny)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if hasAny {
-		return h.authorizeUpdateAnyOnRow(ctx, session, execution)
+		creatorFallback, anyErr := h.authorizeUpdateAnyOnRow(ctx, session, execution)
+		if anyErr != nil {
+			return "", anyErr
+		}
+		if creatorFallback {
+			return auth.ActionUpdate, nil
+		}
+		return auth.ActionUpdateAny, nil
 	}
 	if !isExecutionCreator(session, execution) {
-		return NewClientError(403, "permission denied: cannot manage another user's scheduled purchase")
+		return "", NewClientError(403, "permission denied: cannot manage another user's scheduled purchase")
 	}
-	return nil
+	return auth.ActionUpdate, nil
 }
 
 // isExecutionCreator requires both IDs to be non-empty and equal, so an
@@ -317,22 +339,36 @@ func (h *Handler) resumePlannedPurchase(ctx context.Context, req *events.LambdaF
 	if err != nil {
 		return nil, err
 	}
-	if err := h.requireExecutionAccess(ctx, session, executionID); err != nil {
+	if accessErr := h.requireExecutionAccess(ctx, session, executionID); accessErr != nil {
+		return nil, accessErr
+	}
+	row, err := h.loadPlannedExecution(ctx, executionID)
+	if err != nil {
 		return nil, err
 	}
-	if err := h.authorizeBoundedExecutionManagement(ctx, session, executionID); err != nil {
+	verb, err := h.authorizeRowManagement(ctx, session, row)
+	if err != nil {
 		return nil, err
 	}
 
 	// A recommendation-bearing row that is past its date is moved to
 	// now + NotificationDaysBefore on resume; a plan without a veto window
 	// would move it to "now", so refuse before changing anything.
-	if checkErr := h.requireResumeVetoWindow(ctx, executionID, time.Now()); checkErr != nil {
+	if checkErr := h.requireResumeVetoWindow(ctx, row, time.Now()); checkErr != nil {
 		return nil, checkErr
 	}
 
-	// Atomically transition from paused back to pending
-	resumed, transitionErr := h.config.TransitionExecutionStatus(ctx, executionID, []string{"paused"}, "pending", resolveCreatorUserID(session))
+	// Resuming puts the row back on schedule, so it counts against
+	// MaxPurchaseAmount like a spend (issue #1130).
+	if capErr := h.enforceResumeAmountCap(ctx, session, verb, row.Recommendations); capErr != nil {
+		return nil, capErr
+	}
+
+	// Atomically transition from paused back to pending. Pinned so a
+	// recommendation-set change (empty to non-empty) between the cap check
+	// and this write loses the CAS; it does not catch in-set content edits,
+	// which no writer performs.
+	resumed, transitionErr := h.config.TransitionExecutionStatusPinned(ctx, executionID, []string{"paused"}, "pending", resolveCreatorUserID(session), len(row.Recommendations) == 0)
 	if transitionErr != nil {
 		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be resumed: %v", executionID, transitionErr))
 	}
@@ -343,25 +379,39 @@ func (h *Handler) resumePlannedPurchase(ctx context.Context, req *events.LambdaF
 	return &StatusResponse{Status: "resumed"}, nil
 }
 
+// enforceResumeAmountCap bounds the row's total commitment by the cap of the
+// verb that authorized the resume (issue #1130). An update-any holder is
+// checked on update-any's full scope and amount, as approve-any is. A creator
+// (or any update holder) is checked on amount and currency only, with no new
+// scope matching on update:purchases. The admin API key (empty verb) and a
+// row without recommendations skip the check (recommendations attach later
+// only to pending/notified rows and the scheduler re-checks the plan cap).
+func (h *Handler) enforceResumeAmountCap(ctx context.Context, session *Session, verb string, recs []config.RecommendationRecord) error {
+	if verb == "" || len(recs) == 0 {
+		return nil
+	}
+	if verb == auth.ActionUpdateAny {
+		return h.enforcePurchaseConstraints(ctx, session, verb, recs)
+	}
+	total := purchaseConstraintSets(recs)[0].MaxPurchaseAmount
+	return h.enforcePurchaseConstraintSets(ctx, session, verb, recs, []auth.PermissionConstraints{{MaxPurchaseAmount: total}})
+}
+
 // requireResumeVetoWindow refuses to resume a recommendation-bearing row whose
 // scheduled_date has passed when its plan has no veto window (S13).
-func (h *Handler) requireResumeVetoWindow(ctx context.Context, executionID string, now time.Time) error {
-	row, err := h.config.GetExecutionByID(ctx, executionID)
-	if err != nil {
-		return fmt.Errorf("failed to read execution %s before resume: %w", executionID, err)
-	}
+func (h *Handler) requireResumeVetoWindow(ctx context.Context, row *config.PurchaseExecution, now time.Time) error {
 	if len(row.Recommendations) == 0 || !row.ScheduledDate.Before(now) {
 		return nil
 	}
 	plan, err := h.config.GetPurchasePlan(ctx, row.PlanID)
 	if err != nil {
-		return fmt.Errorf("failed to read plan %s before resuming execution %s: %w", row.PlanID, executionID, err)
+		return fmt.Errorf("failed to read plan %s before resuming execution %s: %w", row.PlanID, row.ExecutionID, err)
 	}
 	if plan.RampSchedule.DatesManaged {
 		return editorReconciliationError()
 	}
 	if vetoErr := plan.RequireVetoWindow(); vetoErr != nil {
-		return NewClientError(409, fmt.Sprintf("execution %s cannot be resumed: %v", executionID, vetoErr))
+		return NewClientError(409, fmt.Sprintf("execution %s cannot be resumed: %v", row.ExecutionID, vetoErr))
 	}
 	return nil
 }
@@ -3262,14 +3312,21 @@ func parseExecutePurchaseBody(body string) (ExecutePurchaseRequest, error) {
 // USD, so a batch with any rec not provably priced in USD is checked by
 // requireUncappedPurchaseGrant instead of by its raw amount (issue #361).
 func (h *Handler) enforcePurchaseConstraints(ctx context.Context, session *Session, action string, recs []config.RecommendationRecord) error {
-	constraintSets := purchaseConstraintSets(recs)
-	if err := requireNonZeroCommitment(constraintSets); err != nil {
+	return h.enforcePurchaseConstraintSets(ctx, session, action, recs, purchaseConstraintSets(recs))
+}
+
+// enforcePurchaseConstraintSets is enforcePurchaseConstraints for a caller-
+// chosen constraint set list: the zero-commitment guard, the USD rule for
+// non-USD recs, then the permission check. sets must come from recs
+// (purchaseConstraintSets) or carry the same total in MaxPurchaseAmount.
+func (h *Handler) enforcePurchaseConstraintSets(ctx context.Context, session *Session, action string, recs []config.RecommendationRecord, sets []auth.PermissionConstraints) error {
+	if err := requireNonZeroCommitment(sets); err != nil {
 		return err
 	}
 	if currency := nonUSDPurchaseCurrency(recs); currency != "" {
-		return h.requireUncappedPurchaseGrant(ctx, session, action, constraintSets, currency)
+		return h.requireUncappedPurchaseGrant(ctx, session, action, sets, currency)
 	}
-	return h.requirePermissionConstraints(ctx, session, action, "purchases", constraintSets)
+	return h.requirePermissionConstraints(ctx, session, action, "purchases", sets)
 }
 
 // purchaseConstraintSets builds one auth.PermissionConstraints per

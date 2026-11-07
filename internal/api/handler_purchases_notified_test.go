@@ -43,7 +43,7 @@ func TestPausePlannedPurchase_AcceptsNotifiedRow(t *testing.T) {
 
 func TestResumePlannedPurchase_PastScheduledDate(t *testing.T) {
 	ctx := context.Background()
-	recs := []config.RecommendationRecord{{ID: "rec-1", Count: 1}}
+	recs := []config.RecommendationRecord{{ID: "rec-1", Count: 1, UpfrontCost: 100, CommitmentCurrency: "USD"}}
 	cases := []struct {
 		name      string
 		recs      []config.RecommendationRecord
@@ -101,7 +101,7 @@ func TestCancelOrRecoverExecution_ReleasesSuppressionsOfNotifiedRow(t *testing.T
 // recommendation-bearing row moved to "now"; nothing is changed.
 func TestResumePlannedPurchase_RefusesWithoutVetoWindow(t *testing.T) {
 	ctx := context.Background()
-	recs := []config.RecommendationRecord{{ID: "rec-1", Count: 1}}
+	recs := []config.RecommendationRecord{{ID: "rec-1", Count: 1, UpfrontCost: 100, CommitmentCurrency: "USD"}}
 	for _, tc := range []struct {
 		name    string
 		recs    []config.RecommendationRecord
