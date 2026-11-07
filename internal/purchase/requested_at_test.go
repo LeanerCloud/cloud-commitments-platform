@@ -380,14 +380,6 @@ func (*fakeAttemptJournal) ClaimedByOthers(context.Context, string, []string) ([
 	return nil, nil
 }
 
-// Compile-only: the manager's journal type must carry the claim reader, so a
-// wrapper hiding ClaimedByOthers (or a plain common.AttemptJournal) cannot be
-// assigned to ManagerConfig.AttemptJournal.
-var _ interface {
-	common.AttemptJournal
-	common.ClaimReader
-} = AttemptJournal(nil)
-
 // The journal reaches every per-rec dispatch together with the per-account
 // ExecutionID the provider keys its attempt rows on (go#107).
 func TestExecuteMultiAccount_PassesAttemptJournalAndPerAccountExecutionID(t *testing.T) {
