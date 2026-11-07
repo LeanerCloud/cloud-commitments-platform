@@ -18,13 +18,15 @@ async function fixture(page: Page): Promise<{ posts: string[] }> {
   await page.route(/\/api\/ri-exchange\/(approve|reject)\//, async route => {
     if (route.request().method() !== 'POST') return route.fulfill({ status: 405, json: { error: 'method not allowed' } });
     posts.push(route.request().url());
-    return route.fulfill({ json: { status: 'ok' } });
+    // The real bodies: approve executes then reports, reject cancels.
+    const approve = route.request().url().includes('/approve/');
+    return route.fulfill({ json: approve ? { status: 'completed', exchange_id: 'exch-1' } : { status: 'canceled' } });
   });
   return { posts };
 }
 
 for (const [action, label, toast] of [
-  ['approve', 'Approve exchange', 'RI exchange approved and executing.'],
+  ['approve', 'Approve exchange', 'RI exchange approved and executed.'],
   ['reject', 'Reject exchange', 'RI exchange rejected.'],
 ] as const) {
   test(`${action} link: confirm first, then POST the token and land on the RI Exchange tab`, async ({ page }) => {

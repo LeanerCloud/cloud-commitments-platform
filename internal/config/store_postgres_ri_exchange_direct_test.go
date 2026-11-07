@@ -41,6 +41,7 @@ func TestPGXMock_SaveRIExchangeDirectExecution_InsertsSubmittedRow(t *testing.T)
 	store := storeWith(mock)
 	rec := validDirectExecution()
 
+	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO ri_exchange_direct_executions").
 		WithArgs(
 			directExecTestID, "azure", rec.CloudAccountID, rec.ProviderAccountID, rec.Region,
@@ -50,6 +51,30 @@ func TestPGXMock_SaveRIExchangeDirectExecution_InsertsSubmittedRow(t *testing.T)
 			rec.ExecutedByUserID, "alice@example.com", rec.ExecutedByAPIKeyID,
 		).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	require.NoError(t, store.SaveRIExchangeDirectExecution(context.Background(), rec))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// An AWS save takes the shared lock, runs both source-RI guards, then inserts.
+func TestPGXMock_SaveRIExchangeDirectExecution_AWSLocksAndGuardsBeforeInsert(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	rec := validDirectExecution()
+	rec.Provider = "aws"
+	rec.SourceIDs = []string{" RI-1 "}
+
+	mock.ExpectBegin()
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectQuery("SELECT id::text, ARRAY").WithArgs([]string{"RI-1", "ri-1"}, (*string)(nil)).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
+	mock.ExpectQuery("FROM ri_exchange_direct_executions").WithArgs([]string{"ri-1"}).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
+	mock.ExpectExec("INSERT INTO ri_exchange_direct_executions").WithArgs(anyArgsCfg(15)...).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
 
 	require.NoError(t, store.SaveRIExchangeDirectExecution(context.Background(), rec))
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -86,9 +111,11 @@ func TestPGXMock_SaveRIExchangeDirectExecution_RejectsInvalidRecord(t *testing.T
 func TestPGXMock_SaveRIExchangeDirectExecution_DBErrorSurfaces(t *testing.T) {
 	mock := newMock(t)
 	store := storeWith(mock)
+	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO ri_exchange_direct_executions").
 		WithArgs(anyArgsCfg(15)...).
 		WillReturnError(errors.New("connection refused"))
+	mock.ExpectRollback()
 
 	err := store.SaveRIExchangeDirectExecution(context.Background(), validDirectExecution())
 	require.Error(t, err)

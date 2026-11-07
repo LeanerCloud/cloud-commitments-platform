@@ -265,3 +265,13 @@ func TestSanitizeStoredError_SlotsRejectWhitespaceAndControls(t *testing.T) {
 		assert.Equal(t, in, SanitizeStoredError(in), in)
 	}
 }
+
+// The direct-execute source guard's refusal (config.refuseRIExchangeSourceInFlightDirect)
+// is stored whole in ri_exchange_history.error and must read back verbatim; any
+// extra suffix falls back to the generic message.
+func TestSanitizeStoredError_DirectExecuteGuardRefusal(t *testing.T) {
+	note := "RI exchange source RI is held by an exchange in progress: source RI(s) ri-0abc, ri-0def are held by a direct exchange that may have reached AWS; an operator must verify the outcome at AWS and settle the record"
+	assert.Equal(t, note, SanitizeStoredError(note))
+	assert.NotEqual(t, note+": secret detail", SanitizeStoredError(note+": secret detail"))
+	assert.NotEqual(t, note+"\nx", SanitizeStoredError(note+"\nx"))
+}

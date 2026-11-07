@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 	azurecompute "github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -234,8 +235,9 @@ func TestExecuteExchange_AuditInsertFailureRefusesExchange(t *testing.T) {
 }
 
 // TestExecuteExchange_FailureOutcomeClassification: a provider client fault
-// proves the exchange did not happen (failed); any other error does not, so
-// the trail must not claim it failed (unknown).
+// proves the exchange did not happen (failed), and so does any error from
+// before the accept; only an error the library marks ErrOutcomeUnknown may
+// have committed (unknown).
 func TestExecuteExchange_FailureOutcomeClassification(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -250,16 +252,36 @@ func TestExecuteExchange_FailureOutcomeClassification(t *testing.T) {
 			wantStatus: config.RIExchangeDirectStatusFailed,
 		},
 		{
-			name:       "transport failure",
-			err:        errors.New("AcceptReservedInstancesExchangeQuote: context deadline exceeded"),
+			name:       "transport failure wrapped as the library does",
+			err:        fmt.Errorf("%w: the accept may have been processed: %w", common.ErrOutcomeUnknown, errors.New("AcceptReservedInstancesExchangeQuote: context deadline exceeded")),
 			wantStatus: config.RIExchangeDirectStatusUnknown,
+		},
+		{
+			name:       "unwrapped pre-accept error did not reach the accept",
+			err:        errors.New("GetReservedInstancesExchangeQuote: context deadline exceeded"),
+			wantStatus: config.RIExchangeDirectStatusFailed,
 		},
 		{
 			name:       "guardrail refusal keeps the quoted amount",
 			err:        errors.New("payment due 900 exceeds max 500"),
 			quote:      &exchange.ExchangeQuoteSummary{PaymentDueRaw: "900.000000", CurrencyCode: "USD"},
-			wantStatus: config.RIExchangeDirectStatusUnknown,
+			wantStatus: config.RIExchangeDirectStatusFailed,
 			wantPay:    toPtr("900"),
+		},
+		{
+			name:       "re-quote over the cap",
+			err:        errors.New("re-quoted payment due 1200 exceeds cap 1000"),
+			wantStatus: config.RIExchangeDirectStatusFailed,
+		},
+		{
+			name:       "invalid exchange quote",
+			err:        errors.New("exchange is not valid: target offering unavailable"),
+			wantStatus: config.RIExchangeDirectStatusFailed,
+		},
+		{
+			name:       "throttled accept is a definite reject",
+			err:        &smithy.GenericAPIError{Code: "RequestLimitExceeded", Message: "throttled", Fault: smithy.FaultServer},
+			wantStatus: config.RIExchangeDirectStatusFailed,
 		},
 	}
 	for _, tt := range tests {
@@ -532,4 +554,16 @@ func TestAWSDirectExchangeAudit_LegacySingletonTarget(t *testing.T) {
 	assert.Equal(t, []ExchangeTargetBody{{OfferingID: auditOfferingA, Count: 3}}, targets)
 	assert.Equal(t, "250", audit.MaxPaymentDue)
 	require.NoError(t, audit.Validate())
+}
+
+// TestAWSDirectFailureStatus pins the dependency on the library's
+// classifyAcceptError wrapping: a wrapped ErrOutcomeUnknown, however nested,
+// is unknown; a plain error is failed. If the library stops wrapping, the
+// in-flight guard silently stops protecting, and this is where it shows.
+func TestAWSDirectFailureStatus(t *testing.T) {
+	wrapped := fmt.Errorf("%w: the accept may have been processed: %w", common.ErrOutcomeUnknown, errors.New("send request failed"))
+	assert.Equal(t, config.RIExchangeDirectStatusUnknown, awsDirectFailureStatus(wrapped))
+	assert.Equal(t, config.RIExchangeDirectStatusUnknown, awsDirectFailureStatus(fmt.Errorf("outer: %w", wrapped)))
+	assert.Equal(t, config.RIExchangeDirectStatusFailed, awsDirectFailureStatus(errors.New("send request failed")))
+	assert.Equal(t, config.RIExchangeDirectStatusFailed, awsDirectFailureStatus(&smithy.GenericAPIError{Code: "InternalError", Fault: smithy.FaultServer}))
 }

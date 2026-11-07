@@ -137,6 +137,28 @@ as an explicitly consented step (the `az role assignment create` mirror of
 step 1) and must not be reintroduced into the template.
 `scripts/check-azure-role-parity.sh` fails CI if it is.
 
+### Direct RI exchange spend is outside the daily cap (issue #1829)
+
+By design (migration 000131's header), a direct execute is bounded only by its
+own `max_payment_due`; it is not counted in the daily or per-exchange cap that
+AUTO and approved exchanges share, so repeated direct executes can spend past it.
+The in-flight source-RI guard only stops two exchanges taking the same RI; it does
+not cap total spend.
+
+### No operator resolve endpoint for direct RI exchange rows (issue #1829 follow-up)
+
+A direct row left `submitted` or `unknown` keeps its source RIs blocked until a DBA
+settles it with the SQL in `runbooks/ri-exchange-direct-execution-settle.md`. A
+resolve endpoint (and a list of unresolved direct rows) is tracked in #1836.
+
+### RI id matching is exact for stored history rows (issue #1829)
+
+The direct-execute guard normalises (lower, trim) its input and the stored direct
+ids, but the history guard compares `source_ri_ids` exactly. A history row whose
+stored id is not lowercase matches only identically spelled input. History ids
+come from AWS describe calls, which return lowercase RI ids, so this does not occur
+in practice; closing it means normalising both sides inside the history guard.
+
 ## Resolved
 
 ### Azure
