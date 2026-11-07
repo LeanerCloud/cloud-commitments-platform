@@ -1,6 +1,7 @@
 package purchase
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,6 +29,9 @@ func TestSanitizeStoredError_RIExchangeNotesPassVerbatim(t *testing.T) {
 	for _, reason := range reasons {
 		notes = append(notes, riExchangeOutcomeUnknownHead+reason+riExchangeOutcomeUnknownTail)
 	}
+	// The resolve route accepts an upper-case id, so the note may carry one.
+	notes = append(notes, riExchangeOutcomeUnknownHead+outcomeUnconfirmedMessage+riExchangeOutcomeUnknownTail[:len(riExchangeOutcomeUnknownTail)-36]+strings.ToUpper(riExchangeOutcomeUnknownTail[len(riExchangeOutcomeUnknownTail)-36:]))
+	notes = append(notes, sourceInFlightNote(strings.Repeat("a", 64)))
 	for _, note := range notes {
 		assert.Equal(t, note, SanitizeStoredError(note))
 	}
@@ -42,9 +46,19 @@ func TestSanitizeStoredError_RIExchangeNotesStayClosed(t *testing.T) {
 		riExchangeOutcomeUnknownHead + ErrCategoryMessage(ErrCategoryUnknown) + "; verify the source RIs and target reservation at AWS, then POST /api/ri-exchange/resolve/" + leak,
 		// RI ids carrying text the guard never writes.
 		"RI exchange source RI is held by an exchange in progress: source RI(s) ri-1 " + leak + " already have an exchange in progress; resolve that exchange first",
+		// Text ahead of either note (the patterns are anchored at the head).
+		leak + " " + riExchangeSourceInFlightNote,
+		leak + ": " + riExchangeOutcomeUnknownHead + outcomeUnconfirmedMessage + riExchangeOutcomeUnknownTail,
+		// An RI id past 64 characters, and an empty RI list.
+		sourceInFlightNote(strings.Repeat("a", 65)),
+		sourceInFlightNote(""),
 	} {
 		out := SanitizeStoredError(in)
 		assert.NotEqual(t, in, out, in)
 		assert.NotContains(t, out, leak)
 	}
+}
+
+func sourceInFlightNote(ids string) string {
+	return "RI exchange source RI is held by an exchange in progress: source RI(s) " + ids + " already have an exchange in progress; resolve that exchange first"
 }

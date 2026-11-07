@@ -73,7 +73,7 @@ var bareNotePatterns = []string{
 	`RI exchange source RI is held by an exchange in progress: source RI\(s\) ` + riIDListPattern + ` already have an exchange in progress; resolve that exchange first`,
 	// The outcome-unknown note (api leaveExchangeOutcomeUnknown): fixed text, the
 	// sanitized SummarizeFailure reason and the exchange id to resolve (#1050).
-	`outcome unknown: (?:` + joinAlt(append(categoryNotePatterns(), regexp.QuoteMeta(outcomeUnconfirmedMessage))) + `); verify the source RIs and target reservation at AWS, then POST /api/ri-exchange/resolve/` + uuidPattern,
+	`outcome unknown: (?:` + joinAlt(append(categoryNotePatterns(), regexp.QuoteMeta(outcomeUnconfirmedMessage))) + `); verify the source RIs and target reservation at AWS, then POST /api/ri-exchange/resolve/(?i:` + uuidPattern + `)`,
 }
 
 // categoryNotePatterns matches a collection failure stored as "<provider>:
