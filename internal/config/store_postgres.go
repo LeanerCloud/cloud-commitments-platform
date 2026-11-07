@@ -3525,13 +3525,22 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 // initial quote does not fit the remaining daily or per-exchange headroom.
 var ErrRIExchangeDailyCapExceeded = errors.New("RI exchange daily cap exceeded")
 
+// lockRIExchangeSpend takes the transaction-scoped advisory lock every RI
+// exchange reservation and direct-execute save serialises on.
+func lockRIExchangeSpend(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", riExchangeDailySpendLockKey); err != nil {
+		return fmt.Errorf("failed to lock RI exchange daily spend: %w", err)
+	}
+	return nil
+}
+
 // reserveRIExchangeCeiling takes the global daily-spend lock (held until tx ends)
 // and returns min(perExchangeCap, dailyCap - spend) as the execution ceiling,
 // refusing when the initial quote does not fit. excludeID leaves one row's own
 // amount out of spend so an approval does not count itself twice.
 func reserveRIExchangeCeiling(ctx context.Context, tx pgx.Tx, excludeID *string, initialText string, initial, dailyCap, perCap *big.Int, dailyCapUSD string) (string, error) {
-	if _, lockErr := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", riExchangeDailySpendLockKey); lockErr != nil {
-		return "", fmt.Errorf("failed to lock RI exchange daily spend: %w", lockErr)
+	if lockErr := lockRIExchangeSpend(ctx, tx); lockErr != nil {
+		return "", lockErr
 	}
 	var spendText string
 	if scanErr := tx.QueryRow(ctx, riExchangeDailySpendQuery, time.Now().UTC(), excludeID).Scan(&spendText); scanErr != nil {
