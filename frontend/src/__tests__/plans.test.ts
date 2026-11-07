@@ -1742,6 +1742,137 @@ describe('Plans Module', () => {
       expect(api.setPlanAccounts).not.toHaveBeenCalled();
     });
 
+    // A plan create is sent once (issue #1734): Save is guarded while the
+    // request is in flight, and a duplicate-name 409 offers the existing plan.
+    describe('in-flight guard and duplicate name (#1734)', () => {
+      const rec: api.Recommendation = {
+        id: 'rec-1734', provider: 'aws', service: 'ec2', region: 'us-east-1',
+        resource_type: 't3.medium', count: 1, term: 1, payment: 'partial-upfront',
+        upfront_cost: 100, monthly_cost: 20, savings: 15, selected: true,
+        purchased: false, cloud_account_id: 'acct-1734',
+      };
+      const account = { id: 'acct-1734', name: 'Prod AWS', external_id: '123456789012', provider: 'aws' };
+      const settlers: Array<() => void> = [];
+      const flush = async (): Promise<void> => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+      const saveButton = (): HTMLButtonElement => document.querySelector('#plan-form button[type="submit"]') as HTMLButtonElement;
+      const submit = (): Promise<void> => savePlan({ preventDefault: jest.fn() } as unknown as Event);
+      // pendingCreate makes createPlan hang until release() or fail() runs;
+      // afterEach settles whatever a test left pending so the module-level
+      // in-flight flag never leaks into the next test.
+      const pendingCreate = (): { release: () => void; fail: (err: Error) => void } => {
+        let release!: () => void;
+        let fail!: (err: Error) => void;
+        (api.createPlan as jest.Mock).mockReturnValueOnce(new Promise((resolve, reject) => {
+          release = () => resolve({});
+          fail = reject;
+        }));
+        settlers.push(() => release());
+        return { release, fail };
+      };
+
+      beforeEach(async () => {
+        (api.listAccountsMinimal as jest.Mock).mockResolvedValueOnce([account]);
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        openCreatePlanModal([rec]);
+        await flush();
+        (document.getElementById('plan-name') as HTMLInputElement).value = 'Weekly EC2';
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '80';
+        (document.getElementById('plan-notify-days') as HTMLInputElement).value = '3';
+        expect(saveButton().disabled).toBe(false);
+      });
+
+      afterEach(async () => {
+        settlers.splice(0).forEach((settle) => settle());
+        await flush();
+      });
+
+      test('a double submit sends one create and disables Save until it settles', async () => {
+        const { release } = pendingCreate();
+        const first = submit();
+        await submit();
+
+        expect(api.createPlan).toHaveBeenCalledTimes(1);
+        expect(saveButton().disabled).toBe(true);
+        expect(saveButton().title).toBe('Saving…');
+
+        release();
+        await first;
+        expect(saveButton().disabled).toBe(false);
+      });
+
+      test('Save is enabled again after a failed create', async () => {
+        const { fail } = pendingCreate();
+        const first = submit();
+        expect(saveButton().disabled).toBe(true);
+
+        fail(new Error('boom'));
+        await first;
+        expect(saveButton().disabled).toBe(false);
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+      });
+
+      test('adding an account while the create is pending leaves Save disabled', async () => {
+        const { release } = pendingCreate();
+        const first = submit();
+
+        (api.listAccountsMinimal as jest.Mock).mockResolvedValueOnce([{ ...account, id: 'acct-other' }]);
+        openCreatePlanModal([{ ...rec, cloud_account_id: 'acct-other' }]);
+        await flush();
+        expect((document.getElementById('plan-account-ids') as HTMLInputElement).value).toBe('acct-other');
+        expect(saveButton().disabled).toBe(true);
+
+        release();
+        await first;
+      });
+
+      test('Save stays disabled after the create when no account is left', async () => {
+        const { release } = pendingCreate();
+        const first = submit();
+
+        (document.querySelector('.account-chip-remove') as HTMLButtonElement).click();
+        release();
+        await first;
+        expect(saveButton().disabled).toBe(true);
+      });
+
+      test('a plan_name_taken 409 offers the existing plan and opening it drops the selection snapshot', async () => {
+        const { fail } = pendingCreate();
+        const first = submit();
+        fail(Object.assign(new Error('a plan named "weekly ec2" already exists; open it or choose another name'), {
+          status: 409,
+          details: { code: 'plan_name_taken', existing_plan_id: 'plan-existing' },
+        }));
+        await first;
+
+        const toast = mockShowToast.mock.calls.map((c) => c[0] as { message: string; actions?: Array<{ label: string; onClick: () => void }> })
+          .find((t) => t.actions !== undefined);
+        expect(toast?.message).toContain('already exists');
+        expect(toast?.actions?.map((a) => a.label)).toEqual(['Open existing plan']);
+        expect((api.createPlan as jest.Mock).mock.calls[0][0]).toHaveProperty('recommendations');
+
+        (api.getPlan as jest.Mock).mockRejectedValueOnce(new Error('gone'));
+        toast?.actions?.[0]?.onClick();
+        await flush();
+
+        expect(api.getPlan).toHaveBeenCalledWith('plan-existing');
+        expect(document.getElementById('plan-modal')?.classList.contains('hidden')).toBe(true);
+        // The modal closed first, so the next create does not inherit the
+        // Plan-from-selection snapshot.
+        (api.createPlan as jest.Mock).mockResolvedValueOnce({});
+        await submit();
+        expect((api.createPlan as jest.Mock).mock.calls[1][0]).not.toHaveProperty('recommendations');
+      });
+
+      test('other errors get no open-existing action', async () => {
+        const { fail } = pendingCreate();
+        const first = submit();
+        fail(Object.assign(new Error('conflict'), { status: 409, details: { code: 'editor_reconciliation_required' } }));
+        await first;
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error', actions: undefined }));
+      });
+    });
+
     // -------------------------------------------------------------------------
     // Regression tests for finding 11-M1: plan numeric fields must be validated
     // with Number.isInteger(Number(raw)) before being sent to the API.

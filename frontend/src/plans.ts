@@ -12,6 +12,7 @@ import { confirmDialog } from './confirmDialog';
 import type { PlansResponse, LocalPlan, SavePlanData } from './types';
 import { viewPlanHistory } from './history';
 import type { PlannedPurchase } from './api';
+import type { ApiError } from './api/types';
 import { populateTermSelect, populatePaymentSelect, isValidCombination, normalizePaymentValue } from './commitmentOptions';
 import { openModal, closeModal, modalCloseButtonHtml } from './modal';
 import { showSkeletonTiles, showSkeletonRows, teardownSkeleton } from './lib/skeleton';
@@ -1197,11 +1198,26 @@ async function deletePlanAction(planId: string): Promise<void> {
   }
 }
 
+// savingPlan is true while a save request is in flight. refreshPlanSaveButtonState
+// reads it so the account gate stays the single owner of the Save button.
+let savingPlan = false;
+
+// duplicatePlanId returns the id of the plan that blocked a create, from the
+// backend's plan_name_taken 409, or null for any other error.
+function duplicatePlanId(error: unknown): string | null {
+  const apiError = error as ApiError;
+  if (apiError.status !== 409 || apiError.details?.['code'] !== 'plan_name_taken') return null;
+  const id = apiError.details?.['existing_plan_id'];
+  return typeof id === 'string' && id !== '' ? id : null;
+}
+
 /**
  * Save plan (create or update)
  */
 export async function savePlan(e: Event): Promise<void> {
   e.preventDefault();
+  // A double click or Enter+click must not send a second create (issue #1734).
+  if (savingPlan) return;
 
   const planId = (document.getElementById('plan-id') as HTMLInputElement).value;
   const rampScheduleRadio = document.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked');
@@ -1293,6 +1309,8 @@ export async function savePlan(e: Event): Promise<void> {
   }
   plan.target_accounts = accountIds;
 
+  savingPlan = true;
+  refreshPlanSaveButtonState();
   try {
     if (planId) {
       await api.updatePlan(planId, plan as unknown as api.CreatePlanRequest);
@@ -1311,7 +1329,20 @@ export async function savePlan(e: Event): Promise<void> {
   } catch (error) {
     console.error('Failed to save plan:', error);
     const err = error as Error;
-    showToast({ message: `Failed to save plan: ${err.message}`, kind: 'error' });
+    const existingId = duplicatePlanId(error);
+    showToast({
+      message: `Failed to save plan: ${err.message}`,
+      kind: 'error',
+      actions: existingId === null ? undefined : [{
+        label: 'Open existing plan',
+        // Close first: it clears the Plan-from-selection snapshot, so the
+        // existing plan's editor does not inherit this form's target.
+        onClick: () => { closePlanModal(); void editPlan(existingId); },
+      }],
+    });
+  } finally {
+    savingPlan = false;
+    refreshPlanSaveButtonState();
   }
 }
 
@@ -1326,8 +1357,8 @@ function refreshPlanSaveButtonState(): void {
   const submitBtn = Array.from(form.elements).find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement && element.type === 'submit');
   if (!submitBtn) return;
   const hasAccounts = planSelectedAccounts.length > 0;
-  submitBtn.disabled = !hasAccounts;
-  submitBtn.title = hasAccounts ? '' : 'Select at least one Target Account to save the plan';
+  submitBtn.disabled = !hasAccounts || savingPlan;
+  submitBtn.title = savingPlan ? 'Saving…' : hasAccounts ? '' : 'Select at least one Target Account to save the plan';
 }
 
 /**
