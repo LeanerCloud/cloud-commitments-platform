@@ -426,7 +426,7 @@ func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExec
 // All refusals except the armed re-drive and missing-journal ones are
 // beforeSubmission errors, so the row ends failed with no_submission stamped.
 func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
-	if err := armedRedriveRefusal(exec); err != nil {
+	if err := m.armedRedriveRefusal(ctx, exec); err != nil {
 		return err
 	}
 	if refusal := m.staleAzurePricingRefusal(ctx, exec); refusal != nil {
@@ -582,7 +582,7 @@ func allRecsSafeToRedrive(exec *config.PurchaseExecution) bool {
 // so an armed row is DEFUSED and visible in History instead of remaining armed
 // for the next sweep. Retrying it from the UI then hits the #1668 gate, which
 // refuses, so it cannot be re-armed either.
-func armedRedriveRefusal(exec *config.PurchaseExecution) error {
+func (m *Manager) armedRedriveRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
 	if exec.RetryAttemptN <= 0 {
 		return nil
 	}
@@ -590,8 +590,26 @@ func armedRedriveRefusal(exec *config.PurchaseExecution) error {
 	if reason == "" {
 		return nil
 	}
+	// Only a first retry can follow a proven-unsent first attempt (D1: no chain
+	// walk), so deeper attempts skip the lookup and keep the refusal.
+	proven := false
+	if exec.RetryAttemptN == 1 {
+		var err error
+		proven, err = m.config.PredecessorProvenUnsent(ctx, exec.ExecutionID)
+		if err != nil {
+			logging.Errorf("predecessor proof lookup failed for execution %s: %v", exec.ExecutionID, err)
+			return errors.New(armedRedriveLookupRefusal)
+		}
+	}
+	if reason = retryRefusalReason(exec, proven); reason == "" {
+		return nil
+	}
 	return fmt.Errorf("refusing to execute retry attempt %d: %s", exec.RetryAttemptN, reason)
 }
+
+// armedRedriveLookupRefusal is fixed text (no wrapped DB error) so the stored
+// error stays on the errnotes allowlist.
+const armedRedriveLookupRefusal = "refusing to execute retry: could not confirm that the earlier attempt sent nothing; start a new purchase instead of retrying"
 
 // RedriveRefusalReason returns a short operator-facing reason why exec must not
 // be re-driven, or "" when every recommendation on it carries a provider-side
