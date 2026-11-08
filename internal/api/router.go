@@ -336,6 +336,9 @@ func (r *Router) registerRoutes() {
 		{PathPrefix: "/api/ri-exchange/resolve/", Method: "POST", Handler: r.resolveRIExchangeHandler, Auth: AuthUser},
 		// Operator list of AWS direct-execute rows that still hold their source RIs (#1836).
 		{ExactPath: "/api/ri-exchange/direct-executions", Method: "GET", Handler: r.listRIExchangeDirectExecutionsHandler, Auth: AuthUser},
+		// Operator resolve of one such row. AuthUser, so the outer middleware
+		// enforces the session and CSRF.
+		{PathPrefix: "/api/ri-exchange/direct-executions/", PathSuffix: "/resolve", Method: "POST", Handler: r.resolveRIExchangeDirectExecutionHandler, Auth: AuthUser},
 
 		// Commitment Laddering endpoints (flag-gated default-off, issue #1336).
 		// GET returns all per-account ladder configs; PUT inserts or updates one.
@@ -929,6 +932,10 @@ func (r *Router) rejectRIExchangeHandler(ctx context.Context, req *events.Lambda
 
 func (r *Router) listRIExchangeDirectExecutionsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, _ map[string]string) (any, error) {
 	return r.h.listRIExchangeDirectExecutions(ctx, req)
+}
+
+func (r *Router) resolveRIExchangeDirectExecutionHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
+	return r.h.resolveRIExchangeDirectExecution(ctx, req, params["id"])
 }
 
 func (r *Router) resolveRIExchangeHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {

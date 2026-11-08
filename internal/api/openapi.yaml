@@ -3006,6 +3006,138 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /api/ri-exchange/direct-executions/{id}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/ResourceID'
+    post:
+      operationId: resolveRIExchangeDirectExecution
+      tags: [RIExchange]
+      summary: Record an operator's outcome for a stuck AWS direct RI exchange
+      description: >
+        Settles a row from `GET /api/ri-exchange/direct-executions` after the
+        operator checked AWS. The row keeps its original status and gains the
+        resolution, and its source RIs stop blocking later exchanges. `failed`
+        releases them and requires `acknowledge_unknown_outcome`. Requires
+        `execute:ri-exchange`, checked against the row's own account, region
+        and `max_payment_due` (not the deployment's), and a signed-in user or
+        user API key (the admin API key is refused). A `submitted` row is
+        refused until 10 minutes after it was created, and `checked_at` must
+        be at or after that time (for an `unknown` row, one minute after it
+        completed) and not in the future. `expected_status` must be the status
+        the row has now. A repeat of the same request returns the stored
+        result with `replayed: true`. A row outside the session's allowed
+        accounts reads as not found.
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [outcome, expected_status, reason, cloud_check]
+              properties:
+                outcome:
+                  type: string
+                  enum: [failed, completed]
+                expected_status:
+                  type: string
+                  enum: [submitted, unknown]
+                  description: The status the operator saw in the list.
+                reason:
+                  type: string
+                  minLength: 10
+                  maxLength: 300
+                  description: Free text, trimmed, without control characters.
+                acknowledge_unknown_outcome:
+                  type: boolean
+                  description: Must be true when outcome is failed.
+                cloud_check:
+                  type: object
+                  additionalProperties: false
+                  required: [checked_region, checked_at]
+                  description: Where and when the operator verified the exchange at AWS.
+                  properties:
+                    checked_region:
+                      type: string
+                      pattern: '^[a-z0-9-]{1,32}$'
+                      description: Must be the region of the exchange.
+                    checked_at:
+                      type: string
+                      format: date-time
+      responses:
+        '200':
+          description: Row resolved, or the same resolve replayed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, resolved_status, resolved_at, note, replayed]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [submitted, unknown, completed, failed]
+                    description: >
+                      The row's provider status, which resolving leaves
+                      unchanged. A late finalize may have set it to
+                      `completed` or `failed` since. `resolved_status` is the
+                      operator's resolution.
+                  resolved_status:
+                    type: string
+                    enum: [completed, failed]
+                  resolved_at:
+                    type: string
+                    format: date-time
+                  note:
+                    type: string
+                  replayed:
+                    type: boolean
+        '400':
+          description: >
+            Invalid id or body: body over 4096 bytes, unknown fields, a
+            missing or invalid field, a region other than the row's, or a
+            `checked_at` outside the allowed window.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            CSRF validation failed, the session lacks `execute:ri-exchange` or
+            fails its constraints for the row's account, region or amount, or
+            the caller is the admin API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such AWS direct row, or its account is outside the session's allowed accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            The row cannot be resolved this way: already resolved differently,
+            already settled, its status is not `expected_status`, or a
+            `submitted` row may still be in flight.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: RI exchange resolve storage is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /api/ri-exchange/resolve/{id}:
     parameters:
       - $ref: '#/components/parameters/ResourceID'
