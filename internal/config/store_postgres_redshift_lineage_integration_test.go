@@ -5,6 +5,7 @@ package config
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 const (
 	lineageTestHorizon = 24 * time.Hour
 	lineageTestWindow  = 10 * time.Minute
+	lineageTestSettle  = 10 * time.Minute
 )
 
 var lineageTuple = RedshiftTuple{Region: "us-east-1", NodeType: "ra3.xlplus", Term: 1, Payment: "all-upfront", Count: 2}
@@ -46,7 +48,7 @@ func findLineageConflicts(ctx context.Context, t *testing.T, store *PostgresStor
 	var got []RedshiftLineageConflict
 	require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		got, err = store.FindOpenRedshiftLineageConflictsTx(ctx, tx, self, family, []RedshiftTuple{lineageTuple}, nil, lineageTestHorizon, time.Now(), lineageTestWindow)
+		got, err = store.FindOpenRedshiftLineageConflictsTx(ctx, tx, self, family, []RedshiftTuple{lineageTuple}, nil, lineageTestHorizon, time.Now(), lineageTestWindow, lineageTestSettle)
 		return err
 	}))
 	return got
@@ -93,8 +95,17 @@ func TestFindOpenRedshiftLineageConflicts(t *testing.T) {
 	t.Run("same_family_non_running_excluded", func(t *testing.T) {
 		reset(t)
 		self := seedLineageRow(ctx, t, store, "fam-c", "running", recent)
-		for _, st := range []string{"failed", "pending", "approved"} {
+		for _, st := range []string{"pending", "approved", "scheduled"} {
 			seedLineageRow(ctx, t, store, "fam-c:"+st, st, recent)
+		}
+		// Old updated_at via a plain INSERT: the trigger overwrites it on UPDATE.
+		old := time.Now().Add(-lineageTestSettle - time.Minute)
+		for _, st := range []string{"failed", "completed"} {
+			_, err := store.db.Exec(ctx, `
+				INSERT INTO purchase_executions (status, step_number, scheduled_date, idempotency_key, first_dispatch_at, updated_at, recommendations)
+				VALUES ($1, 1, NOW(), $2, $3, $3, $4::jsonb)`, st, "fam-c:"+st, old,
+				`[{"provider":"aws","service":"redshift","region":"us-east-1","resource_type":"ra3.xlplus","term":1,"payment":"all-upfront","count":2,"selected":true}]`)
+			require.NoError(t, err)
 		}
 		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-c"))
 	})
@@ -159,7 +170,7 @@ func TestFindOpenRedshiftLineageConflicts(t *testing.T) {
 			var got []RedshiftLineageConflict
 			require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
 				var e error
-				got, e = store.FindOpenRedshiftLineageConflictsTx(ctx, tx, self.ExecutionID, "fam-k", []RedshiftTuple{tp}, nil, lineageTestHorizon, time.Now(), lineageTestWindow)
+				got, e = store.FindOpenRedshiftLineageConflictsTx(ctx, tx, self.ExecutionID, "fam-k", []RedshiftTuple{tp}, nil, lineageTestHorizon, time.Now(), lineageTestWindow, lineageTestSettle)
 				return e
 			}))
 			return got
@@ -180,7 +191,7 @@ func TestFindOpenRedshiftLineageConflicts(t *testing.T) {
 		var got []RedshiftLineageConflict
 		require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
 			var e error
-			got, e = store.FindOpenRedshiftLineageConflictsTx(ctx, tx, self, family, []RedshiftTuple{tp}, arg, lineageTestHorizon, time.Now(), lineageTestWindow)
+			got, e = store.FindOpenRedshiftLineageConflictsTx(ctx, tx, self, family, []RedshiftTuple{tp}, arg, lineageTestHorizon, time.Now(), lineageTestWindow, lineageTestSettle)
 			return e
 		}))
 		return got
@@ -313,7 +324,7 @@ func TestFindOpenRedshiftLineageConflicts(t *testing.T) {
 	t.Run("empty_family_is_rejected", func(t *testing.T) {
 		reset(t)
 		require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
-			_, err := store.FindOpenRedshiftLineageConflictsTx(ctx, tx, "x", "", []RedshiftTuple{lineageTuple}, nil, lineageTestHorizon, time.Now(), lineageTestWindow)
+			_, err := store.FindOpenRedshiftLineageConflictsTx(ctx, tx, "x", "", []RedshiftTuple{lineageTuple}, nil, lineageTestHorizon, time.Now(), lineageTestWindow, lineageTestSettle)
 			assert.Error(t, err)
 			return nil
 		}))
@@ -372,7 +383,7 @@ func TestFindOpenRedshiftLineageConflicts_AdoptionWindow(t *testing.T) {
 		var got []RedshiftLineageConflict
 		require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
 			var e error
-			got, e = store.FindOpenRedshiftLineageConflictsTx(ctx, tx, self, family, []RedshiftTuple{tp}, arg, lineageTestHorizon, stamp, lineageTestWindow)
+			got, e = store.FindOpenRedshiftLineageConflictsTx(ctx, tx, self, family, []RedshiftTuple{tp}, arg, lineageTestHorizon, stamp, lineageTestWindow, lineageTestSettle)
 			return e
 		}))
 		return got
@@ -416,8 +427,19 @@ func TestFindOpenRedshiftLineageConflicts_AdoptionWindow(t *testing.T) {
 	t.Run("same_family_completed_not_conflict", func(t *testing.T) {
 		reset(t)
 		self := seedLineageRow(ctx, t, store, "fam-w5", "running", recent)
-		other := seedLineageRow(ctx, t, store, "fam-w5:acct", "completed", recent)
-		assert.Empty(t, find(t, self.ExecutionID, "fam-w5", lineageTuple, nil, updatedAt(t, other.ExecutionID)))
+		old := time.Now().Add(-lineageTestSettle - time.Minute)
+		_, err := store.db.Exec(ctx, `
+			INSERT INTO purchase_executions (status, step_number, scheduled_date, idempotency_key, first_dispatch_at, updated_at, recommendations)
+			VALUES ('completed', 1, NOW(), 'fam-w5:acct', $1, $1, $2::jsonb)`, old,
+			`[{"provider":"aws","service":"redshift","region":"us-east-1","resource_type":"ra3.xlplus","term":1,"payment":"all-upfront","count":2,"selected":true}]`)
+		require.NoError(t, err)
+		assert.Empty(t, find(t, self.ExecutionID, "fam-w5", lineageTuple, nil, time.Now()))
+	})
+	t.Run("same_family_completed_inside_settle_conflicts", func(t *testing.T) {
+		reset(t)
+		self := seedLineageRow(ctx, t, store, "fam-w5b", "running", recent)
+		other := seedLineageRow(ctx, t, store, "fam-w5b:acct", "completed", recent)
+		assert.Equal(t, []string{other.ExecutionID}, conflictIDs(find(t, self.ExecutionID, "fam-w5b", lineageTuple, nil, updatedAt(t, other.ExecutionID))))
 	})
 	t.Run("different_count_passes", func(t *testing.T) {
 		reset(t)
@@ -475,5 +497,123 @@ func TestFindOpenRedshiftLineageConflicts_AdoptionWindow(t *testing.T) {
 			RETURNING execution_id::text`, stamp, stamp.Add(10*time.Minute),
 			`[{"provider":"aws","service":"redshift","region":"us-east-1","resource_type":"ra3.xlplus","term":1,"payment":"all-upfront","count":2,"selected":true}]`).Scan(&id))
 		assert.Equal(t, []string{id}, conflictIDs(find(t, self.ExecutionID, "fam-w10", lineageTuple, nil, stamp)))
+	})
+}
+
+func TestFindOpenRedshiftLineageConflicts_FailedRows(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+	recent, old := ptrDur(time.Hour), ptrDur(48*time.Hour)
+	// seedFailed seeds an other-family failed row and applies a column update to it.
+	seedFailed := func(t *testing.T, family string, stampAge *time.Duration, set string) (self, failed *PurchaseExecution) {
+		t.Helper()
+		_, err := store.db.Exec(ctx, `DELETE FROM purchase_executions`)
+		require.NoError(t, err)
+		self = seedLineageRow(ctx, t, store, "fam-f0", "running", recent)
+		failed = seedLineageRow(ctx, t, store, family, "failed", stampAge)
+		if set != "" {
+			args := []any{failed.ExecutionID}
+			if strings.Contains(set, "$2") {
+				args = append(args, self.ExecutionID)
+			}
+			_, err = store.db.Exec(ctx, `UPDATE purchase_executions SET `+set+` WHERE execution_id = $1`, args...)
+			require.NoError(t, err)
+		}
+		return self, failed
+	}
+
+	t.Run("failed_unlinked_conflicts", func(t *testing.T) {
+		self, failed := seedFailed(t, "fam-f1", recent, "")
+		assert.Equal(t, []string{failed.ExecutionID}, conflictIDs(findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")))
+	})
+	t.Run("failed_attempt1_no_submission_conflicts", func(t *testing.T) {
+		self, failed := seedFailed(t, "fam-f2", recent, "no_submission = true, retry_attempt_n = 1")
+		assert.Equal(t, []string{failed.ExecutionID}, conflictIDs(findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")))
+	})
+	t.Run("failed_linked_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f3", recent, "retry_execution_id = $2")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_attempt0_no_submission_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f4", recent, "no_submission = true")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_older_than_H_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f5", old, "")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_settled_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f6", recent, "outcome_settled_at = now(), outcome_settled_by = 'op', outcome_settlement = 'settled'")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_settled_still_conflicts_before_the_settlement_migration", func(t *testing.T) {
+		// Prod may run this code before migration 000155: the settled filter must drop out, not error.
+		self, failed := seedFailed(t, "fam-f8", recent, "outcome_settled_at = now(), outcome_settled_by = 'op', outcome_settlement = 'settled'")
+		var version int64
+		var dirty bool
+		require.NoError(t, store.db.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty))
+		t.Cleanup(func() {
+			_, err := store.db.Exec(ctx, `UPDATE schema_migrations SET version = $1, dirty = $2`, version, dirty)
+			require.NoError(t, err)
+		})
+		_, err := store.db.Exec(ctx, `UPDATE schema_migrations SET version = $1, dirty = false`, settlementMigrationVersion-1)
+		require.NoError(t, err)
+		assert.Equal(t, []string{failed.ExecutionID}, conflictIDs(findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")))
+	})
+	t.Run("same_family_failed_inside_settle_conflicts", func(t *testing.T) {
+		self, failed := seedFailed(t, "fam-f0:acct", recent, "")
+		got := findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")
+		assert.Equal(t, []string{failed.ExecutionID}, conflictIDs(got))
+		assert.True(t, got[0].SameFamily)
+	})
+	t.Run("same_family_failed_after_settle_passes", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f9", recent, "")
+		// A plain INSERT keeps the old updated_at; the trigger would overwrite it on UPDATE.
+		old := time.Now().Add(-lineageTestSettle - time.Minute)
+		_, err := store.db.Exec(ctx, `
+			INSERT INTO purchase_executions (status, step_number, scheduled_date, idempotency_key, first_dispatch_at, updated_at, recommendations)
+			VALUES ('failed', 1, NOW(), 'fam-f0:acct', $1, $1, $2::jsonb)`, old,
+			`[{"provider":"aws","service":"redshift","region":"us-east-1","resource_type":"ra3.xlplus","term":1,"payment":"all-upfront","count":2,"selected":true}]`)
+		require.NoError(t, err)
+		_, err = store.db.Exec(ctx, `DELETE FROM purchase_executions WHERE execution_id <> $1 AND idempotency_key = 'fam-f9'`, self.ExecutionID)
+		require.NoError(t, err)
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("same_family_linked_predecessor_bumped_by_link_passes", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f0:acct", recent, "retry_execution_id = $2")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("same_family_refused_no_submission_attempt1_passes", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f0:acct", recent, "no_submission = true, retry_attempt_n = 1")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("same_family_completed_inside_settle_conflicts", func(t *testing.T) {
+		_, err := store.db.Exec(ctx, `DELETE FROM purchase_executions`)
+		require.NoError(t, err)
+		self := seedLineageRow(ctx, t, store, "fam-f0", "running", recent)
+		done := seedLineageRow(ctx, t, store, "fam-f0:acct", "completed", recent)
+		got := findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")
+		assert.Equal(t, []string{done.ExecutionID}, conflictIDs(got))
+		assert.True(t, got[0].SameFamily)
+	})
+	t.Run("same_family_completed_after_settle_passes", func(t *testing.T) {
+		_, err := store.db.Exec(ctx, `DELETE FROM purchase_executions`)
+		require.NoError(t, err)
+		self := seedLineageRow(ctx, t, store, "fam-f0", "running", recent)
+		old := time.Now().Add(-lineageTestSettle - time.Minute)
+		_, err = store.db.Exec(ctx, `
+			INSERT INTO purchase_executions (status, step_number, scheduled_date, idempotency_key, first_dispatch_at, updated_at, recommendations)
+			VALUES ('completed', 1, NOW(), 'fam-f0:acct', $1, $1, $2::jsonb)`, old,
+			`[{"provider":"aws","service":"redshift","region":"us-east-1","resource_type":"ra3.xlplus","term":1,"payment":"all-upfront","count":2,"selected":true}]`)
+		require.NoError(t, err)
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("same_family_failed_attempt0_no_submission_passes", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f0:acct", recent, "no_submission = true")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_without_stamp_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f7", nil, "")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
 	})
 }

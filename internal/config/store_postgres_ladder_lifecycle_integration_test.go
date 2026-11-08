@@ -125,7 +125,7 @@ func TestLadderGraceBoundary_ScheduledRowsAreCountedOrCancelledNeverNeither(t *t
 	for _, r := range rows {
 		got := trancheStatus(ctx, t, store, r.tr.ID)
 		if r.sched {
-			canceled := got == ladder.TrancheStatusCancelled
+			canceled := got == ladder.TrancheStatusCanceled
 			assert.NotEqual(t, r.counted, canceled, "scheduled row at %v: counted=%v status=%s (must be counted XOR canceled)",
 				r.tr.ScheduledDate.Sub(asOf), r.counted, got)
 		} else {
@@ -225,8 +225,8 @@ func TestClaimDueLadderTranches_NeverClaimsOnDemandOrUnknownBasisRows(t *testing
 	later := asOf.Add(LadderFireGrace)
 	_, err = store.SaveLadderRunWithTranches(ctx, &LadderRunDB{ConfigID: &cfgID, StartedAt: later, Status: ladder.RunStatusPlanned}, nil)
 	require.NoError(t, err)
-	assert.Equal(t, ladder.TrancheStatusCancelled, trancheStatus(ctx, t, store, unknown.ID), "past grace the sweep cancels it")
-	assert.Equal(t, ladder.TrancheStatusCancelled, trancheStatus(ctx, t, store, od.ID), "past grace the sweep cancels it")
+	assert.Equal(t, ladder.TrancheStatusCanceled, trancheStatus(ctx, t, store, unknown.ID), "past grace the sweep cancels it")
+	assert.Equal(t, ladder.TrancheStatusCanceled, trancheStatus(ctx, t, store, od.ID), "past grace the sweep cancels it")
 }
 
 func TestClaimDueLadderTranches_CallbackFailureRollsBackClaimAndExecution(t *testing.T) {
@@ -281,10 +281,10 @@ func TestTransitionLadderTranche_EveryLegalEdgeAndCompareAndSet(t *testing.T) {
 	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{canceled, toCompleted, toFailed}))
 	require.Equal(t, 7.0, inFlight(ctx, t, store, cfgID, asOf))
 
-	ok, err := store.TransitionLadderTranche(ctx, canceled.ID, ladder.TrancheStatusScheduled, ladder.TrancheStatusCancelled, "test")
+	ok, err := store.TransitionLadderTranche(ctx, canceled.ID, ladder.TrancheStatusScheduled, ladder.TrancheStatusCanceled, "test")
 	require.NoError(t, err)
 	assert.True(t, ok)
-	ok, err = store.TransitionLadderTranche(ctx, canceled.ID, ladder.TrancheStatusScheduled, ladder.TrancheStatusCancelled, "test")
+	ok, err = store.TransitionLadderTranche(ctx, canceled.ID, ladder.TrancheStatusScheduled, ladder.TrancheStatusCanceled, "test")
 	require.NoError(t, err)
 	assert.False(t, ok, "second apply loses the compare-and-set")
 	assert.Equal(t, 6.0, inFlight(ctx, t, store, cfgID, asOf), "canceled releases netting")
@@ -293,7 +293,7 @@ func TestTransitionLadderTranche_EveryLegalEdgeAndCompareAndSet(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 6.0, inFlight(ctx, t, store, cfgID, asOf), "fired still nets")
 
-	ok, err = store.TransitionLadderTranche(ctx, toCompleted.ID, ladder.TrancheStatusScheduled, ladder.TrancheStatusCancelled, "test")
+	ok, err = store.TransitionLadderTranche(ctx, toCompleted.ID, ladder.TrancheStatusScheduled, ladder.TrancheStatusCanceled, "test")
 	require.NoError(t, err)
 	assert.False(t, ok, "a claimed tranche can no longer be canceled from scheduled")
 	ok, err = store.TransitionLadderTranche(ctx, toCompleted.ID, ladder.TrancheStatusFired, ladder.TrancheStatusCompleted, "test")
@@ -388,7 +388,7 @@ func TestClaimVsCancelAndOverdueSweep_ExactlyOneOutcome(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			cancelWon, cancelErr = store.TransitionLadderTranche(ctx, tr.ID, ladder.TrancheStatusScheduled, ladder.TrancheStatusCancelled, "test")
+			cancelWon, cancelErr = store.TransitionLadderTranche(ctx, tr.ID, ladder.TrancheStatusScheduled, ladder.TrancheStatusCanceled, "test")
 		}()
 		go func() {
 			defer wg.Done()
@@ -404,7 +404,7 @@ func TestClaimVsCancelAndOverdueSweep_ExactlyOneOutcome(t *testing.T) {
 		switch final {
 		case ladder.TrancheStatusFired:
 			assert.True(t, claimWon && !cancelWon, "iteration %d: fired but claimWon=%v cancelWon=%v", i, claimWon, cancelWon)
-		case ladder.TrancheStatusCancelled:
+		case ladder.TrancheStatusCanceled:
 			assert.True(t, cancelWon && !claimWon, "iteration %d: canceled but claimWon=%v cancelWon=%v", i, claimWon, cancelWon)
 		default:
 			t.Fatalf("iteration %d: unexpected final status %s", i, final)

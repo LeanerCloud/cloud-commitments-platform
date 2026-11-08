@@ -99,7 +99,7 @@ func TestLadderTrancheProvenance_InsertClaimAndReconcile(t *testing.T) {
 			return execErr
 		}))
 	}
-	fired, err := store.ListFiredLadderTranches(ctx, 10)
+	fired, err := store.ListFiredLadderTranches(ctx, nil, 10)
 	require.NoError(t, err)
 	require.Len(t, fired, len(rows))
 	for i := range fired {
@@ -391,7 +391,7 @@ func TestPostgresStore_CancelLadderRun_StampsCancelledBy(t *testing.T) {
 	require.NoError(t, err)
 
 	refused, err := store.TransitionLadderRunStatus(ctx, run.ID,
-		[]ladder.RunStatus{ladder.RunStatusAwaitingApproval}, ladder.RunStatusCancelled)
+		[]ladder.RunStatus{ladder.RunStatusAwaitingApproval}, ladder.RunStatusCanceled)
 	require.ErrorIs(t, err, ErrLadderRunCancelViaTransition)
 	assert.Nil(t, refused)
 
@@ -404,12 +404,12 @@ func TestPostgresStore_CancelLadderRun_StampsCancelledBy(t *testing.T) {
 		[]ladder.RunStatus{ladder.RunStatusAwaitingApproval}, "alice@example.com")
 	require.NoError(t, err)
 	require.NotNil(t, updated)
-	assert.Equal(t, ladder.RunStatusCancelled, updated.Status)
+	assert.Equal(t, ladder.RunStatusCanceled, updated.Status)
 
 	got, err := store.GetLadderRun(ctx, run.ID)
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	assert.Equal(t, ladder.RunStatusCancelled, got.Status)
+	assert.Equal(t, ladder.RunStatusCanceled, got.Status)
 	require.NotNil(t, got.CancelledBy, "ladder_runs.cancelled_by must be stamped on cancel")
 	assert.Equal(t, "alice@example.com", *got.CancelledBy)
 }
@@ -575,7 +575,7 @@ func TestPostgresStore_InFlightLadderRows(t *testing.T) {
 	insertTranche(t, &cfgID, 3.0, ladder.TrancheStatusScheduled) // included
 	insertTranche(t, &cfgID, 2.0, ladder.TrancheStatusFired)     // included (unresolved purchase)
 	insertTranche(t, &cfgID, 5.0, ladder.TrancheStatusCompleted) // excluded (already in E)
-	insertTranche(t, &cfgID, 1.0, ladder.TrancheStatusCancelled) // excluded (terminal)
+	insertTranche(t, &cfgID, 1.0, ladder.TrancheStatusCanceled)  // excluded (terminal)
 	insertTranche(t, &cfgID, 4.0, ladder.TrancheStatusFailed)    // excluded (terminal)
 	// Still 'scheduled' but past the grace window: never fired, so never bought
 	// (issue #118). Excluded, or past plans would net out of every later gap.
@@ -731,12 +731,12 @@ func TestPostgresStore_SaveLadderRunWithTranches_CancelsOverdue(t *testing.T) {
 	// 12 day-0 tranches + 10 two-week tranches past the grace window; the
 	// 11th is due exactly at start (within grace, still netted/fireable) and
 	// the 12th is in the future.
-	assert.Equal(t, 22, countStatus(t, cfgID, ladder.TrancheStatusCancelled), "overdue scheduled rows must be marked canceled, not deleted")
+	assert.Equal(t, 22, countStatus(t, cfgID, ladder.TrancheStatusCanceled), "overdue scheduled rows must be marked canceled, not deleted")
 	assert.Equal(t, 1, countStatus(t, cfgID, ladder.TrancheStatusFired), "an overdue fired row must be left alone")
 	assert.Equal(t, 1, countStatus(t, cfgID, ladder.TrancheStatusCompleted), "an overdue completed row must be left alone")
 	var linkedStatus string
 	require.NoError(t, store.db.QueryRow(ctx, `SELECT status FROM ladder_tranches WHERE id = $1`, linked.ID).Scan(&linkedStatus))
 	assert.Equal(t, string(ladder.TrancheStatusScheduled), linkedStatus, "an overdue row linked to an execution must be left alone")
 	assert.Equal(t, 1, countStatus(t, otherID, ladder.TrancheStatusScheduled), "another config's tranches must be untouched")
-	assert.Equal(t, 0, countStatus(t, otherID, ladder.TrancheStatusCancelled))
+	assert.Equal(t, 0, countStatus(t, otherID, ladder.TrancheStatusCanceled))
 }

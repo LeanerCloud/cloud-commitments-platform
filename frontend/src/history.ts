@@ -1647,6 +1647,16 @@ function wireRowActionHandlers(container: HTMLElement): void {
         const opsHint = typeof err.details?.['ops_hint'] === 'string' ? err.details['ops_hint'] : '';
         const retryAttemptN = typeof err.details?.['retry_attempt_n'] === 'number' ? err.details['retry_attempt_n'] : undefined;
         const threshold = typeof err.details?.['threshold'] === 'number' ? err.details['threshold'] : undefined;
+        // A Redshift purchase that failed minutes ago may still be settling at AWS (not overridable by force).
+        const retryAfterSeconds = typeof err.details?.['retry_after_seconds'] === 'number' ? err.details['retry_after_seconds'] : undefined;
+        if (!opsHint && retryAfterSeconds != null) {
+          const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+          showToast({
+            message: `Retry is not possible yet: AWS may still be settling this purchase. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+            kind: 'warning',
+          });
+          return;
+        }
         let detailMessage = '';
         if (opsHint) {
           detailMessage = opsHint;

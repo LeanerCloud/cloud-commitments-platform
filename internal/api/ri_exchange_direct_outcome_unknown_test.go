@@ -33,5 +33,5 @@ func TestExecuteExchange_OutcomeUnknownIs502NamingSourceRIs(t *testing.T) {
 
 	_, outcome, finalized := store.onlyRow(t)
 	require.True(t, finalized)
-	assert.Equal(t, config.RIExchangeDirectStatusUnknown, outcome.Status, "a 5xx keeps the audit outcome unknown, never failed")
+	assert.Equal(t, config.RIExchangeDirectStatusUnknown, outcome.Status, "a lost accept response (ErrOutcomeUnknown) keeps the audit outcome unknown, never failed")
 }

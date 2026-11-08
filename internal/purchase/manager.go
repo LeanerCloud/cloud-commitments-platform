@@ -52,7 +52,15 @@ type ManagerConfig struct {
 	MaxDueRowAge time.Duration
 	// AttemptJournal records each purchase attempt durably (go#107). Nil keeps
 	// the provider's own window dedupe.
-	AttemptJournal common.AttemptJournal
+	AttemptJournal AttemptJournal
+}
+
+// AttemptJournal is the journal the manager hands to providers. It must also
+// read claims (go#700), so a wrapper that hides ClaimedByOthers fails to
+// compile instead of silently disabling the cross-lineage exclusion.
+type AttemptJournal interface {
+	common.AttemptJournal
+	common.ClaimReader
 }
 
 // Manager handles purchase workflow.
@@ -64,7 +72,7 @@ type Manager struct {
 	bastionSTS      credentials.STSClientFactory
 	ambientAWSCreds aws.CredentialsProvider
 	credStore       credentials.CredentialStore
-	attemptJournal  common.AttemptJournal
+	attemptJournal  AttemptJournal
 	providerFactory provider.FactoryInterface
 	oidcSigner      oidc.Signer
 	defaults        PurchaseDefaults
@@ -415,8 +423,8 @@ func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExec
 }
 
 // preExecutionRefusal runs every check that must pass before any provider call.
-// All refusals except the armed re-drive one are beforeSubmission errors, so
-// the row ends failed with no_submission stamped.
+// All refusals except the armed re-drive and missing-journal ones are
+// beforeSubmission errors, so the row ends failed with no_submission stamped.
 func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
 	if err := armedRedriveRefusal(exec); err != nil {
 		return err
@@ -426,6 +434,10 @@ func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.Purchase
 	}
 	if refusal := m.ladderExecutionRefusal(ctx, exec); refusal != nil {
 		return beforeSubmission(refusal)
+	}
+	// A Redshift retry reuses the first attempt's request time; only the journal lets go's dedupe tell its node from another's.
+	if hasRedshiftRec(exec) && exec.RetryAttemptN > 0 && m.attemptJournal == nil {
+		return errors.New(redshiftNoJournalRefusal)
 	}
 	return nil
 }
@@ -597,6 +609,9 @@ func armedRedriveRefusal(exec *config.PurchaseExecution) error {
 //   - AWS RDS, ElastiCache, MemoryDB, OpenSearch and Savings Plans: a
 //     deterministic reservation ID or ClientToken collapses a repeat onto the
 //     first attempt (#636/#638).
+//   - AWS Redshift: the Retry gate (checkRedshiftRetryGate) and the dispatch gate
+//     (stampRedshiftDispatch) reuse the first attempt's request time, so go's
+//     dedupe adopts a node already bought; both refuse when that cannot be proven.
 //   - Azure reservations (compute, relational-db, cache, nosql, memorydb,
 //     search, data-warehouse): DoIdempotentPurchaseTwoStep performs a
 //     tag-based lookup before purchasing (#729 / #721).
@@ -604,10 +619,10 @@ func armedRedriveRefusal(exec *config.PurchaseExecution) error {
 //     the token (#654).
 //
 // NOT safe:
-//   - AWS EC2 and Redshift (slugs ec2, compute, redshift, data-warehouse): the
-//     purchase APIs take no client token, so a lost response may have bought the
-//     commitment and a second attempt would buy another (MON-02). The provider
-//     sends the call once and reports "purchase outcome unknown".
+//   - AWS EC2 (slugs ec2, compute): the purchase API takes no client token, so a
+//     lost response may have bought the commitment and a second attempt would buy
+//     another (MON-02). The provider sends the call once and reports "purchase
+//     outcome unknown".
 //   - Azure savings-plans: the pinned client names the order alias after the
 //     idempotency token when one is set (a timestamp name only on the
 //     empty-token CLI path), but no test or provider doc here confirms that a
@@ -640,24 +655,23 @@ func RedriveRefusalReason(exec *config.PurchaseExecution) string {
 
 // Fixed refusal texts, shared with the stored-error allowlist (errnotes.go).
 const (
-	redriveReasonAWSNoGuard       = "AWS EC2 and Redshift purchases have no provider-side duplicate guard, and a lost response means the earlier attempt may already have bought the commitment. Check EC2 Reserved Instances or Redshift Reserved Nodes in the target account and region; if it is missing, start a new purchase instead of retrying"
+	redriveReasonAWSNoGuard = "AWS EC2 purchases have no provider-side duplicate guard, and a lost response means the earlier attempt may already have bought the commitment. Check EC2 Reserved Instances in the target account and region; if it is missing, start a new purchase instead of retrying"
+	// Stored by armed-refusal rows written before Redshift re-drive was lifted; errnotes only.
+	redriveReasonAWSNoGuardLegacy = "AWS EC2 and Redshift purchases have no provider-side duplicate guard, and a lost response means the earlier attempt may already have bought the commitment. Check EC2 Reserved Instances or Redshift Reserved Nodes in the target account and region; if it is missing, start a new purchase instead of retrying"
 	redriveReasonAzureSavingsPlan = "Azure savings plans have no provider-side duplicate guard, so re-driving this purchase would buy a second savings plan that cannot be canceled"
 )
 
-// recRedriveRefusalReason returns the reason a single recommendation cannot be
-// safely re-driven, or "" when it can. Extracted from RedriveRefusalReason to
-// keep that function under the gocyclo budget and to make per-rec exclusions
-// explicit.
+// recRedriveRefusalReason returns why one recommendation cannot be safely re-driven, or ""
+// when it can; split out of RedriveRefusalReason for the gocyclo budget.
 func recRedriveRefusalReason(rec config.RecommendationRecord) string {
 	switch rec.Provider {
 	case "", "aws":
 		// Empty provider is legacy AWS. RDS, ElastiCache, MemoryDB, OpenSearch
-		// and Savings Plans collapse a repeat onto the first attempt. EC2 and
-		// Redshift cannot: their purchase APIs take no client token or caller
-		// ID, and the provider sends them once and reports a lost response as
-		// "purchase outcome unknown". The commitment may exist, so a second
-		// attempt must not be made until someone has checked the account.
-		if awsPurchaseHasNoDuplicateGuard(rec.Service) {
+		// and Savings Plans collapse a repeat onto the first attempt. Redshift
+		// is guarded by the journaled lineage gate (redshift_lineage.go). EC2
+		// takes no client token or caller ID, so a lost response may hide a
+		// bought commitment and a second attempt waits for someone to check.
+		if awsPurchaseIsEC2(rec.Service) {
 			return redriveReasonAWSNoGuard
 		}
 		return ""
@@ -679,19 +693,15 @@ func recRedriveRefusalReason(rec config.RecommendationRecord) string {
 	}
 }
 
-// awsPurchaseHasNoDuplicateGuard reports whether a recommendation's service
-// slug dispatches to the AWS EC2 or Redshift purchase path. The canonical
-// slugs (compute, data-warehouse) and the legacy ones (ec2, redshift) reach the
-// same client, so all four must be covered or the refusal can be bypassed by
-// spelling. Matching goes through mapServiceSlug, the same table the executor
-// dispatches on, so the two cannot drift.
-func awsPurchaseHasNoDuplicateGuard(service string) bool {
+// awsPurchaseIsEC2 reports whether a service slug (ec2 or compute) dispatches to the EC2 path,
+// matching through mapServiceSlug, the executor's own table, so spellings cannot drift.
+func awsPurchaseIsEC2(service string) bool {
 	svc, ok := mapServiceSlug(service)
 	if !ok {
 		return false
 	}
 	switch svc {
-	case common.ServiceEC2, common.ServiceCompute, common.ServiceRedshift, common.ServiceDataWarehouse:
+	case common.ServiceEC2, common.ServiceCompute:
 		return true
 	default:
 		return false

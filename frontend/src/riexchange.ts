@@ -36,6 +36,7 @@ import { canAccess } from './permissions';
 import { createIcon, iconSvg } from './icons';
 import { applyReadOnlySettings, isPermissionDeniedError } from './settings';
 import { showToast } from './toast';
+import { approveResultToast } from './riexchange-approve-outcome';
 import { getCurrentUser } from './state';
 import { attachAzureExchangeToolbar, buildAzureSelectCell, buildAzureSelectHeader, canPreviewAzureExchange } from './riexchange-azure';
 import { formatDecimalStringCurrency, formatIsoTermShort, formatPaymentOption } from './lib/table-format';
@@ -2258,8 +2259,7 @@ async function handleRIExchangeApproveClick(btn: HTMLButtonElement, record: RIEx
   }
 
   try {
-    await api.approveRIExchange(record.id);
-    showToast({ kind: 'success', message: 'RI exchange approved and executing.' });
+    showToast(approveResultToast(await api.approveRIExchange(record.id)));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     showToast({ kind: 'error', message: 'Failed to approve exchange: ' + msg });

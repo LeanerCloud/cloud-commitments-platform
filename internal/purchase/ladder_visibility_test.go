@@ -35,7 +35,7 @@ type visFake struct {
 	scheduledAt  *time.Time // due time reported on every chain node
 }
 
-func (f *visFake) ListFiredLadderTranches(context.Context, int) ([]config.LadderTrancheDB, error) {
+func (f *visFake) ListFiredLadderTranches(context.Context, *config.LadderFiredCursor, int) ([]config.LadderTrancheDB, error) {
 	return f.fired, nil
 }
 func (f *visFake) WithTx(_ context.Context, fn func(pgx.Tx) error) error {

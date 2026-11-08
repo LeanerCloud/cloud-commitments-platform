@@ -34,6 +34,7 @@ import { getRIExchangeHistory } from './api';
 import type { RIExchangeHistoryRecord } from './api/types';
 import { confirmDialog } from './confirmDialog';
 import { showToast } from './toast';
+import { approveResultToast, parseRIExchangeApproveResult } from './riexchange-approve-outcome';
 
 type RIExchangeDeeplinkAction = 'approve' | 'reject';
 
@@ -136,12 +137,10 @@ export async function handleRIExchangeDeeplink(): Promise<boolean> {
   // (router.go approveRIExchangeHandler / rejectRIExchangeHandler).
   const endpoint = `/ri-exchange/${dl.action}/${encodeURIComponent(dl.id)}?token=${encodeURIComponent(dl.token)}`;
   try {
-    await apiRequest<unknown>(endpoint, { method: 'POST' });
-    showToast({
-      message: approve ? 'RI exchange approved and executing.' : 'RI exchange rejected.',
-      kind: 'success',
-      timeout: 5_000,
-    });
+    const body = await apiRequest<unknown>(endpoint, { method: 'POST' });
+    showToast(approve
+      ? approveResultToast(parseRIExchangeApproveResult(body))
+      : { message: 'RI exchange rejected.', kind: 'success', timeout: 5_000 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     showToast({ message: `Failed to ${dl.action} RI exchange: ${msg}`, kind: 'error', timeout: null });
