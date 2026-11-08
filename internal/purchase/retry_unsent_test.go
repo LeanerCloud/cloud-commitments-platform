@@ -24,7 +24,7 @@ func TestRetryRefusalReason(t *testing.T) {
 		refused bool
 	}{
 		{"NS attempt 0 failed EC2", retryExec(config.StatusFailed, true, 0, ec2), false},
-		{"NS attempt 0 failed Redshift", retryExec(config.StatusFailed, true, 0, redshift), false},
+		{"Redshift has no no-guard refusal to lift", retryExec(config.StatusFailed, false, 0, redshift), false},
 		{"NS attempt 0 failed Azure SP", retryExec(config.StatusFailed, true, 0, azSP), false},
 		{"not NS EC2", retryExec(config.StatusFailed, false, 0, ec2), true},
 		{"NS attempt 1 EC2", retryExec(config.StatusFailed, true, 1, ec2), true},

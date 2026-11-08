@@ -567,21 +567,21 @@ func allRecsSafeToRedrive(exec *config.PurchaseExecution) bool {
 // the way three copies at three call sites can. executePurchase has exactly one
 // production caller, immediately below this check.
 //
-// The condition is a conjunction and BOTH halves are load-bearing:
+// The checks run in this order, so a lookup happens only when it can matter:
 //
-//   - RetryAttemptN > 0 restricts it to retry successors. A fresh execution
-//     (n == 0) is a FIRST purchase with nothing to duplicate, and Azure savings
-//     plans must remain buyable, so re-drive safety alone here would block
-//     every legitimate first buy.
-//   - RedriveRefusalReason != "" restricts it to providers with no duplicate
-//     guard, reusing the predicate from #1668 rather than introducing a second
-//     notion of re-drive safety.
+//   - (a) RetryAttemptN <= 0 returns nil. A fresh execution is a FIRST purchase
+//     with nothing to duplicate, and Azure savings plans must remain buyable.
+//   - (b) An empty RedriveRefusalReason returns nil: the provider has a
+//     duplicate guard (#1668 predicate, not a second notion of re-drive safety).
+//   - (c) Otherwise, for a first retry only, the predecessor is read. When it is
+//     a failed no_submission attempt 0, the lineage provably sent nothing and
+//     the no-guard refusal is lifted (retryRefusalReason). A lookup error
+//     refuses with fixed text, never a beforeSubmission error.
 //
 // Returning an error rather than skipping silently means finalizeExecution
 // stamps the row "failed" with this reason and executeAndFinalize persists it,
-// so an armed row is DEFUSED and visible in History instead of remaining armed
-// for the next sweep. Retrying it from the UI then hits the #1668 gate, which
-// refuses, so it cannot be re-armed either.
+// so a refused row is visible in History instead of remaining armed for the
+// next sweep.
 func (m *Manager) armedRedriveRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
 	if exec.RetryAttemptN <= 0 {
 		return nil

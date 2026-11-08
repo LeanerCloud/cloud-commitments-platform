@@ -90,6 +90,7 @@ func TestArmedRetryRefusedWithoutProof(t *testing.T) {
 			calls, last, store := runArmedRetry(t, exec, tc.svcType, predecessorProof{proven: tc.proven, err: tc.lookupErr})
 			assert.Equal(t, 0, calls, "a refused retry must make zero provider calls")
 			assert.Equal(t, "failed", last.Status)
+			assert.False(t, last.NoSubmission, "an armed refusal must not stamp no_submission")
 			assert.Contains(t, last.Error, tc.wantText)
 			assert.NotContains(t, last.Error, "db down", "the stored error must not carry the DB error")
 			if tc.wantLookups == 0 {

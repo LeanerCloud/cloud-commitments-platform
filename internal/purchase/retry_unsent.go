@@ -9,7 +9,7 @@ func RetryRefusalReason(exec *config.PurchaseExecution) string {
 	return retryRefusalReason(exec, NeverSubmitted(exec) && exec.Status == config.StatusFailed)
 }
 
-// retryRefusalReason lifts only the AWS EC2/Redshift and Azure savings-plans
+// retryRefusalReason lifts only the AWS EC2 and Azure savings-plans
 // reasons when lineageUnsent. Unknown providers and any other reason still
 // refuse: no proof of an unsent lineage says anything about them.
 func retryRefusalReason(exec *config.PurchaseExecution, lineageUnsent bool) string {
