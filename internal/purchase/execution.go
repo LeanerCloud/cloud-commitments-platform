@@ -449,11 +449,12 @@ const (
 	skippedAccountNoRetryNote = "the run ended before this account's purchase started, so nothing was submitted; this purchase type cannot be retried automatically, so start a new purchase for this account if it is still wanted"
 )
 
-// skippedAccountNote words the skip row by whether Retry accepts it:
-// RedriveRefusalReason refuses EC2 and Azure savings plans whatever
-// NoSubmission says, so those rows point at a new purchase instead.
+// skippedAccountNote words the skip row by whether Retry accepts it. The row
+// must already be failed and NoSubmission; it inherits the root's
+// RetryAttemptN, so a retried root's skip rows stay refused and point at a
+// new purchase instead.
 func skippedAccountNote(row *config.PurchaseExecution) string {
-	if RedriveRefusalReason(row) != "" {
+	if RetryRefusalReason(row) != "" {
 		return skippedAccountNoRetryNote
 	}
 	return skippedAccountRetryNote
