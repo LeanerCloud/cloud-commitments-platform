@@ -156,7 +156,7 @@ func runRedshiftFinalize(t *testing.T, exec *config.PurchaseExecution, accounts 
 
 // runRedshiftFinalizeWithJournal is runRedshiftFinalize on a manager whose attempt journal is journal.
 func runRedshiftFinalizeWithJournal(t *testing.T, exec *config.PurchaseExecution, accounts []config.CloudAccount, service common.ServiceType,
-	stamp func() (config.StampResult, error), journal common.AttemptJournal) *redshiftFinalizeRun {
+	stamp func() (config.StampResult, error), journal AttemptJournal) *redshiftFinalizeRun {
 	t.Helper()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
