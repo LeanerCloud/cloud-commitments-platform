@@ -341,6 +341,27 @@ func TestGCPRecentRefusal_DropsOwnCommitmentsBeforeFiltering(t *testing.T) {
 	assert.Zero(t, spy.calls, "nothing recent and foreign is left, so the filter is not reached")
 }
 
+// A recent CUD bought by another CUDly lineage (another plan step, a
+// re-approval, or a sibling account sharing the project) carries a valid
+// CUDly-shaped name that is not this execution's, so it must count as a recent
+// commitment and refuse the rec, not be mistaken for an own commitment.
+func TestGCPRecentRefusal_OtherLineageCUDIsRefused(t *testing.T) {
+	recent := spyRecent(false)
+	recent[0].CommitmentID = gcpCommitmentName(common.DeriveIdempotencyToken("other-lineage", 0))
+	inner := new(MockServiceClient)
+	inner.On("GetExistingCommitments", mock.Anything).Return(recent, nil)
+	spy := &filterSpy{MockServiceClient: inner, filtered: true}
+
+	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), map[string]bool{cudOwnName(0): true})
+
+	require.Error(t, err)
+	assert.Equal(t, gcpRecentCommitmentNote, err.Error())
+	var notSubmitted *beforeSubmissionError
+	assert.True(t, errors.As(err, &notSubmitted))
+	require.Equal(t, 1, spy.calls, "the other lineage's CUD reached the provider filter as a recent commitment")
+	inner.AssertNotCalled(t, "PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything)
+}
+
 // Recent commitments from two projects cannot all describe this rec's project,
 // so the check fails closed instead of stamping the first project and letting
 // a duplicate in the other one through.
