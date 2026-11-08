@@ -55,8 +55,8 @@ run "defaults_schedule_only_the_default_on_sweeps" {
   command = apply
 
   assert {
-    condition     = toset(keys(azurerm_logic_app_workflow.sweep)) == toset(["analytics_collect", "finalize_revocations", "fire_scheduled_purchases", "reap_stuck_purchases"])
-    error_message = "By default reap, analytics, finalize and fire run; process and send_notifications are opt-in."
+    condition     = toset(keys(azurerm_logic_app_workflow.sweep)) == toset(["analytics_collect", "finalize_revocations", "fire_scheduled_purchases", "ladder_reconcile", "reap_stuck_purchases"])
+    error_message = "By default reap, analytics, finalize, fire and ladder_reconcile run; process and send_notifications are opt-in."
   }
 
   assert {
@@ -100,6 +100,15 @@ run "defaults_schedule_only_the_default_on_sweeps" {
 
   assert {
     condition = (
+      azurerm_logic_app_trigger_recurrence.sweep["ladder_reconcile"].frequency == "Hour" &&
+      azurerm_logic_app_trigger_recurrence.sweep["ladder_reconcile"].interval == 1 &&
+      azurerm_logic_app_trigger_recurrence.sweep["ladder_reconcile"].start_time == "2024-01-01T00:15:00Z"
+    )
+    error_message = "15 * * * * must become hourly at minute 15."
+  }
+
+  assert {
+    condition = (
       azurerm_logic_app_trigger_recurrence.sweep["analytics_collect"].frequency == "Day" &&
       azurerm_logic_app_trigger_recurrence.sweep["analytics_collect"].interval == 1 &&
       azurerm_logic_app_trigger_recurrence.sweep["analytics_collect"].start_time == "2024-01-01T04:00:00Z"
@@ -127,7 +136,7 @@ run "opt_in_sweeps_follow_their_flags" {
 
   assert {
     condition = toset(keys(azurerm_logic_app_workflow.sweep)) == toset([
-      "analytics_collect", "fire_scheduled_purchases", "process_scheduled_purchases", "reap_stuck_purchases", "send_notifications",
+      "analytics_collect", "fire_scheduled_purchases", "ladder_reconcile", "process_scheduled_purchases", "reap_stuck_purchases", "send_notifications",
     ])
     error_message = "Each per-task flag must switch its workflow on or off independently."
   }
@@ -155,7 +164,7 @@ run "fire_opt_out" {
   }
 
   assert {
-    condition     = toset(keys(azurerm_logic_app_workflow.sweep)) == toset(["analytics_collect", "finalize_revocations", "reap_stuck_purchases"])
+    condition     = toset(keys(azurerm_logic_app_workflow.sweep)) == toset(["analytics_collect", "finalize_revocations", "ladder_reconcile", "reap_stuck_purchases"])
     error_message = "Setting enable_fire_scheduled_purchases_schedule = false must remove the fire workflow."
   }
 }

@@ -28,11 +28,11 @@ run "defaults" {
   command = plan
 
   assert {
-    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["analytics_collect", "finalize_revocations", "reap_stuck_purchases"])
-    error_message = "Only reap_stuck_purchases, analytics_collect and finalize_revocations are default-on sweeps; process, send_notifications and cleanup are opt-in."
+    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["analytics_collect", "finalize_revocations", "ladder_reconcile", "reap_stuck_purchases"])
+    error_message = "Only reap_stuck_purchases, analytics_collect, finalize_revocations and ladder_reconcile are default-on sweeps; process, send_notifications and cleanup are opt-in."
   }
   assert {
-    condition     = length(aws_cloudwatch_event_target.sweep) == 3 && length(aws_iam_role.eventbridge_sweeps) == 1 && length(aws_iam_role_policy.eventbridge_sweeps) == 1
+    condition     = length(aws_cloudwatch_event_target.sweep) == 4 && length(aws_iam_role.eventbridge_sweeps) == 1 && length(aws_iam_role_policy.eventbridge_sweeps) == 1
     error_message = "Each active sweep needs a target, and the sweeps need their invoker role and policy."
   }
   assert {
@@ -55,7 +55,7 @@ run "defaults" {
     error_message = "Rule names must be <= 64 chars, keep the cudly- prefix and end with -sweep-<rule>."
   }
   assert {
-    condition     = aws_cloudwatch_event_rule.sweep["reap_stuck_purchases"].schedule_expression == "rate(5 minutes)" && aws_cloudwatch_event_rule.sweep["analytics_collect"].schedule_expression == "rate(1 day)" && aws_cloudwatch_event_rule.sweep["finalize_revocations"].schedule_expression == "rate(1 hour)"
+    condition     = aws_cloudwatch_event_rule.sweep["reap_stuck_purchases"].schedule_expression == "rate(5 minutes)" && aws_cloudwatch_event_rule.sweep["analytics_collect"].schedule_expression == "rate(1 day)" && aws_cloudwatch_event_rule.sweep["finalize_revocations"].schedule_expression == "rate(1 hour)" && aws_cloudwatch_event_rule.sweep["ladder_reconcile"].schedule_expression == "rate(1 hour)"
     error_message = "Default schedules must match the Lambda module."
   }
   assert {
@@ -77,15 +77,15 @@ run "opt_in" {
   }
 
   assert {
-    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["analytics_collect", "cleanup", "finalize_revocations", "process_scheduled_purchases", "reap_stuck_purchases", "send_notifications"])
+    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["analytics_collect", "cleanup", "finalize_revocations", "ladder_reconcile", "process_scheduled_purchases", "reap_stuck_purchases", "send_notifications"])
     error_message = "Opting in must add process, send_notifications and cleanup."
   }
   assert {
-    condition     = length(aws_cloudwatch_event_target.sweep) == 6 && length(aws_iam_role.eventbridge_sweeps) == 1
+    condition     = length(aws_cloudwatch_event_target.sweep) == 7 && length(aws_iam_role.eventbridge_sweeps) == 1
     error_message = "Every opted-in sweep needs a target; all share one invoker role."
   }
   assert {
-    condition     = length(distinct([for r in aws_cloudwatch_event_rule.sweep : r.name])) == 6
+    condition     = length(distinct([for r in aws_cloudwatch_event_rule.sweep : r.name])) == 7
     error_message = "Sweep rule names must be distinct."
   }
   assert {
@@ -111,6 +111,7 @@ run "all_off" {
     enable_reap_stuck_purchases_schedule     = false
     enable_analytics_collect_schedule        = false
     enable_finalize_revocations_schedule     = false
+    enable_ladder_reconcile_schedule         = false
     enable_fire_scheduled_purchases_schedule = false
   }
 

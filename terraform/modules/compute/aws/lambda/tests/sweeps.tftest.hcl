@@ -22,8 +22,8 @@ run "defaults" {
   command = plan
 
   assert {
-    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["finalize_revocations"])
-    error_message = "Only finalize_revocations is a default-on sweep (cleanup is opt-in)."
+    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["finalize_revocations", "ladder_reconcile"])
+    error_message = "Only finalize_revocations and ladder_reconcile are default-on sweeps (cleanup is opt-in)."
   }
   assert {
     condition     = length(aws_cloudwatch_event_rule.scheduled_recommendations) == 1 && length(aws_cloudwatch_event_rule.reap_stuck_purchases) == 1 && length(aws_cloudwatch_event_rule.analytics_collect) == 1
@@ -52,7 +52,7 @@ run "defaults" {
   assert {
     condition = alltrue([
       for k, r in aws_cloudwatch_event_rule.sweep :
-      length(r.name) <= 64 && startswith(r.name, "cudly-") && endswith(r.name, "-sweep-${ { process_scheduled_purchases = "process", send_notifications = "notify", finalize_revocations = "finalize", cleanup = "cleanup" }[k]}")
+      length(r.name) <= 64 && startswith(r.name, "cudly-") && endswith(r.name, "-sweep-${ { process_scheduled_purchases = "process", send_notifications = "notify", finalize_revocations = "finalize", ladder_reconcile = "reconcile", cleanup = "cleanup" }[k]}")
     ])
     error_message = "Rule names must be <= 64 chars, keep the cudly- prefix and end with -sweep-<rule>."
   }
@@ -61,7 +61,7 @@ run "defaults" {
     error_message = "Sweep rule names must be distinct."
   }
   assert {
-    condition     = length(aws_cloudwatch_event_target.sweep) == 1 && length(aws_lambda_permission.sweep) == 1
+    condition     = length(aws_cloudwatch_event_target.sweep) == 2 && length(aws_lambda_permission.sweep) == 2
     error_message = "Each active sweep needs a target and a permission."
   }
   assert {
@@ -85,7 +85,7 @@ run "opt_in" {
   }
 
   assert {
-    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["cleanup", "finalize_revocations", "process_scheduled_purchases", "send_notifications"])
+    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["cleanup", "finalize_revocations", "ladder_reconcile", "process_scheduled_purchases", "send_notifications"])
     error_message = "Opting in must add process, send_notifications and cleanup."
   }
   assert {
@@ -95,7 +95,7 @@ run "opt_in" {
   assert {
     condition = alltrue([
       for k, r in aws_cloudwatch_event_rule.sweep :
-      length(r.name) <= 64 && startswith(r.name, "cudly-") && endswith(r.name, "-sweep-${ { process_scheduled_purchases = "process", send_notifications = "notify", finalize_revocations = "finalize", cleanup = "cleanup" }[k]}")
+      length(r.name) <= 64 && startswith(r.name, "cudly-") && endswith(r.name, "-sweep-${ { process_scheduled_purchases = "process", send_notifications = "notify", finalize_revocations = "finalize", ladder_reconcile = "reconcile", cleanup = "cleanup" }[k]}")
     ])
     error_message = "Rule names must be <= 64 chars, keep the cudly- prefix and end with -sweep-<rule>."
   }
@@ -104,13 +104,13 @@ run "opt_in" {
     error_message = "Sweep rule names must be distinct."
   }
   assert {
-    condition     = length(aws_cloudwatch_event_target.sweep) == 4
+    condition     = length(aws_cloudwatch_event_target.sweep) == 5
     error_message = "Every opted-in sweep needs a target."
   }
   assert {
     condition = alltrue([
       for k, r in aws_cloudwatch_event_rule.sweep :
-      r.schedule_expression == { process_scheduled_purchases = var.process_scheduled_purchases_schedule, send_notifications = var.send_notifications_schedule, finalize_revocations = var.finalize_revocations_schedule, cleanup = var.cleanup_schedule }[k]
+      r.schedule_expression == { process_scheduled_purchases = var.process_scheduled_purchases_schedule, send_notifications = var.send_notifications_schedule, finalize_revocations = var.finalize_revocations_schedule, ladder_reconcile = var.ladder_reconcile_schedule, cleanup = var.cleanup_schedule }[k]
     ])
     error_message = "Schedule must come from the variable."
   }

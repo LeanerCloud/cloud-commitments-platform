@@ -101,6 +101,8 @@ module "compute_lambda" {
   send_notifications_schedule                 = var.send_notifications_schedule
   enable_finalize_revocations_schedule        = var.enable_finalize_revocations_schedule
   finalize_revocations_schedule               = var.finalize_revocations_schedule
+  enable_ladder_reconcile_schedule            = var.enable_ladder_reconcile_schedule
+  ladder_reconcile_schedule                   = var.ladder_reconcile_schedule
   enable_reap_stuck_purchases_schedule        = var.enable_reap_stuck_purchases_schedule
   reap_stuck_purchases_schedule               = var.reap_stuck_purchases_schedule
   enable_analytics_collect_schedule           = var.enable_analytics_collect_schedule
@@ -242,6 +244,8 @@ module "compute_fargate" {
   send_notifications_schedule                 = var.send_notifications_schedule
   enable_finalize_revocations_schedule        = var.enable_finalize_revocations_schedule
   finalize_revocations_schedule               = var.finalize_revocations_schedule
+  enable_ladder_reconcile_schedule            = var.enable_ladder_reconcile_schedule
+  ladder_reconcile_schedule                   = var.ladder_reconcile_schedule
   enable_reap_stuck_purchases_schedule        = var.enable_reap_stuck_purchases_schedule
   reap_stuck_purchases_schedule               = var.reap_stuck_purchases_schedule
   enable_analytics_collect_schedule           = var.enable_analytics_collect_schedule
