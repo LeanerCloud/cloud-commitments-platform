@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -114,8 +115,10 @@ func (s *PostgresStore) FinalizeRIExchangeDirectExecution(ctx context.Context, i
 		       completed_at         = now()
 		 WHERE id = $1
 		   AND status = 'submitted'
+		RETURNING resolved_status
 	`
-	tag, err := s.db.Exec(ctx, query,
+	var resolved *string
+	err := s.db.QueryRow(ctx, query,
 		id,
 		outcome.Status,
 		nullStringFromString(outcome.ProviderReference),
@@ -123,12 +126,17 @@ func (s *PostgresStore) FinalizeRIExchangeDirectExecution(ctx context.Context, i
 		nullStringFromString(outcome.NetPayableCurrency),
 		nullStringFromString(outcome.ProviderStatus),
 		nullStringFromString(outcome.Error),
-	)
+	).Scan(&resolved)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("finalize ri exchange direct execution %s: %w", id, ErrRIExchangeDirectExecutionNotSubmitted)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to finalize ri exchange direct execution %s: %w", id, err)
 	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("finalize ri exchange direct execution %s: %w", id, ErrRIExchangeDirectExecutionNotSubmitted)
+	// A late finalize can outlive an operator's resolution. Both facts are
+	// kept; a contradiction is logged because no reader lists resolved rows.
+	if resolved != nil && outcome.Status != RIExchangeDirectStatusUnknown && *resolved != outcome.Status {
+		logging.Errorf("ri-exchange direct execute %s: provider outcome %q contradicts operator resolution %q", id, outcome.Status, *resolved)
 	}
 	return nil
 }
