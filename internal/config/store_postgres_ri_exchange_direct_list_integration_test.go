@@ -199,3 +199,30 @@ func TestPostgresStoreDB_RIExchangeDirectList_KeysetPagination(t *testing.T) {
 	}
 	assert.Equal(t, rowIDs(full.Rows), got, "pages concatenate to the full ordered list with no gap or repeat")
 }
+
+// [fail-first] An AWS row with a NULL region is listed for the empty region,
+// the same pair the pair read reports for it.
+func TestPostgresStoreDB_RIExchangeDirectList_NullRegionRowIsListable(t *testing.T) {
+	env := newRIExchangeIntegrationEnv(t)
+	acc := strPtr("acc-1")
+	id := env.insertDirect(t, directSpec{account: acc, nullRegion: true})
+	env.insertDirect(t, directSpec{account: acc})
+
+	page, err := env.storeA.ListUnresolvedRIExchangeDirectExecutions(env.ctx, RIExchangeDirectListFilter{Allowed: allow(acc, "")})
+	require.NoError(t, err)
+	require.Equal(t, []string{id}, rowIDs(page.Rows))
+	assert.Equal(t, "", page.Rows[0].Region)
+}
+
+// [fail-first] A bad filter is invalid even when nothing is allowed, never an
+// empty result.
+func TestPostgresStoreDB_RIExchangeDirectList_BadFilterIsInvalidWithEmptyAllowSet(t *testing.T) {
+	env := newRIExchangeIntegrationEnv(t)
+	for name, f := range map[string]RIExchangeDirectListFilter{
+		"limit":  {Limit: 201},
+		"status": {Statuses: []string{"completed"}},
+	} {
+		_, err := env.storeA.ListUnresolvedRIExchangeDirectExecutions(env.ctx, f)
+		require.ErrorIs(t, err, ErrRIExchangeResolveInvalid, name)
+	}
+}
