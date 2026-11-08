@@ -38,7 +38,10 @@ var serverNotePatterns = []string{
 	regexp.QuoteMeta(redshiftConflictRefusal),
 	regexp.QuoteMeta(redshiftHorizonRefusal),
 	regexp.QuoteMeta(redshiftNoStampRefusal),
+	regexp.QuoteMeta(redshiftFailedConflictRefusal),
+	regexp.QuoteMeta(redshiftNoJournalRefusal),
 	regexp.QuoteMeta(redshiftRecentBuyRefusal),
+	regexp.QuoteMeta(redshiftSettleRefusal),
 	regexp.QuoteMeta(gcpDuplicateCheckFailedNote),
 	regexp.QuoteMeta(gcpRecentCommitmentNote),
 	`EC2 recommendation for ` + resourceTypePattern + ` has zonal scope but no AvailabilityZone: refusing to buy a zonal RI in an arbitrary AZ; re-fetch the recommendation`,
@@ -126,7 +129,7 @@ var exchangeNoteHeads = []string{
 	`unknown provider`,
 }
 
-var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + regexp.QuoteMeta(redriveReasonAzureSavingsPlan) +
+var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + regexp.QuoteMeta(redriveReasonAWSNoGuardLegacy) + `|` + regexp.QuoteMeta(redriveReasonAzureSavingsPlan) +
 	`|provider "[A-Za-z0-9._+-]{0,32}" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`
 
 // resourceTypePattern is the "<resourceType>: " head the executor's per-rec join

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -100,17 +101,17 @@ func TestCheckRedshiftRetryGate_ClockErrorFailsClosed(t *testing.T) {
 	assert.False(t, isClient, "a store failure is a 500, not a refusal the UI would render as permanent")
 }
 
-// Until the old guard is lifted it refuses every Redshift Retry first, so the
-// new gate must not even read the clock.
-func TestLoadAndValidateRetry_OldRedriveRefusalStillWinsForRedshift(t *testing.T) {
+// The provider-level refusal no longer covers Redshift, so a Redshift Retry reaches the new gate.
+func TestLoadAndValidateRetry_RedshiftReachesTheNewGate(t *testing.T) {
 	failed := redshiftFailedRow(1, false)
 	session := &Session{UserID: retryCallerID, Email: "operator@example.com"}
 	h, store, _ := buildSessionRetryHandler(t, failed, session, false, true)
+	store.On("GetRedshiftRetryClock", mock.Anything, failed.ExecutionID).Return(config.RedshiftRetryClock{SinceUpdate: time.Hour}, nil)
 
 	_, _, err := h.loadAndValidateRetryRequest(context.Background(), sessionRetryReqWithForce(), failed.ExecutionID)
 
-	assertRedriveRefused(t, err, "Check EC2 Reserved Instances or Redshift Reserved Nodes")
-	store.AssertNotCalled(t, "GetRedshiftRetryClock", mock.Anything, mock.Anything)
+	assertRedriveRefused(t, err, "no first dispatch time recorded")
+	store.AssertCalled(t, "GetRedshiftRetryClock", mock.Anything, failed.ExecutionID)
 }
 
 func persistedSuccessor(t *testing.T, failed *config.PurchaseExecution) *config.PurchaseExecution {
@@ -155,4 +156,62 @@ func TestPersistRetryExecution_NoSubmissionAttempt0LeavesStampNil(t *testing.T) 
 
 func TestPersistRetryExecution_StamplessPredecessorStaysStampless(t *testing.T) {
 	assert.Nil(t, persistedSuccessor(t, redshiftFailedRow(1, false)).FirstDispatchAt)
+}
+
+// retryRedshiftViaHandler drives the whole retryPurchase handler for a failed Redshift row.
+func retryRedshiftViaHandler(t *testing.T, failed *config.PurchaseExecution, clock config.RedshiftRetryClock, req *events.LambdaFunctionURLRequest) (saved []*config.PurchaseExecution, err error) {
+	t.Helper()
+	session := &Session{UserID: retryCallerID, Email: "operator@example.com"}
+	h, store, _ := buildSessionRetryHandler(t, failed, session, false, true)
+	store.On("GetRedshiftRetryClock", mock.Anything, failed.ExecutionID).Return(clock, nil)
+	store.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) {
+			snap := *args.Get(1).(*config.PurchaseExecution)
+			saved = append(saved, &snap)
+		}).
+		Return(nil).Maybe()
+	store.On("LinkRetryExecutionAtomic", mock.Anything, mock.Anything, failed.ExecutionID, mock.AnythingOfType("string")).Return(true, nil).Maybe()
+
+	_, err = h.retryPurchase(context.Background(), req, failed.ExecutionID)
+	return saved, err
+}
+
+func TestRetryRedshift_InsideSettleRefusedWithRetryAfter(t *testing.T) {
+	stamp := time.Now().Add(-time.Hour)
+	failed := redshiftFailedRow(1, false)
+	failed.FirstDispatchAt = &stamp
+
+	for _, req := range []*events.LambdaFunctionURLRequest{sessionRetryReq(), sessionRetryReqWithForce()} {
+		saved, err := retryRedshiftViaHandler(t, failed, config.RedshiftRetryClock{SinceUpdate: 4 * time.Minute, SinceStamp: ageOf(time.Hour)}, req)
+
+		ce, ok := IsClientError(err)
+		require.True(t, ok, "got %v", err)
+		assert.Equal(t, 409, ce.code)
+		assert.Equal(t, 360, ce.Details()["retry_after_seconds"])
+		assert.Equal(t, "360", ce.headers["Retry-After"])
+		assert.Empty(t, saved, "a refused retry persists no successor")
+	}
+}
+
+func TestRetryRedshift_AfterSettleCopiesStamp(t *testing.T) {
+	stamp := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
+	failed := redshiftFailedRow(1, false)
+	failed.FirstDispatchAt = &stamp
+
+	saved, err := retryRedshiftViaHandler(t, failed, config.RedshiftRetryClock{SinceUpdate: 11 * time.Minute, SinceStamp: ageOf(time.Hour)}, sessionRetryReq())
+
+	require.NoError(t, err)
+	require.NotEmpty(t, saved)
+	require.NotNil(t, saved[0].FirstDispatchAt)
+	assert.True(t, stamp.Equal(*saved[0].FirstDispatchAt), "the successor keeps the lineage stamp")
+	assert.Equal(t, 2, saved[0].RetryAttemptN)
+}
+
+func TestRetryRedshift_LegacyStamplessRefused(t *testing.T) {
+	failed := redshiftFailedRow(1, false)
+
+	saved, err := retryRedshiftViaHandler(t, failed, config.RedshiftRetryClock{SinceUpdate: time.Hour}, sessionRetryReqWithForce())
+
+	assertRedriveRefused(t, err, "no first dispatch time recorded")
+	assert.Empty(t, saved)
 }

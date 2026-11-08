@@ -550,6 +550,32 @@ describe('History inline Retry button (issue #47)', () => {
     expect(btn?.disabled).toBe(false);
   });
 
+  test('Redshift settle 409 with retry_after_seconds shows a wait toast, not a generic error', async () => {
+    (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
+    (confirmDialog as jest.Mock).mockResolvedValue(true);
+    const settleError = Object.assign(new Error('this Redshift purchase failed too recently to retry safely; retry after the wait'), {
+      details: { retry_after_seconds: 90 },
+    });
+    (api.retryPurchase as jest.Mock).mockRejectedValue(settleError);
+    (api.getHistory as jest.Mock).mockResolvedValue({
+      summary: {},
+      purchases: [makeRow({ purchase_id: 'r-1', created_by_user_id: ADMIN_USER.id })],
+    });
+    console.error = jest.fn();
+
+    await loadHistory();
+    document.querySelector<HTMLButtonElement>('.history-retry-btn')?.click();
+    await flushPromises();
+
+    expect(showToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'warning',
+        message: expect.stringContaining('Try again in 2 minutes'),
+      }),
+    );
+    expect(showToast).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+  });
+
   test('admin WITHOUT Purchaser membership does not see Retry on rows they did not create (CR #924 F5)', async () => {
     // Issue #923 + CR #924 F5: retry-any:purchases is carved out of
     // admin:*. canRetryFailedRow must gate on

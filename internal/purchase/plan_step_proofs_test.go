@@ -155,13 +155,13 @@ func TestRedriveRefusedWhereNoProviderGuardExists(t *testing.T) {
 	for _, rec := range []config.RecommendationRecord{
 		{Provider: "azure", Service: "savingsplans"},
 		{Provider: "aws", Service: "ec2"},
-		{Provider: "aws", Service: "redshift"},
 		{Provider: "oracle", Service: "compute"},
 	} {
 		assert.NotEmpty(t, recRedriveRefusalReason(rec), "%s/%s", rec.Provider, rec.Service)
 	}
 	for _, rec := range []config.RecommendationRecord{
 		{Provider: "aws", Service: "rds"},
+		{Provider: "aws", Service: "redshift"},
 		{Provider: "azure", Service: "compute"},
 		{Provider: "gcp", Service: "compute"},
 	} {

@@ -450,7 +450,7 @@ const (
 )
 
 // skippedAccountNote words the skip row by whether Retry accepts it:
-// RedriveRefusalReason refuses EC2, Redshift and Azure savings plans whatever
+// RedriveRefusalReason refuses EC2 and Azure savings plans whatever
 // NoSubmission says, so those rows point at a new purchase instead.
 func skippedAccountNote(row *config.PurchaseExecution) string {
 	if RedriveRefusalReason(row) != "" {
