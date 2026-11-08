@@ -38,8 +38,8 @@ func stuckExec(id, status string) config.PurchaseExecution {
 
 // stuckExecWithAWSRecs builds a stuck execution with a single AWS RDS rec.
 // RDS honors a deterministic reservation ID, so allRecsSafeToRedrive is true and
-// the reaper's canonical error includes "safe to retry" (F4 fix). EC2 and
-// Redshift are the AWS services that are not safe; see stuckExecWithAWSEC2Rec.
+// the reaper's canonical error includes "safe to retry" (F4 fix). EC2 is the AWS
+// service that is not safe; see stuckExecWithAWSEC2Rec.
 func stuckExecWithAWSRecs(id, status string) config.PurchaseExecution {
 	e := stuckExec(id, status)
 	e.Recommendations = []config.RecommendationRecord{
@@ -106,6 +106,35 @@ func TestReapStuckExecutions_EC2RowIsNotAdvertisedAsSafeToRetry(t *testing.T) {
 	transitioned.Status = failedStatus
 	expectStuckLists(ctx, store, reapAfter, row)
 	store.On("TransitionExecutionStatus", ctx, "exec-ec2", []string{"running"}, failedStatus, (*string)(nil)).Return(&transitioned, nil)
+	var saved *config.PurchaseExecution
+	store.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).Return(nil)
+
+	result, err := newReaperManager(store).ReapStuckExecutions(ctx, reapAfter)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Reaped)
+	require.NotNil(t, saved)
+	assert.Contains(t, saved.Error, "reaped after")
+	assert.NotContains(t, saved.Error, "safe to retry")
+}
+
+// A reaped Redshift row may have sent, and its Retry gate can still refuse it, so the note
+// must not promise a safe retry even though Redshift is no longer refused as a provider.
+func TestReapedRedshiftRowDoesNotSayRetryIsSafe(t *testing.T) {
+	ctx := context.Background()
+	store := new(MockConfigStore)
+	assertMocksOnCleanup(t, store)
+	reapAfter := 10 * time.Minute
+
+	row := stuckExec("exec-rs", "running")
+	row.Recommendations = []config.RecommendationRecord{
+		{Provider: "aws", Service: "redshift", ResourceType: "ra3.xlplus", Count: 1, Selected: true},
+	}
+	transitioned := row
+	transitioned.Status = failedStatus
+	expectStuckLists(ctx, store, reapAfter, row)
+	store.On("TransitionExecutionStatus", ctx, "exec-rs", []string{"running"}, failedStatus, (*string)(nil)).Return(&transitioned, nil)
 	var saved *config.PurchaseExecution
 	store.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).
 		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).Return(nil)
