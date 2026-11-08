@@ -57,7 +57,7 @@ func TestPostgresStoreDB_LadderSettledAt(t *testing.T) {
 
 		_, err = store.TransitionLadderTranche(ctx, failed, ladder.TrancheStatusFired, ladder.TrancheStatusFailed, "boom")
 		require.NoError(t, err)
-		_, err = store.TransitionLadderTranche(ctx, skipped, ladder.TrancheStatusScheduled, ladder.TrancheStatusCancelled, "no")
+		_, err = store.TransitionLadderTranche(ctx, skipped, ladder.TrancheStatusScheduled, ladder.TrancheStatusCanceled, "no")
 		require.NoError(t, err)
 		assert.Nil(t, settledAt(failed))
 		assert.Nil(t, settledAt(skipped))
@@ -106,7 +106,7 @@ func TestPostgresStoreDB_LadderSettledAt(t *testing.T) {
 		add(ladder.TrancheStatusCompleted, 4, &after)
 		assert.InDelta(t, 4, sum(), 1e-9, "one microsecond after counts")
 		add(ladder.TrancheStatusFailed, 8, nil)
-		add(ladder.TrancheStatusCancelled, 16, nil)
+		add(ladder.TrancheStatusCanceled, 16, nil)
 		add(ladder.TrancheStatusFired, 32, nil)
 		add(ladder.TrancheStatusScheduled, 64, nil)
 		assert.InDelta(t, 4, sum(), 1e-9, "only completed rows count")

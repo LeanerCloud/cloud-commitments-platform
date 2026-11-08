@@ -828,7 +828,7 @@ type StoreInterface interface {
 	// FindOpenRedshiftLineageConflictsTx returns the other open executions
 	// holding a Redshift rec for one of tuples that a dispatch of family must
 	// not race (see the implementation for the predicate).
-	FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []RedshiftTuple, accountID *string, horizon time.Duration, stamp time.Time, window time.Duration) ([]RedshiftLineageConflict, error)
+	FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []RedshiftTuple, accountID *string, horizon time.Duration, stamp time.Time, window, settle time.Duration) ([]RedshiftLineageConflict, error)
 
 	// GetRedshiftRetryClock returns how long ago an execution was last written
 	// and first dispatched, both measured on the database clock.
@@ -881,7 +881,7 @@ type StoreInterface interface {
 	// current status), so callers can distinguish a race from a hard error.
 	// Statuses are typed ladder.RunStatus so callers cannot pass an arbitrary
 	// string that would never match a stored status. A transition to
-	// RunStatusCancelled is refused (ErrLadderRunCancelViaTransition).
+	// RunStatusCanceled is refused (ErrLadderRunCancelViaTransition).
 	//
 	// CancelLadderRun is the only way to cancel a ladder run: a CAS UPDATE
 	// from one of fromStatuses to cancelled that stamps cancelled_by with the

@@ -1294,16 +1294,18 @@ func (h *Handler) executeAzureExchange(ctx context.Context, req *events.LambdaFu
 	// mid-LRO and retries commits the exchange twice, each half individually
 	// under the cap. Taken here, last, so no gate rejection ever leaves a
 	// claim behind.
+	// The execution window is measured from just before the audit save (#1840).
+	deadline := time.Now().Add(h.exchangeExecutionTimeout())
 	auditID, err := h.beginDirectExchange(ctx,
 		azureDirectExchangeAudit(session, accountID, body, maxRat, preview),
-		azureExchangeIdempotencyKey(body))
+		azureExchangeIdempotencyKey(body), deadline)
 	if err != nil {
 		return nil, err
 	}
 
 	// Past the claim the exchange may commit at Azure; a cancelled request must
 	// not abort the submit or its long-running-operation poll (#790).
-	execCtx, cancelExec := ctxutil.DetachedWithTimeout(ctx, riExchangeExecutionTimeout)
+	execCtx, cancelExec := ctxutil.DetachedWithDeadline(ctx, deadline)
 	defer cancelExec()
 	result, err := client.ExecuteExchange(execCtx, preview.SessionID)
 	if err != nil {
@@ -2051,16 +2053,20 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 	// retries otherwise double-spends with each half individually under the
 	// cap. Taken last, after every gate, so no rejected request leaves a
 	// claim behind.
+	//
+	// The execution window is measured from just before the audit save (#1840):
+	// one deadline bounds both the claim and the provider call.
+	deadline := time.Now().Add(h.exchangeExecutionTimeout())
 	auditID, err := h.beginDirectExchange(ctx,
 		awsDirectExchangeAudit(session, cloudAccountID, body, maxRat),
-		awsExchangeIdempotencyKey(cloudAccountID, body))
+		awsExchangeIdempotencyKey(cloudAccountID, body), deadline)
 	if err != nil {
 		return nil, err
 	}
 
 	// Past the claim the exchange may commit at AWS; a cancelled request must
 	// not abort it midway (#790).
-	execCtx, cancelExec := ctxutil.DetachedWithTimeout(ctx, riExchangeExecutionTimeout)
+	execCtx, cancelExec := ctxutil.DetachedWithDeadline(ctx, deadline)
 	defer cancelExec()
 	exchangeID, quote, err := h.awsExchangeExecutor()(execCtx, exchange.ExchangeExecuteRequest{
 		Region:           region,
@@ -2076,10 +2082,10 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 		if errors.Is(err, common.ErrOutcomeUnknown) {
 			mapped = directExchangeOutcomeUnknown(body.RIIDs)
 		}
-		h.finalizeDirectExchange(ctx, auditID, awsDirectExchangeOutcome(exchangeID, quote, err, mapped))
+		h.finalizeDirectExchange(ctx, auditID, awsDirectExchangeOutcome(exchangeID, quote, err))
 		return nil, mapped
 	}
-	h.finalizeDirectExchange(ctx, auditID, awsDirectExchangeOutcome(exchangeID, quote, nil, nil))
+	h.finalizeDirectExchange(ctx, auditID, awsDirectExchangeOutcome(exchangeID, quote, nil))
 
 	return &ExchangeExecuteResponse{
 		ExchangeID: exchangeID,
@@ -2120,8 +2126,9 @@ func mapAWSExchangeError(opMsg string, err error) error {
 
 // directExchangeOutcomeUnknown is the error for an accept whose response was
 // lost: AWS may have exchanged the RIs, so the operator must check before
-// retrying (#1050). It stays 5xx so the audit records the outcome as unknown,
-// and it names only the caller's own RI ids, never provider text.
+// retrying (#1050). The audit status is decided from the library's error,
+// which must keep its wrapping (awsDirectFailureStatus), not from this status.
+// It names only the caller's own RI ids, never provider text.
 func directExchangeOutcomeUnknown(riIDs []string) error {
 	return NewClientError(502, fmt.Sprintf("the exchange outcome is unknown: AWS may already have exchanged RI(s) %s; check them at AWS before retrying", strings.Join(riIDs, ", ")))
 }

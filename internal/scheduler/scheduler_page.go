@@ -135,7 +135,9 @@ func suppressionPageKeys(index map[suppressionKey][]config.PurchaseSuppression) 
 	var keys []string
 	for k := range index {
 		for _, service := range config.SuppressionServiceSpellings(k.provider, k.service) {
-			keys = append(keys, config.SuppressionTupleKey(k.accountID, k.provider, service, k.region, k.resourceType, k.engine))
+			for _, engine := range config.SuppressionEngineSpellings(k.provider, k.service, k.engine) {
+				keys = append(keys, config.SuppressionTupleKey(k.accountID, k.provider, service, k.region, k.resourceType, engine))
+			}
 		}
 	}
 	sort.Strings(keys)

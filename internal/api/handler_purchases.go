@@ -2360,46 +2360,6 @@ func (h *Handler) requireSession(ctx context.Context, req *events.LambdaFunction
 // they accumulate dozens of dead retry rows.
 const retryThreshold = 5
 
-// persistentFailureHints maps known-persistent failure substrings to
-// the operator-actionable hint surfaced on the History row in place of
-// the Retry button (issue #47, Q3). The match is a case-INsensitive
-// substring contains check (see resolveOpsHint) — wording variations
-// like "ses sandbox" / "SES Sandbox" all hit. Keep needles short and
-// distinctive so legitimate transient failures don't accidentally
-// substring-match a persistent hint and lock the user out.
-//
-// Membership criteria: only failures that NO retry can possibly fix —
-// they require an operator to change configuration or unblock an
-// upstream resource. SES sandbox / unverified domain / missing
-// FROM_EMAIL all fit; a transient SES throttle does NOT (the next
-// retry might succeed). When in doubt, leave it out — false-negatives
-// cost a wasted retry; false-positives lock the user out of an
-// actionable button entirely.
-var persistentFailureHints = map[string]string{
-	"FROM_EMAIL not configured": "Set FROM_EMAIL tfvar then retry",
-	"SES sandbox":               "Move SES out of sandbox or verify recipient, then retry",
-	"SES domain not verified":   "Verify SES domain in AWS console, then retry",
-	"IAM denied":                "Grant the deploy role missing IAM permission, then retry",
-}
-
-// resolveOpsHint returns a non-empty hint when the failure reason
-// matches a known-persistent pattern, else empty. Match is case-
-// insensitive substring contains so backend wording variations don't
-// silently slip through ("ses sandbox" / "SES sandbox" / "SES Sandbox"
-// all hit).
-func resolveOpsHint(failureReason string) string {
-	if failureReason == "" {
-		return ""
-	}
-	lower := strings.ToLower(failureReason)
-	for needle, hint := range persistentFailureHints {
-		if strings.Contains(lower, strings.ToLower(needle)) {
-			return hint
-		}
-	}
-	return ""
-}
-
 // retryPurchase creates a new execution from a *failed* execution's
 // stored Recommendations slice (issue #47). The original failed row
 // keeps its `failed` status as a historical record and gains a
@@ -2603,12 +2563,12 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 	// potentially a re-drive. purchase.RedriveRefusalReason is the same
 	// predicate the reaper's automatic re-drive gates on: it returns a
 	// reason exactly when the provider offers nothing that would collapse
-	// the second attempt onto the first, which today means AWS EC2 and
-	// Redshift (no client token; a lost response is reported as outcome
-	// unknown), Azure savings-plans (no server-side idempotency key,
-	// timestamp-derived order alias) plus any provider the predicate does
-	// not recognize. A failed EC2 or Redshift row therefore cannot be
-	// retried; the operator checks the account and starts a new purchase.
+	// the second attempt onto the first, which today means AWS EC2 (no
+	// client token; a lost response is reported as outcome unknown), Azure
+	// savings-plans (no server-side idempotency key, timestamp-derived order
+	// alias) plus any provider the predicate does not recognize. A failed EC2
+	// row therefore cannot be retried; the operator checks the account and
+	// starts a new purchase. Redshift is gated by checkRedshiftRetryGate.
 	// If plan steps ever carry recommendations (platform#609), a failed EC2
 	// step will be un-retryable too and needs its own recovery path.
 	//
@@ -2650,7 +2610,7 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 	// Persistent-failure block (Q3). Surfaces the ops_hint via the
 	// API for stale-cache callers; the History UI already shows it
 	// inline in place of the Retry button.
-	if hint := resolveOpsHint(failedExec.Error); hint != "" {
+	if hint := purchase.ResolveOpsHint(failedExec.Error); hint != "" {
 		return NewClientErrorWithDetails(409,
 			"this failure is operator-fixable; retrying without changing configuration will fail again",
 			map[string]any{"ops_hint": hint, "failure_reason": purchase.SanitizeStoredError(failedExec.Error)})

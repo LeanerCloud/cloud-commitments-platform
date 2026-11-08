@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,11 +28,19 @@ func TestRecordAttempt_TransitionTable(t *testing.T) {
 	ctx := context.Background()
 	store := setupLadderStore(ctx, t)
 
-	sources := map[string][]common.AttemptRecord{
-		"none":            nil,
-		"sending":         {attemptRec("", common.AttemptSending, "", "")},
-		"outcome_unknown": {attemptRec("", common.AttemptSending, "", ""), attemptRec("", common.AttemptOutcomeUnknown, "", "")},
-		"purchased":       {attemptRec("", common.AttemptPurchased, "rn-1", "")},
+	// The unique purchased-reservation index spans executions, so every case
+	// gets its own ids: "rn-1-<exec>" and "rn-2-<exec>".
+	sources := map[string]func(exec string) []common.AttemptRecord{
+		"none": func(string) []common.AttemptRecord { return nil },
+		"sending": func(e string) []common.AttemptRecord {
+			return []common.AttemptRecord{attemptRec(e, common.AttemptSending, "", "")}
+		},
+		"outcome_unknown": func(e string) []common.AttemptRecord {
+			return []common.AttemptRecord{attemptRec(e, common.AttemptSending, "", ""), attemptRec(e, common.AttemptOutcomeUnknown, "", "")}
+		},
+		"purchased": func(e string) []common.AttemptRecord {
+			return []common.AttemptRecord{attemptRec(e, common.AttemptPurchased, "rn-1-"+e, "")}
+		},
 	}
 	targets := []struct {
 		name string
@@ -43,9 +52,9 @@ func TestRecordAttempt_TransitionTable(t *testing.T) {
 			map[string]bool{"none": true}},
 		{"outcome_unknown", func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptOutcomeUnknown, "", "") },
 			map[string]bool{"sending": true}},
-		{"purchased_same_id", func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptPurchased, "rn-1", "") },
+		{"purchased_same_id", func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptPurchased, "rn-1-"+e, "") },
 			map[string]bool{"none": true, "sending": true, "outcome_unknown": true, "purchased": true}},
-		{"purchased_other_id", func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptPurchased, "rn-2", "") },
+		{"purchased_other_id", func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptPurchased, "rn-2-"+e, "") },
 			map[string]bool{"none": true, "sending": true, "outcome_unknown": true}},
 	}
 
@@ -55,8 +64,7 @@ func TestRecordAttempt_TransitionTable(t *testing.T) {
 			n++
 			exec := fmt.Sprintf("exec-%d", n)
 			t.Run(srcName+"_to_"+tgt.name, func(t *testing.T) {
-				for _, s := range setup {
-					s.ExecutionID = exec
+				for _, s := range setup(exec) {
 					require.NoError(t, store.RecordAttempt(ctx, s))
 				}
 				err := store.RecordAttempt(ctx, tgt.rec(exec))
@@ -143,4 +151,67 @@ func TestRecordAttempt_OfferingIDWriteOnce(t *testing.T) {
 			assert.Equal(t, "off-late", r.OfferingID)
 		}
 	}
+}
+
+func TestClaimedByOthers(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+	const otherToken = "other-token-0123456"
+
+	require.NoError(t, store.RecordAttempt(ctx, attemptRec("exec-own", common.AttemptPurchased, "rn-own", "")))
+	other := common.AttemptRecord{IdempotencyToken: otherToken, ExecutionID: "exec-o1", State: common.AttemptPurchased, ReservationID: "rn-other"}
+	require.NoError(t, store.RecordAttempt(ctx, other))
+	sending := common.AttemptRecord{IdempotencyToken: otherToken, ExecutionID: "exec-o2", State: common.AttemptSending}
+	require.NoError(t, store.RecordAttempt(ctx, sending))
+
+	got, err := store.ClaimedByOthers(ctx, attemptToken, []string{"rn-own", "rn-other", "rn-unknown"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"rn-other"}, got, "only another token's purchased id is claimed")
+
+	got, err = store.ClaimedByOthers(ctx, otherToken, []string{"rn-own", "rn-other"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"rn-own"}, got, "the view is symmetric per token")
+}
+
+func TestClaimedByOthers_EmptyIDsNoQuery(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+	counter := &queryCounter{dbConn: store.db}
+	store.db = counter
+
+	got, err := store.ClaimedByOthers(ctx, attemptToken, nil)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+	got, err = store.ClaimedByOthers(ctx, attemptToken, []string{})
+	require.NoError(t, err)
+	assert.Nil(t, got)
+	assert.Zero(t, counter.queries, "no ids means no query")
+}
+
+type queryCounter struct {
+	dbConn
+	queries int
+}
+
+func (c *queryCounter) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	c.queries++
+	return c.dbConn.Query(ctx, sql, args...)
+}
+
+// The unique purchased-reservation index (migration 000162) makes the second
+// purchased write of one reservation fail, whatever the token.
+func TestRecordAttempt_PurchasedReservationUniqueAcrossTokens(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+
+	require.NoError(t, store.RecordAttempt(ctx, attemptRec("exec-1", common.AttemptPurchased, "rn-1", "")))
+	second := common.AttemptRecord{IdempotencyToken: "other-token-0123456", ExecutionID: "exec-2", State: common.AttemptPurchased, ReservationID: "rn-1"}
+	err := store.RecordAttempt(ctx, second)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already recorded as purchased")
+	assert.NotContains(t, err.Error(), "SQLSTATE", "no raw pg detail")
+	assert.NotContains(t, err.Error(), second.IdempotencyToken, "token stays masked")
+
+	// The same row re-recorded with the same id stays allowed.
+	require.NoError(t, store.RecordAttempt(ctx, attemptRec("exec-1", common.AttemptPurchased, "rn-1", "")))
 }

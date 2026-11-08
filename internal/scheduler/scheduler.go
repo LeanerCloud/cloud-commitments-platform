@@ -1517,8 +1517,9 @@ func aggregateSuppressions(sups []config.PurchaseSuppression) map[suppressionKey
 		k := suppressionKey{
 			accountID: sup.AccountID, provider: sup.Provider,
 			service: config.CanonicalSuppressionService(sup.Provider, sup.Service),
-			region:  sup.Region, resourceType: sup.ResourceType, engine: sup.Engine,
+			region:  sup.Region, resourceType: sup.ResourceType,
 		}
+		k.engine = config.CanonicalSuppressionEngine(k.provider, k.service, sup.Engine)
 		index[k] = append(index[k], sup)
 	}
 	return index
@@ -1563,8 +1564,9 @@ func applySuppressionIndex(recs []config.RecommendationRecord, index map[suppres
 		k := suppressionKey{
 			accountID: accountID, provider: rec.Provider,
 			service: config.CanonicalSuppressionService(rec.Provider, rec.Service),
-			region:  rec.Region, resourceType: rec.ResourceType, engine: rec.Engine,
+			region:  rec.Region, resourceType: rec.ResourceType,
 		}
+		k.engine = config.CanonicalSuppressionEngine(k.provider, k.service, rec.Engine)
 		a := matchingSuppressions(&rec, index[k])
 		if a == nil {
 			out = append(out, rec)
@@ -1824,7 +1826,7 @@ func (s *Scheduler) convertRecommendations(recs []common.Recommendation, provide
 		record := config.RecommendationRecord{
 			SourceAccountID:   sourceAccountID,
 			Provider:          providerName,
-			Service:           string(rec.Service),
+			Service:           config.StoredRecommendationService(providerName, rec.Service),
 			Region:            rec.Region,
 			ResourceType:      rec.ResourceType,
 			Engine:            engine,

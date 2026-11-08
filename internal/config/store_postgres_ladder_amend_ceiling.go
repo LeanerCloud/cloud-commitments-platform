@@ -109,7 +109,8 @@ type ladderCeilingSnapshot struct {
 }
 
 // loadLadderCeiling reads the latest non-canceled run's snapshot joined with the
-// config's current coverage. It refuses a run without a full snapshot.
+// config's current coverage. It refuses a run without a full snapshot. Rows
+// keep either spelling of canceled (#1792), so both are excluded.
 func loadLadderCeiling(ctx context.Context, tx pgx.Tx, configID string) (ladderCeilingSnapshot, error) {
 	var snap ladderCeilingSnapshot
 	var hasSnapshot bool
@@ -117,7 +118,7 @@ func loadLadderCeiling(ctx context.Context, tx pgx.Tx, configID string) (ladderC
  r.target_usd_hr IS NOT NULL AND r.existing_usd_hr IS NOT NULL AND r.baseline_usd_hr IS NOT NULL,
  COALESCE(trunc(LEAST(r.target_usd_hr,r.baseline_usd_hr*c.target_coverage/100)-r.existing_usd_hr,6),0)::float8
  FROM ladder_runs r JOIN ladder_configs c ON c.id=r.config_id
- WHERE r.config_id=$1 AND r.status<>'cancelled' ORDER BY r.started_at DESC,r.created_at DESC,r.id DESC LIMIT 1`,
+ WHERE r.config_id=$1 AND r.status NOT IN ('canceled','cancelled') ORDER BY r.started_at DESC,r.created_at DESC,r.id DESC LIMIT 1`,
 		configID).Scan(&snap.anchor, &hasSnapshot, &snap.ceiling)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return snap, fmt.Errorf("%w: config has no non-canceled run", ErrLadderAmendInvalid)

@@ -227,9 +227,8 @@ func TestRedshiftDispatchGate_SecondLineageAfterWindowDispatches(t *testing.T) {
 	assert.Equal(t, config.StatusCompleted, rowStatus(ctx, t, f.rampStepFixture, later.ExecutionID).Status)
 }
 
-// A completed row of the same family (a retry's earlier per-account row) is
-// not another lineage, so the retry successor is not refused.
-func TestRedshiftDispatchGate_SameFamilyCompletedRowNotRefused(t *testing.T) {
+// A same-family completed row written inside the settle window may not be visible to AWS yet.
+func TestRedshiftDispatchGate_SameFamilyCompletedRowRefusedInsideSettle(t *testing.T) {
 	ctx := context.Background()
 	f := newRedshiftGateFixture(ctx, t)
 	family := uuid.New().String()
@@ -239,6 +238,34 @@ func TestRedshiftDispatchGate_SameFamilyCompletedRowNotRefused(t *testing.T) {
 	claimed, _ := f.mgr.claimAndExecuteWithin(ctx, rowStatusCopy(successor), 0)
 	require.True(t, claimed)
 
-	assert.NotEqual(t, redshiftRecentBuyRefusal, SanitizeStoredError(rowStatus(ctx, t, f.rampStepFixture, successor.ExecutionID).Error))
+	assert.Zero(t, f.bought.Load(), "a refused successor never reaches the provider")
+	assert.Equal(t, redshiftSettleRefusal, SanitizeStoredError(rowStatus(ctx, t, f.rampStepFixture, successor.ExecutionID).Error))
+}
+
+// Once the same-family completed row is older than the settle, the retry successor is not refused.
+func TestRedshiftDispatchGate_SameFamilyCompletedRowNotRefusedAfterSettle(t *testing.T) {
+	ctx := context.Background()
+	f := newRedshiftGateFixture(ctx, t)
+	family := uuid.New().String()
+	key := family + ":" + f.accounts[0].ID
+	f.finishedRow(ctx, t, key)
+	// The updated_at trigger overwrites any UPDATE, so switch user triggers off for this backdating.
+	tx, err := f.pool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, `ALTER TABLE purchase_executions DISABLE TRIGGER USER`)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `UPDATE purchase_executions SET updated_at = now() - $2 * interval '1 second' WHERE idempotency_key = $1`,
+		key, (redshiftRetrySettle + time.Minute).Seconds())
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `ALTER TABLE purchase_executions ENABLE TRIGGER USER`)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+	successor := f.redshiftRowKeyed(ctx, t, "notified", family, true)
+
+	claimed, _ := f.mgr.claimAndExecuteWithin(ctx, rowStatusCopy(successor), 0)
+	require.True(t, claimed)
+
+	assert.NotEqual(t, redshiftSettleRefusal, SanitizeStoredError(rowStatus(ctx, t, f.rampStepFixture, successor.ExecutionID).Error))
 	assert.Positive(t, f.bought.Load(), "the same-family retry reaches the provider")
 }

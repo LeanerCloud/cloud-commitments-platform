@@ -1449,10 +1449,12 @@ func TestExecutePurchase_AzureCanonicalServiceTypes(t *testing.T) {
 			expectedType: common.ServiceCompute,
 		},
 		{
-			name:         "cache_canonical",
-			service:      "cache",
-			resource:     "Standard_C1",
-			expectedType: common.ServiceCache,
+			name:     "cache_canonical",
+			service:  "cache",
+			resource: "Standard_C1",
+			// Azure Redis is bought by the managedredis client; the cache
+			// client refuses purchases (cloud-commitments-go#694, #1801).
+			expectedType: common.ServiceMemoryDB,
 		},
 		{
 			name:         "relational_db_canonical",
@@ -2248,7 +2250,7 @@ func TestProcessPurchaseRecommendations_GlobalConfigError_FailsInsteadOfDefaulti
 		dashboardURL:    "https://dashboard.example.com",
 	}
 
-	_, _, purchaseErrors, procErr := manager.processPurchaseRecommendations(ctx, exec, plan, "111111111111", nil, "")
+	_, _, purchaseErrors, _, procErr := manager.processPurchaseRecommendations(ctx, exec, plan, "111111111111", nil, "")
 
 	// The function must return an error derived from the DB failure.
 	require.Error(t, procErr, "GlobalConfig load failure must abort processing, not silently default to convertible")

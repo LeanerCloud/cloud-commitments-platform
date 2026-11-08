@@ -34,7 +34,7 @@ func suppressionBucketOf(rec *RecommendationRecord) suppressionBucket {
 		service:      CanonicalSuppressionService(rec.Provider, rec.Service),
 		region:       rec.Region,
 		resourceType: rec.ResourceType,
-		engine:       rec.Engine,
+		engine:       CanonicalSuppressionEngine(rec.Provider, CanonicalSuppressionService(rec.Provider, rec.Service), rec.Engine),
 	}
 	v, err := rec.SuppressionVariant()
 	if err != nil {

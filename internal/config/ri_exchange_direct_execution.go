@@ -12,7 +12,10 @@ import (
 // Statuses of an ri_exchange_direct_executions row (issue #82). A row is
 // written as RIExchangeDirectStatusSubmitted before the provider call and
 // moved exactly once to one of the three terminal statuses after it; see
-// migration 000131 for what each one asserts about the money.
+// migration 000131 for what each one asserts about the money. On AWS,
+// unknown means only that the accept response was lost (the library wrapped
+// the error in common.ErrOutcomeUnknown); migration 000131's "timeout, 5xx,
+// transport error" wording is stale for AWS.
 const (
 	RIExchangeDirectStatusSubmitted = "submitted"
 	RIExchangeDirectStatusCompleted = "completed"

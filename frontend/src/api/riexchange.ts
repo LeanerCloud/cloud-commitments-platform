@@ -3,6 +3,7 @@
  */
 
 import { apiRequest } from './client';
+import { parseRIExchangeApproveResult, type RIExchangeApproveResult } from '../riexchange-approve-outcome';
 import type {
   ConvertibleRI,
   ExchangeableAzureRI,
@@ -189,8 +190,9 @@ export async function getRIExchangeHistory(
  * Approve a pending RI exchange via session auth (issue #300).
  * Mirrors the purchase approvePurchase API method.
  */
-export async function approveRIExchange(id: string): Promise<void> {
-  await apiRequest<unknown>(`/ri-exchange/approve/${encodeURIComponent(id)}`, {
+export async function approveRIExchange(id: string): Promise<RIExchangeApproveResult> {
+  const body = await apiRequest<unknown>(`/ri-exchange/approve/${encodeURIComponent(id)}`, {
     method: 'POST',
   });
+  return parseRIExchangeApproveResult(body);
 }

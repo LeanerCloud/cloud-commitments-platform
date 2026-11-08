@@ -1472,10 +1472,17 @@ paths:
             known; a concurrent retry also answers this way), it is a plan step
             with no recommendations, it belongs to a settled ladder tranche,
             a provider re-drive of it is unsafe (ops_hint plus
-            redrive_unsafe, permanent and not overridable by force), its
-            failure is operator-fixable (ops_hint plus failure_reason), or it
-            reached the retry threshold without force=true (retry_attempt_n
-            plus threshold).
+            redrive_unsafe, permanent and not overridable by force), it is a
+            Redshift purchase that failed too recently for AWS to have settled
+            (retry_after_seconds and a Retry-After header, not overridable by
+            force), its failure is operator-fixable (ops_hint plus
+            failure_reason), or it reached the retry threshold without
+            force=true (retry_attempt_n plus threshold).
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (Redshift settle wait only)
+              schema:
+                type: integer
           content:
             application/json:
               schema:
@@ -1490,6 +1497,9 @@ paths:
                         type: string
                       redrive_unsafe:
                         type: boolean
+                      retry_after_seconds:
+                        type: integer
+                        description: Seconds until a Redshift purchase has settled and can be retried.
                       failure_reason:
                         type: string
                       retry_attempt_n:
@@ -2546,6 +2556,11 @@ paths:
         not part of that fingerprint: raising the cap does not make it a
         different purchase. See the 409 response: it does not assert that the
         earlier submit succeeded, only that it claimed the window.
+        The 409 also means a source RI is held by an exchange in progress: an
+        in-flight approve or AUTO exchange row, or an unresolved direct
+        execution (submitted, or unknown after a lost accept response). Nothing
+        is sent to AWS or claimed in that case; verify the outcome at AWS and
+        have an operator settle the held record before retrying.
         The exchange runs in the deployment's own AWS account, so a session
         whose allowed accounts do not cover that account gets 403.
         A quote that is not denominated in USD, or names no currency, is
@@ -2625,7 +2640,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          $ref: '#/components/responses/Conflict'
+          description: >-
+            Either an identical submit is already inside the 15 minute dedup
+            window, or a source RI is held by an exchange in progress (an
+            in-flight approve or AUTO row, or an unresolved direct execution).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
 
@@ -7740,7 +7762,10 @@ components:
           description: Execution-only. Operator hint shown instead of Retry on failed rows.
         redrive_unsafe:
           type: boolean
-          description: Execution-only. True when ops_hint is a permanent re-drive refusal.
+          description: >-
+            Execution-only. True when ops_hint is a permanent re-drive refusal,
+            including a Redshift purchase with no first dispatch time or one
+            dispatched at least 24h ago.
         is_audit_gap:
           type: boolean
           description: >-
@@ -9371,10 +9396,12 @@ components:
           enum: [all-upfront, partial-upfront, no-upfront]
         status:
           type: string
-          enum: [scheduled, fired, completed, cancelled, failed]
+          description: New rows write "canceled"; rows written before cloud-commitments-go#554 keep "cancelled".
+          enum: [scheduled, fired, completed, canceled, cancelled, failed]
         run_status:
           type: string
-          enum: [planned, awaiting_approval, approved, executing, completed, failed, cancelled, expired]
+          description: New rows write "canceled"; rows written before cloud-commitments-go#554 keep "cancelled".
+          enum: [planned, awaiting_approval, approved, executing, completed, failed, canceled, cancelled, expired]
         execution_id:
           type: string
           description: Omitted until the tranche has an execution.
@@ -9427,7 +9454,8 @@ components:
           format: uuid
         status:
           type: string
-          enum: [planned, awaiting_approval, approved, executing, completed, failed, cancelled, expired]
+          description: New rows write "canceled"; rows written before cloud-commitments-go#554 keep "cancelled".
+          enum: [planned, awaiting_approval, approved, executing, completed, failed, canceled, cancelled, expired]
         started_at:
           type: string
           format: date-time

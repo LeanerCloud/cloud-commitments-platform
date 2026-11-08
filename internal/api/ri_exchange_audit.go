@@ -3,11 +3,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"strconv"
+	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -35,19 +38,38 @@ import (
 // the submit-time idempotency claim for claimKey. It returns the audit row's
 // ID, which the caller finalizes with the provider's outcome.
 //
+// deadline is the end of the whole execution window, computed by the caller
+// just before the audit save (#1840): the claim is bounded by it, and the
+// caller runs the provider call to the same instant, so the exchange cannot
+// outlive created_at + riExchangeExecutionTimeout however slow the claim is
+// (the runbook's settle age relies on that bound). A claim that has not
+// answered by then fails like any other claim failure and never reaches the
+// provider; the row is finalized as failed.
+//
 // A claim refusal (an identical submit inside the window, or a claim store
 // failure) finalizes the row as failed: the request never reached the
 // provider, and the row records that an identical execute was attempted and
 // refused.
-func (h *Handler) beginDirectExchange(ctx context.Context, audit *config.RIExchangeDirectExecution, claimKey string) (string, error) {
+func (h *Handler) beginDirectExchange(ctx context.Context, audit *config.RIExchangeDirectExecution, claimKey string, deadline time.Time) (string, error) {
 	if err := audit.Validate(); err != nil {
 		return "", fmt.Errorf("invalid RI exchange audit record, exchange not executed: %w", err)
 	}
 	if err := h.config.SaveRIExchangeDirectExecution(ctx, audit); err != nil {
+		if errors.Is(err, config.ErrRIExchangeSourceInFlight) {
+			logging.Warnf("ri-exchange direct execute refused: %v", err)
+			return "", NewClientError(409, err.Error())
+		}
 		logging.Errorf("ri-exchange direct execute: failed to record audit row, refusing to execute: %v", err)
 		return "", fmt.Errorf("failed to record the RI exchange audit trail, exchange not executed: %w", err)
 	}
-	if err := h.claimExchangeSubmit(ctx, claimKey); err != nil {
+	claimCtx, cancelClaim := context.WithDeadline(ctx, deadline)
+	defer cancelClaim()
+	err := h.claimExchangeSubmit(claimCtx, claimKey)
+	if err == nil && claimCtx.Err() != nil {
+		// Claimed, but too late to leave the provider call any of its window.
+		err = fmt.Errorf("RI exchange claim finished after the execution deadline: %w", claimCtx.Err())
+	}
+	if err != nil {
 		h.finalizeDirectExchange(ctx, audit.ID, config.RIExchangeDirectOutcome{
 			Status: config.RIExchangeDirectStatusFailed,
 			Error:  "not submitted to the provider: " + err.Error(),
@@ -72,8 +94,8 @@ func (h *Handler) finalizeDirectExchange(ctx context.Context, id string, outcome
 // directExchangeFailureStatus classifies a failed provider call for the audit
 // trail from the error the handler returns for it: a 4xx means the provider
 // rejected the request as a client fault, so the exchange did not happen;
-// anything else (timeout, 5xx, transport error) does not prove that, so the
-// exchange may have committed and the outcome is recorded as unknown.
+// anything else does not prove that, so the exchange may have committed and
+// the outcome is recorded as unknown. Azure only; AWS uses awsDirectFailureStatus.
 func directExchangeFailureStatus(mapped error) string {
 	if ce, ok := IsClientError(mapped); ok && ce.code >= 400 && ce.code < 500 {
 		return config.RIExchangeDirectStatusFailed
@@ -181,7 +203,7 @@ func awsDirectExchangeAudit(session *Session, cloudAccountID string, body Exchan
 // awsDirectExchangeOutcome builds the outcome of a direct AWS execute.
 // ExecuteExchange may return its quote alongside an error (a guardrail
 // refusal), so the quoted amount is recorded whenever there is one.
-func awsDirectExchangeOutcome(exchangeID string, quote *exchange.ExchangeQuoteSummary, providerErr, mapped error) config.RIExchangeDirectOutcome {
+func awsDirectExchangeOutcome(exchangeID string, quote *exchange.ExchangeQuoteSummary, providerErr error) config.RIExchangeDirectOutcome {
 	outcome := config.RIExchangeDirectOutcome{
 		Status:            config.RIExchangeDirectStatusCompleted,
 		ProviderReference: exchangeID,
@@ -191,10 +213,25 @@ func awsDirectExchangeOutcome(exchangeID string, quote *exchange.ExchangeQuoteSu
 		outcome.NetPayableCurrency = quote.CurrencyCode
 	}
 	if providerErr != nil {
-		outcome.Status = directExchangeFailureStatus(mapped)
+		outcome.Status = awsDirectFailureStatus(providerErr)
 		outcome.Error = providerErr.Error()
 	}
 	return outcome
+}
+
+// awsDirectFailureStatus is unknown only for an error the library marked
+// common.ErrOutcomeUnknown, because only then may the accept have committed.
+// This depends on classifyAcceptError (pkg/exchange/outcome.go:21-35 in the
+// pinned cloud-commitments-go/pkg) wrapping every accept error except a
+// definite 4xx or throttle, and on pre-accept errors (quote, payment over
+// max, invalid exchange, STS) staying unwrapped. The in-flight guard blocks
+// on unknown rows, so a plain error must be failed or it would block the RI.
+// TestAWSDirectFailureStatus pins that wrapping.
+func awsDirectFailureStatus(providerErr error) string {
+	if errors.Is(providerErr, common.ErrOutcomeUnknown) {
+		return config.RIExchangeDirectStatusUnknown
+	}
+	return config.RIExchangeDirectStatusFailed
 }
 
 // azureDirectExchangeAudit builds the audit row for a direct Azure execute

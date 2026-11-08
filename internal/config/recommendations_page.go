@@ -99,6 +99,16 @@ func SuppressionTupleKey(accountID, provider, service, region, resourceType, eng
 	return accountID + sep + provider + sep + service + sep + region + sep + resourceType + sep + engine
 }
 
+// SuppressionEngineSpellings returns every engine spelling a stored rec can
+// carry that CanonicalSuppressionEngine maps to canonical.
+func SuppressionEngineSpellings(provider, service, canonical string) []string {
+	out := []string{canonical}
+	if CanonicalSuppressionEngine(provider, service, "") == canonical && canonical != "" {
+		out = append(out, "")
+	}
+	return out
+}
+
 // SuppressionServiceSpellings returns every service spelling a stored rec
 // can carry that CanonicalSuppressionService maps to canonical for provider:
 // canonical itself (when it maps to itself) and its legacy and dash-free

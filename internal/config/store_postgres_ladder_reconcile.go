@@ -33,20 +33,34 @@ type LadderChainNode struct {
 	UpdatedAt            time.Time
 }
 
+// LadderFiredCursor is the keyset position after which ListFiredLadderTranches
+// continues: the (scheduled_date, id) of the last tranche of the previous page.
+type LadderFiredCursor struct {
+	ScheduledDate time.Time
+	ID            string
+}
+
 // ListFiredLadderTranches returns fired tranches that have an execution,
-// oldest first, for the reconciler to examine one by one.
-func (s *PostgresStore) ListFiredLadderTranches(ctx context.Context, limit int) ([]LadderTrancheDB, error) {
+// oldest first (scheduled_date, id), for the reconciler to examine one by one.
+// A nil after starts at the oldest; otherwise only rows strictly after it.
+func (s *PostgresStore) ListFiredLadderTranches(ctx context.Context, after *LadderFiredCursor, limit int) ([]LadderTrancheDB, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("ListFiredLadderTranches limit must be positive, got %d", limit)
+	}
+	var afterDate *time.Time
+	var afterID *string
+	if after != nil {
+		afterDate, afterID = &after.ScheduledDate, &after.ID
 	}
 	rows, err := s.db.Query(ctx, `
 		SELECT id, config_id, run_id, execution_id, layer_type, amount_usd_hr, term,
 		       payment_option, scheduled_date, status, settled_at, created_at, amount_basis, commitment_rate
 		FROM ladder_tranches
 		WHERE status = 'fired' AND execution_id IS NOT NULL
+		  AND ($2::timestamptz IS NULL OR (scheduled_date, id) > ($2::timestamptz, $3::uuid))
 		ORDER BY scheduled_date, id
 		LIMIT $1
-	`, limit)
+	`, limit, afterDate, afterID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list fired ladder_tranches: %w", err)
 	}

@@ -23,7 +23,7 @@ func runFanOutCapturingOpts(t *testing.T, service common.ServiceType, mk func(st
 
 // runFanOutCapturingOptsWithJournal is runFanOutCapturingOpts on a Manager
 // whose attempt journal is journal.
-func runFanOutCapturingOptsWithJournal(t *testing.T, service common.ServiceType, mk func(string) config.RecommendationRecord, journal common.AttemptJournal) []common.PurchaseOptions {
+func runFanOutCapturingOptsWithJournal(t *testing.T, service common.ServiceType, mk func(string) config.RecommendationRecord, journal AttemptJournal) []common.PurchaseOptions {
 	t.Helper()
 	ctx := context.Background()
 	accounts := []config.CloudAccount{
@@ -151,6 +151,13 @@ type redshiftFinalizeRun struct {
 func runRedshiftFinalize(t *testing.T, exec *config.PurchaseExecution, accounts []config.CloudAccount, service common.ServiceType,
 	stamp func() (config.StampResult, error)) *redshiftFinalizeRun {
 	t.Helper()
+	return runRedshiftFinalizeWithJournal(t, exec, accounts, service, stamp, nil)
+}
+
+// runRedshiftFinalizeWithJournal is runRedshiftFinalize on a manager whose attempt journal is journal.
+func runRedshiftFinalizeWithJournal(t *testing.T, exec *config.PurchaseExecution, accounts []config.CloudAccount, service common.ServiceType,
+	stamp func() (config.StampResult, error), journal AttemptJournal) *redshiftFinalizeRun {
+	t.Helper()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := new(MockEmailSender)
@@ -173,7 +180,7 @@ func runRedshiftFinalize(t *testing.T, exec *config.PurchaseExecution, accounts 
 	if stamp != nil {
 		mockStore.On("LockRedshiftTuplesTx", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 		mockStore.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 		res, stampErr := stamp()
 		mockStore.On("StampFirstDispatchTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Run(func(args mock.Arguments) {
@@ -200,6 +207,7 @@ func runRedshiftFinalize(t *testing.T, exec *config.PurchaseExecution, accounts 
 	manager := &Manager{
 		config: mockStore, email: mockEmail, providerFactory: mockFactory,
 		credStore: awsAccessKeyCredStore(), dashboardURL: "https://dashboard.example.com",
+		attemptJournal: journal,
 	}
 	run.err = manager.executeAndFinalize(ctx, exec)
 	return run
@@ -376,6 +384,9 @@ func (*fakeAttemptJournal) PriorAttempts(context.Context, string) ([]common.Atte
 	return nil, nil
 }
 func (*fakeAttemptJournal) RecordAttempt(context.Context, common.AttemptRecord) error { return nil }
+func (*fakeAttemptJournal) ClaimedByOthers(context.Context, string, []string) ([]string, error) {
+	return nil, nil
+}
 
 // The journal reaches every per-rec dispatch together with the per-account
 // ExecutionID the provider keys its attempt rows on (go#107).

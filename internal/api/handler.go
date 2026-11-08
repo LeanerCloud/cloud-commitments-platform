@@ -144,6 +144,9 @@ type Handler struct {
 	// exchange.ExecuteExchange directly. Tests inject a stub so the handler
 	// can be exercised end-to-end without live AWS credentials or a real RI.
 	executeExchangeFn func(ctx context.Context, req exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error)
+	// executionTimeoutOverride, when positive, replaces riExchangeExecutionTimeout
+	// for the direct executes. Tests only.
+	executionTimeoutOverride time.Duration
 
 	// exchangeQuoteFn is the RI exchange quote function injected by tests.
 	// When nil (the production default), awsExchangeQuoter returns
