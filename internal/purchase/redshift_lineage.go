@@ -147,7 +147,7 @@ func conflictRefusal(executionID string, conflicts []config.RedshiftLineageConfl
 }
 
 // conflictRules is the refusal precedence: another family's row that may have bought recently, any open lineage, a
-// same-family attempt inside the settle. Failed rows only fall through to pickConflict's last case.
+// same-family attempt inside the settle. Other failed rows only fall through to pickConflict's last case.
 var conflictRules = []struct {
 	match   func(config.RedshiftLineageConflict) bool
 	refusal string

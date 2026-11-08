@@ -148,6 +148,7 @@ func isWordByte(b byte) bool {
 }
 
 // setItems splits a SET clause at commas outside parentheses and '...' literals.
+// It does not parse -- comments, $$...$$ or E'...' strings; no SQL in this repo uses them in a SET.
 func setItems(set string) []string {
 	var items []string
 	depth, start, inQuote := 0, 0, false
