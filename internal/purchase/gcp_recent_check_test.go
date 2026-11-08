@@ -341,6 +341,26 @@ func TestGCPRecentRefusal_DropsOwnCommitmentsBeforeFiltering(t *testing.T) {
 	assert.Zero(t, spy.calls, "nothing recent and foreign is left, so the filter is not reached")
 }
 
+// Recent commitments from two projects cannot all describe this rec's project,
+// so the check fails closed instead of stamping the first project and letting
+// a duplicate in the other one through.
+func TestGCPRecentRefusal_CommitmentsFromTwoProjectsFailClosed(t *testing.T) {
+	recent := append(spyRecent(false), spyRecent(false)...)
+	recent[1].Account = "other-project"
+	recent[1].CommitmentID = "other-2"
+	inner := new(MockServiceClient)
+	inner.On("GetExistingCommitments", mock.Anything).Return(recent, nil)
+	spy := &filterSpy{MockServiceClient: inner, filtered: false}
+
+	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), nil)
+
+	require.Error(t, err)
+	assert.Equal(t, gcpDuplicateCheckFailedNote, err.Error())
+	var notSubmitted *beforeSubmissionError
+	assert.True(t, errors.As(err, &notSubmitted))
+	assert.Zero(t, spy.calls, "the provider filter is never reached with a mixed-project list")
+}
+
 // A client without the GCP filter must fail closed, never reach recfilter's
 // generic map path.
 func TestGCPRecentRefusal_ClientWithoutFilterFailsClosed(t *testing.T) {
