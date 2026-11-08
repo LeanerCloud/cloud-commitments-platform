@@ -118,6 +118,16 @@ func (h *Handler) requireRIExchangeResolveConstraints(ctx context.Context, sessi
 	if err != nil {
 		return fmt.Errorf("failed to resolve cloud account scope: %w", err)
 	}
+	return h.requireRIExchangeConstraintsFor(ctx, session, cloudAccountID, region, func() (float64, error) {
+		return h.riExchangeHoldAmount(ctx, id)
+	})
+}
+
+// requireRIExchangeConstraintsFor is the constraint check shared by the
+// history resolve and the direct-row resolve: the grant must allow the AWS EC2
+// exchange in the given account and region, and when it caps the amount,
+// amount() must fit under the cap. A grant without a cap never calls amount.
+func (h *Handler) requireRIExchangeConstraintsFor(ctx context.Context, session *Session, cloudAccountID, region string, amount func() (float64, error)) error {
 	c := auth.PermissionConstraints{
 		AccountIDs: []string{cloudAccountID},
 		Providers:  []string{string(common.ProviderAWS)},
@@ -135,7 +145,7 @@ func (h *Handler) requireRIExchangeResolveConstraints(ctx context.Context, sessi
 	if otherErr := check(0); otherErr != nil {
 		return otherErr
 	}
-	due, err := h.riExchangeHoldAmount(ctx, id)
+	due, err := amount()
 	if err != nil {
 		return err
 	}
