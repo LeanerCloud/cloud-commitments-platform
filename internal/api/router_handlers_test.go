@@ -235,6 +235,7 @@ func TestRouter_rejectRIExchangeHandler_InvalidToken(t *testing.T) {
 }
 
 func TestRouter_listAccountsHandler(t *testing.T) {
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true") // the handler's STS lookup must not reach IMDS (#855 guard)
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
