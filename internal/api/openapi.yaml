@@ -2881,6 +2881,131 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/ri-exchange/direct-executions:
+    get:
+      operationId: listRIExchangeDirectExecutions
+      tags: [RIExchange]
+      summary: List AWS direct RI exchanges that still hold their source RIs
+      description: >
+        An AWS direct execute whose outcome was never recorded stays `submitted`
+        or `unknown`, and the in-flight guard then refuses every later exchange
+        of its source RIs. This lists those unresolved rows, oldest first, so an
+        operator can check AWS and resolve them. Requires `execute:ri-exchange`.
+        A row is listed only when the session's allowed accounts cover its
+        account (a row with no registered account needs an unrestricted
+        session) and the grant on `execute:ri-exchange` covers its account and
+        region, evaluated as the direct execute evaluates it. Rows outside that
+        are absent, not an error, so an empty list can mean nothing is stuck or
+        nothing is visible. `error_summary` is a sanitized category message; the
+        stored provider text, the executing user id and the API key id are never
+        returned. `resolvable_at` is the earliest time the store would accept a
+        resolve: ten minutes after creation for a `submitted` row, one minute
+        after completion for an `unknown` row.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [submitted, unknown]
+          description: Default is both.
+        - name: ri_id
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+          description: Source RI id, matched trimmed and case-insensitively.
+        - name: region
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^[a-z0-9-]{1,32}$'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: The `next_cursor` of the previous page. Opaque.
+      responses:
+        '200':
+          description: One page of unresolved direct exchanges
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [executions, next_cursor]
+                properties:
+                  executions:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, status, provider, region, source_ids, targets, max_payment_due, max_payment_currency, created_at, executed_by, error_summary, resolvable, resolvable_at]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        status:
+                          type: string
+                          enum: [submitted, unknown]
+                        provider:
+                          type: string
+                          enum: [aws]
+                        region:
+                          type: string
+                        source_ids:
+                          type: array
+                          items:
+                            type: string
+                        targets:
+                          type: array
+                          items:
+                            type: object
+                        max_payment_due:
+                          type: string
+                        max_payment_currency:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                        executed_by:
+                          type: string
+                        error_summary:
+                          type: string
+                        resolvable:
+                          type: boolean
+                        resolvable_at:
+                          type: string
+                          format: date-time
+                  next_cursor:
+                    type: string
+                    description: Empty at the end of the list.
+        '400':
+          description: Invalid `status`, `region`, `ri_id`, `limit` or `cursor`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: RI exchange resolve storage is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /api/ri-exchange/resolve/{id}:
     parameters:
       - $ref: '#/components/parameters/ResourceID'
