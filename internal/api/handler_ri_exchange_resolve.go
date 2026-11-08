@@ -165,11 +165,21 @@ func (h *Handler) riExchangeHoldAmount(ctx context.Context, id string) (float64,
 	if record == nil {
 		return 0, errNotFound
 	}
-	due, err := strconv.ParseFloat(record.PaymentDue, 64)
-	if err != nil || math.IsNaN(due) || math.IsInf(due, 0) || due < 0 {
+	due, ok := parseRIExchangeAmount(record.PaymentDue)
+	if !ok {
 		return 0, fmt.Errorf("unreadable hold amount on exchange %s", id)
 	}
 	return due, nil
+}
+
+// parseRIExchangeAmount reads a stored amount, refusing a value that is not a
+// finite non-negative number.
+func parseRIExchangeAmount(s string) (float64, bool) {
+	due, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(due) || math.IsInf(due, 0) || due < 0 {
+		return 0, false
+	}
+	return due, true
 }
 
 func mapRIExchangeResolveError(err error) error {

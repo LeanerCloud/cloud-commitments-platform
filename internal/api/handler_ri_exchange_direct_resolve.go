@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,8 +10,10 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
+	"github.com/aws/aws-lambda-go/events"
 )
 
 // Operator list of AWS direct RI-exchange rows that still hold their source
@@ -131,4 +134,96 @@ func resolvableRIExchangeDirectAt(r *config.RIExchangeDirectRow) time.Time {
 		return r.CreatedAt.Add(config.RIExchangeDirectResolveSubmittedAfter).UTC()
 	}
 	return r.CompletedAt.Add(config.RIExchangeDirectResolveUnknownCheckAfter).UTC()
+}
+
+type riExchangeDirectResolveResponse struct {
+	ID             string    `json:"id"`
+	Status         string    `json:"status"`
+	ResolvedStatus string    `json:"resolved_status"`
+	ResolvedAt     time.Time `json:"resolved_at"`
+	Note           string    `json:"note"`
+	Replayed       bool      `json:"replayed"`
+}
+
+// resolveRIExchangeDirectExecution records an operator's outcome for a stuck
+// AWS direct row. Authorization runs against the ROW's account, region and
+// payment cap, not the deployment's, because the row may belong to another
+// account; an unknown, out-of-scope or non-AWS row is the same 404.
+func (h *Handler) resolveRIExchangeDirectExecution(ctx context.Context, req *events.LambdaFunctionURLRequest, id string) (any, error) {
+	session, err := h.requirePermission(ctx, req, "execute", "ri-exchange")
+	if err != nil {
+		return nil, err
+	}
+	// The resolver is stamped on the row, so it needs an identified person.
+	if session.UserID == apiKeyAdminUserID {
+		return nil, NewClientError(403, "resolving an RI exchange needs a signed-in user or a user API key")
+	}
+	if idErr := validateUUID(id); idErr != nil {
+		return nil, idErr
+	}
+	store, ok := h.config.(config.RIExchangeDirectResolveStore)
+	if !ok {
+		return nil, NewClientError(503, "RI exchange resolve storage is unavailable")
+	}
+	row, err := store.GetRIExchangeDirectExecution(ctx, id)
+	if mapped := mapRIExchangeResolveError(err); mapped != nil {
+		return nil, mapped
+	}
+	if authErr := h.authorizeRIExchangeDirectRow(ctx, session, row); authErr != nil {
+		return nil, authErr
+	}
+	resolve, err := buildRIExchangeDirectResolve(session, row, req.Body)
+	if err != nil {
+		return nil, err
+	}
+	res, err := store.ResolveRIExchangeDirectExecution(ctx, resolve)
+	if mapped := mapRIExchangeResolveError(err); mapped != nil {
+		return nil, mapped
+	}
+	if !res.Replayed {
+		logging.Warnf("RI exchange direct row resolved by operator: id=%s actor=%q via=%s outcome=%s",
+			id, session.UserID, credentialKind(ctx, session), res.ResolvedStatus)
+	}
+	return riExchangeDirectResolveResponse{ID: res.ID, Status: res.Status, ResolvedStatus: res.ResolvedStatus,
+		ResolvedAt: res.ResolvedAt.UTC(), Note: res.Note, Replayed: res.Replayed}, nil
+}
+
+// buildRIExchangeDirectResolve validates the body against the row and builds
+// the store request. The note must fit the store's byte limit, so an overlong
+// reason is a clear 400 here rather than the store's.
+func buildRIExchangeDirectResolve(session *Session, row *config.RIExchangeDirectRow, raw string) (config.RIExchangeDirectResolve, error) {
+	body, checkedAt, err := decodeRIExchangeDirectResolve(raw, row.Region)
+	if err != nil {
+		return config.RIExchangeDirectResolve{}, err
+	}
+	note := body.note(checkedAt)
+	if len(note) > config.RIExchangeDirectResolveNoteMax {
+		return config.RIExchangeDirectResolve{}, NewClientError(400, "reason too long once encoded; shorten it")
+	}
+	return config.RIExchangeDirectResolve{
+		ID: row.ID, Outcome: body.Outcome, ExpectedStatus: body.ExpectedStatus, Note: note,
+		CheckedAt: checkedAt, ResolvedByUserID: resolveCreatorUserID(session), ResolvedBy: fourEyesActorIdentity(session),
+	}, nil
+}
+
+// authorizeRIExchangeDirectRow applies the session's account scope and the
+// grant on execute:ri-exchange to the row's own account, region and
+// max_payment_due (the most the original request could have committed). A
+// row outside the account scope reads as missing.
+func (h *Handler) authorizeRIExchangeDirectRow(ctx context.Context, session *Session, row *config.RIExchangeDirectRow) error {
+	scope, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+	account, inScope := riExchangeDirectPairAccount(scope, config.RIExchangeDirectAccountRegion{CloudAccountID: row.CloudAccountID, Region: row.Region})
+	if !inScope {
+		return errNotFound
+	}
+	return h.requireRIExchangeConstraintsFor(ctx, session, account, row.Region, func() (float64, error) {
+		due, ok := parseRIExchangeAmount(row.MaxPaymentDue)
+		if !ok {
+			return 0, fmt.Errorf("unreadable payment cap on direct exchange %s", row.ID)
+		}
+		return due, nil
+	})
 }
