@@ -2428,8 +2428,9 @@ const retryThreshold = 5
 //   - failedExec.Status must be "failed" → 409 otherwise.
 //   - a plan-step row (PlanID set) must carry at least one recommendation
 //     → 409 otherwise, nothing to buy (platform#609).
-//   - every rec must be safe to re-drive per purchase.RedriveRefusalReason
-//     → 409 with ops_hint + redrive_unsafe when any is not, NOT
+//   - every rec must be safe to re-drive per purchase.RetryRefusalReason
+//     (a proven-unsent attempt-0 EC2 or Azure savings-plan row is lifted,
+//     #1803) → 409 with ops_hint + redrive_unsafe when any is not, NOT
 //     overridable by ?force=true (issue #1668).
 //   - failedExec.Error must NOT match the persistent-failure map →
 //     409 with ops_hint when it does (Q3).
@@ -2603,15 +2604,17 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 	// Provider re-drive safety (issue #1668). A "failed" row may in fact
 	// have landed its commitment at the provider (a timeout, a lost
 	// response, a post-purchase write that failed), so every retry is
-	// potentially a re-drive. purchase.RedriveRefusalReason is the same
-	// predicate the reaper's automatic re-drive gates on: it returns a
-	// reason exactly when the provider offers nothing that would collapse
-	// the second attempt onto the first, which today means AWS EC2 (no
-	// client token; a lost response is reported as outcome unknown), Azure
-	// savings-plans (no server-side idempotency key, timestamp-derived order
-	// alias) plus any provider the predicate does not recognize. A failed EC2
-	// row therefore cannot be retried; the operator checks the account and
-	// starts a new purchase. Redshift is gated by checkRedshiftRetryGate.
+	// potentially a re-drive. purchase.RetryRefusalReason is the reaper's
+	// RedriveRefusalReason minus the EC2 and Azure savings-plans refusals for a
+	// row proven to have sent nothing (no_submission at attempt 0). The
+	// remaining reasons exist exactly when the provider offers nothing that
+	// would collapse the second attempt onto the first: AWS EC2 (no client
+	// token; a lost response is reported as outcome unknown), Azure
+	// savings-plans (no server-side idempotency key, no tag-based lookup) plus
+	// any provider the predicate does not recognize. A failed EC2 or Azure
+	// savings-plans row that may have sent therefore cannot be retried; the
+	// operator checks the account and starts a new purchase. Redshift is gated
+	// by checkRedshiftRetryGate.
 	// If plan steps ever carry recommendations (platform#609), a failed EC2
 	// step will be un-retryable too and needs its own recovery path.
 	//
@@ -2625,7 +2628,7 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 	// A refusal here is permanent: nothing about the row can change to make
 	// it retryable. So the gate must fire only where the duplicate hazard is
 	// real. An execution carrying no recommendations buys nothing and cannot
-	// double-buy, so RedriveRefusalReason stays silent on the empty case. The
+	// double-buy, so the predicate stays silent on the empty case. The
 	// rec-less plan steps that createPurchaseExecutionsTx (handler_plans.go) and
 	// getOrCreateExecution (purchase/notifications.go) used to create are
 	// refused earlier in this handler instead (platform#609), because a retry of
@@ -2633,7 +2636,7 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 	// never "we could not load them": GetExecutionByID propagates a
 	// recommendations unmarshal failure as an error (config/store_postgres.go),
 	// which this handler has already turned into a 500 well before this gate.
-	if reason := purchase.RedriveRefusalReason(failedExec); reason != "" {
+	if reason := purchase.RetryRefusalReason(failedExec); reason != "" {
 		return NewClientErrorWithDetails(409,
 			"this purchase cannot be retried safely: "+reason,
 			// ops_hint reuses the key the History UI already renders in
@@ -2642,11 +2645,10 @@ func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *event
 			// the operator-fixable hints below, which clear once the
 			// configuration is fixed.
 			//
-			// No frontend reads redrive_unsafe yet, so it looks unused: issue
-			// #1714 is its intended consumer, where History will render a
-			// terminal badge instead of offering a Retry button that always
-			// 409s. That is presentation only. This refusal is enforced here,
-			// server-side, and does not depend on any client honoring it.
+			// History also sets redrive_unsafe on the row (handler_history.go)
+			// to hide Retry. That is presentation only. This refusal is
+			// enforced here, server-side, and does not depend on any client
+			// honoring it.
 			map[string]any{"ops_hint": reason, "redrive_unsafe": true})
 	}
 
@@ -2761,15 +2763,15 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 	// against the identical lineage key, which is the precondition for the
 	// provider-side dedupe to engage at all.
 	//
-	// Whether it then DOES engage is per-provider and not universal: AWS (all
-	// services), Azure reservations and GCP CUDs reproduce the token and
-	// dedupe, but Azure savings-plans has no server-side idempotency key and
-	// names its order alias from time.Now().UnixNano(), so a re-drive of a
-	// landed Azure SP order still duplicates it. Scope propagation is therefore
-	// necessary for dedupe everywhere and sufficient everywhere except Azure SP.
-	// purchase.RedriveRefusalReason encodes exactly that exclusion and now gates
-	// this handler too (checkRetryEligibilityGates, issue #1668), so an Azure SP
-	// row never reaches this function in the first place.
+	// Whether it then DOES engage is per-provider and not universal: most AWS
+	// services, Azure reservations and GCP CUDs reproduce the token and
+	// dedupe, but AWS EC2 takes no client token and Azure savings-plans has no
+	// tag-based lookup, so a re-drive of a landed order of either may still
+	// duplicate it. Scope propagation is therefore necessary for dedupe
+	// everywhere and sufficient nowhere for those two.
+	// purchase.RetryRefusalReason gates this handler on that exclusion
+	// (checkRetryEligibilityGates, issue #1668) and lifts it only for a
+	// proven-unsent first attempt, which cannot have landed.
 	//
 	// Copied by value rather than by pointer so the successor and the
 	// historical failed row never share a *string, matching the defensive
@@ -2816,8 +2818,9 @@ func (h *Handler) persistRetryExecution(ctx context.Context, failedExec *config.
 // Order matters: the FK on retry_execution_id requires the successor to
 // exist before the original can point at it.
 //
-// The linkage write is an atomic CAS (LinkRetryExecutionAtomic, conditional
-// on status='failed' AND retry_execution_id IS NULL), not a full-row
+// The linkage write is an atomic CAS (LinkUnsentRetryExecutionAtomic when the
+// no-guard refusal was lifted by the proven-unsent proof, LinkRetryExecutionAtomic
+// otherwise; conditional on status='failed' AND retry_execution_id IS NULL), not a full-row
 // upsert of a stale in-memory copy of the failed row. This is the
 // authoritative, race-safe guard: the pre-tx already-retried check in
 // loadAndValidateRetryRequest is only a fast-path optimization, since two
@@ -2880,7 +2883,7 @@ func (h *Handler) writeRetrySuccessorTx(ctx context.Context, tx pgx.Tx, failedEx
 	if err := h.config.SavePurchaseExecutionTx(ctx, tx, newExecution); err != nil {
 		return err
 	}
-	linked, linkErr := h.config.LinkRetryExecutionAtomic(ctx, tx, failedExec.ExecutionID, newExecution.ExecutionID)
+	linked, linkErr := h.linkRetrySuccessor(ctx, tx, failedExec, newExecution.ExecutionID)
 	if linkErr != nil {
 		return linkErr
 	}
@@ -2896,6 +2899,16 @@ func (h *Handler) writeRetrySuccessorTx(ctx context.Context, tx pgx.Tx, failedEx
 		}
 	}
 	return nil
+}
+
+// linkRetrySuccessor links the failed row to its successor. A row retryable
+// only on its no-submission proof links through the CAS that re-checks the
+// proof, so a row that stopped being one after the gate read it is not linked.
+func (h *Handler) linkRetrySuccessor(ctx context.Context, tx pgx.Tx, failedExec *config.PurchaseExecution, successorID string) (bool, error) {
+	if purchase.RedriveRefusalReason(failedExec) != "" && purchase.RetryRefusalReason(failedExec) == "" {
+		return h.config.LinkUnsentRetryExecutionAtomic(ctx, tx, failedExec.ExecutionID, successorID)
+	}
+	return h.config.LinkRetryExecutionAtomic(ctx, tx, failedExec.ExecutionID, successorID)
 }
 
 // checkRetryDuplicateSubmit returns a *retryDuplicateSubmitError when recent
@@ -2927,7 +2940,7 @@ func (e *retryDuplicateSubmitError) Error() string {
 
 // errRetryLinkRaceLost is returned from persistRetrySuccessorTx's tx
 // closure to force a rollback (via WithTx's error path) when
-// LinkRetryExecutionAtomic matches zero rows -- a concurrent retry already
+// the link CAS matches zero rows -- a concurrent retry already
 // claimed the failed row between the pre-tx already-retried check and this
 // tx's UPDATE. Never returned to a caller directly; persistRetrySuccessorTx
 // translates it into a 409 ClientError.

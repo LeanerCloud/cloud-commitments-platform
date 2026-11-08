@@ -25,8 +25,8 @@ import (
 //
 // That intersection is the gate's release valve, and it has to exist. An
 // account can become permanently unable to buy (revoked credentials, closed
-// account, an Azure savings-plans row that purchase.RedriveRefusalReason
-// refuses to retry by design), and a failed row cannot be canceled either --
+// account, an EC2 or Azure savings-plans row that
+// purchase.RetryRefusalReason refuses to retry by design), and a failed row cannot be canceled either --
 // IsCancelable and CancelExecutionAtomic both admit only pending/notified.
 // Without the attachment test such a unit would hold its step open
 // forever and the plan would never buy the rest of its ramp: the exact

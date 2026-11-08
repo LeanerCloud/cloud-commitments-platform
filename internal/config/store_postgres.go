@@ -1290,6 +1290,19 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 // successor row, after that insert, so the FK on retry_execution_id is
 // satisfied.
 func (s *PostgresStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error) {
+	return s.linkRetryExecution(ctx, tx, executionID, retryExecutionID, "")
+}
+
+// LinkUnsentRetryExecutionAtomic is LinkRetryExecutionAtomic for a retry the
+// handler allowed only because the row is a proven-unsent first attempt: the
+// same conditional UPDATE plus no_submission AND retry_attempt_n = 0, so a row
+// that stopped being that proof between the gate and the link is not linked.
+func (s *PostgresStore) LinkUnsentRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error) {
+	return s.linkRetryExecution(ctx, tx, executionID, retryExecutionID, "AND no_submission AND retry_attempt_n = 0")
+}
+
+// linkRetryExecution is the shared link CAS; extraPredicate narrows it.
+func (s *PostgresStore) linkRetryExecution(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID, extraPredicate string) (bool, error) {
 	// Before the settlement migration no row can be settled (#999).
 	notSettled := ""
 	if ready, readyErr := settlementSchemaReady(ctx, tx); readyErr != nil {
@@ -1304,7 +1317,8 @@ func (s *PostgresStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx,
 		 WHERE execution_id = $1
 		   AND status = 'failed'
 		   AND retry_execution_id IS NULL
-		   ` + notSettled
+		   ` + notSettled + `
+		   ` + extraPredicate
 	tag, err := tx.Exec(ctx, q, executionID, retryExecutionID)
 	if err != nil {
 		return false, fmt.Errorf("failed to link retry execution: %w", err)

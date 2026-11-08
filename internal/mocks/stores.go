@@ -731,6 +731,13 @@ func (m *MockConfigStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.T
 	return args.Bool(0), args.Error(1)
 }
 
+// LinkUnsentRetryExecutionAtomic mocks the proven-unsent link CAS (no default: testify panics if unexpected).
+func (m *MockConfigStore) LinkUnsentRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (bool, error) {
+	m.record("LinkUnsentRetryExecutionAtomic", ctx, tx, executionID, retryExecutionID)
+	args := m.Called(ctx, tx, executionID, retryExecutionID)
+	return args.Bool(0), args.Error(1)
+}
+
 // LockLadderTrancheForRetryTx mocks the operation. Defaults to (not a ladder
 // execution) when no expectation is registered.
 func (m *MockConfigStore) LockLadderTrancheForRetryTx(ctx context.Context, tx pgx.Tx, idempotencyKey string) (ladder.TrancheStatus, bool, error) {
