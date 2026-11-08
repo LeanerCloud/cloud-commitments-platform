@@ -128,14 +128,14 @@ func (m *Manager) executeSingleAccount(ctx context.Context, exec *config.Purchas
 		}
 	}
 
-	totalSavings, totalUpfront, purchaseErrors, procErr := m.processPurchaseRecommendations(ctx, exec, plan, accountID, provCfg, target.awsPartition)
+	totalSavings, totalUpfront, purchaseErrors, allRefused, procErr := m.processPurchaseRecommendations(ctx, exec, plan, accountID, provCfg, target.awsPartition)
 	if procErr != nil {
 		return procErr
 	}
 
 	if len(purchaseErrors) > 0 && !anyRecPurchased(exec.Recommendations) {
 		// Nothing committed — a clean total failure.
-		return fmt.Errorf("some purchases failed: %v", purchaseErrors)
+		return failedPurchasesError(purchaseErrors, allRefused)
 	}
 
 	// Confirm only when at least one rec committed (full or partial success).
@@ -373,7 +373,7 @@ func (m *Manager) executeForAccountLate(ctx context.Context, baseExec *config.Pu
 	}
 
 	accountID := account.ExternalID
-	totalSavings, totalUpfront, purchaseErrors, procErr := m.processPurchaseRecommendations(ctx, &acctExec, plan, accountID, provCfg, account.AWSPartition())
+	totalSavings, totalUpfront, purchaseErrors, allRefused, procErr := m.processPurchaseRecommendations(ctx, &acctExec, plan, accountID, provCfg, account.AWSPartition())
 	if procErr != nil {
 		acctExec.Status = "failed"
 		acctExec.Error = procErr.Error()
@@ -384,6 +384,7 @@ func (m *Manager) executeForAccountLate(ctx context.Context, baseExec *config.Pu
 	// Resolve the final status/error/completion stamp from the per-rec outcome
 	// (#642), and learn whether any rec committed (#1014).
 	_, committed = applyAccountOutcome(&acctExec, purchaseErrors)
+	markRefusedAccountRow(&acctExec, allRefused)
 
 	if saveErr := m.saveAccountRow(ctx, &acctExec); saveErr != nil {
 		return committed, fmt.Errorf("AUDIT LOSS: failed to save execution record for account %s: %w", account.ID, saveErr)
@@ -449,7 +450,7 @@ const (
 )
 
 // skippedAccountNote words the skip row by whether Retry accepts it:
-// RedriveRefusalReason refuses EC2, Redshift and Azure savings plans whatever
+// RedriveRefusalReason refuses EC2 and Azure savings plans whatever
 // NoSubmission says, so those rows point at a new purchase instead.
 func skippedAccountNote(row *config.PurchaseExecution) string {
 	if RedriveRefusalReason(row) != "" {
@@ -744,7 +745,7 @@ type recPurchaseOutcome struct {
 	index    int
 }
 
-func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan, accountID string, provCfg *provider.Config, awsPartition string) (totalSavings, totalUpfront float64, purchaseErrors []string, procErr error) {
+func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan, accountID string, provCfg *provider.Config, awsPartition string) (totalSavings, totalUpfront float64, purchaseErrors []string, allRefused bool, procErr error) {
 	// ExecutionID is carried into PurchaseOptions so executeSinglePurchase
 	// can tag every per-rec log line with the owning exec UUID. Without
 	// this, CloudWatch filtering by exec ID returns zero hits and a stuck
@@ -766,7 +767,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 	// settings (no-silent-fallbacks-on-money-paths rule).
 	globalCfg, err := m.config.GetGlobalConfig(ctx)
 	if err != nil {
-		return 0, 0, nil, fmt.Errorf("purchase[%s]: failed to load GlobalConfig for offering class: %w",
+		return 0, 0, nil, false, fmt.Errorf("purchase[%s]: failed to load GlobalConfig for offering class: %w",
 			exec.ExecutionID, err)
 	}
 	if globalCfg != nil {
@@ -774,7 +775,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 	}
 	offeringClass, err := resolveEC2OfferingClass(opts.OfferingClass)
 	if err != nil {
-		return 0, 0, nil, fmt.Errorf("purchase[%s]: %w", exec.ExecutionID, err)
+		return 0, 0, nil, false, fmt.Errorf("purchase[%s]: %w", exec.ExecutionID, err)
 	}
 
 	// Build the list of selected indices once so the fan-out closure only
@@ -783,7 +784,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 	if len(selected) == 0 {
 		logging.Infof("purchase[%s]: no selected recommendations, nothing to execute (account=%s plan=%q)",
 			exec.ExecutionID, accountID, plan.Name)
-		return 0, 0, nil, nil
+		return 0, 0, nil, false, nil
 	}
 	logging.Infof("purchase[%s]: dispatching %d recommendation(s) for account=%s plan=%q",
 		exec.ExecutionID, len(selected), accountID, plan.Name)
@@ -841,8 +842,8 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 	// there are no concurrent writes to totals, exec.Recommendations, or
 	// purchaseErrors (05-N2). Do NOT move the aggregation inside the FanOut
 	// closure or run it concurrently with the fan-out.
-	totalSavings, totalUpfront, purchaseErrors = m.aggregatePurchaseOutcomes(ctx, exec, plan, accountID, offeringClass, results)
-	return totalSavings, totalUpfront, purchaseErrors, nil
+	totalSavings, totalUpfront, purchaseErrors, allRefused = m.aggregatePurchaseOutcomes(ctx, exec, plan, accountID, offeringClass, results)
+	return totalSavings, totalUpfront, purchaseErrors, allRefused, nil
 }
 
 // aggregatePurchaseOutcomes walks the fan-out results serially and writes
@@ -851,9 +852,10 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 // so the aggregation logic is single-threaded — no concurrent writes to
 // totals, purchaseErrors, or exec.Recommendations[i] regardless of how
 // many recs ran in parallel.
-func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan, accountID string, offeringClass ec2types.OfferingClassType, results []execution.Result[recPurchaseOutcome]) (float64, float64, []string) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
+func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan, accountID string, offeringClass ec2types.OfferingClassType, results []execution.Result[recPurchaseOutcome]) (float64, float64, []string, bool) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
 	var totalSavings, totalUpfront float64
 	var purchaseErrors []string
+	var tally failureTally
 	for _, r := range results {
 		// Closure-level error (parse / bounds / framework). r.Value is the
 		// zero recPurchaseOutcome here — its index is 0 and would mis-target
@@ -861,6 +863,7 @@ func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.Pu
 		// generic execution failure and skip the per-rec writes.
 		if r.Err != nil {
 			logging.Errorf("Internal fan-out failure during purchase execution: %v", r.Err)
+			tally.add(r.Err)
 			purchaseErrors = append(purchaseErrors, fmt.Sprintf("internal fan-out error: %v", r.Err))
 			continue
 		}
@@ -872,6 +875,7 @@ func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.Pu
 		// this otherwise).
 		if i < 0 || i >= len(exec.Recommendations) {
 			logging.Errorf("Aggregator received out-of-range index %d (len=%d)", i, len(exec.Recommendations))
+			tally.add(nil)
 			purchaseErrors = append(purchaseErrors, fmt.Sprintf("aggregator index %d out of range", i))
 			continue
 		}
@@ -886,6 +890,7 @@ func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.Pu
 			if v.purchase.CommitmentID != "" {
 				exec.Recommendations[i].PurchaseID = v.purchase.CommitmentID
 			}
+			tally.add(v.err)
 			purchaseErrors = append(purchaseErrors, fmt.Sprintf("%s: %v", rec.ResourceType, v.err))
 			continue
 		}
@@ -904,7 +909,7 @@ func (m *Manager) aggregatePurchaseOutcomes(ctx context.Context, exec *config.Pu
 			recordHistoryAuditGap(exec, v.purchase.CommitmentID, histErr)
 		}
 	}
-	return totalSavings, totalUpfront, purchaseErrors
+	return totalSavings, totalUpfront, purchaseErrors, tally.allRefused(exec.Recommendations)
 }
 
 // recordHistoryAuditGap stamps exec.Error with a note that a successful

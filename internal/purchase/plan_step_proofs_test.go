@@ -105,7 +105,7 @@ func tokenCapture(t *testing.T, providerName string, exec *config.PurchaseExecut
 			mu.Unlock()
 		}).Return(common.PurchaseResult{Success: true, CommitmentID: "c"}, nil)
 	m := &Manager{config: store, email: sender, providerFactory: factory}
-	_, _, errs, err := m.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "p"}, "acct", (*provider.Config)(nil), "")
+	_, _, errs, _, err := m.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "p"}, "acct", (*provider.Config)(nil), "")
 	require.NoError(t, err)
 	require.Empty(t, errs)
 	return tokens
@@ -150,13 +150,13 @@ func TestRedriveRefusedWhereNoProviderGuardExists(t *testing.T) {
 	for _, rec := range []config.RecommendationRecord{
 		{Provider: "azure", Service: "savingsplans"},
 		{Provider: "aws", Service: "ec2"},
-		{Provider: "aws", Service: "redshift"},
 		{Provider: "oracle", Service: "compute"},
 	} {
 		assert.NotEmpty(t, recRedriveRefusalReason(rec), "%s/%s", rec.Provider, rec.Service)
 	}
 	for _, rec := range []config.RecommendationRecord{
 		{Provider: "aws", Service: "rds"},
+		{Provider: "aws", Service: "redshift"},
 		{Provider: "azure", Service: "compute"},
 		{Provider: "gcp", Service: "compute"},
 	} {

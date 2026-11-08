@@ -38,7 +38,7 @@ func runGate(t *testing.T, exec *config.PurchaseExecution, stamp config.StampRes
 		Run(func(a mock.Arguments) { run.locked = a.Get(2).([]config.RedshiftTuple) }).Return(nil)
 	store.On("StampFirstDispatchTx", mock.Anything, mock.Anything, exec.ExecutionID, redshiftRedriveHorizon).Return(stamp, nil)
 	store.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, exec.ExecutionID, mock.Anything,
-		mock.Anything, mock.Anything, redshiftRedriveHorizon, mock.Anything, mock.Anything).
+		mock.Anything, mock.Anything, redshiftRedriveHorizon, mock.Anything, mock.Anything, mock.Anything).
 		Run(func(a mock.Arguments) {
 			run.family = a.String(3)
 			run.finds = a.Get(4).([]config.RedshiftTuple)
@@ -101,6 +101,97 @@ func TestRedshiftDispatchGate_FinishedConflictWinsOverOpenOne(t *testing.T) {
 
 	require.Error(t, run.err)
 	assert.Equal(t, redshiftRecentBuyRefusal, run.err.Error())
+}
+
+func TestRedshiftDispatchGate_SameFamilyRecentFailureRefusesWithSettleText(t *testing.T) {
+	rs := []config.RecommendationRecord{gateRec("acct-A", 2)}
+	sameFailed := config.RedshiftLineageConflict{ExecutionID: "sib", Status: config.StatusFailed, SameFamily: true, Recommendations: rs}
+
+	exec := gateExec(1, gateRec("acct-A", 2))
+	run := runGate(t, exec, stamped(), []config.RedshiftLineageConflict{sameFailed})
+	require.Error(t, run.err)
+	assert.True(t, isBeforeSubmission(run.err))
+	assert.Equal(t, redshiftSettleRefusal, run.err.Error())
+	assert.Nil(t, exec.FirstDispatchAt, "a refused dispatch records no stamp")
+
+	run = runGate(t, gateExec(1, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		sameFailed, {ExecutionID: "done", Status: config.StatusCompleted, Recommendations: rs}})
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftRecentBuyRefusal, run.err.Error(), "a recent finished buy wins over the settle text")
+}
+
+func TestRedshiftDispatchGate_SameFamilyFinishedRefusesWithSettleText(t *testing.T) {
+	rs := []config.RecommendationRecord{gateRec("acct-A", 2)}
+	done := config.RedshiftLineageConflict{ExecutionID: "sib", Status: config.StatusCompleted, SameFamily: true, Recommendations: rs}
+	run := runGate(t, gateExec(1, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{done})
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftSettleRefusal, run.err.Error())
+
+	run = runGate(t, gateExec(1, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		done, {ExecutionID: "live", Status: "running", SameFamily: true}})
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftConflictRefusal, run.err.Error(), "an open row wins over the settle text")
+}
+
+func TestRedshiftDispatchGate_SameFamilyFailureWithHintIsNotDropped(t *testing.T) {
+	run := runGate(t, gateExec(1, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "sib", Status: config.StatusFailed, SameFamily: true, Error: "send failed: SES sandbox active"}})
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftSettleRefusal, run.err.Error())
+}
+
+func TestRedshiftDispatchGate_PersistentFailureCandidateDropped(t *testing.T) {
+	exec := gateExec(0, gateRec("acct-A", 2))
+	run := runGate(t, exec, stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "stuck", Status: config.StatusFailed, Error: "send failed: SES sandbox active"}})
+
+	require.NoError(t, run.err, "History hides Retry for this row, so it must not hold the tuple")
+	assert.NotNil(t, exec.FirstDispatchAt)
+}
+
+func TestRedshiftDispatchGate_RunningRowWithHintTextStillConflicts(t *testing.T) {
+	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "live", Status: "running", Error: "SES sandbox"}})
+
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftConflictRefusal, run.err.Error())
+}
+
+func TestRedshiftDispatchGate_DefiniteRefusalFailedRowStillConflicts(t *testing.T) {
+	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "refused", Status: config.StatusFailed, Error: redshiftConflictRefusal, Recommendations: []config.RecommendationRecord{gateRec("acct-A", 2)}}})
+
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftFailedConflictRefusal, run.err.Error())
+	assert.True(t, isBeforeSubmission(run.err))
+}
+
+func TestRedshiftDispatchGate_PicksTheRefusalTextByConflictKind(t *testing.T) {
+	rs := []config.RecommendationRecord{gateRec("acct-A", 2)}
+	failed := config.RedshiftLineageConflict{ExecutionID: "f", Status: config.StatusFailed, Recommendations: rs}
+	running := config.RedshiftLineageConflict{ExecutionID: "r", Status: "running", Recommendations: rs}
+	done := config.RedshiftLineageConflict{ExecutionID: "d", Status: config.StatusCompleted, Recommendations: rs}
+	for name, tc := range map[string]struct {
+		conflicts []config.RedshiftLineageConflict
+		want      string
+	}{
+		"only failed":           {[]config.RedshiftLineageConflict{failed}, redshiftFailedConflictRefusal},
+		"failed beside running": {[]config.RedshiftLineageConflict{failed, running}, redshiftConflictRefusal},
+		"running":               {[]config.RedshiftLineageConflict{running}, redshiftConflictRefusal},
+		"finished wins":         {[]config.RedshiftLineageConflict{failed, running, done}, redshiftRecentBuyRefusal},
+	} {
+		run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), tc.conflicts)
+		require.Error(t, run.err, name)
+		assert.Equal(t, tc.want, run.err.Error(), name)
+	}
+}
+
+func TestRedshiftDispatchGate_FailedRowWithRefusedProviderRecDropped(t *testing.T) {
+	both := []config.RecommendationRecord{{Provider: "aws", Service: "ec2"}, gateRec("acct-A", 2)}
+	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "mixed", Status: config.StatusFailed, Recommendations: both}})
+
+	require.NoError(t, run.err, "Retry refuses the EC2 rec for good, so the row cannot be retried")
 }
 
 func TestRedshiftDispatchGate_QueriesOnlySelectedRedshiftTuples(t *testing.T) {
@@ -173,7 +264,7 @@ func TestRedshiftDispatchGate_StoreErrorsByAttempt(t *testing.T) {
 			store.On("LockRedshiftTuplesTx", mock.Anything, mock.Anything, mock.Anything).Return(lockErr)
 			store.On("StampFirstDispatchTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(stamped(), nil).Maybe()
 			store.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, findErr).Maybe()
+				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, findErr).Maybe()
 			exec := gateExec(attempt, gateRec("acct-A", 2))
 
 			err := (&Manager{config: store}).stampRedshiftDispatch(context.Background(), exec)
@@ -192,7 +283,7 @@ func TestRedshiftDispatchGate_CallOrderIsLockStampFind(t *testing.T) {
 	store.On("LockRedshiftTuplesTx", mock.Anything, mock.Anything, mock.Anything).Run(note("lock")).Return(nil)
 	store.On("StampFirstDispatchTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(note("stamp")).Return(stamped(), nil)
 	store.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(note("find")).Return(nil, nil)
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(note("find")).Return(nil, nil)
 
 	require.NoError(t, (&Manager{config: store}).stampRedshiftDispatch(context.Background(), gateExec(0, gateRec("acct-A", 2))))
 	assert.Equal(t, []string{"lock", "stamp", "find"}, order)
