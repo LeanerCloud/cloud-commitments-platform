@@ -225,6 +225,14 @@ jobs:
           python3 scripts/check-rollback-tf-vars.py
           python3 scripts/test-check-rollback-tf-vars.py
 
+      - name: Assert every Azure OIDC environment has a credential
+        # Issue #1750: an azure/login job bound to an environment missing from
+        # the ci-cd-permissions github_environments default fails with
+        # AADSTS70021 at deploy time. Parses the workflows (PyYAML).
+        run: |
+          python3 scripts/check-azure-oidc-environments.py
+          python3 scripts/test-check-azure-oidc-environments.py
+
       - name: Assert shellcheck is available to actionlint
         # actionlint does not fail when shellcheck is missing from PATH: it
         # silently skips every run: block and still exits 0. That silent skip is
