@@ -7463,7 +7463,7 @@ components:
           description: >
             Failure count per reason category. Keys are drawn from a closed
             set: permission_denied, throttled, timeout, canceled, not_found,
-            provider_unavailable, pricing_unavailable, other.
+            provider_unavailable, pricing_unavailable, pricing_hold_expired, other.
           additionalProperties:
             type: integer
           example:
@@ -7479,6 +7479,25 @@ components:
             The nil UUID (00000000-0000-0000-0000-000000000000) stands for the
             ambient identity, which has no registered account. It is returned
             only to callers with an unrestricted account scope.
+          items:
+            type: string
+            format: uuid
+        held_since:
+          type: object
+          description: >
+            First-held time per account key (a platform cloud-account ID, or
+            the nil UUID for the ambient identity). Only accounts in your
+            scope are returned.
+          additionalProperties:
+            type: string
+            format: date-time
+        expired_hold_account_ids:
+          type: array
+          description: >
+            Platform cloud-account IDs whose hold passed the age bound and
+            whose stale rows were evicted (reason pricing_hold_expired). Kept
+            until the account re-prices. Only accounts in your scope are
+            returned.
           items:
             type: string
             format: uuid

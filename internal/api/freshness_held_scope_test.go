@@ -3,8 +3,10 @@ package api
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -85,4 +87,61 @@ func TestFreshness_ScopeLookupFailureFailsClosed(t *testing.T) {
 	assert.NotContains(t, err.Error(), heldInScope)
 	_, isClient := IsClientError(err)
 	assert.False(t, isClient, "a lookup failure is a server error, not a client one")
+}
+
+func partialSweepFor(t *testing.T, accounts []string, stored *config.RecommendationsFreshness) config.PartialProviderSweep {
+	t.Helper()
+	f := newRefreshFixture(t, viewRecommendationsOnly(), accounts)
+	f.store.ExpectedCalls = nil
+	f.store.On("GetRecommendationsFreshness", mock.Anything).Return(stored, nil)
+	res, err := NewRouter(f.handler).Route(t.Context(), "GET", "/api/recommendations/freshness", scopedRequest(""))
+	require.NoError(t, err)
+	got, ok := res.(*config.RecommendationsFreshness)
+	require.True(t, ok, "got %T", res)
+	require.NotNil(t, got.LastCollectionPartial)
+	return got.LastCollectionPartial.Providers[0]
+}
+
+// held_since keys and the expired ids name accounts too, so they are filtered
+// like held_account_ids, and the expired count follows the filtered ids.
+func TestFreshness_HeldSinceAndExpiredScopedToCaller(t *testing.T) {
+	ambient := uuid.Nil.String()
+	since := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	stored := func() *config.RecommendationsFreshness {
+		f := heldFreshness(heldInScope, heldOutScope)
+		sweep := &f.LastCollectionPartial.Providers[0]
+		sweep.HeldSince = map[string]time.Time{heldInScope: since, heldOutScope: since, ambient: since}
+		sweep.ExpiredHoldAccountIDs = []string{heldInScope, heldOutScope}
+		sweep.Reasons[config.PartialReasonPricingHoldExpired] = 2
+		return f
+	}
+
+	t.Run("unrestricted caller sees everything", func(t *testing.T) {
+		got := partialSweepFor(t, nil, stored())
+		assert.Equal(t, []string{heldInScope, heldOutScope}, got.HeldAccountIDs)
+		assert.Len(t, got.HeldSince, 3)
+		assert.Equal(t, []string{heldInScope, heldOutScope}, got.ExpiredHoldAccountIDs)
+		assert.Equal(t, 2, got.Reasons[config.PartialReasonPricingHoldExpired])
+	})
+	t.Run("restricted caller sees only its own accounts", func(t *testing.T) {
+		got := partialSweepFor(t, []string{heldInScope}, stored())
+		assert.Equal(t, []string{heldInScope}, got.HeldAccountIDs)
+		assert.Equal(t, map[string]time.Time{heldInScope: since}, got.HeldSince, "other accounts and the ambient key are hidden")
+		assert.Equal(t, []string{heldInScope}, got.ExpiredHoldAccountIDs)
+		assert.Equal(t, 1, got.Reasons[config.PartialReasonPricingHoldExpired], "the count matches the filtered ids")
+	})
+	t.Run("caller with no matching accounts sees no expired count", func(t *testing.T) {
+		got := partialSweepFor(t, []string{"33333333-3333-3333-3333-333333333333"}, stored())
+		assert.Empty(t, got.HeldSince)
+		assert.Empty(t, got.ExpiredHoldAccountIDs)
+		assert.NotContains(t, got.Reasons, config.PartialReasonPricingHoldExpired)
+	})
+	t.Run("the stored value is not mutated", func(t *testing.T) {
+		s := stored()
+		partialSweepFor(t, []string{heldInScope}, s)
+		sweep := s.LastCollectionPartial.Providers[0]
+		assert.Len(t, sweep.HeldSince, 3)
+		assert.Equal(t, 2, sweep.Reasons[config.PartialReasonPricingHoldExpired])
+		assert.Len(t, sweep.ExpiredHoldAccountIDs, 2)
+	})
 }
