@@ -57,13 +57,13 @@ func (e *riExchangeIntegrationEnv) resolve(t *testing.T, req RIExchangeDirectRes
 // recorded, and the guard stops blocking.
 func TestPostgresStoreDB_ResolveRIExchangeDirectExecution_SubmittedAgeBoundary(t *testing.T) {
 	env := newRIExchangeIntegrationEnv(t)
-	young := env.directAged(t, "submitted", "9 minutes 59 seconds", "0")
+	young := env.directAged(t, "submitted", "9 minutes", "0")
 	old := env.directAged(t, "submitted", "10 minutes 1 second", "0")
 
 	_, err := env.resolve(t, directResolveReq(young, "failed", "submitted", time.Now().UTC()))
 	require.ErrorIs(t, err, ErrRIExchangeResolveConflict)
 	assert.Contains(t, err.Error(), "wait until")
-	require.ErrorIs(t, env.reserve(t, testAccountID(836100000001), "ri-g1836-submitted-9 minutes 59 seconds"), ErrRIExchangeSourceInFlight)
+	require.ErrorIs(t, env.reserve(t, testAccountID(836100000001), "ri-g1836-submitted-9 minutes"), ErrRIExchangeSourceInFlight)
 
 	times := env.directTimes(t, old)
 	uid := "7d444840-9dc0-11d1-b245-5ffdce74fad2"

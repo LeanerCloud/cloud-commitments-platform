@@ -94,7 +94,7 @@ func (b riExchangeDirectResolveRequest) checkedAt(rowRegion string) (time.Time, 
 // order and quoted, so a repeat of the same request produces the same string
 // and a different one cannot.
 func (b riExchangeDirectResolveRequest) note(checkedAt time.Time) string {
-	s := fmt.Sprintf("operator:%s: region=%q checked_at=%s", b.Outcome, b.CloudCheck.Region, checkedAt.Format(time.RFC3339))
+	s := fmt.Sprintf("operator:%s: region=%q checked_at=%s", b.Outcome, b.CloudCheck.Region, checkedAt.Format(time.RFC3339Nano))
 	if b.Outcome == config.RIExchangeDirectStatusFailed {
 		s += " ack=true"
 	}

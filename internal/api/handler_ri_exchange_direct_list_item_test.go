@@ -67,7 +67,7 @@ func TestRIExchangeDirectListItem_KeysAreAllowlisted(t *testing.T) {
 	var items []map[string]any
 	require.NoError(t, json.Unmarshal(top["executions"], &items))
 	require.Len(t, items, 1)
-	assert.ElementsMatch(t, []string{"id", "status", "provider", "region", "source_ids", "targets", "max_payment_due",
+	assert.ElementsMatch(t, []string{"id", "status", "provider", "region", "cloud_account_id", "source_ids", "targets", "max_payment_due",
 		"max_payment_currency", "created_at", "executed_by", "error_summary", "resolvable", "resolvable_at"}, keysOf(items[0]))
 
 	assert.Equal(t, purchase.SanitizeStoredError(row.Error), items[0]["error_summary"])
@@ -75,6 +75,19 @@ func TestRIExchangeDirectListItem_KeysAreAllowlisted(t *testing.T) {
 		assert.NotContains(t, string(raw), leak)
 	}
 	assert.Equal(t, "aws", items[0]["provider"])
+}
+
+func TestRIExchangeDirectListItem_CloudAccountID(t *testing.T) {
+	attributed := dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1)
+	unattributed := dlRow(dlID2, nil, "eu-west-1", "unknown", 1)
+
+	raw, err := json.Marshal(newRIExchangeDirectListItem(&attributed, time.Now()))
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"cloud_account_id":"`+dlAcctA+`"`)
+
+	raw, err = json.Marshal(newRIExchangeDirectListItem(&unattributed, time.Now()))
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"cloud_account_id":null`)
 }
 
 func TestRIExchangeDirectListItem_ResolvableHint(t *testing.T) {

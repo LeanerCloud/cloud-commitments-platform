@@ -132,6 +132,22 @@ func TestResolveRIExchangeDirect_PassesOperatorDecisionToStore(t *testing.T) {
 	assert.Equal(t, `operator:completed: region="eu-west-1" checked_at=2026-10-19T08:00:00Z reason="source RIs still active in the EC2 console"`, completed.got.Note)
 }
 
+// The store replays only a byte-identical note and refuses any other as a
+// conflict, so two checks a fraction of a second apart must not share a note.
+func TestResolveRIExchangeDirect_SubSecondCheckedAtChangesNote(t *testing.T) {
+	body := func(at string) string {
+		return fmt.Sprintf(`{"outcome":"completed","expected_status":"unknown","reason":"source RIs still active in the EC2 console",`+
+			`"cloud_check":{"checked_region":%q,"checked_at":%q}}`, drRegion, at)
+	}
+	first, second := drStore(), drStore()
+	_, err := drCaller{perms: riExecute}.call(first, dlID1, body("2026-10-19T08:00:00.1Z"))
+	require.NoError(t, err)
+	_, err = drCaller{perms: riExecute}.call(second, dlID1, body("2026-10-19T08:00:00.2Z"))
+	require.NoError(t, err)
+	assert.NotEqual(t, first.got.Note, second.got.Note, "equal notes would replay instead of conflicting")
+	assert.Contains(t, first.got.Note, "checked_at=2026-10-19T08:00:00.1Z")
+}
+
 func TestResolveRIExchangeDirect_ReplayIsReportedAndNotLogged(t *testing.T) {
 	logs := captureLogs(t)
 	store := drStore()

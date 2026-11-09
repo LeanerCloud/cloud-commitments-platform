@@ -28,6 +28,7 @@ type riExchangeDirectListItem struct {
 	Status             string          `json:"status"`
 	Provider           string          `json:"provider"`
 	Region             string          `json:"region"`
+	CloudAccountID     *string         `json:"cloud_account_id"`
 	SourceIDs          []string        `json:"source_ids"`
 	Targets            json.RawMessage `json:"targets"`
 	MaxPaymentDue      string          `json:"max_payment_due"`
@@ -118,7 +119,7 @@ func newRIExchangeDirectListItem(r *config.RIExchangeDirectRow, now time.Time) r
 	at := resolvableRIExchangeDirectAt(r)
 	return riExchangeDirectListItem{
 		ID: r.ID, Status: r.Status, Provider: string(common.ProviderAWS), Region: r.Region,
-		SourceIDs: r.SourceIDs, Targets: r.Targets,
+		CloudAccountID: r.CloudAccountID, SourceIDs: r.SourceIDs, Targets: r.Targets,
 		MaxPaymentDue: r.MaxPaymentDue, MaxPaymentCurrency: r.MaxPaymentCurrency,
 		CreatedAt: r.CreatedAt.UTC(), ExecutedBy: r.ExecutedBy,
 		ErrorSummary: purchase.SanitizeStoredError(r.Error),

@@ -2949,7 +2949,7 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [id, status, provider, region, source_ids, targets, max_payment_due, max_payment_currency, created_at, executed_by, error_summary, resolvable, resolvable_at]
+                      required: [id, status, provider, region, cloud_account_id, source_ids, targets, max_payment_due, max_payment_currency, created_at, executed_by, error_summary, resolvable, resolvable_at]
                       properties:
                         id:
                           type: string
@@ -2962,6 +2962,10 @@ paths:
                           enum: [aws]
                         region:
                           type: string
+                        cloud_account_id:
+                          type: string
+                          nullable: true
+                          description: The registered cloud account of the exchange, null when it mapped to none.
                         source_ids:
                           type: array
                           items:
@@ -3049,7 +3053,11 @@ paths:
                   type: string
                   minLength: 10
                   maxLength: 300
-                  description: Free text, trimmed, without control characters.
+                  description: >
+                    Free text, trimmed, without control characters. At most
+                    300 characters, and the stored note at most 1000 bytes, so
+                    non-ASCII text needs fewer characters. Past that the API
+                    answers 400 "reason too long once encoded; shorten it".
                 acknowledge_unknown_outcome:
                   type: boolean
                   description: Must be true when outcome is failed.
@@ -3099,8 +3107,10 @@ paths:
         '400':
           description: >
             Invalid id or body: body over 4096 bytes, unknown fields, a
-            missing or invalid field, a region other than the row's, or a
-            `checked_at` outside the allowed window.
+            missing or invalid field, a reason over 300 characters or whose
+            stored note exceeds 1000 bytes ("reason too long once encoded;
+            shorten it"), a region other than the row's, or a `checked_at`
+            outside the allowed window.
           content:
             application/json:
               schema:
