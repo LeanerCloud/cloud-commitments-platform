@@ -124,3 +124,40 @@ func elastiCacheRecentRefusal(ctx context.Context, client provider.ServiceClient
 		ctx, []common.Recommendation{elastiCacheDedupeCopy(rec)}, elastiCacheRecentDedupeClient{ServiceClient: client, own: ownIDs, self: self, sawSelf: &sawSelf})
 	return elastiCacheRefusalFor(passed, filtered, err, sawSelf, rec)
 }
+
+// purchaseOwnNames carries the commitment names this execution's selected recs
+// will create, per provider, so a retry is told apart from another lineage's
+// purchase. A nil pointer reads as no own names.
+type purchaseOwnNames struct {
+	gcp, elastiCache map[string]bool
+}
+
+func newPurchaseOwnNames(exec *config.PurchaseExecution, selected []int) *purchaseOwnNames {
+	return &purchaseOwnNames{
+		gcp:         gcpOwnCommitmentNames(exec, selected),
+		elastiCache: elastiCacheOwnReservationIDs(exec, selected),
+	}
+}
+
+func (o *purchaseOwnNames) gcpNames() map[string]bool {
+	if o == nil {
+		return nil
+	}
+	return o.gcp
+}
+
+func (o *purchaseOwnNames) elastiCacheNames() map[string]bool {
+	if o == nil {
+		return nil
+	}
+	return o.elastiCache
+}
+
+// ownElastiCacheID is the reservation ID this rec's purchase call would create,
+// or "" when the call carries no idempotency token.
+func ownElastiCacheID(opts common.PurchaseOptions) string {
+	if opts.IdempotencyToken == "" {
+		return ""
+	}
+	return common.IdempotentReservationID(elastiCacheReservationIDPrefix, opts.IdempotencyToken)
+}

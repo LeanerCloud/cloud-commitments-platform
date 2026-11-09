@@ -24,6 +24,7 @@ func purchaseCacheRecThrough(t *testing.T, prov *MockProvider, providerName, reg
 	store.On("SavePurchaseHistory", ctx, mock.Anything).Return(nil)
 	factory.On("CreateAndValidateProvider", mock.Anything, providerName, mock.Anything).Return(prov, nil)
 	prov.On("GetServiceClient", mock.Anything, want, region).Return(provider.ServiceClient(svc), nil)
+	expectNoExistingCommitments(svc)
 	svc.On("PurchaseCommitment", mock.Anything, mock.MatchedBy(func(rec common.Recommendation) bool {
 		return rec.Service == common.ServiceCache
 	}), mock.Anything).Return(common.PurchaseResult{Success: true, CommitmentID: "order-1"}, nil)
