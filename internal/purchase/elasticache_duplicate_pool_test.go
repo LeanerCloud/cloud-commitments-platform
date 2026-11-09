@@ -89,7 +89,8 @@ func TestElastiCacheDuplicatePool_PlanStepRootRefusedAndSuppressionsReleased(t *
 	require.Error(t, run.err)
 	assert.Equal(t, elastiCacheDuplicatePoolRefusal, run.err.Error())
 	assert.Empty(t, run.opts)
-	run.store.AssertCalled(t, "DeleteSuppressionsByExecutionTx")
+	store := run.store // the vacuous-assertion guard resolves only plain identifiers
+	store.AssertCalled(t, "DeleteSuppressionsByExecutionTx")
 }
 
 // Fan-out children hold only their own account's recs, so same-pool recs of different accounts never collide.
