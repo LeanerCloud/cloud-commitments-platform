@@ -435,12 +435,23 @@ func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.Purchase
 	if refusal := m.ladderExecutionRefusal(ctx, exec); refusal != nil {
 		return beforeSubmission(refusal)
 	}
-	if hasDuplicateRedshiftTuple(exec) {
-		return beforeSubmission(errors.New(redshiftDuplicateTupleRefusal))
+	if refusal := duplicateSelectionRefusal(exec); refusal != nil {
+		return beforeSubmission(refusal)
 	}
 	// A Redshift retry reuses the first attempt's request time; only the journal lets go's dedupe tell its node from another's.
 	if hasRedshiftRec(exec) && exec.RetryAttemptN > 0 && m.attemptJournal == nil {
 		return errors.New(redshiftNoJournalRefusal)
+	}
+	return nil
+}
+
+// duplicateSelectionRefusal refuses a selection two of whose recs would buy the same reservation.
+func duplicateSelectionRefusal(exec *config.PurchaseExecution) error {
+	switch {
+	case hasDuplicateRedshiftTuple(exec):
+		return errors.New(redshiftDuplicateTupleRefusal)
+	case hasDuplicateElastiCachePool(exec):
+		return errors.New(elastiCacheDuplicatePoolRefusal)
 	}
 	return nil
 }
