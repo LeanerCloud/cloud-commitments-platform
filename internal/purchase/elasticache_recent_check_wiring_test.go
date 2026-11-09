@@ -32,25 +32,50 @@ func expectNoExistingCommitments(svc *MockServiceClient) {
 // recorded in ecRegion, so the listing and the recommendation agree.
 func runECExecution(t *testing.T, api *fakeElastiCacheAPI, recs ...config.RecommendationRecord) (*config.PurchaseExecution, []string, bool) {
 	t.Helper()
+	return runECExecutionWithBudgets(t, api, purchaseBudgets{}, recs...)
+}
+
+func runECExecutionWithBudgets(t *testing.T, api *fakeElastiCacheAPI, budgets purchaseBudgets, recs ...config.RecommendationRecord) (*config.PurchaseExecution, []string, bool) {
+	t.Helper()
 	ctx := context.Background()
 	store, sender, factory, prov := new(MockConfigStore), new(MockEmailSender), new(MockProviderFactory), new(MockProvider)
 	assertMocksOnCleanup(t, store, sender, factory, prov)
 	store.SavePurchaseExecutionFn = func(context.Context, *config.PurchaseExecution) error { return nil }
 	store.On("SavePurchaseHistory", ctx, mock.Anything).Return(nil).Maybe()
 	factory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(prov, nil)
-	prov.On("GetServiceClient", mock.Anything, common.ServiceElastiCache, ecRegion).Return(provider.ServiceClient(newFakeElastiCacheClient(api)), nil)
 
 	if len(recs) == 0 {
 		recs = []config.RecommendationRecord{ecCacheRec(t, "elasticache")}
+	}
+	// Exact region matchers pin that the client is built for rec.Region. A rec in
+	// another region gets its own client over an empty fake (nothing held there).
+	for _, region := range recRegions(recs) {
+		regionAPI := api
+		if region != ecRegion {
+			regionAPI = &fakeElastiCacheAPI{}
+		}
+		prov.On("GetServiceClient", mock.Anything, common.ServiceElastiCache, region).Return(provider.ServiceClient(newFakeElastiCacheClient(regionAPI)), nil)
 	}
 	for i := range recs {
 		recs[i].ID = fmt.Sprintf("rec-1863-%d", i)
 	}
 	exec := &config.PurchaseExecution{ExecutionID: "exec-1863", IdempotencyKey: "lineage-1863-wiring", Recommendations: recs}
-	m := &Manager{config: store, email: sender, providerFactory: factory}
+	m := &Manager{config: store, email: sender, providerFactory: factory, budgets: budgets}
 	_, _, errs, allRefused, err := m.processPurchaseRecommendations(ctx, exec, &config.PurchasePlan{Name: "p"}, "acct", (*provider.Config)(nil), "")
 	require.NoError(t, err)
 	return exec, errs, allRefused
+}
+
+func recRegions(recs []config.RecommendationRecord) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range recs {
+		if !seen[r.Region] {
+			seen[r.Region] = true
+			out = append(out, r.Region)
+		}
+	}
+	return out
 }
 
 func TestElastiCacheWiring_RecentSamePoolReservationRefusesBeforePurchase(t *testing.T) {

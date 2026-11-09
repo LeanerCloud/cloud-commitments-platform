@@ -26,7 +26,9 @@ type fakeElastiCacheAPI struct {
 	mu          sync.Mutex
 	held        []types.ReservedCacheNode
 	describeErr error
-	purchased   []*awsec.PurchaseReservedCacheNodesOfferingInput
+	// block, when set, makes every no-ID listing wait for it or the caller's context.
+	block     chan struct{}
+	purchased []*awsec.PurchaseReservedCacheNodesOfferingInput
 }
 
 // DescribeReservedCacheNodesOfferings echoes the request filters, so the
@@ -45,7 +47,14 @@ func (f *fakeElastiCacheAPI) DescribeReservedCacheNodesOfferings(_ context.Conte
 // DescribeReservedCacheNodes branches on the input: a by-ID call (the library's
 // idempotency guard) returns the held reservation with that ID or
 // ReservedCacheNodeNotFoundFault; a listing returns every held reservation.
-func (f *fakeElastiCacheAPI) DescribeReservedCacheNodes(_ context.Context, in *awsec.DescribeReservedCacheNodesInput, _ ...func(*awsec.Options)) (*awsec.DescribeReservedCacheNodesOutput, error) {
+func (f *fakeElastiCacheAPI) DescribeReservedCacheNodes(ctx context.Context, in *awsec.DescribeReservedCacheNodesInput, _ ...func(*awsec.Options)) (*awsec.DescribeReservedCacheNodesOutput, error) {
+	if f.block != nil && in.ReservedCacheNodeId == nil {
+		select {
+		case <-f.block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.describeErr != nil {
