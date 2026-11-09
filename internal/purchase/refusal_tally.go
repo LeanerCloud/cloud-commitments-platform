@@ -3,9 +3,11 @@ package purchase
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/execution"
 )
 
 // failureTally counts one aggregation's failed recs and how many of them were
@@ -19,10 +21,42 @@ type failureTally struct{ failed, refused int }
 // also wraps ErrOutcomeUnknown may have reached the cloud.
 func (t *failureTally) add(err error) {
 	t.failed++
-	var notSubmitted *beforeSubmissionError
-	if errors.As(err, &notSubmitted) && !errors.Is(err, common.ErrOutcomeUnknown) {
+	if refusedBeforeSubmission(err) {
 		t.refused++
 	}
+}
+
+// refusedBeforeSubmission reports an error that proves nothing reached the
+// cloud: the beforeSubmission class without an unknown outcome.
+func refusedBeforeSubmission(err error) bool {
+	var notSubmitted *beforeSubmissionError
+	return errors.As(err, &notSubmitted) && !errors.Is(err, common.ErrOutcomeUnknown)
+}
+
+// fanOutNotSubmitted reports that a fan-out where no account committed provably
+// submitted nothing, so the root may carry the no_submission proof and release
+// its suppressions. It reads the in-memory results, not saved rows: a panicked
+// account leaves no row and a lost row would read as "nothing submitted". Every
+// account must be refused before submission, never started (the run context
+// ended first, as skippedAccountRows decides), or have bought nothing without
+// error; any other ending (panic, plain error, unknown outcome, a bought rec)
+// may have reached the cloud, so it keeps today's unproven failure.
+func fanOutNotSubmitted(results []execution.Result[bool], started *sync.Map) bool {
+	if len(results) == 0 {
+		return false
+	}
+	for _, r := range results {
+		if r.Value {
+			return false
+		}
+		if r.Err == nil || refusedBeforeSubmission(r.Err) {
+			continue
+		}
+		if _, ran := started.Load(r.AccountID); ran {
+			return false
+		}
+	}
+	return true
 }
 
 // allRefused reports that every failed rec was refused before submission and

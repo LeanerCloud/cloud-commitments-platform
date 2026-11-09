@@ -30,6 +30,7 @@ const (
 	recPlainFail
 	recRefusedUnknown
 	recPanics
+	recSuccessFalse
 )
 
 func (b recBehavior) result() (common.PurchaseResult, error) {
@@ -42,6 +43,9 @@ func (b recBehavior) result() (common.PurchaseResult, error) {
 		// A pre-submission class that still wraps an unknown outcome may have
 		// reached the cloud, so it must not count as refused.
 		return common.PurchaseResult{}, beforeSubmission(fmt.Errorf("guard: %w", common.ErrOutcomeUnknown))
+	case recSuccessFalse:
+		// The provider reports a failed purchase without an error value.
+		return common.PurchaseResult{Success: false}, nil
 	case recPlainFail:
 		return common.PurchaseResult{}, errors.New("offering not available")
 	}

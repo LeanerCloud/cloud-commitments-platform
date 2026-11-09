@@ -285,7 +285,13 @@ func summarizeFanOut(scoped map[string]*config.PurchaseExecution, results []exec
 		// ack and never mislabel the run as a flat failure (issue #1014).
 		return &multiAccountPartialError{committed: committed, errors: errs, skipped: skippedAccountRows(scoped, results, started)}
 	}
-	return fmt.Errorf("%w: %s", errAllAccountsFailed, strings.Join(errs, "; "))
+	err := fmt.Errorf("%w: %s", errAllAccountsFailed, strings.Join(errs, "; "))
+	if fanOutNotSubmitted(results, started) {
+		// Nothing was submitted by any account (#1844), so the root carries the
+		// proof saveTerminalExecution reads; the %w chain is unchanged.
+		return beforeSubmission(err)
+	}
+	return err
 }
 
 // saveExecutionStatusBestEffort saves the execution record and logs any error.
@@ -406,7 +412,7 @@ func (m *Manager) executeForAccountLate(ctx context.Context, baseExec *config.Pu
 	// authoritative per-account row was already saved as partially_completed
 	// (not failed) and the confirmation already went out.
 	if len(purchaseErrors) > 0 {
-		return committed, fmt.Errorf("some purchases failed: %v", purchaseErrors)
+		return committed, failedPurchasesError(purchaseErrors, allRefused)
 	}
 	return committed, nil
 }
@@ -494,9 +500,12 @@ func skippedAccountRows(scoped map[string]*config.PurchaseExecution, results []e
 // that function under the gocyclo:10 budget.
 func (m *Manager) persistFailedAccountExecution(ctx context.Context, acctExec *config.PurchaseExecution, account config.CloudAccount, cause error) error {
 	if saveErr := m.saveAccountRow(ctx, acctExec); saveErr != nil {
+		// The cause is joined as text: a lost audit row means the outcome is
+		// unknown, so a before-submission class on the cause must not survive
+		// into the fan-out proof (errors.As walks every Join branch).
 		return errors.Join(
 			fmt.Errorf("AUDIT LOSS: failed to save execution record for account %s: %w", account.ID, saveErr),
-			cause,
+			errors.New(cause.Error()),
 		)
 	}
 	return cause
