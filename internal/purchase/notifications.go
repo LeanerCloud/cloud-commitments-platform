@@ -34,6 +34,8 @@ func (m *Manager) SendUpcomingPurchaseNotifications(ctx context.Context) (*Notif
 		return nil, fmt.Errorf("failed to read global config for the overdue-plan grace window: %w", err)
 	}
 
+	now := time.Now()
+	readopt := m.readoptCandidates(ctx, global, now)
 	notified := 0
 	for _rvc := range plans {
 		plan := plans[_rvc]
@@ -41,7 +43,9 @@ func (m *Manager) SendUpcomingPurchaseNotifications(ctx context.Context) (*Notif
 			logging.Errorf("Failed to inspect due manual plan step for plan %s: %v", plan.ID, err)
 			continue
 		}
-		if m.shouldNotifyPlan(plan, autoPurchaseEnabled) || shouldRetryOverduePlan(plan, autoPurchaseEnabled, global, time.Now()) {
+		_, hasReadoptableRoot := readopt[plan.ID]
+		if m.shouldNotifyPlan(plan, autoPurchaseEnabled) || shouldRetryOverduePlan(plan, autoPurchaseEnabled, global, now) ||
+			shouldReadoptExpiredPlan(plan, global, autoPurchaseEnabled, hasReadoptableRoot, now) {
 			if m.sendPlanNotification(ctx, &plan, planNeedsApproval(plan, global)) {
 				notified++
 			}
@@ -290,7 +294,9 @@ type stepClaim struct {
 // attempt) qualifies: child and retry rows share the step number, and a step
 // whose root is failed, partially_completed, expired, canceled or in flight
 // must not get a second root, because approving it would buy the step again
-// (E1/E2). The second return value is the quiet skip error when none qualifies.
+// (E1/E2). The one exception is a lone, never-approved expired root, re-armed
+// once by tryReadoptExpired (#1785). The second return value is the quiet skip
+// error when none qualifies.
 func adoptableRootRow(rows []config.PurchaseExecution) (*config.PurchaseExecution, error) {
 	for i := range rows {
 		r := rows[i]
