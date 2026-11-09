@@ -207,3 +207,66 @@ func TestPersistCollection_FailedMarkerWriteRollsBackUpsert(t *testing.T) {
 	require.Equal(t, []string{"prev-advisor-row"}, storedAzureIDs(t, store), "the upsert must roll back with the marker")
 	require.Equal(t, []string{acctA}, heldAzureAccounts(t, store), "the old hold must survive a failed marker write")
 }
+
+func azureSweep(t *testing.T, store config.StoreInterface) config.PartialProviderSweep {
+	t.Helper()
+	fresh, err := store.GetRecommendationsFreshness(context.Background())
+	require.NoError(t, err)
+	if fresh.LastCollectionPartial == nil {
+		return config.PartialProviderSweep{}
+	}
+	for _, sweep := range fresh.LastCollectionPartial.Providers {
+		if sweep.Provider == "azure" {
+			return sweep
+		}
+	}
+	return config.PartialProviderSweep{}
+}
+
+// The hold ends at PricingHoldMaxAge: rows are kept while it is younger, then
+// evicted and reported as expired (not held) until the account prices again.
+// The scheduler stamps collections with time.Now() and has no clock seam, so
+// the test makes the same UpsertRecommendationsWithPartial call persistCollection
+// makes, with a chosen collection time.
+func TestAzureHoldBoundedAcrossCycles(t *testing.T) {
+	ctx := context.Background()
+	container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
+	store := config.NewPostgresStore(container.DB)
+	acct, other := registerAzure(t, store), registerAzure(t, store)
+	seedAzureAccountRows(t, store, acct, other)
+	rowID := "row-" + acct
+	base := time.Now().UTC()
+	outage := func(at time.Duration) {
+		t.Helper()
+		require.NoError(t, store.UpsertRecommendationsWithPartial(ctx, base.Add(at), nil, nil, heldPartial(acct)))
+	}
+
+	outage(0)
+	outage(24 * time.Hour)
+	require.Contains(t, storedAzureIDs(t, store), rowID, "rows stay before the bound")
+	sweep := azureSweep(t, store)
+	require.Equal(t, []string{acct}, sweep.HeldAccountIDs)
+	require.Empty(t, sweep.ExpiredHoldAccountIDs)
+
+	outage(config.PricingHoldMaxAge)
+	require.NotContains(t, storedAzureIDs(t, store), rowID, "stale rows are evicted at the bound")
+	require.Contains(t, storedAzureIDs(t, store), "row-"+other, "an account that was never held is untouched")
+	sweep = azureSweep(t, store)
+	require.Equal(t, []string{acct}, sweep.ExpiredHoldAccountIDs)
+	require.Equal(t, 1, sweep.Reasons[config.PartialReasonPricingHoldExpired])
+	require.NotContains(t, sweep.HeldAccountIDs, acct)
+
+	outage(config.PricingHoldMaxAge + 24*time.Hour)
+	sweep = azureSweep(t, store)
+	require.Equal(t, []string{acct}, sweep.ExpiredHoldAccountIDs, "the expired marker outlasts later outage cycles")
+	require.NotContains(t, sweep.HeldAccountIDs, acct, "an expired account is not re-held")
+
+	repriced := config.RecommendationRecord{ID: rowID, CloudAccountID: &acct, Provider: "azure", Service: "compute",
+		Region: "westeurope", ResourceType: "Standard_D2s_v3", Savings: 40, Count: 1, Term: 12, Payment: "upfront"}
+	require.NoError(t, store.UpsertRecommendations(ctx, base.Add(config.PricingHoldMaxAge+48*time.Hour),
+		[]config.RecommendationRecord{repriced}, expandSuccessfulCollects("azure", []string{acct})))
+	require.Contains(t, storedAzureIDs(t, store), rowID, "a successful collection restores the rows")
+	sweep = azureSweep(t, store)
+	require.Empty(t, sweep.ExpiredHoldAccountIDs)
+	require.Zero(t, sweep.Reasons[config.PartialReasonPricingHoldExpired])
+}

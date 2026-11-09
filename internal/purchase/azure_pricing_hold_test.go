@@ -21,6 +21,17 @@ func heldFreshness(heldIDs ...string) *config.RecommendationsFreshness {
 	}}
 }
 
+// expiredFreshness is the marker after a hold expired while the outage goes on:
+// expired is evicted and no longer held, held accounts are still held.
+func expiredFreshness(expired string, held ...string) *config.RecommendationsFreshness {
+	return &config.RecommendationsFreshness{LastCollectionPartial: &config.RecommendationsCollectionPartial{
+		Providers: []config.PartialProviderSweep{{
+			Provider: "azure", IncompleteAccounts: len(held), HeldAccountIDs: held, ExpiredHoldAccountIDs: []string{expired},
+			Reasons: map[string]int{config.PartialReasonPricingUnavailable: 1, config.PartialReasonPricingHoldExpired: 1},
+		}},
+	}}
+}
+
 // An Advisor row held through a pricing outage still matches the approved
 // execution, because both carry the same old price. The collection state is
 // what tells the purchase path the price may be days old.
@@ -44,6 +55,10 @@ func TestAzurePricingHold(t *testing.T) {
 		{"partial sweep without the pricing reason does not refuse", &acct, &config.RecommendationsFreshness{LastCollectionPartial: &config.RecommendationsCollectionPartial{
 			Providers: []config.PartialProviderSweep{{Provider: "azure", HeldAccountIDs: []string{acct}, Reasons: map[string]int{config.PartialReasonThrottled: 1}}},
 		}}, nil, false},
+		// An evicted account has no stale row left, so the outage that continues for
+		// other accounts must not refuse it; the same marker still refuses a held one.
+		{"expired-hold account not refused while the outage continues", &acct, expiredFreshness(acct, other), nil, false},
+		{"held account refused next to an expired one", &acct, expiredFreshness(other, acct), nil, true},
 		{"unresolved ambient rec refused during an outage", nil, heldFreshness(), nil, true},
 		// Fail-closed by design: a rec without an account cannot be matched to the
 		// hold list, so any Azure hold refuses it.
