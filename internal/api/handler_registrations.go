@@ -300,7 +300,7 @@ func (h *Handler) approveRegistration(ctx context.Context, httpReq *events.Lambd
 	// KMS-backed federated. Without this, every federated-path
 	// approval leaves the account disabled and the operator has to
 	// follow up with a manual PUT enabled=true.
-	account.Enabled = regCred != nil || accountHasCredentialFreePath(account)
+	account.Enabled = (regCred != nil || accountHasCredentialFreePath(account)) && !approvalDisablesAccount(httpReq.Body)
 	account.CreatedAt = now
 	account.UpdatedAt = now
 
@@ -328,6 +328,17 @@ func (h *Handler) approveRegistration(ctx context.Context, httpReq *events.Lambd
 	})
 
 	return account, nil
+}
+
+// approvalDisablesAccount reports whether the approval body carries an
+// explicit "enabled": false. CloudAccountRequest.Enabled is a plain bool, so
+// an omitted field cannot be told apart from false there; only an explicit
+// false disables, and the body was already parsed by parseApprovalRequest.
+func approvalDisablesAccount(body string) bool {
+	var p struct {
+		Enabled *bool `json:"enabled"`
+	}
+	return json.Unmarshal([]byte(body), &p) == nil && p.Enabled != nil && !*p.Enabled
 }
 
 // classifyApproveRegistrationError maps an ApproveAccountRegistration failure

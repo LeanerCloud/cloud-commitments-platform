@@ -10,8 +10,13 @@ import { initRegistrations, loadRegistrations } from '../modules/registrations';
 jest.mock('../api', () => ({
   listRegistrations: jest.fn(),
 }));
+jest.mock('../settings', () => ({
+  openAccountModal: jest.fn(),
+  loadAccountsForProvider: jest.fn(),
+}));
 
 import * as api from '../api';
+import { openAccountModal } from '../settings';
 
 describe('loadRegistrations default filter', () => {
   beforeEach(() => {
@@ -103,5 +108,20 @@ describe('registration row actions', () => {
       expect(btn.title).toBe(title);
     }
     expect(buttons[2]!.classList.contains('btn-danger')).toBe(true);
+  });
+
+  test('Approve opens the account modal with enabled preset to true, so the admin unchecks it to keep the account disabled', async () => {
+    const container = document.createElement('div');
+    container.id = 'registrations-list';
+    document.body.appendChild(container);
+    (api.listRegistrations as jest.Mock).mockResolvedValue([{
+      id: 'r1', provider: 'aws', account_name: 'Checkout', external_id: '650412398877',
+      contact_email: 'c@example.com', status: 'pending', created_at: '2026-10-28T12:00:00Z',
+    }]);
+    await loadRegistrations();
+
+    (container.querySelector('button[aria-label="Approve registration Checkout"]') as HTMLButtonElement).click();
+
+    expect(openAccountModal).toHaveBeenCalledWith('aws', expect.objectContaining({ enabled: true }), expect.anything());
   });
 });

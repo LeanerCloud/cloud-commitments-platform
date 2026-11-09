@@ -5112,8 +5112,9 @@ paths:
         the body, and any credential submitted with the registration is
         stored for the new account and wiped from the registration. The
         account is enabled when the registration carried a credential or its
-        auth mode needs no stored secret; the body's enabled value is
-        ignored. The contact email is notified of the decision.
+        auth mode needs no stored secret, unless the body sets enabled to
+        false, which keeps the account disabled; enabled true or omitted
+        never enables an account that has neither. The contact email is notified of the decision.
       parameters:
         - $ref: '#/components/parameters/CSRFToken'
       requestBody:
