@@ -162,7 +162,7 @@ func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 		store := config.NewPostgresStore(container.DB)
 		s := &Scheduler{config: store}
 		seedAdvisorRow(t, store)
-		collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips})
+		collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips, Kinds: advisorOutageKinds})
 		s.persistCollection(ctx, nil, nil, map[string]string{"azure": "boom"}, nil)
 		fresh, err := store.GetRecommendationsFreshness(ctx)
 		require.NoError(t, err)

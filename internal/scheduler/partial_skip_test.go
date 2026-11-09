@@ -21,6 +21,23 @@ type skipErr struct {
 	reasons []string
 }
 
+// kindSkipErr is skipErr that also reports a kind per skip reason, as Azure's
+// PartialResultError does (cloud-commitments-go#670).
+type kindSkipErr struct {
+	skipErr
+	kinds []azureprovider.SkipKind
+}
+
+func (e *kindSkipErr) SkipKinds() []azureprovider.SkipKind { return e.kinds }
+
+// outageSkip is an Advisor skip whose price lookup did not complete, with a
+// reason text that matches no prefix the scheduler ever knew: the hold reads
+// the kind, never the text.
+func outageSkip(reason string) *kindSkipErr {
+	return &kindSkipErr{skipErr: skipErr{partial: true, count: 1, reasons: []string{reason}},
+		kinds: []azureprovider.SkipKind{azureprovider.SkipPriceLookupUnavailable}}
+}
+
 func (e *skipErr) Error() string         { return e.msg }
 func (e *skipErr) Partial() bool         { return e.partial }
 func (e *skipErr) SkippedCount() int     { return e.count }
@@ -126,28 +143,31 @@ func TestAzureFailureWithoutSkips_RecordsNoSkippedCount(t *testing.T) {
 	assert.True(t, gap.holdsEviction())
 }
 
-func TestHasPricingOutageSkip(t *testing.T) {
+func TestCountPricingOutageSkips(t *testing.T) {
+	const (
+		outage     = azureprovider.SkipPriceLookupUnavailable
+		unpriced   = azureprovider.SkipUnpriceable
+		incomplete = azureprovider.SkipSourceIncomplete
+	)
 	for name, tc := range map[string]struct {
-		reasons []string
-		want    bool
+		kinds []azureprovider.SkipKind
+		want  int
 	}{
-		"first failed row":                {[]string{"advisor: azure advisor: advisor compute reservation price: get: retail prices fetch failed"}, true},
-		"later rows":                      {[]string{"advisor: non-USD", "advisor: price lookup unavailable: x"}, true},
-		"invalid recommendation":          {[]string{"advisor: row is in EUR, not USD", "computeengine us-east1: non-USD"}, false},
-		"mid-string mention":              {[]string{"computeengine: price lookup unavailable: x"}, false},
-		"truncated walk is not an outage": {[]string{"advisor: azure advisor: recommendation list is incomplete"}, false},
-		"truncated walk plus outage":      {[]string{"advisor: azure advisor: recommendation list is incomplete", "advisor: azure advisor: get: retail prices fetch failed"}, true},
-		"prefix mid-string":               {[]string{"sub-1: advisor: price lookup unavailable: x"}, false},
-		"none":                            {nil, false},
+		"a failed price lookup":                 {[]azureprovider.SkipKind{outage}, 1},
+		"later rows of the same call":           {[]azureprovider.SkipKind{unpriced, outage, outage}, 2},
+		"invalid recommendations only":          {[]azureprovider.SkipKind{unpriced, unpriced}, 0},
+		"a truncated walk is not an outage":     {[]azureprovider.SkipKind{incomplete}, 0},
+		"a truncated walk plus an outage":       {[]azureprovider.SkipKind{incomplete, outage}, 1},
+		"an unrecognized kind is not an outage": {[]azureprovider.SkipKind{azureprovider.SkipKind("a_kind_added_later")}, 0},
+		"none":                                  {nil, 0},
 	} {
-		t.Run(name, func(t *testing.T) { assert.Equal(t, tc.want, hasPricingOutageSkip(tc.reasons)) })
+		t.Run(name, func(t *testing.T) { assert.Equal(t, tc.want, countPricingOutageSkips(tc.kinds)) })
 	}
 }
 
 // A pricing outage holds eviction; ordinary invalid-row skips do not.
 func TestTolerateSkipped_PricingOutageHoldsEviction(t *testing.T) {
-	gap, err := tolerateIncompleteSweep("azure", &skipErr{partial: true, count: 1,
-		reasons: []string{"advisor: price lookup unavailable: x"}})
+	gap, err := tolerateIncompleteSweep("azure", outageSkip("advisor: price lookup unavailable: x"))
 	require.NoError(t, err)
 	assert.True(t, gap.holdsEviction())
 	assert.Equal(t, 1, gap.skippedRecommendations)
@@ -162,11 +182,11 @@ func TestTolerateSkipped_PricingOutageHoldsEviction(t *testing.T) {
 func TestPricingOutageGap_FanOutRecordsHeldAccounts(t *testing.T) {
 	accounts := []config.CloudAccount{{ID: "held", Name: "held"}, {ID: "plain", Name: "plain"}}
 	fn := func(_ context.Context, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
-		reason := "advisor: non-USD"
+		var skip error = &skipErr{partial: true, count: 1, reasons: []string{"advisor: non-USD"}}
 		if acct.ID == "held" {
-			reason = "advisor: price lookup unavailable: x"
+			skip = outageSkip("advisor: price lookup unavailable: x")
 		}
-		gap, err := tolerateIncompleteSweep("azure", &skipErr{partial: true, count: 1, reasons: []string{reason}})
+		gap, err := tolerateIncompleteSweep("azure", skip)
 		return []config.RecommendationRecord{{ID: acct.ID}}, gap, err
 	}
 
@@ -179,4 +199,49 @@ func TestPricingOutageGap_FanOutRecordsHeldAccounts(t *testing.T) {
 	assert.Equal(t, 1, sweep.Reasons[config.PartialReasonPricingUnavailable])
 	assert.Equal(t, []string{"held"}, outcome.IncompleteAccountIDs)
 	assert.Equal(t, []string{"plain"}, outcome.SucceededAccountIDs)
+}
+
+// The hold decision reads only the typed kind. An outage skip whose reason text
+// matches no known prefix still holds, and a skip whose text looks like an
+// outage but is not of that kind does not: the library can reword its reasons
+// without silently stopping or starting the hold.
+func TestTolerateSkipped_HoldReadsTheKindNotTheText(t *testing.T) {
+	gap, err := tolerateIncompleteSweep("azure", outageSkip("the retail catalog said no"))
+	require.NoError(t, err)
+	assert.True(t, gap.holdsEviction(), "an outage with unfamiliar text still holds")
+	assert.True(t, gap.pricingUnavailable)
+
+	lookalike := &kindSkipErr{skipErr: skipErr{partial: true, count: 1, reasons: []string{"advisor: price lookup unavailable: x"}},
+		kinds: []azureprovider.SkipKind{azureprovider.SkipUnpriceable}}
+	gap, err = tolerateIncompleteSweep("azure", lookalike)
+	require.NoError(t, err)
+	assert.False(t, gap.holdsEviction(), "outage-looking text of another kind does not hold")
+
+	// Kinds beyond the skips name no skip: the library ignores them, so they
+	// must not count as an outage.
+	extra := &kindSkipErr{skipErr: skipErr{partial: true, count: 1, reasons: []string{"a"}},
+		kinds: []azureprovider.SkipKind{azureprovider.SkipUnpriceable, azureprovider.SkipPriceLookupUnavailable}}
+	gap, err = tolerateIncompleteSweep("azure", extra)
+	require.NoError(t, err)
+	assert.False(t, gap.holdsEviction(), "a kind with no skip behind it never holds")
+
+	short := &kindSkipErr{skipErr: skipErr{partial: true, count: 2, reasons: []string{"a", "b"}},
+		kinds: []azureprovider.SkipKind{azureprovider.SkipUnpriceable}}
+	gap, err = tolerateIncompleteSweep("azure", short)
+	require.NoError(t, err)
+	assert.False(t, gap.holdsEviction(), "a skip with no kind reads as unpriceable, never as an outage")
+}
+
+// The same through the multi-subscription failure that also lost a subscription.
+func TestGapFromPartialSubscriptions_HoldReadsTheKindNotTheText(t *testing.T) {
+	failed := []azureprovider.SubscriptionFailure{{SubscriptionID: "sub-b", Err: errors.New("403 authorization failed")}}
+	gap, err := tolerateIncompleteSweep("azure", azureprovider.NewPartialSubscriptionFailureWithKinds(2, failed,
+		[]string{"the retail catalog said no"}, []azureprovider.SkipKind{azureprovider.SkipPriceLookupUnavailable}))
+	require.NoError(t, err)
+	assert.True(t, gap.forAccount().withHeld("acct-1").pricingUnavailable)
+
+	gap, err = tolerateIncompleteSweep("azure", azureprovider.NewPartialSubscriptionFailure(2, failed,
+		[]string{"advisor: price lookup unavailable: x"}))
+	require.NoError(t, err)
+	assert.False(t, gap.forAccount().withHeld("acct-1").pricingUnavailable, "no kinds recorded: the text alone never holds")
 }

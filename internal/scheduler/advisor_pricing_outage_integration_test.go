@@ -16,7 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Skip reasons as the go#663 Advisor pricing records them (see pricingOutageReasons).
+// The kind the library records for each skip below: a failed price lookup.
+var advisorOutageKinds = []azureprovider.SkipKind{azureprovider.SkipPriceLookupUnavailable, azureprovider.SkipPriceLookupUnavailable}
+
+// Skip reasons as the go#663 Advisor pricing records them.
 var advisorOutageSkips = []string{
 	`advisor: azure advisor: advisor compute reservation price for "Standard_D2s_v3" in "westeurope" (1y): get: retail prices fetch failed: EOF`,
 	`advisor: price lookup unavailable: azure advisor: advisor compute reservation price for "Standard_D2s_v3" in "westeurope" (1y): get: retail prices fetch failed: EOF`,
@@ -76,13 +79,13 @@ func TestAzureAdvisorPricingOutage_HoldsEviction(t *testing.T) {
 
 	t.Run("outage keeps prior rows", func(t *testing.T) {
 		store := newStore(t)
-		collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips})
+		collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips, Kinds: advisorOutageKinds})
 		require.Contains(t, storedAzureIDs(t, store), "prev-advisor-row")
 	})
 
 	t.Run("later good cycle replaces them", func(t *testing.T) {
 		store := newStore(t)
-		collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips})
+		collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips, Kinds: advisorOutageKinds})
 		got := collectAzureAmbientCycle(t, store, []common.Recommendation{partialSweepRec()}, nil)
 		require.NotEmpty(t, got)
 		ids := storedAzureIDs(t, store)
@@ -113,7 +116,7 @@ func TestAzureAdvisorPricingOutage_FreshnessListsHeldAccount(t *testing.T) {
 	acct := config.CloudAccount{ID: uuid.NewString(), Name: "host", Provider: "azure", ExternalID: "sub-a", AzureSubscriptionID: "sub-a", Enabled: false}
 	require.NoError(t, store.CreateCloudAccount(ctx, &acct))
 
-	collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips})
+	collectAzureAmbientCycle(t, store, nil, &azureprovider.PartialResultError{Skipped: advisorOutageSkips, Kinds: advisorOutageKinds})
 	fresh, err := store.GetRecommendationsFreshness(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, fresh.LastCollectionPartial)
