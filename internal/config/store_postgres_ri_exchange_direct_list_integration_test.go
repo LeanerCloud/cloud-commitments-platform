@@ -162,7 +162,7 @@ func TestPostgresStoreDB_RIExchangeDirectList_KeysetPagination(t *testing.T) {
 	env := newRIExchangeIntegrationEnv(t)
 	acc := strPtr("acc-1")
 	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
-	var all []string
+	all := make([]string, 0, 7)
 	for _, at := range []time.Time{base, base, base, base, base.Add(time.Second), base.Add(time.Second), base.Add(2 * time.Second)} {
 		all = append(all, env.insertDirect(t, directSpec{account: acc, createdAt: at}))
 	}
@@ -170,9 +170,9 @@ func TestPostgresStoreDB_RIExchangeDirectList_KeysetPagination(t *testing.T) {
 		at time.Time
 		id string
 	}
-	var keys []key
 	full, err := env.storeA.ListUnresolvedRIExchangeDirectExecutions(env.ctx, RIExchangeDirectListFilter{Allowed: allow(acc, "eu-west-1")})
 	require.NoError(t, err)
+	keys := make([]key, 0, len(full.Rows))
 	for _, r := range full.Rows {
 		keys = append(keys, key{r.CreatedAt, r.ID})
 	}

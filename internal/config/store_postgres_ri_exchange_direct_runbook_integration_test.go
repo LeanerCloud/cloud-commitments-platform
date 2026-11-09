@@ -39,8 +39,9 @@ func runbookBreakGlassSQL(t *testing.T) string {
 func TestRIExchangeDirectRunbook_IntervalsMatchStore(t *testing.T) {
 	sql := runbookBreakGlassSQL(t)
 	minutes := func(re string) []time.Duration {
-		var out []time.Duration
-		for _, m := range regexp.MustCompile(re).FindAllStringSubmatch(sql, -1) {
+		matches := regexp.MustCompile(re).FindAllStringSubmatch(sql, -1)
+		out := make([]time.Duration, 0, len(matches))
+		for _, m := range matches {
 			n, err := strconv.Atoi(m[1])
 			require.NoError(t, err)
 			out = append(out, time.Duration(n)*time.Minute)

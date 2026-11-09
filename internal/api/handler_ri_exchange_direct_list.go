@@ -30,7 +30,7 @@ func (h *Handler) listRIExchangeDirectExecutions(ctx context.Context, req *event
 	}
 	filter.Allowed = allowed
 	page, err := store.ListUnresolvedRIExchangeDirectExecutions(ctx, filter)
-	if err := mapRIExchangeResolveError(err); err != nil {
+	if err = mapRIExchangeResolveError(err); err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()

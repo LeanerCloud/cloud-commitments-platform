@@ -61,7 +61,7 @@ func (s *directListStore) ListUnresolvedRIExchangeDirectExecutions(_ context.Con
 		if !allowed[pairKey(r.CloudAccountID, r.Region)] {
 			continue
 		}
-		if f.After != nil && !(r.CreatedAt.After(f.After.CreatedAt) || r.CreatedAt.Equal(f.After.CreatedAt) && r.ID > f.After.ID) {
+		if f.After != nil && !r.CreatedAt.After(f.After.CreatedAt) && (!r.CreatedAt.Equal(f.After.CreatedAt) || r.ID <= f.After.ID) {
 			continue
 		}
 		rows = append(rows, r)
@@ -115,7 +115,7 @@ func dlIDs(t *testing.T, out any) []string {
 }
 
 func regionGrant(regions ...string) []auth.Permission {
-	var perms []auth.Permission
+	perms := make([]auth.Permission, 0, len(regions))
 	for _, r := range regions {
 		perms = append(perms, auth.Permission{Action: auth.ActionExecute, Resource: "ri-exchange",
 			Constraints: &auth.PermissionConstraints{Regions: []string{r}}})

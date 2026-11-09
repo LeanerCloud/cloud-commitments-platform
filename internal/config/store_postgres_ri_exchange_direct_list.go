@@ -92,15 +92,15 @@ func (s *PostgresStore) ListUnresolvedRIExchangeDirectExecutions(ctx context.Con
 
 // validateRIExchangeDirectListFilter applies the limit default and cap and
 // checks the status filter.
-func validateRIExchangeDirectListFilter(f RIExchangeDirectListFilter) (int, []string, error) {
-	limit := f.Limit
+func validateRIExchangeDirectListFilter(f RIExchangeDirectListFilter) (limit int, statuses []string, err error) {
+	limit = f.Limit
 	if limit <= 0 {
 		limit = RIExchangeDirectListDefaultLimit
 	}
 	if limit > RIExchangeDirectListMaxLimit {
 		return 0, nil, fmt.Errorf("%w: limit must be at most %d", ErrRIExchangeResolveInvalid, RIExchangeDirectListMaxLimit)
 	}
-	statuses := f.Statuses
+	statuses = f.Statuses
 	if len(statuses) == 0 {
 		statuses = []string{RIExchangeDirectStatusSubmitted, RIExchangeDirectStatusUnknown}
 	}
