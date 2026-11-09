@@ -72,13 +72,13 @@ type GlobalConfig struct {
 	// Set to true to allow per-account configs to activate individually.
 	LadderingEnabled bool `json:"laddering_enabled" db:"laddering_enabled"`
 
-	// LadderExecutionEnabled gates the write side of the ladder capability
-	// (migration 000083). BOTH LadderingEnabled AND LadderExecutionEnabled
-	// must be true for PurchaseLayer / ReshapeBuffer to be wired with real
-	// AWS SDK clients. Default false: existing deployments that enable
-	// laddering produce plans but never call AWS purchase APIs until an
-	// operator explicitly opts in. Fail-loud: wireLadderWriteSide returns
-	// a typed ErrLadderExecutionDisabled when this is false.
+	// LadderExecutionEnabled gates ladder purchases and reshapes (migration
+	// 000083). BOTH LadderingEnabled AND LadderExecutionEnabled must be true
+	// for a sweep that buys or reshapes to act. Planning (ladder_run) never
+	// reads it: its capability always has the disabled write side, which
+	// returns a typed ErrLadderExecutionDisabled. Default false: deployments
+	// that enable laddering produce plans but never call AWS purchase APIs
+	// until an operator explicitly opts in.
 	LadderExecutionEnabled bool `json:"ladder_execution_enabled" db:"ladder_execution_enabled"`
 
 	// AutoPurchaseEnabled is the global kill switch for AutoPurchase plans
@@ -1232,7 +1232,7 @@ type PurchaseHistoryRecord struct {
 	// time so updates to the persistent-failure map land instantly).
 	OpsHint string `json:"ops_hint,omitempty" dynamodbav:"-"`
 	// RedriveUnsafe is true when OpsHint is a permanent refusal from
-	// purchase.RedriveRefusalReason (provider has no duplicate guard), not an
+	// purchase.RetryRefusalReason (provider has no duplicate guard), not an
 	// operator-fixable misconfiguration. Computed at read time, like OpsHint.
 	RedriveUnsafe bool `json:"redrive_unsafe,omitempty" dynamodbav:"-"`
 	// IsAuditGap marks a synthesized "completed" row whose purchase_history

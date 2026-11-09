@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -103,6 +104,12 @@ func (s *PostgresStore) FinalizeRIExchangeDirectExecution(ctx context.Context, i
 	if err := outcome.Validate(); err != nil {
 		return err
 	}
+	ready, err := directResolveSchemaReady(ctx, s.db)
+	if err != nil {
+		// The provider outcome must not be lost over a version read: the plain UPDATE is right on either schema.
+		logging.Errorf("ri-exchange direct execute %s: schema version unreadable, finalizing without the resolution check: %v", id, err)
+		ready = false
+	}
 	query := `
 		UPDATE ri_exchange_direct_executions
 		   SET status               = $2,
@@ -113,9 +120,8 @@ func (s *PostgresStore) FinalizeRIExchangeDirectExecution(ctx context.Context, i
 		       error                = $7,
 		       completed_at         = now()
 		 WHERE id = $1
-		   AND status = 'submitted'
-	`
-	tag, err := s.db.Exec(ctx, query,
+		   AND status = 'submitted'`
+	args := []any{
 		id,
 		outcome.Status,
 		nullStringFromString(outcome.ProviderReference),
@@ -123,12 +129,38 @@ func (s *PostgresStore) FinalizeRIExchangeDirectExecution(ctx context.Context, i
 		nullStringFromString(outcome.NetPayableCurrency),
 		nullStringFromString(outcome.ProviderStatus),
 		nullStringFromString(outcome.Error),
-	)
+	}
+	if !ready {
+		// No resolved_status column yet (or the schema version is unreadable): nothing to check against.
+		return s.finalizeDirectPlain(ctx, id, query, args)
+	}
+	return s.finalizeDirectChecked(ctx, id, query, args, outcome)
+}
+
+func (s *PostgresStore) finalizeDirectPlain(ctx context.Context, id, query string, args []any) error {
+	tag, err := s.db.Exec(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to finalize ri exchange direct execution %s: %w", id, err)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("finalize ri exchange direct execution %s: %w", id, ErrRIExchangeDirectExecutionNotSubmitted)
+	}
+	return nil
+}
+
+func (s *PostgresStore) finalizeDirectChecked(ctx context.Context, id, query string, args []any, outcome RIExchangeDirectOutcome) error {
+	var resolved *string
+	err := s.db.QueryRow(ctx, query+"\n\t\tRETURNING resolved_status", args...).Scan(&resolved)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("finalize ri exchange direct execution %s: %w", id, ErrRIExchangeDirectExecutionNotSubmitted)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to finalize ri exchange direct execution %s: %w", id, err)
+	}
+	// A late finalize can outlive an operator's resolution. Both facts are
+	// kept; a contradiction is logged because no reader lists resolved rows.
+	if resolved != nil && outcome.Status != RIExchangeDirectStatusUnknown && *resolved != outcome.Status {
+		logging.Errorf("ri-exchange direct execute %s: provider outcome %q contradicts operator resolution %q", id, outcome.Status, *resolved)
 	}
 	return nil
 }

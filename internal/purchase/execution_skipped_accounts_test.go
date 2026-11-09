@@ -30,6 +30,8 @@ type skipFixture struct {
 	// cancelAtB moves the cancel from A's purchase to B's credential load, so B
 	// starts and fails on its own (a started account, not a skip).
 	cancelAtB bool
+	// rootAttempt is the root's RetryAttemptN, copied onto its skip rows.
+	rootAttempt int
 }
 
 const (
@@ -56,6 +58,7 @@ func (f *skipFixture) run(t *testing.T, ctx context.Context, cancel context.Canc
 		Count: 1, Savings: 75, UpfrontCost: 300, Selected: true}
 	exec := &config.PurchaseExecution{
 		ExecutionID: "exec-skip", PlanID: "plan-skip", Status: "pending", IdempotencyKey: "lineage-skip",
+		RetryAttemptN:   f.rootAttempt,
 		Recommendations: []config.RecommendationRecord{withAccount(rec, skipAcctA), withAccount(rec, skipAcctB), withAccount(rec, skipAcctC)},
 	}
 	plan := &config.PurchasePlan{ID: "plan-skip", Name: "Skip", RampSchedule: config.RampSchedule{TotalSteps: 1}}
@@ -140,7 +143,8 @@ func TestExecuteMultiAccount_RecordsAccountsSkippedAfterACommit(t *testing.T) {
 		r := rows[0]
 		assert.Equal(t, "failed", r.Status, id)
 		assert.True(t, r.NoSubmission, "%s: the skip proves nothing was submitted", id)
-		assert.Equal(t, skippedAccountNoRetryNote, r.Error, "%s: Retry refuses EC2, so the row must not promise one", id)
+		assert.Equal(t, skippedAccountRetryNote, r.Error, "%s: an attempt-0 NoSubmission EC2 row is retryable", id)
+		assert.Empty(t, RetryRefusalReason(&r), id)
 		assert.Equal(t, "lineage-skip:"+id, r.IdempotencyKey, "%s: the stable per-account key", id)
 		assert.NotEqual(t, "exec-skip", r.ExecutionID, id)
 		require.Len(t, r.Recommendations, 1, "%s: the row keeps only its own account's recs, so a retry buys exactly them", id)
@@ -150,22 +154,45 @@ func TestExecuteMultiAccount_RecordsAccountsSkippedAfterACommit(t *testing.T) {
 	}
 }
 
+// A retried root's skip rows copy its RetryAttemptN, so Retry still refuses
+// them and the note points at a new purchase.
+func TestExecuteMultiAccount_SkipRowsOfRetriedRootStayRefused(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f := &skipFixture{rootAttempt: 1}
+	require.Error(t, f.run(t, ctx, cancel, true))
+	for _, id := range []string{skipAcctB, skipAcctC} {
+		rows := f.rowsFor(id)
+		require.Len(t, rows, 1, id)
+		assert.Equal(t, skippedAccountNoRetryNote, rows[0].Error, id)
+		assert.NotEmpty(t, RetryRefusalReason(&rows[0]), id)
+	}
+}
+
 // The skip row promises a retry only where Retry accepts the row.
 func TestSkippedAccountNote_MatchesRetryEligibility(t *testing.T) {
 	cases := []struct {
 		provider, service string
+		attempt           int
 		want              string
 	}{
-		{"aws", "ec2", skippedAccountNoRetryNote},
-		{"azure", "savingsplans", skippedAccountNoRetryNote},
-		{"aws", "rds", skippedAccountRetryNote},
-		{"aws", "redshift", skippedAccountRetryNote},
-		{"gcp", "compute", skippedAccountRetryNote},
+		{"aws", "ec2", 0, skippedAccountRetryNote},
+		{"azure", "savingsplans", 0, skippedAccountRetryNote},
+		{"aws", "ec2", 1, skippedAccountNoRetryNote},
+		{"azure", "savingsplans", 1, skippedAccountNoRetryNote},
+		{"aws", "rds", 0, skippedAccountRetryNote},
+		{"aws", "rds", 1, skippedAccountRetryNote},
+		{"aws", "redshift", 0, skippedAccountRetryNote},
+		{"gcp", "compute", 0, skippedAccountRetryNote},
 	}
 	for _, c := range cases {
-		row := &config.PurchaseExecution{Recommendations: []config.RecommendationRecord{{Provider: c.provider, Service: c.service}}}
-		assert.Equal(t, c.want, skippedAccountNote(row), c.provider+"/"+c.service)
-		assert.Equal(t, RedriveRefusalReason(row) == "", c.want == skippedAccountRetryNote, c.provider+"/"+c.service)
+		row := &config.PurchaseExecution{
+			Status: config.StatusFailed, NoSubmission: true, RetryAttemptN: c.attempt,
+			Recommendations: []config.RecommendationRecord{{Provider: c.provider, Service: c.service}},
+		}
+		name := fmt.Sprintf("%s/%s/attempt%d", c.provider, c.service, c.attempt)
+		assert.Equal(t, c.want, skippedAccountNote(row), name)
+		assert.Equal(t, RetryRefusalReason(row) == "", c.want == skippedAccountRetryNote, name)
 	}
 }
 

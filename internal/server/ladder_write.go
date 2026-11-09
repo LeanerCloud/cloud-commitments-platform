@@ -95,12 +95,12 @@ func (a *exchangeRunnerAdapter) run(ctx context.Context, cfg exchange.RIExchange
 	})
 }
 
-// buildAndWireCapability constructs a LadderCapability via the factory and wires its
-// write side. Extracted from processOneLadderConfig to keep that function's cyclomatic
-// complexity below the project threshold (10). The returned error carries no config
-// ID: the sole caller already prefixes its log line with the config ID, so repeating
-// it here would duplicate it in the output.
-func (app *Application) buildAndWireCapability(ctx context.Context, region, accountID string, executionEnabled bool) (pkgladder.LadderCapability, error) {
+// planningCapability builds the capability ladder_run plans with. Planning never
+// buys, so its write side is always the disabled one, whatever
+// ladder_execution_enabled says; it takes no flag, so the planner cannot ask for
+// real clients (#70). The returned error carries no config ID: the caller
+// already prefixes its log line with it.
+func (app *Application) planningCapability(ctx context.Context, region, accountID string) (pkgladder.LadderCapability, error) {
 	if app.LadderCapabilityFactory == nil {
 		return nil, errors.New("LadderCapabilityFactory is nil (not wired)")
 	}
@@ -108,7 +108,7 @@ func (app *Application) buildAndWireCapability(ctx context.Context, region, acco
 	if err != nil {
 		return nil, fmt.Errorf("failed to build ladder capability: %w", err)
 	}
-	return app.wireLadderWriteSide(ctx, executionEnabled, region, accountID, capability)
+	return app.wireLadderWriteSide(ctx, false, region, accountID, capability)
 }
 
 // wireLadderWriteSide wires the write side of a LadderCapability if and only if

@@ -1290,6 +1290,19 @@ func (s *PostgresStore) SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, 
 // successor row, after that insert, so the FK on retry_execution_id is
 // satisfied.
 func (s *PostgresStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error) {
+	return s.linkRetryExecution(ctx, tx, executionID, retryExecutionID, "")
+}
+
+// LinkUnsentRetryExecutionAtomic is LinkRetryExecutionAtomic for a retry the
+// handler allowed only because the row is a proven-unsent first attempt: the
+// same conditional UPDATE plus no_submission AND retry_attempt_n = 0, so a row
+// that stopped being that proof between the gate and the link is not linked.
+func (s *PostgresStore) LinkUnsentRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error) {
+	return s.linkRetryExecution(ctx, tx, executionID, retryExecutionID, "AND no_submission AND retry_attempt_n = 0")
+}
+
+// linkRetryExecution is the shared link CAS; extraPredicate narrows it.
+func (s *PostgresStore) linkRetryExecution(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID, extraPredicate string) (bool, error) {
 	// Before the settlement migration no row can be settled (#999).
 	notSettled := ""
 	if ready, readyErr := settlementSchemaReady(ctx, tx); readyErr != nil {
@@ -1304,7 +1317,8 @@ func (s *PostgresStore) LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx,
 		 WHERE execution_id = $1
 		   AND status = 'failed'
 		   AND retry_execution_id IS NULL
-		   ` + notSettled
+		   ` + notSettled + `
+		   ` + extraPredicate
 	tag, err := tx.Exec(ctx, q, executionID, retryExecutionID)
 	if err != nil {
 		return false, fmt.Errorf("failed to link retry execution: %w", err)
@@ -3488,8 +3502,9 @@ func normaliseRIExchangeSourceIDs(sources []string) []string {
 // refuseRIExchangeSourceInFlightDirect is the sibling guard for direct
 // executes: an AWS ri_exchange_direct_executions row still submitted (the
 // accept may be committing) or unknown (it may have committed) holds its
-// source RIs. It normalises its own input and compares against the stored ids
-// normalised the same way, so spelling and padding cannot slip an RI past it.
+// source RIs until an operator resolves it (resolved_at set, #1836). It
+// normalises its own input and compares against the stored ids normalised the
+// same way, so spelling and padding cannot slip an RI past it.
 // Like refuseRIExchangeSourceInFlight it runs under the daily-spend advisory
 // lock, fails closed on a lookup error, and logs the blocking row's id rather
 // than returning it (#1428).
@@ -3498,6 +3513,13 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 	if len(normalised) == 0 {
 		return nil
 	}
+	resolvedFilter := " AND resolved_at IS NULL"
+	if ready, err := directResolveSchemaReady(ctx, tx); err != nil {
+		logging.Errorf("RI exchange reservation: schema version check failed: %v", err)
+		return errors.New("failed to check RI exchange source RIs held by a direct execute")
+	} else if !ready {
+		resolvedFilter = ""
+	}
 	var blocker string
 	var shared []string
 	err := tx.QueryRow(ctx, `
@@ -3505,7 +3527,7 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 		FROM (
 			SELECT id, created_at, ARRAY(SELECT lower(btrim(x, E' \t\n\r\f\x0B')) FROM unnest(source_ids) x) AS ids
 			FROM ri_exchange_direct_executions
-			WHERE provider = 'aws' AND status IN ('submitted', 'unknown')
+			WHERE provider = 'aws' AND status IN ('submitted', 'unknown')`+resolvedFilter+`
 		) d
 		WHERE ids && $1::text[]
 		ORDER BY created_at, id

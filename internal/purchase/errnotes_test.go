@@ -18,6 +18,7 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 	retry := &config.PurchaseExecution{RetryAttemptN: 2, Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "ec2"}}}
 	azSP := &config.PurchaseExecution{RetryAttemptN: 1, Recommendations: []config.RecommendationRecord{{Provider: "azure", Service: "savingsplans"}}}
 	gcpRetry := &config.PurchaseExecution{RetryAttemptN: 1, Recommendations: []config.RecommendationRecord{{Provider: "weird"}}}
+	armedMgr := &Manager{config: unprovenPredecessorStore(t)}
 	notes := []string{
 		fresh.Error,
 		recoveredAfterReapNote,
@@ -26,10 +27,11 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		"reaped after 30m in approved state — executor did not complete; safe to retry",
 		strandedRecoveryError(&config.PurchaseExecution{}),
 		strandedRecoveryError(retry),
-		armedRedriveRefusal(retry).Error(),
+		armedRefusalText(t, armedMgr, retry),
 		"refusing to execute retry attempt 2: " + redriveReasonAWSNoGuardLegacy,
-		armedRedriveRefusal(azSP).Error(),
-		armedRedriveRefusal(gcpRetry).Error(),
+		armedRefusalText(t, armedMgr, azSP),
+		armedRefusalText(t, armedMgr, gcpRetry),
+		armedRedriveLookupRefusal,
 		ErrStaleAzurePricing.Error(),
 		ErrPlanStepNoRecommendations.Error(),
 		legacyPlanStepNoRecommendationsNote,

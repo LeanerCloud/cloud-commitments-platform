@@ -93,7 +93,7 @@ func TestRedshiftRedriveGuardLifted(t *testing.T) {
 
 			exec := &config.PurchaseExecution{RetryAttemptN: 1, Recommendations: []config.RecommendationRecord{rec}}
 			assert.Empty(t, RedriveRefusalReason(exec))
-			assert.NoError(t, armedRedriveRefusal(exec), "a Redshift retry successor is not refused by the armed backstop")
+			assert.NoError(t, (&Manager{}).armedRedriveRefusal(context.Background(), exec), "a Redshift retry successor is not refused by the armed backstop")
 		}
 	}
 }

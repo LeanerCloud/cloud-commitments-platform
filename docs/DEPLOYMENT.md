@@ -371,6 +371,58 @@ cd terraform/environments/aws
 terraform apply -replace="module.compute_lambda[0].aws_lambda_function.main" -auto-approve
 ```
 
+### Release ordering: Redshift re-drive (#1832) after the attempt journal (#1824)
+
+A Redshift purchase dispatched before the attempt journal existed in an
+environment has no journal record. If AWS changes that tuple's offering within
+the 24h re-drive horizon, a Retry of such a row could buy a second reserved
+node. So in every environment (dev, staging, prod, any other):
+
+- Deploy the release that contains #1832 (it lifts the Redshift re-drive and
+  Retry refusal) no earlier than 24h after the release that contains #1824 and
+  migration 000161 is live there.
+- Never ship #1824 and #1832 in the same release, or #1832 within 24h of #1824.
+- Start the 24h clock when migration 000161 is confirmed applied in that
+  environment, not when the deploy finishes. Migrations run at app start and a
+  failed run is only reported by the `migrations` check of `/health`, so a
+  finished deploy is not proof. Confirm with `SELECT version, dirty FROM
+  schema_migrations;` (version 161 or higher and `dirty` false). Confirming
+  later only lengthens the wait. The oldest `purchase_attempts` row is not
+  proof either: the table stays empty until the first Redshift purchase after
+  the deploy.
+
+Both changes are already on `main` (#1824 is `71b5e29a`, #1832 is `af8f5434`),
+so an environment still running a build from before #1824 cannot take both from
+one deploy of `main`. Do it in two deploys:
+
+1. Deploy `6fd9a2ef` (the parent of `af8f5434`: it has #1824 but not #1832).
+   Use the Rollback section below (`git checkout 6fd9a2ef`, then
+   `./scripts/tf-deploy.sh <cloud> <environment>`, for example `aws prod`).
+   The CI deploy workflow deploys the ref it is dispatched on, and whether a
+   ref at that commit passes an environment's deploy trust conditions depends
+   on the environment, so check before relying on it.
+2. Wait 24h from the moment 000161 is confirmed applied, then `git checkout main`
+   and deploy it the same way.
+
+An environment with no Redshift row in `purchase_executions` has no such rows
+and can skip the wait. Check with:
+
+```sql
+SELECT count(*) FROM purchase_executions e,
+  jsonb_array_elements(CASE WHEN jsonb_typeof(e.recommendations) = 'array'
+                            THEN e.recommendations ELSE '[]'::jsonb END) r
+ WHERE r->>'service' IN ('redshift', 'data-warehouse');
+```
+
+A count of 0 means the exemption applies; anything else means wait.
+
+Rolling back to a build without #1824 (see Rollback below) leaves Redshift rows
+dispatched in the meantime without a journal record. After such a rollback the
+24h wait restarts from the next deploy of #1824.
+
+Dev was handled by merge timing (#1824 went live there at 2026-11-06T23:38:42Z).
+See `known_issues/39_redshift_dedupe_window.md`.
+
 ### CI/CD Integration
 
 ```yaml

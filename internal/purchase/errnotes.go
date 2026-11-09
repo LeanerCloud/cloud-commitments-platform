@@ -22,6 +22,7 @@ var serverNotePatterns = []string{
 	`reaped after \d+m in [a-z_]+ state \x{2014} executor did not complete(?:; safe to retry)?`,
 	`execution was approved but its purchase run was interrupted before completing and never finalized; failed by the recovery sweep so it is not silently stuck \(issue #632\)\. (?:Verify on the cloud provider that no commitment was created, then Retry\.|Retry is refused for this purchase because a repeat could buy a second commitment\. Verify on the cloud provider whether the commitment was created; if it was not, start a new purchase\.)`,
 	`refusing to execute retry attempt \d+: (?:` + redriveReasonPattern + `)`,
+	regexp.QuoteMeta(armedRedriveLookupRefusal),
 	`stale Azure recommendation pricing; refresh recommendations and submit a new purchase(?:: the latest collection state is missing, so Azure prices cannot be confirmed current)?`,
 	`(?:execution ` + uuidPattern + `: )?plan step has no recommendations attached, so it cannot buy anything(?: \(platform#631: plan steps cannot yet carry recommendations\))?`,
 	`plan step refused by commitment cap(?:: plan has no max_step_commitment set \(auto-purchase of steps with recommendations is refused until one is set\)|: step total commitment \d+\.\d{2} exceeds max_step_commitment \d+\.\d{2}|` + boundGroupCapNotePatterns + `)?`,

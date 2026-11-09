@@ -3586,6 +3586,7 @@ func TestPGXMock_ReserveApprovedRIExchange_ReservesCeilingExcludingOwnRow(t *tes
 	mock.ExpectQuery("SELECT id::text, ARRAY").WithArgs([]string{"ri-1"}, &id).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
 	// Nor does an in-flight direct execute (#1829).
+	expectDirectResolveVersion(mock, directResolveMigrationVersion)
 	mock.ExpectQuery("FROM ri_exchange_direct_executions").WithArgs([]string{"ri-1"}).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
 	mock.ExpectExec("UPDATE ri_exchange_history SET payment_due").WithArgs(id, "1000.000000").

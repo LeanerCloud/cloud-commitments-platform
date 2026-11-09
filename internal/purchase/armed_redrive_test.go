@@ -86,6 +86,18 @@ func armedExecution(provider, service string, retryAttemptN int, status string) 
 // the provider's GetServiceClient is asked for.
 func armedHarness(t *testing.T, serviceType common.ServiceType) (*Manager, *MockConfigStore, *armedPurchaseRecorder) {
 	t.Helper()
+	return armedHarnessWithProof(t, serviceType, predecessorProof{})
+}
+
+// predecessorProof is the answer the harness gives PredecessorProvenUnsent;
+// the zero value is "not proven, no error".
+type predecessorProof struct {
+	proven bool
+	err    error
+}
+
+func armedHarnessWithProof(t *testing.T, serviceType common.ServiceType, proof predecessorProof) (*Manager, *MockConfigStore, *armedPurchaseRecorder) {
+	t.Helper()
 
 	rec := &armedPurchaseRecorder{}
 	store := new(MockConfigStore)
@@ -110,6 +122,7 @@ func armedHarness(t *testing.T, serviceType common.ServiceType) (*Manager, *Mock
 	stampedAt := time.Now().UTC()
 	store.On("StampFirstDispatchTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(config.StampResult{At: &stampedAt, WithinHorizon: true}, nil).Maybe()
+	store.On("PredecessorProvenUnsent", mock.Anything, mock.Anything).Return(proof.proven, proof.err).Maybe()
 	store.On("LockRedshiftTuplesTx", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	store.On("FindOpenRedshiftLineageConflictsTx", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Maybe()

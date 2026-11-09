@@ -70,6 +70,7 @@ func TestPGXMock_SaveRIExchangeDirectExecution_AWSLocksAndGuardsBeforeInsert(t *
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
 	mock.ExpectQuery("SELECT id::text, ARRAY").WithArgs([]string{"RI-1", "ri-1"}, (*string)(nil)).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
+	expectDirectResolveVersion(mock, directResolveMigrationVersion)
 	mock.ExpectQuery("FROM ri_exchange_direct_executions").WithArgs([]string{"ri-1"}).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
 	mock.ExpectExec("INSERT INTO ri_exchange_direct_executions").WithArgs(anyArgsCfg(15)...).
@@ -135,9 +136,10 @@ func TestPGXMock_FinalizeRIExchangeDirectExecution_CompareAndSet(t *testing.T) {
 	t.Run("submitted row is finalized", func(t *testing.T) {
 		mock := newMock(t)
 		store := storeWith(mock)
-		mock.ExpectExec(`UPDATE ri_exchange_direct_executions(.|\n)*WHERE id = \$1(.|\n)*AND status = 'submitted'`).
+		expectDirectResolveVersion(mock, directResolveMigrationVersion)
+		mock.ExpectQuery(`UPDATE ri_exchange_direct_executions(.|\n)*WHERE id = \$1(.|\n)*AND status = 'submitted'(.|\n)*RETURNING resolved_status`).
 			WithArgs(directExecTestID, "completed", pgxmock.AnyArg(), outcome.NetPayable, pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
-			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+			WillReturnRows(pgxmock.NewRows([]string{"resolved_status"}).AddRow((*string)(nil)))
 		require.NoError(t, store.FinalizeRIExchangeDirectExecution(context.Background(), directExecTestID, outcome))
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -145,9 +147,10 @@ func TestPGXMock_FinalizeRIExchangeDirectExecution_CompareAndSet(t *testing.T) {
 	t.Run("finalized or missing row is refused", func(t *testing.T) {
 		mock := newMock(t)
 		store := storeWith(mock)
-		mock.ExpectExec("UPDATE ri_exchange_direct_executions").
+		expectDirectResolveVersion(mock, directResolveMigrationVersion)
+		mock.ExpectQuery("UPDATE ri_exchange_direct_executions").
 			WithArgs(anyArgsCfg(7)...).
-			WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+			WillReturnRows(pgxmock.NewRows([]string{"resolved_status"}))
 		err := store.FinalizeRIExchangeDirectExecution(context.Background(), directExecTestID, outcome)
 		require.ErrorIs(t, err, ErrRIExchangeDirectExecutionNotSubmitted)
 		assert.NoError(t, mock.ExpectationsWereMet())
