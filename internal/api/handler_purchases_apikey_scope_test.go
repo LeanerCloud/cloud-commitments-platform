@@ -117,7 +117,7 @@ func keyScopeExec(status, creator string) *config.PurchaseExecution {
 		ExecutionID: keyScopeExecID, Status: status, CreatedByUserID: &creator,
 		ScheduledDate: time.Now().Add(72 * time.Hour),
 		Recommendations: []config.RecommendationRecord{{
-			ID: "r1", Provider: "aws", Service: "ec2", Region: "us-east-1", Count: 1, UpfrontCost: 100,
+			ID: "r1", Provider: "aws", Service: "ec2", Region: "us-east-1", Count: 1, UpfrontCost: 100, CommitmentCurrency: "USD",
 		}},
 	}
 }

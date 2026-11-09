@@ -43,6 +43,12 @@ func runPauseResume(t *testing.T, op pauseResumeOp, creator *string, recs []conf
 	if recs != nil {
 		exec.Recommendations = recs
 	}
+	// Resume refuses a zero-commitment batch (issue #1130), so price the rows.
+	for i := range exec.Recommendations {
+		if exec.Recommendations[i].UpfrontCost == 0 {
+			exec.Recommendations[i].UpfrontCost = 100
+		}
+	}
 	h, store := cancelRouteHandler(t, exec, append(perms, revokePerm(auth.ActionUpdate, nil))...)
 	resp, err := op.run(h)
 	return resp, store, err
