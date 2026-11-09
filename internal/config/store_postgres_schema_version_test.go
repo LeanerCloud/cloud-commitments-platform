@@ -2,6 +2,10 @@ package config
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -77,4 +81,42 @@ func TestDirectResolveSchemaReady(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// The re-adoption paths run before migration 164 is applied (#1785).
+func TestReadoptSchemaReady(t *testing.T) {
+	t.Parallel()
+	v := readoptMigrationVersion
+	cases := []struct {
+		name string
+		row  fakeVersionRow
+		want bool
+	}{
+		{"nothing applied", fakeVersionRow{err: pgx.ErrNoRows}, false},
+		{"before the migration", fakeVersionRow{version: v - 1}, false},
+		{"at the migration", fakeVersionRow{version: v}, true},
+		{"at the migration, dirty", fakeVersionRow{version: v, dirty: true}, false},
+		{"after it, even with a later dirty migration", fakeVersionRow{version: v + 1, dirty: true}, true},
+		{"unreadable", fakeVersionRow{err: assert.AnError}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := readoptSchemaReady(context.Background(), fakeVersionQuerier{tc.row})
+			if errors.Is(tc.row.err, assert.AnError) {
+				require.ErrorIs(t, err, assert.AnError)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// The constant must name this change's migration file, so a renumbering that
+// forgets it fails here instead of failing closed in production.
+func TestReadoptMigrationVersionNamesTheMigrationFile(t *testing.T) {
+	name := fmt.Sprintf("%06d_purchase_executions_approval_readopted_at.up.sql", readoptMigrationVersion)
+	_, err := os.Stat(filepath.Join("..", "database", "postgres", "migrations", name))
+	require.NoError(t, err, "readoptMigrationVersion no longer matches the migration file")
 }
