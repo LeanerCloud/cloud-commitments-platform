@@ -101,6 +101,7 @@ var (
 	upsertSet                = regexp.MustCompile(`(?is)\bDO\s+UPDATE\s+SET\b`)
 	setTerminator            = regexp.MustCompile(`(?i)^(WHERE|RETURNING)\b`)
 	idempotencyKeyColumn     = regexp.MustCompile(`(?i)\bidempotency_key\b`)
+	keyAssignmentTarget      = regexp.MustCompile(`(?i)^"?idempotency_key"?\s*=`)
 )
 
 // columnList returns the balanced "(...)" after an INSERT target and the text
@@ -121,11 +122,14 @@ func columnList(rest string) (cols, tail string, ok bool) {
 }
 
 // setText returns the SET clause text in rest, cut at the first WHERE, RETURNING or ";"
-// outside parentheses, so a subselect's WHERE does not hide a later assignment.
+// outside parentheses and '...' literals, so a subselect's WHERE does not hide a later assignment.
 func setText(rest string) string {
-	depth := 0
+	depth, inQuote := 0, false
 	for i, r := range rest {
 		switch {
+		case r == '\'':
+			inQuote = !inQuote
+		case inQuote:
 		case r == '(':
 			depth++
 		case r == ')':
@@ -143,8 +147,49 @@ func isWordByte(b byte) bool {
 	return b == '_' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
+// setItems splits a SET clause at commas outside parentheses and '...' literals.
+// It does not parse -- comments, $$...$$ or E'...' strings; no SQL in this repo uses them in a SET.
+func setItems(set string) []string {
+	var items []string
+	depth, start, inQuote := 0, 0, false
+	for i, r := range set {
+		switch {
+		case r == '\'':
+			inQuote = !inQuote
+		case inQuote:
+		case r == '(':
+			depth++
+		case r == ')':
+			depth--
+		case r == ',' && depth == 0:
+			items = append(items, set[start:i])
+			start = i + 1
+		}
+	}
+	return append(items, set[start:])
+}
+
+// setsIdempotencyKey reports whether a SET clause assigns the column: as a plain target, or
+// inside the column list of a row assignment. A reference in a value or subquery does not count.
+func setsIdempotencyKey(set string) bool {
+	for _, item := range setItems(set) {
+		item = strings.TrimSpace(item)
+		if !strings.HasPrefix(item, "(") {
+			if keyAssignmentTarget.MatchString(item) {
+				return true
+			}
+			continue
+		}
+		cols, tail, ok := columnList(item)
+		if ok && strings.HasPrefix(strings.TrimSpace(tail), "=") && idempotencyKeyColumn.MatchString(cols) {
+			return true
+		}
+	}
+	return false
+}
+
 // sqlIdempotencyKeyWriters counts purchase_executions INSERTs carrying idempotency_key
-// (no column list counts) and UPDATEs or upserts that SET it; dynamic counts unverifiable INSERTs.
+// (no column list counts) and UPDATEs or upserts that assign it in SET; dynamic counts unverifiable INSERTs.
 func sqlIdempotencyKeyWriters(sql string) (inserts, updates, dynamic int) {
 	for _, loc := range insertPurchaseExecutions.FindAllStringIndex(sql, -1) {
 		rest := strings.TrimSpace(sql[loc[1]:])
@@ -164,13 +209,13 @@ func sqlIdempotencyKeyWriters(sql string) (inserts, updates, dynamic int) {
 			tail = tail[:end]
 		}
 		for _, loc := range upsertSet.FindAllStringIndex(tail, -1) {
-			if idempotencyKeyColumn.MatchString(setText(tail[loc[1]:])) {
+			if setsIdempotencyKey(setText(tail[loc[1]:])) {
 				updates++
 			}
 		}
 	}
 	for _, loc := range updatePurchaseExecutions.FindAllStringIndex(sql, -1) {
-		if idempotencyKeyColumn.MatchString(setText(sql[loc[1]:])) {
+		if setsIdempotencyKey(setText(sql[loc[1]:])) {
 			updates++
 		}
 	}
@@ -334,6 +379,17 @@ func TestIdempotencyKeySQLScan_Detects(t *testing.T) {
 		{"update key set after a FROM inside parentheses", `UPDATE purchase_executions SET status = (SELECT s FROM t), idempotency_key = $2 WHERE execution_id = $1`, 0, 1, 0},
 		{"update key set after a WHERE inside parentheses", `UPDATE purchase_executions SET x = (SELECT a FROM t WHERE b = 1), idempotency_key = $2 WHERE id = $1`, 0, 1, 0},
 		{"upsert key set after a WHERE inside parentheses", `INSERT INTO purchase_executions (execution_id) VALUES ($1) ON CONFLICT (execution_id) DO UPDATE SET x = (SELECT a FROM t WHERE b = 1), idempotency_key = $2`, 0, 1, 0},
+		{"update filters on the key inside a SET subquery", `UPDATE purchase_executions SET a = (SELECT x FROM t WHERE idempotency_key = $1) WHERE execution_id = $2`, 0, 0, 0},
+		{"update sets the key after a subquery that filters on it", `UPDATE purchase_executions SET a = (SELECT x FROM t WHERE idempotency_key = $1), idempotency_key = $2 WHERE execution_id = $3`, 0, 1, 0},
+		{"update row assignment names the key", `UPDATE purchase_executions SET (status, idempotency_key) = ($1, $2) WHERE execution_id = $3`, 0, 1, 0},
+		{"update row assignment without the key", `UPDATE purchase_executions SET (status, error) = (SELECT s, idempotency_key FROM t) WHERE execution_id = $1`, 0, 0, 0},
+		{"update quoted identifier target", `UPDATE purchase_executions SET "idempotency_key" = $1 WHERE execution_id = $2`, 0, 1, 0},
+		{"update target without space before equals", `UPDATE purchase_executions SET IDEMPOTENCY_KEY=$1 WHERE execution_id = $2`, 0, 1, 0},
+		{"update literal with a paren and comma before the key target", `UPDATE purchase_executions SET error = 'x (', idempotency_key = $2 WHERE execution_id = $1`, 0, 1, 0},
+		{"update literal that mentions WHERE before the key target", `UPDATE purchase_executions SET error = 'see WHERE', idempotency_key = $1 WHERE execution_id = $2`, 0, 1, 0},
+		{"update literal that mentions the key", `UPDATE purchase_executions SET error = 'idempotency_key = 1, y' WHERE execution_id = $1`, 0, 0, 0},
+		{"update with the key set twice counts once", `UPDATE purchase_executions SET idempotency_key = $1, idempotency_key = $2`, 0, 1, 0},
+		{"upsert filters on the key inside a SET subquery", `INSERT INTO purchase_executions (execution_id) VALUES ($1) ON CONFLICT (execution_id) DO UPDATE SET a = (SELECT x FROM t WHERE idempotency_key = $2)`, 0, 0, 0},
 		{"insert column list built with Sprintf", `INSERT INTO purchase_executions (%s) VALUES (%s)`, 0, 0, 1},
 		{"insert column list unclosed by concatenation", `INSERT INTO purchase_executions (execution_id, `, 0, 0, 1},
 		{"insert column list empty before concatenation", `INSERT INTO purchase_executions (`, 0, 0, 1},

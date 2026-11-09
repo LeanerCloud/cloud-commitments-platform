@@ -49,7 +49,7 @@ func TestExecuteSinglePurchase_ZonalRecKeepsAvailabilityZone(t *testing.T) {
 		Run(func(args mock.Arguments) { got = args.Get(1).(common.Recommendation) }).
 		Return(common.PurchaseResult{Success: true, CommitmentID: "ri-1"}, nil)
 
-	_, err := managerServing(t, sc).executeSinglePurchase(context.Background(), zonalRecRecord(t, "us-east-1b"), nil, common.PurchaseOptions{ExecutionID: "exec-az"})
+	_, err := managerServing(t, sc).executeSinglePurchase(context.Background(), zonalRecRecord(t, "us-east-1b"), nil, common.PurchaseOptions{ExecutionID: "exec-az"}, nil)
 	require.NoError(t, err)
 
 	d, ok := got.Details.(*common.ComputeDetails)
@@ -81,7 +81,7 @@ func TestExecuteSinglePurchase_StaleZonalRowWithoutAZFailsClosed(t *testing.T) {
 	c := ec2svc.NewClient(awsConfigForTest())
 	c.SetEC2API(api)
 
-	_, err := managerServing(t, c).executeSinglePurchase(context.Background(), zonalRecRecord(t, ""), nil, common.PurchaseOptions{ExecutionID: "exec-stale"})
+	_, err := managerServing(t, c).executeSinglePurchase(context.Background(), zonalRecRecord(t, ""), nil, common.PurchaseOptions{ExecutionID: "exec-stale"}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "re-fetch")
 	assert.Zero(t, api.purchases, "no purchase call")

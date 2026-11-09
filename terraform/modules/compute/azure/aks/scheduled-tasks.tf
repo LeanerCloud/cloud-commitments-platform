@@ -28,6 +28,7 @@ locals {
     process_scheduled_purchases = { job = "process", enabled = var.enable_process_scheduled_purchases_schedule, schedule = var.process_scheduled_purchases_schedule }
     send_notifications          = { job = "notify", enabled = var.enable_send_notifications_schedule, schedule = var.send_notifications_schedule }
     finalize_revocations        = { job = "finalize", enabled = var.enable_finalize_revocations_schedule, schedule = var.finalize_revocations_schedule }
+    ladder_reconcile            = { job = "reconcile", enabled = var.enable_ladder_reconcile_schedule, schedule = var.ladder_reconcile_schedule }
     cleanup                     = { job = "cleanup", enabled = var.enable_cleanup_schedule, schedule = var.cleanup_schedule }
     ri_exchange_reshape         = { job = "ri-exchange", enabled = var.enable_ri_exchange_schedule, schedule = var.ri_exchange_schedule }
     ladder_run                  = { job = "ladder", enabled = var.enable_ladder_run_schedule, schedule = var.ladder_run_schedule }

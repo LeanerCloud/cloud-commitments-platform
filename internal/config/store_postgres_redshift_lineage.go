@@ -71,6 +71,16 @@ func redshiftFailedClause(settleReady bool) string {
 		            AND e.first_dispatch_at > now() - make_interval(secs => $3)` + notSettled + `)`
 }
 
+// redshiftRecentBuyClause matches other-family rows that may have bought (finished, or failed
+// without the no-submission proof, settled or not) and were last written within $7 seconds of
+// the dispatch stamp $6: go could adopt their node. It is also the recent_buy column.
+func redshiftRecentBuyClause() string {
+	return `(split_part(COALESCE(NULLIF(e.idempotency_key, ''), e.execution_id::text), ':', 1) <> $2
+		            AND e.updated_at >= $6::timestamptz - make_interval(secs => $7)
+		            AND (e.status IN ('completed', 'partially_completed', 'revocation_requested')
+		                 OR (e.status = 'failed' AND NOT e.no_submission)))`
+}
+
 // redshiftSameFamilySettleClause matches a same-family row whose own attempt may have bought and
 // was last written within $8 seconds: its node can still be missing from AWS describe results.
 // A linked failed row already passed the Retry settle (and Retry bumps its updated_at).
@@ -83,12 +93,14 @@ func redshiftSameFamilySettleClause() string {
 
 // RedshiftLineageConflict is an open execution whose Redshift rec matches a
 // candidate tuple. SameFamily is true when it shares the candidate's lineage
-// root (idempotency key up to the first colon).
+// root (idempotency key up to the first colon). RecentBuy marks an other-family row that may
+// have bought and was written inside the adoption window.
 type RedshiftLineageConflict struct {
 	ExecutionID     string
 	Status          string
 	FirstDispatchAt *time.Time
 	SameFamily      bool
+	RecentBuy       bool
 	Error           string
 	Recommendations []RecommendationRecord
 }
@@ -96,7 +108,8 @@ type RedshiftLineageConflict struct {
 // FindOpenRedshiftLineageConflictsTx returns the other executions whose node this lineage could
 // buy twice or adopt. Account: row's else rec's vs execution's else tuple's; NULL matches any.
 // Running rows conflict at any age; other open rows within horizon of their stamp. Other-family
-// finished rows within window of stamp; other-family retryable failed rows within horizon.
+// rows that may have bought (finished, or failed without the no-submission proof) within window
+// of stamp; other-family retryable failed rows within horizon.
 // Same-family rows: running, or failed (unlinked) or finished after a possible send, within settle.
 func (s *PostgresStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, tx pgx.Tx, selfID, family string, tuples []RedshiftTuple, accountID *string, horizon time.Duration, stamp time.Time, window, settle time.Duration) ([]RedshiftLineageConflict, error) {
 	if family == "" {
@@ -116,7 +129,8 @@ func (s *PostgresStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, 
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT e.execution_id, e.status, e.first_dispatch_at, COALESCE(e.error, ''), e.recommendations,
-		       split_part(COALESCE(NULLIF(e.idempotency_key, ''), e.execution_id::text), ':', 1) = $2
+		       split_part(COALESCE(NULLIF(e.idempotency_key, ''), e.execution_id::text), ':', 1) = $2,
+		       `+redshiftRecentBuyClause()+`
 		FROM purchase_executions e
 		WHERE e.execution_id <> $1
 		  AND e.first_dispatch_at IS NOT NULL
@@ -125,9 +139,7 @@ func (s *PostgresStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, 
 		        OR (split_part(COALESCE(NULLIF(e.idempotency_key, ''), e.execution_id::text), ':', 1) <> $2
 		            AND e.status IN ('approved', 'scheduled', 'pending', 'notified', 'paused')
 		            AND e.first_dispatch_at > now() - make_interval(secs => $3))
-		        OR (split_part(COALESCE(NULLIF(e.idempotency_key, ''), e.execution_id::text), ':', 1) <> $2
-		            AND e.status IN ('completed', 'partially_completed', 'revocation_requested')
-		            AND e.updated_at >= $6::timestamptz - make_interval(secs => $7))
+		        OR `+redshiftRecentBuyClause()+`
 		        OR `+redshiftFailedClause(settleReady)+`
 		        OR `+redshiftSameFamilySettleClause()+`
 		      )
@@ -154,7 +166,7 @@ func (s *PostgresStore) FindOpenRedshiftLineageConflictsTx(ctx context.Context, 
 	for rows.Next() {
 		var c RedshiftLineageConflict
 		var recsJSON []byte
-		if err := rows.Scan(&c.ExecutionID, &c.Status, &c.FirstDispatchAt, &c.Error, &recsJSON, &c.SameFamily); err != nil {
+		if err := rows.Scan(&c.ExecutionID, &c.Status, &c.FirstDispatchAt, &c.Error, &recsJSON, &c.SameFamily, &c.RecentBuy); err != nil {
 			return nil, fmt.Errorf("scan redshift lineage conflict: %w", err)
 		}
 		if err := json.Unmarshal(recsJSON, &c.Recommendations); err != nil {
