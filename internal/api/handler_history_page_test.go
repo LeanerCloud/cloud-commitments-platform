@@ -253,7 +253,7 @@ func TestHandler_getHistory_CursorPageOmitsActionableRows(t *testing.T) {
 	assert.Equal(t, "p-1", resp.Purchases[0].PurchaseID)
 	assert.True(t, resp.HasMore)
 	store.AssertNotCalled(t, "GetExecutionsByStatuses", mock.Anything, mock.Anything, mock.Anything)
-	store.AssertNotCalled(t, "ExpireExecutionAtomic", mock.Anything, mock.Anything, mock.Anything)
+	store.AssertNotCalled(t, "ExpireExecutionAtomic", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	store.AssertCalled(t, "ListPurchaseHistoryPage", ctx, mock.Anything, mock.MatchedBy(func(after *config.HistoryPageKey) bool {
 		return after != nil && *after == purchases[0].Key()
 	}))

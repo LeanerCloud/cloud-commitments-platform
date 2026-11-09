@@ -188,7 +188,7 @@ var failRacers = []failRacer{
 			var won bool
 			err := f.store.WithTx(f.ctx, func(tx pgx.Tx) error {
 				var expErr error
-				if won, expErr = f.store.ExpireExecutionAtomic(f.ctx, tx, root.ExecutionID); expErr != nil || !won {
+				if won, expErr = f.store.ExpireExecutionAtomic(f.ctx, tx, root.ExecutionID, root.ScheduledDate); expErr != nil || !won {
 					return expErr
 				}
 				return f.store.DeleteSuppressionsByExecutionTx(f.ctx, tx, root.ExecutionID)

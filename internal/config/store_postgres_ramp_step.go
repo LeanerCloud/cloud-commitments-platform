@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -364,10 +365,11 @@ func (s *PostgresStore) SetExecutionRecommendationsIfEmptyTx(ctx context.Context
 }
 
 // ExpireExecutionAtomic implements StoreInterface.
-func (s *PostgresStore) ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string) (bool, error) {
+func (s *PostgresStore) ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string, observedScheduledDate time.Time) (bool, error) {
 	tag, err := tx.Exec(ctx, `
 		UPDATE purchase_executions SET status = $2, updated_at = NOW()
-		 WHERE execution_id = $1 AND status IN ('pending', 'notified')`, executionID, StatusExpired)
+		 WHERE execution_id = $1 AND status IN ('pending', 'notified') AND scheduled_date = $3`,
+		executionID, StatusExpired, observedScheduledDate)
 	if err != nil {
 		return false, fmt.Errorf("failed to expire execution %s: %w", executionID, err)
 	}

@@ -301,7 +301,7 @@ func (h *Handler) expireStaleExecutionsSweep(staleExecs []config.PurchaseExecuti
 		// expired step bought nothing, and leaving its rows would keep hiding
 		// recommendations nobody purchased (platform#631).
 		err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
-			expired, expErr := h.config.ExpireExecutionAtomic(ctx, tx, staleExecs[i].ExecutionID)
+			expired, expErr := h.config.ExpireExecutionAtomic(ctx, tx, staleExecs[i].ExecutionID, staleExecs[i].ScheduledDate)
 			if expErr != nil || !expired {
 				return expErr
 			}

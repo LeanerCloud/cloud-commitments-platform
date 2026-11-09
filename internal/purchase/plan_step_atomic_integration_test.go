@@ -187,18 +187,7 @@ func TestExpireExecutionAtomic_ReleasesSuppressions(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	expire := func() bool {
-		var expired bool
-		require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
-			var e error
-			expired, e = store.ExpireExecutionAtomic(ctx, tx, rootID)
-			if e != nil || !expired {
-				return e
-			}
-			return store.DeleteSuppressionsByExecutionTx(ctx, tx, rootID)
-		}))
-		return expired
-	}
+	expire := func() bool { return expireObserved(ctx, t, store, rootID, *plan.NextExecutionDate) }
 	require.True(t, expire())
 	got, err := store.GetExecutionByID(ctx, rootID)
 	require.NoError(t, err)
@@ -207,6 +196,55 @@ func TestExpireExecutionAtomic_ReleasesSuppressions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, sups)
 	assert.False(t, expire(), "an already-expired row must not be flipped again")
+}
+
+// expireObserved is the history sweep body for one row read with observedDate.
+func expireObserved(ctx context.Context, t *testing.T, store *config.PostgresStore, rootID string, observedDate time.Time) bool {
+	t.Helper()
+	var expired bool
+	require.NoError(t, store.WithTx(ctx, func(tx pgx.Tx) error {
+		var e error
+		expired, e = store.ExpireExecutionAtomic(ctx, tx, rootID, observedDate)
+		if e != nil || !expired {
+			return e
+		}
+		return store.DeleteSuppressionsByExecutionTx(ctx, tx, rootID)
+	}))
+	return expired
+}
+
+// A sweep holding a stale list must not expire a row that was re-armed since
+// the list was read (#1785): re-arming moves the date, and the sweep is pinned
+// to the date it observed. Fail-before: without the pin the row flips to
+// expired and its suppressions are dropped.
+func TestExpireExecutionAtomic_StaleObservedDateLosesToARearmedRow(t *testing.T) {
+	ctx := context.Background()
+	store, pool := rampStepStore(ctx, t)
+	plan := atomicStepPlan(ctx, t, store)
+	rootID := uuid.New().String()
+	observed := plan.NextExecutionDate.Add(-8 * 24 * time.Hour)
+	require.NoError(t, store.SavePurchaseExecution(ctx, &config.PurchaseExecution{
+		PlanID: plan.ID, ExecutionID: rootID, Status: "pending", StepNumber: 1, ScheduledDate: observed}))
+	rec := scopedTestRec("")
+	rec.CloudAccountID = nil
+	m := &Manager{config: store}
+	ok, err := m.AttachResolvedRecommendations(ctx, &config.PurchaseExecution{ExecutionID: rootID}, []config.RecommendationRecord{rec})
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	// The re-arm moved the date after the sweep read its list.
+	_, err = pool.Exec(ctx, `UPDATE purchase_executions SET scheduled_date = $2 WHERE execution_id = $1`, rootID, *plan.NextExecutionDate)
+	require.NoError(t, err)
+
+	assert.False(t, expireObserved(ctx, t, store, rootID, observed), "a stale sweep must lose")
+	got, err := store.GetExecutionByID(ctx, rootID)
+	require.NoError(t, err)
+	assert.Equal(t, "pending", got.Status)
+	sups, err := store.ListActiveSuppressions(ctx)
+	require.NoError(t, err)
+	assert.NotEmpty(t, sups, "the suppressions survive")
+
+	assert.True(t, expireObserved(ctx, t, store, rootID, *plan.NextExecutionDate), "a sweep that saw the current date still expires")
 }
 
 // The compare-and-set also matches a row stored with an empty JSON array (not

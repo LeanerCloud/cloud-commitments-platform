@@ -255,7 +255,7 @@ func TestHandler_getHistory_ExpireIfStale(t *testing.T) {
 		// The goroutine uses context.Background(); context.Background() == ctx in
 		// this test, so the matcher fires correctly. The trailing mock.Anything
 		// matches the actor *string (nil for the system-initiated async expire).
-		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID).
+		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID, mock.Anything).
 			Run(waitForCall(done)).
 			Return(true, nil).Once()
 
@@ -275,7 +275,7 @@ func TestHandler_getHistory_ExpireIfStale(t *testing.T) {
 
 		// Exactly one Transition call, only for the stale row.
 		mockStore.AssertNumberOfCalls(t, "ExpireExecutionAtomic", 1)
-		mockStore.AssertCalled(t, "ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID)
+		mockStore.AssertCalled(t, "ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID, mock.Anything)
 
 		historyResp := result.(HistoryResponse)
 		require.Len(t, historyResp.Purchases, 2, "both executions must render as history rows")
@@ -313,7 +313,7 @@ func TestHandler_getHistory_ExpireIfStale(t *testing.T) {
 		mockStore.On("GetExecutionsByStatuses", ctx, mock.Anything, mock.Anything).
 			Return([]config.PurchaseExecution{staleExec("notified")}, nil)
 		mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &approverEmail}, nil)
-		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID).
+		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID, mock.Anything).
 			Run(waitForCall(done)).
 			Return(true, nil).Once()
 
@@ -351,7 +351,7 @@ func TestHandler_getHistory_ExpireIfStale(t *testing.T) {
 		mockStore.On("GetExecutionsByStatuses", ctx, mock.Anything, mock.Anything).
 			Return([]config.PurchaseExecution{staleExec("pending")}, nil)
 		mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &approverEmail}, nil)
-		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID).
+		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID, mock.Anything).
 			Run(waitForCall(done)).
 			Return(false, errors.New("simulated store failure")).Once()
 
@@ -446,7 +446,7 @@ func TestHandler_getHistory_GetIsReadOnly(t *testing.T) {
 	mockStore.On("ListPurchaseHistoryPage", ctx, mock.Anything, mock.Anything).Return([]config.PurchaseHistoryRecord{}, nil)
 	mockStore.On("GetExecutionsByStatuses", ctx, mock.Anything, mock.Anything).Return([]config.PurchaseExecution{stale}, nil)
 	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &approverEmail}, nil)
-	mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, "stale-ro-exec").
+	mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, "stale-ro-exec", mock.Anything).
 		Run(func(_ mock.Arguments) {
 			close(transitionCalled) // signal that the goroutine reached the transition
 			<-gate                  // block until the test releases it
@@ -652,7 +652,7 @@ func TestHandler_expireStaleExecutionsAsync_SystemActorIsNil(t *testing.T) {
 	// System path: the async expire must pass nil actor so transitioned_by =
 	// NULL. The (*string)(nil) literal is the contract under test. The
 	// goroutine uses context.Background(); use mock.Anything for ctx.
-	mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID).Run(func(_ mock.Arguments) { close(done) }).Return(true, nil).Once()
+	mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID, mock.Anything).Run(func(_ mock.Arguments) { close(done) }).Return(true, nil).Once()
 
 	mockAuth, req := adminHistoryReq(t, ctx)
 	handler := &Handler{auth: mockAuth, config: mockStore}
@@ -2025,7 +2025,7 @@ func TestHandler_getHistory_ExpireIfStale_LambdaGuard(t *testing.T) {
 		mockStore.On("GetExecutionsByStatuses", ctx, mock.Anything, mock.Anything).
 			Return([]config.PurchaseExecution{staleExec()}, nil)
 		mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &approverEmail}, nil)
-		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID).Return(true, nil).Once()
+		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID, mock.Anything).Return(true, nil).Once()
 
 		mockAuth, req := adminHistoryReq(t, ctx)
 		handler := &Handler{auth: mockAuth, config: mockStore, isLambda: true}
@@ -2064,7 +2064,7 @@ func TestHandler_getHistory_ExpireIfStale_LambdaGuard(t *testing.T) {
 		mockStore.On("GetExecutionsByStatuses", ctx, mock.Anything, mock.Anything).
 			Return([]config.PurchaseExecution{staleExec()}, nil)
 		mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{NotificationEmail: &approverEmail}, nil)
-		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID).Run(func(_ mock.Arguments) {
+		mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID, mock.Anything).Run(func(_ mock.Arguments) {
 			<-release
 			close(swept)
 		}).Return(true, nil).Once()
@@ -2150,7 +2150,7 @@ func TestExpireStaleExecutionsSweep_ReleasesSuppressionsOnlyWhenExpired(t *testi
 		t.Run(name, func(t *testing.T) {
 			store := new(MockConfigStore)
 			t.Cleanup(func() { store.AssertExpectations(t) })
-			store.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, "stale-1").Return(won, nil)
+			store.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, "stale-1", mock.Anything).Return(won, nil)
 			store.On("DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "stale-1").Return(nil).Maybe()
 			h := &Handler{config: store}
 

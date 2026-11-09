@@ -141,8 +141,10 @@ type StoreInterface interface {
 	SetExecutionRecommendationsIfEmptyTx(ctx context.Context, tx pgx.Tx, executionID string, recs []RecommendationRecord, upfront, savings float64) (bool, error)
 	// ExpireExecutionAtomic flips a pending/notified execution to expired in
 	// tx so its suppressions can be deleted in the same transaction. Returns
-	// false when the row had already left pending/notified.
-	ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string) (bool, error)
+	// false when the row had already left pending/notified or its
+	// scheduled_date no longer equals observedScheduledDate (a re-armed root
+	// carries a new date, so a stale sweep list cannot expire it again).
+	ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string, observedScheduledDate time.Time) (bool, error)
 	// UpdatePurchasePlanTx checks UpdatedAt and replaces it with the returned version.
 	// The caller must discard the transaction-local plan if the transaction rolls back.
 	UpdatePurchasePlanTx(ctx context.Context, tx pgx.Tx, plan *PurchasePlan) error
