@@ -292,7 +292,8 @@ func TestGapFromPartialSubscriptions_PricingOutageSkipsHoldAccount(t *testing.T)
 	for i, r := range outage {
 		prefixed[i] = "0f4c1a52-8d3e-4b7a-9c61-2e5d7a9b3c10: " + r
 	}
-	gap, err := tolerateIncompleteSweep("azure", azureprovider.NewPartialSubscriptionFailure(2, failed, prefixed))
+	gap, err := tolerateIncompleteSweep("azure", azureprovider.NewPartialSubscriptionFailureWithKinds(2, failed, prefixed,
+		[]azureprovider.SkipKind{azureprovider.SkipPriceLookupUnavailable, azureprovider.SkipPriceLookupUnavailable}))
 	require.NoError(t, err)
 
 	held := gap.forAccount().withHeld("acct-1")
@@ -312,7 +313,8 @@ func TestTolerateIncompleteSweep_PrefixedPricingOutageSkipsHoldAccount(t *testin
 		`0f4c1a52-8d3e-4b7a-9c61-2e5d7a9b3c10: advisor: azure advisor: advisor compute reservation price for "Standard_D2s_v3" in "westeurope" (1y): get: retail prices fetch failed: EOF`,
 		`0f4c1a52-8d3e-4b7a-9c61-2e5d7a9b3c10: advisor: price lookup unavailable: azure advisor: advisor compute reservation price for "Standard_D2s_v3" in "westeurope" (1y): get: retail prices fetch failed: EOF`,
 	}
-	gap, err := tolerateIncompleteSweep("azure", &azureprovider.PartialResultError{Skipped: skips})
+	gap, err := tolerateIncompleteSweep("azure", &azureprovider.PartialResultError{Skipped: skips,
+		Kinds: []azureprovider.SkipKind{azureprovider.SkipPriceLookupUnavailable, azureprovider.SkipPriceLookupUnavailable}})
 	require.NoError(t, err)
 
 	held := gap.forAccount().withHeld("acct-1")

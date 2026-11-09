@@ -41,7 +41,7 @@ type sweepGap struct {
 	skippedOnly bool
 	reasons     map[string]int
 	// pricingUnavailable is set when a skip meant the price could not be
-	// fetched, so the previous cycle's rows are held (see hasPricingOutageSkip).
+	// fetched, so the previous cycle's rows are held (see recordSkips).
 	pricingUnavailable bool
 	// heldAccountIDs are the platform account UUIDs whose rows are held for
 	// that reason; the collector that knows the account fills them in.
@@ -66,6 +66,13 @@ type partialResult interface {
 	SkipReasons() []string
 }
 
+// skipKinder is implemented by Azure's PartialResultError: one kind per skip
+// reason, index-aligned (cloud-commitments-go#670). A provider without it, such
+// as GCP, reads every skip as azureprovider.SkipUnpriceable.
+type skipKinder interface {
+	SkipKinds() []azureprovider.SkipKind
+}
+
 // tolerateSkippedRecommendations keeps the recommendations returned alongside
 // a Partial() error and records how many were skipped. Any other error is
 // returned unchanged.
@@ -76,33 +83,31 @@ func tolerateSkippedRecommendations(providerName string, err error) (*sweepGap, 
 	}
 	logging.Warnf("%s recommendations partial, keeping the rest: %v", providerName, err)
 	g := &sweepGap{reasons: map[string]int{}}
-	g.recordSkips(p.SkippedCount(), p.SkipReasons())
+	var kinds []azureprovider.SkipKind
+	if k, ok := p.(skipKinder); ok {
+		kinds = k.SkipKinds()
+	}
+	g.recordSkips(p.SkippedCount(), kinds)
 	g.skippedOnly = !g.pricingUnavailable
 	return g, nil
 }
 
-// trimSubscriptionPrefixes drops the "<subscription ID>: " that the Azure
-// multi-subscription client puts before each skip it aggregates
-// (recommendations_multi_subscription.go:399 at 61111428), so the reasons match
-// the same prefixes as a single-subscription sweep. Only a leading segment
-// followed by an Advisor skip is removed, so unprefixed reasons pass through.
-func trimSubscriptionPrefixes(reasons []string) []string {
-	out := make([]string, len(reasons))
-	for i, reason := range reasons {
-		out[i] = reason
-		if sub, rest, ok := strings.Cut(reason, ": "); ok && sub != "" && !strings.ContainsAny(sub, " :") && strings.HasPrefix(rest, "advisor: ") {
-			out[i] = rest
-		}
-	}
-	return out
-}
-
-// recordSkips adds dropped recommendations to the gap. A skip that means "the
-// price could not be fetched" says nothing about the row being invalid, so its
-// previous-cycle row must survive: it marks the gap pricingUnavailable.
-func (g *sweepGap) recordSkips(count int, reasons []string) {
+// recordSkips adds dropped recommendations to the gap. A skip of kind
+// SkipPriceLookupUnavailable means "the price could not be fetched", which says
+// nothing about the row being invalid, so its previous-cycle row must survive:
+// it marks the gap pricingUnavailable. The decision reads only the typed kinds,
+// never the reason text, so a wording change in the library cannot silently
+// stop holding rows. A truncated walk (SkipSourceIncomplete) and an unusable
+// row (SkipUnpriceable) do not hold: holding on a walk that is always
+// truncated would keep that account's stale rows forever.
+func (g *sweepGap) recordSkips(count int, kinds []azureprovider.SkipKind) {
 	g.skippedRecommendations += count
-	if outage := countPricingOutageSkips(trimSubscriptionPrefixes(reasons)); outage > 0 {
+	// Kinds are index-aligned with the skips, and the library ignores extra
+	// ones, so only the first count can name a skip.
+	if len(kinds) > count {
+		kinds = kinds[:count]
+	}
+	if outage := countPricingOutageSkips(kinds); outage > 0 {
 		g.pricingUnavailable = true
 		g.reasons[config.PartialReasonPricingUnavailable] += outage
 	}
@@ -119,42 +124,12 @@ func (g *sweepGap) withHeld(accountID string) *sweepGap {
 	return out
 }
 
-// Skip-reason prefixes cloud-commitments-go records when Azure Advisor rows
-// cannot be priced because the Retail Prices catalog is unreachable
-// (providers/azure/recommendations_advisor_pricing.go, priceAdvisorReservations,
-// go#663). The library exports no constant for them: RecordSkip stores
-// "<service>: <err>" strings. The first failed row is recorded with the
-// collection-failure wrapper "azure advisor: "; every later row of the call
-// gets "price lookup unavailable: ".
-var pricingOutageSkipPrefixes = []string{
-	"advisor: price lookup unavailable: ",
-	"advisor: azure advisor: ",
-}
-
-// advisorTruncatedSkipPrefix starts the skip recorded for an Advisor walk that
-// hit the page cap or a page error (collectAdvisorOrSkip,
-// providers/azure/recommendations.go:471 at 61111428). It shares the
-// "advisor: azure advisor: " prefix but is not a pricing outage: a walk over
-// the page cap is always truncated, so holding eviction would keep that
-// account's stale rows forever.
-const advisorTruncatedSkipPrefix = "advisor: azure advisor: recommendation list is incomplete"
-
-// hasPricingOutageSkip reports whether any skip reason is a pricing outage.
-func hasPricingOutageSkip(reasons []string) bool {
-	return countPricingOutageSkips(reasons) > 0
-}
-
-func countPricingOutageSkips(reasons []string) int {
+// countPricingOutageSkips counts the skips whose price lookup did not complete.
+func countPricingOutageSkips(kinds []azureprovider.SkipKind) int {
 	n := 0
-	for _, reason := range reasons {
-		if strings.HasPrefix(reason, advisorTruncatedSkipPrefix) {
-			continue
-		}
-		for _, prefix := range pricingOutageSkipPrefixes {
-			if strings.HasPrefix(reason, prefix) {
-				n++
-				break
-			}
+	for _, kind := range kinds {
+		if kind == azureprovider.SkipPriceLookupUnavailable {
+			n++
 		}
 	}
 	return n
@@ -187,7 +162,7 @@ func gapFromPartialSubscriptions(p *azureprovider.PartialSubscriptionFailureErro
 	// user warning only and does not affect eviction (skippedOnly stays false),
 	// but a pricing outage among them holds the account like a skips-only one.
 	if sk := p.Skips(); sk != nil {
-		g.recordSkips(sk.SkippedCount(), sk.SkipReasons())
+		g.recordSkips(sk.SkippedCount(), sk.SkipKinds())
 	}
 	for _, f := range p.Failed {
 		g.reasons[classifySweepCause(f.Err)]++
