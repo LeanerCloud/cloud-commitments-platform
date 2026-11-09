@@ -123,7 +123,8 @@ type GlobalConfig struct {
 	// pre-created with the plan keeps its human creator, who then cannot
 	// approve it. A step root pre-created through the admin API key (no
 	// creator and not system-created) cannot be approved by anyone while this
-	// is on: it waits, then expires, and a human recreates the plan.
+	// is on: it waits, then expires, and a human recreates the plan; the
+	// overdue tick does not re-arm such a root (#1785), nobody could approve it.
 	RequireDifferentApprover bool `json:"require_different_approver" dynamodbav:"require_different_approver"`
 }
 
