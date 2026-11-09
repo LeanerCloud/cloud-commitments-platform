@@ -171,3 +171,39 @@ func TestStampFirstDispatch_ExactHorizonIsOutside(t *testing.T) {
 	require.NotNil(t, res.At)
 	assert.False(t, res.WithinHorizon)
 }
+
+func TestPredecessorProvenUnsent(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+
+	cases := []struct {
+		name     string
+		attemptN int
+		ns       bool
+		seed     bool
+		status   string // overrides the seeded predecessor's failed status
+		want     bool
+	}{
+		{"no_submission attempt 0", 0, true, true, "", true},
+		{"no_submission attempt 1", 1, true, true, "", false},
+		{"submitted attempt 0", 0, false, true, "", false},
+		{"no_submission attempt 0 but running", 0, true, true, "running", false},
+		// Each case seeds its own successor, so this one has no predecessor row at all.
+		{"no predecessor", 0, false, false, "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			succ := seedRunningSuccessor(ctx, t, store, tc.attemptN+1, nil)
+			if tc.seed {
+				seedPredecessor(ctx, t, store, succ.ExecutionID, tc.attemptN, tc.ns)
+				if tc.status != "" {
+					_, err := store.db.Exec(ctx, `UPDATE purchase_executions SET status = $2 WHERE retry_execution_id = $1`, succ.ExecutionID, tc.status)
+					require.NoError(t, err)
+				}
+			}
+			got, err := store.PredecessorProvenUnsent(ctx, succ.ExecutionID)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

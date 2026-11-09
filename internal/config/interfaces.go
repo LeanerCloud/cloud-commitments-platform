@@ -313,6 +313,10 @@ type StoreInterface interface {
 	// DB error. Must be called inside the same tx that inserts the
 	// successor row, after that insert.
 	LinkRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error)
+	// LinkUnsentRetryExecutionAtomic is LinkRetryExecutionAtomic with the extra
+	// condition no_submission AND retry_attempt_n = 0 (a proven-unsent first
+	// attempt). The handler uses it for retries it allowed only on that proof.
+	LinkUnsentRetryExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID, retryExecutionID string) (linked bool, err error)
 	// LockLadderTrancheForRetryTx row-locks the ladder tranche whose id equals
 	// idempotencyKey (matched as text; found=false for any non-ladder key) so
 	// Retry can refuse a settled tranche before inserting a successor.
@@ -820,6 +824,10 @@ type StoreInterface interface {
 	// running row (kept once set; minted only per the mint rule) and reports
 	// whether it is within horizon on the database clock.
 	StampFirstDispatchTx(ctx context.Context, tx pgx.Tx, executionID string, horizon time.Duration) (StampResult, error)
+
+	// PredecessorProvenUnsent reports whether executionID's retry predecessor
+	// is a no_submission attempt 0 row (the lineage provably sent nothing).
+	PredecessorProvenUnsent(ctx context.Context, executionID string) (bool, error)
 
 	// LockRedshiftTuplesTx takes a transaction-scoped advisory lock per
 	// distinct tuple, in sorted order, serializing dispatches that share one.

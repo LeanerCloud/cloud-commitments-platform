@@ -1232,7 +1232,7 @@ type PurchaseHistoryRecord struct {
 	// time so updates to the persistent-failure map land instantly).
 	OpsHint string `json:"ops_hint,omitempty" dynamodbav:"-"`
 	// RedriveUnsafe is true when OpsHint is a permanent refusal from
-	// purchase.RedriveRefusalReason (provider has no duplicate guard), not an
+	// purchase.RetryRefusalReason (provider has no duplicate guard), not an
 	// operator-fixable misconfiguration. Computed at read time, like OpsHint.
 	RedriveUnsafe bool `json:"redrive_unsafe,omitempty" dynamodbav:"-"`
 	// IsAuditGap marks a synthesized "completed" row whose purchase_history

@@ -1472,7 +1472,9 @@ paths:
             known; a concurrent retry also answers this way), it is a plan step
             with no recommendations, it belongs to a settled ladder tranche,
             a provider re-drive of it is unsafe (ops_hint plus
-            redrive_unsafe, permanent and not overridable by force), it is a
+            redrive_unsafe, permanent and not overridable by force; an AWS
+            EC2 or Azure savings-plans row proven to have sent nothing, with
+            no_submission at attempt 0, is retryable), it is a
             Redshift purchase that failed too recently for AWS to have settled
             (retry_after_seconds and a Retry-After header, not overridable by
             force), its failure is operator-fixable (ops_hint plus
@@ -8033,7 +8035,9 @@ components:
           description: >-
             Execution-only. True when ops_hint is a permanent re-drive refusal,
             including a Redshift purchase with no first dispatch time or one
-            dispatched at least 24h ago.
+            dispatched at least 24h ago. False for an AWS EC2 or Azure
+            savings-plans row proven to have sent nothing (no_submission at
+            attempt 0), which stays retryable.
         is_audit_gap:
           type: boolean
           description: >-

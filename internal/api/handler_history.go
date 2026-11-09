@@ -407,11 +407,12 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 	// inputs, so this is safe to call unconditionally.
 	if exec.Status == "failed" {
 		row.OpsHint = purchase.ResolveOpsHint(exec.Error)
-		// A re-drive the backend will always refuse is permanent, so it wins
+		// A retry the backend will always refuse is permanent, so it wins
 		// over the operator-fixable failure-reason hint (which promises that
 		// fixing the config makes Retry work). Same call and input as the
-		// retry handler's gate so the two cannot disagree (issue #161).
-		if reason := purchase.RedriveRefusalReason(&exec); reason != "" {
+		// retry handler's gate so the two cannot disagree (issue #161); a
+		// proven-unsent first attempt keeps Retry (issue #1803).
+		if reason := purchase.RetryRefusalReason(&exec); reason != "" {
 			row.RedriveUnsafe = true
 			// Only a proven pre-send AWS refusal on every rec means nothing was
 			// bought; for any other outcome the duplicate-purchase warning stays.

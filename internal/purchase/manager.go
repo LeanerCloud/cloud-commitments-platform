@@ -426,7 +426,7 @@ func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExec
 // All refusals except the armed re-drive and missing-journal ones are
 // beforeSubmission errors, so the row ends failed with no_submission stamped.
 func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
-	if err := armedRedriveRefusal(exec); err != nil {
+	if err := m.armedRedriveRefusal(ctx, exec); err != nil {
 		return err
 	}
 	if refusal := m.staleAzurePricingRefusal(ctx, exec); refusal != nil {
@@ -567,22 +567,22 @@ func allRecsSafeToRedrive(exec *config.PurchaseExecution) bool {
 // the way three copies at three call sites can. executePurchase has exactly one
 // production caller, immediately below this check.
 //
-// The condition is a conjunction and BOTH halves are load-bearing:
+// The checks run in this order, so a lookup happens only when it can matter:
 //
-//   - RetryAttemptN > 0 restricts it to retry successors. A fresh execution
-//     (n == 0) is a FIRST purchase with nothing to duplicate, and Azure savings
-//     plans must remain buyable, so re-drive safety alone here would block
-//     every legitimate first buy.
-//   - RedriveRefusalReason != "" restricts it to providers with no duplicate
-//     guard, reusing the predicate from #1668 rather than introducing a second
-//     notion of re-drive safety.
+//   - (a) RetryAttemptN <= 0 returns nil. A fresh execution is a FIRST purchase
+//     with nothing to duplicate, and Azure savings plans must remain buyable.
+//   - (b) An empty RedriveRefusalReason returns nil: the provider has a
+//     duplicate guard (#1668 predicate, not a second notion of re-drive safety).
+//   - (c) Otherwise, for a first retry only, the predecessor is read. When it is
+//     a failed no_submission attempt 0, the lineage provably sent nothing and
+//     the no-guard refusal is lifted (retryRefusalReason). A lookup error
+//     refuses with fixed text, never a beforeSubmission error.
 //
 // Returning an error rather than skipping silently means finalizeExecution
 // stamps the row "failed" with this reason and executeAndFinalize persists it,
-// so an armed row is DEFUSED and visible in History instead of remaining armed
-// for the next sweep. Retrying it from the UI then hits the #1668 gate, which
-// refuses, so it cannot be re-armed either.
-func armedRedriveRefusal(exec *config.PurchaseExecution) error {
+// so a refused row is visible in History instead of remaining armed for the
+// next sweep.
+func (m *Manager) armedRedriveRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
 	if exec.RetryAttemptN <= 0 {
 		return nil
 	}
@@ -590,8 +590,26 @@ func armedRedriveRefusal(exec *config.PurchaseExecution) error {
 	if reason == "" {
 		return nil
 	}
+	// Only a first retry can follow a proven-unsent first attempt (D1: no chain
+	// walk), so deeper attempts skip the lookup and keep the refusal.
+	proven := false
+	if exec.RetryAttemptN == 1 {
+		var err error
+		proven, err = m.config.PredecessorProvenUnsent(ctx, exec.ExecutionID)
+		if err != nil {
+			logging.Errorf("predecessor proof lookup failed for execution %s: %v", exec.ExecutionID, err)
+			return errors.New(armedRedriveLookupRefusal)
+		}
+	}
+	if reason = retryRefusalReason(exec, proven); reason == "" {
+		return nil
+	}
 	return fmt.Errorf("refusing to execute retry attempt %d: %s", exec.RetryAttemptN, reason)
 }
+
+// armedRedriveLookupRefusal is fixed text (no wrapped DB error) so the stored
+// error stays on the errnotes allowlist.
+const armedRedriveLookupRefusal = "refusing to execute retry: could not confirm that the earlier attempt sent nothing; start a new purchase instead of retrying"
 
 // RedriveRefusalReason returns a short operator-facing reason why exec must not
 // be re-driven, or "" when every recommendation on it carries a provider-side
