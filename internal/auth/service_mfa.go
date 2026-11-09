@@ -9,6 +9,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"slices"
 	"strings"
@@ -188,22 +189,33 @@ func buildProvisioningURI(accountEmail, secret string) string {
 // caller is responsible for hashing for storage and surfacing the
 // plaintext to the user exactly once.
 func generateRecoveryCodes(n int) ([]string, error) {
+	return generateRecoveryCodesFrom(rand.Reader, n)
+}
+
+// recoveryCodeByteLimit is the largest multiple of the alphabet size that fits
+// in a byte. A byte at or above it is redrawn, so every character is equally
+// likely; folding it with % would favor the first 256%31 characters (#1768).
+const recoveryCodeByteLimit = 256 - 256%len(recoveryCodeAlphabet)
+
+// generateRecoveryCodesFrom is generateRecoveryCodes drawing from src.
+func generateRecoveryCodesFrom(src io.Reader, n int) ([]string, error) {
 	out := make([]string, 0, n)
-	alphabetLen := byte(len(recoveryCodeAlphabet))
-	// Pull a buffer of random bytes once per code rather than one byte
-	// at a time so failure modes are easier to reason about.
+	b := make([]byte, 1)
 	for i := 0; i < n; i++ {
-		raw := make([]byte, recoveryCodeLength)
-		if _, err := rand.Read(raw); err != nil {
-			return nil, fmt.Errorf("failed to read random bytes for recovery code: %w", err)
-		}
 		var sb strings.Builder
 		sb.Grow(recoveryCodeLength + 1)
-		for j, b := range raw {
+		for j := 0; j < recoveryCodeLength; {
+			if _, err := io.ReadFull(src, b); err != nil {
+				return nil, fmt.Errorf("failed to read random bytes for recovery code: %w", err)
+			}
+			if int(b[0]) >= recoveryCodeByteLimit {
+				continue
+			}
 			if j == recoveryCodeLength/2 {
 				sb.WriteByte('-')
 			}
-			sb.WriteByte(recoveryCodeAlphabet[b%alphabetLen])
+			sb.WriteByte(recoveryCodeAlphabet[int(b[0])%len(recoveryCodeAlphabet)])
+			j++
 		}
 		out = append(out, sb.String())
 	}
