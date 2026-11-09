@@ -181,10 +181,10 @@ func TestClaimedByOthers_QueryErrorReturnsError(t *testing.T) {
 	counter := &queryCounter{dbConn: store.db}
 	store.db = counter
 
-	cancelled, cancel := context.WithCancel(ctx)
+	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
 
-	got, err := store.ClaimedByOthers(cancelled, attemptToken, []string{"rn-1"})
+	got, err := store.ClaimedByOthers(canceledCtx, attemptToken, []string{"rn-1"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Contains(t, err.Error(), "list claimed reservations", "wrapped by the query-error branch")
