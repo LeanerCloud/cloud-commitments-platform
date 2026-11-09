@@ -409,9 +409,9 @@ func (m *MockConfigStore) SetExecutionRecommendationsIfEmptyTx(ctx context.Conte
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockConfigStore) ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string) (bool, error) {
-	m.record("ExpireExecutionAtomic", ctx, tx, executionID)
-	args := m.Called(ctx, tx, executionID)
+func (m *MockConfigStore) ExpireExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string, observedScheduledDate time.Time) (bool, error) {
+	m.record("ExpireExecutionAtomic", ctx, tx, executionID, observedScheduledDate)
+	args := m.Called(ctx, tx, executionID, observedScheduledDate)
 	return args.Bool(0), args.Error(1)
 }
 

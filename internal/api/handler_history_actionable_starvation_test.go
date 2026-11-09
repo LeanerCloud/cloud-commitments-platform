@@ -208,7 +208,7 @@ func TestHandler_getHistory_StaleSweepBoundedToDefaultListLimit(t *testing.T) {
 	store := newStarvationStore(ctx)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	store.On("GetExecutionsByStatuses", ctx, mock.Anything, mock.Anything).Return(stale, nil)
-	store.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
+	store.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
 
 	// Lambda mode (synchronous sweep) so the call count is final on return.
 	mockAuth, req := adminHistoryReq(t, ctx)

@@ -151,7 +151,7 @@ func TestGetHistory_LambdaSweepRunsAfterSummaryAggregate(t *testing.T) {
 	mockStore.On("GetExecutionsByStatuses", ctx, mock.Anything, mock.Anything).Return([]config.PurchaseExecution{stale}, nil)
 	mockStore.On("HistorySummaryAggregate", ctx, mock.Anything).Run(note("aggregate")).
 		Return(&config.HistorySummaryGroups{Executions: []config.ExecutionSummaryGroup{{Status: "pending", Count: 1}}}, nil)
-	mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID).Run(note("expire")).Return(true, nil).Once()
+	mockStore.On("ExpireExecutionAtomic", mock.Anything, mock.Anything, staleID, mock.Anything).Run(note("expire")).Return(true, nil).Once()
 
 	mockAuth, req := adminHistoryReq(t, ctx)
 	handler := &Handler{auth: mockAuth, config: mockStore, isLambda: true}
