@@ -220,6 +220,20 @@ func TestGCPRecent_OwnNameRetryAdoptsExistingCommitment(t *testing.T) {
 	assert.Equal(t, cudOwnName(0), recs[0].PurchaseID)
 }
 
+// End to end through the real go client: the retry's own CUD and another
+// lineage's same-family CUD are both recent; the retry still adopts its own.
+func TestGCPRecent_OwnNameRetryAdoptsDespiteForeignRecentCUD(t *testing.T) {
+	foreign := gcpCommitmentName(common.DeriveIdempotencyToken("other-lineage", 0))
+	svc := &fakeCUDService{items: []*computepb.Commitment{
+		cudFixture(cudOwnName(0), familyN2, time.Minute),
+		cudFixture(foreign, familyN2, time.Minute),
+	}}
+	errs, allRefused, recs := gcpRun(t, svc, cudLineage, cudRec(t, familyN2, cudRegion))
+	require.Empty(t, errs)
+	assert.False(t, allRefused)
+	assert.Equal(t, cudOwnName(0), recs[0].PurchaseID, "the retry adopted its own commitment")
+}
+
 func TestGCPRecent_TwoSameFamilyRecsInOneExecutionBothBought(t *testing.T) {
 	svc := &fakeCUDService{}
 	errs, allRefused, recs := gcpRun(t, svc, cudLineage, cudRec(t, familyN2, cudRegion), cudRec(t, familyN2, cudRegion))
@@ -321,7 +335,7 @@ func TestGCPRecentRefusal_ForwardsTheGCPFilterWithTheListedProject(t *testing.T)
 	inner.On("GetExistingCommitments", mock.Anything).Return(spyRecent(false), nil)
 	spy := &filterSpy{MockServiceClient: inner, filtered: true}
 
-	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), nil)
+	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), nil, "")
 
 	require.Error(t, err)
 	assert.Equal(t, gcpRecentCommitmentNote, err.Error())
@@ -337,7 +351,7 @@ func TestGCPRecentRefusal_DropsOwnCommitmentsBeforeFiltering(t *testing.T) {
 	inner.On("GetExistingCommitments", mock.Anything).Return(spyRecent(true), nil)
 	spy := &filterSpy{MockServiceClient: inner, filtered: true}
 
-	require.NoError(t, gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), map[string]bool{cudOwnName(0): true}))
+	require.NoError(t, gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), map[string]bool{cudOwnName(0): true}, ""))
 	assert.Zero(t, spy.calls, "nothing recent and foreign is left, so the filter is not reached")
 }
 
@@ -352,7 +366,7 @@ func TestGCPRecentRefusal_OtherLineageCUDIsRefused(t *testing.T) {
 	inner.On("GetExistingCommitments", mock.Anything).Return(recent, nil)
 	spy := &filterSpy{MockServiceClient: inner, filtered: true}
 
-	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), map[string]bool{cudOwnName(0): true})
+	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), map[string]bool{cudOwnName(0): true}, "")
 
 	require.Error(t, err)
 	assert.Equal(t, gcpRecentCommitmentNote, err.Error())
@@ -360,6 +374,37 @@ func TestGCPRecentRefusal_OtherLineageCUDIsRefused(t *testing.T) {
 	assert.True(t, errors.As(err, &notSubmitted))
 	require.Equal(t, 1, spy.calls, "the other lineage's CUD reached the provider filter as a recent commitment")
 	inner.AssertNotCalled(t, "PurchaseCommitment", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// A lost-response retry whose own commitment is already listed must reach the
+// purchase call, which adopts it, even when another lineage's recent CUD in the
+// same family is listed too; refusing it would record no submission for a rec
+// whose commitment exists.
+func TestGCPRecentRefusal_OwnCommitmentListedAdoptsDespiteForeignCUD(t *testing.T) {
+	recent := append(spyRecent(true), spyRecent(false)...)
+	recent[1].CommitmentID = gcpCommitmentName(common.DeriveIdempotencyToken("other-lineage", 0))
+	inner := new(MockServiceClient)
+	inner.On("GetExistingCommitments", mock.Anything).Return(recent, nil)
+	spy := &filterSpy{MockServiceClient: inner, filtered: true}
+
+	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), map[string]bool{cudOwnName(0): true}, cudOwnName(0))
+
+	require.NoError(t, err)
+}
+
+// Another rec of the same execution owning a listed commitment does not let
+// this rec past a foreign recent CUD: only this rec's own name defers.
+func TestGCPRecentRefusal_SiblingRecOwnNameDoesNotDefer(t *testing.T) {
+	recent := append(spyRecent(true), spyRecent(false)...)
+	recent[1].CommitmentID = gcpCommitmentName(common.DeriveIdempotencyToken("other-lineage", 0))
+	inner := new(MockServiceClient)
+	inner.On("GetExistingCommitments", mock.Anything).Return(recent, nil)
+	spy := &filterSpy{MockServiceClient: inner, filtered: true}
+
+	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), map[string]bool{cudOwnName(0): true, cudOwnName(1): true}, cudOwnName(1))
+
+	require.Error(t, err)
+	assert.Equal(t, gcpRecentCommitmentNote, err.Error())
 }
 
 // Recent commitments from two projects cannot all describe this rec's project,
@@ -373,7 +418,7 @@ func TestGCPRecentRefusal_CommitmentsFromTwoProjectsFailClosed(t *testing.T) {
 	inner.On("GetExistingCommitments", mock.Anything).Return(recent, nil)
 	spy := &filterSpy{MockServiceClient: inner, filtered: false}
 
-	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), nil)
+	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), nil, "")
 
 	require.Error(t, err)
 	assert.Equal(t, gcpDuplicateCheckFailedNote, err.Error())
@@ -388,7 +433,7 @@ func TestGCPRecentRefusal_ClientWithoutFilterFailsClosed(t *testing.T) {
 	inner := new(MockServiceClient)
 	inner.On("GetExistingCommitments", mock.Anything).Return(spyRecent(false), nil)
 
-	err := gcpRecentCommitmentRefusal(context.Background(), inner, gcpGuardRec(), nil)
+	err := gcpRecentCommitmentRefusal(context.Background(), inner, gcpGuardRec(), nil, "")
 
 	require.Error(t, err)
 	assert.Equal(t, gcpDuplicateCheckFailedNote, err.Error())
@@ -401,6 +446,6 @@ func TestGCPRecentRefusal_OtherRecsNeverTouchTheClient(t *testing.T) {
 		{Provider: common.ProviderAzure, Service: common.ServiceCompute},
 		{Provider: common.ProviderGCP, Service: common.ServiceRelationalDB},
 	} {
-		assert.NoError(t, gcpRecentCommitmentRefusal(context.Background(), client, rec, nil), "%s/%s", rec.Provider, rec.Service)
+		assert.NoError(t, gcpRecentCommitmentRefusal(context.Background(), client, rec, nil, ""), "%s/%s", rec.Provider, rec.Service)
 	}
 }

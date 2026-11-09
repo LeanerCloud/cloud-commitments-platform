@@ -70,12 +70,21 @@ type recentCommitmentFilter interface {
 type gcpRecentDedupeClient struct {
 	provider.ServiceClient
 	own map[string]bool
+	// self is this rec's own commitment name; sawSelf records that the listing
+	// held it, so the purchase call can adopt it instead of being refused.
+	self    string
+	sawSelf *bool
 }
 
 func (c gcpRecentDedupeClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	all, err := c.ServiceClient.GetExistingCommitments(ctx)
 	if err != nil {
 		return nil, err
+	}
+	for i := range all {
+		if c.self != "" && all[i].CommitmentID == c.self {
+			*c.sawSelf = true
+		}
 	}
 	return slices.DeleteFunc(slices.Clone(all), func(cm common.Commitment) bool { return c.own[cm.CommitmentID] }), nil
 }
@@ -108,16 +117,21 @@ func (c gcpRecentDedupeClient) FilterRecommendationsForRecentCommitments(recs []
 // gcpRecentCommitmentRefusal refuses a GCP compute rec when the project already
 // has a commitment of the rec's region and machine family that started in the
 // last 24 hours, and fails closed when the commitments cannot be listed. It
-// returns nil for every other rec. A refusal is a beforeSubmission error: the
-// purchase call is never made.
-func gcpRecentCommitmentRefusal(ctx context.Context, client provider.ServiceClient, rec common.Recommendation, ownNames map[string]bool) error {
+// returns nil for every other rec, and when this rec's own commitment (self) is
+// already listed: a lost-response retry must reach the purchase call, which
+// adopts it, rather than be refused by another lineage's commitment. A refusal
+// is a beforeSubmission error: the purchase call is never made.
+func gcpRecentCommitmentRefusal(ctx context.Context, client provider.ServiceClient, rec common.Recommendation, ownNames map[string]bool, self string) error {
 	if !isGCPCompute(string(rec.Provider), rec.Service) {
 		return nil
 	}
 	rec.CommitmentType = common.CommitmentCUD
+	sawSelf := false
 	passed, filtered, err := recfilter.NewDuplicateChecker(0).AdjustRecommendationsForExisting(
-		ctx, []common.Recommendation{rec}, gcpRecentDedupeClient{ServiceClient: client, own: ownNames})
+		ctx, []common.Recommendation{rec}, gcpRecentDedupeClient{ServiceClient: client, own: ownNames, self: self, sawSelf: &sawSelf})
 	switch {
+	case sawSelf:
+		return nil
 	case err != nil:
 		logging.Errorf("GCP duplicate check for %s in %s failed: %v", rec.ResourceType, rec.Region, err)
 		return beforeSubmission(errors.New(gcpDuplicateCheckFailedNote))

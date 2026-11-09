@@ -1386,10 +1386,19 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 // by RequestedAt and must be the lineage's first dispatch time, never this
 // call's.
 func preSubmitChecks(ctx context.Context, client provider.ServiceClient, rec config.RecommendationRecord, recommendation common.Recommendation, opts common.PurchaseOptions, ownGCPNames map[string]bool) (common.PurchaseOptions, error) {
-	if err := gcpRecentCommitmentRefusal(ctx, client, recommendation, ownGCPNames); err != nil {
+	if err := gcpRecentCommitmentRefusal(ctx, client, recommendation, ownGCPNames, ownCommitmentName(opts)); err != nil {
 		return opts, err
 	}
 	return withDispatchTime(rec, opts)
+}
+
+// ownCommitmentName is the GCP commitment name this rec's purchase call would
+// create, or "" when the call carries no idempotency token.
+func ownCommitmentName(opts common.PurchaseOptions) string {
+	if opts.IdempotencyToken == "" {
+		return ""
+	}
+	return gcpCommitmentName(opts.IdempotencyToken)
 }
 
 // purchaseCallError wraps a failed PurchaseCommitment. When the run context
