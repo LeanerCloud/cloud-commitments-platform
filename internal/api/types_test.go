@@ -133,11 +133,10 @@ func TestPlanRequest_toPurchasePlan(t *testing.T) {
 		assert.Equal(t, 5, plan.RampSchedule.TotalSteps)        // 100/20 = 5
 	})
 
-	t.Run("unknown ramp schedule defaults to immediate", func(t *testing.T) {
+	t.Run("omitted ramp schedule defaults to immediate", func(t *testing.T) {
 		req := &PlanRequest{
-			Name:         "Unknown Ramp Plan",
-			Enabled:      true,
-			RampSchedule: "unknown-schedule",
+			Name:    "Omitted Ramp Plan",
+			Enabled: true,
 		}
 
 		plan := req.toPurchasePlan()
@@ -248,6 +247,26 @@ func TestPlanRequest_validateTargetCoverage(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, 400, ce.code)
 			assert.Equal(t, "target_coverage must be between 1 and 100 for a purchase plan", ce.message)
+		})
+	}
+}
+
+// An unknown ramp_schedule used to fall back to the immediate preset (the whole
+// base bought in one step); the request is now refused with a 400.
+func TestDecodePlanRequest_RampSchedule(t *testing.T) {
+	for _, ramp := range []string{"", "immediate", "weekly-25pct", "monthly-10pct", "custom"} {
+		t.Run("accepts "+ramp, func(t *testing.T) {
+			_, err := decodePlanRequest(`{"name":"p","ramp_schedule":"` + ramp + `"}`)
+			assert.NoError(t, err)
+		})
+	}
+	for _, ramp := range []string{"unknown-schedule", "Immediate", "weekly"} {
+		t.Run("rejects "+ramp, func(t *testing.T) {
+			_, err := decodePlanRequest(`{"name":"p","ramp_schedule":"` + ramp + `"}`)
+			ce, ok := IsClientError(err)
+			require.True(t, ok, "got %v", err)
+			assert.Equal(t, 400, ce.code)
+			assert.Contains(t, ce.message, "ramp_schedule")
 		})
 	}
 }

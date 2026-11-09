@@ -162,13 +162,16 @@ func mapCreatePlanStorageError(err error, notFoundMsg, genericMsg, logFmt string
 }
 
 // decodePlanRequest parses a create or update body and refuses an out-of-range
-// target_coverage before any store access.
+// target_coverage or an unknown ramp_schedule before any store access.
 func decodePlanRequest(body string) (*PlanRequest, error) {
 	var req PlanRequest
 	if err := json.Unmarshal([]byte(body), &req); err != nil {
 		return nil, NewClientError(400, "invalid request body")
 	}
 	if err := req.validateTargetCoverage(); err != nil {
+		return nil, err
+	}
+	if err := req.validateRampSchedule(); err != nil {
 		return nil, err
 	}
 	return &req, nil

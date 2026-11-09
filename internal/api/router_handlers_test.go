@@ -536,7 +536,7 @@ func TestHandler_getRIExchangeConfigUpdateRequest_Validate(t *testing.T) {
 		},
 		{
 			name:    "valid auto mode",
-			req:     RIExchangeConfigUpdateRequest{Mode: "auto", UtilizationThreshold: 0, LookbackDays: 1},
+			req:     RIExchangeConfigUpdateRequest{Mode: "auto", UtilizationThreshold: 95, LookbackDays: 1},
 			wantErr: false,
 		},
 		{
@@ -548,6 +548,12 @@ func TestHandler_getRIExchangeConfigUpdateRequest_Validate(t *testing.T) {
 		{
 			name:    "utilization threshold too high",
 			req:     RIExchangeConfigUpdateRequest{Mode: "manual", UtilizationThreshold: 101, LookbackDays: 7},
+			wantErr: true,
+			errMsg:  "utilization_threshold",
+		},
+		{
+			name:    "utilization threshold zero",
+			req:     RIExchangeConfigUpdateRequest{Mode: "manual", UtilizationThreshold: 0, LookbackDays: 7},
 			wantErr: true,
 			errMsg:  "utilization_threshold",
 		},

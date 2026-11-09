@@ -874,6 +874,19 @@ func (r *PlanRequest) validateTargetCoverage() error {
 	return nil
 }
 
+// validateRampSchedule refuses a ramp_schedule that is neither omitted, a preset
+// nor "custom": it used to fall back to the immediate preset, buying the whole
+// base in one step.
+func (r *PlanRequest) validateRampSchedule() error {
+	if r.RampSchedule == "" || r.RampSchedule == "custom" {
+		return nil
+	}
+	if _, ok := config.PresetRampSchedules[r.RampSchedule]; !ok {
+		return NewClientError(400, "ramp_schedule must be one of immediate, weekly-25pct, monthly-10pct or custom")
+	}
+	return nil
+}
+
 // omittedFields records which service fields an update request left out, so
 // the overlay keeps the stored values instead of the create defaults.
 type omittedFields struct{ Coverage, Term, Payment bool }
