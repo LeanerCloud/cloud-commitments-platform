@@ -144,7 +144,9 @@ func TestPostgresStoreDB_ReserveRIExchange_DirectGuardNormalisesIDs(t *testing.T
 // through.
 func TestPostgresStoreDB_ReserveRIExchange_DirectGuardFailsClosedOnLookupError(t *testing.T) {
 	env := newRIExchangeIntegrationEnv(t)
-	_, err := env.poolA.Exec(env.ctx, "DROP TABLE ri_exchange_direct_executions")
+	// Break only the column the guard reads: the daily-spend query runs first
+	// and reads other columns of the same table, so dropping it would fail there.
+	_, err := env.poolA.Exec(env.ctx, "ALTER TABLE ri_exchange_direct_executions RENAME COLUMN source_ids TO source_ids_broken")
 	require.NoError(t, err)
 
 	account := testAccountID(830000000041)

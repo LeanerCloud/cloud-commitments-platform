@@ -3896,20 +3896,6 @@ func (s *PostgresStore) GetRIExchangeDailySpend(ctx context.Context, date time.T
 	return total, nil
 }
 
-// riExchangeDailySpendQuery counts completed exchanges accepted inside the
-// requested UTC day plus every processing reservation. A processing row is an
-// unsettled hold, so it stays counted across UTC midnight until it completes or
-// fails. $2 optionally leaves one row out (an approval's own reservation).
-const riExchangeDailySpendQuery = `
-		SELECT COALESCE(SUM(payment_due), 0)::text
-		FROM ri_exchange_history
-		WHERE ($2::uuid IS NULL OR id <> $2::uuid)
-		  AND (status = 'processing'
-		       OR (status = 'completed'
-		           AND COALESCE(completed_at, updated_at) >= (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
-		           AND COALESCE(completed_at, updated_at) < (date_trunc('day', $1::timestamptz AT TIME ZONE 'UTC') + INTERVAL '1 day') AT TIME ZONE 'UTC'))
-	`
-
 // CancelAllPendingExchanges cancels all pending RI exchange records regardless
 // of origin. Kept for interface compatibility; new callers should prefer
 // CancelPendingExchangesByOrigin to avoid cross-origin contamination.
