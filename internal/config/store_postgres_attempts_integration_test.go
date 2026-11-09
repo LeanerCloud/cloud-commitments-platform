@@ -173,6 +173,25 @@ func TestClaimedByOthers(t *testing.T) {
 	assert.Equal(t, []string{"rn-own"}, got, "the view is symmetric per token")
 }
 
+// A query failure must surface as a wrapped error with a nil result, never as
+// "nothing claimed" (which would let a caller proceed to buy).
+func TestClaimedByOthers_QueryErrorReturnsError(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+	counter := &queryCounter{dbConn: store.db}
+	store.db = counter
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	got, err := store.ClaimedByOthers(canceledCtx, attemptToken, []string{"rn-1"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Contains(t, err.Error(), "list claimed reservations", "wrapped by the query-error branch")
+	assert.Nil(t, got)
+	assert.Equal(t, 1, counter.queries, "the query ran, so the empty-ids early return was not taken")
+}
+
 func TestClaimedByOthers_EmptyIDsNoQuery(t *testing.T) {
 	ctx := context.Background()
 	store := setupLadderStore(ctx, t)

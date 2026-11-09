@@ -4,10 +4,13 @@ package migrations_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
+	"github.com/golang-migrate/migrate/v4/database"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,8 +72,19 @@ func TestMigration_0162_PreCheckNamesDuplicates(t *testing.T) {
 
 	err := migrations.MigrateToVersion(ctx, pool, migrationsPath, 162)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate purchased reservation_id")
-	assert.Contains(t, err.Error(), "rn-dup")
-	assert.NotContains(t, err.Error(), "rn-ok")
+
+	// golang-migrate's database.Error has no Unwrap, so errors.As cannot reach
+	// the *pgconn.PgError directly; take database.Error, then read OrigErr.
+	// err.Error() echoes the whole migration SQL (RAISE literal included) and
+	// the unique-index build failure also names the key, so only the SQLSTATE
+	// and PgError.Message prove the DO-block pre-check raised.
+	var dbErr database.Error
+	require.True(t, errors.As(err, &dbErr), "expected golang-migrate database.Error, got %v", err)
+	var pgErr *pgconn.PgError
+	require.True(t, errors.As(dbErr.OrigErr, &pgErr), "expected a Postgres error, got %v", dbErr.OrigErr)
+	assert.Equal(t, "P0001", pgErr.Code, "raise_exception from the pre-check, not 23505 from the index build")
+	assert.Contains(t, pgErr.Message, "duplicate purchased reservation_id")
+	assert.Contains(t, pgErr.Message, "rn-dup")
+	assert.NotContains(t, pgErr.Message, "rn-ok")
 	assert.False(t, purchasedIndexExists(ctx, t, pool), "no index after a refused migration")
 }
