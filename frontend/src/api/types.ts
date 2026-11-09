@@ -103,6 +103,9 @@ export interface UpcomingPurchase {
   plan_name: string;
   scheduled_date: string;
   provider: string;
+  // Set only for a bound plan: its distinct enabled group providers, since
+  // provider is then "multiple" when the groups differ.
+  providers?: string[];
   service: string;
   step_number: number;
   total_steps: number;
@@ -486,6 +489,8 @@ export interface PlannedPurchase {
   plan_name: string;
   scheduled_date: string;
   provider: Provider;
+  // Set only for a bound plan: its distinct enabled group providers (see UpcomingPurchase).
+  providers?: string[];
   service: string;
   resource_type: string;
   region: string;

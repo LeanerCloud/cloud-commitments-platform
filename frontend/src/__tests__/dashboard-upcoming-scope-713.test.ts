@@ -79,6 +79,14 @@ describe('upcoming-scope helpers (#713)', () => {
     expect(scopeUpcomingToProvider(ROWS, 'gcp')).toEqual([]);
   });
 
+  test('a cross-provider bound row matches each of its providers (#1746)', () => {
+    const multi = { ...row('e-multi', 'multiple', 'Bound Plan'), providers: ['aws', 'azure'] };
+    const rows = [...ROWS, multi];
+    expect(scopeUpcomingToProvider(rows, 'aws').map(r => r.execution_id)).toEqual(['e-aws', 'e-multi']);
+    expect(scopeUpcomingToProvider(rows, 'azure').map(r => r.execution_id)).toEqual(['e-az', 'e-multi']);
+    expect(scopeUpcomingToProvider(rows, 'gcp')).toEqual([]);
+  });
+
   test('empty message names the provider only when one is filtered', () => {
     expect(upcomingEmptyMessage('')).toBe('No upcoming scheduled purchases');
     expect(upcomingEmptyMessage('all')).toBe('No upcoming scheduled purchases');

@@ -227,6 +227,20 @@ describe('Planned Purchases column filters (issue #166 follow-up)', () => {
     });
   });
 
+  test('provider set filter keeps a cross-provider bound row under each of its providers (#1746)', async () => {
+    const multi = { ...seedPurchases[0], id: 'pp-multi', plan_name: 'Bound Plan', provider: 'multiple', providers: ['aws', 'azure'] };
+    (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [...seedPurchases, multi] });
+    const idsFor = async (values: string[]): Promise<string[]> => {
+      plansFilters = { provider: { kind: 'set', values } };
+      await loadPlans();
+      return Array.from(document.querySelectorAll<HTMLElement>('#planned-purchases-list tbody tr.planned-purchase-row'))
+        .map((r) => (r.textContent ?? '').includes('Bound Plan') ? 'bound' : 'other');
+    };
+    expect(await idsFor(['azure'])).toEqual(['other', 'bound']);
+    expect(await idsFor(['aws'])).toEqual(['other', 'other', 'bound']);
+    expect(await idsFor(['gcp'])).toEqual([]);
+  });
+
   test('numeric expr filter narrows rows (count >= 2)', async () => {
     await loadPlans();
     expect(countRows()).toBe(3);

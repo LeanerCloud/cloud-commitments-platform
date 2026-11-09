@@ -32,7 +32,7 @@ func DerivePlanProviders(plan *PurchasePlan) ([]string, error) {
 		if bound {
 			key, _, _ = strings.Cut(key, BoundKeySeparator) // the group id may hold a "/"
 		}
-		if provider := serviceEntryProvider(key, plan.Services[k].Provider); provider != "" {
+		if provider := ServiceEntryProvider(key, plan.Services[k].Provider); provider != "" {
 			seen[provider] = struct{}{}
 		}
 	}
@@ -47,9 +47,9 @@ func DerivePlanProviders(plan *PurchasePlan) ([]string, error) {
 	return providers, nil
 }
 
-// serviceEntryProvider returns the provider a services entry names: the key's
+// ServiceEntryProvider returns the provider a services entry names: the key's
 // prefix when the key has one, else the entry's Provider field, else "".
-func serviceEntryProvider(key, fieldProvider string) string {
+func ServiceEntryProvider(key, fieldProvider string) string {
 	if i := strings.IndexAny(key, "/:"); i > 0 {
 		return key[:i]
 	}

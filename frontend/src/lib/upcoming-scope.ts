@@ -21,6 +21,19 @@ function isProviderFilter(provider: string): boolean {
 }
 
 /**
+ * A bound plan whose groups span providers has provider "multiple" and lists
+ * its group providers in `providers`; a row matches a chip on either.
+ */
+export function rowMatchesProvider(
+  row: { provider?: string; providers?: readonly string[] },
+  provider: string,
+): boolean {
+  const want = provider.toLowerCase();
+  return (row.provider || '').toLowerCase() === want
+    || (row.providers ?? []).some(p => p.toLowerCase() === want);
+}
+
+/**
  * Keep only the rows matching the provider chip. '' / 'all' keep every row.
  * The row's provider is the plan's first service provider (see
  * upcomingFromExecution in internal/api/handler_dashboard.go).
@@ -30,8 +43,7 @@ export function scopeUpcomingToProvider(
   provider: string,
 ): UpcomingPurchase[] {
   if (!isProviderFilter(provider)) return [...purchases];
-  const want = provider.toLowerCase();
-  return purchases.filter(p => (p.provider || '').toLowerCase() === want);
+  return purchases.filter(p => rowMatchesProvider(p, provider));
 }
 
 /** Empty-state text, naming the provider filter when one hid every row. */
