@@ -72,7 +72,8 @@ func planArmEscalates(before, after *config.PurchasePlan) bool {
 		return true
 	}
 	return !subsetOf(afterProviders, beforeProviders) ||
-		!subsetOf(config.DerivePlanServices(after), config.DerivePlanServices(before))
+		!subsetOf(config.DerivePlanServices(after), config.DerivePlanServices(before)) ||
+		boundGroupsEscalate(before, after)
 }
 
 func subsetOf(sub, super []string) bool {
@@ -133,6 +134,10 @@ func (h *Handler) requireAutoPurchaseGrantFor(ctx context.Context, req *events.L
 // providers and services the plan targets. A plan whose providers cannot be
 // derived fails closed: an empty provider set would read as no restriction.
 func (h *Handler) requireAutoPurchaseGrantForPlan(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, accountIDs []string, plan *config.PurchasePlan) error {
+	// The scopes below come from the keys; sizing buys by each entry's own fields.
+	if err := plan.CheckBoundKeys(); err != nil {
+		return NewClientError(http.StatusConflict, err.Error())
+	}
 	providers, err := config.DerivePlanProviders(plan)
 	if err != nil {
 		logging.Errorf("requireAutoPurchaseGrantForPlan: %v", err)
