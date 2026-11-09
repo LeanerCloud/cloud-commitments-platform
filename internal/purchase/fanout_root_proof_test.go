@@ -36,7 +36,7 @@ func TestExecuteMultiAccount_RootProof(t *testing.T) {
 		"3 one unknown outcome, one refused":          {fx: fanOutFixture{behaviors: withA(recUnknown)}},
 		"4 refused, the other never started":          {fx: fanOutFixture{behaviors: bothRefused, cancelAfterSave: skipAcctA}, wantProof: true},
 		"5 all never started":                         {fx: fanOutFixture{behaviors: bothRefused, precancel: true}, wantProof: true},
-		"5b started account cut off by the context":   {fx: fanOutFixture{behaviors: bothRefused, cancelAtCred: skipAcctA}},
+		"5b started account cut off by the context":   {fx: fanOutFixture{behaviors: bothRefused, cancelAtCred: skipAcctA}, wantProof: true}, // cut off in credential load: nothing submitted (#1844 S2)
 		"7 one panics after submitting, one refused":  {fx: fanOutFixture{behaviors: withA(recPanics)}},
 		"8 refused wrapping unknown, one refused":     {fx: fanOutFixture{behaviors: withA(recRefusedUnknown)}},
 		"9 audit loss on a refused account's row":     {fx: fanOutFixture{behaviors: bothRefused, saveFail: map[string]bool{skipAcctA: true}}},
@@ -45,7 +45,7 @@ func TestExecuteMultiAccount_RootProof(t *testing.T) {
 		"9c provider factory failure, one refused":    {fx: fanOutFixture{behaviors: bothRefused, factoryFail: map[string]bool{skipAcctA: true}}},
 		"9c service client failure, one refused":      {fx: fanOutFixture{behaviors: bothRefused, clientFail: map[string]bool{skipAcctA: true}}},
 		"9c success=false result, one refused":        {fx: fanOutFixture{behaviors: withA(recSuccessFalse)}},
-		"credential failure, one refused (until S2)":  {fx: fanOutFixture{behaviors: bothRefused, credFail: map[string]bool{skipAcctA: true}}},
+		"credential failure, one refused":             {fx: fanOutFixture{behaviors: bothRefused, credFail: map[string]bool{skipAcctA: true}}, wantProof: true},
 		"plain purchase failure, one refused":         {fx: fanOutFixture{behaviors: withA(recPlainFail)}},
 		"never started, the started one failed plain": {fx: fanOutFixture{behaviors: withA(recPlainFail), cancelAfterSave: skipAcctA}},
 	}

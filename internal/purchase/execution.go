@@ -363,7 +363,7 @@ func (m *Manager) executeForAccountLate(ctx context.Context, baseExec *config.Pu
 	if err != nil {
 		acctExec.Status = "failed"
 		acctExec.Error = err.Error()
-		credErr := fmt.Errorf("credential resolution failed for account %s: %w", account.ID, err)
+		credErr := beforeSubmission(fmt.Errorf("credential resolution failed for account %s: %w", account.ID, err))
 		// Audit-trail save: the failed row is as much a part of the audit
 		// trail as a success row, so a save failure must surface (AUDIT LOSS)
 		// instead of being silently dropped. Extracted to a helper to keep
@@ -499,6 +499,9 @@ func skippedAccountRows(scoped map[string]*config.PurchaseExecution, results []e
 // #1184 / COR-10). Extracted from executeForAccount so the new branch keeps
 // that function under the gocyclo:10 budget.
 func (m *Manager) persistFailedAccountExecution(ctx context.Context, acctExec *config.PurchaseExecution, account config.CloudAccount, cause error) error {
+	// Stamped before the save so the row that lands carries the proof; a failed
+	// save loses the row and strips the class below.
+	markRefusedAccountRow(acctExec, refusedBeforeSubmission(cause))
 	if saveErr := m.saveAccountRow(ctx, acctExec); saveErr != nil {
 		// The cause is joined as text: a lost audit row means the outcome is
 		// unknown, so a before-submission class on the cause must not survive
