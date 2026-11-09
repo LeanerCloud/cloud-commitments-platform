@@ -12,10 +12,11 @@
 
 **Mitigation (platform-recorded buys):** The Redshift dispatch gate now refuses a purchase when another lineage's completed, partially completed or revocation-requested row, or a failed row without the no-submission proof (settled or not, and whether or not Retry is refused), for the same tuple was last saved within 10 minutes of the new lineage's first dispatch time. The refusal is recorded before submission with a fixed text that names no execution, and the user starts a new purchase at least 10 minutes after the other one ended, or retries or settles it if it failed and can still be retried.
 
+**Two identical-tuple recs in one execution** (same region, node type, term, payment, count and account) are refused before submission with a fixed text (`redshiftDuplicateTupleRefusal`, checked in `preExecutionRefusal`), since the go client would adopt the first node for the second. The user keeps one of them and starts a new purchase.
+
 **Remaining:**
 
 - Buys made outside the platform are invisible to the gate.
-- Two identical-tuple recs in one execution still adopt each other (platform #1809).
 - A lineage whose purchase record never landed (the child bought but its row save failed, `execution.go:351` and `:383`) leaves no completed row for the gate to see.
 - The go-side narrowing in LeanerCloud/cloud-commitments-go#700 and the real fix in #515 are open.
 - The window is measured from the other row's last save, so a later save of that row (for example a revocation request) restarts it. That only refuses longer; it never allows a double buy.
