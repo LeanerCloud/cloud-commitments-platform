@@ -371,6 +371,38 @@ cd terraform/environments/aws
 terraform apply -replace="module.compute_lambda[0].aws_lambda_function.main" -auto-approve
 ```
 
+### Release ordering: Redshift re-drive (#1832) after the attempt journal (#1824)
+
+A Redshift purchase dispatched before the attempt journal existed in an
+environment has no journal record. If AWS changes that tuple's offering within
+the 24h re-drive horizon, a Retry of such a row could buy a second reserved
+node. So in every environment (dev, staging, prod, any other):
+
+- Deploy the release that contains #1832 (it lifts the Redshift re-drive and
+  Retry refusal) no earlier than 24h after the release that contains #1824 and
+  migration 000161 is live there.
+- Never ship #1824 and #1832 in the same release, or #1832 within 24h of #1824.
+- Take the "live since" time from that environment's deploy history. The oldest
+  `purchase_attempts` row is not proof: the table stays empty until the first
+  Redshift purchase after the deploy.
+
+Both changes are already on `main` (#1824 is `71b5e29a`, #1832 is `af8f5434`),
+so an environment still running a build from before #1824 cannot take both from
+one deploy of `main`. Do it in two deploys:
+
+1. Deploy `6fd9a2ef` (the parent of `af8f5434`: it has #1824 but not #1832).
+2. Wait 24h from that deploy, then deploy `main`.
+
+An environment that has never dispatched a Redshift purchase through this platform has no such rows
+and can skip the wait.
+
+Rolling back to a build without #1824 (see Rollback below) leaves Redshift rows
+dispatched in the meantime without a journal record. After such a rollback the
+24h wait restarts from the next deploy of #1824.
+
+Dev was handled by merge timing (#1824 went live there at 2026-11-06T23:38:42Z).
+See `known_issues/39_redshift_dedupe_window.md`.
+
 ### CI/CD Integration
 
 ```yaml
