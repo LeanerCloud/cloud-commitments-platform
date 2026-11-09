@@ -127,3 +127,14 @@ func TestDerivePlan_BoundGroupIDIsNeitherProviderNorService(t *testing.T) {
 		assert.Equal(t, []string{"ec2", "rds"}, DerivePlanServices(plan))
 	})
 }
+
+// An unmarked plan keeps today's provider parsing: its key is read up to the
+// first separator, "#" or not (#1746 changes bound plans only).
+func TestDerivePlanProviders_UnmarkedKeyWithHashKeepsItsParsing(t *testing.T) {
+	plan := &PurchasePlan{Services: map[string]ServiceConfig{
+		"team#west/ec2": {Provider: "aws", Service: "ec2"},
+	}}
+	providers, err := DerivePlanProviders(plan)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"team#west"}, providers)
+}
