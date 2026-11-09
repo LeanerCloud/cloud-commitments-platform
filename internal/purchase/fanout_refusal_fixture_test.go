@@ -181,7 +181,8 @@ func TestExecuteMultiAccount_FanOutFixtureHooks(t *testing.T) {
 		"credential failure on A, B refused": {
 			fx:         fanOutFixture{behaviors: refusedBoth, credFail: map[string]bool{skipAcctA: true}},
 			errContain: "credential resolution failed for account " + skipAcctA,
-			a:          rowWant{"failed", false}, // the unflagged row #1844 S2 will flag
+			wantProof:  true,
+			a:          rowWant{"failed", true},
 			b:          rowWant{"failed", true},
 		},
 		"row save failure on A (AUDIT LOSS), B refused": {
