@@ -145,6 +145,15 @@ AUTO and approved exchanges share, so repeated direct executes can spend past it
 The in-flight source-RI guard only stops two exchanges taking the same RI; it does
 not cap total spend.
 
+### Direct finalize reads the schema version outside its statement (issue #1836)
+
+`FinalizeRIExchangeDirectExecution` reads the schema version before its UPDATE,
+not in the same statement. If migration 163 lands between the two, a late
+provider outcome that contradicts an operator resolution is finalized without
+the contradiction being logged (the row keeps both facts either way). A version
+read that fails is logged and finalizes without the check. Neither loses the
+provider outcome.
+
 ### RI id matching is exact for stored history rows (issue #1829)
 
 The direct-execute guard normalises (lower, trim) its input and the stored direct
