@@ -82,8 +82,8 @@ func planArmEscalates(before, after *config.PurchasePlan) bool {
 // cannot see because they ignore Enabled (#1777). Unlike enablesEntry, an
 // absent entry is not counted: a new service is already caught by those sets.
 func reEnablesEntry(before, after *config.PurchasePlan) bool {
-	for key, svc := range after.Services {
-		if prev, ok := before.Services[key]; ok && svc.Enabled && !prev.Enabled {
+	for key := range after.Services {
+		if prev, ok := before.Services[key]; ok && after.Services[key].Enabled && !prev.Enabled {
 			return true
 		}
 	}
