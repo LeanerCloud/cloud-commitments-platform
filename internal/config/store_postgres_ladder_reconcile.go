@@ -169,6 +169,8 @@ type LadderExecutionGate struct {
 	ConfigMode    *string
 	RunStatus     *string
 	TrancheStatus *string
+	// LayerType is the tranche's own layer (NOT NULL in the schema).
+	LayerType ladder.LayerType
 }
 
 // GetLadderExecutionGate finds the ladder tranche whose id equals an
@@ -183,11 +185,11 @@ func (s *PostgresStore) GetLadderExecutionGate(ctx context.Context, idempotencyK
 	}
 	var g LadderExecutionGate
 	err := s.db.QueryRow(ctx, `
-		SELECT c.enabled, c.mode, r.status, t.status
+		SELECT c.enabled, c.mode, r.status, t.status, t.layer_type
 		  FROM ladder_tranches t
 		  LEFT JOIN ladder_configs c ON c.id = t.config_id
 		  LEFT JOIN ladder_runs r ON r.id = t.run_id
-		 WHERE t.id::text = $1`, idempotencyKey).Scan(&g.ConfigEnabled, &g.ConfigMode, &g.RunStatus, &g.TrancheStatus)
+		 WHERE t.id::text = $1`, idempotencyKey).Scan(&g.ConfigEnabled, &g.ConfigMode, &g.RunStatus, &g.TrancheStatus, &g.LayerType)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

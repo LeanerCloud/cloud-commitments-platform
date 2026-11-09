@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
@@ -25,7 +26,7 @@ func ptr[T any](v T) *T { return &v }
 
 // openGate is a gate that allows execution; each case flips one field.
 func openGate() *config.LadderExecutionGate {
-	return &config.LadderExecutionGate{ConfigEnabled: ptr(true), ConfigMode: ptr("auto_approve"), RunStatus: ptr("executing"), TrancheStatus: ptr("fired")}
+	return &config.LadderExecutionGate{ConfigEnabled: ptr(true), ConfigMode: ptr("auto_approve"), RunStatus: ptr("executing"), TrancheStatus: ptr("fired"), LayerType: ladder.LayerComputeSP}
 }
 
 func ladderGlobal(planning, execution bool) *config.GlobalConfig {
@@ -38,6 +39,8 @@ func ladderHarness(t *testing.T, key string, gate *config.LadderExecutionGate, g
 	t.Helper()
 	exec := armedExecution("aws", "savingsplans", 0, "notified")
 	exec.IdempotencyKey = key
+	notified := time.Now().Add(-time.Hour)
+	exec.NotificationSent = &notified
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 	kept := store.ExpectedCalls[:0]
 	for _, c := range store.ExpectedCalls {
@@ -181,4 +184,60 @@ func TestLadderRecheck_EveryExecutorEntryRefuses(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 0, rec.count())
 	})
+}
+
+// S8c1: an announced, single-approver purchase of the class the Manager will
+// actually buy. Each case flips one input; the pass cases prove the refusal is
+// not blanket.
+func TestLadderRecheck_ApprovalAndClassGate(t *testing.T) {
+	ri := func(g *config.LadderExecutionGate) { g.LayerType = ladder.LayerConvertibleRI }
+	withGlobal := func(mut func(*config.GlobalConfig)) *config.GlobalConfig {
+		g := ladderGlobal(true, true)
+		mut(g)
+		return g
+	}
+	cases := []struct {
+		name   string
+		mutGt  func(*config.LadderExecutionGate)
+		mutEx  func(*config.PurchaseExecution)
+		global *config.GlobalConfig
+		want   string // empty = allowed
+	}{
+		{"notice not sent", nil, func(e *config.PurchaseExecution) { e.NotificationSent = nil }, ladderGlobal(true, true), ladderNoticeNotSentNote},
+		{"4-eyes on", nil, nil, withGlobal(func(g *config.GlobalConfig) { g.RequireDifferentApprover = true }), ladderNeedsSecondApproverNote},
+		{"RI layer, standard class", ri, nil, withGlobal(func(g *config.GlobalConfig) { g.OfferingClass = "standard" }), ladderRINeedsConvertibleNote},
+		{"RI layer, empty class", ri, nil, ladderGlobal(true, true), ""},
+		{"RI layer, convertible class", ri, nil, withGlobal(func(g *config.GlobalConfig) { g.OfferingClass = "convertible" }), ""},
+		{"non-RI layer, standard class", nil, nil, withGlobal(func(g *config.GlobalConfig) { g.OfferingClass = "standard" }), ""},
+		{"stamped, 4-eyes off", nil, nil, ladderGlobal(true, true), ""},
+		{"gate refusal wins over a missing notice", func(g *config.LadderExecutionGate) { g.RunStatus = ptr("cancelled") }, func(e *config.PurchaseExecution) { e.NotificationSent = nil }, ladderGlobal(true, true), "refusing to execute ladder purchase: its ladder run was canceled"}, //nolint:misspell // legacy stored ladder status value
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gate := openGate()
+			if tc.mutGt != nil {
+				tc.mutGt(gate)
+			}
+			mgr, store, rec, exec := ladderHarness(t, ladderTrancheKey, gate, nil, tc.global, nil)
+			if tc.mutEx != nil {
+				tc.mutEx(exec)
+			}
+			var saved []config.PurchaseExecution
+			store.SavePurchaseExecutionFn = func(_ context.Context, e *config.PurchaseExecution) error {
+				saved = append(saved, *e)
+				return nil
+			}
+			runViaClaimFunnel(t, mgr, store, exec)
+			if tc.want == "" {
+				assert.Equal(t, 1, rec.count())
+				return
+			}
+			assert.Equal(t, 0, rec.count(), "a refused ladder execution must reach no provider")
+			require.NotEmpty(t, saved)
+			final := saved[len(saved)-1]
+			assert.Equal(t, "failed", final.Status)
+			assert.True(t, final.NoSubmission)
+			assert.Contains(t, final.Error, tc.want)
+		})
+	}
 }

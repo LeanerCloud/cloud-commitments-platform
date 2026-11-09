@@ -37,28 +37,56 @@ func (m *Manager) ladderExecutionRefusal(ctx context.Context, exec *config.Purch
 	if gate == nil {
 		return nil
 	}
-	if err := m.ladderFlagsRefusal(ctx); err != nil {
+	global, err := m.ladderFlagsRefusal(ctx)
+	if err != nil {
 		return err
 	}
-	return ladderGateRefusal(gate)
+	if err := ladderGateRefusal(gate); err != nil {
+		return err
+	}
+	return ladderApprovalRefusal(exec, gate, global)
 }
 
-func (m *Manager) ladderFlagsRefusal(ctx context.Context) error {
+func (m *Manager) ladderFlagsRefusal(ctx context.Context) (*config.GlobalConfig, error) {
 	global, err := m.config.GetGlobalConfig(ctx)
 	if err != nil {
-		return fmt.Errorf("refusing to execute ladder purchase: global config unreadable: %w", err)
+		return nil, fmt.Errorf("refusing to execute ladder purchase: global config unreadable: %w", err)
 	}
 	if global == nil {
-		return errors.New("refusing to execute ladder purchase: global config unavailable")
+		return nil, errors.New("refusing to execute ladder purchase: global config unavailable")
 	}
 	if !global.LadderingEnabled {
-		return errors.New("refusing to execute ladder purchase: ladder planning is switched off")
+		return nil, errors.New("refusing to execute ladder purchase: ladder planning is switched off")
 	}
 	if !global.LadderExecutionEnabled {
-		return errors.New("refusing to execute ladder purchase: ladder execution is switched off")
+		return nil, errors.New("refusing to execute ladder purchase: ladder execution is switched off")
+	}
+	return global, nil
+}
+
+// ladderApprovalRefusal covers what a ladder purchase must have beyond the
+// switches. The scheduled-purchase notice must have gone out (no production
+// path stamps notification_sent yet, so this refuses until one does). 4-eyes
+// mode is refused because a ladder purchase has no second approver. The
+// Manager buys the global offering class, so an RI-layer tranche cannot run
+// while that class is anything but convertible.
+func ladderApprovalRefusal(exec *config.PurchaseExecution, gate *config.LadderExecutionGate, global *config.GlobalConfig) error {
+	switch {
+	case exec.NotificationSent == nil:
+		return errors.New(ladderNoticeNotSentNote)
+	case global.RequireDifferentApprover:
+		return errors.New(ladderNeedsSecondApproverNote)
+	case gate.LayerType == ladder.LayerConvertibleRI && global.OfferingClass != "" && global.OfferingClass != "convertible":
+		return errors.New(ladderRINeedsConvertibleNote)
 	}
 	return nil
 }
+
+const (
+	ladderNoticeNotSentNote       = "refusing to execute ladder purchase: its scheduled-purchase notice was not sent"
+	ladderNeedsSecondApproverNote = "refusing to execute ladder purchase: purchases need a second approver"
+	ladderRINeedsConvertibleNote  = "refusing to execute ladder purchase: RI ladder purchases need the convertible offering class"
+)
 
 func ladderGateRefusal(gate *config.LadderExecutionGate) error {
 	switch {
