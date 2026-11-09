@@ -71,7 +71,13 @@ func CheckStepCommitmentCap(plan *config.PurchasePlan, recs []config.Recommendat
 }
 
 func planCapUsable(plan *config.PurchasePlan) bool {
-	return plan != nil && plan.MaxStepCommitment != nil && *plan.MaxStepCommitment > 0 && !math.IsInf(*plan.MaxStepCommitment, 0)
+	return plan != nil && plan.MaxStepCommitment != nil && capUsable(*plan.MaxStepCommitment)
+}
+
+// capUsable reports whether a cap is a positive finite number. NaN is not: it
+// fails every comparison, so as a cap it would silently let any step through.
+func capUsable(c float64) bool {
+	return c > 0 && !math.IsInf(c, 0)
 }
 
 func errNoPlanCap() error {
@@ -89,7 +95,11 @@ func checkBoundStepCap(plan *config.PurchasePlan, recs []config.RecommendationRe
 	if !planCap && (plan.AutoPurchase || plan.MaxStepCommitment != nil) {
 		return errNoPlanCap()
 	}
-	totals, total, err := boundStepTotals(plan, recs, boundGroupOf(plan), planCap)
+	groupOf, err := boundGroupOf(plan)
+	if err != nil {
+		return err
+	}
+	totals, total, err := boundStepTotals(plan, recs, groupOf, planCap)
 	if err != nil {
 		return err
 	}
@@ -100,14 +110,29 @@ func checkBoundStepCap(plan *config.PurchasePlan, recs []config.RecommendationRe
 }
 
 // boundGroupOf maps each bound identity key to the service key of its group.
-func boundGroupOf(plan *config.PurchasePlan) map[string]string {
-	groupOf := make(map[string]string)
+// A disabled group is skipped, as the resolver skips it, so its identities are
+// outside every group. An identity bound by two groups is refused: validation
+// rejects it, but a stored plan may hold one. Keys are visited in order so the
+// pair named in the refusal is the same on every check.
+func boundGroupOf(plan *config.PurchasePlan) (map[string]string, error) {
+	keys := make([]string, 0, len(plan.Services))
 	for k := range plan.Services {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	groupOf := make(map[string]string)
+	for _, k := range keys {
+		if !plan.Services[k].Enabled {
+			continue
+		}
 		for _, id := range plan.Services[k].BoundIdentities {
+			if prev, dup := groupOf[id]; dup && prev != k {
+				return nil, fmt.Errorf("%w: a recommendation is bound by two groups (%q and %q)", ErrStepCommitmentCap, prev, k)
+			}
 			groupOf[id] = k
 		}
 	}
-	return groupOf
+	return groupOf, nil
 }
 
 // boundStepTotals maps every rec to its bound group and sums the commitments a
@@ -137,7 +162,8 @@ func boundStepTotals(plan *config.PurchasePlan, recs []config.RecommendationReco
 	return totals, total, nil
 }
 
-// checkBoundGroupCaps refuses the first group, in key order, over its own cap.
+// checkBoundGroupCaps refuses the first group, in key order, whose cap is
+// unusable or that is over its own cap.
 func checkBoundGroupCaps(plan *config.PurchasePlan, totals map[string]float64) error {
 	keys := make([]string, 0, len(totals))
 	for g := range totals {
@@ -145,7 +171,14 @@ func checkBoundGroupCaps(plan *config.PurchasePlan, totals map[string]float64) e
 	}
 	sort.Strings(keys)
 	for _, g := range keys {
-		if gc := plan.Services[g].MaxStepCommitment; gc != nil && totals[g] > *gc {
+		gc := plan.Services[g].MaxStepCommitment
+		if gc == nil {
+			continue
+		}
+		if !capUsable(*gc) {
+			return fmt.Errorf("%w: group %q has no usable max_step_commitment (%v)", ErrStepCommitmentCap, g, *gc)
+		}
+		if totals[g] > *gc {
 			return fmt.Errorf("%w: group %q step commitment %.2f exceeds its max_step_commitment %.2f", ErrStepCommitmentCap, g, totals[g], *gc)
 		}
 	}

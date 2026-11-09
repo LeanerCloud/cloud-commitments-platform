@@ -24,7 +24,7 @@ var serverNotePatterns = []string{
 	`refusing to execute retry attempt \d+: (?:` + redriveReasonPattern + `)`,
 	`stale Azure recommendation pricing; refresh recommendations and submit a new purchase(?:: the latest collection state is missing, so Azure prices cannot be confirmed current)?`,
 	`(?:execution ` + uuidPattern + `: )?plan step has no recommendations attached, so it cannot buy anything(?: \(platform#631: plan steps cannot yet carry recommendations\))?`,
-	`plan step refused by commitment cap(?:: plan has no max_step_commitment set \(auto-purchase of steps with recommendations is refused until one is set\)|: step total commitment \d+\.\d{2} exceeds max_step_commitment \d+\.\d{2})?`,
+	`plan step refused by commitment cap(?:: plan has no max_step_commitment set \(auto-purchase of steps with recommendations is refused until one is set\)|: step total commitment \d+\.\d{2} exceeds max_step_commitment \d+\.\d{2}|` + boundGroupCapNotePatterns + `)?`,
 	`scheduled purchase skipped: it was due too long ago(?:: it was due at \d{4}-\d{2}-\d{2}T[0-9:.]+Z, [0-9a-z.]+ ago, which is more than the [0-9a-z.]+ limit \(SCHEDULED_PURCHASE_MAX_OVERDUE\); nothing was submitted, retry it if the purchase is still wanted)?`,
 	`purchase refused after claim: the claimed execution no longer passes the authorization checks`,
 	`refusing to execute ladder purchase: (?:global config unavailable|ladder planning is switched off|ladder execution is switched off|its tranche status is unknown|its tranche is [a-z_]+|its ladder config no longer exists|its ladder config is disabled|ladder config mode is "[a-z_]*", not auto_approve|its ladder run no longer exists|its ladder run was canceled|its ladder run status "[a-z_]{1,32}" is unknown)`,
@@ -100,6 +100,16 @@ const (
 	// whitespace, quotes or newline. Anything wider falls back to the fixed head.
 	amountPattern     = `\d+(?:\.\d+)?`
 	shortValuePattern = `[A-Za-z0-9._+-]{1,32}`
+	// groupKeyPattern is a bound group's services key ("aws/ec2#g1"); a key with
+	// any other character falls back to the fixed head.
+	groupKeyPattern = `[A-Za-z0-9._:/#+-]{1,128}`
+	// boundGroupCapNotePatterns are the group-level refusals of a bound plan's step
+	// cap (step_cap.go): a group over or without a usable cap, or a rec in two
+	// groups. They name only group keys and numbers. "Outside every group" names a
+	// rec id, which carries an account, so it keeps only the head.
+	boundGroupCapNotePatterns = `: group "` + groupKeyPattern + `" step commitment \d+\.\d{2} exceeds its max_step_commitment \d+\.\d{2}` +
+		`|: group "` + groupKeyPattern + `" has no usable max_step_commitment \((?:NaN|[+-]?Inf|-?\d+(?:\.\d+)?(?:e[+-]\d+)?)\)` +
+		`|: a recommendation is bound by two groups \("` + groupKeyPattern + `" and "` + groupKeyPattern + `"\)`
 	// uuidPattern is a Postgres UUID as it renders (plan, execution and cloud
 	// account IDs). commitmentIDPattern covers provider commitment IDs and ARNs;
 	// identityKeyPattern a RecIdentityKey with "/" separators (skippedNote).
