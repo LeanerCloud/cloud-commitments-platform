@@ -806,3 +806,208 @@ Not adapters at the handler (decoded straight into the auth package's own wire t
 | API json tag | Target Go field | Disposition | Covering test |
 | --- | --- | --- | --- |
 | code | positional argument 3 -> claimTOTPOrReject service_mfa.go:557 | validation or authorization only | handler_auth_test.go:1418 |
+
+## Findings
+
+### Dropped rows at the audited commit
+
+| Pair | Field | Where | Status |
+| --- | --- | --- | --- |
+| R2 | `enabled` on registration approve | `internal/api/handler_registrations.go:303` overwrites the converter's value | fixed in #1905 |
+| E5 | `utilization_threshold` 0 on PUT /api/ri-exchange/config | accepted at `handler_ri_exchange.go:3116`, stored as 95.0 at `internal/config/store_postgres.go:333-336` | fixed in #1906 |
+| B1, B2 | `description` | `types.go:890-907` never reads it; `config.PurchasePlan` has no such field | open, #1776 |
+| B2 | `target_accounts` on update | `mergeUpdatedPlan` (`handler_plans.go:431-469`) never reads it; the frontend uses PUT /api/plans/{id}/accounts | open, #1776 |
+| B5 | `provider`, `service` in the service-config PUT body | overwritten from the URL path at `handler_config.go:510-514`, no comment | follow-up issue |
+
+### 1. Fixed in this series
+
+- Registration approve ignored an explicit `enabled` false (R2): fixed in #1905.
+- An unknown `ramp_schedule` on `PlanRequest` fell back to `immediate` instead of being rejected (`types.go:919-923`, B1 and B2), and `utilization_threshold` 0 on PUT /api/ri-exchange/config was stored as 95 (E5): both fixed in #1906.
+- #1775, an override save clearing the other fields of the override (O1): fixed in #1788, guarded by `TestAccountServiceOverrideRequest_EveryFieldIsMerged`.
+
+### 2. Open
+
+- #1776: `PlanRequest.description` is accepted and dropped on create and update; `target_accounts` is ignored on PUT /api/plans/{id}; the service-config `ramp_schedule` is ignored for an existing row (deliberate, source comment at `handler_config.go:349-350`, stale API spec and frontend comment); frontend-only fields. The `approveRegistration` item of that issue is fixed by #1905.
+- #923: the `internal/auth` conversions behind the auth adapters (`CreateUserAPI`, `UpdateUserAPI`, `CreateGroupAPI`, `UpdateGroupAPI`, `CreateAPIKeyAPI`). This audit covers the handler and `internal/server` side only.
+
+### 3. Tracked in the follow-up issue
+
+The follow-up issue is #1907. It holds three checklists (pairs with no round-trip test, deliberately ignored fields with no source comment, dead fields) and these findings:
+
+- **`PUT /api/config` still accepts `ri_exchange_utilization_threshold` 0.** `internal/config/validation.go:351-353` accepts 0 and the store saves it as 95 (`internal/config/store_postgres.go:333-336`). The comment at `validation.go:332-335` claims parity with the RI exchange route, which #1906 changed.
+- **Dead request types and documentation drift.** `CreateUserRequest`, `UpdateUserRequest`, `CreateGroupRequest` and `UpdateGroupRequest` (`internal/api/types.go:377`, `:384`, `:417`, `:425`) are referenced by no Go code; the live decode targets are the `auth.API*Request` types. `internal/api/openapi.yaml:6723` and `:6741` still document a `role` property that no decode type has (it was removed in #912); a client that sends `role` has it ignored.
+- **Service-config PUT `provider` and `service`** are overwritten by the URL path (`handler_config.go:510-514`), with no comment and no test for a conflicting body value.
+- **Marketplace `price_schedule` escape cells.** The tier fields (`term_months`, `price`) are traced to the persisted JSON column and to the client call at `handler_marketplace_attempt.go:199-204`, but not into `cloud-commitments-go`.
+- **`acknowledge_unknown_outcome` on outcome `completed`** (E6, E7) is accepted and not stored. The type comments (`handler_ri_exchange_resolve.go:43-45`, `handler_ri_exchange_direct_resolve_request.go:14-17`) state the requirement for `failed` only, so classifying it as deliberately ignored is a judgment call. If that reading is rejected it becomes an ordinary dropped cell. Nothing is released by a `completed` resolve.
+- **Approval-token classification (T1, T2).** The token is used as a compare-only predicate in the status-claim UPDATE (`store_postgres.go:1438`, `:1559`) and never persisted. It is labeled "reaches the target" under the FORWARDED rule; "validation or authorization only" is an equally defensible label. No row is dropped either way.
+- **`internal/server/handler.go:453` classification.** `ScheduledEvent` (EventBridge, self-invoke or CLI payload) is classed as not an adapter because it is not an API request body, although it copies fields into `ScheduledTaskParams`. `source`, `detail-type` and `detail` are not used after the decode (`handler.go:451-484`).
+- **`created_at` and `updated_at` accepted and ignored in the ladder config upsert** (`internal/api/handler_ladder.go:102`, `store_postgres_ladder.go:105,118`), with no comment. The ladder config `provider` is not forwarded to the engine (`internal/server/handler_ladder.go:598`).
+- **Silent reset by omission on PUT /api/plans/{id}.** `notification_days_before`, `enabled` and `auto_purchase` are not pointers, so a PUT that omits them writes 0 or false (`types.go:857,864,865`). This is full replacement by design and PATCH is the partial endpoint, but nothing in the API spec says so. If only one of `provider` and `service` is sent, `buildServiceConfig` returns nil and the sent one is ignored (`types.go:954-956`).
+- **Legacy `target_offering_id` and `target_count` on the exchange quote and execute bodies** are ignored when `targets` is non-empty (comment at `handler_ri_exchange.go:2221-2223`); the handler forwards both spellings and the library picks one.
+- **Azure `billing_scope_id`** is never used for the charge (comments at `handler_ri_exchange.go:512-518`, `:583-595`); on execute the submitted value is recorded in the audit targets JSON (`ri_exchange_audit.go:251`) and no test covers that.
+- **`ExecutePurchaseRequest.recommendations[]`**: every element field except `count`, `recommended_count` and `selected` is replaced from the stored row (`purchase_pricing.go:148-151`), documented by one shared comment (`handler_purchases.go:3146-3150`) rather than per field. `capacity_percent` persistence and the `execute_mode` branch have no test.
+
+### Deliberate and documented behavior
+
+| Pair | Field or rule | Source comment | Test |
+| --- | --- | --- | --- |
+| B5 | `created_at`, `updated_at` cleared | `handler_config.go:502-504` | none |
+| B5 | `group_id`, `bound_identities`, `max_step_commitment`, `bound_count` cleared | `handler_config.go:506-507` | `handler_config_test.go:1698` |
+| B5 | `ramp_schedule` not overlaid on an existing row | `handler_config.go:349-350` | none |
+| B9 | `account_name`, `created_at`, `updated_at` ignored on import | `internal/api/override_transfer.go:14-16` | `handler_override_import_test.go:33` |
+| E3, E4 | Azure `billing_scope_id` replaced by the derived scope | `handler_ri_exchange.go:512-518`, `:583-595` | `handler_ri_exchange_azure_test.go:255`, `:440` |
+| E9 | cost and identity fields replaced from the stored row | `handler_purchases.go:3146-3150`, `purchase_pricing.go:124-128` | `purchase_pricing_test.go:131-198` |
+| R1 | credential fields kept only with a credential store | `handler_registrations.go:111` | `handler_registrations_credentials_test.go:71`, `:129` |
+| T1, T2 | token ignored for an authorized session | `handler_purchases.go:1015-1019`, `:1781` | `handler_purchases_test.go:4505` |
+
+## Test coverage
+
+A guard test checks the converter's output only. A round-trip test asserts every field of the pair at the callee boundary (fixture store, SQL or outbound client). "Partial" means named tests assert some fields only.
+
+| Pair | Guard test | Round-trip test | Status |
+| --- | --- | --- | --- |
+| A1 | `adapter_field_drop_test.go:124` (converter only) | none | guard only |
+| A2 | `adapter_field_drop_test.go:124`; `handler_accounts_update_keep_test.go:75`, `:103` (omitted flags) | none | guard only |
+| A3 | `adapter_field_drop_test.go:124` | none | guard only |
+| A4 | none | none (`handler_accounts_test.go:934` asserts success only) | none |
+| A5 | none | none (`discover_org_scope_test.go:173` does not assert the request value) | none |
+| R1 | `adapter_field_drop_test.go:128` (`credential_type`, `credential_payload` allowlisted) | `handler_registrations_credentials_test.go:71`, `:129` for the credential fields | guard, partial |
+| R2 | `adapter_field_drop_test.go:124` (does not see the later overwrite) | `handler_registrations_approve_test.go:61` (no explicit false) | guard, partial |
+| R3 | none | none | none |
+| P1 | none | none (`handler_accounts_test.go:1232` asserts success only) | none |
+| B1 | `adapter_field_drop_test.go:137` (converter only) | `handler_plans_test.go:298` asserts `SetPlanAccounts` arguments only | guard, partial |
+| B2 | `adapter_field_drop_test.go:137`; `description` and `target_accounts` allowlisted, so the update path for `target_accounts` is unguarded | partial: `handler_plans_services_merge_test.go`, `handler_plans_step_cap_test.go:17`, Postgres tests | guard, partial |
+| B3 | none | `handler_plans_test.go:1198` | round-trip |
+| B4 | none | `handler_plans_concurrency_integration_test.go:135` (Postgres) | round-trip |
+| B5 | none | partial: `handler_config_test.go:661`, `:727` | partial |
+| B6 | none | `handler_ladder_resolve_test.go:154` | round-trip |
+| E1 | none | partial: `handler_ri_exchange_test.go:1892`, `:2297` | partial |
+| E2 | none | partial: audit row only, `ri_exchange_audit_test.go:184-187`, `:547-561` | partial |
+| E3 | none | partial: Azure call asserted with `mock.Anything`; `handler_ri_exchange_azure_test.go:423` asserts the billing scope | partial |
+| E4 | none | partial: audit row only, `ri_exchange_audit_test.go:424-430` | partial |
+| E5 | none | none (`global_config_arming_grants_test.go:70` exercises the gate only) | none |
+| E6 | none | `handler_ri_exchange_resolve_test.go:75-92` | round-trip |
+| E7 | none | `handler_ri_exchange_direct_resolve_test.go:114-137` | round-trip |
+| E8 | none | `handler_execution_settle_test.go:20-21`; `handler_execution_settle_integration_test.go:55`, `:88` | round-trip |
+| E9 | none | partial: `purchase_pricing_test.go:131-198`; none for `capacity_percent` persistence and `execute_mode` | partial |
+| B7 | none | `handler_marketplace_attempt_test.go:441` | round-trip |
+| T1 to T4 | none | `handler_purchases_test.go:4505`, `:4547`, `:6427`; token pin tests in `internal/purchase/token_rotation_pin_integration_test.go`; `handler_purchases_approval_details_test.go:117` | round-trip |
+| O1 | `handler_override_merge_test.go:193` (request and stored sides) | `handler_override_merge_test.go:59`, `:78`, `:94` | guard and round-trip |
+| B8, B9 | none | `handler_override_import_test.go:33`, `:74`; `handler_override_import_integration_test.go:22` (Postgres) | round-trip |
+| U1 | none | `internal/server/adapter_mfa_token_test.go:23` (`TestLogin_MFATokenRoundTrip`, named for `mfa_token`); `adapter_test.go:48` | partial |
+| U2 | none | `internal/server/adapter_test.go:621` | round-trip |
+| U3 to U10 | none | handler-boundary argument tests in `handler_auth_test.go` (`:536`, `:595`, `:835`, `:926`, `:1339`, `:1376`, `:1405`, `:1418`); adapter smoke tests exercise error paths only | partial |
+
+## Appendix: every decode site
+
+Source: `git grep -n -E '(Unmarshal|Decode)\(' 72d90d54b06769710b7c49094365892d9a4d4ab0 -- internal/api internal/server ':!*_test.go'`. 64 lines, 64 rows: 36 adapter, 10 auxiliary, 18 not an adapter. "Auxiliary" marks a second decode of a body already decoded elsewhere (a presence map or a single-document check). Pair ids refer to the area sections.
+
+| Site | Target type | Adapter | Pair(s) fed | Reason |
+| --- | --- | --- | --- | --- |
+| internal/api/handler_accounts.go:357 | CloudAccountRequest | yes | A1 CloudAccountRequest -> createAccount | fields copied into config.CloudAccount by cloudAccountFromRequest (:548) |
+| internal/api/handler_accounts.go:626 | CloudAccountRequest | yes | A2 CloudAccountRequest -> updateAccount | same converter plus keepOmittedAccountFlags (:585); provider is checked, not written |
+| internal/api/handler_accounts.go:802 | CredentialsRequest | yes | A4 CredentialsRequest -> saveAccountCredentials | credential_type and the marshalled payload leave as positional arguments of credStore.SaveCredential (:839) |
+| internal/api/handler_accounts.go:1193 | AccountServiceOverrideRequest | yes | O1 AccountServiceOverrideRequest -> saveAccountServiceOverride | fields overlaid onto config.AccountServiceOverride by buildServiceOverride (:1245); the key-presence decode at handler_config.go:389 is an auxiliary of this pair |
+| internal/api/handler_accounts.go:1461 | anonymous struct {AccountIDs []string `json:"account_ids"`} | yes | P1 anonymous account_ids body -> setPlanAccounts | account_ids leaves as a positional argument of SetPlanAccountsGated (:1494) |
+| internal/api/handler_accounts.go:1661 | DiscoverOrgRequest | yes | A5 DiscoverOrgRequest -> discoverOrgAccounts | account_id is passed positionally to requireAccountAccess (:1671) as a lookup key; the stored root, not the request value, drives the writes |
+| internal/api/handler_apikeys.go:63 | auth.APICreateAPIKeyRequest | no | none (direct decode into the auth service's own wire type, passed whole to CreateAPIKeyAPI at :75; service-side conversion is internal/auth, #923) | decoded straight into the type the callee takes; the handler only decodes the password field in place |
+| internal/api/handler_auth.go:30 | LoginRequest | yes | U1 LoginRequest -> login | copied field by field into auth.LoginRequest by authServiceAdapter.Login (internal/server/app.go:1179-1184) |
+| internal/api/handler_auth.go:374 | SetupAdminRequest | yes | U2 SetupAdminRequest -> setupAdmin | copied into auth.SetupAdminRequest by authServiceAdapter.SetupAdmin (app.go:1218-1221) |
+| internal/api/handler_auth.go:414 | PasswordResetRequest | yes | U3 PasswordResetRequest -> forgotPassword | email leaves as positional argument 2 of RequestPasswordReset (:435) |
+| internal/api/handler_auth.go:505 | PasswordResetConfirm | yes | U4 PasswordResetConfirm -> resetPassword | copied into auth.PasswordResetConfirm by authServiceAdapter.ConfirmPasswordReset (app.go:1248-1251) |
+| internal/api/handler_auth.go:545 | ProfileUpdateRequest | yes | U5 ProfileUpdateRequest -> updateProfile | email, current_password, new_password leave as positional arguments 3-5 of UpdateUserProfile (:563; app.go:1276) |
+| internal/api/handler_auth.go:649 | ChangePasswordRequest | yes | U6 ChangePasswordRequest -> changePassword | current_password and new_password leave as positional arguments 3-4 of ChangePasswordAPI (:659; app.go:1297) |
+| internal/api/handler_auth.go:719 | MFASetupRequest | yes | U7 MFASetupRequest -> mfaSetup | password leaves as positional argument 3 of MFASetupAPI (:727) |
+| internal/api/handler_auth.go:743 | MFAEnableRequest | yes | U8 MFAEnableRequest -> mfaEnable | code leaves as positional argument 3 of MFAEnableAPI (:747) |
+| internal/api/handler_auth.go:764 | MFADisableRequest | yes | U9 MFADisableRequest -> mfaDisable | password and code leave as positional arguments 3-4 of MFADisableAPI (:772) |
+| internal/api/handler_auth.go:789 | MFARegenerateRequest | yes | U10 MFARegenerateRequest -> mfaRegenerateRecoveryCodes | code leaves as positional argument 3 of MFARegenerateRecoveryCodesAPI (:793) |
+| internal/api/handler_config.go:116 | config.GlobalConfig (the stored row, inside UpdateGlobalConfigAtomic) | no | none | Direct decode into the store struct under an advisory-locked read-modify-write; absent keys are preserved by design (comment handler_config.go:85-95). Not a copy into another struct. |
+| internal/api/handler_config.go:144 | map[string]json.RawMessage (presence map) | auxiliary | none (auxiliary of a direct decode at internal/api/handler_config.go:116) | globalConfigWriteFields: presence map used for grace_period_days replace and mode and provider validation only. |
+| internal/api/handler_config.go:389 | map[string]json.RawMessage (presence map) | auxiliary | B5 | presentKeys: tells mergeServiceConfig which overlay keys the service-config PUT body carried. |
+| internal/api/handler_config.go:499 | config.ServiceConfig (request, then overlaid onto the stored row) | yes | B5 | Decoded into the store struct, but mergeServiceConfig copies an allowlist of fields onto the stored row (handler_config.go:351-357,369-382), so fields outside it never reach the store for an existing row; body provider and service are overwritten by the path. |
+| internal/api/handler_execution_settle.go:142 | executionSettleRequest (handler_execution_settle.go:26) | yes | E8: executionSettleRequest via settleExecution | Body is converted into config.ExecutionSettleRequest (:70-72). Strict decoder (:141). |
+| internal/api/handler_execution_settle.go:145 | `new(any)` (single-document EOF check) | auxiliary | E8 (same body as :142) | Rejects a second JSON document after the body; carries no field. |
+| internal/api/handler_groups.go:50 | auth.APICreateGroupRequest | no | none (direct decode into the auth service's own wire type, passed whole to CreateGroupAPI at :60; service-side conversion is internal/auth, #923) | decoded straight into the callee's input type; the handler only rewrites allowed_accounts in place (bindGroupAccounts :55) |
+| internal/api/handler_groups.go:123 | auth.APIUpdateGroupRequest | no | none (direct decode into the auth service's own wire type, passed whole to UpdateGroupAPI at :132; service-side conversion is internal/auth, #923) | decoded straight into the callee's input type; the handler only rewrites allowed_accounts in place (:127) |
+| internal/api/handler_ladder.go:102 | config.LadderConfigDB (store struct) | no | none | Direct decode (DisallowUnknownFields) straight into the store struct passed to UpsertLadderConfig; no per-field copy. |
+| internal/api/handler_ladder.go:117 | map[string]json.RawMessage (presence map) | auxiliary | none (auxiliary of a direct decode at internal/api/handler_ladder.go:102) | Presence map so defaults apply only to omitted numeric keys (applyLadderConfigNumericDefaults). |
+| internal/api/handler_ladder_amend.go:86 | config.LadderAmendment (store struct) | no | none | Decoded into the store-layer amendment value and passed whole to AmendLadderTranche; all three fields used (store_postgres_ladder_amend.go:94,97,105-107). |
+| internal/api/handler_ladder_amend.go:89 | any (EOF probe, value discarded) | auxiliary | none (auxiliary of a direct decode at internal/api/handler_ladder_amend.go:86) | Rejects a second JSON document after the amendment. |
+| internal/api/handler_ladder_resolve.go:155 | ladderResolveRequest | yes | B6 | Body is rebuilt into config.LadderResolveFailed and a status_reason string (handler_ladder_resolve.go:127-130,195-225). |
+| internal/api/handler_ladder_resolve.go:158 | any (EOF probe, value discarded) | auxiliary | B6 | Rejects a second JSON document after the resolve body. |
+| internal/api/handler_marketplace.go:227 | MarketplaceListRequest | yes | B7 | price_schedule tiers are converted (toAWSPriceSchedule) into the EC2 listing request and persisted as JSON. |
+| internal/api/handler_marketplace_attempt.go:133 | []MarketplacePriceTier (stored value) | no | none | Decodes the persisted listing_price_schedule of a resumed attempt read from the store, not an API request; it replaces the request's price_schedule on resume (documented at handler_marketplace_attempt.go:93-94). |
+| internal/api/handler_override_import.go:130 | OverrideImportRequest | yes | B8, B9 | Request fields feed the report and audit event (B8); its rows (JSON `overrides` or decoded `csv`) are copied into config.AccountServiceOverride (B9). |
+| internal/api/handler_plans.go:168 | PlanRequest | yes | B1, B2 | decodePlanRequest serves createPlan (:184) and updatePlan (:319); toPurchasePlan copies the fields into config.PurchasePlan. |
+| internal/api/handler_plans.go:327 | anonymous struct {max_step_commitment, expected_updated_at} | auxiliary | B2 | Second decode of the update body for cap presence and the optimistic-lock token; its fields are rows of the B2 table. |
+| internal/api/handler_plans.go:810 | CreatePlannedPurchasesRequest | yes | B4 | start_date and count leave as positional arguments to createPlannedPurchasesTx. |
+| internal/api/handler_plans.go:969 | PatchPlanRequest | yes | B3 | applyPatchFields copies the four optional fields onto the stored config.PurchasePlan. |
+| internal/api/handler_purchases.go:3233 | ExecutePurchaseRequest (handler_purchases.go:3145) | yes | E9: ExecutePurchaseRequest via executePurchase | Recommendations are re-priced from the stored set (priceFromStored, purchase_pricing.go:131) and copied with capacity_percent into config.PurchaseExecution by newPendingExecution (handler_purchases.go:3771). Non-strict decoder. |
+| internal/api/handler_purchases_revoke.go:296 | revokeConfirmBody (handler_purchases_revoke.go:74) | no | none (validation only; | The decoded body is passed whole to dispatchProviderRevoke (:301) and used only to compare the user's confirmed quote with Azure's fresh quote (checkConfirmedRefund :1016); no field is copied into another struct or call argument. Decoded only on the completed-purchase path; the scheduled-execution path never reads the body. Non-strict decoder. |
+| internal/api/handler_registrations.go:91 | RegistrationRequest | yes | R1 RegistrationRequest -> submitRegistration | copied into config.AccountRegistration by registrationFromRequest (:60); credential fields attached in submitRegistration (:106-114) |
+| internal/api/handler_registrations.go:352 | CloudAccountRequest | yes | R2 CloudAccountRequest -> approveRegistration | approval body converted by cloudAccountFromRequest (:294); enabled is overwritten at :303 |
+| internal/api/handler_registrations.go:402 | RejectRequest | yes | R3 RejectRequest -> rejectRegistration | reason copied into config.AccountRegistration.RejectionReason (:408) |
+| internal/api/handler_registrations_credentials.go:37 | map[string]interface{} (the credential_payload string's JSON object) | auxiliary | R1 RegistrationRequest -> submitRegistration | validation-and-canonicalization decode of the credential_payload field of the body decoded at handler_registrations.go:91; the same function also re-checks the stored payload at approval (:83) |
+| internal/api/handler_ri_exchange.go:981 | AzureCompatibleOfferingsRequestBody (handler_ri_exchange.go:524) | yes | E3: AzureCompatibleOfferingsRequestBody via getAzureCompatibleOfferings | Body is copied into provider-layer reservation and target structs (toAzureExchangeSources :677, toAzureExchangeTargets :696) and handed to the Azure client's CalculateExchange (:1009). Non-strict decoder: unknown keys are ignored. |
+| internal/api/handler_ri_exchange.go:1222 | AzureExecuteExchangeRequestBody (handler_ri_exchange.go:544) | yes | E4: AzureExecuteExchangeRequestBody via executeAzureExchange | Same copies as E3 plus the audit row (azureDirectExchangeAudit, ri_exchange_audit.go:239), the idempotency key (ri_exchange_idempotency.go:103) and the spend-cap guardrails. Decoded inside parseAzureExecuteRequest (:1220). Non-strict decoder. |
+| internal/api/handler_ri_exchange.go:1956 | ExchangeQuoteRequestBody (handler_ri_exchange.go:2224) | yes | E1: ExchangeQuoteRequestBody via getExchangeQuote | Fields are copied into exchange.ExchangeQuoteRequest (:1972-1978) with targets converted by toExchangeTargets (:2251). Non-strict decoder. |
+| internal/api/handler_ri_exchange.go:2029 | ExchangeExecuteRequestBody (handler_ri_exchange.go:2238) | yes | E2: ExchangeExecuteRequestBody via executeExchange | Fields are copied into exchange.ExchangeExecuteRequest (:2071-2078), the audit row (awsDirectExchangeAudit, ri_exchange_audit.go:184, which folds the legacy target_offering_id/target_count into a one-element targets list) and the idempotency key (ri_exchange_idempotency.go:137, same fold). Non-strict decoder. |
+| internal/api/handler_ri_exchange.go:2305 | RIExchangeConfigUpdateRequest (handler_ri_exchange.go:3103) | yes | E5: RIExchangeConfigUpdateRequest via updateRIExchangeConfig | Six fields are copied one by one onto config.GlobalConfig inside UpdateGlobalConfigAtomic's closure (:2335-2340). Non-strict decoder. |
+| internal/api/handler_ri_exchange_direct_resolve_request.go:41 | riExchangeDirectResolveRequest (handler_ri_exchange_direct_resolve_request.go:18) | yes | E7: riExchangeDirectResolveRequest via resolveRIExchangeDirectExecution (build step buildRIExchangeDirectResolve, handler_ri_exchange_direct_resolve.go:195) | Body is converted into config.RIExchangeDirectResolve (handler_ri_exchange_direct_resolve.go:204-206) with reason, acknowledgement, region and time folded into a note by body.note (:98). Strict decoder (:40). |
+| internal/api/handler_ri_exchange_direct_resolve_request.go:44 | `new(any)` (single-document EOF check) | auxiliary | E7 (same body as :41) | Rejects a second JSON document after the body; carries no field. |
+| internal/api/handler_ri_exchange_resolve.go:208 | riExchangeResolveRequest (handler_ri_exchange_resolve.go:46) | yes | E6: riExchangeResolveRequest via resolveRIExchange | Body is converted into config.RIExchangeResolve (:96-99) with the reason, acknowledgement and cloud check folded into a note and a RIExchangeCloudCheck by body.note (:271) and body.cloudCheck (:256). Strict decoder (DisallowUnknownFields at :207). |
+| internal/api/handler_ri_exchange_resolve.go:211 | `new(any)` (single-document EOF check) | auxiliary | E6 (same body as :208) | Rejects a second JSON document after the body; carries no field. |
+| internal/api/handler_users.go:48 | auth.APICreateUserRequest | no | none (direct decode into the auth service's own wire type, passed whole to CreateUserAPI at :70; service-side conversion is internal/auth, #923) | decoded straight into the callee's input type; the handler only decodes the password field in place (:61-65) |
+| internal/api/handler_users.go:168 | auth.APIUpdateUserRequest | no | none (direct decode into the auth service's own wire type, passed whole to UpdateUserAPI at :176; service-side conversion is internal/auth, #923) | decoded straight into the callee's input type; the handler does not touch any field |
+| internal/api/ri_utilization_cache.go:202 | `[]riUtilization` (alias of recommendations.RIUtilization) | no | none | Reads the cache payload this process wrote itself (`storePayload` json.Marshal, ri_utilization_cache.go:174); not an API request body. |
+| internal/api/router.go:608 | anonymous `struct{ Token string }` (router.go:605-607) | yes | T1 approvePurchase, T2 cancelPurchase, T3 revokeViaEmailToken, T4 getApprovalDetails | POST body token returned by `resolveApprovalToken` and passed as a positional argument to four handlers. |
+| internal/server/handler.go:453 | `ScheduledEvent` | no | none | EventBridge, self-invoke or CLI scheduled event, not an API request body; copied to `ScheduledTaskParams`. |
+| internal/server/handler_ladder.go:592 | pkgladder.RampSchedule (engine type) | no | none | Parses the stored ramp_schedule column of a LadderConfigDB row inside ladderConfigToEngine; a store-to-engine hop, not an API request decode (see the ladder section). |
+| internal/server/lambda.go:60 | anonymous `httpEvent` struct | no | none | Event-type sniffing only (reads the HTTP method keys); nothing is forwarded. |
+| internal/server/lambda.go:72 | anonymous `scheduledEvent` struct | no | none | Event-type sniffing only (reads source, detail-type, action); nothing is forwarded. |
+| internal/server/lambda.go:87 | `events.LambdaFunctionURLRequest` | no | none | AWS envelope decoded straight into the type `API.HandleRequest` takes (lambda.go:136); handler body decodes belong to the per-route pairs. |
+| internal/server/scheduledauth/kidguard.go:100 | `jose.JSONWebKeySet` | no | none | Identity-provider JWKS response parse inside a RoundTripper; not an API request body. |
+| internal/server/scheduledauth/validator.go:319 | anonymous `{Keys []json.RawMessage}` | no | none | Warmup probe checks that the JWKS response has a `keys` array; validation of a provider response only. |
+
+### Pairs with no decode site of their own
+
+| Pair | Where the struct comes from |
+| --- | --- |
+| A3 CloudAccountRequest -> createSelfAccount | built in code by `buildSelfAccountRequest` (`internal/api/handler_accounts.go:327`, called `:284`) from the host source identity; no request body is read; it goes through `cloudAccountFromRequest` (`:290`) into `CreateCloudAccount` (`:296`), the same converter as A1, A2 and R2 |
+| B9 (CSV form) | `decodeOverridesCSV` (`internal/api/override_transfer_csv.go:117-142`) parses the `csv` string of the B8 body into `OverrideTransferRow` values; no `Unmarshal` or `Decode` call, so no grep line |
+| B2 (anonymous cap struct) | decoded at `internal/api/handler_plans.go:327`, listed in the appendix as an auxiliary decode of B2 |
+| ladder timeline scope | `ladderTimelineRequest` (`internal/api/handler_ladder_timeline.go:16-21`) is filled from query-string parameters; not an API body and not a pair |
+
+## How to keep it true
+
+- **`requireFieldsReach`** (`internal/api/adapter_field_drop_test.go:96-122`) is the reflection helper behind the field-drop guards for three converters: `CloudAccountRequest` (`:124`), `RegistrationRequest` (`:128`) and `PlanRequest` (`:137-147`). It fails CI when a field is added to the request struct and the converter does not map it, unless the field is on the test's allowlist.
+- **`TestAccountServiceOverrideRequest_EveryFieldIsMerged`** (`internal/api/handler_override_merge_test.go:193`) guards the override request on both the request and the stored side, with a per-key table at `:59`.
+- **#923's guards** cover the `internal/auth` conversions behind the auth adapters. Nothing in this audit replaces them.
+- **`TestLogin_MFATokenRoundTrip`** (`internal/server/adapter_mfa_token_test.go:23`) is the only per-field guard on the `internal/server` auth adapters, and it is single-field: it asserts `mfa_token`. The copy in `authServiceAdapter.Login` (`internal/server/app.go:1178-1184`) has no reflection guard, so a field added to `api.LoginRequest` is not caught automatically.
+
+Limits to keep in mind when relying on these:
+
+- A converter guard covers the converter's output, not the store write. The approval path passed its guard while `handler_registrations.go:303` overwrote `enabled` after the converter ran.
+- `PlanRequest`'s allowlist (`description` at `adapter_field_drop_test.go:145`, `target_accounts` at `:146`) means the update path for target accounts and description (#1776) is unguarded: the entry proves only that the converter does not map them, not that the update path ignores them on purpose, and no source comment in `handler_plans.go` says so.
+- The guards do not see merge steps (`mergeUpdatedPlan`), a second decode of the same body, `SetPlanAccounts` or any store write.
+- The other pairs in this audit are covered by reading only, until the round-trip tests in the follow-up issue land.
+
+To refresh the audit after a change: re-run the decode-site grep above and diff its line count against the appendix (64 at the audited commit); then re-run `git diff 72d90d54b06769710b7c49094365892d9a4d4ab0..origin/main -- internal/api internal/server ':!*_test.go'` and re-derive every pair whose converter, request struct or target struct the diff touches. A copy line removed from an existing converter changes no decode site, so the grep alone would not show it.
+
+## Differences from the old issue comment
+
+The comment on #19 of 2026-11-05 predates #1788, #1797 and later changes. Where it disagrees with the audited commit:
+
+- "No per-adapter round-trip test for CloudAccountRequest, RegistrationRequest, PlanRequest or AccountServiceOverrideRequest": stale. Guards exist (`adapter_field_drop_test.go:124`, `:128`, `:137`; `handler_override_merge_test.go:193`). They cover converter output, not the store write.
+- #1775 (override save clears the other fields): fixed. `saveAccountServiceOverride` overlays only the keys present in the body inside a locked read-merge-write transaction (`handler_accounts.go:1198-1221`, `:1245-1299`).
+- `RIExchangeConfigUpdateRequest` listed as clean: one value is not clean. `utilization_threshold` 0 was stored as 95 (E5, fixed in #1906).
+- `approveRegistration`'s `enabled` was listed under #1776 as accepted but ignored: confirmed at `handler_registrations.go:303` and fixed in #1905.
+- Registrations listed as clean: true for the mapper. `credential_type` and `credential_payload` are not in `registrationFromRequest` and are attached in `submitRegistration` only when a credential store is configured (`handler_registrations.go:106-114`).
+- The scope covered `internal/api` only. The `internal/server` auth adapters (`authServiceAdapter` `Login`, `SetupAdmin`, `ConfirmPasswordReset`), the profile and MFA bodies, and the approval-token body (`router.go:605-608`, four routes) were not covered and are not covered by #923; none drops a field.
+- The service-config PUT body `provider` and `service` are overwritten by the URL path (`handler_config.go:510-514`); #1776 does not list them.
+- The legacy `target_offering_id` and `target_count` are not folded into `targets` by the handler on the library path; they are forwarded and the library picks one. The fold happens only in the audit row (`ri_exchange_audit.go:185-188`) and the idempotency key (`ri_exchange_idempotency.go:148-156`).
+- Azure `billing_scope_id` is never used for the charge; on execute the submitted value is still recorded in the audit targets JSON (`ri_exchange_audit.go:251`).
+- "Deliberate: ExecutePurchaseRequest client costs" is narrower than the code: every `recommendations[]` field except `count`, `recommended_count` and `selected` is replaced from the stored row.
+- The revoke confirm body is a validation input, not an adapter, and is decoded only on the completed-purchase path (`handler_purchases_revoke.go:294-299`).
+- Dead request types and the stale OpenAPI `role` property were not mentioned (see Findings).
+- Line numbers: `requireFieldsReach` is `adapter_field_drop_test.go:96-122` and the three guard tests are `:124`, `:128` and `:137-147`. The plan update body is decoded by `decodePlanRequest` (decode site `handler_plans.go:168`, call `:319`) and again into an anonymous struct at `:327`.
