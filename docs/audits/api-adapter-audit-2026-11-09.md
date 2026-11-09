@@ -491,3 +491,318 @@ Direct decodes in the ladder area, none of which is an adapter (each is decoded 
 - `internal/api/handler_ladder_amend.go:86` decodes into `config.LadderAmendment` and passes it whole to `AmendLadderTranche`; all three fields (`expected_revision`, `scheduled_date`, `amount_usd_hr`) are used (`internal/config/store_postgres_ladder_amend.go:94,97,105-107`).
 - `ladderTimelineRequest` (`internal/api/handler_ladder_timeline.go:16-21`) is a scope struct filled from query-string parameters and has no decode site, so it is not an API body.
 - Second hop of the ladder config upsert: `ladderConfigToEngine` (`internal/server/handler_ladder.go:581-612`) forwards mode, cadence, ramp_schedule, target_coverage, buffer_fraction, baseline_percentile, lookback_days, max_actions_per_run, buffer_utilization_threshold and max_hourly_commit_per_run (the spend cap) (`:601-610`). `enabled` is consumed before the conversion (`:221`) and `cloud_account_id` becomes the account argument (`:227-240`). `provider` is not forwarded: the engine scope is hard-coded to AWS (`:598`). This is a store-to-engine conversion, not an API decode.
+
+## Purchases/revoke
+
+### E8: executionSettleRequest via settleExecution
+
+- Request type: executionSettleRequest, handler_execution_settle.go:26-29.
+- Decode site: handler_execution_settle.go:142 (appendix row 10); EOF check :145 auxiliary (row 11); decoder function decodeExecutionSettle :135-159.
+- Target type: config.ExecutionSettleRequest (internal/config/store_postgres_execution_settle.go:30-35).
+- Converting function: the struct literal at handler_execution_settle.go:70-72.
+- Path: handler (0), store.SettleFailedExecution (store_postgres_execution_settle.go:72-110) (2), the UPDATE purchase_executions at :101-104 with the record built by settlementRecord (:238-241) (3).
+- Final disposition: matches.
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| reason | ExecutionSettleRequest.Reason (:71); stored inside the outcome_settlement text by settlementRecord (store :240, SQL arg :104) | reaches the target | handler_execution_settle_integration_test.go:55 (response carries the reason; the stored record is the same string) |
+| acknowledge_unknown_outcome | ExecutionSettleRequest.Acknowledge (:71); the store refuses false (store :114-115) and records the constant `ack=true` (store :239) | reaches the target (FORWARDED wins over the handler's own check at :149) | handler_execution_settle_test.go:20-21; handler_execution_settle_integration_test.go:88 |
+
+### E9: ExecutePurchaseRequest via executePurchase
+
+- Request type: ExecutePurchaseRequest, handler_purchases.go:3145-3167, holding `[]config.RecommendationRecord` (internal/config/types.go:640-781).
+- Decode site: handler_purchases.go:3233 inside parseExecutePurchaseBody :3231-3247 (appendix row 13).
+- Target type: config.PurchaseExecution (store write SavePurchaseExecutionTx, internal/config/store_postgres.go:1143-1274).
+- Converting functions: priceAndEnforcePurchaseConstraints (purchase_pricing.go:19-24) rewrites each rec in place through priceRecommendationsFromStore (:33-78) and priceFromStored (:131-157); newPendingExecution (handler_purchases.go:3771-3789) copies Recommendations and CapacityPercent.
+- Path: converters (1), persistExecutionAndSuppressions (handler_purchases.go:3635-3672) (2), SavePurchaseExecutionTx INSERT (store_postgres.go:1176-1267; recommendations marshalled whole at :1160, capacity_percent at :1167-1170 and :1254) (3).
+- Rule for every `recommendations[]` element: after validation and identity matching, priceFromStored copies the STORED row (`out := *stored`, purchase_pricing.go:148) and overlays only `count`, `recommended_count` and `selected` from the request (:149-151) and scaled cost fields from the stored row (:152-155). The source comment that says so: handler_purchases.go:3146-3150 ("Only count, recommended_count and selected are taken from the request; id, details and every cost field are replaced from the stored row") and purchase_pricing.go:124-128. Rows that cite this rule are marked "deliberately ignored (rule R)".
+- Identity matching: the request's provider, cloud_account_id, service, region, resource_type, engine, term, payment, availability_zone and the Details-derived platform, tenancy and az_config select which stored row is bought (config.RecIdentityKey, internal/config/recommendation_identity.go:98-116; match at purchase_pricing.go:43-48). The matched value is not what is written; the stored row is.
+- Final disposition: matches (deliberate).
+
+Top-level fields:
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| recommendations | PurchaseExecution.Recommendations (handler_purchases.go:3781), JSONB column recommendations (store_postgres.go:1160, arg :1244); each element per the rows below | reaches the target (re-priced from the stored set) | purchase_pricing_test.go:131-198 |
+| capacity_percent | PurchaseExecution.CapacityPercent (:3787), column capacity_percent (store_postgres.go:1167-1170, arg :1254); normalized by normalizeCapacityPercent (:3364-3372); cross-checked with recommended_count (validation.go:728-743); in the submit idempotency key (handler_purchases.go:3686) | reaches the target | none for the persisted value (purchase_pricing_test.go:163 sends capacity_percent 50 but never asserts saved.CapacityPercent); the dedupe key's capacity component: handler_purchases_dedupe_test.go:54 |
+| execute_mode | selects the direct-execute branch (handler_purchases.go:3850) after authorizeSessionExecuteDirect (:1708); not stored | validation or authorization only (decides the path; any value other than "direct" is the default flow, documented at :3158-3162) | none found for the direct branch (handler_per_account_perms_test.go:610 covers the account gate only) |
+
+`recommendations[]` elements (dotted path `recommendations[].<tag>`, struct config.RecommendationRecord):
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| recommendations[].id | lookup key for the originally selected stored row (purchase_pricing.go:49-67, checkPurchaseDetailIdentity); the written ID is the matched stored row's | validation or authorization only | purchase_pricing_test.go:915 (stale origin id refused), :171 (stored id written) |
+| recommendations[].provider | identity key (config.RecIdentityKey recommendation_identity.go:112); canonicalized by validatePurchaseRecommendation (validation.go:632-637); validatePurchaseRecommendationScope runs on cloud_account_id only | validation or authorization only (selects the stored row) | purchase_pricing_test.go:203, :571 |
+| recommendations[].service | identity key; validation (validation.go:638-641) | validation or authorization only | purchase_pricing_test.go:203, :571 |
+| recommendations[].region | identity key | validation or authorization only | purchase_pricing_test.go:203, :571 |
+| recommendations[].resource_type | identity key | validation or authorization only | purchase_pricing_test.go:203, :571 |
+| recommendations[].engine | identity key | validation or authorization only | purchase_pricing_test.go:571 |
+| recommendations[].details | identity components platform, tenancy, az_config (ComputeIdentity, IdentityAZConfig); refuse-only comparison of tenancy, platform, scope, memory_gb, az_config with the stored match when id is empty (purchase_pricing.go:227-244); never copied (comment at purchase_pricing.go:219-226) | deliberately ignored for the written value, cited at handler_purchases.go:3146-3150 and purchase_pricing.go:219-226; used for validation as described | purchase_pricing_test.go:180 (stored details written), :1001, :1021, :1072, :1118 |
+| recommendations[].availability_zone | identity key component (recommendation_identity.go:114) and mismatch check (purchase_pricing.go:316) | validation or authorization only | purchase_pricing_test.go:571 |
+| recommendations[].count | RecommendationRecord.Count = req.Count (purchase_pricing.go:149); costs scaled by it (:147-155); validated > 0 (validation.go:642-644) | reaches the target | purchase_pricing_test.go:172 |
+| recommendations[].recommended_count | out.RecommendedCount = req.RecommendedCount (:150); checked by validateCapacityConsistency (validation.go:728-743) | reaches the target | purchase_pricing_test.go:173 |
+| recommendations[].term | identity key; validated to 1 or 3 (validation.go:645-647) | validation or authorization only | purchase_pricing_test.go:398, :571 |
+| recommendations[].payment | identity key (lowercased); normalized and validated by validatePurchaseRecommendation (validation.go:656-693); a schedule-changing coercion is reported back as payment_adjustments | validation or authorization only (selects the stored variant) | purchase_pricing_test.go:398 |
+| recommendations[].upfront_cost | replaced by stored.UpfrontCost * ratio (purchase_pricing.go:152) | deliberately ignored (rule R; also handler_purchases.go:3219-3221) | purchase_pricing_test.go:174 |
+| recommendations[].monthly_cost | read once to refuse a negative value (validation.go:653-655); then replaced by scaledCost(stored.MonthlyCost) (purchase_pricing.go:154) | deliberately ignored for the written value (rule R); validation use as stated | purchase_pricing_test.go:176 |
+| recommendations[].savings | replaced by stored.Savings * ratio (purchase_pricing.go:153) | deliberately ignored (rule R) | purchase_pricing_test.go:177 |
+| recommendations[].on_demand_cost | replaced by scaledCost(stored.OnDemandCost) (purchase_pricing.go:155) | deliberately ignored (rule R) | purchase_pricing_test.go:179 |
+| recommendations[].commitment_currency | replaced by the stored value (`out := *stored`, :148) | deliberately ignored (rule R) | none |
+| recommendations[].savings_percentage | replaced by the stored value | deliberately ignored (rule R) | none |
+| recommendations[].selected | out.Selected = req.Selected (:151) | reaches the target | purchase_pricing_test.go:181 |
+| recommendations[].purchased | replaced by the stored value | deliberately ignored (rule R) | none |
+| recommendations[].purchase_id | replaced by the stored value | deliberately ignored (rule R) | none |
+| recommendations[].error | replaced by the stored value | deliberately ignored (rule R) | none |
+| recommendations[].cloud_account_id | identity key (nil and empty collapse, recommendation_identity.go:107-110); validatePurchaseRecommendationScope authorization (scoping.go:179-203); purchaseConstraintSets AccountIDs after replacement (handler_purchases.go:3306-3308) | validation or authorization only | handler_per_account_perms_test.go:610-719; purchase_pricing_test.go:249 |
+| recommendations[].source_account_id | replaced by the stored value | deliberately ignored (rule R) | none |
+| recommendations[].suppressed_count | replaced by the stored value | deliberately ignored (rule R) | none |
+| recommendations[].suppression_expires_at | replaced by the stored value | deliberately ignored (rule R) | none |
+| recommendations[].primary_suppression_execution_id | replaced by the stored value | deliberately ignored (rule R) | none |
+| recommendations[].usage_history | replaced by the stored value | deliberately ignored (rule R) | none |
+| recommendations[].vcpu | replaced by the stored value (not persisted anyway, types.go:767-778) | deliberately ignored (rule R) | none |
+| recommendations[].memory_gb | replaced by the stored value; the Details memory_gb is the compared discriminator (purchase_pricing.go:320) | deliberately ignored (rule R) | purchase_pricing_test.go:757 (details discriminator) |
+
+### N1: revokeConfirmBody via revokePurchase (not an adapter)
+
+- Request type: revokeConfirmBody, handler_purchases_revoke.go:74-77. Decode site: :296 (appendix row 12).
+- Why not an adapter: the decoded struct is passed whole to dispatchProviderRevoke (:301, :463) and callAzureReturn (:843-886) and used only to compare the user's confirmed quote with Azure's fresh quote (checkConfirmedRefund :1016-1034). No field is copied into a different struct or into a store or SDK call argument; the Return request is built from the fresh CalculateRefund session (postAzureReturn :899-915).
+- Path facts: the body is decoded only on the completed-purchase path (loadAndRevokePurchaseHistory :294-299); the scheduled-execution path (revokeScheduledExecution :317) never reads it; AWS and GCP records are decoded and then refused with 422 (:467-472).
+
+| API json tag | Use | Disposition | Covering test |
+| --- | --- | --- | --- |
+| expected_refund_amount | required for Azure (callAzureReturn :859); compared with Azure's quote within revokeQuoteEpsilon (:1027) | validation or authorization only | handler_purchases_revoke_test.go:1140 (divergence refused), :1165 (within epsilon succeeds) |
+| expected_refund_currency | required for Azure (:859); compared case-insensitively with the quote currency (:1021) | validation or authorization only | handler_purchases_revoke_guard_test.go:97-100 |
+
+### B7: MarketplaceListRequest -> marketplaceList (POST /api/purchases/{id}/marketplace-list)
+
+- Request type: MarketplaceListRequest + MarketplacePriceTier, internal/api/handler_marketplace.go:156-170. Decode: validateMarketplaceListRequest, :226-230 (site :227).
+- Target: ec2MarketplaceListingRequest.PriceSchedule (alias of ec2svc.MarketplaceListingRequest, provider_wiring.go:36-38) sent to AWS CreateReservedInstancesListing, and the persisted purchase_history.listing_price_schedule. Converters: resolveMarketplacePriceSchedule (handler_marketplace.go:595-635, passes a valid supplied schedule through unchanged, else builds a default tier) and toAWSPriceSchedule (handler_marketplace_attempt.go:80-86). Store: ClaimMarketplaceListingSlot (store_postgres.go:2547; UPDATE sets listing_price_schedule at :2563-2564). Outbound: createAndPersistListing (handler_marketplace_attempt.go:198-204) -> ec2svc client in the external module `cloud-commitments-go`.
+- Retry note: on a resumed attempt the persisted schedule replaces the request's (handler_marketplace_attempt.go:129-141); this is documented at :93-94 and :4-9 (see appendix site handler_marketplace_attempt.go:133).
+- Per-pair disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| price_schedule | when present and valid: passed through whole to ClaimMarketplaceListingSlot and CreateMarketplaceListing; when absent or empty: the handler computes a one-tier default (handler_marketplace.go:614-634), the documented behavior (struct comment :164-167). Floors and range checks are validation (:560-583,:599-611) | reaches the target (as a whole value; per-tier fields below) | handler_marketplace_attempt_test.go:441 |
+| price_schedule[].term_months | ec2MarketplacePriceTier.Term (handler_marketplace_attempt.go:83) -> ec2MarketplaceListingRequest.PriceSchedule (:202); persisted copy in listing_price_schedule (store_postgres.go:2563-2564) | reaches ec2svc.MarketplaceListingRequest.PriceSchedule at the client call (handler_marketplace_attempt.go:199) (store write not traced: the outbound SDK field is inside the external module cloud-commitments-go; the persisted JSON copy is traced to the SQL column) | handler_marketplace_attempt_test.go:441 (stored JSON decoded back equals the tiers the fake EC2 client received); :255 |
+| price_schedule[].price | ec2MarketplacePriceTier.Price (handler_marketplace_attempt.go:83), same path | reaches ec2svc.MarketplaceListingRequest.PriceSchedule at the client call (store write not traced: external module cloud-commitments-go; persisted copy traced) | handler_marketplace_attempt_test.go:441; :255 |
+
+### T1: anonymous approval-token body {token} -> approvePurchase (POST /api/purchases/approve/{id})
+
+- Request type: anonymous struct with one field Token tagged json:"token" at internal/api/router.go:605-607 (decode at :608), inside `resolveApprovalToken` (router.go:602). JSON is tried first, then a form body (`url.ParseQuery`, router.go:611-617, not a decode site), then the query string (:619). The same helper serves 4 routes (router.go:168-176), so each route is its own pair below.
+- Converter: `resolveApprovalToken` router.go:602 (returns the string); caller `approvePurchaseHandler` router.go:622-628 passes it as positional argument 4 of `(*Handler).approvePurchase` (handler_purchases.go:1001, call at router.go:627).
+- Target: positional argument `token` of approvePurchase; no struct.
+
+| API json tag | target Go field | disposition | covering test |
+| --- | --- | --- | --- |
+| `token` | positional argument 4 (`token`) of `approvePurchase` -> `approveViaToken` handler_purchases.go:1046/:1137 -> `purchase.Manager.ApproveExecution` (handler_purchases.go:1224) -> `ValidateApprovalToken` (approvals.go:74) and pinned into the status-claim UPDATE (`claimRunningForApprove` claim.go:55 -> `TransitionExecutionStatusTokenPinned` store_postgres.go:1384 -> predicate `approval_token_hash = $7`, store_postgres.go:1438); delayed branch: `ValidateApprovalToken` handler_purchases.go:1182, then `approveWithDelay` handler_purchases.go:1185 -> `ScheduleApprovedExecution` with the token pinned (handler_purchases.go:1589-1595) | reaches the target (FORWARDED into the store write as a compare-only CAS predicate; it is never persisted as a column; see judgment note J1). When the session is RBAC-authorized the token is ignored on purpose, source comment handler_purchases.go:1015-1019 | body decode: handler_purchases_test.go:4505 (`TestResolveApprovalToken_PostBodyTakesPriority`), :4547; token pin: internal/purchase/token_rotation_pin_integration_test.go:74, internal/api/handler_purchases_token_errors_test.go:170, store_postgres_db_test.go:1819 |
+
+Pair disposition: matches.
+
+### T2: anonymous approval-token body {token} -> cancelPurchase (POST /api/purchases/cancel/{id})
+
+- Request type, converter: as T1 (router.go:605-608, :602). Caller `cancelPurchaseHandler` router.go:637-643 -> `(*Handler).cancelPurchase` handler_purchases.go:1754 (call at router.go:642).
+
+| API json tag | target Go field | disposition | covering test |
+| --- | --- | --- | --- |
+| `token` | positional argument 4 (`token`) of `cancelPurchase` -> `cancelViaToken` handler_purchases.go:1817/:1826 -> `Manager.CancelExecution` (handler_purchases.go:1831; approvals.go:516) -> `loadCancelableExecution` `ValidateApprovalToken` (approvals.go:656) and `CancelExecutionAtomicTokenPinned` (approvals.go:540; store_postgres.go:1540 -> UPDATE predicate `approval_token_hash = $4`, store_postgres.go:1559) | reaches the target (compare-only CAS predicate, never persisted; judgment note J1). With an RBAC-authorized session the token is ignored on purpose, source comment handler_purchases.go:1781 ("the token in the URL is informational at that point") | body decode: handler_purchases_test.go:4505, :4533, :4547; token pin: internal/purchase/token_rotation_pin_integration_test.go:109, store_postgres_token_pin_cancel_db_test.go:63 |
+
+Pair disposition: matches.
+
+### T3: anonymous approval-token body {token} -> revokeViaEmailToken (POST /api/purchases/revoke/{execID})
+
+- Request type, converter: as T1. Caller `revokeViaEmailTokenHandler` router.go:656-662 -> `(*Handler).revokeViaEmailToken` handler_purchases.go:1983 (call at router.go:661). The GET route (router.go:175) reads the token from the query string only (resolveApprovalToken decodes JSON only for POST), so it is not an adapter for this decode.
+
+| API json tag | target Go field | disposition | covering test |
+| --- | --- | --- | --- |
+| `token` | positional argument 4 (`token`) of `revokeViaEmailToken` -> `revokeViaToken` handler_purchases.go:2023/:2030 -> `validateRevokeToken` :2035/:2149 -> `ValidateApprovalToken` | validation or authorization only (compared with the stored hash; `revokeViaSession` is then called without the token, handler_purchases.go:2041). Also decides the branch: `fallsThroughToToken` in `tryRevokeViaSession` (handler_purchases.go:2087) | handler_purchases_test.go:6427 (`TestRevokePOSTReadsTokenFromBody`), :6468 (`TestRevokePurchase_RejectsRotatedToken`) |
+
+Pair disposition: matches.
+
+### T4: anonymous approval-token body {token} -> getApprovalDetails (POST /api/purchases/approve/{id}/details)
+
+- Request type, converter: as T1. Caller `approvalDetailsHandler` router.go:630-635 -> `(*Handler).getApprovalDetails` handler_purchases_approval_details.go:30 (call at router.go:634). This route performs no write.
+
+| API json tag | target Go field | disposition | covering test |
+| --- | --- | --- | --- |
+| `token` | positional argument 4 (`token`) of `getApprovalDetails` -> `authorizeApprovalDetailsRead` handler_purchases_approval_details.go:40/:50 -> `purchase.ValidateApprovalToken` :59 | validation or authorization only (read endpoint; nothing is persisted or forwarded) | handler_purchases_approval_details_test.go:117 (`TestHandleRequest_ApprovalDetails_TokenAndContactBothRequired`) |
+
+Pair disposition: matches.
+
+#### Judgment note J1
+
+Under the schema PRECEDENCE rule ("reaches the target wins whenever the value is FORWARDED, i.e. used by the callee's store write"), the token in T1 and T2 is used inside the store UPDATE (as the WHERE predicate that pins the token hash), so it is classed 'reaches the target'. An equally defensible reading is 'validation or authorization only', because the value is compared, never written. Either reading yields no DROPPED row; the choice only changes the label.
+
+## Overrides
+
+### O1: AccountServiceOverrideRequest -> saveAccountServiceOverride (PUT /api/accounts/:id/service-overrides/:provider/:service)
+
+- Area: overrides. Request type: AccountServiceOverrideRequest, handler_accounts.go:68. Decode: handler_accounts.go:1193; key-presence auxiliary decode `presentKeys` at internal/api/handler_config.go:389 (called :1198).
+- Target: config.AccountServiceOverride, internal/config/types.go:1533. Converter: buildServiceOverride, handler_accounts.go:1245 (overlayOverrideScalars :1262, overlayOverrideSlices :1280), run inside the store's locked transaction via mergeAndValidateServiceOverride :1228. Store: UpdateAccountServiceOverrideAtomic, internal/config/store_postgres_config_audit.go:156 -> writeOverrideAudited :201 -> upsertAccountServiceOverrideReturning :212 (SQL :220-235). Semantics: a key present in the body replaces the stored value, null clears it, an absent key keeps it (comment :1241-1244).
+- Final disposition: fixed in #1788 (matches).
+- Guards: handler_override_merge_test.go:193 (every json field is merged, request and stored sides), the per-key table at :59, single-key test :78, null-clears test :94.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| enabled | AccountServiceOverride.Enabled (:1263-1265) -> SQL `enabled = $5` (store_postgres_config_audit.go:224, arg :231) | reaches the target | handler_override_merge_test.go:193, :78 |
+| term | .Term (:1266-1268) -> `term = $6`; also checked with payment on the merged row (combos.check :1230) | reaches the target | handler_override_merge_test.go:193, :78, :170 |
+| payment | .Payment (:1269-1271) -> `payment = $7`; same combo check | reaches the target | handler_override_merge_test.go:193, :78, :170 |
+| coverage | .Coverage (:1272-1274) -> `coverage = $8` | reaches the target | handler_override_merge_test.go:193, :78 |
+| ramp_schedule | .RampSchedule (:1275-1277) -> `ramp_schedule = $9` | reaches the target | handler_override_merge_test.go:193, :78 |
+| include_engines | .IncludeEngines (:1281-1283) -> `include_engines = $10` | reaches the target | handler_override_merge_test.go:193, :78 |
+| exclude_engines | .ExcludeEngines (:1284-1286) -> `exclude_engines = $11` | reaches the target | handler_override_merge_test.go:193, :78 |
+| include_regions | .IncludeRegions (:1287-1289) -> `include_regions = $12` | reaches the target | handler_override_merge_test.go:193, :78 |
+| exclude_regions | .ExcludeRegions (:1290-1292) -> `exclude_regions = $13` | reaches the target | handler_override_merge_test.go:193, :78 |
+| include_types | .IncludeTypes (:1293-1295) -> `include_types = $14` | reaches the target | handler_override_merge_test.go:193, :78 |
+| exclude_types | .ExcludeTypes (:1296-1298) -> `exclude_types = $15` | reaches the target | handler_override_merge_test.go:193, :78 |
+
+### B8: OverrideImportRequest -> importAccountServiceOverrides control flow (POST /api/accounts/service-overrides/import)
+
+- Request type: OverrideImportRequest, handler_override_import.go:51-56. Decode: parseOverrideImportRequest, :128-144 (site :130; shared with B9).
+- Targets: OverrideImportReport.Mode / DryRun (handler_override_import.go:114) and the import audit event details (overrideImportEvent :370-381 -> SaveConfigAuditEventTx, store_postgres_config_audit.go:297-321, config_audit_events.details).
+- Per-pair disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| mode | OverrideImportReport.Mode (:114) and audit event details.mode (:371) -> config_audit_events.details; also decides strict vs best_effort (:115) and defaults to "strict" when empty (:133-135) | reaches the target | handler_override_import_test.go:105,119; handler_override_import_integration_test.go:22 (Postgres) |
+| dry_run | OverrideImportReport.DryRun (:114); control flow: true skips applyOverrideImport (:118-120). Not stored | validation or authorization only (control flow) | handler_override_import_test.go:146 |
+| overrides | rows of B9 (`overrides[].*`), bounded 1..5000 (:157-159); exactly one of overrides or csv (:139) | reaches the target (as a whole value; see B9) | handler_override_import_test.go:33,74 |
+| csv | decoded by decodeOverridesCSV (override_transfer_csv.go:117-142) into the same B9 rows | reaches the target (as a whole value; see B9) | handler_override_import_test.go:33 (csv format), :183 |
+
+### B9: OverrideTransferRow -> config.AccountServiceOverride (import apply)
+
+- Request type: OverrideTransferRow, internal/api/override_transfer.go:21-40, from `overrides[]` (JSON, site handler_override_import.go:130) or from CSV text (decodeOverridesCSV, override_transfer_csv.go:117, no decode site of its own).
+- Target type: config.AccountServiceOverride (built at handler_override_import.go:343; fields applied by applyOverrideFieldsTo, override_transfer.go:116-121). Account resolved by overrideAccountIndex.resolve (override_account_index.go:50-69). Store: applyOverrideImport (L1, :330-359) -> SaveAccountServiceOverrideAuditedTx (L2, store_postgres_config_audit.go:139) -> upsertAccountServiceOverrideReturning (L3, :212-243, columns :222-233).
+- Per-pair disposition: matches (the informational fields are documented as ignored).
+- The comment at override_transfer.go:14-17 states "AccountName, CreatedAt and UpdatedAt are informational: import ignores them" and that an unset field clears that field.
+
+| API json tag (dotted) | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| overrides[].account_id | selects the account: overrideAccountIndex.resolve (:54-55); the written AccountID is the resolved in-scope account's own id (handler_override_import.go:343) | validation or authorization only (account resolution and scope; out-of-scope ids read as unknown) | handler_override_import_test.go:56,105 |
+| overrides[].account_name | none | deliberately ignored, source comment override_transfer.go:14-16 | handler_override_import_test.go:33 (round trip) |
+| overrides[].account_external_id | fallback account key and consistency check (override_account_index.go:57-68,77-78) | validation or authorization only | handler_override_import_test.go:56 |
+| overrides[].provider | AccountServiceOverride.Provider (handler_override_import.go:343) -> account_service_overrides.provider; validated (override_account_index.go:51-53) | reaches the target | handler_override_import_test.go:33,105 |
+| overrides[].service | AccountServiceOverride.Service (:343) -> service; validated (:227-229) | reaches the target | handler_override_import_test.go:33,105 |
+| overrides[].enabled | AccountServiceOverride.Enabled via applyOverrideFieldsTo (override_transfer.go:117) -> enabled (store_postgres_config_audit.go:224) | reaches the target | handler_override_import_test.go:74,33 |
+| overrides[].term | Term (:117) -> term | reaches the target | handler_override_import_test.go:56,74 |
+| overrides[].payment | Payment (:117) -> payment | reaches the target | handler_override_import_test.go:74 |
+| overrides[].coverage | Coverage (:117) -> coverage (DECIMAL(5,2), validated :265) | reaches the target | handler_override_import_test.go:33 |
+| overrides[].ramp_schedule | RampSchedule (:117) -> ramp_schedule (length-bounded :257-260) | reaches the target | handler_override_import_test.go:259 |
+| overrides[].include_engines | IncludeEngines (:118) | reaches the target | handler_override_import_test.go:33 |
+| overrides[].exclude_engines | ExcludeEngines (:118) | reaches the target | handler_override_import_test.go:33 |
+| overrides[].include_regions | IncludeRegions (:119) | reaches the target | handler_override_import_test.go:33 |
+| overrides[].exclude_regions | ExcludeRegions (:119) | reaches the target | handler_override_import_test.go:33 |
+| overrides[].include_types | IncludeTypes (:120) | reaches the target | handler_override_import_test.go:33 |
+| overrides[].exclude_types | ExcludeTypes (:120) | reaches the target | handler_override_import_test.go:33 |
+| overrides[].created_at | none (an update keeps the stored CreatedAt, handler_override_import.go:345; an insert stamps now, :343) | deliberately ignored, comment override_transfer.go:14-16 | handler_override_import_test.go:33 |
+| overrides[].updated_at | none | deliberately ignored, comment override_transfer.go:14-16 | handler_override_import_test.go:33 |
+
+The CSV form decodes the same columns; overrideRowFromCSV (override_transfer_csv.go:163-189) leaves account_name, created_at and updated_at unset, so the CSV columns for them are accepted by the header check (:144-161) and ignored, the same documented behavior.
+
+## Auth/profile
+
+Common facts used below:
+
+- Handler to service for U1-U10 goes through the interface `AuthServiceInterface` (internal/api/types.go:195); in production the implementation is `authServiceAdapter` (internal/server/app.go:1169). Where the adapter copies a struct (Login :1179-1184, SetupAdmin :1218-1221, ConfirmPasswordReset :1248-1251) every field is copied; the other methods pass positional arguments straight through.
+- Passwords arrive base64-encoded and are decoded in the handler (`decodeBase64Password`) before the call; that is a transform, not a drop.
+- Trace depth used for the auth pairs: handler = 0, adapter = level 1, auth.Service method = level 2, auth store method = level 3.
+
+Not adapters at the handler (decoded straight into the auth package's own wire type and passed whole to the service; the service-side conversion lives in internal/auth/service_api.go, out of scope for this audit and covered by #923): handler_apikeys.go:63, handler_users.go:48 and :168, handler_groups.go:50 and :123. Observations only, read while checking the call, not table rows: `CreateUserAPI` copies email, password, groups (internal/auth/service_api.go:256-260); `UpdateUserAPI` copies groups, email when non-empty, active (:276-288); `CreateGroupAPI` copies name, description, permissions, allowed_accounts (:353-358); `UpdateGroupAPI` applies name, description, permissions, allowed_accounts via applyUpdateGroupRequest (:371-384). `CreateAPIKeyAPI` (internal/auth/service_apikeys_api.go:199) was not traced.
+
+### U1: LoginRequest -> login (POST /api/auth/login)
+
+- Area: auth/profile. Request type: LoginRequest, internal/api/types.go:302. Decode: handler_auth.go:30. Call: `h.auth.Login(ctx, loginReq)` :48. Converter: authServiceAdapter.Login, internal/server/app.go:1178 (copies all four fields into auth.LoginRequest :1179-1184; target internal/auth/types.go:254). Service: Service.Login internal/auth/service.go:150; store lookups GetUserByEmail (service.go:190) and, for the token form, loginWithMFAToken (internal/auth/service_mfa_login_token.go:77-99).
+- Final disposition: matches (the issue #19 trigger class, now guarded for mfa_token).
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| email | auth.LoginRequest.Email (app.go:1180); normalized service.go:157-161; lookup key GetUserByEmail :190 / claimMFALoginToken (service_mfa_login_token.go:110) | validation or authorization only | internal/server/adapter_mfa_token_test.go:23; adapter_test.go:48 |
+| password | auth.LoginRequest.Password (app.go:1181); verifyPassword service.go:247; must be empty in the token form (service_mfa_login_token.go:78) | validation or authorization only | internal/server/adapter_mfa_token_test.go:23 |
+| mfa_code | auth.LoginRequest.MFACode (app.go:1182); verifyLoginMFACode service.go:265 | validation or authorization only | internal/server/adapter_mfa_token_test.go:23 |
+| mfa_token | auth.LoginRequest.MFAToken (app.go:1183); hashed lookup and consume service_mfa_login_token.go:81-98 | validation or authorization only | internal/server/adapter_mfa_token_test.go:23 |
+
+### U2: SetupAdminRequest -> setupAdmin (POST /api/auth/setup-admin)
+
+- Area: auth/profile. Request type: SetupAdminRequest, types.go:331. Decode: handler_auth.go:374. Call: `h.auth.SetupAdmin` :387. Converter: authServiceAdapter.SetupAdmin, app.go:1217 (copies both fields :1218-1221 into auth.SetupAdminRequest, internal/auth/types.go:321). Service: Service.SetupAdmin internal/auth/service_user.go:19. Store: CreateAdminIfNone internal/auth/store_postgres_admin.go:159 (args via userInsertArgs internal/auth/store_postgres.go:188-200).
+- Final disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| email | auth.SetupAdminRequest.Email (app.go:1219) -> normalizeAccountEmail service_user.go:28 -> User.Email :49 -> users email arg store_postgres.go:199 | reaches the target | internal/server/adapter_test.go:621 (round trip) |
+| password | auth.SetupAdminRequest.Password (app.go:1220) -> hashPassword service_user.go:38 -> User.PasswordHash :50 -> arg store_postgres.go:200 (stored as a hash, never plain) | reaches the target (hashed) | internal/server/adapter_test.go:621 |
+
+### U3: PasswordResetRequest -> forgotPassword (POST /api/auth/forgot-password)
+
+- Area: auth/profile. Request type: PasswordResetRequest, types.go:338. Decode: handler_auth.go:414. Call: `h.auth.RequestPasswordReset(ctx, pwdReq.Email)` :435 (positional argument 2). Adapter: app.go:1243 passes it through. Service: internal/auth/service_password.go:338.
+- Final disposition: matches (lookup key; the email is sent to the STORED user email, service_password.go:389, never to the request value).
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| email | positional argument 2 of RequestPasswordReset -> store GetUserByEmail (service_password.go:339); also the per-email rate-limit bucket handler_auth.go:423 | validation or authorization only | handler_auth_test.go:536 (argument asserted at the handler boundary) |
+
+### U4: PasswordResetConfirm -> resetPassword (POST /api/auth/reset-password)
+
+- Area: auth/profile. Request type: PasswordResetConfirm, types.go:344. Decode: handler_auth.go:505. Call: `h.auth.ConfirmPasswordReset` :520. Converter: authServiceAdapter.ConfirmPasswordReset app.go:1247 (copies :1249-1250 into auth.PasswordResetConfirm, internal/auth/types.go:285). Service: service_password.go:415. Store: CompletePasswordReset internal/auth/store_postgres_credentials.go:61.
+- Final disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| token | auth.PasswordResetConfirm.Token (app.go:1249) -> validateResetToken service_password.go:416/:546 (hashed lookup) | validation or authorization only | handler_auth_test.go:595; adapter_test.go:139 (smoke, error path only) |
+| new_password | auth.PasswordResetConfirm.NewPassword (app.go:1250) -> processPasswordReset service_password.go:575-595 -> hash -> `password_hash = $4` (store_postgres_credentials.go:63, arg :67) | reaches the target (hashed) | handler_auth_test.go:595 (handler boundary); no adapter-level test asserts it |
+
+### U5: ProfileUpdateRequest -> updateProfile (PUT /api/auth/profile)
+
+- Area: auth/profile. Request type: ProfileUpdateRequest, types.go:439. Decode: handler_auth.go:545. Call: `h.auth.UpdateUserProfile(ctx, session.UserID, profileReq.Email, currentPassword, newPassword)` :563 (positional arguments 3, 4, 5; decodeProfilePasswords :600). Adapter: app.go:1276 passes through. Service: Service.UpdateUserProfile internal/auth/service_user.go:793. Store: UpdateUserCredentials internal/auth/store_postgres_credentials.go:41.
+- Final disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| email | positional argument 3 -> updateUserEmail service_user.go:837 (empty or unchanged leaves the address as is) -> User.Email -> `email = $4` (store_postgres_credentials.go:43, arg :47) | reaches the target | handler_auth_test.go:835; adapter_test.go:320 (smoke, error path only) |
+| current_password | positional argument 4 -> verifyPassword service_user.go:799 | validation or authorization only | handler_auth_test.go:835 |
+| new_password | positional argument 5 -> updateUserPassword service_user.go:859-885 -> hash -> `password_hash = $5` (store_postgres_credentials.go:43, arg :47) | reaches the target (hashed) | handler_auth_test.go:835 |
+
+### U6: ChangePasswordRequest -> changePassword (POST /api/auth/change-password)
+
+- Area: auth/profile. Request type: ChangePasswordRequest, types.go:433. Decode: handler_auth.go:649. Call: `h.auth.ChangePasswordAPI(ctx, session.UserID, currentPassword, newPassword)` :659 (positional arguments 3, 4; decodeChangePasswordRequest :617). Adapter: app.go:1297. Service: ChangePasswordAPI internal/auth/service_api.go:309 -> ChangePassword service_password.go:254. Store: UpdateUserCredentials.
+- Final disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| current_password | positional argument 3 -> verifyPassword service_password.go:261 | validation or authorization only | handler_auth_test.go:926; adapter_test.go:214 (smoke) |
+| new_password | positional argument 4 -> ChangePasswordRequest.NewPassword (service_api.go:310-313) -> hash service_password.go:278 -> UpdateUserCredentials :290 (`password_hash`) | reaches the target (hashed) | handler_auth_test.go:926 |
+
+### U7: MFASetupRequest -> mfaSetup (POST /api/auth/mfa/setup)
+
+- Area: auth/profile. Request type: MFASetupRequest, types.go:594. Decode: handler_auth.go:719. Call: `h.auth.MFASetupAPI(ctx, session.UserID, password)` :727 (positional argument 3). Adapter app.go:1302. Service: service_api.go:557 -> MFASetup internal/auth/service_mfa.go:318.
+- Final disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| password | positional argument 3 -> verifyPassword service_mfa.go:329 | validation or authorization only | handler_auth_test.go:1339 |
+
+### U8: MFAEnableRequest -> mfaEnable (POST /api/auth/mfa/enable)
+
+- Area: auth/profile. Request type: MFAEnableRequest, types.go:610. Decode: handler_auth.go:743. Call: `h.auth.MFAEnableAPI(ctx, session.UserID, body.Code)` :747 (positional argument 3). Adapter app.go:1306. Service: service_api.go:566 -> MFAEnable service_mfa.go:403.
+- Final disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| code | positional argument 3 -> validatePendingMFAEnrollment service_mfa.go:417; the counter derived from the code is recorded by EnableMFA (:432), the code itself is not stored | validation or authorization only | handler_auth_test.go:1376 |
+
+### U9: MFADisableRequest -> mfaDisable (POST /api/auth/mfa/disable)
+
+- Area: auth/profile. Request type: MFADisableRequest, types.go:622. Decode: handler_auth.go:764. Call: `h.auth.MFADisableAPI(ctx, session.UserID, password, body.Code)` :772 (positional arguments 3, 4). Adapter app.go:1310. Service: service_api.go:571 -> MFADisable service_mfa.go:501.
+- Final disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| password | positional argument 3 -> verifyPassword service_mfa.go:512 | validation or authorization only | handler_auth_test.go:1405 |
+| code | positional argument 4 (`codeOrRecovery`) -> verifyMFAProof service_mfa.go:528 | validation or authorization only | handler_auth_test.go:1405 |
+
+### U10: MFARegenerateRequest -> mfaRegenerateRecoveryCodes (POST /api/auth/mfa/regenerate-recovery-codes)
+
+- Area: auth/profile. Request type: MFARegenerateRequest, types.go:630. Decode: handler_auth.go:789. Call: `h.auth.MFARegenerateRecoveryCodesAPI(ctx, session.UserID, body.Code)` :793 (positional argument 3). Adapter app.go:1314. Service: service_api.go:576 -> MFARegenerateRecoveryCodes service_mfa.go:543.
+- Final disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| code | positional argument 3 -> claimTOTPOrReject service_mfa.go:557 | validation or authorization only | handler_auth_test.go:1418 |
