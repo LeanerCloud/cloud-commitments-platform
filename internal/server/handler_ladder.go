@@ -130,7 +130,7 @@ func (app *Application) handleLadderRun(ctx context.Context) (*LadderRunResult, 
 	}
 
 	now := time.Now().UTC()
-	result := app.runLadderConfigs(ctx, allConfigs, ownAccountID, region, term, paymentOpt, now, globalCfg.LadderExecutionEnabled)
+	result := app.runLadderConfigs(ctx, allConfigs, ownAccountID, region, term, paymentOpt, now)
 
 	log.Printf("ladder_run done: planned=%d skipped_cadence=%d skipped_disabled=%d skipped_multi_account=%d errored=%d",
 		result.Planned, result.SkippedCadence, result.SkippedDisabled, result.SkippedMultiAccount, result.Errored)
@@ -198,11 +198,10 @@ func (app *Application) runLadderConfigs(
 	term pkgladder.Term,
 	paymentOpt pkgladder.PaymentOption,
 	now time.Time,
-	executionEnabled bool,
 ) *LadderRunResult {
 	result := &LadderRunResult{}
 	for i := range configs {
-		result.record(app.processOneLadderConfig(ctx, &configs[i], ownAccountID, region, term, paymentOpt, now, executionEnabled))
+		result.record(app.processOneLadderConfig(ctx, &configs[i], ownAccountID, region, term, paymentOpt, now))
 	}
 	return result
 }
@@ -218,7 +217,6 @@ func (app *Application) processOneLadderConfig(
 	term pkgladder.Term,
 	paymentOpt pkgladder.PaymentOption,
 	now time.Time,
-	executionEnabled bool,
 ) ladderConfigOutcome {
 	if !dbCfg.Enabled {
 		log.Printf("ladder_run: config %s: enabled=false, skipping", dbCfg.ID)
@@ -256,8 +254,8 @@ func (app *Application) processOneLadderConfig(
 		return outcomeSkippedCadence
 	}
 
-	// Build and wire the LadderCapability for this account.
-	capability, err := app.buildAndWireCapability(ctx, region, cloudAcct.ExternalID, executionEnabled)
+	// Build the planning capability for this account: its write side is always disabled.
+	capability, err := app.planningCapability(ctx, region, cloudAcct.ExternalID)
 	if err != nil {
 		log.Printf("ladder_run: config %s: %v", dbCfg.ID, err)
 		return outcomeErrored
