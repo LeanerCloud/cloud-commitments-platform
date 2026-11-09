@@ -61,30 +61,29 @@ variable "github_environments" {
     The default meets the rule, `prod` included: `dev`, `staging` and `prod`
     each exist with a `main`-only branch policy (applied 2026-10-04, see #141
     and #2), and `prod` uses the same service principal as the other two, so it
-    is not an exception. None has required reviewers, so the branch policy
-    (plus main's ruleset) is the only gate. Widening a policy past `main`, for
-    example a `v*` tag policy for release-triggered `prod` deploys, widens this
-    credential's reach to those refs and needs the same review.
+    is not an exception. The `azure-db-dev`, `azure-db-staging` and
+    `azure-db-prod` environments that database-migration.yml binds meet it too:
+    each exists with a `main`-only branch policy (verified read-only
+    2026-11-09 with the gh command above). None has required reviewers, so the
+    branch policy (plus main's ruleset) is the only gate. Widening a policy
+    past `main`, for example a `v*` tag policy for release-triggered `prod`
+    deploys, widens this credential's reach to those refs and needs the same
+    review.
 
-    This list is NOT a complete enumeration of the environment subjects this repo
-    presents to Azure. It covers the destroy jobs bound by cleanup-staging.yml
-    (`staging`) and destroy-fargate-dev.yml (`dev`), deploy-azure.yml's
-    build-and-deploy and test-deployment jobs (see #140), and rollback.yml's
-    rollback-azure job (see #139) — all of which bind plain
-    `dev`/`staging`/`prod`.
+    Adding the three `azure-db-*` names mints three new credentials (#1750), so
+    it needs a bootstrap re-apply of this module by a privileged human; no PR
+    applies it.
 
-    Knowingly NOT covered, tracked in #1648 — this Azure job binds a compound
-    environment name and therefore still fails with AADSTS70021:
-      - database-migration.yml -> azure-db-{dev,staging,prod}
-
-    They were excluded because their environments did not exist yet. Those
-    environments now exist with a `main`-only branch policy (2026-10-04), so
-    they meet the gating rule; adding them is left to #1648 because it mints
-    three new credentials and needs a bootstrap re-apply. Do not read the
-    absence of a name as "no job uses it".
+    This list holds exactly the environments that `azure/login` jobs bind:
+    cleanup-staging.yml's destroy-azure job (`staging`),
+    database-migration.yml's migrate-azure job (`azure-db-<env>`),
+    deploy-azure.yml's build-and-deploy and test-deployment jobs (see #140), and
+    rollback.yml's rollback-azure job (see #139).
+    scripts/check-azure-oidc-environments.py fails CI when one of them is
+    missing from this list.
   EOT
   type        = list(string)
-  default     = ["dev", "staging", "prod"]
+  default     = ["dev", "staging", "prod", "azure-db-dev", "azure-db-staging", "azure-db-prod"]
 
   validation {
     condition     = length(var.github_environments) == length(distinct(var.github_environments))

@@ -572,9 +572,7 @@ wildcards, so each environment name needs its own credential:
 | `azure-db-dev`, `azure-db-staging`, `azure-db-prod` | `database-migration.yml` (`migrate-azure`) |
 
 The bootstrap module creates one credential per name in its `github_environments` variable
-(default `dev`, `staging`, `prod`). It does not yet create the `azure-db-*` credentials, so
-`migrate-azure` fails with `AADSTS70021` until those environments exist with protection rules and
-are added to `github_environments`. The module also creates a `ref:refs/heads/main` credential; no
+(default `dev`, `staging`, `prod` and the three `azure-db-*` names). The module also creates a `ref:refs/heads/main` credential; no
 current Azure job presents that subject. The environment subject does not encode the branch, so
 restrict branches with each environment's deployment branch policy (step 3 below).
 
@@ -638,7 +636,12 @@ this section exists to prevent (see #141). The list below is generated from the 
      require approvals, restrict `deployment_branch_policy` to `main`
    - **Staging** (`staging`, `aws-fargate-staging`, `aws-db-staging`, `gcp-db-staging`,
      `azure-db-staging`): optional approvals, restrict to `main`
-   - **Dev** (`dev`, `aws-fargate-dev`, `aws-db-dev`, `gcp-db-dev`, `azure-db-dev`): no restrictions
+   - **Dev** (`dev`, `aws-fargate-dev`, `aws-db-dev`, `gcp-db-dev`, `azure-db-dev`): no required
+     approvals
+   - **Every environment with an Azure federated credential** (`dev`, `staging`, `prod`,
+     `azure-db-dev`, `azure-db-staging`, `azure-db-prod`) must restrict `deployment_branch_policy`
+     to `main`, dev included: the environment subject does not encode the branch, so an
+     unrestricted one lets any branch obtain the deploy service principal
 
    Configuring protection rules here is necessary but not sufficient on its own: each cloud's OIDC
    trust must independently allowlist the `environment:<name>` subject for every name above, and

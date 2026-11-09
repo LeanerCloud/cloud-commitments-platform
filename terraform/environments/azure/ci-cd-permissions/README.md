@@ -195,7 +195,7 @@ used to need it moved to cloud-commitments-go with the repo split). See #90.
 A job declaring `environment: <name>` presents the **environment** subject, not the
 main-branch one, so it cannot authenticate unless `<name>` is in
 `var.github_environments`. Omitting this is what makes `azure/login` fail with
-`AADSTS70021` on an otherwise-correct workflow (see issue #1648).
+`AADSTS70021` on an otherwise-correct workflow (see issue #1750).
 
 Note the environment subject is **ref-agnostic** — it does not encode the branch. Adding
 a name here therefore lets any branch that can reach a job bound to that environment
@@ -207,6 +207,6 @@ check can be removed on that branch.
 To allow a new deployment environment, first create it with a deployment branch
 policy that admits only `main`, then add its name to `var.github_environments`
 (see the gating rule in that variable's description; the default `dev`,
-`staging` and `prod` all meet it). To deploy from a different branch or repo,
+`staging`, `prod` and `azure-db-{dev,staging,prod}` all meet it). To deploy from a different branch or repo,
 add a further `azuread_application_federated_identity_credential` resource to
 `sp.tf`.
