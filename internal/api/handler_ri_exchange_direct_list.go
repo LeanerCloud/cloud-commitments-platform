@@ -30,8 +30,8 @@ func (h *Handler) listRIExchangeDirectExecutions(ctx context.Context, req *event
 	}
 	filter.Allowed = allowed
 	page, err := store.ListUnresolvedRIExchangeDirectExecutions(ctx, filter)
-	if err = mapRIExchangeResolveError(err); err != nil {
-		return nil, err
+	if mapped := mapRIExchangeResolveError(err); mapped != nil {
+		return nil, mapped
 	}
 	now := time.Now().UTC()
 	resp := riExchangeDirectListResponse{Executions: make([]riExchangeDirectListItem, 0, len(page.Rows))}
