@@ -203,3 +203,291 @@ Extra observation (not a field row): the approval body is not required to match 
 | API json tag | Target Go field | Disposition | Covering test |
 | --- | --- | --- | --- |
 | reason | AccountRegistration.RejectionReason -> store_postgres_registrations.go:236 | reaches the target | none (handler_registrations_api_key_integration_test.go:149 sends a reason through the route but is an auth-route test) |
+
+## Plans
+
+### P1: anonymous `{account_ids}` body -> setPlanAccounts (PUT /api/plans/:id/accounts)
+
+- Area: plans. Target type of the decode: anonymous `struct{ AccountIDs []string }`, handler_accounts.go:1458-1460. Decode: handler_accounts.go:1461. Target: positional argument 3 (`accountIDs`) of `config.SetPlanAccountsGated` (called at :1494 inside storePlanAccounts :1488, passed `body.AccountIDs` at :1480); store PostgresStore.SetPlanAccountsGated store_postgres.go:4689 -> setPlanAccountsTx (internal/config/store_postgres_plan_writes.go:66, INSERT plan_accounts :74-76).
+- Final disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| account_ids | positional argument 3 of SetPlanAccountsGated -> plan_accounts rows (store_postgres_plan_writes.go:73-76); also validated (validatePlanAccountIDs :1465/:1537), authorized (requirePlanAccountsAccess :1469) and provider-checked (:1476); FORWARDED wins | reaches the target | none (handler_accounts_test.go:1232 asserts success only, not the argument) |
+
+Notes that apply to B1 and B2 (the PlanRequest guard and #1776):
+
+- `requireFieldsReach` is internal/api/adapter_field_drop_test.go:96-122; `TestPlanRequestToPurchasePlan_NoFieldDropped` is :137-147 with the allowlist `description` ("accepted but dropped, tracked in #1776", :145) and `target_accounts` ("handled by createPlan/setPlanAccounts, not the converter", :146). The guard covers only the output of `toPurchasePlan` (types.go:890). It never sees the update merge (`mergeUpdatedPlan`, handler_plans.go:431), the second decode (handler_plans.go:323-327), `SetPlanAccounts`, or the store write.
+- #1776 (open at the audited commit) lists: description dropped on create and update; target_accounts ignored on PUT /api/plans/{id}; approveRegistration enabled; service-config ramp_schedule on an existing row; frontend-only fields. All five items still hold at the base SHA for the rows here. #1776 does not list the service-config body `provider` and `service` rows in B5.
+- The update path for target_accounts is unguarded: the allowlist entry only proves the converter does not map it, not that update ignores it deliberately. No source comment in handler_plans.go (mergeUpdatedPlan :431-469, updatePlan :303-346) says so.
+
+### B1: PlanRequest -> createPlan (POST /api/plans)
+
+- Request type: PlanRequest, internal/api/types.go:847. Decode: decodePlanRequest, internal/api/handler_plans.go:166-175 (site handler_plans.go:168).
+- Target type: config.PurchasePlan, internal/config/types.go:256 (+ plan_accounts rows via SetPlanAccounts).
+- Converter: `(*PlanRequest).toPurchasePlan`, types.go:890-907 (helpers buildRampSchedule :910, buildCustomRampSchedule :927, buildServiceConfig :953, calculateNextExecutionDate :988). Handler call: handler_plans.go:205.
+- Store path: CreatePurchasePlan (handler_plans.go:212) -> createPurchasePlan, internal/config/store_postgres_plan_writes.go:13-64 (INSERT :32-57); SetPlanAccounts (handler_plans.go:235) -> setPlanAccountsTx, store_postgres_plan_writes.go:66-82.
+- Per-pair disposition: documented gap #1776 (description dropped). All other fields reach the target.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| name | PurchasePlan.Name (types.go:893) -> purchase_plans.name (store_postgres_plan_writes.go:35,46) | reaches the target | guard (converter only) adapter_field_drop_test.go:137; handler_plans_test.go:298 |
+| description | none (toPurchasePlan never reads it; config.PurchasePlan has no description field, types.go:256-281) | **DROPPED** (tracked in #1776 item 1; no handler-source comment, only the test allowlist at adapter_field_drop_test.go:145) | adapter_field_drop_test.go:137 asserts it stays dropped |
+| ramp_schedule | PurchasePlan.RampSchedule via buildRampSchedule (types.go:910-924) -> purchase_plans.ramp_schedule jsonb (store_postgres_plan_writes.go:27,50). Values outside the three presets and "custom" silently become "immediate" (types.go:919-923), see Findings; fixed in #1906, after the audited commit | reaches the target | guard (converter only) :137 (base uses "custom"); handler_plans_test.go:298 |
+| provider | ServiceConfig.Provider via buildServiceConfig (types.go:953-985), key provider/service -> purchase_plans.services jsonb (marshalPlanServices, store_postgres_plan_writes.go:90-107). Reaches only when BOTH provider and service are non-empty (types.go:954-956); otherwise Services is nil | reaches the target | guard :137 (base sets provider and service); handler_plans_services_merge_test.go:183 |
+| service | ServiceConfig.Service, same helper as provider | reaches the target | guard :137; handler_plans_services_merge_test.go:183 |
+| target_accounts | positional argument 3 of h.config.SetPlanAccounts (handler_plans.go:235) -> plan_accounts INSERT (store_postgres_plan_writes.go:74-77); also validated (:195) and authorized (requireAccountsAccess :201) | reaches the target | handler_plans_test.go:298 (mock store asserts SetPlanAccounts args, :339); integration test handler_plans_legacy_version_integration_test.go:171 posts it |
+| target_coverage | ServiceConfig.Coverage via buildServiceConfig (types.go:970-973), validated by validateTargetCoverage (types.go:870-875, called handler_plans.go:171) | reaches the target | guard :137; handler_plans_services_merge_test.go:183 |
+| term | ServiceConfig.Term via buildServiceConfig (types.go:959-962) | reaches the target | guard :137; handler_plans_services_merge_test.go:183 |
+| payment | ServiceConfig.Payment via buildServiceConfig (types.go:964-967) | reaches the target | guard :137; handler_plans_services_merge_test.go:183 |
+| notification_days_before | PurchasePlan.NotificationDaysBefore (types.go:896) -> purchase_plans.notification_days_before | reaches the target | guard :137; handler_plans_test.go:298 does not set it |
+| custom_step_percent | RampSchedule.PercentPerStep and TotalSteps via buildCustomRampSchedule (types.go:927-950); applies only when ramp_schedule is "custom" | reaches the target | guard :137 (custom base) |
+| custom_interval_days | RampSchedule.StepIntervalDays via buildCustomRampSchedule (types.go:933-936); only when ramp_schedule is "custom" | reaches the target | guard :137 (custom base) |
+| max_step_commitment | PurchasePlan.MaxStepCommitment (types.go:897) -> purchase_plans.max_step_commitment (store_postgres_plan_writes.go:37,56) | reaches the target | guard :137; handler_plans_step_cap_test.go:17 (merge path, not create) |
+| auto_purchase | PurchasePlan.AutoPurchase (types.go:895); also drives the arming gate validateAndGatePlan (handler_plans.go:208) | reaches the target | guard :137; handler_plans_sp_multistep_test.go:43 |
+| enabled | PurchasePlan.Enabled (types.go:894) | reaches the target | guard :137; handler_plans_test.go:298 (asserts Enabled) |
+
+Create body note: `expected_updated_at` is not a field of the create body (only the update handler decodes it), so it has no row here.
+
+### B2: PlanRequest (+ anonymous cap struct) -> updatePlan (PUT /api/plans/{id})
+
+- Request types: PlanRequest (types.go:847) decoded at handler_plans.go:168 via decodePlanRequest (called :319), plus the anonymous `struct{MaxStepCommitment json.RawMessage; ExpectedUpdatedAt *string}` decoded at handler_plans.go:323-327 (auxiliary site :327). The field set is the union of both.
+- Target type: config.PurchasePlan (types.go:256).
+- Converter chain: loadPlanForUpdate (handler_plans.go:409-426) -> mergeUpdatedPlan (:431-469) -> `toPurchasePlan` (types.go:890) + preserveRampProgress (:485-512) + mergeRequestedServices / overlayServiceConfig (plan_services_merge.go:31-66, :100-114). Store: updatePlanGated (:355-383) -> UpdatePurchasePlan -> UpdatePurchasePlanGated (store_postgres.go:811) -> updatePurchasePlanGuardedTx (:878-923, UPDATE :893-907).
+- Per-pair disposition: documented gap #1776 (description, target_accounts on update). Everything else reaches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| name | PurchasePlan.Name -> purchase_plans.name (store_postgres.go:897) | reaches the target | guard (converter only) adapter_field_drop_test.go:137; handler_plans_test.go:571; handler_plans_managed_rename_integration_test.go:13 |
+| description | none | **DROPPED** (#1776 item 1; no handler-source comment) | adapter_field_drop_test.go:137 asserts it stays dropped |
+| ramp_schedule | PurchasePlan.RampSchedule via buildRampSchedule then preserveRampProgress (handler_plans.go:485-512): same shape keeps the stored CurrentStep, StartDate, NextExecutionDate; a different shape is applied before the first step and refused with 409 once a step completed. Unknown values become "immediate" (types.go:919-923) | reaches the target | handler_plans_ramp_shape_test.go:51; handler_plans_test.go:619 |
+| provider | ServiceConfig.Provider, merged into the stored services map by mergeRequestedServices (plan_services_merge.go:41-66). If only one of provider/service is sent, buildServiceConfig returns nil (types.go:954-956) and the sent one is silently ignored | reaches the target | handler_plans_services_merge_test.go:36,172 |
+| service | ServiceConfig.Service, same path | reaches the target | handler_plans_services_merge_test.go:36,172 |
+| target_accounts | none. mergeUpdatedPlan never reads req.TargetAccounts; the frontend uses PUT /api/plans/{id}/accounts instead (#1776 item 2). The arming and account-scope gates for accounts run only on that other endpoint | **DROPPED** (#1776 item 2; no source comment on the update path; the test allowlist comment at adapter_field_drop_test.go:146 only says the converter does not map it) | none on the update path (the guard allowlists it; handler_plans_test.go:571 sends no target_accounts) |
+| target_coverage | ServiceConfig.Coverage; omitted keeps the stored value (omittedFields, types.go:881-887; overlayServiceConfig plan_services_merge.go:110-112) | reaches the target | handler_plans_services_merge_test.go:139,172 |
+| term | ServiceConfig.Term; nil or 0 keeps the stored value (types.go:884; plan_services_merge.go:104-106) | reaches the target | handler_plans_services_merge_test.go:147,172,206 |
+| payment | ServiceConfig.Payment; nil or "" keeps the stored value (types.go:885; plan_services_merge.go:107-109) | reaches the target | handler_plans_services_merge_test.go:155,172,206 |
+| notification_days_before | PurchasePlan.NotificationDaysBefore (types.go:896) -> UPDATE notification_days_before (store_postgres.go:898). Non-pointer: an omitted key is 0 and overwrites the stored value (observation, not a drop) | reaches the target | guard :137; handler_plans_test.go:571 |
+| custom_step_percent | RampSchedule.PercentPerStep / TotalSteps (types.go:927-950); only when ramp_schedule is "custom" | reaches the target | guard :137; handler_plans_ramp_shape_test.go:101 |
+| custom_interval_days | RampSchedule.StepIntervalDays (types.go:933-936); only when ramp_schedule is "custom" | reaches the target | guard :137; handler_plans_ramp_shape_test.go:101 |
+| max_step_commitment | PurchasePlan.MaxStepCommitment: decoded twice. PlanRequest.MaxStepCommitment gives the value; the anonymous struct (handler_plans.go:324,336) gives presence, so omitted keeps the stored cap (:449-451) and explicit null clears it unless auto_purchase is on (:452-454). Validated by plan.Validate (config/validation.go:614-617) -> UPDATE max_step_commitment (store_postgres.go:904,922) | reaches the target | handler_plans_step_cap_test.go:17; handler_plans_concurrency_integration_test.go:330 (Postgres) |
+| auto_purchase | PurchasePlan.AutoPurchase; arming gate planArmEscalates/requirePlanArmGrantFor (handler_plans.go:361-371). Non-pointer: omitted means false | reaches the target | guard :137; handler_plans_sp_multistep_test.go:50 |
+| enabled | PurchasePlan.Enabled; non-pointer: omitted means false (observation) | reaches the target | guard :137; handler_plans_test.go:571 |
+| expected_updated_at | none stored. Used only to compare against the stored updated_at (loadPlanForUpdate handler_plans.go:416-424, 409 on mismatch, 400 on bad format); the write then uses the stored updated_at as the optimistic key (mergeUpdatedPlan :437-438, SQL `WHERE ... updated_at = $8` store_postgres.go:905) | validation or authorization only (concurrency token) | handler_plans_legacy_version_integration_test.go:100-135 (Postgres) |
+
+### B3: PatchPlanRequest -> patchPlan (PATCH /api/plans/{id})
+
+- Request type: PatchPlanRequest, handler_plans.go:902-907. Decode: handler_plans.go:969 (site).
+- Target type: config.PurchasePlan. Converter: applyPatchFields, handler_plans.go:927-950 (L1) -> updatePlanGated (L2) -> UpdatePurchasePlan -> updatePurchasePlanGuardedTx UPDATE (L3, store_postgres.go:893-907).
+- Per-pair disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| name | PurchasePlan.Name (handler_plans.go:935) -> UPDATE name | reaches the target | handler_plans_test.go:1198 |
+| enabled | PurchasePlan.Enabled (:938) -> UPDATE enabled | reaches the target | handler_plans_test.go:1198 |
+| auto_purchase | PurchasePlan.AutoPurchase (:941) -> UPDATE auto_purchase; arming gate in updatePlanGated | reaches the target | handler_plans_test.go:1198; handler_plans_sp_multistep_test.go:76 |
+| notification_days_before | PurchasePlan.NotificationDaysBefore (:947) -> UPDATE notification_days_before | reaches the target | handler_plans_test.go:1198 |
+
+### B4: CreatePlannedPurchasesRequest -> createPlannedPurchases (POST /api/plans/{id}/purchases)
+
+- Request type: CreatePlannedPurchasesRequest, types.go:1003-1006. Decode: parseCreatePurchasesRequest, handler_plans.go:808-824 (site :810).
+- Target: positional arguments of createPlannedPurchasesTx (handler_plans.go:606) -> purchase_executions rows and the plan row. Chain: createPlannedPurchasesTx (L1, :633) -> createPurchaseExecutionsTx (L2, :860-887) -> SavePurchaseExecutionTx (L3, store_postgres.go:1143, INSERT :1176-1186, args :1236-1262); updatePlanNextExecutionDateTx (:892-899) -> UpdatePurchasePlanTx.
+- Per-pair disposition: matches.
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| start_date | positional argument 5 of createPlannedPurchasesTx (parsed to time.Time at :818); becomes PurchaseExecution.ScheduledDate (:865-876) -> purchase_executions.scheduled_date (store_postgres.go:1241), and PurchasePlan.NextExecutionDate / RampSchedule.StartDate (:893-894) -> UPDATE next_execution_date, ramp_schedule | reaches the target | handler_plans_concurrency_integration_test.go:135 (Postgres); handler_plans_start_date_test.go:92 |
+| count | positional argument 4 of createPlannedPurchasesTx (req.Count, :606); number of rows and StepNumber (:863-875) -> purchase_executions.step_number; also validated 1..52 (:814) and against remaining ramp steps (:740) | reaches the target | handler_plans_concurrency_integration_test.go:135,188 |
+
+### B5: config.ServiceConfig body -> updateServiceConfig overlay (PUT /api/config/service/{provider}/{service})
+
+- Request type: config.ServiceConfig (internal/config/types.go:214-253), decoded directly into the store struct at handler_config.go:499 (site). Presence map: presentKeys, handler_config.go:387-399 (site :389, auxiliary).
+- Why this is a pair although the decode is into a store struct: for an EXISTING row, mergeServiceConfig (handler_config.go:369-382) copies an allowlist (serviceConfigOverlayKeys, :351-357) from the decoded struct onto the stored row, so a decoded field outside the allowlist never reaches the store. For a first save (no stored row) the decoded struct is saved as is (:370-372).
+- Target type: config.ServiceConfig row `merged` (handler_config.go:378), saved by UpdateServiceConfigAtomic -> saveServiceConfigWith (store_postgres.go:471-560, INSERT/UPSERT :526-546).
+- Per-pair disposition: documented gap #1776 item 4 (ramp_schedule on an existing row; comment exists at :349-350); not in #1776: body provider and service are overwritten by the URL path (DROPPED, below; see Findings).
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| provider | none: cfg.Provider is overwritten from the URL path at handler_config.go:510-514 (path always has exactly two parts, validation.go:441-445) | **DROPPED** (path wins; no source comment; body value silently ignored; low severity, not on a money path) | handler_config_test.go:624 sends no provider in the body; none asserts a conflicting body value |
+| service | none: cfg.Service overwritten from the URL path, same lines | **DROPPED** (same) | none |
+| enabled | ServiceConfig.Enabled, overlaid only when the key is present (overlayPresentScalarFields :405-408; first save: whole cfg) -> service_configs.enabled (store_postgres.go:532) | reaches the target | handler_config_test.go:727,776 |
+| term | ServiceConfig.Term, presence overlay (:409-411) -> term | reaches the target | handler_config_test.go:727 |
+| payment | ServiceConfig.Payment, presence overlay (:412-414) -> payment | reaches the target | handler_config_test.go:727 |
+| coverage | ServiceConfig.Coverage, presence overlay (:415-417) -> coverage | reaches the target | handler_config_test.go:727 |
+| ramp_schedule | none for an existing row (not in serviceConfigOverlayKeys); honoured on first save (mergeServiceConfig :370-372) | deliberately ignored (existing row only), source comment handler_config.go:349-350 ("RampSchedule is intentionally absent: it is still set out-of-band and the UI does not own it"); tracked #1776 item 4 (the API spec and a frontend comment are the stale parts) | none specific (handler_config_test.go:661 builds no ramp_schedule) |
+| include_engines | ServiceConfig.IncludeEngines, presence overlay (overlayPresentFilterFields :425-427) -> include_engines | reaches the target | handler_config_test.go:661 |
+| exclude_engines | ExcludeEngines (:428-430) | reaches the target | handler_config_test.go:661 |
+| include_regions | IncludeRegions (:431-433) | reaches the target | handler_config_test.go:661 |
+| exclude_regions | ExcludeRegions (:434-436) | reaches the target | handler_config_test.go:661 |
+| include_types | IncludeTypes (:437-439) | reaches the target | handler_config_test.go:661 |
+| exclude_types | ExcludeTypes (:440-442) | reaches the target | handler_config_test.go:661 (asserts exclude_types preserved when absent) |
+| min_count | ServiceConfig.MinCount (:443-445) -> min_count | reaches the target | handler_config_test.go:661 |
+| created_at | none: cleared at handler_config.go:505 | deliberately ignored, source comment handler_config.go:502-504 (read-only row stamps, issue #8) | none |
+| updated_at | none: cleared at :505 | deliberately ignored, comment :502-504 | none |
+| group_id | none: cleared at :508 | deliberately ignored, source comment :506-507 (plan-group fields belong to plan entries) | handler_config_test.go:1698 (first save drops bound_count) |
+| bound_identities | none: cleared at :508 | deliberately ignored, comment :506-507 | none |
+| max_step_commitment | none: cleared at :508 (the service_configs upsert has no such column, store_postgres.go:526-530) | deliberately ignored, comment :506-507 | none |
+| bound_count | none: cleared at :508 | deliberately ignored, comment :506-507 | handler_config_test.go:1698 |
+
+## RI exchange
+
+### E1: ExchangeQuoteRequestBody via getExchangeQuote
+
+- Request type: ExchangeQuoteRequestBody, internal/api/handler_ri_exchange.go:2224-2230; element type ExchangeTargetBody :2214-2217.
+- Decode site: handler_ri_exchange.go:1956 (appendix row 3).
+- Target type: exchange.ExchangeQuoteRequest (pinned pkg exchange/exchange.go:72-97).
+- Converting function: getExchangeQuote :1972-1978, with toExchangeTargets :2251-2260 for `targets`.
+- Path: handler (0) builds ExchangeQuoteRequest and calls the quoter chosen at ri_exchange_detached.go:45 (exchange.GetExchangeQuote) (2); getQuoteWithAPI/quoteWithAPI (pinned pkg exchange.go:277-300) build the EC2 GetReservedInstancesExchangeQuoteInput (3). No store write: this is a read-only quote.
+- Final disposition: matches.
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| ri_ids | ExchangeQuoteRequest.ReservedIDs (:1974), then EC2 input ReservedInstanceIds (pinned pkg exchange.go:298) | reaches the target | none for the library request; validateExchangeRIIDs (:1908) tested via handler_ri_exchange_test.go:108 |
+| targets[].offering_id | TargetConfig.OfferingID via toExchangeTargets (:2257), then TargetConfigurationRequest.OfferingId (pinned pkg exchange.go:142) | reaches the target | handler_ri_exchange_test.go:1892 (asserts quotes[0].Targets[0].OfferingID) |
+| targets[].count | TargetConfig.Count via toExchangeTargets (:2257), then InstanceCount (pinned pkg exchange.go:143) | reaches the target | none |
+| target_offering_id (legacy) | ExchangeQuoteRequest.TargetOfferingID (:1976); NOT folded into targets by the handler; the library uses it only when targets is empty (pinned pkg exchange.go:84-86 and :137-152) | reaches the target when `targets` is empty; deliberately ignored when `targets` is non-empty, cited at handler_ri_exchange.go:2221-2223 ("When both are present, targets wins") | handler_ri_exchange_test.go:2297 (legacy body reaches the quote call; asserts only Region) |
+| target_count (legacy) | ExchangeQuoteRequest.TargetCount (:1977); same precedence as target_offering_id | reaches the target when `targets` is empty; deliberately ignored when `targets` is non-empty, same citation | none |
+| region | loadAWSConfigWithRegion (:1385-1394) overrides cfg.Region when non-empty; ExchangeQuoteRequest.Region = cfg.Region (:1970, :1973); pinned pkg loadCfg builds the SDK client for that region (exchange.go:235-240) | reaches the target (an empty value resolves from the SDK chain, documented at :1963-1965) | handler_ri_exchange_test.go:2275-2300 |
+
+### E2: ExchangeExecuteRequestBody via executeExchange
+
+- Request type: ExchangeExecuteRequestBody, handler_ri_exchange.go:2238-2245; ExchangeTargetBody :2214-2217.
+- Decode site: handler_ri_exchange.go:2029 (appendix row 4).
+- Target types, three destinations built from the one body: (A) exchange.ExchangeExecuteRequest (pinned pkg exchange.go:102-124), built at :2071-2078; (B) config.RIExchangeDirectExecution (internal/config/ri_exchange_direct_execution.go:39-66) built by awsDirectExchangeAudit (ri_exchange_audit.go:184-201); (C) the submit idempotency key built by awsExchangeIdempotencyKey (ri_exchange_idempotency.go:137-161).
+- Many-to-one fold: the legacy `target_offering_id` and `target_count` become one element of targets in (B) (ri_exchange_audit.go:185-188, named helper: the inline fallback in awsDirectExchangeAudit) and in (C) (ri_exchange_idempotency.go:148-156). In (A) there is no fold in the handler: both spellings are forwarded and the pinned pkg chooses (buildTargetConfigs, exchange.go:137-152).
+- Path for (A): handler (0), toExchangeTargets (1), exchange.ExecuteExchange via ri_exchange_detached.go:36 (2), executeWithAPI and the EC2 Accept input (3, pinned pkg exchange.go:419-462). Path for (B): awsDirectExchangeAudit (1), beginDirectExchange and SaveRIExchangeDirectExecution (2), the INSERT in internal/config/store_postgres_ri_exchange_direct.go:33-66 (3).
+- Final disposition: matches.
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| ri_ids | (A) ReservedIDs :2073, then Accept input ReservedInstanceIds (pinned pkg exchange.go:459); (B) SourceIDs (ri_exchange_audit.go:194), column source_ids (store_postgres_ri_exchange_direct.go:56); (C) sources component | reaches the target | ri_exchange_audit_test.go:185 (audit row SourceIDs) |
+| targets[].offering_id | (A) TargetConfig via toExchangeTargets, then Accept input OfferingId (pinned pkg exchange.go:142); (B) Targets JSON via auditJSON (ri_exchange_audit.go:195), column targets (store_postgres_ri_exchange_direct.go:58); (C) target tuple | reaches the target | ri_exchange_audit_test.go:186 (audit row targets JSON) |
+| targets[].count | same three destinations as offering_id | reaches the target | ri_exchange_audit_test.go:186 |
+| target_offering_id (legacy) | (A) TargetOfferingID :2075, used by the pinned pkg only when targets is empty; (B) folded into a one-element Targets JSON (ri_exchange_audit.go:187); (C) folded into the target tuple (ri_exchange_idempotency.go:155) | reaches the target when `targets` is empty; deliberately ignored in (A) when `targets` is non-empty, cited at handler_ri_exchange.go:2221-2223 (and the same precedence comment at ri_exchange_idempotency.go:132-136) | ri_exchange_audit_test.go:547-561 (legacy singleton recorded as one-element targets) |
+| target_count (legacy) | same as target_offering_id | same as target_offering_id | ri_exchange_audit_test.go:547-561 |
+| max_payment_due_usd | parsed to maxRat (:2038); (A) MaxPaymentDueUSD :2077, enforced against the quote in the pinned pkg (exchange.go:387, :405); (B) MaxPaymentDue via auditDecimal (ri_exchange_audit.go:196), column max_payment_due (store_postgres_ri_exchange_direct.go:59); also the Constraints cap input at :2755 | reaches the target (it is also the spend-cap guardrail; FORWARDED wins) | ri_exchange_audit_test.go:187 (audit row cap); handler_ri_exchange_test.go:1991 (constraint use) |
+| region | (A) Region :2072, pinned pkg loadCfg (exchange.go:235-240); (B) Region (ri_exchange_audit.go:193), column region (store_postgres_ri_exchange_direct.go:55); permission Constraints Regions at :2754; (C) account scope component. Required non-empty by validateExecuteExchangeBody :2006 | reaches the target | ri_exchange_audit_test.go:184 |
+
+### E3: AzureCompatibleOfferingsRequestBody via getAzureCompatibleOfferings
+
+- Request type: AzureCompatibleOfferingsRequestBody, handler_ri_exchange.go:524-528; elements AzureExchangeSourceBody :497-500 and AzureExchangeTargetBody :506-520.
+- Decode site: handler_ri_exchange.go:981 (appendix row 1).
+- Target types: azurecompute.ExchangeableReservation (alias azureExchangeableReservation, provider_wiring.go:40) and azurecompute.ExchangeTarget (alias :41), consumed by client.CalculateExchange (handler_ri_exchange.go:1009).
+- Converting functions: toAzureExchangeSources :677-688 (applies quantities onto the server-listed reservation records after requireAzureSourceOwnership :916), toAzureExchangeTargets :696-713.
+- Path: handler (0), converters (1), azurecompute client CalculateExchange (2), buildCalculateExchangeRequest building the ARM CalculateExchangeRequest (3; pinned azure provider services/compute/exchange_operations.go:498-544). No store write: read-only quote.
+- Final disposition: matches (billing_scope_id deliberately not forwarded).
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| subscription_id | account lookup and scope check (:987, lookupAzureAccount :879); client credentials (:991); derived billing scope via azureBillingScopeID (:596) into each target's BillingScopeID (:709); ownership key (:916-931) | reaches the target (as the derived billing scope of every target) | handler_ri_exchange_azure_test.go:423 (TestToAzureExchangeTargets_DerivesBillingScope), :531 |
+| sources[].reservation_id | key into the server's tenant listing (toAzureExchangeSources :684); ownership check requireAzureSourceOwnership (:916); the listed record's ReservationID reaches ReservationsToExchange (pinned azure provider exchange_operations.go:503-506) | reaches the target (as a lookup key; the written id is the listed one) | handler_ri_exchange_azure_test.go:1801 |
+| sources[].quantity | ExchangeableReservation.Quantity (:685), then ReservationToReturn.Quantity (pinned azure provider exchange_operations.go:504) | reaches the target | none (:381 registers CalculateExchange with mock.Anything for sources and targets) |
+| targets[].sku | azureExchangeTarget.SKU (:705), then SKUName.Name (pinned azure provider exchange_operations.go:521) | reaches the target | none for the Azure call (:381 uses mock.Anything for sources and targets; :423 asserts only BillingScopeID) |
+| targets[].location | Target.Location (:706), then PurchaseRequest.Location (pinned azure provider :520) | reaches the target | none for the Azure call (:381 uses mock.Anything for sources and targets; :423 asserts only BillingScopeID) |
+| targets[].term | azureReservationTermFromString (provider_wiring.go:91-99), Target.Term (:707), then PurchaseRequestProperties.Term (pinned azure provider :530) | reaches the target | none for the Azure call (:381 uses mock.Anything for sources and targets; :423 asserts only BillingScopeID) |
+| targets[].quantity | Target.Quantity (:708), then PurchaseRequestProperties.Quantity (pinned azure provider :527) | reaches the target | none for the Azure call (:381 uses mock.Anything for sources and targets; :423 asserts only BillingScopeID) |
+| targets[].billing_scope_id | none (validated at :626-630, then the target's BillingScopeID is set from the derived scope at :709) | validation or authorization only; the deliberate non-use is documented at handler_ri_exchange.go:512-518 and :583-595 | handler_ri_exchange_azure_test.go:255, :440 |
+
+### E4: AzureExecuteExchangeRequestBody via executeAzureExchange
+
+- Request type: AzureExecuteExchangeRequestBody, handler_ri_exchange.go:544-550; elements as in E3.
+- Decode site: handler_ri_exchange.go:1222, inside parseAzureExecuteRequest :1220-1233 (appendix row 2).
+- Target types: (A) azureExchangeableReservation and azureExchangeTarget for the Azure client's re-quote (CalculateExchange :1279); (B) config.RIExchangeDirectExecution built by azureDirectExchangeAudit (ri_exchange_audit.go:239-259); (C) the idempotency key (ri_exchange_idempotency.go:103-121); (D) the permission Constraints set (checkAzureExecuteConstraints :1140).
+- Converting functions: toAzureExchangeSources, toAzureExchangeTargets (as E3); azureDirectExchangeAudit.
+- Path for (B): azureDirectExchangeAudit (1), beginDirectExchange and SaveRIExchangeDirectExecution (2), INSERT in store_postgres_ri_exchange_direct.go:33-66 (3). The commit call is ExecuteExchange with the session the fresh re-quote returned (:1310), so the request's sources and targets reach Azure through the re-quote only.
+- Final disposition: matches.
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| subscription_id | (A) client credentials and derived scope as E3; (B) ProviderAccountID (ri_exchange_audit.go:248), column provider_account_id (store_postgres_ri_exchange_direct.go:54); (C) key component (ri_exchange_idempotency.go:119); account lookup :1062 | reaches the target | ri_exchange_audit_test.go:424 |
+| sources[].reservation_id | (A) as E3; (B) SourceIDs (ri_exchange_audit.go:241-243) and Sources JSON (:250); (C) key | reaches the target | ri_exchange_audit_test.go:426-427 |
+| sources[].quantity | (A) as E3; (B) Sources JSON (:250); (C) key | reaches the target | ri_exchange_audit_test.go:427 |
+| targets[].sku | (A) as E3; (B) Targets JSON (:251); (C) key | reaches the target | ri_exchange_audit_test.go:428 |
+| targets[].location | (A) as E3; (B) Targets JSON; (C) key; (D) Regions constraint via targetLocations (:735) | reaches the target | ri_exchange_audit_test.go:428; handler_ri_exchange_azure_test.go:1411 |
+| targets[].term | (A) as E3; (B) Targets JSON; (C) key | reaches the target | ri_exchange_audit_test.go:428 |
+| targets[].quantity | (A) as E3; (B) Targets JSON; (C) key | reaches the target | ri_exchange_audit_test.go:428 |
+| targets[].billing_scope_id | (A) none (the target's scope is the derived one, :709); (B) recorded as submitted inside the Targets JSON (ri_exchange_audit.go:251 marshals body.Targets whole; omitted when empty); (C) excluded on purpose (ri_exchange_idempotency.go:89-92) | reaches the target, audit JSON only (FORWARDED wins over validation); the Azure charge never uses it, per the comment at handler_ri_exchange.go:512-518 | handler_ri_exchange_azure_test.go:470 (foreign scope rejected); the audit JSON for a spelled-out scope has no test |
+| max_payment_due | parsed to maxRat (:1228); (B) MaxPaymentDue via auditDecimal (ri_exchange_audit.go:252), column max_payment_due; compared with the fresh quote's net payable (checkAzureExchangeMoneyGuardrails :1206); Constraints MaxPurchaseAmount (:1151-1152) | reaches the target (spend cap; FORWARDED wins) | ri_exchange_audit_test.go:429; handler_ri_exchange_azure_test.go:1125 |
+| currency | (B) MaxPaymentCurrency (ri_exchange_audit.go:253), column max_payment_currency; compared with the quote currency (:1199); picks the USD or non-USD cap path (:1148) | reaches the target | ri_exchange_audit_test.go:430; handler_ri_exchange_azure_test.go:1174 |
+
+### E5: RIExchangeConfigUpdateRequest via updateRIExchangeConfig
+
+- Request type: RIExchangeConfigUpdateRequest, handler_ri_exchange.go:3103-3110; validate :3112-3129.
+- Decode site: handler_ri_exchange.go:2305 (appendix row 5).
+- Target type: config.GlobalConfig (internal/config/types.go, fields RIExchange*, at :40 for the threshold).
+- Converting function: the closure passed to UpdateGlobalConfigAtomic, handler_ri_exchange.go:2327-2343.
+- Path: handler closure (1), UpdateGlobalConfigAtomic (store_postgres.go:198-225) (2), saveGlobalConfigWith UPSERT (store_postgres.go:263-316, args :358-390) (3).
+- Final disposition: documented gap: one row loses a value (`utilization_threshold` 0), fixed in #1906 after the audited commit.
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| mode | GlobalConfig.RIExchangeMode (:2336), column ri_exchange_mode (store_postgres.go:292, arg :367); an empty value would be stored as "manual" (store_postgres.go:319-322) but validate rejects it first (:3113) | reaches the target | none for this path (handler_config_ri_exchange_mode_test.go:57-83 covers the PUT /api/config path, a different decode site) |
+| utilization_threshold | GlobalConfig.RIExchangeUtilizationThreshold (:2337), column ri_exchange_utilization_threshold (store_postgres.go:293, arg :368) | reaches the target for 0 < value <= 100; the value 0 is **DROPPED** (fixed in #1906, after the audited commit): accepted by validate (:3116) and stored as 95.0 (store_postgres.go:333-336), no comment saying 0 means "unset" | none (utilization_threshold appears only in request bodies in internal/api tests; the one stored-value assertion, handler_config_test.go:252, is the PUT /api/config path) |
+| max_payment_per_exchange_usd | GlobalConfig.RIExchangeMaxPerExchangeUSD (:2338), column ri_exchange_max_per_exchange_usd (store_postgres.go:294, arg :369) | reaches the target | none |
+| max_payment_daily_usd | GlobalConfig.RIExchangeMaxDailyUSD (:2339), column ri_exchange_max_daily_usd (store_postgres.go:295, arg :370) | reaches the target | none |
+| lookback_days | GlobalConfig.RIExchangeLookbackDays (:2340), column ri_exchange_lookback_days (store_postgres.go:296, arg :371); a 0 would be stored as 30 (store_postgres.go:323-326) but validate rejects values below 1 (:3119) | reaches the target | none |
+| auto_exchange_enabled | GlobalConfig.RIExchangeEnabled (:2335), column ri_exchange_enabled (store_postgres.go:291, arg :366); also drives the auto-mode arm gate (requireRIExchangeAutoModeGrant :2342) | reaches the target | global_config_arming_grants_test.go:70 (arming body, exercises the gate; asserts no stored column) |
+
+### E6: riExchangeResolveRequest via resolveRIExchange
+
+- Request type: riExchangeResolveRequest, handler_ri_exchange_resolve.go:46-52; riExchangeResolveCloudCheck :54-58.
+- Decode site: handler_ri_exchange_resolve.go:208 (appendix row 6); the EOF check at :211 is auxiliary (row 7).
+- Target type: config.RIExchangeResolve (internal/config/store_postgres_ri_exchange_resolve.go:46-54) with config.RIExchangeCloudCheck (:34-38).
+- Converting functions: body.note (:271-281), body.cloudCheck (:256-267), the struct literal at :96-99.
+- Path: converters (1), store.ResolveStaleRIExchange (store_postgres_ri_exchange_resolve.go:86-108) (2), applyRIExchangeResolve UPDATE ri_exchange_history (:207-227, SQL :208-219) (3). Note: the stored text is the note, which folds reason, acknowledgement, account, region and time into the `error` column.
+- Final disposition: matches.
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| outcome | RIExchangeResolve.Outcome (:97), UPDATE status = $2 (store :210, arg :219) | reaches the target | handler_ri_exchange_resolve_test.go:75, :89 |
+| reason | folded into RIExchangeResolve.Note by body.note (:279), UPDATE error = $3 (store :211) | reaches the target | handler_ri_exchange_resolve_test.go:81 |
+| exchange_id | RIExchangeResolve.ExchangeID (:97), UPDATE exchange_id (store :212); also in the note (:276-278) | reaches the target | handler_ri_exchange_resolve_test.go:90-91 |
+| acknowledge_unknown_outcome | required when outcome is "failed" (:247-249); stored as `ack=true` in the note when outcome is "failed" (:273-275), written to the `error` column | reaches the target when outcome is "failed"; for outcome "completed" a true value is accepted and not stored: deliberately ignored, cited at handler_ri_exchange_resolve.go:43-45 (the comment makes the acknowledgement a requirement of "failed" only). Judgment call: if that comment is read as not documenting an ignore, this becomes an ordinary DROPPED cell (a "completed" resolve releases nothing) | handler_ri_exchange_resolve_test.go:81 (failed note has ack=true), :92 (completed note has none) |
+| cloud_check.checked_account_id | RIExchangeCloudCheck.AccountID (:265); compared with the row's account in the store (store_postgres_ri_exchange_resolve.go:181); also in the note (:272) | reaches the target | handler_ri_exchange_resolve_test.go:78, :81 |
+| cloud_check.checked_region | RIExchangeCloudCheck.Region (:265); compared with the row's region (store :183); also the Regions constraint input (:89, :116-153) and the note | reaches the target | handler_ri_exchange_resolve_test.go:78, :81 |
+| cloud_check.checked_at | RIExchangeCloudCheck.CheckedAt (:265, parsed at :258); compared with the DB clock and the row's last change (store :185-189); also in the note | reaches the target | handler_ri_exchange_resolve_test.go:78, :81 |
+
+### E7: riExchangeDirectResolveRequest via resolveRIExchangeDirectExecution
+
+- Request type: riExchangeDirectResolveRequest, handler_ri_exchange_direct_resolve_request.go:18-24; riExchangeDirectResolveCloudCheck :26-29.
+- Decode site: handler_ri_exchange_direct_resolve_request.go:41 (appendix row 8); EOF check :44 auxiliary (row 9).
+- Target type: config.RIExchangeDirectResolve (internal/config/ri_exchange_direct_resolve.go:29-37).
+- Converting functions: buildRIExchangeDirectResolve (handler_ri_exchange_direct_resolve.go:195-208), body.note (direct_resolve_request.go:98-105), body.checkedAt (:81-91).
+- Path: converters (1), store.ResolveRIExchangeDirectExecution (store_postgres_ri_exchange_direct_resolve.go:28-53) (2), applyRIExchangeDirectResolve UPDATE ri_exchange_direct_executions (:140-156, SQL :141-147) (3).
+- Final disposition: matches.
+
+| API json tag | Target | Disposition | Covering test |
+| --- | --- | --- | --- |
+| outcome | RIExchangeDirectResolve.Outcome (handler_ri_exchange_direct_resolve.go:205), UPDATE resolved_status = $2 | reaches the target | handler_ri_exchange_direct_resolve_test.go:114, :132 |
+| expected_status | RIExchangeDirectResolve.ExpectedStatus (:205), UPDATE ... AND status = $6 (store :145, arg :147); also in the note (direct_resolve_request.go:100) | reaches the target | handler_ri_exchange_direct_resolve_test.go:115, :209 |
+| reason | folded into Note by body.note (direct_resolve_request.go:104), UPDATE resolution_note = $5 | reaches the target | handler_ri_exchange_direct_resolve_test.go:120; handler_ri_exchange_direct_resolve_body_test.go:70 |
+| acknowledge_unknown_outcome | required when outcome is "failed" (direct_resolve_request.go:73-74); stored as `ack=true` in the note when outcome is "failed" (:101-103) | reaches the target when outcome is "failed"; for "completed" a true value is accepted and not stored: deliberately ignored, cited at handler_ri_exchange_direct_resolve_request.go:14-17 (requirement stated for "failed" only). Same judgment call as E6 | handler_ri_exchange_direct_resolve_test.go:120 (failed), :132 (completed has no ack); handler_ri_exchange_direct_resolve_body_test.go:77 |
+| cloud_check.checked_region | validated equal to the row's region (direct_resolve_request.go:83); in the note (:100) | reaches the target (as part of the stored note) | handler_ri_exchange_direct_resolve_test.go:120 |
+| cloud_check.checked_at | RIExchangeDirectResolve.CheckedAt (handler_ri_exchange_direct_resolve.go:206, parsed at direct_resolve_request.go:86); compared with the DB clock and earliest bound (store :130-136); in the note (:100) | reaches the target | handler_ri_exchange_direct_resolve_test.go:116, :137 |
+
+## Ladder
+
+### B6: ladderResolveRequest -> resolveLadderTranche (POST /api/ladder/tranches/{id}/resolve)
+
+- Request type: ladderResolveRequest (+ ladderResolveCloudCheck), handler_ladder_resolve.go:39-52. Decode: decodeLadderResolve, :148-166 (site :155; auxiliary EOF check :158).
+- Target type: config.LadderResolveFailed (internal/config/store_postgres_ladder_resolve.go:38-48) and config.LadderCloudCheck (:27-32). Converters: body.cloudCheck (handler_ladder_resolve.go:195-208, L1) and body.statusReason (:213-225, L1), built at applyLadderResolveFailed :127-130. Store: ResolveLadderTrancheFailed (:88, L2) -> TransitionLadderTrancheTx (store_postgres_ladder_lifecycle.go:66-83, L3, sets ladder_tranches.status_reason).
+- Per-pair disposition: matches (status_reason is built from every free-text and check field; the store gates on the acknowledge flag and the check).
+
+| API json tag | Target Go field | Disposition | Covering test |
+| --- | --- | --- | --- |
+| outcome | none: decides the branch ("completed" -> 501 at handler_ladder_resolve.go:92-94; "failed" proceeds); validated :170-172 | validation or authorization only | handler_ladder_resolve_test.go:114,147 |
+| reason | LadderResolveFailed.StatusReason via statusReason (:216,219) -> ladder_tranches.status_reason (store_postgres_ladder_lifecycle.go:78) | reaches the target | handler_ladder_resolve_test.go:154 (asserts the exact string passed to the fixture store) |
+| note | StatusReason suffix (:221-223) -> status_reason | reaches the target | handler_ladder_resolve_test.go:154 |
+| acknowledge_unknown_outcome | LadderResolveFailed.Acknowledge (:129); used by the store only as a gate (validateLadderUnverifiedFail, store_postgres_ladder_resolve.go:184, refusing an unproven chain without it); also logged (:142). The value itself is not written. Must be sent together with cloud_check (:182) | validation or authorization only | handler_ladder_resolve_test.go:114 ("ack without check"), :154 |
+| cloud_check | LadderResolveFailed.Check non-nil (:129, :207); gates the unverified path and selects the "unverified" status_reason form (:218) | reaches the target | handler_ladder_resolve_test.go:154 |
+| cloud_check.checked_account_id | LadderCloudCheck.AccountID; store checks it names the tranche's account (store_postgres_ladder_resolve.go:195) and the value is rendered into status_reason (handler_ladder_resolve.go:218) | reaches the target | handler_ladder_resolve_test.go:154 |
+| cloud_check.checked_region | LadderCloudCheck.Region; format-checked only in the handler (:204); not checked by the store; reaches the store solely through status_reason (:218) | reaches the target | handler_ladder_resolve_test.go:154 |
+| cloud_check.checked_service | LadderCloudCheck.Service; store requires it equals the tranche layer (:197) and it is rendered into status_reason (:218) | reaches the target | handler_ladder_resolve_test.go:154 |
+| cloud_check.checked_at | LadderCloudCheck.CheckedAt (parsed :200); store checks not in the future and after the chain's last change (:199-202); rendered into status_reason (:218-219) | reaches the target | handler_ladder_resolve_test.go:154 (RFC3339 offset normalized to UTC) |
+
+Direct decodes in the ladder area, none of which is an adapter (each is decoded straight into a store or engine struct, so there is no per-field copy to drop):
+
+- `internal/api/handler_ladder.go:102` decodes into `config.LadderConfigDB` (strict decoder, reason in the comment at `:96-98`). `created_at` and `updated_at` are accepted but the upsert writes `NOW()` (`internal/config/store_postgres_ladder.go:105,118`), with no source comment saying so. `id` is written only when a new row is inserted and is ignored on conflict (`:89-91,106-118`).
+- `internal/api/handler_ladder_amend.go:86` decodes into `config.LadderAmendment` and passes it whole to `AmendLadderTranche`; all three fields (`expected_revision`, `scheduled_date`, `amount_usd_hr`) are used (`internal/config/store_postgres_ladder_amend.go:94,97,105-107`).
+- `ladderTimelineRequest` (`internal/api/handler_ladder_timeline.go:16-21`) is a scope struct filled from query-string parameters and has no decode site, so it is not an API body.
+- Second hop of the ladder config upsert: `ladderConfigToEngine` (`internal/server/handler_ladder.go:581-612`) forwards mode, cadence, ramp_schedule, target_coverage, buffer_fraction, baseline_percentile, lookback_days, max_actions_per_run, buffer_utilization_threshold and max_hourly_commit_per_run (the spend cap) (`:601-610`). `enabled` is consumed before the conversion (`:221`) and `cloud_account_id` becomes the account argument (`:227-240`). `provider` is not forwarded: the engine scope is hard-coded to AWS (`:598`). This is a store-to-engine conversion, not an API decode.
