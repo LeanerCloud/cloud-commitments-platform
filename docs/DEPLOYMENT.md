@@ -231,6 +231,31 @@ aws logs tail /aws/lambda/cudly-dev-api --follow
 aws logs tail /aws/lambda/cudly-dev-api --filter-pattern "ERROR"
 ```
 
+### Post-deploy gate
+
+`scripts/wait-for-healthy.sh URL` gates the container deploy workflows in two
+phases. Phase 1 polls `URL/ready` until it answers 2xx several times in a row.
+Phase 2 (OIDC mode only, i.e. GCP) calls `URL/health?jwks=refresh` and reads
+`checks.scheduled_auth_jwks.status`. `degraded` means the scheduled-task JWKS
+endpoint was unreachable at startup and a bounded re-probe did not clear it, so
+`/api/scheduled/*` may answer 401. The gate retries up to 8 rounds, then
+fails with the reason code (`jwks_fetch_failed`, `jwks_http_error` or
+`jwks_invalid_payload`). Any other readable value passes. A `/health` that
+cannot be read never fails the gate by itself; the last readable verdict
+decides.
+
+- `?jwks=refresh` is opt-in: it re-probes a degraded JWKS endpoint (at most
+  once per 10s per instance) and waits up to 2s. Plain `/health`, `/ready` and
+  every liveness or uptime probe never probe or wait.
+- The check is a deploy-config signal, not a monitor. It does not change the
+  top-level `status`, so the GCP uptime check never pages on it, and healthy is
+  terminal: a JWKS break after a good start is not shown.
+- Knobs: `HEALTH_JWKS_CHECK=0` skips phase 2, `HEALTH_JWKS_MAX_ATTEMPTS`
+  (default 8) sets the rounds, spaced by `HEALTH_INTERVAL_SECONDS`. Phase 2
+  needs `jq`.
+- On a persistent degraded reason, fix `SCHEDULED_TASK_OIDC_JWKS_URL` or the
+  egress path and re-run the deploy.
+
 ### Deploy Frontend
 
 ```bash
@@ -384,7 +409,8 @@ node. So in every environment (dev, staging, prod, any other):
 - Never ship #1824 and #1832 in the same release, or #1832 within 24h of #1824.
 - Start the 24h clock when migration 000161 is confirmed applied in that
   environment, not when the deploy finishes. Migrations run at app start and a
-  failed run is only reported by the `migrations` check of `/health`, so a
+  failed run is only reported by the `migrations` check of `/health` (see
+  "Post-deploy gate" for the deploy gate's other `/health` check), so a
   finished deploy is not proof. Confirm with `SELECT version, dirty FROM
   schema_migrations;` (version 161 or higher and `dirty` false). Confirming
   later only lengthens the wait. The oldest `purchase_attempts` row is not
