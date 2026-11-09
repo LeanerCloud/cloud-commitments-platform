@@ -16,6 +16,10 @@ Resolving a row records what you found at AWS and releases its RIs. The row keep
 original `status`; the resolution is stored beside it (`resolved_status`, `resolved_by`,
 `resolved_at`, `resolution_note`), and rows with a resolution no longer block anything.
 
+Note (#145): an unresolved `submitted` or `unknown` AWS row holds its `max_payment_due` against
+the daily RI exchange cap, at any age, until it is resolved; resolving it `failed` releases the
+budget. Unresolved Azure rows hold for 24 hours only and cannot be resolved here.
+
 ## Step 1: confirm the outcome at AWS
 
 Run `DescribeReservedInstances` (and check the target offering) for the source RIs

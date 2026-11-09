@@ -423,6 +423,47 @@ dispatched in the meantime without a journal record. After such a rollback the
 Dev was handled by merge timing (#1824 went live there at 2026-11-06T23:38:42Z).
 See `known_issues/39_redshift_dedupe_window.md`.
 
+### Release ordering: interactive RI exchanges count toward the daily cap (#145)
+
+Interactive RI exchanges (`POST /api/ri-exchange/execute` for AWS, the Azure
+instance exchange) are recorded in `ri_exchange_direct_executions`, and from
+this release the RI exchange daily cap counts them. Every unresolved AWS row
+that is `submitted` or `unknown` starts holding its `max_payment_due` against
+the global cap at the moment of deploy, whatever its age, so stuck rows from
+before the release can block automated and approved exchanges immediately.
+
+Before deploying (the operator who runs the deploy, in every environment):
+
+1. List the unresolved rows, up to what they would hold (read-only):
+
+   ```sql
+   SELECT id, provider, status, created_at, max_payment_due, max_payment_currency
+     FROM ri_exchange_direct_executions
+    WHERE status IN ('submitted', 'unknown')
+      AND resolved_at IS NULL
+    ORDER BY created_at;
+   -- Total AWS hold (USD rows only): add
+   --   SELECT sum(max_payment_due) ... AND provider = 'aws' AND upper(max_payment_currency) = 'USD'
+   ```
+
+   On a database that does not have migration 000163 yet, drop the
+   `resolved_at IS NULL` line: every row is unresolved there.
+2. Resolve each AWS row you can verify at AWS with
+   `runbooks/ri-exchange-direct-execution-settle.md` (the API list and
+   resolve endpoints, `/api/ri-exchange/direct-executions`). A row resolved
+   `failed` holds nothing; resolved `completed` counts its amount only on the
+   day it happened.
+
+What is counted:
+
+- Completed rows count `net_payable` (or `max_payment_due` when the provider
+  reported none) on the UTC day of completion. Refunds (negative amounts) count 0.
+- Unresolved AWS holds count at any age until an operator resolves them.
+- Azure holds count only for a rolling 24 hours after creation, because the
+  resolve endpoint is AWS-only. Azure counting is best effort relative to a
+  concurrent reservation, since the Azure save takes no advisory lock.
+- Only USD amounts count; rows in another currency are not counted.
+
 ### CI/CD Integration
 
 ```yaml
