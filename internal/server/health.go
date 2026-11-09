@@ -42,18 +42,27 @@ const (
 	healthReasonAuthUnreachable = "auth_store_unreachable"
 )
 
+// checkScheduledAuthJWKS is the check key for the scheduled-task OIDC JWKS
+// probe (platform#67). Its reason is one of scheduledauth's JWKSReason* codes.
+// It never changes the overall status or readiness: the GCP uptime check
+// pages on a non-"healthy" top-level status.
+const checkScheduledAuthJWKS = "scheduled_auth_jwks"
+
 // handleHealthCheck returns the liveness status of the application.
 //
 // This endpoint is the LIVENESS contract: it always answers HTTP 200 so
 // orchestrator liveness/startup probes never restart or kill a process that is
 // up but whose dependencies are not connected yet. The verdict is in the JSON
 // body ("healthy" / "degraded"). Traffic admission is a separate question
-// answered by handleReadinessCheck (#488).
+// answered by handleReadinessCheck (#488). Only ?jwks=refresh (the deploy
+// gate) re-probes a degraded JWKS and waits up to 2s; liveness and uptime
+// probes use the plain form and never probe or wait.
 func (app *Application) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	writeHealthResponse(w, app.appConfig.CORSAllowedOrigin, http.StatusOK, app.collectHealth(ctx))
+	refresh := r.URL.Query().Get("jwks") == "refresh"
+	writeHealthResponse(w, app.appConfig.CORSAllowedOrigin, http.StatusOK, app.collectHealthWith(ctx, refresh))
 }
 
 // handleReadinessCheck returns the READINESS status of the application.
@@ -84,6 +93,9 @@ func (app *Application) handleReadinessCheck(w http.ResponseWriter, r *http.Requ
 // transient error (e.g. a lock timeout) with nothing to bring them back.
 func (h HealthStatus) ready() bool {
 	for name, check := range h.Checks {
+		if name == checkScheduledAuthJWKS {
+			continue // never gates traffic
+		}
 		if name == "migrations" {
 			if check.Status == "pending" {
 				return false
@@ -101,6 +113,12 @@ func (h HealthStatus) ready() bool {
 // overall status. Shared by /health and /ready so the two endpoints can never
 // drift on what "initialized" means.
 func (app *Application) collectHealth(ctx context.Context) HealthStatus {
+	return app.collectHealthWith(ctx, false)
+}
+
+// collectHealthWith is collectHealth with an opt-in JWKS re-probe (see
+// handleHealthCheck).
+func (app *Application) collectHealthWith(ctx context.Context, refreshJWKS bool) HealthStatus {
 	health := HealthStatus{
 		Status:    "healthy",
 		Version:   app.Version,
@@ -141,7 +159,27 @@ func (app *Application) collectHealth(ctx context.Context) HealthStatus {
 		health.Status = "degraded"
 	}
 
+	// app.scheduledAuth is set once at construction, so no dbMu needed.
+	health.Checks[checkScheduledAuthJWKS] = app.checkScheduledAuthJWKSHealth(ctx, refreshJWKS)
+
 	return health
+}
+
+func (app *Application) checkScheduledAuthJWKSHealth(ctx context.Context, refresh bool) CheckResult {
+	if app.scheduledAuth == nil {
+		return CheckResult{Status: "disabled", Message: "Scheduled-task OIDC is not enabled"}
+	}
+	j := app.scheduledAuth.JWKSHealth(ctx, refresh)
+	switch {
+	case !j.Enabled:
+		return CheckResult{Status: "disabled", Message: "Scheduled-task OIDC is not enabled"}
+	case j.Pending:
+		return CheckResult{Status: "pending", Message: "JWKS warmup has not run"}
+	case j.OK:
+		return CheckResult{Status: "healthy", Message: "JWKS endpoint reachable"}
+	default:
+		return CheckResult{Status: "degraded", Message: "Scheduled-task JWKS probe failed", Reason: j.Reason}
+	}
 }
 
 // writeHealthResponse encodes a health payload with the security headers and
