@@ -29,6 +29,11 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # pgx 5.12 adds BatchResults.Tx, which pgxmock v5 lacks. Bump pgx together
+      # with pgxmock v6 (#1864), then drop this rule.
+      - dependency-name: "github.com/jackc/pgx/v5"
+        versions: [">=5.12.0"]
 
   # tests/e2e is its own module, excluded from the root module on purpose.
   - package-ecosystem: gomod
