@@ -137,7 +137,7 @@ func TestPGXMock_DirectGuard_UnreadableSchemaVersionRefuses(t *testing.T) {
 
 	err := storeWith(mock).SaveRIExchangeDirectExecution(context.Background(), rec)
 
-	require.Error(t, err)
+	require.ErrorContains(t, err, "failed to check RI exchange source RIs held by a direct execute")
 	assert.NotErrorIs(t, err, ErrRIExchangeSourceInFlight)
 	assert.Contains(t, logs.String(), "schema version check failed", "the refusal comes from the version read, not from the blocker query")
 	assert.NotContains(t, logs.String(), "source RI check failed")
