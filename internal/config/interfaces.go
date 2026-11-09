@@ -644,7 +644,9 @@ type StoreInterface interface {
 	// row as "submitted" before the provider call, and
 	// FinalizeRIExchangeDirectExecution records the outcome on it exactly
 	// once (ErrRIExchangeDirectExecutionNotSubmitted when the row is absent or
-	// already finalized). Neither touches the approval flow's spend ledger.
+	// already finalized). They are not in ri_exchange_history, but the daily
+	// spend query counts them (#145): completed rows by net payable, unresolved
+	// submitted/unknown rows by their max_payment_due.
 	SaveRIExchangeDirectExecution(ctx context.Context, record *RIExchangeDirectExecution) error
 	FinalizeRIExchangeDirectExecution(ctx context.Context, id string, outcome RIExchangeDirectOutcome) error
 

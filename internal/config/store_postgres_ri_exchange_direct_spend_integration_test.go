@@ -259,3 +259,36 @@ func TestGetRIExchangeDailySpend_BeforeResolutionMigration(t *testing.T) {
 	_, err := env.storeA.ReserveRIExchange(env.ctx, guardCandidate(testAccountID(145000000041), "ri-145-pre-free"), "250", "250")
 	require.ErrorIs(t, err, ErrRIExchangeDailyCapExceeded)
 }
+
+// reserveDollars reserves an AUTO exchange of the given payment against a 150
+// USD daily cap. The per-exchange cap equals the payment, so the stored ceiling
+// (min of both caps and the headroom) is exactly the requested amount.
+func (e *riExchangeIntegrationEnv) reserveDollars(t *testing.T, account, source string, dollars int64) error {
+	t.Helper()
+	r := guardCandidate(account, source)
+	r.PaymentDue = riExchangeUSD(usdMicros(dollars))
+	_, err := e.storeA.ReserveRIExchange(e.ctx, r, "150", r.PaymentDue)
+	return err
+}
+
+// End to end through the real store: an interactive exchange whose outcome is
+// unknown holds its cap, an operator resolving it as failed frees the headroom,
+// and a completed interactive exchange then uses it up. Kills the mutants that
+// drop the hold branch, drop `resolved_at IS NULL`, or drop the completed branch.
+func TestRIExchangeDirectSpend_ReservationFollowsInteractiveLifecycle(t *testing.T) {
+	env := newRIExchangeIntegrationEnv(t)
+	held := env.directAged(t, "unknown", "2 hours", "1 hour") // holds 100 USD
+
+	err := env.reserveDollars(t, testAccountID(145000000051), "ri-145-life-a", 80)
+	require.ErrorIs(t, err, ErrRIExchangeDailyCapExceeded, "100 held + 80 exceeds 150")
+	assert.Zero(t, env.rowCount(t, testAccountID(145000000051)))
+
+	_, err = env.resolve(t, directResolveReq(held, "failed", "unknown", time.Now().UTC().Add(-time.Second)))
+	require.NoError(t, err)
+	require.NoError(t, env.reserveDollars(t, testAccountID(145000000052), "ri-145-life-b", 80), "a resolved-failed row holds nothing")
+
+	env.completeInteractive(t, "ri-145-life-c", "30") // 80 reserved + 30 completed = 110
+	err = env.reserveDollars(t, testAccountID(145000000053), "ri-145-life-d", 50)
+	require.ErrorIs(t, err, ErrRIExchangeDailyCapExceeded, "110 + 50 exceeds 150")
+	require.NoError(t, env.reserveDollars(t, testAccountID(145000000054), "ri-145-life-e", 40), "110 + 40 fits")
+}
