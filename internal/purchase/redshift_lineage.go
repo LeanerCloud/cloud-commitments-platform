@@ -36,6 +36,32 @@ func hasRedshiftRec(exec *config.PurchaseExecution) bool {
 	return false
 }
 
+// hasDuplicateRedshiftTuple reports whether two selected Redshift recs share a tuple and account. The
+// go client adopts a node it finds for the same offering and count, so the second would buy nothing.
+func hasDuplicateRedshiftTuple(exec *config.PurchaseExecution) bool {
+	type key struct {
+		tuple   config.RedshiftTuple
+		account string
+	}
+	seen := map[key]bool{}
+	for _, t := range redshiftTuples(exec) {
+		account := ""
+		switch {
+		case t.CloudAccountID != nil:
+			account = *t.CloudAccountID
+		case exec.CloudAccountID != nil:
+			account = *exec.CloudAccountID
+		}
+		t.CloudAccountID = nil
+		k := key{t, account}
+		if seen[k] {
+			return true
+		}
+		seen[k] = true
+	}
+	return false
+}
+
 // afterRedshiftStampHook runs inside the gate transaction right after the
 // stamp. Tests set it to observe the lock wait; it is nil in production.
 var afterRedshiftStampHook func()
@@ -51,6 +77,7 @@ const (
 	redshiftRecentBuyRefusal      = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) ended too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one ended, or, if it failed and can still be retried, retry or settle it"
 	// redshiftRecentBuyRefusalLegacy is the text stored before failed rows joined the adoption window.
 	redshiftRecentBuyRefusalLegacy = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) completed too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one completed"
+	redshiftDuplicateTupleRefusal  = "refusing to dispatch: this purchase selects the same Redshift reservation (region, node type, term, payment, count) twice for one account, and AWS would treat the second as the first, so keep one of them in the selection and start a new purchase"
 	redshiftSettleRefusal          = "refusing to dispatch: another attempt of this Redshift purchase ended less than 10 minutes ago and may have bought, so wait 10 minutes and then retry"
 )
 

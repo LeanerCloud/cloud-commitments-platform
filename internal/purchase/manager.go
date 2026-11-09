@@ -435,6 +435,9 @@ func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.Purchase
 	if refusal := m.ladderExecutionRefusal(ctx, exec); refusal != nil {
 		return beforeSubmission(refusal)
 	}
+	if hasDuplicateRedshiftTuple(exec) {
+		return beforeSubmission(errors.New(redshiftDuplicateTupleRefusal))
+	}
 	// A Redshift retry reuses the first attempt's request time; only the journal lets go's dedupe tell its node from another's.
 	if hasRedshiftRec(exec) && exec.RetryAttemptN > 0 && m.attemptJournal == nil {
 		return errors.New(redshiftNoJournalRefusal)
