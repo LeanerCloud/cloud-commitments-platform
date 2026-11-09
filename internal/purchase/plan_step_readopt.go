@@ -2,6 +2,8 @@ package purchase
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
@@ -84,4 +86,38 @@ func hasPurchasedRec(r *config.PurchaseExecution) bool {
 		}
 	}
 	return false
+}
+
+// tryReadoptExpired runs inside the claim transaction, under the provider and
+// plan locks. For a step whose only row is a re-armable expired root it re-arms
+// the root with a compare-and-set, then attaches fresh recommendations through
+// attachStep directly (the date-before-veto-window skip in claimFromRows would
+// trip on the new date). handled is false when the step stays blocked as
+// before. Every gate is re-derived here from the locked plan and rows: the
+// tick's list is only a trigger. A lost CAS, an unmigrated schema or a no-match
+// before the grace deadline is the quiet skip, and the rollback leaves the root
+// expired and unmarked for the next tick.
+func (m *Manager) tryReadoptExpired(ctx context.Context, tx pgx.Tx, locked *config.PurchasePlan, claim stepClaim, rows []config.PurchaseExecution) (stepClaim, bool, error) {
+	store, ok := m.config.(expiredRootStore)
+	root := readoptableExpiredRoot(rows)
+	if !ok || root == nil {
+		return claim, false, nil
+	}
+	global, err := m.config.GetGlobalConfig(ctx)
+	if err != nil {
+		return stepClaim{}, true, fmt.Errorf("failed to read global config to re-arm step %d of plan %s: %w", claim.number, locked.ID, err)
+	}
+	now := time.Now()
+	if global == nil || !shouldReadoptExpiredPlan(*locked, global, global.AutoPurchaseEnabled, true, now) {
+		return claim, false, nil
+	}
+	adopted, err := store.ReadoptExpiredRootTx(ctx, tx, root.ExecutionID, attachScheduledDate(locked, now), now, global.RequireDifferentApprover)
+	if errors.Is(err, config.ErrReadoptNotReady) || errors.Is(err, config.ErrExecutionNotInExpectedStatus) {
+		return stepClaim{}, true, fmt.Errorf("%w: expired root %s of plan %s is not re-armable: %w", errPlanStepSkipped, root.ExecutionID, locked.ID, err)
+	}
+	if err != nil {
+		return stepClaim{}, true, fmt.Errorf("failed to re-arm expired root %s of plan %s: %w", root.ExecutionID, locked.ID, err)
+	}
+	claim, err = m.attachStep(ctx, tx, locked, claim, adopted)
+	return claim, true, err
 }

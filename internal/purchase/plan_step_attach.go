@@ -92,6 +92,9 @@ func (m *Manager) claimFromRows(ctx context.Context, tx pgx.Tx, locked *config.P
 	if len(rows) > 0 {
 		root, blocked := adoptableRootRow(rows)
 		if blocked != nil {
+			if adopted, handled, err := m.tryReadoptExpired(ctx, tx, locked, claim, rows); handled {
+				return adopted, err
+			}
 			claim.blocked = blocked
 			return claim, nil
 		}
