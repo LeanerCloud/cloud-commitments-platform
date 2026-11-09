@@ -6,13 +6,16 @@ package purchase
 // marked "regression guard" pass on main too; the refusals fail there.
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -168,17 +171,45 @@ func TestElastiCacheScenarios_SiblingDifferentPoolsBothBought(t *testing.T) {
 	assert.Len(t, api.purchases(), 2)
 }
 
-// Characterization test (D6, accepted gap, follow-up issue): two recs of the SAME
-// pool in one execution get different tokens, their listings race, and both buy.
-// A later fix must flip this assertion deliberately.
-func TestElastiCacheScenarios_CharacterizationSamePoolTwiceInOneExecutionBothBought(t *testing.T) {
+// runECFinalize drives recs through executeAndFinalize, the only path that runs
+// preExecutionRefusal, over the real elasticache client on the shared fake API.
+func runECFinalize(t *testing.T, api *fakeElastiCacheAPI, recs ...config.RecommendationRecord) (*config.PurchaseExecution, error) {
+	t.Helper()
+	store, sender, factory, prov := new(MockConfigStore), new(MockEmailSender), new(MockProviderFactory), new(MockProvider)
+	store.SavePurchaseExecutionFn = func(context.Context, *config.PurchaseExecution) error { return nil }
+	store.On("SavePurchaseHistory", mock.Anything, mock.Anything).Return(nil).Maybe()
+	sender.On("SendPurchaseConfirmation", mock.Anything, mock.Anything).Return(nil).Maybe()
+	sender.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).Return(nil).Maybe()
+	factory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(prov, nil).Maybe()
+	prov.On("GetServiceClient", mock.Anything, common.ServiceElastiCache, ecRegion).Return(provider.ServiceClient(newFakeElastiCacheClient(api)), nil).Maybe()
+	exec := &config.PurchaseExecution{ExecutionID: "exec-1867", IdempotencyKey: "lineage-1867", Status: "running", Recommendations: recs}
+	m := &Manager{config: store, email: sender, providerFactory: factory, credStore: awsAccessKeyCredStore()}
+	return exec, m.executeAndFinalize(context.Background(), exec)
+}
+
+// #1867: two recs of the SAME pool in one execution would each get their own
+// token and race their listings, so the selection is refused before submission.
+func TestElastiCacheScenarios_SamePoolTwiceInOneExecutionIsRefused(t *testing.T) {
 	api := &fakeElastiCacheAPI{}
 
-	_, errs, allRefused := runECExecution(t, api, ecCacheRec(t, "elasticache"), ecCacheRec(t, "elasticache"))
+	exec, err := runECFinalize(t, api, ecCacheRec(t, "elasticache"), ecCacheRec(t, "elasticache"))
 
-	assert.Empty(t, errs)
-	assert.False(t, allRefused)
-	assert.Len(t, api.purchases(), 2, "D6: the check cannot see a same-execution sibling")
+	require.Error(t, err)
+	assert.Equal(t, elastiCacheDuplicatePoolRefusal, err.Error())
+	assert.Empty(t, api.purchases())
+	assert.Equal(t, "failed", exec.Status)
+}
+
+// Control: with the twin unselected there is no duplicate, so the one rec buys.
+func TestElastiCacheScenarios_SamePoolTwinUnselectedBuysOnce(t *testing.T) {
+	api := &fakeElastiCacheAPI{}
+	twin := ecCacheRec(t, "elasticache")
+	twin.Selected = false
+
+	_, err := runECFinalize(t, api, ecCacheRec(t, "elasticache"), twin)
+
+	require.NoError(t, err)
+	assert.Len(t, api.purchases(), 1)
 }
 
 // Regression guard: a same-pool sibling's own reservation is listed (its purchase

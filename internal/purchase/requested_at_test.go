@@ -142,6 +142,7 @@ type redshiftFinalizeRun struct {
 	stampedIDs []string
 	opts       []common.PurchaseOptions
 	saves      []config.PurchaseExecution
+	store      *MockConfigStore
 	err        error
 }
 
@@ -164,7 +165,7 @@ func runRedshiftFinalizeWithJournal(t *testing.T, exec *config.PurchaseExecution
 	mockFactory := new(MockProviderFactory)
 	mockProviderInst := new(MockProvider)
 	mockServiceClient := new(MockServiceClient)
-	run := &redshiftFinalizeRun{}
+	run := &redshiftFinalizeRun{store: mockStore}
 	var mu sync.Mutex
 
 	mockStore.SavePurchaseExecutionFn = func(_ context.Context, e *config.PurchaseExecution) error {

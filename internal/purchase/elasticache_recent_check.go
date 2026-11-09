@@ -38,6 +38,8 @@ func isAWSElastiCache(providerName string, service common.ServiceType) bool {
 // selected AWS ElastiCache recs will create, from the same per-rec tokens the
 // purchase path passes to the provider. A listed reservation with one of these
 // IDs came from this lineage, not from another purchase.
+// Two same-pool recs of one execution cannot see each other here; hasDuplicateElastiCachePool
+// refuses that selection before submission.
 func elastiCacheOwnReservationIDs(exec *config.PurchaseExecution, selected []int) map[string]bool {
 	ids := make(map[string]bool)
 	for _, i := range selected {
