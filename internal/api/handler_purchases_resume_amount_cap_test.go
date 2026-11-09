@@ -171,16 +171,45 @@ func TestResumeAmountCap_ScopedUpdateAnyCreatorUncappedUpdateResumes(t *testing.
 	assert.Equal(t, "resumed", resp.Status)
 }
 
-// The update branch bounds the amount only: a region-scoped update grant must
-// not newly refuse a creator's own row.
-func TestResumeAmountCap_UpdateBranchAddsNoScope(t *testing.T) {
+// The update branch is checked on the row's scope, as approve-own is: an
+// update grant scoped to another region does not cover the row.
+func TestResumeAmountCap_UpdateBranchUsesRowScope(t *testing.T) {
 	t.Parallel()
 	me := revokeConstraintsUser
 	scoped := &auth.PermissionConstraints{Regions: []string{"eastus"}, MaxPurchaseAmount: 5000}
-	resp, _, err := runResumeCap(t, resumeCapCase{creator: &me, recs: noUpfrontRecs(),
+	_, store, err := runResumeCap(t, resumeCapCase{creator: &me, recs: noUpfrontRecs(),
 		perms: []auth.Permission{revokePerm(auth.ActionUpdate, scoped)}})
-	require.NoError(t, err)
-	assert.Equal(t, "resumed", resp.Status)
+	requireRevokeForbidden(t, err, constraintDenied)
+	requireResumeNotTransitioned(t, store)
+}
+
+// An uncapped grant scoped elsewhere must not lift the cap of the grant that
+// covers the row (the azure/westeurope row totals 1200), on either verb.
+func TestResumeAmountCap_UncappedGrantElsewhereDoesNotLiftCap(t *testing.T) {
+	t.Parallel()
+	me := revokeConstraintsUser
+	other := pauseResumeOtherUser
+	for _, tc := range []struct {
+		name    string
+		verb    string
+		creator *string
+	}{
+		{"update, creator's own row", auth.ActionUpdate, &me},
+		{"update-any, another user's row", auth.ActionUpdateAny, &other},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			capped := revokePerm(tc.verb, &auth.PermissionConstraints{Providers: []string{"azure"}, MaxPurchaseAmount: 500})
+			elsewhere := revokePerm(tc.verb, &auth.PermissionConstraints{Regions: []string{"eastus"}})
+			perms := []auth.Permission{capped, elsewhere}
+			if tc.verb == auth.ActionUpdateAny {
+				perms = append(perms, revokePerm(auth.ActionUpdate, nil)) // so the request passes the update gate
+			}
+			_, store, err := runResumeCap(t, resumeCapCase{creator: tc.creator, recs: noUpfrontRecs(), perms: perms})
+			requireRevokeForbidden(t, err, constraintDenied)
+			requireResumeNotTransitioned(t, store)
+		})
+	}
 }
 
 func TestResumeAmountCap_NonUSDUnderCap(t *testing.T) {
@@ -332,9 +361,23 @@ func TestResumeAmountCap_APIKeyFollowsKeyCap(t *testing.T) {
 	})
 }
 
-// The admin API key is unrestricted: no amount check.
+// The admin API key is unrestricted: no amount check and, as on approve, no
+// zero-commitment refusal.
 func TestResumeAmountCap_AdminAPIKeyUnrestricted(t *testing.T) {
 	t.Parallel()
+	for name, rec := range map[string]config.RecommendationRecord{
+		"above any cap":   resumeCapRec(1e9, 0, "USD"),
+		"zero commitment": resumeCapRec(0, 0, "USD"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, 200, resumeAsAdminKey(t, rec))
+		})
+	}
+}
+
+func resumeAsAdminKey(t *testing.T, rec config.RecommendationRecord) int {
+	t.Helper()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -343,7 +386,7 @@ func TestResumeAmountCap_AdminAPIKeyUnrestricted(t *testing.T) {
 	m.grantAdmin()
 	row := cancelRouteExec("paused")
 	row.ScheduledDate = time.Now().Add(24 * time.Hour)
-	row.Recommendations = []config.RecommendationRecord{resumeCapRec(1e9, 0, "USD")}
+	row.Recommendations = []config.RecommendationRecord{rec}
 	resumed := *row
 	resumed.Status = "pending"
 	store.On("GetExecutionByID", mock.Anything, cancelExecID).Return(row, nil)
@@ -355,7 +398,7 @@ func TestResumeAmountCap_AdminAPIKeyUnrestricted(t *testing.T) {
 			Method: "POST", Path: "/api/purchases/planned/" + cancelExecID + "/resume"}},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 200, resp.StatusCode)
+	return resp.StatusCode
 }
 
 // A nil auth component fails closed with a 500 on the claimed-row path too.

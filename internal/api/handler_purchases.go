@@ -380,21 +380,16 @@ func (h *Handler) resumePlannedPurchase(ctx context.Context, req *events.LambdaF
 }
 
 // enforceResumeAmountCap bounds the row's total commitment by the cap of the
-// verb that authorized the resume (issue #1130). An update-any holder is
-// checked on update-any's full scope and amount, as approve-any is. A creator
-// (or any update holder) is checked on amount and currency only, with no new
-// scope matching on update:purchases. The admin API key (empty verb) and a
-// row without recommendations skip the check (recommendations attach later
-// only to pending/notified rows and the scheduler re-checks the plan cap).
+// verb that authorized the resume (issue #1130), checked on the row's full
+// scope and amount as approve is: a grant scoped elsewhere must not lift the
+// cap of the one that covers the row. The admin API key (empty verb) and a row
+// without recommendations skip the check (recommendations attach later only
+// to pending/notified rows and the scheduler re-checks the plan cap).
 func (h *Handler) enforceResumeAmountCap(ctx context.Context, session *Session, verb string, recs []config.RecommendationRecord) error {
 	if verb == "" || len(recs) == 0 {
 		return nil
 	}
-	if verb == auth.ActionUpdateAny {
-		return h.enforcePurchaseConstraints(ctx, session, verb, recs)
-	}
-	total := purchaseConstraintSets(recs)[0].MaxPurchaseAmount
-	return h.enforcePurchaseConstraintSets(ctx, session, verb, recs, []auth.PermissionConstraints{{MaxPurchaseAmount: total}})
+	return h.enforcePurchaseConstraints(ctx, session, verb, recs)
 }
 
 // requireResumeVetoWindow refuses to resume a recommendation-bearing row whose
@@ -3312,21 +3307,14 @@ func parseExecutePurchaseBody(body string) (ExecutePurchaseRequest, error) {
 // USD, so a batch with any rec not provably priced in USD is checked by
 // requireUncappedPurchaseGrant instead of by its raw amount (issue #361).
 func (h *Handler) enforcePurchaseConstraints(ctx context.Context, session *Session, action string, recs []config.RecommendationRecord) error {
-	return h.enforcePurchaseConstraintSets(ctx, session, action, recs, purchaseConstraintSets(recs))
-}
-
-// enforcePurchaseConstraintSets is enforcePurchaseConstraints for a caller-
-// chosen constraint set list: the zero-commitment guard, the USD rule for
-// non-USD recs, then the permission check. sets must come from recs
-// (purchaseConstraintSets) or carry the same total in MaxPurchaseAmount.
-func (h *Handler) enforcePurchaseConstraintSets(ctx context.Context, session *Session, action string, recs []config.RecommendationRecord, sets []auth.PermissionConstraints) error {
-	if err := requireNonZeroCommitment(sets); err != nil {
+	constraintSets := purchaseConstraintSets(recs)
+	if err := requireNonZeroCommitment(constraintSets); err != nil {
 		return err
 	}
 	if currency := nonUSDPurchaseCurrency(recs); currency != "" {
-		return h.requireUncappedPurchaseGrant(ctx, session, action, sets, currency)
+		return h.requireUncappedPurchaseGrant(ctx, session, action, constraintSets, currency)
 	}
-	return h.requirePermissionConstraints(ctx, session, action, "purchases", sets)
+	return h.requirePermissionConstraints(ctx, session, action, "purchases", constraintSets)
 }
 
 // purchaseConstraintSets builds one auth.PermissionConstraints per
