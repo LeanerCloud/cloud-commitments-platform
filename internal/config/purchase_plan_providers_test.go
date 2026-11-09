@@ -100,3 +100,30 @@ func TestDerivePlanProviders_LegacyKeyUsesProviderField(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"gcp"}, got, "a key that names a provider still wins, as before")
 }
+
+// A bound key's "#<group_id>" suffix is never part of its provider or service,
+// even when the group id holds a "/" (issue #1746).
+func TestDerivePlan_BoundGroupIDIsNeitherProviderNorService(t *testing.T) {
+	bound := func(entries map[string]ServiceConfig) *PurchasePlan {
+		p := &PurchasePlan{Services: entries}
+		p.RampSchedule.AllocationMode = RampAllocationBoundGroups
+		return p
+	}
+	t.Run("a key with no provider prefix takes its provider from the entry", func(t *testing.T) {
+		providers, err := DerivePlanProviders(bound(map[string]ServiceConfig{
+			"ec2#g/1": {Provider: "aws", Service: "ec2", GroupID: "g/1"},
+		}))
+		require.NoError(t, err)
+		assert.Equal(t, []string{"aws"}, providers)
+	})
+	t.Run("a slash in the group id does not hide a service", func(t *testing.T) {
+		plan := bound(map[string]ServiceConfig{
+			"aws/ec2#g/1": {Provider: "aws", Service: "ec2", GroupID: "g/1"},
+			"aws/rds#g2":  {Provider: "aws", Service: "rds", GroupID: "g2"},
+		})
+		providers, err := DerivePlanProviders(plan)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"aws"}, providers)
+		assert.Equal(t, []string{"ec2", "rds"}, DerivePlanServices(plan))
+	})
+}

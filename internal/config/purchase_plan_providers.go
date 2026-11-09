@@ -45,6 +45,7 @@ func DerivePlanProviders(plan *PurchasePlan) ([]string, error) {
 // serviceEntryProvider returns the provider a services entry names: the key's
 // prefix when the key has one, else the entry's Provider field, else "".
 func serviceEntryProvider(key, fieldProvider string) string {
+	key, _, _ = strings.Cut(key, BoundKeySeparator) // the group id may hold a "/"
 	if i := strings.IndexAny(key, "/:"); i > 0 {
 		return key[:i]
 	}

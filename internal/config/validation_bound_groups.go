@@ -99,11 +99,19 @@ func checkGroupBindings(svc *ServiceConfig, gid string, seen map[string]string) 
 
 // checkGroupKey requires a bound plan's entry to be keyed
 // "provider/service#<group_id>" with that same GroupID, so the key and the
-// field can never name different groups.
+// field can never name different groups. The key's provider and service must
+// also be the entry's own: the arming grant's scopes are derived from the key,
+// while sizing buys by the entry's fields.
 func checkGroupKey(key string, svc *ServiceConfig) error {
-	_, suffix, ok := strings.Cut(key, BoundKeySeparator)
-	if !ok || svc.GroupID == "" || suffix != svc.GroupID {
-		return fmt.Errorf("%w: entry %q must be keyed \"provider/service%s<group_id>\" with a matching group_id (got %q)", ErrInvalidBoundGroup, key, BoundKeySeparator, svc.GroupID)
+	prefix, suffix, ok := strings.Cut(key, BoundKeySeparator)
+	if !ok || svc.GroupID == "" || suffix != svc.GroupID || !namesEntry(prefix, svc) {
+		return fmt.Errorf("%w: entry %q must be keyed \"%s/%s%s%s\" (its own provider, service and group_id)", ErrInvalidBoundGroup, key, svc.Provider, svc.Service, BoundKeySeparator, svc.GroupID)
 	}
 	return nil
+}
+
+// namesEntry reports whether a key prefix is the entry's "provider/service" or
+// "provider:service".
+func namesEntry(prefix string, svc *ServiceConfig) bool {
+	return prefix == svc.Provider+"/"+svc.Service || prefix == svc.Provider+":"+svc.Service
 }
