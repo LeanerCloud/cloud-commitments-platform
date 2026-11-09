@@ -121,8 +121,8 @@ func columnList(rest string) (cols, tail string, ok bool) {
 	return "", "", false
 }
 
-// setText returns the SET clause text in rest, cut at the first WHERE, RETURNING or ";"
-// outside parentheses and '...' literals, so a subselect's WHERE does not hide a later assignment.
+// setText returns the SET clause text in rest (already masked by maskSQL), cut at the first WHERE, RETURNING or ";"
+// outside parentheses, so a subselect's WHERE does not hide a later assignment.
 func setText(rest string) string {
 	depth, inQuote := 0, false
 	for i, r := range rest {
@@ -148,7 +148,6 @@ func isWordByte(b byte) bool {
 }
 
 // setItems splits a SET clause at commas outside parentheses and '...' literals.
-// It does not parse -- comments, $$...$$ or E'...' strings; no SQL in this repo uses them in a SET.
 func setItems(set string) []string {
 	var items []string
 	depth, start, inQuote := 0, 0, false
@@ -188,9 +187,146 @@ func setsIdempotencyKey(set string) bool {
 	return false
 }
 
+var purchaseExecutionsMention = regexp.MustCompile(`(?i)purchase_executions`)
+
+// canOpenQuote reports whether a quote or prefix may start at i: the previous byte is not part of a word.
+func canOpenQuote(sql string, i int) bool {
+	if i == 0 {
+		return true
+	}
+	p := sql[i-1]
+	return !isWordByte(p) && p != '$' && p < 0x80
+}
+
+// quotedEnd returns the index after the closing quote of the literal whose body starts at start;
+// a doubled quote is an escape, and a backslash escapes the next byte only when backslash is set.
+func quotedEnd(sql string, start int, quote byte, backslash bool) (int, bool) {
+	for i := start; i < len(sql); i++ {
+		switch {
+		case backslash && sql[i] == '\\':
+			i++
+		case sql[i] != quote:
+		case i+1 < len(sql) && sql[i+1] == quote:
+			i++
+		default:
+			return i + 1, true
+		}
+	}
+	return 0, false
+}
+
+// dollarTag returns the "$tag$" opener at the start of s, or "" when s does not start one.
+func dollarTag(s string) string {
+	j := 1
+	if j < len(s) && (s[j] == '_' || s[j] >= 'a' && s[j] <= 'z' || s[j] >= 'A' && s[j] <= 'Z' || s[j] >= 0x80) {
+		for j < len(s) && (isWordByte(s[j]) || s[j] >= 0x80) {
+			j++
+		}
+	}
+	if j < len(s) && s[j] == '$' {
+		return s[:j+1]
+	}
+	return ""
+}
+
+// blockCommentEnd returns the index after the nesting block comment that starts at i.
+func blockCommentEnd(sql string, i int) (int, bool) {
+	for depth := 0; i < len(sql); {
+		switch {
+		case strings.HasPrefix(sql[i:], "/*"):
+			depth++
+			i += 2
+		case strings.HasPrefix(sql[i:], "*/"):
+			depth--
+			i += 2
+			if depth == 0 {
+				return i, true
+			}
+		default:
+			i++
+		}
+	}
+	return 0, false
+}
+
+// maskSQL replaces comments with a space and string literal bodies ('...', E'...', $$...$$, $tag$...$tag$)
+// with an empty literal, so the scan never reads text that is not code. A "..." identifier is kept only
+// for idempotency_key and is otherwise emitted as "x". ok is false when a literal, comment or identifier
+// is unterminated, or a literal body mentions purchase_executions (SQL the scan cannot see).
+// Plain '...' literals take a backslash literally (standard_conforming_strings on); U&'...' is not lexed.
+func maskSQL(sql string) (masked string, ok bool) {
+	var b strings.Builder
+	for i := 0; i < len(sql); {
+		var end, bodyStart, bodyEnd int
+		var found bool
+		c := sql[i]
+		switch {
+		case strings.HasPrefix(sql[i:], "--"):
+			end = strings.IndexByte(sql[i:], '\n')
+			if end < 0 {
+				end = len(sql) - i
+			}
+			b.WriteByte(' ')
+			i += end
+			continue
+		case strings.HasPrefix(sql[i:], "/*"):
+			if end, found = blockCommentEnd(sql, i); !found {
+				return "", false
+			}
+			b.WriteByte(' ')
+			i = end
+			continue
+		case c == '"':
+			if end, found = quotedEnd(sql, i+1, '"', false); !found {
+				return "", false
+			}
+			if strings.EqualFold(sql[i+1:end-1], "idempotency_key") {
+				b.WriteString(sql[i:end])
+			} else {
+				b.WriteString(`"x"`)
+			}
+			i = end
+			continue
+		case c == '\'':
+			bodyStart = i + 1
+			end, found = quotedEnd(sql, bodyStart, '\'', false)
+			bodyEnd = end - 1
+		case (c == 'E' || c == 'e') && canOpenQuote(sql, i) && i+1 < len(sql) && sql[i+1] == '\'':
+			bodyStart = i + 2
+			end, found = quotedEnd(sql, bodyStart, '\'', true)
+			bodyEnd = end - 1
+		case c == '$' && canOpenQuote(sql, i) && dollarTag(sql[i:]) != "":
+			tag := dollarTag(sql[i:])
+			bodyStart = i + len(tag)
+			if k := strings.Index(sql[bodyStart:], tag); k >= 0 {
+				bodyEnd, end, found = bodyStart+k, bodyStart+k+len(tag), true
+			}
+		default:
+			b.WriteByte(c)
+			i++
+			continue
+		}
+		if !found || purchaseExecutionsMention.MatchString(sql[bodyStart:bodyEnd]) {
+			return "", false
+		}
+		b.WriteString("''")
+		i = end
+	}
+	return b.String(), true
+}
+
 // sqlIdempotencyKeyWriters counts purchase_executions INSERTs carrying idempotency_key
-// (no column list counts) and UPDATEs or upserts that assign it in SET; dynamic counts unverifiable INSERTs.
+// (no column list counts) and UPDATEs or upserts that assign it in SET, after maskSQL removes comments and
+// literal bodies. dynamic counts unverifiable INSERTs and statements maskSQL cannot lex.
 func sqlIdempotencyKeyWriters(sql string) (inserts, updates, dynamic int) {
+	masked, ok := maskSQL(sql)
+	if !ok {
+		if purchaseExecutionsMention.MatchString(sql) {
+			dynamic++
+		}
+		return 0, 0, dynamic
+	}
+	sql = masked
 	for _, loc := range insertPurchaseExecutions.FindAllStringIndex(sql, -1) {
 		rest := strings.TrimSpace(sql[loc[1]:])
 		if !strings.HasPrefix(rest, "(") {
@@ -393,6 +529,31 @@ func TestIdempotencyKeySQLScan_Detects(t *testing.T) {
 		{"insert column list built with Sprintf", `INSERT INTO purchase_executions (%s) VALUES (%s)`, 0, 0, 1},
 		{"insert column list unclosed by concatenation", `INSERT INTO purchase_executions (execution_id, `, 0, 0, 1},
 		{"insert column list empty before concatenation", `INSERT INTO purchase_executions (`, 0, 0, 1},
+		{"comment before the key target", `UPDATE purchase_executions SET /* k */ idempotency_key = $1`, 0, 1, 0},
+		{"line comment before the key target", "UPDATE purchase_executions SET status = $3, -- note\n idempotency_key = $1 WHERE id = $2", 0, 1, 0},
+		{"nested block comment before the key target", `UPDATE purchase_executions SET /* a /* b */ c */ idempotency_key = $1`, 0, 1, 0},
+		{"commented-out assignment", "UPDATE purchase_executions SET status = $1 -- note, idempotency_key = $2\n WHERE x = $3", 0, 0, 0},
+		{"comment marker inside a literal", `UPDATE purchase_executions SET error = 'a -- b', idempotency_key = $1`, 0, 1, 0},
+		{"E string with an escaped quote", `UPDATE purchase_executions SET error = E'it\'s', idempotency_key = $1`, 0, 1, 0},
+		{"dollar quoted body with a paren and WHERE", `UPDATE purchase_executions SET error = $$ WHERE ( $$, idempotency_key = $1`, 0, 1, 0},
+		{"tagged dollar quote", `UPDATE purchase_executions SET error = $q$ x, WHERE ( $q$, idempotency_key = $1`, 0, 1, 0},
+		{"E string that mentions the key", `UPDATE purchase_executions SET error = E'idempotency_key = 1'`, 0, 0, 0},
+		{"unterminated literal on the table", `UPDATE purchase_executions SET error = 'abc`, 0, 0, 1},
+		{"unterminated block comment on the table", `UPDATE purchase_executions SET x = 1 /* oops`, 0, 0, 1},
+		{"unterminated literal off the table", `SELECT 'abc`, 0, 0, 0},
+		{"trailing line comment at EOF", `UPDATE purchase_executions SET idempotency_key = $1 -- note`, 0, 1, 0},
+		{"upsert comment before the key target", `INSERT INTO purchase_executions (execution_id) VALUES ($1) ON CONFLICT (execution_id) DO UPDATE SET /* k */ idempotency_key = $2`, 0, 1, 0},
+		{"parameter is not a dollar quote", `UPDATE purchase_executions SET a = $1, idempotency_key = $2`, 0, 1, 0},
+		{"adjacent parameters are not a dollar quote", `UPDATE purchase_executions SET a = $1$2, idempotency_key = $3`, 0, 1, 0},
+		{"dollars inside a word do not open a quote", `UPDATE purchase_executions SET x$$y = $1, idempotency_key = $2`, 0, 1, 0},
+		{"quoted identifier with comment marker", `UPDATE purchase_executions SET "a--b" = $1, idempotency_key = $2`, 0, 1, 0},
+		{"quoted identifier with a quote", `UPDATE purchase_executions SET "o'k" = $1, idempotency_key = $2`, 0, 1, 0},
+		{"quoted identifier with a paren", `UPDATE purchase_executions SET "a(" = $1, idempotency_key = $2`, 0, 1, 0},
+		{"quoted key as the only target", `UPDATE purchase_executions SET "idempotency_key" = $1`, 0, 1, 0},
+		{"SQL inside a dollar quoted body is unverifiable", `DO $$ UPDATE purchase_executions SET idempotency_key = $1 $$`, 0, 0, 1},
+		{"insert with a comment between keywords", `INSERT /* c */ INTO purchase_executions (idempotency_key) VALUES ($1)`, 1, 0, 0},
+		{"backslash is literal in a plain literal", `UPDATE purchase_executions SET error = 'a\', idempotency_key = $1`, 0, 1, 0},
+		{"e quote inside a word is not an E string", `UPDATE purchase_executions SET error = type'a\', idempotency_key = $1`, 0, 1, 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
