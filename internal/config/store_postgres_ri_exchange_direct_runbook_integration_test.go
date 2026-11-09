@@ -56,7 +56,7 @@ func TestRIExchangeDirectRunbook_IntervalsMatchStore(t *testing.T) {
 
 // The note limit in the SQL is the store's constant.
 func TestRIExchangeDirectRunbook_NoteLimitMatchesStore(t *testing.T) {
-	m := regexp.MustCompile(`octet_length\(:'note'\) <= (\d+)`).FindStringSubmatch(runbookBreakGlassSQLRaw(t))
+	m := regexp.MustCompile(`octet_length\(v\.n\) <= (\d+)`).FindStringSubmatch(runbookBreakGlassSQLRaw(t))
 	require.NotNil(t, m, "runbook SQL has no note length guard")
 	n, err := strconv.Atoi(m[1])
 	require.NoError(t, err)
@@ -91,31 +91,35 @@ func TestRIExchangeDirectRunbook_BreakGlassStatement(t *testing.T) {
 	aged := func(status, ri, createdAgo, completedAgo string) string {
 		return agedFor("aws", status, ri, createdAgo, completedAgo)
 	}
-	settleWith := func(id, outcome, expected, note string, at time.Time) int64 {
-		tag, err := env.poolA.Exec(env.ctx, sql, outcome, id, "operator-a", note, at, expected)
+	settleWith := func(id, outcome, expected, operator, note string, at time.Time) int64 {
+		tag, err := env.poolA.Exec(env.ctx, sql, outcome, id, operator, note, at, expected)
 		require.NoError(t, err)
 		return tag.RowsAffected()
 	}
 	settle := func(id, outcome string, at time.Time) int64 {
 		var status string
 		require.NoError(t, env.poolA.QueryRow(env.ctx, "SELECT status FROM ri_exchange_direct_executions WHERE id = $1", id).Scan(&status))
-		return settleWith(id, outcome, status, "checked at AWS", at)
+		return settleWith(id, outcome, status, "operator-a", "checked at AWS", at)
 	}
 
 	unknown := aged("unknown", "ri-g1836-rb-unknown", "2 hours", "1 hour")
 	assert.EqualValues(t, 0, settle(unknown, "failed", checkedAt(unknown, "-1 microsecond")), "unknown: checked_at just before completed_at + 1 minute")
 	assert.EqualValues(t, 0, settle(unknown, "failed", checkedAt(unknown, "10 hours")), "unknown: checked_at in the future")
 	require.ErrorIs(t, env.reserve(t, testAccountID(850000000001), "ri-g1836-rb-unknown"), ErrRIExchangeSourceInFlight, "an unresolved row keeps blocking")
-	assert.EqualValues(t, 0, settleWith(unknown, "failed", "submitted", "checked at AWS", checkedAt(unknown, "0")), "a status other than the one seen is not resolved")
-	assert.EqualValues(t, 0, settleWith(unknown, "failed", "unknown", strings.Repeat("x", RIExchangeDirectResolveNoteMax+1), checkedAt(unknown, "0")), "a note over the store limit is not stored")
-	assert.EqualValues(t, 1, settle(unknown, "failed", checkedAt(unknown, "0")), "unknown: exactly completed_at + 1 minute")
+	assert.EqualValues(t, 0, settleWith(unknown, "failed", "submitted", "operator-a", "checked at AWS", checkedAt(unknown, "0")), "a status other than the one seen is not resolved")
+	assert.EqualValues(t, 0, settleWith(unknown, "failed", "unknown", "operator-a", strings.Repeat("x", RIExchangeDirectResolveNoteMax+1), checkedAt(unknown, "0")), "a note over the store limit is not stored")
+	assert.EqualValues(t, 0, settleWith(unknown, "failed", "unknown", "operator-a", strings.Repeat("x", RIExchangeDirectResolveNoteMax), checkedAt(unknown, "0")), "a note that overflows only with the checked_at prefix is not stored")
+	assert.EqualValues(t, 0, settleWith(unknown, "failed", "unknown", "operator-a", "", checkedAt(unknown, "0")), "an empty note is not stored")
+	assert.EqualValues(t, 0, settleWith(unknown, "failed", "unknown", "  ", "checked at AWS", checkedAt(unknown, "0")), "an empty operator is not recorded")
+	bound := checkedAt(unknown, "0")
+	assert.EqualValues(t, 1, settle(unknown, "failed", bound), "unknown: exactly completed_at + 1 minute")
 	assert.EqualValues(t, 0, settle(unknown, "failed", checkedAt(unknown, "0")), "a resolved row is not resolved twice")
 	var status, resolved, by, note string
 	var userID *string
 	require.NoError(t, env.poolA.QueryRow(env.ctx, `
 		SELECT status, resolved_status, resolved_by, resolution_note, resolved_by_user_id::text
 		  FROM ri_exchange_direct_executions WHERE id = $1`, unknown).Scan(&status, &resolved, &by, &note, &userID))
-	assert.Equal(t, []any{"unknown", "failed", "operator-a", "checked at AWS", (*string)(nil)}, []any{status, resolved, by, note, userID})
+	assert.Equal(t, []any{"unknown", "failed", "operator-a", "break-glass checked_at=" + bound.UTC().Format("2006-01-02T15:04:05.000000Z") + " note=checked at AWS", (*string)(nil)}, []any{status, resolved, by, note, userID})
 	require.NoError(t, env.reserve(t, testAccountID(850000000001), "ri-g1836-rb-unknown"), "a resolved row stops blocking the guard")
 
 	old := aged("submitted", "ri-g1836-rb-old", "11 minutes", "0")

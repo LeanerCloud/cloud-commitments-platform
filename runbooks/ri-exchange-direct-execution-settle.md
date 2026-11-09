@@ -61,8 +61,10 @@ curl -s -X POST \
 
 - `expected_status` is the status you saw in the list. If the row changed meanwhile you get 409.
 - `outcome: "failed"` needs `acknowledge_unknown_outcome: true`. `completed` does not.
-- `reason` is 10 to 300 characters, no control characters.
-- `checked_region` must be the row's region.
+- `reason` is 10 to 300 characters, no control characters, and the stored note must fit 1000 bytes.
+  Non-ASCII text needs fewer characters; the API answers 400 "reason too long once encoded; shorten it".
+- `checked_region` must be the row's region. A row with an empty region cannot be resolved through the
+  API (400 on region); use the break-glass statement below.
 - A repeat of the same request returns the stored result with `replayed: true`.
 - 409 with "wait until" and a time means the row is too young; see "Why the age" below.
 - 400 "checked_at must be at or after" and a time means your AWS check is too early; see
@@ -118,19 +120,22 @@ UPDATE ri_exchange_direct_executions
        resolved_by_user_id = NULL,
        resolved_by         = :'operator',
        resolved_at         = now(),
-       resolution_note     = :'note'
+       resolution_note     = v.n
+  FROM (SELECT 'break-glass checked_at=' || to_char(:'checked_at'::timestamptz AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+               || ' note=' || :'note' AS n) v
  WHERE id = :'id'
    AND provider = 'aws'
    AND resolved_at IS NULL
    AND status = :'expected_status'
    AND status IN ('submitted', 'unknown')
-   AND octet_length(:'note') <= 1000
+   AND octet_length(v.n) <= 1000
+   AND btrim(:'operator') <> '' AND btrim(:'note') <> ''
    AND (   (status = 'submitted' AND created_at <= now() - interval '10 minutes'
                                  AND :'checked_at'::timestamptz >= created_at + interval '10 minutes')
         OR (status = 'unknown'   AND :'checked_at'::timestamptz >= completed_at + interval '1 minute'))
    AND :'checked_at'::timestamptz <= now();
 -- Expect exactly 1 row updated. 0 rows means: wrong id, already resolved, a status that changed since
--- the SELECT, a note over 1000 bytes, a 'submitted' row younger than 10 minutes that may still be in
+-- the SELECT, an empty operator or note, a stored note (with its prefix) over 1000 bytes, a 'submitted' row younger than 10 minutes that may still be in
 -- flight, or a checked_at that is too early or in the future.
 -- Do NOT widen the WHERE clause; wait, check AWS again and re-run.
 ```
