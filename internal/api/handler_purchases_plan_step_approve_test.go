@@ -279,3 +279,33 @@ func TestApproveConstraintsForSession_NilSession_NonUSDCappedPlanStep(t *testing
 	_, err := newTokenApprove(t, nil, autoPlan(&capAmount)).handler.approveViaToken(ctx, &events.LambdaFunctionURLRequest{}, exec, "valid-token")
 	requireStatus(t, err, 404) // the 401 is concealed as not-found
 }
+
+// A manual bound plan with group caps and no plan cap: the approval gate runs
+// only because it shares StepCapApplies with the attach path (#1746), so an
+// over-cap group, or a rec outside every group, is refused for the email-link
+// approver too.
+func TestApproveViaToken_PlanStep_ManualBoundPlanGroupCaps(t *testing.T) {
+	exec, total := planStepExecution(t)
+	key, err := config.RecIdentityKey(&exec.Recommendations[0])
+	require.NoError(t, err)
+	bound := func(groupCap *float64, ids ...string) *config.PurchasePlan {
+		return &config.PurchasePlan{
+			ID:           stepPlanID,
+			RampSchedule: config.RampSchedule{AllocationMode: config.RampAllocationBoundGroups},
+			Services: map[string]config.ServiceConfig{"azure/compute#g1": {
+				Provider: "azure", Service: "compute", Enabled: true, MinCount: 1, GroupID: "g1",
+				BoundIdentities: ids, MaxStepCommitment: groupCap,
+			}},
+		}
+	}
+	under, over := total+1, total-1
+
+	f := newTokenApprove(t, nil, bound(&under, key))
+	requireApproveReached(t, f.purchase, f.approve(exec))
+
+	f = newTokenApprove(t, nil, bound(&over, key))
+	requireApproveRefused(t, f.purchase, f.approve(exec), 403)
+
+	f = newTokenApprove(t, nil, bound(&under, "some-other-identity"))
+	requireApproveRefused(t, f.purchase, f.approve(exec), 403)
+}

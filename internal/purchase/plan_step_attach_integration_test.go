@@ -152,6 +152,40 @@ func TestAttachIntegration_NoMatchAndCap(t *testing.T) {
 		assert.Contains(t, rows[0].Error, "rec-a")
 		assert.Contains(t, rows[0].Error, "exceeds max_step_commitment 1.00")
 	})
+	t.Run("a manual bound plan with an over-cap group and no plan cap fails the step", func(t *testing.T) {
+		// Only StepCapApplies makes the attach path run the cap check for this plan
+		// (manual, no plan cap): its group cap and its group mapping are held here too.
+		rec := attachRec("rec-a", 5)
+		key, err := config.RecIdentityKey(&rec)
+		require.NoError(t, err)
+		next := time.Now().Add(24 * time.Hour).Truncate(time.Microsecond)
+		plan := &config.PurchasePlan{
+			Name: "attach-bound-manual", Enabled: true, NotificationDaysBefore: 30,
+			Services: map[string]config.ServiceConfig{"aws/ec2#g1": {
+				Provider: "aws", Service: "ec2", Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 80,
+				MinCount: 1, GroupID: "g1", BoundIdentities: []string{key}, MaxStepCommitment: f64(1),
+			}},
+			RampSchedule:      config.RampSchedule{Type: "weekly", PercentPerStep: 25, StepIntervalDays: 7, TotalSteps: 4, StartDate: next.AddDate(0, 0, -7), AllocationMode: config.RampAllocationBoundGroups},
+			NextExecutionDate: &next,
+		}
+		require.NoError(t, plan.Validate())
+		require.NoError(t, store.CreatePurchasePlan(ctx, plan))
+		// A manual plan attaches only into its pre-created empty root row.
+		root := &config.PurchaseExecution{PlanID: plan.ID, ExecutionID: "00000000-0000-4000-8000-0000000000a2", Status: "pending", StepNumber: 1, ScheduledDate: time.Now().Add(40 * 24 * time.Hour)}
+		require.NoError(t, store.SavePurchaseExecution(ctx, root))
+		sender := newCountingSender(ctx)
+		m := &Manager{config: store, email: sender, resolver: &fakeResolver{recs: []config.RecommendationRecord{rec}}}
+
+		require.False(t, m.sendPlanNotification(ctx, plan, false))
+
+		rows := stepRowsInDB(ctx, t, store, plan.ID)
+		require.Len(t, rows, 1)
+		assert.Equal(t, root.ExecutionID, rows[0].ExecutionID)
+		assert.Equal(t, "failed", rows[0].Status)
+		assert.Empty(t, rows[0].Recommendations)
+		assert.Contains(t, rows[0].Error, `group "aws/ec2#g1"`)
+		assert.Contains(t, rows[0].Error, "exceeds its max_step_commitment 1.00")
+	})
 	t.Run("pre-created empty root row is attached in place", func(t *testing.T) {
 		plan := attachPlanInDB(ctx, t, store, "attach-root", time.Now().Add(24*time.Hour))
 		root := &config.PurchaseExecution{PlanID: plan.ID, ExecutionID: "00000000-0000-4000-8000-0000000000a1", Status: "pending", StepNumber: 1, ScheduledDate: time.Now().Add(40 * 24 * time.Hour)}
