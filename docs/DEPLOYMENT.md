@@ -464,6 +464,26 @@ What is counted:
   concurrent reservation, since the Azure save takes no advisory lock.
 - Only USD amounts count; rows in another currency are not counted.
 
+### Re-arming an expired approval step (migration 000164)
+
+An approval-needed plan step whose unapproved root expired within the last
+30 days is re-armed once by the notification tick (#1785). The feature is
+inert until migration 000164 (`purchase_executions.approval_readopted_at`)
+is applied. To size what the first tick may email (at most one email per
+plan), run this read-only. It is an upper bound: it omits the single-row,
+once-marker and auto-plan/4-eyes clauses, so the real count can be lower:
+
+```sql
+SELECT count(*) FROM purchase_executions e JOIN purchase_plans p ON p.id = e.plan_id
+ WHERE e.status = 'expired' AND e.updated_at >= now() - interval '30 days'
+   AND e.cloud_account_id IS NULL AND e.retry_attempt_n = 0
+   AND e.retry_execution_id IS NULL AND e.ladder_run_id IS NULL
+   AND e.step_number = COALESCE((p.ramp_schedule->>'current_step')::int, 0) + 1
+   AND p.enabled AND NOT COALESCE((p.ramp_schedule->>'dates_managed')::boolean, false);
+```
+
+The down migration drops the column and so discards every once-marker.
+
 ### CI/CD Integration
 
 ```yaml

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -16,6 +17,19 @@ const settlementMigrationVersion = 155
 // columns to ri_exchange_direct_executions (#1836). It mirrors
 // directResolutionMigration in internal/database/postgres/migrations.
 const directResolveMigrationVersion = 163
+
+// readoptMigrationVersion is the migration that adds
+// purchase_executions.approval_readopted_at (#1785). It mirrors the file
+// 000164_purchase_executions_approval_readopted_at in internal/database/postgres/migrations.
+const readoptMigrationVersion = 164
+
+// ReadoptMaxExpiredAge bounds how long after expiry an unapproved plan-step
+// root may be re-armed. updated_at is the expiry time because nothing writes an
+// expired row afterwards; a future writer that bumps it only widens the window.
+const ReadoptMaxExpiredAge = 30 * 24 * time.Hour
+
+// ErrReadoptNotReady: the re-adoption migration is not applied yet.
+var ErrReadoptNotReady = errors.New("re-arming an expired plan step is not available until the database migration is applied")
 
 // rowQuerier is satisfied by both the store's connection and a pgx.Tx, so a
 // schema check can run inside the caller's transaction.
@@ -74,4 +88,15 @@ func requireDirectResolveSchema(ctx context.Context, q rowQuerier) error {
 		return ErrRIExchangeDirectResolveNotReady
 	}
 	return nil
+}
+
+// readoptSchemaReady reports whether approval_readopted_at exists. Same N-1
+// rule as settlementSchemaReady: until migration 164 is applied the list
+// returns nothing and the CAS answers ErrReadoptNotReady.
+func readoptSchemaReady(ctx context.Context, q rowQuerier) (bool, error) {
+	version, dirty, found, err := readSchemaVersion(ctx, q)
+	if err != nil || !found {
+		return false, err
+	}
+	return version > readoptMigrationVersion || (version == readoptMigrationVersion && !dirty), nil
 }
