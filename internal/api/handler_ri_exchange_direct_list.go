@@ -25,8 +25,8 @@ func (h *Handler) listRIExchangeDirectExecutions(ctx context.Context, req *event
 		return nil, NewClientError(503, "RI exchange resolve storage is unavailable")
 	}
 	allowed, err := h.visibleRIExchangeDirectPairs(ctx, session, store)
-	if err != nil {
-		return nil, err
+	if mapped := mapRIExchangeResolveError(err); mapped != nil {
+		return nil, mapped
 	}
 	filter.Allowed = allowed
 	page, err := store.ListUnresolvedRIExchangeDirectExecutions(ctx, filter)
