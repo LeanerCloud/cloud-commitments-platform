@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -62,6 +63,7 @@ type Config struct {
 	Audiences []string
 	Subjects  []string
 	Skew      time.Duration
+	Now       func() time.Time // injectable clock; nil means time.Now
 }
 
 // Validator authenticates inbound requests against the configured mode.
@@ -79,6 +81,11 @@ type Validator struct {
 	skew        time.Duration
 	bearer      []byte
 	now         func() time.Time // pluggable for tests
+
+	jwksResult   atomic.Pointer[jwksProbeResult] // nil until the first probe finished
+	jwksMu       sync.Mutex                      // guards jwksInflight and the re-probe trigger decision
+	jwksInflight chan struct{}                   // non-nil while a probe goroutine runs; closed on completion
+	jwksWait     time.Duration                   // test override of jwksRefreshWait; 0 means the default
 }
 
 // claims captures the timestamp claims we need beyond what go-oidc's
@@ -104,19 +111,23 @@ type claims struct {
 // with the new kid before retiring the old key.
 //
 // To pre-warm the cache and surface JWKS endpoint misconfiguration at
-// startup, callers should invoke (*Validator).Warmup. Failure is logged
-// but does not abort startup — Google's CDN sometimes hiccups and we
-// prefer the validator come up with a stale-on-error fetch on the first
-// real request rather than crashloop the container.
+// startup, callers should invoke (*Validator).Warmup. Fail-open for serving
+// by design (a Lambda cold-start init budget cannot host a retry loop; a bad
+// JWKS only affects /api/scheduled/*). The outcome is exposed via JWKSHealth
+// and shown as the scheduled_auth_jwks check on /health; the deploy gate
+// fails a persistent degraded state. Healthy is terminal. platform#67, A+.
 func New(cfg Config) (*Validator, error) {
 	if cfg.Skew <= 0 {
 		cfg.Skew = DefaultClockSkew
 	}
 
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
 	v := &Validator{
 		mode: cfg.Mode,
 		skew: cfg.Skew,
-		now:  time.Now,
+		now:  cfg.Now,
 	}
 
 	switch cfg.Mode {
@@ -266,11 +277,11 @@ func (v *Validator) Mode() Mode {
 const warmupTimeout = 5 * time.Second
 
 // Warmup performs a best-effort sanity check on the JWKS endpoint at
-// startup. Failure is non-fatal — it is logged and the validator stays
-// operable; the underlying *oidc.RemoteKeySet retries on the first real
-// request. This avoids crashlooping the container when Google's CDN
-// hiccups, while still surfacing misconfiguration (wrong URL, blocked
-// egress) prominently in the startup logs.
+// startup. Fail-open for serving by design (a Lambda cold-start init budget
+// cannot host a retry loop; a bad JWKS only affects /api/scheduled/*). The
+// outcome is exposed via JWKSHealth and shown as the scheduled_auth_jwks
+// check on /health; the deploy gate fails a persistent degraded state.
+// Healthy is terminal. platform#67, option A+.
 //
 // If ctx has no deadline, a 5s fallback is applied — startup must
 // always make forward progress, even if the caller forgot to bound the
@@ -289,27 +300,7 @@ func (v *Validator) Warmup(ctx context.Context) {
 		ctx, cancel = context.WithTimeout(ctx, warmupTimeout)
 		defer cancel()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.jwksURL, http.NoBody)
-	if err != nil {
-		log.Printf("scheduledauth: WARN — JWKS warmup request build failed: %v", err)
-		return
-	}
-	resp, err := v.httpClient.Do(req) // #nosec G704 -- jwksURL is operator-supplied config (SCHEDULED_TASK_OIDC_JWKS_URL), not request-tainted user input; v.httpClient is the hardened client from pkg/httpclient that blocks IMDS/link-local endpoints and enforces dial/TLS/overall timeouts
-	if err != nil {
-		log.Printf("scheduledauth: WARN — JWKS warmup fetch failed for %s: %v "+
-			"(validator will retry on first request)", v.jwksURL, err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		log.Printf("scheduledauth: WARN — JWKS warmup got %d from %s "+
-			"(validator will retry on first request)", resp.StatusCode, v.jwksURL)
-		return
-	}
-	if err := validateJWKSBody(resp.Body); err != nil {
-		log.Printf("scheduledauth: WARN — JWKS warmup got invalid JWKS payload from %s: %v "+
-			"(validator will retry on first request)", v.jwksURL, err)
-	}
+	v.storeJWKSResult(v.probeJWKS(ctx))
 }
 
 func validateJWKSBody(r io.Reader) error {
