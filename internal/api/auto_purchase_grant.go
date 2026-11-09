@@ -73,7 +73,21 @@ func planArmEscalates(before, after *config.PurchasePlan) bool {
 	}
 	return !subsetOf(afterProviders, beforeProviders) ||
 		!subsetOf(config.DerivePlanServices(after), config.DerivePlanServices(before)) ||
-		boundGroupsEscalate(before, after)
+		boundGroupsEscalate(before, after) ||
+		reEnablesEntry(before, after)
+}
+
+// reEnablesEntry reports whether an entry that was disabled is enabled again.
+// The armed plan then buys for it, which the provider and service sets above
+// cannot see because they ignore Enabled (#1777). Unlike enablesEntry, an
+// absent entry is not counted: a new service is already caught by those sets.
+func reEnablesEntry(before, after *config.PurchasePlan) bool {
+	for key, svc := range after.Services {
+		if prev, ok := before.Services[key]; ok && svc.Enabled && !prev.Enabled {
+			return true
+		}
+	}
+	return false
 }
 
 func subsetOf(sub, super []string) bool {

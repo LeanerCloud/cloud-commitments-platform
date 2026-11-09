@@ -278,6 +278,30 @@ func TestPlanArmEscalates_ProviderAndServiceWidening(t *testing.T) {
 	})
 }
 
+// A disabled entry turned back on starts buying under the existing arming, so
+// it needs the grant like a new service does (#1777).
+func TestPlanArmEscalates_ReEnabledEntry(t *testing.T) {
+	plan := func(enabled bool) *config.PurchasePlan {
+		p := apgStoredPlan(true, apgCap(1000))
+		p.Services = map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Enabled: enabled}}
+		return p
+	}
+	for _, tc := range []struct {
+		name          string
+		before, after bool
+		want          bool
+	}{
+		{"disabled to enabled", false, true, true},
+		{"enabled stays enabled", true, true, false},
+		{"disabled stays disabled", false, false, false},
+		{"enabled to disabled is a narrowing", true, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, planArmEscalates(plan(tc.before), plan(tc.after)))
+		})
+	}
+}
+
 // A provider mismatch is a malformed request, so it is a 400 whatever the
 // plan's armed state; the 403 arming gate must not mask it.
 func TestAutoPurchaseScope_RetargetProviderMismatchBeforeArmingGate(t *testing.T) {
