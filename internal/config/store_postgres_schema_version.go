@@ -12,6 +12,11 @@ import (
 // columns to purchase_executions (issue #999).
 const settlementMigrationVersion = 155
 
+// directResolveMigrationVersion is the migration that adds the resolution
+// columns to ri_exchange_direct_executions (#1836). It mirrors
+// directResolutionMigration in internal/database/postgres/migrations.
+const directResolveMigrationVersion = 163
+
 // rowQuerier is satisfied by both the store's connection and a pgx.Tx, so a
 // schema check can run inside the caller's transaction.
 type rowQuerier interface {
@@ -44,4 +49,29 @@ func settlementSchemaReady(ctx context.Context, q rowQuerier) (bool, error) {
 		return false, err
 	}
 	return version > settlementMigrationVersion || (version == settlementMigrationVersion && !dirty), nil
+}
+
+// directResolveSchemaReady reports whether the direct-exchange resolution
+// columns exist. Same N-1 rule as settlementSchemaReady: until migration 163 is
+// applied the guard and finalize drop their resolved_at references and the
+// list, get and resolve paths answer ErrRIExchangeDirectResolveNotReady.
+func directResolveSchemaReady(ctx context.Context, q rowQuerier) (bool, error) {
+	version, dirty, found, err := readSchemaVersion(ctx, q)
+	if err != nil || !found {
+		return false, err
+	}
+	return version > directResolveMigrationVersion || (version == directResolveMigrationVersion && !dirty), nil
+}
+
+// requireDirectResolveSchema fails with ErrRIExchangeDirectResolveNotReady
+// while the resolution columns are missing.
+func requireDirectResolveSchema(ctx context.Context, q rowQuerier) error {
+	ready, err := directResolveSchemaReady(ctx, q)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		return ErrRIExchangeDirectResolveNotReady
+	}
+	return nil
 }

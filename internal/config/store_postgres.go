@@ -3488,8 +3488,9 @@ func normaliseRIExchangeSourceIDs(sources []string) []string {
 // refuseRIExchangeSourceInFlightDirect is the sibling guard for direct
 // executes: an AWS ri_exchange_direct_executions row still submitted (the
 // accept may be committing) or unknown (it may have committed) holds its
-// source RIs. It normalises its own input and compares against the stored ids
-// normalised the same way, so spelling and padding cannot slip an RI past it.
+// source RIs until an operator resolves it (resolved_at set, #1836). It
+// normalises its own input and compares against the stored ids normalised the
+// same way, so spelling and padding cannot slip an RI past it.
 // Like refuseRIExchangeSourceInFlight it runs under the daily-spend advisory
 // lock, fails closed on a lookup error, and logs the blocking row's id rather
 // than returning it (#1428).
@@ -3498,6 +3499,13 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 	if len(normalised) == 0 {
 		return nil
 	}
+	resolvedFilter := " AND resolved_at IS NULL"
+	if ready, err := directResolveSchemaReady(ctx, tx); err != nil {
+		logging.Errorf("RI exchange reservation: schema version check failed: %v", err)
+		return errors.New("failed to check RI exchange source RIs held by a direct execute")
+	} else if !ready {
+		resolvedFilter = ""
+	}
 	var blocker string
 	var shared []string
 	err := tx.QueryRow(ctx, `
@@ -3505,7 +3513,7 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 		FROM (
 			SELECT id, created_at, ARRAY(SELECT lower(btrim(x, E' \t\n\r\f\x0B')) FROM unnest(source_ids) x) AS ids
 			FROM ri_exchange_direct_executions
-			WHERE provider = 'aws' AND status IN ('submitted', 'unknown')
+			WHERE provider = 'aws' AND status IN ('submitted', 'unknown')`+resolvedFilter+`
 		) d
 		WHERE ids && $1::text[]
 		ORDER BY created_at, id

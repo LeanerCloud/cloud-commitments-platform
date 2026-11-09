@@ -145,11 +145,14 @@ AUTO and approved exchanges share, so repeated direct executes can spend past it
 The in-flight source-RI guard only stops two exchanges taking the same RI; it does
 not cap total spend.
 
-### No operator resolve endpoint for direct RI exchange rows (issue #1829 follow-up)
+### Direct finalize reads the schema version outside its statement (issue #1836)
 
-A direct row left `submitted` or `unknown` keeps its source RIs blocked until a DBA
-settles it with the SQL in `runbooks/ri-exchange-direct-execution-settle.md`. A
-resolve endpoint (and a list of unresolved direct rows) is tracked in #1836.
+`FinalizeRIExchangeDirectExecution` reads the schema version before its UPDATE,
+not in the same statement. If migration 163 lands between the two, a late
+provider outcome that contradicts an operator resolution is finalized without
+the contradiction being logged (the row keeps both facts either way). A version
+read that fails is logged and finalizes without the check. Neither loses the
+provider outcome.
 
 ### RI id matching is exact for stored history rows (issue #1829)
 

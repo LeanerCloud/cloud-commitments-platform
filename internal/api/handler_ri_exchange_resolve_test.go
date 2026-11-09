@@ -288,3 +288,42 @@ func TestResolveRIExchange_CappedGrantMissingHoldIsNotFound(t *testing.T) {
 	require.ErrorIs(t, err, errNotFound)
 	assert.Zero(t, store.called)
 }
+
+// The constraints check must use the checked region and the deployment's own
+// account, not a fixed pair: each case differs from the other cases in exactly
+// the dimension a hard-coded region or a swapped account would hide.
+func TestResolveRIExchange_ConstraintsUseTheCheckedRegionAndTheDeploymentAccount(t *testing.T) {
+	grant := func(c auth.PermissionConstraints) []auth.Permission {
+		return []auth.Permission{{Action: auth.ActionExecute, Resource: "ri-exchange", Constraints: &c}}
+	}
+	tests := []struct {
+		name       string
+		perms      []auth.Permission
+		region     string
+		deployment string
+		want       int // 0 = allowed
+	}{
+		{"grant for the checked region, which is not us-east-1", grant(auth.PermissionConstraints{Regions: []string{"eu-west-1"}}), "eu-west-1", scopedInAccount, 0},
+		{"grant for us-east-1 against another checked region", grant(auth.PermissionConstraints{Regions: []string{"us-east-1"}}), "eu-west-1", scopedInAccount, 403},
+		{"grant for the deployment's account", grant(auth.PermissionConstraints{AccountIDs: []string{scopedInAccount}}), "us-east-1", scopedInAccount, 0},
+		{"grant for another account than the deployment's", grant(auth.PermissionConstraints{AccountIDs: []string{scopedInAccount}}), "us-east-1", scopedOutAccount, 403},
+		{"grant for the other account, matching the deployment", grant(auth.PermissionConstraints{AccountIDs: []string{scopedOutAccount}}), "us-east-1", scopedOutAccount, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &resolveRIStore{MockConfigStore: new(MockConfigStore)}
+			h, req := apgCaller{perms: tc.perms}.handlerAndReq(store.MockConfigStore,
+				strings.ReplaceAll(riResolveFailedBody, "us-east-1", tc.region))
+			h.config = store
+			h.reshapeAccountResolver = func(context.Context) (string, error) { return tc.deployment, nil }
+			_, err := h.resolveRIExchange(context.Background(), req, resolveRIID)
+			if tc.want == 0 {
+				require.NoError(t, err)
+				assert.Equal(t, 1, store.called)
+				return
+			}
+			assert.Equal(t, tc.want, clientCode(t, err))
+			assert.Zero(t, store.called, "a refused caller must not reach the store")
+		})
+	}
+}
