@@ -2,10 +2,13 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var holdNow = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
 func holdOf(ids ...string) *RecommendationsCollectionPartial {
 	return &RecommendationsCollectionPartial{Providers: []PartialProviderSweep{{
@@ -44,7 +47,7 @@ func TestCarryAzureHold(t *testing.T) {
 		"ambient drops with no ambient rows": {holdOf(), nil, nil, stored, nil, false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := carryAzureHold(tc.prev, tc.partial, tc.collects, tc.stored)
+			got, _ := carryAzureHold(tc.prev, tc.partial, tc.collects, tc.stored, nil, holdNow)
 			if !tc.wantHold {
 				assert.Nil(t, got)
 				return
@@ -64,22 +67,23 @@ func TestCarryAzureHold_AmbientSurvivesNamedReprice(t *testing.T) {
 	stored := map[string]bool{ambientAccountKey: true, "c": true}
 
 	// Cycle 1: the ambient hold carries while this cycle holds account c.
-	merged := carryAzureHold(holdOf(), holdOf("c"), nil, stored)
+	merged, _ := carryAzureHold(holdOf(), holdOf("c"), nil, stored, nil, holdNow)
 	require.NotNil(t, merged)
 
 	// Cycle 2: c re-prices, the ambient identity does not.
-	got := carryAzureHold(merged, nil, azureCollect(&c), stored)
+	got, _ := carryAzureHold(merged, nil, azureCollect(&c), stored, nil, holdNow)
 	require.NotNil(t, got, "ambient rows still exist, so the hold must stay")
 	assert.Contains(t, got.Providers[0].HeldAccountIDs, ambientAccountKey)
 
 	// Cycle 3: the ambient identity re-prices, which ends the hold.
-	assert.Nil(t, carryAzureHold(got, nil, azureCollect(nil), stored))
+	end, _ := carryAzureHold(got, nil, azureCollect(nil), stored, nil, holdNow)
+	assert.Nil(t, end)
 }
 
 // An ambient pricing outage in this cycle plus a carried named hold keeps both.
 func TestCarryAzureHold_ThisCycleAmbientKeptWithCarriedNamed(t *testing.T) {
 	stored := map[string]bool{ambientAccountKey: true, "a": true}
-	got := carryAzureHold(holdOf("a"), holdOf(), nil, stored)
+	got, _ := carryAzureHold(holdOf("a"), holdOf(), nil, stored, nil, holdNow)
 	require.NotNil(t, got)
 	assert.ElementsMatch(t, []string{"a", ambientAccountKey}, got.Providers[0].HeldAccountIDs)
 }
@@ -98,7 +102,7 @@ func TestCarryAzureHold_IncompleteAccountsCountsEachCarriedAccount(t *testing.T)
 		"ambient carried":                  {holdOf(), nil, 1},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := carryAzureHold(tc.prev, tc.partial, nil, stored)
+			got, _ := carryAzureHold(tc.prev, tc.partial, nil, stored, nil, holdNow)
 			require.NotNil(t, got)
 			assert.Equal(t, tc.want, got.Providers[0].IncompleteAccounts)
 		})

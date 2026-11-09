@@ -91,7 +91,7 @@ func (s *PostgresStore) UpsertRecommendationsWithPartial(ctx context.Context, co
 
 	// The state row lock is taken last, after the row writes, so the lock order
 	// is unchanged from the plain UPDATE this replaced.
-	partialJSON, markerErr := lockedMarkerJSON(ctx, tx, partial, successfulCollects)
+	partialJSON, markerErr := lockedMarkerJSON(ctx, tx, collectedAt, partial, successfulCollects)
 	if markerErr != nil {
 		return markerErr
 	}
@@ -134,43 +134,78 @@ func encodeCollectionPartial(partial *RecommendationsCollectionPartial) ([]byte,
 
 // lockedMarkerJSON returns the encoded marker to write: partial with the
 // previous Azure hold merged in under the state row lock.
-func lockedMarkerJSON(ctx context.Context, tx pgx.Tx, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) ([]byte, error) {
-	merged, err := carryHoldInTx(ctx, tx, partial, collects)
+func lockedMarkerJSON(ctx context.Context, tx pgx.Tx, now time.Time, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) ([]byte, error) {
+	merged, evict, err := carryHoldInTx(ctx, tx, now, partial, collects)
 	if err != nil {
 		return nil, err
 	}
+	_ = evict // T2 deletes these rows
 	return encodeCollectionPartial(merged)
 }
 
 // carryHoldInTx locks the state row, then merges the previous Azure pricing
 // hold into partial. The lock serializes this read-merge-write against every
 // concurrent collection. An unreadable row or account list fails the tx.
-func carryHoldInTx(ctx context.Context, tx pgx.Tx, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) (*RecommendationsCollectionPartial, error) {
+func carryHoldInTx(ctx context.Context, tx pgx.Tx, now time.Time, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) (*RecommendationsCollectionPartial, []string, error) {
 	var raw []byte
 	if err := tx.QueryRow(ctx, `SELECT last_collection_partial FROM recommendations_state WHERE id = 1 FOR UPDATE`).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("failed to lock recommendations_state: %w", err)
+		return nil, nil, fmt.Errorf("failed to lock recommendations_state: %w", err)
 	}
 	prev := decodeCollectionPartial(raw)
-	if previousAzureHold(prev) == nil {
-		return partial, nil
+	if sweep := azureSweep(prev); previousAzureHold(prev) == nil && (sweep == nil || len(sweep.ExpiredHoldAccountIDs) == 0) {
+		return partial, nil, nil
 	}
 	rows, err := tx.Query(ctx, `SELECT DISTINCT account_key::text FROM recommendations WHERE provider = 'azure'`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list azure accounts with stored rows: %w", err)
+		return nil, nil, fmt.Errorf("failed to list azure accounts with stored rows: %w", err)
 	}
+	stored, err := scanKeySet(rows, "azure account key")
+	if err != nil {
+		return nil, nil, err
+	}
+	active, err := activeAzureAccounts(ctx, tx, prev)
+	if err != nil {
+		return nil, nil, err
+	}
+	merged, evict := carryAzureHold(prev, partial, collects, stored, active, now)
+	return merged, evict, nil
+}
+
+// scanKeySet reads a single text column into a set and closes rows.
+func scanKeySet(rows pgx.Rows, what string) (map[string]bool, error) {
 	defer rows.Close()
-	stored := map[string]bool{}
+	set := map[string]bool{}
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("failed to scan azure account key: %w", err)
+			return nil, fmt.Errorf("failed to scan %s: %w", what, err)
 		}
-		stored[id] = true
+		set[id] = true
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to list azure accounts with stored rows: %w", err)
+		return nil, fmt.Errorf("failed to read %s: %w", what, err)
 	}
-	return carryAzureHold(prev, partial, collects, stored), nil
+	return set, nil
+}
+
+// activeAzureAccounts returns which of the previously expired account ids are
+// still enabled Azure accounts, the scheduler's roster predicate.
+func activeAzureAccounts(ctx context.Context, tx pgx.Tx, prev *RecommendationsCollectionPartial) (map[string]bool, error) {
+	sweep := azureSweep(prev)
+	if sweep == nil || len(sweep.ExpiredHoldAccountIDs) == 0 {
+		return map[string]bool{}, nil
+	}
+	ids := make([]string, 0, len(sweep.ExpiredHoldAccountIDs))
+	for _, id := range sweep.ExpiredHoldAccountIDs {
+		if id != ambientAccountKey {
+			ids = append(ids, id)
+		}
+	}
+	rows, err := tx.Query(ctx, `SELECT id::text FROM cloud_accounts WHERE id::text = ANY($1::text[]) AND provider = 'azure' AND enabled`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list enabled azure accounts: %w", err)
+	}
+	return scanKeySet(rows, "enabled azure account")
 }
 
 // successfulCollectArrays converts the SuccessfulCollect slice into the two
