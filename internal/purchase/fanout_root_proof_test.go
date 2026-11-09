@@ -63,10 +63,11 @@ func TestExecuteMultiAccount_RootProof(t *testing.T) {
 			r.saveTerminal(t)
 
 			assert.Equal(t, tc.wantProof, r.root.NoSubmission, "root no_submission")
+			store := r.store
 			if tc.wantProof {
-				r.store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "root")
+				store.AssertCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "root")
 			} else {
-				r.store.AssertNotCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "root")
+				store.AssertNotCalled(t, "DeleteSuppressionsByExecutionTx", mock.Anything, mock.Anything, "root")
 			}
 		})
 	}
