@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/pashagolub/pgxmock/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +22,7 @@ func expectDirectResolveVersion(mock pgxmock.PgxPoolIface, version int) {
 }
 
 // Before migration 163 the guard and finalize must not name resolved_at or
-// resolved_status (#1836); the queries with it are pinned by the neighbouring tests.
+// resolved_status (#1836); the queries with it are pinned by the neighboring tests.
 func TestPGXMock_DirectResolveBeforeMigration_QueriesOmitResolutionColumns(t *testing.T) {
 	notReady := directResolveMigrationVersion - 1
 
@@ -111,5 +113,33 @@ func TestPGXMock_FinalizeDirectExecution_UnreadableSchemaVersionStillFinalizes(t
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 	outcome := RIExchangeDirectOutcome{Status: RIExchangeDirectStatusCompleted, ProviderReference: "riex-1"}
 	require.NoError(t, storeWith(mock).FinalizeRIExchangeDirectExecution(context.Background(), directExecTestID, outcome))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// A failed version read in the guard refuses the reservation: reading it as
+// "not ready" would drop the resolved_at filter and reading it as "ready" would
+// name a column that may not exist. Neither may look like a held source RI.
+func TestPGXMock_DirectGuard_UnreadableSchemaVersionRefuses(t *testing.T) {
+	var logs bytes.Buffer
+	prev := logging.SetOutput(&logs)
+	t.Cleanup(func() { logging.SetOutput(prev) })
+
+	mock := newMock(t)
+	rec := validDirectExecution()
+	rec.Provider = "aws"
+	mock.ExpectBegin()
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs(riExchangeDailySpendLockKey).
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectQuery("SELECT id::text, ARRAY").WithArgs(anyArgsCfg(2)...).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "shared"}))
+	mock.ExpectQuery("SELECT version, dirty FROM schema_migrations").WillReturnError(errors.New("connection reset"))
+	mock.ExpectRollback()
+
+	err := storeWith(mock).SaveRIExchangeDirectExecution(context.Background(), rec)
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrRIExchangeSourceInFlight)
+	assert.Contains(t, logs.String(), "schema version check failed", "the refusal comes from the version read, not from the blocker query")
+	assert.NotContains(t, logs.String(), "source RI check failed")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

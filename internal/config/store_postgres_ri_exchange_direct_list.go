@@ -39,8 +39,8 @@ func (s *PostgresStore) ListUnresolvedRIExchangeDirectExecutions(ctx context.Con
 	if err != nil {
 		return nil, err
 	}
-	if err := requireDirectResolveSchema(ctx, s.db); err != nil {
-		return nil, err
+	if schemaErr := requireDirectResolveSchema(ctx, s.db); schemaErr != nil {
+		return nil, schemaErr
 	}
 	page := &RIExchangeDirectListPage{}
 	if len(f.Allowed) == 0 {
@@ -109,9 +109,9 @@ func validateRIExchangeDirectListFilter(f RIExchangeDirectListFilter) (limit int
 
 // allowedListArrays splits the allowed pairs into the two parallel arrays the
 // query unnests.
-func allowedListArrays(allowed []RIExchangeDirectAccountRegion) ([]*string, []string) {
-	accounts := make([]*string, len(allowed))
-	regions := make([]string, len(allowed))
+func allowedListArrays(allowed []RIExchangeDirectAccountRegion) (accounts []*string, regions []string) {
+	accounts = make([]*string, len(allowed))
+	regions = make([]string, len(allowed))
 	for i, p := range allowed {
 		accounts[i], regions[i] = p.CloudAccountID, p.Region
 	}
@@ -119,7 +119,7 @@ func allowedListArrays(allowed []RIExchangeDirectAccountRegion) ([]*string, []st
 }
 
 // listCursorArgs is the keyset cursor as nullable SQL arguments.
-func listCursorArgs(after *RIExchangeDirectCursor) (*time.Time, *string) {
+func listCursorArgs(after *RIExchangeDirectCursor) (at *time.Time, id *string) {
 	if after == nil {
 		return nil, nil
 	}
