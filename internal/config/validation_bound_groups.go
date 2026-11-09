@@ -23,6 +23,27 @@ func (c *ServiceConfig) EffectiveGroupID(key string) string {
 	return key
 }
 
+// CheckBoundKeys refuses a bound plan whose entries are not keyed by their own
+// provider, service and group (checkGroupKey). A gate that reads a stored plan
+// without validating it calls this before it derives grant scopes from the keys.
+func (p *PurchasePlan) CheckBoundKeys() error {
+	if p == nil || p.RampSchedule.AllocationMode != RampAllocationBoundGroups {
+		return nil
+	}
+	keys := make([]string, 0, len(p.Services))
+	for k := range p.Services {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys) // the error names the first bad key in a stable order
+	for _, k := range keys {
+		svc := p.Services[k]
+		if err := checkGroupKey(k, &svc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateBoundGroups checks a bound_groups plan's entries against each other.
 // Unmarked plans are skipped, so existing plans (including migration 000040's
 // savings-plans siblings, which share one identity) validate as before. The
