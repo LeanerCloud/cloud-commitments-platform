@@ -619,6 +619,13 @@ CUDly learns that an RI listed on the AWS Reserved Instance Marketplace sold, cl
 - **AKS:** hourly by default, as a Kubernetes CronJob, when `deploy_kubernetes_resources` is true. `enable_finalize_revocations_schedule` (default `true`) and `finalize_revocations_schedule` (default `30 * * * *`) on the AKS module.
 - **GCP Cloud Run, GKE and Azure Container Apps:** hourly by default, as a Cloud Scheduler job (GCP) or a Logic App (Container Apps), when the module's `enable_scheduled_tasks` is true. `enable_finalize_revocations_schedule` (default `true`) and `finalize_revocations_schedule` (default `30 * * * *`) in `terraform/environments/gcp` and `terraform/environments/azure`. `terraform/environments/gcp` does not pass `enable_scheduled_tasks` or `app_url` to GKE, so a GKE deployment from there has no Cloud Scheduler jobs.
 
+### Ladder Reconcile Sweep
+
+The `ladder_reconcile` task settles fired ladder tranches: it marks a tranche active once its purchase completes and releases it when the purchase fails or goes stale (6 hours). It is not gated by the ladder switches and does nothing when no tranche is fired, so it is on by default on every platform. Run it well inside the 6-hour window.
+
+- **AWS Lambda and Fargate:** hourly. `enable_ladder_reconcile_schedule` (default `true`) and `ladder_reconcile_schedule` (default `rate(1 hour)`) in `terraform/environments/aws`.
+- **AKS, GCP Cloud Run, GKE and Azure Container Apps:** hourly at minute 15. `enable_ladder_reconcile_schedule` (default `true`) and `ladder_reconcile_schedule` (default `15 * * * *`) in `terraform/environments/gcp` and `terraform/environments/azure`, under the same `enable_scheduled_tasks` / `deploy_kubernetes_resources` conditions as the finalize sweep above.
+
 ---
 
 ## Troubleshooting

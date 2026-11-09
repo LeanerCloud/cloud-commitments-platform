@@ -441,6 +441,18 @@ variable "finalize_revocations_schedule" {
   default     = "rate(1 hour)"
 }
 
+variable "enable_ladder_reconcile_schedule" {
+  description = "Enable the scheduled ladder_reconcile sweep (settles fired ladder tranches: marks each one active once its purchase completes and releases it when the purchase fails or goes stale). Not gated by the ladder switches and a no-op when no tranche is fired, so it is on by default."
+  type        = bool
+  default     = true
+}
+
+variable "ladder_reconcile_schedule" {
+  description = "EventBridge schedule for the ladder_reconcile sweep (default rate(1 hour)); must stay well under the 6h stale-tranche window."
+  type        = string
+  default     = "rate(1 hour)"
+}
+
 variable "enable_reap_stuck_purchases_schedule" {
   description = "Enable the scheduled stuck-purchase reaper sweep (issue #678 backstop)."
   type        = bool

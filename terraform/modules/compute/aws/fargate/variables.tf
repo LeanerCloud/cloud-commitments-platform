@@ -299,6 +299,18 @@ variable "finalize_revocations_schedule" {
   default     = "rate(1 hour)"
 }
 
+variable "enable_ladder_reconcile_schedule" {
+  description = "Enable the scheduled ladder_reconcile sweep (settles fired ladder tranches: marks each one active once its purchase completes and releases it when the purchase fails or goes stale). Not gated by the ladder switches and a no-op when no tranche is fired, so it is on by default."
+  type        = bool
+  default     = true
+}
+
+variable "ladder_reconcile_schedule" {
+  description = "EventBridge schedule for the ladder_reconcile sweep (default rate(1 hour)); must stay well under the 6h stale-tranche window."
+  type        = string
+  default     = "rate(1 hour)"
+}
+
 variable "enable_cleanup_schedule" {
   description = "Enable the scheduled server cleanup sweep. Opt-in: default false. It deletes expired sessions and, via CleanupOldExecutions(30), purchase_executions that are completed with scheduled_date older than 30 days, canceled with updated_at older than 30 days, or in a status outside failed/canceled with expires_at older than 30 days. The first run deletes the whole backlog, so export any history you want to keep first."
   type        = bool

@@ -108,6 +108,8 @@ module "compute_cloud_run" {
   send_notifications_schedule                 = var.send_notifications_schedule
   enable_finalize_revocations_schedule        = var.enable_finalize_revocations_schedule
   finalize_revocations_schedule               = var.finalize_revocations_schedule
+  enable_ladder_reconcile_schedule            = var.enable_ladder_reconcile_schedule
+  ladder_reconcile_schedule                   = var.ladder_reconcile_schedule
   enable_cleanup_schedule                     = var.enable_cleanup_schedule
   cleanup_schedule                            = var.cleanup_schedule
 
@@ -222,6 +224,8 @@ module "compute_gke" {
   send_notifications_schedule                 = var.send_notifications_schedule
   enable_finalize_revocations_schedule        = var.enable_finalize_revocations_schedule
   finalize_revocations_schedule               = var.finalize_revocations_schedule
+  enable_ladder_reconcile_schedule            = var.enable_ladder_reconcile_schedule
+  ladder_reconcile_schedule                   = var.ladder_reconcile_schedule
   enable_cleanup_schedule                     = var.enable_cleanup_schedule
   cleanup_schedule                            = var.cleanup_schedule
 

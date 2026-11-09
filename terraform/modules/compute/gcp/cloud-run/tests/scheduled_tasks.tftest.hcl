@@ -23,8 +23,8 @@ run "defaults_schedule_only_the_default_on_sweeps" {
   command = apply
 
   assert {
-    condition     = toset(keys(google_cloud_scheduler_job.sweep)) == toset(["analytics_collect", "finalize_revocations", "fire_scheduled_purchases", "reap_stuck_purchases"])
-    error_message = "By default reap, analytics, finalize and fire run; process, send_notifications and cleanup are opt-in."
+    condition     = toset(keys(google_cloud_scheduler_job.sweep)) == toset(["analytics_collect", "finalize_revocations", "fire_scheduled_purchases", "ladder_reconcile", "reap_stuck_purchases"])
+    error_message = "By default reap, analytics, finalize, fire and ladder_reconcile run; process, send_notifications and cleanup are opt-in."
   }
 
   assert {
@@ -74,7 +74,7 @@ run "opt_in_sweeps_follow_their_flags" {
 
   assert {
     condition = toset(keys(google_cloud_scheduler_job.sweep)) == toset([
-      "cleanup", "finalize_revocations", "fire_scheduled_purchases", "process_scheduled_purchases",
+      "cleanup", "finalize_revocations", "fire_scheduled_purchases", "ladder_reconcile", "process_scheduled_purchases",
       "reap_stuck_purchases", "send_notifications",
     ])
     error_message = "Each per-task flag must switch its job on or off independently."
@@ -106,7 +106,7 @@ run "fire_opt_out" {
   }
 
   assert {
-    condition     = toset(keys(google_cloud_scheduler_job.sweep)) == toset(["analytics_collect", "finalize_revocations", "reap_stuck_purchases"])
+    condition     = toset(keys(google_cloud_scheduler_job.sweep)) == toset(["analytics_collect", "finalize_revocations", "ladder_reconcile", "reap_stuck_purchases"])
     error_message = "Setting enable_fire_scheduled_purchases_schedule = false must remove the fire job."
   }
 

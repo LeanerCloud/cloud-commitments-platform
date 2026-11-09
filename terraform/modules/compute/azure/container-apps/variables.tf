@@ -332,6 +332,18 @@ variable "finalize_revocations_schedule" {
   default     = "30 * * * *"
 }
 
+variable "enable_ladder_reconcile_schedule" {
+  description = "Schedule the ladder_reconcile sweep (settles fired ladder tranches: marks each one active once its purchase completes and releases it when the purchase fails or goes stale). Not gated by the ladder switches and a no-op when no tranche is fired, so it is on by default."
+  type        = bool
+  default     = true
+}
+
+variable "ladder_reconcile_schedule" {
+  description = "Cron schedule for ladder_reconcile (hourly at minute 15); must stay well under the 6h stale-tranche window."
+  type        = string
+  default     = "15 * * * *"
+}
+
 variable "enable_ri_exchange_schedule" {
   description = "Enable scheduled RI exchange automation via Logic Apps"
   type        = bool
