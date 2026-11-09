@@ -25,6 +25,7 @@ locals {
     process_scheduled_purchases = { job = "process", enabled = var.enable_process_scheduled_purchases_schedule, schedule = var.process_scheduled_purchases_schedule }
     send_notifications          = { job = "notify", enabled = var.enable_send_notifications_schedule, schedule = var.send_notifications_schedule }
     finalize_revocations        = { job = "finalize", enabled = var.enable_finalize_revocations_schedule, schedule = var.finalize_revocations_schedule }
+    ladder_reconcile            = { job = "reconcile", enabled = var.enable_ladder_reconcile_schedule, schedule = var.ladder_reconcile_schedule }
     cleanup                     = { job = "cleanup", enabled = var.enable_cleanup_schedule, schedule = var.cleanup_schedule }
   }
   active_sweeps = var.enable_scheduled_tasks ? { for k, v in local.sweep_tasks : k => v if v.enabled } : {}

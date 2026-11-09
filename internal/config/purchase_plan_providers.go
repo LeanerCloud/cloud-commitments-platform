@@ -26,8 +26,13 @@ func DerivePlanProviders(plan *PurchasePlan) ([]string, error) {
 		return nil, nil
 	}
 	seen := make(map[string]struct{}, len(plan.Services))
+	bound := plan.RampSchedule.AllocationMode == RampAllocationBoundGroups
 	for k := range plan.Services {
-		if provider := ServiceEntryProvider(k, plan.Services[k].Provider); provider != "" {
+		key := k
+		if bound {
+			key, _, _ = strings.Cut(key, BoundKeySeparator) // the group id may hold a "/"
+		}
+		if provider := ServiceEntryProvider(key, plan.Services[k].Provider); provider != "" {
 			seen[provider] = struct{}{}
 		}
 	}
@@ -53,14 +58,17 @@ func ServiceEntryProvider(key, fieldProvider string) string {
 
 // DerivePlanServices extracts the distinct service names a plan targets from
 // the "provider/service" and "provider:service" keys of plan.Services, sorted.
-// A bound entry's "#<group_id>" suffix is not part of its service name.
+// A bound plan's "#<group_id>" suffix is not part of its service name.
 func DerivePlanServices(plan *PurchasePlan) []string {
 	if plan == nil {
 		return nil
 	}
 	seen := make(map[string]struct{}, len(plan.Services))
+	bound := plan.RampSchedule.AllocationMode == RampAllocationBoundGroups
 	for k := range plan.Services {
-		k, _, _ = strings.Cut(k, BoundKeySeparator)
+		if bound {
+			k, _, _ = strings.Cut(k, BoundKeySeparator)
+		}
 		if i := strings.IndexAny(k, "/:"); i > 0 && i < len(k)-1 {
 			seen[k[i+1:]] = struct{}{}
 		}

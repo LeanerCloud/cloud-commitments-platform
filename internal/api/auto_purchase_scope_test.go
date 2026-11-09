@@ -295,3 +295,48 @@ func TestAutoPurchaseScope_RetargetProviderMismatchBeforeArmingGate(t *testing.T
 	assert.Equal(t, 400, clientCode(t, err))
 	assert.False(t, apgCalled(store, "SetPlanAccounts"))
 }
+
+// The grant's scopes come from a plan's keys, while sizing buys by each entry's
+// own provider and service. The retarget gate reads the stored plan without
+// validating it, so a bound plan whose key names another provider or service is
+// refused before any scope is derived (#1746): a grant covering the key's
+// gcp/compute and aws/rds must not move a plan that buys aws/ec2.
+func TestAutoPurchaseScope_RetargetRefusesBoundKeyNamingAnotherEntry(t *testing.T) {
+	grant := apsGrant(&auth.PermissionConstraints{Providers: []string{"aws", "gcp"}, Services: []string{"compute", "rds"}})
+	bound := func(key string, svc config.ServiceConfig) *config.PurchasePlan {
+		p := apgStoredPlan(true, apgCap(1000))
+		p.RampSchedule.AllocationMode = config.RampAllocationBoundGroups
+		p.Services = map[string]config.ServiceConfig{
+			key:          svc,
+			"aws/rds#g2": {Provider: "aws", Service: "rds", MinCount: 1, GroupID: "g2", BoundIdentities: []string{"k2"}},
+		}
+		return p
+	}
+	entry := func(provider, service string) config.ServiceConfig {
+		return config.ServiceConfig{Provider: provider, Service: service, Enabled: true, MinCount: 1, GroupID: "g1", BoundIdentities: []string{"k1"}}
+	}
+	for _, tc := range []struct {
+		name        string
+		stored      *config.PurchasePlan
+		wantRefused bool
+	}{
+		{"key names another provider and service", bound("gcp/compute#g1", entry("aws", "ec2")), true},
+		{"key names another service", bound("aws/compute#g1", entry("aws", "ec2")), true},
+		{"key without a provider prefix", bound("ec2#g1", entry("aws", "ec2")), true},
+		{"a key naming its own entry still moves", bound("aws/rds#g1", entry("aws", "rds")), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := apsSetAccounts(t, grant, tc.stored, apsAcctA)
+			if tc.wantRefused {
+				ce, ok := IsClientError(err)
+				require.True(t, ok, "must be a client error, not a 500: %v", err)
+				assert.Equal(t, 409, ce.code)
+				assert.Contains(t, ce.Error(), "must be keyed")
+				assert.False(t, apgCalled(store, "SetPlanAccounts"))
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, apgCalled(store, "SetPlanAccounts"))
+		})
+	}
+}

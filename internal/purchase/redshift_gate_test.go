@@ -83,7 +83,7 @@ func TestRedshiftDispatchGate_RecentFinishedBuyRefusedWithFixedText(t *testing.T
 	for _, status := range []string{config.StatusCompleted, config.StatusPartiallyCompleted, config.StatusRevocationRequested} {
 		exec := gateExec(0, gateRec("acct-A", 2))
 		stamp := stamped()
-		run := runGate(t, exec, stamp, []config.RedshiftLineageConflict{{ExecutionID: "other-id", Status: status}})
+		run := runGate(t, exec, stamp, []config.RedshiftLineageConflict{{ExecutionID: "other-id", Status: status, RecentBuy: true}})
 
 		require.Error(t, run.err, status)
 		assert.True(t, isBeforeSubmission(run.err), status)
@@ -97,7 +97,7 @@ func TestRedshiftDispatchGate_RecentFinishedBuyRefusedWithFixedText(t *testing.T
 
 func TestRedshiftDispatchGate_FinishedConflictWinsOverOpenOne(t *testing.T) {
 	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
-		{ExecutionID: "open", Status: "running"}, {ExecutionID: "done", Status: config.StatusCompleted}})
+		{ExecutionID: "open", Status: "running"}, {ExecutionID: "done", Status: config.StatusCompleted, RecentBuy: true}})
 
 	require.Error(t, run.err)
 	assert.Equal(t, redshiftRecentBuyRefusal, run.err.Error())
@@ -115,7 +115,7 @@ func TestRedshiftDispatchGate_SameFamilyRecentFailureRefusesWithSettleText(t *te
 	assert.Nil(t, exec.FirstDispatchAt, "a refused dispatch records no stamp")
 
 	run = runGate(t, gateExec(1, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
-		sameFailed, {ExecutionID: "done", Status: config.StatusCompleted, Recommendations: rs}})
+		sameFailed, {ExecutionID: "done", Status: config.StatusCompleted, RecentBuy: true, Recommendations: rs}})
 	require.Error(t, run.err)
 	assert.Equal(t, redshiftRecentBuyRefusal, run.err.Error(), "a recent finished buy wins over the settle text")
 }
@@ -170,7 +170,7 @@ func TestRedshiftDispatchGate_PicksTheRefusalTextByConflictKind(t *testing.T) {
 	rs := []config.RecommendationRecord{gateRec("acct-A", 2)}
 	failed := config.RedshiftLineageConflict{ExecutionID: "f", Status: config.StatusFailed, Recommendations: rs}
 	running := config.RedshiftLineageConflict{ExecutionID: "r", Status: "running", Recommendations: rs}
-	done := config.RedshiftLineageConflict{ExecutionID: "d", Status: config.StatusCompleted, Recommendations: rs}
+	done := config.RedshiftLineageConflict{ExecutionID: "d", Status: config.StatusCompleted, RecentBuy: true, Recommendations: rs}
 	for name, tc := range map[string]struct {
 		conflicts []config.RedshiftLineageConflict
 		want      string
@@ -192,6 +192,27 @@ func TestRedshiftDispatchGate_FailedRowWithRefusedProviderRecDropped(t *testing.
 		{ExecutionID: "mixed", Status: config.StatusFailed, Recommendations: both}})
 
 	require.NoError(t, run.err, "Retry refuses the EC2 rec for good, so the row cannot be retried")
+}
+
+func TestRedshiftDispatchGate_FailedRecentBuyRowIsKeptAndRefuses(t *testing.T) {
+	both := []config.RecommendationRecord{{Provider: "aws", Service: "ec2"}, gateRec("acct-A", 2)}
+	for name, c := range map[string]config.RedshiftLineageConflict{
+		"retry-refused mixed row": {ExecutionID: "mixed", Status: config.StatusFailed, Recommendations: both},
+		"ops-hint error":          {ExecutionID: "stuck", Status: config.StatusFailed, Error: "send failed: SES sandbox active"},
+		"retryable failed row":    {ExecutionID: "retryable", Status: config.StatusFailed, Recommendations: []config.RecommendationRecord{gateRec("acct-A", 2)}},
+	} {
+		c.RecentBuy = true
+		run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{c})
+		require.Error(t, run.err, name)
+		assert.True(t, isBeforeSubmission(run.err), name)
+		assert.Equal(t, redshiftRecentBuyRefusal, run.err.Error(), name)
+
+		c.RecentBuy = false
+		if name != "retryable failed row" {
+			run = runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{c})
+			require.NoError(t, run.err, "%s: outside the window it is dropped", name)
+		}
+	}
 }
 
 func TestRedshiftDispatchGate_QueriesOnlySelectedRedshiftTuples(t *testing.T) {
