@@ -68,29 +68,20 @@ func (s *PostgresStore) UpsertRecommendationsWithPartial(ctx context.Context, co
 	}
 	defer rollbackTx(ctx, tx, "UpsertRecommendations")
 
+	if err := lockRecommendationsTable(ctx, tx); err != nil {
+		return err
+	}
 	if err := insertRecommendationsBatched(ctx, tx, collectedAt, recs); err != nil {
 		return err
 	}
-
-	if len(successfulCollects) > 0 {
-		providers, accountKeys, err := successfulCollectArrays(successfulCollects)
-		if err != nil {
-			return fmt.Errorf("failed to materialize successful-collect arrays: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `
-			DELETE FROM recommendations
-			 WHERE collected_at < $1
-			   AND (provider, account_key) IN (
-			       SELECT p, a
-			         FROM unnest($2::text[], $3::uuid[]) AS t(p, a)
-			   )
-		`, collectedAt, providers, accountKeys); err != nil {
-			return fmt.Errorf("failed to evict stale rows: %w", err)
-		}
+	if err := evictStaleCollectedRows(ctx, tx, collectedAt, successfulCollects); err != nil {
+		return err
 	}
 
-	// The state row lock is taken last, after the row writes, so the lock order
-	// is unchanged from the plain UPDATE this replaced.
+	// The state row lock is taken after the row writes, as before this carried a
+	// hold (a prune waiting on this collection relies on that order), so nothing
+	// after it may wait on recommendations rows: the expired-hold delete skips
+	// rows another tx holds instead.
 	partialJSON, markerErr := lockedMarkerJSON(ctx, tx, collectedAt, partial, successfulCollects)
 	if markerErr != nil {
 		return markerErr
@@ -119,6 +110,71 @@ func (s *PostgresStore) UpsertRecommendationsWithPartial(ctx context.Context, co
 	return nil
 }
 
+// lockRecommendationsTable takes the table lock every row write needs, up front.
+// A cycle with no rows to write would otherwise take it only at the expired-hold
+// DELETE, after the state row lock, and wait there for a prune's SHARE ROW
+// EXCLUSIVE lock while that prune waits on a collection that waits for the state
+// lock: a cycle. Row writes take this mode anyway, so the lock order (table, then
+// rows, then state) is unchanged.
+func lockRecommendationsTable(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, `LOCK TABLE recommendations IN ROW EXCLUSIVE MODE`); err != nil {
+		return fmt.Errorf("failed to lock recommendations: %w", err)
+	}
+	return nil
+}
+
+// evictStaleCollectedRows deletes the older rows of every (provider, account)
+// pair that collected successfully in this run.
+func evictStaleCollectedRows(ctx context.Context, tx pgx.Tx, collectedAt time.Time, successfulCollects []SuccessfulCollect) error {
+	if len(successfulCollects) == 0 {
+		return nil
+	}
+	providers, accountKeys, err := successfulCollectArrays(successfulCollects)
+	if err != nil {
+		return fmt.Errorf("failed to materialize successful-collect arrays: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM recommendations
+		 WHERE collected_at < $1
+		   AND (provider, account_key) IN (
+		       SELECT p, a
+		         FROM unnest($2::text[], $3::uuid[]) AS t(p, a)
+		   )
+	`, collectedAt, providers, accountKeys); err != nil {
+		return fmt.Errorf("failed to evict stale rows: %w", err)
+	}
+	return nil
+}
+
+// evictExpiredHoldRows deletes the stale rows of accounts whose pricing hold
+// expired. The collected_at guard keeps rows written this cycle and rows of a
+// newer overlapping tx. It runs under the state row lock, so rows another tx
+// holds are skipped (SKIP LOCKED) rather than waited for, which could deadlock
+// with a collection that holds them while waiting for that lock; a skipped row
+// is deleted by the next cycle, since an expired account is evicted every cycle.
+func evictExpiredHoldRows(ctx context.Context, tx pgx.Tx, collectedAt time.Time, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(keys))
+	for _, key := range keys {
+		id, err := uuid.Parse(key)
+		if err != nil {
+			return fmt.Errorf("invalid expired-hold account key %q: %w", key, err)
+		}
+		ids = append(ids, id)
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM recommendations WHERE id IN (SELECT id FROM recommendations WHERE provider = 'azure' AND account_key = ANY($1::uuid[]) AND collected_at < $2 FOR UPDATE SKIP LOCKED)`, ids, collectedAt)
+	if err != nil {
+		return fmt.Errorf("failed to evict expired-hold rows: %w", err)
+	}
+	// Runs every cycle for an expired account; only a cycle that deleted something is worth a warning.
+	if n := tag.RowsAffected(); n > 0 {
+		logging.Warnf("azure pricing hold expired after %s; evicted %d stale recommendation rows for accounts %v", PricingHoldMaxAge, n, keys)
+	}
+	return nil
+}
+
 // encodeCollectionPartial marshals the marker for the JSONB column; nil stays
 // nil so the column is cleared.
 func encodeCollectionPartial(partial *RecommendationsCollectionPartial) ([]byte, error) {
@@ -133,26 +189,31 @@ func encodeCollectionPartial(partial *RecommendationsCollectionPartial) ([]byte,
 }
 
 // lockedMarkerJSON returns the encoded marker to write: partial with the
-// previous Azure hold merged in under the state row lock.
+// previous Azure hold merged in under the state row lock, and deletes the
+// stale rows of accounts whose hold just expired.
 func lockedMarkerJSON(ctx context.Context, tx pgx.Tx, now time.Time, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) ([]byte, error) {
 	merged, evict, err := carryHoldInTx(ctx, tx, now, partial, collects)
 	if err != nil {
 		return nil, err
 	}
-	_ = evict // T2 deletes these rows
+	if err := evictExpiredHoldRows(ctx, tx, now, evict); err != nil {
+		return nil, err
+	}
 	return encodeCollectionPartial(merged)
 }
 
 // carryHoldInTx locks the state row, then merges the previous Azure pricing
-// hold into partial. The lock serializes this read-merge-write against every
-// concurrent collection. An unreadable row or account list fails the tx.
+// hold into partial and ages it. The lock serializes this read-merge-write
+// against every concurrent collection. It does nothing else when
+// there is no hold to carry, no expired ids and this cycle holds nothing. An
+// unreadable row or account list fails the tx.
 func carryHoldInTx(ctx context.Context, tx pgx.Tx, now time.Time, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) (*RecommendationsCollectionPartial, []string, error) {
 	var raw []byte
 	if err := tx.QueryRow(ctx, `SELECT last_collection_partial FROM recommendations_state WHERE id = 1 FOR UPDATE`).Scan(&raw); err != nil {
 		return nil, nil, fmt.Errorf("failed to lock recommendations_state: %w", err)
 	}
 	prev := decodeCollectionPartial(raw)
-	if sweep := azureSweep(prev); previousAzureHold(prev) == nil && (sweep == nil || len(sweep.ExpiredHoldAccountIDs) == 0) {
+	if !holdNeedsCarry(prev, partial) {
 		return partial, nil, nil
 	}
 	rows, err := tx.Query(ctx, `SELECT DISTINCT account_key::text FROM recommendations WHERE provider = 'azure'`)
@@ -169,6 +230,13 @@ func carryHoldInTx(ctx context.Context, tx pgx.Tx, now time.Time, partial *Recom
 	}
 	merged, evict := carryAzureHold(prev, partial, collects, stored, active, now)
 	return merged, evict, nil
+}
+
+// holdNeedsCarry reports whether the previous marker has a hold or expired ids
+// or this cycle's own partial holds pricing (its first held_since is stamped).
+func holdNeedsCarry(prev, partial *RecommendationsCollectionPartial) bool {
+	sweep := azureSweep(prev)
+	return previousAzureHold(prev) != nil || (sweep != nil && len(sweep.ExpiredHoldAccountIDs) > 0) || holdsPricing(azureSweep(partial))
 }
 
 // scanKeySet reads a single text column into a set and closes rows.
