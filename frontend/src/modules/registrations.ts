@@ -24,7 +24,8 @@ function registrationToAccount(reg: AccountRegistration): CloudAccount {
     provider: reg.provider,
     external_id: reg.external_id,
     contact_email: reg.contact_email,
-    enabled: false,
+    // The modal's checkbox starts checked; the backend honours an explicit false.
+    enabled: true,
     aws_auth_mode: reg.aws_auth_mode as CloudAccount['aws_auth_mode'],
     aws_role_arn: reg.aws_role_arn,
     aws_external_id: reg.aws_external_id,

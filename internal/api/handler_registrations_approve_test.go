@@ -115,3 +115,32 @@ func TestApproveRegistration_StoreErrorsMapToResponses(t *testing.T) {
 		})
 	}
 }
+
+// An admin who unchecks "enabled" in the approval modal keeps the new account
+// disabled, even when its auth mode would otherwise auto-enable it. Omitted or
+// true keeps the auto-enable rule (a credential-free account is enabled).
+func TestApproveRegistration_HonoursExplicitEnabledFalse(t *testing.T) {
+	const base = `"name":"Fixture Sub","provider":"azure","external_id":"fixture-subscription-1102","azure_auth_mode":"managed_identity"`
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"enabled false stays disabled", `{` + base + `,"enabled":false}`, false},
+		{"enabled true auto-enables", `{` + base + `,"enabled":true}`, true},
+		{"enabled omitted auto-enables", `{` + base + `}`, true},
+		{"enabled true never widens a stored-secret account", `{"name":"Fixture Sub","provider":"azure","external_id":"fixture-subscription-1102","azure_auth_mode":"client_secret","enabled":true}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			h, _ := newApproveRegistrationHandler(t, ctx, nil)
+
+			result, err := h.approveRegistration(ctx, adminRequest(tc.body), approveRegID)
+			require.NoError(t, err)
+			account, ok := result.(*config.CloudAccount)
+			require.True(t, ok, "got %T", result)
+			assert.Equal(t, tc.want, account.Enabled)
+		})
+	}
+}
