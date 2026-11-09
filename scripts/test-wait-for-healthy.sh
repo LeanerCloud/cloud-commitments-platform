@@ -28,6 +28,13 @@ mkdir -p "$WORK/bin"
 #   N = HTTP 502 with a non-JSON (HTML) body, as a proxy in front of the app
 #       answers while no replica is up
 #   Z = HTTP 200 with an empty body
+# Requests to /health?jwks=refresh (gate phase 2) consume $HSCENARIO instead
+# (default HOK), with their own counter ${STATE}.h, so every /ready case above
+# keeps passing phase 2 on the first read:
+#   HOK = 200 without a scheduled_auth_jwks check (older revision)
+#   HDIS = disabled, HHEAL = healthy, HDEG = degraded (reason jwks_http_error)
+#   HERR = HTTP 503, HNJ = HTTP 200 non-JSON body, HR = connection refused
+# Every */health* URL requested is appended to $URLLOG when set.
 # Models the real curl flags the callers use: -o FILE, -w with %{http_code} and
 # %{redirect_url}, -f/--fail (exit 22 on >= 400, no body) and --fail-with-body
 # (exit 22 on >= 400, body still written). Without either, curl exits 0 for any
@@ -64,11 +71,19 @@ fi
 case "$url" in
   */api/*) exit 0 ;;
 esac
-n=$(cat "$STATE" 2>/dev/null || echo 0)
-tokens=($SCENARIO)
+case "$url" in
+  */health*) [ -n "${URLLOG:-}" ] && echo "$url" >> "$URLLOG" ;;
+esac
+if [[ "$url" == */health\?jwks=refresh ]]; then
+  CNT="$STATE.h"; scen="${HSCENARIO:-HOK}"
+else
+  CNT="$STATE"; scen="$SCENARIO"
+fi
+n=$(cat "$CNT" 2>/dev/null || echo 0)
+tokens=($scen)
 i=$n
 ((i >= ${#tokens[@]})) && i=$((${#tokens[@]} - 1))
-echo $((n + 1)) > "$STATE"
+echo $((n + 1)) > "$CNT"
 degraded='{"status":"degraded","checks":{"auth_store":{"status":"unhealthy","message":"auth store not initialized"}}}'
 location=""
 case "${tokens[$i]}" in
@@ -79,7 +94,13 @@ case "${tokens[$i]}" in
   E) code=503; body="" ;;
   N) code=502; body='<html><body><h1>502 Bad Gateway</h1></body></html>' ;;
   Z) code=200; body="" ;;
-  R) echo "curl: (7) Failed to connect" >&2
+  HOK) code=200; body='{"status":"healthy","checks":{}}' ;;
+  HDIS) code=200; body='{"status":"healthy","checks":{"scheduled_auth_jwks":{"status":"disabled"}}}' ;;
+  HHEAL) code=200; body='{"status":"healthy","checks":{"scheduled_auth_jwks":{"status":"healthy"}}}' ;;
+  HDEG) code=200; body='{"status":"healthy","checks":{"scheduled_auth_jwks":{"status":"degraded","reason":"jwks_http_error"}}}' ;;
+  HERR) code=503; body='{"status":"degraded"}' ;;
+  HNJ) code=200; body='not json' ;;
+  R|HR) echo "curl: (7) Failed to connect" >&2
      [ -n "$wfmt" ] && printf '000 '
      exit 7 ;;
 esac
@@ -109,7 +130,7 @@ fail=0
 run_case() {
   local label="$1" expected="$2" scenario="$3" needle="${4:-}"
   local out actual=0
-  : > "$WORK/state"
+  : > "$WORK/state"; : > "$WORK/state.h"; : > "$WORK/urls"
   out=$(PATH="$WORK/bin:$PATH" STATE="$WORK/state" SCENARIO="$scenario" \
     HEALTH_INTERVAL_SECONDS=0 HEALTH_MAX_ATTEMPTS=8 HEALTH_REQUIRED_STREAK=3 \
     "$SUT" https://app.example 2>&1) || actual=$?
@@ -154,8 +175,8 @@ run_env_case() {
   local label="$1" expected="$2" scenario="$3" needle="$4"
   shift 4
   local out actual=0
-  : > "$WORK/state"
-  out=$(env PATH="$WORK/bin:$PATH" STATE="$WORK/state" SCENARIO="$scenario" \
+  : > "$WORK/state"; : > "$WORK/state.h"; : > "$WORK/urls"
+  out=$(env PATH="$WORK/bin:$PATH" STATE="$WORK/state" URLLOG="$WORK/urls" SCENARIO="$scenario" \
     HEALTH_INTERVAL_SECONDS=0 "$@" "$SUT" https://app.example 2>&1) || actual=$?
   if [[ "$actual" -ne "$expected" ]]; then
     echo "FAIL: $label (expected exit $expected, got $actual)"; echo "$out"
@@ -178,6 +199,75 @@ run_env_case "attempts 0 rejected" 2 "H" "HEALTH_MAX_ATTEMPTS must be a positive
 run_env_case "attempts abc rejected" 2 "H" "HEALTH_MAX_ATTEMPTS must be a positive integer" HEALTH_MAX_ATTEMPTS=abc
 run_env_case "attempts empty rejected" 2 "H" "HEALTH_MAX_ATTEMPTS must be a positive integer" HEALTH_MAX_ATTEMPTS=
 run_env_case "attempts below streak rejected" 2 "H" "could never pass" HEALTH_MAX_ATTEMPTS=2 HEALTH_REQUIRED_STREAK=3
+
+# Gate phase 2 (platform#67). The /ready scenario passes in three reads; the
+# HSCENARIO tokens drive /health?jwks=refresh, with the interval at 0.
+# reads LABEL N: the last run requested /health?jwks=refresh exactly N times.
+reads() {
+  local got
+  got=$(grep -c '/health?jwks=refresh$' "$WORK/urls" || true)
+  if [[ "$got" -eq "$2" ]]; then echo "PASS: $1 ($got /health reads)"; ((pass++)) || true
+  else echo "FAIL: $1 (expected $2 /health reads, got $got)"; ((fail++)) || true; fi
+}
+all_refresh_urls() {
+  if [[ -s "$WORK/urls" ]] && ! grep -qv '/health?jwks=refresh$' "$WORK/urls"; then
+    echo "PASS: $1 (every /health request is the refresh form)"; ((pass++)) || true
+  else echo "FAIL: $1 (a /health request lacked ?jwks=refresh)"; cat "$WORK/urls"; ((fail++)) || true; fi
+}
+J=HEALTH_JWKS_MAX_ATTEMPTS
+run_env_case "jwks degraded forever fails with the reason" 1 "H H H" "scheduled_auth_jwks still degraded after 3 rounds (reason=jwks_http_error)" HSCENARIO="HDEG" $J=3
+all_refresh_urls "jwks degraded run"
+run_env_case "jwks hiccup clears (HDEG HDEG HHEAL)" 0 "H H H" "scheduled_auth_jwks healthy" HSCENARIO="HDEG HDEG HHEAL"
+run_env_case "jwks boundary: recovery on round 4 passes with 4 rounds" 0 "H H H" "" HSCENARIO="HDEG HDEG HDEG HHEAL" $J=4
+run_env_case "jwks boundary: recovery on round 4 fails with 3 rounds" 1 "H H H" "still degraded" HSCENARIO="HDEG HDEG HDEG HHEAL" $J=3
+run_env_case "jwks disabled passes after one read" 0 "H H H" "scheduled_auth_jwks disabled" HSCENARIO="HDIS"
+reads "jwks disabled" 1
+run_env_case "jwks check absent (older revision) passes after one read" 0 "H H H" "scheduled_auth_jwks absent" HSCENARIO="HOK"
+reads "jwks absent" 1
+run_env_case "unreadable /health (503) forever passes with a warning" 0 "H H H" "::warning::cannot read /health" HSCENARIO="HERR"
+run_env_case "non-JSON /health forever passes with a warning" 0 "H H H" "::warning::cannot read /health" HSCENARIO="HNJ"
+run_env_case "refused /health forever passes with a warning" 0 "H H H" "::warning::cannot read /health" HSCENARIO="HR"
+run_env_case "degraded then unreadable fails (last readable decides)" 1 "H H H" "still degraded" HSCENARIO="HDEG HERR"
+run_env_case "unreadable, unreadable, degraded, unreadable fails" 1 "H H H" "still degraded" HSCENARIO="HERR HERR HDEG HERR"
+run_env_case "degraded, healthy, unreadable passes" 0 "H H H" "scheduled_auth_jwks healthy" HSCENARIO="HDEG HHEAL HERR"
+run_env_case "default 8 rounds: degraded forever fails after exactly 8 reads" 1 "H H H" "after 8 rounds" HSCENARIO="HDEG"
+reads "default rounds" 8
+run_env_case "default 8 rounds: recovery on round 8 passes" 0 "H H H" "scheduled_auth_jwks healthy" HSCENARIO="HDEG HDEG HDEG HDEG HDEG HDEG HDEG HHEAL"
+reads "default round 8 recovery" 8
+# The phase-2 sleep between rounds: streak 1 means phase 1 never sleeps, so the
+# one second of elapsed time can only come from the sleep between the 2 rounds.
+t_start=$(date +%s)
+run_env_case "jwks rounds are spaced by HEALTH_INTERVAL_SECONDS" 1 "H" "after 2 rounds" HSCENARIO="HDEG" HEALTH_INTERVAL_SECONDS=1 HEALTH_REQUIRED_STREAK=1 $J=2
+if (($(date +%s) - t_start >= 1)); then echo "PASS: jwks rounds slept between attempts"; ((pass++)) || true
+else echo "FAIL: jwks rounds did not sleep between attempts"; ((fail++)) || true; fi
+run_env_case "HEALTH_JWKS_CHECK=0 skips phase 2" 0 "H H H" "skipped" HSCENARIO="HDEG" HEALTH_JWKS_CHECK=0
+reads "jwks check off" 0
+for bad in 0 abc ""; do
+  run_env_case "jwks attempts '$bad' rejected" 2 "H" "HEALTH_JWKS_MAX_ATTEMPTS must be a positive integer" HEALTH_JWKS_MAX_ATTEMPTS="$bad"
+done
+run_env_case "/ready failing forever never requests /health" 1 "U" "after 30 attempts" HSCENARIO="HDEG"
+reads "ready failing" 0
+
+# jq missing: a PATH of symlinks to only what the script and the curl stub
+# (#!/usr/bin/env bash) need. Skipping phase 2 must still work there, which
+# also proves the stub itself runs.
+mkdir -p "$WORK/nojq"
+for c in env bash mktemp cat rm sleep dirname; do ln -sf "$(command -v "$c")" "$WORK/nojq/$c"; done
+ln -sf "$WORK/bin/curl" "$WORK/nojq/curl"
+BASH_ABS="$(command -v bash)"
+for chk in 1 0; do
+  : > "$WORK/state"; : > "$WORK/state.h"; : > "$WORK/urls"
+  actual=0
+  out=$(env PATH="$WORK/nojq" STATE="$WORK/state" URLLOG="$WORK/urls" SCENARIO="H H H" HSCENARIO=HDEG \
+    HEALTH_INTERVAL_SECONDS=0 HEALTH_JWKS_CHECK=$chk "$BASH_ABS" "$SUT" https://app.example 2>&1) || actual=$?
+  if [[ "$chk" == 1 && "$actual" -eq 2 && "$out" == *"jq is required"* && ! -s "$WORK/urls" ]]; then
+    echo "PASS: jq missing exits 2 before polling"; ((pass++)) || true
+  elif [[ "$chk" == 0 && "$actual" -eq 0 && "$out" == *"skipped"* ]]; then
+    echo "PASS: jq missing with HEALTH_JWKS_CHECK=0 still passes"; ((pass++)) || true
+  else
+    echo "FAIL: jq-less run (check=$chk, exit $actual)"; echo "$out"; ((fail++)) || true
+  fi
+done
 
 # The pre-#488 loop from deploy-azure.yml, faithful to the original semantics:
 # warm up on /api/ to trigger lazy DB init, gate on the /health BODY, and pass
