@@ -16,6 +16,7 @@ import (
 
 	"cloud.google.com/go/compute/apiv1/computepb"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/computeengine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -390,6 +391,36 @@ func TestGCPRecentRefusal_OwnCommitmentListedAdoptsDespiteForeignCUD(t *testing.
 	err := gcpRecentCommitmentRefusal(context.Background(), spy, gcpGuardRec(), map[string]bool{cudOwnName(0): true}, cudOwnName(0))
 
 	require.NoError(t, err)
+}
+
+// When this rec's own commitment is listed, adoption wins even if the check
+// would otherwise fail: refusing there records no_submission for a rec whose
+// commitment exists. So the own-commitment case is decided before any error.
+func TestGCPRecentRefusal_OwnCommitmentListedWinsOverACheckerFailure(t *testing.T) {
+	foreign := gcpCommitmentName(common.DeriveIdempotencyToken("other-lineage", 0))
+	for name, build := range map[string]func() (provider.ServiceClient, []common.Commitment){
+		"client without the recent filter": func() (provider.ServiceClient, []common.Commitment) {
+			recent := append(spyRecent(true), spyRecent(false)...)
+			recent[1].CommitmentID = foreign
+			inner := new(MockServiceClient)
+			inner.On("GetExistingCommitments", mock.Anything).Return(recent, nil)
+			return inner, recent
+		},
+		"recent commitments from two projects": func() (provider.ServiceClient, []common.Commitment) {
+			recent := append(spyRecent(true), spyRecent(false)...)
+			recent[1].CommitmentID = foreign
+			recent[1].Account = "other-project"
+			inner := new(MockServiceClient)
+			inner.On("GetExistingCommitments", mock.Anything).Return(recent, nil)
+			return &filterSpy{MockServiceClient: inner, filtered: true}, recent
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, _ := build()
+			err := gcpRecentCommitmentRefusal(context.Background(), client, gcpGuardRec(), map[string]bool{cudOwnName(0): true}, cudOwnName(0))
+			require.NoError(t, err)
+		})
+	}
 }
 
 // Another rec of the same execution owning a listed commitment does not let
