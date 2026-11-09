@@ -117,7 +117,7 @@ func TestResolveRIExchangeDirect_PassesOperatorDecisionToStore(t *testing.T) {
 	require.NotNil(t, got.ResolvedByUserID)
 	assert.Equal(t, apgUserID, *got.ResolvedByUserID)
 	assert.Equal(t, "ops@example.com", got.ResolvedBy)
-	assert.Equal(t, `operator:failed: region="eu-west-1" checked_at=2026-10-19T08:00:00Z ack=true reason="source RIs still active in the EC2 console"`, got.Note)
+	assert.Equal(t, `operator:failed: region="eu-west-1" checked_at=2026-10-19T08:00:00Z expected=unknown ack=true reason="source RIs still active in the EC2 console"`, got.Note)
 	resp, ok := out.(riExchangeDirectResolveResponse)
 	require.True(t, ok)
 	assert.Equal(t, riExchangeDirectResolveResponse{ID: dlID1, Status: "unknown", ResolvedStatus: "failed",
@@ -129,7 +129,7 @@ func TestResolveRIExchangeDirect_PassesOperatorDecisionToStore(t *testing.T) {
 	completed := drStore()
 	_, err = drCaller{perms: riExecute}.call(completed, dlID1, drBody("completed", ""))
 	require.NoError(t, err)
-	assert.Equal(t, `operator:completed: region="eu-west-1" checked_at=2026-10-19T08:00:00Z reason="source RIs still active in the EC2 console"`, completed.got.Note)
+	assert.Equal(t, `operator:completed: region="eu-west-1" checked_at=2026-10-19T08:00:00Z expected=unknown reason="source RIs still active in the EC2 console"`, completed.got.Note)
 }
 
 // The store replays only a byte-identical note and refuses any other as a
@@ -202,4 +202,53 @@ func TestResolveRIExchangeDirect_Needs503WithoutTheStore(t *testing.T) {
 	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"Authorization": "Bearer tok"}, Body: drFailedBody}
 	_, err := h.resolveRIExchangeDirectExecution(context.Background(), req, dlID1)
 	assert.Equal(t, 503, clientCode(t, err))
+}
+
+// The status the operator saw is part of the replay identity: a repeat that
+// changes only expected_status must not read as the same request.
+func TestResolveRIExchangeDirect_NoteDiffersByExpectedStatus(t *testing.T) {
+	body := func(expected string) string {
+		return fmt.Sprintf(`{"outcome":"failed","expected_status":%q,"reason":"source RIs still active in the EC2 console",`+
+			`"acknowledge_unknown_outcome":true,"cloud_check":{"checked_region":%q,"checked_at":%q}}`,
+			expected, drRegion, riResolveAt.Format(time.RFC3339))
+	}
+	unknown, submitted := drStore(), drStore()
+	_, err := drCaller{perms: riExecute}.call(unknown, dlID1, body("unknown"))
+	require.NoError(t, err)
+	_, err = drCaller{perms: riExecute}.call(submitted, dlID1, body("submitted"))
+	require.NoError(t, err)
+	assert.Contains(t, unknown.got.Note, "expected=unknown")
+	assert.Contains(t, submitted.got.Note, "expected=submitted")
+	assert.NotEqual(t, unknown.got.Note, submitted.got.Note)
+}
+
+// A group may list an account by its AWS account number, which the group write
+// keeps verbatim. The row's registered account must be admitted by that entry,
+// as by its internal id; another account's number must not admit it.
+func TestResolveRIExchangeDirect_AllowedAccountsMayNameTheAWSAccountNumber(t *testing.T) {
+	accounts := []config.CloudAccount{
+		{ID: dlAcctA, Provider: "aws", ExternalID: "111122223333"},
+		{ID: dlAcctB, Provider: "aws", ExternalID: "999999999999"},
+	}
+	for name, tc := range map[string]struct {
+		allowed []string
+		denied  bool
+	}{
+		"by the account number":     {[]string{"111122223333"}, false},
+		"by the internal id":        {[]string{dlAcctA}, false},
+		"another account's number":  {[]string{"999999999999"}, true},
+		"a number that is nobody's": {[]string{"000000000000"}, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := drStore()
+			store.ListCloudAccountsFn = func(context.Context, config.CloudAccountFilter) ([]config.CloudAccount, error) { return accounts, nil }
+			_, err := drCaller{perms: riExecute, accounts: tc.allowed}.call(store, dlID1, drFailedBody)
+			if !tc.denied {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, errNotFound, "a row outside the caller's accounts reads as not found")
+			assert.Zero(t, store.called)
+		})
+	}
 }

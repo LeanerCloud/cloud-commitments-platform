@@ -65,7 +65,8 @@ curl -s -X POST \
   Non-ASCII text needs fewer characters; the API answers 400 "reason too long once encoded; shorten it".
 - `checked_region` must be the row's region. A row with an empty region cannot be resolved through the
   API (400 on region); use the break-glass statement below.
-- A repeat of the same request returns the stored result with `replayed: true`.
+- A repeat of the same request returns the stored result with `replayed: true`. A repeat that
+  differs in any field, including `expected_status`, is a 409, not a replay.
 - 409 with "wait until" and a time means the row is too young; see "Why the age" below.
 - 400 "checked_at must be at or after" and a time means your AWS check is too early; see
   "Why checked_at has a lower bound" below. Check again at AWS, then retry with the new time.

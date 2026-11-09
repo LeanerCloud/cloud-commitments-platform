@@ -216,7 +216,11 @@ func (h *Handler) authorizeRIExchangeDirectRow(ctx context.Context, session *Ses
 	if err != nil {
 		return fmt.Errorf("failed to get allowed accounts: %w", err)
 	}
-	account, inScope := riExchangeDirectPairAccount(scope, config.RIExchangeDirectAccountRegion{CloudAccountID: row.CloudAccountID, Region: row.Region})
+	accounts, err := h.riExchangeDirectAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	account, inScope := riExchangeDirectPairAccount(scope, accounts, config.RIExchangeDirectAccountRegion{CloudAccountID: row.CloudAccountID, Region: row.Region})
 	if !inScope {
 		return errNotFound
 	}

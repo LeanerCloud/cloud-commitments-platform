@@ -248,3 +248,35 @@ func TestListRIExchangeDirectExecutions_NoStore503(t *testing.T) {
 		&events.LambdaFunctionURLRequest{Headers: map[string]string{"Authorization": "Bearer tok"}})
 	assert.Equal(t, 503, clientCode(t, err))
 }
+
+// A group may list an account by its AWS account number. The list must admit
+// the row of the account that number names, not hide it because only the
+// internal id was compared.
+func TestListRIExchangeDirectExecutions_AllowedAccountsMayNameTheAWSAccountNumber(t *testing.T) {
+	rows := []config.RIExchangeDirectRow{
+		dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1),
+		dlRow(dlID2, dlPtr(dlAcctB), "eu-west-1", "unknown", 2),
+	}
+	accounts := []config.CloudAccount{
+		{ID: dlAcctA, Provider: "aws", ExternalID: "111122223333"},
+		{ID: dlAcctB, Provider: "aws", ExternalID: "999999999999"},
+	}
+	for name, tc := range map[string]struct {
+		allowed []string
+		want    []string
+	}{
+		"the account number":                {[]string{"111122223333"}, []string{dlID1}},
+		"the internal id":                   {[]string{dlAcctA}, []string{dlID1}},
+		"the other account's number":        {[]string{"999999999999"}, []string{dlID2}},
+		"a number that is nobody's":         {[]string{"000000000000"}, nil},
+		"both, one by number and one by id": {[]string{"111122223333", dlAcctB}, []string{dlID1, dlID2}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := dlStore(rows...)
+			store.ListCloudAccountsFn = func(context.Context, config.CloudAccountFilter) ([]config.CloudAccount, error) { return accounts, nil }
+			out, err := dlCall(t, store, riExecute, tc.allowed, nil)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, tc.want, dlIDs(t, out))
+		})
+	}
+}

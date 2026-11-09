@@ -92,9 +92,12 @@ func (b riExchangeDirectResolveRequest) checkedAt(rowRegion string) (time.Time, 
 
 // note is the exact text stored in resolution_note. The fields are in a fixed
 // order and quoted, so a repeat of the same request produces the same string
-// and a different one cannot.
+// and a different one cannot. That includes the status the operator saw: a
+// repeat that differs only in expected_status is a conflict, while an identical
+// retry stays a replay even after a late finalize moved the row's status.
 func (b riExchangeDirectResolveRequest) note(checkedAt time.Time) string {
-	s := fmt.Sprintf("operator:%s: region=%q checked_at=%s", b.Outcome, b.CloudCheck.Region, checkedAt.Format(time.RFC3339Nano))
+	s := fmt.Sprintf("operator:%s: region=%q checked_at=%s expected=%s",
+		b.Outcome, b.CloudCheck.Region, checkedAt.Format(time.RFC3339Nano), b.ExpectedStatus)
 	if b.Outcome == config.RIExchangeDirectStatusFailed {
 		s += " ack=true"
 	}

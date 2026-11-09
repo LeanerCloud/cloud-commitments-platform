@@ -24,7 +24,11 @@ func (h *Handler) listRIExchangeDirectExecutions(ctx context.Context, req *event
 	if !ok {
 		return nil, NewClientError(503, "RI exchange resolve storage is unavailable")
 	}
-	allowed, err := h.visibleRIExchangeDirectPairs(ctx, session, store)
+	accounts, err := h.riExchangeDirectAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	allowed, err := h.visibleRIExchangeDirectPairs(ctx, session, store, accounts)
 	if mapped := mapRIExchangeResolveError(err); mapped != nil {
 		return nil, mapped
 	}
@@ -51,7 +55,7 @@ func (h *Handler) listRIExchangeDirectExecutions(ctx context.Context, req *event
 // the direct execute checks. The grant is evaluated by the authorization
 // service, never reimplemented here, so OR'd grants, a user API key's own
 // narrower permissions and region spelling behave as they do on execute.
-func (h *Handler) visibleRIExchangeDirectPairs(ctx context.Context, session *Session, store config.RIExchangeDirectListStore) ([]config.RIExchangeDirectAccountRegion, error) {
+func (h *Handler) visibleRIExchangeDirectPairs(ctx context.Context, session *Session, store config.RIExchangeDirectListStore, accounts map[string]config.CloudAccount) ([]config.RIExchangeDirectAccountRegion, error) {
 	scope, err := h.getAccountScope(ctx, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get allowed accounts: %w", err)
@@ -62,7 +66,7 @@ func (h *Handler) visibleRIExchangeDirectPairs(ctx context.Context, session *Ses
 	}
 	var visible []config.RIExchangeDirectAccountRegion
 	for _, p := range pairs {
-		account, inScope := riExchangeDirectPairAccount(scope, p)
+		account, inScope := riExchangeDirectPairAccount(scope, accounts, p)
 		if !inScope {
 			continue
 		}
@@ -77,15 +81,38 @@ func (h *Handler) visibleRIExchangeDirectPairs(ctx context.Context, session *Ses
 	return visible, nil
 }
 
+// riExchangeDirectAccounts loads the registered AWS accounts by ID, so the scope
+// check can also match an account's AWS account number.
+func (h *Handler) riExchangeDirectAccounts(ctx context.Context) (map[string]config.CloudAccount, error) {
+	provider := string(common.ProviderAWS)
+	accounts, err := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{Provider: &provider})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list cloud accounts: %w", err)
+	}
+	byID := make(map[string]config.CloudAccount, len(accounts))
+	for i := range accounts {
+		byID[accounts[i].ID] = accounts[i]
+	}
+	return byID, nil
+}
+
 // riExchangeDirectPairAccount returns the account the grant is checked
 // against (the unattributed sentinel for a row with no registered account) and
 // whether the session's account scope covers it. A row with no account needs
-// an unrestricted scope.
-func riExchangeDirectPairAccount(scope auth.AccountScope, p config.RIExchangeDirectAccountRegion) (string, bool) {
+// an unrestricted scope. A group may list an account by its ID or by its AWS
+// account number (the group write keeps an external id verbatim), so either
+// form admits the row; external ids are unique per provider, so the number
+// cannot name another AWS account.
+func riExchangeDirectPairAccount(scope auth.AccountScope, accounts map[string]config.CloudAccount, p config.RIExchangeDirectAccountRegion) (string, bool) {
 	if p.CloudAccountID == nil {
 		return unattributedAccountConstraint, scope.AllowsAll()
 	}
-	return *p.CloudAccountID, scope.Allows(*p.CloudAccountID, "")
+	id := *p.CloudAccountID
+	if scope.Allows(id, "") {
+		return id, true
+	}
+	external := accounts[id].ExternalID
+	return id, external != "" && scope.Allows(external, "")
 }
 
 // riExchangeDirectPairGranted asks the authorization service whether the

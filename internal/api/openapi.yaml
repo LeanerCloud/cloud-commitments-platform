@@ -3029,7 +3029,8 @@ paths:
         be at or after that time (for an `unknown` row, one minute after it
         completed) and not in the future. `expected_status` must be the status
         the row has now. A repeat of the same request returns the stored
-        result with `replayed: true`. A row outside the session's allowed
+        result with `replayed: true`; a repeat that differs in any field,
+        including `expected_status`, is a conflict. A row outside the session's allowed
         accounts reads as not found.
       parameters:
         - $ref: '#/components/parameters/CSRFToken'
