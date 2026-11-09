@@ -15,7 +15,6 @@ locals {
     "roles/logging.admin",
     "roles/monitoring.admin",
     "roles/vpcaccess.admin",
-    "roles/cloudfunctions.developer",
     "roles/servicenetworking.networksAdmin",
     "roles/pubsub.admin",
     "roles/container.admin",

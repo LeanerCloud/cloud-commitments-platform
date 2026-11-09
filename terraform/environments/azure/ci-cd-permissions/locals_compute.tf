@@ -6,8 +6,6 @@ locals {
     "Microsoft.ContainerRegistry/registries/*",
     "Microsoft.ContainerRegistry/registries/tasks/*",
     "Microsoft.ContainerService/managedClusters/*",
-    "Microsoft.Web/serverFarms/*",
-    "Microsoft.Web/sites/*",
     "Microsoft.Logic/workflows/*",
     "Microsoft.Logic/locations/*",
     "Microsoft.Cdn/profiles/*",
