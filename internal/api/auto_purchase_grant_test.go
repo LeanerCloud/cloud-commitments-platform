@@ -40,7 +40,7 @@ func apgStoredPlan(armed bool, capUSD *float64) *config.PurchasePlan {
 	return &config.PurchasePlan{
 		ID: apgPlanID, Name: "p", Enabled: true, AutoPurchase: armed, MaxStepCommitment: capUSD,
 		NotificationDaysBefore: 3, CreatedAt: time.Now().AddDate(0, -1, 0),
-		Services: map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds"}},
+		Services: map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Enabled: true}},
 	}
 }
 
@@ -114,6 +114,16 @@ func TestAutoPurchaseGate_PlanWrites(t *testing.T) {
 		{"put 100.10 (binary-float trap) over 100.10 is the same cap: admin allowed", admin, "put", apgStoredPlan(true, apgCap(100.10)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":100.10}`, false},
 		{"put one cent more is a raise: admin refused", admin, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":1000.01}`, true},
 		{"put omitting the cap keeps it: admin allowed", admin, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true}`, false},
+		{"put re-enables a disabled entry on an armed plan: admin refused", admin, "put", func() *config.PurchasePlan {
+			p := apgStoredPlan(true, apgCap(1000))
+			p.Services = map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Enabled: false}}
+			return p
+		}(), `{"name":"p","enabled":true,"auto_purchase":true,"provider":"aws","service":"rds"}`, true},
+		{"put re-enables a disabled entry on an armed plan: execute:purchases allowed", granted, "put", func() *config.PurchasePlan {
+			p := apgStoredPlan(true, apgCap(1000))
+			p.Services = map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Enabled: false}}
+			return p
+		}(), `{"name":"p","enabled":true,"auto_purchase":true,"provider":"aws","service":"rds"}`, false},
 		{"put disarms with admin API key allowed", key, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":false}`, false},
 	}
 	for _, tc := range tests {

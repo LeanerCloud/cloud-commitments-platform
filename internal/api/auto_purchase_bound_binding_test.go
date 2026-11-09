@@ -55,8 +55,8 @@ func TestPlanDisarm_AllowsStrippedBoundPlan(t *testing.T) {
 	}
 }
 
-// Re-enabling a stripped entry widens an armed plan even though
-// planArmEscalates cannot see it (its service sets ignore Enabled).
+// Re-enabling a stripped entry widens an armed plan: the arming gate sees it
+// (#1777), and the binding refusal runs before the gate, so the answer is 409.
 func TestUpdatePlanGated_RefusesReenablingStrippedEntry(t *testing.T) {
 	before := strippedBoundPlan(true)
 	before.Services = map[string]config.ServiceConfig{
@@ -68,7 +68,7 @@ func TestUpdatePlanGated_RefusesReenablingStrippedEntry(t *testing.T) {
 	g2 := after.Services["aws/rds#g2"]
 	g2.Enabled = true
 	after.Services["aws/rds#g2"] = g2
-	require.False(t, planArmEscalates(before, &after), "the gap: the arming gate alone misses this write")
+	require.True(t, planArmEscalates(before, &after), "a re-enabled entry is an arming escalation")
 
 	store := new(MockConfigStore)
 	h, req := apgCaller{perms: apsGrant(nil)}.handlerAndReq(store, `{}`)
