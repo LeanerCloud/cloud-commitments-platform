@@ -338,6 +338,15 @@ const PLANS_NUMERIC_COLUMNS: ReadonlySet<state.PlansColumnId> = new Set<state.Pl
   'count', 'upfront_cost', 'estimated_savings',
 ]);
 
+// A bound plan spanning providers has provider "multiple" and lists its real
+// providers (#1746); the provider options are those providers, never "multiple".
+function plansProviderOptions(purchases: readonly PlannedPurchase[]): string[] {
+  return sortedDistinctValues(
+    purchases.flatMap(p => (p.providers && p.providers.length > 0 ? p.providers : [p.provider ?? ''])),
+    (value) => value,
+  );
+}
+
 function plansColumnLabel(column: state.PlansColumnId): string {
   switch (column) {
     case 'plan_name':          return 'Plan';
@@ -382,7 +391,9 @@ function openPlansColumnPopover(column: state.PlansColumnId, anchor: HTMLElement
     column,
     label: plansColumnLabel(column),
     kind: PLANS_NUMERIC_COLUMNS.has(column) ? 'numeric' : 'categorical',
-    distinctValues: sortedDistinctValues(lastLoadedPurchases, (p) => categoricalCellValueForPlan(p, column)),
+    distinctValues: column === 'provider'
+      ? plansProviderOptions(lastLoadedPurchases)
+      : sortedDistinctValues(lastLoadedPurchases, (p) => categoricalCellValueForPlan(p, column)),
     displayLabel: (value) => plansCategoricalDisplayLabel(column, value),
     getFilter: () => state.getPlansColumnFilters()[column],
     onCommit: (filter) => {

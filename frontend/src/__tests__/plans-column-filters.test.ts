@@ -189,6 +189,23 @@ describe('Planned Purchases column filters (issue #166 follow-up)', () => {
     expect(labels).toEqual(['Jan 2, 2026', 'Jan 10, 2026', 'Jun 2, 2026', 'Dec 1, 2026']);
   });
 
+  // #1851: a bound plan spanning providers is shown as provider "multiple" and lists
+  // its real providers; the provider options are those providers, never "multiple".
+  test('provider options list a bound plan\'s providers, not "multiple"', async () => {
+    (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [
+      { ...seedPurchases[0], id: 'b1', provider: 'multiple', providers: ['aws', 'gcp'] },
+      { ...seedPurchases[1], id: 'u1', provider: 'azure' },
+      { ...seedPurchases[0], id: 'e1', provider: 'oci', providers: [] },
+    ] });
+    await loadPlans();
+    document.querySelector<HTMLButtonElement>(
+      '#planned-purchases-list th .column-filter-btn[data-column="provider"]',
+    )?.click();
+    const values = Array.from(document.querySelectorAll<HTMLInputElement>('.column-filter-popover .column-filter-item input[type="checkbox"]'))
+      .map((i) => i.dataset['value']);
+    expect(values).toEqual(['aws', 'azure', 'gcp', 'oci']);
+  });
+
   test('clicking a trigger opens a popover detached to document.body', async () => {
     await loadPlans();
     const providerBtn = document.querySelector<HTMLButtonElement>(
