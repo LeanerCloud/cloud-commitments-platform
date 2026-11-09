@@ -12,6 +12,7 @@ import (
 	"github.com/googleapis/gax-go/v2"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/googleapi"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
@@ -82,4 +83,92 @@ func TestSavePurchaseHistory_GCPRecordsNoUpfront(t *testing.T) {
 	require.Zero(t, *saved.UpfrontCost)
 	require.NotNil(t, saved.MonthlyCost)
 	require.InDelta(t, monthly, *saved.MonthlyCost, 1e-9)
+}
+
+// conflictCommitmentsService rejects every Insert with a 409 and serves the
+// commitment back from Get, as GCP does for a re-drive that finds the CUD an
+// earlier attempt created.
+type conflictCommitmentsService struct {
+	fakeCommitmentsService
+	inserted *computepb.InsertRegionCommitmentRequest
+}
+
+func (f *conflictCommitmentsService) Insert(_ context.Context, req *computepb.InsertRegionCommitmentRequest) (computeengine.CommitmentsOperation, error) {
+	f.inserted = req
+	return nil, &googleapi.Error{Code: 409, Message: "already exists"}
+}
+
+func (f *conflictCommitmentsService) Get(context.Context, *computepb.GetRegionCommitmentRequest) (*computepb.Commitment, error) {
+	want := f.inserted.GetCommitmentResource()
+	return &computepb.Commitment{
+		Name:      want.Name,
+		Plan:      want.Plan,
+		Type:      want.Type,
+		Resources: want.Resources,
+	}, nil
+}
+
+// TestSavePurchaseHistory_AdoptedGCPRecordsZeroUpfront drives the real GCP client
+// through an idempotent re-drive that adopts the earlier CUD. The library reports
+// no Cost for it; a CUD has no upfront charge, so the row must hold 0, not NULL
+// (NULL nulls the upfront aggregates for the whole term).
+func TestSavePurchaseHistory_AdoptedGCPRecordsZeroUpfront(t *testing.T) {
+	ctx := context.Background()
+	client, err := computeengine.NewClient("project", "us-central1")
+	require.NoError(t, err)
+	client.SetCommitmentsService(&conflictCommitmentsService{})
+
+	rec := common.Recommendation{
+		ResourceType: "n1-standard-1",
+		Term:         "1yr",
+		Count:        5,
+		Details:      common.ComputeDetails{MemoryGB: 20},
+	}
+	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{IdempotencyToken: common.DeriveIdempotencyToken("lineage-1856", 0)})
+	require.NoError(t, err)
+	require.True(t, result.ExistingCommitment)
+	require.Nil(t, result.Cost, "the library contract this platform relies on: an adopted CUD reports no Cost")
+
+	store := new(MockConfigStore)
+	assertMocksOnCleanup(t, store)
+	var saved *config.PurchaseHistoryRecord
+	store.On("SavePurchaseHistory", ctx, mock.AnythingOfType("*config.PurchaseHistoryRecord")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseHistoryRecord) }).
+		Return(nil)
+	m := &Manager{config: store}
+
+	err = m.savePurchaseHistory(ctx,
+		&config.PurchaseExecution{ExecutionID: "exec", PlanID: "plan"}, &config.PurchasePlan{ID: "plan"},
+		config.RecommendationRecord{Provider: "gcp", Service: "compute", ResourceType: "n1-standard-1", Region: "us-central1", Count: 5, Term: 1},
+		result, "account", ec2types.OfferingClassTypeConvertible)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	require.NotNil(t, saved.UpfrontCost)
+	require.Zero(t, *saved.UpfrontCost)
+}
+
+// TestHistoryUpfrontCostKeepsUnknownOutsideAdoptedGCPCompute pins the scope of
+// the zero: AWS and Azure adoptions can hide a real upfront payment, and a
+// fresh result with no Cost is a provider bug to surface, not a free purchase.
+func TestHistoryUpfrontCostKeepsUnknownOutsideAdoptedGCPCompute(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider string
+		service  common.ServiceType
+		adopted  bool
+	}{
+		{"aws adopted", "aws", common.ServiceEC2, true},
+		{"azure adopted", "azure", common.ServiceCompute, true},
+		{"gcp non-compute adopted", "gcp", common.ServiceRDS, true},
+		{"gcp compute fresh with no cost", "gcp", common.ServiceCompute, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Nil(t, historyUpfrontCost(tc.provider, tc.service, common.PurchaseResult{ExistingCommitment: tc.adopted}))
+		})
+	}
+
+	known := 12.5
+	got := historyUpfrontCost("gcp", common.ServiceCompute, common.PurchaseResult{Cost: &known, ExistingCommitment: true})
+	require.Same(t, &known, got, "a reported cost is never overwritten")
 }

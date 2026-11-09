@@ -1169,6 +1169,7 @@ func SingleCloudAccountIDFromRecs(recs []config.RecommendationRecord) (*string, 
 // row, making the purchase invisible in the History view (issue #621).
 func (m *Manager) savePurchaseHistory(ctx context.Context, exec *config.PurchaseExecution, plan *config.PurchasePlan, rec config.RecommendationRecord, result common.PurchaseResult, accountID string, offeringClass ec2types.OfferingClassType) error {
 	purchasedAt := time.Now()
+	svc := m.mapServiceType(rec.Service)
 	historyRecord := &config.PurchaseHistoryRecord{
 		AccountID:        accountID,
 		PurchaseID:       result.CommitmentID,
@@ -1180,7 +1181,7 @@ func (m *Manager) savePurchaseHistory(ctx context.Context, exec *config.Purchase
 		Count:            rec.Count,
 		Term:             rec.Term,
 		Payment:          rec.Payment,
-		UpfrontCost:      result.Cost,
+		UpfrontCost:      historyUpfrontCost(rec.Provider, svc, result),
 		MonthlyCost:      rec.MonthlyCost,
 		EstimatedSavings: rec.Savings,
 		PlanID:           exec.PlanID,
@@ -1193,10 +1194,11 @@ func (m *Manager) savePurchaseHistory(ctx context.Context, exec *config.Purchase
 		RevocationWindowClosesAt: config.RevocationWindowClosesAtFor(rec.Provider, purchasedAt),
 	}
 	// The marketplace-sell guard reads this column instead of asking AWS
-	// (issue #292), so it must be the class the EC2 client was asked to buy.
-	svc := m.mapServiceType(rec.Service)
+	// (issue #292), so it must be the class of the recorded commitment: the
+	// provider-reported class on an adopted re-drive, else the class the EC2
+	// client was asked to buy.
 	if rec.Provider == string(common.ProviderAWS) && (svc == common.ServiceEC2 || svc == common.ServiceCompute) {
-		historyRecord.OfferingClass = string(offeringClass)
+		historyRecord.OfferingClass = historyOfferingClass(result, offeringClass)
 	}
 	if err := m.config.SavePurchaseHistory(ctx, historyRecord); err != nil {
 		logging.Errorf("Failed to save history: %v", err)
