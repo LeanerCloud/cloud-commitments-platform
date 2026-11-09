@@ -266,7 +266,7 @@ func TestExecuteSinglePurchase_OnlyACutOffCallIsOutcomeUnknown(t *testing.T) {
 		prov.On("GetServiceClient", mock.Anything, common.ServiceEC2, "us-east-1").Return(client, nil)
 		m := &Manager{config: store, providerFactory: factory}
 		_, err := m.executeSinglePurchase(ctx, config.RecommendationRecord{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1},
-			nil, common.PurchaseOptions{})
+			nil, common.PurchaseOptions{}, nil)
 		require.Error(t, err)
 		assert.Equal(t, cut, errors.Is(err, common.ErrOutcomeUnknown), "cut=%v: %v", cut, err)
 		cancel()
