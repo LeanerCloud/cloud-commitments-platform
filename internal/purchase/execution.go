@@ -794,7 +794,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 	// Build the list of selected indices once so the fan-out closure only
 	// has to look up rec[i] (no second pass over the full slice).
 	selected := selectedIndices(exec.Recommendations)
-	ownGCPNames := gcpOwnCommitmentNames(exec, selected)
+	ownNames := newPurchaseOwnNames(exec, selected)
 	if len(selected) == 0 {
 		logging.Infof("purchase[%s]: no selected recommendations, nothing to execute (account=%s plan=%q)",
 			exec.ExecutionID, accountID, plan.Name)
@@ -847,7 +847,7 @@ func (m *Manager) processPurchaseRecommendations(ctx context.Context, exec *conf
 			recOpts := opts
 			recOpts.IdempotencyToken = common.DeriveIdempotencyToken(idempotencyLineageKey(exec), i)
 			recOpts.AttemptJournal = m.attemptJournal
-			purchaseResult, err := m.executeSinglePurchase(ctx, rec, provCfg, recOpts, ownGCPNames)
+			purchaseResult, err := m.executeSinglePurchase(ctx, rec, provCfg, recOpts, ownNames)
 			return recPurchaseOutcome{index: i, purchase: purchaseResult, err: err}, nil
 		}, getMaxAccountParallelism())
 
@@ -1261,7 +1261,7 @@ func logRecCtxErr(executionID, recTuple string, elapsed time.Duration, recCtxErr
 // provCfg carries optional per-account credentials; pass nil to use ambient credentials.
 // opts carries execution-level metadata (the source surface) that providers stamp
 // onto the commitment they create.
-func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.RecommendationRecord, provCfg *provider.Config, opts common.PurchaseOptions, ownGCPNames map[string]bool) (common.PurchaseResult, error) {
+func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.RecommendationRecord, provCfg *provider.Config, opts common.PurchaseOptions, ownNames *purchaseOwnNames) (common.PurchaseResult, error) {
 	// Per-purchase Info logs tagged with the owning execution ID so a
 	// CloudWatch filter on the execution UUID surfaces every step of the
 	// purchase attempt -- provider construction, service-client lookup,
@@ -1359,7 +1359,7 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 	// CloudWatch shows whether a failure came from the SDK call itself
 	// (which the AWS SDK retries up to 3× × 30s by default) versus
 	// something earlier in the flow — issue #667.
-	opts, err = preSubmitChecks(recCtx, serviceClient, rec, recommendation, opts, ownGCPNames)
+	opts, err = preSubmitChecks(recCtx, serviceClient, rec, recommendation, opts, ownNames)
 	if err != nil {
 		return common.PurchaseResult{}, err
 	}
@@ -1393,13 +1393,17 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 	return result, nil
 }
 
-// preSubmitChecks runs what must hold before PurchaseCommitment: the GCP
+// preSubmitChecks runs what must hold before PurchaseCommitment: the AWS
+// ElastiCache recent-reservation refusal (platform#1863), the GCP
 // recent-commitment refusal (platform#682, a beforeSubmission error) and go's
 // Redshift dispatch time, which bounds its DescribeReservedNodes match window
 // by RequestedAt and must be the lineage's first dispatch time, never this
 // call's.
-func preSubmitChecks(ctx context.Context, client provider.ServiceClient, rec config.RecommendationRecord, recommendation common.Recommendation, opts common.PurchaseOptions, ownGCPNames map[string]bool) (common.PurchaseOptions, error) {
-	if err := gcpRecentCommitmentRefusal(ctx, client, recommendation, ownGCPNames, ownCommitmentName(opts)); err != nil {
+func preSubmitChecks(ctx context.Context, client provider.ServiceClient, rec config.RecommendationRecord, recommendation common.Recommendation, opts common.PurchaseOptions, ownNames *purchaseOwnNames) (common.PurchaseOptions, error) {
+	if err := elastiCacheRecentRefusal(ctx, client, recommendation, ownNames.elastiCacheNames(), ownElastiCacheID(opts)); err != nil {
+		return opts, err
+	}
+	if err := gcpRecentCommitmentRefusal(ctx, client, recommendation, ownNames.gcpNames(), ownCommitmentName(opts)); err != nil {
 		return opts, err
 	}
 	return withDispatchTime(rec, opts)
