@@ -162,6 +162,14 @@ stored id is not lowercase matches only identically spelled input. History ids
 come from AWS describe calls, which return lowercase RI ids, so this does not occur
 in practice; closing it means normalising both sides inside the history guard.
 
+### The idempotency_key writer scan misses schema-qualified or quoted table names (issue #1853)
+
+`TestIdempotencyKeyCopyHasSingleWriter` matches `purchase_executions` literally, so
+`public.purchase_executions` and `"purchase_executions"` in a Go SQL string are invisible to it.
+No SQL in the repo spells the table that way; closing it means widening the table regexes.
+The scan also reads a backslash as a plain character in a '...' literal (PostgreSQL's default
+`standard_conforming_strings = on`) and does not lex `U&'...'` strings; no SQL here relies on either.
+
 ## Resolved
 
 ### Azure
