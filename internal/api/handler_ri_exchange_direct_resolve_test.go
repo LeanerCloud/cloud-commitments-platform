@@ -166,6 +166,7 @@ func TestResolveRIExchangeDirect_MapsStoreOutcomes(t *testing.T) {
 		want int
 	}{
 		{"missing at resolve time", config.ErrRIExchangeResolveNotFound, 404},
+		{"migration not applied", config.ErrRIExchangeDirectResolveNotReady, 503},
 		{"checked_at outside the window", fmt.Errorf("%w: checked_at is in the future", config.ErrRIExchangeResolveInvalid), 400},
 		{"already settled", fmt.Errorf("%w: the exchange is already completed", config.ErrRIExchangeResolveConflict), 409},
 		{"may still be in flight", fmt.Errorf("%w: the exchange may still be in flight; wait until 2026-11-08T09:10:00Z", config.ErrRIExchangeResolveConflict), 409},

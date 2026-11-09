@@ -53,3 +53,28 @@ func TestSettlementSchemaReady(t *testing.T) {
 		})
 	}
 }
+
+// The direct-resolve paths run before migration 163 is applied (#1836).
+func TestDirectResolveSchemaReady(t *testing.T) {
+	t.Parallel()
+	v := directResolveMigrationVersion
+	cases := []struct {
+		name string
+		row  fakeVersionRow
+		want bool
+	}{
+		{"nothing applied", fakeVersionRow{err: pgx.ErrNoRows}, false},
+		{"before the migration", fakeVersionRow{version: v - 1}, false},
+		{"at the migration", fakeVersionRow{version: v}, true},
+		{"at the migration, dirty", fakeVersionRow{version: v, dirty: true}, false},
+		{"after it, even with a later dirty migration", fakeVersionRow{version: v + 1, dirty: true}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := directResolveSchemaReady(context.Background(), fakeVersionQuerier{tc.row})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

@@ -13,6 +13,9 @@ import (
 // authorization service about each pair once. The unresolved partial index
 // serves it.
 func (s *PostgresStore) ListUnresolvedRIExchangeDirectAccountRegions(ctx context.Context) ([]RIExchangeDirectAccountRegion, error) {
+	if err := requireDirectResolveSchema(ctx, s.db); err != nil {
+		return nil, err
+	}
 	rows, err := s.db.Query(ctx, `
 		SELECT DISTINCT cloud_account_id, COALESCE(region, '')
 		FROM ri_exchange_direct_executions
@@ -36,6 +39,9 @@ func (s *PostgresStore) ListUnresolvedRIExchangeDirectAccountRegions(ctx context
 // GetRIExchangeDirectExecution returns one AWS direct row of any status, or
 // ErrRIExchangeResolveNotFound for a missing or non-AWS row.
 func (s *PostgresStore) GetRIExchangeDirectExecution(ctx context.Context, id string) (*RIExchangeDirectRow, error) {
+	if err := requireDirectResolveSchema(ctx, s.db); err != nil {
+		return nil, err
+	}
 	r, err := scanRIExchangeDirectRow(s.db.QueryRow(ctx, `
 		SELECT`+riExchangeDirectRowColumns+`
 		FROM ri_exchange_direct_executions

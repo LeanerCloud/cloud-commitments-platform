@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -46,6 +47,9 @@ type RIExchangeDirectResolveResult struct {
 	Note           string
 	Replayed       bool
 }
+
+// ErrRIExchangeDirectResolveNotReady: the resolution migration is not applied yet.
+var ErrRIExchangeDirectResolveNotReady = errors.New("resolving direct RI exchanges is not available until the database migration is applied")
 
 // RIExchangeDirectResolveStore is the store surface of the direct-row list and
 // resolve endpoints.

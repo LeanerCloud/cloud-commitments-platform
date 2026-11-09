@@ -39,21 +39,16 @@ func (s *PostgresStore) ListUnresolvedRIExchangeDirectExecutions(ctx context.Con
 	if err != nil {
 		return nil, err
 	}
+	if err := requireDirectResolveSchema(ctx, s.db); err != nil {
+		return nil, err
+	}
 	page := &RIExchangeDirectListPage{}
 	if len(f.Allowed) == 0 {
 		return page, nil
 	}
-	accounts := make([]*string, len(f.Allowed))
-	regions := make([]string, len(f.Allowed))
-	for i, p := range f.Allowed {
-		accounts[i], regions[i] = p.CloudAccountID, p.Region
-	}
+	accounts, regions := allowedListArrays(f.Allowed)
 	riID, region := optionalListText(normaliseRIExchangeSourceIDs([]string{f.RIID})), optionalListText([]string{f.Region})
-	var afterAt *time.Time
-	var afterID *string
-	if f.After != nil {
-		afterAt, afterID = &f.After.CreatedAt, &f.After.ID
-	}
+	afterAt, afterID := listCursorArgs(f.After)
 
 	rows, err := s.db.Query(ctx, `
 		SELECT`+riExchangeDirectRowColumns+`
@@ -110,6 +105,25 @@ func validateRIExchangeDirectListFilter(f RIExchangeDirectListFilter) (limit int
 		}
 	}
 	return limit, statuses, nil
+}
+
+// allowedListArrays splits the allowed pairs into the two parallel arrays the
+// query unnests.
+func allowedListArrays(allowed []RIExchangeDirectAccountRegion) ([]*string, []string) {
+	accounts := make([]*string, len(allowed))
+	regions := make([]string, len(allowed))
+	for i, p := range allowed {
+		accounts[i], regions[i] = p.CloudAccountID, p.Region
+	}
+	return accounts, regions
+}
+
+// listCursorArgs is the keyset cursor as nullable SQL arguments.
+func listCursorArgs(after *RIExchangeDirectCursor) (*time.Time, *string) {
+	if after == nil {
+		return nil, nil
+	}
+	return &after.CreatedAt, &after.ID
 }
 
 // optionalListText is the first non-empty value as a nullable SQL argument.

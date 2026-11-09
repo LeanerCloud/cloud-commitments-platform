@@ -3499,6 +3499,13 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 	if len(normalised) == 0 {
 		return nil
 	}
+	resolvedFilter := " AND resolved_at IS NULL"
+	if ready, err := directResolveSchemaReady(ctx, tx); err != nil {
+		logging.Errorf("RI exchange reservation: schema version check failed: %v", err)
+		return errors.New("failed to check RI exchange source RIs held by a direct execute")
+	} else if !ready {
+		resolvedFilter = ""
+	}
 	var blocker string
 	var shared []string
 	err := tx.QueryRow(ctx, `
@@ -3506,7 +3513,7 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 		FROM (
 			SELECT id, created_at, ARRAY(SELECT lower(btrim(x, E' \t\n\r\f\x0B')) FROM unnest(source_ids) x) AS ids
 			FROM ri_exchange_direct_executions
-			WHERE provider = 'aws' AND status IN ('submitted', 'unknown') AND resolved_at IS NULL
+			WHERE provider = 'aws' AND status IN ('submitted', 'unknown')`+resolvedFilter+`
 		) d
 		WHERE ids && $1::text[]
 		ORDER BY created_at, id

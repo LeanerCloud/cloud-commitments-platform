@@ -29,6 +29,9 @@ func (s *PostgresStore) ResolveRIExchangeDirectExecution(ctx context.Context, re
 	if err := validateRIExchangeDirectResolve(req); err != nil {
 		return nil, err
 	}
+	if err := requireDirectResolveSchema(ctx, s.db); err != nil {
+		return nil, err
+	}
 	res := &RIExchangeDirectResolveResult{ID: req.ID, ResolvedStatus: req.Outcome, Note: req.Note}
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		row, err := lockRIExchangeDirectForResolve(ctx, tx, req.ID)
