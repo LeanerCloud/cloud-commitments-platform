@@ -21,6 +21,7 @@
 - The window is measured from the other row's last save, so a later save of that row (for example a revocation request) restarts it. That only refuses longer; it never allows a double buy.
 - A `failed` row without the no-submission proof (reaped mid-buy, or an unknown outcome) may hold a real node. Inside the window the gate refuses it like a finished row, settled or not and whether or not Retry is refused (#1839); outside it, the gate counts it as an open lineage only while Retry can still re-drive it (below).
 - Now that the Redshift re-drive guard is lifted, a retry can be refused for up to 24h while another lineage's completed node sits inside its window (liveness only, no double buy).
+- Deploy ordering: a Redshift row dispatched before the attempt journal (#1824, migration 000161) is live in an environment has no journal record, so #1832 (the lifted re-drive refusal) must be deployed there no earlier than 24h after #1824; otherwise a Retry inside the 24h horizon could buy a second node if AWS changed the offering. Recorded as a step in `docs/DEPLOYMENT.md` (#1835).
 - Plan rows that PR2b refused before submission (failed, `no_submission`, attempt 0) used to hold their ramp step until the account was detached. They are now retryable, so that hold clears with a Retry once the other node leaves its window.
 
 **Status:** Mitigated for platform-recorded buys. Tracked in #702 and LeanerCloud/cloud-commitments-go#515.
