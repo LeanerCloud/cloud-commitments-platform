@@ -1016,7 +1016,18 @@ const (
 	// reached. Those rows may carry an outdated price and must not be
 	// purchased until a good collection re-prices them.
 	PartialReasonPricingUnavailable = "pricing_unavailable"
+	// PartialReasonPricingHoldExpired counts accounts whose pricing hold hit
+	// PricingHoldMaxAge and whose stale rows were evicted; it equals the length
+	// of PartialProviderSweep.ExpiredHoldAccountIDs.
+	PartialReasonPricingHoldExpired = "pricing_hold_expired"
 )
+
+// PricingHoldMaxAge is how long an account's Azure rows stay held through a
+// pricing outage before they are evicted. It is age based because manual and
+// stale-cache refreshes also run collections, so a cycle count is not a time.
+// On a daily schedule the hold is kept on the second run (about 24h) and the
+// account is dropped on the third (about 48h).
+const PricingHoldMaxAge = 36 * time.Hour
 
 // PartialProviderSweep summarizes one provider's incomplete sweeps in a
 // collection. A "scope" is the unit a sweep fails in: a subscription for
@@ -1046,6 +1057,13 @@ type PartialProviderSweep struct {
 	// the nil UUID (all zeros) for the ambient identity, which has no account;
 	// the API shows it only to callers with an unrestricted account scope.
 	HeldAccountIDs []string `json:"held_account_ids,omitempty"`
+	// HeldSince records when each held account (by HeldAccountIDs entry, or the
+	// nil UUID for an ambient hold) was first held in the current streak.
+	HeldSince map[string]time.Time `json:"held_since,omitempty"`
+	// ExpiredHoldAccountIDs lists accounts whose hold passed PricingHoldMaxAge
+	// and whose stale rows were evicted. It is carried until the account
+	// re-prices or stops being an enabled Azure account.
+	ExpiredHoldAccountIDs []string `json:"expired_hold_account_ids,omitempty"`
 }
 
 // SuccessfulCollect identifies a (provider, account) pair whose collection

@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -396,16 +397,46 @@ func scopeHeldAccounts(f *config.RecommendationsFreshness, scope auth.AccountSco
 	partial := *f.LastCollectionPartial
 	partial.Providers = slices.Clone(partial.Providers)
 	for i := range partial.Providers {
-		var allowed []string
-		for _, id := range partial.Providers[i].HeldAccountIDs {
-			if scope.Allows(id, "") {
-				allowed = append(allowed, id)
-			}
-		}
-		partial.Providers[i].HeldAccountIDs = allowed
+		scopeSweep(&partial.Providers[i], scope)
 	}
 	out.LastCollectionPartial = &partial
 	return &out
+}
+
+// scopeSweep narrows one provider sweep to the accounts scope allows: held ids,
+// held_since keys and expired ids, with the expired reason count recomputed so
+// a restricted caller cannot infer accounts outside its scope from the count.
+func scopeSweep(sweep *config.PartialProviderSweep, scope auth.AccountScope) {
+	sweep.HeldAccountIDs = allowedIDs(sweep.HeldAccountIDs, scope)
+	sweep.ExpiredHoldAccountIDs = allowedIDs(sweep.ExpiredHoldAccountIDs, scope)
+	if sweep.HeldSince != nil {
+		since := make(map[string]time.Time, len(sweep.HeldSince))
+		for id, at := range sweep.HeldSince {
+			if scope.Allows(id, "") {
+				since[id] = at
+			}
+		}
+		sweep.HeldSince = since
+	}
+	if _, ok := sweep.Reasons[config.PartialReasonPricingHoldExpired]; ok {
+		reasons := maps.Clone(sweep.Reasons)
+		if n := len(sweep.ExpiredHoldAccountIDs); n > 0 {
+			reasons[config.PartialReasonPricingHoldExpired] = n
+		} else {
+			delete(reasons, config.PartialReasonPricingHoldExpired)
+		}
+		sweep.Reasons = reasons
+	}
+}
+
+func allowedIDs(ids []string, scope auth.AccountScope) []string {
+	var allowed []string
+	for _, id := range ids {
+		if scope.Allows(id, "") {
+			allowed = append(allowed, id)
+		}
+	}
+	return allowed
 }
 
 // getRecommendationDetail returns the per-id drill-down payload backing

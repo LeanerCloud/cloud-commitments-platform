@@ -1,11 +1,16 @@
 package config
 
 import (
+	"maps"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var holdNow = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
 func holdOf(ids ...string) *RecommendationsCollectionPartial {
 	return &RecommendationsCollectionPartial{Providers: []PartialProviderSweep{{
@@ -44,7 +49,7 @@ func TestCarryAzureHold(t *testing.T) {
 		"ambient drops with no ambient rows": {holdOf(), nil, nil, stored, nil, false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := carryAzureHold(tc.prev, tc.partial, tc.collects, tc.stored)
+			got, _ := carryAzureHold(tc.prev, tc.partial, tc.collects, tc.stored, nil, holdNow)
 			if !tc.wantHold {
 				assert.Nil(t, got)
 				return
@@ -64,22 +69,23 @@ func TestCarryAzureHold_AmbientSurvivesNamedReprice(t *testing.T) {
 	stored := map[string]bool{ambientAccountKey: true, "c": true}
 
 	// Cycle 1: the ambient hold carries while this cycle holds account c.
-	merged := carryAzureHold(holdOf(), holdOf("c"), nil, stored)
+	merged, _ := carryAzureHold(holdOf(), holdOf("c"), nil, stored, nil, holdNow)
 	require.NotNil(t, merged)
 
 	// Cycle 2: c re-prices, the ambient identity does not.
-	got := carryAzureHold(merged, nil, azureCollect(&c), stored)
+	got, _ := carryAzureHold(merged, nil, azureCollect(&c), stored, nil, holdNow)
 	require.NotNil(t, got, "ambient rows still exist, so the hold must stay")
 	assert.Contains(t, got.Providers[0].HeldAccountIDs, ambientAccountKey)
 
 	// Cycle 3: the ambient identity re-prices, which ends the hold.
-	assert.Nil(t, carryAzureHold(got, nil, azureCollect(nil), stored))
+	end, _ := carryAzureHold(got, nil, azureCollect(nil), stored, nil, holdNow)
+	assert.Nil(t, end)
 }
 
 // An ambient pricing outage in this cycle plus a carried named hold keeps both.
 func TestCarryAzureHold_ThisCycleAmbientKeptWithCarriedNamed(t *testing.T) {
 	stored := map[string]bool{ambientAccountKey: true, "a": true}
-	got := carryAzureHold(holdOf("a"), holdOf(), nil, stored)
+	got, _ := carryAzureHold(holdOf("a"), holdOf(), nil, stored, nil, holdNow)
 	require.NotNil(t, got)
 	assert.ElementsMatch(t, []string{"a", ambientAccountKey}, got.Providers[0].HeldAccountIDs)
 }
@@ -98,7 +104,7 @@ func TestCarryAzureHold_IncompleteAccountsCountsEachCarriedAccount(t *testing.T)
 		"ambient carried":                  {holdOf(), nil, 1},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := carryAzureHold(tc.prev, tc.partial, nil, stored)
+			got, _ := carryAzureHold(tc.prev, tc.partial, nil, stored, nil, holdNow)
 			require.NotNil(t, got)
 			assert.Equal(t, tc.want, got.Providers[0].IncompleteAccounts)
 		})
@@ -108,4 +114,256 @@ func TestCarryAzureHold_IncompleteAccountsCountsEachCarriedAccount(t *testing.T)
 func withIncomplete(p *RecommendationsCollectionPartial, n int) *RecommendationsCollectionPartial {
 	p.Providers[0].IncompleteAccounts = n
 	return p
+}
+
+// Helpers for the hold-age bound (issue #1675).
+
+func setOf(ids ...string) map[string]bool {
+	m := map[string]bool{}
+	for _, id := range ids {
+		m[id] = true
+	}
+	return m
+}
+
+// holdAt is a stored hold whose accounts have the given start times.
+func holdAt(since map[string]time.Time) *RecommendationsCollectionPartial {
+	ids := slices.Sorted(maps.Keys(since))
+	p := holdOf(ids...)
+	p.Providers[0].HeldSince = since
+	p.Providers[0].IncompleteAccounts = len(ids)
+	return p
+}
+
+// withExpired adds an expired-hold record (ids and the matching reason count).
+func withExpired(p *RecommendationsCollectionPartial, ids ...string) *RecommendationsCollectionPartial {
+	p.Providers[0].ExpiredHoldAccountIDs = ids
+	p.Providers[0].Reasons[PartialReasonPricingHoldExpired] = len(ids)
+	return p
+}
+
+func expiredOnly(ids ...string) *RecommendationsCollectionPartial {
+	p := holdOf()
+	delete(p.Providers[0].Reasons, PartialReasonPricingUnavailable)
+	return withExpired(p, ids...)
+}
+
+func azureOf(t *testing.T, p *RecommendationsCollectionPartial) PartialProviderSweep {
+	t.Helper()
+	require.NotNil(t, p)
+	require.Len(t, p.Providers, 1)
+	return p.Providers[0]
+}
+
+func TestCarryAzureHold_SetsHeldSinceOnFirstHold(t *testing.T) {
+	got, evict := carryAzureHold(nil, holdOf("a"), nil, setOf("a"), nil, holdNow)
+	sweep := azureOf(t, got)
+	assert.Equal(t, map[string]time.Time{"a": holdNow}, sweep.HeldSince)
+	assert.Equal(t, []string{"a"}, sweep.HeldAccountIDs)
+	assert.Empty(t, evict)
+}
+
+func TestCarryAzureHold_KeepsHeldSinceAcrossCycles(t *testing.T) {
+	start := holdNow.Add(-24 * time.Hour)
+	got, evict := carryAzureHold(holdAt(map[string]time.Time{"a": start}), holdOf("b"), nil, setOf("a", "b"), nil, holdNow)
+	sweep := azureOf(t, got)
+	assert.Equal(t, map[string]time.Time{"a": start, "b": holdNow}, sweep.HeldSince)
+	assert.Empty(t, evict)
+}
+
+func TestCarryAzureHold_ExpiresAtMaxAge(t *testing.T) {
+	start := holdNow
+	prev := func() *RecommendationsCollectionPartial {
+		return holdAt(map[string]time.Time{"a": start, "b": start.Add(time.Hour)})
+	}
+	stored := setOf("a", "b")
+
+	got, evict := carryAzureHold(prev(), nil, nil, stored, setOf("a", "b"), start.Add(PricingHoldMaxAge-time.Nanosecond))
+	assert.Equal(t, []string{"a", "b"}, azureOf(t, got).HeldAccountIDs)
+	assert.Empty(t, evict)
+
+	got, evict = carryAzureHold(prev(), nil, nil, stored, setOf("a", "b"), start.Add(PricingHoldMaxAge))
+	sweep := azureOf(t, got)
+	assert.Equal(t, []string{"b"}, sweep.HeldAccountIDs, "only the aged account leaves the hold")
+	assert.Equal(t, map[string]time.Time{"b": start.Add(time.Hour)}, sweep.HeldSince)
+	assert.Equal(t, []string{"a"}, sweep.ExpiredHoldAccountIDs)
+	assert.Equal(t, []string{"a"}, evict)
+	assert.Equal(t, 1, sweep.IncompleteAccounts)
+	assert.Equal(t, 1, sweep.Reasons[PartialReasonPricingHoldExpired])
+	assert.Positive(t, sweep.Reasons[PartialReasonPricingUnavailable])
+
+	// The last held account expiring ends the hold, so purchases stop being refused.
+	got, evict = carryAzureHold(holdAt(map[string]time.Time{"a": start}), nil, nil, stored, setOf("a"), start.Add(PricingHoldMaxAge))
+	sweep = azureOf(t, got)
+	assert.Empty(t, sweep.HeldAccountIDs)
+	assert.Nil(t, previousAzureHold(got))
+	assert.Zero(t, sweep.IncompleteAccounts)
+	assert.Equal(t, []string{"a"}, evict)
+}
+
+func TestCarryAzureHold_RepriceResetsHeldSince(t *testing.T) {
+	a := "a"
+	prev := holdAt(map[string]time.Time{"a": holdNow, "b": holdNow})
+	got, _ := carryAzureHold(prev, nil, azureCollect(&a), setOf("a", "b"), nil, holdNow.Add(30*time.Hour))
+	assert.Equal(t, map[string]time.Time{"b": holdNow}, azureOf(t, got).HeldSince)
+
+	later := holdNow.Add(40 * time.Hour)
+	got, evict := carryAzureHold(got, holdOf("a"), nil, setOf("a", "b"), setOf("a", "b"), later)
+	sweep := azureOf(t, got)
+	assert.Equal(t, []string{"a"}, sweep.HeldAccountIDs, "a is held again with a fresh start")
+	assert.Equal(t, later, sweep.HeldSince["a"])
+	assert.Equal(t, []string{"b"}, evict)
+}
+
+func TestCarryAzureHold_LegacyHoldWithoutSinceNotExpired(t *testing.T) {
+	got, evict := carryAzureHold(holdOf("a"), nil, nil, setOf("a"), nil, holdNow.Add(1000*time.Hour))
+	sweep := azureOf(t, got)
+	assert.Equal(t, []string{"a"}, sweep.HeldAccountIDs)
+	assert.Equal(t, holdNow.Add(1000*time.Hour), sweep.HeldSince["a"])
+	assert.Empty(t, evict)
+}
+
+func TestCarryAzureHold_SkippedAzureCycleKeepsAgeButChecksBound(t *testing.T) {
+	prev := func() *RecommendationsCollectionPartial { return holdAt(map[string]time.Time{"a": holdNow}) }
+	got, evict := carryAzureHold(prev(), nil, nil, setOf("a"), setOf("a"), holdNow.Add(10*time.Hour))
+	assert.Equal(t, holdNow, azureOf(t, got).HeldSince["a"])
+	assert.Empty(t, evict)
+
+	got, evict = carryAzureHold(prev(), nil, nil, setOf("a"), setOf("a"), holdNow.Add(37*time.Hour))
+	assert.Equal(t, []string{"a"}, azureOf(t, got).ExpiredHoldAccountIDs)
+	assert.Equal(t, []string{"a"}, evict)
+}
+
+func TestCarryAzureHold_AmbientExpires(t *testing.T) {
+	stored := setOf(ambientAccountKey)
+	t.Run("carried from a legacy ambient hold", func(t *testing.T) {
+		got, _ := carryAzureHold(holdOf(), nil, nil, stored, nil, holdNow)
+		assert.Equal(t, holdNow, azureOf(t, got).HeldSince[ambientAccountKey])
+		got, evict := carryAzureHold(got, nil, nil, stored, nil, holdNow.Add(PricingHoldMaxAge))
+		sweep := azureOf(t, got)
+		assert.Equal(t, []string{ambientAccountKey}, sweep.ExpiredHoldAccountIDs)
+		assert.Equal(t, []string{ambientAccountKey}, evict)
+		assert.Nil(t, previousAzureHold(got))
+	})
+	t.Run("this cycle's own ambient outage", func(t *testing.T) {
+		got, _ := carryAzureHold(nil, withIncomplete(holdOf(), 1), nil, stored, nil, holdNow)
+		sweep := azureOf(t, got)
+		assert.Empty(t, sweep.HeldAccountIDs, "the own ambient hold keeps its empty id list")
+		assert.Equal(t, holdNow, sweep.HeldSince[ambientAccountKey])
+
+		got, evict := carryAzureHold(got, withIncomplete(holdOf(), 1), nil, stored, nil, holdNow.Add(PricingHoldMaxAge))
+		sweep = azureOf(t, got)
+		assert.Equal(t, []string{ambientAccountKey}, evict)
+		assert.Nil(t, previousAzureHold(got))
+		assert.Zero(t, sweep.IncompleteAccounts)
+		assert.Empty(t, sweep.HeldSince)
+	})
+}
+
+func TestCarryAzureHold_NoStoredRowsNotAged(t *testing.T) {
+	got, evict := carryAzureHold(holdAt(map[string]time.Time{"a": holdNow}), nil, nil, setOf("c"), nil, holdNow.Add(100*time.Hour))
+	assert.Nil(t, got, "no stored rows ends the hold without expiring it")
+	assert.Empty(t, evict)
+}
+
+func TestCarryAzureHold_EachAccountOnceWhenInCarriedAndThisCycle(t *testing.T) {
+	stored := setOf("a")
+	prev := func() *RecommendationsCollectionPartial { return holdAt(map[string]time.Time{"a": holdNow}) }
+
+	got, evict := carryAzureHold(prev(), withIncomplete(holdOf("a"), 1), nil, stored, setOf("a"), holdNow.Add(10*time.Hour))
+	sweep := azureOf(t, got)
+	assert.Equal(t, []string{"a"}, sweep.HeldAccountIDs)
+	assert.Equal(t, 1, sweep.IncompleteAccounts)
+	assert.Empty(t, evict)
+
+	got, evict = carryAzureHold(prev(), withIncomplete(holdOf("a"), 1), nil, stored, setOf("a"), holdNow.Add(PricingHoldMaxAge))
+	sweep = azureOf(t, got)
+	assert.Equal(t, []string{"a"}, evict, "evicted once, not once per source")
+	assert.Equal(t, []string{"a"}, sweep.ExpiredHoldAccountIDs)
+	assert.Zero(t, sweep.IncompleteAccounts)
+}
+
+func TestCarryAzureHold_ExpiredAccountNotReagedNorReheld(t *testing.T) {
+	stored, active := setOf("a", "b"), setOf("a", "b")
+	prev := expiredOnly("a")
+
+	got, evict := carryAzureHold(prev, withIncomplete(holdOf("a", "b"), 2), nil, stored, active, holdNow)
+	sweep := azureOf(t, got)
+	assert.Equal(t, []string{"b"}, sweep.HeldAccountIDs, "a is not held again")
+	assert.Equal(t, map[string]time.Time{"b": holdNow}, sweep.HeldSince)
+	assert.Equal(t, []string{"a"}, sweep.ExpiredHoldAccountIDs)
+	assert.Equal(t, []string{"a"}, evict)
+	assert.Equal(t, 1, sweep.IncompleteAccounts)
+
+	// Long after the bound it still is not re-armed.
+	got, evict = carryAzureHold(got, withIncomplete(holdOf("a"), 1), nil, stored, active, holdNow.Add(500*time.Hour))
+	sweep = azureOf(t, got)
+	assert.Empty(t, sweep.HeldAccountIDs)
+	assert.Nil(t, previousAzureHold(got), "no refusal flapping for the expired account")
+	assert.Equal(t, []string{"a", "b"}, sweep.ExpiredHoldAccountIDs, "b aged out meanwhile")
+	assert.ElementsMatch(t, []string{"a", "b"}, evict)
+}
+
+func TestCarryAzureHold_OlderCollectedAtNeverMovesHeldSinceBackwards(t *testing.T) {
+	newer := holdNow.Add(10 * time.Hour)
+	got, evict := carryAzureHold(holdAt(map[string]time.Time{"a": newer}), holdOf("a"), nil, setOf("a"), nil, holdNow)
+	sweep := azureOf(t, got)
+	assert.Equal(t, newer, sweep.HeldSince["a"])
+	assert.Equal(t, []string{"a"}, sweep.HeldAccountIDs, "a negative age expires nothing")
+	assert.Empty(t, evict)
+}
+
+func TestCarryAzureHold_ExpiredIdsCarriedAcrossSkippedAzureCycle(t *testing.T) {
+	gcp := "a"
+	got, evict := carryAzureHold(expiredOnly("a"), nil, []SuccessfulCollect{{Provider: "gcp", CloudAccountID: &gcp}}, setOf("a"), setOf("a"), holdNow)
+	sweep := azureOf(t, got)
+	assert.Equal(t, []string{"a"}, sweep.ExpiredHoldAccountIDs)
+	assert.Equal(t, 1, sweep.Reasons[PartialReasonPricingHoldExpired])
+	assert.Empty(t, evict, "the account is not held this cycle, so nothing to delete")
+}
+
+func TestCarryAzureHold_ExpiredIdsClearedOnReprice(t *testing.T) {
+	a := "a"
+	got, _ := carryAzureHold(expiredOnly("a", "b"), nil, azureCollect(&a), setOf(), setOf("a", "b"), holdNow)
+	sweep := azureOf(t, got)
+	assert.Equal(t, []string{"b"}, sweep.ExpiredHoldAccountIDs)
+	assert.Equal(t, 1, sweep.Reasons[PartialReasonPricingHoldExpired])
+
+	got, _ = carryAzureHold(expiredOnly(ambientAccountKey), nil, azureCollect(nil), setOf(), nil, holdNow)
+	assert.Nil(t, got, "an ambient re-price clears the ambient expiry")
+}
+
+func TestCarryAzureHold_ExpiredIdsDroppedForDisabledOrDeletedAccount(t *testing.T) {
+	got, _ := carryAzureHold(expiredOnly("a", "b", ambientAccountKey), nil, nil, setOf(), setOf("a"), holdNow)
+	assert.Equal(t, []string{ambientAccountKey, "a"}, azureOf(t, got).ExpiredHoldAccountIDs, "ambient is always active")
+
+	got, _ = carryAzureHold(expiredOnly("a", "b"), nil, nil, setOf(), setOf(), holdNow)
+	assert.Nil(t, got, "no active account keeps the record")
+}
+
+func TestCarryAzureHold_ExpiredIdsKeepReasonCountInSync(t *testing.T) {
+	a := "a"
+	prev := withExpired(holdAt(map[string]time.Time{"c": holdNow}), "a", "b")
+	got, _ := carryAzureHold(prev, nil, azureCollect(&a), setOf("c"), setOf("a", "b", "c"), holdNow.Add(PricingHoldMaxAge))
+	sweep := azureOf(t, got)
+	assert.Equal(t, []string{"b", "c"}, sweep.ExpiredHoldAccountIDs)
+	assert.Equal(t, len(sweep.ExpiredHoldAccountIDs), sweep.Reasons[PartialReasonPricingHoldExpired])
+
+	// At zero the reason key is removed.
+	got, _ = carryAzureHold(withExpired(holdAt(map[string]time.Time{"c": holdNow}), "a"), nil, azureCollect(&a), setOf("c"), setOf("a", "c"), holdNow)
+	sweep = azureOf(t, got)
+	assert.Empty(t, sweep.ExpiredHoldAccountIDs)
+	assert.NotContains(t, sweep.Reasons, PartialReasonPricingHoldExpired)
+}
+
+func TestCarryAzureHold_ExpiredHeldAccountKeysIncludedEveryCycle(t *testing.T) {
+	stored, active := setOf("a", "c"), setOf("a", "c")
+	prev := withExpired(holdAt(map[string]time.Time{"c": holdNow}), "a")
+	now := holdNow.Add(PricingHoldMaxAge)
+	got, evict := carryAzureHold(prev, holdOf("a"), nil, stored, active, now)
+	assert.ElementsMatch(t, []string{"a", "c"}, evict, "the previously expired a and the newly expired c")
+
+	got, evict = carryAzureHold(got, holdOf("a"), nil, stored, active, now.Add(24*time.Hour))
+	assert.Equal(t, []string{"a"}, evict, "a is evicted again while it stays held")
+	assert.Equal(t, []string{"a", "c"}, azureOf(t, got).ExpiredHoldAccountIDs)
 }

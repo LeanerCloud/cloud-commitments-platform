@@ -128,6 +128,10 @@ export interface PartialProviderSweep {
   reasons: Record<string, number>;
   /** Platform account IDs whose rows are held through a pricing outage (reason `pricing_unavailable`). */
   held_account_ids?: string[];
+  /** First-held time per account key; only accounts in the caller's scope. */
+  held_since?: Record<string, string>;
+  /** Accounts whose hold passed the bound and whose stale rows were evicted (reason `pricing_hold_expired`). */
+  expired_hold_account_ids?: string[];
 }
 
 export interface RecommendationsFreshness {
