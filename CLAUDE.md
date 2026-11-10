@@ -295,6 +295,13 @@ Merge only at the reviewed SHA, and only when all of these cover it:
 - The verdict, the reviewed SHA and the local verification evidence are
   recorded on the PR itself.
 
+CodeRabbit stays optional: never add `CodeRabbit` to the ruleset's
+required status checks. When rate limited it publishes the status with
+state `success` and description `Review rate limited`, so a required
+check would pass for reviews that never ran. Only the description tells
+the truth. To gate on CodeRabbit, use a check that reads the description
+and rejects `rate limited`, `paused` and `limit reached`.
+
 Merge normally; never bypass failing or required checks (no
 `gh pr merge --admin`, no `--no-verify`). Verification never authorizes
 real purchases, deploys or the CLI's `--yes`. Any new commit or rebase
