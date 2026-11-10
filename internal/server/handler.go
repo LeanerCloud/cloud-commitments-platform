@@ -424,7 +424,10 @@ func (app *Application) handleRefreshAnalytics(ctx context.Context) (map[string]
 	return result, nil
 }
 
-// ScheduledEvent represents a generic scheduled event.
+// ScheduledEvent represents a generic scheduled event. Source, DetailType and
+// Detail are the EventBridge envelope: ParseScheduledEvent never reads them
+// (lambda.go routes on source separately), only Action and OwnerToken drive the
+// task.
 type ScheduledEvent struct {
 	Source     string          `json:"source"`
 	DetailType string          `json:"detail-type"`

@@ -617,7 +617,14 @@ paths:
       tags: [Plans]
       summary: Replace a purchase plan
       description: >-
-        A singleton legacy service alias retains its original key, hidden filters,
+        This replaces the plan: notification_days_before, enabled and auto_purchase
+        take the request's value, so one that is omitted becomes 0 or false; send the
+        current value to keep it. max_step_commitment keeps its stored value when
+        omitted, and so do target_coverage, term and payment for the plan's existing
+        service; on a single-service plan, naming a different service replaces its
+        settings, and a plan with several services refuses it with 400. A provider or
+        service sent on its own is ignored; both are needed to change the plan's
+        service. A singleton legacy service alias retains its original key, hidden filters,
         minimum count, service ramp and Enabled value when edited through its canonical
         service name. Exact-key edits retain their existing Enabled overlay behavior;
         selecting a genuinely different singleton service still replaces its settings.
