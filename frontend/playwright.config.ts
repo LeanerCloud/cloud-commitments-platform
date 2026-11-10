@@ -21,7 +21,25 @@
 
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 4173;
+const DEFAULT_PORT = 4173;
+
+/**
+ * Port for the static server and baseURL. Override with PLAYWRIGHT_PORT so
+ * concurrent runs (several worktrees or agents) do not collide; unset keeps
+ * 4173. An invalid value throws rather than silently falling back.
+ */
+function resolvePort(raw: string | undefined): number {
+  if (raw === undefined || raw === '') return DEFAULT_PORT;
+  const port = Number(raw);
+  if (!/^\d+$/.test(raw) || port < 1 || port > 65535) {
+    throw new Error(
+      `PLAYWRIGHT_PORT must be an integer from 1 to 65535, got "${raw}"`,
+    );
+  }
+  return port;
+}
+
+const PORT = resolvePort(process.env.PLAYWRIGHT_PORT);
 const HOST = '127.0.0.1';
 
 export default defineConfig({
