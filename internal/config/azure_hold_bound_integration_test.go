@@ -84,6 +84,15 @@ func (e boundEnv) azureSweep(t *testing.T) config.PartialProviderSweep {
 	return config.PartialProviderSweep{}
 }
 
+func (e boundEnv) requireExpiredOnly(t *testing.T, acct string) {
+	t.Helper()
+	sweep := e.azureSweep(t)
+	require.Empty(t, sweep.HeldAccountIDs)
+	require.Equal(t, []string{acct}, sweep.ExpiredHoldAccountIDs)
+	require.Equal(t, 1, sweep.Reasons[config.PartialReasonPricingHoldExpired])
+	require.Zero(t, sweep.Reasons[config.PartialReasonPricingUnavailable])
+}
+
 func TestUpsertRecommendationsWithPartial_EvictsHeldRowsPastBound(t *testing.T) {
 	e := newBoundEnv(t)
 	acct := e.account(t, "sub-bound-evict")
@@ -238,8 +247,11 @@ func TestUpsertRecommendationsWithPartial_ExpiredEvictionSkipsRowsLockedByAnothe
 	defer cancel()
 	require.NoError(t, e.store.UpsertRecommendationsWithPartial(ctx, e.base, nil, nil, holdPartial(acct)), "the eviction must not wait on a locked row")
 	require.Equal(t, 1, e.rowCount(t, acct), "only the unlocked stale row is deleted this cycle")
+	// The purchase gate relies on this exact marker: expired, nothing held, no pricing_unavailable.
+	e.requireExpiredOnly(t, acct)
 
 	require.NoError(t, hold.Rollback(e.ctx))
 	require.NoError(t, e.store.UpsertRecommendationsWithPartial(e.ctx, e.base.Add(time.Minute), nil, nil, holdPartial(acct)))
 	require.Zero(t, e.rowCount(t, acct), "the next cycle deletes the row that was locked")
+	e.requireExpiredOnly(t, acct)
 }
