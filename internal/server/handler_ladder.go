@@ -601,6 +601,12 @@ func ladderConfigToEngine(dbCfg *config.LadderConfigDB, accountID string) (pkgla
 		return pkgladder.LadderConfig{}, fmt.Errorf("ramp_schedule: %w", err)
 	}
 
+	// The scope is always AWS: the run gate (processOneLadderConfig) compares the
+	// account's external id with the Lambda's own AWS account and never reads
+	// dbCfg.Provider. A config stored for azure or gcp (the API and the UI accept
+	// them) is therefore stored and inert until the engine generalises: it is
+	// skipped as another account, and would act only if its external id equalled
+	// that AWS account number.
 	return pkgladder.LadderConfig{
 		Scope: pkgladder.Scope{
 			Provider:  pkgcommon.ProviderAWS,
