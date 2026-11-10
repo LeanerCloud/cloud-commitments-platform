@@ -64,7 +64,7 @@ curl -s -X POST \
 ```
 
 - `expected_status` is the status you saw in the list. If the row changed meanwhile you get 409.
-- `outcome: "failed"` needs `acknowledge_unknown_outcome: true`. `completed` does not.
+- `outcome: "failed"` needs `acknowledge_unknown_outcome: true`. `completed` does not need it, and the API refuses it there with 400.
 - `reason` is 10 to 300 characters, no control characters, and the stored note must fit 1000 bytes.
   Non-ASCII text needs fewer characters; the API answers 400 "reason too long once encoded; shorten it".
 - `checked_region` must be the row's region. A row with an empty region cannot be resolved through the

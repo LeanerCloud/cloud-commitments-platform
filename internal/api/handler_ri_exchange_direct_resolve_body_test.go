@@ -38,6 +38,7 @@ func TestResolveRIExchangeDirect_BodyValidation(t *testing.T) {
 		"cloud check null":                         head + `"cloud_check":null}`,
 		"failed without ack":                       `{"outcome":"failed","expected_status":"unknown",` + reason + `,` + good + `}`,
 		"failed with ack false":                    `{"outcome":"failed","expected_status":"unknown",` + reason + `,"acknowledge_unknown_outcome":false,` + good + `}`,
+		"completed with ack":                       `{"outcome":"completed","expected_status":"unknown",` + reason + `,"acknowledge_unknown_outcome":true,` + good + `}`,
 		"wrong region":                             head + check("us-east-1", "2026-10-19T08:00:00Z") + `}`,
 		"malformed region":                         head + check("EU WEST", "2026-10-19T08:00:00Z") + `}`,
 		"empty region":                             head + check("", "2026-10-19T08:00:00Z") + `}`,

@@ -158,6 +158,7 @@ func TestResolveRIExchange_BodyValidation(t *testing.T) {
 		"failed without ack":        `{"outcome":"failed",` + reason + `,` + good + `}`,
 		"failed with exchange id":   `{"outcome":"failed",` + reason + `,"acknowledge_unknown_outcome":true,"exchange_id":"riex-1",` + good + `}`,
 		"bad exchange id":           `{"outcome":"completed",` + reason + `,"exchange_id":"riex 1",` + good + `}`,
+		"completed with ack":        `{"outcome":"completed",` + reason + `,"acknowledge_unknown_outcome":true,` + good + `}`,
 		"bad checked_at":            `{"outcome":"completed",` + reason + `,` + check(riResolveAccount(), "us-east-1", "yesterday") + `}`,
 		"non-numeric account":       `{"outcome":"completed",` + reason + `,` + check("acct-1", "us-east-1", "2026-10-19T08:00:00Z") + `}`,
 		"upper-case region":         `{"outcome":"completed",` + reason + `,` + check(riResolveAccount(), "US East", "2026-10-19T08:00:00Z") + `}`,

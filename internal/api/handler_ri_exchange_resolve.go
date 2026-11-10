@@ -42,8 +42,7 @@ var (
 // riExchangeResolveRequest is the body of POST /api/ri-exchange/resolve/{id}.
 // outcome "failed" releases the hold and needs acknowledge_unknown_outcome;
 // "completed" keeps the reserved amount on today's books and may name the
-// exchange id the operator found; acknowledge_unknown_outcome is accepted and
-// ignored for it.
+// exchange id the operator found; acknowledge_unknown_outcome is refused for it.
 type riExchangeResolveRequest struct {
 	Outcome     string                       `json:"outcome"`
 	Reason      string                       `json:"reason"`
@@ -237,6 +236,9 @@ func (b riExchangeResolveRequest) validate() error {
 
 func (b riExchangeResolveRequest) validateOutcomeFields() error {
 	if b.Outcome == config.StatusCompleted {
+		if b.Acknowledge {
+			return NewClientError(400, "acknowledge_unknown_outcome applies only to outcome failed")
+		}
 		if b.ExchangeID != "" && !riExchangeResolveExchangeRe.MatchString(b.ExchangeID) {
 			return NewClientError(400, "exchange_id must be a provider exchange id")
 		}

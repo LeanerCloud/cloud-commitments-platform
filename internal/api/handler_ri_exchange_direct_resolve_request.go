@@ -14,8 +14,7 @@ import (
 // riExchangeDirectResolveRequest is the body of POST
 // /api/ri-exchange/direct-executions/{id}/resolve. expected_status is the
 // status the operator saw in the list; outcome "failed" releases the source
-// RIs and needs acknowledge_unknown_outcome, which is accepted and ignored for
-// "completed".
+// RIs and needs acknowledge_unknown_outcome, which is refused for "completed".
 type riExchangeDirectResolveRequest struct {
 	Outcome        string                             `json:"outcome"`
 	ExpectedStatus string                             `json:"expected_status"`
@@ -73,6 +72,8 @@ func (b riExchangeDirectResolveRequest) validateCheckAndAck() error {
 		return NewClientError(400, "cloud_check is required: say where you verified the exchange at AWS")
 	case b.Outcome == config.RIExchangeDirectStatusFailed && !b.Acknowledge:
 		return NewClientError(400, "acknowledge_unknown_outcome is required to release the source RIs: CUDly cannot see whether the exchange happened")
+	case b.Outcome == config.RIExchangeDirectStatusCompleted && b.Acknowledge:
+		return NewClientError(400, "acknowledge_unknown_outcome applies only to outcome failed")
 	}
 	return nil
 }
