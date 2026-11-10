@@ -96,6 +96,9 @@ func (h *Handler) upsertLadderConfig(ctx context.Context, req *events.LambdaFunc
 	// DisallowUnknownFields so a typo'd key is rejected loudly instead of
 	// silently dropped -- e.g. a mistyped "max_hourly_commit_per_run" would
 	// decode to nil, which the engine reads as "no spend cap" (unbounded).
+	// created_at and updated_at are accepted so a GET response can be echoed
+	// back, but the store stamps created_at on insert and updated_at on every
+	// write, and ignores the body values.
 	var cfg config.LadderConfigDB
 	dec := json.NewDecoder(bytes.NewReader([]byte(req.Body)))
 	dec.DisallowUnknownFields()

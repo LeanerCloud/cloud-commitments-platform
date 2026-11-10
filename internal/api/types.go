@@ -372,20 +372,6 @@ type User struct {
 	MFAEnabled bool     `json:"mfa_enabled"`
 }
 
-// CreateUserRequest represents a request to create a new user. Groups must be
-// non-empty: authorization is group-membership-only (issue #907).
-type CreateUserRequest struct {
-	Email    string   `json:"email"`
-	Password string   `json:"password"` //nolint:gosec // G117: intentional credential field in request/response struct -- value is supplied by the authenticated caller or returned once at creation; not re-stored downstream
-	Groups   []string `json:"groups,omitempty"`
-}
-
-// UpdateUserRequest represents a request to update a user.
-type UpdateUserRequest struct {
-	Email  string   `json:"email,omitempty"`
-	Groups []string `json:"groups,omitempty"`
-}
-
 // Group represents a user group with permissions.
 type Group struct {
 	ID              string       `json:"id"`
@@ -411,22 +397,6 @@ type PermissionConstraint struct {
 	Services  []string `json:"services,omitempty"`
 	Regions   []string `json:"regions,omitempty"`
 	MaxAmount float64  `json:"max_amount,omitempty"`
-}
-
-// CreateGroupRequest represents a request to create a new group.
-type CreateGroupRequest struct {
-	Name            string       `json:"name"`
-	Description     string       `json:"description,omitempty"`
-	Permissions     []Permission `json:"permissions"`
-	AllowedAccounts []string     `json:"allowed_accounts,omitempty"`
-}
-
-// UpdateGroupRequest represents a request to update a group.
-type UpdateGroupRequest struct {
-	Name            string       `json:"name,omitempty"`
-	Description     string       `json:"description,omitempty"`
-	Permissions     []Permission `json:"permissions,omitempty"`
-	AllowedAccounts []string     `json:"allowed_accounts,omitempty"`
 }
 
 // ChangePasswordRequest represents a request to change password.

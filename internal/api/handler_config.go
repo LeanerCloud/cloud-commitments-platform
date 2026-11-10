@@ -507,6 +507,8 @@ func (h *Handler) updateServiceConfig(ctx context.Context, req *events.LambdaFun
 	// global service setting never carries them, even on a first save.
 	cfg.GroupID, cfg.BoundIdentities, cfg.MaxStepCommitment, cfg.BoundCount = "", nil, nil, 0
 
+	// The URL path names the setting, so a provider or service in the body
+	// is replaced by it.
 	parts := strings.SplitN(service, "/", 2)
 	if len(parts) == 2 {
 		cfg.Provider = parts[0]

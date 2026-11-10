@@ -42,7 +42,8 @@ var (
 // riExchangeResolveRequest is the body of POST /api/ri-exchange/resolve/{id}.
 // outcome "failed" releases the hold and needs acknowledge_unknown_outcome;
 // "completed" keeps the reserved amount on today's books and may name the
-// exchange id the operator found.
+// exchange id the operator found; acknowledge_unknown_outcome is accepted and
+// ignored for it.
 type riExchangeResolveRequest struct {
 	Outcome     string                       `json:"outcome"`
 	Reason      string                       `json:"reason"`

@@ -14,7 +14,8 @@ import (
 // riExchangeDirectResolveRequest is the body of POST
 // /api/ri-exchange/direct-executions/{id}/resolve. expected_status is the
 // status the operator saw in the list; outcome "failed" releases the source
-// RIs and needs acknowledge_unknown_outcome.
+// RIs and needs acknowledge_unknown_outcome, which is accepted and ignored for
+// "completed".
 type riExchangeDirectResolveRequest struct {
 	Outcome        string                             `json:"outcome"`
 	ExpectedStatus string                             `json:"expected_status"`
