@@ -20,6 +20,17 @@ export default [
     },
   },
   {
+    // Same custom rules as src (recommended defaults would make `any` an error
+    // and flag `_x`); the Playwright specs and config run in node, so no
+    // browser globals.
+    files: ['tests-e2e/**/*.ts', 'playwright.config.ts'],
+    languageOptions: { parser: tsParser, ecmaVersion: 2020, sourceType: 'module' },
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
+  },
+  {
     files: ['src/__tests__/**/*.ts'],
     rules: {
       '@typescript-eslint/no-var-requires': 'off',
