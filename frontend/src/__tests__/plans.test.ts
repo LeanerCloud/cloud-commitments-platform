@@ -1210,6 +1210,48 @@ describe('Plans Module', () => {
       expect(api.deletePlannedPurchase).not.toHaveBeenCalled();
     });
 
+    test('declined cancel confirm refocuses the re-rendered row control (#1666)', async () => {
+      mockConfirmDialog.mockResolvedValue(false);
+      const oldBtn = document.querySelector('[data-action="disable"]') as HTMLButtonElement;
+      oldBtn.click();
+      await flushPromises();
+
+      const newBtn = document.querySelector('[data-action="disable"][data-id="purchase-1"]') as HTMLButtonElement;
+      expect(newBtn).not.toBe(oldBtn);
+      expect(document.activeElement).toBe(newBtn);
+    });
+
+    test('declined cancel confirm falls back to the section heading when the row is gone (#1666)', async () => {
+      mockConfirmDialog.mockResolvedValue(false);
+      const header = document.createElement('div');
+      header.id = 'planned-purchases-header';
+      header.innerHTML = '<h2>Planned Purchases</h2>';
+      document.body.appendChild(header);
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      (document.querySelector('[data-action="disable"]') as HTMLButtonElement).click();
+      await flushPromises();
+
+      expect(document.activeElement).toBe(header.querySelector('h2'));
+      header.remove();
+    });
+
+    test('accepted cancel confirm does not move focus to the row or heading (#1666)', async () => {
+      mockConfirmDialog.mockResolvedValue(true);
+      (api.deletePlannedPurchase as jest.Mock).mockResolvedValue({});
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      const header = document.createElement('div');
+      header.id = 'planned-purchases-header';
+      header.innerHTML = '<h2>Planned Purchases</h2>';
+      document.body.appendChild(header);
+
+      (document.querySelector('[data-action="disable"]') as HTMLButtonElement).click();
+      await flushPromises();
+
+      expect(document.activeElement).not.toBe(header.querySelector('h2'));
+      header.remove();
+    });
+
     test('action shows error on failure', async () => {
       (api.pausePlannedPurchase as jest.Mock).mockRejectedValue(new Error('API Error'));
       console.error = jest.fn();

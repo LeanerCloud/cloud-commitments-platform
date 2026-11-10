@@ -587,11 +587,28 @@ async function runPlannedPurchaseNow(purchaseId: string): Promise<boolean> {
   }
 }
 
+// The reload replaces the row the confirm dialog restored focus to, so
+// focus would fall to <body>; re-target the same control, else the heading.
+function restorePlannedPurchaseFocus(action: string, purchaseId: string): void {
+  const rows = document.querySelectorAll<HTMLElement>('#planned-purchases-list [data-action][data-id]');
+  const control = Array.from(rows).find(el => el.dataset['action'] === action && el.dataset['id'] === purchaseId);
+  if (control) {
+    control.focus();
+    return;
+  }
+  const heading = document.querySelector<HTMLElement>('#planned-purchases-header h2');
+  if (heading) {
+    heading.setAttribute('tabindex', '-1');
+    heading.focus();
+  }
+}
+
 /**
  * Handle planned purchase action
  */
 async function handlePlannedPurchaseAction(action: string, purchaseId: string, planId = ''): Promise<void> {
   try {
+    let declinedConfirm = false;
     switch (action) {
       case 'run':
         // An empty step only toasts; a reload would drop keyboard focus.
@@ -637,10 +654,12 @@ async function handlePlannedPurchaseAction(action: string, purchaseId: string, p
           await loadPlans();
           return;
         }
+        declinedConfirm = true;
         break;
       }
     }
     await loadPlannedPurchases();
+    if (declinedConfirm) restorePlannedPurchaseFocus(action, purchaseId);
   } catch (error) {
     console.error(`Failed to ${action} planned purchase:`, error);
     const err = error as Error;
