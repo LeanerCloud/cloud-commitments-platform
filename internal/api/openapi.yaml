@@ -1474,7 +1474,9 @@ paths:
             a provider re-drive of it is unsafe (ops_hint plus
             redrive_unsafe, permanent and not overridable by force; an AWS
             EC2 or Azure savings-plans row proven to have sent nothing, with
-            no_submission at attempt 0, is retryable), it is a
+            no_submission at attempt 0, is retryable, unless the other kind of
+            row of the same fan-out, the root or its account rows, was already
+            retried: retry_family_claimed, act on that retry's successor), it is a
             Redshift purchase that failed too recently for AWS to have settled
             (retry_after_seconds and a Retry-After header, not overridable by
             force), its failure is operator-fixable (ops_hint plus
@@ -1499,6 +1501,11 @@ paths:
                         type: string
                       redrive_unsafe:
                         type: boolean
+                      retry_family_claimed:
+                        type: boolean
+                        description: >
+                          True when a fan-out root and one of its account rows
+                          cannot both be retried and the other kind already was.
                       retry_after_seconds:
                         type: integer
                         description: Seconds until a Redshift purchase has settled and can be retried.

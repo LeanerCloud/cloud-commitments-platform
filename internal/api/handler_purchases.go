@@ -2802,6 +2802,8 @@ func (h *Handler) persistRetrySuccessorTx(ctx context.Context, failedExec, newEx
 		return NewClientErrorWithDetails(409,
 			fmt.Sprintf("execution %s belongs to a ladder tranche that is already settled; retrying it could buy the same commitment twice", failedExec.ExecutionID),
 			map[string]any{})
+	case errors.Is(err, errRetryFamilyClaimed):
+		return retryFamilyClaimedError(failedExec)
 	case errors.Is(err, errRetryLinkRaceLost):
 		return NewClientErrorWithDetails(409,
 			fmt.Sprintf("execution %s was already retried or settled; reload it", failedExec.ExecutionID),
@@ -2832,6 +2834,9 @@ func (h *Handler) writeRetrySuccessorTx(ctx context.Context, tx pgx.Tx, failedEx
 		return listErr
 	}
 	if err := h.guardLadderTrancheForRetry(ctx, tx, failedExec.IdempotencyKey); err != nil {
+		return err
+	}
+	if err := h.guardRetryFamily(ctx, tx, failedExec); err != nil {
 		return err
 	}
 	if err := h.config.SavePurchaseExecutionTx(ctx, tx, newExecution); err != nil {
