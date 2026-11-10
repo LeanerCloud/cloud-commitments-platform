@@ -312,6 +312,38 @@ describe('Navigation Module', () => {
         expect(container?.textContent).toContain('You do not have access to this page');
       });
 
+      // #1650: the placeholder must keep the shipped page header (the route-change
+      // focus target) and drop everything else, which the header-less fixture
+      // above cannot show.
+      describe.each([
+        ['purchases', 'Purchases'],
+        ['inventory', 'Inventory & Coverage'],
+      ])('%s tab on the real index.html', (tab, heading) => {
+        beforeEach(() => {
+          const fs = require('fs') as typeof import('fs');
+          const path = require('path') as typeof import('path');
+          const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+          const body = /<body[^>]*>([\s\S]*)<\/body>/.exec(html)![1]!.replace(/<script[\s\S]*?<\/script>/g, '');
+          document.body.innerHTML = body;
+        });
+
+        test('keeps its page header and replaces the rest with the placeholder', () => {
+          const container = document.getElementById(`${tab}-tab`)!;
+          const header = container.querySelector(':scope > .page-header');
+          expect(header).not.toBeNull();
+          expect(container.children.length).toBeGreaterThan(2);
+
+          switchTab(tab);
+
+          expect(Array.from(container.children).map(c => c.className)).toEqual(['page-header', 'empty-state']);
+          expect(container.firstElementChild).toBe(header);
+          expect(container.querySelector('.page-heading')?.textContent).toBe(heading);
+          expect(container.querySelector('.empty-state')?.textContent).toBe(
+            'You do not have access to this page. Contact your administrator if you need access.',
+          );
+        });
+      });
+
       test('purchases tab: fires normally when user has view:purchases', () => {
         (canAccess as jest.Mock).mockReturnValue(true);
         switchTab('purchases');
