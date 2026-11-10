@@ -50,7 +50,7 @@ func TestLadderTrancheProvenance_InsertClaimAndReconcile(t *testing.T) {
 	}
 	rows[1].AmountBasis = &od
 	rows[2].AmountBasis, rows[2].CommitmentRate = &native, &rate
-	require.NoError(t, store.SaveLadderTranches(ctx, rows))
+	saveClaimable(ctx, t, store, rows)
 	require.Equal(t, "2/6", rate, "canonical storage must not mutate caller metadata")
 	want := make(map[string]*LadderTrancheDB)
 	for i := range rows {

@@ -159,7 +159,7 @@ func TestClaimDueLadderTranches_ClaimsOnlyDueUnexpiredAndKeepsNetting(t *testing
 	future := claimableTranche(cfgID, 4, asOf.Add(time.Microsecond))
 	expired := claimableTranche(cfgID, 8, asOf.Add(-LadderFireGrace))
 	otherCfg := claimableTranche(otherID, 16, asOf.Add(-time.Hour))
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{due, dueNow, future, expired, otherCfg}))
+	saveClaimable(ctx, t, store, []LadderTrancheDB{due, dueNow, future, expired, otherCfg})
 	before := inFlight(ctx, t, store, cfgID, asOf)
 	assert.Equal(t, 1.0+2+4, before, "expired row is not netted")
 
@@ -186,7 +186,7 @@ func TestClaimDueLadderTranches_ClaimsOnlyDueUnexpiredAndKeepsNetting(t *testing
 
 	limited := claimableTranche(cfgID, 32, asOf.Add(-time.Minute))
 	limited2 := claimableTranche(cfgID, 64, asOf.Add(-2*time.Minute))
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{limited, limited2}))
+	saveClaimable(ctx, t, store, []LadderTrancheDB{limited, limited2})
 	filter = claimFilter(due, dueNow, future, expired, otherCfg, limited, limited2)
 	one, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 1, filter, create)
 	require.NoError(t, err)
@@ -219,7 +219,7 @@ func TestClaimDueLadderTranches_NeverClaimsOnDemandOrUnknownBasisRows(t *testing
 	native := claimableTranche(cfgID, 4, asOf.Add(-time.Hour))
 	half := "1/2"
 	native.CommitmentRate = &half
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{unknown, od, native}))
+	saveClaimable(ctx, t, store, []LadderTrancheDB{unknown, od, native})
 	assert.Equal(t, 1.0+2+8, inFlight(ctx, t, store, cfgID, asOf), "4 commitment at rate 1/2 nets as 8 on-demand-equivalent")
 
 	filter := claimFilter(unknown, od, native)
@@ -252,7 +252,7 @@ func TestClaimDueLadderTranches_CallbackFailureRollsBackClaimAndExecution(t *tes
 	create := newExecCreator(ctx, t, store, &calls)
 	first := claimableTranche(cfgID, 1, asOf.Add(-2*time.Hour))
 	second := claimableTranche(cfgID, 2, asOf.Add(-time.Hour))
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{first, second}))
+	saveClaimable(ctx, t, store, []LadderTrancheDB{first, second})
 	var execsBefore int
 	require.NoError(t, store.db.QueryRow(ctx, `SELECT count(*) FROM purchase_executions`).Scan(&execsBefore))
 
@@ -292,7 +292,7 @@ func TestTransitionLadderTranche_EveryLegalEdgeAndCompareAndSet(t *testing.T) {
 	// scheduled -> fired (claim) -> completed / failed.
 	toCompleted := claimableTranche(cfgID, 2, asOf.Add(-time.Hour))
 	toFailed := claimableTranche(cfgID, 4, asOf.Add(-time.Hour))
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{canceled, toCompleted, toFailed}))
+	saveClaimable(ctx, t, store, []LadderTrancheDB{canceled, toCompleted, toFailed})
 	require.Equal(t, 7.0, inFlight(ctx, t, store, cfgID, asOf))
 
 	ok, err := store.TransitionLadderTranche(ctx, canceled.ID, ladder.TrancheStatusScheduled, ladder.TrancheStatusCanceled, "test")
@@ -342,7 +342,7 @@ func TestClaimDueLadderTranches_ConcurrentClaimersExactlyOneWinner(t *testing.T)
 	var calls atomic.Int64
 	create := newExecCreator(ctx, t, store, &calls)
 	tr := claimableTranche(cfgID, 1, asOf.Add(-time.Hour))
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{tr}))
+	saveClaimable(ctx, t, store, []LadderTrancheDB{tr})
 
 	const n = 8
 	var wg sync.WaitGroup
@@ -386,7 +386,7 @@ func TestClaimVsCancelAndOverdueSweep_ExactlyOneOutcome(t *testing.T) {
 
 	for i := 0; i < 25; i++ {
 		tr := claimableTranche(cfgID, 1, asOf.Add(-time.Hour))
-		require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{tr}))
+		saveClaimable(ctx, t, store, []LadderTrancheDB{tr})
 		var claimWon, cancelWon bool
 		var claimErr, cancelErr, sweepErr error
 		var wg sync.WaitGroup

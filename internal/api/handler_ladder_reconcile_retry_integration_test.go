@@ -81,6 +81,9 @@ func (r *ladderRetryRig) addFiredTranche(t *testing.T) {
 	tr := config.LadderTrancheDB{ID: uuid.New().String(), ConfigID: &r.cfgID, LayerType: ladder.LayerComputeSP,
 		Term: ladder.Term1Year, PaymentOption: ladder.PaymentNoUpfront, Status: ladder.TrancheStatusScheduled,
 		AmountUSDHr: 5, ScheduledDate: time.Now().Add(-time.Hour), AmountBasis: &basis, CommitmentRate: &rate}
+	run, runErr := r.store.SaveLadderRun(ctx, &config.LadderRunDB{ConfigID: &r.cfgID, StartedAt: tr.ScheduledDate, Status: ladder.RunStatusPlanned})
+	require.NoError(t, runErr)
+	tr.RunID = &run.ID
 	require.NoError(t, r.store.SaveLadderTranches(ctx, []config.LadderTrancheDB{tr}))
 	var failedID string
 	_, err := r.store.ClaimDueLadderTranches(ctx, r.cfgID, time.Now(), 1,

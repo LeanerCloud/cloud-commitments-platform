@@ -82,7 +82,7 @@ func TestLadderLock_ClaimWaitsForPlanner(t *testing.T) {
 	store := setupLadderStore(ctx, t)
 	cfgID := seedLadderConfigWithExtID(ctx, t, store, "711111111111")
 	tr := claimableTranche(cfgID, 1, time.Now().UTC().Add(-time.Hour))
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{tr}))
+	saveClaimable(ctx, t, store, []LadderTrancheDB{tr})
 	release := holdLadderLock(ctx, t, store, cfgID)
 
 	var claimEntered atomic.Bool
@@ -225,7 +225,7 @@ func TestLadderLock_TimeoutBoundsOnlyTheWaitAndIsolationIsReadCommitted(t *testi
 
 	past := time.Now().UTC().Add(-time.Hour)
 	tr := claimableTranche(cfgID, 1, past)
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{tr}))
+	saveClaimable(ctx, t, store, []LadderTrancheDB{tr})
 	inner := newExecCreator(ctx, t, store, new(atomic.Int64))
 	var lockTimeout, isolation string
 	_, err = store.ClaimDueLadderTranches(ctx, cfgID, time.Now().UTC(), 1, claimFilter(tr), func(c context.Context, tx pgx.Tx, tr LadderTrancheDB) (string, error) {

@@ -56,7 +56,7 @@ func newClaimFilterFixture(t *testing.T) *claimFilterFixture {
 	f.d = claimTrancheAt(f.cfgID, ladder.LayerComputeSP, 8, f.asOf.Add(-time.Hour))
 	f.e = claimTrancheAt(f.cfgID, ladder.LayerComputeSP, 16, f.asOf.Add(time.Microsecond))
 	f.x = claimTrancheAt(otherID, ladder.LayerComputeSP, 32, f.asOf.Add(-time.Hour))
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{f.x, f.e, f.d, f.c, f.b, f.a}))
+	saveClaimable(ctx, t, store, []LadderTrancheDB{f.x, f.e, f.d, f.c, f.b, f.a})
 	return f
 }
 
@@ -132,7 +132,7 @@ func TestClaimFilter_MultipleLayersKeepDateOrder(t *testing.T) {
 	if t1.ID > t2.ID {
 		t1, t2 = t2, t1
 	}
-	require.NoError(t, f.store.SaveLadderTranches(f.ctx, []LadderTrancheDB{t2, t1}))
+	saveClaimable(f.ctx, t, f.store, []LadderTrancheDB{t2, t1})
 	got, err := f.claim(10, []ladder.LayerType{ladder.LayerEC2InstanceSP, ladder.LayerComputeSP}, append(f.all(), t1, t2)...)
 	require.NoError(t, err)
 	assert.Equal(t, []string{f.a.ID, f.c.ID, f.d.ID, t1.ID, t2.ID}, claimedIDs(got))
