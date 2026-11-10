@@ -111,6 +111,27 @@ func (app *Application) planningCapability(ctx context.Context, region, accountI
 	return app.wireLadderWriteSide(ctx, false, region, accountID, capability)
 }
 
+// bufferFractionSetter is implemented by *awsladder.AWSLadder. Without a call
+// the ladder leaves UsageBaseline.Stable nil, so the buffer fraction from the
+// ladder config would never reach the stable-usage estimate.
+type bufferFractionSetter interface {
+	WithBufferFraction(float64) (*awsladder.AWSLadder, error)
+}
+
+// setLadderBufferFraction applies the config's buffer fraction to capability.
+// Non-AWS capabilities and test fakes do not implement the setter and are left
+// unchanged. WithBufferFraction mutates the receiver and returns that same
+// instance, so the returned pointer is ignored. An out-of-range fraction is
+// returned as an error rather than defaulted.
+func setLadderBufferFraction(capability pkgladder.LadderCapability, fraction float64) error {
+	setter, ok := capability.(bufferFractionSetter)
+	if !ok {
+		return nil
+	}
+	_, err := setter.WithBufferFraction(fraction)
+	return err
+}
+
 // wireLadderWriteSide wires the write side of a LadderCapability if and only if
 // cap is a *awsladder.AWSLadder. For test fakes (non-AWSLadder implementations)
 // it returns cap unchanged so existing handler tests continue to work without
