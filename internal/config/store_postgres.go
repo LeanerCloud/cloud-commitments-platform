@@ -4751,7 +4751,7 @@ func (s *PostgresStore) validatePlanAccountProvidersTx(ctx context.Context, tx p
 		parts[i] = fmt.Sprintf("account %q has provider=%q, expected one of %v",
 			mismatch.Name, mismatch.Provider, expected)
 	}
-	return fmt.Errorf("plan provider mismatch: %s", strings.Join(parts, "; "))
+	return fmt.Errorf("%w: %s", ErrPlanProviderMismatch, strings.Join(parts, "; "))
 }
 
 func (s *PostgresStore) getPlanServicesForShareTx(ctx context.Context, tx pgx.Tx, planID string) (map[string]ServiceConfig, error) {
@@ -4809,6 +4809,15 @@ func (s *PostgresStore) findPlanAccountProviderMismatchesTx(ctx context.Context,
 
 // GetPlanAccounts returns all cloud accounts associated with a plan.
 func (s *PostgresStore) GetPlanAccounts(ctx context.Context, planID string) ([]CloudAccount, error) {
+	return getPlanAccountsFrom(ctx, s.db, planID)
+}
+
+// planAccountsQuerier is satisfied by the pool and by a transaction.
+type planAccountsQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+func getPlanAccountsFrom(ctx context.Context, q planAccountsQuerier, planID string) ([]CloudAccount, error) {
 	query := `
 		SELECT
 			ca.id, ca.name, COALESCE(ca.description,''), COALESCE(ca.contact_email,''),
@@ -4828,7 +4837,7 @@ func (s *PostgresStore) GetPlanAccounts(ctx context.Context, planID string) ([]C
 		WHERE pa.plan_id = $1
 		ORDER BY ca.name
 	`
-	rows, err := s.db.Query(ctx, query, planID)
+	rows, err := q.Query(ctx, query, planID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan accounts: %w", err)
 	}

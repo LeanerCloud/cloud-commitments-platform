@@ -45,6 +45,11 @@ type StoreInterface interface {
 
 	// Purchase plans
 	CreatePurchasePlan(ctx context.Context, plan *PurchasePlan) error
+	// CreatePurchasePlanWithAccounts creates plan and attaches accountIDs in
+	// one transaction. It returns *PlanNameTakenError (errors.Is
+	// ErrPlanNameTaken) when a plan whose accounts satisfy visible already has
+	// the same name, compared with lower(btrim(name, E' \t\r\n')). visible must be pure.
+	CreatePurchasePlanWithAccounts(ctx context.Context, plan *PurchasePlan, accountIDs []string, visible func(accounts []CloudAccount) bool) error
 	GetPurchasePlan(ctx context.Context, planID string) (*PurchasePlan, error)
 	// UpdatedAt must be the read version; a stale version returns ErrPurchasePlanConflict.
 	UpdatePurchasePlan(ctx context.Context, plan *PurchasePlan) error

@@ -63,6 +63,77 @@ func (s *PostgresStore) createPurchasePlan(ctx context.Context, executor globalC
 	return nil
 }
 
+// planNameLockPrefix namespaces the advisory lock that serializes creates of
+// the same plan name (same cudly: scheme as serviceConfigLockPrefix).
+const planNameLockPrefix = "cudly:purchase-plan-name:"
+
+// CreatePurchasePlanWithAccounts inserts plan and attaches accountIDs in one
+// transaction, refusing the create when a plan the caller can see already has
+// the same name (issue #1734).
+//
+// A name matches when lower(btrim(name, E' \t\r\n')) agrees, so a trailing tab or newline does not
+// make a different name. The key is computed by the
+// database once and used for both the advisory lock and the match, so Postgres
+// alone defines the equivalence: an exact repeat always matches, whatever the
+// database ctype. Case folding beyond ASCII follows that ctype. There is no
+// unique index because plans in disjoint account scopes may share a name.
+//
+// Concurrent creates of one name queue on the lock. The plan and its accounts
+// commit together, so a queued create always sees an account-bearing row.
+//
+// visible is called in the transaction with the accounts of each existing plan
+// of that name, oldest first, and must be pure: it decides whether the caller
+// may know about that plan. The first visible plan is reported as
+// *PlanNameTakenError (errors.Is ErrPlanNameTaken). A match the caller cannot
+// see is ignored and never disclosed.
+func (s *PostgresStore) CreatePurchasePlanWithAccounts(ctx context.Context, plan *PurchasePlan, accountIDs []string, visible func(accounts []CloudAccount) bool) error {
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		var key string
+		if err := tx.QueryRow(ctx, `SELECT lower(btrim($1::text, E' \t\r\n'))`, plan.Name).Scan(&key); err != nil {
+			return fmt.Errorf("failed to normalise plan name: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, planNameLockPrefix+key); err != nil {
+			return fmt.Errorf("failed to acquire plan name lock: %w", err)
+		}
+		same, err := listPlansNamedTx(ctx, tx, key)
+		if err != nil {
+			return err
+		}
+		for _, existing := range same {
+			accounts, err := getPlanAccountsFrom(ctx, tx, existing.ExistingID)
+			if err != nil {
+				return err
+			}
+			if visible(accounts) {
+				return &existing
+			}
+		}
+		if err := s.createPurchasePlan(ctx, tx, plan); err != nil {
+			return err
+		}
+		return s.setPlanAccountsTx(ctx, tx, plan.ID, accountIDs)
+	})
+}
+
+// listPlansNamedTx returns the plans whose normalised name is key, oldest
+// first so the reported duplicate is deterministic.
+func listPlansNamedTx(ctx context.Context, tx pgx.Tx, key string) ([]PlanNameTakenError, error) {
+	rows, err := tx.Query(ctx, `SELECT id, name FROM purchase_plans WHERE lower(btrim(name, E' \t\r\n')) = $1 ORDER BY created_at, id`, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up plans by name: %w", err)
+	}
+	defer rows.Close()
+	var out []PlanNameTakenError
+	for rows.Next() {
+		var p PlanNameTakenError
+		if err := rows.Scan(&p.ExistingID, &p.ExistingName); err != nil {
+			return nil, fmt.Errorf("failed to scan plan name: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (s *PostgresStore) setPlanAccountsTx(ctx context.Context, tx pgx.Tx, planID string, accountIDs []string) error {
 	if err := s.validatePlanAccountProvidersTx(ctx, tx, planID, accountIDs); err != nil {
 		return err
