@@ -324,9 +324,9 @@ func (app *Application) executeLadderRun(
 
 	// Collect read-side data. All three calls are independent; errors are
 	// fail-loud (not silently defaulted to empty).
-	baseline, err := capability.GetUsageBaseline(ctx, scope, engineCfg.LookbackDays, engineCfg.BaselinePercentile)
+	baseline, err := readLadderBaseline(ctx, capability, engineCfg)
 	if err != nil {
-		return fmt.Errorf("GetUsageBaseline: %w", err)
+		return err
 	}
 
 	layerStates, err := capability.GetLayerStates(ctx, scope)
@@ -574,6 +574,20 @@ func ladderWithinCadenceWindow(ctx context.Context, store config.StoreInterface,
 		log.Printf("ladder_run: config %s: unknown cadence=%q, proceeding without cadence gate", dbCfg.ID, dbCfg.Cadence)
 	}
 	return false, "", nil
+}
+
+// readLadderBaseline sets the config's buffer fraction on the capability and
+// then reads the usage baseline. The order matters: the ladder only fills
+// Stable once it has a buffer fraction.
+func readLadderBaseline(ctx context.Context, capability pkgladder.LadderCapability, engineCfg pkgladder.LadderConfig) (pkgladder.UsageBaseline, error) {
+	if err := setLadderBufferFraction(capability, engineCfg.BufferFraction); err != nil {
+		return pkgladder.UsageBaseline{}, fmt.Errorf("buffer fraction: %w", err)
+	}
+	baseline, err := capability.GetUsageBaseline(ctx, engineCfg.Scope, engineCfg.LookbackDays, engineCfg.BaselinePercentile)
+	if err != nil {
+		return pkgladder.UsageBaseline{}, fmt.Errorf("GetUsageBaseline: %w", err)
+	}
+	return baseline, nil
 }
 
 // ladderConfigToEngine converts a LadderConfigDB row to a pkg/ladder LadderConfig.
