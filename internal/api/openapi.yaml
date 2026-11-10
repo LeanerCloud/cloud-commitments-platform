@@ -6723,7 +6723,7 @@ components:
 
     CreateUserRequest:
       type: object
-      required: [email, password, role]
+      required: [email, password, groups]
       properties:
         email:
           type: string
@@ -6731,11 +6731,10 @@ components:
         password:
           type: string
           description: Base64-encoded password
-        role:
-          type: string
-          enum: [admin, user, readonly]
         groups:
           type: array
+          minItems: 1
+          description: Authorization is group-membership-only, so at least one group is required.
           items:
             type: string
 
@@ -6745,9 +6744,6 @@ components:
         email:
           type: string
           format: email
-        role:
-          type: string
-          enum: [admin, user, readonly]
         groups:
           type: array
           items:
