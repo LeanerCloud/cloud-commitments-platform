@@ -144,6 +144,13 @@ func (s *PostgresStore) TransitionLadderTrancheTx(ctx context.Context, tx pgx.Tx
 // other predicates (config, status, basis and the due window at this asOf), so
 // a stale or foreign id never widens the claim. A layer without an instrument
 // builder must not be listed in Layers.
+//
+// Only tranches at the owner-decided offering (LadderTerm, LadderPayment) whose
+// run exists and started no earlier than LadderFireGrace before their date are
+// claimable: a ramp step planned days ahead on stale usage, a tranche without a
+// run and any other offering are refused in SQL. A refused row is left
+// scheduled, keeps netting and is canceled as expired by the overdue sweep.
+// Run rows are only read, never locked, so a concurrent amend is not blocked.
 func (s *PostgresStore) ClaimDueLadderTranches(
 	ctx context.Context,
 	configID string,
@@ -203,10 +210,17 @@ func selectDueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID string, 
 		  AND scheduled_date > $3
 		  AND layer_type = ANY($5::text[])
 		  AND id = ANY($6::uuid[])
+		  AND term = $7
+		  AND payment_option = $8
+		  AND EXISTS (
+		        SELECT 1 FROM ladder_runs r
+		        WHERE r.id = ladder_tranches.run_id
+		          AND ladder_tranches.scheduled_date <= r.started_at + $9::bigint * interval '1 second')
 		ORDER BY scheduled_date, id
 		LIMIT $4
 		FOR UPDATE SKIP LOCKED
-	`, configID, asOf, ladderGraceCutoff(asOf), limit, filter.Layers, filter.TrancheIDs)
+	`, configID, asOf, ladderGraceCutoff(asOf), limit, filter.Layers, filter.TrancheIDs,
+		string(LadderTerm), string(LadderPayment), int64(LadderFireGrace/time.Second))
 	if err != nil {
 		return nil, fmt.Errorf("failed to select due ladder_tranches config_id=%s: %w", configID, err)
 	}

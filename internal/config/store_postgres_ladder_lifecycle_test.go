@@ -124,3 +124,9 @@ func TestLadderPlanningTerms_WireStrings(t *testing.T) {
 	assert.Equal(t, "1yr", string(LadderTerm))
 	assert.Equal(t, "no-upfront", string(LadderPayment))
 }
+
+// The claim's run-start window and the overdue sweep share this value, so a
+// change must be a deliberate edit of both semantics.
+func TestLadderClaimPolicy_GracePin(t *testing.T) {
+	assert.Equal(t, 24*time.Hour, LadderFireGrace)
+}
