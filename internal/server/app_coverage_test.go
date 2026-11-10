@@ -17,7 +17,7 @@ func TestResolveAdminPassword_MissingEnvVar(t *testing.T) {
 	testutil.SetEnv(t, "ADMIN_PASSWORD_SECRET", "")
 
 	app := &Application{}
-	_, err := app.resolveAdminPassword(context.Background())
+	_, err := resolveAdminPassword(context.Background(), app.secretResolver)
 	testutil.AssertError(t, err)
 	testutil.AssertContains(t, err.Error(), "ADMIN_PASSWORD_SECRET")
 }
@@ -26,7 +26,7 @@ func TestResolveAdminPassword_NilResolver(t *testing.T) {
 	testutil.SetEnv(t, "ADMIN_PASSWORD_SECRET", "arn:aws:secretsmanager:us-east-1:123456789012:secret:admin-pass")
 
 	app := &Application{secretResolver: nil}
-	_, err := app.resolveAdminPassword(context.Background())
+	_, err := resolveAdminPassword(context.Background(), app.secretResolver)
 	testutil.AssertError(t, err)
 	testutil.AssertContains(t, err.Error(), "secret resolver is not configured")
 }
@@ -37,7 +37,7 @@ func TestResolveAdminPassword_ResolverError(t *testing.T) {
 	app := &Application{secretResolver: &mockSecretResolver{
 		getErr: errors.New("access denied"),
 	}}
-	_, err := app.resolveAdminPassword(context.Background())
+	_, err := resolveAdminPassword(context.Background(), app.secretResolver)
 	testutil.AssertError(t, err)
 	testutil.AssertContains(t, err.Error(), "failed to resolve admin password secret")
 }
@@ -48,7 +48,7 @@ func TestResolveAdminPassword_Success(t *testing.T) {
 	app := &Application{secretResolver: &mockSecretResolver{
 		getResult: "supersecret",
 	}}
-	password, err := app.resolveAdminPassword(context.Background())
+	password, err := resolveAdminPassword(context.Background(), app.secretResolver)
 	testutil.AssertNoError(t, err)
 	testutil.AssertEqual(t, "supersecret", password)
 }

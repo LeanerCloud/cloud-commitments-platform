@@ -740,7 +740,7 @@ func (app *Application) ensureDB(ctx context.Context) error {
 		log.Println("Running database migrations...")
 
 		adminEmail := os.Getenv("ADMIN_EMAIL")
-		adminPassword, err := app.resolveAdminPassword(ctx)
+		adminPassword, err := resolveAdminPassword(ctx, app.secretResolver)
 		if err != nil {
 			// Same cleanup as the reinitializeAfterConnect failure path below:
 			// the retry loop (and repeated lazy attempts) would otherwise leak
@@ -775,15 +775,15 @@ func (app *Application) ensureDB(ctx context.Context) error {
 // resolveAdminPassword returns the admin password from Secrets Manager.
 // It requires ADMIN_PASSWORD_SECRET to be set to a valid secret ARN/name.
 // If absent, it returns an error to prevent startup with no secret source.
-func (app *Application) resolveAdminPassword(ctx context.Context) (string, error) {
+func resolveAdminPassword(ctx context.Context, resolver secrets.Resolver) (string, error) {
 	secret := os.Getenv("ADMIN_PASSWORD_SECRET")
 	if secret == "" {
 		return "", fmt.Errorf("ADMIN_PASSWORD_SECRET environment variable is required but not set; refusing to start without a Secrets Manager ARN")
 	}
-	if app.secretResolver == nil {
+	if resolver == nil {
 		return "", fmt.Errorf("secret resolver is not configured; cannot resolve ADMIN_PASSWORD_SECRET")
 	}
-	resolved, err := app.secretResolver.GetSecret(ctx, secret)
+	resolved, err := resolver.GetSecret(ctx, secret)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve admin password secret: %w", err)
 	}
