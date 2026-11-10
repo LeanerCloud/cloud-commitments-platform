@@ -336,11 +336,6 @@ describe('HTML Structure', () => {
       const modal = document.getElementById('purchase-modal');
       expect(modal).toBeTruthy();
     });
-
-    test('has recommendations selection modal', () => {
-      const modal = document.getElementById('select-recommendations-modal');
-      expect(modal).toBeTruthy();
-    });
   });
 
   describe('Form Elements', () => {

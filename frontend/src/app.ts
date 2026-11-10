@@ -22,7 +22,6 @@ import { buildCommitmentSummary, commitmentLine, commitmentTotals, executeButton
 import { handlePurchaseDeeplink } from './purchases-deeplink';
 import { handleRIExchangeDeeplink } from './riexchange-deeplink';
 import { handleArcheraDeeplink, openArcheraOfferModal } from './archera';
-import { closeModal } from './modal';
 import { showFanOutRetry, fanOutRetryLabel, purchaseModalReplaced, type FanOutBucketOutcome } from './fanout-retry';
 import { wireTablistKeyboard } from './lib/tablist';
 import { setOpenAccountsHandler } from './first-run-empty-state';
@@ -342,21 +341,6 @@ function setupButtonHandlers(): void {
   const executePurchaseBtn = document.getElementById('execute-purchase-btn');
   if (executePurchaseBtn) {
     executePurchaseBtn.addEventListener('click', () => void handleExecutePurchase());
-  }
-
-  // Recommendation selection modal buttons - these may be dynamically added
-  const closeSelectRecsBtn = document.getElementById('close-select-recommendations-btn');
-  if (closeSelectRecsBtn) {
-    closeSelectRecsBtn.addEventListener('click', () => {
-      const modal = document.getElementById('select-recommendations-modal');
-      if (modal) closeModal(modal);
-    });
-  }
-
-  const confirmSelectRecsBtn = document.getElementById('confirm-select-recommendations-btn');
-  if (confirmSelectRecsBtn) {
-    confirmSelectRecsBtn.addEventListener('click', () => {
-    });
   }
 
   // Settings buttons
