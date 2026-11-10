@@ -540,7 +540,7 @@ func TestHandleLadderRun_MultiAccountSkip_CountedAndIsolated(t *testing.T) {
 
 	// Put the foreign config first to prove isolation is order-independent.
 	configs := []config.LadderConfigDB{cfgForeign, cfgHealthy}
-	result := app.runLadderConfigs(ctx, configs, ownAccount, "us-east-1", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	result := app.runLadderConfigs(ctx, configs, ownAccount, "us-east-1", ladderTestGlobal, now)
 
 	require.NotNil(t, result)
 	// (a) The foreign config must be counted as SkippedMultiAccount.
@@ -581,7 +581,7 @@ func TestExecuteLadderRun_HealthyRun(t *testing.T) {
 		baseline: testBaseline(),
 	}
 
-	err := app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	err := app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", ladderTestGlobal, now)
 	require.NoError(t, err)
 
 	// SaveLadderRun must have been called exactly once.
@@ -649,7 +649,7 @@ func TestExecuteLadderRun_ImmediateStepIsTrancheAndPlanShowsOnlyIt(t *testing.T)
 	app := &Application{Config: store}
 	cap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(12.5)} // target 10, one base allocation
 
-	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now))
+	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", ladderTestGlobal, now))
 
 	require.Len(t, store.savedTranches, 2)
 	for i := range store.savedTranches {
@@ -698,7 +698,7 @@ func TestExecuteLadderRun_BaselineError_NoRunPersisted(t *testing.T) {
 		baselineErr: errors.New("CE on-demand series not yet wired"),
 	}
 
-	err := app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	err := app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", ladderTestGlobal, now)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "GetUsageBaseline")
 	// Fail-loud: nothing may be persisted when the baseline lookup errors.
@@ -729,7 +729,7 @@ func TestExecuteLadderRun_NilBaseline_HoldPlan(t *testing.T) {
 		},
 	}
 
-	err := app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	err := app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", ladderTestGlobal, now)
 	require.NoError(t, err, "nil baseline with no error must be a Hold, not an error")
 
 	require.NotNil(t, store.savedRun, "a Hold run must still be persisted")
@@ -784,7 +784,7 @@ func TestExecuteLadderRun_ZeroGap_HoldPlan(t *testing.T) {
 		},
 	}
 
-	err := app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	err := app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", ladderTestGlobal, now)
 	require.NoError(t, err)
 
 	require.NotNil(t, store.savedRun, "a zero-gap Hold run must still be persisted")
@@ -837,7 +837,7 @@ func TestExecuteLadderRun_MaxActionsExceeded_TruncatesAndPersists(t *testing.T) 
 		},
 	}
 
-	err = app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	err = app.executeLadderRun(ctx, &dbCfg, cap, "123456789012", ladderTestGlobal, now)
 	require.NoError(t, err, "over-cap plans must truncate, not error (permanent-stall regression)")
 
 	require.NotNil(t, store.savedRun, "the truncated run must be persisted")
@@ -981,7 +981,7 @@ func TestProcessOneLadderConfig_CadenceDBError_Errored(t *testing.T) {
 		},
 	}
 
-	result := app.runLadderConfigs(ctx, []config.LadderConfigDB{dbCfg}, ownAccount, "us-east-1", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	result := app.runLadderConfigs(ctx, []config.LadderConfigDB{dbCfg}, ownAccount, "us-east-1", ladderTestGlobal, now)
 
 	assert.Equal(t, 1, result.Errored, "a cadence lookup error must count the config Errored")
 	assert.Equal(t, 0, result.Planned)
@@ -1105,7 +1105,7 @@ func TestHandleLadderRun_MultiConfigIsolation(t *testing.T) {
 	// Order the broken config first to prove a leading failure does not abort
 	// the healthy config that follows.
 	configs := []config.LadderConfigDB{cfgBroken, cfgHealthy}
-	result := app.runLadderConfigs(ctx, configs, ownAccount, "us-east-1", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	result := app.runLadderConfigs(ctx, configs, ownAccount, "us-east-1", ladderTestGlobal, now)
 
 	require.NotNil(t, result)
 	assert.Equal(t, 1, result.Planned, "the healthy config must still be planned despite the broken one")
@@ -1417,7 +1417,7 @@ func TestExecuteLadderRun_L5Convergence_PreservesRampAcrossHolds(t *testing.T) {
 	capability := &fakeLadderCapability{t: t, baseline: testBaseline()}
 	run := func(at time.Time) {
 		require.NoError(t, app.executeLadderRun(ctx, &dbCfg, capability, "123456789012",
-			pkgladder.Term1Year, pkgladder.PaymentNoUpfront, at))
+			ladderTestGlobal, at))
 	}
 
 	// Run 1: builds the scheduled ramp. gap = 8, all delayed -> scheduled.
@@ -1461,13 +1461,13 @@ func TestExecuteLadderRun_L5ElapsedTranchesStopNetting(t *testing.T) {
 	capability := &fakeLadderCapability{t: t, baseline: testBaseline()}
 
 	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, capability, "123456789012",
-		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now))
+		ladderTestGlobal, now))
 	require.Len(t, store.runs, 1)
 	assert.InDelta(t, 8.0, store.runs[0].TotalHourlyCommit, 1e-9, "run1 must plan the full gap (8)")
 
 	// Day 15: both ramp steps (day 7, day 14) are past due and still 'scheduled'.
 	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, capability, "123456789012",
-		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now.Add(15*24*time.Hour)))
+		ladderTestGlobal, now.Add(15*24*time.Hour)))
 	require.Len(t, store.runs, 2)
 	assert.InDelta(t, 8.0, store.runs[1].TotalHourlyCommit, 1e-9,
 		"a run after the ramp elapsed must plan the full gap again, not Hold on never-fired tranches")
@@ -1496,7 +1496,7 @@ func TestExecuteLadderRun_L5DriftUp_AppendsToTargetAndConverges(t *testing.T) {
 	// Run 1: low-water 10 -> target 8. Build a scheduled ramp summing 8.
 	lowCap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(10.0)}
 	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, lowCap, "123456789012",
-		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now))
+		ladderTestGlobal, now))
 	gen1 := store.scheduledTrancheIDs(cfgID)
 	require.NotEmpty(t, gen1, "run1 must build a scheduled ramp")
 	assert.InDelta(t, 8.0, store.scheduledSum(cfgID), 1e-9, "run1 ramp must sum to target-E (8)")
@@ -1507,7 +1507,7 @@ func TestExecuteLadderRun_L5DriftUp_AppendsToTargetAndConverges(t *testing.T) {
 	// converge to the new target (16), NOT stay capped at 8.
 	highCap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(20.0)}
 	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, highCap, "123456789012",
-		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now.Add(24*time.Hour)))
+		ladderTestGlobal, now.Add(24*time.Hour)))
 
 	sched2 := store.scheduledTrancheIDs(cfgID)
 	// Run1's tranches must STILL be scheduled (append-only preserves them).
@@ -1524,7 +1524,7 @@ func TestExecuteLadderRun_L5DriftUp_AppendsToTargetAndConverges(t *testing.T) {
 	// Run 3: SAME (drifted-up) usage. Netting now sees 16 scheduled == target-E
 	// -> Hold. Total must stay at 16 (no further accumulation), ramp preserved.
 	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, highCap, "123456789012",
-		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now.Add(48*time.Hour)))
+		ladderTestGlobal, now.Add(48*time.Hour)))
 	assert.InDelta(t, 16.0, store.scheduledSum(cfgID), 1e-9,
 		"run3 must Hold at target (16); netting prevents overshoot past the target")
 	assert.Equal(t, 0.0, store.runs[2].TotalHourlyCommit, "run3 must be a Hold (zero new commitment)")
@@ -1550,7 +1550,7 @@ func TestExecuteLadderRun_L5OverCommitGuard_NettingCapsAppends(t *testing.T) {
 
 	// Run 1: builds the ramp to target-E.
 	require.NoError(t, app.executeLadderRun(ctx, &dbCfg, capability, "123456789012",
-		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now))
+		ladderTestGlobal, now))
 	assert.LessOrEqual(t, store.scheduledSum(cfgID), targetMinusE+1e-9,
 		"run1 scheduled commitment must not exceed target-E")
 	trancheCountAfterBuild := len(store.tranches)
@@ -1560,7 +1560,7 @@ func TestExecuteLadderRun_L5OverCommitGuard_NettingCapsAppends(t *testing.T) {
 	// and no new tranche rows are appended on a Hold.
 	for i, at := range []time.Time{now.Add(24 * time.Hour), now.Add(48 * time.Hour)} {
 		require.NoError(t, app.executeLadderRun(ctx, &dbCfg, capability, "123456789012",
-			pkgladder.Term1Year, pkgladder.PaymentNoUpfront, at))
+			ladderTestGlobal, at))
 		assert.LessOrEqual(t, store.scheduledSum(cfgID), targetMinusE+1e-9,
 			"run %d: netting must cap total scheduled commitment at target-E (no over-commit)", i+2)
 		assert.Equal(t, trancheCountAfterBuild, len(store.tranches),

@@ -94,13 +94,9 @@ func (app *Application) handleLadderRun(ctx context.Context) (*LadderRunResult, 
 
 	// Parse global-default term and payment option. Fail loud: money-path
 	// decisions must never proceed with an invalid/unknown option.
-	term, err := ladderTermFromYears(globalCfg.DefaultTerm)
+	global, err := ladderGlobalTerms(globalCfg)
 	if err != nil {
-		return nil, fmt.Errorf("ladder_run: invalid default_term in global config: %w", err)
-	}
-	paymentOpt, err := pkgladder.ParsePaymentOption(globalCfg.DefaultPayment)
-	if err != nil {
-		return nil, fmt.Errorf("ladder_run: invalid default_payment in global config: %w", err)
+		return nil, err
 	}
 
 	// Load the ladder_config rows. GetLadderConfigs returns at most
@@ -130,7 +126,7 @@ func (app *Application) handleLadderRun(ctx context.Context) (*LadderRunResult, 
 	}
 
 	now := time.Now().UTC()
-	result := app.runLadderConfigs(ctx, allConfigs, ownAccountID, region, term, paymentOpt, now)
+	result := app.runLadderConfigs(ctx, allConfigs, ownAccountID, region, global, now)
 
 	log.Printf("ladder_run done: planned=%d skipped_cadence=%d skipped_disabled=%d skipped_multi_account=%d errored=%d",
 		result.Planned, result.SkippedCadence, result.SkippedDisabled, result.SkippedMultiAccount, result.Errored)
@@ -195,13 +191,12 @@ func (app *Application) runLadderConfigs(
 	ctx context.Context,
 	configs []config.LadderConfigDB,
 	ownAccountID, region string,
-	term pkgladder.Term,
-	paymentOpt pkgladder.PaymentOption,
+	global ladderTerms,
 	now time.Time,
 ) *LadderRunResult {
 	result := &LadderRunResult{}
 	for i := range configs {
-		result.record(app.processOneLadderConfig(ctx, &configs[i], ownAccountID, region, term, paymentOpt, now))
+		result.record(app.processOneLadderConfig(ctx, &configs[i], ownAccountID, region, global, now))
 	}
 	return result
 }
@@ -214,8 +209,7 @@ func (app *Application) processOneLadderConfig(
 	ctx context.Context,
 	dbCfg *config.LadderConfigDB,
 	ownAccountID, region string,
-	term pkgladder.Term,
-	paymentOpt pkgladder.PaymentOption,
+	global ladderTerms,
 	now time.Time,
 ) ladderConfigOutcome {
 	if !dbCfg.Enabled {
@@ -262,7 +256,7 @@ func (app *Application) processOneLadderConfig(
 	}
 
 	// Run the plan engine and persist the result.
-	if err := app.executeLadderRun(ctx, dbCfg, capability, cloudAcct.ExternalID, term, paymentOpt, now); err != nil {
+	if err := app.executeLadderRun(ctx, dbCfg, capability, cloudAcct.ExternalID, global, now); err != nil {
 		log.Printf("ladder_run: config %s: planning failed: %v", dbCfg.ID, err)
 		return outcomeErrored
 	}
@@ -285,8 +279,9 @@ func (app *Application) processOneLadderConfig(
 // Units: the provider's existing and expiring coverage arrive in commitment
 // dollars and are first converted to on-demand-equivalent dollars at the
 // observed rate of the commitments held when the provider reports one, else at
-// the new-purchase rate (ladderConversionRates, ladderLayerStatesOnDemand).
-// New tranches are always sized at the new-purchase rate. Coverage on a layer with no rate
+// the lower of the constant-pair and global-pair new-purchase rates
+// (ladderRates, ladderConversionRates, ladderLayerStatesOnDemand).
+// New tranches are always sized at the constant-pair rate. Coverage on a layer with no rate
 // cannot be converted, so the gap cannot be sized: the run is persisted as a
 // Hold-only run with reason_code missing_discount_rate that buys nothing
 // (planMissingRateHold), not an Errored run. Allocate sizes the gap in
@@ -306,8 +301,7 @@ func (app *Application) executeLadderRun(
 	dbCfg *config.LadderConfigDB,
 	capability pkgladder.LadderCapability,
 	accountID string,
-	term pkgladder.Term,
-	paymentOpt pkgladder.PaymentOption,
+	global ladderTerms,
 	now time.Time,
 ) error {
 	// Convert the DB config row to the engine's typed LadderConfig.
@@ -337,27 +331,26 @@ func (app *Application) executeLadderRun(
 	// Rates are provider data, fetched outside the transaction. No capability or
 	// a fetch error fails the run: the allocator never gets a guessed rate. An
 	// empty map is valid and yields a Hold-only run. Observed rates are
-	// optional: a capability without them converts at the marginal rates.
-	rater, ok := capability.(pkgladder.CommitmentRateCapability)
-	if !ok {
-		return fmt.Errorf("capability %T does not provide commitment rates", capability)
-	}
-	rates, err := rater.GetCommitmentRates(ctx, scope, term, paymentOpt)
+	// optional: a capability without them converts at the marginal rates. One
+	// local plan pair feeds both the rates and the planner, so the sizing rate
+	// and the stored term and payment cannot diverge.
+	plan := ladderPlanTerms
+	rates, base, err := ladderRates(ctx, capability, scope, plan, global, layerStates)
 	if err != nil {
-		return fmt.Errorf("GetCommitmentRates: %w", err)
+		return err
 	}
 
 	// Providers report existing coverage in commitment dollars; Allocate and
 	// the plan snapshot compare it with an on-demand-equivalent target (#946).
 	// Existing coverage converts at observed rates where reported, else at the
-	// marginal rates; the planner below keeps the marginal rates for new
-	// tranches. Layers holding coverage with no rate at all come back in
+	// lower of the constant-pair and global-pair rates; the planner below keeps
+	// the constant-pair rates for new tranches. Layers holding coverage with no rate at all come back in
 	// missing; the run is then a Hold that buys nothing and says why.
-	conv, observed, err := ladderConversionRates(ctx, capability, scope, rates)
+	conv, observed, err := ladderConversionRates(ctx, capability, scope, base)
 	if err != nil {
 		return fmt.Errorf("observed commitment rates: %w", err)
 	}
-	logObservedOverrides(dbCfg.ID, observed, rates)
+	logObservedOverrides(dbCfg.ID, observed, base)
 	layerStates, missing, err := ladderLayerStatesOnDemand(layerStates, conv)
 	if err != nil {
 		return fmt.Errorf("existing coverage: %w", err)
@@ -374,7 +367,7 @@ func (app *Application) executeLadderRun(
 	// network I/O.
 	in := &ladderRunPlanner{
 		dbCfg: dbCfg, engineCfg: engineCfg, baseline: baseline, layerStates: layerStates, rates: rates,
-		layers: layers, term: term, paymentOpt: paymentOpt, now: now, missing: missing,
+		layers: layers, term: plan.term, paymentOpt: plan.payment, global: global, now: now, missing: missing,
 	}
 	savedRun, err := app.Config.PlanAndSaveLadderRun(ctx, dbCfg.ID, now, in.build)
 	if err != nil {
@@ -396,6 +389,7 @@ type ladderRunPlanner struct {
 	layers      []pkgladder.LayerSpec
 	term        pkgladder.Term
 	paymentOpt  pkgladder.PaymentOption
+	global      ladderTerms // reference pair for hold rationale only
 	now         time.Time
 	// missing lists the layers whose existing coverage has no rate. When set,
 	// the run is a Hold-only run (planMissingRateHold) and layerStates is nil.

@@ -94,7 +94,7 @@ func runComputeCapConfig(t *testing.T, cap *float64) (*LadderRunResult, *persist
 	dbCfg := validTestDBConfig("cfg-compute-cap")
 	dbCfg.MaxHourlyCommitPerRun = cap
 	result := app.runLadderConfigs(testutil.TestContext(t), []config.LadderConfigDB{dbCfg}, computeCapAccount, "us-east-1",
-		pkgladder.Term1Year, pkgladder.PaymentNoUpfront, ratesTestNow)
+		ladderTestGlobal, ratesTestNow)
 	return result, store, reads
 }
 

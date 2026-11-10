@@ -24,7 +24,7 @@ func runWithRates(t *testing.T, store *ladderTestStore, cap pkgladder.LadderCapa
 	// Capped so the fail-closed Compute SP refusal does not fire for fakes that list it.
 	dbCfg.MaxHourlyCommitPerRun = f64(100)
 	app := &Application{Config: store}
-	return app.executeLadderRun(testutil.TestContext(t), &dbCfg, cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, ratesTestNow)
+	return app.executeLadderRun(testutil.TestContext(t), &dbCfg, cap, "123456789012", ladderTestGlobal, ratesTestNow)
 }
 
 func TestExecuteLadderRun_RateHalfPersistsCommitmentDollars(t *testing.T) {

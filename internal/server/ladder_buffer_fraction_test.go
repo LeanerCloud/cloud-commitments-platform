@@ -59,7 +59,7 @@ func runBufferFractionSpy(t *testing.T, fraction float64, setErr error) (*buffer
 		setErr:               setErr,
 	}
 	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
-	err := app.executeLadderRun(ctx, &dbCfg, spy, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	err := app.executeLadderRun(ctx, &dbCfg, spy, "123456789012", ladderTestGlobal, now)
 	return spy, store, err
 }
 

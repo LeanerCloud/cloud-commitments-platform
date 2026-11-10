@@ -102,7 +102,7 @@ func TestExecuteLadderRun_InFlightFetchError_FailsLoudAndPersistsNothing(t *test
 	store, fakeCap := newInFlightErrFixture(t)
 	app := &Application{Config: store}
 
-	err := app.executeLadderRun(ctx, &dbCfg, fakeCap, inFlightTestAccount, pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	err := app.executeLadderRun(ctx, &dbCfg, fakeCap, inFlightTestAccount, ladderTestGlobal, now)
 
 	require.Error(t, err, "an in-flight fetch error must fail the run, not report success")
 	require.ErrorIs(t, err, errLadderInFlightFetch, "the store's error must be wrapped, not replaced")
@@ -125,7 +125,7 @@ func TestRunLadderConfigs_InFlightFetchError_CountsErrored(t *testing.T) {
 		},
 	}
 
-	result := app.runLadderConfigs(ctx, []config.LadderConfigDB{dbCfg}, inFlightTestAccount, "us-east-1", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now)
+	result := app.runLadderConfigs(ctx, []config.LadderConfigDB{dbCfg}, inFlightTestAccount, "us-east-1", ladderTestGlobal, now)
 
 	assert.Equal(t, LadderRunResult{Errored: 1}, *result, "an in-flight fetch error must count the config Errored and nothing else")
 	assertNothingPersistedOrSubmitted(t, store, fakeCap)

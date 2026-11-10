@@ -93,7 +93,7 @@ func (e *ladderB1Env) run(ctx context.Context, t *testing.T, now time.Time) stri
 	if e.cap2 != nil {
 		capability = e.cap2
 	}
-	require.NoError(t, e.app.executeLadderRun(ctx, e.cfg, capability, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, now))
+	require.NoError(t, e.app.executeLadderRun(ctx, e.cfg, capability, "123456789012", ladderTestGlobal, now))
 	var id string
 	require.NoError(t, e.conn.QueryRow(ctx, `SELECT id FROM ladder_runs WHERE config_id=$1 ORDER BY started_at DESC, created_at DESC LIMIT 1`, e.cfg.ID).Scan(&id))
 	return id

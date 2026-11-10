@@ -76,7 +76,7 @@ func TestLadderLock_ConcurrentRunsPlanTheGapOnce(t *testing.T) {
 	runOnce := func() chan error {
 		errc := make(chan error, 1)
 		go func() {
-			errc <- e.app.executeLadderRun(ctx, e.cfg, e.cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, e.start)
+			errc <- e.app.executeLadderRun(ctx, e.cfg, e.cap, "123456789012", ladderTestGlobal, e.start)
 		}()
 		return errc
 	}
@@ -133,7 +133,7 @@ func TestLadderLock_UnknownBasisPersistsNoRun(t *testing.T) {
 	e := newLadderB1Env(ctx, t, ladderB1Conn(ctx, t), ladderB1TwoStep)
 	seed := config.LadderTrancheDB{ID: uuid.New().String(), ConfigID: &e.cfg.ID, LayerType: pkgladder.LayerConvertibleRI, AmountUSDHr: 2, Term: pkgladder.Term1Year, PaymentOption: pkgladder.PaymentNoUpfront, Status: pkgladder.TrancheStatusFired, ScheduledDate: e.start}
 	require.NoError(t, e.app.Config.SaveLadderTranches(ctx, []config.LadderTrancheDB{seed}))
-	err := e.app.executeLadderRun(ctx, e.cfg, e.cap, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, e.start)
+	err := e.app.executeLadderRun(ctx, e.cfg, e.cap, "123456789012", ladderTestGlobal, e.start)
 	require.Error(t, err)
 	var runs int
 	require.NoError(t, e.conn.QueryRow(ctx, "SELECT count(*) FROM ladder_runs WHERE config_id=$1", e.cfg.ID).Scan(&runs))
