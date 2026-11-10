@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/aws/aws-lambda-go/events"
@@ -23,15 +25,21 @@ func StartLambdaHandler(app *Application) {
 
 // HandleLambdaEvent processes any Lambda event type.
 func (app *Application) HandleLambdaEvent(ctx context.Context, rawEvent json.RawMessage) (any, error) {
+	eventType := detectLambdaEventType(rawEvent)
+	log.Printf("Received %s event (size: %d bytes)", eventType, len(rawEvent))
+
+	// The migrate event must not touch ensureDB: its lazy path runs the
+	// app-start migrations and the runner needs its own bounded connection.
+	if eventType == "migrate" {
+		return app.handleLambdaMigrateEvent(ctx, rawEvent)
+	}
+
 	// Ensure database connection is established (lazy initialization)
 	// Safe to call on every request - mutex guards connection and allows retry on transient failures
 	if err := app.ensureDB(ctx); err != nil {
 		log.Printf("Failed to establish database connection: %v", err)
 		return nil, fmt.Errorf("database connection failed: %w", err)
 	}
-
-	eventType := detectLambdaEventType(rawEvent)
-	log.Printf("Received %s event (size: %d bytes)", eventType, len(rawEvent))
 
 	switch eventType {
 	case "http":
@@ -70,12 +78,70 @@ func detectLambdaEventType(rawEvent json.RawMessage) string {
 		Action     string `json:"action"`
 	}
 	if err := json.Unmarshal(rawEvent, &scheduledEvent); err == nil {
+		// Before the scheduled branch, which claims every non-empty action.
+		// Not a security boundary: a static-input EventBridge target is
+		// indistinguishable, and its authors can already invoke the function.
+		if scheduledEvent.Action == "migrate" && scheduledEvent.Source != "aws.events" {
+			return "migrate"
+		}
 		if scheduledEvent.Source == "aws.events" || scheduledEvent.Action != "" {
 			return "scheduled"
 		}
 	}
 
 	return "unknown"
+}
+
+// maxLambdaMigrateSeconds is the Lambda function timeout ceiling.
+const maxLambdaMigrateSeconds = 900
+
+// runDeployMigrationsFn is the migrate event's runner; tests replace it.
+var runDeployMigrationsFn = RunDeployMigrations
+
+type lambdaMigrateEvent struct {
+	ForceVersion   *int `json:"force_version"`
+	TimeoutSeconds *int `json:"timeout_seconds"`
+}
+
+// parseLambdaMigrateEvent validates the payload; unknown fields are ignored.
+func parseLambdaMigrateEvent(ctx context.Context, rawEvent json.RawMessage) (MigrateOptions, error) {
+	var ev lambdaMigrateEvent
+	if err := json.Unmarshal(rawEvent, &ev); err != nil {
+		return MigrateOptions{}, fmt.Errorf("invalid migrate event: %w", err)
+	}
+	opts := MigrateOptions{ForceVersion: ev.ForceVersion}
+	if ev.ForceVersion != nil && *ev.ForceVersion < 0 {
+		return MigrateOptions{}, fmt.Errorf("invalid migrate event: force_version must be >= 0, got %d", *ev.ForceVersion)
+	}
+	if ev.TimeoutSeconds == nil {
+		return opts, nil
+	}
+	limit := int64(maxLambdaMigrateSeconds)
+	if deadline, ok := ctx.Deadline(); ok {
+		limit = min(limit, int64(time.Until(deadline)/time.Second))
+	}
+	if limit < 1 {
+		return MigrateOptions{}, errors.New("invalid migrate event: too little invocation time remaining to set timeout_seconds")
+	}
+	if *ev.TimeoutSeconds <= 0 || int64(*ev.TimeoutSeconds) > limit {
+		return MigrateOptions{}, fmt.Errorf("invalid migrate event: timeout_seconds must be in 1..%d, got %d", limit, *ev.TimeoutSeconds)
+	}
+	opts.Timeout = time.Duration(*ev.TimeoutSeconds) * time.Second
+	return opts, nil
+}
+
+// handleLambdaMigrateEvent runs the deploy-time migrator on the app's own DB
+// config. Errors are returned so Lambda reports a FunctionError.
+func (app *Application) handleLambdaMigrateEvent(ctx context.Context, rawEvent json.RawMessage) (any, error) {
+	opts, err := parseLambdaMigrateEvent(ctx, rawEvent)
+	if err != nil {
+		return nil, err
+	}
+	report, err := runDeployMigrationsFn(ctx, app.dbConfig, app.secretResolver, opts)
+	if err != nil {
+		return nil, fmt.Errorf("migrate failed: %w", err)
+	}
+	return map[string]any{"status": "ok", "from": report.From, "to": report.To}, nil
 }
 
 // handleLambdaHTTPEvent processes HTTP requests from Lambda Function URL.

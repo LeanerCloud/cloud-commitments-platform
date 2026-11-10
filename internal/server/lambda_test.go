@@ -3,11 +3,15 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/scheduler"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/secrets"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 )
 
@@ -62,6 +66,26 @@ func TestDetectLambdaEventType(t *testing.T) {
 				"action": "collect_recommendations"
 			}`,
 			expectedType: "scheduled",
+		},
+		{
+			name:         "migrate action",
+			rawEvent:     `{"action":"migrate"}`,
+			expectedType: "migrate",
+		},
+		{
+			name:         "EventBridge envelope with migrate action stays scheduled",
+			rawEvent:     `{"source":"aws.events","detail-type":"Scheduled Event","action":"migrate"}`,
+			expectedType: "scheduled",
+		},
+		{
+			name:         "Function URL event with migrate in body stays http",
+			rawEvent:     `{"requestContext":{"http":{"method":"POST"}},"body":"{\"action\":\"migrate\"}"}`,
+			expectedType: "http",
+		},
+		{
+			name:         "API Gateway event with top-level migrate action stays http",
+			rawEvent:     `{"httpMethod":"POST","action":"migrate"}`,
+			expectedType: "http",
 		},
 		{
 			name:         "Unknown event defaults to scheduled",
@@ -334,4 +358,136 @@ func TestHandleLambdaEvent(t *testing.T) {
 			}
 		})
 	}
+}
+
+// stubMigrateRunner replaces the migrate event's runner. No t.Parallel in
+// callers: it swaps a package var.
+func stubMigrateRunner(t *testing.T, fn func(context.Context, *database.Config, secrets.Resolver, MigrateOptions) (MigrateReport, error)) {
+	t.Helper()
+	prev := runDeployMigrationsFn
+	runDeployMigrationsFn = fn
+	t.Cleanup(func() { runDeployMigrationsFn = prev })
+}
+
+// poisonedEnsureDBApp's ensureDB returns an error, so any route through it
+// fails the test's expectations.
+func poisonedEnsureDBApp() *Application {
+	return &Application{
+		API:      api.NewHandler(api.HandlerConfig{}),
+		dbConfig: &database.Config{Host: "unreachable"},
+		dbErr:    errors.New("ensureDB must not be called"),
+	}
+}
+
+func TestHandleLambdaEvent_MigrateBypassesEnsureDB(t *testing.T) {
+	var gotOpts MigrateOptions
+	var gotCfg *database.Config
+	stubMigrateRunner(t, func(_ context.Context, cfg *database.Config, _ secrets.Resolver, o MigrateOptions) (MigrateReport, error) {
+		gotCfg, gotOpts = cfg, o
+		return MigrateReport{From: 70, To: 74}, nil
+	})
+	app := poisonedEnsureDBApp()
+
+	out, err := app.HandleLambdaEvent(context.Background(), json.RawMessage(`{"action":"migrate","extra":"ignored"}`))
+	testutil.AssertNoError(t, err)
+	testutil.AssertTrue(t, gotCfg == app.dbConfig, "runner must get the app's dbConfig")
+	testutil.AssertTrue(t, gotOpts.ForceVersion == nil && gotOpts.Timeout == 0, "no options expected")
+	body, mErr := json.Marshal(out)
+	testutil.AssertNoError(t, mErr)
+	testutil.AssertEqual(t, `{"from":70,"status":"ok","to":74}`, string(body))
+}
+
+func TestHandleLambdaEvent_MigratePassesOptions(t *testing.T) {
+	var gotOpts MigrateOptions
+	stubMigrateRunner(t, func(_ context.Context, _ *database.Config, _ secrets.Resolver, o MigrateOptions) (MigrateReport, error) {
+		gotOpts = o
+		return MigrateReport{}, nil
+	})
+	_, err := poisonedEnsureDBApp().HandleLambdaEvent(context.Background(),
+		json.RawMessage(`{"action":"migrate","force_version":0,"timeout_seconds":120}`))
+	testutil.AssertNoError(t, err)
+	testutil.AssertTrue(t, gotOpts.ForceVersion != nil && *gotOpts.ForceVersion == 0, "force_version 0 must be passed through")
+	testutil.AssertEqual(t, 120*time.Second, gotOpts.Timeout)
+}
+
+func TestHandleLambdaEvent_MigrateRunnerErrorIsReturned(t *testing.T) {
+	boom := errors.New("dirty at 72")
+	stubMigrateRunner(t, func(context.Context, *database.Config, secrets.Resolver, MigrateOptions) (MigrateReport, error) {
+		return MigrateReport{}, boom
+	})
+	out, err := poisonedEnsureDBApp().HandleLambdaEvent(context.Background(), json.RawMessage(`{"action":"migrate"}`))
+	testutil.AssertTrue(t, errors.Is(err, boom), "runner error must be wrapped and returned")
+	testutil.AssertTrue(t, out == nil, "no success body on failure")
+}
+
+func TestHandleLambdaEvent_MigrateRejectsBadPayload(t *testing.T) {
+	stubMigrateRunner(t, func(context.Context, *database.Config, secrets.Resolver, MigrateOptions) (MigrateReport, error) {
+		t.Error("runner must not run for an invalid payload")
+		return MigrateReport{}, nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	for name, payload := range map[string]string{
+		"negative force_version":  `{"action":"migrate","force_version":-1}`,
+		"string force_version":    `{"action":"migrate","force_version":"5"}`,
+		"float force_version":     `{"action":"migrate","force_version":1.5}`,
+		"zero timeout":            `{"action":"migrate","timeout_seconds":0}`,
+		"negative timeout":        `{"action":"migrate","timeout_seconds":-5}`,
+		"string timeout":          `{"action":"migrate","timeout_seconds":"60"}`,
+		"timeout over ctx budget": `{"action":"migrate","timeout_seconds":101}`,
+		"timeout over Lambda max": `{"action":"migrate","timeout_seconds":901}`,
+		"huge timeout":            `{"action":"migrate","timeout_seconds":9223372036854775807}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := poisonedEnsureDBApp().HandleLambdaEvent(ctx, json.RawMessage(payload))
+			testutil.AssertError(t, err)
+			testutil.AssertContains(t, err.Error(), "invalid migrate event")
+		})
+	}
+}
+
+func TestHandleLambdaEvent_AWSEventsMigrateStaysScheduled(t *testing.T) {
+	stubMigrateRunner(t, func(context.Context, *database.Config, secrets.Resolver, MigrateOptions) (MigrateReport, error) {
+		t.Error("runner must not run for an aws.events envelope")
+		return MigrateReport{}, nil
+	})
+	_, err := poisonedEnsureDBApp().HandleLambdaEvent(context.Background(),
+		json.RawMessage(`{"version":"0","source":"aws.events","detail-type":"Scheduled Event","action":"migrate"}`))
+	testutil.AssertError(t, err)
+	testutil.AssertContains(t, err.Error(), "ensureDB must not be called")
+}
+
+func TestHandleLambdaEvent_FunctionURLBodyMigrateStaysHTTP(t *testing.T) {
+	stubMigrateRunner(t, func(context.Context, *database.Config, secrets.Resolver, MigrateOptions) (MigrateReport, error) {
+		t.Error("runner must not run for an HTTP event")
+		return MigrateReport{}, nil
+	})
+	_, err := poisonedEnsureDBApp().HandleLambdaEvent(context.Background(),
+		json.RawMessage(`{"requestContext":{"http":{"method":"POST"}},"rawPath":"/x","body":"{\"action\":\"migrate\"}"}`))
+	testutil.AssertError(t, err)
+	testutil.AssertContains(t, err.Error(), "ensureDB must not be called")
+}
+
+func TestHandleLambdaEvent_MigrateTimeoutBounds(t *testing.T) {
+	var got MigrateOptions
+	stubMigrateRunner(t, func(_ context.Context, _ *database.Config, _ secrets.Resolver, o MigrateOptions) (MigrateReport, error) {
+		got = o
+		return MigrateReport{}, nil
+	})
+	app := poisonedEnsureDBApp()
+
+	_, err := app.HandleLambdaEvent(context.Background(), json.RawMessage(`{"action":"migrate","timeout_seconds":901}`))
+	testutil.AssertError(t, err)
+	testutil.AssertContains(t, err.Error(), "1..900")
+
+	_, err = app.HandleLambdaEvent(context.Background(), json.RawMessage(`{"action":"migrate","timeout_seconds":900}`))
+	testutil.AssertNoError(t, err)
+	testutil.AssertEqual(t, 900*time.Second, got.Timeout)
+
+	expired, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	time.Sleep(5 * time.Millisecond)
+	_, err = app.HandleLambdaEvent(expired, json.RawMessage(`{"action":"migrate","timeout_seconds":5}`))
+	testutil.AssertError(t, err)
+	testutil.AssertContains(t, err.Error(), "too little invocation time")
 }
