@@ -180,6 +180,12 @@
     margin: 0;     /* override the legacy `main` rule below */
 }
 
+/* The skip link (#main-content) moves focus here, so main carries
+ * tabindex="-1". It is a landmark, not a control: no focus ring for it. */
+.app-main:focus {
+    outline: none;
+}
+
 /* ------------------------------------------------------------------------- */
 
 header {
