@@ -117,3 +117,10 @@ func TestClaimDueLadderTranches_ValidatesBeforeSQL(t *testing.T) {
 		assert.Nil(t, claimed)
 	}
 }
+
+// The wire strings are stored in ladder_tranches and matched by the claim, so
+// a rename in the provider module must fail here instead of orphaning rows.
+func TestLadderPlanningTerms_WireStrings(t *testing.T) {
+	assert.Equal(t, "1yr", string(LadderTerm))
+	assert.Equal(t, "no-upfront", string(LadderPayment))
+}

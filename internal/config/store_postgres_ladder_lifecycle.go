@@ -19,6 +19,14 @@ import (
 // buy, and both would be bought) and never both.
 const LadderFireGrace = 24 * time.Hour
 
+// The only term and payment option automated ladder buys use (owner decision
+// D6=A). Planning and the claim share them so a tranche is sized, stored and
+// bought as one offering.
+const (
+	LadderTerm    = ladder.Term1Year
+	LadderPayment = ladder.PaymentNoUpfront
+)
+
 // ladderGraceCutoff returns the instant at or before which a scheduled
 // tranche is expired: scheduled_date <= cutoff is canceled, and
 // scheduled_date > cutoff is still netted and claimable.
