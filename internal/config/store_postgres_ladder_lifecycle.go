@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -23,6 +24,28 @@ const LadderFireGrace = 24 * time.Hour
 // scheduled_date > cutoff is still netted and claimable.
 func ladderGraceCutoff(asOf time.Time) time.Time {
 	return asOf.Add(-LadderFireGrace)
+}
+
+// LadderClaimFilter narrows a claim. Both fields are required and fail closed.
+type LadderClaimFilter struct {
+	// Layers are the layers that have an instrument builder; empty is an error.
+	Layers []ladder.LayerType
+	// TrancheIDs are the ids the pre-claim resolve step accepted; empty claims nothing.
+	TrancheIDs []string
+}
+
+// validate rejects an allowlist that would silently match nothing or, if a
+// caller later treated it as "no filter", everything.
+func (f LadderClaimFilter) validate() error {
+	if len(f.Layers) == 0 {
+		return errors.New("ClaimDueLadderTranches needs at least one allowed layer")
+	}
+	for _, l := range f.Layers {
+		if err := l.Validate(); err != nil {
+			return fmt.Errorf("ClaimDueLadderTranches layer allowlist: %w", err)
+		}
+	}
+	return nil
 }
 
 // ladderTrancheEdges lists the legal tranche status transitions. completed,
@@ -107,19 +130,29 @@ func (s *PostgresStore) TransitionLadderTrancheTx(ctx context.Context, tx pgx.Tx
 // on_demand_equivalent row would over-buy by 1/rate (#946). Those rows stay
 // netted until the overdue sweep cancels them, and the next run re-plans
 // their gap in commitment dollars.
+//
+// The filter fails closed. Empty or unknown Layers is an error and nothing is
+// locked. Empty TrancheIDs claims nothing, and IDs only intersect with the
+// other predicates (config, status, basis and the due window at this asOf), so
+// a stale or foreign id never widens the claim. A layer without an instrument
+// builder must not be listed in Layers.
 func (s *PostgresStore) ClaimDueLadderTranches(
 	ctx context.Context,
 	configID string,
 	asOf time.Time,
 	limit int,
+	filter LadderClaimFilter,
 	create func(ctx context.Context, tx pgx.Tx, tranche LadderTrancheDB) (executionID string, err error),
 ) ([]LadderTrancheDB, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("ClaimDueLadderTranches limit must be positive, got %d", limit)
 	}
+	if err := filter.validate(); err != nil {
+		return nil, err
+	}
 	var claimed []LadderTrancheDB
 	err := s.withLadderConfigLock(ctx, configID, func(tx pgx.Tx) error {
-		due, err := selectDueLadderTranchesTx(ctx, tx, configID, asOf, limit)
+		due, err := selectDueLadderTranchesTx(ctx, tx, configID, asOf, limit, filter)
 		if err != nil {
 			return err
 		}
@@ -149,7 +182,7 @@ func (s *PostgresStore) ClaimDueLadderTranches(
 	return claimed, nil
 }
 
-func selectDueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID string, asOf time.Time, limit int) ([]LadderTrancheDB, error) {
+func selectDueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID string, asOf time.Time, limit int, filter LadderClaimFilter) ([]LadderTrancheDB, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id, config_id, run_id, layer_type, amount_usd_hr, term,
 		       payment_option, scheduled_date, status, settled_at, created_at, amount_basis, commitment_rate
@@ -160,10 +193,12 @@ func selectDueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID string, 
 		  AND amount_basis = 'commitment'
 		  AND scheduled_date <= $2
 		  AND scheduled_date > $3
+		  AND layer_type = ANY($5::text[])
+		  AND id = ANY($6::uuid[])
 		ORDER BY scheduled_date, id
 		LIMIT $4
 		FOR UPDATE SKIP LOCKED
-	`, configID, asOf, ladderGraceCutoff(asOf), limit)
+	`, configID, asOf, ladderGraceCutoff(asOf), limit, filter.Layers, filter.TrancheIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select due ladder_tranches config_id=%s: %w", configID, err)
 	}

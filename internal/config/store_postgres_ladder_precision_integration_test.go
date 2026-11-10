@@ -57,7 +57,7 @@ func TestLadderTrancheAmount_RoundTripsProviderPrecisionContract(t *testing.T) {
 	require.NoError(t, store.SaveLadderTranches(ctx, rows))
 
 	var calls atomic.Int64
-	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, len(rows), newExecCreator(ctx, t, store, &calls))
+	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, len(rows), claimFilter(rows...), newExecCreator(ctx, t, store, &calls))
 	require.NoError(t, err)
 	require.Len(t, claimed, len(rows))
 	for i := range claimed {

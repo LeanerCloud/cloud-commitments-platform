@@ -44,6 +44,16 @@ func claimableTranche(cfgID string, amount float64, at time.Time) LadderTrancheD
 	return tr
 }
 
+// claimFilter allows compute-sp (the layer every fixture here uses) and exactly
+// the given rows, so a test keeps asserting the predicate it is about.
+func claimFilter(rows ...LadderTrancheDB) LadderClaimFilter {
+	ids := make([]string, len(rows))
+	for i := range rows {
+		ids[i] = rows[i].ID
+	}
+	return LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: ids}
+}
+
 func trancheStatus(ctx context.Context, t *testing.T, store *PostgresStore, id string) ladder.TrancheStatus {
 	t.Helper()
 	var st string
@@ -153,7 +163,8 @@ func TestClaimDueLadderTranches_ClaimsOnlyDueUnexpiredAndKeepsNetting(t *testing
 	before := inFlight(ctx, t, store, cfgID, asOf)
 	assert.Equal(t, 1.0+2+4, before, "expired row is not netted")
 
-	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, create)
+	filter := claimFilter(due, dueNow, future, expired, otherCfg)
+	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, filter, create)
 	require.NoError(t, err)
 	require.Len(t, claimed, 2)
 	assert.Equal(t, due.ID, claimed[0].ID, "oldest due first")
@@ -169,19 +180,20 @@ func TestClaimDueLadderTranches_ClaimsOnlyDueUnexpiredAndKeepsNetting(t *testing
 	assert.Equal(t, ladder.TrancheStatusScheduled, trancheStatus(ctx, t, store, otherCfg.ID), "other config untouched")
 	assert.Equal(t, before, inFlight(ctx, t, store, cfgID, asOf), "claiming moves scheduled -> fired without changing netting")
 
-	again, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, create)
+	again, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, filter, create)
 	require.NoError(t, err)
 	assert.Empty(t, again, "a second claim finds nothing: idempotent")
 
 	limited := claimableTranche(cfgID, 32, asOf.Add(-time.Minute))
 	limited2 := claimableTranche(cfgID, 64, asOf.Add(-2*time.Minute))
 	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{limited, limited2}))
-	one, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 1, create)
+	filter = claimFilter(due, dueNow, future, expired, otherCfg, limited, limited2)
+	one, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 1, filter, create)
 	require.NoError(t, err)
 	require.Len(t, one, 1)
 	assert.Equal(t, limited2.ID, one[0].ID)
 
-	_, err = store.ClaimDueLadderTranches(ctx, cfgID, asOf, 0, create)
+	_, err = store.ClaimDueLadderTranches(ctx, cfgID, asOf, 0, filter, create)
 	require.Error(t, err)
 }
 
@@ -210,11 +222,12 @@ func TestClaimDueLadderTranches_NeverClaimsOnDemandOrUnknownBasisRows(t *testing
 	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{unknown, od, native}))
 	assert.Equal(t, 1.0+2+8, inFlight(ctx, t, store, cfgID, asOf), "4 commitment at rate 1/2 nets as 8 on-demand-equivalent")
 
-	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 1, create)
+	filter := claimFilter(unknown, od, native)
+	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 1, filter, create)
 	require.NoError(t, err)
 	require.Len(t, claimed, 1, "the older legacy rows must not use up the limit")
 	assert.Equal(t, native.ID, claimed[0].ID)
-	again, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, create)
+	again, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, filter, create)
 	require.NoError(t, err)
 	assert.Empty(t, again, "legacy rows are never claimable")
 	assert.Equal(t, int64(1), calls.Load(), "no execution row for a legacy tranche")
@@ -250,7 +263,8 @@ func TestClaimDueLadderTranches_CallbackFailureRollsBackClaimAndExecution(t *tes
 		}
 		return create(ctx, tx, tr)
 	}
-	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, failSecond)
+	filter := claimFilter(first, second)
+	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, filter, failSecond)
 	require.ErrorIs(t, err, boom)
 	assert.Nil(t, claimed)
 	assert.Equal(t, ladder.TrancheStatusScheduled, trancheStatus(ctx, t, store, first.ID), "first claim must roll back with the failed second")
@@ -258,7 +272,7 @@ func TestClaimDueLadderTranches_CallbackFailureRollsBackClaimAndExecution(t *tes
 	require.NoError(t, store.db.QueryRow(ctx, `SELECT count(*) FROM purchase_executions`).Scan(&execsAfter))
 	assert.Equal(t, execsBefore, execsAfter, "no execution row may survive a rolled-back claim")
 
-	_, err = store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10,
+	_, err = store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, filter,
 		func(context.Context, pgx.Tx, LadderTrancheDB) (string, error) { return "", nil })
 	require.Error(t, err, "an empty execution id must fail loud")
 	assert.Equal(t, ladder.TrancheStatusScheduled, trancheStatus(ctx, t, store, first.ID))
@@ -289,7 +303,7 @@ func TestTransitionLadderTranche_EveryLegalEdgeAndCompareAndSet(t *testing.T) {
 	assert.False(t, ok, "second apply loses the compare-and-set")
 	assert.Equal(t, 6.0, inFlight(ctx, t, store, cfgID, asOf), "canceled releases netting")
 
-	_, err = store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, create)
+	_, err = store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, claimFilter(canceled, toCompleted, toFailed), create)
 	require.NoError(t, err)
 	assert.Equal(t, 6.0, inFlight(ctx, t, store, cfgID, asOf), "fired still nets")
 
@@ -340,7 +354,7 @@ func TestClaimDueLadderTranches_ConcurrentClaimersExactlyOneWinner(t *testing.T)
 		go func() {
 			defer wg.Done()
 			<-start
-			got, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, create)
+			got, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, claimFilter(tr), create)
 			if err != nil {
 				errs <- err
 				return
@@ -381,7 +395,7 @@ func TestClaimVsCancelAndOverdueSweep_ExactlyOneOutcome(t *testing.T) {
 			defer wg.Done()
 			var got []LadderTrancheDB
 			// Scope the claim to this tranche by limiting to the single oldest row.
-			got, claimErr = store.ClaimDueLadderTranches(ctx, cfgID, asOf, 1, create)
+			got, claimErr = store.ClaimDueLadderTranches(ctx, cfgID, asOf, 1, claimFilter(tr), create)
 			for _, g := range got {
 				claimWon = claimWon || g.ID == tr.ID
 			}

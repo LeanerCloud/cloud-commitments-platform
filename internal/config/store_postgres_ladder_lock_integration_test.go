@@ -89,7 +89,7 @@ func TestLadderLock_ClaimWaitsForPlanner(t *testing.T) {
 	inner := newExecCreator(ctx, t, store, new(atomic.Int64))
 	claimDone := make(chan error, 1)
 	go func() {
-		_, err := store.ClaimDueLadderTranches(ctx, cfgID, time.Now().UTC(), 1,
+		_, err := store.ClaimDueLadderTranches(ctx, cfgID, time.Now().UTC(), 1, claimFilter(tr),
 			func(c context.Context, tx pgx.Tx, tr LadderTrancheDB) (string, error) {
 				claimEntered.Store(true)
 				return inner(c, tx, tr)
@@ -174,7 +174,7 @@ func TestLadderLock_EmptyConfigIDRejected(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.False(t, built)
-	_, err = store.ClaimDueLadderTranches(ctx, "", time.Now().UTC(), 1, nil)
+	_, err = store.ClaimDueLadderTranches(ctx, "", time.Now().UTC(), 1, claimFilter(), nil)
 	require.Error(t, err)
 }
 
@@ -224,10 +224,11 @@ func TestLadderLock_TimeoutBoundsOnlyTheWaitAndIsolationIsReadCommitted(t *testi
 	pool.Reset() // new connections pick up the database default
 
 	past := time.Now().UTC().Add(-time.Hour)
-	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{claimableTranche(cfgID, 1, past)}))
+	tr := claimableTranche(cfgID, 1, past)
+	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{tr}))
 	inner := newExecCreator(ctx, t, store, new(atomic.Int64))
 	var lockTimeout, isolation string
-	_, err = store.ClaimDueLadderTranches(ctx, cfgID, time.Now().UTC(), 1, func(c context.Context, tx pgx.Tx, tr LadderTrancheDB) (string, error) {
+	_, err = store.ClaimDueLadderTranches(ctx, cfgID, time.Now().UTC(), 1, claimFilter(tr), func(c context.Context, tx pgx.Tx, tr LadderTrancheDB) (string, error) {
 		require.NoError(t, tx.QueryRow(c, `SHOW lock_timeout`).Scan(&lockTimeout))
 		require.NoError(t, tx.QueryRow(c, `SHOW transaction_isolation`).Scan(&isolation))
 		return inner(c, tx, tr)
