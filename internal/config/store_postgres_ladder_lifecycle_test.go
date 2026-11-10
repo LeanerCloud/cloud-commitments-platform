@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var allLadderTrancheStatuses = []ladder.TrancheStatus{
@@ -65,5 +67,53 @@ func TestTransitionLadderTranche_RequiresReasonForFailedAndCanceled(t *testing.T
 		applied, err := s.TransitionLadderTrancheTx(context.Background(), nil, "id", c.from, c.to, "")
 		assert.ErrorContains(t, err, "needs a status reason", "%s -> %s", c.from, c.to)
 		assert.False(t, applied)
+	}
+}
+
+func TestLadderClaimFilter_Validate(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		layers  []ladder.LayerType
+		wantErr bool
+	}{
+		{"nil", nil, true},
+		{"empty", []ladder.LayerType{}, true},
+		{"unknown", []ladder.LayerType{"compute_sp"}, true},
+		{"empty string", []ladder.LayerType{""}, true},
+		{"one valid one unknown", []ladder.LayerType{ladder.LayerComputeSP, "x"}, true},
+		{"valid one", []ladder.LayerType{ladder.LayerComputeSP}, false},
+		{"valid many", []ladder.LayerType{ladder.LayerComputeSP, ladder.LayerEC2InstanceSP}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			err := LadderClaimFilter{Layers: c.layers}.validate()
+			if c.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+	assert.ErrorContains(t, LadderClaimFilter{}.validate(), "layer")
+}
+
+// Invalid input fails before the config lock and any SQL, so a nil DB proves
+// nothing was attempted and the callback never runs.
+func TestClaimDueLadderTranches_ValidatesBeforeSQL(t *testing.T) {
+	s := &PostgresStore{}
+	create := func(context.Context, pgx.Tx, LadderTrancheDB) (string, error) {
+		t.Fatal("create must not run")
+		return "", nil
+	}
+	valid := LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: []string{"id"}}
+	asOf := time.Now()
+
+	_, err := s.ClaimDueLadderTranches(context.Background(), "cfg", asOf, 0, valid, create)
+	require.ErrorContains(t, err, "limit must be positive")
+	for _, layers := range [][]ladder.LayerType{nil, {}, {"compute_sp"}} {
+		claimed, err := s.ClaimDueLadderTranches(context.Background(), "cfg", asOf, 1,
+			LadderClaimFilter{Layers: layers, TrancheIDs: valid.TrancheIDs}, create)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "layer")
+		assert.Nil(t, claimed)
 	}
 }

@@ -273,6 +273,7 @@ func TestLadderAmendCeiling_CancelsOverdueBeforeCounting(t *testing.T) {
 	require.NoError(t, f.store.db.QueryRow(f.ctx, "SELECT status FROM ladder_tranches WHERE id=$1", ids[0]).Scan(&status))
 	require.Equal(t, ladder.TrancheStatusCanceled, status, "the overdue row must be canceled, not left for a claim with an older asOf")
 	claimed, err := f.store.ClaimDueLadderTranches(f.ctx, f.cfgID, time.Now().Add(-time.Minute), 10,
+		LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: ids},
 		func(context.Context, pgx.Tx, LadderTrancheDB) (string, error) { return uuid.NewString(), nil })
 	require.NoError(t, err)
 	require.Empty(t, claimed)

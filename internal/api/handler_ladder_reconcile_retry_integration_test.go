@@ -84,6 +84,7 @@ func (r *ladderRetryRig) addFiredTranche(t *testing.T) {
 	require.NoError(t, r.store.SaveLadderTranches(ctx, []config.LadderTrancheDB{tr}))
 	var failedID string
 	_, err := r.store.ClaimDueLadderTranches(ctx, r.cfgID, time.Now(), 1,
+		config.LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: []string{tr.ID}},
 		func(ctx context.Context, tx pgx.Tx, _ config.LadderTrancheDB) (string, error) {
 			insErr := tx.QueryRow(ctx, `INSERT INTO purchase_executions (scheduled_date, status, no_submission, error, idempotency_key)
 				VALUES (NOW(), 'failed', true, '', $1) RETURNING execution_id`, tr.ID).Scan(&failedID)

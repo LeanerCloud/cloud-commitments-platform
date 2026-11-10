@@ -41,7 +41,7 @@ func newResolveRig(ctx context.Context, t *testing.T, store *PostgresStore, node
 	require.NoError(t, store.SaveLadderTranches(ctx, []LadderTrancheDB{tr}))
 	r.trancheID = tr.ID
 	var ids []string
-	_, err := store.ClaimDueLadderTranches(ctx, cfgID, time.Now(), 1, func(ctx context.Context, tx pgx.Tx, _ LadderTrancheDB) (string, error) {
+	_, err := store.ClaimDueLadderTranches(ctx, cfgID, time.Now(), 1, claimFilter(tr), func(ctx context.Context, tx pgx.Tx, _ LadderTrancheDB) (string, error) {
 		id, err := insertResolveNode(ctx, tx, tr.ID, nodes[0])
 		ids = append(ids, id)
 		return id, err

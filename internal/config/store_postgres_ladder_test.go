@@ -77,7 +77,7 @@ func TestLadderTrancheProvenance_InsertClaimAndReconcile(t *testing.T) {
 	}
 	var calls atomic.Int64
 	create := newExecCreator(ctx, t, store, &calls)
-	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, func(ctx context.Context, tx pgx.Tx, tr LadderTrancheDB) (string, error) {
+	claimed, err := store.ClaimDueLadderTranches(ctx, cfgID, asOf, 10, claimFilter(rows...), func(ctx context.Context, tx pgx.Tx, tr LadderTrancheDB) (string, error) {
 		check(&tr)
 		require.Equal(t, ladder.TrancheStatusScheduled, tr.Status)
 		require.Nil(t, tr.ExecutionID)
