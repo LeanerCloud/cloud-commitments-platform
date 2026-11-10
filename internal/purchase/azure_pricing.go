@@ -85,6 +85,9 @@ func (m *Manager) loadAzureFreshness(ctx context.Context) (*config.Recommendatio
 	if fresh == nil {
 		return nil, fmt.Errorf("%w: the latest collection state is missing, so Azure prices cannot be confirmed current", ErrStaleAzurePricing)
 	}
+	if fresh.LastCollectionPartialUnreadable {
+		return nil, fmt.Errorf("%w: the collection marker is unreadable, so an Azure pricing hold cannot be ruled out", ErrStaleAzurePricing)
+	}
 	return fresh, nil
 }
 

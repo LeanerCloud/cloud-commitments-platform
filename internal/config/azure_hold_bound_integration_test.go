@@ -288,3 +288,35 @@ func TestUpsertRecommendationsWithPartial_SurvivorThenDisableKeepsMarkerUntilDel
 	require.NoError(t, err)
 	require.Nil(t, fresh.LastCollectionPartial)
 }
+
+// JSONB rejects invalid text, so a corrupt marker is a valid value of the wrong
+// shape. Collection writes must fail loudly instead of reading it as "no hold".
+func (e boundEnv) seedCorruptMarker(t *testing.T) {
+	t.Helper()
+	_, err := e.db.Exec(e.ctx, `UPDATE recommendations_state SET last_collection_partial = '[]'::jsonb WHERE id = 1`)
+	require.NoError(t, err)
+}
+
+func TestUpsertRecommendationsWithPartial_CorruptMarkerFailsTheWriteWithRepairHint(t *testing.T) {
+	e := newBoundEnv(t)
+	acct := e.account(t, "sub-corrupt-write")
+	e.seedCorruptMarker(t)
+
+	err := e.store.UpsertRecommendationsWithPartial(e.ctx, e.base, []config.RecommendationRecord{azureAccountRec("r1", acct, "D2")},
+		[]config.SuccessfulCollect{{Provider: "azure", CloudAccountID: &acct}}, nil)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "UPDATE recommendations_state SET last_collection_partial = NULL WHERE id = 1")
+	require.Zero(t, e.rowCount(t, acct), "the failed write must roll back")
+}
+
+func TestGetRecommendationsFreshness_CorruptMarkerIsReportedNotFatal(t *testing.T) {
+	e := newBoundEnv(t)
+	e.seedCorruptMarker(t)
+
+	fresh, err := e.store.GetRecommendationsFreshness(e.ctx)
+
+	require.NoError(t, err, "the scheduler and dashboard depend on this read")
+	require.Nil(t, fresh.LastCollectionPartial)
+	require.True(t, fresh.LastCollectionPartialUnreadable)
+}

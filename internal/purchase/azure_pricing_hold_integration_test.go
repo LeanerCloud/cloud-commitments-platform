@@ -85,3 +85,27 @@ func TestAzurePricingHoldSurvivingRow(t *testing.T) {
 	require.Len(t, fresh, 1)
 	require.NoError(t, gate(fresh[0]))
 }
+
+// A marker of the wrong shape hides any hold, so the gate refuses the purchase.
+func TestAzurePricingCorruptMarkerRefuses(t *testing.T) {
+	ctx := context.Background()
+	db := testhelpers.RequireMigratedDatabase(ctx, t, rampMigrationsPath()).DB
+	store := config.NewPostgresStore(db)
+	acct := uuid.NewString()
+	require.NoError(t, store.CreateCloudAccount(ctx, &config.CloudAccount{
+		ID: acct, Name: "corrupt-gate", Provider: "azure", ExternalID: "sub-corrupt-gate", Enabled: true}))
+	require.NoError(t, store.UpsertRecommendations(ctx, time.Now().UTC(),
+		[]config.RecommendationRecord{azureHoldRec("r1", acct, "D2", 100)}, nil))
+	rows, err := store.ListStoredRecommendations(ctx, config.RecommendationFilter{Provider: "azure"})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	exec := armedExecution("azure", "compute", 0, "approved")
+	exec.Recommendations = []config.RecommendationRecord{rows[0]}
+	mgr := &Manager{config: store}
+	require.NoError(t, mgr.staleAzurePricingRefusal(ctx, exec), "a readable, empty marker passes")
+
+	_, err = db.Exec(ctx, `UPDATE recommendations_state SET last_collection_partial = '[]'::jsonb WHERE id = 1`)
+	require.NoError(t, err)
+
+	require.ErrorIs(t, mgr.staleAzurePricingRefusal(ctx, exec), ErrStaleAzurePricing)
+}

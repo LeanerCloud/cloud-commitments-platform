@@ -212,7 +212,11 @@ func carryHoldInTx(ctx context.Context, tx pgx.Tx, now time.Time, partial *Recom
 	if err := tx.QueryRow(ctx, `SELECT last_collection_partial FROM recommendations_state WHERE id = 1 FOR UPDATE`).Scan(&raw); err != nil {
 		return nil, nil, fmt.Errorf("failed to lock recommendations_state: %w", err)
 	}
-	prev := decodeCollectionPartial(raw)
+	prev, err := decodeCollectionPartial(raw)
+	if err != nil {
+		return nil, nil, fmt.Errorf("recommendations_state.last_collection_partial is unreadable, so the Azure pricing hold cannot be carried; "+
+			"repair it with: UPDATE recommendations_state SET last_collection_partial = NULL WHERE id = 1: %w", err)
+	}
 	if !holdNeedsCarry(prev, partial) {
 		return partial, nil, nil
 	}
@@ -626,30 +630,34 @@ func (s *PostgresStore) GetRecommendationsFreshness(ctx context.Context) (*Recom
 	if err != nil {
 		return nil, fmt.Errorf("failed to read recommendations_state: %w", err)
 	}
+	partial, decodeErr := decodeCollectionPartial(lastCollectionPartial)
+	if decodeErr != nil {
+		logging.Warnf("recommendations_state.last_collection_partial is unreadable; reporting it as unreadable: %v", decodeErr)
+	}
 	return &RecommendationsFreshness{
-		LastCollectedAt:         lastCollectedAt,
-		LastCollectionError:     lastCollectionError,
-		LastCollectionStartedAt: lastCollectionStartedAt,
-		LastCollectionPartial:   decodeCollectionPartial(lastCollectionPartial),
+		LastCollectedAt:                 lastCollectedAt,
+		LastCollectionError:             lastCollectionError,
+		LastCollectionStartedAt:         lastCollectionStartedAt,
+		LastCollectionPartial:           partial,
+		LastCollectionPartialUnreadable: decodeErr != nil,
 	}, nil
 }
 
 // decodeCollectionPartial decodes the last_collection_partial JSONB column.
-// NULL decodes to nil (the last collection was complete). The column is only
-// ever written by UpsertRecommendationsWithPartial via json.Marshal, so an
-// undecodable value means the row was edited by hand; it is logged and read
-// as nil rather than failing the whole freshness read, which the scheduler's
-// cache-TTL check and every dashboard load depend on.
-func decodeCollectionPartial(raw []byte) *RecommendationsCollectionPartial {
+// NULL decodes to nil (the last collection was complete); JSON null and {} decode
+// to an empty marker. JSONB cannot hold invalid text, so an undecodable value is
+// valid JSON of the wrong shape, written by hand: it is an error, never "no
+// marker", because the purchase gate would otherwise miss an Azure hold. The
+// caller decides how to fail: the write path stops, the freshness read reports it.
+func decodeCollectionPartial(raw []byte) (*RecommendationsCollectionPartial, error) {
 	if len(raw) == 0 {
-		return nil
+		return nil, nil
 	}
 	var partial RecommendationsCollectionPartial
 	if err := json.Unmarshal(raw, &partial); err != nil {
-		logging.Warnf("recommendations_state.last_collection_partial is not valid JSON; ignoring it: %v", err)
-		return nil
+		return nil, fmt.Errorf("decode last_collection_partial: %w", err)
 	}
-	return &partial
+	return &partial, nil
 }
 
 // SetRecommendationsCollectionError records the most recent collection's

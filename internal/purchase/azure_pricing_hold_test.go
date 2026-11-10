@@ -198,3 +198,50 @@ func TestAzureHoldRefusal(t *testing.T) {
 	err := azureHoldRefusal(expiredOnlyFreshness(acct), nil, []config.RecommendationRecord{row("azure-1", &acct)})
 	require.ErrorContains(t, err, config.PricingHoldMaxAge.String())
 }
+
+// An unreadable marker hides any hold, so an Azure execution cannot be confirmed
+// current; other providers never read it.
+func TestAzurePricingUnreadableMarker(t *testing.T) {
+	acct := "11111111-1111-1111-1111-111111111111"
+	cases := []struct {
+		name      string
+		provider  string
+		fresh     *config.RecommendationsFreshness
+		wantStale bool
+	}{
+		{"unreadable marker refuses an Azure execution", "azure", &config.RecommendationsFreshness{LastCollectionPartialUnreadable: true}, true},
+		{"readable empty marker passes", "azure", &config.RecommendationsFreshness{}, false},
+		{"valid marker holding another account passes", "azure", heldFreshness("22222222-2222-2222-2222-222222222222"), false},
+		{"nil freshness still fails closed", "azure", nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			base := config.RecommendationRecord{ID: "azure-1", Provider: "azure", Service: "compute", Region: "westeurope",
+				ResourceType: "Standard_D2s_v3", Count: 2, Term: 3, UpfrontCost: 200, Selected: true, CloudAccountID: &acct}
+			exec := armedExecution("azure", "compute", 0, "approved")
+			exec.Recommendations = []config.RecommendationRecord{base}
+			mgr, store, recorder := armedHarness(t, common.ServiceCompute)
+			store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).
+				Return([]config.RecommendationRecord{base}, nil).Maybe()
+			store.On("GetRecommendationsFreshness", mock.Anything).Return(tc.fresh, nil).Maybe()
+
+			err := mgr.executeAndFinalize(context.Background(), exec)
+
+			if tc.wantStale {
+				require.ErrorIs(t, err, ErrStaleAzurePricing)
+				assert.Zero(t, recorder.count())
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, 1, recorder.count())
+		})
+	}
+}
+
+func TestAzurePricingUnreadableMarkerIgnoredForOtherProviders(t *testing.T) {
+	exec := armedExecution("aws", "ec2", 0, "approved")
+	mgr, store, _ := armedHarness(t, common.ServiceEC2)
+	store.On("GetRecommendationsFreshness", mock.Anything).Return(&config.RecommendationsFreshness{LastCollectionPartialUnreadable: true}, nil).Maybe()
+
+	require.NoError(t, mgr.staleAzurePricingRefusal(context.Background(), exec))
+}

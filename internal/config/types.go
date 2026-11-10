@@ -984,6 +984,10 @@ type RecommendationsFreshness struct {
 	LastCollectionStartedAt *time.Time                        `json:"last_collection_started_at"`
 	LastCollectionPartial   *RecommendationsCollectionPartial `json:"last_collection_partial"`
 	NextCollectionAt        *time.Time                        `json:"next_collection_at"`
+	// LastCollectionPartialUnreadable is set when the stored marker could not be
+	// decoded (LastCollectionPartial is then nil). It stays out of the API: it
+	// only lets the purchase gate refuse instead of reading "no marker".
+	LastCollectionPartialUnreadable bool `json:"-"`
 }
 
 // RecommendationsCollectionPartial records that the most recent collection
