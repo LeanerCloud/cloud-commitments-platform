@@ -251,6 +251,23 @@ func TestResumeAmountCap_NonUSDUnderCap(t *testing.T) {
 	}
 }
 
+// #1866: a legacy row with no CommitmentCurrency counts as non-USD. A paused row cannot
+// be refreshed, so the refusal must not point a capped resumer at a refresh.
+func TestResumeAmountCap_LegacyEmptyCurrencyRefusalSaysWhoCanResume(t *testing.T) {
+	t.Parallel()
+	me := revokeConstraintsUser
+	legacy := []config.RecommendationRecord{resumeCapRec(100, 0, "")}
+	perms := []auth.Permission{revokePerm(auth.ActionUpdate, capOf(5000))}
+
+	_, store, err := runResumeCap(t, resumeCapCase{creator: &me, recs: legacy, perms: perms})
+
+	requireRevokeForbidden(t, err, "USD spend cap")
+	requireRevokeForbidden(t, err, "a stored or paused purchase cannot be refreshed")
+	requireRevokeForbidden(t, err, "without a spend cap must act on it instead")
+	requireRevokeForbidden(t, err, "unknown currency")
+	requireResumeNotTransitioned(t, store)
+}
+
 // A row whose recs total zero is refused (400) as approve refuses it, on both branches.
 func TestResumeAmountCap_ZeroCommitmentRefused(t *testing.T) {
 	t.Parallel()

@@ -57,7 +57,8 @@ func (h *Handler) requireUncappedPurchaseGrant(ctx context.Context, session *Ses
 	return NewClientError(403, fmt.Sprintf(
 		"permission denied: the constraints configured on your %s permission for purchases include a USD spend cap (MaxPurchaseAmount), "+
 			"and this purchase is priced in %s currency, so the cap cannot be enforced against it; "+
-			"refresh the recommendations so they carry a USD price, or ask an administrator to remove the cap",
+			"refresh the recommendations so they carry a USD price (a stored or paused purchase cannot be refreshed: an administrator or a user without a spend cap must act on it instead), "+
+			"or ask an administrator to remove the cap",
 		action, currency))
 }
 
