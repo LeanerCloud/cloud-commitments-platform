@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -53,7 +55,27 @@ func okResolver(t *testing.T) *mockSecretResolver {
 
 func intPtr(n int) *int { return &n }
 
+// migDirCfg returns a config whose migrations dir holds an up file per version.
+func migDirCfg(t *testing.T, versions ...int) *database.Config {
+	t.Helper()
+	dir := t.TempDir()
+	for _, v := range versions {
+		name := fmt.Sprintf("%06d_m.up.sql", v)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("SELECT 1;"), 0o600))
+	}
+	return &database.Config{MigrationsPath: dir}
+}
+
+func seq(from, to int) []int {
+	var out []int
+	for i := from; i <= to; i++ {
+		out = append(out, i)
+	}
+	return out
+}
+
 func TestRunDeployMigrations_Success(t *testing.T) {
+	t.Setenv(forceVersionEnv, "")
 	f := &fakeMigrate{versions: []uint{3, 5}}
 	rep, err := runDeployMigrations(context.Background(), &database.Config{}, okResolver(t), MigrateOptions{}, f.deps())
 	require.NoError(t, err)
@@ -63,6 +85,7 @@ func TestRunDeployMigrations_Success(t *testing.T) {
 }
 
 func TestRunDeployMigrations_RunnerErrorPropagates(t *testing.T) {
+	t.Setenv(forceVersionEnv, "")
 	f := &fakeMigrate{versions: []uint{3}, runErr: errors.New("boom")}
 	_, err := runDeployMigrations(context.Background(), &database.Config{}, okResolver(t), MigrateOptions{}, f.deps())
 	require.ErrorContains(t, err, "boom")
@@ -77,7 +100,9 @@ func TestRunDeployMigrations_NilConfigFailsLoud(t *testing.T) {
 }
 
 func TestRunDeployMigrations_AdminSecretFailureIsFatalAndClosesPool(t *testing.T) {
+	t.Setenv(forceVersionEnv, "")
 	t.Setenv("ADMIN_PASSWORD_SECRET", "admin-secret")
+	t.Setenv("ADMIN_EMAIL", "admin@example.com")
 	f := &fakeMigrate{versions: []uint{0}}
 	_, err := runDeployMigrations(context.Background(), &database.Config{},
 		&mockSecretResolver{getErr: errors.New("denied")}, MigrateOptions{}, f.deps())
@@ -102,7 +127,7 @@ func TestRunDeployMigrations_ForceGuardRefusals(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &fakeMigrate{versions: []uint{tc.version}, dirty: tc.dirty}
-			_, err := runDeployMigrations(context.Background(), &database.Config{}, okResolver(t),
+			_, err := runDeployMigrations(context.Background(), migDirCfg(t, seq(1, 9)...), okResolver(t),
 				MigrateOptions{ForceVersion: intPtr(tc.force)}, f.deps())
 			require.ErrorContains(t, err, "refusing force_version")
 			assert.Equal(t, 0, f.runCalls)
@@ -118,7 +143,7 @@ func TestRunDeployMigrations_ForceAcceptedAndEnvRestored(t *testing.T) {
 				t.Setenv(forceVersionEnv, *prior)
 			}
 			f := &fakeMigrate{versions: []uint{5, 6}, dirty: true}
-			_, err := runDeployMigrations(context.Background(), &database.Config{}, okResolver(t),
+			_, err := runDeployMigrations(context.Background(), migDirCfg(t, seq(1, 9)...), okResolver(t),
 				MigrateOptions{ForceVersion: intPtr(force)}, f.deps())
 			require.NoError(t, err)
 			assert.True(t, f.envWasSet)
@@ -136,12 +161,61 @@ func TestRunDeployMigrations_ForceAcceptedAndEnvRestored(t *testing.T) {
 	os.Unsetenv(forceVersionEnv)
 }
 
-func TestRunDeployMigrations_NoForceLeavesEnvAlone(t *testing.T) {
+func TestRunDeployMigrations_StaleForceEnvWithoutFlagFailsLoud(t *testing.T) {
 	t.Setenv(forceVersionEnv, "9")
+	f := &fakeMigrate{versions: []uint{1}} // clean row: the env var alone must be refused
+	_, err := runDeployMigrations(context.Background(), &database.Config{}, okResolver(t), MigrateOptions{}, f.deps())
+	require.ErrorContains(t, err, "remove the env var or pass force_version")
+	assert.Equal(t, 0, f.runCalls)
+	assert.Equal(t, 0, f.readCalls)
+	assert.False(t, f.closed, "must fail before connecting")
+}
+
+func TestRunDeployMigrations_EmptyForceEnvIsIgnored(t *testing.T) {
+	t.Setenv(forceVersionEnv, "")
 	f := &fakeMigrate{versions: []uint{1}}
 	_, err := runDeployMigrations(context.Background(), &database.Config{}, okResolver(t), MigrateOptions{}, f.deps())
 	require.NoError(t, err)
-	assert.Equal(t, "9", f.envAtRun)
+}
+
+func TestRunDeployMigrations_NoAdminEmailSkipsAdminPassword(t *testing.T) {
+	t.Setenv("ADMIN_EMAIL", "")
+	t.Setenv("ADMIN_PASSWORD_SECRET", "")
+	t.Setenv(forceVersionEnv, "")
+	f := &fakeMigrate{versions: []uint{1}}
+	_, err := runDeployMigrations(context.Background(), &database.Config{}, &mockSecretResolver{getErr: errors.New("denied")}, MigrateOptions{}, f.deps())
+	require.NoError(t, err)
+	assert.Equal(t, 1, f.runCalls)
+}
+
+func TestValidateForceVersion_NumberingGaps(t *testing.T) {
+	cfg := migDirCfg(t, 1, 2, 58, 59, 60, 63, 64, 67, 70, 81, 83, 86, 134, 136)
+	cases := []struct {
+		dirty    int
+		allowed  []int
+		refused  []int
+		lowerMsg string
+	}{
+		{63, []int{63, 60}, []int{62, 61, 59}, "60"},
+		{70, []int{70, 67}, []int{69}, "67"},
+		{83, []int{83, 81}, []int{82}, "81"},
+		{86, []int{86, 83}, []int{85}, "83"},
+		{136, []int{136, 134}, []int{135}, "134"},
+		{64, []int{64, 63}, []int{62}, "63"},
+		{1, []int{1, 0}, []int{2}, "0"},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprint(tc.dirty), func(t *testing.T) {
+			for _, n := range tc.allowed {
+				require.NoError(t, validateForceVersion(n, uint(tc.dirty), true, cfg.MigrationsPath), "force %d", n)
+			}
+			for _, n := range tc.refused {
+				err := validateForceVersion(n, uint(tc.dirty), true, cfg.MigrationsPath)
+				require.ErrorContains(t, err, "refusing force_version", "force %d", n)
+				assert.ErrorContains(t, err, fmt.Sprintf("only %d or %s are allowed", tc.dirty, tc.lowerMsg))
+			}
+		})
+	}
 }
 
 func ptr(s string) *string { return &s }
@@ -171,6 +245,14 @@ func TestMigrateBudget(t *testing.T) {
 		got, err := migrateBudget(withDeadline(5*time.Minute), time.Minute)
 		require.NoError(t, err)
 		assert.Equal(t, time.Minute, got)
+	})
+	t.Run("exactly the minimum budget is allowed", func(t *testing.T) {
+		prev := timeUntil
+		timeUntil = func(time.Time) time.Duration { return minMigrateBudget + migrateDeadlineMargin }
+		t.Cleanup(func() { timeUntil = prev })
+		got, err := migrateBudget(withDeadline(time.Hour), time.Hour)
+		require.NoError(t, err)
+		assert.Equal(t, minMigrateBudget, got)
 	})
 	t.Run("under 30s left is an error", func(t *testing.T) {
 		_, err := migrateBudget(withDeadline(45*time.Second), time.Minute)

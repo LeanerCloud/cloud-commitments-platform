@@ -153,7 +153,7 @@ func parseFlags(args []string) (cliFlags, error) {
 	fs.IntVar(&c.port, "port", 8080, "HTTP server port (ignored in lambda mode)")
 	fs.StringVar(&c.task, "task", "", "Run a scheduled task and exit (e.g., collect_recommendations, cleanup)")
 	fs.BoolVar(&c.migrate, "migrate", false, "Apply pending database migrations and exit")
-	fs.IntVar(&c.forceVersion, "migrate-force-version", -1, "With --migrate: clear a dirty migration row at this version (dirty version N or N-1 only)")
+	fs.IntVar(&c.forceVersion, "migrate-force-version", -1, "With --migrate: clear a dirty migration row at this version (the dirty version or the highest lower version with a migration file)")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
@@ -177,7 +177,7 @@ func (c cliFlags) validate() error {
 }
 
 func (c cliFlags) migrateOptions() server.MigrateOptions {
-	opts := server.MigrateOptions{Timeout: getTaskTimeout()}
+	opts := server.MigrateOptions{}
 	if c.forceSet {
 		opts.ForceVersion = &c.forceVersion
 	}

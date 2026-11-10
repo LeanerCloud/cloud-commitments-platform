@@ -101,9 +101,12 @@ module's SNS topic(s) to get paged.
       - If migration N's SQL landed on-disk (check the schema), set
         `CUDLY_FORCE_MIGRATION_VERSION=N`. Next cold start marks clean and
         resumes from N+1.
-      - If it didn't land, set `CUDLY_FORCE_MIGRATION_VERSION=N-1` to
-        retry N.
-      - Remove the env var after the deploy reports `healthy`.
+      - If it didn't land, set `CUDLY_FORCE_MIGRATION_VERSION` to the
+        highest version below N that has a migration file (N-1 only when
+        the numbering has no gap there) to retry N.
+      - Remove the env var after the deploy reports `healthy`. The
+        deploy-time runner (`cudly --migrate`, `{"action":"migrate"}`)
+        refuses to run while it is set; pass `force_version` instead.
 
    `CUDLY_FORCE_MIGRATION_VERSION` takes precedence over auto-heal: it runs
    first and pins+cleans the version, leaving nothing for auto-heal to act on.

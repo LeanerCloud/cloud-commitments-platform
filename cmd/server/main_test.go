@@ -88,6 +88,13 @@ func TestParseFlags_MigrateAcceptsEntrypointTrailingFlags(t *testing.T) {
 	}
 }
 
+func TestMigrateOptions_TimeoutIgnoresTaskTimeout(t *testing.T) {
+	t.Setenv("TASK_TIMEOUT", "30")
+	if got := (cliFlags{}).migrateOptions().Timeout; got != 0 {
+		t.Errorf("Timeout = %v, want 0 (runner default) regardless of TASK_TIMEOUT", got)
+	}
+}
+
 func TestParseFlags_ForceVersion(t *testing.T) {
 	for _, tc := range []struct {
 		args []string

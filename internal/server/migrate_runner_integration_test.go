@@ -78,6 +78,21 @@ func TestRunDeployMigrations_AllowedForceVersionClearsDirtyRow(t *testing.T) {
 	assert.Empty(t, os.Getenv(forceVersionEnv))
 }
 
+func TestRunDeployMigrations_ForceDirtyVersionKeepsItApplied(t *testing.T) {
+	cfg, r := runnerFixture(t, "SELECT * FROM missing_table;")
+	_, err := RunDeployMigrations(context.Background(), cfg, r, MigrateOptions{})
+	require.Error(t, err)
+
+	// Force N itself: 2 is marked applied (its effects "landed"), Up() resumes at 3.
+	rep, err := RunDeployMigrations(context.Background(), cfg, r, MigrateOptions{ForceVersion: intPtr(2)})
+	require.NoError(t, err)
+	assert.Equal(t, MigrateReport{From: 2, To: 3}, rep)
+	v, dirty, verr := realMigrateDeps.readVersion(context.Background(), mustPool(t, cfg), cfg.MigrationsPath)
+	require.NoError(t, verr)
+	assert.False(t, dirty)
+	assert.Equal(t, uint(3), v)
+}
+
 func mustPool(t *testing.T, cfg *database.Config) *pgxpool.Pool {
 	t.Helper()
 	conn, err := database.NewConnection(context.Background(), cfg, nil)
