@@ -19,6 +19,11 @@ import (
 // buy, and both would be bought) and never both.
 const LadderFireGrace = 24 * time.Hour
 
+// LadderCeilingWindow is the rolling window over which the claim sums the
+// commitment already fired for a config against the sweep ceiling. It is not
+// LadderFireGrace: the two are equal today but mean different things.
+const LadderCeilingWindow = 24 * time.Hour
+
 // The only term and payment option automated ladder buys use (owner decision
 // D6=A). Planning and the claim share them so a tranche is sized, stored and
 // bought as one offering.
@@ -34,12 +39,16 @@ func ladderGraceCutoff(asOf time.Time) time.Time {
 	return asOf.Add(-LadderFireGrace)
 }
 
-// LadderClaimFilter narrows a claim. Both fields are required and fail closed.
+// LadderClaimFilter narrows a claim. Every field is required and fails closed.
 type LadderClaimFilter struct {
 	// Layers are the layers that have an instrument builder; empty is an error.
 	Layers []ladder.LayerType
 	// TrancheIDs are the ids the pre-claim resolve step accepted; empty claims nothing.
 	TrancheIDs []string
+	// CeilingMicros is the config's sweep ceiling in micro-dollars of hourly
+	// commitment. The claim keeps the longest prefix of due rows that fits under
+	// it minus what the last LadderCeilingWindow already fired; <= 0 is an error.
+	CeilingMicros int64
 }
 
 // validate rejects an allowlist that would silently match nothing or, if a
@@ -52,6 +61,9 @@ func (f LadderClaimFilter) validate() error {
 		if err := l.Validate(); err != nil {
 			return fmt.Errorf("ClaimDueLadderTranches layer allowlist: %w", err)
 		}
+	}
+	if f.CeilingMicros <= 0 {
+		return fmt.Errorf("ClaimDueLadderTranches needs a positive ceiling, got %d micro-dollars", f.CeilingMicros)
 	}
 	return nil
 }
@@ -151,6 +163,14 @@ func (s *PostgresStore) TransitionLadderTrancheTx(ctx context.Context, tx pgx.Tx
 // run and any other offering are refused in SQL. A refused row is left
 // scheduled, keeps netting and is canceled as expired by the overdue sweep.
 // Run rows are only read, never locked, so a concurrent amend is not blocked.
+//
+// CeilingMicros caps the commitment fired in any rolling LadderCeilingWindow:
+// after the filters, the claim keeps the longest prefix (in date, id order)
+// whose exact micro-dollar sum fits under CeilingMicros minus every tranche of
+// this config whose execution was created in the window, in any status. It
+// stops at the first row that does not fit instead of skipping to a smaller
+// later one, and an exhausted budget claims nothing without an error. Trimmed
+// rows stay scheduled.
 func (s *PostgresStore) ClaimDueLadderTranches(
 	ctx context.Context,
 	configID string,
@@ -167,7 +187,7 @@ func (s *PostgresStore) ClaimDueLadderTranches(
 	}
 	var claimed []LadderTrancheDB
 	err := s.withLadderConfigLock(ctx, configID, func(tx pgx.Tx) error {
-		due, err := selectDueLadderTranchesTx(ctx, tx, configID, asOf, limit, filter)
+		due, err := claimableLadderTranchesTx(ctx, tx, configID, asOf, limit, filter)
 		if err != nil {
 			return err
 		}
@@ -197,10 +217,13 @@ func (s *PostgresStore) ClaimDueLadderTranches(
 	return claimed, nil
 }
 
-func selectDueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID string, asOf time.Time, limit int, filter LadderClaimFilter) ([]LadderTrancheDB, error) {
+// selectDueLadderTranchesTx returns the locked due rows and, in the same order,
+// each row's amount in exact micro-dollars.
+func selectDueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID string, asOf time.Time, limit int, filter LadderClaimFilter) ([]LadderTrancheDB, []int64, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id, config_id, run_id, layer_type, amount_usd_hr, term,
-		       payment_option, scheduled_date, status, settled_at, created_at, amount_basis, commitment_rate
+		       payment_option, scheduled_date, status, settled_at, created_at, amount_basis, commitment_rate,
+		       (amount_usd_hr * 1000000)::bigint
 		FROM ladder_tranches
 		WHERE config_id = $1
 		  AND status = 'scheduled'
@@ -222,23 +245,26 @@ func selectDueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID string, 
 	`, configID, asOf, ladderGraceCutoff(asOf), limit, filter.Layers, filter.TrancheIDs,
 		string(LadderTerm), string(LadderPayment), int64(LadderFireGrace/time.Second))
 	if err != nil {
-		return nil, fmt.Errorf("failed to select due ladder_tranches config_id=%s: %w", configID, err)
+		return nil, nil, fmt.Errorf("failed to select due ladder_tranches config_id=%s: %w", configID, err)
 	}
 	defer rows.Close()
 	var out []LadderTrancheDB
+	var micros []int64
 	for rows.Next() {
 		var tr LadderTrancheDB
+		var amountMicros int64
 		if err := rows.Scan(&tr.ID, &tr.ConfigID, &tr.RunID, &tr.LayerType, &tr.AmountUSDHr, &tr.Term,
-			&tr.PaymentOption, &tr.ScheduledDate, &tr.Status, &tr.SettledAt, &tr.CreatedAt, &tr.AmountBasis, &tr.CommitmentRate); err != nil {
-			return nil, fmt.Errorf("failed to scan due ladder_tranche: %w", err)
+			&tr.PaymentOption, &tr.ScheduledDate, &tr.Status, &tr.SettledAt, &tr.CreatedAt, &tr.AmountBasis, &tr.CommitmentRate, &amountMicros); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan due ladder_tranche: %w", err)
 		}
 		if _, err := trancheCommitmentRate(&tr); err != nil {
-			return nil, fmt.Errorf("invalid due ladder_tranche %s: %w", tr.ID, err)
+			return nil, nil, fmt.Errorf("invalid due ladder_tranche %s: %w", tr.ID, err)
 		}
 		out = append(out, tr)
+		micros = append(micros, amountMicros)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read due ladder_tranches: %w", err)
+		return nil, nil, fmt.Errorf("failed to read due ladder_tranches: %w", err)
 	}
-	return out, nil
+	return out, micros, nil
 }

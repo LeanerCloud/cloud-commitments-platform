@@ -45,13 +45,14 @@ func claimableTranche(cfgID string, amount float64, at time.Time) LadderTrancheD
 }
 
 // claimFilter allows compute-sp (the layer every fixture here uses) and exactly
-// the given rows, so a test keeps asserting the predicate it is about.
+// the given rows, so a test keeps asserting the predicate it is about. Its
+// ceiling never binds; ceiling tests set their own.
 func claimFilter(rows ...LadderTrancheDB) LadderClaimFilter {
 	ids := make([]string, len(rows))
 	for i := range rows {
 		ids[i] = rows[i].ID
 	}
-	return LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: ids}
+	return LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: ids, CeilingMicros: nonBindingCeilingMicros}
 }
 
 func trancheStatus(ctx context.Context, t *testing.T, store *PostgresStore, id string) ladder.TrancheStatus {

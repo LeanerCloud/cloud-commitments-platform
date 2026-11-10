@@ -81,7 +81,7 @@ func (r *ladderRig) firedTranche(headStatus string, headProof bool, age time.Dur
 	tr.RunID = &run.ID
 	require.NoError(r.t, r.store.SaveLadderTranches(r.ctx, []config.LadderTrancheDB{tr}))
 	claimed, err := r.store.ClaimDueLadderTranches(r.ctx, r.cfgID, time.Now(), 10,
-		config.LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: []string{tr.ID}},
+		config.LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: []string{tr.ID}, CeilingMicros: 1_000_000_000_000},
 		func(ctx context.Context, tx pgx.Tx, _ config.LadderTrancheDB) (string, error) {
 			var id string
 			scanErr := tx.QueryRow(ctx, `INSERT INTO purchase_executions (plan_id, scheduled_date, status, no_submission, created_at)

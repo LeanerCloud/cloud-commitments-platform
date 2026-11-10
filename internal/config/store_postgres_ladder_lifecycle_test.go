@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -70,6 +71,10 @@ func TestTransitionLadderTranche_RequiresReasonForFailedAndCanceled(t *testing.T
 	}
 }
 
+// nonBindingCeilingMicros is a ceiling no fixture reaches (the precision test
+// claims rows of 1e8 USD/hr), for tests about other claim predicates.
+const nonBindingCeilingMicros = math.MaxInt64
+
 func TestLadderClaimFilter_Validate(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -85,7 +90,7 @@ func TestLadderClaimFilter_Validate(t *testing.T) {
 		{"valid many", []ladder.LayerType{ladder.LayerComputeSP, ladder.LayerEC2InstanceSP}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			err := LadderClaimFilter{Layers: c.layers}.validate()
+			err := LadderClaimFilter{Layers: c.layers, CeilingMicros: nonBindingCeilingMicros}.validate()
 			if c.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -96,6 +101,14 @@ func TestLadderClaimFilter_Validate(t *testing.T) {
 	assert.ErrorContains(t, LadderClaimFilter{}.validate(), "layer")
 }
 
+func TestLadderClaimFilter_ValidateCeiling(t *testing.T) {
+	layers := []ladder.LayerType{ladder.LayerComputeSP}
+	for _, micros := range []int64{0, -1, math.MinInt64} {
+		assert.ErrorContains(t, LadderClaimFilter{Layers: layers, CeilingMicros: micros}.validate(), "ceiling", micros)
+	}
+	assert.NoError(t, LadderClaimFilter{Layers: layers, CeilingMicros: 1}.validate())
+}
+
 // Invalid input fails before the config lock and any SQL, so a nil DB proves
 // nothing was attempted and the callback never runs.
 func TestClaimDueLadderTranches_ValidatesBeforeSQL(t *testing.T) {
@@ -104,14 +117,14 @@ func TestClaimDueLadderTranches_ValidatesBeforeSQL(t *testing.T) {
 		t.Fatal("create must not run")
 		return "", nil
 	}
-	valid := LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: []string{"id"}}
+	valid := LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: []string{"id"}, CeilingMicros: nonBindingCeilingMicros}
 	asOf := time.Now()
 
 	_, err := s.ClaimDueLadderTranches(context.Background(), "cfg", asOf, 0, valid, create)
 	require.ErrorContains(t, err, "limit must be positive")
 	for _, layers := range [][]ladder.LayerType{nil, {}, {"compute_sp"}} {
 		claimed, err := s.ClaimDueLadderTranches(context.Background(), "cfg", asOf, 1,
-			LadderClaimFilter{Layers: layers, TrancheIDs: valid.TrancheIDs}, create)
+			LadderClaimFilter{Layers: layers, TrancheIDs: valid.TrancheIDs, CeilingMicros: nonBindingCeilingMicros}, create)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "layer")
 		assert.Nil(t, claimed)

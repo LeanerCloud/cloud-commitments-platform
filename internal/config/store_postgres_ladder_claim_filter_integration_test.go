@@ -68,7 +68,7 @@ func (f *claimFilterFixture) claim(limit int, layers []ladder.LayerType, ids ...
 
 func (f *claimFilterFixture) claimIDs(limit int, layers []ladder.LayerType, ids []string) ([]LadderTrancheDB, error) {
 	return f.store.ClaimDueLadderTranches(f.ctx, f.cfgID, f.asOf, limit,
-		LadderClaimFilter{Layers: layers, TrancheIDs: ids}, f.create)
+		LadderClaimFilter{Layers: layers, TrancheIDs: ids, CeilingMicros: nonBindingCeilingMicros}, f.create)
 }
 
 func (f *claimFilterFixture) all() []LadderTrancheDB {
