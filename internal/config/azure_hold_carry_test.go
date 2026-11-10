@@ -319,7 +319,42 @@ func TestCarryAzureHold_ExpiredIdsCarriedAcrossSkippedAzureCycle(t *testing.T) {
 	sweep := azureOf(t, got)
 	assert.Equal(t, []string{"a"}, sweep.ExpiredHoldAccountIDs)
 	assert.Equal(t, 1, sweep.Reasons[PartialReasonPricingHoldExpired])
-	assert.Empty(t, evict, "the account is not held this cycle, so nothing to delete")
+	assert.Equal(t, []string{"a"}, evict, "its stored row is evicted although the account is not held this cycle")
+}
+
+// An expired marker outlives account state while a row it protects exists, so
+// the purchase gate keeps refusing a survivor of a failed eviction.
+func TestCarryAzureHold_KeptExpiredWhileRowsRemain(t *testing.T) {
+	a := "a"
+	cases := []struct {
+		name         string
+		prev         *RecommendationsCollectionPartial
+		collects     []SuccessfulCollect
+		stored       map[string]bool
+		active       map[string]bool
+		wantExpired  []string
+		wantEvict    []string
+		wantNoMarker bool
+	}{
+		{name: "disabled account with a stored row stays expired", prev: expiredOnly("a"), stored: setOf("a"), wantExpired: []string{"a"}, wantEvict: []string{"a"}},
+		{name: "disabled account without rows ends the marker", prev: expiredOnly("a"), wantNoMarker: true},
+		{name: "active account without rows stays expired", prev: expiredOnly("a"), active: setOf("a"), wantExpired: []string{"a"}},
+		{name: "re-priced account drops out despite its old rows", prev: expiredOnly("a"), collects: azureCollect(&a), stored: setOf("a"), active: setOf("a"), wantNoMarker: true},
+		{name: "ambient key stays expired without rows or accounts", prev: expiredOnly(ambientAccountKey), wantExpired: []string{ambientAccountKey}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, evict := carryAzureHold(tc.prev, nil, tc.collects, tc.stored, tc.active, holdNow)
+			assert.Equal(t, tc.wantEvict, evict)
+			if tc.wantNoMarker {
+				assert.Nil(t, got)
+				return
+			}
+			sweep := azureOf(t, got)
+			assert.Equal(t, tc.wantExpired, sweep.ExpiredHoldAccountIDs)
+			assert.Equal(t, len(tc.wantExpired), sweep.Reasons[PartialReasonPricingHoldExpired])
+		})
+	}
 }
 
 func TestCarryAzureHold_ExpiredIdsClearedOnReprice(t *testing.T) {
@@ -364,6 +399,6 @@ func TestCarryAzureHold_ExpiredHeldAccountKeysIncludedEveryCycle(t *testing.T) {
 	assert.ElementsMatch(t, []string{"a", "c"}, evict, "the previously expired a and the newly expired c")
 
 	got, evict = carryAzureHold(got, holdOf("a"), nil, stored, active, now.Add(24*time.Hour))
-	assert.Equal(t, []string{"a"}, evict, "a is evicted again while it stays held")
+	assert.ElementsMatch(t, []string{"a", "c"}, evict, "both stay evicted while their rows are stored")
 	assert.Equal(t, []string{"a", "c"}, azureOf(t, got).ExpiredHoldAccountIDs)
 }

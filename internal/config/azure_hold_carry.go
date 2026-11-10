@@ -33,13 +33,14 @@ var ambientAccountKey = uuid.Nil.String()
 // so the store deletes its stale rows (the scheduler would otherwise withhold it
 // again every cycle). HeldSince carries when each hold began; a hold without a
 // recorded start (written before the field existed) starts now. Expired ids are
-// carried until the account re-prices or is not in active (the enabled Azure
-// accounts; the ambient key is always active), are never re-aged or re-held, and
-// are evicted each cycle they are still held. now is the collection time.
+// carried until the account re-prices or has neither stored rows nor an entry in
+// active (the enabled Azure accounts; the ambient key is always active), are
+// never re-aged or re-held, and are evicted each cycle while stored rows remain.
+// now is the collection time.
 func carryAzureHold(prev, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect, stored, active map[string]bool, now time.Time) (merged *RecommendationsCollectionPartial, evict []string) {
 	prevSweep := azureSweep(prev)
 	repriced := repricedKeys(collects)
-	expiredPrev := keptExpired(prevSweep, repriced, active)
+	expiredPrev := keptExpired(prevSweep, repriced, stored, active)
 	carried, unresolved := carriedFromPrev(prev, repriced, stored)
 	if len(carried) == 0 && !unresolved && len(expiredPrev) == 0 && !holdsPricing(azureSweep(partial)) {
 		return partial, nil
@@ -56,7 +57,18 @@ func carryAzureHold(prev, partial *RecommendationsCollectionPartial, collects []
 	aged := classifyHeld(sweep, holdAging{prior: prevSweep.heldSince(), carried: carriedSet, expiredPrev: expiredPrev, now: now})
 	applyAging(sweep, aged)
 	setExpired(sweep, expiredPrev, aged.expired)
-	return partial, aged.evict
+	return partial, evictKeptExpired(aged.evict, expiredPrev, stored)
+}
+
+// evictKeptExpired adds the kept-expired accounts that still have stored rows to
+// evict, held this cycle or not, so a row the previous eviction skipped is retried.
+func evictKeptExpired(evict []string, expiredPrev, stored map[string]bool) []string {
+	for _, id := range slices.Sorted(maps.Keys(expiredPrev)) {
+		if stored[id] && !slices.Contains(evict, id) {
+			evict = append(evict, id)
+		}
+	}
+	return evict
 }
 
 // carriedFromPrev returns the previously held accounts not re-priced this cycle
@@ -185,14 +197,16 @@ func setExpired(sweep *PartialProviderSweep, prevExpired map[string]bool, newly 
 }
 
 // keptExpired returns the previously expired accounts that have not re-priced
-// and are still enabled Azure accounts (the ambient key is always active).
-func keptExpired(prev *PartialProviderSweep, repriced, active map[string]bool) map[string]bool {
+// and either still have stored rows (a survivor of a skipped eviction, which the
+// purchase gate must keep refusing) or are enabled Azure accounts (the ambient key
+// is always active).
+func keptExpired(prev *PartialProviderSweep, repriced, stored, active map[string]bool) map[string]bool {
 	kept := map[string]bool{}
 	if prev == nil {
 		return kept
 	}
 	for _, id := range prev.ExpiredHoldAccountIDs {
-		if !repriced[id] && (id == ambientAccountKey || active[id]) {
+		if !repriced[id] && (id == ambientAccountKey || active[id] || stored[id]) {
 			kept[id] = true
 		}
 	}

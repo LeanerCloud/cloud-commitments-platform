@@ -255,3 +255,36 @@ func TestUpsertRecommendationsWithPartial_ExpiredEvictionSkipsRowsLockedByAnothe
 	require.Zero(t, e.rowCount(t, acct), "the next cycle deletes the row that was locked")
 	e.requireExpiredOnly(t, acct)
 }
+
+// Disabling the account must not end the marker while a survivor row exists: the
+// next cycle reads the stored rows before it evicts them, so the marker ends one
+// cycle after the row is deleted.
+func TestUpsertRecommendationsWithPartial_SurvivorThenDisableKeepsMarkerUntilDeleted(t *testing.T) {
+	e := newBoundEnv(t)
+	acct := e.account(t, "sub-bound-disable")
+	require.NoError(t, e.store.UpsertRecommendations(e.ctx, e.base.Add(-48*time.Hour),
+		[]config.RecommendationRecord{azureAccountRec("r1", acct, "D2"), azureAccountRec("r2", acct, "D4")}, nil))
+	e.seedHold(t, acct, e.base.Add(-config.PricingHoldMaxAge))
+	hold, err := e.db.Begin(e.ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = hold.Rollback(context.Background()) })
+	_, err = hold.Exec(e.ctx, `SELECT id FROM recommendations WHERE provider = 'azure' AND account_key::text = $1 ORDER BY id LIMIT 1 FOR UPDATE`, acct)
+	require.NoError(t, err)
+	require.NoError(t, e.store.UpsertRecommendationsWithPartial(e.ctx, e.base, nil, nil, holdPartial(acct)))
+	require.Equal(t, 1, e.rowCount(t, acct))
+
+	_, err = e.db.Exec(e.ctx, `UPDATE cloud_accounts SET enabled = false WHERE id = $1`, acct)
+	require.NoError(t, err)
+	require.NoError(t, hold.Rollback(e.ctx))
+
+	// Cycle 2 reads the stored rows before it evicts: the marker stays, the row goes.
+	require.NoError(t, e.store.UpsertRecommendationsWithPartial(e.ctx, e.base.Add(time.Minute), nil, nil, nil))
+	require.Zero(t, e.rowCount(t, acct), "an expired account's surviving row is evicted although nothing is held")
+	e.requireExpiredOnly(t, acct)
+
+	// Cycle 3 finds no rows and no enabled account: the marker ends.
+	require.NoError(t, e.store.UpsertRecommendationsWithPartial(e.ctx, e.base.Add(2*time.Minute), nil, nil, nil))
+	fresh, err := e.store.GetRecommendationsFreshness(e.ctx)
+	require.NoError(t, err)
+	require.Nil(t, fresh.LastCollectionPartial)
+}
