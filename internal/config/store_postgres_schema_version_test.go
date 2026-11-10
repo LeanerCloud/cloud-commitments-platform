@@ -120,3 +120,49 @@ func TestReadoptMigrationVersionNamesTheMigrationFile(t *testing.T) {
 	_, err := os.Stat(filepath.Join("..", "database", "postgres", "migrations", name))
 	require.NoError(t, err, "readoptMigrationVersion no longer matches the migration file")
 }
+
+// The ceiling paths run before migration 165 is applied (#70).
+func TestSweepCeilingSchemaReady(t *testing.T) {
+	t.Parallel()
+	v := sweepCeilingMigrationVersion
+	cases := []struct {
+		name string
+		row  fakeVersionRow
+		want bool
+	}{
+		{"nothing applied", fakeVersionRow{err: pgx.ErrNoRows}, false},
+		{"before the migration", fakeVersionRow{version: v - 1}, false},
+		{"at the migration", fakeVersionRow{version: v}, true},
+		{"at the migration, dirty", fakeVersionRow{version: v, dirty: true}, false},
+		{"after it, even with a later dirty migration", fakeVersionRow{version: v + 1, dirty: true}, true},
+		{"unreadable", fakeVersionRow{err: assert.AnError}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := sweepCeilingSchemaReady(context.Background(), fakeVersionQuerier{tc.row})
+			if errors.Is(tc.row.err, assert.AnError) {
+				require.ErrorIs(t, err, assert.AnError)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestRequireSweepCeilingSchema(t *testing.T) {
+	t.Parallel()
+	err := requireSweepCeilingSchema(context.Background(), fakeVersionQuerier{fakeVersionRow{version: sweepCeilingMigrationVersion - 1}})
+	require.ErrorIs(t, err, ErrLadderCeilingUnavailable)
+	require.NoError(t, requireSweepCeilingSchema(context.Background(), fakeVersionQuerier{fakeVersionRow{version: sweepCeilingMigrationVersion}}))
+	require.ErrorIs(t, requireSweepCeilingSchema(context.Background(), fakeVersionQuerier{fakeVersionRow{err: assert.AnError}}), assert.AnError)
+}
+
+// The constant must name this change's migration file, so a renumbering that
+// forgets it fails here instead of failing closed in production.
+func TestSweepCeilingMigrationVersionNamesTheMigrationFile(t *testing.T) {
+	name := fmt.Sprintf("%06d_ladder_configs_sweep_ceiling.up.sql", sweepCeilingMigrationVersion)
+	_, err := os.Stat(filepath.Join("..", "database", "postgres", "migrations", name))
+	require.NoError(t, err, "sweepCeilingMigrationVersion no longer matches the migration file")
+}

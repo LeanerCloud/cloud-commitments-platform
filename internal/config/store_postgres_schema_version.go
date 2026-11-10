@@ -23,10 +23,18 @@ const directResolveMigrationVersion = 163
 // 000164_purchase_executions_approval_readopted_at in internal/database/postgres/migrations.
 const readoptMigrationVersion = 164
 
+// sweepCeilingMigrationVersion is the migration that adds
+// ladder_configs.max_hourly_commit_per_sweep (#70). It mirrors the file
+// 000165_ladder_configs_sweep_ceiling in internal/database/postgres/migrations.
+const sweepCeilingMigrationVersion = 165
+
 // ReadoptMaxExpiredAge bounds how long after expiry an unapproved plan-step
 // root may be re-armed. updated_at is the expiry time because nothing writes an
 // expired row afterwards; a future writer that bumps it only widens the window.
 const ReadoptMaxExpiredAge = 30 * 24 * time.Hour
+
+// ErrLadderCeilingUnavailable: the sweep-ceiling migration is not applied yet.
+var ErrLadderCeilingUnavailable = errors.New("the ladder sweep ceiling is not available until the database migration is applied")
 
 // ErrReadoptNotReady: the re-adoption migration is not applied yet.
 var ErrReadoptNotReady = errors.New("re-arming an expired plan step is not available until the database migration is applied")
@@ -99,4 +107,16 @@ func readoptSchemaReady(ctx context.Context, q rowQuerier) (bool, error) {
 		return false, err
 	}
 	return version > readoptMigrationVersion || (version == readoptMigrationVersion && !dirty), nil
+}
+
+// sweepCeilingSchemaReady reports whether max_hourly_commit_per_sweep exists.
+// Same N-1 rule as settlementSchemaReady. A plain read is used instead of
+// catching SQLSTATE 42703 because a failed statement would abort the caller's
+// transaction.
+func sweepCeilingSchemaReady(ctx context.Context, q rowQuerier) (bool, error) {
+	version, dirty, found, err := readSchemaVersion(ctx, q)
+	if err != nil || !found {
+		return false, err
+	}
+	return version > sweepCeilingMigrationVersion || (version == sweepCeilingMigrationVersion && !dirty), nil
 }
