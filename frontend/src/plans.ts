@@ -1359,13 +1359,29 @@ function renderPlanAccountChips(): void {
     removeBtn.title = 'Remove';
     removeBtn.appendChild(createIcon('x'));
     removeBtn.addEventListener('click', () => {
+      const removedAt = planSelectedAccounts.findIndex(a => a.id === acct.id);
       planSelectedAccounts = planSelectedAccounts.filter(a => a.id !== acct.id);
       renderPlanAccountChips();
       updatePlanAccountIdsField();
+      focusAfterChipRemoval(removedAt);
     });
     chip.appendChild(removeBtn);
     container.appendChild(chip);
   });
+}
+
+/**
+ * Re-rendering destroys the focused remove button, so keyboard users would
+ * lose their place. Focus the next chip, else the previous one, else the search box.
+ */
+function focusAfterChipRemoval(removedAt: number): void {
+  const buttons = document.querySelectorAll<HTMLElement>('#plan-accounts-selected .account-chip-remove');
+  const target = buttons.item(removedAt) ?? buttons.item(buttons.length - 1);
+  if (target) {
+    target.focus();
+    return;
+  }
+  document.getElementById('plan-account-search')?.focus();
 }
 
 /**
