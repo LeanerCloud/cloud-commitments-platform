@@ -1338,7 +1338,7 @@ describe('Settings Module', () => {
       (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'custom@example.com';
       (document.getElementById('setting-auto-collect') as HTMLInputElement).checked = false;
       (document.getElementById('setting-default-term') as HTMLSelectElement).value = '1';
-      (document.getElementById('setting-default-payment') as HTMLSelectElement).value = 'no-upfront';
+      (document.getElementById('setting-default-payment') as HTMLSelectElement).value = 'all-upfront';
       (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '50';
       (document.getElementById('setting-notification-days') as HTMLInputElement).value = '7';
     });
@@ -1363,7 +1363,7 @@ describe('Settings Module', () => {
       expect((document.getElementById('setting-notification-email') as HTMLInputElement).value).toBe('');
       expect((document.getElementById('setting-auto-collect') as HTMLInputElement).checked).toBe(true);
       expect((document.getElementById('setting-default-term') as HTMLSelectElement).value).toBe('3');
-      expect((document.getElementById('setting-default-payment') as HTMLSelectElement).value).toBe('all-upfront');
+      expect((document.getElementById('setting-default-payment') as HTMLSelectElement).value).toBe('no-upfront');
       expect((document.getElementById('setting-default-coverage') as HTMLInputElement).value).toBe('80');
       expect((document.getElementById('setting-notification-days') as HTMLInputElement).value).toBe('3');
     });
@@ -1414,6 +1414,43 @@ describe('Settings Module', () => {
       expect(tabBtn?.classList.contains('has-unsaved')).toBe(true);
       const saveBar = document.querySelector('.settings-buttons') as HTMLElement | null;
       expect(saveBar?.classList.contains('dirty')).toBe(true);
+    });
+  });
+
+  describe('default payment falls back to no-upfront (#1758)', () => {
+    const paymentSelect = (): HTMLSelectElement =>
+      document.getElementById('setting-default-payment') as HTMLSelectElement;
+
+    test('loadGlobalSettings uses no-upfront when the config has no default_payment', async () => {
+      paymentSelect().value = 'all-upfront';
+      (api.getConfig as jest.Mock).mockResolvedValue({
+        global: { enabled_providers: ['aws'], default_term: 3, default_coverage: 80, notification_days_before: 3 },
+        services: [],
+      });
+
+      await loadGlobalSettings();
+
+      expect(paymentSelect().value).toBe('no-upfront');
+    });
+
+    test('saveGlobalSettings sends no-upfront when the select has no value', async () => {
+      (api.getConfig as jest.Mock).mockResolvedValue({
+        global: {
+          enabled_providers: ['aws'], default_term: 3, default_payment: 'all-upfront',
+          default_coverage: 80, notification_days_before: 3,
+        },
+        services: [],
+      });
+      await loadGlobalSettings();
+      paymentSelect().value = '';
+      (api.updateConfig as jest.Mock).mockClear().mockResolvedValue({});
+      window.alert = jest.fn();
+
+      await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+      expect(api.updateConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ default_payment: 'no-upfront' }),
+      );
     });
   });
 

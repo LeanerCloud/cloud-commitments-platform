@@ -101,13 +101,15 @@ describe('Settings Save payment tokens (issue #545)', () => {
   it('sends the Azure option the user picked, and GCP monthly whatever the global default is', async () => {
     await loadGlobalSettings();
     editEveryServiceTerm();
-    (document.getElementById('azure-vm-payment') as HTMLSelectElement).value = 'monthly';
+    // Pick upfront, not the monthly default, so the assertion proves the
+    // user's pick is sent and the untouched card keeps its default.
+    (document.getElementById('azure-vm-payment') as HTMLSelectElement).value = 'upfront';
     (document.getElementById('setting-default-payment') as HTMLSelectElement).value = 'partial-upfront';
     await saveGlobalSettings(new Event('submit'));
 
     const calls = serviceCalls();
-    expect(calls.find(c => c.provider === 'azure' && c.service === 'compute')!.payment).toBe('monthly');
-    expect(calls.find(c => c.provider === 'azure' && c.service === 'relational-db')!.payment).toBe('upfront');
+    expect(calls.find(c => c.provider === 'azure' && c.service === 'compute')!.payment).toBe('upfront');
+    expect(calls.find(c => c.provider === 'azure' && c.service === 'relational-db')!.payment).toBe('monthly');
     for (const c of calls.filter(x => x.provider === 'gcp')) expect(c.payment).toBe('monthly');
   });
 
@@ -150,7 +152,27 @@ describe('Settings Save payment tokens (issue #545)', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
 
     expect((document.getElementById('aws-ec2-payment') as HTMLSelectElement).value).toBe('partial-upfront');
-    expect((document.getElementById('azure-vm-payment') as HTMLSelectElement).value).toBe('upfront');
+    expect((document.getElementById('azure-vm-payment') as HTMLSelectElement).value).toBe('monthly');
+  });
+
+  it.each(['vm', 'sql', 'cosmosdb', 'redis', 'search'])(
+    'the Azure %s payment select starts on monthly, never upfront (issue #1758)',
+    svc => {
+      expect((document.getElementById(`azure-${svc}-payment`) as HTMLSelectElement).value).toBe('monthly');
+    },
+  );
+
+  it('the global default payment select starts on no-upfront (issue #1758)', () => {
+    expect((document.getElementById('setting-default-payment') as HTMLSelectElement).value).toBe('no-upfront');
+  });
+
+  it('a term-only edit on an Azure card with no stored row saves monthly, not upfront (issue #1758)', async () => {
+    await loadGlobalSettings();
+    (document.getElementById('azure-vm-term') as HTMLSelectElement).value = '1';
+    await saveGlobalSettings(new Event('submit'));
+
+    const call = serviceCalls().find(c => c.provider === 'azure' && c.service === 'compute');
+    expect(call?.payment).toBe('monthly');
   });
 
   it('loads a persisted Azure payment into its card', async () => {
@@ -169,9 +191,9 @@ describe('Settings Save payment tokens (issue #545)', () => {
     });
     await loadGlobalSettings();
     const azurePayment = document.getElementById('azure-vm-payment') as HTMLSelectElement;
-    azurePayment.value = 'monthly';
+    azurePayment.value = 'upfront';
     const awsPayment = document.getElementById('aws-ec2-payment') as HTMLSelectElement;
-    awsPayment.value = 'no-upfront';
+    awsPayment.value = 'all-upfront';
 
     await saveGlobalSettings(new Event('submit'));
 
@@ -198,7 +220,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
     (api.updateServiceConfig as jest.Mock).mockRejectedValue(denied());
     await loadGlobalSettings();
     const awsPayment = document.getElementById('aws-ec2-payment') as HTMLSelectElement;
-    awsPayment.value = 'no-upfront';
+    awsPayment.value = 'all-upfront';
 
     await saveGlobalSettings(new Event('submit'));
 
@@ -314,7 +336,12 @@ describe('Settings Save payment tokens (issue #545)', () => {
     const { confirmDialog } = jest.requireMock('../confirmDialog') as { confirmDialog: jest.Mock };
     await loadGlobalSettings();
     setupSettingsHandlers();
-    const awsCount = document.querySelectorAll('select[id^="aws-"][id$="-payment"]').length;
+    const awsSelects = [...document.querySelectorAll<HTMLSelectElement>('select[id^="aws-"][id$="-payment"]')];
+    // RDS rejects 3yr No Upfront, so the page clamps its pre-selected no-upfront
+    // to Partial Upfront on load; it is already at the new value, so not counted.
+    expect(document.getElementById('aws-rds-payment')).toHaveProperty('value', 'partial-upfront');
+    const awsCount = awsSelects.filter(sel => sel.value !== 'partial-upfront').length;
+    expect(awsCount).toBe(awsSelects.length - 1);
     const def = document.getElementById('setting-default-payment') as HTMLSelectElement;
     def.value = 'partial-upfront';
     def.dispatchEvent(new Event('change'));
