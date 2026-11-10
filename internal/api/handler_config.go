@@ -72,7 +72,7 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 	if parseErr != nil {
 		return nil, parseErr
 	}
-	_, gracePresent := present["grace_period_days"]
+	gracePresent := bodyHasKey(present, "grace_period_days")
 	modeSent := riExchangeModeSent(present)
 	providersSent := bodyHasKey(present, "enabled_providers")
 	if err := h.requireGlobalConfigScope(ctx, session); err != nil {

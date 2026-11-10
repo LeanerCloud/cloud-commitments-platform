@@ -419,6 +419,70 @@ func TestHandler_updateConfig_GracePeriodDaysReplaceNotMerge(t *testing.T) {
 	mockStore.AssertNotCalled(t, "ListServiceConfigs", mock.Anything)
 }
 
+// putGraceBody runs PUT /api/config with body against a stored grace map of
+// {aws:7, azure:3} and returns the map that reached SaveGlobalConfig.
+func putGraceBody(t *testing.T, body string) map[string]int {
+	t.Helper()
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockStore.AssertExpectations(t); mockAuth.AssertExpectations(t) })
+
+	mockAuth.On("ValidateSession", ctx, "admin-token").
+		Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}, nil)
+	mockAuth.grantAdmin()
+	mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+		EnabledProviders:               []string{"aws"},
+		DefaultTerm:                    3,
+		DefaultPayment:                 "all-upfront",
+		DefaultCoverage:                80,
+		CollectionSchedule:             "daily",
+		NotificationDaysBefore:         3,
+		RecommendationsCacheStaleHours: 24,
+		RecommendationsLookbackDays:    7,
+		GracePeriodDays:                map[string]int{"aws": 7, "azure": 3},
+	}, nil)
+	var saved config.GlobalConfig
+	mockStore.On("SaveGlobalConfig", ctx, mock.AnythingOfType("*config.GlobalConfig")).
+		Run(func(args mock.Arguments) { saved = *args.Get(1).(*config.GlobalConfig) }).
+		Return(nil)
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	_, err := handler.updateConfig(ctx, &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer admin-token"},
+		Body:    body,
+	})
+	require.NoError(t, err)
+	return saved.GracePeriodDays
+}
+
+// json.Unmarshal matches keys case-insensitively, so the replace-not-merge
+// presence check must too (#1658). The two replace rows with a non-exact key
+// fail on the exact-case lookup (the stored azure entry survives the merge);
+// the exact-key and null rows are controls: Unmarshal of null into a map
+// already clears it, so null handling is pinned only as clear-on-null.
+func TestHandler_updateConfig_GracePeriodDaysKeyCase(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want map[string]int
+	}{
+		{"exact key replaces", `{"grace_period_days": {"aws": 5}}`, map[string]int{"aws": 5}},
+		{"mixed case replaces", `{"Grace_Period_Days": {"aws": 5}}`, map[string]int{"aws": 5}},
+		{"upper case replaces", `{"GRACE_PERIOD_DAYS": {"aws": 5}}`, map[string]int{"aws": 5}},
+		{"absent key preserves", `{"default_term": 1}`, map[string]int{"aws": 7, "azure": 3}},
+		// An explicit null clears the stored map for every casing (json.Unmarshal
+		// of null into a map sets it to nil); these rows pin that as a control.
+		{"exact null clears", `{"grace_period_days": null}`, nil},
+		{"mixed case null clears", `{"Grace_Period_Days": null}`, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, putGraceBody(t, tt.body))
+		})
+	}
+}
+
 // serializedConfigStore is a concurrency-test store double. Its
 // UpdateGlobalConfigAtomic guards the read-modify-write with a real mutex,
 // modeling the transaction-scoped advisory lock that
