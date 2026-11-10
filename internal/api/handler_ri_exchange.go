@@ -3113,10 +3113,8 @@ func (r *RIExchangeConfigUpdateRequest) validate() error {
 	if !config.IsValidRIExchangeMode(r.Mode) {
 		return NewClientError(400, "mode must be 'manual' or 'auto'")
 	}
-	// 0 is refused too: the store replaces a stored 0 with the 95 default, so
-	// accepting it would silently apply a different threshold.
-	if r.UtilizationThreshold <= 0 || r.UtilizationThreshold > 100 {
-		return NewClientError(400, "utilization_threshold must be greater than 0 and at most 100")
+	if err := config.ValidateRIExchangeUtilizationThreshold("utilization_threshold", r.UtilizationThreshold); err != nil {
+		return NewClientError(400, err.Error())
 	}
 	if r.LookbackDays < 1 || r.LookbackDays > 365 {
 		return NewClientError(400, "lookback_days must be between 1 and 365")

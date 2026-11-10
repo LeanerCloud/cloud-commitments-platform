@@ -1980,7 +1980,7 @@ function renderAutomationSettings(container: HTMLElement, config: RIExchangeConf
     + automationRow('ri-exchange-mode', 'Mode',
         '<select id="ri-exchange-mode" aria-describedby="ri-exchange-mode-hint">' + modeOptions + '</select>')
     + automationRow('ri-exchange-threshold', 'Utilization Threshold (%)',
-        '<input type="number" id="ri-exchange-threshold" aria-describedby="ri-exchange-threshold-hint" value="' + numberAttr(config.utilization_threshold) + '" min="0" max="100" step="0.1">')
+        '<input type="number" id="ri-exchange-threshold" aria-describedby="ri-exchange-threshold-hint" value="' + numberAttr(config.utilization_threshold) + '" min="0.1" max="100" step="0.1">')
     + automationRow('ri-exchange-max-per-exchange', 'Max Payment Per Exchange (USD)',
         '<input type="number" id="ri-exchange-max-per-exchange" aria-describedby="ri-exchange-max-per-exchange-hint" value="' + numberAttr(config.max_payment_per_exchange_usd) + '" min="0" step="0.01">')
     + automationRow('ri-exchange-max-daily', 'Max Payment Daily (USD)',
@@ -2056,11 +2056,11 @@ export async function saveAutomationSettings(): Promise<void> {
   const mode = modeInput.value as RIExchangeConfig['mode'];
 
   // Client-side validation
-  if (isNaN(threshold) || threshold < 0 || threshold > 100) {
+  if (isNaN(threshold) || threshold <= 0 || threshold > 100) {
     messageContainer.textContent = '';
     const p = document.createElement('p');
     p.className = 'error';
-    p.textContent = 'Utilization threshold must be between 0 and 100.';
+    p.textContent = 'Utilization threshold must be greater than 0 and at most 100.';
     messageContainer.appendChild(p);
     return;
   }

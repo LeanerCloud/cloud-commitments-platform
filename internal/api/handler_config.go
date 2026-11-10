@@ -105,6 +105,7 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 		switchBefore = existing.AutoPurchaseEnabled
 		ladderBefore = existing.LadderExecutionEnabled
 		delayBefore := existing.PurchaseDelayHours
+		thresholdBefore := existing.RIExchangeUtilizationThreshold
 
 		// grace_period_days is a map: json.Unmarshal into a non-nil map MERGES
 		// keys (an omitted key can never be deleted). When the caller sends the
@@ -116,7 +117,8 @@ func (h *Handler) updateConfig(ctx context.Context, req *events.LambdaFunctionUR
 		if uErr := json.Unmarshal([]byte(req.Body), existing); uErr != nil {
 			return NewClientError(400, "invalid request body")
 		}
-		if vErr := validateGlobalConfigWrite(existing, modeSent || existing.RIExchangeMode != before.mode, providersSent, h.refusesDelay(present, delayBefore, existing.PurchaseDelayHours)); vErr != nil {
+		thresholdWritten := riThresholdWritten(present, thresholdBefore, existing.RIExchangeUtilizationThreshold)
+		if vErr := validateGlobalConfigWrite(existing, modeSent || existing.RIExchangeMode != before.mode, providersSent, thresholdWritten, h.refusesDelay(present, delayBefore, existing.PurchaseDelayHours)); vErr != nil {
 			return vErr
 		}
 		if gErr := requireRIExchangeAutoModeGrant(before, riExchangeArmStateOf(existing), grants.riExchange); gErr != nil {
@@ -174,6 +176,17 @@ func bodyWritesKey(present map[string]json.RawMessage, name string) bool {
 	return false
 }
 
+// riThresholdKey is the global-config field holding the RI exchange
+// utilization threshold.
+const riThresholdKey = "ri_exchange_utilization_threshold"
+
+// riThresholdWritten reports whether this write sets the utilization threshold:
+// the body carries a non-null key, or decoding changed the stored value (a later
+// duplicate key of null hides an earlier write from the presence map).
+func riThresholdWritten(present map[string]json.RawMessage, before, after float64) bool {
+	return bodyWritesKey(present, riThresholdKey) || after != before
+}
+
 // validateGlobalConfigWrite validates the merged config as a 400.
 //
 // ri_exchange_mode is checked when explicitly set or changed by JSON decoding
@@ -184,7 +197,7 @@ func bodyWritesKey(present map[string]json.RawMessage, name string) bool {
 // such as "Auto". Such a row keeps its value until a caller sends a valid one,
 // and armed() keeps treating it as auto. Runs before the arming gates so a
 // malformed write never reveals grant state.
-func validateGlobalConfigWrite(cfg *config.GlobalConfig, modeSent, providersSent, delayRefused bool) error {
+func validateGlobalConfigWrite(cfg *config.GlobalConfig, modeSent, providersSent, thresholdWritten, delayRefused bool) error {
 	// Presence-based, not in Validate: a fresh install stores [] and partial
 	// saves that omit the key must keep working.
 	if providersSent && len(cfg.EnabledProviders) == 0 {
@@ -192,6 +205,14 @@ func validateGlobalConfigWrite(cfg *config.GlobalConfig, modeSent, providersSent
 	}
 	if modeSent && !config.IsValidRIExchangeMode(cfg.RIExchangeMode) {
 		return NewClientError(400, "ri_exchange_mode must be 'manual' or 'auto'")
+	}
+	// A threshold the caller writes is held to the stricter rule PUT
+	// /api/ri-exchange/config applies (0 would be stored as 95); Validate below
+	// stays lenient because it also runs on stored rows.
+	if thresholdWritten {
+		if err := config.ValidateRIExchangeUtilizationThreshold(riThresholdKey, cfg.RIExchangeUtilizationThreshold); err != nil {
+			return NewClientError(400, err.Error())
+		}
 	}
 	if err := cfg.Validate(); err != nil {
 		return NewClientError(400, fmt.Sprintf("validation error: %s", err))

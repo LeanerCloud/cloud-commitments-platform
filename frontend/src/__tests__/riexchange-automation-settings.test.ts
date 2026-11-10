@@ -15,6 +15,7 @@
 
 jest.mock('../api', () => ({
   getRIExchangeConfig: jest.fn(),
+  updateRIExchangeConfig: jest.fn(),
 }));
 
 jest.mock('../settings', () => ({
@@ -28,7 +29,7 @@ jest.mock('../state', () => ({
 
 import * as api from '../api';
 import * as settings from '../settings';
-import { loadAutomationSettings } from '../riexchange';
+import { loadAutomationSettings, saveAutomationSettings } from '../riexchange';
 
 function makePermissionError(status: number, message: string): Error & { status: number } {
   const err = new Error(message) as Error & { status: number };
@@ -336,5 +337,42 @@ describe('loadAutomationSettings: every field explains itself (issue #1689)', ()
     const hint = hintFor('ri-exchange-max-per-exchange');
     expect(hint).toMatch(/not proposed in either mode/);
     expect(hint).toMatch(/At 0, no exchange with a payment due is proposed/);
+  });
+});
+
+// A threshold of 0 used to be accepted, and the server stored 95 instead. The
+// form refuses it up front, with the server's wording (issue #1928).
+describe('saveAutomationSettings: utilization threshold range (issue #1928)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  async function renderWithThreshold(value: string): Promise<void> {
+    setupContainer();
+    (api.getRIExchangeConfig as jest.Mock).mockResolvedValueOnce({
+      auto_exchange_enabled: false, mode: 'manual', utilization_threshold: 95,
+      max_payment_per_exchange_usd: 100, max_payment_daily_usd: 500, lookback_days: 30,
+    });
+    await loadAutomationSettings();
+    (document.getElementById('ri-exchange-threshold') as HTMLInputElement).value = value;
+  }
+
+  test.each(['0', '-1', '100.5', ''])('threshold %p is refused before any API call', async (value) => {
+    await renderWithThreshold(value);
+
+    await saveAutomationSettings();
+
+    expect(document.getElementById('ri-exchange-settings-message')?.textContent)
+      .toBe('Utilization threshold must be greater than 0 and at most 100.');
+    expect(api.updateRIExchangeConfig).not.toHaveBeenCalled();
+  });
+
+  test('a threshold above 0 is saved', async () => {
+    await renderWithThreshold('0.1');
+    (api.updateRIExchangeConfig as jest.Mock).mockResolvedValueOnce({});
+
+    await saveAutomationSettings();
+
+    expect(api.updateRIExchangeConfig).toHaveBeenCalledWith(expect.objectContaining({ utilization_threshold: 0.1 }));
   });
 });

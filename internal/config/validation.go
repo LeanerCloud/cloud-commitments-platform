@@ -327,14 +327,28 @@ func (c *GlobalConfig) Validate() error {
 // ri_exchange_utilization_threshold, a percentage.
 const MaxRIExchangeUtilizationThreshold = 100.0
 
+// ValidateRIExchangeUtilizationThreshold is the rule for a utilization threshold
+// a caller writes: above 0 and at most MaxRIExchangeUtilizationThreshold. 0 is
+// refused because the store replaces a stored 0 with its 95 default, so
+// accepting it would silently apply a different threshold. Both write routes
+// (PUT /api/ri-exchange/config and PUT /api/config) use it; name is the field
+// as that route's caller knows it.
+func ValidateRIExchangeUtilizationThreshold(name string, t float64) error {
+	if math.IsNaN(t) || t <= 0 || t > MaxRIExchangeUtilizationThreshold {
+		return fmt.Errorf("%s must be greater than 0 and at most %v, got: %v", name, MaxRIExchangeUtilizationThreshold, t)
+	}
+	return nil
+}
+
 // validateRIExchangeLimits rejects an RI-exchange money cap that is negative
 // or not finite, and a utilization threshold outside
 // [0, MaxRIExchangeUtilizationThreshold] (#120). PUT /api/config unmarshals
 // onto the whole GlobalConfig, so without this a negative daily cap reached
-// the store unchecked; the bounds match the ones the dedicated
-// PUT /api/ri-exchange/config body already enforces, so both routes accept
-// the same values. 0 stays valid for every field: a 0 cap is the "not
-// configured" state the exchange guard refuses to run under.
+// the store unchecked. 0 stays valid for every field here: a 0 cap is the "not
+// configured" state the exchange guard refuses to run under, and this check
+// also runs on stored rows, so a legacy 0 threshold must not block unrelated
+// saves. A threshold the caller WRITES is held to
+// ValidateRIExchangeUtilizationThreshold by the write routes.
 func (c *GlobalConfig) validateRIExchangeLimits() error {
 	caps := []struct {
 		name  string
