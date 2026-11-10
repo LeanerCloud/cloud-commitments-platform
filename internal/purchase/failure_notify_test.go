@@ -179,7 +179,7 @@ func TestMultiAccountFailureNotifiesOncePerFailedAccountNotRoot(t *testing.T) {
 	running := *exec
 	running.Status = "running"
 	store.On("TransitionExecutionStatus", ctx, "root-714",
-		[]string{"approved", "pending", "notified"}, "running", (*string)(nil)).Return(&running, nil)
+		[]string{"pending", "notified"}, "running", (*string)(nil)).Return(&running, nil)
 	store.On("GetPurchasePlan", mock.Anything, "plan-x").Return(plan, nil).Maybe()
 	store.GetPlanAccountsFn = func(context.Context, string) ([]config.CloudAccount, error) { return accounts, nil }
 	store.On("CompletePlanStep", ctx, "plan-x", mock.Anything).Return(nil).Maybe()

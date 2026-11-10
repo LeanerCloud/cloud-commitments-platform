@@ -178,7 +178,7 @@ func TestApproveAndExecuteRefusesArmedAzureSavingsPlanRetry(t *testing.T) {
 func TestClaimAndExecuteRefusesArmedAzureSavingsPlanRetry(t *testing.T) {
 	exec := armedExecution("azure", "savingsplans", 2, "notified")
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
-	expectClaim(store, exec, []string{"approved", "pending", "notified"})
+	expectClaim(store, exec, []string{"pending", "notified"})
 
 	_, _ = mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 
@@ -222,7 +222,7 @@ func TestFirstAzureSavingsPlanPurchaseStillExecutes(t *testing.T) {
 	exec.Recommendations[0].ID = "current-azure"
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 	store.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(exec.Recommendations, nil).Once()
-	expectClaim(store, exec, []string{"approved", "pending", "notified"})
+	expectClaim(store, exec, []string{"pending", "notified"})
 
 	claimed, err := mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 	require.NoError(t, err)
@@ -240,7 +240,7 @@ func TestFirstAzureSavingsPlanPurchaseStillExecutes(t *testing.T) {
 func TestSafeProviderRetrySuccessorStillExecutes(t *testing.T) {
 	exec := armedExecution("aws", "rds", 3, "notified")
 	mgr, store, rec := armedHarness(t, common.ServiceRDS)
-	expectClaim(store, exec, []string{"approved", "pending", "notified"})
+	expectClaim(store, exec, []string{"pending", "notified"})
 
 	claimed, err := mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 	require.NoError(t, err)
@@ -264,7 +264,7 @@ func TestArmedRowIsDefusedNotLeftArmed(t *testing.T) {
 		saved = append(saved, *e)
 		return nil
 	}
-	expectClaim(store, exec, []string{"approved", "pending", "notified"})
+	expectClaim(store, exec, []string{"pending", "notified"})
 
 	_, _ = mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 

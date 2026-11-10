@@ -17,15 +17,6 @@ built with `GOTOOLCHAIN=go1.26.10` (or the official release binary), unfiltered
 and with the integration build tag, as CI does. Do not reformat a file only
 because a locally built tool flags it while main CI is green.
 
-### `claimAndExecuteWithin` still claims from `approved` (issue #399 follow-up)
-
-The claim funnel's from-set is `approved, pending, notified`. With the
-execute-by-ID path gone, no executor reaches it with an `approved` row (the
-approve paths claim `pending, notified` and stranded `approved` rows go
-through the re-drive), so the `approved` entry is unreachable in production.
-Left in place by issue #399 to keep that change a pure removal; dropping it
-needs its own change and test review, tracked in issue #1814.
-
 ### Existing Azure deployments carry a tenant-wide reservation grant (issue #1545)
 
 Until issue #1545 was fixed, `arm/CUDly-CrossSubscription/template.json`

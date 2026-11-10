@@ -243,7 +243,7 @@ func TestClaimAndExecuteWithin_NotifiedRowExecutes(t *testing.T) {
 	runningExec := *exec
 	runningExec.Status = "running"
 	mockStore.On("TransitionExecutionStatus", ctx, "exec-approved",
-		[]string{"approved", "pending", "notified"}, "running", (*string)(nil)).Return(&runningExec, nil)
+		[]string{"pending", "notified"}, "running", (*string)(nil)).Return(&runningExec, nil)
 	mockStore.On("GetPurchasePlan", mock.Anything, "plan-approved").Return(plan, nil)
 	mockEmail.On("SendPurchaseConfirmation", mock.Anything, mock.AnythingOfType("email.NotificationData")).Return(nil)
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).Return(nil)
@@ -311,7 +311,7 @@ func TestClaimAndExecuteWithin_SaveError(t *testing.T) {
 	runningExec := *exec
 	runningExec.Status = "running"
 	mockStore.On("TransitionExecutionStatus", ctx, "exec-save-err",
-		[]string{"approved", "pending", "notified"}, "running", (*string)(nil)).Return(&runningExec, nil)
+		[]string{"pending", "notified"}, "running", (*string)(nil)).Return(&runningExec, nil)
 	mockStore.On("GetPurchasePlan", mock.Anything, "plan-save-err").Return(plan, nil)
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).Return(errors.New("save failed"))
 	mockSTS.On("GetCallerIdentity", mock.Anything, mock.Anything).Return(nil, errors.New("sts error"))

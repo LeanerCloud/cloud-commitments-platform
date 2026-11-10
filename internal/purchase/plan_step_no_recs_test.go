@@ -99,7 +99,7 @@ func scheduledBarePlanStepFails(t *testing.T, notificationDaysBefore int) {
 	mockEmail.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).Return(nil).Once()
 	mockStore.On("GetPurchasePlan", mock.Anything, bareStepPlanID).Return(plan, nil)
 	mockStore.On("TransitionExecutionStatus", ctx, bareStepExecID,
-		[]string{"approved", "pending", "notified"}, "running", (*string)(nil)).Return(&claimed, nil)
+		[]string{"pending", "notified"}, "running", (*string)(nil)).Return(&claimed, nil)
 	// A two-account plan: the failure must be recorded once on the root row,
 	// not once per account.
 	mockStore.GetPlanAccountsFn = func(context.Context, string) ([]config.CloudAccount, error) {

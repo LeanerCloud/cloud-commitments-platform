@@ -198,7 +198,7 @@ func (m *Manager) finalizeExecution(exec *config.PurchaseExecution, execErr erro
 // approve path already gets from ApproveAndExecute's CAS (issue #1013).
 //
 // It atomically transitions the row from an executable state
-// (approved/pending/notified) to "running" via TransitionExecutionStatus and
+// (pending/notified) to "running" via TransitionExecutionStatus and
 // only proceeds when it wins that CAS. A lost CAS (row already claimed by a
 // concurrent worker, an overlapping cron tick, or the row
 // vanishing mid-flight) is benign: the function returns (claimed=false, nil) and
@@ -212,8 +212,11 @@ func (m *Manager) finalizeExecution(exec *config.PurchaseExecution, execErr erro
 // row again), instead of running recommendations nobody checked against the cap
 // or the notified rule.
 //
-// For a pending/notified row (the ones the AutoPurchase gate applies to) the
-// step cap is re-checked against the claimed row and the current plan; a refusal
+// An approved row is not claimable here: stranded approvals go through the re-drive
+// (claimAndRedrive), and the approve paths claim the row themselves (issue #1814).
+//
+// For a row with recommendations the step cap is re-checked against the claimed row and the
+// current plan; a refusal
 // fails the row with the beforeSubmission class, so its suppressions release.
 //
 // When maxAge is positive, a claimed row that was due more than maxAge ago is
@@ -224,10 +227,9 @@ func (m *Manager) finalizeExecution(exec *config.PurchaseExecution, execErr erro
 //
 // On a won claim it runs executeAndFinalize and returns (true, execErr).
 func (m *Manager) claimAndExecuteWithin(ctx context.Context, exec *config.PurchaseExecution, maxAge time.Duration) (claimed bool, err error) {
-	gated := exec.Status == "pending" || exec.Status == "notified"
 	gateSawEmpty := len(exec.Recommendations) == 0
 	// System-initiated: cron executor passes nil so transitioned_by = NULL.
-	updated, claimErr := m.config.TransitionExecutionStatusPinned(ctx, exec.ExecutionID, []string{"approved", "pending", "notified"}, "running", nil, gateSawEmpty)
+	updated, claimErr := m.config.TransitionExecutionStatusPinned(ctx, exec.ExecutionID, []string{"pending", "notified"}, "running", nil, gateSawEmpty)
 	if claimErr != nil {
 		if errors.Is(claimErr, config.ErrNotFound) || errors.Is(claimErr, config.ErrExecutionNotInExpectedStatus) {
 			// Benign CAS race-loss: an overlapping sweep or approve already owns
@@ -242,7 +244,7 @@ func (m *Manager) claimAndExecuteWithin(ctx context.Context, exec *config.Purcha
 	// the RETURNING clause) onto the caller's struct so the rest of the run
 	// starts from the claimed row rather than the pre-claim snapshot.
 	*exec = *updated
-	if refusal := m.claimedRowRefusal(ctx, exec, gated, maxAge); refusal != nil {
+	if refusal := m.claimedRowRefusal(ctx, exec, maxAge); refusal != nil {
 		return true, m.failClaimedBeforeSubmission(ctx, exec, refusal)
 	}
 	return true, m.executeAndFinalize(ctx, exec)
@@ -250,14 +252,15 @@ func (m *Manager) claimAndExecuteWithin(ctx context.Context, exec *config.Purcha
 
 // claimedRowRefusal runs claimAndExecuteWithin's checks on the row its claim
 // returned: the due-row age cap when maxAge is positive, then the step cap for
-// a gated row with recommendations.
-func (m *Manager) claimedRowRefusal(ctx context.Context, exec *config.PurchaseExecution, gated bool, maxAge time.Duration) error {
+// a row with recommendations. Every claimed row came from pending or notified, the states the
+// AutoPurchase gate applies to.
+func (m *Manager) claimedRowRefusal(ctx context.Context, exec *config.PurchaseExecution, maxAge time.Duration) error {
 	if maxAge > 0 {
 		if refusal := dueRowAgeRefusal(exec, maxAge, time.Now()); refusal != nil {
 			return refusal
 		}
 	}
-	if gated && len(exec.Recommendations) > 0 {
+	if len(exec.Recommendations) > 0 {
 		return m.recheckStepCap(ctx, exec)
 	}
 	return nil

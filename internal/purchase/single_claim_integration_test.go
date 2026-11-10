@@ -96,7 +96,7 @@ func TestSingleClaim_ConcurrentExecutorsBuyOnce(t *testing.T) {
 	redrive := func(row *config.PurchaseExecution) { _, _ = f.manager.claimAndRedrive(ctx, rowStatusCopy(row)) }
 	fire := func(row *config.PurchaseExecution) { f.manager.fireOneDue(ctx, rowStatusCopy(row)) }
 	cases["notified"] = []func(*config.PurchaseExecution){approve, direct, cron}
-	cases["approved"] = []func(*config.PurchaseExecution){cron, redrive}
+	cases["approved"] = []func(*config.PurchaseExecution){redrive}
 	cases["scheduled"] = []func(*config.PurchaseExecution){fire}
 
 	for status, executors := range cases {
@@ -201,9 +201,7 @@ func TestSingleClaim_ExecutorArrivingMidApproveCannotBuyAgain(t *testing.T) {
 		if fired.Swap(true) {
 			return
 		}
-		c := rowStatusCopy(row)
-		c.Status = "approved"
-		midClaimed, _ = f.manager.claimAndExecuteWithin(ctx, c, 0)
+		midClaimed, _ = f.manager.claimAndExecuteWithin(ctx, rowStatusCopy(row), 0)
 	}
 	_, _, err := f.manager.ApproveAndExecute(ctx, row.ExecutionID, "a@example.invalid", nil, nil)
 	require.NoError(t, err)
@@ -259,4 +257,21 @@ func TestSingleClaim_StrandedRedriveMidSyncRunCannotBuyAgain(t *testing.T) {
 			assert.Equal(t, "completed", rowStatus(ctx, t, f, row.ExecutionID).Status)
 		})
 	}
+}
+
+// An approved row is not claimable by the claim funnel (issue #1814): stranded approvals go
+// through the re-drive, and the approve paths claim the row themselves, so the funnel refuses
+// the row without buying and leaves it approved.
+func TestSingleClaim_FunnelRefusesAnApprovedRow(t *testing.T) {
+	ctx := context.Background()
+	f := newRampStepFixture(ctx, t)
+	row := claimRaceRow(ctx, t, f, "approved")
+	before := f.purchaseCount()
+
+	claimed, execErr := f.manager.claimAndExecuteWithin(ctx, rowStatusCopy(row), 0)
+
+	require.NoError(t, execErr)
+	assert.False(t, claimed)
+	assert.Equal(t, before, f.purchaseCount())
+	assert.Equal(t, "approved", rowStatus(ctx, t, f, row.ExecutionID).Status)
 }

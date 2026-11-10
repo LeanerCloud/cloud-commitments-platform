@@ -182,7 +182,7 @@ func TestProcessScheduledPurchases_PastTheCapIsFailedUnbought(t *testing.T) {
 	store.On("GetPendingExecutions", ctx).Return([]config.PurchaseExecution{row}, nil)
 	store.On("GetPurchasePlan", mock.Anything, "plan-gate").Return(plan, nil)
 	store.On("GetGlobalConfig", mock.Anything).Return(autoPurchaseOnCfg(), nil)
-	store.On("TransitionExecutionStatusPinned", ctx, "exec-age", []string{"approved", "pending", "notified"}, "running", (*string)(nil), false).
+	store.On("TransitionExecutionStatusPinned", ctx, "exec-age", []string{"pending", "notified"}, "running", (*string)(nil), false).
 		Return(&claimed, nil).Once()
 	var saved *config.PurchaseExecution
 	staleRefusalStore(store, &saved)
@@ -214,6 +214,6 @@ func TestProcessScheduledPurchases_CapNeverTouchesRowsAwaitingApproval(t *testin
 // Callers that pass no cap share the claim funnel but never refuse a stale row.
 func TestClaimedRowRefusal_NoCapWithoutMaxAge(t *testing.T) {
 	ancient := &config.PurchaseExecution{ScheduledDate: time.Now().Add(-365 * 24 * time.Hour)}
-	require.NoError(t, (&Manager{}).claimedRowRefusal(context.Background(), ancient, false, 0))
-	require.ErrorIs(t, (&Manager{}).claimedRowRefusal(context.Background(), ancient, false, time.Hour), ErrDueRowTooOld)
+	require.NoError(t, (&Manager{}).claimedRowRefusal(context.Background(), ancient, 0))
+	require.ErrorIs(t, (&Manager{}).claimedRowRefusal(context.Background(), ancient, time.Hour), ErrDueRowTooOld)
 }

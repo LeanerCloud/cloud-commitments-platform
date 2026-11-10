@@ -116,7 +116,7 @@ func TestAWSNoTokenRetrySuccessorIsRefusedAndFirstBuyStillExecutes(t *testing.T)
 				saved = append(saved, *e)
 				return nil
 			}
-			expectClaim(store, retry, []string{"approved", "pending", "notified"})
+			expectClaim(store, retry, []string{"pending", "notified"})
 			_, _ = mgr.claimAndExecuteWithin(context.Background(), retry, 0)
 
 			assert.Equal(t, 0, rec.count(), "a retry after a possibly-landed %s purchase must not buy again", service)
@@ -127,7 +127,7 @@ func TestAWSNoTokenRetrySuccessorIsRefusedAndFirstBuyStillExecutes(t *testing.T)
 
 			first := armedExecution("aws", service, 0, "notified")
 			mgr, store, rec = armedHarness(t, svcType)
-			expectClaim(store, first, []string{"approved", "pending", "notified"})
+			expectClaim(store, first, []string{"pending", "notified"})
 			claimed, err := mgr.claimAndExecuteWithin(context.Background(), first, 0)
 			require.NoError(t, err)
 			require.True(t, claimed)

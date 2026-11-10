@@ -45,7 +45,7 @@ func TestClaimPin_AttachBetweenGateAndClaimIsRefused(t *testing.T) {
 	store, factory := new(MockConfigStore), new(MockProviderFactory)
 	assertMocksOnCleanup(t, store, factory)
 	manager := newPinManager(ctx, store, factory, dueRecExec("notified"), autoPlan(f64(1000)), autoPlan(f64(1000)))
-	store.On("TransitionExecutionStatusPinned", ctx, "exec-gate", []string{"approved", "pending", "notified"}, "running", (*string)(nil), true).
+	store.On("TransitionExecutionStatusPinned", ctx, "exec-gate", []string{"pending", "notified"}, "running", (*string)(nil), true).
 		Return(nil, config.ErrExecutionNotInExpectedStatus)
 
 	result, err := manager.ProcessScheduledPurchases(ctx)
@@ -53,7 +53,7 @@ func TestClaimPin_AttachBetweenGateAndClaimIsRefused(t *testing.T) {
 	assert.Equal(t, 0, result.Executed)
 	assert.Equal(t, 0, result.Failed, "a lost pin is a benign skip")
 
-	store.AssertCalled(t, "TransitionExecutionStatusPinned", ctx, "exec-gate", []string{"approved", "pending", "notified"}, "running", (*string)(nil), true)
+	store.AssertCalled(t, "TransitionExecutionStatusPinned", ctx, "exec-gate", []string{"pending", "notified"}, "running", (*string)(nil), true)
 	store.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	store.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
 	factory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
@@ -219,4 +219,24 @@ func TestClaimPin_RecLessRowStillFailsInsteadOfBuying(t *testing.T) {
 	assert.Equal(t, "failed", saved.Status)
 	assert.Contains(t, saved.Error, ErrPlanStepNoRecommendations.Error())
 	factory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// An approved row is not claimable by the claim funnel (issue #1814): its from-set is
+// pending/notified, so the claim loses on the row's status and nothing runs. Stranded approvals
+// go through the re-drive instead.
+func TestClaimAndExecuteWithin_AnApprovedRowIsNotClaimable(t *testing.T) {
+	ctx := context.Background()
+	store := new(MockConfigStore)
+	assertMocksOnCleanup(t, store)
+	exec := dueRecExec("approved")
+	store.On("TransitionExecutionStatusPinned", ctx, exec.ExecutionID, []string{"pending", "notified"}, "running", (*string)(nil), mock.Anything).
+		Return(nil, config.ErrExecutionNotInExpectedStatus)
+	manager := &Manager{config: store}
+
+	claimed, err := manager.claimAndExecuteWithin(ctx, &exec, 0)
+
+	require.NoError(t, err)
+	assert.False(t, claimed, "a lost claim is a benign skip")
+	store.AssertNumberOfCalls(t, "TransitionExecutionStatusPinned", 1)
+	store.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
 }

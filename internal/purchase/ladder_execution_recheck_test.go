@@ -58,7 +58,7 @@ func ladderHarness(t *testing.T, key string, gate *config.LadderExecutionGate, g
 // after its gate, with the from-set that production passes.
 func runViaClaimFunnel(t *testing.T, mgr *Manager, store *MockConfigStore, exec *config.PurchaseExecution) {
 	t.Helper()
-	expectClaim(store, exec, []string{"approved", "pending", "notified"})
+	expectClaim(store, exec, []string{"pending", "notified"})
 	_, _ = mgr.claimAndExecuteWithin(context.Background(), exec, 0)
 }
 
