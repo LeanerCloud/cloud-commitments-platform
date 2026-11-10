@@ -27,7 +27,7 @@ func (app *Application) handleLadderReconcile(ctx context.Context) (purchase.Lad
 		return purchase.LadderReconcileResult{}, fmt.Errorf("ladder_reconcile: purchase manager %T cannot describe Savings Plans", app.Purchase)
 	}
 	res, err := purchase.RunLadderReconcile(ctx, purchase.LadderReconcileDeps{Store: store, SP: sp.LadderSPDescriber, Now: time.Now})
-	logging.Infof("ladder_reconcile: checked=%d completed=%d failed=%d unresolved=%d stale=%d lost_race=%d errored=%d",
-		res.Checked, res.Completed, res.Failed, res.Unresolved, res.Stale, res.LostRace, res.Errored)
+	logging.Infof("ladder_reconcile: checked=%d completed=%d failed=%d unresolved=%d stale=%d lost_race=%d errored=%d disabled=%d deferred=%d",
+		res.Checked, res.Completed, res.Failed, res.Unresolved, res.Stale, res.LostRace, res.Errored, res.ConfigsDisabled, res.Deferred)
 	return res, err
 }

@@ -57,6 +57,12 @@ func (f *visFake) TransitionLadderTrancheTx(_ context.Context, _ pgx.Tx, id stri
 	}
 	return true, nil
 }
+func (f *visFake) GetGlobalConfigTx(context.Context, pgx.Tx) (*config.GlobalConfig, error) {
+	return &config.GlobalConfig{LadderingEnabled: true, LadderExecutionEnabled: true}, nil
+}
+func (f *visFake) DisableLadderConfigTx(context.Context, pgx.Tx, string) (bool, error) {
+	return true, nil
+}
 func (f *visFake) GetExecutionByID(_ context.Context, id string) (*config.PurchaseExecution, error) {
 	return f.execs[id], nil
 }

@@ -40,6 +40,14 @@ func (f *reconcileFakeStore) TransitionLadderTrancheTx(context.Context, pgx.Tx, 
 	return true, nil
 }
 
+func (f *reconcileFakeStore) GetGlobalConfigTx(context.Context, pgx.Tx) (*config.GlobalConfig, error) {
+	f.global++
+	return &config.GlobalConfig{LadderingEnabled: false, LadderExecutionEnabled: false}, nil
+}
+func (f *reconcileFakeStore) DisableLadderConfigTx(context.Context, pgx.Tx, string) (bool, error) {
+	return false, nil
+}
+
 type reconcileFakePurchase struct {
 	PurchaseManagerInterface
 }

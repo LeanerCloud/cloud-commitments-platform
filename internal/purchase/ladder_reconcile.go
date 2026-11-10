@@ -44,11 +44,16 @@ type LadderReconcileStore interface {
 	WithTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 	LockLadderTrancheChainTx(ctx context.Context, tx pgx.Tx, trancheID string) ([]config.LadderChainNode, error)
 	TransitionLadderTrancheTx(ctx context.Context, tx pgx.Tx, id string, from, to ladder.TrancheStatus, reason string) (bool, error)
+	GetGlobalConfigTx(ctx context.Context, tx pgx.Tx) (*config.GlobalConfig, error)
+	DisableLadderConfigTx(ctx context.Context, tx pgx.Tx, configID string) (bool, error)
 }
 
-// LadderReconcileResult counts what one sweep did.
+// LadderReconcileResult counts what one sweep did. Deferred counts tranches
+// left fired because their config row was busy; the next sweep retries them.
+// ConfigsDisabled counts configs a failed tranche switched off (decision D5).
 type LadderReconcileResult struct {
 	Checked, Completed, Failed, Unresolved, Stale, LostRace, Errored int
+	Deferred, ConfigsDisabled                                        int
 }
 
 type ladderVerdict struct {
@@ -184,43 +189,77 @@ func forEachFiredPage(ctx context.Context, store LadderReconcileStore, batch int
 	}
 }
 
+// ladderOutcome is what reconcileTx decided and did for one tranche.
+type ladderOutcome struct {
+	verdict  ladderVerdict
+	moved    bool
+	disabled bool // the failed tranche's config was switched off
+	head     time.Time
+}
+
 func reconcileOne(ctx context.Context, store LadderReconcileStore, vis CommitmentVisibility, now time.Time, tr config.LadderTrancheDB, res *LadderReconcileResult) error {
-	var verdict ladderVerdict
-	var moved bool
-	var head time.Time
+	var out ladderOutcome
 	err := store.WithTx(ctx, func(tx pgx.Tx) error {
-		chain, err := store.LockLadderTrancheChainTx(ctx, tx, tr.ID)
-		if err != nil {
-			return err
-		}
-		head = chain[0].CreatedAt
-		verdict = decideFiredTranche(chain, now, func(execID string) (bool, error) {
-			return vis.CommitmentVisible(ctx, tr, execID)
-		})
-		if verdict.to == "" {
-			return nil
-		}
-		moved, err = store.TransitionLadderTrancheTx(ctx, tx, tr.ID, ladder.TrancheStatusFired, verdict.to, verdict.reason)
-		return err
+		var txErr error
+		out, txErr = reconcileTx(ctx, store, tx, vis, now, tr)
+		return txErr
 	})
 	switch {
 	case errors.Is(err, config.ErrLadderTrancheNotFired):
 		res.LostRace++
 		return nil
+	case errors.Is(err, config.ErrLadderConfigBusy):
+		res.Deferred++
+		logging.Infof("ladder tranche %s: config row busy, retrying next sweep: %v", tr.ID, err)
+		return nil
 	case err != nil:
 		return fmt.Errorf("reconcile ladder_tranche %s: %w", tr.ID, err)
-	case verdict.to == "":
+	}
+	res.record(now, tr.ID, out)
+	return nil
+}
+
+// record counts one committed outcome.
+func (res *LadderReconcileResult) record(now time.Time, trancheID string, out ladderOutcome) {
+	switch {
+	case out.verdict.to == "":
 		res.Unresolved++
-		if !verdict.waiting && now.Sub(head) > LadderFiredStaleAfter {
+		if !out.verdict.waiting && now.Sub(out.head) > LadderFiredStaleAfter {
 			res.Stale++
-			logging.Errorf("ladder tranche %s fired %s ago is unresolved: %s", tr.ID, now.Sub(head).Round(time.Minute), verdict.note)
+			logging.Errorf("ladder tranche %s fired %s ago is unresolved: %s", trancheID, now.Sub(out.head).Round(time.Minute), out.verdict.note)
 		}
-	case !moved:
+	case !out.moved:
 		res.LostRace++
-	case verdict.to == ladder.TrancheStatusCompleted:
+	case out.verdict.to == ladder.TrancheStatusCompleted:
 		res.Completed++
 	default:
 		res.Failed++
+		if out.disabled {
+			res.ConfigsDisabled++
+		}
 	}
-	return nil
+}
+
+// reconcileTx locks the tranche chain, decides, moves the tranche and, for a
+// failed verdict, applies D5 in the same transaction. Any error must be
+// returned so the caller's transaction rolls back.
+func reconcileTx(ctx context.Context, store LadderReconcileStore, tx pgx.Tx, vis CommitmentVisibility, now time.Time, tr config.LadderTrancheDB) (ladderOutcome, error) {
+	var out ladderOutcome
+	chain, err := store.LockLadderTrancheChainTx(ctx, tx, tr.ID)
+	if err != nil {
+		return out, err
+	}
+	out.head = chain[0].CreatedAt
+	out.verdict = decideFiredTranche(chain, now, func(execID string) (bool, error) {
+		return vis.CommitmentVisible(ctx, tr, execID)
+	})
+	if out.verdict.to == "" {
+		return out, nil
+	}
+	out.moved, err = store.TransitionLadderTrancheTx(ctx, tx, tr.ID, ladder.TrancheStatusFired, out.verdict.to, out.verdict.reason)
+	if err != nil || !out.moved || out.verdict.to != ladder.TrancheStatusFailed {
+		return out, err
+	}
+	out.disabled, err = applyLadderD5Tx(ctx, store, tx, tr, out.verdict.reason)
+	return out, err
 }

@@ -22,6 +22,19 @@ type pagingFake struct {
 	listErr  error
 	moved    []string
 	cursors  []*config.LadderFiredCursor
+
+	// D5 hooks: the global config served in the tx, the ids passed to
+	// DisableLadderConfigTx, and what that call returns.
+	global       *config.GlobalConfig
+	globalErr    error
+	globalReads  int
+	disabled     []string
+	disableErr   map[string]error // config ID -> error
+	alreadyOff   map[string]bool  // config ID -> already disabled
+	onGlobalRead func()
+	noProof      map[string]bool // tranche ID -> chain tail lacks the no_submission proof
+	notMoved     map[string]bool // tranche ID -> the CAS transition loses the race
+	txResults    []error         // what each WithTx callback returned
 }
 
 func (f *pagingFake) ListFiredLadderTranches(_ context.Context, after *config.LadderFiredCursor, limit int) ([]config.LadderTrancheDB, error) {
@@ -39,15 +52,48 @@ func (f *pagingFake) ListFiredLadderTranches(_ context.Context, after *config.La
 	end := min(start+limit, len(f.tranches))
 	return f.tranches[min(start, end):end], nil
 }
-func (f *pagingFake) WithTx(_ context.Context, fn func(pgx.Tx) error) error { return fn(nil) }
+
+// WithTx undoes the moves of a callback that returned an error, like a rollback.
+func (f *pagingFake) WithTx(_ context.Context, fn func(pgx.Tx) error) error {
+	before := len(f.moved)
+	err := fn(nil)
+	f.txResults = append(f.txResults, err)
+	if err != nil {
+		f.moved = f.moved[:before]
+	}
+	return err
+}
 func (f *pagingFake) LockLadderTrancheChainTx(_ context.Context, _ pgx.Tx, id string) ([]config.LadderChainNode, error) {
 	if err := f.lockErr[id]; err != nil {
 		return nil, err
 	}
-	return []config.LadderChainNode{{ExecutionID: "e-" + id, Status: f.status[id], NoSubmission: true, CreatedAt: time.Unix(0, 0)}}, nil
+	return []config.LadderChainNode{{ExecutionID: "e-" + id, Status: f.status[id], NoSubmission: !f.noProof[id], CreatedAt: time.Unix(0, 0)}}, nil
 }
 func (f *pagingFake) TransitionLadderTrancheTx(_ context.Context, _ pgx.Tx, id string, _, _ ladder.TrancheStatus, _ string) (bool, error) {
 	f.moved = append(f.moved, id)
+	return !f.notMoved[id], nil
+}
+
+func (f *pagingFake) GetGlobalConfigTx(context.Context, pgx.Tx) (*config.GlobalConfig, error) {
+	f.globalReads++
+	g, err := f.global, f.globalErr
+	if f.onGlobalRead != nil {
+		f.onGlobalRead()
+	}
+	return g, err
+}
+func (f *pagingFake) DisableLadderConfigTx(_ context.Context, _ pgx.Tx, configID string) (bool, error) {
+	f.disabled = append(f.disabled, configID)
+	if err := f.disableErr[configID]; err != nil {
+		return false, err
+	}
+	if f.alreadyOff[configID] {
+		return false, nil
+	}
+	if f.alreadyOff == nil {
+		f.alreadyOff = map[string]bool{}
+	}
+	f.alreadyOff[configID] = true
 	return true, nil
 }
 
