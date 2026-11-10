@@ -66,6 +66,10 @@ type Result struct {
 	// MissingBound lists bound identities (issue #1746) the strict read did
 	// not show, through churn or suppression. They are not bought this step.
 	MissingBound []string
+	// MismatchedBound lists bound identities the strict read showed but whose
+	// group rejected them (term, payment or account differs from the group's).
+	// They are not bought this step; an operator fixes the plan.
+	MismatchedBound []string
 }
 
 // ramp carries the cumulative-sizing inputs and accumulates its outputs.
@@ -151,10 +155,14 @@ func (r *ramp) resolveServices(ctx context.Context, src Source, store Store, pla
 		if !svc.Enabled {
 			continue
 		}
-		recs, missing, err := resolveService(ctx, src, store, &svc, plan.RampSchedule.PercentPerStep, r, accountIDs, allowed, enabledProviders)
-		if len(missing) > 0 {
+		recs, bound, err := resolveService(ctx, src, store, &svc, plan.RampSchedule.PercentPerStep, r, accountIDs, allowed, enabledProviders)
+		if missing := bound.missing(); len(missing) > 0 {
 			logging.Warnf("plan %s service %q: %d bound recommendation(s) not shown, not bought this step: %v", plan.ID, k, len(missing), missing)
 			r.out.MissingBound = append(r.out.MissingBound, missing...)
+		}
+		if mismatched := bound.mismatchedIDs(); len(mismatched) > 0 {
+			logging.Warnf("plan %s service %q: %d bound recommendation(s) differ from the group's term, payment or accounts, not bought this step: %v", plan.ID, k, len(mismatched), mismatched)
+			r.out.MismatchedBound = append(r.out.MismatchedBound, mismatched...)
 		}
 		if err == nil {
 			err = claimIdentities(seen, recs)
@@ -273,10 +281,10 @@ func claimIdentities(seen map[string]struct{}, recs []config.RecommendationRecor
 }
 
 // resolveService sizes one plan service. A bound group (issue #1746) only
-// considers its bound identities, and returns those the strict read did not
-// show as missing.
+// considers its bound identities; the returned set reports those the strict
+// read did not show and those its group rejected (nil for an unbound entry).
 func resolveService(ctx context.Context, src Source, store Store, svc *config.ServiceConfig, percentPerStep float64, r *ramp,
-	accountIDs []string, allowed map[string]struct{}, enabledProviders []string) ([]config.RecommendationRecord, []string, error) {
+	accountIDs []string, allowed map[string]struct{}, enabledProviders []string) ([]config.RecommendationRecord, *boundSet, error) {
 	wantPayment, err := r.validateInputs(svc, percentPerStep)
 	if err != nil {
 		return nil, nil, err
@@ -295,16 +303,13 @@ func resolveService(ctx context.Context, src Source, store Store, svc *config.Se
 	if shown, err = bound.filter(shown); err != nil {
 		return nil, nil, err
 	}
+	matched, err := bound.matching(shown, svc.Term, wantPayment, allowed)
+	if err != nil {
+		return nil, nil, err
+	}
 	var out []config.RecommendationRecord
-	for i := range shown {
-		rec := shown[i]
-		match, err := matchesPlan(&rec, svc.Term, wantPayment, allowed)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !match {
-			continue
-		}
+	for i := range matched {
+		rec := matched[i]
 		sized, keep, err := r.sizeFromStored(&rec, stored, svc.Coverage, percentPerStep)
 		if err != nil {
 			return nil, nil, fmt.Errorf("recommendation %s: %w", rec.ID, err)
@@ -313,14 +318,15 @@ func resolveService(ctx context.Context, src Source, store Store, svc *config.Se
 			out = append(out, sized)
 		}
 	}
-	return out, bound.missing(), nil
+	return out, bound, nil
 }
 
 // boundSet restricts a bound group to its bound identities and records which
 // of them the strict read showed. A nil set (an unbound entry) admits every rec.
 type boundSet struct {
-	ids  []string
-	want map[string]bool // identity -> shown
+	ids        []string
+	want       map[string]bool // identity -> shown
+	mismatched []string        // shown identities their group's term, payment or accounts rejected
 }
 
 func newBoundSet(ids []string) *boundSet {
@@ -351,6 +357,38 @@ func (b *boundSet) filter(recs []config.RecommendationRecord) ([]config.Recommen
 		}
 	}
 	return kept, nil
+}
+
+// matching keeps the recs that have the plan service's term, payment and a
+// target account. For a bound group it records each rejected rec's identity.
+func (b *boundSet) matching(recs []config.RecommendationRecord, term int, wantPayment string, allowed map[string]struct{}) ([]config.RecommendationRecord, error) {
+	var kept []config.RecommendationRecord
+	for i := range recs {
+		match, err := matchesPlan(&recs[i], term, wantPayment, allowed)
+		if err != nil {
+			return nil, err
+		}
+		if match {
+			kept = append(kept, recs[i])
+			continue
+		}
+		if b == nil {
+			continue
+		}
+		key, err := config.RecIdentityKey(&recs[i])
+		if err != nil {
+			return nil, err
+		}
+		b.mismatched = append(b.mismatched, key)
+	}
+	return kept, nil
+}
+
+func (b *boundSet) mismatchedIDs() []string {
+	if b == nil {
+		return nil
+	}
+	return b.mismatched
 }
 
 func (b *boundSet) missing() []string {

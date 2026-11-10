@@ -58,6 +58,45 @@ func TestResolve_BoundIdentitiesMissingFromTheStrictRead(t *testing.T) {
 	assert.Equal(t, []string{cumKey(t, gone)}, res.MissingBound)
 }
 
+// A bound identity the strict read shows but matchesPlan rejects (term, payment
+// or account differs from its group) is reported as mismatched, not as missing,
+// and the group's other bound recs are still bought (issue #1857).
+func TestResolve_BoundIdentitiesRejectedByTheGroupAreReportedMismatched(t *testing.T) {
+	good := azureRecIn("westeurope", "monthly")
+	wrongTerm := azureRecIn("northeurope", "monthly")
+	wrongTerm.Term = 3
+	wrongPayment := azureRecIn("uksouth", "upfront")
+	otherAccount := azureRecIn("francecentral", "monthly")
+	otherAccount.CloudAccountID = ptr("acct-other")
+	for name, bad := range map[string]config.RecommendationRecord{
+		"term": wrongTerm, "payment": wrongPayment, "account": otherAccount,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rows := []config.RecommendationRecord{good, bad}
+			plan := boundAzurePlan(map[string]config.ServiceConfig{"azure/compute#g1": azureGroup("monthly", 100, cumKey(t, good), cumKey(t, bad))})
+			res, err := Resolve(t.Context(), fakeSource{shown: rows}, fakeStore{rows: rows}, plan, accts, 1, nil, nil)
+			require.NoError(t, err)
+			require.Len(t, res.Recs, 1, "the matching bound rec is still bought")
+			assert.Equal(t, "westeurope", res.Recs[0].Region)
+			assert.Equal(t, []string{cumKey(t, bad)}, res.MismatchedBound)
+			assert.Empty(t, res.MissingBound, "a shown identity is not missing")
+		})
+	}
+
+	// Every bound rec rejected: nothing to buy, and the reason is still reported.
+	rows := []config.RecommendationRecord{wrongTerm}
+	plan := boundAzurePlan(map[string]config.ServiceConfig{"azure/compute#g1": azureGroup("monthly", 100, cumKey(t, wrongTerm))})
+	res, err := Resolve(t.Context(), fakeSource{shown: rows}, fakeStore{rows: rows}, plan, accts, 1, nil, nil)
+	require.ErrorIs(t, err, ErrNoMatch)
+	assert.Equal(t, []string{cumKey(t, wrongTerm)}, res.MismatchedBound)
+
+	// A shown rec the group does not bind is not a mismatch, whatever its term.
+	res, err = Resolve(t.Context(), fakeSource{shown: []config.RecommendationRecord{good, wrongTerm}}, fakeStore{rows: []config.RecommendationRecord{good, wrongTerm}},
+		boundAzurePlan(map[string]config.ServiceConfig{"azure/compute#g1": azureGroup("monthly", 100, cumKey(t, good))}), accts, 1, nil, nil)
+	require.NoError(t, err)
+	assert.Empty(t, res.MismatchedBound, "an unselected rec is not a mismatch")
+}
+
 // targetMet judges a baselined identity only against the group that bound it.
 func TestResolve_TargetMetJudgesByBoundGroup(t *testing.T) {
 	monthly, upfront := azureRecIn("westeurope", "monthly"), azureRecIn("westeurope", "upfront")
