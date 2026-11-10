@@ -112,6 +112,11 @@ tr.history-row-highlight:hover {
     margin-bottom: 0.5rem;
 }
 
+/* Programmatic focus target after a declined cancel; a heading is not a control, so no ring. */
+#planned-purchases-header h2:focus {
+    outline: none;
+}
+
 #planned-purchases-header .help-text {
     color: var(--cudly-text-muted);
     font-size: 0.9rem;

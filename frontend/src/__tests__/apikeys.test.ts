@@ -808,6 +808,17 @@ describe('API Keys Module', () => {
       expect(modal?.innerHTML).toContain('test-api-key-12345');
     });
 
+    test('exposes dialog semantics labelled by its heading', () => {
+      showKeyCreatedModal('test-key');
+
+      const modal = document.getElementById('apikey-created-modal');
+      expect(modal?.getAttribute('role')).toBe('dialog');
+      expect(modal?.getAttribute('aria-modal')).toBe('true');
+      const labelId = modal?.getAttribute('aria-labelledby') ?? '';
+      expect(labelId).not.toBe('');
+      expect(document.getElementById(labelId)?.textContent).toBe('API Key Created Successfully');
+    });
+
     test('shows warning about one-time display', () => {
       showKeyCreatedModal('test-key');
 

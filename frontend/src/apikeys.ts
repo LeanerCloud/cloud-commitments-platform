@@ -411,9 +411,12 @@ export function showKeyCreatedModal(apiKey: string): void {
   modal.id = 'apikey-created-modal';
   modal.className = 'modal';
   modal.dataset.requireAck = 'true';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'apikey-created-title');
   modal.innerHTML = `
     <div class="modal-content">
-      <div class="modal-header"><h2>API Key Created Successfully</h2></div>
+      <div class="modal-header"><h2 id="apikey-created-title">API Key Created Successfully</h2></div>
       <div class="warning-box">
         <strong>Important:</strong> This is the only time you'll see this API key.
         Please copy it now and store it securely.
