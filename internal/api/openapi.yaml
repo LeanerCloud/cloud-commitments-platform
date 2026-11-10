@@ -6617,9 +6617,6 @@ components:
         email:
           type: string
           format: email
-        role:
-          type: string
-          enum: [admin, user, readonly]
         groups:
           type: array
           items:
@@ -6689,8 +6686,10 @@ components:
         email:
           type: string
           format: email
-        role:
-          type: string
+        groups:
+          type: array
+          items:
+            type: string
         mfa_enabled:
           type: boolean
 
@@ -6709,15 +6708,21 @@ components:
         email:
           type: string
           format: email
-        role:
-          type: string
-          enum: [admin, user, readonly]
         groups:
           type: array
           items:
             type: string
         mfa_enabled:
           type: boolean
+        last_login:
+          type: string
+          format: date-time
+        invite_email_sent:
+          type: boolean
+          description: Only in the create-user response, when an invite email was attempted.
+        invite_email_error:
+          type: string
+          description: Only in the create-user response, when sending the invite email failed.
         active:
           type: boolean
           description: Whether the account is active. A deactivated user's existing sessions are revoked and cannot be restored via password reset.
