@@ -84,9 +84,9 @@ func (r *ladderRig) firedTranche(headStatus string, headProof bool, age time.Dur
 		config.LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: []string{tr.ID}},
 		func(ctx context.Context, tx pgx.Tx, _ config.LadderTrancheDB) (string, error) {
 			var id string
-			err := tx.QueryRow(ctx, `INSERT INTO purchase_executions (plan_id, scheduled_date, status, no_submission, created_at)
+			scanErr := tx.QueryRow(ctx, `INSERT INTO purchase_executions (plan_id, scheduled_date, status, no_submission, created_at)
 				VALUES ($1, NOW(), $2, $3, NOW() - $4::interval) RETURNING execution_id`, r.planID, headStatus, headProof, age.String()).Scan(&id)
-			return id, err
+			return id, scanErr
 		})
 	require.NoError(r.t, err)
 	require.Len(r.t, claimed, 1)
