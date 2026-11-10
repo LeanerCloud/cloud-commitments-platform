@@ -29,9 +29,9 @@ import (
 //
 // so 5 commitment $/hr at r = 0.5 covers 10 OD $/hr. The rate is the observed
 // rate of the commitments held, from GetObservedCommitmentRates, when the
-// provider reports one for the layer; otherwise today's new-purchase rate for
-// the config's term and payment option, from GetCommitmentRates, which
-// approximates plans bought at a different discount (ladderConversionRates).
+// provider reports one for the layer; otherwise the lower of the constant-pair
+// and global-pair new-purchase rates, from GetCommitmentRates, which
+// approximates plans bought at a different discount (ladderRates).
 //
 // Rounding favors under-buying. When the exact quotient is not a float64,
 // existing is rounded up and expiring down, so the net existing coverage
@@ -229,7 +229,7 @@ func (p *ladderRunPlanner) planMissingRateHold() (*config.LadderRunDB, []config.
 		actions = append(actions, pkgladder.PlannedAction{
 			Action:      pkgladder.ActionHold,
 			Layer:       m.layer,
-			Rationale:   m.rationale(p.term, p.paymentOpt),
+			Rationale:   m.rationale(ladderTerms{term: p.term, payment: p.paymentOpt}, p.global),
 			DataSources: []string{dataSourceAWSCostExplorer},
 		})
 	}
@@ -246,9 +246,14 @@ func (p *ladderRunPlanner) planMissingRateHold() (*config.LadderRunDB, []config.
 
 // rationale is the Hold's human message. It must read as "not sized yet", never
 // as "covered", so it is not mistaken for a target-met Hold.
-func (m ladderMissingRate) rationale(term pkgladder.Term, payment pkgladder.PaymentOption) string {
+func (m ladderMissingRate) rationale(plan, global ladderTerms) string {
+	rates := fmt.Sprintf("a new-purchase rate at %s %s", plan.term, plan.payment)
+	if plan != global {
+		rates = fmt.Sprintf("new-purchase rates at both %s %s and %s %s (existing coverage converts at the lower of the two)",
+			plan.term, plan.payment, global.term, global.payment)
+	}
 	return fmt.Sprintf("Can't size this yet because layer %s holds existing coverage (%s commitment USD/hr, %s expiring) "+
-		"and has no rate: neither an observed rate from the commitments held nor a new-purchase rate at %s %s, so that coverage cannot be converted to on-demand-equivalent dollars. "+
+		"and has no rate: neither an observed rate from the commitments held nor %s, so that coverage cannot be converted to on-demand-equivalent dollars. "+
 		"Nothing is bought this run: the rate is never estimated or assumed 1:1. The ladder sizes the gap once a rate is available.",
-		m.layer, fmtFloatPtr(m.existing), fmtFloatPtr(m.expiring), term, payment)
+		m.layer, fmtFloatPtr(m.existing), fmtFloatPtr(m.expiring), rates)
 }
