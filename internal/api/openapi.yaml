@@ -1042,7 +1042,7 @@ paths:
             (in token mode the status check is the atomic transition, so a
             concurrent change answers the same way, and in either mode a
             lost claim answers 409 as well), or a purchase delay above 0
-            (stored, or the default when no configuration is saved) on a
+            (stored, or the 48 fallback when the configuration row is missing) on a
             deployment that schedules no fire_scheduled_purchases sweep;
             set purchase_delay_hours to 0 first.
           content:
@@ -7080,16 +7080,17 @@ components:
           type: integer
           minimum: 0
           maximum: 168
-          default: 48
           description: |
             Gmail-style pre-fire delay in hours. When above 0, approving a
             purchase defers the cloud call by this many hours and the
             approver can cancel until the window closes; 0 executes
-            immediately. A value outside 0 to 168 returns 400. The default
-            (48) applies when no configuration has been saved. On a
+            immediately. A value outside 0 to 168 returns 400. A fresh install
+            stores 0, so approvals execute immediately until the value is
+            set; 48 is only the fallback used when the configuration row is
+            missing. On a
             deployment that schedules no fire_scheduled_purchases sweep, a
             write of a value above 0 returns 400 on PUT /api/config, and
-            approving a purchase while the stored or default delay is above
+            approving a purchase while the effective delay is above
             0 returns 409 on POST /api/purchases/approve/{id}.
 
     ServiceConfig:
