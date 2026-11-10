@@ -834,6 +834,14 @@ type StoreInterface interface {
 	// whether it is within horizon on the database clock.
 	StampFirstDispatchTx(ctx context.Context, tx pgx.Tx, executionID string, horizon time.Duration) (StampResult, error)
 
+	// LockRetryFamilyTx takes a transaction-scoped advisory lock on a fan-out
+	// key family so a root retry and an account-row retry serialize.
+	LockRetryFamilyTx(ctx context.Context, tx pgx.Tx, family string) error
+	// FamilyRetryClaimedTx reports whether a row of the opposite kind (account
+	// rows when selfIsRoot, the root otherwise) in the same plan and key family
+	// already has a retry successor. Call it under LockRetryFamilyTx.
+	FamilyRetryClaimedTx(ctx context.Context, tx pgx.Tx, family, planID, selfID string, selfIsRoot bool) (claimed bool, err error)
+
 	// PredecessorProvenUnsent reports whether executionID's retry predecessor
 	// is a no_submission attempt 0 row (the lineage provably sent nothing).
 	PredecessorProvenUnsent(ctx context.Context, executionID string) (bool, error)

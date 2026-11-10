@@ -753,6 +753,19 @@ func (m *MockConfigStore) LinkUnsentRetryExecutionAtomic(ctx context.Context, tx
 	return args.Bool(0), args.Error(1)
 }
 
+// LockRetryFamilyTx mocks the fan-out family advisory lock (no default: testify panics if unexpected).
+func (m *MockConfigStore) LockRetryFamilyTx(ctx context.Context, tx pgx.Tx, family string) error {
+	m.record("LockRetryFamilyTx", ctx, tx, family)
+	return m.Called(ctx, tx, family).Error(0)
+}
+
+// FamilyRetryClaimedTx mocks the fan-out family claim query (no default: testify panics if unexpected).
+func (m *MockConfigStore) FamilyRetryClaimedTx(ctx context.Context, tx pgx.Tx, family, planID, selfID string, selfIsRoot bool) (bool, error) {
+	m.record("FamilyRetryClaimedTx", ctx, tx, family, planID, selfID, selfIsRoot)
+	args := m.Called(ctx, tx, family, planID, selfID, selfIsRoot)
+	return args.Bool(0), args.Error(1)
+}
+
 // LockLadderTrancheForRetryTx mocks the operation. Defaults to (not a ladder
 // execution) when no expectation is registered.
 func (m *MockConfigStore) LockLadderTrancheForRetryTx(ctx context.Context, tx pgx.Tx, idempotencyKey string) (ladder.TrancheStatus, bool, error) {
