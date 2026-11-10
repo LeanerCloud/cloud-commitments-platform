@@ -3183,6 +3183,79 @@ describe('Plans Module', () => {
     });
   });
 
+  describe('Plan account chip removal focus (issue #1648)', () => {
+    const accounts = [
+      { id: 'a1', name: 'Alpha', external_id: '111' },
+      { id: 'a2', name: 'Beta', external_id: '222' },
+      { id: 'a3', name: 'Gamma', external_id: '333' },
+    ];
+
+    beforeEach(() => {
+      const form = document.getElementById('plan-form') as HTMLElement;
+      const search = document.createElement('input');
+      search.id = 'plan-account-search';
+      const suggestions = document.createElement('div');
+      suggestions.id = 'plan-account-suggestions';
+      const selected = document.createElement('div');
+      selected.id = 'plan-accounts-selected';
+      const ids = document.createElement('input');
+      ids.type = 'hidden';
+      ids.id = 'plan-account-ids';
+      form.append(search, suggestions, selected, ids);
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      (api.listAccountsMinimal as jest.Mock).mockResolvedValue([]);
+    });
+
+    async function addChips(count: number): Promise<void> {
+      (api.listAccountsMinimal as jest.Mock).mockResolvedValue(accounts.slice(0, count));
+      openNewPlanModal();
+      await Promise.resolve();
+      const search = document.getElementById('plan-account-search') as HTMLInputElement;
+      search.value = 'x';
+      search.dispatchEvent(new Event('input'));
+      await jest.advanceTimersByTimeAsync(300);
+      document
+        .querySelectorAll<HTMLElement>('#plan-account-suggestions .account-suggestion-item')
+        .forEach(item => item.click());
+    }
+
+    function removeBtn(name: string, id: string): HTMLButtonElement {
+      return document.querySelector(`button[aria-label="Remove ${name} (${id})"]`) as HTMLButtonElement;
+    }
+
+    test('removing the middle chip focuses the next chip remove button', async () => {
+      await addChips(3);
+      removeBtn('Beta', '222').click();
+      expect(document.activeElement).toBe(removeBtn('Gamma', '333'));
+      expect((document.getElementById('plan-account-ids') as HTMLInputElement).value).toBe('a1,a3');
+      expect(document.querySelectorAll('#plan-accounts-selected .account-chip')).toHaveLength(2);
+    });
+
+    test('removing the last chip focuses the previous chip remove button', async () => {
+      await addChips(3);
+      removeBtn('Gamma', '333').click();
+      expect(document.activeElement).toBe(removeBtn('Beta', '222'));
+    });
+
+    test('removing the first chip focuses the new first chip remove button', async () => {
+      await addChips(3);
+      removeBtn('Alpha', '111').click();
+      expect(document.activeElement).toBe(removeBtn('Beta', '222'));
+    });
+
+    test('removing the only chip focuses the account search input', async () => {
+      await addChips(1);
+      removeBtn('Alpha', '111').click();
+      expect(document.activeElement).toBe(document.getElementById('plan-account-search'));
+      expect((document.getElementById('plan-account-ids') as HTMLInputElement).value).toBe('');
+      expect(document.querySelectorAll('#plan-accounts-selected .account-chip')).toHaveLength(0);
+    });
+  });
+
   // Regression tests for H3: setupRampScheduleHandlers must not stack duplicate
   // listeners on static modal elements across multiple modal opens.
   // Pre-fix: opening the plan modal N times would attach N handlers to each
