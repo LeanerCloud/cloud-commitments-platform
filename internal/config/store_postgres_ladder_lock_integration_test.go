@@ -45,7 +45,7 @@ func waitForLadderWaiters(ctx context.Context, t *testing.T, store *PostgresStor
 var lockTestAsOf = time.Now().UTC().Truncate(time.Microsecond)
 
 func lockTestRun(cfgID string) *LadderRunDB {
-	return &LadderRunDB{ConfigID: &cfgID, StartedAt: lockTestAsOf, Status: ladder.RunStatusPlanned}
+	return &LadderRunDB{ConfigID: &cfgID, StartedAt: lockTestAsOf, Status: ladder.RunStatusPlanned, Mode: autoApproveMode()}
 }
 
 // holdLadderLock runs PlanAndSaveLadderRun with a build that blocks until the

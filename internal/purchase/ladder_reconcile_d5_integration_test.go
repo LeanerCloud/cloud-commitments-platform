@@ -65,7 +65,7 @@ func (r *ladderRig) scheduledTranche() string {
 	tr := config.LadderTrancheDB{ID: uuid.New().String(), ConfigID: &r.cfgID, LayerType: ladder.LayerComputeSP,
 		Term: ladder.Term1Year, PaymentOption: ladder.PaymentNoUpfront, Status: ladder.TrancheStatusScheduled,
 		AmountUSDHr: 5, ScheduledDate: time.Now().Add(-time.Minute), AmountBasis: &basis, CommitmentRate: &rate}
-	run, err := r.store.SaveLadderRun(r.ctx, &config.LadderRunDB{ConfigID: &r.cfgID, StartedAt: time.Now(), Status: ladder.RunStatusPlanned})
+	run, err := r.store.SaveLadderRun(r.ctx, &config.LadderRunDB{ConfigID: &r.cfgID, StartedAt: time.Now(), Status: ladder.RunStatusPlanned, Mode: ptr(string(ladder.ModeAutoApprove))})
 	require.NoError(r.t, err)
 	tr.RunID = &run.ID
 	require.NoError(r.t, r.store.SaveLadderTranches(r.ctx, []config.LadderTrancheDB{tr}))

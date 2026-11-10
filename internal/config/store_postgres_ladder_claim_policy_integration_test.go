@@ -40,7 +40,7 @@ func (p *policyFixture) add(t *testing.T, term ladder.Term, pay ladder.PaymentOp
 	p.amount *= 2
 	tr.Term, tr.PaymentOption = term, pay
 	if runStart != nil {
-		run, err := p.store.SaveLadderRun(p.ctx, &LadderRunDB{ConfigID: &p.cfgID, StartedAt: *runStart, Status: ladder.RunStatusPlanned})
+		run, err := p.store.SaveLadderRun(p.ctx, &LadderRunDB{ConfigID: &p.cfgID, StartedAt: *runStart, Status: ladder.RunStatusPlanned, Mode: autoApproveMode()})
 		require.NoError(t, err)
 		tr.RunID = &run.ID
 	}

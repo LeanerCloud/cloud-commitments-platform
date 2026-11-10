@@ -32,6 +32,28 @@ const (
 	LadderPayment = ladder.PaymentNoUpfront
 )
 
+// ladderCanceledRunStatuses are both stored spellings of a canceled run: rows
+// written before #554 carry the legacy one, which is read and never written.
+var ladderCanceledRunStatuses = []string{string(ladder.RunStatusCanceled), "cancelled"} //nolint:misspell // legacy stored ladder status value
+
+// ladderClaimablePredicateSQL is the one definition of which due tranches a
+// claim may take beyond the config, status and date window, shared with
+// ListDueLadderTranches so the sweep's resolve step cannot drift from the
+// claim. Placeholders: $4 layers, $5 term, $6 payment, $7 run window seconds,
+// $8 canceled run statuses. Only an auto_approve run that is not canceled
+// counts: every run persists tranches whatever its mode, and the config's mode
+// can flip after a run was planned for approval by email.
+const ladderClaimablePredicateSQL = `amount_basis = 'commitment'
+		  AND layer_type = ANY($4::text[])
+		  AND term = $5
+		  AND payment_option = $6
+		  AND EXISTS (
+		        SELECT 1 FROM ladder_runs r
+		        WHERE r.id = ladder_tranches.run_id
+		          AND ladder_tranches.scheduled_date <= r.started_at + $7::bigint * interval '1 second'
+		          AND r.status <> ALL($8::text[])
+		          AND r.mode = '` + string(ladder.ModeAutoApprove) + `')`
+
 // ladderGraceCutoff returns the instant at or before which a scheduled
 // tranche is expired: scheduled_date <= cutoff is canceled, and
 // scheduled_date > cutoff is still netted and claimable.
@@ -228,22 +250,15 @@ func selectDueLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID string, 
 		WHERE config_id = $1
 		  AND status = 'scheduled'
 		  AND execution_id IS NULL
-		  AND amount_basis = 'commitment'
 		  AND scheduled_date <= $2
 		  AND scheduled_date > $3
-		  AND layer_type = ANY($5::text[])
-		  AND id = ANY($6::uuid[])
-		  AND term = $7
-		  AND payment_option = $8
-		  AND EXISTS (
-		        SELECT 1 FROM ladder_runs r
-		        WHERE r.id = ladder_tranches.run_id
-		          AND ladder_tranches.scheduled_date <= r.started_at + $9::bigint * interval '1 second')
+		  AND `+ladderClaimablePredicateSQL+`
+		  AND id = ANY($10::uuid[])
 		ORDER BY scheduled_date, id
-		LIMIT $4
+		LIMIT $9
 		FOR UPDATE SKIP LOCKED
-	`, configID, asOf, ladderGraceCutoff(asOf), limit, filter.Layers, filter.TrancheIDs,
-		string(LadderTerm), string(LadderPayment), int64(LadderFireGrace/time.Second))
+	`, configID, asOf, ladderGraceCutoff(asOf), filter.Layers, string(LadderTerm), string(LadderPayment),
+		int64(LadderFireGrace/time.Second), ladderCanceledRunStatuses, limit, filter.TrancheIDs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to select due ladder_tranches config_id=%s: %w", configID, err)
 	}

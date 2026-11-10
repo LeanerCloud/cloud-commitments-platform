@@ -26,7 +26,7 @@ func saveClaimable(ctx context.Context, t *testing.T, store *PostgresStore, rows
 	runIDs := make(map[string]string, len(latest))
 	for cfg, start := range latest {
 		cfgID := cfg
-		run, err := store.SaveLadderRun(ctx, &LadderRunDB{ConfigID: &cfgID, StartedAt: start, Status: ladder.RunStatusPlanned})
+		run, err := store.SaveLadderRun(ctx, &LadderRunDB{ConfigID: &cfgID, StartedAt: start, Status: ladder.RunStatusPlanned, Mode: autoApproveMode()})
 		require.NoError(t, err)
 		runIDs[cfg] = run.ID
 	}

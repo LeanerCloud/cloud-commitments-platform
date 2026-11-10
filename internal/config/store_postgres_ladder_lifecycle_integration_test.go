@@ -129,7 +129,7 @@ func TestLadderGraceBoundary_ScheduledRowsAreCountedOrCancelledNeverNeither(t *t
 	assert.Equal(t, want, inFlight(ctx, t, store, cfgID, asOf), "netting must count exactly fired + fireable scheduled")
 
 	_, err := store.SaveLadderRunWithTranches(ctx,
-		&LadderRunDB{ConfigID: &cfgID, StartedAt: asOf, Status: ladder.RunStatusPlanned}, nil)
+		&LadderRunDB{ConfigID: &cfgID, StartedAt: asOf, Status: ladder.RunStatusPlanned, Mode: autoApproveMode()}, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, want, inFlight(ctx, t, store, cfgID, asOf), "the sweep must cancel only rows netting did not count")
@@ -237,7 +237,7 @@ func TestClaimDueLadderTranches_NeverClaimsOnDemandOrUnknownBasisRows(t *testing
 	assert.Equal(t, 1.0+2+8, inFlight(ctx, t, store, cfgID, asOf), "legacy rows stay netted within grace")
 
 	later := asOf.Add(LadderFireGrace)
-	_, err = store.SaveLadderRunWithTranches(ctx, &LadderRunDB{ConfigID: &cfgID, StartedAt: later, Status: ladder.RunStatusPlanned}, nil)
+	_, err = store.SaveLadderRunWithTranches(ctx, &LadderRunDB{ConfigID: &cfgID, StartedAt: later, Status: ladder.RunStatusPlanned, Mode: autoApproveMode()}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ladder.TrancheStatusCanceled, trancheStatus(ctx, t, store, unknown.ID), "past grace the sweep cancels it")
 	assert.Equal(t, ladder.TrancheStatusCanceled, trancheStatus(ctx, t, store, od.ID), "past grace the sweep cancels it")
@@ -409,7 +409,7 @@ func TestClaimVsCancelAndOverdueSweep_ExactlyOneOutcome(t *testing.T) {
 			defer wg.Done()
 			// The sweep cancels only rows past grace, so a within-grace row must survive it.
 			_, sweepErr = store.SaveLadderRunWithTranches(ctx,
-				&LadderRunDB{ConfigID: &cfgID, StartedAt: asOf, Status: ladder.RunStatusPlanned}, nil)
+				&LadderRunDB{ConfigID: &cfgID, StartedAt: asOf, Status: ladder.RunStatusPlanned, Mode: autoApproveMode()}, nil)
 		}()
 		wg.Wait()
 		require.NoError(t, claimErr)
