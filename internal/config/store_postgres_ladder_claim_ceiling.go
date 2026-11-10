@@ -29,16 +29,33 @@ func claimableLadderTranchesTx(ctx context.Context, tx pgx.Tx, configID string, 
 }
 
 // inFlightLadderMicros sums, in exact micro-dollars, every tranche of the
-// config (any status) whose execution was created within LadderCeilingWindow
-// before asOf. A row created exactly one window ago has aged out.
+// config (any status) with an execution created within LadderCeilingWindow
+// before asOf. A tranche's executions are its retry chain: it starts at
+// ladder_tranches.execution_id, which names only the first attempt, and
+// follows purchase_executions.retry_execution_id forward, because a retry
+// fires the commitment again after the first attempt has aged out. Each
+// tranche counts once however many of its executions are in the window. A
+// row created exactly one window ago has aged out. UNION, not UNION ALL,
+// makes a retry cycle terminate.
 func inFlightLadderMicros(ctx context.Context, tx pgx.Tx, configID string, asOf time.Time) (int64, error) {
 	var sum int64
 	err := tx.QueryRow(ctx, `
+		WITH RECURSIVE chain(tranche_id, created_at, next_id) AS (
+			SELECT t.id, e.created_at, e.retry_execution_id
+			FROM ladder_tranches t
+			JOIN purchase_executions e ON e.execution_id = t.execution_id
+			WHERE t.config_id = $1
+			UNION
+			SELECT c.tranche_id, n.created_at, n.retry_execution_id
+			FROM chain c
+			JOIN purchase_executions n ON n.execution_id = c.next_id
+		)
 		SELECT COALESCE(SUM((t.amount_usd_hr * 1000000)::bigint), 0)::bigint
 		FROM ladder_tranches t
-		JOIN purchase_executions e ON e.execution_id = t.execution_id
 		WHERE t.config_id = $1
-		  AND e.created_at > $2
+		  AND t.id IN (
+			SELECT tranche_id FROM chain GROUP BY tranche_id HAVING MAX(created_at) > $2
+		  )
 	`, configID, asOf.Add(-LadderCeilingWindow)).Scan(&sum)
 	if err != nil {
 		return 0, fmt.Errorf("failed to sum in-flight ladder commitment config_id=%s: %w", configID, err)
