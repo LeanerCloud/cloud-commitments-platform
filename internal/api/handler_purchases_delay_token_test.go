@@ -57,12 +57,12 @@ func TestHandleRequest_ApproveViaToken_DelayConfigured_ValidatesToken(t *testing
 			store := h.config.(*MockConfigStore)
 			// Registered so a regression answers 200 instead of panicking on an unmocked call.
 			scheduled := &config.PurchaseExecution{ExecutionID: tokenErrExecID, Status: "scheduled"}
-			store.On("ScheduleApprovedExecution", mock.Anything, tokenErrExecID, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			store.On("ScheduleApprovedExecutionTokenPinned", mock.Anything, tokenErrExecID, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 				Return(scheduled, nil).Maybe()
 			resp, err := h.HandleRequest(context.Background(), tokenErrRequest("approve", tc.token))
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, resp.StatusCode, resp.Body)
-			store.AssertNotCalled(t, "ScheduleApprovedExecution",
+			store.AssertNotCalled(t, "ScheduleApprovedExecutionTokenPinned",
 				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		})
 	}
@@ -77,7 +77,7 @@ func TestHandleRequest_ApproveViaToken_DelayConfigured_ValidTokenSchedules(t *te
 	// The CAS must carry the supplied token so the store re-checks it against
 	// the row at transition time, not only against the request's snapshot
 	// (issue #590).
-	store.On("ScheduleApprovedExecution", mock.Anything, tokenErrExecID, []string{"pending", "notified"}, mock.Anything, tokenErrRawToken, mock.Anything, mock.Anything).
+	store.On("ScheduleApprovedExecutionTokenPinned", mock.Anything, tokenErrExecID, []string{"pending", "notified"}, mock.Anything, tokenErrRawToken, mock.Anything, mock.Anything).
 		Return(scheduled, nil).Once()
 
 	resp, err := h.HandleRequest(context.Background(), tokenErrRequest("approve", tokenErrRawToken))
@@ -99,7 +99,7 @@ func TestHandleRequest_ApproveViaToken_DelayConfigured_TokenRotatedBeforeCASIs40
 	exec := &config.PurchaseExecution{Status: "notified", ApprovalToken: config.HashApprovalToken(tokenErrRawToken), ApprovalTokenExpiresAt: &future}
 	h := delayTokenHandler(t, exec)
 	store := h.config.(*MockConfigStore)
-	store.On("ScheduleApprovedExecution", mock.Anything, tokenErrExecID, []string{"pending", "notified"}, mock.Anything, tokenErrRawToken, mock.Anything, mock.Anything).
+	store.On("ScheduleApprovedExecutionTokenPinned", mock.Anything, tokenErrExecID, []string{"pending", "notified"}, mock.Anything, tokenErrRawToken, mock.Anything, mock.Anything).
 		Return(nil, fmt.Errorf("%w: execution %s", config.ErrApprovalTokenChanged, tokenErrExecID)).Once()
 
 	resp, err := h.HandleRequest(context.Background(), tokenErrRequest("approve", tokenErrRawToken))
@@ -118,7 +118,7 @@ func TestHandleRequest_ApproveViaToken_DelayConfigured_ReplayOfScheduledIs409(t 
 	h := delayTokenHandler(t, exec)
 	store := h.config.(*MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
-	store.On("ScheduleApprovedExecution", mock.Anything, tokenErrExecID, []string{"pending", "notified"}, mock.Anything, tokenErrRawToken, mock.Anything, mock.Anything).
+	store.On("ScheduleApprovedExecutionTokenPinned", mock.Anything, tokenErrExecID, []string{"pending", "notified"}, mock.Anything, tokenErrRawToken, mock.Anything, mock.Anything).
 		Return(nil, config.ErrExecutionNotInExpectedStatus)
 
 	resp, err := h.HandleRequest(context.Background(), tokenErrRequest("approve", tokenErrRawToken))

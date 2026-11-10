@@ -5796,7 +5796,7 @@ func TestHandler_scheduleApprovedExecution_CASGuardsConcurrentCancel(t *testing.
 
 	mockConfig := new(MockConfigStore)
 	// ScheduleApprovedExecution fails because a concurrent Cancel already landed.
-	mockConfig.On("ScheduleApprovedExecution", ctx, execID, []string{"pending", "notified"}, mock.Anything, "", mock.Anything, mock.Anything).
+	mockConfig.On("ScheduleApprovedExecution", ctx, execID, []string{"pending", "notified"}, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, concurrentCancelErr)
 
 	handler := &Handler{config: mockConfig}
@@ -5821,6 +5821,8 @@ func TestHandler_scheduleApprovedExecution_HappyPath(t *testing.T) {
 	}
 
 	actor := "actor@example.com"
+	approverUUID := "99998888-7777-6666-5555-444433332222"
+	approverID := &approverUUID
 	scheduledAt := time.Now().Add(48 * time.Hour)
 	scheduled := &config.PurchaseExecution{
 		ExecutionID:          execID,
@@ -5831,7 +5833,7 @@ func TestHandler_scheduleApprovedExecution_HappyPath(t *testing.T) {
 
 	mockConfig := new(MockConfigStore)
 	before := time.Now()
-	mockConfig.On("ScheduleApprovedExecution", ctx, execID, []string{"pending", "notified"}, mock.Anything, "",
+	mockConfig.On("ScheduleApprovedExecution", ctx, execID, []string{"pending", "notified"}, approverID,
 		mock.MatchedBy(func(at time.Time) bool {
 			return !at.Before(before.Add(48*time.Hour)) && at.Before(time.Now().Add(48*time.Hour).Add(time.Second))
 		}),
@@ -5840,12 +5842,56 @@ func TestHandler_scheduleApprovedExecution_HappyPath(t *testing.T) {
 
 	handler := &Handler{config: mockConfig}
 
-	result, err := handler.scheduleApprovedExecution(ctx, exec, 48*time.Hour, actor, nil, "")
+	result, err := handler.scheduleApprovedExecution(ctx, exec, 48*time.Hour, actor, approverID, "")
 	require.NoError(t, err)
 	assert.Equal(t, "scheduled", result.Status)
 	assert.NotNil(t, result.ScheduledExecutionAt, "ScheduledExecutionAt must be stamped")
 	mockConfig.AssertExpectations(t)
 	mockConfig.AssertNotCalled(t, "SaveExecutionIfStatus", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// The token path must call the token-pinned store method with the raw token
+// and the approver UUID, and never the unpinned one (#1794).
+func TestHandler_scheduleApprovedExecution_TokenPathUsesPinnedMethod(t *testing.T) {
+	ctx := context.Background()
+	execID := "22223333-4444-5555-6666-777788889999"
+	exec := &config.PurchaseExecution{ExecutionID: execID, Status: "pending"}
+	approverUUID := "99998888-7777-6666-5555-444433332222"
+	approverID := &approverUUID
+
+	mockConfig := new(MockConfigStore)
+	mockConfig.On("ScheduleApprovedExecutionTokenPinned", ctx, execID, []string{"pending", "notified"}, approverID, "raw-token",
+		mock.Anything, mock.Anything).
+		Return(&config.PurchaseExecution{ExecutionID: execID, Status: "scheduled"}, nil).Once()
+
+	handler := &Handler{config: mockConfig}
+
+	_, err := handler.scheduleApprovedExecution(ctx, exec, time.Hour, "actor@example.com", approverID, "raw-token")
+	require.NoError(t, err)
+	mockConfig.AssertExpectations(t)
+	mockConfig.AssertNotCalled(t, "ScheduleApprovedExecution",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// The session path (empty token) must use the unpinned method only (#1794).
+func TestHandler_scheduleApprovedExecution_SessionPathNeverCallsPinned(t *testing.T) {
+	ctx := context.Background()
+	execID := "33334444-5555-6666-7777-888899990000"
+	exec := &config.PurchaseExecution{ExecutionID: execID, Status: "pending"}
+	approverUUID := "99998888-7777-6666-5555-444433332222"
+
+	mockConfig := new(MockConfigStore)
+	mockConfig.On("ScheduleApprovedExecution", ctx, execID, []string{"pending", "notified"}, &approverUUID,
+		mock.Anything, mock.Anything).
+		Return(&config.PurchaseExecution{ExecutionID: execID, Status: "scheduled"}, nil).Once()
+
+	handler := &Handler{config: mockConfig}
+
+	_, err := handler.scheduleApprovedExecution(ctx, exec, time.Hour, "actor@example.com", &approverUUID, "")
+	require.NoError(t, err)
+	mockConfig.AssertExpectations(t)
+	mockConfig.AssertNotCalled(t, "ScheduleApprovedExecutionTokenPinned",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestApproveWithDelay_CASLostMaps409 verifies that when scheduleApprovedExecution
@@ -5860,7 +5906,7 @@ func TestApproveWithDelay_CASLostMaps409(t *testing.T) {
 		config.ErrExecutionNotInExpectedStatus, execID)
 
 	mockConfig := new(MockConfigStore)
-	mockConfig.On("ScheduleApprovedExecution", ctx, execID, []string{"pending", "notified"}, mock.Anything, "", mock.Anything, mock.Anything).
+	mockConfig.On("ScheduleApprovedExecution", ctx, execID, []string{"pending", "notified"}, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, concurrentCancelErr)
 
 	handler := &Handler{config: mockConfig}
@@ -5885,7 +5931,7 @@ func TestApproveWithDelay_ScheduleLostToRevokeMaps409(t *testing.T) {
 		config.ErrExecutionNotInExpectedStatus, execID, config.StatusCanceled)
 
 	mockConfig := new(MockConfigStore)
-	mockConfig.On("ScheduleApprovedExecution", ctx, execID, []string{"pending", "notified"}, mock.Anything, "", mock.Anything, mock.Anything).
+	mockConfig.On("ScheduleApprovedExecution", ctx, execID, []string{"pending", "notified"}, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, revoked).Once()
 
 	handler := &Handler{config: mockConfig}

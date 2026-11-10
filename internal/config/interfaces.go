@@ -289,10 +289,15 @@ type StoreInterface interface {
 	// ScheduleApprovedExecution moves a delayed approval to "scheduled" and
 	// stamps scheduled_execution_at (and approved_by when non-nil) in one
 	// transaction, so a failed stamp can never leave a scheduled row that no
-	// scheduler run picks up (#348 F6). A non-empty rawToken pins the approval
-	// token as TransitionExecutionStatusTokenPinned does; the errors match the
-	// two transition methods.
-	ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, rawToken string, scheduledAt time.Time, approvedBy *string) (*PurchaseExecution, error)
+	// scheduler run picks up (#348 F6). It pins no approval token (session
+	// path); the errors match the two transition methods.
+	ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, scheduledAt time.Time, approvedBy *string) (*PurchaseExecution, error)
+	// ScheduleApprovedExecutionTokenPinned is ScheduleApprovedExecution for the
+	// email-link path: it pins the approval token as
+	// TransitionExecutionStatusTokenPinned does and fails closed
+	// (ErrApprovalTokenChanged, no write) on an empty rawToken. The split keeps
+	// a future caller that passes "" from silently skipping the pin (#1794).
+	ScheduleApprovedExecutionTokenPinned(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, rawToken string, scheduledAt time.Time, approvedBy *string) (*PurchaseExecution, error)
 	// RescheduleAwaitingExecution sets scheduled_date on an execution that is
 	// still pending or notified and touches no other column. It returns false
 	// (and writes nothing) when the row has left those statuses, so a cancel or
