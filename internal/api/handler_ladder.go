@@ -179,22 +179,22 @@ func (h *Handler) requireLadderAccountAccess(ctx context.Context, session *Sessi
 // [0, 1), so an explicit 0 there is a legitimate "no buffer" choice and is
 // likewise passed through untouched.
 func applyLadderConfigNumericDefaults(cfg *config.LadderConfigDB, present map[string]json.RawMessage) {
-	if _, ok := present["target_coverage"]; !ok {
+	if !bodyHasKey(present, "target_coverage") {
 		cfg.TargetCoverage = config.DefaultLadderTargetCoverage
 	}
-	if _, ok := present["buffer_fraction"]; !ok {
+	if !bodyHasKey(present, "buffer_fraction") {
 		cfg.BufferFraction = config.DefaultLadderBufferFraction
 	}
-	if _, ok := present["baseline_percentile"]; !ok {
+	if !bodyHasKey(present, "baseline_percentile") {
 		cfg.BaselinePercentile = config.DefaultLadderBaselinePercentile
 	}
-	if _, ok := present["lookback_days"]; !ok {
+	if !bodyHasKey(present, "lookback_days") {
 		cfg.LookbackDays = config.DefaultLadderLookbackDays
 	}
-	if _, ok := present["buffer_utilization_threshold"]; !ok {
+	if !bodyHasKey(present, "buffer_utilization_threshold") {
 		cfg.BufferUtilizationThreshold = config.DefaultLadderBufferUtilThreshold
 	}
-	if _, ok := present["max_actions_per_run"]; !ok {
+	if !bodyHasKey(present, "max_actions_per_run") {
 		cfg.MaxActionsPerRun = config.DefaultLadderMaxActionsPerRun
 	}
 }

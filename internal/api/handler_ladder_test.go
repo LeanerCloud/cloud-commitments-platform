@@ -351,3 +351,33 @@ func TestUpsertLadderConfig_UncappedAWSRejected(t *testing.T) {
 	assert.Contains(t, ce.message, "max_hourly_commit_per_run")
 	mockStore.AssertNotCalled(t, "UpsertLadderConfig", mock.Anything, mock.Anything)
 }
+
+// TestUpsertLadderConfig_NumericFieldKeyCase pins #1919: json.Unmarshal binds
+// a mixed-case key to the struct, so the presence check must match it too,
+// or the default overwrites the caller's explicit value.
+func TestUpsertLadderConfig_NumericFieldKeyCase(t *testing.T) {
+	cases := []struct {
+		key, value string
+		got        func(*config.LadderConfigDB) any
+		want       any
+		def        any
+	}{
+		{"Target_Coverage", "73.5", func(c *config.LadderConfigDB) any { return c.TargetCoverage }, 73.5, config.DefaultLadderTargetCoverage},
+		{"BUFFER_FRACTION", "0.35", func(c *config.LadderConfigDB) any { return c.BufferFraction }, 0.35, config.DefaultLadderBufferFraction},
+		{"Baseline_Percentile", "7.5", func(c *config.LadderConfigDB) any { return c.BaselinePercentile }, 7.5, config.DefaultLadderBaselinePercentile},
+		{"Lookback_Days", "45", func(c *config.LadderConfigDB) any { return c.LookbackDays }, 45, config.DefaultLadderLookbackDays},
+		{"Buffer_Utilization_Threshold", "66", func(c *config.LadderConfigDB) any { return c.BufferUtilizationThreshold }, 66.0, config.DefaultLadderBufferUtilThreshold},
+		{"Max_Actions_Per_Run", "3", func(c *config.LadderConfigDB) any { return c.MaxActionsPerRun }, 3, config.DefaultLadderMaxActionsPerRun},
+	}
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			require.NotEqual(t, tc.want, tc.def, "the test value must differ from the default")
+			handler, _, captured := newLadderHandler(t)
+			body := `{"cloud_account_id":"` + ladderTestAccount + `","provider":"aws","mode":"email_approval","cadence":"daily","max_hourly_commit_per_run":5,"` + tc.key + `":` + tc.value + `,` + ladderValidRamp + `}`
+			_, err := handler.upsertLadderConfig(context.Background(), ladderReq(body))
+			require.NoError(t, err)
+			require.NotNil(t, *captured)
+			assert.Equal(t, tc.want, tc.got(*captured))
+		})
+	}
+}
