@@ -123,7 +123,7 @@ tidy-check:
 lint:
 	@echo "Running golangci-lint..."
 	@command -v golangci-lint > /dev/null || { echo "golangci-lint not installed. Install: make install-dev-tools" >&2; exit 1; }
-	golangci-lint run --timeout=5m
+	golangci-lint run --timeout=10m
 
 # Go vet
 vet:
