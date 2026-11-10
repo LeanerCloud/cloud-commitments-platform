@@ -29,8 +29,8 @@ type revokeAfterScheduleStore struct {
 	revoke func()
 }
 
-func (s *revokeAfterScheduleStore) ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, rawToken string, scheduledAt time.Time, approvedBy *string) (*config.PurchaseExecution, error) {
-	updated, err := s.PostgresStore.ScheduleApprovedExecution(ctx, executionID, fromStatuses, transitionedBy, rawToken, scheduledAt, approvedBy)
+func (s *revokeAfterScheduleStore) ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, scheduledAt time.Time, approvedBy *string) (*config.PurchaseExecution, error) {
+	updated, err := s.PostgresStore.ScheduleApprovedExecution(ctx, executionID, fromStatuses, transitionedBy, scheduledAt, approvedBy)
 	if err == nil {
 		s.revoke()
 	}

@@ -680,15 +680,30 @@ func (m *MockConfigStore) TransitionExecutionStatusTokenPinned(ctx context.Conte
 
 // ScheduleApprovedExecution mocks the atomic delayed-approval schedule. It has
 // no default: a test of the delayed-approve path must register it.
-func (m *MockConfigStore) ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, rawToken string, scheduledAt time.Time, approvedBy *string) (*config.PurchaseExecution, error) {
-	m.record("ScheduleApprovedExecution", ctx, executionID, fromStatuses, transitionedBy, rawToken, scheduledAt, approvedBy)
-	args := m.Called(ctx, executionID, fromStatuses, transitionedBy, rawToken, scheduledAt, approvedBy)
+func (m *MockConfigStore) ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, scheduledAt time.Time, approvedBy *string) (*config.PurchaseExecution, error) {
+	m.record("ScheduleApprovedExecution", ctx, executionID, fromStatuses, transitionedBy, scheduledAt, approvedBy)
+	args := m.Called(ctx, executionID, fromStatuses, transitionedBy, scheduledAt, approvedBy)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	v, ok := args.Get(0).(*config.PurchaseExecution)
 	if !ok {
 		m.reporter.wrongReturnType("ScheduleApprovedExecution", "*config.PurchaseExecution", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// ScheduleApprovedExecutionTokenPinned mocks the token-pinned schedule. Like
+// the other pinned mocks it does not delegate to the unpinned one.
+func (m *MockConfigStore) ScheduleApprovedExecutionTokenPinned(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, rawToken string, scheduledAt time.Time, approvedBy *string) (*config.PurchaseExecution, error) {
+	m.record("ScheduleApprovedExecutionTokenPinned", ctx, executionID, fromStatuses, transitionedBy, rawToken, scheduledAt, approvedBy)
+	args := m.Called(ctx, executionID, fromStatuses, transitionedBy, rawToken, scheduledAt, approvedBy)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*config.PurchaseExecution)
+	if !ok {
+		m.reporter.wrongReturnType("ScheduleApprovedExecutionTokenPinned", "*config.PurchaseExecution", args.Get(0))
 	}
 	return v, args.Error(1)
 }

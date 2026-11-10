@@ -16,14 +16,26 @@ import (
 // flag a possible double buy instead of recovering.
 var ErrExecutionRetryLinked = errors.New("execution already has a retry successor")
 
-// ScheduleApprovedExecution implements StoreInterface. The CAS row lock holds
-// until commit, so the guarded save cannot lose; it stays as a fail-loud check.
-func (s *PostgresStore) ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, rawToken string, scheduledAt time.Time, approvedBy *string) (*PurchaseExecution, error) {
-	var tokenHash *string
-	if rawToken != "" {
-		h := HashApprovalToken(rawToken)
-		tokenHash = &h
+// ScheduleApprovedExecution implements StoreInterface for the session path:
+// no approval token is pinned.
+func (s *PostgresStore) ScheduleApprovedExecution(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, scheduledAt time.Time, approvedBy *string) (*PurchaseExecution, error) {
+	return s.scheduleApproved(ctx, executionID, fromStatuses, transitionedBy, nil, scheduledAt, approvedBy)
+}
+
+// ScheduleApprovedExecutionTokenPinned implements StoreInterface for the
+// email-link path. An empty rawToken fails closed before any write, so a
+// caller that lost its token cannot silently skip the pin (#1794).
+func (s *PostgresStore) ScheduleApprovedExecutionTokenPinned(ctx context.Context, executionID string, fromStatuses []string, transitionedBy *string, rawToken string, scheduledAt time.Time, approvedBy *string) (*PurchaseExecution, error) {
+	if rawToken == "" {
+		return nil, fmt.Errorf("%w: execution %s: no approval token supplied", ErrApprovalTokenChanged, executionID)
 	}
+	tokenHash := HashApprovalToken(rawToken)
+	return s.scheduleApproved(ctx, executionID, fromStatuses, transitionedBy, &tokenHash, scheduledAt, approvedBy)
+}
+
+// scheduleApproved is the shared body. The CAS row lock holds until commit, so
+// the guarded save cannot lose; it stays as a fail-loud check.
+func (s *PostgresStore) scheduleApproved(ctx context.Context, executionID string, fromStatuses []string, transitionedBy, tokenHash *string, scheduledAt time.Time, approvedBy *string) (*PurchaseExecution, error) {
 	var updated *PurchaseExecution
 	err := s.WithTx(ctx, func(tx pgx.Tx) error {
 		rec, err := s.transitionExecutionStatus(ctx, tx, executionID, fromStatuses, "scheduled", transitionedBy, nil, tokenHash)

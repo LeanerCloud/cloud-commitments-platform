@@ -30,7 +30,7 @@ func TestScheduleApprovedExecution_StampsWithTheTransition(t *testing.T) {
 	at := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Microsecond)
 	by := "approver@example.com"
 
-	got, err := store.ScheduleApprovedExecution(ctx, exec.ExecutionID, scheduleFrom, nil, "", at, &by)
+	got, err := store.ScheduleApprovedExecution(ctx, exec.ExecutionID, scheduleFrom, nil, at, &by)
 	require.NoError(t, err)
 	assert.Equal(t, "scheduled", got.Status)
 	require.NotNil(t, got.ScheduledExecutionAt)
@@ -53,17 +53,17 @@ func TestScheduleApprovedExecution_Refusals(t *testing.T) {
 	_, err := store.db.Exec(ctx, `UPDATE purchase_executions SET approval_token_hash = $2, approval_token_expires_at = $3
 		WHERE execution_id = $1`, pinned.ExecutionID, HashApprovalToken("current-token"), time.Now().Add(time.Hour))
 	require.NoError(t, err)
-	_, err = store.ScheduleApprovedExecution(ctx, pinned.ExecutionID, scheduleFrom, nil, "rotated-away-token", at, nil)
+	_, err = store.ScheduleApprovedExecutionTokenPinned(ctx, pinned.ExecutionID, scheduleFrom, nil, "rotated-away-token", at, nil)
 	require.ErrorIs(t, err, ErrApprovalTokenChanged)
 	status, storedAt, _, _ := scheduleFields(ctx, t, store, pinned.ExecutionID)
 	assert.Equal(t, "notified", status)
 	assert.Nil(t, storedAt)
 
-	_, err = store.ScheduleApprovedExecution(ctx, pinned.ExecutionID, scheduleFrom, nil, "current-token", at, nil)
+	_, err = store.ScheduleApprovedExecutionTokenPinned(ctx, pinned.ExecutionID, scheduleFrom, nil, "current-token", at, nil)
 	require.NoError(t, err, "the current token schedules the row")
 
 	running := newNoSubmissionExec(ctx, t, store, "running")
-	_, err = store.ScheduleApprovedExecution(ctx, running.ExecutionID, scheduleFrom, nil, "", at, nil)
+	_, err = store.ScheduleApprovedExecution(ctx, running.ExecutionID, scheduleFrom, nil, at, nil)
 	require.ErrorIs(t, err, ErrExecutionNotInExpectedStatus)
 }
 
@@ -76,7 +76,7 @@ func TestScheduleApprovedExecution_FailedStampRollsBackTheTransition(t *testing.
 	exec := newNoSubmissionExec(ctx, t, store, "notified")
 	failScheduleStamp(ctx, t, store)
 
-	_, err := store.ScheduleApprovedExecution(ctx, exec.ExecutionID, scheduleFrom, nil, "", time.Now().Add(time.Hour), nil)
+	_, err := store.ScheduleApprovedExecution(ctx, exec.ExecutionID, scheduleFrom, nil, time.Now().Add(time.Hour), nil)
 	require.Error(t, err)
 	status, storedAt, _, transitionedBy := scheduleFields(ctx, t, store, exec.ExecutionID)
 	assert.Equal(t, "notified", status, "the status change must roll back with the stamp")
@@ -97,4 +97,34 @@ func failScheduleStamp(ctx context.Context, t *testing.T, store *PostgresStore) 
 			FOR EACH ROW WHEN (NEW.scheduled_execution_at IS DISTINCT FROM OLD.scheduled_execution_at)
 			EXECUTE FUNCTION test_fail_schedule_stamp();`)
 	require.NoError(t, err)
+}
+
+func TestScheduleApprovedExecution_StoresTransitionedBy(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+	exec := newNoSubmissionExec(ctx, t, store, "notified")
+	var approver string
+	require.NoError(t, store.db.QueryRow(ctx,
+		`INSERT INTO users (email, password_hash, group_ids)
+		 SELECT 'sched-approver@example.com', 'x', ARRAY[id] FROM groups ORDER BY name LIMIT 1 RETURNING id::text`).Scan(&approver))
+
+	_, err := store.ScheduleApprovedExecution(ctx, exec.ExecutionID, scheduleFrom, &approver, time.Now().Add(time.Hour), nil)
+	require.NoError(t, err)
+	_, _, _, transitionedBy := scheduleFields(ctx, t, store, exec.ExecutionID)
+	require.NotNil(t, transitionedBy)
+	assert.Equal(t, approver, *transitionedBy)
+}
+
+// An empty token must fail closed before any write, even when the row has no
+// token pinned (an unpinned fallback would schedule it).
+func TestScheduleApprovedExecutionTokenPinned_EmptyTokenFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+	exec := newNoSubmissionExec(ctx, t, store, "notified")
+
+	_, err := store.ScheduleApprovedExecutionTokenPinned(ctx, exec.ExecutionID, scheduleFrom, nil, "", time.Now().Add(time.Hour), nil)
+	require.ErrorIs(t, err, ErrApprovalTokenChanged)
+	status, storedAt, _, _ := scheduleFields(ctx, t, store, exec.ExecutionID)
+	assert.Equal(t, "notified", status)
+	assert.Nil(t, storedAt)
 }

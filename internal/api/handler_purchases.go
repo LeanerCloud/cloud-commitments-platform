@@ -1594,8 +1594,15 @@ func (h *Handler) scheduleApprovedExecution(ctx context.Context, execution *conf
 	// One transaction: no other writer can see or change the row between the
 	// transition and the stamp, so a revoke can no longer land in between
 	// (issue #835).
-	updated, err := h.config.ScheduleApprovedExecution(ctx, execution.ExecutionID, []string{"pending", "notified"},
-		transitionedBy, approvalToken, time.Now().Add(delay), approvedBy)
+	var updated *config.PurchaseExecution
+	var err error
+	if approvalToken != "" {
+		updated, err = h.config.ScheduleApprovedExecutionTokenPinned(ctx, execution.ExecutionID, []string{"pending", "notified"},
+			transitionedBy, approvalToken, time.Now().Add(delay), approvedBy)
+	} else {
+		updated, err = h.config.ScheduleApprovedExecution(ctx, execution.ExecutionID, []string{"pending", "notified"},
+			transitionedBy, time.Now().Add(delay), approvedBy)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to schedule execution %s: %w", execution.ExecutionID, err)
 	}
