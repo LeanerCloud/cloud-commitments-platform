@@ -45,6 +45,19 @@ func trancheCommitmentRate(tr *LadderTrancheDB) (*string, error) {
 	}
 }
 
+// RequireLadderCommitmentBasis refuses a tranche whose amount is not proven to
+// be commitment dollars with a valid stored rate, so a caller never buys an
+// on-demand-equivalent amount as the commitment.
+func RequireLadderCommitmentBasis(tr *LadderTrancheDB) error {
+	if tr.AmountBasis == nil || *tr.AmountBasis != LadderAmountCommitment {
+		return fmt.Errorf("tranche amount is not a proven commitment amount")
+	}
+	if _, err := trancheCommitmentRate(tr); err != nil {
+		return fmt.Errorf("tranche commitment basis: %w", err)
+	}
+	return nil
+}
+
 func parseStoredCommitmentRate(text string) (*big.Rat, error) {
 	rate, ok := new(big.Rat).SetString(text)
 	if !ok || rate.Sign() <= 0 || rate.Cmp(big.NewRat(1, 1)) > 0 {

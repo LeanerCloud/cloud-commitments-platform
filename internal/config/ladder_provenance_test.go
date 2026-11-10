@@ -191,3 +191,37 @@ func TestLadderAmountText_RefusesAmountsTheColumnWouldRound(t *testing.T) {
 		require.Error(t, err, "%v", amount)
 	}
 }
+
+func TestRequireLadderCommitmentBasis(t *testing.T) {
+	od, native := LadderAmountOnDemand, LadderAmountCommitment
+	str := func(s string) *string { return &s }
+	for _, tc := range []struct {
+		name  string
+		basis *LadderAmountBasis
+		rate  *string
+		ok    bool
+	}{
+		{"nil basis", nil, nil, false},
+		{"nil basis with rate", nil, str("1/2"), false},
+		{"on-demand without rate", &od, nil, false},
+		{"on-demand with rate", &od, str("1/2"), false},
+		{"commitment nil rate", &native, nil, false},
+		{"rate zero", &native, str("0"), false},
+		{"rate text", &native, str("abc"), false},
+		{"rate above one", &native, str("1.5"), false},
+		{"rate negative", &native, str("-1/2"), false},
+		{"rate empty", &native, str(""), false},
+		{"rate one", &native, str("1"), true},
+		{"rate half", &native, str("1/2"), true},
+		{"rate decimal", &native, str("0.5"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := RequireLadderCommitmentBasis(&LadderTrancheDB{AmountBasis: tc.basis, CommitmentRate: tc.rate})
+			if tc.ok {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+		})
+	}
+}
