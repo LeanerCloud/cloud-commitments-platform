@@ -8,6 +8,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // LadderChainMaxDepth caps how many executions the reconciler follows along a
@@ -18,6 +19,10 @@ const LadderChainMaxDepth = 20
 // ErrLadderTrancheNotFired means the tranche row is gone or no longer fired
 // when the reconciler locked it: another writer won, nothing to do.
 var ErrLadderTrancheNotFired = errors.New("ladder tranche is not fired")
+
+// ErrLadderConfigBusy means another writer holds the ladder_configs row lock,
+// so DisableLadderConfigTx did nothing and the caller must roll back and retry.
+var ErrLadderConfigBusy = errors.New("ladder config row is locked by another writer")
 
 // LadderChainNode is the part of one purchase_executions row the reconciler
 // reads. NoSubmission is only meaningful while Status is failed.
@@ -204,4 +209,41 @@ func (s *PostgresStore) GetLadderExecutionGate(ctx context.Context, idempotencyK
 // Unknown statuses count as settled, so Retry fails closed.
 func LadderTrancheSettled(status ladder.TrancheStatus) bool {
 	return status != ladder.TrancheStatusScheduled && status != ladder.TrancheStatusFired
+}
+
+// GetGlobalConfigTx reads the global config inside the caller's transaction,
+// so the value is as fresh as the statement and not a snapshot taken earlier.
+func (s *PostgresStore) GetGlobalConfigTx(ctx context.Context, tx pgx.Tx) (*GlobalConfig, error) {
+	return getGlobalConfigFrom(ctx, tx)
+}
+
+// DisableLadderConfigTx sets ladder_configs.enabled to false inside the
+// caller's transaction and reports whether it flipped a row (false: the config
+// is gone or was already disabled). It locks the config row with NOWAIT and
+// never waits: the reconciler already holds a tranche row, and amend takes the
+// config row before the tranche row, so waiting here could deadlock. A busy row
+// returns ErrLadderConfigBusy. It takes no advisory lock (see withLadderConfigLock).
+func (s *PostgresStore) DisableLadderConfigTx(ctx context.Context, tx pgx.Tx, configID string) (bool, error) {
+	if configID == "" {
+		return false, errors.New("DisableLadderConfigTx needs a config id")
+	}
+	var enabled bool
+	err := tx.QueryRow(ctx, `SELECT enabled FROM ladder_configs WHERE id = $1 FOR NO KEY UPDATE NOWAIT`, configID).Scan(&enabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "55P03" {
+			return false, fmt.Errorf("%w: %s", ErrLadderConfigBusy, configID)
+		}
+		return false, fmt.Errorf("lock ladder_config %s: %w", configID, err)
+	}
+	if !enabled {
+		return false, nil
+	}
+	if _, execErr := tx.Exec(ctx, `UPDATE ladder_configs SET enabled = false WHERE id = $1`, configID); execErr != nil {
+		return false, fmt.Errorf("disable ladder_config %s: %w", configID, execErr)
+	}
+	return true, nil
 }
