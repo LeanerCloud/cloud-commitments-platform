@@ -26,11 +26,10 @@ func TestCreatePlan_StoresEveryRequestedField(t *testing.T) {
 
 	const accountID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	var created *config.PurchasePlan
-	mockStore.On("CreatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Run(func(args mock.Arguments) {
+	mockStore.On("CreatePurchasePlanWithAccounts", ctx, mock.AnythingOfType("*config.PurchasePlan"), []string{accountID}, mock.Anything).Run(func(args mock.Arguments) {
 		p := *args.Get(1).(*config.PurchasePlan)
 		created = &p
 	}).Return(nil)
-	mockStore.On("SetPlanAccounts", ctx, mock.AnythingOfType("string"), []string{accountID}).Return(nil)
 	mockStore.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
 		return &config.CloudAccount{ID: id, Name: "test-aws", Provider: "aws"}, nil
 	}

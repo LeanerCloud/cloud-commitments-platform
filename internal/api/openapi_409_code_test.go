@@ -32,7 +32,7 @@ func TestOpenAPI409NamesGuardCode(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(data, &doc))
 
 	for _, op := range []struct{ path, method string }{
-		{"/api/plans/{id}", "put"}, {"/api/plans/{id}", "patch"}, {"/api/plans/{id}", "delete"},
+		{"/api/plans", "post"}, {"/api/plans/{id}", "put"}, {"/api/plans/{id}", "patch"}, {"/api/plans/{id}", "delete"},
 		{"/api/plans/{id}/purchases", "post"}, {"/api/purchases/planned/{id}/resume", "post"},
 	} {
 		node := doc.Paths[op.path][op.method]

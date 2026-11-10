@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/planstep"
 	"github.com/aws/aws-lambda-go/events"
@@ -148,6 +149,16 @@ func calculateNextExecutionDate(plan *config.PurchasePlan, now time.Time) *time.
 
 // mapCreatePlanStorageError keeps storage details out of API responses.
 func mapCreatePlanStorageError(err error, notFoundMsg, genericMsg, logFmt string, logArgs ...any) error {
+	var taken *config.PlanNameTakenError
+	if errors.As(err, &taken) {
+		return planNameTakenError(taken)
+	}
+	if errors.Is(err, config.ErrPlanProviderMismatch) {
+		// The text is built by the store from account names the caller has
+		// already been authorized to attach, and is the same text the
+		// PUT /plans/:id/accounts path returns, so it is forwarded as is.
+		return NewClientError(http.StatusBadRequest, err.Error())
+	}
 	if errors.Is(err, config.ErrNotFound) {
 		return NewClientError(http.StatusNotFound, notFoundMsg)
 	}
@@ -212,38 +223,41 @@ func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunction
 		return nil, err
 	}
 
-	if err := h.config.CreatePurchasePlan(ctx, plan); err != nil {
+	// Resolved before the store call and never defaulted: a scope error must
+	// fail the request, not read as "no plan is visible" and let a duplicate in.
+	scope, scopeErr := h.getAccountScope(ctx, session)
+	if scopeErr != nil {
+		return nil, fmt.Errorf("failed to get allowed accounts: %w", scopeErr)
+	}
+
+	// One transaction writes the plan and its accounts, so no partial plan can
+	// exist and a concurrent create of the same name sees this one.
+	if err := h.config.CreatePurchasePlanWithAccounts(ctx, plan, req.TargetAccounts, planVisibleTo(scope)); err != nil {
 		return nil, mapCreatePlanStorageError(err,
-			"plan not found", "failed to create plan",
-			"createPlan: CreatePurchasePlan failed (provider=%s service=%s accounts=%d): %v",
+			"account not found", "failed to create plan",
+			"createPlan: CreatePurchasePlanWithAccounts failed (provider=%s service=%s accounts=%d): %v",
 			req.Provider, req.Service, len(req.TargetAccounts), err)
 	}
 
-	// Provider-match validation + plan_accounts insert. SetPlanAccounts is
-	// transactional internally, but the plan-row insert above is not part of
-	// that tx. If either step here fails we roll the plan row back so the
-	// invariant "every purchase_plans row has at least one plan_accounts
-	// row" holds end-to-end.
-	rollbackPlan := func() {
-		if delErr := h.config.DeletePurchasePlan(ctx, plan.ID); delErr != nil {
-			logging.Warnf("createPlan rollback: failed to delete partial plan %s: %v (manual cleanup may be required)", plan.ID, delErr)
-		}
-	}
-
-	if err := h.validatePlanAccountProviders(ctx, plan.ID, req.TargetAccounts); err != nil {
-		rollbackPlan()
-		return nil, err
-	}
-
-	if err := h.config.SetPlanAccounts(ctx, plan.ID, req.TargetAccounts); err != nil {
-		rollbackPlan()
-		return nil, mapCreatePlanStorageError(err,
-			"account not found", "failed to assign accounts to plan",
-			"createPlan: SetPlanAccounts failed (plan=%s accounts=%d): %v",
-			plan.ID, len(req.TargetAccounts), err)
-	}
-
 	return planForResponse(plan), nil
+}
+
+// planVisibleTo reports whether a caller with scope can see a plan attached to
+// accounts. It mirrors requirePlanAccess: one in-scope account is enough, and a
+// plan with no accounts is invisible to a scoped caller. It is pure so the
+// store can run it inside its transaction.
+func planVisibleTo(scope auth.AccountScope) func(accounts []config.CloudAccount) bool {
+	return func(accounts []config.CloudAccount) bool {
+		if scope.AllowsAll() {
+			return true
+		}
+		for i := range accounts {
+			if scope.Allows(accounts[i].ID, accounts[i].Name) {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 // validateTargetAccounts rejects a missing/empty target_accounts payload and

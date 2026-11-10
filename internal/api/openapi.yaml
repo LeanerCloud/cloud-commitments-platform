@@ -591,6 +591,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          description: A plan the caller can see already has this name, compared case-insensitively with surrounding spaces ignored (code plan_name_taken; details.existing_plan_id names it).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWithCode'
 
   /api/plans/{id}:
     parameters:

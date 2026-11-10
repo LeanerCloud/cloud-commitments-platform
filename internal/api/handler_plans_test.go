@@ -311,15 +311,7 @@ func TestHandler_createPlan(t *testing.T) {
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("CreatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
-	mockStore.On("SetPlanAccounts", ctx, mock.AnythingOfType("string"), []string{targetAccountID}).Return(nil)
-
-	// validatePlanAccountProviders looks up each target account and checks
-	// its provider matches the plan's. Stub GetCloudAccount to return an
-	// aws account so the provider-match passes (plan service is aws:rds).
-	mockStore.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
-		return &config.CloudAccount{ID: id, Name: "test-aws", Provider: "aws"}, nil
-	}
+	mockStore.On("CreatePurchasePlanWithAccounts", ctx, mock.AnythingOfType("*config.PurchasePlan"), []string{targetAccountID}, mock.Anything).Return(nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 
@@ -336,7 +328,7 @@ func TestHandler_createPlan(t *testing.T) {
 	plan := result.(*config.PurchasePlan)
 	assert.Equal(t, "New Plan", plan.Name)
 	assert.True(t, plan.Enabled)
-	mockStore.AssertCalled(t, "SetPlanAccounts", ctx, mock.AnythingOfType("string"), []string{targetAccountID})
+	mockStore.AssertCalled(t, "CreatePurchasePlanWithAccounts", ctx, mock.AnythingOfType("*config.PurchasePlan"), []string{targetAccountID})
 }
 
 func TestHandler_createPlan_InvalidBody(t *testing.T) {
@@ -406,18 +398,15 @@ func TestHandler_createPlan_RejectsEmptyTargetAccounts(t *testing.T) {
 			require.True(t, ok, "expected ClientError, got %T: %v", err, err)
 			assert.Equal(t, 400, ce.code)
 			assert.Contains(t, ce.Error(), "target_accounts")
-			mockStore.AssertNotCalled(t, "CreatePurchasePlan", mock.Anything, mock.Anything)
+			mockStore.AssertNotCalled(t, "CreatePurchasePlanWithAccounts", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		})
 	}
 }
 
-// TestHandler_createPlan_RollbackDeleteFailureSurfacesOriginalError verifies
-// that when SetPlanAccounts fails after CreatePurchasePlan succeeds, AND the
-// rollback DeletePurchasePlan also fails, the caller still receives a 500
-// ClientError (not the raw DB error) and the rollback error does not leak.
-// The rollback failure is logged at WARN; the SetPlanAccounts error is logged
-// at ERROR -- see handler_plans.go createPlan rollbackPlan closure.
-func TestHandler_createPlan_RollbackDeleteFailureSurfacesOriginalError(t *testing.T) {
+// TestHandler_createPlan_StoreFailureReturns500NoLeak verifies that a failure
+// inside the atomic create returns a 500 ClientError with the generic message
+// and does not leak the raw store error.
+func TestHandler_createPlan_StoreFailureReturns500NoLeak(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -432,19 +421,7 @@ func TestHandler_createPlan_RollbackDeleteFailureSurfacesOriginalError(t *testin
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("CreatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
-	setAccountsErr := errors.New("setplanaccounts boom")
-	mockStore.On("SetPlanAccounts", ctx, mock.AnythingOfType("string"), []string{targetAccountID}).Return(setAccountsErr)
-	// Rollback DeletePurchasePlan also fails — caller must still get the
-	// original SetPlanAccounts error, not the rollback error.
-	deleteErr := errors.New("rollback delete boom")
-	mockStore.On("DeletePurchasePlan", ctx, mock.AnythingOfType("string")).Return(deleteErr)
-
-	// Stub GetCloudAccount so provider-match validation passes — we want to
-	// reach the SetPlanAccounts step.
-	mockStore.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
-		return &config.CloudAccount{ID: id, Name: "test-aws", Provider: "aws"}, nil
-	}
+	mockStore.On("CreatePurchasePlanWithAccounts", ctx, mock.AnythingOfType("*config.PurchasePlan"), []string{targetAccountID}, mock.Anything).Return(errors.New("insert plan_accounts boom"))
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 	body := `{"name": "New Plan", "enabled": true, "provider": "aws", "service": "rds", "target_accounts": ["` + targetAccountID + `"]}`
@@ -460,9 +437,7 @@ func TestHandler_createPlan_RollbackDeleteFailureSurfacesOriginalError(t *testin
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
 	assert.Equal(t, 500, ce.code)
-	assert.NotContains(t, ce.Error(), "setplanaccounts boom", "DB error must not leak to caller")
-	assert.NotContains(t, ce.Error(), "rollback delete boom", "rollback error must not leak to caller")
-	mockStore.AssertCalled(t, "DeletePurchasePlan", ctx, mock.AnythingOfType("string"))
+	assert.NotContains(t, ce.Error(), "boom", "DB error must not leak to caller")
 }
 
 // TestHandler_createPlan_RejectsInvalidTargetAccountUUID verifies that a
@@ -493,7 +468,7 @@ func TestHandler_createPlan_RejectsInvalidTargetAccountUUID(t *testing.T) {
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected ClientError, got %T: %v", err, err)
 	assert.Equal(t, 400, ce.code)
-	mockStore.AssertNotCalled(t, "CreatePurchasePlan", mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "CreatePurchasePlanWithAccounts", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestHandler_getPlan(t *testing.T) {
@@ -1629,24 +1604,8 @@ func TestHandler_createPlan_UnknownAccountReturns404(t *testing.T) {
 
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
-	mockStore.On("CreatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
-	// Rollback is triggered when validatePlanAccountProviders returns an error.
-	mockStore.On("DeletePurchasePlan", ctx, mock.AnythingOfType("string")).Return(nil)
-	// GetPurchasePlan is called by getPlanForAccountProviderValidation inside
-	// validatePlanAccountProviders. Return a plan with services so
-	// DerivePlanProviders produces a non-empty expected set and the
-	// provider-match check actually runs (empty services => check skipped).
-	mockStore.GetPurchasePlanFn = func(_ context.Context, _ string) (*config.PurchasePlan, error) {
-		return &config.PurchasePlan{
-			Services: map[string]config.ServiceConfig{
-				"aws/rds": {Provider: "aws", Service: "rds"},
-			},
-		}, nil
-	}
-	// GetCloudAccount returns nil (not found) to simulate the missing account.
-	mockStore.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
-		return nil, nil // nil account, nil error => "not found" branch
-	}
+	mockStore.On("CreatePurchasePlanWithAccounts", ctx, mock.AnythingOfType("*config.PurchasePlan"), []string{unknownAccountID}, mock.Anything).
+		Return(fmt.Errorf("%w: account %s", config.ErrNotFound, unknownAccountID))
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 	body := `{"name": "P", "provider": "aws", "service": "rds", "target_accounts": ["` + unknownAccountID + `"]}`
@@ -1681,7 +1640,7 @@ func TestHandler_createPlan_DBErrorOnCreateReturns500WithLog(t *testing.T) {
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
 	mockAuth.grantAdmin()
 	dbErr := errors.New("connection refused")
-	mockStore.On("CreatePurchasePlan", ctx, mock.AnythingOfType("*config.PurchasePlan")).Return(dbErr)
+	mockStore.On("CreatePurchasePlanWithAccounts", ctx, mock.AnythingOfType("*config.PurchasePlan"), []string{targetAccountID}, mock.Anything).Return(dbErr)
 
 	handler := &Handler{config: mockStore, auth: mockAuth}
 	body := `{"name": "P", "provider": "aws", "service": "rds", "target_accounts": ["` + targetAccountID + `"]}`
@@ -1946,7 +1905,7 @@ func TestHandler_planWrites_RefuseZeroTargetCoverage(t *testing.T) {
 			require.True(t, ok, "expected ClientError, got %T: %v", err, err)
 			assert.Equal(t, 400, ce.code)
 			assert.Equal(t, "target_coverage must be between 1 and 100 for a purchase plan", ce.message)
-			mockStore.AssertNotCalled(t, "CreatePurchasePlan", mock.Anything, mock.Anything)
+			mockStore.AssertNotCalled(t, "CreatePurchasePlanWithAccounts", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			mockStore.AssertNotCalled(t, "UpdatePurchasePlan", mock.Anything, mock.Anything)
 		})
 	}

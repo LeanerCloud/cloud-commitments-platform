@@ -92,12 +92,11 @@ func TestCreatePlan_ReturnsCountedCopy(t *testing.T) {
 	h, store := boundResponseHandler(t)
 	account := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	var created *config.PurchasePlan
-	store.On("CreatePurchasePlan", mock.Anything, mock.AnythingOfType("*config.PurchasePlan")).
+	store.On("CreatePurchasePlanWithAccounts", mock.Anything, mock.AnythingOfType("*config.PurchasePlan"), []string{account}, mock.Anything).
 		Run(func(args mock.Arguments) {
 			created = args.Get(1).(*config.PurchasePlan)
 			created.Services = boundStoredPlan().Services
 		}).Return(nil)
-	store.On("SetPlanAccounts", mock.Anything, mock.Anything, []string{account}).Return(nil)
 	store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
 		return &config.CloudAccount{ID: id, Name: "test-aws", Provider: "aws"}, nil
 	}

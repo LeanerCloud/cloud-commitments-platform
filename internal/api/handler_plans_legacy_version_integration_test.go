@@ -168,7 +168,7 @@ func TestLegacyVersionB1aRoutedCreateCompatibility(t *testing.T) {
 			if tc.value != "" {
 				field = `,"expected_updated_at":` + tc.value
 			}
-			body := fmt.Sprintf(`{"name":"created","provider":"azure","service":"compute","term":1,"payment":"monthly","target_coverage":80,"ramp_schedule":"immediate","enabled":false,"target_accounts":[%q]%s}`, accounts[0].ID, field)
+			body := fmt.Sprintf(`{"name":%q,"provider":"azure","service":"compute","term":1,"payment":"monthly","target_coverage":80,"ramp_schedule":"immediate","enabled":false,"target_accounts":[%q]%s}`, "created "+tc.name, accounts[0].ID, field)
 			response := b1aRoute(t, f.handler, "POST", "/api/plans", body)
 			require.Equal(t, 200, response.StatusCode, response.Body)
 			var created config.PurchasePlan
@@ -179,7 +179,9 @@ func TestLegacyVersionB1aRoutedCreateCompatibility(t *testing.T) {
 			assigned, err := f.store.GetPlanAccounts(context.Background(), created.ID)
 			require.NoError(t, err)
 			require.Equal(t, accounts, assigned, "every created plan retains account association")
-			stored.ID = ""
+			// Plan names are unique per caller scope (#1734), so each subtest
+			// creates its own name; the comparison ignores it.
+			stored.ID, stored.Name = "", ""
 			stored.CreatedAt, stored.UpdatedAt, stored.RampSchedule.StartDate = time.Time{}, time.Time{}, time.Time{}
 			if stored.NextExecutionDate != nil {
 				zero := time.Time{}

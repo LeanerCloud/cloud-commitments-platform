@@ -708,14 +708,7 @@ func TestHandler_HandleRequest_CreatePlan(t *testing.T) {
 	// is never validated.
 	mockAuth.grantAdmin()
 
-	mockStore.On("CreatePurchasePlan", mock.Anything, mock.AnythingOfType("*config.PurchasePlan")).Return(nil)
-	mockStore.On("SetPlanAccounts", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("[]string")).Return(nil)
-	// Universal-plans fix: createPlan now validates target_accounts'
-	// providers match the plan's. Stub the cloud-account lookup so the
-	// provider-match passes (plan has aws:rds, account returns aws).
-	mockStore.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
-		return &config.CloudAccount{ID: id, Name: "test-aws", Provider: "aws"}, nil
-	}
+	mockStore.On("CreatePurchasePlanWithAccounts", mock.Anything, mock.AnythingOfType("*config.PurchasePlan"), mock.AnythingOfType("[]string"), mock.Anything).Return(nil)
 
 	handler := &Handler{config: mockStore, auth: mockAuth, apiKey: "test-key"}
 
