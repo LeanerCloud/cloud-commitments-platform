@@ -7076,6 +7076,21 @@ components:
         default_ramp_schedule:
           type: string
           enum: [immediate, weekly-25pct, monthly-10pct, custom]
+        purchase_delay_hours:
+          type: integer
+          minimum: 0
+          maximum: 168
+          default: 48
+          description: |
+            Gmail-style pre-fire delay in hours. When above 0, approving a
+            purchase defers the cloud call by this many hours and the
+            approver can cancel until the window closes; 0 executes
+            immediately. A value outside 0 to 168 returns 400. The default
+            (48) applies when no configuration has been saved. On a
+            deployment that schedules no fire_scheduled_purchases sweep, a
+            write of a value above 0 returns 400 on PUT /api/config, and
+            approving a purchase while the stored or default delay is above
+            0 returns 409 on POST /api/purchases/approve/{id}.
 
     ServiceConfig:
       type: object
