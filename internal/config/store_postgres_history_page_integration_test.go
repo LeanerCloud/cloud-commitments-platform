@@ -5,6 +5,7 @@ package config
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -148,7 +149,7 @@ func TestIntegration_ListHistoryExecutionsPage_WalksEveryRowOnce(t *testing.T) {
 	f.addExecution(ctx, t, "pending", "", base)
 
 	got := walkExecutions(ctx, t, f.store, HistoryExecutionsPageQuery{
-		Statuses: append(statuses, "completed"), Limit: 4,
+		Statuses: slices.Concat(statuses, []string{"completed"}), Limit: 4,
 	})
 
 	assert.Equal(t, f.sortedIDs(ids), got)
