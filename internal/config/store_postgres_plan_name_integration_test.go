@@ -125,6 +125,12 @@ func TestCreatePurchasePlanWithAccounts_TabAndNewlineAreWhitespace(t *testing.T)
 		err := store.CreatePurchasePlanWithAccounts(ctx, planNamed(variant), []string{account.ID}, seenAlways)
 		requireNameTaken(t, err, existing.ID, "Tabbed plan")
 	}
+
+	// The stored name is what listPlansNamedTx matches, so a padded stored name needs the same trim.
+	padded := planNamed("Padded plan\t\n")
+	require.NoError(t, store.CreatePurchasePlanWithAccounts(ctx, padded, []string{account.ID}, seenAlways))
+	err := store.CreatePurchasePlanWithAccounts(ctx, planNamed("Padded plan"), []string{account.ID}, seenAlways)
+	requireNameTaken(t, err, padded.ID, "Padded plan\t\n")
 }
 
 func TestCreatePurchasePlanWithAccounts_QueuesOnNormalisedNameLock(t *testing.T) {
