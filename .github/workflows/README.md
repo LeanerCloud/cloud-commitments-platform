@@ -52,7 +52,7 @@ Runs comprehensive quality checks on every pull request and push to main branch.
 
 ### Required Variables
 
-- `GO_VERSION` (default: 1.26.10)
+- `GO_VERSION` (default: 1.26.11)
 
 ### Example
 

@@ -1,6 +1,6 @@
 module github.com/LeanerCloud/cloud-commitments-platform
 
-go 1.26.10
+go 1.26.11
 
 // Keep ./... out of frontend/node_modules (issue #177). Go's ./... skips only
 // testdata and paths starting with . or _, so after `npm ci` it picked up the

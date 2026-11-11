@@ -7,13 +7,13 @@ action. Resolved items are moved to the Resolved section at the bottom.
 
 ### Local gofmt and golangci-lint can disagree with CI
 
-CI and `go.mod` use Go 1.26.10 and the prebuilt golangci-lint v2.10.1 release
+CI and `go.mod` use Go 1.26.11 and the prebuilt golangci-lint v2.10.1 release
 binary. A developer machine often has a newer Go first on `PATH` (Homebrew Go
 1.27.2 at the time of writing) and a golangci-lint built from source with it;
 their formatters flag files that CI accepts, for example
 `internal/api/handler_ri_exchange_direct_resolve_body_test.go`. Run the pinned
-toolchain's `gofmt` (`$GOROOT/bin/gofmt` of Go 1.26.10) and a golangci-lint
-built with `GOTOOLCHAIN=go1.26.10` (or the official release binary), unfiltered
+toolchain's `gofmt` (`$GOROOT/bin/gofmt` of Go 1.26.11) and a golangci-lint
+built with `GOTOOLCHAIN=go1.26.11` (or the official release binary), unfiltered
 and with the integration build tag, as CI does. Do not reformat a file only
 because a locally built tool flags it while main CI is green.
 
