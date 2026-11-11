@@ -20,7 +20,7 @@ import { showSkeletonTiles, showSkeletonBlock, teardownSkeleton, isSkeletonActiv
 import { buildErrorCallout } from './lib/error-callout';
 import { filterByEnabledProviders } from './lib/enabled-providers';
 import { buildKpiTile } from './lib/kpi-tile';
-import { scopeUpcomingToProvider, upcomingEmptyMessage, UPCOMING_ACCOUNT_SCOPE_NOTE } from './lib/upcoming-scope';
+import { upcomingEmptyMessage } from './lib/upcoming-scope';
 import { formatTrendAxisTick, formatTrendTooltipTitle, formatSparseTrendMessage, MIN_TREND_POINTS, upsertChart } from './modules/chart-utils';
 import { setChartSummary, renderChartTable, removeChartTable } from './lib/chart-a11y';
 import { applyChartDefaults, chartColor, surfaceColor, withAlpha } from './lib/chart-theme';
@@ -116,6 +116,10 @@ export function savingsLayerColors(): { current: string; lowestOption: string; u
 // enumerates real pending executions to surface execution_id properly.
 let upcomingPurchasesIndex: Map<string, UpcomingPurchase> = new Map();
 
+// Bumped on every upcoming request so a slower, older response cannot
+// overwrite the widget after a newer chip selection rendered (#713).
+let upcomingGen = 0;
+
 /**
  * True when the Home tab is the currently-visible tab. Used by the
  * reload-on-filter-change subscriptions below to skip the fetch (and
@@ -203,9 +207,10 @@ export async function loadDashboard(): Promise<void> {
     // move the range computation server-side if needed.
     // Promise.allSettled ensures the dashboard still renders if any individual
     // fetch fails -- each card falls back gracefully.
+    const gen = ++upcomingGen;
     const [summaryResult, upcomingResult, recsResult, enabledProviders, accountsResult] = await Promise.allSettled([
       api.getDashboardSummary(currentProvider, currentAccountIDs),
-      api.getUpcomingPurchases(),
+      api.getUpcomingPurchases(currentProvider, currentAccountIDs),
       api.getRecommendations({ provider: currentProvider, account_ids: currentAccountIDs }),
       loadEnabledProviders(),
       // Only feeds the first-run onboarding card (issue #756); wrapped so a
@@ -269,7 +274,9 @@ export async function loadDashboard(): Promise<void> {
     // Single merged per-service chart (#908): potential range from recs +
     // current-savings underlay from the summary's by_service map.
     renderSavingsByService(recs, summaryData.by_service || {}, filterDesc);
-    if (upcomingResult.status === 'rejected') {
+    if (gen !== upcomingGen) {
+      // A newer upcoming request owns the widget.
+    } else if (upcomingResult.status === 'rejected') {
       console.error('Failed to load upcoming purchases:', upcomingResult.reason);
       renderUpcomingError();
     } else {
@@ -549,24 +556,25 @@ async function retryUpcomingPurchases(): Promise<void> {
     container.focus();
     showSkeletonBlock(container, '100%', '6rem');
   }
+  const gen = ++upcomingGen;
   try {
-    const data = await api.getUpcomingPurchases();
+    const data = await api.getUpcomingPurchases(state.getCurrentProvider(), state.getCurrentAccountIDs());
+    if (gen !== upcomingGen) return;
     // `?.`: apiRequest resolves null for an empty 2xx body (#304).
     renderUpcomingPurchases(data?.purchases || []);
   } catch (error) {
+    if (gen !== upcomingGen) return;
     console.error('Failed to load upcoming purchases:', error);
     renderUpcomingError();
   }
 }
 
-function renderUpcomingPurchases(allPurchases: UpcomingPurchase[]): void {
+function renderUpcomingPurchases(purchases: UpcomingPurchase[]): void {
   const container = document.getElementById('upcoming-list');
   if (!container) return;
 
-  // The endpoint ignores the topbar chips, so apply the provider chip here
-  // and flag the account chip as not applied (#713, see lib/upcoming-scope).
+  // The endpoint already applied the topbar chips (#713).
   const provider = state.getCurrentProvider();
-  const purchases = scopeUpcomingToProvider(allPurchases, provider);
 
   // Refresh the in-memory index so viewPurchaseDetails can render its
   // dialog from local data — there is no execution row to look up yet
@@ -580,13 +588,6 @@ function renderUpcomingPurchases(allPurchases: UpcomingPurchase[]): void {
     empty.textContent = upcomingEmptyMessage(provider);
     container.appendChild(empty);
     return;
-  }
-
-  if (state.getCurrentAccountIDs().length > 0) {
-    const note = document.createElement('p');
-    note.className = 'help-text upcoming-scope-note';
-    note.textContent = UPCOMING_ACCOUNT_SCOPE_NOTE;
-    container.appendChild(note);
   }
 
   for (const p of purchases) {

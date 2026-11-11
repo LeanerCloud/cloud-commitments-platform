@@ -799,6 +799,14 @@ describe('Dashboard API', () => {
       );
     });
 
+    test('sends provider and account chips as query params (#713)', async () => {
+      await getUpcomingPurchases('aws', ['a1', 'a2']);
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/dashboard/upcoming?provider=aws&account_ids=a1%2Ca2',
+        expect.anything()
+      );
+    });
+
     // #1189: the endpoint returns { purchases: [...] }, not a bare array. The
     // annotation makes tsc (npm run typecheck) reject a regression to the
     // old UpcomingPurchase[] return type.
