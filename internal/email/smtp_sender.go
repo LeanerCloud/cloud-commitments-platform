@@ -657,7 +657,7 @@ func (s *SMTPSender) SendPurchaseScheduledNotification(ctx context.Context, data
 	if err != nil {
 		return fmt.Errorf("failed to render purchase scheduled delay email: %w", err)
 	}
-	subject := fmt.Sprintf("CUDly - Purchase Scheduled for %s", data.RevocationWindowClosesAt)
+	subject := purchaseScheduledSubject(data)
 	return s.SendToEmailWithCC(ctx, data.RecipientEmail, data.CCEmails, subject, body)
 }
 

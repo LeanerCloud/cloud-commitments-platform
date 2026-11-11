@@ -854,10 +854,54 @@ To view or manage this purchase:
 -- CUDly
 `
 
+// purchaseLadderScheduledTemplate is the body of the scheduled notice of an
+// automatic ladder purchase. Nobody approved it and its upfront cost and
+// savings are not estimated, so it states the hourly commitment, the annual
+// exposure and who can revoke instead. "no upfront" mirrors
+// config.LadderPayment, the only payment option automated ladder buys use.
+var purchaseLadderScheduledTemplate = `
+An automatic ladder purchase has been scheduled. It was not approved by a person.
+
+What will be bought:
+- Hourly commitment: ${{.Ladder.HourlyText}} per hour
+- Annual exposure: ${{printf "%.2f" .Ladder.AnnualExposure}} (hourly commitment x 8760 hours)
+- Term: {{if eq .Ladder.TermYears 1}}1 year{{else}}{{.Ladder.TermYears}} years{{end}}, no upfront
+- Account: {{.Ladder.AccountLabel}}
+- Ladder tranche: {{.Ladder.TrancheID}}
+
+Scheduled execution time: {{.RevocationWindowClosesAt}} (UTC)
+
+You can revoke this purchase at zero cost until it executes:
+{{.RevokeURL}}
+
+Only users with the revoke-any permission and the admin API key can revoke
+it. Users who can revoke only their own purchases cannot, because no person
+created it.
+
+After that time the cloud SDK call will have been made and revocation
+requires a provider support case (for supported providers).
+
+To view or manage this purchase:
+{{.DashboardURL}}/purchases#history?execution={{.ExecutionID}}
+
+-- CUDly
+`
+
 // RenderPurchaseScheduledDelayEmail renders the plain-text scheduled-delay
-// notification email.
+// notification email, or the ladder variant when data.Ladder is set.
 func RenderPurchaseScheduledDelayEmail(data NotificationData) (string, error) {
+	if data.Ladder != nil {
+		return renderTextTemplate("purchase_ladder_scheduled", purchaseLadderScheduledTemplate, data)
+	}
 	return renderTextTemplate("purchase_scheduled_delay", purchaseScheduledDelayTemplate, data)
+}
+
+// purchaseScheduledSubject is the subject of the scheduled-purchase notice.
+func purchaseScheduledSubject(data NotificationData) string {
+	if data.Ladder != nil {
+		return fmt.Sprintf("CUDly - Automatic ladder purchase scheduled for %s", data.RevocationWindowClosesAt)
+	}
+	return fmt.Sprintf("CUDly - Purchase Scheduled for %s", data.RevocationWindowClosesAt)
 }
 
 // SendPurchaseScheduledNotification sends the Gmail-style pre-fire delay
@@ -880,7 +924,7 @@ func (s *Sender) SendPurchaseScheduledNotification(ctx context.Context, data Not
 	if err != nil {
 		return fmt.Errorf("failed to render purchase scheduled delay email: %w", err)
 	}
-	subject := fmt.Sprintf("CUDly - Purchase Scheduled for %s", data.RevocationWindowClosesAt)
+	subject := purchaseScheduledSubject(data)
 	return s.SendToEmailWithCCMultipart(ctx, data.RecipientEmail, data.CCEmails, subject, body, "")
 }
 

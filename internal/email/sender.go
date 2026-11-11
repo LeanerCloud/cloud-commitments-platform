@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -620,6 +621,32 @@ type NotificationData struct {
 	// UnrecordedCommitmentID), instead of a recovery sweep having interrupted
 	// the run (cloud-commitments-go#107).
 	UnrecordedCommitment bool
+	// Ladder, when non-nil, makes the scheduled-purchase notice describe an
+	// automatic ladder purchase. Only the ladder sweep sets it; it is never
+	// inferred from the other fields.
+	Ladder *LadderNoticeData
+}
+
+// LadderNoticeData is what the scheduled notice of an automatic ladder
+// purchase states: no person approved it, so the notice must show what is
+// bought and for how long it commits the account.
+type LadderNoticeData struct {
+	HourlyCommitment float64 // USD per hour.
+	AnnualExposure   float64 // USD per year, hourly commitment x 8760.
+	TermYears        int
+	AccountLabel     string
+	TrancheID        string
+}
+
+// HourlyText is the hourly commitment at the precision a tranche can carry (5
+// decimals), with trailing zeros trimmed to at least cents, so a small
+// commitment never renders as $0.00.
+func (l *LadderNoticeData) HourlyText() string {
+	s := strconv.FormatFloat(l.HourlyCommitment, 'f', 5, 64)
+	for strings.HasSuffix(s, "0") && len(s)-strings.Index(s, ".") > 3 {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 // RecommendationSummary is a simplified recommendation for email display.

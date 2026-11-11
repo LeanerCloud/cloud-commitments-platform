@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 )
@@ -84,6 +85,39 @@ func SendScheduledNotice(ctx context.Context, n ScheduledNotifier, globalCfg *co
 	data := BuildScheduledNoticeData(dashboardURL, exec, globalCfg, actor)
 	if err := n.SendPurchaseScheduledNotification(ctx, data); err != nil {
 		return fmt.Errorf("send scheduled notice for execution %s: %w", exec.ExecutionID, err)
+	}
+	return nil
+}
+
+// LadderNoticeFacts are what an automatic ladder purchase's notice states
+// beyond the execution itself.
+type LadderNoticeFacts struct {
+	HourlyCommitment float64
+	TermYears        int
+	AccountLabel     string
+	TrancheID        string
+}
+
+// SendLadderNotice sends the scheduled notice of an automatic ladder purchase.
+// The ladder variant is selected by facts, never by inspecting the execution,
+// so SendScheduledNotice and its callers are unchanged.
+func SendLadderNotice(ctx context.Context, n ScheduledNotifier, globalCfg *config.GlobalConfig, dashboardURL string, exec *config.PurchaseExecution, facts LadderNoticeFacts) error {
+	if n == nil {
+		return ErrNoScheduledNotifier
+	}
+	if exec.ExecutionID == "" {
+		return ErrNoExecutionID
+	}
+	data := BuildScheduledNoticeData(dashboardURL, exec, globalCfg, "")
+	data.Ladder = &email.LadderNoticeData{
+		HourlyCommitment: facts.HourlyCommitment,
+		AnnualExposure:   facts.HourlyCommitment * common.HoursPerYear,
+		TermYears:        facts.TermYears,
+		AccountLabel:     facts.AccountLabel,
+		TrancheID:        facts.TrancheID,
+	}
+	if err := n.SendPurchaseScheduledNotification(ctx, data); err != nil {
+		return fmt.Errorf("send ladder notice for execution %s: %w", exec.ExecutionID, err)
 	}
 	return nil
 }
