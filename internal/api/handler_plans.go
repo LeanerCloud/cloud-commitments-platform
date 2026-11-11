@@ -459,6 +459,9 @@ func mergeUpdatedPlan(existingPlan *config.PurchasePlan, req *PlanRequest, planI
 	// since it has no way to see the existing plan. Left alone, every PUT
 	// -- including a bare rename -- silently restarts an in-progress ramp,
 	// so the scheduler re-buys steps that already executed (issue #219).
+	if err := refuseOmittedRampChange(existingPlan, req, plan); err != nil {
+		return nil, err
+	}
 	if err := preserveRampProgress(existingPlan, plan); err != nil {
 		return nil, err
 	}
@@ -483,6 +486,25 @@ func mergeUpdatedPlan(existingPlan *config.PurchasePlan, req *PlanRequest, planI
 		return nil, NewClientError(400, fmt.Sprintf("validation error: %s", err))
 	}
 	return plan, nil
+}
+
+// refuseOmittedRampChange refuses an update that omits ramp_schedule when the
+// immediate preset it would fall back to is a different schedule from the
+// stored one (#1935). PUT replaces the ramp, so omitting it means immediate: on
+// a plan with no completed step that used to turn a weekly or monthly ramp into
+// buying the whole base in one step, silently. A plan with a completed step is
+// refused by preserveRampProgress with its own message, so it is left to that.
+func refuseOmittedRampChange(existingPlan *config.PurchasePlan, req *PlanRequest, plan *config.PurchasePlan) error {
+	// Only the legacy zero value (a plan stored with no schedule) is exempt. A
+	// one-step custom ramp of 51 to 99% is not immediate: it buys that share, and
+	// the fallback would make it 100%, which rampScheduleShapeUnchanged catches.
+	if req.RampSchedule != "" || existingPlan.RampSchedule.CurrentStep > 0 || existingPlan.RampSchedule.TotalSteps == 0 ||
+		rampScheduleShapeUnchanged(existingPlan.RampSchedule, plan.RampSchedule) {
+		return nil
+	}
+	return NewClientError(http.StatusConflict,
+		"ramp_schedule was omitted, which means immediate and would replace this plan's "+existingPlan.RampSchedule.Type+
+			" schedule; resend the current ramp_schedule to keep it, or send immediate to change it")
 }
 
 // preserveRampProgress carries ramp-in-progress state from the existing

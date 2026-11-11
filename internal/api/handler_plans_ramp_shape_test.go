@@ -185,3 +185,86 @@ func TestUpdatePlan_RealRampChangeOnNonPresetStillRefused(t *testing.T) {
 		})
 	}
 }
+
+// #1935: PUT replaces the ramp, so an omitted ramp_schedule means immediate. On a
+// plan with no completed step that used to turn a weekly or monthly ramp into
+// buying the whole base in one step without a word; it is now refused, like the
+// in-progress case, unless the stored schedule already is the immediate one.
+func TestUpdatePlan_OmittedRampSchedule(t *testing.T) {
+	const planID = "12345678-1234-1234-1234-123456789abc"
+	weekly := config.PresetRampSchedules[config.RampWeekly25Pct]
+	immediate := config.PresetRampSchedules["immediate"]
+	// 60% steps give one step (int(100/60)), so TotalSteps is 1 but it buys 60%,
+	// not the whole base: the immediate fallback would raise it to 100%.
+	partialOneStep := config.RampSchedule{Type: "custom", PercentPerStep: 60, StepIntervalDays: 7, TotalSteps: 1}
+
+	tests := []struct {
+		name       string
+		stored     config.RampSchedule
+		body       string
+		wantStatus int
+		wantType   string
+	}{
+		{"omitted over a stored weekly ramp is refused", weekly, `{"name":"renamed"}`, 409, ""},
+		{"omitted over a stored one-step 60% custom ramp is refused", partialOneStep, `{"name":"renamed"}`, 409, ""},
+		{"omitted over a stored immediate plan is fine", immediate, `{"name":"renamed"}`, 200, "immediate"},
+		{"omitted over a legacy plan with no stored ramp is fine", config.RampSchedule{}, `{"name":"renamed"}`, 200, "immediate"},
+		{"sending the stored ramp keeps it", weekly, `{"name":"renamed","ramp_schedule":"weekly-25pct"}`, 200, "weekly"},
+		{"sending immediate explicitly is allowed", weekly, `{"name":"renamed","ramp_schedule":"immediate"}`, 200, "immediate"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			existing := &config.PurchasePlan{ID: planID, Name: "p", Enabled: true, RampSchedule: tc.stored}
+
+			resp, saved := putPlan(t, existing, tc.body)
+
+			assert.Equal(t, tc.wantStatus, resp.StatusCode, resp.Body)
+			if tc.wantStatus == 409 {
+				assert.Nil(t, saved, "a refused update must not reach the store")
+				assert.Contains(t, resp.Body, "ramp_schedule was omitted")
+				assert.Contains(t, resp.Body, "resend the current ramp_schedule to keep it")
+				return
+			}
+			require.NotNil(t, saved)
+			assert.Equal(t, tc.wantType, saved.RampSchedule.Type)
+		})
+	}
+}
+
+// #1935: which preset a plan gets when ramp_schedule is omitted on create is
+// pinned here, since the API docs did not say: the immediate one.
+func TestPlanRequest_OmittedRampScheduleOnCreateIsImmediate(t *testing.T) {
+	plan := (&PlanRequest{Name: "p"}).toPurchasePlan()
+
+	assert.Equal(t, "immediate", plan.RampSchedule.Type)
+	assert.Equal(t, 1, plan.RampSchedule.TotalSteps)
+	assert.Equal(t, 100.0, plan.RampSchedule.PercentPerStep)
+}
+
+// #1935: custom_step_percent and custom_interval_days are read only with
+// ramp_schedule "custom"; sent without it they would be ignored and the plan
+// would buy everything at once, so the request is refused.
+func TestDecodePlanRequest_CustomCadenceWithoutCustomSchedule(t *testing.T) {
+	refused := []string{
+		`{"name":"p","custom_step_percent":25}`,
+		`{"name":"p","custom_interval_days":7}`,
+		`{"name":"p","ramp_schedule":"weekly-25pct","custom_step_percent":25,"custom_interval_days":7}`,
+		`{"name":"p","ramp_schedule":"immediate","custom_interval_days":7}`,
+	}
+	for _, body := range refused {
+		_, err := decodePlanRequest(body)
+		ce, ok := IsClientError(err)
+		require.True(t, ok, body)
+		assert.Equal(t, 400, ce.code, body)
+		assert.Contains(t, ce.message, "apply only with ramp_schedule \"custom\"", body)
+	}
+
+	for _, body := range []string{
+		`{"name":"p","ramp_schedule":"custom","custom_step_percent":25,"custom_interval_days":7}`,
+		`{"name":"p","ramp_schedule":"weekly-25pct"}`,
+		`{"name":"p"}`,
+	} {
+		_, err := decodePlanRequest(body)
+		require.NoError(t, err, body)
+	}
+}

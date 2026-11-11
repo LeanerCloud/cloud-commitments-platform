@@ -634,6 +634,13 @@ paths:
         minimum count, service ramp and Enabled value when edited through its canonical
         service name. Exact-key edits retain their existing Enabled overlay behavior;
         selecting a genuinely different singleton service still replaces its settings.
+        ramp_schedule replaces the plan's ramp too: omitted, it means immediate (the
+        same default as on create), so an update that omits it from a plan with a
+        weekly, monthly or custom ramp is refused with 409 unless it resends that ramp
+        (a plan with a completed step is refused for any different ramp). custom_step_percent
+        and custom_interval_days are read only with ramp_schedule custom; sending them
+        with any other value is refused with 400. target_accounts is ignored on update;
+        change a plan's accounts with PUT /api/plans/{id}/accounts.
       parameters:
         - $ref: '#/components/parameters/CSRFToken'
       requestBody:
@@ -669,7 +676,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: The plan changed concurrently, the request changes the ramp schedule of a plan that has already completed a step (keep the schedule, or create a new plan), or the plan is managed by the schedule editor and the request changes what only the editor may (code editor_reconciliation_required).
+          description: The plan changed concurrently, the request changes the ramp schedule of a plan that has already completed a step (keep the schedule, or create a new plan), the request omits ramp_schedule on a plan with a weekly, monthly or custom ramp (resend it, or send immediate), or the plan is managed by the schedule editor and the request changes what only the editor may (code editor_reconciliation_required).
           content:
             application/json:
               schema:
@@ -7590,10 +7597,16 @@ components:
         ramp_schedule:
           type: string
           enum: [immediate, weekly-25pct, monthly-10pct, custom]
+          description: >
+            On create and PUT, omitted means immediate: the whole base in one step. See
+            the PUT operation for how an update treats an omitted value. PATCH ignores
+            this field.
         custom_step_percent:
           type: integer
+          description: Read only with ramp_schedule custom; create and PUT refuse it with 400 otherwise. PATCH ignores it.
         custom_interval_days:
           type: integer
+          description: Read only with ramp_schedule custom; create and PUT refuse it with 400 otherwise. PATCH ignores it.
         target_accounts:
           type: array
           minItems: 1

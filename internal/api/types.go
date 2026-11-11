@@ -848,6 +848,12 @@ func (r *PlanRequest) validateTargetCoverage() error {
 // nor "custom": it used to fall back to the immediate preset, buying the whole
 // base in one step.
 func (r *PlanRequest) validateRampSchedule() error {
+	if r.RampSchedule != "custom" && (r.CustomStepPercent != 0 || r.CustomIntervalDays != 0) {
+		// Without "custom" these fields are ignored and an omitted ramp_schedule
+		// becomes the immediate preset, so a cadence the caller named would turn
+		// into buying the whole base in one step (#1935).
+		return NewClientError(400, "custom_step_percent and custom_interval_days apply only with ramp_schedule \"custom\"")
+	}
 	if r.RampSchedule == "" || r.RampSchedule == "custom" {
 		return nil
 	}
