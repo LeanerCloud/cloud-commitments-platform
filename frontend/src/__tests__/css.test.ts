@@ -603,3 +603,29 @@ describe('CSS hygiene (issue #725)', () => {
     }
   });
 });
+
+describe('Toast stack at narrow widths (issue #1736)', () => {
+  const stylesDir = path.join(__dirname, '..', 'styles');
+  const responsive = fs.readFileSync(path.join(stylesDir, 'responsive.css'), 'utf8');
+  const components = fs.readFileSync(path.join(stylesDir, 'components.css'), 'utf8');
+
+  test('<=480px spans the viewport with a gutter and clears the safe area', () => {
+    const m = responsive.match(/@media \(max-width: 480px\) \{\s*\.toast-container \{([^}]*)\}/);
+    expect(m).not.toBeNull();
+    const body = m![1];
+    expect(body).toMatch(/left:\s*var\(--cudly-sp-3\)/);
+    expect(body).toMatch(/right:\s*var\(--cudly-sp-3\)/);
+    expect(body).toMatch(/max-width:\s*none/);
+    expect(body).toMatch(/bottom:\s*calc\(var\(--toast-bottom\)\s*\+\s*env\(safe-area-inset-bottom\)\)/);
+    expect(body).not.toMatch(/#[0-9a-fA-F]{3,6}\b|rgba?\(/);
+  });
+
+  test('desktop rule keeps the bottom-right 400px stack', () => {
+    const m = components.match(/\.toast-container \{([^}]*)\}/);
+    expect(m).not.toBeNull();
+    expect(m![1]).toMatch(/--toast-max-width:\s*400px/);
+    expect(m![1]).toMatch(/bottom:\s*var\(--toast-bottom\)/);
+    expect(m![1]).toMatch(/right:\s*1rem/);
+    expect(m![1]).not.toMatch(/\bleft:/);
+  });
+});

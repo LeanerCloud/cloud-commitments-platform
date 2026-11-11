@@ -376,6 +376,21 @@ body.sidebar-open {
     }
 }
 
+/* Toasts on phones (issue #1736): the bottom-right stack was sized to its
+ * content and could cover controls at 320px. Span the viewport width with
+ * the page gutter instead and clear the home indicator. toast.ts still
+ * lifts the stack via --toast-bottom when a dialog's button row is in the
+ * way, so the inset is added on top of that variable. Sticky bottom bars
+ * (bulk-action box, settings save bar) are not tracked by toast.ts. */
+@media (max-width: 480px) {
+    .toast-container {
+        left: var(--cudly-sp-3);
+        right: var(--cudly-sp-3);
+        max-width: none;
+        bottom: calc(var(--toast-bottom) + env(safe-area-inset-bottom));
+    }
+}
+
 /* Summary-card rows (Home, Opportunities, Purchase History) hold four cards.
  * An auto-fit grid wrapped them 3 + 1 on mid-width screens, leaving an orphan
  * card and dead space (issue #191). Step 4 -> 2x2 -> 1 instead. 1199px is where
