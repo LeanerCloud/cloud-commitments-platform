@@ -26,6 +26,7 @@ var pinnedIdempotencyKeyWriters = []string{
 	"internal/config.PostgresStore.SavePurchaseExecutionTx",
 	"internal/config.scanExecutionRows",
 	"internal/purchase.newAccountExecution",
+	"internal/purchase.newLadderExecution",
 	"internal/purchase.Manager.writeAttached",
 }
 
