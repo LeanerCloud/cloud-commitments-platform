@@ -7568,8 +7568,6 @@ components:
       properties:
         name:
           type: string
-        description:
-          type: string
         enabled:
           type: boolean
         auto_purchase:

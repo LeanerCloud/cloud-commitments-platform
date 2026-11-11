@@ -142,7 +142,6 @@ func TestPlanRequestToPurchasePlan_NoFieldDropped(t *testing.T) {
 	requireFieldsReach(t, base,
 		func(r PlanRequest) *config.PurchasePlan { return r.toPurchasePlan() },
 		map[string]string{
-			"description":     "accepted but dropped, tracked in #1776",
 			"target_accounts": "handled by createPlan/setPlanAccounts, not the converter",
 		})
 }

@@ -159,7 +159,6 @@ export interface LocalPlan {
 
 export interface SavePlanData {
   name: string;
-  description: string;
   provider: string;
   service: string;
   term: number;

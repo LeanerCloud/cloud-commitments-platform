@@ -816,7 +816,6 @@ type PlannedPurchase struct {
 // The frontend sends ramp_schedule as a string, which we convert to the proper struct.
 type PlanRequest struct {
 	Payment                *string  `json:"payment,omitempty"`
-	Description            string   `json:"description,omitempty"`
 	RampSchedule           string   `json:"ramp_schedule,omitempty"`
 	Name                   string   `json:"name"`
 	Provider               string   `json:"provider,omitempty"`

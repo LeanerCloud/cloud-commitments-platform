@@ -1254,7 +1254,6 @@ export async function savePlan(e: Event): Promise<void> {
 
   const plan: SavePlanData = {
     name: (document.getElementById('plan-name') as HTMLInputElement).value,
-    description: (document.getElementById('plan-description') as HTMLTextAreaElement).value,
     provider: (document.getElementById('plan-provider') as HTMLSelectElement).value,
     service,
     term: rawTerm,

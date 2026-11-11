@@ -1442,6 +1442,8 @@ describe('Plans Module', () => {
       await savePlan(event);
 
       expect(api.createPlan).toHaveBeenCalled();
+      // The plan description is not stored (the field is disabled in the form), so it is not sent.
+      expect((api.createPlan as jest.Mock).mock.calls[0][0]).not.toHaveProperty('description');
       // PR #861: no follow-up setPlanAccounts on the create path.
       expect(api.setPlanAccounts).not.toHaveBeenCalled();
       expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Plan created successfully' }));
