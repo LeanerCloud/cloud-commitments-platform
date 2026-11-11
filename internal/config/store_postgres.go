@@ -2810,6 +2810,11 @@ func purchaseHistoryFilterWhere(filter PurchaseHistoryFilter) (where string, arg
 		add("plan_id = $%d", filter.PlanID)
 	}
 	conds, args = appendAccountPredicate(conds, args, filter.AccountIDs, filter.ExternalIDsByProvider)
+	if filter.Scope != nil {
+		// A non-nil empty slice, so no allowed account binds NULL and the
+		// comparison matches no row.
+		add("account_id = ANY($%d)", append([]string{}, filter.Scope.AccountIDs...))
+	}
 	if filter.Start != nil {
 		add("timestamp >= $%d", *filter.Start)
 	}

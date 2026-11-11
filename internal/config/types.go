@@ -1149,6 +1149,12 @@ type PurchaseHistoryFilter struct {
 	// api.MaxHistoryDateRangeDays).
 	Start *time.Time
 	End   *time.Time
+	// Scope, when non-nil, keeps only rows whose account_id is one of
+	// Scope.AccountIDs (UserID is not read: purchase_history rows have no
+	// creator). Empty AccountIDs keeps nothing (fail closed); nil is an
+	// unrestricted caller. Like the execution scope it is a superset of the
+	// handler's Go scope check, which still runs on the rows.
+	Scope *ExecutionScope
 	// Limit caps the row count; clamped to [1, MaxListLimit] with a
 	// DefaultListLimit fallback when <= 0.
 	Limit int

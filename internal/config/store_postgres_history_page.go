@@ -73,6 +73,11 @@ type HistoryExecutionsPageQuery struct {
 	// Start and End bound scheduled_date, inclusive; nil leaves a side open.
 	Start *time.Time
 	End   *time.Time
+	// Provider, AccountIDs and Scope mean what they mean for
+	// ExecutionsByStatusesQuery: supersets of the handler's Go checks.
+	Provider   string
+	AccountIDs []string
+	Scope      *ExecutionScope
 	// After is the stream position to continue from; nil starts at the top.
 	After *HistoryPageKey
 	// Limit caps the row count; clamped to [1, MaxListLimit] with a
@@ -191,23 +196,14 @@ func (s *PostgresStore) ListHistoryExecutionsPage(ctx context.Context, q History
 	if len(q.Statuses) == 0 {
 		return nil, nil
 	}
-	args := []any{q.Statuses}
-	// historyExecutionsPredicate is shared with GetExecutionsByStatuses and
-	// HistorySummaryAggregate, so the stream and the summary select the same
-	// executions (issue #675).
-	conds := []string{historyExecutionsPredicate}
-	if q.PlanID != "" {
-		args = append(args, q.PlanID)
-		conds = append(conds, fmt.Sprintf("plan_id = $%d", len(args)))
-	}
-	if q.Start != nil {
-		args = append(args, *q.Start)
-		conds = append(conds, fmt.Sprintf("scheduled_date >= $%d", len(args)))
-	}
-	if q.End != nil {
-		args = append(args, *q.End)
-		conds = append(conds, fmt.Sprintf("scheduled_date <= $%d", len(args)))
-	}
+	// executionsByStatusesWhere is the predicate builder the actionable read
+	// uses, so both reads push the History filters and scope down the same way
+	// and the status predicate stays shared with GetExecutionsByStatuses and
+	// HistorySummaryAggregate (issues #632, #675).
+	conds, args := executionsByStatusesWhere(&ExecutionsByStatusesQuery{
+		Statuses: q.Statuses, PlanID: q.PlanID, Start: q.Start, End: q.End,
+		Provider: q.Provider, AccountIDs: q.AccountIDs, Scope: q.Scope,
+	})
 	if q.After != nil {
 		var cond string
 		cond, args = historyKeysetCondition("scheduled_date", "execution_id", HistorySourceExecution, q.After, args)

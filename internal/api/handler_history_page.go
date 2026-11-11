@@ -182,7 +182,7 @@ func (s *historyStreamSource) head(ctx context.Context) (*historyStreamRow, erro
 // stream order.
 type historyStream struct {
 	h                *Handler
-	session          *Session
+	scope            historyScope
 	filters          *historyFilters
 	purchases        historyStreamSource
 	executions       historyStreamSource
@@ -195,9 +195,9 @@ type historyStream struct {
 	executionsFailed bool
 }
 
-func newHistoryStream(h *Handler, session *Session, filters *historyFilters) *historyStream {
+func newHistoryStream(h *Handler, scope historyScope, filters *historyFilters) *historyStream {
 	batch := historyStreamBatch(filters.Limit)
-	st := &historyStream{h: h, session: session, filters: filters}
+	st := &historyStream{h: h, scope: scope, filters: filters}
 	st.purchases = historyStreamSource{fetch: st.fetchPurchases, after: filters.Cursor, batch: batch}
 	st.executions = historyStreamSource{fetch: st.fetchTerminalExecutions, after: filters.Cursor, batch: batch}
 	return st
@@ -231,7 +231,7 @@ func (st *historyStream) next(ctx context.Context) (*historyStreamRow, error) {
 }
 
 func (st *historyStream) fetchPurchases(ctx context.Context, after *config.HistoryPageKey) ([]historyStreamRow, error) {
-	recs, err := st.h.fetchPurchaseHistory(ctx, st.filters, after, st.purchases.batch)
+	recs, err := st.h.fetchPurchaseHistory(ctx, st.filters, &st.scope, after, st.purchases.batch)
 	if err != nil {
 		return nil, err
 	}
@@ -240,19 +240,35 @@ func (st *historyStream) fetchPurchases(ctx context.Context, after *config.Histo
 		rows[i] = historyStreamRow{key: recs[i].Key(), row: recs[i].PurchaseHistoryRecord, visible: true}
 		rows[i].row.Status = purchaseHistoryRowStatus
 	}
-	return rows, st.h.markOutOfScope(ctx, st.session, rows)
+	markOutOfScope(st.scope, rows)
+	return rows, nil
 }
 
-// fetchTerminalExecutions reads a batch of terminal executions and projects
-// the ones matching the request's filters into History rows. The date bound
-// is pushed into SQL as well as checked by matchesExecution; the plan is pushed into
-// SQL too; provider and account are checked in Go only, like the actionable class.
-func (st *historyStream) fetchTerminalExecutions(ctx context.Context, after *config.HistoryPageKey) ([]historyStreamRow, error) {
-	q := config.HistoryExecutionsPageQuery{Statuses: terminalExecutionStatuses, PlanID: st.filters.PlanID, After: after, Limit: st.executions.batch}
+// terminalExecutionsQuery is the store read for one batch of terminal
+// executions, carrying the request filters and the caller's account scope.
+func (st *historyStream) terminalExecutionsQuery(after *config.HistoryPageKey) config.HistoryExecutionsPageQuery {
+	q := config.HistoryExecutionsPageQuery{
+		Statuses: terminalExecutionStatuses, PlanID: st.filters.PlanID, Provider: st.filters.Provider,
+		Scope: st.scope.executionScope(), After: after, Limit: st.executions.batch,
+	}
+	if len(st.filters.AccountIDs) > 0 || len(st.filters.ExternalIDsByProvider) > 0 {
+		q.AccountIDs = executionFilterAccountValues(st.filters)
+	}
 	if st.filters.HasDate {
 		start, end := st.filters.Start, st.filters.End
 		q.Start, q.End = &start, &end
 	}
+	return q
+}
+
+// fetchTerminalExecutions reads a batch of terminal executions and projects
+// the ones matching the request's filters into History rows. The date bound
+// is pushed into SQL as well as checked by matchesExecution; the plan,
+// provider, account filters and the caller's account scope are pushed into SQL
+// as supersets of the Go checks, which still run, so a scoped caller's sparse
+// rows cost no extra batches (issue #632).
+func (st *historyStream) fetchTerminalExecutions(ctx context.Context, after *config.HistoryPageKey) ([]historyStreamRow, error) {
+	q := st.terminalExecutionsQuery(after)
 	execs, err := st.h.config.ListHistoryExecutionsPage(ctx, q)
 	if err != nil {
 		return nil, err
@@ -278,7 +294,8 @@ func (st *historyStream) fetchTerminalExecutions(ctx context.Context, after *con
 			rows[i].row = executionToHistoryRow(execs[i], approver, createdByEmail(emails, &execs[i]))
 		}
 	}
-	return rows, st.h.markOutOfScope(ctx, st.session, rows)
+	markOutOfScope(st.scope, rows)
+	return rows, nil
 }
 
 // approverEmail resolves the approver address once per request.
@@ -298,12 +315,12 @@ func createdByEmail(emails map[string]string, exec *config.PurchaseExecution) st
 }
 
 // markOutOfScope hides every visible row the caller's account scope does not
-// allow. The scope rule has one home, filterPurchaseHistoryByAllowedAccounts;
-// this runs the batch's visible rows through it and matches the rows it keeps
-// back to the batch in order. The filter keeps an order-preserving subset and
-// decides each row from that row alone, and sameHistoryRow compares every
-// field it reads plus the row's identity, so the match is exact.
-func (h *Handler) markOutOfScope(ctx context.Context, session *Session, rows []historyStreamRow) error {
+// allow. The scope rule has one home, historyScope.filter; this runs the
+// batch's visible rows through it and matches the rows it keeps back to the
+// batch in order. The filter keeps an order-preserving subset and decides each
+// row from that row alone, and sameHistoryRow compares every field it reads
+// plus the row's identity, so the match is exact.
+func markOutOfScope(scope historyScope, rows []historyStreamRow) {
 	candidates := make([]config.PurchaseHistoryRecord, 0, len(rows))
 	index := make([]int, 0, len(rows))
 	for i := range rows {
@@ -312,13 +329,7 @@ func (h *Handler) markOutOfScope(ctx context.Context, session *Session, rows []h
 			index = append(index, i)
 		}
 	}
-	if len(candidates) == 0 {
-		return nil
-	}
-	kept, err := h.filterPurchaseHistoryByAllowedAccounts(ctx, session, candidates)
-	if err != nil {
-		return err
-	}
+	kept := scope.filter(candidates)
 	j := 0
 	for n, i := range index {
 		if j < len(kept) && sameHistoryRow(&kept[j], &candidates[n]) {
@@ -327,7 +338,6 @@ func (h *Handler) markOutOfScope(ctx context.Context, session *Session, rows []h
 		}
 		rows[i].visible = false
 	}
-	return nil
 }
 
 // sameHistoryRow compares the fields the account-scope check reads (account,
@@ -358,8 +368,8 @@ type historyPage struct {
 // caller may see, starting after filters.Cursor. It reads one row past the
 // page so has_more is exact: has_more is never set when the rows after the
 // page are all outside the caller's scope or filters.
-func (h *Handler) fetchHistoryPage(ctx context.Context, session *Session, filters *historyFilters) (historyPage, error) {
-	st := newHistoryStream(h, session, filters)
+func (h *Handler) fetchHistoryPage(ctx context.Context, scope historyScope, filters *historyFilters) (historyPage, error) {
+	st := newHistoryStream(h, scope, filters)
 	var page historyPage
 	var last config.HistoryPageKey
 	for {

@@ -39,18 +39,18 @@ func (h *Handler) getHistory(ctx context.Context, req *events.LambdaFunctionURLR
 	// folded in here so fetchPurchaseHistory sees a single unified account set.
 	h.resolveHistoryAccountFilter(ctx, &filters)
 
-	// The paged stream: completed purchases and terminal executions, newest
-	// first, filters.Limit rows the caller may see, starting after
-	// filters.Cursor (issue #674, see handler_history_page.go).
-	page, err := h.fetchHistoryPage(ctx, session, &filters)
+	// The account scope is resolved once per request and applied to the
+	// paged stream (pushed into SQL and re-checked per batch), the actionable
+	// rows and the summary (issues #632, #675).
+	scope, err := h.loadHistoryScope(ctx, session)
 	if err != nil {
 		return nil, err
 	}
 
-	// The account scope is resolved once per request and applied to the
-	// actionable rows and the summary (issue #675). The paged stream applies
-	// the same rule per batch (markOutOfScope).
-	scope, err := h.loadHistoryScope(ctx, session)
+	// The paged stream: completed purchases and terminal executions, newest
+	// first, filters.Limit rows the caller may see, starting after
+	// filters.Cursor (issue #674, see handler_history_page.go).
+	page, err := h.fetchHistoryPage(ctx, scope, &filters)
 	if err != nil {
 		return nil, err
 	}
@@ -1076,9 +1076,13 @@ func stringInSlice(needle string, haystack []string) bool {
 // (getHistory) and arrives here folded into AccountIDs/ExternalIDsByProvider,
 // so there is no longer a separate single-column legacy path to coerce
 // identifiers through.
-func (h *Handler) fetchPurchaseHistory(ctx context.Context, filters *historyFilters, after *config.HistoryPageKey, limit int) ([]config.PurchaseHistoryPageRow, error) {
+func (h *Handler) fetchPurchaseHistory(ctx context.Context, filters *historyFilters, scope *historyScope, after *config.HistoryPageKey, limit int) ([]config.PurchaseHistoryPageRow, error) {
 	filter := filters.purchaseHistoryFilter()
 	filter.Limit = limit
+	// The scope is a superset of historyScope.allows, which still runs on the
+	// batch; the summary aggregate groups by account and applies the scope in
+	// Go, so only this read carries it (issue #632).
+	filter.Scope = scope.executionScope()
 	return h.config.ListPurchaseHistoryPage(ctx, filter, after)
 }
 
