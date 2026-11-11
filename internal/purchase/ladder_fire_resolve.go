@@ -27,6 +27,7 @@ type LadderUnresolved struct {
 // ladderResolution is what the resolve step decided for one config.
 type ladderResolution struct {
 	IDs        []string // tranches to hand to the claim, in due order.
+	HeadUSDHr  float64  // amount of IDs[0], for the oversized-head log.
 	Unresolved []LadderUnresolved
 	Due        int // rows the pre-claim read returned.
 	Capped     bool
@@ -49,6 +50,9 @@ func resolveLadderTranches(rows []config.LadderDueRow, cfg *config.LadderConfigD
 		if reason := ladderTrancheRefusal(&rows[i], cfg, registry, region); reason != "" {
 			res.Unresolved = append(res.Unresolved, LadderUnresolved{TrancheID: tr.ID, Layer: tr.LayerType, Reason: reason})
 			continue
+		}
+		if len(res.IDs) == 0 {
+			res.HeadUSDHr = tr.AmountUSDHr
 		}
 		res.IDs = append(res.IDs, tr.ID)
 	}
