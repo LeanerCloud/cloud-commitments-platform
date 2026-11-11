@@ -284,8 +284,8 @@ function localDayKey(date: string | null | undefined): string {
 function numericCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): number {
   switch (col) {
     case 'count':              return p.count ?? 0;
-    case 'upfront_cost':       return p.upfront_cost ?? 0;
-    case 'estimated_savings':  return p.estimated_savings ?? 0;
+    case 'upfront_cost':       return p.upfront_cost ?? Number.NaN;
+    case 'estimated_savings':  return p.estimated_savings ?? Number.NaN;
     case 'plan_name':
     case 'scheduled_date':
     case 'provider':

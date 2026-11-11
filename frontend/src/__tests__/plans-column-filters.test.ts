@@ -312,6 +312,47 @@ describe('Planned Purchases column filters (issue #166 follow-up)', () => {
     expect(survivor?.innerHTML).toContain('RDS');
   });
 
+  describe('unknown vs zero money (#151)', () => {
+    const unknownRow = {
+      ...seedPurchases[0], id: 'pp-4', upfront_cost: null, estimated_savings: undefined,
+    };
+    const zeroSavingsRow = { ...seedPurchases[0], id: 'pp-5', upfront_cost: 10, estimated_savings: 0 };
+
+    async function filterBy(column: string, expr: string): Promise<string[]> {
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({
+        purchases: [...seedPurchases, unknownRow, zeroSavingsRow],
+      });
+      await loadPlans();
+      document.querySelector<HTMLButtonElement>(
+        `#planned-purchases-list th .column-filter-btn[data-column="${column}"]`,
+      )?.click();
+      const input = document.querySelector<HTMLInputElement>(
+        '.column-filter-popover .column-filter-numeric-input',
+      );
+      input!.value = expr;
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return Array.from(document.querySelectorAll(
+        '#planned-purchases-list tbody tr.planned-purchase-row',
+      )).map((r) => r.getAttribute('data-id') ?? '');
+    }
+
+    test('unknown upfront cost does not match upfront_cost = 0', async () => {
+      expect(await filterBy('upfront_cost', '0')).toHaveLength(1);
+    });
+
+    test('unknown estimated savings does not match estimated_savings = 0', async () => {
+      expect(await filterBy('estimated_savings', '0')).toHaveLength(1);
+    });
+
+    test('unknown estimated savings does not match estimated_savings <= 10', async () => {
+      expect(await filterBy('estimated_savings', '<=10')).toHaveLength(2);
+    });
+
+    test('a blank bound still passes rows with unknown values', async () => {
+      expect(await filterBy('upfront_cost', '')).toHaveLength(5);
+    });
+  });
+
   test('invalid numeric expression surfaces the lib error inline (no filter applied)', async () => {
     await loadPlans();
     const countBtn = document.querySelector<HTMLButtonElement>(

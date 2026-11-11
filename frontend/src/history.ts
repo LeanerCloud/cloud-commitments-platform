@@ -1247,7 +1247,7 @@ export function purchaseHistoryNumericCellValue(
   switch (col) {
     case 'count':         return p.count ?? 0;
     case 'upfront_cost':  return p.upfront_cost ?? Number.NaN;
-    case 'savings':       return boughtNothing(p) ? 0 : p.estimated_savings ?? 0;
+    case 'savings':       return boughtNothing(p) ? 0 : p.estimated_savings ?? Number.NaN;
     case 'provider':
     case 'service':
     case 'resource_type':
@@ -1976,7 +1976,7 @@ function approvalQueueNumericCellValue(
     // don't match rows where the provider didn't report a monthly cost.
     case 'monthly_cost': return p.monthly_cost == null ? Number.NaN : p.monthly_cost;
     case 'upfront_cost': return p.upfront_cost ?? Number.NaN;
-    case 'savings':      return p.estimated_savings ?? 0;
+    case 'savings':      return p.estimated_savings ?? Number.NaN;
     case 'provider':
     case 'account':
     case 'service':

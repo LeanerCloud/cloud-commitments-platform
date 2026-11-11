@@ -17,7 +17,7 @@
  *      filtering.
  */
 
-import { applyPurchaseHistoryColumnFilters } from '../history';
+import { applyPurchaseHistoryColumnFilters, applyApprovalQueueColumnFilters } from '../history';
 import type { HistoryPurchase } from '../types';
 import type { PurchaseHistoryColumnFilters } from '../state';
 
@@ -73,6 +73,26 @@ describe('applyPurchaseHistoryColumnFilters', () => {
       mkRow({ purchase_id: 'unknown', upfront_cost: null }),
       mkRow({ purchase_id: 'zero', upfront_cost: 0 }),
     ], { upfront_cost: { kind: 'expr', expr: '0' } });
+    expect(out.map(row => row.purchase_id)).toEqual(['zero']);
+  });
+  test('unknown savings does not match a known-zero filter, real zero does', () => {
+    const out = applyPurchaseHistoryColumnFilters([
+      mkRow({ purchase_id: 'unknown', estimated_savings: undefined as unknown as number }),
+      mkRow({ purchase_id: 'zero', estimated_savings: 0 }),
+    ], { savings: { kind: 'expr', expr: '0' } });
+    expect(out.map(row => row.purchase_id)).toEqual(['zero']);
+  });
+  test('blank bound passes rows with unknown money values', () => {
+    const out = applyPurchaseHistoryColumnFilters([
+      mkRow({ purchase_id: 'unknown', upfront_cost: null }),
+    ], { upfront_cost: { kind: 'expr', expr: '' } });
+    expect(out).toHaveLength(1);
+  });
+  test('approval queue: unknown savings does not match 0, real zero does', () => {
+    const out = applyApprovalQueueColumnFilters([
+      mkRow({ purchase_id: 'unknown', estimated_savings: undefined as unknown as number }),
+      mkRow({ purchase_id: 'zero', estimated_savings: 0 }),
+    ], { savings: { kind: 'expr', expr: '0' } });
     expect(out.map(row => row.purchase_id)).toEqual(['zero']);
   });
   test('numeric expr: savings > 100 narrows to high-saving rows', () => {

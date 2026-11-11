@@ -961,9 +961,7 @@ function renderRecommendationsSummary(
   const hasRecs = target.length > 0;
   const savingsText = hasRecs && plr.savingsMax > 0 && scaledSavingsMin !== null && scaledSavingsMax !== null
     ? formatScaledRange(scaledSavingsMin, scaledSavingsMax, period)
-    : hasRecs && (plr.savingsMin === null || plr.savingsMax === null)
-      ? NO_VALUE
-      : formatCostForPeriod(0, period);
+    : formatCostForPeriod(0, period);
   const upfrontText = hasRecs && plr.upfrontMax > 0
     ? formatSavingsRange(plr.upfrontMin, plr.upfrontMax)
     : formatCurrency(0);
