@@ -165,6 +165,32 @@ describe('money', () => {
   });
 });
 
+describe('numeric columns are right-aligned (num class) in header and body', () => {
+  const NUM_HEADS = /monthly\)|one-time\)|^Amount$|^Discount rate$|^Breakeven days$/;
+  const TEXT_HEADS = /^(Measure|Offer|Provider|Region|Term|Lease|Archera|Contract|Payment|Line items)/;
+
+  it('every numeric column carries num on th and td, text columns do not', async () => {
+    const root = await mount();
+    await clickAndLoad(root, golden);
+    const tables = Array.from(root.querySelectorAll('table'));
+    expect(tables.length).toBeGreaterThanOrEqual(3);
+    let numSeen = 0;
+    for (const t of tables) {
+      Array.from(t.querySelectorAll('thead th')).forEach((h, i) => {
+        const text = h.textContent!;
+        const isNum = NUM_HEADS.test(text);
+        if (!isNum && !TEXT_HEADS.test(text)) throw new Error(`unclassified header ${text}`);
+        expect(h.classList.contains('num')).toBe(isNum);
+        t.querySelectorAll('tbody tr').forEach(tr => {
+          expect(tr.children[i]!.classList.contains('num')).toBe(isNum);
+        });
+        if (isNum) numSeen++;
+      });
+    }
+    expect(numSeen).toBeGreaterThan(10);
+  });
+});
+
 describe('money in every cell matches the golden value for that column', () => {
   function grid(t: HTMLTableElement): Array<Record<string, string>> {
     const heads = Array.from(t.querySelectorAll('thead th')).map(h => h.textContent!);

@@ -49,7 +49,20 @@ function cell(tag: 'td' | 'th', content: string, scope?: 'row' | 'col'): HTMLTab
   return c;
 }
 
-function table(caption: string, headers: string[]): { wrap: HTMLElement; body: HTMLTableSectionElement } {
+// Amount, rate and day-count columns, by header text (issue #739). Only the
+// presentation class is set; the cell text stays the server string.
+const NUMERIC_HEADER = /monthly\)|one-time\)|^Amount$|^Discount rate$|^Breakeven days$/;
+
+function alignNumericColumns(t: HTMLTableElement): void {
+  const heads = Array.from(t.querySelectorAll('thead th'));
+  heads.forEach((h, i) => {
+    if (!NUMERIC_HEADER.test(h.textContent ?? '')) return;
+    h.classList.add('num');
+    t.querySelectorAll('tbody tr').forEach(tr => tr.children[i]?.classList.add('num'));
+  });
+}
+
+function table(caption: string, headers: string[]): { wrap: HTMLElement; body: HTMLTableSectionElement; align: () => void } {
   const wrap = el('div');
   wrap.style.overflowX = 'auto';
   const t = el('table');
@@ -62,7 +75,7 @@ function table(caption: string, headers: string[]): { wrap: HTMLElement; body: H
   const body = el('tbody');
   t.appendChild(body);
   wrap.appendChild(t);
-  return { wrap, body };
+  return { wrap, body, align: () => alignNumericColumns(t) };
 }
 
 function formatFetchedAt(raw: unknown): string {
@@ -164,6 +177,7 @@ export function buildComparisonView(c: ArcheraComparison): HTMLElement {
 
   const cur = table('Current plan totals', ['Measure', 'Amount']);
   totalsRows(cur.body, c.current);
+  cur.align();
   root.appendChild(cur.wrap);
 
   if (c.hypotheticals.length > 0) {
@@ -192,6 +206,7 @@ export function buildComparisonView(c: ArcheraComparison): HTMLElement {
       tr.appendChild(li);
       h.body.appendChild(tr);
     }
+    h.align();
     root.appendChild(h.wrap);
   }
 
@@ -200,6 +215,7 @@ export function buildComparisonView(c: ArcheraComparison): HTMLElement {
     const t = table(`Offers for line item ${text(r.line_item_id)}`, OFFER_HEADERS);
     offerRow(t.body, r.current);
     for (const cand of r.candidates) offerRow(t.body, cand);
+    t.align();
     root.appendChild(t.wrap);
   }
   return root;
