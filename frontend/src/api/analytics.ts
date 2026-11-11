@@ -24,6 +24,13 @@ export interface TrendsMonthlyRow {
   service: string;
   total_savings: number;
   avg_coverage?: number | null;
+  /**
+   * Upfront cost amortized per month and recurring monthly fees; committed
+   * spend is their sum. Omitted when unknown (a snapshot had no figure),
+   * which is not 0; a known zero is 0.
+   */
+  total_commitment?: number | null;
+  total_usage?: number | null;
   snapshot_count: number;
 }
 

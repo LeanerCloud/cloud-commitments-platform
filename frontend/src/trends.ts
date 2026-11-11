@@ -159,8 +159,9 @@ function renderTrends(
   overview.appendChild(chartBox);
   overview.appendChild(buildTable(
     'trends-monthly-table',
-    ['Month', 'Savings /mo', 'Coverage'],
-    series.map((p) => [p.label, formatCurrency(p.savings), formatCoverage(p.coverage)]),
+    ['Month', 'Savings /mo', 'Committed spend /mo', 'Coverage'],
+    series.map((p) => [p.label, formatCurrency(p.savings), formatCurrency(p.committed), formatCoverage(p.coverage)]),
+    [1, 2, 3],
   ));
 
   const providerCard = card('By provider');
@@ -232,28 +233,30 @@ function buildStats(series: TrendsMonthPoint[]): HTMLElement {
   return grid;
 }
 
-function buildTable(id: string, headers: string[], rows: string[][]): HTMLElement {
+function buildTable(id: string, headers: string[], rows: string[][], numericCols: readonly number[] = []): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'trends-table-wrap';
   const table = document.createElement('table');
   table.id = id;
   const thead = document.createElement('thead');
   const hr = document.createElement('tr');
-  for (const h of headers) {
+  headers.forEach((h, i) => {
     const th = document.createElement('th');
     th.scope = 'col';
+    if (numericCols.includes(i)) th.className = 'num';
     th.textContent = h;
     hr.appendChild(th);
-  }
+  });
   thead.appendChild(hr);
   const tbody = document.createElement('tbody');
   for (const row of rows) {
     const tr = document.createElement('tr');
-    for (const cell of row) {
+    row.forEach((cell, i) => {
       const td = document.createElement('td');
+      if (numericCols.includes(i)) td.className = 'num';
       td.textContent = cell;
       tr.appendChild(td);
-    }
+    });
     tbody.appendChild(tr);
   }
   table.append(thead, tbody);

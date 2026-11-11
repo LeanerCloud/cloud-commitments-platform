@@ -80,12 +80,34 @@ describe('trends-data', () => {
       row('2025-01', 'aws', 999, 99), // outside the window
     ], keys);
     expect(series).toEqual([
-      { key: '2026-07', label: 'Jul 2026', savings: 175, coverage: 50 },
-      { key: '2026-08', label: 'Aug 2026', savings: null, coverage: null },
-      { key: '2026-09', label: 'Sep 2026', savings: 80, coverage: null },
+      { key: '2026-07', label: 'Jul 2026', savings: 175, coverage: 50, committed: null },
+      { key: '2026-08', label: 'Aug 2026', savings: null, coverage: null, committed: null },
+      { key: '2026-09', label: 'Sep 2026', savings: 80, coverage: null, committed: null },
     ]);
     expect(latestWithSavings(series)?.key).toBe('2026-09');
     expect(latestWithSavings(buildMonthlySeries([], keys))).toBeNull();
+  });
+
+  test('committed spend sums commitment and usage across buckets', () => {
+    const k = ['2026-08'];
+    const withSpend = (c: number | null | undefined, u: number | null | undefined, p = 'aws'): TrendsMonthlyRow => ({
+      ...row('2026-08', p, 10), total_commitment: c, total_usage: u,
+    });
+    expect(buildMonthlySeries([withSpend(100, 20), withSpend(30, 5, 'gcp')], k)[0]?.committed).toBe(155);
+  });
+
+  test('committed spend: a known zero is 0, a part unknown makes it unknown', () => {
+    const k = ['2026-08'];
+    const withSpend = (c: number | null | undefined, u: number | null | undefined, p = 'aws'): TrendsMonthlyRow => ({
+      ...row('2026-08', p, 10), total_commitment: c, total_usage: u,
+    });
+    expect(buildMonthlySeries([withSpend(0, 0)], k)[0]?.committed).toBe(0);
+    expect(buildMonthlySeries([withSpend(0, 40)], k)[0]?.committed).toBe(40);
+    expect(buildMonthlySeries([withSpend(100, undefined)], k)[0]?.committed).toBeNull();
+    expect(buildMonthlySeries([withSpend(undefined, 20)], k)[0]?.committed).toBeNull();
+    expect(buildMonthlySeries([withSpend(100, null)], k)[0]?.committed).toBeNull();
+    // one unknown bucket poisons the month even when another is known
+    expect(buildMonthlySeries([withSpend(100, 20), withSpend(undefined, undefined, 'gcp')], k)[0]?.committed).toBeNull();
   });
 
   test('a genuine $0 month stays 0, not a gap', () => {
@@ -116,7 +138,8 @@ describe('loadTrends', () => {
   function response(overrides: Partial<AnalyticsTrendsResponse> = {}): AnalyticsTrendsResponse {
     return {
       start: '', end: '', months: 6,
-      monthly: [row(previous, 'aws', 300, 70), row(previous, 'gcp', 100), row(latest, 'aws', 400, 80)],
+      monthly: [row(previous, 'aws', 300, 70), row(previous, 'gcp', 100),
+        { ...row(latest, 'aws', 400, 80), total_commitment: 1000, total_usage: 250 }],
       by_provider: [
         { provider: 'aws', service: 'ec2', total_savings: 350, avg_coverage: 75 },
         { provider: 'gcp', service: 'compute', total_savings: 100 },
@@ -146,14 +169,22 @@ describe('loadTrends', () => {
     (Chart as unknown as jest.Mock).mockClear();
   });
 
+  test('right-aligns the numeric monthly columns with the num class', async () => {
+    await loadTrends();
+    const heads = Array.from(document.querySelectorAll('#trends-monthly-table thead th')).map((th) => th.className);
+    expect(heads).toEqual(['', 'num', 'num', 'num']);
+    const tds = Array.from(document.querySelectorAll('#trends-monthly-table tbody tr:last-child td')).map((td) => td.className);
+    expect(tds).toEqual(['', 'num', 'num', 'num']);
+  });
+
   test('renders stats, a monthly table, both breakdowns and a single-series chart', async () => {
     await loadTrends();
 
     const monthly = cells('trends-monthly-table');
     expect(monthly).toHaveLength(6);
-    expect(monthly[5]).toEqual([monthLabel(latest), '$400', '80.0%']);
-    expect(monthly[4]).toEqual([monthLabel(previous), '$400', '70.0%']);
-    expect(monthly[0]).toEqual([monthLabel(keys[0]!), '\u2014', 'N/A']);
+    expect(monthly[5]).toEqual([monthLabel(latest), '$400', '$1,250', '80.0%']);
+    expect(monthly[4]).toEqual([monthLabel(previous), '$400', '\u2014', '70.0%']);
+    expect(monthly[0]).toEqual([monthLabel(keys[0]!), '\u2014', '\u2014', 'N/A']);
 
     expect(cells('trends-provider-table')).toEqual([
       ['AWS', 'ec2', '$350', '75.0%'],
@@ -184,8 +215,8 @@ describe('loadTrends', () => {
     await loadTrends();
     expect((api.getAnalyticsTrends as jest.Mock).mock.calls[0][0].provider).toBe('gcp');
     expect(cells('trends-provider-table')).toEqual([['GCP', 'compute', '$100', 'N/A']]);
-    expect(cells('trends-monthly-table')[4]).toEqual([monthLabel(previous), '$100', 'N/A']);
-    expect(cells('trends-monthly-table')[5]).toEqual([monthLabel(latest), '\u2014', 'N/A']);
+    expect(cells('trends-monthly-table')[4]).toEqual([monthLabel(previous), '$100', '\u2014', 'N/A']);
+    expect(cells('trends-monthly-table')[5]).toEqual([monthLabel(latest), '\u2014', '\u2014', 'N/A']);
   });
 
   test('period select drives the window length', async () => {

@@ -26,6 +26,8 @@ export interface TrendsMonthPoint {
   label: string;
   savings: number | null;
   coverage: number | null;
+  /** total_commitment + total_usage; null when any bucket's part is unknown. */
+  committed: number | null;
 }
 
 /**
@@ -99,11 +101,18 @@ export function meanOrNull(values: ReadonlyArray<number | null | undefined>): nu
 export function buildMonthlySeries(rows: readonly TrendsMonthlyRow[], keys: readonly string[]): TrendsMonthPoint[] {
   const savings = new Map<string, number>();
   const coverage = new Map<string, number[]>();
+  const committed = new Map<string, number | null>();
   for (const row of rows) {
     const key = monthKeyOf(row.month);
     if (!key || !keys.includes(key)) continue;
     if (Number.isFinite(row.total_savings)) {
       savings.set(key, (savings.get(key) ?? 0) + row.total_savings);
+    }
+    const known = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
+    if (known(row.total_commitment) && known(row.total_usage)) {
+      if (committed.get(key) !== null) committed.set(key, (committed.get(key) ?? 0) + row.total_commitment + row.total_usage);
+    } else {
+      committed.set(key, null); // unknown stays unknown for the whole month
     }
     if (typeof row.avg_coverage === 'number' && Number.isFinite(row.avg_coverage)) {
       const list = coverage.get(key) ?? [];
@@ -116,6 +125,7 @@ export function buildMonthlySeries(rows: readonly TrendsMonthlyRow[], keys: read
     label: monthLabel(key),
     savings: savings.has(key) ? savings.get(key)! : null,
     coverage: meanOrNull(coverage.get(key) ?? []),
+    committed: committed.get(key) ?? null,
   }));
 }
 
