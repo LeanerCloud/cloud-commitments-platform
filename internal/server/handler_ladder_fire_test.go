@@ -57,6 +57,26 @@ func (f *fireFakeStore) ClaimDueLadderTranches(context.Context, string, time.Tim
 	return nil, nil
 }
 
+// The announce step is not reached here (the fake claims nothing); these only
+// make the fake a purchase.LadderFireStore.
+func (f *fireFakeStore) SaveExecutionIfStatus(context.Context, *config.PurchaseExecution, []string) error {
+	return nil
+}
+
+func (f *fireFakeStore) WithTx(context.Context, func(pgx.Tx) error) error { return nil }
+
+func (f *fireFakeStore) LockLadderTrancheChainTx(context.Context, pgx.Tx, string) ([]config.LadderChainNode, error) {
+	return nil, nil
+}
+
+func (f *fireFakeStore) CancelScheduledExecutionAtomic(context.Context, pgx.Tx, string, *string) (bool, string, error) {
+	return false, "", nil
+}
+
+func (f *fireFakeStore) TransitionLadderTrancheTx(context.Context, pgx.Tx, string, ladder.TrancheStatus, ladder.TrancheStatus, string) (bool, error) {
+	return false, nil
+}
+
 func (f *fireFakeStore) SavePurchaseExecutionTx(context.Context, pgx.Tx, *config.PurchaseExecution) error {
 	return nil
 }

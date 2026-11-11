@@ -17,7 +17,7 @@ type LadderFireResult struct {
 	Configs, Skipped, Due, Unresolved, Claimed, Trimmed, Errored int
 	// Announced counts executions stamped after a send; the rest of a claim is
 	// NoticeFailed (send error), NoticeDeferred (no time left) or StampFailed.
-	Announced, NoticeFailed, NoticeDeferred, StampFailed int
+	Announced, NoticeFailed, NoticeDeferred, StampFailed, SettleFailed int
 }
 
 // ladderFirePlan is what the gates let one config sweep with.

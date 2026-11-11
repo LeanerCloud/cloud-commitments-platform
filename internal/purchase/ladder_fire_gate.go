@@ -26,6 +26,10 @@ type LadderFireStore interface {
 		create func(ctx context.Context, tx pgx.Tx, tranche config.LadderTrancheDB) (string, error)) ([]config.LadderTrancheDB, error)
 	SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, execution *config.PurchaseExecution) error
 	SaveExecutionIfStatus(ctx context.Context, execution *config.PurchaseExecution, expected []string) error
+	WithTx(ctx context.Context, fn func(tx pgx.Tx) error) error
+	LockLadderTrancheChainTx(ctx context.Context, tx pgx.Tx, trancheID string) ([]config.LadderChainNode, error)
+	CancelScheduledExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string, cancelledBy *string) (canceled bool, currentStatus string, err error)
+	TransitionLadderTrancheTx(ctx context.Context, tx pgx.Tx, id string, from, to ladder.TrancheStatus, reason string) (bool, error)
 }
 
 // LadderFireDeps is everything one ladder fire sweep needs. Notifier is nil

@@ -117,11 +117,11 @@ func TestLadderFire_ReconcilerLeavesASweepsTranchesAlone(t *testing.T) {
 // provider is reached (the provider factory mock has no expectation).
 func TestLadderFire_UnannouncedExecutionIsRefusedAtFireTime(t *testing.T) {
 	f := newFireRig(t)
-	// The notice cannot be sent, so nothing is stamped.
-	_, err := f.sweep(func(d *LadderFireDeps) { d.Notifier = &captureNotifier{err: errors.New("no mail")} })
+	_, err := f.sweep(nil)
 	require.NoError(t, err)
-	_, err = f.pool.Exec(f.ctx, `UPDATE purchase_executions SET scheduled_execution_at = NOW() - interval '1 minute'
-		WHERE created_by_system AND idempotency_key = $1`, f.ids[0])
+	// A lost notice (crash before the stamp, a failed stamp): unannounced.
+	_, err = f.pool.Exec(f.ctx, `UPDATE purchase_executions SET notification_sent = NULL,
+		scheduled_execution_at = NOW() - interval '1 minute' WHERE created_by_system AND idempotency_key = $1`, f.ids[0])
 	require.NoError(t, err)
 	var execID string
 	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT execution_id FROM purchase_executions WHERE idempotency_key = $1`, f.ids[0]).Scan(&execID))

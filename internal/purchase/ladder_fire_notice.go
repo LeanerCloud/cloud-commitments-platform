@@ -14,19 +14,24 @@ import (
 
 // The notice loop runs after the claim has committed, on a context detached
 // from the sweep's, so a dead sweep context cannot leave a claimed execution
-// half announced. The loop as a whole gets ladderNoticeLoopCap; a tranche only
+// half announced. The loop as a whole gets ladderNoticeLoopCap (a settle after
+// a tranche's last send may run ladderSettleBudget past it); a tranche only
 // starts its send when ladderNoticeBudget is left, and its send and stamp share
 // one budget of that size. Variables so a test can shrink them.
 var (
 	ladderNoticeLoopCap = 120 * time.Second
 	ladderNoticeBudget  = 45 * time.Second
+	// ladderSettleBudget is the settle's own budget, so a send that ran to its
+	// deadline (the case that most needs a settle) still gets one.
+	ladderSettleBudget = 10 * time.Second
 )
 
 // announceClaimed sends the revoke-window notice for each claimed tranche, in
 // claim order, and stamps the execution as announced only after a send
 // succeeded: the stamp is the one thing that makes a ladder execution fireable.
-// A send that fails, a stamp that fails and a tranche deferred for lack of time
-// all leave the execution unannounced, which the execute-time recheck refuses:
+// A send that fails is settled at once (see settleNoticeFailed). A stamp that
+// fails, a tranche deferred for lack of time and a settle that fails leave the
+// execution unannounced, which the execute-time recheck refuses:
 // the amount nets against the ceiling for a day, the reconciler then fails the
 // tranche and disables the config, and an operator re-enables it. No spend.
 func announceClaimed(ctx context.Context, deps LadderFireDeps, plan *ladderFirePlan, claimed []config.LadderTrancheDB,
@@ -56,6 +61,12 @@ func announceOne(ctx context.Context, deps LadderFireDeps, plan *ladderFirePlan,
 	if err := sendLadderNotice(sendCtx, deps, plan, tr, exec); err != nil {
 		res.NoticeFailed++
 		logging.Errorf("ladder_fire: tranche %s execution %s notice failed: %v", tr.ID, exec.ExecutionID, err)
+		settleCtx, cancelSettle := ctxutil.DetachedWithTimeout(ctx, ladderSettleBudget)
+		defer cancelSettle()
+		if settleErr := settleNoticeFailed(settleCtx, deps.Store, tr, exec); settleErr != nil {
+			res.SettleFailed++
+			logging.Errorf("ladder_fire: tranche %s execution %s could not be settled after the failed notice, so it stays fired and unannounced (the recheck refuses it): %v", tr.ID, exec.ExecutionID, settleErr)
+		}
 		return
 	}
 	now := deps.Now()

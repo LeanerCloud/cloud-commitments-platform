@@ -37,6 +37,7 @@ type fakeFireStore struct {
 	saved         []*config.PurchaseExecution
 	stamped       []*config.PurchaseExecution
 	claimDone     bool
+	settle        settleFake
 	stampErr      error
 	stampExpected []string
 }
