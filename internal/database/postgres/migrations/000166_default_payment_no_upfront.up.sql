@@ -13,6 +13,16 @@
 -- unreachable in production because the seeded row is never deleted; even
 -- there the value guard leaves anything but all-upfront alone.
 --
+-- Operator-visible effect on laddering: handleLadderRun reads this row's
+-- default_payment as the global conversion pair (term plus payment option). On
+-- an untouched deployment the pair moves from (3yr, all-upfront) to
+-- (3yr, no-upfront). Sizing stays on the plan pair; only the base rate used to
+-- credit existing coverage rises, so for layers without an observed rate the
+-- ladder can size up where the account still holds older all-upfront
+-- commitments. That follows from the decision above; it is not a separate
+-- change. Deployments that saved their settings keep their value. See
+-- known_issues/resolved/43_default_payment_ladder_pair.md.
+--
 -- The trigger is disabled for the data UPDATE so the row stays recognisably
 -- untouched (for the down migration and audits). This file runs as one implicit
 -- transaction, so the trigger cannot be left disabled (see 000145).
