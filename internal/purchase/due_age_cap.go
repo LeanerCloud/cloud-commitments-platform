@@ -32,8 +32,8 @@ func (m *Manager) dueRowMaxAge() time.Duration {
 }
 
 // dueAt is when the sweeps consider exec due: scheduled_execution_at for a
-// delayed (status "scheduled") purchase, which only the delayed-approve path
-// sets, and scheduled_date for every other row.
+// delayed (status "scheduled") purchase, which the delayed-approve path and the
+// ladder fire sweep set, and scheduled_date for every other row.
 func dueAt(exec *config.PurchaseExecution) time.Time {
 	if exec.ScheduledExecutionAt != nil {
 		return *exec.ScheduledExecutionAt
