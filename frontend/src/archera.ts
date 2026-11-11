@@ -24,6 +24,7 @@
  */
 
 import { renderComparisonSection } from './archera-comparison';
+import { openModal, closeModal } from './modal';
 
 /** Canonical Archera signup URL with CUDly attribution. */
 export const ARCHERA_SIGNUP_URL = 'https://www.archera.ai/cudly';
@@ -50,14 +51,10 @@ export type ArcheraContext = 'purchase' | 'plan';
 
 /**
  * Module-scoped reference to the element that was focused when the page
- * overlay or the offer modal was last opened. Restored on close so keyboard
- * users return to their original position. Reused across both surfaces;
- * only one is visible at a time so a single slot is sufficient.
+ * overlay was last opened. Restored on close so keyboard users return to
+ * their original position. (The offer modal gets this from openModal.)
  */
 let _previouslyFocused: HTMLElement | null = null;
-
-/** Cached cleanup for the offer modal's outside-click + ESC handlers. */
-let _offerModalCleanup: (() => void) | null = null;
 
 /**
  * Open the Archera Insurance offer modal. Shown after a successful
@@ -79,20 +76,10 @@ export function openArcheraOfferModal(context: ArcheraContext = 'purchase'): voi
   const container = document.getElementById('archera-offer-modal-container');
   if (!container) return;
 
-  const isCurrentlyHidden = container.classList.contains('hidden');
-  if (isCurrentlyHidden) {
-    _previouslyFocused = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-  }
-
-  // Re-open path: tear down any document-level listeners attached by a
-  // prior open() so we don't leak them by overwriting _offerModalCleanup
-  // below. Idempotent: no-op if no prior open is in flight.
-  if (_offerModalCleanup) _offerModalCleanup();
-
+  // Focus trap, Escape and focus return come from the shared openModal
+  // helper, armed once per open; re-opening only swaps the content.
+  const wasHidden = container.classList.contains('hidden');
   while (container.firstChild) container.removeChild(container.firstChild);
-  container.classList.remove('hidden');
 
   // Backdrop. Clicking it closes the modal, matching the rest of the app's
   // modal UX. Pointer events on the panel itself stop propagation.
@@ -106,6 +93,8 @@ export function openArcheraOfferModal(context: ArcheraContext = 'purchase'): voi
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'true');
   panel.setAttribute('aria-labelledby', 'archera-offer-title');
+  // Focusable so a click on non-interactive text keeps focus (and Escape) inside the dialog.
+  panel.tabIndex = -1;
   panel.addEventListener('click', (e) => e.stopPropagation());
   container.appendChild(panel);
 
@@ -186,67 +175,25 @@ export function openArcheraOfferModal(context: ArcheraContext = 'purchase'): voi
 
   panel.appendChild(actions);
 
-  // Keyboard handling:
-  //   - Document-level keydown: ESC closes (works regardless of where focus is).
-  //   - Panel-level keydown: Tab / Shift+Tab trap focus inside the dialog
-  //     so keyboard users can't tab into background controls (required
-  //     for role="dialog" aria-modal="true" to actually be modal).
-  const escHandler = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') closeArcheraOfferModal();
-  };
-  document.addEventListener('keydown', escHandler);
-
-  const trapHandler = (e: KeyboardEvent): void => {
-    if (e.key !== 'Tab') return;
-    // Re-query each Tab press because the <details> drop-down expands the
-    // focusable set when opened — caching at modal-build time would miss
-    // those nested focusables.
-    const focusables = panel.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]),' +
-        ' textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
-    );
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (!first || !last) return;
-    const active = document.activeElement as HTMLElement | null;
-    if (e.shiftKey && active === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
-  panel.addEventListener('keydown', trapHandler);
-
-  _offerModalCleanup = () => {
-    document.removeEventListener('keydown', escHandler);
-    panel.removeEventListener('keydown', trapHandler);
-    _offerModalCleanup = null;
-  };
-
   // Focus the "Sign up" button by default: it's the primary CTA and lets
   // keyboard users confirm with Enter immediately.
-  signupBtn.focus();
+  if (wasHidden) {
+    openModal(container, { initialFocus: signupBtn, onClose: clearOfferContent });
+  } else {
+    signupBtn.focus();
+  }
+}
+
+function clearOfferContent(): void {
+  const container = document.getElementById('archera-offer-modal-container');
+  while (container?.firstChild) container.removeChild(container.firstChild);
 }
 
 /** Close the Archera offer modal and clear its content. */
 export function closeArcheraOfferModal(): void {
   const container = document.getElementById('archera-offer-modal-container');
   if (!container) return;
-  container.classList.add('hidden');
-  while (container.firstChild) container.removeChild(container.firstChild);
-
-  if (_offerModalCleanup) _offerModalCleanup();
-
-  if (
-    _previouslyFocused !== null &&
-    document.contains(_previouslyFocused) &&
-    typeof _previouslyFocused.focus === 'function'
-  ) {
-    _previouslyFocused.focus();
-  }
-  _previouslyFocused = null;
+  closeModal(container);
 }
 
 /**

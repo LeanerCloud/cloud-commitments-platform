@@ -277,11 +277,61 @@ describe('openArcheraOfferModal', () => {
     expect(container.classList.contains('hidden')).toBe(true);
   });
 
-  it('ESC key closes the modal', () => {
+  it('ESC key closes the modal and returns focus to the opener', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
     openArcheraOfferModal('purchase');
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    const signup = document.querySelector<HTMLElement>('#archera-offer-modal-container a.archera-offer-signup')!;
+    expect(document.activeElement).toBe(signup);
+    signup.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     const container = document.getElementById('archera-offer-modal-container')!;
     expect(container.classList.contains('hidden')).toBe(true);
+    expect(container.childNodes.length).toBe(0);
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
+  it('ESC closes when focus fell to the panel after a click on non-focusable text', () => {
+    openArcheraOfferModal('purchase');
+    const panel = document.querySelector<HTMLElement>('#archera-offer-modal-container .archera-offer-panel')!;
+    expect(panel.getAttribute('tabindex')).toBe('-1');
+    panel.focus();
+    panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(document.getElementById('archera-offer-modal-container')!.classList.contains('hidden')).toBe(true);
+  });
+
+  it('names the dialog by its title', () => {
+    openArcheraOfferModal('purchase');
+    const panel = document.querySelector<HTMLElement>('#archera-offer-modal-container [role="dialog"]')!;
+    expect(panel.getAttribute('aria-modal')).toBe('true');
+    expect(panel.getAttribute('aria-labelledby')).toBe('archera-offer-title');
+    expect(document.getElementById('archera-offer-title')).not.toBeNull();
+  });
+
+  it('re-opening keeps the original opener for focus return', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    openArcheraOfferModal('purchase');
+    openArcheraOfferModal('plan');
+    closeArcheraOfferModal();
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
+  it('Shift+Tab from the summary does not escape the panel (summary is a trap stop)', () => {
+    openArcheraOfferModal('purchase');
+    const container = document.getElementById('archera-offer-modal-container')!;
+    const summary = container.querySelector<HTMLElement>('summary')!;
+    const skip = container.querySelector<HTMLElement>('button.archera-offer-skip')!;
+    // summary precedes the action buttons, so it is the first stop.
+    summary.focus();
+    const evt = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true });
+    summary.dispatchEvent(evt);
+    expect(evt.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(container.querySelector('a.archera-offer-signup'));
+    expect(skip).not.toBeNull();
   });
 
   it('"Learn more" is a collapsed drop-down that expands inside the modal', () => {
@@ -319,26 +369,16 @@ describe('openArcheraOfferModal', () => {
     expect(title?.textContent).toMatch(/plan/i);
   });
 
-  it('re-opening tears down the previous open\'s ESC listener (no leak)', () => {
-    // Spy on document.addEventListener so we can count keydown handlers
-    // attached across the two opens. Without the cleanup-before-open
-    // guard the second open would have added a second handler without
-    // removing the first.
-    const addSpy = jest.spyOn(document, 'addEventListener');
-    const removeSpy = jest.spyOn(document, 'removeEventListener');
+  it('re-opening does not stack a second keydown handler', () => {
+    const container = document.getElementById('archera-offer-modal-container')!;
+    const addSpy = jest.spyOn(container, 'addEventListener');
     try {
       openArcheraOfferModal('purchase');
-      const addsAfterFirst = addSpy.mock.calls.filter(c => c[0] === 'keydown').length;
-      const removesAfterFirst = removeSpy.mock.calls.filter(c => c[0] === 'keydown').length;
       openArcheraOfferModal('plan');
-      const addsAfterSecond = addSpy.mock.calls.filter(c => c[0] === 'keydown').length;
-      const removesAfterSecond = removeSpy.mock.calls.filter(c => c[0] === 'keydown').length;
-      // Second open must remove the first open's handler before adding a new one.
-      expect(addsAfterSecond - addsAfterFirst).toBe(1);
-      expect(removesAfterSecond - removesAfterFirst).toBe(1);
+      const keydowns = addSpy.mock.calls.filter(c => c[0] === 'keydown').length;
+      expect(keydowns).toBe(1);
     } finally {
       addSpy.mockRestore();
-      removeSpy.mockRestore();
     }
   });
 
