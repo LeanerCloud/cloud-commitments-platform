@@ -106,7 +106,41 @@ describe('handlePurchaseDeeplink approve (issue #247)', () => {
   });
 });
 
+describe('handlePurchaseDeeplink revoke (issue #1102 item 4)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    jest.clearAllMocks();
+    (apiRequest as jest.Mock).mockResolvedValue({ status: 'revocation_requested' });
+    window.history.replaceState({}, '', `/purchases/revoke/${EXEC_ID}?token=tok-rev`);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('confirms, then posts the token with the session and skips the approval details', async () => {
+    const done = handlePurchaseDeeplink();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(apiRequest).not.toHaveBeenCalled();
+    const revoke = Array.from(document.querySelectorAll<HTMLButtonElement>('.modal-confirm-actions button'))
+      .find(b => b.textContent === 'Revoke purchase');
+    expect(revoke).toBeDefined();
+    revoke!.click();
+    await expect(done).resolves.toBe(true);
+
+    expect(api.getApprovalDetails).not.toHaveBeenCalled();
+    expect(apiRequest).toHaveBeenCalledWith(`/purchases/revoke/${EXEC_ID}`, {
+      method: 'POST',
+      body: JSON.stringify({ token: 'tok-rev' }),
+    });
+    expect(window.location.pathname).toBe('/purchases');
+  });
+});
+
 describe('parsePurchaseDeeplink', () => {
+  it('parses a revoke deep-link with a token', () => {
+    expect(parsePurchaseDeeplink('/purchases/revoke/abc-123', '?token=tok-xyz'))
+      .toEqual({ action: 'revoke', id: 'abc-123', token: 'tok-xyz' });
+  });
+
   it('parses an approve deep-link with a token', () => {
     const dl = parsePurchaseDeeplink(
       '/purchases/approve/abc-123',

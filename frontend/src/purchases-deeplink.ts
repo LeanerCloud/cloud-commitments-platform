@@ -1,5 +1,5 @@
 /**
- * Deep-link handler for /purchases/approve/:id and /purchases/cancel/:id.
+ * Deep-link handler for /purchases/{approve,cancel,revoke}/:id.
  *
  * The approval email's action links target these SPA paths (not the raw
  * API endpoints) so the click lands on an authenticated session that can
@@ -10,11 +10,11 @@
  *      first; login's location.reload() re-enters init() with the same
  *      URL, and handlePurchaseDeeplink() then runs post-auth.
  *   3. User confirms the action via confirmDialog.
- *   4. We POST to /api/purchases/{approve,cancel}/:id?token=… with the
+ *   4. We POST to /api/purchases/{approve,cancel,revoke}/:id with the token in the JSON body and the
  *      session cookie attached; the backend records session.Email as
  *      approved_by / cancelled_by (see handler_purchases.go:
  *      tryResolveActorEmail).
- *   5. On result, we replace the URL with /history so the user isn't
+ *   5. On result, we replace the URL with /purchases so the user isn't
  *      stuck on a stale deep-link if they navigate back.
  */
 
@@ -23,7 +23,13 @@ import { showToast } from './toast';
 import { confirmDialog } from './confirmDialog';
 import { approvalDetailsUnavailableMessage, buildApprovalDetailsBody, isPermanentDetailsError } from './approval-details';
 
-type DeeplinkAction = 'approve' | 'cancel';
+type DeeplinkAction = 'approve' | 'cancel' | 'revoke';
+
+const ACTION_LABELS: Record<DeeplinkAction, { title: string; confirm: string; past: string }> = {
+  approve: { title: 'Approve', confirm: 'Approve purchase', past: 'approved' },
+  cancel: { title: 'Cancel', confirm: 'Cancel purchase', past: 'cancelled' },
+  revoke: { title: 'Revoke', confirm: 'Revoke purchase', past: 'revocation requested' },
+};
 
 interface ParsedDeeplink {
   action: DeeplinkAction;
@@ -33,16 +39,16 @@ interface ParsedDeeplink {
 
 /**
  * Parse the current URL as a purchase action deep-link. Returns null when
- * the path isn't `/purchases/{approve,cancel}/:id`.
+ * the path isn't `/purchases/{approve,cancel,revoke}/:id`.
  */
 export function parsePurchaseDeeplink(pathname: string, search: string): ParsedDeeplink | null {
   const parts = pathname.split('/').filter(Boolean);
   if (parts.length !== 3 || parts[0] !== 'purchases') return null;
   const action = parts[1];
   const id = parts[2];
-  if ((action !== 'approve' && action !== 'cancel') || !id) return null;
+  if (!action || !id || !Object.prototype.hasOwnProperty.call(ACTION_LABELS, action)) return null;
   const token = new URLSearchParams(search).get('token') || '';
-  return { action, id: id, token };
+  return { action: action as DeeplinkAction, id: id, token };
 }
 
 /**
@@ -52,7 +58,7 @@ export function parsePurchaseDeeplink(pathname: string, search: string): ParsedD
  * through to its usual tab handling.
  *
  * In the no-token and user-cancelled paths we replace the URL with
- * /history so the user doesn't bounce back into the same deep-link on a
+ * /purchases so the user doesn't bounce back into the same deep-link on a
  * browser back navigation.
  */
 export async function handlePurchaseDeeplink(): Promise<boolean> {
@@ -73,9 +79,8 @@ export async function handlePurchaseDeeplink(): Promise<boolean> {
   // Dismissal is via the close-X, ESC, or a backdrop click, so a
   // cancel-purchase dialog doesn't end up with two buttons both labelled
   // "Cancel" (one to dismiss, one to confirm the purchase cancellation).
-  const titleVerb = dl.action === 'approve' ? 'Approve' : 'Cancel';
-  const gerund = dl.action === 'approve' ? 'approve' : 'cancel';
-  const confirmLabel = dl.action === 'approve' ? 'Approve purchase' : 'Cancel purchase';
+  const { title: titleVerb, confirm: confirmLabel, past: actionPast } = ACTION_LABELS[dl.action];
+  const gerund = dl.action;
   // Issue #374: on approve, show the per-rec details (service / engine
   // / resource / region / count / term + payment / costs) so the user
   // has informed consent before authorising a financial commitment.
@@ -105,7 +110,7 @@ export async function handlePurchaseDeeplink(): Promise<boolean> {
     body,
     confirmLabel,
     hideCancelButton: true,
-    destructive: dl.action === 'cancel',
+    destructive: dl.action !== 'approve',
   });
   if (!ok) {
     window.history.replaceState({}, '', '/purchases');
@@ -116,7 +121,6 @@ export async function handlePurchaseDeeplink(): Promise<boolean> {
   // so it does not appear in Lambda Function URL access logs (which record
   // rawQueryString but not the request body).
   const endpoint = `/purchases/${dl.action}/${encodeURIComponent(dl.id)}`;
-  const actionPast = dl.action === 'approve' ? 'approved' : 'cancelled';
   try {
     await apiRequest<{ status: string }>(endpoint, {
       method: 'POST',

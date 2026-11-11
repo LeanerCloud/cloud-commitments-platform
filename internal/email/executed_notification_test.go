@@ -65,7 +65,10 @@ func TestRenderPurchaseExecutedNotificationEmail_RevokeURLPresent(t *testing.T) 
 
 	// The one-click revoke route is rendered with the execution ID and the
 	// url-escaped token.
-	assert.Contains(t, body, "/api/purchases/revoke/exec-12345?token=")
+	assert.Contains(t, body, "/purchases/revoke/exec-12345?token=")
+	// The link is the SPA deep link (session-authenticated), never the raw
+	// API route a logged-out recipient would 401 on (issue #1102 item 4).
+	assert.NotContains(t, body, "/api/purchases/revoke/")
 	// Token is url-escaped: percent-encoded fragments present...
 	assert.Contains(t, body, "%2F", "'/' must be percent-encoded")
 	assert.Contains(t, body, "%2B", "'+' must be percent-encoded")
@@ -89,8 +92,9 @@ func TestRenderPurchaseExecutedNotificationEmailHTML_RevokeURLPresent(t *testing
 	require.NoError(t, err)
 
 	// HTML half renders the revoke CTA anchor with the escaped token.
-	assert.Contains(t, body, "/api/purchases/revoke/exec-12345?token="+escapedToken)
+	assert.Contains(t, body, "/purchases/revoke/exec-12345?token="+escapedToken)
 	assert.Contains(t, body, "Revoke this purchase")
+	assert.NotContains(t, body, "/api/purchases/revoke/")
 	assert.Contains(t, body, "%2F")
 	assert.Contains(t, body, "%2B")
 	assert.Contains(t, body, "%3D")
@@ -127,7 +131,7 @@ func TestRenderPurchaseExecutedNotificationEmail_ExpiryNoteDeferred(t *testing.T
 	assert.NotContains(t, body, "You can revoke this purchase until")
 	assert.NotContains(t, htmlBody, "You can revoke this purchase until")
 	// The revoke link itself is still present even without the expiry note.
-	assert.Contains(t, body, "/api/purchases/revoke/exec-12345")
+	assert.Contains(t, body, "/purchases/revoke/exec-12345")
 }
 
 func TestRenderPurchaseExecutedNotificationEmail_ExpiryNoteWhenPopulated(t *testing.T) {

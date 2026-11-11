@@ -450,6 +450,7 @@ var appRoutes = []string{
 	"/archera-insurance",
 	"/purchases/approve/abc-123",
 	"/purchases/cancel/abc-123",
+	"/purchases/revoke/abc-123",
 }
 
 func TestSPAFallbackServesIndexForEveryAppRoute(t *testing.T) {

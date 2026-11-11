@@ -919,10 +919,10 @@ REVOCATION WINDOW
 After that, contact AWS Support.
 {{end}}
 One-click revoke:
-{{.DashboardURL}}/api/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}
+{{.DashboardURL}}/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}
 
 Plain-text URL (copy + paste if the link above is broken):
-{{.DashboardURL}}/api/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}
+{{.DashboardURL}}/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}
 {{end}}
 View in dashboard:
 {{.DashboardURL}}/purchases#history?execution={{.ExecutionID}}
@@ -979,9 +979,9 @@ const purchaseExecutedNotificationHTMLTemplate = `<!DOCTYPE html>
 <h2 style="margin:16px 0 8px 0;font-size:15px;color:#b45309;text-transform:uppercase;letter-spacing:0.04em;">Revocation Window</h2>
 {{if .RevocationWindowClosesAt}}<p style="margin:0 0 12px 0;color:#475569;font-size:13px;">You can revoke this purchase until <strong>{{.RevocationWindowClosesAt}}</strong>. After that, contact AWS Support.</p>{{end}}
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-<td><a href="{{.DashboardURL}}/api/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}" style="display:inline-block;padding:12px 28px;background:#dc2626;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;border-radius:6px;">Revoke this purchase</a></td>
+<td><a href="{{.DashboardURL}}/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}" style="display:inline-block;padding:12px 28px;background:#dc2626;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;border-radius:6px;">Revoke this purchase</a></td>
 </tr></table>
-<p style="margin:10px 0 0 0;color:#64748b;font-size:11px;word-break:break-all;">If the button does not work, copy and paste this URL: <a href="{{.DashboardURL}}/api/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}" style="color:#2563eb;text-decoration:underline;">{{.DashboardURL}}/api/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}</a></p>
+<p style="margin:10px 0 0 0;color:#64748b;font-size:11px;word-break:break-all;">If the button does not work, copy and paste this URL: <a href="{{.DashboardURL}}/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}" style="color:#2563eb;text-decoration:underline;">{{.DashboardURL}}/purchases/revoke/{{.ExecutionID}}?token={{urlquery .RevocationToken}}</a></p>
 </td></tr>
 {{end}}
 

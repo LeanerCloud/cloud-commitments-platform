@@ -549,7 +549,7 @@ func TestPlainTextTemplates_NoHTMLEscaping(t *testing.T) {
 		assert.Contains(t, body, "Requested by: "+name+" <"+email+">",
 			"requester name and address must be verbatim in the plain-text executed notice")
 		// The revoke token is still query-escaped by urlquery, exactly once.
-		assert.Contains(t, body, "/api/purchases/revoke/exec-4?token=tok%2B%2F%3D")
+		assert.Contains(t, body, "/purchases/revoke/exec-4?token=tok%2B%2F%3D")
 		assert.NotContains(t, body, "&#39;")
 		assert.NotContains(t, body, "&amp;")
 		assert.NotContains(t, body, "&lt;")

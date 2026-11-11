@@ -593,7 +593,8 @@ type NotificationData struct {
 	// RevocationToken is the one-time token embedded in the revocation link
 	// of a post-execution notification email. When non-empty, the template
 	// renders a "Revoke this purchase" CTA that hits
-	// /api/purchases/revoke/{ExecutionID}?token=<RevocationToken>.
+	// /purchases/revoke/{ExecutionID}?token=<RevocationToken>, the SPA deep link
+	// that posts to /api/purchases/revoke/{ExecutionID} with the session cookie.
 	// Empty silently omits the revocation panel so other email flows are
 	// unaffected.
 	RevocationToken string

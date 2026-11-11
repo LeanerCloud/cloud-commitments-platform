@@ -1197,7 +1197,9 @@ paths:
       tags: [Purchases]
       summary: Render the revocation confirmation form for the email link
       description: >
-        The revocation email links here. Returns an HTML page with a form
+        Legacy confirmation page; the revocation email now links to the SPA
+        deep link /purchases/revoke/{id}?token=..., which asks for confirmation
+        and POSTs with the signed-in session. Returns an HTML page with a form
         that POSTs the token to this path; nothing is looked up or changed, so
         mail prefetchers cannot trigger a revocation. The form submits a
         plain browser form POST, which carries no Authorization or
@@ -1233,6 +1235,10 @@ paths:
       tags: [Purchases]
       summary: Revoke a completed purchase from the email link
       description: >
+        The revocation email links to the SPA deep link
+        /purchases/revoke/{id}?token=..., which POSTs here with the signed-in
+        session; a POST without a session is rejected with 401.
+
         Records a revocation request for a completed or partially completed
         purchase. The same path also answers GET with an unauthenticated HTML
         confirmation form (no state change, so mail prefetchers cannot
