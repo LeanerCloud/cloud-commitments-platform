@@ -369,7 +369,7 @@ describe('History Module', () => {
 
       const list = document.getElementById('history-list');
       expect(list?.innerHTML).toContain('table');
-      expect(list?.innerHTML).toContain('ec2');
+      expect(list?.innerHTML).toContain('EC2');
       expect(list?.innerHTML).toContain('us-east-1');
       // Both Monthly Cost and Monthly Savings columns must be present (issue #788).
       expect(list?.innerHTML).toContain('Monthly Cost');

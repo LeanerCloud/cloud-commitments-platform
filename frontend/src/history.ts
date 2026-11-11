@@ -14,6 +14,7 @@ import { approvalDetailsUnavailableMessage, buildApprovalDetailsBody } from './a
 import { showToast } from './toast';
 import { iconSvg } from './icons';
 import { formatPaymentOption, formatTermShort } from './lib/table-format';
+import { serviceLabel } from './lib/service-labels';
 import {
   historyTruncationMessage,
   mergeHistoryPages,
@@ -1314,6 +1315,7 @@ function purchaseHistoryDisplayLabel(
     const n = Number(value);
     return isRealTerm(n) ? formatTermShort(n) : Number.isFinite(n) ? NO_VALUE : value;
   }
+  if (column === 'service') return serviceLabel(value);
   return value;
 }
 
@@ -1457,7 +1459,7 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
         <td data-label="Status">${statusCell}</td>
         <td data-label="Date">${formatDate(p.timestamp)}</td>
         <td data-label="Provider">${providerCell(p)}</td>
-        <td data-label="Service">${dashOr(escapeHtml(p.service))}</td>
+        <td data-label="Service">${dashOr(escapeHtml(p.service ? serviceLabel(p.service) : p.service))}</td>
         <td data-label="Type">${empty ? NO_RECS_HTML : escapeHtml(p.resource_type)}</td>
         <td data-label="Region">${dashOr(escapeHtml(p.region))}</td>
         <td class="num" data-label="Count">${dashOr(escapeHtml(String(p.count ?? '')))}</td>
@@ -2025,6 +2027,7 @@ function approvalQueueDisplayLabel(
     const n = Number(value);
     return isRealTerm(n) ? formatTermShort(n) : Number.isFinite(n) ? NO_VALUE : value;
   }
+  if (column === 'service') return serviceLabel(value);
   if (column === 'account') {
     // Account cells render via getAccountName() — mirror the same display.
     return getAccountName(value);
@@ -2115,7 +2118,7 @@ export function renderApprovalQueue(purchases: HistoryPurchase[]): void {
         <td data-label="Date">${formatDate(p.timestamp)}</td>
         <td data-label="Account">${accountCell}</td>
         <td data-label="Provider">${providerCell(p)}</td>
-        <td data-label="Service">${empty ? NO_RECS_HTML : escapeHtml(p.service)}</td>
+        <td data-label="Service">${empty ? NO_RECS_HTML : escapeHtml(p.service ? serviceLabel(p.service) : p.service)}</td>
         <td class="num" data-label="Count">${dashOr(escapeHtml(String(p.count ?? '')))}</td>
         <td data-label="Term">${termCell(p)}</td>
         <td data-label="Payment">${dashOr(paymentCell)}</td>

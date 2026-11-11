@@ -411,7 +411,7 @@ describe('History inline Retry button (issue #47)', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     const body = (confirmDialog as jest.Mock).mock.calls[0][0].body as HTMLElement;
-    expect(body.querySelector('.history-confirm-summary strong')?.textContent).toBe('AWS rds db.r5.large × 2 in us-east-1');
+    expect(body.querySelector('.history-confirm-summary strong')?.textContent).toBe('AWS RDS db.r5.large × 2 in us-east-1');
     expect(body.textContent).toContain('This will create a new purchase execution');
   });
 

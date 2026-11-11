@@ -221,13 +221,13 @@ describe('Cancel and Retry confirms apply the no-commitments guards (#181, #728)
 
   test('Cancel on a real row names it and shows upfront in the shipped currency format', async () => {
     const body = await confirmBodyFor('#purchases-approval-queue .history-cancel-btn[data-cancel-id="exec-real"]');
-    expect(body.querySelector('.history-confirm-summary strong')?.textContent).toBe('AWS ec2 m5.xlarge × 3 in eu-west-1');
+    expect(body.querySelector('.history-confirm-summary strong')?.textContent).toBe('AWS EC2 m5.xlarge × 3 in eu-west-1');
     expect(body.textContent).toContain('Upfront: $4,200');
     expect(body.textContent).toContain('Term: 1 Year');
   });
 
   test('a "multiple" region is left out like a "multiple" provider', () => {
     const p = { ...REAL_PENDING, resource_type: '2 commitment(s)', count: 2, region: 'multiple' } as unknown as HistoryPurchase;
-    expect(describeHistoryPurchase(p)).toBe('AWS ec2 2 commitment(s) × 2');
+    expect(describeHistoryPurchase(p)).toBe('AWS EC2 2 commitment(s) × 2');
   });
 });

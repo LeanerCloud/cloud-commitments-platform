@@ -11,16 +11,17 @@
 import type { HistoryPurchase } from './types';
 import { getAccountName } from './recommendations';
 import { formatCurrency, formatDate, formatTerm } from './utils';
+import { serviceLabel } from './lib/service-labels';
 import { hasNoCommitments, isRealTerm, NO_RECOMMENDATIONS_LABEL } from './lib/purchase-row-guards';
 
 /** The API's "multiple" placeholder for a basket spanning providers or regions. */
 const specific = (v: string | undefined): string => (v && v !== 'multiple' ? v : '');
 
-/** One-line description of a History row, e.g. "AWS ec2 m5.large × 2 in us-east-1". */
+/** One-line description of a History row, e.g. "AWS EC2 m5.large × 2 in us-east-1". */
 export function describeHistoryPurchase(p: HistoryPurchase): string {
   if (hasNoCommitments(p)) return NO_RECOMMENDATIONS_LABEL;
   const provider = specific(p.provider).toUpperCase();
-  const what = [provider, p.service, p.resource_type].filter(Boolean).join(' ');
+  const what = [provider, p.service ? serviceLabel(p.service) : '', p.resource_type].filter(Boolean).join(' ');
   const count = p.count > 1 ? ` × ${p.count}` : '';
   const region = specific(p.region) ? ` in ${p.region}` : '';
   return `${what || 'Purchase'}${count}${region}`;

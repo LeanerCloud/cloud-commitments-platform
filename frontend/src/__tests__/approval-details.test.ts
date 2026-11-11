@@ -153,6 +153,17 @@ describe('renderApprovalDetailsBody', () => {
     expect(cells[0]?.textContent).toBe('⚠ Account deleted — purchase cannot execute');
   });
 
+  it.each([
+    ['rds', 'RDS'],
+    ['compute', 'Compute'],
+    ['relational-db', 'Relational DB'],
+    ['mystery-svc', 'mystery-svc'],
+    ['', ''],
+  ])('renders the Service cell for slug %p as %p (issue #1717)', (slug, label) => {
+    const body = renderApprovalDetailsBody(makeDetails([makeRec({ service: slug })]), new Map());
+    expect(body.querySelectorAll('.approval-details-table tbody td')[2]?.textContent).toBe(label);
+  });
+
   it('renders the engine column for RDS-shaped recs and "—" otherwise', () => {
     const rdsRec = makeRec({ service: 'rds', engine: 'postgres' });
     const ec2Rec = makeRec({ id: 'rec-2', service: 'ec2', engine: '' });

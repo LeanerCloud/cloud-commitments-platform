@@ -28,6 +28,7 @@ import type { CloudAccount } from './api/accounts';
 import type { PurchaseDetails, Recommendation } from './api/types';
 import { escapeHtml, formatCurrency, formatTerm, amortizedMonthly } from './utils';
 import { getAmortizeUpfront } from './state';
+import { serviceLabel } from './lib/service-labels';
 import { commitmentLine, formatCommitmentTotals } from './commitmentSummary';
 
 /**
@@ -240,7 +241,7 @@ function renderRecRow(rec: Recommendation, accountsById: AccountsById, hostAWSAc
   row.innerHTML = `
     <td>${escapeHtml(accountLabel)}</td>
     <td>${escapeHtml(rec.provider ?? '')}</td>
-    <td>${escapeHtml(rec.service ?? '')}</td>
+    <td>${escapeHtml(rec.service ? serviceLabel(rec.service) : '')}</td>
     <td>${escapeHtml(rec.resource_type ?? '')}</td>
     <td>${escapeHtml(engineLabel)}</td>
     <td>${escapeHtml(rec.region ?? '')}</td>

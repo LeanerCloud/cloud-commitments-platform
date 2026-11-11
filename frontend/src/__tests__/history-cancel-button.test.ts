@@ -270,7 +270,7 @@ describe('Approval queue Cancel button (issue #46)', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     const body = (confirmDialog as jest.Mock).mock.calls[0][0].body as HTMLElement;
-    expect(body.querySelector('.history-confirm-summary strong')?.textContent).toBe('AWS ec2 m5.xlarge × 3 in eu-west-1');
+    expect(body.querySelector('.history-confirm-summary strong')?.textContent).toBe('AWS EC2 m5.xlarge × 3 in eu-west-1');
     // formatCurrency is mocked here; purchases-placeholders-181.test.ts
     // pins the real "Upfront: $4,200" output with the real utils.
     expect(body.textContent).toContain('Upfront:');

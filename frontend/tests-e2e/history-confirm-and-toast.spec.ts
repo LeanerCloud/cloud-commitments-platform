@@ -29,7 +29,7 @@ test('Cancel confirm names the purchase on the clicked row', async ({ page }) =>
   await page.locator(`#purchases-approval-queue .history-cancel-btn[data-cancel-id="${ROWS[1]!.purchase_id}"]`).click();
 
   const summary = page.getByRole('dialog').locator('.history-confirm-summary');
-  await expect(summary.locator('strong')).toHaveText('AWS ec2 c5.2xlarge × 4 in us-east-1');
+  await expect(summary.locator('strong')).toHaveText('AWS EC2 c5.2xlarge × 4 in us-east-1');
   await expect(summary).toContainText('Upfront: $9,800');
 });
 
