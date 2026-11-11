@@ -11,11 +11,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type captureNotifier struct{ got []email.NotificationData }
+// captureNotifier records every notice; hook runs inside the send and err is
+// returned after it.
+type captureNotifier struct {
+	got  []email.NotificationData
+	hook func(email.NotificationData)
+	err  error
+}
 
-func (c *captureNotifier) SendPurchaseScheduledNotification(_ context.Context, d email.NotificationData) error {
+func (c *captureNotifier) SendPurchaseScheduledNotification(ctx context.Context, d email.NotificationData) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	c.got = append(c.got, d)
-	return nil
+	if c.hook != nil {
+		c.hook(d)
+	}
+	return c.err
 }
 
 func ladderNoticeExec() *config.PurchaseExecution {

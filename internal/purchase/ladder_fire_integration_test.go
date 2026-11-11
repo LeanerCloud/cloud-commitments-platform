@@ -109,12 +109,12 @@ func TestLadderFire_FullSweepClaimsThePrefixUnderTheCeiling(t *testing.T) {
 	f := newFireRig(t)
 	res, err := f.sweep(nil)
 	require.NoError(t, err)
-	assert.Equal(t, LadderFireResult{Configs: 1, Due: 3, Claimed: 2, Trimmed: 1}, res)
+	assert.Equal(t, LadderFireResult{Configs: 1, Due: 3, Claimed: 2, Trimmed: 1, Announced: 2}, res)
 	assert.Equal(t, []string{"fired", "fired", "scheduled"}, []string{f.status(0), f.status(1), f.status(2)})
 	assert.Contains(t, buf.String(), "held back")
 
 	rows, err := f.pool.Query(f.ctx, `SELECT status, plan_id IS NULL, scheduled_execution_at, idempotency_key, created_by_system,
-		notification_sent IS NULL, cloud_account_id IS NOT NULL, recommendations->0->>'term'
+		notification_sent IS NOT NULL, cloud_account_id IS NOT NULL, recommendations->0->>'term'
 		FROM purchase_executions WHERE created_by_system ORDER BY idempotency_key`)
 	require.NoError(t, err)
 	defer rows.Close()
@@ -122,12 +122,12 @@ func TestLadderFire_FullSweepClaimsThePrefixUnderTheCeiling(t *testing.T) {
 	n := 0
 	for rows.Next() {
 		var status, key, term string
-		var noPlan, system, unannounced, hasAcct bool
+		var noPlan, system, announced, hasAcct bool
 		var fireAt time.Time
-		require.NoError(t, rows.Scan(&status, &noPlan, &fireAt, &key, &system, &unannounced, &hasAcct, &term))
+		require.NoError(t, rows.Scan(&status, &noPlan, &fireAt, &key, &system, &announced, &hasAcct, &term))
 		assert.True(t, want[key], key)
 		assert.Equal(t, "scheduled", status)
-		assert.True(t, noPlan && system && unannounced && hasAcct)
+		assert.True(t, noPlan && system && announced && hasAcct)
 		assert.True(t, f.now.Add(48*time.Hour).Equal(fireAt), fireAt)
 		assert.Equal(t, "1", term)
 		n++

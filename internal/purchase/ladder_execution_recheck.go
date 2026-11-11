@@ -65,8 +65,8 @@ func (m *Manager) ladderFlagsRefusal(ctx context.Context) (*config.GlobalConfig,
 }
 
 // ladderApprovalRefusal covers what a ladder purchase must have beyond the
-// switches. The scheduled-purchase notice must have gone out (no production
-// path stamps notification_sent yet, so this refuses until one does). 4-eyes
+// switches. The scheduled-purchase notice must have gone out (the ladder fire
+// sweep stamps notification_sent only after a notice was sent). 4-eyes
 // mode is refused because a ladder purchase has no second approver. The
 // Manager buys the global offering class, so an RI-layer tranche cannot run
 // while that class is anything but convertible.

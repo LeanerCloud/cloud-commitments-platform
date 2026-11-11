@@ -1,16 +1,22 @@
 package purchase
 
 import (
+	"context"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/stretchr/testify/assert"
 )
 
 var _ LadderFireStore = (*config.PostgresStore)(nil)
 
-type stubScheduledNotifier struct{ ScheduledNotifier }
+type stubScheduledNotifier struct{}
+
+func (stubScheduledNotifier) SendPurchaseScheduledNotification(context.Context, email.NotificationData) error {
+	return nil
+}
 
 func fireGlobal(mut func(*config.GlobalConfig)) *config.GlobalConfig {
 	to := "ops@example.com"

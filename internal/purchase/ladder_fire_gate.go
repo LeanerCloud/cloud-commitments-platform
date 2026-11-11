@@ -25,6 +25,7 @@ type LadderFireStore interface {
 	ClaimDueLadderTranches(ctx context.Context, configID string, asOf time.Time, limit int, filter config.LadderClaimFilter,
 		create func(ctx context.Context, tx pgx.Tx, tranche config.LadderTrancheDB) (string, error)) ([]config.LadderTrancheDB, error)
 	SavePurchaseExecutionTx(ctx context.Context, tx pgx.Tx, execution *config.PurchaseExecution) error
+	SaveExecutionIfStatus(ctx context.Context, execution *config.PurchaseExecution, expected []string) error
 }
 
 // LadderFireDeps is everything one ladder fire sweep needs. Notifier is nil

@@ -27,14 +27,18 @@ type fakeFireStore struct {
 	claimTake   int
 	claimErrFor map[string]error
 
-	listCalls  int
-	claimCalls int
-	saveCalls  int
-	listLayers []ladder.LayerType
-	filter     config.LadderClaimFilter
-	claimLimit int
-	claimedFor []string
-	saved      []*config.PurchaseExecution
+	listCalls     int
+	claimCalls    int
+	saveCalls     int
+	listLayers    []ladder.LayerType
+	filter        config.LadderClaimFilter
+	claimLimit    int
+	claimedFor    []string
+	saved         []*config.PurchaseExecution
+	stamped       []*config.PurchaseExecution
+	claimDone     bool
+	stampErr      error
+	stampExpected []string
 }
 
 func (f *fakeFireStore) GetGlobalConfig(context.Context) (*config.GlobalConfig, error) {
@@ -91,7 +95,17 @@ func (f *fakeFireStore) ClaimDueLadderTranches(ctx context.Context, configID str
 		out = append(out, tr)
 	}
 	f.claimedFor = append(f.claimedFor, configID)
+	f.claimDone = true
 	return out, nil
+}
+
+func (f *fakeFireStore) SaveExecutionIfStatus(ctx context.Context, e *config.PurchaseExecution, expected []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	f.stamped = append(f.stamped, e)
+	f.stampExpected = expected
+	return f.stampErr
 }
 
 func (f *fakeFireStore) SavePurchaseExecutionTx(_ context.Context, _ pgx.Tx, e *config.PurchaseExecution) error {
@@ -134,7 +148,7 @@ func TestSweep_ClaimsWithTheResolvedFilter(t *testing.T) {
 	f.rows["c1"] = append(f.rows["c1"], dueRow("X", 1, false))
 	res, err := runFire(f)
 	require.NoError(t, err)
-	assert.Equal(t, LadderFireResult{Configs: 1, Due: 3, Unresolved: 1, Claimed: 2}, res)
+	assert.Equal(t, LadderFireResult{Configs: 1, Due: 3, Unresolved: 1, Claimed: 2, Announced: 2}, res)
 	assert.Equal(t, 1, f.claimCalls)
 	assert.Equal(t, NewLadderInstrumentRegistry().Layers(), f.filter.Layers)
 	assert.Equal(t, NewLadderInstrumentRegistry().Layers(), f.listLayers)

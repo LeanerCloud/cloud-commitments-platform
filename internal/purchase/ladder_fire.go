@@ -15,11 +15,15 @@ import (
 // Claimed and Trimmed sum over the configs that reached the resolve step.
 type LadderFireResult struct {
 	Configs, Skipped, Due, Unresolved, Claimed, Trimmed, Errored int
+	// Announced counts executions stamped after a send; the rest of a claim is
+	// NoticeFailed (send error), NoticeDeferred (no time left) or StampFailed.
+	Announced, NoticeFailed, NoticeDeferred, StampFailed int
 }
 
 // ladderFirePlan is what the gates let one config sweep with.
 type ladderFirePlan struct {
 	global       *config.GlobalConfig
+	acct         *config.CloudAccount
 	layers       []ladder.LayerType
 	ceilingMicro int64
 }
@@ -116,7 +120,7 @@ func prepareLadderFire(ctx context.Context, deps LadderFireDeps, cfg *config.Lad
 	if len(layers) == 0 {
 		return nil, "no buildable layer is allowed", nil
 	}
-	return &ladderFirePlan{global: g, layers: layers, ceilingMicro: *ceiling}, "", nil
+	return &ladderFirePlan{global: g, acct: acct, layers: layers, ceilingMicro: *ceiling}, "", nil
 }
 
 // fireLadderConfig sweeps one config: gates, ceiling, list, resolve, claim.
@@ -151,6 +155,7 @@ func fireLadderConfig(ctx context.Context, deps LadderFireDeps, cfg *config.Ladd
 	}
 	res.Claimed += len(claimed)
 	logLadderTrim(cfg.ID, plan.ceilingMicro, rv, len(claimed), res)
+	announceClaimed(ctx, deps, plan, claimed, execs, res)
 	return nil
 }
 

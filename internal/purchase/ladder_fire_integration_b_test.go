@@ -68,7 +68,7 @@ func TestLadderFire_UnclaimableTrancheDoesNotBlockTheOthers(t *testing.T) {
 	require.NoError(t, err)
 	res, err := f.sweep(nil)
 	require.NoError(t, err)
-	assert.Equal(t, LadderFireResult{Configs: 1, Due: 3, Unresolved: 1, Claimed: 2}, res)
+	assert.Equal(t, LadderFireResult{Configs: 1, Due: 3, Unresolved: 1, Claimed: 2, Announced: 2}, res)
 	assert.Equal(t, []string{"fired", "scheduled", "fired"}, []string{f.status(0), f.status(1), f.status(2)})
 }
 
@@ -117,7 +117,8 @@ func TestLadderFire_ReconcilerLeavesASweepsTranchesAlone(t *testing.T) {
 // provider is reached (the provider factory mock has no expectation).
 func TestLadderFire_UnannouncedExecutionIsRefusedAtFireTime(t *testing.T) {
 	f := newFireRig(t)
-	_, err := f.sweep(nil)
+	// The notice cannot be sent, so nothing is stamped.
+	_, err := f.sweep(func(d *LadderFireDeps) { d.Notifier = &captureNotifier{err: errors.New("no mail")} })
 	require.NoError(t, err)
 	_, err = f.pool.Exec(f.ctx, `UPDATE purchase_executions SET scheduled_execution_at = NOW() - interval '1 minute'
 		WHERE created_by_system AND idempotency_key = $1`, f.ids[0])

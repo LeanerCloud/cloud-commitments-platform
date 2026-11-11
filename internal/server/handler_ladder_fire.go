@@ -49,7 +49,8 @@ func (app *Application) handleLadderFire(ctx context.Context) (purchase.LadderFi
 		DashboardURL: strings.TrimRight(app.appConfig.DashboardURL, "/"),
 		Now:          time.Now,
 	})
-	logging.Infof("ladder_fire: configs=%d skipped=%d due=%d unresolved=%d claimed=%d trimmed=%d errored=%d",
-		res.Configs, res.Skipped, res.Due, res.Unresolved, res.Claimed, res.Trimmed, res.Errored)
+	logging.Infof("ladder_fire: configs=%d skipped=%d due=%d unresolved=%d claimed=%d trimmed=%d errored=%d announced=%d notice_failed=%d notice_deferred=%d stamp_failed=%d",
+		res.Configs, res.Skipped, res.Due, res.Unresolved, res.Claimed, res.Trimmed, res.Errored,
+		res.Announced, res.NoticeFailed, res.NoticeDeferred, res.StampFailed)
 	return res, err
 }
