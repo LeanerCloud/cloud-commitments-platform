@@ -27,9 +27,11 @@ type FireResult struct {
 	// Errored is the number of rows where the fire attempt failed for a reason
 	// other than a CAS race (DB error, provider error). Worth alerting on.
 	Errored int `json:"errored"`
-	// Stale is the number of claimed rows refused, unbought, because they were
-	// due more than the due-row age cap ago (ErrDueRowTooOld, issue #712). They
-	// end failed with no_submission and are not counted in Errored.
+	// Stale is the number of claimed rows refused, unbought: because they were
+	// due more than the due-row age cap ago (ErrDueRowTooOld, issue #712), or by
+	// the plan's step cap re-check (ErrStepCommitmentCap, or a failure to read
+	// the plan; #1933), which a cap lowered since the approval fails. They end
+	// failed with no_submission and are not counted in Errored.
 	Stale int `json:"stale"`
 	// Deferred is the number of due rows left untouched (still scheduled)
 	// because less than purchaseRunBudget remained on the context deadline.
@@ -44,7 +46,7 @@ const (
 	fireErrored  fireOutcome = iota // a real error (DB, provider)
 	fireFired                       // claimed and run through executeAndFinalize
 	fireRaceLost                    // another actor owned the row first
-	fireStale                       // claimed but refused by the due-row age cap
+	fireStale                       // claimed but refused by the due-row age cap or the plan's step cap
 )
 
 // FireScheduledDelayedPurchases runs a sweep that fires all purchase_executions
@@ -122,7 +124,7 @@ func nothingCouldFire(r *FireResult) bool {
 // fireFired on success, fireRaceLost when the CAS was lost to a concurrent
 // revoke or the claim was lost before the provider call (the guarded audit
 // stamp found the row no longer running), fireStale when the claimed row was
-// past the due-row age cap and was failed unbought, or fireErrored on a real
+// past the due-row age cap or over its plan's step cap and was failed unbought, or fireErrored on a real
 // error.
 func (m *Manager) fireOneDue(ctx context.Context, exec *config.PurchaseExecution) fireOutcome {
 	// CAS: scheduled -> running (the executor claim). If this fails with ErrExecutionNotInExpectedStatus
@@ -141,8 +143,14 @@ func (m *Manager) fireOneDue(ctx context.Context, exec *config.PurchaseExecution
 
 	// The age cap is checked on the claimed row (issue #712): this run now
 	// owns it, so no other sweep can buy or fail it, and the refusal fails it
-	// with no_submission and notifies operators exactly once.
-	if refusal := dueRowAgeRefusal(updated, m.dueRowMaxAge(), time.Now()); refusal != nil {
+	// with no_submission and notifies operators exactly once. The plan's step
+	// cap is re-applied the same way (#1933): it may have been lowered since
+	// the human approved the delay.
+	refusal := dueRowAgeRefusal(updated, m.dueRowMaxAge(), time.Now())
+	if refusal == nil {
+		refusal = m.scheduledRowCapRefusal(ctx, updated)
+	}
+	if refusal != nil {
 		if failErr := m.failClaimedBeforeSubmission(ctx, updated, refusal); errors.Is(failErr, config.ErrAuditLoss) {
 			// Nothing was bought, but the failed status was not saved: the row
 			// stays running for the reaper, so this is a real error.
