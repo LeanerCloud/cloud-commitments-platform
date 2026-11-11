@@ -1677,22 +1677,29 @@ describe('Recommendations Module', () => {
       expect(mockShowToast).not.toHaveBeenCalled();
     });
 
-    test('cold cache + collection error — error toast surfaces the message', async () => {
+    test('cold cache + collection error — friendly toast, raw text kept out of it (#748)', async () => {
       mockGetRecs();
       (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
         last_collected_at: null,
         last_collection_error: 'Provider X returned 403 Forbidden',
       });
 
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
       await loadRecommendations();
       await Promise.resolve();
 
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0]).toContain('Provider X returned 403 Forbidden');
+      warnSpy.mockRestore();
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('Provider X returned 403 Forbidden'),
+          message: 'The last recommendations collection had errors. Refreshing may resolve it.',
           kind: 'error',
         }),
       );
+      for (const [arg] of mockShowToast.mock.calls) {
+        expect((arg as { message: string }).message).not.toContain('Provider X');
+      }
     });
 
     test('refresh failure — error toast shown with message', async () => {

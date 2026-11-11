@@ -43,7 +43,11 @@ export function isScopeFiltered(provider: string, accountIDs: readonly string[])
   return (provider !== '' && provider.toLowerCase() !== 'all') || accountIDs.length > 0;
 }
 
-/** One-line description of the last recommendations collection. */
+/**
+ * One-line description of the last recommendations collection. The raw
+ * collection error is provider or database text, so it is not part of the
+ * sentence; the card shows it inside a collapsed <details> (issue #748).
+ */
 export function describeFreshness(f: RecommendationsFreshness): string {
   if (f.last_collection_started_at) {
     return 'A recommendations collection is running now.';
@@ -52,7 +56,7 @@ export function describeFreshness(f: RecommendationsFreshness): string {
   const when = formatDateTime(f.last_collected_at);
   parts.push(when ? `Last collected ${when}.` : 'Recommendations have not been collected yet.');
   if (f.last_collection_error) {
-    parts.push(`The last collection reported errors: ${f.last_collection_error}`);
+    parts.push('The last collection reported errors.');
   }
   return parts.join(' ');
 }
@@ -114,12 +118,21 @@ export function buildFirstRunEmptyState(opts: FirstRunEmptyStateOptions): HTMLEl
   card.appendChild(body);
 
   if (opts.loadFreshness) {
-    const status = document.createElement('p');
+    const status = document.createElement('div');
     status.className = 'first-run-freshness';
     status.hidden = true;
     card.appendChild(status);
     opts.loadFreshness().then((f) => {
       status.textContent = describeFreshness(f);
+      if (f.last_collection_error && !f.last_collection_started_at) {
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = 'Show technical details';
+        const raw = document.createElement('pre');
+        raw.textContent = f.last_collection_error;
+        details.append(summary, raw);
+        status.appendChild(details);
+      }
       status.hidden = false;
     }).catch(() => {
       // Freshness is a nice-to-have; the card is complete without it.

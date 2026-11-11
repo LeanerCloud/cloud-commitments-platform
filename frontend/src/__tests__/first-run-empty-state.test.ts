@@ -52,7 +52,8 @@ describe('describeFreshness', () => {
   test('last collected time plus error', () => {
     const text = describeFreshness({ last_collected_at: '2026-10-01T10:00:00Z', last_collection_error: 'AccessDenied' });
     expect(text).toMatch(/^Last collected Oct 1, 2026, \d\d:\d\d\./);
-    expect(text).toContain('The last collection reported errors: AccessDenied');
+    expect(text).toContain('The last collection reported errors.');
+    expect(text).not.toContain('AccessDenied');
   });
 });
 
@@ -115,8 +116,28 @@ describe('buildFirstRunEmptyState', () => {
     expect(line.hidden).toBe(true);
     await flush();
     expect(line.hidden).toBe(false);
-    expect(line.textContent).toContain('<img src=x>');
+    expect(line.textContent).toContain('The last collection reported errors.');
+    const details = line.querySelector('details')!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')?.textContent).toBe('Show technical details');
+    expect(details.textContent).toContain('<img src=x>');
     expect(card.querySelector('img')).toBeNull();
+  });
+
+  test('a running collection hides the raw error details', async () => {
+    const card = buildFirstRunEmptyState({
+      hasAccounts: true,
+      scopeFiltered: false,
+      loadFreshness: () => Promise.resolve({
+        last_collected_at: null,
+        last_collection_error: 'AccessDenied',
+        last_collection_started_at: '2026-10-01T11:00:00Z',
+      }),
+    });
+    await flush();
+    const line = card.querySelector<HTMLElement>('.first-run-freshness')!;
+    expect(line.textContent).toBe('A recommendations collection is running now.');
+    expect(line.querySelector('details')).toBeNull();
   });
 
   test('freshness failure leaves the line hidden', async () => {

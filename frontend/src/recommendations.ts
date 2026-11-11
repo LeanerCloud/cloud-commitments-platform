@@ -392,8 +392,10 @@ export async function triggerAutoRefreshIfStale(
     !Number.isFinite(lastCollectedMs) ||
     Date.now() - lastCollectedMs > STALE_THRESHOLD_MS;
   if (freshness.last_collection_error && isStale) {
+    // The raw text is provider or database output; keep it for support (#748).
+    console.warn('Last recommendations collection error:', freshness.last_collection_error);
     showToast({
-      message: `Last recommendations collection had errors: ${freshness.last_collection_error}`,
+      message: 'The last recommendations collection had errors. Refreshing may resolve it.',
       kind: 'error',
     });
   }
