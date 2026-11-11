@@ -653,6 +653,55 @@ describe('openExchangeModal', () => {
     expect(Array.from(picker?.options ?? []).map((o) => o.value)).toContain('4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91');
   });
 
+  it('shows an empty state, not a bare placeholder, when the offerings list is empty (issue #1696)', async () => {
+    (api.listTargetOfferings as jest.Mock).mockResolvedValueOnce([]);
+    openExchangeModal('ri-abc', 2);
+    await flushPromises();
+
+    const picker = modal.querySelector<HTMLSelectElement>('.modal-exchange-target-select');
+    expect(picker?.options[0]?.textContent).toBe('No compatible offerings found');
+    const empty = modal.querySelector<HTMLElement>('.exchange-offerings-empty');
+    expect(empty?.classList.contains('hidden')).toBe(false);
+    expect(empty?.textContent).toContain('AWS returned no convertible offerings');
+    expect(modal.querySelector<HTMLElement>('.exchange-offerings-error')?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('hides the empty state when CE recommendations remain selectable (issue #1696)', async () => {
+    (api.listTargetOfferings as jest.Mock).mockResolvedValueOnce([]);
+    openExchangeModal('ri-abc', 2, undefined, [
+      { instance_type: 'm5.large', offering_id: '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91', effective_monthly_cost: 42.5 },
+    ]);
+    await flushPromises();
+    expect(modal.querySelector<HTMLElement>('.exchange-offerings-empty')?.classList.contains('hidden')).toBe(true);
+    expect(modal.querySelector<HTMLSelectElement>('.modal-exchange-target-select')?.options[0]?.textContent).toBe('Select a target offering');
+  });
+
+  it('shows the error row and hides the empty state on failure, and tracks Retry transitions (issue #1696)', async () => {
+    const mock = api.listTargetOfferings as jest.Mock;
+    mock.mockRejectedValueOnce(new Error('throttled'));
+    openExchangeModal('ri-abc', 2);
+    await flushPromises();
+    const empty = modal.querySelector<HTMLElement>('.exchange-offerings-empty');
+    const err = modal.querySelector<HTMLElement>('.exchange-offerings-error');
+    const retry = (): void => Array.from(err?.querySelectorAll('button') ?? []).find((b) => b.textContent === 'Retry')?.click();
+    expect(err?.classList.contains('hidden')).toBe(false);
+    expect(empty?.classList.contains('hidden')).toBe(true);
+
+    mock.mockResolvedValueOnce([]);
+    retry();
+    await flushPromises();
+    expect(err?.classList.contains('hidden')).toBe(true);
+    expect(empty?.classList.contains('hidden')).toBe(false);
+    expect(empty?.textContent).toContain('AWS returned no convertible offerings');
+
+    mock.mockRejectedValueOnce(new Error('boom'));
+    modal.querySelector<HTMLElement>('.exchange-offerings-error button')?.click();
+    await flushPromises();
+    expect(err?.classList.contains('hidden')).toBe(false);
+    expect(empty?.classList.contains('hidden')).toBe(true);
+    expect(empty?.textContent).toBe('');
+  });
+
   it('keeps CE recommendations selectable when the AWS offerings fail to load', async () => {
     (api.listTargetOfferings as jest.Mock).mockRejectedValueOnce(new Error('throttled'));
     openExchangeModal('ri-abc', 2, undefined, [

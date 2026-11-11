@@ -1325,6 +1325,8 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
         : 'Could not load offerings';
     } else if (!offeringsLoaded) {
       placeholder.textContent = 'Loading offerings...';
+    } else if (awsOfferings.length === 0 && !(alternativeTargets && alternativeTargets.length > 0)) {
+      placeholder.textContent = 'No compatible offerings found';
     } else {
       placeholder.textContent = 'Select a target offering';
     }
@@ -1379,6 +1381,8 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
     offeringsLoaded = false;
     offeringsError = false;
     offeringsErrorRow.classList.add('hidden');
+    offeringsEmptyRow.classList.add('hidden');
+    offeringsEmptyRow.textContent = '';
     refreshPickers();
     try {
       awsOfferings = await api.listTargetOfferings(riId);
@@ -1390,8 +1394,19 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
       offeringsErrorRow.classList.remove('hidden');
     }
     offeringsLoaded = true;
+    if (!offeringsError && awsOfferings.length === 0 && !(alternativeTargets && alternativeTargets.length > 0)) {
+      offeringsEmptyRow.textContent = 'AWS returned no convertible offerings matching this RI\'s platform, tenancy, scope and term, so there is nothing to exchange into.';
+      offeringsEmptyRow.classList.remove('hidden');
+    }
     refreshPickers();
   };
+
+  // Empty state for a successful load that returned nothing: without it the
+  // picker is a bare placeholder and Get Quote is unusable with no reason (#1696).
+  const offeringsEmptyRow = document.createElement('div');
+  offeringsEmptyRow.className = 'setting-row exchange-offerings-empty hidden';
+  offeringsEmptyRow.setAttribute('role', 'status');
+  content.appendChild(offeringsEmptyRow);
 
   // Error state for a failed offerings load: the message is an alert so
   // screen readers hear it, and Retry reloads the list in place.
