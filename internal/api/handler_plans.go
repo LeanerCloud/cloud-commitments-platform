@@ -169,7 +169,7 @@ func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunction
 	// purchase_plans with no matching plan_accounts row) that were hard to
 	// scope, hard to filter, and hard to govern. Reject early with a clear
 	// 400 so the frontend can surface the error before any DB write.
-	if err := validateTargetAccounts(req.TargetAccounts); err != nil {
+	if err := req.validateCreate(); err != nil {
 		return nil, err
 	}
 
@@ -218,6 +218,34 @@ func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunction
 	}
 
 	return plan, nil
+}
+
+func (r *PlanRequest) validateCreate() error {
+	if err := validateTargetAccounts(r.TargetAccounts); err != nil {
+		return err
+	}
+	return r.validateRampFields()
+}
+
+// validateUpdate refuses a request whose ramp fields are inconsistent or whose
+// expected_updated_at is not the stored version. A matching version leaves
+// plan.UpdatedAt as read, so the guarded update's WHERE updated_at= is the
+// second check against a racing write.
+func (r *PlanRequest) validateUpdate(existing *config.PurchasePlan) error {
+	if err := r.validateRampFields(); err != nil {
+		return err
+	}
+	if r.ExpectedUpdatedAt == "" {
+		return nil
+	}
+	expected, err := time.Parse(time.RFC3339Nano, r.ExpectedUpdatedAt)
+	if err != nil {
+		return NewClientError(400, "expected_updated_at must be an RFC3339 timestamp")
+	}
+	if !expected.Equal(existing.UpdatedAt) {
+		return NewClientError(http.StatusConflict, "plan changed; refresh the plan and try again")
+	}
+	return nil
 }
 
 // validateTargetAccounts rejects a missing/empty target_accounts payload and
@@ -336,6 +364,9 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 // the state the request cannot express (timestamps, ramp progress, services)
 // from the stored plan, and validates it.
 func mergeUpdatedPlan(existingPlan *config.PurchasePlan, req *PlanRequest, planID string, capPresent bool) (*config.PurchasePlan, error) {
+	if err := req.validateUpdate(existingPlan); err != nil {
+		return nil, err
+	}
 	// Create new plan from request
 	plan := req.toPurchasePlan()
 	plan.ID = planID
@@ -391,6 +422,11 @@ func preserveRampProgress(existingPlan, plan *config.PurchasePlan) error {
 	plan.LastExecutionDate = existingPlan.LastExecutionDate
 	plan.LastNotificationSent = existingPlan.LastNotificationSent
 
+	// A legacy request cannot name the mode of an editor-managed ramp, so
+	// omitting it is not a change (a rename must keep the managed markers).
+	if existingPlan.RampSchedule.DatesManaged && plan.RampSchedule.AllocationMode == "" {
+		plan.RampSchedule.AllocationMode = existingPlan.RampSchedule.AllocationMode
+	}
 	if rampScheduleShapeUnchanged(existingPlan.RampSchedule, plan.RampSchedule) {
 		plan.RampSchedule.CurrentStep = existingPlan.RampSchedule.CurrentStep
 		plan.RampSchedule.StartDate = existingPlan.RampSchedule.StartDate
@@ -418,7 +454,8 @@ func rampScheduleShapeUnchanged(a, b config.RampSchedule) bool {
 	return a.Type == b.Type &&
 		a.PercentPerStep == b.PercentPerStep &&
 		a.StepIntervalDays == b.StepIntervalDays &&
-		a.TotalSteps == b.TotalSteps
+		a.TotalSteps == b.TotalSteps &&
+		a.AllocationMode == b.AllocationMode
 }
 
 func (h *Handler) deletePlan(ctx context.Context, req *events.LambdaFunctionURLRequest, planID string) (any, error) {

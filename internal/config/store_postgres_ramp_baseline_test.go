@@ -113,3 +113,14 @@ func TestSumPlanCommitted_HourlyCommitment(t *testing.T) {
 	_, err = sumPlanCommitted([]PurchaseExecution{baselineExec("bad", 1, StatusCompleted, sp)})
 	require.Error(t, err, "an unreadable hourly commitment fails loud")
 }
+
+func TestRampBaselineStale_AllocationMode(t *testing.T) {
+	mk := func(mode RampAllocationMode) *PurchasePlan {
+		return &PurchasePlan{
+			Services:     map[string]ServiceConfig{"a": {Provider: "aws", Service: "ec2", Enabled: true, Term: 1, Payment: "no-upfront"}},
+			RampSchedule: RampSchedule{Type: "custom", PercentPerStep: 25, TotalSteps: 4, StepIntervalDays: 7, AllocationMode: mode},
+		}
+	}
+	assert.True(t, rampBaselineStale(mk(""), mk(RampAllocationEqualCount)))
+	assert.False(t, rampBaselineStale(mk(RampAllocationEqualCount), mk(RampAllocationEqualCount)))
+}

@@ -3240,6 +3240,24 @@ components:
           type: integer
         custom_interval_days:
           type: integer
+        custom_total_steps:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: >-
+            Number of equal steps of a custom ramp (percent per step is
+            100/n). Requires ramp_schedule custom and ramp_allocation
+            equal_count; custom_step_percent is ignored when it is set.
+        ramp_allocation:
+          type: string
+          enum: [equal_count]
+          description: Allocation of a custom ramp; sent together with custom_total_steps.
+        expected_updated_at:
+          type: string
+          description: >-
+            Update only. The plan's updated_at exactly as read (RFC3339Nano
+            string). A different stored value returns 409 "plan changed;
+            refresh the plan and try again".
         target_accounts:
           type: array
           minItems: 1
