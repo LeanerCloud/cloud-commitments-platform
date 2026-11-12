@@ -21,8 +21,8 @@ const providerWiringFile = "provider_wiring.go"
 // (providers/aws, providers/aws/services/ec2, providers/azure/..., ...).
 const concreteProviderPkgPrefix = "github.com/LeanerCloud/cloud-commitments-go/providers/"
 
-// riExchangeForbiddenImportPrefixes are the imports handler_ri_exchange.go
-// must not take: concrete provider packages, the Azure SDK, and the AWS SDK's
+// riExchangeForbiddenImportPrefixes are the imports the handler_ri_exchange*.go
+// non-test files must not take: concrete provider packages, the Azure SDK, and the AWS SDK's
 // config loader and service clients. The generic aws.Config value type and
 // smithy's error interface stay allowed.
 var riExchangeForbiddenImportPrefixes = []string{
@@ -59,14 +59,22 @@ func hasAnyPrefix(s string, prefixes []string) bool {
 // client interfaces; the concrete constructors and types live in
 // provider_wiring.go.
 func TestRIExchangeHandlerHasNoConcreteProviderImports(t *testing.T) {
-	imports := fileImports(t, "handler_ri_exchange.go")
-	require.NotEmpty(t, imports, "the guard must actually read the handler's imports")
-	var bad []string
-	for _, p := range imports {
-		if hasAnyPrefix(p, riExchangeForbiddenImportPrefixes) {
-			bad = append(bad, p)
+	files, err := filepath.Glob("handler_ri_exchange*.go")
+	require.NoError(t, err)
+	var imports, bad []string
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		fileImps := fileImports(t, f)
+		imports = append(imports, fileImps...)
+		for _, p := range fileImps {
+			if hasAnyPrefix(p, riExchangeForbiddenImportPrefixes) {
+				bad = append(bad, f+": "+p)
+			}
 		}
 	}
+	require.NotEmpty(t, imports, "the guard must actually read the handler's imports")
 	assert.Empty(t, bad, "move concrete provider construction and types into %s", providerWiringFile)
 }
 
