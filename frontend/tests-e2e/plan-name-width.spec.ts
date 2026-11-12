@@ -22,3 +22,25 @@ test('a 100-char plan name keeps Planned Purchases inside its wrapper', async ({
   });
   expect(fits.scroll).toBeLessThanOrEqual(fits.client + 1);
 });
+
+// The 24rem cap is for pathological names only: a typical name must render in
+// full, not behind an ellipsis (#1749, follow-up to #1680/#1742).
+test('a typical plan name is not truncated in Planned Purchases', async ({ page }) => {
+  const planName = 'RDS Full Coverage Purchase';
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  await seedAuth(page);
+  await mockApi(page);
+  await page.route('**/api/purchases/planned', route => route.fulfill({ json: { purchases: [{
+    id: 'pp-1', plan_id: 'plan-1', plan_name: planName, scheduled_date: '2026-11-01T00:00:00Z',
+    provider: 'aws', service: 'rds', resource_type: 'db.r5.large', region: 'us-east-1', count: 3, term: 1,
+    payment: 'all-upfront', estimated_savings: 1234, upfront_cost: 25000, has_recommendations: true,
+    status: 'pending', step_number: 1, total_steps: 2, created_by_user_id: 'user-smoke',
+  }] } }));
+  await page.goto('/plans');
+  const name = page.locator('#planned-purchases-list tbody tr.planned-purchase-row .plan-name-cell');
+  await expect(name).toHaveCount(1);
+  await expect(name).toHaveText(planName);
+  const box = await name.evaluate((el: HTMLElement) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(box.client).toBeGreaterThan(0);
+  expect(box.scroll).toBeLessThanOrEqual(box.client);
+});
