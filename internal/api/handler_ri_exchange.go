@@ -21,118 +21,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/ctxutil"
 )
 
-// filterAzureReservationsBySubscription narrows a tenant-wide reservation
-// listing down to the rows billed to subscriptionID, using the same
-// BillingScopeID discriminator requireAzureSourceOwnership keys on (issue
-// #1527). Reservations with no BillingScopeID, or one billed to a different
-// subscription, are dropped.
-//
-// Called only after requireAzureSubscriptionScope has cleared the caller for
-// subscriptionID; a reservation billed elsewhere could never be named as a
-// valid exchange source against this subscription anyway
-// (requireAzureSourceOwnership refuses cross-subscription sources), so
-// returning the wider tenant listing here would just be the enumeration leak
-// issue #1656 describes.
-func filterAzureReservationsBySubscription(reservations []azureExchangeableReservation, subscriptionID string) []azureExchangeableReservation {
-	scope := azureBillingScopeID(subscriptionID)
-	filtered := make([]azureExchangeableReservation, 0, len(reservations))
-	for i := range reservations {
-		if strings.EqualFold(reservations[i].BillingScopeID, scope) {
-			filtered = append(filtered, reservations[i])
-		}
-	}
-	return filtered
-}
-
-// filterAzureReservationsByScope narrows a tenant-wide Azure reservation
-// listing down to the rows billed to a subscription the session's
-// allowed_accounts scope covers. Mirrors filterDashboardRecommendations
-// (handler_dashboard.go): unrestricted/admin sessions pass through
-// unchanged; a restricted session keeps only the rows it can resolve back to
-// one of its allowed CloudAccounts.
-//
-// Each reservation's BillingScopeID ("/subscriptions/{subscriptionID}") is
-// the same ownership signal requireAzureSourceOwnership keys on (issue
-// #1527) -- the subscription actually charged, which is the correct
-// discriminator even for AppliedScopeType == Shared.
-//
-// Fails closed: a reservation with no BillingScopeID, or one that matches no
-// registered Azure CloudAccount, is dropped rather than kept. Counts, not
-// the dropped reservation/billing-scope identifiers, are safe to log --
-// logging the identifiers would just relocate the disclosure this filter
-// exists to prevent.
-func (h *Handler) filterAzureReservationsByScope(ctx context.Context, session *Session, reservations []azureExchangeableReservation) ([]azureExchangeableReservation, error) {
-	allowed, err := h.getAccountScope(ctx, session)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get allowed accounts: %w", err)
-	}
-	if allowed.AllowsAll() {
-		// client.ListExchangeableReservations may return a nil slice for zero
-		// results; every other path here returns a non-nil empty slice, so
-		// normalize here too rather than letting an admin session alone see
-		// {"reservations": null}.
-		if reservations == nil {
-			reservations = []azureExchangeableReservation{}
-		}
-		return reservations, nil
-	}
-
-	provider := "azure"
-	accounts, err := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{Provider: &provider})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list cloud accounts: %w", err)
-	}
-
-	filtered := filterReservationsByScopeIndex(reservations, azureScopeIndex(accounts), allowed)
-	if dropped := len(reservations) - len(filtered); dropped > 0 {
-		logging.Debugf("azure exchange listing: filtered %d of %d tenant-wide reservations outside session scope", dropped, len(reservations))
-	}
-	return filtered, nil
-}
-
-// azureScopeIndex builds a lookup from ARM billing scope (lower-cased) to the
-// registered Azure CloudAccount that owns it, so filterAzureReservationsByScope
-// can resolve each reservation's BillingScopeID straight to its CloudAccount
-// without re-deriving azureBillingScopeID per row. Accounts with no
-// ExternalID are skipped -- they cannot own any BillingScopeID.
-//
-// Split out of filterAzureReservationsByScope, together with
-// filterReservationsByScopeIndex below, to stay under the project's gocyclo
-// threshold (mirrors validateAzureOfferingsBody's precedent).
-func azureScopeIndex(accounts []config.CloudAccount) map[string]config.CloudAccount {
-	index := make(map[string]config.CloudAccount, len(accounts))
-	for i := range accounts {
-		if accounts[i].ExternalID == "" {
-			continue
-		}
-		index[strings.ToLower(azureBillingScopeID(accounts[i].ExternalID))] = accounts[i]
-	}
-	return index
-}
-
-// filterReservationsByScopeIndex narrows reservations down to the rows whose
-// BillingScopeID resolves, via scopeToAccount, to a CloudAccount the session
-// scope allows (AccountScope.Allows). Fails closed: a reservation with no
-// BillingScopeID, or one that resolves to no registered CloudAccount, is
-// dropped rather than kept.
-func filterReservationsByScopeIndex(reservations []azureExchangeableReservation, scopeToAccount map[string]config.CloudAccount, allowed auth.AccountScope) []azureExchangeableReservation {
-	filtered := make([]azureExchangeableReservation, 0, len(reservations))
-	for i := range reservations {
-		r := reservations[i]
-		if r.BillingScopeID == "" {
-			continue
-		}
-		account, ok := scopeToAccount[strings.ToLower(r.BillingScopeID)]
-		if !ok {
-			continue
-		}
-		if allowed.Allows(account.ID, account.Name) {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered
-}
-
 // azureMaxPurchaseAmountCurrency is the currency the execute:ri-exchange
 // permission's MaxPurchaseAmount constraint is denominated in, matching the
 // AWS execute:ri-exchange precedent (which takes max_payment_due_usd). There
@@ -747,12 +635,6 @@ const exchangeRejectedMessage = "the exchange request was rejected as invalid: c
 const azurePolicyRefusedMessage = "Azure rejected this exchange: it does not meet Azure's exchange policy"
 
 // Response types
-
-// ExchangeableAzureRIsResponse holds the list of Azure VM reservations that
-// are eligible for the cross-SKU/cross-region exchange flow.
-type ExchangeableAzureRIsResponse struct {
-	Reservations []azureExchangeableReservation `json:"reservations"`
-}
 
 // ExchangeTargetBody is one entry in an ExchangeQuote/Execute request's
 // `targets` array. Mirrors pkg/exchange.TargetConfig but with JSON tags
