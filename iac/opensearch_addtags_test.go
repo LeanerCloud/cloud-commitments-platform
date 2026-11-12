@@ -21,6 +21,8 @@ func TestOpenSearchStatementsGrantAddTags(t *testing.T) {
 		"federation/aws-target/cloudformation/template.yaml",
 		"federation/aws-target/terraform/main.tf",
 		"../cloudformation/stacks/CUDly-CrossAccount/template.yaml",
+		"../internal/iacfiles/templates/aws-cross-account-cli.sh.tmpl",
+		"../internal/iacfiles/templates/aws-wif-cli.sh.tmpl",
 	}
 	purchase := regexp.MustCompile(`es:PurchaseReservedInstanceOffering`)
 	for _, rel := range files {
