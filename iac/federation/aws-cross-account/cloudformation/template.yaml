@@ -138,6 +138,7 @@ Resources:
             Effect: Allow
             Action:
               - es:PurchaseReservedInstanceOffering
+              - es:AddTags
               - es:DescribeReservedInstanceOfferings
               - es:DescribeReservedInstances
             Resource: "*"
