@@ -1334,6 +1334,14 @@ describe('renderReshapeStalenessBanner', () => {
     expect(banner?.textContent).toContain('last collected 2h');
   });
 
+  it('reports days once the data is older than 48h (#1691)', () => {
+    const old = new Date(Date.now() - 203 * 60 * 60 * 1000).toISOString();
+    renderReshapeStalenessBanner('hard', old);
+    const text = document.getElementById('ri-exchange-recommendations-freshness')?.textContent;
+    expect(text).toContain('last collected 8 days ago');
+    expect(text).not.toContain('203h');
+  });
+
   it('clears an existing banner when staleness becomes empty', () => {
     renderReshapeStalenessBanner('hard', null);
     expect(document.getElementById('ri-exchange-recommendations-freshness')?.className).toContain('error');
