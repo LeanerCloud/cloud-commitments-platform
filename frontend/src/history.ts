@@ -1104,7 +1104,7 @@ function renderPendingActionButtons(p: HistoryPurchase): string {
 //   * failed + threshold reached    → "Retried 5× — confirm to override" Retry button (Q2)
 //   * failed + canRetry             → standard ↻ Retry button
 //   * any row with retry lineage    → inline ↻ Retried as / ↻ Retry of link
-//   * else                          → plan_name or "-"
+//   * else                          → plan_name or NO_VALUE
 // renderLineageLinks returns the inline retry-chain cross-links for a row: a
 // row that was retried (retry_execution_id set) or is itself a retry
 // (retry_attempt_n > 0) links to the other end of the chain so the user can
@@ -1206,7 +1206,7 @@ function renderActionCell(p: HistoryPurchase): string {
 
   return p.plan_name
     ? `<span class="cell-truncate" title="${escapeHtmlAttr(p.plan_name)}">${escapeHtml(p.plan_name)}</span>`
-    : '-';
+    : NO_VALUE;
 }
 
 // ---------------------------------------------------------------------------
