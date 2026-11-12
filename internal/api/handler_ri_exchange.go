@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -978,8 +977,8 @@ func (h *Handler) getAzureCompatibleOfferings(ctx context.Context, req *events.L
 	}
 
 	var body AzureCompatibleOfferingsRequestBody
-	if err = json.Unmarshal([]byte(req.Body), &body); err != nil {
-		return nil, NewClientError(400, "invalid request body")
+	if decodeErr := decodeStrictBody(req.Body, &body); decodeErr != nil {
+		return nil, decodeErr
 	}
 	if validateErr := validateAzureOfferingsBody(body); validateErr != nil {
 		return nil, validateErr
@@ -1219,8 +1218,8 @@ func checkAzureExchangeMoneyGuardrails(preview *azureExchangePreview, maxRat *bi
 // inline code did.
 func parseAzureExecuteRequest(rawBody string) (AzureExecuteExchangeRequestBody, *big.Rat, error) {
 	var body AzureExecuteExchangeRequestBody
-	if err := json.Unmarshal([]byte(rawBody), &body); err != nil {
-		return body, nil, NewClientError(400, "invalid request body")
+	if err := decodeStrictBody(rawBody, &body); err != nil {
+		return body, nil, err
 	}
 	if err := validateAzureExecuteBody(body); err != nil {
 		return body, nil, err
@@ -1953,8 +1952,8 @@ func (h *Handler) getExchangeQuote(ctx context.Context, req *events.LambdaFuncti
 	}
 
 	var body ExchangeQuoteRequestBody
-	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
-		return nil, NewClientError(400, "invalid request body")
+	if err := decodeStrictBody(req.Body, &body); err != nil {
+		return nil, err
 	}
 	if err := validateExchangeTargetsBody(body.RIIDs, body.Targets, body.TargetOfferingID, body.TargetCount); err != nil {
 		return nil, err
@@ -2026,9 +2025,9 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 	}
 
 	var body ExchangeExecuteRequestBody
-	err = json.Unmarshal([]byte(req.Body), &body)
+	err = decodeStrictBody(req.Body, &body)
 	if err != nil {
-		return nil, NewClientError(400, "invalid request body")
+		return nil, err
 	}
 	err = validateExecuteExchangeBody(body)
 	if err != nil {
@@ -2302,8 +2301,8 @@ func (h *Handler) updateRIExchangeConfig(ctx context.Context, req *events.Lambda
 	}
 
 	var body RIExchangeConfigUpdateRequest
-	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
-		return nil, NewClientError(400, "invalid request body")
+	if err := decodeStrictBody(req.Body, &body); err != nil {
+		return nil, err
 	}
 
 	if err := body.validate(); err != nil {

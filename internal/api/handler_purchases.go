@@ -3240,6 +3240,13 @@ func (h *Handler) validateExecutePurchaseRequest(ctx context.Context, req *event
 // parseExecutePurchaseBody decodes an execute request, bounds its
 // recommendation count to 1..1000 and normalizes capacity_percent. It runs
 // after the permission check and before every scope and content check.
+//
+// The body stays permissive about unknown keys, unlike the RI exchange bodies:
+// the UI spreads whole server-provided recommendation rows into it, and the
+// recommendations are re-priced from the stored set (priceRecommendationsFromStore):
+// only count, recommended_count and selected are taken from the request, so an
+// unknown key cannot change what is bought, while a strict decoder would turn any
+// extra field a client adds to a row into a refused purchase.
 func parseExecutePurchaseBody(body string) (ExecutePurchaseRequest, error) {
 	var execReq ExecutePurchaseRequest
 	if err := json.Unmarshal([]byte(body), &execReq); err != nil {
