@@ -19,13 +19,13 @@ type SavingsSnapshot struct {
 	CloudAccountID     *string        `json:"cloud_account_id,omitempty"`
 	CoveragePercentage *float64       `json:"coverage_percentage,omitempty"`
 	Metadata           map[string]any `json:"metadata,omitempty"`
-	AccountID          string         `json:"account_id"`
+	TotalCommitment    *float64       `json:"total_commitment"`
 	Provider           string         `json:"provider"`
 	Service            string         `json:"service"`
 	Region             string         `json:"region"`
 	CommitmentType     string         `json:"commitment_type"`
 	ID                 string         `json:"id"`
-	TotalCommitment    *float64       `json:"total_commitment"`
+	AccountID          string         `json:"account_id"`
 	TotalSavings       float64        `json:"total_savings"`
 }
 

@@ -51,24 +51,24 @@ func NewCollector(cfg CollectorConfig, configStore config.StoreInterface) (*Coll
 // aggregateData holds aggregated savings data for one
 // (cloud_account_id|account_id|service|provider|region|commitment_type) bucket.
 type aggregateData struct {
-	accountID         string
-	cloudAccountID    *string
-	service           string
-	provider          string
-	region            string
-	commitmentType    string
-	commitment        float64
-	commitmentUnknown bool
+	cloudAccountID *string
+	accountID      string
+	service        string
+	provider       string
+	region         string
+	commitmentType string
+	commitment     float64
 	// usage accumulates the recurring (monthly) cost of the commitments in this
 	// bucket as the covered-usage proxy. usageUnknown is set as soon as one
 	// contributing row has a nil MonthlyCost, exactly like commitmentUnknown,
 	// so a bucket with any all-upfront commitment writes NULL usage rather
 	// than a partial sum marked as known (issue #1423). A known 0 stays 0
 	// (feedback_nullable_not_zero).
-	usage        float64
-	usageUnknown bool
-	savings      float64
-	count        int
+	usage             float64
+	savings           float64
+	count             int
+	commitmentUnknown bool
+	usageUnknown      bool
 }
 
 // aggKey is the bucket identity. cloudAccountID is dereferenced (or "" when

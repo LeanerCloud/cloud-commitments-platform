@@ -55,9 +55,9 @@ func TestCollectorUnknownUpfront(t *testing.T) {
 // real total.
 func TestCollectorUnknownMonthlyCost(t *testing.T) {
 	cases := []struct {
+		want  *float64
 		name  string
 		costs []*float64
-		want  *float64
 	}{
 		{name: "recurring then all-upfront", costs: []*float64{new(float64(120)), nil}, want: nil},
 		{name: "all-upfront then recurring", costs: []*float64{nil, new(float64(120))}, want: nil},

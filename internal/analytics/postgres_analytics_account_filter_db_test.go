@@ -54,9 +54,9 @@ const accountFilterWindow = time.Hour
 
 // accountFilterFixture holds the seeded state the cases query against.
 type accountFilterFixture struct {
+	ts        time.Time
 	store     *analytics.PostgresAnalyticsStore
 	uuidUnder string // cloud_accounts.id of aws/acctUnderTest
-	ts        time.Time
 }
 
 func TestPostgresAnalyticsStore_AccountFilterSemantics_DB(t *testing.T) {
@@ -153,9 +153,11 @@ func seedAccountFilterFixture(ctx context.Context, t *testing.T, c *testhelpers.
 	}
 
 	rows := []struct {
-		service, provider, external string
-		cloud                       *string
-		savings                     float64
+		cloud    *string
+		service  string
+		provider string
+		external string
+		savings  float64
 	}{
 		{service: svcBoth, provider: "aws", external: acctUnderTest, cloud: &uuidUnder, savings: 1},
 		{service: svcExtOnly, provider: "aws", external: acctUnderTest, cloud: nil, savings: 2},
