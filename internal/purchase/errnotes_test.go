@@ -87,9 +87,9 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		"RI exchange daily cap exceeded: spend 900.000000 exceeds cap 800.000000",
 		"RI exchange daily cap exceeded: initial 10.000000, remaining 5.000000",
 		"daily spending cap check failed",
-		`reserved ceiling "x" is not a decimal`,
+		`reserved ceiling "12.5" is not a decimal`,
 		"exchange reservation returned no record ID",
-		`exchange reservation returned invalid ceiling "x"`,
+		`exchange reservation returned invalid ceiling "0.000001"`,
 		`unknown provider "AWS" (valid: aws, azure, gcp)`,
 		ErrCategoryMessage(ErrCategoryAccessDenied),
 	}

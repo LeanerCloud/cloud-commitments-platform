@@ -1,6 +1,7 @@
 package purchase
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -61,4 +62,28 @@ func TestSanitizeStoredError_RIExchangeNotesStayClosed(t *testing.T) {
 
 func sourceInFlightNote(ids string) string {
 	return "RI exchange source RI is held by an exchange in progress: source RI(s) " + ids + " already have an exchange in progress; resolve that exchange first"
+}
+
+func TestSanitizeStoredError_QuotedValueSlotsAreClosed(t *testing.T) {
+	slots := []struct {
+		name, tmpl string
+		ok, bad    []string
+	}{
+		{"reserved ceiling", `reserved ceiling "%s" is not a decimal`, []string{"0", "12.5", "800.000000", "999999999.12345678"}, nil},
+		{"invalid ceiling", `exchange reservation returned invalid ceiling "%s"`, []string{"0", "12.5", "800.000000"}, nil},
+		{"provider", `unknown provider "%s" (valid: aws, azure, gcp)`, []string{"AWS", "Azure", "GCP", "digitalocean"}, nil},
+	}
+	common := []string{"10.0.0.1", "123456789012", "db.internal.example.com", "12.5.1", "a b"}
+	for _, sl := range slots {
+		for _, v := range sl.ok {
+			note := fmt.Sprintf(sl.tmpl, v)
+			assert.Equal(t, note, SanitizeStoredError(note), note)
+		}
+		for _, v := range common {
+			note := fmt.Sprintf(sl.tmpl, v)
+			out := SanitizeStoredError(note)
+			assert.NotEqual(t, note, out, note)
+			assert.NotContains(t, out, v, note)
+		}
+	}
 }

@@ -75,14 +75,14 @@ var bareNotePatterns = []string{
 	`(?:daily|per-exchange) spending cap is not configured \(RIExchange(?:MaxDaily|MaxPerExchange)USD is 0\)`,
 	`RI exchange daily cap exceeded: (?:spend ` + amountPattern + ` exceeds cap ` + amountPattern + `|initial ` + amountPattern + `, remaining ` + amountPattern + `)`,
 	`daily spending cap check failed`,
-	`reserved ceiling "` + shortValuePattern + `" is not a decimal`,
+	`reserved ceiling "` + ceilingValuePattern + `" is not a decimal`,
 	`exchange reservation returned no record ID`,
-	`exchange reservation returned invalid ceiling "` + shortValuePattern + `"`,
+	`exchange reservation returned invalid ceiling "` + ceilingValuePattern + `"`,
 	// config.refuseRIExchangeSourceInFlightDirect refusal, stored whole from
 	// err.Error() (sentinel text first); only the shared RI ids vary.
 	`RI exchange source RI is held by an exchange in progress: source RI\(s\) ` + riIDListPattern + ` are held by a direct exchange that may have reached AWS; an operator must verify the outcome at AWS and settle the record`,
 	// Scheduler note for a provider name it does not know.
-	`unknown provider "` + shortValuePattern + `" \(valid: aws, azure, gcp\)`,
+	`unknown provider "` + providerNameValuePattern + `" \(valid: aws, azure, gcp\)`,
 	// The source-RI guard's refusal (config refuseRIExchangeSourceInFlight): only
 	// the shared RI ids, never the blocking exchange (#1050, #1428).
 	`RI exchange source RI is held by an exchange in progress: source RI\(s\) ` + riIDListPattern + ` already have an exchange in progress; resolve that exchange first`,
@@ -102,10 +102,14 @@ func categoryNotePatterns() []string {
 }
 
 const (
-	// amountPattern is a decimal amount; shortValuePattern is a short value with no
-	// whitespace, quotes or newline. Anything wider falls back to the fixed head.
-	amountPattern     = `\d+(?:\.\d+)?`
-	shortValuePattern = `[A-Za-z0-9._+-]{1,32}`
+	// amountPattern is a decimal amount. ceilingValuePattern is an exchange
+	// ceiling in dollars: at most 9 integer digits, so a 12-digit account number
+	// or a dotted-quad address never fits. providerNameValuePattern is a provider
+	// name the scheduler did not recognize ("AWS", "Azure"): letters only. Anything
+	// wider falls back to the fixed head.
+	amountPattern            = `\d+(?:\.\d+)?`
+	ceilingValuePattern      = `\d{1,9}(?:\.\d{1,8})?`
+	providerNameValuePattern = `[A-Za-z]{1,16}`
 	// groupKeyPattern is a bound group's services key ("aws/ec2#g1"); a key with
 	// any other character falls back to the fixed head.
 	groupKeyPattern = `[A-Za-z0-9._:/#+-]{1,128}`
