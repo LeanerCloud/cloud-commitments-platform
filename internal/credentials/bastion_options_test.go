@@ -22,9 +22,9 @@ const (
 
 // recordingSTS records AssumeRole calls and hands out fixed session keys.
 type recordingSTS struct {
-	mu              sync.Mutex
-	assumeRoleCalls int
 	roleARNs        []string
+	assumeRoleCalls int
+	mu              sync.Mutex
 }
 
 func (r *recordingSTS) AssumeRole(_ context.Context, in *sts.AssumeRoleInput, _ ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {

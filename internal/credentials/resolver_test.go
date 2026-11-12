@@ -202,8 +202,8 @@ var testAmbientCreds = aws.CredentialsProviderFunc(func(_ context.Context) (aws.
 })
 
 type callerIdentitySTS struct {
-	account string
 	err     error
+	account string
 }
 
 func (c *callerIdentitySTS) GetCallerIdentity(_ context.Context, _ *sts.GetCallerIdentityInput, _ ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error) {
@@ -217,8 +217,8 @@ func (c *callerIdentitySTS) GetCallerIdentity(_ context.Context, _ *sts.GetCalle
 // credentials only when it is the host account.
 func TestResolveAWSCredentialProvider_SelfAccount_NonHostFailsClosed(t *testing.T) {
 	for name, tc := range map[string]struct {
-		externalID string
 		hostSTS    CallerIdentityClient
+		externalID string
 	}{
 		"different host account": {externalID: "222222222222", hostSTS: &callerIdentitySTS{account: hostAccountNum}},
 		"empty external_id":      {externalID: "", hostSTS: &callerIdentitySTS{account: hostAccountNum}},
