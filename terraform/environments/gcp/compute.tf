@@ -151,6 +151,9 @@ module "compute_cloud_run" {
 # ==============================================
 # Compute Platform: GKE (Kubernetes)
 # ==============================================
+# Known gap (#1767): this root passes no enable_scheduled_tasks or app_url, so
+# GKE runs no Cloud Scheduler jobs, sweeps or recommendations. Delayed purchases
+# are refused there. Do not guess a URL.
 
 module "compute_gke" {
   source = "../../modules/compute/gcp/gke"
