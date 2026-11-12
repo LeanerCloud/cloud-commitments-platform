@@ -96,6 +96,11 @@ updates:
       prefix: chore(deps)
     labels:
       - type/chore
+    groups:
+      docker-compose-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   # Dockerfile, Dockerfile.dev and Dockerfile.test pin base images by tag
   # and digest; Dependabot updates both.

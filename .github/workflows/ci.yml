@@ -236,6 +236,11 @@ jobs:
           python3 scripts/check-azure-oidc-environments.py
           python3 scripts/test-check-azure-oidc-environments.py
 
+      - name: Test the Makefile.terraform validate and state targets
+        # Issue #1572: the targets must run in the flat provider root, not the
+        # removed per-profile directory. Standard library only.
+        run: python3 scripts/test-makefile-terraform.py
+
       - name: Assert shellcheck is available to actionlint
         # actionlint does not fail when shellcheck is missing from PATH: it
         # silently skips every run: block and still exits 0. That silent skip is
