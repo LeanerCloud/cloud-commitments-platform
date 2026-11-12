@@ -109,6 +109,7 @@ require (
 	github.com/pashagolub/pgxmock/v5 v5.2.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
+	golang.org/x/tools v0.51.0
 )
 
 require (
@@ -184,5 +185,4 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/mod v0.42.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
 )
