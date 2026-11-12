@@ -24,10 +24,10 @@ func boundEntry(ids ...string) config.ServiceConfig {
 
 func TestPrecheck_BoundBinding(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
 		plan    *config.PurchasePlan
-		missing bool   // want ErrBoundPlanMissingBinding
+		name    string
 		want    string // other refusal substring; "" = accepted
+		missing bool   // want ErrBoundPlanMissingBinding
 	}{
 		{name: "marked plan with bindings and the sentinel", plan: boundPlan(true, map[string]config.ServiceConfig{"aws/ec2#g1": boundEntry("k1")}), missing: false, want: ""},
 		{name: "marked plan, entry lost its binding", plan: boundPlan(true, map[string]config.ServiceConfig{"aws/ec2#g1": boundEntry()}), missing: true, want: ""},

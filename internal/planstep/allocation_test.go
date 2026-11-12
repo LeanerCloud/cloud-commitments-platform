@@ -43,9 +43,10 @@ func TestEqualCountResolve(t *testing.T) {
 
 func TestEqualCountSavingsPlan(t *testing.T) {
 	for _, tc := range []struct {
-		count        int
-		hourly, want string
-		percent      float64
+		hourly  string
+		want    string
+		count   int
+		percent float64
 	}{{count: 1, hourly: "1.234", want: "1.23", percent: 33}, {count: 1, hourly: "1.234", want: "1.23", percent: 0}, {count: 3, hourly: "1.234", want: "0.41", percent: 33}, {count: 97, hourly: "0.97", want: "0.01", percent: 33}, {count: 1, hourly: "1e14", want: "100000000000000", percent: 33}, {count: 1, hourly: "1e20", want: "100000000000000000000", percent: 33}} {
 		t.Run(fmt.Sprint(tc.count), func(t *testing.T) {
 			p := spPlan(100, 33)
@@ -106,8 +107,8 @@ func TestEqualCountInvalidQuantities(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		hourly   string
-		coverage float64
 		want     string
+		coverage float64
 	}{
 		{hourly: "90071992547409", coverage: 99, want: "cannot represent whole cents"},
 		{hourly: "100000000000000.1", coverage: 100, want: "cannot represent whole cents"},

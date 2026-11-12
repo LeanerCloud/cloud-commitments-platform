@@ -18,8 +18,8 @@ import (
 // database or cloud).
 
 type fakeSource struct {
-	shown []config.RecommendationRecord
 	err   error
+	shown []config.RecommendationRecord
 }
 
 func (f fakeSource) ListRecommendationsStrict(context.Context, config.RecommendationFilter) ([]config.RecommendationRecord, error) {
@@ -27,10 +27,10 @@ func (f fakeSource) ListRecommendationsStrict(context.Context, config.Recommenda
 }
 
 type fakeStore struct {
-	rows      []config.RecommendationRecord
 	listErr   error
-	global    config.GlobalConfig
 	globalErr error
+	global    config.GlobalConfig
+	rows      []config.RecommendationRecord
 }
 
 func (f fakeStore) ListStoredRecommendations(context.Context, config.RecommendationFilter) ([]config.RecommendationRecord, error) {

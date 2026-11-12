@@ -50,19 +50,15 @@ type Store interface {
 
 // Result is what Resolve decided for one step.
 type Result struct {
-	// Recs are the recommendations the step would buy.
-	Recs []config.RecommendationRecord
 	// Baseline is set only when step is 1: every matched count-based identity
 	// mapped to its base (the existing baseline entry, else step-1 shown),
 	// including recs that sized to 0. The caller freezes it; nil at step > 1.
 	Baseline config.PlanRampBaseline
+	// Recs are the recommendations the step would buy.
+	Recs []config.RecommendationRecord
 	// Skipped lists identities with no baseline at step > 1 (new recs, newly
 	// added accounts). They are never frozen at first sight: under-buy.
 	Skipped []string
-	// Target and Committed total the judged identities' cumulative target and
-	// what the plan already holds. Set only with ErrTargetMet, for the no-op
-	// row's note.
-	Target, Committed int
 	// MissingBound lists bound identities (issue #1746) the strict read did
 	// not show, through churn or suppression. They are not bought this step.
 	MissingBound []string
@@ -70,17 +66,22 @@ type Result struct {
 	// group rejected them (term, payment or account differs from the group's).
 	// They are not bought this step; an operator fixes the plan.
 	MismatchedBound []string
+	// Target and Committed total the judged identities' cumulative target and
+	// what the plan already holds. Set only with ErrTargetMet, for the no-op
+	// row's note.
+	Target    int
+	Committed int
 }
 
 // ramp carries the cumulative-sizing inputs and accumulates its outputs.
 type ramp struct {
-	step      int
-	cum       float64
-	mode      config.RampAllocationMode
-	count     int
 	baseline  config.PlanRampBaseline
 	committed map[string]config.PlanRampQuantity
+	mode      config.RampAllocationMode
 	out       Result
+	step      int
+	cum       float64
+	count     int
 }
 
 // Resolve returns the recommendations the plan's step would buy: for each
