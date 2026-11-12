@@ -815,11 +815,13 @@ type PlannedPurchase struct {
 // PlanRequest represents the API request format for creating/updating plans
 // The frontend sends ramp_schedule as a string, which we convert to the proper struct.
 type PlanRequest struct {
-	Payment                *string  `json:"payment,omitempty"`
-	RampSchedule           string   `json:"ramp_schedule,omitempty"`
-	Name                   string   `json:"name"`
-	Provider               string   `json:"provider,omitempty"`
-	Service                string   `json:"service,omitempty"`
+	Payment      *string `json:"payment,omitempty"`
+	RampSchedule string  `json:"ramp_schedule,omitempty"`
+	Name         string  `json:"name"`
+	Provider     string  `json:"provider,omitempty"`
+	Service      string  `json:"service,omitempty"`
+	// TargetAccounts is read by createPlan only. updatePlan ignores it; account
+	// assignment on an existing plan goes through setPlanAccounts.
 	TargetAccounts         []string `json:"target_accounts,omitempty"`
 	TargetCoverage         *int     `json:"target_coverage,omitempty"`
 	Term                   *int     `json:"term,omitempty"`
