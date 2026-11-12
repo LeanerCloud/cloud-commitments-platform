@@ -3020,3 +3020,31 @@ func TestExtractEngine(t *testing.T) {
 		})
 	}
 }
+
+// An AWS RI whose Cost Explorer fractional quantity rounds to Count 0 cannot be
+// purchased and has no baseline for the MinSavingsPct floor, so it must not be
+// stored (#1949). Count-0 rows that are not AWS RIs are untouched.
+func TestScheduler_ConvertRecommendations_DropsCountZeroAWSRI(t *testing.T) {
+	scheduler := &Scheduler{}
+	base := common.Recommendation{
+		Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large",
+		Term: "1yr", PaymentOption: "no-upfront", Count: 1,
+		CommitmentType: common.CommitmentReservedInstance,
+	}
+	zeroRI := base
+	zeroRI.Count = 0
+	zeroRI.ResourceType = "m5.xlarge"
+	negRI := base
+	negRI.Count = -1
+	negRI.ResourceType = "m5.2xlarge"
+	zeroOther := zeroRI
+	zeroOther.CommitmentType = ""
+
+	aws := scheduler.convertRecommendations([]common.Recommendation{base, zeroRI, negRI}, "aws")
+	require.Len(t, aws, 1)
+	assert.Equal(t, "m5.large", aws[0].ResourceType)
+
+	// Same Count 0 on another provider, or without the RI commitment type, is kept.
+	require.Len(t, scheduler.convertRecommendations([]common.Recommendation{zeroRI}, "azure"), 1)
+	require.Len(t, scheduler.convertRecommendations([]common.Recommendation{zeroOther}, "aws"), 1)
+}

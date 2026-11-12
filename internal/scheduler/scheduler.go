@@ -1773,6 +1773,15 @@ func marshalRecDetails(rec common.Recommendation, providerName string) []byte {
 	return blob
 }
 
+// isUnpurchasableAWSRI reports an AWS RI whose Cost Explorer fractional
+// quantity rounded to Count 0 (#1949). It has no on-demand baseline and cannot
+// be purchased, and storing it would let it slip past the MinSavingsPct floor,
+// which only drops rows whose percentage is computable.
+func isUnpurchasableAWSRI(rec common.Recommendation, providerName string) bool {
+	return providerName == string(common.ProviderAWS) &&
+		rec.CommitmentType == common.CommitmentReservedInstance && rec.Count <= 0
+}
+
 // convertRecommendations converts common.Recommendation slice to config.RecommendationRecord slice.
 func (s *Scheduler) convertRecommendations(recs []common.Recommendation, providerName string) []config.RecommendationRecord {
 	records := make([]config.RecommendationRecord, 0, len(recs))
@@ -1816,6 +1825,12 @@ func (s *Scheduler) convertRecommendations(recs []common.Recommendation, provide
 		if err != nil || term <= 0 {
 			logging.Errorf("convertRecommendations: dropping %s rec (account=%s service=%s sku=%s region=%s): invalid term %q",
 				providerName, rec.Account, rec.Service, rec.ResourceType, rec.Region, rec.Term)
+			continue
+		}
+
+		if isUnpurchasableAWSRI(rec, providerName) {
+			logging.Warnf("convertRecommendations: dropping %s rec (account=%s service=%s sku=%s region=%s): non-positive count %d",
+				providerName, rec.Account, rec.Service, rec.ResourceType, rec.Region, rec.Count)
 			continue
 		}
 

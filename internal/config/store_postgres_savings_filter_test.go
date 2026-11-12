@@ -230,3 +230,19 @@ func TestBuildRecommendationFilter_MinSavingsUSD(t *testing.T) {
 		assert.Equal(t, float64(50), args[0])
 	})
 }
+
+// Pins #1949's read-side decision: the MinSavingsPct floor keeps a row whose
+// percentage is not computable (a Count >= 1 AWS row with no on-demand
+// baseline is legitimately unknown, not hidden), so Count 0 rows are removed at
+// collection (scheduler.convertRecommendations) rather than by this floor.
+func TestDecodeStoredRecommendation_UnknownBaselineIsKept(t *testing.T) {
+	payload := []byte(`{"provider":"aws","service":"ec2","count":1,"term":1,"savings":10}`)
+	_, keep, err := decodeStoredRecommendation(payload, RecommendationFilter{MinSavingsPct: 50})
+	require.NoError(t, err)
+	assert.True(t, keep)
+
+	below := []byte(`{"provider":"aws","service":"ec2","count":1,"term":1,"savings":10,"on_demand_cost":1000}`)
+	_, keep, err = decodeStoredRecommendation(below, RecommendationFilter{MinSavingsPct: 50})
+	require.NoError(t, err)
+	assert.False(t, keep)
+}
