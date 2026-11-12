@@ -1,4 +1,4 @@
--- Reverts 000162. Only a row that is still the untouched no-upfront seed
+-- Reverts 000163. Only a row that is still the untouched no-upfront seed
 -- (updated_at = created_at) goes back; an admin's deliberate no-upfront choice
 -- (trigger-stamped) is kept.
 ALTER TABLE global_config ALTER COLUMN default_payment SET DEFAULT 'all-upfront';

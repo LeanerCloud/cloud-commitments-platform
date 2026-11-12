@@ -14,28 +14,28 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
 )
 
-const m162Version = 162
+const m163Version = 163
 
-type m162State struct {
+type m163State struct {
 	payment   string
 	untouched bool // updated_at = created_at
 }
 
-func m162Read(ctx context.Context, t *testing.T, pool *pgxpool.Pool) m162State {
+func m163Read(ctx context.Context, t *testing.T, pool *pgxpool.Pool) m163State {
 	t.Helper()
-	var s m162State
+	var s m163State
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT default_payment, updated_at = created_at FROM global_config WHERE id = 1`).Scan(&s.payment, &s.untouched))
 	return s
 }
 
-func m162Exec(ctx context.Context, t *testing.T, pool *pgxpool.Pool, sql string) {
+func m163Exec(ctx context.Context, t *testing.T, pool *pgxpool.Pool, sql string) {
 	t.Helper()
 	_, err := pool.Exec(ctx, sql)
 	require.NoError(t, err, sql)
 }
 
-// TestMigration_DefaultPaymentNoUpfront pins 000162: only the untouched seeded
+// TestMigration_DefaultPaymentNoUpfront pins 000163: only the untouched seeded
 // row moves (and back on down); anything an admin saved, and any other value,
 // is left alone, and the trigger-driven updated_at stays unequal/equal as found.
 func TestMigration_DefaultPaymentNoUpfront(t *testing.T) {
@@ -44,19 +44,19 @@ func TestMigration_DefaultPaymentNoUpfront(t *testing.T) {
 		name     string
 		beforeUp string
 		afterUp  string
-		wantUp   m162State
-		wantDown m162State
+		wantUp   m163State
+		wantDown m163State
 	}{
 		{"a untouched seed", "", "",
-			m162State{"no-upfront", true}, m162State{"all-upfront", true}},
+			m163State{"no-upfront", true}, m163State{"all-upfront", true}},
 		{"b admin saved all-upfront", `UPDATE global_config SET default_payment = 'all-upfront' WHERE id = 1`, "",
-			m162State{"all-upfront", false}, m162State{"all-upfront", false}},
+			m163State{"all-upfront", false}, m163State{"all-upfront", false}},
 		{"c admin saved partial-upfront", `UPDATE global_config SET default_payment = 'partial-upfront' WHERE id = 1`, "",
-			m162State{"partial-upfront", false}, m162State{"partial-upfront", false}},
+			m163State{"partial-upfront", false}, m163State{"partial-upfront", false}},
 		{"e inserted partial-upfront, created=updated", "DELETE FROM global_config; INSERT INTO global_config (id, default_payment) VALUES (1, 'partial-upfront')", "",
-			m162State{"partial-upfront", true}, m162State{"partial-upfront", true}},
+			m163State{"partial-upfront", true}, m163State{"partial-upfront", true}},
 		{"f admin chose no-upfront after up", "", `UPDATE global_config SET default_payment = 'no-upfront' WHERE id = 1`,
-			m162State{"no-upfront", false}, m162State{"no-upfront", false}},
+			m163State{"no-upfront", false}, m163State{"no-upfront", false}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -64,20 +64,20 @@ func TestMigration_DefaultPaymentNoUpfront(t *testing.T) {
 			ctx := context.Background()
 			path := getMigrationsPath()
 			pool := testhelpers.RequireEmptyDatabase(ctx, t).DB.Pool()
-			prev := previousMigrationVersion(t, m162Version)
+			prev := previousMigrationVersion(t, m163Version)
 			require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, prev))
 			if tc.beforeUp != "" {
-				m162Exec(ctx, t, pool, tc.beforeUp)
+				m163Exec(ctx, t, pool, tc.beforeUp)
 			}
 
-			require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, m162Version))
+			require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, m163Version))
 			if tc.afterUp != "" {
-				m162Exec(ctx, t, pool, tc.afterUp)
+				m163Exec(ctx, t, pool, tc.afterUp)
 			}
-			assert.Equal(t, tc.wantUp, m162Read(ctx, t, pool), "after up")
+			assert.Equal(t, tc.wantUp, m163Read(ctx, t, pool), "after up")
 
 			require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, prev))
-			assert.Equal(t, tc.wantDown, m162Read(ctx, t, pool), "after down")
+			assert.Equal(t, tc.wantDown, m163Read(ctx, t, pool), "after down")
 		})
 	}
 }
@@ -89,13 +89,13 @@ func TestMigration_DefaultPaymentNoUpfront_ColumnDefaults(t *testing.T) {
 	ctx := context.Background()
 	path := getMigrationsPath()
 	pool := testhelpers.RequireEmptyDatabase(ctx, t).DB.Pool()
-	prev := previousMigrationVersion(t, m162Version)
-	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, m162Version))
+	prev := previousMigrationVersion(t, m163Version)
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, path, m163Version))
 
 	insert := func() (global, service string) {
-		m162Exec(ctx, t, pool, `DELETE FROM global_config; DELETE FROM service_configs`)
-		m162Exec(ctx, t, pool, `INSERT INTO global_config (id) VALUES (1)`)
-		m162Exec(ctx, t, pool, `INSERT INTO service_configs (provider, service) VALUES ('aws', 'ec2')`)
+		m163Exec(ctx, t, pool, `DELETE FROM global_config; DELETE FROM service_configs`)
+		m163Exec(ctx, t, pool, `INSERT INTO global_config (id) VALUES (1)`)
+		m163Exec(ctx, t, pool, `INSERT INTO service_configs (provider, service) VALUES ('aws', 'ec2')`)
 		require.NoError(t, pool.QueryRow(ctx, `SELECT default_payment FROM global_config WHERE id = 1`).Scan(&global))
 		require.NoError(t, pool.QueryRow(ctx, `SELECT payment FROM service_configs WHERE provider = 'aws'`).Scan(&service))
 		return global, service
