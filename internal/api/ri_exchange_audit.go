@@ -67,7 +67,14 @@ func (h *Handler) beginDirectExchange(ctx context.Context, audit *config.RIExcha
 	err := h.claimExchangeSubmit(claimCtx, claimKey)
 	if err == nil && claimCtx.Err() != nil {
 		// Claimed, but too late to leave the provider call any of its window.
-		err = fmt.Errorf("RI exchange claim finished after the execution deadline: %w", claimCtx.Err())
+		// The claim stays held for the window, so the caller needs to know that
+		// nothing was sent and where the record is (#1845).
+		err = NewClientError(409, fmt.Sprintf(
+			"the RI exchange claim was taken only after the execution deadline, so this submit was "+
+				"not sent to the provider; the audit row records it as failed. The claim stays held "+
+				"for %s, so an identical retry is refused with a 409 until it expires; read the audit "+
+				"row first, then retry once the window has passed",
+			riExchangeIdempotencyWindow))
 	}
 	if err != nil {
 		h.finalizeDirectExchange(ctx, audit.ID, config.RIExchangeDirectOutcome{

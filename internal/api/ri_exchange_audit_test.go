@@ -692,6 +692,13 @@ func TestExecuteExchange_DirectLateClaimSuccessNeverExecutes(t *testing.T) {
 	_, outcome, finalized := store.onlyRow(t)
 	require.True(t, finalized)
 	assert.Equal(t, config.RIExchangeDirectStatusFailed, outcome.Status)
+
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "a lapsed claim must surface as a client error, got: %v", err)
+	assert.Equal(t, 409, ce.code)
+	assert.Contains(t, err.Error(), "not sent to the provider")
+	assert.Contains(t, err.Error(), "audit row records it as failed")
+	assert.NotContains(t, err.Error(), "may be running", "must not use the live-duplicate wording")
 }
 
 // The deadline is taken before the save: a slow save must not push the exec
