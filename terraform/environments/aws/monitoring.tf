@@ -39,7 +39,8 @@ module "monitoring" {
   )
   db_instance_identifier = module.database.instance_identifier
 
-  alert_email_addresses = local.alert_email_addresses
+  alert_email_addresses       = local.alert_email_addresses
+  enable_ladder_failure_alarm = var.enable_ladder_failure_alarm
 
   tags = local.common_tags
 }

@@ -743,6 +743,12 @@ variable "enable_monitoring" {
   default     = false
 }
 
+variable "enable_ladder_failure_alarm" {
+  description = "Alarm on ladder tranche notice and settle failures through the monitoring module (issue #70). Only takes effect when enable_monitoring is true."
+  type        = bool
+  default     = false
+}
+
 variable "alert_emails" {
   description = "Comma-separated email addresses subscribed to the alerts SNS topic. Supplied by the deploy workflow from the ALERT_EMAILS secret; never commit real addresses. Empty means alarms fire with nobody subscribed (the prod_alerts_reach_someone check in monitoring.tf warns)."
   type        = string

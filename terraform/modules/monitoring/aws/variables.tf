@@ -127,6 +127,12 @@ variable "enable_security_hub" {
   default     = false
 }
 
+variable "enable_ladder_failure_alarm" {
+  description = "Create a log metric filter and alarm for ladder tranche notice and settle failures (issue #70), notifying the alerts SNS topic. Off until the ladder is scheduled."
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
