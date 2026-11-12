@@ -1460,10 +1460,17 @@ paths:
             known; a concurrent retry also answers this way), it is a plan step
             with no recommendations, it belongs to a settled ladder tranche,
             a provider re-drive of it is unsafe (ops_hint plus
-            redrive_unsafe, permanent and not overridable by force), its
-            failure is operator-fixable (ops_hint plus failure_reason), or it
-            reached the retry threshold without force=true (retry_attempt_n
-            plus threshold).
+            redrive_unsafe, permanent and not overridable by force), it is a
+            Redshift purchase that failed too recently for AWS to have settled
+            (retry_after_seconds and a Retry-After header, not overridable by
+            force), its failure is operator-fixable (ops_hint plus
+            failure_reason), or it reached the retry threshold without
+            force=true (retry_attempt_n plus threshold).
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (Redshift settle wait only)
+              schema:
+                type: integer
           content:
             application/json:
               schema:
@@ -1478,6 +1485,9 @@ paths:
                         type: string
                       redrive_unsafe:
                         type: boolean
+                      retry_after_seconds:
+                        type: integer
+                        description: Seconds until a Redshift purchase has settled and can be retried.
                       failure_reason:
                         type: string
                       retry_attempt_n:
@@ -7695,7 +7705,10 @@ components:
           description: Execution-only. Operator hint shown instead of Retry on failed rows.
         redrive_unsafe:
           type: boolean
-          description: Execution-only. True when ops_hint is a permanent re-drive refusal.
+          description: >-
+            Execution-only. True when ops_hint is a permanent re-drive refusal,
+            including a Redshift purchase with no first dispatch time or one
+            dispatched at least 24h ago.
         is_audit_gap:
           type: boolean
           description: >-

@@ -151,6 +151,13 @@ type redshiftFinalizeRun struct {
 func runRedshiftFinalize(t *testing.T, exec *config.PurchaseExecution, accounts []config.CloudAccount, service common.ServiceType,
 	stamp func() (config.StampResult, error)) *redshiftFinalizeRun {
 	t.Helper()
+	return runRedshiftFinalizeWithJournal(t, exec, accounts, service, stamp, nil)
+}
+
+// runRedshiftFinalizeWithJournal is runRedshiftFinalize on a manager whose attempt journal is journal.
+func runRedshiftFinalizeWithJournal(t *testing.T, exec *config.PurchaseExecution, accounts []config.CloudAccount, service common.ServiceType,
+	stamp func() (config.StampResult, error), journal common.AttemptJournal) *redshiftFinalizeRun {
+	t.Helper()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockEmail := new(MockEmailSender)
@@ -200,6 +207,7 @@ func runRedshiftFinalize(t *testing.T, exec *config.PurchaseExecution, accounts 
 	manager := &Manager{
 		config: mockStore, email: mockEmail, providerFactory: mockFactory,
 		credStore: awsAccessKeyCredStore(), dashboardURL: "https://dashboard.example.com",
+		attemptJournal: journal,
 	}
 	run.err = manager.executeAndFinalize(ctx, exec)
 	return run

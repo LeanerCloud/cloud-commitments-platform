@@ -24,7 +24,8 @@ func strandedRecoveryError(exec *config.PurchaseExecution) string {
 // place: every recommendation is safe to re-drive and the row has a durable
 // ExecutionID for the idempotency lineage. The sweep checks it on the listed
 // snapshot to pick a path, and claimAndRedrive checks it again on the claimed
-// row before buying (issue #1037).
+// row before buying (issue #1037). Redshift qualifies: only approved rows are
+// swept and nothing claims one before it runs, so a stranded row never sent.
 func redrivable(exec *config.PurchaseExecution) bool {
 	return allRecsSafeToRedrive(exec) && exec.ExecutionID != ""
 }

@@ -275,7 +275,8 @@ func (m *Manager) reapOne(ctx context.Context, exec *config.PurchaseExecution, r
 	// confirmed to deduplicate a repeat order-alias PUT (RedriveRefusalReason),
 	// so retrying a reaped Azure SP row risks creating a duplicate commitment.
 	safeMsg := ""
-	if allRecsSafeToRedrive(exec) {
+	// A reaped Redshift row may have sent; its Retry gate decides, so the note makes no promise.
+	if allRecsSafeToRedrive(exec) && !hasRedshiftRec(exec) {
 		safeMsg = "; safe to retry"
 	}
 	transitioned.Error = fmt.Sprintf("reaped after %dm in %s state — executor did not complete%s",

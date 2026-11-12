@@ -5,6 +5,7 @@ package config
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -475,5 +476,75 @@ func TestFindOpenRedshiftLineageConflicts_AdoptionWindow(t *testing.T) {
 			RETURNING execution_id::text`, stamp, stamp.Add(10*time.Minute),
 			`[{"provider":"aws","service":"redshift","region":"us-east-1","resource_type":"ra3.xlplus","term":1,"payment":"all-upfront","count":2,"selected":true}]`).Scan(&id))
 		assert.Equal(t, []string{id}, conflictIDs(find(t, self.ExecutionID, "fam-w10", lineageTuple, nil, stamp)))
+	})
+}
+
+func TestFindOpenRedshiftLineageConflicts_FailedRows(t *testing.T) {
+	ctx := context.Background()
+	store := setupLadderStore(ctx, t)
+	recent, old := ptrDur(time.Hour), ptrDur(48*time.Hour)
+	// seedFailed seeds an other-family failed row and applies a column update to it.
+	seedFailed := func(t *testing.T, family string, stampAge *time.Duration, set string) (self, failed *PurchaseExecution) {
+		t.Helper()
+		_, err := store.db.Exec(ctx, `DELETE FROM purchase_executions`)
+		require.NoError(t, err)
+		self = seedLineageRow(ctx, t, store, "fam-f0", "running", recent)
+		failed = seedLineageRow(ctx, t, store, family, "failed", stampAge)
+		if set != "" {
+			args := []any{failed.ExecutionID}
+			if strings.Contains(set, "$2") {
+				args = append(args, self.ExecutionID)
+			}
+			_, err = store.db.Exec(ctx, `UPDATE purchase_executions SET `+set+` WHERE execution_id = $1`, args...)
+			require.NoError(t, err)
+		}
+		return self, failed
+	}
+
+	t.Run("failed_unlinked_conflicts", func(t *testing.T) {
+		self, failed := seedFailed(t, "fam-f1", recent, "")
+		assert.Equal(t, []string{failed.ExecutionID}, conflictIDs(findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")))
+	})
+	t.Run("failed_attempt1_no_submission_conflicts", func(t *testing.T) {
+		self, failed := seedFailed(t, "fam-f2", recent, "no_submission = true, retry_attempt_n = 1")
+		assert.Equal(t, []string{failed.ExecutionID}, conflictIDs(findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")))
+	})
+	t.Run("failed_linked_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f3", recent, "retry_execution_id = $2")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_attempt0_no_submission_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f4", recent, "no_submission = true")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_older_than_H_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f5", old, "")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_settled_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f6", recent, "outcome_settled_at = now(), outcome_settled_by = 'op', outcome_settlement = 'settled'")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_settled_still_conflicts_before_the_settlement_migration", func(t *testing.T) {
+		// Prod may run this code before migration 000155: the settled filter must drop out, not error.
+		self, failed := seedFailed(t, "fam-f8", recent, "outcome_settled_at = now(), outcome_settled_by = 'op', outcome_settlement = 'settled'")
+		var version int64
+		var dirty bool
+		require.NoError(t, store.db.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty))
+		t.Cleanup(func() {
+			_, err := store.db.Exec(ctx, `UPDATE schema_migrations SET version = $1, dirty = $2`, version, dirty)
+			require.NoError(t, err)
+		})
+		_, err := store.db.Exec(ctx, `UPDATE schema_migrations SET version = $1, dirty = false`, settlementMigrationVersion-1)
+		require.NoError(t, err)
+		assert.Equal(t, []string{failed.ExecutionID}, conflictIDs(findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0")))
+	})
+	t.Run("failed_same_family_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f0:acct", recent, "")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
+	})
+	t.Run("failed_without_stamp_excluded", func(t *testing.T) {
+		self, _ := seedFailed(t, "fam-f7", nil, "")
+		assert.Empty(t, findLineageConflicts(ctx, t, store, self.ExecutionID, "fam-f0"))
 	})
 }

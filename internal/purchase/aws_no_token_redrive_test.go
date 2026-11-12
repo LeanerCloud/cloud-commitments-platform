@@ -11,20 +11,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- MON-02: AWS EC2 and Redshift have no duplicate guard --------------
+// --- MON-02: AWS EC2 has no duplicate guard ----------------------------
 //
-// The EC2 and Redshift purchase APIs take no client token or caller ID, so the
-// provider sends them once and returns "purchase outcome unknown" when the
-// response is lost. The commitment may exist, so nothing may buy again until
-// someone has checked the account. These tests pin where that refusal reaches.
+// The EC2 purchase API takes no client token or caller ID, so the provider
+// sends it once and returns "purchase outcome unknown" when the response is
+// lost. The commitment may exist, so nothing may buy again until someone has
+// checked the account. These tests pin where that refusal reaches. Redshift is
+// guarded by the lineage gate instead (TestRedshiftRedriveGuardLifted).
 
-// awsNoTokenSlugs are the rec.Service spellings that dispatch to the AWS EC2 or
-// Redshift purchase clients (mapServiceSlug: canonical and legacy).
-var awsNoTokenSlugs = []string{"ec2", "compute", "redshift", "data-warehouse"}
+// awsEC2Slugs are the rec.Service spellings that dispatch to the AWS EC2
+// purchase client (mapServiceSlug: canonical and legacy).
+var awsEC2Slugs = []string{"ec2", "compute"}
 
 // TestAWSRedriveGuardReachMatchesDispatchReach states the guard as an iff
 // against dispatch, like the Azure savings-plans test: a value that dispatches
-// to the EC2/Redshift client but is not refused is a double-buy hole.
+// to the EC2 client but is not refused is a double-buy hole.
 func TestAWSRedriveGuardReachMatchesDispatchReach(t *testing.T) {
 	m := NewManager(ManagerConfig{})
 
@@ -42,8 +43,7 @@ func TestAWSRedriveGuardReachMatchesDispatchReach(t *testing.T) {
 			provider, service := provider, service
 			t.Run("provider="+provider+"/service="+service, func(t *testing.T) {
 				svc := m.mapServiceType(service)
-				dispatchesToNoTokenClient := svc == common.ServiceEC2 || svc == common.ServiceCompute ||
-					svc == common.ServiceRedshift || svc == common.ServiceDataWarehouse
+				dispatchesToNoTokenClient := svc == common.ServiceEC2 || svc == common.ServiceCompute
 				refused := recRedriveRefusalReason(config.RecommendationRecord{Provider: provider, Service: service}) != ""
 
 				assert.Equal(t, dispatchesToNoTokenClient, refused,
@@ -58,12 +58,12 @@ func TestAWSRedriveGuardReachMatchesDispatchReach(t *testing.T) {
 // compute on any provider) fails here.
 func TestAWSRedriveRefusalSetIsExact(t *testing.T) {
 	for _, provider := range []string{"aws", ""} {
-		for _, service := range awsNoTokenSlugs {
+		for _, service := range awsEC2Slugs {
 			reason := recRedriveRefusalReason(config.RecommendationRecord{Provider: provider, Service: service})
-			assert.Contains(t, reason, "Check EC2 Reserved Instances or Redshift Reserved Nodes",
+			assert.Contains(t, reason, "Check EC2 Reserved Instances in the target account",
 				"provider %q service %q has no duplicate guard and must be refused with the operator action", provider, service)
 		}
-		for _, service := range []string{"rds", "relational-db", "elasticache", "cache", "memorydb", "opensearch", "search", "savingsplans", "savings-plans"} {
+		for _, service := range []string{"rds", "relational-db", "elasticache", "cache", "memorydb", "opensearch", "search", "savingsplans", "savings-plans", "redshift", "data-warehouse"} {
 			assert.Empty(t, recRedriveRefusalReason(config.RecommendationRecord{Provider: provider, Service: service}),
 				"provider %q service %q has a provider-side duplicate guard and must stay retryable", provider, service)
 		}
@@ -77,19 +77,34 @@ func TestAWSRedriveRefusalSetIsExact(t *testing.T) {
 	}
 	// Any one unsafe rec makes the whole execution unsafe.
 	mixed := &config.PurchaseExecution{Recommendations: []config.RecommendationRecord{
-		{Provider: "aws", Service: "rds"}, {Provider: "aws", Service: "redshift"},
+		{Provider: "aws", Service: "rds"}, {Provider: "aws", Service: "ec2"},
 	}}
 	assert.NotEmpty(t, RedriveRefusalReason(mixed))
 	assert.False(t, allRecsSafeToRedrive(&config.PurchaseExecution{ExecutionID: "x", Recommendations: mixed.Recommendations}))
 }
 
+// TestRedshiftRedriveGuardLifted pins that Redshift is no longer refused by the provider-level
+// re-drive guard: the Retry gate and the dispatch gate decide, so the armed backstop is silent.
+func TestRedshiftRedriveGuardLifted(t *testing.T) {
+	for _, provider := range []string{"aws", ""} {
+		for _, service := range []string{"redshift", "data-warehouse"} {
+			rec := config.RecommendationRecord{Provider: provider, Service: service}
+			assert.Empty(t, recRedriveRefusalReason(rec), "provider %q service %q", provider, service)
+
+			exec := &config.PurchaseExecution{RetryAttemptN: 1, Recommendations: []config.RecommendationRecord{rec}}
+			assert.Empty(t, RedriveRefusalReason(exec))
+			assert.NoError(t, armedRedriveRefusal(exec), "a Redshift retry successor is not refused by the armed backstop")
+		}
+	}
+}
+
 // TestAWSNoTokenRetrySuccessorIsRefusedAndFirstBuyStillExecutes drives the real
-// executor funnel: a retry successor (RetryAttemptN > 0) of an EC2/Redshift
+// executor funnel: a retry successor (RetryAttemptN > 0) of an EC2
 // purchase buys nothing and is persisted as failed with the reason, while a
 // first purchase of the same service still buys exactly once.
 func TestAWSNoTokenRetrySuccessorIsRefusedAndFirstBuyStillExecutes(t *testing.T) {
 	m := NewManager(ManagerConfig{})
-	for _, service := range awsNoTokenSlugs {
+	for _, service := range awsEC2Slugs {
 		service := service
 		t.Run(service, func(t *testing.T) {
 			svcType := m.mapServiceType(service)
@@ -108,7 +123,7 @@ func TestAWSNoTokenRetrySuccessorIsRefusedAndFirstBuyStillExecutes(t *testing.T)
 			require.NotEmpty(t, saved)
 			final := saved[len(saved)-1]
 			assert.Equal(t, "failed", final.Status)
-			assert.Contains(t, final.Error, "Check EC2 Reserved Instances or Redshift Reserved Nodes")
+			assert.Contains(t, final.Error, "Check EC2 Reserved Instances in the target account")
 
 			first := armedExecution("aws", service, 0, "notified")
 			mgr, store, rec = armedHarness(t, svcType)
@@ -191,7 +206,7 @@ func TestApproveAndExecuteRefusesAWSNoTokenRetrySuccessor(t *testing.T) {
 
 	m := NewManager(ManagerConfig{})
 	for _, path := range paths {
-		for _, service := range append(append([]string{}, awsNoTokenSlugs...), "rds") {
+		for _, service := range append(append([]string{}, awsEC2Slugs...), "rds") {
 			path, service := path, service
 			refused := service != "rds"
 			t.Run(path.name+"/"+service, func(t *testing.T) {
@@ -228,7 +243,7 @@ func TestApproveAndExecuteRefusesAWSNoTokenRetrySuccessor(t *testing.T) {
 				require.NotEmpty(t, saved, "the refused row must be persisted, not left running")
 				final := saved[len(saved)-1]
 				assert.Equal(t, "failed", final.Status)
-				assert.Contains(t, final.Error, "Check EC2 Reserved Instances or Redshift Reserved Nodes")
+				assert.Contains(t, final.Error, "Check EC2 Reserved Instances in the target account")
 				store.AssertExpectations(t)
 			})
 		}
