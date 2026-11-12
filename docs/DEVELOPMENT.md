@@ -87,6 +87,10 @@ Configured in docker-compose.yml:
 
 ### Database
 
+Detached API-key usage writes emit coded database events, error classes, validated SQLSTATEs and elapsed durations, independent of `DB_LOG_BIND_PARAMETERS`. Other API database work remains pending coverage. Unmarked work retains verbose logging and its bind-parameter opt-in; application warnings are outside this database-only boundary.
+
+Error classification visits at most 64 nodes or child slots. Deep, wide or cyclic chains retain observed facts and can omit higher-priority matches in an unvisited tail.
+
 - `DB_HOST`: PostgreSQL hostname (docker-compose: `postgres`)
 - `DB_PORT`: PostgreSQL port (default: `5432`)
 - `DB_NAME`: Database name (default: `cudly`)

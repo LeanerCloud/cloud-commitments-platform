@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -504,7 +505,7 @@ func (s *Service) flushPendingUsage(keyID string) {
 	if delta == 0 {
 		return
 	}
-	updateCtx, cancel := context.WithTimeout(context.Background(), apiKeyUsageFlushTimeout)
+	updateCtx, cancel := context.WithTimeout(database.WithSafeDiagnostics(context.Background()), apiKeyUsageFlushTimeout)
 	defer cancel()
 	if err := s.RecordUsage(updateCtx, keyID, delta); err != nil {
 		logging.Debugf("Failed to record %d API key usage(s) for key %s: %v", delta, keyID, err)

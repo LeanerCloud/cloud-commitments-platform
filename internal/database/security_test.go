@@ -3,12 +3,18 @@ package database
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/tracelog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -259,4 +265,143 @@ func TestSanitizeLogData_SensitiveKeysWithoutArgs(t *testing.T) {
 			assert.Contains(t, safe, "safe")
 		})
 	}
+}
+
+type diagnosticsHostile struct {
+	stringCalls atomic.Int64
+	errorCalls  atomic.Int64
+	formatCalls atomic.Int64
+}
+
+func (h *diagnosticsHostile) String() string {
+	h.stringCalls.Add(1)
+	return "forbidden-String"
+}
+
+func (h *diagnosticsHostile) Error() string {
+	h.errorCalls.Add(1)
+	return "forbidden-Error"
+}
+
+func (h *diagnosticsHostile) Format(state fmt.State, _ rune) {
+	h.formatCalls.Add(1)
+	_, _ = io.WriteString(state, "forbidden-Format")
+}
+
+type diagnosticsStringer struct{ hostile *diagnosticsHostile }
+
+func (s diagnosticsStringer) String() string { return s.hostile.String() }
+
+type diagnosticsError struct{ hostile *diagnosticsHostile }
+
+func (e diagnosticsError) Error() string { return e.hostile.Error() }
+
+type diagnosticsContextKey struct{}
+
+func requireDiagnosticsUnformatted(t *testing.T, hostile *diagnosticsHostile) {
+	t.Helper()
+	require.Zero(t, hostile.stringCalls.Load())
+	require.Zero(t, hostile.errorCalls.Load())
+	require.Zero(t, hostile.formatCalls.Load())
+}
+
+func TestAPIDatabaseDiagnosticsUsageMatrix(t *testing.T) {
+	var output bytes.Buffer
+	oldOutput, oldLevel := logging.SetOutput(&output), logging.GetLevel()
+	logging.SetLevelValue(logging.LevelDebug)
+	t.Cleanup(func() { logging.SetOutput(oldOutput); logging.SetLevelValue(oldLevel) })
+	for _, safe := range []bool{false, true} {
+		for _, bind := range []string{"", "true"} {
+			t.Setenv("DB_LOG_BIND_PARAMETERS", bind)
+			for _, level := range []tracelog.LogLevel{tracelog.LogLevelDebug, tracelog.LogLevelInfo, tracelog.LogLevelWarn, tracelog.LogLevelError, tracelog.LogLevelTrace, tracelog.LogLevelNone} {
+				hostile := &diagnosticsHostile{}
+				ctx := context.Background()
+				data := map[string]any{"sql": "raw-sql", "args": []any{"raw-key", "raw-hash"}, "err": errors.New("raw-error"), "time": time.Millisecond}
+				if safe {
+					ctx = WithSafeDiagnostics(ctx)
+					data["err"], data["sql"] = diagnosticsError{hostile}, diagnosticsStringer{hostile}
+					data["args"] = []any{hostile}
+					for _, key := range []string{"host", "port", "database", "DSN", "pid", "table", "column", "name", "commandTag", "rowcount", "unknown", "password", "secret", "token", "Message", "Detail", "Hint", "Where"} {
+						data[key] = hostile
+					}
+				}
+				output.Reset()
+				(&stdLogger{}).Log(ctx, level, "Query", data)
+				logged := output.String()
+				requireDiagnosticsUnformatted(t, hostile)
+				if level == tracelog.LogLevelTrace || level == tracelog.LogLevelNone {
+					require.Empty(t, logged)
+					continue
+				}
+				require.NotEmpty(t, logged)
+				if safe {
+					payload := "[" + strings.ToUpper(level.String()) + "] Database event=Query class=other duration=1ms\n"
+					require.Regexp(t, `^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `+regexp.QuoteMeta(payload)+`$`, logged)
+					for _, value := range []string{"raw-sql", "raw-key", "raw-hash", "raw-error", "forbidden-", "map[", "sql:", "args:", "err:", "host:", "pid:", "Detail:"} {
+						require.NotContains(t, logged, value)
+					}
+					output.Reset()
+					(&stdLogger{}).Log(ctx, level, "Query", map[string]any{"err": &pgconn.PgError{Code: "P0001", Message: "forbidden-message", Detail: "forbidden-detail"}, "time": time.Millisecond, "args": hostile})
+					payload = "[" + strings.ToUpper(level.String()) + "] Database event=Query class=database sqlstate=P0001 duration=1ms\n"
+					require.Regexp(t, `^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `+regexp.QuoteMeta(payload)+`$`, output.String())
+					require.NotContains(t, output.String(), "forbidden-")
+					requireDiagnosticsUnformatted(t, hostile)
+				} else if level != tracelog.LogLevelInfo {
+					require.Contains(t, logged, "raw-sql")
+					require.Contains(t, logged, "raw-error")
+					require.Equal(t, bind == "true", bytes.Contains(output.Bytes(), []byte("raw-key")))
+				} else {
+					require.Contains(t, logged, "Query")
+					require.NotContains(t, logged, "raw-")
+				}
+			}
+		}
+	}
+}
+
+func TestAPIDatabaseDiagnosticsUsageProjection(t *testing.T) {
+	hostile := &diagnosticsHostile{}
+	var nilPG *pgconn.PgError
+	var nilConnect *pgconn.ConnectError
+	for _, tc := range []struct {
+		err         any
+		class, code string
+	}{
+		{nil, "ok", ""}, {hostile, "other", ""}, {"raw", "other", ""},
+		{nilPG, "other", ""}, {nilConnect, "other", ""},
+		{fmt.Errorf("wrapped: %w", context.Canceled), "canceled", ""},
+		{fmt.Errorf("wrapped: %w", context.DeadlineExceeded), "deadline", ""},
+		{&pgconn.ConnectError{}, "connection", ""},
+		{fmt.Errorf("wrapped: %w", &pgconn.PgError{Code: "P0001", Message: "raw", Detail: "raw", Hint: "raw", Where: "raw"}), "database", "P0001"},
+	} {
+		d := projectDiagnostic("raw-event", map[string]any{"err": tc.err})
+		require.Equal(t, databaseDiagnostic{event: "Database", class: tc.class, sqlState: tc.code}, d)
+	}
+	for _, code := range []string{"", "p0001", "123456", "12\n34", "Ａ0001"} {
+		require.Empty(t, projectDiagnostic("Query", map[string]any{"err": &pgconn.PgError{Code: code}}).sqlState)
+	}
+	for _, duration := range []any{nil, -time.Nanosecond, int64(1), "1ms", hostile} {
+		require.False(t, projectDiagnostic("Query", map[string]any{"time": duration}).hasElapsed)
+	}
+	for _, duration := range []time.Duration{0, time.Nanosecond, time.Duration(1<<63 - 1)} {
+		d := projectDiagnostic("Query", map[string]any{"time": duration})
+		require.True(t, d.hasElapsed)
+		require.Equal(t, duration, d.elapsed)
+	}
+	for _, event := range []string{"Query", "BatchQuery", "BatchClose", "CopyFrom", "Connect", "Prepare", "Acquire", "Release"} {
+		require.Equal(t, event, projectDiagnostic(event, nil).event)
+	}
+	requireDiagnosticsUnformatted(t, hostile)
+	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), diagnosticsContextKey{}, "retained"), time.Hour)
+	defer cancel()
+	marked := WithSafeDiagnostics(ctx)
+	require.Same(t, marked, WithSafeDiagnostics(marked))
+	require.Equal(t, "retained", marked.Value(diagnosticsContextKey{}))
+	want, _ := ctx.Deadline()
+	got, ok := marked.Deadline()
+	require.True(t, ok)
+	require.Equal(t, want, got)
+	require.Equal(t, ctx.Done(), marked.Done())
+	cancel()
+	require.ErrorIs(t, marked.Err(), context.Canceled)
 }

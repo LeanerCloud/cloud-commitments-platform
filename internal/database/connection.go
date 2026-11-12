@@ -435,6 +435,20 @@ func sanitizeLogData(data map[string]any) map[string]any {
 }
 
 func (l *stdLogger) Log(ctx context.Context, level tracelog.LogLevel, msg string, data map[string]any) {
+	if ctx.Value(safeDiagnosticsKey{}) == true {
+		text := projectDiagnostic(msg, data).text()
+		switch level {
+		case tracelog.LogLevelDebug:
+			logging.Debugf("%s", text)
+		case tracelog.LogLevelInfo:
+			logging.Infof("%s", text)
+		case tracelog.LogLevelWarn:
+			logging.Warnf("%s", text)
+		case tracelog.LogLevelError:
+			logging.Errorf("%s", text)
+		}
+		return
+	}
 	safeData := sanitizeLogData(data)
 
 	switch level {
