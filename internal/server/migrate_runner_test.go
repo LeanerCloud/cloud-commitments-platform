@@ -270,27 +270,36 @@ func TestVersionToInt_Bounds(t *testing.T) {
 	require.ErrorContains(t, err, "out of range")
 }
 
-// A readVersion that ignores ctx (golang-migrate blocks on the advisory lock)
-// must not hold the runner past its budget.
+// Both version reads must receive the budget context: the real reader cancels
+// its advisory-lock wait when that context ends. The seam stands in for a read
+// blocked on the lock and gives up only if it is handed an unbounded context.
 func TestRunDeployMigrations_VersionReadHonoursBudget(t *testing.T) {
-	t.Setenv(forceVersionEnv, "")
-	release := make(chan struct{})
-	t.Cleanup(func() { close(release) })
-	f := &fakeMigrate{versions: []uint{3}}
-	deps := f.deps()
-	deps.readVersion = func(context.Context, *pgxpool.Pool, string) (uint, bool, error) {
-		select {
-		case <-release:
-		case <-time.After(5 * time.Second):
-		}
-		return 0, false, nil
+	for _, blockOn := range []int{1, 2} {
+		t.Run(fmt.Sprintf("read%d", blockOn), func(t *testing.T) {
+			t.Setenv(forceVersionEnv, "")
+			f := &fakeMigrate{versions: []uint{3, 5}}
+			deps := f.deps()
+			fakeRead := deps.readVersion
+			calls := 0
+			deps.readVersion = func(ctx context.Context, p *pgxpool.Pool, path string) (uint, bool, error) {
+				calls++
+				if calls != blockOn {
+					return fakeRead(ctx, p, path)
+				}
+				select {
+				case <-ctx.Done():
+					return 0, false, ctx.Err()
+				case <-time.After(5 * time.Second):
+					return 0, false, nil
+				}
+			}
+			start := time.Now()
+			_, err := migrateOnPool(withMigrateBudget(t, 200*time.Millisecond), nil, &database.Config{}, okResolver(t), MigrateOptions{}, deps)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			assert.Less(t, time.Since(start), 2*time.Second)
+			assert.Equal(t, blockOn-1, f.runCalls)
+		})
 	}
-	start := time.Now()
-	_, err := migrateOnPool(withMigrateBudget(t, 200*time.Millisecond), nil, &database.Config{}, okResolver(t), MigrateOptions{}, deps)
-	elapsed := time.Since(start)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.Less(t, elapsed, 2*time.Second)
-	assert.Zero(t, f.runCalls)
 }
 
 func withMigrateBudget(t *testing.T, d time.Duration) context.Context {

@@ -161,6 +161,34 @@ func TestRunMigrations_DeadlineStopsAdvisoryLockWait(t *testing.T) {
 	require.True(t, held, "the foreign session must still own its lock")
 }
 
+func TestGetMigrationVersion_DeadlineStopsAdvisoryLockWait(t *testing.T) {
+	// Not parallel: asserts a 1s deadline is honored within a fixed wall-clock bound.
+	pool, db := migrationDB(t)
+	ctx := context.Background()
+
+	aid, err := database.GenerateAdvisoryLockId("/"+db, "public", "schema_migrations")
+	require.NoError(t, err)
+	holder := session(t, pool)
+	_, err = holder.Exec(ctx, "SELECT pg_advisory_lock($1::bigint)", aid)
+	require.NoError(t, err)
+
+	rctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, gerr := migrations.GetMigrationVersion(rctx, pool, migrationDir(t, "SELECT 1;"))
+		done <- gerr
+	}()
+	select {
+	case err = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("GetMigrationVersion still blocked 10s after its 1s deadline")
+	}
+	require.True(t, errors.Is(err, context.DeadlineExceeded), "want deadline error, got %v", err)
+
+	requireNoBackend(t, pool, db, "SELECT pg_advisory_lock")
+}
+
 func TestRunMigrations_CancelStopsSetupBlockedOnVersionTable(t *testing.T) {
 	// Not parallel: asserts a 1s deadline is honored within a fixed wall-clock bound.
 	pool, db := migrationDB(t)

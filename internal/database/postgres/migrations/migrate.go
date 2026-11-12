@@ -545,14 +545,21 @@ func MigrateToVersion(ctx context.Context, pool *pgxpool.Pool, migrationsPath st
 	return nil
 }
 
-// GetMigrationVersion returns the current migration version.
-func GetMigrationVersion(ctx context.Context, pool *pgxpool.Pool, migrationsPath string) (uint, bool, error) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
-	dsn := buildMigrateDSN(pool.Config())
+// GetMigrationVersion returns the current migration version. ctx bounds the
+// advisory-lock wait and the version query like RunMigrations: when it ends the
+// migrator's connections are canceled server-side and the error matches
+// errors.Is(err, ctx.Err()).
+func GetMigrationVersion(ctx context.Context, pool *pgxpool.Pool, migrationsPath string) (version uint, dirty bool, err error) {
+	tracker := &connTracker{ctx: ctx}
+	stopWatch := tracker.watch()
+	defer stopWatch()
 
-	m, err := migrate.New(
-		fmt.Sprintf("file://%s", migrationsPath),
-		dsn,
-	)
+	version, dirty, err = getMigrationVersion(tracker, pool, migrationsPath)
+	return version, dirty, wrapContextError(ctx, err)
+}
+
+func getMigrationVersion(tracker *connTracker, pool *pgxpool.Pool, migrationsPath string) (uint, bool, error) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
+	m, err := newCancelableMigrator(tracker, migrationsPath, buildMigrateDSN(pool.Config()))
 	if err != nil {
 		return 0, false, fmt.Errorf("failed to create migrator: %w", err)
 	}
