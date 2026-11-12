@@ -770,3 +770,23 @@ func TestExecuteAzureExchange_DirectClaimOutlivingDeadlineNeverExecutes(t *testi
 	require.True(t, finalized)
 	assert.Equal(t, config.RIExchangeDirectStatusFailed, outcome.Status)
 }
+
+// TestAzureDirectExchangeAudit_RecordsBillingScope pins that the spelled-out
+// billing_scope_id of each target reaches the audit row's targets JSON.
+func TestAzureDirectExchangeAudit_RecordsBillingScope(t *testing.T) {
+	body := AzureExecuteExchangeRequestBody{
+		SubscriptionID: "sub-1",
+		Sources:        []AzureExchangeSourceBody{{ReservationID: "res-1", Quantity: 1}},
+		Targets: []AzureExchangeTargetBody{{
+			SKU: "Standard_D4s_v3", Location: "eastus", Term: "P1Y", Quantity: 1,
+			BillingScopeID: "/subscriptions/sub-1",
+		}},
+		Currency: "USD",
+	}
+	audit := azureDirectExchangeAudit(&Session{}, "", body, big.NewRat(1, 1), &azureExchangePreview{})
+
+	var targets []map[string]any
+	require.NoError(t, json.Unmarshal(audit.Targets, &targets))
+	require.Len(t, targets, 1)
+	assert.Equal(t, "/subscriptions/sub-1", targets[0]["billing_scope_id"])
+}
