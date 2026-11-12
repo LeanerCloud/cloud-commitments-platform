@@ -44,8 +44,9 @@ const (
 	// legitimate link.
 	PasswordResetRateLimit = 1 * time.Minute
 
-	// resetClockSkewMargin is the allowance for instances whose clocks differ when
-	// telling an invite token from a reset token by remaining lifetime.
+	// resetClockSkewMargin is the allowance for instances whose clocks differ: it
+	// tells an invite token from a reset token by remaining lifetime, and a token
+	// within it of its expiry counts as expired.
 	resetClockSkewMargin = 5 * time.Minute
 )
 
@@ -529,7 +530,7 @@ func (s *Service) ResetTokenStatus(ctx context.Context, token string) (ResetToke
 		return ResetTokenStateUsed, ResetTokenFlowReset, nil
 	}
 
-	if user.PasswordResetExpiry == nil || time.Now().After(*user.PasswordResetExpiry) {
+	if resetTokenExpired(user) {
 		return ResetTokenStateExpired, resetTokenFlowFor(user), nil
 	}
 
@@ -541,6 +542,12 @@ func (s *Service) ResetTokenStatus(ctx context.Context, token string) (ResetToke
 	}
 
 	return ResetTokenStateValid, resetTokenFlowFor(user), nil
+}
+
+// resetTokenExpired reports whether the user's reset or invite token is, or is
+// within resetClockSkewMargin of being, expired.
+func resetTokenExpired(user *User) bool {
+	return user.PasswordResetExpiry == nil || time.Now().Add(resetClockSkewMargin).After(*user.PasswordResetExpiry)
 }
 
 func (s *Service) validateResetToken(ctx context.Context, token string) (*User, error) {
@@ -565,7 +572,7 @@ func (s *Service) validateResetToken(ctx context.Context, token string) (*User, 
 		return nil, ErrInvalidResetToken
 	}
 
-	if user.PasswordResetExpiry == nil || time.Now().After(*user.PasswordResetExpiry) {
+	if resetTokenExpired(user) {
 		return nil, fmt.Errorf("reset token has expired")
 	}
 

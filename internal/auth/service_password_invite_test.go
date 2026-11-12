@@ -112,3 +112,38 @@ func TestResetRecentlyIssued(t *testing.T) {
 		assert.False(t, resetRecentlyIssued(&User{}, "u@example.com"))
 	})
 }
+
+func TestResetTokenExpired_SkewMargin(t *testing.T) {
+	left := func(d time.Duration) *User { e := time.Now().Add(d); return &User{PasswordResetExpiry: &e} }
+	assert.True(t, resetTokenExpired(left(resetClockSkewMargin-time.Minute)), "inside the margin counts as expired")
+	assert.False(t, resetTokenExpired(left(resetClockSkewMargin+time.Minute)), "outside the margin is valid")
+	assert.True(t, resetTokenExpired(&User{}), "no expiry counts as expired")
+}
+
+func TestResetToken_ExpiryWithinSkewMarginIsRefused(t *testing.T) {
+	ctx := context.Background()
+	for name, left := range map[string]time.Duration{"inside": time.Minute, "outside": resetClockSkewMargin + time.Minute} {
+		expiry := time.Now().Add(left)
+		newSvc := func() *Service {
+			store := new(MockStore)
+			store.On("GetUserByResetToken", ctx, mock.AnythingOfType("string")).
+				Return(&User{ID: "u1", Active: true, PasswordResetToken: hashSessionToken("tok"), PasswordResetExpiry: &expiry}, nil).Maybe()
+			store.On("DeleteUserSessions", ctx, "u1").Return(nil).Maybe()
+			store.On("ListAPIKeysByUser", ctx, "u1").Return([]*UserAPIKey{}, nil).Maybe()
+			store.On("CompletePasswordReset", ctx, mock.AnythingOfType("*auth.User"), hashSessionToken("tok"), "").Return(nil).Maybe()
+			return createTestService(store, new(MockEmailSender))
+		}
+		wantExpired := name == "inside"
+
+		state, _, err := newSvc().ResetTokenStatus(ctx, "tok")
+		require.NoError(t, err)
+		assert.Equal(t, wantExpired, state == ResetTokenStateExpired, name)
+
+		err = newSvc().ConfirmPasswordReset(ctx, PasswordResetConfirm{Token: "tok", NewPassword: "SecureT3st@789"})
+		if wantExpired {
+			assert.ErrorContains(t, err, "expired", name)
+		} else {
+			assert.NoError(t, err, name)
+		}
+	}
+}
