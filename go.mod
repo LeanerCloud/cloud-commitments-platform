@@ -82,26 +82,26 @@ require (
 )
 
 require (
-	cloud.google.com/go/kms v1.36.0
-	cloud.google.com/go/secretmanager v1.23.0
+	cloud.google.com/go/kms v1.36.1
+	cloud.google.com/go/secretmanager v1.23.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/billingbenefits/armbillingbenefits v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations v1.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.5.0
-	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.0
+	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.1
 	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261112024114-496b780ba23f
 	github.com/LeanerCloud/cloud-commitments-go/providers/aws v0.0.0-20261112024114-496b780ba23f
 	github.com/LeanerCloud/cloud-commitments-go/providers/azure v0.0.0-20261112024114-496b780ba23f
 	github.com/LeanerCloud/cloud-commitments-go/providers/gcp v0.0.0-20261112024114-496b780ba23f
 	github.com/aws/aws-lambda-go v1.55.1
-	github.com/aws/aws-sdk-go-v2/service/kms v1.62.1
-	github.com/aws/aws-sdk-go-v2/service/lambda v1.113.4
+	github.com/aws/aws-sdk-go-v2/service/kms v1.62.3
+	github.com/aws/aws-sdk-go-v2/service/lambda v1.114.1
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.62.7
-	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.7
-	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.79.4
-	github.com/aws/aws-sdk-go-v2/service/sns v1.47.7
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.9
+	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.79.6
+	github.com/aws/aws-sdk-go-v2/service/sns v1.47.8
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.9
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/go-jose/go-jose/v4 v4.1.6
+	github.com/go-jose/go-jose/v4 v4.1.8
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/hcl/v2 v2.25.0
@@ -130,7 +130,7 @@ require (
 	github.com/agext/levenshtein v1.2.1 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/apparentlymart/go-textseg/v17 v17.0.1 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.26 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.12.4 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
