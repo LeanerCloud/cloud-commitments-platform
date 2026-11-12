@@ -921,6 +921,16 @@
 
                     <div class="form-section">
                         <h3>Automation Settings</h3>
+                        <p id="plan-auto-purchase-state" role="status">Global Auto-Purchase state is unavailable.</p>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label for="plan-max-step-commitment">Maximum commitment per step</label>
+                                <small id="plan-max-step-commitment-help">Total commitment over the full term, including upfront and recurring costs. Optional for manual plans; required for Auto-Purchase.</small>
+                            </div>
+                            <div class="setting-input">
+                                <input type="text" id="plan-max-step-commitment" inputmode="decimal" autocomplete="off" aria-describedby="plan-max-step-commitment-help">
+                            </div>
+                        </div>
                         <div class="setting-row">
                             <div class="setting-info">
                                 <label for="plan-auto-purchase">Auto-Purchase</label>
