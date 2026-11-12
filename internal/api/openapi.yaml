@@ -297,7 +297,9 @@ paths:
         Provider and service are taken from the path. This is a partial
         update: any enabled, term, payment, coverage or filter key absent from
         the body keeps its stored value, and the merged row is validated. A
-        key that is present, even with a zero value, replaces the stored one.
+        key that is present, even with a zero value, replaces the stored one,
+        except ramp_schedule: it is honoured only when the row is first saved,
+        and a sent ramp_schedule on an existing row is ignored.
         The response does not echo the configuration; read it back with GET.
       parameters:
         - $ref: '#/components/parameters/CSRFToken'
@@ -7564,6 +7566,9 @@ components:
 
     PlanRequest:
       type: object
+      description: >-
+        Unknown properties are ignored, not rejected. A plan has no description
+        field, so a client that sends one gets 200 and nothing is stored for it.
       required: [name]
       properties:
         name:
