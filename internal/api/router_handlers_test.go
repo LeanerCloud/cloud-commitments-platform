@@ -410,7 +410,7 @@ func TestRouter_setPlanAccountsHandler(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handler_ri_exchange.go — getRIExchangeConfig, updateRIExchangeConfig,
+// handler_ri_exchange_config_history.go — getRIExchangeConfig, updateRIExchangeConfig,
 //                         getRIExchangeHistory, validate, validateExchangeApproval
 // ---------------------------------------------------------------------------
 

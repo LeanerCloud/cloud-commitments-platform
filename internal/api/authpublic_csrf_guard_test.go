@@ -44,7 +44,7 @@ import (
 //   - The shared pre-lookup check in requireSessionBeforeLookup
 //     (handler_purchases_approve.go) runs validateCSRF for every purchase row, so
 //     removing it fails the purchase rows. The RI-exchange session check
-//     (handler_ri_exchange.go, approveRIExchangeViaSession) fails the RI rows.
+//     (handler_ri_exchange_approve.go, approveRIExchangeViaSession) fails the RI rows.
 //   - The per-handler validateCSRF calls in approvePurchaseViaSession,
 //     cancelPurchaseViaSession and tryRevokeViaSession sit behind that shared
 //     check, so removing only one of them leaves every row green. They are

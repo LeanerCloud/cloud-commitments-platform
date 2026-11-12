@@ -116,7 +116,7 @@ func TestRIExchangeCarveOut_AdminKeepsNonCarvedVerbs(t *testing.T) {
 // The discriminating assertion is the error's IDENTITY, not its wording:
 // requirePermission's carve-out denial is a *clientError with code 403
 // (handler.go's requireSessionPermission), and executeExchange returns it
-// unwrapped (handler_ri_exchange.go:1713-1716). Asserting substrings of the
+// unwrapped (handler_ri_exchange.go, executeExchange). Asserting substrings of the
 // message ("execute", "ri-exchange") is fragile in the wrong direction: if
 // the carve-out is dropped, executeExchange proceeds past the gate into
 // cloud account scope resolution and then the AWS exchange call, and fails

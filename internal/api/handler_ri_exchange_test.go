@@ -1006,7 +1006,7 @@ func (f *fakeReshapeRecsStub) GetRIUtilization(_ context.Context, _ int, _ strin
 // load-bearing assertion is filter.Region == "us-west-2" (not "").
 //
 // Reverting the `if region == "" { region = cfg.Region }` block from
-// handler_ri_exchange.go makes this test fail loudly with the captured
+// handler_ri_exchange_reshape_recs.go makes this test fail loudly with the captured
 // filter showing Region:"".
 func TestGetReshapeRecommendations_EmptyRegionUsesConfigRegion(t *testing.T) {
 	const cfgRegion = "us-west-2"
