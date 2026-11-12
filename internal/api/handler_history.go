@@ -208,8 +208,8 @@ func (h *Handler) fetchExecutionsAsHistory(ctx context.Context, filters historyF
 	approver := h.resolvePendingApproverEmail(ctx)
 	userEmailCache := h.resolveUserEmails(ctx, executions)
 	out := make([]config.PurchaseHistoryRecord, 0, len(executions))
-	for _rvc := range executions {
-		exec := executions[_rvc]
+	for i := range executions {
+		exec := executions[i]
 		if !filters.matchesExecution(exec) {
 			continue
 		}
@@ -321,8 +321,8 @@ func (h *Handler) expireStaleExecutionsSweep(staleExecs []config.PurchaseExecuti
 // creators, not the number of execution rows.
 func (h *Handler) resolveUserEmails(ctx context.Context, executions []config.PurchaseExecution) map[string]string {
 	seen := make(map[string]struct{})
-	for _rvc := range executions {
-		exec := executions[_rvc]
+	for i := range executions {
+		exec := executions[i]
 		if exec.CreatedByUserID != nil && *exec.CreatedByUserID != "" {
 			seen[*exec.CreatedByUserID] = struct{}{}
 		}
@@ -613,8 +613,8 @@ func collapseRecommendationService(recs []config.RecommendationRecord) string {
 		return "multiple"
 	}
 	s := recs[0].Service
-	for _rvc := range recs[1:] {
-		r := recs[1:][_rvc]
+	for i := range recs[1:] {
+		r := recs[1:][i]
 		if r.Service != s {
 			return "multiple"
 		}
@@ -631,8 +631,8 @@ func collapseRecommendationTerm(recs []config.RecommendationRecord) int {
 		return 0
 	}
 	t := recs[0].Term
-	for _rvc := range recs[1:] {
-		r := recs[1:][_rvc]
+	for i := range recs[1:] {
+		r := recs[1:][i]
 		if r.Term != t {
 			return 0
 		}
@@ -648,8 +648,8 @@ func collapseRecommendationProvider(recs []config.RecommendationRecord) string {
 		return "multiple"
 	}
 	p := recs[0].Provider
-	for _rvc := range recs[1:] {
-		r := recs[1:][_rvc]
+	for i := range recs[1:] {
+		r := recs[1:][i]
 		if r.Provider != p {
 			return "multiple"
 		}
@@ -666,8 +666,8 @@ func collapseRecommendationPayment(recs []config.RecommendationRecord) string {
 		return ""
 	}
 	p := recs[0].Payment
-	for _rvc := range recs[1:] {
-		r := recs[1:][_rvc]
+	for i := range recs[1:] {
+		r := recs[1:][i]
 		if r.Payment != p {
 			return ""
 		}
@@ -688,8 +688,8 @@ func collapseRecommendationAccount(recs []config.RecommendationRecord) string {
 	if recs[0].CloudAccountID != nil {
 		first = *recs[0].CloudAccountID
 	}
-	for _rvc := range recs[1:] {
-		r := recs[1:][_rvc]
+	for i := range recs[1:] {
+		r := recs[1:][i]
 		var cur string
 		if r.CloudAccountID != nil {
 			cur = *r.CloudAccountID
@@ -709,8 +709,8 @@ func collapseRecommendationAccount(recs []config.RecommendationRecord) string {
 func sumRecommendationMonthlyCostPtr(recs []config.RecommendationRecord) *float64 {
 	var total float64
 	anyNonNil := false
-	for _rvc := range recs {
-		r := recs[_rvc]
+	for i := range recs {
+		r := recs[i]
 		if r.MonthlyCost != nil {
 			total += *r.MonthlyCost
 			anyNonNil = true
@@ -1025,8 +1025,8 @@ func accountMatchesFilters(exec config.PurchaseExecution, accountIDs []string, e
 // recommendation (all recs in an execution share a provider in practice).
 // Returns "" when no recommendation carries one.
 func executionProvider(exec config.PurchaseExecution) string {
-	for _rvc := range exec.Recommendations {
-		r := exec.Recommendations[_rvc]
+	for i := range exec.Recommendations {
+		r := exec.Recommendations[i]
 		if r.Provider != "" {
 			return r.Provider
 		}
@@ -1037,8 +1037,8 @@ func executionProvider(exec config.PurchaseExecution) string {
 // executionHasProvider reports whether any of the execution's
 // recommendations carries the given provider value.
 func executionHasProvider(exec config.PurchaseExecution, provider string) bool {
-	for _rvc := range exec.Recommendations {
-		r := exec.Recommendations[_rvc]
+	for i := range exec.Recommendations {
+		r := exec.Recommendations[i]
 		if r.Provider == provider {
 			return true
 		}

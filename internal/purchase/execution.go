@@ -1224,8 +1224,8 @@ func (m *Manager) buildPurchaseConfirmationData(exec *config.PurchaseExecution, 
 		data.ArcheraEducationURL = dashboardBase + "/archera-insurance"
 	}
 
-	for _rvc := range exec.Recommendations {
-		rec := exec.Recommendations[_rvc]
+	for i := range exec.Recommendations {
+		rec := exec.Recommendations[i]
 		if rec.Purchased {
 			data.Recommendations = append(data.Recommendations, email.RecommendationSummary{
 				Service:        rec.Service,

@@ -73,8 +73,8 @@ func (h *Handler) plannedPurchasesInScope(ctx context.Context, scope auth.Accoun
 	// Memoises GetPlanAccounts: plan-level parents of the same plan share it.
 	planAccounts := make(map[string][]config.CloudAccount)
 	var purchases []PlannedPurchase
-	for _rvc := range executions {
-		exec := executions[_rvc]
+	for i := range executions {
+		exec := executions[i]
 		plan := planMap[exec.PlanID]
 		if plan == nil {
 			continue

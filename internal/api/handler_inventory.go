@@ -56,8 +56,8 @@ func (h *Handler) listActiveCommitments(ctx context.Context, req *events.LambdaF
 	}
 
 	commitments := make([]InventoryCommitment, 0, len(purchases))
-	for _rvc := range purchases {
-		p := purchases[_rvc]
+	for i := range purchases {
+		p := purchases[i]
 		if !isActiveCommitment(p, now) {
 			continue
 		}
@@ -127,8 +127,8 @@ func (h *Handler) fetchCommitmentRecords(ctx context.Context, asOf time.Time, se
 	// lowercase names the store holds (aws, azure, gcp).
 	if provider != "" {
 		filtered := rows[:0]
-		for _rvc := range rows {
-			r := rows[_rvc]
+		for i := range rows {
+			r := rows[i]
 			if r.Provider == provider {
 				filtered = append(filtered, r)
 			}
@@ -208,8 +208,8 @@ func (h *Handler) getCoverageBreakdown(ctx context.Context, req *events.LambdaFu
 	// registers as covered instead of being silently dropped (issue: Azure
 	// showed $0 coverage while the dashboard reported active commitments).
 	coveredByKey := make(map[string]*float64)
-	for _rvc := range purchases {
-		p := purchases[_rvc]
+	for i := range purchases {
+		p := purchases[i]
 		if !isActiveCommitment(p, now) {
 			continue
 		}
@@ -282,8 +282,8 @@ func buildCoverageRecFilter(params map[string]string) config.RecommendationFilte
 // cyclomatic limit.
 func aggregateOnDemandByKey(recs []config.RecommendationRecord, providerFilter string) map[string]float64 {
 	out := make(map[string]float64)
-	for _rvc := range recs {
-		rec := recs[_rvc]
+	for i := range recs {
+		rec := recs[i]
 		if providerFilter != "" && rec.Provider != providerFilter {
 			continue
 		}

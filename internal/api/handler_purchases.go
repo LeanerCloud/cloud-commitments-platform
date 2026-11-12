@@ -3201,8 +3201,8 @@ const purchaseIdempotencyWindow = 2 * time.Minute
 // differently. Closes issue #644.
 func purchaseIdempotencyKey(creatorID string, recs []config.RecommendationRecord, capacityPercent int) (string, error) {
 	tuples := make([]string, 0, len(recs))
-	for _rvc := range recs {
-		r := recs[_rvc]
+	for i := range recs {
+		r := recs[i]
 		acct := ""
 		if r.CloudAccountID != nil {
 			acct = *r.CloudAccountID
@@ -3610,8 +3610,8 @@ func (h *Handler) sendPurchaseApprovalEmail(ctx context.Context, req *events.Lam
 // approvalRecommendationSummaries is the per-rec table of the approval email.
 func approvalRecommendationSummaries(recs []config.RecommendationRecord) []email.RecommendationSummary {
 	summaries := make([]email.RecommendationSummary, 0, len(recs))
-	for _rvc := range recs {
-		rec := recs[_rvc]
+	for i := range recs {
+		rec := recs[i]
 		summaries = append(summaries, email.RecommendationSummary{
 			Service:        rec.Service,
 			ResourceType:   rec.ResourceType,
@@ -3997,8 +3997,8 @@ func (h *Handler) gatherAccountContactEmails(ctx context.Context, recs []config.
 func uniqueAccountIDsFromRecs(recs []config.RecommendationRecord) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _rvc := range recs {
-		rec := recs[_rvc]
+	for i := range recs {
+		rec := recs[i]
 		if rec.CloudAccountID == nil || *rec.CloudAccountID == "" {
 			continue
 		}

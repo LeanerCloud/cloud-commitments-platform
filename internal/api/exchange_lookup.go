@@ -53,8 +53,8 @@ func purchaseRecLookupFromStore(store recsLister, accountID string) exchange.Pur
 			return nil, err
 		}
 		out := make([]exchange.OfferingOption, 0, len(recs))
-		for _rvc := range recs {
-			rec := recs[_rvc]
+		for i := range recs {
+			rec := recs[i]
 			out = append(out, recommendationToOffering(rec, currencyCode))
 		}
 		return out, nil
@@ -195,8 +195,8 @@ func (h *Handler) resolveAWSCloudAccountID(ctx context.Context) (string, error) 
 		// no-op rather than a leak.
 		return "", nil
 	}
-	for _rvc := range accounts {
-		a := accounts[_rvc]
+	for i := range accounts {
+		a := accounts[i]
 		if a.ExternalID == awsAccountID {
 			return a.ID, nil
 		}

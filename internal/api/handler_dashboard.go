@@ -165,8 +165,8 @@ func (h *Handler) resolveAllowedAccountScope(ctx context.Context, session *Sessi
 	// Non-nil empty slice: a sentinel meaning "scoped to zero accounts" so the
 	// dual-column predicate matches no rows (never falls back to all-accounts).
 	allowedUUIDs := []string{}
-	for _rvc := range accounts {
-		a := accounts[_rvc]
+	for i := range accounts {
+		a := accounts[i]
 		if allowed.Allows(a.ID, a.Name) {
 			allowedUUIDs = append(allowedUUIDs, a.ID)
 		}
@@ -185,13 +185,13 @@ func filterDashboardRecommendations(allowed auth.AccountScope, recs []config.Rec
 	}
 
 	filtered := make([]config.RecommendationRecord, 0, len(recs))
-	for _rvc := range recs {
-		if recs[_rvc].CloudAccountID == nil {
+	for i := range recs {
+		if recs[i].CloudAccountID == nil {
 			continue
 		}
-		id := *recs[_rvc].CloudAccountID
+		id := *recs[i].CloudAccountID
 		if allowed.Allows(id, "") {
-			filtered = append(filtered, recs[_rvc])
+			filtered = append(filtered, recs[i])
 		}
 	}
 	return filtered
@@ -254,8 +254,8 @@ func summarizeRecommendationsWithCoverage( //nolint:gocritic // unnamedResult: r
 
 	var total float64
 	byService := make(map[string]ServiceSavings)
-	for _rvc := range representatives {
-		rep := representatives[_rvc]
+	for idx := range representatives {
+		rep := representatives[idx]
 		scaled := rep.scaled
 		total += scaled
 		svc := byService[rep.rec.Service]
@@ -318,8 +318,8 @@ func bestVariantPerCell(
 ) []cellRepresentative {
 	indexByCell := make(map[string]int, len(recs))
 	reps := make([]cellRepresentative, 0, len(recs))
-	for _rvc := range recs {
-		rec := recs[_rvc]
+	for i := range recs {
+		rec := recs[i]
 		scaled := scaledSavings(rec, coverageByKey)
 		key := recCellKey(rec)
 		if idx, ok := indexByCell[key]; ok {
@@ -641,8 +641,8 @@ func isActiveCommitment(p config.PurchaseHistoryRecord, now time.Time) bool {
 // same "active" definition.
 func aggregateActiveCommitmentsPerService(purchases []config.PurchaseHistoryRecord, now time.Time) map[string]float64 {
 	byService := make(map[string]float64)
-	for _rvc := range purchases {
-		p := purchases[_rvc]
+	for i := range purchases {
+		p := purchases[i]
 		if !isActiveCommitment(p, now) {
 			continue
 		}
@@ -684,9 +684,9 @@ func (h *Handler) fetchCommitmentPurchases(ctx context.Context, asOf time.Time, 
 
 	if provider != "" {
 		filtered := purchases[:0]
-		for _rvc := range purchases {
-			if purchases[_rvc].Provider == provider {
-				filtered = append(filtered, purchases[_rvc])
+		for i := range purchases {
+			if purchases[i].Provider == provider {
+				filtered = append(filtered, purchases[i])
 			}
 		}
 		purchases = filtered
@@ -733,8 +733,8 @@ func (h *Handler) calculateCommitmentMetrics(ctx context.Context, provider strin
 		committedMonthly += v
 	}
 
-	for _rvc := range purchases {
-		p := purchases[_rvc]
+	for i := range purchases {
+		p := purchases[i]
 		if !isActiveCommitment(p, currentTime) {
 			continue
 		}

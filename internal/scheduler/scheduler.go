@@ -259,8 +259,8 @@ func (s *Scheduler) CollectRecommendations(ctx context.Context, ownerToken strin
 			DashboardURL: s.dashboardURL,
 			TotalSavings: totalSavings,
 		}
-		for _rvc := range allRecommendations {
-			rec := allRecommendations[_rvc]
+		for i := range allRecommendations {
+			rec := allRecommendations[i]
 			if len(data.Recommendations) >= 10 { // Limit to top 10 in email
 				break
 			}
@@ -377,8 +377,8 @@ func (s *Scheduler) collectAllProviders(ctx context.Context, globalCfg *config.G
 		}
 		successfulProviders = append(successfulProviders, providerName)
 		successfulCollects = append(successfulCollects, expandSuccessfulCollects(providerName, out.succeededAccountIDs)...)
-		for _rvc := range out.recs {
-			rec := out.recs[_rvc]
+		for i := range out.recs {
+			rec := out.recs[i]
 			totalSavings += rec.Savings
 		}
 		allRecommendations = append(allRecommendations, out.recs...)
@@ -671,8 +671,8 @@ func fanOutPerAccount(
 	var all []config.RecommendationRecord
 	var outcome accountOutcome
 
-	for _rvc := range accounts {
-		acct := accounts[_rvc]
+	for i := range accounts {
+		acct := accounts[i]
 		g.Go(func() error {
 			recs, gap, err := fn(gctx, acct)
 			if err != nil {
@@ -1555,8 +1555,8 @@ func applySuppressionIndex(recs []config.RecommendationRecord, index map[suppres
 	// Allocate a fresh backing array so callers that hold a reference to
 	// the original recs slice do not see mutations (05-M1).
 	out := make([]config.RecommendationRecord, 0, len(recs))
-	for _rvc := range recs {
-		rec := recs[_rvc]
+	for i := range recs {
+		rec := recs[i]
 		accountID := ""
 		if rec.CloudAccountID != nil {
 			accountID = *rec.CloudAccountID
@@ -1786,8 +1786,8 @@ func isUnpurchasableAWSRI(rec common.Recommendation, providerName string) bool {
 func (s *Scheduler) convertRecommendations(recs []common.Recommendation, providerName string) []config.RecommendationRecord {
 	records := make([]config.RecommendationRecord, 0, len(recs))
 
-	for _rvc := range recs {
-		rec := recs[_rvc]
+	for i := range recs {
+		rec := recs[i]
 		engine := extractEngine(rec.Details)
 		detailsBlob := marshalRecDetails(rec, providerName)
 

@@ -37,8 +37,8 @@ func (m *Manager) SendUpcomingPurchaseNotifications(ctx context.Context) (*Notif
 	now := time.Now()
 	readopt := m.readoptCandidates(ctx, global, now)
 	notified := 0
-	for _rvc := range plans {
-		plan := plans[_rvc]
+	for i := range plans {
+		plan := plans[i]
 		if err := m.failDueManualStep(ctx, &plan); err != nil {
 			logging.Errorf("Failed to inspect due manual plan step for plan %s: %v", plan.ID, err)
 			continue
@@ -423,8 +423,8 @@ func (m *Manager) buildNotificationData(plan config.PurchasePlan, exec *config.P
 	if plan.MaxStepCommitment != nil {
 		data.StepCap = *plan.MaxStepCommitment
 	}
-	for _rvc := range exec.Recommendations {
-		rec := exec.Recommendations[_rvc]
+	for i := range exec.Recommendations {
+		rec := exec.Recommendations[i]
 		summary := email.RecommendationSummary{
 			Service:          rec.Service,
 			ResourceType:     rec.ResourceType,

@@ -128,8 +128,8 @@ func (h *Handler) listAccounts(ctx context.Context, req *events.LambdaFunctionUR
 	}
 	if !allowedAccounts.AllowsAll() {
 		filtered := accts[:0]
-		for _rvc := range accts {
-			acct := accts[_rvc]
+		for i := range accts {
+			acct := accts[i]
 			if allowedAccounts.Allows(acct.ID, acct.Name) {
 				filtered = append(filtered, acct)
 			}

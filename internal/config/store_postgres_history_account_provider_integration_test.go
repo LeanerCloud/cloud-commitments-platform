@@ -41,8 +41,8 @@ func seedProviderVariantHistory(ctx context.Context, t *testing.T, conn *databas
 
 func purchaseIDs(recs []PurchaseHistoryRecord) []string {
 	ids := make([]string, 0, len(recs))
-	for _rvc := range recs {
-		ids = append(ids, recs[_rvc].PurchaseID)
+	for i := range recs {
+		ids = append(ids, recs[i].PurchaseID)
 	}
 	sort.Strings(ids)
 	return ids

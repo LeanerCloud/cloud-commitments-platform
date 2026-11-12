@@ -36,8 +36,8 @@ func BuildScheduledNoticeData(dashboardURL string, execution *config.PurchaseExe
 
 	// Build a minimal summaries slice from the stored recommendations.
 	summaries := make([]email.RecommendationSummary, 0, len(execution.Recommendations))
-	for _rvc := range execution.Recommendations {
-		r := execution.Recommendations[_rvc]
+	for i := range execution.Recommendations {
+		r := execution.Recommendations[i]
 		summaries = append(summaries, email.RecommendationSummary{
 			Service:      r.Service,
 			ResourceType: r.ResourceType,

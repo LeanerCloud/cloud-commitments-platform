@@ -354,8 +354,8 @@ func (h *Handler) resolveAccountFilterIDs(ctx context.Context, uuids []string) (
 	}
 	type provExt struct{ provider, externalID string }
 	byUUID := make(map[string]provExt, len(accounts))
-	for _rvc := range accounts {
-		a := accounts[_rvc]
+	for i := range accounts {
+		a := accounts[i]
 		if a.ExternalID != "" {
 			byUUID[a.ID] = provExt{provider: a.Provider, externalID: a.ExternalID}
 		}

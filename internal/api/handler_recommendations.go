@@ -177,8 +177,8 @@ func (h *Handler) cloudAccountNamesByID(ctx context.Context) (map[string]string,
 		return nil, fmt.Errorf("failed to list accounts for filter: %w", err)
 	}
 	nameByID := make(map[string]string, len(accounts))
-	for _rvc := range accounts {
-		a := accounts[_rvc]
+	for i := range accounts {
+		a := accounts[i]
 		nameByID[a.ID] = a.Name
 	}
 	return nameByID, nil
@@ -188,8 +188,8 @@ func (h *Handler) cloudAccountNamesByID(ctx context.Context) (map[string]string,
 // allows, in place and in order. Recs without an account are dropped.
 func filterRecommendationsInScope(allowedAccounts auth.AccountScope, nameByID map[string]string, recs []config.RecommendationRecord) []config.RecommendationRecord {
 	filtered := recs[:0]
-	for _rvc := range recs {
-		rec := recs[_rvc]
+	for i := range recs {
+		rec := recs[i]
 		if rec.CloudAccountID == nil {
 			continue
 		}

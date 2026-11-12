@@ -55,8 +55,8 @@ func (h *Handler) filterLadderConfigsByAllowedAccounts(ctx context.Context, sess
 		return configs, nil
 	}
 	filtered := make([]config.LadderConfigDB, 0, len(configs))
-	for _rvc := range configs {
-		c := configs[_rvc]
+	for i := range configs {
+		c := configs[i]
 		if allowed.Allows(c.CloudAccountID, "") {
 			filtered = append(filtered, c)
 		}

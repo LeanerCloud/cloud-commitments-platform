@@ -1865,8 +1865,8 @@ func (h *Handler) attachReshapeStaleness(ctx context.Context, resp *ReshapeRecom
 // firstNonEmptyCurrency returns the first RI CurrencyCode set, or "" when none
 // is, so the response omits currency_code instead of claiming USD (#361).
 func firstNonEmptyCurrency(instances []ec2ConvertibleRI) string {
-	for _rvc := range instances {
-		inst := instances[_rvc]
+	for i := range instances {
+		inst := instances[i]
 		if inst.CurrencyCode != "" {
 			return inst.CurrencyCode
 		}
