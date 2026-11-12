@@ -84,9 +84,9 @@ func (c *checker) one(source string, re *regexp.Regexp, text string) {
 func (c *checker) terraformVariables() {
 	c.t.Helper()
 	for _, v := range []struct {
-		file  string
 		block *regexp.Regexp
 		floor *regexp.Regexp
+		file  string
 	}{
 		{file: "terraform/modules/compute/aws/lambda/variables.tf", block: tfModuleTimeoutVar, floor: tfModuleFloor},
 		{file: "terraform/environments/aws/variables.tf", block: tfRootTimeoutVar, floor: tfRootFloor},
