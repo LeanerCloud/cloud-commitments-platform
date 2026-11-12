@@ -419,7 +419,7 @@ export async function triggerAutoRefreshIfStale(
 
   if (!isStale) return;
 
-  startRecommendationsRefresh(onReload);
+  startRecommendationsRefresh(onReload, { quietForbidden: true });
 }
 
 // pollForCollectionToClear bounds how long startRecommendationsRefresh waits
@@ -473,6 +473,7 @@ async function pollUntilCollectionClears(): Promise<RecommendationsFreshness | n
  */
 export function startRecommendationsRefresh(
   onReload: () => Promise<void> = loadRecommendations,
+  opts: { quietForbidden?: boolean } = {},
 ): Promise<void> {
   // Dedup: if a refresh is already in flight, don't start a second one.
   if (autoRefreshInFlight) return autoRefreshInFlight;
@@ -530,6 +531,13 @@ export function startRecommendationsRefresh(
         return;
       }
       inFlight.dismiss();
+      // #619: the refresh needs unrestricted account scope, so a scoped user
+      // gets a 403 for an action they never asked for. Stay quiet on the
+      // automatic path only.
+      if (status === 403 && opts.quietForbidden) {
+        console.info('Skipped automatic recommendations refresh (not permitted):', err);
+        return;
+      }
       const message =
         err instanceof Error
           ? err.message

@@ -1,7 +1,7 @@
 /**
  * Recommendations module tests
  */
-import { loadRecommendations, openPurchaseModal, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, refreshRecommendations, setupRecommendationsHandlers, pickBestVariantPerCell, seedGlobalDefaults, effectiveMonthlySavings, effectiveSavingsPct, displaySavingsPct, onDemandMonthly, groupRecsByCell, cellSummary, pageLevelRange, resetExpandedCells, resetAutoRefreshInFlight, scaleCost, formatCostForPeriod, periodSuffix, loadColumnVisibility, saveColumnVisibility, resetColumnVisibilityState, TOGGLEABLE_COLUMNS, COLUMN_DEFS, isHomogeneousSelection, renderUsageSparkline, loadColumnFilters, saveColumnFilters, resetColumnFiltersState, spGroupKey, groupSpCellKeys, formatCapacity, scaleRecForCapacity, weightedDisplaySavingsPct } from '../recommendations';
+import { loadRecommendations, startRecommendationsRefresh, openPurchaseModal, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, refreshRecommendations, setupRecommendationsHandlers, pickBestVariantPerCell, seedGlobalDefaults, effectiveMonthlySavings, effectiveSavingsPct, displaySavingsPct, onDemandMonthly, groupRecsByCell, cellSummary, pageLevelRange, resetExpandedCells, resetAutoRefreshInFlight, scaleCost, formatCostForPeriod, periodSuffix, loadColumnVisibility, saveColumnVisibility, resetColumnVisibilityState, TOGGLEABLE_COLUMNS, COLUMN_DEFS, isHomogeneousSelection, renderUsageSparkline, loadColumnFilters, saveColumnFilters, resetColumnFiltersState, spGroupKey, groupSpCellKeys, formatCapacity, scaleRecForCapacity, weightedDisplaySavingsPct } from '../recommendations';
 import type { CostPeriod } from '../state';
 import { HOURS_PER_MONTH } from '../lib/hours-per-month';
 
@@ -1720,6 +1720,43 @@ describe('Recommendations Module', () => {
           message: 'Recommendations refresh failed: Network timeout',
           kind: 'error',
         }),
+      );
+    });
+
+    // Issue #619: a scoped user's POST /recommendations/refresh is a 403 by
+    // design, so the automatic refresh must not report it as a failure.
+    test('auto-refresh 403 (scoped user) — in-flight toast dismissed, no error toast (#619)', async () => {
+      mockGetRecs();
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+        last_collected_at: null,
+        last_collection_error: null,
+      });
+      (recsApi.refreshRecommendations as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('permission denied'), { status: 403 }),
+      );
+      const dismiss = jest.fn();
+      mockShowToast.mockReturnValueOnce({ dismiss });
+      const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+
+      await loadRecommendations();
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+
+      expect(recsApi.refreshRecommendations).toHaveBeenCalledTimes(1);
+      expect(dismiss).toHaveBeenCalledTimes(1);
+      expect(infoSpy).toHaveBeenCalledTimes(1);
+      infoSpy.mockRestore();
+      for (const [arg] of mockShowToast.mock.calls) {
+        expect((arg as { kind: string }).kind).not.toBe('error');
+      }
+    });
+
+    test('explicit refresh 403 still shows the error toast (#619)', async () => {
+      (recsApi.refreshRecommendations as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('permission denied'), { status: 403 }),
+      );
+      await startRecommendationsRefresh(async () => undefined);
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Recommendations refresh failed: permission denied', kind: 'error' }),
       );
     });
 
