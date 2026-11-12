@@ -402,3 +402,36 @@ func TestCarryAzureHold_ExpiredHeldAccountKeysIncludedEveryCycle(t *testing.T) {
 	assert.ElementsMatch(t, []string{"a", "c"}, evict, "both stay evicted while their rows are stored")
 	assert.Equal(t, []string{"a", "c"}, azureOf(t, got).ExpiredHoldAccountIDs)
 }
+
+func TestUnreadableMarkerHold(t *testing.T) {
+	assert.Nil(t, unreadableMarkerHold(setOf(), holdNow), "no stored Azure rows, nothing to hold")
+
+	got := azureOf(t, unreadableMarkerHold(setOf("b", "a", ambientAccountKey), holdNow))
+	assert.Equal(t, []string{ambientAccountKey, "a", "b"}, got.HeldAccountIDs)
+	assert.Equal(t, map[string]time.Time{ambientAccountKey: holdNow, "a": holdNow, "b": holdNow}, got.HeldSince)
+	assert.Equal(t, 1, got.Reasons[PartialReasonPricingUnavailable])
+	assert.Equal(t, 3, got.IncompleteAccounts)
+}
+
+// The synthetic previous marker of an unreadable column runs through the normal merge.
+func TestCarryAzureHold_UnreadableMarkerHoldsEveryStoredAccountUntilItRecollects(t *testing.T) {
+	stored := setOf("a", "b")
+	prev := unreadableMarkerHold(stored, holdNow)
+	awsOnly := func() *RecommendationsCollectionPartial {
+		return &RecommendationsCollectionPartial{Providers: []PartialProviderSweep{{Provider: "aws", IncompleteAccounts: 1}}}
+	}
+
+	got, evict := carryAzureHold(prev, awsOnly(), []SuccessfulCollect{{Provider: "aws"}}, stored, nil, holdNow)
+	sweep := azureSweep(got)
+	require.NotNil(t, sweep)
+	assert.Equal(t, []string{"a", "b"}, sweep.HeldAccountIDs)
+	assert.Equal(t, map[string]time.Time{"a": holdNow, "b": holdNow}, sweep.HeldSince)
+	assert.Equal(t, 1, sweep.Reasons[PartialReasonPricingUnavailable])
+	assert.Empty(t, evict, "the hold starts now, so nothing expires")
+	assert.Len(t, got.Providers, 2, "the other provider's sweep is kept")
+
+	a := "a"
+	got, evict = carryAzureHold(prev, awsOnly(), azureCollect(&a), stored, nil, holdNow)
+	assert.Equal(t, []string{"b"}, azureSweep(got).HeldAccountIDs, "a re-priced, b stays held")
+	assert.Empty(t, evict)
+}

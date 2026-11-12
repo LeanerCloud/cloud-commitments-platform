@@ -108,4 +108,14 @@ func TestAzurePricingCorruptMarkerRefuses(t *testing.T) {
 	require.NoError(t, err)
 
 	require.ErrorIs(t, mgr.staleAzurePricingRefusal(ctx, exec), ErrStaleAzurePricing)
+
+	// The next collection resets the marker with the account held: still refused, now by the held path.
+	aws := config.RecommendationRecord{ID: "a1", Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+		Savings: 10, UpfrontCost: 100, Count: 1, Term: 12, Payment: "no-upfront"}
+	require.NoError(t, store.UpsertRecommendationsWithPartial(ctx, time.Now().UTC().Add(time.Minute),
+		[]config.RecommendationRecord{aws}, []config.SuccessfulCollect{{Provider: "aws"}}, nil))
+	fresh, err := store.GetRecommendationsFreshness(ctx)
+	require.NoError(t, err)
+	require.False(t, fresh.LastCollectionPartialUnreadable)
+	require.ErrorIs(t, mgr.staleAzurePricingRefusal(ctx, exec), ErrStaleAzurePricing)
 }

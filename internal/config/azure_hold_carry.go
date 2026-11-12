@@ -71,6 +71,25 @@ func evictKeptExpired(evict []string, expiredPrev, stored map[string]bool) []str
 	return evict
 }
 
+// unreadableMarkerHold stands in for a previous marker that cannot be decoded:
+// it holds every Azure account with stored rows, from now, so the normal merge
+// keeps the ones that do not re-price this cycle held. The real hold can only
+// have been older, so this errs towards refusing. nil when nothing is stored.
+func unreadableMarkerHold(stored map[string]bool, now time.Time) *RecommendationsCollectionPartial {
+	if len(stored) == 0 {
+		return nil
+	}
+	ids := slices.Sorted(maps.Keys(stored))
+	since := make(map[string]time.Time, len(ids))
+	for _, id := range ids {
+		since[id] = now
+	}
+	return &RecommendationsCollectionPartial{Providers: []PartialProviderSweep{{
+		Provider: "azure", IncompleteAccounts: len(ids), HeldAccountIDs: ids, HeldSince: since,
+		Reasons: map[string]int{PartialReasonPricingUnavailable: 1},
+	}}}
+}
+
 // carriedFromPrev returns the previously held accounts not re-priced this cycle
 // that still have stored rows, and whether an ambient hold is unresolved.
 func carriedFromPrev(prev *RecommendationsCollectionPartial, repriced, stored map[string]bool) (carried []string, unresolved bool) {

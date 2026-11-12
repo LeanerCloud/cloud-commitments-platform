@@ -82,9 +82,14 @@ func (s *PostgresStore) UpsertRecommendationsWithPartial(ctx context.Context, co
 	// hold (a prune waiting on this collection relies on that order), so nothing
 	// after it may wait on recommendations rows: the expired-hold delete skips
 	// rows another tx holds instead.
-	partialJSON, markerErr := lockedMarkerJSON(ctx, tx, collectedAt, partial, successfulCollects)
+	partialJSON, reset, markerErr := lockedMarkerJSON(ctx, tx, collectedAt, partial, successfulCollects)
 	if markerErr != nil {
 		return markerErr
+	}
+	var collectionNote *string
+	if reset {
+		note := markerResetNote
+		collectionNote = &note
 	}
 
 	// last_collected_at only moves forward (issue #111). Two collections can
@@ -97,10 +102,10 @@ func (s *PostgresStore) UpsertRecommendationsWithPartial(ctx context.Context, co
 	if _, err := tx.Exec(ctx, `
 		UPDATE recommendations_state
 		   SET last_collected_at       = GREATEST(last_collected_at, $1),
-		       last_collection_error   = NULL,
+		       last_collection_error   = $3::text,
 		       last_collection_partial = $2::jsonb
 		 WHERE id = 1
-	`, collectedAt, partialJSON); err != nil {
+	`, collectedAt, partialJSON, collectionNote); err != nil {
 		return fmt.Errorf("failed to update state: %w", err)
 	}
 
@@ -188,52 +193,66 @@ func encodeCollectionPartial(partial *RecommendationsCollectionPartial) ([]byte,
 	return encoded, nil
 }
 
+// markerResetNote is shown to users as last_collection_error after an
+// unreadable marker was overwritten; a later provider error is joined to it.
+const markerResetNote = "the stored pricing-hold marker was unreadable and has been reset: every Azure account is treated as held until it next collects successfully"
+
 // lockedMarkerJSON returns the encoded marker to write: partial with the
 // previous Azure hold merged in under the state row lock, and deletes the
-// stale rows of accounts whose hold just expired.
-func lockedMarkerJSON(ctx context.Context, tx pgx.Tx, now time.Time, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) ([]byte, error) {
-	merged, evict, err := carryHoldInTx(ctx, tx, now, partial, collects)
+// stale rows of accounts whose hold just expired. reset reports that an
+// unreadable previous marker was replaced by a hold on every stored Azure account.
+func lockedMarkerJSON(ctx context.Context, tx pgx.Tx, now time.Time, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) (encoded []byte, reset bool, err error) {
+	merged, evict, reset, err := carryHoldInTx(ctx, tx, now, partial, collects)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := evictExpiredHoldRows(ctx, tx, now, evict); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return encodeCollectionPartial(merged)
+	encoded, err = encodeCollectionPartial(merged)
+	return encoded, reset, err
 }
 
 // carryHoldInTx locks the state row, then merges the previous Azure pricing
 // hold into partial and ages it. The lock serializes this read-merge-write
 // against every concurrent collection. It does nothing else when
 // there is no hold to carry, no expired ids and this cycle holds nothing. An
-// unreadable row or account list fails the tx.
-func carryHoldInTx(ctx context.Context, tx pgx.Tx, now time.Time, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) (*RecommendationsCollectionPartial, []string, error) {
+// unreadable account list fails the tx. An unreadable previous marker never
+// does: it is replaced by a hold on every stored Azure account (reset), because
+// refusing the write would block every provider's collection.
+func carryHoldInTx(ctx context.Context, tx pgx.Tx, now time.Time, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) (merged *RecommendationsCollectionPartial, evict []string, reset bool, err error) {
 	var raw []byte
 	if err := tx.QueryRow(ctx, `SELECT last_collection_partial FROM recommendations_state WHERE id = 1 FOR UPDATE`).Scan(&raw); err != nil {
-		return nil, nil, fmt.Errorf("failed to lock recommendations_state: %w", err)
+		return nil, nil, false, fmt.Errorf("failed to lock recommendations_state: %w", err)
 	}
-	prev, err := decodeCollectionPartial(raw)
+	prev, decodeErr := decodeCollectionPartial(raw)
+	if decodeErr == nil && !holdNeedsCarry(prev, partial) {
+		return partial, nil, false, nil
+	}
+	stored, err := storedAzureKeys(ctx, tx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("recommendations_state.last_collection_partial is unreadable, so the Azure pricing hold cannot be carried; "+
-			"repair it with: UPDATE recommendations_state SET last_collection_partial = NULL WHERE id = 1: %w", err)
+		return nil, nil, false, err
 	}
-	if !holdNeedsCarry(prev, partial) {
-		return partial, nil, nil
-	}
-	rows, err := tx.Query(ctx, `SELECT DISTINCT account_key::text FROM recommendations WHERE provider = 'azure'`)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list azure accounts with stored rows: %w", err)
-	}
-	stored, err := scanKeySet(rows, "azure account key")
-	if err != nil {
-		return nil, nil, err
+	if decodeErr != nil {
+		logging.Errorf("recommendations_state.last_collection_partial is unreadable; resetting it with every Azure account held "+
+			"(or repair it with: UPDATE recommendations_state SET last_collection_partial = NULL WHERE id = 1): %v", decodeErr)
+		prev, reset = unreadableMarkerHold(stored, now), len(stored) > 0
 	}
 	active, err := activeAzureAccounts(ctx, tx, prev)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	merged, evict := carryAzureHold(prev, partial, collects, stored, active, now)
-	return merged, evict, nil
+	merged, evict = carryAzureHold(prev, partial, collects, stored, active, now)
+	return merged, evict, reset, nil
+}
+
+// storedAzureKeys returns the account_key of every provider=azure row.
+func storedAzureKeys(ctx context.Context, tx pgx.Tx) (map[string]bool, error) {
+	rows, err := tx.Query(ctx, `SELECT DISTINCT account_key::text FROM recommendations WHERE provider = 'azure'`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list azure accounts with stored rows: %w", err)
+	}
+	return scanKeySet(rows, "azure account key")
 }
 
 // holdNeedsCarry reports whether the previous marker has a hold or expired ids
@@ -678,9 +697,9 @@ func decodeCollectionPartial(raw []byte) (*RecommendationsCollectionPartial, err
 func (s *PostgresStore) SetRecommendationsCollectionError(ctx context.Context, errMsg string) error {
 	if _, err := s.db.Exec(ctx, `
 		UPDATE recommendations_state
-		   SET last_collection_error = $1
+		   SET last_collection_error = CASE WHEN last_collection_error = $2 THEN $2 || '; ' || $1 ELSE $1 END
 		 WHERE id = 1
-	`, errMsg); err != nil {
+	`, errMsg, markerResetNote); err != nil {
 		return fmt.Errorf("failed to set collection error: %w", err)
 	}
 	return nil

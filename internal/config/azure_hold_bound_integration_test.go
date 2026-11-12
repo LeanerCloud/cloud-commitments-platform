@@ -297,17 +297,55 @@ func (e boundEnv) seedCorruptMarker(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestUpsertRecommendationsWithPartial_CorruptMarkerFailsTheWriteWithRepairHint(t *testing.T) {
+// An unreadable marker never blocks a write: it is overwritten with every stored
+// Azure account held, so the purchase gate refuses them until they re-collect.
+func TestUpsertRecommendationsWithPartial_CorruptMarkerResetHoldsStoredAzureAccounts(t *testing.T) {
 	e := newBoundEnv(t)
-	acct := e.account(t, "sub-corrupt-write")
+	acct := e.account(t, "sub-corrupt-reset")
+	require.NoError(t, e.store.UpsertRecommendations(e.ctx, e.base.Add(-48*time.Hour),
+		[]config.RecommendationRecord{azureAccountRec("r1", acct, "D2")}, nil))
 	e.seedCorruptMarker(t)
 
-	err := e.store.UpsertRecommendationsWithPartial(e.ctx, e.base, []config.RecommendationRecord{azureAccountRec("r1", acct, "D2")},
-		[]config.SuccessfulCollect{{Provider: "azure", CloudAccountID: &acct}}, nil)
+	require.NoError(t, e.store.UpsertRecommendationsWithPartial(e.ctx, e.base,
+		[]config.RecommendationRecord{awsRec("a1", "ec2", "us-east-1", "m5.large", 10)},
+		[]config.SuccessfulCollect{{Provider: "aws"}}, nil), "a non-Azure collection must not fail on a corrupt marker")
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "UPDATE recommendations_state SET last_collection_partial = NULL WHERE id = 1")
-	require.Zero(t, e.rowCount(t, acct), "the failed write must roll back")
+	var awsRows int
+	require.NoError(t, e.db.QueryRow(e.ctx, `SELECT count(*) FROM recommendations WHERE provider = 'aws'`).Scan(&awsRows))
+	require.Equal(t, 1, awsRows)
+	require.Equal(t, 1, e.rowCount(t, acct), "the Azure rows are kept, not evicted")
+	sweep := e.azureSweep(t)
+	require.Equal(t, []string{acct}, sweep.HeldAccountIDs)
+	require.True(t, e.base.Equal(sweep.HeldSince[acct]), "the hold ages from the reset: %v", sweep.HeldSince[acct])
+	fresh, err := e.store.GetRecommendationsFreshness(e.ctx)
+	require.NoError(t, err)
+	require.False(t, fresh.LastCollectionPartialUnreadable)
+	require.NotNil(t, fresh.LastCollectionError)
+	require.Contains(t, *fresh.LastCollectionError, "unreadable and has been reset")
+
+	// A later provider error is joined to the reset note, not replacing it.
+	require.NoError(t, e.store.SetRecommendationsCollectionError(e.ctx, "azure: boom"))
+	fresh, err = e.store.GetRecommendationsFreshness(e.ctx)
+	require.NoError(t, err)
+	require.Contains(t, *fresh.LastCollectionError, "unreadable and has been reset")
+	require.Contains(t, *fresh.LastCollectionError, "azure: boom")
+}
+
+func TestUpsertRecommendationsWithPartial_CorruptMarkerResetDropsAccountThatRecollects(t *testing.T) {
+	e := newBoundEnv(t)
+	a := e.account(t, "sub-corrupt-a")
+	b := e.account(t, "sub-corrupt-b")
+	require.NoError(t, e.store.UpsertRecommendations(e.ctx, e.base.Add(-48*time.Hour),
+		[]config.RecommendationRecord{azureAccountRec("r1", a, "D2"), azureAccountRec("r2", b, "D2")}, nil))
+	e.seedCorruptMarker(t)
+
+	require.NoError(t, e.store.UpsertRecommendationsWithPartial(e.ctx, e.base,
+		[]config.RecommendationRecord{azureAccountRec("r3", a, "D4")},
+		[]config.SuccessfulCollect{{Provider: "azure", CloudAccountID: &a}}, nil))
+
+	require.Equal(t, []string{b}, e.azureSweep(t).HeldAccountIDs, "only the account that did not re-collect stays held")
+	require.Equal(t, 1, e.rowCount(t, a), "a's stale row is replaced by the re-collected one")
+	require.Equal(t, 1, e.rowCount(t, b))
 }
 
 func TestGetRecommendationsFreshness_CorruptMarkerIsReportedNotFatal(t *testing.T) {
