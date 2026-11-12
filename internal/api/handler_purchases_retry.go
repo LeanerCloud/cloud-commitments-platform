@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -181,4 +184,177 @@ func (h *Handler) loadAndValidateRetryRequest(ctx context.Context, req *events.L
 	}
 
 	return failedExec, session, nil
+}
+
+// authorizeRetrySession runs the account-scope gate (issue #92), the status
+// guard, and the retry-any/retry-own RBAC matrix, in that order. Extracted
+// from loadAndValidateRetryRequest to keep that function under the
+// cyclomatic-complexity ceiling; the order is preserved from the original
+// inline sequence, so the security boundary is unchanged.
+func (h *Handler) authorizeRetrySession(ctx context.Context, session *Session, failedExec *config.PurchaseExecution) error {
+	// Account-scope gate (issue #92): retry relied only on the retry-any/
+	// retry-own RBAC matrix below and never consulted allowed_accounts. Runs
+	// before the status check so an out-of-scope caller learns nothing about
+	// the execution, matching the 404 a scoped-out session already gets from
+	// the History endpoint for the same row.
+	if err := h.requireExecutionAccess(ctx, session, failedExec.ExecutionID); err != nil {
+		return err
+	}
+	if failedExec.Status != "failed" {
+		return NewClientError(409, fmt.Sprintf("execution %s cannot be retried (status=%s)", failedExec.ExecutionID, failedExec.Status))
+	}
+	// Authorize BEFORE the already-retried guard so an unauthorized
+	// caller can't enumerate descendant execution IDs by probing
+	// failed-row UUIDs (CR #168 review). The status check above is
+	// allowed pre-RBAC because non-admins can already see the row's
+	// status via the History endpoint they're entitled to read.
+	return h.authorizeSessionRetry(ctx, session, failedExec)
+}
+
+// checkRetryEligibilityGates runs the provider re-drive-safety (issue
+// #1668), persistent-failure (Q3) and retry-attempt-threshold (Q2)
+// gates and returns the appropriate 409 ClientError when any fires.
+// Extracted from loadAndValidateRetryRequest to keep that function
+// under the cyclomatic-complexity ceiling without flattening the gate
+// sequence.
+func checkRetryEligibilityGates(failedExec *config.PurchaseExecution, req *events.LambdaFunctionURLRequest) error {
+	// Provider re-drive safety (issue #1668). A "failed" row may in fact
+	// have landed its commitment at the provider (a timeout, a lost
+	// response, a post-purchase write that failed), so every retry is
+	// potentially a re-drive. purchase.RetryRefusalReason is the reaper's
+	// RedriveRefusalReason minus the EC2 and Azure savings-plans refusals for a
+	// row proven to have sent nothing (no_submission at attempt 0). The
+	// remaining reasons exist exactly when the provider offers nothing that
+	// would collapse the second attempt onto the first: AWS EC2 (no client
+	// token; a lost response is reported as outcome unknown), Azure
+	// savings-plans (no server-side idempotency key, no tag-based lookup) plus
+	// any provider the predicate does not recognize. A failed EC2 or Azure
+	// savings-plans row that may have sent therefore cannot be retried; the
+	// operator checks the account and starts a new purchase. Redshift is gated
+	// by checkRedshiftRetryGate.
+	// If plan steps ever carry recommendations (platform#609), a failed EC2
+	// step will be un-retryable too and needs its own recovery path.
+	//
+	// This gate runs FIRST and, unlike the threshold below, ?force=true
+	// does NOT override it: a savings plan cannot be canceled, so there
+	// is no recovery from getting this wrong, and a duplicate is not what
+	// the operator clicking Retry is asking for. An operator who genuinely
+	// wants a second commitment can submit a fresh purchase, which is an
+	// explicit buy rather than a retry of one that may already exist.
+	//
+	// A refusal here is permanent: nothing about the row can change to make
+	// it retryable. So the gate must fire only where the duplicate hazard is
+	// real. An execution carrying no recommendations buys nothing and cannot
+	// double-buy, so the predicate stays silent on the empty case. The
+	// rec-less plan steps that createPurchaseExecutionsTx (handler_plans.go) and
+	// getOrCreateExecution (purchase/notifications.go) used to create are
+	// refused earlier in this handler instead (platform#609), because a retry of
+	// one can only fail the same way. Empty here always means empty as created,
+	// never "we could not load them": GetExecutionByID propagates a
+	// recommendations unmarshal failure as an error (config/store_postgres.go),
+	// which this handler has already turned into a 500 well before this gate.
+	if reason := purchase.RetryRefusalReason(failedExec); reason != "" {
+		return NewClientErrorWithDetails(409,
+			"this purchase cannot be retried safely: "+reason,
+			// ops_hint reuses the key the History UI already renders in
+			// place of the Retry button, so the reason reaches the operator
+			// today. redrive_unsafe distinguishes this PERMANENT refusal from
+			// the operator-fixable hints below, which clear once the
+			// configuration is fixed.
+			//
+			// History also sets redrive_unsafe on the row (handler_history.go)
+			// to hide Retry. That is presentation only. This refusal is
+			// enforced here, server-side, and does not depend on any client
+			// honoring it.
+			map[string]any{"ops_hint": reason, "redrive_unsafe": true})
+	}
+
+	// Persistent-failure block (Q3). Surfaces the ops_hint via the
+	// API for stale-cache callers; the History UI already shows it
+	// inline in place of the Retry button.
+	if hint := purchase.ResolveOpsHint(failedExec.Error); hint != "" {
+		return NewClientErrorWithDetails(409,
+			"this failure is operator-fixable; retrying without changing configuration will fail again",
+			map[string]any{"ops_hint": hint, "failure_reason": purchase.SanitizeStoredError(failedExec.Error)})
+	}
+
+	// Threshold soft-block (Q2). force=true (set by the frontend
+	// confirm-with-warning) skips the block but still increments the
+	// chain so the next retry is gated by the same threshold against
+	// the new attempt count.
+	force := strings.EqualFold(req.QueryStringParameters["force"], "true")
+	if !force && failedExec.RetryAttemptN >= retryThreshold {
+		return NewClientErrorWithDetails(409,
+			fmt.Sprintf("execution %s has been retried %d times already; pass ?force=true to override", failedExec.ExecutionID, failedExec.RetryAttemptN),
+			map[string]any{"retry_attempt_n": failedExec.RetryAttemptN, "threshold": retryThreshold})
+	}
+
+	return nil
+}
+
+// clonePtr returns a pointer to a copy of *p, or nil when p is nil, so a
+// value copied between two records never leaves them aliasing the same
+// pointee. nil is preserved rather than collapsed to a zero value: on
+// PurchaseExecution.CloudAccountID nil means "no account scope" (a root or
+// ambient-credentials execution) and is not interchangeable with "".
+func clonePtr[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+// authorizeSessionRetry is the retry-side mirror of
+// authorizeSessionCancel. Returns nil when the session is permitted to
+// retry the given failed execution under the retry-any / retry-own
+// rules (issue #47); 403 ClientError otherwise. Admins short-circuit;
+// non-admins must hold retry-any (allowed for any execution) or
+// retry-own (allowed only when the execution's CreatedByUserID matches
+// the session UserID — legacy NULL-creator rows are out of reach for
+// non-admins, same as the cancel path).
+func (h *Handler) authorizeSessionRetry(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	// Stateless admin API key: full access, no user row. Administrators-group
+	// users pass via the retry-any check below.
+	if session.UserID == apiKeyAdminUserID {
+		return nil
+	}
+	if h.auth == nil {
+		return NewClientError(500, "authentication service not configured")
+	}
+
+	hasAny, err := h.sessionHoldsVerb(ctx, session, auth.ActionRetryAny)
+	if err != nil {
+		return err
+	}
+	if hasAny {
+		return nil
+	}
+
+	hasOwn, err := h.sessionHoldsVerb(ctx, session, auth.ActionRetryOwn)
+	if err != nil {
+		return err
+	}
+	if !hasOwn {
+		return NewClientError(403, "permission denied: requires retry-any or retry-own on purchases")
+	}
+
+	if execution.CreatedByUserID == nil || *execution.CreatedByUserID != session.UserID {
+		return NewClientError(403, "permission denied: cannot retry another user's failed purchase")
+	}
+	return nil
+}
+
+// tryResolveActorEmail returns the email of the session-authenticated user
+// who made the request, or "" when the request carries no valid session.
+// Best-effort: the approve/cancel routes are AuthPublic (token-only), so
+// we don't require a session; we just capture it when present so the
+// auth-gated deep-link flow (frontend /purchases/{action}/:id → login
+// → session-authed call with ?token=…) can record per-user attribution
+// without changing the token-only fallback path used by message workers.
+func (h *Handler) tryResolveActorEmail(ctx context.Context, req *events.LambdaFunctionURLRequest) string {
+	if s := h.tryGetSession(ctx, req); s != nil {
+		return s.Email
+	}
+	return ""
 }
