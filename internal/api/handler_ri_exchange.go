@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1861,41 +1860,6 @@ type ExchangeQuoteResponse struct {
 	Region string `json:"Region"`
 }
 
-// exchangeAccountIDsInScope returns, sorted, every STS account id whose
-// exchange records the scope covers under exchangeRecordInScope. A covered id
-// is either a registered account's external id or a literal allow-list entry,
-// so testing those candidates finds them all. Literal entries that are
-// not STS ids (a UUID or a name) are kept too: they match no stored record,
-// and keeping them makes the set exactly what exchangeRecordInScope accepts.
-func exchangeAccountIDsInScope(allowed auth.AccountScope, accounts []config.CloudAccount) []string {
-	candidates := make(map[string]struct{}, len(allowed.Accounts)+len(accounts))
-	for _, a := range allowed.Accounts {
-		candidates[a] = struct{}{}
-	}
-	for i := range accounts {
-		candidates[accounts[i].ExternalID] = struct{}{}
-	}
-	ids := make([]string, 0, len(candidates))
-	for id := range candidates {
-		if exchangeRecordInScope(allowed, accounts, id) {
-			ids = append(ids, id)
-		}
-	}
-	sort.Strings(ids)
-	return ids
-}
-
-// exchangeRecordInScope reports whether the scope covers an exchange record's
-// STS account id, directly or through the single registered AWS account that
-// owns it.
-func exchangeRecordInScope(allowed auth.AccountScope, accounts []config.CloudAccount, stsAccountID string) bool {
-	acct := uniqueAccountByExternalID(accounts, "aws", stsAccountID)
-	if acct == nil {
-		return allowed.Allows(stsAccountID, "")
-	}
-	return allowed.Allows(stsAccountID, acct.Name) || allowed.Allows(acct.ID, acct.Name)
-}
-
 // approveRIExchange handles approval of a pending RI exchange.
 //
 // Three-mode dispatch mirroring approvePurchase (issue #286, issue #300):
@@ -2190,48 +2154,4 @@ func (h *Handler) rejectRIExchange(ctx context.Context, id, token string) (any, 
 	}
 
 	return map[string]string{"status": config.StatusCanceled}, nil
-}
-
-// RIExchangeConfigResponse is the response for GET /api/ri-exchange/config.
-type RIExchangeConfigResponse struct {
-	Mode                     string  `json:"mode"`
-	UtilizationThreshold     float64 `json:"utilization_threshold"`
-	MaxPaymentPerExchangeUSD float64 `json:"max_payment_per_exchange_usd"`
-	MaxPaymentDailyUSD       float64 `json:"max_payment_daily_usd"`
-	LookbackDays             int     `json:"lookback_days"`
-	AutoExchangeEnabled      bool    `json:"auto_exchange_enabled"`
-}
-
-// RIExchangeConfigUpdateRequest is the request body for PUT /api/ri-exchange/config.
-type RIExchangeConfigUpdateRequest struct {
-	Mode                     string  `json:"mode"`
-	UtilizationThreshold     float64 `json:"utilization_threshold"`
-	MaxPaymentPerExchangeUSD float64 `json:"max_payment_per_exchange_usd"`
-	MaxPaymentDailyUSD       float64 `json:"max_payment_daily_usd"`
-	LookbackDays             int     `json:"lookback_days"`
-	AutoExchangeEnabled      bool    `json:"auto_exchange_enabled"`
-}
-
-func (r *RIExchangeConfigUpdateRequest) validate() error {
-	if !config.IsValidRIExchangeMode(r.Mode) {
-		return NewClientError(400, "mode must be 'manual' or 'auto'")
-	}
-	if err := config.ValidateRIExchangeUtilizationThreshold("utilization_threshold", r.UtilizationThreshold); err != nil {
-		return NewClientError(400, err.Error())
-	}
-	if r.LookbackDays < 1 || r.LookbackDays > 365 {
-		return NewClientError(400, "lookback_days must be between 1 and 365")
-	}
-	if r.MaxPaymentPerExchangeUSD < 0 {
-		return NewClientError(400, "max_payment_per_exchange_usd must be >= 0")
-	}
-	if r.MaxPaymentDailyUSD < 0 {
-		return NewClientError(400, "max_payment_daily_usd must be >= 0")
-	}
-	return nil
-}
-
-// RIExchangeHistoryResponse is the response for GET /api/ri-exchange/history.
-type RIExchangeHistoryResponse struct {
-	Records []config.RIExchangeRecord `json:"records"`
 }
