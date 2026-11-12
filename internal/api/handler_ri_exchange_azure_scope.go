@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/aws/aws-lambda-go/events"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
@@ -154,4 +157,55 @@ func listOwnedAzureReservations(ctx context.Context, client azureExchangeClient)
 		return nil, NewClientError(502, "could not verify which subscription owns the requested reservations; refusing to proceed")
 	}
 	return owned, nil
+}
+
+// getAzureCompatibleOfferings prices a proposed Azure RI exchange and
+// returns the compatible offerings Azure is willing to accept plus the cost
+// preview, without committing anything. Requires "view:purchases" permission
+// plus allowed_accounts scope over the requested subscription, mirroring the
+// AWS quote endpoint.
+//
+// POST /api/ri-exchange/azure-instances/compatible-offerings.
+func (h *Handler) getAzureCompatibleOfferings(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
+	session, err := h.requirePermission(ctx, req, "view", "purchases")
+	if err != nil {
+		return nil, err
+	}
+
+	var body AzureCompatibleOfferingsRequestBody
+	if err = json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return nil, NewClientError(400, "invalid request body")
+	}
+	if validateErr := validateAzureOfferingsBody(body); validateErr != nil {
+		return nil, validateErr
+	}
+	if scopeErr := h.requireAzureSubscriptionScope(ctx, session, body.SubscriptionID); scopeErr != nil {
+		return nil, scopeErr
+	}
+
+	client, err := h.buildAzureExchangeClient(ctx, body.SubscriptionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build Azure exchange client: %w", err)
+	}
+	if client == nil {
+		return nil, NewClientError(404, fmt.Sprintf("no Azure account registered for subscription %q", body.SubscriptionID))
+	}
+
+	sources, err := checkAzureSourceOwnership(ctx, client, body.Sources, body.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	targets, err := toAzureExchangeTargets(body.Targets, body.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	preview, offerings, err := client.CalculateExchange(ctx, sources, targets)
+	if err != nil {
+		logging.Errorf("azure compatible offerings failed: %v", err)
+		return nil, mapAzureExchangeError("failed to find compatible offerings", err)
+	}
+
+	return &AzureCompatibleOfferingsResponse{Offerings: offerings, Preview: preview}, nil
 }
