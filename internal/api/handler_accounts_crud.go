@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // CloudAccountRequest is the request body for create/update account endpoints.
@@ -138,4 +140,117 @@ func keepOmittedAccountFlags(account, existing *config.CloudAccount, req CloudAc
 	if req.AWSIsOrgRoot == nil {
 		account.AWSIsOrgRoot = existing.AWSIsOrgRoot
 	}
+}
+
+// updateAccount handles PUT /api/accounts/:id.
+func (h *Handler) updateAccount(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, id string) (any, error) {
+	if err := validateUUID(id); err != nil {
+		return nil, err
+	}
+
+	session, err := h.requirePermission(ctx, httpReq, "update", "accounts")
+	if err != nil {
+		return nil, err
+	}
+
+	var req CloudAccountRequest
+	err = json.Unmarshal([]byte(httpReq.Body), &req)
+	if err != nil {
+		return nil, NewClientError(400, "invalid request body")
+	}
+
+	err = validateCloudAccountRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	existing, err := h.requireAccountAccess(ctx, session, id)
+	if err != nil {
+		return nil, err
+	}
+	// After the access check, so an out-of-scope caller gets the 404
+	// without triggering an STS call.
+	if err := h.requireHostForEmptyRoleARN(ctx, id, &req); err != nil {
+		return nil, err
+	}
+
+	// The provider is fixed when the account is created: UpdateCloudAccount
+	// does not write it, and credentials, service overrides and plan
+	// memberships all depend on it. Refuse a change rather than echo back a
+	// provider that was never saved.
+	if req.Provider != existing.Provider {
+		return nil, NewClientError(400, fmt.Sprintf(
+			"provider cannot be changed (this account is %s); delete the account and add it again under the new provider", existing.Provider))
+	}
+
+	account := cloudAccountFromRequest(req)
+	keepOmittedAccountFlags(account, existing, req)
+	account.ID = id
+	account.CreatedAt = existing.CreatedAt
+	account.CreatedBy = existing.CreatedBy
+	account.UpdatedAt = time.Now()
+
+	if err := h.config.UpdateCloudAccount(ctx, account); err != nil {
+		return nil, classifyStoreError(err, fmt.Sprintf("an account with external ID %q already exists for %s", req.ExternalID, req.Provider))
+	}
+
+	annotateAccountNotices(account, "")
+	return account, nil
+}
+
+// deleteAccount handles DELETE /api/accounts/:id.
+//
+// Preflights the delete against the purchase_executions that still need the
+// account (preflightAccountDelete). Executions in a terminal status do not
+// block: DeleteCloudAccount detaches them (cloud_account_id = NULL) and keeps
+// them as history (issue #265). Migration 000053 also enforces ON DELETE
+// RESTRICT at the DB level, so a live execution that races past the
+// preflight still can't be orphaned.
+func (h *Handler) deleteAccount(ctx context.Context, req *events.LambdaFunctionURLRequest, id string) (any, error) {
+	if err := validateUUID(id); err != nil {
+		return nil, err
+	}
+
+	session, err := h.requirePermission(ctx, req, "delete", "accounts")
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify the user can access this account AND that it exists. Returns 404
+	// for both "doesn't exist" and "out of scope" to avoid existence leakage.
+	_, err = h.requireAccountAccess(ctx, session, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.preflightAccountDelete(ctx, id); err != nil {
+		return nil, err
+	}
+
+	if err := h.config.DeleteCloudAccount(ctx, id); err != nil {
+		// Race: the preflight found no live execution but one was inserted
+		// concurrently before we issued the DELETE. Migration 000053 enforces
+		// ON DELETE RESTRICT, so Postgres raises SQLSTATE 23503
+		// (foreign_key_violation). Terminal executions never cause this:
+		// DeleteCloudAccount detaches them in the same transaction. Re-run the
+		// preflight so the client gets the same structured 409 (pending with
+		// counts and ids, or active), and fall back to a bare pending 409 if
+		// the re-query fails or no longer sees the blocker.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			if perr := h.preflightAccountDelete(ctx, id); perr != nil {
+				if ce, ok := IsClientError(perr); ok {
+					return nil, ce
+				}
+			}
+			return nil, NewClientErrorWithDetails(409,
+				"cannot delete account: pending purchase(s) must be canceled first",
+				map[string]any{
+					"reason": "pending_executions",
+				})
+		}
+		return nil, fmt.Errorf("accounts: %w", err)
+	}
+
+	return nil, nil
 }
