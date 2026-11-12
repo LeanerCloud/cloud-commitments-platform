@@ -129,4 +129,18 @@ describe('Purchase History placeholders (issue #1681)', () => {
     await loadHistory();
     expect(cell('h-1', 'Plan')).toBe('—');
   });
+
+  test('a cancelled no-commitment row still shows its known provider and plan', async () => {
+    (api.getHistory as jest.Mock).mockResolvedValue({
+      summary: {},
+      purchases: [
+        makeRow({ purchase_id: 'c-1', status: 'cancelled', count: 0, provider: 'aws', plan_name: 'Prod plan' }),
+        makeRow({ purchase_id: 'c-2', status: 'cancelled', count: 0, provider: 'multiple', plan_name: 'Prod plan' }),
+      ],
+    });
+    await loadHistory();
+    expect(cell('c-1', 'Provider')).toBe('AWS');
+    expect(cell('c-1', 'Plan')).toBe('Prod plan');
+    expect(cell('c-2', 'Provider')).toBe('\u2014');
+  });
 });

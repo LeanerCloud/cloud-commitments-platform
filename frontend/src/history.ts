@@ -705,8 +705,11 @@ function termCell(p: HistoryPurchase): string {
 }
 
 function providerCell(p: HistoryPurchase): string {
-  if (hasNoCommitments(p)) return MUTED_DASH;
-  if (!p.provider || p.provider === 'multiple') return '<span class="provider-badge">Multiple</span>';
+  // A no-commitment row (#181) still knows its provider when plan-originated
+  // (#1681); only the unattributable "multiple" fallback is meaningless there.
+  const unknown = !p.provider || p.provider === 'multiple';
+  if (hasNoCommitments(p) && unknown) return MUTED_DASH;
+  if (unknown) return '<span class="provider-badge">Multiple</span>';
   // Whitelist provider to prevent stored XSS via class attribute injection (#443).
   const safeProvider = (VALID_PROVIDERS as string[]).includes(p.provider) ? p.provider : 'unknown';
   return `<span class="provider-badge ${safeProvider}">${safeProvider.toUpperCase()}</span>`;
