@@ -736,3 +736,9 @@ variable "trusted_proxy_hops" {
     error_message = "trusted_proxy_hops must be an integer between 0 and 8."
   }
 }
+
+variable "enable_self_account_ingestion" {
+  description = "Grant the Container App identity Reader over the host subscription so the host account can be ingested as a Self account. Off by default: Reader also exposes CUDly's own Key Vault, PostgreSQL server, ACR and Container App environment."
+  type        = bool
+  default     = false
+}

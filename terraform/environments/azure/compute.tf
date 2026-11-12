@@ -79,6 +79,7 @@ module "compute_container_apps" {
   auto_migrate                   = var.auto_migrate
   admin_email                    = var.admin_email
   admin_password_secret_name     = coalesce(module.secrets.admin_password_secret_name, "")
+  enable_self_account_ingestion  = var.enable_self_account_ingestion
   archera_org_id                 = var.archera_org_id
   archera_plan_id                = var.archera_plan_id
   archera_api_key_secret_name    = var.archera_api_key_secret_name

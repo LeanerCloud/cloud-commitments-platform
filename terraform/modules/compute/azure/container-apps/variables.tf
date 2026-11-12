@@ -377,3 +377,9 @@ variable "archera_api_key_secret_name" {
   type        = string
   default     = ""
 }
+
+variable "enable_self_account_ingestion" {
+  description = "Grant the Container App identity Reader over the host subscription so the host account can be ingested as a Self account. Off by default: Reader also exposes CUDly's own Key Vault, PostgreSQL server, ACR and Container App environment."
+  type        = bool
+  default     = false
+}

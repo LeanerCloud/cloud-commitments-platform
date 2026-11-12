@@ -81,7 +81,7 @@ run "sync_armed_grants_write_on_that_secret_only" {
       azurerm_role_assignment.signing_key_crypto_user.role_definition_name == "Key Vault Crypto User",
       azurerm_role_assignment.acr_pull.role_definition_name == "AcrPull",
       azurerm_role_assignment.cost_management_reader.role_definition_name == "Cost Management Reader",
-      azurerm_role_assignment.subscription_reader.role_definition_name == "Reader",
+      length(azurerm_role_assignment.subscription_reader) == 0,
     ])
     error_message = "Only the per-secret grant may carry Key Vault Secrets Officer."
   }

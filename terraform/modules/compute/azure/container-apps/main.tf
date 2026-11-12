@@ -279,8 +279,12 @@ resource "azurerm_role_assignment" "cost_management_reader" {
 # Reader: allows the host container-app identity to enumerate VMs, Redis,
 # Cosmos, Search, SQL, and compute SKUs in the host subscription when the host
 # account is ingested as a "Self" account. Without this, every per-service SDK
-# list call against the host subscription returns 403.
+# list call against the host subscription returns 403. Opt-in: Reader over the
+# host subscription also exposes CUDly's own Key Vault, PostgreSQL server, ACR
+# and Container App environment to a compromised runtime (issue #323).
 resource "azurerm_role_assignment" "subscription_reader" {
+  count = var.enable_self_account_ingestion ? 1 : 0
+
   scope                = local.subscription_resource_id
   role_definition_name = "Reader"
   principal_id         = azurerm_user_assigned_identity.container_app.principal_id
