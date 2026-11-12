@@ -442,7 +442,7 @@ func TestHandler_createPlan_StoreFailureReturns500NoLeak(t *testing.T) {
 
 // TestHandler_createPlan_RejectsInvalidTargetAccountUUID verifies that a
 // malformed UUID in target_accounts is rejected before any DB write — same
-// validation contract as PUT /plans/:id/accounts (handler_accounts.go).
+// validation contract as PUT /plans/:id/accounts (handler_accounts_plans.go).
 func TestHandler_createPlan_RejectsInvalidTargetAccountUUID(t *testing.T) {
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)

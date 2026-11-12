@@ -2120,7 +2120,7 @@ func TestScheduler_CollectAzureForAccount_MissingSubscriptionIDFailsLoud(t *test
 // collectAWSForAccount took the ambient-credentials branch for ANY empty
 // role ARN regardless of auth mode -- including the empty string
 // org-discovery persists on a freshly-discovered member account pending
-// operator review (handler_accounts.go, persistDiscoveredMembers) -- which
+// operator review (handler_accounts_discover.go, persistDiscoveredMembers) -- which
 // silently collected the HOST account's Cost Explorer data and tagged it
 // with the member account's UUID: a purchase approved off one of those rows
 // is a money action taken in one account against another account's usage.

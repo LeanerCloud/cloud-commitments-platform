@@ -732,7 +732,7 @@ function getOverrideServicesForProvider(provider: string): ReadonlyArray<{ value
  *   currently has no payment set; once a payment is set, switching back
  *   would require deleting/recreating the override (out of scope for #23).
  * - The change handler PUTs only `{ payment }` — the backend's
- *   applyOverrideScalars (handler_accounts_overrides.go) treats unset request fields
+ *   overlayOverrideScalars (handler_accounts_overrides.go) treats unset request fields
  *   as "leave alone", so other override fields (term, coverage, etc.) are
  *   preserved.
  */
@@ -1761,7 +1761,7 @@ function resetOverrideModalState(): void {
 /**
  * Submit the create-override form. Sends a sparse PUT — fields left blank
  * (term/payment/coverage = "Inherit") are omitted so the backend's
- * applyOverrideScalars treats them as "unset → inherit global default".
+ * overlayOverrideScalars treats them as "unset → inherit global default".
  */
 async function submitOverrideForm(e: Event): Promise<void> {
   e.preventDefault();
