@@ -46,7 +46,7 @@ func TestEqualCountSavingsPlan(t *testing.T) {
 		count        int
 		hourly, want string
 		percent      float64
-	}{{1, "1.234", "1.23", 33}, {1, "1.234", "1.23", 0}, {3, "1.234", "0.41", 33}, {97, "0.97", "0.01", 33}, {1, "1e14", "100000000000000", 33}, {1, "1e20", "100000000000000000000", 33}} {
+	}{{count: 1, hourly: "1.234", want: "1.23", percent: 33}, {count: 1, hourly: "1.234", want: "1.23", percent: 0}, {count: 3, hourly: "1.234", want: "0.41", percent: 33}, {count: 97, hourly: "0.97", want: "0.01", percent: 33}, {count: 1, hourly: "1e14", want: "100000000000000", percent: 33}, {count: 1, hourly: "1e20", want: "100000000000000000000", percent: 33}} {
 		t.Run(fmt.Sprint(tc.count), func(t *testing.T) {
 			p := spPlan(100, 33)
 			equalCountRamp(t, p, tc.count, tc.percent)
@@ -109,8 +109,8 @@ func TestEqualCountInvalidQuantities(t *testing.T) {
 		coverage float64
 		want     string
 	}{
-		{"90071992547409", 99, "cannot represent whole cents"},
-		{"100000000000000.1", 100, "cannot represent whole cents"},
+		{hourly: "90071992547409", coverage: 99, want: "cannot represent whole cents"},
+		{hourly: "100000000000000.1", coverage: 100, want: "cannot represent whole cents"},
 	} {
 		p = spPlan(tc.coverage, 33)
 		equalCountRamp(t, p, 1, 33)
