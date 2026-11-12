@@ -150,7 +150,8 @@ func providerFilterParam(provider string) (string, error) {
 // strings are accepted (contact email is optional on cloud accounts).
 // The frontend pre-checks the same "has @ and a TLD" shape in
 // frontend/src/utils.ts isValidEmail and frontend/src/auth.ts EMAIL_SHAPE_RE;
-// this is the authoritative check, keep the two in sync.
+// this is the authoritative check and the frontend regexes are a looser
+// pre-check; keep the two in sync.
 func validateEmailFormat(email string) error {
 	if email == "" {
 		return nil
