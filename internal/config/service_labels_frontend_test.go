@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -57,35 +59,76 @@ func libraryServiceTypes(t *testing.T) []string {
 		}
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		require.NoError(t, err)
-		slugs = append(slugs, serviceTypeConsts(t, file)...)
+		found, err := serviceTypeConsts(file)
+		require.NoErrorf(t, err, "parse %s", path)
+		slugs = append(slugs, found...)
 	}
 	require.NotEmpty(t, slugs)
 	return slugs
 }
 
 // serviceTypeConsts returns the string values of the ServiceType constants
-// declared in file.
-func serviceTypeConsts(t *testing.T, file *ast.File) []string {
-	t.Helper()
+// declared in file. It reads the explicit typed form (`X ServiceType = "x"`),
+// the conversion form (`X = ServiceType("x")`) and specs that inherit a
+// previous spec's type and values; a ServiceType constant whose value is not a
+// string literal is an error, so a new declaration form fails loudly.
+func serviceTypeConsts(file *ast.File) ([]string, error) {
 	var slugs []string
+	var errs []error
 	for _, decl := range file.Decls {
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.CONST {
 			continue
 		}
+		var typ ast.Expr
+		var values []ast.Expr
 		for _, spec := range gen.Specs {
 			vs := spec.(*ast.ValueSpec)
-			if id, ok := vs.Type.(*ast.Ident); !ok || id.Name != "ServiceType" {
-				continue
+			if len(vs.Values) > 0 {
+				typ, values = vs.Type, vs.Values
 			}
-			for _, v := range vs.Values {
-				if lit, ok := v.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					s, err := strconv.Unquote(lit.Value)
-					require.NoError(t, err)
-					slugs = append(slugs, s)
+			typed := isServiceTypeIdent(typ)
+			for i, v := range values {
+				slug, isConversion, ok := serviceTypeLiteral(v)
+				switch {
+				case ok:
+					if typed || isConversion {
+						slugs = append(slugs, slug)
+					}
+				case typed || isConversion:
+					name := "?"
+					if i < len(vs.Names) {
+						name = vs.Names[i].Name
+					}
+					errs = append(errs, fmt.Errorf("ServiceType constant %s has a value the label guard cannot read; teach serviceTypeConsts this form", name))
 				}
 			}
 		}
 	}
-	return slugs
+	return slugs, errors.Join(errs...)
+}
+
+func isServiceTypeIdent(e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == "ServiceType"
+}
+
+// serviceTypeLiteral unquotes v when it is a string literal or a
+// ServiceType("literal") conversion. isConversion reports a ServiceType(...)
+// call, which is a ServiceType constant even when its argument is unreadable.
+func serviceTypeLiteral(v ast.Expr) (slug string, isConversion, ok bool) {
+	arg := v
+	if call, isCall := v.(*ast.CallExpr); isCall && isServiceTypeIdent(call.Fun) {
+		isConversion = true
+		if len(call.Args) != 1 {
+			return "", true, false
+		}
+		arg = call.Args[0]
+	}
+	lit, isLit := arg.(*ast.BasicLit)
+	if !isLit || lit.Kind != token.STRING {
+		return "", isConversion, false
+	}
+	s, err := strconv.Unquote(lit.Value)
+	return s, isConversion, err == nil
 }
