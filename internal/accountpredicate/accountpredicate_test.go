@@ -13,13 +13,13 @@ import (
 func TestBuild_PinnedSQL(t *testing.T) {
 	mixed := map[string][]string{"azure": {"sub-1"}, "": {"raw"}, "aws": {"123", "456"}, "gcp": nil}
 	tests := []struct {
+		ext        map[string][]string
 		name       string
+		wantClause string
 		base       []any
 		uuids      []string
-		ext        map[string][]string
-		match      ProviderMatch
-		wantClause string
 		wantArgs   []any
+		match      ProviderMatch
 	}{
 		{name: "no filter keeps args", base: []any{"s"}, match: ProviderExact, wantClause: "", wantArgs: []any{"s"}},
 		{name: "providers with no ids keep args", base: []any{"s"}, ext: map[string][]string{"aws": {}, "azure": nil}, match: ProviderExact, wantClause: "", wantArgs: []any{"s"}},
