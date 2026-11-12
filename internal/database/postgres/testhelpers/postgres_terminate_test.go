@@ -45,17 +45,17 @@ func TestTerminateAfterErrorSurvivesDeadContext(t *testing.T) {
 		name string
 		ctx  func() context.Context
 	}{
-		{"canceled parent", func() context.Context {
+		{name: "canceled parent", ctx: func() context.Context {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			return ctx
 		}},
-		{"expired deadline", func() context.Context {
+		{name: "expired deadline", ctx: func() context.Context {
 			ctx, cancel := context.WithTimeout(context.Background(), 0)
 			t.Cleanup(cancel)
 			return ctx
 		}},
-		{"live parent", func() context.Context { return context.Background() }},
+		{name: "live parent", ctx: func() context.Context { return context.Background() }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &recordingContainer{}
