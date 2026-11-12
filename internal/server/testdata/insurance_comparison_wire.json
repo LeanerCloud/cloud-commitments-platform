@@ -1,0 +1,142 @@
+{
+  "current_totals": {
+    "commitment_financials_monthly_rate": {
+      "commitment_cost": {
+        "total": 101.01,
+        "breakdown": {
+          "cloud_provider_cost": {
+            "total": 102.02
+          },
+          "archera_premium": 103.03
+        }
+      },
+      "commitment_savings": {
+        "gross": 104.04,
+        "net": 105.05
+      },
+      "covered_ondemand_cost": 106.06
+    },
+    "commitment_upfront_cost": 107.07
+  },
+  "hypothetical_totals": [
+    {
+      "contract_term": "three_year",
+      "payment_option": "partial_upfront",
+      "commitment_financials_monthly_rate": {
+        "commitment_cost": {
+          "total": 201.01,
+          "breakdown": {
+            "cloud_provider_cost": {
+              "total": 202.02
+            },
+            "archera_premium": 203.03
+          }
+        },
+        "commitment_savings": {
+          "gross": 204.04,
+          "net": 205.05
+        },
+        "covered_ondemand_cost": 206.06
+      },
+      "commitment_upfront_cost": 207.07,
+      "delta_vs_current": {
+        "monthly_net_savings": 211.11,
+        "monthly_commitment_cost": -212.12,
+        "upfront_cost": 213.13
+      },
+      "line_items": [
+        {
+          "line_item_id": "33333333-3333-4333-8333-333333333333",
+          "actual_term": "one_year",
+          "actual_payment_option": "all_upfront",
+          "actual_commitment_type": "aws/AmazonEC2",
+          "actual_term_reason": "fallback_closest_shorter"
+        }
+      ]
+    }
+  ],
+  "data": [
+    {
+      "line_item_id": "33333333-3333-4333-8333-333333333333",
+      "current": {
+        "is_current": true,
+        "offer_id": "44444444-4444-4444-8444-444444444444",
+        "selected_amount": 1.25,
+        "offer": {
+          "provider": "aws",
+          "region": "us-east-1",
+          "guaranteed_display_name": "Synthetic guaranteed offer"
+        },
+        "lease_menu_item_id": "66666666-6666-4666-8666-666666666666",
+        "commitment_type": "aws/AmazonEC2",
+        "contract_term": "one_year",
+        "payment_option": "no_upfront",
+        "discount_rate": 0.308,
+        "breakeven_days": null,
+        "commitment_upfront_cost": 307.07,
+        "commitment_financials_monthly_rate": {
+          "commitment_cost": {
+            "total": 301.01,
+            "breakdown": {
+              "cloud_provider_cost": {
+                "total": 302.02
+              },
+              "archera_premium": 303.03
+            }
+          },
+          "commitment_savings": {
+            "gross": 304.04,
+            "net": 305.05
+          },
+          "covered_ondemand_cost": 306.06
+        },
+        "delta_vs_current": {
+          "monthly_net_savings": 311.11,
+          "upfront_cost": 312.12,
+          "discount_rate": 0.313,
+          "breakeven_days": 314.14
+        }
+      },
+      "candidates": [
+        {
+          "is_current": false,
+          "offer_id": "55555555-5555-4555-8555-555555555555",
+          "selected_amount": 2.5,
+          "offer": {
+            "provider": "gcp",
+            "region": null
+          },
+          "lease_menu_item_id": null,
+          "commitment_type": "gcp/other",
+          "contract_term": null,
+          "payment_option": null,
+          "discount_rate": 0.408,
+          "breakeven_days": 409.09,
+          "commitment_upfront_cost": 407.07,
+          "commitment_financials_monthly_rate": {
+            "commitment_cost": {
+              "total": 401.01,
+              "breakdown": {
+                "cloud_provider_cost": {
+                  "total": 402.02
+                },
+                "archera_premium": 0
+              }
+            },
+            "commitment_savings": {
+              "gross": 404.04,
+              "net": 405.05
+            },
+            "covered_ondemand_cost": null
+          },
+          "delta_vs_current": {
+            "monthly_net_savings": -411.11,
+            "upfront_cost": 412.12,
+            "discount_rate": -0.413,
+            "breakeven_days": 414.14
+          }
+        }
+      ]
+    }
+  ]
+}
