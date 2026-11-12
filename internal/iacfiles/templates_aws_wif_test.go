@@ -99,19 +99,19 @@ func TestAWSWIFCLIProviderGuards(t *testing.T) {
 		env            map[string]string
 		create, reject bool
 	}{
-		{"absent", nil, true, false},
-		{"exact with lookalikes", map[string]string{"LIST_RESPONSE": listed}, false, false},
-		{"only lookalike", map[string]string{"LIST_RESPONSE": `{"OpenIDConnectProviderList":[{"Arn":"` + awsWIFProvider + `.evil.example"}]}`}, true, false},
-		{"list denied", map[string]string{"FAIL_OPERATION": "iam list-open-id-connect-providers"}, false, true},
-		{"create denied", map[string]string{"FAIL_OPERATION": "iam create-open-id-connect-provider"}, true, true},
-		{"get denied", map[string]string{"FAIL_OPERATION": "iam get-open-id-connect-provider"}, true, true},
-		{"missing audience", map[string]string{"LIST_RESPONSE": listed, "PROVIDER_RESPONSE": `{"Url":"accounts.google.com","ClientIDList":["other"],"ThumbprintList":[]}`}, false, true},
-		{"wrong URL", map[string]string{"PROVIDER_RESPONSE": `{"Url":"accounts.google.com.evil","ClientIDList":["sts.amazonaws.com"],"ThumbprintList":[]}`}, true, true},
-		{"zero thumbprint", map[string]string{"PROVIDER_RESPONSE": `{"Url":"accounts.google.com","ClientIDList":["sts.amazonaws.com"],"ThumbprintList":["0000000000000000000000000000000000000000"]}`}, true, true},
-		{"malformed list", map[string]string{"LIST_RESPONSE": `not-json`}, false, true},
-		{"malformed provider", map[string]string{"PROVIDER_RESPONSE": `{}`}, true, true},
-		{"wrong created ARN", map[string]string{"CREATE_RESPONSE": `{"OpenIDConnectProviderArn":"` + awsWIFProvider + `.evil"}`}, true, true},
-		{"duplicate exact", map[string]string{"LIST_RESPONSE": `{"OpenIDConnectProviderList":[{"Arn":"` + awsWIFProvider + `"},{"Arn":"` + awsWIFProvider + `"}]}`}, false, true},
+		{name: "absent", env: nil, create: true, reject: false},
+		{name: "exact with lookalikes", env: map[string]string{"LIST_RESPONSE": listed}, create: false, reject: false},
+		{name: "only lookalike", env: map[string]string{"LIST_RESPONSE": `{"OpenIDConnectProviderList":[{"Arn":"` + awsWIFProvider + `.evil.example"}]}`}, create: true, reject: false},
+		{name: "list denied", env: map[string]string{"FAIL_OPERATION": "iam list-open-id-connect-providers"}, create: false, reject: true},
+		{name: "create denied", env: map[string]string{"FAIL_OPERATION": "iam create-open-id-connect-provider"}, create: true, reject: true},
+		{name: "get denied", env: map[string]string{"FAIL_OPERATION": "iam get-open-id-connect-provider"}, create: true, reject: true},
+		{name: "missing audience", env: map[string]string{"LIST_RESPONSE": listed, "PROVIDER_RESPONSE": `{"Url":"accounts.google.com","ClientIDList":["other"],"ThumbprintList":[]}`}, create: false, reject: true},
+		{name: "wrong URL", env: map[string]string{"PROVIDER_RESPONSE": `{"Url":"accounts.google.com.evil","ClientIDList":["sts.amazonaws.com"],"ThumbprintList":[]}`}, create: true, reject: true},
+		{name: "zero thumbprint", env: map[string]string{"PROVIDER_RESPONSE": `{"Url":"accounts.google.com","ClientIDList":["sts.amazonaws.com"],"ThumbprintList":["0000000000000000000000000000000000000000"]}`}, create: true, reject: true},
+		{name: "malformed list", env: map[string]string{"LIST_RESPONSE": `not-json`}, create: false, reject: true},
+		{name: "malformed provider", env: map[string]string{"PROVIDER_RESPONSE": `{}`}, create: true, reject: true},
+		{name: "wrong created ARN", env: map[string]string{"CREATE_RESPONSE": `{"OpenIDConnectProviderArn":"` + awsWIFProvider + `.evil"}`}, create: true, reject: true},
+		{name: "duplicate exact", env: map[string]string{"LIST_RESPONSE": `{"OpenIDConnectProviderList":[{"Arn":"` + awsWIFProvider + `"},{"Arn":"` + awsWIFProvider + `"}]}`}, create: false, reject: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -174,10 +174,10 @@ func TestAWSWIFCLIAudienceAndLiteralClaims(t *testing.T) {
 		name, rendered, want string
 		override             map[string]string
 	}{
-		{"Azure default", "api://AzureADTokenExchange", "api://AzureADTokenExchange", nil},
-		{"rendered empty", "", "sts.amazonaws.com", nil},
-		{"explicit empty", "api://AzureADTokenExchange", "sts.amazonaws.com", map[string]string{"OIDC_AUDIENCE": ""}},
-		{"literal override", "default", `a"b\c`, map[string]string{"OIDC_AUDIENCE": `a"b\c`}},
+		{name: "Azure default", rendered: "api://AzureADTokenExchange", want: "api://AzureADTokenExchange", override: nil},
+		{name: "rendered empty", rendered: "", want: "sts.amazonaws.com", override: nil},
+		{name: "explicit empty", rendered: "api://AzureADTokenExchange", want: "sts.amazonaws.com", override: map[string]string{"OIDC_AUDIENCE": ""}},
+		{name: "literal override", rendered: "default", want: `a"b\c`, override: map[string]string{"OIDC_AUDIENCE": `a"b\c`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := awsWIFData()
