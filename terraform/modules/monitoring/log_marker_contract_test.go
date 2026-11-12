@@ -7,6 +7,7 @@ package monitoring_test
 import (
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
@@ -34,6 +35,33 @@ func TestMonitoringLogMarkersMatchGo(t *testing.T) {
 			if !re.MatchString(src) {
 				t.Errorf("%s: no failure_markers entry with token = %q (%s)", file, token, name)
 			}
+		}
+	}
+}
+
+// The ladder alarm matches the free-text ERROR lines of the ladder fire task
+// (issue #70), so every quoted term of its filter pattern must appear verbatim
+// in the Go source that logs them.
+func TestLadderAlarmPatternTermsMatchGo(t *testing.T) {
+	tf, err := os.ReadFile("aws/ladder_alerts.tf")
+	if err != nil {
+		t.Fatalf("reading ladder_alerts.tf: %v", err)
+	}
+	goSrc, err := os.ReadFile("../../../internal/purchase/ladder_fire_notice.go")
+	if err != nil {
+		t.Fatalf("reading ladder_fire_notice.go: %v", err)
+	}
+	line := regexp.MustCompile(`(?m)^\s*ladder_failure_pattern\s*=\s*"(.*)"\s*$`).FindStringSubmatch(string(tf))
+	if line == nil {
+		t.Fatal("ladder_alerts.tf: no ladder_failure_pattern assignment")
+	}
+	terms := regexp.MustCompile(`\\"([^"\\]+)\\"`).FindAllStringSubmatch(line[1], -1)
+	if len(terms) != 3 {
+		t.Fatalf("ladder_failure_pattern: want 3 quoted terms, got %d in %q", len(terms), line[1])
+	}
+	for _, m := range terms {
+		if !strings.Contains(string(goSrc), m[1]) {
+			t.Errorf("ladder_failure_pattern term %q is not in ladder_fire_notice.go", m[1])
 		}
 	}
 }
