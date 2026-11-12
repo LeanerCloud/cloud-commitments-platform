@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // AccountServiceOverrideRequest is the request body for service override endpoints.
@@ -112,4 +116,158 @@ func (h *Handler) saveAccountServiceOverride(ctx context.Context, httpReq *event
 	}
 
 	return override, nil
+}
+
+// mergeAndValidateServiceOverride is the read-merge step of an override PUT,
+// run inside the store's locked transaction: it merges the request onto the
+// stored row, then rejects an invalid (term, payment) combo on the merged
+// result. The check is permissive when no probe data exists, as for the
+// service-config PUT. It does no I/O.
+func mergeAndValidateServiceOverride(accountID, provider, service string, req AccountServiceOverrideRequest, existing *config.AccountServiceOverride, present map[string]bool, combos commitmentOptsSnapshot) (*config.AccountServiceOverride, error) {
+	override := buildServiceOverride(accountID, provider, service, req, existing, present, time.Now())
+	if err := combos.check(config.ServiceConfig{
+		Provider: override.Provider,
+		Service:  override.Service,
+		Term:     derefInt(override.Term),
+		Payment:  derefString(override.Payment),
+	}); err != nil {
+		return nil, err
+	}
+	return override, nil
+}
+
+// buildServiceOverride constructs an AccountServiceOverride by overlaying the
+// request onto the stored row (or an empty one). present names the request
+// keys the body carried: only those replace the stored value, so a one-field
+// PUT keeps the rest (#1775). A present key with a null value clears it.
+func buildServiceOverride(accountID, provider, service string, req AccountServiceOverrideRequest, existing *config.AccountServiceOverride, present map[string]bool, now time.Time) *config.AccountServiceOverride {
+	override := &config.AccountServiceOverride{}
+	if existing != nil {
+		*override = *existing
+	} else {
+		override.ID = uuid.New().String()
+		override.CreatedAt = now
+	}
+	override.AccountID, override.Provider, override.Service = accountID, provider, service
+	override.UpdatedAt = now
+
+	overlayOverrideScalars(override, req, present)
+	overlayOverrideSlices(override, req, present)
+
+	return override
+}
+
+func overlayOverrideScalars(o *config.AccountServiceOverride, req AccountServiceOverrideRequest, present map[string]bool) {
+	if present["enabled"] {
+		o.Enabled = req.Enabled
+	}
+	if present["term"] {
+		o.Term = req.Term
+	}
+	if present["payment"] {
+		o.Payment = req.Payment
+	}
+	if present["coverage"] {
+		o.Coverage = req.Coverage
+	}
+	if present["ramp_schedule"] {
+		o.RampSchedule = req.RampSchedule
+	}
+}
+
+func overlayOverrideSlices(o *config.AccountServiceOverride, req AccountServiceOverrideRequest, present map[string]bool) {
+	if present["include_engines"] {
+		o.IncludeEngines = req.IncludeEngines
+	}
+	if present["exclude_engines"] {
+		o.ExcludeEngines = req.ExcludeEngines
+	}
+	if present["include_regions"] {
+		o.IncludeRegions = req.IncludeRegions
+	}
+	if present["exclude_regions"] {
+		o.ExcludeRegions = req.ExcludeRegions
+	}
+	if present["include_types"] {
+		o.IncludeTypes = req.IncludeTypes
+	}
+	if present["exclude_types"] {
+		o.ExcludeTypes = req.ExcludeTypes
+	}
+}
+
+// derefInt dereferences an *int pointer, returning 0 for nil.
+func derefInt(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// derefString dereferences a *string pointer, returning "" for nil.
+func derefString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// deleteAccountServiceOverride handles DELETE /api/accounts/:id/service-overrides/:provider/:service.
+func (h *Handler) deleteAccountServiceOverride(ctx context.Context, req *events.LambdaFunctionURLRequest, providerServicePath string) (any, error) {
+	accountID, provider, service, err := parseServiceOverridePath(providerServicePath)
+	if err != nil {
+		return nil, NewClientError(400, err.Error())
+	}
+
+	session, err := h.requirePermission(ctx, req, "delete", "accounts")
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := h.requireAccountAccess(ctx, session, accountID); err != nil {
+		return nil, err
+	}
+
+	audit := config.AuditContext{Actor: configAuditActor(session)}
+	if err := h.config.WithTx(ctx, func(tx pgx.Tx) error {
+		return h.config.DeleteAccountServiceOverrideAuditedTx(ctx, tx, accountID, provider, service, audit)
+	}); err != nil {
+		return nil, fmt.Errorf("accounts: %w", err)
+	}
+
+	return nil, nil
+}
+
+// parseServiceOverridePath parses "uuid/service-overrides/provider/service"
+// and returns accountID, provider, service.
+func parseServiceOverridePath(path string) (accountID, provider, service string, err error) {
+	// Strip leading slash if present
+	path = strings.TrimPrefix(path, "/")
+
+	parts := strings.Split(path, "/")
+	// Expect: [accountID, "service-overrides", provider, service]
+	if len(parts) != 4 {
+		return "", "", "", fmt.Errorf("invalid service override path: expected uuid/service-overrides/provider/service")
+	}
+
+	accountID = parts[0]
+	if _, parseErr := uuid.Parse(accountID); parseErr != nil {
+		return "", "", "", fmt.Errorf("invalid account ID in path")
+	}
+
+	if parts[1] != "service-overrides" {
+		return "", "", "", fmt.Errorf("invalid service override path: missing service-overrides segment")
+	}
+
+	provider = parts[2]
+	service = parts[3]
+
+	if !validAccountProviders[provider] {
+		return "", "", "", fmt.Errorf("invalid provider %q: must be one of aws, azure, gcp", provider)
+	}
+	if service == "" || !serviceNameRegex.MatchString(service) {
+		return "", "", "", fmt.Errorf("invalid service name %q: must be 1-64 lowercase alphanumeric characters or hyphens", service)
+	}
+
+	return accountID, provider, service, nil
 }
