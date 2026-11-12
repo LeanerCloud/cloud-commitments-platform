@@ -351,6 +351,37 @@ jobs:
             echo "log_group=$(terraform output -raw lambda_log_group_name 2>/dev/null | grep -v '::' || echo "")"
           } >> "$GITHUB_OUTPUT"
 
+      # Second, idempotent migration runner (#31): the lazy ensureDB path stays
+      # on and the golang-migrate advisory lock serializes the two. Same job as
+      # the apply, so it shares the aws-tfstate-<env> serialization and the
+      # job's credentials. `--cli-read-timeout 0` keeps the CLI from retrying an
+      # invoke that is still running. `aws lambda invoke` exits 0 on a function
+      # error, so the script reads FunctionError and the payload status. Prod is
+      # excluded until the owner confirms it may migrate inside the deploy job
+      # (plan decision D1); it migrates on demand through the same invoke.
+      - name: Run database migrations
+        if: needs.prepare.outputs.target_environment != 'prod'
+        timeout-minutes: 20
+        env:
+          FUNCTION_NAME: ${{ steps.outputs.outputs.function_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FUNCTION_NAME" ]; then
+            echo "::error::Terraform did not output a Lambda function name; cannot run migrations."
+            exit 1
+          fi
+          out_dir="$(mktemp -d)"
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --cli-read-timeout 0 \
+            --cli-connect-timeout 60 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"migrate"}' \
+            "$out_dir/payload.json" >"$out_dir/invoke.json"
+          summary="$(scripts/check-lambda-migrate-result.sh "$out_dir/invoke.json" "$out_dir/payload.json")"
+          echo "$summary"
+          echo "$summary" >> "$GITHUB_STEP_SUMMARY"
+
       # The allowlist this apply wrote holds the origin read before the plan.
       # If the apply created or reissued the Function URL, the live origin is
       # not in it until the next deploy, which reads the new URL back.
