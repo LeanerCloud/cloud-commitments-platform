@@ -184,6 +184,20 @@ func TestSanitizeStoredError_HeadsAreClosed(t *testing.T) {
 		"Standard_D2", "Standard_B2ats_v2", "Standard_NV24ads_A10_v5", "Standard_NC6s_v3", "Basic_C0",
 		"D2", "D2s_v3", "NC6s_v3", "A1",
 		"GP_Gen5_8", "BC_Gen5_16", "GENERAL_PURPOSE", "c7i-flex.large",
+		// Real library types that used to fall back (#1753).
+		"Premium_P1", "100RU", "Cosmos_DB_100_RUs", "GeneralPurpose_Gen5_2", "db-n1-standard-1",
+		"STANDARD", "STANDARD_HA", "BASIC", "u7i-12tb.224xlarge", "a3-edgegpu-8g",
+		// One row per closed-set prefix, so none can be dropped silently.
+		"DW100c", "DW500c", "oi2.large.search", "om2.xlarge.search", "a1.medium", "c5.large", "d3.xlarge", "dc2.large",
+		"cc2.8xlarge", "cg1.4xlarge", "cr1.8xlarge", "dl1.24xlarge", "ds2.xlarge", "f1.2xlarge", "g5.xlarge", "gr6.4xlarge",
+		"h1.2xlarge", "hi1.4xlarge", "hs1.8xlarge", "i4i.large", "im4gn.large", "inf2.xlarge", "is4gen.medium", "p4d.24xlarge",
+		"r6g.large", "t3.micro", "trn1.2xlarge", "u-6tb1.56xlarge", "vt1.3xlarge", "x2idn.16xlarge", "z1d.large", "or1.large.search",
+		"Standard_B2ms", "Standard_DC2ads_v5", "Standard_DS3_v2", "Standard_E2s_v5", "Standard_EC2ads_v5", "Standard_ES1", "Standard_F2s_v2",
+		"Standard_FX4mds", "Standard_G2", "Standard_GS1", "Standard_H8", "Standard_HB120rs_v3", "Standard_HC44rs", "Standard_HX176rs",
+		"Standard_L8s_v3", "Standard_LS1", "Standard_M128ms", "Standard_ND96isr_H100_v5", "Standard_NV6",
+		"B2ms", "DC2ads_v5", "DS3_v2", "E2s_v5", "EC2ads_v5", "ES1", "F2s_v2", "FX4mds", "G2", "GS1", "H8", "HB120rs_v3", "HC44rs", "HX176rs",
+		"L8s_v3", "LS1", "M128ms", "ND96isr_v5", "NV6", "NC6s_v3", "NG8ads_V620", "NP10s",
+		"db-custom-2-8192", "c3-standard-192-metal", "NP10s", "NG8ads_V620", "Standard_D02", "e2-custom-medium-2048", "hpc7g.16xlarge", "a1.medium", "or1.medium.search", "db.r6g.large", "cache.r7g.large",
 	} {
 		assert.Equal(t, h+": "+note, SanitizeStoredError(h+": "+note), h)
 		assert.Equal(t, h+": "+category, SanitizeStoredError(h+": "+category), h)
@@ -194,6 +208,8 @@ func TestSanitizeStoredError_HeadsAreClosed(t *testing.T) {
 	for _, h := range []string{
 		"123456789012", "10.20.30.40", "db-prod.internal", "db.internal.example", "cudly_app", "web1.prod.example",
 		"m5.large.example.com", "ec2.large.example", "arn:aws:iam::123456789012:role/x", "evil", "AWS",
+		// Short made-up tokens that fit the old family shapes (#1753).
+		"DB1", "SQL1", "PG01", "web1.medium", "db1.large", "db.app1.large", "n2-standard-db-prod", "e2-micro-admin", "D02", "NX6", "db-n1-standard-db",
 	} {
 		unknown := ErrCategoryMessage(ErrCategoryUnknown)
 		assert.Equal(t, unknown, SanitizeStoredError(h+": "+category), h)

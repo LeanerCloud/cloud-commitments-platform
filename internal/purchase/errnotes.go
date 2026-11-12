@@ -168,17 +168,31 @@ var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + reg
 //   - AWS: [db.|cache.]<family>.<size>[.search] (m5.large, u-6tb1.metal,
 //     mac2-m2pro.metal, ultrawarm1.medium.search, m7i.metal-24xl) and db.serverless
 //   - Azure SQL: GP_Gen5_8 vCore SKUs and the tier names GENERAL_PURPOSE, BUSINESS_CRITICAL, HYPERSCALE
-//   - Azure: Standard_|Basic_ sizes (Standard_D2, Standard_NV24ads_A10_v5) and the
+//   - Azure: Standard_|Basic_|Premium_ sizes (Standard_D2, Standard_NV24ads_A10_v5) and the
 //     unprefixed forms the provider sends (D2, D2s_v3, NC6s_v3)
 //   - GCP: <family>-<series word>[-<digits or suffix>]... with a closed series word
 //     (n2-standard-2, n2d-custom-2-8192-ext, a2-ultragpu-8g, c3d-highmem-360-lssd, e2-micro)
 const resourceTypePattern = `(?:` +
 	`Compute|EC2Instance|SageMaker|Database|db\.serverless` +
-	`|(?:db\.|cache\.)?(?:[a-z]{1,4}[0-9][a-z0-9]{0,5}(?:-[a-z][a-z0-9]{1,7})?|u-[0-9]{1,2}tb[0-9]|ultrawarm1)\.(?:nano|micro|small|medium|large|[0-9]{0,3}xlarge|xlplus|metal(?:-[0-9]{1,2}xl)?)(?:\.search)?` +
-	`|(?:Standard|Basic)_[A-Za-z]{1,4}[0-9][A-Za-z0-9_-]{0,24}` +
-	`|[A-Z]{1,3}[0-9]{1,3}[a-z]{0,4}(?:_[A-Za-z0-9]{1,4}){0,2}|[A-Z]{1,3}_Gen[0-9]_[0-9]{1,3}|GENERAL_PURPOSE|BUSINESS_CRITICAL|HYPERSCALE` +
-	`|[a-z][0-9][a-z]{0,2}-(?:standard|highmem|highcpu|highgpu|ultragpu|megagpu|megamem|ultramem|hypermem|custom|micro|small|medium)(?:-[a-z0-9]{1,8}){0,3}` +
+	`|(?:db\.|cache\.)?(?:` + awsFamilyPrefix + `[0-9][a-z0-9]{0,5}(?:-[a-z][a-z0-9]{1,7})?|u[0-9]?[a-z]{0,3}-[0-9]{1,2}tb[0-9]?|ultrawarm1)\.(?:nano|micro|small|medium|large|[0-9]{0,3}xlarge|xlplus|metal(?:-[0-9]{1,2}xl)?)(?:\.search)?` +
+	`|(?:Standard|Basic|Premium)_[A-Za-z]{1,4}[0-9][A-Za-z0-9_-]{0,24}` +
+	`|` + azureSeriesPrefix + `[1-9][0-9]{0,2}[a-z]{0,4}(?:_[A-Za-z0-9]{1,4}){0,2}|[A-Z]{1,3}_Gen[0-9]_[0-9]{1,3}|GeneralPurpose_Gen[0-9]_[0-9]{1,3}|GENERAL_PURPOSE|BUSINESS_CRITICAL|HYPERSCALE` +
+	`|[0-9]{1,6}RU|Cosmos_DB_[0-9]{1,6}_RUs|BASIC|STANDARD(?:_HA)?` +
+	`|db-custom-[0-9]{1,3}-[0-9]{3,6}` +
+	`|(?:db-)?[a-z][0-9][a-z]{0,2}-(?:standard|highmem|highcpu|highgpu|ultragpu|megagpu|edgegpu|megamem|ultramem|hypermem|custom|micro|small|medium)(?:-(?:[0-9]{1,8}[a-z]{0,4}|lssd|highlssd|ext|metal|medium|small|micro)){0,3}` +
 	`)`
+
+const (
+	// awsFamilyPrefix is the closed set of letter prefixes of AWS instance, DB,
+	// cache, search and Redshift families (m5, hpc7g, ra3, or1, ...), so a token
+	// like "web1" or "db1" is not a head. A new real prefix falls back to the
+	// category message until it is added here (maintenance cost: every new AWS
+	// family or Azure series needs a prefix in these two sets).
+	awsFamilyPrefix = `(?:a|c|cc|cg|cr|d|dc|dl|ds|f|g|gr|h|hi|hpc|hs|i|im|inf|is|m|mac|oi|om|or|p|r|ra|t|trn|vt|x|z)`
+	// azureSeriesPrefix is the closed set of Azure VM series letters in the
+	// unprefixed sizes the provider sends (D2s_v3, NC6s_v3).
+	azureSeriesPrefix = `(?:A|B|D|DC|DS|DW|E|EC|ES|F|FX|G|GS|H|HB|HC|HX|L|LS|M|NC|ND|NG|NP|NV)`
+)
 
 // providerHeadPattern is the collection writer's "<provider>: " head.
 const providerHeadPattern = `(?:aws|azure|gcp)`
