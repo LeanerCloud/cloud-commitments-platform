@@ -99,14 +99,12 @@ func runDeployMigrations(ctx context.Context, dbCfg *database.Config, resolver s
 }
 
 func migrateOnPool(ctx context.Context, pool *pgxpool.Pool, dbCfg *database.Config, resolver secrets.Resolver, opts MigrateOptions, deps migrateDeps) (MigrateReport, error) {
-	// GetMigrationVersion ignores ctx, so the two version reads are not bounded
-	// by the budget; RunMigrations itself is.
 	adminEmail := os.Getenv("ADMIN_EMAIL")
 	adminPassword, err := migrateAdminPassword(ctx, resolver, adminEmail)
 	if err != nil {
 		return MigrateReport{}, err
 	}
-	from, dirty, err := deps.readVersion(ctx, pool, dbCfg.MigrationsPath)
+	from, dirty, err := readVersionWithin(ctx, deps, pool, dbCfg.MigrationsPath)
 	if err != nil {
 		return MigrateReport{}, err
 	}
@@ -120,7 +118,7 @@ func migrateOnPool(ctx context.Context, pool *pgxpool.Pool, dbCfg *database.Conf
 	if rerr := deps.run(ctx, pool, dbCfg.MigrationsPath, adminEmail, adminPassword); rerr != nil {
 		return MigrateReport{}, rerr
 	}
-	to, _, err := deps.readVersion(ctx, pool, dbCfg.MigrationsPath)
+	to, _, err := readVersionWithin(ctx, deps, pool, dbCfg.MigrationsPath)
 	if err != nil {
 		return MigrateReport{}, err
 	}
@@ -133,6 +131,29 @@ func migrateOnPool(ctx context.Context, pool *pgxpool.Pool, dbCfg *database.Conf
 		return MigrateReport{}, err
 	}
 	return MigrateReport{From: fromInt, To: toInt}, nil
+}
+
+// readVersionWithin bounds deps.readVersion by ctx. GetMigrationVersion
+// ignores ctx and blocks on golang-migrate's advisory lock, so the read runs in
+// a goroutine that is abandoned when the budget expires (it ends once the lock
+// frees or the process exits).
+func readVersionWithin(ctx context.Context, deps migrateDeps, pool *pgxpool.Pool, path string) (version uint, dirty bool, err error) {
+	type result struct {
+		version uint
+		dirty   bool
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		v, d, rerr := deps.readVersion(ctx, pool, path)
+		done <- result{v, d, rerr}
+	}()
+	select {
+	case r := <-done:
+		return r.version, r.dirty, r.err
+	case <-ctx.Done():
+		return 0, false, fmt.Errorf("reading the migration version did not finish within the migrate budget: %w", ctx.Err())
+	}
 }
 
 // migrateAdminPassword resolves the password only when an admin user will be

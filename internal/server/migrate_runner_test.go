@@ -269,3 +269,33 @@ func TestVersionToInt_Bounds(t *testing.T) {
 	_, err := versionToInt(math.MaxInt32 + 1)
 	require.ErrorContains(t, err, "out of range")
 }
+
+// A readVersion that ignores ctx (golang-migrate blocks on the advisory lock)
+// must not hold the runner past its budget.
+func TestRunDeployMigrations_VersionReadHonoursBudget(t *testing.T) {
+	t.Setenv(forceVersionEnv, "")
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	f := &fakeMigrate{versions: []uint{3}}
+	deps := f.deps()
+	deps.readVersion = func(context.Context, *pgxpool.Pool, string) (uint, bool, error) {
+		select {
+		case <-release:
+		case <-time.After(5 * time.Second):
+		}
+		return 0, false, nil
+	}
+	start := time.Now()
+	_, err := migrateOnPool(withMigrateBudget(t, 200*time.Millisecond), nil, &database.Config{}, okResolver(t), MigrateOptions{}, deps)
+	elapsed := time.Since(start)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, elapsed, 2*time.Second)
+	assert.Zero(t, f.runCalls)
+}
+
+func withMigrateBudget(t *testing.T, d time.Duration) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	t.Cleanup(cancel)
+	return ctx
+}
