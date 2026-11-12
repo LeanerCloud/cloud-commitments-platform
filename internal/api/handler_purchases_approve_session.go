@@ -176,3 +176,152 @@ func (h *Handler) scheduleApprovedExecution(ctx context.Context, execution *conf
 	}
 	return updated, nil
 }
+
+// sendPurchaseScheduledEmail fires the Gmail-style scheduled-delay notification
+// email immediately after scheduling. Best-effort: errors are logged and never
+// returned to the caller (the purchase state is already committed).
+func (h *Handler) sendPurchaseScheduledEmail(ctx context.Context, execution *config.PurchaseExecution, actor string) {
+	if h.emailNotifier == nil {
+		logging.Debug("sendPurchaseScheduledEmail: no email notifier configured, skipping")
+		return
+	}
+	if execution.ExecutionID == "" {
+		logging.Warn("sendPurchaseScheduledEmail: empty execution ID, skipping")
+		return
+	}
+
+	globalCfg, err := h.config.GetGlobalConfig(ctx)
+	if err != nil {
+		logging.Errorf("sendPurchaseScheduledEmail: failed to load global config: %v", err)
+		return
+	}
+
+	if sendErr := purchase.SendScheduledNotice(ctx, h.emailNotifier, globalCfg, h.dashboardURL, execution, actor); sendErr != nil {
+		logging.Errorf("sendPurchaseScheduledEmail: %v", sendErr)
+	}
+}
+
+// requireDifferentApprover enforces the 4-eyes approval policy (issue #1005).
+// It is called on every approve path (session-authed and email-token) after
+// the standard RBAC gate. Returns nil when the policy allows the approval.
+//
+// Decision logic:
+//   - mode off (RequireDifferentApprover == false): always returns nil (default behavior preserved).
+//   - session == nil AND mode on: returns 500 (fail-closed; we cannot determine
+//     identity without a session; the email-token path should always carry a
+//     session when mode is on because the deep-link flow forces a login).
+//   - session present AND creatorUserID == nil: returns 403 with a
+//     targeted message explaining that the legacy row predates dual-control and
+//     an admin must disable 4-eyes mode to proceed.
+//   - session present AND session.UserID == *creatorUserID: returns 403.
+//   - session present AND session.UserID != *creatorUserID: returns nil.
+//
+// Admin wildcard is intentionally NOT exempt: an admin who created an execution
+// must disable the mode in Settings before approving their own row.
+func (h *Handler) requireDifferentApprover(ctx context.Context, session *Session, subjectID string, creatorUserID *string, systemCreated bool) error {
+	cfg, err := h.config.GetGlobalConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("4-eyes policy check: failed to load global config: %w", err)
+	}
+	if cfg == nil || !cfg.RequireDifferentApprover {
+		return nil
+	}
+
+	// Mode is on.
+	if session == nil {
+		logging.Warnf("4-eyes[%s]: mode on but no session available; denying (fail-closed)", subjectID)
+		return NewClientError(500, "4-eyes approval mode is enabled but no session could be resolved; sign in before approving")
+	}
+
+	if creatorUserID == nil && systemCreated {
+		// Scheduler-minted row: no human requester exists, so any identified
+		// approver (session != nil, checked above) is the second pair of eyes.
+		logging.Infof("4-eyes[%s]: mode on; system-created row approved by user %s", subjectID, session.UserID)
+		return nil
+	}
+
+	if creatorUserID == nil {
+		logging.Warnf("4-eyes[%s]: mode on; NULL creator (legacy row) attempted by user %s, denied",
+			subjectID, session.UserID)
+		return NewClientError(403, "approval declined: this execution predates the dual-control feature and has no recorded creator; an admin must disable 4-eyes mode to approve")
+	}
+
+	if session.UserID == *creatorUserID {
+		logging.Warnf("4-eyes[%s]: mode on; creator %s attempted self-approval, denied",
+			subjectID, session.UserID)
+		return NewClientError(403, "approval declined: 4-eyes mode requires a different approver than the requester")
+	}
+
+	return nil
+}
+
+// authorizeSessionExecuteDirect returns nil when the session is permitted to
+// bypass the approval email and execute a purchase immediately under the
+// execute-any / execute-own RBAC rules added in issue #289.
+// Returns a 403 ClientError otherwise.
+//
+// creatorID is the creator of the execution being submitted (resolved via
+// resolveCreatorUserID before this call; "" on non-human or legacy rows).
+// recs is the execution's (store-priced) recommendation set, used to build
+// the same per-permission Constraints sets validateExecutePurchaseRequest
+// already enforces against the base execute:purchases permission (issue
+// #60): execute-any/execute-own are DISTINCT permissions from execute, so a
+// session capped tighter on execute-any than on execute could otherwise
+// direct-execute past that tighter cap by holding both verbs.
+//
+// Gate logic (mirrors authorizeSessionApprove / authorizeSessionCancel):
+//   - stateless admin API key: always permitted (apiKeyAdminUserID sentinel).
+//   - execute-any: permitted when the execute-any permission's own
+//     Constraints also allow this batch, regardless of creator.
+//     Administrators-group users pass the verb check here because
+//     {admin, *} matches ActionExecuteAny.
+//   - execute-own: permitted only when creatorID == session.UserID (both
+//     non-empty) AND the execute-own permission's own Constraints allow
+//     this batch.
+//   - no matching grant, or a constraint denial: 403 fail-closed; nil auth
+//     component is a 500 as per feedback_fail_closed_middleware.md.
+func (h *Handler) authorizeSessionExecuteDirect(ctx context.Context, session *Session, creatorID string, recs []config.RecommendationRecord) error {
+	// Stateless admin API key: full access, no user row. Administrators-group
+	// users pass via the execute-any check below, since
+	// {admin, *} matches any requested permission.
+	if session.UserID == apiKeyAdminUserID {
+		return nil
+	}
+	if h.auth == nil {
+		return NewClientError(500, "authentication service not configured")
+	}
+
+	// Both verbs are probed on the principal enforcePurchaseConstraints
+	// judges: the key (intersected with its owner) for a user API key, so a
+	// key holding execute-own is not routed to its owner's execute-any and
+	// then refused on the key's (issue #1005).
+	hasAny, err := h.sessionHoldsVerb(ctx, session, auth.ActionExecuteAny)
+	if err != nil {
+		return err
+	}
+	if hasAny {
+		return h.enforcePurchaseConstraints(ctx, session, auth.ActionExecuteAny, recs)
+	}
+	return h.authorizeExecuteOwnDirect(ctx, session, creatorID, recs)
+}
+
+// authorizeExecuteOwnDirect is the execute-own branch of
+// authorizeSessionExecuteDirect, reached only after the admin, nil-auth and
+// execute-any gates. Its gates keep authorizeSessionExecuteDirect's order:
+// verb held, then creator match, then the execute-own Constraints.
+func (h *Handler) authorizeExecuteOwnDirect(ctx context.Context, session *Session, creatorID string, recs []config.RecommendationRecord) error {
+	hasOwn, err := h.sessionHoldsVerb(ctx, session, auth.ActionExecuteOwn)
+	if err != nil {
+		return err
+	}
+	if !hasOwn {
+		return NewClientError(403, "permission denied: requires execute-any or execute-own on purchases")
+	}
+
+	// execute-own: both IDs must be non-empty and must match (empty-string
+	// collision would otherwise grant access to any null-creator row).
+	if session.UserID == "" || creatorID == "" || creatorID != session.UserID {
+		return NewClientError(403, "permission denied: execute-own requires you to be the creator of this purchase")
+	}
+	return h.enforcePurchaseConstraints(ctx, session, auth.ActionExecuteOwn, recs)
+}
