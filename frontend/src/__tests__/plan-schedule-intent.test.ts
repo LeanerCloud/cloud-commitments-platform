@@ -12,6 +12,10 @@ test('weekly 25% builds four weekly steps from the suggested start', () => {
   expect(intent.coverage).toBe(80);
 });
 
+test('a 0% target is a valid preview and stays 0 (#523)', () => {
+  expect(buildLocalScheduleIntent({ ...draft, coverage: '0' }).coverage).toBe(0);
+});
+
 test('preserves legacy custom 33% shares (3 steps, last share 99)', () => {
   const intent = buildLocalScheduleIntent({ ...draft, preset: 'custom', stepPercent: '33' });
   expect(intent.dates).toHaveLength(3);

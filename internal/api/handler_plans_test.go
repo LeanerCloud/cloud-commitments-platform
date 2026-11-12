@@ -1880,33 +1880,35 @@ func TestHandler_createPlannedPurchases_FailsClosedWhenTheProbeFails(t *testing.
 	mockStore.AssertNotCalled(t, "UpdatePurchasePlanTx", mock.Anything, mock.Anything, mock.Anything)
 }
 
-func TestHandler_planWrites_RefuseZeroTargetCoverage(t *testing.T) {
+func TestHandler_planWrites_RefuseOutOfRangeTargetCoverage(t *testing.T) {
 	ctx := context.Background()
 	const planID = "12345678-1234-1234-1234-123456789abc"
-	body := `{"name":"P","provider":"aws","service":"rds","target_accounts":["11111111-1111-1111-1111-111111111111"],"target_coverage":0}`
-	for _, op := range []string{"create", "update"} {
-		t.Run(op, func(t *testing.T) {
-			mockAuth := new(MockAuthService)
-			t.Cleanup(func() { mockAuth.AssertExpectations(t) })
-			mockAuth.On("ValidateSession", ctx, "admin-token").Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}, nil)
-			mockAuth.grantAdmin()
-			mockStore := new(MockConfigStore)
-			mockStore.On("GetPurchasePlan", ctx, planID).Return(&config.PurchasePlan{ID: planID, Name: "Old"}, nil).Maybe()
-			handler := &Handler{config: mockStore, auth: mockAuth}
-			req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"Authorization": "Bearer admin-token"}, Body: body}
+	for _, coverage := range []string{"-1", "101"} {
+		body := `{"name":"P","provider":"aws","service":"rds","target_accounts":["11111111-1111-1111-1111-111111111111"],"target_coverage":` + coverage + `}`
+		for _, op := range []string{"create", "update"} {
+			t.Run(op+" "+coverage, func(t *testing.T) {
+				mockAuth := new(MockAuthService)
+				t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+				mockAuth.On("ValidateSession", ctx, "admin-token").Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}, nil)
+				mockAuth.grantAdmin()
+				mockStore := new(MockConfigStore)
+				mockStore.On("GetPurchasePlan", ctx, planID).Return(&config.PurchasePlan{ID: planID, Name: "Old"}, nil).Maybe()
+				handler := &Handler{config: mockStore, auth: mockAuth}
+				req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"Authorization": "Bearer admin-token"}, Body: body}
 
-			var err error
-			if op == "create" {
-				_, err = handler.createPlan(ctx, req)
-			} else {
-				_, err = handler.updatePlan(ctx, req, planID)
-			}
-			ce, ok := IsClientError(err)
-			require.True(t, ok, "expected ClientError, got %T: %v", err, err)
-			assert.Equal(t, 400, ce.code)
-			assert.Equal(t, "target_coverage must be between 1 and 100 for a purchase plan", ce.message)
-			mockStore.AssertNotCalled(t, "CreatePurchasePlanWithAccounts", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-			mockStore.AssertNotCalled(t, "UpdatePurchasePlan", mock.Anything, mock.Anything)
-		})
+				var err error
+				if op == "create" {
+					_, err = handler.createPlan(ctx, req)
+				} else {
+					_, err = handler.updatePlan(ctx, req, planID)
+				}
+				ce, ok := IsClientError(err)
+				require.True(t, ok, "expected ClientError, got %T: %v", err, err)
+				assert.Equal(t, 400, ce.code)
+				assert.Equal(t, "target_coverage must be between 0 and 100", ce.message)
+				mockStore.AssertNotCalled(t, "CreatePurchasePlanWithAccounts", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+				mockStore.AssertNotCalled(t, "UpdatePurchasePlan", mock.Anything, mock.Anything)
+			})
+		}
 	}
 }

@@ -232,7 +232,7 @@ func TestPlanRequest_validateTargetCoverage(t *testing.T) {
 		{"omitted is allowed", `{"name":"p"}`, false},
 		{"1 is allowed", `{"target_coverage":1}`, false},
 		{"100 is allowed", `{"target_coverage":100}`, false},
-		{"0 is refused", `{"target_coverage":0}`, true},
+		{"0 is allowed", `{"target_coverage":0}`, false},
 		{"-1 is refused", `{"target_coverage":-1}`, true},
 		{"101 is refused", `{"target_coverage":101}`, true},
 	}
@@ -246,7 +246,7 @@ func TestPlanRequest_validateTargetCoverage(t *testing.T) {
 			ce, ok := IsClientError(err)
 			require.True(t, ok)
 			assert.Equal(t, 400, ce.code)
-			assert.Equal(t, "target_coverage must be between 1 and 100 for a purchase plan", ce.message)
+			assert.Equal(t, "target_coverage must be between 0 and 100", ce.message)
 		})
 	}
 }

@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { mockApi, seedAuth } from './fixtures/recs';
 
-// Issue #523: the plan executor rejects a 0% target, so the form refuses 0 (without clamping it to 1) and an
-// emptied field (Number('') is 0) and posts the lowest valid target, 1, as 1.
-test('Create plan refuses an empty or 0% coverage and posts 1 as 1', async ({ page }) => {
+// Issue #523: a 0% target is valid and is posted as 0. An emptied field (Number('') is 0) and an out-of-range
+// value are refused instead of being sent as 0.
+test('Create plan refuses an empty or out-of-range coverage and posts 0 as 0', async ({ page }) => {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1'
     ? route.fallback() : route.abort());
   await seedAuth(page);
@@ -32,18 +32,19 @@ test('Create plan refuses an empty or 0% coverage and posts 1 as 1', async ({ pa
   const coverage = modal.locator('#plan-coverage');
   await coverage.fill('');
   await save.click();
-  await expect(page.locator('.toast, [role="status"]').filter({ hasText: 'Target Coverage must be a whole number between 1 and 100' }).first()).toBeVisible();
+  await expect(page.locator('.toast, [role="status"]').filter({ hasText: 'Target Coverage must be a whole number between 0 and 100' }).first()).toBeVisible();
   expect(posts).toHaveLength(0);
 
-  // Clicking Save blurs the field; it must keep 0 and be refused, not clamped to 1.
+  // Clicking Save blurs the field; an out-of-range value is refused and kept as typed.
+  await coverage.fill('101');
+  await save.click();
+  await expect(page.locator('.toast, [role="status"]').filter({ hasText: 'Target Coverage must be a whole number between 0 and 100' }).first()).toBeVisible();
+  await expect(coverage).toHaveValue('101');
+  expect(posts).toHaveLength(0);
+
+  // A 0 target is valid and is posted as 0, not clamped or replaced by 80.
   await coverage.fill('0');
   await save.click();
-  await expect(page.locator('.toast, [role="status"]').filter({ hasText: 'Target Coverage must be a whole number between 1 and 100' }).first()).toBeVisible();
-  await expect(coverage).toHaveValue('0');
-  expect(posts).toHaveLength(0);
-
-  await modal.locator('#plan-coverage').fill('1');
-  await save.click();
   await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0]).toMatchObject({ target_coverage: 1 });
+  expect(posts[0]).toMatchObject({ target_coverage: 0 });
 });

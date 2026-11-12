@@ -2058,19 +2058,29 @@ describe('Plans Module', () => {
         await savePlan(event);
         expect(api.createPlan).not.toHaveBeenCalled();
         expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
-          message: 'Target Coverage must be a whole number between 1 and 100',
+          message: 'Target Coverage must be a whole number between 0 and 100',
           kind: 'error',
         }));
       });
 
-      test.each(['0', '101'])('rejects target_coverage %s (#523)', async (value) => {
+      test.each(['-1', '101', '2.5'])('rejects target_coverage %s (#523)', async (value) => {
         (document.getElementById('plan-coverage') as HTMLInputElement).value = value;
         const event = { preventDefault: jest.fn() } as unknown as Event;
         await savePlan(event);
         expect(api.createPlan).not.toHaveBeenCalled();
         expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
-          message: 'Target Coverage must be a whole number between 1 and 100',
+          message: 'Target Coverage must be a whole number between 0 and 100',
         }));
+      });
+
+      test('sends target_coverage 0 as 0, not 80 (#523)', async () => {
+        (api.createPlan as jest.Mock).mockResolvedValue({});
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '0';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).toHaveBeenCalledWith(expect.objectContaining({ target_coverage: 0 }));
       });
 
       test('sends target_coverage 1 as 1 (#523)', async () => {

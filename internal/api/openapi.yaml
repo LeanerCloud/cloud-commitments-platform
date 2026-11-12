@@ -7600,9 +7600,12 @@ components:
           type: string
         target_coverage:
           type: integer
-          minimum: 1
+          minimum: 0
           maximum: 100
-          description: Percentage, 1 to 100. Defaults to 80 when omitted on create.
+          description: >
+            Percentage, 0 to 100. Defaults to 80 when omitted on create; an explicit 0 is
+            stored and returned as 0. A plan at 0 buys nothing, and the dashboard shows zero
+            savings for it.
         ramp_schedule:
           type: string
           enum: [immediate, weekly-25pct, monthly-10pct, custom]

@@ -834,11 +834,11 @@ type PlanRequest struct {
 	Enabled           bool     `json:"enabled"`
 }
 
-// validateTargetCoverage refuses an explicit target outside 1..100: the plan
-// executor rejects 0, so a stored 0% plan would fail on every tick.
+// validateTargetCoverage refuses an explicit target outside 0..100. An explicit
+// 0 is stored as 0 (a plan that buys nothing); only an omitted field defaults.
 func (r *PlanRequest) validateTargetCoverage() error {
-	if r.TargetCoverage != nil && (*r.TargetCoverage < 1 || *r.TargetCoverage > 100) {
-		return NewClientError(400, "target_coverage must be between 1 and 100 for a purchase plan")
+	if r.TargetCoverage != nil && (*r.TargetCoverage < 0 || *r.TargetCoverage > 100) {
+		return NewClientError(400, "target_coverage must be between 0 and 100")
 	}
 	return nil
 }
