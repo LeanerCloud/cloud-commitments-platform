@@ -8,8 +8,8 @@ package api
 //   - The test reads the live openapi.yaml from the package directory (same
 //     directory as this file) via the standard "testdata adjacent" convention.
 //   - It reads router.go to obtain the handler wrapper function name for
-//     each route, then reads the wrapper body to extract which h.* function
-//     it delegates to.
+//     each route, then reads the wrapper body (in router.go or a
+//     router_wrappers_*.go file) to extract which h.* function it delegates to.
 //   - It then reads handler_*.go source files and checks whether the
 //     h.* function body calls requirePermission.
 //   - For every such route it asserts that the spec operation declares '403'.
@@ -111,9 +111,10 @@ type routeHandlerEntry struct {
 	delegateFnName string // e.g. "getDashboardSummary" (the h.* call inside the wrapper)
 }
 
-// parseRouterEntries reads router.go and returns a slice of route entries,
+// parseRouterEntries reads router.go (plus the router_wrappers_*.go wrapper
+// files beside it) and returns a slice of route entries,
 // extracting ExactPath, PathPrefix, PathSuffix, Method, and Handler fields
-// from the Route literal syntax, then for each handler wrapper function
+// from the Route literal syntax in router.go, then for each handler wrapper function
 // extracts the name of the h.* method it delegates to.
 func parseRouterEntries(routerPath string) ([]routeHandlerEntry, error) {
 	data, err := os.ReadFile(routerPath)
@@ -165,24 +166,43 @@ func parseRouterEntries(routerPath string) ([]routeHandlerEntry, error) {
 	}
 
 	// Phase 2: for each wrapper function body, find the h.* delegate call.
-	// Build a map: wrapperName -> delegateFnName.
-	wrapperToDelegate := make(map[string]string)
-	inWrapper := ""
-	for _, line := range lines {
-		if m := reWrapperDecl.FindStringSubmatch(line); m != nil {
-			inWrapper = m[1]
+	// Build a map: wrapperName -> delegateFnName. Wrappers live in router.go
+	// and in the router_wrappers_*.go files next to it; each file is scanned
+	// on its own so a trailing wrapper cannot bleed into the next file.
+	wrapperFiles := [][]string{lines}
+	extra, err := filepath.Glob(filepath.Join(filepath.Dir(routerPath), "router_wrappers_*.go"))
+	if err != nil {
+		return nil, fmt.Errorf("glob router wrapper files: %w", err)
+	}
+	for _, path := range extra {
+		if strings.HasSuffix(path, "_test.go") {
 			continue
 		}
-		if inWrapper != "" {
-			if m := reDelegateCall.FindStringSubmatch(line); m != nil {
-				// First h.* call in the wrapper body is the delegate.
-				if _, seen := wrapperToDelegate[inWrapper]; !seen {
-					wrapperToDelegate[inWrapper] = m[1]
-				}
+		extraData, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil, fmt.Errorf("read router wrapper file: %w", readErr)
+		}
+		wrapperFiles = append(wrapperFiles, strings.Split(string(extraData), "\n"))
+	}
+	wrapperToDelegate := make(map[string]string)
+	for _, fileLines := range wrapperFiles {
+		inWrapper := ""
+		for _, line := range fileLines {
+			if m := reWrapperDecl.FindStringSubmatch(line); m != nil {
+				inWrapper = m[1]
+				continue
 			}
-			// A blank line or another func declaration ends the wrapper scan.
-			if strings.HasPrefix(strings.TrimSpace(line), "func ") {
-				inWrapper = ""
+			if inWrapper != "" {
+				if m := reDelegateCall.FindStringSubmatch(line); m != nil {
+					// First h.* call in the wrapper body is the delegate.
+					if _, seen := wrapperToDelegate[inWrapper]; !seen {
+						wrapperToDelegate[inWrapper] = m[1]
+					}
+				}
+				// A blank line or another func declaration ends the wrapper scan.
+				if strings.HasPrefix(strings.TrimSpace(line), "func ") {
+					inWrapper = ""
+				}
 			}
 		}
 	}
