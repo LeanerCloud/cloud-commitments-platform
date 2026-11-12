@@ -207,7 +207,7 @@ func recHourlyCommitment(rec *RecommendationRecord) (float64, error) {
 
 // rampBaselineStale reports whether an edit changes what the frozen baseline
 // describes: which services are bought (provider, service, term, payment of
-// the enabled ones) or the ramp's shape (type, percent, steps, interval).
+// the enabled ones) or the ramp's shape (type, percent, steps, interval, allocation mode).
 // Coverage and the current position are deliberately not part of it: the
 // baseline holds demand counts, and the target scales with coverage. A stale
 // baseline is cleared rather than reused, so the next step fails loud (every
@@ -223,7 +223,7 @@ func rampBaselineStale(old, next *PurchasePlan) bool {
 		}
 		sort.Strings(svcs)
 		r := p.RampSchedule
-		return fmt.Sprintf("%s;%s|%v|%d|%d", strings.Join(svcs, ","), r.Type, r.PercentPerStep, r.TotalSteps, r.StepIntervalDays)
+		return fmt.Sprintf("%s;%s|%v|%d|%d|%s", strings.Join(svcs, ","), r.Type, r.PercentPerStep, r.TotalSteps, r.StepIntervalDays, r.AllocationMode)
 	}
 	return shape(old) != shape(next)
 }

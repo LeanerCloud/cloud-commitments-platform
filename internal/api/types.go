@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/analytics"
@@ -815,6 +816,14 @@ type PlanRequest struct {
 	NotificationDaysBefore int      `json:"notification_days_before"`
 	CustomStepPercent      int      `json:"custom_step_percent,omitempty"`
 	CustomIntervalDays     int      `json:"custom_interval_days,omitempty"`
+	// CustomTotalSteps and RampAllocation describe a custom ramp as n equal
+	// steps (percent 100/n); they travel together and only with
+	// ramp_schedule "custom".
+	CustomTotalSteps int    `json:"custom_total_steps,omitempty"`
+	RampAllocation   string `json:"ramp_allocation,omitempty"`
+	// ExpectedUpdatedAt is the plan's updated_at exactly as the client read
+	// it. Update only: a different stored value refuses the write with 409.
+	ExpectedUpdatedAt string `json:"expected_updated_at,omitempty"`
 	// MaxStepCommitment caps the total commitment one ramp step may
 	// auto-purchase. Omitted on create = no cap (auto-purchase of steps with
 	// recommendations stays refused); omitted on update = keep the current cap.
@@ -877,6 +886,17 @@ func (r *PlanRequest) buildCustomRampSchedule(now time.Time) config.RampSchedule
 		totalSteps = 1
 	}
 
+	if r.CustomTotalSteps > 0 {
+		return config.RampSchedule{
+			Type:             "custom",
+			PercentPerStep:   100 / float64(r.CustomTotalSteps),
+			StepIntervalDays: intervalDays,
+			TotalSteps:       r.CustomTotalSteps,
+			StartDate:        now,
+			AllocationMode:   config.RampAllocationEqualCount,
+		}
+	}
+
 	return config.RampSchedule{
 		Type:             "custom",
 		PercentPerStep:   stepPercent,
@@ -884,6 +904,24 @@ func (r *PlanRequest) buildCustomRampSchedule(now time.Time) config.RampSchedule
 		TotalSteps:       totalSteps,
 		StartDate:        now,
 	}
+}
+
+// validateRampFields rejects custom_total_steps / ramp_allocation combinations
+// buildCustomRampSchedule cannot honor.
+func (r *PlanRequest) validateRampFields() error {
+	if r.CustomTotalSteps == 0 && r.RampAllocation == "" {
+		return nil
+	}
+	if r.CustomTotalSteps < 1 || r.CustomTotalSteps > config.MaxTotalSteps {
+		return NewClientError(400, fmt.Sprintf("custom_total_steps must be between 1 and %d", config.MaxTotalSteps))
+	}
+	if r.RampAllocation != string(config.RampAllocationEqualCount) {
+		return NewClientError(400, `ramp_allocation must be "equal_count" when custom_total_steps is set`)
+	}
+	if r.RampSchedule != "custom" {
+		return NewClientError(400, `custom_total_steps and ramp_allocation require ramp_schedule "custom"`)
+	}
+	return nil
 }
 
 // buildServiceConfig creates service configuration from request fields.

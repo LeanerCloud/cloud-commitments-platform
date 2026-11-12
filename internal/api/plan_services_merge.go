@@ -41,6 +41,20 @@ func mergeRequestedServices(existing, requested map[string]config.ServiceConfig)
 		merged[key] = overlayServiceConfig(existing[key], reqSvc)
 		return merged, nil
 	}
+	if key, ok := legacySlugKey(existing, reqSvc); ok {
+		merged := maps.Clone(existing)
+		merged[key] = overlayServiceConfig(existing[key], reqSvc)
+		return merged, nil
+	}
+	if len(existing) == 1 {
+		for key := range existing {
+			if carriesUnexpressibleSettings(existing[key]) {
+				return nil, NewClientError(409, fmt.Sprintf(
+					"plan service %s carries filters, a minimum count or a service ramp that switching to %s would drop; "+
+						"edit the stored service instead, or create a new plan", key, reqKey))
+			}
+		}
+	}
 	if len(existing) <= 1 {
 		return requested, nil
 	}
@@ -62,6 +76,43 @@ func findServiceKey(services map[string]config.ServiceConfig, provider, service 
 		}
 	}
 	return "", false
+}
+
+// legacyPlanServiceIDs maps the per-provider ids plans saved before #608
+// carry to the canonical slug; it mirrors LEGACY_PLAN_SERVICE_IDS in
+// frontend/src/plans.ts, which is why the UI's request names the canonical
+// slug for a plan stored under the legacy one.
+var legacyPlanServiceIDs = map[string]string{
+	"azure/vm":        "compute",
+	"azure/sql":       "relational-db",
+	"azure/redis":     "cache",
+	"gcp/cloudsql":    "relational-db",
+	"gcp/memorystore": "cache",
+}
+
+// legacySlugKey finds the lone stored entry the request means when it is
+// stored under a legacy slug: the plan has exactly one entry and its
+// provider/service value, mapped to canonical, is the request's.
+func legacySlugKey(existing map[string]config.ServiceConfig, req config.ServiceConfig) (string, bool) {
+	if len(existing) != 1 {
+		return "", false
+	}
+	for key := range existing {
+		stored := existing[key]
+		canonical, ok := legacyPlanServiceIDs[stored.Provider+"/"+stored.Service]
+		if !ok {
+			canonical = stored.Service
+		}
+		if stored.Provider == req.Provider && canonical == req.Service {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+func carriesUnexpressibleSettings(s config.ServiceConfig) bool {
+	return s.MinCount > 0 || s.RampSchedule != "" || len(s.IncludeRegions) > 0 || len(s.ExcludeRegions) > 0 ||
+		len(s.IncludeEngines) > 0 || len(s.ExcludeEngines) > 0 || len(s.IncludeTypes) > 0 || len(s.ExcludeTypes) > 0
 }
 
 // overlayServiceConfig applies the fields the legacy form sends onto the
