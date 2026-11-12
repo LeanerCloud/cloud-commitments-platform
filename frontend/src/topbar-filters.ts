@@ -197,7 +197,7 @@ export function initTopbarFilters(): void {
       // Cleared until this retry settles, so reopening meanwhile doesn't fire
       // another request; a second failure sets it again.
       accountsLoadFailed = false;
-      accountChip?.setNotice('Loading accounts…');
+      accountChip?.setNotice('Loading accounts…', 'loading');
       void populateAccountOptions(state.getCurrentProvider());
     },
     onChange: (newAccountId) => {

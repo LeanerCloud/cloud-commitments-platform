@@ -396,4 +396,58 @@ describe('createChipSelect', () => {
       expect(document.activeElement).toBe(trigger);
     });
   });
+
+  describe('setNotice (issue #1731)', () => {
+    function make() {
+      const h = createChipSelect({ label: 'Account', options: SHORT_OPTIONS, value: '', onChange: () => {} });
+      document.body.appendChild(h.root);
+      const trigger = h.root.querySelector('button.chip-select') as HTMLButtonElement;
+      const status = h.root.querySelector('[role="status"]') as HTMLElement;
+      return { h, trigger, status };
+    }
+
+    test('polite atomic status region exists from the start, empty and sr-only', () => {
+      const { h, status } = make();
+      expect(h.root.querySelectorAll('[role="status"]')).toHaveLength(1);
+      expect(status.getAttribute('aria-live')).toBe('polite');
+      expect(status.getAttribute('aria-atomic')).toBe('true');
+      expect(status.classList.contains('sr-only')).toBe(true);
+      expect(status.textContent).toBe('');
+    });
+
+    test('status text follows loading -> error while the menu stays open, without duplicates', () => {
+      const { h, trigger, status } = make();
+      trigger.click();
+      h.setNotice('Loading accounts…', 'loading');
+      h.setNotice('Loading accounts…', 'loading');
+      expect(status.textContent).toBe('Loading accounts…');
+      h.setNotice('Couldn\'t load accounts.');
+      expect(status.textContent).toBe('Couldn\'t load accounts.');
+      expect(h.root.querySelectorAll('[role="status"]')).toHaveLength(1);
+      expect(h.root.querySelectorAll('.chip-select-notice')).toHaveLength(1);
+    });
+
+    test('status is cleared when the notice is cleared or the menu closes', () => {
+      const { h, trigger, status } = make();
+      trigger.click();
+      h.setNotice('Loading accounts…', 'loading');
+      h.setNotice(null);
+      expect(status.textContent).toBe('');
+      h.setNotice('Oops');
+      expect(status.textContent).toBe('Oops');
+      trigger.click();
+      expect(status.textContent).toBe('');
+      trigger.click();
+      expect(status.textContent).toBe('Oops');
+    });
+
+    test('loading kind gets the muted modifier class; error (default) does not', () => {
+      const { h, trigger } = make();
+      trigger.click();
+      h.setNotice('Loading accounts…', 'loading');
+      expect(h.root.querySelector('.chip-select-notice')?.classList.contains('chip-select-notice-loading')).toBe(true);
+      h.setNotice('Failed');
+      expect(h.root.querySelector('.chip-select-notice')?.classList.contains('chip-select-notice-loading')).toBe(false);
+    });
+  });
 });

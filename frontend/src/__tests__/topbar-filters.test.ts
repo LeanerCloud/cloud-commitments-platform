@@ -105,6 +105,28 @@ describe('Topbar filters', () => {
       expect(notice?.getAttribute('aria-disabled')).toBe('true');
     });
 
+    test('the retry shows a muted loading notice, then the error one in the error style', async () => {
+      jest.spyOn(console, 'warn').mockImplementation(() => {});
+      let reject: (e: Error) => void = () => {};
+      (api.listAccountsMinimal as jest.Mock)
+        .mockRejectedValueOnce(new Error('HTTP 502'))
+        .mockImplementationOnce(() => new Promise((_, rj) => { reject = rj; }));
+
+      initTopbarFilters();
+      await new Promise((r) => setTimeout(r, 0));
+      openAccountMenu();
+      const loading = document.querySelector('.chip-select-notice');
+      expect(loading?.textContent).toBe('Loading accounts…');
+      expect(loading?.classList.contains('chip-select-notice-loading')).toBe(true);
+      expect(loading?.closest('.chip-select-root')?.querySelector('[role="status"]')?.textContent).toBe('Loading accounts…');
+
+      reject(new Error('HTTP 502'));
+      await new Promise((r) => setTimeout(r, 0));
+      const failed = document.querySelector('.chip-select-notice');
+      expect(failed?.classList.contains('chip-select-notice-loading')).toBe(false);
+      expect(failed?.closest('.chip-select-root')?.querySelector('[role="status"]')?.textContent).toMatch(/^Couldn't load accounts/);
+    });
+
     test('reopening the menu after a failure retries and shows the accounts', async () => {
       jest.spyOn(console, 'warn').mockImplementation(() => {});
       (api.listAccountsMinimal as jest.Mock)

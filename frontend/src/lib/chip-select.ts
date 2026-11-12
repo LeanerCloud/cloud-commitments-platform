@@ -52,13 +52,19 @@ export interface ChipSelectConfig {
   onOpen?: () => void;
 }
 
+export type ChipSelectNoticeKind = 'loading' | 'error';
+
 export interface ChipSelectHandle {
   root: HTMLElement;
   setValue: (v: string) => void;
   getValue: () => string;
   setOptions: (opts: readonly ChipSelectOption[]) => void;
-  /** Show a non-selectable status line at the top of the menu; null clears it. */
-  setNotice: (text: string | null) => void;
+  /**
+   * Show a non-selectable status line at the top of the menu; null clears it.
+   * `kind` 'loading' renders it in the muted text colour, 'error' (default)
+   * in the error colour.
+   */
+  setNotice: (text: string | null, kind?: ChipSelectNoticeKind) => void;
 }
 
 const DEFAULT_SEARCH_THRESHOLD = 8;
@@ -75,6 +81,7 @@ export function createChipSelect(cfg: ChipSelectConfig): ChipSelectHandle {
   let currentValue = cfg.value;
   let options = cfg.options.slice();
   let notice: string | null = null;
+  let noticeKind: ChipSelectNoticeKind = 'error';
   let isOpen = false;
   let filterText = '';
   let activeIndex = -1;
@@ -117,6 +124,16 @@ export function createChipSelect(cfg: ChipSelectConfig): ChipSelectHandle {
   trigger.appendChild(triggerCaret);
 
   root.appendChild(trigger);
+
+  // Live region present from the start (created-at-announce regions are often
+  // missed). Visually hidden (.sr-only) so the visible notice, a non-live
+  // listbox option, is not read twice; aria-describedby covers reading on focus.
+  const status = document.createElement('div');
+  status.classList.add('sr-only');
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
+  status.setAttribute('aria-atomic', 'true');
+  root.appendChild(status);
 
   const menu = document.createElement('div');
   menu.classList.add('chip-select-menu', 'hidden');
@@ -175,6 +192,10 @@ export function createChipSelect(cfg: ChipSelectConfig): ChipSelectHandle {
     trigger.removeAttribute('aria-describedby');
     search.removeAttribute('aria-describedby');
     if (isOpen && notice !== null) activeDescendantHost().setAttribute('aria-describedby', noticeId);
+    // Only while open, so reopening re-announces; textContent diff keeps
+    // repeated identical syncs from re-announcing.
+    const announce = isOpen && notice !== null ? notice : '';
+    if (status.textContent !== announce) status.textContent = announce;
   }
 
   function renderOptions(): void {
@@ -184,6 +205,7 @@ export function createChipSelect(cfg: ChipSelectConfig): ChipSelectHandle {
       const li = document.createElement('li');
       li.id = noticeId;
       li.classList.add('chip-select-notice');
+      if (noticeKind === 'loading') li.classList.add('chip-select-notice-loading');
       li.textContent = notice;
       li.setAttribute('role', 'option');
       li.setAttribute('aria-disabled', 'true');
@@ -421,8 +443,9 @@ export function createChipSelect(cfg: ChipSelectConfig): ChipSelectHandle {
         renderOptions();
       }
     },
-    setNotice: (text: string | null): void => {
+    setNotice: (text: string | null, kind: ChipSelectNoticeKind = 'error'): void => {
       notice = text;
+      noticeKind = kind;
       if (isOpen) renderOptions();
     },
   };

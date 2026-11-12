@@ -1816,6 +1816,11 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     white-space: normal;
 }
 
+/* Loading is not a failure: muted text, not the error colour (issue #1731). */
+.chip-select-notice-loading {
+    color: var(--cudly-text-muted);
+}
+
 /* ---------------------------------------------------------------------------
  * API keys usage summary (issue #340/#344 deferred sub-task).
  * Three-tile summary card + top-3 most-active list. Sits above the
