@@ -30,19 +30,19 @@ import (
 // keeps clones of one template from contending with each other. Drops take it
 // too, so TerminateSharedPostgres cannot pull the server out from under one.
 type sharedServer struct {
-	mu        sync.Mutex
-	admin     *PostgresContainer // connected to the maintenance database, never handed to a test
 	startErr  error
+	admin     *PostgresContainer    // connected to the maintenance database, never handed to a test
 	templates map[string]templateDB // keyed by cleaned migrations path
 	seq       int
+	mu        sync.Mutex
 }
 
 // templateDB is the outcome of migrating one template. A migration failure is
 // remembered, so every later test fails with it straight away rather than
 // each re-running a chain that is known not to apply.
 type templateDB struct {
-	name string
 	err  error
+	name string
 }
 
 var shared sharedServer

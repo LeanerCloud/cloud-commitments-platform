@@ -48,10 +48,10 @@ var guardedCalls = map[string]string{
 var skipFuncs = map[string]bool{"Skip": true, "Skipf": true, "SkipNow": true}
 
 type finding struct {
-	pos       token.Position
 	call      string
 	skipFn    string
 	rationale string
+	pos       token.Position
 }
 
 func (f finding) String() string {

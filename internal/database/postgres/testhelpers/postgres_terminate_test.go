@@ -13,8 +13,8 @@ import (
 // anything else should panic rather than pass quietly.
 type recordingContainer struct {
 	testcontainers.Container
-	called bool
 	ctxErr error
+	called bool
 }
 
 func (r *recordingContainer) Terminate(ctx context.Context, _ ...testcontainers.TerminateOption) error {
@@ -42,8 +42,8 @@ func (f *failingContainer) Terminate(context.Context, ...testcontainers.Terminat
 // leaked container the helper exists to prevent.
 func TestTerminateAfterErrorSurvivesDeadContext(t *testing.T) {
 	for _, tc := range []struct {
-		name string
 		ctx  func() context.Context
+		name string
 	}{
 		{name: "canceled parent", ctx: func() context.Context {
 			ctx, cancel := context.WithCancel(context.Background())
