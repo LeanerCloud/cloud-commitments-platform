@@ -19,8 +19,9 @@ import (
 
 // Connection wraps a PostgreSQL connection pool.
 type Connection struct {
-	pool   *pgxpool.Pool
-	config *Config
+	pool              *pgxpool.Pool
+	config            *Config
+	cancelInitialFill context.CancelFunc
 	// lockedConns stores pinned pool connections for session-level advisory locks.
 	// Session-level advisory locks are tied to the PostgreSQL session (backend),
 	// not the transaction, so lock and unlock must use the same underlying connection.
@@ -53,14 +54,19 @@ func NewConnection(ctx context.Context, config *Config, secretResolver SecretRes
 	}
 
 	// Create connection pool with retry logic (for Lambda ENI attachment)
-	pool, err := createConnectionPoolWithRetry(ctx, poolConfig, config)
+	candidate, err := createConnectionPoolWithRetry(ctx, poolConfig, config)
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		candidate.close()
 		return nil, err
 	}
 
 	return &Connection{
-		pool:   pool,
-		config: config,
+		pool:              candidate.pool,
+		config:            config,
+		cancelInitialFill: candidate.cancelInitialFill,
 	}, nil
 }
 
@@ -118,36 +124,46 @@ var (
 	perAttemptConnectTimeout = 15 * time.Second
 )
 
-// attemptOpenPool runs ONE pool-creation + Ping attempt under a bounded
-// per-attempt context. The bounded context is independent of the outer
-// ctx (cancellation still propagates because context.WithTimeout takes
-// the earlier of the two deadlines), so a hung attempt fails after
-// perAttemptConnectTimeout and the retry loop can move forward.
-//
-// `defer cancel()` is correct here because it sits inside a function
-// body — putting the same defer inside the retry loop would leak a
-// context per iteration. Same pattern as
-// providers/azure/services/compute/client.go::fetchOnePricingPage
-// (committed in f416b614c for identical defer-in-loop avoidance).
-//
-// Both NewWithConfig and Ping receive perAttemptCtx. pgxpool defers
-// the actual TCP dial until the first acquire/Ping, so wrapping only
-// NewWithConfig wouldn't bound the cold-start hang.
-func attemptOpenPool(ctx context.Context, poolConfig *pgxpool.Config, perAttemptTimeout time.Duration) (*pgxpool.Pool, error) {
-	perAttemptCtx, cancel := context.WithTimeout(ctx, perAttemptTimeout)
+type poolCandidate struct {
+	pool              *pgxpool.Pool
+	cancelInitialFill context.CancelFunc
+}
+
+func (p *poolCandidate) close() {
+	p.cancelInitialFill()
+	p.pool.Close()
+}
+
+// Initial fill outlives bounded opening attempts; rejection or Connection.Close owns its cancellation.
+func attemptOpenPool(originalCallerCtx, outerAttemptCtx context.Context, poolConfig *pgxpool.Config, perAttemptTimeout time.Duration) (*poolCandidate, error) {
+	perAttemptCtx, cancel := context.WithTimeout(outerAttemptCtx, perAttemptTimeout)
 	defer cancel()
 
-	pool, err := pgxpool.NewWithConfig(perAttemptCtx, poolConfig)
+	initialFillCtx, cancelInitialFill := context.WithCancel(context.WithoutCancel(originalCallerCtx))
+	pool, err := pgxpool.NewWithConfig(initialFillCtx, poolConfig)
 	if err != nil {
+		cancelInitialFill()
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
+	}
+	candidate := &poolCandidate{
+		pool:              pool,
+		cancelInitialFill: cancelInitialFill,
 	}
 
 	if err := pool.Ping(perAttemptCtx); err != nil {
-		pool.Close()
+		candidate.close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
+	if err := originalCallerCtx.Err(); err != nil {
+		candidate.close()
+		return nil, err
+	}
+	if err := perAttemptCtx.Err(); err != nil {
+		candidate.close()
+		return nil, err
+	}
 
-	return pool, nil
+	return candidate, nil
 }
 
 // createConnectionPoolWithRetry creates a connection pool with exponential
@@ -155,8 +171,8 @@ func attemptOpenPool(ctx context.Context, poolConfig *pgxpool.Config, perAttempt
 // ENI may not be fully attached during init — a single attempt can hang
 // for ~30-45s on a TCP SYN retransmit, so each attempt is wrapped in a
 // PerAttemptTimeout via the shared retry helper.
-func createConnectionPoolWithRetry(ctx context.Context, poolConfig *pgxpool.Config, _ *Config) (*pgxpool.Pool, error) {
-	var pool *pgxpool.Pool
+func createConnectionPoolWithRetry(ctx context.Context, poolConfig *pgxpool.Config, _ *Config) (*poolCandidate, error) {
+	var pool *poolCandidate
 
 	cfg := retry.Config{
 		MaxAttempts:       maxConnectRetries,
@@ -171,12 +187,17 @@ func createConnectionPoolWithRetry(ctx context.Context, poolConfig *pgxpool.Conf
 	}
 
 	err := retry.Do(ctx, cfg, func(perAttemptCtx context.Context, attempt int) error {
-		// attemptOpenPool already wraps its work in its own per-attempt
-		// context for the nested NewWithConfig + Ping pair. Pass
-		// perAttemptCtx through so the outer retry budget cooperates.
-		p, err := attemptOpenPool(perAttemptCtx, poolConfig, perAttemptConnectTimeout)
+		p, err := attemptOpenPool(ctx, perAttemptCtx, poolConfig, perAttemptConnectTimeout)
 		if err != nil {
 			return fmt.Errorf("attempt %d/%d (timeout %s): %w", attempt, maxConnectRetries, perAttemptConnectTimeout, err)
+		}
+		if err := ctx.Err(); err != nil {
+			p.close()
+			return err
+		}
+		if err := perAttemptCtx.Err(); err != nil {
+			p.close()
+			return err
 		}
 		pool = p
 		if attempt > 1 {
@@ -245,6 +266,9 @@ func (c *Connection) Pool() *pgxpool.Pool {
 
 // Close closes the connection pool.
 func (c *Connection) Close() {
+	if c.cancelInitialFill != nil {
+		c.cancelInitialFill()
+	}
 	c.pool.Close()
 }
 
