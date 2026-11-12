@@ -297,17 +297,25 @@ func (e boundEnv) seedCorruptMarker(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestUpsertRecommendationsWithPartial_CorruptMarkerFailsTheWriteWithRepairHint(t *testing.T) {
+func TestUpsertRecommendationsWithPartial_CorruptMarkerHoldsStoredAzureAndKeepsOtherProvidersWriting(t *testing.T) {
 	e := newBoundEnv(t)
 	acct := e.account(t, "sub-corrupt-write")
+	require.NoError(t, e.store.UpsertRecommendationsWithPartial(e.ctx, e.base, []config.RecommendationRecord{azureAccountRec("r1", acct, "D2")},
+		[]config.SuccessfulCollect{{Provider: "azure", CloudAccountID: &acct}}, nil))
 	e.seedCorruptMarker(t)
 
-	err := e.store.UpsertRecommendationsWithPartial(e.ctx, e.base, []config.RecommendationRecord{azureAccountRec("r1", acct, "D2")},
-		[]config.SuccessfulCollect{{Provider: "azure", CloudAccountID: &acct}}, nil)
-
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "UPDATE recommendations_state SET last_collection_partial = NULL WHERE id = 1")
-	require.Zero(t, e.rowCount(t, acct), "the failed write must roll back")
+	for _, provider := range []string{"aws", "gcp"} {
+		require.NoError(t, e.store.UpsertRecommendationsWithPartial(e.ctx, e.base.Add(time.Minute),
+			[]config.RecommendationRecord{ambientRec("r-"+provider, provider, "m5")},
+			[]config.SuccessfulCollect{{Provider: provider}}, nil), provider)
+		var n int
+		require.NoError(t, e.db.QueryRow(e.ctx, `SELECT count(*) FROM recommendations WHERE provider = $1`, provider).Scan(&n))
+		require.Equal(t, 1, n, "the %s write is committed", provider)
+		sweep := e.azureSweep(t)
+		require.Equal(t, []string{acct}, sweep.HeldAccountIDs, "Azure stays fail-closed for its stored account")
+		require.Positive(t, sweep.Reasons[config.PartialReasonPricingUnavailable])
+	}
+	require.Equal(t, 1, e.rowCount(t, acct), "the held Azure row is kept")
 }
 
 func TestGetRecommendationsFreshness_CorruptMarkerIsReportedNotFatal(t *testing.T) {

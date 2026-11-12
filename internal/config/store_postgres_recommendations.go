@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -206,18 +208,19 @@ func lockedMarkerJSON(ctx context.Context, tx pgx.Tx, now time.Time, partial *Re
 // hold into partial and ages it. The lock serializes this read-merge-write
 // against every concurrent collection. It does nothing else when
 // there is no hold to carry, no expired ids and this cycle holds nothing. An
-// unreadable row or account list fails the tx.
+// unreadable marker is logged and read as every stored Azure account held; an
+// unreadable account list fails the tx.
 func carryHoldInTx(ctx context.Context, tx pgx.Tx, now time.Time, partial *RecommendationsCollectionPartial, collects []SuccessfulCollect) (*RecommendationsCollectionPartial, []string, error) {
 	var raw []byte
 	if err := tx.QueryRow(ctx, `SELECT last_collection_partial FROM recommendations_state WHERE id = 1 FOR UPDATE`).Scan(&raw); err != nil {
 		return nil, nil, fmt.Errorf("failed to lock recommendations_state: %w", err)
 	}
 	prev, err := decodeCollectionPartial(raw)
-	if err != nil {
-		return nil, nil, fmt.Errorf("recommendations_state.last_collection_partial is unreadable, so the Azure pricing hold cannot be carried; "+
-			"repair it with: UPDATE recommendations_state SET last_collection_partial = NULL WHERE id = 1: %w", err)
-	}
-	if !holdNeedsCarry(prev, partial) {
+	unreadable := err != nil
+	if unreadable {
+		logging.Errorf("recommendations_state.last_collection_partial is unreadable, so every stored Azure account is treated as held; "+
+			"repair it with: UPDATE recommendations_state SET last_collection_partial = NULL WHERE id = 1: %v", err)
+	} else if !holdNeedsCarry(prev, partial) {
 		return partial, nil, nil
 	}
 	rows, err := tx.Query(ctx, `SELECT DISTINCT account_key::text FROM recommendations WHERE provider = 'azure'`)
@@ -228,12 +231,25 @@ func carryHoldInTx(ctx context.Context, tx pgx.Tx, now time.Time, partial *Recom
 	if err != nil {
 		return nil, nil, err
 	}
+	if unreadable {
+		prev = allAzureHeld(stored)
+	}
 	active, err := activeAzureAccounts(ctx, tx, prev)
 	if err != nil {
 		return nil, nil, err
 	}
 	merged, evict := carryAzureHold(prev, partial, collects, stored, active, now)
 	return merged, evict, nil
+}
+
+// allAzureHeld stands in for an unreadable previous marker: every stored Azure
+// account is held, so Azure stays fail-closed until each re-prices.
+func allAzureHeld(stored map[string]bool) *RecommendationsCollectionPartial {
+	return &RecommendationsCollectionPartial{Providers: []PartialProviderSweep{{
+		Provider:       "azure",
+		Reasons:        map[string]int{PartialReasonPricingUnavailable: 1},
+		HeldAccountIDs: slices.Sorted(maps.Keys(stored)),
+	}}}
 }
 
 // holdNeedsCarry reports whether the previous marker has a hold or expired ids
