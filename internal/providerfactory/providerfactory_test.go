@@ -103,10 +103,10 @@ func TestNewGCP_PassesTypedConfigToRegistry(t *testing.T) {
 // did that, so NewGCP must refuse before the factory runs.
 func TestNewGCP_RejectsMissingInputsBeforeRegistry(t *testing.T) {
 	cases := []struct {
-		name      string
-		projectID string
 		ts        oauth2.TokenSource
 		wantErr   error
+		name      string
+		projectID string
 	}{
 		{name: "empty project", projectID: "", ts: &fakeTokenSource{}, wantErr: ErrMissingGCPProjectID},
 		{name: "nil token source", projectID: testProjectID, ts: nil, wantErr: ErrMissingGCPTokenSource},
