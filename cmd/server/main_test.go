@@ -168,10 +168,10 @@ func TestDispatch_Order(t *testing.T) {
 		c    cliFlags
 		want []string
 	}{
-		{"migrate only", cliFlags{migrate: true}, []string{"migrate"}},
-		{"migrate beats task", cliFlags{migrate: true, task: "x"}, []string{"migrate"}},
-		{"task beats serve", cliFlags{task: "x"}, []string{"task"}},
-		{"serve", cliFlags{}, []string{"serve"}},
+		{name: "migrate only", c: cliFlags{migrate: true}, want: []string{"migrate"}},
+		{name: "migrate beats task", c: cliFlags{migrate: true, task: "x"}, want: []string{"migrate"}},
+		{name: "task beats serve", c: cliFlags{task: "x"}, want: []string{"task"}},
+		{name: "serve", c: cliFlags{}, want: []string{"serve"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
