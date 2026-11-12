@@ -36,6 +36,11 @@ var gen = G[int]{1, 2}
 var alias = Alias{5, "z"}
 var anon = struct{ M, N int }{1, 2}
 
+var table = []struct{ K, V int }{{1, 2}, {K: 3, V: 4}}
+var table2 = map[string]struct{ K, V int }{"k": {5, 6}}
+var table3 = []struct{ K, V int }{{K: 7, V: 8}}
+var table4 = []*struct{ K, V int }{{9, 10}}
+
 func f1() int {
 	type L struct{ A, B int }
 	l := L{1, 2}
@@ -91,6 +96,10 @@ func TestCheck(t *testing.T) {
 		{"local type L in f1 only", []string{in("type L struct{ A, B int }")},
 			[]string{line("l := L{1, 2}")}, []string{line("l := L{3, 4}")}, false},
 		{"anonymous struct by its own position", []string{in("var anon")}, []string{line("var anon")}, []string{line("var unkeyed")}, false},
+		{"elided slice rows", []string{in("var table = ")}, []string{line("var table = ")}, []string{line("var table3"), line("var table2")}, false},
+		{"elided map rows", []string{in("var table2 = ")}, []string{line("var table2")}, []string{line("var table = ")}, false},
+		{"keyed elided rows", []string{in("var table3 = ")}, nil, nil, false},
+		{"elided pointer rows", []string{in("var table4 = ")}, []string{line("var table4")}, nil, false},
 		{"no input", nil, nil, nil, false},
 		{"bogus position", []string{in("type S struct"), "a/a.go:1:1: struct x"}, nil, nil, true},
 	}

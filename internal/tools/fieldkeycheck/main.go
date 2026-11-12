@@ -172,10 +172,19 @@ func check(dir, tags string, positions []string) ([]string, error) {
 func findUnkeyed(pkgs []*packages.Package, wanted map[string]bool) []string {
 	seen := map[string]bool{}
 	for _, p := range pkgs {
+		elided := map[*ast.CompositeLit]string{}
 		for _, f := range p.Syntax {
 			ast.Inspect(f, func(n ast.Node) bool {
-				if lit, ok := n.(*ast.CompositeLit); ok && hasUnkeyed(lit) {
-					if wanted[literalKey(p, lit)] {
+				if lit, ok := n.(*ast.CompositeLit); ok {
+					markElidedRows(p, lit, elided)
+					if !hasUnkeyed(lit) {
+						return true
+					}
+					key, ok := elided[lit]
+					if !ok {
+						key = literalKey(p, lit)
+					}
+					if wanted[key] {
 						seen[p.Fset.Position(lit.Pos()).String()] = true
 					}
 				}
@@ -208,6 +217,35 @@ func load(dir, tags string) ([]*packages.Package, error) {
 		}
 	}
 	return pkgs, nil
+}
+
+// markElidedRows keys the type-less rows of a []struct{...}{{...}} or
+// map[K]struct{...}{k: {...}} literal by the element StructType position.
+func markElidedRows(p *packages.Package, lit *ast.CompositeLit, elided map[*ast.CompositeLit]string) {
+	var elem ast.Expr
+	switch t := lit.Type.(type) {
+	case *ast.ArrayType:
+		elem = t.Elt
+	case *ast.MapType:
+		elem = t.Value
+	default:
+		return
+	}
+	if star, ok := elem.(*ast.StarExpr); ok {
+		elem = star.X
+	}
+	st, ok := elem.(*ast.StructType)
+	if !ok {
+		return
+	}
+	for _, e := range lit.Elts {
+		if kv, ok := e.(*ast.KeyValueExpr); ok {
+			e = kv.Value
+		}
+		if row, ok := e.(*ast.CompositeLit); ok && row.Type == nil {
+			elided[row] = "anon:" + declKey(p.Fset, st.Struct)
+		}
+	}
 }
 
 func literalKey(p *packages.Package, lit *ast.CompositeLit) string {
