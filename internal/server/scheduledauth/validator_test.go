@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -19,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	jose "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
@@ -1211,9 +1211,8 @@ func TestWarmup_LoggedAndNonFatal_OnDeadEndpoint(t *testing.T) {
 	// No tests in this package use t.Parallel(), so swapping the global
 	// log writer here is safe; t.Cleanup restores it.
 	var logBuf bytes.Buffer
-	origOut := log.Writer()
-	log.SetOutput(&logBuf)
-	t.Cleanup(func() { log.SetOutput(origOut) })
+	origOut := logging.SetOutput(&logBuf)
+	t.Cleanup(func() { logging.SetOutput(origOut) })
 
 	v, err := New(Config{
 		Mode:      ModeOIDC,

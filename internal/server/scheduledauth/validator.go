@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	jose "github.com/go-jose/go-jose/v4"
@@ -137,7 +138,7 @@ func New(cfg Config) (*Validator, error) {
 		return configureBearer(v, cfg)
 	case ModeDisabled:
 		// No setup; every request passes (with a per-request WARN log).
-		log.Printf("scheduledauth: WARN — auth mode is disabled; /api/scheduled/* is unauthenticated. " +
+		logging.Warnf("scheduledauth: WARN — auth mode is disabled; /api/scheduled/* is unauthenticated. " +
 			"Set SCHEDULED_TASK_AUTH_MODE=oidc (GCP) or =bearer (Azure) in production.")
 		return v, nil
 	default:
@@ -322,14 +323,14 @@ func validateJWKSBody(r io.Reader) error {
 func (v *Validator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if v.mode == ModeDisabled {
-			log.Printf("scheduledauth: WARN — request to %s allowed without auth (mode=disabled)", r.URL.Path) // #nosec G706 -- URL path logged only when auth is disabled (operator-set mode); informational audit log
+			logging.Warnf("scheduledauth: WARN — request to %s allowed without auth (mode=disabled)", r.URL.Path) // #nosec G706 -- URL path logged only when auth is disabled (operator-set mode); informational audit log
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		authz := r.Header.Get("Authorization")
 		if err := v.Validate(r.Context(), authz); err != nil {
-			log.Printf("scheduledauth: rejected %s %s: %q", r.Method, r.URL.Path, err.Error()) // #nosec G706 -- HTTP method and path logged for auth audit; Go net/http normalizes paths before handler dispatch; %q quotes the error string to prevent log injection from any token-derived values
+			logging.Infof("scheduledauth: rejected %s %s: %q", r.Method, r.URL.Path, err.Error()) // #nosec G706 -- HTTP method and path logged for auth audit; Go net/http normalizes paths before handler dispatch; %q quotes the error string to prevent log injection from any token-derived values
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -410,7 +411,7 @@ func (v *Validator) validateOIDC(ctx context.Context, authz string) error {
 		return fmt.Errorf("%w: subject %q not in allowlist", ErrUnauthorized, idToken.Subject)
 	}
 
-	log.Printf("scheduledauth: oidc token accepted (sub=%q, aud=%q)", idToken.Subject, idToken.Audience) // #nosec G706 -- both sub and aud are quoted (%q) to prevent log injection; sub is additionally validated against the allowlist
+	logging.Infof("scheduledauth: oidc token accepted (sub=%q, aud=%q)", idToken.Subject, idToken.Audience) // #nosec G706 -- both sub and aud are quoted (%q) to prevent log injection; sub is additionally validated against the allowlist
 	return nil
 }
 
@@ -469,7 +470,7 @@ func (v *Validator) verifyWithRotationRetry(ctx context.Context, rawToken string
 			v.verMu.Unlock()
 			return nil, err
 		}
-		log.Printf("scheduledauth: oidc signature verification failed; rebuilding key set for rotation retry")
+		logging.Warnf("scheduledauth: oidc signature verification failed; rebuilding key set for rotation retry")
 		v.verifier = v.newVerifier()
 		v.lastRebuild = v.now()
 	}

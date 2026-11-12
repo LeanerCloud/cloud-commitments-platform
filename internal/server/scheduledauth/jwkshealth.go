@@ -2,9 +2,10 @@ package scheduledauth
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // Stable, URL-free reason codes for a failed JWKS probe. They are safe to
@@ -45,23 +46,23 @@ type JWKSHealth struct {
 func (v *Validator) probeJWKS(ctx context.Context) string {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.jwksURL, http.NoBody)
 	if err != nil {
-		log.Printf("scheduledauth: WARN — JWKS warmup request build failed: %v", err)
+		logging.Warnf("scheduledauth: WARN — JWKS warmup request build failed: %v", err)
 		return JWKSReasonFetchFailed
 	}
 	resp, err := v.httpClient.Do(req) // #nosec G704 -- jwksURL is operator-supplied config (SCHEDULED_TASK_OIDC_JWKS_URL), not request-tainted user input; v.httpClient is the hardened client from pkg/httpclient that blocks IMDS/link-local endpoints and enforces dial/TLS/overall timeouts
 	if err != nil {
-		log.Printf("scheduledauth: WARN — JWKS warmup fetch failed for %s: %v "+
+		logging.Warnf("scheduledauth: WARN — JWKS warmup fetch failed for %s: %v "+
 			"(validator will retry on first request)", v.jwksURL, err)
 		return JWKSReasonFetchFailed
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		log.Printf("scheduledauth: WARN — JWKS warmup got %d from %s "+
+		logging.Warnf("scheduledauth: WARN — JWKS warmup got %d from %s "+
 			"(validator will retry on first request)", resp.StatusCode, v.jwksURL)
 		return JWKSReasonHTTPError
 	}
 	if err := validateJWKSBody(resp.Body); err != nil {
-		log.Printf("scheduledauth: WARN — JWKS warmup got invalid JWKS payload from %s: %v "+
+		logging.Warnf("scheduledauth: WARN — JWKS warmup got invalid JWKS payload from %s: %v "+
 			"(validator will retry on first request)", v.jwksURL, err)
 		return JWKSReasonInvalidPayload
 	}
@@ -140,7 +141,7 @@ func (v *Validator) runProbe(done chan struct{}) {
 	reason := v.probeJWKS(ctx)
 	v.storeJWKSResult(reason)
 	if reason == "" {
-		log.Printf("scheduledauth: JWKS probe recovered")
+		logging.Infof("scheduledauth: JWKS probe recovered")
 	}
 	v.jwksMu.Lock()
 	v.jwksInflight = nil
