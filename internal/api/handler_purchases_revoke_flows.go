@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/aws/aws-lambda-go/events"
@@ -283,4 +284,66 @@ func revocationWindowClosesAt(execution *config.PurchaseExecution) string {
 		return ""
 	}
 	return ref.Add(config.RevocationWindow).UTC().Format("2006-01-02 15:04 UTC")
+}
+
+// revokeViaSession performs the post-execution revocation action by recording
+// a "revocation_requested" status on the execution. Actual cloud-side
+// revocation (AWS support-case) is out of scope for issue #291 — it is
+// handled by the sibling "AWS RI/SP revocation via support case" issue.
+// This call records the intent so the History UI can surface it.
+//
+// The status flip uses TransitionExecutionStatus, which issues a conditional
+// UPDATE WHERE status IN ('completed','partially_completed'). This guards
+// against lost-update races: if the row changed between the GetExecutionByID
+// read and this write (e.g. a concurrent transition), zero rows are affected
+// and we return a 409 rather than blindly overwriting. CancelledBy is then
+// stamped by a narrow SetCancelledBy UPDATE keyed on the execution ID, so the
+// row TransitionExecutionStatus returns is not used.
+//
+// transitionedBy is the acting user's UUID (resolveCreatorUserID), or nil when
+// the caller has no user row. It must never be an email: transitioned_by is a
+// UUID foreign key. revokedBy is the email shown as the requester.
+//
+// The revocation window is enforced here, not only in validateRevokeToken, so
+// the session-authed branch (tryRevokeViaSession) cannot flip an execution
+// whose window closed long ago to revocation_requested (issue #260).
+//
+// Neither revoke path (this one or the token path in revokePurchase) applies
+// the 4-eyes RequireDifferentApprover policy: that policy gates approvals
+// only, and a revocation records a request that an operator completes with
+// AWS Support. Whether revocation should also need a second person is an
+// open owner decision (issue #311).
+func (h *Handler) revokeViaSession(ctx context.Context, execution *config.PurchaseExecution, revokedBy string, transitionedBy *string) (any, error) {
+	if err := checkRevocationWindow(execution); err != nil {
+		return nil, err
+	}
+	_, err := h.config.TransitionExecutionStatus(
+		ctx, execution.ExecutionID,
+		[]string{"completed", "partially_completed"}, "revocation_requested", transitionedBy)
+	if err != nil {
+		if errors.Is(err, config.ErrExecutionNotInExpectedStatus) {
+			return nil, NewClientError(409, fmt.Sprintf(
+				"execution %s cannot be revoked: a concurrent operation changed its status", execution.ExecutionID))
+		}
+		if errors.Is(err, config.ErrNotFound) {
+			return nil, NewClientError(404, "execution not found")
+		}
+		return nil, fmt.Errorf("failed to record revocation request for execution %s: %w", execution.ExecutionID, err)
+	}
+	if revokedBy != "" {
+		// Use a narrow SetCancelledBy UPDATE rather than a full-row
+		// SavePurchaseExecution to avoid clobbering concurrent writes
+		// between the TransitionExecutionStatus and this attribution step
+		// (Finding #5). The targeted UPDATE only touches the cancellation
+		// attribution column so any other concurrent column change (e.g. a
+		// background webhook stamping a cloud reference) is preserved.
+		if err := h.config.SetCancelledBy(ctx, execution.ExecutionID, revokedBy); err != nil {
+			return nil, fmt.Errorf("failed to record revocation requester for execution %s: %w", execution.ExecutionID, err)
+		}
+	}
+	logging.Infof("Revocation requested for execution %s by %s", execution.ExecutionID, redactEmail(revokedBy))
+	return map[string]string{
+		"status":  "revocation_requested",
+		"message": "Revocation request recorded. Contact AWS Support to complete the cancellation within the allowed window.",
+	}, nil
 }
