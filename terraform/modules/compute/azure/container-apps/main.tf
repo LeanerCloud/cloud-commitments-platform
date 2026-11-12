@@ -165,7 +165,7 @@ resource "azurerm_container_app" "main" {
       readiness_probe {
         transport = "HTTP"
         port      = 8080
-        path      = "/health"
+        path      = "/ready"
 
         interval_seconds        = 10
         timeout                 = 3

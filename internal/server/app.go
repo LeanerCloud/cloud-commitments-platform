@@ -77,6 +77,8 @@ type Application struct {
 	dbConfig          *database.Config
 	secretResolver    secrets.Resolver
 	dbMu              sync.Mutex
+	apiMu             sync.RWMutex
+	httpInit          *httpInitialization
 	dbConnected       bool
 	dbErr             error
 	appConfig         ApplicationConfig
@@ -868,7 +870,7 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 	// AnalyticsClient is Postgres-backed (see api.NewPostgresAnalyticsClient) —
 	// it aggregates purchase_history on demand so the History UI charts work
 	// without requiring a separate S3/Athena deployment.
-	app.API = api.NewHandler(api.HandlerConfig{
+	handler := api.NewHandler(api.HandlerConfig{
 		ConfigStore:         app.Config,
 		CredentialStore:     credStore,
 		PurchaseManager:     app.Purchase,
@@ -889,9 +891,12 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 		CommitmentOpts:      commitmentOpts,
 		EncryptionKeySource: app.encKeySource,
 	})
-	if app.API == nil {
+	if handler == nil {
 		return fmt.Errorf("failed to create API handler")
 	}
+	app.apiMu.Lock()
+	app.API = handler
+	app.apiMu.Unlock()
 
 	return nil
 }

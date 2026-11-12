@@ -4,14 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
@@ -29,6 +26,7 @@ func CreateHTTPServer(app *Application, port int) *http.Server {
 	// SCHEDULED_TASK_AUTH_MODE: oidc on GCP, bearer on Azure, disabled
 	// for local dev.
 	mux.HandleFunc("/health", app.handleHealthCheck)
+	mux.HandleFunc("/ready", app.handleReadinessCheck)
 	// /version is a root-path (no /api prefix) public endpoint. Like /health
 	// it must be registered explicitly: when STATIC_DIR is set the catch-all
 	// "/" route serves the SPA, so an unregistered /version would return the
@@ -72,44 +70,6 @@ func CreateHTTPServer(app *Application, port int) *http.Server {
 	}
 }
 
-// StartHTTPServer starts the HTTP server with graceful shutdown on SIGINT/SIGTERM.
-// It blocks until the server exits cleanly. In container orchestrators (Cloud Run,
-// Container Apps, Fargate) SIGTERM is the normal stop signal; without this wiring
-// the process is killed before deferred app.Close() runs, leaving in-flight
-// requests cut and the DB pool/advisory locks undrained (issue #1025).
-func StartHTTPServer(app *Application, port int) error {
-	server := CreateHTTPServer(app, port)
-	log.Printf("Starting HTTP server on %s", server.Addr)
-
-	// Signal context cancels on the first SIGINT or SIGTERM.
-	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	serveErr := make(chan error, 1)
-	go func() {
-		serveErr <- server.ListenAndServe()
-	}()
-
-	select {
-	case err := <-serveErr:
-		// ListenAndServe returned before a signal -- hard error (bind failure, etc.).
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	case <-sigCtx.Done():
-		// Received SIGINT or SIGTERM: drain in-flight requests then close the DB.
-		stop() // release signal resources promptly
-		log.Printf("Shutdown signal received; draining HTTP server (30s grace)...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("HTTP server forced shutdown: %v", err)
-		}
-		return nil
-	}
-}
-
 // handleOIDCHTTP bridges the standard HTTP path to the Lambda-shaped HandleOIDC
 // implementation. Registered at api.OIDCBasePath+"/" so it intercepts all
 // /oidc/... requests before the SPA static handler or the API router, exactly
@@ -119,7 +79,7 @@ func (app *Application) handleOIDCHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	lambdaReq := httpToLambdaRequest(r)
-	resp, handled := app.API.HandleOIDC(ctx, lambdaReq)
+	resp, handled := app.currentAPI().HandleOIDC(ctx, lambdaReq)
 	if !handled {
 		// Path matched /oidc/ prefix but is not a recognized OIDC endpoint.
 		http.NotFound(w, r)
@@ -158,8 +118,7 @@ func (app *Application) handleHTTPRequest(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	// Ensure database connection is established (lazy initialization)
-	if err := app.ensureDB(ctx); err != nil {
+	if err := app.ensureHTTPDB(ctx); err != nil {
 		log.Printf("Failed to establish database connection: %v", err)
 		http.Error(w, "Service temporarily unavailable", http.StatusServiceUnavailable)
 		return
@@ -190,7 +149,7 @@ func (app *Application) handleVersion(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	lambdaResp, err := app.API.HandleRequest(ctx, httpToLambdaRequest(r))
+	lambdaResp, err := app.currentAPI().HandleRequest(ctx, httpToLambdaRequest(r))
 	if err != nil {
 		log.Printf("Version handler error: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -224,8 +183,7 @@ func (app *Application) handleScheduledHTTP(w http.ResponseWriter, r *http.Reque
 
 	ctx := r.Context()
 
-	// Ensure database connection is established (lazy initialization)
-	if err := app.ensureDB(ctx); err != nil {
+	if err := app.ensureHTTPDB(ctx); err != nil {
 		log.Printf("Failed to establish database connection: %v", err)
 		http.Error(w, "Database connection failed", http.StatusServiceUnavailable)
 		return

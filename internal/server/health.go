@@ -25,9 +25,29 @@ type CheckResult struct {
 
 // handleHealthCheck returns the health status of the application.
 func (app *Application) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	app.writeHealth(w, r, false)
+}
+
+func (app *Application) handleReadinessCheck(w http.ResponseWriter, r *http.Request) {
+	app.writeHealth(w, r, true)
+}
+
+func (app *Application) writeHealth(w http.ResponseWriter, r *http.Request, readiness bool) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	health := app.healthStatus(ctx)
+	status := http.StatusOK
+	if readiness && health.Status != "healthy" {
+		status = http.StatusServiceUnavailable
+	}
+	setHealthResponseHeaders(w, app.appConfig.CORSAllowedOrigin)
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		log.Printf("health: failed to encode response: %v", err)
+	}
+}
 
+func (app *Application) healthStatus(ctx context.Context) HealthStatus {
 	health := HealthStatus{
 		Status:    "healthy",
 		Version:   app.Version,
@@ -35,38 +55,54 @@ func (app *Application) handleHealthCheck(w http.ResponseWriter, r *http.Request
 		Checks:    make(map[string]CheckResult),
 	}
 
-	// Check configuration store
-	health.Checks["config_store"] = app.checkConfigStore(ctx)
+	snapshot := app.healthSnapshot()
+	if snapshot == nil {
+		health.Checks["config_store"] = CheckResult{Status: "pending", Message: "Application initialization has not completed"}
+		health.Checks["auth_store"] = CheckResult{Status: "pending", Message: "Application initialization has not completed"}
+	} else {
+		health.Checks["config_store"] = snapshot.checkConfigStore(ctx)
+		health.Checks["auth_store"] = snapshot.checkAuthStore(ctx)
+		if snapshot.dbConfig != nil && !snapshot.dbConnected {
+			health.Status = "degraded"
+		}
+	}
 	if health.Checks["config_store"].Status != "healthy" {
 		health.Status = "degraded"
 	}
 
-	// Check auth store
-	health.Checks["auth_store"] = app.checkAuthStore(ctx)
 	if health.Checks["auth_store"].Status != "healthy" {
 		health.Status = "degraded"
 	}
 
-	// Check migrations. "disabled" and "healthy" are both acceptable; only
-	// "pending" and "failed" flip the overall status to degraded.
 	health.Checks["migrations"] = app.checkMigrations()
 	switch health.Checks["migrations"].Status {
 	case "failed", "pending":
 		health.Status = "degraded"
 	}
 
-	// Always return 200 for the health endpoint so startup/liveness probes pass.
-	// The actual health status is in the JSON body. "degraded" means the app is
-	// running but some dependencies (like DB) aren't connected yet - this is
-	// expected during cold starts with lazy DB initialization.
+	return health
+}
 
-	// Write response with security headers and CORS
-	setHealthResponseHeaders(w, app.appConfig.CORSAllowedOrigin)
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(health); err != nil {
-		// Body write failed after headers are sent; log for parity with
-		// handleScheduledHTTP which already logs its encode error (04-L4).
-		log.Printf("health: failed to encode response: %v", err)
+func (app *Application) healthSnapshot() *Application {
+	if app.httpInit != nil {
+		select {
+		case <-app.httpInit.done:
+			if app.httpInit.err != nil {
+				return nil
+			}
+		default:
+			return nil
+		}
+	} else {
+		if !app.dbMu.TryLock() {
+			return nil
+		}
+		defer app.dbMu.Unlock()
+	}
+	// Copy only health dependencies, never Application's mutexes; ping after releasing dbMu.
+	return &Application{
+		Config: app.Config, Auth: app.Auth, DB: app.DB,
+		dbConfig: app.dbConfig, dbConnected: app.dbConnected,
 	}
 }
 
