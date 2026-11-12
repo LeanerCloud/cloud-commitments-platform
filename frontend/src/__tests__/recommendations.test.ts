@@ -2198,7 +2198,7 @@ describe('Recommendations Module', () => {
       await openPurchaseModal(recommendations);
 
       const details = document.getElementById('purchase-details');
-      expect(details?.textContent).toContain('ec2');
+      expect(details?.textContent).toContain('EC2');
       expect(details?.textContent).toContain('t3.medium');
       expect(details?.textContent).toContain('us-east-1');
     });

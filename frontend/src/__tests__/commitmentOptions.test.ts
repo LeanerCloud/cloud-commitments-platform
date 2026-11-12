@@ -884,6 +884,12 @@ describe('commitmentOptions', () => {
       expect(msg).not.toContain('partial-upfront');
     });
 
+    it('shows the service display name, not the raw slug', () => {
+      const msg = formatPaymentAdjustmentNotice([adj({ provider: 'aws', service: 'rds' })]);
+      expect(msg).toContain('AWS RDS does not offer');
+      expect(msg).not.toContain('rds');
+    });
+
     it('collapses a batch to the distinct requested -> applied pairs', () => {
       const msg = formatPaymentAdjustmentNotice([
         adj({ rec_index: 0 }),

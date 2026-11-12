@@ -125,9 +125,9 @@ describe('Issue #1904: fan-out modal skips incompatible buckets', () => {
     expect(text).toContain(`Upfront on approval${formatCurrency(8000, '$', 2)}`);
     expect(text).toContain(`Monthly${formatCurrency(100, '$', 2)}`);
     expect(text).toContain(`Total over term${formatCurrency(9200, '$', 2)}`);
-    expect(text).toContain('4 × ec2 m5.large');
+    expect(text).toContain('4 × EC2 m5.large');
     expect(text).toContain('Partial upfront');
-    expect(text).toContain('2 × rds db.r5.large');
+    expect(text).toContain('2 × RDS db.r5.large');
     expect(text).not.toContain('Charged today');
     expect(opts.confirmLabel).toContain(`(${formatCurrency(8000, '$', 2)} upfront on approval)`);
   });

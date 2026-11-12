@@ -131,7 +131,8 @@ describe('Issue #1903: purchase modal re-prices on Term/Payment change', () => {
 
     const notice = document.querySelector('.purchase-modal-unavailable');
     expect(notice?.getAttribute('role')).toBe('alert');
-    for (const label of ['a1', 'ec2', 'm5.large', 'us-east-1', 'excluded']) expect(notice?.textContent).toContain(label);
+    for (const label of ['a1', 'EC2', 'm5.large', 'us-east-1', 'excluded']) expect(notice?.textContent).toContain(label);
+    expect(notice?.textContent).not.toContain('ec2');
     expect(getPurchaseModalRecommendations()).toEqual([]);
     expect(document.querySelectorAll('.purchase-modal-table tbody tr')).toHaveLength(0);
     expect((document.getElementById('execute-purchase-btn') as HTMLButtonElement).disabled).toBe(true);

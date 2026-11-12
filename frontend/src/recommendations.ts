@@ -5580,7 +5580,7 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
     const list = document.createElement('ul');
     for (const rec of unavailable) {
       const item = document.createElement('li');
-      item.textContent = [rec.cloud_account_id, rec.provider, rec.service, rec.resource_type, rec.region, `${rec.term}-year`].filter(Boolean).join(' / ');
+      item.textContent = [rec.cloud_account_id, rec.provider, serviceLabel(rec.service), rec.resource_type, rec.region, `${rec.term}-year`].filter(Boolean).join(' / ');
       list.appendChild(item);
     }
     notice.appendChild(list);

@@ -72,7 +72,7 @@ describe('buildCommitmentSummary', () => {
     expect(text).toContain('Charged today$1,200.00');
     expect(text).toContain('Monthly$10.00');
     expect(text).toContain('Total over term$1,320.00');
-    expect(text).toContain('2 × ec2 m5.large · 1 Year, No upfront · prod');
+    expect(text).toContain('2 × EC2 m5.large · 1 Year, No upfront · prod');
   });
 
   it('says so when the monthly cost is not reported, and truncates long lists', () => {

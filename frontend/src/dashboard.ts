@@ -624,7 +624,7 @@ function renderUpcomingPurchases(purchases: UpcomingPurchase[]): void {
     if (safeProvider) badge.classList.add(safeProvider);
     badge.textContent = (p.provider || '').toUpperCase();
     descP.appendChild(badge);
-    descP.appendChild(document.createTextNode(` ${p.service} - Step ${p.step_number} of ${p.total_steps}`));
+    descP.appendChild(document.createTextNode(` ${serviceLabel(p.service)} - Step ${p.step_number} of ${p.total_steps}`));
     details.appendChild(h4);
     details.appendChild(descP);
 

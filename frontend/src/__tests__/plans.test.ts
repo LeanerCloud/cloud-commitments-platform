@@ -1185,7 +1185,7 @@ describe('Plans Module', () => {
       const opts = mockConfirmDialog.mock.calls[0]![0] as { title: string; body: HTMLElement };
       expect(opts.title).toBe('Run step 1/4 of "Test Plan" now?');
       expect(opts.body.textContent).toMatch(/Charged today\$1,?000/);
-      expect(opts.body.textContent).toContain('5 \u00d7 ec2 t3.medium');
+      expect(opts.body.textContent).toContain('5 \u00d7 EC2 t3.medium');
     });
 
     test('a second click while the run confirm is open does not stack a second dialog', async () => {

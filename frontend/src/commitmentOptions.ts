@@ -6,6 +6,7 @@
  */
 
 import type { PaymentAdjustment } from './api/types';
+import { serviceLabel } from './lib/service-labels';
 
 export interface PaymentOption {
   value: string;
@@ -365,7 +366,7 @@ export function formatPaymentAdjustmentNotice(
   const only = adjustments.length === 1 ? adjustments[0] : undefined;
   if (only) {
     return (
-      `Billing schedule adjusted: ${only.provider.toUpperCase()} ${only.service} does not offer ` +
+      `Billing schedule adjusted: ${only.provider.toUpperCase()} ${serviceLabel(only.service)} does not offer ` +
       `"${getPaymentLabel(only.requested_payment_option)}", so this purchase was applied as ` +
       `"${getPaymentLabel(only.applied_payment_option)}".`
     );

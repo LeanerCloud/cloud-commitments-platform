@@ -354,6 +354,8 @@ describe('Dashboard Module', () => {
       const upcomingList = document.getElementById('upcoming-list');
       expect(upcomingList?.innerHTML).toContain('Test Plan');
       expect(upcomingList?.innerHTML).toContain('Step 1 of 4');
+      expect(upcomingList?.innerHTML).toContain(' EC2 - Step 1 of 4');
+      expect(upcomingList?.innerHTML).not.toContain('ec2');
     });
 
     test('shows an inline error with Retry, not the empty state, when the upcoming fetch fails (#713)', async () => {

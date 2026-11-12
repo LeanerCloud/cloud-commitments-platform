@@ -6,6 +6,7 @@
  */
 
 import { formatCurrency, formatTerm } from './utils';
+import { serviceLabel } from './lib/service-labels';
 
 export interface CommitmentLine {
   service: string;
@@ -152,7 +153,7 @@ export function formatCommitmentTotals(lines: readonly CommitmentLine[], digits 
 
 function describe(l: CommitmentLine): string {
   const where = [l.account, l.region].filter(Boolean).join(', ');
-  const what = `${l.count} × ${l.service} ${l.resourceType}`;
+  const what = `${l.count} × ${serviceLabel(l.service)} ${l.resourceType}`;
   const terms = `${formatTerm(l.term)}, ${paymentLabel(l.payment)}`;
   return [what, terms, where].filter(Boolean).join(' · ');
 }
