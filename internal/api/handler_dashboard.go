@@ -395,7 +395,7 @@ func (h *Handler) resolveTargetCoverage(ctx context.Context) float64 {
 
 // getUpcomingPurchases enumerates pending purchase_executions joined to
 // their parent PurchasePlan for display. Mirrors the data flow in
-// getPlannedPurchases (handler_purchases.go) so the dashboard widget and
+// getPlannedPurchases (handler_purchases_planned.go) so the dashboard widget and
 // the Plans page walk the same canonical "what's about to happen" set.
 //
 // The widget previously enumerated plans and synthesized one row per plan

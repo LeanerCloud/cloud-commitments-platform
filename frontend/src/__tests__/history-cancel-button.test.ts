@@ -3,7 +3,7 @@
  * the Approval queue card (#1331), not in the History table.
  *
  * Mirror of the backend RBAC matrix in
- * internal/api/handler_purchases.go::authorizeSessionCancel — keep both
+ * internal/api/handler_purchases_cancel.go::authorizeSessionCancel — keep both
  * sides in sync. The backend remains authoritative; these tests only
  * verify the UX gate (don't render buttons users can't use).
  *

@@ -4221,7 +4221,7 @@ func TestHandler_retryPurchase_AlreadyRetried_Rejects(t *testing.T) {
 // issue #220 regression guard. Two concurrent retries of the same failed
 // row can both read RetryExecutionID == nil in loadAndValidateRetryRequest
 // before either commits -- the in-memory already-retried guard at
-// handler_purchases.go:1718 cannot see the other request's in-flight write.
+// handler_purchases_retry.go cannot see the other request's in-flight write.
 // The authoritative guard is the atomic CAS inside the tx
 // (LinkRetryExecutionAtomic, conditional on status='failed' AND
 // retry_execution_id IS NULL): whichever request's UPDATE runs second
@@ -5698,7 +5698,7 @@ func TestDisablePlan_UpdatePlanDBError_NoPIILeak(t *testing.T) {
 // TestLookupContactEmail_GetAccountDBError_NoPIILeak guards that the
 // GetCloudAccount failure path in lookupContactEmail no longer logs the raw
 // account UUID or the raw DB error string (issue #965 sibling at
-// handler_purchases.go:2006).
+// handler_purchases_approval_email.go).
 func TestLookupContactEmail_GetAccountDBError_NoPIILeak(t *testing.T) {
 	ctx := context.Background()
 
@@ -5732,7 +5732,7 @@ func TestLookupContactEmail_GetAccountDBError_NoPIILeak(t *testing.T) {
 }
 
 // TestGatherAccountContactEmails_DBError_NoPIILeak guards the wrap site at
-// gatherAccountContactEmails (handler_purchases.go:1955) which previously
+// gatherAccountContactEmails (handler_purchases_approval_email.go) which previously
 // re-wrapped lookupContactEmail's error with the raw account UUID
 // (`fmt.Errorf("lookup contact email for account %s: %w", id, err)`) and
 // propagated it up to the router's `API error: %v` log.

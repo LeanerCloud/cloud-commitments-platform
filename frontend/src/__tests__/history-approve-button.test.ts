@@ -2,7 +2,7 @@
  * History inline Approve button tests (issue #286).
  *
  * Mirror of the backend RBAC matrix in
- * internal/api/handler_purchases.go::authorizeSessionApprove — keep
+ * internal/api/handler_purchases_approve.go::authorizeSessionApprove — keep
  * both sides in sync. The backend remains authoritative; these tests
  * only verify the UX gate (don't render buttons users can't use).
  *

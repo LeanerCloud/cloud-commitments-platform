@@ -414,7 +414,7 @@ function rerenderPlannedPurchases(): void {
 // canManageScheduledPurchase returns true when the current session is
 // permitted to act on the given scheduled purchase's row buttons (issue #950).
 // UX gate only -- the backend authorizeExecutionManagement in
-// internal/api/handler_purchases.go remains the security boundary; a
+// internal/api/handler_purchases_scope.go remains the security boundary; a
 // false-positive here surfaces as a 403 toast on click rather than a
 // successful mutation.
 //

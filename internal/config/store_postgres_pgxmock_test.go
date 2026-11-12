@@ -832,7 +832,7 @@ func TestPGXMock_GetExecutionByID_WithTimestamps(t *testing.T) {
 // (and earlier migrations added executed_by_user_id, executed_at,
 // pre_approval_skip_reason) every execution-reading SELECT must project them,
 // or scanExecutionRows fails at runtime with "failed to scan execution" on the
-// planned-purchase list path (handler_purchases.go GetPlannedExecutions).
+// planned-purchase list path (handler_purchases_planned.go GetPlannedExecutions).
 //
 // The mock uses regexp query matching, so ExpectQuery requires the issued SQL
 // to contain idempotency_key; with the column missing from the projection the

@@ -755,7 +755,7 @@ func createStepsViaTx(ctx context.Context, h *Handler, count int, creator *strin
 // guard: every execution row written through POST /api/plans/{id}/purchases
 // MUST carry the session user's UUID in CreatedByUserID, otherwise the
 // per-row ownership gate (authorizeExecutionManagement in
-// handler_purchases.go) downstream cannot recognize the actor as the
+// handler_purchases_scope.go) downstream cannot recognize the actor as the
 // rightful manager and the user who just scheduled the purchases is
 // locked out of pause / resume / run / delete until an admin steps in.
 //

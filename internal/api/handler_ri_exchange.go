@@ -2692,7 +2692,7 @@ func (h *Handler) sessionHasApproveRight(ctx context.Context, session *Session) 
 
 // authorizeSessionApproveRIExchange returns nil when the session is permitted to
 // approve the given RI exchange record under the approve-any / approve-own RBAC rules
-// (issue #300). Mirrors authorizeSessionApprove from handler_purchases.go.
+// (issue #300). Mirrors authorizeSessionApprove from handler_purchases_approve.go.
 //
 // The RI exchange shares ResourcePurchases because approval is conceptually
 // "approving a purchase action on a different resource type" per the issue spec,

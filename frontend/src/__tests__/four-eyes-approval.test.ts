@@ -3,7 +3,7 @@
  *
  * GlobalConfig.require_different_approver gates the inline Approve button so
  * a session cannot approve a purchase execution it created itself, mirroring
- * the backend's requireDifferentApprover in internal/api/handler_purchases.go.
+ * the backend's requireDifferentApprover in internal/api/handler_purchases_approve_session.go.
  * This is a UX gate only -- the backend remains the security boundary; these
  * tests verify the button/badge rendering, not the API enforcement.
  */

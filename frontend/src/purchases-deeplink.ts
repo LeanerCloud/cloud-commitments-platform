@@ -12,7 +12,7 @@
  *   3. User confirms the action via confirmDialog.
  *   4. We POST to /api/purchases/{approve,cancel,revoke}/:id with the token in the JSON body and the
  *      session cookie attached; the backend records session.Email as
- *      approved_by / cancelled_by (see handler_purchases.go:
+ *      approved_by / cancelled_by (see handler_purchases_retry.go:
  *      tryResolveActorEmail).
  *   5. On result, we replace the URL with /purchases so the user isn't
  *      stuck on a stale deep-link if they navigate back.

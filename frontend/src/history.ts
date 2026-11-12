@@ -722,7 +722,7 @@ function upfrontCell(p: HistoryPurchase, amortize: boolean): string {
 // canCancelPendingRow returns true when the current session is permitted
 // to cancel the given pending/notified history row via the session-authed
 // Cancel button (issue #46). UX gate only — the backend
-// authorizeSessionCancel in internal/api/handler_purchases.go remains the
+// authorizeSessionCancel in internal/api/handler_purchases_cancel.go remains the
 // security boundary; if this helper is wrong-positive the API surfaces
 // 403 and the click handler turns that into a "Failed to cancel" toast.
 //
@@ -747,7 +747,7 @@ function canCancelPendingRow(p: HistoryPurchase): boolean {
 // canApproveUnder4Eyes returns true when the 4-eyes dual-control policy
 // (issue #1005, GlobalConfig.require_different_approver) allows sessionUserId
 // to approve a row created by row.created_by_user_id. Mirrors the backend's
-// requireDifferentApprover in internal/api/handler_purchases.go: mode off →
+// requireDifferentApprover in internal/api/handler_purchases_approve_session.go: mode off →
 // always allowed; mode on → allowed only when the row has a recorded,
 // different creator (a NULL/legacy creator is denied, matching the backend's
 // fail-closed 403 for rows that predate dual-control). Scheduler-created rows
@@ -783,7 +783,7 @@ function rbacAllowsApprove(p: HistoryPurchase, user: { id: string }): boolean {
 // canApprovePendingRow returns true when the current session is permitted
 // to approve the given pending history row via the inline Approve button
 // (issue #286). UX gate only — the backend authorizeSessionApprove in
-// internal/api/handler_purchases.go remains the security boundary; a
+// internal/api/handler_purchases_approve.go remains the security boundary; a
 // false-positive here surfaces as a 403 toast on click rather than a
 // successful approve.
 //
@@ -809,7 +809,7 @@ function canApprovePendingRow(p: HistoryPurchase): boolean {
 // canRetryFailedRow returns true when the current session is permitted
 // to retry the given failed history row via the inline Retry button
 // (issue #47). UX gate only — the backend authorizeSessionRetry in
-// internal/api/handler_purchases.go remains the security boundary.
+// internal/api/handler_purchases_retry.go remains the security boundary.
 //
 // Heuristic:
 //   * status must be "failed";
@@ -895,7 +895,7 @@ function canRevokeCompletedRow(p: HistoryPurchase): boolean {
 // block threshold (5 attempts). The frontend shows a confirm-with-
 // warning dialog and forwards force=true on confirmation.
 //
-// Kept in sync with retryThreshold in internal/api/handler_purchases.go;
+// Kept in sync with retryThreshold in internal/api/handler_purchases_retry.go;
 // the backend remains authoritative — if this client predicate disagrees
 // with the server, the API surfaces a structured 409 with retry_attempt_n
 // + threshold and the toast falls back to the server message.

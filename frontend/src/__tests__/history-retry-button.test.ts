@@ -2,7 +2,7 @@
  * History inline Retry button tests (issue #47).
  *
  * Mirror of the backend RBAC matrix in
- * internal/api/handler_purchases.go::authorizeSessionRetry — keep both
+ * internal/api/handler_purchases_retry.go::authorizeSessionRetry — keep both
  * sides in sync. The backend remains authoritative; these tests only
  * verify the UX gate (don't render buttons users can't use, render
  * the right control for the row's state).

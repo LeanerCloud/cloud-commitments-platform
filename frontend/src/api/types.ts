@@ -459,7 +459,7 @@ export interface PurchaseResult {
 }
 
 // PurchaseDetails matches the shape produced by backend
-// buildPurchaseDetailsResponse (internal/api/handler_purchases.go).
+// buildPurchaseDetailsResponse (internal/api/handler_purchases_details.go).
 // `recommendations` carries the per-rec snapshot that was captured at
 // approval-request time so callers can render the deal without
 // re-querying provider APIs. plan_id / plan_name / scheduled_date are

@@ -42,7 +42,7 @@ import (
 // What the rows pin, per check:
 //
 //   - The shared pre-lookup check in requireSessionBeforeLookup
-//     (handler_purchases.go) runs validateCSRF for every purchase row, so
+//     (handler_purchases_approve.go) runs validateCSRF for every purchase row, so
 //     removing it fails the purchase rows. The RI-exchange session check
 //     (handler_ri_exchange.go, approveRIExchangeViaSession) fails the RI rows.
 //   - The per-handler validateCSRF calls in approvePurchaseViaSession,

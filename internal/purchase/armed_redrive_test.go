@@ -190,7 +190,7 @@ func TestClaimAndExecuteRefusesArmedAzureSavingsPlanRetry(t *testing.T) {
 // path issue #1718 did not name, and which an approved successor is MOST likely
 // to take in practice.
 //
-// approveWithDelay (internal/api/handler_purchases.go) transitions an approved
+// approveWithDelay (internal/api/handler_purchases_approve_session.go) transitions an approved
 // row pending -> scheduled and returns; the row then fires later from the
 // scheduler sweep via fireOneDue, never passing through ApproveAndExecute at
 // all. Gating only the two executors the issue named would have left this

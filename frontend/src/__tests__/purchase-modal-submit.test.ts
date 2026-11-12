@@ -327,7 +327,7 @@ describe('Issue #430: interleaved purchase modal opens submit what the newest op
 // belonging to different cloud accounts landed in ONE bucket and were sent
 // in a single executePurchase POST. internal/purchase/execution.go's
 // SingleCloudAccountIDFromRecs -- enforced both at the API boundary
-// (validateExecutePurchaseRecommendations, internal/api/handler_purchases.go)
+// (validateExecutePurchaseRecommendations, internal/api/handler_purchases_execute.go)
 // and by the executor -- rejects a request whose selected recs target more
 // than one cloud account, or mix attributed and unattributed recs, with
 // HTTP 400 (issue #1902). handleBulkPurchaseClick's bucket key now includes

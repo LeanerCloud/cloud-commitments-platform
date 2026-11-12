@@ -504,7 +504,7 @@ export const __test__ = { sparklinePoints, attachSparkline, computeServiceStats 
 // canCancelUpcomingPurchase returns true when the current session is
 // permitted to cancel the given upcoming purchase via the Dashboard
 // widget (issues #950, #1400). UX gate only -- the backend
-// authorizePlannedPurchaseCancel in internal/api/handler_purchases.go
+// authorizePlannedPurchaseCancel in internal/api/handler_purchases_cancel_planned.go
 // remains the security boundary; a false-positive surfaces as a 403
 // toast rather than a successful mutation.
 //
