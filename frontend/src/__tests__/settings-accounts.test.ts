@@ -5,6 +5,7 @@
 import {
   loadAccountsForProvider,
   loadOverridesPanel,
+  openAccountModal,
   openOverrideModal,
   setupSettingsHandlers,
   setGlobalDefaultsForTest,
@@ -122,7 +123,9 @@ function buildAccountsDOM(): void {
   form.appendChild(input('account-external-id'));
   const enabledCb = input('account-enabled', 'checkbox');
   enabledCb.checked = true;
-  form.appendChild(enabledCb);
+  const enabledRow = div('account-enabled-row');
+  enabledRow.appendChild(enabledCb);
+  form.appendChild(enabledRow);
 
   // AWS fields
   const awsFields = div('account-aws-fields');
@@ -355,6 +358,14 @@ describe('Account modal via setupSettingsHandlers', () => {
 
     expect(document.getElementById('account-gcp-fields')!.classList.contains('hidden')).toBe(false);
     expect(document.getElementById('account-aws-fields')!.classList.contains('hidden')).toBe(true);
+  });
+
+  test('approve-registration modal (onSave) hides the Enabled toggle; add and edit keep it (#1776)', () => {
+    const row = document.getElementById('account-enabled-row')!;
+    openAccountModal('aws', undefined, { onSave: async () => {} });
+    expect(row.classList.contains('hidden')).toBe(true);
+    openAccountModal('aws');
+    expect(row.classList.contains('hidden')).toBe(false);
   });
 
   test('close button hides account modal', () => {

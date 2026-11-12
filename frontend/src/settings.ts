@@ -1936,6 +1936,8 @@ export function openAccountModal(provider: AccountProvider, account?: api.CloudA
   setInputValue('account-contact-email', account?.contact_email ?? '');
   setInputValue('account-external-id', account?.external_id ?? '');
   setInputChecked('account-enabled', account?.enabled ?? true);
+  // Approving a registration auto-enables the account server-side, so the toggle would be a no-op there.
+  document.getElementById('account-enabled-row')?.classList.toggle('hidden', !!options?.onSave);
 
   // Show/hide provider-specific fields
   const awsFields = document.getElementById('account-aws-fields');
