@@ -40,12 +40,8 @@ type ManagerConfig struct {
 	ConfigStore            config.StoreInterface
 	OIDCSigner             oidc.Signer
 	OIDCIssuerURL          string
-	DefaultPaymentOption   string
-	DefaultRampSchedule    string
 	DashboardURL           string
 	NotificationDaysBefore int
-	DefaultCoverage        float64
-	DefaultTerm            int
 	// MaxDueRowAge caps how long after its due time the fire and process
 	// sweeps may still buy a row (issue #712); an older row is failed
 	// unbought instead. Zero means DefaultMaxDueRowAge.
@@ -75,7 +71,6 @@ type Manager struct {
 	attemptJournal  AttemptJournal
 	providerFactory provider.FactoryInterface
 	oidcSigner      oidc.Signer
-	defaults        PurchaseDefaults
 	dashboardURL    string
 	oidcIssuerURL   string
 	notifyDays      int
@@ -85,14 +80,6 @@ type Manager struct {
 	// budgets lets tests shorten purchase deadlines. Production leaves it
 	// zero, which means the default durations below.
 	budgets purchaseBudgets
-}
-
-// PurchaseDefaults holds default purchase settings.
-type PurchaseDefaults struct { //nolint:revive // exported: doc comment style intentional
-	Payment      string
-	RampSchedule string
-	Term         int
-	Coverage     float64
 }
 
 // ProcessResult holds the result of processing scheduled purchases.
@@ -146,16 +133,10 @@ func NewManager(cfg ManagerConfig) *Manager {
 		attemptJournal:  cfg.AttemptJournal,
 		providerFactory: factory,
 		notifyDays:      cfg.NotificationDaysBefore,
-		defaults: PurchaseDefaults{
-			Term:         cfg.DefaultTerm,
-			Payment:      cfg.DefaultPaymentOption,
-			Coverage:     cfg.DefaultCoverage,
-			RampSchedule: cfg.DefaultRampSchedule,
-		},
-		dashboardURL:  cfg.DashboardURL,
-		oidcSigner:    cfg.OIDCSigner,
-		oidcIssuerURL: cfg.OIDCIssuerURL,
-		maxDueRowAge:  cfg.MaxDueRowAge,
+		dashboardURL:    cfg.DashboardURL,
+		oidcSigner:      cfg.OIDCSigner,
+		oidcIssuerURL:   cfg.OIDCIssuerURL,
+		maxDueRowAge:    cfg.MaxDueRowAge,
 	}
 }
 

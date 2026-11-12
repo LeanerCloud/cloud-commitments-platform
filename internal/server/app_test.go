@@ -159,7 +159,7 @@ func TestLoadApplicationConfig_FireSweepOff(t *testing.T) {
 	// Clear every input LoadApplicationConfig can reject, so an inherited bad
 	// value fails no subtest before FireSweepOff is checked.
 	for _, key := range []string{
-		"DEFAULT_TERM", "DEFAULT_COVERAGE", "SCHEDULED_PURCHASE_MAX_OVERDUE", "CUDLY_TRUSTED_PROXY_HOPS",
+		"SCHEDULED_PURCHASE_MAX_OVERDUE", "CUDLY_TRUSTED_PROXY_HOPS",
 		"ANALYTICS_COLLECTION_ENABLED", "ANALYTICS_RETENTION_MONTHS", "ANALYTICS_PARTITIONS_AHEAD",
 	} {
 		t.Setenv(key, "")
@@ -402,8 +402,7 @@ func TestLoadApplicationConfig(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		// Clear all env vars that LoadApplicationConfig reads
 		envVars := []string{
-			"VERSION", "NOTIFICATION_DAYS_BEFORE", "DEFAULT_TERM",
-			"DEFAULT_PAYMENT_OPTION", "DEFAULT_COVERAGE", "DEFAULT_RAMP_SCHEDULE",
+			"VERSION", "NOTIFICATION_DAYS_BEFORE",
 			"API_KEY_SECRET_ARN", "ENABLE_DASHBOARD", "DASHBOARD_BUCKET",
 			"DASHBOARD_URL", "CORS_ALLOWED_ORIGIN", "AWS_LAMBDA_RUNTIME_API",
 			"RECOMMENDATION_SCHEDULE",
@@ -420,10 +419,6 @@ func TestLoadApplicationConfig(t *testing.T) {
 		testutil.AssertEqual(t, 3, cfg.NotificationDaysBefore)
 		// Zero is read by the purchase manager as its 24h default cap.
 		testutil.AssertEqual(t, time.Duration(0), cfg.ScheduledPurchaseMaxOverdue)
-		testutil.AssertEqual(t, 3, cfg.DefaultTerm)
-		testutil.AssertEqual(t, "", cfg.DefaultPaymentOption)
-		testutil.AssertEqual(t, 80.0, cfg.DefaultCoverage)
-		testutil.AssertEqual(t, "", cfg.DefaultRampSchedule)
 		testutil.AssertEqual(t, false, cfg.EnableDashboard)
 		testutil.AssertEqual(t, false, cfg.IsLambda)
 		testutil.AssertEqual(t, "", cfg.RecommendationSchedule)
@@ -432,10 +427,6 @@ func TestLoadApplicationConfig(t *testing.T) {
 	t.Run("custom values", func(t *testing.T) {
 		testutil.SetEnv(t, "VERSION", "1.2.3")
 		testutil.SetEnv(t, "NOTIFICATION_DAYS_BEFORE", "7")
-		testutil.SetEnv(t, "DEFAULT_TERM", "1")
-		testutil.SetEnv(t, "DEFAULT_PAYMENT_OPTION", "AllUpfront")
-		testutil.SetEnv(t, "DEFAULT_COVERAGE", "95.5")
-		testutil.SetEnv(t, "DEFAULT_RAMP_SCHEDULE", "linear")
 		testutil.SetEnv(t, "API_KEY_SECRET_ARN", "arn:api:key")
 		testutil.SetEnv(t, "ENABLE_DASHBOARD", "true")
 		testutil.SetEnv(t, "DASHBOARD_BUCKET", "my-bucket")
@@ -450,10 +441,6 @@ func TestLoadApplicationConfig(t *testing.T) {
 
 		testutil.AssertEqual(t, "1.2.3", cfg.Version)
 		testutil.AssertEqual(t, 7, cfg.NotificationDaysBefore)
-		testutil.AssertEqual(t, 1, cfg.DefaultTerm)
-		testutil.AssertEqual(t, "AllUpfront", cfg.DefaultPaymentOption)
-		testutil.AssertEqual(t, 95.5, cfg.DefaultCoverage)
-		testutil.AssertEqual(t, "linear", cfg.DefaultRampSchedule)
 		testutil.AssertEqual(t, "arn:api:key", cfg.APIKeySecretARN)
 		testutil.AssertEqual(t, true, cfg.EnableDashboard)
 		testutil.AssertEqual(t, "my-bucket", cfg.DashboardBucket)
@@ -466,14 +453,10 @@ func TestLoadApplicationConfig(t *testing.T) {
 }
 
 func TestNewApplicationRejectsMalformedEnvDefaults(t *testing.T) {
-	for _, key := range []string{"DEFAULT_TERM", "DEFAULT_COVERAGE", "SCHEDULED_PURCHASE_MAX_OVERDUE", "ANALYTICS_COLLECTION_ENABLED", "ANALYTICS_RETENTION_MONTHS", "ANALYTICS_PARTITIONS_AHEAD", "DB_HOST"} {
+	for _, key := range []string{"SCHEDULED_PURCHASE_MAX_OVERDUE", "ANALYTICS_COLLECTION_ENABLED", "ANALYTICS_RETENTION_MONTHS", "ANALYTICS_PARTITIONS_AHEAD", "DB_HOST"} {
 		t.Setenv(key, "")
 	}
 	for _, tc := range []struct{ key, value string }{
-		{"DEFAULT_TERM", "3y"},
-		{"DEFAULT_TERM", "999999999999999999999999999"},
-		{"DEFAULT_COVERAGE", "80%"},
-		{"DEFAULT_COVERAGE", "1e999"},
 		{"SCHEDULED_PURCHASE_MAX_OVERDUE", "24"},
 		{"SCHEDULED_PURCHASE_MAX_OVERDUE", "1d"},
 		{"SCHEDULED_PURCHASE_MAX_OVERDUE", "0s"},
@@ -496,48 +479,19 @@ func TestNewApplicationRejectsMalformedEnvDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadApplicationConfigNumericDefaults(t *testing.T) {
+func TestLoadApplicationConfigAnalyticsDisabled(t *testing.T) {
 	t.Setenv("ANALYTICS_COLLECTION_ENABLED", "false")
 	t.Setenv("ANALYTICS_RETENTION_MONTHS", "")
 	t.Setenv("ANALYTICS_PARTITIONS_AHEAD", "")
-	for _, tc := range []struct {
-		name, term, coverage string
-		wantTerm             int
-		wantCoverage         float64
-	}{
-		{"unset", "", "", 3, 80},
-		{"empty", "", "", 3, 80},
-		{"one year", "1", "95.5", 1, 95.5},
-		{"zero coverage", "3", "0", 3, 0},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("DEFAULT_TERM", tc.term)
-			t.Setenv("DEFAULT_COVERAGE", tc.coverage)
-			if tc.name == "unset" {
-				if err := os.Unsetenv("DEFAULT_TERM"); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Unsetenv("DEFAULT_COVERAGE"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			cfg, err := LoadApplicationConfig()
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("DEFAULT_TERM", "3y")
-			t.Setenv("DEFAULT_COVERAGE", "80%")
-			t.Setenv("ANALYTICS_COLLECTION_ENABLED", "off")
-			testutil.AssertEqual(t, tc.wantTerm, cfg.DefaultTerm)
-			testutil.AssertEqual(t, tc.wantCoverage, cfg.DefaultCoverage)
-			testutil.AssertNoError(t, validateAppConfigEnvDefaults(cfg))
-			testutil.AssertNoError(t, cfg.Analytics.Validate())
-			app := &Application{appConfig: cfg}
-			result, err := app.handleCollectAnalytics(context.Background())
-			testutil.AssertNoError(t, err)
-			testutil.AssertEqual(t, "disabled", result["status"])
-		})
-	}
+	cfg, err := LoadApplicationConfig()
+	testutil.AssertNoError(t, err)
+	// A later bad value must not matter: the handler reads the loaded config.
+	t.Setenv("ANALYTICS_COLLECTION_ENABLED", "off")
+	testutil.AssertNoError(t, cfg.Analytics.Validate())
+	app := &Application{appConfig: cfg}
+	result, err := app.handleCollectAnalytics(context.Background())
+	testutil.AssertNoError(t, err)
+	testutil.AssertEqual(t, "disabled", result["status"])
 }
 
 func TestNewApplicationFromDeps(t *testing.T) {
@@ -561,8 +515,6 @@ func TestNewApplicationFromDeps(t *testing.T) {
 	baseCfg := ApplicationConfig{
 		Version:                "test-v1",
 		NotificationDaysBefore: 3,
-		DefaultTerm:            3,
-		DefaultCoverage:        80,
 		IsLambda:               false,
 	}
 
@@ -642,9 +594,6 @@ func TestNewApplicationFromDeps(t *testing.T) {
 		cfg := ApplicationConfig{
 			Version:                "v2.0",
 			NotificationDaysBefore: 7,
-			DefaultTerm:            1,
-			DefaultPaymentOption:   "all-upfront", // canonical form; "AllUpfront" is now correctly rejected at startup
-			DefaultCoverage:        95.5,
 			APIKeySecretARN:        "arn:aws:key",
 			EnableDashboard:        true,
 			DashboardBucket:        "bucket",
@@ -663,68 +612,6 @@ func TestNewApplicationFromDeps(t *testing.T) {
 		testutil.AssertEqual(t, "v2.0", app.Version)
 		testutil.AssertEqual(t, cfg.DashboardURL, app.appConfig.DashboardURL)
 		testutil.AssertEqual(t, cfg.CORSAllowedOrigin, app.appConfig.CORSAllowedOrigin)
-	})
-}
-
-// TestNewApplicationFromDepsValidatesEnvDefaults is a regression test for
-// issue #1026: before the fix, invalid DEFAULT_PAYMENT_OPTION /
-// DEFAULT_RAMP_SCHEDULE values were silently propagated into the purchase
-// manager. The test confirms that NewApplicationFromDeps now fails fast on
-// an invalid value rather than accepting it.
-func TestNewApplicationFromDepsValidatesEnvDefaults(t *testing.T) {
-	ctx := context.Background()
-	validDBConfig := &database.Config{Host: "localhost", Port: 5432, Database: "cudly_test", User: "test", Password: "test"}
-
-	t.Run("invalid DEFAULT_PAYMENT_OPTION is rejected at startup", func(t *testing.T) {
-		cfg := ApplicationConfig{
-			DefaultPaymentOption: "AllUpfront", // typo: should be "all-upfront"
-		}
-		deps := ExternalDeps{DBConfig: validDBConfig}
-		_, err := NewApplicationFromDeps(ctx, cfg, deps)
-		testutil.AssertError(t, err)
-		testutil.AssertContains(t, err.Error(), "DEFAULT_PAYMENT_OPTION")
-	})
-
-	t.Run("invalid DEFAULT_RAMP_SCHEDULE is rejected at startup", func(t *testing.T) {
-		cfg := ApplicationConfig{
-			DefaultRampSchedule: "Immediate", // wrong case
-		}
-		deps := ExternalDeps{DBConfig: validDBConfig}
-		_, err := NewApplicationFromDeps(ctx, cfg, deps)
-		testutil.AssertError(t, err)
-		testutil.AssertContains(t, err.Error(), "DEFAULT_RAMP_SCHEDULE")
-	})
-
-	t.Run("empty DEFAULT_PAYMENT_OPTION is accepted", func(t *testing.T) {
-		// Empty means "use purchase manager built-in default" -- must not error.
-		cfg := ApplicationConfig{DefaultPaymentOption: ""}
-		deps := ExternalDeps{
-			EmailSender: &noopEmailSender{},
-			DBConfig:    validDBConfig,
-		}
-		_, err := NewApplicationFromDeps(ctx, cfg, deps)
-		// Error is expected for other reasons (e.g. scheduledauth or DB), but
-		// NOT for the payment option: verify the message does not mention it.
-		if err != nil {
-			testutil.AssertTrue(t, !strings.Contains(err.Error(), "DEFAULT_PAYMENT_OPTION"),
-				"empty DEFAULT_PAYMENT_OPTION must not produce a validation error, got: "+err.Error())
-		}
-	})
-
-	t.Run("valid DEFAULT_PAYMENT_OPTION is accepted", func(t *testing.T) {
-		cfg := ApplicationConfig{
-			DefaultPaymentOption: "all-upfront",
-		}
-		deps := ExternalDeps{
-			EmailSender: &noopEmailSender{},
-			DBConfig:    validDBConfig,
-		}
-		_, err := NewApplicationFromDeps(ctx, cfg, deps)
-		// Error may occur for unrelated reasons but must not mention payment option.
-		if err != nil {
-			testutil.AssertTrue(t, !strings.Contains(err.Error(), "DEFAULT_PAYMENT_OPTION"),
-				"valid DEFAULT_PAYMENT_OPTION must not produce a validation error, got: "+err.Error())
-		}
 	})
 }
 

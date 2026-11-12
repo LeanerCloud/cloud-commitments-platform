@@ -78,9 +78,7 @@ func TestNewApplicationFromDeps_IsLambdaSingleSourceOfTruth(t *testing.T) {
 			setLambdaEnv(t, tt.envOnLambda)
 
 			cfg := ApplicationConfig{
-				Version:         "islambda-test",
-				DefaultTerm:     3,
-				DefaultCoverage: 80,
+				Version: "islambda-test",
 				// A configured issuer URL skips the Lambda function-URL
 				// lookup, so the test makes no AWS call in either mode.
 				DashboardURL: "https://islambda.example.test",

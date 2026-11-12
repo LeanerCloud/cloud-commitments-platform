@@ -78,7 +78,7 @@ func newReinitTestApp(t *testing.T) *Application {
 	t.Setenv("AWS_REGION", "us-east-1")
 
 	app, err := NewApplicationFromDeps(testutil.TestContext(t), ApplicationConfig{
-		DefaultTerm: 3, DefaultCoverage: 80, DashboardURL: "https://rl-cleanup.example.test",
+		DashboardURL: "https://rl-cleanup.example.test",
 	}, ExternalDeps{
 		EmailSender: &noopEmailSender{},
 		DBConfig:    &database.Config{Host: "localhost", Port: 5432, Database: "cudly_test", User: "test", Password: "test", SSLMode: "disable"},

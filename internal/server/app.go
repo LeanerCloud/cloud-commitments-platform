@@ -130,9 +130,7 @@ type ApplicationConfig struct {
 	ScheduledTaskSecret     string
 	IssuerURL               string
 	ScheduledTaskSecretName string
-	DefaultPaymentOption    string
 	Version                 string
-	DefaultRampSchedule     string
 	CORSAllowedOrigin       string
 	DashboardURL            string
 	DashboardBucket         string
@@ -143,8 +141,6 @@ type ApplicationConfig struct {
 	// fire and process sweeps' due-row age cap (issue #712). Zero means
 	// purchase.DefaultMaxDueRowAge.
 	ScheduledPurchaseMaxOverdue time.Duration
-	DefaultCoverage             float64
-	DefaultTerm                 int
 	EnableDashboard             bool
 	IsLambda                    bool
 	// TrustedProxyHops is the number of proxies that append to
@@ -301,22 +297,6 @@ func LoadApplicationConfig() (ApplicationConfig, error) {
 	if version == "" {
 		version = "dev"
 	}
-	term := 3
-	if raw := os.Getenv("DEFAULT_TERM"); raw != "" {
-		value, err := strconv.Atoi(raw)
-		if err != nil {
-			return ApplicationConfig{}, fmt.Errorf("invalid DEFAULT_TERM: %w", err)
-		}
-		term = value
-	}
-	coverage := 80.0
-	if raw := os.Getenv("DEFAULT_COVERAGE"); raw != "" {
-		value, err := strconv.ParseFloat(raw, 64)
-		if err != nil {
-			return ApplicationConfig{}, fmt.Errorf("invalid DEFAULT_COVERAGE: %w", err)
-		}
-		coverage = value
-	}
 	maxOverdue, err := loadScheduledPurchaseMaxOverdue()
 	if err != nil {
 		return ApplicationConfig{}, err
@@ -335,10 +315,6 @@ func LoadApplicationConfig() (ApplicationConfig, error) {
 		Version:                     version,
 		NotificationDaysBefore:      getEnvInt("NOTIFICATION_DAYS_BEFORE", 3),
 		ScheduledPurchaseMaxOverdue: maxOverdue,
-		DefaultTerm:                 term,
-		DefaultPaymentOption:        os.Getenv("DEFAULT_PAYMENT_OPTION"),
-		DefaultCoverage:             coverage,
-		DefaultRampSchedule:         os.Getenv("DEFAULT_RAMP_SCHEDULE"),
 		APIKeySecretARN:             os.Getenv("API_KEY_SECRET_ARN"),
 		EnableDashboard:             os.Getenv("ENABLE_DASHBOARD") == "true",
 		DashboardBucket:             os.Getenv("DASHBOARD_BUCKET"),
@@ -393,21 +369,6 @@ func parseTrustedProxyHops(raw string) (int, error) {
 		return 0, fmt.Errorf("invalid CUDLY_TRUSTED_PROXY_HOPS %q: want an integer 0-%d", raw, maxTrustedProxyHops)
 	}
 	return hops, nil
-}
-
-// validateAppConfigEnvDefaults validates the money-moving env-sourced defaults
-// at the startup boundary. Both DEFAULT_PAYMENT_OPTION and DEFAULT_RAMP_SCHEDULE
-// flow into the purchase manager as system-wide defaults; a typo propagates
-// silently into every purchase unless we reject it here (issue #1026).
-// Empty values are always valid (means "use the purchase manager's built-in default").
-func validateAppConfigEnvDefaults(cfg ApplicationConfig) error {
-	if err := config.ValidatePaymentOptionEnv(cfg.DefaultPaymentOption); err != nil {
-		return fmt.Errorf("invalid DEFAULT_PAYMENT_OPTION: %w", err)
-	}
-	if err := config.ValidateRampScheduleEnv(cfg.DefaultRampSchedule); err != nil {
-		return fmt.Errorf("invalid DEFAULT_RAMP_SCHEDULE: %w", err)
-	}
-	return nil
 }
 
 // resolveScheduledTaskSecret resolves SCHEDULED_TASK_SECRET_NAME to its real
@@ -503,12 +464,6 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 		return nil, fmt.Errorf("database configuration required: DBConfig must be provided")
 	}
 
-	// Validate money-moving env defaults at the startup boundary -- consistent with the
-	// fail-fast posture used for scheduledauth mode and ADMIN_PASSWORD_SECRET (issue #1026).
-	if err := validateAppConfigEnvDefaults(cfg); err != nil {
-		return nil, err
-	}
-
 	// Wire up the /api/scheduled/* auth validator. initScheduledAuth loads
 	// the mode config, resolves the bearer secret with fail-fast semantics
 	// in bearer mode (04-M4), builds the validator, and warms up JWKS.
@@ -554,10 +509,6 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 		STSClient:              deps.STSClient,
 		NotificationDaysBefore: cfg.NotificationDaysBefore,
 		MaxDueRowAge:           cfg.ScheduledPurchaseMaxOverdue,
-		DefaultTerm:            cfg.DefaultTerm,
-		DefaultPaymentOption:   cfg.DefaultPaymentOption,
-		DefaultCoverage:        cfg.DefaultCoverage,
-		DefaultRampSchedule:    cfg.DefaultRampSchedule,
 		OIDCSigner:             signer,
 		OIDCIssuerURL:          resolveOIDCIssuerURL(cfg),
 	})
@@ -875,10 +826,6 @@ func postDBPurchaseManagerConfig(app *Application, pgStore *config.PostgresStore
 		AttemptJournal:         pgStore,
 		NotificationDaysBefore: app.appConfig.NotificationDaysBefore,
 		MaxDueRowAge:           app.appConfig.ScheduledPurchaseMaxOverdue,
-		DefaultTerm:            app.appConfig.DefaultTerm,
-		DefaultPaymentOption:   app.appConfig.DefaultPaymentOption,
-		DefaultCoverage:        app.appConfig.DefaultCoverage,
-		DefaultRampSchedule:    app.appConfig.DefaultRampSchedule,
 		DashboardURL:           app.appConfig.DashboardURL,
 		OIDCSigner:             app.signer,
 		OIDCIssuerURL:          resolveOIDCIssuerURL(app.appConfig),

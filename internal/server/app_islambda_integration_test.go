@@ -47,7 +47,6 @@ func TestEnsureDB_IsLambdaSingleSourceOfTruth(t *testing.T) {
 			setLambdaEnv(t, !cfgIsLambda)
 			cfg := ApplicationConfig{
 				IsLambda: cfgIsLambda, DashboardURL: "https://islambda.example.test",
-				DefaultTerm: 3, DefaultCoverage: 80,
 			}
 			app, appErr := NewApplicationFromDeps(ctx, cfg, ExternalDeps{
 				DBConfig: pg.Config, EmailSender: &noopEmailSender{},
