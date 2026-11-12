@@ -20,6 +20,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/ricost"
 )
 
@@ -294,6 +295,12 @@ func buildExchangeNotificationData(result *exchange.AutoExchangeResult, dashboar
 
 	for i := range allOutcomes {
 		o := allOutcomes[i]
+		// The email carries the category message, never the raw execution
+		// error; the record id below is the reference to the full detail.
+		detail := o.Error
+		if detail != "" {
+			detail = purchase.SanitizeStoredError(detail)
+		}
 		data.Exchanges = append(data.Exchanges, email.RIExchangeItem{
 			RecordID:           o.RecordID,
 			ApprovalToken:      o.ApprovalToken,
@@ -304,7 +311,7 @@ func buildExchangeNotificationData(result *exchange.AutoExchangeResult, dashboar
 			PaymentDue:         o.PaymentDue,
 			ExchangeID:         o.ExchangeID,
 			UtilizationPct:     o.UtilizationPct,
-			Error:              o.Error,
+			Error:              detail,
 			OutcomeUnknown:     o.OutcomeUnknown,
 		})
 	}

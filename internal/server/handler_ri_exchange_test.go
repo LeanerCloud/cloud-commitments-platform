@@ -16,6 +16,7 @@ import (
 	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 	"github.com/jackc/pgx/v5"
 )
@@ -1210,5 +1211,34 @@ func TestMonthlyCostFromConvertibleRI_NoPositivePriceErrors(t *testing.T) {
 	cost, err := monthlyCostFromConvertibleRI(ec2svc.ConvertibleRI{RecurringHourlyAmount: 0.05, Duration: 31536000})
 	if err != nil || cost < 36.5-1e-6 || cost > 36.5+1e-6 {
 		t.Fatalf("No Upfront RI: cost=%v err=%v", cost, err)
+	}
+}
+
+func TestBuildExchangeNotificationData_ReconciliationDetailHidesRawError(t *testing.T) {
+	raw := `pq: duplicate key value violates unique constraint "ri_exchange_pkey" (host=10.0.0.5 user=cudly)`
+	result := &exchange.AutoExchangeResult{
+		Mode: "auto",
+		Failed: []exchange.ExchangeOutcome{{
+			RecordID:       "550e8400-e29b-41d4-a716-000000010501",
+			SourceRIID:     "ri-0a1b2c3d",
+			Error:          raw,
+			OutcomeUnknown: true,
+		}},
+	}
+	data := buildExchangeNotificationData(result, "https://dashboard.example.com", "ops@example.com")
+	body, err := email.RenderRIExchangeCompletedEmail(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{"pq:", "ri_exchange_pkey", "10.0.0.5", "cudly)"} {
+		if strings.Contains(body, leak) {
+			t.Errorf("email leaks raw error text %q:\n%s", leak, body)
+		}
+	}
+	if !strings.Contains(body, "Detail: "+purchase.ErrCategoryMessage(purchase.ErrCategoryUnknown)) {
+		t.Errorf("email lacks the category message:\n%s", body)
+	}
+	if !strings.Contains(body, "Record: 550e8400-e29b-41d4-a716-000000010501") {
+		t.Errorf("email lacks the record reference:\n%s", body)
 	}
 }

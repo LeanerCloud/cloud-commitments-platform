@@ -7,6 +7,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 )
 
 // outcomeUnknownAutoResult is the shape cloud-commitments-go returns when the
@@ -95,7 +96,7 @@ func TestSendExchangeNotification_OutcomeUnknownRendersReconciliation(t *testing
 
 	reconcile := body[reconcileAt:completedAt]
 	completed := body[completedAt:]
-	for _, want := range []string{"ri-unknown", "rec-unknown", "c6i.large x2", "purchase outcome unknown", "/api/ri-exchange/resolve/"} {
+	for _, want := range []string{"ri-unknown", "rec-unknown", "c6i.large x2", purchase.ErrCategoryMessage(purchase.ErrCategoryUnknown), "/api/ri-exchange/resolve/"} {
 		if !strings.Contains(reconcile, want) {
 			t.Errorf("reconciliation group is missing %q:\n%s", want, reconcile)
 		}
