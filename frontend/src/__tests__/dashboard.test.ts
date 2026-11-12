@@ -911,6 +911,13 @@ describe('Dashboard Module', () => {
         expect(savingsTile()?.querySelector('.kpi-tile-detail')?.textContent).toBe('2 recommendations');
       });
 
+      test('headline tile says the range is unscaled by the coverage cap (#1946)', async () => {
+        await loadDashboard();
+
+        expect(savingsTile()?.getAttribute('title'))
+          .toBe("Unscaled by the coverage cap: sums each cell's known-savings variants.");
+      });
+
       test('empty enabled_providers keeps every recommendation (permissive default)', async () => {
         (api.getConfig as jest.Mock).mockResolvedValueOnce({ global: { enabled_providers: [] } });
 
@@ -2295,6 +2302,15 @@ describe('Dashboard Module', () => {
           // as a third "potential savings" figure next to the KPI range.
           expect(label).toContain('The bars add up to $350');
           expect(label).toContain('not the Potential Monthly Savings range');
+        });
+
+        test('chart note says the range is unscaled by the coverage cap (#1946)', () => {
+          buildDOM();
+          const note = document.createElement('p');
+          note.id = 'savings-by-service-note';
+          document.getElementById('savings-by-service-section')?.appendChild(note);
+          renderSavingsByService([rec('ec2', 100)], {});
+          expect(note.textContent).toContain("Unscaled by the coverage cap: sums each cell's known-savings variants.");
         });
 
         test('lists every layer value per service in a "View as table" disclosure', () => {

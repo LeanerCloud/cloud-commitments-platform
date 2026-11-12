@@ -60,6 +60,8 @@ const SERVICE_CHART_ROW_PX = 36;
 const SERVICE_CHART_CHROME_PX = 84;
 
 // Ids of the "View as table" text alternatives for the Home charts (#744).
+// #1946: shared caption for the Home savings range figures (headline and chart).
+const SAVINGS_UNSCALED_NOTE = 'Unscaled by the coverage cap: sums each cell\'s known-savings variants.';
 const SAVINGS_BY_SERVICE_TABLE_ID = 'savings-by-service-table';
 const SAVINGS_TREND_TABLE_ID = 'savings-trend-table';
 const SAVINGS_TREND_LOADING_ID = 'savings-trend-loading';
@@ -434,7 +436,12 @@ function renderDashboardSummary(
   ];
   // Shared with the Opportunities summary (issue #743). buildKpiTile keeps an
   // absent (NO_VALUE) figure neutral rather than green (issue #739).
-  for (const t of tiles) summary.appendChild(buildKpiTile({ ...t, spark: true }));
+  for (const t of tiles) {
+    const tile = buildKpiTile({ ...t, spark: true });
+    // #1946: the range is not scaled by the coverage cap the by_service figure applies.
+    if (t.kpi === 'savings') tile.title = SAVINGS_UNSCALED_NOTE;
+    summary.appendChild(tile);
+  }
 }
 
 /**
@@ -1087,8 +1094,8 @@ export function renderSavingsByService(
   if (heading) heading.textContent = 'Potential savings range per service';
   if (note) {
     note.textContent = truncated
-      ? `Monthly savings. Top ${SAVINGS_BY_SERVICE_MAX} of ${positive.length} services shown; the table lists all.`
-      : 'Monthly savings.';
+      ? `Monthly savings. Top ${SAVINGS_BY_SERVICE_MAX} of ${positive.length} services shown; the table lists all. ${SAVINGS_UNSCALED_NOTE}`
+      : `Monthly savings. ${SAVINGS_UNSCALED_NOTE}`;
     note.classList.remove('hidden');
   }
   // Height follows the bar count (both bounds, so Chart.js sizes to it).
