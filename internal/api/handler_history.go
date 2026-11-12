@@ -370,7 +370,7 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 		accountID = *exec.CloudAccountID
 	} else {
 		// Web-initiated bulk-purchase executions (handler_purchases_execute_flow.go's
-		// buildPendingExecution) never populate exec.CloudAccountID — the
+		// newPendingExecution) never populate exec.CloudAccountID — the
 		// per-rec CloudAccountID is the canonical source. Fall back to that
 		// so the Approval queue's Account cell shows the actual account ID
 		// instead of "-". Returns "" when recs disagree (a basket that
