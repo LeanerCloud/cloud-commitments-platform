@@ -1813,7 +1813,7 @@ func TestManager_ExecuteAndFinalize_HistorySaveFailure_StaysVisible(t *testing.T
 	exec := &config.PurchaseExecution{
 		ExecutionID: "exec-auditgap",
 		PlanID:      "",
-		StepNumber:  1,
+		StepNumber:  0,
 		Recommendations: []config.RecommendationRecord{
 			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 500.0, Selected: true},
 		},
@@ -1888,7 +1888,7 @@ func TestManager_ExecuteAndFinalize_EmptyCommitmentID_CompletesWithAuditGap(t *t
 
 	exec := &config.PurchaseExecution{
 		ExecutionID: "exec-empty-id",
-		StepNumber:  1,
+		StepNumber:  0,
 		Recommendations: []config.RecommendationRecord{
 			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 500.0, Selected: true},
 		},
@@ -1943,7 +1943,7 @@ func TestManager_ExecuteAndFinalize_SingleAccount_PartialSuccess(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID: "exec-partial-single",
 		PlanID:      "",
-		StepNumber:  1,
+		StepNumber:  0,
 		Source:      common.PurchaseSourceWeb,
 		Recommendations: []config.RecommendationRecord{
 			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300.0, Savings: 50.0, Selected: true},

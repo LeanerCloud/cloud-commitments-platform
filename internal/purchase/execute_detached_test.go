@@ -48,7 +48,7 @@ func newDetachFixture(t *testing.T) *detachFixture {
 	prov := new(MockProvider)
 	stsMock := new(MockSTSClient)
 	f.exec = &config.PurchaseExecution{
-		ExecutionID: "exec-detach", StepNumber: 1, Status: "running",
+		ExecutionID: "exec-detach", StepNumber: 0, Status: "running",
 		Recommendations: []config.RecommendationRecord{
 			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 500, Selected: true},
 		},

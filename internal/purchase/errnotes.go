@@ -42,6 +42,7 @@ var serverNotePatterns = []string{
 	regexp.QuoteMeta(redshiftNoStampRefusal),
 	regexp.QuoteMeta(redshiftFailedConflictRefusal),
 	regexp.QuoteMeta(redshiftNoJournalRefusal),
+	regexp.QuoteMeta(PlanGoneRefusal),
 	regexp.QuoteMeta(redshiftRecentBuyRefusal),
 	regexp.QuoteMeta(redshiftRecentBuyRefusalLegacy),
 	regexp.QuoteMeta(redshiftSettleRefusal),

@@ -429,6 +429,9 @@ func (m *Manager) saveSkippedRows(ctx context.Context, root *config.PurchaseExec
 // All refusals except the armed re-drive and missing-journal ones are
 // beforeSubmission errors, so the row ends failed with no_submission stamped.
 func (m *Manager) preExecutionRefusal(ctx context.Context, exec *config.PurchaseExecution) error {
+	if refusal := orphanedPlanStepRefusal(exec); refusal != nil {
+		return beforeSubmission(refusal)
+	}
 	if err := m.armedRedriveRefusal(ctx, exec); err != nil {
 		return err
 	}

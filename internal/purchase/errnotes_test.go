@@ -65,6 +65,7 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		redshiftNoStampRefusal,
 		redshiftFailedConflictRefusal,
 		redshiftNoJournalRefusal,
+		PlanGoneRefusal,
 		redshiftRecentBuyRefusal,
 		redshiftRecentBuyRefusalLegacy,
 		redshiftSettleRefusal,
