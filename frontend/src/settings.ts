@@ -603,7 +603,9 @@ function renderAccountsList(
   const tbody = document.createElement('tbody');
 
   visible.forEach((account) => {
-    const accountLabel = `${account.name} (${account.external_id})`;
+    const accountLabel = account.name.includes(account.external_id)
+      ? account.name
+      : `${account.name} (${account.external_id})`;
     const tr = document.createElement('tr');
 
     const nameTd = document.createElement('td');

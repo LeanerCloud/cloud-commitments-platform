@@ -237,6 +237,23 @@ describe('loadAccountsForProvider', () => {
     expect(container.textContent).toContain('Disabled');
   });
 
+  test('action labels do not repeat the ID when the name already contains it (#1691)', async () => {
+    (api.listAccounts as jest.Mock).mockResolvedValue([
+      { id: 'id1', name: 'CUDly host (111111111111)', external_id: '111111111111', enabled: true },
+      { id: 'id2', name: 'Dev', external_id: '222222222222', enabled: true }
+    ]);
+
+    await loadAccountsForProvider('aws');
+
+    const labels = Array.from(
+      document.getElementById('aws-accounts-list')!.querySelectorAll('tbody button[aria-label]')
+    ).map(b => b.getAttribute('aria-label')!);
+    expect(labels).toContain('Edit CUDly host (111111111111)');
+    expect(labels).toContain('Delete CUDly host (111111111111)');
+    expect(labels.some(l => l.includes('(111111111111) (111111111111)'))).toBe(false);
+    expect(labels).toContain('Edit Dev (222222222222)');
+  });
+
   test('renders "No accounts configured." for empty list', async () => {
     (api.listAccounts as jest.Mock).mockResolvedValue([]);
 
