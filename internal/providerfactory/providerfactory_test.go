@@ -64,7 +64,7 @@ func TestNewAzure_PassesTypedConfigToRegistry(t *testing.T) {
 	assert.Equal(t, "azure", cfg.Name)
 	assert.Equal(t, testSubscriptionID, cfg.AzureSubscriptionID)
 	assert.Same(t, cred, cfg.AzureTokenCredential, "the resolved credential must be passed through unchanged")
-	assert.Empty(t, cfg.Profile, "the deprecated Profile field must not be used") //nolint:staticcheck // SA1019: asserting the deprecated field stays unset
+	assert.Empty(t, cfg.AWSProfile, "an Azure provider must not carry an AWS profile")
 	assert.Nil(t, cfg.GCPTokenSource)
 	assert.Nil(t, cfg.ProviderOverride)
 }
@@ -93,7 +93,7 @@ func TestNewGCP_PassesTypedConfigToRegistry(t *testing.T) {
 	assert.Equal(t, "gcp", cfg.Name)
 	assert.Equal(t, testProjectID, cfg.GCPProjectID)
 	assert.Same(t, ts, cfg.GCPTokenSource, "the resolved token source must be passed through unchanged")
-	assert.Empty(t, cfg.Profile, "the deprecated Profile field must not be used") //nolint:staticcheck // SA1019: asserting the deprecated field stays unset
+	assert.Empty(t, cfg.AzureSubscriptionID, "a GCP provider must not carry an Azure subscription")
 	assert.Nil(t, cfg.AzureTokenCredential)
 	assert.Nil(t, cfg.ProviderOverride)
 }
@@ -147,7 +147,7 @@ func TestBuild_PropagatesFactoryErrorsAndNilProviders(t *testing.T) {
 func TestNewAzure_MatchesLegacyConstruction(t *testing.T) {
 	cred := &fakeAzureCred{id: "legacy"}
 
-	legacy, err := azureprovider.NewAzureProvider(&provider.Config{Profile: testSubscriptionID}) //nolint:staticcheck // SA1019: this is the legacy baseline being compared against
+	legacy, err := azureprovider.NewAzureProvider(&provider.Config{AzureSubscriptionID: testSubscriptionID})
 	require.NoError(t, err)
 	legacy.SetCredential(cred)
 
