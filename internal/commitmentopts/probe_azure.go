@@ -52,12 +52,12 @@ var azureCandidateCombos = []struct {
 	azurePlan   *armbillingbenefits.BillingPlan
 	paymentName string
 }{
-	{1, armbillingbenefits.TermP1Y, nil, "all-upfront"},
-	{1, armbillingbenefits.TermP1Y, billingPlanP1M(), "monthly"},
-	{3, armbillingbenefits.TermP3Y, nil, "all-upfront"},
-	{3, armbillingbenefits.TermP3Y, billingPlanP1M(), "monthly"},
-	{5, armbillingbenefits.TermP5Y, nil, "all-upfront"},
-	{5, armbillingbenefits.TermP5Y, billingPlanP1M(), "monthly"},
+	{termYears: 1, azureTerm: armbillingbenefits.TermP1Y, azurePlan: nil, paymentName: "all-upfront"},
+	{termYears: 1, azureTerm: armbillingbenefits.TermP1Y, azurePlan: billingPlanP1M(), paymentName: "monthly"},
+	{termYears: 3, azureTerm: armbillingbenefits.TermP3Y, azurePlan: nil, paymentName: "all-upfront"},
+	{termYears: 3, azureTerm: armbillingbenefits.TermP3Y, azurePlan: billingPlanP1M(), paymentName: "monthly"},
+	{termYears: 5, azureTerm: armbillingbenefits.TermP5Y, azurePlan: nil, paymentName: "all-upfront"},
+	{termYears: 5, azureTerm: armbillingbenefits.TermP5Y, azurePlan: billingPlanP1M(), paymentName: "monthly"},
 }
 
 // billingPlanP1M returns a pointer to BillingPlanP1M. Using a function avoids
