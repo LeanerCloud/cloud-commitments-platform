@@ -836,18 +836,18 @@
                     <div id="accounts-overview" class="accounts-overview" aria-label="Accounts overview"></div>
 
                     <fieldset class="settings-category" id="accounts-federation">
-                        <legend>Federation Setup (Add New Account)</legend>
+                        <legend><h4 class="legend-heading">Federation Setup (Add New Account)</h4></legend>
                         <p class="settings-description">Download pre-populated IaC to onboard a new account via workload identity federation. No long-lived credentials needed.</p>
                         <div class="target-cloud-row">
                             <label>Target cloud:</label>
                             <span class="info-icon"><svg class="icon icon-info" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tooltip-text">The cloud where the new account lives. The downloaded IaC will be pre-configured to trust CUDly's current deployment.</span></span>
-                            <div id="federation-target-cloud-pills" class="target-cloud-pills" role="group" aria-label="Target cloud"></div>
+                            <div id="federation-target-cloud-pills" class="target-cloud-pills" role="radiogroup" aria-label="Target cloud"></div>
                         </div>
                         <div id="federation-setup-panel" class="federation-accounts"></div>
                     </fieldset>
 
                     <fieldset class="settings-category" id="accounts-registrations">
-                        <legend>Account Registrations</legend>
+                        <legend><h4 class="legend-heading">Account Registrations</h4></legend>
                         <p class="settings-description">Target accounts that submitted federation IaC. Approve, reject, or delete entries here.</p>
                         <div class="controls-bar">
                             <label>Status:
@@ -863,7 +863,7 @@
                     </fieldset>
 
                     <fieldset id="accounts-aws-block" class="settings-category">
-                        <legend><span class="provider-badge aws">AWS</span> Accounts</legend>
+                        <legend><h4 class="legend-heading"><span class="provider-badge aws">AWS</span> Accounts</h4></legend>
                         <div class="provider-disabled-banner">Provider is disabled — enable AWS in Global Config to manage these accounts.</div>
                         <div class="controls-bar">
                             <button type="button" class="btn btn-small" id="add-aws-account-btn">+ Add Account</button>
@@ -873,7 +873,7 @@
                     </fieldset>
 
                     <fieldset id="accounts-azure-block" class="settings-category">
-                        <legend><span class="provider-badge azure">Azure</span> Accounts</legend>
+                        <legend><h4 class="legend-heading"><span class="provider-badge azure">Azure</span> Accounts</h4></legend>
                         <div class="provider-disabled-banner">Provider is disabled — enable Azure in Global Config to manage these accounts.</div>
                         <div class="controls-bar">
                             <button type="button" class="btn btn-small" id="add-azure-account-btn">+ Add Account</button>
@@ -882,7 +882,7 @@
                     </fieldset>
 
                     <fieldset id="accounts-gcp-block" class="settings-category">
-                        <legend><span class="provider-badge gcp">GCP</span> Accounts</legend>
+                        <legend><h4 class="legend-heading"><span class="provider-badge gcp">GCP</span> Accounts</h4></legend>
                         <div class="provider-disabled-banner">Provider is disabled — enable GCP in Global Config to manage these accounts.</div>
                         <div class="controls-bar">
                             <button type="button" class="btn btn-small" id="add-gcp-account-btn">+ Add Account</button>

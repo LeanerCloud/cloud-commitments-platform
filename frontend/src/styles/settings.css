@@ -100,6 +100,15 @@
     color: var(--cudly-text);
 }
 
+.settings-category > legend > .legend-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--cudly-sp-2);
+    margin: 0;
+    font: inherit;
+    color: inherit;
+}
+
 /* Everything after the floated legend starts below it. Clearing only the
  * first sibling is not enough: when that sibling is hidden (the provider
  * disabled banner), a flex row next to the full-width float is pushed out

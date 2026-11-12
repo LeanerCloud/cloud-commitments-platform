@@ -838,4 +838,20 @@ describe('HTML Structure', () => {
       }
     });
   });
+
+  describe('Accounts page section titles (#1691)', () => {
+    test('fieldset legends on the Accounts page contain headings', () => {
+      document.body.innerHTML = bodyContent;
+      for (const id of ['accounts-federation', 'accounts-registrations', 'accounts-aws-block', 'accounts-azure-block', 'accounts-gcp-block']) {
+        expect(document.querySelector(`#${id} > legend > h4`)).not.toBeNull();
+      }
+      expect(document.querySelector('#accounts-federation h4')?.textContent).toBe('Federation Setup (Add New Account)');
+      expect(document.querySelector('#accounts-registrations h4')?.textContent).toBe('Account Registrations');
+    });
+
+    test('target cloud control is a radiogroup', () => {
+      document.body.innerHTML = bodyContent;
+      expect(document.getElementById('federation-target-cloud-pills')?.getAttribute('role')).toBe('radiogroup');
+    });
+  });
 });
