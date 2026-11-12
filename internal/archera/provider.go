@@ -88,7 +88,7 @@ type Provider struct {
 	// client is an atomic pointer so fmt prints an address, never the Client's
 	// fields: fmt dereferences a plain *Client held in an unexported field for
 	// verbs such as %s, which would print the key.
-	client   atomic.Pointer[insurance.Client]
+	client   atomic.Pointer[boundClient]
 	settings Settings
 	mu       sync.Mutex
 }
@@ -114,6 +114,15 @@ func (p *Provider) Format(s fmt.State, _ rune) {
 // PlanID is the configured Archera plan ID.
 func (p *Provider) PlanID() string { return p.settings.PlanID }
 
+type boundClient struct {
+	*insurance.Client
+	key insurance.Secret
+}
+
+func (c *boundClient) BuildComparison(value *insurance.Comparison) (*ComparisonDTO, error) {
+	return BuildComparison(value, c.key)
+}
+
 // Client returns the lazily built client. A failure is not cached: the next
 // call retries (a mutex, not sync.Once, guards the build).
 func (p *Provider) Client(ctx context.Context) (insurance.QuoteClient, error) {
@@ -136,11 +145,13 @@ func (p *Provider) Client(ctx context.Context) (insurance.QuoteClient, error) {
 		logging.Warnf("archera: resolving %s failed: %v", EnvKeySecret, err)
 		return nil, ErrKeyUnavailable
 	}
-	c, err := insurance.NewClient(insurance.Config{APIKey: insurance.NewSecret(strings.TrimSpace(key)), OrgID: p.settings.OrgID}, p.hc)
+	secret := insurance.NewSecret(strings.TrimSpace(key))
+	c, err := insurance.NewClient(insurance.Config{APIKey: secret, OrgID: p.settings.OrgID}, p.hc)
 	if err != nil {
 		logging.Warnf("archera: building client failed: %v", err)
 		return nil, ErrKeyUnavailable
 	}
-	p.client.Store(c)
-	return c, nil
+	bound := &boundClient{Client: c, key: secret}
+	p.client.Store(bound)
+	return bound, nil
 }

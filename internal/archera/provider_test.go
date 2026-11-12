@@ -190,3 +190,51 @@ func TestClient_KeyWithTrailingNewlineIsTrimmed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, int(rt.calls.Load()))
 }
+
+func TestBound_ClientGenerationCapabilitiesAndPrinters(t *testing.T) {
+	const nextKey = "synthetic-next-archera-key-9876543210"
+	oldTransport := &hostAssertingTransport{t: t, body: strings.Replace(comparison, `"guaranteed_display_name":null`, `"guaranteed_display_name":"`+testKey+`"`, 1)}
+	p := NewProvider(fullSettings(), envResolver(t), &http.Client{Transport: oldTransport})
+	oldQuote, err := p.Client(context.Background())
+	require.NoError(t, err)
+	oldBound, ok := oldQuote.(*boundClient)
+	require.True(t, ok)
+	t.Setenv(testSecret, nextKey)
+	nextTransport := &hostAssertingTransport{t: t, body: strings.Replace(comparison, `"guaranteed_display_name":null`, `"guaranteed_display_name":"`+nextKey+`"`, 1)}
+	nextProvider := NewProvider(fullSettings(), secrets.NewEnvResolver(), &http.Client{Transport: nextTransport})
+	nextQuote, err := nextProvider.Client(context.Background())
+	require.NoError(t, err)
+	nextBound, ok := nextQuote.(*boundClient)
+	require.True(t, ok)
+	p.client.Store(nextBound)
+	again, err := p.Client(context.Background())
+	require.NoError(t, err)
+	require.Same(t, nextQuote, again)
+	for _, generation := range []*boundClient{oldBound, nextBound} {
+		_, ok := any(generation).(interface {
+			LineItems(context.Context, string) ([]insurance.LineItem, error)
+		})
+		require.True(t, ok, "original concrete client LineItems must remain promoted")
+		decoded, err := generation.Comparison(context.Background(), insurance.ComparisonRequest{PlanID: testPlan})
+		require.NoError(t, err)
+		dto, err := generation.BuildComparison(decoded)
+		require.ErrorIs(t, err, ErrCredentialMaterial, "returned generation must reject its own credential after cache replacement")
+		assert.Nil(t, dto)
+		other := oldBound
+		if generation == oldBound {
+			other = nextBound
+		}
+		dto, err = other.BuildComparison(decoded)
+		require.NoError(t, err, "a different generation must not be substituted for the response's credential")
+		require.NotNil(t, dto)
+		for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q"} {
+			printed := fmt.Sprintf(verb, generation) + fmt.Sprintf(verb, struct{ Client any }{generation}) + fmt.Sprintf(verb, []any{generation})
+			assert.NotContains(t, printed, testKey)
+			assert.NotContains(t, printed, nextKey)
+		}
+	}
+	assert.Equal(t, testKey, oldTransport.gotKey)
+	assert.Equal(t, nextKey, nextTransport.gotKey)
+	assert.EqualValues(t, 1, oldTransport.calls.Load())
+	assert.EqualValues(t, 1, nextTransport.calls.Load())
+}

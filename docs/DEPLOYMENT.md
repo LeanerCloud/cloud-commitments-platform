@@ -329,6 +329,8 @@ The GCP secret variable takes the short secret ID, not the `projects/<number>/se
 
 The comparison shows Archera's own figures as returned by its API. Amounts carry no currency (Archera provides none), premiums are already included in totals, and an unknown value is shown as unknown, never as zero. Products Archera does not document as supported are shown as "not known to be supported by Archera". Nothing in this view is a guarantee or a purchase; the existing Archera disclosures stay in place.
 
+If a vendor text value or exact decimal contains the configured credential, the whole comparison is withheld with a fixed error; successful IDs and amounts are never masked. Short credentials can coincide with legitimate vendor values and conservatively withhold a comparison. This does not promise absence of a short credential's characters from fixed response text, or protect the separate recommendation comparison surface.
+
 ## Deploying Code Updates
 
 When infrastructure already exists and you only need to update application code:

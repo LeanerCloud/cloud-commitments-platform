@@ -16,6 +16,9 @@ import (
 // decimal form (the DTO never rounds or converts to float).
 var ErrUnrepresentable = errors.New("archera value has no exact decimal representation")
 
+// ErrCredentialMaterial withholds a comparison containing the configured credential.
+var ErrCredentialMaterial = errors.New("archera comparison contains credential material")
+
 const (
 	dtoTitle         = "Archera commitment plan comparison (read-only)"
 	currencyNote     = "currency not provided by Archera"
@@ -176,12 +179,59 @@ type ComparisonDTO struct {
 	SponsorshipDisclosure string            `json:"sponsorship_disclosure"`
 }
 
-type mapper struct{ err error }
+type mapper struct {
+	err error
+	key insurance.Secret
+}
+
+// Mirrors cloud-commitments-mcp/tools/archera_comparison.go's archeraSkeleton policy.
+func credentialSkeleton(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch r {
+		case utf8.RuneError, 0x115F, 0x1160, 0x3164, 0xFFA0:
+			continue
+		}
+		if !unicode.In(r, unicode.Cc, unicode.Cf, unicode.Mn, unicode.Me, unicode.Zl, unicode.Zp, unicode.Zs) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func (m *mapper) check(s string) {
+	key := credentialSkeleton(strings.TrimSpace(m.key.Reveal()))
+	if m.err == nil && key != "" && strings.Contains(credentialSkeleton(s), key) {
+		m.err = ErrCredentialMaterial
+	}
+}
+
+func (m *mapper) clean(s string) string {
+	m.check(s)
+	return CleanString(s)
+}
+
+func (m *mapper) ptr(s *string) *string {
+	if s != nil {
+		m.check(*s)
+	}
+	return cleanPtr(s)
+}
+
+func (m *mapper) payment(p *insurance.PaymentOption) *string {
+	if p != nil {
+		m.check(string(*p))
+	}
+	return payment(p)
+}
 
 func (m *mapper) dec(r *big.Rat) *string {
 	s, err := Decimal(r)
 	if err != nil && m.err == nil {
 		m.err = err
+	}
+	if s != nil {
+		m.check(*s)
 	}
 	return s
 }
@@ -226,14 +276,14 @@ func (m *mapper) offer(e *insurance.OfferEntry) OfferDTO {
 		ps.Status, ps.Source, ps.Evidence = supportedSummary, support.Source, support.Evidence
 	}
 	o := OfferDTO{
-		OfferID: CleanString(e.OfferID), IsCurrent: e.IsCurrent, Provider: CleanString(string(e.Provider)),
-		CommitmentType: CleanString(e.CommitmentType), Region: cleanPtr(e.Region), ContractTerm: cleanPtr(e.ContractTerm),
-		PaymentOption: payment(e.PaymentOption), LeaseAttached: e.LeaseBacked(), LeaseMenuItemID: cleanPtr(e.LeaseMenuItemID),
+		OfferID: m.clean(e.OfferID), IsCurrent: e.IsCurrent, Provider: m.clean(string(e.Provider)),
+		CommitmentType: m.clean(e.CommitmentType), Region: m.ptr(e.Region), ContractTerm: m.ptr(e.ContractTerm),
+		PaymentOption: m.payment(e.PaymentOption), LeaseAttached: e.LeaseBacked(), LeaseMenuItemID: m.ptr(e.LeaseMenuItemID),
 		ProductSupport: ps, DiscountRate: m.dec(e.DiscountRate), BreakevenDays: m.dec(e.BreakevenDays),
 		Monthly: m.financials(e.Monthly), UpfrontCost: m.dec(e.UpfrontCost), DeltaVsCurrent: m.delta(e.Delta),
 	}
 	if e.GuaranteedDisplayName != nil {
-		o.ArcheraOfferName, o.ArcheraOfferNameNote = cleanPtr(e.GuaranteedDisplayName), offerNameCaveat
+		o.ArcheraOfferName, o.ArcheraOfferNameNote = m.ptr(e.GuaranteedDisplayName), offerNameCaveat
 	}
 	return o
 }
@@ -241,10 +291,10 @@ func (m *mapper) offer(e *insurance.OfferEntry) OfferDTO {
 // BuildComparison maps the contract type to the platform DTO. Money is exact
 // decimal text or null; every vendor string is cleaned and capped. It returns
 // ErrUnrepresentable when any number has no exact decimal form.
-func BuildComparison(c *insurance.Comparison) (*ComparisonDTO, error) {
-	m := &mapper{}
+func BuildComparison(c *insurance.Comparison, key insurance.Secret) (*ComparisonDTO, error) {
+	m := &mapper{key: key}
 	out := &ComparisonDTO{
-		Title: dtoTitle, PlanID: CleanString(c.PlanID), FetchedAt: c.FetchedAt.UTC().Format(time.RFC3339),
+		Title: dtoTitle, PlanID: m.clean(c.PlanID), FetchedAt: c.FetchedAt.UTC().Format(time.RFC3339),
 		CurrencyNote: currencyNote, PremiumIncluded: true, BasisNote: basisNote, DeltaBasisNote: deltaBasisNote,
 		Current:       m.totals(c.Current),
 		Hypotheticals: []HypotheticalDTO{}, Rows: []RowDTO{},
@@ -253,22 +303,22 @@ func BuildComparison(c *insurance.Comparison) (*ComparisonDTO, error) {
 	for i := range c.Hypotheticals {
 		h := &c.Hypotheticals[i]
 		hd := HypotheticalDTO{
-			ContractTerm: cleanPtr(h.ContractTerm), PaymentOption: CleanString(string(h.PaymentOption)),
+			ContractTerm: m.ptr(h.ContractTerm), PaymentOption: m.clean(string(h.PaymentOption)),
 			Totals: m.totals(h.Totals), LineItems: []LineItemDTO{},
 			DeltaVsCurrent: HypotheticalDeltaDTO{MonthlyNetSavings: m.dec(h.DeltaMonthlyNetSavings),
 				MonthlyCommitmentCost: m.dec(h.DeltaMonthlyCommitmentCost), UpfrontCost: m.dec(h.DeltaUpfrontCost)},
 		}
 		for _, li := range h.LineItems {
 			hd.LineItems = append(hd.LineItems, LineItemDTO{
-				LineItemID: CleanString(li.LineItemID), Reason: CleanString(string(li.Reason)), ActualTerm: cleanPtr(li.ActualTerm),
-				ActualPaymentOption: payment(li.ActualPaymentOption), ActualCommitmentType: cleanPtr(li.ActualCommitmentType),
+				LineItemID: m.clean(li.LineItemID), Reason: m.clean(string(li.Reason)), ActualTerm: m.ptr(li.ActualTerm),
+				ActualPaymentOption: m.payment(li.ActualPaymentOption), ActualCommitmentType: m.ptr(li.ActualCommitmentType),
 			})
 		}
 		out.Hypotheticals = append(out.Hypotheticals, hd)
 	}
 	for i := range c.Rows {
 		r := &c.Rows[i]
-		rd := RowDTO{LineItemID: CleanString(r.LineItemID), Current: m.offer(&r.Current), Candidates: []OfferDTO{}}
+		rd := RowDTO{LineItemID: m.clean(r.LineItemID), Current: m.offer(&r.Current), Candidates: []OfferDTO{}}
 		for j := range r.Candidates {
 			rd.Candidates = append(rd.Candidates, m.offer(&r.Candidates[j]))
 		}

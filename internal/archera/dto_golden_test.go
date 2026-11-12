@@ -64,7 +64,7 @@ func goldenFixture(t *testing.T) *insurance.Comparison {
 }
 
 func TestBuildComparison_GoldenJSON(t *testing.T) {
-	dto, err := BuildComparison(goldenFixture(t))
+	dto, err := BuildComparison(goldenFixture(t), insurance.NewSecret(testKey))
 	require.NoError(t, err)
 	got, err := json.MarshalIndent(dto, "", "  ")
 	require.NoError(t, err)
@@ -79,7 +79,7 @@ func TestBuildComparison_GoldenJSON(t *testing.T) {
 // The platform never presents Archera money as USD (currency is null), so no
 // platform-authored note may name a currency.
 func TestBuildComparison_NotesNameNoCurrency(t *testing.T) {
-	dto, err := BuildComparison(goldenFixture(t))
+	dto, err := BuildComparison(goldenFixture(t), insurance.NewSecret(testKey))
 	require.NoError(t, err)
 	notes := []string{dto.Title, dto.CurrencyNote, dto.BasisNote, dto.DeltaBasisNote, dto.NonGatingDisclosure,
 		dto.SponsorshipDisclosure, dto.Rows[0].Current.ArcheraOfferNameNote}

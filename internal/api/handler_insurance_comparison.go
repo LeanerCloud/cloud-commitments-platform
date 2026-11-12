@@ -32,12 +32,21 @@ func (h *Handler) getInsuranceComparison(ctx context.Context, req *events.Lambda
 	if err != nil {
 		return nil, err
 	}
+	builder, ok := client.(interface {
+		BuildComparison(*insurance.Comparison) (*archera.ComparisonDTO, error)
+	})
+	if !ok {
+		return nil, NewClientError(503, "Archera comparison is not supported")
+	}
 	cmp, err := client.Comparison(ctx, insurance.ComparisonRequest{PlanID: h.insurance.PlanID()})
 	if err != nil {
 		return nil, mapInsuranceError(err)
 	}
-	dto, err := archera.BuildComparison(cmp)
+	dto, err := builder.BuildComparison(cmp)
 	if err != nil {
+		if errors.Is(err, archera.ErrCredentialMaterial) {
+			return nil, NewClientError(502, "Archera comparison withheld: contained credential material")
+		}
 		logging.Warnf("archera comparison: a vendor value has no exact decimal form")
 		return nil, NewClientError(502, "Archera returned a value that cannot be shown exactly")
 	}
