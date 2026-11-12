@@ -61,7 +61,8 @@ func TestNoAssertionBeforeCallUnderTest(t *testing.T) {
 		fset := token.NewFileSet()
 		f, perr := parser.ParseFile(fset, path, nil, 0)
 		if perr != nil {
-			return nil // the compiler's problem, not this guard's
+			findings = append(findings, path+": parse error, guard cannot check this file: "+perr.Error())
+			return nil
 		}
 		rel, _ := filepath.Rel(root, path)
 		for _, msg := range findOrderedAssertions(fset, f) {
