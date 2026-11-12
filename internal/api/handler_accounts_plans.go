@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -150,4 +151,117 @@ func (h *Handler) setPlanAccounts(ctx context.Context, httpReq *events.LambdaFun
 	}
 
 	return nil, h.storePlanAccounts(ctx, httpReq, session, id, body.AccountIDs)
+}
+
+// storePlanAccounts writes the plan's accounts. The retarget grant is decided
+// first, outside any transaction, against the plan as read then; the gate under
+// the plan's row lock only confirms the plan has not changed since (an arm via
+// updatePlan / patchPlan takes the same lock), and the decision is redone if it
+// has.
+func (h *Handler) storePlanAccounts(ctx context.Context, httpReq *events.LambdaFunctionURLRequest, session *Session, id string, accountIDs []string) error {
+	for attempt := 0; attempt < planGateAttempts; attempt++ {
+		seen, err := h.requireRetargetOfArmedPlan(ctx, httpReq, session, id, accountIDs)
+		if err != nil {
+			return err
+		}
+		err = h.config.SetPlanAccountsGated(ctx, id, accountIDs, func(locked *config.PurchasePlan, _ []string) error {
+			if !locked.UpdatedAt.Equal(seen.UpdatedAt) {
+				return errPlanMovedUnderGate
+			}
+			return nil
+		})
+		if errors.Is(err, errPlanMovedUnderGate) {
+			continue
+		}
+		return mapSetPlanAccountsError(err)
+	}
+	return errPlanGateContended
+}
+
+func mapSetPlanAccountsError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if ce, ok := IsClientError(err); ok {
+		return ce
+	}
+	if errors.Is(err, config.ErrNotFound) {
+		return NewClientError(404, err.Error())
+	}
+	if errors.Is(err, config.ErrEditorReconciliationRequired) {
+		return editorReconciliationError()
+	}
+	return fmt.Errorf("accounts: %w", err)
+}
+
+// validatePlanAccountIDs rejects a missing/empty account_ids payload and
+// entries that are not valid UUIDs.
+//
+// Empty is refused because a plan must remain tied to at least one
+// cloud_account row: letting the PUT clear all rows would recreate the
+// universal-plan bug class (a purchase_plans row with no matching
+// plan_accounts row) that createPlan refuses at insert time. It is also what
+// keeps the account-axis scope check in requirePlanAccountsAccess meaningful,
+// since an empty list has nothing to check.
+//
+// Same contract as validateTargetAccounts (handler_plans.go) with this
+// endpoint's field names in the messages, so a payload that gets past
+// createPlan also gets past here.
+func validatePlanAccountIDs(ids []string) error {
+	if len(ids) == 0 {
+		return NewClientError(400, "account_ids is required: a plan must be tied to at least one account")
+	}
+	for _, aid := range ids {
+		if err := validateUUID(aid); err != nil {
+			return NewClientError(400, fmt.Sprintf("invalid account_id %q: must be a valid UUID", aid))
+		}
+	}
+	return nil
+}
+
+// listPlanAccounts handles GET /api/plans/:id/accounts.
+//
+// The read sibling of setPlanAccounts, and it carries the mirror image of the
+// same gap (issue #1769): view:plans is a default Standard User grant, so
+// without requirePlanAccess a scoped caller could enumerate the accounts of
+// any plan by id. requirePlanAccess bounds WHICH plans are visible; the
+// per-account filter then bounds WHAT of a visible plan is disclosed, since a
+// plan the caller legitimately reaches through one of their accounts may also
+// carry accounts they have no entitlement to see.
+func (h *Handler) listPlanAccounts(ctx context.Context, req *events.LambdaFunctionURLRequest, id string) (any, error) {
+	if err := validateUUID(id); err != nil {
+		return nil, err
+	}
+
+	session, err := h.requirePermission(ctx, req, "view", "plans")
+	if err != nil {
+		return nil, err
+	}
+
+	err = h.requirePlanAccess(ctx, session, id)
+	if err != nil {
+		return nil, err
+	}
+
+	accts, err := h.config.GetPlanAccounts(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("accounts: %w", err)
+	}
+
+	allowed, err := h.getAccountScope(ctx, session)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get allowed accounts: %w", err)
+	}
+
+	// Allows() is true for every account of an unrestricted scope, so this is
+	// one loop rather than a branch on AllowsAll. make() also gives the
+	// endpoint its no-nil-slice contract for free.
+	scoped := make([]config.CloudAccount, 0, len(accts))
+	for i := range accts {
+		if allowed.Allows(accts[i].ID, accts[i].Name) {
+			scoped = append(scoped, accts[i])
+		}
+	}
+
+	return scoped, nil
 }
