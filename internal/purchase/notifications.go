@@ -35,7 +35,7 @@ func (m *Manager) SendUpcomingPurchaseNotifications(ctx context.Context) (*Notif
 	}
 
 	now := time.Now()
-	readopt := m.readoptCandidates(ctx, global, now)
+	listed := rootCandidates{readopt: m.readoptCandidates(ctx, global, now), attachable: m.attachCandidates(ctx, now)}
 	notified := 0
 	for i := range plans {
 		plan := plans[i]
@@ -43,9 +43,8 @@ func (m *Manager) SendUpcomingPurchaseNotifications(ctx context.Context) (*Notif
 			logging.Errorf("Failed to inspect due manual plan step for plan %s: %v", plan.ID, err)
 			continue
 		}
-		_, hasReadoptableRoot := readopt[plan.ID]
 		if m.shouldNotifyPlan(plan, autoPurchaseEnabled) || shouldRetryOverduePlan(plan, autoPurchaseEnabled, global, now) ||
-			shouldReadoptExpiredPlan(plan, global, autoPurchaseEnabled, hasReadoptableRoot, now) {
+			listed.due(plan, global, autoPurchaseEnabled, now) {
 			if m.sendPlanNotification(ctx, &plan, planNeedsApproval(plan, global)) {
 				notified++
 			}
