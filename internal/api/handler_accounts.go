@@ -13,13 +13,10 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
-	"github.com/LeanerCloud/cloud-commitments-platform/internal/accounts"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/oidc"
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -1353,105 +1350,6 @@ func (h *Handler) listPlanAccounts(ctx context.Context, req *events.LambdaFuncti
 	}
 
 	return scoped, nil
-}
-
-// buildOrgRootAWSConfig resolves the org-root account's stored credentials and
-// returns an aws.Config configured to call AWS APIs as that account.
-//
-// Returns the resolver's error wrapped as a regular Go error (which the
-// handler-default mapping surfaces as 500) — NOT a 400 ClientError — because
-// ResolveAWSCredentialProvider mixes definite client-side validation
-// failures (e.g., missing aws_role_arn for role_arn mode) with transient
-// server-side failures (credential store unavailable, network errors during
-// access-key load). Without a sentinel/typed error in the credentials
-// package today, blanket-400 was misleading; 5xx is the safer default and
-// retries are possible. Refining this to a proper 400/500 split is tracked
-// in the credentials-package error-type cleanup (out of scope for this PR;
-// see CR pass 1 on #212).
-func (h *Handler) buildOrgRootAWSConfig(ctx context.Context, root *config.CloudAccount) (aws.Config, error) {
-	baseCfg, err := h.getBaseAWSConfig(ctx)
-	if err != nil {
-		return aws.Config{}, fmt.Errorf("accounts: load base aws config: %w", err)
-	}
-	stsClient := sts.NewFromConfig(baseCfg)
-	credProvider, err := credentials.ResolveAWSCredentialProviderWithOpts(ctx, root, h.credStore, stsClient, h.bastionResolveOptions(baseCfg))
-	if err != nil {
-		return aws.Config{}, fmt.Errorf("accounts: resolve credentials for org root %s: %w", root.ID, err)
-	}
-	cfg := baseCfg.Copy()
-	cfg.Credentials = credProvider
-	return cfg, nil
-}
-
-// runOrgDiscovery dispatches to the configured discovery function — the
-// injectable seam Handler.discoverOrgFn for tests, falling back to the real
-// accounts.DiscoverOrgAccounts in production.
-func (h *Handler) runOrgDiscovery(ctx context.Context, cfg aws.Config) (*accounts.OrgDiscoveryResult, error) {
-	discoverFn := h.discoverOrgFn
-	if discoverFn == nil {
-		discoverFn = accounts.DiscoverOrgAccounts
-	}
-	disco, err := discoverFn(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("accounts: org discovery failed: %w", err)
-	}
-	return disco, nil
-}
-
-// persistDiscoveredMembers dedupes the discovered list against existing aws
-// rows and persists each new one with the spec-mandated defaults
-// (enabled=false, aws_auth_mode="", aws_bastion_id=root.ID). Returns the
-// {discovered, created, skipped} summary.
-func (h *Handler) persistDiscoveredMembers(ctx context.Context, root *config.CloudAccount, members []config.CloudAccount) (DiscoverOrgResult, error) {
-	awsProvider := "aws"
-	existing, err := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{Provider: &awsProvider})
-	if err != nil {
-		return DiscoverOrgResult{}, fmt.Errorf("accounts: list existing aws accounts: %w", err)
-	}
-	knownExternal := make(map[string]struct{}, len(existing))
-	for i := range existing {
-		knownExternal[existing[i].ExternalID] = struct{}{}
-	}
-
-	result := DiscoverOrgResult{Discovered: len(members)}
-	now := time.Now()
-	for i := range members {
-		member := members[i]
-		if _, found := knownExternal[member.ExternalID]; found {
-			result.Skipped++
-			continue
-		}
-		// Defaults the spec mandates: persist disabled (operator review gate)
-		// + bastion-id pre-filled with this org root's ID. AWSAuthMode is
-		// LEFT EMPTY on purpose — pre-setting it to "bastion" while
-		// AWSRoleARN is empty would leave the row in a half-configured
-		// bastion shape (no role to assume) that the operator could
-		// mistake for a usable account.
-		// The operator's review step must set both AWSAuthMode="bastion"
-		// AND a non-empty AWSRoleARN before flipping enabled=true; the
-		// scheduler silently skips disabled rows in the meantime, and the
-		// empty AWSAuthMode we persist here also fails
-		// ResolveAWSCredentialProvider's switch with a clear
-		// "unsupported aws_auth_mode" error if the row is enabled
-		// prematurely. (CR pass 1 on PR #212.)
-		member.Enabled = false
-		member.ID = uuid.New().String()
-		member.CreatedAt = now
-		member.UpdatedAt = now
-		member.AWSAuthMode = ""
-		member.AWSBastionID = root.ID
-		if err := h.config.CreateCloudAccount(ctx, &member); err != nil {
-			if isDuplicateKeyError(err) {
-				knownExternal[member.ExternalID] = struct{}{}
-				result.Skipped++
-				continue
-			}
-			return DiscoverOrgResult{}, fmt.Errorf("accounts: persist discovered %s: %w", member.ExternalID, err)
-		}
-		knownExternal[member.ExternalID] = struct{}{}
-		result.Created++
-	}
-	return result, nil
 }
 
 // parseServiceOverridePath parses "uuid/service-overrides/provider/service"
