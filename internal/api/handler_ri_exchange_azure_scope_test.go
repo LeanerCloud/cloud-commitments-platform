@@ -180,10 +180,11 @@ func TestAzureExchangeScopeRefused(t *testing.T) {
 					require.Nil(t, client.priced)
 				} else {
 					// The real CalculateExchange refuses with
-					// ErrUnsupportedAppliedScope (#521); the caller gets a 422
-					// naming the scope problem instead of "failed to ...".
+					// ErrUnsupportedAppliedScope (#521); the caller gets a 422 with the fixed refusal text
+					// (provider text stays in the log), not "failed to ...".
 					require.Equal(t, 422, ce.code)
-					require.Contains(t, ce.message, "unsupported applied scope")
+					require.Equal(t, exchangeRefusedMessage, ce.message)
+					require.NotContains(t, ce.message, "unsupported applied scope")
 					require.NotContains(t, ce.message, "failed to")
 					require.Len(t, client.priced, len(sources))
 				}

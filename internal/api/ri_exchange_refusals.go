@@ -5,7 +5,12 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
+
+// exchangeRefusedMessage is the fixed 422 body for an exchange refusal; the
+// provider's own text stays in the log.
+const exchangeRefusedMessage = "the exchange was refused before it reached the provider: check that the reservations are billed in USD and share a supported scope"
 
 // exchangeRefusals are the exported sentinels cloud-commitments-go wraps when
 // it refuses an RI exchange before reaching the provider's commit call:
@@ -30,7 +35,7 @@ var exchangeRefusals = []error{
 	common.ErrCurrencyNotAccepted,
 }
 
-// exchangeRefusalError returns a 422 carrying err's message when err wraps
+// exchangeRefusalError returns a 422 with the fixed exchangeRefusedMessage when err wraps
 // one of exchangeRefusals, or nil otherwise. 422 matches the Azure execute
 // guardrails (checkAzureExchangeMoneyGuardrails), which refuse a currency
 // mismatch the same way. On Azure a 4xx makes directExchangeFailureStatus
@@ -41,7 +46,8 @@ var exchangeRefusals = []error{
 func exchangeRefusalError(err error) error {
 	for _, sentinel := range exchangeRefusals {
 		if errors.Is(err, sentinel) {
-			return NewClientError(422, err.Error())
+			logging.Warnf("ri-exchange: exchange refused before the provider commit call: %v", err)
+			return NewClientError(422, exchangeRefusedMessage)
 		}
 	}
 	return nil
