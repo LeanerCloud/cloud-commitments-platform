@@ -27,21 +27,34 @@ type FinalizeResult struct {
 
 // staleRevocationInFlightAfter is how long a row may stay flagged with no
 // recorded Return before the sweep clears the flag so the purchase can be
-// revoked again (issue #1523). It only has to outlast a revoke still between
-// its flip and its recorded Return, which every deployment bounds: the app's
-// own HTTP server caps each request at 30s on every container platform
+// revoked again (issues #1523, #1584). It only has to outlast a revoke still
+// between its flip and its recorded Return, which every deployment bounds: the
+// app's own HTTP server caps each request at 30s on every container platform
 // (handleHTTPRequest in internal/server/http.go), Lambda ends an invocation at
 // its function timeout, and past the flip the revoke handler runs the Return
 // and the writes recording it detached under their own budgets (3m and 30s,
-// issue #1527). 2h is a wide margin over all of these. It is also how a row
-// whose Return failed without a definite answer gets released: the revoke
-// handler keeps that row flagged and records no Return (issue #1529), so the
-// sweep releases it here and logs it for an operator. Correctness does not
-// depend on it (issue #1525): a Return recorded after the release is still
-// finalized, flag or not, and if the user revokes again while the first
-// Return is in flight, Azure refuses a second Return of the same reservation,
-// so there is no double refund.
-const staleRevocationInFlightAfter = 2 * time.Hour
+// issue #1527), 3m30s in all. 30m is about 8 times that.
+//
+// It is also how a row whose Return failed without a definite answer gets
+// released: the revoke handler keeps that row flagged and records no Return
+// (issue #1529), so the sweep releases it here and logs it for an operator.
+// That is why it is not longer. The sweep runs hourly, so a flag is released
+// at the first sweep after this threshold: the effective lock is 30m to 90m.
+// The revoke endpoint stops accepting a revoke azureRefundSafetyMargin (1h)
+// before the 7-day free-cancel window closes. With the earlier 2h value (2h to
+// 3h effective) a retry was possibly locked out for any revoke started in the
+// last 4h of the window; now it is only a revoke started in the last 2h30m
+// (and certainly locked out only if started from 1h30m before the close, when
+// even the earliest release, 30m later, falls past the cutoff).
+// Lowering the constant does not help while the sweep is hourly. The retry
+// text in the revoke response tells the user to check the Azure portal first
+// and names the 90m upper bound. Correctness does not depend on the value
+// (issue #1525): a Return recorded after the release is still finalized, flag
+// or not, and if the user revokes again while the first Return is in flight,
+// Azure refuses a second Return of the same reservation (and the revoke
+// handler then marks the purchase revoked, issue #1584), so there is no double
+// refund. The revoke response text in internal/api names the 90m bound.
+const staleRevocationInFlightAfter = 30 * time.Minute
 
 // finalizeRevocationBackoffs are the sleep durations between consecutive
 // MarkPurchaseRevoked retry attempts in FinalizeInFlightRevocations.

@@ -494,7 +494,7 @@ describe('History Revoke click flow (platform#96)', () => {
 
       expect(toasts()).toEqual([
         expect.objectContaining({
-          message: "A refund for this purchase is being processed. Check back in a few minutes; don't start another revoke.",
+          message: "We could not confirm whether the refund for this purchase went through. Check the reservation in the Azure portal before trying again: if it still shows as active after about 90 minutes, you can revoke again.",
           kind: 'info',
         }),
       ]);

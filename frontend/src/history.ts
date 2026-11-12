@@ -40,9 +40,10 @@ import type {
   ApprovalQueueColumnId,
 } from './state';
 
-// Owner-approved copy for a revoke whose Azure Return is not yet confirmed (#1522).
+// Copy for a revoke whose Azure Return is not proven (#1522, #1584); keep it equal to
+// revokePendingConfirmationMessage in internal/api/handler_purchases_revoke.go.
 const REVOCATION_PENDING_CONFIRMATION_COPY =
-  "A refund for this purchase is being processed. Check back in a few minutes; don't start another revoke.";
+  'We could not confirm whether the refund for this purchase went through. Check the reservation in the Azure portal before trying again: if it still shows as active after about 90 minutes, you can revoke again.';
 
 // Mirrors the concrete providers of backend validProviders in internal/api/validation.go;
 // keep the two in sync.

@@ -160,7 +160,11 @@ func TestFinalizeInFlightRevocations_ReleaseAndListErrorsJoined(t *testing.T) {
 // The timeout should outlast a revoke still between its flip and its recorded
 // Return: the app server caps a request at 30s (internal/server/http.go) and
 // the detached Return plus its writes at 3m30s (issue #1527). Correctness does
-// not depend on this (issue #1525).
-func TestStaleRevocationInFlightAfter_OutlastsLongestRequest(t *testing.T) {
-	assert.Greater(t, staleRevocationInFlightAfter, time.Hour)
+// not depend on this (issue #1525). It must also stay well under the revoke
+// endpoint's 1h pre-window cutoff (issue #1584): a flag held for 2h locked out
+// the retries of possibly every revoke started in the last 4h of the free-cancel window
+// (the sweep is hourly, so the effective lock is this value plus up to 1h).
+func TestStaleRevocationInFlightAfter_OutlastsLongestRequestAndStaysInsideWindowMargin(t *testing.T) {
+	assert.Greater(t, staleRevocationInFlightAfter, 4*(3*time.Minute+30*time.Second))
+	assert.LessOrEqual(t, staleRevocationInFlightAfter, 30*time.Minute)
 }

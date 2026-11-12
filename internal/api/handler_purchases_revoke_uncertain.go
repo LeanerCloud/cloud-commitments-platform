@@ -128,15 +128,35 @@ func isAzureDefiniteRefusal(err error, attempts int32) bool {
 	return code >= 400 && code < 500 && code != http.StatusRequestTimeout
 }
 
+// azureAlreadyReturnedCode is the ErrorCode on Azure's refusal of a Return for
+// a reservation that was already returned. NOT confirmed against Azure's
+// documentation or a live capture (neither lists it); it is the code the
+// tests of this package have used for that refusal since #290. A wrong value
+// is safe: it never matches, so the refusal keeps its definite-refusal
+// handling (issue #1584).
+const azureAlreadyReturnedCode = "ReservationAlreadyReturned"
+
+// isAzureAlreadyReturned reports whether a failed Return was Azure's answer
+// that the reservation is already returned. It needs the one-send guarantee
+// of a definite refusal: after a retry the answer may be to our own try that
+// Azure had accepted, which is the uncertain case, not this one.
+func isAzureAlreadyReturned(err error, attempts int32) bool {
+	if !isAzureDefiniteRefusal(err, attempts) {
+		return false
+	}
+	var respErr *azcore.ResponseError
+	return errors.As(err, &respErr) && respErr.ErrorCode == azureAlreadyReturnedCode
+}
+
 // azureReturnUncertain handles a Return that failed without a definite answer
 // (issue #1529). The in-flight flag stays set, so no request can post a
 // second Return for this purchase, and the user gets the shared
 // REVOCATION_PENDING_CONFIRMATION answer (issue #1522): neither "refunded" nor
 // "failed". If no Return gets recorded, the finalize_revocations sweep clears
-// the flag after its 2h stale window and logs the row for an operator.
+// the flag after its 30m stale window and logs the row for an operator.
 func azureReturnUncertain(record *config.PurchaseHistoryRecord, attempts int32, err error) *revokePendingConfirmationResult {
 	logging.Errorf("revoke azure: purchase_id=%s account_id=%s Return failed without a definite answer after %d send(s), outcome uncertain: %v. "+
-		"Kept the in-flight flag so no second Return is posted; finalize_revocations releases it after 2h if no Return is recorded. "+
+		"Kept the in-flight flag so no second Return is posted; finalize_revocations releases it after 30m if no Return is recorded. "+
 		"If Azure did accept the Return, reconcile the row by hand",
 		record.PurchaseID, record.AccountID, attempts, err)
 	return newRevokePendingConfirmation()

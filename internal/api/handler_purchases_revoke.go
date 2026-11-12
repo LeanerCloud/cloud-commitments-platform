@@ -125,13 +125,13 @@ type revokeReconcilePendingResult struct {
 const (
 	revokeCodeReconcilePending       = "RECONCILE_PENDING"
 	revokeCodePendingConfirmation    = "REVOCATION_PENDING_CONFIRMATION"
-	revokePendingConfirmationMessage = "A refund for this purchase is being processed. Check back in a few minutes; don't start another revoke."
+	revokePendingConfirmationMessage = "We could not confirm whether the refund for this purchase went through. Check the reservation in the Azure portal before trying again: if it still shows as active after about 90 minutes, you can revoke again."
 
 	// revokeRetryAfterSeconds is how long a client should wait before asking
 	// again: the detached Return (revokeReturnTimeout, 3m) plus the writes
 	// that record it (revokePersistTimeout, 30s) is 3m30s, so by 5m the
 	// request that holds the claim has either recorded the Return or given
-	// up; the finalize_revocations sweep (2h stale window) is the backstop.
+	// up; the finalize_revocations sweep (30m stale window) is the backstop.
 	revokeRetryAfterSeconds = 300
 )
 
@@ -1077,6 +1077,14 @@ func (h *Handler) azureCalculateRefund(ctx context.Context, calcClient azureCalc
 func (h *Handler) handleAzureReturnError(reqCtx context.Context, record *config.PurchaseHistoryRecord, attempts int32, err error) (any, error) {
 	if !isAzureDefiniteRefusal(err, attempts) {
 		return azureReturnUncertain(record, attempts, err), nil
+	}
+	if isAzureAlreadyReturned(err, attempts) {
+		// The reservation is already returned (an earlier Return whose flag the
+		// sweep released, issue #1584): record it as revoked rather than
+		// clearing the flag and leaving a refunded purchase showing active. The
+		// refund amount of that earlier Return is unknown, so none is stored.
+		logging.Warnf("revoke azure: purchase_id=%s Azure says the reservation is already returned; marking it revoked", record.PurchaseID)
+		return h.persistAzureRevocation(reqCtx, record, nil, "")
 	}
 	ctx, cancel := ctxutil.DetachedWithTimeout(reqCtx, revokePersistTimeout)
 	defer cancel()

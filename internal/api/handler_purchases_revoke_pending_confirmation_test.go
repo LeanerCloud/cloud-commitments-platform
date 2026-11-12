@@ -22,7 +22,7 @@ import (
 // lets a response say azure_returned:true. The tests read the response the
 // way a client does, as JSON.
 
-const pendingConfirmationMessage = "A refund for this purchase is being processed. Check back in a few minutes; don't start another revoke."
+const pendingConfirmationMessage = "We could not confirm whether the refund for this purchase went through. Check the reservation in the Azure portal before trying again: if it still shows as active after about 90 minutes, you can revoke again."
 
 func resultJSON(t *testing.T, result any) map[string]any {
 	t.Helper()

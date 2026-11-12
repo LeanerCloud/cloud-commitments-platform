@@ -82,7 +82,7 @@ func TestCallAzureReturn_DefiniteRefusal_ClearsFlag(t *testing.T) {
 	}{
 		"400":         {&azcore.ResponseError{StatusCode: 400, ErrorCode: "InvalidReservationID"}, 400},
 		"403":         {&azcore.ResponseError{StatusCode: 403, ErrorCode: "AuthorizationFailed"}, 400},
-		"409":         {&azcore.ResponseError{StatusCode: 409, ErrorCode: "ReservationAlreadyReturned"}, 400},
+		"409":         {&azcore.ResponseError{StatusCode: 409, ErrorCode: "ReservationNotFound"}, 400},
 		"window edge": {&azcore.ResponseError{StatusCode: 400, ErrorCode: "RefundPolicyViolated"}, 422},
 		"401":         {&azcore.ResponseError{StatusCode: 401, ErrorCode: "InvalidAuthenticationToken"}, 0},
 		"429":         {&azcore.ResponseError{StatusCode: 429, ErrorCode: "TooManyRequests"}, 0},

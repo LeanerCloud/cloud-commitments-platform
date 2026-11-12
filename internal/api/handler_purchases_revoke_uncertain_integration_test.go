@@ -24,7 +24,7 @@ import (
 //     was cleared and the answer was a flat failure);
 //   - a retry is answered REVOCATION_PENDING_CONFIRMATION (no stamp) and posts no second Return;
 //   - the finalize_revocations sweep leaves the fresh flag alone, and once it
-//     is older than the 2h stale window releases it without marking the
+//     is older than the 30m stale window releases it without marking the
 //     purchase revoked.
 //
 // Stub Azure clients; nothing calls Azure.
@@ -86,7 +86,7 @@ func TestRevokeAzure_UncertainReturn_FlagKeptUntilSweepReleases(t *testing.T) {
 
 	_, err = pg.DB.Pool().Exec(ctx, `
 		UPDATE purchase_history
-		   SET revocation_in_flight_at = now() - interval '2 hours 1 minute'
+		   SET revocation_in_flight_at = now() - interval '31 minutes'
 		 WHERE purchase_id = $1`, record.PurchaseID)
 	require.NoError(t, err)
 	res, err := sweeper.FinalizeInFlightRevocations(ctx)
