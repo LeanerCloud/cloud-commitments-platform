@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"log"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
@@ -106,7 +107,7 @@ var scheduledEventActions = map[string]ScheduledTaskType{
 // runScheduledTask runs a scheduled task by type.
 // It acquires a PostgreSQL advisory lock to prevent concurrent execution of the same task.
 func (app *Application) runScheduledTask(ctx context.Context, taskType ScheduledTaskType, params ScheduledTaskParams) (any, error) {
-	log.Printf("Handling scheduled task: %q", taskType) // #nosec G706 -- taskType is looked up from a known-value map; %q quotes the value to prevent CR/LF log injection
+	logging.Infof("Handling scheduled task: %q", taskType) // #nosec G706 -- taskType is looked up from a known-value map; %q quotes the value to prevent CR/LF log injection
 
 	// Reject an unknown task before connecting or taking an advisory lock
 	// keyed on its name. The Lambda and HTTP transports already validate at
@@ -127,7 +128,7 @@ func (app *Application) runScheduledTask(ctx context.Context, taskType Scheduled
 			return nil, fmt.Errorf("failed to check task lock: %w", err)
 		}
 		if !acquired {
-			log.Printf("Task %q already running (advisory lock held), skipping", taskType) // #nosec G706 -- taskType is looked up from a known-value map; %q quotes the value to prevent CR/LF log injection
+			logging.Warnf("Task %q already running (advisory lock held), skipping", taskType) // #nosec G706 -- taskType is looked up from a known-value map; %q quotes the value to prevent CR/LF log injection
 			app.releaseSkippedCollectionMarker(taskType, params.OwnerToken)
 			if err := stuckTaskLockError(ctx, locker, taskType, lockID); err != nil {
 				return nil, err
@@ -178,13 +179,13 @@ func (app *Application) releaseSkippedCollectionMarker(taskType ScheduledTaskTyp
 		return
 	}
 	if app.Config == nil {
-		log.Println("Cannot release collection marker for skipped run: no config store configured")
+		logging.Errorf("Cannot release collection marker for skipped run: no config store configured")
 		return
 	}
 	clearCtx, cancel := context.WithTimeout(context.Background(), skippedCollectionMarkerClearTimeout)
 	defer cancel()
 	if err := app.Config.ClearCollectionStarted(clearCtx, ownerToken); err != nil {
-		log.Printf("Failed to release collection marker for skipped run: %v", err)
+		logging.Errorf("Failed to release collection marker for skipped run: %v", err)
 	}
 }
 
@@ -243,25 +244,25 @@ func taskLockID(taskType ScheduledTaskType) int64 {
 // ownerToken threads through to CollectRecommendations's compare-and-clear
 // guard (issue #261); it is empty for cron-triggered runs.
 func (app *Application) handleCollectRecommendations(ctx context.Context, ownerToken string) (*scheduler.CollectResult, error) {
-	log.Println("Collecting recommendations...")
+	logging.Infof("Collecting recommendations...")
 	result, err := app.Scheduler.CollectRecommendations(ctx, ownerToken)
 	if err != nil {
-		log.Printf("Failed to collect recommendations: %v", err)
+		logging.Errorf("Failed to collect recommendations: %v", err)
 		return nil, err
 	}
-	log.Printf("Recommendations collected: %d total, savings: $%.2f", result.Recommendations, result.TotalSavings)
+	logging.Infof("Recommendations collected: %d total, savings: $%.2f", result.Recommendations, result.TotalSavings)
 	return result, nil
 }
 
 // handleProcessScheduledPurchases processes scheduled purchases.
 func (app *Application) handleProcessScheduledPurchases(ctx context.Context) (*purchase.ProcessResult, error) {
-	log.Println("Processing scheduled purchases...")
+	logging.Infof("Processing scheduled purchases...")
 	result, err := app.Purchase.ProcessScheduledPurchases(ctx)
 	if err != nil {
-		log.Printf("Failed to process scheduled purchases: %v", err)
+		logging.Errorf("Failed to process scheduled purchases: %v", err)
 		return nil, err
 	}
-	log.Printf("Purchases processed: %d processed, %d executed, %d failed (%d past the due-row age cap), %d stranded-approvals recovered", result.Processed, result.Executed, result.Failed, result.Stale, result.Recovered)
+	logging.Infof("Purchases processed: %d processed, %d executed, %d failed (%d past the due-row age cap), %d stranded-approvals recovered", result.Processed, result.Executed, result.Failed, result.Stale, result.Recovered)
 	if result.Failed > 0 {
 		// A partial failure must not read as success to the scheduler (#714).
 		// The result still goes back for callers that want the counts.
@@ -273,13 +274,13 @@ func (app *Application) handleProcessScheduledPurchases(ctx context.Context) (*p
 
 // handleSendNotifications sends upcoming purchase notifications.
 func (app *Application) handleSendNotifications(ctx context.Context) (*purchase.NotificationResult, error) {
-	log.Println("Sending notifications...")
+	logging.Infof("Sending notifications...")
 	result, err := app.Purchase.SendUpcomingPurchaseNotifications(ctx)
 	if err != nil {
-		log.Printf("Failed to send notifications: %v", err)
+		logging.Errorf("Failed to send notifications: %v", err)
 		return nil, err
 	}
-	log.Printf("Notifications sent: %d notified", result.Notified)
+	logging.Infof("Notifications sent: %d notified", result.Notified)
 	return result, nil
 }
 
@@ -290,7 +291,7 @@ func (app *Application) handleSendNotifications(ctx context.Context) (*purchase.
 //
 //nolint:unparam // scheduled-task handler: (result, error) shape is the shared
 func (app *Application) handleCleanupExpiredRecords(ctx context.Context) (map[string]int64, error) {
-	log.Println("Cleaning up expired records...")
+	logging.Infof("Cleaning up expired records...")
 
 	// No sessions_deleted counter: CleanupExpiredSessions reports no count,
 	// so it could only ever be a fabricated 0 (#326).
@@ -301,9 +302,9 @@ func (app *Application) handleCleanupExpiredRecords(ctx context.Context) (map[st
 	// Clean up expired sessions via auth service
 	if app.Auth != nil {
 		if err := app.Auth.CleanupExpiredSessions(ctx); err != nil {
-			log.Printf("Warning: failed to cleanup expired sessions: %v", err)
+			logging.Errorf("Warning: failed to cleanup expired sessions: %v", err)
 		} else {
-			log.Println("Expired sessions cleaned up successfully")
+			logging.Infof("Expired sessions cleaned up successfully")
 		}
 	}
 
@@ -315,14 +316,14 @@ func (app *Application) handleCleanupExpiredRecords(ctx context.Context) (map[st
 		// retained, so the two must never drift apart.
 		deleted, err := app.Config.CleanupOldExecutions(ctx, config.DefaultExecutionTTLDays)
 		if err != nil {
-			log.Printf("Warning: failed to cleanup old executions: %v", err)
+			logging.Errorf("Warning: failed to cleanup old executions: %v", err)
 		} else {
 			result["executions_deleted"] = deleted
-			log.Printf("Cleaned up %d old execution records", deleted)
+			logging.Infof("Cleaned up %d old execution records", deleted)
 		}
 	}
 
-	log.Printf("Cleanup complete: %d executions deleted", result["executions_deleted"])
+	logging.Infof("Cleanup complete: %d executions deleted", result["executions_deleted"])
 	return result, nil
 }
 
@@ -338,13 +339,13 @@ func (app *Application) handleCleanupExpiredRecords(ctx context.Context) (map[st
 // redeploy.
 func (app *Application) handleReapStuckPurchases(ctx context.Context) (*purchase.ReapResult, error) {
 	reapAfter := purchase.ParseReapAfterFromEnv()
-	log.Printf("Reaping stuck purchase executions (threshold: %s)...", reapAfter)
+	logging.Infof("Reaping stuck purchase executions (threshold: %s)...", reapAfter)
 	result, err := app.Purchase.ReapStuckExecutions(ctx, reapAfter)
 	if err != nil {
-		log.Printf("Failed to reap stuck purchase executions: %v", err)
+		logging.Errorf("Failed to reap stuck purchase executions: %v", err)
 		return nil, err
 	}
-	log.Printf("Reap sweep complete: found=%d reaped=%d race_lost=%d errored=%d",
+	logging.Infof("Reap sweep complete: found=%d reaped=%d race_lost=%d errored=%d",
 		result.Found, result.Reaped, result.RaceLost, result.Errored)
 	return result, nil
 }
@@ -354,13 +355,13 @@ func (app *Application) handleReapStuckPurchases(ctx context.Context) (*purchase
 // delay feature (issue #291 wave-2): approve defers the cloud SDK call; this
 // tick fires the SDK call when the window expires.
 func (app *Application) handleFireScheduledPurchases(ctx context.Context) (*purchase.FireResult, error) {
-	log.Println("Firing scheduled delayed purchases...")
+	logging.Infof("Firing scheduled delayed purchases...")
 	result, err := app.Purchase.FireScheduledDelayedPurchases(ctx)
 	if err != nil {
-		log.Printf("Failed to fire scheduled purchases: %v", err)
+		logging.Errorf("Failed to fire scheduled purchases: %v", err)
 		return nil, err
 	}
-	log.Printf("Fire sweep complete: found=%d fired=%d race_lost=%d stale=%d errored=%d deferred=%d",
+	logging.Infof("Fire sweep complete: found=%d fired=%d race_lost=%d stale=%d errored=%d deferred=%d",
 		result.Found, result.Fired, result.RaceLost, result.Stale, result.Errored, result.Deferred)
 	return result, nil
 }
@@ -373,13 +374,13 @@ func (app *Application) handleFireScheduledPurchases(ctx context.Context) (*purc
 // the DB write failed, this sweep ensures the audit row is eventually
 // consistent.
 func (app *Application) handleFinalizeRevocations(ctx context.Context) (*purchase.FinalizeResult, error) {
-	log.Println("Finalizing in-flight revocations...")
+	logging.Infof("Finalizing in-flight revocations...")
 	result, err := app.Purchase.FinalizeInFlightRevocations(ctx)
 	if err != nil {
-		log.Printf("Failed to finalize in-flight revocations: %v", err)
+		logging.Errorf("Failed to finalize in-flight revocations: %v", err)
 		return nil, err
 	}
-	log.Printf("Finalize sweep complete: found=%d finalized=%d errored=%d released=%d",
+	logging.Infof("Finalize sweep complete: found=%d finalized=%d errored=%d released=%d",
 		result.Found, result.Finalized, result.Errored, result.Released)
 	return result, nil
 }
@@ -391,7 +392,7 @@ func (app *Application) handleFinalizeRevocations(ctx context.Context) (*purchas
 //
 //nolint:unparam // scheduled-task handler: (result, error) shape is the shared
 func (app *Application) handleRefreshAnalytics(ctx context.Context) (map[string]any, error) {
-	log.Println("Refreshing analytics...")
+	logging.Infof("Refreshing analytics...")
 
 	// No partition counters: this task never creates or drops partitions
 	// (handleCollectAnalytics does), so they could only be fabricated zeros.
@@ -406,21 +407,21 @@ func (app *Application) handleRefreshAnalytics(ctx context.Context) (map[string]
 	// server-side log (06-M4 error-visibility).
 	if app.Analytics != nil {
 		if err := app.Analytics.RefreshMaterializedViews(ctx); err != nil {
-			log.Printf("Warning: failed to refresh materialized views: %v", err)
+			logging.Errorf("Warning: failed to refresh materialized views: %v", err)
 			result["status"] = "partial"
 			result["views_error"] = err.Error()
 		} else {
 			result["views_refreshed"] = 1
-			log.Println("Materialized views refreshed successfully")
+			logging.Infof("Materialized views refreshed successfully")
 		}
 	} else {
 		// Nothing ran, so this is not a success; handleCollectAnalytics
 		// reports the same condition as "skipped" (#326).
 		result["status"] = "skipped"
-		log.Println("Analytics store not available, skipping materialized view refresh")
+		logging.Warnf("Analytics store not available, skipping materialized view refresh")
 	}
 
-	log.Printf("Analytics refresh complete")
+	logging.Infof("Analytics refresh complete")
 	return result, nil
 }
 

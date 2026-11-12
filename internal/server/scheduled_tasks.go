@@ -3,10 +3,11 @@ package server
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/ctxutil"
 )
@@ -34,7 +35,7 @@ const scheduledResponseGrace = 30 * time.Second
 func extendScheduledWriteDeadline(w http.ResponseWriter) {
 	deadline := time.Now().Add(scheduledTaskHTTPTimeout + scheduledResponseGrace)
 	if err := http.NewResponseController(w).SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		log.Printf("Failed to extend scheduled task write deadline: %v", err)
+		logging.Errorf("Failed to extend scheduled task write deadline: %v", err)
 	}
 }
 
@@ -126,7 +127,7 @@ var ErrScheduledPurchasesFailed = errors.New("scheduled purchases failed")
 func (app *Application) HandleScheduledTask(ctx context.Context, taskType ScheduledTaskType, params ScheduledTaskParams) (any, error) {
 	result, err := app.runScheduledTask(ctx, taskType, params)
 	if err != nil {
-		log.Printf("%s task=%q error=%q", ScheduledTaskFailedLogMarker, taskType, err.Error()) // #nosec G706 -- taskType comes from a known-value map and both values are %q-quoted, which escapes CR/LF
+		logging.Errorf("%s task=%q error=%q", ScheduledTaskFailedLogMarker, taskType, err.Error()) // #nosec G706 -- taskType comes from a known-value map and both values are %q-quoted, which escapes CR/LF
 	}
 	return result, err
 }

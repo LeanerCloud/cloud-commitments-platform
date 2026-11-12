@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/testutil"
 )
@@ -38,10 +38,9 @@ func (b *syncBuffer) String() string {
 
 func captureServerLog(t *testing.T) *syncBuffer {
 	t.Helper()
-	orig := log.Writer()
 	buf := &syncBuffer{}
-	log.SetOutput(buf)
-	t.Cleanup(func() { log.SetOutput(orig) })
+	orig := logging.SetOutput(buf)
+	t.Cleanup(func() { logging.SetOutput(orig) })
 	return buf
 }
 

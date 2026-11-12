@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/aws/aws-lambda-go/events"
@@ -140,14 +141,14 @@ func (app *Application) initializeUntilReady(ctx context.Context, init func(cont
 		err := init(attemptCtx)
 		cancel()
 		if err == nil {
-			log.Println("Background database initialization complete")
+			logging.Infof("Background database initialization complete")
 			return
 		}
 		delay := app.backgroundInitDelay()
-		log.Printf("Background database initialization failed: %v (retrying in %s)", err, delay)
+		logging.Warnf("Background database initialization failed: %v (retrying in %s)", err, delay)
 		select {
 		case <-ctx.Done():
-			log.Printf("Background database initialization stopped: %v", ctx.Err())
+			logging.Infof("Background database initialization stopped: %v", ctx.Err())
 			return
 		case <-time.After(delay):
 		}
@@ -179,7 +180,7 @@ const scheduledTaskUnwindShare = 6
 // requests cut and the DB pool/advisory locks undrained (issue #1025).
 func StartHTTPServer(app *Application, port int) error {
 	server := CreateHTTPServer(app, port)
-	log.Printf("Starting HTTP server on %s", server.Addr)
+	logging.Infof("Starting HTTP server on %s", server.Addr)
 
 	// Signal context cancels on the first SIGINT or SIGTERM.
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -202,7 +203,7 @@ func StartHTTPServer(app *Application, port int) error {
 	case <-sigCtx.Done():
 		// Received SIGINT or SIGTERM: drain in-flight requests then close the DB.
 		stop() // release signal resources promptly
-		log.Printf("Shutdown signal received; draining HTTP server (30s grace)...")
+		logging.Infof("Shutdown signal received; draining HTTP server (30s grace)...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
 		defer cancel()
 		// Drain for most of the grace period, leaving the last part for
@@ -210,13 +211,13 @@ func StartHTTPServer(app *Application, port int) error {
 		drainCtx, cancelDrain := context.WithTimeout(shutdownCtx, shutdownGracePeriod-shutdownGracePeriod/scheduledTaskUnwindShare)
 		defer cancelDrain()
 		if err := server.Shutdown(drainCtx); err != nil {
-			log.Printf("HTTP server forced shutdown: %v", err)
+			logging.Warnf("HTTP server forced shutdown: %v", err)
 		}
 		// Scheduled tasks run detached from their request (#784), so draining
 		// does not stop them. Cancel any still running and wait for them to
 		// return before main closes the database under them.
 		if !app.scheduledTasks.stop(shutdownCtx) {
-			log.Printf("Scheduled tasks did not stop within the shutdown grace period")
+			logging.Warnf("Scheduled tasks did not stop within the shutdown grace period")
 		}
 		// The initializer shares app.DB with app.Close; let it exit first.
 		if shutdownInitWaitHook != nil {
@@ -225,7 +226,7 @@ func StartHTTPServer(app *Application, port int) error {
 		select {
 		case <-initDone:
 		case <-shutdownCtx.Done():
-			log.Printf("Background database initialization did not stop within the shutdown grace period")
+			logging.Warnf("Background database initialization did not stop within the shutdown grace period")
 		}
 		return nil
 	}
@@ -285,7 +286,7 @@ func (app *Application) handleHTTPRequest(w http.ResponseWriter, r *http.Request
 
 	// Ensure database connection is established (lazy initialization)
 	if err := app.ensureDB(ctx); err != nil {
-		log.Printf("Failed to establish database connection: %v", err)
+		logging.Errorf("Failed to establish database connection: %v", err)
 		http.Error(w, "Service temporarily unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -300,7 +301,7 @@ func (app *Application) handleHTTPRequest(w http.ResponseWriter, r *http.Request
 	// Call the API handler
 	lambdaResp, err := app.API.HandleRequest(ctx, lambdaReq)
 	if err != nil {
-		log.Printf("API handler error: %v", err)
+		logging.Errorf("API handler error: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -326,7 +327,7 @@ func (app *Application) handleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	lambdaResp, err := app.API.HandleRequest(ctx, lambdaReq)
 	if err != nil {
-		log.Printf("Version handler error: %v", err)
+		logging.Errorf("Version handler error: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -370,7 +371,7 @@ func (app *Application) handleScheduledHTTP(w http.ResponseWriter, r *http.Reque
 	// scheduler URL is a client error, not an outage (#710).
 	taskType, err := ParseScheduledTaskType(taskTypeStr)
 	if err != nil {
-		log.Printf("Rejected scheduled task request: %v", err) // #nosec G706 -- error text quotes the value with %q
+		logging.Infof("Rejected scheduled task request: %v", err) // #nosec G706 -- error text quotes the value with %q
 		http.Error(w, "Unknown scheduled task", http.StatusBadRequest)
 		return
 	}
@@ -387,7 +388,7 @@ func (app *Application) handleScheduledHTTP(w http.ResponseWriter, r *http.Reque
 
 	// Ensure database connection is established (lazy initialization)
 	if err = app.ensureDB(ctx); err != nil {
-		log.Printf("Failed to establish database connection: %v", err)
+		logging.Errorf("Failed to establish database connection: %v", err)
 		http.Error(w, "Database connection failed", http.StatusServiceUnavailable)
 		return
 	}
@@ -397,7 +398,7 @@ func (app *Application) handleScheduledHTTP(w http.ResponseWriter, r *http.Reque
 	// the collection-marker clear (see ScheduledTaskParams).
 	result, err := app.HandleScheduledTask(ctx, taskType, ScheduledTaskParams{})
 	if err != nil {
-		log.Printf("Scheduled task %q error: %v", taskTypeStr, err) // #nosec G706 -- taskTypeStr printed with %q which escapes special chars; validated to contain no '/' before this point
+		logging.Errorf("Scheduled task %q error: %v", taskTypeStr, err) // #nosec G706 -- taskTypeStr printed with %q which escapes special chars; validated to contain no '/' before this point
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -410,7 +411,7 @@ func (app *Application) handleScheduledHTTP(w http.ResponseWriter, r *http.Reque
 		"task":   taskTypeStr,
 		"result": result,
 	}); err != nil {
-		log.Printf("Failed to encode scheduled task response: %v", err)
+		logging.Errorf("Failed to encode scheduled task response: %v", err)
 	}
 }
 
@@ -506,7 +507,7 @@ func lambdaResponseToHTTP(w http.ResponseWriter, lambdaResp *events.LambdaFuncti
 	if lambdaResp.IsBase64Encoded {
 		decoded, err := base64.StdEncoding.DecodeString(lambdaResp.Body)
 		if err != nil {
-			log.Printf("Error decoding base64 response body: %v", err)
+			logging.Errorf("Error decoding base64 response body: %v", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -519,11 +520,11 @@ func lambdaResponseToHTTP(w http.ResponseWriter, lambdaResp *events.LambdaFuncti
 	for key, value := range lambdaResp.Headers {
 		lowerKey := strings.ToLower(key)
 		if !safeHeaderNames[lowerKey] {
-			log.Printf("Blocked unsafe header from Lambda response: %s", key)
+			logging.Warnf("Blocked unsafe header from Lambda response: %s", key)
 			continue
 		}
 		if !isSafeHeaderValue(value) {
-			log.Printf("Blocked header with unsafe value (CRLF injection attempt): %s", key)
+			logging.Warnf("Blocked header with unsafe value (CRLF injection attempt): %s", key)
 			continue
 		}
 		w.Header().Set(key, value)
@@ -532,7 +533,7 @@ func lambdaResponseToHTTP(w http.ResponseWriter, lambdaResp *events.LambdaFuncti
 	// Set cookies with CRLF validation
 	for _, cookie := range lambdaResp.Cookies {
 		if !isSafeHeaderValue(cookie) {
-			log.Printf("Blocked cookie with unsafe value (CRLF injection attempt)")
+			logging.Warnf("Blocked cookie with unsafe value (CRLF injection attempt)")
 			continue
 		}
 		w.Header().Add("Set-Cookie", cookie)
@@ -541,6 +542,6 @@ func lambdaResponseToHTTP(w http.ResponseWriter, lambdaResp *events.LambdaFuncti
 	// Set status code and write body
 	w.WriteHeader(lambdaResp.StatusCode)
 	if _, err := w.Write(body); err != nil { // #nosec G705 -- body is the proxied Lambda API response; Content-Type is set from the validated Lambda response headers above
-		log.Printf("http: failed to write response body: %v", err)
+		logging.Errorf("http: failed to write response body: %v", err)
 	}
 }
