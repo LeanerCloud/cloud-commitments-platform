@@ -304,3 +304,160 @@ func newPendingExecution(req *ExecutePurchaseRequest, totalUpfront, totalSavings
 		CapacityPercent:        req.CapacityPercent,
 	}, approvalToken, nil
 }
+
+func (h *Handler) executePurchase(ctx context.Context, req *events.LambdaFunctionURLRequest) (any, error) {
+	execReq, session, paymentAdjustments, err := h.validateExecutePurchaseRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	totalUpfront, totalSavings, err := validateAndTotalRecommendations(execReq.Recommendations)
+	if err != nil {
+		return nil, err
+	}
+
+	// Submit-time idempotency (#644/#643): a double-click or retried POST with
+	// an identical actor + scaled rec set + capacity within a short window must
+	// resolve to the original pending execution rather than minting a second
+	// approvable row (double-spend). The atomic guard lives inside
+	// persistExecutionAndSuppressions (per-creator lock + read + INSERT in one tx)
+	// which closes the TOCTOU race that a pre-tx read alone cannot prevent.
+	creator := resolveCreatorUserID(session)
+	creatorID := derefStringOrEmpty(creator)
+	idempotencyKey, err := purchaseIdempotencyKey(creatorID, execReq.Recommendations, execReq.CapacityPercent)
+	if err != nil {
+		return nil, fmt.Errorf("derive purchase idempotency key: %w", err)
+	}
+
+	execution, rawApprovalToken, err := newPendingExecution(&execReq, totalUpfront, totalSavings)
+	if err != nil {
+		return nil, err
+	}
+	// CreatedByUserID is set after construction so newPendingExecution stays
+	// signature-stable. The cancel-own RBAC path in cancelPurchase relies on
+	// this stamp to identify the creator on later cancellation; legacy rows
+	// pre-dating issue #46 can carry NULL here, so always go through the
+	// resolveCreatorUserID helper rather than dereferencing the session.
+	execution.CreatedByUserID = creator
+	executionID := execution.ExecutionID
+
+	// Load the grace-period config once before entering the tx.
+	graceCfg, err := h.gracePeriodConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	suppressions := config.BuildSuppressions(execReq.Recommendations, executionID, graceCfg, time.Now())
+	dupExec, err := h.persistExecutionAndSuppressions(ctx, execution, suppressions, creatorID, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	if dupExec != nil {
+		logging.Infof("concurrent duplicate purchase submit collapsed to existing execution %s", dupExec.ExecutionID)
+		return withPaymentAdjustments(buildDuplicatePurchaseResponse(dupExec), paymentAdjustments), nil
+	}
+
+	// Direct-execute path (issue #289): a session with execute-any or
+	// execute-own on purchases can request execute_mode="direct" to bypass
+	// the approval email and commit the purchase immediately.
+	//
+	// authorizeSessionExecuteDirect is a hard gate — any check failure
+	// returns a 403 rather than falling through to the email path. This
+	// prevents a client that sets execute_mode="direct" but only holds the
+	// base execute:purchases verb from silently degrading to the email flow.
+	if execReq.ExecuteMode == "direct" {
+		if err := h.authorizeSessionExecuteDirect(ctx, session, creatorID, execReq.Recommendations); err != nil {
+			return nil, err
+		}
+		return h.directExecutePurchase(ctx, req, execution, session, paymentAdjustments)
+	}
+
+	// Send approval email synchronously so the response can surface the
+	// actual outcome. The DB write above is the source of truth — email is
+	// best-effort and never blocks the response body; the returned
+	// email_sent / email_reason fields let the UI tell the user whether they
+	// should wait for an inbox or cancel/retry manually. The one exception is
+	// a send failure that cannot be recorded on the row: that answers 500
+	// (issue #54).
+	return h.sendApprovalAndFinalize(ctx, req, execution, rawApprovalToken, execReq.Recommendations, totalUpfront, totalSavings, paymentAdjustments)
+}
+
+// gracePeriodConfig loads the global config for BuildSuppressions' grace
+// periods, read before any tx opens. A read error is returned and fails the
+// purchase before anything is persisted (audit A01-016, issue #111): falling
+// back to the default grace period would write suppressions for a provider
+// the operator switched off (grace 0) or with the wrong expiry. This matches
+// internal/purchase (AttachResolvedRecommendations) and the other config
+// reads on these paths.
+func (h *Handler) gracePeriodConfig(ctx context.Context) (*config.GlobalConfig, error) {
+	g, err := h.config.GetGlobalConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read grace periods for suppressions: %w", err)
+	}
+	return g, nil
+}
+
+// directExecutePurchase is the direct-execute branch of executePurchase
+// (issue #289). It is called after the execution row has been persisted as
+// "pending" and after authorizeSessionExecuteDirect has confirmed the session
+// holds execute-any or execute-own on purchases.
+//
+// Steps:
+//  1. Delegate to purchase.Manager.DirectExecute, which atomically
+//     transitions the row to "approved" (stamping ApprovedBy), stamps the
+//     three audit fields (executed_by_user_id, executed_at,
+//     pre_approval_skip_reason) only once that claim is won, and then runs the
+//     purchase synchronously. A refused or lost direct execute therefore
+//     leaves no executed_at on a row that never ran, and failures map through
+//     executeFailureError (403 four-eyes, 409 lost claim, 502 after the claim).
+//  2. Send the best-effort post-execution notification email (issue #291).
+//     This is the only email the direct-execute flow emits -- no approval
+//     email precedes it -- so it is the path where the executed-notification
+//     matters most.
+//  3. Return a "completed" status to the caller, carrying any payment-option
+//     coercion notices (paymentAdjustments, from the request validation) so
+//     the direct-execute response surfaces them like the approval path does.
+//
+// The audit invariant is that a non-nil executed_by_user_id always co-occurs
+// with a non-nil pre_approval_skip_reason; both are stamped in the same save.
+func (h *Handler) directExecutePurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, session *Session, paymentAdjustments []PaymentAdjustment) (any, error) {
+	t0 := time.Now()
+	executionID := execution.ExecutionID
+	logging.Infof("purchase[%s]: directExecutePurchase entry (auth=session)", executionID)
+
+	// Human session direct-execute: stamp the session user's UUID onto
+	// transitioned_by (FK-safe via validUUIDPtrOrNil) so the audit trail
+	// records who flipped the row to "approved".
+	//
+	// revocationToken is the raw token DirectExecute mints for this
+	// approval (issue #103); only the token hash is stored, so this
+	// return value is the only place a raw, emailable token exists after
+	// the call returns.
+	// The direct-execute Constraints ran on the request's recommendations; the
+	// funnel re-runs them on the row its claim returns (issue #415).
+	final, revocationToken, err := h.purchase.DirectExecute(ctx, executionID, fourEyesActorIdentity(session), validUUIDPtrOrNil(&session.UserID), h.directExecuteClaimCheck(session))
+	if err != nil {
+		logging.Errorf("purchase[%s]: directExecutePurchase failed after %s: %v",
+			executionID, time.Since(t0), err)
+		return nil, h.executeFailure(ctx, req, executionID, "direct-executed", final, revocationToken, session.Email, err)
+	}
+
+	logging.Infof("purchase[%s]: directExecutePurchase completed in %s", executionID, time.Since(t0))
+	// Best-effort post-execution notification email (issue #291). The
+	// direct-execute path sends no approval email (the whole point is to skip
+	// the approval round-trip), so this is the only notification the recipients
+	// receive -- making the executed-notification the most valuable here.
+	// Mirrors the approve-path call sites (see approvePurchase and
+	// approvePurchaseViaSession); recipient resolution and the nil-notifier
+	// guard live inside sendPurchaseExecutedEmail. session.Email is the actor
+	// who direct-executed, matching the actor passed to ApproveAndExecute above.
+	h.sendPurchaseExecutedEmail(ctx, req, execution, revocationToken, session.Email)
+	return withPaymentAdjustments(map[string]any{
+		"execution_id":         executionID,
+		"status":               "completed",
+		"recommendation_count": len(execution.Recommendations),
+		"total_upfront_cost":   execution.TotalUpfrontCost,
+		"estimated_savings":    execution.EstimatedSavings,
+		"direct_execute":       true,
+		"message":              "Purchase executed immediately (direct-execute permission).",
+	}, paymentAdjustments), nil
+}
