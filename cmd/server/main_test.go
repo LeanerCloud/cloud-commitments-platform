@@ -165,8 +165,8 @@ func TestFlagErrorCode_HelpExitsZero(t *testing.T) {
 func TestDispatch_Order(t *testing.T) {
 	cases := []struct {
 		name string
-		c    cliFlags
 		want []string
+		c    cliFlags
 	}{
 		{name: "migrate only", c: cliFlags{migrate: true}, want: []string{"migrate"}},
 		{name: "migrate beats task", c: cliFlags{migrate: true, task: "x"}, want: []string{"migrate"}},

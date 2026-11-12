@@ -24,11 +24,11 @@ var ciWorkflowPath = filepath.Join("..", "..", ".github", "workflows", "ci.yml")
 var shippedImageArches = []string{"amd64", "arm64"}
 
 type ciStep struct {
+	Env  map[string]string `yaml:"env"`
+	With map[string]string `yaml:"with"`
 	Name string            `yaml:"name"`
 	Uses string            `yaml:"uses"`
 	Run  string            `yaml:"run"`
-	Env  map[string]string `yaml:"env"`
-	With map[string]string `yaml:"with"`
 }
 
 type ciJob struct {
