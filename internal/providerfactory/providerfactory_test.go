@@ -108,8 +108,8 @@ func TestNewGCP_RejectsMissingInputsBeforeRegistry(t *testing.T) {
 		ts        oauth2.TokenSource
 		wantErr   error
 	}{
-		{"empty project", "", &fakeTokenSource{}, ErrMissingGCPProjectID},
-		{"nil token source", testProjectID, nil, ErrMissingGCPTokenSource},
+		{name: "empty project", projectID: "", ts: &fakeTokenSource{}, wantErr: ErrMissingGCPProjectID},
+		{name: "nil token source", projectID: testProjectID, ts: nil, wantErr: ErrMissingGCPTokenSource},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
