@@ -463,3 +463,11 @@ docker run --rm \
   -p 8080:8080 \
   cudly:latest
 ```
+
+## Accepted govulncheck advisories
+
+GO-2026-5932 (golang.org/x/crypto/openpgp, the module pinned at `golang.org/x/crypto` in `go.mod`) is accepted. govulncheck reports it at the required-module level. Its advisory has no fixed version, so no version bump clears it. It is unreachable: govulncheck reports no called or imported symbol, and the repo imports no `crypto/openpgp` package.
+
+Do not try a dependency bump to clear it, and do not add it to the govulncheck ignore list without an owner decision.
+
+Re-check this note when x/crypto ships an openpgp fix or the advisory is withdrawn.
