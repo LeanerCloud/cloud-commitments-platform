@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -75,7 +76,7 @@ func clearForgotPasswordLimits(ctx context.Context, db *database.Connection, dom
 		return Response{}, fmt.Errorf("failed to count remaining rate limits: %w", err)
 	}
 
-	log.Printf("Successfully cleared %d rate limit(s), %d remaining", deletedCount, remainingCount)
+	logging.Infof("Successfully cleared %d rate limit(s), %d remaining", deletedCount, remainingCount)
 
 	return Response{
 		Message:        fmt.Sprintf("Successfully cleared %d rate limit(s)", deletedCount),

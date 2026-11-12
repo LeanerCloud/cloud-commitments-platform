@@ -15,9 +15,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/jackc/pgx/v5"
 
@@ -37,14 +38,16 @@ func main() {
 	flag.Parse()
 
 	if os.Getenv(safetyEnv) != "1" {
-		log.Fatalf("rekey: refusing to run without %s=1 (see cmd/rekey/README.md)", safetyEnv)
+		logging.Errorf("rekey: refusing to run without %s=1 (see cmd/rekey/README.md)", safetyEnv)
+		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
 	if err := run(ctx); err != nil {
-		log.Fatalf("rekey: %v", err) //nolint:gocritic // exitAfterDefer: intentional fatal; cancel() best-effort on timeout
+		logging.Errorf("rekey: %v", err)
+		os.Exit(1) //nolint:gocritic // exitAfterDefer: intentional fatal; cancel() best-effort on timeout
 	}
 }
 
@@ -55,7 +58,7 @@ func run(ctx context.Context) error {
 	}
 	defer func() {
 		if cerr := resolver.Close(); cerr != nil {
-			log.Printf("rekey: warning: resolver close: %v", cerr)
+			logging.Warnf("rekey: warning: resolver close: %v", cerr)
 		}
 	}()
 
@@ -63,7 +66,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load real key: %w", err)
 	}
-	log.Printf("rekey: loaded real key via %s", source)
+	logging.Infof("rekey: loaded real key via %s", source)
 
 	zeroKey := credentials.DevKey()
 	if isEqual(realKey, zeroKey) {
@@ -80,7 +83,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("rekey: %w", err)
 	}
-	log.Printf("rekey: scanned=%d re_keyed=%d skipped_already_real=%d errored=%d",
+	logging.Infof("rekey: scanned=%d re_keyed=%d skipped_already_real=%d errored=%d",
 		cs.scanned, cs.reKeyed, cs.skippedAlreadyReal, cs.errored)
 
 	if cs.errored > 0 {
@@ -173,30 +176,30 @@ func rekeyOne(ctx context.Context, db *database.Connection, id, blob string, zer
 		// truncated, empty, or written under some other key) is an error, so
 		// the run fails instead of declaring the migration complete.
 		if _, realErr := credentials.Decrypt(realKey, blob); realErr != nil {
-			log.Printf("rekey: id=%s decrypts under neither zero key nor real key: %v", id, realErr)
+			logging.Errorf("rekey: id=%s decrypts under neither zero key nor real key: %v", id, realErr)
 			return outcomeErrored
 		}
 		return outcomeSkipped
 	}
 	newBlob, err := credentials.Encrypt(realKey, plaintext)
 	if err != nil {
-		log.Printf("rekey: encrypt id=%s: %v", id, err)
+		logging.Errorf("rekey: encrypt id=%s: %v", id, err)
 		return outcomeErrored
 	}
 	tx, err := db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		log.Printf("rekey: begin tx id=%s: %v", id, err)
+		logging.Errorf("rekey: begin tx id=%s: %v", id, err)
 		return outcomeErrored
 	}
 	if _, err := tx.Exec(ctx, `UPDATE account_credentials SET encrypted_blob = $1 WHERE id = $2`, newBlob, id); err != nil {
 		if rErr := tx.Rollback(ctx); rErr != nil {
-			log.Printf("rekey: rollback id=%s: %v", id, rErr)
+			logging.Errorf("rekey: rollback id=%s: %v", id, rErr)
 		}
-		log.Printf("rekey: update id=%s: %v", id, err)
+		logging.Errorf("rekey: update id=%s: %v", id, err)
 		return outcomeErrored
 	}
 	if err := tx.Commit(ctx); err != nil {
-		log.Printf("rekey: commit id=%s: %v", id, err)
+		logging.Errorf("rekey: commit id=%s: %v", id, err)
 		return outcomeErrored
 	}
 	return outcomeReKeyed

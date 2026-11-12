@@ -10,8 +10,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/server"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -41,7 +42,7 @@ func initApp(ctx context.Context) (*server.Application, error) {
 		return app, nil
 	}
 
-	log.Printf("CUDly Lambda Handler starting, version: %s", Version)
+	logging.Infof("CUDly Lambda Handler starting, version: %s", Version)
 
 	// Initialize using the unified server package (PostgreSQL-based).
 	// Pass Version directly to avoid the os.Setenv round-trip (04-N1).
@@ -51,7 +52,7 @@ func initApp(ctx context.Context) (*server.Application, error) {
 		return nil, fmt.Errorf("failed to initialize application: %w", err)
 	}
 
-	log.Println("Lambda handler initialized successfully")
+	logging.Infof("Lambda handler initialized successfully")
 	return app, nil
 }
 

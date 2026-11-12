@@ -6,10 +6,11 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/runtime"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/server"
@@ -53,14 +54,14 @@ func realMain(args []string) int {
 		return flagErrorCode(err)
 	}
 
-	log.Printf("CUDly Server v%s (git: %s, built: %s)", Version, GitSHA, BuildTime)
+	logging.Infof("CUDly Server v%s (git: %s, built: %s)", Version, GitSHA, BuildTime)
 
 	// Export BUILD_TIME and GIT_SHA to the environment so the api package can
 	// read them without importing main (import cycle). VERSION is passed
 	// directly to NewApplication to avoid the env round-trip (04-N1).
 	for k, v := range map[string]string{"BUILD_TIME": BuildTime, "GIT_SHA": GitSHA} {
 		if envErr := os.Setenv(k, v); envErr != nil {
-			log.Printf("failed to export %s: %v", k, envErr)
+			logging.Errorf("failed to export %s: %v", k, envErr)
 		}
 	}
 
@@ -79,7 +80,7 @@ func flagErrorCode(err error) int {
 	if errors.Is(err, flag.ErrHelp) {
 		return 0
 	}
-	log.Printf("Invalid flags: %v", err)
+	logging.Errorf("Invalid flags: %v", err)
 	return 2
 }
 
@@ -87,7 +88,7 @@ func runTaskMode(c cliFlags) int {
 	ctx := context.Background()
 	app, err := server.NewApplication(ctx, Version)
 	if err != nil {
-		log.Printf("Failed to initialize application: %v", err)
+		logging.Errorf("Failed to initialize application: %v", err)
 		return 1
 	}
 	defer app.Close()
@@ -96,13 +97,13 @@ func runTaskMode(c cliFlags) int {
 	taskCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	log.Printf("Running scheduled task: %s (timeout: %v)", c.task, timeout)
+	logging.Infof("Running scheduled task: %s (timeout: %v)", c.task, timeout)
 	result, err := app.HandleScheduledTask(taskCtx, server.ScheduledTaskType(c.task), server.ScheduledTaskParams{})
 	if err != nil {
-		log.Printf("Scheduled task %q failed: %v", c.task, err)
+		logging.Errorf("Scheduled task %q failed: %v", c.task, err)
 		return 1
 	}
-	log.Printf("Scheduled task %q completed successfully: %v", c.task, result)
+	logging.Infof("Scheduled task %q completed successfully: %v", c.task, result)
 	return 0
 }
 
@@ -111,24 +112,24 @@ func runServeMode(c cliFlags) int {
 	// going through os.Setenv("VERSION",...).
 	app, err := server.NewApplication(context.Background(), Version)
 	if err != nil {
-		log.Printf("Failed to initialize application: %v", err)
+		logging.Errorf("Failed to initialize application: %v", err)
 		return 1
 	}
 	defer app.Close()
 
 	runtimeMode := determineRuntimeMode(c.mode)
-	log.Printf("Starting CUDly server in %s mode", runtimeMode)
+	logging.Infof("Starting CUDly server in %s mode", runtimeMode)
 
 	switch runtimeMode {
 	case "lambda":
 		server.StartLambdaHandler(app)
 	case "http":
 		if err := server.StartHTTPServer(app, c.port); err != nil {
-			log.Printf("HTTP server failed: %v", err)
+			logging.Errorf("HTTP server failed: %v", err)
 			return 1
 		}
 	default:
-		log.Printf("Unknown runtime mode: %s", runtimeMode)
+		logging.Errorf("Unknown runtime mode: %s", runtimeMode)
 		return 1
 	}
 	return 0
@@ -197,10 +198,10 @@ func migrateOnce(ctx context.Context, opts server.MigrateOptions) (server.Migrat
 func runMigrateMode(ctx context.Context, opts server.MigrateOptions, migrate func(context.Context, server.MigrateOptions) (server.MigrateReport, error)) int {
 	rep, err := migrate(ctx, opts)
 	if err != nil {
-		log.Printf("Migration failed: %v", err)
+		logging.Errorf("Migration failed: %v", err)
 		return 1
 	}
-	log.Printf("Migrations complete: version %d -> %d", rep.From, rep.To)
+	logging.Infof("Migrations complete: version %d -> %d", rep.From, rep.To)
 	return 0
 }
 
@@ -212,11 +213,11 @@ func getTaskTimeout() time.Duration {
 	if v := os.Getenv("TASK_TIMEOUT"); v != "" {
 		secs, err := strconv.Atoi(v)
 		if err != nil {
-			log.Printf("WARNING: TASK_TIMEOUT=%q is not a valid integer; using default %v", v, defaultTimeout) // #nosec G706 -- TASK_TIMEOUT env var is operator-controlled; logged for diagnostics
+			logging.Warnf("WARNING: TASK_TIMEOUT=%q is not a valid integer; using default %v", v, defaultTimeout) // #nosec G706 -- TASK_TIMEOUT env var is operator-controlled; logged for diagnostics
 			return defaultTimeout
 		}
 		if secs <= 0 {
-			log.Printf("WARNING: TASK_TIMEOUT=%q must be a positive number; using default %v", v, defaultTimeout) // #nosec G706 -- TASK_TIMEOUT env var is operator-controlled; logged for diagnostics
+			logging.Warnf("WARNING: TASK_TIMEOUT=%q must be a positive number; using default %v", v, defaultTimeout) // #nosec G706 -- TASK_TIMEOUT env var is operator-controlled; logged for diagnostics
 			return defaultTimeout
 		}
 		return time.Duration(secs) * time.Second
@@ -245,7 +246,7 @@ func determineRuntimeMode(modeFlag string) string {
 	case "", "auto":
 		// Not set, or explicitly auto: fall through to detection below.
 	default:
-		log.Printf("Warning: unrecognized RUNTIME_MODE %q, falling back to auto-detection", runtimeMode) // #nosec G706 -- RUNTIME_MODE env var is operator-controlled; logged for diagnostics
+		logging.Warnf("Warning: unrecognized RUNTIME_MODE %q, falling back to auto-detection", runtimeMode) // #nosec G706 -- RUNTIME_MODE env var is operator-controlled; logged for diagnostics
 	}
 
 	// Auto-detect based on environment using the canonical runtime helper,
