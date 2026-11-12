@@ -65,18 +65,18 @@ func TestMigration133_ClearsConvertibleEC2Stamps(t *testing.T) {
 		before, after                 *string
 	}{
 		// The defect: a stale convertible stamp on an EC2 RI.
-		{"ri-ec2-convertible", "aws", "ec2", strPtr("convertible"), nil},
-		{"ri-compute-convertible", "aws", "compute", strPtr("convertible"), nil},
+		{purchaseID: "ri-ec2-convertible", provider: "aws", service: "ec2", before: strPtr("convertible"), after: nil},
+		{purchaseID: "ri-compute-convertible", provider: "aws", service: "compute", before: strPtr("convertible"), after: nil},
 		// The sell guard compares case-insensitively, so the reset does too.
-		{"ri-ec2-convertible-upper", "aws", "ec2", strPtr("Convertible"), nil},
+		{purchaseID: "ri-ec2-convertible-upper", provider: "aws", service: "ec2", before: strPtr("Convertible"), after: nil},
 		// A standard stamp is already sellable and must not be touched.
-		{"ri-ec2-standard", "aws", "ec2", strPtr("standard"), strPtr("standard")},
-		{"ri-compute-standard", "aws", "compute", strPtr("standard"), strPtr("standard")},
+		{purchaseID: "ri-ec2-standard", provider: "aws", service: "ec2", before: strPtr("standard"), after: strPtr("standard")},
+		{purchaseID: "ri-compute-standard", provider: "aws", service: "compute", before: strPtr("standard"), after: strPtr("standard")},
 		// Already unknown: stays unknown.
-		{"ri-ec2-null", "aws", "ec2", nil, nil},
+		{purchaseID: "ri-ec2-null", provider: "aws", service: "ec2", before: nil, after: nil},
 		// Out of scope: other AWS services and other providers.
-		{"ri-rds-convertible", "aws", "rds", strPtr("convertible"), strPtr("convertible")},
-		{"azure-compute-convertible", "azure", "compute", strPtr("convertible"), strPtr("convertible")},
+		{purchaseID: "ri-rds-convertible", provider: "aws", service: "rds", before: strPtr("convertible"), after: strPtr("convertible")},
+		{purchaseID: "azure-compute-convertible", provider: "azure", service: "compute", before: strPtr("convertible"), after: strPtr("convertible")},
 	}
 	for _, c := range cases {
 		insertOfferingClassRow(ctx, t, pool, c.purchaseID, c.provider, c.service, c.before)

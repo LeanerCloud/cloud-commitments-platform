@@ -32,10 +32,10 @@ func TestMigration_000142_ClearRevokedInFlight(t *testing.T) {
 		revokedAt *time.Time
 		want      bool
 	}{
-		{"ri-142-revoked-flagged", true, &revokedAt, false}, // the stale flag
-		{"ri-142-pending-flagged", true, nil, true},         // sweep must still see it
-		{"ri-142-revoked-clear", false, &revokedAt, false},  // untouched
-		{"ri-142-active", false, nil, false},                // untouched
+		{id: "ri-142-revoked-flagged", inFlight: true, revokedAt: &revokedAt, want: false}, // the stale flag
+		{id: "ri-142-pending-flagged", inFlight: true, revokedAt: nil, want: true},         // sweep must still see it
+		{id: "ri-142-revoked-clear", inFlight: false, revokedAt: &revokedAt, want: false},  // untouched
+		{id: "ri-142-active", inFlight: false, revokedAt: nil, want: false},                // untouched
 	}
 	for _, r := range rows {
 		_, err := pool.Exec(ctx, `

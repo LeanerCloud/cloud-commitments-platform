@@ -98,19 +98,19 @@ func TestMigration_SavingsRollupsPropagateUnknown(t *testing.T) {
 	t2 := t1.Add(time.Hour)
 	insertSnapshots143(ctx, t, pool, []snapshotRow143{
 		// One region known, one with no provider figure at the same instant.
-		{"acct-mixed", t1, "us-east-1", cost143(4000), cost143(4000)},
-		{"acct-mixed", t1, "eu-west-1", nil, nil},
+		{account: "acct-mixed", at: t1, region: "us-east-1", usage: cost143(4000), commitment: cost143(4000)},
+		{account: "acct-mixed", at: t1, region: "eu-west-1", usage: nil, commitment: nil},
 		// A real, known zero in every row.
-		{"acct-zero", t1, "us-east-1", cost143(0), cost143(0)},
-		{"acct-zero", t1, "eu-west-1", cost143(0), cost143(0)},
+		{account: "acct-zero", at: t1, region: "us-east-1", usage: cost143(0), commitment: cost143(0)},
+		{account: "acct-zero", at: t1, region: "eu-west-1", usage: cost143(0), commitment: cost143(0)},
 		// Fully known: AVG(100+50, 200+100) = 225.
-		{"acct-known", t1, "us-east-1", cost143(100), cost143(100)},
-		{"acct-known", t1, "eu-west-1", cost143(50), cost143(50)},
-		{"acct-known", t2, "us-east-1", cost143(200), cost143(200)},
-		{"acct-known", t2, "eu-west-1", cost143(100), cost143(100)},
+		{account: "acct-known", at: t1, region: "us-east-1", usage: cost143(100), commitment: cost143(100)},
+		{account: "acct-known", at: t1, region: "eu-west-1", usage: cost143(50), commitment: cost143(50)},
+		{account: "acct-known", at: t2, region: "us-east-1", usage: cost143(200), commitment: cost143(200)},
+		{account: "acct-known", at: t2, region: "eu-west-1", usage: cost143(100), commitment: cost143(100)},
 		// Known at the first instant, unknown at the second.
-		{"acct-later", t1, "us-east-1", cost143(100), cost143(100)},
-		{"acct-later", t2, "us-east-1", nil, nil},
+		{account: "acct-later", at: t1, region: "us-east-1", usage: cost143(100), commitment: cost143(100)},
+		{account: "acct-later", at: t2, region: "us-east-1", usage: nil, commitment: nil},
 	})
 
 	// The previous definitions report the unknown rows as if they were absent.
@@ -166,8 +166,8 @@ func TestMigration_SavingsRollupsPropagateUnknown_ConcurrentRefresh(t *testing.T
 	now := time.Now().UTC()
 	t1 := time.Date(now.Year(), now.Month(), 1, 1, 0, 0, 0, time.UTC)
 	insertSnapshots143(ctx, t, pool, []snapshotRow143{
-		{"acct-mixed", t1, "us-east-1", cost143(4000), cost143(4000)},
-		{"acct-mixed", t1, "eu-west-1", nil, nil},
+		{account: "acct-mixed", at: t1, region: "us-east-1", usage: cost143(4000), commitment: cost143(4000)},
+		{account: "acct-mixed", at: t1, region: "eu-west-1", usage: nil, commitment: nil},
 	})
 
 	// A reader holding provider_savings_summary stops the migration after it
