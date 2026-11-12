@@ -120,7 +120,7 @@ func TestBuildExchangeNotificationData(t *testing.T) {
 
 	// Verify skipped
 	testutil.AssertEqual(t, "ri-skipped", data.Skipped[0].SourceRIID)
-	testutil.AssertEqual(t, "no matching offering", data.Skipped[0].Reason)
+	testutil.AssertEqual(t, purchase.ErrCategoryMessage(purchase.ErrCategoryUnknown), data.Skipped[0].Reason)
 }
 
 func TestBuildExchangeNotificationData_Empty(t *testing.T) {
@@ -1214,7 +1214,7 @@ func TestMonthlyCostFromConvertibleRI_NoPositivePriceErrors(t *testing.T) {
 	}
 }
 
-func TestBuildExchangeNotificationData_ReconciliationDetailHidesRawError(t *testing.T) {
+func TestBuildExchangeNotificationData_DetailAndSkippedReasonHideRawError(t *testing.T) {
 	raw := `pq: duplicate key value violates unique constraint "ri_exchange_pkey" (host=10.0.0.5 user=cudly)`
 	result := &exchange.AutoExchangeResult{
 		Mode: "auto",
@@ -1224,6 +1224,7 @@ func TestBuildExchangeNotificationData_ReconciliationDetailHidesRawError(t *test
 			Error:          raw,
 			OutcomeUnknown: true,
 		}},
+		Skipped: []exchange.SkippedRecommendation{{SourceRIID: "ri-skipped", Reason: "quote failed: " + raw}},
 	}
 	data := buildExchangeNotificationData(result, "https://dashboard.example.com", "ops@example.com")
 	body, err := email.RenderRIExchangeCompletedEmail(data)
@@ -1235,8 +1236,11 @@ func TestBuildExchangeNotificationData_ReconciliationDetailHidesRawError(t *test
 			t.Errorf("email leaks raw error text %q:\n%s", leak, body)
 		}
 	}
-	if !strings.Contains(body, "Detail: "+purchase.ErrCategoryMessage(purchase.ErrCategoryUnknown)) {
-		t.Errorf("email lacks the category message:\n%s", body)
+	if !strings.Contains(body, "Detail: purchase outcome unknown") {
+		t.Errorf("email lacks the outcome-unknown wording:\n%s", body)
+	}
+	if !strings.Contains(body, "ri-skipped (): "+purchase.ErrCategoryMessage(purchase.ErrCategoryUnknown)) {
+		t.Errorf("skipped reason is not the category message:\n%s", body)
 	}
 	if !strings.Contains(body, "Record: 550e8400-e29b-41d4-a716-000000010501") {
 		t.Errorf("email lacks the record reference:\n%s", body)

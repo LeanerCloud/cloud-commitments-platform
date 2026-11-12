@@ -295,11 +295,12 @@ func buildExchangeNotificationData(result *exchange.AutoExchangeResult, dashboar
 
 	for i := range allOutcomes {
 		o := allOutcomes[i]
-		// The email carries the category message, never the raw execution
-		// error; the record id below is the reference to the full detail.
-		detail := o.Error
-		if detail != "" {
-			detail = purchase.SanitizeStoredError(detail)
+		// The email carries fixed text, never the raw execution error; the
+		// record id below is the reference to the full detail.
+		detail := emailDetail(o.Error)
+		if o.OutcomeUnknown {
+			// The sentinel text is a stored contract (go common/types.go).
+			detail = common.ErrOutcomeUnknown.Error() + ": the accept may have been processed and the exchange may exist; reconcile before retrying"
 		}
 		data.Exchanges = append(data.Exchanges, email.RIExchangeItem{
 			RecordID:           o.RecordID,
@@ -320,11 +321,20 @@ func buildExchangeNotificationData(result *exchange.AutoExchangeResult, dashboar
 		data.Skipped = append(data.Skipped, email.SkippedExchange{
 			SourceRIID:         s.SourceRIID,
 			SourceInstanceType: s.SourceInstanceType,
-			Reason:             s.Reason,
+			Reason:             emailDetail(s.Reason),
 		})
 	}
 
 	return data
+}
+
+// emailDetail returns the text safe to put in an email for a stored error or
+// skip reason: an allowlisted server note, else the category message.
+func emailDetail(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	return purchase.SanitizeStoredError(raw)
 }
 
 // monthlyCostFromConvertibleRI delegates to ricost.MonthlyCostFromConvertibleRI,
