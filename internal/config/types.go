@@ -865,22 +865,12 @@ func CanonicalSuppressionService(provider, service string) string {
 	return service
 }
 
-// CanonicalSuppressionEngine reads an engine "" as the engine the pinned
-// library now emits, so a suppression and a rec match across the bumps that
-// gave those recs an engine: go#702 for Azure cache ("redis", Advisor Redis
-// recs had none) and go#735 for Azure relational-db ("sqlserver", every Azure
-// SQL Database rec is SQL Server; issue #1950). Suppressions written before
-// the bump keep engine "" in the table and are canonicalized on read. Other
-// tuples are unchanged: an AWS RDS "" never matches "mysql".
+// CanonicalSuppressionEngine reads an Azure cache engine "" as "redis" so a
+// suppression and a rec match across go#702, which gave Advisor-sourced Azure
+// Redis recs an engine (they had none before). Other tuples are unchanged.
 func CanonicalSuppressionEngine(provider, service, engine string) string {
-	if provider != string(common.ProviderAzure) || engine != "" {
-		return engine
-	}
-	switch service {
-	case string(common.ServiceCache):
+	if provider == string(common.ProviderAzure) && service == string(common.ServiceCache) && engine == "" {
 		return "redis"
-	case string(common.ServiceRelationalDB):
-		return "sqlserver"
 	}
 	return engine
 }

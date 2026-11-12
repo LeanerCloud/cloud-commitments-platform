@@ -348,35 +348,9 @@ func TestCanonicalSuppressionEngine(t *testing.T) {
 		{"azure", "cache", "valkey", "valkey"},
 		{"aws", "cache", "", ""},
 		{"azure", "compute", "", ""},
-		{"azure", "relational-db", "", "sqlserver"},
-		{"azure", "relational-db", "sqlserver", "sqlserver"},
-		{"azure", "relational-db", "mysql", "mysql"},
-		{"aws", "relational-db", "", ""},
-		{"aws", "rds", "", ""},
-		{"gcp", "relational-db", "", ""},
 	} {
 		assert.Equal(t, tc.want, CanonicalSuppressionEngine(tc.provider, tc.service, tc.engine), tc.provider+"/"+tc.service+"/"+tc.engine)
 	}
 	assert.Equal(t, []string{"redis", ""}, SuppressionEngineSpellings("azure", "cache", "redis"))
 	assert.Equal(t, []string{""}, SuppressionEngineSpellings("aws", "cache", ""))
-	assert.Equal(t, []string{"sqlserver", ""}, SuppressionEngineSpellings("azure", "relational-db", "sqlserver"))
-	assert.Equal(t, []string{"mysql"}, SuppressionEngineSpellings("azure", "relational-db", "mysql"))
-}
-
-// The write side stores the canonical engine (issue #1950), so a purchase
-// after go#735 and one before it produce the same Azure SQL row.
-func TestBuildSuppressions_StoresCanonicalEngine(t *testing.T) {
-	now := time.Now()
-	gp := &GlobalConfig{GracePeriodDays: map[string]int{"aws": 7, "azure": 7}}
-	for _, tc := range []struct{ provider, service, engine, want string }{
-		{"azure", "relational-db", "", "sqlserver"},
-		{"azure", "relational-db", "sqlserver", "sqlserver"},
-		{"aws", "rds", "", ""},
-	} {
-		sups := BuildSuppressions([]RecommendationRecord{
-			{Provider: tc.provider, Service: tc.service, Region: "r1", ResourceType: "T1", Engine: tc.engine, Count: 1, CloudAccountID: strPtr("acct-1")},
-		}, "exec-1", gp, now)
-		require.Len(t, sups, 1)
-		assert.Equal(t, tc.want, sups[0].Engine, tc.provider+"/"+tc.service+"/"+tc.engine)
-	}
 }

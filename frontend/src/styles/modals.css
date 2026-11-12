@@ -296,6 +296,14 @@
     font-size: 0.85rem;
 }
 
+/* Issue #1654: the Upfront / Monthly / Total band lives inside the table's
+ * horizontal scroller, so scrolling the wide table carried the tiles out of
+ * view. Pin it to the scrollport's left edge so it stays at the content box. */
+#purchase-modal-commitment-band {
+    position: sticky;
+    left: 0;
+}
+
 /* "Include" label next to the select-all checkbox. */
 .purchase-modal-include-label {
     display: block;

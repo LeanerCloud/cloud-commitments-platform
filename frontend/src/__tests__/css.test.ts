@@ -647,3 +647,15 @@ describe('Toast stack at narrow widths (issue #1736)', () => {
     expect(m![1]).not.toMatch(/\bleft:/);
   });
 });
+
+describe('Review Purchase totals band on phones (issue #1654)', () => {
+  const stylesDir = path.join(__dirname, '..', 'styles');
+  const modals = fs.readFileSync(path.join(stylesDir, 'modals.css'), 'utf8');
+
+  test('the band stays pinned to the scroller left edge', () => {
+    const m = modals.match(/#purchase-modal-commitment-band \{([^}]*)\}/);
+    expect(m).not.toBeNull();
+    expect(m![1]).toMatch(/position:\s*sticky/);
+    expect(m![1]).toMatch(/left:\s*0/);
+  });
+});
