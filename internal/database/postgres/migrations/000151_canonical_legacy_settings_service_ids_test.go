@@ -272,9 +272,9 @@ func TestMigration_CanonicalLegacySettingsServiceIDs(t *testing.T) {
 			account, provider, legacy, canonical string
 			settings                             *string
 		}{
-			{m151AccountA, "azure", "vm", "compute", fullA},
-			{m151AccountB, "azure", "redis", "cache", m151Ptr(m151Snapshot(44))},
-			{m151AccountC, "gcp", "memorystore", "cache", m151Ptr(m151Snapshot(46))},
+			{account: m151AccountA, provider: "azure", legacy: "vm", canonical: "compute", settings: fullA},
+			{account: m151AccountB, provider: "azure", legacy: "redis", canonical: "cache", settings: m151Ptr(m151Snapshot(44))},
+			{account: m151AccountC, provider: "gcp", legacy: "memorystore", canonical: "cache", settings: m151Ptr(m151Snapshot(46))},
 		}
 		for i, r := range rekeys {
 			details := m151Details(m151Rekeyed, r.legacy, r.canonical)

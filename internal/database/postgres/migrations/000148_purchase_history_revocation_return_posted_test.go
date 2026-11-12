@@ -32,9 +32,9 @@ func TestMigration_000148_RevocationReturnPosted(t *testing.T) {
 		inFlight  bool
 		revokedAt *time.Time
 	}{
-		{"ri-148-flagged", true, nil},
-		{"ri-148-revoked", false, &revokedAt},
-		{"ri-148-active", false, nil},
+		{id: "ri-148-flagged", inFlight: true, revokedAt: nil},
+		{id: "ri-148-revoked", inFlight: false, revokedAt: &revokedAt},
+		{id: "ri-148-active", inFlight: false, revokedAt: nil},
 	}
 	for _, r := range rows {
 		_, err := pool.Exec(ctx, `

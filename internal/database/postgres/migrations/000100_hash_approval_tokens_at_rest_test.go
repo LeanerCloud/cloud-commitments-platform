@@ -82,8 +82,8 @@ type tokenTable struct {
 }
 
 var tokenTables = []tokenTable{
-	{"purchase_executions", "execution_id", strPtr(""), seedPurchaseExecutionWithToken},
-	{"ri_exchange_history", "id", nil, seedRIExchangeWithToken},
+	{name: "purchase_executions", idCol: "execution_id", blankRaw: strPtr(""), seed: seedPurchaseExecutionWithToken},
+	{name: "ri_exchange_history", idCol: "id", blankRaw: nil, seed: seedRIExchangeWithToken},
 }
 
 func assertMigrated(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tt tokenTable, id, rawToken, msg string) {

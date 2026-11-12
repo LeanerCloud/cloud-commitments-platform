@@ -82,22 +82,22 @@ var forbiddenPatterns = []struct {
 	name string
 	re   *regexp.Regexp
 }{
-	{"CREATE INDEX CONCURRENTLY", regexp.MustCompile(`(?is)\bcreate\s+(?:unique\s+)?index\s+concurrently\b`)},
-	{"DROP INDEX CONCURRENTLY", regexp.MustCompile(`(?is)\bdrop\s+index\s+concurrently\b`)},
+	{name: "CREATE INDEX CONCURRENTLY", re: regexp.MustCompile(`(?is)\bcreate\s+(?:unique\s+)?index\s+concurrently\b`)},
+	{name: "DROP INDEX CONCURRENTLY", re: regexp.MustCompile(`(?is)\bdrop\s+index\s+concurrently\b`)},
 	// Only REINDEX CONCURRENTLY and REINDEX SYSTEM/DATABASE are refused inside
 	// a transaction block; a plain REINDEX TABLE/INDEX runs in one. The pattern
 	// matches every REINDEX, so all of them stay out of migrations.
-	{"REINDEX", regexp.MustCompile(`(?is)\breindex\b`)},
-	{"VACUUM", regexp.MustCompile(`(?is)\bvacuum\b`)},
-	{"ALTER SYSTEM", regexp.MustCompile(`(?is)\balter\s+system\b`)},
-	{"CREATE DATABASE", regexp.MustCompile(`(?is)\bcreate\s+database\b`)},
-	{"DROP DATABASE", regexp.MustCompile(`(?is)\bdrop\s+database\b`)},
-	{"CREATE TABLESPACE", regexp.MustCompile(`(?is)\bcreate\s+tablespace\b`)},
+	{name: "REINDEX", re: regexp.MustCompile(`(?is)\breindex\b`)},
+	{name: "VACUUM", re: regexp.MustCompile(`(?is)\bvacuum\b`)},
+	{name: "ALTER SYSTEM", re: regexp.MustCompile(`(?is)\balter\s+system\b`)},
+	{name: "CREATE DATABASE", re: regexp.MustCompile(`(?is)\bcreate\s+database\b`)},
+	{name: "DROP DATABASE", re: regexp.MustCompile(`(?is)\bdrop\s+database\b`)},
+	{name: "CREATE TABLESPACE", re: regexp.MustCompile(`(?is)\bcreate\s+tablespace\b`)},
 	// PostgreSQL does allow REFRESH MATERIALIZED VIEW CONCURRENTLY inside a
 	// transaction block; this entry keeps a top-level one out of migrations
 	// anyway. One inside a function/DO body is stripped before matching, so
 	// this only fires at top level.
-	{"REFRESH MATERIALIZED VIEW CONCURRENTLY", regexp.MustCompile(`(?is)\brefresh\s+materialized\s+view\s+concurrently\b`)},
+	{name: "REFRESH MATERIALIZED VIEW CONCURRENTLY", re: regexp.MustCompile(`(?is)\brefresh\s+materialized\s+view\s+concurrently\b`)},
 }
 
 // lineCommentRe matches a -- comment to end of line.
