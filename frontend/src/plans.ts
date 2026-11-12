@@ -31,6 +31,7 @@ import { badgeHtml, statusBadgeHtml } from './lib/status-badge';
 import { isPastScheduledDate } from './lib/purchase-row-guards';
 import { serviceLabel } from './lib/service-labels';
 import { mountPlanEditorPanel } from './plan-editor-panel';
+import { renderPlanFiltersNotice } from './plan-filters-notice';
 import { applyPlanForm, clearPlanDraft, loadPlanDraft, readPlanForm, savePlanDraft } from './lib/plan-form-draft';
 
 // pendingPlanRecommendations holds the resolved plan target captured at
@@ -684,6 +685,13 @@ interface BackendPlan {
     term: number;
     payment: string;
     coverage: number;
+    include_engines?: string[];
+    exclude_engines?: string[];
+    include_regions?: string[];
+    exclude_regions?: string[];
+    include_types?: string[];
+    exclude_types?: string[];
+    min_count?: number;
   }>;
   ramp_schedule: {
     type: string;
@@ -1051,6 +1059,7 @@ async function togglePlan(planId: string, enabled: boolean): Promise<void> {
 let disposePlanEditor: (() => void) | undefined;
 function openPlanForm(modal: HTMLElement, restartsFromToday = false): void {
   planModalEpoch++;
+  renderPlanFiltersNotice(modal.querySelector<HTMLElement>('#plan-filters-notice'), undefined);
   disposePlanEditor?.(); disposePlanEditor = undefined;
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
   const advanced = modal.querySelector<HTMLDetailsElement>('#plan-advanced-settings');
@@ -1170,6 +1179,7 @@ async function editPlan(planId: string): Promise<boolean> {
     wirePlanRangeInputs();
     const planModal = document.getElementById('plan-modal');
     if (planModal) openPlanForm(planModal, true);
+    renderPlanFiltersNotice(document.getElementById('plan-filters-notice'), backendPlan.services);
     return true;
   } catch (error) {
     console.error('Failed to load plan:', error);

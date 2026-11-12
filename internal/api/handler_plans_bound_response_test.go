@@ -105,3 +105,64 @@ func TestCreatePlan_ReturnsCountedCopy(t *testing.T) {
 	require.NoError(t, err)
 	assertCountedResponse(t, result, created)
 }
+
+// Issue #1737: the plan edit modal lists a plan's service filters read-only, so
+// GET /api/plans/{id} must carry them, and a PUT the form can send must leave
+// them in the saved plan.
+func TestGetPlan_ReturnsServiceFilters(t *testing.T) {
+	h, store := boundResponseHandler(t)
+	stored := multiServicePlan()
+	stored.ID = boundResponsePlanID
+	store.On("GetPurchasePlan", mock.Anything, boundResponsePlanID).Return(stored, nil)
+	result, err := h.getPlan(context.Background(), boundResponseRequest(""), boundResponsePlanID)
+	require.NoError(t, err)
+	raw, err := json.Marshal(result)
+	require.NoError(t, err)
+	var got struct {
+		Services map[string]config.ServiceConfig `json:"services"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+	assert.Equal(t, []string{"us-east-1"}, got.Services["aws/ec2"].IncludeRegions)
+	assert.Equal(t, 2, got.Services["aws/ec2"].MinCount)
+}
+
+func TestUpdatePlan_KeepsServiceFilters(t *testing.T) {
+	h, store := boundResponseHandler(t)
+	var saved *config.PurchasePlan
+	existing := multiServicePlan()
+	existing.ID = boundResponsePlanID
+	store.On("GetPurchasePlan", mock.Anything, boundResponsePlanID).Return(existing, nil)
+	store.On("UpdatePurchasePlan", mock.Anything, mock.AnythingOfType("*config.PurchasePlan")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchasePlan) }).Return(nil)
+	_, err := h.updatePlan(context.Background(), boundResponseRequest(`{"name":"renamed","provider":"aws","service":"ec2","ramp_schedule":"immediate","notification_days_before":3,"enabled":true}`), boundResponsePlanID)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	assert.Equal(t, []string{"us-east-1"}, saved.Services["aws/ec2"].IncludeRegions)
+	assert.Equal(t, 2, saved.Services["aws/ec2"].MinCount)
+}
+
+// The bound branch of planForResponse rewrites every service entry, so the
+// filter fields must survive that copy too (issue #1737).
+func TestGetPlan_BoundPlanKeepsServiceFilters(t *testing.T) {
+	h, store := boundResponseHandler(t)
+	stored := boundStoredPlan()
+	g := stored.Services["aws/ec2#g1"]
+	g.IncludeRegions = []string{"us-east-1"}
+	g.ExcludeTypes = []string{"t3.micro"}
+	g.MinCount = 2
+	stored.Services["aws/ec2#g1"] = g
+	store.On("GetPurchasePlan", mock.Anything, boundResponsePlanID).Return(stored, nil)
+	result, err := h.getPlan(context.Background(), boundResponseRequest(""), boundResponsePlanID)
+	require.NoError(t, err)
+	raw, err := json.Marshal(result)
+	require.NoError(t, err)
+	var got struct {
+		Services map[string]config.ServiceConfig `json:"services"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+	svc := got.Services["aws/ec2#g1"]
+	assert.Equal(t, 3, svc.BoundCount)
+	assert.Equal(t, []string{"us-east-1"}, svc.IncludeRegions)
+	assert.Equal(t, []string{"t3.micro"}, svc.ExcludeTypes)
+	assert.Equal(t, 2, svc.MinCount)
+}
