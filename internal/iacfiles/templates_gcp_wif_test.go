@@ -109,8 +109,6 @@ const (
 // gcpStubState is the pre-existing GCP state a run starts from. The zero value
 // is an empty project.
 type gcpStubState struct {
-	pool     bool
-	provider bool
 	// Set only when provider is true.
 	issuer    string
 	condition string
@@ -125,6 +123,8 @@ type gcpStubState struct {
 	// otherProviders are further live providers in the same pool, given as
 	// bare IDs.
 	otherProviders []string
+	pool           bool
+	provider       bool
 }
 
 // seedGCPStubState materializes state in dir for the stub to read.
@@ -209,15 +209,15 @@ func TestGCPWIFCLI_ProviderReuseIsVerified(t *testing.T) {
 	const grantCall = "add-iam-policy-binding"
 
 	reject := []struct {
-		name  string
-		state gcpStubState
-		env   map[string]string
+		env  map[string]string
+		name string
 		// wantText must appear in stderr.
 		wantText string
 		// absentCall, when set, must not appear among the recorded gcloud
 		// invocations. It carries the cases where aborting at the right point
 		// matters as much as aborting at all.
 		absentCall string
+		state      gcpStubState
 	}{
 		{
 			// The actual vulnerability: "true" is non-empty and admits every

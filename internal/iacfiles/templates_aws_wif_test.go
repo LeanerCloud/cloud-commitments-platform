@@ -95,9 +95,10 @@ func awsWIFArgument(t *testing.T, call []string, flag string) string {
 func TestAWSWIFCLIProviderGuards(t *testing.T) {
 	listed := `{"OpenIDConnectProviderList":[{"Arn":"` + awsWIFProvider + `.evil.example"},{"Arn":"` + awsWIFProvider + `/other"},{"Arn":"` + awsWIFProvider + `"}]}`
 	cases := []struct {
-		name           string
-		env            map[string]string
-		create, reject bool
+		env    map[string]string
+		name   string
+		create bool
+		reject bool
 	}{
 		{name: "absent", env: nil, create: true, reject: false},
 		{name: "exact with lookalikes", env: map[string]string{"LIST_RESPONSE": listed}, create: false, reject: false},
@@ -171,8 +172,10 @@ func TestAWSWIFCLIInputGuards(t *testing.T) {
 
 func TestAWSWIFCLIAudienceAndLiteralClaims(t *testing.T) {
 	for _, tc := range []struct {
-		name, rendered, want string
-		override             map[string]string
+		override map[string]string
+		name     string
+		rendered string
+		want     string
 	}{
 		{name: "Azure default", rendered: "api://AzureADTokenExchange", want: "api://AzureADTokenExchange", override: nil},
 		{name: "rendered empty", rendered: "", want: "sts.amazonaws.com", override: nil},

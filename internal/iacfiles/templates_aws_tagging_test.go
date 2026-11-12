@@ -18,8 +18,8 @@ const reservedInstanceARN = "arn:aws:ec2:*:*:reserved-instances/*"
 
 type awsPolicyStatement struct {
 	Effect   string   `json:"Effect"`
-	Action   []string `json:"Action"`
 	Resource string   `json:"Resource"`
+	Action   []string `json:"Action"`
 }
 
 // permissionsPolicy extracts the PERMISSIONS_POLICY heredoc from an AWS CLI

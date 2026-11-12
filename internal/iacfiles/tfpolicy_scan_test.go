@@ -27,8 +27,8 @@ const (
 )
 
 type tfToken struct {
-	kind tfTokenKind
 	text string
+	kind tfTokenKind
 }
 
 type tfAttribute struct {
