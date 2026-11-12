@@ -263,7 +263,7 @@ func planVisibleTo(scope auth.AccountScope) func(accounts []config.CloudAccount)
 // validateTargetAccounts rejects a missing/empty target_accounts payload and
 // rejects entries that are not valid UUIDs. Mirrors the validation the
 // dedicated PUT /plans/:id/accounts endpoint already performs (see
-// setPlanAccounts in handler_accounts.go) so a request that gets past
+// setPlanAccounts in handler_accounts_plans.go) so a request that gets past
 // createPlan would also get past that endpoint.
 func validateTargetAccounts(ids []string) error {
 	if len(ids) == 0 {

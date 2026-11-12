@@ -878,7 +878,7 @@ func (s *Scheduler) collectAWSForAccount(ctx context.Context, globalCfg *config.
 	// credentials.resolveRoleARNProvider, which documents the identical
 	// shape. Any OTHER auth mode with an empty AWSRoleARN -- including the
 	// empty string org-discovery persists on newly-discovered member
-	// accounts pending operator review (handler_accounts.go,
+	// accounts pending operator review (handler_accounts_discover.go,
 	// persistDiscoveredMembers) -- must NOT take this branch: it must fall
 	// through to ResolveAWSCredentialProvider below so its switch fails
 	// loud ("unsupported aws_auth_mode") instead of silently collecting the

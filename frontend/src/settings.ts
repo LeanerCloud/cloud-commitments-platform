@@ -732,7 +732,7 @@ function getOverrideServicesForProvider(provider: string): ReadonlyArray<{ value
  *   currently has no payment set; once a payment is set, switching back
  *   would require deleting/recreating the override (out of scope for #23).
  * - The change handler PUTs only `{ payment }` — the backend's
- *   applyOverrideScalars (handler_accounts.go) treats unset request fields
+ *   applyOverrideScalars (handler_accounts_overrides.go) treats unset request fields
  *   as "leave alone", so other override fields (term, coverage, etc.) are
  *   preserved.
  */

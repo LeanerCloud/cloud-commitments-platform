@@ -252,7 +252,7 @@ func (h *Handler) buildAzureExchangeClient(ctx context.Context, subscriptionID s
 	}
 
 	// Look up the registered Azure CloudAccount by its subscription ID.
-	// For Azure, ExternalID stores the subscription ID (see handler_accounts.go:
+	// For Azure, ExternalID stores the subscription ID (see handler_accounts_self.go:
 	// buildSelfAccountRequest sets ExternalID = si.ExternalID() = si.SubscriptionID).
 	account, err := h.config.GetCloudAccountByExternalID(ctx, "azure", subscriptionID)
 	if err != nil {
