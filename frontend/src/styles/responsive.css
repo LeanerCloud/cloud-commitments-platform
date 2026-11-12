@@ -388,9 +388,14 @@ body.sidebar-open {
         right: var(--cudly-sp-3);
         max-width: none;
         bottom: calc(var(--toast-bottom) + env(safe-area-inset-bottom));
-        /* Stop the stack at the top bar and scroll inside it (issue 1945). */
-        max-height: calc(100vh - var(--cudly-topbar-h) - var(--toast-bottom) - env(safe-area-inset-bottom) - var(--cudly-sp-3));
-        max-height: calc(100dvh - var(--cudly-topbar-h) - var(--toast-bottom) - env(safe-area-inset-bottom) - var(--cudly-sp-3));
+        /* Stop the stack at the top bar and scroll inside it (issue 1945).
+         * toast.ts lifts --toast-bottom above a dialog; the cap never drops
+         * below one toast (6rem) and the lift is clamped so the stack stays
+         * on screen. */
+        bottom: min(calc(var(--toast-bottom) + env(safe-area-inset-bottom)), calc(100vh - 6rem));
+        bottom: min(calc(var(--toast-bottom) + env(safe-area-inset-bottom)), calc(100dvh - 6rem));
+        max-height: max(6rem, calc(100vh - var(--cudly-topbar-h) - var(--toast-bottom) - env(safe-area-inset-bottom) - var(--cudly-sp-3)));
+        max-height: max(6rem, calc(100dvh - var(--cudly-topbar-h) - var(--toast-bottom) - env(safe-area-inset-bottom) - var(--cudly-sp-3)));
         overflow-y: auto;
     }
 }

@@ -624,9 +624,18 @@ describe('Toast stack at narrow widths (issue #1736)', () => {
     const m = responsive.match(/@media \(max-width: 480px\) \{\s*\.toast-container \{([^}]*)\}/);
     expect(m).not.toBeNull();
     const body = m![1];
-    expect(body).toMatch(/max-height:\s*calc\(100vh\s*-\s*var\(--cudly-topbar-h\)/);
-    expect(body).toMatch(/max-height:\s*calc\(100dvh\s*-\s*var\(--cudly-topbar-h\)/);
+    expect(body).toMatch(/max-height:\s*max\(6rem,\s*calc\(100vh\s*-\s*var\(--cudly-topbar-h\)/);
+    expect(body).toMatch(/max-height:\s*max\(6rem,\s*calc\(100dvh\s*-\s*var\(--cudly-topbar-h\)/);
     expect(body).toMatch(/overflow-y:\s*auto/);
+  });
+
+  test('<=480px keeps one toast visible and on screen when toast.ts lifts the stack (issue #1945)', () => {
+    const m = responsive.match(/@media \(max-width: 480px\) \{\s*\.toast-container \{([^}]*)\}/);
+    const body = m![1];
+    // The cap has a floor taller than one single-line toast (~63px = 3.9rem).
+    expect(body).toMatch(/max-height:\s*max\(6rem,/);
+    // The lifted bottom offset is clamped so floor-height stack top stays >= 0.
+    expect(body).toMatch(/bottom:\s*min\(calc\(var\(--toast-bottom\)[^;]*\),\s*calc\(100dvh\s*-\s*6rem\)\)/);
   });
 
   test('desktop rule keeps the bottom-right 400px stack', () => {
