@@ -303,65 +303,6 @@ func filterReservationsByScopeIndex(reservations []azureExchangeableReservation,
 	return filtered
 }
 
-// validateAzureExecuteBody validates the execute request body: the shared
-// offerings validation plus the mandatory spend-cap and currency guardrails.
-func validateAzureExecuteBody(body AzureExecuteExchangeRequestBody) error {
-	if err := validateAzureOfferingsBody(AzureCompatibleOfferingsRequestBody{
-		SubscriptionID: body.SubscriptionID,
-		Sources:        body.Sources,
-		Targets:        body.Targets,
-	}); err != nil {
-		return err
-	}
-	if body.MaxPaymentDue == "" {
-		return NewClientError(400, "max_payment_due is required as a safety guardrail")
-	}
-	if body.Currency == "" {
-		return NewClientError(400, "currency is required")
-	}
-	return nil
-}
-
-// toAzureExchangeSources keeps the server-listed reservation metadata and
-// applies the requested quantities after requireAzureSourceOwnership succeeds.
-func toAzureExchangeSources(sources []AzureExchangeSourceBody, owned []azureExchangeableReservation) []azureExchangeableReservation {
-	byID := make(map[string]azureExchangeableReservation, len(owned))
-	for i := range owned {
-		byID[strings.ToLower(owned[i].ReservationID)] = owned[i]
-	}
-	out := make([]azureExchangeableReservation, len(sources))
-	for i, s := range sources {
-		out[i] = byID[strings.ToLower(s.ReservationID)]
-		out[i].Quantity = s.Quantity
-	}
-	return out
-}
-
-// toAzureExchangeTargets converts the HTTP-shaped targets into the
-// provider-layer shape, re-parsing the term string and deriving each
-// target's billing scope from subscriptionID rather than from the request
-// body (see azureBillingScopeID). validateAzureExchangeTargets must be
-// called first; a term error here indicates an internal invariant break
-// rather than a fresh client mistake.
-func toAzureExchangeTargets(targets []AzureExchangeTargetBody, subscriptionID string) ([]azureExchangeTarget, error) {
-	out := make([]azureExchangeTarget, len(targets))
-	scope := azureBillingScopeID(subscriptionID)
-	for i, t := range targets {
-		term, err := azureReservationTermFromString(t.Term)
-		if err != nil {
-			return nil, fmt.Errorf("targets[%d]: %w", i, err)
-		}
-		out[i] = azureExchangeTarget{
-			SKU:            t.SKU,
-			Location:       t.Location,
-			Term:           term,
-			Quantity:       t.Quantity,
-			BillingScopeID: scope,
-		}
-	}
-	return out, nil
-}
-
 // requireAzureSubscriptionScope enforces the session's allowed_accounts
 // scope (issue #1030) against the CloudAccount registered for
 // subscriptionID, the same per-account gate the sibling /ri-exchange
