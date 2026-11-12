@@ -24,6 +24,16 @@ const USERS = [1, 2, 3].map((n) => ({
   created_at: '2026-07-01T00:00:00Z',
 }));
 
+// One ladder config: mockApi's catch-all 404s /api/ladder/*, which renders only
+// "Failed to load" and never the configs table (issue #1892).
+const LADDER_CONFIG = {
+  id: 'config-0', cloud_account_id: 'account-0', provider: 'aws', enabled: true,
+  mode: 'email_approval', cadence: 'daily', target_coverage: 80, buffer_fraction: 0.2,
+  baseline_percentile: 10, lookback_days: 14, buffer_utilization_threshold: 85,
+  max_hourly_commit_per_run: 5, max_actions_per_run: 3,
+  ramp_schedule: { steps: [{ after_days: 0, fraction: 0.5 }, { after_days: 7, fraction: 0.5 }] },
+};
+
 const PAGES = [
   '/home',
   '/opportunities',
@@ -52,8 +62,17 @@ for (const width of WIDTHS) {
       await page.route('**/api/groups', (route) =>
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ groups: GROUPS }) }),
       );
+      await page.route('**/api/ladder/configs', (route) => route.fulfill({ json: { configs: [LADDER_CONFIG] } }));
+      await page.route('**/api/ladder/runs?*', (route) => route.fulfill({ json: { total_count: 0, runs: [] } }));
+      await page.route('**/api/ladder/tranches?*', (route) =>
+        route.fulfill({ json: { total_count: 0, total_usd_hr: '0.000000', events: [] } }),
+      );
       await page.goto(path);
       await page.waitForLoadState('networkidle');
+      if (path === '/admin/purchasing') {
+        // A guard that silently renders nothing is the bug: the table must be there.
+        await expect(page.locator('#ladder-configs-table-container table')).toBeVisible();
+      }
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - window.innerWidth,
       );
