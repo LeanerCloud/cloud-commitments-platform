@@ -70,11 +70,14 @@ END $$;
 -- SDK call by a configurable window so the user can revoke at $0 cost.
 -- scheduled_execution_at: when the scheduler will fire the SDK call.
 -- purchase_delay_hours: configurable delay in hours (0=immediate, default 48).
+-- The column default is 48 so the seeded global_config row of a fresh install
+-- gets the free-cancel window (#1934). Databases that applied this file before
+-- that change keep the value they stored; no row is rewritten.
 ALTER TABLE purchase_executions
     ADD COLUMN IF NOT EXISTS scheduled_execution_at TIMESTAMPTZ NULL;
 
 ALTER TABLE global_config
-    ADD COLUMN IF NOT EXISTS purchase_delay_hours INT NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS purchase_delay_hours INT NOT NULL DEFAULT 48;
 
 -- Extend the status CHECK constraint to include 'scheduled'.
 DO $$ BEGIN

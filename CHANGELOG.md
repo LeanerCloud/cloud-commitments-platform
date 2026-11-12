@@ -20,6 +20,16 @@ are the full record until the next release.
 
 ### Notices
 
+- **A fresh install now stores `purchase_delay_hours` = 48 (#1934).**
+  Migration 000070 added the column with default 0, so the seeded
+  `global_config` row of a new database held 0 and approved purchases
+  executed immediately, with no free-cancel window, although the setting is
+  documented as 48. 000070 now adds it with default 48. A database that
+  applied 000070 before this change keeps the value it stored; no row is
+  rewritten. On a deployment with the `fire_scheduled_purchases` sweep off
+  (`FIRE_SWEEP_SCHEDULED=false`) a stored delay above 0 makes every approval
+  return 409 until it is set to 0, so a fresh install there must set
+  `purchase_delay_hours` to 0 first (see docs/DEPLOYMENT.md).
 - **Federation IaC bundles downloaded before 2026-04-22 need to be
   re-downloaded** to get zero-touch registration. Older bundles silently
   skip auto-registration unless manually edited (Terraform `registration.tf`
@@ -55,10 +65,10 @@ are the full record until the next release.
 - **The fire_scheduled_purchases sweep is now on by default on every
   Terraform platform** (Lambda, Fargate, Cloud Run, GKE, Container Apps and
   AKS), every 15 minutes. It carries out every purchase a person approves
-  while a purchase delay is set (`purchase_delay_hours` > 0; the migrated
-  default is 0, which executes approvals immediately) once the delay ends;
+  while a purchase delay is set (`purchase_delay_hours` > 0; a fresh install
+  stores 48, and 0 executes approvals immediately) once the delay ends;
   until now those approvals never executed unless the operator turned the
-  sweep on. Keep it on unless `purchase_delay_hours` stays 0. GKE deployed from `terraform/environments/gcp` still gets no Cloud
+  sweep on. Keep it on unless `purchase_delay_hours` is 0. GKE deployed from `terraform/environments/gcp` still gets no Cloud
   Scheduler jobs, this one included (that environment doesn't pass
   `enable_scheduled_tasks` to GKE). The server refuses (and sends the purchase-failed
   alert for) any purchase due more than 24h ago, so the first run cannot buy

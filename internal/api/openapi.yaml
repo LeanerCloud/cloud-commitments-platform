@@ -7085,9 +7085,10 @@ components:
             purchase defers the cloud call by this many hours and the
             approver can cancel until the window closes; 0 executes
             immediately. A value outside 0 to 168 returns 400. A fresh install
-            stores 0, so approvals execute immediately until the value is
-            set; 48 is only the fallback used when the configuration row is
-            missing. On a
+            stores 48, so approvals wait 48 hours until the value is
+            changed; a database that applied migration 000070 before #1934
+            keeps the value it stored (0 on those), and 48 is also the
+            fallback used when the configuration row is missing. On a
             deployment that schedules no fire_scheduled_purchases sweep, a
             write of a value above 0 returns 400 on PUT /api/config, and
             approving a purchase while the effective delay is above

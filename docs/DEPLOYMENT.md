@@ -510,6 +510,32 @@ SELECT count(*) FROM purchase_executions e JOIN purchase_plans p ON p.id = e.pla
 
 The down migration drops the column and so discards every once-marker.
 
+### New installs default to a 48 hour purchase delay (#1934)
+
+A database created from migration 000070 onward stores
+`global_config.purchase_delay_hours = 48`: approving a purchase schedules the
+cloud call 48 hours out and the approver can cancel for free until then. A
+database that applied 000070 before this change keeps the value it stored (0
+means execute immediately); no row is rewritten, so nothing changes on an
+existing install.
+
+The delayed purchases are carried out by the `fire_scheduled_purchases` sweep.
+Terraform schedules it by default on every platform. On a deployment where it is
+off (`FIRE_SWEEP_SCHEDULED=false`, for example
+`enable_fire_scheduled_purchases_schedule = false`), a stored delay above 0 makes
+every `POST /api/purchases/approve/{id}` return 409 ("this deployment schedules no
+fire_scheduled_purchases sweep ...") until the delay is 0. On such a fresh install,
+set it to 0 once after the first start, before anyone approves a purchase. The
+settings page has no field for it, so use the API as an admin:
+
+```bash
+curl -X PUT "$API/api/config" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"purchase_delay_hours": 0}'
+```
+
+or seed it in the deployment template after migrations run:
+`UPDATE global_config SET purchase_delay_hours = 0 WHERE id = 1;`.
+
 ### CI/CD Integration
 
 ```yaml

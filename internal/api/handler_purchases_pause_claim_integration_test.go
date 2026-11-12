@@ -94,6 +94,9 @@ func newPauseClaimFixture(t *testing.T) *pauseClaimFixture {
 	globalCfg, err := f.store.GetGlobalConfig(ctx)
 	require.NoError(t, err)
 	globalCfg.AutoPurchaseEnabled = true
+	// A migrated database now stores the 48 hour default (#1934); these tests
+	// approve and expect the purchase to run at once.
+	globalCfg.PurchaseDelayHours = 0
 	require.NoError(t, f.store.SaveGlobalConfig(ctx, globalCfg))
 	accounts, err := f.store.GetPlanAccounts(ctx, plan.ID)
 	require.NoError(t, err)
