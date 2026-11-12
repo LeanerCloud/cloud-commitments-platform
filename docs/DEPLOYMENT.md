@@ -769,6 +769,8 @@ The `ladder_reconcile` task settles fired ladder tranches: it marks a tranche ac
 
 A deployment with `FIRE_SWEEP_SCHEDULED=false` runs no `fire_scheduled_purchases` sweep, so a delayed purchase would never execute. It refuses delayed approvals (409) and refuses any `PUT /api/config` that sets a non-zero `purchase_delay_hours` (400). One request fixes both: `PUT /api/config` with `{"purchase_delay_hours": 0}`. Retry the approval afterwards.
 
+GKE deployed from `terraform/environments/gcp` is always a no-sweep deployment. That root passes no `enable_scheduled_tasks` and no `app_url` to the GKE module, so it schedules no fire sweep, and delayed purchases are refused there. This is deliberate: no Cloud Scheduler URL has been chosen for that root, so none is guessed. To enable delayed purchases on GKE, pick the URL Cloud Scheduler should call, then pass `enable_scheduled_tasks = true` and that `app_url` in `terraform/environments/gcp/compute.tf`.
+
 ---
 
 ## Troubleshooting
