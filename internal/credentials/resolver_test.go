@@ -220,11 +220,11 @@ func TestResolveAWSCredentialProvider_SelfAccount_NonHostFailsClosed(t *testing.
 		externalID string
 		hostSTS    CallerIdentityClient
 	}{
-		"different host account": {"222222222222", &callerIdentitySTS{account: "111111111111"}},
-		"empty external_id":      {"", &callerIdentitySTS{account: "111111111111"}},
-		"empty host account":     {"", &callerIdentitySTS{account: ""}},
-		"host identity unknown":  {"222222222222", &callerIdentitySTS{err: errors.New("sts down")}},
-		"no host STS client":     {"222222222222", nil},
+		"different host account": {externalID: "222222222222", hostSTS: &callerIdentitySTS{account: hostAccountNum}},
+		"empty external_id":      {externalID: "", hostSTS: &callerIdentitySTS{account: hostAccountNum}},
+		"empty host account":     {externalID: "", hostSTS: &callerIdentitySTS{account: ""}},
+		"host identity unknown":  {externalID: "222222222222", hostSTS: &callerIdentitySTS{err: errors.New("sts down")}},
+		"no host STS client":     {externalID: "222222222222", hostSTS: nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			account := &config.CloudAccount{ID: "tenant-acct", ExternalID: tc.externalID, AWSAuthMode: "role_arn"}
