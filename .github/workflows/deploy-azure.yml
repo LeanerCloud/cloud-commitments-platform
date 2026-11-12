@@ -438,25 +438,30 @@ jobs:
       - name: Test health endpoint
         run: |
           URL="${{ steps.get-url.outputs.url }}"
-          echo "Testing health endpoint: $URL/health"
+          echo "Testing readiness endpoint: $URL/ready"
 
-          for i in {1..5}; do
-            # /health reports but never triggers the lazy DB init on the HTTP
-            # server; any /api/ request does. /health below is the gate.
-            curl -s -o /dev/null --max-time 60 "$URL/api/auth/check-admin" || true
-            # /health returns HTTP 200 even when degraded; the body is the verdict.
-            if RESPONSE=$(curl -fsS --max-time 10 "$URL/health"); then
+          DEADLINE=$((SECONDS + 300))
+          while (( SECONDS < DEADLINE )); do
+            REMAINING=$((DEADLINE - SECONDS))
+            if (( REMAINING <= 0 )); then
+              break
+            fi
+            REQUEST_TIMEOUT=$((REMAINING < 10 ? REMAINING : 10))
+            if RESPONSE=$(curl -fsS --max-time "$REQUEST_TIMEOUT" "$URL/ready"); then
               echo "Response: $RESPONSE"
               if jq -e '.status == "healthy"' > /dev/null <<< "$RESPONSE"; then
                 echo "Health check passed!"
                 exit 0
               fi
             fi
-            echo "Attempt $i failed, retrying in 10 seconds..."
-            sleep 10
+            REMAINING=$((DEADLINE - SECONDS))
+            if (( REMAINING > 0 )); then
+              echo "Not ready, retrying within $REMAINING seconds..."
+              sleep "$((REMAINING < 5 ? REMAINING : 5))"
+            fi
           done
 
-          echo "Health check failed after 5 attempts"
+          echo "Readiness check failed after 300 seconds"
           exit 1
 
       - name: Run smoke tests
@@ -466,7 +471,7 @@ jobs:
           echo "Running basic smoke tests..."
 
           for i in {1..3}; do
-            if RESPONSE=$(curl -fsS --max-time 10 "$URL/health") &&
+            if RESPONSE=$(curl -fsS --max-time 10 "$URL/ready") &&
               jq -e '.status == "healthy"' > /dev/null <<< "$RESPONSE"; then
               echo "Health check $i: passed"
             else
