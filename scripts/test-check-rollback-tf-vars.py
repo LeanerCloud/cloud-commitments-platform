@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Self-test for check-rollback-tf-vars.py: each drift probe is applied to a copy
 of the real workflows and must fail the check; the unmodified copy must pass."""
+import re
 import shutil
 import subprocess
 import sys
@@ -97,7 +98,100 @@ def probe_step_to_job_diff(rb):
     rb["jobs"]["rollback-aws-lambda"]["env"]["TF_VAR_dashboard_url"] = "other"
 
 
-PASSES = {"TF_VAR_ moved step -> job, same value": probe_step_to_job_same}
+LAMBDA_URL = "TF_VAR_lambda_deployed_function_url"
+URL_CMD = "$(../../../scripts/read-lambda-function-url.sh .)"
+
+
+def rewrite_run(job, old, new):
+    def probe(rb):
+        s = apply_step(rb, job)
+        assert old in s["run"], old
+        s["run"] = s["run"].replace(old, new)
+    return probe
+
+
+EXPORT_LINE = f"export {LAMBDA_URL}\n"
+ASSIGN_LINE = f"{LAMBDA_URL}={URL_CMD}\n"
+APPLY = "terraform apply -auto-approve"
+
+
+def lambda_run(rb, fn):
+    s = apply_step(rb, "rollback-aws-lambda")
+    s["run"] = fn(s["run"])
+
+
+def probe_no_export(rb):
+    lambda_run(rb, lambda r: r.replace(EXPORT_LINE, ""))
+
+
+def probe_export_other(rb):
+    lambda_run(rb, lambda r: r.replace(EXPORT_LINE, "export TF_VAR_other\n"))
+
+
+def probe_inline_other_cmd(rb):
+    lambda_run(rb, lambda r: r.replace(EXPORT_LINE, "").replace("terraform init", f"{LAMBDA_URL}=x terraform init"))
+
+
+def probe_export_one_line(rb):
+    lambda_run(rb, lambda r: r.replace(ASSIGN_LINE + EXPORT_LINE, f"export {LAMBDA_URL}={URL_CMD}\n"))
+
+
+def probe_export_multi(rb):
+    lambda_run(rb, lambda r: r.replace(ASSIGN_LINE + EXPORT_LINE, f"A=1\nexport A {LAMBDA_URL}=$(x) B=2\n"))
+
+
+def probe_declare_x(rb):
+    lambda_run(rb, lambda r: r.replace(EXPORT_LINE, f"declare -x {LAMBDA_URL}\n"))
+
+
+def probe_inline_apply(rb):
+    lambda_run(rb, lambda r: r.replace(ASSIGN_LINE + EXPORT_LINE, "").replace(APPLY, f"{LAMBDA_URL}={URL_CMD} {APPLY}"))
+
+
+def probe_env_inline_apply(rb):
+    lambda_run(rb, lambda r: r.replace(ASSIGN_LINE + EXPORT_LINE, "").replace(APPLY, f"env {LAMBDA_URL}=x {APPLY}"))
+
+
+def probe_semicolon_export(rb):
+    lambda_run(rb, lambda r: r.replace(ASSIGN_LINE + EXPORT_LINE, f"{LAMBDA_URL}=x; export {LAMBDA_URL}\n"))
+
+
+def add_github_env_step(rb):
+    steps = rb["jobs"]["rollback-aws-lambda"]["steps"]
+    steps.insert(0, {"name": "x", "run": 'echo "TF_VAR_extra=1" >> "$GITHUB_ENV"'})
+
+
+def probe_github_env_deploy(doc):
+    doc["jobs"]["build-and-deploy"]["steps"].insert(0, {"name": "x", "run": 'echo "TF_VAR_x=1" >> "$GITHUB_ENV"'})
+
+
+def probe_env_hardcoded(rb):
+    apply_step(rb, "rollback-aws-lambda")["env"]["ENVIRONMENT"] = "prod"
+
+
+def probe_env_job_level(rb):
+    del apply_step(rb, "rollback-gcp")["env"]["ENVIRONMENT"]
+    rb["jobs"]["rollback-gcp"].setdefault("env", {})["ENVIRONMENT"] = "${{ vars.DEPLOY_ENV }}"
+
+
+def probe_env_event_inputs(rb):
+    apply_step(rb, "rollback-gcp")["env"]["ENVIRONMENT"] = "${{ github.event.inputs.environment }}"
+
+
+def probe_env_missing(rb):
+    del apply_step(rb, "rollback-azure")["env"]["ENVIRONMENT"]
+
+
+PASSES = {
+    "TF_VAR_ moved step -> job, same value": probe_step_to_job_same,
+    "export NAME=value on one line": probe_export_one_line,
+    "export A NAME=v B=2 multi-name": probe_export_multi,
+    "declare -x NAME": probe_declare_x,
+    "inline NAME=v terraform apply": probe_inline_apply,
+    "env NAME=v terraform apply": probe_env_inline_apply,
+    "assignment; export NAME": probe_semicolon_export,
+    "ENVIRONMENT from github.event.inputs": probe_env_event_inputs,
+}
 
 MUTATIONS = {
     "TF_VAR_ at job level": probe_job_level,
@@ -116,17 +210,28 @@ MUTATIONS = {
     "-var location deleted (azure)": probe_no_location,
     "missing apply step": probe_no_apply,
     "missing rollback job": probe_no_job,
+    "TF_VAR_ assigned but never exported": probe_no_export,
+    "export of a different TF_VAR_": probe_export_other,
+    "inline TF_VAR_ on a non-terraform-apply command": probe_inline_other_cmd,
+    "TF_VAR_ written to GITHUB_ENV (rollback)": add_github_env_step,
+    "ENVIRONMENT hard-coded to prod": probe_env_hardcoded,
+    "ENVIRONMENT from vars at job level": probe_env_job_level,
+    "ENVIRONMENT undefined in the apply scope": probe_env_missing,
+}
+
+DEPLOY_MUTATIONS = {
+    "TF_VAR_ written to GITHUB_ENV (deploy)": ("deploy-aws-lambda.yml", probe_github_env_deploy),
 }
 
 
-def run(mutate=None, drop=None):
+def run(mutate=None, drop=None, target="rollback.yml"):
     with tempfile.TemporaryDirectory() as d:
         for n in NAMES:
             shutil.copy(SRC / n, d)
         if drop:
             (Path(d) / drop).unlink()
         if mutate:
-            p = Path(d) / "rollback.yml"
+            p = Path(d) / target
             doc = yaml.safe_load(p.read_text())
             mutate(doc)
             p.write_text(yaml.safe_dump(doc))
@@ -146,12 +251,21 @@ if run() != 0:
 for label, fn in MUTATIONS.items():
     if run(fn) != 1:
         failed.append(f"must fail: {label}")
+for label, (target, fn) in DEPLOY_MUTATIONS.items():
+    if run(fn, target=target) != 1:
+        failed.append(f"must fail: {label}")
 for label, fn in PASSES.items():
     if run(fn) != 0:
         failed.append(f"must pass: {label}")
 for n in NAMES[1:]:
     if run(drop=n) != 1:
         failed.append(f"must fail: missing {n}")
+# Issue #1773: the check imports PyYAML, so CI must install an exact version.
+ci = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text())
+ci_runs = [str(st.get("run")) for j in ci["jobs"].values() for st in j.get("steps") or []]
+ci_step = next((r for r in ci_runs if "check-rollback-tf-vars.py" in r), "")
+if not re.search(r"pyyaml==\d+(\.\d+)+", ci_step, re.I):
+    failed.append("ci.yml step running check-rollback-tf-vars.py must pip install pyyaml==<exact version>")
 for f in failed:
     print(f"FAIL: {f}", file=sys.stderr)
 if failed:

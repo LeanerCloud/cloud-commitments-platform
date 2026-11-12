@@ -7,6 +7,27 @@ changes the stack just as silently. For each (rollback job, deploy workflow)
 pair this compares, in both directions and by value, every TF_VAR_* env entry,
 -var flag and shell-exported TF_VAR_ of the one step that applies.
 
+Shell text is read line by line (continuations joined, split on ; && ||, not
+quote-aware). A TF_VAR_ counts from run text only when exported in the step
+(`export A=1 B=2`, `export A` after `A=1`, `declare -x`/`typeset -x`) or given
+as an inline prefix (`A=1 terraform apply`, `env A=1 terraform apply`) to the
+terraform plan or apply command itself. A bare assignment does not count, and
+neither does a prefix on another command. Not understood: `export -n`,
+`unset`, eval, sourced files, functions, heredoc or quoted-body lines,
+variables built from other variables' names. Ordering is not modelled (an
+export after the apply still counts), and conditionals (`if ...; then export`)
+and `sudo terraform apply` are not recognised; they fail closed with a
+'missing in rollback' message.
+Any run step that writes a TF_VAR_ to $GITHUB_ENV in a rollback job or a deploy
+workflow fails the check outright, since it would reach later steps unseen.
+That rule scans only the same step's run text: a script file the step calls, a
+name built from variables, or TF_VAR_ and GITHUB_ENV in separate steps are out
+of scope. The rollback's ENVIRONMENT must be defined as inputs.environment.
+
+Requires PyYAML (CI installs a pinned version in a venv). The Azure OIDC step in
+ci.yml still uses the runner's system python3 for PyYAML; that drift risk is out
+of scope here.
+
 The deploy workflows plan in one step (`terraform plan -var ...`) and apply the
 saved plan in the next (`terraform apply tfplan`), so the deploy side is the
 plan step; a rollback applies directly, so its side is the apply step.
@@ -48,7 +69,12 @@ VAR_FILE = re.compile(r"""-var-file(?:=|\s+)(?:"([^"]*)"|'([^']*)'|(\S+))""")
 VAR_FLAG = re.compile(
     r"""-var(?:=|\s+)(?:"([^"=]+)=([^"]*)"|'([^'=]+)=([^']*)'|([^\s"'=]+)=(\S*))"""
 )
-EXPORT = re.compile(r"^\s*(?:export\s+)?(TF_VAR_\w+)=")
+ASSIGN_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^)]*\)|\S*)"""
+LEAD_ASSIGN = re.compile(rf"(?:env\s+)?((?:[A-Za-z_]\w*={ASSIGN_VALUE}(?:\s+|$))*)")
+ASSIGN_NAME = re.compile(r"([A-Za-z_]\w*)=")
+EXPORTED_NAME = re.compile(r"""(?:^|\s)["']?(TF_VAR_\w+)(=)?""")
+SEGMENT_SPLIT = re.compile(r"\s*(?:;|&&|\|\|)\s*")
+INPUTS_ENV = re.compile(r"\$\{\{\s*(?:github\.event\.)?inputs\.environment\s*\}\}")
 ENV_REF = re.compile(r"\$\{?([A-Za-z_]\w*)\}?")
 
 
@@ -58,6 +84,49 @@ class CheckError(Exception):
 
 def code_lines(run):
     return [l for l in str(run or "").splitlines() if not l.lstrip().startswith("#")]
+
+
+def logical_lines(run):
+    out, cur = [], ""
+    for l in code_lines(run):
+        if l.rstrip().endswith("\\"):
+            cur += l.rstrip()[:-1] + " "
+        else:
+            out.append(cur + l)
+            cur = ""
+    return out + ([cur] if cur else [])
+
+
+def shell_tf_vars(run):
+    """TF_VAR_ names the step's shell text hands to Terraform (see header)."""
+    assigned, exported, inline = set(), set(), set()
+    for line in logical_lines(run):
+        for seg in SEGMENT_SPLIT.split(line):
+            lead = LEAD_ASSIGN.match(seg.strip())
+            names = set(ASSIGN_NAME.findall(lead.group(1)))
+            words = seg.strip()[lead.end():].split()
+            if not words:
+                assigned |= names
+            elif words[0] == "terraform" and ({"plan", "apply"} & set(words)):
+                inline |= names
+            elif words[0] == "export" or (
+                words[0] in ("declare", "typeset") and len(words) > 1 and re.fullmatch(r"-\w*x\w*", words[1])
+            ):
+                for m in EXPORTED_NAME.finditer(" ".join(words[1:])):
+                    exported.add(m.group(1))
+                    if m.group(2):
+                        assigned.add(m.group(1))
+    return {n for n in (assigned & exported) | inline if n.startswith("TF_VAR_")}
+
+
+def github_env_writes(doc, jobs, where):
+    errs = []
+    for jname in jobs:
+        for step in doc["jobs"][jname].get("steps") or []:
+            text = "\n".join(code_lines(step.get("run")))
+            if "GITHUB_ENV" in text and "TF_VAR_" in text:
+                errs.append(f"{where} {jname}: step '{step.get('name')}' writes a TF_VAR_ to $GITHUB_ENV")
+    return errs
 
 
 def load(path):
@@ -92,9 +161,8 @@ def collect(doc, jname, step):
             for old, new in ENV_ALIASES.items():
                 text = text.replace("${%s}" % old, "${%s}" % new).replace("$" + old, "$" + new)
             files.append(text)
-        m = EXPORT.match(line)
-        if m:
-            pairs.setdefault(m.group(1), "<shell export>")
+    for name in shell_tf_vars(step.get("run")):
+        pairs.setdefault(name, "<shell export>")
     if files:
         pairs["-var-file"] = ",".join(sorted(files))
     # Later scopes override earlier ones, as in GitHub Actions.
@@ -149,7 +217,13 @@ def check_pair(wdir, rollback_doc, job, deploy_file):
         raise CheckError(f"{job}: rollback does not pass -var image_uri")
     if not r[0] or not d[0]:
         raise CheckError(f"{job} vs {deploy_file}: extracted no variables from one side")
-    return compare(job, deploy_file, r, d)
+    env = r[1].get("ENVIRONMENT")
+    errs = [] if env and INPUTS_ENV.fullmatch(env.strip()) else [
+        f"{job}: ENVIRONMENT must be ${{{{ inputs.environment }}}}, got {env!r}"
+    ]
+    errs += github_env_writes(rollback_doc, [job], "rollback.yml")
+    errs += github_env_writes(deploy_doc, list(deploy_doc["jobs"]), deploy_file)
+    return errs + compare(job, deploy_file, r, d)
 
 
 def main(argv):

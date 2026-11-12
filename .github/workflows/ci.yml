@@ -220,10 +220,13 @@ jobs:
 
       - name: Assert rollback applies match the deploy applies
         # Issue #1744: a rollback apply that omits or changes a deploy TF_VAR_
-        # or -var resets it on the live stack. Parses the workflows (PyYAML).
+        # or -var resets it on the live stack. Parses the workflows (PyYAML,
+        # pinned in a venv so the runner image's Python does not matter, #1773).
         run: |
-          python3 scripts/check-rollback-tf-vars.py
-          python3 scripts/test-check-rollback-tf-vars.py
+          python3 -m venv "$RUNNER_TEMP/rollback-check-venv"
+          "$RUNNER_TEMP/rollback-check-venv/bin/pip" install --quiet 'pyyaml==6.0.3'
+          "$RUNNER_TEMP/rollback-check-venv/bin/python" scripts/check-rollback-tf-vars.py
+          "$RUNNER_TEMP/rollback-check-venv/bin/python" scripts/test-check-rollback-tf-vars.py
 
       - name: Assert every Azure OIDC environment has a credential
         # Issue #1750: an azure/login job bound to an environment missing from
