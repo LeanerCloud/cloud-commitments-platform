@@ -8,6 +8,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -278,4 +279,80 @@ func (h *Handler) pushPastScheduledDate(ctx context.Context, row *config.Purchas
 		return fmt.Errorf("failed to reschedule resumed execution %s: %w", row.ExecutionID, err)
 	}
 	return nil
+}
+
+// runPlannedPurchase forces a pending or paused scheduled purchase to
+// execute immediately (the "Run now" button) instead of waiting for its
+// scheduled date. It delegates to purchase.Manager.RunPlannedPurchaseNow,
+// which shares ApproveAndExecute's 4-eyes-gated, CAS-guarded
+// claim-then-execute funnel (issue #218): the previous implementation only
+// CASed the row's status to "running" and reported success from that bare
+// flip, but no executor consumes "running" rows -- the scheduler only picks
+// up pending/notified, so nothing ever bought the purchase and the reaper
+// later failed the row out from under the operator who was told it ran.
+func (h *Handler) runPlannedPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID string) (any, error) {
+	if err := validateUUID(executionID); err != nil {
+		return nil, err
+	}
+
+	session, err := h.requirePermission(ctx, req, "execute", "purchases")
+	if err != nil {
+		return nil, err
+	}
+	if err := h.requireExecutionAccess(ctx, session, executionID); err != nil {
+		return nil, err
+	}
+	// update-any lets a non-creator run the row only within its Constraints
+	// (issue #1129).
+	if err := h.authorizeBoundedExecutionManagement(ctx, session, executionID); err != nil {
+		return nil, err
+	}
+
+	// Re-hydrate the persisted recommendations and enforce the session's
+	// execute:purchases Constraints against them before RunPlannedPurchaseNow
+	// fires the purchase (issue #60). requirePermission above only checked
+	// the bare execute:purchases verb: a session running a plan via
+	// update-any:purchases (which lets a non-creator past the creator check
+	// within its own Constraints) would otherwise bypass any MaxPurchaseAmount/
+	// Providers/Services/Regions/AccountIDs cap configured on their own
+	// execute:purchases permission, exactly the fail-open class the web
+	// execute path (validateExecutePurchaseRequest) already closed for
+	// SEC-01 (#1141). Routed through the shared enforcePurchaseConstraints
+	// helper so a planned execution whose recs sum to $0 is refused by
+	// requireNonZeroCommitment rather than reading as an uncapped
+	// MaxPurchaseAmount (issue #60 review follow-up).
+	execution, fetchErr := h.config.GetExecutionByID(ctx, executionID)
+	if errors.Is(fetchErr, config.ErrNotFound) {
+		return nil, errNotFound
+	}
+	if fetchErr != nil {
+		return nil, fmt.Errorf("failed to get execution: %w", fetchErr)
+	}
+	// An empty step has no constraint sets to evaluate (the auth check fails
+	// closed on them, which surfaced as a 500), and the executor refuses it
+	// anyway so it cannot complete and advance the ramp (issue #1695).
+	if len(execution.Recommendations) == 0 {
+		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be started: %v", executionID, purchase.ErrPlanStepNoRecommendations))
+	}
+	if constraintErr := h.enforcePurchaseConstraints(ctx, session, "execute", execution.Recommendations); constraintErr != nil {
+		return nil, constraintErr
+	}
+
+	// The check above read a snapshot; the funnel re-runs it on the row its
+	// claim returns, the row it buys (issue #415).
+	final, revocationToken, runErr := h.purchase.RunPlannedPurchaseNow(ctx, executionID, fourEyesActorIdentity(session), resolveCreatorUserID(session), h.runNowClaimCheck(session))
+	if runErr != nil {
+		return nil, h.executeFailure(ctx, req, executionID, "started", final, revocationToken, session.Email, runErr)
+	}
+
+	// The shared execute funnel rotated the row's token into a revocation
+	// token whose raw value exists only here (issue #103); email it like the
+	// session-approve path does. Best-effort: the purchase already committed.
+	h.sendPurchaseExecutedEmail(ctx, req, final, revocationToken, session.Email)
+
+	return map[string]any{
+		"execution_id": executionID,
+		"status":       final.Status,
+		"message":      "Purchase executed",
+	}, nil
 }
