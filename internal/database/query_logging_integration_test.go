@@ -17,8 +17,8 @@ import (
 )
 
 type queryLogBuffer struct {
-	mu  sync.Mutex
 	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
 func (b *queryLogBuffer) Write(p []byte) (int, error) {

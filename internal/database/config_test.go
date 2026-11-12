@@ -281,9 +281,9 @@ func TestGetEnvDuration(t *testing.T) {
 func TestConfigDSN(t *testing.T) {
 	tests := []struct {
 		name             string
-		config           Config
 		passwordOverride string
 		expected         string
+		config           Config
 	}{
 		{
 			name: "generates basic DSN",
@@ -353,9 +353,9 @@ func TestConfigDSN(t *testing.T) {
 
 func TestConfigValidate(t *testing.T) {
 	tests := []struct {
-		config      Config
 		name        string
 		errorMsg    string
+		config      Config
 		expectError bool
 	}{
 		{
@@ -725,9 +725,9 @@ func TestConfigStruct(t *testing.T) {
 
 func TestValidateRequiredFields(t *testing.T) {
 	tests := []struct {
-		config      Config
 		name        string
 		errorMsg    string
+		config      Config
 		expectError bool
 	}{
 		{
@@ -800,9 +800,9 @@ func TestValidateRequiredFields(t *testing.T) {
 
 func TestValidatePoolSettings(t *testing.T) {
 	tests := []struct {
-		config      Config
 		name        string
 		errorMsg    string
+		config      Config
 		expectError bool
 	}{
 		{
