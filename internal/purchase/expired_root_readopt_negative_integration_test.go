@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -168,22 +169,42 @@ func TestReadoptExpiredRoot_PlanGatesBlockAdoption(t *testing.T) {
 }
 
 // E6: an auto plan with 4-eyes off would auto-buy the re-armed row with the
-// email as the only veto, so it is not adopted. E6a: with 4-eyes on it is
-// adopted and the scheduler still does not buy it.
-func TestReadoptExpiredRoot_AutoPlanOnlyWithFourEyes(t *testing.T) {
+// email as the only veto, so it is not adopted (#1785). It is failed visibly
+// instead of staying expired and silent (#1904): failed, the reason, no
+// re-arm, no purchase, and later ticks (even with 4-eyes on) change nothing.
+// E6a: with 4-eyes on it is adopted and the scheduler still does not buy it.
+func TestReadoptExpiredRoot_AutoPlanWithoutFourEyesIsFailedNotAdopted(t *testing.T) {
 	ctx := context.Background()
 	f := newReadoptFixture(ctx, t)
+	f.sender.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).Return(nil).Maybe()
 	plan := f.addPlan(ctx, t, "readopt-e6", func(p *config.PurchasePlan) { p.AutoPurchase = true })
 	rootID := f.seedExpiredRoot(ctx, t, plan, 0)
 
 	setFourEyes(ctx, t, f.rampStepFixture, false)
-	f.assertUntouched(ctx, t, map[string]*config.PurchasePlan{"auto, 4-eyes off": plan})
+	assert.Zero(t, f.tick(ctx, t))
+	row := rowStatus(ctx, t, f.rampStepFixture, rootID)
+	assert.Equal(t, "failed", row.Status)
+	assert.Equal(t, errExpiredAutoRootNeedsRearm.Error(), row.Error)
 	assert.Nil(t, f.marker(ctx, t, rootID))
+	assert.Empty(t, sentTokens(f.sender))
 
+	before := f.snapshot(ctx, t, plan.ID)
 	setFourEyes(ctx, t, f.rampStepFixture, true)
+	assert.Zero(t, f.tick(ctx, t))
+	assert.Equal(t, before, f.snapshot(ctx, t, plan.ID))
+	assert.Zero(t, f.purchaseCount())
+}
+
+func TestReadoptExpiredRoot_AutoPlanWithFourEyesOnIsAdoptedNotFailed(t *testing.T) {
+	ctx := context.Background()
+	f := newReadoptFixture(ctx, t)
+	plan := f.addPlan(ctx, t, "readopt-e6a", func(p *config.PurchasePlan) { p.AutoPurchase = true })
+	rootID := f.seedExpiredRoot(ctx, t, plan, 0)
+
 	require.Equal(t, 1, f.tick(ctx, t))
 	row := rowStatus(ctx, t, f.rampStepFixture, rootID)
 	assert.Equal(t, "notified", row.Status)
+	assert.Empty(t, row.Error)
 	eligible, err := f.manager.executableByScheduler(ctx, row)
 	require.NoError(t, err)
 	assert.False(t, eligible)

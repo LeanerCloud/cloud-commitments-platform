@@ -148,12 +148,13 @@ func TestNotificationTickOnBarePlanStepCreatesOneFailedRowAndSendsNoApprovalEmai
 	mockStore.On("ListPurchasePlans", ctx, config.PurchasePlanFilter{}).Return([]config.PurchasePlan{plan}, nil)
 	mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{NotificationEmail: &notifyTo, AutoPurchaseEnabled: true}, nil)
 
-	// Tick 1 finds no row for the date; tick 2 finds whatever tick 1 saved.
+	// Tick 1 finds no row for the date (the expired-root pass and the claim each
+	// read the step once); tick 2 finds whatever tick 1 saved.
 	var stored config.PurchaseExecution
 	var saves []config.PurchaseExecution
 	mockStore.On("LockPurchasePlanTx", mock.Anything, mock.Anything, plan.ID).Return(&plan, nil)
 	mockStore.On("ListExecutionsForPlanStepTx", mock.Anything, mock.Anything, plan.ID, plan.RampSchedule.CurrentStep+1).
-		Return(nil, nil).Once()
+		Return(nil, nil).Twice()
 	mockStore.SavePurchaseExecutionFn = func(_ context.Context, exec *config.PurchaseExecution) error {
 		stored = *exec
 		saves = append(saves, *exec)

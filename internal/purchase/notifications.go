@@ -39,8 +39,8 @@ func (m *Manager) SendUpcomingPurchaseNotifications(ctx context.Context) (*Notif
 	notified := 0
 	for i := range plans {
 		plan := plans[i]
-		if err := m.failDueManualStep(ctx, &plan); err != nil {
-			logging.Errorf("Failed to inspect due manual plan step for plan %s: %v", plan.ID, err)
+		if err := m.failStalledStep(ctx, &plan, global, autoPurchaseEnabled); err != nil {
+			logging.Errorf("Failed to inspect stalled plan step for plan %s: %v", plan.ID, err)
 			continue
 		}
 		if m.shouldNotifyPlan(plan, autoPurchaseEnabled) || shouldRetryOverduePlan(plan, autoPurchaseEnabled, global, now) ||
@@ -104,6 +104,16 @@ func shouldRetryOverduePlan(plan config.PurchasePlan, autoPurchaseEnabled bool, 
 		return false
 	}
 	return now.Before(plan.NextExecutionDate.AddDate(0, 0, planGraceDays(&plan, global)+1))
+}
+
+// failStalledStep fails the plan's step root that would otherwise stay stalled
+// with no visible outcome: a due manual step without recommendations, or an
+// expired root of an auto plan without four-eyes (#1904).
+func (m *Manager) failStalledStep(ctx context.Context, plan *config.PurchasePlan, global *config.GlobalConfig, autoPurchaseEnabled bool) error {
+	if err := m.failDueManualStep(ctx, plan); err != nil {
+		return err
+	}
+	return m.failExpiredAutoRoot(ctx, plan, global, autoPurchaseEnabled)
 }
 
 func (m *Manager) failDueManualStep(ctx context.Context, plan *config.PurchasePlan) error {
