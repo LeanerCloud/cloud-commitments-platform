@@ -3,10 +3,11 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/analytics"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -135,12 +136,12 @@ func (app *Application) handleCollectAnalytics(ctx context.Context) (map[string]
 
 	if !cfg.Enabled {
 		result["status"] = "disabled"
-		log.Println("Analytics collection disabled (ANALYTICS_COLLECTION_ENABLED=false)")
+		logging.Infof("Analytics collection disabled (ANALYTICS_COLLECTION_ENABLED=false)")
 		return result, nil
 	}
 	if app.AnalyticsCollector == nil || app.Analytics == nil {
 		result["status"] = "skipped"
-		log.Println("Analytics collector/store not available, skipping collection")
+		logging.Warnf("Analytics collector/store not available, skipping collection")
 		return result, nil
 	}
 
@@ -150,7 +151,7 @@ func (app *Application) handleCollectAnalytics(ctx context.Context) (map[string]
 	//     so abort and surface the error (#271). CreatePartition is idempotent,
 	//     and Collect stamps rows with the current UTC time.
 	if err := app.ensureCurrentAnalyticsPartition(ctx); err != nil {
-		log.Printf("Error: failed to ensure current-month savings partition, skipping analytics collection: %v", err)
+		logging.Errorf("Error: failed to ensure current-month savings partition, skipping analytics collection: %v", err)
 		result["status"] = "failed"
 		return result, fmt.Errorf("analytics collection aborted: failed to ensure current-month partition: %w", err)
 	}
@@ -162,7 +163,7 @@ func (app *Application) handleCollectAnalytics(ctx context.Context) (map[string]
 	//     would fail every day without ever healing. Logged loudly and flagged
 	//     "partial" so it is visible.
 	if err := withDDLTimeout(ctx, app.Analytics.CreateFuturePartitions, cfg.PartitionsAhead); err != nil {
-		log.Printf("ERROR: failed to ensure future savings partitions (%d months ahead); "+
+		logging.Errorf("ERROR: failed to ensure future savings partitions (%d months ahead); "+
 			"upcoming months' snapshots will land in savings_snapshots_default if their partition is still missing when they start: %v", cfg.PartitionsAhead, err)
 		result["status"] = "partial"
 	} else {
@@ -175,7 +176,7 @@ func (app *Application) handleCollectAnalytics(ctx context.Context) (map[string]
 		if ctx.Err() != nil {
 			return result, fmt.Errorf("analytics collection canceled: %w", err)
 		}
-		log.Printf("Warning: analytics collection failed: %v", err)
+		logging.Errorf("Warning: analytics collection failed: %v", err)
 		result["status"] = "partial"
 	} else {
 		result["snapshots_written"] = true
@@ -183,7 +184,7 @@ func (app *Application) handleCollectAnalytics(ctx context.Context) (map[string]
 
 	// 3. Apply retention.
 	if err := withDDLTimeout(ctx, app.Analytics.DropOldPartitions, cfg.RetentionMonths); err != nil {
-		log.Printf("Warning: failed to drop old partitions: %v", err)
+		logging.Errorf("Warning: failed to drop old partitions: %v", err)
 		result["status"] = "partial"
 	} else {
 		result["partitions_dropped"] = true
@@ -194,12 +195,12 @@ func (app *Application) handleCollectAnalytics(ctx context.Context) (map[string]
 	err := app.Analytics.RefreshMaterializedViews(refreshCtx)
 	cancelRefresh()
 	if err != nil {
-		log.Printf("Warning: failed to refresh materialized views: %v", err)
+		logging.Errorf("Warning: failed to refresh materialized views: %v", err)
 		result["status"] = "partial"
 	} else {
 		result["views_refreshed"] = true
 	}
 
-	log.Printf("Analytics collection complete: %v", result)
+	logging.Infof("Analytics collection complete: %v", result)
 	return result, nil
 }

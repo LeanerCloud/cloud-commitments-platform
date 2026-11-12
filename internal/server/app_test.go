@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
@@ -735,10 +735,9 @@ func TestGetEnvIntLogsOnBadValue(t *testing.T) {
 	testutil.SetEnv(t, "TEST_ENV_INT_BAD", "notanint")
 
 	var logged string
-	orig := log.Writer()
 	var buf strings.Builder
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(orig) })
+	orig := logging.SetOutput(&buf)
+	t.Cleanup(func() { logging.SetOutput(orig) })
 
 	result := getEnvInt("TEST_ENV_INT_BAD", 42)
 	logged = buf.String()

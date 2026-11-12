@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/big"
 	"time"
 
@@ -88,7 +87,7 @@ func (app *Application) handleLadderRun(ctx context.Context) (*LadderRunResult, 
 		return nil, fmt.Errorf("ladder_run: failed to load global config: %w", err)
 	}
 	if !globalCfg.LadderingEnabled {
-		log.Println("ladder_run: laddering_enabled=false in global config, skipping all configs")
+		logging.Warnf("ladder_run: laddering_enabled=false in global config, skipping all configs")
 		return &LadderRunResult{}, nil
 	}
 
@@ -112,7 +111,7 @@ func (app *Application) handleLadderRun(ctx context.Context) (*LadderRunResult, 
 			len(allConfigs), config.MaxListLimit)
 	}
 	if len(allConfigs) == 0 {
-		log.Println("ladder_run: no ladder_config rows found, nothing to do")
+		logging.Infof("ladder_run: no ladder_config rows found, nothing to do")
 		return &LadderRunResult{}, nil
 	}
 
@@ -128,7 +127,7 @@ func (app *Application) handleLadderRun(ctx context.Context) (*LadderRunResult, 
 	now := time.Now().UTC()
 	result := app.runLadderConfigs(ctx, allConfigs, ownAccountID, region, global, now)
 
-	log.Printf("ladder_run done: planned=%d skipped_cadence=%d skipped_disabled=%d skipped_multi_account=%d errored=%d",
+	logging.Infof("ladder_run done: planned=%d skipped_cadence=%d skipped_disabled=%d skipped_multi_account=%d errored=%d",
 		result.Planned, result.SkippedCadence, result.SkippedDisabled, result.SkippedMultiAccount, result.Errored)
 	return result, nil
 }
@@ -213,24 +212,24 @@ func (app *Application) processOneLadderConfig(
 	now time.Time,
 ) ladderConfigOutcome {
 	if !dbCfg.Enabled {
-		log.Printf("ladder_run: config %s: enabled=false, skipping", dbCfg.ID)
+		logging.Warnf("ladder_run: config %s: enabled=false, skipping", dbCfg.ID)
 		return outcomeSkippedDisabled
 	}
 
 	// Resolve the cloud account to get the 12-digit AWS account number (Q2).
 	cloudAcct, err := app.Config.GetCloudAccount(ctx, dbCfg.CloudAccountID)
 	if err != nil {
-		log.Printf("ladder_run: config %s: failed to get cloud account %s: %v", dbCfg.ID, dbCfg.CloudAccountID, err)
+		logging.Errorf("ladder_run: config %s: failed to get cloud account %s: %v", dbCfg.ID, dbCfg.CloudAccountID, err)
 		return outcomeErrored
 	}
 	if cloudAcct == nil {
-		log.Printf("ladder_run: config %s: cloud account %s not found in DB", dbCfg.ID, dbCfg.CloudAccountID)
+		logging.Errorf("ladder_run: config %s: cloud account %s not found in DB", dbCfg.ID, dbCfg.CloudAccountID)
 		return outcomeErrored
 	}
 
 	// Q1: skip configs that belong to a different AWS account.
 	if cloudAcct.ExternalID != ownAccountID {
-		log.Printf("ladder_run: config %s: cloud account external_id=%q != lambda account=%q: skipped (multi_account_unsupported)", dbCfg.ID, cloudAcct.ExternalID, ownAccountID)
+		logging.Warnf("ladder_run: config %s: cloud account external_id=%q != lambda account=%q: skipped (multi_account_unsupported)", dbCfg.ID, cloudAcct.ExternalID, ownAccountID)
 		return outcomeSkippedMultiAccount
 	}
 
@@ -240,24 +239,24 @@ func (app *Application) processOneLadderConfig(
 	// (visible in LadderRunResult.Errored) instead of proceeding silently.
 	within, reason, err := ladderWithinCadenceWindow(ctx, app.Config, dbCfg, now)
 	if err != nil {
-		log.Printf("ladder_run: config %s: cadence lookup failed, skipping to avoid a possible double-run: %v", dbCfg.ID, err)
+		logging.Errorf("ladder_run: config %s: cadence lookup failed, skipping to avoid a possible double-run: %v", dbCfg.ID, err)
 		return outcomeErrored
 	}
 	if within {
-		log.Printf("ladder_run: config %s: %s", dbCfg.ID, reason)
+		logging.Infof("ladder_run: config %s: %s", dbCfg.ID, reason)
 		return outcomeSkippedCadence
 	}
 
 	// Build the planning capability for this account: its write side is always disabled.
 	capability, err := app.planningCapability(ctx, region, cloudAcct.ExternalID)
 	if err != nil {
-		log.Printf("ladder_run: config %s: %v", dbCfg.ID, err)
+		logging.Errorf("ladder_run: config %s: %v", dbCfg.ID, err)
 		return outcomeErrored
 	}
 
 	// Run the plan engine and persist the result.
 	if err := app.executeLadderRun(ctx, dbCfg, capability, cloudAcct.ExternalID, global, now); err != nil {
-		log.Printf("ladder_run: config %s: planning failed: %v", dbCfg.ID, err)
+		logging.Errorf("ladder_run: config %s: planning failed: %v", dbCfg.ID, err)
 		return outcomeErrored
 	}
 	return outcomePlanned
@@ -425,7 +424,7 @@ func (p *ladderRunPlanner) logPersisted(run *config.LadderRunDB) {
 			p.dbCfg.ID, run.ID, ladderHoldMissingDiscountRate, len(p.missing))
 		return
 	}
-	log.Printf("ladder_run: config %s: persisted run %s (status=%s, allocations=%d, tranches=%d, holds=%d)",
+	logging.Infof("ladder_run: config %s: persisted run %s (status=%s, allocations=%d, tranches=%d, holds=%d)",
 		p.dbCfg.ID, run.ID, run.Status, p.allocations, p.tranches, p.holds)
 }
 
@@ -565,7 +564,7 @@ func ladderWithinCadenceWindow(ctx context.Context, store config.StoreInterface,
 		// Unknown cadence: log but do not block the run. The LadderConfig
 		// validator surfaces this as an error in ladderConfigToEngine (pre-persist,
 		// fail-loud), so the run will fail before any money action is taken.
-		log.Printf("ladder_run: config %s: unknown cadence=%q, proceeding without cadence gate", dbCfg.ID, dbCfg.Cadence)
+		logging.Warnf("ladder_run: config %s: unknown cadence=%q, proceeding without cadence gate", dbCfg.ID, dbCfg.Cadence)
 	}
 	return false, "", nil
 }
@@ -839,7 +838,7 @@ func buildTrancheDBRows(tranches []pkgladder.Tranche, runID string, configID *st
 			return nil, err
 		}
 		if !stored {
-			log.Printf("ladder_run: run %s: dropping tranche %s (layer %s): amount_usd_per_hour %s floors to 0 at the stored six-decimal scale",
+			logging.Warnf("ladder_run: run %s: dropping tranche %s (layer %s): amount_usd_per_hour %s floors to 0 at the stored six-decimal scale",
 				runID, tr.ID, tr.Layer, tr.AmountUSDPerHour)
 			continue
 		}

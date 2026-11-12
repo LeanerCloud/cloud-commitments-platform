@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -196,7 +195,7 @@ func resolveMigrationsTimeout() time.Duration {
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil || d <= 0 {
-		log.Printf("CUDLY_MIGRATION_TIMEOUT invalid (%q); using default %s", v, defaultMigrationsTimeout) // #nosec G706 -- env var value is operator-controlled configuration; logged for diagnostics
+		logging.Warnf("CUDLY_MIGRATION_TIMEOUT invalid (%q); using default %s", v, defaultMigrationsTimeout) // #nosec G706 -- env var value is operator-controlled configuration; logged for diagnostics
 		return defaultMigrationsTimeout
 	}
 	return d
@@ -429,7 +428,7 @@ func validateAppConfigEnvDefaults(cfg ApplicationConfig) error {
 // The secret-store path is always preferred when both are present.
 func resolveScheduledTaskSecret(ctx context.Context, cfg ApplicationConfig, resolver secrets.Resolver) (string, error) {
 	if cfg.ScheduledTaskSecretName != "" && cfg.ScheduledTaskSecret != "" {
-		log.Printf("SECURITY WARNING: both SCHEDULED_TASK_SECRET (plaintext) and " +
+		logging.Warnf("SECURITY WARNING: both SCHEDULED_TASK_SECRET (plaintext) and " +
 			"SCHEDULED_TASK_SECRET_NAME are set. The plaintext value is visible in " +
 			"Lambda environment variables and Terraform state. " +
 			"Remove SCHEDULED_TASK_SECRET and rely on SCHEDULED_TASK_SECRET_NAME only.")
@@ -440,7 +439,7 @@ func resolveScheduledTaskSecret(ctx context.Context, cfg ApplicationConfig, reso
 	}
 	resolved, err := resolver.GetSecret(ctx, cfg.ScheduledTaskSecretName)
 	if err != nil {
-		log.Printf("scheduled task secret resolution failed for %q: %v (falling back to SCHEDULED_TASK_SECRET)", cfg.ScheduledTaskSecretName, err)
+		logging.Warnf("scheduled task secret resolution failed for %q: %v (falling back to SCHEDULED_TASK_SECRET)", cfg.ScheduledTaskSecretName, err)
 		return cfg.ScheduledTaskSecret, err
 	}
 	return resolved, nil
@@ -523,7 +522,7 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 	// federated credential) fall back to their legacy behaviors.
 	signer, signerErr := oidc.NewSignerFromEnv(ctx)
 	if signerErr != nil {
-		log.Printf("oidc signer init failed (federated flow disabled): %v", signerErr)
+		logging.Errorf("oidc signer init failed (federated flow disabled): %v", signerErr)
 		signer = nil
 	}
 
@@ -537,12 +536,12 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 	// inbound HTTP request.
 	if issuer := resolveOIDCIssuerURL(cfg); issuer != "" {
 		if err := oidc.SetIssuerURL(issuer); err != nil {
-			log.Printf("WARN: oidc issuer URL invalid, ignoring: %v", err)
+			logging.Warnf("WARN: oidc issuer URL invalid, ignoring: %v", err)
 		}
 	} else if cfg.IsLambda {
 		primeCtx, primeCancel := context.WithTimeout(ctx, 5*time.Second)
 		if err := oidc.PrimeIssuerURLFromLambda(primeCtx); err != nil {
-			log.Printf("oidc issuer cache not primed from lambda: %v (falling back to request-driven populate)", err)
+			logging.Warnf("oidc issuer cache not primed from lambda: %v (falling back to request-driven populate)", err)
 		}
 		primeCancel()
 	}
@@ -577,7 +576,7 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 
 	// Auth store will be initialized lazily after DB connection
 	var authStore auth.StoreInterface
-	log.Println("PostgreSQL auth store will be initialized on first request")
+	logging.Infof("PostgreSQL auth store will be initialized on first request")
 
 	// Initialize auth service
 	authService := auth.NewService(auth.ServiceConfig{
@@ -591,7 +590,7 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 	// Sensitive requests pass ensureDB, which replaces this temporary limiter
 	// with shared database counters before dispatch on every runtime.
 	rateLimiter := api.RateLimiterInterface(api.NewInMemoryRateLimiter())
-	log.Println("Initialized temporary in-memory rate limiter until database connection")
+	logging.Infof("Initialized temporary in-memory rate limiter until database connection")
 
 	// Archera comparison: default off, key resolved lazily on first explicit request.
 	archeraProvider := archera.NewProvider(archera.SettingsFromEnv(), deps.SecretResolver, nil)
@@ -618,7 +617,7 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 		FireSweepOff:           cfg.FireSweepOff,
 	})
 
-	log.Printf("CUDly Server initialization complete")
+	logging.Infof("CUDly Server initialization complete")
 
 	return &Application{
 		Config:            deps.ConfigStore,
@@ -659,7 +658,7 @@ func NewApplication(ctx context.Context, version string) (*Application, error) {
 		return nil, fmt.Errorf("invalid analytics configuration: %w", err)
 	}
 
-	log.Printf("CUDly Server initializing, version: %s", cfg.Version)
+	logging.Infof("CUDly Server initializing, version: %s", cfg.Version)
 
 	// Initialize configuration store (PostgreSQL). The store connects lazily on
 	// first request, so ConfigStore is wired as nil here (see initConfigStore).
@@ -718,7 +717,7 @@ func (app *Application) ensureDB(ctx context.Context) error {
 		return app.dbErr
 	}
 
-	log.Println("Establishing PostgreSQL connection (lazy initialization)...")
+	logging.Infof("Establishing PostgreSQL connection (lazy initialization)...")
 
 	// Connect to PostgreSQL
 	dbConn, err := database.NewConnection(ctx, app.dbConfig, app.secretResolver)
@@ -728,7 +727,7 @@ func (app *Application) ensureDB(ctx context.Context) error {
 
 	// Store the connection
 	app.DB = dbConn
-	log.Println("PostgreSQL connection established successfully")
+	logging.Infof("PostgreSQL connection established successfully")
 
 	// Run migrations if AutoMigrate is enabled. Failures are non-fatal:
 	// we log, surface via the migrations check in /health and /ready, and
@@ -737,7 +736,7 @@ func (app *Application) ensureDB(ctx context.Context) error {
 	// query time.
 	// See specs/migration-resilience.md (or the plan) for the rationale.
 	if app.dbConfig.AutoMigrate {
-		log.Println("Running database migrations...")
+		logging.Infof("Running database migrations...")
 
 		adminEmail := os.Getenv("ADMIN_EMAIL")
 		adminPassword, err := resolveAdminPassword(ctx, app.secretResolver)
@@ -754,10 +753,10 @@ func (app *Application) ensureDB(ctx context.Context) error {
 		app.recordMigrationResult(migErr)
 
 		if migErr != nil {
-			log.Printf("⚠️ Migration failed — app continuing with existing schema: %v", migErr)
+			logging.Errorf("⚠️ Migration failed — app continuing with existing schema: %v", migErr)
 			// Intentionally do NOT return, do NOT close dbConn, do NOT clear app.DB.
 		} else {
-			log.Println("Database migrations completed successfully")
+			logging.Infof("Database migrations completed successfully")
 		}
 	}
 
@@ -806,7 +805,7 @@ func loadAndGuardEncryptionKey(ctx context.Context, resolver secrets.Resolver) (
 	if bytes.Equal(encKey, credentials.DevKey()) && os.Getenv(credentials.EnvAllowDev) != "1" {
 		return nil, "", fmt.Errorf("credentials: refusing to start with all-zero dev key (set %s=1 for local dev only)", credentials.EnvAllowDev)
 	}
-	log.Printf("credentials: loaded encryption key via %s", source)
+	logging.Infof("credentials: loaded encryption key via %s", source)
 	return encKey, source, nil
 }
 
@@ -926,7 +925,7 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 
 	dbRL := api.NewDBRateLimiter(dbConn.Pool())
 	app.RateLimiter = dbRL
-	log.Println("Initialized database-backed rate limiter with shared replica counters")
+	logging.Infof("Initialized database-backed rate limiter with shared replica counters")
 
 	// Initialize analytics store for savings data and materialized views, plus
 	// the snapshot collector behind the scheduled analytics_collect task.
@@ -936,13 +935,13 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 		return fmt.Errorf("failed to create analytics collector: %w", err)
 	}
 	app.AnalyticsCollector = collector
-	log.Println("Initialized PostgreSQL analytics store and snapshot collector")
+	logging.Infof("Initialized PostgreSQL analytics store and snapshot collector")
 
 	// Initialize credential store (AES-256-GCM encrypted credential blobs).
 	// encKey/encKeySource were loaded above (memoized) to seed the CSRF key.
 	credStore := credentials.NewCredentialStore(dbConn.Pool(), encKey)
 	app.encKeySource = encKeySource
-	log.Println("Initialized encrypted credential store")
+	logging.Infof("Initialized encrypted credential store")
 
 	// Re-initialize purchase manager with multi-account deps now that credStore is available.
 	// The initial manager (created before DB connect) lacks CredentialStore and AssumeRoleSTS,
@@ -953,7 +952,7 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 	}
 	reinitPurchase := purchase.NewManager(postDBPurchaseManagerConfig(app, pgStore, credStore, awsCfg))
 	app.Purchase = reinitPurchase
-	log.Println("Re-initialized purchase manager with credential store and cross-account STS")
+	logging.Infof("Re-initialized purchase manager with credential store and cross-account STS")
 
 	// Re-initialize scheduler with per-account credential resolution.
 	reinitScheduler := scheduler.NewScheduler(scheduler.SchedulerConfig{
@@ -1104,7 +1103,7 @@ func buildAdminPasswordSyncCallback(store auth.StoreInterface, resolver secrets.
 
 // Close gracefully shuts down the application.
 func (app *Application) Close() error {
-	log.Println("Shutting down CUDly Server...")
+	logging.Infof("Shutting down CUDly Server...")
 
 	app.lifeMu.Lock()
 	if app.lifeCancel != nil {
@@ -1114,9 +1113,9 @@ func (app *Application) Close() error {
 
 	// Close database connection if using PostgreSQL
 	if app.DB != nil {
-		log.Println("Closing database connection...")
+		logging.Infof("Closing database connection...")
 		app.DB.Close()
-		log.Println("Database connection closed successfully")
+		logging.Infof("Database connection closed successfully")
 	}
 
 	return nil
@@ -1130,7 +1129,7 @@ func initConfigStore(ctx context.Context) (*database.Config, secrets.Resolver, e
 		return nil, nil, fmt.Errorf("database configuration required: DB_HOST must be set")
 	}
 
-	log.Println("Preparing PostgreSQL configuration store (lazy initialization)...")
+	logging.Infof("Preparing PostgreSQL configuration store (lazy initialization)...")
 
 	// Initialize secret resolver
 	secretResolver, err := secrets.NewResolver(ctx, secrets.LoadConfigFromEnv())
@@ -1144,7 +1143,7 @@ func initConfigStore(ctx context.Context) (*database.Config, secrets.Resolver, e
 		return nil, nil, fmt.Errorf("failed to load database config: %w", err)
 	}
 
-	log.Printf("PostgreSQL config loaded (will connect on first request): %s:%d", dbConfig.Host, dbConfig.Port)
+	logging.Infof("PostgreSQL config loaded (will connect on first request): %s:%d", dbConfig.Host, dbConfig.Port)
 
 	// The config store itself is created lazily on first request (not here), so
 	// callers wire a nil ConfigStore into ExternalDeps. Deferring the connection
@@ -1158,7 +1157,7 @@ func getEnvInt(key string, defaultVal int) int {
 	if val := os.Getenv(key); val != "" {
 		result, err := strconv.Atoi(val)
 		if err != nil {
-			log.Printf("WARNING: %s=%q is not a valid integer; using default %d", key, val, defaultVal) // #nosec G706 -- env var value is operator-controlled configuration; logged for diagnostics
+			logging.Warnf("WARNING: %s=%q is not a valid integer; using default %d", key, val, defaultVal) // #nosec G706 -- env var value is operator-controlled configuration; logged for diagnostics
 			return defaultVal
 		}
 		return result
