@@ -2,13 +2,18 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -180,4 +185,122 @@ func (h *Handler) persistExecutionAndSuppressions(
 		return nil, fmt.Errorf("failed to save execution: %w", txErr)
 	}
 	return dup, nil
+}
+
+// purchaseIdempotencyWindow is how long a freshly-created pending execution
+// "absorbs" an identical resubmission. A double-click or a retried network
+// call within this window resolves to the original execution instead of
+// minting a second approvable row (double-spend). Sized to comfortably cover
+// a stuck request retry without masking a genuine intentional re-purchase.
+const purchaseIdempotencyWindow = 2 * time.Minute
+
+// purchaseIdempotencyKey derives a stable fingerprint of a submit so two
+// identical submissions (same actor, same scaled rec set, same capacity)
+// collapse to one execution. The recs are normalized and sorted so map/slice
+// ordering can't change the hash. Account scope is implicit: each rec carries
+// its CloudAccountID, so the same recs targeting a different account hash
+// differently. Closes issue #644.
+func purchaseIdempotencyKey(creatorID string, recs []config.RecommendationRecord, capacityPercent int) (string, error) {
+	tuples := make([]string, 0, len(recs))
+	for i := range recs {
+		r := recs[i]
+		acct := ""
+		if r.CloudAccountID != nil {
+			acct = *r.CloudAccountID
+		}
+		az, err := recDetailsAvailabilityZone(&r)
+		if err != nil {
+			return "", err
+		}
+		ci, err := r.ComputeIdentity()
+		if err != nil {
+			return "", err
+		}
+		// Single-AZ and Multi-AZ RDS buys of the same class are different
+		// purchases and must not dedupe into one (issue #408).
+		azConfig, err := r.IdentityAZConfig()
+		if err != nil {
+			return "", err
+		}
+		tuples = append(tuples, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s",
+			strings.ToLower(strings.TrimSpace(r.Provider)),
+			r.Service, r.Region, r.ResourceType, r.Engine, acct,
+			r.Count, r.Term, strings.ToLower(strings.TrimSpace(r.Payment)), az,
+			ci.Platform, ci.Tenancy, azConfig))
+	}
+	sort.Strings(tuples)
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x1f%d\x1f%s", creatorID, capacityPercent, strings.Join(tuples, "\x1e"))
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// recDetailsAvailabilityZone returns the zonal EC2 AZ carried in the rec's
+// Details blob, "" for non-compute recs and for absent or legacy Details.
+// The AZ is read from Details, not RecommendationRecord.AvailabilityZone,
+// because pending executions written before issue #792 carry it only there
+// and the idempotency key is recomputed from them (issue #792).
+func recDetailsAvailabilityZone(r *config.RecommendationRecord) (string, error) {
+	if r.Service != string(common.ServiceEC2) && r.Service != string(common.ServiceCompute) {
+		return "", nil
+	}
+	details, err := common.DecodeServiceDetailsFor(r.Service, r.Details)
+	if err != nil {
+		return "", fmt.Errorf("decode %s details of %s/%s: %w", r.Service, r.Region, r.ResourceType, err)
+	}
+	if cd, ok := details.(*common.ComputeDetails); ok && cd != nil {
+		return strings.TrimSpace(cd.AvailabilityZone), nil
+	}
+	return "", nil
+}
+
+// buildDuplicatePurchaseResponse returns the executePurchase response body for
+// a submit that collapsed onto an existing pending execution (#644). It points
+// at the original row so the client lands on the same approvable execution
+// instead of a freshly-minted duplicate. duplicate=true lets the UI explain
+// why no new approval email was sent.
+func buildDuplicatePurchaseResponse(ex *config.PurchaseExecution) map[string]any {
+	resp := map[string]any{
+		"execution_id":         ex.ExecutionID,
+		"status":               ex.Status,
+		"recommendation_count": len(ex.Recommendations),
+		"total_upfront_cost":   ex.TotalUpfrontCost,
+		"estimated_savings":    ex.EstimatedSavings,
+		"duplicate":            true,
+		"message":              "Duplicate submission collapsed onto the existing execution (see status); no new execution or approval request was created.",
+	}
+	// An approval email only exists for a row still awaiting approval. A row
+	// that already moved on (direct execute, approved, completed) never had
+	// one, and email_sent=false would make the client report a failure.
+	if ex.Status == "pending" || ex.Status == "notified" {
+		resp["email_sent"] = ex.NotificationSent != nil
+	}
+	return resp
+}
+
+// newPendingExecution builds a fresh pending PurchaseExecution with a
+// crypto/rand-backed approval token. Extracted from executePurchase to keep
+// that function under the gocyclo threshold.
+//
+// Returns the RAW token alongside the execution: the struct's ApprovalToken
+// field holds only the SHA-256 hash that gets persisted (issue #103), so the
+// caller's synchronous approval email (sendPurchaseApprovalEmail) must take
+// the raw value from the second return, not from execution.ApprovalToken.
+func newPendingExecution(req *ExecutePurchaseRequest, totalUpfront, totalSavings float64) (*config.PurchaseExecution, string, error) {
+	approvalToken, err := common.GenerateApprovalToken()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to generate approval token: %w", err)
+	}
+	tokenExpiresAt := time.Now().Add(config.ApprovalTokenTTL)
+	return &config.PurchaseExecution{
+		ExecutionID:            uuid.New().String(),
+		Status:                 "pending",
+		ScheduledDate:          time.Now(),
+		Recommendations:        req.Recommendations,
+		TotalUpfrontCost:       totalUpfront,
+		EstimatedSavings:       totalSavings,
+		ApprovalToken:          config.HashApprovalToken(approvalToken),
+		ApprovalTokenExpiresAt: &tokenExpiresAt,
+		Source:                 common.PurchaseSourceWeb,
+		CapacityPercent:        req.CapacityPercent,
+	}, approvalToken, nil
 }
