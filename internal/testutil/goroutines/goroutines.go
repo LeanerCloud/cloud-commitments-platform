@@ -20,12 +20,12 @@ type Goroutine struct {
 	// Stack is the goroutine's block of the dump: the header, every frame
 	// and the "created by" line.
 	Stack string
-	// ID is the runtime's goroutine ID.
-	ID int64
 	// CreatedBy is the function that ran the go statement, from the dump's
 	// "created by" line, or "" when the dump does not name one (the main
 	// goroutine, runtime workers).
 	CreatedBy string
+	// ID is the runtime's goroutine ID.
+	ID int64
 	// CreatorID is the ID of the goroutine that ran the go statement, or 0
 	// when the dump does not name one.
 	CreatorID int64
