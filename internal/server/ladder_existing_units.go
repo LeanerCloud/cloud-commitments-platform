@@ -3,11 +3,12 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
 	"maps"
 	"math"
 	"math/big"
 	"slices"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/google/uuid"
 
@@ -85,10 +86,10 @@ func ladderConversionRates(
 func logObservedOverrides(cfgID string, observed, marginal map[pkgladder.LayerType]float64) {
 	for _, layer := range slices.Sorted(maps.Keys(observed)) {
 		if m, ok := marginal[layer]; ok {
-			log.Printf("ladder_run: config %s: layer %s converts existing coverage at observed rate %v (marginal %v)", cfgID, layer, observed[layer], m)
+			logging.Infof("ladder_run: config %s: layer %s converts existing coverage at observed rate %v (marginal %v)", cfgID, layer, observed[layer], m)
 			continue
 		}
-		log.Printf("ladder_run: config %s: layer %s converts existing coverage at observed rate %v (marginal: none)", cfgID, layer, observed[layer])
+		logging.Infof("ladder_run: config %s: layer %s converts existing coverage at observed rate %v (marginal: none)", cfgID, layer, observed[layer])
 	}
 }
 

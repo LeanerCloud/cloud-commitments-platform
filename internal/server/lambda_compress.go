@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
-	"log"
 	"strings"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -29,11 +30,11 @@ func compressLambdaResponse(req *events.LambdaFunctionURLRequest, resp *events.L
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
 	if _, err := zw.Write([]byte(resp.Body)); err != nil {
-		log.Printf("lambda response gzip failed, sending uncompressed: %v", err)
+		logging.Warnf("lambda response gzip failed, sending uncompressed: %v", err)
 		return
 	}
 	if err := zw.Close(); err != nil {
-		log.Printf("lambda response gzip failed, sending uncompressed: %v", err)
+		logging.Warnf("lambda response gzip failed, sending uncompressed: %v", err)
 		return
 	}
 	resp.Body = base64.StdEncoding.EncodeToString(buf.Bytes())

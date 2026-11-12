@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/aws/aws-lambda-go/events"
@@ -17,7 +18,7 @@ import (
 
 // StartLambdaHandler starts the AWS Lambda handler.
 func StartLambdaHandler(app *Application) {
-	log.Println("Starting Lambda handler mode...")
+	logging.Infof("Starting Lambda handler mode...")
 	lambda.Start(func(ctx context.Context, rawEvent json.RawMessage) (any, error) {
 		return app.HandleLambdaEvent(ctx, rawEvent)
 	})
@@ -26,7 +27,7 @@ func StartLambdaHandler(app *Application) {
 // HandleLambdaEvent processes any Lambda event type.
 func (app *Application) HandleLambdaEvent(ctx context.Context, rawEvent json.RawMessage) (any, error) {
 	eventType := detectLambdaEventType(rawEvent)
-	log.Printf("Received %s event (size: %d bytes)", eventType, len(rawEvent))
+	logging.Infof("Received %s event (size: %d bytes)", eventType, len(rawEvent))
 
 	// The migrate event must not touch ensureDB: its lazy path runs the
 	// app-start migrations and the runner needs its own bounded connection.
@@ -37,7 +38,7 @@ func (app *Application) HandleLambdaEvent(ctx context.Context, rawEvent json.Raw
 	// Ensure database connection is established (lazy initialization)
 	// Safe to call on every request - mutex guards connection and allows retry on transient failures
 	if err := app.ensureDB(ctx); err != nil {
-		log.Printf("Failed to establish database connection: %v", err)
+		logging.Errorf("Failed to establish database connection: %v", err)
 		return nil, fmt.Errorf("database connection failed: %w", err)
 	}
 
@@ -151,7 +152,7 @@ func (app *Application) handleLambdaMigrateEvent(ctx context.Context, rawEvent j
 func (app *Application) handleLambdaHTTPEvent(ctx context.Context, rawEvent json.RawMessage) (*events.LambdaFunctionURLResponse, error) {
 	var request events.LambdaFunctionURLRequest
 	if err := json.Unmarshal(rawEvent, &request); err != nil {
-		log.Printf("Failed to parse HTTP event: %v", err)
+		logging.Errorf("Failed to parse HTTP event: %v", err)
 		headers := lambdaSecurityHeaders()
 		headers["Content-Type"] = "application/json"
 		return &events.LambdaFunctionURLResponse{
@@ -171,7 +172,7 @@ func (app *Application) handleLambdaHTTPEvent(ctx context.Context, rawEvent json
 	if request.IsBase64Encoded {
 		decoded, err := base64.StdEncoding.DecodeString(request.Body)
 		if err != nil {
-			log.Printf("Failed to base64-decode request body: %v", err)
+			logging.Errorf("Failed to base64-decode request body: %v", err)
 			headers := lambdaSecurityHeaders()
 			headers["Content-Type"] = "application/json"
 			return &events.LambdaFunctionURLResponse{

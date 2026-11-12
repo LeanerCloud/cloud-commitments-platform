@@ -1,10 +1,11 @@
 package server
 
 import (
-	"log"
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/clientip"
 )
@@ -28,7 +29,7 @@ func requestSourceIP(r *http.Request, trustedHops int) string {
 	xff := strings.Join(r.Header.Values("X-Forwarded-For"), ",")
 	if xff != "" && trustedHops == 0 {
 		warnXFFIgnored.Do(func() {
-			log.Printf("WARN: X-Forwarded-For received but CUDLY_TRUSTED_PROXY_HOPS=0; using the peer address. Set it to the number of appending proxies in front of the app.")
+			logging.Warnf("WARN: X-Forwarded-For received but CUDLY_TRUSTED_PROXY_HOPS=0; using the peer address. Set it to the number of appending proxies in front of the app.")
 		})
 	}
 	return clientip.Resolve(r.RemoteAddr, xff, trustedHops)

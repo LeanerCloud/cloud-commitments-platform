@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 )
@@ -37,11 +38,11 @@ func writeBodyReadError(w http.ResponseWriter, err error) {
 	if errors.As(err, &tooLarge) {
 		status, msg = http.StatusRequestEntityTooLarge, "Request body too large"
 	} else {
-		log.Printf("Failed to read request body: %v", err)
+		logging.Errorf("Failed to read request body: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if encErr := json.NewEncoder(w).Encode(map[string]string{"error": msg}); encErr != nil {
-		log.Printf("Failed to encode body-read error response: %v", encErr)
+		logging.Errorf("Failed to encode body-read error response: %v", encErr)
 	}
 }

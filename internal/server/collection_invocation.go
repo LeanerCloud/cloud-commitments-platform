@@ -2,7 +2,8 @@ package server
 
 import (
 	"context"
-	"log"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // claimCollectionInvocation runs once a token-carrying collect run holds the
@@ -24,11 +25,11 @@ func (app *Application) claimCollectionInvocation(ctx context.Context, taskType 
 	}
 	token, ok, err := app.Config.ClaimCollectionInvocation(ctx, params.OwnerToken)
 	if err != nil {
-		log.Printf("Failed to claim collection marker for this invocation, keeping the marker token: %v", err)
+		logging.Errorf("Failed to claim collection marker for this invocation, keeping the marker token: %v", err)
 		return params
 	}
 	if !ok {
-		log.Println("Collection marker is held by another run; collecting without an owner token")
+		logging.Infof("Collection marker is held by another run; collecting without an owner token")
 		params.OwnerToken = ""
 		return params
 	}

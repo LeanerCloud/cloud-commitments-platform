@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -73,7 +72,7 @@ func newRIExchangeClients(ec2Client riExchangeEC2, recs riUtilizationSource, exc
 
 // handleRIExchangeReshape runs the automated RI exchange analysis and execution.
 func (app *Application) handleRIExchangeReshape(ctx context.Context) (*exchange.AutoExchangeResult, error) {
-	log.Println("Starting RI exchange reshape analysis...")
+	logging.Infof("Starting RI exchange reshape analysis...")
 
 	cfg, err := app.Config.GetGlobalConfig(ctx)
 	if err != nil {
@@ -83,7 +82,7 @@ func (app *Application) handleRIExchangeReshape(ctx context.Context) (*exchange.
 	// blocks approvals of pending exchanges while automation is off.
 	app.alarmStaleRIExchanges(ctx)
 	if !cfg.RIExchangeEnabled {
-		log.Println("RI exchange automation is disabled, skipping")
+		logging.Warnf("RI exchange automation is disabled, skipping")
 		return nil, nil
 	}
 
@@ -212,7 +211,7 @@ func (app *Application) executeRIExchangeReshape(ctx context.Context, cfg *confi
 	}
 	app.sendExchangeNotification(ctx, result, notifyEmail)
 
-	log.Printf("RI exchange reshape complete: mode=%s completed=%d pending=%d failed=%d skipped=%d",
+	logging.Infof("RI exchange reshape complete: mode=%s completed=%d pending=%d failed=%d skipped=%d",
 		result.Mode, len(result.Completed), len(result.Pending), len(result.Failed), len(result.Skipped))
 	return result, nil
 }
@@ -269,7 +268,7 @@ func (app *Application) sendExchangeNotification(ctx context.Context, result *ex
 	}
 
 	if err != nil {
-		log.Printf("Warning: failed to send RI exchange notification email: %v", err)
+		logging.Errorf("Warning: failed to send RI exchange notification email: %v", err)
 	}
 }
 

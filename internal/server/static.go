@@ -1,13 +1,14 @@
 package server
 
 import (
-	"log"
 	"mime"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // spaFileServer returns an http.Handler that serves static files from dir
@@ -214,17 +215,17 @@ func staticDirFromEnv() string {
 	indexPath := filepath.Join(dir, "index.html")
 	if _, err := os.Stat(indexPath); err != nil { // #nosec G703 -- dir is STATIC_DIR, an operator-set deployment config env var, not user input
 		if !os.IsNotExist(err) {
-			log.Printf("STATIC_DIR set to %s but index.html not accessible: %v", dir, err) // #nosec G706 -- STATIC_DIR is operator-set config; value not reachable from user input
+			logging.Errorf("STATIC_DIR set to %s but index.html not accessible: %v", dir, err) // #nosec G706 -- STATIC_DIR is operator-set config; value not reachable from user input
 		}
 		return ""
 	}
 	// Verify it's actually a directory
 	info, err := os.Stat(dir) // #nosec G703 -- dir is STATIC_DIR, operator-set deployment config env var
 	if err != nil || !info.IsDir() {
-		log.Printf("STATIC_DIR %s is not a directory", dir) // #nosec G706 -- STATIC_DIR is operator-set config; value not reachable from user input
+		logging.Warnf("STATIC_DIR %s is not a directory", dir) // #nosec G706 -- STATIC_DIR is operator-set config; value not reachable from user input
 		return ""
 	}
-	log.Printf("Static file serving enabled from %s", dir) // #nosec G706 -- STATIC_DIR is operator-set config; value not reachable from user input
+	logging.Infof("Static file serving enabled from %s", dir) // #nosec G706 -- STATIC_DIR is operator-set config; value not reachable from user input
 	return dir
 }
 

@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
@@ -190,7 +191,7 @@ func writeHealthResponse(w http.ResponseWriter, corsOrigin string, status int, h
 	if err := json.NewEncoder(w).Encode(health); err != nil {
 		// Body write failed after headers are sent; log for parity with
 		// handleScheduledHTTP which already logs its encode error (04-L4).
-		log.Printf("health: failed to encode response: %v", err)
+		logging.Errorf("health: failed to encode response: %v", err)
 	}
 }
 
@@ -257,7 +258,7 @@ func (app *Application) checkConfigStore(ctx context.Context, configStore config
 	// If using PostgreSQL, check database connection health
 	if db != nil {
 		if err := db.HealthCheck(ctx); err != nil {
-			log.Printf("health: database health check failed: %v", err)
+			logging.Errorf("health: database health check failed: %v", err)
 			return CheckResult{
 				Status:  "unhealthy",
 				Message: "Database health check failed",
@@ -308,7 +309,7 @@ func (app *Application) checkAuthStore(ctx context.Context, authService *auth.Se
 
 	// Ping the database to verify connection is healthy
 	if err := authService.Ping(ctx); err != nil {
-		log.Printf("health: auth store ping failed: %v", err)
+		logging.Errorf("health: auth store ping failed: %v", err)
 		return CheckResult{
 			Status:  "unhealthy",
 			Message: "Auth store ping failed",

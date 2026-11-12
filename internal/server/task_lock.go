@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // stuckTaskLockThreshold is how long a scheduled task's advisory lock may be
@@ -39,7 +40,7 @@ var ErrTaskLockStuck = errors.New("scheduled task lock held longer than any run 
 func stuckTaskLockError(ctx context.Context, locker TaskLocker, taskType ScheduledTaskType, lockID int64) error {
 	heldFor, found, err := locker.AdvisoryLockHeldFor(ctx, lockID)
 	if err != nil {
-		log.Printf("Could not check how long the %q task lock has been held: %v", taskType, err) // #nosec G706 -- taskType is looked up from a known-value map; %q quotes the value to prevent CR/LF log injection
+		logging.Errorf("Could not check how long the %q task lock has been held: %v", taskType, err) // #nosec G706 -- taskType is looked up from a known-value map; %q quotes the value to prevent CR/LF log injection
 		return nil
 	}
 	if !found || heldFor <= stuckTaskLockThreshold {

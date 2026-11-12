@@ -1,7 +1,7 @@
 package server
 
 import (
-	"log"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -28,6 +28,6 @@ func fourEyesExchangeMode(cfg *config.GlobalConfig, mode string) string {
 	if cfg != nil && !cfg.RequireDifferentApprover {
 		return mode
 	}
-	log.Printf("RI exchange: 4-eyes approval mode is on; running mode %q as %q so every exchange waits for approval", mode, manual)
+	logging.Infof("RI exchange: 4-eyes approval mode is on; running mode %q as %q so every exchange waits for approval", mode, manual)
 	return manual
 }

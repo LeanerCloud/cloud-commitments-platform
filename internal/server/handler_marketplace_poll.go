@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
@@ -43,13 +44,13 @@ func (app *Application) pollMarketplaceListings(ctx context.Context) (*api.Marke
 	if poller == nil {
 		return nil, nil
 	}
-	log.Println("Polling RI Marketplace listings...")
+	logging.Infof("Polling RI Marketplace listings...")
 	result, err := poller.PollMarketplaceListings(ctx)
 	if err != nil {
-		log.Printf("Failed to poll RI Marketplace listings: %v", err)
+		logging.Errorf("Failed to poll RI Marketplace listings: %v", err)
 		return result, fmt.Errorf("marketplace listing poll: %w", err)
 	}
-	log.Printf("Marketplace listing poll complete: found=%d active=%d settled=%d unpriced=%d skipped=%d errored=%d",
+	logging.Infof("Marketplace listing poll complete: found=%d active=%d settled=%d unpriced=%d skipped=%d errored=%d",
 		result.Found, result.Active, result.Settled, result.Unpriced, result.Skipped, result.Errored)
 	return result, nil
 }

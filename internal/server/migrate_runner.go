@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/migrations"
@@ -230,7 +231,7 @@ func versionToInt(v uint) (int, error) {
 func setForceVersionEnv(n int) func() {
 	prev, had := os.LookupEnv(forceVersionEnv)
 	if err := os.Setenv(forceVersionEnv, strconv.Itoa(n)); err != nil {
-		log.Printf("failed to set %s: %v", forceVersionEnv, err)
+		logging.Errorf("failed to set %s: %v", forceVersionEnv, err)
 	}
 	return func() {
 		if had {
