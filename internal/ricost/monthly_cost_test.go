@@ -17,11 +17,11 @@ import (
 func TestMonthlyCostFromConvertibleRI(t *testing.T) {
 	const oneYear, threeYears = 31536000, 94608000
 	cases := []struct {
+		wantIs  error // sentinel the error must wrap; ErrNonPositiveDuration when nil
 		name    string
+		wantErr string
 		ri      ec2svc.ConvertibleRI
 		want    float64
-		wantErr string
-		wantIs  error // sentinel the error must wrap; ErrNonPositiveDuration when nil
 	}{
 		{name: "1y all upfront", ri: ec2svc.ConvertibleRI{ReservedInstanceID: "ri-a", FixedPrice: 8760, Duration: oneYear}, want: 730},
 		{name: "3y all upfront", ri: ec2svc.ConvertibleRI{ReservedInstanceID: "ri-b", FixedPrice: 3000, Duration: threeYears}, want: 83.33333333333333},
