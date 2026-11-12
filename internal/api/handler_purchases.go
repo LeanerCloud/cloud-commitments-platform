@@ -176,63 +176,6 @@ func tokenActionError(err error) error {
 	}
 }
 
-// executeTokenApprove is the immediate (no pre-fire delay) tail of
-// approveViaToken. It runs only after every approveViaToken gate passed.
-func (h *Handler) executeTokenApprove(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, token, actor string, tokenSession *Session) (any, error) {
-	// ApproveExecution now runs the purchase synchronously inside the
-	// same call (issue #372). When it returns nil the AWS API call
-	// has already happened, so the response surfaces "completed"
-	// instead of the transient "approved" the old no-op flow returned.
-	//
-	// revocationToken is the raw token ApproveExecution's own
-	// ApproveAndExecute minted for this approval (issue #103); it is
-	// sourced from this return value, never from a DB re-read, since
-	// only the token hash is stored and a re-read can only ever yield
-	// the hash.
-	// approveConstraintsForSession above read a snapshot; the funnel re-runs
-	// it on the row its claim returns, the row it buys (issue #415).
-	final, revocationToken, approveErr := h.purchase.ApproveExecution(ctx, execution.ExecutionID, token, actor, h.tokenApproveClaimCheck(tokenSession))
-	if approveErr != nil {
-		return nil, h.tokenApproveFailure(ctx, req, execution.ExecutionID, final, revocationToken, actor, approveErr)
-	}
-	h.emailTokenApproveOutcome(ctx, req, execution, revocationToken, actor)
-	return map[string]string{"status": "completed"}, nil
-}
-
-// tokenApproveFailure answers a failed token approve (issue #532). Once the
-// claim was won (a row came back) it answers like the session approve: a
-// partially_completed run gets its executed email, a provider failure is a
-// 502 carrying the row's status, an audit loss a 500. A 4-eyes denial is a
-// 403 on every path. Any other refusal before the claim (bad, rotated or
-// expired token, lost claim) keeps the tokenActionError mapping.
-func (h *Handler) tokenApproveFailure(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID string, final *config.PurchaseExecution, revocationToken, actor string, err error) error {
-	if final == nil && !errors.Is(err, purchase.ErrFourEyesDenied) {
-		return tokenActionError(err)
-	}
-	logging.Errorf("purchase[%s]: token approve failed: %v", executionID, err)
-	h.emailCommittedPartialRun(ctx, req, final, revocationToken, actor, err)
-	return tokenFailureError(executionID, final, err)
-}
-
-// emailTokenApproveOutcome sends the executed email for a token approve that
-// completed (tokenApproveFailure emails a partial run from the returned row).
-// It re-fetches the execution to pick up the FINAL state (status,
-// completed_at, per-rec purchase results) ApproveAndExecute wrote -- the
-// pre-approve `execution` struct is stale on those fields. Falling back to the stale struct on a re-fetch failure is a
-// cosmetic degradation of the email content only: revocationToken is already
-// in hand either way, so the Revoke link is always valid. Best-effort (issue
-// #291): errors are logged inside sendPurchaseExecutedEmail and never
-// propagate, since the purchase is already done.
-func (h *Handler) emailTokenApproveOutcome(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, revocationToken, actor string) {
-	emailExec, fetchErr := h.config.GetExecutionByID(ctx, execution.ExecutionID)
-	if fetchErr != nil || emailExec == nil {
-		logging.Warnf("approveViaToken[%s]: re-fetch for email failed (%v); using pre-approve snapshot",
-			execution.ExecutionID, fetchErr)
-		emailExec = execution
-	}
-	h.sendPurchaseExecutedEmail(ctx, req, emailExec, revocationToken, actor)
-}
-
 // approvePurchaseViaSession is the session-authed branch of approvePurchase.
 // Enforces the approve-any/approve-own RBAC matrix, then hands off to
 // purchase.Manager.ApproveAndExecute which atomically flips the row to
