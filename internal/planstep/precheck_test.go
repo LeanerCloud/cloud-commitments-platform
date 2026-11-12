@@ -15,9 +15,9 @@ func planWith(svc config.ServiceConfig, ramp config.RampSchedule) *config.Purcha
 }
 
 func TestPrecheck(t *testing.T) {
-	ok := config.ServiceConfig{Provider: "aws", Service: "ec2", Enabled: true}
+	ok := config.ServiceConfig{Provider: "aws", Service: "ec2", Enabled: true, Coverage: 80}
 	weekly := config.RampSchedule{Type: "weekly", PercentPerStep: 25}
-	sp := config.ServiceConfig{Provider: "aws", Service: "savingsplans", Enabled: true}
+	sp := config.ServiceConfig{Provider: "aws", Service: "savingsplans", Enabled: true, Coverage: 80}
 	weekly4 := config.RampSchedule{Type: "weekly", PercentPerStep: 25, TotalSteps: 4}
 	armed := func(p *config.PurchasePlan) *config.PurchasePlan { p.Enabled, p.AutoPurchase = true, true; return p }
 	cases := []struct {
@@ -26,6 +26,8 @@ func TestPrecheck(t *testing.T) {
 		want string // substring of the error; "" = accepted
 	}{
 		{"clean plan", planWith(ok, weekly), ""},
+		{"coverage 0 buys nothing", planWith(withSvc(ok, func(s *config.ServiceConfig) { s.Coverage = 0 }), weekly), "target_coverage 0, which buys nothing"},
+		{"coverage 0 on a disabled service is not judged", planWith(withSvc(ok, func(s *config.ServiceConfig) { s.Enabled = false; s.Coverage = 0 }), weekly), ""},
 		{"immediate at 100", planWith(ok, config.RampSchedule{Type: "immediate", PercentPerStep: 100}), ""},
 		{"immediate at 50", planWith(ok, config.RampSchedule{Type: "immediate", PercentPerStep: 50}), "immediate ramp"},
 		{"immediate at 0", planWith(ok, config.RampSchedule{Type: "immediate"}), "immediate ramp"},
@@ -82,6 +84,16 @@ func TestResolveRefusesUnsupportedPlanBeforeReading(t *testing.T) {
 	// A nil Source/Store would panic if Resolve read anything.
 	_, err := resolveStep1(t, nil, nil, plan, accts)
 	require.ErrorIs(t, err, ErrUnsupportedPlan)
+}
+
+// A plan at coverage 0 must buy nothing: Resolve refuses it before reading any
+// recommendation (a nil Source/Store would panic) instead of sizing a quantity.
+func TestResolveRefusesZeroCoveragePlanBeforeReading(t *testing.T) {
+	plan := azurePlan(0, 100)
+	recs, err := resolveStep1(t, nil, nil, plan, accts)
+	require.ErrorIs(t, err, ErrUnsupportedPlan)
+	assert.ErrorContains(t, err, "buys nothing")
+	assert.Empty(t, recs)
 }
 
 func TestResolveRefusesStoredSPWithCountNotOne(t *testing.T) {

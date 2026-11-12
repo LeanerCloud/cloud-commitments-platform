@@ -26,7 +26,9 @@ var ErrBoundPlanMissingBinding = fmt.Errorf("%w: bound plan entry has no bound r
 // than what the plan says), an armed multi-step plan with a Savings Plans
 // service (platform#631 Q7), and an immediate ramp whose PercentPerStep is not
 // 100 (an immediate ramp ignores that field when validated but Resolve sizes
-// with it).
+// with it). An enabled service at target_coverage 0 is a plan that buys
+// nothing: it is refused here, with its reason, instead of sizing to a
+// quantity of 0 or failing every tick on an invalid-input error (#523).
 func Precheck(plan *config.PurchasePlan) error {
 	if err := plan.RampSchedule.ValidateAllocationMode(); err != nil {
 		return fmt.Errorf("%w: plan %s: %w", ErrUnsupportedPlan, plan.ID, err)
@@ -35,9 +37,8 @@ func Precheck(plan *config.PurchasePlan) error {
 		return err
 	}
 	for _, k := range sortedServiceKeys(plan) {
-		svc := plan.Services[k]
-		if field := firstFilterSet(&svc, config.IsBoundServiceKey(k)); field != "" {
-			return fmt.Errorf("%w: plan %s service %q sets %s", ErrUnsupportedPlan, plan.ID, k, field)
+		if err := precheckService(plan.ID, k, plan.Services[k]); err != nil {
+			return err
 		}
 	}
 	if plan.RampSchedule.AllocationMode.SizesByPercent() && plan.RampSchedule.Type == "immediate" && plan.RampSchedule.PercentPerStep != 100 {
@@ -46,6 +47,18 @@ func Precheck(plan *config.PurchasePlan) error {
 	}
 	if err := plan.CheckNoMultiStepSavingsPlans(); err != nil {
 		return fmt.Errorf("%w: plan %s: %w", ErrUnsupportedPlan, plan.ID, err)
+	}
+	return nil
+}
+
+// precheckService refuses an enabled service at target_coverage 0 and any
+// filter Resolve does not apply.
+func precheckService(planID, key string, svc config.ServiceConfig) error {
+	if svc.Enabled && svc.Coverage <= 0 {
+		return fmt.Errorf("%w: plan %s service %q has target_coverage %v, which buys nothing", ErrUnsupportedPlan, planID, key, svc.Coverage)
+	}
+	if field := firstFilterSet(&svc, config.IsBoundServiceKey(key)); field != "" {
+		return fmt.Errorf("%w: plan %s service %q sets %s", ErrUnsupportedPlan, planID, key, field)
 	}
 	return nil
 }

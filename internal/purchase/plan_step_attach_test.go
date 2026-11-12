@@ -254,7 +254,7 @@ func TestAttach_UnsupportedPlanFailsTheStepVisibly(t *testing.T) {
 	listed := attachPlan(time.Now().Add(48*time.Hour), 1e6)
 	locked := attachPlan(*listed.NextExecutionDate, 1e6)
 	for _, p := range []*config.PurchasePlan{listed, locked} {
-		p.Services = map[string]config.ServiceConfig{"aws/savingsplans": {Enabled: true, Provider: "aws", Service: "savingsplans"}}
+		p.Services = map[string]config.ServiceConfig{"aws/savingsplans": {Enabled: true, Provider: "aws", Service: "savingsplans", Coverage: 80}}
 		p.RampSchedule = config.RampSchedule{Type: "weekly", PercentPerStep: 25, TotalSteps: 4}
 	}
 	res := &fakeResolver{err: planstep.Precheck(locked)}
@@ -269,6 +269,30 @@ func TestAttach_UnsupportedPlanFailsTheStepVisibly(t *testing.T) {
 	require.Len(t, saved, 1)
 	assert.Equal(t, "failed", saved[0].Status)
 	assert.Contains(t, saved[0].Error, "multi-step ramps do not support Savings Plans")
+}
+
+// A plan at target_coverage 0 buys nothing: the step fails visibly with the
+// reason and no recommendation is attached (#523).
+func TestAttach_ZeroCoveragePlanFailsTheStepVisibly(t *testing.T) {
+	listed := attachPlan(time.Now().Add(48*time.Hour), 1e6)
+	locked := attachPlan(*listed.NextExecutionDate, 1e6)
+	for _, p := range []*config.PurchasePlan{listed, locked} {
+		p.Services = map[string]config.ServiceConfig{"aws/ec2": {Enabled: true, Provider: "aws", Service: "ec2", Coverage: 0}}
+		p.RampSchedule = config.RampSchedule{Type: "weekly", PercentPerStep: 25, TotalSteps: 4}
+	}
+	res := &fakeResolver{err: planstep.Precheck(locked)}
+	require.ErrorIs(t, res.err, planstep.ErrUnsupportedPlan)
+	m, store := attachManager(t, listed, locked, res)
+	assertMocksOnCleanup(t, store)
+	store.On("SavePurchaseExecution", mock.Anything, mock.Anything).Return(nil)
+
+	_, _, _, err := m.getOrCreateExecution(context.Background(), listed)
+	require.ErrorIs(t, err, errExecutionNotNotifiable)
+	saved := savedRows(store)
+	require.Len(t, saved, 1)
+	assert.Equal(t, "failed", saved[0].Status)
+	assert.Contains(t, saved[0].Error, "buys nothing")
+	assert.Empty(t, saved[0].Recommendations)
 }
 
 func TestAttach_ManualPlanRequiresExplicitRootAndHonorsOptionalCap(t *testing.T) {
