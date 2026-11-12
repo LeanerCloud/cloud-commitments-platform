@@ -118,7 +118,9 @@ quick-deploy: aws-dev ## Quick deploy to AWS dev
 # Validation
 validate: ## Validate Terraform configuration
 	@echo "🔍 Validating Terraform configuration..."
-	@cd terraform/environments/$(PROVIDER)/$(PROFILE) && terraform validate
+	@test -f terraform/environments/$(PROVIDER)/backends/$(PROFILE).tfbackend || { echo "missing terraform/environments/$(PROVIDER)/backends/$(PROFILE).tfbackend"; exit 1; }
+	@test -f terraform/profiles/$(PROVIDER)/$(PROFILE).tfvars || { echo "missing terraform/profiles/$(PROVIDER)/$(PROFILE).tfvars"; exit 1; }
+	@cd terraform/environments/$(PROVIDER) && export TF_DATA_DIR="$$PWD/.terraform/profiles/$(PROFILE)" && { test -d "$$TF_DATA_DIR" || terraform init -backend-config="backends/$(PROFILE).tfbackend"; } && terraform validate
 
 fmt: ## Format Terraform files
 	@echo "✨ Formatting Terraform files..."
@@ -126,10 +128,14 @@ fmt: ## Format Terraform files
 
 # State management
 state-list: ## List resources in Terraform state
-	@cd terraform/environments/$(PROVIDER)/$(PROFILE) && terraform state list
+	@test -f terraform/environments/$(PROVIDER)/backends/$(PROFILE).tfbackend || { echo "missing terraform/environments/$(PROVIDER)/backends/$(PROFILE).tfbackend"; exit 1; }
+	@test -f terraform/profiles/$(PROVIDER)/$(PROFILE).tfvars || { echo "missing terraform/profiles/$(PROVIDER)/$(PROFILE).tfvars"; exit 1; }
+	@cd terraform/environments/$(PROVIDER) && export TF_DATA_DIR="$$PWD/.terraform/profiles/$(PROFILE)" && { test -d "$$TF_DATA_DIR" || terraform init -backend-config="backends/$(PROFILE).tfbackend"; } && terraform state list
 
 state-show: ## Show detailed state for a resource
-	@cd terraform/environments/$(PROVIDER)/$(PROFILE) && terraform state show $(RESOURCE)
+	@test -f terraform/environments/$(PROVIDER)/backends/$(PROFILE).tfbackend || { echo "missing terraform/environments/$(PROVIDER)/backends/$(PROFILE).tfbackend"; exit 1; }
+	@test -f terraform/profiles/$(PROVIDER)/$(PROFILE).tfvars || { echo "missing terraform/profiles/$(PROVIDER)/$(PROFILE).tfvars"; exit 1; }
+	@cd terraform/environments/$(PROVIDER) && export TF_DATA_DIR="$$PWD/.terraform/profiles/$(PROFILE)" && { test -d "$$TF_DATA_DIR" || terraform init -backend-config="backends/$(PROFILE).tfbackend"; } && terraform state show $(RESOURCE)
 
 # Docker operations
 #

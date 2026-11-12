@@ -84,6 +84,19 @@ updates:
           - minor
           - patch
 
+  # docker-compose.yml pins service images; Dependabot updates them.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps)
+    labels:
+      - type/chore
+
   # Dockerfile, Dockerfile.dev and Dockerfile.test pin base images by tag
   # and digest; Dependabot updates both.
   - package-ecosystem: docker
