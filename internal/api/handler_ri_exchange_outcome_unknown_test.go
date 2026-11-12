@@ -10,6 +10,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -52,6 +53,7 @@ func assertOutcomeUnknown(t *testing.T, store *MockConfigStore, id string, resp 
 		assert.Contains(t, text, "/api/ri-exchange/resolve/"+id, "%s must tell the operator how to resolve it", name)
 		assert.NotContains(t, text, outcomeUnknownLeak, "%s must not carry raw provider text", name)
 	}
+	assert.Equal(t, note, purchase.SanitizeStoredError(note), "History shows the stored note as written")
 	store.AssertNotCalled(t, "FailRIExchange", mock.Anything, mock.Anything, mock.Anything)
 	store.AssertNotCalled(t, "CompleteRIExchangeWithPayment", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
