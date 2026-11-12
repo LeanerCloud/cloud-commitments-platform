@@ -120,7 +120,7 @@ func TestBuildExchangeNotificationData(t *testing.T) {
 
 	// Verify skipped
 	testutil.AssertEqual(t, "ri-skipped", data.Skipped[0].SourceRIID)
-	testutil.AssertEqual(t, purchase.ErrCategoryMessage(purchase.ErrCategoryUnknown), data.Skipped[0].Reason)
+	testutil.AssertEqual(t, "no matching offering", data.Skipped[0].Reason)
 }
 
 func TestBuildExchangeNotificationData_Empty(t *testing.T) {
@@ -1216,6 +1216,7 @@ func TestMonthlyCostFromConvertibleRI_NoPositivePriceErrors(t *testing.T) {
 
 func TestBuildExchangeNotificationData_DetailAndSkippedReasonHideRawError(t *testing.T) {
 	raw := `pq: duplicate key value violates unique constraint "ri_exchange_pkey" (host=10.0.0.5 user=cudly)`
+	const capReason = "exceeds per-exchange cap: payment $120.00 > cap $100.00"
 	result := &exchange.AutoExchangeResult{
 		Mode: "auto",
 		Failed: []exchange.ExchangeOutcome{{
@@ -1224,7 +1225,10 @@ func TestBuildExchangeNotificationData_DetailAndSkippedReasonHideRawError(t *tes
 			Error:          raw,
 			OutcomeUnknown: true,
 		}},
-		Skipped: []exchange.SkippedRecommendation{{SourceRIID: "ri-skipped", Reason: "quote failed: " + raw}},
+		Skipped: []exchange.SkippedRecommendation{
+			{SourceRIID: "ri-skipped", Reason: "quote failed: " + raw},
+			{SourceRIID: "ri-capped", Reason: capReason},
+		},
 	}
 	data := buildExchangeNotificationData(result, "https://dashboard.example.com", "ops@example.com")
 	body, err := email.RenderRIExchangeCompletedEmail(data)
@@ -1239,8 +1243,11 @@ func TestBuildExchangeNotificationData_DetailAndSkippedReasonHideRawError(t *tes
 	if !strings.Contains(body, "Detail: purchase outcome unknown") {
 		t.Errorf("email lacks the outcome-unknown wording:\n%s", body)
 	}
-	if !strings.Contains(body, "ri-skipped (): "+purchase.ErrCategoryMessage(purchase.ErrCategoryUnknown)) {
-		t.Errorf("skipped reason is not the category message:\n%s", body)
+	if !strings.Contains(body, "ri-skipped (): quote failed: "+purchase.ErrCategoryMessage(purchase.ErrCategoryUnknown)) {
+		t.Errorf("a wrapping skip reason keeps its head and the category message:\n%s", body)
+	}
+	if !strings.Contains(body, "ri-capped (): "+capReason) {
+		t.Errorf("a fixed skip reason must pass through unchanged:\n%s", body)
 	}
 	if !strings.Contains(body, "Record: 550e8400-e29b-41d4-a716-000000010501") {
 		t.Errorf("email lacks the record reference:\n%s", body)

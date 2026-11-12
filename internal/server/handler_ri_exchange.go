@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strings"
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -321,11 +322,33 @@ func buildExchangeNotificationData(result *exchange.AutoExchangeResult, dashboar
 		data.Skipped = append(data.Skipped, email.SkippedExchange{
 			SourceRIID:         s.SourceRIID,
 			SourceInstanceType: s.SourceInstanceType,
-			Reason:             emailDetail(s.Reason),
+			Reason:             skipReasonForEmail(s.Reason),
 		})
 	}
 
 	return data
+}
+
+// skippedErrorWraps are the heads of the library's skip reasons that append a
+// raw error or provider text (go exchange/auto.go:366 no matching offering,
+// :388 quote failed, :396 invalid exchange, :405 per-exchange cap check).
+// Every other skip reason is fixed library text and is shown unchanged.
+var skippedErrorWraps = []string{
+	"no matching offering found: ",
+	"quote failed: ",
+	"invalid exchange: ",
+	"cannot enforce the per-exchange cap: ",
+}
+
+// skipReasonForEmail keeps the fixed head of a wrapping skip reason and
+// sanitizes its tail; any other reason passes through.
+func skipReasonForEmail(reason string) string {
+	for _, head := range skippedErrorWraps {
+		if tail, ok := strings.CutPrefix(reason, head); ok {
+			return head + emailDetail(tail)
+		}
+	}
+	return reason
 }
 
 // emailDetail returns the text safe to put in an email for a stored error or
