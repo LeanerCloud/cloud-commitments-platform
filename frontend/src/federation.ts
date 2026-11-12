@@ -203,11 +203,13 @@ function buildTargetCloudPills(
     pill.className = 'btn btn-small target-cloud-pill';
     pill.textContent = cloud.label;
     pill.setAttribute('data-target', cloud.value);
-    pill.setAttribute('aria-pressed', 'false');
+    // Single-select: radio semantics, not toggle-button (reads as checkboxes).
+    pill.setAttribute('role', 'radio');
+    pill.setAttribute('aria-checked', 'false');
     pill.addEventListener('click', () => {
       for (const b of buttons) {
         const selected = b === pill;
-        b.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        b.setAttribute('aria-checked', selected ? 'true' : 'false');
         b.classList.toggle('selected', selected);
       }
       onSelect(cloud.value);
@@ -219,7 +221,7 @@ function buildTargetCloudPills(
   // Default selection: AWS (first option).
   const first = buttons[0];
   if (first) {
-    first.setAttribute('aria-pressed', 'true');
+    first.setAttribute('aria-checked', 'true');
     first.classList.add('selected');
   }
 }
