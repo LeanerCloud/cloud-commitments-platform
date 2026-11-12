@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
@@ -292,4 +293,101 @@ func isGCPIAMPropagationError(err error) bool {
 type tokenResult struct {
 	tok *oauth2.Token
 	err error
+}
+
+// azureFederatedCredResult exercises the secret-free Azure federated
+// credential path end-to-end for accounts in workload_identity_federation
+// mode whose CUDly deployment has an OIDC signer + issuer configured.
+// It mints a client_assertion JWT via the KMS signer, exchanges it at
+// Azure AD's token endpoint, and reports the result. Returns
+// (result, true) when this path applies; (_, false) means the caller
+// should fall back to the presence check (client_secret mode only).
+func (h *Handler) azureFederatedCredResult(ctx context.Context, acct *config.CloudAccount) (AccountTestResult, bool) {
+	if acct.Provider != "azure" || acct.AzureAuthMode != "workload_identity_federation" {
+		return AccountTestResult{}, false
+	}
+	if h.signer == nil {
+		return AccountTestResult{}, false
+	}
+	issuer := oidc.IssuerURL()
+	if issuer == "" {
+		return AccountTestResult{}, false
+	}
+
+	cred, err := credentials.BuildAzureFederatedCredential(h.signer, issuer, acct.AzureTenantID, acct.AzureClientID)
+	if err != nil {
+		return AccountTestResult{OK: false, Message: fmt.Sprintf("azure federated credential build failed: %v", err)}, true
+	}
+
+	// Actually exchange the JWT for an access token. This is the only
+	// path that proves the whole chain — KMS sign → Azure AD federated
+	// credential validation → access token — is healthy.
+	tokCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	tok, err := cred.GetToken(tokCtx, policy.TokenRequestOptions{
+		Scopes: []string{"https://management.azure.com/.default"},
+	})
+	if err != nil {
+		return AccountTestResult{OK: false, Message: fmt.Sprintf("azure token exchange failed: %v", err)}, true
+	}
+	if tok.Token == "" {
+		return AccountTestResult{OK: false, Message: "azure token exchange returned empty token"}, true
+	}
+	return AccountTestResult{OK: true, Message: "federated credential validated (KMS-signed JWT accepted by Azure AD)"}, true
+}
+
+// checkCredentialPresence checks whether the expected credential is stored for an account.
+func (h *Handler) checkCredentialPresence(ctx context.Context, acct *config.CloudAccount) (AccountTestResult, error) {
+	if h.credStore != nil {
+		credType := credTypeForAccount(acct)
+		// Empty credType means this auth mode isn't backed by a stored
+		// credential — e.g. Azure workload_identity_federation on a
+		// deployment where the OIDC signer wasn't wired (so
+		// azureFederatedCredResult returned ok=false and we fell
+		// through to here). Report an operator-facing message instead
+		// of querying for "no  credential stored".
+		if credType == "" {
+			return AccountTestResult{OK: false, Message: "this account's auth mode is not backed by a stored credential — check the deployment's OIDC issuer wiring"}, nil
+		}
+		has, err := h.credStore.HasCredential(ctx, acct.ID, credType)
+		if err != nil {
+			return AccountTestResult{}, fmt.Errorf("accounts: check credential: %w", err)
+		}
+		if has {
+			return AccountTestResult{OK: true, Message: "credentials are configured"}, nil
+		}
+		return AccountTestResult{OK: false, Message: fmt.Sprintf("no %s credential stored", credType)}, nil
+	}
+
+	// Fallback when credStore is not wired (e.g. in unit tests).
+	ok, err := h.config.HasAccountCredentials(ctx, acct.ID)
+	if err != nil {
+		return AccountTestResult{}, fmt.Errorf("accounts: %w", err)
+	}
+	if ok {
+		return AccountTestResult{OK: true, Message: "credentials are configured"}, nil
+	}
+	return AccountTestResult{OK: false, Message: "no credentials configured"}, nil
+}
+
+// credTypeForAccount returns the expected credential_type for an account
+// based on its provider and auth mode. Returns "" for auth modes that
+// aren't backed by a stored credential (e.g. Azure
+// workload_identity_federation, which uses the deployment's OIDC signer
+// at request time and stores nothing per-account).
+func credTypeForAccount(acct *config.CloudAccount) string {
+	switch acct.Provider {
+	case "azure":
+		if acct.AzureAuthMode == "workload_identity_federation" {
+			return ""
+		}
+		return "azure_client_secret"
+	case "gcp":
+		if acct.GCPAuthMode == "workload_identity_federation" {
+			return "gcp_workload_identity_config"
+		}
+		return "gcp_service_account"
+	default: // aws
+		return "aws_access_keys"
+	}
 }
