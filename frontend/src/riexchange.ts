@@ -1652,7 +1652,7 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
   }
 
   // offeringUUIDPattern mirrors the backend regex for AWS offering UUIDs.
-  // Backend: internal/api/handler_ri_exchange.go offeringIDPattern; keep the two in sync.
+  // Backend: internal/api/handler_ri_exchange_offerings.go offeringIDPattern; keep the two in sync.
   const offeringUUIDPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
   // collectTargets reads each row into a validated target. Rows with

@@ -73,7 +73,7 @@ type Handler struct {
 	// `awsprovider.NewEC2ClientDirect` and
 	// `awsprovider.NewRecommendationsClientDirect`. Tests set these
 	// to stubs that satisfy the narrow interfaces declared in
-	// `handler_ri_exchange.go` (reshapeEC2Client / reshapeRecsClient)
+	// `handler_ri_exchange_clients.go` (reshapeEC2Client / reshapeRecsClient)
 	// so the test can exercise the handler end-to-end without live
 	// AWS credentials. Prod behavior is unchanged because both
 	// fields stay nil.

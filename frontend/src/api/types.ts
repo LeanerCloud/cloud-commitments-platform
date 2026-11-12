@@ -772,7 +772,7 @@ export interface ExchangeableAzureRI {
 }
 
 // Azure RI exchange requests (issue #81). Mirror AzureExchangeSourceBody /
-// AzureExchangeTargetBody in internal/api/handler_ri_exchange.go. term is
+// AzureExchangeTargetBody in internal/api/handler_ri_exchange_azure_body.go. term is
 // the ISO 8601 reservation term ("P1Y", "P3Y", "P5Y").
 export interface AzureExchangeSource {
   reservation_id: string;

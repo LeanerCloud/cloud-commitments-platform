@@ -147,7 +147,7 @@ the static family allowlist and the per-rec offering enumeration.
     the source RI (a no-op today since both sides are USD per region,
     but pinned for forward-compat).
 
-- `internal/api/handler_ri_exchange.go::convertToExchangeTypes` and
+- `internal/api/handler_ri_exchange_reshape_ris.go::convertToExchangeTypes` and
   `internal/server/handler_ri_exchange.go::convertForAutoExchange`:
   thread the new `purchaseRecLookupFromStore(h.store)` into
   `AnalyzeReshapingWithRecs` instead of the live

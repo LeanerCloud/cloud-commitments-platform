@@ -481,7 +481,7 @@ func matchStringListConstraints(permList, reqList []string) bool {
 //
 // Regions is the one dimension where a single request legitimately spans
 // several values: an Azure RI exchange takes a list of targets, and
-// handler_ri_exchange.go's targetLocations feeds all of their locations in
+// handler_ri_exchange_azure_regions.go's targetLocations feeds all of their locations in
 // at once. Under the any-match rule the dimensions once shared, that made the
 // region constraint bypassable -- a caller permitted only in eastus could
 // attach a westus target, any-match would find eastus in the permitted set,

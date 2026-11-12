@@ -295,7 +295,8 @@ The scan also reads a backslash as a plain character in a '...' literal (Postgre
   plus stale-while-revalidate on non-Lambda runtimes. Migration
   `000031_ri_utilization_cache` adds
   `ri_utilization_cache (region, lookback_days, payload, fetched_at)`.
-  `internal/api/handler_ri_exchange.go` routes both `getRIUtilization`
+  `internal/api/handler_ri_exchange_reshape_ris.go` and
+  `internal/api/handler_ri_exchange_reshape_recs.go` route `getRIUtilization`
   and `getReshapeRecommendations` through the cache wrapper
   (`internal/api/ri_utilization_cache.go`) so one Cost Explorer call
   per TTL window serves every warm and cold Lambda container.
