@@ -319,7 +319,7 @@ func (h *Handler) purchaseDelay(ctx context.Context) (time.Duration, error) {
 		// fire sweep: scheduling would strand the approval (#1588). Executing
 		// immediately would drop the free-cancel window the approver was
 		// promised, so refuse until the delay is set to 0.
-		return 0, NewClientError(409, "this deployment schedules no fire_scheduled_purchases sweep, so a delayed approval would never execute: set purchase_delay_hours to 0 first")
+		return 0, NewClientError(409, `this deployment schedules no fire_scheduled_purchases sweep, so a delayed approval would never execute: send PUT /api/config with {"purchase_delay_hours": 0}, then approve again`)
 	}
 	return delay, nil
 }

@@ -218,7 +218,7 @@ func validateGlobalConfigWrite(cfg *config.GlobalConfig, modeSent, providersSent
 		return NewClientError(400, fmt.Sprintf("validation error: %s", err))
 	}
 	if delayRefused && cfg.PurchaseDelayHours > 0 {
-		return NewClientError(400, "purchase_delay_hours must be 0: this deployment schedules no fire_scheduled_purchases sweep, so a delayed purchase would never execute")
+		return NewClientError(400, `this deployment has no fire sweep (FIRE_SWEEP_SCHEDULED=false), so purchase_delay_hours must be 0: send PUT /api/config with {"purchase_delay_hours": 0}`)
 	}
 	return nil
 }

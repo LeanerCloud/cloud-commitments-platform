@@ -765,6 +765,10 @@ The `ladder_reconcile` task settles fired ladder tranches: it marks a tranche ac
 - **AWS Lambda and Fargate:** hourly. `enable_ladder_reconcile_schedule` (default `true`) and `ladder_reconcile_schedule` (default `rate(1 hour)`) in `terraform/environments/aws`.
 - **AKS, GCP Cloud Run, GKE and Azure Container Apps:** hourly at minute 15. `enable_ladder_reconcile_schedule` (default `true`) and `ladder_reconcile_schedule` (default `15 * * * *`) in `terraform/environments/gcp` and `terraform/environments/azure`, under the same `enable_scheduled_tasks` / `deploy_kubernetes_resources` conditions as the finalize sweep above.
 
+### Deployments without a fire sweep
+
+A deployment with `FIRE_SWEEP_SCHEDULED=false` runs no `fire_scheduled_purchases` sweep, so a delayed purchase would never execute. It refuses delayed approvals (409) and refuses any `PUT /api/config` that sets a non-zero `purchase_delay_hours` (400). One request fixes both: `PUT /api/config` with `{"purchase_delay_hours": 0}`. Retry the approval afterwards.
+
 ---
 
 ## Troubleshooting

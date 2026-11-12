@@ -28,7 +28,9 @@ func TestUpdateConfig_RefusesDelayWhenNoFireSweep(t *testing.T) {
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a client error, got %v", err)
 	assert.Equal(t, 400, ce.code)
-	assert.Contains(t, err.Error(), "purchase_delay_hours")
+	assert.Contains(t, err.Error(), "has no fire sweep")
+	assert.Contains(t, err.Error(), "purchase_delay_hours must be 0")
+	assert.Contains(t, err.Error(), `PUT /api/config with {"purchase_delay_hours": 0}`)
 	assert.False(t, wrote(), "a rejected write must not reach the store")
 }
 
@@ -98,6 +100,7 @@ func TestPurchaseDelay_RefusesStoredDelayWhenNoFireSweep(t *testing.T) {
 			ce, ok := IsClientError(err)
 			require.True(t, ok, "expected a client error, got %v", err)
 			assert.Equal(t, 409, ce.code)
+			assert.Contains(t, err.Error(), `PUT /api/config with {"purchase_delay_hours": 0}`)
 			continue
 		}
 		require.NoError(t, err)
