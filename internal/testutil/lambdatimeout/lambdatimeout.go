@@ -88,8 +88,8 @@ func (c *checker) terraformVariables() {
 		block *regexp.Regexp
 		floor *regexp.Regexp
 	}{
-		{"terraform/modules/compute/aws/lambda/variables.tf", tfModuleTimeoutVar, tfModuleFloor},
-		{"terraform/environments/aws/variables.tf", tfRootTimeoutVar, tfRootFloor},
+		{file: "terraform/modules/compute/aws/lambda/variables.tf", block: tfModuleTimeoutVar, floor: tfModuleFloor},
+		{file: "terraform/environments/aws/variables.tf", block: tfRootTimeoutVar, floor: tfRootFloor},
 	} {
 		block := v.block.FindString(c.read(v.file))
 		if block == "" {
