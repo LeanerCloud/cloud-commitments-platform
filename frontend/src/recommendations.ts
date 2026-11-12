@@ -5948,7 +5948,7 @@ function renderPurchaseModalRow(idx: number, paymentSource: 'override' | 'rec' |
 
   // Service / Type (col 2): service + resource_type combined.
   const serviceTypeTd = document.createElement('td');
-  serviceTypeTd.appendChild(document.createTextNode(rec.service));
+  serviceTypeTd.appendChild(document.createTextNode(serviceLabel(rec.service)));
   if (rec.resource_type) {
     const typeSpan = document.createElement('span');
     typeSpan.className = 'purchase-modal-resource-type';

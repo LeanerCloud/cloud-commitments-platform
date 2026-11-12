@@ -1827,15 +1827,15 @@ export function openNewPlanModal(): void {
  */
 function generatePlanName(rampSchedule: string, customStepPercent?: number, customIntervalDays?: number): string {
   const service = (document.getElementById('plan-service') as HTMLSelectElement)?.value || 'EC2';
-  const serviceUpper = service.toUpperCase();
+  const serviceName = serviceLabel(service);
 
   switch (rampSchedule) {
     case 'immediate':
-      return `${serviceUpper} Full Coverage Purchase`;
+      return `${serviceName} Full Coverage Purchase`;
     case 'weekly-25pct':
-      return `${serviceUpper} Weekly 25% Ramp-up (4 weeks)`;
+      return `${serviceName} Weekly 25% Ramp-up (4 weeks)`;
     case 'monthly-10pct':
-      return `${serviceUpper} Monthly 10% Ramp-up (10 months)`;
+      return `${serviceName} Monthly 10% Ramp-up (10 months)`;
     case 'custom':
       if (customStepPercent && customIntervalDays) {
         // Same count as the backend (buildCustomRampSchedule) and the schedule
@@ -1844,11 +1844,11 @@ function generatePlanName(rampSchedule: string, customStepPercent?: number, cust
         const intervalLabel = customIntervalDays === 7 ? 'weekly' :
                               customIntervalDays === 30 ? 'monthly' :
                               `every ${customIntervalDays} days`;
-        return `${serviceUpper} Custom ${customStepPercent}% ${intervalLabel} (${totalSteps} step${totalSteps === 1 ? '' : 's'})`;
+        return `${serviceName} Custom ${customStepPercent}% ${intervalLabel} (${totalSteps} step${totalSteps === 1 ? '' : 's'})`;
       }
-      return `${serviceUpper} Custom Ramp-up Plan`;
+      return `${serviceName} Custom Ramp-up Plan`;
     default:
-      return `${serviceUpper} Purchase Plan`;
+      return `${serviceName} Purchase Plan`;
   }
 }
 

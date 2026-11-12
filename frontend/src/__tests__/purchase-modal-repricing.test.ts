@@ -383,3 +383,17 @@ describe('Issue #1903: purchase modal re-prices on Term/Payment change', () => {
     expect(api.executePurchase).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Issue #1944: purchase modal Service / Type column', () => {
+  test('shows the service display name, not the slug', async () => {
+    const rec: LocalRecommendation = {
+      id: 'rdb-1', provider: 'azure', cloud_account_id: 'a1', service: 'relational-db',
+      region: 'eastus', resource_type: 'GP_Gen5_2', term: 1, payment: 'all-upfront',
+      count: 1, upfront_cost: 1000, monthly_cost: 0, savings: 100,
+    };
+    await openPurchaseModal([rec]);
+    const cell = document.querySelector('.purchase-modal-resource-type')!.parentElement!;
+    expect(cell.textContent).toBe('Relational DB / GP_Gen5_2');
+    expect(cell.textContent).not.toContain('relational-db');
+  });
+});

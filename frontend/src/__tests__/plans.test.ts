@@ -3048,6 +3048,23 @@ describe('Plans Module', () => {
       expect(planNameInput.value).toContain('Full Coverage Purchase');
     });
 
+    test('default plan name uses the service display name, not the upper-cased slug (#1944)', () => {
+      const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement;
+      const opt = document.createElement('option');
+      opt.value = 'relational-db';
+      serviceSelect.appendChild(opt);
+      serviceSelect.value = 'relational-db';
+      (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set([0]));
+      openCreatePlanModal();
+      serviceSelect.value = 'relational-db';
+      const rampRadio = document.querySelector('input[value="immediate"]') as HTMLInputElement;
+      rampRadio.checked = true;
+      rampRadio.dispatchEvent(new Event('change', { bubbles: true }));
+
+      const planNameInput = document.getElementById('plan-name') as HTMLInputElement;
+      expect(planNameInput.value).toBe('Relational DB Full Coverage Purchase');
+    });
+
     test('generates plan name based on weekly-25pct schedule', () => {
       (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set([0]));
       openCreatePlanModal();
