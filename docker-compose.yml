@@ -123,7 +123,7 @@ services:
   # pgAdmin for database management (local development only — do not expose in production)
   pgadmin:
     # Tag and digest (multi-arch index) bumped together, like the images above.
-    image: dpage/pgadmin4:9.2@sha256:52cb72a9e3da275324ca0b9bb3891021366d501aad375db34584a7bca8ce02ff
+    image: dpage/pgadmin4:9.19@sha256:3591b3d02910dcd817dec6fcaa681c278ba6966945283dd0ea0042731c330c83
     container_name: cudly-pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
