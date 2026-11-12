@@ -1427,6 +1427,11 @@ func purchaseCallError(ctx context.Context, err error) error {
 	if ctx.Err() != nil && !errors.Is(err, common.ErrOutcomeUnknown) {
 		return fmt.Errorf("purchase failed: %w: %w", common.ErrOutcomeUnknown, err)
 	}
+	// The Azure client wraps a currency refusal with ErrOutcomeUnknown from
+	// attempt 2 on and returns attempt 1 bare, so a bare one is a refusal.
+	if errors.Is(err, common.ErrCurrencyNotAccepted) && !errors.Is(err, common.ErrOutcomeUnknown) {
+		return beforeSubmission(fmt.Errorf("purchase refused: the provider does not accept the billing currency: %w", err))
+	}
 	return fmt.Errorf("purchase failed: %w", err)
 }
 
