@@ -746,26 +746,6 @@ func (r *Router) deleteGroupHandler(ctx context.Context, req *events.LambdaFunct
 	return r.h.deleteGroup(ctx, req, params["id"])
 }
 
-func (r *Router) healthCheckHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.GetHealth(ctx)
-}
-
-func (r *Router) getPublicInfoHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getPublicInfo(ctx, req)
-}
-
-func (r *Router) getVersionHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getVersion(ctx, req), nil
-}
-
-func (r *Router) getDeploymentInfoHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getDeploymentInfo(ctx, req)
-}
-
-func (r *Router) docsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.docsHandler(ctx, req, params)
-}
-
 func (r *Router) listInventoryCommitmentsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
 	return r.h.listActiveCommitments(ctx, req, req.QueryStringParameters)
 }
@@ -957,34 +937,4 @@ func (r *Router) listPlanAccountsHandler(ctx context.Context, req *events.Lambda
 
 func (r *Router) setPlanAccountsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
 	return r.h.setPlanAccounts(ctx, req, params["id"])
-}
-
-// Commitment Laddering route wrappers (issue #1336).
-
-func (r *Router) getLadderConfigsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, _ map[string]string) (any, error) {
-	return r.h.getLadderConfigs(ctx, req)
-}
-
-func (r *Router) upsertLadderConfigHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, _ map[string]string) (any, error) {
-	return r.h.upsertLadderConfig(ctx, req)
-}
-
-func (r *Router) getLadderTimelineHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, _ map[string]string) (any, error) {
-	return r.h.getLadderTimeline(ctx, req)
-}
-
-func (r *Router) getLadderTimelineRunsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, _ map[string]string) (any, error) {
-	return r.h.getLadderTimelineRuns(ctx, req)
-}
-
-func (r *Router) amendLadderTrancheHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.amendLadderTranche(ctx, req, params["id"])
-}
-
-func (r *Router) resolveLadderTrancheHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.resolveLadderTranche(ctx, req, params["id"])
-}
-
-func (r *Router) unsubscribeHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.unsubscribeHandler(ctx, req, params)
 }
