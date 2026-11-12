@@ -75,6 +75,12 @@ func (h *Handler) retryPurchase(ctx context.Context, req *events.LambdaFunctionU
 			"this plan step has no recommendations attached, so retrying it would buy nothing")
 	}
 
+	// A step whose plan was deleted stays refused: the successor a retry
+	// mints is web-sourced and would otherwise slip past the fire-time guard (#1048).
+	if purchase.IsOrphanedPlanStep(failedExec) {
+		return nil, NewClientError(409, purchase.PlanGoneRefusal)
+	}
+
 	totalUpfront, totalSavings, err := validateAndTotalRecommendations(failedExec.Recommendations)
 	if err != nil {
 		return nil, err

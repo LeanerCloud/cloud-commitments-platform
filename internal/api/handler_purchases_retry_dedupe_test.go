@@ -8,6 +8,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -125,4 +126,30 @@ func TestHandler_retryPurchase_EmptyPlanStepMessageHasNoInternalRef(t *testing.T
 	assert.Equal(t, 409, ce.code)
 	assert.Contains(t, ce.message, "no recommendations attached")
 	assert.NotContains(t, ce.message, "#")
+}
+
+// #1048: retrying a plan step whose plan was deleted would mint a web-sourced
+// successor that slips past the fire-time guard, so the retry is refused.
+func TestHandler_retryPurchase_RefusesStepOfDeletedPlan(t *testing.T) {
+	failed, handler, _ := retryDedupeFixture(t, false)
+	failed.StepNumber = 2 // plan-less with a step: the plan was deleted
+
+	_, err := handler.retryPurchase(context.Background(), sessionRetryReq(), retryExecID)
+
+	ce, ok := IsClientError(err)
+	require.True(t, ok, "%v", err)
+	assert.Equal(t, 409, ce.code)
+	assert.Equal(t, purchase.PlanGoneRefusal, ce.message)
+}
+
+// An ad-hoc web row (no plan, no step) stays retryable.
+func TestHandler_retryPurchase_AdHocPlanlessStillRetryable(t *testing.T) {
+	failed, handler, _ := retryDedupeFixture(t, true)
+	require.Zero(t, failed.StepNumber)
+
+	_, err := handler.retryPurchase(context.Background(), sessionRetryReq(), retryExecID)
+
+	if ce, ok := IsClientError(err); ok {
+		assert.NotEqual(t, purchase.PlanGoneRefusal, ce.message)
+	}
 }
