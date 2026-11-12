@@ -12,11 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 	"sync"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/secrets"
 )
 
@@ -128,7 +128,7 @@ func loadKey(ctx context.Context, resolver secrets.Resolver) ([]byte, string, er
 	}
 
 	if os.Getenv(EnvAllowDev) == "1" {
-		log.Printf("WARN: credentials: %s=1 — using insecure all-zero dev key. NEVER use in production.", EnvAllowDev)
+		logging.Warnf("credentials: %s=1 — using insecure all-zero dev key. NEVER use in production.", EnvAllowDev)
 		k, err := decodeHexKey(devKeyHex)
 		return k, EnvAllowDev, err
 	}

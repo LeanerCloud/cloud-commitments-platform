@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -12,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -37,14 +37,8 @@ func newUnreachablePool(t *testing.T) *pgxpool.Pool {
 func captureLogOutput(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
-	origFlags := log.Flags()
-	origOutput := log.Writer()
-	log.SetFlags(0)
-	log.SetOutput(&buf)
-	t.Cleanup(func() {
-		log.SetFlags(origFlags)
-		log.SetOutput(origOutput)
-	})
+	origOutput := logging.SetOutput(&buf)
+	t.Cleanup(func() { logging.SetOutput(origOutput) })
 	return &buf
 }
 

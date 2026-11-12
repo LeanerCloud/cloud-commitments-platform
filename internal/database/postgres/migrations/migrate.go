@@ -5,12 +5,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5" // postgres driver (pgx/v5)
 	_ "github.com/golang-migrate/migrate/v4/source/file"     // file source
@@ -75,7 +75,7 @@ func runMigrations(ctx context.Context, tracker *connTracker, pool *pgxpool.Pool
 		return fmt.Errorf("database is in dirty state at version %d", version)
 	}
 
-	log.Printf("Database migrations completed successfully (version: %d)", version)
+	logging.Infof("Database migrations completed successfully (version: %d)", version)
 
 	// Create admin user if email provided (after migrations complete).
 	// Admin-bootstrap failure is non-fatal: the schema migration step
@@ -85,7 +85,7 @@ func runMigrations(ctx context.Context, tracker *connTracker, pool *pgxpool.Pool
 	// distinguish it from a migration-step failure (issue #945).
 	if adminEmail != "" {
 		if err := ensureAdminUser(ctx, pool, adminEmail, adminPassword); err != nil {
-			log.Printf("WARNING: admin bootstrap failed (schema migration completed successfully): %v", err)
+			logging.Warnf("admin bootstrap failed (schema migration completed successfully): %v", err)
 		}
 	}
 
@@ -121,7 +121,7 @@ func newMigratorWithRecovery(tracker *connTracker, pool *pgxpool.Pool, migration
 	// successful deploy.
 	if err := maybeForceMigrationVersion(m); err != nil {
 		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
-			log.Printf("migrate: close after force-version error: source=%v db=%v", srcErr, dbErr)
+			logging.Errorf("migrate: close after force-version error: source=%v db=%v", srcErr, dbErr)
 		}
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func newMigratorWithRecovery(tracker *connTracker, pool *pgxpool.Pool, migration
 	// so recovery stays a manual CUDLY_FORCE_MIGRATION_VERSION decision.
 	if err := maybeAutoHealDirty(m); err != nil {
 		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
-			log.Printf("migrate: close after auto-heal error: source=%v db=%v", srcErr, dbErr)
+			logging.Errorf("migrate: close after auto-heal error: source=%v db=%v", srcErr, dbErr)
 		}
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func ensureAdminUser(ctx context.Context, pool *pgxpool.Pool, email, password st
 		return ensureAdminUserWithPassword(ctx, pool, email, password)
 	}
 
-	log.Printf("Ensuring admin user exists: %s (user will need to reset password to login)", email)
+	logging.Infof("Ensuring admin user exists: %s (user will need to reset password to login)", email)
 
 	// Create admin user with no password - account is inactive until password is set via reset flow.
 	// Use ON CONFLICT to prevent race conditions when multiple instances run migrations.
@@ -179,9 +179,9 @@ func ensureAdminUser(ctx context.Context, pool *pgxpool.Pool, email, password st
 	}
 
 	if result.RowsAffected() > 0 {
-		log.Printf("Admin user created: %s (password not set - user must reset)", email)
+		logging.Infof("Admin user created: %s (password not set - user must reset)", email)
 	} else {
-		log.Printf("Admin user already exists: %s", email)
+		logging.Infof("Admin user already exists: %s", email)
 	}
 
 	// Idempotent backfill + invariant check on the bootstrap admin row
@@ -206,7 +206,7 @@ func ensureAdminUser(ctx context.Context, pool *pgxpool.Pool, email, password st
 // Note: the `role` column was dropped by migration 000057; this INSERT
 // intentionally omits it (issue #945).
 func ensureAdminUserWithPassword(ctx context.Context, pool *pgxpool.Pool, email, password string) error {
-	log.Printf("Ensuring admin user exists with password: %s", email)
+	logging.Infof("Ensuring admin user exists with password: %s", email)
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
@@ -234,9 +234,9 @@ func ensureAdminUserWithPassword(ctx context.Context, pool *pgxpool.Pool, email,
 	}
 
 	if result.RowsAffected() > 0 {
-		log.Printf("Admin user created/activated: %s", email)
+		logging.Infof("Admin user created/activated: %s", email)
 	} else {
-		log.Printf("Admin user already has a password set: %s (skipping)", email)
+		logging.Infof("Admin user already has a password set: %s (skipping)", email)
 	}
 
 	// Idempotent backfill + invariant check on the bootstrap admin row
@@ -288,7 +288,7 @@ func assignAdminGroupAndWarn(ctx context.Context, pool *pgxpool.Pool, groupID, a
 		// Route to the stdlib logger (stderr) like every other admin-activity
 		// message in this file. fmt.Printf would echo this to stdout, which
 		// issue #440 explicitly forbids for admin-account operations.
-		log.Printf("Backfilled group_ids for %d user(s) to include Administrators group", n)
+		logging.Infof("Backfilled group_ids for %d user(s) to include Administrators group", n)
 	}
 
 	// Invariant check: if the bootstrap admin row still has empty
@@ -305,7 +305,7 @@ func assignAdminGroupAndWarn(ctx context.Context, pool *pgxpool.Pool, groupID, a
 		return fmt.Errorf("failed to check admin group_ids invariant: %w", err)
 	}
 	if remaining > 0 {
-		log.Printf("WARN: bootstrap admin %s has empty group_ids and the Administrators group could not be assigned. Permissions may not work as expected. Check that migration 000024_seed_default_groups has run successfully.", adminEmail)
+		logging.Warnf("bootstrap admin %s has empty group_ids and the Administrators group could not be assigned. Permissions may not work as expected. Check that migration 000024_seed_default_groups has run successfully.", adminEmail)
 	}
 	return nil
 }
@@ -346,11 +346,11 @@ func maybeForceMigrationVersion(m *migrate.Migrate) error {
 	if err != nil || n < 0 {
 		return fmt.Errorf("CUDLY_FORCE_MIGRATION_VERSION must be a non-negative integer, got %q", v)
 	}
-	log.Printf("CUDLY_FORCE_MIGRATION_VERSION=%d set: forcing migration state (clears dirty flag)", n)
+	logging.Infof("CUDLY_FORCE_MIGRATION_VERSION=%d set: forcing migration state (clears dirty flag)", n)
 	if err := m.Force(n); err != nil {
 		return fmt.Errorf("failed to force migration version to %d: %w", n, err)
 	}
-	log.Printf("Forced migration state to version %d", n)
+	logging.Infof("Forced migration state to version %d", n)
 	return nil
 }
 
@@ -430,7 +430,7 @@ func maybeAutoHealDirty(m *migrate.Migrate) error {
 	//     without per-migration effect probes.
 	// Conservative choice: fail loud so the alarm fires and an operator
 	// inspects the actual schema before choosing the recovery target.
-	log.Printf("Database is DIRTY at version %d: auto-heal cannot safely clear the dirty flag without "+
+	logging.Errorf("Database is DIRTY at version %d: auto-heal cannot safely clear the dirty flag without "+
 		"knowing whether migration %d's SQL effects were applied. Inspect the schema and redeploy "+
 		"with CUDLY_FORCE_MIGRATION_VERSION to recover. Set CUDLY_MIGRATION_AUTOHEAL=false to suppress this check.",
 		version, version)
@@ -486,7 +486,7 @@ func RollbackMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsPath 
 	}
 	defer m.Close()
 
-	log.Printf("Rolling back %d migration(s)...", steps)
+	logging.Infof("Rolling back %d migration(s)...", steps)
 
 	// Rollback steps
 	err = m.Steps(-steps)
@@ -503,7 +503,7 @@ func RollbackMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsPath 
 		return fmt.Errorf("database is in dirty state at version %d", version)
 	}
 
-	log.Printf("Rolled back %d migration(s) (current version: %d)", steps, version)
+	logging.Infof("Rolled back %d migration(s) (current version: %d)", steps, version)
 	return nil
 }
 
@@ -541,7 +541,7 @@ func MigrateToVersion(ctx context.Context, pool *pgxpool.Pool, migrationsPath st
 		return fmt.Errorf("expected migration version %d, got %d", version, current)
 	}
 
-	log.Printf("Migrated to version %d", current)
+	logging.Infof("Migrated to version %d", current)
 	return nil
 }
 

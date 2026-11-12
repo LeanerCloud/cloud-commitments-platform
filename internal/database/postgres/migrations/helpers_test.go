@@ -5,7 +5,6 @@ package migrations_test
 
 import (
 	"bytes"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/stretchr/testify/require"
 )
 
@@ -103,13 +103,7 @@ func captureStdout(t *testing.T) func() string {
 func captureLogOutput(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
-	origFlags := log.Flags()
-	origOutput := log.Writer()
-	log.SetFlags(0)
-	log.SetOutput(&buf)
-	t.Cleanup(func() {
-		log.SetFlags(origFlags)
-		log.SetOutput(origOutput)
-	})
+	origOutput := logging.SetOutput(&buf)
+	t.Cleanup(func() { logging.SetOutput(origOutput) })
 	return &buf
 }

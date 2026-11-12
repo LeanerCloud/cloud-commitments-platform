@@ -4,13 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"net"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/golang-migrate/migrate/v4"
 	migratepgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/file"
@@ -88,7 +88,7 @@ func (t *connTracker) abort() {
 	defer stop()
 	for _, s := range sessions {
 		if err := s.CancelRequest(cctx); err != nil {
-			log.Printf("migrate: cancel request failed: %v", err)
+			logging.Errorf("migrate: cancel request failed: %v", err)
 		}
 	}
 	for _, c := range sockets {

@@ -3,10 +3,10 @@ package testhelpers
 import (
 	"context"
 	"fmt"
-	"log"
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -123,7 +123,7 @@ func terminateAfterError(ctx context.Context, c testcontainers.Container, stage 
 	defer cancel()
 
 	if err := c.Terminate(termCtx); err != nil {
-		log.Printf("testhelpers: failed to terminate postgres container after %s failed: %v", stage, err)
+		logging.Errorf("testhelpers: failed to terminate postgres container after %s failed: %v", stage, err)
 	}
 }
 

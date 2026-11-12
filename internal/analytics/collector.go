@@ -5,9 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
@@ -85,7 +85,7 @@ func aggKey(p config.PurchaseHistoryRecord, commitmentType string) string {
 // Collect aggregates current savings data across all tenants and writes a
 // snapshot row per bucket. Intended to be called on a schedule.
 func (c *Collector) Collect(ctx context.Context) error {
-	log.Printf("Analytics collector: starting collection")
+	logging.Infof("Analytics collector: starting collection")
 
 	now := time.Now().UTC()
 
@@ -99,19 +99,19 @@ func (c *Collector) Collect(ctx context.Context) error {
 		return fmt.Errorf("failed to get active purchase history: %w", err)
 	}
 
-	log.Printf("Analytics collector: processing %d active purchases", len(purchases))
+	logging.Infof("Analytics collector: processing %d active purchases", len(purchases))
 
 	serviceMap, activePurchases, skippedBadTerm, err := aggregatePurchases(ctx, purchases, now)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Analytics collector: %d active, %d unique buckets, %d skipped (term<=0)",
+	logging.Infof("Analytics collector: %d active, %d unique buckets, %d skipped (term<=0)",
 		activePurchases, len(serviceMap), skippedBadTerm)
 
 	snapshots := buildSnapshots(serviceMap, now)
 	if len(snapshots) == 0 {
-		log.Printf("Analytics collector: no active purchases to snapshot")
+		logging.Infof("Analytics collector: no active purchases to snapshot")
 		return nil
 	}
 
@@ -124,7 +124,7 @@ func (c *Collector) Collect(ctx context.Context) error {
 		return fmt.Errorf("failed to save snapshots: %w", err)
 	}
 
-	log.Printf("Analytics collector: saved %d snapshots", len(snapshots))
+	logging.Infof("Analytics collector: saved %d snapshots", len(snapshots))
 	return nil
 }
 
