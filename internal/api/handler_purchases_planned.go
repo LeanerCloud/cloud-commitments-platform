@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -141,4 +143,139 @@ func buildPlannedPurchase(plan *config.PurchasePlan, exec *config.PurchaseExecut
 		}
 	}
 	return row
+}
+
+func (h *Handler) pausePlannedPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID string) (*StatusResponse, error) {
+	if err := validateUUID(executionID); err != nil {
+		return nil, err
+	}
+
+	session, err := h.requirePermission(ctx, req, "update", "purchases")
+	if err != nil {
+		return nil, err
+	}
+	if err := h.requireExecutionAccess(ctx, session, executionID); err != nil {
+		return nil, err
+	}
+	if err := h.authorizeBoundedExecutionManagement(ctx, session, executionID); err != nil {
+		return nil, err
+	}
+
+	// Atomically transition to paused
+	if _, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"pending", "notified"}, "paused", resolveCreatorUserID(session)); err != nil {
+		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be paused: %v", executionID, err))
+	}
+
+	return &StatusResponse{Status: "paused"}, nil
+}
+
+func (h *Handler) resumePlannedPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID string) (*StatusResponse, error) {
+	if err := validateUUID(executionID); err != nil {
+		return nil, err
+	}
+
+	session, err := h.requirePermission(ctx, req, "update", "purchases")
+	if err != nil {
+		return nil, err
+	}
+	if accessErr := h.requireExecutionAccess(ctx, session, executionID); accessErr != nil {
+		return nil, accessErr
+	}
+	row, err := h.loadPlannedExecution(ctx, executionID)
+	if err != nil {
+		return nil, err
+	}
+	verb, err := h.authorizeRowManagement(ctx, session, row)
+	if err != nil {
+		return nil, err
+	}
+
+	// A recommendation-bearing row that is past its date is moved to
+	// now + NotificationDaysBefore on resume; a plan without a veto window
+	// would move it to "now", so refuse before changing anything.
+	if checkErr := h.requireResumeVetoWindow(ctx, row, time.Now()); checkErr != nil {
+		return nil, checkErr
+	}
+
+	// Resuming puts the row back on schedule, so it counts against
+	// MaxPurchaseAmount like a spend (issue #1130).
+	if capErr := h.enforceResumeAmountCap(ctx, session, verb, row.Recommendations); capErr != nil {
+		return nil, capErr
+	}
+
+	// Atomically transition from paused back to pending. Pinned so a
+	// recommendation-set change (empty to non-empty) between the cap check
+	// and this write loses the CAS; it does not catch in-set content edits,
+	// which no writer performs.
+	resumed, transitionErr := h.config.TransitionExecutionStatusPinned(ctx, executionID, []string{"paused"}, "pending", resolveCreatorUserID(session), len(row.Recommendations) == 0)
+	if transitionErr != nil {
+		return nil, NewClientError(409, fmt.Sprintf("execution %s cannot be resumed: %v", executionID, transitionErr))
+	}
+	if pushErr := h.pushPastScheduledDate(ctx, resumed, time.Now()); pushErr != nil {
+		return nil, pushErr
+	}
+
+	return &StatusResponse{Status: "resumed"}, nil
+}
+
+// enforceResumeAmountCap bounds the row's total commitment by the cap of the
+// verb that authorized the resume (issue #1130), checked on the row's full
+// scope and amount as approve is: a grant scoped elsewhere must not lift the
+// cap of the one that covers the row. The admin API key (empty verb) and a row
+// without recommendations skip the check (recommendations attach later only
+// to pending/notified rows and the scheduler re-checks the plan cap).
+func (h *Handler) enforceResumeAmountCap(ctx context.Context, session *Session, verb string, recs []config.RecommendationRecord) error {
+	if verb == "" || len(recs) == 0 {
+		return nil
+	}
+	return h.enforcePurchaseConstraints(ctx, session, verb, recs)
+}
+
+// requireResumeVetoWindow refuses to resume a recommendation-bearing row whose
+// scheduled_date has passed when its plan has no veto window (S13).
+func (h *Handler) requireResumeVetoWindow(ctx context.Context, row *config.PurchaseExecution, now time.Time) error {
+	if len(row.Recommendations) == 0 || !row.ScheduledDate.Before(now) {
+		return nil
+	}
+	plan, err := h.config.GetPurchasePlan(ctx, row.PlanID)
+	if err != nil {
+		return fmt.Errorf("failed to read plan %s before resuming execution %s: %w", row.PlanID, row.ExecutionID, err)
+	}
+	if plan.RampSchedule.DatesManaged {
+		return editorReconciliationError()
+	}
+	if vetoErr := plan.RequireVetoWindow(); vetoErr != nil {
+		return NewClientError(409, fmt.Sprintf("execution %s cannot be resumed: %v", row.ExecutionID, vetoErr))
+	}
+	return nil
+}
+
+// pushPastScheduledDate moves a resumed recommendation-bearing row whose
+// scheduled_date has already passed to now + the plan's NotificationDaysBefore
+// days, so that once it is re-notified the scheduler cannot buy it before the
+// veto window has run. The row is pending, which the scheduler does not
+// execute while it carries recommendations, so the gap between the resume
+// and this write cannot buy. Rows without recommendations keep their date
+// (the scheduler fails them).
+func (h *Handler) pushPastScheduledDate(ctx context.Context, row *config.PurchaseExecution, now time.Time) error {
+	if len(row.Recommendations) == 0 || !row.ScheduledDate.Before(now) {
+		return nil
+	}
+	plan, err := h.config.GetPurchasePlan(ctx, row.PlanID)
+	if err != nil {
+		return fmt.Errorf("failed to read plan %s to reschedule resumed execution %s: %w", row.PlanID, row.ExecutionID, err)
+	}
+	if vetoErr := plan.RequireVetoWindow(); vetoErr != nil {
+		return NewClientError(409, fmt.Sprintf("execution %s was resumed but cannot be rescheduled: %v", row.ExecutionID, vetoErr))
+	}
+	// Conditional single-column update, not a full-row save: a cancel or
+	// approve landing after the resume must not be overwritten. A lost
+	// condition is a benign no-op (the row is no longer awaiting approval).
+	if _, err := h.config.RescheduleAwaitingExecution(ctx, row.ExecutionID, now.AddDate(0, 0, plan.NotificationDaysBefore)); err != nil {
+		if errors.Is(err, config.ErrEditorReconciliationRequired) {
+			return editorReconciliationError()
+		}
+		return fmt.Errorf("failed to reschedule resumed execution %s: %w", row.ExecutionID, err)
+	}
+	return nil
 }
