@@ -32,13 +32,20 @@ func newUnreachablePool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// captureLogOutput redirects the standard logger output to a buffer for the
-// duration of the test, restoring the original flags and writer on cleanup.
+// captureLogOutput redirects the pkg/logging default logger to a buffer for
+// the duration of the test and pins its level to info so LOG_LEVEL in the
+// environment cannot hide lines. The original writer and level are restored
+// on cleanup.
 func captureLogOutput(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
 	origOutput := logging.SetOutput(&buf)
-	t.Cleanup(func() { logging.SetOutput(origOutput) })
+	origLevel := logging.GetLevel()
+	logging.SetLevelValue(logging.LevelInfo)
+	t.Cleanup(func() {
+		logging.SetOutput(origOutput)
+		logging.SetLevelValue(origLevel)
+	})
 	return &buf
 }
 
@@ -64,7 +71,7 @@ func captureStdout(t *testing.T) func() string {
 // TestEnsureAdminUserWithPassword_LogsToStderr_NotStdout is a regression test
 // for issue #440: admin password activity must not be echoed to stdout.
 // Previously the function used fmt.Printf which writes to stdout; it now uses
-// log.Printf which writes to stderr.
+// logging.Infof which writes to stderr.
 func TestEnsureAdminUserWithPassword_LogsToStderr_NotStdout(t *testing.T) {
 	readStdout := captureStdout(t)
 	logBuf := captureLogOutput(t)
@@ -79,9 +86,9 @@ func TestEnsureAdminUserWithPassword_LogsToStderr_NotStdout(t *testing.T) {
 
 	// Assertion: nothing about admin password activity on stdout.
 	assert.Empty(t, stdoutContent,
-		"log.Printf must not write to stdout; found on stdout: %q", stdoutContent)
+		"logging.Infof must not write to stdout; found on stdout: %q", stdoutContent)
 
-	// Assertion: the log messages landed in the stderr-bound log buffer.
+	// Assertion: the log messages landed in the stderr-bound logging buffer.
 	logContent := logBuf.String()
 	assert.Contains(t, logContent, "admin@example.com",
 		"admin email must appear in log output (stderr path)")
@@ -103,7 +110,7 @@ func TestEnsureAdminUser_NoPasswordVariant_LogsToStderr(t *testing.T) {
 	stdoutContent := readStdout()
 
 	assert.Empty(t, stdoutContent,
-		"log.Printf must not write to stdout")
+		"logging.Infof must not write to stdout")
 	assert.Contains(t, logBuf.String(), "admin@example.com")
 }
 

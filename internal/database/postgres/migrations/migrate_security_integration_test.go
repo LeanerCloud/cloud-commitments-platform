@@ -15,7 +15,7 @@ import (
 
 // TestAdminBootstrap_LogsToStderr_NotStdout is a regression test for
 // issue #545 (a follow-up to #440): the admin bootstrap path in
-// ensureAdminUser must log to stderr (via log.Printf), never stdout
+// ensureAdminUser must log to stderr (via logging.Infof), never stdout
 // (via fmt.Printf).
 //
 // Note: the pre-057 drift scenario (seeding an admin row with empty
@@ -25,7 +25,7 @@ import (
 // This test therefore exercises the "Admin user created" log path, which
 // is emitted on the first cold-start bootstrap and must reach stderr.
 func TestAdminBootstrap_LogsToStderr_NotStdout(t *testing.T) {
-	// Not parallel: it swaps os.Stdout and the standard logger, which other tests write to.
+	// Not parallel: it swaps os.Stdout and the pkg/logging default logger, which other tests write to.
 	ctx := context.Background()
 	migrationsPath := getMigrationsPath()
 	const adminEmail = "stderr-bootstrap@test.example"
@@ -38,7 +38,7 @@ func TestAdminBootstrap_LogsToStderr_NotStdout(t *testing.T) {
 
 	// Run migrations + bootstrap. ensureAdminUser fires and emits the
 	// "Admin user created" message, which must reach the stderr-bound
-	// stdlib logger, not stdout.
+	// logging output, not stdout.
 	require.NoError(t, migrations.RunMigrations(ctx, pool, migrationsPath, adminEmail, ""))
 
 	stdout := readStdout()

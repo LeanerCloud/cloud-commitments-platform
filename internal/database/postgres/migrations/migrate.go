@@ -285,7 +285,7 @@ func assignAdminGroupAndWarn(ctx context.Context, pool *pgxpool.Pool, groupID, a
 		return fmt.Errorf("failed to backfill admin group_ids: %w", err)
 	}
 	if n := res.RowsAffected(); n > 0 {
-		// Route to the stdlib logger (stderr) like every other admin-activity
+		// Route to pkg/logging (stderr) like every other admin-activity
 		// message in this file. fmt.Printf would echo this to stdout, which
 		// issue #440 explicitly forbids for admin-account operations.
 		logging.Infof("Backfilled group_ids for %d user(s) to include Administrators group", n)

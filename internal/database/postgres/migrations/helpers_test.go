@@ -93,10 +93,11 @@ func captureStdout(t *testing.T) func() string {
 	}
 }
 
-// captureLogOutput redirects the standard logger to a buffer for the duration
-// of the test, restoring the original flags and writer on cleanup. Every
-// RunMigrations call logs through that logger, so a test using it must not
-// call t.Parallel.
+// captureLogOutput redirects the pkg/logging default logger to a buffer for
+// the duration of the test and pins its level to info so LOG_LEVEL in the
+// environment cannot hide lines. The original writer and level are restored
+// on cleanup. Every RunMigrations call logs through that logger, so a test
+// using it must not call t.Parallel.
 //
 // Mirrors the helper of the same name in migrate_security_test.go for the
 // same package-boundary reason described on captureStdout.
@@ -104,6 +105,11 @@ func captureLogOutput(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
 	origOutput := logging.SetOutput(&buf)
-	t.Cleanup(func() { logging.SetOutput(origOutput) })
+	origLevel := logging.GetLevel()
+	logging.SetLevelValue(logging.LevelInfo)
+	t.Cleanup(func() {
+		logging.SetOutput(origOutput)
+		logging.SetLevelValue(origLevel)
+	})
 	return &buf
 }
