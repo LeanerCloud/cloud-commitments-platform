@@ -20,13 +20,17 @@ Parameters:
 
   PrimaryRoleName:
     Type: String
-    Default: CUDly-LambdaRole
+    AllowedPattern: "^[A-Za-z0-9_+=,.@-]{1,64}$"
+    ConstraintDescription: Must be the bare IAM role name (1-64 characters), not an ARN or a path.
     Description: >
-      Exact name of the Lambda execution role in the primary account.
-      Default matches a primary CUDly stack deployed with the stack name "CUDly".
-      If your stack was deployed with a different name, set this to the full role
-      name (without path prefix). For Terraform-managed stacks this is typically
-      the full role name including the stack suffix.
+      Exact name of the Lambda execution role in the primary account, without
+      path. There is no default: the Terraform install creates this role with a
+      generated name (the "<stack_name>-lambda-" prefix plus a random suffix), so
+      no fixed value is correct. Get it with "terraform output lambda_role_name"
+      in the Terraform AWS environment (Lambda platform), or from the primary
+      account's IAM roles starting with "<stack_name>-lambda-". Existing stacks created with the old
+      default CUDly-LambdaRole must pass their current value explicitly on every
+      update, because a stack update that omits this parameter now fails.
 
   ExternalId:
     Type: String

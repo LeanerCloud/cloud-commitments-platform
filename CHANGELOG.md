@@ -49,6 +49,18 @@ are the full record until the next release.
   bastion fails at AssumeRole until the bastion is added as the trusted
   principal in that role's trust policy
   ([#1556](https://github.com/LeanerCloud/cloud-commitments-platform/pull/1556)).
+- **The `CUDly-CrossAccount` template's `PrimaryRoleName` parameter no
+  longer defaults to `CUDly-LambdaRole`**, the role name of the retired
+  CloudFormation install stack. Terraform installs generate the Lambda role
+  name (`<stack_name>-lambda-` plus a random suffix), so no fixed default is
+  correct. New deployments must set it to the primary account's Lambda role
+  name. Existing cross-account stacks must pass their current value explicitly
+  on the next `aws cloudformation update-stack` (for example
+  `ParameterKey=PrimaryRoleName,UsePreviousValue=true`); an update that omits
+  it now fails instead of silently re-pointing the trust policy.
+  Cross-account stacks on a Terraform install that kept the old default
+  already have a trust policy naming a role that does not exist; set
+  `PrimaryRoleName` to the output of `terraform output lambda_role_name`.
 
 ### Changed
 

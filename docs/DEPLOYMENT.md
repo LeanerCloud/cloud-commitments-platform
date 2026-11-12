@@ -2,7 +2,7 @@
 
 CUDly supports deployment via Terraform across three cloud providers (AWS, Azure, GCP). A helper script (`scripts/tf-deploy.sh`) simplifies common operations.
 
-There is no CloudFormation install. The CloudFormation install stack was removed (#1432): it still provisioned DynamoDB tables and set no `DB_HOST`, so it could not start the Postgres-only server. Install on AWS with the Terraform root in `terraform/environments/aws` (Lambda or Fargate). The CloudFormation templates under `iac/federation/` and `cloudformation/stacks/CUDly-CrossAccount` are not installs: they create the IAM role CUDly uses in each target account.
+There is no CloudFormation install. The CloudFormation install stack was removed (#1432): it still provisioned DynamoDB tables and set no `DB_HOST`, so it could not start the Postgres-only server. Install on AWS with the Terraform root in `terraform/environments/aws` (Lambda or Fargate). The CloudFormation templates under `iac/federation/` and `cloudformation/stacks/CUDly-CrossAccount` are not installs: they create the IAM role CUDly uses in each target account. For the `PrimaryRoleName` parameter of the cross-account template, use `terraform output lambda_role_name`.
 
 ## Table of Contents
 

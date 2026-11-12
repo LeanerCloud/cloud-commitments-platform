@@ -21,6 +21,7 @@ type cfnStringParameter struct {
 	Type           string `yaml:"Type"`
 	AllowedPattern string `yaml:"AllowedPattern"`
 	MinLength      int    `yaml:"MinLength"`
+	Default        string `yaml:"Default"`
 }
 
 // cfnParameter decodes one entry of a CloudFormation template's Parameters

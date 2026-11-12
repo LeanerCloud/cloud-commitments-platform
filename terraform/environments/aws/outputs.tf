@@ -102,6 +102,11 @@ output "lambda_role_arn" {
   value       = var.compute_platform == "lambda" ? module.compute_lambda[0].role_arn : null
 }
 
+output "lambda_role_name" {
+  description = "Lambda IAM role name; pass it as PrimaryRoleName to the CUDly-CrossAccount CloudFormation template"
+  value       = var.compute_platform == "lambda" ? module.compute_lambda[0].role_name : null
+}
+
 output "lambda_log_group_name" {
   description = "Lambda CloudWatch log group name"
   value       = var.compute_platform == "lambda" ? module.compute_lambda[0].log_group_name : null

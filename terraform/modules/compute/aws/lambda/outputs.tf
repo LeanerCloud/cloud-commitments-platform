@@ -18,6 +18,11 @@ output "function_invoke_arn" {
   value       = aws_lambda_function.main.invoke_arn
 }
 
+output "role_name" {
+  description = "Lambda IAM role name (generated from name_prefix; use it as PrimaryRoleName in the CUDly-CrossAccount template)"
+  value       = aws_iam_role.lambda.name
+}
+
 output "role_arn" {
   description = "IAM role ARN for Lambda"
   value       = aws_iam_role.lambda.arn
