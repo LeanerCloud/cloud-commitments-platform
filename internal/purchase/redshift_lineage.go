@@ -46,6 +46,7 @@ const (
 	redshiftConflictRefusal  = "refusing to dispatch: another open purchase of the same Redshift reservation (region, node type, term, payment, count) may still complete, so wait for it to finish and then retry"
 	redshiftHorizonRefusal   = "refusing to dispatch: this Redshift purchase was first dispatched more than 24h ago, so check the account in AWS and start a new purchase"
 	redshiftNoStampRefusal   = "refusing to dispatch: this Redshift purchase has no first dispatch time recorded, so check the account in AWS and start a new purchase"
+	redshiftNoJournalRefusal = "refusing to dispatch: this Redshift retry needs the purchase attempt journal, which is not configured, so check the account in AWS and start a new purchase"
 	redshiftRecentBuyRefusal = "refusing to dispatch: another purchase of the same Redshift reservation (region, node type, term, payment, count) completed too close to this purchase's first dispatch for AWS to tell the two apart, so start a new purchase at least 10 minutes after the other one completed"
 )
 
@@ -128,6 +129,7 @@ func (m *Manager) redshiftGate(ctx context.Context, tx pgx.Tx, exec *config.Purc
 	if err != nil {
 		return res, err
 	}
+	conflicts = dropPersistentFailures(conflicts)
 	for _, c := range conflicts {
 		if redshiftFinishedStatus(c.Status) {
 			logging.Warnf("Redshift gate: execution %s refused, another purchase of the tuple finished within the adoption window (execution %s, %s)", exec.ExecutionID, c.ExecutionID, c.Status)
@@ -139,6 +141,19 @@ func (m *Manager) redshiftGate(ctx context.Context, tx pgx.Tx, exec *config.Purc
 		return res, beforeSubmission(errors.New(redshiftConflictRefusal))
 	}
 	return res, nil
+}
+
+// dropPersistentFailures removes failed rows whose error names an operator fix: History
+// hides Retry for them, so they would hold the tuple for the whole horizon with no way out.
+func dropPersistentFailures(conflicts []config.RedshiftLineageConflict) []config.RedshiftLineageConflict {
+	kept := make([]config.RedshiftLineageConflict, 0, len(conflicts))
+	for _, c := range conflicts {
+		if c.Status == config.StatusFailed && ResolveOpsHint(c.Error) != "" {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	return kept
 }
 
 // redshiftFinishedStatus reports the statuses whose node may already sit in AWS.

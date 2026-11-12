@@ -299,16 +299,16 @@ func TestRetryOfFailedAzureReservationStillPurchasesOnce(t *testing.T) {
 		"the retry must fire exactly one purchase, under the predecessor's token so Azure's two-step lookup dedupes it")
 }
 
-// TestRetryOfFailedAWSEC2OrRedshiftRowIsRefused is the MON-02 platform
-// regression guard. EC2 and Redshift purchases take no client token, so the
-// provider sends them once and reports a lost response as "purchase outcome
-// unknown": the commitment may exist. Retrying such a row must not create a
-// successor that buys again, whatever spelling the row carries (the canonical
-// compute and data-warehouse slugs dispatch to the same clients as ec2 and
-// redshift) and with ?force=true too.
-func TestRetryOfFailedAWSEC2OrRedshiftRowIsRefused(t *testing.T) {
+// TestRetryOfFailedAWSEC2RowIsRefused is the MON-02 platform regression guard.
+// EC2 purchases take no client token, so the provider sends them once and
+// reports a lost response as "purchase outcome unknown": the commitment may
+// exist. Retrying such a row must not create a successor that buys again,
+// whatever spelling the row carries (the canonical compute slug dispatches to
+// the same client as ec2) and with ?force=true too. Redshift has its own gate
+// (handler_purchases_redshift_retry_test.go).
+func TestRetryOfFailedAWSEC2RowIsRefused(t *testing.T) {
 	for _, tc := range []struct{ provider, service string }{
-		{"aws", "ec2"}, {"aws", "compute"}, {"aws", "redshift"}, {"aws", "data-warehouse"}, {"", "ec2"},
+		{"aws", "ec2"}, {"aws", "compute"}, {"", "ec2"},
 	} {
 		tc := tc
 		t.Run(tc.provider+"/"+tc.service, func(t *testing.T) {
@@ -319,8 +319,8 @@ func TestRetryOfFailedAWSEC2OrRedshiftRowIsRefused(t *testing.T) {
 				tokens, err := purchasesFiredByRetry(t, failed, req)
 
 				assert.Empty(t, tokens,
-					"a retry of an EC2/Redshift row after an unknown outcome must buy nothing")
-				assertRedriveRefused(t, err, "Check EC2 Reserved Instances or Redshift Reserved Nodes")
+					"a retry of an EC2 row after an unknown outcome must buy nothing")
+				assertRedriveRefused(t, err, "Check EC2 Reserved Instances in the target account")
 			}
 		})
 	}

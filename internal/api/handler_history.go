@@ -406,7 +406,7 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 	// failed rows can carry a hint — the resolver returns "" for empty
 	// inputs, so this is safe to call unconditionally.
 	if exec.Status == "failed" {
-		row.OpsHint = resolveOpsHint(exec.Error)
+		row.OpsHint = purchase.ResolveOpsHint(exec.Error)
 		// A re-drive the backend will always refuse is permanent, so it wins
 		// over the operator-fixable failure-reason hint (which promises that
 		// fixing the config makes Retry work). Same call and input as the
@@ -421,10 +421,30 @@ func executionToHistoryRow(exec config.PurchaseExecution, approver, createdByEma
 			} else {
 				row.OpsHint = reason
 			}
+		} else {
+			applyRedshiftRetryHint(&row, &exec)
 		}
 	}
 	annotateHistoryRowByStatus(&row, exec, approver)
 	return row
+}
+
+// applyRedshiftRetryHint hides Retry for a Redshift row the retry gate will refuse for good.
+// The age comes from the app clock, a presentation hint only: the gate reads the database
+// clock, so near the 24h horizon Retry may show and then 409.
+func applyRedshiftRetryHint(row *config.PurchaseHistoryRecord, exec *config.PurchaseExecution) {
+	if !purchase.IsRedshiftExecution(exec) {
+		return
+	}
+	var sinceStamp *time.Duration
+	if exec.FirstDispatchAt != nil {
+		age := max(0, time.Since(*exec.FirstDispatchAt))
+		sinceStamp = &age
+	}
+	if reason := purchase.RedshiftRetryPermanentRefusal(exec, sinceStamp); reason != "" {
+		row.RedriveUnsafe = true
+		row.OpsHint = reason
+	}
 }
 
 // definiteRefusalOpsHint replaces the duplicate-purchase warning when AWS

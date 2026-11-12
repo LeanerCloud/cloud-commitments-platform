@@ -25,7 +25,7 @@ var pinnedIdempotencyKeyWriters = []string{
 	"internal/api.Handler.persistRetryExecution",
 	"internal/config.PostgresStore.SavePurchaseExecutionTx",
 	"internal/config.scanExecutionRows",
-	"internal/purchase.Manager.executeForAccount",
+	"internal/purchase.newAccountExecution",
 	"internal/purchase.Manager.writeAttached",
 }
 
@@ -97,8 +97,9 @@ func idempotencyKeyWriters(f *ast.File, dir string) []string {
 
 var (
 	insertPurchaseExecutions = regexp.MustCompile(`(?is)\bINSERT\s+INTO\s+purchase_executions\b`)
-	updatePurchaseExecutions = regexp.MustCompile(`(?is)\bUPDATE\s+purchase_executions\b.*?\bSET\b(.*?)(?:\bWHERE\b|\bRETURNING\b|;|$)`)
-	upsertSet                = regexp.MustCompile(`(?is)\bDO\s+UPDATE\s+SET\b(.*?)(?:\bWHERE\b|\bRETURNING\b|;|$)`)
+	updatePurchaseExecutions = regexp.MustCompile(`(?is)\bUPDATE\s+purchase_executions\b.*?\bSET\b`)
+	upsertSet                = regexp.MustCompile(`(?is)\bDO\s+UPDATE\s+SET\b`)
+	setTerminator            = regexp.MustCompile(`(?i)^(WHERE|RETURNING)\b`)
 	idempotencyKeyColumn     = regexp.MustCompile(`(?i)\bidempotency_key\b`)
 )
 
@@ -117,6 +118,29 @@ func columnList(rest string) (cols, tail string, ok bool) {
 		}
 	}
 	return "", "", false
+}
+
+// setText returns the SET clause text in rest, cut at the first WHERE, RETURNING or ";"
+// outside parentheses, so a subselect's WHERE does not hide a later assignment.
+func setText(rest string) string {
+	depth := 0
+	for i, r := range rest {
+		switch {
+		case r == '(':
+			depth++
+		case r == ')':
+			depth--
+		case depth == 0 && r == ';':
+			return rest[:i]
+		case depth == 0 && (i == 0 || !isWordByte(rest[i-1])) && setTerminator.MatchString(rest[i:]):
+			return rest[:i]
+		}
+	}
+	return rest
+}
+
+func isWordByte(b byte) bool {
+	return b == '_' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
 // sqlIdempotencyKeyWriters counts purchase_executions INSERTs carrying idempotency_key
@@ -139,14 +163,14 @@ func sqlIdempotencyKeyWriters(sql string) (inserts, updates, dynamic int) {
 		if end := strings.Index(tail, ";"); end >= 0 {
 			tail = tail[:end]
 		}
-		for _, m := range upsertSet.FindAllStringSubmatch(tail, -1) {
-			if idempotencyKeyColumn.MatchString(m[1]) {
+		for _, loc := range upsertSet.FindAllStringIndex(tail, -1) {
+			if idempotencyKeyColumn.MatchString(setText(tail[loc[1]:])) {
 				updates++
 			}
 		}
 	}
-	for _, m := range updatePurchaseExecutions.FindAllStringSubmatch(sql, -1) {
-		if idempotencyKeyColumn.MatchString(m[1]) {
+	for _, loc := range updatePurchaseExecutions.FindAllStringIndex(sql, -1) {
+		if idempotencyKeyColumn.MatchString(setText(sql[loc[1]:])) {
 			updates++
 		}
 	}
@@ -308,6 +332,8 @@ func TestIdempotencyKeySQLScan_Detects(t *testing.T) {
 		{"upsert rewrites the key from a parameter", `INSERT INTO purchase_executions (execution_id) VALUES ($1) ON CONFLICT (execution_id) DO UPDATE SET status = $2, idempotency_key = $3 WHERE true`, 0, 1, 0},
 		{"update row constructor", `UPDATE purchase_executions SET (idempotency_key, status) = ($2, $3) WHERE execution_id = $1`, 0, 1, 0},
 		{"update key set after a FROM inside parentheses", `UPDATE purchase_executions SET status = (SELECT s FROM t), idempotency_key = $2 WHERE execution_id = $1`, 0, 1, 0},
+		{"update key set after a WHERE inside parentheses", `UPDATE purchase_executions SET x = (SELECT a FROM t WHERE b = 1), idempotency_key = $2 WHERE id = $1`, 0, 1, 0},
+		{"upsert key set after a WHERE inside parentheses", `INSERT INTO purchase_executions (execution_id) VALUES ($1) ON CONFLICT (execution_id) DO UPDATE SET x = (SELECT a FROM t WHERE b = 1), idempotency_key = $2`, 0, 1, 0},
 		{"insert column list built with Sprintf", `INSERT INTO purchase_executions (%s) VALUES (%s)`, 0, 0, 1},
 		{"insert column list unclosed by concatenation", `INSERT INTO purchase_executions (execution_id, `, 0, 0, 1},
 		{"insert column list empty before concatenation", `INSERT INTO purchase_executions (`, 0, 0, 1},

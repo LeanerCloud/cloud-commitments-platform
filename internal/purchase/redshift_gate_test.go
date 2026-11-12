@@ -103,6 +103,31 @@ func TestRedshiftDispatchGate_FinishedConflictWinsOverOpenOne(t *testing.T) {
 	assert.Equal(t, redshiftRecentBuyRefusal, run.err.Error())
 }
 
+func TestRedshiftDispatchGate_PersistentFailureCandidateDropped(t *testing.T) {
+	exec := gateExec(0, gateRec("acct-A", 2))
+	run := runGate(t, exec, stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "stuck", Status: config.StatusFailed, Error: "send failed: SES sandbox active"}})
+
+	require.NoError(t, run.err, "History hides Retry for this row, so it must not hold the tuple")
+	assert.NotNil(t, exec.FirstDispatchAt)
+}
+
+func TestRedshiftDispatchGate_RunningRowWithHintTextStillConflicts(t *testing.T) {
+	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "live", Status: "running", Error: "SES sandbox"}})
+
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftConflictRefusal, run.err.Error())
+}
+
+func TestRedshiftDispatchGate_DefiniteRefusalFailedRowStillConflicts(t *testing.T) {
+	run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), []config.RedshiftLineageConflict{
+		{ExecutionID: "refused", Status: config.StatusFailed, Error: redshiftConflictRefusal}})
+
+	require.Error(t, run.err)
+	assert.Equal(t, redshiftConflictRefusal, run.err.Error())
+}
+
 func TestRedshiftDispatchGate_QueriesOnlySelectedRedshiftTuples(t *testing.T) {
 	unselected := gateRec("acct-A", 7)
 	unselected.Selected = false
