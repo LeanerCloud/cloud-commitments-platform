@@ -112,6 +112,8 @@ func (h *Handler) storedRecommendation(ctx context.Context, id string) (*config.
 		return nil, errNotFound
 	case len(rows) > 1:
 		return nil, NewClientError(409, "recommendation identity is ambiguous")
+	case rows[0].ID != id:
+		return nil, errNotFound
 	}
 	return &rows[0], nil
 }

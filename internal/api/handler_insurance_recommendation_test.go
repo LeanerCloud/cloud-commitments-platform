@@ -60,6 +60,15 @@ func (r *recRig) getID(id string) (any, error) {
 	return r.get(adminCtx(), "recommendation_id="+id, map[string]string{"recommendation_id": id})
 }
 
+func TestRecommendationComparisonRefusesRowWithOtherID(t *testing.T) {
+	r := newRecRig(t, one())
+	_, err := r.getID("stored-b")
+	require.ErrorIs(t, err, errNotFound)
+	require.Equal(t, "stored-b", r.store.filter.ID)
+	require.Zero(t, r.provider.keys)
+	require.Zero(t, r.client.itemCalls)
+}
+
 func requireCode(t *testing.T, err error, code int) *clientError {
 	t.Helper()
 	ce, ok := IsClientError(err)
