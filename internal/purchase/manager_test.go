@@ -24,10 +24,6 @@ func TestNewManager(t *testing.T) {
 		ConfigStore:            mockStore,
 		EmailSender:            mockEmail,
 		NotificationDaysBefore: 7,
-		DefaultTerm:            3,
-		DefaultPaymentOption:   "all-upfront",
-		DefaultCoverage:        80,
-		DefaultRampSchedule:    "immediate",
 		DashboardURL:           "https://dashboard.example.com",
 	}
 
@@ -35,25 +31,7 @@ func TestNewManager(t *testing.T) {
 
 	assert.NotNil(t, manager)
 	assert.Equal(t, 7, manager.notifyDays)
-	assert.Equal(t, 3, manager.defaults.Term)
-	assert.Equal(t, "all-upfront", manager.defaults.Payment)
-	assert.Equal(t, float64(80), manager.defaults.Coverage)
-	assert.Equal(t, "immediate", manager.defaults.RampSchedule)
 	assert.Equal(t, "https://dashboard.example.com", manager.dashboardURL)
-}
-
-func TestPurchaseDefaults(t *testing.T) {
-	defaults := PurchaseDefaults{
-		Term:         3,
-		Payment:      "partial-upfront",
-		Coverage:     70,
-		RampSchedule: "weekly-25pct",
-	}
-
-	assert.Equal(t, 3, defaults.Term)
-	assert.Equal(t, "partial-upfront", defaults.Payment)
-	assert.Equal(t, float64(70), defaults.Coverage)
-	assert.Equal(t, "weekly-25pct", defaults.RampSchedule)
 }
 
 func TestManager_ProcessScheduledPurchases_NoExecutions(t *testing.T) {

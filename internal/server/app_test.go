@@ -403,7 +403,7 @@ func TestLoadApplicationConfig(t *testing.T) {
 		// Clear all env vars that LoadApplicationConfig reads
 		envVars := []string{
 			"VERSION", "NOTIFICATION_DAYS_BEFORE", "DEFAULT_TERM",
-			"DEFAULT_PAYMENT_OPTION", "DEFAULT_COVERAGE", "DEFAULT_RAMP_SCHEDULE",
+			"DEFAULT_COVERAGE", "DEFAULT_RAMP_SCHEDULE",
 			"API_KEY_SECRET_ARN", "ENABLE_DASHBOARD", "DASHBOARD_BUCKET",
 			"DASHBOARD_URL", "CORS_ALLOWED_ORIGIN", "AWS_LAMBDA_RUNTIME_API",
 			"RECOMMENDATION_SCHEDULE",
@@ -421,7 +421,6 @@ func TestLoadApplicationConfig(t *testing.T) {
 		// Zero is read by the purchase manager as its 24h default cap.
 		testutil.AssertEqual(t, time.Duration(0), cfg.ScheduledPurchaseMaxOverdue)
 		testutil.AssertEqual(t, 3, cfg.DefaultTerm)
-		testutil.AssertEqual(t, "", cfg.DefaultPaymentOption)
 		testutil.AssertEqual(t, 80.0, cfg.DefaultCoverage)
 		testutil.AssertEqual(t, "", cfg.DefaultRampSchedule)
 		testutil.AssertEqual(t, false, cfg.EnableDashboard)
@@ -433,7 +432,6 @@ func TestLoadApplicationConfig(t *testing.T) {
 		testutil.SetEnv(t, "VERSION", "1.2.3")
 		testutil.SetEnv(t, "NOTIFICATION_DAYS_BEFORE", "7")
 		testutil.SetEnv(t, "DEFAULT_TERM", "1")
-		testutil.SetEnv(t, "DEFAULT_PAYMENT_OPTION", "AllUpfront")
 		testutil.SetEnv(t, "DEFAULT_COVERAGE", "95.5")
 		testutil.SetEnv(t, "DEFAULT_RAMP_SCHEDULE", "linear")
 		testutil.SetEnv(t, "API_KEY_SECRET_ARN", "arn:api:key")
@@ -451,7 +449,6 @@ func TestLoadApplicationConfig(t *testing.T) {
 		testutil.AssertEqual(t, "1.2.3", cfg.Version)
 		testutil.AssertEqual(t, 7, cfg.NotificationDaysBefore)
 		testutil.AssertEqual(t, 1, cfg.DefaultTerm)
-		testutil.AssertEqual(t, "AllUpfront", cfg.DefaultPaymentOption)
 		testutil.AssertEqual(t, 95.5, cfg.DefaultCoverage)
 		testutil.AssertEqual(t, "linear", cfg.DefaultRampSchedule)
 		testutil.AssertEqual(t, "arn:api:key", cfg.APIKeySecretARN)
@@ -643,7 +640,6 @@ func TestNewApplicationFromDeps(t *testing.T) {
 			Version:                "v2.0",
 			NotificationDaysBefore: 7,
 			DefaultTerm:            1,
-			DefaultPaymentOption:   "all-upfront", // canonical form; "AllUpfront" is now correctly rejected at startup
 			DefaultCoverage:        95.5,
 			APIKeySecretARN:        "arn:aws:key",
 			EnableDashboard:        true,
@@ -667,23 +663,12 @@ func TestNewApplicationFromDeps(t *testing.T) {
 }
 
 // TestNewApplicationFromDepsValidatesEnvDefaults is a regression test for
-// issue #1026: before the fix, invalid DEFAULT_PAYMENT_OPTION /
-// DEFAULT_RAMP_SCHEDULE values were silently propagated into the purchase
-// manager. The test confirms that NewApplicationFromDeps now fails fast on
-// an invalid value rather than accepting it.
+// issue #1026: before the fix, invalid DEFAULT_RAMP_SCHEDULE values were
+// silently propagated into the purchase manager. The test confirms that
+// NewApplicationFromDeps now fails fast on an invalid value.
 func TestNewApplicationFromDepsValidatesEnvDefaults(t *testing.T) {
 	ctx := context.Background()
 	validDBConfig := &database.Config{Host: "localhost", Port: 5432, Database: "cudly_test", User: "test", Password: "test"}
-
-	t.Run("invalid DEFAULT_PAYMENT_OPTION is rejected at startup", func(t *testing.T) {
-		cfg := ApplicationConfig{
-			DefaultPaymentOption: "AllUpfront", // typo: should be "all-upfront"
-		}
-		deps := ExternalDeps{DBConfig: validDBConfig}
-		_, err := NewApplicationFromDeps(ctx, cfg, deps)
-		testutil.AssertError(t, err)
-		testutil.AssertContains(t, err.Error(), "DEFAULT_PAYMENT_OPTION")
-	})
 
 	t.Run("invalid DEFAULT_RAMP_SCHEDULE is rejected at startup", func(t *testing.T) {
 		cfg := ApplicationConfig{
@@ -693,38 +678,6 @@ func TestNewApplicationFromDepsValidatesEnvDefaults(t *testing.T) {
 		_, err := NewApplicationFromDeps(ctx, cfg, deps)
 		testutil.AssertError(t, err)
 		testutil.AssertContains(t, err.Error(), "DEFAULT_RAMP_SCHEDULE")
-	})
-
-	t.Run("empty DEFAULT_PAYMENT_OPTION is accepted", func(t *testing.T) {
-		// Empty means "use purchase manager built-in default" -- must not error.
-		cfg := ApplicationConfig{DefaultPaymentOption: ""}
-		deps := ExternalDeps{
-			EmailSender: &noopEmailSender{},
-			DBConfig:    validDBConfig,
-		}
-		_, err := NewApplicationFromDeps(ctx, cfg, deps)
-		// Error is expected for other reasons (e.g. scheduledauth or DB), but
-		// NOT for the payment option: verify the message does not mention it.
-		if err != nil {
-			testutil.AssertTrue(t, !strings.Contains(err.Error(), "DEFAULT_PAYMENT_OPTION"),
-				"empty DEFAULT_PAYMENT_OPTION must not produce a validation error, got: "+err.Error())
-		}
-	})
-
-	t.Run("valid DEFAULT_PAYMENT_OPTION is accepted", func(t *testing.T) {
-		cfg := ApplicationConfig{
-			DefaultPaymentOption: "all-upfront",
-		}
-		deps := ExternalDeps{
-			EmailSender: &noopEmailSender{},
-			DBConfig:    validDBConfig,
-		}
-		_, err := NewApplicationFromDeps(ctx, cfg, deps)
-		// Error may occur for unrelated reasons but must not mention payment option.
-		if err != nil {
-			testutil.AssertTrue(t, !strings.Contains(err.Error(), "DEFAULT_PAYMENT_OPTION"),
-				"valid DEFAULT_PAYMENT_OPTION must not produce a validation error, got: "+err.Error())
-		}
 	})
 }
 

@@ -129,7 +129,6 @@ type ApplicationConfig struct {
 	ScheduledTaskSecret     string
 	IssuerURL               string
 	ScheduledTaskSecretName string
-	DefaultPaymentOption    string
 	Version                 string
 	DefaultRampSchedule     string
 	CORSAllowedOrigin       string
@@ -335,7 +334,6 @@ func LoadApplicationConfig() (ApplicationConfig, error) {
 		NotificationDaysBefore:      getEnvInt("NOTIFICATION_DAYS_BEFORE", 3),
 		ScheduledPurchaseMaxOverdue: maxOverdue,
 		DefaultTerm:                 term,
-		DefaultPaymentOption:        os.Getenv("DEFAULT_PAYMENT_OPTION"),
 		DefaultCoverage:             coverage,
 		DefaultRampSchedule:         os.Getenv("DEFAULT_RAMP_SCHEDULE"),
 		APIKeySecretARN:             os.Getenv("API_KEY_SECRET_ARN"),
@@ -395,14 +393,10 @@ func parseTrustedProxyHops(raw string) (int, error) {
 }
 
 // validateAppConfigEnvDefaults validates the money-moving env-sourced defaults
-// at the startup boundary. Both DEFAULT_PAYMENT_OPTION and DEFAULT_RAMP_SCHEDULE
-// flow into the purchase manager as system-wide defaults; a typo propagates
-// silently into every purchase unless we reject it here (issue #1026).
+// at the startup boundary. DEFAULT_RAMP_SCHEDULE is
+// validated here so a typo fails startup (issue #1026).
 // Empty values are always valid (means "use the purchase manager's built-in default").
 func validateAppConfigEnvDefaults(cfg ApplicationConfig) error {
-	if err := config.ValidatePaymentOptionEnv(cfg.DefaultPaymentOption); err != nil {
-		return fmt.Errorf("invalid DEFAULT_PAYMENT_OPTION: %w", err)
-	}
 	if err := config.ValidateRampScheduleEnv(cfg.DefaultRampSchedule); err != nil {
 		return fmt.Errorf("invalid DEFAULT_RAMP_SCHEDULE: %w", err)
 	}
@@ -553,10 +547,6 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 		STSClient:              deps.STSClient,
 		NotificationDaysBefore: cfg.NotificationDaysBefore,
 		MaxDueRowAge:           cfg.ScheduledPurchaseMaxOverdue,
-		DefaultTerm:            cfg.DefaultTerm,
-		DefaultPaymentOption:   cfg.DefaultPaymentOption,
-		DefaultCoverage:        cfg.DefaultCoverage,
-		DefaultRampSchedule:    cfg.DefaultRampSchedule,
 		OIDCSigner:             signer,
 		OIDCIssuerURL:          resolveOIDCIssuerURL(cfg),
 	})
@@ -874,10 +864,6 @@ func postDBPurchaseManagerConfig(app *Application, pgStore *config.PostgresStore
 		AttemptJournal:         pgStore,
 		NotificationDaysBefore: app.appConfig.NotificationDaysBefore,
 		MaxDueRowAge:           app.appConfig.ScheduledPurchaseMaxOverdue,
-		DefaultTerm:            app.appConfig.DefaultTerm,
-		DefaultPaymentOption:   app.appConfig.DefaultPaymentOption,
-		DefaultCoverage:        app.appConfig.DefaultCoverage,
-		DefaultRampSchedule:    app.appConfig.DefaultRampSchedule,
 		DashboardURL:           app.appConfig.DashboardURL,
 		OIDCSigner:             app.signer,
 		OIDCIssuerURL:          resolveOIDCIssuerURL(app.appConfig),
