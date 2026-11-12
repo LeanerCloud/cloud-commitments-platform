@@ -1188,7 +1188,8 @@ func checkAzureExchangeMoneyGuardrails(preview *azureExchangePreview, maxRat *bi
 		return fmt.Errorf("internal error: CalculateExchange returned a nil preview")
 	}
 	if len(preview.PolicyErrors) > 0 {
-		return NewClientError(422, fmt.Sprintf("Azure rejected this exchange: %s", strings.Join(preview.PolicyErrors, "; ")))
+		logging.Warnf("ri-exchange: Azure policy refused the exchange: %s", strings.Join(preview.PolicyErrors, "; "))
+		return NewClientError(422, azurePolicyRefusedMessage)
 	}
 	if preview.NetPayable == nil {
 		return NewClientError(422, "Azure did not return a net payable amount; refusing to execute")
@@ -2096,8 +2097,9 @@ func (h *Handler) executeExchange(ctx context.Context, req *events.LambdaFunctio
 
 // awsExchangeClientFaultCodes is the set of AWS error codes that are
 // documented client faults for RI exchange operations. These map to
-// 4xx responses so the caller receives the original AWS error message
-// and understands it was their input that was wrong. All other AWS
+// 4xx responses so the caller receives the fixed exchangeRejectedMessage
+// (the AWS text stays in the log) and understands it was their input that
+// was wrong. All other AWS
 // errors remain 5xx (transient / server-side).
 var awsExchangeClientFaultCodes = map[string]bool{
 	"InvalidOfferingId":                   true,
@@ -2138,6 +2140,11 @@ func directExchangeOutcomeUnknown(riIDs []string) error {
 // exchangeRejectedMessage is the provider-neutral text for a client-fault
 // rejection; the provider's own text stays in the log.
 const exchangeRejectedMessage = "the exchange request was rejected as invalid: check the offering and count"
+
+// azurePolicyRefusedMessage is the fixed 422 body for an Azure exchange policy
+// refusal; the policy text stays in the log. The frontend keys its hint on the
+// "Azure rejected this exchange" prefix (frontend/src/lib/azure-exchange.ts).
+const azurePolicyRefusedMessage = "Azure rejected this exchange: it does not meet Azure's exchange policy"
 
 // Response types
 

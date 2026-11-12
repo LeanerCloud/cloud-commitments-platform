@@ -1,14 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	azurecompute "github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -1159,6 +1162,15 @@ func TestExecuteAzureExchange_PolicyErrorsBlockExecution(t *testing.T) {
 	)
 	t.Cleanup(func() { opsClient.AssertExpectations(t) })
 
+	var logs bytes.Buffer
+	prevOut := logging.SetOutput(&logs)
+	prevLevel := logging.GetLevel()
+	logging.SetLevelValue(logging.LevelInfo)
+	t.Cleanup(func() {
+		logging.SetOutput(prevOut)
+		logging.SetLevelValue(prevLevel)
+	})
+
 	h := newAzureExecuteMoneyPathHandler(t, opsClient)
 	_, err := h.executeAzureExchange(ctx, &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"authorization": "Bearer tok"},
@@ -1168,7 +1180,10 @@ func TestExecuteAzureExchange_PolicyErrorsBlockExecution(t *testing.T) {
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
 	assert.Equal(t, 422, ce.code)
-	assert.Contains(t, err.Error(), "reservations must share a billing account")
+	assert.Equal(t, azurePolicyRefusedMessage, ce.message)
+	assert.True(t, strings.HasPrefix(ce.message, "Azure rejected this exchange"), "the frontend hint keys on this prefix")
+	assert.NotContains(t, err.Error(), "reservations must share a billing account")
+	assert.Contains(t, logs.String(), "reservations must share a billing account", "the policy text goes to the log")
 }
 
 func TestExecuteAzureExchange_CurrencyMismatchBlocksExecution(t *testing.T) {
