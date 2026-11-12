@@ -3684,3 +3684,34 @@ func TestPGXMock_GetExecutionsByStatuses_FuturePendingStepsSortLast(t *testing.T
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// ─── Registration credential payload clearing ────────────────────────────────
+
+func TestPGXMock_TransitionRegistrationStatus_RejectClearsPayloadInStatement(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	// The same UPDATE that moves the row to rejected sets the payload to NULL.
+	mock.ExpectExec(`UPDATE account_registrations SET[\s\S]*reg_credential_payload = CASE WHEN \$2::text = 'rejected' THEN NULL ELSE reg_credential_payload END[\s\S]*WHERE id = \$1 AND status = \$8`).
+		WithArgs("reg-1", "rejected", pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), "pending", pgxmock.AnyArg()).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+
+	reg := &AccountRegistration{ID: "reg-1", Status: "rejected"}
+	require.NoError(t, store.TransitionRegistrationStatus(context.Background(), reg, "pending", nil))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_ClearRegistrationCredential_GuardedAndIdempotent(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	ctx := context.Background()
+	// Only an approved row is cleared; a repeat or a non-approved row
+	// matches no row and is not an error.
+	mock.ExpectExec(`UPDATE account_registrations SET reg_credential_payload = NULL\s+WHERE id = \$1 AND status = 'approved' AND reg_credential_payload IS NOT NULL`).
+		WithArgs("reg-1").WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	mock.ExpectExec(`status = 'approved'`).
+		WithArgs("reg-1").WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+
+	require.NoError(t, store.ClearRegistrationCredential(ctx, "reg-1"))
+	require.NoError(t, store.ClearRegistrationCredential(ctx, "reg-1"))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

@@ -166,6 +166,7 @@ func approveWithCredential(t *testing.T, credType, payload, approvalBody string)
 	store.On("ApproveAccountRegistration", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	store.On("TransitionRegistrationStatus", mock.Anything, mock.Anything, "pending", mock.Anything).Return(nil).Maybe()
 	store.On("UpdateAccountRegistration", mock.Anything, mock.Anything).Return(nil).Maybe()
+	store.On("ClearRegistrationCredential", mock.Anything, mock.Anything).Return(nil).Maybe()
 	// The router enforces the approve permission; called directly with no
 	// bearer token, approveRegistration resolves no session, so the auth mock
 	// carries no expectations (an unexpected auth call would panic).

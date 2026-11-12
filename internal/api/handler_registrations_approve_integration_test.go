@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -231,4 +232,48 @@ func TestApproveRegistration_RejectQueuedBehindApproval(t *testing.T) {
 			}
 		})
 	}
+}
+
+func regPayloadIsSet(ctx context.Context, t *testing.T, pool *pgxpool.Pool, id string) bool {
+	t.Helper()
+	var set bool
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT reg_credential_payload IS NOT NULL FROM account_registrations WHERE id = $1`, id).Scan(&set))
+	return set
+}
+
+func newRegistrationWithPayload(ctx context.Context, t *testing.T, f *createConcurrencyFixture, externalID string) *config.AccountRegistration {
+	t.Helper()
+	reg := &config.AccountRegistration{
+		ReferenceToken: "tok-" + externalID, Status: "pending", Provider: "azure",
+		ExternalID: externalID, AccountName: "Fixture " + externalID, ContactEmail: "owner@example.com",
+		RegCredentialType: "azure_client_secret", RegCredentialPayload: "ciphertext-placeholder",
+	}
+	require.NoError(t, f.store.CreateAccountRegistration(ctx, reg))
+	return reg
+}
+
+// The payload survives approval, is cleared only by the guarded clear, and a
+// repeat is a no-op; a rejection clears it in the status change itself.
+func TestRegistrationCredentialPayload_ClearedOnlyWhenApprovedOrRejected(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	t.Cleanup(cancel)
+	f := newCreateConcurrencyFixture(ctx, t)
+
+	approved := newRegistrationWithPayload(ctx, t, f, "fixture-clear-approved")
+	require.NoError(t, f.store.ClearRegistrationCredential(ctx, approved.ID))
+	assert.True(t, regPayloadIsSet(ctx, t, f.pool, approved.ID), "a pending registration is not cleared")
+
+	acct := &config.CloudAccount{ID: uuid.New().String(), Name: "Fixture", Provider: "azure", ExternalID: "fixture-clear-approved", Enabled: true}
+	require.NoError(t, f.store.ApproveAccountRegistration(ctx, approved, acct, nil))
+	assert.True(t, regPayloadIsSet(ctx, t, f.pool, approved.ID), "approval alone keeps the payload")
+
+	require.NoError(t, f.store.ClearRegistrationCredential(ctx, approved.ID))
+	assert.False(t, regPayloadIsSet(ctx, t, f.pool, approved.ID))
+	require.NoError(t, f.store.ClearRegistrationCredential(ctx, approved.ID))
+
+	rejected := newRegistrationWithPayload(ctx, t, f, "fixture-clear-rejected")
+	rejected.Status = "rejected"
+	require.NoError(t, f.store.TransitionRegistrationStatus(ctx, rejected, "pending", nil))
+	assert.False(t, regPayloadIsSet(ctx, t, f.pool, rejected.ID), "rejection clears the payload")
 }

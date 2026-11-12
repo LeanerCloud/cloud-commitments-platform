@@ -220,7 +220,8 @@ func (s *PostgresStore) TransitionRegistrationStatus(ctx context.Context, reg *A
 			reviewed_at      = $6,
 			updated_at       = $7,
 			transitioned_by  = $9,
-			transitioned_at  = NOW()
+			transitioned_at  = NOW(),
+			reg_credential_payload = CASE WHEN $2::text = 'rejected' THEN NULL ELSE reg_credential_payload END
 		WHERE id = $1 AND status = $8
 	`
 
@@ -245,6 +246,21 @@ func (s *PostgresStore) TransitionRegistrationStatus(ctx context.Context, reg *A
 	}
 	if result.RowsAffected() == 0 {
 		return ErrRegistrationConflict
+	}
+	return nil
+}
+
+// ClearRegistrationCredential removes the stored credential payload of an
+// approved registration, once the credential has been saved for its account.
+// It is guarded on status = 'approved' and is idempotent: a row that is not
+// approved, or has no payload, is left as it is and no error is returned.
+func (s *PostgresStore) ClearRegistrationCredential(ctx context.Context, id string) error {
+	_, err := s.db.Exec(ctx, `
+		UPDATE account_registrations SET reg_credential_payload = NULL
+		WHERE id = $1 AND status = 'approved' AND reg_credential_payload IS NOT NULL
+	`, id)
+	if err != nil {
+		return fmt.Errorf("failed to clear registration credential: %w", err)
 	}
 	return nil
 }

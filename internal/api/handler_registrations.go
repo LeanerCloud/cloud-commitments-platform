@@ -219,6 +219,7 @@ func (h *Handler) getPendingRegistration(ctx context.Context, id string) (*confi
 		return nil, NewClientError(404, "registration not found")
 	}
 	if reg.Status != "pending" {
+		h.reclaimApprovedRegistrationCredential(ctx, reg)
 		return nil, NewClientError(409, fmt.Sprintf("registration is already %s", reg.Status))
 	}
 	return reg, nil

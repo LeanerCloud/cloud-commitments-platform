@@ -2095,6 +2095,12 @@ func (m *MockConfigStore) TransitionRegistrationStatus(ctx context.Context, reg 
 	return args.Error(0)
 }
 
+func (m *MockConfigStore) ClearRegistrationCredential(ctx context.Context, id string) error {
+	m.record("ClearRegistrationCredential", ctx, id)
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 func (m *MockConfigStore) ApproveAccountRegistration(ctx context.Context, reg *config.AccountRegistration, account *config.CloudAccount, actor *string) error {
 	m.record("ApproveAccountRegistration", ctx, reg, account, actor)
 	args := m.Called(ctx, reg, account, actor)

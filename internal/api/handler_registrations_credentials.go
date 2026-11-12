@@ -89,14 +89,43 @@ func (h *Handler) registrationCredential(reg *config.AccountRegistration, provid
 }
 
 // storeRegistrationCredentials saves a registration credential that
-// registrationCredential has checked into the account_credentials table.
-// The account already exists at this point, so a store error is logged, not
-// returned.
+// registrationCredential has checked into the account_credentials table, then
+// clears the payload kept on the registration. The account already exists at
+// this point, so a store error is logged, not returned. When the save fails
+// the payload is kept so the credential can still be recovered.
 func (h *Handler) storeRegistrationCredentials(ctx context.Context, reg *config.AccountRegistration, accountID string, payload []byte) {
 	if payload == nil || h.credStore == nil {
 		return
 	}
 	if err := h.credStore.SaveCredential(ctx, accountID, reg.RegCredentialType, payload); err != nil {
-		logging.Warnf("registration %s: failed to store credential: %v", reg.ID, err)
+		logging.Errorf("registration %s: failed to store credential, keeping the registration payload: %v", reg.ID, err)
+		return
+	}
+	h.clearRegistrationCredential(ctx, reg.ID)
+}
+
+// clearRegistrationCredential clears the payload kept on an approved
+// registration; a failure is logged and left for the next retry.
+func (h *Handler) clearRegistrationCredential(ctx context.Context, regID string) {
+	if err := h.config.ClearRegistrationCredential(ctx, regID); err != nil {
+		logging.Warnf("registration %s: failed to clear registration credential: %v", regID, err)
+	}
+}
+
+// reclaimApprovedRegistrationCredential finishes a clear that did not happen
+// after approval (for example the process stopped between saving the
+// credential and clearing the payload). It clears only when the credential
+// exists for the registration's account, so it is safe to repeat.
+func (h *Handler) reclaimApprovedRegistrationCredential(ctx context.Context, reg *config.AccountRegistration) {
+	if reg.Status != "approved" || reg.RegCredentialPayload == "" || reg.CloudAccountID == nil || h.credStore == nil {
+		return
+	}
+	has, err := h.credStore.HasCredential(ctx, *reg.CloudAccountID, reg.RegCredentialType)
+	if err != nil {
+		logging.Warnf("registration %s: could not check stored credential: %v", reg.ID, err)
+		return
+	}
+	if has {
+		h.clearRegistrationCredential(ctx, reg.ID)
 	}
 }
