@@ -67,19 +67,20 @@ func sourceInFlightNote(ids string) string {
 func TestSanitizeStoredError_QuotedValueSlotsAreClosed(t *testing.T) {
 	slots := []struct {
 		name, tmpl string
-		ok, bad    []string
+		ok         []string
 	}{
-		{"reserved ceiling", `reserved ceiling "%s" is not a decimal`, []string{"0", "12.5", "800.000000", "999999999.12345678"}, nil},
-		{"invalid ceiling", `exchange reservation returned invalid ceiling "%s"`, []string{"0", "12.5", "800.000000"}, nil},
-		{"provider", `unknown provider "%s" (valid: aws, azure, gcp)`, []string{"AWS", "Azure", "GCP", "digitalocean"}, nil},
+		{"reserved ceiling", `reserved ceiling "%s" is not a decimal`, []string{"", "NaN"}},
+		{"invalid ceiling", `exchange reservation returned invalid ceiling "%s"`, []string{"", "NaN", "-12.5", "-0.000001"}},
+		{"scheduler provider", `unknown provider "%s" (valid: aws, azure, gcp)`, []string{"", "AWS", "Azure", "oracle"}},
+		{"redrive provider", `refusing to execute retry attempt 2: provider "%s" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`, []string{"", "AWS", "oraclecloud"}},
 	}
-	common := []string{"10.0.0.1", "123456789012", "db.internal.example.com", "12.5.1", "a b"}
+	refused := []string{"10.0.0.1", "123456789012", "db.internal.example.com", "12.5.1", "a b"}
 	for _, sl := range slots {
 		for _, v := range sl.ok {
 			note := fmt.Sprintf(sl.tmpl, v)
 			assert.Equal(t, note, SanitizeStoredError(note), note)
 		}
-		for _, v := range common {
+		for _, v := range refused {
 			note := fmt.Sprintf(sl.tmpl, v)
 			out := SanitizeStoredError(note)
 			assert.NotEqual(t, note, out, note)

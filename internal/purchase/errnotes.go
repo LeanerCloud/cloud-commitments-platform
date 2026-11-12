@@ -102,14 +102,16 @@ func categoryNotePatterns() []string {
 }
 
 const (
-	// amountPattern is a decimal amount. ceilingValuePattern is an exchange
-	// ceiling in dollars: at most 9 integer digits, so a 12-digit account number
-	// or a dotted-quad address never fits. providerNameValuePattern is a provider
-	// name the scheduler did not recognize ("AWS", "Azure"): letters only. Anything
-	// wider falls back to the fixed head.
+	// amountPattern is a decimal amount. ceilingValuePattern is what the two
+	// ceiling writers quote: "" or NaN from the store's numeric text
+	// (api reserveApprovedExchange) or a negative decimal (go exchange/auto.go
+	// ParseDecimalRat + Sign() < 0), with at most 9 integer digits so a 12-digit
+	// account number or a dotted-quad address never fits. providerNameValuePattern
+	// is a provider name no switch recognized (scheduler, manager redrive reason):
+	// letters only, possibly empty. Anything wider falls back to the fixed head.
 	amountPattern            = `\d+(?:\.\d+)?`
-	ceilingValuePattern      = `\d{1,9}(?:\.\d{1,8})?`
-	providerNameValuePattern = `[A-Za-z]{1,16}`
+	ceilingValuePattern      = `(?:NaN|-?\d{1,9}(?:\.\d{1,8})?)?`
+	providerNameValuePattern = `[A-Za-z]{0,16}`
 	// groupKeyPattern is a bound group's services key ("aws/ec2#g1"); a key with
 	// any other character falls back to the fixed head.
 	groupKeyPattern = `[A-Za-z0-9._:/#+-]{1,128}`
@@ -160,7 +162,7 @@ var exchangeNoteHeads = []string{
 }
 
 var redriveReasonPattern = regexp.QuoteMeta(redriveReasonAWSNoGuard) + `|` + regexp.QuoteMeta(redriveReasonAWSNoGuardLegacy) + `|` + regexp.QuoteMeta(redriveReasonAzureSavingsPlan) +
-	`|provider "[A-Za-z0-9._+-]{0,32}" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`
+	`|provider "` + providerNameValuePattern + `" is not known to reject a duplicate purchase, so re-driving this could buy a second commitment`
 
 // resourceTypePattern is the "<resourceType>: " head the executor's per-rec join
 // adds (execution.go: fmt.Sprintf("%s: %v", rec.ResourceType, err)). The head is

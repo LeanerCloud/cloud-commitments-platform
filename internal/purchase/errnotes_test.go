@@ -87,9 +87,9 @@ func TestSanitizeStoredError_AllowlistedNotesPassThroughVerbatim(t *testing.T) {
 		"RI exchange daily cap exceeded: spend 900.000000 exceeds cap 800.000000",
 		"RI exchange daily cap exceeded: initial 10.000000, remaining 5.000000",
 		"daily spending cap check failed",
-		`reserved ceiling "12.5" is not a decimal`,
+		`reserved ceiling "NaN" is not a decimal`,
 		"exchange reservation returned no record ID",
-		`exchange reservation returned invalid ceiling "0.000001"`,
+		`exchange reservation returned invalid ceiling "-12.5"`,
 		`unknown provider "AWS" (valid: aws, azure, gcp)`,
 		ErrCategoryMessage(ErrCategoryAccessDenied),
 	}
@@ -303,7 +303,7 @@ func TestSanitizeStoredError_SlotsRejectWhitespaceAndControls(t *testing.T) {
 		fmt.Sprintf(slots[4], id),
 		fmt.Sprintf(slots[5], id),
 		fmt.Sprintf(slots[6], "m5.large"),
-		fmt.Sprintf(slots[7], "oracle-cloud"),
+		fmt.Sprintf(slots[7], "oraclecloud"),
 		fmt.Sprintf(resolve, `done, see ticket \"7\"\n`),
 	} {
 		assert.Equal(t, in, SanitizeStoredError(in), in)
