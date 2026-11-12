@@ -8,7 +8,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -20,6 +19,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -88,8 +88,8 @@ func canon(p string) string {
 	return filepath.Clean(p)
 }
 
-func parseTargets(dir string, positions []string) (map[lineKey]bool, error) {
-	targets := map[lineKey]bool{}
+func parseTargets(dir string, positions []string) (map[lineKey]string, error) {
+	targets := map[lineKey]string{}
 	for _, p := range positions {
 		m := posRe.FindStringSubmatch(p)
 		if m == nil {
@@ -107,18 +107,30 @@ func parseTargets(dir string, positions []string) (map[lineKey]bool, error) {
 		if err != nil {
 			return nil, err
 		}
-		targets[lineKey{canon(abs), line}] = true
+		targets[lineKey{canon(abs), line}] = p
 	}
 	return targets, nil
 }
 
-// typeKey names a type independently of the loader's per-variant type
-// universes (Tests: true type-checks a package more than once).
-func typeKey(t types.Type) string {
-	if p, ok := t.(*types.Pointer); ok {
-		t = p.Elem()
+// declKey names a type by the position of its declaration, which is the same
+// in every type-checking universe (Tests: true checks a package more than
+// once) and distinguishes same-named local types.
+func declKey(fset *token.FileSet, pos token.Pos) string {
+	ps := fset.Position(pos)
+	return fmt.Sprintf("%s:%d:%d", canon(ps.Filename), ps.Line, ps.Column)
+}
+
+// litKey returns the declaration key of a literal's struct type, looking
+// through pointers, aliases and generic instantiations; "" when unnamed.
+func litKey(fset *token.FileSet, t types.Type) string {
+	t = types.Unalias(t)
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = types.Unalias(ptr.Elem())
 	}
-	return types.TypeString(t, nil)
+	if n, ok := t.(*types.Named); ok {
+		return declKey(fset, n.Origin().Obj().Pos())
+	}
+	return ""
 }
 
 // check returns the sorted, de-duplicated positions of unkeyed literals of
@@ -140,11 +152,19 @@ func check(dir, tags string, positions []string) ([]string, error) {
 		return nil, err
 	}
 	wanted := map[string]bool{}
+	resolved := map[lineKey]bool{}
 	for _, p := range pkgs {
-		collectTargets(p, targets, wanted)
+		collectTargets(p, targets, wanted, resolved)
 	}
-	if len(wanted) == 0 {
-		return nil, errors.New("no struct declaration found at any input position")
+	var missing []string
+	for k, orig := range targets {
+		if !resolved[k] {
+			missing = append(missing, orig)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return nil, fmt.Errorf("no struct declaration at: %s", strings.Join(missing, "; "))
 	}
 	return findUnkeyed(pkgs, wanted), nil
 }
@@ -155,9 +175,8 @@ func findUnkeyed(pkgs []*packages.Package, wanted map[string]bool) []string {
 		for _, f := range p.Syntax {
 			ast.Inspect(f, func(n ast.Node) bool {
 				if lit, ok := n.(*ast.CompositeLit); ok && hasUnkeyed(lit) {
-					tv, ok := p.TypesInfo.Types[lit]
-					if ok && tv.Type != nil && wanted[typeKey(tv.Type)] {
-						seen[canonPos(p.Fset, lit.Pos())] = true
+					if wanted[literalKey(p, lit)] {
+						seen[p.Fset.Position(lit.Pos()).String()] = true
 					}
 				}
 				return true
@@ -191,29 +210,47 @@ func load(dir, tags string) ([]*packages.Package, error) {
 	return pkgs, nil
 }
 
-func canonPos(fset *token.FileSet, pos token.Pos) string {
-	return fset.Position(pos).String()
+func literalKey(p *packages.Package, lit *ast.CompositeLit) string {
+	if st, ok := lit.Type.(*ast.StructType); ok {
+		return "anon:" + declKey(p.Fset, st.Struct)
+	}
+	if tv, ok := p.TypesInfo.Types[lit]; ok && tv.Type != nil {
+		return litKey(p.Fset, tv.Type)
+	}
+	return ""
 }
 
-func collectTargets(p *packages.Package, targets map[lineKey]bool, wanted map[string]bool) {
-	at := func(pos token.Pos) bool {
+// collectTargets records the declared struct types (TypeSpec) at the input
+// lines, plus anonymous struct types whose own position is an input.
+func collectTargets(p *packages.Package, targets map[lineKey]string, wanted map[string]bool, resolved map[lineKey]bool) {
+	at := func(pos token.Pos) (lineKey, bool) {
 		ps := p.Fset.Position(pos)
-		return targets[lineKey{canon(ps.Filename), ps.Line}]
+		k := lineKey{canon(ps.Filename), ps.Line}
+		_, ok := targets[k]
+		return k, ok
 	}
+	declared := map[*ast.StructType]bool{}
 	for _, f := range p.Syntax {
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.TypeSpec:
-				if st, ok := n.Type.(*ast.StructType); ok && (at(st.Struct) || at(n.Pos())) {
-					if obj := p.TypesInfo.Defs[n.Name]; obj != nil {
-						wanted[typeKey(obj.Type())] = true
-					}
+				st, ok := n.Type.(*ast.StructType)
+				if !ok {
+					return true
+				}
+				declared[st] = true
+				k, hit := at(st.Struct)
+				if !hit {
+					k, hit = at(n.Pos())
+				}
+				if obj := p.TypesInfo.Defs[n.Name]; hit && obj != nil {
+					wanted[declKey(p.Fset, obj.Pos())] = true
+					resolved[k] = true
 				}
 			case *ast.StructType:
-				if at(n.Struct) {
-					if tv, ok := p.TypesInfo.Types[n]; ok {
-						wanted[typeKey(tv.Type)] = true
-					}
+				if k, hit := at(n.Struct); hit && !declared[n] {
+					wanted["anon:"+declKey(p.Fset, n.Struct)] = true
+					resolved[k] = true
 				}
 			}
 			return true

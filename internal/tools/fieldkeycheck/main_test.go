@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,12 +20,46 @@ type Other struct {
 	Y int
 }
 
+type G[T any] struct {
+	P T
+	Q T
+}
+
+type Alias = S
+
 var keyed = S{A: 1, B: "x"}
 var unkeyed = S{1, "x"}
 var elided = []S{{2, "y"}, {A: 3, B: "z"}}
 var ptrs = []*S{{4, "p"}}
 var other = Other{1, 2}
+var gen = G[int]{1, 2}
+var alias = Alias{5, "z"}
+var anon = struct{ M, N int }{1, 2}
+
+func f1() int {
+	type L struct{ A, B int }
+	l := L{1, 2}
+	return l.A
+}
+
+func f2() int {
+	type L struct{ A, B int }
+	l := L{3, 4}
+	return l.A
+}
 `
+
+// at returns the "line:col" prefix of the first source line containing marker.
+func at(t *testing.T, marker string) int {
+	t.Helper()
+	for i, l := range strings.Split(fixtureSrc, "\n") {
+		if strings.Contains(l, marker) {
+			return i + 1
+		}
+	}
+	t.Fatalf("marker %q not in fixture", marker)
+	return 0
+}
 
 func TestCheck(t *testing.T) {
 	dir := t.TempDir()
@@ -33,24 +68,31 @@ func TestCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("go.mod", "module fixture\n\ngo 1.21\n")
+	write("go.mod", "module fixture\n\ngo 1.23\n")
 	if err := os.Mkdir(filepath.Join(dir, "a"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	write("a/a.go", fixtureSrc)
+	in := func(marker string) string { return fmt.Sprintf("a/a.go:%d:8: struct x", at(t, marker)) }
+	line := func(marker string) string { return fmt.Sprintf("a.go:%d:", at(t, marker)) }
 
 	tests := []struct {
 		name      string
 		positions []string
-		wantLines []string
-		notLines  []string
+		want      []string
+		not       []string
 		wantErr   bool
 	}{
-		{"unkeyed, elided and pointer rows reported", []string{"a/a.go:3:8: struct with 24 pointer bytes could be 8"},
-			[]string{"a.go:14:", "a.go:15:", "a.go:16:"}, []string{"a.go:13:", "a.go:17:"}, false},
-		{"other struct only", []string{"a/a.go:8:14: struct x"}, []string{"a.go:17:"}, []string{"a.go:14:", "a.go:15:", "a.go:16:"}, false},
+		{"unkeyed, elided, pointer and alias rows", []string{in("type S struct")},
+			[]string{line("var unkeyed"), line("var elided"), line("var ptrs"), line("var alias")},
+			[]string{line("var keyed"), line("var other"), line("var gen"), line("var anon")}, false},
+		{"other struct only, not anonymous literals", []string{in("type Other")}, []string{line("var other")}, []string{line("var unkeyed"), line("var anon")}, false},
+		{"generic instantiation", []string{in("type G[T")}, []string{line("var gen")}, []string{line("var unkeyed")}, false},
+		{"local type L in f1 only", []string{in("type L struct{ A, B int }")},
+			[]string{line("l := L{1, 2}")}, []string{line("l := L{3, 4}")}, false},
+		{"anonymous struct by its own position", []string{in("var anon")}, []string{line("var anon")}, []string{line("var unkeyed")}, false},
 		{"no input", nil, nil, nil, false},
-		{"position without struct", []string{"a/a.go:1:1: struct x"}, nil, nil, true},
+		{"bogus position", []string{in("type S struct"), "a/a.go:1:1: struct x"}, nil, nil, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -59,17 +101,17 @@ func TestCheck(t *testing.T) {
 				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
 			}
 			joined := strings.Join(got, "\n")
-			for _, w := range tc.wantLines {
+			for _, w := range tc.want {
 				if !strings.Contains(joined, w) {
 					t.Errorf("missing %q in:\n%s", w, joined)
 				}
 			}
-			for _, n := range tc.notLines {
+			for _, n := range tc.not {
 				if strings.Contains(joined, n) {
 					t.Errorf("unexpected %q in:\n%s", n, joined)
 				}
 			}
-			if len(tc.wantLines) == 0 && len(got) != 0 {
+			if len(tc.want) == 0 && len(got) != 0 {
 				t.Errorf("want no hits, got %v", got)
 			}
 		})
