@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/ctxutil"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 )
 
 // riExchangeTransitionError maps a lost pending -> X transition: the record
@@ -138,4 +140,65 @@ func exchangeCapStrings(cfg *config.GlobalConfig) (daily, perExchange, reason st
 	daily = new(big.Rat).SetFloat64(cfg.RIExchangeMaxDailyUSD).FloatString(6)
 	perExchange = new(big.Rat).SetFloat64(cfg.RIExchangeMaxPerExchangeUSD).FloatString(6)
 	return daily, perExchange, ""
+}
+
+// executeApprovedExchange reserves the execution ceiling atomically under the
+// shared daily-cap lock, then executes the exchange within that ceiling. The
+// ceiling is the full permitted amount (min of per-exchange cap and daily
+// headroom), so a fresh re-quote cannot push the day over the cap.
+func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record *config.RIExchangeRecord) (any, error) {
+	globalCfg, err := h.config.GetGlobalConfig(ctx)
+	if err != nil {
+		return h.failExchange(ctx, id, "config load failed")
+	}
+
+	region := record.Region
+	if region == "" {
+		// Region is a required field captured at record-creation time.
+		// Defaulting to us-east-1 here would execute a financial mutation
+		// in the wrong region for records created without a region stamp.
+		return h.failExchange(ctx, id, "exchange record has no region; cannot execute safely")
+	}
+
+	ceiling, effectiveCap, refusal := h.reserveApprovedExchange(ctx, id, globalCfg)
+	if refusal != "" {
+		return h.failExchange(ctx, id, refusal)
+	}
+
+	// The provider call and the terminal ledger write that records its outcome
+	// must survive a cancelled approval request (#790).
+	execCtx, cancelExec := ctxutil.DetachedWithTimeout(ctx, riExchangeExecutionTimeout)
+	defer cancelExec()
+	exchangeID, freshQ, execErr := h.awsExchangeExecutor()(execCtx, exchange.ExchangeExecuteRequest{
+		Region:           region,
+		ReservedIDs:      record.SourceRIIDs,
+		TargetOfferingID: record.TargetOfferingID,
+		TargetCount:      int32(record.TargetCount), // #nosec G115 -- RI quantity stored from validated API request; AWS limits RI counts well below math.MaxInt32
+		MaxPaymentDueUSD: effectiveCap,
+	})
+	saveCtx, cancelSave := ctxutil.DetachedWithTimeout(ctx, riExchangeTerminalSaveTimeout)
+	defer cancelSave()
+	if execErr != nil {
+		logging.Errorf("RI exchange %s execution failed: %v", id, execErr)
+		_, reason := purchase.SummarizeFailure(execErr)
+		if errors.Is(execErr, common.ErrOutcomeUnknown) {
+			return h.leaveExchangeOutcomeUnknown(saveCtx, id, reason), nil
+		}
+		return h.failExchange(saveCtx, id, reason)
+	}
+
+	// H3: persist the amount AWS actually accepted, not the reserved ceiling.
+	acceptedPaymentDue := handlerAcceptedAmount(freshQ, ceiling)
+
+	// H4: retry the ledger write via retryCompleteWithPayment; persistent
+	// failure is returned as an error (HTTP 500) so the caller knows money
+	// moved but the record was not updated.
+	if completeErr := h.retryCompleteWithPayment(saveCtx, id, exchangeID, acceptedPaymentDue); completeErr != nil {
+		logging.Errorf("all ledger write attempts failed for exchange %s after money moved: %v",
+			id, completeErr)
+		return nil, fmt.Errorf("exchange executed (id=%s) but ledger update failed: %w",
+			exchangeID, completeErr)
+	}
+
+	return map[string]any{"status": "completed", "exchange_id": exchangeID}, nil
 }
