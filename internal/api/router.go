@@ -402,84 +402,6 @@ func (r *Router) registerRoutes() {
 	}
 }
 
-// Handler wrappers that adapt the old handlers to the new RouteHandler signature
-
-func (r *Router) dashboardSummaryHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getDashboardSummary(ctx, req, req.QueryStringParameters)
-}
-
-func (r *Router) upcomingPurchasesHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getUpcomingPurchases(ctx, req)
-}
-
-func (r *Router) getConfigHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getConfig(ctx, req)
-}
-
-func (r *Router) updateConfigHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.updateConfig(ctx, req)
-}
-
-func (r *Router) getServiceConfigHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getServiceConfig(ctx, req, params["id"])
-}
-
-func (r *Router) updateServiceConfigHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.updateServiceConfig(ctx, req, params["id"])
-}
-
-func (r *Router) commitmentOptionsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getCommitmentOptions(ctx)
-}
-
-func (r *Router) getRecommendationsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getRecommendations(ctx, req, req.QueryStringParameters)
-}
-
-func (r *Router) refreshRecommendationsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.postRefreshRecommendations(ctx, req)
-}
-
-func (r *Router) getInsuranceStatusHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getInsuranceStatus(ctx, req)
-}
-
-func (r *Router) getInsuranceComparisonHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getInsuranceComparison(ctx, req)
-}
-
-func (r *Router) getRecommendationsFreshnessHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getRecommendationsFreshness(ctx, req)
-}
-
-func (r *Router) getRecommendationDetailHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getRecommendationDetail(ctx, req, params["id"])
-}
-
-func (r *Router) listPlansHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.listPlans(ctx, req, req.QueryStringParameters)
-}
-
-func (r *Router) createPlanHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.createPlan(ctx, req)
-}
-
-func (r *Router) getPlanHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getPlan(ctx, req, params["id"])
-}
-
-func (r *Router) updatePlanHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.updatePlan(ctx, req, params["id"])
-}
-
-func (r *Router) patchPlanHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.patchPlan(ctx, req, params["id"])
-}
-
-func (r *Router) deletePlanHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.deletePlan(ctx, req, params["id"])
-}
-
 func (r *Router) createPlannedPurchasesHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
 	return r.h.createPlannedPurchases(ctx, req, params["id"])
 }
@@ -584,46 +506,6 @@ func (r *Router) marketplaceListHandler(ctx context.Context, req *events.LambdaF
 
 func (r *Router) marketplaceCancelHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
 	return r.h.marketplaceCancel(ctx, req, params["id"])
-}
-
-func (r *Router) getPlannedPurchasesHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getPlannedPurchases(ctx, req)
-}
-
-func (r *Router) pausePlannedPurchaseHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.pausePlannedPurchase(ctx, req, params["id"])
-}
-
-func (r *Router) resumePlannedPurchaseHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.resumePlannedPurchase(ctx, req, params["id"])
-}
-
-func (r *Router) runPlannedPurchaseHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.runPlannedPurchase(ctx, req, params["id"])
-}
-
-func (r *Router) deletePlannedPurchaseHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.deletePlannedPurchase(ctx, req, params["id"])
-}
-
-func (r *Router) getHistoryHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getHistory(ctx, req, req.QueryStringParameters)
-}
-
-func (r *Router) getHistoryAnalyticsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getHistoryAnalytics(ctx, req, req.QueryStringParameters)
-}
-
-func (r *Router) getHistoryBreakdownHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getHistoryBreakdown(ctx, req, req.QueryStringParameters)
-}
-
-func (r *Router) getAnalyticsTrendsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.getAnalyticsTrends(ctx, req, req.QueryStringParameters)
-}
-
-func (r *Router) triggerAnalyticsCollectionHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	return r.h.triggerAnalyticsCollection(ctx, req, req.QueryStringParameters)
 }
 
 func (r *Router) loginHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
