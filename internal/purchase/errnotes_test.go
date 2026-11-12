@@ -3,6 +3,7 @@ package purchase
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -266,6 +267,17 @@ func TestSanitizeStoredError_SlotsRejectWhitespaceAndControls(t *testing.T) {
 			assert.NotEqual(t, in, SanitizeStoredError(in), "%q", in)
 		}
 	}
+	// A raw invalid byte or a literal U+FFFD in the reason falls back; a backslash
+	// may only escape a printable ASCII character, and a commitment id stops at 256.
+	for _, bad := range []string{"a\xffb", "a\ufffdb", "a\\\u202eb"} {
+		in := fmt.Sprintf(resolve, bad)
+		assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), SanitizeStoredError(in), "%q", in)
+	}
+	assert.Equal(t, fmt.Sprintf(resolve, `a\xffb`), SanitizeStoredError(fmt.Sprintf(resolve, `a\xffb`)), "the %q form of an invalid byte passes")
+	longID := fmt.Sprintf(slots[0], strings.Repeat("a", 257))
+	assert.Equal(t, ErrCategoryMessage(ErrCategoryUnknown), SanitizeStoredError(longID))
+	maxID := fmt.Sprintf(slots[0], strings.Repeat("a", 256))
+	assert.Equal(t, maxID, SanitizeStoredError(maxID))
 	// The real alphabets still pass verbatim.
 	for _, in := range []string{
 		fmt.Sprintf(slots[0], "arn:aws:ec2:us-east-1:reserved/ri-0a1b.c_2"),

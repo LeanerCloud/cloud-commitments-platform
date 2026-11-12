@@ -13,8 +13,9 @@ import (
 // due_age_cap.go, claim.go, ladder_execution_recheck.go and the api retry
 // handler's email reasons). Anything else in a stored error is treated as
 // provider text. Each pattern is anchored and closed: every variable slot admits only
-// its writer's alphabet, so no slot matches whitespace, a line break or a control
-// or format character.
+// its writer's alphabet, so no slot matches a line break, a control or format
+// character or any whitespace except the one ASCII space the operator's resolve
+// reason may carry.
 // The em dash in the reaper note is written as \x{2014}.
 var serverNotePatterns = []string{
 	`history_write_failed: commitment ` + commitmentIDPattern + ` purchased but its history record failed to save`,
@@ -117,7 +118,9 @@ const (
 		`|: a recommendation is bound by two groups \("` + groupKeyPattern + `" and "` + groupKeyPattern + `"\)`
 	// uuidPattern is a Postgres UUID as it renders (plan, execution and cloud
 	// account IDs). commitmentIDPattern covers provider commitment IDs and ARNs;
-	// identityKeyPattern a RecIdentityKey with "/" separators (skippedNote).
+	// identityKeyPattern a RecIdentityKey with "/" separators (skippedNote); it admits
+	// no space, so a platform value like "Red Hat Enterprise Linux" falls back to the
+	// category message (as before #1820).
 	uuidPattern         = `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
 	commitmentIDPattern = `[A-Za-z0-9._:/-]{1,256}`
 	identityKeyPattern  = `[A-Za-z0-9._:/+-]{1,256}`
@@ -125,8 +128,10 @@ const (
 	// riIDListPattern is the ", "-joined source RI ids of an RI exchange.
 	riIDListPattern = `[A-Za-z0-9-]{1,64}(?:, [A-Za-z0-9-]{1,64})*`
 	// quotedTextPattern is the body of a Go %q string: printable characters
-	// other than '"' and '\\', ASCII space, or an escape.
-	quotedTextPattern  = `(?:[^"\\\p{C}\p{Z}]| |\\[ -~])*`
+	// other than '"' and '\\', ASCII space, or an escape. U+FFFD is excluded
+	// because the regexp reads a raw invalid byte as U+FFFD; %q writes a real
+	// invalid byte as \xNN, so only a literal U+FFFD rune falls back (fail closed).
+	quotedTextPattern  = `(?:[^"\\\p{C}\p{Z}\x{FFFD}]| |\\[ -~])*`
 	skippedNotePattern = `\d+ recommendation\(s\) without a frozen baseline skipped \(under-buy\): ` + idListPattern
 )
 
