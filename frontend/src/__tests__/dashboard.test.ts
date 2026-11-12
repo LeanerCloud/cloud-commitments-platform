@@ -1989,7 +1989,7 @@ describe('Dashboard Module', () => {
     const { renderSavingsByService, computeServiceStats, computeServiceStatsFromRecs, savingsLayerColors } = require('../dashboard') as {
       renderSavingsByService: (recs: unknown[], byService?: Record<string, { potential_savings: number; current_savings: number }>, filterDesc?: string) => void;
       computeServiceStats: (dataPoints: unknown[]) => Map<string, { min: number; max: number; sum: number; count: number; samples: number[] }>;
-      computeServiceStatsFromRecs: (recs: unknown[]) => Map<string, { min: number; max: number; sum: number; count: number; samples: number[]; minLabel?: string; maxLabel?: string }>;
+      computeServiceStatsFromRecs: (recs: unknown[]) => Map<string, { min: number; max: number; sum: number; count: number; samples: number[]; minLabel?: string; maxLabel?: string; unknownCells?: number }>;
       savingsLayerColors: () => { current: string; lowestOption: string; upside: string };
     };
 
@@ -2179,6 +2179,75 @@ describe('Dashboard Module', () => {
         expect(ec2?.samples).toContain(100);
         expect(ec2?.samples).toContain(200);
         expect(ec2?.samples).toContain(300);
+      });
+      describe('per-cell aggregation (#1770)', () => {
+        // The suite mocks groupRecsByCell as one-cell-for-all; these cases need real cells.
+        beforeEach(() => {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const actual = jest.requireActual('../recommendations') as { groupRecsByCell: (r: unknown[]) => Map<string, unknown[]> };
+          mockGroupRecsByCell.mockImplementation((recs: unknown[]) => actual.groupRecsByCell(recs));
+        });
+        const cell = (svc: string, region: string, savings: unknown, term = 1, payment = 'no_upfront'): unknown =>
+          ({ ...(rec(svc, 0, term, payment) as Record<string, unknown>), region, savings });
+
+        test('two cells with two variants each: min/max are per-cell sums', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 100, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', 150, 3, 'all_upfront'),
+            cell('ec2', 'eu-west-1', 400, 1, 'no_upfront'),
+            cell('ec2', 'eu-west-1', 500, 3, 'all_upfront'),
+          ]).get('ec2');
+          // Per-row min/max would give 100 / 500.
+          expect(ec2?.min).toBe(500);
+          expect(ec2?.max).toBe(650);
+          expect(ec2?.count).toBe(4);
+        });
+
+        test('labels name the variant when every cell picks the same one', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 100, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', 150, 3, 'all_upfront'),
+            cell('ec2', 'eu-west-1', 400, 1, 'no_upfront'),
+            cell('ec2', 'eu-west-1', 500, 3, 'all_upfront'),
+          ]).get('ec2');
+          expect(ec2?.minLabel).toBe('1yr no_upfront');
+          expect(ec2?.maxLabel).toBe('3yr all_upfront');
+        });
+
+        test('labels are neutral when cells pick different variants', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 100, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', 150, 3, 'all_upfront'),
+            cell('ec2', 'eu-west-1', 400, 3, 'partial_upfront'),
+            cell('ec2', 'eu-west-1', 500, 1, 'all_upfront'),
+          ]).get('ec2');
+          expect(ec2?.minLabel).toBe('varies by account/region');
+          expect(ec2?.maxLabel).toBe('varies by account/region');
+        });
+
+        test('single-cell service is unchanged', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 200, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', 500, 3, 'all_upfront'),
+          ]).get('ec2');
+          expect([ec2?.min, ec2?.max]).toEqual([200, 500]);
+          expect([ec2?.minLabel, ec2?.maxLabel]).toEqual(['1yr no_upfront', '3yr all_upfront']);
+        });
+
+        test('unknown savings are skipped, never counted as 0', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 300, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', undefined, 3, 'all_upfront'),
+            cell('ec2', 'eu-west-1', null),
+            cell('ec2', 'ap-south-1', NaN),
+          ]).get('ec2');
+          expect([ec2?.min, ec2?.max]).toEqual([300, 300]);
+          expect(ec2?.unknownCells).toBe(2);
+        });
+
+        test('service whose cells are all unknown has no entry', () => {
+          expect(computeServiceStatsFromRecs([cell('rds', 'us-east-1', undefined)]).has('rds')).toBe(false);
+        });
       });
     });
 
