@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/jackc/pgx/v5"
 )
 
 func (h *Handler) cancelPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, execID, token string) (any, error) {
@@ -165,4 +167,91 @@ func (h *Handler) cancelPurchaseViaSession(ctx context.Context, req *events.Lamb
 	}
 
 	return map[string]string{"status": "canceled"}, nil
+}
+
+// cancelAndReleaseSuppressions flips a pending/notified row to canceled and
+// drops its purchase_suppressions in one transaction. canceled is false (with
+// the row's current status) when a concurrent operation moved it first; the
+// suppressions are then left alone.
+func (h *Handler) cancelAndReleaseSuppressions(ctx context.Context, executionID string, canceledBy *string) (canceled bool, currentStatus string, err error) {
+	err = h.config.WithTx(ctx, func(tx pgx.Tx) error {
+		var txErr error
+		canceled, currentStatus, txErr = h.config.CancelExecutionAtomic(ctx, tx, executionID, canceledBy)
+		if txErr != nil {
+			return txErr
+		}
+		if !canceled {
+			return nil
+		}
+		return h.config.DeleteSuppressionsByExecutionTx(ctx, tx, executionID)
+	})
+	return canceled, currentStatus, err
+}
+
+// authorizeCancelSession runs the account-scope gate (issue #92) before the
+// cancel-any/cancel-own RBAC matrix, so an out-of-scope caller gets the
+// enumeration-safe 404 before a 403 can reveal the execution exists. Shared
+// by the cancel and revoke session paths.
+func (h *Handler) authorizeCancelSession(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	if err := h.requireExecutionAccess(ctx, session, execution.ExecutionID); err != nil {
+		return err
+	}
+	return h.authorizeSessionCancel(ctx, session, execution)
+}
+
+// authorizeSessionCancel returns nil when the session is permitted to cancel
+// the given execution under the cancel-any / cancel-own RBAC rules added in
+// issue #46, and the Constraints of the permission that grants the verb cover
+// every recommendation of the execution (issue #678, same strict sets as the
+// #404 revoke check). A constrained cancel-any falls back to cancel-own only on
+// a 403; a Constraints denial is terminal for the email-token fall-through (it
+// is wrapped so fallsThroughToToken does not hand it to the contact_email
+// branch). The token branch itself is a separate capability and is not
+// Constraints-checked. Returns a 403 ClientError otherwise.
+func (h *Handler) authorizeSessionCancel(ctx context.Context, session *Session, execution *config.PurchaseExecution) error {
+	// Stateless admin API key: full access, no user row. Administrators-group
+	// users pass via the cancel-any check below.
+	if session.UserID == apiKeyAdminUserID {
+		return nil
+	}
+	if h.auth == nil {
+		return NewClientError(500, "authentication service not configured")
+	}
+
+	hasAny, err := h.sessionHoldsVerb(ctx, session, auth.ActionCancelAny)
+	if err != nil {
+		return err
+	}
+	var anyErr error
+	if hasAny {
+		anyErr = wrapConstraintDenied(h.requirePermissionConstraints(ctx, session, auth.ActionCancelAny, auth.ResourcePurchases, revokeExecutionConstraintSets(execution)))
+		if anyErr == nil || !isForbidden(anyErr) {
+			return anyErr
+		}
+	}
+	return h.authorizeCancelOwn(ctx, session, execution, anyErr)
+}
+
+// authorizeCancelOwn requires cancel-own, a matching creator and the cancel-own
+// Constraints. anyErr is the cancel-any Constraints denial (nil when the
+// session has no cancel-any); it is returned instead of the generic denials so
+// a constraint refusal stays terminal.
+func (h *Handler) authorizeCancelOwn(ctx context.Context, session *Session, execution *config.PurchaseExecution, anyErr error) error {
+	hasOwn, err := h.sessionHoldsVerb(ctx, session, auth.ActionCancelOwn)
+	if err != nil {
+		return err
+	}
+	if !hasOwn {
+		if anyErr != nil {
+			return anyErr
+		}
+		return NewClientError(403, "permission denied: requires cancel-any or cancel-own on purchases")
+	}
+	if execution.CreatedByUserID == nil || *execution.CreatedByUserID != session.UserID {
+		if anyErr != nil {
+			return anyErr
+		}
+		return NewClientError(403, "permission denied: cannot cancel another user's pending purchase")
+	}
+	return wrapConstraintDenied(h.requirePermissionConstraints(ctx, session, auth.ActionCancelOwn, auth.ResourcePurchases, revokeExecutionConstraintSets(execution)))
 }
