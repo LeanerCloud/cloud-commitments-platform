@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
@@ -157,4 +158,115 @@ func anyPurchased(recs []config.RecommendationRecord) bool {
 		}
 	}
 	return false
+}
+
+// globalNotifyEmail returns the trimmed notification email from a GlobalConfig,
+// or "" when the config is nil or the field is unset. Extracted from
+// sendPurchaseExecutedEmail to keep that function under the cyclomatic limit.
+func globalNotifyEmail(globalCfg *config.GlobalConfig) string {
+	if globalCfg != nil && globalCfg.NotificationEmail != nil {
+		return strings.TrimSpace(*globalCfg.NotificationEmail)
+	}
+	return ""
+}
+
+// lookupRequesterInfo resolves the email for the user who originally submitted
+// the execution. The lookup is non-fatal: when auth is unavailable or the user
+// cannot be found, "" is returned and the notification is sent without it.
+// Extracted from sendPurchaseExecutedEmail to keep that function under the
+// cyclomatic limit. Only the email is returned -- api.User carries no display
+// name field, so the notification's RequestedByName is populated separately if
+// and when a name source lands.
+func (h *Handler) lookupRequesterInfo(ctx context.Context, execution *config.PurchaseExecution) (requesterEmail string) {
+	if h.auth == nil || execution.CreatedByUserID == nil || *execution.CreatedByUserID == "" {
+		return ""
+	}
+	u, err := h.auth.GetUser(ctx, *execution.CreatedByUserID)
+	if err != nil {
+		logging.Warnf("lookupRequesterInfo: GetUser(%s) failed: %v", *execution.CreatedByUserID, err)
+		return ""
+	}
+	if u == nil {
+		logging.Warnf("lookupRequesterInfo: GetUser(%s) returned nil user", *execution.CreatedByUserID)
+		return ""
+	}
+	return u.Email
+}
+
+// resolveExecutedNotificationRecipients builds the To / Cc pair for the
+// post-execution notification from the three input email sets. The logic
+// mirrors resolveApprovalRecipients: first contact email is To; remaining
+// contact emails, globalNotify, and requesterEmail are Cc (deduped). When
+// no contact emails are present, globalNotify becomes To and requesterEmail
+// becomes Cc.
+func resolveExecutedNotificationRecipients(contactEmails []string, globalNotify, requesterEmail string) (to string, cc []string) {
+	seen := map[string]bool{}
+	addCc := func(addr string) {
+		norm := strings.ToLower(strings.TrimSpace(addr))
+		if norm == "" || seen[norm] {
+			return
+		}
+		seen[norm] = true
+		cc = append(cc, addr)
+	}
+
+	if len(contactEmails) > 0 {
+		to = contactEmails[0]
+		seen[strings.ToLower(strings.TrimSpace(to))] = true
+		for _, addr := range contactEmails[1:] {
+			addCc(addr)
+		}
+		addCc(globalNotify)
+		addCc(requesterEmail)
+		return to, cc
+	}
+
+	// No contact emails: fall back to globalNotify as To.
+	if globalNotify != "" {
+		to = globalNotify
+		seen[strings.ToLower(strings.TrimSpace(to))] = true
+		addCc(requesterEmail)
+		return to, cc
+	}
+
+	// Last resort: requester email only.
+	to = strings.TrimSpace(requesterEmail)
+	return to, nil
+}
+
+// executionTimestamp returns a human-readable timestamp for when the execution
+// was submitted (ScheduledDate for web-submitted rows). Returns empty string
+// when the execution has no timestamp (shouldn't happen in practice but
+// guards against zero-value time panics in templates).
+func executionTimestamp(exec *config.PurchaseExecution) string {
+	if exec.ScheduledDate.IsZero() {
+		return ""
+	}
+	return exec.ScheduledDate.UTC().Format(time.RFC3339)
+}
+
+// resolveDashboardURL returns the absolute base URL to embed in email
+// approval/cancel links. Preference order matches the OIDC issuer helper's
+// strategy for the same underlying problem (Lambda's Function URL can't be
+// wired into its own env via Terraform without a cycle, so the canonical
+// URL has to be discovered at request time):
+//
+//  1. h.dashboardURL — set from CUDLY_DASHBOARD_URL when the operator has
+//     a custom domain (frontend_domain_names populated in Terraform).
+//  2. The inbound request's trusted DomainName (`https://<lambda-url-host>`)
+//     — the fallback for bare-Function-URL deployments so emails carry
+//     clickable absolute links instead of relative paths.
+//
+// When both are empty the template renders relative links — still valid if
+// the user clicks them from the dashboard itself, but broken in email
+// clients. That case is a deployment misconfiguration (no domain, no
+// Function URL) and deserves to surface.
+func (h *Handler) resolveDashboardURL(req *events.LambdaFunctionURLRequest) string {
+	if h.dashboardURL != "" {
+		return strings.TrimRight(h.dashboardURL, "/")
+	}
+	if req != nil && req.RequestContext.DomainName != "" {
+		return "https://" + req.RequestContext.DomainName
+	}
+	return ""
 }
