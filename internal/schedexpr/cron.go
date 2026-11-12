@@ -16,9 +16,12 @@ const searchYears = 10
 // cronSchedule is a parsed cron expression. Each set is indexed by the
 // field's value (dow by time.Weekday); year is nil when any year matches.
 type cronSchedule struct {
-	minute, hour, dom, month []bool
-	dow                      [7]bool
-	year                     []bool
+	minute []bool
+	hour   []bool
+	dom    []bool
+	month  []bool
+	year   []bool
+	dow    [7]bool
 	// orDays makes a day match when either day-of-month or day-of-week
 	// matches (classic cron when both fields are restricted); otherwise
 	// both must match.
@@ -28,9 +31,9 @@ type cronSchedule struct {
 // dialect captures how the cron syntaxes differ: field count and the
 // day-of-month/day-of-week rules.
 type dialect struct {
+	parseDays func(c *cronSchedule, dom, dow string) error
 	name      string
 	fields    int
-	parseDays func(c *cronSchedule, dom, dow string) error
 }
 
 var (
@@ -40,8 +43,9 @@ var (
 
 // field describes one cron field's value range and optional names.
 type field struct {
-	lo, hi int
-	names  map[string]int
+	names map[string]int
+	lo    int
+	hi    int
 }
 
 var (
