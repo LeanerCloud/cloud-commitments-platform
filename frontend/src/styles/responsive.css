@@ -378,7 +378,7 @@ body.sidebar-open {
     /* Review Purchase totals (issue #1654): one tile per row so a 9-10 digit
      * amount fits its tile. */
     .commitment-summary-band {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 

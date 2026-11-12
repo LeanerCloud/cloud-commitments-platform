@@ -1899,6 +1899,7 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 .commitment-summary-stat {
     display: flex;
     flex-direction: column;
+    min-width: 0; /* issue #1654: let the tile shrink to its grid track instead of overflowing */
     padding: 0.5rem 0.75rem;
     background: var(--cudly-surface-muted);
     border-radius: 6px;
@@ -1911,6 +1912,7 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 
 .commitment-summary-value {
     font-size: 1.15rem;
+    overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
 }
 
