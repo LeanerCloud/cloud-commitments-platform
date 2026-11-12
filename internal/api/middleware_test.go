@@ -712,7 +712,7 @@ func TestTokenOnlyApprove_BypassesCSRF(t *testing.T) {
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveExecution", ctx, execID, "email-token", contactEmail).Return("", nil)
+	mockPurchase.On("ApproveExecution", ctx, execID, "email-token", contactEmail).Return(nil, "", nil)
 
 	handler := &Handler{config: mockConfig, auth: mockAuth, purchase: mockPurchase}
 

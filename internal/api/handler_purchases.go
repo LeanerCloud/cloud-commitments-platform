@@ -698,6 +698,18 @@ func tokenActionError(err error) error {
 	}
 }
 
+// tokenApproveError maps a failed token approve. A bad or expired token is the
+// caller's fault (403/410) and always precedes the claim, so those keep the
+// tokenActionError mapping; every other failure goes through
+// executeFailureError, so a provider failure after the claim is a 502 carrying
+// the row's real status, like session approve.
+func tokenApproveError(executionID string, final *config.PurchaseExecution, err error) error {
+	if errors.Is(err, purchase.ErrInvalidApprovalToken) || errors.Is(err, purchase.ErrApprovalTokenExpired) {
+		return tokenActionError(err)
+	}
+	return executeFailureError(executionID, "approved", final, err)
+}
+
 // approveViaToken handles the email-link approve branch of approvePurchase to keep
 // that function under the cyclomatic limit.
 func (h *Handler) approveViaToken(ctx context.Context, req *events.LambdaFunctionURLRequest, execution *config.PurchaseExecution, token string) (any, error) {
@@ -757,9 +769,9 @@ func (h *Handler) approveViaToken(ctx context.Context, req *events.LambdaFunctio
 	// sourced from this return value, never from a DB re-read, since
 	// only the token hash is stored and a re-read can only ever yield
 	// the hash.
-	revocationToken, approveErr := h.purchase.ApproveExecution(ctx, execution.ExecutionID, token, actor)
+	final, revocationToken, approveErr := h.purchase.ApproveExecution(ctx, execution.ExecutionID, token, actor)
 	if approveErr != nil {
-		return nil, tokenActionError(approveErr)
+		return nil, tokenApproveError(execution.ExecutionID, final, approveErr)
 	}
 	// Re-fetch the execution to pick up the FINAL state (status,
 	// completed_at, per-rec purchase results) ApproveAndExecute wrote --

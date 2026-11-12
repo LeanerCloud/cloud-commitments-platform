@@ -29,7 +29,7 @@ type PurchaseManagerInterface interface {
 	// raw revocation token minted on a successful execute (issue #103: only
 	// its hash is stored, so a re-read cannot yield an emailable token).
 	// Empty on failure.
-	ApproveExecution(ctx context.Context, execID, token, actor string) (string, error)
+	ApproveExecution(ctx context.Context, execID, token, actor string) (*config.PurchaseExecution, string, error)
 	ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
 	// DirectExecute is ApproveAndExecute for the direct-execute permission; it
 	// stamps the executed_* audit fields only after the claim is won.

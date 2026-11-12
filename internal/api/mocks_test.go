@@ -48,9 +48,10 @@ type MockPurchaseManager struct {
 	mock.Mock
 }
 
-func (m *MockPurchaseManager) ApproveExecution(ctx context.Context, execID, token, actor string) (string, error) {
+func (m *MockPurchaseManager) ApproveExecution(ctx context.Context, execID, token, actor string) (*config.PurchaseExecution, string, error) {
 	args := m.Called(ctx, execID, token, actor)
-	return args.String(0), args.Error(1)
+	exec, _ := args.Get(0).(*config.PurchaseExecution)
+	return exec, args.String(1), args.Error(2)
 }
 
 func (m *MockPurchaseManager) ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error) {

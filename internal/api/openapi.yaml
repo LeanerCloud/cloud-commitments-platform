@@ -498,6 +498,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '500':
+          description: >
+            Server error. With execute_mode "direct", also answered when the
+            purchase ran but its final status could not be saved; check the
+            execution in History before retrying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '502':
           description: >
             execute_mode "direct" only. The claim was won and the purchase
@@ -595,9 +604,8 @@ paths:
           description: >
             The execution cannot be approved: a non-AWS execution without a
             resolvable cloud account, a status other than pending or notified
-            (in token mode the status check is the atomic transition, so a
-            concurrent change answers the same way, and in session mode a
-            lost claim answers 409 as well).
+            (the status check is the atomic transition in both modes, so a
+            concurrent change or a lost claim answers the same way).
           content:
             application/json:
               schema:
@@ -613,17 +621,20 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
-          description: Server error.
+          description: >
+            Server error. Also answered when the purchase ran but its final
+            status could not be saved, in either mode; check the execution in
+            History before retrying.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '502':
           description: >
-            Session mode only. The claim was won and the purchase ran, but it
-            failed or only partly completed (a failed or partially_completed
-            run). Money may have moved; the body details carry execution_id
-            and the row's actual status. Check the execution in History
+            Session and token mode. The claim was won and the purchase ran,
+            but it failed or only partly completed (a failed or
+            partially_completed run). Money may have moved; the body details
+            carry execution_id and the row's actual status. Check the execution in History
             before retrying.
           content:
             application/json:

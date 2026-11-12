@@ -140,7 +140,7 @@ type BreakdownValue struct {
 // hash is stored, so callers can no longer recover a raw, emailable token by
 // re-reading the execution from the store). Empty on failure.
 type PurchaseManagerInterface interface {
-	ApproveExecution(ctx context.Context, execID, token, actor string) (string, error)
+	ApproveExecution(ctx context.Context, execID, token, actor string) (*config.PurchaseExecution, string, error)
 	ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
 	// DirectExecute is ApproveAndExecute for the direct-execute permission; it
 	// stamps the executed_* audit fields only after the claim is won.

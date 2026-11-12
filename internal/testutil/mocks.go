@@ -42,7 +42,7 @@ type MockPurchaseManager struct {
 	ProcessScheduledPurchasesFunc         func(ctx context.Context) (*purchase.ProcessResult, error)
 	SendUpcomingPurchaseNotificationsFunc func(ctx context.Context) (*purchase.NotificationResult, error)
 	ProcessMessageFunc                    func(ctx context.Context, body string) error
-	ApproveExecutionFunc                  func(ctx context.Context, execID, token, actor string) (string, error)
+	ApproveExecutionFunc                  func(ctx context.Context, execID, token, actor string) (*config.PurchaseExecution, string, error)
 	ApproveAndExecuteFunc                 func(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
 	DirectExecuteFunc                     func(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
 	RunPlannedPurchaseNowFunc             func(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error)
@@ -73,11 +73,11 @@ func (m *MockPurchaseManager) ProcessMessage(ctx context.Context, body string) e
 	return nil
 }
 
-func (m *MockPurchaseManager) ApproveExecution(ctx context.Context, execID, token, actor string) (string, error) {
+func (m *MockPurchaseManager) ApproveExecution(ctx context.Context, execID, token, actor string) (*config.PurchaseExecution, string, error) {
 	if m.ApproveExecutionFunc != nil {
 		return m.ApproveExecutionFunc(ctx, execID, token, actor)
 	}
-	return "", nil
+	return nil, "", nil
 }
 
 func (m *MockPurchaseManager) ApproveAndExecute(ctx context.Context, execID, actor string, transitionedBy *string) (*config.PurchaseExecution, string, error) {

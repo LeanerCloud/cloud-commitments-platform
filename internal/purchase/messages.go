@@ -178,7 +178,7 @@ func (m *Manager) handleApproveMessage(ctx context.Context, msg *AsyncMessage) e
 	}
 	// The SQS worker sends no email itself, so the minted revocation token
 	// (issue #103) has no consumer here; only the error matters.
-	_, err := m.ApproveExecution(ctx, msg.ExecutionID, msg.Token, msg.ActorEmail)
+	_, _, err := m.ApproveExecution(ctx, msg.ExecutionID, msg.Token, msg.ActorEmail)
 	return err
 }
 

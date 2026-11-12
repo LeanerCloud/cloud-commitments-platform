@@ -112,7 +112,7 @@ func TestExecutedNotification_TokenApprovePath(t *testing.T) {
 	mockAuth.On("HasPermissionAPI", ctx, "", "approve-own", "purchases").Return(false, nil).Maybe()
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contact).Return(freshToken, nil)
+	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contact).Return(nil, freshToken, nil)
 
 	notifier := &recordingExecutedNotifier{}
 	handler := &Handler{
@@ -183,7 +183,7 @@ func TestExecutedNotification_TokenApprovePath_RefetchFailureStillEmailsToken(t 
 	mockAuth.On("HasPermissionAPI", ctx, "", "approve-own", "purchases").Return(false, nil).Maybe()
 
 	mockPurchase := new(MockPurchaseManager)
-	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contact).Return(freshToken, nil)
+	mockPurchase.On("ApproveExecution", ctx, execID, "valid-token", contact).Return(nil, freshToken, nil)
 
 	notifier := &recordingExecutedNotifier{}
 	handler := &Handler{
