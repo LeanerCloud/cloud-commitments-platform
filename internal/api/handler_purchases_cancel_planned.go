@@ -7,6 +7,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -294,4 +295,104 @@ func (h *Handler) releaseCanceledSuppressions(ctx context.Context, canceled *con
 		return nil, fmt.Errorf("cancel execution %s: failed to release suppressions: %w", executionID, delErr)
 	}
 	return canceled, nil
+}
+
+// cancelOrRecoverExecution transitions the execution to "canceled" if it is
+// still in {pending, notified, paused}. If a prior attempt already canceled it
+// (ErrExecutionNotInExpectedStatus), it fetches the row instead so the caller
+// can still drive the plan-disable side-effect, keeping the operation
+// idempotent across retries.
+// actor is the UUID of the user initiating the cancel (nil for system-initiated paths).
+func (h *Handler) cancelOrRecoverExecution(ctx context.Context, executionID string, actor *string) (*config.PurchaseExecution, error) {
+	canceled, err := h.config.TransitionExecutionStatus(ctx, executionID, []string{"pending", "notified", "paused"}, "canceled", actor)
+	if err == nil {
+		return h.releaseCanceledSuppressions(ctx, canceled, executionID)
+	}
+	if !errors.Is(err, config.ErrExecutionNotInExpectedStatus) {
+		// Not a CAS conflict: a real server-side failure (DB error, transient
+		// fault). Surface it as a plain wrapped error so the router logs the
+		// raw detail and returns a generic 500 -- a 409 here would misclassify
+		// a retriable backend failure as the caller's fault and leak backend
+		// text (feedback_http_status_classification; same class as PR #1276).
+		return nil, fmt.Errorf("cancel execution %s: %w", executionID, err)
+	}
+	existing, getErr := h.config.GetExecutionByID(ctx, executionID)
+	if errors.Is(getErr, config.ErrNotFound) {
+		return nil, NewClientError(404, fmt.Sprintf("execution %s not found", executionID))
+	}
+	if getErr != nil {
+		return nil, fmt.Errorf("disable plan: failed to get execution %s after conflict: %w", executionID, getErr)
+	}
+	// Accept both spellings: during the expand-contract rename (migration
+	// 000089) a concurrent legacy cancel may have written the legacy value
+	// before the rolling deploy completes. The contract migration (#1278)
+	// normalizes the data, after which LegacyStatusCanceled can be removed.
+	if existing.Status != config.StatusCanceled && existing.Status != config.LegacyStatusCanceled {
+		return nil, NewClientError(409, fmt.Sprintf(
+			"execution %s cannot be canceled (status=%s)",
+			executionID, existing.Status))
+	}
+	// Normalize the response Status so the idempotent recovery path returns the
+	// canonical US spelling even when the DB row still carries the legacy value.
+	// Without this, a caller that received an in-flight 200 from this branch
+	// would see status="canceled" while a caller that hit the happy-path
+	// transition above would see status="canceled" for the same execution_id
+	// during the rolling deploy. The legacy value is preserved in storage --
+	// only the in-memory copy returned to the handler is normalized -- so the
+	// contract migration's authoritative status backfill still observes every
+	// legacy row.
+	if existing.Status == config.LegacyStatusCanceled {
+		existing.Status = config.StatusCanceled
+	}
+	if delErr := h.config.DeleteSuppressionsByExecution(ctx, executionID); delErr != nil {
+		return nil, fmt.Errorf("cancel execution %s: failed to release suppressions: %w", executionID, delErr)
+	}
+	return existing, nil
+}
+
+// disablePlan fetches the plan identified by planID and sets Enabled=false if
+// it is currently true. It is idempotent: calling it against an already-
+// disabled plan is a no-op. Returns a 404 ClientError when the plan does not
+// exist, and a 500-wrapped error for any other store failure.
+func (h *Handler) disablePlan(ctx context.Context, planID string) error {
+	plan, err := h.config.GetPurchasePlan(ctx, planID)
+	if err != nil {
+		if errors.Is(err, config.ErrNotFound) {
+			return NewClientError(404, fmt.Sprintf("disable plan: plan %s not found", planID))
+		}
+		// Do NOT wrap err with the raw plan UUID: a non-ClientError propagates
+		// to the router's logging.Errorf("API error: %v"), leaking the plan
+		// UUID and the raw DB error string (issue #965, same shape as the
+		// validatePlanAccountProviders fix).
+		return mapCreatePlanStorageError(err,
+			"plan not found", "failed to disable plan",
+			"disablePlan: GetPurchasePlan failed")
+	}
+	if plan.Enabled {
+		plan.Enabled = false
+		if err := h.config.UpdatePurchasePlan(ctx, plan); err != nil {
+			// Same rationale: avoid leaking planID + raw DB error through the
+			// router's API error log.
+			return mapCreatePlanStorageError(err,
+				"plan not found", "failed to disable plan",
+				"disablePlan: UpdatePurchasePlan failed")
+		}
+	}
+	return nil
+}
+
+// rejectOrphanExecution runs the issue-#609 orphan preflight: non-AWS
+// executions whose account no longer exists are rejected with a 409 before
+// the cloud SDK is reached. Delegates to the centralized predicate in the
+// purchase package so the logic is maintained in one place. It runs only
+// once the session is authorized for the execution, so the 409 cannot tell
+// an unauthorized caller that the execution exists (issue #597). The token
+// branch needs no copy: an orphan has no per-account contact_email, so
+// authorizeApprovalAction never authorizes it, and ApproveExecution runs
+// the same predicate itself.
+func rejectOrphanExecution(execution *config.PurchaseExecution) error {
+	if err := purchase.OrphanExecutionError(execution); err != nil {
+		return NewClientError(409, err.Error())
+	}
+	return nil
 }
