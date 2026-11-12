@@ -29,6 +29,11 @@ updates:
         update-types:
           - minor
           - patch
+    # pgxmock v6 is still a beta; pgx 5.12 breaks the v5 mock (#1864). Lift this
+    # ignore together with the pgxmock v6 migration.
+    ignore:
+      - dependency-name: "github.com/jackc/pgx/v5"
+        versions: [">=5.12.0"]
 
   # tests/e2e is its own module, excluded from the root module on purpose.
   - package-ecosystem: gomod
