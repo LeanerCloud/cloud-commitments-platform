@@ -47,8 +47,8 @@ func TestResolve(t *testing.T) {
 		name   string
 		remote string
 		xff    string
-		hops   int
 		want   string
+		hops   int
 	}{
 		{name: "hops 1 takes rightmost", remote: "10.0.0.1:1000", xff: "1.1.1.1, 2.2.2.2", hops: 1, want: "2.2.2.2"},
 		{name: "hops 2 takes n-2", remote: "10.0.0.1:1000", xff: "9.9.9.9, 1.1.1.1, 2.2.2.2", hops: 2, want: "1.1.1.1"},
