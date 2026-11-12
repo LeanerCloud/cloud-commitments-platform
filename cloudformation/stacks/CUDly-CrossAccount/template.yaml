@@ -148,6 +148,7 @@ Resources:
               - es:DescribeReservedInstanceOfferings
               - es:DescribeReservedInstances
               - es:PurchaseReservedInstanceOffering
+              - es:AddTags
             Resource: "*"
 
           # Redshift Reserved Nodes

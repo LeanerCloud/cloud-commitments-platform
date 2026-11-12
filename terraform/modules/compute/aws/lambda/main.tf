@@ -400,6 +400,7 @@ resource "aws_iam_role_policy" "ri_exchange" {
           "es:DescribeReservedInstances",
           "es:DescribeReservedInstanceOfferings",
           "es:PurchaseReservedInstanceOffering",
+          "es:AddTags",
           # Redshift reserved nodes
           "redshift:DescribeReservedNodes",
           "redshift:DescribeReservedNodeOfferings",

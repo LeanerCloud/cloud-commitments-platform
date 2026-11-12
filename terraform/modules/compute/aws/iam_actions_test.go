@@ -28,11 +28,13 @@ var runtimeModuleFiles = []string{
 }
 
 // requiredOpenSearchActions are the IAM actions required by the OpenSearch
-// API operations invoked in providers/aws/services/opensearch/client.go.
+// API operations invoked in providers/aws/services/opensearch/client.go,
+// including the post-purchase AddTags attribution call (#42).
 var requiredOpenSearchActions = []string{
 	"es:DescribeReservedInstances",
 	"es:DescribeReservedInstanceOfferings",
 	"es:PurchaseReservedInstanceOffering",
+	"es:AddTags",
 }
 
 // legacyElasticsearchActionPattern matches the pre-OpenSearch action names

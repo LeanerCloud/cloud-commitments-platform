@@ -139,6 +139,7 @@ resource "aws_iam_policy" "cudly" {
           "es:PurchaseReservedInstanceOffering",
           "es:DescribeReservedInstanceOfferings",
           "es:DescribeReservedInstances",
+          "es:AddTags",
         ]
         Resource = "*"
       },
