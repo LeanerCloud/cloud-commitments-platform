@@ -135,7 +135,7 @@ func (h *Handler) principalFromUserAPIKey(ctx context.Context, apiKey string) *P
 	}
 	keyRaw, userRaw, err := h.auth.ValidateUserAPIKeyAPI(ctx, apiKey)
 	if err != nil {
-		logging.Debugf("User API key validation failed: %v", err)
+		logging.Debugf("User API key validation failed")
 		return nil
 	}
 	if userRaw == nil {

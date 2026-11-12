@@ -437,7 +437,7 @@ func (s *Service) RecordUsageAsync(keyID string) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logging.Warnf("service_apikeys: RecordUsage goroutine panic: %v", r)
+				logging.Warnf("service_apikeys: RecordUsage goroutine panic")
 			}
 		}()
 
@@ -507,7 +507,7 @@ func (s *Service) flushPendingUsage(keyID string) {
 	updateCtx, cancel := context.WithTimeout(context.Background(), apiKeyUsageFlushTimeout)
 	defer cancel()
 	if err := s.RecordUsage(updateCtx, keyID, delta); err != nil {
-		logging.Debugf("Failed to record %d API key usage(s) for key %s: %v", delta, keyID, err)
+		logging.Debugf("Failed to record API key usage")
 	}
 }
 

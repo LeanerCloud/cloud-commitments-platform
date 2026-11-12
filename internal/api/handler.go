@@ -351,7 +351,7 @@ func (h *Handler) authorizeAPIKey(ctx context.Context, apiKey, action, resource 
 	}
 	userID, keyID, has, err := h.auth.HasAPIKeyPermissionAPI(ctx, apiKey, action, resource)
 	if err != nil {
-		logging.Debugf("User API key permission check failed: %v", err)
+		logging.Debugf("User API key permission check failed")
 		return nil, nil // validation error: fall through to bearer-token auth
 	}
 	if !has {
@@ -458,7 +458,7 @@ func (h *Handler) authorizeAPIKeyAny(ctx context.Context, apiKey string, verbs [
 	for _, verb := range verbs {
 		userID, keyID, has, err := h.auth.HasAPIKeyPermissionAPI(ctx, apiKey, verb, resource)
 		if err != nil {
-			logging.Debugf("User API key permission check failed: %v", err)
+			logging.Debugf("User API key permission check failed")
 			return nil, nil // validation error: fall through to bearer-token auth
 		}
 		if !has {
@@ -692,7 +692,7 @@ func (h *Handler) withRegisteredAccountNames(ctx context.Context, scope auth.Acc
 	}
 	registered, err := h.config.ListCloudAccounts(ctx, config.CloudAccountFilter{})
 	if err != nil {
-		logging.Warnf("account scope: cannot load cloud accounts, matching scope entries by ID only: %v", err)
+		logging.Warnf("account scope: cannot load cloud accounts, matching scope entries by ID only")
 		return scope
 	}
 	names := make([]string, len(registered))

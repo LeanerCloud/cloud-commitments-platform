@@ -338,7 +338,7 @@ func (s *Service) ValidateSession(ctx context.Context, token string) (*Session, 
 
 	if time.Now().After(session.ExpiresAt) {
 		if delErr := s.store.DeleteSession(ctx, hashedToken); delErr != nil {
-			logging.Warnf("Failed to delete expired session: %v", delErr)
+			logging.Warnf("Failed to delete expired session")
 		}
 		return nil, fmt.Errorf("session expired")
 	}
