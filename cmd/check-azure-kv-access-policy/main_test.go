@@ -187,10 +187,10 @@ func TestRunExitCodes(t *testing.T) {
 
 	cases := []struct {
 		name       string
-		args       []string
-		wantCode   int
 		wantStdout string
 		wantStderr string
+		args       []string
+		wantCode   int
 	}{
 		{name: "clean", args: []string{clean}, wantCode: exitClean},
 		{name: "violation", args: []string{clean, bad}, wantCode: exitViolation,
