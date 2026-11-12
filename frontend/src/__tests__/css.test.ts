@@ -620,6 +620,15 @@ describe('Toast stack at narrow widths (issue #1736)', () => {
     expect(body).not.toMatch(/#[0-9a-fA-F]{3,6}\b|rgba?\(/);
   });
 
+  test('<=480px caps the stack below the top bar and scrolls (issue #1945)', () => {
+    const m = responsive.match(/@media \(max-width: 480px\) \{\s*\.toast-container \{([^}]*)\}/);
+    expect(m).not.toBeNull();
+    const body = m![1];
+    expect(body).toMatch(/max-height:\s*calc\(100vh\s*-\s*var\(--cudly-topbar-h\)/);
+    expect(body).toMatch(/max-height:\s*calc\(100dvh\s*-\s*var\(--cudly-topbar-h\)/);
+    expect(body).toMatch(/overflow-y:\s*auto/);
+  });
+
   test('desktop rule keeps the bottom-right 400px stack', () => {
     const m = components.match(/\.toast-container \{([^}]*)\}/);
     expect(m).not.toBeNull();

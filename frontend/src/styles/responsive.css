@@ -388,6 +388,10 @@ body.sidebar-open {
         right: var(--cudly-sp-3);
         max-width: none;
         bottom: calc(var(--toast-bottom) + env(safe-area-inset-bottom));
+        /* Stop the stack at the top bar and scroll inside it (issue 1945). */
+        max-height: calc(100vh - var(--cudly-topbar-h) - var(--toast-bottom) - env(safe-area-inset-bottom) - var(--cudly-sp-3));
+        max-height: calc(100dvh - var(--cudly-topbar-h) - var(--toast-bottom) - env(safe-area-inset-bottom) - var(--cudly-sp-3));
+        overflow-y: auto;
     }
 }
 
