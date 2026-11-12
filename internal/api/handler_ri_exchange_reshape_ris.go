@@ -2,13 +2,18 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
+	"strconv"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/ricost"
 )
 
 // listRIsAccount resolves the AWS account the convertible RIs are read from
@@ -171,4 +176,113 @@ func (h *Handler) restrictUtilizationToDeploymentRIs(ctx context.Context, sessio
 		}
 	}
 	return visible, nil
+}
+
+// parseLookbackDaysParam parses and validates the "lookback_days" query parameter.
+// Returns 30 as default when the parameter is absent.
+func parseLookbackDaysParam(params map[string]string) (int, error) {
+	days := params["lookback_days"]
+	if days == "" {
+		return 30, nil
+	}
+	d, err := strconv.Atoi(days)
+	if err != nil || d < 1 || d > 365 {
+		return 0, NewClientError(400, "lookback_days must be between 1 and 365")
+	}
+	return d, nil
+}
+
+// parseThresholdParam parses and validates the "threshold" query parameter.
+func parseThresholdParam(params map[string]string) (float64, error) {
+	t := params["threshold"]
+	if t == "" {
+		return 95.0, nil
+	}
+	f, err := strconv.ParseFloat(t, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f < 0 || f > 100 {
+		return 0, NewClientError(400, "threshold must be a number between 0 and 100")
+	}
+	return f, nil
+}
+
+// monthlyCostFromConvertibleRI delegates to ricost.MonthlyCostFromConvertibleRI,
+// the single implementation of the convertible RI monthly cost formula shared
+// with internal/server. Its error wraps ricost.ErrNonPositiveDuration or
+// ricost.ErrNoPricing, and callers must exclude the RI.
+func monthlyCostFromConvertibleRI(ri ec2ConvertibleRI) (float64, error) {
+	return ricost.MonthlyCostFromConvertibleRI(ri)
+}
+
+// excludedRIReason is the user-facing reason for an RI left out of reshape
+// analysis because monthlyCostFromConvertibleRI returned err.
+func excludedRIReason(err error) string {
+	if errors.Is(err, ricost.ErrNoPricing) {
+		return "AWS returned no pricing (fixed, usage and recurring charges total zero or less), so its monthly cost cannot be computed"
+	}
+	return "AWS returned no term length (duration), so its monthly cost cannot be computed"
+}
+
+// convertToExchangeTypes converts provider-specific types to the exchange package types.
+// RIs whose monthly cost cannot be computed are returned as excluded rather
+// than dropped silently, so the response can surface them.
+func convertToExchangeTypes(instances []ec2ConvertibleRI, utilData []riUtilization) ([]exchange.RIInfo, []exchange.UtilizationInfo, []ExcludedRI) {
+	var excluded []ExcludedRI
+	riInfos := make([]exchange.RIInfo, 0, len(instances))
+	for i := range instances {
+		inst := instances[i]
+		monthlyCost, err := monthlyCostFromConvertibleRI(inst)
+		if err != nil {
+			logging.Warnf("convertToExchangeTypes: excluding RI from reshape: %v", err)
+			excluded = append(excluded, ExcludedRI{RIID: inst.ReservedInstanceID, Reason: excludedRIReason(err)})
+			continue
+		}
+		riInfos = append(riInfos, exchange.RIInfo{
+			ID:                  inst.ReservedInstanceID,
+			InstanceType:        inst.InstanceType,
+			InstanceCount:       inst.InstanceCount,
+			OfferingClass:       "convertible",
+			NormalizationFactor: inst.NormalizationFactor,
+			MonthlyCost:         monthlyCost,
+			CurrencyCode:        inst.CurrencyCode,
+			// Plumb the AWS-reported RI duration straight through —
+			// reshape's term-match guard rejects alternatives whose
+			// TermSeconds differs from the source so a 3y RI never
+			// surfaces as an alternative to a 1y commitment.
+			TermSeconds: inst.Duration,
+		})
+	}
+
+	utilInfos := make([]exchange.UtilizationInfo, len(utilData))
+	for i, u := range utilData {
+		utilInfos[i] = exchange.UtilizationInfo{
+			RIID:               u.ReservedInstanceID,
+			UtilizationPercent: u.UtilizationPercent,
+		}
+	}
+
+	return riInfos, utilInfos, excluded
+}
+
+// ConvertibleRIsResponse holds the list of convertible RIs.
+type ConvertibleRIsResponse struct {
+	Instances []convertibleRIWithAccount `json:"instances"`
+}
+
+// convertibleRIWithAccount names the AWS account an RI belongs to, so the UI
+// can show it before an exchange (#1692). AccountID is empty when the running
+// account could not be resolved.
+type convertibleRIWithAccount struct {
+	ec2ConvertibleRI
+	AccountID string `json:"account_id,omitempty"`
+}
+
+// RIUtilizationResponse holds per-RI utilization data.
+type RIUtilizationResponse struct {
+	Utilization []riUtilization `json:"utilization"`
+}
+
+// ExcludedRI names a convertible RI omitted from reshape analysis and why.
+type ExcludedRI struct {
+	RIID   string `json:"ri_id"`
+	Reason string `json:"reason"`
 }
