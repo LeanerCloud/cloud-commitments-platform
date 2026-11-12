@@ -8,6 +8,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -185,3 +186,113 @@ func (h *Handler) persistRetrySuccessorTx(ctx context.Context, failedExec, newEx
 	}
 	return fmt.Errorf("failed to save retry execution: %w", err)
 }
+
+// writeRetrySuccessorTx is persistRetrySuccessorTx's transaction body.
+//
+// Its first statement takes the retrying user's per-creator submit lock
+// (ListRecentSubmitsTx), the same lock at the same point as
+// persistExecutionAndSuppressions, so a retry and an identical fresh submit
+// by that user serialize instead of both inserting a pending row. Taking it
+// before the ladder tranche lock keeps one order everywhere: the submit path
+// takes only this lock, and the reconciler never takes it. The rows read
+// under the lock are checked for a duplicate of the successor only after the
+// link CAS, so a lost retry race still reports "already retried".
+func (h *Handler) writeRetrySuccessorTx(ctx context.Context, tx pgx.Tx, failedExec, newExecution *config.PurchaseExecution, suppressions []config.PurchaseSuppression) error {
+	creatorID := derefStringOrEmpty(newExecution.CreatedByUserID)
+	now := time.Now()
+	recent, listErr := h.config.ListRecentSubmitsTx(ctx, tx, creatorID, now.Add(-purchaseIdempotencyWindow))
+	if listErr != nil {
+		return listErr
+	}
+	if err := h.guardLadderTrancheForRetry(ctx, tx, failedExec.IdempotencyKey); err != nil {
+		return err
+	}
+	if err := h.guardRetryFamily(ctx, tx, failedExec); err != nil {
+		return err
+	}
+	if err := h.config.SavePurchaseExecutionTx(ctx, tx, newExecution); err != nil {
+		return err
+	}
+	linked, linkErr := h.linkRetrySuccessor(ctx, tx, failedExec, newExecution.ExecutionID)
+	if linkErr != nil {
+		return linkErr
+	}
+	if !linked {
+		return errRetryLinkRaceLost
+	}
+	if err := checkRetryDuplicateSubmit(recent, creatorID, newExecution, now); err != nil {
+		return err
+	}
+	for i := range suppressions {
+		if err := h.config.CreateSuppressionTx(ctx, tx, &suppressions[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// linkRetrySuccessor links the failed row to its successor. A row retryable
+// only on its no-submission proof links through the CAS that re-checks the
+// proof, so a row that stopped being one after the gate read it is not linked.
+func (h *Handler) linkRetrySuccessor(ctx context.Context, tx pgx.Tx, failedExec *config.PurchaseExecution, successorID string) (bool, error) {
+	if purchase.RedriveRefusalReason(failedExec) != "" && purchase.RetryRefusalReason(failedExec) == "" {
+		return h.config.LinkUnsentRetryExecutionAtomic(ctx, tx, failedExec.ExecutionID, successorID)
+	}
+	return h.config.LinkRetryExecutionAtomic(ctx, tx, failedExec.ExecutionID, successorID)
+}
+
+// checkRetryDuplicateSubmit returns a *retryDuplicateSubmitError when recent
+// (the creator's live web submits, read under the submit lock) already holds
+// an execution with the successor's submit fingerprint. The successor's own
+// row is not in recent: it was read before the successor was inserted. A
+// fingerprint that cannot be derived fails the retry rather than skipping
+// the check, since a skipped check is a possible double purchase.
+func checkRetryDuplicateSubmit(recent []config.PurchaseExecution, creatorID string, successor *config.PurchaseExecution, now time.Time) error {
+	key, err := purchaseIdempotencyKey(creatorID, successor.Recommendations, successor.CapacityPercent)
+	if err != nil {
+		return fmt.Errorf("derive retry idempotency key: %w", err)
+	}
+	if dup := matchDuplicateInList(recent, creatorID, key, now); dup != nil {
+		return &retryDuplicateSubmitError{existingID: dup.ExecutionID}
+	}
+	return nil
+}
+
+// retryDuplicateSubmitError rolls back persistRetrySuccessorTx's tx when the
+// retrying user already has an identical live submit inside the idempotency
+// window, so the retry would mint a second approvable row for the same
+// purchase. persistRetrySuccessorTx translates it into a 409.
+type retryDuplicateSubmitError struct{ existingID string }
+
+func (e *retryDuplicateSubmitError) Error() string {
+	return "identical purchase already submitted as execution " + e.existingID
+}
+
+// errRetryLinkRaceLost is returned from persistRetrySuccessorTx's tx
+// closure to force a rollback (via WithTx's error path) when
+// the link CAS matches zero rows -- a concurrent retry already
+// claimed the failed row between the pre-tx already-retried check and this
+// tx's UPDATE. Never returned to a caller directly; persistRetrySuccessorTx
+// translates it into a 409 ClientError.
+var errRetryLinkRaceLost = errors.New("retry link race lost")
+
+// guardLadderTrancheForRetry locks the ladder tranche named by the execution's
+// idempotency key (if any) before any execution row in the retry tx (only the
+// per-creator submit advisory lock comes first), the same order the reconciler
+// uses (tranche, then execution rows), and refuses when the
+// tranche is settled. A failed tranche no longer nets, so an approvable
+// successor would buy the same slice a second time.
+func (h *Handler) guardLadderTrancheForRetry(ctx context.Context, tx pgx.Tx, idempotencyKey string) error {
+	status, isLadder, err := h.config.LockLadderTrancheForRetryTx(ctx, tx, idempotencyKey)
+	if err != nil {
+		return err
+	}
+	if isLadder && config.LadderTrancheSettled(status) {
+		return errRetryLadderTrancheSettled
+	}
+	return nil
+}
+
+// errRetryLadderTrancheSettled rolls back persistRetrySuccessorTx's tx when the
+// execution's ladder tranche is already completed, failed or canceled.
+var errRetryLadderTrancheSettled = errors.New("ladder tranche is settled")
