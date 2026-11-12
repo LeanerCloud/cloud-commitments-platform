@@ -344,6 +344,21 @@ export function describeSkippedRecommendations(f: RecommendationsFreshness): str
 }
 
 /**
+ * Names the accounts whose Azure pricing hold passed the bound so their stale
+ * recommendations were removed (issue #1900), or null when none were. Only the
+ * count is shown; the server already scopes the ids to the caller.
+ */
+export function describeExpiredPricingHolds(f: RecommendationsFreshness): string | null {
+  const ids = new Set<string>();
+  for (const p of f.last_collection_partial?.providers ?? []) {
+    for (const id of p.expired_hold_account_ids ?? []) ids.add(id);
+  }
+  if (ids.size === 0) return null;
+  const noun = ids.size === 1 ? 'account' : 'accounts';
+  return `Azure prices unavailable for over a day; stale recommendations removed for ${ids.size} ${noun}`;
+}
+
+/**
  * Check freshness and fire a background refresh if the cache is stale or cold.
  * Fire-and-forget: does not block the table render that already happened.
  *
@@ -381,6 +396,8 @@ export async function triggerAutoRefreshIfStale(
 
   const skipNotice = describeSkippedRecommendations(freshness);
   if (skipNotice) showToast({ message: skipNotice, kind: 'warning' });
+  const holdNotice = describeExpiredPricingHolds(freshness);
+  if (holdNotice) showToast({ message: holdNotice, kind: 'warning' });
 
   const lastCollectedMs =
     freshness.last_collected_at === null

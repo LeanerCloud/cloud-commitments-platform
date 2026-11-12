@@ -2022,6 +2022,62 @@ describe('Recommendations Module', () => {
       );
     });
 
+    describe('expired Azure pricing holds (#1900)', () => {
+      const sweep = (ids?: string[], extra: Record<string, unknown> = {}) => ({
+        provider: 'azure', incomplete_accounts: 0, attempted_scopes: 0, failed_scopes: 0,
+        failed_details: 0, reasons: {}, ...(ids === undefined ? {} : { expired_hold_account_ids: ids }), ...extra,
+      });
+      const run = async (providers?: unknown[]) => {
+        mockGetRecs();
+        (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+          last_collected_at: new Date().toISOString(),
+          last_collection_error: null,
+          ...(providers ? { last_collection_partial: { providers } } : {}),
+        });
+        await loadRecommendations();
+        await Promise.resolve();
+        await Promise.resolve();
+      };
+      const holdCalls = () =>
+        mockShowToast.mock.calls.filter(([o]) => String((o as { message: string }).message).startsWith('Azure prices unavailable'));
+
+      test('no toast when the field is absent', async () => {
+        await run([sweep()]);
+        expect(holdCalls()).toHaveLength(0);
+      });
+      test('no toast when the list is empty', async () => {
+        await run([sweep([])]);
+        expect(holdCalls()).toHaveLength(0);
+      });
+      test('singular for 1 account, without ids', async () => {
+        await run([sweep(['acct-secret'])]);
+        expect(holdCalls()).toHaveLength(1);
+        const o = holdCalls()[0]![0] as { kind: string; message: string };
+        expect(o.kind).toBe('warning');
+        expect(o.message).toBe('Azure prices unavailable for over a day; stale recommendations removed for 1 account');
+        expect(o.message).not.toContain('acct-secret');
+      });
+      test('plural for 3 accounts', async () => {
+        await run([sweep(['a', 'b', 'c'])]);
+        expect((holdCalls()[0]![0] as { message: string }).message).toContain('removed for 3 accounts');
+      });
+      test('counts an account once when the same id is in two sweeps', async () => {
+        await run([sweep(['a']), sweep(['a'])]);
+        expect((holdCalls()[0]![0] as { message: string }).message).toContain('removed for 1 account');
+      });
+      test('counts distinct accounts across overlapping sweeps', async () => {
+        await run([sweep(['a', 'b']), sweep(['b', 'c'])]);
+        expect((holdCalls()[0]![0] as { message: string }).message).toContain('removed for 3 accounts');
+      });
+      test('shown together with the skipped-recommendations notice', async () => {
+        await run([sweep(['a', 'b'], { skipped_recommendations: 4 })]);
+        expect(holdCalls()).toHaveLength(1);
+        expect(mockShowToast).toHaveBeenCalledWith(
+          expect.objectContaining({ message: expect.stringContaining('4 AZURE recommendation(s) skipped') }),
+        );
+      });
+    });
+
     test('persistent in-flight toast — shown with timeout: null so it stays until settled', async () => {
       mockGetRecs();
       (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
