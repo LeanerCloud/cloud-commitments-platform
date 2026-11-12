@@ -17,16 +17,16 @@ import (
 type fakeAzureKeyVaultClient struct {
 	signErr error
 	key     *ecdsa.PublicKey
-	// xBytes and yBytes allow callers to inject nil to simulate incomplete
-	// responses from the Key Vault API.
-	xBytes []byte
-	yBytes []byte
 	// kty and crv override the key type and curve the fake reports. Empty
 	// means "derive from key": EC plus the key's curve name, which is what
 	// Key Vault returns for a software-protected EC key. omitKty and omitCrv
 	// report the field as absent (nil).
-	kty     azkeys.KeyType
-	crv     azkeys.CurveName
+	kty azkeys.KeyType
+	crv azkeys.CurveName
+	// xBytes and yBytes allow callers to inject nil to simulate incomplete
+	// responses from the Key Vault API.
+	xBytes  []byte
+	yBytes  []byte
 	omitKty bool
 	omitCrv bool
 	nilKey  bool // if true, return a KeyBundle with Key==nil
