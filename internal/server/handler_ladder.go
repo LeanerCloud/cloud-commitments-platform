@@ -355,16 +355,15 @@ type ladderRunPlanner struct {
 	allocations, tranches, holds int // set by plan, for the log line
 }
 
-func (p *ladderRunPlanner) plan(inFlight float64) (*config.LadderRunDB, []config.LadderTrancheDB, error) {
-	allocResult, err := pkgladder.Allocate(&pkgladder.AllocationInput{
-		Now:                p.now,
-		Baseline:           p.baseline,
-		LayerStates:        p.layerStates,
-		Layers:             p.layers,
-		Config:             p.engineCfg,
-		DataSources:        []string{dataSourceAWSCostExplorer},
-		InFlightUSDPerHour: &inFlight,
-	})
+func (p *ladderRunPlanner) plan(inFlight config.LadderInFlight) (*config.LadderRunDB, []config.LadderTrancheDB, error) {
+	input := &pkgladder.AllocationInput{
+		Now: p.now, Baseline: p.baseline, LayerStates: p.layerStates,
+		Layers: p.layers, Config: p.engineCfg, DataSources: []string{dataSourceAWSCostExplorer},
+	}
+	if err := inFlight.ApplyToAllocationInput(input); err != nil {
+		return nil, nil, fmt.Errorf("in-flight: %w", err)
+	}
+	allocResult, err := pkgladder.Allocate(input)
 	if err != nil {
 		return nil, nil, fmt.Errorf("allocate: %w", err)
 	}

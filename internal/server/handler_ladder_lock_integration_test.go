@@ -28,10 +28,15 @@ type hookedLadderStore struct {
 	entered chan struct{} // closed when the first builder is running under the lock
 	second  chan struct{} // closed if a second builder runs while the first is held
 	gate    chan struct{}
+	inspect func(config.LadderInFlight)
 }
 
 func (h *hookedLadderStore) PlanAndSaveLadderRun(ctx context.Context, configID string, asOf time.Time, build config.LadderPlanBuilder) (*config.LadderRunDB, error) {
-	return h.PostgresStore.PlanAndSaveLadderRun(ctx, configID, asOf, func(inFlight float64) (*config.LadderRunDB, []config.LadderTrancheDB, error) {
+	return h.PostgresStore.PlanAndSaveLadderRun(ctx, configID, asOf, func(inFlight config.LadderInFlight) (*config.LadderRunDB, []config.LadderTrancheDB, error) {
+		if h.inspect != nil {
+			h.inspect(inFlight)
+			return build(inFlight)
+		}
 		if h.calls.Add(1) == 1 {
 			close(h.entered)
 			<-h.gate
@@ -117,7 +122,16 @@ func TestLadderLock_MixedBasisReachesActualPlanner(t *testing.T) {
 		{ID: uuid.New().String(), ConfigID: &e.cfg.ID, LayerType: pkgladder.LayerConvertibleRI, AmountUSDHr: 2, AmountBasis: &native, CommitmentRate: &rate, Term: pkgladder.Term1Year, PaymentOption: pkgladder.PaymentNoUpfront, Status: pkgladder.TrancheStatusFired, ScheduledDate: e.start.Add(-time.Hour)},
 	}
 	require.NoError(t, e.app.Config.SaveLadderTranches(ctx, seed))
+	seen := false
+	e.app.Config = &hookedLadderStore{PostgresStore: config.NewPostgresStore(e.conn), inspect: func(rows config.LadderInFlight) {
+		seen = true
+		require.ElementsMatch(t, config.LadderInFlight{
+			{Layer: seed[0].LayerType, Amount: "1.000000", AmountBasis: od},
+			{Layer: seed[1].LayerType, Amount: "2.000000", AmountBasis: native, CommitmentRate: &rate},
+		}, rows)
+	}}
 	id := e.run(ctx, t, e.start)
+	require.True(t, seen)
 	_, total := e.planAndTotal(ctx, t, id)
 	require.Equal(t, 5.0, total)
 	var basis string

@@ -631,8 +631,8 @@ type StoreInterface interface {
 	// string that would never match a stored status.
 	// PlanAndSaveLadderRun is the ladder planning persist: in ONE READ COMMITTED
 	// transaction under the config's advisory lock it reads the in-flight
-	// commitment (scheduled rows within LadderFireGrace plus fired rows), calls
-	// build with it, then inserts the run, sweeps overdue tranches and inserts
+	// exposures (scheduled rows within LadderFireGrace plus fired rows), calls
+	// build with their original provenance, then inserts the run, sweeps overdue tranches and inserts
 	// the new ones (append-only, L5). Overlapping runs for one config serialize:
 	// the second nets the first's committed rows. build must be pure compute
 	// (no I/O); run.StartedAt must equal asOf. asOf MUST be captured before the

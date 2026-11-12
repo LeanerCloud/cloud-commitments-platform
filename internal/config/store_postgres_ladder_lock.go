@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/big"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,10 +24,8 @@ const ladderConfigLockPrefix = "cudly:ladder-config:"
 // loudly instead of queueing every later run. Package var so a test can shrink it.
 var ladderLockTimeout = 30 * time.Second
 
-// LadderPlanBuilder computes a run and its new tranches from the config's
-// measured on-demand-equivalent total. It runs while the per-config lock is held inside the
-// persist transaction: it must be pure compute (no provider or network I/O).
-type LadderPlanBuilder func(inFlightUSDHr float64) (*LadderRunDB, []LadderTrancheDB, error)
+// LadderPlanBuilder runs under the config lock and must perform no I/O.
+type LadderPlanBuilder func(inFlight LadderInFlight) (*LadderRunDB, []LadderTrancheDB, error)
 
 // ErrLadderLockTimeout means the per-config ladder lock was not acquired within
 // ladderLockTimeout (SQLSTATE 55P03). The operation did nothing; retry later.
@@ -170,44 +167,49 @@ func (s *PostgresStore) PlanAndSaveLadderRun(ctx context.Context, configID strin
 // a fresh READ COMMITTED snapshot, so a tranche fired at the first and
 // completed before the second is counted by both (safe); the reverse order
 // could miss one completing between the two.
-func lockedLadderCommit(ctx context.Context, q dbConn, configID string, asOf time.Time) (float64, error) {
+func lockedLadderCommit(ctx context.Context, q dbConn, configID string, asOf time.Time) (LadderInFlight, error) {
 	inFlight, err := ladderNettingRows(ctx, q,
 		"status = $2 OR (status = $3 AND scheduled_date > $4)",
 		configID, string(ladder.TrancheStatusFired), string(ladder.TrancheStatusScheduled), ladderGraceCutoff(asOf))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	settled, err := ladderNettingRows(ctx, q, "status = 'completed' AND settled_at > $2",
 		configID, ladderSettleAnchor(asOf))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return nettingFloat(inFlight.Add(inFlight, settled))
+	inFlight = append(inFlight, settled...)
+	if _, err := inFlight.onDemandTotal(); err != nil {
+		return nil, err
+	}
+	return inFlight, nil
 }
 
-func ladderNettingRows(ctx context.Context, q dbConn, predicate string, args ...any) (*big.Rat, error) {
+func ladderNettingRows(ctx context.Context, q dbConn, predicate string, args ...any) (LadderInFlight, error) {
 	rows, err := q.Query(ctx, "SELECT id,layer_type,amount_usd_hr::text,amount_basis,commitment_rate FROM ladder_tranches WHERE config_id=$1 AND ("+predicate+")", args...)
 	if err != nil {
 		return nil, fmt.Errorf("read ladder netting rows: %w", err)
 	}
 	defer rows.Close()
-	total := new(big.Rat)
+	exposures := make(LadderInFlight, 0)
 	for rows.Next() {
 		var tr LadderTrancheDB
 		var amount string
 		if err := rows.Scan(&tr.ID, &tr.LayerType, &amount, &tr.AmountBasis, &tr.CommitmentRate); err != nil {
 			return nil, err
 		}
-		od, err := nettingOnDemand(amount, &tr)
-		if err != nil {
+		if _, err := nettingOnDemand(amount, &tr); err != nil {
 			return nil, fmt.Errorf("net tranche %s (%s): %w", tr.ID, tr.LayerType, err)
 		}
-		total.Add(total, od)
+		exposures = append(exposures, LadderInFlightExposure{
+			Layer: tr.LayerType, Amount: amount, AmountBasis: *tr.AmountBasis, CommitmentRate: tr.CommitmentRate,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return total, nil
+	return exposures, nil
 }
 
 // queryRower is satisfied by pgx.Tx and the pool connection.

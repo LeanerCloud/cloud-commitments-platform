@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -125,8 +126,8 @@ type ladderTestStore struct {
 
 	// L5: configurable in-flight hourly commitment handed to the plan builder
 	// by PlanAndSaveLadderRun. Defaults to zero.
-	inFlightUSDHr *float64
-	inFlightErr   error
+	inFlight    config.LadderInFlight
+	inFlightErr error
 
 	// Capture fields: non-nil if the call was made. savedRuns accumulates every
 	// SaveLadderRun call so multi-config tests can assert on each persisted run;
@@ -194,9 +195,9 @@ func (s *ladderTestStore) PlanAndSaveLadderRun(_ context.Context, _ string, _ ti
 	if s.inFlightErr != nil {
 		return nil, s.inFlightErr
 	}
-	inFlight := 0.0
-	if s.inFlightUSDHr != nil {
-		inFlight = *s.inFlightUSDHr
+	inFlight := s.inFlight
+	if inFlight == nil {
+		inFlight = config.LadderInFlight{}
 	}
 	run, tranches, err := build(inFlight)
 	if err != nil {
@@ -699,6 +700,32 @@ func TestExecuteLadderRun_NilBaseline_HoldPlan(t *testing.T) {
 	}
 	// No tranches produced from an empty allocation set.
 	assert.Empty(t, store.savedTranches, "a Hold-only run produces no tranches")
+}
+
+func TestExecuteLadderRun_NilBaselinePreservesMaintenance(t *testing.T) {
+	store := &ladderTestStore{}
+	app := &Application{Config: store}
+	cfg := validTestDBConfig("fixture-maintenance")
+	zero, existing, utilization := 0.0, 2.0, 10.0
+	capability := &fakeLadderCapability{t: t, supportedLayers: []pkgladder.LayerSpec{
+		{Type: pkgladder.LayerConvertibleRI, Roles: []pkgladder.LayerRole{pkgladder.RoleBuffer}},
+		{Type: pkgladder.LayerEC2InstanceSP, Roles: []pkgladder.LayerRole{pkgladder.RoleFlex}},
+	}, layerStates: map[pkgladder.LayerType]pkgladder.LayerState{
+		pkgladder.LayerConvertibleRI: {ExistingUSDPerHour: &existing, ExpiringUSDPerHour: &zero, UtilizationPct: &utilization},
+		pkgladder.LayerEC2InstanceSP: {ExistingUSDPerHour: &zero, ExpiringUSDPerHour: &zero},
+	}}
+	require.NoError(t, app.executeLadderRun(context.Background(), &cfg, capability, "123456789012", pkgladder.Term1Year, pkgladder.PaymentNoUpfront, time.Now().UTC()))
+	require.NotNil(t, store.savedRun)
+	require.Nil(t, store.savedRun.TargetUSDHr)
+	require.Nil(t, store.savedRun.GapUSDHr)
+	var plan ladderPlanJSONDTO
+	require.NoError(t, json.Unmarshal(store.savedRun.Plan, &plan))
+	require.Len(t, plan.Actions, 2)
+	require.Equal(t, string(pkgladder.ActionReshape), plan.Actions[0].Action)
+	require.Equal(t, string(pkgladder.ActionHold), plan.Actions[1].Action)
+	require.NotContains(t, string(store.savedRun.Plan), "\"target_usd_hr\"")
+	require.NotContains(t, string(store.savedRun.Plan), "\"gap_usd_hr\"")
+	require.Empty(t, store.savedTranches)
 }
 
 // TestExecuteLadderRun_ZeroGap_HoldPlan covers a run where existing commitment
@@ -1219,11 +1246,14 @@ func (s *ladderStatefulStore) scheduledTrancheIDs(configID string) map[string]bo
 // any existing tranche's status. This mirrors the production store, whose
 // supersede/cancel path was removed.
 func (s *ladderStatefulStore) PlanAndSaveLadderRun(_ context.Context, configID string, asOf time.Time, build config.LadderPlanBuilder) (*config.LadderRunDB, error) {
-	inFlight := 0.0
+	inFlight := config.LadderInFlight{}
 	for i := range s.tranches {
 		tr := &s.tranches[i]
 		if tr.ConfigID != nil && *tr.ConfigID == configID && tr.Status == pkgladder.TrancheStatusScheduled && tr.ScheduledDate.After(asOf) {
-			inFlight += tr.AmountUSDHr
+			inFlight = append(inFlight, config.LadderInFlightExposure{
+				Layer: tr.LayerType, Amount: strconv.FormatFloat(tr.AmountUSDHr, 'f', -1, 64),
+				AmountBasis: *tr.AmountBasis, CommitmentRate: tr.CommitmentRate,
+			})
 		}
 	}
 	run, tranches, err := build(inFlight)
