@@ -3,11 +3,13 @@ package purchase
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/billingbenefits/armbillingbenefits"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
@@ -46,15 +48,29 @@ import (
 // aliasRecorder fakes savingsplans.SavingsPlanOrderAliasAPI. It records the
 // alias name each purchase PUTs, keyed by the hourly commitment (each fixture
 // recommendation has its own), because the fan-out runs recommendations in
-// parallel and call order is not stable.
+// parallel and call order is not stable. Get reports every alias as missing
+// (404), the answer for a first purchase, after recording the name so the
+// test can check each PUT was preceded by a lookup of the same alias.
 type aliasRecorder struct {
-	mu    sync.Mutex
-	names map[float64][]string
+	mu       sync.Mutex
+	names    map[float64][]string
+	looked   map[string]bool
+	unlooked []string
+}
+
+func (r *aliasRecorder) Get(_ context.Context, name string, _ *armbillingbenefits.SavingsPlanOrderAliasClientGetOptions) (armbillingbenefits.SavingsPlanOrderAliasClientGetResponse, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.looked[name] = true
+	return armbillingbenefits.SavingsPlanOrderAliasClientGetResponse{}, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 }
 
 func (r *aliasRecorder) BeginCreate(_ context.Context, name string, body armbillingbenefits.SavingsPlanOrderAliasModel, _ *armbillingbenefits.SavingsPlanOrderAliasClientBeginCreateOptions) (savingsplans.SavingsPlanOrderAliasPoller, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if !r.looked[name] {
+		r.unlooked = append(r.unlooked, name)
+	}
 	amount := *body.Properties.Commitment.Amount
 	r.names[amount] = append(r.names[amount], name)
 	id := "/providers/Microsoft.BillingBenefits/savingsPlanOrderAliases/" + name
@@ -92,7 +108,7 @@ func azureSavingsPlansExec(t *testing.T, service, lineage string) *config.Purcha
 func purchaseThroughPinnedAzureClient(t *testing.T, exec *config.PurchaseExecution) map[float64][]string {
 	t.Helper()
 	ctx := context.Background()
-	recorder := &aliasRecorder{names: map[float64][]string{}}
+	recorder := &aliasRecorder{names: map[float64][]string{}, looked: map[string]bool{}}
 	client := savingsplans.NewClient(nil, "sub-placeholder", "westeurope")
 	client.SetOrderAliasClient(recorder)
 
@@ -114,6 +130,7 @@ func purchaseThroughPinnedAzureClient(t *testing.T, exec *config.PurchaseExecuti
 	for i, rec := range exec.Recommendations {
 		require.True(t, rec.Purchased, "recommendation %d must reach the fake alias API and succeed", i)
 	}
+	require.Empty(t, recorder.unlooked, "each alias must be looked up (Get) before it is created")
 	return recorder.names
 }
 
