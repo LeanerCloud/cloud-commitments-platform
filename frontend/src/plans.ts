@@ -31,6 +31,7 @@ import { badgeHtml, statusBadgeHtml } from './lib/status-badge';
 import { isPastScheduledDate } from './lib/purchase-row-guards';
 import { serviceLabel } from './lib/service-labels';
 import { mountPlanEditorPanel } from './plan-editor-panel';
+import { applyPlanForm, clearPlanDraft, loadPlanDraft, readPlanForm, savePlanDraft } from './lib/plan-form-draft';
 
 // pendingPlanRecommendations holds the resolved plan target captured at
 // "Plan from N selected" button-click time. The Plan flow used to re-derive
@@ -1049,6 +1050,7 @@ async function togglePlan(planId: string, enabled: boolean): Promise<void> {
 
 let disposePlanEditor: (() => void) | undefined;
 function openPlanForm(modal: HTMLElement, restartsFromToday = false): void {
+  planModalEpoch++;
   disposePlanEditor?.(); disposePlanEditor = undefined;
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
   const advanced = modal.querySelector<HTMLDetailsElement>('#plan-advanced-settings');
@@ -1082,7 +1084,11 @@ function rampRadioValue(ramp: { type?: string; percent_per_step?: number; step_i
 // when the modal opened, false when the plan could not be loaded (e.g. it was
 // deleted or is no longer accessible). Callers that render the plan in a list
 // use the false result to reconcile a now-stale row (issue #1403).
+// HTTP status of the last failed editPlan load (undefined: none, or not an HTTP error).
+let editPlanFailureStatus: number | undefined;
+
 async function editPlan(planId: string): Promise<boolean> {
+  editPlanFailureStatus = undefined;
   try {
     const backendPlan = await api.getPlan(planId) as unknown as BackendPlan;
 
@@ -1159,7 +1165,7 @@ async function editPlan(planId: string): Promise<boolean> {
       (document.getElementById('ramp-interval-days') as HTMLInputElement).value = String(rampSchedule.step_interval_days || 7);
     }
 
-    void setupPlanAccountsSection(backendPlan.id);
+    planAccountsLoad = setupPlanAccountsSection(backendPlan.id);
     // Wire live range validation on all five numeric inputs (#702).
     wirePlanRangeInputs();
     const planModal = document.getElementById('plan-modal');
@@ -1174,6 +1180,7 @@ async function editPlan(planId: string): Promise<boolean> {
     // caller can reconcile the stale row. Other errors keep the generic
     // message (network blip, transient 5xx) since the plan may still exist.
     const status = (error as { status?: number }).status;
+    editPlanFailureStatus = status;
     const message = status === 404
       ? 'This plan is no longer available. It may have been deleted.'
       : 'Failed to load plan details';
@@ -1383,6 +1390,11 @@ function refreshPlanSaveButtonState(): void {
  */
 export function closePlanModal(): void {
   planAutomationRead += 1;
+  planModalEpoch++;
+  // Save, Cancel and every other close end the edit: nothing left to restore.
+  if (planDraftTimer) clearTimeout(planDraftTimer);
+  planDraftTimer = null;
+  clearPlanDraft();
   const planModal = document.getElementById('plan-modal');
   if (planModal) closeModal(planModal);
   // Invalidate the resolved-target snapshot stamped by openCreatePlanModal
@@ -1390,6 +1402,81 @@ export function closePlanModal(): void {
   // ties the plan to a specific button-click moment; once the modal
   // closes — by Save, Cancel, or any other path — that moment is over.
   pendingPlanRecommendations = [];
+}
+
+// Settles when the account chips of the most recently opened plan modal are loaded.
+let planAccountsLoad: Promise<void> = Promise.resolve();
+
+const PLAN_DRAFT_DEBOUNCE_MS = 300;
+// Bumped by every open, close and user edit of the plan form, so a restore can tell the user moved on.
+let planModalEpoch = 0;
+let planDraftTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Session copy of the open plan form (#1735). Plan-from-selection forms are skipped:
+// their target snapshot is not persisted.
+function schedulePlanDraftSave(): void {
+  planModalEpoch++; // the user edited the form
+  if (planDraftTimer) clearTimeout(planDraftTimer);
+  planDraftTimer = setTimeout(() => {
+    planDraftTimer = null;
+    const form = document.getElementById('plan-form') as HTMLFormElement | null;
+    const userId = state.getCurrentUser()?.id;
+    if (!form || !userId || pendingPlanRecommendations.length > 0) return;
+    savePlanDraft({
+      userId,
+      planId: (document.getElementById('plan-id') as HTMLInputElement).value,
+      ...readPlanForm(form),
+      accounts: planSelectedAccounts.map(a => ({ ...a })),
+    });
+  }, PLAN_DRAFT_DEBOUNCE_MS);
+}
+
+// Reopen the plan form with the draft a session expiry interrupted (only for its own user).
+export async function restorePlanDraft(stillOnPlans: () => boolean = () => true): Promise<boolean> {
+  try {
+    return await restorePlanDraftUnsafe(stillOnPlans);
+  } catch (error) {
+    // Restoring is a convenience: it must never break init or keep a draft that cannot be applied.
+    console.warn('Failed to restore the plan draft:', error);
+    clearPlanDraft();
+    return false;
+  }
+}
+
+const PLAN_DRAFT_ACCOUNTS_WAIT_MS = 5_000;
+
+async function restorePlanDraftUnsafe(stillOnPlans: () => boolean): Promise<boolean> {
+  const draft = loadPlanDraft();
+  if (!draft || !stillOnPlans()) return false;
+  if (draft.userId !== state.getCurrentUser()?.id) {
+    clearPlanDraft();
+    return false;
+  }
+  const epoch = planModalEpoch;
+  if (draft.planId) {
+    if (!(await editPlan(draft.planId))) {
+      // Only a definitely gone or forbidden plan ends the draft; transient failures retry next load.
+      if (editPlanFailureStatus === 404 || editPlanFailureStatus === 403) clearPlanDraft();
+      return false;
+    }
+  } else {
+    openNewPlanModal();
+  }
+  await Promise.race([planAccountsLoad, new Promise(resolve => setTimeout(resolve, PLAN_DRAFT_ACCOUNTS_WAIT_MS))]);
+  // Exactly one open (ours) since the start: otherwise the user opened, closed or typed meanwhile.
+  const mine = planModalEpoch === epoch + 1;
+  const form = document.getElementById('plan-form') as HTMLFormElement | null;
+  if (!mine || !form || !stillOnPlans()) {
+    if (mine) closePlanModal();
+    clearPlanDraft();
+    return false;
+  }
+  applyPlanForm(form, draft);
+  planSelectedAccounts = draft.accounts.map(a => ({ ...a }));
+  renderPlanAccountChips();
+  updatePlanAccountIdsField();
+  showToast({ message: 'Restored your unsaved plan draft. Review it and save.', kind: 'info', timeout: 8_000 });
+  return true;
 }
 
 // Selected accounts for the plan modal
@@ -1431,6 +1518,7 @@ function renderPlanAccountChips(): void {
       planSelectedAccounts = planSelectedAccounts.filter(a => a.id !== acct.id);
       renderPlanAccountChips();
       updatePlanAccountIdsField();
+      schedulePlanDraftSave();
       focusAfterChipRemoval(removedAt);
     });
     chip.appendChild(removeBtn);
@@ -1498,6 +1586,7 @@ async function handlePlanAccountSearch(value: string): Promise<void> {
         planSelectedAccounts.push({ id: a.id, name: a.name, external_id: a.external_id });
         renderPlanAccountChips();
         updatePlanAccountIdsField();
+        schedulePlanDraftSave();
         suggestions.classList.add('hidden');
         (document.getElementById('plan-account-search') as HTMLInputElement).value = '';
       });
@@ -1681,7 +1770,7 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   // chip. Homogeneity of provider/service/term/payment (enforced by the
   // "Plan from N selected" gate) does not imply a single account, so a
   // multi-account selection leaves the chip empty for the user to fill. (#898)
-  void setupPlanAccountsSection();
+  planAccountsLoad = setupPlanAccountsSection();
   if (pendingPlanRecommendations.length >= 1) {
     const firstAccountId = pendingPlanRecommendations[0]!.cloud_account_id;
     const sharedAccountId =
@@ -1725,7 +1814,7 @@ export function openNewPlanModal(): void {
   // Generate initial plan name
   updatePlanNameFromSchedule();
 
-  void setupPlanAccountsSection();
+  planAccountsLoad = setupPlanAccountsSection();
 
   const planModal = document.getElementById('plan-modal');
   if (planModal) {
@@ -2332,6 +2421,10 @@ export function setupPlanHandlers(): void {
   _unsubAccount?.();
   _unsubProvider = state.subscribeProvider(() => void loadPlans());
   _unsubAccount = state.subscribeAccount(() => void loadPlans());
+
+  const planForm = document.getElementById('plan-form');
+  planForm?.addEventListener('input', schedulePlanDraftSave);
+  planForm?.addEventListener('change', schedulePlanDraftSave);
 
   const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement | null;
   const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement | null;

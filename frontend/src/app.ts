@@ -8,7 +8,7 @@ import { showLoginModal, showAdminSetupModal, showResetPasswordModal, updateUser
 import { loadDashboard, setupDashboardHandlers } from './dashboard';
 import { setupRecommendationsHandlers, getPurchaseModalRecommendations, getPurchaseModalSession, clearPurchaseModalRecommendations, getFanOutBuckets, clearFanOutBuckets, getExecuteMode, clearExecuteMode, fanOutBucketAccountLabel, getAccountName, type FanOutBucket } from './recommendations';
 import { switchTab, setActiveNav, applyTabFromPath, initRouter, switchSettingsSubTab, canonicalTabPath } from './navigation';
-import { savePlan, setupPlanHandlers, closePlanModal, openNewPlanModal, closePurchaseModal } from './plans';
+import { restorePlanDraft, savePlan, setupPlanHandlers, closePlanModal, openNewPlanModal, closePurchaseModal } from './plans';
 import { saveGlobalSettings, setupSettingsHandlers, resetSettings } from './settings';
 import { setupUserHandlers } from './users';
 import { initApiKeys } from './apikeys';
@@ -169,6 +169,9 @@ async function initApp(): Promise<void> {
     switchTab(target, { push: false });
     setupEventListeners();
     updateUserUI();
+    // A plan form left open when the session expired comes back after sign-in (#1735).
+    // Not awaited: it never throws and must not delay or fail init.
+    void restorePlanDraft(() => applyTabFromPath() === 'plans');
   } catch (error) {
     console.error('Init error:', error);
     const err = error as { status?: number; message?: string };

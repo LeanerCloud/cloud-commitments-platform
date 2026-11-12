@@ -549,6 +549,8 @@ describe('API Requests', () => {
         expect.objectContaining({ method: 'POST' })
       );
       expect(isAuthenticated()).toBe(false);
+      // An intentional sign-out must not resurrect a plan draft (#1735).
+      expect(sessionStorage.removeItem).toHaveBeenCalledWith('cudly:plan-form-draft');
     });
 
     test('includes x-amz-content-sha256 header for CloudFront OAC', async () => {

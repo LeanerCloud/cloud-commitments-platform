@@ -16,6 +16,7 @@ import type {
   MFALoginErrorCode,
 } from './types';
 import { fetchOrNetworkError, readJson, responseError } from './errors';
+import { clearPlanDraft } from '../lib/plan-form-draft';
 
 /**
  * Login error raised when the server returns one of the MFA-related
@@ -106,6 +107,7 @@ export async function logout(): Promise<void> {
     console.warn('Server logout failed:', e);
   }
   clearAuth();
+  clearPlanDraft();
 }
 
 /**
