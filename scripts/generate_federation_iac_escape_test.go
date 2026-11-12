@@ -107,11 +107,11 @@ func sortedKeys(m map[string]string) []string {
 // under test, and want maps a tfvars attribute to the hostile value it must
 // decode back to.
 type tfvarsCase struct {
+	want    map[string]string
 	name    string
 	base    []string
 	hostile []string
 	benign  []string
-	want    map[string]string
 }
 
 func tfvarsCases() []tfvarsCase {
