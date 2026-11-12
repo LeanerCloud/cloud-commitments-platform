@@ -17,25 +17,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/ctxutil"
 )
 
-// mapAzureExchangeError converts an error from an Azure RI exchange
-// client-layer call to a ClientError with the appropriate HTTP status.
-// A cloud-commitments-go exchange refusal (exchangeRefusalError) produces a
-// 422 with the fixed exchangeRefusedMessage; Azure 4xx client faults (via
-// isAzureClientError) produce a 400 with the fixed exchangeRejectedMessage;
-// the provider text of both stays in the log. Any other error
-// produces a 500 using the opMsg fallback -- the same contract
-// mapAWSExchangeError applies to the AWS exchange endpoints.
-func mapAzureExchangeError(opMsg string, err error) error {
-	if refusal := exchangeRefusalError(err); refusal != nil {
-		return refusal
-	}
-	if isAzureClientError(err) {
-		logging.Warnf("ri-exchange: %s: provider rejected the request: %v", opMsg, err)
-		return NewClientError(400, exchangeRejectedMessage)
-	}
-	return NewClientError(500, opMsg)
-}
-
 // validateTargets checks each entry in targets for a non-empty, UUID-shaped
 // offering_id and a positive count. Extracted so both getExchangeQuote and
 // validateExecuteExchangeBody share the same check without exceeding the
@@ -302,11 +283,6 @@ func directExchangeOutcomeUnknown(riIDs []string) error {
 // exchangeRejectedMessage is the provider-neutral text for a client-fault
 // rejection; the provider's own text stays in the log.
 const exchangeRejectedMessage = "the exchange request was rejected as invalid: check the offering and count"
-
-// azurePolicyRefusedMessage is the fixed 422 body for an Azure exchange policy
-// refusal; the policy text stays in the log. The frontend keys its hint on the
-// "Azure rejected this exchange" prefix (frontend/src/lib/azure-exchange.ts).
-const azurePolicyRefusedMessage = "Azure rejected this exchange: it does not meet Azure's exchange policy"
 
 // Response types
 
