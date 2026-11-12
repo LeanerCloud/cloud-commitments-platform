@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -185,4 +188,169 @@ func purchaseConstraintSets(recs []config.RecommendationRecord) []auth.Permissio
 		})
 	}
 	return sets
+}
+
+// recTotalCommitment returns a single recommendation's full committed
+// spend: the upfront cost plus the recurring monthly cost multiplied by
+// the term length in months. UpfrontCost and MonthlyCost are both totals
+// for the rec's Count (AWS Cost Explorer reports them per-batch, not
+// per-instance -- see recommendationToOffering), so they sum directly
+// with no per-instance scaling needed. rec.Term is in years (AWS/Azure/GCP
+// RI/SP standard; see exchange_lookup.go), converted to months with the
+// same *12 convention used throughout this package. A nil MonthlyCost
+// (all-upfront commitments have no recurring charge) or a non-positive
+// Term (can't be converted to months) contribute nothing to the recurring
+// leg, matching the Term<=0 handling elsewhere in this package. On the web
+// execute path the two cost fields are the store-derived values written by
+// priceRecommendationsFromStore.
+func recTotalCommitment(rec *config.RecommendationRecord) float64 {
+	return rec.TotalCommitment()
+}
+
+// requireNonZeroCommitment guards against a purchase batch whose computed
+// total commitment (see recTotalCommitment) is exactly zero even though it
+// targets real, count>0 resources. A genuine RI/Savings Plan/commitment
+// purchase always carries SOME committed spend -- either an upfront cost
+// (all/partial-upfront) or a recurring monthly charge (no-upfront); a batch
+// that totals to exactly $0 is not "unconstrained", it is malformed or
+// adversarial data (e.g. a no-upfront rec submitted with monthly_cost
+// omitted or zeroed out to slip under a MaxPurchaseAmount cap -- the same
+// evasion shape recTotalCommitment was introduced to close). Per this
+// repo's no-silent-fallback-on-money-paths convention, a zero total must
+// fail loud rather than be silently treated as "no constraint applies"
+// (MaxPurchaseAmount==0 reads as uncapped to matchPurchaseAmountConstraint).
+// sets is assumed non-empty whenever recs is (callers already reject empty
+// recommendation batches before reaching this check).
+func requireNonZeroCommitment(sets []auth.PermissionConstraints) error {
+	if len(sets) > 0 && sets[0].MaxPurchaseAmount == 0 {
+		return NewClientError(400, "recommendation batch has zero total commitment (no upfront or recurring cost); refusing to evaluate purchase constraints against it")
+	}
+	return nil
+}
+
+// normalizeCapacityPercent defaults an absent/zero capacity_percent to 100
+// and rejects anything outside [1, 100]. capacity_percent is audit-only but
+// still bounded: a value outside the range is a client bug worth surfacing
+// rather than silently clamping. Extracted so validateExecutePurchaseRequest
+// stays under the gocyclo threshold.
+func normalizeCapacityPercent(execReq *ExecutePurchaseRequest) error {
+	if execReq.CapacityPercent == 0 {
+		execReq.CapacityPercent = 100
+	}
+	if execReq.CapacityPercent < 1 || execReq.CapacityPercent > 100 {
+		return NewClientError(400, fmt.Sprintf("capacity_percent must be between 1 and 100, got %d", execReq.CapacityPercent))
+	}
+	return nil
+}
+
+// validateExecutePurchaseRecommendations runs the per-rec #643 boundary
+// validation over every rec in a web execute request, then the one-account-
+// per-batch rule (#1902), returning the first failure. On success it also
+// returns the payment-option coercions that occurred (nil-free, in rec order)
+// so the response can surface them to the caller (#1503 follow-up). Extracted
+// so validateExecutePurchaseRequest stays under the gocyclo threshold.
+func validateExecutePurchaseRecommendations(recs []config.RecommendationRecord) ([]PaymentAdjustment, error) {
+	var adjustments []PaymentAdjustment
+	for i := range recs {
+		adjustment, err := validatePurchaseRecommendation(&recs[i], i)
+		if err != nil {
+			return nil, err
+		}
+		if adjustment != nil {
+			adjustments = append(adjustments, *adjustment)
+		}
+	}
+	// One plan-less execution targets exactly one cloud account (#1902).
+	// Same rule the executor enforces in resolveSingleAccountProvider, applied
+	// here so the batch is refused before an execution row exists, an
+	// approval email goes out, or a History row lands as failed.
+	if _, err := purchase.SingleCloudAccountIDFromRecs(recs); err != nil {
+		return nil, NewClientError(400, err.Error())
+	}
+	return adjustments, nil
+}
+
+// finalizePurchaseStatus flips an execution's stored status to "failed" if
+// the approval email couldn't send, and returns the status string the API
+// response should carry. Returns "pending" when email_sent is true.
+//
+// The write is guarded on the row still being "pending" (issue #1232). A
+// session approve, cancel or pause can land while the email is being sent;
+// an unguarded write would then stamp "failed" over a row that was already
+// approved and bought, which makes it eligible for retry and a second
+// purchase. A lost guard is a no-op: the row keeps the status the other
+// writer gave it, and that status is what the response carries.
+//
+// Any other save error is returned as a 500 (issue #54). The row then
+// still reads "pending" with no error text and a valid approval token while
+// no approval email exists, so answering "pending" would make it look like
+// a healthy request waiting on its approver. The error names the execution
+// so the caller can cancel it.
+func (h *Handler) finalizePurchaseStatus(ctx context.Context, execution *config.PurchaseExecution, emailSent bool, emailReason string) (string, error) {
+	if emailSent {
+		return "pending", nil
+	}
+	failed := *execution
+	failed.Status = "failed"
+	failed.Error = emailReason
+	err := h.config.SaveExecutionIfStatus(ctx, &failed, []string{"pending"})
+	switch {
+	case err == nil:
+		execution.Status, execution.Error = failed.Status, failed.Error
+		return "failed", nil
+	case errors.Is(err, config.ErrExecutionNotInExpectedStatus):
+		logging.Warnf("execution %s left pending while its approval email was being sent; not marking it failed: %v", execution.ExecutionID, err)
+		return h.currentExecutionStatus(ctx, execution.ExecutionID), nil
+	default:
+		logging.Errorf("AUDIT LOSS: failed to mark execution %s as failed after email send error (%s): %v", execution.ExecutionID, emailReason, err)
+		return "", emailFailureNotRecordedError(execution.ExecutionID, emailReason, err)
+	}
+}
+
+// currentExecutionStatus re-reads an execution's stored status for a response
+// whose in-memory copy went stale. Falls back to "pending" (the status the row
+// was created with) when the read fails.
+func (h *Handler) currentExecutionStatus(ctx context.Context, executionID string) string {
+	row, err := h.config.GetExecutionByID(ctx, executionID)
+	if err != nil || row == nil {
+		logging.Errorf("failed to re-read execution %s status: %v", executionID, err)
+		return "pending"
+	}
+	return row.Status
+}
+
+// validateAndTotalRecommendations validates each recommendation and returns
+// totals. Runs on store-derived recs for the web path and on the persisted
+// row for retry; the negative and $10M guards stay as the sanity check for
+// both.
+func validateAndTotalRecommendations(recs []config.RecommendationRecord) (upfront, savings float64, err error) {
+	const maxAmount = 10_000_000 // $10M sanity cap
+	for i := range recs {
+		rec := recs[i]
+		if rec.UpfrontCost < 0 {
+			return 0, 0, NewClientError(400, fmt.Sprintf("recommendation %d has negative upfront cost: %.2f", i, rec.UpfrontCost))
+		}
+		if rec.Savings < 0 {
+			return 0, 0, NewClientError(400, fmt.Sprintf("recommendation %d has negative savings: %.2f", i, rec.Savings))
+		}
+		upfront += rec.UpfrontCost
+		savings += rec.Savings
+	}
+	if upfront > maxAmount {
+		return 0, 0, NewClientError(400, fmt.Sprintf("total upfront cost %.2f exceeds maximum allowed (%.2f)", upfront, float64(maxAmount)))
+	}
+	if savings > maxAmount {
+		return 0, 0, NewClientError(400, fmt.Sprintf("total estimated savings %.2f exceeds maximum allowed (%.2f)", savings, float64(maxAmount)))
+	}
+	return upfront, savings, nil
+}
+
+// derefStringOrEmpty returns the string a pointer points to, or "" when nil.
+// Used to convert *string creator IDs to the bare string needed for hashing
+// without adding a branch to the caller.
+func derefStringOrEmpty(s *string) string {
+	if s != nil {
+		return *s
+	}
+	return ""
 }
