@@ -658,4 +658,13 @@ describe('Review Purchase totals band on phones (issue #1654)', () => {
     expect(m![1]).toMatch(/position:\s*sticky/);
     expect(m![1]).toMatch(/left:\s*0/);
   });
+
+  test('<=480px stacks the totals tiles into one column', () => {
+    const responsive = fs.readFileSync(path.join(stylesDir, 'responsive.css'), 'utf8');
+    const block = responsive.match(/@media \(max-width: 480px\) \{\s*\.modal, \.modal-confirm-backdrop \{[\s\S]*?\n\}\n/);
+    expect(block).not.toBeNull();
+    const band = block![0].match(/\.commitment-summary-band \{([^}]*)\}/);
+    expect(band).not.toBeNull();
+    expect(band![1]).toMatch(/grid-template-columns:\s*1fr\b/);
+  });
 });

@@ -374,6 +374,12 @@ body.sidebar-open {
         max-width: 100%;
         margin: 0;
     }
+
+    /* Review Purchase totals (issue #1654): one tile per row so a 9-10 digit
+     * amount fits its tile. */
+    .commitment-summary-band {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Toasts on phones (issue #1736): the bottom-right stack was sized to its
