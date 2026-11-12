@@ -157,12 +157,12 @@ func seedAccountFilterFixture(ctx context.Context, t *testing.T, c *testhelpers.
 		cloud                       *string
 		savings                     float64
 	}{
-		{svcBoth, "aws", acctUnderTest, &uuidUnder, 1},
-		{svcExtOnly, "aws", acctUnderTest, nil, 2},
-		{svcUUIDOnly, "aws", acctStale, &uuidUnder, 4},
-		{svcOtherProv, "gcp", acctUnderTest, nil, 8},
-		{svcOtherExt, "aws", acctOther, nil, 16},
-		{svcOtherUUID, "aws", acctOther, &uuidOther, 32},
+		{service: svcBoth, provider: "aws", external: acctUnderTest, cloud: &uuidUnder, savings: 1},
+		{service: svcExtOnly, provider: "aws", external: acctUnderTest, cloud: nil, savings: 2},
+		{service: svcUUIDOnly, provider: "aws", external: acctStale, cloud: &uuidUnder, savings: 4},
+		{service: svcOtherProv, provider: "gcp", external: acctUnderTest, cloud: nil, savings: 8},
+		{service: svcOtherExt, provider: "aws", external: acctOther, cloud: nil, savings: 16},
+		{service: svcOtherUUID, provider: "aws", external: acctOther, cloud: &uuidOther, savings: 32},
 	}
 	for _, r := range rows {
 		require.NoError(t, fx.store.SaveSnapshot(ctx, &analytics.SavingsSnapshot{
