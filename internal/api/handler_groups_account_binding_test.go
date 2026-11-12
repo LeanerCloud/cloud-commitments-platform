@@ -82,7 +82,9 @@ func expectUpdate(m *MockAuthService, got *[]string) {
 
 func TestCreateGroup_BindsAccountNamesToIDs(t *testing.T) {
 	t.Parallel()
-	all := []config.CloudAccount{bindProd, bindDupA, bindDupB, bindOther}
+	sharedExtA, sharedExtB := bindDupA, bindDupB
+	sharedExtA.ExternalID, sharedExtB.ExternalID = "dup-ext", "dup-ext"
+	all := []config.CloudAccount{bindProd, sharedExtA, sharedExtB, bindOther}
 	for _, tc := range []struct {
 		name string
 		body string
@@ -90,7 +92,8 @@ func TestCreateGroup_BindsAccountNamesToIDs(t *testing.T) {
 	}{
 		{"a unique name is stored as its account's ID", `{"name":"g","allowed_accounts":["prod"]}`, []string{bindProd.ID}},
 		{"an ID is kept", `{"name":"g","allowed_accounts":["` + bindDupA.ID + `"]}`, []string{bindDupA.ID}},
-		{"an external ID is kept verbatim", `{"name":"g","allowed_accounts":["123456789012"]}`, []string{"123456789012"}},
+		{"an external ID is stored as its account's ID", `{"name":"g","allowed_accounts":["123456789012"]}`, []string{bindProd.ID}},
+		{"an external ID shared by two accounts is kept verbatim", `{"name":"g","allowed_accounts":["dup-ext"]}`, []string{"dup-ext"}},
 		{"order and mixed forms are preserved", `{"name":"g","allowed_accounts":["` + bindOther.ID + `","prod"]}`, []string{bindOther.ID, bindProd.ID}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

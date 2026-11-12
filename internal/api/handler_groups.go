@@ -175,7 +175,8 @@ const allAccountsEntry = "*"
 // the group stores. Later renames and reuse of the name then change nothing.
 //
 // Each entry must be "*", a registered account ID, a registered account's
-// external ID (kept verbatim, as before), or a name exactly one registered
+// external ID (stored as that account's ID, so it matches what AccountScope
+// checks; kept verbatim only when several accounts share it), or a name exactly one registered
 // account carries and the acting principal can access. Anything else is
 // refused with 400 rather than stored: an unresolvable entry must not be kept
 // as a name, and dropping it could turn a restricted list into an empty,
@@ -224,14 +225,14 @@ func needsAccountBinding(entries []string) bool {
 // groupAccountDirectory indexes the registered accounts for bindGroupAccounts.
 type groupAccountDirectory struct {
 	ids          map[string]bool
-	externalIDs  map[string]bool
+	externalIDs  map[string]string // external ID -> internal ID; "" when several accounts share it
 	uniqueByName map[string]config.CloudAccount
 }
 
 func newGroupAccountDirectory(accounts []config.CloudAccount) groupAccountDirectory {
 	d := groupAccountDirectory{
 		ids:          make(map[string]bool, len(accounts)),
-		externalIDs:  make(map[string]bool, len(accounts)),
+		externalIDs:  make(map[string]string, len(accounts)),
 		uniqueByName: make(map[string]config.CloudAccount, len(accounts)),
 	}
 	shared := make(map[string]bool)
@@ -239,7 +240,11 @@ func newGroupAccountDirectory(accounts []config.CloudAccount) groupAccountDirect
 		a := accounts[i]
 		d.ids[a.ID] = true
 		if a.ExternalID != "" {
-			d.externalIDs[a.ExternalID] = true
+			if _, seen := d.externalIDs[a.ExternalID]; seen {
+				d.externalIDs[a.ExternalID] = ""
+			} else {
+				d.externalIDs[a.ExternalID] = a.ID
+			}
 		}
 		if a.Name == "" {
 			continue
@@ -258,8 +263,15 @@ func newGroupAccountDirectory(accounts []config.CloudAccount) groupAccountDirect
 // not identify one account the actor can access. Names are compared exactly,
 // as AccountScope compares IDs.
 func (d groupAccountDirectory) bind(entry string, actor auth.AccountScope) (string, bool) {
-	if entry == allAccountsEntry || d.ids[entry] || d.externalIDs[entry] {
+	if entry == allAccountsEntry || d.ids[entry] {
 		return entry, true
+	}
+	if id, ok := d.externalIDs[entry]; ok {
+		if id == "" {
+			// Shared across providers: no single account to bind to.
+			return entry, true
+		}
+		return id, true
 	}
 	acct, ok := d.uniqueByName[entry]
 	if !ok || !actor.Allows(acct.ID, acct.Name) {
