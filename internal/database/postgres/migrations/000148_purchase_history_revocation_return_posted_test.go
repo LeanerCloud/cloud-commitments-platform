@@ -28,9 +28,9 @@ func TestMigration_000148_RevocationReturnPosted(t *testing.T) {
 
 	revokedAt := time.Now().UTC()
 	rows := []struct {
+		revokedAt *time.Time
 		id        string
 		inFlight  bool
-		revokedAt *time.Time
 	}{
 		{id: "ri-148-flagged", inFlight: true, revokedAt: nil},
 		{id: "ri-148-revoked", inFlight: false, revokedAt: &revokedAt},

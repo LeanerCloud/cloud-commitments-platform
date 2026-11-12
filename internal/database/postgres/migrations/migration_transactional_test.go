@@ -79,8 +79,8 @@ const noTransactionMarker = "-- migrate:no-transaction"
 // the comment-and-body-stripped SQL with whitespace tolerance and word
 // boundaries.
 var forbiddenPatterns = []struct {
-	name string
 	re   *regexp.Regexp
+	name string
 }{
 	{name: "CREATE INDEX CONCURRENTLY", re: regexp.MustCompile(`(?is)\bcreate\s+(?:unique\s+)?index\s+concurrently\b`)},
 	{name: "DROP INDEX CONCURRENTLY", re: regexp.MustCompile(`(?is)\bdrop\s+index\s+concurrently\b`)},

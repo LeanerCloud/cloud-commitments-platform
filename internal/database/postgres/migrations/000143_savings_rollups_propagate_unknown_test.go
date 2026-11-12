@@ -18,11 +18,11 @@ const rollupsUnknownVersion = 143
 
 // snapshotRow143 is one savings_snapshots row; a nil cost is an unknown one.
 type snapshotRow143 struct {
-	account    string
 	at         time.Time
-	region     string
 	usage      *float64
 	commitment *float64
+	account    string
+	region     string
 }
 
 // rollup143 is what the two views report for one account.

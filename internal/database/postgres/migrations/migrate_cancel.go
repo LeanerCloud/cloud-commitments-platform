@@ -32,12 +32,11 @@ type cancelRequestKey struct{}
 // interrupts lock waits and running SQL server-side, rolling back the open
 // transaction) and then closes the sockets so any blocked read returns.
 type connTracker struct {
-	ctx context.Context
-
-	mu       sync.Mutex
-	aborted  bool
+	ctx      context.Context
 	sessions []*pgconn.PgConn
 	sockets  []net.Conn
+	mu       sync.Mutex
+	aborted  bool
 }
 
 func (t *connTracker) dial(ctx context.Context, network, addr string) (net.Conn, error) {

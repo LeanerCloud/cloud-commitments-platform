@@ -26,10 +26,10 @@ const (
 )
 
 type m136Row struct {
+	updatedAt time.Time
+	baseline  *string
 	services  string
 	state     string
-	baseline  *string
-	updatedAt time.Time
 }
 
 func m136Insert(ctx context.Context, t *testing.T, pool *pgxpool.Pool, services, schedule string) string {

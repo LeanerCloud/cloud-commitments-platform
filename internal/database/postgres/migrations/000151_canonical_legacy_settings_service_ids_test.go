@@ -46,9 +46,9 @@ func m151Override(ctx context.Context, t *testing.T, pool *pgxpool.Pool, account
 }
 
 type m151Row struct {
+	updatedAt time.Time
 	id        string
 	coverage  float64
-	updatedAt time.Time
 }
 
 // m151ServiceConfigs maps "provider/service" to the stored row.
@@ -90,8 +90,14 @@ func m151Coverages(rows map[string]m151Row) map[string]float64 {
 }
 
 type m151Event struct {
-	eventType, actor, account, provider, service string
-	before, after, details                       *string
+	before    *string
+	after     *string
+	details   *string
+	eventType string
+	actor     string
+	account   string
+	provider  string
+	service   string
 }
 
 func m151Events(ctx context.Context, t *testing.T, pool *pgxpool.Pool) []m151Event {
@@ -269,8 +275,11 @@ func TestMigration_CanonicalLegacySettingsServiceIDs(t *testing.T) {
 		m151AssertEvent(t, events[1], config.AuditOverrideDelete, m151AccountC, "gcp", "sql",
 			m151Ptr(m151Snapshot(47)), nil, m151Details(m151Superseded, "sql", "relational-db"))
 		rekeys := []struct {
-			account, provider, legacy, canonical string
-			settings                             *string
+			settings  *string
+			account   string
+			provider  string
+			legacy    string
+			canonical string
 		}{
 			{account: m151AccountA, provider: "azure", legacy: "vm", canonical: "compute", settings: fullA},
 			{account: m151AccountB, provider: "azure", legacy: "redis", canonical: "cache", settings: m151Ptr(m151Snapshot(44))},

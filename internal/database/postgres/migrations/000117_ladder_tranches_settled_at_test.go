@@ -68,8 +68,10 @@ func TestMigration_LadderTranchesSettledAt(t *testing.T) {
 }
 
 type legacyTranches struct {
-	account, config, execution string
-	tranches                   map[string]string
+	tranches  map[string]string
+	account   string
+	config    string
+	execution string
 }
 
 func seedLegacyCompletedTranches(ctx context.Context, t *testing.T, pool *pgxpool.Pool) legacyTranches {

@@ -322,10 +322,10 @@ func TestMigration139_ConcurrentHistoryWriters(t *testing.T) {
 // historyInsertStream inserts purchase_history rows in a loop until stopped,
 // alternating NULL and stamped cloud_account_id like the real write paths.
 type historyInsertStream struct {
+	err    error
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 	count  int
-	err    error
 }
 
 func startHistoryInsertStream(ctx context.Context, pool *pgxpool.Pool, acct string) *historyInsertStream {

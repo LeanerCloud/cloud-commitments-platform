@@ -76,9 +76,10 @@ func seedRIExchangeWithToken(ctx context.Context, t *testing.T, pool *pgxpool.Po
 // raw column holds once swept: empty on purchase_executions (pre-#103 code scans
 // it into a Go string), NULL on ri_exchange_history (the column is UNIQUE).
 type tokenTable struct {
-	name, idCol string
-	blankRaw    *string
-	seed        func(ctx context.Context, t *testing.T, pool *pgxpool.Pool, status string, token *string) string
+	blankRaw *string
+	seed     func(ctx context.Context, t *testing.T, pool *pgxpool.Pool, status string, token *string) string
+	name     string
+	idCol    string
 }
 
 var tokenTables = []tokenTable{

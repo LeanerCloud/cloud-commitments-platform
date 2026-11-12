@@ -49,10 +49,13 @@ func seedListingRow(ctx context.Context, t *testing.T, pool *pgxpool.Pool, purch
 }
 
 type migratedListingSettlement struct {
-	historyID, purchaseID, status string
-	listedAt                      *time.Time
-	proceeds, fee                 *float64
-	settledAt                     *time.Time
+	listedAt   *time.Time
+	proceeds   *float64
+	fee        *float64
+	settledAt  *time.Time
+	historyID  string
+	purchaseID string
+	status     string
 }
 
 func readMigratedListingSettlements(ctx context.Context, t *testing.T, pool *pgxpool.Pool) map[string]migratedListingSettlement {

@@ -61,8 +61,11 @@ func TestMigration133_ClearsConvertibleEC2Stamps(t *testing.T) {
 	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, prev))
 
 	cases := []struct {
-		purchaseID, provider, service string
-		before, after                 *string
+		before     *string
+		after      *string
+		purchaseID string
+		provider   string
+		service    string
 	}{
 		// The defect: a stale convertible stamp on an EC2 RI.
 		{purchaseID: "ri-ec2-convertible", provider: "aws", service: "ec2", before: strPtr("convertible"), after: nil},

@@ -27,9 +27,9 @@ func TestMigration_000142_ClearRevokedInFlight(t *testing.T) {
 
 	revokedAt := time.Now().UTC()
 	rows := []struct {
+		revokedAt *time.Time
 		id        string
 		inFlight  bool
-		revokedAt *time.Time
 		want      bool
 	}{
 		{id: "ri-142-revoked-flagged", inFlight: true, revokedAt: &revokedAt, want: false}, // the stale flag

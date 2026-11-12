@@ -108,8 +108,8 @@ func TestMigration_CanonicalLegacySettingsServiceIDs_ConcurrentWriters(t *testin
 
 	require.NoError(t, overrideTx.Commit(ctx))
 	for _, w := range []struct {
-		name string
 		ch   chan error
+		name string
 	}{{name: "migration", ch: migrated}, {name: "service config save", ch: serviceSaved}, {name: "override save", ch: overrideSaved}} {
 		select {
 		case chErr := <-w.ch:
