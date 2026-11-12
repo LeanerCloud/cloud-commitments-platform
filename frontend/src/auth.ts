@@ -615,7 +615,8 @@ function setupLoginModalHandlers(modal: HTMLElement): void {
 // Basic email shape check used to short-circuit obviously-malformed input
 // client-side before sending it to the server. Intentionally permissive: it
 // only catches "obviously not an email" (missing @, missing TLD, whitespace).
-// The backend's regex remains the authoritative validator.
+// The backend's regex remains the authoritative validator
+// (internal/api/validation.go validateEmailFormat); keep the two in sync.
 const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**

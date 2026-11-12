@@ -44,6 +44,8 @@ import type {
 const REVOCATION_PENDING_CONFIRMATION_COPY =
   "A refund for this purchase is being processed. Check back in a few minutes; don't start another revoke.";
 
+// Mirrors the concrete providers of backend validProviders in internal/api/validation.go;
+// keep the two in sync.
 const VALID_PROVIDERS: api.Provider[] = ['aws', 'azure', 'gcp'];
 
 // AWS Marketplace fee/pricing constants (must stay in sync with handler_marketplace.go).

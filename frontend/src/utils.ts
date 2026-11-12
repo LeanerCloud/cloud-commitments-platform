@@ -312,6 +312,8 @@ export function jsonClone<T>(obj: T): T {
 
 /**
  * Validate email format
+ * Mirrors the "has @ and a TLD" rule of backend validateEmailFormat in
+ * internal/api/validation.go; keep the two in sync.
  */
 export function isValidEmail(email: string | null | undefined): boolean {
   if (!email) return false;

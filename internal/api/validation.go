@@ -55,6 +55,8 @@ var awsWebIdentityTokenFilePrefixes = []string{
 }
 
 // validProviders are the allowed provider values.
+// The concrete providers are mirrored in frontend/src/history.ts VALID_PROVIDERS;
+// keep the two in sync.
 var validProviders = map[string]bool{
 	"":      true, // empty is allowed (means all)
 	"all":   true,
@@ -146,6 +148,9 @@ func providerFilterParam(provider string) (string, error) {
 // validateEmailFormat returns a 400 error when email is non-empty but does not
 // parse as an RFC 5322 address or lacks a TLD (e.g. name@hostonly). Empty
 // strings are accepted (contact email is optional on cloud accounts).
+// The frontend pre-checks the same "has @ and a TLD" shape in
+// frontend/src/utils.ts isValidEmail and frontend/src/auth.ts EMAIL_SHAPE_RE;
+// this is the authoritative check, keep the two in sync.
 func validateEmailFormat(email string) error {
 	if email == "" {
 		return nil

@@ -97,6 +97,7 @@ type TargetOfferingsResponse struct {
 // offeringIDPattern matches a standard AWS offering UUID used for
 // ReservedInstancesOfferingId values. Used both as a server-side guard
 // (Defect 2) and to reject any stray free-text before it reaches AWS.
+// Mirrored in frontend/src/riexchange.ts offeringUUIDPattern; keep the two in sync.
 var offeringIDPattern = regexp.MustCompile(
 	`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`,
 )
