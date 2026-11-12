@@ -59,11 +59,11 @@ func TestCollectorUnknownMonthlyCost(t *testing.T) {
 		costs []*float64
 		want  *float64
 	}{
-		{"recurring then all-upfront", []*float64{new(float64(120)), nil}, nil},
-		{"all-upfront then recurring", []*float64{nil, new(float64(120))}, nil},
-		{"all unknown", []*float64{nil, nil}, nil},
-		{"all known", []*float64{new(float64(120)), new(float64(30))}, new(float64(150))},
-		{"known zero stays zero", []*float64{new(float64)}, new(float64)},
+		{name: "recurring then all-upfront", costs: []*float64{new(float64(120)), nil}, want: nil},
+		{name: "all-upfront then recurring", costs: []*float64{nil, new(float64(120))}, want: nil},
+		{name: "all unknown", costs: []*float64{nil, nil}, want: nil},
+		{name: "all known", costs: []*float64{new(float64(120)), new(float64(30))}, want: new(float64(150))},
+		{name: "known zero stays zero", costs: []*float64{new(float64)}, want: new(float64)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
