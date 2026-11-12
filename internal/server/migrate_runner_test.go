@@ -202,7 +202,6 @@ func TestValidateForceVersion_NumberingGaps(t *testing.T) {
 		{86, []int{86, 83}, []int{85}, "83"},
 		{136, []int{136, 134}, []int{135}, "134"},
 		{64, []int{64, 63}, []int{62}, "63"},
-		{1, []int{1, 0}, []int{2}, "0"},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprint(tc.dirty), func(t *testing.T) {
@@ -216,6 +215,25 @@ func TestValidateForceVersion_NumberingGaps(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateForceVersion_RefusesStrandedRow(t *testing.T) {
+	t.Run("first migration dirty has no lower file", func(t *testing.T) {
+		cfg := migDirCfg(t, 1, 2, 3)
+		for _, n := range []int{0, 1} {
+			err := validateForceVersion(n, 1, true, cfg.MigrationsPath)
+			require.ErrorContains(t, err, "refusing force_version", "force %d", n)
+			assert.ErrorContains(t, err, "first migration failed and needs manual SQL")
+		}
+	})
+	t.Run("dirty version has no file in the image", func(t *testing.T) {
+		cfg := migDirCfg(t, 1, 2, 3)
+		for _, n := range []int{2, 4, 5} {
+			err := validateForceVersion(n, 4, true, cfg.MigrationsPath)
+			require.ErrorContains(t, err, "refusing force_version", "force %d", n)
+			assert.ErrorContains(t, err, "has no migration file")
+		}
+	})
 }
 
 func ptr(s string) *string { return &s }

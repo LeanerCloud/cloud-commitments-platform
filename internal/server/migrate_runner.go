@@ -166,7 +166,9 @@ func migrateBudget(ctx context.Context, requested time.Duration) (time.Duration,
 // validateForceVersion allows forcing only a dirty row, and only to the dirty
 // version (its SQL landed) or the highest version below it that has a file in
 // path (it rolled back; numbering has gaps, so that is not always N-1).
-// Anything else would mark unapplied migrations as applied.
+// Anything else would mark unapplied migrations as applied. It fails closed
+// when path has no file for the dirty version, or no lower file to roll back
+// to: forcing 0 would strand the row, so that needs manual SQL.
 func validateForceVersion(n int, version uint, dirty bool, path string) error {
 	if !dirty {
 		return fmt.Errorf("refusing force_version %d: schema_migrations is not dirty (version %d)", n, version)
@@ -175,9 +177,15 @@ func validateForceVersion(n int, version uint, dirty bool, path string) error {
 	if err != nil {
 		return err
 	}
-	lower, err := previousMigrationVersion(path, v)
+	hasFile, lower, hasLower, err := scanMigrationVersions(path, v)
 	if err != nil {
 		return err
+	}
+	if !hasFile {
+		return fmt.Errorf("refusing force_version %d: dirty version %d has no migration file in %q; this image does not match the database, fix it manually", n, v, path)
+	}
+	if !hasLower {
+		return fmt.Errorf("refusing force_version %d: dirty version %d is the first migration and no lower migration file exists; the first migration failed and needs manual SQL", n, v)
 	}
 	if n != v && n != lower {
 		return fmt.Errorf("refusing force_version %d: dirty version is %d, only %d or %d are allowed", n, v, v, lower)
@@ -185,22 +193,27 @@ func validateForceVersion(n int, version uint, dirty bool, path string) error {
 	return nil
 }
 
-// previousMigrationVersion is the highest <version>_*.up.sql version below v in
-// path, or 0 when there is none.
-func previousMigrationVersion(path string, v int) (int, error) {
+// scanMigrationVersions reports whether path has a <version>_*.up.sql file for
+// v, and the highest such version below v (hasLower false when none).
+func scanMigrationVersions(path string, v int) (hasFile bool, lower int, hasLower bool, err error) {
 	files, err := filepath.Glob(filepath.Join(path, "*.up.sql"))
 	if err != nil {
-		return 0, fmt.Errorf("failed to list migrations in %q: %w", path, err)
+		return false, 0, false, fmt.Errorf("failed to list migrations in %q: %w", path, err)
 	}
-	best := 0
 	for _, f := range files {
 		prefix, _, ok := strings.Cut(filepath.Base(f), "_")
 		n, perr := strconv.Atoi(prefix)
-		if ok && perr == nil && n < v && n > best {
-			best = n
+		if !ok || perr != nil {
+			continue
+		}
+		switch {
+		case n == v:
+			hasFile = true
+		case n < v && (!hasLower || n > lower):
+			lower, hasLower = n, true
 		}
 	}
-	return best, nil
+	return hasFile, lower, hasLower, nil
 }
 
 func versionToInt(v uint) (int, error) {
