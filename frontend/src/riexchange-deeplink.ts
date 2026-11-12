@@ -134,7 +134,7 @@ export async function handleRIExchangeDeeplink(): Promise<boolean> {
   if (!ok) return leave();
 
   // The backend reads the token from the query string only
-  // (router.go approveRIExchangeHandler / rejectRIExchangeHandler).
+  // (router_wrappers_exchange.go approveRIExchangeHandler / rejectRIExchangeHandler).
   const endpoint = `/ri-exchange/${dl.action}/${encodeURIComponent(dl.id)}?token=${encodeURIComponent(dl.token)}`;
   try {
     const body = await apiRequest<unknown>(endpoint, { method: 'POST' });

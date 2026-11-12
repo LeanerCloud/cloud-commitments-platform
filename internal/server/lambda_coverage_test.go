@@ -123,7 +123,7 @@ func TestHandleLambdaHTTPEvent_StaticPath(t *testing.T) {
 // text -- the inbound mirror of the isTextContentType decision this file
 // already makes for outbound responses. Before the fix, handleLambdaHTTPEvent
 // passed the raw base64 blob straight through to the API router, so
-// resolveApprovalToken (internal/api/router.go) could never recover the
+// resolveApprovalToken (internal/api/router_wrappers_purchases.go) could never recover the
 // "token=..." pair from the one-click revoke confirmation form's
 // x-www-form-urlencoded POST body: every revoke via the email link 401'd in
 // Lambda Function URL mode (the primary deploy mode), even though the same
