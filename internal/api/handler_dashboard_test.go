@@ -157,9 +157,10 @@ func TestHandler_getDashboardSummary_PerAccountCoverageScalesSavings(t *testing.
 func float64Ptr(f float64) *float64 { return &f }
 
 // Issue #201 — a global ServiceConfig with Coverage=0 (the float64 zero-value,
-// meaning "not configured") must NOT silence the dashboard headline. The fix is
-// in resolveCoverageByAccountKey: zero-coverage entries are omitted from the map
-// so scaledSavings falls through to full savings.
+// meaning "not configured") must NOT silence the dashboard headline. A new row
+// created without a coverage is stored as 0, and a value-typed field cannot tell
+// that from a configured 0, so only a per-account override's pointer coverage
+// (issue #523) is honored as a configured 0%.
 func TestHandler_getDashboardSummary_ZeroCoverageInServiceConfigFallsThroughToFull(t *testing.T) {
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
@@ -195,9 +196,6 @@ func TestHandler_getDashboardSummary_ZeroCoverageInServiceConfigFallsThroughToFu
 	result, err := handler.getDashboardSummary(ctx, req, map[string]string{"provider": "aws"})
 	require.NoError(t, err)
 
-	// Before the fix, Coverage=0 was inserted into the map and scaledSavings
-	// returned $0. After the fix, the zero entry is omitted and the full $200
-	// is returned.
 	assert.InDelta(t, 200.0, result.PotentialMonthlySavings, 0.001,
 		"Coverage=0 (unset zero-value) must not silence savings (issue #201)")
 	assert.InDelta(t, 200.0, result.ByService["rds"].PotentialSavings, 0.001)
@@ -2104,4 +2102,62 @@ func TestHandleRequest_DashboardUpcomingFlagsStepWithoutRecommendations(t *testi
 	}
 	assert.Equal(t, false, byID["exec-bare"]["has_recommendations"])
 	assert.Equal(t, true, byID["exec-with-recs"]["has_recommendations"])
+}
+
+// Issue #523 — coverage 0 is configured only by an override's pointer coverage.
+// Rows: a zero override beats a 100 global, an override-only account without a
+// coverage is unset (full savings, as under #201), a global 0 without an
+// override is unset, a zero override beats a global 0, a 50 override beats a
+// global 0, and an account with a configured 80 scales to 80.
+func TestHandler_getDashboardSummary_ZeroCoverageVersusUnset(t *testing.T) {
+	acct := func(s string) *string { return &s }
+	rec := func(a string) config.RecommendationRecord {
+		return config.RecommendationRecord{Provider: "aws", Service: "rds", Savings: 100.0, CloudAccountID: acct(a)}
+	}
+	for _, tc := range []struct {
+		name      string
+		global    *config.ServiceConfig
+		overrides map[string]*config.AccountServiceOverride
+		recs      []config.RecommendationRecord
+		want      float64
+	}{
+		{"zero override over global 100, plus an unset account", &config.ServiceConfig{Provider: "aws", Service: "rds", Enabled: true, Coverage: 100},
+			map[string]*config.AccountServiceOverride{config.AccountConfigKey("a", "aws", "rds"): {Coverage: float64Ptr(0)}},
+			[]config.RecommendationRecord{rec("a"), rec("b")}, 100},
+		{"override-only without coverage is unset", nil,
+			map[string]*config.AccountServiceOverride{config.AccountConfigKey("a", "aws", "rds"): {}},
+			[]config.RecommendationRecord{rec("a")}, 100},
+		{"override-only with zero coverage is configured", nil,
+			map[string]*config.AccountServiceOverride{config.AccountConfigKey("a", "aws", "rds"): {Coverage: float64Ptr(0)}},
+			[]config.RecommendationRecord{rec("a")}, 0},
+		{"50 override beats global 0", &config.ServiceConfig{Provider: "aws", Service: "rds", Enabled: true, Coverage: 0},
+			map[string]*config.AccountServiceOverride{config.AccountConfigKey("a", "aws", "rds"): {Coverage: float64Ptr(50)}},
+			[]config.RecommendationRecord{rec("a")}, 50},
+		{"global 0 without override is unset", &config.ServiceConfig{Provider: "aws", Service: "rds", Enabled: true, Coverage: 0}, nil,
+			[]config.RecommendationRecord{rec("a")}, 100},
+		{"zero override over global 0 is configured", &config.ServiceConfig{Provider: "aws", Service: "rds", Enabled: true, Coverage: 0},
+			map[string]*config.AccountServiceOverride{config.AccountConfigKey("a", "aws", "rds"): {Coverage: float64Ptr(0)}},
+			[]config.RecommendationRecord{rec("a")}, 0},
+		{"global 80", &config.ServiceConfig{Provider: "aws", Service: "rds", Enabled: true, Coverage: 80}, nil,
+			[]config.RecommendationRecord{rec("a")}, 80},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			mockScheduler := new(MockScheduler)
+			t.Cleanup(func() { mockScheduler.AssertExpectations(t) })
+			mockStore := new(MockConfigStore)
+			t.Cleanup(func() { mockStore.AssertExpectations(t) })
+			store := &dashboardOverrideStore{MockConfigStore: mockStore, overrides: tc.overrides}
+			mockScheduler.On("ListRecommendations", mock.Anything, mock.Anything).Return(tc.recs, nil)
+			mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{DefaultCoverage: 80.0}, nil)
+			mockStore.On("GetActivePurchaseHistory", ctx, mock.Anything, mock.Anything, mock.Anything).Return([]config.PurchaseHistoryRecord{}, nil)
+			mockStore.On("GetServiceConfig", ctx, "aws", "rds").Return(tc.global, nil)
+			mockAuth, req := adminDashboardReq(t, ctx)
+			handler := &Handler{auth: mockAuth, scheduler: mockScheduler, config: store}
+
+			result, err := handler.getDashboardSummary(ctx, req, map[string]string{"provider": "aws"})
+			require.NoError(t, err)
+			assert.InDelta(t, tc.want, result.PotentialMonthlySavings, 0.001)
+		})
+	}
 }

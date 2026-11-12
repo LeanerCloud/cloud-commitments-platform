@@ -88,9 +88,52 @@ func ResolveAccountConfigsForRecs(
 	store AccountConfigReader,
 	recs []RecommendationRecord,
 ) (map[string]*ServiceConfig, error) {
-	resolved := make(map[string]*ServiceConfig)
+	resolved, _, err := resolveAccountConfigs(ctx, store, recs)
+	return resolved, err
+}
+
+// ResolveConfiguredCoverageForRecs returns the resolved coverage percentage per
+// AccountConfigKey for the triples whose coverage was set by an operator: an
+// override that carries a coverage (a configured 0 included) or a global
+// ServiceConfig with a non-zero coverage. A global 0 and an override without a
+// coverage over no global row are left out as unset.
+func ResolveConfiguredCoverageForRecs(
+	ctx context.Context,
+	store AccountConfigReader,
+	recs []RecommendationRecord,
+) (map[string]float64, error) {
+	resolved, unset, err := resolveAccountConfigs(ctx, store, recs)
+	out := make(map[string]float64, len(resolved))
+	for k, cfg := range resolved {
+		if !unset[k] {
+			out[k] = cfg.Coverage
+		}
+	}
+	return out, err
+}
+
+// coverageUnset reports that no source set a coverage. Only an override's
+// pointer coverage can say "configured 0": the global ServiceConfig is
+// value-typed and a row created without a coverage stores 0, so a global 0 is
+// treated as unset.
+func coverageUnset(global *ServiceConfig, override *AccountServiceOverride) bool {
+	if override != nil && override.Coverage != nil {
+		return false
+	}
+	return global == nil || global.Coverage == 0
+}
+
+// resolveAccountConfigs is ResolveAccountConfigsForRecs plus the keys whose
+// coverage no source set: no global ServiceConfig row and no override coverage.
+func resolveAccountConfigs(
+	ctx context.Context,
+	store AccountConfigReader,
+	recs []RecommendationRecord,
+) (resolved map[string]*ServiceConfig, unset map[string]bool, err error) {
+	resolved = make(map[string]*ServiceConfig)
+	unset = make(map[string]bool)
 	if len(recs) == 0 {
-		return resolved, nil
+		return resolved, unset, nil
 	}
 
 	// Cache global configs per (provider, service) — many recs share the same
@@ -114,16 +157,17 @@ func ResolveAccountConfigsForRecs(
 		}
 		seen[key] = struct{}{}
 
-		global, err := cache.lookup(ctx, store, rec.Provider, rec.Service)
+		var global *ServiceConfig
+		global, err = cache.lookup(ctx, store, rec.Provider, rec.Service)
 		if err != nil {
-			return resolved, err
+			return resolved, unset, err
 		}
 
 		var override *AccountServiceOverride
 		if rec.CloudAccountID != nil {
 			override, err = store.GetAccountServiceOverride(ctx, accountID, rec.Provider, rec.Service)
 			if err != nil {
-				return resolved, fmt.Errorf("get override %s/%s/%s: %w", accountID, rec.Provider, rec.Service, err)
+				return resolved, unset, fmt.Errorf("get override %s/%s/%s: %w", accountID, rec.Provider, rec.Service, err)
 			}
 		}
 
@@ -136,7 +180,8 @@ func ResolveAccountConfigsForRecs(
 		// override may be nil — ResolveServiceConfig returns global unchanged.
 		// global may be nil — ResolveServiceConfig synthesizes a default baseline.
 		resolved[key] = ResolveServiceConfig(rec.Provider, rec.Service, global, override)
+		unset[key] = coverageUnset(global, override)
 	}
 
-	return resolved, nil
+	return resolved, unset, nil
 }

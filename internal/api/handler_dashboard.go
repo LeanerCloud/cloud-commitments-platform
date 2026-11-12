@@ -359,33 +359,19 @@ func scaledSavings(rec config.RecommendationRecord, coverageByKey map[string]flo
 // recs. Lookup errors degrade gracefully to a nil map (no scaling applied
 // → un-overridden behavior).
 //
-// Entries with a resolved coverage of zero are omitted from the map.
-// ServiceConfig.Coverage is a float64 whose zero-value means "not configured",
-// so including a zero entry would silently scale that account's savings to $0
-// even though the operator never set an explicit coverage cap (issue #201).
-// When an entry is absent, scaledSavings falls through to full savings,
-// matching the pre-#196 behavior for un-configured accounts.
+// A configured coverage of zero stays in the map, so scaledSavings shows zero
+// savings for it: 0% means "buy nothing" (#523). Only a triple with no
+// configured coverage at all is omitted, and scaledSavings then falls through
+// to full savings, matching the pre-#196 behavior for un-configured accounts
+// (#201).
 func (h *Handler) resolveCoverageByAccountKey(ctx context.Context, recs []config.RecommendationRecord) map[string]float64 {
 	if len(recs) == 0 {
 		return nil
 	}
-	resolved, err := config.ResolveAccountConfigsForRecs(ctx, h.config, recs)
+	out, err := config.ResolveConfiguredCoverageForRecs(ctx, h.config, recs)
 	if err != nil {
 		logging.Errorf("dashboard: failed to resolve per-account configs for coverage cap; using un-scaled totals: %v", err)
 		return nil
-	}
-	if len(resolved) == 0 {
-		return nil
-	}
-	out := make(map[string]float64, len(resolved))
-	for k, cfg := range resolved {
-		if cfg.Coverage == 0 {
-			// Zero is the float64 zero-value, meaning "not configured".
-			// Omit the entry so scaledSavings returns full savings
-			// rather than silently zeroing the dashboard headline.
-			continue
-		}
-		out[k] = cfg.Coverage
 	}
 	if len(out) == 0 {
 		return nil
@@ -394,7 +380,8 @@ func (h *Handler) resolveCoverageByAccountKey(ctx context.Context, recs []config
 }
 
 // resolveTargetCoverage returns the configured default coverage or 80% when
-// no global config is set or the configured value is zero.
+// no global config is set or the configured value is zero (a value-typed
+// field cannot tell an unset 0 from a configured one).
 func (h *Handler) resolveTargetCoverage(ctx context.Context) float64 {
 	globalCfg, err := h.config.GetGlobalConfig(ctx)
 	if err != nil {
