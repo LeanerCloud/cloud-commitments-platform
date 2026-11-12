@@ -47,10 +47,10 @@ var azureCurrencyCodePattern = regexp.MustCompile(`^[A-Za-z]{3}$`)
 // includes P5Y and drops it if ValidatePurchase rejects it, so the persisted
 // combos always reflect live API reality rather than the SDK enum.
 var azureCandidateCombos = []struct {
-	termYears   int
-	azureTerm   armbillingbenefits.Term
 	azurePlan   *armbillingbenefits.BillingPlan
+	azureTerm   armbillingbenefits.Term
 	paymentName string
+	termYears   int
 }{
 	{termYears: 1, azureTerm: armbillingbenefits.TermP1Y, azurePlan: nil, paymentName: "all-upfront"},
 	{termYears: 1, azureTerm: armbillingbenefits.TermP1Y, azurePlan: billingPlanP1M(), paymentName: "monthly"},
