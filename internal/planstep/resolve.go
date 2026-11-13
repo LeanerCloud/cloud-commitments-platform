@@ -365,7 +365,7 @@ func (b *boundSet) filter(recs []config.RecommendationRecord) ([]config.Recommen
 func (b *boundSet) matching(recs []config.RecommendationRecord, term int, wantPayment string, allowed map[string]struct{}) ([]config.RecommendationRecord, error) {
 	var kept []config.RecommendationRecord
 	for i := range recs {
-		match, err := matchesPlan(&recs[i], term, wantPayment, allowed)
+		match, err := MatchesPlan(&recs[i], term, wantPayment, allowed)
 		if err != nil {
 			return nil, err
 		}
@@ -418,9 +418,9 @@ func (r *ramp) validateInputs(svc *config.ServiceConfig, percentPerStep float64)
 	return payment, nil
 }
 
-// matchesPlan reports whether rec has the plan service's term, payment and a
+// MatchesPlan reports whether rec has the plan service's term, payment and a
 // target account. An unrecognized payment is an error, never a loosened match.
-func matchesPlan(rec *config.RecommendationRecord, term int, wantPayment string, allowed map[string]struct{}) (bool, error) {
+func MatchesPlan(rec *config.RecommendationRecord, term int, wantPayment string, allowed map[string]struct{}) (bool, error) {
 	if rec.Term != term || rec.CloudAccountID == nil {
 		return false, nil
 	}

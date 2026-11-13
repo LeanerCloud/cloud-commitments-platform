@@ -71,6 +71,19 @@ func TestDecodePlanRequest_GroupsRefused(t *testing.T) {
 	}
 }
 
+func TestValidateGroups_GroupCountCap(t *testing.T) {
+	groups := make([]string, maxPlanGroups+1)
+	for i := range groups {
+		groups[i] = `{"provider":"aws","service":"s` + fmt.Sprint(i) + `","recommendation_ids":["r` + fmt.Sprint(i) + `"]}`
+	}
+	_, err := decodePlanRequest(groupsBody(groups[:maxPlanGroups]...))
+	assert.NoError(t, err, "exactly the cap")
+	_, err = decodePlanRequest(groupsBody(groups...))
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, planGroupsTooManyCode, ce.Details()["code"])
+}
+
 func TestValidateGroups_Boundaries(t *testing.T) {
 	var req PlanRequest
 	require.NoError(t, json.Unmarshal([]byte(groupsBody(groupJSON(idList(0, 1000)))), &req))
@@ -85,12 +98,14 @@ func TestValidateGroups_Boundaries(t *testing.T) {
 	assert.NoError(t, req.validateGroups(), "coverage 100 and a small positive cap")
 }
 
-func TestDecodePlanRequest_ValidGroupsNotSupportedYet(t *testing.T) {
-	_, err := decodePlanRequest(groupsBody(groupJSON(`["a","b"]`)))
-	ce, ok := IsClientError(err)
+func TestDecodePlanRequest_ValidGroupsAccepted(t *testing.T) {
+	req, err := decodePlanRequest(groupsBody(groupJSON(`["a","b"]`)))
+	require.NoError(t, err)
+	require.Len(t, req.Groups, 1)
+	assert.NoError(t, refuseGroupsOnUpdate(&PlanRequest{}))
+	ce, ok := IsClientError(refuseGroupsOnUpdate(req))
 	require.True(t, ok)
 	assert.Equal(t, 400, ce.code)
-	assert.Equal(t, "plan groups are not supported yet (#1746)", ce.message)
 	assert.Equal(t, planGroupsNotSupportedCode, ce.Details()["code"])
 }
 

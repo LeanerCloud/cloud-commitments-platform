@@ -58,7 +58,7 @@ func TestResolve_BoundIdentitiesMissingFromTheStrictRead(t *testing.T) {
 	assert.Equal(t, []string{cumKey(t, gone)}, res.MissingBound)
 }
 
-// A bound identity the strict read shows but matchesPlan rejects (term, payment
+// A bound identity the strict read shows but MatchesPlan rejects (term, payment
 // or account differs from its group) is reported as mismatched, not as missing,
 // and the group's other bound recs are still bought (issue #1857).
 func TestResolve_BoundIdentitiesRejectedByTheGroupAreReportedMismatched(t *testing.T) {

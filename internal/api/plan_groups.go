@@ -5,6 +5,8 @@ import "fmt"
 const (
 	maxPlanGroupRecommendationIDs      = 1000
 	maxPlanRequestRecommendationIDs    = 5000
+	maxPlanGroups                      = 200
+	planGroupsTooManyCode              = "plan_too_many_groups"
 	planGroupsTooManyIDsCode           = "plan_group_too_many_recommendation_ids"
 	planGroupsTooManyTotalIDsCode      = "plan_groups_too_many_recommendation_ids"
 	planGroupsMixedWithFlatServiceCode = "plan_groups_with_flat_service_fields"
@@ -35,6 +37,11 @@ func (r *PlanRequest) validateGroups() error {
 		return NewClientErrorWithDetails(400,
 			"groups cannot be combined with provider, service, term, payment or target_coverage",
 			map[string]any{"code": planGroupsMixedWithFlatServiceCode})
+	}
+	if len(r.Groups) > maxPlanGroups {
+		return NewClientErrorWithDetails(400,
+			fmt.Sprintf("%d groups, at most %d are allowed", len(r.Groups), maxPlanGroups),
+			map[string]any{"code": planGroupsTooManyCode})
 	}
 	seen := map[string]struct{}{}
 	total := 0

@@ -188,12 +188,17 @@ func decodePlanRequest(body string) (*PlanRequest, error) {
 	if err := req.validateGroups(); err != nil {
 		return nil, err
 	}
+	return &req, nil
+}
+
+// refuseGroupsOnUpdate fails loud: groups bind a plan at create only, so a PUT
+// carrying them would otherwise be dropped silently (#1746).
+func refuseGroupsOnUpdate(req *PlanRequest) error {
 	if len(req.Groups) > 0 {
-		// Fail loud until the handler builds plans from groups (#1746).
-		return nil, NewClientErrorWithDetails(400, "plan groups are not supported yet (#1746)",
+		return NewClientErrorWithDetails(400, "groups can only be set when creating a plan",
 			map[string]any{"code": planGroupsNotSupportedCode})
 	}
-	return &req, nil
+	return nil
 }
 
 func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunctionURLRequest) (any, error) {
@@ -225,6 +230,9 @@ func (h *Handler) createPlan(ctx context.Context, httpReq *events.LambdaFunction
 	}
 
 	plan := req.toPurchasePlan()
+	if err := h.bindPlanGroups(ctx, req, plan); err != nil {
+		return nil, err
+	}
 
 	// Validate the plan
 	if err := h.validateAndGatePlan(ctx, httpReq, session, nil, plan, req.TargetAccounts); err != nil {
@@ -344,6 +352,9 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 	req, err := decodePlanRequest(httpReq.Body)
 	if err != nil {
 		return nil, err
+	}
+	if groupsErr := refuseGroupsOnUpdate(req); groupsErr != nil {
+		return nil, groupsErr
 	}
 	var capField struct {
 		MaxStepCommitment json.RawMessage `json:"max_step_commitment"`
