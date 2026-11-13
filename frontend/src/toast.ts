@@ -71,6 +71,9 @@ const DIALOG_FOOTER_SELECTOR = '.modal-footer, .modal-buttons, .modal-confirm-ac
 const EDGE_PX = 16;
 const DEFAULT_MAX_WIDTH_PX = 400;
 const FOOTER_GAP_PX = 8;
+// Sticky bottom bars the stack must not cover when no dialog is open (issue
+// #1736): the Opportunities bulk-action box and the settings save bar.
+const BAR_SELECTOR = '.recommendations-action-box, .settings-savebar';
 // Narrower than this, a toast beside the dialog is too cramped to read, so
 // the stack is lifted above the dialog (or its button row) instead.
 const MIN_SIDE_WIDTH_PX = 240;
@@ -120,7 +123,9 @@ function topmostDialog(): { el: Element; rect: DOMRect } | null {
  * there is room), or just above the button row it would cover. The last
  * case can put the stack over the lower part of a dialog that fills the
  * screen; the buttons stay clickable and the toast can be dismissed.
- * Exported for tests; runs on every new toast and, while toasts are
+ * With no dialog open the same lift applies to sticky bottom bars (bulk
+ * action box, settings save bar): the stack steps above one it would cover
+ * (issue #1736). Exported for tests; runs on every new toast and, while toasts are
  * showing, whenever a dialog opens or closes, something scrolls, or the
  * viewport is resized.
  */
@@ -131,18 +136,25 @@ export function layoutToastStack(): void {
   setVar(container, '--toast-max-width', null);
   setVar(container, '--toast-bottom', null);
   const stack = visibleRect(container);
+  if (!stack) return;
   const dialog = topmostDialog();
-  if (!stack || !dialog) return;
 
   const vw = document.documentElement.clientWidth || window.innerWidth;
   const vh = document.documentElement.clientHeight || window.innerHeight;
-  const onScreen = intersect(dialog.rect, { left: 0, top: 0, right: vw, bottom: vh });
-  const rows: Box[] = [];
-  dialog.el.querySelectorAll(DIALOG_FOOTER_SELECTOR).forEach((el) => {
-    const rect = visibleRect(el);
-    const shown = rect && onScreen ? intersect(rect, onScreen) : null;
-    if (shown) rows.push(shown);
-  });
+  const screen: Box = { left: 0, top: 0, right: vw, bottom: vh };
+  const shownRows = (els: Iterable<Element>, within: Box | null): Box[] => {
+    const out: Box[] = [];
+    for (const el of els) {
+      const rect = visibleRect(el);
+      const shown = rect && within ? intersect(rect, within) : null;
+      if (shown) out.push(shown);
+    }
+    return out;
+  };
+  // Bars under an open dialog sit behind its backdrop, so only count them bare.
+  const rows = dialog
+    ? shownRows(dialog.el.querySelectorAll(DIALOG_FOOTER_SELECTOR), intersect(dialog.rect, screen))
+    : shownRows(document.querySelectorAll(BAR_SELECTOR), screen);
   const width = Math.min(stack.width, DEFAULT_MAX_WIDTH_PX);
   const boxAt = (bottom: number): Box =>
     ({ left: vw - EDGE_PX - width, right: vw - EDGE_PX, top: vh - bottom - stack.height, bottom: vh - bottom });
@@ -152,16 +164,19 @@ export function layoutToastStack(): void {
   let row = covered(EDGE_PX);
   if (!row) return;
 
-  const side = Math.floor(vw - dialog.rect.right - 2 * EDGE_PX);
-  if (side >= MIN_SIDE_WIDTH_PX) {
-    setVar(container, '--toast-max-width', `${Math.min(side, DEFAULT_MAX_WIDTH_PX)}px`);
-    return;
+  if (dialog) {
+    const side = Math.floor(vw - dialog.rect.right - 2 * EDGE_PX);
+    if (side >= MIN_SIDE_WIDTH_PX) {
+      setVar(container, '--toast-max-width', `${Math.min(side, DEFAULT_MAX_WIDTH_PX)}px`);
+      return;
+    }
+    const aboveDialog = Math.ceil(vh - dialog.rect.top + FOOTER_GAP_PX);
+    if (dialog.rect.top - FOOTER_GAP_PX - stack.height >= EDGE_PX) {
+      setVar(container, '--toast-bottom', `${aboveDialog}px`);
+      return;
+    }
   }
-  const aboveDialog = Math.ceil(vh - dialog.rect.top + FOOTER_GAP_PX);
-  if (dialog.rect.top - FOOTER_GAP_PX - stack.height >= EDGE_PX) {
-    setVar(container, '--toast-bottom', `${aboveDialog}px`);
-    return;
-  }
+
   // Step up past each button row the stack would cover, lowest first.
   let bottom = EDGE_PX;
   for (let i = 0; row && i <= rows.length; i++) {

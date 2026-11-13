@@ -386,8 +386,8 @@ body.sidebar-open {
  * content and could cover controls at 320px. Span the viewport width with
  * the page gutter instead and clear the home indicator. toast.ts still
  * lifts the stack via --toast-bottom when a dialog's button row is in the
- * way, so the inset is added on top of that variable. Sticky bottom bars
- * (bulk-action box, settings save bar) are not tracked by toast.ts. */
+ * way, so the inset is added on top of that variable. toast.ts also lifts
+ * it above sticky bottom bars (bulk-action box, settings save bar). */
 @media (max-width: 480px) {
     .toast-container {
         left: var(--cudly-sp-3);

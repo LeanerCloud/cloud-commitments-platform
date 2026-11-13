@@ -371,6 +371,51 @@ describe('toast stack and open dialogs', () => {
     expect(prop('--toast-bottom')).toBe('');
   });
 
+  // Issue #1736: with no dialog open, sticky bottom bars are covered too.
+  function addBar(cls: string, box: DOMRect): HTMLElement {
+    const bar = document.createElement('div');
+    bar.className = cls;
+    document.body.appendChild(bar);
+    jest.spyOn(bar, 'getBoundingClientRect').mockReturnValue(box);
+    return bar;
+  }
+
+  it.each(['recommendations-action-box', 'settings-savebar'])(
+    'lifts the stack above a sticky %s at 320px', (cls) => {
+      setViewport(320, 640);
+      setStack(296, 70);
+      const bar = rect(0, 560, 320, 80);
+      addBar(cls, bar);
+      showToast({ message: 'saved', kind: 'success' });
+      expect(prop('--toast-bottom')).toBe(`${640 - 560 + 8}px`);
+      expect(overlaps(stackBox(), { left: 0, top: 560, right: 320, bottom: 640 })).toBe(false);
+    });
+
+  it('ignores sticky bars while a dialog is open (they sit behind its backdrop)', () => {
+    setViewport(320, 640);
+    setStack(296, 70);
+    openDialog(rect(10, 40, 300, 400), [rect(10, 376, 300, 64)]);
+    addBar('settings-savebar', rect(0, 560, 320, 80));
+    showToast({ message: 'saved' });
+    expect(prop('--toast-bottom')).toBe('');
+  });
+
+  it('keeps the default corner when a sticky bar is not under the stack', () => {
+    setViewport(320, 640);
+    setStack(296, 70);
+    addBar('settings-savebar', rect(0, 300, 320, 60));
+    showToast({ message: 'saved' });
+    expect(prop('--toast-bottom')).toBe('');
+  });
+
+  it('ignores sticky bars that are not rendered', () => {
+    setViewport(320, 640);
+    setStack(296, 70);
+    addBar('recommendations-action-box', NONE);
+    showToast({ message: 'saved' });
+    expect(prop('--toast-bottom')).toBe('');
+  });
+
   it('ignores dialogs that are not rendered', () => {
     setViewport(390, 844);
     setStack(358, 70);
