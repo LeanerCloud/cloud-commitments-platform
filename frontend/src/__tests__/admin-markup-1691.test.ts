@@ -1,6 +1,6 @@
 /**
- * Issue #1691 item 6: markup/CSS assertions for the Edit Account
- * modal autofill hints.
+ * Issue #1691 items 6 and 7: markup/CSS assertions for the Edit Account
+ * modal autofill hints and the group card header wrapping.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -27,4 +27,17 @@ describe('#1691 item 6: account form autofill hints', () => {
       expect(doc.getElementById(id)?.getAttribute('autocomplete')).toBe('new-password');
     },
   );
+});
+
+describe('#1691 item 7: group card header', () => {
+  const css = read('styles/settings.css');
+
+  it('lets the text block shrink so the actions stay on the top row', () => {
+    expect(css).toMatch(/\.group-card-header\s*>\s*div:first-child\s*\{[^}]*min-width:\s*0/);
+    expect(css).toMatch(/\.group-card-header\s*>\s*div:first-child\s*\{[^}]*flex:\s*1 1/);
+  });
+
+  it('keeps the actions pinned right', () => {
+    expect(css).toMatch(/\.group-card-actions\s*\{[^}]*margin-left:\s*auto/);
+  });
 });
