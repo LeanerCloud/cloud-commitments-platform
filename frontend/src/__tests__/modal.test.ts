@@ -78,7 +78,7 @@ function buildModal(): { modal: HTMLDivElement; trigger: HTMLButtonElement; firs
 function mountPlanModalDOM(): HTMLButtonElement {
   const trigger = document.createElement('button');
   trigger.id = 'new-plan-btn';
-  trigger.textContent = 'New Plan';
+  trigger.textContent = 'New plan';
   document.body.appendChild(trigger);
 
   const modal = document.createElement('div');
@@ -92,7 +92,7 @@ function mountPlanModalDOM(): HTMLButtonElement {
 
   const h2 = document.createElement('h2');
   h2.id = 'plan-modal-title';
-  h2.textContent = 'Create Purchase Plan';
+  h2.textContent = 'Create purchase plan';
   content.appendChild(h2);
 
   const form = document.createElement('form');
@@ -184,7 +184,7 @@ function mountPlanModalDOM(): HTMLButtonElement {
 function mountAccountModalDOM(): { trigger: HTMLButtonElement; modal: HTMLDivElement } {
   const trigger = document.createElement('button');
   trigger.id = 'add-account-btn';
-  trigger.textContent = 'Add Account';
+  trigger.textContent = 'Add account';
   document.body.appendChild(trigger);
 
   const modal = document.createElement('div');
@@ -198,7 +198,7 @@ function mountAccountModalDOM(): { trigger: HTMLButtonElement; modal: HTMLDivEle
 
   const h2 = document.createElement('h2');
   h2.id = 'account-modal-title';
-  h2.textContent = 'Add Account';
+  h2.textContent = 'Add account';
   content.appendChild(h2);
 
   const form = document.createElement('form');

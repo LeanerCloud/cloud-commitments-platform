@@ -43,7 +43,7 @@ export function openCreateGroupModal(): void {
 
   if (!modal || !title || !form) return;
 
-  title.textContent = 'Create Group';
+  title.textContent = 'Create group';
   form.reset();
   clearGroupFormValidation();
   (document.getElementById('group-id') as HTMLInputElement).value = '';
@@ -71,7 +71,7 @@ export async function openEditGroupModal(groupId: string): Promise<void> {
 
     if (!modal || !title || !form) return;
 
-    title.textContent = 'Edit Group';
+    title.textContent = 'Edit group';
     clearGroupFormValidation();
     (document.getElementById('group-id') as HTMLInputElement).value = group.id;
     (document.getElementById('group-name') as HTMLInputElement).value = group.name;

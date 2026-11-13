@@ -302,7 +302,7 @@ describe('HTML Structure', () => {
         document.querySelector(`label[for="${id}"]`)?.textContent?.trim()
         ?? document.getElementById(id)?.closest('label')?.textContent?.trim();
 
-      expect(labelFor('setting-default-coverage')).toBe('Dashboard Coverage Target (%)');
+      expect(labelFor('setting-default-coverage')).toBe('Dashboard coverage target (%)');
       for (const sp of ['compute', 'ec2instance', 'sagemaker', 'database']) {
         expect(labelFor(`aws-savings-plans-${sp}-coverage`)).toBe('Dashboard coverage %:');
       }
@@ -316,7 +316,7 @@ describe('HTML Structure', () => {
 
     test('keeps the plan form Target Coverage label, which sizes plan steps', () => {
       const plan = document.getElementById('plan-coverage');
-      expect(plan?.closest('label')?.textContent?.trim()).toBe('Target Coverage (%):');
+      expect(plan?.closest('label')?.textContent?.trim()).toBe('Target coverage (%):');
     });
   });
 
@@ -845,8 +845,8 @@ describe('HTML Structure', () => {
       for (const id of ['accounts-federation', 'accounts-registrations', 'accounts-aws-block', 'accounts-azure-block', 'accounts-gcp-block']) {
         expect(document.querySelector(`#${id} > legend > h4`)).not.toBeNull();
       }
-      expect(document.querySelector('#accounts-federation h4')?.textContent).toBe('Federation Setup (Add New Account)');
-      expect(document.querySelector('#accounts-registrations h4')?.textContent).toBe('Account Registrations');
+      expect(document.querySelector('#accounts-federation h4')?.textContent).toBe('Federation setup (add new account)');
+      expect(document.querySelector('#accounts-registrations h4')?.textContent).toBe('Account registrations');
     });
 
     test('target cloud control is a radiogroup', () => {

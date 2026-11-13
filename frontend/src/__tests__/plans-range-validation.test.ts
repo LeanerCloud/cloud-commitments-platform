@@ -136,7 +136,7 @@ function buildPlanModalDOM(): void {
 
   const title = document.createElement('h3');
   title.id = 'plan-modal-title';
-  title.textContent = 'New Purchase Plan';
+  title.textContent = 'New purchase plan';
   modal.appendChild(title);
 
   const form = document.createElement('form');

@@ -47,7 +47,7 @@ function setUpUserForm(): void {
           <select id="user-groups" multiple required></select>
           <small class="form-help">At least one group is required.</small>
         </div>
-        <button type="submit">Save User</button>
+        <button type="submit">Save user</button>
       </form>
     </div>`;
 }

@@ -46,7 +46,7 @@ test('plan draft returns after the session expires mid-edit and the user signs i
   await page.waitForFunction(() => sessionStorage.getItem('cudly:plan-form-draft') !== null);
 
   sessionExpired = true;
-  await page.getByRole('button', { name: 'Save Plan', exact: true }).click();
+  await page.getByRole('button', { name: 'Save plan', exact: true }).click();
   await expect.poll(() => saveAttempts).toBe(1);
   await expect(page.locator('#plan-modal')).toBeVisible();
 

@@ -359,7 +359,7 @@ describe('Account modal via setupSettingsHandlers', () => {
     document.getElementById('add-aws-account-btn')!.click();
 
     expect(document.getElementById('account-modal')!.classList.contains('hidden')).toBe(false);
-    expect(document.getElementById('account-modal-title')!.textContent).toBe('Add Account');
+    expect(document.getElementById('account-modal-title')!.textContent).toBe('Add account');
   });
 
   test('add-azure-account-btn shows azure fields, hides aws fields', () => {

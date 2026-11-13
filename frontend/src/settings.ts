@@ -1929,7 +1929,7 @@ export function openAccountModal(provider: AccountProvider, account?: api.CloudA
   if (!modal) return;
 
   const title = document.getElementById('account-modal-title');
-  if (title) title.textContent = account ? 'Edit Account' : 'Add Account';
+  if (title) title.textContent = account ? 'Edit account' : 'Add account';
 
   setInputValue('account-id', account?.id ?? '');
   setInputValue('account-provider', provider);

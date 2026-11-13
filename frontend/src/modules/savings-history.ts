@@ -329,13 +329,13 @@ function renderSavingsStats(data: SavingsAnalyticsResponse, start: Date, end: Da
         periodSavingsEl.textContent = formatCurrency(displayTotal, '$', 2);
     }
     if (periodSavingsLabelEl) {
-        periodSavingsLabelEl.textContent = 'Period Savings';
+        periodSavingsLabelEl.textContent = 'Period savings';
     }
     if (periodSavingsUnitEl) {
         periodSavingsUnitEl.textContent = `shown in ${adjective.toLowerCase()} equivalents`;
     }
     if (avgLabelEl) {
-        avgLabelEl.textContent = `Avg ${adjective} Savings`;
+        avgLabelEl.textContent = `Avg ${adjective.toLowerCase()} savings`;
     }
     if (avgSavingsEl) {
         avgSavingsEl.textContent = `${formatCurrency(displayAvg, '$', 2)}${suffix}`;

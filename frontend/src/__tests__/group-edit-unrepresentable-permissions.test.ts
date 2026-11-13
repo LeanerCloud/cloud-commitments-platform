@@ -329,7 +329,7 @@ describe('regression: group edit preserves constraints.accounts (#1629)', () => 
           <input type="text" id="group-name" required>
           <textarea id="group-description"></textarea>
           <div id="permissions-list"></div>
-          <button type="submit" class="primary">Save Group</button>
+          <button type="submit" class="primary">Save group</button>
         </form>
       </div>
     `;

@@ -1501,7 +1501,7 @@ describe('users/userModals', () => {
   beforeEach(() => {
     document.body.innerHTML = `
       <div id="user-modal" class="hidden">
-        <h2 id="user-modal-title">Create User</h2>
+        <h2 id="user-modal-title">Create user</h2>
         <form id="user-form">
           <input type="hidden" id="user-id" />
           <input type="email" id="user-email" />
@@ -1544,7 +1544,7 @@ describe('users/userModals', () => {
       userModals.openCreateUserModal();
 
       const title = document.getElementById('user-modal-title');
-      expect(title?.textContent).toBe('Create User');
+      expect(title?.textContent).toBe('Create user');
     });
 
     it('should reset form', () => {
@@ -1615,7 +1615,7 @@ describe('users/userModals', () => {
       await userModals.openEditUserModal('1');
 
       const title = document.getElementById('user-modal-title');
-      expect(title?.textContent).toBe('Edit User');
+      expect(title?.textContent).toBe('Edit user');
     });
 
     it('should load user from API', async () => {
@@ -3110,7 +3110,7 @@ describe('contradictory group combination validation (issue #1405)', () => {
     beforeEach(() => {
       document.body.innerHTML = `
         <div id="user-modal" class="hidden">
-          <h2 id="user-modal-title">Create User</h2>
+          <h2 id="user-modal-title">Create user</h2>
           <form id="user-form">
             <input type="hidden" id="user-id" />
             <input type="email" id="user-email" value="test@test.com" />

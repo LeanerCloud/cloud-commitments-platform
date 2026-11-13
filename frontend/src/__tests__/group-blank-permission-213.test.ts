@@ -45,7 +45,7 @@ function setUpModalDom(): void {
         <div class="form-group"><input type="text" id="group-name" required /></div>
         <textarea id="group-description"></textarea>
         <div id="permissions-list"></div>
-        <button type="submit">Save Group</button>
+        <button type="submit">Save group</button>
       </form>
     </div>
   `;

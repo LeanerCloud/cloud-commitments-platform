@@ -32,7 +32,7 @@ export function renderGroups(groups: APIGroup[]): void {
   if (!container) return;
 
   if (groups.length === 0) {
-    container.innerHTML = '<div class="empty">No groups yet. Use Create Group to define who can do what.</div>';
+    container.innerHTML = '<div class="empty">No groups yet. Use Create group to define who can do what.</div>';
     return;
   }
 

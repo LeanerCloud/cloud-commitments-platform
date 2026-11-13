@@ -64,7 +64,7 @@ for (const [period, count, average, totalFull] of [
     for (const mode of ['sparse', 'zero-filled', 'full'] as const) {
       fixture.mode = mode;
       await changePeriod(page, period);
-      await expect(page.locator('#avg-savings-label')).toHaveText('Avg Monthly Savings');
+      await expect(page.locator('#avg-savings-label')).toHaveText('Avg monthly savings');
       await expect(page.locator('#avg-hourly-savings')).toHaveText(mode === 'full' ? '$10.00/mo' : average);
       await expect(page.locator('#period-savings')).toHaveText(mode === 'full' ? totalFull : '$1,680.00');
       await expect(page.locator('#peak-savings')).toHaveText(mode === 'full' ? '$10.00/mo' : '$560.00/mo');

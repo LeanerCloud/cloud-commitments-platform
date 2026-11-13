@@ -86,7 +86,7 @@ const setupDom = () => {
   const btn = document.createElement('button');
   btn.id = 'new-plan-btn';
   btn.className = 'primary';
-  btn.textContent = 'New Plan';
+  btn.textContent = 'New plan';
 
   const list = document.createElement('div');
   list.id = 'plans-list';

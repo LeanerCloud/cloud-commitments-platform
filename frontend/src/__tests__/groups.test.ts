@@ -343,7 +343,7 @@ describe('groups/groupModals', () => {
     it('should set modal title to "Create Group"', () => {
       groupModals.openCreateGroupModal();
       const title = document.getElementById('group-modal-title');
-      expect(title?.textContent).toBe('Create Group');
+      expect(title?.textContent).toBe('Create group');
     });
 
     it('should reset the form', () => {
@@ -439,7 +439,7 @@ describe('groups/groupModals', () => {
     it('should set modal title to "Edit Group"', async () => {
       await groupModals.openEditGroupModal('group-1');
       const title = document.getElementById('group-modal-title');
-      expect(title?.textContent).toBe('Edit Group');
+      expect(title?.textContent).toBe('Edit group');
     });
 
     it('should populate form with group data', async () => {

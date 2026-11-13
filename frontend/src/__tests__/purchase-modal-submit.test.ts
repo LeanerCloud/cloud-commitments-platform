@@ -105,7 +105,7 @@ describe('Issue #251: Execute Now makes no cancellation promise', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const html = (require('fs') as typeof import('fs')).readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
     const title = /<h2 id="purchase-modal-title">([^<]*)<\/h2>/.exec(html)?.[1];
-    expect(title).toBe('Review Purchase');
+    expect(title).toBe('Review purchase');
   });
 
   test('direct-execute confirm dialog makes no cancellation promise', async () => {

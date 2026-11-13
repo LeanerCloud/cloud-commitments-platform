@@ -70,10 +70,10 @@ describe('Savings History Module', () => {
         <p class="help-text">Data will be collected hourly once you have active purchases.</p>
       </div>
       <div id="savings-stats">
-        <h4 id="period-savings-label">Period Savings</h4>
+        <h4 id="period-savings-label">Period savings</h4>
         <span id="period-savings">$0</span>
         <p id="period-savings-unit">shown in monthly equivalents</p>
-        <h4 id="avg-savings-label">Avg Monthly Savings</h4>
+        <h4 id="avg-savings-label">Avg monthly savings</h4>
         <span id="avg-hourly-savings">$0/mo</span>
         <span id="peak-savings">$0/mo</span>
       </div>
@@ -1463,18 +1463,18 @@ describe('Savings History Module', () => {
 
       // Monthly (default)
       await loadSavingsHistory();
-      expect(document.getElementById('avg-savings-label')?.textContent).toBe('Avg Monthly Savings');
+      expect(document.getElementById('avg-savings-label')?.textContent).toBe('Avg monthly savings');
 
       // Switch to hourly
       const unitSelect = document.getElementById('savings-unit') as HTMLSelectElement;
       unitSelect.value = 'hourly';
       await loadSavingsHistory();
-      expect(document.getElementById('avg-savings-label')?.textContent).toBe('Avg Hourly Savings');
+      expect(document.getElementById('avg-savings-label')?.textContent).toBe('Avg hourly savings');
 
       // Switch to yearly
       unitSelect.value = 'yearly';
       await loadSavingsHistory();
-      expect(document.getElementById('avg-savings-label')?.textContent).toBe('Avg Yearly Savings');
+      expect(document.getElementById('avg-savings-label')?.textContent).toBe('Avg yearly savings');
     });
 
     test('unit dropdown change triggers loadSavingsHistory via initSavingsHistory', async () => {

@@ -1841,7 +1841,7 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   const titleEl = document.getElementById('plan-modal-title');
   const hasSelection = pendingPlanRecommendations.length > 0;
   if (titleEl) {
-    titleEl.textContent = hasSelection ? 'Create Purchase Plan' : 'New Purchase Plan';
+    titleEl.textContent = hasSelection ? 'Create purchase plan' : 'New purchase plan';
   }
   (document.getElementById('plan-id') as HTMLInputElement).value = '';
   (document.getElementById('plan-form') as HTMLFormElement | null)?.reset();
@@ -1907,7 +1907,7 @@ export function openNewPlanModal(): void {
   planModalSession += 1;
 
   const titleEl = document.getElementById('plan-modal-title');
-  if (titleEl) titleEl.textContent = 'New Purchase Plan';
+  if (titleEl) titleEl.textContent = 'New purchase plan';
   (document.getElementById('plan-id') as HTMLInputElement).value = '';
   (document.getElementById('plan-form') as HTMLFormElement | null)?.reset();
 

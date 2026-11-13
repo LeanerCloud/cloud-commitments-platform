@@ -28,7 +28,7 @@ test('Create plan keeps out-of-range ramp and notify values and refuses them on 
   await modal.locator('#plan-account-search').fill('AWS');
   await modal.locator('.account-suggestion-item').first().click();
   await page.locator('#plan-modal label.ramp-option').filter({ hasText: 'Define your own schedule' }).click();
-  const save = page.getByRole('button', { name: 'Save Plan' });
+  const save = page.getByRole('button', { name: 'Save plan' });
   await expect(save).toBeEnabled();
 
   const step = modal.locator('#ramp-step-percent');

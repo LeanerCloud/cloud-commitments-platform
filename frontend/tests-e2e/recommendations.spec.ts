@@ -78,7 +78,7 @@ test('selection updates the sticky action summary and submits the selected purch
   await expect(page.locator('.recommendations-filter-live')).toContainText('1 selected');
   await expect(page.locator('#recommendations-action-summary')).toContainText('across 1 row');
   await page.getByRole('button', { name: 'Purchase 1 selected' }).click();
-  await expect(page.getByRole('dialog', { name: 'Review Purchase' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Review purchase' })).toBeVisible();
   await page.getByRole('button', { name: 'Send for Approval' }).click();
   await page.locator('.modal-confirm-backdrop')
     .getByRole('button', { name: 'Send for approval' })
@@ -109,14 +109,14 @@ test('submits a plan bound to the selected recommendation ids', async ({ page })
 
   await selectRecommendation(page, selected.id);
   await page.getByRole('button', { name: 'Plan from 1 selected' }).click();
-  const modal = page.getByRole('dialog', { name: 'Create Purchase Plan' });
+  const modal = page.getByRole('dialog', { name: 'Create purchase plan' });
   await expect(modal).toBeVisible();
   await expect(modal.getByLabel('Provider:')).toHaveValue(selected.provider);
   await expect(modal.getByLabel('Service:')).toHaveValue(selected.service);
   await expect(modal.getByLabel('Term:')).toHaveValue(String(selected.term));
   await expect(modal.getByLabel('Payment:')).toHaveValue(selected.payment);
   await expect(modal.locator('#plan-account-ids')).toHaveValue(selected.cloud_account_id);
-  await modal.getByRole('button', { name: 'Save Plan' }).click();
+  await modal.getByRole('button', { name: 'Save plan' }).click();
 
   await expect.poll(() => callsTo(api, '/api/plans').length).toBe(1);
   const body = callsTo(api, '/api/plans')[0] as {
@@ -144,12 +144,12 @@ test('a mixed selection becomes one plan with one group per combination (#1746)'
   await selectRecommendation(page, first.id);
   await selectRecommendation(page, second.id);
   await page.getByRole('button', { name: 'Plan from 2 selected' }).click();
-  const modal = page.getByRole('dialog', { name: 'Create Purchase Plan' });
+  const modal = page.getByRole('dialog', { name: 'Create purchase plan' });
   await expect(modal).toBeVisible();
   await expect(modal.getByRole('list', { name: 'Selected recommendation groups' }).getByRole('listitem')).toHaveCount(2);
   await expect(modal.getByLabel('Provider:')).toBeHidden();
   await expect(modal.locator('#plan-account-ids')).toHaveValue(first.cloud_account_id);
-  await modal.getByRole('button', { name: 'Save Plan' }).click();
+  await modal.getByRole('button', { name: 'Save plan' }).click();
 
   await expect.poll(() => callsTo(api, '/api/plans').length).toBe(1);
   const body = callsTo(api, '/api/plans')[0] as { groups: { term: number; recommendation_ids: string[] }[] };

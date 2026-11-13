@@ -54,7 +54,7 @@ for (const width of [1280, 390]) {
     await cap.fill('100.10');
     await page.locator('.toggle-label').filter({ has: page.locator('#plan-auto-purchase') }).click();
     await expect(page.locator('#plan-auto-purchase')).toBeChecked();
-    await page.getByRole('button', { name: 'Save Plan', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect(page.locator('#plan-modal')).toBeHidden();
     expect(writes[0]).toMatchObject({ max_step_commitment: 100.10, auto_purchase: true });
 
@@ -64,11 +64,11 @@ for (const width of [1280, 390]) {
     await page.locator('.toggle-label').filter({ has: page.locator('#plan-auto-purchase') }).click();
     await expect(page.locator('#plan-auto-purchase')).not.toBeChecked();
     await cap.fill('');
-    await page.getByRole('button', { name: 'Save Plan', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect(page.locator('#plan-modal')).toBeHidden();
     expect(writes[1]).toMatchObject({ max_step_commitment: null, auto_purchase: false });
 
-    await page.getByRole('button', { name: 'New Plan', exact: true }).click();
+    await page.getByRole('button', { name: 'New plan', exact: true }).click();
     await page.locator('#plan-advanced-settings summary').click();
     await expect(cap).toHaveValue('');
     await page.locator('#plan-provider').selectOption('azure');
@@ -78,7 +78,7 @@ for (const width of [1280, 390]) {
     await page.locator('#plan-account-search').fill('Azure Prod');
     await page.locator('#plan-account-suggestions').getByText('Azure Prod (acct-100) (sub-aaaa)', { exact: true }).click();
     await cap.fill('100.10');
-    await page.getByRole('button', { name: 'Save Plan', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect(page.locator('#plan-modal')).toBeHidden();
     expect(writes[2]).toMatchObject({ max_step_commitment: 100.10, auto_purchase: false });
     await page.getByRole('button', { name: 'Add Purchases', exact: true }).click();

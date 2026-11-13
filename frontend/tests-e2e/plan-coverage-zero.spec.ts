@@ -26,7 +26,7 @@ test('Create plan refuses an empty or out-of-range coverage and posts 0 as 0', a
   await modal.locator('#plan-name').fill('Zero target');
   await modal.locator('#plan-account-search').fill('AWS');
   await modal.locator('.account-suggestion-item').first().click();
-  const save = page.getByRole('button', { name: 'Save Plan' });
+  const save = page.getByRole('button', { name: 'Save plan' });
   await expect(save).toBeEnabled();
 
   const coverage = modal.locator('#plan-coverage');

@@ -14,7 +14,7 @@ test('ramp option radios are reachable by Tab and show a focus ring', async ({ p
   await seedAuth(page);
   await mockApi(page);
   await page.goto('/plans');
-  await page.getByRole('button', { name: 'New Plan' }).click();
+  await page.getByRole('button', { name: 'New plan' }).click();
 
   const radio = page.locator('.ramp-option input[type="radio"]').first();
   await expect(radio).toBeAttached();

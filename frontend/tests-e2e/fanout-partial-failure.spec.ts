@@ -42,7 +42,7 @@ test('partial failure keeps the modal open and retries only the failed bucket', 
   await openFanOut(page);
   await send(page, 'Send for Approval');
 
-  const modal = page.getByRole('dialog', { name: 'Review Purchase' });
+  const modal = page.getByRole('dialog', { name: 'Review purchase' });
   await expect(modal).toBeVisible();
   await expect(page.locator('#fanout-result')).toContainText('2 buckets submitted, 1 failed.');
   const failed = page.locator('section.fanout-bucket.fanout-bucket-failed');

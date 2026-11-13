@@ -30,7 +30,7 @@ export function openCreateUserModal(): void {
 
   if (!modal || !title || !form) return;
 
-  title.textContent = 'Create User';
+  title.textContent = 'Create user';
   form.reset();
   clearFieldErrors(form);
   (document.getElementById('user-id') as HTMLInputElement).value = '';
@@ -64,7 +64,7 @@ export async function openEditUserModal(userId: string): Promise<void> {
 
     if (!modal || !title || !form) return;
 
-    title.textContent = 'Edit User';
+    title.textContent = 'Edit user';
     clearFieldErrors(form);
     (document.getElementById('user-id') as HTMLInputElement).value = user.id;
     (document.getElementById('user-email') as HTMLInputElement).value = user.email;

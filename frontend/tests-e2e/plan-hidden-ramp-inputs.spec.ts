@@ -38,7 +38,7 @@ for (const path of [['custom', 'immediate'], ['weekly-25pct', 'immediate']]) {
     await expect(modal.locator('input[name="ramp-schedule"][value="immediate"]')).toBeChecked();
     await expect(modal.locator('#custom-ramp-config')).toBeHidden();
 
-    const save = page.getByRole('button', { name: 'Save Plan' });
+    const save = page.getByRole('button', { name: 'Save plan' });
     await expect(save).toBeEnabled();
     await save.click();
     await expect.poll(() => posts.length).toBe(1);
@@ -87,7 +87,7 @@ test('Edit as the first modal, then Custom, lets the user type custom ramp value
 
   await modal.locator('#plan-account-search').fill('AWS');
   await modal.locator('.account-suggestion-item').first().click();
-  await page.getByRole('button', { name: 'Save Plan' }).click();
+  await page.getByRole('button', { name: 'Save plan' }).click();
   await expect.poll(() => puts.length).toBe(1);
   await expect.poll(() => accountPuts).toBe(1);
   expect(puts[0]).toMatchObject({ ramp_schedule: 'custom', custom_step_percent: 30, custom_interval_days: 14 });

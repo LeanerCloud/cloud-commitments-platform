@@ -204,7 +204,7 @@ describe('Plans Module', () => {
           <div id="plan-accounts-selected" class="selected-accounts"></div>
           <input type="hidden" id="plan-account-ids" value="">
           <div id="plan-filters-notice" class="hidden"></div>
-          <button type="submit">Save Plan</button>
+          <button type="submit">Save plan</button>
         </form>
       </div>
       <div id="purchase-modal" class="hidden"></div>
@@ -1387,7 +1387,7 @@ describe('Plans Module', () => {
       mockConfirmDialog.mockResolvedValue(false);
       const header = document.createElement('div');
       header.id = 'planned-purchases-header';
-      header.innerHTML = '<h2>Planned Purchases</h2>';
+      header.innerHTML = '<h2>Planned purchases</h2>';
       document.body.appendChild(header);
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
 
@@ -1404,7 +1404,7 @@ describe('Plans Module', () => {
       (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
       const header = document.createElement('div');
       header.id = 'planned-purchases-header';
-      header.innerHTML = '<h2>Planned Purchases</h2>';
+      header.innerHTML = '<h2>Planned purchases</h2>';
       document.body.appendChild(header);
 
       (document.querySelector('[data-action="disable"]') as HTMLButtonElement).click();
@@ -2462,7 +2462,7 @@ describe('Plans Module', () => {
       const modal = document.getElementById('plan-modal');
       expect(modal?.classList.contains('hidden')).toBe(false);
       const title = document.getElementById('plan-modal-title');
-      expect(title?.textContent).toBe('New Purchase Plan');
+      expect(title?.textContent).toBe('New purchase plan');
       // Previously we early-returned behind a toast that users missed
       // (e.g. after a provider-filter switch). Falling through to the
       // new-plan flow never silently noop-s.
@@ -2489,7 +2489,7 @@ describe('Plans Module', () => {
       openCreatePlanModal(snapshot);
 
       const title = document.getElementById('plan-modal-title');
-      expect(title?.textContent).toBe('Create Purchase Plan');
+      expect(title?.textContent).toBe('Create purchase plan');
     });
 
     test('clears plan ID for new plan', () => {
@@ -2768,7 +2768,7 @@ describe('Plans Module', () => {
       openNewPlanModal();
 
       const title = document.getElementById('plan-modal-title');
-      expect(title?.textContent).toBe('New Purchase Plan');
+      expect(title?.textContent).toBe('New purchase plan');
     });
 
     test('resets form', () => {
@@ -4476,7 +4476,7 @@ describe('Plans Module', () => {
       jest.useFakeTimers({ now: new Date('2026-10-15T12:00:00Z') });
       const form = document.getElementById('plan-form')!.innerHTML;
       document.body.innerHTML = `<div id="plans-list"></div><div id="planned-purchases-list"></div>
-        <div id="plan-modal" class="modal hidden"><div class="modal-content"><h2 id="plan-modal-title">Create Purchase Plan</h2>
+        <div id="plan-modal" class="modal hidden"><div class="modal-content"><h2 id="plan-modal-title">Create purchase plan</h2>
         <div class="plan-editor-layout"><section id="plan-editor-panel" hidden></section><form id="plan-form">${form}</form></div>
         <div class="modal-buttons"><button type="button" id="close-plan-modal-btn">Cancel</button><button type="submit" form="plan-form">Save</button></div>
         </div></div><div id="purchase-modal" class="hidden"></div>`;

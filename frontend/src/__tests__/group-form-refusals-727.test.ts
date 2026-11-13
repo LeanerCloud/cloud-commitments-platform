@@ -44,9 +44,9 @@ function setUpModalDom(): void {
         <textarea id="group-description"></textarea>
         <div class="form-group">
           <div id="permissions-list"></div>
-          <button type="button" id="add-permission-btn">Add Permission</button>
+          <button type="button" id="add-permission-btn">Add permission</button>
         </div>
-        <button type="submit">Save Group</button>
+        <button type="submit">Save group</button>
       </form>
     </div>
   `;
