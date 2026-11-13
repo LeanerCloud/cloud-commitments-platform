@@ -140,6 +140,14 @@ func (m *MockScheduler) ListRecommendations(ctx context.Context, filter config.R
 	return args.Get(0).([]config.RecommendationRecord), args.Error(1)
 }
 
+func (m *MockScheduler) ListRecommendationsStrict(ctx context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error) {
+	args := m.Called(ctx, filter)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]config.RecommendationRecord), args.Error(1)
+}
+
 // ScanRecommendations replays the []config.RecommendationRecord registered
 // for it the way the store-backed scan does: sorted by ID (a stable sort, so
 // duplicate IDs keep their relative order), chunkSize rows per call to fn,

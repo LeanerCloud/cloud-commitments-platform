@@ -11,11 +11,12 @@ import (
 
 // MockScheduler is a mock implementation of server.SchedulerInterface.
 type MockScheduler struct {
-	CollectRecommendationsFunc func(ctx context.Context, ownerToken string) (*scheduler.CollectResult, error)
-	ListRecommendationsFunc    func(ctx context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error)
-	GetRecommendationByIDFunc  func(ctx context.Context, id string) (*config.RecommendationRecord, []string, error)
-	ScanRecommendationsFunc    func(ctx context.Context, filter config.RecommendationFilter, chunkSize int, fn func([]config.RecommendationRecord) error) error
-	PageRecommendationsFunc    func(ctx context.Context, scope config.RecommendationListScope, afterID string, limit int) (*config.RecommendationPage, error)
+	CollectRecommendationsFunc    func(ctx context.Context, ownerToken string) (*scheduler.CollectResult, error)
+	ListRecommendationsFunc       func(ctx context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error)
+	GetRecommendationByIDFunc     func(ctx context.Context, id string) (*config.RecommendationRecord, []string, error)
+	ListRecommendationsStrictFunc func(ctx context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error)
+	ScanRecommendationsFunc       func(ctx context.Context, filter config.RecommendationFilter, chunkSize int, fn func([]config.RecommendationRecord) error) error
+	PageRecommendationsFunc       func(ctx context.Context, scope config.RecommendationListScope, afterID string, limit int) (*config.RecommendationPage, error)
 }
 
 func (m *MockScheduler) CollectRecommendations(ctx context.Context, ownerToken string) (*scheduler.CollectResult, error) {
@@ -30,6 +31,14 @@ func (m *MockScheduler) ListRecommendations(ctx context.Context, filter config.R
 		return m.ListRecommendationsFunc(ctx, filter)
 	}
 	return []config.RecommendationRecord{}, nil
+}
+
+// ListRecommendationsStrict defaults to an empty read.
+func (m *MockScheduler) ListRecommendationsStrict(ctx context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error) {
+	if m.ListRecommendationsStrictFunc != nil {
+		return m.ListRecommendationsStrictFunc(ctx, filter)
+	}
+	return nil, nil
 }
 
 // ScanRecommendations defaults to an empty cache: fn is never called.

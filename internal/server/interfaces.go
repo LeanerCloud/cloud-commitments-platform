@@ -13,6 +13,9 @@ import (
 type SchedulerInterface interface {
 	CollectRecommendations(ctx context.Context, ownerToken string) (*scheduler.CollectResult, error)
 	ListRecommendations(ctx context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error)
+	// ListRecommendationsStrict is ListRecommendations for the money path:
+	// suppressions and overrides applied, read errors returned (planstep.Source).
+	ListRecommendationsStrict(ctx context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error)
 	// ScanRecommendations walks the same rows as ListRecommendations in
 	// ID-ordered chunks for the paginated list endpoint (issue #981).
 	ScanRecommendations(ctx context.Context, filter config.RecommendationFilter, chunkSize int, fn func([]config.RecommendationRecord) error) error
