@@ -3297,10 +3297,7 @@ func TestPGXMock_CleanupOldExecutions_IncludesCanonicalStatus(t *testing.T) {
 	store := storeWith(mock)
 	ctx := context.Background()
 
-	// The regex pins on both 'cancelled' (legacy) and 'canceled' (canonical)
-	// appearing together in the SQL. If either is missing the mock won't
-	// match, causing an "unexpected query" error from ExpectationsWereMet.
-	mock.ExpectExec(`'cancelled'.*'canceled'`).
+	mock.ExpectExec(`status = 'canceled'`).
 		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnResult(pgxmock.NewResult("DELETE", 4))
 
@@ -3322,7 +3319,7 @@ func TestPGXMock_CleanupOldExecutions_IncludesCanonicalStatus(t *testing.T) {
 // regressed instead of just "the SQL changed".
 func TestPGXMock_CleanupOldExecutions_RetainsCanceledOnUpdatedAt(t *testing.T) {
 	anchors := map[string]string{
-		"canceled branch retains on updated_at":      `(?s)status IN \('cancelled', 'canceled'\)\s+AND updated_at`,
+		"canceled branch retains on updated_at":      `(?s)status = 'canceled'\s+AND updated_at`,
 		"completed branch retains on scheduled_date": `(?s)status = 'completed'\s+AND scheduled_date`,
 		"expires_at branch allowlists settled rows":  `(?s)status = ANY\(\$2\)\s+AND status <> ALL\(\$3\)\s+AND expires_at IS NOT NULL`,
 	}
@@ -3371,7 +3368,7 @@ func TestPGXMock_CleanupOldExecutions_ExcludesEveryHealthScoredStatus(t *testing
 	assert.NoError(t, mock.ExpectationsWereMet())
 	// Guards the slice's contents independently of how the query uses it.
 	assert.ElementsMatch(t,
-		[]string{StatusFailed, StatusCanceled, LegacyStatusCanceled},
+		[]string{StatusFailed, StatusCanceled},
 		HealthScoredExecutionStatuses)
 	// The statuses a lapsed TTL may delete: settled and not health-scored.
 	// None of them is one an executor, scheduler or reaper acts on.
@@ -3405,13 +3402,13 @@ func TestPGXMock_CountExecutionsByPlanAndStatus_AggregatesInSQL(t *testing.T) {
 	rows := pgxmock.NewRows([]string{"plan_id", "status", "count"}).
 		AddRow("plan-a", "failed", 7).
 		AddRow("plan-a", StatusCanceled, 2).
-		AddRow("plan-b", LegacyStatusCanceled, 1)
+		AddRow("plan-b", StatusCanceled, 1)
 	mock.ExpectQuery(`(?s)SELECT plan_id, status, COUNT\(\*\).*FROM purchase_executions.*status = ANY\(\$1\).*plan_id IS NOT NULL.*updated_at >= \$2.*GROUP BY plan_id, status`).
 		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(rows)
 
 	counts, err := store.CountExecutionsByPlanAndStatus(ctx,
-		[]string{"failed", StatusCanceled, LegacyStatusCanceled},
+		[]string{"failed", StatusCanceled},
 		time.Now().AddDate(0, 0, -90))
 	require.NoError(t, err)
 
@@ -3419,7 +3416,7 @@ func TestPGXMock_CountExecutionsByPlanAndStatus_AggregatesInSQL(t *testing.T) {
 	// though DefaultListLimit-style paging would be the temptation here.
 	assert.Equal(t, 7, counts["plan-a"]["failed"])
 	assert.Equal(t, 2, counts["plan-a"][StatusCanceled])
-	assert.Equal(t, 1, counts["plan-b"][LegacyStatusCanceled])
+	assert.Equal(t, 1, counts["plan-b"][StatusCanceled])
 	// Absent statuses read as a zero count rather than needing a guard.
 	assert.Equal(t, 0, counts["plan-b"]["failed"])
 	assert.Equal(t, 0, counts["plan-missing"]["failed"])

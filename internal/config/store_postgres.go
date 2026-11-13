@@ -2339,10 +2339,8 @@ func (s *PostgresStore) GetScheduledExecutionsDue(ctx context.Context) ([]Purcha
 //     clock here because a completed row executed on (or very near) the day
 //     it was scheduled for.
 //
-//  2. Canceled-state cleanup: `status IN ('cancelled', 'canceled') AND
-//     updated_at < NOW() - retention`. Both spellings are included to cover
-//     legacy rows ('cancelled') and new code rows ('canceled', canonical US
-//     spelling per StatusCanceled / migration 000089).
+//  2. Canceled-state cleanup: `status = 'canceled' AND
+//     updated_at < NOW() - retention`.
 //
 //     This branch retains on `updated_at`, NOT `scheduled_date`, and must
 //     stay that way: CountExecutionsByPlanAndStatus windows the plan health
@@ -2427,11 +2425,6 @@ func (s *PostgresStore) GetScheduledExecutionsDue(ctx context.Context) ([]Purcha
 // are safe from expiry-based cleanup -- which, per the reachability note
 // above, is every row current code writes.
 func (s *PostgresStore) CleanupOldExecutions(ctx context.Context, retentionDays int) (int64, error) {
-	// Branch 2 lists both spellings: 'cancelled' (legacy, pre-migration
-	// 000089 rows) and 'canceled' (canonical, written by new code after the
-	// follow-up to #1277). #1278 will drop 'cancelled' once all rows are
-	// normalized.
-	//
 	// Branch 3's allowlist and exclusion are parameterized from
 	// TerminalExecutionStatuses and HealthScoredExecutionStatuses instead of
 	// repeating literal lists, so this branch and the plan health score
@@ -2448,7 +2441,7 @@ func (s *PostgresStore) CleanupOldExecutions(ctx context.Context, retentionDays 
 		    AND scheduled_date < NOW() - INTERVAL '1 day' * $1
 		      )
 		   OR (
-		        status IN ('cancelled', 'canceled')
+		        status = 'canceled'
 		    AND updated_at     < NOW() - INTERVAL '1 day' * $1
 		      )
 		   OR (

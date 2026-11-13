@@ -491,15 +491,6 @@ type PurchaseExecution struct {
 // StatusCanceled is the canonical US-spelling status value new code writes.
 const StatusCanceled = "canceled"
 
-// LegacyStatusCanceled is the British-spelling status value old code writes
-// during the expand-contract rename (migration 000089). It is constructed by
-// concatenation rather than a single literal so the US-locale misspell linter
-// does not flag it -- this lets the dual-spelling read paths reference the
-// legacy value without a //nolint:misspell directive. The CONTRACT migration
-// (#1278) normalizes all rows to StatusCanceled once old code is gone, after
-// which every reference to this constant can be deleted.
-const LegacyStatusCanceled = "cancel" + "led"
-
 // StatusFailed is the terminal status written when an execution's purchase
 // attempt errors out, and by the stuck-purchase reaper (internal/purchase/
 // reaper.go) for rows left in approved/running past its threshold.
@@ -547,7 +538,7 @@ const StatusExpired = "expired"
 // "bought" means.
 var (
 	RampStepSucceededStatuses = []string{StatusCompleted, StatusPartiallyCompleted}
-	RampStepSettledStatuses   = []string{StatusCompleted, StatusPartiallyCompleted, StatusCanceled, LegacyStatusCanceled}
+	RampStepSettledStatuses   = []string{StatusCompleted, StatusPartiallyCompleted, StatusCanceled}
 	RampStepStuckStatuses     = []string{StatusFailed, StatusExpired}
 )
 
@@ -581,13 +572,9 @@ type RampStepBlock struct {
 // Keeping one exported slice rather than a literal list on each side is what
 // makes that agreement structural: adding a status to the score
 // automatically extends the sweep's exclusion, so the two cannot drift.
-//
-// Both spellings of canceled are present for the duration of the
-// expand-contract rename (migration 000089, contract in #1278).
 var HealthScoredExecutionStatuses = []string{
 	StatusFailed,
 	StatusCanceled,
-	LegacyStatusCanceled,
 }
 
 // StatusRevocationRequested records that an operator asked for a completed
@@ -617,7 +604,6 @@ var TerminalExecutionStatuses = []string{
 	StatusPartiallyCompleted,
 	StatusFailed,
 	StatusCanceled,
-	LegacyStatusCanceled,
 	StatusExpired,
 	StatusRevocationRequested,
 }

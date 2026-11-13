@@ -85,7 +85,7 @@ func decideFiredTranche(chain []config.LadderChainNode, now time.Time, visible f
 			return ladderVerdict{note: "failed without a no_submission proof (outcome unknown)"}
 		}
 		return failedIfPredecessorsProven(chain, ladderReasonNoSubmission)
-	case config.StatusCanceled, config.LegacyStatusCanceled:
+	case config.StatusCanceled:
 		return failedIfPredecessorsProven(chain, ladderReasonApprovalCanceled)
 	case config.StatusExpired:
 		return failedIfPredecessorsProven(chain, ladderReasonApprovalExpired)

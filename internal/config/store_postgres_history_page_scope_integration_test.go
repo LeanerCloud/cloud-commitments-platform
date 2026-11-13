@@ -75,7 +75,7 @@ func TestIntegration_ListHistoryExecutionsPage_Pushdown(t *testing.T) {
 	}
 	f.saveExecution(ctx, t, day(0), "completed", "", &a, nil, recA) // clean completed: always excluded
 	f.saveExecution(ctx, t, day(7), "pending", "", &a, nil, recA)   // outside the terminal statuses
-	terminal := []string{"completed", "partially_completed", "failed", "expired", StatusCanceled, LegacyStatusCanceled}
+	terminal := []string{"completed", "partially_completed", "failed", "expired", StatusCanceled}
 
 	names := func(q HistoryExecutionsPageQuery) []string {
 		t.Helper()
