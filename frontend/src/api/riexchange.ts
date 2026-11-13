@@ -19,6 +19,7 @@ import type {
   ExchangeResult,
   RIExchangeConfig,
   RIExchangeHistoryRecord,
+  RIExchangeDirectExecution,
   TargetOffering,
 } from './types';
 
@@ -184,6 +185,15 @@ export async function getRIExchangeHistory(
   }
   const resp = await apiRequest<{ records: RIExchangeHistoryRecord[] }>(`/ri-exchange/history${qs}`);
   return resp.records ?? [];
+}
+
+/**
+ * Get the direct (interactive) RI exchanges, read-only (#1883). They come
+ * from the same endpoint as the history records.
+ */
+export async function getRIExchangeDirectExecutions(): Promise<RIExchangeDirectExecution[]> {
+  const resp = await apiRequest<{ direct_executions?: RIExchangeDirectExecution[] }>('/ri-exchange/history');
+  return resp.direct_executions ?? [];
 }
 
 /**

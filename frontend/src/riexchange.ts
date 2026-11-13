@@ -23,6 +23,7 @@ import type {
   ExchangeQuoteSummary,
   RIExchangeConfig,
   RIExchangeHistoryRecord,
+  RIExchangeDirectExecution,
   OfferingOption,
   TargetOffering,
   ReshapeRecommendationsResponse,
@@ -32,6 +33,7 @@ import type {
 import { openModal, closeModal, createModalHeader } from './modal';
 import { showSkeletonRows, showSkeletonText, teardownSkeleton } from './lib/skeleton';
 import { statusBadgeHtml } from './lib/status-badge';
+import { buildDirectExchangeSection } from './riexchange-direct-history';
 import { canAccess } from './permissions';
 import { createIcon, iconSvg } from './icons';
 import { applyReadOnlySettings, isPermissionDeniedError } from './settings';
@@ -2188,9 +2190,9 @@ async function loadExchangeHistory(generation: number = scopeGeneration): Promis
   showSkeletonRows(container, 3, 7);
 
   try {
-    const records = await api.getRIExchangeHistory();
+    const [records, direct] = await Promise.all([api.getRIExchangeHistory(), loadDirectExchanges()]);
     if (generation !== scopeGeneration) return;
-    renderExchangeHistory(container, records);
+    renderExchangeHistory(container, records, direct);
   } catch (error) {
     if (generation !== scopeGeneration) return;
     const err = error as Error;
@@ -2202,8 +2204,34 @@ async function loadExchangeHistory(generation: number = scopeGeneration): Promis
   }
 }
 
-function renderExchangeHistory(container: HTMLElement, records: RIExchangeHistoryRecord[]): void {
-  if (!records || records.length === 0) {
+// A failed direct-exchange fetch must not hide the approval history, so it
+// resolves to an error message the section shows instead of rows (#1883).
+async function loadDirectExchanges(): Promise<RIExchangeDirectExecution[] | Error> {
+  try {
+    return (await api.getRIExchangeDirectExecutions()) ?? [];
+  } catch (error) {
+    return error as Error;
+  }
+}
+
+function renderDirectExchanges(container: HTMLElement, direct: RIExchangeDirectExecution[] | Error): void {
+  if (direct instanceof Error) {
+    const errorP = document.createElement('p');
+    errorP.className = 'error';
+    errorP.textContent = 'Failed to load direct exchanges: ' + direct.message;
+    container.appendChild(errorP);
+  } else if (direct.length > 0) {
+    container.appendChild(buildDirectExchangeSection(direct));
+  }
+}
+
+function renderExchangeHistory(
+  container: HTMLElement,
+  records: RIExchangeHistoryRecord[],
+  direct: RIExchangeDirectExecution[] | Error = [],
+): void {
+  const hasDirect = direct instanceof Error || direct.length > 0;
+  if ((!records || records.length === 0) && !hasDirect) {
     container.textContent = '';
     const emptyP = document.createElement('p');
     emptyP.className = 'empty';
@@ -2213,7 +2241,7 @@ function renderExchangeHistory(container: HTMLElement, records: RIExchangeHistor
   }
 
   // Build table rows — all dynamic values go through escapeHtml
-  const rowsHTML = records.map(rec => {
+  const rowsHTML = (records ?? []).map(rec => {
     const exchangeIdCell = rec.exchange_id
       ? '<span class="monospace">' + escapeHtml(rec.exchange_id) + '</span>'
       : '&mdash;';
@@ -2246,11 +2274,14 @@ function renderExchangeHistory(container: HTMLElement, records: RIExchangeHistor
     + '</table>';
 
   container.textContent = '';
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = tableHTML;
-  while (wrapper.firstChild) {
-    container.appendChild(wrapper.firstChild);
+  if (records && records.length > 0) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = tableHTML;
+    while (wrapper.firstChild) {
+      container.appendChild(wrapper.firstChild);
+    }
   }
+  renderDirectExchanges(container, direct);
 
   // Wire Approve button click handlers
   container.querySelectorAll<HTMLButtonElement>('.riexchange-approve-btn[data-approve-id]').forEach(btn => {

@@ -70,6 +70,7 @@ export type {
   ExchangeResult,
   RIExchangeConfig,
   RIExchangeHistoryRecord,
+  RIExchangeDirectExecution,
   InventoryCommitment,
   CoverageServiceRow,
   ProviderCoverageSection,
@@ -225,6 +226,7 @@ export {
   getRIExchangeConfig,
   updateRIExchangeConfig,
   getRIExchangeHistory,
+  getRIExchangeDirectExecutions,
   listTargetOfferings,
   approveRIExchange
 } from './riexchange';

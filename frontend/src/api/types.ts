@@ -973,6 +973,28 @@ export interface RIExchangeHistoryRecord {
   approved_by?: string;
 }
 
+/** A direct (interactive) RI exchange, listed read-only in History (#1883). */
+export interface RIExchangeDirectExecution {
+  id: string;
+  provider: string;
+  status: string;
+  region: string;
+  cloud_account_id: string | null;
+  provider_account_id: string | null;
+  source_ids: string[];
+  targets: unknown[];
+  max_payment_due: string;
+  max_payment_currency: string;
+  net_payable: string | null;
+  net_payable_currency: string;
+  error_summary: string;
+  executed_by: string;
+  created_at: string;
+  completed_at: string | null;
+  resolved_status: string;
+  resolved_at: string | null;
+}
+
 // Inventory & Coverage types (issue #340 deferred sub-task — Active commitments)
 export interface InventoryCommitment {
   id: string;
