@@ -17,8 +17,6 @@ import (
 // US-locale misspell linter does not flag it; it is the value under test.
 const legacyCancelActorColumn = "cancel" + "led_by"
 
-const coalescedActorProjection = "COALESCE(canceled_by, " + legacyCancelActorColumn + ") AS " + legacyCancelActorColumn
-
 var executionProjectionCols = []string{
 	"plan_id", "execution_id", "status", "step_number", "scheduled_date",
 	"notification_sent", "approval_token", "recommendations",
@@ -30,13 +28,11 @@ var executionProjectionCols = []string{
 	"idempotency_key", "scheduled_execution_at", "no_submission", "created_by_system",
 }
 
-// TestPGXMock_ExecutionProjectionsReadCoalescedActor pins the read half of the
-// 000089 contract while old builds can still write the legacy column: every
-// statement that projects a purchase_executions row must read
-// COALESCE(canceled_by, <legacy column>), so an actor stored in either column
-// scans back. A bare canceled_by projection loses the attribution of legacy
-// rows (written to the legacy column only) until the follow-up drain runs.
-func TestPGXMock_ExecutionProjectionsReadCoalescedActor(t *testing.T) {
+// TestPGXMock_ExecutionProjectionsReadCanceledByAlone pins the strict read
+// after the legacy column was dropped (issue #1747): every statement that
+// projects a purchase_executions row must read canceled_by and must not name
+// the dropped legacy column, which would fail at runtime.
+func TestPGXMock_ExecutionProjectionsReadCanceledByAlone(t *testing.T) {
 	var mu sync.Mutex
 	var projections, bare []string
 	mock, err := pgxmock.NewPool(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherFunc(func(_, actual string) error {
@@ -46,7 +42,7 @@ func TestPGXMock_ExecutionProjectionsReadCoalescedActor(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		projections = append(projections, actual)
-		if !strings.Contains(actual, coalescedActorProjection) {
+		if !strings.Contains(actual, "approved_by, canceled_by, capacity_percent") || strings.Contains(actual, legacyCancelActorColumn) {
 			bare = append(bare, actual)
 		}
 		return nil
@@ -92,18 +88,17 @@ func TestPGXMock_ExecutionProjectionsReadCoalescedActor(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	assert.GreaterOrEqual(t, len(projections), 10, "every purchase_executions projection must be exercised")
-	assert.Empty(t, bare, "projections that do not read COALESCE(canceled_by, legacy actor)")
+	assert.Empty(t, bare, "projections that do not read canceled_by alone")
 }
 
 // TestPGXMock_ExecutionCancelActorWritesOnlyCanceledBy pins the write half:
 // the save, the cancel transition and SetCancelledBy write canceled_by alone
-// and never the legacy column (RETURNING projections still read it). The
-// matcher rejects any INSERT or UPDATE statement whose write part names the legacy
-// column, so each call fails against the dual-write queries.
+// and never the legacy column. The matcher rejects any INSERT or UPDATE
+// statement whose write part names the legacy column, so each call fails
+// against the dual-write queries.
 //
 // The save keeps an actor already on the row (COALESCE(existing, $17)): a save
-// from a copy read before a concurrent cancel must not erase that actor, and a
-// legacy-only actor read through COALESCE is carried into canceled_by.
+// from a copy read before a concurrent cancel must not erase that actor.
 func TestPGXMock_ExecutionCancelActorWritesOnlyCanceledBy(t *testing.T) {
 	var dualWrites []string
 	mock, err := pgxmock.NewPool(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherFunc(func(expected, actual string) error {

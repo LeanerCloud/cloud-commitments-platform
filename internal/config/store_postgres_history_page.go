@@ -210,12 +210,11 @@ func (s *PostgresStore) ListHistoryExecutionsPage(ctx context.Context, q History
 		conds = append(conds, cond)
 	}
 	args = append(args, clampHistoryPageLimit(q.Limit))
-	// cancelled_by is the legacy column name (migration 000035, rename tracked in #1277).
 	query := fmt.Sprintf(`
 		SELECT plan_id, execution_id, status, step_number, scheduled_date,
 		       notification_sent, approval_token_hash, recommendations,
 		       total_upfront_cost, estimated_savings, completed_at, error, expires_at,
-		       cloud_account_id, source, approved_by, COALESCE(canceled_by, cancelled_by) AS cancelled_by, capacity_percent,
+		       cloud_account_id, source, approved_by, canceled_by, capacity_percent,
 		       created_by_user_id, retry_execution_id, retry_attempt_n,
 		       approval_token_expires_at,
 		       executed_by_user_id, executed_at, pre_approval_skip_reason,

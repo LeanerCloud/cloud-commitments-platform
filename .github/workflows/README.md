@@ -411,6 +411,8 @@ ungated-but-credentialed shape that made the workflow exploitable. The
 tradeoff is that a rollback to a nonexistent tag now fails after the
 environment approval rather than before it.
 
+Do not roll back to an image built before #1253 (commit `ce42cf79`) once migration 000169 has dropped `purchase_executions.cancelled_by`: that build still writes the column, so its cancel and save writes fail (owner-accepted risk, #1747).
+
 ### Triggers
 
 - Manual dispatch only (safety measure)
