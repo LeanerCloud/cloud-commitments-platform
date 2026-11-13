@@ -357,19 +357,36 @@ export async function buildApprovalDetailsBody(executionId: string, approvalToke
   if (!details.recommendations?.length) {
     throw new Error('the purchase details contain no recommendations');
   }
+  if (!APPROVABLE_STATUSES.includes(details.status)) {
+    throw new NotApprovableError(details.status);
+  }
   const accountsById = new Map<string, CloudAccount>();
   for (const acct of accounts) accountsById.set(acct.id, acct);
   const hostAWSAccountID = deploymentInfo?.deployment_aws_account_id;
   return renderApprovalDetailsBody(details, accountsById, hostAWSAccountID);
 }
 
-/** True for a 403/404/410 on the details fetch: retrying cannot succeed. */
+/** Statuses the backend accepts for approval (handler_purchases_approve.go). */
+const APPROVABLE_STATUSES = ['pending', 'notified'];
+
+/** The purchase has already left the approvable states, so Approve must not be offered. */
+export class NotApprovableError extends Error {
+  constructor(readonly executionStatus: string) {
+    super(`the purchase is already ${executionStatus}`);
+  }
+}
+
+/** True for a 403/404/410 on the details fetch or a non-approvable status: retrying cannot succeed. */
 export function isPermanentDetailsError(err: unknown): boolean {
+  if (err instanceof NotApprovableError) return true;
   const status = (err as { status?: number } | null)?.status;
   return status === 403 || status === 404 || status === 410;
 }
 
 export function approvalDetailsUnavailableMessage(err: unknown): string {
+  if (err instanceof NotApprovableError) {
+    return `This purchase is already ${err.executionStatus} and can no longer be approved.`;
+  }
   const cause = err instanceof Error ? err.message : String(err);
   const base = `This purchase cannot be approved without showing the amount, and its details could not be loaded (${cause}).`;
   const status = (err as { status?: number } | null)?.status;

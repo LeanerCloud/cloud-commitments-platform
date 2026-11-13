@@ -115,6 +115,7 @@ const REG_USER = {
 };
 const OTHER_UUID = 'other-uuid';
 const DETAILS = {
+  status: 'pending',
   total_upfront_cost: 100,
   estimated_savings: 10,
   recommendations: [{ provider: 'aws', service: 'ec2', region: 'us-east-1', count: 1, term: 1, payment: 'all-upfront', upfront_cost: 100, savings: 10 }],

@@ -28,6 +28,7 @@ jest.mock('../api', () => ({
   approvePurchase: jest.fn(),
   cancelPurchase: jest.fn(),
   getPurchaseDetails: jest.fn().mockResolvedValue({
+    status: 'pending',
     total_upfront_cost: 100,
     estimated_savings: 10,
     recommendations: [{ provider: 'aws', service: 'ec2', region: 'us-east-1', count: 1, term: 1, upfront_cost: 100, savings: 10 }],

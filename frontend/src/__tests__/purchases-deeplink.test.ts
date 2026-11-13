@@ -96,6 +96,22 @@ describe('handlePurchaseDeeplink approve (issue #247)', () => {
     expect(apiRequest).toHaveBeenCalledWith(`/purchases/approve/${EXEC_ID}`, expect.objectContaining({ method: 'POST' }));
   });
 
+  it.each(['approved', 'cancelled', 'completed'])('does not offer Approve when the purchase is already %s', async (status) => {
+    (api.getApprovalDetails as jest.Mock).mockResolvedValue({
+      execution_id: EXEC_ID, status, total_upfront_cost: 1200, estimated_savings: 10,
+      recommendations: [{ id: 'r1', provider: 'aws', service: 'ec2', region: 'us-east-1', resource_type: 'm5.large',
+        count: 1, term: 1, payment: 'all-upfront', upfront_cost: 1200, monthly_cost: 0, savings: 10, selected: true, purchased: false }],
+    });
+
+    await expect(handlePurchaseDeeplink()).resolves.toBe(true);
+
+    expect(document.querySelector('.modal-confirm-actions')).toBeNull();
+    const text = document.querySelector('[role="alert"]')?.textContent ?? '';
+    expect(text).toContain(`already ${status}`);
+    expect(text).not.toContain('retry');
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
   it('loads the details through the token-authorized read, not the view:purchases route (issue #529)', async () => {
     (api.getApprovalDetails as jest.Mock).mockRejectedValue(Object.assign(new Error('execution not found'), { status: 404 }));
 
