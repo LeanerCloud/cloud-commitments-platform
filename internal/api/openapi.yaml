@@ -632,7 +632,9 @@ paths:
         service; on a single-service plan, naming a different service replaces its
         settings, and a plan with several services refuses it with 400. A provider or
         service sent on its own is ignored; both are needed to change the plan's
-        service. A singleton legacy service alias retains its original key, hidden filters,
+        service. A plan bound to selected recommendations (ramp_schedule.allocation_mode
+        bound_groups) refuses with 400 any request that names both; edit its name,
+        ramp and caps only. A singleton legacy service alias retains its original key, hidden filters,
         minimum count, service ramp and Enabled value when edited through its canonical
         service name. Exact-key edits retain their existing Enabled overlay behavior;
         selecting a genuinely different singleton service still replaces its settings.

@@ -65,6 +65,28 @@ func mergeRequestedServices(existing, requested map[string]config.ServiceConfig,
 		len(existing), strings.Join(sortedServiceKeys(existing), ", "), reqKey))
 }
 
+// mergeUpdatedServices is mergeRequestedServices for a stored plan: a bound plan
+// refuses a request that names a service.
+func mergeUpdatedServices(existing *config.PurchasePlan, requested map[string]config.ServiceConfig, omitted omittedFields) (map[string]config.ServiceConfig, error) {
+	if err := refuseBoundServiceEdit(existing, requested); err != nil {
+		return nil, err
+	}
+	return mergeRequestedServices(existing.Services, requested, omitted)
+}
+
+// refuseBoundServiceEdit refuses a PUT that names a service on a bound plan.
+// The legacy form's merge would overlay or replace a group's entry, dropping its
+// bound identities, so the plan would silently buy by filter instead of the
+// selected recommendations (#1746). Plan-level fields still edit as before.
+func refuseBoundServiceEdit(existing *config.PurchasePlan, requested map[string]config.ServiceConfig) error {
+	if len(requested) == 0 || existing.RampSchedule.AllocationMode != config.RampAllocationBoundGroups {
+		return nil
+	}
+	return NewClientError(400,
+		"this plan is bound to selected recommendations; provider, service, term, payment and target_coverage "+
+			"cannot be edited on it, only its name, ramp, accounts and caps")
+}
+
 // Mirrors the legacy Edit aliases in frontend/src/plans.ts:997-1001.
 func legacyServiceAlias(provider, service string) string {
 	switch provider + "/" + service {
