@@ -5,9 +5,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/accountpredicate"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -17,6 +19,7 @@ import (
 // Both *database.Connection and pgxmock.PgxPoolIface satisfy it so tests
 // can drop in a mock without needing a real Postgres.
 type analyticsDBConn interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
@@ -28,6 +31,26 @@ type analyticsDBConn interface {
 // storage layer.
 type PostgresAnalyticsClient struct {
 	db analyticsDBConn
+	// amountBasisReady latches true once purchase_history.amount_basis exists.
+	amountBasisReady atomic.Bool
+}
+
+// legacyEstimateFilter keeps legacy-estimate rows (issue #669) out of an
+// aggregate's dollar sums while COUNT(*) still counts them. It is empty on a
+// schema without the column; a true gate answer is latched, a false one or an
+// error is re-checked on the next query.
+func (c *PostgresAnalyticsClient) legacyEstimateFilter(ctx context.Context) (string, error) {
+	if !c.amountBasisReady.Load() {
+		ready, err := config.AmountBasisSchemaReady(ctx, c.db)
+		if err != nil {
+			return "", fmt.Errorf("check amount_basis schema: %w", err)
+		}
+		if !ready {
+			return "", nil
+		}
+		c.amountBasisReady.Store(true)
+	}
+	return " FILTER (WHERE amount_basis IS DISTINCT FROM 'legacy_window')", nil
 }
 
 // NewPostgresAnalyticsClient creates a new Postgres-backed analytics client.
@@ -96,6 +119,16 @@ func accountFilterClause(accountUUIDs []string, accountExternalIDsByProvider map
 	return clause, args
 }
 
+// providerFilterClause returns the optional parameter-bound provider predicate
+// ("" = no filter) and args with the provider appended.
+func providerFilterClause(provider string, args []any) (clause string, outArgs []any) {
+	if provider == "" {
+		return "", args
+	}
+	args = append(args, provider)
+	return fmt.Sprintf(" AND provider = $%d", len(args)), args
+}
+
 // QueryHistory aggregates purchase_history rows bucketed by interval.
 // Empty accountUUIDs AND accountExternalIDsByProvider means "all accounts
 // accessible to the caller"; scoping is enforced upstream in the handler.
@@ -122,25 +155,25 @@ func (c *PostgresAnalyticsClient) QueryHistory(
 	// shared dual-column clause (see accountFilterClause); the optional provider
 	// predicate mirrors QueryByService (parameter-bound, "" = no filter).
 	accountClause, args := accountFilterClause(accountUUIDs, accountExternalIDsByProvider, []any{start, end})
-	providerClause := ""
-	if provider != "" {
-		args = append(args, provider)
-		providerClause = fmt.Sprintf(" AND provider = $%d", len(args))
+	providerClause, args := providerFilterClause(provider, args)
+	amountFilter, err := c.legacyEstimateFilter(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 	query := fmt.Sprintf(`
-		SELECT date_trunc('%s', timestamp) AS bucket,
+		SELECT date_trunc('%[2]s', timestamp) AS bucket,
 		       service,
 		       provider,
-		       SUM(estimated_savings)::float8 AS savings,
-		       CASE WHEN COUNT(upfront_cost) = COUNT(*) THEN SUM(upfront_cost)::float8 END AS upfront,
+		       COALESCE(SUM(estimated_savings)%[1]s, 0)::float8 AS savings,
+		       CASE WHEN COUNT(upfront_cost)%[1]s = COUNT(*)%[1]s THEN COALESCE(SUM(upfront_cost)%[1]s, 0)::float8 END AS upfront,
 		       COUNT(*) AS purchases
 		FROM purchase_history
 		WHERE timestamp >= $1
 		  AND timestamp <= $2
-		  AND %s%s
+		  AND %[3]s%[4]s
 		GROUP BY bucket, service, provider
 		ORDER BY bucket ASC
-	`, unit, accountClause, providerClause)
+	`, amountFilter, unit, accountClause, providerClause)
 
 	rows, err := c.db.Query(ctx, query, args...)
 	if err != nil {
@@ -229,18 +262,22 @@ func (c *PostgresAnalyticsClient) QueryBreakdown(
 	// Dual-column account predicate: see accountFilterClause / QueryHistory for
 	// rationale (issue #701/#498/#866).
 	accountClause, args := accountFilterClause(accountUUIDs, accountExternalIDsByProvider, []any{start, end})
+	amountFilter, err := c.legacyEstimateFilter(ctx)
+	if err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`
-		SELECT %s AS bucket,
-		       SUM(estimated_savings)::float8 AS savings,
-		       CASE WHEN COUNT(upfront_cost) = COUNT(*) THEN SUM(upfront_cost)::float8 END AS upfront,
+		SELECT %[2]s AS bucket,
+		       COALESCE(SUM(estimated_savings)%[1]s, 0)::float8 AS savings,
+		       CASE WHEN COUNT(upfront_cost)%[1]s = COUNT(*)%[1]s THEN COALESCE(SUM(upfront_cost)%[1]s, 0)::float8 END AS upfront,
 		       COUNT(*) AS purchases
 		FROM purchase_history
 		WHERE timestamp >= $1
 		  AND timestamp <= $2
-		  AND %s
+		  AND %[3]s
 		GROUP BY bucket
 		ORDER BY savings DESC
-	`, column, accountClause)
+	`, amountFilter, column, accountClause)
 
 	rows, err := c.db.Query(ctx, query, args...)
 	if err != nil {

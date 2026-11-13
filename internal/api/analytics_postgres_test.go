@@ -15,7 +15,11 @@ func newMockAnalyticsClient(t *testing.T) (*PostgresAnalyticsClient, pgxmock.Pgx
 	t.Helper()
 	mock, err := pgxmock.NewPool(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherRegexp))
 	require.NoError(t, err)
-	return &PostgresAnalyticsClient{db: mock}, mock
+	client := &PostgresAnalyticsClient{db: mock}
+	// Latched open so these tests need no schema-version query; the gate has
+	// its own test below.
+	client.amountBasisReady.Store(true)
+	return client, mock
 }
 
 func TestIntervalToTruncUnit(t *testing.T) {
@@ -364,4 +368,46 @@ func TestAccountFilterClause_PinnedSQL(t *testing.T) {
 			assert.Equal(t, tc.wantArgs, args)
 		})
 	}
+}
+
+// Legacy-estimate rows (issue #669) keep their COUNT(*) but add no dollars, on
+// both aggregates. The FILTER sits on the SUMs and on both sides of the
+// unknown-upfront comparison, and only once the migration is applied.
+func TestAnalytics_LegacyEstimateFilterBehindSchemaGate(t *testing.T) {
+	const versionQuery = `SELECT version, dirty FROM schema_migrations`
+	filtered := `COUNT\(upfront_cost\) FILTER \(WHERE amount_basis IS DISTINCT FROM 'legacy_window'\) = COUNT\(\*\) FILTER \(WHERE amount_basis IS DISTINCT FROM 'legacy_window'\)`
+	start, end := time.Now().Add(-time.Hour), time.Now()
+	cols := []string{"bucket", "service", "provider", "savings", "upfront", "purchases"}
+	bcols := []string{"bucket", "savings", "upfront", "purchases"}
+
+	t.Run("applied: both queries filter, and the answer is latched", func(t *testing.T) {
+		mock, err := pgxmock.NewPool(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherRegexp))
+		require.NoError(t, err)
+		client := &PostgresAnalyticsClient{db: mock}
+		mock.ExpectQuery(versionQuery).WillReturnRows(pgxmock.NewRows([]string{"version", "dirty"}).AddRow(9999, false))
+		mock.ExpectQuery(`(?s)SELECT date_trunc.*`+filtered).WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnRows(pgxmock.NewRows(cols))
+		mock.ExpectQuery(`(?s)SELECT service AS bucket.*`+filtered).WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnRows(pgxmock.NewRows(bcols))
+
+		_, _, err = client.QueryHistory(context.Background(), nil, nil, "", start, end, "daily")
+		require.NoError(t, err)
+		_, err = client.QueryBreakdown(context.Background(), nil, nil, start, end, "service")
+		require.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("below the migration: no FILTER, and the gate is asked again", func(t *testing.T) {
+		mock, err := pgxmock.NewPool(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherRegexp))
+		require.NoError(t, err)
+		client := &PostgresAnalyticsClient{db: mock}
+		for range 2 {
+			mock.ExpectQuery(versionQuery).WillReturnRows(pgxmock.NewRows([]string{"version", "dirty"}).AddRow(1, false))
+			mock.ExpectQuery(`(?s)SELECT date_trunc.*COUNT\(upfront_cost\) = COUNT\(\*\) THEN COALESCE\(SUM\(upfront_cost\), 0\)`).
+				WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnRows(pgxmock.NewRows(cols))
+		}
+		for range 2 {
+			_, _, err = client.QueryHistory(context.Background(), nil, nil, "", start, end, "daily")
+			require.NoError(t, err)
+		}
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
 }

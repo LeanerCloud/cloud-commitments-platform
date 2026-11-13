@@ -31,8 +31,10 @@ func flagBasis(ctx context.Context, t *testing.T, s *PostgresStore, purchaseID s
 	require.NoError(t, err)
 }
 
-// Every purchase_history reader returns the basis (issue #669).
-func TestAmountBasis_Readers(t *testing.T) {
+// Flagged rows keep their purchase count but add no dollars to the SQL summary,
+// even when a flagged row has an unknown upfront cost, and every purchase_history
+// reader returns the basis (issue #669).
+func TestAmountBasis_SummaryAndReaders(t *testing.T) {
 	ctx := context.Background()
 	s := setupRampStepStore(ctx, t)
 	up := func(v float64) *float64 { return &v }
@@ -44,6 +46,23 @@ func TestAmountBasis_Readers(t *testing.T) {
 	for _, id := range []string{legacyUnknown, legacyKnown, onlyLegacy} {
 		flagBasis(ctx, t, s, id)
 	}
+
+	agg, err := s.HistorySummaryAggregate(ctx, HistorySummaryFilter{})
+	require.NoError(t, err)
+	byAccount := map[string]PurchaseHistorySummaryGroup{}
+	for _, g := range agg.Purchases {
+		byAccount[g.AccountID] = g
+	}
+	mixed := byAccount["mixed"]
+	assert.Equal(t, 3, mixed.Count, "flagged rows stay counted")
+	require.NotNil(t, mixed.UpfrontCost, "a flagged NULL upfront must not make the total unknown")
+	assert.InDelta(t, 100.0, *mixed.UpfrontCost, 1e-9)
+	assert.InDelta(t, 20.0, mixed.EstimatedSavings, 1e-9)
+	only := byAccount["only-legacy"]
+	assert.Equal(t, 1, only.Count)
+	require.NotNil(t, only.UpfrontCost)
+	assert.Zero(t, *only.UpfrontCost)
+	assert.Zero(t, only.EstimatedSavings)
 
 	rows, err := s.GetPurchaseHistory(ctx, "mixed", 10)
 	require.NoError(t, err)
