@@ -88,7 +88,7 @@ test('unit switches, refresh and empty/error states work on a narrow screen', as
     ['monthly', 'Monthly', '$10.00/mo', '$1,680.00', '$560.00/mo'],
   ]) {
     await page.locator('#savings-unit').selectOption(unit!);
-    await expect(page.locator('#avg-savings-label')).toHaveText('Avg ' + label + ' Savings');
+    await expect(page.locator('#avg-savings-label')).toHaveText('Avg ' + label.toLowerCase() + ' savings');
     await expect(page.locator('#avg-hourly-savings')).toHaveText(average!);
     await expect(page.locator('#period-savings')).toHaveText(total!);
     await expect(page.locator('#peak-savings')).toHaveText(peak!);
