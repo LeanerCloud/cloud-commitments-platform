@@ -50,8 +50,12 @@ func anyArgsCfg(n int) []interface{} {
 }
 
 // storeWith creates a real PostgresStore backed by mock.
+// The amount_basis gate is latched open so these tests need no schema-version
+// query; TestAmountBasisColumn_Latches covers the gate itself.
 func storeWith(mock pgxmock.PgxPoolIface) *PostgresStore {
-	return &PostgresStore{db: mock}
+	s := &PostgresStore{db: mock}
+	s.amountBasisReady.Store(true)
+	return s
 }
 
 func f64Ptr(f float64) *float64 { return &f }
@@ -972,6 +976,8 @@ func TestPGXMock_GetPurchaseHistory_Success(t *testing.T) {
 		"revocation_window_closes_at", "revoked_at", "revoked_via", "support_case_id",
 		// marketplace columns (issue #292)
 		"offering_class", "listing_id", "listing_state",
+		// amount_basis (migration 000168, issue #669)
+		"amount_basis",
 	}
 	rows := pgxmock.NewRows(cols).
 		AddRow("acc-1", "pur-1", now, "aws", "ec2", "us-east-1",
@@ -983,17 +989,20 @@ func TestPGXMock_GetPurchaseHistory_Success(t *testing.T) {
 			nil, nil, sql.NullString{}, sql.NullString{},
 			// marketplace columns (issue #292)
 			sql.NullString{Valid: true, String: "standard"},
-			sql.NullString{}, sql.NullString{}).
+			sql.NullString{}, sql.NullString{}, sql.NullString{Valid: true, String: "legacy_window"}).
 		AddRow("acc-1", "pur-2", now, "aws", "rds", "us-west-2",
 			"db.t3.medium", 1, 3, "all-upfront", 200.0, 0.0, 100.0,
 			sql.NullString{}, sql.NullString{}, 0, sql.NullString{},
 			nil, nil, sql.NullString{}, sql.NullString{},
-			sql.NullString{}, sql.NullString{}, sql.NullString{})
+			sql.NullString{}, sql.NullString{}, sql.NullString{}, sql.NullString{})
 	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnRows(rows)
 
 	records, err := store.GetPurchaseHistory(ctx, "acc-1", 10)
 	require.NoError(t, err)
 	assert.Len(t, records, 2)
+	assert.Equal(t, PurchaseAmountBasisLegacyWindow, records[0].AmountBasis)
+	assert.True(t, records[0].IsLegacyEstimate())
+	assert.Empty(t, records[1].AmountBasis)
 	assert.Equal(t, "plan-1", records[0].PlanID)
 	assert.Equal(t, "", records[1].PlanID) // null → empty
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -1025,6 +1034,8 @@ func TestPGXMock_GetPurchaseHistoryByPurchaseID_Success(t *testing.T) {
 		"offering_class", "listing_id", "listing_state",
 		// return_posted_at (migration 000148, issue #1522)
 		"return_posted_at",
+		// amount_basis (migration 000168, issue #669)
+		"amount_basis",
 	}
 	// monthly_cost scans straight into the *float64 r.MonthlyCost (not through
 	// the nullables struct), so the mock value must be a *float64.
@@ -1045,7 +1056,8 @@ func TestPGXMock_GetPurchaseHistoryByPurchaseID_Success(t *testing.T) {
 			sql.NullString{Valid: true, String: "listing-1"},
 			sql.NullString{Valid: true, String: "active"},
 			// return_posted_at (migration 000148, issue #1522)
-			&posted)
+			&posted,
+			sql.NullString{Valid: true, String: "legacy_window"})
 	mock.ExpectQuery("SELECT").WithArgs(pgxmock.AnyArg()).WillReturnRows(rows)
 
 	record, err := store.GetPurchaseHistoryByPurchaseID(ctx, "pur-1")
@@ -1065,6 +1077,7 @@ func TestPGXMock_GetPurchaseHistoryByPurchaseID_Success(t *testing.T) {
 	// one still in progress (issue #1522).
 	require.NotNil(t, record.ReturnPostedAt)
 	assert.True(t, record.ReturnPostedAt.Equal(posted))
+	assert.Equal(t, PurchaseAmountBasisLegacyWindow, record.AmountBasis)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -1097,7 +1110,7 @@ var purchaseHistoryCols = []string{
 	"resource_type", "count", "term", "payment", "upfront_cost", "monthly_cost",
 	"estimated_savings", "plan_id", "plan_name", "ramp_step", "cloud_account_id",
 	"revocation_window_closes_at", "revoked_at", "revoked_via", "support_case_id",
-	"offering_class", "listing_id", "listing_state",
+	"offering_class", "listing_id", "listing_state", "amount_basis",
 }
 
 // purchaseHistoryRow builds a single AddRow tuple matching purchaseHistoryCols.
@@ -1110,6 +1123,8 @@ func purchaseHistoryRow(now time.Time, provider, acct string) []interface{} {
 		nil, nil, sql.NullString{}, sql.NullString{},
 		// marketplace columns (issue #292): all null for unlisted rows
 		sql.NullString{}, sql.NullString{}, sql.NullString{},
+		// amount_basis (issue #669): NULL for a normal row
+		sql.NullString{},
 	}
 }
 
@@ -1277,7 +1292,7 @@ func TestPGXMock_GetActivePurchaseHistory_Unscoped(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	rows := pgxmock.NewRows(purchaseHistoryCols).AddRow(purchaseHistoryRow(now, "aws", "acct-1")...)
 	mock.ExpectQuery(
-		`SELECT account_id, purchase_id, .*revocation_window_closes_at, revoked_at, revoked_via, support_case_id, offering_class, listing_id, listing_state FROM purchase_history WHERE term > 0 AND \(extract\(epoch FROM \(timestamp AT TIME ZONE 'UTC'\)\) \+ term::numeric \* 31536000\) >= extract\(epoch FROM \(\$1::timestamptz AT TIME ZONE 'UTC'\)\) AND revoked_at IS NULL ORDER BY timestamp DESC$`,
+		`SELECT account_id, purchase_id, .*revocation_window_closes_at, revoked_at, revoked_via, support_case_id, offering_class, listing_id, listing_state, amount_basis FROM purchase_history WHERE term > 0 AND \(extract\(epoch FROM \(timestamp AT TIME ZONE 'UTC'\)\) \+ term::numeric \* 31536000\) >= extract\(epoch FROM \(\$1::timestamptz AT TIME ZONE 'UTC'\)\) AND revoked_at IS NULL ORDER BY timestamp DESC$`,
 	).WithArgs(now).WillReturnRows(rows)
 
 	records, err := store.GetActivePurchaseHistory(ctx, now, nil, nil)

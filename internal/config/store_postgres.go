@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -35,6 +36,9 @@ type dbConn interface {
 // PostgresStore implements StoreInterface using PostgreSQL.
 type PostgresStore struct {
 	db dbConn
+	// amountBasisReady latches true once purchase_history.amount_basis is
+	// known to exist (amountBasisColumn).
+	amountBasisReady atomic.Bool
 }
 
 // NewPostgresStore creates a new PostgreSQL-backed config store.
@@ -2600,33 +2604,41 @@ func (s *PostgresStore) ReleaseMarketplaceListingClaim(ctx context.Context, purc
 
 // GetPurchaseHistory retrieves purchase history for an account.
 func (s *PostgresStore) GetPurchaseHistory(ctx context.Context, accountID string, limit int) ([]PurchaseHistoryRecord, error) {
-	query := `
+	basis, err := s.amountBasisColumn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`
 		SELECT account_id, purchase_id, timestamp, provider, service, region,
 		       resource_type, count, term, payment, upfront_cost, monthly_cost,
 		       estimated_savings, plan_id, plan_name, ramp_step, cloud_account_id,
 		       revocation_window_closes_at, revoked_at, revoked_via, support_case_id,
-		       offering_class, listing_id, listing_state
+		       offering_class, listing_id, listing_state, %s
 		FROM purchase_history
 		WHERE account_id = $1
 		ORDER BY timestamp DESC
 		LIMIT $2
-	`
+	`, basis)
 
 	return s.queryPurchaseHistory(ctx, query, accountID, limit)
 }
 
 // GetAllPurchaseHistory retrieves all purchase history.
 func (s *PostgresStore) GetAllPurchaseHistory(ctx context.Context, limit int) ([]PurchaseHistoryRecord, error) {
-	query := `
+	basis, err := s.amountBasisColumn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`
 		SELECT account_id, purchase_id, timestamp, provider, service, region,
 		       resource_type, count, term, payment, upfront_cost, monthly_cost,
 		       estimated_savings, plan_id, plan_name, ramp_step, cloud_account_id,
 		       revocation_window_closes_at, revoked_at, revoked_via, support_case_id,
-		       offering_class, listing_id, listing_state
+		       offering_class, listing_id, listing_state, %s
 		FROM purchase_history
 		ORDER BY timestamp DESC
 		LIMIT $1
-	`
+	`, basis)
 
 	return s.queryPurchaseHistory(ctx, query, limit)
 }
@@ -2670,13 +2682,17 @@ const activeExpiryEpochExpr = "(extract(epoch FROM (timestamp AT TIME ZONE 'UTC'
 // predicate can use idx_purchase_history_active_expiry (migration 000126)
 // instead of evaluating every row ever recorded (issue #33).
 func (s *PostgresStore) GetActivePurchaseHistory(ctx context.Context, asOf time.Time, accountIDs []string, externalIDsByProvider map[string][]string) ([]PurchaseHistoryRecord, error) {
-	query, args := activePurchaseHistoryQuery(asOf, accountIDs, externalIDsByProvider)
+	basis, err := s.amountBasisColumn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query, args := activePurchaseHistoryQuery(basis, asOf, accountIDs, externalIDsByProvider)
 	return s.queryPurchaseHistory(ctx, query, args...)
 }
 
 // activePurchaseHistoryQuery builds GetActivePurchaseHistory's SQL and bind
 // args. It is separate so the integration tests can EXPLAIN the exact query.
-func activePurchaseHistoryQuery(asOf time.Time, accountIDs []string, externalIDsByProvider map[string][]string) (query string, args []any) {
+func activePurchaseHistoryQuery(basis string, asOf time.Time, accountIDs []string, externalIDsByProvider map[string][]string) (query string, args []any) {
 	conds := []string{
 		"term > 0",
 		activeExpiryEpochExpr + " >= extract(epoch FROM ($1::timestamptz AT TIME ZONE 'UTC'))",
@@ -2695,11 +2711,11 @@ func activePurchaseHistoryQuery(asOf time.Time, accountIDs []string, externalIDs
 		       resource_type, count, term, payment, upfront_cost, monthly_cost,
 		       estimated_savings, plan_id, plan_name, ramp_step, cloud_account_id,
 		       revocation_window_closes_at, revoked_at, revoked_via, support_case_id,
-		       offering_class, listing_id, listing_state
+		       offering_class, listing_id, listing_state, %s
 		FROM purchase_history
 		WHERE %s
 		ORDER BY timestamp DESC
-	`, strings.Join(conds, " AND "))
+	`, basis, strings.Join(conds, " AND "))
 	return query, args
 }
 
@@ -2763,6 +2779,10 @@ func (s *PostgresStore) GetPurchaseHistoryFiltered(
 		limit = MaxListLimit
 	}
 
+	basis, err := s.amountBasisColumn(ctx)
+	if err != nil {
+		return nil, err
+	}
 	where, args := purchaseHistoryFilterWhere(filter)
 	args = append(args, limit)
 
@@ -2771,11 +2791,11 @@ func (s *PostgresStore) GetPurchaseHistoryFiltered(
 		       resource_type, count, term, payment, upfront_cost, monthly_cost,
 		       estimated_savings, plan_id, plan_name, ramp_step, cloud_account_id,
 		       revocation_window_closes_at, revoked_at, revoked_via, support_case_id,
-		       offering_class, listing_id, listing_state
+		       offering_class, listing_id, listing_state, %s
 		FROM purchase_history%s
 		ORDER BY timestamp DESC
 		LIMIT $%d
-	`, where, len(args))
+	`, basis, where, len(args))
 
 	return s.queryPurchaseHistory(ctx, query, args...)
 }
@@ -2873,6 +2893,7 @@ type purchaseHistoryNullables struct {
 	offeringClass            sql.NullString
 	listingID                sql.NullString
 	listingState             sql.NullString
+	amountBasis              sql.NullString
 }
 
 // applyTo reconciles the nullable columns into record. monthly_cost is left as
@@ -2911,6 +2932,7 @@ func (n *purchaseHistoryNullables) applyTo(record *PurchaseHistoryRecord) {
 	if n.listingState.Valid {
 		record.ListingState = n.listingState.String
 	}
+	record.AmountBasis = PurchaseAmountBasis(n.amountBasis.String) // NULL scans as ""
 }
 
 func scanPurchaseHistoryRow(rows pgx.Rows) (PurchaseHistoryRecord, error) {
@@ -2942,6 +2964,7 @@ func scanPurchaseHistoryRow(rows pgx.Rows) (PurchaseHistoryRecord, error) {
 		&n.offeringClass,
 		&n.listingID,
 		&n.listingState,
+		&n.amountBasis,
 	); err != nil {
 		return PurchaseHistoryRecord{}, fmt.Errorf("failed to scan purchase history: %w", err)
 	}
@@ -2963,18 +2986,22 @@ func scanPurchaseHistoryRow(rows pgx.Rows) (PurchaseHistoryRecord, error) {
 // return_posted_at (migration 000148) is read last so the revoke handler can
 // tell an accepted Azure Return from one still in progress (issue #1522).
 func (s *PostgresStore) GetPurchaseHistoryByPurchaseID(ctx context.Context, purchaseID string) (*PurchaseHistoryRecord, error) {
-	query := `
+	basis, err := s.amountBasisColumn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`
 		SELECT account_id, purchase_id, timestamp, provider, service, region,
 		       resource_type, count, term, payment, upfront_cost, monthly_cost,
 		       estimated_savings, plan_id, plan_name, ramp_step, cloud_account_id,
 		       revocation_window_closes_at, revoked_at, revoked_via, support_case_id,
 		       revocation_in_flight, offering_class, listing_id, listing_state,
-		       return_posted_at
+		       return_posted_at, %s
 		FROM purchase_history
 		WHERE purchase_id = $1
 		ORDER BY created_at, id
 		LIMIT 1
-	`
+	`, basis)
 	rows, err := s.db.Query(ctx, query, purchaseID)
 	if err != nil {
 		return nil, fmt.Errorf("GetPurchaseHistoryByPurchaseID: %w", err)
@@ -3018,6 +3045,7 @@ func (s *PostgresStore) GetPurchaseHistoryByPurchaseID(ctx context.Context, purc
 		&n.listingID,
 		&n.listingState,
 		&r.ReturnPostedAt,
+		&n.amountBasis,
 	); err != nil {
 		return nil, fmt.Errorf("GetPurchaseHistoryByPurchaseID scan: %w", err)
 	}

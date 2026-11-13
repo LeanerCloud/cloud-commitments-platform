@@ -13,6 +13,11 @@ import (
 // columns to purchase_executions (issue #999).
 const settlementMigrationVersion = 155
 
+// amountBasisMigrationVersion is the migration that adds
+// purchase_history.amount_basis (issue #669). It mirrors the file
+// 000168_purchase_history_amount_basis in internal/database/postgres/migrations.
+const amountBasisMigrationVersion = 168
+
 // directResolveMigrationVersion is the migration that adds the resolution
 // columns to ri_exchange_direct_executions (#1836). It mirrors
 // directResolutionMigration in internal/database/postgres/migrations.
@@ -66,11 +71,52 @@ func readSchemaVersion(ctx context.Context, q rowQuerier) (version int, dirty, f
 // exist even if that later migration is dirty; at exactly this version a
 // dirty flag means it may not have finished.
 func settlementSchemaReady(ctx context.Context, q rowQuerier) (bool, error) {
+	return migrationApplied(ctx, q, settlementMigrationVersion)
+}
+
+// migrationApplied reports whether migration v is applied and finished.
+func migrationApplied(ctx context.Context, q rowQuerier, v int) (bool, error) {
 	version, dirty, found, err := readSchemaVersion(ctx, q)
 	if err != nil || !found {
 		return false, err
 	}
-	return version > settlementMigrationVersion || (version == settlementMigrationVersion && !dirty), nil
+	return version > v || (version == v && !dirty), nil
+}
+
+// AmountBasisSchemaReady reports whether purchase_history.amount_basis exists,
+// for readers outside this package that run their own purchase_history SQL.
+func AmountBasisSchemaReady(ctx context.Context, q rowQuerier) (bool, error) {
+	return migrationApplied(ctx, q, amountBasisMigrationVersion)
+}
+
+// amountBasisNotMigrated selects NULL in place of the column on a schema
+// without it, so every purchase_history reader keeps one column list.
+const amountBasisNotMigrated = "NULL::text AS amount_basis"
+
+// amountBasisColumn returns the amount_basis select expression. main deploys
+// before prod migrations are applied, so below amountBasisMigrationVersion
+// the column reads as NULL. A true answer is latched for the store's life
+// (migrations never go backward under a running deploy); false and errors are
+// never cached, so the gate opens as soon as the migration lands.
+func (s *PostgresStore) amountBasisColumn(ctx context.Context) (string, error) {
+	return s.amountBasisColumnOn(ctx, s.db)
+}
+
+// amountBasisColumnOn is amountBasisColumn on the caller's connection or
+// transaction.
+func (s *PostgresStore) amountBasisColumnOn(ctx context.Context, q rowQuerier) (string, error) {
+	if s.amountBasisReady.Load() {
+		return "amount_basis", nil
+	}
+	ready, err := migrationApplied(ctx, q, amountBasisMigrationVersion)
+	if err != nil {
+		return "", err
+	}
+	if !ready {
+		return amountBasisNotMigrated, nil
+	}
+	s.amountBasisReady.Store(true)
+	return "amount_basis", nil
 }
 
 // directResolveSchemaReady reports whether the direct-exchange resolution
