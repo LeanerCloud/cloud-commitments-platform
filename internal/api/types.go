@@ -841,6 +841,10 @@ type PlanRequest struct {
 	MaxStepCommitment *float64 `json:"max_step_commitment,omitempty"`
 	AutoPurchase      bool     `json:"auto_purchase"`
 	Enabled           bool     `json:"enabled"`
+	// Groups builds the plan from selected recommendations, one entry per
+	// service. It excludes the flat provider/service/term/payment/target_coverage
+	// fields. createPlan does not read it yet.
+	Groups []PlanGroupRequest `json:"groups,omitempty"`
 }
 
 // validateTargetCoverage refuses an explicit target outside 0..100. An explicit

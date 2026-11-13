@@ -264,6 +264,16 @@ export interface PlanHealthFactor {
   note: string;
 }
 
+export interface PlanGroupRequest {
+  provider: string;
+  service: string;
+  term?: number;
+  payment?: string;
+  coverage?: number;
+  max_step_commitment?: number;
+  recommendation_ids: string[];
+}
+
 export interface CreatePlanRequest {
   name: string;
   enabled: boolean;

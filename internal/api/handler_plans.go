@@ -185,6 +185,9 @@ func decodePlanRequest(body string) (*PlanRequest, error) {
 	if err := req.validateRampSchedule(); err != nil {
 		return nil, err
 	}
+	if err := req.validateGroups(); err != nil {
+		return nil, err
+	}
 	return &req, nil
 }
 

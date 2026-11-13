@@ -7564,6 +7564,32 @@ components:
           items:
             $ref: '#/components/schemas/PlanWithHealth'
 
+    PlanGroupRequest:
+      type: object
+      required: [recommendation_ids]
+      properties:
+        provider:
+          type: string
+        service:
+          type: string
+        term:
+          type: integer
+        payment:
+          type: string
+        coverage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        max_step_commitment:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        recommendation_ids:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            type: string
     PlanRequest:
       type: object
       description: >-
@@ -7590,6 +7616,16 @@ components:
             steps with recommendations is then refused); omit on update to keep
             the current cap. On update, explicit null clears a manual plan's
             cap and is refused while auto_purchase is true.
+        groups:
+          type: array
+          description: >-
+            Builds the plan from selected recommendations, one entry per
+            service. Cannot be combined with provider, service, term, payment
+            or target_coverage (400). Each group needs a non-empty
+            recommendation_ids; at most 1000 ids per group and 5000 in total
+            (400 with a code field).
+          items:
+            $ref: '#/components/schemas/PlanGroupRequest'
         provider:
           type: string
         service:

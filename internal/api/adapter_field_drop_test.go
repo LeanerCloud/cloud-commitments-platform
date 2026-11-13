@@ -79,6 +79,10 @@ func setDistinct(t *testing.T, f reflect.Value, tag string) {
 	case reflect.Float64:
 		f.SetFloat(7.5)
 	case reflect.Slice:
+		if f.Type().Elem().Kind() != reflect.String {
+			f.Set(reflect.MakeSlice(f.Type(), 1, 1))
+			return
+		}
 		f.Set(reflect.ValueOf([]string{"v-" + tag}))
 	case reflect.Ptr:
 		p := reflect.New(f.Type().Elem())
@@ -143,5 +147,6 @@ func TestPlanRequestToPurchasePlan_NoFieldDropped(t *testing.T) {
 		func(r PlanRequest) *config.PurchasePlan { return r.toPurchasePlan() },
 		map[string]string{
 			"target_accounts": "handled by createPlan/setPlanAccounts, not the converter",
+			"groups":          "not read by createPlan yet (#1746)",
 		})
 }
