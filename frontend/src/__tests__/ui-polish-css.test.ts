@@ -35,7 +35,8 @@ function decl(body: string, prop: string): string {
 }
 
 const tokens = (() => {
-  const base = read('base.css');
+  // Light values only: the dark palette block (#699) redefines the same names.
+  const base = read('base.css').split(':root[data-theme="dark"]')[0]!;
   const out: Record<string, string> = {};
   for (const m of base.matchAll(/(--cudly-[\w-]+):\s*(#[0-9a-fA-F]{3,6})\b/g)) out[m[1]!] = m[2]!;
   return out;
