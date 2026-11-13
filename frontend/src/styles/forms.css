@@ -261,7 +261,7 @@ input:checked + .slider:before {
     background: white;
     padding: 1rem;
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px var(--cudly-shadow-ink-10);
     margin-bottom: 1.5rem;
 }
 
@@ -334,7 +334,7 @@ input:checked + .slider:before {
     margin: 0.75rem 0 1rem 0;
     padding: 0.75rem;
     background: var(--cudly-surface-muted);
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--cudly-border-cool);
     border-radius: 4px;
     font-size: var(--cudly-fs-sm);
 }

@@ -110,7 +110,7 @@ describe('color literals (theming ratchet)', () => {
   // The baseline is the count on main when this ratchet landed. This ceiling
   // may only go down: migrate a literal to a token, then lower it. Raising it
   // means a new hard-coded color; use or add a token instead.
-  const CSS_LITERAL_CEILING = 113;
+  const CSS_LITERAL_CEILING = 63;
 
   it(`styles/*.css hold at most ${CSS_LITERAL_CEILING} color literals outside token definitions`, () => {
     const counts = fs.readdirSync(STYLES)
@@ -118,5 +118,49 @@ describe('color literals (theming ratchet)', () => {
       .map((f) => [f, cssColorLiterals(fs.readFileSync(path.join(STYLES, f), 'utf8')).length] as const);
     const total = counts.reduce((n, [, c]) => n + c, 0);
     expect(total).toBeLessThanOrEqual(CSS_LITERAL_CEILING);
+  });
+
+  // Light mode must not change when a literal becomes a token: each token
+  // holds exactly the text of the literal it replaced.
+  const MIGRATED_LITERALS: ReadonlyArray<readonly [string, string]> = [
+    ['--cudly-success-strong', '#166534'],
+    ['--cudly-neutral-hover-bg', '#e8e8e8'],
+    ['--cudly-neutral-hover-border', '#bbb'],
+    ['--cudly-warn-strong', '#f9a825'],
+    ['--cudly-text-strong', '#222'],
+    ['--cudly-text-body', '#444'],
+    ['--cudly-text-dark', '#333'],
+    ['--cudly-accent-border', '#4a90e2'],
+    ['--cudly-accent-fg', '#1a56c4'],
+    ['--cudly-surface-faint', '#fafafa'],
+    ['--cudly-error-strong', '#d32f2f'],
+    ['--cudly-accent-border-soft', '#a9c7f5'],
+    ['--cudly-surface-cool', '#f8f9fb'],
+    ['--cudly-surface-tint', '#f3f6fb'],
+    ['--cudly-surface-tint-hover', '#eaf0fb'],
+    ['--cudly-surface-tint-faint', '#fafbfe'],
+    ['--cudly-surface-tint-strong', '#f0f4fc'],
+    ['--cudly-surface-subtle', '#f0f2f5'],
+    ['--cudly-brand-aws', '#ff9900'],
+    ['--cudly-brand-aws-fg', '#232f3e'],
+    ['--cudly-brand-azure', '#0078d4'],
+    ['--cudly-brand-gcp', '#1a73e8'],
+    ['--cudly-success-accent', '#4caf50'],
+    ['--cudly-border-cool', '#dee2e6'],
+    ['--cudly-shadow-ink-18', 'rgba(0, 0, 0, 0.18)'],
+    ['--cudly-shadow-ink-08', 'rgba(0, 0, 0, 0.08)'],
+    ['--cudly-shadow-ink-15', 'rgba(0,0,0,0.15)'],
+    ['--cudly-shadow-ink-13', 'rgba(0,0,0,0.13)'],
+    ['--cudly-shadow-ink-20', 'rgba(0,0,0,0.2)'],
+    ['--cudly-shadow-ink-10', 'rgba(0,0,0,0.1)'],
+    ['--cudly-on-primary-18', 'rgba(255,255,255,0.18)'],
+    ['--cudly-on-primary-95', 'rgba(255,255,255,0.95)'],
+    ['--cudly-on-primary-15', 'rgba(255,255,255,0.15)'],
+    ['--cudly-on-primary-50', 'rgba(255,255,255,0.5)'],
+    ['--cudly-on-primary-10', 'rgba(255,255,255,0.1)'],
+  ];
+
+  it.each(MIGRATED_LITERALS)('%s keeps the old literal %s', (token, literal) => {
+    expect(baseRootTokens().get(token)).toBe(literal);
   });
 });

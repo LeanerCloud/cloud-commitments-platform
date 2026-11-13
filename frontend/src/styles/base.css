@@ -104,6 +104,58 @@
     --cudly-chart-grid: rgba(0, 0, 0, 0.1);
     --cudly-chart-grid-faint: rgba(0, 0, 0, 0.05);
 
+    /* Exact-value tokens for colors that used to be literals in the
+     * stylesheets (issue #699). Values equal the old literals so light mode
+     * is unchanged; consolidation into the palette above is a later pass. */
+    /* Text shades */
+    --cudly-text-strong: #222;
+    --cudly-text-dark: #333;
+    --cudly-text-body: #444;
+
+    /* Surfaces */
+    --cudly-surface-faint: #fafafa;
+    --cudly-surface-cool: #f8f9fb;
+    --cudly-surface-subtle: #f0f2f5;
+    --cudly-surface-tint: #f3f6fb;
+    --cudly-surface-tint-hover: #eaf0fb;
+    --cudly-surface-tint-faint: #fafbfe;
+    --cudly-surface-tint-strong: #f0f4fc;
+
+    /* Borders and accents */
+    --cudly-border-cool: #dee2e6;
+    --cudly-neutral-hover-bg: #e8e8e8;
+    --cudly-neutral-hover-border: #bbb;
+    --cudly-accent-border: #4a90e2;
+    --cudly-accent-border-soft: #a9c7f5;
+    --cudly-accent-fg: #1a56c4;
+
+    /* Status shades */
+    --cudly-success-strong: #166534;
+    --cudly-success-accent: #4caf50;
+    --cudly-warn-strong: #f9a825;
+    --cudly-error-strong: #d32f2f;
+
+    /* Provider brand marks (same in every scheme) */
+    --cudly-brand-aws: #ff9900;
+    --cudly-brand-aws-fg: #232f3e;
+    --cudly-brand-azure: #0078d4;
+    --cudly-brand-gcp: #1a73e8;
+
+    /* Shadow inks */
+    --cudly-shadow-ink-08: rgba(0, 0, 0, 0.08);
+    --cudly-shadow-ink-10: rgba(0,0,0,0.1);
+    --cudly-shadow-ink-13: rgba(0,0,0,0.13);
+    --cudly-shadow-ink-15: rgba(0,0,0,0.15);
+    --cudly-shadow-ink-18: rgba(0, 0, 0, 0.18);
+    --cudly-shadow-ink-20: rgba(0,0,0,0.2);
+
+    /* White alphas on the primary bar */
+    --cudly-on-primary-10: rgba(255,255,255,0.1);
+    --cudly-on-primary-15: rgba(255,255,255,0.15);
+    --cudly-on-primary-18: rgba(255,255,255,0.18);
+    --cudly-on-primary-50: rgba(255,255,255,0.5);
+    --cudly-on-primary-95: rgba(255,255,255,0.95);
+
     /* Motion (issue #725): one easing curve and three durations so every
      * transition moves alike. Name the transitioned properties; never use
      * `transition: all`, which also animates layout and color changes that

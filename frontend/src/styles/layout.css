@@ -217,7 +217,7 @@ header h1 {
 }
 
 #user-email:hover {
-    background: rgba(255,255,255,0.15);
+    background: var(--cudly-on-primary-15);
     opacity: 1;
 }
 
@@ -233,7 +233,7 @@ header h1 {
 #logout-btn {
     padding: var(--cudly-sp-2) var(--cudly-sp-3);
     border-radius: var(--cudly-r-sm);
-    border: 1px solid rgba(255,255,255,0.5);
+    border: 1px solid var(--cudly-on-primary-50);
     background: transparent;
     color: var(--cudly-primary-fg);
     cursor: pointer;
@@ -242,7 +242,7 @@ header h1 {
 }
 
 #logout-btn:hover {
-    background: rgba(255,255,255,0.1);
+    background: var(--cudly-on-primary-10);
     border-color: white;
 }
 
@@ -256,7 +256,7 @@ header h1 {
 }
 
 .header-link:hover {
-    background: rgba(255,255,255,0.1);
+    background: var(--cudly-on-primary-10);
 }
 
 main {

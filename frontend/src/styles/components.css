@@ -158,8 +158,8 @@ button.success {
 }
 
 button.success:hover {
-    background: #166534;
-    border-color: #166534;
+    background: var(--cudly-success-strong);
+    border-color: var(--cudly-success-strong);
 }
 
 button.danger {
@@ -183,8 +183,8 @@ button.secondary {
 
 .btn-secondary:hover,
 button.secondary:hover {
-    background: #e8e8e8;
-    border-color: #bbb;
+    background: var(--cudly-neutral-hover-bg);
+    border-color: var(--cudly-neutral-hover-border);
 }
 
 /* Base btn class: same quiet outlined look as the bare button, so it can
@@ -217,8 +217,8 @@ button.secondary:hover {
 }
 
 .btn-small:hover {
-    background: #e8e8e8;
-    border-color: #bbb;
+    background: var(--cudly-neutral-hover-bg);
+    border-color: var(--cudly-neutral-hover-border);
 }
 
 .btn-small.primary {
@@ -239,8 +239,8 @@ button.secondary:hover {
 }
 
 .btn-small.success:hover {
-    background: #166534;
-    border-color: #166534;
+    background: var(--cudly-success-strong);
+    border-color: var(--cudly-success-strong);
 }
 
 .btn-small.warning {
@@ -250,8 +250,8 @@ button.secondary:hover {
 }
 
 .btn-small.warning:hover {
-    background: #f9a825;
-    border-color: #f9a825;
+    background: var(--cudly-warn-strong);
+    border-color: var(--cudly-warn-strong);
 }
 
 .btn-small.danger {
@@ -387,9 +387,9 @@ button.secondary:hover {
     background: white;
     border-radius: 6px;
     border-left: 4px solid var(--cudly-text-muted);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    box-shadow: 0 6px 18px var(--cudly-shadow-ink-18);
     font-size: 0.9rem;
-    color: #222;
+    color: var(--cudly-text-strong);
     animation: toast-enter 0.18s ease-out;
     transition: opacity var(--cudly-dur-fast) var(--cudly-ease), transform var(--cudly-dur-fast) var(--cudly-ease);
 }
@@ -440,7 +440,7 @@ button.secondary:hover {
 }
 
 .toast-close:hover {
-    color: #222;
+    color: var(--cudly-text-strong);
 }
 
 @keyframes toast-enter {
@@ -500,7 +500,7 @@ button.secondary:hover {
 }
 
 .settings-savebar.dirty {
-    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 -4px 12px var(--cudly-shadow-ink-08);
     border-top-color: var(--cudly-border);
 }
 
@@ -573,7 +573,7 @@ button.secondary:hover {
 
 .accounts-overview-chip:hover {
     background: var(--cudly-bg);
-    border-color: #4a90e2;
+    border-color: var(--cudly-accent-border);
 }
 
 .accounts-overview-chip-count {
@@ -615,8 +615,8 @@ button.secondary:hover {
 
 .status-chip.active {
     background: var(--cudly-info-bg);
-    border-color: #4a90e2;
-    color: #1a56c4;
+    border-color: var(--cudly-accent-border);
+    color: var(--cudly-accent-fg);
     font-weight: var(--cudly-fw-semibold);
 }
 
@@ -642,7 +642,7 @@ button.secondary:hover {
     font-size: 0.85rem;
     color: var(--cudly-text-muted);
     font-weight: var(--cudly-fw-medium);
-    background: #fafafa;
+    background: var(--cudly-surface-faint);
 }
 
 .account-actions {
@@ -741,7 +741,7 @@ th .column-filter-btn.active {
     background: var(--cudly-surface);
     border: 1px solid var(--cudly-border-strong);
     border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 12px var(--cudly-shadow-ink-15);
     padding: 0.75rem;
     min-width: 220px;
     max-width: 320px;
@@ -787,7 +787,7 @@ th .column-filter-btn.active {
     font-size: 0.9rem;
 }
 .column-filter-popover .column-filter-error {
-    color: #d32f2f;
+    color: var(--cudly-error-strong);
     font-size: 0.8em;
     min-height: 1em;
     margin-top: 0.25rem;
@@ -838,7 +838,7 @@ th .column-filter-btn.active {
 }
 .recommendations-filter-status .clear-filters {
     background: var(--cudly-info-bg);
-    border: 1px solid #a9c7f5;
+    border: 1px solid var(--cudly-accent-border-soft);
     border-radius: 3px;
     color: var(--cudly-primary);
     padding: 0.25rem 0.6rem;
@@ -915,7 +915,7 @@ tr.recommendation-row {
 }
 
 tr.recommendation-row:hover {
-    background: #f8f9fb;
+    background: var(--cudly-surface-cool);
 }
 
 /* issues #225 + #226: cell-grouping UX */
@@ -951,7 +951,7 @@ tr.recommendation-row:hover {
 }
 .recommendations-filter-status .column-visibility-btn[aria-pressed="true"] {
     background: var(--cudly-info-bg);
-    border-color: #a9c7f5;
+    border-color: var(--cudly-accent-border-soft);
     color: var(--cudly-primary);
 }
 
@@ -969,7 +969,7 @@ tr.recommendation-row:hover {
     background: var(--cudly-surface);
     border: 1px solid var(--cudly-border-strong);
     border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.13);
+    box-shadow: 0 4px 16px var(--cudly-shadow-ink-13);
     padding: 0.6rem 0.75rem;
     min-width: 180px;
     max-height: calc(100vh - 2rem);
@@ -979,7 +979,7 @@ tr.recommendation-row:hover {
     margin: 0 0 0.4rem;
     font-size: 0.8em;
     font-weight: var(--cudly-fw-semibold);
-    color: #444;
+    color: var(--cudly-text-body);
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
@@ -1003,7 +1003,7 @@ tr.recommendation-row:hover {
     background: var(--cudly-info-bg);
     border-radius: 4px;
     font-size: 0.88em;
-    color: #444;
+    color: var(--cudly-text-body);
 }
 
 /* Informational notice banner used on pages where the current session can
@@ -1017,16 +1017,16 @@ tr.recommendation-row:hover {
     margin-bottom: 0.75rem;
     border-radius: 0 4px 4px 0;
     font-size: 0.9em;
-    color: #333;
+    color: var(--cudly-text-dark);
 }
 
 /* Cell summary row (collapsed state) */
 tr.rec-cell-summary-row {
-    background: #f3f6fb;
+    background: var(--cudly-surface-tint);
     cursor: default;
 }
 tr.rec-cell-summary-row:hover {
-    background: #eaf0fb;
+    background: var(--cudly-surface-tint-hover);
 }
 
 /* Summary row content: identity + range inline. The flex box is an inner
@@ -1080,14 +1080,14 @@ tr.rec-cell-summary-row:hover {
  * data cell is indented: padding every cell widened the table enough to
  * scroll sideways (issue #1684). */
 tr.rec-variant-row td:not(.checkbox-col) {
-    background: #fafbfe;
+    background: var(--cudly-surface-tint-faint);
     font-size: 0.88em;
 }
 tr.rec-variant-row > td.checkbox-col + td {
     padding-left: 2rem;
 }
 tr.rec-variant-row:hover td:not(.checkbox-col) {
-    background: #f0f4fc;
+    background: var(--cudly-surface-tint-strong);
 }
 
 /* Confirm-dialog modal. Rendered via confirmDialog.ts. */
@@ -1136,12 +1136,12 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 .modal-confirm-title {
     margin: 0 1.5rem 0.75rem 0;
     font-size: 1.1rem;
-    color: #222;
+    color: var(--cudly-text-strong);
 }
 
 .modal-confirm-body {
     margin-bottom: 1.25rem;
-    color: #444;
+    color: var(--cudly-text-body);
     line-height: 1.5;
     font-size: 0.95rem;
 }
@@ -1214,7 +1214,7 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 .approval-details-stat-value {
     font-size: var(--cudly-fs-md);
     font-weight: var(--cudly-fw-semibold);
-    color: #222;
+    color: var(--cudly-text-strong);
 }
 
 .approval-details-table-wrap {
@@ -1272,17 +1272,17 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 }
 
 .provider-badge.aws {
-    background: #ff9900;
-    color: #232f3e;
+    background: var(--cudly-brand-aws);
+    color: var(--cudly-brand-aws-fg);
 }
 
 .provider-badge.azure {
-    background: #0078d4;
+    background: var(--cudly-brand-azure);
     color: white;
 }
 
 .provider-badge.gcp {
-    background: #1a73e8;
+    background: var(--cudly-brand-gcp);
     color: white;
 }
 
@@ -1305,7 +1305,7 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     padding: 0.2rem 0.55rem;
     margin-right: 0.25rem;
     border-radius: 12px;
-    background: #f0f2f5;
+    background: var(--cudly-surface-subtle);
     color: var(--cudly-text);
     font-size: 0.78rem;
     font-family: var(--cudly-font-mono);
@@ -1434,7 +1434,7 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     width: 250px;
     line-height: 1.4;
     text-align: left;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 8px var(--cudly-shadow-ink-20);
     white-space: normal;
 }
 
@@ -1460,8 +1460,8 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
     padding: 0.15rem 0.5rem;
     margin-left: 0.4rem;
     border-radius: 999px;
-    background: rgba(255,255,255,0.18);
-    color: rgba(255,255,255,0.95);
+    background: var(--cudly-on-primary-18);
+    color: var(--cudly-on-primary-95);
     letter-spacing: 0.02em;
     text-transform: lowercase;
 }
@@ -1589,7 +1589,7 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 }
 
 .copy-btn.copied {
-    color: #4caf50;
+    color: var(--cudly-success-accent);
 }
 
 /* Input + inline copy button (e.g. auto-generated AWS External ID). The
