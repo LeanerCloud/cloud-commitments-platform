@@ -61,10 +61,10 @@ func TestApplyPlanScheduleCommandReplayWritesNothing(t *testing.T) {
 	replay, err := store.ApplyPlanScheduleCommand(ctx, cmd)
 	require.NoError(t, err)
 	require.True(t, replay.Replayed)
-	require.Equal(t, first.UpdatedAt, replay.UpdatedAt)
+	require.True(t, first.UpdatedAt.Equal(replay.UpdatedAt))
 	got, err := store.GetPurchasePlan(ctx, plan.ID)
 	require.NoError(t, err)
-	require.Equal(t, first.UpdatedAt, got.UpdatedAt, "a replay must not write the plan again")
+	require.True(t, first.UpdatedAt.Equal(got.UpdatedAt), "a replay must not write the plan again")
 	require.Equal(t, 1, receiptCount(ctx, t, store))
 
 	other := cmd
