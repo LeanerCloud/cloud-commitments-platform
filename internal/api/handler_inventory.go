@@ -161,6 +161,7 @@ func buildInventoryCommitment(p config.PurchaseHistoryRecord, accountName string
 		MonthlyCost:      p.MonthlyCost,
 		EstimatedSavings: p.EstimatedSavings,
 		Status:           "active",
+		AmountBasis:      p.AmountBasis,
 	}
 }
 
@@ -207,20 +208,7 @@ func (h *Handler) getCoverageBreakdown(ctx context.Context, req *events.LambdaFu
 	// (MonthlyCost nil, UpfrontCost > 0 — typical for Azure RIs) still
 	// registers as covered instead of being silently dropped (issue: Azure
 	// showed $0 coverage while the dashboard reported active commitments).
-	coveredByKey := make(map[string]*float64)
-	for i := range purchases {
-		p := purchases[i]
-		if !isActiveCommitment(p, now) {
-			continue
-		}
-		key := p.Provider + ":" + p.Service
-		cost := commitmentCoveredMonthly(p)
-		total, exists := coveredByKey[key]
-		if !exists {
-			total = new(float64)
-		}
-		coveredByKey[key] = sumKnownCosts(total, cost)
-	}
+	coveredByKey := coveredMonthlyByKey(purchases, now)
 
 	// --- on-demand gap: recommendations -------------------------------------
 	recs, err := h.fetchCoverageOnDemandRecs(ctx, session, params)
@@ -230,6 +218,31 @@ func (h *Handler) getCoverageBreakdown(ctx context.Context, req *events.LambdaFu
 	onDemandByKey := aggregateOnDemandByKey(recs, provider)
 
 	return buildCoverageBreakdown(coveredByKey, onDemandByKey), nil
+}
+
+// coveredMonthlyByKey sums the covered monthly spend of the active commitments
+// per "provider:service". A legacy-estimate row (issue #669) adds no dollars,
+// but the service keeps its key at zero covered: usage comes from cost data,
+// so "no usage detected" would be wrong for it.
+func coveredMonthlyByKey(purchases []config.PurchaseHistoryRecord, now time.Time) map[string]*float64 {
+	coveredByKey := make(map[string]*float64)
+	for i := range purchases {
+		p := purchases[i]
+		if !isActiveCommitment(p, now) {
+			continue
+		}
+		key := p.Provider + ":" + p.Service
+		total, exists := coveredByKey[key]
+		if !exists {
+			total = new(float64)
+			coveredByKey[key] = total
+		}
+		if p.IsLegacyEstimate() {
+			continue
+		}
+		coveredByKey[key] = sumKnownCosts(total, commitmentCoveredMonthly(p))
+	}
+	return coveredByKey
 }
 
 // fetchCoverageOnDemandRecs reads the recommendations behind the coverage

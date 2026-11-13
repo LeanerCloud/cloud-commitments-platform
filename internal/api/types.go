@@ -645,6 +645,10 @@ type DashboardSummaryResponse struct {
 	// CommittedMonthly is the estimated monthly savings of the active
 	// commitments (the sum of their EstimatedSavings), not their cost (#1709).
 	CommittedMonthly float64 `json:"committed_monthly"`
+	// ExcludedLegacyEstimateCount is how many of ActiveCommitments are Azure
+	// rows with legacy-estimate amounts (issue #669). Their dollars are not in
+	// CommittedMonthly, YTDSavings or the per-service current savings.
+	ExcludedLegacyEstimateCount int `json:"excluded_legacy_estimate_count"`
 	// CurrentCoverage is null when there is neither committed nor potential
 	// savings to measure (0/0), instead of a fabricated 100% (issue #72).
 	CurrentCoverage *float64 `json:"current_coverage"`
@@ -691,6 +695,9 @@ type InventoryCommitment struct {
 	UpfrontCost      *float64 `json:"upfront_cost"`
 	EstimatedSavings float64  `json:"estimated_savings"`
 	Count            int      `json:"count"`
+	// AmountBasis is "legacy_window" when the dollar amounts are a legacy
+	// estimate (issue #669); omitted for normal rows.
+	AmountBasis config.PurchaseAmountBasis `json:"amount_basis,omitempty"`
 }
 
 // InventoryCommitmentsResponse is the envelope returned by

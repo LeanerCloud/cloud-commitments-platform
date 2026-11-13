@@ -1258,6 +1258,12 @@ func addHistoryRowToSummary(summary *HistorySummary, p *config.PurchaseHistoryRe
 	if p.IsAuditGap {
 		return
 	}
+	// Legacy-estimate rows (issue #669) are completed purchases whose dollar
+	// amounts were estimated, so they add no dollars. The SQL aggregate
+	// FILTERs the same rows out of its sums.
+	if p.IsLegacyEstimate() {
+		return
+	}
 	summary.TotalUpfront = sumKnownCosts(summary.TotalUpfront, p.UpfrontCost)
 	summary.TotalMonthlySavings += p.EstimatedSavings
 }
