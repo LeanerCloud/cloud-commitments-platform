@@ -391,7 +391,7 @@ textarea {
 
 .text-muted {
     color: var(--cudly-text-muted);
-    font-size: 0.85rem;
+    font-size: var(--cudly-fs-sm);
 }
 
 .cursor-pointer {

@@ -165,7 +165,7 @@
 /* Modal description */
 .modal-description {
     color: var(--cudly-text-muted);
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
     margin-bottom: 1rem;
 }
 
@@ -180,7 +180,7 @@
     border: 1px solid var(--cudly-border-strong);
     border-radius: 4px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.85rem;
+    font-size: var(--cudly-fs-sm);
     line-height: 1.4;
     color: var(--cudly-text);
     white-space: pre-wrap;
@@ -205,7 +205,7 @@
     background: var(--cudly-surface-muted);
     padding: 1rem;
     border-radius: 4px;
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
     margin-bottom: 1.5rem;
 }
 
@@ -222,7 +222,7 @@
 /* Modal step headers */
 .modal-content h4 {
     color: var(--cudly-text);
-    font-size: 0.95rem;
+    font-size: var(--cudly-fs-md);
     margin: 0 0 0.75rem 0;
 }
 
@@ -238,12 +238,12 @@
 .prereq-section h4 {
     margin: 0 0 0.5rem 0;
     color: var(--cudly-primary);
-    font-size: 0.95rem;
+    font-size: var(--cudly-fs-md);
 }
 
 .prereq-description {
     color: var(--cudly-text-muted);
-    font-size: 0.85rem;
+    font-size: var(--cudly-fs-sm);
     margin-bottom: 0.75rem;
 }
 
@@ -252,13 +252,13 @@
 }
 
 .prereq-section .cli-command code {
-    font-size: 0.8rem;
+    font-size: var(--cudly-fs-xs);
     word-break: break-all;
 }
 
 .prereq-hint {
     color: var(--cudly-text-muted);
-    font-size: 0.8rem;
+    font-size: var(--cudly-fs-xs);
     font-style: italic;
     margin-top: 0.75rem;
     margin-bottom: 0;
@@ -293,7 +293,7 @@
 
 .purchase-modal-totals td {
     border-top: 2px solid var(--cudly-info-border-alt);
-    font-size: 0.85rem;
+    font-size: var(--cudly-fs-sm);
 }
 
 /* Issue #1654: the Upfront / Monthly / Total band lives inside the table's
@@ -307,7 +307,7 @@
 /* "Include" label next to the select-all checkbox. */
 .purchase-modal-include-label {
     display: block;
-    font-size: 0.8rem;
+    font-size: var(--cudly-fs-xs);
     color: var(--cudly-text-muted);
     margin-top: 2px;
 }
@@ -383,7 +383,7 @@
 }
 
 .archera-page-inner h2 {
-    font-size: 1.1rem;
+    font-size: var(--cudly-fs-lg);
     color: var(--cudly-text-body);
     margin: 1.5rem 0 0.5rem;
 }
@@ -425,7 +425,7 @@
     border: none;
     padding: 0;
     color: var(--cudly-text-mid);
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
     cursor: pointer;
     font-family: inherit;
     text-decoration: underline;
@@ -467,7 +467,7 @@
 
 .archera-signup-note {
     margin-top: 0.75rem;
-    font-size: 0.8rem;
+    font-size: var(--cudly-fs-xs);
     color: var(--cudly-text-muted); /* #888 was 3.3:1 on the offer card (issue #191) */
 }
 
@@ -512,14 +512,14 @@
 
 .archera-offer-title {
     margin: 0 0 0.6rem;
-    font-size: 1.15rem;
+    font-size: var(--cudly-fs-lg);
     color: var(--cudly-text-strong);
     line-height: 1.35;
 }
 
 .archera-offer-lead {
     margin: 0 0 0.75rem;
-    font-size: 0.92rem;
+    font-size: var(--cudly-fs-sm);
     line-height: 1.5;
     color: var(--cudly-text-body);
 }
@@ -551,7 +551,7 @@
     border: 1px solid var(--cudly-border-soft);
     border-radius: 4px;
     padding: 0.55rem 1rem;
-    font-size: 0.92rem;
+    font-size: var(--cudly-fs-sm);
     cursor: pointer;
     font-family: inherit;
 }
@@ -568,7 +568,7 @@
     text-decoration: none;
     padding: 0.55rem 1.1rem;
     border-radius: 4px;
-    font-size: 0.92rem;
+    font-size: var(--cudly-fs-sm);
     font-weight: var(--cudly-fw-medium);
     transition: background var(--cudly-dur) var(--cudly-ease);
 }
@@ -587,13 +587,13 @@
    width and separated from the offer-modal chrome by a top border. */
 .archera-offer-learnmore {
     margin: 0 0 1rem;
-    font-size: 0.85rem;
+    font-size: var(--cudly-fs-sm);
 }
 
 .archera-offer-learnmore-summary {
     cursor: pointer;
     color: var(--cudly-link);
-    font-size: 0.85rem;
+    font-size: var(--cudly-fs-sm);
     padding: 0.25rem 0;
     list-style: none; /* hide default disclosure marker; we render our own ::after */
     user-select: none;
@@ -623,7 +623,7 @@
     margin-top: 0.5rem;
     padding: 0.5rem 0 0;
     color: var(--cudly-text-body);
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
 }
 
 /* Override .archera-page-inner padding inside the modal — the modal

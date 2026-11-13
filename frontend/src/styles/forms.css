@@ -42,7 +42,7 @@ label {
     align-items: center;
     gap: 0.5rem;
     color: var(--cudly-text-muted);
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
 }
 
 /* Filter chips (issue #340) — every filter-like select / date / text
@@ -169,7 +169,7 @@ label {
  * apart, and its margin-top had no effect. */
 .form-help {
     display: block;
-    font-size: 0.8rem;
+    font-size: var(--cudly-fs-xs);
     color: var(--cudly-text-muted);
     margin-top: 0.25rem;
 }
@@ -270,7 +270,7 @@ input:checked + .slider:before {
     align-items: center;
     gap: 0.5rem;
     color: var(--cudly-text-muted);
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
 }
 
 .date-range-picker input[type="date"],
@@ -278,7 +278,7 @@ input:checked + .slider:before {
     padding: 0.5rem;
     border: 1px solid var(--cudly-border-strong);
     border-radius: 4px;
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
 }
 
 /* Password input with toggle button */
@@ -295,7 +295,7 @@ input:checked + .slider:before {
     border: 1px solid var(--cudly-border-strong);
     border-radius: 4px;
     margin-top: 0.25rem;
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
 }
 
 .toggle-password {

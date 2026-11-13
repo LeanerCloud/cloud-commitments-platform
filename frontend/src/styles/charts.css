@@ -81,7 +81,7 @@
 }
 
 .stat-unit-context {
-    font-size: 0.85rem;
+    font-size: var(--cudly-fs-sm);
     color: var(--cudly-text-muted);
     margin-top: 0.25rem;
 }

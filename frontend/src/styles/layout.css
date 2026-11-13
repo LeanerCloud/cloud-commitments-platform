@@ -209,7 +209,7 @@ header h1 {
 }
 
 #user-email {
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
     opacity: 0.9;
     padding: 0.3rem 0.6rem;
     border-radius: 4px;
@@ -237,7 +237,7 @@ header h1 {
     background: transparent;
     color: var(--cudly-primary-fg);
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: var(--cudly-fs-sm);
     transition: background-color var(--cudly-dur) var(--cudly-ease), border-color var(--cudly-dur) var(--cudly-ease);
 }
 
@@ -297,7 +297,7 @@ footer {
 footer a {
     color: var(--cudly-primary);
     text-decoration: none;
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
 }
 
 footer a:hover {

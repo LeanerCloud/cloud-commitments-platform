@@ -119,7 +119,7 @@ tr.history-row-highlight:hover {
 
 #planned-purchases-header .help-text {
     color: var(--cudly-text-muted);
-    font-size: 0.9rem;
+    font-size: var(--cudly-fs-sm);
     margin-bottom: 1rem;
 }
 
@@ -180,7 +180,7 @@ tr.history-row-highlight:hover {
 }
 
 .planned-purchase-row .step-info {
-    font-size: 0.8rem;
+    font-size: var(--cudly-fs-xs);
     color: var(--cudly-text-muted);
 }
 
@@ -271,7 +271,7 @@ tr.history-row-highlight:hover {
 
 .planned-purchase-row .overdue-hint {
     margin-top: 0.25rem;
-    font-size: 0.8rem;
+    font-size: var(--cudly-fs-xs);
     color: var(--cudly-text-muted);
 }
 
@@ -620,7 +620,7 @@ th .history-column-filter-btn:focus-visible {
     max-width: 16rem;
     margin-top: 0.35rem;
     color: var(--cudly-text-muted);
-    font-size: 0.78rem;
+    font-size: var(--cudly-fs-xs);
     line-height: 1.25;
     overflow-wrap: anywhere;
 }
