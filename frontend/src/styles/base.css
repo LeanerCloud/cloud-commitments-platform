@@ -9,6 +9,8 @@
  * migrated section-by-section so the diff stays reviewable.
  * ------------------------------------------------------------------------- */
 :root {
+    color-scheme: light;
+
     /* Brand */
     --cudly-primary: #2563eb;       /* Blue accent used on top bar + primary CTAs */
     --cudly-primary-hover: #1d4ed8;
@@ -222,6 +224,109 @@
     --cudly-z-page-overlay: 1100;  /* Archera education page, opened from a modal */
     --cudly-z-confirm: 2000;       /* confirmDialog, may sit on any modal */
     --cudly-z-toast: 2100;         /* toasts stay above everything */
+}
+
+/* Dark palette (issue #699). Inert unless <html data-theme="dark"> is set.
+ * Only tokens whose value changes are listed; brand marks, shadow inks, white
+ * alphas, scrims and the mask stay as in :root (see theme-tokens.test.ts). */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Brand and surfaces */
+    --cudly-primary: #60a5fa;
+    --cudly-primary-hover: #93c5fd;
+    --cudly-primary-fg: #0f172a;
+    --cudly-bg: #0f172a;
+    --cudly-surface: #1e293b;
+    --cudly-surface-muted: #172033;
+    --cudly-border: #334155;
+    --cudly-border-strong: #475569;
+
+    /* Text */
+    --cudly-text: #e5e7eb;
+    --cudly-text-muted: #cbd5e1;
+    --cudly-text-subtle: #94a3b8;
+    --cudly-text-strong: #f1f5f9;
+    --cudly-text-dark: #e2e8f0;
+    --cudly-text-body: #cbd5e1;
+    --cudly-text-mid: #b6c0cf;
+    --cudly-text-faint: #94a3b8;
+
+    /* Status */
+    --cudly-success: #22c55e;
+    --cudly-success-bg: #14532d;
+    --cudly-success-fg: #bbf7d0;
+    --cudly-warn: #fbbf24;
+    --cudly-warn-bg: #422006;
+    --cudly-warn-fg: #fcd34d;
+    --cudly-error: #f87171;
+    --cudly-error-bg: #450a0a;
+    --cudly-error-fg: #fecaca;
+    --cudly-info: #60a5fa;
+    --cudly-info-bg: #172554;
+    --cudly-success-strong: #22c55e;
+    --cudly-success-accent: #4ade80;
+    --cudly-warn-strong: #fbbf24;
+    --cudly-error-strong: #f87171;
+    --cudly-success-deep: #4ade80;
+    --cudly-highlight: #fb923c;
+    --cudly-highlight-bg: #3a2e12;
+    --cudly-highlight-ring: rgba(251, 146, 60, 0.3);
+
+    /* Elevation */
+    --cudly-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --cudly-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --cudly-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+    /* Charts */
+    --cudly-chart-1: #8ab4f8;
+    --cudly-chart-2: #81c995;
+    --cudly-chart-3: #fdd663;
+    --cudly-chart-4: #f28b82;
+    --cudly-chart-5: #c58af9;
+    --cudly-chart-6: #78d9ec;
+    --cudly-chart-7: #ff8a65;
+    --cudly-chart-8: #90a4ae;
+    --cudly-chart-9: #bcaaa4;
+    --cudly-chart-10: #f48fb1;
+    --cudly-chart-cumulative: #669df6;
+    --cudly-chart-layer-current: #6ea8fe;
+    --cudly-chart-layer-lowest: #f08a5d;
+    --cudly-chart-layer-upside: #3ecf9a;
+    --cudly-chart-text: #cbd5e1;
+    --cudly-chart-grid: rgba(255, 255, 255, 0.12);
+    --cudly-chart-grid-faint: rgba(255, 255, 255, 0.06);
+
+    /* Surfaces, borders and accents from the exact-value tokens */
+    --cudly-surface-faint: #1a2436;
+    --cudly-surface-cool: #1b2639;
+    --cudly-surface-subtle: #243044;
+    --cudly-surface-tint: #1e2a40;
+    --cudly-surface-tint-hover: #273650;
+    --cudly-surface-tint-faint: #1b2538;
+    --cudly-surface-tint-strong: #243350;
+    --cudly-surface-info: #1e2f4f;
+    --cudly-surface-info-alt: #1e2a4a;
+    --cudly-surface-hover: #2a3647;
+    --cudly-surface-header: #243044;
+    --cudly-border-cool: #334155;
+    --cudly-border-soft: #3f4c61;
+    --cudly-border-light: #334155;
+    --cudly-neutral-hover-bg: #334155;
+    --cudly-neutral-hover-border: #475569;
+    --cudly-accent-border: #60a5fa;
+    --cudly-accent-border-soft: #3b5b8f;
+    --cudly-accent-fg: #93c5fd;
+    --cudly-info-border: #2f5a99;
+    --cudly-info-border-alt: #35508a;
+    --cudly-info-border-pale: #2d4a78;
+    --cudly-info-border-faint: #2a3f63;
+    --cudly-warn-border: #7a5c12;
+    --cudly-link: #60a5fa;
+    --cudly-link-hover: #93c5fd;
+    --cudly-flash-bg: #4a3f10;
+    --cudly-flash-bg-hover: #5a4d14;
+    --cudly-flash-start: #6b5a12;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
