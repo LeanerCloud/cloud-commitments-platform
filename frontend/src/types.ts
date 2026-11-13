@@ -159,11 +159,13 @@ export interface LocalPlan {
 
 export interface SavePlanData {
   name: string;
-  provider: string;
-  service: string;
-  term: number;
-  payment: string;
-  target_coverage: number;
+  // The flat service fields are omitted when the plan is built from a selection
+  // (groups) and when a bound plan is edited: the backend refuses them there (#1746).
+  provider?: string;
+  service?: string;
+  term?: number;
+  payment?: string;
+  target_coverage?: number;
   ramp_schedule: string;
   auto_purchase: boolean;
   max_step_commitment?: number | null;
@@ -171,7 +173,7 @@ export interface SavePlanData {
   enabled: boolean;
   custom_step_percent?: number;
   custom_interval_days?: number;
-  recommendations?: api.Recommendation[];
+  groups?: api.PlanGroupRequest[];
   // UUIDs of cloud accounts the plan will purchase for. The server now
   // requires at least one (universal-plans fix). The modal renders selected
   // accounts as chips; savePlan reads them out of the hidden #plan-account-

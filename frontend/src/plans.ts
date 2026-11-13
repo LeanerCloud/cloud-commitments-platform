@@ -30,6 +30,7 @@ import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { badgeHtml, statusBadgeHtml } from './lib/status-badge';
 import { isPastScheduledDate } from './lib/purchase-row-guards';
 import { serviceLabel } from './lib/service-labels';
+import { groupSelection } from './lib/plan-groups';
 import { mountPlanEditorPanel } from './plan-editor-panel';
 import { renderPlanFiltersNotice } from './plan-filters-notice';
 import { applyPlanForm, clearPlanDraft, loadPlanDraft, readPlanForm, savePlanDraft } from './lib/plan-form-draft';
@@ -44,6 +45,26 @@ import { applyPlanForm, clearPlanDraft, loadPlanDraft, readPlanForm, savePlanDra
 // (the New-Plan-from-scratch path has no pre-resolved target). See #273
 // CR follow-up.
 let pendingPlanRecommendations: api.Recommendation[] = [];
+
+// editingBoundPlan is true while the modal edits a plan bound to selected
+// recommendations (#1746). Its service fields are read-only and never sent.
+let editingBoundPlan = false;
+
+// setPlanFieldsLocked makes the modal's service fields read-only. A plan built
+// from a selection locks provider, service, term and payment (the selection
+// defines them); editing a bound plan also locks coverage.
+function setPlanFieldsLocked(service: boolean, coverage: boolean): void {
+  for (const id of ['plan-provider', 'plan-service', 'plan-term', 'plan-payment']) {
+    const el = document.getElementById(id) as HTMLSelectElement | null;
+    if (!el) continue;
+    el.disabled = service;
+    if (service) el.title = 'Set by the selected recommendations'; else el.removeAttribute('title');
+  }
+  const coverageInput = document.getElementById('plan-coverage') as HTMLInputElement | null;
+  if (!coverageInput) return;
+  coverageInput.readOnly = coverage;
+  if (coverage) coverageInput.title = 'Set by the selected recommendations'; else coverageInput.removeAttribute('title');
+}
 
 // Install-once guard for setupRampScheduleHandlers. The elements it binds are
 // static modal singletons that are never replaced, so adding listeners on
@@ -706,6 +727,8 @@ interface BackendPlan {
     step_interval_days: number;
     current_step: number;
     total_steps: number;
+    // "bound_groups" marks a plan bound to selected recommendations (#1746).
+    allocation_mode?: string;
   };
   next_execution_date?: string;
   // unassigned is true for legacy plans that have zero plan_accounts rows
@@ -1125,6 +1148,9 @@ async function editPlan(planId: string): Promise<boolean> {
 
     const titleEl = document.getElementById('plan-modal-title');
     if (titleEl) titleEl.textContent = 'Edit Purchase Plan';
+    pendingPlanRecommendations = [];
+    editingBoundPlan = backendPlan.ramp_schedule?.allocation_mode === 'bound_groups';
+    setPlanFieldsLocked(editingBoundPlan, editingBoundPlan);
 
     // Edit can be the first modal opened. Install the handlers before any field is filled: the first install rebuilds term/payment (#1536).
     setupRampScheduleHandlers();
@@ -1141,7 +1167,7 @@ async function editPlan(planId: string): Promise<boolean> {
     const planService = LEGACY_PLAN_SERVICE_IDS[`${info.provider}/${info.service}`] ?? info.service;
     const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement;
     serviceSelect.value = planService;
-    if (serviceSelect.selectedIndex === -1 || serviceSelect.value === '') {
+    if (!editingBoundPlan && (serviceSelect.selectedIndex === -1 || serviceSelect.value === '')) {
       serviceSelect.selectedIndex = -1;
       showToast({
         message: `This plan uses a service that is no longer supported (${info.provider ?? 'unknown provider'}/${info.service}). Recreate the plan, or choose a supported service before saving.`,
@@ -1250,8 +1276,14 @@ export async function savePlan(e: Event): Promise<void> {
   const rampScheduleRadio = document.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked');
   const rampSchedule = rampScheduleRadio?.value || 'immediate';
 
+  // A bound plan's service fields are read-only and the backend refuses them on
+  // edit (#1746), so they are neither validated nor sent.
+  const bound = planId !== '' && editingBoundPlan;
+  // The selection defines a from-selection plan's service, term and payment,
+  // so only a plan with flat service fields validates the (editable) selects.
+  const flatFields = !bound && pendingPlanRecommendations.length === 0;
   const service = (document.getElementById('plan-service') as HTMLSelectElement).value;
-  if (!service) {
+  if (flatFields && !service) {
     showToast({ message: 'Service is required: choose a supported service before saving the plan', kind: 'error' });
     return;
   }
@@ -1266,11 +1298,11 @@ export async function savePlan(e: Event): Promise<void> {
   const rawCoverage = coverageText === '' ? NaN : Number(coverageText);
   const rawNotifyDays = Number((document.getElementById('plan-notify-days') as HTMLInputElement).value);
 
-  if (!Number.isFinite(rawTerm) || !Number.isInteger(rawTerm) || rawTerm < 1) {
+  if (flatFields && (!Number.isFinite(rawTerm) || !Number.isInteger(rawTerm) || rawTerm < 1)) {
     showToast({ message: 'Term must be a valid whole number of years', kind: 'error' });
     return;
   }
-  if (!Number.isFinite(rawCoverage) || !Number.isInteger(rawCoverage) || rawCoverage < 0 || rawCoverage > 100) {
+  if (!bound && (!Number.isFinite(rawCoverage) || !Number.isInteger(rawCoverage) || rawCoverage < 0 || rawCoverage > 100)) {
     showToast({ message: 'Target Coverage must be a whole number between 0 and 100', kind: 'error' });
     return;
   }
@@ -1295,11 +1327,6 @@ export async function savePlan(e: Event): Promise<void> {
 
   const plan: SavePlanData = {
     name: (document.getElementById('plan-name') as HTMLInputElement).value,
-    provider: (document.getElementById('plan-provider') as HTMLSelectElement).value,
-    service,
-    term: rawTerm,
-    payment: (document.getElementById('plan-payment') as HTMLSelectElement).value,
-    target_coverage: rawCoverage,
     ramp_schedule: rampSchedule,
     auto_purchase: autoPurchase,
     max_step_commitment: maxStepCommitment,
@@ -1330,8 +1357,14 @@ export async function savePlan(e: Event): Promise<void> {
   // user clicked "Plan from N selected"; we read it back here.
   // openNewPlanModal() clears the snapshot for the New-Plan-from-scratch
   // path (no pre-resolved target — plan submits without `recommendations`).
-  if (pendingPlanRecommendations.length > 0) {
-    plan.recommendations = [...pendingPlanRecommendations];
+  if (!bound && !flatFields) {
+    plan.groups = groupSelection(pendingPlanRecommendations, rawCoverage);
+  } else if (flatFields) {
+    plan.provider = (document.getElementById('plan-provider') as HTMLSelectElement).value;
+    plan.service = service;
+    plan.term = rawTerm;
+    plan.payment = (document.getElementById('plan-payment') as HTMLSelectElement).value;
+    plan.target_coverage = rawCoverage;
   }
 
   // Universal-plans fix: read the selected account chips and reject submit
@@ -1419,6 +1452,8 @@ export function closePlanModal(): void {
   // ties the plan to a specific button-click moment; once the modal
   // closes — by Save, Cancel, or any other path — that moment is over.
   pendingPlanRecommendations = [];
+  editingBoundPlan = false;
+  setPlanFieldsLocked(false, false);
 }
 
 // Settles when the account chips of the most recently opened plan modal are loaded.
@@ -1765,6 +1800,8 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   if (pendingPlanRecommendations.length >= 1) {
     prefillPurchaseConfigFromCommitment(pendingPlanRecommendations[0]!);
   }
+  editingBoundPlan = false;
+  setPlanFieldsLocked(hasSelection, false);
 
   // Set up ramp schedule change handlers for dynamic plan name
   setupRampScheduleHandlers();
@@ -1815,6 +1852,8 @@ export function openNewPlanModal(): void {
   // subsequent savePlan doesn't accidentally inherit a previous flow's
   // recs. See #273 CR.
   pendingPlanRecommendations = [];
+  editingBoundPlan = false;
+  setPlanFieldsLocked(false, false);
 
   const titleEl = document.getElementById('plan-modal-title');
   if (titleEl) titleEl.textContent = 'New Purchase Plan';

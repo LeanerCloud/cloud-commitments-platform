@@ -102,7 +102,7 @@ test('selection updates the sticky action summary and submits the selected purch
   });
 });
 
-test('submits a plan with the selected recommendation snapshot', async ({ page }) => {
+test('submits a plan bound to the selected recommendation ids', async ({ page }) => {
   const api = await mockApi(page);
   await openOpportunities(page);
   const selected = RECS.find((rec) => rec.id === 'r01') as SmokeRec;
@@ -120,20 +120,17 @@ test('submits a plan with the selected recommendation snapshot', async ({ page }
 
   await expect.poll(() => callsTo(api, '/api/plans').length).toBe(1);
   const body = callsTo(api, '/api/plans')[0] as {
-    provider: string;
-    service: string;
-    term: number;
-    payment: string;
+    groups: { provider: string; service: string; term: number; payment: string; recommendation_ids: string[] }[];
     target_accounts: string[];
-    recommendations: SmokeRec[];
   };
-  expect(body).toMatchObject({
+  expect(body.target_accounts).toEqual([selected.cloud_account_id]);
+  expect(body.groups).toEqual([expect.objectContaining({
     provider: selected.provider,
     service: selected.service,
     term: selected.term,
     payment: selected.payment,
-    target_accounts: [selected.cloud_account_id],
-  });
-  expect(body.recommendations).toEqual([selected]);
+    recommendation_ids: [selected.id],
+  })]);
+  expect(body).not.toHaveProperty('recommendations');
   await expect(modal).toBeHidden();
 });

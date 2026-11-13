@@ -1382,6 +1382,118 @@ describe('Plans Module', () => {
       expect((document.getElementById('plan-coverage') as HTMLInputElement).value).toBe('55');
     });
 
+    test('editing a bound plan sends plan-level fields only (#1746)', async () => {
+      (api.getPlan as jest.Mock).mockResolvedValue({
+        id: 'plan-bound', name: 'Bound', enabled: true, auto_purchase: false, notification_days_before: 3,
+        services: { 'aws/ec2#g1': { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 70, group_id: 'g1', bound_count: 2 } },
+        ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1, allocation_mode: 'bound_groups' },
+      });
+      (api.updatePlan as jest.Mock).mockResolvedValue({});
+      (api.setPlanAccounts as jest.Mock).mockResolvedValue(undefined);
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      (document.querySelector('[data-action="edit"]') as HTMLButtonElement)?.click();
+      await flushPromises();
+      (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+      (document.getElementById('plan-name') as HTMLInputElement).value = 'Renamed';
+
+      expect((document.getElementById('plan-service') as HTMLSelectElement).disabled).toBe(true);
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+
+      const sent = (api.updatePlan as jest.Mock).mock.calls[0][1];
+      expect(sent.name).toBe('Renamed');
+      for (const field of ['provider', 'service', 'term', 'payment', 'target_coverage', 'groups']) {
+        expect(sent).not.toHaveProperty(field);
+      }
+    });
+
+    describe('plan field locks (#1746)', () => {
+      const locked = () => ['plan-provider', 'plan-service', 'plan-term', 'plan-payment']
+        .map((id) => (document.getElementById(id) as HTMLSelectElement).disabled);
+      const boundPlan = {
+        id: 'plan-bound', name: 'Bound', enabled: true, auto_purchase: false, notification_days_before: 3,
+        services: {
+          'aws/ec2#g1': { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 70 },
+          'aws/rds#g2': { provider: 'aws', service: 'rds', enabled: true, term: 3, payment: 'all-upfront', coverage: 70 },
+        },
+        ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1, allocation_mode: 'bound_groups' },
+      };
+      const openBoundEdit = async () => {
+        (api.getPlan as jest.Mock).mockResolvedValue(boundPlan);
+        (document.querySelector('[data-action="edit"]') as HTMLButtonElement)?.click();
+        await flushPromises();
+      };
+      const snapshot = [{ id: 'rec-1', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' }] as unknown as readonly api.Recommendation[];
+
+      test('a multi-service bound plan saves with blank locked selects and no unsupported-service toast', async () => {
+        (api.updatePlan as jest.Mock).mockResolvedValue({});
+        (api.setPlanAccounts as jest.Mock).mockResolvedValue(undefined);
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        await openBoundEdit();
+        (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+        (document.getElementById('plan-term') as HTMLSelectElement).value = '';
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '';
+        expect(mockShowToast).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+        expect((document.getElementById('plan-coverage') as HTMLInputElement).readOnly).toBe(true);
+        expect((document.getElementById('plan-service') as HTMLSelectElement).title).toBe('Set by the selected recommendations');
+        await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+        expect(api.updatePlan).toHaveBeenCalledTimes(1);
+      });
+
+      test('locks never leak into the next modal', async () => {
+        await openBoundEdit();
+        expect(locked()).toEqual([true, true, true, true]);
+        closePlanModal();
+        expect(locked()).toEqual([false, false, false, false]);
+        expect((document.getElementById('plan-coverage') as HTMLInputElement).readOnly).toBe(false);
+        expect((document.getElementById('plan-service') as HTMLSelectElement).title).toBe('');
+
+        await openBoundEdit();
+        openNewPlanModal();
+        expect(locked()).toEqual([false, false, false, false]);
+        expect((document.getElementById('plan-coverage') as HTMLInputElement).readOnly).toBe(false);
+
+        await openBoundEdit();
+        openCreatePlanModal(snapshot);
+        expect(locked()).toEqual([true, true, true, true]);
+        expect((document.getElementById('plan-coverage') as HTMLInputElement).readOnly).toBe(false);
+        closePlanModal();
+        expect(locked()).toEqual([false, false, false, false]);
+      });
+
+      test('a selection save does not depend on the locked selects', async () => {
+        openCreatePlanModal(snapshot);
+        (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+        (document.getElementById('plan-service') as HTMLSelectElement).value = '';
+        (document.getElementById('plan-term') as HTMLSelectElement).value = '';
+        (api.createPlan as jest.Mock).mockResolvedValue({});
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+        expect((api.createPlan as jest.Mock).mock.calls[0][0].groups).toEqual([expect.objectContaining({ service: 'ec2', term: 3 })]);
+      });
+
+      test('editing an unbound plan drops a selection left open by the create flow', async () => {
+        openCreatePlanModal(snapshot);
+        (api.getPlan as jest.Mock).mockResolvedValue({
+          ...boundPlan, services: { ec2: { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 70 } },
+          ramp_schedule: { ...boundPlan.ramp_schedule, allocation_mode: undefined },
+        });
+        (document.querySelector('[data-action="edit"]') as HTMLButtonElement)?.click();
+        await flushPromises();
+        (api.updatePlan as jest.Mock).mockResolvedValue({});
+        (api.setPlanAccounts as jest.Mock).mockResolvedValue(undefined);
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+        await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+        const sent = (api.updatePlan as jest.Mock).mock.calls[0][1];
+        expect(sent).not.toHaveProperty('groups');
+        expect(sent).toHaveProperty('provider');
+      });
+    });
+
     describe('read-only plan filters (#1737)', () => {
       const plan = (services: Record<string, unknown>) => ({
         id: 'plan-1', name: 'Test Plan', enabled: true, auto_purchase: false, notification_days_before: 3,
@@ -1555,6 +1667,7 @@ describe('Plans Module', () => {
 
   describe('savePlan', () => {
     beforeEach(() => {
+      closePlanModal(); // drop a selection or bound-edit state a previous test left open
       // Set up form values
       (document.getElementById('plan-name') as HTMLInputElement).value = 'New Plan';
       (document.getElementById('plan-description') as HTMLTextAreaElement).value = 'Test description';
@@ -1715,8 +1828,8 @@ describe('Plans Module', () => {
       // longer change which recs are planned. The Purchase flow already
       // captures the target at click time; the Plan flow now mirrors it.
       const snapshot = [
-        { id: 'rec-1', service: 'ec2' },
-        { id: 'rec-2', service: 'rds' },
+        { id: 'rec-1', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' },
+        { id: 'rec-2', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' },
       ] as unknown as readonly api.Recommendation[];
       openCreatePlanModal(snapshot);
       stampAccountIds();
@@ -1728,8 +1841,13 @@ describe('Plans Module', () => {
       const event = { preventDefault: jest.fn() } as unknown as Event;
       await savePlan(event);
 
-      const sentRecs = (api.createPlan as jest.Mock).mock.calls[0][0].recommendations;
-      expect(sentRecs.map((r: { id: string }) => r.id).sort()).toEqual(['rec-1', 'rec-2']);
+      const sent = (api.createPlan as jest.Mock).mock.calls[0][0];
+      expect(sent.groups).toEqual([expect.objectContaining({
+        provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront', recommendation_ids: ['rec-1', 'rec-2'],
+      })]);
+      for (const field of ['recommendations', 'provider', 'service', 'term', 'payment', 'target_coverage']) {
+        expect(sent).not.toHaveProperty(field);
+      }
     });
 
     test('snapshot is immune to state mutations between modal-open and Save (#273 CR)', async () => {
@@ -1740,8 +1858,8 @@ describe('Plans Module', () => {
       // user's intent at click time, NOT the (potentially narrower /
       // wider / different) state at Save time.
       const snapshotAtClickTime = [
-        { id: 'rec-1', service: 'ec2' },
-        { id: 'rec-2', service: 'rds' },
+        { id: 'rec-1', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' },
+        { id: 'rec-2', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' },
       ] as unknown as readonly api.Recommendation[];
       openCreatePlanModal(snapshotAtClickTime);
       stampAccountIds();
@@ -1761,9 +1879,9 @@ describe('Plans Module', () => {
       const event = { preventDefault: jest.fn() } as unknown as Event;
       await savePlan(event);
 
-      const sentRecs = (api.createPlan as jest.Mock).mock.calls[0][0].recommendations;
+      const sentGroups = (api.createPlan as jest.Mock).mock.calls[0][0].groups;
       // Must be the snapshot, NOT the post-mutation state.
-      expect(sentRecs.map((r: { id: string }) => r.id).sort()).toEqual(['rec-1', 'rec-2']);
+      expect(sentGroups.flatMap((g: { recommendation_ids: string[] }) => g.recommendation_ids)).toEqual(['rec-1', 'rec-2']);
     });
 
     test('does NOT include any recs when no selection (#273 CR follow-up)', async () => {
@@ -1788,8 +1906,9 @@ describe('Plans Module', () => {
       const event = { preventDefault: jest.fn() } as unknown as Event;
       await savePlan(event);
 
-      const sentRecs = (api.createPlan as jest.Mock).mock.calls[0][0].recommendations;
-      expect(sentRecs == null || sentRecs.length === 0).toBe(true);
+      const sent = (api.createPlan as jest.Mock).mock.calls[0][0];
+      expect(sent.groups).toBeUndefined();
+      expect(sent.provider).toBeDefined();
     });
 
     test('empty snapshot from openCreatePlanModal also produces no recs', async () => {
@@ -1806,8 +1925,21 @@ describe('Plans Module', () => {
       const event = { preventDefault: jest.fn() } as unknown as Event;
       await savePlan(event);
 
-      const sentRecs = (api.createPlan as jest.Mock).mock.calls[0][0].recommendations;
-      expect(sentRecs == null || sentRecs.length === 0).toBe(true);
+      const sent = (api.createPlan as jest.Mock).mock.calls[0][0];
+      expect(sent.groups).toBeUndefined();
+      expect(sent.provider).toBeDefined();
+    });
+
+    test('editing an unbound plan still sends the service fields', async () => {
+      openNewPlanModal();
+      stampAccountIds();
+      (document.getElementById('plan-id') as HTMLInputElement).value = 'plan-flat';
+      (api.updatePlan as jest.Mock).mockResolvedValue({});
+      (api.setPlanAccounts as jest.Mock).mockResolvedValue(undefined);
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+      expect((api.updatePlan as jest.Mock).mock.calls[0][1]).toEqual(expect.objectContaining({ provider: expect.any(String), term: expect.any(Number) }));
     });
 
     test('closes modal after successful save', async () => {
@@ -2064,7 +2196,7 @@ describe('Plans Module', () => {
           .find((t) => t.actions !== undefined);
         expect(toast?.message).toContain('already exists');
         expect(toast?.actions?.map((a) => a.label)).toEqual(['Open existing plan']);
-        expect((api.createPlan as jest.Mock).mock.calls[0][0]).toHaveProperty('recommendations');
+        expect((api.createPlan as jest.Mock).mock.calls[0][0]).toHaveProperty('groups');
 
         (api.getPlan as jest.Mock).mockRejectedValueOnce(new Error('gone'));
         toast?.actions?.[0]?.onClick();
@@ -2076,7 +2208,7 @@ describe('Plans Module', () => {
         // Plan-from-selection snapshot.
         (api.createPlan as jest.Mock).mockResolvedValueOnce({});
         await submit();
-        expect((api.createPlan as jest.Mock).mock.calls[1][0]).not.toHaveProperty('recommendations');
+        expect((api.createPlan as jest.Mock).mock.calls[1][0]).not.toHaveProperty('groups');
       });
 
       test('other errors get no open-existing action', async () => {

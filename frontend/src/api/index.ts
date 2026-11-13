@@ -19,6 +19,7 @@ export type {
   RecommendationFilters,
   Plan,
   PlanHealthFactor,
+  PlanGroupRequest,
   CreatePlanRequest,
   PurchaseHistory,
   HistoryFilters,
