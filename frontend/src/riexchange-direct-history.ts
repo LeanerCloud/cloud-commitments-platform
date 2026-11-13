@@ -8,11 +8,13 @@ import { escapeHtml, formatDateTime } from './utils';
 import { statusBadgeHtml } from './lib/status-badge';
 import type { RIExchangeDirectExecution } from './api/types';
 
-function formatAmount(amount: string, currency: string): string {
+function formatAmount(amount: string, currency: string | null | undefined): string {
   const n = Number(amount);
   if (amount.trim() === '' || !Number.isFinite(n)) return amount;
+  // No currency known: a dash, never a guessed symbol.
+  if (!currency) return '—';
   try {
-    return n.toLocaleString('en-US', { style: 'currency', currency: currency || 'USD' });
+    return n.toLocaleString('en-US', { style: 'currency', currency });
   } catch {
     return `${amount} ${currency}`.trim();
   }

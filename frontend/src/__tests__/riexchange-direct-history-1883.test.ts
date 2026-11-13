@@ -75,6 +75,17 @@ describe('Direct exchanges in History (#1883)', () => {
     expect(history().textContent).not.toContain('No exchange history found');
   });
 
+  it('shows a dash, not USD, when the currency is empty or missing', async () => {
+    const noCurrency = { ...AZURE, id: 'd3', net_payable: '5', net_payable_currency: '' };
+    const missing = { ...AWS, id: 'd4', max_payment_currency: undefined };
+    (api.getRIExchangeDirectExecutions as jest.Mock).mockResolvedValue([noCurrency, missing]);
+    await loadRIExchange();
+    await flush();
+    const cells = Array.from(history().querySelectorAll('.ri-exchange-direct-history tbody tr'))
+      .map(tr => tr.querySelector('td.num')!.textContent);
+    expect(cells).toEqual(['—', 'cap —']);
+  });
+
   it('is read-only: no buttons or links in the direct section', async () => {
     await loadRIExchange();
     await flush();
