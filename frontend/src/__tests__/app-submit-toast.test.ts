@@ -98,7 +98,7 @@ describe('submit toast', () => {
     executeMode = '';
     resolvePost({ execution_id: execId, status: 'pending', email_sent: true });
     await pending;
-    expect(document.getElementById('execute-purchase-btn')?.textContent).toBe('Send for Approval');
+    expect(document.getElementById('execute-purchase-btn')?.textContent).toBe('Send for approval');
   });
 
   it('non-duplicate direct keeps the executed-immediately message', async () => {

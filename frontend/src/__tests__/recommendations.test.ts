@@ -151,7 +151,7 @@ describe('Recommendations Module', () => {
         <div id="purchase-details"></div>
         <div class="modal-buttons">
           <button type="button" id="close-purchase-modal-btn">Cancel</button>
-          <button type="button" id="execute-purchase-btn" class="primary">Send for Approval</button>
+          <button type="button" id="execute-purchase-btn" class="primary">Send for approval</button>
         </div>
       </div>
     `;
@@ -2283,11 +2283,11 @@ describe('Recommendations Module', () => {
         upfront_cost: 500,
       };
 
-      test('primary button reads "Send for Approval", not "Execute Purchase"', async () => {
+      test('primary button reads "Send for approval", not "Execute Purchase"', async () => {
         await openPurchaseModal([baseRec]);
 
         const btn = document.getElementById('execute-purchase-btn');
-        expect(btn?.textContent).toBe('Send for Approval');
+        expect(btn?.textContent).toBe('Send for approval');
         // Belt-and-braces: ensure no element on the rendered modal still
         // carries the pre-#288 text — guards against a future template
         // re-introducing the misleading wording somewhere new.
@@ -6257,7 +6257,7 @@ const DOM_FOR_319 = (
   + '<div id="purchase-details"></div>'
   + '<div class="modal-buttons">'
   + '<button type="button" id="close-purchase-modal-btn">Cancel</button>'
-  + '<button type="button" id="execute-purchase-btn" class="primary">Send for Approval</button>'
+  + '<button type="button" id="execute-purchase-btn" class="primary">Send for approval</button>'
   + '</div></div>'
 );
 
@@ -8383,7 +8383,7 @@ describe('Issue #1417: usage-history sparkline renders in recommendations table'
         <div id="purchase-details"></div>
         <div class="modal-buttons">
           <button type="button" id="close-purchase-modal-btn">Cancel</button>
-          <button type="button" id="execute-purchase-btn" class="primary">Send for Approval</button>
+          <button type="button" id="execute-purchase-btn" class="primary">Send for approval</button>
         </div>
       </div>
     `;
@@ -8986,7 +8986,7 @@ describe('Issue #1419: Opportunities Account column shows display name via listA
         <div id="purchase-details"></div>
         <div class="modal-buttons">
           <button type="button" id="close-purchase-modal-btn">Cancel</button>
-          <button type="button" id="execute-purchase-btn" class="primary">Send for Approval</button>
+          <button type="button" id="execute-purchase-btn" class="primary">Send for approval</button>
         </div>
       </div>
     `;

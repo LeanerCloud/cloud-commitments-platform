@@ -33,7 +33,7 @@ for (const sample of [
     await expect(warning).toHaveText(`Warning: This will charge $${row.upfront_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} upfront immediately${recurring}. This bypasses the approval step.`);
     await expect(page.locator('#purchase-modal-commitment-band')).toContainText('Total over term');
     await expect(warning).not.toContainText(/AWS|cancell|24 hours/);
-    await expect(page.locator('#execute-purchase-btn')).toHaveText('Execute Purchase Now');
+    await expect(page.locator('#execute-purchase-btn')).toHaveText('Execute purchase now');
     await page.getByRole('checkbox', { name: 'Include row 1' }).uncheck();
     await expect(warning).toHaveText('Warning: This will charge $0.00 upfront immediately. This bypasses the approval step.');
     await expect(page.locator('#execute-purchase-btn')).toBeDisabled();
@@ -50,7 +50,7 @@ for (const sample of [
     }
     await page.locator('#execute-mode-approval').check();
     await expect(warning).toBeHidden();
-    await expect(page.locator('#execute-purchase-btn')).toHaveText('Send for Approval');
+    await expect(page.locator('#execute-purchase-btn')).toHaveText('Send for approval');
     await page.locator('#execute-mode-direct').check();
     await page.locator('#close-purchase-modal-btn').click();
     await page.locator('#bulk-purchase-btn').click();

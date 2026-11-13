@@ -31,7 +31,7 @@ test('bulk approval confirm states the totals across every bucket', async ({ pag
   await expect(dialog.locator('.commitment-summary-band')).toContainText(`Monthly${usd(monthly)}`);
   await expect(dialog.locator('.commitment-summary-band')).toContainText(`Total over term${usd(termTotal)}`);
   await expect(dialog.locator('.commitment-summary-lines li')).toHaveCount(3);
-  await expect(dialog.getByRole('button', { name: `Send for Approval (${usd(upfront)} upfront on approval)` })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: `Send for approval (${usd(upfront)} upfront on approval)` })).toBeVisible();
 
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toHaveCount(0);

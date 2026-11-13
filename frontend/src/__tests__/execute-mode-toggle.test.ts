@@ -103,7 +103,7 @@ const setupPurchaseModal = () => {
   // execute-purchase-btn is referenced in updateExecuteMode
   const btn = document.createElement('button');
   btn.id = 'execute-purchase-btn';
-  btn.textContent = 'Send for Approval';
+  btn.textContent = 'Send for approval';
   document.body.appendChild(btn);
 
   return { modal, details };
@@ -166,10 +166,10 @@ describe('Execute-mode toggle (issue #289)', () => {
 
     // The submit button label should update.
     const btn = document.getElementById('execute-purchase-btn') as HTMLButtonElement;
-    expect(btn.textContent).toBe('Execute Purchase Now');
+    expect(btn.textContent).toBe('Execute purchase now');
   });
 
-  test('switching back to Send for Approval resets execute mode', async () => {
+  test('switching back to Send for approval resets execute mode', async () => {
     mockUser('admin');
     setupPurchaseModal();
     await openPurchaseModal([minimalRec as never]);
@@ -187,7 +187,7 @@ describe('Execute-mode toggle (issue #289)', () => {
     expect(getExecuteMode()).toBe('');
 
     const btn = document.getElementById('execute-purchase-btn') as HTMLButtonElement;
-    expect(btn.textContent).toBe('Send for Approval');
+    expect(btn.textContent).toBe('Send for approval');
   });
   test('closing the modal resets execute mode and the button label (closes #754)', async () => {
     mockUser('admin');
@@ -198,20 +198,20 @@ describe('Execute-mode toggle (issue #289)', () => {
     directRadio.click();
     directRadio.dispatchEvent(new Event('change', { bubbles: true }));
     const btn = document.getElementById('execute-purchase-btn') as HTMLButtonElement;
-    expect(btn.textContent).toBe('Execute Purchase Now');
+    expect(btn.textContent).toBe('Execute purchase now');
 
     closeModal(modal);
 
     expect(getExecuteMode()).toBe('');
-    expect(btn.textContent).toBe('Send for Approval');
+    expect(btn.textContent).toBe('Send for approval');
   });
 
-  test('reopening resets a stale Execute Purchase Now label (closes #754)', async () => {
+  test('reopening resets a stale Execute purchase now label (closes #754)', async () => {
     mockUser('admin');
     setupPurchaseModal();
     const btn = document.getElementById('execute-purchase-btn') as HTMLButtonElement;
-    btn.textContent = 'Execute Purchase Now';
+    btn.textContent = 'Execute purchase now';
     await openPurchaseModal([minimalRec as never]);
-    expect(btn.textContent).toBe('Send for Approval');
+    expect(btn.textContent).toBe('Send for approval');
   });
 });

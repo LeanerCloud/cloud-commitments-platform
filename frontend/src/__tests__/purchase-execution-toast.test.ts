@@ -157,7 +157,7 @@ function setup(): HTMLButtonElement {
 
   const btn = document.createElement('button');
   btn.id = 'execute-purchase-btn';
-  btn.textContent = 'Send for Approval';
+  btn.textContent = 'Send for approval';
   document.body.appendChild(btn);
 
   const capacityInput = document.createElement('input');
@@ -1005,7 +1005,7 @@ describe('handleExecutePurchase — double-submit guard (#644)', () => {
 
     expect(api.executePurchase).not.toHaveBeenCalled();
     expect(btn.disabled).toBe(false);
-    expect(btn.textContent).toBe('Send for Approval');
+    expect(btn.textContent).toBe('Send for approval');
   });
 });
 

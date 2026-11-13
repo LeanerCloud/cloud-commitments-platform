@@ -2142,7 +2142,7 @@ describe('Plans Module', () => {
       expect(api.setPlanAccounts).not.toHaveBeenCalled();
       expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
         kind: 'error',
-        message: expect.stringContaining('Target Accounts'),
+        message: expect.stringContaining('Target accounts'),
       }));
     });
 
@@ -2730,7 +2730,7 @@ describe('Plans Module', () => {
           (api.listAccountsMinimal as jest.Mock).mockResolvedValueOnce([{ id: fixture.cloud_account_id, name: 'A', external_id: '1', provider: 'aws' }]);
           openCreatePlanModal([fixture, { ...azure, cloud_account_id: 'acct-unlisted' }]);
           await flushPromises();
-          expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning', message: expect.stringContaining('Target Accounts') }));
+          expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning', message: expect.stringContaining('Target accounts') }));
         });
 
         test('a late account lookup does not fill the next modal', async () => {

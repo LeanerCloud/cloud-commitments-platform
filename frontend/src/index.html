@@ -610,7 +610,7 @@
                     </fieldset>
 
                     <fieldset class="settings-category" id="purchasing-grace-period">
-                        <legend>Post-Purchase Grace Period</legend>
+                        <legend>Post-purchase grace period</legend>
                         <p class="settings-help">After a purchase is submitted, CUDly hides the just-covered capacity from the Recommendations view for this many days so you don't re-buy the same capacity while cloud-provider utilisation metrics catch up. Set to 0 to disable the feature for a provider. Range: 0–30 days.</p>
                         <div class="setting-row">
                             <div class="setting-info">
@@ -639,7 +639,7 @@
                     </fieldset>
 
                     <fieldset class="settings-category" id="ec2-ri-offering-class">
-                        <legend><span class="provider-badge aws">AWS</span> Reserved Instance Class</legend>
+                        <legend><span class="provider-badge aws">AWS</span> Reserved instance class</legend>
                         <p class="settings-help">Controls whether EC2 Reserved Instances are purchased as Convertible or Standard. Convertible RIs can be exchanged for a different instance family, size, OS, or region later. Standard RIs are approximately 5% cheaper but are locked to the exact instance type for the full term and cannot be exchanged.</p>
                         <div class="setting-row">
                             <div class="setting-info">
@@ -669,7 +669,7 @@
 
                     <!-- AWS Settings -->
                     <fieldset class="settings-category provider-settings" id="aws-settings">
-                        <legend><span class="provider-badge aws">AWS</span> Service Defaults</legend>
+                        <legend><span class="provider-badge aws">AWS</span> Service defaults</legend>
                         <div class="setting-row">
                             <div class="setting-info">
                                 <label>Credentials</label>
@@ -746,7 +746,7 @@
 
                     <!-- Azure Settings -->
                     <fieldset class="settings-category provider-settings hidden" id="azure-settings">
-                        <legend><span class="provider-badge azure">Azure</span> Service Defaults</legend>
+                        <legend><span class="provider-badge azure">Azure</span> Service defaults</legend>
                         <!-- Collapsed by default to keep the page short (issue #190); the
                              fields stay in the form, so Save still reads them. -->
                         <details class="service-defaults-details">
@@ -783,7 +783,7 @@
 
                     <!-- GCP Settings -->
                     <fieldset class="settings-category provider-settings hidden" id="gcp-settings">
-                        <legend><span class="provider-badge gcp">GCP</span> Service Defaults</legend>
+                        <legend><span class="provider-badge gcp">GCP</span> Service defaults</legend>
                         <!-- Collapsed by default to keep the page short (issue #190); the
                              fields stay in the form, so Save still reads them. -->
                         <details class="service-defaults-details">
@@ -1059,7 +1059,7 @@
                     <div id="plan-filters-notice" class="form-section hidden" role="note" aria-label="Plan filters"></div>
 
                     <div class="form-section">
-                        <h3>Target Accounts <span aria-hidden="true" class="required-asterisk">*</span></h3>
+                        <h3>Target accounts <span aria-hidden="true" class="required-asterisk">*</span></h3>
                         <p class="help-text">Required. Select at least one account this plan will purchase for. The Save button stays disabled until you add one.</p>
                         <div class="plan-accounts-search">
                             <input type="text" id="plan-account-search" placeholder="Search accounts to add...">
@@ -1070,7 +1070,7 @@
                     </div>
 
                     <div class="form-section">
-                        <h3>Ramp-up Schedule</h3>
+                        <h3>Ramp-up schedule</h3>
                         <p class="help-text">Choose how to phase in your commitment purchases over time.</p>
                         <div class="ramp-options">
                             <label class="ramp-option">
@@ -1498,7 +1498,7 @@
 
                     <!-- Azure-specific fields -->
                     <div class="form-section hidden" id="account-azure-fields">
-                        <h3>Azure Authentication</h3>
+                        <h3>Azure authentication</h3>
                         <label>Auth mode:
                             <select id="account-azure-auth-mode">
                                 <option value="workload_identity_federation" selected title="Authenticate with CUDly's OIDC identity through a federated identity credential on an App Registration. No client secret or certificate is stored in CUDly.">Workload Identity Federation (recommended)</option>

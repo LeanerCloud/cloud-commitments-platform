@@ -202,16 +202,16 @@ describe('Issue #1904: fan-out modal skips incompatible buckets', () => {
     await loadRecommendations();
 
     const btn = document.getElementById('execute-purchase-btn') as HTMLButtonElement;
-    btn.textContent = 'Execute Purchase Now';
+    btn.textContent = 'Execute purchase now';
     (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
     await flush();
-    expect(btn.textContent).toBe('Send for Approval');
+    expect(btn.textContent).toBe('Send for approval');
     expect(getExecuteMode()).toBe('');
 
-    btn.textContent = 'Execute Purchase Now';
+    btn.textContent = 'Execute purchase now';
     const onClose = (openModal as jest.Mock).mock.calls.slice(-1)[0][1].onClose as () => void;
     onClose();
-    expect(btn.textContent).toBe('Send for Approval');
+    expect(btn.textContent).toBe('Send for approval');
     expect(getExecuteMode()).toBe('');
   });
 

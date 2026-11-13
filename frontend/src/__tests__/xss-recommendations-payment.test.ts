@@ -118,7 +118,7 @@ describe('XSS regression: rec.payment rendered as text, not markup (#1632)', () 
         <div id="purchase-details"></div>
         <div class="modal-buttons">
           <button type="button" id="close-purchase-modal-btn">Cancel</button>
-          <button type="button" id="execute-purchase-btn" class="primary">Send for Approval</button>
+          <button type="button" id="execute-purchase-btn" class="primary">Send for approval</button>
         </div>
       </div>
     `;

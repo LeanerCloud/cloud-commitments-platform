@@ -50,10 +50,10 @@ describe('Issue #251: Execute Now makes no cancellation promise', () => {
       `Warning: This will charge ${formatCurrency(sample.upfront_cost, '$', 2)} upfront immediately. This bypasses the approval step.`,
     );
     expect(warning.textContent).not.toMatch(/AWS|cancell|24 hours/);
-    expect(document.getElementById('execute-purchase-btn')?.textContent).toBe('Execute Purchase Now');
+    expect(document.getElementById('execute-purchase-btn')?.textContent).toBe('Execute purchase now');
     (document.getElementById('execute-mode-approval') as HTMLInputElement).click();
     expect(warning.hidden).toBe(true);
-    expect(document.getElementById('execute-purchase-btn')?.textContent).toBe('Send for Approval');
+    expect(document.getElementById('execute-purchase-btn')?.textContent).toBe('Send for approval');
     (document.getElementById('execute-mode-direct') as HTMLInputElement).click();
     (document.getElementById('close-purchase-modal-btn') as HTMLButtonElement).click();
     await openPurchaseModal([rec]);

@@ -4476,7 +4476,7 @@ function handleBulkPurchaseClick(recommendations: LocalRecommendation[]): void {
   }
 
   // Single-bucket happy path: open the preview modal + submit via the
-  // existing approval-request flow. The modal's "Send for Approval" button
+  // existing approval-request flow. The modal's "Send for approval" button
   // (wired in app.ts) picks up the recs via getPurchaseModalRecommendations.
   // openPurchaseModal is async (issue #111 (iii): per-rec override
   // prefetch); fire-and-forget — the modal is the user's surface.
@@ -5602,7 +5602,7 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
     radioGroup.setAttribute('role', 'radiogroup');
     radioGroup.setAttribute('aria-label', 'Purchase execution mode');
 
-    // Option 1: Send for Approval (default)
+    // Option 1: Send for approval (default)
     const approvalRadioLabel = document.createElement('label');
     approvalRadioLabel.className = 'execute-mode-radio-label';
     const approvalRadio = document.createElement('input');
@@ -5612,7 +5612,7 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
     approvalRadio.checked = true;
     approvalRadio.id = 'execute-mode-approval';
     approvalRadioLabel.appendChild(approvalRadio);
-    approvalRadioLabel.appendChild(document.createTextNode(' Send for Approval (default)'));
+    approvalRadioLabel.appendChild(document.createTextNode(' Send for approval (default)'));
     radioGroup.appendChild(approvalRadioLabel);
 
     // Option 2: Execute Now

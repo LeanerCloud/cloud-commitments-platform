@@ -1418,7 +1418,7 @@ export async function savePlan(e: Event): Promise<void> {
   const accountIds = accountIdsField?.value ? accountIdsField.value.split(',').filter(Boolean) : [];
   if (accountIds.length === 0) {
     showToast({
-      message: 'Target Accounts is required: pick at least one account before saving the plan.',
+      message: 'Target accounts is required: pick at least one account before saving the plan.',
       kind: 'error',
     });
     return;
@@ -1807,7 +1807,7 @@ async function prefillAccountChips(accountIds: readonly string[], session: numbe
     // Guard: only add if the chip is not already present (e.g. a concurrent
     // edit flow somehow set it) and the account record is usable.
     if (accounts.length < accountIds.length) {
-      showToast({ message: 'Some selected recommendations belong to accounts you cannot list. Add those accounts under Target Accounts before saving.', kind: 'warning' });
+      showToast({ message: 'Some selected recommendations belong to accounts you cannot list. Add those accounts under Target accounts before saving.', kind: 'warning' });
     }
     for (const account of accounts) {
       if (account.id && !planSelectedAccounts.some(a => a.id === account.id)) {

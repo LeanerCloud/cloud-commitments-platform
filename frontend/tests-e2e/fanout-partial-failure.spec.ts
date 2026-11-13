@@ -20,7 +20,7 @@ async function send(page: Page, label: RegExp | string): Promise<void> {
   await page.locator('#execute-purchase-btn').filter({ hasText: label }).click();
   // The confirm button names the combined upfront of the buckets being sent (#707).
   await page.locator('.modal-confirm-backdrop')
-    .getByRole('button', { name: /^Send for Approval \(\$[\d,.]+ upfront on approval\)$/ }).click();
+    .getByRole('button', { name: /^Send for approval \(\$[\d,.]+ upfront on approval\)$/ }).click();
 }
 
 test('partial failure keeps the modal open and retries only the failed bucket', async ({ page }) => {
@@ -40,7 +40,7 @@ test('partial failure keeps the modal open and retries only the failed bucket', 
   });
 
   await openFanOut(page);
-  await send(page, 'Send for Approval');
+  await send(page, 'Send for approval');
 
   const modal = page.getByRole('dialog', { name: 'Review purchase' });
   await expect(modal).toBeVisible();

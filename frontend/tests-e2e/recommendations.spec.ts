@@ -79,7 +79,7 @@ test('selection updates the sticky action summary and submits the selected purch
   await expect(page.locator('#recommendations-action-summary')).toContainText('across 1 row');
   await page.getByRole('button', { name: 'Purchase 1 selected' }).click();
   await expect(page.getByRole('dialog', { name: 'Review purchase' })).toBeVisible();
-  await page.getByRole('button', { name: 'Send for Approval' }).click();
+  await page.getByRole('button', { name: 'Send for approval' }).click();
   await page.locator('.modal-confirm-backdrop')
     .getByRole('button', { name: 'Send for approval' })
     .click();

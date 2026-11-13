@@ -85,7 +85,7 @@ export function commitmentTotals(lines: readonly CommitmentLine[]): CommitmentTo
 
 /** Label of the purchase modal's primary button; one source for every place that sets it. */
 export function executeButtonLabel(direct: boolean): string {
-  return direct ? 'Execute Purchase Now' : 'Send for Approval';
+  return direct ? 'Execute purchase now' : 'Send for approval';
 }
 
 /**
