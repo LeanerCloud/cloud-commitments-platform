@@ -147,6 +147,6 @@ func TestPlanRequestToPurchasePlan_NoFieldDropped(t *testing.T) {
 		func(r PlanRequest) *config.PurchasePlan { return r.toPurchasePlan() },
 		map[string]string{
 			"target_accounts": "handled by createPlan/setPlanAccounts, not the converter",
-			"groups":          "not read by createPlan yet (#1746)",
+			"groups":          "the converter ignores groups until the handler builds plans from them (#1746)",
 		})
 }

@@ -188,6 +188,11 @@ func decodePlanRequest(body string) (*PlanRequest, error) {
 	if err := req.validateGroups(); err != nil {
 		return nil, err
 	}
+	if len(req.Groups) > 0 {
+		// Fail loud until the handler builds plans from groups (#1746).
+		return nil, NewClientErrorWithDetails(400, "plan groups are not supported yet (#1746)",
+			map[string]any{"code": planGroupsNotSupportedCode})
+	}
 	return &req, nil
 }
 

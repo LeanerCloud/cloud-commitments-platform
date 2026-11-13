@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -9,24 +10,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func idList(n int) string {
+// idList returns a JSON array of n ids unique across calls with distinct from.
+func idList(from, n int) string {
 	ids := make([]string, n)
 	for i := range ids {
-		ids[i] = fmt.Sprintf(`"r%d"`, i)
+		ids[i] = fmt.Sprintf(`"r%d"`, from+i)
 	}
 	return "[" + strings.Join(ids, ",") + "]"
 }
 
-func TestDecodePlanRequest_Groups(t *testing.T) {
+func groupJSON(ids string) string {
+	return `{"provider":"aws","service":"ec2","recommendation_ids":` + ids + `}`
+}
+
+func groupsBody(groups ...string) string {
+	return `{"name":"p","groups":[` + strings.Join(groups, ",") + `]}`
+}
+
+func fiveGroupsOf1000() []string {
+	gs := make([]string, 5)
+	for i := range gs {
+		gs[i] = groupJSON(idList(i*1000, 1000))
+	}
+	return gs
+}
+
+func TestDecodePlanRequest_GroupsRefused(t *testing.T) {
+	six := append(fiveGroupsOf1000(), groupJSON(`["x"]`))
 	cases := []struct {
 		name, body, msg, code string
 	}{
-		{"flat service", `{"name":"p","service":"ec2","groups":[{"provider":"aws","service":"ec2","recommendation_ids":["a"]}]}`, "cannot be combined", planGroupsMixedWithFlatServiceCode},
-		{"flat coverage", `{"name":"p","target_coverage":50,"groups":[{"recommendation_ids":["a"]}]}`, "cannot be combined", planGroupsMixedWithFlatServiceCode},
-		{"empty ids", `{"name":"p","groups":[{"recommendation_ids":["a"]},{"recommendation_ids":[]}]}`, "groups[1]", ""},
-		{"missing ids", `{"name":"p","groups":[{"provider":"aws"}]}`, "groups[0]", ""},
-		{"1001 in group", `{"name":"p","groups":[{"recommendation_ids":` + idList(1001) + `}]}`, "groups[0]", planGroupsTooManyIDsCode},
-		{"5001 total", `{"name":"p","groups":[` + strings.TrimSuffix(strings.Repeat(`{"recommendation_ids":`+idList(1000)+`},`, 5), ",") + `,{"recommendation_ids":["x"]}]}`, "in total", planGroupsTooManyTotalIDsCode},
+		{"flat service", `{"name":"p","service":"ec2","groups":[` + groupJSON(`["a"]`) + `]}`, "cannot be combined", planGroupsMixedWithFlatServiceCode},
+		{"flat coverage", `{"name":"p","target_coverage":50,"groups":[` + groupJSON(`["a"]`) + `]}`, "cannot be combined", planGroupsMixedWithFlatServiceCode},
+		{"empty ids", groupsBody(groupJSON(`["a"]`), groupJSON(`[]`)), "groups[1]", ""},
+		{"missing ids", groupsBody(`{"provider":"aws","service":"ec2"}`), "groups[0]", ""},
+		{"1001 in group", groupsBody(groupJSON(idList(0, 1001))), "groups[0]", planGroupsTooManyIDsCode},
+		{"5001 total", groupsBody(six...), "in total", planGroupsTooManyTotalIDsCode},
+		{"coverage 500", groupsBody(`{"provider":"aws","service":"ec2","coverage":500,"recommendation_ids":["a"]}`), "groups[0].coverage", ""},
+		{"coverage -1", groupsBody(`{"provider":"aws","service":"ec2","coverage":-1,"recommendation_ids":["a"]}`), "groups[0].coverage", ""},
+		{"cap 0", groupsBody(`{"provider":"aws","service":"ec2","max_step_commitment":0,"recommendation_ids":["a"]}`), "groups[0].max_step_commitment", ""},
+		{"cap -1", groupsBody(`{"provider":"aws","service":"ec2","max_step_commitment":-1,"recommendation_ids":["a"]}`), "groups[0].max_step_commitment", ""},
+		{"empty id", groupsBody(groupJSON(`["a",""]`)), "groups[0] has an empty", ""},
+		{"null id", groupsBody(groupJSON(`["a",null]`)), "groups[0] has an empty", ""},
+		{"dup within", groupsBody(groupJSON(`["a","a"]`)), `"a"`, ""},
+		{"dup across", groupsBody(groupJSON(`["a"]`), groupJSON(`["b","a"]`)), `groups[1] repeats recommendation id "a"`, ""},
+		{"no provider", groupsBody(`{"service":"ec2","recommendation_ids":["a"]}`), "groups[0] requires provider and service", ""},
+		{"no service", groupsBody(groupJSON(`["a"]`), `{"provider":"aws","recommendation_ids":["b"]}`), "groups[1] requires provider and service", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -42,12 +71,27 @@ func TestDecodePlanRequest_Groups(t *testing.T) {
 	}
 }
 
-func TestDecodePlanRequest_GroupsAccepted(t *testing.T) {
-	body := `{"name":"p","max_step_commitment":10,"groups":[{"provider":"aws","service":"ec2","term":1,"payment":"no-upfront","coverage":80,"recommendation_ids":["a","b"]}]}`
-	req, err := decodePlanRequest(body)
-	require.NoError(t, err)
-	require.Len(t, req.Groups, 1)
-	assert.Equal(t, []string{"a", "b"}, req.Groups[0].RecommendationIDs)
+func TestValidateGroups_Boundaries(t *testing.T) {
+	var req PlanRequest
+	require.NoError(t, json.Unmarshal([]byte(groupsBody(groupJSON(idList(0, 1000)))), &req))
+	assert.NoError(t, req.validateGroups(), "exactly 1000 ids in one group")
+
+	req = PlanRequest{}
+	require.NoError(t, json.Unmarshal([]byte(groupsBody(fiveGroupsOf1000()...)), &req))
+	assert.NoError(t, req.validateGroups(), "exactly 5000 ids in total")
+
+	req = PlanRequest{}
+	require.NoError(t, json.Unmarshal([]byte(groupsBody(`{"provider":"aws","service":"ec2","coverage":100,"max_step_commitment":0.01,"recommendation_ids":["a"]}`)), &req))
+	assert.NoError(t, req.validateGroups(), "coverage 100 and a small positive cap")
+}
+
+func TestDecodePlanRequest_ValidGroupsNotSupportedYet(t *testing.T) {
+	_, err := decodePlanRequest(groupsBody(groupJSON(`["a","b"]`)))
+	ce, ok := IsClientError(err)
+	require.True(t, ok)
+	assert.Equal(t, 400, ce.code)
+	assert.Equal(t, "plan groups are not supported yet (#1746)", ce.message)
+	assert.Equal(t, planGroupsNotSupportedCode, ce.Details()["code"])
 }
 
 func TestDecodePlanRequest_NoGroupsUnchanged(t *testing.T) {

@@ -7566,7 +7566,7 @@ components:
 
     PlanGroupRequest:
       type: object
-      required: [recommendation_ids]
+      required: [provider, service, recommendation_ids]
       properties:
         provider:
           type: string
@@ -7590,6 +7590,7 @@ components:
           maxItems: 1000
           items:
             type: string
+
     PlanRequest:
       type: object
       description: >-
