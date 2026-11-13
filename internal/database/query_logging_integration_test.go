@@ -49,7 +49,7 @@ func TestQueryLogging_RedactsBoundSecretsOnFailure(t *testing.T) {
 	})
 
 	_, err := container.DB.Exec(ctx, `CREATE TABLE query_logging_secrets (
-		session_token text, password_hash text, approval_token text,
+		session_token text, password_hash text, approval_secret text,
 		accepted integer CHECK (accepted > 0))`)
 	require.NoError(t, err)
 	secrets := []string{strings.Repeat("a", 64), strings.Repeat("b", 60), strings.Repeat("c", 64)}

@@ -27,7 +27,7 @@ func TestMigration_DropRawApprovalToken(t *testing.T) {
 	// The trap: a migrated row (hash set, raw blanked) must keep its hash.
 	const existingHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	peEmpty := seedPurchaseExecutionWithToken(ctx, t, pool, "pending", strPtr(""))
-	riEmpty := seedRIExchangeWithToken(ctx, t, pool, "", nil)
+	riEmpty := seedRIExchangeWithToken(ctx, t, pool, "", strPtr(""))
 	_, err := pool.Exec(ctx, `UPDATE purchase_executions SET approval_token_hash = $1 WHERE execution_id = $2`, existingHash, peEmpty)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `UPDATE ri_exchange_history SET approval_token_hash = $1 WHERE id = $2`, existingHash, riEmpty)
