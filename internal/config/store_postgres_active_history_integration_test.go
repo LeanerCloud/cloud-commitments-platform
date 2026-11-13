@@ -181,7 +181,7 @@ func TestGetActivePurchaseHistory_SessionTimeZoneIndependent(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _, _ = pc.Exec(ctx, "RESET TimeZone") }()
 
-	query, args := activePurchaseHistoryQuery(base, nil, nil)
+	query, args := activePurchaseHistoryQuery(amountBasisNotMigrated, base, nil, nil)
 	r, err := pc.Query(ctx, "SELECT purchase_id FROM ("+query+") q", args...)
 	require.NoError(t, err)
 	var got []string
@@ -219,7 +219,7 @@ func TestGetActivePurchaseHistory_UsesExpiryIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, scope := range []map[string][]string{nil, {"aws": {"000000000007"}}} {
-		query, args := activePurchaseHistoryQuery(asOf, nil, scope)
+		query, args := activePurchaseHistoryQuery(amountBasisNotMigrated, asOf, nil, scope)
 		var plan json.RawMessage
 		require.NoError(t, conn.Pool().QueryRow(ctx, "EXPLAIN (FORMAT JSON) "+query, args...).Scan(&plan))
 		require.True(t, planUsesIndex(t, plan, activeExpiryIndex),

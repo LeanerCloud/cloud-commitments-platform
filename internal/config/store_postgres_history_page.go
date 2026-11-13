@@ -138,6 +138,10 @@ func (s *PostgresStore) ListPurchaseHistoryPage(ctx context.Context, filter Purc
 	// The filter predicate is purchaseHistoryFilterWhere, the one builder
 	// GetPurchaseHistoryFiltered and HistorySummaryAggregate share, so a page
 	// lists exactly the rows the summary counts (issue #675).
+	basis, err := s.amountBasisColumn(ctx)
+	if err != nil {
+		return nil, err
+	}
 	where, args := purchaseHistoryFilterWhere(filter)
 	if after != nil {
 		var cond string
@@ -150,11 +154,11 @@ func (s *PostgresStore) ListPurchaseHistoryPage(ctx context.Context, filter Purc
 		       resource_type, count, term, payment, upfront_cost, monthly_cost,
 		       estimated_savings, plan_id, plan_name, ramp_step, cloud_account_id,
 		       revocation_window_closes_at, revoked_at, revoked_via, support_case_id,
-		       offering_class, listing_id, listing_state
+		       offering_class, listing_id, listing_state, %s
 		FROM purchase_history%s
 		ORDER BY timestamp DESC, id DESC
 		LIMIT $%d
-	`, where, len(args))
+	`, basis, where, len(args))
 
 	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {

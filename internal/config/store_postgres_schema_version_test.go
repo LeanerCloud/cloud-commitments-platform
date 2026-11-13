@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/pashagolub/pgxmock/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -165,4 +166,81 @@ func TestSweepCeilingMigrationVersionNamesTheMigrationFile(t *testing.T) {
 	name := fmt.Sprintf("%06d_ladder_configs_sweep_ceiling.up.sql", sweepCeilingMigrationVersion)
 	_, err := os.Stat(filepath.Join("..", "database", "postgres", "migrations", name))
 	require.NoError(t, err, "sweepCeilingMigrationVersion no longer matches the migration file")
+}
+
+// main deploys before prod migrations are applied, so purchase_history reads
+// must work on a schema without amount_basis (#669).
+func TestAmountBasisMigrationApplied(t *testing.T) {
+	t.Parallel()
+	v := amountBasisMigrationVersion
+	cases := []struct {
+		name string
+		row  fakeVersionRow
+		want bool
+	}{
+		{"nothing applied", fakeVersionRow{err: pgx.ErrNoRows}, false},
+		{"before the migration", fakeVersionRow{version: v - 1}, false},
+		{"at the migration", fakeVersionRow{version: v}, true},
+		{"at the migration, dirty", fakeVersionRow{version: v, dirty: true}, false},
+		{"after it, with a later dirty migration", fakeVersionRow{version: v + 1, dirty: true}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := migrationApplied(context.Background(), fakeVersionQuerier{tc.row}, amountBasisMigrationVersion)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// The gate sits on hot read paths: true is latched once per store, false and
+// errors are re-checked on the next read.
+func TestAmountBasisColumn_Latches(t *testing.T) {
+	mock := newMock(t)
+	store := &PostgresStore{db: mock}
+	ctx := context.Background()
+	const versionQuery = `SELECT version, dirty FROM schema_migrations`
+	versionRows := func(v int, dirty bool) *pgxmock.Rows {
+		return pgxmock.NewRows([]string{"version", "dirty"}).AddRow(v, dirty)
+	}
+
+	mock.ExpectQuery(versionQuery).WillReturnError(errors.New("db down"))
+	_, err := store.amountBasisColumn(ctx)
+	require.Error(t, err)
+
+	mock.ExpectQuery(versionQuery).WillReturnRows(versionRows(amountBasisMigrationVersion-1, false))
+	col, err := store.amountBasisColumn(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, amountBasisNotMigrated, col, "below the version the column reads as NULL")
+
+	mock.ExpectQuery(versionQuery).WillReturnRows(versionRows(amountBasisMigrationVersion, true))
+	col, err = store.amountBasisColumn(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, amountBasisNotMigrated, col, "a dirty migration is not ready")
+
+	mock.ExpectQuery(versionQuery).WillReturnRows(versionRows(amountBasisMigrationVersion, false))
+	col, err = store.amountBasisColumn(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "amount_basis", col, "at the version the column is read")
+
+	// Latched: no further version query is expected.
+	col, err = store.amountBasisColumn(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "amount_basis", col)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Stage 1 only reads the column: no writer names it.
+func TestSavePurchaseHistoryQuery_DoesNotWriteAmountBasis(t *testing.T) {
+	t.Parallel()
+	assert.NotContains(t, savePurchaseHistoryQuery, "amount_basis")
+}
+
+// The constant must name this change's migration file, so a renumbering that
+// forgets it fails here instead of failing closed in production.
+func TestAmountBasisMigrationVersionNamesTheMigrationFile(t *testing.T) {
+	name := fmt.Sprintf("%06d_purchase_history_amount_basis.up.sql", amountBasisMigrationVersion)
+	_, err := os.Stat(filepath.Join("..", "database", "postgres", "migrations", name))
+	require.NoError(t, err, "amountBasisMigrationVersion no longer matches the migration file")
 }

@@ -1194,6 +1194,16 @@ func RevocationWindowClosesAtFor(provider string, purchaseTime time.Time) *time.
 	return nil
 }
 
+// PurchaseAmountBasis says how a purchase_history row's dollar amounts were
+// derived. Empty is a normal row. It is distinct from LadderAmountBasis, which
+// describes ladder tranche amounts.
+type PurchaseAmountBasis string
+
+// PurchaseAmountBasisLegacyWindow marks an Azure row whose upfront_cost and
+// estimated_savings were estimated over a window before the repricing fix
+// (issue #669). Totals skip its dollars; the row stays listed and counted.
+const PurchaseAmountBasisLegacyWindow PurchaseAmountBasis = "legacy_window"
+
 // PurchaseHistoryRecord is the response-layer representation for rows on the
 // /api/history page. DB-backed rows always describe *completed* purchases; the
 // handler additionally synthesizes rows for pending executions so users can
@@ -1227,7 +1237,9 @@ type PurchaseHistoryRecord struct {
 	PlanName         string   `json:"plan_name,omitempty" dynamodbav:"plan_name,omitempty"`
 	RampStep         int      `json:"ramp_step,omitempty" dynamodbav:"ramp_step,omitempty"`
 	CloudAccountID   *string  `json:"cloud_account_id,omitempty" dynamodbav:"cloud_account_id,omitempty"`
-	Status           string   `json:"status,omitempty" dynamodbav:"-"`
+	// AmountBasis is set from the amount_basis column; no writer names it.
+	AmountBasis PurchaseAmountBasis `json:"-" dynamodbav:"-"`
+	Status      string              `json:"status,omitempty" dynamodbav:"-"`
 	// Approver holds the email address the approval request was sent to (or
 	// would have been, if SES failed). Set only on pending rows, so the
 	// History UI can show "awaiting approval from <addr>" and the user knows
@@ -1765,4 +1777,10 @@ type LadderTrancheDB struct {
 // USD": whitespace-trimmed and case-insensitive. Empty (unknown) is not USD.
 func IsUSDCommitmentCurrency(currency string) bool {
 	return strings.EqualFold(strings.TrimSpace(currency), "USD")
+}
+
+// IsLegacyEstimate reports whether the row's dollar amounts are a legacy
+// estimate that totals must skip.
+func (r *PurchaseHistoryRecord) IsLegacyEstimate() bool {
+	return r.AmountBasis == PurchaseAmountBasisLegacyWindow
 }
