@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -41,6 +42,8 @@ func TestMergePlanGroupTargetCapsOnlyStayOrDrop(t *testing.T) {
 		"plan raise":  {GroupID: "a", PlanMaxStepCommitment: fp(501)},
 		"zero":        {GroupID: "a", MaxStepCommitment: fp(0)},
 		"nan":         {GroupID: "a", MaxStepCommitment: fp(nanValue())},
+		"group inf":   {GroupID: "a", MaxStepCommitment: fp(math.Inf(1))},
+		"plan inf":    {GroupID: "a", PlanMaxStepCommitment: fp(math.Inf(1))},
 	} {
 		_, err := MergePlanGroupTarget(plan, edit)
 		require.ErrorIs(t, err, ErrGroupTargetRefused, name)
@@ -73,3 +76,26 @@ func TestMergePlanGroupTargetRefusals(t *testing.T) {
 }
 
 func nanValue() float64 { var z float64; return z / z }
+
+func TestMergePlanGroupTargetWritesPlanCap(t *testing.T) {
+	got, err := MergePlanGroupTarget(boundTwoGroupPlan(), PlanGroupTarget{GroupID: "a", PlanMaxStepCommitment: fp(400)})
+	require.NoError(t, err)
+	require.Equal(t, 400.0, *got.MaxStepCommitment)
+}
+
+func TestMergePlanGroupTargetRefusesDuplicateGroupID(t *testing.T) {
+	plan := boundTwoGroupPlan()
+	plan.Services["aws:ec2#a"] = ServiceConfig{Provider: "aws", Service: "ec2", GroupID: "a", Enabled: true, MaxStepCommitment: fp(100)}
+	_, err := MergePlanGroupTarget(plan, PlanGroupTarget{GroupID: "a", MaxStepCommitment: fp(50)})
+	require.ErrorIs(t, err, ErrGroupTargetRefused)
+}
+
+func TestMergePlanGroupTargetRefusesPlanCapOnUncappedAutoPlan(t *testing.T) {
+	plan := boundTwoGroupPlan()
+	plan.AutoPurchase = true
+	plan.MaxStepCommitment = nil
+	_, err := MergePlanGroupTarget(plan, PlanGroupTarget{GroupID: "a", PlanMaxStepCommitment: fp(50)})
+	require.ErrorIs(t, err, ErrGroupTargetRefused)
+	_, err = MergePlanGroupTarget(plan, PlanGroupTarget{GroupID: "a", MaxStepCommitment: fp(50)})
+	require.NoError(t, err, "group cap behavior is unchanged")
+}

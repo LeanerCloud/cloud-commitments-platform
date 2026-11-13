@@ -155,3 +155,21 @@ func TestApplyPlanScheduleCommandGroupTargetKeepsOtherGroup(t *testing.T) {
 	require.ErrorIs(t, err, ErrGroupTargetRefused)
 	require.Equal(t, 1, receiptCount(ctx, t, store), "a refused edit leaves no receipt")
 }
+
+func TestApplyPlanScheduleCommandGroupTargetDuplicateWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	store := setupRampStepStore(ctx, t)
+	plan := boundTwoGroupPlan()
+	plan.Name = "dup"
+	plan.Services["aws:ec2#a"] = ServiceConfig{Provider: "aws", Service: "ec2", GroupID: "a", Enabled: true, MaxStepCommitment: fp(100)}
+	require.NoError(t, store.CreatePurchasePlan(ctx, plan))
+	cmd := scheduleCommand(plan, "dup")
+	cmd.GroupTarget = &PlanGroupTarget{GroupID: "a", MaxStepCommitment: fp(50)}
+
+	_, err := store.ApplyPlanScheduleCommand(ctx, cmd)
+	require.ErrorIs(t, err, ErrGroupTargetRefused)
+	got, err := store.GetPurchasePlan(ctx, plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, 100.0, *got.Services["aws/ec2#a"].MaxStepCommitment)
+	require.Equal(t, 0, receiptCount(ctx, t, store))
+}

@@ -37,7 +37,6 @@ func MergePlanGroupTarget(plan *PurchasePlan, edit PlanGroupTarget) (*PurchasePl
 	next := *plan
 	next.Services = maps.Clone(plan.Services)
 	group := next.Services[key]
-	oldEffective := EffectiveStepCap(plan.MaxStepCommitment, group.MaxStepCommitment)
 	if edit.MaxStepCommitment != nil {
 		if err := lowerCap("group "+edit.GroupID, group.MaxStepCommitment, *edit.MaxStepCommitment); err != nil {
 			return nil, err
@@ -47,14 +46,14 @@ func MergePlanGroupTarget(plan *PurchasePlan, edit PlanGroupTarget) (*PurchasePl
 		next.Services[key] = group
 	}
 	if edit.PlanMaxStepCommitment != nil {
+		if plan.AutoPurchase && plan.MaxStepCommitment == nil {
+			return nil, fmt.Errorf("%w: setting the plan cap of an auto-purchase plan with none is a raise from unbounded", ErrGroupTargetRefused)
+		}
 		if err := lowerCap("plan", plan.MaxStepCommitment, *edit.PlanMaxStepCommitment); err != nil {
 			return nil, err
 		}
 		c := *edit.PlanMaxStepCommitment
 		next.MaxStepCommitment = &c
-	}
-	if EffectiveStepCap(next.MaxStepCommitment, group.MaxStepCommitment) > oldEffective {
-		return nil, fmt.Errorf("%w: effective cap for group %q would rise", ErrGroupTargetRefused, edit.GroupID)
 	}
 	return &next, nil
 }
@@ -71,17 +70,25 @@ func EffectiveStepCap(plan, group *float64) float64 {
 	return eff
 }
 
+// groupEntryKey returns the key of the one entry for groupID. Two entries
+// with the same GroupID (for example "aws/ec2#a" and "aws:ec2#a") are
+// ambiguous, so none is returned.
 func groupEntryKey(plan *PurchasePlan, groupID string) (string, bool) {
 	if groupID == "" {
 		return "", false
 	}
+	found := ""
 	for key := range plan.Services {
 		svc := plan.Services[key]
-		if svc.GroupID == groupID && checkGroupKey(key, &svc) == nil {
-			return key, true
+		if svc.GroupID != groupID {
+			continue
 		}
+		if found != "" || checkGroupKey(key, &svc) != nil {
+			return "", false
+		}
+		found = key
 	}
-	return "", false
+	return found, found != ""
 }
 
 func lowerCap(what string, stored *float64, requested float64) error {
