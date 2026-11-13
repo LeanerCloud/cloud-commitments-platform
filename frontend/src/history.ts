@@ -10,7 +10,7 @@ import type { HistoryResponse, HistorySummary, HistoryPurchase } from './types';
 import type { RevokePurchaseResult, RevokeQuote } from './api';
 import { switchTab } from './navigation';
 import { confirmDialog } from './confirmDialog';
-import { approvalDetailsUnavailableMessage, buildApprovalDetailsBody } from './approval-details';
+import { approvalDetailsUnavailableMessage, buildApprovalDetailsBody, isPermanentDetailsError } from './approval-details';
 import { showToast } from './toast';
 import { iconSvg } from './icons';
 import { formatPaymentOption, formatTermShort } from './lib/table-format';
@@ -1569,7 +1569,12 @@ function wireRowActionHandlers(container: HTMLElement): void {
         detailsBody = await buildApprovalDetailsBody(id);
       } catch (detailsError) {
         console.error('Failed to load purchase details for approval:', detailsError);
-        showToast({ message: `${approvalDetailsUnavailableMessage(detailsError)} Try again.`, kind: 'error' });
+        const permanent = isPermanentDetailsError(detailsError);
+        showToast({
+          message: permanent ? approvalDetailsUnavailableMessage(detailsError) : `${approvalDetailsUnavailableMessage(detailsError)} Try again.`,
+          kind: 'error',
+          timeout: null,
+        });
         return;
       }
       const ok = await confirmDialog({

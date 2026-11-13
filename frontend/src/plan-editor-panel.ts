@@ -26,7 +26,7 @@ export function mountPlanEditorPanel(host: HTMLElement, form: HTMLFormElement, o
   host.hidden = false;
   host.closest('.plan-editor-layout')?.classList.add('has-editor-draft');
   const statusId = `${host.id || 'plan-editor'}-status`;
-  host.innerHTML = `<h3>Proposed purchase dates</h3><p class="editor-draft-notice">${editable ? 'Local draft. These dates are not scheduled. Save Plan does not save date changes.' : options.restartsFromToday ? restartNotice : readOnlyNotice}</p>
+  host.innerHTML = `<h3>Proposed purchase dates</h3><p class="editor-draft-notice">${editable ? 'Local draft. These dates are not scheduled. Save plan does not save date changes.' : options.restartsFromToday ? restartNotice : readOnlyNotice}</p>
     ${editable ? '' : `<p class="editor-status" data-editor="summary" id="${statusId}"></p><p class="sr-only" data-editor="status" role="status" aria-live="polite"></p>`}
     <div class="schedule-preview-scroll" role="region" tabindex="0" aria-label="Proposed purchase calendar"${editable ? '' : ` aria-describedby="${statusId}"`}></div>
     <p class="editor-target help-text"></p>${editable ? `<p class="help-text">Drag a point to change its date, or Start/End to space the dates.</p>

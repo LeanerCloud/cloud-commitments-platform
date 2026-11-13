@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(() => { dispose(); jest.useRealTimers(); });
 
 test('renders real Create intent and follows unedited notification settings', () => {
-  expect(host.hidden).toBe(false); expect(host.textContent).toContain('Save Plan does not save date changes');
+  expect(host.hidden).toBe(false); expect(host.textContent).toContain('Save plan does not save date changes');
   expect(host.querySelectorAll('[data-preview-step]')).toHaveLength(3);
   expect(host.querySelector('[data-preview-step="2"]')?.getAttribute('aria-label')).toContain('target 79.2%');
   expect(host.querySelectorAll('svg [role=button]')).toHaveLength(5);

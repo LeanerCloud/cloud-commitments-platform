@@ -238,6 +238,18 @@ describe('History action ownership and refresh recovery (#249)', () => {
     expect(document.querySelectorAll('[data-approve-id="guarded"]')).toHaveLength(1);
   });
 
+  test('a purchase that is no longer pending shows a sticky refusal without a retry hint (issue #728)', async () => {
+    setupHistoryHandlers();
+    await loadHistory();
+    (api.getPurchaseDetails as jest.Mock).mockResolvedValue({ ...DETAILS, status: 'approved' });
+    document.querySelector<HTMLButtonElement>('#purchases-approval-queue .history-approve-btn')!.click();
+    await settleActions();
+    expect(showToast).toHaveBeenCalledWith({
+      message: 'This purchase is already approved and can no longer be approved.', kind: 'error', timeout: null,
+    });
+    expect(api.approvePurchase).not.toHaveBeenCalled();
+  });
+
   test('a failed approve toast stays until dismissed (issue #728)', async () => {
     setupHistoryHandlers();
     await loadHistory();

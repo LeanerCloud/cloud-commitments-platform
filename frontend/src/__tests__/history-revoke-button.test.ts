@@ -415,6 +415,22 @@ describe('History Revoke on scheduled rows of every provider (issue #924)', () =
     expect(api.getRevokeQuote).not.toHaveBeenCalled();
     expect(api.revokePurchase).toHaveBeenCalledWith('exec-aws', undefined);
   });
+
+  test('a failed revoke toast stays until dismissed (issue #728)', async () => {
+    (api.getHistory as jest.Mock).mockResolvedValue({
+      summary: {},
+      purchases: [makeRow({ purchase_id: 'exec-aws', provider: 'aws', status: 'scheduled', revocation_window_closes_at: FUTURE })],
+    });
+    (confirmDialog as jest.Mock).mockResolvedValue(true);
+    (api.revokePurchase as jest.Mock).mockRejectedValue(new Error('boom'));
+    console.error = jest.fn();
+
+    await loadHistory();
+    document.querySelector<HTMLButtonElement>('.history-revoke-btn')!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Failed to revoke: boom', kind: 'error', timeout: null }));
+  });
 });
 
 // platform#96: the backend refuses an Azure return unless the body carries the

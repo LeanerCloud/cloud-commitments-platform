@@ -546,7 +546,7 @@ describe('History inline Retry button (issue #47)', () => {
     btn?.click();
     await flushPromises();
 
-    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error', timeout: null }));
     expect(btn?.disabled).toBe(false);
   });
 
