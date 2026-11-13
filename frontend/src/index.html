@@ -1003,51 +1003,55 @@
 
                     <div class="form-section">
                         <h3>Purchase Configuration</h3>
-                        <div class="form-row">
-                            <label>Provider:
-                                <select id="plan-provider">
-                                    <option value="aws">AWS</option>
-                                    <option value="azure">Azure</option>
-                                    <option value="gcp">GCP</option>
-                                </select>
-                            </label>
-                            <label>Service:
-                                <select id="plan-service">
-                                    <optgroup label="AWS" id="plan-service-aws" data-provider="aws">
-                                        <option value="ec2">EC2</option>
-                                        <option value="rds">RDS</option>
-                                        <option value="elasticache">ElastiCache</option>
-                                        <option value="opensearch">OpenSearch</option>
-                                        <option value="memorydb">MemoryDB</option>
-                                        <option value="redshift">Redshift</option>
-                                    </optgroup>
-                                    <optgroup label="Savings Plans" id="plan-service-aws-sp" data-provider="aws">
-                                        <option value="savings-plans-compute">Compute SP</option>
-                                        <option value="savings-plans-ec2instance">EC2 Instance SP</option>
-                                        <option value="savings-plans-sagemaker">SageMaker SP</option>
-                                        <option value="savings-plans-database">Database SP</option>
-                                    </optgroup>
-                                    <optgroup label="Azure" id="plan-service-azure" data-provider="azure" class="hidden">
-                                        <option value="compute">Virtual Machines</option>
-                                        <option value="relational-db">SQL Database</option>
-                                        <option value="cache">Cache for Redis</option>
-                                        <option value="search">AI Search</option>
-                                    </optgroup>
-                                    <optgroup label="GCP" id="plan-service-gcp" data-provider="gcp" class="hidden">
-                                        <option value="compute">Compute Engine</option>
-                                        <option value="relational-db">Cloud SQL</option>
-                                        <option value="cache">Memorystore</option>
-                                    </optgroup>
-                                </select>
-                            </label>
-                        </div>
-                        <div class="form-row">
-                            <label>Term:
-                                <select id="plan-term">
-                                    <option value="1">1 Year</option>
-                                    <option value="3" selected>3 Years</option>
-                                </select>
-                            </label>
+                        <p id="plan-selection-groups-intro" class="help-text" hidden>This plan buys the selected recommendations, in these groups:</p>
+                        <ul id="plan-selection-groups" class="help-text" aria-label="Selected recommendation groups" hidden></ul>
+                        <div id="plan-service-fields">
+                            <div class="form-row">
+                                <label>Provider:
+                                    <select id="plan-provider">
+                                        <option value="aws">AWS</option>
+                                        <option value="azure">Azure</option>
+                                        <option value="gcp">GCP</option>
+                                    </select>
+                                </label>
+                                <label>Service:
+                                    <select id="plan-service">
+                                        <optgroup label="AWS" id="plan-service-aws" data-provider="aws">
+                                            <option value="ec2">EC2</option>
+                                            <option value="rds">RDS</option>
+                                            <option value="elasticache">ElastiCache</option>
+                                            <option value="opensearch">OpenSearch</option>
+                                            <option value="memorydb">MemoryDB</option>
+                                            <option value="redshift">Redshift</option>
+                                        </optgroup>
+                                        <optgroup label="Savings Plans" id="plan-service-aws-sp" data-provider="aws">
+                                            <option value="savings-plans-compute">Compute SP</option>
+                                            <option value="savings-plans-ec2instance">EC2 Instance SP</option>
+                                            <option value="savings-plans-sagemaker">SageMaker SP</option>
+                                            <option value="savings-plans-database">Database SP</option>
+                                        </optgroup>
+                                        <optgroup label="Azure" id="plan-service-azure" data-provider="azure" class="hidden">
+                                            <option value="compute">Virtual Machines</option>
+                                            <option value="relational-db">SQL Database</option>
+                                            <option value="cache">Cache for Redis</option>
+                                            <option value="search">AI Search</option>
+                                        </optgroup>
+                                        <optgroup label="GCP" id="plan-service-gcp" data-provider="gcp" class="hidden">
+                                            <option value="compute">Compute Engine</option>
+                                            <option value="relational-db">Cloud SQL</option>
+                                            <option value="cache">Memorystore</option>
+                                        </optgroup>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="form-row">
+                                <label>Term:
+                                    <select id="plan-term">
+                                        <option value="1">1 Year</option>
+                                        <option value="3" selected>3 Years</option>
+                                    </select>
+                                </label>
+                            </div>
                         </div>
                         <label>Target Coverage (%): <input type="number" id="plan-coverage" value="80" min="0" max="100" inputmode="decimal" autocomplete="off"></label>
                     </div>

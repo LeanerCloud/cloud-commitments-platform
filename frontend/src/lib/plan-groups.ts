@@ -1,4 +1,6 @@
 import type { PlanGroupRequest, Recommendation } from '../api/types';
+import { serviceLabel } from './service-labels';
+import { formatPaymentOption } from './table-format';
 
 // groupSelection splits a selection into one plan group per
 // (provider, service, term, payment), each carrying its recommendation ids, so
@@ -40,4 +42,11 @@ export function planSelectionLimit(recs: readonly Recommendation[]): string | nu
     return `A plan can hold at most ${MAX_GROUP_RECOMMENDATIONS} recommendations of one provider, service, term and payment. Refine your selection.`;
   }
   return null;
+}
+
+// describeGroup is the one-line label of a group in the plan modal.
+export function describeGroup(group: PlanGroupRequest): string {
+  const years = group.term ? `${group.term} year${group.term === 1 ? '' : 's'}` : 'term not set';
+  const count = group.recommendation_ids.length;
+  return `${group.provider.toUpperCase()} ${serviceLabel(group.service)}, ${years}, ${formatPaymentOption(group.payment)}: ${count} recommendation${count === 1 ? '' : 's'}`;
 }

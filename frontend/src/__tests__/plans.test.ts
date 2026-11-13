@@ -146,6 +146,9 @@ describe('Plans Module', () => {
           <input type="hidden" id="plan-id">
           <input type="text" id="plan-name">
           <textarea id="plan-description"></textarea>
+          <p id="plan-selection-groups-intro" hidden></p>
+          <ul id="plan-selection-groups" hidden></ul>
+          <div id="plan-service-fields">
           <select id="plan-provider">
             <option value="aws">AWS</option>
             <option value="azure">Azure</option>
@@ -179,6 +182,7 @@ describe('Plans Module', () => {
             <option value="partial-upfront">Partial Upfront</option>
             <option value="all-upfront">All Upfront</option>
           </select>
+          </div>
           <input type="number" id="plan-coverage" value="80">
           <input type="checkbox" id="plan-auto-purchase">
           <input type="text" id="plan-max-step-commitment">
@@ -1441,6 +1445,16 @@ describe('Plans Module', () => {
         expect(api.updatePlan).toHaveBeenCalledTimes(1);
       });
 
+      test('a bound plan keeps its accounts of every provider (#1746)', async () => {
+        (api.listPlanAccounts as jest.Mock).mockResolvedValueOnce([
+          { id: 'acct-aws', name: 'AWS', external_id: '1', provider: 'aws' },
+          { id: 'acct-azure', name: 'Azure', external_id: '2', provider: 'azure' },
+        ]);
+        await openBoundEdit();
+        await flushPromises();
+        expect((document.getElementById('plan-account-ids') as HTMLInputElement).value.split(',').sort()).toEqual(['acct-aws', 'acct-azure']);
+      });
+
       test('locks never leak into the next modal', async () => {
         await openBoundEdit();
         expect(locked()).toEqual([true, true, true, true]);
@@ -2584,18 +2598,86 @@ describe('Plans Module', () => {
           expect(hiddenIds).toContain('acct-uuid-123');
         });
 
-        test('leaves the account chip empty when commitments span accounts', async () => {
+        test('pre-selects every selected account with one lookup (#1746)', async () => {
+          (api.listAccountsMinimal as jest.Mock).mockResolvedValueOnce([
+            { id: 'acct-uuid-123', name: 'Prod AWS', external_id: '123456789012', provider: 'aws' },
+            { id: 'acct-uuid-999', name: 'Dev AWS', external_id: '210987654321', provider: 'aws' },
+            { id: 'acct-unselected', name: 'Other', external_id: '1', provider: 'aws' },
+          ]);
           const second: api.Recommendation = { ...fixture, id: 'rec-771', cloud_account_id: 'acct-uuid-999' };
           openCreatePlanModal([fixture, second]);
+          await flushPromises();
 
-          await Promise.resolve();
+          expect(api.listAccountsMinimal).toHaveBeenCalledTimes(1);
+          const hiddenIds = (document.getElementById('plan-account-ids') as HTMLInputElement).value.split(',').sort();
+          expect(hiddenIds).toEqual(['acct-uuid-123', 'acct-uuid-999']);
+        });
+      });
 
-          // Config still prefills from the homogeneous fields, but the account
-          // is ambiguous so no list lookup happens.
-          expect((document.getElementById('plan-service') as HTMLSelectElement).value).toBe('ec2');
-          expect(api.listAccountsMinimal).not.toHaveBeenCalled();
-          const hiddenIds = (document.getElementById('plan-account-ids') as HTMLInputElement).value;
-          expect(hiddenIds).toBe('');
+      describe('mixed selection (#1746)', () => {
+        const azure: api.Recommendation = { ...fixture, id: 'rec-az', provider: 'azure', service: 'compute', term: 3, payment: 'monthly' };
+
+        test('lists the groups instead of the service fields and saves every group', async () => {
+          (api.listAccountsMinimal as jest.Mock).mockResolvedValueOnce([]);
+          openCreatePlanModal([fixture, azure]);
+          const list = document.getElementById('plan-selection-groups') as HTMLElement;
+          expect(list.hidden).toBe(false);
+          expect(Array.from(list.children).map((li) => li.textContent)).toEqual([
+            expect.stringContaining('AWS'), expect.stringContaining('AZURE'),
+          ]);
+          expect((document.getElementById('plan-service-fields') as HTMLElement).hidden).toBe(true);
+
+          (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+          (api.createPlan as jest.Mock).mockResolvedValue({});
+          (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+          (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+          await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+          const sent = (api.createPlan as jest.Mock).mock.calls[0][0];
+          expect(sent.groups.map((g: { provider: string; recommendation_ids: string[] }) => [g.provider, g.recommendation_ids]))
+            .toEqual([['aws', [fixture.id]], ['azure', ['rec-az']]]);
+          expect(sent).not.toHaveProperty('provider');
+          expect((document.getElementById('plan-selection-groups') as HTMLElement).hidden).toBe(true);
+          expect((document.getElementById('plan-service-fields') as HTMLElement).hidden).toBe(false);
+        });
+
+        test('group labels are text, not markup', () => {
+          openCreatePlanModal([{ ...fixture, service: '<img src=x onerror=alert(1)>' }, azure]);
+          const list = document.getElementById('plan-selection-groups') as HTMLElement;
+          expect(list.querySelector('img')).toBeNull();
+          expect(list.textContent).toContain('<img src=x onerror=alert(1)>');
+          expect((document.getElementById('plan-selection-groups-intro') as HTMLElement).hidden).toBe(false);
+        });
+
+        test('does not warn when every selected account is listed', async () => {
+          (api.listAccountsMinimal as jest.Mock).mockResolvedValueOnce([{ id: fixture.cloud_account_id, name: 'A', external_id: '1', provider: 'aws' }]);
+          openCreatePlanModal([fixture, azure]);
+          await flushPromises();
+          expect(mockShowToast).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning' }));
+        });
+
+        test('warns when a selected account cannot be listed', async () => {
+          (api.listAccountsMinimal as jest.Mock).mockResolvedValueOnce([{ id: fixture.cloud_account_id, name: 'A', external_id: '1', provider: 'aws' }]);
+          openCreatePlanModal([fixture, { ...azure, cloud_account_id: 'acct-unlisted' }]);
+          await flushPromises();
+          expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning', message: expect.stringContaining('Target Accounts') }));
+        });
+
+        test('a late account lookup does not fill the next modal', async () => {
+          let resolveLookup: (v: unknown[]) => void = () => undefined;
+          (api.listAccountsMinimal as jest.Mock).mockReturnValueOnce(new Promise((r) => { resolveLookup = r; }));
+          openCreatePlanModal([fixture, azure]);
+          closePlanModal();
+          openNewPlanModal();
+          resolveLookup([{ id: fixture.cloud_account_id, name: 'A', external_id: '1', provider: 'aws' }]);
+          await flushPromises();
+          expect((document.getElementById('plan-account-ids') as HTMLInputElement).value).toBe('');
+        });
+
+        test('a single-group selection keeps the service fields', () => {
+          openCreatePlanModal([fixture]);
+          expect((document.getElementById('plan-selection-groups-intro') as HTMLElement).hidden).toBe(true);
+          expect((document.getElementById('plan-selection-groups') as HTMLElement).hidden).toBe(true);
+          expect((document.getElementById('plan-service-fields') as HTMLElement).hidden).toBe(false);
         });
       });
     });
@@ -3656,6 +3738,33 @@ describe('Plans Module', () => {
       expect(api.listAccountsMinimal).toHaveBeenCalledWith(
         expect.objectContaining({ search: 'my-azure', provider: 'azure' })
       );
+    });
+
+    describe('account search for plans built from a selection (#1746)', () => {
+      const rec = (id: string, term: number): api.Recommendation => ({
+        id, provider: 'azure', service: 'compute', term, payment: 'monthly', cloud_account_id: 'acct-az',
+      } as unknown as api.Recommendation);
+      const searchCall = async (selection: api.Recommendation[]) => {
+        (api.listAccountsMinimal as jest.Mock).mockResolvedValue([]);
+        openCreatePlanModal(selection);
+        await Promise.resolve();
+        (api.listAccountsMinimal as jest.Mock).mockClear();
+        const searchInput = document.getElementById('plan-account-search') as HTMLInputElement;
+        searchInput.value = 'prod';
+        searchInput.dispatchEvent(new Event('input'));
+        jest.runAllTimers();
+        await Promise.resolve();
+        await Promise.resolve();
+        return (api.listAccountsMinimal as jest.Mock).mock.calls[0][0] as { provider?: string };
+      };
+
+      test('a selection of several groups is not restricted to the provider select', async () => {
+        expect(await searchCall([rec('a', 3), rec('b', 1)])).not.toHaveProperty('provider');
+      });
+
+      test('a one-group selection is restricted to its provider', async () => {
+        expect(await searchCall([rec('a', 3)])).toEqual(expect.objectContaining({ provider: 'azure' }));
+      });
     });
 
     test('account search passes aws provider when plan provider is aws', async () => {

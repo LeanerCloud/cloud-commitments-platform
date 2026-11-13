@@ -30,7 +30,7 @@ import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { badgeHtml, statusBadgeHtml } from './lib/status-badge';
 import { isPastScheduledDate } from './lib/purchase-row-guards';
 import { serviceLabel } from './lib/service-labels';
-import { groupSelection } from './lib/plan-groups';
+import { describeGroup, groupSelection } from './lib/plan-groups';
 import { mountPlanEditorPanel } from './plan-editor-panel';
 import { renderPlanFiltersNotice } from './plan-filters-notice';
 import { applyPlanForm, clearPlanDraft, loadPlanDraft, readPlanForm, savePlanDraft } from './lib/plan-form-draft';
@@ -49,6 +49,19 @@ let pendingPlanRecommendations: api.Recommendation[] = [];
 // editingBoundPlan is true while the modal edits a plan bound to selected
 // recommendations (#1746). Its service fields are read-only and never sent.
 let editingBoundPlan = false;
+
+// showSelectionGroups lists the groups of a mixed selection in place of the
+// service fields, which describe one group only. An empty list restores them.
+function showSelectionGroups(groups: readonly api.PlanGroupRequest[]): void {
+  const list = document.getElementById('plan-selection-groups');
+  const intro = document.getElementById('plan-selection-groups-intro');
+  const fields = document.getElementById('plan-service-fields');
+  if (!list || !fields) return;
+  list.replaceChildren(...groups.map((g) => Object.assign(document.createElement('li'), { textContent: describeGroup(g) })));
+  list.hidden = groups.length === 0;
+  if (intro) intro.hidden = groups.length === 0;
+  fields.hidden = groups.length > 0;
+}
 
 // setPlanFieldsLocked makes the modal's service fields read-only. A plan built
 // from a selection locks provider, service, term and payment (the selection
@@ -1151,6 +1164,8 @@ async function editPlan(planId: string): Promise<boolean> {
     pendingPlanRecommendations = [];
     editingBoundPlan = backendPlan.ramp_schedule?.allocation_mode === 'bound_groups';
     setPlanFieldsLocked(editingBoundPlan, editingBoundPlan);
+    showSelectionGroups([]);
+    planModalSession += 1;
 
     // Edit can be the first modal opened. Install the handlers before any field is filled: the first install rebuilds term/payment (#1536).
     setupRampScheduleHandlers();
@@ -1454,6 +1469,8 @@ export function closePlanModal(): void {
   pendingPlanRecommendations = [];
   editingBoundPlan = false;
   setPlanFieldsLocked(false, false);
+  showSelectionGroups([]);
+  planModalSession += 1; // a late account lookup must not fill the next modal
 }
 
 // Settles when the account chips of the most recently opened plan modal are loaded.
@@ -1619,7 +1636,7 @@ async function handlePlanAccountSearch(value: string): Promise<void> {
 
   try {
     const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement | null;
-    const provider = providerSelect?.value as api.Provider | undefined;
+    const provider = (planSpansProviders() ? undefined : providerSelect?.value) as api.Provider | undefined;
     // Minimal-disclosure list (view:recommendations) so plan-account search
     // works for Standard / Read-Only users; the full view:accounts list 403s
     // for them. See issues #949/#951.
@@ -1650,13 +1667,21 @@ async function handlePlanAccountSearch(value: string): Promise<void> {
   }
 }
 
+// planSpansProviders is true when the plan may hold groups of several providers
+// (a bound plan, or a selection of several groups, whose service fields the form
+// does not show), so its account picker is not restricted to the provider select (#1746).
+function planSpansProviders(): boolean {
+  return editingBoundPlan || groupSelection(pendingPlanRecommendations, 0).length > 1;
+}
+
 /**
  * Set up plan accounts section in the modal
  */
 async function setupPlanAccountsSection(planId?: string): Promise<void> {
   planSelectedAccounts = [];
 
-  const planProvider = (document.getElementById('plan-provider') as HTMLSelectElement | null)?.value;
+  const spansProviders = planSpansProviders();
+  const planProvider = spansProviders ? undefined : (document.getElementById('plan-provider') as HTMLSelectElement | null)?.value;
 
   if (planId) {
     try {
@@ -1678,7 +1703,7 @@ async function setupPlanAccountsSection(planId?: string): Promise<void> {
   const searchInput = document.getElementById('plan-account-search') as HTMLInputElement | null;
   if (searchInput) {
     // Disable the search input until a provider is selected.
-    searchInput.disabled = !planProvider;
+    searchInput.disabled = !planProvider && !spansProviders;
 
     // Remove previous listeners by replacing node
     const newInput = searchInput.cloneNode(true) as HTMLInputElement;
@@ -1698,11 +1723,9 @@ async function setupPlanAccountsSection(planId?: string): Promise<void> {
  * form.reset() so the defaults are already in place; each field is still
  * editable. (#770)
  *
- * For a multi-commitment selection the caller passes the first commitment as
- * the representative: the "Plan from N selected" button is only enabled when
- * the selection is homogeneous (same provider/service/term/payment — see
- * isHomogeneousSelection in recommendations.ts), so any element shares those
- * four values. (#898)
+ * The caller passes the first commitment as the representative only when the
+ * whole selection shares provider, service, term and payment (one plan group);
+ * a mixed selection lists its groups instead. (#898, #1746)
  */
 function prefillPurchaseConfigFromCommitment(rec: api.Recommendation): void {
   const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement | null;
@@ -1742,25 +1765,30 @@ function prefillPurchaseConfigFromCommitment(rec: api.Recommendation): void {
  *                    the counter will have advanced and the stale result is
  *                    discarded to prevent wrong-modal pollution. (#770 CR)
  */
-async function prefillAccountChipFromId(accountId: string, session: number): Promise<void> {
+async function prefillAccountChips(accountIds: readonly string[], session: number): Promise<void> {
   try {
     // Resolve via the minimal-disclosure list (view:recommendations) instead of
     // GET /api/accounts/:id (view:accounts) so the target prefills for
     // Standard / Read-Only users too — the per-id endpoint 403s for them, which
     // previously left the target empty and made Save Plan silently no-op once
     // the empty-target guard rejected submit. See issues #949/#951.
-    const account = (await api.listAccountsMinimal()).find((a) => a.id === accountId);
+    const accounts = (await api.listAccountsMinimal()).filter((a) => accountIds.includes(a.id));
     // Session guard: discard the result if the modal was closed and reopened
     // while this promise was in-flight. planModalSession is incremented on
     // each new modal open, so a mismatch means this callback is stale.
     if (session !== planModalSession) return;
     // Guard: only add if the chip is not already present (e.g. a concurrent
     // edit flow somehow set it) and the account record is usable.
-    if (account && account.id && !planSelectedAccounts.some(a => a.id === account.id)) {
-      planSelectedAccounts.push({ id: account.id, name: account.name, external_id: account.external_id });
-      renderPlanAccountChips();
-      updatePlanAccountIdsField();
+    if (accounts.length < accountIds.length) {
+      showToast({ message: 'Some selected recommendations belong to accounts you cannot list. Add those accounts under Target Accounts before saving.', kind: 'warning' });
     }
+    for (const account of accounts) {
+      if (account.id && !planSelectedAccounts.some(a => a.id === account.id)) {
+        planSelectedAccounts.push({ id: account.id, name: account.name, external_id: account.external_id });
+      }
+    }
+    renderPlanAccountChips();
+    updatePlanAccountIdsField();
   } catch {
     // Non-critical: the user can still search and add the account manually.
   }
@@ -1791,15 +1819,14 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   (document.getElementById('plan-id') as HTMLInputElement).value = '';
   (document.getElementById('plan-form') as HTMLFormElement | null)?.reset();
 
-  // When one or more commitments are selected, prefill the Purchase
-  // Configuration fields so the user does not have to re-enter them. The
-  // first commitment is the representative: for a multi-selection the
-  // "Plan from N selected" button only enables on a homogeneous selection,
-  // so every element shares provider/service/term/payment. Fields are still
-  // fully editable after prefill. (#770, #898)
-  if (pendingPlanRecommendations.length >= 1) {
+  // One plan group (every selected commitment shares provider, service, term
+  // and payment): prefill and lock the Purchase Configuration from the first
+  // commitment. A mixed selection lists its groups instead. (#770, #898, #1746)
+  const groups = groupSelection(pendingPlanRecommendations, 0);
+  if (groups.length === 1) {
     prefillPurchaseConfigFromCommitment(pendingPlanRecommendations[0]!);
   }
+  showSelectionGroups(groups.length > 1 ? groups : []);
   editingBoundPlan = false;
   setPlanFieldsLocked(hasSelection, false);
 
@@ -1813,7 +1840,7 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   // Generate initial plan name
   updatePlanNameFromSchedule();
 
-  // Stamp a new session so any in-flight prefillAccountChipFromId promise
+  // Stamp a new session so any in-flight prefillAccountChips promise
   // from a prior modal open can detect it belongs to a stale session and
   // discard its result without mutating planSelectedAccounts. (#770 CR)
   planModalSession += 1;
@@ -1825,16 +1852,11 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   // "Plan from N selected" gate) does not imply a single account, so a
   // multi-account selection leaves the chip empty for the user to fill. (#898)
   planAccountsLoad = setupPlanAccountsSection();
-  if (pendingPlanRecommendations.length >= 1) {
-    const firstAccountId = pendingPlanRecommendations[0]!.cloud_account_id;
-    const sharedAccountId =
-      firstAccountId &&
-      pendingPlanRecommendations.every((r) => r.cloud_account_id === firstAccountId)
-        ? firstAccountId
-        : undefined;
-    if (sharedAccountId) {
-      void prefillAccountChipFromId(sharedAccountId, planModalSession);
-    }
+  // Every selected recommendation's account must be a target account, or the
+  // backend refuses the bound plan, so all of them are pre-selected (#1746).
+  const selectedAccountIds = [...new Set(pendingPlanRecommendations.map((r) => r.cloud_account_id).filter((id): id is string => !!id))];
+  if (selectedAccountIds.length > 0) {
+    void prefillAccountChips(selectedAccountIds, planModalSession);
   }
 
   const planModal = document.getElementById('plan-modal');
@@ -1854,6 +1876,8 @@ export function openNewPlanModal(): void {
   pendingPlanRecommendations = [];
   editingBoundPlan = false;
   setPlanFieldsLocked(false, false);
+  showSelectionGroups([]);
+  planModalSession += 1;
 
   const titleEl = document.getElementById('plan-modal-title');
   if (titleEl) titleEl.textContent = 'New Purchase Plan';

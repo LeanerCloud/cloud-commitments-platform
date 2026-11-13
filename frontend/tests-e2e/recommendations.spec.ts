@@ -134,3 +134,27 @@ test('submits a plan bound to the selected recommendation ids', async ({ page })
   expect(body).not.toHaveProperty('recommendations');
   await expect(modal).toBeHidden();
 });
+
+test('a mixed selection becomes one plan with one group per combination (#1746)', async ({ page }) => {
+  const api = await mockApi(page);
+  await openOpportunities(page);
+  const first = RECS.find((rec) => rec.id === 'r01') as SmokeRec;
+  const second = RECS.find((rec) => rec.id === 'r02') as SmokeRec;
+
+  await selectRecommendation(page, first.id);
+  await selectRecommendation(page, second.id);
+  await page.getByRole('button', { name: 'Plan from 2 selected' }).click();
+  const modal = page.getByRole('dialog', { name: 'Create Purchase Plan' });
+  await expect(modal).toBeVisible();
+  await expect(modal.getByRole('list', { name: 'Selected recommendation groups' }).getByRole('listitem')).toHaveCount(2);
+  await expect(modal.getByLabel('Provider:')).toBeHidden();
+  await expect(modal.locator('#plan-account-ids')).toHaveValue(first.cloud_account_id);
+  await modal.getByRole('button', { name: 'Save Plan' }).click();
+
+  await expect.poll(() => callsTo(api, '/api/plans').length).toBe(1);
+  const body = callsTo(api, '/api/plans')[0] as { groups: { term: number; recommendation_ids: string[] }[] };
+  expect(body.groups.map((g) => [g.term, g.recommendation_ids])).toEqual([
+    [first.term, [first.id]], [second.term, [second.id]],
+  ]);
+  await expect(modal).toBeHidden();
+});
