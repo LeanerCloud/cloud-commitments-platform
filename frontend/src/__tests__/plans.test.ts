@@ -839,6 +839,55 @@ describe('Plans Module', () => {
       expect(html).not.toContain('$0');
     });
 
+    describe('step estimate (#631)', () => {
+      const step = {
+        id: 'purchase-est', plan_id: 'plan-1', plan_name: 'Azure compute 80% weekly', scheduled_date: '2026-10-07',
+        provider: 'azure', service: 'compute', resource_type: 'Standard_D2s_v3', region: 'westeurope', count: 4,
+        term: 1, payment: 'monthly', upfront_cost: 50, estimated_savings: 10, has_recommendations: false,
+        status: 'pending', step_number: 1, total_steps: 4
+      };
+      const render = async (row: Record<string, unknown>) => {
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [{ ...step, ...row }] });
+        await loadPlans();
+        return document.getElementById('planned-purchases-list')?.innerHTML ?? '';
+      };
+
+      test('shows the figures with an Estimate label and keeps Run now disabled', async () => {
+        const html = await render({ estimate: true });
+        expect(html).toContain('Standard_D2s_v3');
+        expect(html).toContain('estimate-label');
+        expect(html).toContain('the real figures are fixed when the step runs');
+        expect(html).not.toContain('No recommendations attached');
+        expect(document.querySelector('tr.planned-purchase-row td.num')?.textContent?.trim()).toBe('4');
+        expect(document.querySelector('[data-action="run"]')?.getAttribute('aria-disabled')).toBe('true');
+      });
+
+      test('shows the note instead of the placeholder text, with no figures', async () => {
+        const html = await render({ estimate_note: 'sized when step 1 runs', count: 0, resource_type: 'Various', region: 'Multiple' });
+        expect(html).toContain('sized when step 1 runs');
+        expect(html).not.toContain('No recommendations attached');
+        expect(html).not.toContain('estimate-label');
+      });
+
+      test('reloads the list once when the page becomes visible on the Plans tab', async () => {
+        document.body.insertAdjacentHTML('beforeend', '<div id="plans-tab" class="tab-content active"></div>');
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        setupPlanHandlers();
+        setupPlanHandlers();
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flushPromises();
+        expect(api.getPlannedPurchases).toHaveBeenCalledTimes(1);
+
+        document.getElementById('plans-tab')?.classList.remove('active');
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flushPromises();
+        expect(api.getPlannedPurchases).toHaveBeenCalledTimes(1);
+      });
+    });
+
     describe('Run now on a step with no recommendations (#1695)', () => {
       const bare = {
         id: 'purchase-bare',

@@ -456,13 +456,20 @@ function renderPlannedPurchaseRow(purchase: PlannedPurchase): string {
   // count, resource type, upfront and savings are placeholders. Say so rather
   // than render them as zeros.
   const hasNoRecommendations = purchase.has_recommendations === false;
-  const resourceCell = hasNoRecommendations
-    ? '<span class="no-recommendations" title="This step has no recommendations attached, so it cannot buy anything.">No recommendations attached</span>'
-    : `${escapeHtml(purchase.resource_type)} <span class="cell-sub">(${escapeHtml(purchase.region)})</span>`;
+  // An estimate is not attached: it shows figures but Run now stays disabled.
+  const isEstimate = purchase.estimate === true;
+  const showFigures = !hasNoRecommendations || isEstimate;
+  const estimateLabel = isEstimate
+    ? ' <span class="cell-sub estimate-label" title="Current matching recommendations; the real figures are fixed when the step runs">Estimate</span>'
+    : '';
+  const unattachedText = purchase.estimate_note || 'No recommendations attached';
+  const resourceCell = showFigures
+    ? `${escapeHtml(purchase.resource_type)} <span class="cell-sub">(${escapeHtml(purchase.region)})</span>${estimateLabel}`
+    : `<span class="no-recommendations" title="This step has no recommendations attached, so it cannot buy anything.">${escapeHtml(unattachedText)}</span>`;
   const placeholder = `<span class="cell-placeholder">${NO_VALUE}</span>`;
-  const countCell = hasNoRecommendations ? placeholder : escapeHtml(String(purchase.count ?? ''));
-  const upfrontShown = hasNoRecommendations || upfrontCell === NO_VALUE ? placeholder : upfrontCell;
-  const savingsCell = hasNoRecommendations ? placeholder : `${formatCurrency(purchase.estimated_savings)}/mo`;
+  const countCell = showFigures ? escapeHtml(String(purchase.count ?? '')) : placeholder;
+  const upfrontShown = !showFigures || upfrontCell === NO_VALUE ? placeholder : upfrontCell;
+  const savingsCell = showFigures ? `${formatCurrency(purchase.estimated_savings)}/mo` : placeholder;
 
   // Issue #365: gate row actions by the same plan-management permissions
   // a click on each button would require. Readonly users see no buttons
@@ -2416,6 +2423,15 @@ async function handleAddPurchases(e: Event): Promise<void> {
 // replaces the old subscriptions rather than stacking duplicates.
 let _unsubProvider: (() => void) | null = null;
 let _unsubAccount: (() => void) | null = null;
+let _onVisible: (() => void) | null = null;
+
+// Recommendations move while the tab sits in the background, and the step
+// estimates follow them, so refetch the list when the page comes back.
+function reloadWhenPlansTabVisible(): void {
+  if (document.visibilityState !== 'visible') return;
+  if (!document.getElementById('plans-tab')?.classList.contains('active')) return;
+  void loadPlans();
+}
 
 /**
  * Setup plan form event handlers (provider-aware service dropdown).
@@ -2431,6 +2447,9 @@ export function setupPlanHandlers(): void {
   _unsubAccount?.();
   _unsubProvider = state.subscribeProvider(() => void loadPlans());
   _unsubAccount = state.subscribeAccount(() => void loadPlans());
+  if (_onVisible) document.removeEventListener('visibilitychange', _onVisible);
+  _onVisible = reloadWhenPlansTabVisible;
+  document.addEventListener('visibilitychange', _onVisible);
 
   const planForm = document.getElementById('plan-form');
   planForm?.addEventListener('input', schedulePlanDraftSave);

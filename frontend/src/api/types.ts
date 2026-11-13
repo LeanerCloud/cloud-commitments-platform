@@ -505,6 +505,11 @@ export interface PlannedPurchase {
   // upfront_cost and estimated_savings are then placeholders, not data
   // (platform#609).
   has_recommendations: boolean;
+  // True when the figures come from the current matching recommendations, not
+  // an attached step; the purchase recomputes them. estimate_note says why a
+  // step has none. Both are omitted for callers without view:recommendations.
+  estimate?: boolean;
+  estimate_note?: string;
   status: 'pending' | 'notified' | 'paused' | 'running' | 'completed' | 'failed';
   step_number: number;
   total_steps: number;
