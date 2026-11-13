@@ -813,6 +813,10 @@ type PlannedPurchase struct {
 	// whose Count, UpfrontCost, EstimatedSavings and ResourceType are then
 	// placeholders, not data (platform#609).
 	HasRecommendations bool `json:"has_recommendations"`
+	// Estimate: the figures come from current recommendations, not a stored
+	// attach; the purchase recomputes them. EstimateNote says why there are none.
+	Estimate     bool   `json:"estimate,omitempty"`
+	EstimateNote string `json:"estimate_note,omitempty"`
 }
 
 // PlanRequest represents the API request format for creating/updating plans

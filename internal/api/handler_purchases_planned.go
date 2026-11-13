@@ -58,7 +58,11 @@ func (h *Handler) getPlannedPurchases(ctx context.Context, req *events.LambdaFun
 	if err != nil {
 		return nil, fmt.Errorf("failed to get allowed accounts: %w", err)
 	}
-	purchases, err := h.plannedPurchasesInScope(ctx, scope, executions, planMap)
+	est, err := h.newStepEstimator(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	purchases, err := h.plannedPurchasesInScope(ctx, scope, executions, planMap, est)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +73,7 @@ func (h *Handler) getPlannedPurchases(ctx context.Context, req *events.LambdaFun
 
 // plannedPurchasesInScope builds the list rows for the executions whose plan
 // still exists and that the caller's account scope can see, in input order.
-func (h *Handler) plannedPurchasesInScope(ctx context.Context, scope auth.AccountScope, executions []config.PurchaseExecution, planMap map[string]*config.PurchasePlan) ([]PlannedPurchase, error) {
+func (h *Handler) plannedPurchasesInScope(ctx context.Context, scope auth.AccountScope, executions []config.PurchaseExecution, planMap map[string]*config.PurchasePlan, est *stepEstimator) ([]PlannedPurchase, error) {
 	// Memoises GetPlanAccounts: plan-level parents of the same plan share it.
 	planAccounts := make(map[string][]config.CloudAccount)
 	var purchases []PlannedPurchase
@@ -86,7 +90,9 @@ func (h *Handler) plannedPurchasesInScope(ctx context.Context, scope auth.Accoun
 		if !ok {
 			continue
 		}
-		purchases = append(purchases, buildPlannedPurchase(plan, &exec))
+		row := buildPlannedPurchase(plan, &exec)
+		est.fill(ctx, &row, plan, &exec)
+		purchases = append(purchases, row)
 	}
 	return purchases, nil
 }
@@ -129,21 +135,28 @@ func buildPlannedPurchase(plan *config.PurchasePlan, exec *config.PurchaseExecut
 
 		HasRecommendations: len(exec.Recommendations) > 0,
 	}
-	if len(exec.Recommendations) > 0 {
-		first := exec.Recommendations[0]
-		row.ResourceType, row.Region = first.ResourceType, first.Region
-		for i := range exec.Recommendations {
-			rec := &exec.Recommendations[i]
-			row.Count += rec.Count
-			if rec.ResourceType == "" || rec.ResourceType != first.ResourceType {
-				row.ResourceType = "Various"
-			}
-			if rec.Region == "" || rec.Region != first.Region {
-				row.Region = "Multiple"
-			}
+	summarizePlannedRecs(&row, exec.Recommendations)
+	return row
+}
+
+// summarizePlannedRecs fills the row's count, resource type and region
+// from recs: the shared values when they agree, "Various"/"Multiple" otherwise.
+func summarizePlannedRecs(row *PlannedPurchase, recs []config.RecommendationRecord) {
+	if len(recs) == 0 {
+		return
+	}
+	first := recs[0]
+	row.ResourceType, row.Region = first.ResourceType, first.Region
+	for i := range recs {
+		rec := &recs[i]
+		row.Count += rec.Count
+		if rec.ResourceType == "" || rec.ResourceType != first.ResourceType {
+			row.ResourceType = "Various"
+		}
+		if rec.Region == "" || rec.Region != first.Region {
+			row.Region = "Multiple"
 		}
 	}
-	return row
 }
 
 func (h *Handler) pausePlannedPurchase(ctx context.Context, req *events.LambdaFunctionURLRequest, executionID string) (*StatusResponse, error) {

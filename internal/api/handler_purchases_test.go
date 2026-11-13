@@ -2523,6 +2523,8 @@ func TestHandler_getPlannedPurchases_ReadOnlyCanView(t *testing.T) {
 	// consult view:plans (the fix) and never view:purchases.
 	mockAuth.On("HasPermissionAPI", ctx, "viewer-1", "view", "plans").Return(true, nil)
 	mockAuth.On("HasPermissionAPI", ctx, "viewer-1", "view", "purchases").Return(false, nil).Maybe()
+	// No view:recommendations, so the step estimate is not computed.
+	mockAuth.On("HasPermissionAPI", ctx, "viewer-1", "view", "recommendations").Return(false, nil)
 	// Unrestricted accounts so per-plan scoping short-circuits without GetPlanAccounts.
 	mockAuth.On("GetAllowedAccountsAPI", ctx, "viewer-1").Return([]string(nil), nil)
 	mockStore.On("GetPlannedExecutions", ctx,
