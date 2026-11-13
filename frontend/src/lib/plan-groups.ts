@@ -44,9 +44,8 @@ export function planSelectionLimit(recs: readonly Recommendation[]): string | nu
   return null;
 }
 
-// describeGroup is the one-line label of a group in the plan modal.
-export function describeGroup(group: PlanGroupRequest): string {
+// describeGroup is the one-line label of a plan group in the plan modal.
+export function describeGroup(group: { provider: string; service: string; term?: number; payment?: string }, count: number): string {
   const years = group.term ? `${group.term} year${group.term === 1 ? '' : 's'}` : 'term not set';
-  const count = group.recommendation_ids.length;
   return `${group.provider.toUpperCase()} ${serviceLabel(group.service)}, ${years}, ${formatPaymentOption(group.payment)}: ${count} recommendation${count === 1 ? '' : 's'}`;
 }

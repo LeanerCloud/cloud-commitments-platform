@@ -52,15 +52,15 @@ let editingBoundPlan = false;
 
 // showSelectionGroups lists the groups of a mixed selection in place of the
 // service fields, which describe one group only. An empty list restores them.
-function showSelectionGroups(groups: readonly api.PlanGroupRequest[]): void {
+function showSelectionGroups(labels: readonly string[]): void {
   const list = document.getElementById('plan-selection-groups');
   const intro = document.getElementById('plan-selection-groups-intro');
   const fields = document.getElementById('plan-service-fields');
   if (!list || !fields) return;
-  list.replaceChildren(...groups.map((g) => Object.assign(document.createElement('li'), { textContent: describeGroup(g) })));
-  list.hidden = groups.length === 0;
-  if (intro) intro.hidden = groups.length === 0;
-  fields.hidden = groups.length > 0;
+  list.replaceChildren(...labels.map((textContent) => Object.assign(document.createElement('li'), { textContent })));
+  list.hidden = labels.length === 0;
+  if (intro) intro.hidden = labels.length === 0;
+  fields.hidden = labels.length > 0;
 }
 
 // setPlanFieldsLocked makes the modal's service fields read-only. A plan built
@@ -126,7 +126,7 @@ export async function loadPlans(): Promise<void> {
     // which is falsy so the filter is naturally skipped.
     const providerFilter = state.getCurrentProvider();
     if (providerFilter) {
-      plans = plans.filter(p => extractPlanInfo(p as unknown as BackendPlan).provider === providerFilter);
+      plans = plans.filter(p => planMatchesProvider(p as unknown as BackendPlan, providerFilter));
     }
 
     renderPlans(plans);
@@ -733,6 +733,8 @@ interface BackendPlan {
     include_types?: string[];
     exclude_types?: string[];
     min_count?: number;
+    // Recommendations a bound group is tied to (#1746); omitted on other entries.
+    bound_count?: number;
   }>;
   ramp_schedule: {
     type: string;
@@ -855,15 +857,30 @@ const LEGACY_PLAN_SERVICE_IDS: Readonly<Record<string, string>> = {
 //
 // `service` holds the raw slugs (the edit flow selects the service option by
 // it); `serviceDisplay` holds the display names for the card (#1683).
-function extractPlanInfo(plan: BackendPlan): { provider: string | null; service: string; serviceDisplay: string; term: number | null; coverage: number | null } {
+type PlanInfo = {
+  provider: string | null; service: string; serviceDisplay: string; term: number | null; coverage: number | null;
+  // Every distinct provider, term and coverage of a bound plan's groups (#1746); a
+  // plan that is not bound has only its first entry's, as before.
+  providers: string[]; terms: number[]; coverages: number[]; boundCount: number;
+};
+
+// planMatchesProvider keeps a bound plan when any of its groups has the provider;
+// other plans match on their first service entry only.
+function planMatchesProvider(plan: BackendPlan, provider: string): boolean {
+  return extractPlanInfo(plan).providers.includes(provider);
+}
+
+function extractPlanInfo(plan: BackendPlan): PlanInfo {
   const services = plan.services || {};
   const serviceValues = Object.values(services);
   const firstService = serviceValues[0];
   if (firstService) {
-    const service = serviceValues.map(s => s.service || '—').join(', ');
-    const serviceDisplay = serviceValues
-      .map(s => (s.service ? serviceLabel(s.service, true) : '—'))
-      .join(', ');
+    const bound = plan.ramp_schedule?.allocation_mode === 'bound_groups';
+    const distinct = <T,>(values: (T | null | undefined)[]): T[] => [...new Set(values.filter((v): v is T => !!v || v === 0))];
+    const shown = bound ? serviceValues : [firstService];
+    const serviceList = bound ? distinct(serviceValues.map(s => s.service)) : serviceValues.map(s => s.service || '—');
+    const service = serviceList.join(', ');
+    const serviceDisplay = serviceList.map(sv => (sv ? serviceLabel(sv, true) : '—')).join(', ');
     // H-4: never fabricate provider/term/coverage when absent.
     // Return null so callers can surface NO_VALUE/'Unknown' in the display
     // layer rather than silently committing to aws/3yr/80% defaults.
@@ -872,11 +889,15 @@ function extractPlanInfo(plan: BackendPlan): { provider: string | null; service:
       service,
       serviceDisplay,
       term: firstService.term || null,
-      coverage: firstService.coverage ?? null
+      coverage: firstService.coverage ?? null,
+      providers: distinct(shown.map(s => s.provider)),
+      terms: distinct(shown.map(s => s.term)),
+      coverages: distinct(shown.map(s => s.coverage)),
+      boundCount: bound ? serviceValues.reduce((n, s) => n + (s.bound_count ?? 0), 0) : 0,
     };
   }
   // No services at all: all fields are unknown.
-  return { provider: null, service: '—', serviceDisplay: '—', term: null, coverage: null };
+  return { provider: null, service: '—', serviceDisplay: '—', term: null, coverage: null, providers: [], terms: [], coverages: [], boundCount: 0 };
 }
 
 // Returns true when the plan's next_execution_date is strictly before today.
@@ -970,7 +991,7 @@ function renderPlanCard(plan: BackendPlan, canManagePlan: boolean, canDeletePlan
         <div class="plan-details">
           <div class="plan-detail">
             <span class="plan-detail-label">Provider</span>
-            <span class="plan-detail-value">${providerBadgeHtml(info.provider)}</span>
+            <span class="plan-detail-value">${info.providers.length > 1 ? info.providers.map((p) => providerBadgeHtml(p)).join(' ') : providerBadgeHtml(info.provider)}</span>
           </div>
           <div class="plan-detail">
             <span class="plan-detail-label">Service</span>
@@ -978,12 +999,18 @@ function renderPlanCard(plan: BackendPlan, canManagePlan: boolean, canDeletePlan
           </div>
           <div class="plan-detail">
             <span class="plan-detail-label">Term</span>
-            <span class="plan-detail-value">${info.term !== null ? formatTerm(info.term) : NO_VALUE}</span>
+            <span class="plan-detail-value">${info.terms.length > 1 ? info.terms.map((t) => formatTerm(t)).join(', ') : info.term !== null ? formatTerm(info.term) : NO_VALUE}</span>
           </div>
           <div class="plan-detail">
             <span class="plan-detail-label">Coverage</span>
-            <span class="plan-detail-value">${info.coverage !== null ? `${info.coverage}%` : NO_VALUE}</span>
+            <span class="plan-detail-value">${info.coverages.length > 1 ? info.coverages.map((c) => `${c}%`).join(', ') : info.coverage !== null ? `${info.coverage}%` : NO_VALUE}</span>
           </div>
+          ${info.boundCount > 0 ? `
+          <div class="plan-detail">
+            <span class="plan-detail-label">Recommendations</span>
+            <span class="plan-detail-value">${info.boundCount}</span>
+          </div>
+          ` : ''}
           <div class="plan-detail">
             <span class="plan-detail-label">Ramp Schedule</span>
             <span class="plan-detail-value">${formatBackendRampSchedule(rampSchedule)}</span>
@@ -1164,7 +1191,7 @@ async function editPlan(planId: string): Promise<boolean> {
     pendingPlanRecommendations = [];
     editingBoundPlan = backendPlan.ramp_schedule?.allocation_mode === 'bound_groups';
     setPlanFieldsLocked(editingBoundPlan, editingBoundPlan);
-    showSelectionGroups([]);
+    showSelectionGroups(editingBoundPlan ? Object.values(backendPlan.services ?? {}).map((svc) => describeGroup(svc, svc.bound_count ?? 0)) : []);
     planModalSession += 1;
 
     // Edit can be the first modal opened. Install the handlers before any field is filled: the first install rebuilds term/payment (#1536).
@@ -1826,7 +1853,7 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   if (groups.length === 1) {
     prefillPurchaseConfigFromCommitment(pendingPlanRecommendations[0]!);
   }
-  showSelectionGroups(groups.length > 1 ? groups : []);
+  showSelectionGroups(groups.length > 1 ? groups.map((g) => describeGroup(g, g.recommendation_ids.length)) : []);
   editingBoundPlan = false;
   setPlanFieldsLocked(hasSelection, false);
 

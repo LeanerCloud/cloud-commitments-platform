@@ -461,6 +461,65 @@ describe('Plans Module', () => {
       }
     });
 
+    describe('plans with several service groups (#1746)', () => {
+      const ramp = { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1 };
+      const group = (provider: string, service: string, term: number, coverage: number, extra: object = {}) =>
+        ({ provider, service, enabled: true, term, payment: 'all-upfront', coverage, ...extra });
+      const bound = {
+        id: 'plan-bound', name: 'Bound mix', enabled: true,
+        services: {
+          'aws/ec2#g1': group('aws', 'ec2', 3, 70, { bound_count: 5 }),
+          'aws/ec2#g2': group('aws', 'ec2', 1, 80, { bound_count: 2 }),
+          'azure/compute#g3': group('azure', 'compute', 1, 80, { bound_count: 4 }),
+          'gcp/compute#g4': group('gcp', 'compute', 1, 0, { bound_count: 0 }),
+        },
+        ramp_schedule: { ...ramp, allocation_mode: 'bound_groups' },
+      };
+      const unmarked = {
+        id: 'plan-legacy', name: 'Legacy two providers', enabled: true,
+        services: { ec2: group('aws', 'ec2', 3, 80, { bound_count: 9 }), compute: group('azure', 'compute', 1, 60) },
+        ramp_schedule: ramp,
+      };
+      const detail = (label: string, planName: string) => {
+        const card = Array.from(document.querySelectorAll('.plan-card')).find((c) => c.textContent?.includes(planName));
+        return Array.from(card?.querySelectorAll('.plan-detail') ?? [])
+          .find((d) => d.querySelector('.plan-detail-label')?.textContent === label)?.querySelector('.plan-detail-value')?.textContent;
+      };
+      const load = async (provider: string) => {
+        const state = await import('../state');
+        (state.getCurrentProvider as jest.Mock).mockReturnValue(provider);
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [bound, unmarked] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        try { await loadPlans(); } finally { (state.getCurrentProvider as jest.Mock).mockReturnValue(''); }
+      };
+
+      test('a bound plan card shows every provider, service, term, coverage and the recommendation count', async () => {
+        await load('');
+        expect(detail('Service', 'Bound mix')).toBe('EC2, Compute');
+        expect(detail('Term', 'Bound mix')).toContain(',');
+        expect(detail('Coverage', 'Bound mix')).toBe('70%, 80%, 0%');
+        expect(detail('Recommendations', 'Bound mix')).toBe('11');
+        expect(detail('Provider', 'Bound mix')).toMatch(/AWS.*Azure/i);
+        expect(detail('Provider', 'Legacy two providers')).not.toMatch(/Azure/i);
+        expect(detail('Recommendations', 'Legacy two providers')).toBeUndefined();
+        expect(detail('Coverage', 'Legacy two providers')).toBe('80%');
+      });
+
+      test('the provider filter keeps a bound plan that has a group of that provider', async () => {
+        await load('azure');
+        expect(document.getElementById('plans-list')?.innerHTML).toContain('Bound mix');
+        expect(document.getElementById('plans-list')?.innerHTML).not.toContain('Legacy two providers');
+      });
+
+      test('a plan without the marker still filters on its first entry only', async () => {
+        await load('aws');
+        expect(document.getElementById('plans-list')?.innerHTML).toContain('Legacy two providers');
+        await load('gcp');
+        expect(document.getElementById('plans-list')?.innerHTML).not.toContain('Legacy two providers');
+        expect(document.getElementById('plans-list')?.innerHTML).toContain('Bound mix');
+      });
+    });
+
     test('passes account_ids to api.getPlans when account filter is active (issue #705)', async () => {
       // Regression test for the Account global filter being non-functional
       // on the Plans page. loadPlans must forward the account selection to
@@ -1417,8 +1476,8 @@ describe('Plans Module', () => {
       const boundPlan = {
         id: 'plan-bound', name: 'Bound', enabled: true, auto_purchase: false, notification_days_before: 3,
         services: {
-          'aws/ec2#g1': { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 70 },
-          'aws/rds#g2': { provider: 'aws', service: 'rds', enabled: true, term: 3, payment: 'all-upfront', coverage: 70 },
+          'aws/ec2#g1': { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 70, bound_count: 5 },
+          'aws/rds#g2': { provider: 'aws', service: 'rds', enabled: true, term: 3, payment: 'all-upfront', coverage: 70, bound_count: 1 },
         },
         ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1, allocation_mode: 'bound_groups' },
       };
@@ -1453,6 +1512,17 @@ describe('Plans Module', () => {
         await openBoundEdit();
         await flushPromises();
         expect((document.getElementById('plan-account-ids') as HTMLInputElement).value.split(',').sort()).toEqual(['acct-aws', 'acct-azure']);
+      });
+
+      test('editing a bound plan lists its groups in place of the service fields', async () => {
+        await openBoundEdit();
+        const items = Array.from(document.getElementById('plan-selection-groups')?.children ?? []).map((li) => li.textContent);
+        expect(items).toHaveLength(2);
+        expect(items.map((t) => t?.replace(/^.*: /, ''))).toEqual(['5 recommendations', '1 recommendation']);
+        expect(items[0]).toContain('EC2');
+        expect((document.getElementById('plan-service-fields') as HTMLElement).hidden).toBe(true);
+        closePlanModal();
+        expect((document.getElementById('plan-service-fields') as HTMLElement).hidden).toBe(false);
       });
 
       test('locks never leak into the next modal', async () => {
@@ -1501,6 +1571,7 @@ describe('Plans Module', () => {
         (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
         (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
         (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+        expect((document.getElementById('plan-selection-groups') as HTMLElement).hidden).toBe(true);
         await savePlan({ preventDefault: jest.fn() } as unknown as Event);
         const sent = (api.updatePlan as jest.Mock).mock.calls[0][1];
         expect(sent).not.toHaveProperty('groups');
