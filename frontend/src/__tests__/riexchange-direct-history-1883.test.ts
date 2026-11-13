@@ -7,8 +7,7 @@ jest.mock('../api', () => ({
   listConvertibleRIs: jest.fn().mockResolvedValue([]),
   getRIUtilization: jest.fn().mockResolvedValue([]),
   getReshapeRecommendations: jest.fn().mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null }),
-  getRIExchangeHistory: jest.fn(),
-  getRIExchangeDirectExecutions: jest.fn(),
+  getRIExchangeHistoryResponse: jest.fn(),
   listTargetOfferings: jest.fn(),
   approveRIExchange: jest.fn(),
   listAccountsMinimal: jest.fn().mockResolvedValue([]),
@@ -51,13 +50,16 @@ function history(): HTMLElement {
   return document.getElementById('ri-exchange-history-list')!;
 }
 
+function mockHistory(records: unknown[], direct: unknown[]): void {
+  (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records, direct_executions: direct });
+}
+
 describe('Direct exchanges in History (#1883)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     const ids = ['ri-exchange-instances-list', 'ri-exchange-recommendations-list', 'ri-exchange-history-list'];
     document.body.replaceChildren(...ids.map(id => Object.assign(document.createElement('div'), { id })));
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([]);
-    (api.getRIExchangeDirectExecutions as jest.Mock).mockResolvedValue([AZURE, AWS]);
+    mockHistory([], [AZURE, AWS]);
   });
 
   it('lists each direct row with provider, amount, status and resolved state', async () => {
@@ -78,7 +80,7 @@ describe('Direct exchanges in History (#1883)', () => {
   it('shows a dash, not USD, when the currency is empty or missing', async () => {
     const noCurrency = { ...AZURE, id: 'd3', net_payable: '5', net_payable_currency: '' };
     const missing = { ...AWS, id: 'd4', max_payment_currency: undefined };
-    (api.getRIExchangeDirectExecutions as jest.Mock).mockResolvedValue([noCurrency, missing]);
+    mockHistory([], [noCurrency, missing]);
     await loadRIExchange();
     await flush();
     const cells = Array.from(history().querySelectorAll('.ri-exchange-direct-history tbody tr'))
@@ -92,21 +94,21 @@ describe('Direct exchanges in History (#1883)', () => {
     expect(history().querySelectorAll('.ri-exchange-direct-history button, .ri-exchange-direct-history a')).toHaveLength(0);
   });
 
-  it('keeps the approval history when the direct fetch fails, and says so', async () => {
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([{
-      id: 'h1', account_id: 'a', exchange_id: 'x', region: 'us-east-1', source_ri_ids: [], source_instance_type: 'm5.large',
-      source_count: 1, target_offering_id: 'o', target_instance_type: 'm5.xlarge', target_count: 1, payment_due: '1',
-      status: 'completed', mode: 'manual', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
-    }]);
-    (api.getRIExchangeDirectExecutions as jest.Mock).mockRejectedValue(new Error('boom'));
+  it('reads both kinds of rows from one history request', async () => {
     await loadRIExchange();
     await flush();
-    expect(history().querySelectorAll('table')).toHaveLength(1);
-    expect(history().querySelector('p.error')?.textContent).toBe('Failed to load direct exchanges: boom');
+    expect(api.getRIExchangeHistoryResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the single error line when the history request fails', async () => {
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockRejectedValue(new Error('boom'));
+    await loadRIExchange();
+    await flush();
+    expect(history().querySelector('p.error')?.textContent).toBe('Failed to load exchange history: boom');
   });
 
   it('shows the empty state only when there are neither kinds of rows', async () => {
-    (api.getRIExchangeDirectExecutions as jest.Mock).mockResolvedValue([]);
+    mockHistory([], []);
     await loadRIExchange();
     await flush();
     expect(history().textContent).toContain('No exchange history found');

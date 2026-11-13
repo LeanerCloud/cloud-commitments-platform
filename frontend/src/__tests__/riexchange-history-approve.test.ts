@@ -9,7 +9,7 @@ jest.mock('../api', () => ({
   listConvertibleRIs: jest.fn().mockResolvedValue([]),
   getRIUtilization: jest.fn().mockResolvedValue([]),
   getReshapeRecommendations: jest.fn().mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null }),
-  getRIExchangeHistory: jest.fn(),
+  getRIExchangeHistoryResponse: jest.fn(),
   listTargetOfferings: jest.fn(),
   approveRIExchange: jest.fn(),
   listAccountsMinimal: jest.fn().mockResolvedValue([]),
@@ -58,7 +58,7 @@ describe('History Approve button outcome (#1050)', () => {
     jest.clearAllMocks();
     const ids = ['ri-exchange-instances-list', 'ri-exchange-recommendations-list', 'ri-exchange-history-list'];
     document.body.replaceChildren(...ids.map(id => Object.assign(document.createElement('div'), { id })));
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([PENDING]);
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [PENDING], direct_executions: [] });
   });
 
   async function approveFromHistory(): Promise<void> {

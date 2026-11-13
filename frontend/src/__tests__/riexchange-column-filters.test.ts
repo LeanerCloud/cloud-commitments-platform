@@ -25,7 +25,7 @@ jest.mock('../api', () => ({
   getReshapeRecommendations: jest.fn(),
   getExchangeQuote: jest.fn(),
   executeExchange: jest.fn(),
-  getRIExchangeHistory: jest.fn(),
+  getRIExchangeHistoryResponse: jest.fn(),
   getRIExchangeConfig: jest.fn(),
   updateRIExchangeConfig: jest.fn(),
   listTargetOfferings: jest.fn().mockResolvedValue([]),

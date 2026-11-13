@@ -10,7 +10,7 @@ jest.mock('../api', () => ({
   listExchangeableAzureRIs: jest.fn(),
   getRIUtilization: jest.fn(),
   getReshapeRecommendations: jest.fn(),
-  getRIExchangeHistory: jest.fn(),
+  getRIExchangeHistoryResponse: jest.fn(),
   listTargetOfferings: jest.fn(),
 }));
 
@@ -78,7 +78,7 @@ describe('RI Exchange account label (issue #1692)', () => {
     document.body.append(instancesEl, recsEl, historyEl, modal);
 
     (api.getRIUtilization as jest.Mock).mockResolvedValue([]);
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([]);
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [], direct_executions: [] });
     (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null });
     (api.listTargetOfferings as jest.Mock).mockResolvedValue([]);
     (api.listAccountsMinimal as jest.Mock).mockResolvedValue([hostAccount, plainAccount]);

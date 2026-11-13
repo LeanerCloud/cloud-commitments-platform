@@ -171,11 +171,12 @@ export async function updateRIExchangeConfig(config: RIExchangeConfig): Promise<
 }
 
 /**
- * Get RI exchange history records
+ * Get the RI exchange history response: the approval-flow records plus the
+ * direct (interactive) exchanges, read-only (#1883), from one request.
  */
-export async function getRIExchangeHistory(
+export async function getRIExchangeHistoryResponse(
   params?: { status?: string; limit?: number }
-): Promise<RIExchangeHistoryRecord[]> {
+): Promise<{ records: RIExchangeHistoryRecord[]; direct_executions: RIExchangeDirectExecution[] }> {
   let qs = '';
   if (params) {
     const parts: string[] = [];
@@ -183,17 +184,19 @@ export async function getRIExchangeHistory(
     if (params.limit) parts.push(`limit=${params.limit}`);
     if (parts.length > 0) qs = `?${parts.join('&')}`;
   }
-  const resp = await apiRequest<{ records: RIExchangeHistoryRecord[] }>(`/ri-exchange/history${qs}`);
-  return resp.records ?? [];
+  const resp = await apiRequest<{ records?: RIExchangeHistoryRecord[]; direct_executions?: RIExchangeDirectExecution[] }>(
+    `/ri-exchange/history${qs}`
+  );
+  return { records: resp.records ?? [], direct_executions: resp.direct_executions ?? [] };
 }
 
 /**
- * Get the direct (interactive) RI exchanges, read-only (#1883). They come
- * from the same endpoint as the history records.
+ * Get RI exchange history records
  */
-export async function getRIExchangeDirectExecutions(): Promise<RIExchangeDirectExecution[]> {
-  const resp = await apiRequest<{ direct_executions?: RIExchangeDirectExecution[] }>('/ri-exchange/history');
-  return resp.direct_executions ?? [];
+export async function getRIExchangeHistory(
+  params?: { status?: string; limit?: number }
+): Promise<RIExchangeHistoryRecord[]> {
+  return (await getRIExchangeHistoryResponse(params)).records;
 }
 
 /**

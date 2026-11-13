@@ -11,7 +11,7 @@ jest.mock('../api', () => ({
   getReshapeRecommendations: jest.fn(),
   getExchangeQuote: jest.fn(),
   executeExchange: jest.fn(),
-  getRIExchangeHistory: jest.fn(),
+  getRIExchangeHistoryResponse: jest.fn(),
   getRIExchangeConfig: jest.fn(),
   updateRIExchangeConfig: jest.fn(),
   // listTargetOfferings is called by populateAwsOfferings() in openExchangeModal.
@@ -1006,7 +1006,7 @@ describe('reshape recommendations empty state', () => {
     document.body.append(instancesEl, recsEl, historyEl);
 
     (api.getRIUtilization as jest.Mock).mockResolvedValue([]);
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([]);
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [], direct_executions: [] });
     (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null });
     // resetAllMocks() in afterEach wipes the state mock implementations;
     // loadRIExchange reads the chips to scope the request (issue #871), so
@@ -1399,7 +1399,7 @@ describe('RI Exchange filter subscriptions (issue #186)', () => {
     (api.listConvertibleRIs as jest.Mock).mockResolvedValue([]);
     (api.getRIUtilization as jest.Mock).mockResolvedValue([]);
     (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null });
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([]);
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [], direct_executions: [] });
     _providerListeners.length = 0;
     _accountListeners.length = 0;
     // Re-apply the implementation after jest.resetAllMocks() from a prior
@@ -1510,7 +1510,7 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
     ]);
     (api.getRIUtilization as jest.Mock).mockResolvedValue([]);
     (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null });
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([]);
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [], direct_executions: [] });
 
     _providerListeners.length = 0;
     _accountListeners.length = 0;
@@ -1640,7 +1640,7 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
     const hist = pending<unknown[]>();
     (api.listConvertibleRIs as jest.Mock).mockReturnValueOnce(ris.promise);
     (api.getReshapeRecommendations as jest.Mock).mockReturnValueOnce(recs.promise);
-    (api.getRIExchangeHistory as jest.Mock).mockReturnValueOnce(hist.promise);
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockReturnValueOnce(hist.promise.then(records => ({ records, direct_executions: [] })));
     const loadA = loadRIExchange();
     await new Promise(r => setTimeout(r, 0));
     stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-missing']);
@@ -1829,12 +1829,12 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
       instance_count: 3, start: '2026-01-01T00:00:00Z', end: '2027-01-01T00:00:00Z',
       offering_type: 'Convertible', fixed_price: 0, usage_price: 0, state: 'active', normalization_factor: 4,
     }]);
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([{
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [{
       id: 'h1', account_id: 'a', exchange_id: '', region: 'us-east-1', source_ri_ids: ['ri-1'],
       source_instance_type: 'm5.large', source_count: 1, target_offering_id: 'o', target_instance_type: 'm5.xlarge',
       target_count: 1, payment_due: '1.25', status: 'failed', mode: 'manual',
       created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
-    }]);
+    }], direct_executions: [] });
     await loadRIExchange();
     expect(numColumns(instancesEl)).toEqual({ headers: ['Count'], rowsMatch: true });
     expect(numColumns(historyEl)).toEqual({ headers: ['Payment'], rowsMatch: true });
@@ -1873,12 +1873,12 @@ describe('exchange history table counts (issue #286)', () => {
   });
 
   it('shows each count once, inside the type cells, with no duplicate Count column', async () => {
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([{
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [{
       id: 'h1', account_id: 'a', exchange_id: 'exch-1', region: 'us-east-1', source_ri_ids: ['ri-1'],
       source_instance_type: 'm5.large', source_count: 4, target_offering_id: 'o', target_instance_type: 'm5.4xlarge',
       target_count: 1, payment_due: '1.00', status: 'completed', mode: 'manual',
       created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
-    }]);
+    }], direct_executions: [] });
     await loadRIExchange();
     const table = document.querySelector('#ri-exchange-history-list table')!;
     const headers = Array.from(table.querySelectorAll('th')).map((h) => h.textContent);
@@ -1900,12 +1900,12 @@ describe('exchange history table counts (issue #286)', () => {
     ['failed', 'badge-danger', 'Failed'],
     ['canceled', 'badge-muted', 'Cancelled'],
   ])('renders status %s as a %s badge reading %s', async (status, cls, label) => {
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([{
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [{
       id: 'h1', account_id: 'a', exchange_id: 'exch-1', region: 'us-east-1', source_ri_ids: ['ri-1'],
       source_instance_type: 'm5.large', source_count: 1, target_offering_id: 'o', target_instance_type: 'm5.xlarge',
       target_count: 1, payment_due: '1.00', status, mode: 'manual',
       created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
-    }]);
+    }], direct_executions: [] });
     await loadRIExchange();
     const badge = document.querySelector('#ri-exchange-history-list tbody .badge')!;
     expect(badge.className).toBe(`badge ${cls}`);

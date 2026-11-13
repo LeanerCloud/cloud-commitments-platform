@@ -11,7 +11,7 @@ jest.mock('../api', () => ({
   getReshapeRecommendations: jest.fn(),
   getExchangeQuote: jest.fn(),
   executeExchange: jest.fn(),
-  getRIExchangeHistory: jest.fn(),
+  getRIExchangeHistoryResponse: jest.fn(),
   getRIExchangeConfig: jest.fn(),
   updateRIExchangeConfig: jest.fn(),
   listTargetOfferings: jest.fn(),
@@ -100,7 +100,7 @@ describe('RI exchange tables', () => {
     }
     (api.listConvertibleRIs as jest.Mock).mockResolvedValue([]);
     (api.getRIUtilization as jest.Mock).mockResolvedValue([]);
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([]);
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [], direct_executions: [] });
   });
 
   it('renders alternative cost chips in each offering currency', async () => {
@@ -119,12 +119,12 @@ describe('RI exchange tables', () => {
 
   it('shows a dash, not a lone "$", for a history row with no payment', async () => {
     (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null });
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue(['', '1.25'].map((payment_due, i) => ({
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: ['', '1.25'].map((payment_due, i) => ({
       id: `h${i}`, account_id: 'a', exchange_id: '', region: 'us-east-1', source_ri_ids: ['ri-1'],
       source_instance_type: 'm5.large', source_count: 1, target_offering_id: 'o', target_instance_type: 'm5.xlarge',
       target_count: 1, payment_due, status: 'failed', mode: 'manual',
       created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
-    })));
+    })), direct_executions: [] });
     await loadRIExchange();
     const paymentCol = Array.from(document.querySelectorAll('#ri-exchange-history-list th')).findIndex((h) => h.textContent === 'Payment');
     const cells = Array.from(document.querySelectorAll('#ri-exchange-history-list tbody tr'))

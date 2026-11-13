@@ -2190,9 +2190,9 @@ async function loadExchangeHistory(generation: number = scopeGeneration): Promis
   showSkeletonRows(container, 3, 7);
 
   try {
-    const [records, direct] = await Promise.all([api.getRIExchangeHistory(), loadDirectExchanges()]);
+    const { records, direct_executions } = await api.getRIExchangeHistoryResponse();
     if (generation !== scopeGeneration) return;
-    renderExchangeHistory(container, records, direct);
+    renderExchangeHistory(container, records, direct_executions);
   } catch (error) {
     if (generation !== scopeGeneration) return;
     const err = error as Error;
@@ -2204,23 +2204,8 @@ async function loadExchangeHistory(generation: number = scopeGeneration): Promis
   }
 }
 
-// A failed direct-exchange fetch must not hide the approval history, so it
-// resolves to an error message the section shows instead of rows (#1883).
-async function loadDirectExchanges(): Promise<RIExchangeDirectExecution[] | Error> {
-  try {
-    return (await api.getRIExchangeDirectExecutions()) ?? [];
-  } catch (error) {
-    return error as Error;
-  }
-}
-
-function renderDirectExchanges(container: HTMLElement, direct: RIExchangeDirectExecution[] | Error): void {
-  if (direct instanceof Error) {
-    const errorP = document.createElement('p');
-    errorP.className = 'error';
-    errorP.textContent = 'Failed to load direct exchanges: ' + direct.message;
-    container.appendChild(errorP);
-  } else if (direct.length > 0) {
+function renderDirectExchanges(container: HTMLElement, direct: RIExchangeDirectExecution[]): void {
+  if (direct.length > 0) {
     container.appendChild(buildDirectExchangeSection(direct));
   }
 }
@@ -2228,9 +2213,9 @@ function renderDirectExchanges(container: HTMLElement, direct: RIExchangeDirectE
 function renderExchangeHistory(
   container: HTMLElement,
   records: RIExchangeHistoryRecord[],
-  direct: RIExchangeDirectExecution[] | Error = [],
+  direct: RIExchangeDirectExecution[] = [],
 ): void {
-  const hasDirect = direct instanceof Error || direct.length > 0;
+  const hasDirect = direct.length > 0;
   if ((!records || records.length === 0) && !hasDirect) {
     container.textContent = '';
     const emptyP = document.createElement('p');

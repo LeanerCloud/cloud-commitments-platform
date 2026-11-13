@@ -226,7 +226,7 @@ export {
   getRIExchangeConfig,
   updateRIExchangeConfig,
   getRIExchangeHistory,
-  getRIExchangeDirectExecutions,
+  getRIExchangeHistoryResponse,
   listTargetOfferings,
   approveRIExchange
 } from './riexchange';

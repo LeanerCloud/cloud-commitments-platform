@@ -18,7 +18,7 @@ jest.mock('../api', () => ({
   getReshapeRecommendations: jest.fn(),
   getExchangeQuote: jest.fn(),
   executeExchange: jest.fn(),
-  getRIExchangeHistory: jest.fn(),
+  getRIExchangeHistoryResponse: jest.fn(),
   getRIExchangeConfig: jest.fn(),
   updateRIExchangeConfig: jest.fn(),
   listTargetOfferings: jest.fn().mockResolvedValue([]),
@@ -133,7 +133,7 @@ describe('Active Convertible RIs column filters (issue #1414)', () => {
       recs_staleness: '',
       recs_collected_at: null,
     });
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([]);
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [], direct_executions: [] });
   });
 
   afterEach(() => {

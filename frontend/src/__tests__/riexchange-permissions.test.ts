@@ -10,7 +10,7 @@ jest.mock('../api', () => ({
   listConvertibleRIs: jest.fn(),
   getRIUtilization: jest.fn().mockResolvedValue([]),
   getReshapeRecommendations: jest.fn(),
-  getRIExchangeHistory: jest.fn().mockResolvedValue([]),
+  getRIExchangeHistoryResponse: jest.fn().mockResolvedValue({ records: [], direct_executions: [] }),
 }));
 
 jest.mock('../navigation', () => ({

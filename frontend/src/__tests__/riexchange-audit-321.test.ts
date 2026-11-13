@@ -9,7 +9,7 @@ jest.mock('../api', () => ({
   listConvertibleRIs: jest.fn().mockResolvedValue([]),
   getRIUtilization: jest.fn().mockResolvedValue([]),
   getReshapeRecommendations: jest.fn().mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null }),
-  getRIExchangeHistory: jest.fn(),
+  getRIExchangeHistoryResponse: jest.fn(),
   listTargetOfferings: jest.fn(),
 }));
 
@@ -99,9 +99,9 @@ describe('RI exchange history failure reason (A12-069)', () => {
   }
 
   test('shows the error reason, as text, under a failed badge', async () => {
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [
       historyRecord({ error: 'AcceptReservedInstancesExchangeQuote: <b>InvalidParameter</b>' }),
-    ]);
+    ], direct_executions: [] });
     await loadRIExchange();
 
     const cell = statusCell();
@@ -112,7 +112,7 @@ describe('RI exchange history failure reason (A12-069)', () => {
   });
 
   test('renders no detail line when the record has no error', async () => {
-    (api.getRIExchangeHistory as jest.Mock).mockResolvedValue([historyRecord({ status: 'completed' })]);
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [historyRecord({ status: 'completed' })], direct_executions: [] });
     await loadRIExchange();
 
     expect(statusCell().querySelector('.status-detail')).toBeNull();
