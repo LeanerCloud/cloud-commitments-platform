@@ -228,8 +228,8 @@
 
 /* Prerequisite section in modals */
 .prereq-section {
-    background: #f0f7ff;
-    border: 1px solid #b3d4fc;
+    background: var(--cudly-surface-info);
+    border: 1px solid var(--cudly-info-border);
     border-radius: 6px;
     padding: 1rem;
     margin-bottom: 1.5rem;
@@ -287,12 +287,12 @@
 .purchase-modal-table tfoot tr {
     position: sticky;
     bottom: 0;
-    background: #f0f4ff;
+    background: var(--cudly-surface-info-alt);
     z-index: 1;
 }
 
 .purchase-modal-totals td {
-    border-top: 2px solid #c5d3f0;
+    border-top: 2px solid var(--cudly-info-border-alt);
     font-size: 0.85rem;
 }
 
@@ -341,7 +341,7 @@
     background: none;
     border: none;
     padding: 0;
-    color: #1a73e8;
+    color: var(--cudly-link);
     font-size: inherit;
     cursor: pointer;
     text-decoration: underline;
@@ -350,7 +350,7 @@
 }
 
 .archera-cta-link:hover {
-    color: #1557b0;
+    color: var(--cudly-link-hover);
     background: none;
 }
 
@@ -378,19 +378,19 @@
 
 .archera-page-inner h1 {
     font-size: 1.6rem;
-    color: #333;
+    color: var(--cudly-text-dark);
     margin: 1rem 0 1.25rem;
 }
 
 .archera-page-inner h2 {
     font-size: 1.1rem;
-    color: #444;
+    color: var(--cudly-text-body);
     margin: 1.5rem 0 0.5rem;
 }
 
 .archera-page-lead {
     font-size: var(--cudly-fs-md);
-    color: #555;
+    color: var(--cudly-text-mid);
     line-height: 1.6;
     margin-bottom: 1rem;
 }
@@ -402,7 +402,7 @@
 .archera-page-inner ul,
 .archera-page-inner ol {
     padding-left: 1.5rem;
-    color: #555;
+    color: var(--cudly-text-mid);
     line-height: 1.7;
 }
 
@@ -424,7 +424,7 @@
     background: none;
     border: none;
     padding: 0;
-    color: #555;
+    color: var(--cudly-text-mid);
     font-size: 0.9rem;
     cursor: pointer;
     font-family: inherit;
@@ -432,7 +432,7 @@
 }
 
 .archera-page-back:hover {
-    color: #333;
+    color: var(--cudly-text-dark);
     background: none;
 }
 
@@ -440,8 +440,8 @@
 .archera-signup-block {
     margin-top: 2rem;
     padding: 1.25rem 1.5rem;
-    background: #f0f7ff;
-    border: 1px solid #b3d4fc;
+    background: var(--cudly-surface-info);
+    border: 1px solid var(--cudly-info-border);
     border-radius: 6px;
     text-align: center;
 }
@@ -449,7 +449,7 @@
 /* Primary signup link styled as a button for prominence. */
 .archera-signup-btn {
     display: inline-block;
-    background: #1a73e8;
+    background: var(--cudly-link);
     color: var(--cudly-primary-fg);
     text-decoration: none;
     padding: 0.65rem 1.5rem;
@@ -460,7 +460,7 @@
 }
 
 .archera-signup-btn:hover {
-    background: #1557b0;
+    background: var(--cudly-link-hover);
     color: var(--cudly-primary-fg);
     text-decoration: none;
 }
@@ -513,7 +513,7 @@
 .archera-offer-title {
     margin: 0 0 0.6rem;
     font-size: 1.15rem;
-    color: #222;
+    color: var(--cudly-text-strong);
     line-height: 1.35;
 }
 
@@ -521,7 +521,7 @@
     margin: 0 0 0.75rem;
     font-size: 0.92rem;
     line-height: 1.5;
-    color: #444;
+    color: var(--cudly-text-body);
 }
 
 /* Disclosure line: muted, sits just below the lead so the financial
@@ -547,8 +547,8 @@
 
 .archera-offer-skip {
     background: var(--cudly-surface);
-    color: #444;
-    border: 1px solid #d0d7de;
+    color: var(--cudly-text-body);
+    border: 1px solid var(--cudly-border-soft);
     border-radius: 4px;
     padding: 0.55rem 1rem;
     font-size: 0.92rem;
@@ -557,13 +557,13 @@
 }
 
 .archera-offer-skip:hover {
-    background: #f4f5f7;
-    color: #222;
+    background: var(--cudly-surface-hover);
+    color: var(--cudly-text-strong);
 }
 
 .archera-offer-signup {
     display: inline-block;
-    background: #1a73e8;
+    background: var(--cudly-link);
     color: var(--cudly-primary-fg);
     text-decoration: none;
     padding: 0.55rem 1.1rem;
@@ -574,7 +574,7 @@
 }
 
 .archera-offer-signup:hover {
-    background: #1557b0;
+    background: var(--cudly-link-hover);
     color: var(--cudly-primary-fg);
     text-decoration: none;
 }
@@ -592,7 +592,7 @@
 
 .archera-offer-learnmore-summary {
     cursor: pointer;
-    color: #1a73e8;
+    color: var(--cudly-link);
     font-size: 0.85rem;
     padding: 0.25rem 0;
     list-style: none; /* hide default disclosure marker; we render our own ::after */
@@ -608,7 +608,7 @@
 .archera-offer-learnmore-summary::after {
     content: "▸";
     display: inline-block;
-    color: #888;
+    color: var(--cudly-text-faint);
     transition: transform var(--cudly-dur-fast) var(--cudly-ease);
 }
 
@@ -616,13 +616,13 @@
     transform: rotate(90deg);
 }
 
-.archera-offer-learnmore-summary:hover { color: #1557b0; }
+.archera-offer-learnmore-summary:hover { color: var(--cudly-link-hover); }
 
 .archera-offer-learnmore-body {
-    border-top: 1px solid #e0e3e8;
+    border-top: 1px solid var(--cudly-border-light);
     margin-top: 0.5rem;
     padding: 0.5rem 0 0;
-    color: #444;
+    color: var(--cudly-text-body);
     font-size: 0.9rem;
 }
 
@@ -831,8 +831,8 @@
     background:
         linear-gradient(var(--cudly-surface) 30%, transparent) top / 100% 2rem local no-repeat,
         linear-gradient(transparent, var(--cudly-surface) 70%) bottom / 100% 2rem local no-repeat,
-        radial-gradient(farthest-side at 50% 0, rgba(15, 23, 42, 0.22), transparent) top / 100% 0.5rem scroll no-repeat,
-        radial-gradient(farthest-side at 50% 100%, rgba(15, 23, 42, 0.22), transparent) bottom / 100% 0.5rem scroll no-repeat;
+        radial-gradient(farthest-side at 50% 0, var(--cudly-shadow-scroll), transparent) top / 100% 0.5rem scroll no-repeat,
+        radial-gradient(farthest-side at 50% 100%, var(--cudly-shadow-scroll), transparent) bottom / 100% 0.5rem scroll no-repeat;
     background-color: var(--cudly-surface);
     border: 1px solid var(--cudly-border);
     border-radius: var(--cudly-r-md);

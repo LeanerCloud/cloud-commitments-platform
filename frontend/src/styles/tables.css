@@ -11,7 +11,7 @@ table {
     background: var(--cudly-surface);
     border-radius: var(--cudly-r-md);
     overflow: clip;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px var(--cudly-shadow-ink-10);
     border-collapse: separate;
     border-spacing: 0;
 }
@@ -45,7 +45,7 @@ td.num {
 }
 
 tr:hover {
-    background: #f1f3f4;
+    background: var(--cudly-surface-header);
 }
 
 /* Recommendation row highlighting */
@@ -65,20 +65,20 @@ tr.medium-savings > :first-child {
    `animation` runs once on add for a brief pulse, then `background`
    keeps a steady highlight tint until the class is removed. */
 tr.history-row-highlight {
-    background: #fff8c4;
+    background: var(--cudly-flash-bg);
     animation: history-row-flash 1.2s ease-out 1;
 }
 
 tr.history-row-highlight:hover {
     /* Override the table-wide `tr:hover` so the deep-link highlight
        stays visible while the user mouses over the row. */
-    background: #fff3a0;
+    background: var(--cudly-flash-bg-hover);
 }
 
 @keyframes history-row-flash {
-    0%   { background: #fff080; }
-    50%  { background: #fff8c4; }
-    100% { background: #fff8c4; }
+    0%   { background: var(--cudly-flash-start); }
+    50%  { background: var(--cudly-flash-bg); }
+    100% { background: var(--cudly-flash-bg); }
 }
 
 /* Summary sections: four cards each, balanced like #summary (issue #191) */
@@ -130,7 +130,7 @@ tr.history-row-highlight:hover {
     /* clip, not hidden: hidden made the table its own (non-scrolling)
        scroll container, so the sticky actions column stuck to it. */
     overflow: clip;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px var(--cudly-shadow-ink-10);
 }
 
 .planned-purchases-table th,

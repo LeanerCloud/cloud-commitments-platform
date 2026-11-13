@@ -110,7 +110,7 @@ describe('color literals (theming ratchet)', () => {
   // The baseline is the count on main when this ratchet landed. This ceiling
   // may only go down: migrate a literal to a token, then lower it. Raising it
   // means a new hard-coded color; use or add a token instead.
-  const CSS_LITERAL_CEILING = 63;
+  const CSS_LITERAL_CEILING = 0;
 
   it(`styles/*.css hold at most ${CSS_LITERAL_CEILING} color literals outside token definitions`, () => {
     const counts = fs.readdirSync(STYLES)
@@ -158,9 +158,44 @@ describe('color literals (theming ratchet)', () => {
     ['--cudly-on-primary-15', 'rgba(255,255,255,0.15)'],
     ['--cudly-on-primary-50', 'rgba(255,255,255,0.5)'],
     ['--cudly-on-primary-10', 'rgba(255,255,255,0.1)'],
+    ['--cudly-surface-info', '#f0f7ff'],
+    ['--cudly-info-border', '#b3d4fc'],
+    ['--cudly-surface-info-alt', '#f0f4ff'],
+    ['--cudly-info-border-alt', '#c5d3f0'],
+    ['--cudly-link', '#1a73e8'],
+    ['--cudly-link-hover', '#1557b0'],
+    ['--cudly-text-mid', '#555'],
+    ['--cudly-border-soft', '#d0d7de'],
+    ['--cudly-surface-hover', '#f4f5f7'],
+    ['--cudly-text-faint', '#888'],
+    ['--cudly-border-light', '#e0e3e8'],
+    ['--cudly-shadow-scroll', 'rgba(15, 23, 42, 0.22)'],
+    ['--cudly-on-primary-80', 'rgba(255, 255, 255, 0.8)'],
+    ['--cudly-shadow-ink-40', 'rgba(0, 0, 0, 0.4)'],
+    ['--cudly-mask-opaque', '#000'],
+    ['--cudly-scroll-hint-ink', 'rgb(0 0 0 / 0.12)'],
+    ['--cudly-success-deep', '#137333'],
+    ['--cudly-highlight', '#f4a261'],
+    ['--cudly-highlight-bg', '#fff8e1'],
+    ['--cudly-highlight-ring', 'rgba(244, 162, 97, 0.25)'],
+    ['--cudly-info-border-pale', '#c8dff8'],
+    ['--cudly-info-border-faint', '#dce8f8'],
+    ['--cudly-warn-border', '#ffecb5'],
+    ['--cudly-surface-header', '#f1f3f4'],
+    ['--cudly-flash-bg', '#fff8c4'],
+    ['--cudly-flash-bg-hover', '#fff3a0'],
+    ['--cudly-flash-start', '#fff080'],
   ];
 
   it.each(MIGRATED_LITERALS)('%s keeps the old literal %s', (token, literal) => {
     expect(baseRootTokens().get(token)).toBe(literal);
+  });
+
+  it('every var(--cudly-*) in the stylesheets names a defined token', () => {
+    const css = fs.readdirSync(STYLES).filter((f) => f.endsWith('.css'))
+      .map((f) => fs.readFileSync(path.join(STYLES, f), 'utf8')).join('\n');
+    const defined = new Set([...css.matchAll(/(--cudly-[\w-]+)\s*:/g)].map((m) => m[1]));
+    const used = new Set([...css.matchAll(/var\((--cudly-[\w-]+)/g)].map((m) => m[1]));
+    expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 });

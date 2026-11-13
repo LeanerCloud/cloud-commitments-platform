@@ -92,7 +92,7 @@ a:active,
 }
 
 .hamburger:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.8);
+    outline: 2px solid var(--cudly-on-primary-80);
     outline-offset: 2px;
 }
 
@@ -101,7 +101,7 @@ a:active,
     display: none; /* hidden above breakpoint */
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--cudly-shadow-ink-40);
     z-index: 99;
     opacity: 0;
     transition: opacity var(--cudly-dur-slow) var(--cudly-ease);
@@ -186,7 +186,7 @@ body.sidebar-open {
         transform: translateX(-100%);
         transition: transform var(--cudly-dur-slow) var(--cudly-ease);
         /* Ensure the sidebar is rendered above the overlay */
-        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+        box-shadow: 2px 0 8px var(--cudly-shadow-ink-15);
     }
 
     /* Restore labels hidden by the collapsed sidebar */
@@ -487,8 +487,8 @@ body.sidebar-open {
     --scroll-hint-l: #000;
     --scroll-hint-r: #000;
     --scroll-hint-fade: linear-gradient(to right, var(--scroll-hint-l), #000 4rem, #000 calc(100% - 4rem), var(--scroll-hint-r));
-    -webkit-mask-image: var(--scroll-hint-fade), linear-gradient(#000, #000), linear-gradient(#000, #000);
-    mask-image: var(--scroll-hint-fade), linear-gradient(#000, #000), linear-gradient(#000, #000);
+    -webkit-mask-image: var(--scroll-hint-fade), linear-gradient(var(--cudly-mask-opaque), var(--cudly-mask-opaque)), linear-gradient(var(--cudly-mask-opaque), var(--cudly-mask-opaque));
+    mask-image: var(--scroll-hint-fade), linear-gradient(var(--cudly-mask-opaque), var(--cudly-mask-opaque)), linear-gradient(var(--cudly-mask-opaque), var(--cudly-mask-opaque));
     -webkit-mask-size: calc(100% - var(--scroll-hint-sb-w, 0px)) calc(100% - var(--scroll-hint-sb-h, 0px)), var(--scroll-hint-sb-w, 0px) 100%, 100% var(--scroll-hint-sb-h, 0px);
     mask-size: calc(100% - var(--scroll-hint-sb-w, 0px)) calc(100% - var(--scroll-hint-sb-h, 0px)), var(--scroll-hint-sb-w, 0px) 100%, 100% var(--scroll-hint-sb-h, 0px);
     -webkit-mask-position: 0 0, 100% 0, 0 100%;
@@ -496,8 +496,8 @@ body.sidebar-open {
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
 }
-.scroll-hint-left { --scroll-hint-l: rgb(0 0 0 / 0.12); }
-.scroll-hint-right { --scroll-hint-r: rgb(0 0 0 / 0.12); }
+.scroll-hint-left { --scroll-hint-l: var(--cudly-scroll-hint-ink); }
+.scroll-hint-right { --scroll-hint-r: var(--cudly-scroll-hint-ink); }
 
 /* The Opportunities table is page-tall, so its own horizontal scrollbar sat
  * off-screen under the action box. The strip after it mirrors that scrollbar

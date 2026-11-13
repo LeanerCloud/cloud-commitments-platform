@@ -248,7 +248,7 @@
 
 .credential-status.configured {
     background: var(--cudly-success-bg);
-    color: #137333;
+    color: var(--cudly-success-deep);
 }
 
 .settings-buttons {
@@ -403,17 +403,17 @@
 /* Dirty (changed but unsaved) field highlight */
 input.dirty,
 select.dirty {
-    border-color: #f4a261 !important;
-    background-color: #fff8e1 !important;
-    box-shadow: 0 0 0 2px rgba(244, 162, 97, 0.25);
+    border-color: var(--cudly-highlight) !important;
+    background-color: var(--cudly-highlight-bg) !important;
+    box-shadow: 0 0 0 2px var(--cudly-highlight-ring);
 }
 
 /* Dirty highlight for checkbox containers */
 .setting-input.dirty {
-    background-color: #fff8e1;
+    background-color: var(--cudly-highlight-bg);
     border-radius: 4px;
     padding: 2px 8px;
-    outline: 2px solid #f4a261;
+    outline: 2px solid var(--cudly-highlight);
     outline-offset: 2px;
 }
 
@@ -421,8 +421,8 @@ select.dirty {
 .federation-section {
     margin-top: 1.5rem;
     padding: 1rem;
-    background: #f0f7ff;
-    border: 1px solid #c8dff8;
+    background: var(--cudly-surface-info);
+    border: 1px solid var(--cudly-info-border-pale);
     border-radius: 8px;
 }
 
@@ -563,7 +563,7 @@ select.dirty {
     gap: 1rem;
     padding: 0.5rem 0.75rem;
     background: white;
-    border: 1px solid #dce8f8;
+    border: 1px solid var(--cudly-info-border-faint);
     border-radius: 6px;
 }
 
@@ -703,7 +703,7 @@ select.dirty {
     display: none;
     background: var(--cudly-warn-bg);
     color: var(--cudly-warn-fg);
-    border: 1px solid #ffecb5;
+    border: 1px solid var(--cudly-warn-border);
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
     margin-bottom: 0.75rem;
@@ -765,7 +765,7 @@ select.dirty {
 .permission-matrix th, .permission-matrix td { padding: 0.4rem 0.6rem; border: 1px solid var(--cudly-border); text-align: center; }
 .permission-matrix th { background: var(--cudly-bg); font-weight: var(--cudly-fw-semibold); }
 .permission-matrix td:first-child { text-align: left; font-family: monospace; }
-.permission-matrix .has-perm { color: #137333; font-weight: var(--cudly-fw-semibold); }
+.permission-matrix .has-perm { color: var(--cudly-success-deep); font-weight: var(--cudly-fw-semibold); }
 .permission-matrix .no-perm { color: var(--cudly-border-strong); }
 
 /* Permission overview: ticks granted through admin:* are grey, direct

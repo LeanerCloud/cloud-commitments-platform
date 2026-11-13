@@ -156,6 +156,47 @@
     --cudly-on-primary-50: rgba(255,255,255,0.5);
     --cudly-on-primary-95: rgba(255,255,255,0.95);
 
+    /* Text */
+    --cudly-text-mid: #555;
+    --cudly-text-faint: #888;
+
+    /* Surfaces */
+    --cudly-surface-info: #f0f7ff;
+    --cudly-surface-info-alt: #f0f4ff;
+    --cudly-surface-hover: #f4f5f7;
+    --cudly-surface-header: #f1f3f4;
+    --cudly-highlight-bg: #fff8e1;
+
+    /* Borders */
+    --cudly-border-soft: #d0d7de;
+    --cudly-border-light: #e0e3e8;
+    --cudly-info-border: #b3d4fc;
+    --cudly-info-border-alt: #c5d3f0;
+    --cudly-info-border-pale: #c8dff8;
+    --cudly-info-border-faint: #dce8f8;
+    --cudly-warn-border: #ffecb5;
+
+    /* Links and accents */
+    --cudly-link: #1a73e8;
+    --cudly-link-hover: #1557b0;
+    --cudly-success-deep: #137333;
+    --cudly-highlight: #f4a261;
+    --cudly-highlight-ring: rgba(244, 162, 97, 0.25);
+
+    /* Row flash animation */
+    --cudly-flash-bg: #fff8c4;
+    --cudly-flash-bg-hover: #fff3a0;
+    --cudly-flash-start: #fff080;
+
+    /* Shadow and overlay inks */
+    --cudly-shadow-ink-40: rgba(0, 0, 0, 0.4);
+    --cudly-shadow-scroll: rgba(15, 23, 42, 0.22);
+    --cudly-on-primary-80: rgba(255, 255, 255, 0.8);
+    --cudly-scroll-hint-ink: rgb(0 0 0 / 0.12);
+
+    /* Mask (alpha only, never themed) */
+    --cudly-mask-opaque: #000;
+
     /* Motion (issue #725): one easing curve and three durations so every
      * transition moves alike. Name the transitioned properties; never use
      * `transition: all`, which also animates layout and color changes that
