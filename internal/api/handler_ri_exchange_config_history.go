@@ -114,7 +114,12 @@ func (h *Handler) getRIExchangeHistory(ctx context.Context, req *events.LambdaFu
 		records[i].Error = purchase.SanitizeStoredError(records[i].Error)
 	}
 
-	return &RIExchangeHistoryResponse{Records: records}, nil
+	direct, err := h.loadRIExchangeDirectHistory(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RIExchangeHistoryResponse{Records: records, DirectExecutions: direct}, nil
 }
 
 // riExchangeHistoryLimit caps how many exchange records one history request
@@ -243,4 +248,7 @@ func (r *RIExchangeConfigUpdateRequest) validate() error {
 // RIExchangeHistoryResponse is the response for GET /api/ri-exchange/history.
 type RIExchangeHistoryResponse struct {
 	Records []config.RIExchangeRecord `json:"records"`
+	// DirectExecutions lists the interactive (direct) exchanges, which live in
+	// ri_exchange_direct_executions rather than ri_exchange_history (#1883).
+	DirectExecutions []riExchangeDirectHistoryItem `json:"direct_executions"`
 }
