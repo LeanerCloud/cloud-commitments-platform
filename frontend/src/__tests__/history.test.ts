@@ -141,7 +141,7 @@ describe('History Module', () => {
     // runs in America/New_York (globalSetup), so pin "now" to an evening
     // instant where the local day trails the UTC day: the old toISOString()
     // seeding showed tomorrow in To and dropped a day from From.
-    test('sets default 7-day range from the local calendar day', () => {
+    test('sets default 90-day range from the local calendar day', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-07-28T03:30:00Z')); // Jul 27, 23:30 EDT
       try {
         initHistoryDateRange();
@@ -151,10 +151,9 @@ describe('History Module', () => {
 
       const startInput = document.getElementById('history-start') as HTMLInputElement;
       const endInput = document.getElementById('history-end') as HTMLInputElement;
-      // Purchase events are a log view (7 days); Savings History has its
-      // own 90-day default via #savings-period in index.html.
+      // Same 90-day default as Savings History (#savings-period).
       expect(endInput.value).toBe('2026-07-27');
-      expect(startInput.value).toBe('2026-07-20');
+      expect(startInput.value).toBe('2026-04-28');
     });
 
     test('the seeded range requests a purchase made earlier the same local day', async () => {
@@ -174,7 +173,7 @@ describe('History Module', () => {
       const filters = (api.getHistory as jest.Mock).mock.calls[0][0] as { start: string; end: string };
       const purchaseUtcDay = purchaseAt.slice(0, 10);
       expect(filters.start <= purchaseUtcDay && purchaseUtcDay <= filters.end).toBe(true);
-      expect(filters).toEqual(expect.objectContaining({ start: '2026-07-20', end: '2026-07-28' }));
+      expect(filters).toEqual(expect.objectContaining({ start: '2026-04-28', end: '2026-07-28' }));
     });
 
     test('does not overwrite existing values', () => {
@@ -263,7 +262,7 @@ describe('History Module', () => {
       // Reproduces the scenario from PR #139's CodeRabbit nitpick: the
       // plan-history endpoint returns the full history regardless of
       // date range, so the inputs should reflect the rendered data, not
-      // the tab's generic 7-day default.
+      // the tab's generic default range.
       (api.getHistory as jest.Mock).mockResolvedValue({
         summary: {},
         purchases: [
@@ -678,6 +677,40 @@ describe('History Module', () => {
 
       expect(api.getHistory).toHaveBeenCalledTimes(1);
     });
+
+    test.each(['history-start', 'history-end'])('changing #%s reloads history (issue #1681)', async (id) => {
+      setupHistoryHandlers();
+      (api.getHistory as jest.Mock).mockClear();
+      document.getElementById(id)!.dispatchEvent(new Event('change'));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(api.getHistory).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test('a slower earlier load does not overwrite a later one (issue #1681 date-change reloads)', async () => {
+    const row = (id: string) => ({ timestamp: '2026-09-29T12:00:00Z', purchase_id: id, status: 'completed', provider: 'aws', service: 'ec2' });
+    let resolveOld!: (v: unknown) => void;
+    (api.getHistory as jest.Mock)
+      .mockImplementationOnce(() => new Promise((r) => { resolveOld = r; }))
+      .mockResolvedValueOnce({ summary: {}, purchases: [row('new')] });
+    const first = loadHistory();
+    await loadHistory();
+    resolveOld({ summary: {}, purchases: [row('old')] });
+    await first;
+    expect(document.querySelector('#history-list tr[data-execution-id="new"]')).not.toBeNull();
+    expect(document.querySelector('#history-list tr[data-execution-id="old"]')).toBeNull();
+  });
+
+  test('Date cells use the numeric locale form of the date inputs, not "Sep 29, 2026" (issue #1681)', async () => {
+    (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [
+      { timestamp: '2026-09-29T12:00:00Z', purchase_id: 'a', status: 'completed', provider: 'aws', service: 'ec2' },
+      { timestamp: '2026-09-29T12:00:00Z', purchase_id: 'b', status: 'pending', provider: 'aws', service: 'ec2' },
+    ] });
+    await loadHistory();
+    const hist = document.querySelector('#history-list tr[data-execution-id="a"] td[data-label="Date"]');
+    const queue = document.querySelector('#purchases-approval-queue tr[data-execution-id="b"] td[data-label="Date"]');
+    expect(hist?.textContent).toMatch(/^\d{2}[./-]\d{2}[./-]\d{4}$/);
+    expect(queue?.textContent).toMatch(/^\d{2}[./-]\d{2}[./-]\d{4}$/);
   });
 
   // H-2 regression: absent API summary must render '—' on KPI cards, not '$0'.

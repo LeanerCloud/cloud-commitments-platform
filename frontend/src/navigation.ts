@@ -223,7 +223,7 @@ export function switchTab(tabName: string, opts: SwitchTabOptions = {}): void {
       initHistoryDateRange();
       // Auto-load history so the Approval queue card and the Purchase
       // History table populate on first visit, without requiring the
-      // user to click "Load History" just to see pending approvals.
+      // user to click "Refresh" just to see pending approvals.
       // Matches the loadSavingsHistory pattern above. Both fetch
       // small, fast, scope-already-filtered payloads.
       void loadHistory();

@@ -4,7 +4,7 @@
 
 import * as api from './api';
 import * as state from './state';
-import { formatCurrency, formatDate, escapeHtml, escapeHtmlAttr, amortizedMonthly, NO_VALUE } from './utils';
+import { formatCurrency, escapeHtml, escapeHtmlAttr, amortizedMonthly, NO_VALUE } from './utils';
 import { historyConfirmBody } from './history-confirm-body';
 import type { HistoryResponse, HistorySummary, HistoryPurchase } from './types';
 import type { RevokePurchaseResult, RevokeQuote } from './api';
@@ -220,10 +220,13 @@ export function applyExecutionDeepLink(): boolean {
  * Setup history filter event handlers.
  *
  * Provider/account filters are global (sourced from state.ts via the
- * topbar chips). The history-section's own controls are just date range
- * + Load History button — those stay here.
+ * topbar chips). The history-section's own controls are just the date range
+ * (a change reloads) and the Refresh button; those stay here.
  */
 export function setupHistoryHandlers(): void {
+  for (const id of ['history-start', 'history-end']) {
+    document.getElementById(id)?.addEventListener('change', () => void loadHistory());
+  }
   document.getElementById('history-load-more-btn')?.addEventListener('click', () => void loadMoreHistory());
   state.subscribeProvider(() => void loadHistory());
   state.subscribeAccount(() => void loadHistory());
@@ -274,17 +277,14 @@ function syncAmortizeCheckbox(checkboxId: string): void {
 /**
  * Initialize history date range.
  *
- * Defaults to a 7-day window because the Purchase events table is a *log*
- * view — recent activity is what matters; older days are mostly empty and
- * mostly noise. The Savings History card on the same page covers the
- * complementary multi-month *trend* view (default 90 days, see
- * `#savings-period` in index.html), so the two controls open to their
- * own natural windows rather than fighting over one default.
+ * Defaults to 90 days, the same window as the Savings History card on the
+ * same page (`#savings-period` in index.html), so both open to one span
+ * (issue #1681).
  */
 export function initHistoryDateRange(): void {
   const end = new Date();
   const start = new Date();
-  start.setDate(start.getDate() - 7);
+  start.setDate(start.getDate() - 90);
 
   const startInput = document.getElementById('history-start') as HTMLInputElement | null;
   const endInput = document.getElementById('history-end') as HTMLInputElement | null;
@@ -302,7 +302,7 @@ export function initHistoryDateRange(): void {
  *
  * The plan-history endpoint returns the plan's *full* history regardless
  * of date range — `api.getHistory({ planId })` ignores `start`/`end`.
- * Don't seed the From/To inputs with the generic 7-day default here:
+ * Don't seed the From/To inputs with the generic default range here:
  * they would visibly disagree with the table contents (the tab-level
  * default would suggest the table only covers the last week, while in
  * fact every purchase the plan ever recorded is shown). Instead, after
@@ -316,7 +316,7 @@ export function initHistoryDateRange(): void {
 export async function viewPlanHistory(planId: string): Promise<void> {
   const requestEpoch = historyMutationEpoch;
   resetHistoryPaging();
-  // skipDefaultLoad: the tab's own unscoped 7-day fetch would land after the
+  // skipDefaultLoad: the tab's own unscoped fetch would land after the
   // plan-scoped one below and overwrite it, and its date-range seeding is
   // exactly what the doc comment above says not to do here.
   switchTab('purchases', { skipDefaultLoad: true });
@@ -438,7 +438,7 @@ export async function loadHistory(): Promise<void> {
       api.getHistory(filters) as unknown as Promise<HistoryResponse>,
       refreshFourEyesMode(),
     ]);
-    if (requestEpoch !== historyMutationEpoch) return;
+    if (requestEpoch !== historyMutationEpoch || generation !== historyLoadGeneration) return;
     renderHistorySummary(data.summary ?? null);
     renderTruncationNotices(data);
     const purchases = data.purchases || [];
@@ -446,7 +446,7 @@ export async function loadHistory(): Promise<void> {
     renderHistoryList(purchases);
     updateHistoryPaging(generation, filters, data);
   } catch (error) {
-    if (requestEpoch !== historyMutationEpoch) return;
+    if (requestEpoch !== historyMutationEpoch || generation !== historyLoadGeneration) return;
     console.error('Failed to load history:', error);
     renderTruncationNotices({});
     const err = error as Error;
@@ -702,6 +702,15 @@ const NO_RECS_HTML = `<span class="no-recommendations" title="${NO_RECOMMENDATIO
 // instead. A 0 term on a real row (a mixed-term basket) is also a dash.
 function termCell(p: HistoryPurchase): string {
   return isRealTerm(p.term) ? escapeHtml(formatTermShort(p.term)) : MUTED_DASH;
+}
+
+// historyDate is the Date cell: the same locale numeric form as the From and
+// To date inputs (issue #1681).
+function historyDate(timestamp: string): string {
+  const d = new Date(timestamp);
+  return isNaN(d.getTime())
+    ? ''
+    : d.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
 function providerCell(p: HistoryPurchase): string {
@@ -1463,7 +1472,7 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
     return `
       <tr${execIdAttr}>
         <td data-label="Status">${statusCell}</td>
-        <td data-label="Date">${formatDate(p.timestamp)}</td>
+        <td data-label="Date">${historyDate(p.timestamp)}</td>
         <td data-label="Provider">${providerCell(p)}</td>
         <td data-label="Service">${dashOr(escapeHtml(p.service ? serviceLabel(p.service) : p.service))}</td>
         <td data-label="Type">${empty ? NO_RECS_HTML : escapeHtml(p.resource_type)}</td>
@@ -2121,7 +2130,7 @@ export function renderApprovalQueue(purchases: HistoryPurchase[]): void {
     const execIdAttr = p.purchase_id ? ` data-execution-id="${escapeHtmlAttr(p.purchase_id)}"` : '';
     return `
       <tr${execIdAttr}>
-        <td data-label="Date">${formatDate(p.timestamp)}</td>
+        <td data-label="Date">${historyDate(p.timestamp)}</td>
         <td data-label="Account">${accountCell}</td>
         <td data-label="Provider">${providerCell(p)}</td>
         <td data-label="Service">${empty ? NO_RECS_HTML : escapeHtml(p.service ? serviceLabel(p.service) : p.service)}</td>

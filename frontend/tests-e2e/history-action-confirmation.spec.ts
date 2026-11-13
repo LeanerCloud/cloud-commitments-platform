@@ -195,7 +195,7 @@ test('success survives failed refresh, cached redraw and old GET; fresh same-ID 
   await page.goto('/purchases/history');
   await expect(page.locator('.history-approve-btn')).toHaveCount(1);
   holdNext = true;
-  await page.getByRole('button', { name: 'Load History', exact: true }).click();
+  await page.locator('#load-history-btn').click();
   await expect.poll(() => held).toBe(true);
   await page.locator('#history-amortize-checkbox').check();
   await page.locator('#purchases-approval-queue .history-approve-btn').click();
@@ -213,7 +213,7 @@ test('success survives failed refresh, cached redraw and old GET; fresh same-ID 
   failHistory = false;
   fixture.row.provider = 'azure';
   fixture.row.status = 'scheduled';
-  await page.getByRole('button', { name: 'Load History', exact: true }).click();
+  await page.locator('#load-history-btn').click();
   await page.locator('#history-list .history-revoke-btn').click();
   await expect(page.locator('.modal-confirm-backdrop')).toHaveCount(1);
   await page.locator('.modal-confirm-actions button').last().click();

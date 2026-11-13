@@ -38,7 +38,7 @@ test.describe('east of UTC (Pacific/Auckland)', () => {
     const requests = await historyFixture(page, '2026-07-27T22:00:00Z', '2026-07-27T21:00:00Z');
     await page.goto('/purchases/history');
     await expect(page.locator('#history-end')).toHaveValue('2026-07-28');
-    await expect(page.locator('#history-start')).toHaveValue('2026-07-21');
+    await expect(page.locator('#history-start')).toHaveValue('2026-04-29');
 
     await page.locator('#history-start').fill('2026-07-28');
     const response = page.waitForResponse(r => r.url().includes('/api/history?'));
@@ -59,10 +59,10 @@ test.describe('west of UTC (America/Los_Angeles)', () => {
     const requests = await historyFixture(page, '2026-07-28T03:00:00Z', '2026-07-28T00:30:00Z');
     await page.goto('/purchases/history');
     await expect(page.locator('#history-end')).toHaveValue('2026-07-27');
-    await expect(page.locator('#history-start')).toHaveValue('2026-07-20');
+    await expect(page.locator('#history-start')).toHaveValue('2026-04-28');
     await expect.poll(() => requests.length).toBeGreaterThan(0);
     const last = requests[requests.length - 1]!;
-    expect(last.searchParams.get('start')).toBe('2026-07-20');
+    expect(last.searchParams.get('start')).toBe('2026-04-28');
     expect(last.searchParams.get('end')).toBe('2026-07-28');
     await expect(page.locator('#history-list tbody tr')).not.toHaveCount(0);
   });
