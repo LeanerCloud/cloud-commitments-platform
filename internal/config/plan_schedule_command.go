@@ -43,6 +43,7 @@ type PlanScheduleCommand struct {
 	ExpectedUpdatedAt time.Time
 	Name              *string
 	NextExecutionDate *time.Time
+	GroupTarget       *PlanGroupTarget
 }
 
 // PlanScheduleOutcome is what a command returns and what its receipt stores.
@@ -116,6 +117,13 @@ func (s *PostgresStore) applyPlanScheduleCommandTx(ctx context.Context, tx pgx.T
 // writePlanScheduleCommandTx writes the plan change and its receipt.
 func (s *PostgresStore) writePlanScheduleCommandTx(ctx context.Context, tx pgx.Tx, locked *PurchasePlan, cmd PlanScheduleCommand) (*PlanScheduleOutcome, error) {
 	next := *locked
+	if cmd.GroupTarget != nil {
+		merged, err := MergePlanGroupTarget(locked, *cmd.GroupTarget)
+		if err != nil {
+			return nil, err
+		}
+		next = *merged
+	}
 	next.UpdatedAt = cmd.ExpectedUpdatedAt
 	if cmd.Name != nil {
 		next.Name = *cmd.Name
