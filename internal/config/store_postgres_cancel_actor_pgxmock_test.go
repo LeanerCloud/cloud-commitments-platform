@@ -21,7 +21,7 @@ const coalescedActorProjection = "COALESCE(canceled_by, " + legacyCancelActorCol
 
 var executionProjectionCols = []string{
 	"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-	"notification_sent", "approval_token", "recommendations",
+	"notification_sent", "approval_token_hash", "recommendations",
 	"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	"cloud_account_id", "source", "approved_by", legacyCancelActorColumn, "capacity_percent",
 	"created_by_user_id", "retry_execution_id", "retry_attempt_n",

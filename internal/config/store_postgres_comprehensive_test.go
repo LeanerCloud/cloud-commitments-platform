@@ -1026,7 +1026,7 @@ func TestGetPendingExecutions_Success(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).
 		AddRow("plan-1", "exec-1", "pending", 1, now,
@@ -1063,7 +1063,7 @@ func TestGetPendingExecutions_Empty(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	})
 
@@ -1107,7 +1107,7 @@ func TestGetPendingExecutions_InvalidRecommendationsJSON(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).AddRow("plan-1", "exec-1", "pending", 1, now,
 		sql.NullTime{}, "", []byte("invalid json"),
@@ -1142,7 +1142,7 @@ func TestGetExecutionByID_Success(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).AddRow("plan-123", "exec-456", "completed", 3, now,
 		sql.NullTime{}, "token-xyz", recsJSON,
@@ -1173,7 +1173,7 @@ func TestGetExecutionByID_NotFound(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	})
 
@@ -1223,7 +1223,7 @@ func TestGetExecutionByPlanAndDate_Success(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).AddRow("plan-abc", "exec-xyz", "pending", 1, scheduledDate,
 		sql.NullTime{}, "", recsJSON,
@@ -1253,7 +1253,7 @@ func TestGetExecutionByPlanAndDate_NotFound(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	})
 
@@ -1774,7 +1774,7 @@ func TestQueryExecutions_WithCompletedTimestamp(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).AddRow("plan-done", "exec-done", "completed", 4, now.Add(-24*time.Hour),
 		sql.NullTime{Time: now.Add(-3 * time.Hour), Valid: true}, "approved-token", recsJSON,
@@ -1806,7 +1806,7 @@ func TestQueryExecutions_WithErrorField(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).AddRow("plan-fail", "exec-fail", "failed", 1, now,
 		sql.NullTime{}, "", recsJSON,
@@ -2051,7 +2051,7 @@ func TestGetPendingExecutions_AllTimestampsSet(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).AddRow("plan-all", "exec-all", "completed", 5, now.Add(-3*time.Hour),
 		sql.NullTime{Time: notifSent, Valid: true}, "all-approved", recsJSON,

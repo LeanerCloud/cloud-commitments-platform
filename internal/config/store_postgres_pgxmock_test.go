@@ -727,7 +727,7 @@ func TestPGXMock_GetExecutionByID_Success(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	cols := []string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 		"cloud_account_id", "source", "approved_by", "cancelled_by", "capacity_percent",
 		"created_by_user_id", "retry_execution_id", "retry_attempt_n",
@@ -779,7 +779,7 @@ func TestPGXMock_GetExecutionByID_WithTimestamps(t *testing.T) {
 	future := now.Add(24 * time.Hour)
 	cols := []string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 		"cloud_account_id", "source", "approved_by", "cancelled_by", "capacity_percent",
 		"created_by_user_id", "retry_execution_id", "retry_attempt_n",
@@ -848,7 +848,7 @@ func TestPGXMock_GetPlannedExecutions_ProjectsAllScanColumns(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	cols := []string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 		"cloud_account_id", "source", "approved_by", "cancelled_by", "capacity_percent",
 		"created_by_user_id", "retry_execution_id", "retry_attempt_n",
@@ -930,7 +930,7 @@ func TestPGXMock_GetExecutionByID_ProjectsCoalescedCancelledBy(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	cols := []string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 		"cloud_account_id", "source", "approved_by", "cancelled_by", "capacity_percent",
 		"created_by_user_id", "retry_execution_id", "retry_attempt_n",
@@ -1401,7 +1401,7 @@ var riExchangeCols = []string{
 	"id", "account_id", "exchange_id", "region", "source_ri_ids",
 	"source_instance_type", "source_count", "target_offering_id",
 	"target_instance_type", "target_count", "payment_due",
-	"status", "approval_token", "error", "mode",
+	"status", "approval_token_hash", "error", "mode",
 	"created_at", "updated_at", "completed_at", "expires_at",
 	"created_by_user_id", "approved_by", "ladder_run_id",
 }
@@ -2926,7 +2926,7 @@ func stuckExecRow(execID, status string, scheduled time.Time) []any {
 func stuckExecCols() []string {
 	return []string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 		"cloud_account_id", "source", "approved_by", "cancelled_by", "capacity_percent",
 		"created_by_user_id", "retry_execution_id", "retry_attempt_n",
@@ -3121,7 +3121,7 @@ func TestPGXMock_TransitionExecutionStatus_ProbeHardErrorNotMappedToNotFound(t *
 
 	execCols := []string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 		"cloud_account_id", "source", "approved_by", "cancelled_by", "capacity_percent",
 		"created_by_user_id", "retry_execution_id", "retry_attempt_n",
@@ -3169,7 +3169,7 @@ func TestPGXMock_GetExecutionByPlanAndDate_NotFoundWrapsErrNotFound(t *testing.T
 	// Return an empty row set — simulates the "no existing execution" case.
 	cols := []string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 		"cloud_account_id", "source", "approved_by", "cancelled_by", "capacity_percent",
 		"created_by_user_id", "retry_execution_id", "retry_attempt_n",

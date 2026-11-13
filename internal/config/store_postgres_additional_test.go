@@ -210,7 +210,7 @@ func TestQueryExecutions_RowsError(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).AddRow("plan-1", "exec-1", "pending", 1, now,
 		sql.NullTime{}, "", recsJSON,
@@ -238,7 +238,7 @@ func TestQueryExecutions_InvalidRecommendationsJSON(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).AddRow("plan-bad-json", "exec-bad-json", "pending", 1, now,
 		sql.NullTime{}, "", []byte("{invalid-json}"),
@@ -271,7 +271,7 @@ func TestQueryExecutions_AllTimestampsValid(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).AddRow("plan-all-ts", "exec-all-ts", "completed", 3, now.Add(-3*time.Hour),
 		sql.NullTime{Time: notifSent, Valid: true}, "token-xyz", recsJSON,
@@ -326,7 +326,7 @@ func TestGetExecutionByPlanAndDate_MultipleExecutionsReturnsFirst(t *testing.T) 
 	// Return multiple rows - the function should return the first one
 	rows := pgxmock.NewRows([]string{
 		"plan_id", "execution_id", "status", "step_number", "scheduled_date",
-		"notification_sent", "approval_token", "recommendations",
+		"notification_sent", "approval_token_hash", "recommendations",
 		"total_upfront_cost", "estimated_savings", "completed_at", "error", "expires_at",
 	}).
 		AddRow("plan-multi", "exec-first", "pending", 1, scheduledDate,
