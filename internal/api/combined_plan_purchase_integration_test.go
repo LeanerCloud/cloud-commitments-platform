@@ -126,6 +126,15 @@ func newCombinedPlanFixture(t *testing.T, automatic bool, capAmount *float64) *c
 // recommendation priced in currency (issue #361).
 func newCombinedPlanFixtureIn(t *testing.T, automatic bool, capAmount *float64, currency string) *combinedPlanFixture {
 	t.Helper()
+	f := prepareCombinedPlanFixture(t, automatic, capAmount, currency)
+	f.tick(t)
+	return f
+}
+
+// prepareCombinedPlanFixture builds the plan, its two empty roots and the
+// recommendation, without running the notification tick that attaches step 1.
+func prepareCombinedPlanFixture(t *testing.T, automatic bool, capAmount *float64, currency string) *combinedPlanFixture {
+	t.Helper()
 	ctx := context.Background()
 	f := &combinedPlanFixture{createConcurrencyFixture: newCreateConcurrencyFixture(ctx, t)}
 	accounts, err := f.store.GetPlanAccounts(ctx, f.planID)
@@ -181,19 +190,24 @@ func newCombinedPlanFixtureIn(t *testing.T, automatic bool, capAmount *float64, 
 	f.manager = purchase.NewManager(purchase.ManagerConfig{ConfigStore: f.store, EmailSender: email.NewNopSender(), CredentialStore: &combinedCredentials{}, ProviderFactory: factory})
 	source := scheduler.NewScheduler(scheduler.SchedulerConfig{ConfigStore: f.store, PurchaseManager: f.manager, EmailSender: email.NewNopSender(), ProviderFactory: factory})
 	f.manager.SetRecommendationSource(source)
-	f.handler.purchase = f.manager
+	f.handler.purchase, f.handler.scheduler = f.manager, source
 	shown, err := source.ListRecommendationsStrict(ctx, config.RecommendationFilter{AccountIDs: []string{f.account}})
 	require.NoError(t, err)
 	require.Len(t, shown, 1)
 	assert.Equal(t, 100, shown[0].Count)
-	result, err := f.manager.SendUpcomingPurchaseNotifications(ctx)
+	return f
+}
+
+// tick runs the notification tick that attaches step 1 and records its root.
+func (f *combinedPlanFixture) tick(t *testing.T) {
+	t.Helper()
+	result, err := f.manager.SendUpcomingPurchaseNotifications(context.Background())
 	require.NoError(t, err)
 	f.notified = result.Notified
 	rows := f.rows(t, 1)
 	require.Len(t, rows, 1)
 	f.root = &rows[0]
 	f.service.rootID = f.root.ExecutionID
-	return f
 }
 
 // shiftPlanBackOneDay moves every date Add Purchases wrote 24h earlier, as if a
