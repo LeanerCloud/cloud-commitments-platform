@@ -626,6 +626,11 @@ button.secondary:hover {
  */
 .accounts-table {
     width: 100%;
+    /* Fixed layout and shared column widths so the AWS, Azure and GCP
+     * tables line up when stacked (#1691). Name takes the remainder. */
+    table-layout: fixed;
+    /* Floor so Name keeps ~10rem; narrow screens scroll the container. */
+    min-width: 44rem;
     border-collapse: collapse;
     margin-top: 0.5rem;
 }
@@ -644,6 +649,13 @@ button.secondary:hover {
     font-weight: var(--cudly-fw-medium);
     background: var(--cudly-surface-faint);
 }
+
+.users-table td.nowrap { white-space: nowrap; }
+
+.accounts-table th:nth-child(2) { width: 12rem; }
+.accounts-table th:nth-child(3) { width: 7rem; }
+.accounts-table th:nth-child(4) { width: 14rem; }
+.accounts-table td { overflow-wrap: anywhere; }
 
 .account-actions {
     display: flex;

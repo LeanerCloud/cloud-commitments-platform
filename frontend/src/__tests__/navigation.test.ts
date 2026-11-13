@@ -115,6 +115,13 @@ describe('Navigation Module', () => {
   });
 
   describe('switchTab', () => {
+    test('records the active tab on body for CSS hooks (#1691)', () => {
+      switchTab('admin');
+      expect(document.body.dataset['activeTab']).toBe('admin');
+      switchTab('home');
+      expect(document.body.dataset['activeTab']).toBe('home');
+    });
+
     test('switches to dashboard tab and loads dashboard', () => {
       switchTab('home');
 

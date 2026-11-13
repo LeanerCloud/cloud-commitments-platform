@@ -123,8 +123,8 @@ export function renderUsers(users: APIUser[]): void {
                 ? '<span class="badge badge-success"><i class="icon-shield"></i> Enabled</span>'
                 : '<span class="badge badge-warning"><i class="icon-shield-off"></i> Disabled</span>'}
             </td>
-            <td><span class="text-muted">${user.created_at ? formatDate(user.created_at) : '-'}</span></td>
-            <td><span class="text-muted">${user.last_login ? formatRelativeTime(user.last_login) : 'Never'}</span></td>
+            <td class="nowrap"><span class="text-muted">${user.created_at ? formatDate(user.created_at) : '-'}</span></td>
+            <td class="nowrap"><span class="text-muted">${user.last_login ? formatRelativeTime(user.last_login) : 'Never'}</span></td>
             <td>
               <div class="action-buttons row-actions">
                 <button class="btn-small icon-btn edit-user-btn" data-user-id="${escapeHtml(user.id)}" ${user.id === SYNTHETIC_USER_ID ? 'disabled' : ''} aria-label="Edit user ${escapeHtml(user.email)}" title="Edit user">${iconSvg('edit')}</button>

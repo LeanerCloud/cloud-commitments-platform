@@ -165,6 +165,8 @@ function confirmLeaveSettings(): Promise<boolean> {
  * current one carries aria-current="page" and the rest carry nothing.
  */
 export function setActiveNav(tabName: string): void {
+  // CSS hooks (e.g. hiding the global filters on Admin pages).
+  document.body.dataset['activeTab'] = tabName;
   document.querySelectorAll<HTMLElement>('.tab-btn').forEach(btn => {
     const isActive = btn.dataset['tab'] === tabName;
     btn.classList.toggle('active', isActive);

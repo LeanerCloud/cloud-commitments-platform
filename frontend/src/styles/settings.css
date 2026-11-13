@@ -1000,7 +1000,6 @@ tr.override-disabled {
  * box, which pulled its bottom border out of line with the row). */
 .accounts-table td.account-actions {
     display: table-cell;
-    width: 1%;
     white-space: nowrap;
 }
 

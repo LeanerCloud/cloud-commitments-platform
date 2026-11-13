@@ -248,6 +248,12 @@
     }
 }
 
+/* The global Provider/Account filters have no effect on the Admin pages
+ * (#1691). Also covers the copy the narrow layout moves into the drawer. */
+body[data-active-tab="admin"] #topbar-filters {
+    display: none;
+}
+
 .app-topbar > .app-topbar-filters {
     margin: 0;
     gap: var(--cudly-sp-2);

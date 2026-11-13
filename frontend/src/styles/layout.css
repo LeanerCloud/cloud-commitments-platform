@@ -66,6 +66,13 @@
     flex-direction: column;
     gap: var(--cudly-sp-2);
     transition: width var(--cudly-dur) var(--cudly-ease);
+    /* Stays in view under the sticky top bar on long pages (#1691). The
+     * mobile drawer overrides this with position: fixed. */
+    position: sticky;
+    top: var(--cudly-topbar-h);
+    align-self: flex-start;
+    height: calc(100vh - var(--cudly-topbar-h));
+    overflow-y: auto;
 }
 
 .app-sidebar.collapsed {
