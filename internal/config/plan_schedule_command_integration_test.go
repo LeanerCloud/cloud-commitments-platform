@@ -131,3 +131,27 @@ func TestApplyPlanScheduleCommandIDReusedOnOtherPlanConflicts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "other", got.Name)
 }
+
+func TestApplyPlanScheduleCommandGroupTargetKeepsOtherGroup(t *testing.T) {
+	ctx := context.Background()
+	store := setupRampStepStore(ctx, t)
+	plan := boundTwoGroupPlan()
+	plan.Name = "bound"
+	require.NoError(t, store.CreatePurchasePlan(ctx, plan))
+	cmd := scheduleCommand(plan, "bound")
+	cmd.GroupTarget = &PlanGroupTarget{GroupID: "b", MaxStepCommitment: fp(150)}
+
+	_, err := store.ApplyPlanScheduleCommand(ctx, cmd)
+	require.NoError(t, err)
+	got, err := store.GetPurchasePlan(ctx, plan.ID)
+	require.NoError(t, err)
+	require.Equal(t, 150.0, *got.Services["aws/rds#b"].MaxStepCommitment)
+	require.Equal(t, 100.0, *got.Services["aws/ec2#a"].MaxStepCommitment)
+	require.Equal(t, RampAllocationBoundGroups, got.RampSchedule.AllocationMode)
+
+	raise := scheduleCommand(got, "raise")
+	raise.GroupTarget = &PlanGroupTarget{GroupID: "b", MaxStepCommitment: fp(151)}
+	_, err = store.ApplyPlanScheduleCommand(ctx, raise)
+	require.ErrorIs(t, err, ErrGroupTargetRefused)
+	require.Equal(t, 1, receiptCount(ctx, t, store), "a refused edit leaves no receipt")
+}
