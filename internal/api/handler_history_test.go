@@ -2269,3 +2269,20 @@ func TestHandler_getHistory_ProjectsCreatedBySystem(t *testing.T) {
 	}
 	assert.Equal(t, map[string]bool{"sys": true, "human": false}, got)
 }
+
+// Legacy-estimate rows (issue #669) are counted as completed purchases but add
+// no upfront or savings dollars, and cannot turn the total unknown.
+func TestSummarizePurchaseHistory_LegacyEstimateSkipsDollarsKeepsCount(t *testing.T) {
+	t.Parallel()
+	good := 100.0
+	rows := []config.PurchaseHistoryRecord{
+		{PurchaseID: "legacy", UpfrontCost: nil, EstimatedSavings: 500, AmountBasis: config.PurchaseAmountBasisLegacyWindow},
+		{PurchaseID: "good", UpfrontCost: &good, EstimatedSavings: 20},
+	}
+	got := summarizePurchaseHistory(rows)
+	assert.Equal(t, 2, got.TotalPurchases)
+	assert.Equal(t, 2, got.TotalCompleted)
+	assert.InDelta(t, 20.0, got.TotalMonthlySavings, 1e-9)
+	require.NotNil(t, got.TotalUpfront, "a legacy row with an unknown upfront must not make the total unknown")
+	assert.InDelta(t, 100.0, *got.TotalUpfront, 1e-9)
+}

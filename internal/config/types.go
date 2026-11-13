@@ -1224,7 +1224,7 @@ type PurchaseHistoryRecord struct {
 	RampStep         int      `json:"ramp_step,omitempty" dynamodbav:"ramp_step,omitempty"`
 	CloudAccountID   *string  `json:"cloud_account_id,omitempty" dynamodbav:"cloud_account_id,omitempty"`
 	// AmountBasis is set from the amount_basis column; no writer names it.
-	AmountBasis PurchaseAmountBasis `json:"-" dynamodbav:"-"`
+	AmountBasis PurchaseAmountBasis `json:"amount_basis,omitempty" dynamodbav:"-"`
 	Status      string              `json:"status,omitempty" dynamodbav:"-"`
 	// Approver holds the email address the approval request was sent to (or
 	// would have been, if SES failed). Set only on pending rows, so the

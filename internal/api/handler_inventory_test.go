@@ -788,3 +788,49 @@ func TestHandler_listActiveCommitments_NoTruncationBeyond1000(t *testing.T) {
 	assert.Equal(t, 120.0, resp.Commitments[0].EstimatedSavings)
 	mockStore.AssertNotCalled(t, "GetAllPurchaseHistory", mock.Anything, mock.Anything)
 }
+
+// A legacy-estimate Azure row (issue #669) stays in the commitment list but
+// adds no covered spend, so the Coverage tab cannot count its estimated
+// amounts.
+func TestHandler_getCoverageBreakdown_LegacyEstimateAddsNoCoveredSpend(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockScheduler := new(MockScheduler)
+	t.Cleanup(func() {
+		mockStore.AssertExpectations(t)
+		mockScheduler.AssertExpectations(t)
+	})
+	now := time.Now()
+	row := func(id string, basis config.PurchaseAmountBasis) config.PurchaseHistoryRecord {
+		return config.PurchaseHistoryRecord{
+			AccountID: "acc-az", PurchaseID: id, Provider: "azure", Service: "compute",
+			Timestamp: now.AddDate(0, -2, 0), Term: 1, UpfrontCost: new(float64(1200.0)), AmountBasis: basis,
+		}
+	}
+	other := row("legacy-db", config.PurchaseAmountBasisLegacyWindow)
+	other.Service = "database"
+	purchases := []config.PurchaseHistoryRecord{row("legacy", config.PurchaseAmountBasisLegacyWindow), row("good", ""), other}
+	mockStore.On("GetActivePurchaseHistory", ctx, mock.AnythingOfType("time.Time"), []string(nil), map[string][]string(nil)).Return(purchases, nil)
+	mockStore.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
+		return []config.CloudAccount{}, nil
+	}
+	mockScheduler.On("ListRecommendations", mock.Anything, config.RecommendationFilter{}).Return([]config.RecommendationRecord{}, nil)
+	mockAuth, req := adminInventoryReq(t, ctx)
+	handler := &Handler{auth: mockAuth, config: mockStore, scheduler: mockScheduler}
+
+	result, err := handler.getCoverageBreakdown(ctx, req, map[string]string{})
+	require.NoError(t, err)
+	resp := result.(CoverageBreakdownResponse)
+	for _, p := range resp.Providers {
+		if p.Provider == "azure" {
+			require.Len(t, p.Services, 2, "a legacy-only service keeps its row, not 'no usage detected'")
+			byName := map[string]CoverageServiceRow{}
+			for _, s := range p.Services {
+				byName[s.Service] = s
+			}
+			assert.InDelta(t, 100.0, *byName["compute"].CoveredMonthly, 0.001, "only the good row's $1200/12 counts")
+			require.NotNil(t, byName["database"].CoveredMonthly)
+			assert.Zero(t, *byName["database"].CoveredMonthly, "legacy-only service shows zero covered")
+		}
+	}
+}

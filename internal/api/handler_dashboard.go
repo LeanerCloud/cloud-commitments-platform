@@ -60,7 +60,7 @@ func (h *Handler) getDashboardSummary(ctx context.Context, req *events.LambdaFun
 
 	totalSavings, byService := summarizeRecommendationsWithCoverage(recommendations, coverageByKey)
 	targetCoverage := h.resolveTargetCoverage(ctx)
-	activeCommitments, committedMonthly, ytdSavings, currentSavingsByService, err := h.calculateCommitmentMetrics(ctx, provider, accountUUIDs, accountExternalIDsByProvider)
+	counts, committedMonthly, ytdSavings, currentSavingsByService, err := h.calculateCommitmentMetrics(ctx, provider, accountUUIDs, accountExternalIDsByProvider)
 	if err != nil {
 		// Issue #72: purchase history is a hard dependency of the commitment
 		// KPIs, same as recommendations are of the savings KPIs above. Fail
@@ -81,14 +81,15 @@ func (h *Handler) getDashboardSummary(ctx context.Context, req *events.LambdaFun
 	}
 
 	return &DashboardSummaryResponse{
-		PotentialMonthlySavings: totalSavings,
-		TotalRecommendations:    len(recommendations),
-		ActiveCommitments:       activeCommitments,
-		CommittedMonthly:        committedMonthly,
-		CurrentCoverage:         h.calculateCurrentCoverage(totalSavings, committedMonthly),
-		TargetCoverage:          targetCoverage,
-		YTDSavings:              ytdSavings,
-		ByService:               byService,
+		PotentialMonthlySavings:     totalSavings,
+		TotalRecommendations:        len(recommendations),
+		ActiveCommitments:           counts.Active,
+		ExcludedLegacyEstimateCount: counts.ExcludedLegacy,
+		CommittedMonthly:            committedMonthly,
+		CurrentCoverage:             h.calculateCurrentCoverage(totalSavings, committedMonthly),
+		TargetCoverage:              targetCoverage,
+		YTDSavings:                  ytdSavings,
+		ByService:                   byService,
 	}, nil
 }
 
@@ -625,12 +626,14 @@ func isActiveCommitment(p config.PurchaseHistoryRecord, now time.Time) bool {
 // purchase history rows, grouped by their Service field. It applies the
 // shared isActiveCommitment gate (term not expired AND a successful status)
 // so both the KPI total and the per-service chart breakdowns use exactly the
-// same "active" definition.
+// same "active" definition. Legacy-estimate rows (issue #669) stay active but
+// add no dollars: committed_monthly, the per-service current_savings and the
+// coverage derived from them all skip them.
 func aggregateActiveCommitmentsPerService(purchases []config.PurchaseHistoryRecord, now time.Time) map[string]float64 {
 	byService := make(map[string]float64)
 	for i := range purchases {
 		p := purchases[i]
-		if !isActiveCommitment(p, now) {
+		if !isActiveCommitment(p, now) || p.IsLegacyEstimate() {
 			continue
 		}
 		byService[p.Service] += p.EstimatedSavings
@@ -682,6 +685,13 @@ func (h *Handler) fetchCommitmentPurchases(ctx context.Context, asOf time.Time, 
 	return purchases, nil
 }
 
+// commitmentCounts holds the commitment tallies of calculateCommitmentMetrics:
+// Active counts every active commitment, ExcludedLegacy the legacy-estimate
+// subset whose dollars are left out of the amounts (issue #669).
+type commitmentCounts struct {
+	Active, ExcludedLegacy int
+}
+
 // calculateCommitmentMetrics aggregates active-commitment counts and monthly
 // savings from purchase history. The account scope arrives pre-resolved as the
 // dual-column filter inputs (see resolveDashboardAccountScope); the
@@ -703,12 +713,17 @@ func (h *Handler) fetchCommitmentPurchases(ctx context.Context, asOf time.Time, 
 // this KPI path (committedMonthly) and the per-service chart use exactly the
 // same gate.
 //
+// counts.ExcludedLegacy counts the active commitments whose amounts are legacy
+// estimates (issue #669): they are in activeCommitments but add nothing to
+// committedMonthly, savingsByService or ytdSavings. It is counted in the same
+// loop, under the same isActiveCommitment gate and provider/account scope.
+//
 // A store error is returned, never reported as zeroed metrics (issue #72).
-func (h *Handler) calculateCommitmentMetrics(ctx context.Context, provider string, accountUUIDs []string, accountExternalIDsByProvider map[string][]string) (activeCommitments int, committedMonthly, ytdSavings float64, savingsByService map[string]float64, err error) {
+func (h *Handler) calculateCommitmentMetrics(ctx context.Context, provider string, accountUUIDs []string, accountExternalIDsByProvider map[string][]string) (counts commitmentCounts, committedMonthly, ytdSavings float64, savingsByService map[string]float64, err error) {
 	currentTime := time.Now()
 	purchases, err := h.fetchCommitmentPurchases(ctx, currentTime, provider, accountUUIDs, accountExternalIDsByProvider)
 	if err != nil {
-		return 0, 0, 0, nil, err
+		return commitmentCounts{}, 0, 0, nil, err
 	}
 
 	yearStart := time.Date(currentTime.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
@@ -726,7 +741,11 @@ func (h *Handler) calculateCommitmentMetrics(ctx context.Context, provider strin
 			continue
 		}
 
-		activeCommitments++
+		counts.Active++
+		if p.IsLegacyEstimate() {
+			counts.ExcludedLegacy++
+			continue
+		}
 
 		// committedMonthly is derived from aggregateActiveCommitmentsPerService
 		// above (same gate), so it is intentionally NOT summed here to avoid
@@ -744,7 +763,7 @@ func (h *Handler) calculateCommitmentMetrics(ctx context.Context, provider strin
 		ytdSavings += p.EstimatedSavings * float64(elapsedWholeMonths(countFrom, currentTime))
 	}
 
-	return activeCommitments, committedMonthly, ytdSavings, savingsByService, nil
+	return counts, committedMonthly, ytdSavings, savingsByService, nil
 }
 
 // elapsedWholeMonths returns the number of complete calendar months between

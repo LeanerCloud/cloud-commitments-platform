@@ -7253,7 +7253,17 @@ components:
           format: double
           description: >-
             Estimated monthly savings of the active commitments (the sum of
-            their estimated savings), not what the commitments cost.
+            their estimated savings), not what the commitments cost. Excludes
+            the legacy-estimate commitments counted in
+            excluded_legacy_estimate_count.
+        excluded_legacy_estimate_count:
+          type: integer
+          description: >-
+            How many of the active commitments have legacy-estimate amounts
+            (Azure purchases made before the repricing fix). They are counted
+            in active_commitments but add nothing to committed_monthly,
+            ytd_savings or the per-service current_savings. Same account and
+            provider scope as committed_monthly.
         current_coverage:
           type: number
           format: double
@@ -8197,6 +8207,15 @@ components:
         listing_state:
           type: string
           description: Marketplace listing state (active, pending, cancelled or closed).
+        amount_basis:
+          type: string
+          enum: [legacy_window]
+          description: >-
+            Present when the row's dollar amounts are a legacy estimate: an
+            Azure purchase made before the repricing fix, whose upfront cost
+            and estimated savings were estimated over a window. Dollar totals
+            skip these rows; the row stays listed and counted. Omitted for
+            normal rows.
 
     AnalyticsResponse:
       type: object
@@ -9521,6 +9540,15 @@ components:
         status:
           type: string
           enum: [active]
+        amount_basis:
+          type: string
+          enum: [legacy_window]
+          description: >-
+            Present when the row's dollar amounts are a legacy estimate: an
+            Azure purchase made before the repricing fix, whose upfront cost
+            and estimated savings were estimated over a window. Dollar totals
+            skip these rows; the row stays listed and counted. Omitted for
+            normal rows.
 
     CoverageBreakdownResponse:
       type: object
