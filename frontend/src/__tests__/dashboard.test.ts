@@ -2480,6 +2480,23 @@ describe('Dashboard Module', () => {
           expect(cfg.options.plugins.legend.labels.generateLabels).toBeUndefined();
         });
 
+        test('rebuilds with the new layer colours when the color scheme changes (#699)', async () => {
+          buildDOM();
+          renderSavingsByService([rec('ec2', 500)]);
+          const before = lastCfg().data.datasets.map((d) => d.backgroundColor);
+          const callsBefore = (Chart as unknown as jest.Mock).mock.calls.length;
+          document.documentElement.style.setProperty('--cudly-chart-layer-current', '#6ea8fe');
+          document.documentElement.setAttribute('data-theme', 'dark');
+          await new Promise((r) => setTimeout(r, 0));
+          document.documentElement.removeAttribute('data-theme');
+          document.documentElement.removeAttribute('style');
+          expect((Chart as unknown as jest.Mock).mock.calls.length).toBeGreaterThan(callsBefore);
+          const rebuilt = (Chart as unknown as jest.Mock).mock.calls[callsBefore]?.[1] as ChartCfg;
+          const current = rebuilt.data.datasets.find((d) => d.label === 'Current / Committed');
+          expect(current?.backgroundColor).toBe('#6ea8fe');
+          expect(before).not.toContain('#6ea8fe');
+        });
+
         test('the three layers use three distinct colours', () => {
           expect(new Set(Object.values(savingsLayerColors())).size).toBe(3);
         });

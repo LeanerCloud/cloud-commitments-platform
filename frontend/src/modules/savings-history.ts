@@ -8,7 +8,7 @@ import * as state from '../state';
 import { formatTrendAxisTick, upsertChart } from './chart-utils';
 import { formatCompactCurrency, formatCurrency } from '../utils';
 import { setChartSummary, renderChartTable, removeChartTable } from '../lib/chart-a11y';
-import { applyChartDefaults, chartColor, withAlpha } from '../lib/chart-theme';
+import { applyChartDefaults, chartColor, onThemeChange, withAlpha } from '../lib/chart-theme';
 import { HOURS_PER_MONTH } from '../lib/hours-per-month';
 
 // Register Chart.js components
@@ -16,6 +16,15 @@ Chart.register(...registerables);
 
 // Chart instance
 let savingsChart: Chart | null = null;
+// Replays the last render when the color scheme changes (#699).
+let stopThemeWatch: (() => void) | null = null;
+
+function dropSavingsChart(): void {
+    stopThemeWatch?.();
+    stopThemeWatch = null;
+    savingsChart?.destroy();
+    savingsChart = null;
+}
 // Id of the chart's "View as table" text alternative (#744).
 const SAVINGS_HISTORY_TABLE_ID = 'savings-history-table';
 
@@ -183,10 +192,7 @@ function showEmptyState(
     if (statsEl) statsEl.classList.add('hidden');
 
     // Clear any existing chart
-    if (savingsChart) {
-        savingsChart.destroy();
-        savingsChart = null;
-    }
+    dropSavingsChart();
 }
 
 /**
@@ -210,10 +216,7 @@ function showErrorState(
         if (heading) heading.textContent = 'Failed to load savings history.';
         if (help) help.textContent = `Please retry. (${message})`;
     }
-    if (savingsChart) {
-        savingsChart.destroy();
-        savingsChart = null;
-    }
+    dropSavingsChart();
 }
 
 /**
@@ -448,6 +451,8 @@ function renderSavingsChart(
     });
 
     applyChartDefaults(Chart.defaults);
+    stopThemeWatch?.();
+    stopThemeWatch = onThemeChange(() => renderSavingsChart(dataPoints, interval, unit, periodStart, periodEnd, series));
     // #747: update in place so a period or unit change doesn't replay the
     // entry animation. Switching the series (#749) changes the chart type,
     // which upsertChart handles by recreating the chart.

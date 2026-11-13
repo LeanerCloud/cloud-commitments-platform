@@ -480,6 +480,25 @@ describe('Savings History Module', () => {
       expect(statsEl?.classList.contains('hidden')).toBe(false);
     });
 
+    test('rebuilds the chart with the new token colour on a color-scheme change (#699)', async () => {
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        data_points: [
+          { timestamp: '2024-01-01T12:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 },
+          { timestamp: '2024-01-02T12:00:00Z', total_savings: 20, cumulative_savings: 30, total_upfront: 200, purchase_count: 1 }
+        ]
+      });
+      await loadSavingsHistory();
+      const calls = (Chart as unknown as jest.Mock).mock.calls;
+      const callsBefore = calls.length;
+      document.documentElement.style.setProperty('--cudly-chart-2', '#81c995');
+      document.documentElement.setAttribute('data-theme', 'dark');
+      await new Promise((r) => setTimeout(r, 0));
+      document.documentElement.removeAttribute('data-theme');
+      document.documentElement.removeAttribute('style');
+      expect(calls.length).toBeGreaterThan(callsBefore);
+      expect(JSON.stringify(calls[calls.length - 1][1].data.datasets)).toContain('#81c995');
+    });
+
     test('creates chart with correct configuration', async () => {
       const mockData = {
         data_points: [

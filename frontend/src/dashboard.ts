@@ -23,7 +23,7 @@ import { buildKpiTile } from './lib/kpi-tile';
 import { upcomingEmptyMessage } from './lib/upcoming-scope';
 import { formatTrendAxisTick, formatTrendTooltipTitle, formatSparseTrendMessage, MIN_TREND_POINTS, upsertChart } from './modules/chart-utils';
 import { setChartSummary, renderChartTable, removeChartTable } from './lib/chart-a11y';
-import { applyChartDefaults, chartColor, surfaceColor, withAlpha } from './lib/chart-theme';
+import { applyChartDefaults, chartColor, onThemeChange, surfaceColor, withAlpha } from './lib/chart-theme';
 // Re-export for backward compatibility (tests and other callers import from dashboard.ts).
 export { formatTrendAxisTick } from './modules/chart-utils';
 
@@ -39,6 +39,20 @@ let savingsTrendGeneration = 0;
 
 // Chart instance for the per-service savings-range bar chart (issue #765).
 let savingsByServiceChart: Chart | null = null;
+
+// Inputs of the last per-service render, replayed when the color scheme
+// changes (the canvas only picks up new token values on a rebuild, #699).
+let lastSavingsByServiceArgs: Parameters<typeof renderSavingsByService> | null = null;
+let stopThemeWatch: (() => void) | null = null;
+
+// One module-lifetime subscription, started when the first chart is drawn.
+// Each rebuild is a no-op for a chart that is not on screen.
+function watchTheme(): void {
+  stopThemeWatch ??= onThemeChange(() => {
+    if (savingsByServiceChart && lastSavingsByServiceArgs) renderSavingsByService(...lastSavingsByServiceArgs);
+    if (savingsTrendChart) void loadSavingsTrendChart();
+  });
+}
 
 // Maximum number of services to show in the bar chart before truncating.
 const SAVINGS_BY_SERVICE_MAX = 10;
@@ -1021,6 +1035,7 @@ export function renderSavingsByService(
   const emptyEl = document.getElementById('savings-by-service-empty');
   const section = document.getElementById('savings-by-service-section');
   if (!canvas) return;
+  lastSavingsByServiceArgs = [recs, byService, filterDesc];
 
   const stats = computeServiceStatsFromRecs(recs);
   const heading = section?.querySelector('h3');
@@ -1139,6 +1154,7 @@ export function renderSavingsByService(
   const gap = segmentGap();
   applyChartDefaults(Chart.defaults);
   // #747: update in place so a filter change doesn't replay the entry animation.
+  watchTheme();
   savingsByServiceChart = upsertChart(savingsByServiceChart, canvas, {
     type: 'bar',
     data: {
@@ -1383,6 +1399,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
     const trendColor = chartColor('--cudly-chart-1');
     applyChartDefaults(Chart.defaults);
     // #747: update in place so a range click doesn't replay the entry animation.
+    watchTheme();
     savingsTrendChart = upsertChart(savingsTrendChart, canvas, {
       type: 'line',
       data: {

@@ -5,6 +5,7 @@ import { canAccess } from './permissions';
 import { escapeHtml } from './utils';
 import { emptyLadderFilters, filterLadderEvents, ladderDimensions, ladderFilterOptions, ladderEditReason, ladderTotalOd, ladderOdAmount, ladderLabel, formatLadderAmount, formatLadderUnits, ladderNotCountedNote, LADDER_COUNTED_NOTE, formatLadderDateTime, formatLadderUtcInput, parseLadderUtcInput, type LadderFilters } from './ladder-timeline-filters';
 import { openLadderEventEditor } from './ladder-timeline-editor';
+import { onThemeChange } from './lib/chart-theme';
 import { ladderChartConfig, ladderChartModel, ladderChartSummary, LADDER_UNIT_LABEL } from './ladder-timeline-chart';
 
 Chart.register(...registerables);
@@ -47,7 +48,9 @@ export async function initLadderTimeline(root: HTMLElement, configs: readonly La
   // The current UTC minute: the field documents YYYY-MM-DD HH:MM (#1690).
   let filters: LadderFilters = { ...emptyLadderFilters(), status: 'scheduled', from: `${new Date().toISOString().slice(0, 16)}:00` };
   let selectedID = '';
-  disposeTimeline = () => { disposed = true; generation++; chart?.destroy(); chart = undefined; updateTimeline = undefined; };
+  // Chart colors come from tokens read when the config is built (#699); render is defined below.
+  const stopThemeWatch = onThemeChange(() => { if (chart) render(); });
+  disposeTimeline = () => { disposed = true; generation++; stopThemeWatch(); chart?.destroy(); chart = undefined; updateTimeline = undefined; };
   const labels = { run_id: 'Run', layer_type: 'Commitment type', term: 'Commitment term', payment_option: 'Payment option', status: 'Status' };
   const group = (id: string, label: string, control: string): string => `<div class="form-group"><label for="ladder-timeline-${id}">${label}</label>${control}</div>`;
   const dateInput = (edge: 'from' | 'to'): string => `<input type="text" id="ladder-timeline-${edge}" data-date="${edge}" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD HH:MM" aria-describedby="ladder-timeline-date-hint ladder-timeline-date-error">`;

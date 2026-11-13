@@ -19,7 +19,7 @@ import type { ApiError } from './api/types';
 import * as state from './state';
 import { formatCurrency, NO_VALUE } from './utils';
 import { showSkeletonRows, teardownSkeleton } from './lib/skeleton';
-import { applyChartDefaults, chartColor } from './lib/chart-theme';
+import { applyChartDefaults, chartColor, onThemeChange } from './lib/chart-theme';
 import {
   DEFAULT_TRENDS_PERIOD_MONTHS,
   isTrendsPeriodMonths,
@@ -47,6 +47,7 @@ const PROVIDER_LABELS: Record<string, string> = { aws: 'AWS', azure: 'Azure', gc
 // result depends on ts-loader's check order (it broke the webpack build
 // once chart-utils gained upsertChart, #747).
 let trendsChart: Chart<'bar', (number | null)[], string> | null = null;
+let stopThemeWatch: (() => void) | null = null;
 // Each load takes a ticket; a response that lands after a newer request was
 // issued is dropped so a slow reply can't overwrite the current scope.
 let loadSeq = 0;
@@ -116,6 +117,8 @@ export function trendsErrorMessage(err: ApiError): string {
 }
 
 function destroyChart(): void {
+  stopThemeWatch?.();
+  stopThemeWatch = null;
   if (trendsChart) {
     trendsChart.destroy();
     trendsChart = null;
@@ -272,6 +275,8 @@ function buildTable(id: string, headers: string[], rows: string[][], numericCols
  */
 function renderChart(canvas: HTMLCanvasElement, series: TrendsMonthPoint[]): void {
   destroyChart();
+  // A scheme change rebuilds the chart with the new token values (#699).
+  stopThemeWatch = onThemeChange(() => renderChart(canvas, series));
   applyChartDefaults(Chart.defaults);
   trendsChart = new Chart(canvas, {
     type: 'bar',

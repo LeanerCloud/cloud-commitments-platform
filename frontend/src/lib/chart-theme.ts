@@ -121,3 +121,21 @@ export const SURFACE_FALLBACK = '#ffffff';
 export function surfaceColor(): string {
   return readToken('--cudly-surface') || SURFACE_FALLBACK;
 }
+
+/**
+ * Call `cb` when the active color scheme changes: the OS preference flips
+ * or `data-theme` on <html> is set, changed or removed. Charts paint on a
+ * canvas, so they must rebuild themselves to pick up new token values.
+ * Returns the unsubscribe function.
+ */
+export function onThemeChange(cb: () => void): () => void {
+  const fire = (): void => cb();
+  const query = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  query?.addEventListener('change', fire);
+  const observer = new MutationObserver(fire);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  return () => {
+    query?.removeEventListener('change', fire);
+    observer.disconnect();
+  };
+}

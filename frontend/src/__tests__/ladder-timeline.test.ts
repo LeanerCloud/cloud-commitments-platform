@@ -137,6 +137,23 @@ test('graph legend filters share visible counts and stable layer colors', async 
   expect(instance.data.datasets.map(d => d.backgroundColor)).toEqual(['#222222']);
 });
 
+test('chart colors follow a color-scheme change and stop after dispose (#699)', async () => {
+  await initLadderTimeline(document.getElementById('timeline')!, [], false);
+  const instance = jest.mocked(Chart).mock.results[0]!.value as { update: jest.Mock; data: { datasets: { backgroundColor: string }[] } };
+  expect(instance.data.datasets.map(d => d.backgroundColor)).toEqual(['#111111']);
+  document.documentElement.style.setProperty('--cudly-primary', '#aaaaaa');
+  document.documentElement.setAttribute('data-theme', 'dark');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(instance.data.datasets.map(d => d.backgroundColor)).toEqual(['#aaaaaa']);
+  expect(Chart).toHaveBeenCalledTimes(1);
+  disposeLadderTimeline();
+  instance.update.mockClear();
+  document.documentElement.setAttribute('data-theme', 'light');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(instance.update).not.toHaveBeenCalled();
+  document.documentElement.removeAttribute('data-theme');
+});
+
 test('save errors retain draft and invalid dates do not reach the API', async () => {
   jest.mocked(amendLadderEvent).mockRejectedValue(new Error('HTTP 409'));
   await initLadderTimeline(document.getElementById('timeline')!, [], false);

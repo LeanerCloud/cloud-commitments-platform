@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   CHART_TOKEN_FALLBACKS, SURFACE_FALLBACK, applyChartDefaults, chartColor, chartPalette, requireToken,
-  surfaceColor, withAlpha, type ChartToken,
+  onThemeChange, surfaceColor, withAlpha, type ChartToken,
 } from '../lib/chart-theme';
 
 const SRC = path.join(__dirname, '..');
@@ -92,6 +92,69 @@ describe('chart-theme', () => {
     expect(savingsLayerColors().current).toBe('#2a78d6');
     document.documentElement.style.setProperty('--cudly-chart-layer-current', '#8ab4f8');
     expect(savingsLayerColors().current).toBe('#8ab4f8');
+  });
+});
+
+describe('onThemeChange', () => {
+  const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+  let osListeners: Array<() => void>;
+  const original = window.matchMedia;
+
+  beforeEach(() => {
+    osListeners = [];
+    window.matchMedia = jest.fn().mockReturnValue({
+      addEventListener: (_: string, fn: () => void) => osListeners.push(fn),
+      removeEventListener: (_: string, fn: () => void) => { osListeners = osListeners.filter((l) => l !== fn); },
+    });
+  });
+  afterEach(() => {
+    window.matchMedia = original;
+    document.documentElement.removeAttribute('data-theme');
+  });
+
+  it('fires when data-theme is set, changed and removed on <html>', async () => {
+    const cb = jest.fn();
+    const stop = onThemeChange(cb);
+    document.documentElement.setAttribute('data-theme', 'dark');
+    await tick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    document.documentElement.setAttribute('data-theme', 'light');
+    await tick();
+    document.documentElement.removeAttribute('data-theme');
+    await tick();
+    expect(cb).toHaveBeenCalledTimes(3);
+    stop();
+  });
+
+  it('fires when the OS color-scheme preference changes', () => {
+    const cb = jest.fn();
+    const stop = onThemeChange(cb);
+    osListeners.forEach((fn) => fn());
+    expect(cb).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('ignores unrelated attributes and stops after unsubscribe', async () => {
+    const cb = jest.fn();
+    const stop = onThemeChange(cb);
+    document.documentElement.setAttribute('lang', 'fr');
+    await tick();
+    expect(cb).not.toHaveBeenCalled();
+    stop();
+    expect(osListeners).toHaveLength(0);
+    document.documentElement.setAttribute('data-theme', 'dark');
+    await tick();
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it('works where matchMedia is missing (jsdom)', async () => {
+    (window as { matchMedia?: unknown }).matchMedia = undefined;
+    const cb = jest.fn();
+    const stop = onThemeChange(cb);
+    document.documentElement.setAttribute('data-theme', 'dark');
+    await tick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    stop();
   });
 });
 

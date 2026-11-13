@@ -281,4 +281,20 @@ describe('loadTrends', () => {
     expect(api.getAnalyticsTrends).toHaveBeenCalledTimes(2);
     expect(mockChartInstance.destroy).toHaveBeenCalled();
   });
+
+  test('rebuilds the chart with the new token colour when the color scheme changes (#699)', async () => {
+    await loadTrends();
+    const calls = (Chart as unknown as jest.Mock).mock.calls;
+    expect(calls).toHaveLength(1);
+    const lightColour = calls[0][1].data.datasets[0].backgroundColor;
+    document.documentElement.style.setProperty('--cudly-chart-2', '#81c995');
+    document.documentElement.setAttribute('data-theme', 'dark');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toHaveLength(2);
+    expect(mockChartInstance.destroy).toHaveBeenCalled();
+    expect(calls[1][1].data.datasets[0].backgroundColor).toBe('#81c995');
+    expect(lightColour).not.toBe('#81c995');
+    document.documentElement.removeAttribute('data-theme');
+    document.documentElement.removeAttribute('style');
+  });
 });
