@@ -854,4 +854,25 @@ describe('HTML Structure', () => {
       expect(document.getElementById('federation-target-cloud-pills')?.getAttribute('role')).toBe('radiogroup');
     });
   });
+
+  describe('Help text copy (#1691 item 10)', () => {
+    const visibleText = bodyContent.replace(/<!--[\s\S]*?-->/g, '');
+
+    test('uses no ASCII double-hyphen as a dash in help text', () => {
+      expect(visibleText).not.toMatch(/ -- /);
+    });
+
+    test('lookback hint does not expose the API parameter name', () => {
+      expect(htmlContent).not.toContain('LookbackPeriodInDays');
+    });
+
+    test('Reserved Instance class options stay short', () => {
+      const opts = [...htmlContent.matchAll(/<option value="(?:convertible|standard)"[^>]*>([^<]*)<\/option>/g)]
+        .map((m) => m[1] ?? '');
+      expect(opts).toHaveLength(2);
+      for (const o of opts) {
+        expect(o.length).toBeLessThanOrEqual(50);
+      }
+    });
+  });
 });

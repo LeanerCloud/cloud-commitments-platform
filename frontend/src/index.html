@@ -597,7 +597,7 @@
                         <div class="setting-row">
                             <div class="setting-info">
                                 <label for="setting-recs-lookback-days"><span class="provider-badge aws">AWS</span> lookback period</label>
-                                <p class="setting-hint" id="setting-recs-lookback-days-hint">AWS Cost Explorer LookbackPeriodInDays. A longer window smooths out utilisation spikes but may under-represent recent workload changes. Default: 7 days.</p>
+                                <p class="setting-hint" id="setting-recs-lookback-days-hint">How many days of AWS Cost Explorer usage the recommendations look at. A longer window smooths out utilisation spikes but may under-represent recent workload changes. Default: 7 days.</p>
                             </div>
                             <div class="setting-input">
                                 <select id="setting-recs-lookback-days" aria-describedby="setting-recs-lookback-days-hint">
@@ -647,8 +647,8 @@
                             </div>
                             <div class="setting-input">
                                 <select id="setting-ec2-offering-class">
-                                    <option value="convertible" selected>Convertible (default -- exchangeable for different families/sizes/OS later)</option>
-                                    <option value="standard">Standard (~5% cheaper, locked to the exact instance for the full term)</option>
+                                    <option value="convertible" selected>Convertible (default, exchangeable later)</option>
+                                    <option value="standard">Standard (about 5% cheaper, not exchangeable)</option>
                                 </select>
                             </div>
                         </div>
@@ -659,7 +659,7 @@
                         <div class="setting-row">
                             <div class="setting-info">
                                 <label for="setting-require-different-approver">Require different approver (4-eyes mode)</label>
-                                <p class="help-text">When enabled, a purchase execution cannot be approved by the user who created it. A different person with approval rights must approve. Recommended for SOX / SOC2 compliance -- ensures no single employee can both request and authorize a cloud commitment purchase. Applies to all users including admins.</p>
+                                <p class="help-text">When enabled, a purchase execution cannot be approved by the user who created it. A different person with approval rights must approve. Recommended for SOX / SOC2 compliance: it ensures no single employee can both request and authorize a cloud commitment purchase. Applies to all users including admins.</p>
                             </div>
                             <div class="setting-input">
                                 <input type="checkbox" id="setting-require-different-approver">
@@ -1217,7 +1217,7 @@
                     <div class="form-group">
                         <label id="apikey-permissions-label">Permissions</label>
                         <div id="apikey-permissions-list" class="apikey-permissions-list" aria-labelledby="apikey-permissions-label"></div>
-                        <small class="form-help">Only the permissions your own account holds are offered. At least one is required -- an unscoped key would authenticate you but authorize nothing.</small>
+                        <small class="form-help">Only the permissions your own account holds are offered. At least one is required, because an unscoped key would authenticate you but authorize nothing.</small>
                     </div>
                     <div class="form-group">
                         <label for="apikey-expires-at">Expires On</label>
