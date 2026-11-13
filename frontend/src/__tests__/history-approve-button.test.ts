@@ -238,6 +238,15 @@ describe('History action ownership and refresh recovery (#249)', () => {
     expect(document.querySelectorAll('[data-approve-id="guarded"]')).toHaveLength(1);
   });
 
+  test('a failed approve toast stays until dismissed (issue #728)', async () => {
+    setupHistoryHandlers();
+    await loadHistory();
+    (api.approvePurchase as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+    document.querySelector<HTMLButtonElement>('#purchases-approval-queue .history-approve-btn')!.click();
+    await settleActions();
+    expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Failed to approve: boom', kind: 'error', timeout: null }));
+  });
+
   test.each(['history', 'plan'] as const)('%s loader cannot publish responses started before a successful mutation', async loader => {
     const old = deferred<typeof data>();
     setupHistoryHandlers();

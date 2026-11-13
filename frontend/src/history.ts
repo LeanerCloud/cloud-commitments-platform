@@ -1585,7 +1585,7 @@ function wireRowActionHandlers(container: HTMLElement): void {
       } catch (approveError) {
         console.error('Failed to approve pending purchase:', approveError);
         const err = approveError as Error;
-        showToast({ message: `Failed to approve: ${err.message || 'unknown error'}`, kind: 'error' });
+        showToast({ message: `Failed to approve: ${err.message || 'unknown error'}`, kind: 'error', timeout: null });
         return;
       }
       showToast({ message: 'Purchase approved', kind: 'success', timeout: 5_000 });
@@ -1622,7 +1622,7 @@ function wireRowActionHandlers(container: HTMLElement): void {
       } catch (cancelError) {
         console.error('Failed to cancel pending purchase:', cancelError);
         const err = cancelError as Error;
-        showToast({ message: `Failed to cancel: ${err.message || 'unknown error'}`, kind: 'error' });
+        showToast({ message: `Failed to cancel: ${err.message || 'unknown error'}`, kind: 'error', timeout: null });
         return;
       }
       showToast({ message: 'Purchase cancelled', kind: 'success', timeout: 5_000 });
@@ -1681,7 +1681,7 @@ function wireRowActionHandlers(container: HTMLElement): void {
           detailMessage = `already retried ${retryAttemptN} times (threshold ${threshold}) — confirm the override prompt to force`;
         }
         const finalMessage = detailMessage || err.message || 'unknown error';
-        showToast({ message: `Failed to retry: ${finalMessage}`, kind: 'error' });
+        showToast({ message: `Failed to retry: ${finalMessage}`, kind: 'error', timeout: null });
         return;
       }
       // Gate the toast on the approval email outcome reported by the backend.
@@ -1745,7 +1745,7 @@ function wireRowActionHandlers(container: HTMLElement): void {
       } catch (revokeError) {
         console.error('Failed to revoke purchase:', revokeError);
         const err = revokeError as Error;
-        showToast({ message: `Failed to revoke: ${err.message || 'unknown error'}`, kind: 'error' });
+        showToast({ message: `Failed to revoke: ${err.message || 'unknown error'}`, kind: 'error', timeout: null });
         return;
       }
       if (result.code === 'REVOCATION_PENDING_CONFIRMATION') {
