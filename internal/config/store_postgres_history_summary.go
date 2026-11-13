@@ -82,14 +82,23 @@ type ExecutionSummaryGroup struct {
 
 // purchaseHistorySummaryQuery groups purchase_history rows; %s is the WHERE
 // clause from purchaseHistoryFilterWhere.
+//
+// Legacy-estimate rows (amount_basis = 'legacy_window', issue #669) stay in
+// COUNT(*) but add no dollars: the SUMs and both sides of the unknown-upfront
+// comparison are FILTERed, never a WHERE, so a flagged row with a NULL upfront
+// cannot turn the group's total unknown. %[2]s is the FILTER clause, empty on
+// a schema without the column.
 const purchaseHistorySummaryQuery = `
 		SELECT account_id, cloud_account_id, provider, (revoked_at IS NOT NULL) AS revoked,
 		       COUNT(*),
-		       CASE WHEN COUNT(upfront_cost) = COUNT(*) THEN SUM(upfront_cost) END,
-		       COALESCE(SUM(estimated_savings), 0)
-		FROM purchase_history%s
+		       CASE WHEN COUNT(upfront_cost)%[2]s = COUNT(*)%[2]s THEN COALESCE(SUM(upfront_cost)%[2]s, 0) END,
+		       COALESCE(SUM(estimated_savings)%[2]s, 0)
+		FROM purchase_history%[1]s
 		GROUP BY account_id, cloud_account_id, provider, (revoked_at IS NOT NULL)
 	`
+
+// legacyEstimateFilter keeps legacy-estimate rows out of an aggregate.
+const legacyEstimateFilter = " FILTER (WHERE amount_basis IS DISTINCT FROM 'legacy_window')"
 
 // executionSummaryRecsKey projects an execution's recommendations to the
 // ordered [provider, cloud_account_id] pairs the History handler reads. A
@@ -159,7 +168,7 @@ func (s *PostgresStore) HistorySummaryAggregate(ctx context.Context, filter Hist
 		return nil, fmt.Errorf("failed to set history summary isolation: %w", err)
 	}
 	out := &HistorySummaryGroups{}
-	if out.Purchases, err = queryPurchaseHistorySummary(ctx, tx, filter.History); err != nil {
+	if out.Purchases, err = s.queryPurchaseHistorySummary(ctx, tx, filter.History); err != nil {
 		return nil, err
 	}
 	if len(filter.ExecutionStatuses) > 0 {
@@ -173,9 +182,17 @@ func (s *PostgresStore) HistorySummaryAggregate(ctx context.Context, filter Hist
 	return out, nil
 }
 
-func queryPurchaseHistorySummary(ctx context.Context, tx pgx.Tx, filter PurchaseHistoryFilter) ([]PurchaseHistorySummaryGroup, error) {
+func (s *PostgresStore) queryPurchaseHistorySummary(ctx context.Context, tx pgx.Tx, filter PurchaseHistoryFilter) ([]PurchaseHistorySummaryGroup, error) {
 	where, args := purchaseHistoryFilterWhere(filter)
-	rows, err := tx.Query(ctx, fmt.Sprintf(purchaseHistorySummaryQuery, where), args...)
+	basis, err := s.amountBasisColumnOn(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	amountFilter := ""
+	if basis == "amount_basis" {
+		amountFilter = legacyEstimateFilter
+	}
+	rows, err := tx.Query(ctx, fmt.Sprintf(purchaseHistorySummaryQuery, where, amountFilter), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate purchase history: %w", err)
 	}

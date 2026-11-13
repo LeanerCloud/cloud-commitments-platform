@@ -175,6 +175,13 @@ func aggregatePurchases(ctx context.Context, purchases []config.PurchaseHistoryR
 			serviceMap[key] = agg
 		}
 
+		// Legacy-estimate rows (issue #669) count toward the bucket but add
+		// no dollars: their amounts were estimated, not read from the order.
+		if p.IsLegacyEstimate() {
+			agg.count++
+			continue
+		}
+
 		// Monthly savings run-rate (EstimatedSavings is already monthly). Stored as
 		// a point-in-time run-rate, not an accrued total, so the monthly trend AVGs
 		// snapshots and stays invariant to the collection schedule (daily vs hourly).
