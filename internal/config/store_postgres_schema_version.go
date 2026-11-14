@@ -15,8 +15,8 @@ const settlementMigrationVersion = 155
 
 // amountBasisMigrationVersion is the migration that adds
 // purchase_history.amount_basis (issue #669). It mirrors the file
-// 000168_purchase_history_amount_basis in internal/database/postgres/migrations.
-const amountBasisMigrationVersion = 168
+// 000172_purchase_history_amount_basis in internal/database/postgres/migrations.
+const amountBasisMigrationVersion = 172
 
 // directResolveMigrationVersion is the migration that adds the resolution
 // columns to ri_exchange_direct_executions (#1836). It mirrors

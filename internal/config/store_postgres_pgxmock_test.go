@@ -976,7 +976,7 @@ func TestPGXMock_GetPurchaseHistory_Success(t *testing.T) {
 		"revocation_window_closes_at", "revoked_at", "revoked_via", "support_case_id",
 		// marketplace columns (issue #292)
 		"offering_class", "listing_id", "listing_state",
-		// amount_basis (migration 000168, issue #669)
+		// amount_basis (migration 000172, issue #669)
 		"amount_basis",
 	}
 	rows := pgxmock.NewRows(cols).
@@ -1034,7 +1034,7 @@ func TestPGXMock_GetPurchaseHistoryByPurchaseID_Success(t *testing.T) {
 		"offering_class", "listing_id", "listing_state",
 		// return_posted_at (migration 000148, issue #1522)
 		"return_posted_at",
-		// amount_basis (migration 000168, issue #669)
+		// amount_basis (migration 000172, issue #669)
 		"amount_basis",
 	}
 	// monthly_cost scans straight into the *float64 r.MonthlyCost (not through
