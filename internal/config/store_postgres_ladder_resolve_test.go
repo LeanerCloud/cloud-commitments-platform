@@ -11,6 +11,7 @@ import (
 // The chain-node allowlist fails closed: a live status or one added later is
 // not resolvable (the status CHECK keeps such rows out of the database tests).
 func TestLadderResolvableNodeStatus(t *testing.T) {
+	t.Parallel()
 	for _, s := range []string{StatusFailed, StatusCanceled, StatusExpired, StatusCompleted, StatusPartiallyCompleted} {
 		assert.True(t, ladderResolvableNodeStatus(s), s)
 	}
@@ -22,6 +23,7 @@ func TestLadderResolvableNodeStatus(t *testing.T) {
 // lastChange comes back from Postgres truncated to microseconds; a check
 // stamped with the change's own instant must not count as after it.
 func TestValidateLadderUnverifiedFail_CheckedAtTheChangeIsRefused(t *testing.T) {
+	t.Parallel()
 	change := time.Date(2026, 10, 23, 1, 2, 3, 456789123, time.UTC)
 	req := LadderResolveFailed{
 		Acknowledge: true,

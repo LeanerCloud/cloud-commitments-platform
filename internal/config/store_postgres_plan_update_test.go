@@ -12,6 +12,7 @@ import (
 )
 
 func TestUpdatePurchasePlanPreservesTokenOnCommitFailure(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	readVersion := time.Now().Truncate(time.Microsecond)
@@ -30,6 +31,7 @@ func TestUpdatePurchasePlanPreservesTokenOnCommitFailure(t *testing.T) {
 }
 
 func TestUpdatePurchasePlanPropagatesConflictProbeFailure(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	plan := &PurchasePlan{ID: "plan", UpdatedAt: time.Now()}

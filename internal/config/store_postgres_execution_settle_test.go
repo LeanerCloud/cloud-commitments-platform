@@ -9,6 +9,7 @@ import (
 )
 
 func TestBlocksManagedDelete(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		status       string
 		noSubmission bool
@@ -33,6 +34,7 @@ func TestBlocksManagedDelete(t *testing.T) {
 }
 
 func TestSettlementRecordReplayMatchesOnlyTheSameReason(t *testing.T) {
+	t.Parallel()
 	req := ExecutionSettleRequest{Reason: `checked "eu" account`}
 	record := settlementRecord(req, settleChainTail{id: "tail", status: StatusCompleted})
 	require.Equal(t, `operator:settled_unknown_outcome: ack=true chain_tail=tail tail_status=completed reason="checked \"eu\" account"`, record)
@@ -44,6 +46,7 @@ func TestSettlementRecordReplayMatchesOnlyTheSameReason(t *testing.T) {
 // The conflict text is the 409 body, and the caller may not be the earlier
 // settler, so it must not carry that settler's principal ID.
 func TestReplaySettlementConflictOmitsTheEarlierSettler(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	by := "settler-principal-7f3a"
 	record := settlementRecord(ExecutionSettleRequest{Reason: "checked the account"}, settleChainTail{id: "e1", status: "completed"})

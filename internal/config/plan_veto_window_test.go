@@ -10,6 +10,7 @@ import (
 )
 
 func TestRequireVetoWindow(t *testing.T) {
+	t.Parallel()
 	for days, wantErr := range map[int]bool{-1: true, 0: true, 1: false, 7: false} {
 		err := (&PurchasePlan{ID: "p", NotificationDaysBefore: days}).RequireVetoWindow()
 		if wantErr {
@@ -21,6 +22,7 @@ func TestRequireVetoWindow(t *testing.T) {
 }
 
 func TestVetoWindowEnd_FixedDaysInAnyLocation(t *testing.T) {
+	t.Parallel()
 	ny, err := time.LoadLocation("America/New_York")
 	require.NoError(t, err)
 	// 2026-03-07 12:00 EST, 3 days later crosses the US spring-forward on 03-08.
@@ -33,6 +35,7 @@ func TestVetoWindowEnd_FixedDaysInAnyLocation(t *testing.T) {
 }
 
 func TestPlanStepLockKeys_SortedDedupedValidated(t *testing.T) {
+	t.Parallel()
 	keys, err := planStepLockKeys([]string{"gcp", "aws", "azure", "aws"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"cudly:planstep:aws", "cudly:planstep:azure", "cudly:planstep:gcp"}, keys)

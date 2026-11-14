@@ -11,6 +11,7 @@ import (
 // Fixtures are hand-built configs, not real plans (issue #1746).
 
 func TestValidateAllocationMode_BoundGroups(t *testing.T) {
+	t.Parallel()
 	for _, r := range []RampSchedule{
 		{Type: "immediate", PercentPerStep: 100, TotalSteps: 1},
 		{Type: "weekly", PercentPerStep: 25, TotalSteps: 4},
@@ -23,6 +24,7 @@ func TestValidateAllocationMode_BoundGroups(t *testing.T) {
 }
 
 func TestRampAllocationMode_SizesByPercent(t *testing.T) {
+	t.Parallel()
 	assert.True(t, RampAllocationMode("").SizesByPercent())
 	assert.True(t, RampAllocationBoundGroups.SizesByPercent())
 	assert.False(t, RampAllocationEqualCount.SizesByPercent())
@@ -30,6 +32,7 @@ func TestRampAllocationMode_SizesByPercent(t *testing.T) {
 
 // (guard) bound_groups sizes like the default mode, never like equal_count.
 func TestCumulativePercent_BoundGroupsMatchesDefault(t *testing.T) {
+	t.Parallel()
 	def := RampSchedule{Type: "weekly", PercentPerStep: 30, TotalSteps: 3}
 	bound := def
 	bound.AllocationMode = RampAllocationBoundGroups
@@ -39,6 +42,7 @@ func TestCumulativePercent_BoundGroupsMatchesDefault(t *testing.T) {
 }
 
 func TestServiceConfig_GroupFieldsJSON(t *testing.T) {
+	t.Parallel()
 	// (guard) a legacy entry keeps today's bytes: no group keys appear.
 	legacy, err := json.Marshal(ServiceConfig{Provider: "aws", Service: "ec2", Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 80})
 	require.NoError(t, err)

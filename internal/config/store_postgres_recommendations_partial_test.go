@@ -9,6 +9,7 @@ import (
 )
 
 func TestDecodeCollectionPartial(t *testing.T) {
+	t.Parallel()
 	none, err := decodeCollectionPartial(nil)
 	require.NoError(t, err)
 	assert.Nil(t, none, "NULL means the last collection was complete")
@@ -35,6 +36,7 @@ func TestDecodeCollectionPartial(t *testing.T) {
 // the wrong shape. It must be an error: reading it as "no marker" would let the
 // purchase gate pass an Azure hold it can no longer see.
 func TestDecodeCollectionPartial_WrongShapeIsAnError(t *testing.T) {
+	t.Parallel()
 	for name, raw := range map[string]string{
 		"array":                 `[]`,
 		"number":                `7`,
@@ -52,6 +54,7 @@ func TestDecodeCollectionPartial_WrongShapeIsAnError(t *testing.T) {
 }
 
 func TestDecodeCollectionPartial_EmptyValues(t *testing.T) {
+	t.Parallel()
 	empty, err := decodeCollectionPartial([]byte{})
 	require.NoError(t, err)
 	assert.Nil(t, empty)

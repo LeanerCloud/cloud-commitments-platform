@@ -12,6 +12,7 @@ import (
 // TestServiceTypeCollectorForms pins every const form the label guard must
 // collect (or reject loudly), so a new library form is reported, not skipped.
 func TestServiceTypeCollectorForms(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		decls   string

@@ -31,12 +31,14 @@ func getExecutionByIDWithDriverError(t *testing.T, dbErr error) error {
 }
 
 func TestGetExecutionByID_InvalidTextRepresentationIsNotFound(t *testing.T) {
+	t.Parallel()
 	err := getExecutionByIDWithDriverError(t, &pgconn.PgError{Code: "22P02",
 		Message: `invalid input syntax for type uuid: "exec-1"`})
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestGetExecutionByID_OtherPostgresErrorsAreNotNotFound(t *testing.T) {
+	t.Parallel()
 	for _, code := range []string{
 		"57P01", // admin_shutdown
 		"53300", // too_many_connections

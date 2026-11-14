@@ -23,6 +23,7 @@ import (
 // falls back to the raw slug. It reads the constants from the library source,
 // so a constant added by a future bump fails here until it gets a label.
 func TestEveryServiceTypeHasAFrontendLabel(t *testing.T) {
+	t.Parallel()
 	slugs := libraryServiceTypes(t)
 	require.Contains(t, slugs, "data-warehouse", "sanity check: the parser must find the library constants")
 

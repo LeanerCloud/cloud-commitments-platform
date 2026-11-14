@@ -8,6 +8,7 @@ import (
 )
 
 func TestDerivePlanProviders(t *testing.T) {
+	t.Parallel()
 	plan := &PurchasePlan{
 		Services: map[string]ServiceConfig{
 			"aws/ec2":       {},
@@ -36,6 +37,7 @@ func TestDerivePlanProviders(t *testing.T) {
 // left a colon-keyed plan with an empty provider set, which both
 // account-assignment guards read as "no restriction".
 func TestDerivePlanProviders_ColonKeys(t *testing.T) {
+	t.Parallel()
 	plan := &PurchasePlan{
 		Services: map[string]ServiceConfig{
 			"aws:savings-plans-compute":     {},
@@ -56,6 +58,7 @@ func TestDerivePlanProviders_ColonKeys(t *testing.T) {
 // must be an error, not an empty set: both callers read an empty set as
 // "accept an account of any provider" (issue #316, A04-012).
 func TestDerivePlanProviders_UnidentifiableEntries(t *testing.T) {
+	t.Parallel()
 	for _, key := range []string{"malformed", "/ec2", ":ec2", ""} {
 		t.Run("only "+key, func(t *testing.T) {
 			got, err := DerivePlanProviders(&PurchasePlan{Services: map[string]ServiceConfig{key: {Service: "ec2", Provider: "  "}}})
@@ -81,6 +84,7 @@ func TestDerivePlanProviders_UnidentifiableEntries(t *testing.T) {
 // such keys (provider set empty, no restriction); the first #316 commit
 // refused them outright.
 func TestDerivePlanProviders_LegacyKeyUsesProviderField(t *testing.T) {
+	t.Parallel()
 	got, err := DerivePlanProviders(&PurchasePlan{Services: map[string]ServiceConfig{
 		"original-key": {Provider: "azure", Service: "vm"},
 	}})
@@ -104,6 +108,7 @@ func TestDerivePlanProviders_LegacyKeyUsesProviderField(t *testing.T) {
 // A bound key's "#<group_id>" suffix is never part of its provider or service,
 // even when the group id holds a "/" (issue #1746).
 func TestDerivePlan_BoundGroupIDIsNeitherProviderNorService(t *testing.T) {
+	t.Parallel()
 	bound := func(entries map[string]ServiceConfig) *PurchasePlan {
 		p := &PurchasePlan{Services: entries}
 		p.RampSchedule.AllocationMode = RampAllocationBoundGroups
@@ -131,6 +136,7 @@ func TestDerivePlan_BoundGroupIDIsNeitherProviderNorService(t *testing.T) {
 // An unmarked plan keeps today's provider parsing: its key is read up to the
 // first separator, "#" or not (#1746 changes bound plans only).
 func TestDerivePlanProviders_UnmarkedKeyWithHashKeepsItsParsing(t *testing.T) {
+	t.Parallel()
 	plan := &PurchasePlan{Services: map[string]ServiceConfig{
 		"team#west/ec2": {Provider: "aws", Service: "ec2"},
 	}}

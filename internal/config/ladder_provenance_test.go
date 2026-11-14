@@ -11,6 +11,7 @@ import (
 )
 
 func TestLadderNetting_ExactRatesAndBoundary(t *testing.T) {
+	t.Parallel()
 	od, native := LadderAmountOnDemand, LadderAmountCommitment
 	third, half, bad, above := "1/3", "1/2", "bad", "2"
 	for _, tc := range []struct {
@@ -49,6 +50,7 @@ func TestLadderNetting_ExactRatesAndBoundary(t *testing.T) {
 }
 
 func TestLadderInFlightOnDemand_RoundsAwayFromUnderstating(t *testing.T) {
+	t.Parallel()
 	native, third := LadderAmountCommitment, "1/3"
 	tr := &LadderTrancheDB{AmountBasis: &native, CommitmentRate: &third}
 	row, err := newLadderInFlightRow("1.000001", tr)
@@ -63,6 +65,7 @@ func TestLadderInFlightOnDemand_RoundsAwayFromUnderstating(t *testing.T) {
 }
 
 func TestLadderInFlightOnDemand_RejectsUnusableRows(t *testing.T) {
+	t.Parallel()
 	for _, row := range []LadderInFlightRow{
 		{CommitmentUSDPerHour: 1, Rate: 0}, {CommitmentUSDPerHour: 1, Rate: 1.5}, {CommitmentUSDPerHour: 1, Rate: math.NaN()},
 		{CommitmentUSDPerHour: -1, Rate: 1}, {CommitmentUSDPerHour: math.Inf(1), Rate: 1},
@@ -73,6 +76,7 @@ func TestLadderInFlightOnDemand_RejectsUnusableRows(t *testing.T) {
 }
 
 func TestAssumeOnDemandIfUnknown_OnlyForUnprovenBasis(t *testing.T) {
+	t.Parallel()
 	assumed := assumeOnDemandIfUnknown(&LadderTrancheDB{})
 	require.NotNil(t, assumed.AmountBasis)
 	require.Equal(t, LadderAmountOnDemand, *assumed.AmountBasis)
@@ -84,6 +88,7 @@ func TestAssumeOnDemandIfUnknown_OnlyForUnprovenBasis(t *testing.T) {
 }
 
 func TestNewLadderInFlightRow_FloatFieldsFeedAllocate(t *testing.T) {
+	t.Parallel()
 	od, native := LadderAmountOnDemand, LadderAmountCommitment
 	legacy, err := newLadderInFlightRow("12.5", &LadderTrancheDB{AmountBasis: &od})
 	require.NoError(t, err)
@@ -149,6 +154,7 @@ func requireSameWire(t *testing.T, want *big.Rat, wantOK bool, got *big.Rat, got
 // Issue #1182: a planned amount is floored to the six-decimal column, never
 // rounded up, so the provider submits what it would for the exact amount.
 func TestLadderAmountFloat_FloorsToStoredScaleWithoutRoundingUp(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ planned, want string }{
 		{"1/3", "0.333333"},
 		{"12345999999999999/100000000000000000", "0.123459"}, // nearest float64 is 0.12346
@@ -178,6 +184,7 @@ func TestLadderAmountFloat_FloorsToStoredScaleWithoutRoundingUp(t *testing.T) {
 // Issue #1182: the store refuses an amount the NUMERIC(20,6) column would
 // round rather than letting Postgres round it half-up.
 func TestLadderAmountText_RefusesAmountsTheColumnWouldRound(t *testing.T) {
+	t.Parallel()
 	for amount, want := range map[float64]string{
 		0.001: "0.001", 1000000: "1000000", 999999.99999: "999999.99999",
 		999999.999999: "999999.999999", 0.1: "0.1", 0.29: "0.29", 12.5: "12.5",
@@ -193,6 +200,7 @@ func TestLadderAmountText_RefusesAmountsTheColumnWouldRound(t *testing.T) {
 }
 
 func TestRequireLadderCommitmentBasis(t *testing.T) {
+	t.Parallel()
 	od, native := LadderAmountOnDemand, LadderAmountCommitment
 	str := func(s string) *string { return &s }
 	for _, tc := range []struct {

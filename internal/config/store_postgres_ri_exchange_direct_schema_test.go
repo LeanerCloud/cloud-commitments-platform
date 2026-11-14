@@ -24,6 +24,7 @@ func expectDirectResolveVersion(mock pgxmock.PgxPoolIface, version int) {
 // Before migration 163 the guard and finalize must not name resolved_at or
 // resolved_status (#1836); the queries with it are pinned by the neighboring tests.
 func TestPGXMock_DirectResolveBeforeMigration_QueriesOmitResolutionColumns(t *testing.T) {
+	t.Parallel()
 	notReady := directResolveMigrationVersion - 1
 
 	t.Run("source guard", func(t *testing.T) {
@@ -100,6 +101,7 @@ func TestPGXMock_DirectResolveBeforeMigration_QueriesOmitResolutionColumns(t *te
 // The constant must name this change's migration file, so a renumbering that
 // forgets it fails here instead of failing closed in production.
 func TestDirectResolveMigrationVersionNamesTheMigrationFile(t *testing.T) {
+	t.Parallel()
 	name := fmt.Sprintf("%06d_ri_exchange_direct_resolution.up.sql", directResolveMigrationVersion)
 	_, err := os.Stat(filepath.Join("..", "database", "postgres", "migrations", name))
 	require.NoError(t, err, "directResolveMigrationVersion no longer matches the migration file")
@@ -107,6 +109,7 @@ func TestDirectResolveMigrationVersionNamesTheMigrationFile(t *testing.T) {
 
 // A failed version read must not lose the provider outcome.
 func TestPGXMock_FinalizeDirectExecution_UnreadableSchemaVersionStillFinalizes(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	mock.ExpectQuery("SELECT version, dirty FROM schema_migrations").WillReturnError(errors.New("connection reset"))
 	mock.ExpectExec("UPDATE ri_exchange_direct_executions").WithArgs(anyArgsCfg(7)...).

@@ -10,6 +10,7 @@ import (
 )
 
 func TestListStoredRecommendationsAzurePricingReadiness(t *testing.T) {
+	t.Parallel()
 	queryErr := errors.New("migration query failed")
 	for _, tc := range []struct {
 		err                   error

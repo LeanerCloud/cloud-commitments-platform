@@ -45,6 +45,7 @@ func acctRec(account, provider, service string) RecommendationRecord {
 }
 
 func TestResolveAccountConfigsForRecs_EmptyRecs(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{}
 	got, err := ResolveAccountConfigsForRecs(context.Background(), reader, nil)
 	assert.NoError(t, err)
@@ -54,6 +55,7 @@ func TestResolveAccountConfigsForRecs_EmptyRecs(t *testing.T) {
 }
 
 func TestResolveAccountConfigsForRecs_NilCloudAccountUsesGlobal(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{globals: map[string]*ServiceConfig{
 		"aws|rds": {Provider: "aws", Service: "rds", Enabled: false},
 	}, overrideErr: errors.New("ambient must not query overrides")}
@@ -69,6 +71,7 @@ func TestResolveAccountConfigsForRecs_NilCloudAccountUsesGlobal(t *testing.T) {
 }
 
 func TestResolveAccountConfigsForRecs_AmbientAndRegistered(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{
 		globals:   map[string]*ServiceConfig{"aws|rds": {Enabled: false}},
 		overrides: map[string]*AccountServiceOverride{"acct-A|aws|rds": {Enabled: boolPtr(true)}},
@@ -84,6 +87,7 @@ func TestResolveAccountConfigsForRecs_AmbientAndRegistered(t *testing.T) {
 }
 
 func TestResolveAccountConfigsForRecs_AmbientMissingAndErrors(t *testing.T) {
+	t.Parallel()
 	for _, lookupErr := range []error{nil, fmt.Errorf("absent: %w", ErrNotFound), errors.New("database unavailable")} {
 		reader := &fakeAccountConfigReader{globalErr: lookupErr}
 		got, err := ResolveAccountConfigsForRecs(t.Context(), reader, []RecommendationRecord{{Provider: "aws", Service: "rds"}})
@@ -95,6 +99,7 @@ func TestResolveAccountConfigsForRecs_AmbientMissingAndErrors(t *testing.T) {
 }
 
 func TestResolveAccountConfigsForRecs_OverridePresent_ResolvedConfigReflectsOverride(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{
 		globals: map[string]*ServiceConfig{
 			"aws|rds": {Provider: "aws", Service: "rds", Enabled: true, Term: 3, Coverage: 80},
@@ -116,6 +121,7 @@ func TestResolveAccountConfigsForRecs_OverridePresent_ResolvedConfigReflectsOver
 }
 
 func TestResolveAccountConfigsForRecs_OverrideAbsent_GlobalReturned(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{
 		globals: map[string]*ServiceConfig{
 			"aws|rds": {Provider: "aws", Service: "rds", Enabled: true, Coverage: 80},
@@ -135,6 +141,7 @@ func TestResolveAccountConfigsForRecs_OverrideAbsent_GlobalReturned(t *testing.T
 // triple is omitted from the result when neither a global ServiceConfig nor a
 // per-account override exists — there is nothing to apply.
 func TestResolveAccountConfigsForRecs_NoGlobalNoOverride_TripleSkipped(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{}
 	recs := []RecommendationRecord{acctRec("acct-A", "aws", "rds")}
 
@@ -148,6 +155,7 @@ func TestResolveAccountConfigsForRecs_NoGlobalNoOverride_TripleSkipped(t *testin
 // regression test for issue #202: a per-account override must take effect even
 // when no global ServiceConfig exists for the (provider, service) pair.
 func TestResolveAccountConfigsForRecs_OverrideWithoutGlobal_OverrideApplied(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{
 		overrides: map[string]*AccountServiceOverride{
 			"acct-A|aws|rds": {Enabled: boolPtr(false), Coverage: float64Ptr(70)},
@@ -169,6 +177,7 @@ func TestResolveAccountConfigsForRecs_OverrideWithoutGlobal_OverrideApplied(t *t
 // TestResolveAccountConfigsForRecs_OverrideWithGlobal_MergesCorrectly is a
 // regression test for the existing #200 merge path: override on top of global.
 func TestResolveAccountConfigsForRecs_OverrideWithGlobal_MergesCorrectly(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{
 		globals: map[string]*ServiceConfig{
 			"aws|rds": {Provider: "aws", Service: "rds", Enabled: true, Term: 3, Coverage: 80},
@@ -190,6 +199,7 @@ func TestResolveAccountConfigsForRecs_OverrideWithGlobal_MergesCorrectly(t *test
 }
 
 func TestResolveAccountConfigsForRecs_DedupesPerTriple(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{
 		globals: map[string]*ServiceConfig{
 			"aws|rds": {Provider: "aws", Service: "rds", Enabled: true},
@@ -209,6 +219,7 @@ func TestResolveAccountConfigsForRecs_DedupesPerTriple(t *testing.T) {
 }
 
 func TestResolveAccountConfigsForRecs_GlobalCachedAcrossAccounts(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{
 		globals: map[string]*ServiceConfig{
 			"aws|rds": {Provider: "aws", Service: "rds", Enabled: true},
@@ -227,6 +238,7 @@ func TestResolveAccountConfigsForRecs_GlobalCachedAcrossAccounts(t *testing.T) {
 }
 
 func TestResolveAccountConfigsForRecs_GlobalAbsentCachedNegative(t *testing.T) {
+	t.Parallel()
 	// When GetServiceConfig returns nil, subsequent recs for the same
 	// (provider, service) must not re-fetch the global — but override lookups
 	// still run once per account because the override may exist without a global.
@@ -249,6 +261,7 @@ func TestResolveAccountConfigsForRecs_GlobalAbsentCachedNegative(t *testing.T) {
 // seen-set, so absent triples were never recorded and overrideCalls grew with
 // every duplicate rec.
 func TestResolveAccountConfigsForRecs_NoGlobalNoOverride_DedupedCorrectly(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{} // no globals, no overrides
 	recs := []RecommendationRecord{
 		acctRec("acct-A", "aws", "rds"),
@@ -264,6 +277,7 @@ func TestResolveAccountConfigsForRecs_NoGlobalNoOverride_DedupedCorrectly(t *tes
 }
 
 func TestResolveAccountConfigsForRecs_GlobalErrorPropagates(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{globalErr: errors.New("boom")}
 	recs := []RecommendationRecord{acctRec("acct-A", "aws", "rds")}
 
@@ -273,6 +287,7 @@ func TestResolveAccountConfigsForRecs_GlobalErrorPropagates(t *testing.T) {
 }
 
 func TestResolveAccountConfigsForRecs_OverrideErrorPropagates(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{
 		globals: map[string]*ServiceConfig{
 			"aws|rds": {Provider: "aws", Service: "rds", Enabled: true},
@@ -292,6 +307,7 @@ func TestResolveAccountConfigsForRecs_OverrideErrorPropagates(t *testing.T) {
 // is the root scenario of issue #263: the INFO log firing on every refresh
 // for services that legitimately have no global config row.
 func TestResolveAccountConfigsForRecs_ErrNotFoundAbsorbed(t *testing.T) {
+	t.Parallel()
 	reader := &fakeAccountConfigReader{
 		globalErr: fmt.Errorf("service config not found for aws:rds: %w", ErrNotFound),
 	}

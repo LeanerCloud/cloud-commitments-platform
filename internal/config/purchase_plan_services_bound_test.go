@@ -9,6 +9,7 @@ import (
 // Fixtures are hand-built plans, not real configuration (issue #1746).
 
 func TestDerivePlanServices_CutsBoundGroupSuffix(t *testing.T) {
+	t.Parallel()
 	p := &PurchasePlan{Services: map[string]ServiceConfig{
 		"aws/ec2#g1": {}, "aws/ec2#g2": {}, "aws/rds#g3": {},
 	}}
@@ -25,6 +26,7 @@ func TestDerivePlanServices_CutsBoundGroupSuffix(t *testing.T) {
 // An unmarked plan keeps today's service parsing: a "#" in its key is not a
 // group suffix, so the entry still names its service (#1746 changes bound plans only).
 func TestDerivePlanServices_UnmarkedKeyWithHashKeepsItsService(t *testing.T) {
+	t.Parallel()
 	p := &PurchasePlan{Services: map[string]ServiceConfig{"aws/rds": {}, "team#west/ec2": {}}}
 	assert.Equal(t, []string{"ec2", "rds"}, DerivePlanServices(p))
 }

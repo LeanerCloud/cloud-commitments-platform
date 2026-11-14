@@ -22,6 +22,7 @@ func groupEntry(gid, service string, term int, payment string, ids ...string) Se
 }
 
 func TestValidate_BoundGroups(t *testing.T) {
+	t.Parallel()
 	ec2a := groupEntry("g1", "ec2", 1, "no-upfront", "k1", "k2")
 	ec2b := groupEntry("g2", "ec2", 3, "all-upfront", "k3")
 	capOf := func(s ServiceConfig, v float64) ServiceConfig { s.MaxStepCommitment = &v; return s }
@@ -74,6 +75,7 @@ func TestValidate_BoundGroups(t *testing.T) {
 
 // The effective cap is min(group, plan): a plan cap below a group cap is valid.
 func TestValidate_BoundGroups_PlanCapBelowGroupCap(t *testing.T) {
+	t.Parallel()
 	g := groupEntry("g1", "ec2", 1, "no-upfront", "k1")
 	groupCap, planCap := 500.0, 100.0
 	g.MaxStepCommitment = &groupCap
@@ -85,6 +87,7 @@ func TestValidate_BoundGroups_PlanCapBelowGroupCap(t *testing.T) {
 // (guard) Unmarked plans validate exactly as today, including migration
 // 000040's four aws:savings-plans-* siblings that share one identity.
 func TestValidate_UnmarkedPlansSkipBoundGroupChecks(t *testing.T) {
+	t.Parallel()
 	sp := func(service string) ServiceConfig {
 		return ServiceConfig{Provider: "aws", Service: service, Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 80}
 	}
@@ -99,6 +102,7 @@ func TestValidate_UnmarkedPlansSkipBoundGroupChecks(t *testing.T) {
 }
 
 func TestServiceConfig_EffectiveGroupID(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "g1", (&ServiceConfig{GroupID: "g1"}).EffectiveGroupID("aws/ec2#g1"))
 	assert.Equal(t, "aws/ec2", (&ServiceConfig{}).EffectiveGroupID("aws/ec2"))
 }
@@ -121,6 +125,7 @@ func gcpEntry(gid string, ids ...string) ServiceConfig {
 // A write that only stops the plan skips the bound-group checks, and keeps
 // every other check.
 func TestValidateDeescalation_SkipsOnlyBoundGroupChecks(t *testing.T) {
+	t.Parallel()
 	g := groupEntry("g1", "ec2", 1, "no-upfront", "k1", "k1")
 	p := boundGroupsPlan(map[string]ServiceConfig{"aws/ec2#g1": g})
 	require.ErrorIs(t, p.Validate(), ErrInvalidBoundGroup)

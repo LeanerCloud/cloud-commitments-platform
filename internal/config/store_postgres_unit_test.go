@@ -14,6 +14,7 @@ func pf(v float64) *float64 { return &v }
 
 // TestTimeFromTTL tests the timeFromTTL helper function.
 func TestTimeFromTTL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expected interface{}
 		name     string
@@ -51,6 +52,7 @@ func TestTimeFromTTL(t *testing.T) {
 
 // TestTtlFromTime tests the ttlFromTime helper function.
 func TestTtlFromTime(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		time     time.Time
 		name     string
@@ -88,6 +90,7 @@ func TestTtlFromTime(t *testing.T) {
 
 // TestNullStringFromString tests the nullStringFromString helper function.
 func TestNullStringFromString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -126,6 +129,7 @@ func TestNullStringFromString(t *testing.T) {
 
 // TestNewPostgresStore tests creating a new PostgresStore.
 func TestNewPostgresStore(t *testing.T) {
+	t.Parallel()
 	// Test that NewPostgresStore returns a non-nil store even with nil db
 	store := NewPostgresStore(nil)
 	assert.NotNil(t, store)
@@ -133,6 +137,7 @@ func TestNewPostgresStore(t *testing.T) {
 
 // TestTimeFromTTLRoundTrip tests that timeFromTTL and ttlFromTime are consistent.
 func TestTimeFromTTLRoundTrip(t *testing.T) {
+	t.Parallel()
 	// Test round trip conversion
 	originalTime := time.Date(2024, 6, 15, 12, 30, 0, 0, time.UTC)
 	ttl := ttlFromTime(originalTime)
@@ -148,6 +153,7 @@ func TestTimeFromTTLRoundTrip(t *testing.T) {
 
 // TestValidProvidersConstant tests that ValidProviders is properly defined.
 func TestValidProvidersConstant(t *testing.T) {
+	t.Parallel()
 	assert.Contains(t, ValidProviders, "aws")
 	assert.Contains(t, ValidProviders, "azure")
 	assert.Contains(t, ValidProviders, "gcp")
@@ -156,6 +162,7 @@ func TestValidProvidersConstant(t *testing.T) {
 
 // TestValidPaymentOptionsConstant tests that ValidPaymentOptions is properly defined.
 func TestValidPaymentOptionsConstant(t *testing.T) {
+	t.Parallel()
 	assert.Contains(t, ValidPaymentOptions, "no-upfront")
 	assert.Contains(t, ValidPaymentOptions, "partial-upfront")
 	assert.Contains(t, ValidPaymentOptions, "all-upfront")
@@ -164,6 +171,7 @@ func TestValidPaymentOptionsConstant(t *testing.T) {
 
 // TestValidRampScheduleTypesConstant tests that ValidRampScheduleTypes is properly defined.
 func TestValidRampScheduleTypesConstant(t *testing.T) {
+	t.Parallel()
 	assert.Contains(t, ValidRampScheduleTypes, "immediate")
 	assert.Contains(t, ValidRampScheduleTypes, "weekly")
 	assert.Contains(t, ValidRampScheduleTypes, "monthly")

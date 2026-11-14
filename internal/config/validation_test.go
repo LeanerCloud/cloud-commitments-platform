@@ -9,6 +9,7 @@ import (
 )
 
 func TestGlobalConfig_Validate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		errMsg  string
@@ -335,6 +336,7 @@ func TestGlobalConfig_Validate(t *testing.T) {
 // reaches the store through GlobalConfig.Validate, which used to accept a
 // negative or non-finite RI-exchange cap and an out-of-range threshold.
 func TestGlobalConfig_Validate_RIExchangeLimits(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		mutate func(c *GlobalConfig)
@@ -370,6 +372,7 @@ func TestGlobalConfig_Validate_RIExchangeLimits(t *testing.T) {
 }
 
 func TestServiceConfig_Validate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		errMsg  string
@@ -649,6 +652,7 @@ func TestServiceConfig_Validate(t *testing.T) {
 }
 
 func TestRampSchedule_Validate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		errMsg  string
@@ -824,6 +828,7 @@ func TestRampSchedule_Validate(t *testing.T) {
 }
 
 func TestPurchasePlan_Validate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		errMsg  string
@@ -960,6 +965,7 @@ func TestPurchasePlan_Validate(t *testing.T) {
 }
 
 func TestIsValidProvider(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isValidProvider("aws"))
 	assert.True(t, isValidProvider("azure"))
 	assert.True(t, isValidProvider("gcp"))
@@ -968,6 +974,7 @@ func TestIsValidProvider(t *testing.T) {
 }
 
 func TestIsValidPaymentOption(t *testing.T) {
+	t.Parallel()
 	// AWS tokens
 	assert.True(t, isValidPaymentOption("no-upfront"))
 	assert.True(t, isValidPaymentOption("partial-upfront"))
@@ -981,6 +988,7 @@ func TestIsValidPaymentOption(t *testing.T) {
 }
 
 func TestValidPaymentOptionsUnionDeterministic(t *testing.T) {
+	t.Parallel()
 	// validPaymentOptionsUnion must be sorted so that validation error messages
 	// that include the list of valid options are reproducible across runs.
 	// Map iteration in Go is non-deterministic; without an explicit sort the
@@ -1003,6 +1011,7 @@ func TestValidPaymentOptionsUnionDeterministic(t *testing.T) {
 }
 
 func TestNormalizePaymentOption(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		provider string
@@ -1067,6 +1076,7 @@ func TestNormalizePaymentOption(t *testing.T) {
 // dismiss the warning, under-classifying hides a schedule change the customer
 // never chose.
 func TestPaymentScheduleFor(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		token string
 		want  PaymentSchedule
@@ -1095,6 +1105,7 @@ func TestPaymentScheduleFor(t *testing.T) {
 // are the ones NormalizePaymentOption produces, so this test breaks if a future
 // mapping change silently flips a rename into a schedule change or vice versa.
 func TestPaymentCoercionChangesSchedule(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		raw       string
@@ -1123,6 +1134,7 @@ func TestPaymentCoercionChangesSchedule(t *testing.T) {
 }
 
 func TestIsValidRampScheduleType(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isValidRampScheduleType("immediate"))
 	assert.True(t, isValidRampScheduleType("weekly"))
 	assert.True(t, isValidRampScheduleType("monthly"))
@@ -1137,6 +1149,7 @@ func stringPtr(s string) *string {
 }
 
 func TestLadderCapMicros(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[float64]int64{0.000001: 1, 0.3: 300000, 1: 1000000, 123.456789: 123456789, 1e12: 1e18} {
 		got, err := LadderCapMicros(in)
 		assert.NoError(t, err, in)
@@ -1149,6 +1162,7 @@ func TestLadderCapMicros(t *testing.T) {
 }
 
 func TestPurchasePlan_CheckNoMultiStepSavingsPlans(t *testing.T) {
+	t.Parallel()
 	svc := func(name string, enabled bool) map[string]ServiceConfig {
 		return map[string]ServiceConfig{"aws/" + name: {Provider: "aws", Service: name, Enabled: enabled}}
 	}
@@ -1185,6 +1199,7 @@ func TestPurchasePlan_CheckNoMultiStepSavingsPlans(t *testing.T) {
 }
 
 func TestIsValidRIExchangeMode(t *testing.T) {
+	t.Parallel()
 	for mode, want := range map[string]bool{
 		"manual":    true,
 		"auto":      true,
@@ -1202,6 +1217,7 @@ func TestIsValidRIExchangeMode(t *testing.T) {
 // Only purchase plans refuse a 0% target (platform#523); service and global
 // coverage keep accepting 0.
 func TestCoverageZeroStillValidOutsidePlans(t *testing.T) {
+	t.Parallel()
 	require.NoError(t, (&ServiceConfig{Provider: "aws", Service: "ec2", Term: 3, Payment: "all-upfront", Coverage: 0}).Validate())
 	require.NoError(t, validateCoverage(0))
 }

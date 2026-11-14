@@ -35,6 +35,7 @@ func newLadderCancelMockStore(t *testing.T) (*PostgresStore, pgxmock.PgxPoolIfac
 }
 
 func TestCancelLadderRun_StampsCancelledBy(t *testing.T) {
+	t.Parallel()
 	store, pool := newLadderCancelMockStore(t)
 	now := time.Now().UTC()
 	actor := "alice@example.com"
@@ -60,6 +61,7 @@ func TestCancelLadderRun_StampsCancelledBy(t *testing.T) {
 }
 
 func TestCancelLadderRun_CASLostReturnsNil(t *testing.T) {
+	t.Parallel()
 	store, pool := newLadderCancelMockStore(t)
 	pool.ExpectQuery(regexp.QuoteMeta(ladderRunCancelQuery)).
 		WithArgs("run-1", string(ladder.RunStatusCanceled), []string{"approved"}, "bob@example.com").
@@ -73,6 +75,7 @@ func TestCancelLadderRun_CASLostReturnsNil(t *testing.T) {
 }
 
 func TestCancelLadderRun_RequiresActor(t *testing.T) {
+	t.Parallel()
 	for _, actor := range []string{"", "   "} {
 		store, pool := newLadderCancelMockStore(t)
 		run, err := store.CancelLadderRun(context.Background(), "run-1",
@@ -84,6 +87,7 @@ func TestCancelLadderRun_RequiresActor(t *testing.T) {
 }
 
 func TestTransitionLadderRunStatus_RefusesCancel(t *testing.T) {
+	t.Parallel()
 	store, pool := newLadderCancelMockStore(t)
 	run, err := store.TransitionLadderRunStatus(context.Background(), "run-1",
 		[]ladder.RunStatus{ladder.RunStatusExecuting}, ladder.RunStatusCanceled)

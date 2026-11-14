@@ -33,6 +33,7 @@ var executionProjectionCols = []string{
 // projects a purchase_executions row must read canceled_by and must not name
 // the dropped legacy column, which would fail at runtime.
 func TestPGXMock_ExecutionProjectionsReadCanceledByAlone(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	var projections, bare []string
 	mock, err := pgxmock.NewPool(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherFunc(func(_, actual string) error {
@@ -100,6 +101,7 @@ func TestPGXMock_ExecutionProjectionsReadCanceledByAlone(t *testing.T) {
 // The save keeps an actor already on the row (COALESCE(existing, $17)): a save
 // from a copy read before a concurrent cancel must not erase that actor.
 func TestPGXMock_ExecutionCancelActorWritesOnlyCanceledBy(t *testing.T) {
+	t.Parallel()
 	var dualWrites []string
 	mock, err := pgxmock.NewPool(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherFunc(func(expected, actual string) error {
 		write, _, _ := strings.Cut(actual, "RETURNING")

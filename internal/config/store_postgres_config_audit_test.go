@@ -51,6 +51,7 @@ func expectOverrideLockedRead(mock pgxmock.PgxPoolIface, existing *pgxmock.Rows)
 // TestPGXMock_SaveOverrideAudited_RecordsBeforeAndAfter: lock, locked read,
 // upsert read back, then the event with both snapshots, in one transaction.
 func TestPGXMock_SaveOverrideAudited_RecordsBeforeAndAfter(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	mock.ExpectBegin()
 	expectOverrideLockedRead(mock, overrideAuditRow(1))
@@ -71,6 +72,7 @@ func TestPGXMock_SaveOverrideAudited_RecordsBeforeAndAfter(t *testing.T) {
 // TestPGXMock_SaveOverrideAudited_NoChangeNoEvent: a save that leaves every
 // setting as it was records no event.
 func TestPGXMock_SaveOverrideAudited_NoChangeNoEvent(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	mock.ExpectBegin()
 	expectOverrideLockedRead(mock, overrideAuditRow(1))
@@ -89,6 +91,7 @@ func TestPGXMock_SaveOverrideAudited_NoChangeNoEvent(t *testing.T) {
 // TestPGXMock_DeleteOverrideAudited: the deleted row is the event's before; a
 // delete that finds nothing records nothing.
 func TestPGXMock_DeleteOverrideAudited(t *testing.T) {
+	t.Parallel()
 	t.Run("row deleted", func(t *testing.T) {
 		mock := newMock(t)
 		mock.ExpectBegin()
@@ -120,6 +123,7 @@ func TestPGXMock_DeleteOverrideAudited(t *testing.T) {
 // TestPGXMock_SaveConfigAuditEvent_RequiresActor: an event with no actor is
 // refused before it reaches the database, and the transaction rolls back.
 func TestPGXMock_SaveConfigAuditEvent_RequiresActor(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	mock.ExpectBegin()
 	mock.ExpectRollback()
@@ -131,6 +135,7 @@ func TestPGXMock_SaveConfigAuditEvent_RequiresActor(t *testing.T) {
 }
 
 func TestOverrideSnapshotJSON(t *testing.T) {
+	t.Parallel()
 	got, err := overrideSnapshotJSON(&AccountServiceOverride{
 		ID: "o-1", AccountID: auditTestAccount, Provider: "aws", Service: "rds",
 		Term: intPtrUnit(3), IncludeRegions: []string{"us-east-1"}, CreatedAt: time.Now(),

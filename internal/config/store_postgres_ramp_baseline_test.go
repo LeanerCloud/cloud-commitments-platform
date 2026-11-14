@@ -30,6 +30,7 @@ func baselineExec(id string, step int, status string, recs ...RecommendationReco
 // The status set decides how much of a plan's ramp is already held: a status
 // wrongly counted under-buys, a status wrongly dropped over-buys.
 func TestSumPlanCommitted_StatusSet(t *testing.T) {
+	t.Parallel()
 	rec := baselineRec("a1", "m5.large", 20)
 	key := baselineKey(t, rec)
 
@@ -63,6 +64,7 @@ func TestSumPlanCommitted_StatusSet(t *testing.T) {
 // of a fan-out, its per-account rows and a retry of the same step are one
 // purchase and count once.
 func TestSumPlanCommitted_StepsAddAndSameStepRowsCountOnce(t *testing.T) {
+	t.Parallel()
 	rec := baselineRec("a1", "m5.large", 20)
 	key := baselineKey(t, rec)
 	other := baselineRec("a2", "m5.large", 7)
@@ -86,6 +88,7 @@ func TestSumPlanCommitted_StepsAddAndSameStepRowsCountOnce(t *testing.T) {
 // been accepted by the provider (a timeout), so every selected rec counts; an
 // unselected rec was never sent.
 func TestSumPlanCommitted_PartialRowCountsEveryRecSelectedOnly(t *testing.T) {
+	t.Parallel()
 	bought := baselineRec("a1", "m5.large", 10)
 	bought.Purchased = true
 	errored := baselineRec("a1", "c5.large", 4)
@@ -101,6 +104,7 @@ func TestSumPlanCommitted_PartialRowCountsEveryRecSelectedOnly(t *testing.T) {
 }
 
 func TestSumPlanCommitted_HourlyCommitment(t *testing.T) {
+	t.Parallel()
 	sp := baselineRec("a1", "compute", 1)
 	sp.Service = "savingsplans"
 	sp.Details = json.RawMessage(`{"hourly_commitment":1.25,"platform":"x"}`)

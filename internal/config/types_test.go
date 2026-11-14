@@ -43,6 +43,7 @@ func TestLadderTrancheDB_AmountProvenanceJSON(t *testing.T) {
 }
 
 func TestRampSchedule_GetCurrentCoverage(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		schedule     RampSchedule
@@ -128,6 +129,7 @@ func TestRampSchedule_GetCurrentCoverage(t *testing.T) {
 }
 
 func TestRampSchedule_CumulativePercent(t *testing.T) {
+	t.Parallel()
 	weekly := RampSchedule{Type: "weekly", PercentPerStep: 25, TotalSteps: 4}
 	custom := RampSchedule{Type: "custom", PercentPerStep: 40, TotalSteps: 3}
 	tests := []struct {
@@ -154,6 +156,7 @@ func TestRampSchedule_CumulativePercent(t *testing.T) {
 // GetCurrentCoverage must stay the base scaled by CumulativePercent at the
 // schedule's own CurrentStep, so the two cannot drift.
 func TestRampSchedule_GetCurrentCoverageUsesCumulativePercent(t *testing.T) {
+	t.Parallel()
 	s := RampSchedule{Type: "custom", PercentPerStep: 40, TotalSteps: 3, CurrentStep: 2}
 	assert.Equal(t, 80*s.CumulativePercent(2)/100, s.GetCurrentCoverage(80))
 }
@@ -161,6 +164,7 @@ func TestRampSchedule_GetCurrentCoverageUsesCumulativePercent(t *testing.T) {
 // An immediate schedule returns the base untouched: base*100/100 would turn
 // 0.1694 into 0.16939999999999997 and math.MaxFloat64 into +Inf.
 func TestRampSchedule_GetCurrentCoverageImmediateIsExact(t *testing.T) {
+	t.Parallel()
 	s := RampSchedule{Type: "immediate"}
 	for _, base := range []float64{0.1694, 80, math.MaxFloat64} {
 		assert.Equal(t, base, s.GetCurrentCoverage(base))
@@ -168,6 +172,7 @@ func TestRampSchedule_GetCurrentCoverageImmediateIsExact(t *testing.T) {
 }
 
 func TestRampSchedule_GetNextPurchaseDate(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	startDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
@@ -230,6 +235,7 @@ func TestRampSchedule_GetNextPurchaseDate(t *testing.T) {
 }
 
 func TestRampSchedule_IsComplete(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		schedule RampSchedule
@@ -287,6 +293,7 @@ func TestRampSchedule_IsComplete(t *testing.T) {
 }
 
 func TestPresetRampSchedules(t *testing.T) {
+	t.Parallel()
 	t.Run("immediate schedule exists and is correct", func(t *testing.T) {
 		schedule, exists := PresetRampSchedules["immediate"]
 		assert.True(t, exists)
@@ -315,6 +322,7 @@ func TestPresetRampSchedules(t *testing.T) {
 }
 
 func TestGlobalConfig_Defaults(t *testing.T) {
+	t.Parallel()
 	cfg := GlobalConfig{}
 
 	assert.Empty(t, cfg.EnabledProviders)
@@ -327,6 +335,7 @@ func TestGlobalConfig_Defaults(t *testing.T) {
 }
 
 func TestServiceConfig_Defaults(t *testing.T) {
+	t.Parallel()
 	cfg := ServiceConfig{}
 
 	assert.Empty(t, cfg.Provider)
@@ -339,6 +348,7 @@ func TestServiceConfig_Defaults(t *testing.T) {
 }
 
 func TestPurchasePlan_Defaults(t *testing.T) {
+	t.Parallel()
 	plan := PurchasePlan{}
 
 	assert.Empty(t, plan.ID)
@@ -354,6 +364,7 @@ func TestPurchasePlan_Defaults(t *testing.T) {
 }
 
 func TestPurchaseExecution_Statuses(t *testing.T) {
+	t.Parallel()
 	validStatuses := []string{"pending", "notified", "approved", "canceled", "completed", "failed"}
 
 	for _, status := range validStatuses {
@@ -363,6 +374,7 @@ func TestPurchaseExecution_Statuses(t *testing.T) {
 }
 
 func TestRecommendationRecord_Fields(t *testing.T) {
+	t.Parallel()
 	rec := RecommendationRecord{
 		ID:           "rec-123",
 		Provider:     "aws",
@@ -397,6 +409,7 @@ func TestRecommendationRecord_Fields(t *testing.T) {
 }
 
 func TestPurchaseHistoryRecord_Fields(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	rec := PurchaseHistoryRecord{
 		AccountID:        "123456789012",
@@ -437,6 +450,7 @@ func TestPurchaseHistoryRecord_Fields(t *testing.T) {
 }
 
 func TestGlobalConfig_GracePeriodFor(t *testing.T) {
+	t.Parallel()
 	t.Run("nil receiver returns default", func(t *testing.T) {
 		var cfg *GlobalConfig
 		assert.Equal(t, DefaultGracePeriodDays, cfg.GracePeriodFor("aws"))
@@ -479,6 +493,7 @@ func TestGlobalConfig_GracePeriodFor(t *testing.T) {
 // A scheduled row is revoked, not canceled (issue #73): the cancel CAS matches
 // only pending/notified, so the predicate must agree.
 func TestPurchaseExecution_IsCancelable(t *testing.T) {
+	t.Parallel()
 	for status, want := range map[string]bool{
 		"pending": true, "notified": true, "scheduled": false, "approved": false,
 		"running": false, "paused": false, "failed": false, "expired": false,
@@ -489,6 +504,7 @@ func TestPurchaseExecution_IsCancelable(t *testing.T) {
 }
 
 func TestIsUSDCommitmentCurrency(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]bool{"USD": true, "usd": true, " Usd\t": true, "": false, "  ": false, "EUR": false, "USDT": false} {
 		if got := IsUSDCommitmentCurrency(in); got != want {
 			t.Errorf("IsUSDCommitmentCurrency(%q) = %v, want %v", in, got, want)
@@ -497,6 +513,7 @@ func TestIsUSDCommitmentCurrency(t *testing.T) {
 }
 
 func TestStoredRecommendationService(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		provider string
 		service  common.ServiceType

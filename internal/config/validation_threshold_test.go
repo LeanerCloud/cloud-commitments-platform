@@ -8,6 +8,7 @@ import (
 )
 
 func TestValidateRIExchangeUtilizationThreshold(t *testing.T) {
+	t.Parallel()
 	for _, v := range []float64{0.1, 50, 95, 100} {
 		assert.NoError(t, ValidateRIExchangeUtilizationThreshold("t", v), "%v", v)
 	}

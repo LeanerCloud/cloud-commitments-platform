@@ -14,6 +14,7 @@ import (
 // ==========================================
 
 func TestPostgresStore_CreateCloudAccount_GeneratesIDAndTimestamps(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -36,6 +37,7 @@ func TestPostgresStore_CreateCloudAccount_GeneratesIDAndTimestamps(t *testing.T)
 }
 
 func TestPostgresStore_CreateCloudAccount_PreservesExistingID(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -60,6 +62,7 @@ func TestPostgresStore_CreateCloudAccount_PreservesExistingID(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_UpdateCloudAccount_SetsUpdatedAt(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -82,6 +85,7 @@ func TestPostgresStore_UpdateCloudAccount_SetsUpdatedAt(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_SaveAccountServiceOverride_GeneratesIDAndTimestamps(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -101,6 +105,7 @@ func TestPostgresStore_SaveAccountServiceOverride_GeneratesIDAndTimestamps(t *te
 }
 
 func TestPostgresStore_SaveAccountServiceOverride_PreservesExistingID(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -124,6 +129,7 @@ func TestPostgresStore_SaveAccountServiceOverride_PreservesExistingID(t *testing
 // ==========================================
 
 func TestCloudAccountFilter_ZeroValue(t *testing.T) {
+	t.Parallel()
 	filter := CloudAccountFilter{}
 	assert.Nil(t, filter.Provider)
 	assert.Nil(t, filter.Enabled)
@@ -132,6 +138,7 @@ func TestCloudAccountFilter_ZeroValue(t *testing.T) {
 }
 
 func TestCloudAccountFilter_WithAllFields(t *testing.T) {
+	t.Parallel()
 	provider := "aws"
 	enabled := true
 	bastionID := "bastion-uuid"
@@ -157,6 +164,7 @@ func TestCloudAccountFilter_WithAllFields(t *testing.T) {
 // ==========================================
 
 func TestCloudAccount_CredentialsConfiguredDefaultsFalse(t *testing.T) {
+	t.Parallel()
 	a := CloudAccount{
 		ID:         "id",
 		Name:       "Test",
@@ -168,6 +176,7 @@ func TestCloudAccount_CredentialsConfiguredDefaultsFalse(t *testing.T) {
 }
 
 func TestCloudAccount_AWSFieldsOptional(t *testing.T) {
+	t.Parallel()
 	a := CloudAccount{
 		ID:           "id",
 		Name:         "Test",

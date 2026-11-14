@@ -12,6 +12,7 @@ import (
 // database is the caller's time truncated. A check stamped with that same
 // instant (nanoseconds included) must not count as after the change.
 func TestCheckPostdatesDBTime(t *testing.T) {
+	t.Parallel()
 	change := time.Date(2026, 10, 23, 1, 2, 3, 456789123, time.UTC)
 	stored := change.Truncate(time.Microsecond)
 
@@ -23,6 +24,7 @@ func TestCheckPostdatesDBTime(t *testing.T) {
 }
 
 func TestCheckRIExchangeCloudCheck_CheckedAtTheChangeIsRefused(t *testing.T) {
+	t.Parallel()
 	change := time.Date(2026, 10, 23, 1, 2, 3, 456789123, time.UTC)
 	row := riExchangeResolveRow{
 		accountID: "123456789012",

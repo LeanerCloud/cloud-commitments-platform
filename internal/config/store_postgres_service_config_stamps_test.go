@@ -47,6 +47,7 @@ func assertNoStampKeys(t *testing.T, raw []byte) {
 }
 
 func TestMarshalPlanServices_DropsStampsWithoutMutatingInput(t *testing.T) {
+	t.Parallel()
 	services := map[string]ServiceConfig{"aws/ec2": stampedService()}
 
 	raw, err := marshalPlanServices(services)
@@ -60,6 +61,7 @@ func TestMarshalPlanServices_DropsStampsWithoutMutatingInput(t *testing.T) {
 }
 
 func TestPGXMock_CreatePurchasePlan_StoresServicesWithoutStamps(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -76,6 +78,7 @@ func TestPGXMock_CreatePurchasePlan_StoresServicesWithoutStamps(t *testing.T) {
 }
 
 func TestPGXMock_UpdatePurchasePlan_StoresServicesWithoutStamps(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -99,6 +102,7 @@ func TestPGXMock_UpdatePurchasePlan_StoresServicesWithoutStamps(t *testing.T) {
 // bound_count is response-only (issue #1746); a services map that carries it
 // must not store it.
 func TestMarshalPlanServices_DropsBoundCount(t *testing.T) {
+	t.Parallel()
 	svc := stampedService()
 	svc.BoundCount = 7
 	services := map[string]ServiceConfig{"aws/ec2#g1": svc}

@@ -10,6 +10,7 @@ import (
 )
 
 func TestListDueLadderTranches_RejectsBadArgumentsBeforeTouchingTheDatabase(t *testing.T) {
+	t.Parallel()
 	store := &PostgresStore{}
 	compute := []ladder.LayerType{ladder.LayerComputeSP}
 	cases := []struct {

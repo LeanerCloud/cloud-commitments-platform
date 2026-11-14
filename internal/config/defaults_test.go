@@ -8,6 +8,7 @@ import (
 )
 
 func TestDefaultSettings(t *testing.T) {
+	t.Parallel()
 	assert.NotEmpty(t, DefaultSettings, "DefaultSettings should not be empty")
 
 	// Verify all settings have required fields
@@ -20,6 +21,7 @@ func TestDefaultSettings(t *testing.T) {
 }
 
 func TestDefaultSettings_ExpectedKeys(t *testing.T) {
+	t.Parallel()
 	expectedKeys := []string{
 		"purchase_defaults.term",
 		"purchase_defaults.payment_option",
@@ -49,6 +51,7 @@ func TestDefaultSettings_ExpectedKeys(t *testing.T) {
 }
 
 func TestDefaultSettings_PurchaseDefaults(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expectedValue interface{}
 		key           string
@@ -72,6 +75,7 @@ func TestDefaultSettings_PurchaseDefaults(t *testing.T) {
 }
 
 func TestDefaultSettings_Notification(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expectedValue interface{}
 		key           string
@@ -95,6 +99,7 @@ func TestDefaultSettings_Notification(t *testing.T) {
 }
 
 func TestDefaultSettings_Providers(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		key           string
 		expectedValue bool
@@ -116,6 +121,7 @@ func TestDefaultSettings_Providers(t *testing.T) {
 }
 
 func TestDefaultSettings_Security(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expectedValue interface{}
 		key           string
@@ -142,6 +148,7 @@ func TestDefaultSettings_Security(t *testing.T) {
 }
 
 func TestDefaultSettings_Scheduling(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expectedValue interface{}
 		key           string
@@ -165,6 +172,7 @@ func TestDefaultSettings_Scheduling(t *testing.T) {
 }
 
 func TestDefaultSettings_AWS(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expectedValue interface{}
 		key           string
@@ -191,6 +199,7 @@ func TestDefaultSettings_AWS(t *testing.T) {
 }
 
 func TestDefaultSettings_Thresholds(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expectedValue interface{}
 		key           string
@@ -213,6 +222,7 @@ func TestDefaultSettings_Thresholds(t *testing.T) {
 }
 
 func TestDefaultSettings_Retention(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		key           string
 		expectedValue int
@@ -239,12 +249,14 @@ func TestDefaultSettings_Retention(t *testing.T) {
 // of 30) once sat here with no reader, and it was cited as the retention
 // policy in review (issue #88). Keep it from coming back as an unwired key.
 func TestDefaultSettings_NoExecutionRetentionKey(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, GetDefaultSetting("retention.execution_history_days"),
 		"execution retention is DefaultExecutionTTLDays; a settings key for it would have no reader")
 	assert.Equal(t, 30, DefaultExecutionTTLDays)
 }
 
 func TestDefaultSettings_API(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expectedValue interface{}
 		key           string
@@ -267,6 +279,7 @@ func TestDefaultSettings_API(t *testing.T) {
 }
 
 func TestGetDefaultValue(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		expectedValue interface{}
 		key           string
@@ -286,6 +299,7 @@ func TestGetDefaultValue(t *testing.T) {
 }
 
 func TestGetDefaultSetting(t *testing.T) {
+	t.Parallel()
 	t.Run("existing key", func(t *testing.T) {
 		setting := GetDefaultSetting("purchase_defaults.term")
 		require.NotNil(t, setting)
@@ -317,6 +331,7 @@ func TestGetDefaultSetting(t *testing.T) {
 }
 
 func TestGetDefaultsByCategory(t *testing.T) {
+	t.Parallel()
 	t.Run("purchase_defaults category", func(t *testing.T) {
 		settings := GetDefaultsByCategory("purchase_defaults")
 		assert.NotEmpty(t, settings)
@@ -354,6 +369,7 @@ func TestGetDefaultsByCategory(t *testing.T) {
 }
 
 func TestGetAllCategories(t *testing.T) {
+	t.Parallel()
 	categories := GetAllCategories()
 	assert.NotEmpty(t, categories)
 
@@ -380,6 +396,7 @@ func TestGetAllCategories(t *testing.T) {
 }
 
 func TestDefaultSettings_UpdatedAtIsZero(t *testing.T) {
+	t.Parallel()
 	// Static defaults have never been "updated" by a user; UpdatedAt must be
 	// the zero time so callers can distinguish them from DB-persisted settings.
 	for _, setting := range DefaultSettings {
@@ -390,6 +407,7 @@ func TestDefaultSettings_UpdatedAtIsZero(t *testing.T) {
 }
 
 func TestDefaultSettings_NoKeyDuplicates(t *testing.T) {
+	t.Parallel()
 	seen := make(map[string]bool)
 
 	for _, setting := range DefaultSettings {
@@ -399,6 +417,7 @@ func TestDefaultSettings_NoKeyDuplicates(t *testing.T) {
 }
 
 func TestDefaultSettings_ValidTypes(t *testing.T) {
+	t.Parallel()
 	validTypes := map[string]bool{
 		"int":    true,
 		"float":  true,
@@ -414,6 +433,7 @@ func TestDefaultSettings_ValidTypes(t *testing.T) {
 }
 
 func TestDefaultSettings_TypeMatchesValue(t *testing.T) {
+	t.Parallel()
 	for _, setting := range DefaultSettings {
 		switch setting.Type {
 		case "int":

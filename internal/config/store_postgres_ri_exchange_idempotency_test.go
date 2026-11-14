@@ -22,6 +22,7 @@ import (
 // is one Exec, and the window travels as seconds into make_interval so the
 // expiry is compared against the DATABASE clock rather than the caller's.
 func TestPGXMock_ClaimRIExchangeIdempotencyKey_WonWhenRowWritten(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -40,6 +41,7 @@ func TestPGXMock_ClaimRIExchangeIdempotencyKey_WonWhenRowWritten(t *testing.T) {
 // claim still inside its window, updates nothing, and the caller must read
 // that zero-row result as "someone else already submitted this".
 func TestPGXMock_ClaimRIExchangeIdempotencyKey_LostWhenConflictHeld(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -56,6 +58,7 @@ func TestPGXMock_ClaimRIExchangeIdempotencyKey_LostWhenConflictHeld(t *testing.T
 // TestPGXMock_ClaimRIExchangeIdempotencyKey_ErrorIsNotAWonClaim: a failed Exec
 // must surface as an error, never as a claim the caller can act on.
 func TestPGXMock_ClaimRIExchangeIdempotencyKey_ErrorIsNotAWonClaim(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -76,6 +79,7 @@ func TestPGXMock_ClaimRIExchangeIdempotencyKey_ErrorIsNotAWonClaim(t *testing.T)
 // every existing claim as expired -- both turn the guard into a no-op that
 // still reports success, which is worse than no guard at all.
 func TestPGXMock_ClaimRIExchangeIdempotencyKey_RejectsUnusableArguments(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		key    string
 		want   string

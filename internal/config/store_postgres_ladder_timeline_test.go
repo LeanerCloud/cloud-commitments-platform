@@ -18,6 +18,7 @@ import (
 const ladderTimelineWholeScope = 250
 
 func TestLadderTimelineReturnsWholeScopeFromOneStatement(t *testing.T) {
+	t.Parallel()
 	pool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer pool.Close()
@@ -47,6 +48,7 @@ func TestLadderTimelineReturnsWholeScopeFromOneStatement(t *testing.T) {
 }
 
 func TestLadderTimelineQueryFailureIsNotEmpty(t *testing.T) {
+	t.Parallel()
 	pool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer pool.Close()
@@ -61,6 +63,7 @@ func TestLadderTimelineQueryFailureIsNotEmpty(t *testing.T) {
 }
 
 func TestLadderTimelineRunsWholeScopeCursorAndFailure(t *testing.T) {
+	t.Parallel()
 	pool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer pool.Close()
@@ -93,6 +96,7 @@ func TestLadderTimelineRunsWholeScopeCursorAndFailure(t *testing.T) {
 }
 
 func TestLadderTimelineOnDemandFromOneStatement(t *testing.T) {
+	t.Parallel()
 	pool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer pool.Close()
@@ -121,6 +125,7 @@ func TestLadderTimelineOnDemandFromOneStatement(t *testing.T) {
 }
 
 func TestLadderTimelineMalformedRateFailsLoud(t *testing.T) {
+	t.Parallel()
 	for name, scope := range map[string]string{
 		"unparseable": `[["1.000000","commitment","abc"]]`,
 		"zero":        `[["1.000000","commitment","0"]]`,

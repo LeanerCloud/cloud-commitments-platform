@@ -11,6 +11,7 @@ import (
 // past it is refused. A live database clock cannot probe that edge without
 // flaking, so it is pinned here on a fixed clock (#1869).
 func TestCheckRIExchangeDirectResolve_FutureBoundIsExact(t *testing.T) {
+	t.Parallel()
 	dbNow := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
 	completed := dbNow.Add(-time.Hour)
 	row := riExchangeDirectResolveRow{

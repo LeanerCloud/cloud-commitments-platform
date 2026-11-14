@@ -19,6 +19,7 @@ var allLadderTrancheStatuses = []ladder.TrancheStatus{
 
 // Pure unit test (no database): the edge table is the whole state machine.
 func TestLadderTrancheEdges_OnlyDocumentedTransitionsAreLegal(t *testing.T) {
+	t.Parallel()
 	legal := map[[2]ladder.TrancheStatus]bool{
 		{ladder.TrancheStatusScheduled, ladder.TrancheStatusFired}:    true,
 		{ladder.TrancheStatusScheduled, ladder.TrancheStatusCanceled}: true,
@@ -40,6 +41,7 @@ func TestLadderTrancheEdges_OnlyDocumentedTransitionsAreLegal(t *testing.T) {
 // Illegal edges and the claim-only edge fail before any SQL runs, so a nil DB
 // proves no query was attempted.
 func TestTransitionLadderTranche_RejectsIllegalEdgesWithoutQuerying(t *testing.T) {
+	t.Parallel()
 	s := &PostgresStore{}
 	for _, from := range allLadderTrancheStatuses {
 		for _, to := range allLadderTrancheStatuses {
@@ -54,12 +56,14 @@ func TestTransitionLadderTranche_RejectsIllegalEdgesWithoutQuerying(t *testing.T
 }
 
 func TestLadderGraceCutoff_IsExactComplementOfNettingBound(t *testing.T) {
+	t.Parallel()
 	asOf := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	assert.Equal(t, asOf.Add(-24*time.Hour), ladderGraceCutoff(asOf))
 }
 
 // A failed or canceled transition without a reason is rejected before any SQL.
 func TestTransitionLadderTranche_RequiresReasonForFailedAndCanceled(t *testing.T) {
+	t.Parallel()
 	s := &PostgresStore{}
 	for _, c := range []struct{ from, to ladder.TrancheStatus }{
 		{ladder.TrancheStatusFired, ladder.TrancheStatusFailed},
@@ -76,6 +80,7 @@ func TestTransitionLadderTranche_RequiresReasonForFailedAndCanceled(t *testing.T
 const nonBindingCeilingMicros = math.MaxInt64
 
 func TestLadderClaimFilter_Validate(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name    string
 		layers  []ladder.LayerType
@@ -102,6 +107,7 @@ func TestLadderClaimFilter_Validate(t *testing.T) {
 }
 
 func TestLadderClaimFilter_ValidateCeiling(t *testing.T) {
+	t.Parallel()
 	layers := []ladder.LayerType{ladder.LayerComputeSP}
 	for _, micros := range []int64{0, -1, math.MinInt64} {
 		assert.ErrorContains(t, LadderClaimFilter{Layers: layers, CeilingMicros: micros}.validate(), "ceiling", micros)
@@ -112,6 +118,7 @@ func TestLadderClaimFilter_ValidateCeiling(t *testing.T) {
 // Invalid input fails before the config lock and any SQL, so a nil DB proves
 // nothing was attempted and the callback never runs.
 func TestClaimDueLadderTranches_ValidatesBeforeSQL(t *testing.T) {
+	t.Parallel()
 	s := &PostgresStore{}
 	create := func(context.Context, pgx.Tx, LadderTrancheDB) (string, error) {
 		t.Fatal("create must not run")
@@ -134,6 +141,7 @@ func TestClaimDueLadderTranches_ValidatesBeforeSQL(t *testing.T) {
 // The wire strings are stored in ladder_tranches and matched by the claim, so
 // a rename in the provider module must fail here instead of orphaning rows.
 func TestLadderPlanningTerms_WireStrings(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "1yr", string(LadderTerm))
 	assert.Equal(t, "no-upfront", string(LadderPayment))
 }
@@ -141,5 +149,6 @@ func TestLadderPlanningTerms_WireStrings(t *testing.T) {
 // The claim's run-start window and the overdue sweep share this value, so a
 // change must be a deliberate edit of both semantics.
 func TestLadderClaimPolicy_GracePin(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 24*time.Hour, LadderFireGrace)
 }

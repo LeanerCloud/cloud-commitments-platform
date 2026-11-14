@@ -18,6 +18,7 @@ import (
 // The real-Postgres behavior is covered by
 // TestAccountPredicate_ProviderCaseAndEmpty_Integration.
 func TestAppendAccountPredicate_ProviderGate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		uuids     []string

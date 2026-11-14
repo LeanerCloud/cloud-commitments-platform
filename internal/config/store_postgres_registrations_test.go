@@ -32,6 +32,7 @@ func execRegistrationInsertError(t *testing.T, dbErr error) error {
 }
 
 func TestCreateAccountRegistration_PendingUniqueViolation_IsDuplicate(t *testing.T) {
+	t.Parallel()
 	pgErr := &pgconn.PgError{Code: "23505", ConstraintName: "idx_account_registrations_pending_unique",
 		Message: "duplicate key value violates unique constraint"}
 	err := execRegistrationInsertError(t, pgErr)
@@ -46,6 +47,7 @@ func TestCreateAccountRegistration_PendingUniqueViolation_IsDuplicate(t *testing
 // A locale-translated (lc_messages) server message carries no English words;
 // the SQLSTATE and constraint name still identify it.
 func TestCreateAccountRegistration_TranslatedMessage_IsDuplicate(t *testing.T) {
+	t.Parallel()
 	err := execRegistrationInsertError(t, &pgconn.PgError{Code: "23505",
 		ConstraintName: "idx_account_registrations_pending_unique",
 		Message:        "llave duplicada viola restricción de unicidad"})
@@ -53,6 +55,7 @@ func TestCreateAccountRegistration_TranslatedMessage_IsDuplicate(t *testing.T) {
 }
 
 func TestCreateAccountRegistration_ReferenceTokenViolation_IsCollisionNotDuplicate(t *testing.T) {
+	t.Parallel()
 	err := execRegistrationInsertError(t, &pgconn.PgError{Code: "23505",
 		ConstraintName: "account_registrations_reference_token_key",
 		Message:        `duplicate key value violates unique constraint "account_registrations_reference_token_key"`})
@@ -62,6 +65,7 @@ func TestCreateAccountRegistration_ReferenceTokenViolation_IsCollisionNotDuplica
 }
 
 func TestCreateAccountRegistration_NonDuplicateErrors_AreNotDuplicate(t *testing.T) {
+	t.Parallel()
 	cases := map[string]error{
 		"unique violation on another constraint": &pgconn.PgError{Code: "23505",
 			ConstraintName: "account_registrations_pkey",
@@ -83,6 +87,7 @@ func TestCreateAccountRegistration_NonDuplicateErrors_AreNotDuplicate(t *testing
 }
 
 func TestCreateAccountRegistration_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	defer mock.Close()
 	mock.ExpectExec("INSERT INTO account_registrations").

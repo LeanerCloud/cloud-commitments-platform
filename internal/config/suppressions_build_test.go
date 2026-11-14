@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildSuppressions_CreatesOneRowPerTuple(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 4, 24, 0, 0, 0, 0, time.UTC)
 	gp := &GlobalConfig{GracePeriodDays: map[string]int{"aws": 7, "azure": 7, "gcp": 7}}
 
@@ -30,6 +31,7 @@ func TestBuildSuppressions_CreatesOneRowPerTuple(t *testing.T) {
 }
 
 func TestBuildSuppressions_SkipsProvidersWithGrace0(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	gp := &GlobalConfig{GracePeriodDays: map[string]int{"aws": 7, "azure": 0, "gcp": 14}}
 
@@ -47,6 +49,7 @@ func TestBuildSuppressions_SkipsProvidersWithGrace0(t *testing.T) {
 }
 
 func TestBuildSuppressions_NilAccountIDNormalised(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	gp := &GlobalConfig{}
 
@@ -59,6 +62,7 @@ func TestBuildSuppressions_NilAccountIDNormalised(t *testing.T) {
 }
 
 func TestBuildSuppressions_SkipsZeroCountRecs(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	gp := &GlobalConfig{}
 
@@ -73,6 +77,7 @@ func TestBuildSuppressions_SkipsZeroCountRecs(t *testing.T) {
 // that differ only by availability zone, platform or tenancy get one row each,
 // carrying the rec's variant; recs with the same variant are still summed.
 func TestBuildSuppressions_SeparatesVariants(t *testing.T) {
+	t.Parallel()
 	ec2 := func(az, platform, tenancy string, count int) RecommendationRecord {
 		return RecommendationRecord{
 			Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
@@ -111,6 +116,7 @@ func TestBuildSuppressions_SeparatesVariants(t *testing.T) {
 // or tenancy (non-EC2, no Details) gets an empty but known variant, not a
 // legacy wildcard.
 func TestBuildSuppressions_NonComputeVariantIsKnownEmpty(t *testing.T) {
+	t.Parallel()
 	sups := BuildSuppressions([]RecommendationRecord{
 		{Provider: "aws", Service: "rds", Region: "us-east-1", ResourceType: "db.t4g.micro", Engine: "postgres", Count: 1},
 	}, "exec-1", &GlobalConfig{}, time.Now())
@@ -122,6 +128,7 @@ func TestBuildSuppressions_NonComputeVariantIsKnownEmpty(t *testing.T) {
 // Details cannot be read gets no variant, so its row suppresses the whole
 // 6-tuple (pre-#816 behavior) instead of nothing.
 func TestBuildSuppressions_UnreadableDetailsFallBackToWildcard(t *testing.T) {
+	t.Parallel()
 	sups := BuildSuppressions([]RecommendationRecord{
 		{Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large", Count: 2,
 			AvailabilityZone: "us-east-1a", Details: []byte(`{"platform":42}`)},
@@ -139,6 +146,7 @@ func TestBuildSuppressions_UnreadableDetailsFallBackToWildcard(t *testing.T) {
 // scheduler: exact variant match, legacy rows and unknown rec variants are
 // wildcards.
 func TestPurchaseSuppression_AppliesTo(t *testing.T) {
+	t.Parallel()
 	v := SuppressionVariant{AvailabilityZone: "us-east-1a", Platform: "Linux/UNIX", Tenancy: "default"}
 	scoped := PurchaseSuppression{Variant: &v}
 	legacy := PurchaseSuppression{}
@@ -158,6 +166,7 @@ func TestPurchaseSuppression_AppliesTo(t *testing.T) {
 // suppress every variant (issue #1232). Non-EC2 and fully detailed recs keep
 // their known variant.
 func TestBuildSuppressions_LegacyEC2WithoutDetailsIsWildcard(t *testing.T) {
+	t.Parallel()
 	base := RecommendationRecord{Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large", Count: 1, AvailabilityZone: "us-east-1a"}
 	for name, details := range map[string][]byte{"nil": nil, "empty": {}, "null": []byte(`null`), "no keys": []byte(`{}`)} {
 		t.Run(name, func(t *testing.T) {
@@ -181,6 +190,7 @@ func TestBuildSuppressions_LegacyEC2WithoutDetailsIsWildcard(t *testing.T) {
 // "compute" slug follow the same wildcard rule as "ec2"; a rec with only a
 // platform or only a tenancy keeps its narrow variant.
 func TestBuildSuppressions_ComputeSlugEC2(t *testing.T) {
+	t.Parallel()
 	base := RecommendationRecord{Provider: "aws", Service: "compute", Region: "us-east-1", ResourceType: "m5.large", Count: 1, AvailabilityZone: "us-east-1a"}
 	sups := BuildSuppressions([]RecommendationRecord{base}, "exec-1", &GlobalConfig{}, time.Now())
 	require.Len(t, sups, 1)
@@ -205,6 +215,7 @@ func TestBuildSuppressions_ComputeSlugEC2(t *testing.T) {
 }
 
 func TestCanonicalSuppressionService(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ provider, service, want string }{
 		{"aws", "ec2", "compute"},
 		{"aws", "rds", "relational-db"},
@@ -244,6 +255,7 @@ func TestCanonicalSuppressionService(t *testing.T) {
 // Issue #1420: a legacy "rds" rec and a canonical "relational-db" rec for the
 // same tuple merge into one canonical suppression row with the summed count.
 func TestBuildSuppressions_MergesRDSAliases(t *testing.T) {
+	t.Parallel()
 	gp := &GlobalConfig{GracePeriodDays: map[string]int{"aws": 7}}
 	sups := BuildSuppressions([]RecommendationRecord{
 		{Provider: "aws", Service: "rds", Region: "r", ResourceType: "db.r5.large", Count: 3},
@@ -257,6 +269,7 @@ func TestBuildSuppressions_MergesRDSAliases(t *testing.T) {
 // Issue #1412: AWS "ec2" and "compute" recs in one request share a bucket and
 // are written under the canonical slug; Azure compute is untouched.
 func TestBuildSuppressions_CanonicalisesAWSEC2Slug(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 4, 24, 0, 0, 0, 0, time.UTC)
 	gp := &GlobalConfig{GracePeriodDays: map[string]int{"aws": 7, "azure": 7}}
 	sups := BuildSuppressions([]RecommendationRecord{
@@ -276,6 +289,7 @@ func TestBuildSuppressions_CanonicalisesAWSEC2Slug(t *testing.T) {
 // capacity as "default", and an AZ stored only in Details is used when the AZ
 // field is empty (the field wins when both are set).
 func TestBuildSuppressions_LegacyShapesCanonicalised(t *testing.T) {
+	t.Parallel()
 	mk := func(service, field, details string) RecommendationRecord {
 		return RecommendationRecord{Provider: "aws", Service: service, Region: "us-east-1", ResourceType: "m5.large",
 			Count: 1, AvailabilityZone: field, Details: []byte(details)}
@@ -300,6 +314,7 @@ func TestBuildSuppressions_LegacyShapesCanonicalised(t *testing.T) {
 }
 
 func TestPurchaseSuppression_AppliesTo_LegacySharedTenancy(t *testing.T) {
+	t.Parallel()
 	def := &SuppressionVariant{"us-east-1a", "Linux/UNIX", "default", ""}
 	variant := &SuppressionVariant{"us-east-1a", "Linux/UNIX", "shared", ""}
 	for name, tc := range map[string]struct {
@@ -321,6 +336,7 @@ func TestPurchaseSuppression_AppliesTo_LegacySharedTenancy(t *testing.T) {
 }
 
 func TestRecommendationRecord_SuppressionVariant_DetailsAZ(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct{ details, want string }{
 		"padded AZ is trimmed":   {`{"availability_zone":" us-east-1a "}`, "us-east-1a"},
 		"non-string AZ is empty": {`{"availability_zone":5}`, ""},
@@ -335,6 +351,7 @@ func TestRecommendationRecord_SuppressionVariant_DetailsAZ(t *testing.T) {
 }
 
 func TestCanonicalSuppressionTenancy(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "default", canonicalSuppressionTenancy(" Shared "))
 	assert.Equal(t, "default", canonicalSuppressionTenancy("shared"))
 	assert.Equal(t, "Dedicated", canonicalSuppressionTenancy("Dedicated"))
@@ -342,6 +359,7 @@ func TestCanonicalSuppressionTenancy(t *testing.T) {
 }
 
 func TestCanonicalSuppressionEngine(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ provider, service, engine, want string }{
 		{"azure", "cache", "", "redis"},
 		{"azure", "cache", "redis", "redis"},
@@ -366,6 +384,7 @@ func TestCanonicalSuppressionEngine(t *testing.T) {
 // The write side stores the canonical engine (issue #1950), so a purchase
 // after go#735 and one before it produce the same Azure SQL row.
 func TestBuildSuppressions_StoresCanonicalEngine(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	gp := &GlobalConfig{GracePeriodDays: map[string]int{"aws": 7, "azure": 7}}
 	for _, tc := range []struct{ provider, service, engine, want string }{

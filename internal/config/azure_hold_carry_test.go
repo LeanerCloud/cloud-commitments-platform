@@ -23,6 +23,7 @@ func azureCollect(id *string) []SuccessfulCollect {
 }
 
 func TestCarryAzureHold(t *testing.T) {
+	t.Parallel()
 	a, b, c := "a", "b", "c"
 	stored := map[string]bool{"a": true, "b": true, "c": true}
 	ambient := map[string]bool{ambientAccountKey: true}
@@ -65,6 +66,7 @@ func TestCarryAzureHold(t *testing.T) {
 // An ambient hold merged with a named account's hold must stay an ambient hold
 // after the named account re-prices: the stale ambient rows are still there.
 func TestCarryAzureHold_AmbientSurvivesNamedReprice(t *testing.T) {
+	t.Parallel()
 	c := "c"
 	stored := map[string]bool{ambientAccountKey: true, "c": true}
 
@@ -84,6 +86,7 @@ func TestCarryAzureHold_AmbientSurvivesNamedReprice(t *testing.T) {
 
 // An ambient pricing outage in this cycle plus a carried named hold keeps both.
 func TestCarryAzureHold_ThisCycleAmbientKeptWithCarriedNamed(t *testing.T) {
+	t.Parallel()
 	stored := map[string]bool{ambientAccountKey: true, "a": true}
 	got, _ := carryAzureHold(holdOf("a"), holdOf(), nil, stored, nil, holdNow)
 	require.NotNil(t, got)
@@ -93,6 +96,7 @@ func TestCarryAzureHold_ThisCycleAmbientKeptWithCarriedNamed(t *testing.T) {
 // Carried accounts add to the incomplete count instead of being absorbed into a
 // larger count that came from other failures this cycle.
 func TestCarryAzureHold_IncompleteAccountsCountsEachCarriedAccount(t *testing.T) {
+	t.Parallel()
 	stored := map[string]bool{"a": true, "b": true, "x": true, ambientAccountKey: true}
 	for name, tc := range map[string]struct {
 		prev, partial *RecommendationsCollectionPartial
@@ -156,6 +160,7 @@ func azureOf(t *testing.T, p *RecommendationsCollectionPartial) PartialProviderS
 }
 
 func TestCarryAzureHold_SetsHeldSinceOnFirstHold(t *testing.T) {
+	t.Parallel()
 	got, evict := carryAzureHold(nil, holdOf("a"), nil, setOf("a"), nil, holdNow)
 	sweep := azureOf(t, got)
 	assert.Equal(t, map[string]time.Time{"a": holdNow}, sweep.HeldSince)
@@ -164,6 +169,7 @@ func TestCarryAzureHold_SetsHeldSinceOnFirstHold(t *testing.T) {
 }
 
 func TestCarryAzureHold_KeepsHeldSinceAcrossCycles(t *testing.T) {
+	t.Parallel()
 	start := holdNow.Add(-24 * time.Hour)
 	got, evict := carryAzureHold(holdAt(map[string]time.Time{"a": start}), holdOf("b"), nil, setOf("a", "b"), nil, holdNow)
 	sweep := azureOf(t, got)
@@ -172,6 +178,7 @@ func TestCarryAzureHold_KeepsHeldSinceAcrossCycles(t *testing.T) {
 }
 
 func TestCarryAzureHold_ExpiresAtMaxAge(t *testing.T) {
+	t.Parallel()
 	start := holdNow
 	prev := func() *RecommendationsCollectionPartial {
 		return holdAt(map[string]time.Time{"a": start, "b": start.Add(time.Hour)})
@@ -202,6 +209,7 @@ func TestCarryAzureHold_ExpiresAtMaxAge(t *testing.T) {
 }
 
 func TestCarryAzureHold_RepriceResetsHeldSince(t *testing.T) {
+	t.Parallel()
 	a := "a"
 	prev := holdAt(map[string]time.Time{"a": holdNow, "b": holdNow})
 	got, _ := carryAzureHold(prev, nil, azureCollect(&a), setOf("a", "b"), nil, holdNow.Add(30*time.Hour))
@@ -216,6 +224,7 @@ func TestCarryAzureHold_RepriceResetsHeldSince(t *testing.T) {
 }
 
 func TestCarryAzureHold_LegacyHoldWithoutSinceNotExpired(t *testing.T) {
+	t.Parallel()
 	got, evict := carryAzureHold(holdOf("a"), nil, nil, setOf("a"), nil, holdNow.Add(1000*time.Hour))
 	sweep := azureOf(t, got)
 	assert.Equal(t, []string{"a"}, sweep.HeldAccountIDs)
@@ -224,6 +233,7 @@ func TestCarryAzureHold_LegacyHoldWithoutSinceNotExpired(t *testing.T) {
 }
 
 func TestCarryAzureHold_SkippedAzureCycleKeepsAgeButChecksBound(t *testing.T) {
+	t.Parallel()
 	prev := func() *RecommendationsCollectionPartial { return holdAt(map[string]time.Time{"a": holdNow}) }
 	got, evict := carryAzureHold(prev(), nil, nil, setOf("a"), setOf("a"), holdNow.Add(10*time.Hour))
 	assert.Equal(t, holdNow, azureOf(t, got).HeldSince["a"])
@@ -235,6 +245,7 @@ func TestCarryAzureHold_SkippedAzureCycleKeepsAgeButChecksBound(t *testing.T) {
 }
 
 func TestCarryAzureHold_AmbientExpires(t *testing.T) {
+	t.Parallel()
 	stored := setOf(ambientAccountKey)
 	t.Run("carried from a legacy ambient hold", func(t *testing.T) {
 		got, _ := carryAzureHold(holdOf(), nil, nil, stored, nil, holdNow)
@@ -261,12 +272,14 @@ func TestCarryAzureHold_AmbientExpires(t *testing.T) {
 }
 
 func TestCarryAzureHold_NoStoredRowsNotAged(t *testing.T) {
+	t.Parallel()
 	got, evict := carryAzureHold(holdAt(map[string]time.Time{"a": holdNow}), nil, nil, setOf("c"), nil, holdNow.Add(100*time.Hour))
 	assert.Nil(t, got, "no stored rows ends the hold without expiring it")
 	assert.Empty(t, evict)
 }
 
 func TestCarryAzureHold_EachAccountOnceWhenInCarriedAndThisCycle(t *testing.T) {
+	t.Parallel()
 	stored := setOf("a")
 	prev := func() *RecommendationsCollectionPartial { return holdAt(map[string]time.Time{"a": holdNow}) }
 
@@ -284,6 +297,7 @@ func TestCarryAzureHold_EachAccountOnceWhenInCarriedAndThisCycle(t *testing.T) {
 }
 
 func TestCarryAzureHold_ExpiredAccountNotReagedNorReheld(t *testing.T) {
+	t.Parallel()
 	stored, active := setOf("a", "b"), setOf("a", "b")
 	prev := expiredOnly("a")
 
@@ -305,6 +319,7 @@ func TestCarryAzureHold_ExpiredAccountNotReagedNorReheld(t *testing.T) {
 }
 
 func TestCarryAzureHold_OlderCollectedAtNeverMovesHeldSinceBackwards(t *testing.T) {
+	t.Parallel()
 	newer := holdNow.Add(10 * time.Hour)
 	got, evict := carryAzureHold(holdAt(map[string]time.Time{"a": newer}), holdOf("a"), nil, setOf("a"), nil, holdNow)
 	sweep := azureOf(t, got)
@@ -314,6 +329,7 @@ func TestCarryAzureHold_OlderCollectedAtNeverMovesHeldSinceBackwards(t *testing.
 }
 
 func TestCarryAzureHold_ExpiredIdsCarriedAcrossSkippedAzureCycle(t *testing.T) {
+	t.Parallel()
 	gcp := "a"
 	got, evict := carryAzureHold(expiredOnly("a"), nil, []SuccessfulCollect{{Provider: "gcp", CloudAccountID: &gcp}}, setOf("a"), setOf("a"), holdNow)
 	sweep := azureOf(t, got)
@@ -325,6 +341,7 @@ func TestCarryAzureHold_ExpiredIdsCarriedAcrossSkippedAzureCycle(t *testing.T) {
 // An expired marker outlives account state while a row it protects exists, so
 // the purchase gate keeps refusing a survivor of a failed eviction.
 func TestCarryAzureHold_KeptExpiredWhileRowsRemain(t *testing.T) {
+	t.Parallel()
 	a := "a"
 	cases := []struct {
 		name         string
@@ -358,6 +375,7 @@ func TestCarryAzureHold_KeptExpiredWhileRowsRemain(t *testing.T) {
 }
 
 func TestCarryAzureHold_ExpiredIdsClearedOnReprice(t *testing.T) {
+	t.Parallel()
 	a := "a"
 	got, _ := carryAzureHold(expiredOnly("a", "b"), nil, azureCollect(&a), setOf(), setOf("a", "b"), holdNow)
 	sweep := azureOf(t, got)
@@ -369,6 +387,7 @@ func TestCarryAzureHold_ExpiredIdsClearedOnReprice(t *testing.T) {
 }
 
 func TestCarryAzureHold_ExpiredIdsDroppedForDisabledOrDeletedAccount(t *testing.T) {
+	t.Parallel()
 	got, _ := carryAzureHold(expiredOnly("a", "b", ambientAccountKey), nil, nil, setOf(), setOf("a"), holdNow)
 	assert.Equal(t, []string{ambientAccountKey, "a"}, azureOf(t, got).ExpiredHoldAccountIDs, "ambient is always active")
 
@@ -377,6 +396,7 @@ func TestCarryAzureHold_ExpiredIdsDroppedForDisabledOrDeletedAccount(t *testing.
 }
 
 func TestCarryAzureHold_ExpiredIdsKeepReasonCountInSync(t *testing.T) {
+	t.Parallel()
 	a := "a"
 	prev := withExpired(holdAt(map[string]time.Time{"c": holdNow}), "a", "b")
 	got, _ := carryAzureHold(prev, nil, azureCollect(&a), setOf("c"), setOf("a", "b", "c"), holdNow.Add(PricingHoldMaxAge))
@@ -392,6 +412,7 @@ func TestCarryAzureHold_ExpiredIdsKeepReasonCountInSync(t *testing.T) {
 }
 
 func TestCarryAzureHold_ExpiredHeldAccountKeysIncludedEveryCycle(t *testing.T) {
+	t.Parallel()
 	stored, active := setOf("a", "c"), setOf("a", "c")
 	prev := withExpired(holdAt(map[string]time.Time{"c": holdNow}), "a")
 	now := holdNow.Add(PricingHoldMaxAge)

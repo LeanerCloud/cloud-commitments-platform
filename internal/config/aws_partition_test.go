@@ -7,6 +7,7 @@ import (
 )
 
 func TestCloudAccountAWSPartition(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		account *CloudAccount
@@ -29,6 +30,7 @@ func TestCloudAccountAWSPartition(t *testing.T) {
 }
 
 func TestAWSPartitionNotices(t *testing.T) {
+	t.Parallel()
 	notices := AWSPartitionNotices(AWSPartitionChina)
 	if assert.Len(t, notices, 1) {
 		assert.Equal(t, AccountNoticeUnsupportedPartition, notices[0].Code)

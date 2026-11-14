@@ -21,6 +21,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestRecEffectiveSavingsPct_Config(t *testing.T) {
+	t.Parallel()
 	f64 := func(v float64) *float64 { return &v }
 
 	t.Run("correct pct with on_demand_cost", func(t *testing.T) {
@@ -171,6 +172,7 @@ func TestRecEffectiveSavingsPct_Config(t *testing.T) {
 //
 // This proves the two filters are truly distinct and cannot be conflated.
 func TestRecommendationFilter_UnitDistinction(t *testing.T) {
+	t.Parallel()
 	f64 := func(v float64) *float64 { return &v }
 
 	// A recommendation that saves $100/mo on a $500/mo on-demand baseline
@@ -198,6 +200,7 @@ func TestRecommendationFilter_UnitDistinction(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildRecommendationFilter_MinSavingsUSD(t *testing.T) {
+	t.Parallel()
 	t.Run("MinSavingsUSD zero produces no WHERE clause fragment", func(t *testing.T) {
 		clause, args := buildRecommendationFilter(RecommendationFilter{MinSavingsUSD: 0})
 		assert.Empty(t, clause)
@@ -236,6 +239,7 @@ func TestBuildRecommendationFilter_MinSavingsUSD(t *testing.T) {
 // baseline is legitimately unknown, not hidden), so Count 0 rows are removed at
 // collection (scheduler.convertRecommendations) rather than by this floor.
 func TestDecodeStoredRecommendation_UnknownBaselineIsKept(t *testing.T) {
+	t.Parallel()
 	payload := []byte(`{"provider":"aws","service":"ec2","count":1,"term":1,"savings":10}`)
 	_, keep, err := decodeStoredRecommendation(payload, RecommendationFilter{MinSavingsPct: 50})
 	require.NoError(t, err)

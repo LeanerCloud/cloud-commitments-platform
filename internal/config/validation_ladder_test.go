@@ -46,6 +46,7 @@ func validLadderConfigDB() LadderConfigDB {
 // Struct field order (func, string, bool) is chosen for govet fieldalignment;
 // the keyed literals below keep the human-readable name/mutate/wantErr order.
 func TestLadderConfigDB_Validate_Bounds(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		mutate  func(c *LadderConfigDB)
 		name    string
@@ -116,6 +117,7 @@ func TestLadderConfigDB_Validate_Bounds(t *testing.T) {
 // cap: nil is rejected for AWS (#1815) but valid for other providers, a
 // positive value is valid, and non-positive / NaN / Inf are rejected.
 func TestLadderConfigDB_Validate_MaxHourlyCommitPerRun(t *testing.T) {
+	t.Parallel()
 	f := func(v float64) *float64 { return &v }
 	cases := []struct {
 		val     *float64
@@ -146,6 +148,7 @@ func TestLadderConfigDB_Validate_MaxHourlyCommitPerRun(t *testing.T) {
 // TestLadderConfigDB_Validate_EnumsAndProvider covers the delegated enum checks
 // (mode/cadence via pkg/ladder Parse*) and the provider allow-list.
 func TestLadderConfigDB_Validate_EnumsAndProvider(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		mutate  func(c *LadderConfigDB)
 		name    string
@@ -179,6 +182,7 @@ func TestLadderConfigDB_Validate_EnumsAndProvider(t *testing.T) {
 }
 
 func TestLadderConfigDB_Validate_UncappedAWSNamesField(t *testing.T) {
+	t.Parallel()
 	c := validLadderConfigDB()
 	c.MaxHourlyCommitPerRun = nil
 	err := c.Validate()
@@ -187,6 +191,7 @@ func TestLadderConfigDB_Validate_UncappedAWSNamesField(t *testing.T) {
 }
 
 func TestLadderConfigDB_Validate_UncappedNonAWSValid(t *testing.T) {
+	t.Parallel()
 	c := validLadderConfigDB()
 	c.Provider = "gcp"
 	c.MaxHourlyCommitPerRun = nil

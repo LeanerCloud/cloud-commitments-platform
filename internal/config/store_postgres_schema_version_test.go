@@ -117,6 +117,7 @@ func TestReadoptSchemaReady(t *testing.T) {
 // The constant must name this change's migration file, so a renumbering that
 // forgets it fails here instead of failing closed in production.
 func TestReadoptMigrationVersionNamesTheMigrationFile(t *testing.T) {
+	t.Parallel()
 	name := fmt.Sprintf("%06d_purchase_executions_approval_readopted_at.up.sql", readoptMigrationVersion)
 	_, err := os.Stat(filepath.Join("..", "database", "postgres", "migrations", name))
 	require.NoError(t, err, "readoptMigrationVersion no longer matches the migration file")
@@ -163,6 +164,7 @@ func TestRequireSweepCeilingSchema(t *testing.T) {
 // The constant must name this change's migration file, so a renumbering that
 // forgets it fails here instead of failing closed in production.
 func TestSweepCeilingMigrationVersionNamesTheMigrationFile(t *testing.T) {
+	t.Parallel()
 	name := fmt.Sprintf("%06d_ladder_configs_sweep_ceiling.up.sql", sweepCeilingMigrationVersion)
 	_, err := os.Stat(filepath.Join("..", "database", "postgres", "migrations", name))
 	require.NoError(t, err, "sweepCeilingMigrationVersion no longer matches the migration file")
@@ -197,6 +199,7 @@ func TestAmountBasisMigrationApplied(t *testing.T) {
 // The gate sits on hot read paths: true is latched once per store, false and
 // errors are re-checked on the next read.
 func TestAmountBasisColumn_Latches(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := &PostgresStore{db: mock}
 	ctx := context.Background()
@@ -240,6 +243,7 @@ func TestSavePurchaseHistoryQuery_DoesNotWriteAmountBasis(t *testing.T) {
 // The constant must name this change's migration file, so a renumbering that
 // forgets it fails here instead of failing closed in production.
 func TestAmountBasisMigrationVersionNamesTheMigrationFile(t *testing.T) {
+	t.Parallel()
 	name := fmt.Sprintf("%06d_purchase_history_amount_basis.up.sql", amountBasisMigrationVersion)
 	_, err := os.Stat(filepath.Join("..", "database", "postgres", "migrations", name))
 	require.NoError(t, err, "amountBasisMigrationVersion no longer matches the migration file")

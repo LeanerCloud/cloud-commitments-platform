@@ -7,6 +7,7 @@ import (
 )
 
 func TestRedshiftFailedClause(t *testing.T) {
+	t.Parallel()
 	ready, notReady := redshiftFailedClause(true), redshiftFailedClause(false)
 
 	assert.Contains(t, ready, "outcome_settled_at IS NULL")

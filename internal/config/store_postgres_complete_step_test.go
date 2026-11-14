@@ -140,6 +140,7 @@ func rampPlanRows(t *testing.T, planID string, ramp RampSchedule, now, stale tim
 }
 
 func TestPGXMock_CompletePlanStep_LocksAndAdvances(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -180,6 +181,7 @@ func TestPGXMock_CompletePlanStep_LocksAndAdvances(t *testing.T) {
 // has not bought, so the plan row must not be written at all. pgxmock fails the
 // test if an UPDATE is issued, because no ExpectExec is registered.
 func TestPGXMock_CompletePlanStep_OutstandingAccountBlocksAdvance(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -206,6 +208,7 @@ func TestPGXMock_CompletePlanStep_OutstandingAccountBlocksAdvance(t *testing.T) 
 // outstanding" vacuously, so a guard that only checked outstanding would wave
 // through a step no purchase ever landed for.
 func TestPGXMock_CompletePlanStep_StepNothingBoughtIsRefused(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -238,6 +241,7 @@ func TestPGXMock_CompletePlanStep_StepNothingBoughtIsRefused(t *testing.T) {
 // the execution row, and stamping this routine case would flip a cleanly
 // completed purchase into History's audit-gap rendering.
 func TestPGXMock_CompletePlanStep_SiblingCountedStepWritesNothing(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -267,6 +271,7 @@ func TestPGXMock_CompletePlanStep_SiblingCountedStepWritesNothing(t *testing.T) 
 // mis-stamped-row case issue #1861 asks to be recorded, so it must reach the
 // caller under its own sentinel.
 func TestPGXMock_CompletePlanStep_PassedStepIsReportedAsAnomalous(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -292,6 +297,7 @@ func TestPGXMock_CompletePlanStep_PassedStepIsReportedAsAnomalous(t *testing.T) 
 // overstate how much commitment the plan has bought, so it errors rather than
 // jumping. No UPDATE is expected.
 func TestPGXMock_CompletePlanStep_SkippedPredecessorIsRefused(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -316,6 +322,7 @@ func TestPGXMock_CompletePlanStep_SkippedPredecessorIsRefused(t *testing.T) {
 // validated before any transaction opens: a plan-attributed execution that
 // carries no ramp step must not advance the ramp by guesswork.
 func TestPGXMock_CompletePlanStep_NonPositiveStepIsRefused(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -328,6 +335,7 @@ func TestPGXMock_CompletePlanStep_NonPositiveStepIsRefused(t *testing.T) {
 }
 
 func TestPGXMock_CompletePlanStep_PlanDeletedMidRace(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -345,6 +353,7 @@ func TestPGXMock_CompletePlanStep_PlanDeletedMidRace(t *testing.T) {
 }
 
 func TestPGXMock_CompletePlanStep_CompletedRampClearsNextDate(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -375,6 +384,7 @@ func TestPGXMock_CompletePlanStep_CompletedRampClearsNextDate(t *testing.T) {
 }
 
 func TestPGXMock_CompletePlanStep_LockErrorRollsBack(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()

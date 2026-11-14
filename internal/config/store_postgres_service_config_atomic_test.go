@@ -35,6 +35,7 @@ func expectServiceConfigLockedRead(mock pgxmock.PgxPoolIface, rows *pgxmock.Rows
 // per-service advisory lock and with the row read FOR UPDATE. pgxmock enforces
 // expectation order, so a pass means no statement escaped the transaction.
 func TestPGXMock_UpdateServiceConfigAtomic_LockedReadMergeWrite(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -72,6 +73,7 @@ func TestPGXMock_UpdateServiceConfigAtomic_LockedReadMergeWrite(t *testing.T) {
 // TestPGXMock_UpdateServiceConfigAtomic_NoRowPassesNil: with no stored row,
 // apply gets nil (not an error) and its row is inserted under the same lock.
 func TestPGXMock_UpdateServiceConfigAtomic_NoRowPassesNil(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -100,6 +102,7 @@ func TestPGXMock_UpdateServiceConfigAtomic_NoRowPassesNil(t *testing.T) {
 // validation failure) or a row keyed on another service rolls back with no
 // upsert. The apply error propagates unchanged.
 func TestPGXMock_UpdateServiceConfigAtomic_AbortsWithoutWrite(t *testing.T) {
+	t.Parallel()
 	sentinel := errors.New("validation failed")
 	cases := map[string]struct {
 		next    *ServiceConfig
@@ -133,6 +136,7 @@ func TestPGXMock_UpdateServiceConfigAtomic_AbortsWithoutWrite(t *testing.T) {
 // TestPGXMock_UpdateServiceConfigAtomic_ReadErrorAborts: a failed read is not
 // mistaken for a missing row; apply never runs and nothing is written.
 func TestPGXMock_UpdateServiceConfigAtomic_ReadErrorAborts(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	mock.ExpectBegin()

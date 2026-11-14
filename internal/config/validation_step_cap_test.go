@@ -10,6 +10,7 @@ import (
 // max_step_commitment is stored in NUMERIC(18,2) CHECK > 0: below a cent it
 // rounds to 0 and overflowing values fail the insert, either of which was a 500.
 func TestValidateNotificationAndCap_StepCapBounds(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		v    float64
 		want bool

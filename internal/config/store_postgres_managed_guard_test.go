@@ -3,6 +3,7 @@ package config
 import "testing"
 
 func TestSameAccountSet(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		a, b []string

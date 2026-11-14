@@ -42,6 +42,7 @@ var (
 // separate pieces (for example "DELETE FROM " + table) gets past it. Review
 // any new delete on this table by hand.
 func TestNoUnscopedRecommendationsDelete(t *testing.T) {
+	t.Parallel()
 	_, self, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("cannot locate this test file")
@@ -83,6 +84,7 @@ func TestNoUnscopedRecommendationsDelete(t *testing.T) {
 // TestUnscopedRecommendationsDeletesMatcher pins what the scan above flags,
 // so a broken matcher cannot turn the guard into a silent pass.
 func TestUnscopedRecommendationsDeletesMatcher(t *testing.T) {
+	t.Parallel()
 	src := "package p\n" +
 		"const unscoped = `DELETE FROM recommendations`\n" +
 		"const unscopedLower = \"delete from  recommendations;\"\n" +

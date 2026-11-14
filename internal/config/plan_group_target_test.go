@@ -22,6 +22,7 @@ func boundTwoGroupPlan() *PurchasePlan {
 }
 
 func TestMergePlanGroupTargetEditsOnlyThatGroup(t *testing.T) {
+	t.Parallel()
 	plan := boundTwoGroupPlan()
 	got, err := MergePlanGroupTarget(plan, PlanGroupTarget{GroupID: "b", MaxStepCommitment: fp(150)})
 	require.NoError(t, err)
@@ -32,6 +33,7 @@ func TestMergePlanGroupTargetEditsOnlyThatGroup(t *testing.T) {
 }
 
 func TestMergePlanGroupTargetCapsOnlyStayOrDrop(t *testing.T) {
+	t.Parallel()
 	plan := boundTwoGroupPlan()
 	_, err := MergePlanGroupTarget(plan, PlanGroupTarget{GroupID: "a", MaxStepCommitment: fp(100)})
 	require.NoError(t, err, "equal is allowed")
@@ -51,6 +53,7 @@ func TestMergePlanGroupTargetCapsOnlyStayOrDrop(t *testing.T) {
 }
 
 func TestMergePlanGroupTargetEffectiveCapCannotRise(t *testing.T) {
+	t.Parallel()
 	plan := boundTwoGroupPlan()
 	plan.Services["aws/ec2#a"] = func() ServiceConfig { s := plan.Services["aws/ec2#a"]; s.MaxStepCommitment = nil; return s }()
 	plan.MaxStepCommitment = fp(50)
@@ -63,6 +66,7 @@ func TestMergePlanGroupTargetEffectiveCapCannotRise(t *testing.T) {
 }
 
 func TestMergePlanGroupTargetRefusals(t *testing.T) {
+	t.Parallel()
 	_, err := MergePlanGroupTarget(boundTwoGroupPlan(), PlanGroupTarget{GroupID: "nope"})
 	require.ErrorIs(t, err, ErrGroupTargetRefused)
 	_, err = MergePlanGroupTarget(boundTwoGroupPlan(), PlanGroupTarget{})
@@ -78,12 +82,14 @@ func TestMergePlanGroupTargetRefusals(t *testing.T) {
 func nanValue() float64 { var z float64; return z / z }
 
 func TestMergePlanGroupTargetWritesPlanCap(t *testing.T) {
+	t.Parallel()
 	got, err := MergePlanGroupTarget(boundTwoGroupPlan(), PlanGroupTarget{GroupID: "a", PlanMaxStepCommitment: fp(400)})
 	require.NoError(t, err)
 	require.Equal(t, 400.0, *got.MaxStepCommitment)
 }
 
 func TestMergePlanGroupTargetRefusesDuplicateGroupID(t *testing.T) {
+	t.Parallel()
 	plan := boundTwoGroupPlan()
 	plan.Services["aws:ec2#a"] = ServiceConfig{Provider: "aws", Service: "ec2", GroupID: "a", Enabled: true, MaxStepCommitment: fp(100)}
 	_, err := MergePlanGroupTarget(plan, PlanGroupTarget{GroupID: "a", MaxStepCommitment: fp(50)})
@@ -91,6 +97,7 @@ func TestMergePlanGroupTargetRefusesDuplicateGroupID(t *testing.T) {
 }
 
 func TestMergePlanGroupTargetRefusesPlanCapOnUncappedAutoPlan(t *testing.T) {
+	t.Parallel()
 	plan := boundTwoGroupPlan()
 	plan.AutoPurchase = true
 	plan.MaxStepCommitment = nil

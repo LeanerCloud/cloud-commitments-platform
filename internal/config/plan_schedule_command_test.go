@@ -10,6 +10,7 @@ import (
 )
 
 func TestRetryPlanScheduleTx(t *testing.T) {
+	t.Parallel()
 	transient := &pgconn.PgError{Code: pgSerializationFailure}
 
 	calls := 0
@@ -36,6 +37,7 @@ func TestRetryPlanScheduleTx(t *testing.T) {
 }
 
 func TestPlanScheduleCommandValidate(t *testing.T) {
+	t.Parallel()
 	good := PlanScheduleCommand{
 		CommandID: "7b0f8f0e-5e6a-4d0e-8a38-0f2d3a1b9c11", PlanID: "p", Actor: "a",
 		RequestHash: "h", ExpectedUpdatedAt: time.Now(),

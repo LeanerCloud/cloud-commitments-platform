@@ -12,6 +12,7 @@ import (
 // 000111, internal/database/postgres/migrations) so the Go reader and the
 // generated columns cannot diverge. Details here is the details blob itself.
 func TestComputeIdentity_Vectors(t *testing.T) {
+	t.Parallel()
 	vectors := []struct {
 		name, details, platform, tenancy string
 	}{
@@ -35,6 +36,7 @@ func TestComputeIdentity_Vectors(t *testing.T) {
 }
 
 func TestComputeIdentity_TopLevelKeyIgnoredAndMalformedFailsLoud(t *testing.T) {
+	t.Parallel()
 	// Only Details carries the fields (matches the "top-level-ignored" PG vector).
 	rec := RecommendationRecord{Details: json.RawMessage(`{"instance_type":"m5.large"}`)}
 	got, err := rec.ComputeIdentity()
@@ -51,6 +53,7 @@ func TestComputeIdentity_TopLevelKeyIgnoredAndMalformedFailsLoud(t *testing.T) {
 // az_config column cannot diverge (issue #408). Details here is the details
 // blob itself.
 func TestDetailsAZConfig_Vectors(t *testing.T) {
+	t.Parallel()
 	vectors := []struct {
 		name, details, azConfig string
 	}{
@@ -76,6 +79,7 @@ func TestDetailsAZConfig_Vectors(t *testing.T) {
 }
 
 func TestDetailsAZConfig_MalformedFailsLoud(t *testing.T) {
+	t.Parallel()
 	bad := RecommendationRecord{Provider: "aws", Service: "rds", Details: json.RawMessage(`{"az_config":5}`)}
 	_, err := bad.DetailsAZConfig()
 	require.Error(t, err)
@@ -86,6 +90,7 @@ func TestDetailsAZConfig_MalformedFailsLoud(t *testing.T) {
 // Two otherwise identical RDS rows that differ only by az_config have
 // different identity keys; the same az_config yields the same key.
 func TestRecIdentityKey_DiffersByAZConfig(t *testing.T) {
+	t.Parallel()
 	rds := func(azConfig string) *RecommendationRecord {
 		return &RecommendationRecord{
 			Provider: "aws", Service: "rds", Region: "us-east-1", ResourceType: "db.r5.large", Engine: "mysql",
@@ -106,6 +111,7 @@ func TestRecIdentityKey_DiffersByAZConfig(t *testing.T) {
 // server lookup is incomplete; it must not enter the identity key, or the key
 // would flip between collections (issue #408).
 func TestRecIdentityKey_IgnoresAZConfigOutsideAWSRDS(t *testing.T) {
+	t.Parallel()
 	rec := func(provider, service, azConfig string) *RecommendationRecord {
 		return &RecommendationRecord{
 			Provider: provider, Service: service, Region: "eastus", ResourceType: "GP_Gen5_2", Engine: "sqlserver",

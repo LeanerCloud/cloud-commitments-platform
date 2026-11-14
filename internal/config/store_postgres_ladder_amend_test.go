@@ -10,6 +10,7 @@ import (
 )
 
 func TestAmendLadderTranche_InvalidAmendmentMatchesErrLadderAmendInvalid(t *testing.T) {
+	t.Parallel()
 	zero := int64(0)
 	store := &PostgresStore{} // validation fails before the database is used
 	_, err := store.AmendLadderTranche(context.Background(), "id", "account", "aws", "actor",

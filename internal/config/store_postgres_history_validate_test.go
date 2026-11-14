@@ -12,6 +12,7 @@ import (
 // so SavePurchaseHistory must refuse it before touching the database. The
 // store has no connection here: reaching the insert would panic.
 func TestSavePurchaseHistory_RejectsEmptyPurchaseID(t *testing.T) {
+	t.Parallel()
 	store := &PostgresStore{}
 	for _, id := range []string{"", "   "} {
 		err := store.SavePurchaseHistory(context.Background(), &PurchaseHistoryRecord{AccountID: "123456789012", PurchaseID: id, Provider: "aws"})

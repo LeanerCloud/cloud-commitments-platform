@@ -37,6 +37,7 @@ func validDirectExecution() *RIExchangeDirectExecution {
 }
 
 func TestPGXMock_SaveRIExchangeDirectExecution_InsertsSubmittedRow(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	rec := validDirectExecution()
@@ -59,6 +60,7 @@ func TestPGXMock_SaveRIExchangeDirectExecution_InsertsSubmittedRow(t *testing.T)
 
 // An AWS save takes the shared lock, runs both source-RI guards, then inserts.
 func TestPGXMock_SaveRIExchangeDirectExecution_AWSLocksAndGuardsBeforeInsert(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	rec := validDirectExecution()
@@ -85,6 +87,7 @@ func TestPGXMock_SaveRIExchangeDirectExecution_AWSLocksAndGuardsBeforeInsert(t *
 // table would refuse fails before the round trip, naming the problem, so the
 // handler refuses the exchange with a useful error.
 func TestPGXMock_SaveRIExchangeDirectExecution_RejectsInvalidRecord(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(*RIExchangeDirectExecution){
 		"non-UUID id":        func(r *RIExchangeDirectExecution) { r.ID = "exec-1" },
 		"unknown provider":   func(r *RIExchangeDirectExecution) { r.Provider = "gcp" },
@@ -110,6 +113,7 @@ func TestPGXMock_SaveRIExchangeDirectExecution_RejectsInvalidRecord(t *testing.T
 }
 
 func TestPGXMock_SaveRIExchangeDirectExecution_DBErrorSurfaces(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	mock.ExpectBegin()
@@ -128,6 +132,7 @@ func TestPGXMock_SaveRIExchangeDirectExecution_DBErrorSurfaces(t *testing.T) {
 // outcome write is guarded by status = 'submitted' and that a zero-row result
 // is reported as ErrRIExchangeDirectExecutionNotSubmitted, never as success.
 func TestPGXMock_FinalizeRIExchangeDirectExecution_CompareAndSet(t *testing.T) {
+	t.Parallel()
 	outcome := RIExchangeDirectOutcome{
 		Status: RIExchangeDirectStatusCompleted, ProviderReference: "riex-1",
 		NetPayable: strPtr("40.25"), NetPayableCurrency: "USD",

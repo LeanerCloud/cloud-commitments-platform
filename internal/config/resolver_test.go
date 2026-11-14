@@ -12,6 +12,7 @@ func strPtr(s string) *string       { return &s }
 func float64Ptr(f float64) *float64 { return &f }
 
 func TestResolveServiceConfig_NilOverride(t *testing.T) {
+	t.Parallel()
 	global := &ServiceConfig{
 		Provider: "aws", Service: "ec2",
 		Enabled: true, Term: 3, Payment: "all_upfront", Coverage: 80.0,
@@ -21,6 +22,7 @@ func TestResolveServiceConfig_NilOverride(t *testing.T) {
 }
 
 func TestResolveServiceConfig_AllFieldsOverridden(t *testing.T) {
+	t.Parallel()
 	global := &ServiceConfig{
 		Provider: "aws", Service: "ec2",
 		Enabled: true, Term: 3, Payment: "all_upfront", Coverage: 80.0,
@@ -66,6 +68,7 @@ func TestResolveServiceConfig_AllFieldsOverridden(t *testing.T) {
 }
 
 func TestResolveServiceConfig_SparseOverride(t *testing.T) {
+	t.Parallel()
 	global := &ServiceConfig{
 		Enabled: true, Term: 3, Payment: "all_upfront", Coverage: 80.0,
 		IncludeRegions: []string{"us-east-1"},
@@ -84,6 +87,7 @@ func TestResolveServiceConfig_SparseOverride(t *testing.T) {
 }
 
 func TestResolveServiceConfig_EmptySliceDoesNotOverride(t *testing.T) {
+	t.Parallel()
 	global := &ServiceConfig{IncludeRegions: []string{"us-east-1"}}
 	override := &AccountServiceOverride{
 		IncludeRegions: []string{}, // empty — should NOT override
@@ -94,6 +98,7 @@ func TestResolveServiceConfig_EmptySliceDoesNotOverride(t *testing.T) {
 }
 
 func TestResolveServiceConfig_DoesNotMutateGlobal(t *testing.T) {
+	t.Parallel()
 	global := &ServiceConfig{Term: 3}
 	override := &AccountServiceOverride{Term: intPtr(1)}
 
@@ -105,6 +110,7 @@ func TestResolveServiceConfig_DoesNotMutateGlobal(t *testing.T) {
 // TestResolveServiceConfig_NilGlobalWithOverride verifies that a per-account override
 // takes effect even when no global ServiceConfig row exists.
 func TestResolveServiceConfig_NilGlobalWithOverride(t *testing.T) {
+	t.Parallel()
 	override := &AccountServiceOverride{
 		Enabled:  boolPtr(false),
 		Coverage: float64Ptr(60.0),
@@ -122,6 +128,7 @@ func TestResolveServiceConfig_NilGlobalWithOverride(t *testing.T) {
 // TestResolveServiceConfig_BothNil verifies that nil is returned when both
 // global and override are nil.
 func TestResolveServiceConfig_BothNil(t *testing.T) {
+	t.Parallel()
 	result := ResolveServiceConfig("aws", "rds", nil, nil)
 	assert.Nil(t, result)
 }

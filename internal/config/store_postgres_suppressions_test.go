@@ -12,6 +12,7 @@ import (
 )
 
 func TestPGXMock_CreateSuppression_RoundTrip(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -38,6 +39,7 @@ func TestPGXMock_CreateSuppression_RoundTrip(t *testing.T) {
 // variant writes all three variant columns, empty strings included (a
 // regional, known-empty AZ is not NULL).
 func TestPGXMock_CreateSuppression_WritesVariant(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -62,6 +64,7 @@ func TestPGXMock_CreateSuppression_WritesVariant(t *testing.T) {
 }
 
 func TestPGXMock_CreateSuppression_Validation(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -98,6 +101,7 @@ func TestPGXMock_CreateSuppression_Validation(t *testing.T) {
 }
 
 func TestPGXMock_DeleteSuppressionsByExecution(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -113,6 +117,7 @@ func TestPGXMock_DeleteSuppressionsByExecution(t *testing.T) {
 }
 
 func TestPGXMock_ListActiveSuppressions(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -147,6 +152,7 @@ func TestPGXMock_ListActiveSuppressions(t *testing.T) {
 }
 
 func TestPGXMock_WithTx_Commits(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -164,6 +170,7 @@ func TestPGXMock_WithTx_Commits(t *testing.T) {
 }
 
 func TestPGXMock_WithTx_RollsBackOnError(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -182,6 +189,7 @@ func TestPGXMock_WithTx_RollsBackOnError(t *testing.T) {
 // Issue #408: an RDS suppression writes its az_config, and a NULL az_config
 // reads back as "" (a wildcard); a row with a value reads back with it.
 func TestPGXMock_Suppression_AZConfigRoundTrip(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -232,6 +240,7 @@ func (p poolQueryForbidden) QueryRow(ctx context.Context, sql string, args ...an
 }
 
 func TestPGXMock_CreateSuppressionTx_SchemaCheckRunsOnTx(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := &PostgresStore{db: poolQueryForbidden{PgxPoolIface: mock, t: t}}
 	mock.ExpectBegin()

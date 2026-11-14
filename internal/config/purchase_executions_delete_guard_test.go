@@ -35,6 +35,7 @@ var deleteFromPurchaseExecutions = regexp.MustCompile(`(?i)\b(?:DELETE\s+FROM|TR
 // sees one string literal at a time, so SQL assembled from separate pieces
 // ("DELETE FROM " + table) gets past it.
 func TestPurchaseExecutionsDeletedOnlyByConfigStore(t *testing.T) {
+	t.Parallel()
 	_, self, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("cannot locate this test file")
@@ -77,6 +78,7 @@ func TestPurchaseExecutionsDeletedOnlyByConfigStore(t *testing.T) {
 // TestPurchaseExecutionsDeletesMatcher pins what the scan above flags, so a
 // broken matcher cannot turn the guard into a silent pass.
 func TestPurchaseExecutionsDeletesMatcher(t *testing.T) {
+	t.Parallel()
 	src := "package p\n" +
 		"const cleanupLambda = \"DELETE FROM purchase_executions WHERE \"\n" +
 		"const lower = `delete from  purchase_executions where expires_at < $1`\n" +

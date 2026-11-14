@@ -15,6 +15,7 @@ import (
 )
 
 func TestPGXMock_ListAccountRegistrations_ClampsToMaxListLimit(t *testing.T) {
+	t.Parallel()
 	status, provider := "pending", "aws"
 	cases := []struct {
 		name    string
@@ -44,6 +45,7 @@ func TestPGXMock_ListAccountRegistrations_ClampsToMaxListLimit(t *testing.T) {
 }
 
 func TestPGXMock_GetLadderConfigs_ClampsToMaxListLimit(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	cols := []string{
@@ -82,6 +84,7 @@ func suppressionRows(n int) *pgxmock.Rows {
 // ListActiveSuppressions stays unbounded: a large tenant can hold more than
 // MaxListLimit active rows, and every row must reach the suppression index.
 func TestPGXMock_ListActiveSuppressions_ReturnsEveryRowAboveMaxListLimit(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	expectAZConfigReady(mock)
