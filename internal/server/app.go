@@ -42,14 +42,17 @@ import (
 type Application struct {
 	// scheduledTasks tracks detached HTTP-triggered scheduled tasks so server
 	// shutdown can cancel and wait for them (#784).
-	scheduledTasks      scheduledTaskTracker
+	scheduledTasks scheduledTaskTracker
+	// migrationFinishedAt is when the most recent migration attempt ended; see
+	// migrationErr. Guarded by migrationMu.
 	migrationFinishedAt time.Time
 	secretResolver      secrets.Resolver
 	Purchase            PurchaseManagerInterface
 	Email               email.SenderInterface // Multi-cloud email sender (AWS SES, GCP SendGrid, Azure ACS)
-	lifeCtx             context.Context
-	RateLimiter         api.RateLimiterInterface // Distributed rate limiter (DB-backed for multi-instance)
-	Analytics           AnalyticsStoreInterface  // Analytics store for savings data
+	// lifeCtx outlives any request; Close cancels it via lifeCancel. Guarded by lifeMu.
+	lifeCtx     context.Context
+	RateLimiter api.RateLimiterInterface // Distributed rate limiter (DB-backed for multi-instance)
+	Analytics   AnalyticsStoreInterface  // Analytics store for savings data
 	// AnalyticsCollector aggregates savings into snapshots on a schedule.
 	// Nil until reinitializeAfterConnect wires it; the collect task no-ops
 	// when nil so test builds without a DB stay quiet.
@@ -80,17 +83,21 @@ type Application struct {
 	// STS-backed resolver (defaultLadderAccountResolver); tests inject a stub.
 	LadderAccountResolver func(ctx context.Context) (accountID, region string, err error)
 	archera               *archera.Provider
-	// Lazy initialization fields for PostgreSQL (Lambda ENI readiness)
+	// dbConfig is lazy-initialization state for PostgreSQL (Lambda ENI
+	// readiness), like dbConnected and dbErr. Guarded by dbMu.
 	dbConfig *database.Config
 	// LadderCapabilityFactory constructs a LadderCapability for the given region
 	// and accountID. It is called once per ladder_run task invocation.
 	// Defaults to awsladder.NewFromAWSConfig in production; tests replace it
 	// with a fake factory that returns a hermetic LadderCapability.
 	LadderCapabilityFactory func(ctx context.Context, region, accountID string) (pkgladder.LadderCapability, error)
-	rlCleanupStop           context.CancelFunc
-	runMigrationsFunc       func(ctx context.Context, pool *pgxpool.Pool, migrationsPath, adminEmail, adminPassword string) error
-	API                     *api.Handler
-	Auth                    *auth.Service
+	// rlCleanupStop stops the previous rate-limit cleanup worker when a retried
+	// reinitializeAfterConnect starts a new one, so at most one worker runs.
+	// Guarded by lifeMu.
+	rlCleanupStop     context.CancelFunc
+	runMigrationsFunc func(ctx context.Context, pool *pgxpool.Pool, migrationsPath, adminEmail, adminPassword string) error
+	API               *api.Handler
+	Auth              *auth.Service
 	// encKeySource is the env var name that resolved the credential encryption
 	// key (e.g. "CREDENTIAL_ENCRYPTION_KEY_SECRET_NAME"). Set during
 	// reinitializeAfterConnect. /health reports only a generic degraded state
@@ -105,13 +112,10 @@ type Application struct {
 	// Only tests set it.
 	initRetryDelay    time.Duration
 	migrationsTimeout time.Duration
-	dbMu              sync.Mutex
-	// lifeCtx outlives any request; Close cancels it. rlCleanupStop stops the
-	// previous cleanup worker when a retried reinitializeAfterConnect starts
-	// a new one, so at most one worker runs.
-	lifeMu      sync.Mutex
-	migrationMu sync.Mutex
-	dbConnected bool
+	dbMu              sync.Mutex // guards dbConfig, dbConnected and dbErr
+	lifeMu            sync.Mutex // guards lifeCtx, lifeCancel and rlCleanupStop
+	migrationMu       sync.Mutex // guards migrationErr and migrationFinishedAt
+	dbConnected       bool
 }
 
 // ApplicationConfig holds all env-based configuration for the application.
@@ -203,7 +207,7 @@ func (app *Application) recordMigrationResult(err error) {
 
 // snapshotMigrationState returns a point-in-time copy of the migration
 // state suitable for /health rendering.
-func (app *Application) snapshotMigrationState() (err error, finishedAt time.Time) { //nolint:revive,staticcheck // error-return/ST1008: named return order matches struct field order for clarity
+func (app *Application) snapshotMigrationState() (err error, finishedAt time.Time) { //nolint:revive,staticcheck // error-return/ST1008: named return order is the migrationErr then migrationFinishedAt reading order
 	app.migrationMu.Lock()
 	defer app.migrationMu.Unlock()
 	return app.migrationErr, app.migrationFinishedAt

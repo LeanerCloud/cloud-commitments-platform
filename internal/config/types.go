@@ -1477,11 +1477,13 @@ type ConfigSetting struct { //nolint:revive // exported: doc comment style inten
 
 // CloudAccount represents a single managed cloud account/subscription/project.
 type CloudAccount struct {
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	AzureTenantID string    `json:"azure_tenant_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 	// Azure-specific
+	AzureTenantID       string `json:"azure_tenant_id,omitempty"`
 	AzureSubscriptionID string `json:"azure_subscription_id,omitempty"`
+	AzureClientID       string `json:"azure_client_id,omitempty"`
+	AzureAuthMode       string `json:"azure_auth_mode,omitempty"`
 	CreatedBy           string `json:"created_by,omitempty"`
 	Provider            string `json:"provider"`
 	ExternalID          string `json:"external_id"`
@@ -1492,7 +1494,6 @@ type CloudAccount struct {
 	AWSBastionID            string `json:"aws_bastion_id,omitempty"`
 	AWSWebIdentityTokenFile string `json:"aws_web_identity_token_file,omitempty"`
 	Name                    string `json:"name"`
-	AzureClientID           string `json:"azure_client_id,omitempty"`
 	ContactEmail            string `json:"contact_email,omitempty"`
 	ID                      string `json:"id"`
 	// GCPWIFAudience is the full Workload Identity Pool provider
@@ -1505,17 +1506,15 @@ type CloudAccount struct {
 	GCPProjectID       string `json:"gcp_project_id,omitempty"`
 	GCPClientEmail     string `json:"gcp_client_email,omitempty"`
 	GCPAuthMode        string `json:"gcp_auth_mode,omitempty"`
-	AzureAuthMode      string `json:"azure_auth_mode,omitempty"`
 	Description        string `json:"description,omitempty"`
-	BastionAccountName string `json:"bastion_account_name,omitempty"`
+	BastionAccountName string `json:"bastion_account_name,omitempty"` // derived, not stored in DB
 	// Notices are warnings the API derives for the response, such as the
-	// aws-cn Savings Plans limitation (issue #1194).
-	Notices []AccountNotice `json:"notices,omitempty"`
-	IsSelf  bool            `json:"is_self,omitempty"`
-	// Derived (not stored in DB)
-	CredentialsConfigured bool `json:"credentials_configured"`
-	AWSIsOrgRoot          bool `json:"aws_is_org_root,omitempty"`
-	Enabled               bool `json:"enabled"`
+	// aws-cn Savings Plans limitation (issue #1194). Derived, not stored in DB.
+	Notices               []AccountNotice `json:"notices,omitempty"`
+	IsSelf                bool            `json:"is_self,omitempty"`         // derived, not stored in DB
+	AWSIsOrgRoot          bool            `json:"aws_is_org_root,omitempty"` // AWS-specific
+	CredentialsConfigured bool            `json:"credentials_configured"`    // derived, not stored in DB
+	Enabled               bool            `json:"enabled"`
 }
 
 // CloudAccountFilter for ListCloudAccounts queries.
