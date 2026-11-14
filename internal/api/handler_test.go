@@ -889,7 +889,7 @@ func TestHandler_HandleRequest_ApprovePurchase(t *testing.T) {
 	t.Cleanup(func() { mockPurchase.AssertExpectations(t) })
 	mockPurchase.On("ApproveExecution", mock.Anything, execID, "token123", approver).Return(nil, "", nil)
 
-	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
+	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth, rateLimiter: NewInMemoryRateLimiter()}
 
 	req := &events.LambdaFunctionURLRequest{
 		QueryStringParameters: map[string]string{"token": "token123"},
@@ -981,7 +981,7 @@ func TestHandler_HandleRequest_CancelPurchase(t *testing.T) {
 	t.Cleanup(func() { mockPurchase.AssertExpectations(t) })
 	mockPurchase.On("CancelExecution", mock.Anything, execID, "token456", approver).Return(nil)
 
-	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth}
+	handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth, rateLimiter: NewInMemoryRateLimiter()}
 
 	req := &events.LambdaFunctionURLRequest{
 		QueryStringParameters: map[string]string{"token": "token456"},

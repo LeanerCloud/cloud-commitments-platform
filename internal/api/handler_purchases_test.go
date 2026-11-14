@@ -430,7 +430,7 @@ func TestHandleRequest_approvePurchase_SessionFailureStatuses(t *testing.T) {
 			t.Cleanup(func() { mockPurchase.AssertExpectations(t) })
 			mockPurchase.On("ApproveAndExecute", mock.Anything, execID, adminEmail, (*string)(nil)).Return(tc.final, "", tc.err)
 
-			handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth, corsAllowedOrigin: "*"}
+			handler := &Handler{purchase: mockPurchase, config: mockConfig, auth: mockAuth, corsAllowedOrigin: "*", rateLimiter: NewInMemoryRateLimiter()}
 			resp, err := handler.HandleRequest(ctx, &events.LambdaFunctionURLRequest{
 				Headers: map[string]string{"authorization": "Bearer sess-tok"},
 				RequestContext: events.LambdaFunctionURLRequestContext{

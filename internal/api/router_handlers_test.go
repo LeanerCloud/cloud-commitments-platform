@@ -202,7 +202,7 @@ func TestRouter_approveRIExchangeHandler_InvalidToken(t *testing.T) {
 	}
 	mockStore.On("GetRIExchangeRecord", ctx, "11111111-1111-1111-1111-111111111111").Return(record, nil)
 
-	h := &Handler{auth: mockAuth, config: mockStore}
+	h := &Handler{auth: mockAuth, config: mockStore, rateLimiter: NewInMemoryRateLimiter()}
 	r := newTestRouter(h)
 
 	req := &events.LambdaFunctionURLRequest{
@@ -224,7 +224,7 @@ func TestRouter_rejectRIExchangeHandler_InvalidToken(t *testing.T) {
 	}
 	mockStore.On("GetRIExchangeRecord", ctx, "11111111-1111-1111-1111-111111111111").Return(record, nil)
 
-	h := &Handler{auth: mockAuth, config: mockStore}
+	h := &Handler{auth: mockAuth, config: mockStore, rateLimiter: NewInMemoryRateLimiter()}
 	r := newTestRouter(h)
 
 	req := &events.LambdaFunctionURLRequest{

@@ -54,7 +54,7 @@ func resolveApprovalToken(req *events.LambdaFunctionURLRequest) string {
 }
 
 func (r *Router) approvePurchaseHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	if err := r.h.checkRateLimit(ctx, req, "approve_cancel_public"); err != nil {
+	if err := r.h.checkRateLimitStrict(ctx, req, "approve_cancel_public"); err != nil {
 		return nil, err
 	}
 	token := resolveApprovalToken(req)
@@ -62,14 +62,14 @@ func (r *Router) approvePurchaseHandler(ctx context.Context, req *events.LambdaF
 }
 
 func (r *Router) approvalDetailsHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	if err := r.h.checkRateLimit(ctx, req, "approve_cancel_public"); err != nil {
+	if err := r.h.checkRateLimitStrict(ctx, req, "approve_cancel_public"); err != nil {
 		return nil, err
 	}
 	return r.h.getApprovalDetails(ctx, req, params["id"], resolveApprovalToken(req))
 }
 
 func (r *Router) cancelPurchaseHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	if err := r.h.checkRateLimit(ctx, req, "approve_cancel_public"); err != nil {
+	if err := r.h.checkRateLimitStrict(ctx, req, "approve_cancel_public"); err != nil {
 		return nil, err
 	}
 	token := resolveApprovalToken(req)
@@ -88,7 +88,7 @@ func (r *Router) retryPurchaseHandler(ctx context.Context, req *events.LambdaFun
 // (issue #291 email one-click link). GET renders a confirmation form;
 // POST executes the token-based revocation.
 func (r *Router) revokeViaEmailTokenHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
-	if err := r.h.checkRateLimit(ctx, req, "approve_cancel_public"); err != nil {
+	if err := r.h.checkRateLimitStrict(ctx, req, "approve_cancel_public"); err != nil {
 		return nil, err
 	}
 	token := resolveApprovalToken(req)
