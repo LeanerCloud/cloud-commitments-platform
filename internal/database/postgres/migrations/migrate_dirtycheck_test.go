@@ -24,7 +24,7 @@ func markDirty(ctx context.Context, t *testing.T, container *testhelpers.Postgre
 	require.NoError(t, err, "failed to mark schema_migrations dirty")
 }
 
-// TestMigrations_AutoHealDirty covers the DEFAULT-ON CUDLY_MIGRATION_AUTOHEAL
+// TestMigrations_RefuseDirty covers the DEFAULT-ON CUDLY_MIGRATION_DIRTY_CHECK
 // behavior from migrate.go:
 //
 //   - BY DEFAULT (flag unset), a dirty DB fails loud with a descriptive error
@@ -32,7 +32,7 @@ func markDirty(ctx context.Context, t *testing.T, container *testhelpers.Postgre
 //     dirty flag is left intact. The app still starts (fail-open via ensureDB),
 //     and the CloudWatch alarm fires. Operators inspect the actual schema to
 //     choose the correct force target.
-//   - With CUDLY_MIGRATION_AUTOHEAL=false, auto-heal is bypassed and a dirty DB
+//   - With CUDLY_MIGRATION_DIRTY_CHECK=false, dirty check is bypassed and a dirty DB
 //     surfaces golang-migrate's generic ErrDirty from Up() ("Dirty database
 //     version N. Fix and force version.") without recovery guidance.
 //
@@ -46,8 +46,8 @@ func markDirty(ctx context.Context, t *testing.T, container *testhelpers.Postgre
 // two cases are indistinguishable without per-migration effect probes, so the
 // conservative choice is to refuse to auto-clear and let an operator confirm
 // the schema state before forcing.
-func TestMigrations_AutoHealDirty(t *testing.T) {
-	// Not parallel: the subtests t.Setenv CUDLY_MIGRATION_AUTOHEAL, which RunMigrations reads process-wide.
+func TestMigrations_RefuseDirty(t *testing.T) {
+	// Not parallel: the subtests t.Setenv CUDLY_MIGRATION_DIRTY_CHECK, which RunMigrations reads process-wide.
 	ctx := context.Background()
 	migrationsPath := getMigrationsPath()
 
@@ -68,24 +68,24 @@ func TestMigrations_AutoHealDirty(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, dirtyBefore, "precondition: DB must be dirty before the run")
 
-		// Default-on auto-heal must fail loud (conservative: cannot verify effects).
+		// Default-on dirty check must fail loud (conservative: cannot verify effects).
 		// t.Setenv auto-restores and forbids t.Parallel().
-		t.Setenv("CUDLY_MIGRATION_AUTOHEAL", "")
+		t.Setenv("CUDLY_MIGRATION_DIRTY_CHECK", "")
 		runErr := migrations.RunMigrations(ctx, pool, migrationsPath, "", "")
-		require.Error(t, runErr, "default-on auto-heal must fail loud when dirty (cannot verify whether effects were applied)")
+		require.Error(t, runErr, "default-on dirty check must fail loud when dirty (cannot verify whether effects were applied)")
 		assert.ErrorContains(t, runErr, "is dirty", "error must describe the dirty state")
 		assert.ErrorContains(t, runErr, "CUDLY_FORCE_MIGRATION_VERSION", "error must include recovery instructions")
 
-		// The dirty flag must remain -- conservative auto-heal must not silently
+		// The dirty flag must remain -- dirty check must not silently
 		// Force-clear it, which would record the migration as applied without
 		// verifying its SQL effects.
 		versionAfter, dirtyAfter, verr := migrations.GetMigrationVersion(ctx, pool, migrationsPath)
 		require.NoError(t, verr)
-		assert.True(t, dirtyAfter, "conservative auto-heal must leave the dirty flag intact")
-		assert.Equal(t, headVersion, versionAfter, "conservative auto-heal must not change the recorded version")
+		assert.True(t, dirtyAfter, "dirty check must leave the dirty flag intact")
+		assert.Equal(t, headVersion, versionAfter, "dirty check must not change the recorded version")
 	})
 
-	t.Run("with CUDLY_MIGRATION_AUTOHEAL=true a dirty DB fails loud with recovery instructions", func(t *testing.T) {
+	t.Run("with CUDLY_MIGRATION_DIRTY_CHECK=true a dirty DB fails loud with recovery instructions", func(t *testing.T) {
 		container := testhelpers.RequireEmptyDatabase(ctx, t)
 		pool := container.DB.Pool()
 
@@ -94,18 +94,18 @@ func TestMigrations_AutoHealDirty(t *testing.T) {
 		require.NoError(t, err)
 		markDirty(ctx, t, container, headVersion)
 
-		t.Setenv("CUDLY_MIGRATION_AUTOHEAL", "true")
+		t.Setenv("CUDLY_MIGRATION_DIRTY_CHECK", "true")
 		runErr := migrations.RunMigrations(ctx, pool, migrationsPath, "", "")
 		require.Error(t, runErr, "explicit true should also fail loud when dirty")
 		assert.ErrorContains(t, runErr, "CUDLY_FORCE_MIGRATION_VERSION", "error must include recovery instructions")
 
 		versionAfter, dirtyAfter, verr := migrations.GetMigrationVersion(ctx, pool, migrationsPath)
 		require.NoError(t, verr)
-		assert.True(t, dirtyAfter, "conservative auto-heal must leave the dirty flag intact")
-		assert.Equal(t, headVersion, versionAfter, "conservative auto-heal must not change the recorded version")
+		assert.True(t, dirtyAfter, "dirty check must leave the dirty flag intact")
+		assert.Equal(t, headVersion, versionAfter, "dirty check must not change the recorded version")
 	})
 
-	t.Run("CUDLY_MIGRATION_AUTOHEAL=false bypasses auto-heal check; dirty DB errors via Up()", func(t *testing.T) {
+	t.Run("CUDLY_MIGRATION_DIRTY_CHECK=false bypasses dirty check; dirty DB errors via Up()", func(t *testing.T) {
 		container := testhelpers.RequireEmptyDatabase(ctx, t)
 		pool := container.DB.Pool()
 
@@ -114,22 +114,23 @@ func TestMigrations_AutoHealDirty(t *testing.T) {
 		require.NoError(t, err)
 		markDirty(ctx, t, container, headVersion)
 
-		// Escape hatch: bypasses the descriptive auto-heal error; the dirty state
+		// Escape hatch: bypasses the descriptive dirty-check error; the dirty state
 		// surfaces via the generic Up() path ("failed to run migrations: Dirty
 		// database version N. Fix and force version."). The caller fail-opens on
 		// it; the app still starts.
-		t.Setenv("CUDLY_MIGRATION_AUTOHEAL", "false")
+		t.Setenv("CUDLY_MIGRATION_DIRTY_CHECK", "false")
 		err = migrations.RunMigrations(ctx, pool, migrationsPath, "", "")
-		require.Error(t, err, "CUDLY_MIGRATION_AUTOHEAL=false must bypass auto-heal so a dirty DB still errors")
+		require.Error(t, err, "CUDLY_MIGRATION_DIRTY_CHECK=false must bypass dirty check so a dirty DB still errors")
+		assert.NotContains(t, err.Error(), "dirty check:", "the descriptive dirty-check error must be bypassed, leaving golang-migrate's bare error")
 
 		_, dirtyAfter, verr := migrations.GetMigrationVersion(ctx, pool, migrationsPath)
 		require.NoError(t, verr)
-		assert.True(t, dirtyAfter, "with auto-heal bypassed, the dirty flag must be left intact")
+		assert.True(t, dirtyAfter, "with dirty check bypassed, the dirty flag must be left intact")
 	})
 
-	// TestMigrations_AutoHealDirty_EffectsAbsent is the regression test for the
+	// TestMigrations_RefuseDirty_EffectsAbsent is the regression test for the
 	// 000074 divergence class: when schema_migrations records dirty=true at
-	// version N but N's SQL was rolled back (effects ABSENT), auto-heal must NOT
+	// version N but N's SQL was rolled back (effects ABSENT), dirty check must NOT
 	// silently Force(N) and mark the never-applied migration as complete.
 	//
 	// Setup: run all migrations to head, then roll back the last one (so the
@@ -140,7 +141,7 @@ func TestMigrations_AutoHealDirty(t *testing.T) {
 	// Expected: RunMigrations returns an error AND leaves schema_migrations
 	// dirty at head -- NOT Force-cleared to clean, which would permanently skip
 	// the missing DDL.
-	t.Run("dirty-at-N with N-effects-absent: auto-heal refuses to silently mark it applied", func(t *testing.T) {
+	t.Run("dirty-at-N with N-effects-absent: dirty check refuses to silently mark it applied", func(t *testing.T) {
 		container := testhelpers.RequireEmptyDatabase(ctx, t)
 		pool := container.DB.Pool()
 
@@ -172,11 +173,11 @@ func TestMigrations_AutoHealDirty(t *testing.T) {
 		require.True(t, dirtyBefore, "precondition: schema_migrations must be dirty")
 		require.Equal(t, headVersion, recordedVersion, "precondition: dirty version must be head")
 
-		// Run migrations with default auto-heal (conservative: fail loud).
-		t.Setenv("CUDLY_MIGRATION_AUTOHEAL", "")
+		// Run migrations with default dirty check (conservative: fail loud).
+		t.Setenv("CUDLY_MIGRATION_DIRTY_CHECK", "")
 		runErr := migrations.RunMigrations(ctx, pool, migrationsPath, "", "")
 		require.Error(t, runErr,
-			"auto-heal must NOT silently mark the rolled-back migration as applied "+
+			"dirty check must NOT silently mark the rolled-back migration as applied "+
 				"(that would permanently skip its DDL: the 000074 divergence class)")
 
 		// The dirty flag must remain set and the version must be unchanged:
@@ -186,9 +187,9 @@ func TestMigrations_AutoHealDirty(t *testing.T) {
 		versionFinal, dirtyFinal, verr := migrations.GetMigrationVersion(ctx, pool, migrationsPath)
 		require.NoError(t, verr)
 		assert.True(t, dirtyFinal,
-			"auto-heal must leave the dirty flag intact (not Force-cleared), "+
+			"dirty check must leave the dirty flag intact (not Force-cleared), "+
 				"preventing the missing DDL from being silently skipped")
 		assert.Equal(t, headVersion, versionFinal,
-			"auto-heal must not change the recorded version to avoid falsely marking the migration applied")
+			"dirty check must not change the recorded version to avoid falsely marking the migration applied")
 	})
 }

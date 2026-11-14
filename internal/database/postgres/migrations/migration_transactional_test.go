@@ -31,7 +31,7 @@
 // runs file N, and clears dirty only after the file succeeds (migrate.go
 // runMigrations, pgx.go SetVersion). A failed or interrupted file rolls back
 // as a whole but leaves dirty=true at N. RunMigrations never clears that flag
-// by itself: maybeAutoHealDirty (migrate.go) fails loud, and an operator
+// by itself: maybeRefuseDirty (migrate.go) fails loud, and an operator
 // inspects the schema and recovers with CUDLY_FORCE_MIGRATION_VERSION (see
 // maybeForceMigrationVersion). Because every file is atomic, N's effects are
 // either all present or all absent, so that inspection has two possible

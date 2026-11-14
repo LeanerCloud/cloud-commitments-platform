@@ -40,7 +40,7 @@ const defaultAdminGroupID = "00000000-0000-5000-8000-000000000001"
 // errors.Is(err, ctx.Err()). An interrupted migration file rolls back as a
 // whole (PostgreSQL runs each file as one implicit transaction; see
 // TestMigrationsAreTransactional) but leaves schema_migrations dirty, which
-// the next run reports through maybeAutoHealDirty without clearing it.
+// the next run reports through maybeRefuseDirty without clearing it.
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsPath, adminEmail, adminPassword string) error {
 	tracker := &connTracker{ctx: ctx}
 	stopWatch := tracker.watch()
@@ -95,12 +95,12 @@ func runMigrations(ctx context.Context, tracker *connTracker, pool *pgxpool.Pool
 // newMigratorWithRecovery builds the golang-migrate migrator for migrationsPath
 // and runs the pre-Up recovery hooks in order: the one-shot operator force
 // (CUDLY_FORCE_MIGRATION_VERSION) first, then the default-on dirty check
-// (maybeAutoHealDirty, which fails loud and never clears the flag).
+// (maybeRefuseDirty, which fails loud and never clears the flag).
 // On success it returns a migrator the caller must Close(); on any error it
 // closes the migrator itself and returns the error so the caller never sees a
 // half-initialized migrator.
 //
-// Ordering note: maybeAutoHealDirty runs AFTER maybeForceMigrationVersion so an
+// Ordering note: maybeRefuseDirty runs AFTER maybeForceMigrationVersion so an
 // explicit force always takes precedence (it pins+cleans first, leaving nothing
 // dirty for the check to report). The dirty-check error propagates so it is
 // recorded with its recovery instructions (and the app fail-opens in ensureDB)
@@ -130,9 +130,9 @@ func newMigratorWithRecovery(tracker *connTracker, pool *pgxpool.Pool, migration
 	// an error with recovery instructions and leave the flag set. It does NOT
 	// clear the flag: whether the dirty migration's effects landed is unknown,
 	// so recovery stays a manual CUDLY_FORCE_MIGRATION_VERSION decision.
-	if err := maybeAutoHealDirty(m); err != nil {
+	if err := maybeRefuseDirty(m); err != nil {
 		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
-			logging.Errorf("migrate: close after auto-heal error: source=%v db=%v", srcErr, dbErr)
+			logging.Errorf("migrate: close after dirty-check error: source=%v db=%v", srcErr, dbErr)
 		}
 		return nil, err
 	}
@@ -354,8 +354,8 @@ func maybeForceMigrationVersion(m *migrate.Migrate) error {
 	return nil
 }
 
-// maybeAutoHealDirty detects a dirty schema_migrations row and, when
-// CUDLY_MIGRATION_AUTOHEAL is enabled (the default), returns a loud error with
+// maybeRefuseDirty detects a dirty schema_migrations row and, when
+// CUDLY_MIGRATION_DIRTY_CHECK is enabled (the default), returns a loud error with
 // recovery instructions rather than silently clearing the dirty flag.
 //
 // WHY NOT AUTO-CLEAR: golang-migrate records version=N, dirty=true BEFORE
@@ -393,7 +393,7 @@ func maybeForceMigrationVersion(m *migrate.Migrate) error {
 // migration failures and the broken schema surfaces via /health + the
 // CloudWatch alarm, never via a crash-loop.
 //
-// Set CUDLY_MIGRATION_AUTOHEAL=false to bypass this check entirely; Up() then
+// Set CUDLY_MIGRATION_DIRTY_CHECK=false to bypass this check entirely; Up() then
 // refuses to start and the dirty state surfaces as golang-migrate's ErrDirty,
 // wrapped by RunMigrations as "failed to run migrations: Dirty database version
 // N. Fix and force version.", without recovery guidance.
@@ -404,8 +404,8 @@ func maybeForceMigrationVersion(m *migrate.Migrate) error {
 // The ParseBool gate is duplicated from internal/server.getEnvBool rather than
 // imported because the migrations package must not depend on internal/server,
 // which would invert the dependency direction.
-func maybeAutoHealDirty(m *migrate.Migrate) error {
-	if !autoHealEnabled() {
+func maybeRefuseDirty(m *migrate.Migrate) error {
+	if !dirtyCheckEnabled() {
 		return nil
 	}
 
@@ -415,7 +415,7 @@ func maybeAutoHealDirty(m *migrate.Migrate) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("auto-heal: failed to read migration version: %w", err)
+		return fmt.Errorf("dirty check: failed to read migration version: %w", err)
 	}
 	if !dirty {
 		return nil
@@ -430,29 +430,29 @@ func maybeAutoHealDirty(m *migrate.Migrate) error {
 	//     without per-migration effect probes.
 	// Conservative choice: fail loud so the alarm fires and an operator
 	// inspects the actual schema before choosing the recovery target.
-	logging.Errorf("Database is DIRTY at version %d: auto-heal cannot safely clear the dirty flag without "+
+	logging.Errorf("Database is DIRTY at version %d: dirty check cannot safely clear the dirty flag without "+
 		"knowing whether migration %d's SQL effects were applied. Inspect the schema and redeploy "+
-		"with CUDLY_FORCE_MIGRATION_VERSION to recover. Set CUDLY_MIGRATION_AUTOHEAL=false to suppress this check.",
+		"with CUDLY_FORCE_MIGRATION_VERSION to recover. Set CUDLY_MIGRATION_DIRTY_CHECK=false to suppress this check.",
 		version, version)
 	return fmt.Errorf(
-		"auto-heal: migration %d is dirty; cannot verify whether its SQL effects were applied -- "+
+		"dirty check: migration %d is dirty; cannot verify whether its SQL effects were applied -- "+
 			"clearing the dirty flag risks recording a never-applied migration as complete "+
 			"(silent schema divergence). Inspect the actual schema, then redeploy with: "+
 			"CUDLY_FORCE_MIGRATION_VERSION=%d if migration %d's effects are confirmed present "+
 			"(Force clears dirty, Up() continues at %d), or "+
 			"CUDLY_FORCE_MIGRATION_VERSION=%d if the migration was NOT applied and must be re-run "+
 			"(Force resets to %d, Up() re-applies %d); "+
-			"set CUDLY_MIGRATION_AUTOHEAL=false to suppress this check and surface the raw dirty error",
+			"set CUDLY_MIGRATION_DIRTY_CHECK=false to suppress this check and surface the raw dirty error",
 		version, version, version, version+1, version-1, version-1, version)
 }
 
-// autoHealEnabled reports whether dirty auto-heal should run. DEFAULT-ON: it
-// returns true unless CUDLY_MIGRATION_AUTOHEAL is explicitly set to a
+// dirtyCheckEnabled reports whether the dirty check should run. DEFAULT-ON: it
+// returns true unless CUDLY_MIGRATION_DIRTY_CHECK is explicitly set to a
 // strconv.ParseBool falsey value (0/f/false/...). Unset, empty, or unparseable
-// values keep auto-heal enabled. Kept local to the migrations package to avoid
-// an inverted dependency on internal/server (see maybeAutoHealDirty).
-func autoHealEnabled() bool {
-	v := os.Getenv("CUDLY_MIGRATION_AUTOHEAL")
+// values keep dirty check enabled. Kept local to the migrations package to avoid
+// an inverted dependency on internal/server (see maybeRefuseDirty).
+func dirtyCheckEnabled() bool {
+	v := os.Getenv("CUDLY_MIGRATION_DIRTY_CHECK")
 	if v == "" {
 		return true
 	}
