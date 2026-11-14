@@ -65,7 +65,7 @@ func (f *redshiftGateFixture) redshiftRowKeyed(ctx context.Context, t *testing.T
 	acct := f.accounts[0].ID
 	rec := config.RecommendationRecord{
 		Provider: "aws", Service: "redshift", ResourceType: "ra3.xlplus", Region: "us-east-1",
-		Term: 1, Payment: "no-upfront", Count: 2, UpfrontCost: 300, Selected: true, CloudAccountID: &acct,
+		Term: 1, Payment: "no-upfront", Count: 2, UpfrontCost: 300, CommitmentCurrency: "USD", Selected: true, CloudAccountID: &acct,
 	}
 	row := &config.PurchaseExecution{
 		PlanID: f.plan.ID, ExecutionID: uuid.New().String(), IdempotencyKey: key,
