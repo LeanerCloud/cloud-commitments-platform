@@ -63,13 +63,13 @@ func TestReadoptClaim_OnlyApprovalNeedingPlansReachTheCAS(t *testing.T) {
 		mutate  func(*config.PurchasePlan)
 		wantCAS bool
 	}{
-		{"manual plan", &config.GlobalConfig{}, nil, true},
-		{"auto plan with 4-eyes on", &config.GlobalConfig{AutoPurchaseEnabled: true, RequireDifferentApprover: true}, func(p *config.PurchasePlan) { p.AutoPurchase = true }, true},
-		{"auto plan with 4-eyes off", &config.GlobalConfig{AutoPurchaseEnabled: true}, func(p *config.PurchasePlan) { p.AutoPurchase = true }, false},
-		{"auto plan with the kill switch off", &config.GlobalConfig{RequireDifferentApprover: true}, func(p *config.PurchasePlan) { p.AutoPurchase = true }, false},
-		{"nil global config", nil, nil, false},
-		{"dates managed plan", &config.GlobalConfig{}, func(p *config.PurchasePlan) { p.RampSchedule.DatesManaged = true }, false},
-		{"no veto window", &config.GlobalConfig{}, func(p *config.PurchasePlan) { p.NotificationDaysBefore = 0 }, false},
+		{name: "manual plan", global: &config.GlobalConfig{}, mutate: nil, wantCAS: true},
+		{name: "auto plan with 4-eyes on", global: &config.GlobalConfig{AutoPurchaseEnabled: true, RequireDifferentApprover: true}, mutate: func(p *config.PurchasePlan) { p.AutoPurchase = true }, wantCAS: true},
+		{name: "auto plan with 4-eyes off", global: &config.GlobalConfig{AutoPurchaseEnabled: true}, mutate: func(p *config.PurchasePlan) { p.AutoPurchase = true }, wantCAS: false},
+		{name: "auto plan with the kill switch off", global: &config.GlobalConfig{RequireDifferentApprover: true}, mutate: func(p *config.PurchasePlan) { p.AutoPurchase = true }, wantCAS: false},
+		{name: "nil global config", global: nil, mutate: nil, wantCAS: false},
+		{name: "dates managed plan", global: &config.GlobalConfig{}, mutate: func(p *config.PurchasePlan) { p.RampSchedule.DatesManaged = true }, wantCAS: false},
+		{name: "no veto window", global: &config.GlobalConfig{}, mutate: func(p *config.PurchasePlan) { p.NotificationDaysBefore = 0 }, wantCAS: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := &fakeResolver{recs: attachRecs()}
@@ -124,9 +124,9 @@ func TestReadoptClaim_CASOutcomes(t *testing.T) {
 		err         error
 		wantSkipped bool
 	}{
-		{"lost CAS is the quiet skip", config.ErrExecutionNotInExpectedStatus, true},
-		{"unmigrated schema is the quiet skip", config.ErrReadoptNotReady, true},
-		{"any other error is real", errors.New("db down"), false},
+		{name: "lost CAS is the quiet skip", err: config.ErrExecutionNotInExpectedStatus, wantSkipped: true},
+		{name: "unmigrated schema is the quiet skip", err: config.ErrReadoptNotReady, wantSkipped: true},
+		{name: "any other error is real", err: errors.New("db down"), wantSkipped: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := &fakeResolver{recs: attachRecs()}

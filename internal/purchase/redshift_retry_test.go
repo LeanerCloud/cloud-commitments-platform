@@ -57,14 +57,14 @@ func TestRedshiftRetryWait(t *testing.T) {
 		since time.Duration
 		want  time.Duration
 	}{
-		{"just written waits full settle", retryRow(1, false, rs), 0, s},
-		{"midway", retryRow(1, false, rs), 4 * time.Minute, 6 * time.Minute},
-		{"one nanosecond short", retryRow(1, false, rs), s - time.Nanosecond, time.Nanosecond},
-		{"exactly settled", retryRow(1, false, rs), s, 0},
-		{"long settled", retryRow(1, false, rs), time.Hour, 0},
-		{"never submitted attempt 0 skips wait", retryRow(0, true, rs), 0, 0},
-		{"attempt 1 no_submission still waits", retryRow(1, true, rs), 0, s},
-		{"non-redshift never waits", retryRow(1, false, ec2), 0, 0},
+		{name: "just written waits full settle", exec: retryRow(1, false, rs), since: 0, want: s},
+		{name: "midway", exec: retryRow(1, false, rs), since: 4 * time.Minute, want: 6 * time.Minute},
+		{name: "one nanosecond short", exec: retryRow(1, false, rs), since: s - time.Nanosecond, want: time.Nanosecond},
+		{name: "exactly settled", exec: retryRow(1, false, rs), since: s, want: 0},
+		{name: "long settled", exec: retryRow(1, false, rs), since: time.Hour, want: 0},
+		{name: "never submitted attempt 0 skips wait", exec: retryRow(0, true, rs), since: 0, want: 0},
+		{name: "attempt 1 no_submission still waits", exec: retryRow(1, true, rs), since: 0, want: s},
+		{name: "non-redshift never waits", exec: retryRow(1, false, ec2), since: 0, want: 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

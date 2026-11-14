@@ -189,8 +189,8 @@ func TestUnchangedPlanKeepsItsTokensAcrossRetries(t *testing.T) {
 		accounts []config.CloudAccount
 		want     string
 	}{
-		{"no plan accounts: single-account path", nil, common.DeriveIdempotencyToken("lineage-97", 0)},
-		{"plan accounts: fan-out path", []config.CloudAccount{shapeTestAccountA}, common.DeriveIdempotencyToken("lineage-97:acct-A", 0)},
+		{name: "no plan accounts: single-account path", accounts: nil, want: common.DeriveIdempotencyToken("lineage-97", 0)},
+		{name: "plan accounts: fan-out path", accounts: []config.CloudAccount{shapeTestAccountA}, want: common.DeriveIdempotencyToken("lineage-97:acct-A", 0)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

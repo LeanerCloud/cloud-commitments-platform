@@ -175,10 +175,10 @@ func TestRedshiftDispatchGate_PicksTheRefusalTextByConflictKind(t *testing.T) {
 		conflicts []config.RedshiftLineageConflict
 		want      string
 	}{
-		"only failed":           {[]config.RedshiftLineageConflict{failed}, redshiftFailedConflictRefusal},
-		"failed beside running": {[]config.RedshiftLineageConflict{failed, running}, redshiftConflictRefusal},
-		"running":               {[]config.RedshiftLineageConflict{running}, redshiftConflictRefusal},
-		"finished wins":         {[]config.RedshiftLineageConflict{failed, running, done}, redshiftRecentBuyRefusal},
+		"only failed":           {conflicts: []config.RedshiftLineageConflict{failed}, want: redshiftFailedConflictRefusal},
+		"failed beside running": {conflicts: []config.RedshiftLineageConflict{failed, running}, want: redshiftConflictRefusal},
+		"running":               {conflicts: []config.RedshiftLineageConflict{running}, want: redshiftConflictRefusal},
+		"finished wins":         {conflicts: []config.RedshiftLineageConflict{failed, running, done}, want: redshiftRecentBuyRefusal},
 	} {
 		run := runGate(t, gateExec(0, gateRec("acct-A", 2)), stamped(), tc.conflicts)
 		require.Error(t, run.err, name)

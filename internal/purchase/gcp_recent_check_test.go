@@ -195,11 +195,11 @@ func TestGCPRecent_Purchased(t *testing.T) {
 		items  []*computepb.Commitment
 		region string
 	}{
-		"recent commitment in another family": {[]*computepb.Commitment{cudFixture("other", familyE2, time.Hour)}, cudRegion},
-		"recent commitment in another region": {[]*computepb.Commitment{cudFixture("other", familyN2, time.Hour)}, "europe-west1"},
-		"commitment older than 24h":           {[]*computepb.Commitment{cudFixture("old", familyN2, 25*time.Hour)}, cudRegion},
-		"own name after a lost response":      {[]*computepb.Commitment{cudFixture(cudOwnName(0), familyN2, time.Minute)}, cudRegion},
-		"no commitments, project unknown":     {nil, cudRegion},
+		"recent commitment in another family": {items: []*computepb.Commitment{cudFixture("other", familyE2, time.Hour)}, region: cudRegion},
+		"recent commitment in another region": {items: []*computepb.Commitment{cudFixture("other", familyN2, time.Hour)}, region: "europe-west1"},
+		"commitment older than 24h":           {items: []*computepb.Commitment{cudFixture("old", familyN2, 25*time.Hour)}, region: cudRegion},
+		"own name after a lost response":      {items: []*computepb.Commitment{cudFixture(cudOwnName(0), familyN2, time.Minute)}, region: cudRegion},
+		"no commitments, project unknown":     {items: nil, region: cudRegion},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

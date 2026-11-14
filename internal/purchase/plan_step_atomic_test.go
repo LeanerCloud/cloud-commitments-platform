@@ -195,12 +195,12 @@ func TestSaveTerminalExecution_ReleasesSuppressionsOnlyBeforeSubmission(t *testi
 		err     error
 		release bool
 	}{
-		{"failed before any provider call", failedRow(), beforeSubmission(errors.New("credential resolution failed")), true},
-		{"outcome unknown (lost response) stays failed", failedRow(), errors.New("purchase outcome unknown: response lost"), false},
-		{"refused armed re-drive", failedRow(), errors.New("refusing to execute retry attempt 1: unsafe to re-drive"), false},
-		{"pre-submission error but a rec bought", boughtRow, beforeSubmission(errors.New("x")), false},
-		{"direct execute", direct, beforeSubmission(errors.New("x")), false},
-		{"completed", completed, nil, false},
+		{name: "failed before any provider call", exec: failedRow(), err: beforeSubmission(errors.New("credential resolution failed")), release: true},
+		{name: "outcome unknown (lost response) stays failed", exec: failedRow(), err: errors.New("purchase outcome unknown: response lost"), release: false},
+		{name: "refused armed re-drive", exec: failedRow(), err: errors.New("refusing to execute retry attempt 1: unsafe to re-drive"), release: false},
+		{name: "pre-submission error but a rec bought", exec: boughtRow, err: beforeSubmission(errors.New("x")), release: false},
+		{name: "direct execute", exec: direct, err: beforeSubmission(errors.New("x")), release: false},
+		{name: "completed", exec: completed, err: nil, release: false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

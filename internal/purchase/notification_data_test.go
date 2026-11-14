@@ -65,10 +65,10 @@ func TestPlanNeedsApproval_Modes(t *testing.T) {
 		global *config.GlobalConfig
 		want   bool
 	}{
-		{"manual plan", config.PurchasePlan{}, off, true},
-		{"auto plan, 4-eyes on", config.PurchasePlan{AutoPurchase: true}, on, true},
-		{"auto plan, 4-eyes off", config.PurchasePlan{AutoPurchase: true}, off, false},
-		{"auto plan, nil config fails closed", config.PurchasePlan{AutoPurchase: true}, nil, true},
+		{name: "manual plan", plan: config.PurchasePlan{}, global: off, want: true},
+		{name: "auto plan, 4-eyes on", plan: config.PurchasePlan{AutoPurchase: true}, global: on, want: true},
+		{name: "auto plan, 4-eyes off", plan: config.PurchasePlan{AutoPurchase: true}, global: off, want: false},
+		{name: "auto plan, nil config fails closed", plan: config.PurchasePlan{AutoPurchase: true}, global: nil, want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

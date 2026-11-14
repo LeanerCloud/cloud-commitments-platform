@@ -164,8 +164,8 @@ func TestReconcileD5_GlobalReadFailuresNeverDisableOrSkip(t *testing.T) {
 		global    *config.GlobalConfig
 		globalErr error
 	}{
-		{"read error", nil, errors.New("db down")},
-		{"nil config", nil, nil},
+		{name: "read error", global: nil, globalErr: errors.New("db down")},
+		{name: "nil config", global: nil, globalErr: nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

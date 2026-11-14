@@ -212,10 +212,10 @@ func TestRunNowAndDirectExecuteRefuseOrphanedStep(t *testing.T) {
 		from []string
 		run  func(*Manager, string) (*config.PurchaseExecution, string, error)
 	}{
-		"run now": {[]string{"pending", "notified", "paused"}, func(m *Manager, id string) (*config.PurchaseExecution, string, error) {
+		"run now": {from: []string{"pending", "notified", "paused"}, run: func(m *Manager, id string) (*config.PurchaseExecution, string, error) {
 			return m.RunPlannedPurchaseNow(context.Background(), id, "operator@example.com", &user, nil)
 		}},
-		"direct execute": {[]string{"pending", "notified"}, func(m *Manager, id string) (*config.PurchaseExecution, string, error) {
+		"direct execute": {from: []string{"pending", "notified"}, run: func(m *Manager, id string) (*config.PurchaseExecution, string, error) {
 			return m.DirectExecute(context.Background(), id, "operator@example.com", &user, nil)
 		}},
 	}

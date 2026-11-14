@@ -246,10 +246,10 @@ func TestRunLadderReconcile_ScheduledTailIsNotStale(t *testing.T) {
 		due       *time.Time
 		wantStale int
 	}{
-		{"scheduled in the future", "scheduled", &future, 0},
-		{"scheduled overdue", "scheduled", &overdue, 1},
-		{"scheduled without due time", "scheduled", nil, 1},
-		{"running", "running", nil, 1},
+		{name: "scheduled in the future", status: "scheduled", due: &future, wantStale: 0},
+		{name: "scheduled overdue", status: "scheduled", due: &overdue, wantStale: 1},
+		{name: "scheduled without due time", status: "scheduled", due: nil, wantStale: 1},
+		{name: "running", status: "running", due: nil, wantStale: 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

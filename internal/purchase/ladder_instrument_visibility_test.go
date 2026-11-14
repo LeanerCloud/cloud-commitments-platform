@@ -78,8 +78,8 @@ func TestLadderInstrument_ComputeSPRecordReachesServiceClient(t *testing.T) {
 		want   string
 		hourly float64
 	}{
-		{"1yr", ladder.Term1Year, 0.123456, "1yr", 0.12345},
-		{"3yr", ladder.Term3Year, 1000000, "3yr", 1000000},
+		{name: "1yr", term: ladder.Term1Year, amount: 0.123456, want: "1yr", hourly: 0.12345},
+		{name: "3yr", term: ladder.Term3Year, amount: 1000000, want: "3yr", hourly: 1000000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recs, err := NewLadderInstrumentRegistry().Build(LadderBuildInput{

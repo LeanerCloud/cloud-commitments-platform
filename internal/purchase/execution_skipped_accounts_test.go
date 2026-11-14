@@ -176,14 +176,14 @@ func TestSkippedAccountNote_MatchesRetryEligibility(t *testing.T) {
 		attempt           int
 		want              string
 	}{
-		{"aws", "ec2", 0, skippedAccountRetryNote},
-		{"azure", "savingsplans", 0, skippedAccountRetryNote},
-		{"aws", "ec2", 1, skippedAccountNoRetryNote},
-		{"azure", "savingsplans", 1, skippedAccountNoRetryNote},
-		{"aws", "rds", 0, skippedAccountRetryNote},
-		{"aws", "rds", 1, skippedAccountRetryNote},
-		{"aws", "redshift", 0, skippedAccountRetryNote},
-		{"gcp", "compute", 0, skippedAccountRetryNote},
+		{provider: "aws", service: "ec2", attempt: 0, want: skippedAccountRetryNote},
+		{provider: "azure", service: "savingsplans", attempt: 0, want: skippedAccountRetryNote},
+		{provider: "aws", service: "ec2", attempt: 1, want: skippedAccountNoRetryNote},
+		{provider: "azure", service: "savingsplans", attempt: 1, want: skippedAccountNoRetryNote},
+		{provider: "aws", service: "rds", attempt: 0, want: skippedAccountRetryNote},
+		{provider: "aws", service: "rds", attempt: 1, want: skippedAccountRetryNote},
+		{provider: "aws", service: "redshift", attempt: 0, want: skippedAccountRetryNote},
+		{provider: "gcp", service: "compute", attempt: 0, want: skippedAccountRetryNote},
 	}
 	for _, c := range cases {
 		row := &config.PurchaseExecution{

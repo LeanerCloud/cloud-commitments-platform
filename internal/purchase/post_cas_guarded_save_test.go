@@ -27,10 +27,10 @@ func TestSafeFail_StampIsGuardedOnFailed(t *testing.T) {
 		name    string
 		saveErr error
 	}{
-		{"guard holds", nil},
+		{name: "guard holds", saveErr: nil},
 		// The flip to failed already landed; a lost stamp is an audit gap, not
 		// a sweep error, and the row still counts as recovered.
-		{"guard lost", lostGuard()},
+		{name: "guard lost", saveErr: lostGuard()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()

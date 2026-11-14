@@ -55,12 +55,12 @@ func TestB3C1OverdueHelpers(t *testing.T) {
 		now  time.Time
 		want bool
 	}{
-		{"entry_before", date.Add(-time.Microsecond), false},
-		{"entry_equal", date, false},
-		{"entry_after", date.Add(time.Microsecond), true},
-		{"exit_before", cutoff.Add(-time.Microsecond), true},
-		{"exit_equal", cutoff, false},
-		{"exit_after", cutoff.Add(time.Microsecond), false},
+		{name: "entry_before", now: date.Add(-time.Microsecond), want: false},
+		{name: "entry_equal", now: date, want: false},
+		{name: "entry_after", now: date.Add(time.Microsecond), want: true},
+		{name: "exit_before", now: cutoff.Add(-time.Microsecond), want: true},
+		{name: "exit_equal", now: cutoff, want: false},
+		{name: "exit_after", now: cutoff.Add(time.Microsecond), want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, shouldRetryOverduePlan(plan, true, global, tc.now))

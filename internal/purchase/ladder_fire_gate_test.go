@@ -103,15 +103,15 @@ func TestLadderConfigRefusal(t *testing.T) {
 		acct *config.CloudAccount
 		want string
 	}{
-		{"disabled", good(func(c *config.LadderConfigDB) { c.Enabled = false }), own, "config is disabled"},
-		{"azure", good(func(c *config.LadderConfigDB) { c.Provider = "azure" }), own, "provider azure is not aws"},
-		{"email approval", good(func(c *config.LadderConfigDB) { c.Mode = "email_approval" }), own, "mode email_approval is not auto_approve"},
-		{"no cap", good(func(c *config.LadderConfigDB) { c.MaxHourlyCommitPerRun = nil }), own, "max_hourly_commit_per_run is not set"},
-		{"no account", good(nil), nil, "cloud account not found"},
-		{"other account", good(nil), &config.CloudAccount{ExternalID: "other"}, "cloud account is not the account this process runs in"},
-		{"empty own account never matches an empty external id", good(nil), &config.CloudAccount{ExternalID: ""}, "the account this process runs in is unknown"},
-		{"ok", good(nil), own, ""},
-		{"disabled wins over azure", good(func(c *config.LadderConfigDB) { c.Enabled = false; c.Provider = "azure" }), own, "config is disabled"},
+		{name: "disabled", cfg: good(func(c *config.LadderConfigDB) { c.Enabled = false }), acct: own, want: "config is disabled"},
+		{name: "azure", cfg: good(func(c *config.LadderConfigDB) { c.Provider = "azure" }), acct: own, want: "provider azure is not aws"},
+		{name: "email approval", cfg: good(func(c *config.LadderConfigDB) { c.Mode = "email_approval" }), acct: own, want: "mode email_approval is not auto_approve"},
+		{name: "no cap", cfg: good(func(c *config.LadderConfigDB) { c.MaxHourlyCommitPerRun = nil }), acct: own, want: "max_hourly_commit_per_run is not set"},
+		{name: "no account", cfg: good(nil), acct: nil, want: "cloud account not found"},
+		{name: "other account", cfg: good(nil), acct: &config.CloudAccount{ExternalID: "other"}, want: "cloud account is not the account this process runs in"},
+		{name: "empty own account never matches an empty external id", cfg: good(nil), acct: &config.CloudAccount{ExternalID: ""}, want: "the account this process runs in is unknown"},
+		{name: "ok", cfg: good(nil), acct: own, want: ""},
+		{name: "disabled wins over azure", cfg: good(func(c *config.LadderConfigDB) { c.Enabled = false; c.Provider = "azure" }), acct: own, want: "config is disabled"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

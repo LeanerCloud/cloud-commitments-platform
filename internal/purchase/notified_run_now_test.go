@@ -60,8 +60,8 @@ func TestScheduler_NotifiedRowRespectsPushedScheduledDate(t *testing.T) {
 		date      time.Time
 		wantClaim bool
 	}{
-		{"inside the veto window", time.Now().Add(48 * time.Hour), false},
-		{"after the window", time.Now().Add(-time.Minute), true},
+		{name: "inside the veto window", date: time.Now().Add(48 * time.Hour), wantClaim: false},
+		{name: "after the window", date: time.Now().Add(-time.Minute), wantClaim: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, factory := new(MockConfigStore), new(MockProviderFactory)

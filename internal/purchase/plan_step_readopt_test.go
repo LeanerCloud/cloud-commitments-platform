@@ -33,18 +33,18 @@ func TestShouldReadoptExpiredPlan_Admission(t *testing.T) {
 		listed bool
 		want   bool
 	}{
-		{"manual plan, 4-eyes off", readoptPlan(nil), &config.GlobalConfig{}, true, true, true},
-		{"auto plan, 4-eyes on", readoptPlan(func(p *config.PurchasePlan) { p.AutoPurchase = true }), fourEyes, true, true, true},
-		{"auto plan, 4-eyes off is not adopted", readoptPlan(func(p *config.PurchasePlan) { p.AutoPurchase = true }), &config.GlobalConfig{AutoPurchaseEnabled: true}, true, true, false},
-		{"auto plan, kill switch off", readoptPlan(func(p *config.PurchasePlan) { p.AutoPurchase = true }), fourEyes, false, true, false},
-		{"manual plan ignores the kill switch", readoptPlan(nil), &config.GlobalConfig{}, false, true, true},
-		{"not listed", readoptPlan(nil), fourEyes, true, false, false},
-		{"nil global fails closed", readoptPlan(nil), nil, true, true, false},
-		{"disabled plan", readoptPlan(func(p *config.PurchasePlan) { p.Enabled = false }), fourEyes, true, true, false},
-		{"dates managed plan", readoptPlan(func(p *config.PurchasePlan) { p.RampSchedule.DatesManaged = true }), fourEyes, true, true, false},
-		{"no next date", readoptPlan(func(p *config.PurchasePlan) { p.NextExecutionDate = nil }), fourEyes, true, true, false},
-		{"no veto window", readoptPlan(func(p *config.PurchasePlan) { p.NotificationDaysBefore = 0 }), fourEyes, true, true, false},
-		{"notified within the throttle", readoptPlan(func(p *config.PurchasePlan) { p.LastNotificationSent = &recent }), fourEyes, true, true, false},
+		{name: "manual plan, 4-eyes off", plan: readoptPlan(nil), global: &config.GlobalConfig{}, auto: true, listed: true, want: true},
+		{name: "auto plan, 4-eyes on", plan: readoptPlan(func(p *config.PurchasePlan) { p.AutoPurchase = true }), global: fourEyes, auto: true, listed: true, want: true},
+		{name: "auto plan, 4-eyes off is not adopted", plan: readoptPlan(func(p *config.PurchasePlan) { p.AutoPurchase = true }), global: &config.GlobalConfig{AutoPurchaseEnabled: true}, auto: true, listed: true, want: false},
+		{name: "auto plan, kill switch off", plan: readoptPlan(func(p *config.PurchasePlan) { p.AutoPurchase = true }), global: fourEyes, auto: false, listed: true, want: false},
+		{name: "manual plan ignores the kill switch", plan: readoptPlan(nil), global: &config.GlobalConfig{}, auto: false, listed: true, want: true},
+		{name: "not listed", plan: readoptPlan(nil), global: fourEyes, auto: true, listed: false, want: false},
+		{name: "nil global fails closed", plan: readoptPlan(nil), global: nil, auto: true, listed: true, want: false},
+		{name: "disabled plan", plan: readoptPlan(func(p *config.PurchasePlan) { p.Enabled = false }), global: fourEyes, auto: true, listed: true, want: false},
+		{name: "dates managed plan", plan: readoptPlan(func(p *config.PurchasePlan) { p.RampSchedule.DatesManaged = true }), global: fourEyes, auto: true, listed: true, want: false},
+		{name: "no next date", plan: readoptPlan(func(p *config.PurchasePlan) { p.NextExecutionDate = nil }), global: fourEyes, auto: true, listed: true, want: false},
+		{name: "no veto window", plan: readoptPlan(func(p *config.PurchasePlan) { p.NotificationDaysBefore = 0 }), global: fourEyes, auto: true, listed: true, want: false},
+		{name: "notified within the throttle", plan: readoptPlan(func(p *config.PurchasePlan) { p.LastNotificationSent = &recent }), global: fourEyes, auto: true, listed: true, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, shouldReadoptExpiredPlan(tc.plan, tc.global, tc.auto, tc.listed, now))

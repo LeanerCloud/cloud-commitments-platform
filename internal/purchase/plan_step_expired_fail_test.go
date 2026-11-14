@@ -29,13 +29,13 @@ func TestExpiredAutoRootFailable(t *testing.T) {
 		auto   bool
 		want   bool
 	}{
-		{"auto plan, 4-eyes off", expiredFailPlan(nil), noFourEyes, true, true},
-		{"4-eyes on keeps the one-shot re-arm", expiredFailPlan(nil), &config.GlobalConfig{RequireDifferentApprover: true}, true, false},
-		{"manual plan", expiredFailPlan(func(p *config.PurchasePlan) { p.AutoPurchase = false }), noFourEyes, true, false},
-		{"kill switch off stays quiet", expiredFailPlan(nil), noFourEyes, false, false},
-		{"disabled plan", expiredFailPlan(func(p *config.PurchasePlan) { p.Enabled = false }), noFourEyes, true, false},
-		{"dates managed plan is unchanged", expiredFailPlan(func(p *config.PurchasePlan) { p.RampSchedule.DatesManaged = true }), noFourEyes, true, false},
-		{"nil global fails closed", expiredFailPlan(nil), nil, true, false},
+		{name: "auto plan, 4-eyes off", plan: expiredFailPlan(nil), global: noFourEyes, auto: true, want: true},
+		{name: "4-eyes on keeps the one-shot re-arm", plan: expiredFailPlan(nil), global: &config.GlobalConfig{RequireDifferentApprover: true}, auto: true, want: false},
+		{name: "manual plan", plan: expiredFailPlan(func(p *config.PurchasePlan) { p.AutoPurchase = false }), global: noFourEyes, auto: true, want: false},
+		{name: "kill switch off stays quiet", plan: expiredFailPlan(nil), global: noFourEyes, auto: false, want: false},
+		{name: "disabled plan", plan: expiredFailPlan(func(p *config.PurchasePlan) { p.Enabled = false }), global: noFourEyes, auto: true, want: false},
+		{name: "dates managed plan is unchanged", plan: expiredFailPlan(func(p *config.PurchasePlan) { p.RampSchedule.DatesManaged = true }), global: noFourEyes, auto: true, want: false},
+		{name: "nil global fails closed", plan: expiredFailPlan(nil), global: nil, auto: true, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, expiredAutoRootFailable(tc.plan, tc.global, tc.auto))

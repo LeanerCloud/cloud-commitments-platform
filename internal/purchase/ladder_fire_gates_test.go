@@ -16,31 +16,31 @@ func TestSweep_EveryGateRefusesWithoutClaiming(t *testing.T) {
 		name string
 		mut  func(*fakeFireStore, *LadderFireDeps)
 	}{
-		{"laddering off", func(f *fakeFireStore, _ *LadderFireDeps) {
+		{name: "laddering off", mut: func(f *fakeFireStore, _ *LadderFireDeps) {
 			f.globals = []*config.GlobalConfig{fireGlobal(func(g *config.GlobalConfig) { g.LadderingEnabled = false })}
 		}},
-		{"execution off", func(f *fakeFireStore, _ *LadderFireDeps) {
+		{name: "execution off", mut: func(f *fakeFireStore, _ *LadderFireDeps) {
 			f.globals = []*config.GlobalConfig{fireGlobal(func(g *config.GlobalConfig) { g.LadderExecutionEnabled = false })}
 		}},
-		{"4-eyes on", func(f *fakeFireStore, _ *LadderFireDeps) {
+		{name: "4-eyes on", mut: func(f *fakeFireStore, _ *LadderFireDeps) {
 			f.globals = []*config.GlobalConfig{fireGlobal(func(g *config.GlobalConfig) { g.RequireDifferentApprover = true })}
 		}},
-		{"delay 23", func(f *fakeFireStore, _ *LadderFireDeps) {
+		{name: "delay 23", mut: func(f *fakeFireStore, _ *LadderFireDeps) {
 			f.globals = []*config.GlobalConfig{fireGlobal(func(g *config.GlobalConfig) { g.PurchaseDelayHours = 23 })}
 		}},
-		{"no notifier", func(_ *fakeFireStore, d *LadderFireDeps) { d.Notifier = nil }},
-		{"no recipient", func(f *fakeFireStore, _ *LadderFireDeps) {
+		{name: "no notifier", mut: func(_ *fakeFireStore, d *LadderFireDeps) { d.Notifier = nil }},
+		{name: "no recipient", mut: func(f *fakeFireStore, _ *LadderFireDeps) {
 			f.globals = []*config.GlobalConfig{fireGlobal(func(g *config.GlobalConfig) { g.NotificationEmail = nil })}
 		}},
-		{"no dashboard", func(_ *fakeFireStore, d *LadderFireDeps) { d.DashboardURL = "" }},
-		{"config disabled", func(f *fakeFireStore, _ *LadderFireDeps) { f.configs[0].Enabled = false }},
-		{"azure", func(f *fakeFireStore, _ *LadderFireDeps) { f.configs[0].Provider = "azure" }},
-		{"email approval", func(f *fakeFireStore, _ *LadderFireDeps) { f.configs[0].Mode = "email_approval" }},
-		{"no cap", func(f *fakeFireStore, _ *LadderFireDeps) { f.configs[0].MaxHourlyCommitPerRun = nil }},
-		{"other account", func(f *fakeFireStore, _ *LadderFireDeps) { f.acctExt = "other" }},
-		{"ceiling unset", func(f *fakeFireStore, _ *LadderFireDeps) { f.ceiling = nil }},
-		{"ceiling zero", func(f *fakeFireStore, _ *LadderFireDeps) { f.ceiling = micros(0) }},
-		{"ceiling column absent", func(f *fakeFireStore, _ *LadderFireDeps) { f.ceilingErr = config.ErrLadderCeilingUnavailable }},
+		{name: "no dashboard", mut: func(_ *fakeFireStore, d *LadderFireDeps) { d.DashboardURL = "" }},
+		{name: "config disabled", mut: func(f *fakeFireStore, _ *LadderFireDeps) { f.configs[0].Enabled = false }},
+		{name: "azure", mut: func(f *fakeFireStore, _ *LadderFireDeps) { f.configs[0].Provider = "azure" }},
+		{name: "email approval", mut: func(f *fakeFireStore, _ *LadderFireDeps) { f.configs[0].Mode = "email_approval" }},
+		{name: "no cap", mut: func(f *fakeFireStore, _ *LadderFireDeps) { f.configs[0].MaxHourlyCommitPerRun = nil }},
+		{name: "other account", mut: func(f *fakeFireStore, _ *LadderFireDeps) { f.acctExt = "other" }},
+		{name: "ceiling unset", mut: func(f *fakeFireStore, _ *LadderFireDeps) { f.ceiling = nil }},
+		{name: "ceiling zero", mut: func(f *fakeFireStore, _ *LadderFireDeps) { f.ceiling = micros(0) }},
+		{name: "ceiling column absent", mut: func(f *fakeFireStore, _ *LadderFireDeps) { f.ceilingErr = config.ErrLadderCeilingUnavailable }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

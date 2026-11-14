@@ -81,8 +81,8 @@ func TestAttach_NoMatchWaitsForGraceThenFailsOnce(t *testing.T) {
 		next     time.Time
 		wantFail bool
 	}{
-		{"before the deadline", time.Now().Add(-6 * 24 * time.Hour), false},
-		{"after the deadline", time.Now().Add(-8 * 24 * time.Hour), true},
+		{name: "before the deadline", next: time.Now().Add(-6 * 24 * time.Hour), wantFail: false},
+		{name: "after the deadline", next: time.Now().Add(-8 * 24 * time.Hour), wantFail: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			plan := attachPlan(tc.next, 1e6)
@@ -302,10 +302,10 @@ func TestAttach_ManualPlanRequiresExplicitRootAndHonorsOptionalCap(t *testing.T)
 		root       bool
 		wantAttach bool
 	}{
-		{"no implicit row", nil, false, false},
-		{"manual without cap", nil, true, true},
-		{"manual exact cap", f64(240), true, true},
-		{"manual over cap", f64(239), true, false},
+		{name: "no implicit row", cap: nil, root: false, wantAttach: false},
+		{name: "manual without cap", cap: nil, root: true, wantAttach: true},
+		{name: "manual exact cap", cap: f64(240), root: true, wantAttach: true},
+		{name: "manual over cap", cap: f64(239), root: true, wantAttach: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			plan := attachPlan(time.Now().Add(84*time.Hour), 1e6)

@@ -58,9 +58,9 @@ func TestAzureStepTwo_ExecuteAndFinalize(t *testing.T) {
 		wantCalls int
 		wantErr   bool
 	}{
-		{"resolved from the stored row buys", resolved, stored, 1, false},
-		{"priced from the suppressed row is refused", suppressedPriced, stored, 0, true},
-		{"price changed after notify is refused", resolved, repriced, 0, true},
+		{name: "resolved from the stored row buys", rec: resolved, current: stored, wantCalls: 1, wantErr: false},
+		{name: "priced from the suppressed row is refused", rec: suppressedPriced, current: stored, wantCalls: 0, wantErr: true},
+		{name: "price changed after notify is refused", rec: resolved, current: repriced, wantCalls: 0, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			exec := armedExecution("azure", "compute", 0, "running")

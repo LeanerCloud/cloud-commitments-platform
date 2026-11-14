@@ -24,18 +24,18 @@ func TestAdoptedOfferingClassRecordedInHistory(t *testing.T) {
 		result     common.PurchaseResult
 		want       string
 	}{
-		{"adopted standard under convertible config", "convertible", "ec2", common.ServiceEC2,
-			common.PurchaseResult{ExistingCommitment: true, OfferingClass: "standard"}, "standard"},
-		{"adopted convertible under standard config", "standard", "compute", common.ServiceCompute,
-			common.PurchaseResult{ExistingCommitment: true, OfferingClass: "convertible"}, "convertible"},
-		{"adopted without a class is unknown", "convertible", "ec2", common.ServiceEC2,
-			common.PurchaseResult{ExistingCommitment: true}, ""},
-		{"adopted with an unrecognized class is unknown", "convertible", "ec2", common.ServiceEC2,
-			common.PurchaseResult{ExistingCommitment: true, OfferingClass: "foo"}, ""},
-		{"fresh buy without a class keeps the configured one", "standard", "ec2", common.ServiceEC2,
-			common.PurchaseResult{}, "standard"},
-		{"reported class is lower-cased", "convertible", "compute", common.ServiceCompute,
-			common.PurchaseResult{ExistingCommitment: true, OfferingClass: "Standard"}, "standard"},
+		{name: "adopted standard under convertible config", configured: "convertible", service: "ec2", svcType: common.ServiceEC2,
+			result: common.PurchaseResult{ExistingCommitment: true, OfferingClass: "standard"}, want: "standard"},
+		{name: "adopted convertible under standard config", configured: "standard", service: "compute", svcType: common.ServiceCompute,
+			result: common.PurchaseResult{ExistingCommitment: true, OfferingClass: "convertible"}, want: "convertible"},
+		{name: "adopted without a class is unknown", configured: "convertible", service: "ec2", svcType: common.ServiceEC2,
+			result: common.PurchaseResult{ExistingCommitment: true}, want: ""},
+		{name: "adopted with an unrecognized class is unknown", configured: "convertible", service: "ec2", svcType: common.ServiceEC2,
+			result: common.PurchaseResult{ExistingCommitment: true, OfferingClass: "foo"}, want: ""},
+		{name: "fresh buy without a class keeps the configured one", configured: "standard", service: "ec2", svcType: common.ServiceEC2,
+			result: common.PurchaseResult{}, want: "standard"},
+		{name: "reported class is lower-cased", configured: "convertible", service: "compute", svcType: common.ServiceCompute,
+			result: common.PurchaseResult{ExistingCommitment: true, OfferingClass: "Standard"}, want: "standard"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
