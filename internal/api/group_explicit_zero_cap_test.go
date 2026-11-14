@@ -10,16 +10,17 @@ import (
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-// MockStore aliases auth.MockStore so the mock assertion guard, which only
+// MockStore aliases authtest.MockStore so the mock assertion guard, which only
 // resolves receivers built from a bare type name, can check this file's
 // AssertNotCalled sites.
-type MockStore = auth.MockStore
+type MockStore = authtest.MockStore
 
 const zeroCapGroupID = "33333333-3333-3333-3333-333333333333"
 
