@@ -1,3 +1,4 @@
+import { createIcon } from '../icons';
 import { canAccess } from '../permissions';
 
 /**
@@ -164,4 +165,44 @@ export function applyReadOnlySettings(formEl: HTMLElement | null): void {
   document.querySelectorAll<HTMLButtonElement>(
     '#save-settings-btn, #reset-settings-btn, #save-purchasing-btn, #reset-purchasing-btn',
   ).forEach((el) => { el.hidden = true; });
+}
+
+/**
+ * Copy text from an element to clipboard
+ */
+export function copyToClipboard(elementId: string): void {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+
+  // Prefer .value for form controls (the AWS External ID uses an
+  // <input readonly>) and fall back to textContent for code/span
+  // elements.
+  const text = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+    ? element.value
+    : element.textContent ?? '';
+  navigator.clipboard.writeText(text).then(() => {
+    // Show feedback on the first .copy-btn following the source in DOM
+    // order — handles both the adjacent-sibling layout (code + btn) and
+    // the .input-with-copy layout (input + btn nested under a wrapper).
+    const btn = element.nextElementSibling instanceof HTMLButtonElement
+      ? element.nextElementSibling
+      : element.parentElement?.querySelector<HTMLButtonElement>('.copy-btn') ?? null;
+    if (!btn) return;
+    const previousChildren = Array.from(btn.childNodes);
+    // Swap for a single "copied" checkmark without touching innerHTML —
+    // the content is static but XSS-scanner-friendly code avoids the
+    // pattern entirely so we don't need to re-prove safety at each edit.
+    btn.replaceChildren();
+    const tick = document.createElement('span');
+    tick.className = 'copy-icon';
+    tick.appendChild(createIcon('check'));
+    btn.appendChild(tick);
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.replaceChildren(...previousChildren);
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+  });
 }
