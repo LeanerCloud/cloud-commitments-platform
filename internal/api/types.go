@@ -35,36 +35,36 @@ type RateLimiterInterface interface {
 
 // HandlerConfig holds configuration for the API handler.
 type HandlerConfig struct {
-	AnalyticsClient     AnalyticsClientInterface
-	AnalyticsCollector  AnalyticsCollectorInterface
+	EmailNotifier       email.SenderInterface
+	AnalyticsSnapshots  AnalyticsSnapshotStoreInterface
 	PurchaseManager     PurchaseManagerInterface
 	RateLimiter         RateLimiterInterface
 	AuthService         AuthServiceInterface
 	CommitmentOpts      CommitmentOptsInterface
 	OIDCSigner          oidc.Signer
-	Insurance           InsuranceProvider
-	AnalyticsSnapshots  AnalyticsSnapshotStoreInterface
-	CredentialStore     credentials.CredentialStore
-	EmailNotifier       email.SenderInterface
-	Scheduler           SchedulerInterface
 	ConfigStore         config.StoreInterface
+	Scheduler           SchedulerInterface
+	CredentialStore     credentials.CredentialStore
+	AnalyticsCollector  AnalyticsCollectorInterface
+	AnalyticsClient     AnalyticsClientInterface
+	Insurance           InsuranceProvider
 	DashboardURL        string
 	CORSAllowedOrigin   string
 	DashboardBucket     string
 	OIDCIssuerURL       string
 	APIKeySecretARN     string
 	EncryptionKeySource string
-	EnableDashboard     bool
-	// IsLambda is the caller's (Application's) single answer to "am I on
-	// Lambda". It gates the background goroutines (RI utilization SWR
-	// refresh, stale-execution sweep) that would freeze mid-flight on Lambda.
-	// The handler never re-reads the environment itself (issue #110).
-	IsLambda bool
 	// RecommendationSchedule is the deployment's recommendation-collection
 	// schedule (RECOMMENDATION_SCHEDULE, set by Terraform). Empty means
 	// scheduled collection is off or the deployment predates the variable.
 	// It feeds next_collection_at on GET /api/recommendations/freshness.
 	RecommendationSchedule string
+	EnableDashboard        bool
+	// IsLambda is the caller's (Application's) single answer to "am I on
+	// Lambda". It gates the background goroutines (RI utilization SWR
+	// refresh, stale-execution sweep) that would freeze mid-flight on Lambda.
+	// The handler never re-reads the environment itself (issue #110).
+	IsLambda bool
 	// FireSweepOff is true when Terraform says no fire_scheduled_purchases
 	// sweep runs (FIRE_SWEEP_SCHEDULED=false). A delayed approval would then
 	// sit in "scheduled" forever, so PUT /api/config refuses a delay (#1588).
@@ -119,16 +119,16 @@ type HistoryDataPoint struct {
 	Timestamp         time.Time          `json:"timestamp"`
 	ByService         map[string]float64 `json:"by_service,omitempty"`
 	ByProvider        map[string]float64 `json:"by_provider,omitempty"`
-	TotalSavings      float64            `json:"total_savings"`
 	TotalUpfront      *float64           `json:"total_upfront"`
+	TotalSavings      float64            `json:"total_savings"`
 	PurchaseCount     int                `json:"purchase_count"`
 	CumulativeSavings float64            `json:"cumulative_savings"`
 }
 
 // BreakdownValue represents savings breakdown by dimension.
 type BreakdownValue struct {
-	TotalSavings  float64  `json:"total_savings"`
 	TotalUpfront  *float64 `json:"total_upfront"`
+	TotalSavings  float64  `json:"total_savings"`
 	PurchaseCount int      `json:"purchase_count"`
 	Percentage    float64  `json:"percentage"`
 }
@@ -436,8 +436,8 @@ type StatusResponse struct {
 // (403 before the cancel, 409 if the plan changed after it) instead of
 // reporting false (issues #520, #623).
 type DeletePlannedPurchaseResponse struct {
-	Status       string `json:"status"`
 	PlanDisabled *bool  `json:"plan_disabled,omitempty"`
+	Status       string `json:"status"`
 }
 
 // RecommendationsSummary holds aggregate statistics for recommendations.
@@ -450,12 +450,12 @@ type RecommendationsSummary struct {
 
 // RecommendationsResponse holds the recommendations response.
 type RecommendationsResponse struct {
+	// NextCursor is set only on a paginated request (limit or cursor sent)
+	// that has more rows; pass it back as ?cursor= for the next page.
+	NextCursor      string                        `json:"next_cursor,omitempty"`
 	Recommendations []config.RecommendationRecord `json:"recommendations"`
 	Regions         []string                      `json:"regions"`
 	Summary         RecommendationsSummary        `json:"summary"`
-	// NextCursor is set only on a paginated request (limit or cursor sent)
-	// that has more rows; pass it back as ?cursor= for the next page.
-	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // UsagePoint is a single sample in the per-recommendation usage time
@@ -638,22 +638,22 @@ type DeploymentInfoResponse struct {
 
 // DashboardSummaryResponse holds the dashboard summary data.
 type DashboardSummaryResponse struct {
-	ByService               map[string]ServiceSavings `json:"by_service"`
-	PotentialMonthlySavings float64                   `json:"potential_monthly_savings"`
-	TotalRecommendations    int                       `json:"total_recommendations"`
-	ActiveCommitments       int                       `json:"active_commitments"`
+	ByService map[string]ServiceSavings `json:"by_service"`
+	// CurrentCoverage is null when there is neither committed nor potential
+	// savings to measure (0/0), instead of a fabricated 100% (issue #72).
+	CurrentCoverage         *float64 `json:"current_coverage"`
+	PotentialMonthlySavings float64  `json:"potential_monthly_savings"`
+	TotalRecommendations    int      `json:"total_recommendations"`
+	ActiveCommitments       int      `json:"active_commitments"`
 	// CommittedMonthly is the estimated monthly savings of the active
 	// commitments (the sum of their EstimatedSavings), not their cost (#1709).
 	CommittedMonthly float64 `json:"committed_monthly"`
 	// ExcludedLegacyEstimateCount is how many of ActiveCommitments are Azure
 	// rows with legacy-estimate amounts (issue #669). Their dollars are not in
 	// CommittedMonthly, YTDSavings or the per-service current savings.
-	ExcludedLegacyEstimateCount int `json:"excluded_legacy_estimate_count"`
-	// CurrentCoverage is null when there is neither committed nor potential
-	// savings to measure (0/0), instead of a fabricated 100% (issue #72).
-	CurrentCoverage *float64 `json:"current_coverage"`
-	TargetCoverage  float64  `json:"target_coverage"`
-	YTDSavings      float64  `json:"ytd_savings"`
+	ExcludedLegacyEstimateCount int     `json:"excluded_legacy_estimate_count"`
+	TargetCoverage              float64 `json:"target_coverage"`
+	YTDSavings                  float64 `json:"ytd_savings"`
 }
 
 // ServiceSavings holds savings data for a service.
@@ -681,23 +681,23 @@ type InventoryCommitment struct {
 	// MonthlyCost is nil when the source purchase_history row has a NULL
 	// monthly_cost (provider did not return a monthly breakdown). The
 	// frontend renders "--" for nil and "$X.XX" when non-nil.
-	MonthlyCost      *float64 `json:"monthly_cost"`
-	Provider         string   `json:"provider"`
-	AccountID        string   `json:"account_id"`
-	AccountName      string   `json:"account_name,omitempty"`
-	Service          string   `json:"service"`
-	ResourceType     string   `json:"resource_type,omitempty"`
-	Region           string   `json:"region"`
-	Status           string   `json:"status"`
-	ID               string   `json:"id"`
-	PaymentOption    string   `json:"payment_option,omitempty"`
-	TermYears        int      `json:"term_years"`
-	UpfrontCost      *float64 `json:"upfront_cost"`
-	EstimatedSavings float64  `json:"estimated_savings"`
-	Count            int      `json:"count"`
+	MonthlyCost   *float64 `json:"monthly_cost"`
+	UpfrontCost   *float64 `json:"upfront_cost"`
+	Region        string   `json:"region"`
+	AccountName   string   `json:"account_name,omitempty"`
+	Service       string   `json:"service"`
+	ResourceType  string   `json:"resource_type,omitempty"`
+	AccountID     string   `json:"account_id"`
+	Status        string   `json:"status"`
+	ID            string   `json:"id"`
+	PaymentOption string   `json:"payment_option,omitempty"`
+	Provider      string   `json:"provider"`
 	// AmountBasis is "legacy_window" when the dollar amounts are a legacy
 	// estimate (issue #669); omitted for normal rows.
-	AmountBasis config.PurchaseAmountBasis `json:"amount_basis,omitempty"`
+	AmountBasis      config.PurchaseAmountBasis `json:"amount_basis,omitempty"`
+	TermYears        int                        `json:"term_years"`
+	EstimatedSavings float64                    `json:"estimated_savings"`
+	Count            int                        `json:"count"`
 }
 
 // InventoryCommitmentsResponse is the envelope returned by
@@ -717,8 +717,8 @@ type InventoryCommitmentsResponse struct {
 // semantic per feedback_nullable_not_zero.
 type CoverageServiceRow struct {
 	CoveragePct     *float64 `json:"coverage_pct"`
-	Service         string   `json:"service"`
 	CoveredMonthly  *float64 `json:"covered_monthly"`
+	Service         string   `json:"service"`
 	OnDemandMonthly float64  `json:"on_demand_monthly"`
 }
 
@@ -769,18 +769,18 @@ type UpcomingPurchase struct {
 	// surfaces as a confusing toast on click. Mirrors the field on
 	// PlannedPurchase / PurchaseHistoryEntry. omitempty so legacy
 	// NULL-creator rows keep the JSON shape they had pre-fix.
-	CreatedByUserID  *string `json:"created_by_user_id,omitempty"`
-	ExecutionID      string  `json:"execution_id"`
-	PlanID           string  `json:"plan_id"`
-	PlanName         string  `json:"plan_name"`
-	ScheduledDate    string  `json:"scheduled_date"`
-	Provider         string  `json:"provider"`
-	Service          string  `json:"service"`
-	StepNumber       int     `json:"step_number"`
-	TotalSteps       int     `json:"total_steps"`
-	EstimatedSavings float64 `json:"estimated_savings"`
+	CreatedByUserID *string `json:"created_by_user_id,omitempty"`
+	ExecutionID     string  `json:"execution_id"`
+	PlanID          string  `json:"plan_id"`
+	PlanName        string  `json:"plan_name"`
+	ScheduledDate   string  `json:"scheduled_date"`
+	Provider        string  `json:"provider"`
+	Service         string  `json:"service"`
 	// Providers lists a bound plan's group providers (#1746); omitted otherwise.
-	Providers []string `json:"providers,omitempty"`
+	Providers        []string `json:"providers,omitempty"`
+	StepNumber       int      `json:"step_number"`
+	TotalSteps       int      `json:"total_steps"`
+	EstimatedSavings float64  `json:"estimated_savings"`
 	// HasRecommendations is false for a step that carries no recommendations,
 	// whose EstimatedSavings is then a placeholder, not data (platform#609).
 	HasRecommendations bool `json:"has_recommendations"`
@@ -798,18 +798,19 @@ type PlannedPurchase struct {
 	// frontend gates the row action buttons on creator-scope ownership
 	// (issue #950); omitted for legacy rows with a NULL creator.
 	CreatedByUserID *string `json:"created_by_user_id,omitempty"`
-	Status          string  `json:"status"`
+	ID              string  `json:"id"`
 	PlanID          string  `json:"plan_id"`
 	PlanName        string  `json:"plan_name"`
 	ScheduledDate   string  `json:"scheduled_date"`
 	Provider        string  `json:"provider"`
 	Service         string  `json:"service"`
+	EstimateNote    string  `json:"estimate_note,omitempty"`
+	ResourceType    string  `json:"resource_type"`
+	Status          string  `json:"status"`
+	Region          string  `json:"region"`
+	Payment         string  `json:"payment"`
 	// Providers lists a bound plan's group providers (#1746); omitted otherwise.
 	Providers        []string `json:"providers,omitempty"`
-	ResourceType     string   `json:"resource_type"`
-	Region           string   `json:"region"`
-	ID               string   `json:"id"`
-	Payment          string   `json:"payment"`
 	Count            int      `json:"count"`
 	UpfrontCost      float64  `json:"upfront_cost"`
 	EstimatedSavings float64  `json:"estimated_savings"`
@@ -822,36 +823,35 @@ type PlannedPurchase struct {
 	HasRecommendations bool `json:"has_recommendations"`
 	// Estimate: the figures come from current recommendations, not a stored
 	// attach; the purchase recomputes them. EstimateNote says why there are none.
-	Estimate     bool   `json:"estimate,omitempty"`
-	EstimateNote string `json:"estimate_note,omitempty"`
+	Estimate bool `json:"estimate,omitempty"`
 }
 
 // PlanRequest represents the API request format for creating/updating plans
 // The frontend sends ramp_schedule as a string, which we convert to the proper struct.
 type PlanRequest struct {
-	Payment      *string `json:"payment,omitempty"`
-	RampSchedule string  `json:"ramp_schedule,omitempty"`
-	Name         string  `json:"name"`
-	Provider     string  `json:"provider,omitempty"`
-	Service      string  `json:"service,omitempty"`
-	// TargetAccounts is read by createPlan only. updatePlan ignores it; account
-	// assignment on an existing plan goes through setPlanAccounts.
-	TargetAccounts         []string `json:"target_accounts,omitempty"`
-	TargetCoverage         *int     `json:"target_coverage,omitempty"`
-	Term                   *int     `json:"term,omitempty"`
-	NotificationDaysBefore int      `json:"notification_days_before"`
-	CustomStepPercent      int      `json:"custom_step_percent,omitempty"`
-	CustomIntervalDays     int      `json:"custom_interval_days,omitempty"`
+	TargetCoverage *int `json:"target_coverage,omitempty"`
 	// MaxStepCommitment caps the total commitment one ramp step may
 	// auto-purchase. Omitted on create = no cap (auto-purchase of steps with
 	// recommendations stays refused); omitted on update = keep the current cap.
 	MaxStepCommitment *float64 `json:"max_step_commitment,omitempty"`
-	AutoPurchase      bool     `json:"auto_purchase"`
-	Enabled           bool     `json:"enabled"`
+	Term              *int     `json:"term,omitempty"`
+	Payment           *string  `json:"payment,omitempty"`
+	Provider          string   `json:"provider,omitempty"`
+	Service           string   `json:"service,omitempty"`
+	Name              string   `json:"name"`
+	RampSchedule      string   `json:"ramp_schedule,omitempty"`
+	// TargetAccounts is read by createPlan only. updatePlan ignores it; account
+	// assignment on an existing plan goes through setPlanAccounts.
+	TargetAccounts []string `json:"target_accounts,omitempty"`
 	// Groups builds the plan from selected recommendations, one entry per
 	// service. It excludes the flat provider/service/term/payment/target_coverage
 	// fields. createPlan does not read it yet.
-	Groups []PlanGroupRequest `json:"groups,omitempty"`
+	Groups                 []PlanGroupRequest `json:"groups,omitempty"`
+	NotificationDaysBefore int                `json:"notification_days_before"`
+	CustomStepPercent      int                `json:"custom_step_percent,omitempty"`
+	CustomIntervalDays     int                `json:"custom_interval_days,omitempty"`
+	AutoPurchase           bool               `json:"auto_purchase"`
+	Enabled                bool               `json:"enabled"`
 }
 
 // validateTargetCoverage refuses an explicit target outside 0..100. An explicit
@@ -1020,22 +1020,14 @@ type CreatePlannedPurchasesResponse struct {
 
 // HistoryResponse represents the response from the history API.
 type HistoryResponse struct {
-	Purchases []config.PurchaseHistoryRecord `json:"purchases"`
+	// NextCursor is the opaque position after the last paged row of this
+	// response, set only when HasMore is true.
+	NextCursor string `json:"next_cursor,omitempty"`
 	// Summary covers every row matching the request's filters and the caller's
 	// account scope, including rows beyond the row caps (issue #675), unless
 	// SummaryComplete is false.
-	Summary HistorySummary `json:"summary"`
-	// SummaryComplete is true when Summary was computed over every matching
-	// row. It is false only when that aggregate failed and Summary fell back
-	// to the rows in Purchases, which under-reports when Truncated is true.
-	SummaryComplete bool `json:"summary_complete"`
-	// Truncated is true when a fetch reached its row cap, so older rows (and
-	// possibly pending approvals) may be missing from Purchases. Summary still
-	// counts them while SummaryComplete is true.
-	// It also fires when the actionable execution class hits its MaxListLimit cap,
-	// and when an execution class listing failed, so its rows are missing.
-	// It can be a false positive when exactly a cap's worth of rows exist.
-	Truncated bool `json:"truncated"`
+	Summary   HistorySummary                 `json:"summary"`
+	Purchases []config.PurchaseHistoryRecord `json:"purchases"`
 	// Limit is the page size: the most completed purchase_history rows and
 	// terminal executions (failed, expired, canceled, ...) together that one
 	// response lists (issue #674).
@@ -1050,13 +1042,21 @@ type HistoryResponse struct {
 	// Actionable executions are not paged: the first page lists them all, up
 	// to this cap, and pages fetched with a cursor leave them out.
 	ActionableExecutionsLimit int `json:"actionable_executions_limit"`
+	// SummaryComplete is true when Summary was computed over every matching
+	// row. It is false only when that aggregate failed and Summary fell back
+	// to the rows in Purchases, which under-reports when Truncated is true.
+	SummaryComplete bool `json:"summary_complete"`
+	// Truncated is true when a fetch reached its row cap, so older rows (and
+	// possibly pending approvals) may be missing from Purchases. Summary still
+	// counts them while SummaryComplete is true.
+	// It also fires when the actionable execution class hits its MaxListLimit cap,
+	// and when an execution class listing failed, so its rows are missing.
+	// It can be a false positive when exactly a cap's worth of rows exist.
+	Truncated bool `json:"truncated"`
 	// HasMore is true when more completed purchases or terminal executions the
 	// caller may see follow this page; pass NextCursor as the cursor parameter
 	// to fetch them (issue #674). Truncated is also true then.
 	HasMore bool `json:"has_more"`
-	// NextCursor is the opaque position after the last paged row of this
-	// response, set only when HasMore is true.
-	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // HistorySummary provides aggregate statistics for purchase history.
@@ -1066,9 +1066,10 @@ type HistoryResponse struct {
 // pending, in-progress, failed, expired, canceled, and revoked rows are all
 // excluded because no money is being actively committed for those states.
 type HistorySummary struct {
-	TotalPurchases int `json:"total_purchases"`
-	TotalCompleted int `json:"total_completed"`
-	TotalPending   int `json:"total_pending"`
+	TotalUpfront   *float64 `json:"total_upfront"`
+	TotalPurchases int      `json:"total_purchases"`
+	TotalCompleted int      `json:"total_completed"`
+	TotalPending   int      `json:"total_pending"`
 	// TotalInProgress counts executions that have been approved but whose
 	// synchronous purchase has not finalized (status approved/running/paused).
 	// Tracked separately from pending and excluded from the dollar totals so an
@@ -1080,8 +1081,7 @@ type HistorySummary struct {
 	// TotalRevoked counts commitments that have been revoked/refunded via
 	// MarkPurchaseRevoked. They are excluded from TotalCompleted and all dollar
 	// totals because the provider has canceled the commitment.
-	TotalRevoked        int      `json:"total_revoked"`
-	TotalUpfront        *float64 `json:"total_upfront"`
-	TotalMonthlySavings float64  `json:"total_monthly_savings"`
-	TotalAnnualSavings  float64  `json:"total_annual_savings"`
+	TotalRevoked        int     `json:"total_revoked"`
+	TotalMonthlySavings float64 `json:"total_monthly_savings"`
+	TotalAnnualSavings  float64 `json:"total_annual_savings"`
 }

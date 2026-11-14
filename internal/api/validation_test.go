@@ -170,10 +170,10 @@ func TestValidateUUID(t *testing.T) {
 func TestValidateContentType(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
+		headers   map[string]string
 		name      string
 		method    string
 		body      string
-		headers   map[string]string
 		wantError bool
 	}{
 		{name: "GET request without body", method: "GET", body: "", headers: nil, wantError: false},

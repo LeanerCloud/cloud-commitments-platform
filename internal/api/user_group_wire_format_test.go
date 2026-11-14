@@ -36,17 +36,17 @@ const (
 )
 
 type wireCase struct {
+	wantReq  any
+	response any
 	name     string
 	method   string
 	path     string
 	body     string
 	mockName string
+	wantBody string
 	// args are the expected leading interface arguments after ctx and
 	// before the request value.
-	args     []any
-	wantReq  any
-	response any
-	wantBody string
+	args []any
 }
 
 // wireDecodedConstraint decodes a constraint fragment the way the handler
@@ -237,9 +237,9 @@ func TestAuthServiceInterface_UserGroupWritesAreTyped(t *testing.T) {
 	t.Parallel()
 	iface := reflect.TypeOf((*AuthServiceInterface)(nil)).Elem()
 	cases := []struct {
-		method string
 		req    reflect.Type
 		resp   reflect.Type
+		method string
 	}{
 		{method: "CreateUserAPI", req: reflect.TypeOf(auth.APICreateUserRequest{}), resp: reflect.TypeOf(&auth.APICreateUserResponse{})},
 		{method: "UpdateUserAPI", req: reflect.TypeOf(auth.APIUpdateUserRequest{}), resp: reflect.TypeOf(&auth.APIUser{})},

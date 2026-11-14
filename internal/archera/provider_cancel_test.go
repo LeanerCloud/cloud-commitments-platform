@@ -16,9 +16,9 @@ import (
 
 // blockingResolver parks GetSecret until released, signaling when entered.
 type blockingResolver struct {
-	flakyResolver
 	entered chan struct{}
 	release chan struct{}
+	flakyResolver
 }
 
 func (b *blockingResolver) GetSecret(context.Context, string) (string, error) {
@@ -104,9 +104,9 @@ func TestClient_CancelledCallerWinningTheSlotNeverResolves(t *testing.T) {
 // gatedResolver counts calls and parks each one until release is closed, so a
 // test decides when the in-flight build may finish.
 type gatedResolver struct {
-	flakyResolver
-	n       atomic.Int32
 	release chan struct{}
+	flakyResolver
+	n atomic.Int32
 }
 
 func (g *gatedResolver) GetSecret(context.Context, string) (string, error) {
@@ -154,8 +154,8 @@ func TestClient_ConcurrentCallersShareOneBuild(t *testing.T) {
 // ctxBlockedResolver parks until the caller's ctx ends, then returns the
 // ctx-wrapped error a real backend would.
 type ctxBlockedResolver struct {
-	flakyResolver
 	entered chan struct{}
+	flakyResolver
 }
 
 func (r *ctxBlockedResolver) GetSecret(ctx context.Context, _ string) (string, error) {
@@ -206,8 +206,8 @@ func TestClient_CancelDuringResolveReportsCancellationAndCachesNothing(t *testin
 // badKeyDoneCtxResolver returns an unusable key while the caller's ctx is
 // already done.
 type badKeyDoneCtxResolver struct {
-	flakyResolver
 	cancel context.CancelFunc
+	flakyResolver
 }
 
 func (r *badKeyDoneCtxResolver) GetSecret(context.Context, string) (string, error) {

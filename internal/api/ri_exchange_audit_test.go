@@ -50,15 +50,14 @@ type finalizeCtxState struct {
 // which the handler reached the audit insert, the submit claim, the provider
 // commit and the outcome write.
 type directExchangeAuditStore struct {
-	*exchangeClaimLedger
-
-	mu          sync.Mutex
-	steps       []string
-	saved       []config.RIExchangeDirectExecution
-	outcomes    map[string]config.RIExchangeDirectOutcome
-	finalizeCtx []finalizeCtxState
 	saveErr     error
 	finalizeErr error
+	*exchangeClaimLedger
+	outcomes    map[string]config.RIExchangeDirectOutcome
+	steps       []string
+	saved       []config.RIExchangeDirectExecution
+	finalizeCtx []finalizeCtxState
+	mu          sync.Mutex
 }
 
 func newDirectExchangeAuditStore() *directExchangeAuditStore {
@@ -244,11 +243,11 @@ func TestExecuteExchange_AuditInsertFailureRefusesExchange(t *testing.T) {
 func TestExecuteExchange_FailureOutcomeClassification(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name       string
 		err        error
 		quote      *exchange.ExchangeQuoteSummary
-		wantStatus string
 		wantPay    *string
+		name       string
+		wantStatus string
 	}{
 		{
 			name:       "aws client fault",
@@ -588,20 +587,20 @@ func TestAWSDirectFailureStatus(t *testing.T) {
 // slowClaimStore blocks the submit claim until release closes or the claim's
 // own context ends, recording the deadline the claim ran under.
 type slowClaimStore struct {
-	*directExchangeAuditStore
-	release       chan struct{}
 	claimDeadline time.Time
-	claimHasDL    bool
-	// lateSuccess makes the claim wait for its context to end and then still
-	// report success, as a store that answers just after the deadline would.
-	lateSuccess bool
-	// saveDelay slows the audit save.
-	saveDelay time.Duration
 	// saveStartedAt is taken at the start of the save, before saveDelay, and
 	// claimReturnedAt when the claim answers; the handler's deadline is
 	// computed before the first, so tests compare against them, not slack.
 	saveStartedAt   time.Time
 	claimReturnedAt time.Time
+	*directExchangeAuditStore
+	release chan struct{}
+	// saveDelay slows the audit save.
+	saveDelay  time.Duration
+	claimHasDL bool
+	// lateSuccess makes the claim wait for its context to end and then still
+	// report success, as a store that answers just after the deadline would.
+	lateSuccess bool
 }
 
 func (s *slowClaimStore) SaveRIExchangeDirectExecution(ctx context.Context, record *config.RIExchangeDirectExecution) error {

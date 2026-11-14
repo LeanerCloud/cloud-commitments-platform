@@ -3,8 +3,8 @@ package archera
 import "math/big"
 
 type CandidateIdentity struct {
-	OfferID, Provider, Type, Payment string
 	SelectedAmount                   *big.Rat
+	OfferID, Provider, Type, Payment string
 }
 
 // CandidateStatus classifies a vendor candidate against the stored recommendation.

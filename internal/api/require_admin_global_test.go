@@ -82,8 +82,8 @@ func TestRouterDispatch_AdminRoute_ConstrainedAdminRefused(t *testing.T) {
 func TestGetConfig_ConstrainedAdminGetsNoSourceIdentity(t *testing.T) {
 	t.Setenv("CUDLY_SOURCE_CLOUD", "gcp")
 	for _, tc := range []struct {
-		name string
 		held *auth.PermissionConstraints
+		name string
 		want bool
 	}{
 		{name: "unconstrained admin", held: nil, want: true},

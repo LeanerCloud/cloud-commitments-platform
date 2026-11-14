@@ -600,8 +600,6 @@ var purchaseTermWhitelist = map[string]map[int]bool{
 // the customer's cash flow changed, so there is nothing to disclose. See
 // config.PaymentCoercionChangesSchedule.
 type PaymentAdjustment struct {
-	// RecIndex is the rec's position in the request's recommendations slice.
-	RecIndex int    `json:"rec_index"`
 	Provider string `json:"provider"`
 	Service  string `json:"service"`
 	// RequestedPaymentOption is the caller's token after trim/lowercase only
@@ -612,6 +610,8 @@ type PaymentAdjustment struct {
 	// actually carry.
 	AppliedPaymentOption string `json:"applied_payment_option"`
 	Reason               string `json:"reason"`
+	// RecIndex is the rec's position in the request's recommendations slice.
+	RecIndex int `json:"rec_index"`
 }
 
 // validatePurchaseRecommendation validates a single client-supplied

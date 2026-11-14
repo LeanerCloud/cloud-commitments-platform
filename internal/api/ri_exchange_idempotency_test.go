@@ -29,19 +29,17 @@ import (
 // handler fingerprinted the two requests differently, which is exactly the bug
 // class this guards.
 type exchangeClaimLedger struct {
-	*MockConfigStore
-
-	mu      sync.Mutex
-	held    map[string]bool
-	keys    []string
-	windows []time.Duration
-
-	// holdAll makes every claim lose, standing for "an identical submit is
-	// already in flight" without the test having to derive the key itself.
-	holdAll bool
 	// err, when set, fails every claim: an idempotency guard that cannot be
 	// evaluated must refuse the exchange rather than wave it through.
 	err error
+	*MockConfigStore
+	held    map[string]bool
+	keys    []string
+	windows []time.Duration
+	mu      sync.Mutex
+	// holdAll makes every claim lose, standing for "an identical submit is
+	// already in flight" without the test having to derive the key itself.
+	holdAll bool
 }
 
 func newExchangeClaimLedger() *exchangeClaimLedger {

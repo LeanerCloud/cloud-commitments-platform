@@ -21,8 +21,8 @@ import (
 
 // lockedBuffer is an io.Writer safe for the logger's concurrent writes.
 type lockedBuffer struct {
-	mu  sync.Mutex
 	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {

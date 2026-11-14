@@ -243,12 +243,12 @@ func TestRIExchangeAutoModeGate(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name        string
-		perms       []auth.Permission
-		stored      config.GlobalConfig
 		mode        string
-		enabled     bool
+		stored      config.GlobalConfig
+		perms       []auth.Permission
 		perExchange float64
 		daily       float64
+		enabled     bool
 		wantRefused bool
 	}{
 		{

@@ -50,8 +50,8 @@ func TestProjectContractJoinsActualDecodedIdentity(t *testing.T) {
 
 func TestProjectContractPreservesMissingOrContradictoryEvidence(t *testing.T) {
 	tests := []struct {
-		name   string
 		change func(*insurance.Comparison, *insurance.LineItem)
+		name   string
 	}{
 		{name: "account", change: func(_ *insurance.Comparison, i *insurance.LineItem) { i.AccountID = nil }},
 		{name: "catalog_is_not_provider_offering", change: func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.ProviderOfferingID = "" }},

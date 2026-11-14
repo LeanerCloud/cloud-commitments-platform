@@ -26,9 +26,9 @@ const (
 var errOtherAcct = fmt.Errorf("account %s (%s): assume role arn:aws:iam::%s:role/x failed", otherAcctID, otherAcctName, otherAcctID)
 
 type tokenFailureCase struct {
+	err    error
 	name   string
 	status string // the row's status; also the expected details status
-	err    error
 	code   int
 }
 

@@ -115,11 +115,11 @@ type HypotheticalDeltaDTO struct {
 
 // LineItemDTO is how one line item lands inside a hypothetical rollup.
 type LineItemDTO struct {
-	LineItemID           string  `json:"line_item_id"`
-	Reason               string  `json:"reason"`
 	ActualTerm           *string `json:"actual_term"`
 	ActualPaymentOption  *string `json:"actual_payment_option"`
 	ActualCommitmentType *string `json:"actual_commitment_type"`
+	LineItemID           string  `json:"line_item_id"`
+	Reason               string  `json:"reason"`
 }
 
 // HypotheticalDTO is a rollup for one (term, payment option) combination.
@@ -133,23 +133,23 @@ type HypotheticalDTO struct {
 
 // OfferDTO is one offer (current or candidate) for a line item.
 type OfferDTO struct {
-	OfferID              string            `json:"offer_id"`
-	IsCurrent            bool              `json:"is_current"`
-	Provider             string            `json:"provider"`
-	CommitmentType       string            `json:"commitment_type"`
+	Monthly              FinancialsDTO     `json:"monthly"`
+	DeltaVsCurrent       DeltaDTO          `json:"delta_vs_current"`
+	LeaseMenuItemID      *string           `json:"lease_menu_item_id"`
+	ArcheraOfferName     *string           `json:"archera_offer_name,omitempty"`
 	Region               *string           `json:"region"`
 	ContractTerm         *string           `json:"contract_term"`
 	PaymentOption        *string           `json:"payment_option"`
-	LeaseAttached        bool              `json:"lease_attached"`
-	LeaseMenuItemID      *string           `json:"lease_menu_item_id"`
-	ArcheraOfferName     *string           `json:"archera_offer_name,omitempty"`
-	ArcheraOfferNameNote string            `json:"archera_offer_name_note,omitempty"`
-	ProductSupport       ProductSupportDTO `json:"archera_product_support"`
-	DiscountRate         *string           `json:"discount_rate"`
-	BreakevenDays        *string           `json:"breakeven_days"`
-	Monthly              FinancialsDTO     `json:"monthly"`
 	UpfrontCost          *string           `json:"upfront_one_time_cost"`
-	DeltaVsCurrent       DeltaDTO          `json:"delta_vs_current"`
+	BreakevenDays        *string           `json:"breakeven_days"`
+	DiscountRate         *string           `json:"discount_rate"`
+	ProductSupport       ProductSupportDTO `json:"archera_product_support"`
+	ArcheraOfferNameNote string            `json:"archera_offer_name_note,omitempty"`
+	CommitmentType       string            `json:"commitment_type"`
+	OfferID              string            `json:"offer_id"`
+	Provider             string            `json:"provider"`
+	LeaseAttached        bool              `json:"lease_attached"`
+	IsCurrent            bool              `json:"is_current"`
 }
 
 // RowDTO is a line item's current offer plus its alternatives.
@@ -161,19 +161,19 @@ type RowDTO struct {
 
 // ComparisonDTO is the platform response. No org ID is included.
 type ComparisonDTO struct {
-	Title                 string            `json:"title"`
-	PlanID                string            `json:"plan_id"`
-	FetchedAt             string            `json:"fetched_at"`
-	Currency              *string           `json:"currency"`
-	CurrencyNote          string            `json:"currency_note"`
-	PremiumIncluded       bool              `json:"premium_included"`
-	BasisNote             string            `json:"basis_note"`
-	DeltaBasisNote        string            `json:"delta_basis_note"`
 	Current               TotalsDTO         `json:"current"`
-	Hypotheticals         []HypotheticalDTO `json:"hypotheticals"`
-	Rows                  []RowDTO          `json:"rows"`
+	Currency              *string           `json:"currency"`
+	BasisNote             string            `json:"basis_note"`
+	FetchedAt             string            `json:"fetched_at"`
+	CurrencyNote          string            `json:"currency_note"`
+	Title                 string            `json:"title"`
+	DeltaBasisNote        string            `json:"delta_basis_note"`
+	PlanID                string            `json:"plan_id"`
 	NonGatingDisclosure   string            `json:"non_gating_disclosure"`
 	SponsorshipDisclosure string            `json:"sponsorship_disclosure"`
+	Hypotheticals         []HypotheticalDTO `json:"hypotheticals"`
+	Rows                  []RowDTO          `json:"rows"`
+	PremiumIncluded       bool              `json:"premium_included"`
 }
 
 type mapper struct{ err error }

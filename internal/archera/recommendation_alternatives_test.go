@@ -41,8 +41,8 @@ func TestMatchRecommendationPreservesVendorAlternativesWithoutNativeClaims(t *te
 
 func TestMatchRecommendationDoesNotBorrowCandidateBasis(t *testing.T) {
 	tests := []struct {
-		name   string
 		change func(*CandidateIdentity)
+		name   string
 	}{
 		{name: "id", change: func(c *CandidateIdentity) { c.OfferID = "invalid" }},
 		{name: "invalid36", change: func(c *CandidateIdentity) { c.OfferID = "zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz" }},

@@ -87,11 +87,11 @@ type Provider struct {
 	// client is an atomic pointer so fmt prints an address, never the Client's
 	// fields: fmt dereferences a plain *Client held in an unexported field for
 	// verbs such as %s, which would print the key.
-	client   atomic.Pointer[insurance.Client]
-	settings Settings
+	client atomic.Pointer[insurance.Client]
 	// sem is a 1-slot semaphore serializing the build; unlike a mutex, a
 	// waiter can abandon it when its ctx ends.
-	sem chan struct{}
+	sem      chan struct{}
+	settings Settings
 }
 
 // NewProvider returns a Provider. hc must be nil in production.

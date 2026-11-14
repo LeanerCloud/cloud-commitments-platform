@@ -33,10 +33,10 @@ const (
 // Archera origin, then serves a synthetic response in place of the network.
 type hostAssertingTransport struct {
 	t               *testing.T
-	calls           atomic.Int32
 	body            string
-	code            int
 	gotKey, gotPath string
+	code            int
+	calls           atomic.Int32
 }
 
 func (rt *hostAssertingTransport) RoundTrip(r *http.Request) (*http.Response, error) {

@@ -66,12 +66,12 @@ func riStatusTransition(rec riStatusRecord) (*config.RIExchangeRecord, error) {
 
 // riStatusOpts tweaks the fixture for the less common cases.
 type riStatusOpts struct {
+	status      string // stored record status; "" means pending
 	fourEyes    bool   // global 4-eyes mode on; the admin session is the creator
 	noCreator   bool   // with fourEyes: the record has no creator, as every scheduler/ladder row does
 	noApprove   bool   // the session holds no approve permission
 	approveOwn  bool   // the session holds approve-own only (not the creator)
 	ownsRecord  bool   // with approveOwn: the session created the record
-	status      string // stored record status; "" means pending
 	dbError     bool   // the record lookup fails
 	rateLimited bool   // the public approve/cancel rate limit rejects the request
 }
@@ -177,15 +177,15 @@ func riStatusRequest(action string, sess riStatusSession, token string) *events.
 
 type riStatusCase struct {
 	name      string
-	rec       riStatusRecord
-	sess      riStatusSession
 	token     string
-	opts      riStatusOpts
 	id        string // overrides riStatusID
 	body      string // JSON request body
-	want      int
 	wantError string // exact "error" body text; empty for 200 cases
 	wantBody  string // substring of the body for 200 cases
+	opts      riStatusOpts
+	rec       riStatusRecord
+	sess      riStatusSession
+	want      int
 }
 
 func runRIStatusCases(t *testing.T, action string, cases []riStatusCase) {
@@ -305,8 +305,8 @@ func TestHandleRequest_RIExchangeTokenRoutes_MissingAnswersLikeWrongToken(t *tes
 	t.Parallel()
 	type probe struct {
 		name  string
-		rec   riStatusRecord
 		token string
+		rec   riStatusRecord
 	}
 	// The baseline is a missing record as the mocks report it; every other
 	// probe must answer exactly like it.
@@ -320,8 +320,8 @@ func TestHandleRequest_RIExchangeTokenRoutes_MissingAnswersLikeWrongToken(t *tes
 	}
 	callers := []struct {
 		name string
-		sess riStatusSession
 		opts riStatusOpts
+		sess riStatusSession
 	}{
 		{name: "no session", sess: riSessNone, opts: riStatusOpts{}},
 		{name: "invalid session", sess: riSessInvalid, opts: riStatusOpts{}},
@@ -362,8 +362,8 @@ func TestHandleRequest_ApproveRIExchange_ApproveOwnSessionNoOracle(t *testing.T)
 	t.Parallel()
 	type probe struct {
 		name string
-		rec  riStatusRecord
 		opts riStatusOpts
+		rec  riStatusRecord
 	}
 	other := riStatusOpts{approveOwn: true}
 	// The baseline is another user's pending exchange; every other probe
