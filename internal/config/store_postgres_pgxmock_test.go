@@ -104,6 +104,7 @@ func TestPGXMock_GetGlobalConfig_Success(t *testing.T) {
 		nil, nil, nil,
 		nil, nil, nil,
 	)
+	expectDirectResolveVersion(mock, planTermMigrationVersion)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	cfg, err := store.GetGlobalConfig(ctx)
@@ -124,6 +125,7 @@ func TestPGXMock_GetGlobalConfig_ScanError(t *testing.T) {
 	store := storeWith(mock)
 	ctx := context.Background()
 
+	expectDirectResolveVersion(mock, planTermMigrationVersion)
 	mock.ExpectQuery("SELECT").WillReturnError(errors.New("db error"))
 
 	_, err := store.GetGlobalConfig(ctx)
@@ -180,6 +182,7 @@ func TestPGXMock_GetGlobalConfig_GracePeriodDays(t *testing.T) {
 	t.Run("empty json object", func(t *testing.T) {
 		mock := newMock(t)
 		store := storeWith(mock)
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectQuery("SELECT").WillReturnRows(
 			pgxmock.NewRows(baseCols).AddRow(baseRow("{}")...),
 		)
@@ -196,6 +199,7 @@ func TestPGXMock_GetGlobalConfig_GracePeriodDays(t *testing.T) {
 	t.Run("populated json round-trips", func(t *testing.T) {
 		mock := newMock(t)
 		store := storeWith(mock)
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectQuery("SELECT").WillReturnRows(
 			pgxmock.NewRows(baseCols).AddRow(baseRow(`{"aws":7,"azure":0,"gcp":14}`)...),
 		)
@@ -210,6 +214,7 @@ func TestPGXMock_GetGlobalConfig_GracePeriodDays(t *testing.T) {
 	t.Run("malformed json surfaces error", func(t *testing.T) {
 		mock := newMock(t)
 		store := storeWith(mock)
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectQuery("SELECT").WillReturnRows(
 			pgxmock.NewRows(baseCols).AddRow(baseRow(`not-json`)...),
 		)
@@ -281,7 +286,9 @@ func TestPGXMock_UpdateGlobalConfigAtomic_LockedReadModifyWrite(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	expectDirectResolveVersion(mock, planTermMigrationVersion)
 	mock.ExpectQuery("FROM global_config").WillReturnRows(seeded)
+	expectDirectResolveVersion(mock, planTermMigrationVersion)
 	mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(32)...).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()
@@ -341,6 +348,7 @@ func TestPGXMock_UpdateGlobalConfigAtomic_ApplyErrorRollsBack(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	expectDirectResolveVersion(mock, planTermMigrationVersion)
 	mock.ExpectQuery("FROM global_config").WillReturnRows(seeded)
 	// No ExpectExec("INSERT...") — the UPSERT must not run.
 	mock.ExpectRollback()
@@ -390,7 +398,9 @@ func TestPGXMock_UpdateGlobalConfigAtomic_PropagatesOnlyChangedDefaults(t *testi
 		mock.ExpectBegin()
 		mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
 			WillReturnResult(pgxmock.NewResult("SELECT", 1))
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectQuery("FROM global_config").WillReturnRows(seeded())
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(32)...).
 			WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		mock.ExpectExec("UPDATE service_configs").
@@ -409,7 +419,9 @@ func TestPGXMock_UpdateGlobalConfigAtomic_PropagatesOnlyChangedDefaults(t *testi
 		mock.ExpectBegin()
 		mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
 			WillReturnResult(pgxmock.NewResult("SELECT", 1))
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectQuery("FROM global_config").WillReturnRows(seeded())
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectExec("INSERT INTO global_config").WithArgs(anyArgsCfg(32)...).
 			WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		dbErr := errors.New("service_configs update failed")
@@ -3843,13 +3855,15 @@ func TestPGXMock_UpdateGlobalConfigAtomic_PreservesAutoPurchaseStamps(t *testing
 		&by, &at, &via, // ladder_execution_changed_by/at/via
 	)
 	args := anyArgsCfg(32)
-	args[26], args[27], args[28] = &by, &at, &via
-	args[29], args[30], args[31] = &by, &at, &via
+	args[25], args[26], args[27] = &by, &at, &via
+	args[28], args[29], args[30] = &by, &at, &via
 
 	mock.ExpectBegin()
 	mock.ExpectExec("pg_advisory_xact_lock").WithArgs(pgxmock.AnyArg()).
 		WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	expectDirectResolveVersion(mock, planTermMigrationVersion)
 	mock.ExpectQuery("FROM global_config").WillReturnRows(seeded)
+	expectDirectResolveVersion(mock, planTermMigrationVersion)
 	mock.ExpectExec("INSERT INTO global_config").WithArgs(args...).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()

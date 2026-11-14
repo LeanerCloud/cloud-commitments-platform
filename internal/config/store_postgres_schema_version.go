@@ -18,6 +18,11 @@ const settlementMigrationVersion = 155
 // 000172_purchase_history_amount_basis in internal/database/postgres/migrations.
 const amountBasisMigrationVersion = 172
 
+// planTermMigrationVersion is the migration that adds
+// global_config.experimental_gcp_plan_term (#858). It mirrors the file
+// 000173_experimental_gcp_plan_term in internal/database/postgres/migrations.
+const planTermMigrationVersion = 173
+
 // directResolveMigrationVersion is the migration that adds the resolution
 // columns to ri_exchange_direct_executions (#1836). It mirrors
 // directResolutionMigration in internal/database/postgres/migrations.

@@ -42,6 +42,16 @@ func (s *PostgresStore) GetGlobalConfig(ctx context.Context) (*GlobalConfig, err
 // getGlobalConfigFrom reads the global_config singleton via q (the pool or a
 // transaction), returning defaults when no row exists yet.
 func getGlobalConfigFrom(ctx context.Context, q globalConfigExecutor) (*GlobalConfig, error) {
+	// main deploys before prod migrations are applied: below 000173 the column
+	// reads as false (the setting's default) instead of failing every read.
+	planTermCol := "false AS experimental_gcp_plan_term"
+	planTermReady, err := migrationApplied(ctx, q, planTermMigrationVersion)
+	if err != nil {
+		return nil, err
+	}
+	if planTermReady {
+		planTermCol = "experimental_gcp_plan_term"
+	}
 	query := `
 		SELECT enabled_providers, notification_email, approval_required,
 		       default_term, default_payment, default_coverage, default_ramp_schedule,
@@ -55,7 +65,7 @@ func getGlobalConfigFrom(ctx context.Context, q globalConfigExecutor) (*GlobalCo
 		       COALESCE(ladder_execution_enabled, false),
 		       offering_class,
 		       require_different_approver,
-		       experimental_gcp_plan_term,
+		       ` + planTermCol + `,
 		       auto_purchase_enabled,
 		       auto_purchase_changed_by, auto_purchase_changed_at, auto_purchase_changed_via,
 		       ladder_execution_changed_by, ladder_execution_changed_at, ladder_execution_changed_via
@@ -67,7 +77,7 @@ func getGlobalConfigFrom(ctx context.Context, q globalConfigExecutor) (*GlobalCo
 	var enabledProviders []string
 	var gracePeriodJSON string
 
-	err := q.QueryRow(ctx, query).Scan(
+	err = q.QueryRow(ctx, query).Scan(
 		&enabledProviders,
 		&config.NotificationEmail,
 		&config.ApprovalRequired,

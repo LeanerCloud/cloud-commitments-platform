@@ -13,8 +13,8 @@ import (
 )
 
 type fakeAPI struct {
-	pages [][]awsec2types.InstanceType
 	err   error
+	pages [][]awsec2types.InstanceType
 	calls int
 }
 

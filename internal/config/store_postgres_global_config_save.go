@@ -14,6 +14,11 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 		config.EnabledProviders = []string{}
 	}
 
+	planTerm, err := planTermUpsertFragments(ctx, q, config.ExperimentalGCPPlanTerm)
+	if err != nil {
+		return err
+	}
+
 	query := `
 		INSERT INTO global_config (
 			id, enabled_providers, notification_email, approval_required,
@@ -24,10 +29,10 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 			grace_period_days,
 			recommendations_cache_stale_hours, recommendations_lookback_days,
 			purchase_delay_hours, laddering_enabled, ladder_execution_enabled, offering_class,
-			require_different_approver, experimental_gcp_plan_term, auto_purchase_enabled,
+			require_different_approver, auto_purchase_enabled,
 			auto_purchase_changed_by, auto_purchase_changed_at, auto_purchase_changed_via,
-			ladder_execution_changed_by, ladder_execution_changed_at, ladder_execution_changed_via
-		) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+			ladder_execution_changed_by, ladder_execution_changed_at, ladder_execution_changed_via` + planTerm.col + `
+		) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31` + planTerm.val + `)
 		ON CONFLICT (id) DO UPDATE SET
 			enabled_providers = $1,
 			notification_email = $2,
@@ -53,14 +58,13 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 			ladder_execution_enabled = $22,
 			offering_class = $23,
 			require_different_approver = $24,
-			experimental_gcp_plan_term = $25,
-			auto_purchase_enabled = $26,
-			auto_purchase_changed_by = $27,
-			auto_purchase_changed_at = $28,
-			auto_purchase_changed_via = $29,
-			ladder_execution_changed_by = $30,
-			ladder_execution_changed_at = $31,
-			ladder_execution_changed_via = $32,
+			auto_purchase_enabled = $25,
+			auto_purchase_changed_by = $26,
+			auto_purchase_changed_at = $27,
+			auto_purchase_changed_via = $28,
+			ladder_execution_changed_by = $29,
+			ladder_execution_changed_at = $30,
+			ladder_execution_changed_via = $31` + planTerm.set + `,
 			updated_at = NOW()
 	`
 
@@ -87,13 +91,9 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 	// Marshal GracePeriodDays -> JSON text column. Empty map encodes as
 	// "{}" so the DB column is never NULL and GetGlobalConfig can
 	// treat "{}" and "" uniformly as "no explicit entries".
-	gracePeriodJSON := "{}"
-	if len(config.GracePeriodDays) > 0 {
-		gpBytes, err := json.Marshal(config.GracePeriodDays)
-		if err != nil {
-			return fmt.Errorf("failed to encode grace_period_days JSON: %w", err)
-		}
-		gracePeriodJSON = string(gpBytes)
+	gracePeriodJSON, err := encodeGracePeriodDays(config.GracePeriodDays)
+	if err != nil {
+		return err
 	}
 
 	// Default offering_class to "convertible" when unset so the DB column
@@ -104,7 +104,7 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 		offeringClass = "convertible"
 	}
 
-	_, err := q.Exec(ctx, query,
+	args := []any{
 		config.EnabledProviders,
 		config.NotificationEmail,
 		config.ApprovalRequired,
@@ -129,7 +129,6 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 		config.LadderExecutionEnabled,
 		offeringClass,
 		config.RequireDifferentApprover,
-		config.ExperimentalGCPPlanTerm,
 		config.AutoPurchaseEnabled,
 		config.AutoPurchaseChangedBy,
 		config.AutoPurchaseChangedAt,
@@ -137,11 +136,49 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 		config.LadderExecutionChangedBy,
 		config.LadderExecutionChangedAt,
 		config.LadderExecutionChangedVia,
-	)
+	}
+	args = append(args, planTerm.args...)
 
+	_, err = q.Exec(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to save global config: %w", err)
 	}
 
 	return nil
+}
+
+// planTermFragments are the upsert pieces for experimental_gcp_plan_term.
+type planTermFragments struct {
+	args          []any
+	col, val, set string
+}
+
+// planTermUpsertFragments returns the upsert pieces for the column. main
+// deploys before prod migrations are applied: below 000173 the column does not
+// exist, so it is left out of the upsert and the setting is not persisted
+// until the migration lands.
+func planTermUpsertFragments(ctx context.Context, q rowQuerier, enabled bool) (planTermFragments, error) {
+	ready, err := migrationApplied(ctx, q, planTermMigrationVersion)
+	if err != nil || !ready {
+		return planTermFragments{}, err
+	}
+	return planTermFragments{
+		col:  ", experimental_gcp_plan_term",
+		val:  ", $32",
+		set:  ",\n\t\t\texperimental_gcp_plan_term = $32",
+		args: []any{enabled},
+	}, nil
+}
+
+// encodeGracePeriodDays marshals the per-service grace windows; an empty map is
+// "{}" so the column is never NULL.
+func encodeGracePeriodDays(days map[string]int) (string, error) {
+	if len(days) == 0 {
+		return "{}", nil
+	}
+	b, err := json.Marshal(days)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode grace_period_days JSON: %w", err)
+	}
+	return string(b), nil
 }

@@ -600,6 +600,7 @@ func TestSaveGlobalConfig_OfferingClassBindsAt23(t *testing.T) {
 	// require_different_approver (issue #1005).
 	// If the real query regresses to a different arg count, pgxmock
 	// will return an unexpected-call error and the test will fail.
+	expectDirectResolveVersion(mock, planTermMigrationVersion)
 	mock.ExpectExec(`INSERT INTO global_config`).
 		WithArgs(
 			pgxmock.AnyArg(), // $1  enabled_providers
@@ -626,14 +627,14 @@ func TestSaveGlobalConfig_OfferingClassBindsAt23(t *testing.T) {
 			pgxmock.AnyArg(), // $22 ladder_execution_enabled
 			"standard",       // $23 offering_class -- the field this test guards
 			pgxmock.AnyArg(), // $24 require_different_approver
-			pgxmock.AnyArg(), // $25 experimental_gcp_plan_term
-			pgxmock.AnyArg(), // $26 auto_purchase_enabled
-			pgxmock.AnyArg(), // $27 auto_purchase_changed_by
-			pgxmock.AnyArg(), // $28 auto_purchase_changed_at
-			pgxmock.AnyArg(), // $29 auto_purchase_changed_via
-			pgxmock.AnyArg(), // $30 ladder_execution_changed_by
-			pgxmock.AnyArg(), // $31 ladder_execution_changed_at
-			pgxmock.AnyArg(), // $32 ladder_execution_changed_via
+			pgxmock.AnyArg(), // $25 auto_purchase_enabled
+			pgxmock.AnyArg(), // $26 auto_purchase_changed_by
+			pgxmock.AnyArg(), // $27 auto_purchase_changed_at
+			pgxmock.AnyArg(), // $28 auto_purchase_changed_via
+			pgxmock.AnyArg(), // $29 ladder_execution_changed_by
+			pgxmock.AnyArg(), // $30 ladder_execution_changed_at
+			pgxmock.AnyArg(), // $31 ladder_execution_changed_via
+			pgxmock.AnyArg(), // $32 experimental_gcp_plan_term
 		).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 

@@ -38,6 +38,7 @@ func gcpPlanTermRow(planTerm bool) *pgxmock.Rows {
 func TestPGXMock_GetGlobalConfig_ExperimentalGCPPlanTermDefaultsOff(t *testing.T) {
 	t.Run("no row", func(t *testing.T) {
 		mock := newMock(t)
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectQuery("SELECT").WillReturnError(pgx.ErrNoRows)
 		cfg, err := storeWith(mock).GetGlobalConfig(context.Background())
 		require.NoError(t, err)
@@ -45,6 +46,7 @@ func TestPGXMock_GetGlobalConfig_ExperimentalGCPPlanTermDefaultsOff(t *testing.T
 	})
 	t.Run("stored false", func(t *testing.T) {
 		mock := newMock(t)
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectQuery("SELECT").WillReturnRows(gcpPlanTermRow(false))
 		cfg, err := storeWith(mock).GetGlobalConfig(context.Background())
 		require.NoError(t, err)
@@ -52,6 +54,7 @@ func TestPGXMock_GetGlobalConfig_ExperimentalGCPPlanTermDefaultsOff(t *testing.T
 	})
 	t.Run("stored true", func(t *testing.T) {
 		mock := newMock(t)
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectQuery("SELECT").WillReturnRows(gcpPlanTermRow(true))
 		cfg, err := storeWith(mock).GetGlobalConfig(context.Background())
 		require.NoError(t, err)
@@ -59,12 +62,13 @@ func TestPGXMock_GetGlobalConfig_ExperimentalGCPPlanTermDefaultsOff(t *testing.T
 	})
 }
 
-// SaveGlobalConfig must bind the switch as $25 so a saved true is not lost.
+// SaveGlobalConfig must bind the switch as $32 so a saved true is not lost.
 func TestPGXMock_SaveGlobalConfig_BindsExperimentalGCPPlanTerm(t *testing.T) {
 	for _, want := range []bool{false, true} {
 		mock := newMock(t)
 		args := anyArgsCfg(32)
-		args[24] = want
+		args[31] = want
+		expectDirectResolveVersion(mock, planTermMigrationVersion)
 		mock.ExpectExec("INSERT INTO global_config").WithArgs(args...).
 			WillReturnResult(pgxmock.NewResult("INSERT", 1))
 
@@ -72,4 +76,29 @@ func TestPGXMock_SaveGlobalConfig_BindsExperimentalGCPPlanTerm(t *testing.T) {
 		require.NoError(t, err)
 		assert.NoError(t, mock.ExpectationsWereMet(), "want=%v", want)
 	}
+}
+
+// Prod migrations are applied separately from the deploy (N-1 rule): before
+// 000173 the read must not name the column and the upsert must not write it.
+func TestPGXMock_GlobalConfig_BeforePlanTermMigration(t *testing.T) {
+	notReady := planTermMigrationVersion - 1
+
+	t.Run("read selects false in place of the column", func(t *testing.T) {
+		mock := newMock(t)
+		expectDirectResolveVersion(mock, notReady)
+		mock.ExpectQuery(`false AS experimental_gcp_plan_term`).WillReturnRows(gcpPlanTermRow(false))
+		cfg, err := storeWith(mock).GetGlobalConfig(context.Background())
+		require.NoError(t, err)
+		assert.False(t, cfg.ExperimentalGCPPlanTerm)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("save leaves the column out", func(t *testing.T) {
+		mock := newMock(t)
+		expectDirectResolveVersion(mock, notReady)
+		mock.ExpectExec(`ladder_execution_changed_via \) VALUES .*\$31\) ON CONFLICT .*ladder_execution_changed_via = \$31, updated_at`).WithArgs(anyArgsCfg(31)...).
+			WillReturnResult(pgxmock.NewResult("INSERT", 1))
+		require.NoError(t, storeWith(mock).SaveGlobalConfig(context.Background(), &GlobalConfig{ExperimentalGCPPlanTerm: true}))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
 }

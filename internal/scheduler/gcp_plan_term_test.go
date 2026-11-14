@@ -12,14 +12,11 @@ import (
 )
 
 // collectGCPAmbientWith runs the ambient GCP collection with the given global
-// config and returns the recommendations client so callers assert which fetch
-// method (and params) it saw. Platform issue #858.
-func collectGCPAmbientWith(t *testing.T, globalCfg *config.GlobalConfig, setup func(*MockRecommendationsClient)) *MockRecommendationsClient {
+// config against recClient so callers assert which fetch method (and params) it saw. Platform issue #858.
+func collectGCPAmbientWith(t *testing.T, globalCfg *config.GlobalConfig, recClient *MockRecommendationsClient) {
 	t.Helper()
 	t.Setenv("GCP_PROJECT_ID", "host-project")
 
-	recClient := new(MockRecommendationsClient)
-	setup(recClient)
 	prov := new(MockProvider)
 	prov.On("GetRecommendationsClient", mock.Anything).Return(recClient, nil)
 	factory := new(MockProviderFactory)
@@ -30,7 +27,6 @@ func collectGCPAmbientWith(t *testing.T, globalCfg *config.GlobalConfig, setup f
 	s := &Scheduler{config: store, providerFactory: factory}
 	_, _, _, err := s.collectGCPRecommendations(context.Background(), globalCfg)
 	require.NoError(t, err)
-	return recClient
 }
 
 func TestCollectGCPRecommendations_PlanTermOffKeepsGetAll(t *testing.T) {
@@ -39,9 +35,9 @@ func TestCollectGCPRecommendations_PlanTermOffKeepsGetAll(t *testing.T) {
 		"nil config": nil,
 	} {
 		t.Run(name, func(t *testing.T) {
-			rc := collectGCPAmbientWith(t, cfg, func(c *MockRecommendationsClient) {
-				c.On("GetAllRecommendations", mock.Anything).Return([]common.Recommendation{}, nil).Once()
-			})
+			rc := new(MockRecommendationsClient)
+			rc.On("GetAllRecommendations", mock.Anything).Return([]common.Recommendation{}, nil).Once()
+			collectGCPAmbientWith(t, cfg, rc)
 			rc.AssertExpectations(t)
 			rc.AssertNotCalled(t, "GetRecommendations", mock.Anything, mock.Anything)
 		})
@@ -49,11 +45,11 @@ func TestCollectGCPRecommendations_PlanTermOffKeepsGetAll(t *testing.T) {
 }
 
 func TestCollectGCPRecommendations_PlanTermOnSetsParamFlag(t *testing.T) {
-	rc := collectGCPAmbientWith(t, &config.GlobalConfig{ExperimentalGCPPlanTerm: true}, func(c *MockRecommendationsClient) {
-		c.On("GetRecommendations", mock.Anything, mock.MatchedBy(func(p *common.RecommendationParams) bool {
-			return p.ExperimentalGCPPlanTerm && p.Service == ""
-		})).Return([]common.Recommendation{}, nil).Once()
-	})
+	rc := new(MockRecommendationsClient)
+	rc.On("GetRecommendations", mock.Anything, mock.MatchedBy(func(p *common.RecommendationParams) bool {
+		return p.ExperimentalGCPPlanTerm && p.Service == ""
+	})).Return([]common.Recommendation{}, nil).Once()
+	collectGCPAmbientWith(t, &config.GlobalConfig{ExperimentalGCPPlanTerm: true}, rc)
 	rc.AssertExpectations(t)
 	assert.True(t, rc.AssertNotCalled(t, "GetAllRecommendations", mock.Anything))
 }
@@ -63,17 +59,17 @@ func TestCollectGCPRecommendations_PlanTermOnSetsParamFlag(t *testing.T) {
 func TestCollectGCPRecommendations_PlanTermReachesRegisteredAccountPath(t *testing.T) {
 	for name, tc := range map[string]struct {
 		cfg    *config.GlobalConfig
-		on     bool
 		expect func(*MockRecommendationsClient)
+		on     bool
 	}{
-		"on": {&config.GlobalConfig{ExperimentalGCPPlanTerm: true}, true, func(c *MockRecommendationsClient) {
+		"on": {&config.GlobalConfig{ExperimentalGCPPlanTerm: true}, func(c *MockRecommendationsClient) {
 			c.On("GetRecommendations", mock.Anything, mock.MatchedBy(func(p *common.RecommendationParams) bool {
 				return p.ExperimentalGCPPlanTerm
 			})).Return([]common.Recommendation{}, nil).Once()
-		}},
-		"off": {&config.GlobalConfig{}, false, func(c *MockRecommendationsClient) {
+		}, true},
+		"off": {&config.GlobalConfig{}, func(c *MockRecommendationsClient) {
 			c.On("GetAllRecommendations", mock.Anything).Return([]common.Recommendation{}, nil).Once()
-		}},
+		}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rc := new(MockRecommendationsClient)
