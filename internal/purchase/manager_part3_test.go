@@ -2,7 +2,9 @@ package purchase
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -319,4 +321,132 @@ func TestManager_RecoverStrandedApprovals_AzureReservationRedrives(t *testing.T)
 	// CAS claim (approved -> running) was called; "failed" transition was not.
 	mockStore.AssertCalled(t, "TransitionExecutionStatus", ctx, "exec-azure-res-stranded", []string{"approved"}, "running", (*string)(nil))
 	mockStore.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, "failed", mock.Anything)
+}
+
+// TestManager_ProcessScheduledPurchases_GateCheckErrorCounted verifies that a
+// plan-fetch error during the AutoPurchase gate check counts as a failure and
+// does NOT proceed to claim+execute the row.
+func TestManager_ProcessScheduledPurchases_GateCheckErrorCounted(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+
+	pastDate := time.Now().Add(-1 * time.Hour)
+	executions := []config.PurchaseExecution{
+		{
+			ExecutionID:   "exec-gate-err",
+			PlanID:        "plan-gate-err",
+			Status:        "pending",
+			ScheduledDate: pastDate,
+		},
+	}
+
+	mockStore.On("GetStaleApprovedExecutions", ctx, mock.Anything).Return([]config.PurchaseExecution{}, nil)
+	mockStore.On("GetPendingExecutions", ctx).Return(executions, nil)
+	mockStore.On("GetPurchasePlan", ctx, "plan-gate-err").Return(nil, errors.New("db timeout"))
+
+	manager := &Manager{
+		config:       mockStore,
+		email:        mockEmail,
+		dashboardURL: "https://dashboard.example.com",
+	}
+
+	result, err := manager.ProcessScheduledPurchases(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.Processed, "gate-check error rows are not yet processed")
+	assert.Equal(t, 0, result.Executed)
+	assert.Equal(t, 1, result.Failed, "gate-check error must count as a failure")
+	assert.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0], "AutoPurchase gate check failed")
+
+	mockStore.AssertExpectations(t)
+	mockStore.AssertNotCalled(t, "TransitionExecutionStatus",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestManager_RecoverStrandedApprovals_FailsStrandedRow is the regression test
+// for issue #632 safe-fail path: an Azure Savings Plans execution flipped to
+// "approved" whose synchronous purchase run was interrupted before it finalized
+// must NOT stay permanently "approved". Azure Savings Plans re-drive is unsafe
+// because the OrderAlias API uses a timestamp-based alias name with no server-side
+// idempotency key (#639), so the recovery sweep drives the row into a terminal
+// "failed" state with a clear error and does NOT re-run the purchase (no
+// provider/service-client calls), eliminating double-purchase risk.
+func TestManager_RecoverStrandedApprovals_FailsStrandedRow(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	assertMocksOnCleanup(t, mockEmail)
+	mockFactory := new(MockProviderFactory)
+
+	stranded := config.PurchaseExecution{
+		ExecutionID: "exec-stranded",
+		PlanID:      "plan-456",
+		Status:      "approved",
+		Recommendations: []config.RecommendationRecord{
+			// Azure Savings Plans: safe-fail path because OrderAlias has no idempotency key.
+			{CommitmentCurrency: "USD", Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 1, UpfrontCost: 500.0, Selected: true, Purchased: false},
+		},
+	}
+	failedRow := stranded
+	failedRow.Status = "failed"
+
+	mockStore.On("GetStaleApprovedExecutions", ctx, staleApprovedThreshold).
+		Return([]config.PurchaseExecution{stranded}, nil)
+	// The atomic transition only flips rows still in "approved".
+	mockStore.On("TransitionExecutionStatus", ctx, "exec-stranded", []string{"approved"}, "failed", (*string)(nil)).
+		Return(&failedRow, nil)
+	// The explanatory error is stamped on the now-failed row.
+	var saved *config.PurchaseExecution
+	mockStore.On("SavePurchaseExecution", ctx, mock.AnythingOfType("*config.PurchaseExecution")).
+		Run(func(args mock.Arguments) { saved = args.Get(1).(*config.PurchaseExecution) }).
+		Return(nil)
+	// The failed row reaches operators (issue #1195).
+	mockEmail.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).Return(nil)
+
+	manager := &Manager{
+		config:          mockStore,
+		email:           mockEmail,
+		providerFactory: mockFactory,
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	recovered, err := manager.RecoverStrandedApprovals(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, recovered)
+	mockEmail.AssertNumberOfCalls(t, "SendPurchaseFailedNotification", 1)
+
+	require.NotNil(t, saved)
+	assert.Equal(t, "failed", saved.Status, "stranded Azure Savings Plans row must become terminally failed, never stay approved")
+	assert.NotEmpty(t, saved.Error, "the failed row must carry a clear, operator-readable error")
+	assert.Contains(t, saved.Error, "interrupted")
+	assert.False(t, saved.Recommendations[0].Purchased, "recovery must not mark anything purchased")
+
+	mockStore.AssertExpectations(t)
+	// No provider was ever created: the sweep fails, it does not re-purchase.
+	// A double-purchase would require CreateAndValidateProvider here.
+	mockFactory.AssertNotCalled(t, "CreateAndValidateProvider", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestManager_RecoverStrandedApprovals_FreshRowUntouched verifies the sweep only
+// acts on rows the store returns as stale. A freshly-approved execution (still
+// within staleApprovedThreshold, hence excluded by GetStaleApprovedExecutions)
+// is never transitioned or saved, so an in-flight synchronous purchase is never
+// failed out from under itself.
+func TestManager_RecoverStrandedApprovals_FreshRowUntouched(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+
+	mockStore.On("GetStaleApprovedExecutions", ctx, staleApprovedThreshold).
+		Return([]config.PurchaseExecution{}, nil)
+
+	manager := &Manager{config: mockStore, dashboardURL: "https://dashboard.example.com"}
+
+	recovered, err := manager.RecoverStrandedApprovals(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, recovered)
+
+	mockStore.AssertExpectations(t)
+	mockStore.AssertNotCalled(t, "TransitionExecutionStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockStore.AssertNotCalled(t, "SavePurchaseExecution", mock.Anything, mock.Anything)
 }
