@@ -191,6 +191,11 @@ func (h *Handler) updateAccount(ctx context.Context, httpReq *events.LambdaFunct
 	account.UpdatedAt = time.Now()
 
 	if err := h.config.UpdateCloudAccount(ctx, account); err != nil {
+		if errors.Is(err, config.ErrAccountExternalIDHasHistory) {
+			return nil, NewClientErrorWithDetails(409,
+				"external ID cannot be changed: purchase history exists for this account; delete the account and add it again, or keep the current external ID",
+				map[string]any{"reason": "external_id_has_history"})
+		}
 		return nil, classifyStoreError(err, fmt.Sprintf("an account with external ID %q already exists for %s", req.ExternalID, req.Provider))
 	}
 
