@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -21,7 +22,7 @@ import (
 // Issue #1005: the purchase authorization helpers asked HasPermissionAPI
 // whether the key's OWNER held the full-scope *-any verb, while the
 // Constraints that follow are judged on the key itself. These tests drive
-// the decision into a real auth.Service backed by auth.MockStore (key
+// the decision into a real auth.Service backed by authtest.MockStore (key
 // permissions intersected with the owner's), the same shape #1001 uses for
 // the planned-purchase routes.
 
@@ -95,7 +96,7 @@ func newOKPAuth(keyVerbs ...string) *okpAuth {
 		ID: okpKeyID, UserID: okpOwnerID, KeyHash: base64.RawURLEncoding.EncodeToString(sum[:]),
 		IsActive: true, ExpiresAt: &expires, Permissions: okpPerms(keyVerbs...),
 	}
-	store := new(auth.MockStore)
+	store := new(authtest.MockStore)
 	store.On("GetAPIKeyByHash", mock.Anything, key.KeyHash).Return(key, nil).Maybe()
 	store.On("GetAPIKeyByID", mock.Anything, okpKeyID).Return(key, nil).Maybe()
 	store.On("GetUserByID", mock.Anything, okpOwnerID).Return(&auth.User{
@@ -109,7 +110,7 @@ func newOKPAuth(keyVerbs ...string) *okpAuth {
 	m.On("ValidateSession", mock.Anything, okpToken).Return(&Session{UserID: okpOwnerID, Email: "owner@example.com"}, nil).Maybe()
 	m.On("ValidateCSRFToken", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	m.On("GetAllowedAccountsAPI", mock.Anything, okpOwnerID).Return([]string{}, nil).Maybe()
-	return &okpAuth{MockAuthService: m, service: auth.NewService(auth.ServiceConfig{Store: store, CSRFKey: auth.TestCSRFKey()})}
+	return &okpAuth{MockAuthService: m, service: auth.NewService(auth.ServiceConfig{Store: store, CSRFKey: authtest.TestCSRFKey()})}
 }
 
 func okpKeyHeaders() map[string]string { return map[string]string{"X-API-Key": okpRawKey} }

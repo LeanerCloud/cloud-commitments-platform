@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -23,7 +24,7 @@ import (
 // the key's OWNER. A user API key holding only a narrow verb could therefore
 // act on any user's scheduled purchase whenever its owner held update-any.
 // These tests drive HandleRequest (router, middleware, handler) into a real
-// auth.Service backed by auth.MockStore, so the key-versus-owner decision is
+// auth.Service backed by authtest.MockStore, so the key-versus-owner decision is
 // the production one: key permissions intersected with the owner's.
 
 const (
@@ -93,7 +94,7 @@ func newKeyScopeAuthWithGroup(keyPerms, groupPerms []auth.Permission) *keyScopeA
 		ID: keyScopeKeyID, UserID: keyScopeOwnerID, KeyHash: base64.RawURLEncoding.EncodeToString(sum[:]),
 		IsActive: true, ExpiresAt: &expires, Permissions: keyPerms,
 	}
-	store := new(auth.MockStore)
+	store := new(authtest.MockStore)
 	store.On("GetAPIKeyByHash", mock.Anything, key.KeyHash).Return(key, nil).Maybe()
 	store.On("GetAPIKeyByID", mock.Anything, keyScopeKeyID).Return(key, nil).Maybe()
 	store.On("GetUserByID", mock.Anything, keyScopeOwnerID).Return(&auth.User{
@@ -107,7 +108,7 @@ func newKeyScopeAuthWithGroup(keyPerms, groupPerms []auth.Permission) *keyScopeA
 	m.On("ValidateSession", mock.Anything, keyScopeToken).Return(&Session{UserID: keyScopeOwnerID, Email: "owner@example.com"}, nil).Maybe()
 	m.On("ValidateCSRFToken", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	m.On("GetAllowedAccountsAPI", mock.Anything, keyScopeOwnerID).Return([]string{}, nil).Maybe()
-	return &keyScopeAuth{MockAuthService: m, service: auth.NewService(auth.ServiceConfig{Store: store, CSRFKey: auth.TestCSRFKey()})}
+	return &keyScopeAuth{MockAuthService: m, service: auth.NewService(auth.ServiceConfig{Store: store, CSRFKey: authtest.TestCSRFKey()})}
 }
 
 // keyScopeExec is a not-yet-due row carrying one priced recommendation, so
