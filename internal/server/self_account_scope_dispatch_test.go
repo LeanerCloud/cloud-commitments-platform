@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -39,9 +40,9 @@ const (
 // newSelfScopeHarness wires a real auth.Service (mock store only) behind the
 // real API handler and returns both so a test can drive requests and adjust
 // expectations.
-func newSelfScopeHarness(t *testing.T, priorGroups []string) (*api.Handler, *auth.MockStore) {
+func newSelfScopeHarness(t *testing.T, priorGroups []string) (*api.Handler, *authtest.MockStore) {
 	t.Helper()
-	mockStore := new(auth.MockStore)
+	mockStore := new(authtest.MockStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
 	mockStore.On("GetSession", mock.Anything, mock.AnythingOfType("string")).Return(&auth.Session{
@@ -67,7 +68,7 @@ func newSelfScopeHarness(t *testing.T, priorGroups []string) (*api.Handler, *aut
 	service := auth.NewService(auth.ServiceConfig{
 		Store:           mockStore,
 		SessionDuration: time.Hour,
-		CSRFKey:         auth.TestCSRFKey(),
+		CSRFKey:         authtest.TestCSRFKey(),
 	})
 	handler := api.NewHandler(api.HandlerConfig{AuthService: newAuthServiceAdapter(service)})
 	return handler, mockStore
@@ -82,7 +83,7 @@ func selfMembershipRequest(t *testing.T, groupIDs []string) *events.LambdaFuncti
 	return &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{
 			"Authorization": "Bearer " + scopeDispatchRawToken,
-			"X-CSRF-Token":  auth.DeriveTestCSRFToken(scopeDispatchRawToken),
+			"X-CSRF-Token":  authtest.DeriveTestCSRFToken(scopeDispatchRawToken),
 			"Content-Type":  "application/json",
 		},
 		Body: string(body),

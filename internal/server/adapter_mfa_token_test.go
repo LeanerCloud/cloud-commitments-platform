@@ -9,6 +9,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -22,9 +23,9 @@ import (
 // sends {email, mfa_token, mfa_code} with no password and gets a session.
 func TestLogin_MFATokenRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	store := new(auth.MockStore)
+	store := new(authtest.MockStore)
 	realAuth := auth.NewService(auth.ServiceConfig{
-		Store: store, SessionDuration: time.Hour, CSRFKey: auth.TestCSRFKey(),
+		Store: store, SessionDuration: time.Hour, CSRFKey: authtest.TestCSRFKey(),
 		DashboardURL: "http://localhost:3000", BcryptCost: bcrypt.MinCost,
 	})
 	router := api.NewRouter(api.NewHandler(api.HandlerConfig{AuthService: newAuthServiceAdapter(realAuth), RateLimiter: api.NewInMemoryRateLimiter()}))
@@ -33,9 +34,9 @@ func TestLogin_MFATokenRoundTrip(t *testing.T) {
 	const rtSecret = "RoundTripPass@1" // test-only placeholder
 	const recoveryCode = "ABCD-EFGH"
 	user := &auth.User{
-		ID: "user-rt", Email: email, Active: true, PasswordHash: auth.TestPasswordHash(t, rtSecret),
+		ID: "user-rt", Email: email, Active: true, PasswordHash: authtest.TestPasswordHash(t, rtSecret),
 		MFAEnabled: true, MFASecret: "JBSWY3DPEHPK3PXP", PasswordVersion: 4,
-		MFARecoveryCodes: []string{auth.TestPasswordHash(t, "ABCDEFGH")},
+		MFARecoveryCodes: []string{authtest.TestPasswordHash(t, "ABCDEFGH")},
 	}
 	store.On("GetUserByEmail", ctx, email).Return(user, nil).Once()
 

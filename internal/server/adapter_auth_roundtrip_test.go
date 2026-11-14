@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -65,17 +66,17 @@ func (e *rtEmailSender) SendUserInviteEmail(context.Context, string, string) err
 type authRT struct {
 	t      *testing.T
 	mail   *rtEmailSender
-	store  *auth.MockStore
+	store  *authtest.MockStore
 	router *api.Router
 	user   *auth.User
 }
 
 func newAuthRT(t *testing.T) *authRT {
 	t.Helper()
-	store := new(auth.MockStore)
+	store := new(authtest.MockStore)
 	mail := new(rtEmailSender)
 	svc := auth.NewService(auth.ServiceConfig{
-		EmailSender: mail, Store: store, SessionDuration: time.Hour, CSRFKey: auth.TestCSRFKey(),
+		EmailSender: mail, Store: store, SessionDuration: time.Hour, CSRFKey: authtest.TestCSRFKey(),
 		DashboardURL: "http://localhost:3000", BcryptCost: bcrypt.MinCost,
 	})
 	router := api.NewRouter(api.NewHandler(api.HandlerConfig{
@@ -83,7 +84,7 @@ func newAuthRT(t *testing.T) *authRT {
 	}))
 	h := &authRT{t: t, mail: mail, store: store, router: router, user: &auth.User{
 		ID: rtUserID, Email: rtEmail, Active: true, GroupIDs: []string{"group-rt"},
-		PasswordHash: auth.TestPasswordHash(t, rtPassword),
+		PasswordHash: authtest.TestPasswordHash(t, rtPassword),
 	}}
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	return h
@@ -268,7 +269,7 @@ func TestMFADisable_RoundTripEveryField(t *testing.T) {
 	a := newAuthRT(t)
 	a.session()
 	const recovery = "ABCD-EFGH"
-	recoveryHash := auth.TestPasswordHash(t, "ABCDEFGH")
+	recoveryHash := authtest.TestPasswordHash(t, "ABCDEFGH")
 	a.user.MFAEnabled, a.user.MFASecret, a.user.MFARecoveryCodes = true, rtMFASecret, []string{recoveryHash}
 	// password verified, then the recovery code (not a TOTP) is the proof.
 	a.store.On("DisableMFA", mock.Anything, rtUserID, rtMFASecret, []string{recoveryHash}).Return(nil).Once()
