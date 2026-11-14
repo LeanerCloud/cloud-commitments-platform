@@ -36,7 +36,7 @@
 -- Recovering from a refused rollback
 -- ------------------------------------------------------------------
 -- golang-migrate stamps (version=95, dirty=true) BEFORE running this file, so
--- a refusal leaves schema_migrations dirty at 95 and maybeAutoHealDirty
+-- a refusal leaves schema_migrations dirty at 95 and maybeRefuseDirty
 -- (migrate.go) deliberately will NOT clear it -- the next deploy hard-fails
 -- until an operator intervenes. Because this file raises before touching the
 -- schema, the database still matches version 95 exactly. Recover by setting

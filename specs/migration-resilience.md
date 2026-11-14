@@ -80,20 +80,15 @@ module's SNS topic(s) to get paged.
 
 3. **Clear dirty state** if that's the cause. Two options:
 
-   a. **Auto-heal (default-on; usually nothing to do).** On every cold start,
-      if `schema_migrations` is dirty, the app `Force()`s the CURRENT recorded
-      version to clear the flag and re-applies any pending migrations, so the
-      next boot self-recovers without operator action. This is safe because
-      every migration in this repo is idempotent (guarded with `IF EXISTS` /
-      `IF NOT EXISTS` / `DO`-blocks); the `TestMigrations_FullStackIdempotent`
-      integration test enforces that invariant. It is **enabled by default**;
-      set `CUDLY_MIGRATION_AUTOHEAL=false` only to disable it in an environment
-      whose migrations are not idempotent. If auto-heal still can't reach head
-      (a genuinely broken migration), the app fail-opens (it always starts) and
-      the migration-failed alarm fires — fall through to option (b) or fix the
-      migration file. Auto-heal always forces the current version, never lower:
-      forcing below already-applied seed migrations would re-run guards that
-      raise on a second run (e.g. `000059` "Purchaser already exists").
+   a. **Dirty check (default-on; it does not heal).** On every cold start,
+      if `schema_migrations` is dirty, the app refuses to continue and returns
+      an error with recovery instructions. It never clears the flag: whether
+      the dirty migration's SQL landed is unknown (a rolled-back migration
+      looks the same as a committed one whose version update failed), so
+      recovery is the manual force below. The app fail-opens (it always
+      starts) and the migration-failed alarm fires. Set
+      `CUDLY_MIGRATION_DIRTY_CHECK=false` only to skip the descriptive error
+      and get golang-migrate's bare dirty-version error from `Up()`.
 
    b. **Manual force.** Use `CUDLY_FORCE_MIGRATION_VERSION` — see
       `internal/database/postgres/migrations/migrate.go` for the full
@@ -108,8 +103,9 @@ module's SNS topic(s) to get paged.
         deploy-time runner (`cudly --migrate`, `{"action":"migrate"}`)
         refuses to run while it is set; pass `force_version` instead.
 
-   `CUDLY_FORCE_MIGRATION_VERSION` takes precedence over auto-heal: it runs
-   first and pins+cleans the version, leaving nothing for auto-heal to act on.
+   `CUDLY_FORCE_MIGRATION_VERSION` takes precedence over the dirty check: it
+   runs first and pins+cleans the version, leaving nothing for the check to
+   report.
 
 4. **Verify recovery.** `/health` should return `migrations.status =
    "healthy"` after the next cold start completes successfully.
@@ -124,21 +120,19 @@ module's SNS topic(s) to get paged.
   Lambda 300s hard limit, so a slow-but-legitimate migration completes
   rather than being killed inside `ensureDB`.
 
-- `CUDLY_MIGRATION_AUTOHEAL` (**default-on**) — dirty auto-heal. When
-  `schema_migrations` is dirty on cold start, the app `Force()`s the CURRENT
-  recorded version to clear the dirty flag, then re-applies pending
-  migrations via `m.Up()`, so the next boot self-recovers. Relies on
-  migrations being idempotent (see `TestMigrations_FullStackIdempotent`).
-  Set to a `strconv.ParseBool` falsey value (`false`/`0`/...) to disable it
-  where idempotency is not guaranteed — a dirty DB then surfaces the usual
-  error instead of being auto-forced (the app still starts; it fail-opens).
-  Unset / empty / unparseable values keep it enabled.
+- `CUDLY_MIGRATION_DIRTY_CHECK` (**default-on**): when `schema_migrations`
+  is dirty on cold start, return an error that tells the operator how to
+  choose a `CUDLY_FORCE_MIGRATION_VERSION` target. It never clears the dirty
+  flag. Set to a `strconv.ParseBool` falsey value (`false`/`0`/...) to skip it,
+  so a dirty DB surfaces golang-migrate's bare error from `Up()` instead (the
+  app still starts; it fail-opens). Unset / empty / unparseable values keep it
+  enabled.
 
 - `CUDLY_FORCE_MIGRATION_VERSION` (unset by default) — one-shot
   operator recovery. When set to a non-negative integer, calls
   `migrate.Force(N)` before `m.Up()`. Rejected with a loud error on
   non-numeric input — typos should surface immediately, not corrupt
-  state. Takes precedence over `CUDLY_MIGRATION_AUTOHEAL`.
+  state. Takes precedence over `CUDLY_MIGRATION_DIRTY_CHECK`.
 
 - `DB_AUTO_MIGRATE` (default `false`, set to `true` in deployments that
   want lazy-init migrations) — when off, the `/health` migrations check
@@ -149,10 +143,9 @@ module's SNS topic(s) to get paged.
 - Moving migrations to a dedicated CI deploy step (the longer-term
   fix — migrations run once per deploy with clear failure visibility,
   not lazily per cold-start). Separate plan / follow-up issue.
-- Per-migration retry logic — auto-heal (above) clears a dirty flag and
-  re-applies idempotent migrations, but it does not retry a migration
-  whose SQL itself is broken; that still requires fixing the migration
-  file and redeploying.
+- Per-migration retry logic: the dirty check (above) never clears the flag
+  or retries a migration; a failed migration needs the manual force and, if
+  its SQL is broken, a fix to the migration file and a redeploy.
 
 ## Related
 

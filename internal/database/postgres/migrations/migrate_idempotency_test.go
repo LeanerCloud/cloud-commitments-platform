@@ -24,12 +24,12 @@ import (
 // from golang-migrate and returns without executing any migration SQL -- so
 // individual migration bodies are never actually re-run here.
 //
-// The conservative auto-heal in maybeAutoHealDirty no longer relies on
+// The dirty check in maybeRefuseDirty no longer relies on
 // per-migration idempotency: instead of silently Force-clearing the dirty flag
 // (which risked recording a rolled-back migration as applied), it now fails
 // loud and defers to an operator to confirm the schema state via
 // CUDLY_FORCE_MIGRATION_VERSION. Per-migration re-run safety is therefore not
-// an invariant that auto-heal depends on, and is tracked separately.
+// an invariant that dirty check depends on, and is tracked separately.
 func TestMigrations_FullStackIdempotent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
