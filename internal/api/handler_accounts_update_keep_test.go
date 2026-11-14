@@ -73,6 +73,7 @@ func putAccountFlags(t *testing.T, existingEnabled, existingOrgRoot bool, extra 
 }
 
 func TestUpdateAccount_OmittedFlagsKeepStoredValues(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name            string
 		extra           string
@@ -101,6 +102,7 @@ func TestUpdateAccount_OmittedFlagsKeepStoredValues(t *testing.T) {
 // The issue's verification rule: a real false and a genuine absence go through
 // the same path and must produce different outcomes.
 func TestUpdateAccount_ExplicitFalseAndOmittedDiverge(t *testing.T) {
+	t.Parallel()
 	omitted := putAccountFlags(t, true, true, "")
 	explicit := putAccountFlags(t, true, true, `,"enabled":false,"aws_is_org_root":false`)
 	assert.NotEqual(t, omitted.Enabled, explicit.Enabled, "enabled: omitted and explicit false must differ")
@@ -108,6 +110,7 @@ func TestUpdateAccount_ExplicitFalseAndOmittedDiverge(t *testing.T) {
 }
 
 func TestCreateAccount_FlagDefaultsUnchanged(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name        string
 		extra       string

@@ -76,6 +76,7 @@ func setupAdminAuth(ctx context.Context, mockAuth *MockAuthService) {
 // --- listAccounts ---
 
 func TestListAccounts_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -101,6 +102,7 @@ func TestListAccounts_Success(t *testing.T) {
 }
 
 func TestListAccounts_ReturnsEmptySlice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -155,6 +157,7 @@ func standardRequest(body string) *events.LambdaFunctionURLRequest { //nolint:un
 // A Standard user holding view:recommendations gets the minimal list, and the
 // projection contains none of the sensitive credential/config fields.
 func TestListAccountsMinimal_StandardUserAllowed_NoSensitiveFields(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -199,6 +202,7 @@ func TestListAccountsMinimal_StandardUserAllowed_NoSensitiveFields(t *testing.T)
 // proving the minimal endpoint is the correct least-privilege path, not a
 // redundant copy of an already-reachable one.
 func TestListAccounts_StandardUserDenied_403(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -216,6 +220,7 @@ func TestListAccounts_StandardUserDenied_403(t *testing.T) {
 // A Standard user lacking view:recommendations is denied the minimal endpoint
 // too (it is gated, not public).
 func TestListAccountsMinimal_NoViewRecommendations_403(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -233,6 +238,7 @@ func TestListAccountsMinimal_NoViewRecommendations_403(t *testing.T) {
 // allowed_accounts scoping applies to the minimal endpoint: a restricted user
 // only sees their entitled rows.
 func TestListAccountsMinimal_ScopesByAllowedAccounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -259,6 +265,7 @@ func TestListAccountsMinimal_ScopesByAllowedAccounts(t *testing.T) {
 // Empty store returns a non-nil empty slice (JSON `[]`, not `null`) so the
 // frontend's `.map` is always safe.
 func TestListAccountsMinimal_ReturnsEmptySlice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -275,6 +282,7 @@ func TestListAccountsMinimal_ReturnsEmptySlice(t *testing.T) {
 // --- createAccount ---
 
 func TestCreateAccount_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -295,6 +303,7 @@ func TestCreateAccount_Success(t *testing.T) {
 }
 
 func TestCreateAccount_MissingName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -315,6 +324,7 @@ func TestCreateAccount_MissingName(t *testing.T) {
 }
 
 func TestCreateAccount_InvalidProvider(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -335,6 +345,7 @@ func TestCreateAccount_InvalidProvider(t *testing.T) {
 }
 
 func TestCreateAccount_MissingExternalID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -355,6 +366,7 @@ func TestCreateAccount_MissingExternalID(t *testing.T) {
 }
 
 func TestCreateAccount_InvalidContactEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -375,6 +387,7 @@ func TestCreateAccount_InvalidContactEmail(t *testing.T) {
 }
 
 func TestCreateAccount_EmptyContactEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -396,6 +409,7 @@ func TestCreateAccount_EmptyContactEmail(t *testing.T) {
 // issue #868: account-create must reject a TLD-less contact_email such as
 // "user@host" with 400, applying the same constraint as sign-up.
 func TestCreateAccount_RejectsTLDlessContactEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -418,6 +432,7 @@ func TestCreateAccount_RejectsTLDlessContactEmail(t *testing.T) {
 // TestCreateAccount_AcceptsValidContactEmail verifies that a well-formed
 // contact_email passes validation and the account is stored correctly.
 func TestCreateAccount_AcceptsValidContactEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -437,6 +452,7 @@ func TestCreateAccount_AcceptsValidContactEmail(t *testing.T) {
 // --- getAccount ---
 
 func TestGetAccount_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -457,6 +473,7 @@ func TestGetAccount_Success(t *testing.T) {
 }
 
 func TestGetAccount_NotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -474,6 +491,7 @@ func TestGetAccount_NotFound(t *testing.T) {
 }
 
 func TestGetAccount_InvalidUUID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -493,6 +511,7 @@ func TestGetAccount_InvalidUUID(t *testing.T) {
 // --- deleteAccount ---
 
 func TestDeleteAccount_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -515,6 +534,7 @@ func TestDeleteAccount_Success(t *testing.T) {
 // trigger migration 000053's RESTRICT (an opaque 500) or — pre-migration —
 // silently orphan the executions.
 func TestDeleteAccount_PendingExecutions_Returns409(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -556,6 +576,7 @@ func TestDeleteAccount_PendingExecutions_Returns409(t *testing.T) {
 // CountPendingExecutionsForAccount returns 0 so the preflight is satisfied
 // and the underlying DeleteCloudAccount call runs to completion.
 func TestDeleteAccount_PendingZero_DeletesNormally(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -588,6 +609,7 @@ func TestDeleteAccount_PendingZero_DeletesNormally(t *testing.T) {
 // with a 409 that says why (reason "active_executions" + count) instead of
 // letting the FK raise the misleading "cancel pending purchases" 409.
 func TestDeleteAccount_ActiveExecutions_Returns409(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -629,6 +651,7 @@ func TestDeleteAccount_ActiveExecutions_Returns409(t *testing.T) {
 // Cancel-All-Then-Delete 409 still wins when cancelable rows exist, so the
 // frontend keeps getting the execution IDs it needs.
 func TestDeleteAccount_PendingTakesPrecedenceOverActive(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -659,6 +682,7 @@ func TestDeleteAccount_PendingTakesPrecedenceOverActive(t *testing.T) {
 // happy path at the handler: no pending and no live rows means the delete
 // goes through (DeleteCloudAccount detaches the terminal history itself).
 func TestDeleteAccount_OnlyTerminalExecutions_Deletes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -689,6 +713,7 @@ func TestDeleteAccount_OnlyTerminalExecutions_Deletes(t *testing.T) {
 // TestDeleteAccount_LiveCountErr_Returns500 asserts a failing live count is
 // surfaced as an error (500) and never falls through to the delete.
 func TestDeleteAccount_LiveCountErr_Returns500(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -720,6 +745,7 @@ func TestDeleteAccount_LiveCountErr_Returns500(t *testing.T) {
 // still gets the structured count and the explicit "cancel first" ask,
 // just without the per-execution id payload.
 func TestDeleteAccount_PendingListErr_StillReturns409(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -756,6 +782,7 @@ func TestDeleteAccount_PendingListErr_StillReturns409(t *testing.T) {
 // surfacing a 500 from the wrapped fmt.Errorf branch. Issue #606 race
 // regression guard.
 func TestDeleteAccount_FKViolationRace_Returns409(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -792,6 +819,7 @@ func TestDeleteAccount_FKViolationRace_Returns409(t *testing.T) {
 // specific structured 409 for whatever row raced in: pending (with its count)
 // or active (approved/running/scheduled/paused), not a generic pending 409.
 func TestDeleteAccount_FKViolationRace_RequeriesPreflight(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		pending    int
@@ -850,6 +878,7 @@ func TestDeleteAccount_FKViolationRace_RequeriesPreflight(t *testing.T) {
 // re-query itself fails, the handler still returns the bare pending 409
 // rather than surfacing the re-query's 500.
 func TestDeleteAccount_FKViolationRace_RequeryErrorFallsBack(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -882,6 +911,7 @@ func TestDeleteAccount_FKViolationRace_RequeryErrorFallsBack(t *testing.T) {
 // are NOT FK violations continue to bubble up as wrapped errors (500),
 // so we don't accidentally swallow real failures as 409s.
 func TestDeleteAccount_NonFKError_StillReturns500(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -907,6 +937,7 @@ func TestDeleteAccount_NonFKError_StillReturns500(t *testing.T) {
 // invokes DeleteCloudAccount when the account does not exist. Locks down the
 // existence check added in 031b958cf so a refactor cannot regress the 404 path.
 func TestDeleteAccount_NotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -932,6 +963,7 @@ func TestDeleteAccount_NotFound(t *testing.T) {
 // --- saveAccountCredentials ---
 
 func TestSaveAccountCredentials_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -948,6 +980,7 @@ func TestSaveAccountCredentials_Success(t *testing.T) {
 }
 
 func TestSaveAccountCredentials_InvalidType(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -967,6 +1000,7 @@ func TestSaveAccountCredentials_InvalidType(t *testing.T) {
 }
 
 func TestSaveAccountCredentials_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -988,6 +1022,7 @@ func TestSaveAccountCredentials_InvalidJSON(t *testing.T) {
 // the account is missing and the credStore is nil, the handler returns 404
 // (account not found) rather than 500 (credential store not configured).
 func TestSaveAccountCredentials_NotFound_WithNilCredStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1008,6 +1043,7 @@ func TestSaveAccountCredentials_NotFound_WithNilCredStore(t *testing.T) {
 // --- listAccountServiceOverrides ---
 
 func TestListAccountServiceOverrides_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1041,6 +1077,7 @@ func TestListAccountServiceOverrides_Success(t *testing.T) {
 // --- saveAccountServiceOverride ---
 
 func TestSaveAccountServiceOverride_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1064,6 +1101,7 @@ func TestSaveAccountServiceOverride_Success(t *testing.T) {
 }
 
 func TestSaveAccountServiceOverride_InvalidCombo_Returns400(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1100,6 +1138,7 @@ func TestSaveAccountServiceOverride_InvalidCombo_Returns400(t *testing.T) {
 }
 
 func TestSaveAccountServiceOverride_ValidCombo_Saves(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1130,6 +1169,7 @@ func TestSaveAccountServiceOverride_ValidCombo_Saves(t *testing.T) {
 }
 
 func TestSaveAccountServiceOverride_NoProbeData_Permissive(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	body := `{"term":3,"payment":"no-upfront"}`
 	path := "11111111-1111-1111-1111-111111111111/service-overrides/aws/rds"
@@ -1174,6 +1214,7 @@ func TestSaveAccountServiceOverride_NoProbeData_Permissive(t *testing.T) {
 // --- parseServiceOverridePath ---
 
 func TestParseServiceOverridePath_Valid(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		path          string
@@ -1209,6 +1250,7 @@ func TestParseServiceOverridePath_Valid(t *testing.T) {
 }
 
 func TestParseServiceOverridePath_Invalid(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		path string
@@ -1230,6 +1272,7 @@ func TestParseServiceOverridePath_Invalid(t *testing.T) {
 // --- setPlanAccounts / listPlanAccounts ---
 
 func TestSetPlanAccounts_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1272,6 +1315,7 @@ func awsPlan209() *config.PurchasePlan {
 }
 
 func TestSetPlanAccounts_SingleMismatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1305,6 +1349,7 @@ func TestSetPlanAccounts_SingleMismatch(t *testing.T) {
 }
 
 func TestSetPlanAccounts_MultipleMismatches(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1347,6 +1392,7 @@ func TestSetPlanAccounts_MultipleMismatches(t *testing.T) {
 }
 
 func TestSetPlanAccounts_ValidHappyPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1375,6 +1421,7 @@ func TestSetPlanAccounts_ValidHappyPath(t *testing.T) {
 }
 
 func TestSetPlanAccounts_StoreNotFoundAfterValidationMapsTo404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1403,6 +1450,7 @@ func TestSetPlanAccounts_StoreNotFoundAfterValidationMapsTo404(t *testing.T) {
 }
 
 func TestSetPlanAccounts_PlanNotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1431,6 +1479,7 @@ func TestSetPlanAccounts_PlanNotFound(t *testing.T) {
 }
 
 func TestSetPlanAccounts_AccountNotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1465,6 +1514,7 @@ func TestSetPlanAccounts_AccountNotFound(t *testing.T) {
 }
 
 func TestSetPlanAccounts_MixedValidAndMismatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1505,6 +1555,7 @@ func TestSetPlanAccounts_MixedValidAndMismatch(t *testing.T) {
 }
 
 func TestSetPlanAccounts_EmptyServicesSkipsValidation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1540,6 +1591,7 @@ func TestSetPlanAccounts_EmptyServicesSkipsValidation(t *testing.T) {
 // them, so a plan keyed only that way had an empty provider set and accepted
 // an Azure account (issue #316, A04-012).
 func TestSetPlanAccounts_ColonKeyedPlanStillChecksProvider(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1579,6 +1631,7 @@ func TestSetPlanAccounts_ColonKeyedPlanStillChecksProvider(t *testing.T) {
 // refused, instead of the plan accepting every provider (main) or none (the
 // first #316 commit).
 func TestSetPlanAccounts_LegacyKeyedPlanUsesProviderField(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, tc := range []struct {
 		name, accountProvider string
@@ -1630,6 +1683,7 @@ func TestSetPlanAccounts_LegacyKeyedPlanUsesProviderField(t *testing.T) {
 // and any account was accepted. It now fails the request instead (issue #316,
 // A04-012).
 func TestSetPlanAccounts_UnparseableServiceKeyFailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1668,6 +1722,7 @@ func TestSetPlanAccounts_UnparseableServiceKeyFailsClosed(t *testing.T) {
 // and never reaches the store. Eliminates the back-door for re-creating a
 // universal plan by updating an existing one to have zero target accounts.
 func TestSetPlanAccounts_RejectsEmpty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1693,6 +1748,7 @@ func TestSetPlanAccounts_RejectsEmpty(t *testing.T) {
 }
 
 func TestListPlanAccounts_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1731,6 +1787,7 @@ func orgRootAccount() *config.CloudAccount {
 }
 
 func TestDiscoverOrgAccounts_RejectsInvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1745,6 +1802,7 @@ func TestDiscoverOrgAccounts_RejectsInvalidBody(t *testing.T) {
 }
 
 func TestDiscoverOrgAccounts_RejectsInvalidAccountID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1759,6 +1817,7 @@ func TestDiscoverOrgAccounts_RejectsInvalidAccountID(t *testing.T) {
 }
 
 func TestDiscoverOrgAccounts_RejectsNonAWSAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1779,6 +1838,7 @@ func TestDiscoverOrgAccounts_RejectsNonAWSAccount(t *testing.T) {
 }
 
 func TestDiscoverOrgAccounts_RejectsNonOrgRoot(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1799,6 +1859,7 @@ func TestDiscoverOrgAccounts_RejectsNonOrgRoot(t *testing.T) {
 }
 
 func TestDiscoverOrgAccounts_NotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1823,6 +1884,7 @@ func TestDiscoverOrgAccounts_NotFound(t *testing.T) {
 // users — and discovered rows go straight into cloud_accounts, so this
 // is a privilege-escalation surface, not just a UX preference.
 func TestDiscoverOrgAccounts_RejectsNonAdmin(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1856,6 +1918,7 @@ func TestDiscoverOrgAccounts_RejectsNonAdmin(t *testing.T) {
 // refactor that wraps it as ClientError(400) would silently make
 // transient failures non-retryable.
 func TestDiscoverOrgAccounts_CredResolutionFailureIs5xx(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1913,6 +1976,7 @@ func (e *errCredStore) EncryptPayload(_ []byte) (string, error)                 
 func (e *errCredStore) DecryptPayload(_ string) ([]byte, error)                       { return nil, nil }
 
 func TestDiscoverOrgAccounts_HappyPathDedupesAndPersists(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1997,6 +2061,7 @@ func TestDiscoverOrgAccounts_HappyPathDedupesAndPersists(t *testing.T) {
 }
 
 func TestDiscoverOrgAccounts_SkipsDuplicateKeyOnInsert(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2062,6 +2127,7 @@ func TestDiscoverOrgAccounts_SkipsDuplicateKeyOnInsert(t *testing.T) {
 }
 
 func TestDiscoverOrgAccounts_AllowsNilDiscoveryResult(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2125,6 +2191,7 @@ func (f *fakeCredStore) DecryptPayload(_ string) ([]byte, error)                
 // --- buildAccountFilter ---
 
 func TestBuildAccountFilter(t *testing.T) {
+	t.Parallel()
 	build := func(t *testing.T, params map[string]string) config.CloudAccountFilter {
 		t.Helper()
 		f, err := buildAccountFilter(params)
@@ -2195,6 +2262,7 @@ func scopedRequest(body string) *events.LambdaFunctionURLRequest {
 const outOfScopeID = "22222222-2222-2222-2222-222222222222"
 
 func TestGetAccount_OutOfScope_Returns404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2216,6 +2284,7 @@ func TestGetAccount_OutOfScope_Returns404(t *testing.T) {
 }
 
 func TestGetAccount_InScope_ByID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2242,6 +2311,7 @@ func TestGetAccount_InScope_ByID(t *testing.T) {
 // (#1034): that account may have taken the name after the intended one was
 // deleted or renamed.
 func TestGetAccount_NameEntry_Returns404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2263,6 +2333,7 @@ func TestGetAccount_NameEntry_Returns404(t *testing.T) {
 }
 
 func TestDeleteAccount_OutOfScope_Returns404_NoDelete(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2289,6 +2360,7 @@ func TestDeleteAccount_OutOfScope_Returns404_NoDelete(t *testing.T) {
 }
 
 func TestSaveAccountCredentials_OutOfScope_Returns404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2348,6 +2420,7 @@ func (m *mockConfigStoreAccounts) UpdateCloudAccount(ctx context.Context, a *con
 // the generic 500 "accounts: %w" wrap. Previously the UI got an "Internal
 // Server Error" toast when creating an already-existing account.
 func TestCreateAccount_DuplicateKey_Returns409(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2372,6 +2445,7 @@ func TestCreateAccount_DuplicateKey_Returns409(t *testing.T) {
 }
 
 func TestUpdateAccount_DuplicateKey_Returns409(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2438,6 +2512,7 @@ func (m *mockConfigStoreAccounts) WithTx(_ context.Context, fn func(tx pgx.Tx) e
 // (not view:accounts) to match its write-class side effect. A caller holding only
 // view:accounts must be rejected with 403.
 func TestTestAccountCredentials_RequiresUpdateAccounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -2529,6 +2604,7 @@ func TestValidatePlanAccountProviders_GetAccountDBError_NoPIILeak(t *testing.T) 
 // (nil, nil) result must still produce a 404 referencing the missing ID (which
 // is safe to echo, since the caller supplied it).
 func TestValidatePlanAccountProviders_AccountNotFound_Still404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	store := setupAdminMock(ctx)
@@ -2595,6 +2671,7 @@ func TestGetPlanForAccountProviderValidation_GetPlanDBError_NoPIILeak(t *testing
 // no-PII-leak fix for GetPurchasePlan did not regress the ErrNotFound mapping:
 // a store-level ErrNotFound must still return a 404 ClientError.
 func TestGetPlanForAccountProviderValidation_PlanNotFound_Still404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	store := setupAdminMock(ctx)

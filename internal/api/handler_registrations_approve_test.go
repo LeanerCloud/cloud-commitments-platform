@@ -59,6 +59,7 @@ func assertNoPiecemealApproval(t *testing.T, store *MockConfigStore) {
 }
 
 func TestApproveRegistration_ApprovesAndCreatesInOneStoreCall(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := newApproveRegistrationHandler(t, ctx, nil)
 
@@ -82,6 +83,7 @@ func TestApproveRegistration_ApprovesAndCreatesInOneStoreCall(t *testing.T) {
 }
 
 func TestApproveRegistration_StoreErrorsMapToResponses(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		storeErr error
@@ -120,6 +122,7 @@ func TestApproveRegistration_StoreErrorsMapToResponses(t *testing.T) {
 // disabled, even when its auth mode would otherwise auto-enable it. Omitted or
 // true keeps the auto-enable rule (a credential-free account is enabled).
 func TestApproveRegistration_HonoursExplicitEnabledFalse(t *testing.T) {
+	t.Parallel()
 	const base = `"name":"Fixture Sub","provider":"azure","external_id":"fixture-subscription-1102","azure_auth_mode":"managed_identity"`
 	cases := []struct {
 		name string
