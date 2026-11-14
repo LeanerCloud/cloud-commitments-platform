@@ -22,7 +22,7 @@ terraform {
 
 # Generate random password if not provided
 resource "random_password" "database" {
-  count = var.database_password == null ? 1 : 0
+  count = var.database_password == null || var.database_password == "" ? 1 : 0
 
   length  = 32
   special = true
@@ -48,7 +48,7 @@ resource "aws_secretsmanager_secret_version" "database_password" {
   secret_id = aws_secretsmanager_secret.database_password.id
   secret_string = jsonencode({
     username = var.database_username
-    password = var.database_password != null ? var.database_password : random_password.database[0].result
+    password = var.database_password != null && var.database_password != "" ? var.database_password : random_password.database[0].result
   })
 }
 
@@ -243,10 +243,12 @@ resource "aws_secretsmanager_secret_version" "credential_encryption_key" {
 
 # For storing additional secrets (e.g., API keys for external services)
 resource "aws_secretsmanager_secret" "additional" {
-  for_each = var.additional_secrets
+  # for_each requires a non-sensitive set; only the keys are exposed, the
+  # values stay redacted in plan output.
+  for_each = toset(nonsensitive(keys(var.additional_secrets)))
 
   name_prefix             = "${var.stack_name}-${each.key}-"
-  description             = each.value.description
+  description             = nonsensitive(var.additional_secrets[each.key].description)
   recovery_window_in_days = var.recovery_window_days
 
   tags = merge(var.tags, {
@@ -257,10 +259,10 @@ resource "aws_secretsmanager_secret" "additional" {
 }
 
 resource "aws_secretsmanager_secret_version" "additional" {
-  for_each = var.additional_secrets
+  for_each = toset(nonsensitive(keys(var.additional_secrets)))
 
   secret_id     = aws_secretsmanager_secret.additional[each.key].id
-  secret_string = each.value.value
+  secret_string = var.additional_secrets[each.key].value
 }
 
 # ==============================================

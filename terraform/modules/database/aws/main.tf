@@ -129,6 +129,10 @@ resource "aws_db_instance" "main" {
   auto_minor_version_upgrade = true
   instance_class             = var.instance_class
 
+  # Durable record of auth failures, errors and slow queries beyond the
+  # instance's local log retention.
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+
   db_name  = var.database_name
   username = var.master_username
   password = local.db_password

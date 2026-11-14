@@ -140,8 +140,13 @@ resource "azurerm_logic_app_trigger_recurrence" "daily" {
   logic_app_id = azurerm_logic_app_workflow.recommendations[0].id
   frequency    = "Day"
   interval     = 1
-  start_time   = "${formatdate("YYYY-MM-DD", timestamp())}T${format("%02s", local.schedule_hour)}:00:00Z"
+  start_time   = "${formatdate("YYYY-MM-DD", timestamp())}T${format("%02d", tonumber(local.schedule_hour))}:00:00Z"
   time_zone    = "UTC"
+  # start_time embeds timestamp(); without this every plan would destroy and
+  # recreate the trigger and reset its schedule.
+  lifecycle {
+    ignore_changes = [start_time]
+  }
 }
 
 # Step 1: Fetch the shared secret from Key Vault using the workflow's
@@ -262,6 +267,11 @@ resource "azurerm_logic_app_trigger_recurrence" "ri_exchange" {
   interval     = local.ri_exchange_interval
   start_time   = "${formatdate("YYYY-MM-DD", timestamp())}T00:00:00Z"
   time_zone    = "UTC"
+  # start_time embeds timestamp(); without this every plan would destroy and
+  # recreate the trigger and reset its schedule.
+  lifecycle {
+    ignore_changes = [start_time]
+  }
 }
 
 resource "azurerm_logic_app_action_custom" "ri_exchange_get_secret" {
@@ -357,6 +367,11 @@ resource "azurerm_logic_app_trigger_recurrence" "cleanup_daily" {
   interval     = 1
   start_time   = "${formatdate("YYYY-MM-DD", timestamp())}T03:00:00Z"
   time_zone    = "UTC"
+  # start_time embeds timestamp(); without this every plan would destroy and
+  # recreate the trigger and reset its schedule.
+  lifecycle {
+    ignore_changes = [start_time]
+  }
 }
 
 resource "azurerm_logic_app_action_custom" "cleanup_get_secret" {

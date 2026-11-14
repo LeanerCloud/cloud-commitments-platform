@@ -51,6 +51,10 @@ resource "aws_ecr_lifecycle_policy" "cleanup" {
   })
 }
 
+data "aws_caller_identity" "current" {}
+
+data "aws_partition" "current" {}
+
 # Repository policy to allow pull from Lambda/Fargate
 resource "aws_ecr_repository_policy" "main" {
   repository = aws_ecr_repository.main.name
@@ -59,13 +63,29 @@ resource "aws_ecr_repository_policy" "main" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AllowPullFromLambdaAndECS"
+        # Without the source-ARN condition any account could create a Lambda
+        # function pointing at this image URI and have the Lambda service
+        # pull the private image on its behalf (confused deputy).
+        Sid    = "AllowPullFromLambda"
         Effect = "Allow"
         Principal = {
-          Service = [
-            "lambda.amazonaws.com",
-            "ecs-tasks.amazonaws.com"
-          ]
+          Service = "lambda.amazonaws.com"
+        }
+        Action = [
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer"
+        ]
+        Condition = {
+          ArnLike = {
+            "aws:sourceARN" = "arn:${data.aws_partition.current.partition}:lambda:*:${data.aws_caller_identity.current.account_id}:function:*"
+          }
+        }
+      },
+      {
+        Sid    = "AllowPullFromECS"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
         }
         Action = [
           "ecr:BatchGetImage",

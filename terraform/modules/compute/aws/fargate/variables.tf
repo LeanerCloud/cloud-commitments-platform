@@ -428,6 +428,11 @@ variable "email_from_domain" {
   description = "Verified SES From domain. When set, the task role gets SES send permissions scoped to this domain plus stack-specific configuration sets. Leave empty to disable SES entirely."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.email_from_domain == "" || can(regex("^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$", var.email_from_domain))
+    error_message = "email_from_domain must be a plain domain name (for example \"example.com\") or empty; wildcards would widen the SES FromAddress condition."
+  }
 }
 
 # Archera insured-commitment comparison (default off; see the Archera section of docs/DEPLOYMENT.md).

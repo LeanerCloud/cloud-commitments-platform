@@ -252,6 +252,11 @@ variable "recommendation_schedule" {
   EOT
   type        = string
   default     = "0 2 * * *"
+
+  validation {
+    condition     = can(regex("^\\S+ ([01]?[0-9]|2[0-3]) \\S+ \\S+ \\S+$", var.recommendation_schedule))
+    error_message = "recommendation_schedule must be a five-field cron string whose hour field is a plain hour 0-23 (for example \"0 2 * * *\")."
+  }
 }
 
 # Scheduled server sweeps (#712). Each runs only when enable_scheduled_tasks

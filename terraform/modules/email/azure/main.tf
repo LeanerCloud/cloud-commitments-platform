@@ -87,20 +87,27 @@ resource "null_resource" "get_smtp_credentials" {
   count = var.auto_generate_smtp_credentials ? 1 : 0
 
   provisioner "local-exec" {
+    # Operator-supplied names reach the script as environment variables, so
+    # shell metacharacters in them are never parsed as commands.
+    environment = {
+      EMAIL_SERVICE_NAME  = azurerm_email_communication_service.main.name
+      RESOURCE_GROUP_NAME = var.resource_group_name
+      KEY_VAULT_NAME      = var.key_vault_name
+      DOMAIN_NAME         = var.use_azure_managed_domain ? "AzureManagedDomain" : var.custom_domain_name
+    }
+
     command = <<-EOT
       #!/bin/bash
       set -e
 
       echo "Attempting to retrieve Azure Communication Services SMTP configuration..."
 
-      # Get the domain name
-      DOMAIN_NAME="${var.use_azure_managed_domain ? "AzureManagedDomain" : var.custom_domain_name}"
 
       # Check if domain is provisioned and ready
       DOMAIN_STATUS=$(az communication email domain show \
-        --email-service-name ${azurerm_email_communication_service.main.name} \
+        --email-service-name "$EMAIL_SERVICE_NAME" \
         --domain-name "$DOMAIN_NAME" \
-        --resource-group ${var.resource_group_name} \
+        --resource-group "$RESOURCE_GROUP_NAME" \
         --query "domainManagement" -o tsv 2>/dev/null || echo "NotFound")
 
       if [ "$DOMAIN_STATUS" = "NotFound" ]; then
@@ -110,22 +117,22 @@ resource "null_resource" "get_smtp_credentials" {
 
       # Get the Mail From sender domain (this is the SMTP endpoint identifier)
       MAIL_FROM=$(az communication email domain show \
-        --email-service-name ${azurerm_email_communication_service.main.name} \
+        --email-service-name "$EMAIL_SERVICE_NAME" \
         --domain-name "$DOMAIN_NAME" \
-        --resource-group ${var.resource_group_name} \
+        --resource-group "$RESOURCE_GROUP_NAME" \
         --query "mailFromSenderDomain" -o tsv)
 
       echo "✅ Mail From Domain: $MAIL_FROM"
       echo ""
       echo "⚠️  NOTE: Azure Communication Services SMTP credentials must be generated manually:"
-      echo "   1. Go to Azure Portal → Communication Services → ${azurerm_email_communication_service.main.name}"
+      echo "   1. Go to Azure Portal → Communication Services → $EMAIL_SERVICE_NAME"
       echo "   2. Navigate to 'Domains' → Select '$DOMAIN_NAME'"
       echo "   3. Click 'SMTP' tab → 'Generate credentials'"
       echo "   4. Copy the username and password"
       echo ""
       echo "   Then store in Key Vault:"
-      echo "   az keyvault secret set --vault-name ${var.key_vault_name} --name azure-smtp-username --value '<username>'"
-      echo "   az keyvault secret set --vault-name ${var.key_vault_name} --name azure-smtp-password --value '<password>'"
+      echo "   az keyvault secret set --vault-name '$KEY_VAULT_NAME' --name azure-smtp-username --value '<username>'"
+      echo "   az keyvault secret set --vault-name '$KEY_VAULT_NAME' --name azure-smtp-password --value '<password>'"
       echo ""
       echo "   Sender address will be: DoNotReply@$MAIL_FROM"
     EOT

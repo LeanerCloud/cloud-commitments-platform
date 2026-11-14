@@ -380,6 +380,10 @@ resource "azurerm_monitor_diagnostic_setting" "container_app" {
     category = "ContainerAppSystemLogs"
   }
 
+  enabled_log {
+    category = "ContainerAppConsoleLogs"
+  }
+
   metric {
     category = "AllMetrics"
     enabled  = true

@@ -36,7 +36,7 @@ output "password_secret_arn" {
 
 output "password_secret_name" {
   description = "Name of the Secrets Manager secret containing the database password"
-  value       = var.master_password_secret_arn != null ? data.aws_secretsmanager_secret.existing_password[0].name : aws_secretsmanager_secret.db_password[0].name
+  value       = var.create_password ? aws_secretsmanager_secret.db_password[0].name : data.aws_secretsmanager_secret.existing_password[0].name
 }
 
 output "security_group_id" {

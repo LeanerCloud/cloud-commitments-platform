@@ -379,6 +379,11 @@ variable "email_from_domain" {
   description = "Verified SES domain used as the From: address. When set, the SES IAM policy is scoped to identity/{domain} + configuration-set/{stack_name}*, blocking sends from any other identity in the AWS account. Leave empty only when SES is not configured (notifications disabled)."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.email_from_domain == "" || can(regex("^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$", var.email_from_domain))
+    error_message = "email_from_domain must be a plain domain name (for example \"example.com\") or empty; wildcards would widen the SES FromAddress condition."
+  }
 }
 
 variable "alarm_sns_topic_arn" {

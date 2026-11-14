@@ -94,7 +94,8 @@ variable "additional_secrets" {
     description = string
     value       = string
   }))
-  default = {}
+  default   = {}
+  sensitive = true
 }
 
 variable "enable_secret_rotation" {

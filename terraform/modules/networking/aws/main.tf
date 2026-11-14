@@ -771,12 +771,19 @@ resource "aws_iam_role_policy" "flow_logs" {
     Statement = [
       {
         Action = [
-          "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents",
-          "logs:DescribeLogGroups",
           "logs:DescribeLogStreams"
         ]
+        Effect = "Allow"
+        Resource = [
+          aws_cloudwatch_log_group.flow_logs[0].arn,
+          "${aws_cloudwatch_log_group.flow_logs[0].arn}:*"
+        ]
+      },
+      {
+        # DescribeLogGroups does not support a resource-level ARN.
+        Action   = ["logs:DescribeLogGroups"]
         Effect   = "Allow"
         Resource = "*"
       }
