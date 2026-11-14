@@ -121,6 +121,6 @@ describe('history filter popover scoping (issue #281)', () => {
     const { queueBtn } = mountTables();
     open('queue', queueBtn);
     const heading = popovers()[0]?.querySelector('h3');
-    expect(heading?.id).toBe('history-column-filter-heading-queue-provider');
+    expect(heading?.id).toBe('queue-column-filter-provider-heading');
   });
 });
