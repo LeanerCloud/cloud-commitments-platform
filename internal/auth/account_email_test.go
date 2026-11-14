@@ -120,7 +120,7 @@ func TestSetupAdmin_StoresBareEmail(t *testing.T) {
 
 func TestUpdateUserProfile_StoresBareEmail(t *testing.T) {
 	ctx := context.Background()
-	hash := TestPasswordHash(t, "OldPassword123")
+	hash := testPasswordHash(t, "OldPassword123")
 	newUser := func(email string) *User {
 		return &User{ID: "user-123", Email: email, PasswordHash: hash, Active: true, CreatedAt: time.Now()}
 	}
