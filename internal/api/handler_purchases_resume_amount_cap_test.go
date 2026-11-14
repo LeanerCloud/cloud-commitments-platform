@@ -84,11 +84,11 @@ func TestResumeAmountCap_UpdateAnyChargesTotalCommitment(t *testing.T) {
 		recs         []config.RecommendationRecord
 		denied       bool
 	}{
-		{"no-upfront recurring cost above the cap", 500, 0, noUpfrontRecs(), true},
-		{"stored upfront below the cap does not hide the recs", 500, 1, noUpfrontRecs(), true},
-		{"stored upfront above the cap does not price the recs", 500, 9999, []config.RecommendationRecord{resumeCapRec(100, 0, "USD")}, false},
-		{"total equal to the cap", 1200, 0, noUpfrontRecs(), false},
-		{"uncapped", 0, 0, noUpfrontRecs(), false},
+		{name: "no-upfront recurring cost above the cap", cap: 500, totalUpfront: 0, recs: noUpfrontRecs(), denied: true},
+		{name: "stored upfront below the cap does not hide the recs", cap: 500, totalUpfront: 1, recs: noUpfrontRecs(), denied: true},
+		{name: "stored upfront above the cap does not price the recs", cap: 500, totalUpfront: 9999, recs: []config.RecommendationRecord{resumeCapRec(100, 0, "USD")}, denied: false},
+		{name: "total equal to the cap", cap: 1200, totalUpfront: 0, recs: noUpfrontRecs(), denied: false},
+		{name: "uncapped", cap: 0, totalUpfront: 0, recs: noUpfrontRecs(), denied: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -194,8 +194,8 @@ func TestResumeAmountCap_UncappedGrantElsewhereDoesNotLiftCap(t *testing.T) {
 		verb    string
 		creator *string
 	}{
-		{"update, creator's own row", auth.ActionUpdate, &me},
-		{"update-any, another user's row", auth.ActionUpdateAny, &other},
+		{name: "update, creator's own row", verb: auth.ActionUpdate, creator: &me},
+		{name: "update-any, another user's row", verb: auth.ActionUpdateAny, creator: &other},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

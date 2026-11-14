@@ -90,11 +90,11 @@ func TestApproveRegistration_StoreErrorsMapToResponses(t *testing.T) {
 		code     int // 0: not a client error (500)
 		message  string
 	}{
-		{"already decided", config.ErrRegistrationConflict, 409, "already processed"},
-		{"account already registered", fmt.Errorf("failed to create cloud account: %w",
+		{name: "already decided", storeErr: config.ErrRegistrationConflict, code: 409, message: "already processed"},
+		{name: "account already registered", storeErr: fmt.Errorf("failed to create cloud account: %w",
 			errors.New(`ERROR: duplicate key value violates unique constraint "cloud_accounts_provider_external_id_key" (SQLSTATE 23505)`)),
-			409, `external ID "fixture-subscription-1102" already exists for azure`},
-		{"database failure", errors.New("connection reset"), 0, "registrations: approve: connection reset"},
+			code: 409, message: `external ID "fixture-subscription-1102" already exists for azure`},
+		{name: "database failure", storeErr: errors.New("connection reset"), code: 0, message: "registrations: approve: connection reset"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

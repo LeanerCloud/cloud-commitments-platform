@@ -67,7 +67,7 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountResolvesRegisteredAccount(t *tes
 // through the same resolver as a row with a cloud account.
 func TestLoadMarketplaceAWSConfig_NoCloudAccountRegisteredRoleAccountAssumesRole(t *testing.T) {
 	t.Parallel()
-	h := registeredLookupHandler(assumeRoleSTS{200, marketplaceAssumeRoleOKXML}, []config.CloudAccount{*roleAccount()}, nil)
+	h := registeredLookupHandler(assumeRoleSTS{status: 200, body: marketplaceAssumeRoleOKXML}, []config.CloudAccount{*roleAccount()}, nil)
 
 	cfg, err := h.loadMarketplaceAWSConfig(context.Background(), noCloudAccountRow(nil, marketplaceMemberAccount))
 

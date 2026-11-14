@@ -818,27 +818,27 @@ func TestConfidenceBucketFor(t *testing.T) {
 		count   int
 		want    string
 	}{
-		{"high requires both signals", 250, 4, "high"},
-		{"savings without fleet falls to medium", 250, 1, "medium"},
-		{"medium on savings alone", 60, 1, "medium"},
-		{"low when neither threshold is met", 10, 1, "low"},
-		{"count clamped to >=1 — savings still drives bucket", 60, 0, "medium"},
+		{name: "high requires both signals", savings: 250, count: 4, want: "high"},
+		{name: "savings without fleet falls to medium", savings: 250, count: 1, want: "medium"},
+		{name: "medium on savings alone", savings: 60, count: 1, want: "medium"},
+		{name: "low when neither threshold is met", savings: 10, count: 1, want: "low"},
+		{name: "count clamped to >=1 — savings still drives bucket", savings: 60, count: 0, want: "medium"},
 		// Exact boundaries, pinned with literals so a change to the named
 		// thresholds fails here (#343). Values match pkg/exchange's
 		// ConfidenceHighSavingsUSD / ConfidenceHighMinCount /
 		// ConfidenceMediumSavingsUSD.
-		{"high at both thresholds", 200, 3, "high"},
-		{"just below high savings", 199.99, 3, "medium"},
-		{"just below high count", 200, 2, "medium"},
-		{"medium at threshold", 50, 1, "medium"},
-		{"just below medium", 49.99, 1, "low"},
-		{"zero savings", 0, 10, "low"},
+		{name: "high at both thresholds", savings: 200, count: 3, want: "high"},
+		{name: "just below high savings", savings: 199.99, count: 3, want: "medium"},
+		{name: "just below high count", savings: 200, count: 2, want: "medium"},
+		{name: "medium at threshold", savings: 50, count: 1, want: "medium"},
+		{name: "just below medium", savings: 49.99, count: 1, want: "low"},
+		{name: "zero savings", savings: 0, count: 10, want: "low"},
 		// Count-0 handling: the badge clamps a missing count to 1 instead of
 		// going neutral like the exchange ranking does, so high savings with
 		// no count is medium (never high) and low savings stays low.
-		{"count zero with high savings is medium, not high", 10000, 0, "medium"},
-		{"count zero with low savings is low", 10, 0, "low"},
-		{"negative count is clamped like zero", 10000, -5, "medium"},
+		{name: "count zero with high savings is medium, not high", savings: 10000, count: 0, want: "medium"},
+		{name: "count zero with low savings is low", savings: 10, count: 0, want: "low"},
+		{name: "negative count is clamped like zero", savings: 10000, count: -5, want: "medium"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

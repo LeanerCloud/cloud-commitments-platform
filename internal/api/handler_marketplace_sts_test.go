@@ -65,10 +65,10 @@ func TestMarketplaceCancel_TransientAssumeRoleFailureIsRetryable(t *testing.T) {
 		wantCode   int
 		retryAfter bool
 	}{
-		{"throttling", assumeRoleSTS{400, marketplaceAssumeRoleThrottleXML}, 503, true},
-		{"sts 5xx", assumeRoleSTS{500, marketplaceAssumeRoleServerXML}, 502, false},
-		{"sts 503 empty body", assumeRoleSTS{503, ""}, 502, false},
-		{"network error", failingAssumeRoleSTS{errors.New("dial tcp: connection refused")}, 502, false},
+		{name: "throttling", client: assumeRoleSTS{status: 400, body: marketplaceAssumeRoleThrottleXML}, wantCode: 503, retryAfter: true},
+		{name: "sts 5xx", client: assumeRoleSTS{status: 500, body: marketplaceAssumeRoleServerXML}, wantCode: 502, retryAfter: false},
+		{name: "sts 503 empty body", client: assumeRoleSTS{status: 503, body: ""}, wantCode: 502, retryAfter: false},
+		{name: "network error", client: failingAssumeRoleSTS{errors.New("dial tcp: connection refused")}, wantCode: 502, retryAfter: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestMarketplaceCancel_TransientAssumeRoleFailureIsRetryable(t *testing.T) {
 
 func TestMarketplaceList_ThrottledAssumeRoleIsRetryable(t *testing.T) {
 	t.Parallel()
-	h := realEC2Handler(t, standardRow(), assumeRoleSTS{400, marketplaceAssumeRoleThrottleXML})
+	h := realEC2Handler(t, standardRow(), assumeRoleSTS{status: 400, body: marketplaceAssumeRoleThrottleXML})
 	h.awsCfg.Retryer = noRetry
 
 	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
@@ -106,7 +106,7 @@ func TestMarketplaceList_ThrottledAssumeRoleIsRetryable(t *testing.T) {
 // The access-denied class must keep the fixed 400 with retries disabled too.
 func TestMarketplaceCancel_DeniedAssumeRoleKeeps400(t *testing.T) {
 	t.Parallel()
-	h := realEC2Handler(t, activeListingRow(), assumeRoleSTS{403, marketplaceAssumeRoleDenyXML})
+	h := realEC2Handler(t, activeListingRow(), assumeRoleSTS{status: 403, body: marketplaceAssumeRoleDenyXML})
 	h.awsCfg.Retryer = noRetry
 
 	_, err := h.marketplaceCancel(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
@@ -130,14 +130,14 @@ func TestMapAWSMarketplaceError_AssumeRoleClasses(t *testing.T) {
 		inner    error
 		wantCode int
 	}{
-		{"access denied", &smithy.GenericAPIError{Code: "AccessDenied", Message: "no " + marketplaceTenantRoleARN, Fault: smithy.FaultClient}, 400},
-		{"region disabled", &smithy.GenericAPIError{Code: "RegionDisabledException", Message: "sts disabled", Fault: smithy.FaultClient}, 400},
-		{"unclassified error", errors.New("something odd about " + marketplaceTenantRoleARN), 400},
-		{"throttling", &smithy.GenericAPIError{Code: "Throttling", Message: "Rate exceeded", Fault: smithy.FaultClient}, 503},
-		{"request limit", &smithy.GenericAPIError{Code: "RequestLimitExceeded", Message: "Rate exceeded"}, 503},
-		{"server fault", &smithy.GenericAPIError{Code: "InternalFailure", Message: "internal error", Fault: smithy.FaultServer}, 502},
-		{"request timeout code", &smithy.GenericAPIError{Code: "RequestTimeout", Message: "internal error"}, 502},
-		{"deadline exceeded", fmt.Errorf("request canceled, %w", context.DeadlineExceeded), 502},
+		{name: "access denied", inner: &smithy.GenericAPIError{Code: "AccessDenied", Message: "no " + marketplaceTenantRoleARN, Fault: smithy.FaultClient}, wantCode: 400},
+		{name: "region disabled", inner: &smithy.GenericAPIError{Code: "RegionDisabledException", Message: "sts disabled", Fault: smithy.FaultClient}, wantCode: 400},
+		{name: "unclassified error", inner: errors.New("something odd about " + marketplaceTenantRoleARN), wantCode: 400},
+		{name: "throttling", inner: &smithy.GenericAPIError{Code: "Throttling", Message: "Rate exceeded", Fault: smithy.FaultClient}, wantCode: 503},
+		{name: "request limit", inner: &smithy.GenericAPIError{Code: "RequestLimitExceeded", Message: "Rate exceeded"}, wantCode: 503},
+		{name: "server fault", inner: &smithy.GenericAPIError{Code: "InternalFailure", Message: "internal error", Fault: smithy.FaultServer}, wantCode: 502},
+		{name: "request timeout code", inner: &smithy.GenericAPIError{Code: "RequestTimeout", Message: "internal error"}, wantCode: 502},
+		{name: "deadline exceeded", inner: fmt.Errorf("request canceled, %w", context.DeadlineExceeded), wantCode: 502},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -376,12 +376,12 @@ func TestUpsertLadderConfig_NumericFieldKeyCase(t *testing.T) {
 		want       any
 		def        any
 	}{
-		{"Target_Coverage", "73.5", func(c *config.LadderConfigDB) any { return c.TargetCoverage }, 73.5, config.DefaultLadderTargetCoverage},
-		{"BUFFER_FRACTION", "0.35", func(c *config.LadderConfigDB) any { return c.BufferFraction }, 0.35, config.DefaultLadderBufferFraction},
-		{"Baseline_Percentile", "7.5", func(c *config.LadderConfigDB) any { return c.BaselinePercentile }, 7.5, config.DefaultLadderBaselinePercentile},
-		{"Lookback_Days", "45", func(c *config.LadderConfigDB) any { return c.LookbackDays }, 45, config.DefaultLadderLookbackDays},
-		{"Buffer_Utilization_Threshold", "66", func(c *config.LadderConfigDB) any { return c.BufferUtilizationThreshold }, 66.0, config.DefaultLadderBufferUtilThreshold},
-		{"Max_Actions_Per_Run", "3", func(c *config.LadderConfigDB) any { return c.MaxActionsPerRun }, 3, config.DefaultLadderMaxActionsPerRun},
+		{key: "Target_Coverage", value: "73.5", got: func(c *config.LadderConfigDB) any { return c.TargetCoverage }, want: 73.5, def: config.DefaultLadderTargetCoverage},
+		{key: "BUFFER_FRACTION", value: "0.35", got: func(c *config.LadderConfigDB) any { return c.BufferFraction }, want: 0.35, def: config.DefaultLadderBufferFraction},
+		{key: "Baseline_Percentile", value: "7.5", got: func(c *config.LadderConfigDB) any { return c.BaselinePercentile }, want: 7.5, def: config.DefaultLadderBaselinePercentile},
+		{key: "Lookback_Days", value: "45", got: func(c *config.LadderConfigDB) any { return c.LookbackDays }, want: 45, def: config.DefaultLadderLookbackDays},
+		{key: "Buffer_Utilization_Threshold", value: "66", got: func(c *config.LadderConfigDB) any { return c.BufferUtilizationThreshold }, want: 66.0, def: config.DefaultLadderBufferUtilThreshold},
+		{key: "Max_Actions_Per_Run", value: "3", got: func(c *config.LadderConfigDB) any { return c.MaxActionsPerRun }, want: 3, def: config.DefaultLadderMaxActionsPerRun},
 	}
 	for _, tc := range cases {
 		t.Run(tc.key, func(t *testing.T) {

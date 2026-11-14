@@ -60,17 +60,17 @@ var overrideMergeCases = map[string]struct {
 	body  string
 	apply func(*config.AccountServiceOverride)
 }{
-	"enabled":         {`{"enabled":false}`, func(o *config.AccountServiceOverride) { o.Enabled = ovPtr(false) }},
-	"term":            {`{"term":3}`, func(o *config.AccountServiceOverride) { o.Term = ovPtr(3) }},
-	"payment":         {`{"payment":"no-upfront"}`, func(o *config.AccountServiceOverride) { o.Payment = ovPtr("no-upfront") }},
-	"coverage":        {`{"coverage":0}`, func(o *config.AccountServiceOverride) { o.Coverage = ovPtr(0.0) }},
-	"ramp_schedule":   {`{"ramp_schedule":"immediate"}`, func(o *config.AccountServiceOverride) { o.RampSchedule = ovPtr("immediate") }},
-	"include_engines": {`{"include_engines":["aurora"]}`, func(o *config.AccountServiceOverride) { o.IncludeEngines = []string{"aurora"} }},
-	"exclude_engines": {`{"exclude_engines":["oracle"]}`, func(o *config.AccountServiceOverride) { o.ExcludeEngines = []string{"oracle"} }},
-	"include_regions": {`{"include_regions":["us-west-2"]}`, func(o *config.AccountServiceOverride) { o.IncludeRegions = []string{"us-west-2"} }},
-	"exclude_regions": {`{"exclude_regions":["ap-south-1"]}`, func(o *config.AccountServiceOverride) { o.ExcludeRegions = []string{"ap-south-1"} }},
-	"include_types":   {`{"include_types":["db.r5.large"]}`, func(o *config.AccountServiceOverride) { o.IncludeTypes = []string{"db.r5.large"} }},
-	"exclude_types":   {`{"exclude_types":["db.t3.small"]}`, func(o *config.AccountServiceOverride) { o.ExcludeTypes = []string{"db.t3.small"} }},
+	"enabled":         {body: `{"enabled":false}`, apply: func(o *config.AccountServiceOverride) { o.Enabled = ovPtr(false) }},
+	"term":            {body: `{"term":3}`, apply: func(o *config.AccountServiceOverride) { o.Term = ovPtr(3) }},
+	"payment":         {body: `{"payment":"no-upfront"}`, apply: func(o *config.AccountServiceOverride) { o.Payment = ovPtr("no-upfront") }},
+	"coverage":        {body: `{"coverage":0}`, apply: func(o *config.AccountServiceOverride) { o.Coverage = ovPtr(0.0) }},
+	"ramp_schedule":   {body: `{"ramp_schedule":"immediate"}`, apply: func(o *config.AccountServiceOverride) { o.RampSchedule = ovPtr("immediate") }},
+	"include_engines": {body: `{"include_engines":["aurora"]}`, apply: func(o *config.AccountServiceOverride) { o.IncludeEngines = []string{"aurora"} }},
+	"exclude_engines": {body: `{"exclude_engines":["oracle"]}`, apply: func(o *config.AccountServiceOverride) { o.ExcludeEngines = []string{"oracle"} }},
+	"include_regions": {body: `{"include_regions":["us-west-2"]}`, apply: func(o *config.AccountServiceOverride) { o.IncludeRegions = []string{"us-west-2"} }},
+	"exclude_regions": {body: `{"exclude_regions":["ap-south-1"]}`, apply: func(o *config.AccountServiceOverride) { o.ExcludeRegions = []string{"ap-south-1"} }},
+	"include_types":   {body: `{"include_types":["db.r5.large"]}`, apply: func(o *config.AccountServiceOverride) { o.IncludeTypes = []string{"db.r5.large"} }},
+	"exclude_types":   {body: `{"exclude_types":["db.t3.small"]}`, apply: func(o *config.AccountServiceOverride) { o.ExcludeTypes = []string{"db.t3.small"} }},
 }
 
 // A single-key PUT (what the Settings UI sends) changes that key and keeps

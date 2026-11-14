@@ -63,13 +63,13 @@ func TestUpdatePlan_RampShapeChange(t *testing.T) {
 		wantStep   int
 		wantType   string
 	}{
-		{"in-progress ramp, different shape is refused", weekly, 3, `{"name":"p","ramp_schedule":"monthly-10pct"}`, 409, 0, ""},
-		{"in-progress ramp, omitted ramp_schedule is refused", weekly, 3, `{"name":"renamed"}`, 409, 0, ""},
-		{"first completed step, different shape is refused", weekly, 1, `{"name":"p","ramp_schedule":"monthly-10pct"}`, 409, 0, ""},
+		{name: "in-progress ramp, different shape is refused", stored: weekly, step: 3, body: `{"name":"p","ramp_schedule":"monthly-10pct"}`, wantStatus: 409, wantStep: 0, wantType: ""},
+		{name: "in-progress ramp, omitted ramp_schedule is refused", stored: weekly, step: 3, body: `{"name":"renamed"}`, wantStatus: 409, wantStep: 0, wantType: ""},
+		{name: "first completed step, different shape is refused", stored: weekly, step: 1, body: `{"name":"p","ramp_schedule":"monthly-10pct"}`, wantStatus: 409, wantStep: 0, wantType: ""},
 		// 30% and 33% both give 3 steps: only PercentPerStep differs.
-		{"in-progress ramp, only the percent differs, is refused", custom30, 2, `{"name":"p","ramp_schedule":"custom","custom_step_percent":33,"custom_interval_days":7}`, 409, 0, ""},
-		{"in-progress ramp, same shape keeps its step", weekly, 3, `{"name":"renamed","ramp_schedule":"weekly-25pct"}`, 200, 3, "weekly"},
-		{"no completed step, different shape is allowed", weekly, 0, `{"name":"p","ramp_schedule":"monthly-10pct"}`, 200, 0, "monthly"},
+		{name: "in-progress ramp, only the percent differs, is refused", stored: custom30, step: 2, body: `{"name":"p","ramp_schedule":"custom","custom_step_percent":33,"custom_interval_days":7}`, wantStatus: 409, wantStep: 0, wantType: ""},
+		{name: "in-progress ramp, same shape keeps its step", stored: weekly, step: 3, body: `{"name":"renamed","ramp_schedule":"weekly-25pct"}`, wantStatus: 200, wantStep: 3, wantType: "weekly"},
+		{name: "no completed step, different shape is allowed", stored: weekly, step: 0, body: `{"name":"p","ramp_schedule":"monthly-10pct"}`, wantStatus: 200, wantStep: 0, wantType: "monthly"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -114,16 +114,16 @@ func TestUpdatePlan_EquivalentCustomRampKeepsStoredSchedule(t *testing.T) {
 		step   int
 		body   string
 	}{
-		{"in-progress weekly 20%, renamed via custom", weekly20, 3,
-			`{"name":"renamed","ramp_schedule":"custom","custom_step_percent":20,"custom_interval_days":7}`},
-		{"in-progress monthly 5%, renamed via custom", monthly5, 1,
-			`{"name":"renamed","ramp_schedule":"custom","custom_step_percent":5,"custom_interval_days":30}`},
-		{"in-progress custom 25%/7d, renamed via the equal weekly preset", custom25, 2,
-			`{"name":"renamed","ramp_schedule":"weekly-25pct"}`},
-		{"not started weekly 20%, renamed via custom", weekly20, 0,
-			`{"name":"renamed","ramp_schedule":"custom","custom_step_percent":20,"custom_interval_days":7}`},
-		{"not started monthly 5%, renamed via custom", monthly5, 0,
-			`{"name":"renamed","ramp_schedule":"custom","custom_step_percent":5,"custom_interval_days":30}`},
+		{name: "in-progress weekly 20%, renamed via custom", stored: weekly20, step: 3,
+			body: `{"name":"renamed","ramp_schedule":"custom","custom_step_percent":20,"custom_interval_days":7}`},
+		{name: "in-progress monthly 5%, renamed via custom", stored: monthly5, step: 1,
+			body: `{"name":"renamed","ramp_schedule":"custom","custom_step_percent":5,"custom_interval_days":30}`},
+		{name: "in-progress custom 25%/7d, renamed via the equal weekly preset", stored: custom25, step: 2,
+			body: `{"name":"renamed","ramp_schedule":"weekly-25pct"}`},
+		{name: "not started weekly 20%, renamed via custom", stored: weekly20, step: 0,
+			body: `{"name":"renamed","ramp_schedule":"custom","custom_step_percent":20,"custom_interval_days":7}`},
+		{name: "not started monthly 5%, renamed via custom", stored: monthly5, step: 0,
+			body: `{"name":"renamed","ramp_schedule":"custom","custom_step_percent":5,"custom_interval_days":30}`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -209,12 +209,12 @@ func TestUpdatePlan_OmittedRampSchedule(t *testing.T) {
 		wantStatus int
 		wantType   string
 	}{
-		{"omitted over a stored weekly ramp is refused", weekly, `{"name":"renamed"}`, 409, ""},
-		{"omitted over a stored one-step 60% custom ramp is refused", partialOneStep, `{"name":"renamed"}`, 409, ""},
-		{"omitted over a stored immediate plan is fine", immediate, `{"name":"renamed"}`, 200, "immediate"},
-		{"omitted over a legacy plan with no stored ramp is fine", config.RampSchedule{}, `{"name":"renamed"}`, 200, "immediate"},
-		{"sending the stored ramp keeps it", weekly, `{"name":"renamed","ramp_schedule":"weekly-25pct"}`, 200, "weekly"},
-		{"sending immediate explicitly is allowed", weekly, `{"name":"renamed","ramp_schedule":"immediate"}`, 200, "immediate"},
+		{name: "omitted over a stored weekly ramp is refused", stored: weekly, body: `{"name":"renamed"}`, wantStatus: 409, wantType: ""},
+		{name: "omitted over a stored one-step 60% custom ramp is refused", stored: partialOneStep, body: `{"name":"renamed"}`, wantStatus: 409, wantType: ""},
+		{name: "omitted over a stored immediate plan is fine", stored: immediate, body: `{"name":"renamed"}`, wantStatus: 200, wantType: "immediate"},
+		{name: "omitted over a legacy plan with no stored ramp is fine", stored: config.RampSchedule{}, body: `{"name":"renamed"}`, wantStatus: 200, wantType: "immediate"},
+		{name: "sending the stored ramp keeps it", stored: weekly, body: `{"name":"renamed","ramp_schedule":"weekly-25pct"}`, wantStatus: 200, wantType: "weekly"},
+		{name: "sending immediate explicitly is allowed", stored: weekly, body: `{"name":"renamed","ramp_schedule":"immediate"}`, wantStatus: 200, wantType: "immediate"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

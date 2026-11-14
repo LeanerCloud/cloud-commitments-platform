@@ -126,11 +126,11 @@ func TestHandleRequest_ApprovalDetails_TokenAndContactBothRequired(t *testing.T)
 		token    string
 		wantCode int
 	}{
-		{"contact, wrong token", contactCaller(), pendingApprovalExec(future), "wrong", 404},
-		{"contact, no token", contactCaller(), pendingApprovalExec(future), "", 404},
-		{"contact, execution has no token", contactCaller(), &config.PurchaseExecution{Status: "pending"}, tokenErrRawToken, 404},
-		{"contact, expired token", contactCaller(), pendingApprovalExec(past), tokenErrRawToken, 410},
-		{"not the contact, valid token", oracleCaller{grant: func(m *MockAuthService) { m.grantPermissions(nil) }, email: "outsider@example.com", sendCSRF: true}, pendingApprovalExec(future), tokenErrRawToken, 404},
+		{name: "contact, wrong token", caller: contactCaller(), exec: pendingApprovalExec(future), token: "wrong", wantCode: 404},
+		{name: "contact, no token", caller: contactCaller(), exec: pendingApprovalExec(future), token: "", wantCode: 404},
+		{name: "contact, execution has no token", caller: contactCaller(), exec: &config.PurchaseExecution{Status: "pending"}, token: tokenErrRawToken, wantCode: 404},
+		{name: "contact, expired token", caller: contactCaller(), exec: pendingApprovalExec(past), token: tokenErrRawToken, wantCode: 410},
+		{name: "not the contact, valid token", caller: oracleCaller{grant: func(m *MockAuthService) { m.grantPermissions(nil) }, email: "outsider@example.com", sendCSRF: true}, exec: pendingApprovalExec(future), token: tokenErrRawToken, wantCode: 404},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

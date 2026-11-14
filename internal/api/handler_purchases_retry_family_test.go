@@ -52,8 +52,8 @@ func TestRetryFamilyGuard_RefusesWhenCounterpartKindWasRetried(t *testing.T) {
 		wantRetried  string
 		wantNotInMsg string
 	}{
-		{"root after an account row", false, "account rows", "root was"},
-		{"account row after the root", true, "root", "account rows was"},
+		{name: "root after an account row", accountRow: false, wantRetried: "account rows", wantNotInMsg: "root was"},
+		{name: "account row after the root", accountRow: true, wantRetried: "root", wantNotInMsg: "account rows was"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failed := retryFamilyRow(tc.accountRow)

@@ -399,11 +399,11 @@ func TestHandleRequest_approvePurchase_SessionFailureStatuses(t *testing.T) {
 		wantStatus int
 		wantRow    string
 	}{
-		{"four-eyes denial", nil, fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), 403, ""},
-		{"lost claim", nil, fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), 409, ""},
-		{"store error before claim", nil, errors.New("connection reset"), 500, ""},
-		{"provider failure after claim", &config.PurchaseExecution{Status: "failed"}, errors.New("AWS RI purchase failed"), 502, "failed"},
-		{"partial multi-account run", &config.PurchaseExecution{Status: "partially_completed"}, errors.New("1 of 2 accounts failed"), 502, "partially_completed"},
+		{name: "four-eyes denial", final: nil, err: fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), wantStatus: 403, wantRow: ""},
+		{name: "lost claim", final: nil, err: fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), wantStatus: 409, wantRow: ""},
+		{name: "store error before claim", final: nil, err: errors.New("connection reset"), wantStatus: 500, wantRow: ""},
+		{name: "provider failure after claim", final: &config.PurchaseExecution{Status: "failed"}, err: errors.New("AWS RI purchase failed"), wantStatus: 502, wantRow: "failed"},
+		{name: "partial multi-account run", final: &config.PurchaseExecution{Status: "partially_completed"}, err: errors.New("1 of 2 accounts failed"), wantStatus: 502, wantRow: "partially_completed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2291,14 +2291,14 @@ func TestExecuteFailureError(t *testing.T) {
 		err   error
 		code  int // 0: not a client error, so the router answers a generic 500
 	}{
-		{"four-eyes denial", nil, fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), 403},
-		{"lost claim", nil, fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), 409},
-		{"row gone", nil, fmt.Errorf("approve: %w", config.ErrNotFound), 409},
-		{"store error before claim", nil, errors.New("connection reset"), 0},
-		{"plan deleted after claim", ran, fmt.Errorf("failed to get plan: %w", config.ErrNotFound), 502},
-		{"audit loss wrapping not found", ran, fmt.Errorf("%w: %w", config.ErrAuditLoss, config.ErrNotFound), 500},
-		{"final status not saved", ran, fmt.Errorf("%w: boom", config.ErrAuditLoss), 500},
-		{"execution failed", ran, errors.New("provider rejected"), 502},
+		{name: "four-eyes denial", final: nil, err: fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), code: 403},
+		{name: "lost claim", final: nil, err: fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), code: 409},
+		{name: "row gone", final: nil, err: fmt.Errorf("approve: %w", config.ErrNotFound), code: 409},
+		{name: "store error before claim", final: nil, err: errors.New("connection reset"), code: 0},
+		{name: "plan deleted after claim", final: ran, err: fmt.Errorf("failed to get plan: %w", config.ErrNotFound), code: 502},
+		{name: "audit loss wrapping not found", final: ran, err: fmt.Errorf("%w: %w", config.ErrAuditLoss, config.ErrNotFound), code: 500},
+		{name: "final status not saved", final: ran, err: fmt.Errorf("%w: boom", config.ErrAuditLoss), code: 500},
+		{name: "execution failed", final: ran, err: errors.New("provider rejected"), code: 502},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3660,11 +3660,11 @@ func TestIsPermissionDenied(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{"nil error is not denial", nil, false},
-		{"plain 403 ClientError is denial", NewClientError(403, "permission denied"), true},
-		{"500 ClientError is not denial", NewClientError(500, "auth service down"), false},
-		{"401 ClientError is not denial", NewClientError(401, "no session"), false},
-		{"non-ClientError is not denial", errors.New("auth backend timeout"), false},
+		{name: "nil error is not denial", err: nil, want: false},
+		{name: "plain 403 ClientError is denial", err: NewClientError(403, "permission denied"), want: true},
+		{name: "500 ClientError is not denial", err: NewClientError(500, "auth service down"), want: false},
+		{name: "401 ClientError is not denial", err: NewClientError(401, "no session"), want: false},
+		{name: "non-ClientError is not denial", err: errors.New("auth backend timeout"), want: false},
 		{
 			name: "wrapped 403 is NOT denial (errors.As-style unwrap is rejected)",
 			err:  fmt.Errorf("permission check failed: %w", NewClientError(403, "denied")),
@@ -4870,11 +4870,11 @@ func TestHandler_executePurchase_DirectExec_FailureStatuses(t *testing.T) {
 		err        error
 		wantStatus int
 	}{
-		{"four-eyes denial", nil, fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), 403},
-		{"lost claim", nil, fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), 409},
-		{"store error before claim", nil, errors.New("connection reset"), 500},
-		{"provider failure after claim", &config.PurchaseExecution{Status: "failed"}, errors.New("AWS RI purchase failed"), 502},
-		{"partial run", &config.PurchaseExecution{Status: "partially_completed"}, errors.New("1 of 2 accounts failed"), 502},
+		{name: "four-eyes denial", final: nil, err: fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), wantStatus: 403},
+		{name: "lost claim", final: nil, err: fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), wantStatus: 409},
+		{name: "store error before claim", final: nil, err: errors.New("connection reset"), wantStatus: 500},
+		{name: "provider failure after claim", final: &config.PurchaseExecution{Status: "failed"}, err: errors.New("AWS RI purchase failed"), wantStatus: 502},
+		{name: "partial run", final: &config.PurchaseExecution{Status: "partially_completed"}, err: errors.New("1 of 2 accounts failed"), wantStatus: 502},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -6976,10 +6976,10 @@ func TestRequireDifferentApprover_ModeOn_SystemCreated(t *testing.T) {
 		code    int
 		msg     string
 	}{
-		{"system row, other user", &Session{UserID: "approver"}, nil, true, 0, ""},
-		{"unflagged nil row", &Session{UserID: "approver"}, nil, false, 403, "predates the dual-control feature"},
-		{"flag does not override creator", &Session{UserID: creator}, &creator, true, 403, "different approver"},
-		{"system row, no session", nil, nil, true, 500, "no session"},
+		{name: "system row, other user", session: &Session{UserID: "approver"}, creator: nil, system: true, code: 0, msg: ""},
+		{name: "unflagged nil row", session: &Session{UserID: "approver"}, creator: nil, system: false, code: 403, msg: "predates the dual-control feature"},
+		{name: "flag does not override creator", session: &Session{UserID: creator}, creator: &creator, system: true, code: 403, msg: "different approver"},
+		{name: "system row, no session", session: nil, creator: nil, system: true, code: 500, msg: "no session"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

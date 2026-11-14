@@ -52,9 +52,9 @@ func TestResumePlannedPurchase_PastScheduledDate(t *testing.T) {
 		date      time.Time
 		wantMoved bool
 	}{
-		{"rec-bearing past date is moved", recs, time.Now().Add(-48 * time.Hour), true},
-		{"rec-bearing future date is kept", recs, time.Now().Add(72 * time.Hour), false},
-		{"empty row past date is kept", nil, time.Now().Add(-48 * time.Hour), false},
+		{name: "rec-bearing past date is moved", recs: recs, date: time.Now().Add(-48 * time.Hour), wantMoved: true},
+		{name: "rec-bearing future date is kept", recs: recs, date: time.Now().Add(72 * time.Hour), wantMoved: false},
+		{name: "empty row past date is kept", recs: nil, date: time.Now().Add(-48 * time.Hour), wantMoved: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -112,9 +112,9 @@ func TestResumePlannedPurchase_RefusesWithoutVetoWindow(t *testing.T) {
 		date    time.Time
 		refused bool
 	}{
-		{"rec-bearing past date, 0 days", recs, time.Now().Add(-time.Hour), true},
-		{"rec-bearing future date, 0 days", recs, time.Now().Add(time.Hour), false},
-		{"empty row past date, 0 days", nil, time.Now().Add(-time.Hour), false},
+		{name: "rec-bearing past date, 0 days", recs: recs, date: time.Now().Add(-time.Hour), refused: true},
+		{name: "rec-bearing future date, 0 days", recs: recs, date: time.Now().Add(time.Hour), refused: false},
+		{name: "empty row past date, 0 days", recs: nil, date: time.Now().Add(-time.Hour), refused: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			handler, store, req := notifiedAdminHandler(t, ctx)

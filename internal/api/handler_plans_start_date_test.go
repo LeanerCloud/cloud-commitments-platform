@@ -102,22 +102,22 @@ func TestCreatePlannedPurchases_StartDateMustBeInTheFuture(t *testing.T) {
 		status    int
 		message   string
 	}{
-		{"yesterday is refused", midday, "2026-03-09", 400, "start_date must be in the future"},
-		{"long past date is refused", midday, "2020-01-01", 400, "start_date must be in the future"},
-		{"today is refused", midday, "2026-03-10", 400, "start_date must be in the future"},
+		{name: "yesterday is refused", now: midday, startDate: "2026-03-09", status: 400, message: "start_date must be in the future"},
+		{name: "long past date is refused", now: midday, startDate: "2020-01-01", status: 400, message: "start_date must be in the future"},
+		{name: "today is refused", now: midday, startDate: "2026-03-10", status: 400, message: "start_date must be in the future"},
 		// bareStepAPIPlan has a 2-day notice window, so D5 (#631) refuses dates
 		// before now+3d and accepts the first midnight at or after it.
-		{"tomorrow is inside the notice margin", midday, "2026-03-11", 409, noticeMarginMessage("2026-03-14")},
-		{"three days out is still inside the margin", midday, "2026-03-13", 409, noticeMarginMessage("2026-03-14")},
-		{"the first date past the margin is accepted", midday, "2026-03-14", 200, ""},
-		{"malformed date keeps the format error", midday, "03/11/2026", 400, "invalid start_date format, expected YYYY-MM-DD"},
-		{"today is refused one second after UTC midnight", time.Date(2026, 3, 10, 0, 0, 1, 0, time.UTC), "2026-03-10", 400, "start_date must be in the future"},
-		{"the first date past the margin is accepted one second before UTC midnight", time.Date(2026, 3, 10, 23, 59, 59, 0, time.UTC), "2026-03-14", 200, ""},
-		{"the date is refused exactly at its own UTC midnight", time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC), "2026-03-11", 400, "start_date must be in the future"},
+		{name: "tomorrow is inside the notice margin", now: midday, startDate: "2026-03-11", status: 409, message: noticeMarginMessage("2026-03-14")},
+		{name: "three days out is still inside the margin", now: midday, startDate: "2026-03-13", status: 409, message: noticeMarginMessage("2026-03-14")},
+		{name: "the first date past the margin is accepted", now: midday, startDate: "2026-03-14", status: 200, message: ""},
+		{name: "malformed date keeps the format error", now: midday, startDate: "03/11/2026", status: 400, message: "invalid start_date format, expected YYYY-MM-DD"},
+		{name: "today is refused one second after UTC midnight", now: time.Date(2026, 3, 10, 0, 0, 1, 0, time.UTC), startDate: "2026-03-10", status: 400, message: "start_date must be in the future"},
+		{name: "the first date past the margin is accepted one second before UTC midnight", now: time.Date(2026, 3, 10, 23, 59, 59, 0, time.UTC), startDate: "2026-03-14", status: 200, message: ""},
+		{name: "the date is refused exactly at its own UTC midnight", now: time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC), startDate: "2026-03-11", status: 400, message: "start_date must be in the future"},
 		// 20:00 on 10 March in Los Angeles is 03:00 UTC on 11 March. The
 		// caller's local "tomorrow" is already today in UTC, so it is refused:
 		// the comparison is in UTC, not in the clock's or the server's zone.
-		{"UTC decides, not the local zone", time.Date(2026, 3, 10, 20, 0, 0, 0, losAngeles), "2026-03-11", 400, "start_date must be in the future"},
+		{name: "UTC decides, not the local zone", now: time.Date(2026, 3, 10, 20, 0, 0, 0, losAngeles), startDate: "2026-03-11", status: 400, message: "start_date must be in the future"},
 	}
 
 	for _, tc := range cases {

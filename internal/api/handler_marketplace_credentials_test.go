@@ -197,7 +197,7 @@ func assertTenantSafeRoleDenial(t *testing.T, err error) {
 
 func TestMarketplaceList_AssumeRoleDeniedReturnsFixedMessage(t *testing.T) {
 	t.Parallel()
-	h := realEC2Handler(t, standardRow(), assumeRoleSTS{403, marketplaceAssumeRoleDenyXML})
+	h := realEC2Handler(t, standardRow(), assumeRoleSTS{status: 403, body: marketplaceAssumeRoleDenyXML})
 
 	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
 
@@ -209,7 +209,7 @@ func TestMarketplaceCancel_AssumeRoleDeniedReturnsFixedMessage(t *testing.T) {
 	row := standardRow()
 	row.ListingState = config.ListingStateActive
 	row.ListingID = "ril-cancel"
-	h := realEC2Handler(t, row, assumeRoleSTS{403, marketplaceAssumeRoleDenyXML})
+	h := realEC2Handler(t, row, assumeRoleSTS{status: 403, body: marketplaceAssumeRoleDenyXML})
 
 	_, err := h.marketplaceCancel(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
 
@@ -243,7 +243,7 @@ func TestMarketplaceList_CompensationAssumeRoleDeniedReturnsFixedMessage(t *test
 		h.awsCfg = aws.Config{
 			Region:      "us-east-1",
 			Credentials: awscreds.NewStaticCredentialsProvider(marketplaceHostKeyID, "host-secret", ""),
-			HTTPClient:  assumeRoleSTS{403, marketplaceAssumeRoleDenyXML},
+			HTTPClient:  assumeRoleSTS{status: 403, body: marketplaceAssumeRoleDenyXML},
 		}
 	})
 	h.marketplaceEC2Factory = func(cfg aws.Config) marketplaceEC2Client {
@@ -264,7 +264,7 @@ func TestMarketplaceList_CompensationAssumeRoleDeniedReturnsFixedMessage(t *test
 func TestMarketplaceList_RoleARNAccountAssumesRole(t *testing.T) {
 	t.Parallel()
 	h, built := marketplaceAccountHandler(t, roleAccount(), standardRow())
-	h.awsCfg.HTTPClient = assumeRoleSTS{200, marketplaceAssumeRoleOKXML}
+	h.awsCfg.HTTPClient = assumeRoleSTS{status: 200, body: marketplaceAssumeRoleOKXML}
 
 	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
 
@@ -278,7 +278,7 @@ func TestMarketplaceCancel_RoleARNAccountAssumesRole(t *testing.T) {
 	row.ListingState = config.ListingStateActive
 	row.ListingID = "ril-cancel"
 	h, built := marketplaceAccountHandler(t, roleAccount(), row)
-	h.awsCfg.HTTPClient = assumeRoleSTS{200, marketplaceAssumeRoleOKXML}
+	h.awsCfg.HTTPClient = assumeRoleSTS{status: 200, body: marketplaceAssumeRoleOKXML}
 
 	_, err := h.marketplaceCancel(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
 

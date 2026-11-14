@@ -239,11 +239,11 @@ func TestPlannedPurchaseRoutes_APIKeyFullScopeProbeErrorRefuses(t *testing.T) {
 		name, entryVerb string
 		call            func(h *Handler, req *events.LambdaFunctionURLRequest) error
 	}{
-		{"pause", auth.ActionUpdate, func(h *Handler, req *events.LambdaFunctionURLRequest) error {
+		{name: "pause", entryVerb: auth.ActionUpdate, call: func(h *Handler, req *events.LambdaFunctionURLRequest) error {
 			_, err := h.pausePlannedPurchase(context.Background(), req, keyScopeExecID)
 			return err
 		}},
-		{"delete", auth.ActionDelete, func(h *Handler, req *events.LambdaFunctionURLRequest) error {
+		{name: "delete", entryVerb: auth.ActionDelete, call: func(h *Handler, req *events.LambdaFunctionURLRequest) error {
 			_, err := h.deletePlannedPurchase(context.Background(), req, keyScopeExecID)
 			return err
 		}},

@@ -218,10 +218,10 @@ func TestHandleRequest_RevokeViaEmail_WrongTokenOnLapsedRowIsInvalid(t *testing.
 		want      int
 		wantInMsg string
 	}{
-		{"wrong token on an expired link", config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, "wrong", 403, "invalid revocation token"},
-		{"wrong token past the revocation window", config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &future, CompletedAt: &longAgo}, "wrong", 403, "invalid revocation token"},
-		{"right token on an expired link", config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, tokenErrRawToken, 410, "expired"},
-		{"right token past the revocation window", config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &future, CompletedAt: &longAgo}, tokenErrRawToken, 403, "revocation window has closed"},
+		{name: "wrong token on an expired link", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: "wrong", want: 403, wantInMsg: "invalid revocation token"},
+		{name: "wrong token past the revocation window", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &future, CompletedAt: &longAgo}, token: "wrong", want: 403, wantInMsg: "invalid revocation token"},
+		{name: "right token on an expired link", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: tokenErrRawToken, want: 410, wantInMsg: "expired"},
+		{name: "right token past the revocation window", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &future, CompletedAt: &longAgo}, token: tokenErrRawToken, want: 403, wantInMsg: "revocation window has closed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -914,8 +914,8 @@ func TestMarketplaceListHTTP_ValidRIStillLists(t *testing.T) {
 		name      string
 		timestamp time.Time
 	}{
-		{"fresh", time.Now()},
-		{"just over one month remaining", time.Now().Add(-1050 * 24 * time.Hour)},
+		{name: "fresh", timestamp: time.Now()},
+		{name: "just over one month remaining", timestamp: time.Now().Add(-1050 * 24 * time.Hour)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfgStore := &MockConfigStore{}
