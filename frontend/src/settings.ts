@@ -24,7 +24,7 @@ import { initLadderingSettings } from './ladder';
 import { showSkeletonText } from './lib/skeleton';
 import { canonicalizeServiceConfigs, legacySettingsServiceTarget } from './lib/settings-service-ids';
 import { buildLastUpdatedStamp } from './lib/last-updated';
-import { awsPartitionForArn, getCachedConfig, renderAwsTrustPolicy } from './modules/settings-aws-trust';
+import { renderAwsBastionTrustPolicy, renderAwsTrustPolicy } from './modules/settings-aws-trust';
 import { setupDirtyTracking, snapshotAllFields, updateDirtyMarkers } from './modules/settings-dirty';
 import {
   applyReadOnlySettings,
@@ -1758,98 +1758,6 @@ function populateAwsAccountFields(account?: api.CloudAccount): void {
   // operator switches to that mode mid-edit.
   void renderAwsTrustPolicy();
   void renderAwsBastionTrustPolicy();
-}
-
-/**
- * Render the IAM trust-policy snippet for the bastion auth mode (issue
- * #129). Mirrors renderAwsTrustPolicy but the Principal is the *bastion*
- * account root (the AWS account whose credentials call sts:AssumeRole
- * into the customer's role), not the CUDly host account.
- *
- * Rerun whenever the operator toggles into bastion mode or picks a
- * different bastion in the dropdown. If no bastion is selected yet, the
- * snippet block is cleared and the hint asks the operator to pick one.
- *
- * Race short-circuit (mirrors #130a): if the auth mode changed while we
- * were waiting on listAccounts/getConfig, abort so we don't paint into
- * a now-hidden field.
- */
-async function renderAwsBastionTrustPolicy(): Promise<void> {
-  const block = document.getElementById('account-aws-trust-policy-bastion');
-  const hint = document.getElementById('account-aws-trust-policy-bastion-hint');
-  if (!block) return;
-  const externalID = (document.getElementById('account-aws-external-id-bastion') as HTMLInputElement | null)?.value ?? '';
-  const bastionSelectVal = (document.getElementById('account-aws-bastion-id') as HTMLSelectElement | null)?.value ?? '';
-
-  // Snapshot the auth mode at call time — recheck after the awaits to
-  // detect a race where the user switched modes mid-fetch (#130a).
-  const authModeSnapshot = (document.getElementById('account-aws-auth-mode') as HTMLSelectElement | null)?.value;
-
-  if (!bastionSelectVal) {
-    block.textContent = '';
-    if (hint) {
-      hint.textContent =
-        'Pick a bastion account above to render the trust policy snippet. ' +
-        "The Principal will be the bastion's AWS account root; the " +
-        'sts:ExternalId condition uses the value displayed above.';
-    }
-    return;
-  }
-
-  let bastionAccountID = '';
-  let partition = 'aws';
-  try {
-    const [accounts, cfg] = await Promise.all([
-      api.listAccounts({ provider: 'aws' }),
-      getCachedConfig(),
-    ]);
-    const bastion = accounts.find(a => a.id === bastionSelectVal);
-    bastionAccountID = bastion?.external_id ?? '';
-    if (cfg.source_identity?.provider === 'aws') {
-      partition = awsPartitionForArn(cfg.source_identity.partition);
-    }
-  } catch {
-    // Non-critical — fall through to the placeholder text below.
-  }
-
-  const authModeNow = (document.getElementById('account-aws-auth-mode') as HTMLSelectElement | null)?.value;
-  if (authModeSnapshot !== undefined && authModeSnapshot !== authModeNow) {
-    return;
-  }
-
-  if (!bastionAccountID) {
-    block.textContent = '';
-    if (hint) {
-      hint.textContent =
-        "CUDly couldn't determine the bastion account ID. Build the trust " +
-        'policy manually with Principal=arn:' + partition +
-        ':iam::<bastion account ID>:root, Action=sts:AssumeRole, and a ' +
-        'StringEquals sts:ExternalId condition on the value above.';
-    }
-    return;
-  }
-
-  const policy = {
-    Version: '2012-10-17',
-    Statement: [
-      {
-        Effect: 'Allow',
-        Principal: { AWS: `arn:${partition}:iam::${bastionAccountID}:root` },
-        Action: 'sts:AssumeRole',
-        Condition: {
-          StringEquals: { 'sts:ExternalId': externalID },
-        },
-      },
-    ],
-  };
-  block.textContent = JSON.stringify(policy, null, 2);
-  if (hint) {
-    hint.textContent =
-      "Attach this policy to the target IAM role's trust relationship so " +
-      'CUDly can assume it through the bastion. The Principal is the ' +
-      'bastion account root; the sts:ExternalId condition locks the role ' +
-      'to this specific CUDly registration.';
-  }
 }
 
 /**
