@@ -104,7 +104,7 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 		offeringClass = "convertible"
 	}
 
-	args := []any{
+	args := append(make([]any, 0, 32),
 		config.EnabledProviders,
 		config.NotificationEmail,
 		config.ApprovalRequired,
@@ -136,7 +136,7 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 		config.LadderExecutionChangedBy,
 		config.LadderExecutionChangedAt,
 		config.LadderExecutionChangedVia,
-	}
+	)
 	args = append(args, planTerm.args...)
 
 	_, err = q.Exec(ctx, query, args...)
@@ -149,8 +149,8 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 
 // planTermFragments are the upsert pieces for experimental_gcp_plan_term.
 type planTermFragments struct {
-	args          []any
 	col, val, set string
+	args          []any
 }
 
 // planTermUpsertFragments returns the upsert pieces for the column. main
