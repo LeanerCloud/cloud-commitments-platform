@@ -35,8 +35,8 @@ var httpClient = &http.Client{Timeout: 10 * time.Second}
 // healthResponse mirrors the fields of internal/server.HealthStatus that the
 // suite asserts on.
 type healthResponse struct {
-	Status string                     `json:"status"`
 	Checks map[string]json.RawMessage `json:"checks"`
+	Status string                     `json:"status"`
 }
 
 // waitForHealthy polls /health until the app reports overall status
