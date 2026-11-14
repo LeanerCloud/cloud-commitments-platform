@@ -180,3 +180,86 @@ func TestApplyPlanScheduleCommandRefusesPendingPerAccountRow(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{root.ExecutionID, fanOut.ExecutionID}, []string{rows[0].ExecutionID, rows[1].ExecutionID})
 }
+
+func TestApplyPlanScheduleCommandRefusesBareDateOnManagedPlan(t *testing.T) {
+	ctx := context.Background()
+	f, _, plan := managedRootFixture(ctx, t, "pending")
+	date := time.Now().AddDate(0, 0, 40)
+	bare := scheduleCommand(plan, "x")
+	bare.Name, bare.NextExecutionDate = nil, &date
+	both := rootCommand(plan, date)
+	both.NextExecutionDate = &date
+
+	for name, cmd := range map[string]PlanScheduleCommand{"bare date": bare, "date with root": both} {
+		_, err := f.store.ApplyPlanScheduleCommand(ctx, cmd)
+		require.ErrorIs(t, err, ErrPurchasePlanConflict, name)
+	}
+	require.Equal(t, 0, receiptCount(ctx, t, f.store))
+}
+
+func TestApplyPlanScheduleCommandRefusesClearingAccounts(t *testing.T) {
+	ctx := context.Background()
+	f, _, plan := managedRootFixture(ctx, t, "pending")
+	cmd := rootCommand(plan, time.Now().AddDate(0, 0, 9))
+	none := []string{}
+	cmd.Accounts = &none
+
+	_, err := f.store.ApplyPlanScheduleCommand(ctx, cmd)
+	require.Error(t, err)
+	accounts, err := f.store.GetPlanAccounts(ctx, f.planID)
+	require.NoError(t, err)
+	require.Len(t, accounts, 1)
+}
+
+func TestApplyPlanScheduleCommandRefusesRowsThatActed(t *testing.T) {
+	cases := map[string]string{
+		"canceled after executing": `UPDATE purchase_executions SET status='canceled', executed_at=NOW() WHERE execution_id=$1`,
+		"pending with skip reason": `UPDATE purchase_executions SET pre_approval_skip_reason='skipped' WHERE execution_id=$1`,
+		"pending with purchased":   `UPDATE purchase_executions SET recommendations='[{"purchased":true}]' WHERE execution_id=$1`,
+	}
+	for name, sql := range cases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			f, old, plan := managedRootFixture(ctx, t, "pending")
+			_, err := f.store.db.Exec(ctx, sql, old.ExecutionID)
+			require.NoError(t, err)
+
+			_, err = f.store.ApplyPlanScheduleCommand(ctx, rootCommand(plan, time.Now().AddDate(0, 0, 9)))
+			require.ErrorIs(t, err, ErrExecutionNotInExpectedStatus)
+			require.Len(t, stepRows(ctx, t, f), 1)
+		})
+	}
+}
+
+func TestApplyPlanScheduleCommandReplacesScheduledRoot(t *testing.T) {
+	ctx := context.Background()
+	f, old, plan := managedRootFixture(ctx, t, "scheduled")
+	_, err := f.store.db.Exec(ctx, `UPDATE purchase_executions SET scheduled_execution_at=NOW()+interval '1 hour' WHERE execution_id=$1`, old.ExecutionID)
+	require.NoError(t, err)
+
+	out, err := f.store.ApplyPlanScheduleCommand(ctx, rootCommand(plan, time.Now().AddDate(0, 0, 9)))
+	require.NoError(t, err)
+	for _, r := range stepRows(ctx, t, f) {
+		if r.ExecutionID == old.ExecutionID {
+			require.Equal(t, StatusCanceled, r.Status)
+		} else {
+			require.Equal(t, out.RootExecutionID, r.ExecutionID)
+		}
+	}
+}
+
+func TestApplyPlanScheduleCommandDropsSuppressionsOfReplacedRoot(t *testing.T) {
+	ctx := context.Background()
+	f, old, plan := managedRootFixture(ctx, t, "pending")
+	_, err := f.store.db.Exec(ctx, `INSERT INTO purchase_suppressions
+		(execution_id, account_id, provider, service, region, resource_type, suppressed_count, expires_at)
+		VALUES ($1, 'a', 'aws', 'ec2', 'us-east-1', 'm5.large', 1, NOW() + interval '1 day')`, old.ExecutionID)
+	require.NoError(t, err)
+
+	_, err = f.store.ApplyPlanScheduleCommand(ctx, rootCommand(plan, time.Now().AddDate(0, 0, 9)))
+	require.NoError(t, err)
+
+	var n int
+	require.NoError(t, f.store.db.QueryRow(ctx, `SELECT count(*) FROM purchase_suppressions WHERE execution_id=$1`, old.ExecutionID).Scan(&n))
+	require.Equal(t, 0, n)
+}
