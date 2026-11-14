@@ -41,9 +41,8 @@ import {
   termLabel,
 } from './modules/settings-fields';
 import {
-  buildAffectedList,
-  propagatePaymentToServices,
-  propagateTermToServices,
+  confirmAndPropagatePayment,
+  confirmAndPropagateTerm,
   syncAllServiceCommitmentConstraints,
   syncPaymentConstraintsForService,
 } from './modules/settings-propagation';
@@ -2245,72 +2244,6 @@ function updateCollectionScheduleVisibility(): void {
 
   if (scheduleRow) {
     scheduleRow.classList.toggle('hidden', !autoCollect?.checked);
-  }
-}
-
-async function confirmAndPropagateTerm(select: HTMLSelectElement): Promise<void> {
-  const previousValue = select.dataset['previous'] ?? select.value;
-  const newValue = select.value;
-  if (newValue === previousValue) return;
-  const affected = SERVICE_FIELDS.filter(({ termId }) => {
-    const svc = document.getElementById(termId) as HTMLSelectElement | null;
-    return svc && svc.value !== newValue;
-  });
-  if (affected.length === 0) {
-    // Everything already matches — nothing to propagate, no need to prompt.
-    select.dataset['previous'] = newValue;
-    return;
-  }
-  const ok = await confirmDialog({
-    title: `Apply "${termLabel(newValue)}" to ${affected.length} service${affected.length === 1 ? '' : 's'}?`,
-    body: buildAffectedList(affected),
-    confirmLabel: 'Apply to all',
-  });
-  if (ok) {
-    propagateTermToServices(newValue);
-    select.dataset['previous'] = newValue;
-    updateDirtyMarkers();
-  } else {
-    // User cancelled — restore the default select to its prior value so
-    // the visible state matches what's persisted/saved. Re-run the
-    // dirty-marker diff (setting .value via JS doesn't fire 'input', so
-    // setupDirtyTracking's listener wouldn't catch the revert) so the
-    // field highlight and global "Unsaved changes" badge clear when the
-    // restored value matches the saved snapshot. Issue #468.
-    select.value = previousValue;
-    updateDirtyMarkers();
-  }
-}
-
-async function confirmAndPropagatePayment(select: HTMLSelectElement): Promise<void> {
-  const previousValue = select.dataset['previous'] ?? select.value;
-  const newValue = select.value;
-  if (newValue === previousValue) return;
-  const affected = SERVICE_FIELDS
-    .filter(f => f.provider === 'aws' && f.paymentId !== null)
-    .filter(({ paymentId }) => {
-      const svc = document.getElementById(paymentId!) as HTMLSelectElement | null;
-      return svc && svc.value !== newValue;
-    });
-  if (affected.length === 0) {
-    select.dataset['previous'] = newValue;
-    return;
-  }
-  const ok = await confirmDialog({
-    title: `Apply "${paymentLabel(newValue)}" to ${affected.length} AWS service${affected.length === 1 ? '' : 's'}?`,
-    body: buildAffectedList(affected),
-    confirmLabel: 'Apply to all',
-  });
-  if (ok) {
-    propagatePaymentToServices(newValue);
-    select.dataset['previous'] = newValue;
-    updateDirtyMarkers();
-  } else {
-    // Mirror the Term branch: re-run the dirty-marker diff after the
-    // JS-driven value restore so the visible state matches the saved
-    // snapshot. Issue #468.
-    select.value = previousValue;
-    updateDirtyMarkers();
   }
 }
 
