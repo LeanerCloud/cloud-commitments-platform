@@ -16,6 +16,7 @@ import (
 // persisted members. The other discover-org tests return one fixed root
 // whatever id is asked for, so a dropped or constant id would pass them.
 func TestDiscoverOrgAccounts_AccountIDSelectsRootCredentialsAndBastion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

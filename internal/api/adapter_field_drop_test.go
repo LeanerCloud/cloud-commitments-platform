@@ -126,10 +126,12 @@ func requireFieldsReach[Req, Out any](t *testing.T, base Req, convert func(Req) 
 }
 
 func TestCloudAccountFromRequest_NoFieldDropped(t *testing.T) {
+	t.Parallel()
 	requireFieldsReach(t, CloudAccountRequest{}, cloudAccountFromRequest, map[string]string{})
 }
 
 func TestRegistrationFromRequest_NoFieldDropped(t *testing.T) {
+	t.Parallel()
 	requireFieldsReach(t, RegistrationRequest{},
 		func(r RegistrationRequest) *config.AccountRegistration { return registrationFromRequest(r, "tok") },
 		map[string]string{
@@ -139,6 +141,7 @@ func TestRegistrationFromRequest_NoFieldDropped(t *testing.T) {
 }
 
 func TestPlanRequestToPurchasePlan_NoFieldDropped(t *testing.T) {
+	t.Parallel()
 	// provider, service, term, payment and target_coverage fold into Services;
 	// the custom ramp base makes custom_step_percent and custom_interval_days
 	// visible in RampSchedule.

@@ -33,6 +33,7 @@ var carvedOutVerbs = [][2]string{
 // TestGrantAdmin_CarveOutIsEnforcedAtHandler pins the authorization boundary
 // itself: requirePermission must refuse a plain admin the money verbs.
 func TestGrantAdmin_CarveOutIsEnforcedAtHandler(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, verb := range carvedOutVerbs {
@@ -66,6 +67,7 @@ func TestGrantAdmin_CarveOutIsEnforcedAtHandler(t *testing.T) {
 // TestGrantAdmin_NonCarvedVerbsStillGranted is the negative control. Without
 // it, a mock that denied everything would satisfy the test above.
 func TestGrantAdmin_NonCarvedVerbsStillGranted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// Verbs an Administrators member genuinely holds via the wildcard,
@@ -104,6 +106,7 @@ func TestGrantAdmin_NonCarvedVerbsStillGranted(t *testing.T) {
 // Purchaser membership is what unlocks the money verbs, which is why the 21
 // purchase-path tests repaired in #1596 use grantAdminPurchaser.
 func TestGrantAdminPurchaser_GrantsCarvedOutVerbs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, verb := range carvedOutVerbs {
@@ -132,6 +135,7 @@ func TestGrantAdminPurchaser_GrantsCarvedOutVerbs(t *testing.T) {
 // executePurchase handler, the real request body, a plain admin. Before #1596
 // this returned 200 and wrote a purchase execution.
 func TestExecutePurchase_PlainAdminIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -175,6 +179,7 @@ func TestExecutePurchase_PlainAdminIsRefused(t *testing.T) {
 // through the auto-answering path instead of an explicit mock.On(...)
 // expectation (found in review of #1596).
 func TestGrantPermissionsScoped_ConstrainedCheckFailsClosedOnEmptyConstraintSets(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -263,6 +268,7 @@ var constrainedGrantCases = []constrainedGrantCase{
 // dimensions diverged, so a handler test asserting a constraint refusal was
 // green whether or not the handler enforced anything.
 func TestGrantPermissionsScoped_ConstraintDimensionsAreEnforced(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tc := range constrainedGrantCases {
@@ -293,6 +299,7 @@ func TestGrantPermissionsScoped_ConstraintDimensionsAreEnforced(t *testing.T) {
 // configure a constrained one, and when they do the admin permission alongside
 // it must not widen them back out.
 func TestGrantPermissionsScoped_AdminDoesNotWidenAConstrainedCarveOut(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -321,6 +328,7 @@ func TestGrantPermissionsScoped_AdminDoesNotWidenAConstrainedCarveOut(t *testing
 // barrier covers requirePermissionConstraints' consumption of the answer and
 // not only the mock's production of it.
 func TestRequirePermissionConstraints_ConstrainedGrantIsBoundedAtHandler(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

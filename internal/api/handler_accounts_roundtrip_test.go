@@ -73,6 +73,7 @@ func captureAccountSave(store *MockConfigStore, method string) **config.CloudAcc
 }
 
 func TestCreateAccount_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -97,6 +98,7 @@ func TestCreateAccount_RoundTripEveryField(t *testing.T) {
 }
 
 func TestUpdateAccount_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -125,6 +127,7 @@ func TestUpdateAccount_RoundTripEveryField(t *testing.T) {
 }
 
 func TestCreateSelfAccount_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	selfAWSID := strings.Repeat("4", 12)
 	cases := []struct {
 		name string

@@ -93,11 +93,13 @@ func requireNotHost400(t *testing.T, err error, wantMsg string) {
 }
 
 func TestHostCheckMessages_OnlyMismatchSuggestsSettingRoleARN(t *testing.T) {
+	t.Parallel()
 	assert.Contains(t, roleARNNotHostMessage, "set aws_role_arn")
 	assert.NotContains(t, hostIdentityUnavailableMessage, "set aws_role_arn")
 }
 
 func TestCreateAccount_EmptyRoleARNRequiresHostAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, tc := range rejectedHostCheckCases() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -146,6 +148,7 @@ func TestCreateAccount_EmptyRoleARNRequiresHostAccount(t *testing.T) {
 }
 
 func TestUpdateAccount_EmptyRoleARNRequiresHostAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, tc := range rejectedHostCheckCases() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -181,6 +184,7 @@ func TestUpdateAccount_EmptyRoleARNRequiresHostAccount(t *testing.T) {
 }
 
 func TestApproveRegistration_EmptyRoleARNRequiresHostAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, tc := range rejectedHostCheckCases() {
 		t.Run(tc.name, func(t *testing.T) {

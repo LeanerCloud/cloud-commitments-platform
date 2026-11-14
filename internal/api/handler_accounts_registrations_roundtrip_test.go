@@ -16,6 +16,7 @@ import (
 // existing success test used a store that accepts anything, so a handler that
 // stored a different payload, type or account would still pass.
 func TestSaveAccountCredentials_StoresTheSentPayloadUnderTheAccountAndType(t *testing.T) {
+	t.Parallel()
 	const accountID = "9f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f"
 	cases := []struct {
 		name, credType, payload string
@@ -54,6 +55,7 @@ func TestSaveAccountCredentials_StoresTheSentPayloadUnderTheAccountAndType(t *te
 // account id from the body, in order. The older happy-path test checks one id and
 // ignores the plan id.
 func TestSetPlanAccounts_StoresThePlanAndEveryAccountInOrder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -89,6 +91,7 @@ func TestSetPlanAccounts_StoresThePlanAndEveryAccountInOrder(t *testing.T) {
 // POST /api/registrations/{id}/reject must record the reason on the rejected
 // registration and return it.
 func TestRejectRegistration_StoresAndReturnsTheReason(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

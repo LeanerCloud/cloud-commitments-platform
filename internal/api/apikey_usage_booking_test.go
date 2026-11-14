@@ -35,6 +35,7 @@ func usageBookingLambdaRequest(headers map[string]string, method, path string) *
 // the credential resolved to -- even though the request validates the
 // credential again inside the permission check.
 func TestHandleRequest_UserAPIKeyBooksUsageOnceWithResolvedKeyID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -62,6 +63,7 @@ func TestHandleRequest_UserAPIKeyBooksUsageOnceWithResolvedKeyID(t *testing.T) {
 // session-authenticated request books nothing: there is no key to attribute
 // it to, and booking would inflate whichever key happened to be nearby.
 func TestHandleRequest_SessionAuthBooksNoAPIKeyUsage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -89,6 +91,7 @@ func TestHandleRequest_SessionAuthBooksNoAPIKeyUsage(t *testing.T) {
 // API key books nothing. It is a stateless infrastructure credential with no
 // api_keys row, so there is no counter to increment.
 func TestHandleRequest_AdminAPIKeyBooksNoUsage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

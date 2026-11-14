@@ -28,6 +28,7 @@ func apiKeyBodyWithConstraints(constraints string) string {
 }
 
 func TestHandleRequest_CreateAPIKey_RejectsExplicitZeroMaxAmount(t *testing.T) {
+	t.Parallel()
 	for _, literal := range []string{`0`, `0.0`, `-0`, `0e5`} {
 		t.Run(literal, func(t *testing.T) {
 			h, store, stored := newAPIKeyRoundtripHandler(t)
@@ -48,6 +49,7 @@ func TestHandleRequest_CreateAPIKey_RejectsExplicitZeroMaxAmount(t *testing.T) {
 // Absent and null keep meaning "no cap" (stored as 0), and a positive cap is
 // stored as sent, so the zero check does not over-reject.
 func TestHandleRequest_CreateAPIKey_AcceptsAbsentNullAndPositiveMaxAmount(t *testing.T) {
+	t.Parallel()
 	cases := map[string]float64{
 		`{"regions":["us-east-1"]}`:                   0,
 		`{"regions":["us-east-1"],"max_amount":null}`: 0,

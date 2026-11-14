@@ -44,6 +44,7 @@ func preflightAllowedMethods(t *testing.T, h *Handler, path string) map[string]b
 // TestHandleRequest_PreflightAllowsPATCH is the issue's scenario: the
 // preflight for PATCH /api/plans/{id} must list PATCH.
 func TestHandleRequest_PreflightAllowsPATCH(t *testing.T) {
+	t.Parallel()
 	h := &Handler{corsAllowedOrigin: "https://dashboard.example.com"}
 	allowed := preflightAllowedMethods(t, h, "/api/plans/"+patchCSRFPlan)
 	assert.True(t, allowed["PATCH"], "preflight for PATCH /api/plans/{id} does not allow PATCH: %v", allowed)
@@ -53,6 +54,7 @@ func TestHandleRequest_PreflightAllowsPATCH(t *testing.T) {
 // table: every verb a route is registered with must be in the advertised
 // list, so a verb a route adds later cannot silently fail cross-origin.
 func TestHandleRequest_PreflightAllowsEveryRoutedMethod(t *testing.T) {
+	t.Parallel()
 	h := &Handler{corsAllowedOrigin: "https://dashboard.example.com"}
 	allowed := preflightAllowedMethods(t, h, "/api/plans/"+patchCSRFPlan)
 

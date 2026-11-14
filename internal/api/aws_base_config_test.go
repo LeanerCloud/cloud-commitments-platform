@@ -34,6 +34,7 @@ func (s *awsCfgLoadStub) load(ctx context.Context) (aws.Config, error) {
 // handler for the life of the process. The load now runs detached from the
 // request's cancellation, bounded by awsBaseConfigLoadTimeout.
 func TestBaseAWSConfig_CanceledFirstRequestDoesNotPoisonTheCache(t *testing.T) {
+	t.Parallel()
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 

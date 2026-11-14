@@ -35,6 +35,7 @@ func boundPatch(t *testing.T, stored *config.PurchasePlan, body string) (*MockCo
 }
 
 func TestPlanArm_RefusesStrippedBoundPlan(t *testing.T) {
+	t.Parallel()
 	store, err := boundPatch(t, strippedBoundPlan(false), `{"auto_purchase":true}`)
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
@@ -48,6 +49,7 @@ func TestPlanArm_RefusesStrippedBoundPlan(t *testing.T) {
 // De-escalating writes must always pass, so an operator can stop a plan that
 // lost its binding.
 func TestPlanDisarm_AllowsStrippedBoundPlan(t *testing.T) {
+	t.Parallel()
 	for _, body := range []string{`{"auto_purchase":false}`, `{"enabled":false}`, `{"name":"renamed"}`} {
 		store, err := boundPatch(t, strippedBoundPlan(true), body)
 		require.NoError(t, err, body)
@@ -58,6 +60,7 @@ func TestPlanDisarm_AllowsStrippedBoundPlan(t *testing.T) {
 // Re-enabling a stripped entry widens an armed plan: the arming gate sees it
 // (#1777), and the binding refusal runs before the gate, so the answer is 409.
 func TestUpdatePlanGated_RefusesReenablingStrippedEntry(t *testing.T) {
+	t.Parallel()
 	before := strippedBoundPlan(true)
 	before.Services = map[string]config.ServiceConfig{
 		"aws/ec2#g1": {Provider: "aws", Service: "ec2", Enabled: true, MinCount: 1, GroupID: "g1", BoundIdentities: []string{"k1"}},
@@ -86,6 +89,7 @@ func TestUpdatePlanGated_RefusesReenablingStrippedEntry(t *testing.T) {
 }
 
 func TestRetargetArmedPlan_RefusesStrippedBoundPlan(t *testing.T) {
+	t.Parallel()
 	store, err := apsSetAccounts(t, apsGrant(nil), strippedBoundPlan(true), apsAcctB)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "must be a client error: %v", err)
@@ -101,6 +105,7 @@ func TestRetargetArmedPlan_RefusesStrippedBoundPlan(t *testing.T) {
 // (guard) The re-enable gate applies only while the plan stays armed: an
 // unarmed stripped plan can still re-enable an entry.
 func TestUpdatePlanGated_UnarmedReenableIsAccepted(t *testing.T) {
+	t.Parallel()
 	before := strippedBoundPlan(false)
 	before.Services = map[string]config.ServiceConfig{"aws/rds#g2": {Provider: "aws", Service: "rds", Enabled: false, MinCount: 1}}
 	after := *before
@@ -116,6 +121,7 @@ func TestUpdatePlanGated_UnarmedReenableIsAccepted(t *testing.T) {
 // service it already has (DerivePlanServices unchanged, so no escalation) is
 // refused when that group has no binding.
 func TestUpdatePlanGated_RefusesNewUnboundGroupOnArmedPlan(t *testing.T) {
+	t.Parallel()
 	before := strippedBoundPlan(true)
 	before.RampSchedule.AllocationMode = config.RampAllocationBoundGroups
 	before.Services = map[string]config.ServiceConfig{

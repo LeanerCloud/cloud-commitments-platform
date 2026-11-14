@@ -48,6 +48,7 @@ func roleARNAccountBody(roleARN string) string {
 }
 
 func TestCreateAccount_AWSChinaRoleARN_ReturnsUnsupportedPartitionNotice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -60,6 +61,7 @@ func TestCreateAccount_AWSChinaRoleARN_ReturnsUnsupportedPartitionNotice(t *test
 }
 
 func TestCreateAccount_CommercialRoleARN_HasNoNotice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -72,6 +74,7 @@ func TestCreateAccount_CommercialRoleARN_HasNoNotice(t *testing.T) {
 }
 
 func TestUpdateAccount_AWSChinaRoleARN_ReturnsUnsupportedPartitionNotice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -85,6 +88,7 @@ func TestUpdateAccount_AWSChinaRoleARN_ReturnsUnsupportedPartitionNotice(t *test
 }
 
 func TestGetAccount_AWSChinaRoleARN_ReturnsUnsupportedPartitionNotice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -102,6 +106,7 @@ func TestGetAccount_AWSChinaRoleARN_ReturnsUnsupportedPartitionNotice(t *testing
 // TestListAccounts_PartitionNotices covers the list view, including the
 // self-account, which has no role ARN and takes CUDly's own partition.
 func TestListAccounts_PartitionNotices(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name          string
 		hostPartition string

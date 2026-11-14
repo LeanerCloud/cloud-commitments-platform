@@ -45,6 +45,7 @@ func (m *MockAnalyticsClient) QueryBreakdown(ctx context.Context, accountUUIDs [
 // UUID resolves to (UUID, external_id) and both reach QueryHistory so rows that
 // carry only the external account_id (cloud_account_id NULL) are aggregated.
 func TestHandler_getHistoryAnalytics_ExternalIDOnlyAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	accountUUID := "bbbbbbbb-1111-2222-3333-444444444444"
 	accountExternal := "999988887777"
@@ -96,6 +97,7 @@ func adminAnalyticsReq(ctx context.Context) (*MockAuthService, *events.LambdaFun
 }
 
 func TestHandler_getHistoryAnalytics_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -131,6 +133,7 @@ func TestHandler_getHistoryAnalytics_Success(t *testing.T) {
 }
 
 func TestHandler_getHistoryAnalytics_NoClient(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth, req := adminAnalyticsReq(ctx)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -142,6 +145,7 @@ func TestHandler_getHistoryAnalytics_NoClient(t *testing.T) {
 }
 
 func TestHandler_getHistoryAnalytics_DefaultInterval(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -168,6 +172,7 @@ func TestHandler_getHistoryAnalytics_DefaultInterval(t *testing.T) {
 // selected provider. Pre-fix the handler never read params["provider"] and
 // always passed "" — this asserts the exact provider arg.
 func TestHandler_getHistoryAnalytics_ProviderFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -187,6 +192,7 @@ func TestHandler_getHistoryAnalytics_ProviderFilter(t *testing.T) {
 // sentinel is normalised to "" (no provider filter), matching parseHistoryFilters
 // and the other charts (issue #498).
 func TestHandler_getHistoryAnalytics_ProviderAllIsNoFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -205,6 +211,7 @@ func TestHandler_getHistoryAnalytics_ProviderAllIsNoFilter(t *testing.T) {
 // TestHandler_getHistoryAnalytics_InvalidProvider rejects an unknown provider at
 // the boundary with a 400 rather than silently ignoring it (issue #498).
 func TestHandler_getHistoryAnalytics_InvalidProvider(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -220,6 +227,7 @@ func TestHandler_getHistoryAnalytics_InvalidProvider(t *testing.T) {
 }
 
 func TestHandler_getHistoryAnalytics_InvalidDateRange(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -238,6 +246,7 @@ func TestHandler_getHistoryAnalytics_InvalidDateRange(t *testing.T) {
 }
 
 func TestHandler_getHistoryAnalytics_QueryError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -259,6 +268,7 @@ func TestHandler_getHistoryAnalytics_QueryError(t *testing.T) {
 // non-admin user with restricted allowed_accounts cannot issue an unscoped
 // analytics query.
 func TestHandler_getHistoryAnalytics_ScopedUser_RequiresAccountID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -281,6 +291,7 @@ func TestHandler_getHistoryAnalytics_ScopedUser_RequiresAccountID(t *testing.T) 
 }
 
 func TestHandler_getHistoryBreakdown_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -313,6 +324,7 @@ func TestHandler_getHistoryBreakdown_Success(t *testing.T) {
 }
 
 func TestHandler_getHistoryBreakdown_NoClient(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth, req := adminAnalyticsReq(ctx)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -324,6 +336,7 @@ func TestHandler_getHistoryBreakdown_NoClient(t *testing.T) {
 }
 
 func TestHandler_getHistoryBreakdown_DefaultDimension(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -344,6 +357,7 @@ func TestHandler_getHistoryBreakdown_DefaultDimension(t *testing.T) {
 }
 
 func TestHandler_getHistoryBreakdown_InvalidDateRange(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -362,6 +376,7 @@ func TestHandler_getHistoryBreakdown_InvalidDateRange(t *testing.T) {
 }
 
 func TestHandler_getHistoryBreakdown_QueryError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockClient := new(MockAnalyticsClient)
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
@@ -380,6 +395,7 @@ func TestHandler_getHistoryBreakdown_QueryError(t *testing.T) {
 }
 
 func TestHandler_triggerAnalyticsCollection_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockCollector := new(MockAnalyticsCollector)
 	t.Cleanup(func() { mockCollector.AssertExpectations(t) })
@@ -400,6 +416,7 @@ func TestHandler_triggerAnalyticsCollection_Success(t *testing.T) {
 }
 
 func TestHandler_triggerAnalyticsCollection_NoCollector(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth, req := adminAnalyticsReq(ctx)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -411,6 +428,7 @@ func TestHandler_triggerAnalyticsCollection_NoCollector(t *testing.T) {
 }
 
 func TestHandler_triggerAnalyticsCollection_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockCollector := new(MockAnalyticsCollector)
 	t.Cleanup(func() { mockCollector.AssertExpectations(t) })
@@ -429,6 +447,7 @@ func TestHandler_triggerAnalyticsCollection_Error(t *testing.T) {
 // TestHandler_triggerAnalyticsCollection_NonAdmin asserts that a non-admin user
 // is rejected by requireAdmin, regardless of their broader permission set.
 func TestHandler_triggerAnalyticsCollection_NonAdmin(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockCollector := new(MockAnalyticsCollector)
 	t.Cleanup(func() { mockCollector.AssertExpectations(t) })
@@ -452,6 +471,7 @@ func TestHandler_triggerAnalyticsCollection_NonAdmin(t *testing.T) {
 }
 
 func TestParseDateRange(t *testing.T) {
+	t.Parallel()
 	t.Run("empty strings use defaults", func(t *testing.T) {
 		start, end, err := parseDateRange("", "")
 		require.NoError(t, err)
@@ -611,6 +631,7 @@ func (m *MockAnalyticsSnapshotStore) QueryByService(ctx context.Context, account
 // endpoint resolves the requested account UUID into the dual-column filter and
 // passes it to every Query* call.
 func TestHandler_getAnalyticsTrends_Success_ScopesByAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	accountUUID := "bbbbbbbb-1111-2222-3333-444444444444"
 	accountExternal := "999988887777"
@@ -649,6 +670,7 @@ func TestHandler_getAnalyticsTrends_Success_ScopesByAccount(t *testing.T) {
 // the wire: each monthly row carries total_commitment and total_usage, an
 // unknown value is omitted rather than sent as 0, and a known 0 is sent.
 func TestHandler_getAnalyticsTrends_MonthlyCommitmentAndUsage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	commitment, usage, zero := 720.0, 640.0, 0.0
 	mockSnap := new(MockAnalyticsSnapshotStore)
@@ -688,6 +710,7 @@ func TestHandler_getAnalyticsTrends_MonthlyCommitmentAndUsage(t *testing.T) {
 // TestHandler_getAnalyticsTrends_NoStore returns 503 when the snapshot store is
 // not configured.
 func TestHandler_getAnalyticsTrends_NoStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth, req := adminAnalyticsReq(ctx)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -703,6 +726,7 @@ func TestHandler_getAnalyticsTrends_NoStore(t *testing.T) {
 // TestHandler_getAnalyticsTrends_ScopedUser_RequiresAccountID asserts a scoped
 // user cannot issue an unscoped trends query, and the store is never called.
 func TestHandler_getAnalyticsTrends_ScopedUser_RequiresAccountID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockSnap := new(MockAnalyticsSnapshotStore)
 	t.Cleanup(func() { mockSnap.AssertExpectations(t) })
@@ -724,6 +748,7 @@ func TestHandler_getAnalyticsTrends_ScopedUser_RequiresAccountID(t *testing.T) {
 // TestHandler_getAnalyticsTrends_ScopedUser_OutsideScope returns not-found when
 // a scoped user requests an account outside their allowed_accounts.
 func TestHandler_getAnalyticsTrends_ScopedUser_OutsideScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockSnap := new(MockAnalyticsSnapshotStore)
 	t.Cleanup(func() { mockSnap.AssertExpectations(t) })

@@ -43,6 +43,7 @@ func heldIDsFor(t *testing.T, accounts []string, stored *config.RecommendationsF
 }
 
 func TestFreshness_HeldAccountsScopedToCaller(t *testing.T) {
+	t.Parallel()
 	stored := func() *config.RecommendationsFreshness { return heldFreshness(heldInScope, heldOutScope) }
 
 	t.Run("scoped caller sees only its own held account", func(t *testing.T) {
@@ -64,6 +65,7 @@ func TestFreshness_HeldAccountsScopedToCaller(t *testing.T) {
 // A scope that cannot be established must fail closed: an error, never the
 // unfiltered held IDs.
 func TestFreshness_ScopeLookupFailureFailsClosed(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", mock.Anything, scopedToken).Return(&Session{UserID: scopedUserID}, nil).Maybe()
 	mockAuth.grantPermissionsScoped(viewRecommendationsOnly(), []string{heldInScope})
@@ -105,6 +107,7 @@ func partialSweepFor(t *testing.T, accounts []string, stored *config.Recommendat
 // held_since keys and the expired ids name accounts too, so they are filtered
 // like held_account_ids, and the expired count follows the filtered ids.
 func TestFreshness_HeldSinceAndExpiredScopedToCaller(t *testing.T) {
+	t.Parallel()
 	ambient := uuid.Nil.String()
 	since := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	stored := func() *config.RecommendationsFreshness {

@@ -44,6 +44,7 @@ func requireFourEyesUnattributedRefusal(t *testing.T, err error) {
 }
 
 func TestExecutePurchase_AdminAPIKey_FourEyesOn_RefusedBeforeAnyWrite(t *testing.T) {
+	t.Parallel()
 	for _, body := range map[string]string{
 		"approval email": `{"recommendations":[{"id":"rec-1","provider":"aws","service":"ec2","count":1,"term":1,"payment":"all-upfront","upfront_cost":500.0,"savings":100.0}]}`,
 		"direct execute": directExecRecBody,
@@ -69,6 +70,7 @@ func TestExecutePurchase_AdminAPIKey_FourEyesOn_RefusedBeforeAnyWrite(t *testing
 }
 
 func TestExecutePurchase_AdminAPIKey_FourEyesOff_ReachesPersistence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -85,6 +87,7 @@ func TestExecutePurchase_AdminAPIKey_FourEyesOff_ReachesPersistence(t *testing.T
 }
 
 func TestRetryPurchase_UnattributedSession_FourEyesOn_RefusedBeforeAnyWrite(t *testing.T) {
+	t.Parallel()
 	creator := retryOtherID
 	failed := &config.PurchaseExecution{
 		ExecutionID:     retryExecID,
@@ -109,6 +112,7 @@ func TestRetryPurchase_UnattributedSession_FourEyesOn_RefusedBeforeAnyWrite(t *t
 }
 
 func TestRetryPurchase_UnattributedSession_FourEyesOff_ReachesPersistence(t *testing.T) {
+	t.Parallel()
 	creator := retryOtherID
 	failed := &config.PurchaseExecution{
 		ExecutionID:     retryExecID,
@@ -149,6 +153,7 @@ func unattributedRetryAuth(t *testing.T) *MockAuthService {
 const fourEyesPlanID = "11111111-1111-1111-1111-111111111111"
 
 func TestCreatePlannedPurchases_AdminAPIKey_FourEyesOn_RefusedBeforeAnyWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -163,6 +168,7 @@ func TestCreatePlannedPurchases_AdminAPIKey_FourEyesOn_RefusedBeforeAnyWrite(t *
 }
 
 func TestCreatePlannedPurchases_AdminAPIKey_FourEyesOff_ReachesPersistence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -178,6 +184,7 @@ func TestCreatePlannedPurchases_AdminAPIKey_FourEyesOff_ReachesPersistence(t *te
 
 // The guard itself, for the cases the endpoint tests above do not reach.
 func TestRequireAttributablePurchaseCreator(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	adminKey := &Session{UserID: apiKeyAdminUserID}
 

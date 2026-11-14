@@ -14,12 +14,14 @@ import (
 )
 
 func TestNewDBRateLimiter(t *testing.T) {
+	t.Parallel()
 	rl := NewDBRateLimiter(nil)
 	assert.NotNil(t, rl)
 	assert.NotNil(t, rl.limits)
 }
 
 func TestDBRateLimiter_SetLimit(t *testing.T) {
+	t.Parallel()
 	rl := NewDBRateLimiter(nil)
 	cfg := NewRateLimitConfig(10, 30)
 	rl.SetLimit("test-endpoint", cfg)
@@ -32,6 +34,7 @@ func TestDBRateLimiter_SetLimit(t *testing.T) {
 }
 
 func TestDBRateLimiter_SetLimit_NilLimitsMap(t *testing.T) {
+	t.Parallel()
 	// Simulate a limiter whose limits map was nilled out
 	rl := &DBRateLimiter{}
 	cfg := NewRateLimitConfig(5, 60)
@@ -45,6 +48,7 @@ func TestDBRateLimiter_SetLimit_NilLimitsMap(t *testing.T) {
 // protection on the credential endpoints, whose strict check only fails
 // closed on an error.
 func TestDBRateLimiter_Allow_NilLimiter(t *testing.T) {
+	t.Parallel()
 	var rl *DBRateLimiter
 	allowed, err := rl.Allow(context.Background(), "IP#1.2.3.4", "login")
 	require.ErrorIs(t, err, ErrRateLimiterUnavailable)
@@ -52,6 +56,7 @@ func TestDBRateLimiter_Allow_NilLimiter(t *testing.T) {
 }
 
 func TestDBRateLimiter_NilPool_ReportsUnavailable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	rl := NewDBRateLimiter(nil)
 	calls := map[string]func() (bool, error){
@@ -73,6 +78,7 @@ func TestDBRateLimiter_NilPool_ReportsUnavailable(t *testing.T) {
 // credential-endpoint check answer 503 instead of letting the request through,
 // while the ordinary check keeps its documented fail-open behavior.
 func TestHandler_checkRateLimitStrict_NilPoolFailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for name, rl := range map[string]*DBRateLimiter{"nil pool": NewDBRateLimiter(nil), "nil limiter": nil} {
 		t.Run(name, func(t *testing.T) {
@@ -90,12 +96,14 @@ func TestHandler_checkRateLimitStrict_NilPoolFailsClosed(t *testing.T) {
 }
 
 func TestDBRateLimiter_cleanup_NilPool(t *testing.T) {
+	t.Parallel()
 	rl := &DBRateLimiter{pool: nil}
 	// Should not panic
 	rl.cleanup()
 }
 
 func TestDBRateLimiter_maybeCleanup_AlreadyRunning(t *testing.T) {
+	t.Parallel()
 	rl := NewDBRateLimiter(nil)
 	rl.cleanupRunning.Store(true)
 	// Should return immediately without panicking
@@ -104,6 +112,7 @@ func TestDBRateLimiter_maybeCleanup_AlreadyRunning(t *testing.T) {
 }
 
 func TestDBRateLimiter_maybeCleanup_TooSoon(t *testing.T) {
+	t.Parallel()
 	rl := NewDBRateLimiter(nil)
 	rl.cleanupInterval = time.Hour
 	rl.lastCleanup = time.Now() // Just ran cleanup
@@ -113,6 +122,7 @@ func TestDBRateLimiter_maybeCleanup_TooSoon(t *testing.T) {
 }
 
 func TestDBRateLimiter_maybeCleanup_ReadyToCleanup(t *testing.T) {
+	t.Parallel()
 	rl := NewDBRateLimiter(nil)
 	rl.cleanupInterval = time.Millisecond
 	before := time.Now().Add(-time.Minute) // Long ago
@@ -146,6 +156,7 @@ func TestDBRateLimiter_maybeCleanup_ReadyToCleanup(t *testing.T) {
 // t.Cleanup is a data race the race detector reports, since nothing orders
 // the worker's read before the restore.
 func TestDBRateLimiter_StartCleanupWorker_StopsOnContextCancel(t *testing.T) {
+	t.Parallel()
 	rl := NewDBRateLimiter(nil) // nil pool; cleanup() is a no-op
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

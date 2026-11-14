@@ -15,6 +15,7 @@ import (
 // Issue #120 item 3: an external_id change that would orphan history rows is
 // refused with a 409 and a stable reason code.
 func TestUpdateAccount_ExternalIDChangeWithHistoryIs409(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

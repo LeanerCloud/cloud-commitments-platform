@@ -25,6 +25,7 @@ func updateAccountRequest(body, id string) *events.LambdaFunctionURLRequest {
 }
 
 func TestUpdateAccount_ProviderChangeIsRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -53,6 +54,7 @@ func TestUpdateAccount_ProviderChangeIsRejected(t *testing.T) {
 }
 
 func TestUpdateAccount_SameProviderIsSaved(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

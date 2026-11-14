@@ -41,6 +41,7 @@ func TestHandler_getFederationIaC_SuccessWithoutAccountID(t *testing.T) {
 }
 
 func TestRouter_getFederationIaCHandler(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := &Handler{}
 	r := newTestRouter(h)
@@ -60,6 +61,7 @@ func TestRouter_getFederationIaCHandler(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSlugify(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected string
@@ -82,6 +84,7 @@ func TestSlugify(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAwsOIDCIssuer(t *testing.T) {
+	t.Parallel()
 	assert.Contains(t, awsOIDCIssuer("azure", "tenant-id"), "login.microsoftonline.com/tenant-id")
 	assert.Contains(t, awsOIDCIssuer("azure", ""), "AZURE_TENANT_ID")
 	assert.Equal(t, "https://accounts.google.com", awsOIDCIssuer("gcp", ""))
@@ -89,6 +92,7 @@ func TestAwsOIDCIssuer(t *testing.T) {
 }
 
 func TestGcpOIDCIssuerURI(t *testing.T) {
+	t.Parallel()
 	assert.Contains(t, gcpOIDCIssuerURI("azure", "my-tenant"), "my-tenant")
 	assert.Contains(t, gcpOIDCIssuerURI("azure", ""), "AZURE_TENANT_ID")
 	assert.Equal(t, "", gcpOIDCIssuerURI("gcp", ""))

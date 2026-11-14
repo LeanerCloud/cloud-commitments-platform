@@ -30,6 +30,7 @@ func edited(f func(p *config.PurchasePlan, g *config.ServiceConfig)) *config.Pur
 }
 
 func TestPlanArmEscalates_BoundGroups(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		after *config.PurchasePlan
@@ -86,6 +87,7 @@ func TestPlanArmEscalates_BoundGroups(t *testing.T) {
 // (guard) Unmarked armed plans keep today's rules: a term- or payment-only
 // edit is not an escalation, so admin-key callers are unaffected.
 func TestPlanArmEscalates_UnmarkedTermAndPaymentEditsDoNotEscalate(t *testing.T) {
+	t.Parallel()
 	plan := func(term int, payment string) *config.PurchasePlan {
 		p := apgStoredPlan(true, apgCap(1000))
 		p.Services = map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Enabled: true, Term: term, Payment: payment}}

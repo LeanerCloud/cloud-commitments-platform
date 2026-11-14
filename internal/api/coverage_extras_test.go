@@ -19,6 +19,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestHandler_approvePurchase_InvalidUUID(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 	_, err := h.approvePurchase(context.Background(), nil, "not-uuid", "token")
 	assert.Error(t, err)
@@ -26,6 +27,7 @@ func TestHandler_approvePurchase_InvalidUUID(t *testing.T) {
 }
 
 func TestHandler_approvePurchase_EmptyToken(t *testing.T) {
+	t.Parallel()
 	// After issue #286 the empty-token path is no longer a pre-flight 400 —
 	// approvePurchase dispatches three ways (session-authed RBAC,
 	// token-authed legacy, session-authed fallback when token=="").
@@ -60,6 +62,7 @@ func TestHandler_approvePurchase_EmptyToken(t *testing.T) {
 }
 
 func TestHandler_approvePurchase_PurchaseError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "11111111-1111-1111-1111-111111111111"
 	approver := "approver@example.com"
@@ -117,6 +120,7 @@ func TestHandler_approvePurchase_PurchaseError(t *testing.T) {
 }
 
 func TestHandler_cancelPurchase_InvalidUUID(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 	_, err := h.cancelPurchase(context.Background(), nil, "not-uuid", "token")
 	assert.Error(t, err)
@@ -129,6 +133,7 @@ func TestHandler_cancelPurchase_InvalidUUID(t *testing.T) {
 // session-authed cancel flow (issue #46). With no session the caller gets a
 // 401 before any execution is loaded (issue #435), not the legacy 400.
 func TestHandler_cancelPurchase_EmptyToken_FallsThroughToSession(t *testing.T) {
+	t.Parallel()
 	execID := "11111111-1111-1111-1111-111111111111"
 	mockConfig := new(MockConfigStore)
 	t.Cleanup(func() { mockConfig.AssertExpectations(t) })
@@ -141,6 +146,7 @@ func TestHandler_cancelPurchase_EmptyToken_FallsThroughToSession(t *testing.T) {
 }
 
 func TestHandler_cancelPurchase_PurchaseError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "11111111-1111-1111-1111-111111111111"
 	approver := "approver@example.com"
@@ -197,6 +203,7 @@ func TestHandler_cancelPurchase_PurchaseError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_forgotPassword_RateLimitExceeded(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -225,6 +232,7 @@ func TestHandler_forgotPassword_RateLimitExceeded(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestOverlayOverrideSlices(t *testing.T) {
+	t.Parallel()
 	override := &config.AccountServiceOverride{}
 	req := AccountServiceOverrideRequest{
 		IncludeEngines: []string{"mysql"},
@@ -249,6 +257,7 @@ func TestOverlayOverrideSlices(t *testing.T) {
 }
 
 func TestOverlayOverrideSlices_AbsentKeysKept(t *testing.T) {
+	t.Parallel()
 	override := &config.AccountServiceOverride{
 		IncludeEngines: []string{"existing"},
 	}
@@ -262,6 +271,7 @@ func TestOverlayOverrideSlices_AbsentKeysKept(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_sendPurchaseApprovalEmail_ConfigError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -282,6 +292,7 @@ func TestHandler_sendPurchaseApprovalEmail_ConfigError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_updateRIExchangeConfig_GetGlobalConfigError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -303,6 +314,7 @@ func TestHandler_updateRIExchangeConfig_GetGlobalConfigError(t *testing.T) {
 }
 
 func TestHandler_updateRIExchangeConfig_SaveError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -329,6 +341,7 @@ func TestHandler_updateRIExchangeConfig_SaveError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_rejectRIExchange_RecordNotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -345,6 +358,7 @@ func TestHandler_rejectRIExchange_RecordNotFound(t *testing.T) {
 }
 
 func TestHandler_rejectRIExchange_WrongToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -358,6 +372,7 @@ func TestHandler_rejectRIExchange_WrongToken(t *testing.T) {
 }
 
 func TestHandler_rejectRIExchange_AlreadyProcessed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -379,6 +394,7 @@ func TestHandler_rejectRIExchange_AlreadyProcessed(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_validateExchangeApproval_DBError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -396,6 +412,7 @@ func TestHandler_validateExchangeApproval_DBError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_approveRIExchange_AlreadyProcessed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -417,6 +434,7 @@ func TestHandler_approveRIExchange_AlreadyProcessed(t *testing.T) {
 // TestValidUUIDPtrOrNil_ReturnsPointerForValidUUID asserts the happy-path:
 // a string that parses as a UUID is passed through unchanged.
 func TestValidUUIDPtrOrNil_ReturnsPointerForValidUUID(t *testing.T) {
+	t.Parallel()
 	uid := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	result := validUUIDPtrOrNil(&uid)
 	require.NotNil(t, result, "valid UUID must return non-nil pointer")
@@ -426,6 +444,7 @@ func TestValidUUIDPtrOrNil_ReturnsPointerForValidUUID(t *testing.T) {
 // TestValidUUIDPtrOrNil_ReturnsNilForNonUUID asserts that a non-UUID string
 // (e.g. "admin-api-key") returns nil so it is never used as a FK actor.
 func TestValidUUIDPtrOrNil_ReturnsNilForNonUUID(t *testing.T) {
+	t.Parallel()
 	s := "admin-api-key"
 	assert.Nil(t, validUUIDPtrOrNil(&s), "non-UUID reviewer_by must map to nil actor")
 }
@@ -433,6 +452,7 @@ func TestValidUUIDPtrOrNil_ReturnsNilForNonUUID(t *testing.T) {
 // TestValidUUIDPtrOrNil_ReturnsNilForNilInput asserts that a nil *string
 // returns nil (no panic on nil dereference).
 func TestValidUUIDPtrOrNil_ReturnsNilForNilInput(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, validUUIDPtrOrNil(nil))
 }
 
@@ -443,6 +463,7 @@ func TestValidUUIDPtrOrNil_ReturnsNilForNilInput(t *testing.T) {
 // keeps the test honest: it fails if the handler ever stops deriving the actor
 // from the session and threading it through (CR feedback on PR #1011).
 func TestHandler_TransitionRegistrationStatus_ActorStamped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const regID = "11111111-1111-1111-1111-111111111111"
 	const actorID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
@@ -476,6 +497,7 @@ func TestHandler_TransitionRegistrationStatus_ActorStamped(t *testing.T) {
 // returns a session whose UserID is the literal "admin-api-key" (not a UUID
 // FK). The handler must pass nil as the actor so transitioned_by = NULL.
 func TestHandler_TransitionRegistrationStatus_NonUUIDActorIsNil(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const regID = "22222222-2222-2222-2222-222222222222"
 
@@ -500,6 +522,7 @@ func TestHandler_TransitionRegistrationStatus_NonUUIDActorIsNil(t *testing.T) {
 
 // Case and whitespace variants of one address must share the per-email bucket.
 func TestHandler_forgotPassword_EmailKeyIsNormalised(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("RequestPasswordReset", mock.Anything, mock.Anything).Return(nil).Maybe()

@@ -103,6 +103,7 @@ func (f plannedDeleteFixture) requireRefusedBeforeCancel(t *testing.T, err error
 // Issue #623: a caller who cannot disable the plan is refused before the
 // cancel, so the plan is never left enabled behind a 200.
 func TestRouterDispatch_DeletePlannedPurchase_PartiallyScopedRefusedBeforeCancel(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, []config.CloudAccount{inScopeAccount(), outOfScopeAccount()}, scopedInAccount)
 	store := f.store
 
@@ -114,6 +115,7 @@ func TestRouterDispatch_DeletePlannedPurchase_PartiallyScopedRefusedBeforeCancel
 }
 
 func TestRouterDispatch_DeletePlannedPurchase_FullyScopedDisablesPlan(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, []config.CloudAccount{inScopeAccount(), outOfScopeAccount()}, scopedInAccount, scopedOutAccount)
 	store := f.store
 
@@ -130,6 +132,7 @@ func TestRouterDispatch_DeletePlannedPurchase_FullyScopedDisablesPlan(t *testing
 }
 
 func TestRouterDispatch_DeletePlannedPurchase_UnrestrictedDisablesPlanWithoutScopeLookup(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, []config.CloudAccount{inScopeAccount(), outOfScopeAccount()})
 	store := f.store
 
@@ -145,6 +148,7 @@ func TestRouterDispatch_DeletePlannedPurchase_UnrestrictedDisablesPlanWithoutSco
 // A plan with no accounts is hidden from scoped callers, so the disable is
 // refused like the partially scoped case.
 func TestRouterDispatch_DeletePlannedPurchase_ZeroAccountPlanRefusedBeforeCancel(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, nil, scopedInAccount)
 
 	_, err := f.delete(t)
@@ -155,6 +159,7 @@ func TestRouterDispatch_DeletePlannedPurchase_ZeroAccountPlanRefusedBeforeCancel
 // A store failure while resolving the plan's accounts is not a scope refusal:
 // it surfaces as a server error, and nothing is canceled or disabled.
 func TestRouterDispatch_DeletePlannedPurchase_PlanAccountLookupFailureSurfacesBeforeCancel(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, nil, scopedInAccount)
 	store := f.store
 	store.GetPlanAccountsFn = func(context.Context, string) ([]config.CloudAccount, error) {
@@ -176,6 +181,7 @@ func TestRouterDispatch_DeletePlannedPurchase_PlanAccountLookupFailureSurfacesBe
 // disable re-checks and, when it is refused, reports a 409 naming the
 // half-done state instead of a 200 that hides it.
 func TestRouterDispatch_DeletePlannedPurchase_PlanAccountsChangeDuringCancel(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, nil, scopedInAccount)
 	lookups := 0
 	f.store.GetPlanAccountsFn = func(context.Context, string) ([]config.CloudAccount, error) {
@@ -203,6 +209,7 @@ func TestRouterDispatch_DeletePlannedPurchase_PlanAccountsChangeDuringCancel(t *
 // A scoped caller canceling an execution with no plan has nothing to disable,
 // so no plan scope check runs and the cancel succeeds.
 func TestRouterDispatch_DeletePlannedPurchase_ScopedNoPlanCancelsWithoutPlanCheck(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, nil, scopedInAccount)
 	store := f.store
 	account := scopedInAccount
@@ -230,6 +237,7 @@ func TestRouterDispatch_DeletePlannedPurchase_ScopedNoPlanCancelsWithoutPlanChec
 // The execution gate still comes first: a caller who holds none of the
 // execution's accounts is refused before anything is canceled or disabled.
 func TestRouterDispatch_DeletePlannedPurchase_OutOfScopeExecutionRefusedBeforeAnyWrite(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, []config.CloudAccount{inScopeAccount(), outOfScopeAccount()}, scopedOutAccount)
 	store := f.store
 
@@ -244,6 +252,7 @@ func TestRouterDispatch_DeletePlannedPurchase_OutOfScopeExecutionRefusedBeforeAn
 // Permission is checked before scope: a caller without any delete or cancel
 // verb gets 403 and no execution or plan lookup happens.
 func TestRouterDispatch_DeletePlannedPurchase_PermissionRefusedBeforeScope(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, []config.CloudAccount{inScopeAccount(), outOfScopeAccount()}, scopedInAccount)
 	store := f.store
 	// The refusal comes before the lookup the fixture stubs; the
@@ -268,6 +277,7 @@ func TestRouterDispatch_DeletePlannedPurchase_PermissionRefusedBeforeScope(t *te
 // The plan is disabled only after the execution is canceled: a failed cancel
 // must never leave a disabled plan behind.
 func TestRouterDispatch_DeletePlannedPurchase_CancelsBeforeDisablingPlan(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, []config.CloudAccount{inScopeAccount()}, scopedInAccount)
 	store := f.store
 
@@ -283,6 +293,7 @@ func TestRouterDispatch_DeletePlannedPurchase_CancelsBeforeDisablingPlan(t *test
 
 // An execution without a plan omits plan_disabled from the JSON body.
 func TestRouterDispatch_DeletePlannedPurchase_NoPlanOmitsPlanDisabled(t *testing.T) {
+	t.Parallel()
 	f := newPlannedDeleteFixture(t, nil)
 	store := f.store
 	noPlan := &config.PurchaseExecution{ExecutionID: plannedDeleteExecID, Status: config.StatusCanceled}

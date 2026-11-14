@@ -39,6 +39,7 @@ func setupRouterForDispatch(t *testing.T, ctx context.Context) *Router {
 // The SaveAccountServiceOverride stub returns nil (success), so the handler returns
 // the newly built override — the important thing is no client/not-found error.
 func TestRouterDispatch_UpdateServiceOverride(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := setupRouterForDispatch(t, ctx)
 
@@ -53,6 +54,7 @@ func TestRouterDispatch_UpdateServiceOverride(t *testing.T) {
 // reaches updateAccount (not saveAccountServiceOverride).  The stub returns a
 // valid account so updateAccount succeeds — confirming the correct handler ran.
 func TestRouterDispatch_UpdateAccount_RoutesCorrectly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := setupRouterForDispatch(t, ctx)
 
@@ -67,6 +69,7 @@ func TestRouterDispatch_UpdateAccount_RoutesCorrectly(t *testing.T) {
 // TestRouterDispatch_DeleteServiceOverride verifies DELETE …/service-overrides/:p/:s
 // routes to deleteAccountServiceOverride.
 func TestRouterDispatch_DeleteServiceOverride(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := setupRouterForDispatch(t, ctx)
 
@@ -82,6 +85,7 @@ func TestRouterDispatch_DeleteServiceOverride(t *testing.T) {
 // returns nil → no error expected.  For the service-override path, parseServiceOverridePath
 // would be called, so a missing-component error would be returned instead.
 func TestRouterDispatch_DeleteAccount_RoutesCorrectly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := setupRouterForDispatch(t, ctx)
 
@@ -98,6 +102,7 @@ func TestRouterDispatch_DeleteAccount_RoutesCorrectly(t *testing.T) {
 // "list" as a :id and reject it with a 400 invalid-UUID error. A successful
 // (non-error) result proves the more-specific exact-path route won. (#949/#951).
 func TestRouterDispatch_AccountsList_RoutesToMinimalHandler(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := setupRouterForDispatch(t, ctx)
 
@@ -115,6 +120,7 @@ func TestRouterDispatch_AccountsList_RoutesToMinimalHandler(t *testing.T) {
 // routes to take precedence; if they don't, getPlan would be matched first and
 // would receive id="uuid/accounts", which contains a slash → "invalid ID" error.
 func TestRouterDispatch_PlanAccountsGET_CorrectDispatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := setupRouterForDispatch(t, ctx)
 
@@ -127,6 +133,7 @@ func TestRouterDispatch_PlanAccountsGET_CorrectDispatch(t *testing.T) {
 }
 
 func TestRouterDispatch_PlanAccountsPUT_CorrectDispatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	r := setupRouterForDispatch(t, ctx)
 

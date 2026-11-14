@@ -137,6 +137,7 @@ func csrfRouteKey(r Route) string {
 }
 
 func TestAuthPublicRoutes_EveryRouteIsCSRFGuardedOrExempt(t *testing.T) {
+	t.Parallel()
 	guarded := map[string]bool{}
 	for _, row := range authPublicCSRFGuardRows {
 		guarded[row.route] = true
@@ -171,6 +172,7 @@ func TestAuthPublicRoutes_EveryRouteIsCSRFGuardedOrExempt(t *testing.T) {
 }
 
 func TestAuthPublicMoneyRoutes_SessionWithoutCSRFIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, row := range authPublicCSRFGuardRows {
 		t.Run(row.name+"/no CSRF header", func(t *testing.T) {
 			f := row.build(t)

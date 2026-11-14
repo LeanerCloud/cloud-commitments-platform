@@ -62,6 +62,7 @@ var apiBastionCallers = map[string]func(ctx context.Context, h *Handler, base aw
 }
 
 func TestAPIAWSCallers_BastionAssumesTargetAsBastion(t *testing.T) {
+	t.Parallel()
 	for name, call := range apiBastionCallers {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
@@ -80,6 +81,7 @@ func TestAPIAWSCallers_BastionAssumesTargetAsBastion(t *testing.T) {
 }
 
 func TestAPIAWSCallers_BastionWithoutConfigStoreFailsClosed(t *testing.T) {
+	t.Parallel()
 	for name, call := range apiBastionCallers {
 		t.Run(name, func(t *testing.T) {
 			fake := &probeSTS{}

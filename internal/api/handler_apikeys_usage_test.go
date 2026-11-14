@@ -18,6 +18,7 @@ import (
 // view/api-keys permission.
 
 func TestHandler_listAPIKeysUsageStats_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -49,6 +50,7 @@ func TestHandler_listAPIKeysUsageStats_Success(t *testing.T) {
 }
 
 func TestHandler_listAPIKeysUsageStats_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -60,6 +62,7 @@ func TestHandler_listAPIKeysUsageStats_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_listAPIKeysUsageStats_ServiceError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -81,6 +84,7 @@ func TestHandler_listAPIKeysUsageStats_ServiceError(t *testing.T) {
 }
 
 func TestHandler_listAPIKeysUsageStats_PermissionDenied(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

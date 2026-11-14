@@ -35,6 +35,7 @@ func requireClientCode(t *testing.T, err error, code int, msgAndArgs ...any) {
 // rotating source IPs does not reset the code-guessing budget. Email variants
 // that Login resolves to the same address share one budget.
 func TestHandler_login_MFALegRateLimitedPerEmail(t *testing.T) {
+	t.Parallel()
 	limit := getDefaultRateLimits()["login_mfa"].MaxAttempts
 	require.Less(t, limit, 100)
 	emails := []string{"victim@example.com", "Victim@Example.com", `"Someone" <victim@example.com>`}
@@ -65,6 +66,7 @@ func TestHandler_login_MFALegRateLimitedPerEmail(t *testing.T) {
 // The password-only first leg never touches the per-email bucket, so users
 // without MFA and the mfa_required round trip are unaffected.
 func TestHandler_login_NoMFACodeSkipsPerEmailBucket(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 	mockAuth.On("Login", mock.Anything, mock.Anything).
@@ -80,6 +82,7 @@ func TestHandler_login_NoMFACodeSkipsPerEmailBucket(t *testing.T) {
 }
 
 func TestHandler_login_MFALegRateLimiterErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 	rl := new(MockRateLimiter)
@@ -97,6 +100,7 @@ func TestHandler_login_MFALegRateLimiterErrorFailsClosed(t *testing.T) {
 // bucket, so requests without a valid session cannot spend the budget of
 // users behind the same IP.
 func TestHandler_mfaEndpoints_InvalidSessionDoesNotSpendIPBudget(t *testing.T) {
+	t.Parallel()
 	limit := getDefaultRateLimits()["mfa"].MaxAttempts
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -123,6 +127,7 @@ func TestHandler_mfaEndpoints_InvalidSessionDoesNotSpendIPBudget(t *testing.T) {
 // brute-force protection on the credential endpoints. A nil limiter is now
 // refused with the same 503 as a limiter error.
 func TestHandler_credentialEndpoints_NilLimiterFailsClosed(t *testing.T) {
+	t.Parallel()
 	t.Run("checkRateLimitStrict", func(t *testing.T) {
 		h := &Handler{}
 		for _, endpoint := range []string{"login", "setup_admin", "reset_password", "change_password", "mfa"} {
@@ -158,6 +163,7 @@ func TestHandler_credentialEndpoints_NilLimiterFailsClosed(t *testing.T) {
 // Issue #134: the mfa_required answer carries the continuation token and its
 // expiry at the top level of the JSON body, next to "error".
 func TestHandler_login_MFARequiredCarriesToken(t *testing.T) {
+	t.Parallel()
 	expires := time.Date(2026, 10, 27, 12, 5, 0, 0, time.UTC)
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -185,6 +191,7 @@ func mfaTokenReq(ip, body string) *events.LambdaFunctionURLRequest {
 // The token form reaches the service with the token and no password, and an
 // unusable token maps to its own code so the frontend can restart the login.
 func TestHandler_login_MFATokenFormForwardedAndMapped(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 	mockAuth.On("Login", mock.Anything, LoginRequest{Email: "u@example.com", MFAToken: "tok", MFACode: "123456"}).
@@ -199,6 +206,7 @@ func TestHandler_login_MFATokenFormForwardedAndMapped(t *testing.T) {
 // A body that mixes the forms, or a token form missing its email or code, is
 // a 400 that never reaches the service or spends a rate-limit slot.
 func TestHandler_login_MFATokenFormValidation(t *testing.T) {
+	t.Parallel()
 	for name, body := range map[string]string{
 		"password-and-token": fmt.Sprintf(`{"email":"u@example.com","password":%q,"mfa_token":"tok","mfa_code":"123456"}`, b64("pw")),
 		"no-code":            `{"email":"u@example.com","mfa_token":"tok"}`,
@@ -222,6 +230,7 @@ func TestHandler_login_MFATokenFormValidation(t *testing.T) {
 // The token form spends the same per-account login_mfa budget as the
 // password + code form, so rotating IPs or minting tokens does not reset it.
 func TestHandler_login_MFATokenFormRateLimitedPerEmail(t *testing.T) {
+	t.Parallel()
 	limit := getDefaultRateLimits()["login_mfa"].MaxAttempts
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

@@ -45,6 +45,7 @@ func apsPlanCall(t *testing.T, perms []auth.Permission, planAccounts []string) (
 }
 
 func TestAutoPurchaseScope_PlanArm(t *testing.T) {
+	t.Parallel()
 	onlyA := &auth.PermissionConstraints{AccountIDs: []string{apsAcctA}}
 	for _, tc := range []struct {
 		name         string
@@ -75,6 +76,7 @@ func TestAutoPurchaseScope_PlanArm(t *testing.T) {
 }
 
 func TestAutoPurchaseScope_PlanCreateArm(t *testing.T) {
+	t.Parallel()
 	onlyA := apsGrant(&auth.PermissionConstraints{AccountIDs: []string{apsAcctA}})
 	for _, tc := range []struct {
 		name        string
@@ -105,6 +107,7 @@ func TestAutoPurchaseScope_PlanCreateArm(t *testing.T) {
 }
 
 func TestAutoPurchaseScope_LadderConfigArm(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name        string
 		constraints *auth.PermissionConstraints
@@ -129,6 +132,7 @@ func TestAutoPurchaseScope_LadderConfigArm(t *testing.T) {
 }
 
 func TestAutoPurchaseScope_LadderResolve(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		account string
@@ -167,6 +171,7 @@ func apsSetAccounts(t *testing.T, perms []auth.Permission, stored *config.Purcha
 }
 
 func TestAutoPurchaseScope_RetargetArmedPlan(t *testing.T) {
+	t.Parallel()
 	onlyA := apsGrant(&auth.PermissionConstraints{AccountIDs: []string{apsAcctA}})
 	nonHolder := []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}}
 	for _, tc := range []struct {
@@ -198,6 +203,7 @@ func TestAutoPurchaseScope_RetargetArmedPlan(t *testing.T) {
 }
 
 func TestAutoPurchaseScope_ProviderChangeOnArmedPlan(t *testing.T) {
+	t.Parallel()
 	put := `{"name":"p","enabled":true,"auto_purchase":true,"provider":"azure","service":"vm","term":3,"payment":"monthly"}`
 	for _, tc := range []struct {
 		name        string
@@ -229,6 +235,7 @@ func TestAutoPurchaseScope_ProviderChangeOnArmedPlan(t *testing.T) {
 // (a plan with no region filter covers every region), so a regions-constrained
 // grant keeps failing closed.
 func TestAutoPurchaseScope_ServicesAndRegionsConstraints(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name        string
 		constraints *auth.PermissionConstraints
@@ -251,6 +258,7 @@ func TestAutoPurchaseScope_ServicesAndRegionsConstraints(t *testing.T) {
 }
 
 func TestPlanArmEscalates_ProviderAndServiceWidening(t *testing.T) {
+	t.Parallel()
 	plan := func(keys ...string) *config.PurchasePlan {
 		p := apgStoredPlan(true, apgCap(1000))
 		p.Services = map[string]config.ServiceConfig{}
@@ -280,6 +288,7 @@ func TestPlanArmEscalates_ProviderAndServiceWidening(t *testing.T) {
 // A disabled entry turned back on starts buying under the existing arming, so
 // it needs the grant like a new service does (#1777).
 func TestPlanArmEscalates_ReEnabledEntry(t *testing.T) {
+	t.Parallel()
 	plan := func(enabled bool) *config.PurchasePlan {
 		p := apgStoredPlan(true, apgCap(1000))
 		p.Services = map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Enabled: enabled}}
@@ -304,6 +313,7 @@ func TestPlanArmEscalates_ReEnabledEntry(t *testing.T) {
 // A provider mismatch is a malformed request, so it is a 400 whatever the
 // plan's armed state; the 403 arming gate must not mask it.
 func TestAutoPurchaseScope_RetargetProviderMismatchBeforeArmingGate(t *testing.T) {
+	t.Parallel()
 	nonHolder := []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}}
 	store := new(MockConfigStore)
 	store.On("GetPurchasePlan", mock.Anything, apgPlanID).Return(apgStoredPlan(true, apgCap(1000)), nil)
@@ -325,6 +335,7 @@ func TestAutoPurchaseScope_RetargetProviderMismatchBeforeArmingGate(t *testing.T
 // refused before any scope is derived (#1746): a grant covering the key's
 // gcp/compute and aws/rds must not move a plan that buys aws/ec2.
 func TestAutoPurchaseScope_RetargetRefusesBoundKeyNamingAnotherEntry(t *testing.T) {
+	t.Parallel()
 	grant := apsGrant(&auth.PermissionConstraints{Providers: []string{"aws", "gcp"}, Services: []string{"compute", "rds"}})
 	bound := func(key string, svc config.ServiceConfig) *config.PurchasePlan {
 		p := apgStoredPlan(true, apgCap(1000))

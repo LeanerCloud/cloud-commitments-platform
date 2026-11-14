@@ -76,6 +76,7 @@ func discoverOrgBody(rootID string) string {
 }
 
 func TestRouterDispatch_DiscoverOrg_OutOfScopeRootRefused(t *testing.T) {
+	t.Parallel()
 	p := newDiscoverOrgProbe(t, scopedOutAccount, scopedInAccount)
 
 	_, err := NewRouter(p.h).Route(context.Background(), "POST", "/api/accounts/discover-org",
@@ -93,6 +94,7 @@ func TestRouterDispatch_DiscoverOrg_OutOfScopeRootRefused(t *testing.T) {
 // in the caller's scope, and the created/skipped counts are computed against
 // every tenant's aws rows.
 func TestRouterDispatch_DiscoverOrg_InScopeRootScopedCallerRefused(t *testing.T) {
+	t.Parallel()
 	p := newDiscoverOrgProbe(t, scopedInAccount, scopedInAccount)
 
 	_, err := NewRouter(p.h).Route(context.Background(), "POST", "/api/accounts/discover-org",
@@ -108,6 +110,7 @@ func TestRouterDispatch_DiscoverOrg_InScopeRootScopedCallerRefused(t *testing.T)
 }
 
 func TestRouterDispatch_DiscoverOrg_UnrestrictedAdminUnchanged(t *testing.T) {
+	t.Parallel()
 	p := newDiscoverOrgProbe(t, scopedOutAccount)
 
 	res, err := NewRouter(p.h).Route(context.Background(), "POST", "/api/accounts/discover-org",
@@ -120,6 +123,7 @@ func TestRouterDispatch_DiscoverOrg_UnrestrictedAdminUnchanged(t *testing.T) {
 }
 
 func TestRouterDispatch_DiscoverOrg_MissingRootSameErrorForScoped(t *testing.T) {
+	t.Parallel()
 	p := newDiscoverOrgProbe(t, scopedOutAccount, scopedInAccount)
 	missing := "33333333-3333-4333-8333-333333333333"
 
@@ -158,6 +162,7 @@ func discoverOrgViaHandleRequest(t *testing.T, p *discoverOrgProbe, rootID strin
 // at an in-scope org root gets a 403 and nothing is persisted, while an
 // unrestricted admin still discovers and persists every member.
 func TestHandleRequest_DiscoverOrg_ScopedAdminInScopeRootRefused(t *testing.T) {
+	t.Parallel()
 	p := newDiscoverOrgProbe(t, scopedInAccount, scopedInAccount)
 
 	resp := discoverOrgViaHandleRequest(t, p, scopedInAccount)
@@ -171,6 +176,7 @@ func TestHandleRequest_DiscoverOrg_ScopedAdminInScopeRootRefused(t *testing.T) {
 }
 
 func TestHandleRequest_DiscoverOrg_UnrestrictedAdminPersistsAllMembers(t *testing.T) {
+	t.Parallel()
 	p := newDiscoverOrgProbe(t, scopedOutAccount)
 
 	resp := discoverOrgViaHandleRequest(t, p, scopedOutAccount)

@@ -14,6 +14,7 @@ import (
 // A failed recommendations read must fail the Coverage page: an empty list
 // would render every row as 100% covered (#100).
 func TestGetCoverageBreakdown_RecommendationsReadErrorFailsTheRequest(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockScheduler := new(MockScheduler)
@@ -39,6 +40,7 @@ func TestGetCoverageBreakdown_RecommendationsReadErrorFailsTheRequest(t *testing
 // An unreadable freshness row is unknown, not fresh: the banner must fire
 // like the cold-start case (#100).
 func TestAttachReshapeStaleness_FreshnessReadErrorIsHardStale(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })

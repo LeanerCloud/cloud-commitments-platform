@@ -40,6 +40,7 @@ func (a *realGroupAuth) UpdateGroupAPI(ctx context.Context, actor, id string, re
 }
 
 func TestGroupWritesHTTP_ExplicitZeroSpendCap(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	body := func(constraints string) string {
 		return `{"name":"Team","permissions":[{"action":"view","resource":"plans","constraints":` + constraints + `}]}`

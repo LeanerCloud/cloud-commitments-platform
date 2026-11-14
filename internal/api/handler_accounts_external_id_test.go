@@ -16,6 +16,7 @@ import (
 // / out-of-range / disallowed-charset values are rejected with 400s on
 // both create and update.
 func TestValidateAWSExternalID(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name        string
 		input       string
@@ -66,6 +67,7 @@ func TestValidateAWSExternalID(t *testing.T) {
 // validation runs at the createAccount handler level — not just on the
 // pure helper — for the role_arn auth mode (issue #128).
 func TestCreateAccount_AWSExternalID_RoleArnRequired(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -89,6 +91,7 @@ func TestCreateAccount_AWSExternalID_RoleArnRequired(t *testing.T) {
 // — exactly one byte under the 16-char minimum, locking down the
 // boundary at the handler level (the pure helper covers the same case).
 func TestCreateAccount_AWSExternalID_RoleArnTooShort(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -112,6 +115,7 @@ func TestCreateAccount_AWSExternalID_RoleArnTooShort(t *testing.T) {
 // TestCreateAccount_AWSExternalID_RoleArnInvalidChars rejects values
 // with characters outside AWS's documented sts:ExternalId charset.
 func TestCreateAccount_AWSExternalID_RoleArnInvalidChars(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -135,6 +139,7 @@ func TestCreateAccount_AWSExternalID_RoleArnInvalidChars(t *testing.T) {
 // TestCreateAccount_AWSExternalID_RoleArnHappyPath confirms a valid
 // External ID under role_arn passes validation end-to-end.
 func TestCreateAccount_AWSExternalID_RoleArnHappyPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -157,6 +162,7 @@ func TestCreateAccount_AWSExternalID_RoleArnHappyPath(t *testing.T) {
 // needed). See credentials.resolveRoleARNProvider. The external_id is the
 // fake host account, which that shape now requires (#531).
 func TestCreateAccount_AWSExternalID_RoleArnNoRoleArnSelfAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := hostCheckHandler(t, setupAdminMock(ctx), &probeSTS{}, nil)
 
@@ -174,6 +180,7 @@ func TestCreateAccount_AWSExternalID_RoleArnNoRoleArnSelfAccount(t *testing.T) {
 // field; see resolveWebIdentityProvider). bastion mode IS validated when
 // a role ARN is set (issue #129), covered by its own tests below.
 func TestCreateAccount_AWSExternalID_NotRequiredForOtherAuthModes(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"access_keys", "workload_identity_federation"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
@@ -198,6 +205,7 @@ func TestCreateAccount_AWSExternalID_NotRequiredForOtherAuthModes(t *testing.T) 
 // target role just like role_arn mode, so the same sts:ExternalId guard
 // applies.
 func TestCreateAccount_AWSExternalID_BastionRequiresExternalID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -220,6 +228,7 @@ func TestCreateAccount_AWSExternalID_BastionRequiresExternalID(t *testing.T) {
 // TestCreateAccount_AWSExternalID_BastionHappyPath asserts that bastion
 // mode with a valid External ID passes validation end-to-end (#129).
 func TestCreateAccount_AWSExternalID_BastionHappyPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -243,6 +252,7 @@ func TestCreateAccount_AWSExternalID_BastionHappyPath(t *testing.T) {
 // — see resolveBastionProvider's empty-aws_bastion_id / empty-role-arn
 // guards).
 func TestCreateAccount_AWSExternalID_BastionNoRoleArnExempt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -263,6 +273,7 @@ func TestCreateAccount_AWSExternalID_BastionNoRoleArnExempt(t *testing.T) {
 // recognize a known partition must fall back to "" (which the frontend
 // then defaults to "aws").
 func TestParseArnPartition(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		arn  string

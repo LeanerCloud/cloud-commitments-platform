@@ -148,6 +148,7 @@ func firstPermissionConstraints(t *testing.T, perms any) map[string]any {
 }
 
 func TestHandleRequest_CreateAPIKey_ResponseUsesDocumentedConstraintShape(t *testing.T) {
+	t.Parallel()
 	h, _, _ := newAPIKeyRoundtripHandler(t)
 
 	resp := apiKeyRoundtripRequest(t, h, "POST", constrainedAPIKeyBody(t, 500.5))
@@ -163,6 +164,7 @@ func TestHandleRequest_CreateAPIKey_ResponseUsesDocumentedConstraintShape(t *tes
 }
 
 func TestHandleRequest_ListAPIKeys_ReturnsDocumentedConstraintShape(t *testing.T) {
+	t.Parallel()
 	h, store, _ := newAPIKeyRoundtripHandler(t)
 	// Listing creates nothing and does not read the owner's group.
 	relaxUnreachedStubs(&store.Mock, "GetGroup", "CreateAPIKey")
@@ -205,6 +207,7 @@ func TestHandleRequest_ListAPIKeys_ReturnsDocumentedConstraintShape(t *testing.T
 // level. Before #957 the negative max_amount was dropped during decoding and
 // the key was minted with no cap at all.
 func TestHandleRequest_CreateAPIKey_RejectsNegativeMaxAmount(t *testing.T) {
+	t.Parallel()
 	h, store, stored := newAPIKeyRoundtripHandler(t)
 	// The cap is refused before the owner's group is read or a key is
 	// stored; *stored below pins the latter.

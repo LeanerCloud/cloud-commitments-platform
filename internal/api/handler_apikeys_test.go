@@ -43,6 +43,7 @@ func (m *MockRateLimiter) AllowWithUser(ctx context.Context, userID, limitType s
 }
 
 func TestHandler_listAPIKeys_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -74,6 +75,7 @@ func TestHandler_listAPIKeys_Success(t *testing.T) {
 }
 
 func TestHandler_listAPIKeys_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -85,6 +87,7 @@ func TestHandler_listAPIKeys_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_listAPIKeys_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -100,6 +103,7 @@ func TestHandler_listAPIKeys_NoToken(t *testing.T) {
 }
 
 func TestHandler_listAPIKeys_InvalidSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -120,6 +124,7 @@ func TestHandler_listAPIKeys_InvalidSession(t *testing.T) {
 }
 
 func TestHandler_listAPIKeys_ServiceError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -143,6 +148,7 @@ func TestHandler_listAPIKeys_ServiceError(t *testing.T) {
 }
 
 func TestHandler_createAPIKey_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -172,6 +178,7 @@ func TestHandler_createAPIKey_Success(t *testing.T) {
 }
 
 func TestHandler_createAPIKey_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -183,6 +190,7 @@ func TestHandler_createAPIKey_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_createAPIKey_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -196,6 +204,7 @@ func TestHandler_createAPIKey_NoToken(t *testing.T) {
 }
 
 func TestHandler_createAPIKey_InvalidSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -216,6 +225,7 @@ func TestHandler_createAPIKey_InvalidSession(t *testing.T) {
 }
 
 func TestHandler_createAPIKey_RateLimited(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -242,6 +252,7 @@ func TestHandler_createAPIKey_RateLimited(t *testing.T) {
 }
 
 func TestHandler_createAPIKey_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -265,6 +276,7 @@ func TestHandler_createAPIKey_InvalidBody(t *testing.T) {
 }
 
 func TestHandler_createAPIKey_ServiceError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -303,6 +315,7 @@ func TestHandler_createAPIKey_ServiceError(t *testing.T) {
 // verification logic rejects a wrong password, which is what makes this
 // handler-level sentinel reachable in production.
 func TestHandler_createAPIKey_WrongPassword(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -338,6 +351,7 @@ func TestHandler_createAPIKey_WrongPassword(t *testing.T) {
 // login/MFA) before handing it to the service, rather than forwarding the
 // encoded value or dropping it.
 func TestHandler_createAPIKey_PasswordDecodedBeforeForwarding(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockRateLimiter := new(MockRateLimiter)
@@ -374,6 +388,7 @@ func TestHandler_createAPIKey_PasswordDecodedBeforeForwarding(t *testing.T) {
 // .../fail_when_expiresAt_exceeds_MaxAPIKeyLifetime in internal/auth for the
 // service-level proof against the real (unmocked) validation.
 func TestHandler_createAPIKey_ExpiresAtRequired(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -407,6 +422,7 @@ func TestHandler_createAPIKey_ExpiresAtRequired(t *testing.T) {
 }
 
 func TestHandler_createAPIKey_ExpiresAtTooFar(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -446,6 +462,7 @@ func TestHandler_createAPIKey_ExpiresAtTooFar(t *testing.T) {
 }
 
 func TestHandler_deleteAPIKey_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -477,6 +494,7 @@ func TestHandler_deleteAPIKey_Success(t *testing.T) {
 }
 
 func TestHandler_deleteAPIKey_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -488,6 +506,7 @@ func TestHandler_deleteAPIKey_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_deleteAPIKey_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -501,6 +520,7 @@ func TestHandler_deleteAPIKey_NoToken(t *testing.T) {
 }
 
 func TestHandler_deleteAPIKey_InvalidPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -528,6 +548,7 @@ func TestHandler_deleteAPIKey_InvalidPath(t *testing.T) {
 }
 
 func TestHandler_deleteAPIKey_InvalidUUID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -555,6 +576,7 @@ func TestHandler_deleteAPIKey_InvalidUUID(t *testing.T) {
 }
 
 func TestHandler_deleteAPIKey_ServiceError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -583,6 +605,7 @@ func TestHandler_deleteAPIKey_ServiceError(t *testing.T) {
 }
 
 func TestHandler_revokeAPIKey_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -614,6 +637,7 @@ func TestHandler_revokeAPIKey_Success(t *testing.T) {
 }
 
 func TestHandler_revokeAPIKey_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -625,6 +649,7 @@ func TestHandler_revokeAPIKey_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_revokeAPIKey_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -638,6 +663,7 @@ func TestHandler_revokeAPIKey_NoToken(t *testing.T) {
 }
 
 func TestHandler_revokeAPIKey_InvalidPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -665,6 +691,7 @@ func TestHandler_revokeAPIKey_InvalidPath(t *testing.T) {
 }
 
 func TestHandler_revokeAPIKey_InvalidUUID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -692,6 +719,7 @@ func TestHandler_revokeAPIKey_InvalidUUID(t *testing.T) {
 }
 
 func TestHandler_revokeAPIKey_ServiceError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -723,6 +751,7 @@ func TestHandler_revokeAPIKey_ServiceError(t *testing.T) {
 // permission must be rejected with 403 BEFORE any owner-scoped operation runs.
 
 func TestHandler_listAPIKeys_PermissionDenied(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -744,6 +773,7 @@ func TestHandler_listAPIKeys_PermissionDenied(t *testing.T) {
 }
 
 func TestHandler_createAPIKey_PermissionDenied(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -766,6 +796,7 @@ func TestHandler_createAPIKey_PermissionDenied(t *testing.T) {
 }
 
 func TestHandler_deleteAPIKey_PermissionDenied(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -792,6 +823,7 @@ func TestHandler_deleteAPIKey_PermissionDenied(t *testing.T) {
 }
 
 func TestHandler_revokeAPIKey_PermissionDenied(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -829,6 +861,7 @@ func TestHandler_revokeAPIKey_PermissionDenied(t *testing.T) {
 // requirePermission now authorizes user API keys against their effective
 // permissions via HasAPIKeyPermissionAPI.
 func TestRequirePermission_UserAPIKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// The exact failing request shape: x-api-key header carrying a user API
@@ -930,6 +963,7 @@ func TestRequirePermission_UserAPIKey(t *testing.T) {
 // only an x-api-key user key returned 401 before the fix even when the key
 // was scoped to view:recommendations.
 func TestGetRecommendations_UserAPIKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockAuth := new(MockAuthService)

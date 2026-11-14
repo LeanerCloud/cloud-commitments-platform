@@ -47,6 +47,7 @@ func requireClientError400(t *testing.T, err error, field string) {
 // control character in name or external_id: the request is refused with a
 // 400 naming the field and nothing is stored.
 func TestCreateAccount_RejectsControlChars(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for label, c := range accountControlChars {
 		for _, field := range []string{"name", "external_id"} {
@@ -76,6 +77,7 @@ func TestCreateAccount_RejectsControlChars(t *testing.T) {
 // TestUpdateAccount_RejectsControlChars is the PUT /api/accounts/:id
 // counterpart: the update is refused before the account is loaded or saved.
 func TestUpdateAccount_RejectsControlChars(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const id = "11111111-1111-1111-1111-111111111111"
 	for label, c := range accountControlChars {
@@ -109,6 +111,7 @@ func TestUpdateAccount_RejectsControlChars(t *testing.T) {
 // TestCreateAccount_AcceptsPrintableNames guards against over-rejection:
 // spaces, punctuation and non-ASCII letters stay valid and are stored as sent.
 func TestCreateAccount_AcceptsPrintableNames(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, name := range []string{"Acme Production", "Acme (EU) – Zürich #2", "日本 本番"} {
 		mockAuth := new(MockAuthService)
@@ -126,6 +129,7 @@ func TestCreateAccount_AcceptsPrintableNames(t *testing.T) {
 // but any other control character in account_name, and any control character
 // in external_id, is refused, since approval would reject it anyway.
 func TestSubmitRegistration_RejectsControlChars(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	submit := func(t *testing.T, name, ext string) error {
 		t.Helper()

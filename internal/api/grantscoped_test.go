@@ -51,6 +51,7 @@ func scopedHandler(t *testing.T, accounts ...string) (*Handler, *MockConfigStore
 // enumeration-safe errNotFound rather than a 403 that would confirm the
 // account exists.
 func TestGrantScoped_RestrictsAccountAccess(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, mockStore := scopedHandler(t, scopedInAccount)
 
@@ -68,6 +69,7 @@ func TestGrantScoped_RestrictsAccountAccess(t *testing.T) {
 // in the allow-list. Without this, a seam that refused everything would pass
 // the test above.
 func TestGrantScoped_AllowsInScopeAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, mockStore := scopedHandler(t, scopedInAccount)
 
@@ -85,6 +87,7 @@ func TestGrantScoped_AllowsInScopeAccount(t *testing.T) {
 // account grantScoped refuses. This is what proves the refusal above comes
 // from the allow-list and not from some unrelated failure in the fixture.
 func TestGrantAdmin_UnrestrictedReachesAnyAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, mockStore := scopedHandler(t) // no accounts -> grantAdmin, unrestricted
 
@@ -103,6 +106,7 @@ func TestGrantAdmin_UnrestrictedReachesAnyAccount(t *testing.T) {
 // is currently unique. Pinned because a regression here silently widens every
 // scoped handler at once.
 func TestGrantScoped_NameEntryDoesNotMatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, mockStore := scopedHandler(t, "prod-account")
 

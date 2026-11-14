@@ -170,6 +170,7 @@ func assertReportedMatchesEnforced(t *testing.T, a *mePermsAuth, got UserPermiss
 // TestGetCurrentUserPermissions_UserAPIKey_ReturnsEffectiveScope is the #62
 // regression: an admin's view-only key is reported as view-only, not admin.
 func TestGetCurrentUserPermissions_UserAPIKey_ReturnsEffectiveScope(t *testing.T) {
+	t.Parallel()
 	view := auth.Permission{Action: auth.ActionView, Resource: auth.ResourceRecommendations}
 	a := newMePermsAuth([]auth.Permission{adminAll}, []auth.Permission{view}, nil)
 
@@ -183,6 +184,7 @@ func TestGetCurrentUserPermissions_UserAPIKey_ReturnsEffectiveScope(t *testing.T
 // A key sent together with its owner's bearer session is still evaluated as
 // the key by requirePermission, so it must be reported as the key too.
 func TestGetCurrentUserPermissions_UserAPIKeyWithOwnerSession_ReportsKey(t *testing.T) {
+	t.Parallel()
 	view := auth.Permission{Action: auth.ActionView, Resource: auth.ResourceRecommendations}
 	a := newMePermsAuth([]auth.Permission{adminAll}, []auth.Permission{view}, nil)
 	headers := meKeyHeaders()
@@ -198,6 +200,7 @@ func TestGetCurrentUserPermissions_UserAPIKeyWithOwnerSession_ReportsKey(t *test
 
 // The owner's own session is unchanged: it still reports the owner's groups.
 func TestGetCurrentUserPermissions_OwnerSession_Unchanged(t *testing.T) {
+	t.Parallel()
 	view := auth.Permission{Action: auth.ActionView, Resource: auth.ResourceRecommendations}
 	a := newMePermsAuth([]auth.Permission{adminAll}, []auth.Permission{view}, nil)
 
@@ -210,6 +213,7 @@ func TestGetCurrentUserPermissions_OwnerSession_Unchanged(t *testing.T) {
 
 // The stateless admin API key is unchanged: {admin, *} with no store lookup.
 func TestGetCurrentUserPermissions_AdminAPIKey_Unchanged(t *testing.T) {
+	t.Parallel()
 	a := newMePermsAuth([]auth.Permission{adminAll}, nil, nil)
 
 	got := decodeMePermissions(t, getMePermissions(t, a, map[string]string{"X-API-Key": mePermsAdmin}))
@@ -223,6 +227,7 @@ func TestGetCurrentUserPermissions_AdminAPIKey_Unchanged(t *testing.T) {
 // A deliberately admin-scoped key on an admin owner keeps admin, so is_admin
 // follows the effective set rather than being forced off for every key.
 func TestGetCurrentUserPermissions_AdminScopedKey_ReportsAdmin(t *testing.T) {
+	t.Parallel()
 	a := newMePermsAuth([]auth.Permission{adminAll}, []auth.Permission{adminAll}, nil)
 
 	got := decodeMePermissions(t, getMePermissions(t, a, meKeyHeaders()))
@@ -238,6 +243,7 @@ func TestGetCurrentUserPermissions_AdminScopedKey_ReportsAdmin(t *testing.T) {
 // shape carries action/resource only, see the auth-level test for the
 // constraint values).
 func TestGetCurrentUserPermissions_ConstrainedKey_ReportsKeyEntries(t *testing.T) {
+	t.Parallel()
 	ownerPerms := []auth.Permission{
 		{Action: auth.ActionExecute, Resource: auth.ResourcePurchases, Constraints: &auth.PermissionConstraints{MaxPurchaseAmount: 1000}},
 		{Action: auth.ActionView, Resource: auth.ResourceRecommendations},
@@ -268,6 +274,7 @@ func TestGetCurrentUserPermissions_ConstrainedKey_ReportsKeyEntries(t *testing.T
 // middleware accepted it, the request is refused; it never falls back to
 // the owner's permissions.
 func TestGetCurrentUserPermissions_UserAPIKeyLookupFailureRefuses(t *testing.T) {
+	t.Parallel()
 	view := auth.Permission{Action: auth.ActionView, Resource: auth.ResourceRecommendations}
 	cases := map[string]func(*auth.UserAPIKey) keyLookup{
 		"store error": func(*auth.UserAPIKey) keyLookup {

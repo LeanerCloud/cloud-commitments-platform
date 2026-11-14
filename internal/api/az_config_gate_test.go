@@ -16,6 +16,7 @@ import (
 // A recommendations list below the az_config expand migrations answers the same
 // 503 as the purchase paths, not a generic 500.
 func TestGetRecommendations_MapsMissingAZConfigMigrationTo503(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockAuth := new(MockAuthService)

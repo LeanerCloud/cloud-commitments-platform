@@ -70,6 +70,7 @@ var (
 const afRIExchangeArm = `{"auto_exchange_enabled":true,"mode":"auto","utilization_threshold":50,"max_payment_per_exchange_usd":100,"max_payment_daily_usd":500,"lookback_days":30}`
 
 func TestGlobalConfigArmingGates_NoAuthCallInsideTransaction(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		perms       []auth.Permission
@@ -110,6 +111,7 @@ func TestGlobalConfigArmingGates_NoAuthCallInsideTransaction(t *testing.T) {
 // as when the lookup ran inside the closure on escalation alone. Resolving it
 // up front must not fail an ordinary save, nor turn a lookup error into a pass.
 func TestGlobalConfigArmingGates_LookupErrorOnlyMattersOnEscalation(t *testing.T) {
+	t.Parallel()
 	lookupErr := errors.New("auth store unavailable")
 	newHandler := func() (*Handler, *authFreeTxStore) {
 		mockAuth := new(MockAuthService)

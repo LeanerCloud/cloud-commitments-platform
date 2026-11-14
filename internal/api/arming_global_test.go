@@ -25,6 +25,7 @@ func switchWriter(execute *auth.PermissionConstraints) apgCaller {
 }
 
 func TestArmingSwitches_ConstrainedExecuteRefused(t *testing.T) {
+	t.Parallel()
 	off := baseValidConfig()
 	for name, held := range map[string]*auth.PermissionConstraints{
 		"cap":      capOnly(),
@@ -43,6 +44,7 @@ func TestArmingSwitches_ConstrainedExecuteRefused(t *testing.T) {
 }
 
 func TestArmingSwitches_UnconstrainedExecuteStillArms(t *testing.T) {
+	t.Parallel()
 	off := baseValidConfig()
 	for _, body := range []string{`{"auto_purchase_enabled":true}`, `{"ladder_execution_enabled":true}`} {
 		saved, err := apgConfigCall(t, switchWriter(nil), off, body)
@@ -52,6 +54,7 @@ func TestArmingSwitches_UnconstrainedExecuteStillArms(t *testing.T) {
 }
 
 func TestArmingSwitches_ConstrainedExecuteMayDisarm(t *testing.T) {
+	t.Parallel()
 	on := baseValidConfig()
 	on.AutoPurchaseEnabled, on.LadderExecutionEnabled = true, true
 	saved, err := apgConfigCall(t, switchWriter(capOnly()), on, `{"auto_purchase_enabled":false,"ladder_execution_enabled":false}`)
@@ -60,12 +63,14 @@ func TestArmingSwitches_ConstrainedExecuteMayDisarm(t *testing.T) {
 }
 
 func TestArmingSwitches_AdminKeyStillRefused(t *testing.T) {
+	t.Parallel()
 	saved, err := apgConfigCall(t, apgCaller{key: true}, baseValidConfig(), `{"auto_purchase_enabled":true}`)
 	apgRefused(t, err)
 	assert.Nil(t, saved)
 }
 
 func TestArmingSwitches_UserAPIKeyUsesGlobalSetAndKeyID(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", "update", "config").Return("u2", "key-1", true, nil)
 	mockAuth.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", "execute", "purchases").Return("u2", "key-1", true, nil)
@@ -92,6 +97,7 @@ func TestArmingSwitches_UserAPIKeyUsesGlobalSetAndKeyID(t *testing.T) {
 
 // Non-leak: per-account arming stays open to an account-constrained grant.
 func TestPerAccountArming_ConstrainedExecuteStillWorks(t *testing.T) {
+	t.Parallel()
 	acctScoped := &auth.PermissionConstraints{AccountIDs: []string{lgAcct}}
 	t.Run("ladder config arm for own account", func(t *testing.T) {
 		caller := apgCaller{perms: []auth.Permission{

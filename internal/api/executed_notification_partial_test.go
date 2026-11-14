@@ -87,6 +87,7 @@ func sessionApproveHandler(t *testing.T, ctx context.Context, execID, contact st
 }
 
 func TestExecutedNotification_PartialSessionApproveEmailsRevocationToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "56789012-5678-5678-5678-56789012abcd"
 	row := partialRunRow(execID)
@@ -100,6 +101,7 @@ func TestExecutedNotification_PartialSessionApproveEmailsRevocationToken(t *test
 // Nothing committed (failed), or the partial status never reached the store
 // (audit loss): no revocable purchase exists, so no executed email.
 func TestExecutedNotification_UncommittedFailureSendsNoEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "67890123-6789-6789-6789-67890123abcd"
 	failed := partialRunRow(execID)
@@ -122,6 +124,7 @@ func TestExecutedNotification_UncommittedFailureSendsNoEmail(t *testing.T) {
 }
 
 func TestExecutedNotification_PartialDirectExecuteEmailsRevocationToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "78901234-7890-7890-7890-78901234abcd"
 	contact := "contact@example.com"
@@ -173,6 +176,7 @@ func tokenApproveHandler(t *testing.T, ctx context.Context, execID, contact stri
 // The token approve now gets the row back, so a partial run answers like the
 // session approve: emailed from the returned row, then a 502 with its status.
 func TestExecutedNotification_PartialTokenApproveEmailsRevocationToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "89012345-8901-8901-8901-89012345abcd"
 	row := partialRunRow(execID)
@@ -190,6 +194,7 @@ func TestExecutedNotification_PartialTokenApproveEmailsRevocationToken(t *testin
 // 4-eyes denial is a 403 and the token and lost-claim refusals keep their
 // 4xx. Nothing here committed, so nothing is emailed.
 func TestTokenApprove_FailureMappedByCause(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "a1234567-a123-a123-a123-a1234567abcd"
 	failed := partialRunRow(execID)
@@ -229,6 +234,7 @@ func TestTokenApprove_FailureMappedByCause(t *testing.T) {
 }
 
 func TestExecutedNotification_TokenApproveFailureWithoutTokenSendsNoEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "90123456-9012-9012-9012-90123456abcd"
 	contact := "contact@example.com"
@@ -260,6 +266,7 @@ func TestExecutedNotification_TokenApproveFailureWithoutTokenSendsNoEmail(t *tes
 // do), so its partial email lists every rec with the row totals; the partial
 // notice carries the caveat.
 func TestExecutedEmailCommitments(t *testing.T) {
+	t.Parallel()
 	row := partialRunRow("e1")
 	recs, upfront, savings := executedEmailCommitments(row)
 	assert.Len(t, recs, 1)

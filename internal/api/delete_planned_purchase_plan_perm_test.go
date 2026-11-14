@@ -60,6 +60,7 @@ func servePlannedDelete(t *testing.T, a *keyScopeAuth, planID string, headers ma
 }
 
 func TestDeletePlannedPurchase_PlanBearingRowNeedsPlanUpdate(t *testing.T) {
+	t.Parallel()
 	for _, verb := range []string{auth.ActionCancelAny, auth.ActionUpdateAny} {
 		t.Run("session "+verb+" without plan update is refused", func(t *testing.T) {
 			a := newKeyScopeAuthWithGroup(nil, purchasesPerms(verb))
@@ -92,6 +93,7 @@ func TestDeletePlannedPurchase_PlanBearingRowNeedsPlanUpdate(t *testing.T) {
 }
 
 func TestDeletePlannedPurchase_RowWithoutPlanNeedsNoPlanUpdate(t *testing.T) {
+	t.Parallel()
 	a := newKeyScopeAuthWithGroup(nil, purchasesPerms(auth.ActionCancelAny))
 	code, writes := servePlannedDelete(t, a, "", ownerHeaders())
 	assert.Equal(t, http.StatusOK, code)

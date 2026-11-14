@@ -27,6 +27,7 @@ const (
 // ---------- the failure modes: each must REFUSE ----------
 
 func TestGetAllowedAccounts_FailsClosedWhenAuthMissing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := &Handler{auth: nil}
 
@@ -41,6 +42,7 @@ func TestGetAllowedAccounts_FailsClosedWhenAuthMissing(t *testing.T) {
 // The error from the resolver must reach the caller rather than being
 // flattened into an empty (= unrestricted) list.
 func TestGetAllowedAccounts_PropagatesResolverFailure(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := new(MockAuthService)
 	t.Cleanup(func() { m.AssertExpectations(t) })
@@ -59,6 +61,7 @@ func TestGetAllowedAccounts_PropagatesResolverFailure(t *testing.T) {
 // End-to-end through the shared scoping seam every scoped handler uses: an
 // unestablishable scope must not turn into access.
 func TestRequireAccountAccess_RefusesWhenScopeUnestablishable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -83,6 +86,7 @@ func TestRequireAccountAccess_RefusesWhenScopeUnestablishable(t *testing.T) {
 // Its unrestricted-ness is expressed POSITIVELY (keyed on the sentinel), not
 // by absence, so making absence fail closed must not break it.
 func TestGetAllowedAccounts_AdminAPIKeyStillUnrestricted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := &Handler{auth: new(MockAuthService)}
 
@@ -98,6 +102,7 @@ func TestGetAllowedAccounts_AdminAPIKeyStillUnrestricted(t *testing.T) {
 // one that shares its representation with the failure modes, which is why it
 // is pinned here.
 func TestGetAllowedAccounts_LegitimateUnrestrictedPrincipalsPass(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tc := range []struct {
@@ -125,6 +130,7 @@ func TestGetAllowedAccounts_LegitimateUnrestrictedPrincipalsPass(t *testing.T) {
 // And the scoped principal still gets exactly its own accounts -- proving the
 // fix did not collapse everything into either extreme.
 func TestRequireAccountAccess_ScopedPrincipalUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("in-scope account is reachable", func(t *testing.T) {

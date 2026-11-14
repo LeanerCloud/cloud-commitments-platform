@@ -69,6 +69,7 @@ func assertExecutedNotificationFingerprints(t *testing.T, n *recordingExecutedNo
 // "re-fetch the row" -- a re-read only ever yields the hash. The token must
 // come directly from ApproveExecution's return value, which this test pins.
 func TestExecutedNotification_TokenApprovePath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "12345678-1234-1234-1234-123456789abc"
 	contact := "contact@example.com"
@@ -159,6 +160,7 @@ func TestExecutedNotification_TokenApprovePath(t *testing.T) {
 // already in hand regardless of the re-fetch outcome). The email falls back
 // to the pre-approve execution snapshot for its other, cosmetic fields only.
 func TestExecutedNotification_TokenApprovePath_RefetchFailureStillEmailsToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "12345678-1234-1234-1234-123456789abc"
 	contact := "contact@example.com"
@@ -221,6 +223,7 @@ func TestExecutedNotification_TokenApprovePath_RefetchFailureStillEmailsToken(t 
 // (session-authed) approve branch via approvePurchaseViaSession: after
 // ApproveAndExecute succeeds, the notification must fire.
 func TestExecutedNotification_SessionApprovePath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "23456789-2345-2345-2345-23456789abcd"
 	adminEmail := "admin@example.com"
@@ -277,6 +280,7 @@ func TestExecutedNotification_SessionApprovePath(t *testing.T) {
 // succeeds, directExecutePurchase must fire the post-execution notification --
 // this is the only email the direct-execute flow emits.
 func TestExecutedNotification_DirectExecutePath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "34567890-3456-3456-3456-34567890abcd"
 	adminEmail := "admin@example.com"
@@ -338,6 +342,7 @@ func TestExecutedNotification_DirectExecutePath(t *testing.T) {
 // best-effort contract: a direct-execute with no email notifier configured
 // must still complete the purchase without panicking.
 func TestExecutedNotification_DirectExecute_NilNotifierNoPanic(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "45678901-4567-4567-4567-45678901abcd"
 	adminEmail := "admin@example.com"

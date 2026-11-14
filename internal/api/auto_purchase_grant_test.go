@@ -82,6 +82,7 @@ func apgRefused(t *testing.T, err error) {
 }
 
 func TestAutoPurchaseGate_PlanWrites(t *testing.T) {
+	t.Parallel()
 	admin := apgCaller{perms: apgAdminOnly}
 	granted := apgCaller{perms: apgAdminPlus}
 	key := apgCaller{key: true}
@@ -151,6 +152,7 @@ func TestAutoPurchaseGate_PlanWrites(t *testing.T) {
 }
 
 func TestAutoPurchaseGate_CreatePlan(t *testing.T) {
+	t.Parallel()
 	acct := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	armedBody := `{"name":"n","enabled":true,"auto_purchase":true,"max_step_commitment":1000,"provider":"aws","service":"rds","target_accounts":["` + acct + `"]}`
 	for _, tc := range []struct {
@@ -180,6 +182,7 @@ func TestAutoPurchaseGate_CreatePlan(t *testing.T) {
 }
 
 func TestAutoPurchaseGate_CapValidation(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, body string
 		// decodeRefused: the body does not decode, so the stored plan is
@@ -235,6 +238,7 @@ func apgConfigCall(t *testing.T, caller apgCaller, stored config.GlobalConfig, b
 }
 
 func TestAutoPurchaseGate_KillSwitch(t *testing.T) {
+	t.Parallel()
 	off, on := baseValidConfig(), baseValidConfig()
 	on.AutoPurchaseEnabled = true
 
@@ -282,6 +286,7 @@ func TestAutoPurchaseGate_KillSwitch(t *testing.T) {
 // decoder matches keys case-insensitively, so cover the case variants and the
 // Go field names too.
 func TestAutoPurchaseGate_StampsCannotBeForgedViaConfigBody(t *testing.T) {
+	t.Parallel()
 	stored := baseValidConfig()
 	by, via := "real-actor", "user"
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)

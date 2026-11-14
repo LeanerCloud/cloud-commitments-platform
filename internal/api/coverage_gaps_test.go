@@ -26,6 +26,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestParseAccountIDs(t *testing.T) {
+	t.Parallel()
 	validUUID := "12345678-1234-1234-1234-123456789abc"
 	validUUID2 := "abcdefab-abcd-abcd-abcd-abcdefabcdef"
 
@@ -58,6 +59,7 @@ func TestParseAccountIDs(t *testing.T) {
 }
 
 func TestParseAccountIDs_Canonical(t *testing.T) {
+	t.Parallel()
 	id := "abcdefab-abcd-abcd-abcd-abcdefabcdef"
 	ids, err := parseAccountIDs(" " + strings.ToUpper(id) + " ,\t" + id)
 	require.NoError(t, err)
@@ -68,6 +70,7 @@ func TestParseAccountIDs_Canonical(t *testing.T) {
 // blocks input amplification — an unbounded account_ids list could fan
 // out into thousands of per-account DB queries / cloud API calls.
 func TestParseAccountIDs_Cap(t *testing.T) {
+	t.Parallel()
 	validUUID := "12345678-1234-1234-1234-123456789abc"
 	build := func(n int) string {
 		parts := make([]string, n)
@@ -106,6 +109,7 @@ func TestParseAccountIDs_Cap(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMergeServiceConfig_NewRecord(t *testing.T) {
+	t.Parallel()
 	// No stored row: the request is the whole row.
 	incoming := config.ServiceConfig{
 		Provider: "aws",
@@ -121,6 +125,7 @@ func TestMergeServiceConfig_NewRecord(t *testing.T) {
 }
 
 func TestMergeServiceConfig_ExistingRecord(t *testing.T) {
+	t.Parallel()
 	existing := &config.ServiceConfig{
 		Provider:       "aws",
 		Service:        "rds",
@@ -154,6 +159,7 @@ func TestMergeServiceConfig_ExistingRecord(t *testing.T) {
 }
 
 func TestMergeServiceConfig_MalformedBody(t *testing.T) {
+	t.Parallel()
 	existing := &config.ServiceConfig{Provider: "aws", Service: "rds"}
 
 	_, err := mergeServiceConfig(existing, config.ServiceConfig{Provider: "aws", Service: "rds"}, `not json`)
@@ -167,6 +173,7 @@ func TestMergeServiceConfig_MalformedBody(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_checkRateLimit_NilLimiter(t *testing.T) {
+	t.Parallel()
 	h := &Handler{rateLimiter: nil}
 	req := &events.LambdaFunctionURLRequest{}
 	err := h.checkRateLimit(context.Background(), req, "login")
@@ -174,6 +181,7 @@ func TestHandler_checkRateLimit_NilLimiter(t *testing.T) {
 }
 
 func TestHandler_checkRateLimit_Allowed(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	h := &Handler{rateLimiter: rl}
 	req := &events.LambdaFunctionURLRequest{
@@ -188,6 +196,7 @@ func TestHandler_checkRateLimit_Allowed(t *testing.T) {
 }
 
 func TestHandler_checkRateLimit_Exceeded(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	// Override login limit to 1 attempt so we can exhaust it quickly
 	rl.SetLimit("login", NewRateLimitConfig(1, 60))
@@ -217,6 +226,7 @@ func TestHandler_checkRateLimit_Exceeded(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRequireAuth_UserAPIKey_InvalidKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -236,6 +246,7 @@ func TestRequireAuth_UserAPIKey_InvalidKey(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_requireAdmin_AdminAPIKey(t *testing.T) {
+	t.Parallel()
 	h := &Handler{apiKey: "admin-secret"}
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"X-API-Key": "admin-secret"},
@@ -246,6 +257,7 @@ func TestHandler_requireAdmin_AdminAPIKey(t *testing.T) {
 }
 
 func TestHandler_requireAdmin_NoAuthService(t *testing.T) {
+	t.Parallel()
 	h := &Handler{auth: nil}
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer some-token"},
@@ -255,6 +267,7 @@ func TestHandler_requireAdmin_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_requireAdmin_NoToken(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 	h := &Handler{auth: mockAuth}
@@ -267,6 +280,7 @@ func TestHandler_requireAdmin_NoToken(t *testing.T) {
 }
 
 func TestHandler_requireAdmin_InvalidSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -281,6 +295,7 @@ func TestHandler_requireAdmin_InvalidSession(t *testing.T) {
 }
 
 func TestHandler_requireAdmin_NonAdmin(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	userSession := &Session{UserID: "uid"}
@@ -299,6 +314,7 @@ func TestHandler_requireAdmin_NonAdmin(t *testing.T) {
 }
 
 func TestHandler_requireAdmin_AdminRole(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	adminSession := &Session{UserID: "admin-uid"}
@@ -322,6 +338,7 @@ func TestHandler_requireAdmin_AdminRole(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_validateCSRF_NilAuthService(t *testing.T) {
+	t.Parallel()
 	h := &Handler{auth: nil}
 	req := &events.LambdaFunctionURLRequest{}
 	err := h.validateCSRF(context.Background(), req)
@@ -329,6 +346,7 @@ func TestHandler_validateCSRF_NilAuthService(t *testing.T) {
 }
 
 func TestHandler_validateCSRF_AdminAPIKey(t *testing.T) {
+	t.Parallel()
 	h := &Handler{apiKey: "admin-key", auth: new(MockAuthService)}
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"X-API-Key": "admin-key"},
@@ -338,6 +356,7 @@ func TestHandler_validateCSRF_AdminAPIKey(t *testing.T) {
 }
 
 func TestHandler_validateCSRF_ValidUserAPIKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -352,6 +371,7 @@ func TestHandler_validateCSRF_ValidUserAPIKey(t *testing.T) {
 }
 
 func TestHandler_validateCSRF_InvalidAPIKeyFallsThrough(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -367,6 +387,7 @@ func TestHandler_validateCSRF_InvalidAPIKeyFallsThrough(t *testing.T) {
 }
 
 func TestHandler_validateCSRF_NoSessionToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -380,6 +401,7 @@ func TestHandler_validateCSRF_NoSessionToken(t *testing.T) {
 }
 
 func TestHandler_validateCSRF_ValidCSRF(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -400,6 +422,7 @@ func TestHandler_validateCSRF_ValidCSRF(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_requiresCSRFValidation(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 
 	// GET never requires CSRF
@@ -420,6 +443,7 @@ func TestHandler_requiresCSRFValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAmbientCredResult(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		acct        *config.CloudAccount
 		name        string
@@ -489,6 +513,7 @@ func TestAmbientCredResult(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCredTypeForAccount(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		acct     *config.CloudAccount
@@ -516,6 +541,7 @@ func TestCredTypeForAccount(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_checkCredentialPresence_WithCredStore_Found(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockCred := &MockCredentialStore{}
 	acct := &config.CloudAccount{ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Provider: "aws"}
@@ -532,6 +558,7 @@ func TestHandler_checkCredentialPresence_WithCredStore_Found(t *testing.T) {
 }
 
 func TestHandler_checkCredentialPresence_WithCredStore_NotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	acct := &config.CloudAccount{ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Provider: "aws"}
 
@@ -544,6 +571,7 @@ func TestHandler_checkCredentialPresence_WithCredStore_NotFound(t *testing.T) {
 }
 
 func TestHandler_checkCredentialPresence_FallbackToConfigStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -563,6 +591,7 @@ func TestHandler_checkCredentialPresence_FallbackToConfigStore(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_getRecommendations_InvalidProvider(t *testing.T) {
+	t.Parallel()
 	h := &Handler{apiKey: "test-key"}
 	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"x-api-key": "test-key"}}
 	_, err := h.getRecommendations(context.Background(), req, map[string]string{
@@ -573,6 +602,7 @@ func TestHandler_getRecommendations_InvalidProvider(t *testing.T) {
 }
 
 func TestHandler_getRecommendations_InvalidService(t *testing.T) {
+	t.Parallel()
 	h := &Handler{apiKey: "test-key"}
 	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"x-api-key": "test-key"}}
 	_, err := h.getRecommendations(context.Background(), req, map[string]string{
@@ -584,6 +614,7 @@ func TestHandler_getRecommendations_InvalidService(t *testing.T) {
 }
 
 func TestHandler_getRecommendations_InvalidRegion(t *testing.T) {
+	t.Parallel()
 	h := &Handler{apiKey: "test-key"}
 	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"x-api-key": "test-key"}}
 	_, err := h.getRecommendations(context.Background(), req, map[string]string{
@@ -595,6 +626,7 @@ func TestHandler_getRecommendations_InvalidRegion(t *testing.T) {
 }
 
 func TestHandler_getRecommendations_InvalidAccountIDs(t *testing.T) {
+	t.Parallel()
 	h := &Handler{apiKey: "test-key"}
 	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{"x-api-key": "test-key"}}
 	_, err := h.getRecommendations(context.Background(), req, map[string]string{
@@ -605,6 +637,7 @@ func TestHandler_getRecommendations_InvalidAccountIDs(t *testing.T) {
 }
 
 func TestHandler_getRecommendations_SchedulerError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
 	t.Cleanup(func() { mockScheduler.AssertExpectations(t) })
@@ -619,6 +652,7 @@ func TestHandler_getRecommendations_SchedulerError(t *testing.T) {
 }
 
 func TestHandler_getRecommendations_WithResults(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
 	t.Cleanup(func() { mockScheduler.AssertExpectations(t) })
@@ -642,6 +676,7 @@ func TestHandler_getRecommendations_WithResults(t *testing.T) {
 }
 
 func TestHandler_getRecommendations_ZeroSavings(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
 	t.Cleanup(func() { mockScheduler.AssertExpectations(t) })
@@ -663,6 +698,7 @@ func TestHandler_getRecommendations_ZeroSavings(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_sendPurchaseApprovalEmail_NilNotifier(t *testing.T) {
+	t.Parallel()
 	// When emailNotifier is nil the function returns immediately without panicking.
 	h := &Handler{emailNotifier: nil}
 	// Should not panic.
@@ -678,6 +714,7 @@ func TestHandler_sendPurchaseApprovalEmail_NilNotifier(t *testing.T) {
 }
 
 func TestHandler_sendPurchaseApprovalEmail_NoNotificationEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -728,6 +765,7 @@ func (r *recordingEmailNotifier) SendPurchaseApprovalRequest(_ context.Context, 
 // The actual email To address remains the contact_email — the fix only affects
 // the approval_recipient used in the post-submit toast.
 func TestHandler_sendPurchaseApprovalEmail_ResponseRecipientUsesNotificationEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	notificationEmail := "admin@example.com"
 	contactEmail := "contact@acct.example.com"
@@ -771,6 +809,7 @@ func TestHandler_sendPurchaseApprovalEmail_ResponseRecipientUsesNotificationEmai
 // covers the case where no notification_email is set: responseRecipient falls
 // back to the per-account contact_email (the actual To address).
 func TestHandler_sendPurchaseApprovalEmail_ResponseRecipientFallsBackToContactEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	contactEmail := "contact@acct.example.com"
 	accountID := "acct-2"
