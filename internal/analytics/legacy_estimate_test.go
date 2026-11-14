@@ -15,16 +15,16 @@ import (
 func TestAggregatePurchases_LegacyEstimateAddsNoDollars(t *testing.T) {
 	t.Parallel()
 	upfront, monthly := 1200.0, 30.0
-	row := func(id string, basis config.PurchaseAmountBasis) config.PurchaseHistoryRecord {
+	row := func(id string, basis config.PurchaseAmountBasis, savings, up, mo float64) config.PurchaseHistoryRecord {
 		return config.PurchaseHistoryRecord{
 			AccountID: "sub-1", PurchaseID: id, Provider: "azure", Service: "compute", Region: "westeurope",
-			Term: 1, Timestamp: time.Now().Add(-time.Hour), EstimatedSavings: 100,
-			UpfrontCost: &upfront, MonthlyCost: &monthly, AmountBasis: basis,
+			Term: 1, Timestamp: time.Now().Add(-time.Hour), EstimatedSavings: savings,
+			UpfrontCost: &up, MonthlyCost: &mo, AmountBasis: basis,
 		}
 	}
 	purchases := []config.PurchaseHistoryRecord{
-		row("legacy", config.PurchaseAmountBasisLegacyWindow),
-		row("good", ""),
+		row("legacy", config.PurchaseAmountBasisLegacyWindow, 200, 2400, 60),
+		row("good", "", 100, upfront, monthly),
 	}
 	groups, active, _, err := aggregatePurchases(context.Background(), purchases, time.Now())
 	require.NoError(t, err)
