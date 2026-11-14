@@ -19,9 +19,9 @@ import (
 // Each case runs one writer and reports the row it acted on.
 
 type writerCase struct {
-	name string
 	// run wires store and calls the writer for execution "exec-w".
-	run func(t *testing.T, m *Manager, store *MockConfigStore)
+	run  func(t *testing.T, m *Manager, store *MockConfigStore)
+	name string
 	// alerts is whether the writer must alert (it won the row).
 	alerts bool
 	// outcomeUnknown is whether the alert is for a run a sweep failed after it

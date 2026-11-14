@@ -23,8 +23,8 @@ import (
 // real *testing.T, and which keeps the formatted failure messages so a test can
 // check what was reported.
 type fatalT struct {
-	mu   sync.Mutex
 	msgs []string
+	mu   sync.Mutex
 }
 
 func (f *fatalT) Logf(string, ...interface{}) {}
@@ -47,8 +47,8 @@ var _ mock.TestingT = (*fatalT)(nil)
 
 // callOutcome is what happened when a mock method ran in its own goroutine.
 type callOutcome struct {
-	returned bool        // the call returned normally
 	panicked interface{} // the recovered panic value, if it panicked
+	returned bool        // the call returned normally
 }
 
 // runIsolated runs fn in its own goroutine so a FailNow (runtime.Goexit) or a
@@ -74,8 +74,8 @@ type wrongType struct{}
 // expectation is registered, GetServiceConfig always dispatches.
 func TestMockConfigStore_WrongReturnTypeFailsRegisteredTest(t *testing.T) {
 	for _, tc := range []struct {
-		method string
 		call   func(*MockConfigStore)
+		method string
 	}{
 		{method: "GetGlobalConfig", call: func(m *MockConfigStore) { _, _ = m.GetGlobalConfig(context.Background()) }},
 		{method: "GetServiceConfig", call: func(m *MockConfigStore) { _, _ = m.GetServiceConfig(context.Background(), "aws", "ec2") }},

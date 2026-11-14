@@ -13,8 +13,8 @@ import (
 
 func TestSweep_EveryGateRefusesWithoutClaiming(t *testing.T) {
 	cases := []struct {
-		name string
 		mut  func(*fakeFireStore, *LadderFireDeps)
+		name string
 	}{
 		{name: "laddering off", mut: func(f *fakeFireStore, _ *LadderFireDeps) {
 			f.globals = []*config.GlobalConfig{fireGlobal(func(g *config.GlobalConfig) { g.LadderingEnabled = false })}

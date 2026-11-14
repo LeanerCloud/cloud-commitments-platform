@@ -27,9 +27,9 @@ type LadderUnresolved struct {
 // ladderResolution is what the resolve step decided for one config.
 type ladderResolution struct {
 	IDs        []string // tranches to hand to the claim, in due order.
-	HeadUSDHr  float64  // amount of IDs[0], for the oversized-head log.
 	Unresolved []LadderUnresolved
-	Due        int // rows the pre-claim read returned.
+	HeadUSDHr  float64 // amount of IDs[0], for the oversized-head log.
+	Due        int     // rows the pre-claim read returned.
 	Capped     bool
 }
 

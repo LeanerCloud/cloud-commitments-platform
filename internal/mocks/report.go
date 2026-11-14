@@ -21,8 +21,8 @@ import (
 // panicking. A mock with no registered test keeps the old panic, because there
 // is nothing else to report to.
 type testReporter struct {
-	mu sync.Mutex
 	t  mock.TestingT
+	mu sync.Mutex
 }
 
 func (r *testReporter) set(t mock.TestingT) {

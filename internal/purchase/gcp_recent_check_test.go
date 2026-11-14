@@ -39,8 +39,8 @@ var (
 )
 
 type cudIter struct {
-	items []*computepb.Commitment
 	err   error
+	items []*computepb.Commitment
 }
 
 func (it *cudIter) Next() (*computepb.Commitment, error) {
@@ -58,10 +58,10 @@ func (it *cudIter) Next() (*computepb.Commitment, error) {
 // fakeCUDService stores commitments like the API: Insert adds a live commitment
 // and answers 409 for a name that already exists.
 type fakeCUDService struct {
-	mu       sync.Mutex
-	items    []*computepb.Commitment
 	listErr  error
+	items    []*computepb.Commitment
 	inserted []string
+	mu       sync.Mutex
 }
 
 func (f *fakeCUDService) List(context.Context, *computepb.ListRegionCommitmentsRequest) computeengine.CommitmentsIterator {
@@ -192,8 +192,8 @@ func TestGCPRecent_RefusedBeforePurchase(t *testing.T) {
 
 func TestGCPRecent_Purchased(t *testing.T) {
 	cases := map[string]struct {
-		items  []*computepb.Commitment
 		region string
+		items  []*computepb.Commitment
 	}{
 		"recent commitment in another family": {items: []*computepb.Commitment{cudFixture("other", familyE2, time.Hour)}, region: cudRegion},
 		"recent commitment in another region": {items: []*computepb.Commitment{cudFixture("other", familyN2, time.Hour)}, region: "europe-west1"},
@@ -300,8 +300,8 @@ func TestGCPCommitmentName_MatchesLibraryInsertName(t *testing.T) {
 // filterSpy is a client that implements the GCP filter and records its input.
 type filterSpy struct {
 	*MockServiceClient
-	calls    int
 	gotRecs  []common.Recommendation
+	calls    int
 	filtered bool
 }
 

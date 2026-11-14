@@ -9,10 +9,10 @@ import (
 
 // MockSESClient is a mock implementation of SES client.
 type MockSESClient struct { //nolint:revive // exported: doc comment style intentional
-	mock.Mock
 	// reporter fails the registered test on a mistyped .Return value. See
 	// report.go.
 	reporter testReporter
+	mock.Mock
 }
 
 // SendEmail mocks the SendEmail operation.

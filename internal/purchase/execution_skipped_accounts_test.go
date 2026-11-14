@@ -23,15 +23,15 @@ import (
 // stored credentials, so if either did start it would leave a credential
 // error instead of the skip.
 type skipFixture struct {
+	saveHook func(context.Context)
 	saved    []config.PurchaseExecution
 	live     []bool // live[i]: saved[i]'s save context was not done
-	mu       sync.Mutex
-	saveHook func(context.Context)
+	// rootAttempt is the root's RetryAttemptN, copied onto its skip rows.
+	rootAttempt int
+	mu          sync.Mutex
 	// cancelAtB moves the cancel from A's purchase to B's credential load, so B
 	// starts and fails on its own (a started account, not a skip).
 	cancelAtB bool
-	// rootAttempt is the root's RetryAttemptN, copied onto its skip rows.
-	rootAttempt int
 }
 
 const (
@@ -173,8 +173,8 @@ func TestExecuteMultiAccount_SkipRowsOfRetriedRootStayRefused(t *testing.T) {
 func TestSkippedAccountNote_MatchesRetryEligibility(t *testing.T) {
 	cases := []struct {
 		provider, service string
-		attempt           int
 		want              string
+		attempt           int
 	}{
 		{provider: "aws", service: "ec2", attempt: 0, want: skippedAccountRetryNote},
 		{provider: "azure", service: "savingsplans", attempt: 0, want: skippedAccountRetryNote},
@@ -276,11 +276,11 @@ func TestExecuteMultiAccount_StartedAccountRowSavedOnLiveContext(t *testing.T) {
 // skipBatchHarness drives saveTerminalAndSkipped with n skip rows. Every save
 // is recorded in order; skip-row saves sleep perSkipSave.
 type skipBatchHarness struct {
+	lastSkip time.Time
 	m        *Manager
-	mu       sync.Mutex
 	order    []string // "root" or the skip row's account id
 	sent     []email.NotificationData
-	lastSkip time.Time
+	mu       sync.Mutex
 }
 
 func newSkipBatchHarness(t *testing.T, terminalSave, perSkipSave time.Duration) *skipBatchHarness {

@@ -55,11 +55,9 @@ type mockType struct {
 }
 
 type assertSite struct {
-	pos      token.Position
 	recv     string
 	assertFn string
 	method   string
-	matchers int
 	// unsupported is non-empty when the site was recognized as a mock
 	// assertion but has a shape this check cannot analyze. Such sites are
 	// reported, never dropped: silently ignoring a shape is the same defect
@@ -70,7 +68,9 @@ type assertSite struct {
 	// t.Cleanup closure that references a mock declared in the enclosing test
 	// still resolves, while two tests in one file that both declare mockStore
 	// no longer bleed into each other.
-	scopes []ast.Node
+	scopes   []ast.Node
+	pos      token.Position
+	matchers int
 }
 
 func TestNoUnfailableMockAssertions(t *testing.T) {

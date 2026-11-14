@@ -9,10 +9,10 @@ import (
 
 // MockSNSClient is a mock implementation of SNS client.
 type MockSNSClient struct { //nolint:revive // exported: doc comment style intentional
-	mock.Mock
 	// reporter fails the registered test on a mistyped .Return value. See
 	// report.go.
 	reporter testReporter
+	mock.Mock
 }
 
 // Publish mocks the Publish operation.

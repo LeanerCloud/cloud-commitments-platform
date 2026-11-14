@@ -1508,10 +1508,10 @@ func TestValidateApprovalToken_TTLAndPrecedence(t *testing.T) {
 	future := time.Now().Add(time.Hour)
 
 	tests := []struct {
-		name      string
-		expiresAt *time.Time
-		token     string
 		wantErr   error
+		expiresAt *time.Time
+		name      string
+		token     string
 	}{
 		{name: "expired token is rejected", expiresAt: &past, token: "correct-token", wantErr: ErrApprovalTokenExpired},
 		{name: "unexpired token is accepted", expiresAt: &future, token: "correct-token"},

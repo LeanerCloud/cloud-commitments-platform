@@ -39,8 +39,8 @@ const (
 // armedPurchaseRecorder counts every commitment purchase that reaches the
 // "cloud". One recorded call is one real, irreversible purchase.
 type armedPurchaseRecorder struct {
-	mu    sync.Mutex
 	calls []common.Recommendation
+	mu    sync.Mutex
 }
 
 func (r *armedPurchaseRecorder) record(rec common.Recommendation) {
@@ -93,8 +93,8 @@ func armedHarness(t *testing.T, serviceType common.ServiceType) (*Manager, *Mock
 // predecessorProof is the answer the harness gives PredecessorProvenUnsent;
 // the zero value is "not proven, no error".
 type predecessorProof struct {
-	proven bool
 	err    error
+	proven bool
 }
 
 func armedHarnessWithProof(t *testing.T, serviceType common.ServiceType, proof predecessorProof) (*Manager, *MockConfigStore, *armedPurchaseRecorder) {

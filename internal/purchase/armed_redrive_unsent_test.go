@@ -69,13 +69,13 @@ func TestArmedRetryOfProvenUnsentFirstAttemptExecutes(t *testing.T) {
 
 func TestArmedRetryRefusedWithoutProof(t *testing.T) {
 	cases := []struct {
+		lookupErr               error
 		name, provider, service string
 		svcType                 common.ServiceType
-		attempt                 int
-		proven                  bool
-		lookupErr               error
 		wantText                string
+		attempt                 int
 		wantLookups             int
+		proven                  bool
 	}{
 		{name: "ec2 unproven", provider: "aws", service: "ec2", svcType: common.ServiceEC2, attempt: 1, proven: false, lookupErr: nil, wantText: "Check EC2 Reserved Instances", wantLookups: 1},
 		{name: "azure sp unproven", provider: "azure", service: "savingsplans", svcType: common.ServiceSavingsPlansAll, attempt: 1, proven: false, lookupErr: nil, wantText: "second savings plan", wantLookups: 1},

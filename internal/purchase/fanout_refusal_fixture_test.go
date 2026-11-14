@@ -29,14 +29,14 @@ type fanOutFixture struct {
 	factoryFail map[string]bool        // provider factory fails
 	saveFail    map[string]bool        // the account's row save fails (AUDIT LOSS)
 	clientFail  map[string]bool        // the provider's service client lookup fails
-	pinFail     bool                   // the fan-out shape pin fails for every account (before submission)
-	precancel   bool                   // the run context is already done, so no account starts
 	// cancelAtCred cancels the run context while that account's credentials
 	// load (the load also fails): a started account cut off mid-run.
 	cancelAtCred string
 	// cancelAfterSave cancels the run context once that account's row saved, so
 	// the accounts after it never start.
 	cancelAfterSave string
+	pinFail         bool // the fan-out shape pin fails for every account (before submission)
+	precancel       bool // the run context is already done, so no account starts
 }
 
 // keyedFactory fails the provider factory for the accounts in failKeys. The
@@ -173,10 +173,10 @@ func TestExecuteMultiAccount_FanOutFixtureHooks(t *testing.T) {
 	cases := map[string]struct {
 		fx         fanOutFixture
 		errContain string
+		a, b       rowWant
 		// wantProof is whether the returned error proves nothing was submitted
 		// (#1844 S1): only the refused-then-never-started run does today.
 		wantProof bool
-		a, b      rowWant
 	}{
 		"credential failure on A, B refused": {
 			fx:         fanOutFixture{behaviors: refusedBoth, credFail: map[string]bool{skipAcctA: true}},

@@ -48,8 +48,8 @@ func TestMocks_NoBarePanicOutsideTestReporter(t *testing.T) {
 
 // panicSite is one call to the panic builtin and the declaration enclosing it.
 type panicSite struct {
-	pos   token.Position
 	owner string // "Recv.Method", "Func", or "package scope"
+	pos   token.Position
 }
 
 func (s panicSite) String() string {

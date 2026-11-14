@@ -57,9 +57,9 @@ func TestPurchaseFailedSubject(t *testing.T) {
 func TestSMTPSender_SendPurchaseFailedNotification_OutcomeUnknown(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
-		outcomeUnknown bool
 		wantSubject    string
 		wantBody       string
+		outcomeUnknown bool
 	}{
 		{name: "genuine failure", wantSubject: "CUDly Purchase Failed", wantBody: "Please review and retry manually."},
 		{name: "outcome unknown", outcomeUnknown: true, wantSubject: purchaseOutcomeUnknownSubject, wantBody: "Outcome unknown:"},

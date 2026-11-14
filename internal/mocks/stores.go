@@ -46,18 +46,22 @@ const MockInvocationToken = "mock-invocation-token"
 // assertions.go for why reading mock.Mock.Calls made those assertions
 // unfailable.
 type MockConfigStore struct {
-	GetPurchasePlanFn                   func(ctx context.Context, planID string) (*config.PurchasePlan, error)
-	GetCloudAccountFn                   func(ctx context.Context, id string) (*config.CloudAccount, error)
-	GetCloudAccountByExternalIDFn       func(ctx context.Context, provider, externalID string) (*config.CloudAccount, error)
-	DeleteCloudAccountFn                func(ctx context.Context, id string) error
+	// reporter fails the registered test on a mistyped .Return value. See
+	// report.go.
+	reporter testReporter
+	// fanOutShapes backs PinExecutionFanOutShape's default: first writer wins
+	// per lineage key, like the real table.
+	fanOutShapes                        fanOutShapePins
+	CountLiveExecutionsForAccountFn     func(ctx context.Context, accountID string) (int, error)
+	ListPendingExecutionIDsForAccountFn func(ctx context.Context, accountID string) ([]string, error)
 	ListCloudAccountsFn                 func(ctx context.Context, filter config.CloudAccountFilter) ([]config.CloudAccount, error)
 	CreateCloudAccountFn                func(ctx context.Context, account *config.CloudAccount) error
 	SetPlanAccountsFn                   func(ctx context.Context, planID string, accountIDs []string) error
 	GetPlanAccountsFn                   func(ctx context.Context, planID string) ([]config.CloudAccount, error)
 	SaveAccountServiceOverrideFn        func(ctx context.Context, override *config.AccountServiceOverride) error
 	CountPendingExecutionsForAccountFn  func(ctx context.Context, accountID string) (int, error)
-	CountLiveExecutionsForAccountFn     func(ctx context.Context, accountID string) (int, error)
-	ListPendingExecutionIDsForAccountFn func(ctx context.Context, accountID string) ([]string, error)
+	GetPurchasePlanFn                   func(ctx context.Context, planID string) (*config.PurchasePlan, error)
+	DeleteCloudAccountFn                func(ctx context.Context, id string) error
 	SavePurchaseExecutionFn             func(ctx context.Context, exec *config.PurchaseExecution) error
 	PinExecutionFanOutShapeFn           func(ctx context.Context, lineageKey, shape string) (string, error)
 	GetExecutionFanOutShapeFn           func(ctx context.Context, lineageKey string) (string, error)
@@ -65,17 +69,13 @@ type MockConfigStore struct {
 	// NameTakenFixture, when set, stands in for an existing plan of the same
 	// name: CreatePurchasePlanWithAccounts passes its Accounts to the visible
 	// predicate and refuses with a PlanNameTakenError when it reports true.
-	NameTakenFixture *PlanNameFixture
+	NameTakenFixture              *PlanNameFixture
+	GetCloudAccountFn             func(ctx context.Context, id string) (*config.CloudAccount, error)
+	GetCloudAccountByExternalIDFn func(ctx context.Context, provider, externalID string) (*config.CloudAccount, error)
 	mock.Mock
 	// callLog records every invocation, including the ones served from a
 	// default without reaching mock.Called. See assertions.go.
 	callLog callLog
-	// fanOutShapes backs PinExecutionFanOutShape's default: first writer wins
-	// per lineage key, like the real table.
-	fanOutShapes fanOutShapePins
-	// reporter fails the registered test on a mistyped .Return value. See
-	// report.go.
-	reporter testReporter
 }
 
 // GetGlobalConfig mocks the GetGlobalConfig operation. Returns an empty
@@ -1413,10 +1413,10 @@ func (m *MockConfigStore) FinalizeRIExchangeDirectExecution(ctx context.Context,
 
 // MockAuthStore is a mock implementation of auth.Store.
 type MockAuthStore struct {
-	mock.Mock
 	// reporter fails the registered test on a mistyped .Return value. See
 	// report.go.
 	reporter testReporter
+	mock.Mock
 }
 
 // GetUserByID mocks the GetUserByID operation.

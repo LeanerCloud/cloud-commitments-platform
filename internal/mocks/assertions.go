@@ -25,8 +25,8 @@ type recordedCall struct {
 // then unfailable for such a method: AssertNotCalled walks a slice the call
 // could not have reached, and reports success no matter what happened.
 type callLog struct {
-	mu    sync.Mutex
 	calls []recordedCall
+	mu    sync.Mutex
 }
 
 func (l *callLog) record(method string, args ...interface{}) {

@@ -15,8 +15,8 @@ import (
 )
 
 type fakeExecSaver struct {
-	saved []*config.PurchaseExecution
 	err   error
+	saved []*config.PurchaseExecution
 }
 
 func (f *fakeExecSaver) SavePurchaseExecutionTx(_ context.Context, _ pgx.Tx, e *config.PurchaseExecution) error {

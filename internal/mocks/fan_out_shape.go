@@ -9,8 +9,8 @@ import (
 // purchase_execution_fan_out_shapes table: the first shape pinned for a lineage
 // key is kept and returned to every later caller. The zero value is ready.
 type fanOutShapePins struct {
-	mu   sync.Mutex
 	pins map[string]string
+	mu   sync.Mutex
 }
 
 func (p *fanOutShapePins) pin(lineageKey, shape string) string {

@@ -155,8 +155,8 @@ func TestIsDefiniteAWSRefusal(t *testing.T) {
 	gcp := "commitment creation failed: googleapi: Error 403: Rate Limit Exceeded, rateLimitExceeded"
 	type tc struct {
 		name string
-		recs []string
 		err  string
+		recs []string
 		want bool
 	}
 	retrying := []struct{ head, svc string }{

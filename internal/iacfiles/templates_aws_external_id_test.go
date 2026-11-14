@@ -20,8 +20,8 @@ const minExternalIDLen = 32
 type cfnStringParameter struct {
 	Type           string `yaml:"Type"`
 	AllowedPattern string `yaml:"AllowedPattern"`
-	MinLength      int    `yaml:"MinLength"`
 	Default        string `yaml:"Default"`
+	MinLength      int    `yaml:"MinLength"`
 }
 
 // cfnParameter decodes one entry of a CloudFormation template's Parameters

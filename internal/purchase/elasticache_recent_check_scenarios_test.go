@@ -80,8 +80,8 @@ func TestElastiCacheScenarios_OwnListedReservationIsAdopted(t *testing.T) {
 // Regression guards for a different pool: each row is bought, not refused.
 func TestElastiCacheScenarios_DifferentPoolIsPurchased(t *testing.T) {
 	cases := map[string]struct {
-		held types.ReservedCacheNode
 		rec  func(*testing.T) config.RecommendationRecord
+		held types.ReservedCacheNode
 	}{
 		"memcached held, redis rec": {held: ecHeld("o", "memcached", 2, time.Hour), rec: nil},
 		"valkey held, redis rec":    {held: ecHeld("o", "valkey", 2, time.Hour), rec: nil},

@@ -52,10 +52,10 @@ func TestAzurePricingHold(t *testing.T) {
 	acct := "11111111-1111-1111-1111-111111111111"
 	other := "22222222-2222-2222-2222-222222222222"
 	cases := []struct {
-		name      string
+		freshErr  error
 		execAcct  *string
 		fresh     *config.RecommendationsFreshness
-		freshErr  error
+		name      string
 		wantStale bool
 	}{
 		{name: "held account refused", execAcct: &acct, fresh: heldFreshness(acct), freshErr: nil, wantStale: true},
@@ -110,11 +110,11 @@ func TestAzurePricingHold(t *testing.T) {
 // orderStore models a collection commit landing right after the gate's first
 // read: the first read gets the pre-commit state, anything after it the new one.
 type orderStore struct {
+	oldRow config.RecommendationRecord
+	newRow config.RecommendationRecord
 	*MockConfigStore
-	committed bool
 	calls     []string
-	oldRow    config.RecommendationRecord
-	newRow    config.RecommendationRecord
+	committed bool
 }
 
 func (s *orderStore) ListStoredRecommendations(context.Context, config.RecommendationFilter) ([]config.RecommendationRecord, error) {
@@ -166,10 +166,10 @@ func TestAzureHoldRefusal(t *testing.T) {
 	nonAzure := expiredOnlyFreshness(acct)
 	nonAzure.LastCollectionPartial.Providers[0].Provider = "aws"
 	cases := []struct {
-		name      string
 		fresh     *config.RecommendationsFreshness
 		exec      *string
 		stored    *string
+		name      string
 		wantStale bool
 	}{
 		{name: "fresh collect without a partial", fresh: &config.RecommendationsFreshness{}, exec: &acct, stored: &acct, wantStale: false},
@@ -204,9 +204,9 @@ func TestAzureHoldRefusal(t *testing.T) {
 func TestAzurePricingUnreadableMarker(t *testing.T) {
 	acct := "11111111-1111-1111-1111-111111111111"
 	cases := []struct {
+		fresh     *config.RecommendationsFreshness
 		name      string
 		provider  string
-		fresh     *config.RecommendationsFreshness
 		wantStale bool
 	}{
 		{name: "unreadable marker refuses an Azure execution", provider: "azure", fresh: &config.RecommendationsFreshness{LastCollectionPartialUnreadable: true}, wantStale: true},

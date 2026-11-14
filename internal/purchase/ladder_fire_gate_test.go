@@ -98,10 +98,10 @@ func TestLadderConfigRefusal(t *testing.T) {
 	}
 	own := &config.CloudAccount{ExternalID: "own-acct"}
 	cases := []struct {
-		name string
-		cfg  config.LadderConfigDB
 		acct *config.CloudAccount
+		name string
 		want string
+		cfg  config.LadderConfigDB
 	}{
 		{name: "disabled", cfg: good(func(c *config.LadderConfigDB) { c.Enabled = false }), acct: own, want: "config is disabled"},
 		{name: "azure", cfg: good(func(c *config.LadderConfigDB) { c.Provider = "azure" }), acct: own, want: "provider azure is not aws"},

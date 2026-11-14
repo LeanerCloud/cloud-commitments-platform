@@ -189,10 +189,10 @@ func TestApproveAndExecuteRefusesAWSNoTokenRetrySuccessor(t *testing.T) {
 	sessionUser := "55555555-6666-7777-8888-999999999780"
 
 	paths := []struct {
-		name           string
 		transitionedBy *string
-		pinnedToken    string // the token path pins its token inside the claim (issue #1190)
 		approve        func(m *Manager, id string) error
+		name           string
+		pinnedToken    string // the token path pins its token inside the claim (issue #1190)
 	}{
 		{name: "token", transitionedBy: nil, pinnedToken: rawToken, approve: func(m *Manager, id string) error {
 			_, _, err := m.ApproveExecution(context.Background(), id, rawToken, "approver@example.com", nil)

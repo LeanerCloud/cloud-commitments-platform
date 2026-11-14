@@ -33,21 +33,21 @@ type SMTPConfig struct {
 
 // SMTPSender handles sending email via SMTP (works for SendGrid, Azure ACS, and others).
 type SMTPSender struct {
-	host          string
-	username      string
-	password      string
-	fromEmail     string
-	fromName      string
-	notifyEmail   string
-	port          int
-	useTLS        bool
-	allowInsecure bool
 	// muteChecker consults the muted_recipients table before each send.
 	// Nil disables mute checking (e.g. when no DB is wired in tests).
 	muteChecker MuteChecker
+	host        string
+	username    string
+	password    string
+	fromEmail   string
+	fromName    string
+	notifyEmail string
 	// unsubscribeBaseURL is the dashboard base URL used to construct the
 	// List-Unsubscribe header value. Empty disables the header.
 	unsubscribeBaseURL string
+	port               int
+	useTLS             bool
+	allowInsecure      bool
 }
 
 // WithMuteChecker returns a shallow copy of s with the given MuteChecker wired

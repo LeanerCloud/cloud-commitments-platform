@@ -58,11 +58,11 @@ func elastiCacheOwnReservationIDs(exec *config.PurchaseExecution, selected []int
 // engine-aware map path, which is the one that understands cache nodes.
 type elastiCacheRecentDedupeClient struct {
 	provider.ServiceClient
-	own map[string]bool
+	own     map[string]bool
+	sawSelf *bool
 	// self is this rec's own reservation ID; sawSelf records that the raw
 	// listing held it, so the purchase call can adopt it instead of being refused.
-	self    string
-	sawSelf *bool
+	self string
 }
 
 func (c elastiCacheRecentDedupeClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {

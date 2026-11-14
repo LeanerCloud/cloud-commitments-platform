@@ -23,9 +23,9 @@ type lineageRig struct {
 	t            *testing.T
 	store        *MockConfigStore
 	manager      *Manager
-	mu           sync.Mutex
 	planAccounts []config.CloudAccount
 	tokens       []string
+	mu           sync.Mutex
 }
 
 // shapeTestAccountA is a cloud account that exists in config throughout; only
@@ -186,8 +186,8 @@ func TestRetryAfterPlanLosesLastAccountBuysNothing(t *testing.T) {
 func TestUnchangedPlanKeepsItsTokensAcrossRetries(t *testing.T) {
 	cases := []struct {
 		name     string
-		accounts []config.CloudAccount
 		want     string
+		accounts []config.CloudAccount
 	}{
 		{name: "no plan accounts: single-account path", accounts: nil, want: common.DeriveIdempotencyToken("lineage-97", 0)},
 		{name: "plan accounts: fan-out path", accounts: []config.CloudAccount{shapeTestAccountA}, want: common.DeriveIdempotencyToken("lineage-97:acct-A", 0)},

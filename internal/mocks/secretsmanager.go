@@ -9,10 +9,10 @@ import (
 
 // MockSecretsManagerClient is a mock implementation of Secrets Manager client.
 type MockSecretsManagerClient struct {
-	mock.Mock
 	// reporter fails the registered test on a mistyped .Return value. See
 	// report.go.
 	reporter testReporter
+	mock.Mock
 }
 
 // GetSecretValue mocks the GetSecretValue operation.

@@ -103,8 +103,8 @@ func findOrderedAssertions(fset *token.FileSet, f *ast.File) []string {
 }
 
 type orderEvent struct {
-	pos  token.Pos
 	call *ast.CallExpr
+	pos  token.Pos
 }
 
 func checkBody(fset *token.FileSet, fn string, body *ast.BlockStmt) []string {

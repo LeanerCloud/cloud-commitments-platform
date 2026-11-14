@@ -33,9 +33,9 @@ var errClaimCheckOverCap = errors.New("permission denied: over MaxPurchaseAmount
 // capCheck is a ClaimedRowCheck modeling a MaxPurchaseAmount cap. It records
 // every row it was handed so a test can prove it saw the claimed row.
 type capCheck struct {
-	max  float64
 	err  error // returned instead of the cap decision when set
 	seen []config.PurchaseExecution
+	max  float64
 }
 
 func (c *capCheck) check(_ context.Context, claimed *config.PurchaseExecution) error {
@@ -56,12 +56,12 @@ func (c *capCheck) check(_ context.Context, claimed *config.PurchaseExecution) e
 // claimEntryPoint drives one funnel entry point; row is nil where the entry
 // point returns none (the token approve).
 type claimEntryPoint struct {
-	name string
-	from []string
 	run  func(m *Manager, id string, check ClaimedRowCheck) (*config.PurchaseExecution, error)
+	name string
 	// pinnedToken is the approval token the entry point pins inside its claim
 	// (the token approve, issue #1190); "" for the unpinned entry points.
 	pinnedToken string
+	from        []string
 }
 
 func claimEntryPoints() []claimEntryPoint {

@@ -14,10 +14,10 @@ import (
 // recordingT captures assertion failures without failing the enclosing test, so
 // these tests can assert that an assertion helper *fails*.
 type recordingT struct {
-	failed bool
 	// msgs holds the format strings passed to Errorf, so a test can assert
 	// which diagnosis fired and not merely that something did.
-	msgs []string
+	msgs   []string
+	failed bool
 }
 
 func (r *recordingT) Logf(string, ...interface{}) {}

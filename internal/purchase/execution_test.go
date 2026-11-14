@@ -1643,9 +1643,9 @@ func TestSingleCloudAccountIDFromRecs(t *testing.T) {
 	tests := []struct {
 		want    *string
 		name    string
+		wantMsg string
 		recs    []config.RecommendationRecord
 		wantErr bool
-		wantMsg string
 	}{
 		{
 			name: "empty slice returns nil",

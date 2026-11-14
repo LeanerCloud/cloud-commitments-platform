@@ -52,10 +52,10 @@ import (
 // (404), the answer for a first purchase, after recording the name so the
 // test can check each PUT was preceded by a lookup of the same alias.
 type aliasRecorder struct {
-	mu       sync.Mutex
 	names    map[float64][]string
 	looked   map[string]bool
 	unlooked []string
+	mu       sync.Mutex
 }
 
 func (r *aliasRecorder) Get(_ context.Context, name string, _ *armbillingbenefits.SavingsPlanOrderAliasClientGetOptions) (armbillingbenefits.SavingsPlanOrderAliasClientGetResponse, error) {

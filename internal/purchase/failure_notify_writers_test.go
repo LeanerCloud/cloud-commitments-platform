@@ -27,8 +27,8 @@ import (
 // markerLog captures the logging package's output; the fan-out logs from
 // goroutines, so writes are serialized.
 type markerLog struct {
-	mu  sync.Mutex
 	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
 func (l *markerLog) Write(p []byte) (int, error) {

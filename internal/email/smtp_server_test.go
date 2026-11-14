@@ -752,10 +752,10 @@ func startStallingSMTPServer(t *testing.T, greet bool) string {
 // AllowInsecure path. Before the fix the call blocked until the server let go.
 func TestSMTPSender_SendHonorsContext(t *testing.T) {
 	for _, tc := range []struct {
+		want          error
 		name          string
 		useTLS, greet bool
 		cancel        bool
-		want          error
 	}{
 		{name: "starttls, no greeting", useTLS: true, want: context.DeadlineExceeded},
 		{name: "starttls, stalls after EHLO", useTLS: true, greet: true, want: context.DeadlineExceeded},

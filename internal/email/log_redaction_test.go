@@ -49,8 +49,8 @@ func TestCreateVerificationRequest_RedactsAddressInLog(t *testing.T) {
 func TestSMTPSender_SendLogsRedactRecipient(t *testing.T) {
 	const to = "customer.person@example.com"
 	cases := []struct {
-		name string
 		send func(s *SMTPSender, cc []string) error
+		name string
 	}{
 		{name: "text", send: func(s *SMTPSender, cc []string) error {
 			return s.SendToEmailWithCC(context.Background(), to, cc, "Subject", "body")

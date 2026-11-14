@@ -13,8 +13,8 @@ import (
 // tokenBearingSend is one of the senders' methods whose body carries a live,
 // recipient-scoped link (approve, revoke, exchange approval).
 type tokenBearingSend struct {
-	name string
 	call func(ctx context.Context, s SenderInterface) error
+	name string
 }
 
 func tokenBearingSends() []tokenBearingSend {

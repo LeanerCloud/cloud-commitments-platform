@@ -173,10 +173,10 @@ func TestElastiCacheRefusalFor_DecisionOrder(t *testing.T) {
 	full, partial := []common.Recommendation{ecRec("redis", 5)}, []common.Recommendation{ecRec("redis", 3)}
 	boom := errors.New("boom")
 	cases := map[string]struct {
-		passed, filtered []common.Recommendation
 		err              error
-		sawSelf          bool
 		want             string
+		passed, filtered []common.Recommendation
+		sawSelf          bool
 	}{
 		"clean":                         {passed: full},
 		"self wins over filtered":       {filtered: full, sawSelf: true},

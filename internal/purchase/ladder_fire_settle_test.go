@@ -18,17 +18,16 @@ import (
 // WithTx are applied only when the callback returns nil, so a callback that
 // returns nil after a failed write, or writes outside WithTx, fails a test.
 type settleFake struct {
-	chain       []config.LadderChainNode
 	lockErr     error
+	reason      string
+	chain       []config.LadderChainNode
+	pending     []string
+	committed   []string
+	outside     []string
+	withTx      int
 	cancelFails bool
 	moveFails   bool
-
-	inTx      bool
-	pending   []string
-	committed []string
-	outside   []string
-	withTx    int
-	reason    string
+	inTx        bool
 }
 
 type fakeTx struct{ pgx.Tx }

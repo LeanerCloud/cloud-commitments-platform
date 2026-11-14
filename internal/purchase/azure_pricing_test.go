@@ -17,10 +17,10 @@ import (
 func TestAzurePricingRefusal(t *testing.T) {
 	base := config.RecommendationRecord{ID: "azure-current", Provider: "azure", Service: "compute", Region: "westeurope", ResourceType: "Standard_D2s_v3", Count: 2, Term: 3, UpfrontCost: 200, Selected: true}
 	cases := []struct {
-		name     string
-		change   func(*config.RecommendationRecord, *config.RecommendationRecord)
-		missing  bool
 		storeErr error
+		change   func(*config.RecommendationRecord, *config.RecommendationRecord)
+		name     string
+		missing  bool
 	}{
 		{name: "invalidated", change: func(_, r *config.RecommendationRecord) { r.UpfrontCost = 0 }, missing: false, storeErr: nil},
 		{name: "repriced", change: func(_, r *config.RecommendationRecord) { r.UpfrontCost = 201 }, missing: false, storeErr: nil},
@@ -115,9 +115,9 @@ func TestAzurePricingRefusalEntryPoints(t *testing.T) {
 
 func TestAzurePricingUnchangedStillPurchases(t *testing.T) {
 	for _, variant := range []struct {
+		monthly        *float64
 		name, provider string
 		upfront        float64
-		monthly        *float64
 	}{
 		{name: "azure", provider: "azure", upfront: 200, monthly: nil}, {name: "aws", provider: "aws", upfront: 200, monthly: nil}, {name: "inexact Azure upfront", provider: "azure", upfront: 39.8, monthly: nil},
 		{name: "monthly", provider: "azure", upfront: 0, monthly: new(200.0)}, {name: "upfront zero monthly", provider: "azure", upfront: 200, monthly: new(0.0)},

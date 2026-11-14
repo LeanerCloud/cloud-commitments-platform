@@ -30,8 +30,8 @@ func failureNotifyCfg() *config.GlobalConfig {
 
 // failedEmailRecorder captures every purchase-failed email a mock sender gets.
 type failedEmailRecorder struct {
-	mu   sync.Mutex
 	sent []email.NotificationData
+	mu   sync.Mutex
 }
 
 func (r *failedEmailRecorder) expect(sender *MockEmailSender) *mock.Call {

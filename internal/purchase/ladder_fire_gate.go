@@ -37,12 +37,12 @@ type LadderFireStore interface {
 // an execution nobody was told about must not exist.
 type LadderFireDeps struct {
 	Store        LadderFireStore
-	Registry     *LadderInstrumentRegistry
 	Notifier     ScheduledNotifier
+	Registry     *LadderInstrumentRegistry
+	Now          func() time.Time
 	OwnAccountID string // external id of the AWS account the process runs in.
 	Region       string
 	DashboardURL string
-	Now          func() time.Time
 }
 
 // ladderSwitchRefusal checks the global switches and returns why the sweep

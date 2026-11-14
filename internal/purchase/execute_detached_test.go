@@ -29,14 +29,14 @@ func TestLambdaTimeoutCoversPurchaseBudget(t *testing.T) {
 
 // detachFixture wires a direct single-account AWS purchase (issue #706).
 type detachFixture struct {
+	saveCtx          context.Context
+	histCtx          context.Context
 	manager          *Manager
 	exec             *config.PurchaseExecution
 	svc              *MockServiceClient
 	saved            []string
 	history          int
-	saveCtx          context.Context
 	saveRemaining    time.Duration
-	histCtx          context.Context
 	historyRemaining time.Duration
 }
 

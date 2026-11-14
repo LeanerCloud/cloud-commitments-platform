@@ -23,12 +23,12 @@ import (
 // fakeElastiCacheAPI implements elasticache.API. held is what DescribeReservedCacheNodes
 // returns; describeErr fails every such call. Purchases are recorded, not added to held.
 type fakeElastiCacheAPI struct {
-	mu          sync.Mutex
-	held        []types.ReservedCacheNode
 	describeErr error
 	// block, when set, makes every no-ID listing wait for it or the caller's context.
 	block     chan struct{}
+	held      []types.ReservedCacheNode
 	purchased []*awsec.PurchaseReservedCacheNodesOfferingInput
+	mu        sync.Mutex
 }
 
 // DescribeReservedCacheNodesOfferings echoes the request filters, so the

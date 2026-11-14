@@ -21,8 +21,8 @@ func TestAdoptedOfferingClassRecordedInHistory(t *testing.T) {
 		configured string
 		service    string
 		svcType    common.ServiceType
-		result     common.PurchaseResult
 		want       string
+		result     common.PurchaseResult
 	}{
 		{name: "adopted standard under convertible config", configured: "convertible", service: "ec2", svcType: common.ServiceEC2,
 			result: common.PurchaseResult{ExistingCommitment: true, OfferingClass: "standard"}, want: "standard"},

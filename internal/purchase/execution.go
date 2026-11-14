@@ -213,12 +213,12 @@ func anyRecPurchased(recs []config.RecommendationRecord) bool {
 // the accounts that already succeeded (which #1012's stable key would otherwise
 // dedupe, but the contract should not depend on that second line of defense).
 type multiAccountPartialError struct {
-	errors    []string
-	committed int
+	errors []string
 	// skipped are the failed rows for accounts that never started. They are
 	// saved and announced by executeAndFinalize, inside the root's terminal
 	// windows, not here (issue #1672).
-	skipped []*config.PurchaseExecution
+	skipped   []*config.PurchaseExecution
+	committed int
 }
 
 func (e *multiAccountPartialError) Error() string {
@@ -753,8 +753,8 @@ func getMaxAccountParallelism() int {
 // savePurchaseHistory from a single goroutine (no concurrent map / slice
 // mutation). The index field is the position in exec.Recommendations.
 type recPurchaseOutcome struct {
-	purchase common.PurchaseResult
 	err      error
+	purchase common.PurchaseResult
 	index    int
 }
 

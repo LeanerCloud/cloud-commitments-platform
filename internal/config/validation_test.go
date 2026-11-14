@@ -1153,11 +1153,11 @@ func TestPurchasePlan_CheckNoMultiStepSavingsPlans(t *testing.T) {
 		return map[string]ServiceConfig{"aws/" + name: {Provider: "aws", Service: name, Enabled: enabled}}
 	}
 	cases := []struct {
+		svcs    map[string]ServiceConfig
 		name    string
+		steps   int
 		enabled bool
 		auto    bool
-		steps   int
-		svcs    map[string]ServiceConfig
 		wantErr bool
 	}{
 		{name: "armed 4-step SP", enabled: true, auto: true, steps: 4, svcs: svc("savingsplans", true), wantErr: true},

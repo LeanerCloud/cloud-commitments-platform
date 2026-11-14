@@ -14,8 +14,8 @@ import (
 func TestLadderTrancheDB_AmountProvenanceJSON(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name, wire  string
 		basis, rate any
+		name, wire  string
 	}{
 		{name: "historical unknown", wire: `{"amount_usd_hr":12.5}`, basis: nil, rate: nil},
 		{name: "explicit null unknown", wire: `{"amount_usd_hr":12.5,"amount_basis":null,"commitment_rate":null}`, basis: nil, rate: nil},
