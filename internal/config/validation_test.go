@@ -1160,15 +1160,15 @@ func TestPurchasePlan_CheckNoMultiStepSavingsPlans(t *testing.T) {
 		svcs    map[string]ServiceConfig
 		wantErr bool
 	}{
-		{"armed 4-step SP", true, true, 4, svc("savingsplans", true), true},
-		{"armed 2-step SP (boundary)", true, true, 2, svc("savingsplans", true), true},
-		{"armed 1-step SP", true, true, 1, svc("savingsplans", true), false},
-		{"armed 0-step SP", true, true, 0, svc("savingsplans", true), false},
-		{"armed 4-step compute SP", true, true, 4, svc("savings-plans-compute", true), true},
-		{"armed 4-step disabled SP service", true, true, 4, svc("savingsplans", false), false},
-		{"armed 4-step non-SP", true, true, 4, svc("rds", true), false},
-		{"not auto-purchase", true, false, 4, svc("savingsplans", true), false},
-		{"disabled", false, true, 4, svc("savingsplans", true), false},
+		{name: "armed 4-step SP", enabled: true, auto: true, steps: 4, svcs: svc("savingsplans", true), wantErr: true},
+		{name: "armed 2-step SP (boundary)", enabled: true, auto: true, steps: 2, svcs: svc("savingsplans", true), wantErr: true},
+		{name: "armed 1-step SP", enabled: true, auto: true, steps: 1, svcs: svc("savingsplans", true), wantErr: false},
+		{name: "armed 0-step SP", enabled: true, auto: true, steps: 0, svcs: svc("savingsplans", true), wantErr: false},
+		{name: "armed 4-step compute SP", enabled: true, auto: true, steps: 4, svcs: svc("savings-plans-compute", true), wantErr: true},
+		{name: "armed 4-step disabled SP service", enabled: true, auto: true, steps: 4, svcs: svc("savingsplans", false), wantErr: false},
+		{name: "armed 4-step non-SP", enabled: true, auto: true, steps: 4, svcs: svc("rds", true), wantErr: false},
+		{name: "not auto-purchase", enabled: true, auto: false, steps: 4, svcs: svc("savingsplans", true), wantErr: false},
+		{name: "disabled", enabled: false, auto: true, steps: 4, svcs: svc("savingsplans", true), wantErr: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

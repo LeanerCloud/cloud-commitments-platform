@@ -83,13 +83,13 @@ func TestElastiCacheScenarios_DifferentPoolIsPurchased(t *testing.T) {
 		held types.ReservedCacheNode
 		rec  func(*testing.T) config.RecommendationRecord
 	}{
-		"memcached held, redis rec": {ecHeld("o", "memcached", 2, time.Hour), nil},
-		"valkey held, redis rec":    {ecHeld("o", "valkey", 2, time.Hour), nil},
-		"other node type":           {ecHeldWith("o", time.Hour, func(n *types.ReservedCacheNode) { n.CacheNodeType = aws.String("cache.m6g.large") }), nil},
-		"older than 24h":            {ecHeld("o", "redis", 2, 25*time.Hour), nil},
-		"retired state":             {ecHeldWith("o", time.Hour, func(n *types.ReservedCacheNode) { n.State = aws.String("retired") }), nil},
+		"memcached held, redis rec": {held: ecHeld("o", "memcached", 2, time.Hour), rec: nil},
+		"valkey held, redis rec":    {held: ecHeld("o", "valkey", 2, time.Hour), rec: nil},
+		"other node type":           {held: ecHeldWith("o", time.Hour, func(n *types.ReservedCacheNode) { n.CacheNodeType = aws.String("cache.m6g.large") }), rec: nil},
+		"older than 24h":            {held: ecHeld("o", "redis", 2, 25*time.Hour), rec: nil},
+		"retired state":             {held: ecHeldWith("o", time.Hour, func(n *types.ReservedCacheNode) { n.State = aws.String("retired") }), rec: nil},
 		// The rec's region gets its own client, which lists nothing; the held one lives in us-east-1.
-		"other region": {ecHeld("o", "redis", 2, time.Hour), func(t *testing.T) config.RecommendationRecord {
+		"other region": {held: ecHeld("o", "redis", 2, time.Hour), rec: func(t *testing.T) config.RecommendationRecord {
 			return ecRecWith(t, "redis", 2, "cache.r6g.large", "eu-west-1")
 		}},
 	}

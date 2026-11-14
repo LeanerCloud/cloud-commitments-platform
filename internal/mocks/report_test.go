@@ -77,8 +77,8 @@ func TestMockConfigStore_WrongReturnTypeFailsRegisteredTest(t *testing.T) {
 		method string
 		call   func(*MockConfigStore)
 	}{
-		{"GetGlobalConfig", func(m *MockConfigStore) { _, _ = m.GetGlobalConfig(context.Background()) }},
-		{"GetServiceConfig", func(m *MockConfigStore) { _, _ = m.GetServiceConfig(context.Background(), "aws", "ec2") }},
+		{method: "GetGlobalConfig", call: func(m *MockConfigStore) { _, _ = m.GetGlobalConfig(context.Background()) }},
+		{method: "GetServiceConfig", call: func(m *MockConfigStore) { _, _ = m.GetServiceConfig(context.Background(), "aws", "ec2") }},
 	} {
 		t.Run(tc.method, func(t *testing.T) {
 			ft := &fatalT{}

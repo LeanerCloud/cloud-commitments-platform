@@ -17,10 +17,10 @@ func TestLadderTrancheDB_AmountProvenanceJSON(t *testing.T) {
 		name, wire  string
 		basis, rate any
 	}{
-		{"historical unknown", `{"amount_usd_hr":12.5}`, nil, nil},
-		{"explicit null unknown", `{"amount_usd_hr":12.5,"amount_basis":null,"commitment_rate":null}`, nil, nil},
-		{"verified OD", `{"amount_usd_hr":12.5,"amount_basis":"on_demand_equivalent"}`, "on_demand_equivalent", nil},
-		{"native exact rate", `{"amount_usd_hr":12.5,"amount_basis":"commitment","commitment_rate":"1/3"}`, "commitment", "1/3"},
+		{name: "historical unknown", wire: `{"amount_usd_hr":12.5}`, basis: nil, rate: nil},
+		{name: "explicit null unknown", wire: `{"amount_usd_hr":12.5,"amount_basis":null,"commitment_rate":null}`, basis: nil, rate: nil},
+		{name: "verified OD", wire: `{"amount_usd_hr":12.5,"amount_basis":"on_demand_equivalent"}`, basis: "on_demand_equivalent", rate: nil},
+		{name: "native exact rate", wire: `{"amount_usd_hr":12.5,"amount_basis":"commitment","commitment_rate":"1/3"}`, basis: "commitment", rate: "1/3"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var tr LadderTrancheDB

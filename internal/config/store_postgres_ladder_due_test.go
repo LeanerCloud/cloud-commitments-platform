@@ -18,11 +18,11 @@ func TestListDueLadderTranches_RejectsBadArgumentsBeforeTouchingTheDatabase(t *t
 		layers []ladder.LayerType
 		want   string
 	}{
-		{"zero limit", 0, compute, "limit must be positive"},
-		{"negative limit", -1, compute, "limit must be positive"},
-		{"nil allowlist", 1, nil, "at least one allowed layer"},
-		{"empty allowlist", 1, []ladder.LayerType{}, "at least one allowed layer"},
-		{"unknown layer", 1, []ladder.LayerType{"nope"}, "layer allowlist"},
+		{name: "zero limit", limit: 0, layers: compute, want: "limit must be positive"},
+		{name: "negative limit", limit: -1, layers: compute, want: "limit must be positive"},
+		{name: "nil allowlist", limit: 1, layers: nil, want: "at least one allowed layer"},
+		{name: "empty allowlist", limit: 1, layers: []ladder.LayerType{}, want: "at least one allowed layer"},
+		{name: "unknown layer", limit: 1, layers: []ladder.LayerType{"nope"}, want: "layer allowlist"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

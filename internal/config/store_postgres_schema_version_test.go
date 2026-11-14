@@ -43,11 +43,11 @@ func TestSettlementSchemaReady(t *testing.T) {
 		row  fakeVersionRow
 		want bool
 	}{
-		{"nothing applied", fakeVersionRow{err: pgx.ErrNoRows}, false},
-		{"before the migration", fakeVersionRow{version: v - 1}, false},
-		{"at the migration", fakeVersionRow{version: v}, true},
-		{"at the migration, dirty", fakeVersionRow{version: v, dirty: true}, false},
-		{"after it, even with a later dirty migration", fakeVersionRow{version: v + 1, dirty: true}, true},
+		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
+		{name: "before the migration", row: fakeVersionRow{version: v - 1}, want: false},
+		{name: "at the migration", row: fakeVersionRow{version: v}, want: true},
+		{name: "at the migration, dirty", row: fakeVersionRow{version: v, dirty: true}, want: false},
+		{name: "after it, even with a later dirty migration", row: fakeVersionRow{version: v + 1, dirty: true}, want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,11 +68,11 @@ func TestDirectResolveSchemaReady(t *testing.T) {
 		row  fakeVersionRow
 		want bool
 	}{
-		{"nothing applied", fakeVersionRow{err: pgx.ErrNoRows}, false},
-		{"before the migration", fakeVersionRow{version: v - 1}, false},
-		{"at the migration", fakeVersionRow{version: v}, true},
-		{"at the migration, dirty", fakeVersionRow{version: v, dirty: true}, false},
-		{"after it, even with a later dirty migration", fakeVersionRow{version: v + 1, dirty: true}, true},
+		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
+		{name: "before the migration", row: fakeVersionRow{version: v - 1}, want: false},
+		{name: "at the migration", row: fakeVersionRow{version: v}, want: true},
+		{name: "at the migration, dirty", row: fakeVersionRow{version: v, dirty: true}, want: false},
+		{name: "after it, even with a later dirty migration", row: fakeVersionRow{version: v + 1, dirty: true}, want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -93,12 +93,12 @@ func TestReadoptSchemaReady(t *testing.T) {
 		row  fakeVersionRow
 		want bool
 	}{
-		{"nothing applied", fakeVersionRow{err: pgx.ErrNoRows}, false},
-		{"before the migration", fakeVersionRow{version: v - 1}, false},
-		{"at the migration", fakeVersionRow{version: v}, true},
-		{"at the migration, dirty", fakeVersionRow{version: v, dirty: true}, false},
-		{"after it, even with a later dirty migration", fakeVersionRow{version: v + 1, dirty: true}, true},
-		{"unreadable", fakeVersionRow{err: assert.AnError}, false},
+		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
+		{name: "before the migration", row: fakeVersionRow{version: v - 1}, want: false},
+		{name: "at the migration", row: fakeVersionRow{version: v}, want: true},
+		{name: "at the migration, dirty", row: fakeVersionRow{version: v, dirty: true}, want: false},
+		{name: "after it, even with a later dirty migration", row: fakeVersionRow{version: v + 1, dirty: true}, want: true},
+		{name: "unreadable", row: fakeVersionRow{err: assert.AnError}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -131,12 +131,12 @@ func TestSweepCeilingSchemaReady(t *testing.T) {
 		row  fakeVersionRow
 		want bool
 	}{
-		{"nothing applied", fakeVersionRow{err: pgx.ErrNoRows}, false},
-		{"before the migration", fakeVersionRow{version: v - 1}, false},
-		{"at the migration", fakeVersionRow{version: v}, true},
-		{"at the migration, dirty", fakeVersionRow{version: v, dirty: true}, false},
-		{"after it, even with a later dirty migration", fakeVersionRow{version: v + 1, dirty: true}, true},
-		{"unreadable", fakeVersionRow{err: assert.AnError}, false},
+		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
+		{name: "before the migration", row: fakeVersionRow{version: v - 1}, want: false},
+		{name: "at the migration", row: fakeVersionRow{version: v}, want: true},
+		{name: "at the migration, dirty", row: fakeVersionRow{version: v, dirty: true}, want: false},
+		{name: "after it, even with a later dirty migration", row: fakeVersionRow{version: v + 1, dirty: true}, want: true},
+		{name: "unreadable", row: fakeVersionRow{err: assert.AnError}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -178,11 +178,11 @@ func TestAmountBasisMigrationApplied(t *testing.T) {
 		row  fakeVersionRow
 		want bool
 	}{
-		{"nothing applied", fakeVersionRow{err: pgx.ErrNoRows}, false},
-		{"before the migration", fakeVersionRow{version: v - 1}, false},
-		{"at the migration", fakeVersionRow{version: v}, true},
-		{"at the migration, dirty", fakeVersionRow{version: v, dirty: true}, false},
-		{"after it, with a later dirty migration", fakeVersionRow{version: v + 1, dirty: true}, true},
+		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
+		{name: "before the migration", row: fakeVersionRow{version: v - 1}, want: false},
+		{name: "at the migration", row: fakeVersionRow{version: v}, want: true},
+		{name: "at the migration, dirty", row: fakeVersionRow{version: v, dirty: true}, want: false},
+		{name: "after it, with a later dirty migration", row: fakeVersionRow{version: v + 1, dirty: true}, want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

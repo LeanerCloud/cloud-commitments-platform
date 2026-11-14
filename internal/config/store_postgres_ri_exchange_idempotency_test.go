@@ -81,9 +81,9 @@ func TestPGXMock_ClaimRIExchangeIdempotencyKey_RejectsUnusableArguments(t *testi
 		window time.Duration
 		want   string
 	}{
-		"empty key":       {"", 15 * time.Minute, "empty RI exchange idempotency key"},
-		"zero window":     {"fingerprint-1", 0, "window must be positive"},
-		"negative window": {"fingerprint-1", -time.Second, "window must be positive"},
+		"empty key":       {key: "", window: 15 * time.Minute, want: "empty RI exchange idempotency key"},
+		"zero window":     {key: "fingerprint-1", window: 0, want: "window must be positive"},
+		"negative window": {key: "fingerprint-1", window: -time.Second, want: "window must be positive"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -22,27 +22,27 @@ func TestAzurePricingRefusal(t *testing.T) {
 		missing  bool
 		storeErr error
 	}{
-		{"invalidated", func(_, r *config.RecommendationRecord) { r.UpfrontCost = 0 }, false, nil},
-		{"repriced", func(_, r *config.RecommendationRecord) { r.UpfrontCost = 201 }, false, nil},
-		{"missing", nil, true, nil},
-		{"zero count", func(_, r *config.RecommendationRecord) { r.Count = 0 }, false, nil},
-		{"negative price", func(_, r *config.RecommendationRecord) { r.UpfrontCost = -1 }, false, nil},
-		{"nan price", func(_, r *config.RecommendationRecord) { r.UpfrontCost = math.NaN() }, false, nil},
-		{"infinite price", func(_, r *config.RecommendationRecord) { r.UpfrontCost = math.Inf(1) }, false, nil},
-		{"monthly nil differs from zero", func(_, r *config.RecommendationRecord) { r.MonthlyCost = new(float64) }, false, nil},
-		{"persisted negative price", func(r, _ *config.RecommendationRecord) { r.UpfrontCost = -1 }, false, nil},
-		{"persisted nan price", func(r, _ *config.RecommendationRecord) { r.UpfrontCost = math.NaN() }, false, nil},
-		{"persisted infinite price", func(r, _ *config.RecommendationRecord) { r.UpfrontCost = math.Inf(1) }, false, nil},
-		{"persisted zero count", func(r, _ *config.RecommendationRecord) { r.Count = 0 }, false, nil},
-		{"persisted negative count", func(r, _ *config.RecommendationRecord) { r.Count = -1 }, false, nil},
-		{"negative subnormal upfront", func(req, stored *config.RecommendationRecord) {
+		{name: "invalidated", change: func(_, r *config.RecommendationRecord) { r.UpfrontCost = 0 }, missing: false, storeErr: nil},
+		{name: "repriced", change: func(_, r *config.RecommendationRecord) { r.UpfrontCost = 201 }, missing: false, storeErr: nil},
+		{name: "missing", change: nil, missing: true, storeErr: nil},
+		{name: "zero count", change: func(_, r *config.RecommendationRecord) { r.Count = 0 }, missing: false, storeErr: nil},
+		{name: "negative price", change: func(_, r *config.RecommendationRecord) { r.UpfrontCost = -1 }, missing: false, storeErr: nil},
+		{name: "nan price", change: func(_, r *config.RecommendationRecord) { r.UpfrontCost = math.NaN() }, missing: false, storeErr: nil},
+		{name: "infinite price", change: func(_, r *config.RecommendationRecord) { r.UpfrontCost = math.Inf(1) }, missing: false, storeErr: nil},
+		{name: "monthly nil differs from zero", change: func(_, r *config.RecommendationRecord) { r.MonthlyCost = new(float64) }, missing: false, storeErr: nil},
+		{name: "persisted negative price", change: func(r, _ *config.RecommendationRecord) { r.UpfrontCost = -1 }, missing: false, storeErr: nil},
+		{name: "persisted nan price", change: func(r, _ *config.RecommendationRecord) { r.UpfrontCost = math.NaN() }, missing: false, storeErr: nil},
+		{name: "persisted infinite price", change: func(r, _ *config.RecommendationRecord) { r.UpfrontCost = math.Inf(1) }, missing: false, storeErr: nil},
+		{name: "persisted zero count", change: func(r, _ *config.RecommendationRecord) { r.Count = 0 }, missing: false, storeErr: nil},
+		{name: "persisted negative count", change: func(r, _ *config.RecommendationRecord) { r.Count = -1 }, missing: false, storeErr: nil},
+		{name: "negative subnormal upfront", change: func(req, stored *config.RecommendationRecord) {
 			req.Count, req.UpfrontCost, req.MonthlyCost, stored.UpfrontCost, stored.MonthlyCost = 1, 0, new(50.0), -math.SmallestNonzeroFloat64, new(100.0)
-		}, false, nil},
-		{"negative subnormal monthly", func(req, stored *config.RecommendationRecord) {
+		}, missing: false, storeErr: nil},
+		{name: "negative subnormal monthly", change: func(req, stored *config.RecommendationRecord) {
 			req.Count, req.UpfrontCost, req.MonthlyCost, stored.MonthlyCost = 1, 100, new(0.0), new(-math.SmallestNonzeroFloat64)
-		}, false, nil},
-		{"store error", nil, false, errors.New("database unavailable")},
-		{"migration not ready", nil, false, fmt.Errorf("readiness: %w", config.ErrAzurePricingNotReady)},
+		}, missing: false, storeErr: nil},
+		{name: "store error", change: nil, missing: false, storeErr: errors.New("database unavailable")},
+		{name: "migration not ready", change: nil, missing: false, storeErr: fmt.Errorf("readiness: %w", config.ErrAzurePricingNotReady)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -119,8 +119,8 @@ func TestAzurePricingUnchangedStillPurchases(t *testing.T) {
 		upfront        float64
 		monthly        *float64
 	}{
-		{"azure", "azure", 200, nil}, {"aws", "aws", 200, nil}, {"inexact Azure upfront", "azure", 39.8, nil},
-		{"monthly", "azure", 0, new(200.0)}, {"upfront zero monthly", "azure", 200, new(0.0)},
+		{name: "azure", provider: "azure", upfront: 200, monthly: nil}, {name: "aws", provider: "aws", upfront: 200, monthly: nil}, {name: "inexact Azure upfront", provider: "azure", upfront: 39.8, monthly: nil},
+		{name: "monthly", provider: "azure", upfront: 0, monthly: new(200.0)}, {name: "upfront zero monthly", provider: "azure", upfront: 200, monthly: new(0.0)},
 	} {
 		for _, count := range []int{1, 2, 3, 4, 5} {
 			t.Run(fmt.Sprintf("%s/collected-%d", variant.name, count), func(t *testing.T) {

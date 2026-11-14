@@ -115,7 +115,7 @@ func checkBody(fset *token.FileSet, fn string, body *ast.BlockStmt) []string {
 		case *ast.FuncLit:
 			return v.Body == body
 		case *ast.CallExpr:
-			calls = append(calls, orderEvent{v.Pos(), v})
+			calls = append(calls, orderEvent{pos: v.Pos(), call: v})
 		case *ast.AssignStmt:
 			binds = append(binds, v)
 		}

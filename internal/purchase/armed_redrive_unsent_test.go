@@ -77,12 +77,12 @@ func TestArmedRetryRefusedWithoutProof(t *testing.T) {
 		wantText                string
 		wantLookups             int
 	}{
-		{"ec2 unproven", "aws", "ec2", common.ServiceEC2, 1, false, nil, "Check EC2 Reserved Instances", 1},
-		{"azure sp unproven", "azure", "savingsplans", common.ServiceSavingsPlansAll, 1, false, nil, "second savings plan", 1},
-		{"ec2 attempt 2 even if proven", "aws", "ec2", common.ServiceEC2, 2, true, nil, "Check EC2 Reserved Instances", 0},
-		{"azure sp attempt 2 even if proven", "azure", "savingsplans", common.ServiceSavingsPlansAll, 2, true, nil, "second savings plan", 0},
-		{"ec2 lookup error", "aws", "ec2", common.ServiceEC2, 1, true, errors.New("db down"), "start a new purchase", 1},
-		{"azure sp lookup error", "azure", "savingsplans", common.ServiceSavingsPlansAll, 1, true, errors.New("db down"), "start a new purchase", 1},
+		{name: "ec2 unproven", provider: "aws", service: "ec2", svcType: common.ServiceEC2, attempt: 1, proven: false, lookupErr: nil, wantText: "Check EC2 Reserved Instances", wantLookups: 1},
+		{name: "azure sp unproven", provider: "azure", service: "savingsplans", svcType: common.ServiceSavingsPlansAll, attempt: 1, proven: false, lookupErr: nil, wantText: "second savings plan", wantLookups: 1},
+		{name: "ec2 attempt 2 even if proven", provider: "aws", service: "ec2", svcType: common.ServiceEC2, attempt: 2, proven: true, lookupErr: nil, wantText: "Check EC2 Reserved Instances", wantLookups: 0},
+		{name: "azure sp attempt 2 even if proven", provider: "azure", service: "savingsplans", svcType: common.ServiceSavingsPlansAll, attempt: 2, proven: true, lookupErr: nil, wantText: "second savings plan", wantLookups: 0},
+		{name: "ec2 lookup error", provider: "aws", service: "ec2", svcType: common.ServiceEC2, attempt: 1, proven: true, lookupErr: errors.New("db down"), wantText: "start a new purchase", wantLookups: 1},
+		{name: "azure sp lookup error", provider: "azure", service: "savingsplans", svcType: common.ServiceSavingsPlansAll, attempt: 1, proven: true, lookupErr: errors.New("db down"), wantText: "start a new purchase", wantLookups: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

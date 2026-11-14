@@ -68,22 +68,22 @@ func claimEntryPoints() []claimEntryPoint {
 	ctx := context.Background()
 	actor := "operator@example.com"
 	return []claimEntryPoint{
-		{"run-now", runNowFrom, func(m *Manager, id string, c ClaimedRowCheck) (*config.PurchaseExecution, error) {
+		{name: "run-now", from: runNowFrom, run: func(m *Manager, id string, c ClaimedRowCheck) (*config.PurchaseExecution, error) {
 			row, _, err := m.RunPlannedPurchaseNow(ctx, id, actor, nil, c)
 			return row, err
-		}, ""},
-		{"session approve", []string{"pending", "notified"}, func(m *Manager, id string, c ClaimedRowCheck) (*config.PurchaseExecution, error) {
+		}, pinnedToken: ""},
+		{name: "session approve", from: []string{"pending", "notified"}, run: func(m *Manager, id string, c ClaimedRowCheck) (*config.PurchaseExecution, error) {
 			row, _, err := m.ApproveAndExecute(ctx, id, actor, nil, c)
 			return row, err
-		}, ""},
-		{"direct execute", []string{"pending", "notified"}, func(m *Manager, id string, c ClaimedRowCheck) (*config.PurchaseExecution, error) {
+		}, pinnedToken: ""},
+		{name: "direct execute", from: []string{"pending", "notified"}, run: func(m *Manager, id string, c ClaimedRowCheck) (*config.PurchaseExecution, error) {
 			row, _, err := m.DirectExecute(ctx, id, actor, nil, c)
 			return row, err
-		}, ""},
-		{"token approve", []string{"pending", "notified"}, func(m *Manager, id string, c ClaimedRowCheck) (*config.PurchaseExecution, error) {
+		}, pinnedToken: ""},
+		{name: "token approve", from: []string{"pending", "notified"}, run: func(m *Manager, id string, c ClaimedRowCheck) (*config.PurchaseExecution, error) {
 			_, _, err := m.ApproveExecution(ctx, id, claimCheckToken, actor, c)
 			return nil, err
-		}, claimCheckToken},
+		}, pinnedToken: claimCheckToken},
 	}
 }
 

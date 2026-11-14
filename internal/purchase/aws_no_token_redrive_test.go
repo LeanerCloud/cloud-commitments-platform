@@ -194,11 +194,11 @@ func TestApproveAndExecuteRefusesAWSNoTokenRetrySuccessor(t *testing.T) {
 		pinnedToken    string // the token path pins its token inside the claim (issue #1190)
 		approve        func(m *Manager, id string) error
 	}{
-		{"token", nil, rawToken, func(m *Manager, id string) error {
+		{name: "token", transitionedBy: nil, pinnedToken: rawToken, approve: func(m *Manager, id string) error {
 			_, _, err := m.ApproveExecution(context.Background(), id, rawToken, "approver@example.com", nil)
 			return err
 		}},
-		{"session", &sessionUser, "", func(m *Manager, id string) error {
+		{name: "session", transitionedBy: &sessionUser, pinnedToken: "", approve: func(m *Manager, id string) error {
 			_, _, err := m.ApproveAndExecute(context.Background(), id, "approver@example.com", &sessionUser, nil)
 			return err
 		}},

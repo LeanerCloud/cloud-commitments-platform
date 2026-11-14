@@ -58,29 +58,29 @@ func TestAzurePricingHold(t *testing.T) {
 		freshErr  error
 		wantStale bool
 	}{
-		{"held account refused", &acct, heldFreshness(acct), nil, true},
-		{"hold cleared by a good cycle", &acct, &config.RecommendationsFreshness{}, nil, false},
-		{"unheld account unaffected", &other, heldFreshness(acct), nil, false},
-		{"unreadable hold state refuses", &acct, nil, errors.New("database unavailable"), true},
-		{"missing collection state refuses", &acct, nil, nil, true},
+		{name: "held account refused", execAcct: &acct, fresh: heldFreshness(acct), freshErr: nil, wantStale: true},
+		{name: "hold cleared by a good cycle", execAcct: &acct, fresh: &config.RecommendationsFreshness{}, freshErr: nil, wantStale: false},
+		{name: "unheld account unaffected", execAcct: &other, fresh: heldFreshness(acct), freshErr: nil, wantStale: false},
+		{name: "unreadable hold state refuses", execAcct: &acct, fresh: nil, freshErr: errors.New("database unavailable"), wantStale: true},
+		{name: "missing collection state refuses", execAcct: &acct, fresh: nil, freshErr: nil, wantStale: true},
 		// The reason gate: only a pricing_unavailable sweep holds rows. A sweep that
 		// is partial for another reason (here throttling) must not refuse a purchase.
-		{"partial sweep without the pricing reason does not refuse", &acct, &config.RecommendationsFreshness{LastCollectionPartial: &config.RecommendationsCollectionPartial{
+		{name: "partial sweep without the pricing reason does not refuse", execAcct: &acct, fresh: &config.RecommendationsFreshness{LastCollectionPartial: &config.RecommendationsCollectionPartial{
 			Providers: []config.PartialProviderSweep{{Provider: "azure", HeldAccountIDs: []string{acct}, Reasons: map[string]int{config.PartialReasonThrottled: 1}}},
-		}}, nil, false},
+		}}, freshErr: nil, wantStale: false},
 		// A stored row of an expired-hold account is one eviction failed to delete
 		// (it was locked by another tx) or one that predates the hold: its price is
 		// older than the hold limit, so the gate refuses it with or without an outage.
-		{"expired-hold account with a surviving row refused", &acct, expiredOnlyFreshness(acct), nil, true},
-		{"expired-hold account refused while the outage continues", &acct, expiredFreshness(acct, other), nil, true},
-		{"expired other account does not refuse an unrelated account", &acct, expiredOnlyFreshness(other), nil, false},
-		{"ambient row refused when the ambient key expired", nil, expiredOnlyFreshness(uuid.Nil.String()), nil, true},
-		{"ambient row not refused when only a named account expired", nil, expiredOnlyFreshness(acct), nil, false},
-		{"held account refused next to an expired one", &acct, expiredFreshness(other, acct), nil, true},
-		{"unresolved ambient rec refused during an outage", nil, heldFreshness(), nil, true},
+		{name: "expired-hold account with a surviving row refused", execAcct: &acct, fresh: expiredOnlyFreshness(acct), freshErr: nil, wantStale: true},
+		{name: "expired-hold account refused while the outage continues", execAcct: &acct, fresh: expiredFreshness(acct, other), freshErr: nil, wantStale: true},
+		{name: "expired other account does not refuse an unrelated account", execAcct: &acct, fresh: expiredOnlyFreshness(other), freshErr: nil, wantStale: false},
+		{name: "ambient row refused when the ambient key expired", execAcct: nil, fresh: expiredOnlyFreshness(uuid.Nil.String()), freshErr: nil, wantStale: true},
+		{name: "ambient row not refused when only a named account expired", execAcct: nil, fresh: expiredOnlyFreshness(acct), freshErr: nil, wantStale: false},
+		{name: "held account refused next to an expired one", execAcct: &acct, fresh: expiredFreshness(other, acct), freshErr: nil, wantStale: true},
+		{name: "unresolved ambient rec refused during an outage", execAcct: nil, fresh: heldFreshness(), freshErr: nil, wantStale: true},
 		// Fail-closed by design: a rec without an account cannot be matched to the
 		// hold list, so any Azure hold refuses it.
-		{"accountless rec refused while other accounts are held", nil, heldFreshness(acct), nil, true},
+		{name: "accountless rec refused while other accounts are held", execAcct: nil, fresh: heldFreshness(acct), freshErr: nil, wantStale: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -172,16 +172,16 @@ func TestAzureHoldRefusal(t *testing.T) {
 		stored    *string
 		wantStale bool
 	}{
-		{"fresh collect without a partial", &config.RecommendationsFreshness{}, &acct, &acct, false},
-		{"held just inside the limit", heldFreshness(acct), &acct, &acct, true},
-		{"expired at the limit with a surviving row", expiredOnlyFreshness(acct), &acct, &acct, true},
-		{"re-priced account passes", &config.RecommendationsFreshness{LastCollectionPartial: &config.RecommendationsCollectionPartial{}}, &acct, &acct, false},
-		{"non-azure sweep with an expired id", nonAzure, &acct, &acct, false},
-		{"stored row account decides, exec rec has none", expiredOnlyFreshness(acct), nil, &acct, true},
-		{"stored row account decides, exec rec on another", expiredOnlyFreshness(acct), &other, &acct, true},
-		{"upper-case payload account id still matches the expired key", expiredOnlyFreshness(acct), &acct, &upper, true},
-		{"upper-case payload account id still matches the held key", heldFreshness(acct), &upper, &upper, true},
-		{"exec rec on the expired account, stored row elsewhere", expiredOnlyFreshness(acct), &acct, &other, false},
+		{name: "fresh collect without a partial", fresh: &config.RecommendationsFreshness{}, exec: &acct, stored: &acct, wantStale: false},
+		{name: "held just inside the limit", fresh: heldFreshness(acct), exec: &acct, stored: &acct, wantStale: true},
+		{name: "expired at the limit with a surviving row", fresh: expiredOnlyFreshness(acct), exec: &acct, stored: &acct, wantStale: true},
+		{name: "re-priced account passes", fresh: &config.RecommendationsFreshness{LastCollectionPartial: &config.RecommendationsCollectionPartial{}}, exec: &acct, stored: &acct, wantStale: false},
+		{name: "non-azure sweep with an expired id", fresh: nonAzure, exec: &acct, stored: &acct, wantStale: false},
+		{name: "stored row account decides, exec rec has none", fresh: expiredOnlyFreshness(acct), exec: nil, stored: &acct, wantStale: true},
+		{name: "stored row account decides, exec rec on another", fresh: expiredOnlyFreshness(acct), exec: &other, stored: &acct, wantStale: true},
+		{name: "upper-case payload account id still matches the expired key", fresh: expiredOnlyFreshness(acct), exec: &acct, stored: &upper, wantStale: true},
+		{name: "upper-case payload account id still matches the held key", fresh: heldFreshness(acct), exec: &upper, stored: &upper, wantStale: true},
+		{name: "exec rec on the expired account, stored row elsewhere", fresh: expiredOnlyFreshness(acct), exec: &acct, stored: &other, wantStale: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -209,10 +209,10 @@ func TestAzurePricingUnreadableMarker(t *testing.T) {
 		fresh     *config.RecommendationsFreshness
 		wantStale bool
 	}{
-		{"unreadable marker refuses an Azure execution", "azure", &config.RecommendationsFreshness{LastCollectionPartialUnreadable: true}, true},
-		{"readable empty marker passes", "azure", &config.RecommendationsFreshness{}, false},
-		{"valid marker holding another account passes", "azure", heldFreshness("22222222-2222-2222-2222-222222222222"), false},
-		{"nil freshness still fails closed", "azure", nil, true},
+		{name: "unreadable marker refuses an Azure execution", provider: "azure", fresh: &config.RecommendationsFreshness{LastCollectionPartialUnreadable: true}, wantStale: true},
+		{name: "readable empty marker passes", provider: "azure", fresh: &config.RecommendationsFreshness{}, wantStale: false},
+		{name: "valid marker holding another account passes", provider: "azure", fresh: heldFreshness("22222222-2222-2222-2222-222222222222"), wantStale: false},
+		{name: "nil freshness still fails closed", provider: "azure", fresh: nil, wantStale: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

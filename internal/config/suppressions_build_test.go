@@ -191,8 +191,8 @@ func TestBuildSuppressions_ComputeSlugEC2(t *testing.T) {
 		details []byte
 		want    SuppressionVariant
 	}{
-		"platform only": {[]byte(`{"platform":"Linux/UNIX"}`), SuppressionVariant{"us-east-1a", "Linux/UNIX", "", ""}},
-		"tenancy only":  {[]byte(`{"tenancy":"default"}`), SuppressionVariant{"us-east-1a", "", "default", ""}},
+		"platform only": {details: []byte(`{"platform":"Linux/UNIX"}`), want: SuppressionVariant{"us-east-1a", "Linux/UNIX", "", ""}},
+		"tenancy only":  {details: []byte(`{"tenancy":"default"}`), want: SuppressionVariant{"us-east-1a", "", "default", ""}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := base

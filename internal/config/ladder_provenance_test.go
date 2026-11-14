@@ -201,19 +201,19 @@ func TestRequireLadderCommitmentBasis(t *testing.T) {
 		rate  *string
 		ok    bool
 	}{
-		{"nil basis", nil, nil, false},
-		{"nil basis with rate", nil, str("1/2"), false},
-		{"on-demand without rate", &od, nil, false},
-		{"on-demand with rate", &od, str("1/2"), false},
-		{"commitment nil rate", &native, nil, false},
-		{"rate zero", &native, str("0"), false},
-		{"rate text", &native, str("abc"), false},
-		{"rate above one", &native, str("1.5"), false},
-		{"rate negative", &native, str("-1/2"), false},
-		{"rate empty", &native, str(""), false},
-		{"rate one", &native, str("1"), true},
-		{"rate half", &native, str("1/2"), true},
-		{"rate decimal", &native, str("0.5"), true},
+		{name: "nil basis", basis: nil, rate: nil, ok: false},
+		{name: "nil basis with rate", basis: nil, rate: str("1/2"), ok: false},
+		{name: "on-demand without rate", basis: &od, rate: nil, ok: false},
+		{name: "on-demand with rate", basis: &od, rate: str("1/2"), ok: false},
+		{name: "commitment nil rate", basis: &native, rate: nil, ok: false},
+		{name: "rate zero", basis: &native, rate: str("0"), ok: false},
+		{name: "rate text", basis: &native, rate: str("abc"), ok: false},
+		{name: "rate above one", basis: &native, rate: str("1.5"), ok: false},
+		{name: "rate negative", basis: &native, rate: str("-1/2"), ok: false},
+		{name: "rate empty", basis: &native, rate: str(""), ok: false},
+		{name: "rate one", basis: &native, rate: str("1"), ok: true},
+		{name: "rate half", basis: &native, rate: str("1/2"), ok: true},
+		{name: "rate decimal", basis: &native, rate: str("0.5"), ok: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := RequireLadderCommitmentBasis(&LadderTrancheDB{AmountBasis: tc.basis, CommitmentRate: tc.rate})

@@ -18,18 +18,18 @@ func TestServiceTypeCollectorForms(t *testing.T) {
 		want    []string
 		wantErr string
 	}{
-		{"typed literal", `const A ServiceType = "a"`, []string{"a"}, ""},
-		{"conversion call", `const A = ServiceType("a")`, []string{"a"}, ""},
-		{"typed conversion call", `const A ServiceType = ServiceType("a")`, []string{"a"}, ""},
-		{"grouped typed", "const (\n A ServiceType = \"a\"\n B ServiceType = \"b\"\n)", []string{"a", "b"}, ""},
-		{"grouped conversion", "const (\n A = ServiceType(\"a\")\n B = ServiceType(\"b\")\n)", []string{"a", "b"}, ""},
-		{"untyped literal in group is not a ServiceType", "const (\n A ServiceType = \"a\"\n B = \"b\"\n)", []string{"a"}, ""},
-		{"other type ignored", `const A Other = "a"`, nil, ""},
-		{"typed non-literal", `const A ServiceType = prefix + "a"`, nil, "A"},
-		{"conversion non-literal", `const A = ServiceType(prefix)`, nil, "A"},
-		{"iota-style inherited", "const (\n A ServiceType = iota\n B\n)", nil, "A"},
-		{"implicit repetition of literal", "const (\n A ServiceType = \"a\"\n B\n)", []string{"a", "a"}, ""},
-		{"unrelated non-literal", `const A = 1 + 2`, nil, ""},
+		{name: "typed literal", decls: `const A ServiceType = "a"`, want: []string{"a"}, wantErr: ""},
+		{name: "conversion call", decls: `const A = ServiceType("a")`, want: []string{"a"}, wantErr: ""},
+		{name: "typed conversion call", decls: `const A ServiceType = ServiceType("a")`, want: []string{"a"}, wantErr: ""},
+		{name: "grouped typed", decls: "const (\n A ServiceType = \"a\"\n B ServiceType = \"b\"\n)", want: []string{"a", "b"}, wantErr: ""},
+		{name: "grouped conversion", decls: "const (\n A = ServiceType(\"a\")\n B = ServiceType(\"b\")\n)", want: []string{"a", "b"}, wantErr: ""},
+		{name: "untyped literal in group is not a ServiceType", decls: "const (\n A ServiceType = \"a\"\n B = \"b\"\n)", want: []string{"a"}, wantErr: ""},
+		{name: "other type ignored", decls: `const A Other = "a"`, want: nil, wantErr: ""},
+		{name: "typed non-literal", decls: `const A ServiceType = prefix + "a"`, want: nil, wantErr: "A"},
+		{name: "conversion non-literal", decls: `const A = ServiceType(prefix)`, want: nil, wantErr: "A"},
+		{name: "iota-style inherited", decls: "const (\n A ServiceType = iota\n B\n)", want: nil, wantErr: "A"},
+		{name: "implicit repetition of literal", decls: "const (\n A ServiceType = \"a\"\n B\n)", want: []string{"a", "a"}, wantErr: ""},
+		{name: "unrelated non-literal", decls: `const A = 1 + 2`, want: nil, wantErr: ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -43,19 +43,19 @@ var rollbackSites = []struct {
 	gated bool // runs the az_config schema gate before Begin
 	run   func(ctx context.Context, s *PostgresStore) error
 }{
-	{"DeleteCloudAccount", "DeleteCloudAccount", false, func(ctx context.Context, s *PostgresStore) error {
+	{name: "DeleteCloudAccount", op: "DeleteCloudAccount", gated: false, run: func(ctx context.Context, s *PostgresStore) error {
 		return s.DeleteCloudAccount(ctx, "11111111-1111-1111-1111-111111111111")
 	}},
-	{"SetPlanAccounts", "SetPlanAccounts", false, func(ctx context.Context, s *PostgresStore) error {
+	{name: "SetPlanAccounts", op: "SetPlanAccounts", gated: false, run: func(ctx context.Context, s *PostgresStore) error {
 		return s.SetPlanAccounts(ctx, "22222222-2222-2222-2222-222222222222", nil)
 	}},
-	{"UpsertRecommendations", "UpsertRecommendations", true, func(ctx context.Context, s *PostgresStore) error {
+	{name: "UpsertRecommendations", op: "UpsertRecommendations", gated: true, run: func(ctx context.Context, s *PostgresStore) error {
 		return s.UpsertRecommendations(ctx, time.Now(), nil, nil)
 	}},
-	{"WithTx", "WithTx", false, func(ctx context.Context, s *PostgresStore) error {
+	{name: "WithTx", op: "WithTx", gated: false, run: func(ctx context.Context, s *PostgresStore) error {
 		return s.WithTx(ctx, func(pgx.Tx) error { return errors.New("user code failed") })
 	}},
-	{"withLadderConfigLock", "ladder config lock cfg-1", false, func(ctx context.Context, s *PostgresStore) error {
+	{name: "withLadderConfigLock", op: "ladder config lock cfg-1", gated: false, run: func(ctx context.Context, s *PostgresStore) error {
 		return s.withLadderConfigLock(ctx, "cfg-1", func(pgx.Tx) error { return nil })
 	}},
 }
