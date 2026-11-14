@@ -178,18 +178,18 @@ func TestPredecessorProvenUnsent(t *testing.T) {
 
 	cases := []struct {
 		name     string
+		status   string // overrides the seeded predecessor's failed status
 		attemptN int
 		ns       bool
 		seed     bool
-		status   string // overrides the seeded predecessor's failed status
 		want     bool
 	}{
-		{"no_submission attempt 0", 0, true, true, "", true},
-		{"no_submission attempt 1", 1, true, true, "", false},
-		{"submitted attempt 0", 0, false, true, "", false},
-		{"no_submission attempt 0 but running", 0, true, true, "running", false},
+		{name: "no_submission attempt 0", attemptN: 0, ns: true, seed: true, status: "", want: true},
+		{name: "no_submission attempt 1", attemptN: 1, ns: true, seed: true, status: "", want: false},
+		{name: "submitted attempt 0", attemptN: 0, ns: false, seed: true, status: "", want: false},
+		{name: "no_submission attempt 0 but running", attemptN: 0, ns: true, seed: true, status: "running", want: false},
 		// Each case seeds its own successor, so this one has no predecessor row at all.
-		{"no predecessor", 0, false, false, "", false},
+		{name: "no predecessor", attemptN: 0, ns: false, seed: false, status: "", want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

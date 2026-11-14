@@ -31,8 +31,8 @@ func (a *adminUserUpdateAuth) UpdateUserAPI(ctx context.Context, actorUserID, us
 // commit a concurrent write between the admin's read and its write.
 type afterReadStore struct {
 	auth.StoreInterface
-	targetID  string
 	afterRead func()
+	targetID  string
 	once      sync.Once
 }
 

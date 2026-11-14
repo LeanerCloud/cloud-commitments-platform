@@ -32,17 +32,17 @@ func (*combinedCredentials) LoadRaw(context.Context, string, string) ([]byte, er
 }
 
 type combinedPurchase struct {
-	recommendation common.Recommendation
 	options        common.PurchaseOptions
 	frozen         []config.RecommendationRecord
+	recommendation common.Recommendation
 }
 
 type combinedService struct {
-	fanoutServiceClient
 	store  *config.PostgresStore
 	rootID string
-	mu     sync.Mutex
 	calls  []combinedPurchase
+	fanoutServiceClient
+	mu sync.Mutex
 }
 
 func (s *combinedService) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
@@ -54,7 +54,7 @@ func (s *combinedService) PurchaseCommitment(ctx context.Context, rec common.Rec
 		return common.PurchaseResult{}, fmt.Errorf("provider boundary missing durable execution")
 	}
 	s.mu.Lock()
-	s.calls = append(s.calls, combinedPurchase{rec, opts, append([]config.RecommendationRecord(nil), row.Recommendations...)})
+	s.calls = append(s.calls, combinedPurchase{recommendation: rec, options: opts, frozen: append([]config.RecommendationRecord(nil), row.Recommendations...)})
 	s.mu.Unlock()
 	return common.PurchaseResult{Success: true, CommitmentID: "fixture-" + opts.IdempotencyToken}, nil
 }
@@ -94,13 +94,13 @@ func (f combinedFactory) CreateAndValidateProvider(_ context.Context, name strin
 }
 
 type combinedPlanFixture struct {
+	first time.Time
 	*createConcurrencyFixture
 	manager  *purchase.Manager
 	service  *combinedService
+	root     *config.PurchaseExecution
 	account  string
 	creator  string
-	first    time.Time
-	root     *config.PurchaseExecution
 	notified int
 }
 

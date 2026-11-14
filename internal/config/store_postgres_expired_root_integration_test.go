@@ -20,27 +20,27 @@ const readoptDay = 24 * time.Hour
 // returns one flag per plan, so each case owns its plan and a probe on any one
 // predicate flips exactly one case.
 type readoptCase struct {
+	creator     string // "" or "user" (a user), "none" (NULL, not system), "system"
 	name        string
-	auto        bool
-	disabled    bool
-	managed     bool
-	currentStep int           // plan current_step; the root sits at currentStep+1 unless step is set
-	step        int           // execution step_number; 0 means the plan's next step
 	status      string        // "" means expired
 	age         time.Duration // time since expiry; 0 means one hour
-	account     bool          // child row of a fanned-out step
 	retryN      int           // retry_attempt_n
+	currentStep int           // plan current_step; the root sits at currentStep+1 unless step is set
+	step        int           // execution step_number; 0 means the plan's next step
 	retryLinked bool          // retry_execution_id set
-	ladder      bool          // ladder_run_id set
+	completed   bool
+	managed     bool
+	disabled    bool
+	ladder      bool // ladder_run_id set
 	approvedBy  bool
 	executed    bool
-	completed   bool
+	account     bool // child row of a fanned-out step
 	scheduled   bool // scheduled_execution_at set
 	skipReason  bool // pre_approval_skip_reason set
 	readopted   bool
-	sibling     bool   // a second row at the same step
-	creator     string // "" or "user" (a user), "none" (NULL, not system), "system"
-	require     bool   // requireDifferentApprover passed to the store
+	sibling     bool // a second row at the same step
+	auto        bool
+	require     bool // requireDifferentApprover passed to the store
 	want        bool
 }
 

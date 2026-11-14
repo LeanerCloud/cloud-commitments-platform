@@ -173,11 +173,11 @@ func TestIntegration_MFAEnableExpiryEnforcedInWrite(t *testing.T) {
 // the row in exactly the state one guard is meant to refuse. expiresIn is a
 // Postgres interval added to NOW(); nil leaves the pending expiry NULL.
 type mfaColumns struct {
-	enabled   bool
-	secret    string
-	codes     []string
-	pending   string
 	expiresIn *string
+	secret    string
+	pending   string
+	codes     []string
+	enabled   bool
 }
 
 func pgInterval(s string) *string { return &s }
@@ -264,16 +264,16 @@ func TestIntegration_EnableMFARefusalReason(t *testing.T) {
 	enable := func(id string) error { return store.EnableMFA(ctx, id, pending, 1, []string{"new-code"}) }
 
 	refusals := map[string]struct {
-		row  mfaColumns
 		want error
+		row  mfaColumns
 	}{
-		"expired":                   {mfaColumns{pending: pending, expiresIn: pgInterval("-1 minute")}, ErrMFAEnrollmentExpired},
-		"replaced-by-expired-setup": {mfaColumns{pending: "OTHER-PENDING", expiresIn: pgInterval("-1 minute")}, ErrUserChanged},
-		"replaced-by-live-setup":    {mfaColumns{pending: "OTHER-PENDING", expiresIn: pgInterval("10 minutes")}, ErrUserChanged},
-		"enrollment-cleared":        {mfaColumns{}, ErrUserChanged},
-		"no-expiry":                 {mfaColumns{pending: pending}, ErrUserChanged},
-		"mfa-on-with-expired-pending": {mfaColumns{enabled: true, secret: "ACTIVE-SECRET", codes: []string{"c"},
-			pending: pending, expiresIn: pgInterval("-1 minute")}, ErrUserChanged},
+		"expired":                   {row: mfaColumns{pending: pending, expiresIn: pgInterval("-1 minute")}, want: ErrMFAEnrollmentExpired},
+		"replaced-by-expired-setup": {row: mfaColumns{pending: "OTHER-PENDING", expiresIn: pgInterval("-1 minute")}, want: ErrUserChanged},
+		"replaced-by-live-setup":    {row: mfaColumns{pending: "OTHER-PENDING", expiresIn: pgInterval("10 minutes")}, want: ErrUserChanged},
+		"enrollment-cleared":        {row: mfaColumns{}, want: ErrUserChanged},
+		"no-expiry":                 {row: mfaColumns{pending: pending}, want: ErrUserChanged},
+		"mfa-on-with-expired-pending": {row: mfaColumns{enabled: true, secret: "ACTIVE-SECRET", codes: []string{"c"},
+			pending: pending, expiresIn: pgInterval("-1 minute")}, want: ErrUserChanged},
 	}
 	for name, tc := range refusals {
 		t.Run(name, func(t *testing.T) {

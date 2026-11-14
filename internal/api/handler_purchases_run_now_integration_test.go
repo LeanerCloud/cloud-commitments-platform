@@ -20,10 +20,10 @@ import (
 
 // runNowService buys every recommendation except the call numbered failOn.
 type runNowService struct {
-	fanoutServiceClient
-	calls      atomic.Int32
-	failOn     int32
 	onPurchase func(context.Context)
+	fanoutServiceClient
+	calls  atomic.Int32
+	failOn int32
 }
 
 func (s *runNowService) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
@@ -193,9 +193,9 @@ func TestRunNow_LostClaimIsConflict(t *testing.T) {
 func TestRunNow_CanceledRequestAfterClaimPersistsTerminalOutcome(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		failOn  int32
 		status  string
 		history int
+		failOn  int32
 	}{
 		{name: "completed", status: "completed", history: 1},
 		{name: "failed", failOn: 1, status: "failed"},

@@ -35,10 +35,10 @@ const armingSavePoolSize = 3
 // whole batch takes well under a second.
 func TestGlobalConfigArmingSavesDoNotExhaustPool(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		arm, disarm string
 		put         func(h *Handler) func(context.Context, *events.LambdaFunctionURLRequest) error
 		armed       func(*config.GlobalConfig) bool
+		name        string
+		arm, disarm string
 	}{
 		{
 			name:   "config PUT arms auto-purchase",

@@ -29,9 +29,9 @@ type revokeRequestKey struct{}
 // as two first-time revokes would.
 type barrierCalcRefundClient struct {
 	price   *armreservations.Price
+	ready   chan struct{}
 	parties int32
 	arrived atomic.Int32
-	ready   chan struct{}
 }
 
 func (c *barrierCalcRefundClient) Post(ctx context.Context, _ string, _ armreservations.CalculateRefundRequest, _ *armreservations.CalculateRefundClientPostOptions) (armreservations.CalculateRefundClientPostResponse, error) {
@@ -60,9 +60,9 @@ func (c *barrierCalcRefundClient) Post(ctx context.Context, _ string, _ armreser
 // gets a 400. While the first Return is in flight, it records whether the row
 // still carries the in-flight flag.
 type raceReturnClient struct {
+	done       [2]chan struct{}
 	store      *config.PostgresStore
 	purchaseID string
-	done       [2]chan struct{}
 	calls      atomic.Int32
 	// flagHeld is whether the row was still flagged in flight once the other
 	// request had finished, while the first Return was still in flight.

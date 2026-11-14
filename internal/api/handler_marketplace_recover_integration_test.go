@@ -27,8 +27,8 @@ import (
 // grows.
 type lockedMarketplaceAWS struct {
 	marketplaceListingFinder //nolint:unused // nil; fills in finder methods these tests never call
-	mu                       sync.Mutex
 	fake                     fakeMarketplaceAWS
+	mu                       sync.Mutex
 }
 
 func (a *lockedMarketplaceAWS) create(ctx context.Context, req ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error) {
@@ -71,8 +71,8 @@ func (a *lockedMarketplaceAWS) setFailCancel(fail bool) {
 // UpdatePurchaseHistoryListing; a non-nil error from hook replaces the write.
 type listingWriteHook struct {
 	config.StoreInterface
-	mu   sync.Mutex
 	hook func(listingID, state string) error
+	mu   sync.Mutex
 }
 
 func (s *listingWriteHook) setHook(hook func(listingID, state string) error) {

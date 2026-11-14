@@ -106,15 +106,15 @@ func TestRetrySuccessorRacesFreshSubmit(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
-		name       string
 		h          *Handler
-		rounds     int
 		lag        func() time.Duration
+		name       string
+		rounds     int
 		bothOrders bool
 	}{
-		{"forced interleaving", &Handler{config: &insertBarrierStore{PostgresStore: store, db: pg.DB.Pool(), arrived: make(chan struct{}, 2), parties: 2}},
-			8, func() time.Duration { return 50 * time.Millisecond }, true},
-		{"free race", &Handler{config: store}, 100, func() time.Duration { return time.Duration(rand.IntN(500)) * time.Microsecond }, false},
+		{name: "forced interleaving", h: &Handler{config: &insertBarrierStore{PostgresStore: store, db: pg.DB.Pool(), arrived: make(chan struct{}, 2), parties: 2}},
+			rounds: 8, lag: func() time.Duration { return 50 * time.Millisecond }, bothOrders: true},
+		{name: "free race", h: &Handler{config: store}, rounds: 100, lag: func() time.Duration { return time.Duration(rand.IntN(500)) * time.Microsecond }, bothOrders: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			retryWon := 0

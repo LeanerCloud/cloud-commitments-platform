@@ -126,12 +126,12 @@ func encodeQuery(q map[string]string) string {
 
 // analyticsSeen is what one account_id request exposed across the endpoints.
 type analyticsSeen struct {
-	status                int
 	historyProviders      []string // /api/history/analytics by_provider keys
 	breakdownProviders    []string // /api/history/breakdown?dimension=provider keys
 	trendsServices        []string // /api/analytics/trends by_provider services
 	trendsMonthlyServices []string // /api/analytics/trends monthly services
 	trendsByService       []string // /api/analytics/trends by_service services
+	status                int
 }
 
 // seen drives the three analytics endpoints for accountID and returns the

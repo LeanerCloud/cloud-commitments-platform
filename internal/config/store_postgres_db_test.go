@@ -1263,13 +1263,13 @@ func TestPostgresStoreDB_CleanupOldExecutions_RetainsCanceledInsideHealthWindow(
 	// UPDATE only, so an explicit INSERT value is preserved.
 	const retentionDays = 30
 	cases := []struct {
+		expiresDays   *int // nil => NULL expires_at
 		name          string
 		status        string
-		scheduledDays int  // offset in days from now (negative = past)
-		updatedDays   int  // offset in days from now
-		expiresDays   *int // nil => NULL expires_at
-		shouldSurvive bool
 		why           string
+		scheduledDays int // offset in days from now (negative = past)
+		updatedDays   int // offset in days from now
+		shouldSurvive bool
 	}{
 		{
 			name:          "canceled-today-old-scheduled-date",
@@ -1468,13 +1468,13 @@ func TestPostgresStoreDB_ClaimRIExchangeIdempotencyKey(t *testing.T) {
 		holderPID := testhelpers.BackendPID(ctx, t, tx)
 
 		type claimResult struct {
-			claimed bool
 			err     error
+			claimed bool
 		}
 		done := make(chan claimResult, 1)
 		go func() {
 			claimed, err := store.ClaimRIExchangeIdempotencyKey(ctx, key, window)
-			done <- claimResult{claimed, err}
+			done <- claimResult{claimed: claimed, err: err}
 		}()
 
 		// The claim must contend for the row rather than answer from a read,

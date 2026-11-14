@@ -45,15 +45,15 @@ func TestNullablePurchaseCostPostgres(t *testing.T) {
 
 	client := NewPostgresAnalyticsClient(container.DB)
 	for _, tc := range []struct {
+		want  *float64
 		name  string
 		costs []*float64
-		want  *float64
 	}{
-		{"known", []*float64{new(float64(120)), new(float64(30))}, new(float64(150))},
-		{"zero", []*float64{new(float64)}, new(float64)},
-		{"unknown", []*float64{nil}, nil},
-		{"mixed", []*float64{new(float64(120)), nil}, nil},
-		{"empty", nil, new(float64)},
+		{name: "known", costs: []*float64{new(float64(120)), new(float64(30))}, want: new(float64(150))},
+		{name: "zero", costs: []*float64{new(float64)}, want: new(float64)},
+		{name: "unknown", costs: []*float64{nil}, want: nil},
+		{name: "mixed", costs: []*float64{new(float64(120)), nil}, want: nil},
+		{name: "empty", costs: nil, want: new(float64)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for i, cost := range tc.costs {

@@ -60,22 +60,22 @@ func TestIntegration_GetExecutionsByStatusesFiltered(t *testing.T) {
 
 	tests := []struct {
 		name string
-		q    ExecutionsByStatusesQuery
 		want []string
+		q    ExecutionsByStatusesQuery
 	}{
-		{"no filter", ExecutionsByStatusesQuery{}, []string{"external", "noRecs", "mixedAny", "mixedMy", "recsA", "onB", "onA"}},
-		{"provider aws", ExecutionsByStatusesQuery{Provider: "aws"}, []string{"external", "mixedAny", "mixedMy", "recsA", "onA"}},
-		{"provider azure", ExecutionsByStatusesQuery{Provider: "azure"}, []string{"mixedAny", "mixedMy", "onB"}},
-		{"account A", ExecutionsByStatusesQuery{AccountIDs: []string{a}}, []string{"mixedAny", "mixedMy", "recsA", "onA"}},
-		{"external number on recs", ExecutionsByStatusesQuery{AccountIDs: []string{legacy}}, []string{"external"}},
-		{"date bounds inclusive", ExecutionsByStatusesQuery{Start: &start, End: &end}, []string{"mixedMy", "recsA", "onB"}},
-		{"scope A", ExecutionsByStatusesQuery{Scope: &ExecutionScope{AccountIDs: []string{a}, UserID: user}},
-			[]string{"mixedAny", "mixedMy", "recsA", "onA"}},
-		{"scope nothing keeps own unattributed rows", ExecutionsByStatusesQuery{Scope: &ExecutionScope{UserID: user}}, []string{"mixedMy"}},
-		{"scope with no user matches a NULL creator", ExecutionsByStatusesQuery{Scope: &ExecutionScope{}},
-			[]string{"external", "noRecs", "mixedAny", "recsA"}},
-		{"filters and scope combine", ExecutionsByStatusesQuery{Provider: "azure", Scope: &ExecutionScope{AccountIDs: []string{b}, UserID: user}},
-			[]string{"mixedAny", "mixedMy", "onB"}},
+		{name: "no filter", q: ExecutionsByStatusesQuery{}, want: []string{"external", "noRecs", "mixedAny", "mixedMy", "recsA", "onB", "onA"}},
+		{name: "provider aws", q: ExecutionsByStatusesQuery{Provider: "aws"}, want: []string{"external", "mixedAny", "mixedMy", "recsA", "onA"}},
+		{name: "provider azure", q: ExecutionsByStatusesQuery{Provider: "azure"}, want: []string{"mixedAny", "mixedMy", "onB"}},
+		{name: "account A", q: ExecutionsByStatusesQuery{AccountIDs: []string{a}}, want: []string{"mixedAny", "mixedMy", "recsA", "onA"}},
+		{name: "external number on recs", q: ExecutionsByStatusesQuery{AccountIDs: []string{legacy}}, want: []string{"external"}},
+		{name: "date bounds inclusive", q: ExecutionsByStatusesQuery{Start: &start, End: &end}, want: []string{"mixedMy", "recsA", "onB"}},
+		{name: "scope A", q: ExecutionsByStatusesQuery{Scope: &ExecutionScope{AccountIDs: []string{a}, UserID: user}},
+			want: []string{"mixedAny", "mixedMy", "recsA", "onA"}},
+		{name: "scope nothing keeps own unattributed rows", q: ExecutionsByStatusesQuery{Scope: &ExecutionScope{UserID: user}}, want: []string{"mixedMy"}},
+		{name: "scope with no user matches a NULL creator", q: ExecutionsByStatusesQuery{Scope: &ExecutionScope{}},
+			want: []string{"external", "noRecs", "mixedAny", "recsA"}},
+		{name: "filters and scope combine", q: ExecutionsByStatusesQuery{Provider: "azure", Scope: &ExecutionScope{AccountIDs: []string{b}, UserID: user}},
+			want: []string{"mixedAny", "mixedMy", "onB"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

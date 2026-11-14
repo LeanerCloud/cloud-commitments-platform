@@ -43,9 +43,9 @@ func approveRequest(t *testing.T, externalID string) *events.LambdaFunctionURLRe
 }
 
 type registrationRow struct {
-	status         string
 	cloudAccountID *string
 	reviewedAt     *time.Time
+	status         string
 }
 
 func readRegistration(ctx context.Context, t *testing.T, pool *pgxpool.Pool, id string) registrationRow {
@@ -175,8 +175,8 @@ func TestApproveRegistration_RejectQueuedBehindApproval(t *testing.T) {
 
 	for _, tc := range []struct {
 		ext            string
-		approveCode    int // 0: approval succeeds
 		wantStatus     string
+		approveCode    int // 0: approval succeeds
 		wantRejectCode int // 0: reject succeeds
 		wantAccounts   int
 	}{

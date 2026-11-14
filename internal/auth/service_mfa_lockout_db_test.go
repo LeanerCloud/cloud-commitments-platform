@@ -36,18 +36,18 @@ func (f *credentialRaceFixture) currentTOTP() string {
 // mfaLockoutOps are the endpoints under test. Each takes a code and runs the
 // operation against an account prepared by prepare.
 var mfaLockoutOps = []struct {
+	call    func(f *credentialRaceFixture, code string) error
 	name    string
 	enrolls bool // true: starts with MFA on; false: starts with a pending enrollment
-	call    func(f *credentialRaceFixture, code string) error
 }{
-	{"disable", true, func(f *credentialRaceFixture, code string) error {
+	{name: "disable", enrolls: true, call: func(f *credentialRaceFixture, code string) error {
 		return f.svc.MFADisable(f.t.Context(), f.user.ID, credentialRacePassword, code)
 	}},
-	{"regenerate", true, func(f *credentialRaceFixture, code string) error {
+	{name: "regenerate", enrolls: true, call: func(f *credentialRaceFixture, code string) error {
 		_, err := f.svc.MFARegenerateRecoveryCodes(f.t.Context(), f.user.ID, code)
 		return err
 	}},
-	{"enable", false, func(f *credentialRaceFixture, code string) error {
+	{name: "enable", enrolls: false, call: func(f *credentialRaceFixture, code string) error {
 		_, err := f.svc.MFAEnable(f.t.Context(), f.user.ID, code)
 		return err
 	}},

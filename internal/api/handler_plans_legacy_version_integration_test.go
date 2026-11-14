@@ -223,13 +223,13 @@ func TestLegacyVersionB1aRoutedAuthorization(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {
 		name   string
+		field  string
 		perms  []auth.Permission
 		scope  []string
-		field  string
 		status int
 	}{
-		{"permission precedes stale", []auth.Permission{{Action: auth.ActionView, Resource: auth.ResourcePlans}}, nil, `,"expected_updated_at":"2000-01-01T00:00:00Z"`, 403},
-		{"mixed account scope precedes stale", []auth.Permission{{Action: auth.ActionUpdate, Resource: auth.ResourcePlans}}, []string{}, `,"expected_updated_at":"2000-01-01T00:00:00Z"`, 404},
+		{name: "permission precedes stale", perms: []auth.Permission{{Action: auth.ActionView, Resource: auth.ResourcePlans}}, scope: nil, field: `,"expected_updated_at":"2000-01-01T00:00:00Z"`, status: 403},
+		{name: "mixed account scope precedes stale", perms: []auth.Permission{{Action: auth.ActionUpdate, Resource: auth.ResourcePlans}}, scope: []string{}, field: `,"expected_updated_at":"2000-01-01T00:00:00Z"`, status: 404},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := b1aFixture(t)

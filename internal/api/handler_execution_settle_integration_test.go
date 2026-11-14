@@ -75,20 +75,20 @@ func TestSettleAuthorizationAndValidation(t *testing.T) {
 	}
 	cases := []struct {
 		name   string
-		perms  []auth.Permission
-		scoped []string
 		id     string
 		body   string
+		perms  []auth.Permission
+		scoped []string
 		status int
 	}{
-		{"admin without execute", []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}}, nil, id, settleBody, http.StatusForbidden},
-		{"out of account scope", purchaserPerms, []string{"other-account"}, id, settleBody, http.StatusNotFound},
-		{"execute constrained to another account", constrained(auth.PermissionConstraints{AccountIDs: []string{"other-account"}}), nil, id, settleBody, http.StatusForbidden},
-		{"execute constrained to another provider", constrained(auth.PermissionConstraints{AccountIDs: []string{acct}, Providers: []string{"aws"}}), nil, id, settleBody, http.StatusForbidden},
-		{"no acknowledgement", purchaserPerms, nil, id, `{"reason":"checked the subscription"}`, http.StatusBadRequest},
-		{"short reason", purchaserPerms, nil, id, `{"reason":"ok","acknowledge_unknown_outcome":true}`, http.StatusBadRequest},
-		{"unknown field", purchaserPerms, nil, id, `{"reason":"checked the subscription","acknowledge_unknown_outcome":true,"force":true}`, http.StatusBadRequest},
-		{"completed row", purchaserPerms, nil, completed, settleBody, http.StatusConflict},
+		{name: "admin without execute", perms: []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}}, scoped: nil, id: id, body: settleBody, status: http.StatusForbidden},
+		{name: "out of account scope", perms: purchaserPerms, scoped: []string{"other-account"}, id: id, body: settleBody, status: http.StatusNotFound},
+		{name: "execute constrained to another account", perms: constrained(auth.PermissionConstraints{AccountIDs: []string{"other-account"}}), scoped: nil, id: id, body: settleBody, status: http.StatusForbidden},
+		{name: "execute constrained to another provider", perms: constrained(auth.PermissionConstraints{AccountIDs: []string{acct}, Providers: []string{"aws"}}), scoped: nil, id: id, body: settleBody, status: http.StatusForbidden},
+		{name: "no acknowledgement", perms: purchaserPerms, scoped: nil, id: id, body: `{"reason":"checked the subscription"}`, status: http.StatusBadRequest},
+		{name: "short reason", perms: purchaserPerms, scoped: nil, id: id, body: `{"reason":"ok","acknowledge_unknown_outcome":true}`, status: http.StatusBadRequest},
+		{name: "unknown field", perms: purchaserPerms, scoped: nil, id: id, body: `{"reason":"checked the subscription","acknowledge_unknown_outcome":true,"force":true}`, status: http.StatusBadRequest},
+		{name: "completed row", perms: purchaserPerms, scoped: nil, id: completed, body: settleBody, status: http.StatusConflict},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

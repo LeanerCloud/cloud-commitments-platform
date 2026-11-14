@@ -49,19 +49,19 @@ func TestLegacyWritesOnManagedPlanMapToEditorRefusal(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
 		name    string
-		patch   bool
 		body    string
+		patch   bool
 		managed bool
 		refused bool
 	}{
-		{"put sensitive ramp change", false, `{"name":"p","enabled":true,"notification_days_before":2,"ramp_schedule":"immediate"}`, true, true},
-		{"put sensitive notice change", false, `{"name":"p","enabled":true,"notification_days_before":9,"ramp_schedule":"weekly-25pct"}`, true, true},
-		{"patch notice", true, `{"notification_days_before":7}`, true, true},
-		{"patch arming", true, `{"auto_purchase":true}`, true, true},
-		{"patch name", true, `{"name":"renamed"}`, true, false},
-		{"patch disable", true, `{"enabled":false}`, true, false},
-		{"unmanaged put", false, `{"name":"p","enabled":true,"notification_days_before":2,"ramp_schedule":"immediate"}`, false, false},
-		{"unmanaged patch notice", true, `{"notification_days_before":7}`, false, false},
+		{name: "put sensitive ramp change", patch: false, body: `{"name":"p","enabled":true,"notification_days_before":2,"ramp_schedule":"immediate"}`, managed: true, refused: true},
+		{name: "put sensitive notice change", patch: false, body: `{"name":"p","enabled":true,"notification_days_before":9,"ramp_schedule":"weekly-25pct"}`, managed: true, refused: true},
+		{name: "patch notice", patch: true, body: `{"notification_days_before":7}`, managed: true, refused: true},
+		{name: "patch arming", patch: true, body: `{"auto_purchase":true}`, managed: true, refused: true},
+		{name: "patch name", patch: true, body: `{"name":"renamed"}`, managed: true, refused: false},
+		{name: "patch disable", patch: true, body: `{"enabled":false}`, managed: true, refused: false},
+		{name: "unmanaged put", patch: false, body: `{"name":"p","enabled":true,"notification_days_before":2,"ramp_schedule":"immediate"}`, managed: false, refused: false},
+		{name: "unmanaged patch notice", patch: true, body: `{"notification_days_before":7}`, managed: false, refused: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -114,16 +114,16 @@ func TestManagedPlanAuthorizationPrecedesGuard(t *testing.T) {
 	update := auth.Permission{Action: auth.ActionUpdate, Resource: auth.ResourcePlans}
 	cases := []struct {
 		name   string
+		body   string
 		perms  []auth.Permission
 		scoped []string
-		patch  bool
-		body   string
 		status int
+		patch  bool
 	}{
-		{"no update:plans patch", []auth.Permission{{Action: auth.ActionView, Resource: auth.ResourcePlans}}, nil, true, `{"notification_days_before":7}`, http.StatusForbidden},
-		{"no update:plans put", []auth.Permission{{Action: auth.ActionView, Resource: auth.ResourcePlans}}, nil, false, `{"name":"p","enabled":true,"notification_days_before":9,"ramp_schedule":"weekly-25pct"}`, http.StatusForbidden},
-		{"out of scope account", []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}}, []string{"other-account"}, true, `{"notification_days_before":7}`, http.StatusNotFound},
-		{"missing arm grant", []auth.Permission{update}, nil, true, `{"auto_purchase":true}`, http.StatusForbidden},
+		{name: "no update:plans patch", perms: []auth.Permission{{Action: auth.ActionView, Resource: auth.ResourcePlans}}, scoped: nil, patch: true, body: `{"notification_days_before":7}`, status: http.StatusForbidden},
+		{name: "no update:plans put", perms: []auth.Permission{{Action: auth.ActionView, Resource: auth.ResourcePlans}}, scoped: nil, patch: false, body: `{"name":"p","enabled":true,"notification_days_before":9,"ramp_schedule":"weekly-25pct"}`, status: http.StatusForbidden},
+		{name: "out of scope account", perms: []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}}, scoped: []string{"other-account"}, patch: true, body: `{"notification_days_before":7}`, status: http.StatusNotFound},
+		{name: "missing arm grant", perms: []auth.Permission{update}, scoped: nil, patch: true, body: `{"auto_purchase":true}`, status: http.StatusForbidden},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

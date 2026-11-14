@@ -58,8 +58,8 @@ func (s *credentialReadBarrier) GetUserByResetToken(ctx context.Context, token s
 }
 
 type recordingMailSink struct {
-	resets []string
 	err    error
+	resets []string
 }
 
 func (m *recordingMailSink) SendPasswordResetEmail(_ context.Context, email, _ string) error {

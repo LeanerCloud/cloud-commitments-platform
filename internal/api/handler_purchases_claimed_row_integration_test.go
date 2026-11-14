@@ -72,18 +72,18 @@ func claimRacePerm(action string) auth.Permission {
 }
 
 type claimRaceEntry struct {
+	call  func(f *pauseClaimFixture) error
 	name  string
 	perms []auth.Permission
-	call  func(f *pauseClaimFixture) error
 }
 
 func claimRaceEntries() []claimRaceEntry {
 	return []claimRaceEntry{
-		{"run-now", []auth.Permission{claimRacePerm(auth.ActionExecute)}, func(f *pauseClaimFixture) error {
+		{name: "run-now", perms: []auth.Permission{claimRacePerm(auth.ActionExecute)}, call: func(f *pauseClaimFixture) error {
 			_, err := f.runNow()
 			return err
 		}},
-		{"session approve", []auth.Permission{claimRacePerm(auth.ActionApproveAny)}, func(f *pauseClaimFixture) error {
+		{name: "session approve", perms: []auth.Permission{claimRacePerm(auth.ActionApproveAny)}, call: func(f *pauseClaimFixture) error {
 			_, err := f.handler.approvePurchase(f.ctx, f.request, f.execution.ExecutionID, "")
 			return err
 		}},

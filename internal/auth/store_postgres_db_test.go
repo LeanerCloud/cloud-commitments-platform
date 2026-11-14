@@ -181,8 +181,8 @@ func TestIntegration_CreateAdminIfNone_ConcurrentBootstrapOnce_Stress(t *testing
 // back to the test goroutine. Workers only send these; every assertion runs on
 // the test goroutine.
 type bootstrapOutcome struct {
-	created bool
 	err     error
+	created bool
 }
 
 // requireConcurrentBootstrapOnce runs iterations rounds of callers concurrent

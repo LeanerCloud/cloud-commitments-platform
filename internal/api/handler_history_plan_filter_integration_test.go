@@ -20,8 +20,8 @@ import (
 type planFilterEnv struct {
 	*historySummaryEnv
 	container     *testhelpers.PostgresContainer
-	planA, planB  string
 	admin, scoped *Handler
+	planA, planB  string
 }
 
 func (e *planFilterEnv) createPlan(ctx context.Context, t *testing.T, name string) string {

@@ -330,24 +330,24 @@ func TestCreatePlannedPurchases_CanceledStepIsReschedulable(t *testing.T) {
 func TestUpdatePlan_CapPresencePostgres(t *testing.T) {
 	cap100, cap5 := 100.0, 5.0
 	cases := []struct {
+		want   *float64
 		name   string
 		field  string
-		auto   bool
 		status int
-		want   *float64
+		auto   bool
 	}{
-		{"manual null clears", `,"max_step_commitment":null`, false, 200, nil},
-		{"omitted preserves", "", false, 200, &cap100},
-		{"numeric replaces", `,"max_step_commitment":5`, false, 200, &cap5},
-		{"automatic omitted preserves", "", true, 200, &cap100},
-		{"automatic numeric decreases", `,"max_step_commitment":5`, true, 200, &cap5},
-		{"automatic null refuses", `,"max_step_commitment":null`, true, 400, &cap100},
-		{"string refuses", `,"max_step_commitment":"5"`, false, 400, &cap100},
-		{"zero refuses", `,"max_step_commitment":0`, false, 400, &cap100},
-		{"negative refuses", `,"max_step_commitment":-1`, false, 400, &cap100},
-		{"precision refuses", `,"max_step_commitment":1.005`, false, 400, &cap100},
-		{"unknown remains ignored", `,"max_step_commitment":null,"future_field":false`, false, 200, nil},
-		{"case-insensitive null", `,"MAX_STEP_COMMITMENT":null`, false, 200, nil},
+		{name: "manual null clears", field: `,"max_step_commitment":null`, auto: false, status: 200, want: nil},
+		{name: "omitted preserves", field: "", auto: false, status: 200, want: &cap100},
+		{name: "numeric replaces", field: `,"max_step_commitment":5`, auto: false, status: 200, want: &cap5},
+		{name: "automatic omitted preserves", field: "", auto: true, status: 200, want: &cap100},
+		{name: "automatic numeric decreases", field: `,"max_step_commitment":5`, auto: true, status: 200, want: &cap5},
+		{name: "automatic null refuses", field: `,"max_step_commitment":null`, auto: true, status: 400, want: &cap100},
+		{name: "string refuses", field: `,"max_step_commitment":"5"`, auto: false, status: 400, want: &cap100},
+		{name: "zero refuses", field: `,"max_step_commitment":0`, auto: false, status: 400, want: &cap100},
+		{name: "negative refuses", field: `,"max_step_commitment":-1`, auto: false, status: 400, want: &cap100},
+		{name: "precision refuses", field: `,"max_step_commitment":1.005`, auto: false, status: 400, want: &cap100},
+		{name: "unknown remains ignored", field: `,"max_step_commitment":null,"future_field":false`, auto: false, status: 200, want: nil},
+		{name: "case-insensitive null", field: `,"MAX_STEP_COMMITMENT":null`, auto: false, status: 200, want: nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

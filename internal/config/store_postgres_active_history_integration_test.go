@@ -23,9 +23,9 @@ const legacyActivePredicate = "term > 0 AND timestamp + make_interval(hours => t
 const activeExpiryIndex = "idx_purchase_history_active_expiry"
 
 type activeHistoryRow struct {
+	ts      time.Time
 	id      string
 	account string
-	ts      time.Time
 	term    int
 	revoked bool
 }
@@ -42,22 +42,22 @@ func activeHistoryBoundaryRows(asOf time.Time) []activeHistoryRow {
 	}
 	us := time.Microsecond
 	return []activeHistoryRow{
-		{"t1-exact", "111111111111", asOf.Add(-year), 1, false},
-		{"t1-1us-before", "111111111111", asOf.Add(-year - us), 1, false},
-		{"t1-1us-after", "111111111111", asOf.Add(-year + us), 1, false},
-		{"t3-exact", "222222222222", asOf.Add(-3 * year), 3, false},
-		{"t3-1us-before", "222222222222", asOf.Add(-3*year - us), 3, false},
-		{"t3-1us-after", "222222222222", asOf.Add(-3*year + us), 3, false},
-		{"t1-calendar-year", "111111111111", asOf.AddDate(-1, 0, 0), 1, false},
-		{"t3-calendar-years", "222222222222", asOf.AddDate(-3, 0, 0), 3, false},
-		{"t1-dst-zone", "333333333333", asOf.Add(-year).In(ny), 1, false},
-		{"t1-dst-zone-1us-before", "333333333333", asOf.Add(-year - us).In(ny), 1, false},
-		{"t0", "111111111111", asOf, 0, false},
-		{"t-negative", "111111111111", asOf, -1, false},
-		{"t1-revoked", "111111111111", asOf.Add(-time.Hour), 1, true},
-		{"t1-future", "222222222222", asOf.Add(48 * time.Hour), 1, false},
-		{"t1-long-expired", "333333333333", asOf.AddDate(-10, 0, 0), 1, false},
-		{"t50", "333333333333", asOf.AddDate(-40, 0, 0), 50, false},
+		{id: "t1-exact", account: "111111111111", ts: asOf.Add(-year), term: 1, revoked: false},
+		{id: "t1-1us-before", account: "111111111111", ts: asOf.Add(-year - us), term: 1, revoked: false},
+		{id: "t1-1us-after", account: "111111111111", ts: asOf.Add(-year + us), term: 1, revoked: false},
+		{id: "t3-exact", account: "222222222222", ts: asOf.Add(-3 * year), term: 3, revoked: false},
+		{id: "t3-1us-before", account: "222222222222", ts: asOf.Add(-3*year - us), term: 3, revoked: false},
+		{id: "t3-1us-after", account: "222222222222", ts: asOf.Add(-3*year + us), term: 3, revoked: false},
+		{id: "t1-calendar-year", account: "111111111111", ts: asOf.AddDate(-1, 0, 0), term: 1, revoked: false},
+		{id: "t3-calendar-years", account: "222222222222", ts: asOf.AddDate(-3, 0, 0), term: 3, revoked: false},
+		{id: "t1-dst-zone", account: "333333333333", ts: asOf.Add(-year).In(ny), term: 1, revoked: false},
+		{id: "t1-dst-zone-1us-before", account: "333333333333", ts: asOf.Add(-year - us).In(ny), term: 1, revoked: false},
+		{id: "t0", account: "111111111111", ts: asOf, term: 0, revoked: false},
+		{id: "t-negative", account: "111111111111", ts: asOf, term: -1, revoked: false},
+		{id: "t1-revoked", account: "111111111111", ts: asOf.Add(-time.Hour), term: 1, revoked: true},
+		{id: "t1-future", account: "222222222222", ts: asOf.Add(48 * time.Hour), term: 1, revoked: false},
+		{id: "t1-long-expired", account: "333333333333", ts: asOf.AddDate(-10, 0, 0), term: 1, revoked: false},
+		{id: "t50", account: "333333333333", ts: asOf.AddDate(-40, 0, 0), term: 50, revoked: false},
 	}
 }
 

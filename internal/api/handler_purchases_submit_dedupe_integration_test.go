@@ -245,10 +245,10 @@ func TestPersistExecution_DedupeKeySemantics(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
-		name     string
 		mutate   func(r *config.RecommendationRecord)
-		capacity int
+		name     string
 		afterSQL string // applied to the first row before the resubmit
+		capacity int
 		wantDup  bool
 	}{
 		{name: "identical", wantDup: true},

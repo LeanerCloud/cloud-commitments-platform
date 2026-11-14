@@ -73,15 +73,15 @@ func TestFinalizePurchaseStatus_ApproveDuringEmailSend(t *testing.T) {
 	require.Nil(t, dup)
 
 	type outcome struct {
-		emailSent bool
-		status    string
 		err       error
+		status    string
+		emailSent bool
 	}
 	done := make(chan outcome, 1)
 	go func() {
 		sent, reason, _ := h.sendPurchaseApprovalEmail(ctx, &events.LambdaFunctionURLRequest{}, exec, "raw-token", recs, 0, 0)
 		status, err := h.finalizePurchaseStatus(ctx, exec, sent, reason)
-		done <- outcome{sent, status, err}
+		done <- outcome{emailSent: sent, status: status, err: err}
 	}()
 	select {
 	case <-notifier.entered:

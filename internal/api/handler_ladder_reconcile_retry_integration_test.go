@@ -50,9 +50,9 @@ func (s *pausedChainStore) LockLadderTrancheChainTx(ctx context.Context, tx pgx.
 type ladderRetryRig struct {
 	store      *config.PostgresStore
 	pool       *pgxpool.Pool
+	failedExec *config.PurchaseExecution
 	cfgID      string
 	trancheID  string
-	failedExec *config.PurchaseExecution
 }
 
 func newLadderRetryRig(t *testing.T) *ladderRetryRig {

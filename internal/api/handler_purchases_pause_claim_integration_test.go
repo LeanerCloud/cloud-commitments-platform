@@ -20,10 +20,10 @@ import (
 )
 
 type pauseClaimService struct {
-	fanoutServiceClient
-	calls            atomic.Int32
 	entered, release chan struct{}
-	once             sync.Once
+	fanoutServiceClient
+	once  sync.Once
+	calls atomic.Int32
 }
 
 func (s *pauseClaimService) unblock() { s.once.Do(func() { close(s.release) }) }
@@ -178,9 +178,9 @@ func (f *pauseClaimFixture) resume() error {
 }
 
 type pauseClaimState struct {
-	Status         string
 	Actor          *string
 	TransitionedAt *time.Time
+	Status         string
 }
 
 func (f *pauseClaimFixture) state(t *testing.T) pauseClaimState {

@@ -49,13 +49,13 @@ func TestLadderD5Amend_ReconcileAndAmendNeverDeadlock(t *testing.T) {
 		paused := &pausedChainStore{PostgresStore: r.store, locked: make(chan struct{}), release: make(chan struct{})}
 		roundCtx, roundCancel := context.WithTimeout(ctx, 10*time.Second)
 		type reconcileOutcome struct {
-			res purchase.LadderReconcileResult
 			err error
+			res purchase.LadderReconcileResult
 		}
 		reconciled := make(chan reconcileOutcome, 1)
 		go func() {
 			res, recErr := purchase.ReconcileLadderTranches(roundCtx, paused, visibleNever{}, time.Now())
-			reconciled <- reconcileOutcome{res, recErr}
+			reconciled <- reconcileOutcome{res: res, err: recErr}
 		}()
 		<-paused.locked
 

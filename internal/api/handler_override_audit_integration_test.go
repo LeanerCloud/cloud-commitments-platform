@@ -44,11 +44,11 @@ func newOverrideAuditFixture(ctx context.Context, t *testing.T) *overrideAuditFi
 
 // auditRow is one config_audit_events row, with before/after/details decoded.
 type auditRow struct {
-	ID, EventType, Actor   string
+	Provider, Service      *string
 	ParentID, ActorUserID  *string
 	AccountID              *string
-	Provider, Service      *string
 	Before, After, Details map[string]any
+	ID, EventType, Actor   string
 	BeforeNull, AfterNull  bool
 }
 

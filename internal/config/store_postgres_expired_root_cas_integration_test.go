@@ -38,13 +38,13 @@ func (f *readoptFixture) readopt(execID string, date time.Time, requireDifferent
 }
 
 type readoptStored struct {
+	date                          time.Time
+	creator                       *string
 	status, hash, source, idemKey string
 	recs                          string
 	upfront                       float64
 	marked                        bool
 	hasTokenExpiry, hasNotifSent  bool
-	date                          time.Time
-	creator                       *string
 	system                        bool
 }
 

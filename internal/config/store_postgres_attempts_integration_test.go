@@ -43,19 +43,19 @@ func TestRecordAttempt_TransitionTable(t *testing.T) {
 		},
 	}
 	targets := []struct {
-		name string
-		rec  func(exec string) common.AttemptRecord
+		rec func(exec string) common.AttemptRecord
 		// allowed is keyed by source name.
 		allowed map[string]bool
+		name    string
 	}{
-		{"sending", func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptSending, "", "") },
-			map[string]bool{"none": true}},
-		{"outcome_unknown", func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptOutcomeUnknown, "", "") },
-			map[string]bool{"sending": true}},
-		{"purchased_same_id", func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptPurchased, "rn-1-"+e, "") },
-			map[string]bool{"none": true, "sending": true, "outcome_unknown": true, "purchased": true}},
-		{"purchased_other_id", func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptPurchased, "rn-2-"+e, "") },
-			map[string]bool{"none": true, "sending": true, "outcome_unknown": true}},
+		{name: "sending", rec: func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptSending, "", "") },
+			allowed: map[string]bool{"none": true}},
+		{name: "outcome_unknown", rec: func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptOutcomeUnknown, "", "") },
+			allowed: map[string]bool{"sending": true}},
+		{name: "purchased_same_id", rec: func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptPurchased, "rn-1-"+e, "") },
+			allowed: map[string]bool{"none": true, "sending": true, "outcome_unknown": true, "purchased": true}},
+		{name: "purchased_other_id", rec: func(e string) common.AttemptRecord { return attemptRec(e, common.AttemptPurchased, "rn-2-"+e, "") },
+			allowed: map[string]bool{"none": true, "sending": true, "outcome_unknown": true}},
 	}
 
 	n := 0

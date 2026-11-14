@@ -29,24 +29,24 @@ import (
 // adminDemotingWrite is one store-level write that can lower the active-admin
 // count. target is the row as the caller read it.
 type adminDemotingWrite struct {
-	name string
 	run  func(ctx context.Context, store *PostgresStore, target *User) error
+	name string
 }
 
 func adminDemotingWrites() []adminDemotingWrite {
 	return []adminDemotingWrite{
-		{"UpdateUserAdminFields deactivate", func(ctx context.Context, store *PostgresStore, target *User) error {
+		{name: "UpdateUserAdminFields deactivate", run: func(ctx context.Context, store *PostgresStore, target *User) error {
 			next := *target
 			now := time.Now()
 			next.Active, next.DeactivatedAt = false, &now
 			return store.UpdateUserAdminFields(ctx, &next, target.Email, target.GroupIDs, target.Active)
 		}},
-		{"UpdateUserAdminFields drop Administrators group", func(ctx context.Context, store *PostgresStore, target *User) error {
+		{name: "UpdateUserAdminFields drop Administrators group", run: func(ctx context.Context, store *PostgresStore, target *User) error {
 			next := *target
 			next.GroupIDs = []string{DefaultPurchaserGroupID}
 			return store.UpdateUserAdminFields(ctx, &next, target.Email, target.GroupIDs, target.Active)
 		}},
-		{"DeleteUser", func(ctx context.Context, store *PostgresStore, target *User) error {
+		{name: "DeleteUser", run: func(ctx context.Context, store *PostgresStore, target *User) error {
 			return store.DeleteUser(ctx, target.ID)
 		}},
 	}
@@ -141,22 +141,22 @@ func TestIntegration_AdminDemotingWrites_LockBeforeRowLock(t *testing.T) {
 
 // serviceDemotion is one service-level way of taking admin standing away.
 type serviceDemotion struct {
-	name string
 	run  func(ctx context.Context, svc *Service, userID string) error
+	name string
 }
 
 func serviceDemotions() []serviceDemotion {
 	inactive := false
 	return []serviceDemotion{
-		{"deactivate", func(ctx context.Context, svc *Service, id string) error {
+		{name: "deactivate", run: func(ctx context.Context, svc *Service, id string) error {
 			_, err := svc.UpdateUser(ctx, "", id, UpdateUserRequest{Active: &inactive})
 			return err
 		}},
-		{"drop group", func(ctx context.Context, svc *Service, id string) error {
+		{name: "drop group", run: func(ctx context.Context, svc *Service, id string) error {
 			_, err := svc.UpdateUser(ctx, "", id, UpdateUserRequest{GroupIDs: []string{DefaultPurchaserGroupID}})
 			return err
 		}},
-		{"delete", func(ctx context.Context, svc *Service, id string) error {
+		{name: "delete", run: func(ctx context.Context, svc *Service, id string) error {
 			return svc.DeleteUser(ctx, id)
 		}},
 	}

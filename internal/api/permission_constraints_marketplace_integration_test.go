@@ -117,14 +117,14 @@ func TestMarketplacePermissionConstraintsHTTP(t *testing.T) {
 	anyGrant := auth.Permission{Action: auth.ActionSellAny, Resource: auth.ResourcePurchases}
 	for _, route := range []string{"marketplace-list", "marketplace-cancel"} {
 		for _, tc := range []struct {
-			name                 string
 			constraints          *auth.PermissionConstraints
-			action               string
-			allowed              []string
 			key                  *auth.Permission
+			name                 string
+			action               string
 			credentials, missing string
-			extraOwn             bool
+			allowed              []string
 			want                 int
+			extraOwn             bool
 		}{
 			{name: "unrestricted", want: 200},
 			{name: "matching-any", constraints: matching, allowed: []string{account}, want: 200},

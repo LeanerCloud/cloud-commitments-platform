@@ -24,13 +24,13 @@ import (
 // only counts toward total_purchases); dollars marks rows whose upfront and
 // savings count toward the dollar totals.
 type summarySeedRow struct {
+	at      time.Time
 	tenant  string // "a", "b" or "" for an unattributed (ambient) execution
 	owner   string // creator of an ambient execution
 	bucket  string
-	dollars bool
 	upfront float64
 	savings float64
-	at      time.Time
+	dollars bool
 }
 
 type historySummaryEnv struct {

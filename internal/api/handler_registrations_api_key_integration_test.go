@@ -104,12 +104,12 @@ func approveBody(reg *config.AccountRegistration) CloudAccountRequest {
 // reviewColumns reads the raw review columns so the assertions do not depend
 // on the store's scan code.
 type reviewColumns struct {
-	status         string
 	reviewedBy     *string
 	transitionedBy *string
 	reviewedAt     *time.Time
 	cloudAccountID *string
 	rejection      *string
+	status         string
 }
 
 func (f *registrationReviewFixture) readReviewColumns(t *testing.T, id string) reviewColumns {
