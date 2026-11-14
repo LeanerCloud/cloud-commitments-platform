@@ -27,6 +27,11 @@ storage_account_name = "cudlytfstatedev"
 container_name = "tfstate"
 
 # ─── key ───────────────────────────────────────────────────────────────────────
-# State file blob name within the container. Use a unique key per workspace.
+# State file blob name within the container. Use one key per subscription.
+# New deployments: qualify it with the subscription id (below). Existing
+# deployments: keep your current key (ci-cd-permissions.terraform.tfstate) for
+# the first subscription, because a new key points at an empty state and plans
+# a second deploy identity; qualify only additional subscriptions. A shared key
+# makes the next subscription plan to destroy the first one's deploy identity.
 #
-key = "ci-cd-permissions.terraform.tfstate"
+key = "ci-cd-permissions-<subscription-id>.terraform.tfstate"

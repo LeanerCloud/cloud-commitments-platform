@@ -31,7 +31,8 @@ lambda_reserved_concurrency = -1   # -1 = no limit
 lambda_log_retention_days   = 30
 
 # Lambda Function URL (auth_type is derived from enable_cdn — see compute.tf)
-lambda_allowed_origins        = ["*"]
+# The module rejects "*" (credentialed CORS); set your real origin(s) before applying.
+# lambda_allowed_origins = ["https://dev.example.com"]
 
 # Fargate settings (when compute_platform = "fargate")
 fargate_cpu           = 512

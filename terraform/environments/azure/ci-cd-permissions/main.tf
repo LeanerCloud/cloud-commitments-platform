@@ -12,12 +12,10 @@ terraform {
     }
   }
 
-  backend "azurerm" {
-    resource_group_name  = "cudly-terraform-state-rg"
-    storage_account_name = "cudlytfstatedev"
-    container_name       = "tfstate"
-    key                  = "ci-cd-permissions.terraform.tfstate"
-  }
+  # Left empty on purpose: pass -backend-config=backend.hcl with a
+  # subscription-qualified key so a second subscription never reads the
+  # first one's state.
+  backend "azurerm" {}
 }
 
 provider "azurerm" {
