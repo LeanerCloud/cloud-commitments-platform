@@ -102,25 +102,25 @@ func TestPageRecommendations_FallsBackToScan(t *testing.T) {
 		name  string
 		setup func(*pageStore)
 	}{
-		{"override resolution fails", func(s *pageStore) { s.getGlobalErr = errors.New("db down") }},
-		{"empty but present account", func(s *pageStore) {
+		{name: "override resolution fails", setup: func(s *pageStore) { s.getGlobalErr = errors.New("db down") }},
+		{name: "empty but present account", setup: func(s *pageStore) {
 			s.triples = []config.RecommendationTriple{{Provider: "aws", Service: "rds", HasAccount: true}}
 		}},
-		{"two keys join to one string", func(s *pageStore) {
+		{name: "two keys join to one string", setup: func(s *pageStore) {
 			s.triples = []config.RecommendationTriple{
 				{AccountID: "a", Provider: "b|c", Service: "d", HasAccount: true},
 				{AccountID: "a|b", Provider: "c", Service: "d", HasAccount: true},
 			}
 		}},
-		{"store reports a fallback", func(s *pageStore) {
+		{name: "store reports a fallback", setup: func(s *pageStore) {
 			s.page = func(config.RecommendationPageQuery) (config.RecommendationPage, error) {
 				return config.RecommendationPage{Fallback: "unsure rows"}, nil
 			}
 		}},
-		{"page row the override filter drops", func(s *pageStore) {
+		{name: "page row the override filter drops", setup: func(s *pageStore) {
 			s.globals = map[string]*config.ServiceConfig{"aws|rds": {Provider: "aws", Service: "rds", Enabled: false}}
 		}},
-		{"page row fully suppressed", func(s *pageStore) {
+		{name: "page row fully suppressed", setup: func(s *pageStore) {
 			s.sups = []config.PurchaseSuppression{pageSuppression("rds", "db.r5.large", 9)}
 			s.page = func(q config.RecommendationPageQuery) (config.RecommendationPage, error) {
 				return config.RecommendationPage{TotalCount: 1, Rows: []config.RecommendationRecord{pageRec("a", "rds", "db.r5.large", 1)}}, nil

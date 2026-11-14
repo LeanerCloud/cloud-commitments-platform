@@ -23,11 +23,11 @@ func TestLadderComputeCapRefusal(t *testing.T) {
 		cap     *float64
 		wantErr bool
 	}{
-		{"compute sp without a cap", computeSP, nil, true},
-		{"compute sp among others without a cap", awsLadderLayers, nil, true},
-		{"compute sp with a cap", computeSP, f64(100), false},
-		{"no compute sp without a cap", noCompute, nil, false},
-		{"empty layers without a cap", nil, nil, false},
+		{name: "compute sp without a cap", layers: computeSP, cap: nil, wantErr: true},
+		{name: "compute sp among others without a cap", layers: awsLadderLayers, cap: nil, wantErr: true},
+		{name: "compute sp with a cap", layers: computeSP, cap: f64(100), wantErr: false},
+		{name: "no compute sp without a cap", layers: noCompute, cap: nil, wantErr: false},
+		{name: "empty layers without a cap", layers: nil, cap: nil, wantErr: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dbCfg := validTestDBConfig("cfg-cap")

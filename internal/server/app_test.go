@@ -151,10 +151,10 @@ func TestLoadApplicationConfig_FireSweepOff(t *testing.T) {
 		value string
 		want  bool
 	}{
-		{"unset", false, "", false},
-		{"empty", true, "", false},
-		{"true", true, "true", false},
-		{"false", true, "false", true},
+		{name: "unset", set: false, value: "", want: false},
+		{name: "empty", set: true, value: "", want: false},
+		{name: "true", set: true, value: "true", want: false},
+		{name: "false", set: true, value: "false", want: true},
 	}
 	// Clear every input LoadApplicationConfig can reject, so an inherited bad
 	// value fails no subtest before FireSweepOff is checked.

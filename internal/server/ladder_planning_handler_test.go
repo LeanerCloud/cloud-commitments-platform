@@ -144,8 +144,8 @@ func TestHandleLadderRun_ExistingCoverageConvertsAtLowerRate(t *testing.T) {
 		amount         float64
 		rate           string
 	}{
-		{"global lower", 0.75, 0.5, 3.0, "3/4"},
-		{"plan lower", 0.5, 0.75, 2.0, "1/2"},
+		{name: "global lower", planRI: 0.75, global: 0.5, amount: 3.0, rate: "3/4"},
+		{name: "plan lower", planRI: 0.5, global: 0.75, amount: 2.0, rate: "1/2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -165,8 +165,8 @@ func TestHandleLadderRun_HoldsWhenEitherRateMissingForHeldLayer(t *testing.T) {
 		name           string
 		planRI, global *float64
 	}{
-		{"global absent", rp(0.75), nil},
-		{"plan absent", nil, rp(0.5)},
+		{name: "global absent", planRI: rp(0.75), global: nil},
+		{name: "plan absent", planRI: nil, global: rp(0.5)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

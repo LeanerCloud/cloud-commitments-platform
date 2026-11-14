@@ -23,16 +23,16 @@ func TestRetryRefusalReason(t *testing.T) {
 		exec    *config.PurchaseExecution
 		refused bool
 	}{
-		{"NS attempt 0 failed EC2", retryExec(config.StatusFailed, true, 0, ec2), false},
-		{"Redshift has no no-guard refusal to lift", retryExec(config.StatusFailed, false, 0, redshift), false},
-		{"NS attempt 0 failed Azure SP", retryExec(config.StatusFailed, true, 0, azSP), false},
-		{"not NS EC2", retryExec(config.StatusFailed, false, 0, ec2), true},
-		{"NS attempt 1 EC2", retryExec(config.StatusFailed, true, 1, ec2), true},
-		{"NS attempt 0 not failed EC2", retryExec("running", true, 0, ec2), true},
-		{"NS unknown provider", retryExec(config.StatusFailed, true, 0, unknown), true},
-		{"NS mixed EC2 and unknown", retryExec(config.StatusFailed, true, 0, ec2, unknown), true},
-		{"RDS not NS", retryExec(config.StatusFailed, false, 0, rds), false},
-		{"RDS NS", retryExec(config.StatusFailed, true, 0, rds), false},
+		{name: "NS attempt 0 failed EC2", exec: retryExec(config.StatusFailed, true, 0, ec2), refused: false},
+		{name: "Redshift has no no-guard refusal to lift", exec: retryExec(config.StatusFailed, false, 0, redshift), refused: false},
+		{name: "NS attempt 0 failed Azure SP", exec: retryExec(config.StatusFailed, true, 0, azSP), refused: false},
+		{name: "not NS EC2", exec: retryExec(config.StatusFailed, false, 0, ec2), refused: true},
+		{name: "NS attempt 1 EC2", exec: retryExec(config.StatusFailed, true, 1, ec2), refused: true},
+		{name: "NS attempt 0 not failed EC2", exec: retryExec("running", true, 0, ec2), refused: true},
+		{name: "NS unknown provider", exec: retryExec(config.StatusFailed, true, 0, unknown), refused: true},
+		{name: "NS mixed EC2 and unknown", exec: retryExec(config.StatusFailed, true, 0, ec2, unknown), refused: true},
+		{name: "RDS not NS", exec: retryExec(config.StatusFailed, false, 0, rds), refused: false},
+		{name: "RDS NS", exec: retryExec(config.StatusFailed, true, 0, rds), refused: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

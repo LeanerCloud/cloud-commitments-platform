@@ -21,16 +21,16 @@ var schedulerRefs = []struct {
 	re   *regexp.Regexp
 	min  int
 }{
-	{"gcp/cloud-run/main.tf", regexp.MustCompile(`/api/scheduled/([A-Za-z0-9_-]+)`), 2},
-	{"gcp/gke/main.tf", regexp.MustCompile(`/api/scheduled/([A-Za-z0-9_-]+)`), 1},
-	{"azure/container-apps/scheduled-tasks.tf", regexp.MustCompile(`/api/scheduled/([A-Za-z0-9_-]+)`), 3},
+	{file: "gcp/cloud-run/main.tf", re: regexp.MustCompile(`/api/scheduled/([A-Za-z0-9_-]+)`), min: 2},
+	{file: "gcp/gke/main.tf", re: regexp.MustCompile(`/api/scheduled/([A-Za-z0-9_-]+)`), min: 1},
+	{file: "azure/container-apps/scheduled-tasks.tf", re: regexp.MustCompile(`/api/scheduled/([A-Za-z0-9_-]+)`), min: 3},
 	// Lambda EventBridge targets must send the "action" key; any other key
 	// (the old "event") is not recognized by the Lambda event router.
-	{"aws/lambda/main.tf", regexp.MustCompile(`jsonencode\(\{\s*action\s*=\s*"([^"]+)"`), 6},
-	{"aws/fargate/main.tf", regexp.MustCompile(`"--task",\s*"([^"]+)"`), 4},
+	{file: "aws/lambda/main.tf", re: regexp.MustCompile(`jsonencode\(\{\s*action\s*=\s*"([^"]+)"`), min: 6},
+	{file: "aws/fargate/main.tf", re: regexp.MustCompile(`"--task",\s*"([^"]+)"`), min: 4},
 	// AKS CronJobs run `--task each.key` over the sweep_tasks map, so the
 	// task names are the map keys (#893).
-	{"azure/aks/scheduled-tasks.tf", regexp.MustCompile(`(?m)^\s*(\w+)\s*=\s*\{\s*job\s*=`), 10},
+	{file: "azure/aks/scheduled-tasks.tf", re: regexp.MustCompile(`(?m)^\s*(\w+)\s*=\s*\{\s*job\s*=`), min: 10},
 }
 
 func TestSchedulerTargetsNameKnownServerTasks(t *testing.T) {

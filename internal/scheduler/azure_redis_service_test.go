@@ -58,9 +58,9 @@ func TestApplySuppressions_AdvisorRedisEngineStableAcrossGoBump(t *testing.T) {
 		supEngine string
 		rec       config.RecommendationRecord
 	}{
-		{"old suppression hides new rec", oldRec.Engine, newRec},
-		{"new suppression hides old rec", newRec.Engine, oldRec},
-		{"same-engine control", newRec.Engine, newRec},
+		{name: "old suppression hides new rec", supEngine: oldRec.Engine, rec: newRec},
+		{name: "new suppression hides old rec", supEngine: newRec.Engine, rec: oldRec},
+		{name: "same-engine control", supEngine: newRec.Engine, rec: newRec},
 	} {
 		rec := tc.rec
 		rec.CloudAccountID = strPtr("acct-1")

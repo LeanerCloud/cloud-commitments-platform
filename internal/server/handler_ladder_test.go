@@ -1047,10 +1047,10 @@ func TestLadderTermFromYears(t *testing.T) {
 		want    pkgladder.Term
 		wantErr bool
 	}{
-		{1, pkgladder.Term1Year, false},
-		{3, pkgladder.Term3Year, false},
-		{2, "", true},
-		{0, "", true},
+		{years: 1, want: pkgladder.Term1Year, wantErr: false},
+		{years: 3, want: pkgladder.Term3Year, wantErr: false},
+		{years: 2, want: "", wantErr: true},
+		{years: 0, want: "", wantErr: true},
 	}
 	for _, tc := range tests {
 		tc := tc

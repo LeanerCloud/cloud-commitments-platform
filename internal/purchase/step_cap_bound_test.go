@@ -139,12 +139,12 @@ func TestCheckStepCommitmentCap_BoundCapBoundary(t *testing.T) {
 		plan    func(cap float64) *config.PurchasePlan
 		wantErr bool
 	}{
-		{"plan cap", func(c float64) *config.PurchasePlan {
+		{name: "plan cap", plan: func(c float64) *config.PurchasePlan {
 			return boundCapPlan(true, usd(c), map[string]config.ServiceConfig{"aws/ec2#g1": group(nil, key)})
-		}, false},
-		{"group cap", func(c float64) *config.PurchasePlan {
+		}, wantErr: false},
+		{name: "group cap", plan: func(c float64) *config.PurchasePlan {
 			return boundCapPlan(true, usd(1e9), map[string]config.ServiceConfig{"aws/ec2#g1": group(usd(c), key)})
-		}, false},
+		}, wantErr: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.NoError(t, CheckStepCommitmentCap(tc.plan(100.01), recs), "the step is one cent under the cap")

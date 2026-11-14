@@ -21,13 +21,13 @@ func TestCollectRecommendations_ListAccountsErrorFailsClosed(t *testing.T) {
 		env     map[string]string
 		collect func(*Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error)
 	}{
-		{"aws", nil, func(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error) {
+		{name: "aws", env: nil, collect: func(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error) {
 			return s.collectAWSRecommendations(context.Background(), &config.GlobalConfig{})
 		}},
-		{"azure", map[string]string{"AZURE_SUBSCRIPTION_ID": "sub-a"}, func(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error) {
+		{name: "azure", env: map[string]string{"AZURE_SUBSCRIPTION_ID": "sub-a"}, collect: func(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error) {
 			return s.collectAzureRecommendations(context.Background(), &config.GlobalConfig{})
 		}},
-		{"gcp", map[string]string{"GCP_PROJECT_ID": "proj-a"}, func(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error) {
+		{name: "gcp", env: map[string]string{"GCP_PROJECT_ID": "proj-a"}, collect: func(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error) {
 			return s.collectGCPRecommendations(context.Background(), &config.GlobalConfig{})
 		}},
 	}

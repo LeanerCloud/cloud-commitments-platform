@@ -45,14 +45,14 @@ func TestLowerOfTwoRates(t *testing.T) {
 		held        map[pkgladder.LayerType]bool
 		want        rateMap
 	}{
-		{"ref lower", rateMap{ri: 0.75}, rateMap{ri: 0.5}, held, rateMap{ri: 0.5}},
-		{"sizing lower", rateMap{ri: 0.5}, rateMap{ri: 0.75}, held, rateMap{ri: 0.5}},
-		{"equal", rateMap{ri: 0.625}, rateMap{ri: 0.625}, held, rateMap{ri: 0.625}},
-		{"only in sizing", rateMap{ri: 0.75}, rateMap{}, held, rateMap{}},
-		{"only in ref", rateMap{}, rateMap{ri: 0.75}, held, rateMap{}},
-		{"mixed", rateMap{ri: 0.75, ec2: 0.5, comp: 0.625}, rateMap{ri: 0.5, ec2: 0.75, comp: 0.625, pkgladder.LayerType("x"): 1}, held, rateMap{ri: 0.5, ec2: 0.5, comp: 0.625}},
-		{"nil sizing", nil, rateMap{ri: 0.5}, held, rateMap{}},
-		{"nil ref", rateMap{ri: 0.5}, nil, held, rateMap{}},
+		{name: "ref lower", sizing: rateMap{ri: 0.75}, ref: rateMap{ri: 0.5}, held: held, want: rateMap{ri: 0.5}},
+		{name: "sizing lower", sizing: rateMap{ri: 0.5}, ref: rateMap{ri: 0.75}, held: held, want: rateMap{ri: 0.5}},
+		{name: "equal", sizing: rateMap{ri: 0.625}, ref: rateMap{ri: 0.625}, held: held, want: rateMap{ri: 0.625}},
+		{name: "only in sizing", sizing: rateMap{ri: 0.75}, ref: rateMap{}, held: held, want: rateMap{}},
+		{name: "only in ref", sizing: rateMap{}, ref: rateMap{ri: 0.75}, held: held, want: rateMap{}},
+		{name: "mixed", sizing: rateMap{ri: 0.75, ec2: 0.5, comp: 0.625}, ref: rateMap{ri: 0.5, ec2: 0.75, comp: 0.625, pkgladder.LayerType("x"): 1}, held: held, want: rateMap{ri: 0.5, ec2: 0.5, comp: 0.625}},
+		{name: "nil sizing", sizing: nil, ref: rateMap{ri: 0.5}, held: held, want: rateMap{}},
+		{name: "nil ref", sizing: rateMap{ri: 0.5}, ref: nil, held: held, want: rateMap{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1314,7 +1314,7 @@ func TestScheduler_ListRecommendations_ColdStart_NonLambda_KicksBackgroundCollec
 	listDone := make(chan listResult, 1)
 	go func() {
 		recs, err := scheduler.ListRecommendations(ctx, config.RecommendationFilter{})
-		listDone <- listResult{recs, err}
+		listDone <- listResult{recs: recs, err: err}
 	}()
 	var res listResult
 	select {

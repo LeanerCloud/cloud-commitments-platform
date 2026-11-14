@@ -203,12 +203,12 @@ func TestValidateForceVersion_NumberingGaps(t *testing.T) {
 		refused  []int
 		lowerMsg string
 	}{
-		{63, []int{63, 60}, []int{62, 61, 59}, "60"},
-		{70, []int{70, 67}, []int{69}, "67"},
-		{83, []int{83, 81}, []int{82}, "81"},
-		{86, []int{86, 83}, []int{85}, "83"},
-		{136, []int{136, 134}, []int{135}, "134"},
-		{64, []int{64, 63}, []int{62}, "63"},
+		{dirty: 63, allowed: []int{63, 60}, refused: []int{62, 61, 59}, lowerMsg: "60"},
+		{dirty: 70, allowed: []int{70, 67}, refused: []int{69}, lowerMsg: "67"},
+		{dirty: 83, allowed: []int{83, 81}, refused: []int{82}, lowerMsg: "81"},
+		{dirty: 86, allowed: []int{86, 83}, refused: []int{85}, lowerMsg: "83"},
+		{dirty: 136, allowed: []int{136, 134}, refused: []int{135}, lowerMsg: "134"},
+		{dirty: 64, allowed: []int{64, 63}, refused: []int{62}, lowerMsg: "63"},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprint(tc.dirty), func(t *testing.T) {

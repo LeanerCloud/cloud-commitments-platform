@@ -49,7 +49,7 @@ func (m *scanStore) ListStoredRecommendationsChunk(_ context.Context, _ config.R
 	}
 	rows := make([]row, len(m.recs))
 	for i := range m.recs {
-		rows[i] = row{config.RecommendationScanKey{ID: m.recs[i].ID, RowID: fmt.Sprintf("%08d", i)}, m.recs[i]}
+		rows[i] = row{key: config.RecommendationScanKey{ID: m.recs[i].ID, RowID: fmt.Sprintf("%08d", i)}, rec: m.recs[i]}
 	}
 	less := func(a, b config.RecommendationScanKey) bool {
 		if a.ID != b.ID {

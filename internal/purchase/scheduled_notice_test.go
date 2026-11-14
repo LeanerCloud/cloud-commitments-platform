@@ -52,8 +52,8 @@ func TestSendScheduledNotice_RecipientAndRevokeURL(t *testing.T) {
 		name, dashboard, actor, wantTo, wantRevoke string
 		cfg                                        *config.GlobalConfig
 	}{
-		{"global email wins", "https://d.example", "bob@example.com", notify, "https://d.example/purchases#history?execution=e1", &config.GlobalConfig{NotificationEmail: &notify}},
-		{"actor fallback, no dashboard", "", "bob@example.com", "bob@example.com", "", &config.GlobalConfig{}},
+		{name: "global email wins", dashboard: "https://d.example", actor: "bob@example.com", wantTo: notify, wantRevoke: "https://d.example/purchases#history?execution=e1", cfg: &config.GlobalConfig{NotificationEmail: &notify}},
+		{name: "actor fallback, no dashboard", dashboard: "", actor: "bob@example.com", wantTo: "bob@example.com", wantRevoke: "", cfg: &config.GlobalConfig{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

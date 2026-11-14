@@ -58,9 +58,9 @@ func TestApplySuppressions_EngineMappingDoesNotWidenBeyondAzureSQL(t *testing.T)
 		rec  config.RecommendationRecord
 		sup  config.PurchaseSuppression
 	}{
-		{"aws rds engine empty does not hide mysql", aws, azureSQLSuppression("aws", "rds", "")},
-		{"azure sql engine empty does not hide mysql", azureSQLRec("mysql"), azureSQLSuppression("azure", "relational-db", "")},
-		{"azure sql sqlserver does not hide mysql", azureSQLRec("mysql"), azureSQLSuppression("azure", "relational-db", "sqlserver")},
+		{name: "aws rds engine empty does not hide mysql", rec: aws, sup: azureSQLSuppression("aws", "rds", "")},
+		{name: "azure sql engine empty does not hide mysql", rec: azureSQLRec("mysql"), sup: azureSQLSuppression("azure", "relational-db", "")},
+		{name: "azure sql sqlserver does not hide mysql", rec: azureSQLRec("mysql"), sup: azureSQLSuppression("azure", "relational-db", "sqlserver")},
 	} {
 		store := &mockSuppressionStore{recs: []config.RecommendationRecord{tc.rec}, sups: []config.PurchaseSuppression{tc.sup}}
 		got, err := (&Scheduler{config: store}).ListRecommendations(context.Background(), config.RecommendationFilter{})

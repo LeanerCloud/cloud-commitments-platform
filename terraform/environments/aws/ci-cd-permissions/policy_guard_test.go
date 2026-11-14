@@ -848,20 +848,20 @@ func TestActionPermittedMatchesWholeActionCaseInsensitively(t *testing.T) {
 		action  string
 		want    bool
 	}{
-		{"exact match", []string{"ecs:RunTask"}, "ecs:RunTask", true},
-		{"different action in the same service", []string{"ecs:RunTask"}, "ecs:UpdateService", false},
-		{"entry is a prefix of the action", []string{"ecs:Run"}, "ecs:RunTask", false},
-		{"action is a prefix of the entry", []string{"ssm:GetParameters"}, "ssm:GetParameter", false},
-		{"service wildcard covers the service", []string{"ecs:*"}, "ecs:RunTask", true},
-		{"service wildcard does not bleed into a longer service", []string{"ecs:*"}, "ecsx:RunTask", false},
-		{"service wildcard does not bleed into a shorter service", []string{"ecs:*"}, "ec:RunTask", false},
-		{"verb wildcard covers the verb", []string{"lambda:Update*"}, "lambda:UpdateFunctionCode", true},
-		{"verb wildcard does not cover another verb", []string{"lambda:Update*"}, "lambda:InvokeFunction", false},
-		{"bare star covers everything", []string{"*"}, "ecs:UpdateService", true},
-		{"lowercased entry still permits the action", []string{"ecs:updateservice"}, "ecs:UpdateService", true},
-		{"uppercased entry still permits the action", []string{"ECS:UPDATESERVICE"}, "ecs:UpdateService", true},
-		{"empty ceiling permits nothing", nil, "ecs:RunTask", false},
-		{"match is found anywhere in the list", []string{"s3:*", "ecs:RunTask"}, "ecs:RunTask", true},
+		{name: "exact match", allowed: []string{"ecs:RunTask"}, action: "ecs:RunTask", want: true},
+		{name: "different action in the same service", allowed: []string{"ecs:RunTask"}, action: "ecs:UpdateService", want: false},
+		{name: "entry is a prefix of the action", allowed: []string{"ecs:Run"}, action: "ecs:RunTask", want: false},
+		{name: "action is a prefix of the entry", allowed: []string{"ssm:GetParameters"}, action: "ssm:GetParameter", want: false},
+		{name: "service wildcard covers the service", allowed: []string{"ecs:*"}, action: "ecs:RunTask", want: true},
+		{name: "service wildcard does not bleed into a longer service", allowed: []string{"ecs:*"}, action: "ecsx:RunTask", want: false},
+		{name: "service wildcard does not bleed into a shorter service", allowed: []string{"ecs:*"}, action: "ec:RunTask", want: false},
+		{name: "verb wildcard covers the verb", allowed: []string{"lambda:Update*"}, action: "lambda:UpdateFunctionCode", want: true},
+		{name: "verb wildcard does not cover another verb", allowed: []string{"lambda:Update*"}, action: "lambda:InvokeFunction", want: false},
+		{name: "bare star covers everything", allowed: []string{"*"}, action: "ecs:UpdateService", want: true},
+		{name: "lowercased entry still permits the action", allowed: []string{"ecs:updateservice"}, action: "ecs:UpdateService", want: true},
+		{name: "uppercased entry still permits the action", allowed: []string{"ECS:UPDATESERVICE"}, action: "ecs:UpdateService", want: true},
+		{name: "empty ceiling permits nothing", allowed: nil, action: "ecs:RunTask", want: false},
+		{name: "match is found anywhere in the list", allowed: []string{"s3:*", "ecs:RunTask"}, action: "ecs:RunTask", want: true},
 	}
 
 	for _, tc := range cases {
@@ -1698,8 +1698,8 @@ func TestPolicyDocumentsUseLiteralActionAndResourceLists(t *testing.T) {
 				what    string
 				pattern *regexp.Regexp
 			}{
-				{"Action", actionAssignmentPattern},
-				{"Resource", resourceAssignmentPattern},
+				{what: "Action", pattern: actionAssignmentPattern},
+				{what: "Resource", pattern: resourceAssignmentPattern},
 			} {
 				if refs := unreadListElements(stmt, list.pattern); refs != "" {
 					t.Errorf("%s: statement %q has %s list elements that are not literal strings (%s). Every assertion in this file reads these lists by pulling the quoted strings out of them, so a referenced element is not read at all: the statement is measured as if it granted only its literal entries, and the assertion that pins it passes against a document narrower than the one AWS enforces. Write literals, or teach this file to resolve the reference before using one", file, statementSid(stmt), list.what, refs)

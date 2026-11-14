@@ -156,16 +156,16 @@ func TestScheduler_RefusesBeforeClaim(t *testing.T) {
 		cfgErr     error
 		wantFailed int // 0 = silently skipped, 1 = surfaced as a failure
 	}{
-		{"kill switch off", capped(f64(1000)), dueRecExec("notified", upfrontRec(10)), &config.GlobalConfig{}, nil, 0},
-		{"kill switch read error", capped(f64(1000)), dueRecExec("notified", upfrontRec(10)), nil, errors.New("db down"), 1},
-		{"read error even with a populated config", capped(f64(1000)), dueRecExec("notified", upfrontRec(10)), autoPurchaseOnCfg(), errors.New("db down"), 1},
-		{"nil global config", capped(f64(1000)), dueRecExec("notified", upfrontRec(10)), nil, nil, 1},
-		{"pending rec-bearing row (no notice sent)", capped(f64(1000)), dueRecExec("pending", upfrontRec(10)), autoPurchaseOnCfg(), nil, 0},
-		{"NULL cap", capped(nil), dueRecExec("notified", upfrontRec(10)), autoPurchaseOnCfg(), nil, 1},
-		{"over cap", capped(f64(5)), dueRecExec("notified", upfrontRec(10)), autoPurchaseOnCfg(), nil, 1},
-		{"zero commitment", capped(f64(1000)), dueRecExec("notified", upfrontRec(0)), autoPurchaseOnCfg(), nil, 1},
+		{name: "kill switch off", plan: capped(f64(1000)), exec: dueRecExec("notified", upfrontRec(10)), cfg: &config.GlobalConfig{}, cfgErr: nil, wantFailed: 0},
+		{name: "kill switch read error", plan: capped(f64(1000)), exec: dueRecExec("notified", upfrontRec(10)), cfg: nil, cfgErr: errors.New("db down"), wantFailed: 1},
+		{name: "read error even with a populated config", plan: capped(f64(1000)), exec: dueRecExec("notified", upfrontRec(10)), cfg: autoPurchaseOnCfg(), cfgErr: errors.New("db down"), wantFailed: 1},
+		{name: "nil global config", plan: capped(f64(1000)), exec: dueRecExec("notified", upfrontRec(10)), cfg: nil, cfgErr: nil, wantFailed: 1},
+		{name: "pending rec-bearing row (no notice sent)", plan: capped(f64(1000)), exec: dueRecExec("pending", upfrontRec(10)), cfg: autoPurchaseOnCfg(), cfgErr: nil, wantFailed: 0},
+		{name: "NULL cap", plan: capped(nil), exec: dueRecExec("notified", upfrontRec(10)), cfg: autoPurchaseOnCfg(), cfgErr: nil, wantFailed: 1},
+		{name: "over cap", plan: capped(f64(5)), exec: dueRecExec("notified", upfrontRec(10)), cfg: autoPurchaseOnCfg(), cfgErr: nil, wantFailed: 1},
+		{name: "zero commitment", plan: capped(f64(1000)), exec: dueRecExec("notified", upfrontRec(0)), cfg: autoPurchaseOnCfg(), cfgErr: nil, wantFailed: 1},
 		// The store interface permits (nil, nil); the gate must refuse, not panic (A05-013).
-		{"plan missing", nil, dueRecExec("notified", upfrontRec(10)), autoPurchaseOnCfg(), nil, 1},
+		{name: "plan missing", plan: nil, exec: dueRecExec("notified", upfrontRec(10)), cfg: autoPurchaseOnCfg(), cfgErr: nil, wantFailed: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

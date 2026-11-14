@@ -52,13 +52,13 @@ func TestCompressLambdaResponse_LeavesResponseAloneWhen(t *testing.T) {
 		req    *events.LambdaFunctionURLRequest
 		mutate func(*events.LambdaFunctionURLResponse)
 	}{
-		{"client does not accept gzip", &events.LambdaFunctionURLRequest{Headers: map[string]string{"accept-encoding": "br"}}, nil},
-		{"no accept-encoding header", &events.LambdaFunctionURLRequest{}, nil},
-		{"body below threshold", gzipAccepting(), func(r *events.LambdaFunctionURLResponse) { r.Body = `{"ok":true}` }},
-		{"not JSON", gzipAccepting(), func(r *events.LambdaFunctionURLResponse) { r.Headers["Content-Type"] = "text/html" }},
-		{"already encoded", gzipAccepting(), func(r *events.LambdaFunctionURLResponse) { r.Headers["Content-Encoding"] = "br" }},
-		{"already base64", gzipAccepting(), func(r *events.LambdaFunctionURLResponse) { r.IsBase64Encoded = true }},
-		{"no headers", gzipAccepting(), func(r *events.LambdaFunctionURLResponse) { r.Headers = nil }},
+		{name: "client does not accept gzip", req: &events.LambdaFunctionURLRequest{Headers: map[string]string{"accept-encoding": "br"}}, mutate: nil},
+		{name: "no accept-encoding header", req: &events.LambdaFunctionURLRequest{}, mutate: nil},
+		{name: "body below threshold", req: gzipAccepting(), mutate: func(r *events.LambdaFunctionURLResponse) { r.Body = `{"ok":true}` }},
+		{name: "not JSON", req: gzipAccepting(), mutate: func(r *events.LambdaFunctionURLResponse) { r.Headers["Content-Type"] = "text/html" }},
+		{name: "already encoded", req: gzipAccepting(), mutate: func(r *events.LambdaFunctionURLResponse) { r.Headers["Content-Encoding"] = "br" }},
+		{name: "already base64", req: gzipAccepting(), mutate: func(r *events.LambdaFunctionURLResponse) { r.IsBase64Encoded = true }},
+		{name: "no headers", req: gzipAccepting(), mutate: func(r *events.LambdaFunctionURLResponse) { r.Headers = nil }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -22,14 +22,14 @@ func TestLadderGlobalTerms(t *testing.T) {
 		want    ladderTerms
 		errText string
 	}{
-		{"3y all-upfront", 3, "all-upfront", ladderTerms{pkgladder.Term3Year, pkgladder.PaymentAllUpfront}, ""},
-		{"1y no-upfront", 1, "no-upfront", ladderTerms{pkgladder.Term1Year, pkgladder.PaymentNoUpfront}, ""},
-		{"1y partial-upfront", 1, "partial-upfront", ladderTerms{pkgladder.Term1Year, pkgladder.PaymentPartialUpfront}, ""},
-		{"3y no-upfront", 3, "no-upfront", ladderTerms{pkgladder.Term3Year, pkgladder.PaymentNoUpfront}, ""},
-		{"term 2", 2, "no-upfront", ladderTerms{}, "invalid default_term"},
-		{"term 0", 0, "no-upfront", ladderTerms{}, "invalid default_term"},
-		{"payment monthly", 3, "monthly", ladderTerms{}, "invalid default_payment"},
-		{"payment empty", 3, "", ladderTerms{}, "invalid default_payment"},
+		{name: "3y all-upfront", years: 3, payment: "all-upfront", want: ladderTerms{pkgladder.Term3Year, pkgladder.PaymentAllUpfront}, errText: ""},
+		{name: "1y no-upfront", years: 1, payment: "no-upfront", want: ladderTerms{pkgladder.Term1Year, pkgladder.PaymentNoUpfront}, errText: ""},
+		{name: "1y partial-upfront", years: 1, payment: "partial-upfront", want: ladderTerms{pkgladder.Term1Year, pkgladder.PaymentPartialUpfront}, errText: ""},
+		{name: "3y no-upfront", years: 3, payment: "no-upfront", want: ladderTerms{pkgladder.Term3Year, pkgladder.PaymentNoUpfront}, errText: ""},
+		{name: "term 2", years: 2, payment: "no-upfront", want: ladderTerms{}, errText: "invalid default_term"},
+		{name: "term 0", years: 0, payment: "no-upfront", want: ladderTerms{}, errText: "invalid default_term"},
+		{name: "payment monthly", years: 3, payment: "monthly", want: ladderTerms{}, errText: "invalid default_payment"},
+		{name: "payment empty", years: 3, payment: "", want: ladderTerms{}, errText: "invalid default_payment"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

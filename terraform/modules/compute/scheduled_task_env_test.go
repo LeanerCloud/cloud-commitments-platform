@@ -286,43 +286,43 @@ func TestEnvChecksNegatives(t *testing.T) {
 	}
 	same := func(m, e, c string) (string, string, string) { return m, e, c }
 	for name, f := range map[string]fixture{
-		"clean":                          {cr, "true", same, false, ""},
-		"opt-in task opt-in":             {process, "false", same, false, ""},
-		"opt-in task defaulting true":    {process, "true", same, true, ""},
-		"default-on task defaulting off": {cr, "false", same, true, dimModuleDefault},
-		"default-on task off in the module only": {cr, "true", func(m, e, c string) (string, string, string) {
+		"clean":                          {task: cr, def: "true", edit: same, wantProb: false, wantGapDim: ""},
+		"opt-in task opt-in":             {task: process, def: "false", edit: same, wantProb: false, wantGapDim: ""},
+		"opt-in task defaulting true":    {task: process, def: "true", edit: same, wantProb: true, wantGapDim: ""},
+		"default-on task defaulting off": {task: cr, def: "false", edit: same, wantProb: true, wantGapDim: dimModuleDefault},
+		"default-on task off in the module only": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return strings.Replace(m, "default = true", "default = false", 1), e, c
-		}, false, dimModuleDefault},
-		"opt-in task on in the module only": {process, "false", func(m, e, c string) (string, string, string) {
+		}, wantProb: false, wantGapDim: dimModuleDefault},
+		"opt-in task on in the module only": {task: process, def: "false", edit: func(m, e, c string) (string, string, string) {
 			return strings.Replace(m, "default = false", "default = true", 1), e, c
-		}, true, ""},
-		"module enable var without a default": {cr, "true", func(m, e, c string) (string, string, string) {
+		}, wantProb: true, wantGapDim: ""},
+		"module enable var without a default": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return strings.Replace(m, "  default = true\n", "", 1), e, c
-		}, true, ""},
-		"pass-through not name-identical": {cr, "true", func(m, e, c string) (string, string, string) {
+		}, wantProb: true, wantGapDim: ""},
+		"pass-through not name-identical": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return m, e, strings.Replace(c, "= var.recommendation_schedule", "= var.other", 1)
-		}, true, ""},
-		"undeclared module variable": {cr, "true", func(m, e, c string) (string, string, string) {
+		}, wantProb: true, wantGapDim: ""},
+		"undeclared module variable": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return strings.Replace(m, `variable "recommendation_schedule" {}`, "", 1), e, c
-		}, true, ""},
-		"commented-out module declaration": {cr, "true", func(m, e, c string) (string, string, string) {
+		}, wantProb: true, wantGapDim: ""},
+		"commented-out module declaration": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return "# " + strings.Replace(m, "\n", "\n# ", 1), e, c
-		}, true, ""},
-		"schedule var missing in env": {cr, "true", func(m, e, c string) (string, string, string) {
+		}, wantProb: true, wantGapDim: ""},
+		"schedule var missing in env": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return m, e[:strings.Index(e, `variable "recommendation_schedule"`)], c
-		}, false, dimDefault},
-		"commented-out env declaration": {cr, "true", func(m, e, c string) (string, string, string) {
+		}, wantProb: false, wantGapDim: dimDefault},
+		"commented-out env declaration": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return m, strings.Replace(e, `variable "recommendation_schedule" {`, `# variable "recommendation_schedule" {`, 1), c
-		}, false, dimDefault},
-		"ternary is not a name-identical pass-through": {cr, "true", func(m, e, c string) (string, string, string) {
+		}, wantProb: false, wantGapDim: dimDefault},
+		"ternary is not a name-identical pass-through": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return m, e, strings.Replace(c, "= var.recommendation_schedule", "= var.recommendation_schedule ? 1 : 0", 1)
-		}, false, dimPass},
-		"duplicated module block": {cr, "true", func(m, e, c string) (string, string, string) {
+		}, wantProb: false, wantGapDim: dimPass},
+		"duplicated module block": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return m, e, c + c
-		}, true, ""},
-		"not passed by the module block": {cr, "true", func(m, e, c string) (string, string, string) {
+		}, wantProb: true, wantGapDim: ""},
+		"not passed by the module block": {task: cr, def: "true", edit: func(m, e, c string) (string, string, string) {
 			return m, e, strings.Replace(c, "recommendation_schedule = var.recommendation_schedule", "", 1)
-		}, false, dimPass},
+		}, wantProb: false, wantGapDim: dimPass},
 	} {
 		m, e, c := f.edit(envFixture(f.task, f.def))
 		problems, gaps := envProblems(m, e, c, "m", map[string]bool{f.task: true})
