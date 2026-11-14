@@ -31,8 +31,8 @@ const (
 // repeats or skips a row.
 type HistoryPageKey struct {
 	Timestamp time.Time
-	Source    HistorySource
 	ID        string
+	Source    HistorySource
 }
 
 // SortsBefore reports whether k comes before o in the stream order. IDs are
@@ -65,21 +65,21 @@ func (r *PurchaseHistoryPageRow) Key() HistoryPageKey {
 // HistoryExecutionsPageQuery selects one keyset page of executions for the
 // History stream.
 type HistoryExecutionsPageQuery struct {
-	// Statuses the rows must have. Clean completed rows (status completed,
-	// empty error) are always excluded, as in GetExecutionsByStatuses.
-	Statuses []string
-	// PlanID matches purchase_executions.plan_id exactly; empty skips the clause.
-	PlanID string
 	// Start and End bound scheduled_date, inclusive; nil leaves a side open.
 	Start *time.Time
 	End   *time.Time
-	// Provider, AccountIDs and Scope mean what they mean for
-	// ExecutionsByStatusesQuery: supersets of the handler's Go checks.
-	Provider   string
-	AccountIDs []string
-	Scope      *ExecutionScope
+	Scope *ExecutionScope
 	// After is the stream position to continue from; nil starts at the top.
 	After *HistoryPageKey
+	// PlanID matches purchase_executions.plan_id exactly; empty skips the clause.
+	PlanID string
+	// Provider, AccountIDs and Scope mean what they mean for
+	// ExecutionsByStatusesQuery: supersets of the handler's Go checks.
+	Provider string
+	// Statuses the rows must have. Clean completed rows (status completed,
+	// empty error) are always excluded, as in GetExecutionsByStatuses.
+	Statuses   []string
+	AccountIDs []string
 	// Limit caps the row count; clamped to [1, MaxListLimit] with a
 	// DefaultListLimit fallback when <= 0.
 	Limit int

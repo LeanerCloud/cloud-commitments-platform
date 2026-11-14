@@ -38,10 +38,10 @@ func captureConfigLogs(t *testing.T, level logging.Level) *bytes.Buffer {
 // is primed with only Begin and Rollback, so the first statement inside the
 // transaction fails as unexpected and the deferred rollback runs.
 var rollbackSites = []struct {
+	run   func(ctx context.Context, s *PostgresStore) error
 	name  string
 	op    string
 	gated bool // runs the az_config schema gate before Begin
-	run   func(ctx context.Context, s *PostgresStore) error
 }{
 	{name: "DeleteCloudAccount", op: "DeleteCloudAccount", gated: false, run: func(ctx context.Context, s *PostgresStore) error {
 		return s.DeleteCloudAccount(ctx, "11111111-1111-1111-1111-111111111111")

@@ -25,10 +25,10 @@ const ladderStatusReasonMax = 1000
 // LadderCloudCheck is the operator's statement of where they looked for the
 // purchase before declaring an unproven tranche failed.
 type LadderCloudCheck struct {
+	CheckedAt time.Time
 	AccountID string
 	Region    string
 	Service   string
-	CheckedAt time.Time
 }
 
 // LadderResolveFailed asks to move a fired tranche to failed. StatusReason is
@@ -36,15 +36,15 @@ type LadderCloudCheck struct {
 // same request compares equal as a whole. Check is set when the caller
 // acknowledges an unknown outcome.
 type LadderResolveFailed struct {
+	Now          time.Time
+	Check        *LadderCloudCheck
 	TrancheID    string
 	AccountID    string
 	StatusReason string
-	Acknowledge  bool
-	Check        *LadderCloudCheck
-	Now          time.Time
 	// StaleAfter is how long the chain must have been unchanged before an
 	// unknown outcome may be declared failed (purchase.LadderFiredStaleAfter).
-	StaleAfter time.Duration
+	StaleAfter  time.Duration
+	Acknowledge bool
 }
 
 // LadderResolveResult is the tranche after the call. Replayed is true when an

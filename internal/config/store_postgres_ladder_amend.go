@@ -52,13 +52,13 @@ type lockedLadderRun struct {
 }
 
 type lockedLadderTranche struct {
-	status      ladder.TrancheStatus
+	date        time.Time
 	executionID *string
-	revision    int64
-	amount      string
 	basis       *LadderAmountBasis
 	rate        *string
-	date        time.Time
+	status      ladder.TrancheStatus
+	amount      string
+	revision    int64
 	future      bool
 }
 

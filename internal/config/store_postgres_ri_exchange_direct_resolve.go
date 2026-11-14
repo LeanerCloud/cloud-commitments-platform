@@ -12,11 +12,11 @@ import (
 // riExchangeDirectResolveRow is the locked row the resolve rules run against.
 // dbNow is the database clock after the lock was granted.
 type riExchangeDirectResolveRow struct {
-	status                  string
 	createdAt               time.Time
+	dbNow                   time.Time
 	completedAt, resolvedAt *time.Time
 	resolvedStatus, note    *string
-	dbNow                   time.Time
+	status                  string
 }
 
 // ResolveRIExchangeDirectExecution settles an AWS direct row an operator has

@@ -14,9 +14,9 @@ func TestListDueLadderTranches_RejectsBadArgumentsBeforeTouchingTheDatabase(t *t
 	compute := []ladder.LayerType{ladder.LayerComputeSP}
 	cases := []struct {
 		name   string
-		limit  int
-		layers []ladder.LayerType
 		want   string
+		layers []ladder.LayerType
+		limit  int
 	}{
 		{name: "zero limit", limit: 0, layers: compute, want: "limit must be positive"},
 		{name: "negative limit", limit: -1, layers: compute, want: "limit must be positive"},

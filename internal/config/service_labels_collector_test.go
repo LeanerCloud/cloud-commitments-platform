@@ -15,8 +15,8 @@ func TestServiceTypeCollectorForms(t *testing.T) {
 	tests := []struct {
 		name    string
 		decls   string
-		want    []string
 		wantErr string
+		want    []string
 	}{
 		{name: "typed literal", decls: `const A ServiceType = "a"`, want: []string{"a"}, wantErr: ""},
 		{name: "conversion call", decls: `const A = ServiceType("a")`, want: []string{"a"}, wantErr: ""},

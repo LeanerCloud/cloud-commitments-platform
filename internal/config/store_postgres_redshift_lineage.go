@@ -13,13 +13,13 @@ import (
 // RedshiftTuple identifies one Redshift reserved-node purchase. Go's dedupe
 // window matches on exactly these fields (account is implicit in the client).
 type RedshiftTuple struct {
-	Region   string `json:"region"`
-	NodeType string `json:"node_type"`
-	Term     int    `json:"term"`
-	Payment  string `json:"payment"`
-	Count    int    `json:"count"`
 	// CloudAccountID is the rec's own account; nil falls back to the accountID argument.
 	CloudAccountID *string `json:"cloud_account_id,omitempty"`
+	Region         string  `json:"region"`
+	NodeType       string  `json:"node_type"`
+	Payment        string  `json:"payment"`
+	Term           int     `json:"term"`
+	Count          int     `json:"count"`
 }
 
 // LockKey is the advisory lock key of the tuple. It leaves the account out
@@ -96,13 +96,13 @@ func redshiftSameFamilySettleClause() string {
 // root (idempotency key up to the first colon). RecentBuy marks an other-family row that may
 // have bought and was written inside the adoption window.
 type RedshiftLineageConflict struct {
+	FirstDispatchAt *time.Time
 	ExecutionID     string
 	Status          string
-	FirstDispatchAt *time.Time
-	SameFamily      bool
-	RecentBuy       bool
 	Error           string
 	Recommendations []RecommendationRecord
+	SameFamily      bool
+	RecentBuy       bool
 }
 
 // FindOpenRedshiftLineageConflictsTx returns the other executions whose node this lineage could

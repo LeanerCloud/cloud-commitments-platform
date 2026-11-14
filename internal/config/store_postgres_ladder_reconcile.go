@@ -27,15 +27,15 @@ var ErrLadderConfigBusy = errors.New("ladder config row is locked by another wri
 // LadderChainNode is the part of one purchase_executions row the reconciler
 // reads. NoSubmission is only meaningful while Status is failed.
 type LadderChainNode struct {
-	ExecutionID      string
-	Status           string
-	NoSubmission     bool
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 	RetryExecutionID *string
 	// ScheduledExecutionAt is when the fire sweep should run a scheduled
 	// execution; nil when unset.
 	ScheduledExecutionAt *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ExecutionID          string
+	Status               string
+	NoSubmission         bool
 }
 
 // LadderFiredCursor is the keyset position after which ListFiredLadderTranches

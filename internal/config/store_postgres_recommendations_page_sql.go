@@ -189,8 +189,6 @@ func pageStageBCols(floor string) string {
 // pageRuleJSON is one resolved override configuration as the SQL filter reads
 // it. Lists are never null so the jsonb ? checks and lengths are defined.
 type pageRuleJSON struct {
-	Configured     bool     `json:"c"`
-	Enabled        bool     `json:"en"`
 	IncludeEngines []string `json:"ie"`
 	ExcludeEngines []string `json:"ee"`
 	IncludeRegions []string `json:"ir"`
@@ -198,6 +196,8 @@ type pageRuleJSON struct {
 	IncludeTypes   []string `json:"it"`
 	ExcludeTypes   []string `json:"et"`
 	MinCount       int      `json:"mc"`
+	Configured     bool     `json:"c"`
+	Enabled        bool     `json:"en"`
 	MinCountExempt bool     `json:"sp"`
 }
 

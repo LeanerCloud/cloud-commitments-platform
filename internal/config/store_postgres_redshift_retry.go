@@ -13,8 +13,8 @@ import (
 // SinceStamp is nil when the row has no first_dispatch_at, so a missing stamp
 // never reads as fresh.
 type RedshiftRetryClock struct {
-	SinceUpdate time.Duration
 	SinceStamp  *time.Duration
+	SinceUpdate time.Duration
 }
 
 // GetRedshiftRetryClock returns how long ago the row was last written and

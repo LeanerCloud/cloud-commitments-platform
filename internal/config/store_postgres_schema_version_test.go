@@ -15,9 +15,9 @@ import (
 )
 
 type fakeVersionRow struct {
+	err     error
 	version int
 	dirty   bool
-	err     error
 }
 
 func (r fakeVersionRow) Scan(dest ...any) error {
@@ -39,8 +39,8 @@ func TestSettlementSchemaReady(t *testing.T) {
 	t.Parallel()
 	v := settlementMigrationVersion
 	cases := []struct {
-		name string
 		row  fakeVersionRow
+		name string
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
@@ -64,8 +64,8 @@ func TestDirectResolveSchemaReady(t *testing.T) {
 	t.Parallel()
 	v := directResolveMigrationVersion
 	cases := []struct {
-		name string
 		row  fakeVersionRow
+		name string
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
@@ -89,8 +89,8 @@ func TestReadoptSchemaReady(t *testing.T) {
 	t.Parallel()
 	v := readoptMigrationVersion
 	cases := []struct {
-		name string
 		row  fakeVersionRow
+		name string
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
@@ -127,8 +127,8 @@ func TestSweepCeilingSchemaReady(t *testing.T) {
 	t.Parallel()
 	v := sweepCeilingMigrationVersion
 	cases := []struct {
-		name string
 		row  fakeVersionRow
+		name string
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
@@ -174,8 +174,8 @@ func TestAmountBasisMigrationApplied(t *testing.T) {
 	t.Parallel()
 	v := amountBasisMigrationVersion
 	cases := []struct {
-		name string
 		row  fakeVersionRow
+		name string
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},

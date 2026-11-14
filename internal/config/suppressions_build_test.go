@@ -188,8 +188,8 @@ func TestBuildSuppressions_ComputeSlugEC2(t *testing.T) {
 	assert.True(t, sups[0].AppliesTo(&SuppressionVariant{"us-east-1a", "Linux/UNIX", "default", ""}))
 
 	for name, tc := range map[string]struct {
-		details []byte
 		want    SuppressionVariant
+		details []byte
 	}{
 		"platform only": {details: []byte(`{"platform":"Linux/UNIX"}`), want: SuppressionVariant{"us-east-1a", "Linux/UNIX", "", ""}},
 		"tenancy only":  {details: []byte(`{"tenancy":"default"}`), want: SuppressionVariant{"us-east-1a", "", "default", ""}},

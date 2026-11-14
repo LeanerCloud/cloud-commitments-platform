@@ -32,9 +32,9 @@ const riExchangeResolveNoteMax = 1000
 // RIExchangeCloudCheck is the operator's statement of where they verified the
 // exchange's outcome at AWS before resolving it.
 type RIExchangeCloudCheck struct {
+	CheckedAt time.Time
 	AccountID string
 	Region    string
-	CheckedAt time.Time
 }
 
 // RIExchangeResolve asks to settle a stale processing RI exchange on an
@@ -44,12 +44,12 @@ type RIExchangeCloudCheck struct {
 // text stored in the error column, built by the caller so that a repeat of the
 // same request compares equal as a whole.
 type RIExchangeResolve struct {
+	Check      RIExchangeCloudCheck
+	Actor      *string
 	ID         string
 	Outcome    string
 	ExchangeID string
 	Note       string
-	Check      RIExchangeCloudCheck
-	Actor      *string
 	StaleAfter time.Duration
 }
 
@@ -72,8 +72,8 @@ var _ RIExchangeResolveStore = (*PostgresStore)(nil)
 
 // riExchangeResolveRow is the locked row the resolve rules are checked against.
 type riExchangeResolveRow struct {
-	status, accountID, region, exchangeID, note, paymentDue string
 	updatedAt, dbNow                                        time.Time
+	status, accountID, region, exchangeID, note, paymentDue string
 }
 
 // ResolveStaleRIExchange settles a processing RI exchange that no running

@@ -43,25 +43,25 @@ type AuditActor struct {
 // the import event the write belongs to (nil for a single PUT or DELETE) and
 // optional event details (an import row's number).
 type AuditContext struct {
-	Actor         AuditActor
 	ParentEventID *string
 	Details       map[string]any
+	Actor         AuditActor
 }
 
 // AuditEvent is one config_audit_events row. Before and After are the
 // override settings as JSON (nil for none).
 type AuditEvent struct {
-	ID            string
-	EventType     string
+	CreatedAt     time.Time
 	ParentEventID *string
-	Actor         AuditActor
 	AccountID     *string
 	Provider      *string
 	Service       *string
+	Actor         AuditActor
+	ID            string
+	EventType     string
 	Before        json.RawMessage
 	After         json.RawMessage
 	Details       json.RawMessage
-	CreatedAt     time.Time
 }
 
 // overrideAuditSnapshot is the before/after JSON of an override: its

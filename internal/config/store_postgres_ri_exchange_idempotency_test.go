@@ -78,8 +78,8 @@ func TestPGXMock_ClaimRIExchangeIdempotencyKey_ErrorIsNotAWonClaim(t *testing.T)
 func TestPGXMock_ClaimRIExchangeIdempotencyKey_RejectsUnusableArguments(t *testing.T) {
 	cases := map[string]struct {
 		key    string
-		window time.Duration
 		want   string
+		window time.Duration
 	}{
 		"empty key":       {key: "", window: 15 * time.Minute, want: "empty RI exchange idempotency key"},
 		"zero window":     {key: "fingerprint-1", window: 0, want: "window must be positive"},

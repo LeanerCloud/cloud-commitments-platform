@@ -54,16 +54,16 @@ type HistorySummaryGroups struct {
 // PurchaseHistorySummaryGroup aggregates the purchase_history rows that share
 // account_id, cloud_account_id, provider and revoked state.
 type PurchaseHistorySummaryGroup struct {
-	AccountID      string
 	CloudAccountID *string
-	Provider       string
-	Revoked        bool
-	Count          int
 	// UpfrontCost is the sum of upfront_cost, or nil when any row in the
 	// group has an unknown (NULL) upfront cost, matching how the History
 	// summary treats a single unknown cost.
 	UpfrontCost      *float64
+	AccountID        string
+	Provider         string
+	Count            int
 	EstimatedSavings float64
+	Revoked          bool
 }
 
 // ExecutionSummaryGroup aggregates the purchase_executions rows that share

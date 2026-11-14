@@ -48,12 +48,12 @@ type ExecutionSettlement struct {
 
 // settleTarget is the locked row SettleFailedExecution judges.
 type settleTarget struct {
-	status     string
 	retryID    *string
 	planID     *string
 	settledAt  *time.Time
 	settledBy  *string
 	settlement *string
+	status     string
 }
 
 // SettleFailedExecution records an operator's audited settlement of a failed

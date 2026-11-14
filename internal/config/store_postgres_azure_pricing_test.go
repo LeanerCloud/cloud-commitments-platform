@@ -12,10 +12,10 @@ import (
 func TestListStoredRecommendationsAzurePricingReadiness(t *testing.T) {
 	queryErr := errors.New("migration query failed")
 	for _, tc := range []struct {
+		err                   error
 		name                  string
 		version               int
 		dirty, missing, ready bool
-		err                   error
 	}{
 		{name: "old", version: 105},
 		{name: "dirty", version: 106, dirty: true},
