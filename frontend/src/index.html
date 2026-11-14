@@ -667,6 +667,19 @@
                         </div>
                     </fieldset>
 
+                    <fieldset class="settings-category" id="gcp-plan-term-settings">
+                        <legend>Experimental</legend>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <label for="setting-experimental-gcp-plan-term">GCP Compute: take the CUD term from the recommendation plan</label>
+                                <p class="help-text">Off by default. When enabled, GCP Compute Engine recommendations use the term from each recommendation's root plan instead of defaulting to 1 year. The plan payload shape is unverified against a live Recommender, so leave this off unless you are testing it.</p>
+                            </div>
+                            <div class="setting-input">
+                                <input type="checkbox" id="setting-experimental-gcp-plan-term">
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <!-- AWS Settings -->
                     <fieldset class="settings-category provider-settings" id="aws-settings">
                         <legend><span class="provider-badge aws">AWS</span> Service defaults</legend>

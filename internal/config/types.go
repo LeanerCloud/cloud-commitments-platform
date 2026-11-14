@@ -114,6 +114,12 @@ type GlobalConfig struct {
 	// is on: it waits, then expires, and a human recreates the plan; the
 	// overdue tick does not re-arm such a root (#1785), nobody could approve it.
 	RequireDifferentApprover bool `json:"require_different_approver" dynamodbav:"require_different_approver"`
+	// ExperimentalGCPPlanTerm (migration 000173) makes GCP Compute
+	// recommendation collection take the CUD term from each recommendation's
+	// root Commitment plan (RecommendationParams.ExperimentalGCPPlanTerm in
+	// cloud-commitments-go). EXPERIMENTAL: the plan payload shape is unverified
+	// against a live Recommender. Default false keeps the 1yr term default.
+	ExperimentalGCPPlanTerm bool `json:"experimental_gcp_plan_term" db:"experimental_gcp_plan_term"`
 }
 
 // DefaultGracePeriodDays is the fallback window used when a provider

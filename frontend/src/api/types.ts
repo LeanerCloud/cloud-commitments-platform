@@ -364,6 +364,9 @@ export interface Config {
   // created it -- a different person with approval rights must do so.
   // SOX / SOC2 segregation-of-duties control. Default: false.
   require_different_approver?: boolean;
+  // EXPERIMENTAL, default false: take GCP Compute CUD terms from the
+  // recommendation's root plan instead of defaulting to 1yr.
+  experimental_gcp_plan_term?: boolean;
 }
 
 export interface ServiceConfig {

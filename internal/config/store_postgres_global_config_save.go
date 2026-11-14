@@ -24,10 +24,10 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 			grace_period_days,
 			recommendations_cache_stale_hours, recommendations_lookback_days,
 			purchase_delay_hours, laddering_enabled, ladder_execution_enabled, offering_class,
-			require_different_approver, auto_purchase_enabled,
+			require_different_approver, experimental_gcp_plan_term, auto_purchase_enabled,
 			auto_purchase_changed_by, auto_purchase_changed_at, auto_purchase_changed_via,
 			ladder_execution_changed_by, ladder_execution_changed_at, ladder_execution_changed_via
-		) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
+		) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
 		ON CONFLICT (id) DO UPDATE SET
 			enabled_providers = $1,
 			notification_email = $2,
@@ -53,13 +53,14 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 			ladder_execution_enabled = $22,
 			offering_class = $23,
 			require_different_approver = $24,
-			auto_purchase_enabled = $25,
-			auto_purchase_changed_by = $26,
-			auto_purchase_changed_at = $27,
-			auto_purchase_changed_via = $28,
-			ladder_execution_changed_by = $29,
-			ladder_execution_changed_at = $30,
-			ladder_execution_changed_via = $31,
+			experimental_gcp_plan_term = $25,
+			auto_purchase_enabled = $26,
+			auto_purchase_changed_by = $27,
+			auto_purchase_changed_at = $28,
+			auto_purchase_changed_via = $29,
+			ladder_execution_changed_by = $30,
+			ladder_execution_changed_at = $31,
+			ladder_execution_changed_via = $32,
 			updated_at = NOW()
 	`
 
@@ -128,6 +129,7 @@ func saveGlobalConfigWith(ctx context.Context, q globalConfigExecutor, config *G
 		config.LadderExecutionEnabled,
 		offeringClass,
 		config.RequireDifferentApprover,
+		config.ExperimentalGCPPlanTerm,
 		config.AutoPurchaseEnabled,
 		config.AutoPurchaseChangedBy,
 		config.AutoPurchaseChangedAt,

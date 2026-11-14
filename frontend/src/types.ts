@@ -424,6 +424,9 @@ export interface GlobalConfig {
   // it -- a different user with approve-any:purchases must approve (4-eyes /
   // dual-control rule). Defaults to false (feature is opt-in).
   require_different_approver?: boolean;
+  // EXPERIMENTAL, default false: take GCP Compute CUD terms from the
+  // recommendation's root plan instead of defaulting to 1yr.
+  experimental_gcp_plan_term?: boolean;
 }
 
 // API Keys types

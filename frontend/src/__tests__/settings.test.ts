@@ -364,6 +364,32 @@ describe('Settings Module', () => {
       expect(checkbox.checked).toBe(true);
     });
 
+    test('populates the experimental GCP plan-term checkbox: off when absent, on when true (issue #858)', async () => {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = 'setting-experimental-gcp-plan-term';
+      checkbox.checked = true;
+      document.getElementById('global-settings-form')?.appendChild(checkbox);
+
+      const global = {
+        enabled_providers: [],
+        default_term: 3,
+        default_payment: 'all-upfront',
+        default_coverage: 80,
+        notification_days_before: 3,
+      };
+      (api.getConfig as jest.Mock).mockResolvedValue({ global, credentials: {} });
+      await loadGlobalSettings();
+      expect(checkbox.checked).toBe(false);
+
+      (api.getConfig as jest.Mock).mockResolvedValue({
+        global: { ...global, experimental_gcp_plan_term: true },
+        credentials: {},
+      });
+      await loadGlobalSettings();
+      expect(checkbox.checked).toBe(true);
+    });
+
     test('populates collection schedule from config', async () => {
       (api.getConfig as jest.Mock).mockResolvedValue({
         global: {
@@ -632,6 +658,24 @@ describe('Settings Module', () => {
 
       expect(api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
         require_different_approver: true,
+      }));
+    });
+
+    test('sends experimental_gcp_plan_term from the checkbox (issue #858)', async () => {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = 'setting-experimental-gcp-plan-term';
+      checkbox.checked = true;
+      document.getElementById('global-settings-form')?.appendChild(checkbox);
+
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      window.alert = jest.fn();
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await saveGlobalSettings(event);
+
+      expect(api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+        experimental_gcp_plan_term: true,
       }));
     });
 
@@ -2323,6 +2367,17 @@ describe('Settings Module', () => {
       await save();
 
       expect(globalBody()).toEqual({ require_different_approver: true });
+    });
+
+    test('editing only the experimental GCP plan-term toggle saves it', async () => {
+      await loadRealPage();
+      const box = document.getElementById('setting-experimental-gcp-plan-term') as HTMLInputElement;
+      expect(box.checked).toBe(false);
+      box.checked = true;
+
+      await save();
+
+      expect(globalBody()).toEqual({ experimental_gcp_plan_term: true });
     });
 
     test('editing only the offering class saves it', async () => {

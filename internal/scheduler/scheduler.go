@@ -862,7 +862,7 @@ func (s *Scheduler) collectAzureAmbient(ctx context.Context, subscriptionID stri
 // collectGCPAmbient collects GCP recommendations using Application Default
 // Credentials. Used by the ambient fallback path in collectGCPRecommendations
 // when no accounts are registered.
-func (s *Scheduler) collectGCPAmbient(ctx context.Context) ([]config.RecommendationRecord, *sweepGap, error) {
+func (s *Scheduler) collectGCPAmbient(ctx context.Context, planTerm bool) ([]config.RecommendationRecord, *sweepGap, error) {
 	prov, err := s.providerFactory.CreateAndValidateProvider(ctx, "gcp", nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create ambient GCP provider: %w", err)
@@ -871,12 +871,22 @@ func (s *Scheduler) collectGCPAmbient(ctx context.Context) ([]config.Recommendat
 	if err != nil {
 		return nil, nil, fmt.Errorf("get GCP recommendations client: %w", err)
 	}
-	recs, err := recClient.GetAllRecommendations(ctx)
+	recs, err := fetchGCPRecommendations(ctx, recClient, planTerm)
 	gap, err := tolerateIncompleteSweep("gcp", err)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get GCP recommendations: %w", err)
 	}
 	return s.convertRecommendations(recs, "gcp"), gap, nil
+}
+
+// fetchGCPRecommendations collects every GCP recommendation. With planTerm it
+// passes RecommendationParams.ExperimentalGCPPlanTerm so Compute CUD terms come
+// from the recommendation's root plan; otherwise it keeps GetAllRecommendations.
+func fetchGCPRecommendations(ctx context.Context, rc provider.RecommendationsClient, planTerm bool) ([]common.Recommendation, error) {
+	if !planTerm {
+		return rc.GetAllRecommendations(ctx)
+	}
+	return rc.GetRecommendations(ctx, &common.RecommendationParams{ExperimentalGCPPlanTerm: true})
 }
 
 func (s *Scheduler) collectAWSForAccount(ctx context.Context, globalCfg *config.GlobalConfig, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
@@ -1007,11 +1017,12 @@ func (s *Scheduler) collectAzureForAccount(ctx context.Context, acct config.Clou
 // running natively on GCP with ADC), falls back to ambient credentials
 // and tags recommendations with the registered project's UUID if found
 // in cloud_accounts.
-func (s *Scheduler) collectGCPRecommendations(ctx context.Context, _ *config.GlobalConfig) ([]config.RecommendationRecord, []string, *sweepGap, error) {
+func (s *Scheduler) collectGCPRecommendations(ctx context.Context, globalCfg *config.GlobalConfig) ([]config.RecommendationRecord, []string, *sweepGap, error) {
 	accounts, err := s.enabledAccounts(ctx, "gcp")
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	planTerm := globalCfg != nil && globalCfg.ExperimentalGCPPlanTerm
 	if len(accounts) == 0 {
 		// Issue #662: mirror the AWS ambient-path tagging fix for GCP.
 		// When the host project matches a registered cloud_accounts row,
@@ -1022,7 +1033,7 @@ func (s *Scheduler) collectGCPRecommendations(ctx context.Context, _ *config.Glo
 			logging.Info("No enabled GCP accounts — skipping GCP recommendations")
 			return nil, nil, nil, nil
 		}
-		recs, gap, err := s.collectGCPAmbient(ctx)
+		recs, gap, err := s.collectGCPAmbient(ctx, planTerm)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -1033,14 +1044,16 @@ func (s *Scheduler) collectGCPRecommendations(ctx context.Context, _ *config.Glo
 		return recs, ambientEvictionRoster(!gap.holdsEviction(), ""), gap.forAccount(), nil
 	}
 
-	recs, outcome := fanOutPerAccount(ctx, "GCP", accounts, s.collectGCPForAccount)
+	recs, outcome := fanOutPerAccount(ctx, "GCP", accounts, func(ctx context.Context, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
+		return s.collectGCPForAccount(ctx, acct, planTerm)
+	})
 	if outcome.FailedCount == len(accounts) && len(accounts) > 0 {
 		return nil, nil, nil, errAllAccountsFailed("GCP", outcome)
 	}
 	return recs, outcome.SucceededAccountIDs, outcome.Gap, nil
 }
 
-func (s *Scheduler) collectGCPForAccount(ctx context.Context, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
+func (s *Scheduler) collectGCPForAccount(ctx context.Context, acct config.CloudAccount, planTerm bool) ([]config.RecommendationRecord, *sweepGap, error) {
 	gcpTS, err := credentials.ResolveGCPTokenSourceWithOpts(ctx, &acct, s.credStore, credentials.GCPResolveOptions{
 		Signer:    s.oidcSigner,
 		IssuerURL: s.oidcIssuerURL,
@@ -1069,7 +1082,7 @@ func (s *Scheduler) collectGCPForAccount(ctx context.Context, acct config.CloudA
 	if err != nil {
 		return nil, nil, fmt.Errorf("get recommendations client: %w", err)
 	}
-	recs, err := recClient.GetAllRecommendations(ctx)
+	recs, err := fetchGCPRecommendations(ctx, recClient, planTerm)
 	gap, err := tolerateIncompleteSweep("gcp", err)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get recommendations: %w", err)

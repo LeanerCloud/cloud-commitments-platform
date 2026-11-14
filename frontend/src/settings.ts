@@ -165,6 +165,7 @@ const TRACKED_FIELDS = [
   'setting-recs-stale-hours', 'setting-recs-lookback-days',
   // 4-eyes approval mode (issue #1005)
   'setting-require-different-approver',
+  'setting-experimental-gcp-plan-term',
   'setting-ec2-offering-class',
   // Per-service fields
   ...SERVICE_FIELDS.map(f => f.termId),
@@ -194,6 +195,7 @@ const GLOBAL_CONFIG_FIELDS: ReadonlyArray<readonly [keyof api.Config, readonly s
   ['recommendations_lookback_days', ['setting-recs-lookback-days']],
   ['offering_class', ['setting-ec2-offering-class']],
   ['require_different_approver', ['setting-require-different-approver']],
+  ['experimental_gcp_plan_term', ['setting-experimental-gcp-plan-term']],
 ];
 
 // Cached service configs from last load — used as base when saving to preserve
@@ -3172,6 +3174,12 @@ export async function loadGlobalSettings(): Promise<void> {
         requireDiffApproverEl.checked = data.global.require_different_approver === true;
       }
 
+      // Experimental GCP plan-term collection (issue #858); off unless the API says true.
+      const gcpPlanTermEl = byId<HTMLInputElement>('setting-experimental-gcp-plan-term');
+      if (gcpPlanTermEl) {
+        gcpPlanTermEl.checked = data.global.experimental_gcp_plan_term === true;
+      }
+
       // Update visibility based on loaded settings
       updateProviderSettingsVisibility();
       updateCollectionScheduleVisibility();
@@ -3640,6 +3648,7 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
     recommendations_lookback_days: parseInt(byId<HTMLSelectElement>('setting-recs-lookback-days')?.value || '7', 10),
     offering_class: offeringClass,
     require_different_approver: byId<HTMLInputElement>('setting-require-different-approver')?.checked ?? false,
+    experimental_gcp_plan_term: byId<HTMLInputElement>('setting-experimental-gcp-plan-term')?.checked ?? false,
   };
 
   try {
@@ -3845,6 +3854,10 @@ export async function resetSettings(): Promise<void> {
   // Reset 4-eyes mode to off (default).
   const requireDiffApproverResetEl = byId<HTMLInputElement>('setting-require-different-approver');
   if (requireDiffApproverResetEl) requireDiffApproverResetEl.checked = false;
+
+  // Reset the experimental GCP plan-term switch to off (default).
+  const gcpPlanTermResetEl = byId<HTMLInputElement>('setting-experimental-gcp-plan-term');
+  if (gcpPlanTermResetEl) gcpPlanTermResetEl.checked = false;
 
   // Issue #466: setting el.value / .checked via JS does not fire
   // 'change'/'input', so none of the change-event-driven visibility

@@ -55,6 +55,7 @@ func getGlobalConfigFrom(ctx context.Context, q globalConfigExecutor) (*GlobalCo
 		       COALESCE(ladder_execution_enabled, false),
 		       offering_class,
 		       require_different_approver,
+		       experimental_gcp_plan_term,
 		       auto_purchase_enabled,
 		       auto_purchase_changed_by, auto_purchase_changed_at, auto_purchase_changed_via,
 		       ladder_execution_changed_by, ladder_execution_changed_at, ladder_execution_changed_via
@@ -91,6 +92,7 @@ func getGlobalConfigFrom(ctx context.Context, q globalConfigExecutor) (*GlobalCo
 		&config.LadderExecutionEnabled,
 		&config.OfferingClass,
 		&config.RequireDifferentApprover,
+		&config.ExperimentalGCPPlanTerm,
 		&config.AutoPurchaseEnabled,
 		&config.AutoPurchaseChangedBy,
 		&config.AutoPurchaseChangedAt,
