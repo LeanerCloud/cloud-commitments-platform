@@ -39,23 +39,23 @@ func TestResolveAllowedAccounts_FailsClosed(t *testing.T) {
 		name  string
 		setup func(*MockStore)
 	}{
-		{"group missing (pgx.ErrNoRows)", func(ms *MockStore) {
+		{name: "group missing (pgx.ErrNoRows)", setup: func(ms *MockStore) {
 			ms.On("GetUserByID", ctx, scopeUserID).
 				Return(&User{ID: scopeUserID, GroupIDs: []string{"g1"}}, nil)
 			ms.On("GetGroup", ctx, "g1").Return(nil, pgx.ErrNoRows)
 		}},
-		{"group resolves to (nil, nil)", func(ms *MockStore) {
+		{name: "group resolves to (nil, nil)", setup: func(ms *MockStore) {
 			ms.On("GetUserByID", ctx, scopeUserID).
 				Return(&User{ID: scopeUserID, GroupIDs: []string{"g1"}}, nil)
 			ms.On("GetGroup", ctx, "g1").Return(nil, nil)
 		}},
-		{"several groups, none resolve", func(ms *MockStore) {
+		{name: "several groups, none resolve", setup: func(ms *MockStore) {
 			ms.On("GetUserByID", ctx, scopeUserID).
 				Return(&User{ID: scopeUserID, GroupIDs: []string{"g1", "g2"}}, nil)
 			ms.On("GetGroup", ctx, "g1").Return(nil, pgx.ErrNoRows)
 			ms.On("GetGroup", ctx, "g2").Return(nil, nil)
 		}},
-		{"user has no groups at all", func(ms *MockStore) {
+		{name: "user has no groups at all", setup: func(ms *MockStore) {
 			ms.On("GetUserByID", ctx, scopeUserID).Return(&User{ID: scopeUserID}, nil)
 		}},
 	} {
@@ -164,10 +164,10 @@ func TestResolveAllowedAccounts_PartialResolutionThatWidensIsRefused(t *testing.
 		name      string
 		scopeResp func(*MockStore)
 	}{
-		{"restricting group missing (ErrNoRows)", func(ms *MockStore) {
+		{name: "restricting group missing (ErrNoRows)", scopeResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, scopeGroup).Return(nil, pgx.ErrNoRows)
 		}},
-		{"restricting group resolves to (nil, nil)", func(ms *MockStore) {
+		{name: "restricting group resolves to (nil, nil)", scopeResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, scopeGroup).Return(nil, nil)
 		}},
 	} {
@@ -282,10 +282,10 @@ func TestResolveAllowedAccounts_WildcardSurvivorToleratesSkippedGroup(t *testing
 		name      string
 		scopeResp func(*MockStore)
 	}{
-		{"stale membership missing (ErrNoRows)", func(ms *MockStore) {
+		{name: "stale membership missing (ErrNoRows)", scopeResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, scoped).Return(nil, pgx.ErrNoRows)
 		}},
-		{"stale membership resolves to (nil, nil)", func(ms *MockStore) {
+		{name: "stale membership resolves to (nil, nil)", scopeResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, scoped).Return(nil, nil)
 		}},
 	} {

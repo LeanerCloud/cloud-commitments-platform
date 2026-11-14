@@ -22,27 +22,27 @@ var membershipConstraintCases = []struct {
 	target *PermissionConstraints
 	ok     bool
 }{
-	{"capped holder, uncapped group", &PermissionConstraints{MaxPurchaseAmount: 100}, nil, false},
-	{"capped holder, higher cap group", &PermissionConstraints{MaxPurchaseAmount: 100}, &PermissionConstraints{MaxPurchaseAmount: 500}, false},
-	{"capped holder, uncapped group with scope", &PermissionConstraints{MaxPurchaseAmount: 100}, &PermissionConstraints{AccountIDs: []string{"a"}}, false},
-	{"capped holder, lower cap group", &PermissionConstraints{MaxPurchaseAmount: 100}, &PermissionConstraints{MaxPurchaseAmount: 50}, true},
-	{"capped holder, equal cap group", &PermissionConstraints{MaxPurchaseAmount: 100}, &PermissionConstraints{MaxPurchaseAmount: 100}, true},
-	{"account holder, unconstrained group", &PermissionConstraints{AccountIDs: []string{"a"}}, nil, false},
-	{"account holder, wider accounts group", &PermissionConstraints{AccountIDs: []string{"a"}}, &PermissionConstraints{AccountIDs: []string{"a", "b"}}, false},
-	{"account holder, other account group", &PermissionConstraints{AccountIDs: []string{"a"}}, &PermissionConstraints{AccountIDs: []string{"b"}}, false},
-	{"account holder, subset group", &PermissionConstraints{AccountIDs: []string{"a", "b"}}, &PermissionConstraints{AccountIDs: []string{"a"}}, true},
-	{"services holder, wider services group", &PermissionConstraints{Services: []string{"ec2"}}, &PermissionConstraints{Services: []string{"ec2", "rds"}}, false},
-	{"services holder, other services group", &PermissionConstraints{Services: []string{"ec2"}}, &PermissionConstraints{Services: []string{"other"}}, false},
-	{"services holder, no services group", &PermissionConstraints{Services: []string{"ec2"}}, nil, false},
-	{"services holder, equal services group", &PermissionConstraints{Services: []string{"ec2"}}, &PermissionConstraints{Services: []string{"ec2"}}, true},
-	{"services holder, subset services group", &PermissionConstraints{Services: []string{"ec2", "rds"}}, &PermissionConstraints{Services: []string{"ec2"}}, true},
-	{"regions holder, wider regions group", &PermissionConstraints{Regions: []string{"us-east-1"}}, &PermissionConstraints{Regions: []string{"us-east-1", "eu-west-1"}}, false},
-	{"regions holder, other regions group", &PermissionConstraints{Regions: []string{"us-east-1"}}, &PermissionConstraints{Regions: []string{"other"}}, false},
-	{"regions holder, no regions group", &PermissionConstraints{Regions: []string{"us-east-1"}}, nil, false},
-	{"regions holder, equal regions group", &PermissionConstraints{Regions: []string{"us-east-1"}}, &PermissionConstraints{Regions: []string{"us-east-1"}}, true},
-	{"regions holder, subset regions group", &PermissionConstraints{Regions: []string{"us-east-1", "eu-west-1"}}, &PermissionConstraints{Regions: []string{"us-east-1"}}, true},
-	{"unconstrained holder, unconstrained group", nil, nil, true},
-	{"unconstrained holder, capped group", nil, &PermissionConstraints{MaxPurchaseAmount: 10}, true},
+	{name: "capped holder, uncapped group", held: &PermissionConstraints{MaxPurchaseAmount: 100}, target: nil, ok: false},
+	{name: "capped holder, higher cap group", held: &PermissionConstraints{MaxPurchaseAmount: 100}, target: &PermissionConstraints{MaxPurchaseAmount: 500}, ok: false},
+	{name: "capped holder, uncapped group with scope", held: &PermissionConstraints{MaxPurchaseAmount: 100}, target: &PermissionConstraints{AccountIDs: []string{"a"}}, ok: false},
+	{name: "capped holder, lower cap group", held: &PermissionConstraints{MaxPurchaseAmount: 100}, target: &PermissionConstraints{MaxPurchaseAmount: 50}, ok: true},
+	{name: "capped holder, equal cap group", held: &PermissionConstraints{MaxPurchaseAmount: 100}, target: &PermissionConstraints{MaxPurchaseAmount: 100}, ok: true},
+	{name: "account holder, unconstrained group", held: &PermissionConstraints{AccountIDs: []string{"a"}}, target: nil, ok: false},
+	{name: "account holder, wider accounts group", held: &PermissionConstraints{AccountIDs: []string{"a"}}, target: &PermissionConstraints{AccountIDs: []string{"a", "b"}}, ok: false},
+	{name: "account holder, other account group", held: &PermissionConstraints{AccountIDs: []string{"a"}}, target: &PermissionConstraints{AccountIDs: []string{"b"}}, ok: false},
+	{name: "account holder, subset group", held: &PermissionConstraints{AccountIDs: []string{"a", "b"}}, target: &PermissionConstraints{AccountIDs: []string{"a"}}, ok: true},
+	{name: "services holder, wider services group", held: &PermissionConstraints{Services: []string{"ec2"}}, target: &PermissionConstraints{Services: []string{"ec2", "rds"}}, ok: false},
+	{name: "services holder, other services group", held: &PermissionConstraints{Services: []string{"ec2"}}, target: &PermissionConstraints{Services: []string{"other"}}, ok: false},
+	{name: "services holder, no services group", held: &PermissionConstraints{Services: []string{"ec2"}}, target: nil, ok: false},
+	{name: "services holder, equal services group", held: &PermissionConstraints{Services: []string{"ec2"}}, target: &PermissionConstraints{Services: []string{"ec2"}}, ok: true},
+	{name: "services holder, subset services group", held: &PermissionConstraints{Services: []string{"ec2", "rds"}}, target: &PermissionConstraints{Services: []string{"ec2"}}, ok: true},
+	{name: "regions holder, wider regions group", held: &PermissionConstraints{Regions: []string{"us-east-1"}}, target: &PermissionConstraints{Regions: []string{"us-east-1", "eu-west-1"}}, ok: false},
+	{name: "regions holder, other regions group", held: &PermissionConstraints{Regions: []string{"us-east-1"}}, target: &PermissionConstraints{Regions: []string{"other"}}, ok: false},
+	{name: "regions holder, no regions group", held: &PermissionConstraints{Regions: []string{"us-east-1"}}, target: nil, ok: false},
+	{name: "regions holder, equal regions group", held: &PermissionConstraints{Regions: []string{"us-east-1"}}, target: &PermissionConstraints{Regions: []string{"us-east-1"}}, ok: true},
+	{name: "regions holder, subset regions group", held: &PermissionConstraints{Regions: []string{"us-east-1", "eu-west-1"}}, target: &PermissionConstraints{Regions: []string{"us-east-1"}}, ok: true},
+	{name: "unconstrained holder, unconstrained group", held: nil, target: nil, ok: true},
+	{name: "unconstrained holder, capped group", held: nil, target: &PermissionConstraints{MaxPurchaseAmount: 10}, ok: true},
 }
 
 func targetGroupWith(c *PermissionConstraints) *Group {
@@ -130,10 +130,10 @@ func TestGroupCeiling_CarvedOutCarryThroughHonoursConstraints(t *testing.T) {
 		req  *PermissionConstraints
 		ok   bool
 	}{
-		{"same cap", &PermissionConstraints{MaxPurchaseAmount: 100}, true},
-		{"lower cap", &PermissionConstraints{MaxPurchaseAmount: 10}, true},
-		{"higher cap", &PermissionConstraints{MaxPurchaseAmount: 1000}, false},
-		{"cap removed", nil, false},
+		{name: "same cap", req: &PermissionConstraints{MaxPurchaseAmount: 100}, ok: true},
+		{name: "lower cap", req: &PermissionConstraints{MaxPurchaseAmount: 10}, ok: true},
+		{name: "higher cap", req: &PermissionConstraints{MaxPurchaseAmount: 1000}, ok: false},
+		{name: "cap removed", req: nil, ok: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

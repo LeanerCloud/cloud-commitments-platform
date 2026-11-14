@@ -44,15 +44,15 @@ func TestMatchRecommendationDoesNotBorrowCandidateBasis(t *testing.T) {
 		name   string
 		change func(*CandidateIdentity)
 	}{
-		{"id", func(c *CandidateIdentity) { c.OfferID = "invalid" }},
-		{"invalid36", func(c *CandidateIdentity) { c.OfferID = "zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz" }},
-		{"type", func(c *CandidateIdentity) { c.Type = "ri" }},
-		{"amount", func(c *CandidateIdentity) { c.SelectedAmount = big.NewRat(2, 1) }},
-		{"missing_amount", func(c *CandidateIdentity) { c.SelectedAmount = nil }},
-		{"zero_amount", func(c *CandidateIdentity) { c.SelectedAmount = new(big.Rat) }},
-		{"negative_amount", func(c *CandidateIdentity) { c.SelectedAmount = big.NewRat(-1, 2) }},
-		{"provider", func(c *CandidateIdentity) { c.Provider = "azure" }},
-		{"payment", func(c *CandidateIdentity) { c.Payment = "" }},
+		{name: "id", change: func(c *CandidateIdentity) { c.OfferID = "invalid" }},
+		{name: "invalid36", change: func(c *CandidateIdentity) { c.OfferID = "zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz" }},
+		{name: "type", change: func(c *CandidateIdentity) { c.Type = "ri" }},
+		{name: "amount", change: func(c *CandidateIdentity) { c.SelectedAmount = big.NewRat(2, 1) }},
+		{name: "missing_amount", change: func(c *CandidateIdentity) { c.SelectedAmount = nil }},
+		{name: "zero_amount", change: func(c *CandidateIdentity) { c.SelectedAmount = new(big.Rat) }},
+		{name: "negative_amount", change: func(c *CandidateIdentity) { c.SelectedAmount = big.NewRat(-1, 2) }},
+		{name: "provider", change: func(c *CandidateIdentity) { c.Provider = "azure" }},
+		{name: "payment", change: func(c *CandidateIdentity) { c.Payment = "" }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

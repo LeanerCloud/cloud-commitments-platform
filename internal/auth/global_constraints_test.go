@@ -25,16 +25,16 @@ func TestGlobalConstraints_HeldGrantTable(t *testing.T) {
 		held *PermissionConstraints
 		want bool
 	}{
-		{"nil constraints", nil, true},
-		{"empty constraints", &PermissionConstraints{}, true},
-		{"account", &PermissionConstraints{AccountIDs: []string{"a"}}, false},
-		{"blank account id", &PermissionConstraints{AccountIDs: []string{""}}, false},
-		{"provider", &PermissionConstraints{Providers: []string{"aws"}}, false},
-		{"service", &PermissionConstraints{Services: []string{"ec2"}}, false},
-		{"regions only", &PermissionConstraints{Regions: []string{"us-east-1"}}, false},
-		{"positive cap", &PermissionConstraints{MaxPurchaseAmount: 5}, false},
-		{"NaN cap", &PermissionConstraints{MaxPurchaseAmount: math.NaN()}, false},
-		{"negative cap", &PermissionConstraints{MaxPurchaseAmount: -1}, false},
+		{name: "nil constraints", held: nil, want: true},
+		{name: "empty constraints", held: &PermissionConstraints{}, want: true},
+		{name: "account", held: &PermissionConstraints{AccountIDs: []string{"a"}}, want: false},
+		{name: "blank account id", held: &PermissionConstraints{AccountIDs: []string{""}}, want: false},
+		{name: "provider", held: &PermissionConstraints{Providers: []string{"aws"}}, want: false},
+		{name: "service", held: &PermissionConstraints{Services: []string{"ec2"}}, want: false},
+		{name: "regions only", held: &PermissionConstraints{Regions: []string{"us-east-1"}}, want: false},
+		{name: "positive cap", held: &PermissionConstraints{MaxPurchaseAmount: 5}, want: false},
+		{name: "NaN cap", held: &PermissionConstraints{MaxPurchaseAmount: math.NaN()}, want: false},
+		{name: "negative cap", held: &PermissionConstraints{MaxPurchaseAmount: -1}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -120,11 +120,11 @@ func TestHasAPIKeyPermissionForConstraintsAPI_GlobalKeyOwnerMatrix(t *testing.T)
 		ownerHld *PermissionConstraints
 		want     bool
 	}{
-		{"unconstrained key, unconstrained owner", nil, nil, true},
-		{"constrained key, unconstrained owner", scoped, nil, false},
-		{"unconstrained key, constrained owner", nil, scoped, false},
-		{"constrained key, constrained owner", scoped, scoped, false},
-		{"cap-only key, unconstrained owner", &PermissionConstraints{MaxPurchaseAmount: 9}, nil, false},
+		{name: "unconstrained key, unconstrained owner", keyHeld: nil, ownerHld: nil, want: true},
+		{name: "constrained key, unconstrained owner", keyHeld: scoped, ownerHld: nil, want: false},
+		{name: "unconstrained key, constrained owner", keyHeld: nil, ownerHld: scoped, want: false},
+		{name: "constrained key, constrained owner", keyHeld: scoped, ownerHld: scoped, want: false},
+		{name: "cap-only key, unconstrained owner", keyHeld: &PermissionConstraints{MaxPurchaseAmount: 9}, ownerHld: nil, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -146,8 +146,8 @@ func TestHasAPIKeyPermissionForConstraintsAPI_GlobalConstrainedAdminKey(t *testi
 		held *PermissionConstraints
 		want bool
 	}{
-		{"constrained admin key", &PermissionConstraints{AccountIDs: []string{"acct-a"}}, false},
-		{"unconstrained admin key", nil, true},
+		{name: "constrained admin key", held: &PermissionConstraints{AccountIDs: []string{"acct-a"}}, want: false},
+		{name: "unconstrained admin key", held: nil, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &Service{store: effStore(t, effKey(constrainedAdmin(tc.held)), effOwner(), ownerPerms)}
@@ -165,10 +165,10 @@ func TestUserHasAdminCapability_IgnoresConstrainedAdmin(t *testing.T) {
 		held *PermissionConstraints
 		want bool
 	}{
-		{"unconstrained", nil, true},
-		{"empty constraints", &PermissionConstraints{}, true},
-		{"account constrained", &PermissionConstraints{AccountIDs: []string{"acct-a"}}, false},
-		{"cap constrained", &PermissionConstraints{MaxPurchaseAmount: 1}, false},
+		{name: "unconstrained", held: nil, want: true},
+		{name: "empty constraints", held: &PermissionConstraints{}, want: true},
+		{name: "account constrained", held: &PermissionConstraints{AccountIDs: []string{"acct-a"}}, want: false},
+		{name: "cap constrained", held: &PermissionConstraints{MaxPurchaseAmount: 1}, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &Service{store: effStore(t, nil, effOwner(), []Permission{constrainedAdmin(tc.held)})}

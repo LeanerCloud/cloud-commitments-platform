@@ -160,16 +160,16 @@ func TestUserSelectColumns_ScanUserReadsEveryColumnIntoItsField(t *testing.T) {
 		args []any
 		get  func(*PostgresStore) (*User, error)
 	}{
-		{"GetUserByID", []any{want.ID}, func(s *PostgresStore) (*User, error) {
+		{name: "GetUserByID", args: []any{want.ID}, get: func(s *PostgresStore) (*User, error) {
 			return s.GetUserByID(context.Background(), want.ID)
 		}},
-		{"GetUserByEmail", []any{want.Email}, func(s *PostgresStore) (*User, error) {
+		{name: "GetUserByEmail", args: []any{want.Email}, get: func(s *PostgresStore) (*User, error) {
 			return s.GetUserByEmail(context.Background(), want.Email)
 		}},
-		{"GetUserByResetToken", []any{want.PasswordResetToken}, func(s *PostgresStore) (*User, error) {
+		{name: "GetUserByResetToken", args: []any{want.PasswordResetToken}, get: func(s *PostgresStore) (*User, error) {
 			return s.GetUserByResetToken(context.Background(), want.PasswordResetToken)
 		}},
-		{"ListUsers", nil, func(s *PostgresStore) (*User, error) {
+		{name: "ListUsers", args: nil, get: func(s *PostgresStore) (*User, error) {
 			users, err := s.ListUsers(context.Background())
 			if err != nil || len(users) != 1 {
 				return nil, err

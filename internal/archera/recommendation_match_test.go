@@ -66,89 +66,89 @@ func TestMatchRecommendationRefusesUnprovenAssociation(t *testing.T) {
 		name   string
 		change func(*RecommendationIdentity, *ComparisonIdentity, *LineItemIdentity)
 	}{
-		{"unusable_source", func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "unusable_source", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			r.SourceAccountID = "source\naccount"
 			i.SourceAccountID = r.SourceAccountID
 		}},
-		{"unknown_source", func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "unknown_source", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			r.SourceAccountID = ""
 			i.SourceAccountID = ""
 		}},
-		{"collector_is_not_source", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "collector_is_not_source", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			i.SourceAccountID = "collector-account"
 		}},
-		{"source_case", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "source_case", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			i.SourceAccountID = "SOURCE-account-a"
 		}},
-		{"provider", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.Provider = "gcp" }},
-		{"offering", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "provider", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.Provider = "gcp" }},
+		{name: "offering", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			i.ProviderOfferingID = "other-offer"
 		}},
-		{"missing_offering", func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "missing_offering", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			r.OfferingID = ""
 			i.ProviderOfferingID = ""
 		}},
-		{"unsupported_service", func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) {
+		{name: "unsupported_service", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) {
 			r.Service = "savings-plans-compute"
 		}},
-		{"invented_type", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "invented_type", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			i.Type = "aws/savingsplan/EC2Instance"
 		}},
-		{"plan_type", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.PlanType = "Compute" }},
-		{"family", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.InstanceFamily = "m6" }},
-		{"missing_details_region", func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "plan_type", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.PlanType = "Compute" }},
+		{name: "family", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.InstanceFamily = "m6" }},
+		{name: "missing_details_region", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			r.Region = ""
 			i.Region = ""
 		}},
-		{"contradictory_top_region", func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) {
+		{name: "contradictory_top_region", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) {
 			r.TopLevelRegion = "us-west-2"
 		}},
-		{"native_duration", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "native_duration", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			i.DurationSeconds = big.NewRat(94608000, 1)
 		}},
-		{"payment", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.Payment = "all_upfront" }},
-		{"amount_mismatch", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "payment", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.Payment = "all_upfront" }},
+		{name: "amount_mismatch", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			i.SelectedCommitment = big.NewRat(1, 1)
 		}},
-		{"missing_hourly", func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) { r.HourlyCommitment = nil }},
-		{"zero_hourly", func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) {
+		{name: "missing_hourly", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) { r.HourlyCommitment = nil }},
+		{name: "zero_hourly", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) {
 			r.HourlyCommitment = new(big.Rat)
 		}},
-		{"current_amount", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) {
+		{name: "current_amount", change: func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) {
 			c.CurrentSelectedAmount = big.NewRat(2, 1)
 		}},
-		{"offering_case", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "offering_case", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			i.ProviderOfferingID = "PROVIDER-offer-a"
 		}},
-		{"missing_family", func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "missing_family", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			r.InstanceFamily = ""
 			i.InstanceFamily = ""
 		}},
-		{"unsupported_native_term", func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "unsupported_native_term", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			r.NativeDurationSeconds = 123
 			i.DurationSeconds = big.NewRat(123, 1)
 		}},
-		{"current_provider", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) { c.Provider = "gcp" }},
-		{"current_unit_type", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) { c.CurrentType = "ri" }},
-		{"current_flag", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) { c.IsCurrent = false }},
-		{"current_region", func(_ *RecommendationIdentity, c *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "current_provider", change: func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) { c.Provider = "gcp" }},
+		{name: "current_unit_type", change: func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) { c.CurrentType = "ri" }},
+		{name: "current_flag", change: func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) { c.IsCurrent = false }},
+		{name: "current_region", change: func(_ *RecommendationIdentity, c *ComparisonIdentity, i *LineItemIdentity) {
 			c.Region = &i.InstanceFamily
 		}},
-		{"missing_current_region", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) { c.Region = nil }},
-		{"line_item_region", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.Region = "eu-west-1" }},
-		{"current_payment", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) {
+		{name: "missing_current_region", change: func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) { c.Region = nil }},
+		{name: "line_item_region", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) { i.Region = "eu-west-1" }},
+		{name: "current_payment", change: func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) {
 			c.CurrentPayment = "all_upfront"
 		}},
-		{"other_plan", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "other_plan", change: func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			i.PlanID = "faadf00d-ffff-4aba-8ada-abcdefabcdef"
 		}},
-		{"non_aws_recommendation", func(r *RecommendationIdentity, c *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "non_aws_recommendation", change: func(r *RecommendationIdentity, c *ComparisonIdentity, i *LineItemIdentity) {
 			r.Provider, c.Provider, i.Provider = "gcp", "gcp", "gcp"
 		}},
-		{"invalid_payment", func(r *RecommendationIdentity, c *ComparisonIdentity, i *LineItemIdentity) {
+		{name: "invalid_payment", change: func(r *RecommendationIdentity, c *ComparisonIdentity, i *LineItemIdentity) {
 			r.Payment, c.CurrentPayment, i.Payment = "monthly", "monthly", "monthly"
 		}},
-		{"current_offer", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) {
+		{name: "current_offer", change: func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) {
 			c.CurrentOfferID = "faadf00d-ffff-4aba-8ada-abcdefabcdef"
 		}},
 	}

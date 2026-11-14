@@ -176,16 +176,16 @@ func TestValidateContentType(t *testing.T) {
 		headers   map[string]string
 		wantError bool
 	}{
-		{"GET request without body", "GET", "", nil, false},
-		{"POST with json content type", "POST", `{"key": "value"}`, map[string]string{"Content-Type": "application/json"}, false},
-		{"POST with json and charset", "POST", `{"key": "value"}`, map[string]string{"Content-Type": "application/json; charset=utf-8"}, false},
-		{"PUT with json content type", "PUT", `{"key": "value"}`, map[string]string{"content-type": "application/json"}, false},
-		{"POST with form content type", "POST", "key=value", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, false},
-		{"POST without body is ok", "POST", "", nil, false},
-		{"POST with body but no content type", "POST", `{"key": "value"}`, nil, true},
-		{"POST with unsupported content type", "POST", `{"key": "value"}`, map[string]string{"Content-Type": "text/plain"}, true},
-		{"DELETE without body", "DELETE", "", nil, false},
-		{"PATCH with json", "PATCH", `{"key": "value"}`, map[string]string{"Content-Type": "application/json"}, false},
+		{name: "GET request without body", method: "GET", body: "", headers: nil, wantError: false},
+		{name: "POST with json content type", method: "POST", body: `{"key": "value"}`, headers: map[string]string{"Content-Type": "application/json"}, wantError: false},
+		{name: "POST with json and charset", method: "POST", body: `{"key": "value"}`, headers: map[string]string{"Content-Type": "application/json; charset=utf-8"}, wantError: false},
+		{name: "PUT with json content type", method: "PUT", body: `{"key": "value"}`, headers: map[string]string{"content-type": "application/json"}, wantError: false},
+		{name: "POST with form content type", method: "POST", body: "key=value", headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, wantError: false},
+		{name: "POST without body is ok", method: "POST", body: "", headers: nil, wantError: false},
+		{name: "POST with body but no content type", method: "POST", body: `{"key": "value"}`, headers: nil, wantError: true},
+		{name: "POST with unsupported content type", method: "POST", body: `{"key": "value"}`, headers: map[string]string{"Content-Type": "text/plain"}, wantError: true},
+		{name: "DELETE without body", method: "DELETE", body: "", headers: nil, wantError: false},
+		{name: "PATCH with json", method: "PATCH", body: `{"key": "value"}`, headers: map[string]string{"Content-Type": "application/json"}, wantError: false},
 	}
 
 	for _, tt := range tests {

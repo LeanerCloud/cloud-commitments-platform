@@ -49,11 +49,11 @@ func TestAccountCeiling_RefusesWideningWithNoPermissionsSent(t *testing.T) {
 		accounts []string
 		wantIn   string
 	}{
-		{"to additional accounts", []string{scopedAccountA, "acct-B"}, `"acct-B"`},
+		{name: "to additional accounts", accounts: []string{scopedAccountA, "acct-B"}, wantIn: `"acct-B"`},
 		// The two unrestricted spellings. An empty list is NOT a narrowing:
 		// IsUnrestrictedAccess reads it as "all accounts".
-		{"to the empty list (unrestricted)", []string{}, "unrestricted"},
-		{"to the wildcard", []string{"*"}, "unrestricted"},
+		{name: "to the empty list (unrestricted)", accounts: []string{}, wantIn: "unrestricted"},
+		{name: "to the wildcard", accounts: []string{"*"}, wantIn: "unrestricted"},
 	}
 
 	for _, w := range widenings {
@@ -298,10 +298,10 @@ func TestAccountCeiling_FailsClosedWhenActorScopeUnresolvable(t *testing.T) {
 		name      string
 		groupResp func(*MockStore)
 	}{
-		{"actor's only group is missing", func(ms *MockStore) {
+		{name: "actor's only group is missing", groupResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, ceilingActorGroupID).Return(nil, pgx.ErrNoRows)
 		}},
-		{"actor's only group resolves to nil", func(ms *MockStore) {
+		{name: "actor's only group resolves to nil", groupResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, ceilingActorGroupID).Return(nil, nil)
 		}},
 	} {
@@ -348,10 +348,10 @@ func TestAccountCeiling_PartialActorResolutionThatWidensIsRefused(t *testing.T) 
 		name      string
 		scopeResp func(*MockStore)
 	}{
-		{"restricting group missing (ErrNoRows)", func(ms *MockStore) {
+		{name: "restricting group missing (ErrNoRows)", scopeResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, scopeGroup).Return(nil, pgx.ErrNoRows)
 		}},
-		{"restricting group resolves to (nil, nil)", func(ms *MockStore) {
+		{name: "restricting group resolves to (nil, nil)", scopeResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, scopeGroup).Return(nil, nil)
 		}},
 	} {

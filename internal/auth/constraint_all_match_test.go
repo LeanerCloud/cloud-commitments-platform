@@ -17,9 +17,9 @@ type constraintDimension struct {
 
 func stringListDimensions() []constraintDimension {
 	return []constraintDimension{
-		{"AccountIDs", func(c *PermissionConstraints, v []string) { c.AccountIDs = v }},
-		{"Providers", func(c *PermissionConstraints, v []string) { c.Providers = v }},
-		{"Services", func(c *PermissionConstraints, v []string) { c.Services = v }},
+		{name: "AccountIDs", set: func(c *PermissionConstraints, v []string) { c.AccountIDs = v }},
+		{name: "Providers", set: func(c *PermissionConstraints, v []string) { c.Providers = v }},
+		{name: "Services", set: func(c *PermissionConstraints, v []string) { c.Services = v }},
 	}
 }
 

@@ -237,15 +237,15 @@ func TestGrantCeiling_RejectsBlankConstraintEntries(t *testing.T) {
 		expect     PermissionConstraints
 	}{
 		{
-			"a populated multi-value list on every dimension",
-			APIPermissionConstraint{
+			name: "a populated multi-value list on every dimension",
+			constraint: APIPermissionConstraint{
 				Accounts:  []string{"acct-1", "acct-2"},
 				Providers: []string{"aws", "azure"},
 				Services:  []string{"ec2"},
 				Regions:   []string{"us-east-1", "us-west-2"},
 				MaxAmount: 5000,
 			},
-			PermissionConstraints{
+			expect: PermissionConstraints{
 				AccountIDs:        []string{"acct-1", "acct-2"},
 				Providers:         []string{"aws", "azure"},
 				Services:          []string{"ec2"},
@@ -256,17 +256,17 @@ func TestGrantCeiling_RejectsBlankConstraintEntries(t *testing.T) {
 		{
 			// An EMPTY list is "no restriction on this dimension", a
 			// legitimate state, and must not be confused with a blank entry.
-			"an empty list is not a blank entry",
-			APIPermissionConstraint{Accounts: []string{}, Providers: []string{"aws"}},
-			PermissionConstraints{AccountIDs: []string{}, Providers: []string{"aws"}},
+			name:       "an empty list is not a blank entry",
+			constraint: APIPermissionConstraint{Accounts: []string{}, Providers: []string{"aws"}},
+			expect:     PermissionConstraints{AccountIDs: []string{}, Providers: []string{"aws"}},
 		},
 		{
 			// Blank means empty-after-trimming, not "contains whitespace".
 			// Enforcement compares these exactly, so trimming or refusing
 			// them here would diverge from what the value actually does.
-			"a value containing spaces is not blank",
-			APIPermissionConstraint{Accounts: []string{" acct A "}},
-			PermissionConstraints{AccountIDs: []string{" acct A "}},
+			name:       "a value containing spaces is not blank",
+			constraint: APIPermissionConstraint{Accounts: []string{" acct A "}},
+			expect:     PermissionConstraints{AccountIDs: []string{" acct A "}},
 		},
 	}
 

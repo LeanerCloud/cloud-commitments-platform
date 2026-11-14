@@ -28,13 +28,13 @@ func TestAdminCapability_RequiresUnconstrainedGrant(t *testing.T) {
 		c    *PermissionConstraints
 		want bool
 	}{
-		{"nil constraints", nil, true},
-		{"empty constraints", &PermissionConstraints{}, true},
-		{"account scoped", &PermissionConstraints{AccountIDs: []string{"a"}}, false},
-		{"provider scoped", &PermissionConstraints{Providers: []string{"aws"}}, false},
-		{"service scoped", &PermissionConstraints{Services: []string{"ec2"}}, false},
-		{"region scoped", &PermissionConstraints{Regions: []string{"us-east-1"}}, false},
-		{"amount capped", &PermissionConstraints{MaxPurchaseAmount: 10}, false},
+		{name: "nil constraints", c: nil, want: true},
+		{name: "empty constraints", c: &PermissionConstraints{}, want: true},
+		{name: "account scoped", c: &PermissionConstraints{AccountIDs: []string{"a"}}, want: false},
+		{name: "provider scoped", c: &PermissionConstraints{Providers: []string{"aws"}}, want: false},
+		{name: "service scoped", c: &PermissionConstraints{Services: []string{"ec2"}}, want: false},
+		{name: "region scoped", c: &PermissionConstraints{Regions: []string{"us-east-1"}}, want: false},
+		{name: "amount capped", c: &PermissionConstraints{MaxPurchaseAmount: 10}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -55,8 +55,8 @@ func TestAdminCapability_ConstrainedGrantKeepsScopedMeaning(t *testing.T) {
 		name string
 		c    *PermissionConstraints
 	}{
-		{"account scoped", &PermissionConstraints{AccountIDs: []string{"a"}}},
-		{"amount capped", &PermissionConstraints{MaxPurchaseAmount: 10}},
+		{name: "account scoped", c: &PermissionConstraints{AccountIDs: []string{"a"}}},
+		{name: "amount capped", c: &PermissionConstraints{MaxPurchaseAmount: 10}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := constrainedAdminService(t, tc.c)

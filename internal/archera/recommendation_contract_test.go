@@ -53,21 +53,21 @@ func TestProjectContractPreservesMissingOrContradictoryEvidence(t *testing.T) {
 		name   string
 		change func(*insurance.Comparison, *insurance.LineItem)
 	}{
-		{"account", func(_ *insurance.Comparison, i *insurance.LineItem) { i.AccountID = nil }},
-		{"catalog_is_not_provider_offering", func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.ProviderOfferingID = "" }},
-		{"duration", func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.DurationSeconds = nil }},
-		{"region", func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.Region = nil }},
-		{"family", func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.InstanceFamily = nil }},
-		{"plan_type", func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.PlanType = nil }},
-		{"unselected", func(_ *insurance.Comparison, i *insurance.LineItem) { i.IsSelected = false }},
-		{"payment", func(_ *insurance.Comparison, i *insurance.LineItem) {
+		{name: "account", change: func(_ *insurance.Comparison, i *insurance.LineItem) { i.AccountID = nil }},
+		{name: "catalog_is_not_provider_offering", change: func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.ProviderOfferingID = "" }},
+		{name: "duration", change: func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.DurationSeconds = nil }},
+		{name: "region", change: func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.Region = nil }},
+		{name: "family", change: func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.InstanceFamily = nil }},
+		{name: "plan_type", change: func(_ *insurance.Comparison, i *insurance.LineItem) { i.Offer.PlanType = nil }},
+		{name: "unselected", change: func(_ *insurance.Comparison, i *insurance.LineItem) { i.IsSelected = false }},
+		{name: "payment", change: func(_ *insurance.Comparison, i *insurance.LineItem) {
 			p := insurance.PaymentAllUpfront
 			i.Offer.PaymentOption = &p
 		}},
-		{"current_flag", func(c *insurance.Comparison, _ *insurance.LineItem) { c.Rows[0].Current.IsCurrent = false }},
-		{"current_region", func(c *insurance.Comparison, _ *insurance.LineItem) { c.Rows[0].Current.Region = nil }},
-		{"current_type", func(c *insurance.Comparison, _ *insurance.LineItem) { c.Rows[0].Current.CommitmentType = "ri" }},
-		{"amount", func(c *insurance.Comparison, _ *insurance.LineItem) {
+		{name: "current_flag", change: func(c *insurance.Comparison, _ *insurance.LineItem) { c.Rows[0].Current.IsCurrent = false }},
+		{name: "current_region", change: func(c *insurance.Comparison, _ *insurance.LineItem) { c.Rows[0].Current.Region = nil }},
+		{name: "current_type", change: func(c *insurance.Comparison, _ *insurance.LineItem) { c.Rows[0].Current.CommitmentType = "ri" }},
+		{name: "amount", change: func(c *insurance.Comparison, _ *insurance.LineItem) {
 			c.Rows[0].Current.SelectedAmount = big.NewRat(1, 2)
 		}},
 	}
