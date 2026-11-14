@@ -15,6 +15,7 @@ import (
 // reinitializeAfterConnect) must pass Insurance; dropping it from either
 // silently turns the Archera routes off after the database connects.
 func TestAppGoPassesInsuranceToEveryHandlerConfig(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "app.go", nil, 0)
 	require.NoError(t, err)

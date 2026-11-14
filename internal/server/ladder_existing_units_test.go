@@ -22,6 +22,7 @@ func spState(existing, expiring *float64) pkgladder.LayerState {
 }
 
 func TestLadderLayerStatesOnDemand_PinsCommitmentToOnDemandConversion(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name                   string
 		existing, expiring     float64
@@ -53,6 +54,7 @@ func TestLadderLayerStatesOnDemand_PinsCommitmentToOnDemandConversion(t *testing
 // net existing coverage (existing - expiring) is never understated, which
 // would over-buy.
 func TestLadderLayerStatesOnDemand_RoundsTowardUnderBuying(t *testing.T) {
+	t.Parallel()
 	const rate = 0.3
 	states := map[pkgladder.LayerType]pkgladder.LayerState{
 		pkgladder.LayerEC2InstanceSP: spState(f64(1), f64(1)),
@@ -71,6 +73,7 @@ func TestLadderLayerStatesOnDemand_RoundsTowardUnderBuying(t *testing.T) {
 }
 
 func TestLadderLayerStatesOnDemand_DoesNotMutateInput(t *testing.T) {
+	t.Parallel()
 	existing, expiring := f64(5), f64(2)
 	states := map[pkgladder.LayerType]pkgladder.LayerState{pkgladder.LayerEC2InstanceSP: spState(existing, expiring)}
 	_, _, err := ladderLayerStatesOnDemand(states, map[pkgladder.LayerType]float64{pkgladder.LayerEC2InstanceSP: 0.5})
@@ -83,6 +86,7 @@ func TestLadderLayerStatesOnDemand_DoesNotMutateInput(t *testing.T) {
 // A layer with no commitment needs no rate (the AWS provider has none for
 // Compute SP or Convertible RI today); nil amounts stay nil for Allocate.
 func TestLadderLayerStatesOnDemand_EmptyLayersNeedNoRate(t *testing.T) {
+	t.Parallel()
 	states := map[pkgladder.LayerType]pkgladder.LayerState{
 		pkgladder.LayerComputeSP:     {Layer: pkgladder.LayerComputeSP, ExistingUSDPerHour: f64(0), ExpiringUSDPerHour: f64(0)},
 		pkgladder.LayerConvertibleRI: {Layer: pkgladder.LayerConvertibleRI},
@@ -96,6 +100,7 @@ func TestLadderLayerStatesOnDemand_EmptyLayersNeedNoRate(t *testing.T) {
 }
 
 func TestLadderLayerStatesOnDemand_RejectsUnconvertibleCoverage(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		state   pkgladder.LayerState
@@ -125,6 +130,7 @@ func TestLadderLayerStatesOnDemand_RejectsUnconvertibleCoverage(t *testing.T) {
 // covers 5 OD, so the run places 5 OD = 2.5 commitment. Treating the 2.5 as
 // OD (the bug) placed 7.5 OD = 3.75 commitment.
 func TestExecuteLadderRun_ExistingSavingsPlanCoverageIsOnDemandEquivalent(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(12.5),
 		rates: map[pkgladder.LayerType]float64{pkgladder.LayerConvertibleRI: 0.5, pkgladder.LayerEC2InstanceSP: 0.5},
@@ -151,6 +157,7 @@ func TestExecuteLadderRun_ExistingSavingsPlanCoverageIsOnDemandEquivalent(t *tes
 // Expiring coverage converts by the same rate: existing 4 and expiring 2
 // commitment at rate 0.5 leave a net 4 OD, so the gap is 10 - 4 = 6 OD.
 func TestExecuteLadderRun_ExpiringCoverageIsOnDemandEquivalent(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(12.5),
 		rates: map[pkgladder.LayerType]float64{pkgladder.LayerConvertibleRI: 0.5, pkgladder.LayerEC2InstanceSP: 0.5},
@@ -170,6 +177,7 @@ func TestExecuteLadderRun_ExpiringCoverageIsOnDemandEquivalent(t *testing.T) {
 // ladder_runs and in the plan JSON the approval email is built from, on an
 // allocating run and on a hold-only run alike.
 func TestExecuteLadderRun_ReportsNetExistingCoverage(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		baseline pkgladder.UsageBaseline
@@ -213,6 +221,7 @@ func TestExecuteLadderRun_ReportsNetExistingCoverage(t *testing.T) {
 // converted. Every such layer is reported, in layer order, with no partial
 // conversion for Allocate; layers that hold nothing still need no rate.
 func TestLadderLayerStatesOnDemand_ReportsEveryLayerWithoutARate(t *testing.T) {
+	t.Parallel()
 	states := map[pkgladder.LayerType]pkgladder.LayerState{
 		pkgladder.LayerEC2InstanceSP:    spState(f64(4), f64(0)),
 		pkgladder.LayerConvertibleRI:    {Layer: pkgladder.LayerConvertibleRI, ExistingUSDPerHour: f64(3), ExpiringUSDPerHour: f64(0)},

@@ -62,6 +62,7 @@ func resetStatusRequest(token string) *events.LambdaFunctionURLRequest {
 }
 
 func TestHandleRequest_ResetPasswordStatus_DeactivatedUserLooksLikeUnknownToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore := newResetTokenHarness(t)
 
@@ -113,6 +114,7 @@ func resetConfirmRequest(t *testing.T, token string) *events.LambdaFunctionURLRe
 // ConsumePasswordResetToken expectation) and no password write happens (any
 // other store call would fail the mock).
 func TestHandleRequest_ConfirmPasswordReset_DeactivatedUserLooksLikeUnknownToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore := newResetTokenHarness(t)
 

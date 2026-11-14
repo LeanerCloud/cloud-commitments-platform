@@ -121,6 +121,7 @@ func runZoneReshape(t *testing.T, ri ec2types.ReservedInstances) (*exchange.Auto
 }
 
 func TestExecuteRIExchangeReshape_ZonalRIForwardsAvailabilityZone(t *testing.T) {
+	t.Parallel()
 	result, api, quoted := runZoneReshape(t, zoneTestRI(ec2types.ScopeAvailabilityZone, "us-east-1b"))
 
 	require.NotEmpty(t, api.lookupZones, "offering lookup must reach the provider")
@@ -136,6 +137,7 @@ func TestExecuteRIExchangeReshape_ZonalRIForwardsAvailabilityZone(t *testing.T) 
 }
 
 func TestExecuteRIExchangeReshape_RegionalRIPassesNoAvailabilityZone(t *testing.T) {
+	t.Parallel()
 	result, api, quoted := runZoneReshape(t, zoneTestRI(ec2types.ScopeRegional, ""))
 
 	require.NotEmpty(t, api.lookupZones, "offering lookup must reach the provider")
@@ -150,6 +152,7 @@ func TestExecuteRIExchangeReshape_RegionalRIPassesNoAvailabilityZone(t *testing.
 // call; the refusal reaches the result as the skip reason, not a silent drop
 // and not a quote in an arbitrary zone.
 func TestExecuteRIExchangeReshape_ZonalRIWithoutAZRefused(t *testing.T) {
+	t.Parallel()
 	result, api, quoted := runZoneReshape(t, zoneTestRI(ec2types.ScopeAvailabilityZone, ""))
 
 	assert.Empty(t, api.lookupZones, "no offering lookup without an AZ")
@@ -173,6 +176,7 @@ func (f *fakeOfferingFinder) FindConvertibleOffering(_ context.Context, p ec2svc
 }
 
 func TestNewConvertibleOfferingLookup_MapsEveryField(t *testing.T) {
+	t.Parallel()
 	f := &fakeOfferingFinder{}
 	id, err := newConvertibleOfferingLookup(f)(context.Background(), exchange.LookupOfferingParams{
 		InstanceType: "m5.xlarge", ProductDescription: "Linux/UNIX", Tenancy: "default",
@@ -189,6 +193,7 @@ func TestNewConvertibleOfferingLookup_MapsEveryField(t *testing.T) {
 }
 
 func TestConvertForAutoExchange_CarriesAvailabilityZone(t *testing.T) {
+	t.Parallel()
 	_, _, meta := convertForAutoExchange([]ec2svc.ConvertibleRI{
 		{ReservedInstanceID: "ri-zonal", Scope: "Availability Zone", AvailabilityZone: "us-east-1b", Duration: 31536000, FixedPrice: 876},
 		{ReservedInstanceID: "ri-regional", Scope: "Region", Duration: 31536000, FixedPrice: 876},
@@ -200,6 +205,7 @@ func TestConvertForAutoExchange_CarriesAvailabilityZone(t *testing.T) {
 // #1789: the provider refuses a lookup without the source RI's offering type,
 // so the metadata must carry it for every RI, or no exchange can find a target.
 func TestConvertForAutoExchange_CarriesOfferingType(t *testing.T) {
+	t.Parallel()
 	_, _, meta := convertForAutoExchange([]ec2svc.ConvertibleRI{
 		{ReservedInstanceID: "ri-partial", Scope: "Region", Duration: 31536000, FixedPrice: 876, OfferingType: "Partial Upfront"},
 		{ReservedInstanceID: "ri-none", Scope: "Region", Duration: 31536000, OfferingType: "No Upfront", UsagePrice: 0.1},

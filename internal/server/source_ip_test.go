@@ -16,6 +16,7 @@ import (
 // password reset. A port-bearing key would put every TCP connection in a
 // fresh bucket, so those limits would never bind (issue #104).
 func TestRequestSourceIP(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		remoteAddr string
@@ -49,6 +50,7 @@ func TestRequestSourceIP(t *testing.T) {
 // the source rather than calling httpToLambdaRequest so it does not depend on
 // that function's signature (other in-flight changes alter it).
 func TestHTTPToLambdaRequest_UsesRequestSourceIP(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "http.go", nil, 0)
 	require.NoError(t, err)

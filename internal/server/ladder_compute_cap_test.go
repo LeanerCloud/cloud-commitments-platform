@@ -14,6 +14,7 @@ import (
 )
 
 func TestLadderComputeCapRefusal(t *testing.T) {
+	t.Parallel()
 	computeSP := []pkgladder.LayerSpec{{Type: pkgladder.LayerComputeSP, Roles: []pkgladder.LayerRole{pkgladder.RoleFlex}}}
 	noCompute := []pkgladder.LayerSpec{{Type: pkgladder.LayerEC2InstanceSP, Roles: []pkgladder.LayerRole{pkgladder.RoleBase}}}
 	for _, tc := range []struct {
@@ -110,6 +111,7 @@ var awsPlanningLayers = []pkgladder.LayerSpec{
 }
 
 func TestRunLadderConfigs_ComputeSPWithoutCapIsErroredBeforeAnyRead(t *testing.T) {
+	t.Parallel()
 	result, store, reads := runComputeCapConfig(t, nil)
 
 	assert.Equal(t, LadderRunResult{Errored: 1}, *result)
@@ -122,6 +124,7 @@ func TestRunLadderConfigs_ComputeSPWithoutCapIsErroredBeforeAnyRead(t *testing.T
 }
 
 func TestRunLadderConfigs_ComputeSPWithCapStillPlans(t *testing.T) {
+	t.Parallel()
 	result, store, reads := runComputeCapConfig(t, f64(100))
 
 	assert.Equal(t, LadderRunResult{Planned: 1}, *result)

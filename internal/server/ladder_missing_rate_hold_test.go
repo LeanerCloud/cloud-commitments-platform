@@ -48,6 +48,7 @@ func emptyLayerState(layer pkgladder.LayerType) pkgladder.LayerState {
 // (Cost Explorer returned none). The other layers have rates, so only the
 // missing one stops sizing.
 func TestExecuteLadderRun_MissingDiscountRatePersistsHoldWithReason(t *testing.T) {
+	t.Parallel()
 	allRates := map[pkgladder.LayerType]float64{
 		pkgladder.LayerConvertibleRI: 0.5, pkgladder.LayerComputeSP: 0.5, pkgladder.LayerEC2InstanceSP: 0.5,
 	}
@@ -95,6 +96,7 @@ func TestExecuteLadderRun_MissingDiscountRatePersistsHoldWithReason(t *testing.T
 
 // Every layer without a rate gets its own Hold, in layer order.
 func TestExecuteLadderRun_MissingDiscountRateNamesEveryLayer(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(12.5), supportedLayers: awsLadderLayers,
 		rates: map[pkgladder.LayerType]float64{pkgladder.LayerEC2InstanceSP: 0.5},
@@ -116,6 +118,7 @@ func TestExecuteLadderRun_MissingDiscountRateNamesEveryLayer(t *testing.T) {
 // Allocate's "target already met" rationale. 20 commitment at rate 0.5 covers
 // 20 OD, above the target of 10.
 func TestExecuteLadderRun_TargetMetHoldKeepsOrdinaryReason(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(12.5),
 		rates: map[pkgladder.LayerType]float64{pkgladder.LayerConvertibleRI: 0.5, pkgladder.LayerEC2InstanceSP: 0.5},
@@ -143,6 +146,7 @@ func TestExecuteLadderRun_TargetMetHoldKeepsOrdinaryReason(t *testing.T) {
 // Bad provider data on a layer without a rate still fails the run: the Hold is
 // only for a rate that is missing, not for amounts that cannot be trusted.
 func TestExecuteLadderRun_InvalidCoverageWithoutRateIsErrored(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(12.5),
 		rates: map[pkgladder.LayerType]float64{pkgladder.LayerEC2InstanceSP: 0.5},

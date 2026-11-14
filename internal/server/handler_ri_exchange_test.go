@@ -22,6 +22,7 @@ import (
 )
 
 func TestHandleRIExchangeReshape_DisabledConfig(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 
 	store := &mockConfigStoreForExchange{
@@ -43,6 +44,7 @@ func TestHandleRIExchangeReshape_DisabledConfig(t *testing.T) {
 }
 
 func TestHandleRIExchangeReshape_ConfigLoadFailure(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 
 	store := &mockConfigStoreForExchange{
@@ -62,12 +64,14 @@ func TestHandleRIExchangeReshape_ConfigLoadFailure(t *testing.T) {
 }
 
 func TestParseScheduledEvent_RIExchangeReshape(t *testing.T) {
+	t.Parallel()
 	taskType, _, err := ParseScheduledEvent([]byte(`{"action": "ri_exchange_reshape"}`))
 	testutil.AssertNoError(t, err)
 	testutil.AssertEqual(t, TaskRIExchangeReshape, taskType)
 }
 
 func TestBuildExchangeNotificationData(t *testing.T) {
+	t.Parallel()
 	result := &exchange.AutoExchangeResult{
 		Mode: "manual",
 		Completed: []exchange.ExchangeOutcome{
@@ -124,6 +128,7 @@ func TestBuildExchangeNotificationData(t *testing.T) {
 }
 
 func TestBuildExchangeNotificationData_Empty(t *testing.T) {
+	t.Parallel()
 	result := &exchange.AutoExchangeResult{Mode: "auto"}
 	data := buildExchangeNotificationData(result, "https://example.com", "")
 
@@ -133,6 +138,7 @@ func TestBuildExchangeNotificationData_Empty(t *testing.T) {
 }
 
 func TestConvertForAutoExchange(t *testing.T) {
+	t.Parallel()
 	instances := []ec2svc.ConvertibleRI{
 		{
 			ReservedInstanceID:  "ri-123",
@@ -197,6 +203,7 @@ func TestConvertForAutoExchange(t *testing.T) {
 }
 
 func TestConfigExchangeStoreAdapter(t *testing.T) {
+	t.Parallel()
 	savedRecord := (*config.RIExchangeRecord)(nil)
 	completedID := ""
 	// The adapter must pass both caps through unchanged and in order (#666):
@@ -302,6 +309,7 @@ func TestConfigExchangeStoreAdapter(t *testing.T) {
 // a 12-digit AWS account ID before it reaches the store, or the STS-failure
 // placeholder "unknown" would start landing in the exchange audit table.
 func TestConfigExchangeStoreAdapter_RefusesNonAWSAccountID(t *testing.T) {
+	t.Parallel()
 	storeCalls := 0
 	adapter := newConfigExchangeStoreAdapter(&mockConfigStoreForExchange{
 		saveRIExchangeRecordFunc: func(context.Context, *config.RIExchangeRecord) error {
@@ -338,6 +346,7 @@ func TestConfigExchangeStoreAdapter_RefusesNonAWSAccountID(t *testing.T) {
 }
 
 func TestSendExchangeNotification_NoEmailSender(t *testing.T) {
+	t.Parallel()
 	app := &Application{Email: nil}
 	result := &exchange.AutoExchangeResult{Mode: "auto"}
 	// Should not panic when Email is nil
@@ -345,6 +354,7 @@ func TestSendExchangeNotification_NoEmailSender(t *testing.T) {
 }
 
 func TestSendExchangeNotification_NoResults(t *testing.T) {
+	t.Parallel()
 	emailSent := false
 	app := &Application{
 		Email: &mockEmailSender{
@@ -364,6 +374,7 @@ func TestSendExchangeNotification_NoResults(t *testing.T) {
 }
 
 func TestSendExchangeNotification_ManualPending(t *testing.T) {
+	t.Parallel()
 	approvalSent := false
 	app := &Application{
 		Email: &mockEmailSender{
@@ -388,6 +399,7 @@ func TestSendExchangeNotification_ManualPending(t *testing.T) {
 }
 
 func TestSendExchangeNotification_AutoCompleted(t *testing.T) {
+	t.Parallel()
 	completedSent := false
 	app := &Application{
 		Email: &mockEmailSender{
@@ -416,6 +428,7 @@ func TestSendExchangeNotification_AutoCompleted(t *testing.T) {
 // RecipientEmail, so the token-bearing approval email is delivered to a
 // specific inbox rather than the SNS broadcast topic.
 func TestSendExchangeNotification_PendingSetsRecipientEmail(t *testing.T) {
+	t.Parallel()
 	var gotRecipient string
 	approvalSent := false
 	app := &Application{
@@ -448,6 +461,7 @@ func TestSendExchangeNotification_PendingSetsRecipientEmail(t *testing.T) {
 // notifyEmail) and ignores RecipientEmail, so populating it would misrepresent
 // the struct contract.
 func TestSendExchangeNotification_CompletedOmitsRecipientEmail(t *testing.T) {
+	t.Parallel()
 	var gotRecipient string
 	completedSent := false
 	app := &Application{
@@ -475,6 +489,7 @@ func TestSendExchangeNotification_CompletedOmitsRecipientEmail(t *testing.T) {
 }
 
 func TestSendExchangeNotification_EmailFailure(t *testing.T) {
+	t.Parallel()
 	app := &Application{
 		Email: &mockEmailSender{
 			sendCompletedFunc: func(ctx context.Context, data email.RIExchangeNotificationData) error {
@@ -496,6 +511,7 @@ func TestSendExchangeNotification_EmailFailure(t *testing.T) {
 // --- Tests for executeRIExchangeReshape (end-to-end handler tests) ---
 
 func TestExecuteRIExchangeReshape_NoConvertibleRIs(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 
 	store := &mockConfigStoreForExchange{}
@@ -532,6 +548,7 @@ func TestExecuteRIExchangeReshape_NoConvertibleRIs(t *testing.T) {
 }
 
 func TestExecuteRIExchangeReshape_ListRIsFailure(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 
 	store := &mockConfigStoreForExchange{}
@@ -558,6 +575,7 @@ func TestExecuteRIExchangeReshape_ListRIsFailure(t *testing.T) {
 }
 
 func TestExecuteRIExchangeReshape_UtilizationFailure(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 
 	store := &mockConfigStoreForExchange{}
@@ -588,6 +606,7 @@ func TestExecuteRIExchangeReshape_UtilizationFailure(t *testing.T) {
 }
 
 func TestExecuteRIExchangeReshape_ManualMode(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 
 	var savedRecords []*config.RIExchangeRecord
@@ -681,6 +700,7 @@ func TestExecuteRIExchangeReshape_ManualMode(t *testing.T) {
 }
 
 func TestExecuteRIExchangeReshape_AutoMode(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 
 	var savedRecords []*config.RIExchangeRecord
@@ -791,6 +811,7 @@ func TestExecuteRIExchangeReshape_AutoMode(t *testing.T) {
 }
 
 func TestExecuteRIExchangeReshape_DailyCapHitMidRun(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 
 	// The second quote cannot fit after the first reservation is settled.
@@ -1138,6 +1159,7 @@ func (m *mockConfigStoreForExchange) GetPurchaseHistoryInFlight(_ context.Contex
 // cost. Converting it to MonthlyCost=0 would make reshape's pricing gate
 // treat it as free and skip the dollar-units check, so it must be excluded.
 func TestConvertForAutoExchange_ExcludesNonPositiveDuration(t *testing.T) {
+	t.Parallel()
 	instances := []ec2svc.ConvertibleRI{
 		{ReservedInstanceID: "ri-zero", InstanceType: "m5.large", InstanceCount: 1, FixedPrice: 8760, Duration: 0},
 		{
@@ -1161,6 +1183,7 @@ func TestConvertForAutoExchange_ExcludesNonPositiveDuration(t *testing.T) {
 }
 
 func TestMonthlyCostFromConvertibleRI_NonPositiveDurationErrors(t *testing.T) {
+	t.Parallel()
 	for _, d := range []int64{0, -1} {
 		if _, err := monthlyCostFromConvertibleRI(ec2svc.ConvertibleRI{ReservedInstanceID: "ri-x", FixedPrice: 100, Duration: d}); err == nil || !strings.Contains(err.Error(), "ri-x") {
 			t.Fatalf("duration %d: want error naming ri-x, got %v", d, err)
@@ -1177,6 +1200,7 @@ func TestMonthlyCostFromConvertibleRI_NonPositiveDurationErrors(t *testing.T) {
 // non-positive duration (issue #1188), while a No Upfront RI (FixedPrice 0
 // with an hourly charge) is real pricing and must be kept.
 func TestConvertForAutoExchange_ExcludesRIWithoutPricing(t *testing.T) {
+	t.Parallel()
 	const oneYear = 31536000
 	instances := []ec2svc.ConvertibleRI{
 		{ReservedInstanceID: "ri-unpriced", InstanceType: "m5.large", InstanceCount: 1, Duration: oneYear},
@@ -1198,6 +1222,7 @@ func TestConvertForAutoExchange_ExcludesRIWithoutPricing(t *testing.T) {
 }
 
 func TestMonthlyCostFromConvertibleRI_NoPositivePriceErrors(t *testing.T) {
+	t.Parallel()
 	for name, ri := range map[string]ec2svc.ConvertibleRI{
 		"all zero":     {ReservedInstanceID: "ri-x", Duration: 31536000},
 		"negative sum": {ReservedInstanceID: "ri-x", FixedPrice: -876, Duration: 31536000},
@@ -1215,6 +1240,7 @@ func TestMonthlyCostFromConvertibleRI_NoPositivePriceErrors(t *testing.T) {
 }
 
 func TestBuildExchangeNotificationData_DetailAndSkippedReasonHideRawError(t *testing.T) {
+	t.Parallel()
 	raw := `pq: duplicate key value violates unique constraint "ri_exchange_pkey" (host=10.0.0.5 user=cudly)`
 	const capReason = "exceeds per-exchange cap: payment $120.00 > cap $100.00"
 	result := &exchange.AutoExchangeResult{

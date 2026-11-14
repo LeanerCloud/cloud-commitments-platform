@@ -37,6 +37,7 @@ func finalizeApp(revocations *purchase.FinalizeResult, revErr error, poller *fak
 // Issue #27: the finalize_revocations sweep also polls RI Marketplace
 // listings, and its result keeps the revocation counts under their old keys.
 func TestFinalizeSweep_PollsMarketplaceListings(t *testing.T) {
+	t.Parallel()
 	poller := &fakeMarketplacePoller{result: &api.MarketplacePollResult{Found: 3, Active: 1, Settled: 2}}
 	app, revCalls := finalizeApp(&purchase.FinalizeResult{Found: 1, Finalized: 1}, nil, poller)
 
@@ -53,6 +54,7 @@ func TestFinalizeSweep_PollsMarketplaceListings(t *testing.T) {
 
 // A failing revocation repair does not skip the poll, and still fails the task.
 func TestFinalizeSweep_RevocationFailureStillPolls(t *testing.T) {
+	t.Parallel()
 	poller := &fakeMarketplacePoller{result: &api.MarketplacePollResult{}}
 	app, _ := finalizeApp(nil, errors.New("db down"), poller)
 
@@ -64,6 +66,7 @@ func TestFinalizeSweep_RevocationFailureStillPolls(t *testing.T) {
 
 // A failing poll fails the task without hiding the revocation repair.
 func TestFinalizeSweep_PollFailureFailsTheTask(t *testing.T) {
+	t.Parallel()
 	poller := &fakeMarketplacePoller{err: errors.New("list failed")}
 	app, revCalls := finalizeApp(&purchase.FinalizeResult{Found: 2, Finalized: 2}, nil, poller)
 
@@ -78,6 +81,7 @@ func TestFinalizeSweep_PollFailureFailsTheTask(t *testing.T) {
 
 // Without an API handler (no database wired yet) the poll is a no-op.
 func TestFinalizeSweep_NoPollerIsANoOp(t *testing.T) {
+	t.Parallel()
 	app, _ := finalizeApp(&purchase.FinalizeResult{}, nil, nil)
 	app.marketplacePoller = nil
 

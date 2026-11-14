@@ -100,6 +100,7 @@ func selfMembershipRequest(t *testing.T, groupIDs []string) *events.LambdaFuncti
 // (allowed_accounts = ARRAY['*']) must be refused with a 403 by the time the
 // request comes back out of the router, and no user row may be written.
 func TestSelfAccountScopeDispatch_JoinWiderGroupRefused(t *testing.T) {
+	t.Parallel()
 	handler, mockStore := newSelfScopeHarness(t, []string{scopeDispatchGroupID})
 	mockStore.On("GetGroup", mock.Anything, auth.DefaultAdminGroupID).Return(&auth.Group{
 		ID:              auth.DefaultAdminGroupID,
@@ -125,6 +126,7 @@ func TestSelfAccountScopeDispatch_JoinWiderGroupRefused(t *testing.T) {
 // write. Nothing is being added here, so this request passes every add-oriented
 // check untouched.
 func TestSelfAccountScopeDispatch_LeaveScopingGroupRefused(t *testing.T) {
+	t.Parallel()
 	viewers := &auth.Group{
 		ID:   "55555555-5555-4555-8555-555555555556",
 		Name: "Viewers",
@@ -153,6 +155,7 @@ func TestSelfAccountScopeDispatch_LeaveScopingGroupRefused(t *testing.T) {
 // scope still succeeds through the same route. Without this, a guard refusing
 // every self-membership edit would pass both tests above.
 func TestSelfAccountScopeDispatch_NonWideningChangeAllowed(t *testing.T) {
+	t.Parallel()
 	// Write-capable on purpose: a view-only group next to the admin group is
 	// refused as a contradictory combination (issue #78), which is not what
 	// this control is about.

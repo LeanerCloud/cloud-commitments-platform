@@ -40,6 +40,7 @@ func usersRequest(t *testing.T, method, path string, body map[string]any) *event
 }
 
 func TestGroupCombinationDispatch_UpdateRefusedWith400(t *testing.T) {
+	t.Parallel()
 	handler, mockStore := newSelfScopeHarness(t, []string{scopeDispatchGroupID})
 	mockStore.On("GetGroup", mock.Anything, comboDispatchViewers.ID).Return(comboDispatchViewers, nil)
 
@@ -54,6 +55,7 @@ func TestGroupCombinationDispatch_UpdateRefusedWith400(t *testing.T) {
 }
 
 func TestGroupCombinationDispatch_CreateRefusedWith400(t *testing.T) {
+	t.Parallel()
 	handler, mockStore := newSelfScopeHarness(t, []string{scopeDispatchGroupID})
 	mockStore.On("GetGroup", mock.Anything, comboDispatchViewers.ID).Return(comboDispatchViewers, nil)
 	mockStore.On("GetUserByEmail", mock.Anything, "new-user@example.com").Return(nil, nil)
@@ -72,6 +74,7 @@ func TestGroupCombinationDispatch_CreateRefusedWith400(t *testing.T) {
 // A user who already holds a contradictory membership can still be renamed
 // through the route, with the groups omitted or echoed back unchanged.
 func TestGroupCombinationDispatch_LegacyUserRenameAllowed(t *testing.T) {
+	t.Parallel()
 	legacy := []string{scopeDispatchGroupID, comboDispatchViewers.ID}
 	for name, body := range map[string]map[string]any{
 		"groups omitted":          {"email": "renamed@example.com"},

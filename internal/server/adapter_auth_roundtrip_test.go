@@ -120,6 +120,7 @@ func (a *authRT) requireHashOf(hash, password string) {
 }
 
 func TestLogin_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	t.Run("email and password", func(t *testing.T) {
 		a := newAuthRT(t)
 		a.store.On("GetUserByEmail", mock.Anything, rtEmail).Return(a.user, nil).Once()
@@ -157,6 +158,7 @@ func TestLogin_RoundTripEveryField(t *testing.T) {
 }
 
 func TestForgotPassword_RoundTripEmail(t *testing.T) {
+	t.Parallel()
 	a := newAuthRT(t)
 	a.store.On("GetUserByEmail", mock.Anything, rtEmail).Return(a.user, nil).Once()
 	var stored *auth.User
@@ -173,6 +175,7 @@ func TestForgotPassword_RoundTripEmail(t *testing.T) {
 }
 
 func TestResetPassword_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	a := newAuthRT(t)
 	const token = "reset-token-rt"
 	a.user.PasswordResetToken = hashSessionTokenForTest(token)
@@ -194,6 +197,7 @@ func TestResetPassword_RoundTripEveryField(t *testing.T) {
 }
 
 func TestUpdateProfile_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	a := newAuthRT(t)
 	a.session()
 	const newEmail = "renamed@example.com"
@@ -214,6 +218,7 @@ func TestUpdateProfile_RoundTripEveryField(t *testing.T) {
 }
 
 func TestChangePassword_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	a := newAuthRT(t)
 	a.session()
 	oldHash := a.user.PasswordHash
@@ -232,6 +237,7 @@ func TestChangePassword_RoundTripEveryField(t *testing.T) {
 }
 
 func TestMFASetup_RoundTripPassword(t *testing.T) {
+	t.Parallel()
 	a := newAuthRT(t)
 	a.session()
 	var storedSecret string
@@ -246,6 +252,7 @@ func TestMFASetup_RoundTripPassword(t *testing.T) {
 }
 
 func TestMFAEnable_RoundTripCode(t *testing.T) {
+	t.Parallel()
 	a := newAuthRT(t)
 	a.session()
 	pendingExpiry := time.Now().Add(time.Hour)
@@ -266,6 +273,7 @@ func TestMFAEnable_RoundTripCode(t *testing.T) {
 }
 
 func TestMFADisable_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	a := newAuthRT(t)
 	a.session()
 	const recovery = "ABCD-EFGH"
@@ -281,6 +289,7 @@ func TestMFADisable_RoundTripEveryField(t *testing.T) {
 }
 
 func TestMFARegenerate_RoundTripCode(t *testing.T) {
+	t.Parallel()
 	a := newAuthRT(t)
 	a.session()
 	oldHashes := []string{"old-hash-1"}

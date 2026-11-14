@@ -18,6 +18,7 @@ import (
 )
 
 func TestHttpToLambdaRequest(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		method         string
@@ -107,6 +108,7 @@ func TestHttpToLambdaRequest(t *testing.T) {
 }
 
 func TestLambdaResponseToHTTPRetryAfter(t *testing.T) {
+	t.Parallel()
 	const body = `{"error":"Too many requests"}`
 	tests := []struct {
 		name  string
@@ -151,6 +153,7 @@ func TestLambdaResponseToHTTPRetryAfter(t *testing.T) {
 }
 
 func TestLambdaResponseToHTTP(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		lambdaResp      *events.LambdaFunctionURLResponse
 		expectedHeaders map[string]string
@@ -262,6 +265,7 @@ func TestLambdaResponseToHTTP(t *testing.T) {
 }
 
 func TestHandleScheduledHTTP(t *testing.T) {
+	t.Parallel()
 	// newBearerValidator constructs a bearer-mode validator and fails
 	// the test on construction error — preferred over `panic` because
 	// failures stay scoped to the offending case.
@@ -378,6 +382,7 @@ func TestHandleScheduledHTTP(t *testing.T) {
 }
 
 func TestCreateHTTPServer(t *testing.T) {
+	t.Parallel()
 	app := &Application{
 		API: api.NewHandler(api.HandlerConfig{}),
 	}
@@ -432,6 +437,7 @@ func TestCreateHTTPServer(t *testing.T) {
 // that the HTTP transport correctly intercepts OIDC paths and returns a JSON
 // response (not HTML/404).
 func TestHTTPTransportServesOIDCEndpoints(t *testing.T) {
+	t.Parallel()
 	// A nil signer means HandleOIDC returns a 404 JSON body rather than the
 	// real discovery document -- but critically it is *JSON* and the path is
 	// *handled* rather than falling through to the SPA/404 fallback.
@@ -470,6 +476,7 @@ func TestHTTPTransportServesOIDCEndpoints(t *testing.T) {
 // TestHandleOIDCHTTP verifies that handleOIDCHTTP correctly bridges to
 // api.Handler.HandleOIDC and returns JSON (not HTML).
 func TestHandleOIDCHTTP(t *testing.T) {
+	t.Parallel()
 	app := &Application{
 		API: api.NewHandler(api.HandlerConfig{}),
 	}

@@ -14,6 +14,7 @@ import (
 var ladderTestGlobal = ladderTerms{term: pkgladder.Term1Year, payment: pkgladder.PaymentNoUpfront}
 
 func TestLadderGlobalTerms(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		years   int

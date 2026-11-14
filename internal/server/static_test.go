@@ -34,6 +34,7 @@ func makeStaticDir(t *testing.T, files map[string]string) string {
 // ----- cacheControlForExt -----
 
 func TestCacheControlForExt(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		ext      string
 		contains string
@@ -62,6 +63,7 @@ func TestCacheControlForExt(t *testing.T) {
 // ----- setCacheHeaders -----
 
 func TestSetCacheHeaders(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path     string
 		contains string
@@ -125,6 +127,7 @@ var cachePolicyPins = []struct {
 // TestCachePolicyPinned asserts exact header values from both entry points:
 // setCacheHeaders (container spaHandler) and cacheControlForExt (Lambda).
 func TestCachePolicyPinned(t *testing.T) {
+	t.Parallel()
 	for _, tt := range cachePolicyPins {
 		t.Run(tt.file, func(t *testing.T) {
 			urlPath := "/assets.v2/" + tt.file
@@ -141,6 +144,7 @@ func TestCachePolicyPinned(t *testing.T) {
 // Cache-Control header from both, so a deployment mode cannot change the
 // cache policy for an asset.
 func TestCachePolicyParity_ContainerAndLambda(t *testing.T) {
+	t.Parallel()
 	files := map[string]string{}
 	for _, tt := range cachePolicyPins {
 		files[tt.file] = "x"
@@ -165,6 +169,7 @@ func TestCachePolicyParity_ContainerAndLambda(t *testing.T) {
 // ----- isStaticPath -----
 
 func TestIsStaticPath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path     string
 		expected bool
@@ -191,23 +196,27 @@ func TestIsStaticPath(t *testing.T) {
 // ----- staticDirFromEnv -----
 
 func TestStaticDirFromEnv_Unset(t *testing.T) {
+	t.Parallel()
 	testutil.SetEnv(t, "STATIC_DIR", "")
 	testutil.AssertEqual(t, "", staticDirFromEnv())
 }
 
 func TestStaticDirFromEnv_ValidDir(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html/>"})
 	testutil.SetEnv(t, "STATIC_DIR", dir)
 	testutil.AssertEqual(t, dir, staticDirFromEnv())
 }
 
 func TestStaticDirFromEnv_MissingIndexHTML(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir() // no index.html
 	testutil.SetEnv(t, "STATIC_DIR", dir)
 	testutil.AssertEqual(t, "", staticDirFromEnv())
 }
 
 func TestStaticDirFromEnv_NonExistentDir(t *testing.T) {
+	t.Parallel()
 	testutil.SetEnv(t, "STATIC_DIR", "/nonexistent/path/no/index")
 	testutil.AssertEqual(t, "", staticDirFromEnv())
 }
@@ -215,6 +224,7 @@ func TestStaticDirFromEnv_NonExistentDir(t *testing.T) {
 // ----- resolveStaticFilePath -----
 
 func TestResolveStaticFilePath_ExistingFile(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{
 		"index.html":    "<html/>",
 		"bundle.js":     "var x=1;",
@@ -228,6 +238,7 @@ func TestResolveStaticFilePath_ExistingFile(t *testing.T) {
 }
 
 func TestResolveStaticFilePath_RootFallsBackToIndex(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html/>"})
 
 	_, cleanPath, ok := resolveStaticFilePath(dir, "/")
@@ -236,6 +247,7 @@ func TestResolveStaticFilePath_RootFallsBackToIndex(t *testing.T) {
 }
 
 func TestResolveStaticFilePath_ExtensionlessFallsBackToIndex(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html/>"})
 
 	_, cleanPath, ok := resolveStaticFilePath(dir, "/some/spa/route")
@@ -244,6 +256,7 @@ func TestResolveStaticFilePath_ExtensionlessFallsBackToIndex(t *testing.T) {
 }
 
 func TestResolveStaticFilePath_MissingFileWithExtension(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html/>"})
 
 	_, _, ok := resolveStaticFilePath(dir, "/missing.png")
@@ -251,6 +264,7 @@ func TestResolveStaticFilePath_MissingFileWithExtension(t *testing.T) {
 }
 
 func TestResolveStaticFilePath_DirectoryTraversal(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html/>"})
 
 	_, _, ok := resolveStaticFilePath(dir, "/../../../etc/passwd")
@@ -270,6 +284,7 @@ func TestResolveStaticFilePath_DirectoryTraversal(t *testing.T) {
 // "/srv/static" is a string-prefix of "/srv/static-evil". The fix appends
 // os.PathSeparator to the prefix so only paths genuinely inside the dir pass.
 func TestResolveStaticFilePath_SiblingDirBlocked(t *testing.T) {
+	t.Parallel()
 	// Create a parent and the real static dir inside it.
 	parent := t.TempDir()
 	realDir := filepath.Join(parent, "static")
@@ -295,6 +310,7 @@ func TestResolveStaticFilePath_SiblingDirBlocked(t *testing.T) {
 }
 
 func TestResolveStaticFilePath_IndexMissingForSPARoute(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir() // no index.html
 
 	_, _, ok := resolveStaticFilePath(dir, "/some/route")
@@ -304,6 +320,7 @@ func TestResolveStaticFilePath_IndexMissingForSPARoute(t *testing.T) {
 // ----- serveStaticForLambda -----
 
 func TestServeStaticForLambda_ExistingHTMLFile(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html>hello</html>"})
 
 	content, ct, cc, found := serveStaticForLambda(dir, "/index.html")
@@ -314,6 +331,7 @@ func TestServeStaticForLambda_ExistingHTMLFile(t *testing.T) {
 }
 
 func TestServeStaticForLambda_ExistingJSFile(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{
 		"index.html": "<html/>",
 		"app.js":     "var x=1;",
@@ -327,6 +345,7 @@ func TestServeStaticForLambda_ExistingJSFile(t *testing.T) {
 }
 
 func TestServeStaticForLambda_NotFound(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html/>"})
 
 	_, _, _, found := serveStaticForLambda(dir, "/missing.png")
@@ -334,6 +353,7 @@ func TestServeStaticForLambda_NotFound(t *testing.T) {
 }
 
 func TestServeStaticForLambda_SPAFallback(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html>spa</html>"})
 
 	content, _, _, found := serveStaticForLambda(dir, "/dashboard")
@@ -342,6 +362,7 @@ func TestServeStaticForLambda_SPAFallback(t *testing.T) {
 }
 
 func TestServeStaticForLambda_UnknownExtension(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{
 		"index.html": "<html/>",
 		"data.bin":   "\x00\x01\x02",
@@ -356,6 +377,7 @@ func TestServeStaticForLambda_UnknownExtension(t *testing.T) {
 // ----- spaFileServer / ServeHTTP -----
 
 func TestSpaFileServer_ServesExistingFile(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{
 		"index.html": "<html>index</html>",
 		"app.js":     "var x=1;",
@@ -371,6 +393,7 @@ func TestSpaFileServer_ServesExistingFile(t *testing.T) {
 }
 
 func TestSpaFileServer_ServesIndexForRoot(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html>root</html>"})
 
 	handler := spaFileServer(dir)
@@ -383,6 +406,7 @@ func TestSpaFileServer_ServesIndexForRoot(t *testing.T) {
 }
 
 func TestSpaFileServer_SPAFallbackForUnknownPath(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html>spa</html>"})
 
 	handler := spaFileServer(dir)
@@ -395,6 +419,7 @@ func TestSpaFileServer_SPAFallbackForUnknownPath(t *testing.T) {
 }
 
 func TestSpaFileServer_404ForMissingExtensionFile(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html/>"})
 
 	handler := spaFileServer(dir)
@@ -407,6 +432,7 @@ func TestSpaFileServer_404ForMissingExtensionFile(t *testing.T) {
 }
 
 func TestSpaFileServer_404WhenIndexMissing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir() // no index.html
 
 	handler := spaFileServer(dir)
@@ -454,6 +480,7 @@ var appRoutes = []string{
 }
 
 func TestSPAFallbackServesIndexForEveryAppRoute(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{
 		"index.html":      "<html>spa</html>",
 		"docs/index.html": "<html>docs</html>",
@@ -483,6 +510,7 @@ func TestSPAFallbackServesIndexForEveryAppRoute(t *testing.T) {
 // directory stat fell straight through to the SPA fallback, so the "API Docs"
 // header link (href="/docs/") rendered the dashboard instead.
 func TestResolveStaticFilePath_DirectoryIndex(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{
 		"index.html":      "<html>spa</html>",
 		"docs/index.html": "<html>docs</html>",
@@ -500,6 +528,7 @@ func TestResolveStaticFilePath_DirectoryIndex(t *testing.T) {
 // A directory without its own index.html still falls back to the SPA shell, so
 // asset directories (dist/js, dist/css) do not 404 into a broken page.
 func TestResolveStaticFilePath_DirectoryWithoutIndexFallsBackToSPA(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{
 		"index.html": "<html>spa</html>",
 		"js/app.js":  "var x=1;",
@@ -514,6 +543,7 @@ func TestResolveStaticFilePath_DirectoryWithoutIndexFallsBackToSPA(t *testing.T)
 // request path (/docs/index.html) would reject. os.Stat follows symlinks, so
 // the containment check has to run on the candidate, not just on the directory.
 func TestResolveStaticFilePath_DirectoryIndexRejectsSymlinkEscape(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	staticDir := filepath.Join(parent, "static", "docs")
 	if err := os.MkdirAll(staticDir, 0o755); err != nil {
@@ -546,6 +576,7 @@ func TestResolveStaticFilePath_DirectoryIndexRejectsSymlinkEscape(t *testing.T) 
 // index.html pointing out of the static dir is refused at /index.html and
 // served at /plans, which is the same asymmetry directoryIndex avoids.
 func TestSPAFallbackRejectsSymlinkedShell(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	root := filepath.Join(parent, "static")
 	if err := os.MkdirAll(root, 0o755); err != nil {
@@ -633,6 +664,7 @@ func symlinkCases(symlinked bool) []string {
 // whatever resolveStaticFilePath hands back is inside the served root, with
 // symlinks resolved, or it hands back nothing.
 func TestResolveStaticFilePath_HostilePathsNeverEscapeRoot(t *testing.T) {
+	t.Parallel()
 	root, outside, symlinked := hostileRoot(t)
 	realRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -688,6 +720,7 @@ func TestResolveStaticFilePath_HostilePathsNeverEscapeRoot(t *testing.T) {
 // Same matrix through the real HTTP handler, so Go's own URL decoding is in the
 // loop rather than assumed. Asserts on the served bytes, not the status.
 func TestSpaFileServer_HostilePathsNeverServeOutOfRoot(t *testing.T) {
+	t.Parallel()
 	root, _, symlinked := hostileRoot(t)
 	handler := spaFileServer(root)
 
@@ -718,6 +751,7 @@ func TestSpaFileServer_HostilePathsNeverServeOutOfRoot(t *testing.T) {
 // The Lambda transport passes RawPath, which is not decoded the way
 // http.Request.URL.Path is, so the two transports must be checked separately.
 func TestServeStaticForLambda_HostilePathsNeverServeOutOfRoot(t *testing.T) {
+	t.Parallel()
 	root, outside, symlinked := hostileRoot(t)
 
 	paths := append([]string{

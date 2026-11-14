@@ -13,6 +13,7 @@ import (
 // adapter hands the handler auth.ErrUserNotFound for a missing user, whether
 // the store reports it as pgx.ErrNoRows or as a nil user.
 func TestAuthServiceAdapter_GetUser_MissingUserIsErrUserNotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("store returns ErrNoRows", func(t *testing.T) {

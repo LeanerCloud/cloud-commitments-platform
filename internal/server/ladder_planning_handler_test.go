@@ -126,6 +126,7 @@ func requireHold(t *testing.T, store *ladderTestStore) {
 }
 
 func TestHandleLadderRun_PlansAtConstantPair(t *testing.T) {
+	t.Parallel()
 	store, rec, _ := termsFixture{globalYears: 3, globalPayment: "all-upfront", planRI: rp(0.75), globalRI: rp(0.5)}.run(t)
 
 	assert.Equal(t, []ladderTerms{termsPlan, termsGlobal}, rec.calls)
@@ -136,6 +137,7 @@ func TestHandleLadderRun_PlansAtConstantPair(t *testing.T) {
 }
 
 func TestHandleLadderRun_ExistingCoverageConvertsAtLowerRate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		planRI, global float64
@@ -158,6 +160,7 @@ func TestHandleLadderRun_ExistingCoverageConvertsAtLowerRate(t *testing.T) {
 }
 
 func TestHandleLadderRun_HoldsWhenEitherRateMissingForHeldLayer(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		planRI, global *float64
@@ -178,6 +181,7 @@ func TestHandleLadderRun_HoldsWhenEitherRateMissingForHeldLayer(t *testing.T) {
 }
 
 func TestHandleLadderRun_ObservedRateBeatsLowerOfTwo(t *testing.T) {
+	t.Parallel()
 	store, _, _ := termsFixture{
 		globalYears: 3, globalPayment: "all-upfront", planRI: rp(0.75), globalRI: rp(0.5),
 		existing: 2.5, observed: rateMap{pkgladder.LayerConvertibleRI: 0.625},
@@ -191,6 +195,7 @@ func TestHandleLadderRun_ObservedRateBeatsLowerOfTwo(t *testing.T) {
 }
 
 func TestHandleLadderRun_MissingOrInvalidReferenceRateWithoutHoldingsStillPlans(t *testing.T) {
+	t.Parallel()
 	for name, global := range map[string]*float64{"absent": nil, "invalid": rp(1.3)} {
 		t.Run(name, func(t *testing.T) {
 			store, _, _ := termsFixture{globalYears: 3, globalPayment: "all-upfront", planRI: rp(0.75), globalRI: global}.run(t)
@@ -200,6 +205,7 @@ func TestHandleLadderRun_MissingOrInvalidReferenceRateWithoutHoldingsStillPlans(
 }
 
 func TestHandleLadderRun_SamePairFetchesOnce(t *testing.T) {
+	t.Parallel()
 	store, rec, _ := termsFixture{globalYears: 1, globalPayment: "no-upfront", planRI: rp(0.5), existing: 3}.run(t)
 
 	assert.Equal(t, []ladderTerms{termsPlan}, rec.calls)
@@ -209,6 +215,7 @@ func TestHandleLadderRun_SamePairFetchesOnce(t *testing.T) {
 }
 
 func TestHandleLadderRun_ReferenceFetchErrorPersistsNothing(t *testing.T) {
+	t.Parallel()
 	store, _, result := termsFixture{
 		globalYears: 3, globalPayment: "all-upfront", planRI: rp(0.75), globalRI: rp(0.5),
 		globalErr: errors.New("ce unavailable"),
@@ -219,6 +226,7 @@ func TestHandleLadderRun_ReferenceFetchErrorPersistsNothing(t *testing.T) {
 }
 
 func TestHandleLadderRun_InvalidReferenceRateOnHeldLayerFailsRun(t *testing.T) {
+	t.Parallel()
 	store, _, result := termsFixture{globalYears: 3, globalPayment: "all-upfront", planRI: rp(0.75), globalRI: rp(1.3), existing: 3}.run(t)
 
 	assert.Equal(t, 1, result.Errored)
@@ -226,6 +234,7 @@ func TestHandleLadderRun_InvalidReferenceRateOnHeldLayerFailsRun(t *testing.T) {
 }
 
 func TestHandleLadderRun_OldPairRowsKeepNetting(t *testing.T) {
+	t.Parallel()
 	old := config.LadderInFlightRow{Layer: pkgladder.LayerConvertibleRI, CommitmentUSDPerHour: 4.0, Rate: 0.5}
 	store, _, _ := termsFixture{
 		globalYears: 3, globalPayment: "all-upfront", planRI: rp(0.75), globalRI: rp(0.5),

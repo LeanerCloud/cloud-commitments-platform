@@ -29,6 +29,7 @@ func (f fakeCallerIdentity) GetCallerIdentity(context.Context, *sts.GetCallerIde
 // which used to be written onto every RI exchange audit row the run created
 // (#326, A06-025).
 func TestResolveAccountID_RefusesToFabricateAnAccount(t *testing.T) {
+	t.Parallel()
 	cases := map[string]fakeCallerIdentity{
 		"STS error":     {err: errors.New("ExpiredToken: the security token included in the request is expired")},
 		"nil output":    {},
@@ -46,6 +47,7 @@ func TestResolveAccountID_RefusesToFabricateAnAccount(t *testing.T) {
 }
 
 func TestResolveAccountID_ReturnsTheCallerAccount(t *testing.T) {
+	t.Parallel()
 	fake := fakeCallerIdentity{out: &sts.GetCallerIdentityOutput{Account: aws.String("123456789012")}}
 
 	accountID, err := resolveAccountID(context.Background(), fake)
@@ -57,6 +59,7 @@ func TestResolveAccountID_ReturnsTheCallerAccount(t *testing.T) {
 // A reshape run without a resolved account ID must stop before it lists RIs
 // or writes any exchange record, so no audit row carries a blank account.
 func TestExecuteRIExchangeReshape_RefusesEmptyAccountID(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 	writes := 0
 	store := &mockConfigStoreForExchange{

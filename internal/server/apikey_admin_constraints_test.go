@@ -20,6 +20,7 @@ import (
 // member with an unconstrained {admin, *}, so the owner gate passes
 // everything and only the key's own constraints can refuse the request.
 func TestAuthServiceAdapter_ConstrainedAdminKeyRefusedOutOfScope(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	ctx := context.Background()
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })

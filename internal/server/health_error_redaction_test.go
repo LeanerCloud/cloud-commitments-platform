@@ -29,6 +29,7 @@ func (failingPingAuthStore) Ping(context.Context) error { return errors.New(sens
 // failed check reports a fixed message and a stable reason code, never the
 // raw migration or store error.
 func TestHealth_DoesNotExposeRawErrors(t *testing.T) {
+	t.Parallel()
 	app := &Application{
 		Version:  "test",
 		Config:   &mockConfigStoreForHealth{},

@@ -107,6 +107,7 @@ func jwksCheck(t *testing.T, body map[string]any) map[string]any {
 }
 
 func TestHealthScheduledAuthJWKS_DisabledWhenNilAndBearer(t *testing.T) {
+	t.Parallel()
 	app := &Application{Version: "test", Config: &mockConfigStoreForHealth{}, Auth: createHealthyAuthService()}
 	_, body, _ := getHealth(context.Background(), t, app.handleHealthCheck, "/health")
 	if got := jwksCheck(t, body)["status"]; got != "disabled" {
@@ -120,6 +121,7 @@ func TestHealthScheduledAuthJWKS_DisabledWhenNilAndBearer(t *testing.T) {
 }
 
 func TestHealthScheduledAuthJWKS_Healthy(t *testing.T) {
+	t.Parallel()
 	app, _ := oidcHealthApp(t, newJWKSStub(t, jwksModeOK), true)
 	_, body, _ := getHealth(context.Background(), t, app.handleHealthCheck, "/health")
 	if got := jwksCheck(t, body)["status"]; got != "healthy" {
@@ -128,6 +130,7 @@ func TestHealthScheduledAuthJWKS_Healthy(t *testing.T) {
 }
 
 func TestHealthScheduledAuthJWKS_DegradedJSON(t *testing.T) {
+	t.Parallel()
 	stub := newJWKSStub(t, jwksModeFail)
 	app, _ := oidcHealthApp(t, stub, true)
 	code, body, raw := getHealth(context.Background(), t, app.handleHealthCheck, "/health")
@@ -151,6 +154,7 @@ func TestHealthScheduledAuthJWKS_DegradedJSON(t *testing.T) {
 }
 
 func TestHealthScheduledAuthJWKS_DegradedKeepsTopLevelHealthy(t *testing.T) {
+	t.Parallel()
 	app, _ := oidcHealthApp(t, newJWKSStub(t, jwksModeFail), true)
 	_, body, _ := getHealth(context.Background(), t, app.handleHealthCheck, "/health")
 	if body["status"] != "healthy" {
@@ -159,6 +163,7 @@ func TestHealthScheduledAuthJWKS_DegradedKeepsTopLevelHealthy(t *testing.T) {
 }
 
 func TestHealthScheduledAuthJWKS_PendingKeepsTopLevelHealthy(t *testing.T) {
+	t.Parallel()
 	app, _ := oidcHealthApp(t, newJWKSStub(t, jwksModeOK), false)
 	_, body, _ := getHealth(context.Background(), t, app.handleHealthCheck, "/health")
 	if jwksCheck(t, body)["status"] != "pending" || body["status"] != "healthy" {
@@ -167,6 +172,7 @@ func TestHealthScheduledAuthJWKS_PendingKeepsTopLevelHealthy(t *testing.T) {
 }
 
 func TestHealthPlainNeverProbes(t *testing.T) {
+	t.Parallel()
 	stub := newJWKSStub(t, jwksModeFail)
 	app, clock := oidcHealthApp(t, stub, true)
 	stub.mode.Store(jwksModeBlock)
@@ -189,6 +195,7 @@ func TestHealthPlainNeverProbes(t *testing.T) {
 }
 
 func TestHealthRefreshQueryProbesAndWaitsBounded(t *testing.T) {
+	t.Parallel()
 	stub := newJWKSStub(t, jwksModeFail)
 	app, clock := oidcHealthApp(t, stub, true)
 	stub.mode.Store(jwksModeOK)
@@ -212,6 +219,7 @@ func TestHealthRefreshQueryProbesAndWaitsBounded(t *testing.T) {
 }
 
 func TestReadyIgnoresScheduledAuthJWKS(t *testing.T) {
+	t.Parallel()
 	degraded, _ := oidcHealthApp(t, newJWKSStub(t, jwksModeFail), true)
 	disabled := &Application{Version: "test", Config: &mockConfigStoreForHealth{}, Auth: createHealthyAuthService()}
 	for name, app := range map[string]*Application{"degraded": degraded, "disabled": disabled} {
@@ -223,6 +231,7 @@ func TestReadyIgnoresScheduledAuthJWKS(t *testing.T) {
 }
 
 func TestReadyStill503WhenJWKSDegradedAndStoreDown(t *testing.T) {
+	t.Parallel()
 	app, _ := oidcHealthApp(t, newJWKSStub(t, jwksModeFail), true)
 	// No dbConfig: migrations is "disabled", so config_store alone is unhealthy.
 	app.Config = nil

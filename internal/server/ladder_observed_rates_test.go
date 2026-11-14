@@ -41,6 +41,7 @@ func singleFlexFake(t *testing.T, layer pkgladder.LayerType, existing float64, m
 }
 
 func TestExecuteLadderRun_ObservedRateConvertsExistingPlannerKeepsMarginal(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	base := singleFlexFake(t, pkgladder.LayerEC2InstanceSP, 5, map[pkgladder.LayerType]float64{pkgladder.LayerEC2InstanceSP: 0.75})
 	cap := &observedFake{fakeLadderCapability: base, observedRates: map[pkgladder.LayerType]float64{pkgladder.LayerEC2InstanceSP: 0.5}}
@@ -58,6 +59,7 @@ func TestExecuteLadderRun_ObservedRateConvertsExistingPlannerKeepsMarginal(t *te
 }
 
 func TestExecuteLadderRun_AbsentObservedKeyFallsBackToMarginal(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	base := singleFlexFake(t, pkgladder.LayerEC2InstanceSP, 5, map[pkgladder.LayerType]float64{pkgladder.LayerEC2InstanceSP: 0.5})
 	cap := &observedFake{fakeLadderCapability: base, observedRates: map[pkgladder.LayerType]float64{pkgladder.LayerComputeSP: 0.75}}
@@ -68,6 +70,7 @@ func TestExecuteLadderRun_AbsentObservedKeyFallsBackToMarginal(t *testing.T) {
 }
 
 func TestExecuteLadderRun_NoObservedCapabilityConvertsAtMarginal(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := singleFlexFake(t, pkgladder.LayerEC2InstanceSP, 5, map[pkgladder.LayerType]float64{pkgladder.LayerEC2InstanceSP: 0.5})
 	require.NoError(t, runWithRates(t, store, cap))
@@ -79,6 +82,7 @@ func TestExecuteLadderRun_NoObservedCapabilityConvertsAtMarginal(t *testing.T) {
 // Compute has only an observed rate: its coverage converts (no
 // missing_discount_rate), and the planner, with no marginal rate, holds the gap.
 func TestExecuteLadderRun_ObservedOnlyLayerConvertsButPlannerHolds(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	base := singleFlexFake(t, pkgladder.LayerComputeSP, 2, map[pkgladder.LayerType]float64{})
 	cap := &observedFake{fakeLadderCapability: base, observedRates: map[pkgladder.LayerType]float64{pkgladder.LayerComputeSP: 0.5}}
@@ -97,6 +101,7 @@ func TestExecuteLadderRun_ObservedOnlyLayerConvertsButPlannerHolds(t *testing.T)
 }
 
 func TestExecuteLadderRun_LayerWithNeitherRateIsMissingHold(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	base := singleFlexFake(t, pkgladder.LayerComputeSP, 2, map[pkgladder.LayerType]float64{})
 	cap := &observedFake{fakeLadderCapability: base, observedRates: map[pkgladder.LayerType]float64{}}
@@ -110,6 +115,7 @@ func TestExecuteLadderRun_LayerWithNeitherRateIsMissingHold(t *testing.T) {
 }
 
 func TestExecuteLadderRun_ObservedRatesErrorFailsRun(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	base := singleFlexFake(t, pkgladder.LayerEC2InstanceSP, 5, map[pkgladder.LayerType]float64{pkgladder.LayerEC2InstanceSP: 0.5})
 	cap := &observedFake{fakeLadderCapability: base, observedErr: errors.New("ce throttled")}
@@ -120,6 +126,7 @@ func TestExecuteLadderRun_ObservedRatesErrorFailsRun(t *testing.T) {
 }
 
 func TestLadderConversionRates_NilMarginalWithObserved(t *testing.T) {
+	t.Parallel()
 	base := singleFlexFake(t, pkgladder.LayerComputeSP, 2, nil)
 	cap := &observedFake{fakeLadderCapability: base, observedRates: map[pkgladder.LayerType]float64{pkgladder.LayerComputeSP: 0.5}}
 	conv, observed, err := ladderConversionRates(testutil.TestContext(t), cap, pkgladder.Scope{}, nil)

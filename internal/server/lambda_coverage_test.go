@@ -19,6 +19,7 @@ import (
 )
 
 func TestIsTextContentType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		ct       string
 		expected bool
@@ -45,6 +46,7 @@ func TestIsTextContentType(t *testing.T) {
 }
 
 func TestServeLambdaStatic_Found(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{
 		"index.html": "<html>hello</html>",
 		"app.js":     "var x=1;",
@@ -66,6 +68,7 @@ func TestServeLambdaStatic_Found(t *testing.T) {
 // (browsers ignore that directive in <meta>), leaving the Lambda deploy
 // unprotected against clickjacking. See issues/8.
 func TestLambdaSecurityHeaders_IncludesCSP(t *testing.T) {
+	t.Parallel()
 	h := lambdaSecurityHeaders()
 	csp, ok := h["Content-Security-Policy"]
 	testutil.AssertTrue(t, ok, "lambdaSecurityHeaders must set Content-Security-Policy")
@@ -74,6 +77,7 @@ func TestLambdaSecurityHeaders_IncludesCSP(t *testing.T) {
 }
 
 func TestServeLambdaStatic_BinaryFile(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{
 		"index.html": "<html/>",
 		"img.png":    "\x89PNG\x0d\x0a",
@@ -88,6 +92,7 @@ func TestServeLambdaStatic_BinaryFile(t *testing.T) {
 }
 
 func TestServeLambdaStatic_NotFound(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html/>"})
 
 	app := &Application{staticDir: dir}
@@ -98,6 +103,7 @@ func TestServeLambdaStatic_NotFound(t *testing.T) {
 }
 
 func TestHandleLambdaHTTPEvent_StaticPath(t *testing.T) {
+	t.Parallel()
 	dir := makeStaticDir(t, map[string]string{"index.html": "<html>spa</html>"})
 
 	app := &Application{
@@ -141,6 +147,7 @@ func TestHandleLambdaHTTPEvent_StaticPath(t *testing.T) {
 // resolves, so asserting it proves the fix. (A request with no session never
 // reaches either: it gets 401 before the lookup, issue #435.)
 func TestHandleLambdaHTTPEvent_DecodesBase64FormBody(t *testing.T) {
+	t.Parallel()
 	execID := "11111111-1111-1111-1111-111111111111"
 	accountID := "acct-1"
 	exec := &config.PurchaseExecution{
@@ -193,6 +200,7 @@ func TestHandleLambdaHTTPEvent_DecodesBase64FormBody(t *testing.T) {
 }
 
 func TestHandleLambdaEvent_UnknownEventRouteToScheduled(t *testing.T) {
+	t.Parallel()
 	// "unknown" event type routes to handleLambdaScheduledEvent, which
 	// needs a parseable action. Empty object will fail ParseScheduledEvent.
 	app := &Application{
@@ -238,6 +246,7 @@ func (sessionOnlyAuth) ValidateCSRFToken(_ context.Context, sessionToken, csrfTo
 // same Strict-Transport-Security value (issue #14: Lambda mode had dropped
 // "preload" while HTTP mode sent it).
 func TestSecurityHeaders_HSTSMatchesAcrossModes(t *testing.T) {
+	t.Parallel()
 	testutil.AssertContains(t, api.HSTSHeaderValue, "preload")
 
 	testutil.AssertEqual(t, api.HSTSHeaderValue, lambdaSecurityHeaders()["Strict-Transport-Security"])

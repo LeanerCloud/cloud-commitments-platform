@@ -42,6 +42,7 @@ func twoColdInstances() (warmed, cold *Application) {
 // was no /ready at all and /health answered 200, so the load balancer routed to
 // it and the smoke test saw "degraded" from a replica nobody had initialized.
 func TestReadinessExcludesUninitializedReplica(t *testing.T) {
+	t.Parallel()
 	warmed, cold := twoColdInstances()
 
 	// The warm-up path: one instance has completed initialization.
@@ -72,6 +73,7 @@ func TestReadinessExcludesUninitializedReplica(t *testing.T) {
 // the orchestrator's own failure threshold restarts it, and deployment
 // verification fails within its budget.
 func TestReadinessPermanentInitializationFailure(t *testing.T) {
+	t.Parallel()
 	// Config and Auth stay nil: the state of a process whose ensureDB keeps
 	// failing against an unreachable database.
 	app := &Application{Version: "test", dbConfig: &dbConfigForReadiness}
@@ -93,6 +95,7 @@ func TestReadinessPermanentInitializationFailure(t *testing.T) {
 // is reported as "degraded" but the replica stays ready, because ensureDB never
 // retries migrations and 503 would pull every replica after one transient error.
 func TestReadinessFailedMigrations(t *testing.T) {
+	t.Parallel()
 	app := &Application{
 		Version:  "test",
 		Config:   &mockConfigStoreForHealth{},
@@ -117,6 +120,7 @@ func TestReadinessFailedMigrations(t *testing.T) {
 // TestReadinessPendingMigrations pins the pending case: AutoMigrate on, no
 // migration attempt recorded yet, so this replica has not finished starting.
 func TestReadinessPendingMigrations(t *testing.T) {
+	t.Parallel()
 	app := &Application{
 		Version:  "test",
 		Config:   &mockConfigStoreForHealth{},
@@ -141,6 +145,7 @@ func TestReadinessPendingMigrations(t *testing.T) {
 // "disabled" and a fully wired instance stays ready. Guards against making
 // readiness stricter than the health contract it shares.
 func TestReadinessDisabledMigrationsStayReady(t *testing.T) {
+	t.Parallel()
 	// Local copy: mutating the shared dbConfigForReadiness fixture would leak
 	// AutoMigrate=false into every other test in this file.
 	noMigrate := database.Config{Host: "unreachable", AutoMigrate: false}
@@ -165,6 +170,7 @@ func TestReadinessDisabledMigrationsStayReady(t *testing.T) {
 // dependencies are not connected. Pre-fix this was the only endpoint, which is
 // why readiness could not be expressed at all.
 func TestLivenessStays200WhileDegraded(t *testing.T) {
+	t.Parallel()
 	app := &Application{Version: "test", dbConfig: &dbConfigForReadiness}
 
 	req := httptest.NewRequestWithContext(context.Background(), "GET", "/health", nil)
@@ -182,6 +188,7 @@ func TestLivenessStays200WhileDegraded(t *testing.T) {
 // checks instead of blocking behind the initialization or racing on the store
 // pointers it is rewriting.
 func TestReadinessWhileInitializationInProgress(t *testing.T) {
+	t.Parallel()
 	app := &Application{Version: "test", dbConfig: &dbConfigForReadiness}
 	app.dbMu.Lock()
 	defer app.dbMu.Unlock()
@@ -202,6 +209,7 @@ func TestReadinessWhileInitializationInProgress(t *testing.T) {
 // serving the SPA index or 404, which an orchestrator reads as "not ready"
 // forever; this test catches the wiring, not just the handler.
 func TestReadyRouteRegistered(t *testing.T) {
+	t.Parallel()
 	app := &Application{
 		Version: "test",
 		Config:  &mockConfigStoreForHealth{},
@@ -225,6 +233,7 @@ func TestReadyRouteRegistered(t *testing.T) {
 // request. Pre-fix there was no background initialization at all, so a cold
 // replica stayed uninitialized until user traffic arrived.
 func TestInitializeUntilReadyRetriesAfterTransientFailure(t *testing.T) {
+	t.Parallel()
 	app := &Application{Version: "test", initRetryDelay: time.Millisecond}
 	var mu sync.Mutex
 	attempts := 0
@@ -261,6 +270,7 @@ func TestInitializeUntilReadyRetriesAfterTransientFailure(t *testing.T) {
 // going away. One attempt is always made, so an already-canceled context still
 // tries once.
 func TestInitializeUntilReadyStopsOnCancelledContext(t *testing.T) {
+	t.Parallel()
 	app := &Application{Version: "test", initRetryDelay: time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -296,6 +306,7 @@ func TestInitializeUntilReadyStopsOnCancelledContext(t *testing.T) {
 // must not pay for eager initialization on invocations that never touch the
 // database.
 func TestStartBackgroundInitSkipsWhenNoDatabase(t *testing.T) {
+	t.Parallel()
 	app := &Application{Version: "test"}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

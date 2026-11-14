@@ -22,6 +22,7 @@ import (
 // The password step answers mfa_required with an mfa_token; the code step
 // sends {email, mfa_token, mfa_code} with no password and gets a session.
 func TestLogin_MFATokenRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(authtest.MockStore)
 	realAuth := auth.NewService(auth.ServiceConfig{

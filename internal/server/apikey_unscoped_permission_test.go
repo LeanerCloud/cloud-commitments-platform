@@ -29,6 +29,7 @@ import (
 // server is required for this: api's mock auth service stubs the permission
 // check itself, which would make the regression structurally invisible.
 func TestHandleRequest_UnscopedAPIKey_DeniedOnAdminOwner(t *testing.T) {
+	t.Parallel()
 	rawKey := "unscoped-key-owned-by-admin" // #nosec G101 -- test fixture, not a real credential
 	hash := sha256.Sum256([]byte(rawKey))
 	keyHash := base64.RawURLEncoding.EncodeToString(hash[:])

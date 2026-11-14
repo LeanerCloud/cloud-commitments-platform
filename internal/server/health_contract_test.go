@@ -34,6 +34,7 @@ func topLevelHealthStatus(t *testing.T, body []byte) string {
 // the top-level "status" field, which must read "healthy" only when the
 // replica is fully healthy, on both the server mux and the Lambda router.
 func TestHealthBodyStatusIsTheVerdict(t *testing.T) {
+	t.Parallel()
 	serveMux := func(t *testing.T, app *Application) (int, []byte) {
 		t.Helper()
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)

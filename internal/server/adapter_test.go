@@ -47,6 +47,7 @@ func createMockAuthService(t *testing.T) (*authServiceAdapter, *authtest.MockSto
 }
 
 func TestAuthServiceAdapter_Login(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -67,6 +68,7 @@ func TestAuthServiceAdapter_Login(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_Logout(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -79,6 +81,7 @@ func TestAuthServiceAdapter_Logout(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_ValidateSession(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -102,6 +105,7 @@ func TestAuthServiceAdapter_ValidateSession(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_ValidateSession_Error(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -113,6 +117,7 @@ func TestAuthServiceAdapter_ValidateSession_Error(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_CheckAdminExists(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -125,6 +130,7 @@ func TestAuthServiceAdapter_CheckAdminExists(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_RequestPasswordReset(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -138,6 +144,7 @@ func TestAuthServiceAdapter_RequestPasswordReset(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_ConfirmPasswordReset(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -152,6 +159,7 @@ func TestAuthServiceAdapter_ConfirmPasswordReset(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_GetUser(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -171,6 +179,7 @@ func TestAuthServiceAdapter_GetUser(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_GetUser_Error(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -182,6 +191,7 @@ func TestAuthServiceAdapter_GetUser_Error(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_DeleteUser(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -198,6 +208,7 @@ func TestAuthServiceAdapter_DeleteUser(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_ListUsersAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -213,6 +224,7 @@ func TestAuthServiceAdapter_ListUsersAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_ChangePasswordAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -229,6 +241,7 @@ func TestAuthServiceAdapter_ChangePasswordAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_DeleteGroup(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -242,6 +255,7 @@ func TestAuthServiceAdapter_DeleteGroup(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_GetGroupAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -257,6 +271,7 @@ func TestAuthServiceAdapter_GetGroupAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_ListGroupsAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -271,6 +286,7 @@ func TestAuthServiceAdapter_ListGroupsAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_ValidateCSRFToken(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -296,6 +312,7 @@ func TestAuthServiceAdapter_ValidateCSRFToken(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_HasPermissionAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -319,6 +336,7 @@ func TestAuthServiceAdapter_HasPermissionAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_UpdateUserProfile(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -331,6 +349,7 @@ func TestAuthServiceAdapter_UpdateUserProfile(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_CreateUserAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	ctx := context.Background()
 
@@ -353,6 +372,7 @@ func TestAuthServiceAdapter_CreateUserAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_UpdateUserAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	ctx := context.Background()
 
@@ -393,6 +413,7 @@ func TestAuthServiceAdapter_UpdateUserAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_CreateGroupAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	ctx := context.Background()
 
@@ -412,6 +433,7 @@ func TestAuthServiceAdapter_CreateGroupAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_UpdateGroupAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	ctx := context.Background()
 
@@ -435,6 +457,7 @@ func TestAuthServiceAdapter_UpdateGroupAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_CreateAPIKeyAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	ctx := context.Background()
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -472,6 +495,7 @@ func TestAuthServiceAdapter_CreateAPIKeyAPI(t *testing.T) {
 // auth.PermissionConstraints. Every constraint field must reach the store; a
 // dropped one widens the key's scope.
 func TestAuthServiceAdapter_CreateAPIKeyAPI_KeepsPermissionConstraints(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	ctx := context.Background()
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -517,6 +541,7 @@ func TestAuthServiceAdapter_CreateAPIKeyAPI_KeepsPermissionConstraints(t *testin
 }
 
 func TestAuthServiceAdapter_ListUserAPIKeysAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -532,6 +557,7 @@ func TestAuthServiceAdapter_ListUserAPIKeysAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_DeleteAPIKeyAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -550,6 +576,7 @@ func TestAuthServiceAdapter_DeleteAPIKeyAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_RevokeAPIKeyAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -568,6 +595,7 @@ func TestAuthServiceAdapter_RevokeAPIKeyAPI(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_ValidateUserAPIKeyAPI(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -579,6 +607,7 @@ func TestAuthServiceAdapter_ValidateUserAPIKeyAPI(t *testing.T) {
 }
 
 func TestNewAuthServiceAdapter_NotNil(t *testing.T) {
+	t.Parallel()
 	service := auth.NewService(auth.ServiceConfig{})
 	adapter := newAuthServiceAdapter(service)
 	assert.NotNil(t, adapter)
@@ -586,6 +615,7 @@ func TestNewAuthServiceAdapter_NotNil(t *testing.T) {
 }
 
 func TestAuthServiceAdapter_SetupAdmin(t *testing.T) {
+	t.Parallel()
 	adapter, mockStore := createMockAuthService(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	ctx := context.Background()
@@ -620,6 +650,7 @@ func TestAuthServiceAdapter_SetupAdmin(t *testing.T) {
 // setupAdmin handler (which skips decodeBase64Password) and passes once it
 // decodes like every other password handler.
 func TestSetupAdminThenLogin_RoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockStore := new(authtest.MockStore)

@@ -92,12 +92,14 @@ func fireApp(store config.StoreInterface, sender email.SenderInterface, dashboar
 }
 
 func TestLadderFire_StoreMustBeALadderFireStore(t *testing.T) {
+	t.Parallel()
 	_, err := fireApp(&ladderTestStore{}, fakeSender{}, "https://d.example.com").handleLadderFire(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot fire ladder tranches")
 }
 
 func TestLadderFire_ResolverErrorAbortsBeforeTheStore(t *testing.T) {
+	t.Parallel()
 	store := &fireFakeStore{}
 	app := fireApp(store, fakeSender{}, "https://d.example.com")
 	app.LadderAccountResolver = func(context.Context) (string, string, error) { return "", "", errors.New("sts down") }
@@ -107,6 +109,7 @@ func TestLadderFire_ResolverErrorAbortsBeforeTheStore(t *testing.T) {
 }
 
 func TestLadderFire_NoRealSenderRefusesTheSweep(t *testing.T) {
+	t.Parallel()
 	var typedNilSender *email.Sender
 	var typedNilNop *email.NopSender
 	cases := map[string]email.SenderInterface{
@@ -124,6 +127,7 @@ func TestLadderFire_NoRealSenderRefusesTheSweep(t *testing.T) {
 }
 
 func TestLadderFire_RealSenderProceedsToTheClaim(t *testing.T) {
+	t.Parallel()
 	store := &fireFakeStore{}
 	res, err := fireApp(store, fakeSender{}, "https://d.example.com/").handleLadderFire(context.Background())
 	require.NoError(t, err)
@@ -132,6 +136,7 @@ func TestLadderFire_RealSenderProceedsToTheClaim(t *testing.T) {
 }
 
 func TestLadderFire_NoDashboardURLRefusesTheSweep(t *testing.T) {
+	t.Parallel()
 	store := &fireFakeStore{}
 	res, err := fireApp(store, fakeSender{}, "/").handleLadderFire(context.Background())
 	require.NoError(t, err)
@@ -140,11 +145,13 @@ func TestLadderFire_NoDashboardURLRefusesTheSweep(t *testing.T) {
 }
 
 func TestLadderFire_IsNotARegisteredTask(t *testing.T) {
+	t.Parallel()
 	_, registered := scheduledEventActions["ladder_fire"]
 	assert.False(t, registered, "registering ladder_fire is a deliberate later step")
 }
 
 func TestLadderFire_OtherProcessAccountRefusesTheSweep(t *testing.T) {
+	t.Parallel()
 	store := &fireFakeStore{}
 	app := fireApp(store, fakeSender{}, "https://d.example.com")
 	app.LadderAccountResolver = func(context.Context) (string, string, error) { return "999", "us-east-1", nil }

@@ -57,12 +57,14 @@ func (reconcileFakePurchase) LadderSPDescriber(context.Context, string, string) 
 }
 
 func TestParseScheduledEvent_LadderReconcile(t *testing.T) {
+	t.Parallel()
 	taskType, _, err := ParseScheduledEvent([]byte(`{"action":"ladder_reconcile"}`))
 	require.NoError(t, err)
 	assert.Equal(t, TaskLadderReconcile, taskType)
 }
 
 func TestLadderReconcile_NoFiredTranchesIsNoOpEvenWithSwitchesOff(t *testing.T) {
+	t.Parallel()
 	store := &reconcileFakeStore{}
 	app := &Application{Config: store, Purchase: reconcileFakePurchase{}}
 
@@ -75,6 +77,7 @@ func TestLadderReconcile_NoFiredTranchesIsNoOpEvenWithSwitchesOff(t *testing.T) 
 }
 
 func TestLadderReconcile_PassesStoreErrorThrough(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("list failed")
 	app := &Application{Config: &reconcileFakeStore{firedErr: boom}, Purchase: reconcileFakePurchase{}}
 
@@ -84,6 +87,7 @@ func TestLadderReconcile_PassesStoreErrorThrough(t *testing.T) {
 }
 
 func TestLadderReconcile_FailsLoudWhenStoreCannotReconcile(t *testing.T) {
+	t.Parallel()
 	app := &Application{Config: &ladderTestStore{}, Purchase: reconcileFakePurchase{}}
 
 	_, err := app.handleLadderReconcile(context.Background())
@@ -92,6 +96,7 @@ func TestLadderReconcile_FailsLoudWhenStoreCannotReconcile(t *testing.T) {
 }
 
 func TestLadderReconcile_FailsLoudWhenPurchaseCannotDescribeSavingsPlans(t *testing.T) {
+	t.Parallel()
 	app := &Application{Config: &reconcileFakeStore{}, Purchase: struct{ PurchaseManagerInterface }{}}
 
 	_, err := app.handleLadderReconcile(context.Background())

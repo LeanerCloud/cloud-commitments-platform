@@ -47,6 +47,7 @@ func bodyHandlers(app *Application) map[string]http.HandlerFunc {
 // An oversize body must be rejected with 413, not truncated at the cap and
 // handed to the API router cut mid-JSON (#326, A06-024).
 func TestHTTPHandlers_RejectOversizeBodyWith413(t *testing.T) {
+	t.Parallel()
 	app := &Application{API: api.NewHandler(api.HandlerConfig{})}
 	for name, h := range bodyHandlers(app) {
 		t.Run(name, func(t *testing.T) {
@@ -67,6 +68,7 @@ func TestHTTPHandlers_RejectOversizeBodyWith413(t *testing.T) {
 // A body read error must be answered with 400, not read as an empty body and
 // routed (#326, A06-024).
 func TestHTTPHandlers_RejectBodyReadErrorWith400(t *testing.T) {
+	t.Parallel()
 	app := &Application{API: api.NewHandler(api.HandlerConfig{})}
 	for name, h := range bodyHandlers(app) {
 		t.Run(name, func(t *testing.T) {
@@ -85,6 +87,7 @@ func TestHTTPHandlers_RejectBodyReadErrorWith400(t *testing.T) {
 
 // A body of exactly the cap is still accepted whole.
 func TestHttpToLambdaRequest_BodyAtLimitIsKeptWhole(t *testing.T) {
+	t.Parallel()
 	body := bytes.Repeat([]byte("a"), requestBodyLimit)
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/test", bytes.NewReader(body))
 
@@ -97,6 +100,7 @@ func TestHttpToLambdaRequest_BodyAtLimitIsKeptWhole(t *testing.T) {
 // One byte over the cap is an error carrying *http.MaxBytesError, not a body
 // silently truncated to the cap.
 func TestHttpToLambdaRequest_OversizeBodyIsAnError(t *testing.T) {
+	t.Parallel()
 	body := bytes.Repeat([]byte("a"), requestBodyLimit+1)
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/test", bytes.NewReader(body))
 
@@ -110,6 +114,7 @@ func TestHttpToLambdaRequest_OversizeBodyIsAnError(t *testing.T) {
 
 // A read error is returned, not swallowed into an empty body.
 func TestHttpToLambdaRequest_ReadErrorIsReturned(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/test", nil)
 	req.Body = &failingBody{}
 

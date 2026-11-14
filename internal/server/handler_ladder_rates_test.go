@@ -28,6 +28,7 @@ func runWithRates(t *testing.T, store *ladderTestStore, cap pkgladder.LadderCapa
 }
 
 func TestExecuteLadderRun_RateHalfPersistsCommitmentDollars(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(12.5),
 		rates: map[pkgladder.LayerType]float64{pkgladder.LayerConvertibleRI: 0.5}}
@@ -48,6 +49,7 @@ func TestExecuteLadderRun_RateHalfPersistsCommitmentDollars(t *testing.T) {
 }
 
 func TestExecuteLadderRun_PlanJSONGapIsOnDemand(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(12.5),
 		rates: map[pkgladder.LayerType]float64{pkgladder.LayerConvertibleRI: 0.5}}
@@ -59,6 +61,7 @@ func TestExecuteLadderRun_PlanJSONGapIsOnDemand(t *testing.T) {
 }
 
 func TestExecuteLadderRun_NoRateCapabilityIsErrored(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaseline()}
 	// Embedding the interface hides GetCommitmentRates.
@@ -68,6 +71,7 @@ func TestExecuteLadderRun_NoRateCapabilityIsErrored(t *testing.T) {
 }
 
 func TestExecuteLadderRun_RateFetchErrorIsErrored(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaseline(), ratesErr: errors.New("ce throttled")}
 	err := runWithRates(t, store, cap)
@@ -76,6 +80,7 @@ func TestExecuteLadderRun_RateFetchErrorIsErrored(t *testing.T) {
 }
 
 func TestExecuteLadderRun_EmptyRateMapIsHoldOnlyAndPersists(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{}
 	cap := &fakeLadderCapability{t: t, baseline: testBaselineLowWater(12.5), rates: map[pkgladder.LayerType]float64{}}
 	require.NoError(t, runWithRates(t, store, cap))
@@ -85,6 +90,7 @@ func TestExecuteLadderRun_EmptyRateMapIsHoldOnlyAndPersists(t *testing.T) {
 }
 
 func TestExecuteLadderRun_InFlightOnUnsupportedLayerFailsLoud(t *testing.T) {
+	t.Parallel()
 	store := &ladderTestStore{inFlightRows: []config.LadderInFlightRow{{Layer: pkgladder.LayerComputeSP, CommitmentUSDPerHour: 1, Rate: 1}}}
 	cap := &fakeLadderCapability{t: t, baseline: testBaseline()}
 	err := runWithRates(t, store, cap)
@@ -93,6 +99,7 @@ func TestExecuteLadderRun_InFlightOnUnsupportedLayerFailsLoud(t *testing.T) {
 }
 
 func TestBuildTrancheDBRows_EmptyCommitmentRateErrors(t *testing.T) {
+	t.Parallel()
 	cfgID := "cfg"
 	_, err := buildTrancheDBRows([]pkgladder.Tranche{{
 		ID: "tr-norate", Layer: pkgladder.LayerEC2InstanceSP, AmountUSDPerHour: "5", FireAfter: ratesTestNow,

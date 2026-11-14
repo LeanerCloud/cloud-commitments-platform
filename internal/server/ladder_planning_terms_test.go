@@ -36,6 +36,7 @@ func (r *termRecorder) GetCommitmentRates(_ context.Context, _ pkgladder.Scope, 
 }
 
 func TestLowerOfTwoRates(t *testing.T) {
+	t.Parallel()
 	ri, ec2, comp := pkgladder.LayerConvertibleRI, pkgladder.LayerEC2InstanceSP, pkgladder.LayerComputeSP
 	held := map[pkgladder.LayerType]bool{ri: true, ec2: true, comp: true}
 	tests := []struct {
@@ -63,6 +64,7 @@ func TestLowerOfTwoRates(t *testing.T) {
 }
 
 func TestLowerOfTwoRates_InvalidRates(t *testing.T) {
+	t.Parallel()
 	ri := pkgladder.LayerConvertibleRI
 	for _, bad := range []float64{0, -0.1, math.NaN(), math.Inf(1), 1.3} {
 		for _, onRef := range []bool{true, false} {
@@ -83,6 +85,7 @@ func TestLowerOfTwoRates_InvalidRates(t *testing.T) {
 }
 
 func TestLowerOfTwoRates_DoesNotMutateInputs(t *testing.T) {
+	t.Parallel()
 	ri := pkgladder.LayerConvertibleRI
 	sizing, ref := rateMap{ri: 0.75}, rateMap{ri: 0.5}
 	_, err := lowerOfTwoRates(sizing, ref, map[pkgladder.LayerType]bool{ri: true})
@@ -92,6 +95,7 @@ func TestLowerOfTwoRates_DoesNotMutateInputs(t *testing.T) {
 }
 
 func TestHeldLayers(t *testing.T) {
+	t.Parallel()
 	one, zero := 1.0, 0.0
 	got := heldLayers(map[pkgladder.LayerType]pkgladder.LayerState{
 		pkgladder.LayerConvertibleRI: {ExistingUSDPerHour: &one},
@@ -102,6 +106,7 @@ func TestHeldLayers(t *testing.T) {
 }
 
 func TestLadderRates(t *testing.T) {
+	t.Parallel()
 	ri := pkgladder.LayerConvertibleRI
 	newRec := func() *termRecorder {
 		return &termRecorder{
@@ -160,6 +165,7 @@ func heldState(layer pkgladder.LayerType) map[pkgladder.LayerType]pkgladder.Laye
 type noRatesCapability struct{ pkgladder.LadderCapability }
 
 func TestMissingRateRationale(t *testing.T) {
+	t.Parallel()
 	m := ladderMissingRate{layer: pkgladder.LayerConvertibleRI}
 
 	same := m.rationale(termsPlan, termsPlan)

@@ -19,6 +19,7 @@ import (
 // visible to the scheduler and to alarms. A lock held for a plausible run
 // duration is still a normal skip.
 func TestHandleScheduledTaskStuckLock(t *testing.T) {
+	t.Parallel()
 	skipCases := []struct {
 		locker *mockTaskLocker
 		name   string
@@ -105,6 +106,7 @@ func TestHandleScheduledTaskStuckLock(t *testing.T) {
 // end to end: a normal skip answers 200, a stuck lock answers 500 so Cloud
 // Scheduler / Logic Apps record a failed attempt.
 func TestHandleScheduledHTTP_StuckLockIsNon200(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		heldFor time.Duration

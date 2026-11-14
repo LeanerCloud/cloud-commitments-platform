@@ -200,6 +200,7 @@ func createHealthyAuthService() *auth.Service {
 }
 
 func TestHandleHealthCheck(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		setupApp       func(*Application)
 		name           string
@@ -288,6 +289,7 @@ func TestHandleHealthCheck(t *testing.T) {
 }
 
 func TestHealthCheckSecurityHeaders(t *testing.T) {
+	t.Parallel()
 	app := &Application{
 		Version: "test",
 		Config:  &mockConfigStoreForHealth{},
@@ -325,6 +327,7 @@ func TestHealthCheckSecurityHeaders(t *testing.T) {
 }
 
 func TestHealthCheckNoCORSWhenNotConfigured(t *testing.T) {
+	t.Parallel()
 	app := &Application{
 		Version: "test",
 		Config:  &mockConfigStoreForHealth{},
@@ -345,6 +348,7 @@ func TestHealthCheckNoCORSWhenNotConfigured(t *testing.T) {
 }
 
 func TestCheckConfigStore(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		setupApp       func(*Application)
@@ -408,6 +412,7 @@ func TestCheckConfigStore(t *testing.T) {
 }
 
 func TestCheckAuthStore(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		setupApp       func(*Application)
@@ -444,6 +449,7 @@ func TestCheckAuthStore(t *testing.T) {
 }
 
 func TestCheckMigrations_Disabled(t *testing.T) {
+	t.Parallel()
 	t.Run("nil dbConfig (non-PostgreSQL mode)", func(t *testing.T) {
 		app := &Application{}
 		got := app.checkMigrations()
@@ -457,6 +463,7 @@ func TestCheckMigrations_Disabled(t *testing.T) {
 }
 
 func TestCheckMigrations_Pending(t *testing.T) {
+	t.Parallel()
 	app := &Application{dbConfig: &database.Config{AutoMigrate: true}}
 	// migrationFinishedAt is zero value → pending.
 	got := app.checkMigrations()
@@ -464,6 +471,7 @@ func TestCheckMigrations_Pending(t *testing.T) {
 }
 
 func TestCheckMigrations_Failed(t *testing.T) {
+	t.Parallel()
 	app := &Application{dbConfig: &database.Config{AutoMigrate: true}}
 	app.recordMigrationResult(errors.New("dirty at 27"))
 	got := app.checkMigrations()
@@ -474,6 +482,7 @@ func TestCheckMigrations_Failed(t *testing.T) {
 }
 
 func TestCheckMigrations_Healthy(t *testing.T) {
+	t.Parallel()
 	app := &Application{dbConfig: &database.Config{AutoMigrate: true}}
 	app.recordMigrationResult(nil)
 	got := app.checkMigrations()

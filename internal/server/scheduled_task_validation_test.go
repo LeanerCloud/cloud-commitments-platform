@@ -13,6 +13,7 @@ import (
 // before any advisory lock keyed on that name is taken, the same way the
 // Lambda and HTTP transports reject it at their boundary.
 func TestHandleScheduledTask_UnknownTaskRejectedBeforeLock(t *testing.T) {
+	t.Parallel()
 	locker := &mockTaskLocker{acquired: true}
 	app := &Application{
 		Scheduler:  &testutil.MockScheduler{},
@@ -31,6 +32,7 @@ func TestHandleScheduledTask_UnknownTaskRejectedBeforeLock(t *testing.T) {
 // TestHandleScheduledTask_KnownTaskStillLocks guards the other direction: a
 // valid task name still goes through the advisory lock.
 func TestHandleScheduledTask_KnownTaskStillLocks(t *testing.T) {
+	t.Parallel()
 	locker := &mockTaskLocker{acquired: false}
 	app := &Application{TaskLocker: locker}
 

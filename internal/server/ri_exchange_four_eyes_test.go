@@ -120,6 +120,7 @@ func assertDowngradedToPending(t *testing.T, f *fourEyesExchangeFixture, result 
 // exchanges unattended, whatever non-manual mode is stored. It raises pending
 // records and sends the approval email instead.
 func TestExecuteRIExchangeReshape_FourEyesDowngradesAutoToManual(t *testing.T) {
+	t.Parallel()
 	// "" and "Auto" are included because pkg/exchange treats every
 	// non-"manual" value as auto.
 	for _, mode := range []string{"auto", "", "Auto"} {
@@ -155,6 +156,7 @@ func TestExecuteRIExchangeReshape_FourEyesDowngradesAutoToManual(t *testing.T) {
 // TestExecuteRIExchangeReshape_FourEyesOffAutoStillExecutes is the control:
 // with 4-eyes off, auto mode keeps executing exchanges.
 func TestExecuteRIExchangeReshape_FourEyesOffAutoStillExecutes(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 	cfg := reshapeGlobalConfig("auto", false)
 	f := newFourEyesExchangeFixture(cfg, nil)
@@ -171,6 +173,7 @@ func TestExecuteRIExchangeReshape_FourEyesOffAutoStillExecutes(t *testing.T) {
 // TestExchangeRunnerAdapter_FourEyesDowngradesLadderReshape: the ladder
 // always asks for auto mode, and under 4-eyes it must run as manual too.
 func TestExchangeRunnerAdapter_FourEyesDowngradesLadderReshape(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 	f := newFourEyesExchangeFixture(&config.GlobalConfig{RequireDifferentApprover: true}, nil)
 	adapter := &exchangeRunnerAdapter{
@@ -190,6 +193,7 @@ func TestExchangeRunnerAdapter_FourEyesDowngradesLadderReshape(t *testing.T) {
 // TestExchangeRunnerAdapter_FourEyesOffLadderStillExecutes is the control for
 // the ladder path.
 func TestExchangeRunnerAdapter_FourEyesOffLadderStillExecutes(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 	f := newFourEyesExchangeFixture(&config.GlobalConfig{}, nil)
 	adapter := &exchangeRunnerAdapter{
@@ -210,6 +214,7 @@ func TestExchangeRunnerAdapter_FourEyesOffLadderStillExecutes(t *testing.T) {
 // global config must stop the ladder reshape before any AWS call, never be
 // treated as "4-eyes off".
 func TestExchangeRunnerAdapter_PolicyLookupErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := testutil.TestContext(t)
 	f := newFourEyesExchangeFixture(nil, errors.New("db down"))
 	adapter := &exchangeRunnerAdapter{
@@ -238,6 +243,7 @@ func ladderExchangeConfig() exchange.RIExchangeConfig {
 }
 
 func TestFourEyesExchangeMode(t *testing.T) {
+	t.Parallel()
 	on := &config.GlobalConfig{RequireDifferentApprover: true}
 	off := &config.GlobalConfig{}
 	tests := []struct {
