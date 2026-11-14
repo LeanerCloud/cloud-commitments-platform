@@ -12,6 +12,7 @@ import (
 	awsprovider "github.com/LeanerCloud/cloud-commitments-go/providers/aws"
 	awsladder "github.com/LeanerCloud/cloud-commitments-go/providers/aws/ladder"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/ec2offered"
 )
 
 // exchangeRunnerAdapter bridges internal/server wiring (exchange store, EC2 exchange
@@ -45,7 +46,7 @@ func (a *exchangeRunnerAdapter) RunAutoExchange(ctx context.Context, cfg exchang
 	}
 
 	clients := newRIExchangeClients(
-		awsprovider.NewEC2ClientDirect(awsCfg),
+		ec2offered.New(awsCfg),
 		awsprovider.NewRecommendationsClientDirect(awsCfg),
 		exchange.NewExchangeClient(awsCfg),
 		a.region,

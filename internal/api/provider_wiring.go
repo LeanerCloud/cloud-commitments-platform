@@ -21,6 +21,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/ec2offered"
+
 	awsprovider "github.com/LeanerCloud/cloud-commitments-go/providers/aws"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
@@ -58,7 +60,7 @@ func loadDefaultAWSConfig(ctx context.Context) (aws.Config, error) {
 // newReshapeEC2Client builds the EC2 client that lists convertible RIs and
 // the region's offered instance types.
 func newReshapeEC2Client(cfg aws.Config) reshapeEC2Client {
-	return awsprovider.NewEC2ClientDirect(cfg)
+	return ec2offered.New(cfg)
 }
 
 // newReshapeRecsClient builds the Cost Explorer recommendations adapter.

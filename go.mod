@@ -36,7 +36,6 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/advisor/armadvisor v1.2.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.7.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption v1.2.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3 v3.3.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql v1.2.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.10.1 // indirect
@@ -88,10 +87,10 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations v1.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.5.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.0
-	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261112024114-496b780ba23f
-	github.com/LeanerCloud/cloud-commitments-go/providers/aws v0.0.0-20261112024114-496b780ba23f
-	github.com/LeanerCloud/cloud-commitments-go/providers/azure v0.0.0-20261112024114-496b780ba23f
-	github.com/LeanerCloud/cloud-commitments-go/providers/gcp v0.0.0-20261112024114-496b780ba23f
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261112153629-54d9111a925c
+	github.com/LeanerCloud/cloud-commitments-go/providers/aws v0.0.0-20261112153629-54d9111a925c
+	github.com/LeanerCloud/cloud-commitments-go/providers/azure v0.0.0-20261112153629-54d9111a925c
+	github.com/LeanerCloud/cloud-commitments-go/providers/gcp v0.0.0-20261112153629-54d9111a925c
 	github.com/aws/aws-lambda-go v1.55.1
 	github.com/aws/aws-sdk-go-v2/service/kms v1.62.1
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.113.4
@@ -121,7 +120,6 @@ require (
 	cloud.google.com/go/storage v1.70.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cosmos/armcosmos/v2 v2.7.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/search/armsearch v1.4.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.35.0 // indirect

@@ -19,6 +19,7 @@ import (
 	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/ec2offered"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/ricost"
@@ -96,7 +97,7 @@ func (app *Application) handleRIExchangeReshape(ctx context.Context) (*exchange.
 	}
 
 	clients := newRIExchangeClients(
-		awsprovider.NewEC2ClientDirect(awsCfg),
+		ec2offered.New(awsCfg),
 		awsprovider.NewRecommendationsClientDirect(awsCfg),
 		exchange.NewExchangeClient(awsCfg),
 		awsCfg.Region,
