@@ -16,6 +16,7 @@ import (
 // any query runs.
 
 func TestHandler_getHistoryAnalytics_UnsupportedIntervalIs400(t *testing.T) {
+	t.Parallel()
 	for _, interval := range []string{"yearly", "minute", "HOURLY", "hour"} {
 		t.Run(interval, func(t *testing.T) {
 			ctx := context.Background()
@@ -42,6 +43,7 @@ func TestHandler_getHistoryAnalytics_UnsupportedIntervalIs400(t *testing.T) {
 }
 
 func TestHandler_getHistoryAnalytics_SupportedIntervalsReachStore(t *testing.T) {
+	t.Parallel()
 	for _, interval := range []string{"hourly", "daily", "weekly", "monthly"} {
 		t.Run(interval, func(t *testing.T) {
 			ctx := context.Background()
@@ -63,6 +65,7 @@ func TestHandler_getHistoryAnalytics_SupportedIntervalsReachStore(t *testing.T) 
 }
 
 func TestHandler_getHistoryBreakdown_UnsupportedDimensionIs400(t *testing.T) {
+	t.Parallel()
 	for _, dimension := range []string{"tenant", "account_id", "SERVICE", "service_type"} {
 		t.Run(dimension, func(t *testing.T) {
 			ctx := context.Background()
@@ -87,6 +90,7 @@ func TestHandler_getHistoryBreakdown_UnsupportedDimensionIs400(t *testing.T) {
 }
 
 func TestHandler_getHistoryBreakdown_SupportedDimensionsReachStore(t *testing.T) {
+	t.Parallel()
 	for _, dimension := range []string{"service", "provider", "region", "account"} {
 		t.Run(dimension, func(t *testing.T) {
 			ctx := context.Background()

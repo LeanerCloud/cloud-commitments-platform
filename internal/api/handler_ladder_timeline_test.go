@@ -27,6 +27,7 @@ func (s *timelineTestStore) ListLadderTimelineRuns(_ context.Context, accountID,
 }
 
 func TestLadderTimelineRoutedScope(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{"/api/ladder/tranches", "/api/ladder/runs"} {
 		for _, accountID := range []string{scopedInAccount, scopedOutAccount} {
 			t.Run(path+accountID, func(t *testing.T) {
@@ -53,6 +54,7 @@ func TestLadderTimelineRoutedScope(t *testing.T) {
 }
 
 func TestLadderTimelinePermissionConstraints(t *testing.T) {
+	t.Parallel()
 	for _, permissions := range [][]auth.Permission{
 		{},
 		{{Action: auth.ActionView, Resource: auth.ResourceConfig, Constraints: &auth.PermissionConstraints{Providers: []string{"azure"}}}},
@@ -74,6 +76,7 @@ func TestLadderTimelinePermissionConstraints(t *testing.T) {
 }
 
 func TestLadderTimelineUnavailableIsNotEmpty(t *testing.T) {
+	t.Parallel()
 	h, _ := ladderScopedHandler(t)
 	req := ladderScopedReq("")
 	req.QueryStringParameters = map[string]string{"account_id": scopedInAccount, "provider": "aws"}
@@ -85,6 +88,7 @@ func TestLadderTimelineUnavailableIsNotEmpty(t *testing.T) {
 }
 
 func TestLadderTimelineUnsupportedProvider(t *testing.T) {
+	t.Parallel()
 	h, original := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { original.AssertExpectations(t) })
 	original.On("GetCloudAccount", mock.Anything, scopedInAccount).
@@ -101,6 +105,7 @@ func TestLadderTimelineUnsupportedProvider(t *testing.T) {
 }
 
 func TestLadderTimelineCursorRejectsPartialAndInvalidInput(t *testing.T) {
+	t.Parallel()
 	for _, params := range []map[string]string{
 		{"after_id": scopedInAccount},
 		{"after_created_at": "2026-10-08T00:00:00Z"},
@@ -119,6 +124,7 @@ func (s *failingTimelineStore) ListLadderTimeline(context.Context, string, strin
 }
 
 func TestLadderTimelineMalformedRateReturnsFixedError(t *testing.T) {
+	t.Parallel()
 	h, original := ladderScopedHandler(t)
 	h.config = &failingTimelineStore{timelineTestStore{MockConfigStore: original}}
 	req := ladderScopedReq("")
@@ -135,6 +141,7 @@ func TestLadderTimelineMalformedRateReturnsFixedError(t *testing.T) {
 // an account_id that is not a UUID answers 400 instead of letting Postgres's
 // uuid syntax error surface as a 500.
 func TestLadderTimelineNonUUIDAccountIDIs400(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{"/api/ladder/tranches", "/api/ladder/runs"} {
 		t.Run(path, func(t *testing.T) {
 			h, original := ladderScopedHandler(t)

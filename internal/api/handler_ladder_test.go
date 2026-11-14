@@ -88,6 +88,7 @@ func requireInvalidAccountID(t *testing.T, mockStore *MockConfigStore, result an
 // that is not a UUID answers 400 instead of letting Postgres's uuid syntax
 // error surface as a 500.
 func TestUpsertLadderConfig_NonUUIDAccountIDIs400(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 	failNonUUIDLookups(mockStore)
@@ -101,6 +102,7 @@ func TestUpsertLadderConfig_NonUUIDAccountIDIs400(t *testing.T) {
 // explicit buffer_fraction:0 ("no buffer") reaches the store unchanged rather
 // than being silently rewritten to DefaultLadderBufferFraction.
 func TestUpsertLadderConfig_BufferFractionExplicitZeroSurvives(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, _, captured := newLadderHandler(t)
 
@@ -115,6 +117,7 @@ func TestUpsertLadderConfig_BufferFractionExplicitZeroSurvives(t *testing.T) {
 // TestUpsertLadderConfig_BufferFractionOmittedDefaults asserts that an omitted
 // buffer_fraction key defaults to DefaultLadderBufferFraction.
 func TestUpsertLadderConfig_BufferFractionOmittedDefaults(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, _, captured := newLadderHandler(t)
 
@@ -130,6 +133,7 @@ func TestUpsertLadderConfig_BufferFractionOmittedDefaults(t *testing.T) {
 // contract: an explicit out-of-range target_coverage:0 returns 400 and never
 // reaches the store (it is not silently defaulted).
 func TestUpsertLadderConfig_ExplicitZeroTargetCoverageRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 
@@ -147,6 +151,7 @@ func TestUpsertLadderConfig_ExplicitZeroTargetCoverageRejected(t *testing.T) {
 // below the 10-day baseline minimum returns 400 and never reaches the store,
 // instead of saving a config that fails every planning run.
 func TestUpsertLadderConfig_ShortAWSLookbackRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 
@@ -167,6 +172,7 @@ func TestUpsertLadderConfig_ShortAWSLookbackRejected(t *testing.T) {
 // decoded to 0, so Validate rejected the ramp (not strictly ascending) and this
 // PUT returned 400.
 func TestUpsertLadderConfig_MultiStepRampAccepted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, _, captured := newLadderHandler(t)
 
@@ -186,6 +192,7 @@ func TestUpsertLadderConfig_MultiStepRampAccepted(t *testing.T) {
 // rejected with 400 (DisallowUnknownFields), not silently dropped -- a mistyped
 // max_hourly_commit_per_run would otherwise decode to nil = no spend cap.
 func TestUpsertLadderConfig_UnknownFieldRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 
@@ -203,6 +210,7 @@ func TestUpsertLadderConfig_UnknownFieldRejected(t *testing.T) {
 // must match the cloud account's actual provider. The default GetCloudAccount
 // mock returns provider "aws"; a body claiming "azure" must 400.
 func TestUpsertLadderConfig_ProviderMismatchRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 
@@ -226,6 +234,7 @@ func TestUpsertLadderConfig_ProviderMismatchRejected(t *testing.T) {
 // scoped caller enumerate the account table by probing ids and reading which
 // error came back.
 func TestUpsertLadderConfig_NonexistentAccountRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 	mockStore.On("GetCloudAccount", ctx, ladderGhostAccount).Return(nil, nil)
@@ -285,6 +294,7 @@ func ladderScopedHandler(t *testing.T) (*Handler, *MockConfigStore) {
 // TestUpsertLadderConfig_OutOfScopeAccountRefused is the guard: this is the
 // assertion that fails if the requireAccountAccess call is removed.
 func TestUpsertLadderConfig_OutOfScopeAccountRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore := ladderScopedHandler(t)
 
@@ -301,6 +311,7 @@ func TestUpsertLadderConfig_OutOfScopeAccountRefused(t *testing.T) {
 // the same restricted principal, the account it IS entitled to. Without this,
 // a handler that refused every write would satisfy the test above.
 func TestUpsertLadderConfig_InScopeAccountStillAllowed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore := ladderScopedHandler(t)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -318,6 +329,7 @@ func TestUpsertLadderConfig_InScopeAccountStillAllowed(t *testing.T) {
 // above is driven by the caller's SCOPE and not by anything about the account
 // itself: an unrestricted session writes that same account unchanged.
 func TestUpsertLadderConfig_UnrestrictedSessionUnaffected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore := scopedHandler(t) // no accounts => grantAdmin => unrestricted
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -338,6 +350,7 @@ func TestUpsertLadderConfig_UnrestrictedSessionUnaffected(t *testing.T) {
 // max_hourly_commit_per_run returns 400 naming the field and never reaches the
 // store, instead of saving a config every run will refuse.
 func TestUpsertLadderConfig_UncappedAWSRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, mockStore, _ := newLadderHandler(t)
 
@@ -356,6 +369,7 @@ func TestUpsertLadderConfig_UncappedAWSRejected(t *testing.T) {
 // a mixed-case key to the struct, so the presence check must match it too,
 // or the default overwrites the caller's explicit value.
 func TestUpsertLadderConfig_NumericFieldKeyCase(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		key, value string
 		got        func(*config.LadderConfigDB) any

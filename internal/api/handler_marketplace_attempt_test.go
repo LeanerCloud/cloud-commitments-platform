@@ -231,6 +231,7 @@ func (f *marketplaceFixture) monthsLater(t *testing.T) {
 // boundary), so the default schedule differs. The retry must not create a
 // second listing.
 func TestMarketplaceListHTTP_RetryAcrossMonthBoundaryDoesNotDuplicate(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.aws.loseResponses = 1
 
@@ -253,6 +254,7 @@ func TestMarketplaceListHTTP_RetryAcrossMonthBoundaryDoesNotDuplicate(t *testing
 // reached AWS): the retry creates it with the persisted token and schedule, not
 // ones re-derived from the clock.
 func TestMarketplaceListHTTP_RetryReusesPersistedTokenAndSchedule(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	// The first create never reaches AWS: fail before the fake records a listing.
 	calls := 0
@@ -283,6 +285,7 @@ func TestMarketplaceListHTTP_RetryReusesPersistedTokenAndSchedule(t *testing.T) 
 // uncanceled listing), as in a process that dies right there. The next request
 // resumes the pending row, finds the listing on AWS and records it.
 func TestMarketplaceListHTTP_CrashBetweenCreateAndPersistIsReconciled(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.db.failRecords = 2
 	f.aws.failCancel = true
@@ -302,6 +305,7 @@ func TestMarketplaceListHTTP_CrashBetweenCreateAndPersistIsReconciled(t *testing
 // Reconcile finding a listing that is already dead records it and asks for a
 // retry; the next attempt starts with a fresh token.
 func TestMarketplaceListHTTP_ReconcileFindsCanceledListing(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.aws.loseResponses = 1
 	assert.Equal(t, 502, f.list(t))
@@ -321,6 +325,7 @@ func TestMarketplaceListHTTP_ReconcileFindsCanceledListing(t *testing.T) {
 // A definitive AWS rejection created nothing, so its token is dropped and the
 // operator's next request (possibly with another schedule) starts fresh.
 func TestMarketplaceListHTTP_ClientFaultDropsTheAttempt(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.h.marketplaceEC2Factory = func(aws.Config) marketplaceEC2Client {
 		return &stubMarketplaceEC2{createFn: func(context.Context, ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error) {
@@ -336,6 +341,7 @@ func TestMarketplaceListHTTP_ClientFaultDropsTheAttempt(t *testing.T) {
 // reason "seller_not_registered" in the JSON body. AWS created nothing, so the
 // attempt is dropped like any other client fault.
 func TestMarketplaceListHTTP_SellerNotRegisteredExplainsRegistration(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.h.marketplaceEC2Factory = func(aws.Config) marketplaceEC2Client {
 		return &stubMarketplaceEC2{createFn: func(context.Context, ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error) {
@@ -362,6 +368,7 @@ func TestMarketplaceListHTTP_SellerNotRegisteredExplainsRegistration(t *testing.
 // derived from that copy: with a persisted random token the stale request gets
 // its own listing instead of AWS replaying the canceled one.
 func TestMarketplaceListHTTP_StaleRowAfterCancelGetsNewListing(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	stale := f.db.row
 	assert.Equal(t, 200, f.list(t))
@@ -379,6 +386,7 @@ func TestMarketplaceListHTTP_StaleRowAfterCancelGetsNewListing(t *testing.T) {
 // After a persist failure and a successful compensating cancel the canceled
 // listing is recorded and the token dropped, so the retry creates a new one.
 func TestMarketplaceListHTTP_RetryAfterRolledBackPersistFailureGetsNewListing(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.db.failRecords = 1
 
@@ -393,6 +401,7 @@ func TestMarketplaceListHTTP_RetryAfterRolledBackPersistFailureGetsNewListing(t 
 
 // A create response in a dead state is an error and the dead listing is recorded.
 func TestMarketplaceListHTTP_ReturnedCanceledStateIsAnError(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.h.marketplaceEC2Factory = func(aws.Config) marketplaceEC2Client {
 		return &stubMarketplaceEC2{createFn: func(context.Context, ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error) {
@@ -405,6 +414,7 @@ func TestMarketplaceListHTTP_ReturnedCanceledStateIsAnError(t *testing.T) {
 }
 
 func TestMarketplaceListHTTP_ReconcileLookupFailureKeepsTheAttempt(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.aws.loseResponses = 1
 	assert.Equal(t, 502, f.list(t))
@@ -428,6 +438,7 @@ func (failingFinder) DescribeMarketplaceListingStatus(context.Context, string) (
 }
 
 func TestMarketplaceListHTTP_CorruptStoredScheduleFailsLoud(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.db.token, f.db.schedule = "tok", []byte("[]")
 	f.db.row.ListingState = config.ListingStatePending
@@ -439,6 +450,7 @@ func TestMarketplaceListHTTP_CorruptStoredScheduleFailsLoud(t *testing.T) {
 
 // The schedule is stored as JSON that decodes back to the same tiers.
 func TestMarketplaceListHTTP_PersistsTheSchedule(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.aws.loseResponses = 1
 	assert.Equal(t, 502, f.list(t))
@@ -461,6 +473,7 @@ func (f *fakeDescribeListings) DescribeReservedInstancesListings(_ context.Conte
 }
 
 func TestAWSMarketplaceListingFinder(t *testing.T) {
+	t.Parallel()
 	api := &fakeDescribeListings{out: []sdkec2types.ReservedInstancesListing{
 		{ClientToken: aws.String("other"), ReservedInstancesListingId: aws.String("ril-other"), Status: sdkec2types.ListingStatusActive},
 		{ClientToken: aws.String("tok"), ReservedInstancesListingId: aws.String("ril-mine"), Status: sdkec2types.ListingStatusCancelled},

@@ -154,6 +154,7 @@ func azureExecuteRequest(body string) *events.LambdaFunctionURLRequest {
 // each half is individually under the cap, and committed a SECOND exchange:
 // two calls to ExecuteExchange, roughly twice the intended spend.
 func TestExecuteAzureExchange_RetryOfInFlightSubmitDoesNotDoubleSpend(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ledger := newExchangeClaimLedger()
 	var committed []string
@@ -190,6 +191,7 @@ func TestExecuteAzureExchange_RetryOfInFlightSubmitDoesNotDoubleSpend(t *testing
 // half: a claim that cannot be evaluated is not a claim, so the exchange is
 // refused rather than committed unguarded.
 func TestExecuteAzureExchange_ClaimStoreFailureRefusesCommit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ledger := newExchangeClaimLedger()
 	ledger.err = fmt.Errorf("connection refused")
@@ -216,6 +218,7 @@ func TestExecuteAzureExchange_ClaimStoreFailureRefusesCommit(t *testing.T) {
 // A 409 also proves the claim precedes the AWS call: reaching
 // exchange.ExecuteExchange without credentials would surface as a 5xx.
 func TestExecuteExchange_DuplicateSubmitRefusedBeforeAWS(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const deploymentAccountID = "11111111-2222-3333-4444-555555555555"
 
@@ -268,6 +271,7 @@ func TestExecuteExchange_DuplicateSubmitRefusedBeforeAWS(t *testing.T) {
 }
 
 func TestClaimExchangeSubmit_Outcomes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("won", func(t *testing.T) {

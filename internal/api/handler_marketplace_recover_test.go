@@ -85,6 +85,7 @@ func (f *marketplaceFixture) crashAfterCreate(t *testing.T) {
 // the DB write leaves exactly such a row with a live listing on AWS. Cancel
 // finds the listing by the persisted token, cancels it and records it.
 func TestMarketplaceCancelHTTP_RecoversCrashedAttemptWithLiveListing(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.crashAfterCreate(t)
 
@@ -106,6 +107,7 @@ func TestMarketplaceCancelHTTP_RecoversCrashedAttemptWithLiveListing(t *testing.
 // frees the row and keeps the token, so the next list request resumes the
 // same attempt and AWS still deduplicates on it.
 func TestMarketplaceCancelHTTP_PendingAttemptWithNothingOnAWSIsReleased(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.db.row.ListingState = config.ListingStatePending
 	f.db.token = "tok-crashed"
@@ -127,6 +129,7 @@ func TestMarketplaceCancelHTTP_PendingAttemptWithNothingOnAWSIsReleased(t *testi
 // A listing recorded in AWS's own pending state (or after its rollback cancel
 // failed) has no token; cancel cancels the recorded listing.
 func TestMarketplaceCancelHTTP_PendingRecordedListingIsCanceled(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.aws.listings = []*fakeAWSListing{{id: "ril-p", state: config.ListingStatePending, token: "old"}}
 	f.db.row.ListingID, f.db.row.ListingState = "ril-p", config.ListingStatePending
@@ -142,6 +145,7 @@ func TestMarketplaceCancelHTTP_PendingRecordedListingIsCanceled(t *testing.T) {
 // A pending claim from before migration 000105 has neither a token nor a
 // listing; nothing on AWS can be tied to it, so cancel clears it.
 func TestMarketplaceCancelHTTP_LegacyPendingClaimIsCleared(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.db.row.ListingState = config.ListingStatePending
 	assert.Equal(t, 409, f.list(t), "a legacy pending row blocks listing")
@@ -160,6 +164,7 @@ func TestMarketplaceCancelHTTP_LegacyPendingClaimIsCleared(t *testing.T) {
 // row stayed active forever. The retry now reads the listing back and records
 // the canceled state.
 func TestMarketplaceCancelHTTP_RetryAfterCancelPersistFailureRecordsIt(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	require.Equal(t, 200, f.list(t))
 	f.db.failRecords = 1
@@ -179,6 +184,7 @@ func TestMarketplaceCancelHTTP_RetryAfterCancelPersistFailureRecordsIt(t *testin
 // empty state on main, which reads as "not listed", so the next request
 // created a second listing. The status is read back from AWS instead.
 func TestMarketplaceListHTTP_EmptyCreateStatusIsReadBack(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.blankCreateStatus()
 
@@ -191,6 +197,7 @@ func TestMarketplaceListHTTP_EmptyCreateStatusIsReadBack(t *testing.T) {
 // When the read-back fails too, the listing is recorded as pending: still
 // blocking a second listing, and cancelable through the endpoint.
 func TestMarketplaceListHTTP_EmptyCreateStatusUnreadableIsPending(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	f.blankCreateStatus()
 	stub := f.stub()
@@ -214,6 +221,7 @@ func TestMarketplaceListHTTP_EmptyCreateStatusUnreadableIsPending(t *testing.T) 
 // DB write cancels the listing it finds by the token. The list request's
 // write must not then record the canceled listing as active.
 func TestMarketplaceListHTTP_CancelDuringListIsNotUndone(t *testing.T) {
+	t.Parallel()
 	f := newMarketplaceFixture(t)
 	stub := f.stub()
 	create := stub.createFn
@@ -253,6 +261,7 @@ func (f *marketplaceFixture) blankCreateStatus() {
 // when recording the canceled listing fails used the request context, which
 // is gone when the request timed out.
 func TestMarketplaceList_RollbackReleaseUsesDetachedContext(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cfgStore := &MockConfigStore{}
@@ -282,6 +291,7 @@ func TestMarketplaceList_RollbackReleaseUsesDetachedContext(t *testing.T) {
 // The cancel's DB write runs on a detached context: AWS has already canceled
 // the listing, so a caller that disconnects must not lose the record.
 func TestMarketplaceCancel_RecordsOnDetachedContext(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cfgStore := &MockConfigStore{}
@@ -311,6 +321,7 @@ func TestMarketplaceCancel_RecordsOnDetachedContext(t *testing.T) {
 // A cancel that AWS accepts without a status records it as canceled, never as
 // an empty state that reads as "not listed".
 func TestMarketplaceCancel_EmptyStatusRecordedAsCanceled(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -332,6 +343,7 @@ func TestMarketplaceCancel_EmptyStatusRecordedAsCanceled(t *testing.T) {
 // A cancel failure that is not about an ended listing still fails, and a
 // still-active listing is not recorded as canceled.
 func TestMarketplaceCancel_FailureOnLiveListingIsNotRecorded(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	t.Cleanup(func() { cfgStore.AssertExpectations(t) })
 	authSvc := &MockAuthService{}
@@ -355,6 +367,7 @@ func TestMarketplaceCancel_FailureOnLiveListingIsNotRecorded(t *testing.T) {
 // A pending row that changed between the purchase lookup and the attempt read
 // is not touched.
 func TestMarketplaceCancel_PendingRowThatChangedIs409(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	t.Cleanup(func() { cfgStore.AssertExpectations(t) })
 	authSvc := &MockAuthService{}
@@ -377,6 +390,7 @@ func TestMarketplaceCancel_PendingRowThatChangedIs409(t *testing.T) {
 // The recovery write is fenced: if the row moved on (another request recorded
 // a different listing), cancel reports a conflict instead of overwriting it.
 func TestMarketplaceCancel_FencedRecoveryWriteLosesIs409(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -399,6 +413,7 @@ func TestMarketplaceCancel_FencedRecoveryWriteLosesIs409(t *testing.T) {
 // recorded the listing canceled meanwhile: that is reported as the concurrent
 // cancel, not as a row stuck pending.
 func TestMarketplaceList_UncanceledRecordAfterConcurrentCancelIs409(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)

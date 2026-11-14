@@ -219,6 +219,7 @@ func runRIStatusCases(t *testing.T, action string, cases []riStatusCase) {
 // openapi.yaml. There is no 401: a request without a usable session fails the
 // CSRF check first (403) unless it carries a token.
 func TestHandleRequest_ApproveRIExchange_StatusCodes(t *testing.T) {
+	t.Parallel()
 	runRIStatusCases(t, "approve", []riStatusCase{
 		{name: "200 token without session", rec: riRecPending, sess: riSessNone, token: riStatusRawToken, want: 200, wantBody: `"status"`},
 		{name: "200 session with CSRF and no token", rec: riRecPending, sess: riSessCSRF, want: 200, wantBody: `"status"`},
@@ -268,6 +269,7 @@ func TestHandleRequest_ApproveRIExchange_StatusCodes(t *testing.T) {
 // Observed behavior of POST /api/ri-exchange/reject/{id}: token only; a
 // session, valid or not, is ignored and no CSRF check runs.
 func TestHandleRequest_RejectRIExchange_StatusCodes(t *testing.T) {
+	t.Parallel()
 	runRIStatusCases(t, "reject", []riStatusCase{
 		{name: "200 token without session", rec: riRecPending, sess: riSessNone, token: riStatusRawToken, want: 200, wantBody: `"status":"canceled"`},
 		{name: "200 token with session without CSRF", rec: riRecPending, sess: riSessNoCSRF, token: riStatusRawToken, want: 200, wantBody: `"status":"canceled"`},
@@ -300,6 +302,7 @@ func TestHandleRequest_RejectRIExchange_StatusCodes(t *testing.T) {
 // exist. A 401 before the lookup (the purchase routes' fix, #435) does not
 // fit here: the token alone authorizes these routes, with no session.
 func TestHandleRequest_RIExchangeTokenRoutes_MissingAnswersLikeWrongToken(t *testing.T) {
+	t.Parallel()
 	type probe struct {
 		name  string
 		rec   riStatusRecord
@@ -356,6 +359,7 @@ func TestHandleRequest_RIExchangeTokenRoutes_MissingAnswersLikeWrongToken(t *tes
 // one answer for a missing id and for another user's exchange in any status,
 // with and without a token.
 func TestHandleRequest_ApproveRIExchange_ApproveOwnSessionNoOracle(t *testing.T) {
+	t.Parallel()
 	type probe struct {
 		name string
 		rec  riStatusRecord

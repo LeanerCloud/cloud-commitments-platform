@@ -26,6 +26,7 @@ func adminAuditActor() config.AuditActor {
 // the audited store method inside a transaction, naming the session's actor,
 // and never through the unaudited SaveAccountServiceOverride.
 func TestSaveAccountServiceOverride_WritesThroughAuditedTx(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -47,6 +48,7 @@ func TestSaveAccountServiceOverride_WritesThroughAuditedTx(t *testing.T) {
 // TestSaveAccountServiceOverride_AuditFailureFailsTheSave: a failed audit
 // write is a failed save, not a silent unaudited one.
 func TestSaveAccountServiceOverride_AuditFailureFailsTheSave(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -62,6 +64,7 @@ func TestSaveAccountServiceOverride_AuditFailureFailsTheSave(t *testing.T) {
 }
 
 func TestDeleteAccountServiceOverride_WritesThroughAuditedTx(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -83,6 +86,7 @@ func TestDeleteAccountServiceOverride_WritesThroughAuditedTx(t *testing.T) {
 // updated row, each linked to it and carrying its file row number, in key
 // order rather than file order.
 func TestImportOverrides_RecordsLinkedAuditEvents(t *testing.T) {
+	t.Parallel()
 	store := newOverrideTransferStore()
 	h := transferHandler(t, store, nil)
 	rows := []OverrideTransferRow{
@@ -124,6 +128,7 @@ func TestImportOverrides_RecordsLinkedAuditEvents(t *testing.T) {
 // TestImportOverrides_NoAuditEventsWithoutWrites: a dry run, a rejected
 // strict import and an import rolled back by a store failure leave no events.
 func TestImportOverrides_NoAuditEventsWithoutWrites(t *testing.T) {
+	t.Parallel()
 	t.Run("dry run", func(t *testing.T) {
 		store := newOverrideTransferStore()
 		_, err := runImport(t, transferHandler(t, store, nil), OverrideImportRequest{DryRun: true, Overrides: fortyImportRows()})
@@ -155,6 +160,7 @@ func TestImportOverrides_NoAuditEventsWithoutWrites(t *testing.T) {
 // TestImportOverrides_ImportEventFailureWritesNothing: no row is written when
 // the import event cannot be recorded.
 func TestImportOverrides_ImportEventFailureWritesNothing(t *testing.T) {
+	t.Parallel()
 	store := newOverrideTransferStore()
 	store.failEvent = errors.New("audit insert failed")
 
@@ -164,6 +170,7 @@ func TestImportOverrides_ImportEventFailureWritesNothing(t *testing.T) {
 }
 
 func TestConfigAuditActor(t *testing.T) {
+	t.Parallel()
 	user := configAuditActor(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "a@example.com", UserAPIKeyID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"})
 	require.NotNil(t, user.UserID)
 	require.NotNil(t, user.APIKeyID)

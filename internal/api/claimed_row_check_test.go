@@ -91,6 +91,7 @@ func runNowClaimHarness(t *testing.T, mp *MockPurchaseManager, claimedUpfront fl
 }
 
 func TestClaimedRowCheck_RunNow_RepricedRowRefused(t *testing.T) {
+	t.Parallel()
 	mp := &MockPurchaseManager{}
 	t.Cleanup(func() { mp.AssertExpectations(t) })
 	err := runNowClaimHarness(t, mp, claimRepriced)
@@ -99,6 +100,7 @@ func TestClaimedRowCheck_RunNow_RepricedRowRefused(t *testing.T) {
 }
 
 func TestClaimedRowCheck_RunNow_UnmodifiedRowRuns(t *testing.T) {
+	t.Parallel()
 	mp := &MockPurchaseManager{}
 	t.Cleanup(func() { mp.AssertExpectations(t) })
 	err := runNowClaimHarness(t, mp, claimUnder)
@@ -133,6 +135,7 @@ func sessionApproveClaimHarness(t *testing.T, mp *MockPurchaseManager, claimedUp
 }
 
 func TestClaimedRowCheck_SessionApprove_RepricedRowRefused(t *testing.T) {
+	t.Parallel()
 	mp := &MockPurchaseManager{}
 	t.Cleanup(func() { mp.AssertExpectations(t) })
 	err := sessionApproveClaimHarness(t, mp, claimRepriced)
@@ -141,6 +144,7 @@ func TestClaimedRowCheck_SessionApprove_RepricedRowRefused(t *testing.T) {
 }
 
 func TestClaimedRowCheck_SessionApprove_UnmodifiedRowRuns(t *testing.T) {
+	t.Parallel()
 	mp := &MockPurchaseManager{}
 	t.Cleanup(func() { mp.AssertExpectations(t) })
 	err := sessionApproveClaimHarness(t, mp, claimUnder)
@@ -154,6 +158,7 @@ func TestClaimedRowCheck_SessionApprove_UnmodifiedRowRuns(t *testing.T) {
 // The approver is the account's contact_email holding a capped approve-own on
 // a plan-step row; the plan cap variant holds no verb at all.
 func TestClaimedRowCheck_TokenApprove(t *testing.T) {
+	t.Parallel()
 	exec, total := planStepExecution(t)
 	overCap := func(e *config.PurchaseExecution) *config.PurchaseExecution {
 		c := *e
@@ -234,6 +239,7 @@ func directExecuteClaimHarness(t *testing.T, mp *MockPurchaseManager, claimedUpf
 }
 
 func TestClaimedRowCheck_DirectExecute_RepricedRowRefused(t *testing.T) {
+	t.Parallel()
 	mp := &MockPurchaseManager{}
 	t.Cleanup(func() { mp.AssertExpectations(t) })
 	err := directExecuteClaimHarness(t, mp, claimRepriced)
@@ -242,6 +248,7 @@ func TestClaimedRowCheck_DirectExecute_RepricedRowRefused(t *testing.T) {
 }
 
 func TestClaimedRowCheck_DirectExecute_UnmodifiedRowRuns(t *testing.T) {
+	t.Parallel()
 	mp := &MockPurchaseManager{}
 	t.Cleanup(func() { mp.AssertExpectations(t) })
 	err := directExecuteClaimHarness(t, mp, 500)
@@ -320,6 +327,7 @@ func scopedClaimPaths() []scopedClaimPath {
 }
 
 func TestClaimedRowCheck_AccountScope(t *testing.T) {
+	t.Parallel()
 	for _, p := range scopedClaimPaths() {
 		for _, tc := range []struct {
 			name    string
@@ -356,6 +364,7 @@ func TestClaimedRowCheck_AccountScope(t *testing.T) {
 }
 
 func TestClaimedRowCheck_DirectExecute_AccountScope(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		account string
@@ -383,6 +392,7 @@ func TestClaimedRowCheck_DirectExecute_AccountScope(t *testing.T) {
 
 // A scope that cannot be loaded refuses: the check fails closed.
 func TestClaimedRowCheck_AccountScopeLookupErrorRefuses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, tc := range []struct {
 		name  string
@@ -412,6 +422,7 @@ func TestClaimedRowCheck_AccountScopeLookupErrorRefuses(t *testing.T) {
 // A check that could not be evaluated (no clientError inside) is a server
 // error, not a 403 or a 502: the row failed closed and nothing was bought.
 func TestClaimedRowRefusalError_NonClientCauseIsServerError(t *testing.T) {
+	t.Parallel()
 	err := claimedRowRefusalError(nil, assert.AnError)
 	_, ok := IsClientError(err)
 	assert.False(t, ok)
