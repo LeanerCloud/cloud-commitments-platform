@@ -21,8 +21,8 @@ func globalAllowed(t *testing.T, perms []Permission, action, resource string) bo
 func TestGlobalConstraints_HeldGrantTable(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name string
 		held *PermissionConstraints
+		name string
 		want bool
 	}{
 		{name: "nil constraints", held: nil, want: true},
@@ -115,9 +115,9 @@ func TestGlobalIsRequestOnly(t *testing.T) {
 func TestHasAPIKeyPermissionForConstraintsAPI_GlobalKeyOwnerMatrix(t *testing.T) {
 	scoped := &PermissionConstraints{AccountIDs: []string{"acct-a"}}
 	cases := []struct {
-		name     string
 		keyHeld  *PermissionConstraints
 		ownerHld *PermissionConstraints
+		name     string
 		want     bool
 	}{
 		{name: "unconstrained key, unconstrained owner", keyHeld: nil, ownerHld: nil, want: true},
@@ -142,8 +142,8 @@ func TestHasAPIKeyPermissionForConstraintsAPI_GlobalKeyOwnerMatrix(t *testing.T)
 func TestHasAPIKeyPermissionForConstraintsAPI_GlobalConstrainedAdminKey(t *testing.T) {
 	ownerPerms := []Permission{{Action: ActionAdmin, Resource: ResourceAll}}
 	for _, tc := range []struct {
-		name string
 		held *PermissionConstraints
+		name string
 		want bool
 	}{
 		{name: "constrained admin key", held: &PermissionConstraints{AccountIDs: []string{"acct-a"}}, want: false},
@@ -161,8 +161,8 @@ func TestHasAPIKeyPermissionForConstraintsAPI_GlobalConstrainedAdminKey(t *testi
 
 func TestUserHasAdminCapability_IgnoresConstrainedAdmin(t *testing.T) {
 	for _, tc := range []struct {
-		name string
 		held *PermissionConstraints
+		name string
 		want bool
 	}{
 		{name: "unconstrained", held: nil, want: true},

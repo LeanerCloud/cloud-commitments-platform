@@ -23,9 +23,9 @@ const (
 func TestPGXMock_EnableMFA_RefusalReason(t *testing.T) {
 	hashes := []string{"hash-1"}
 	tests := []struct {
-		name        string
-		diagnose    func(pgxmock.PgxPoolIface)
 		want        error
+		diagnose    func(pgxmock.PgxPoolIface)
+		name        string
 		wantExpired bool
 	}{
 		{

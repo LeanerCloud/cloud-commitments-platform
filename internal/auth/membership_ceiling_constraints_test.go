@@ -17,9 +17,9 @@ func purchaseHeld(c *PermissionConstraints) []Permission {
 }
 
 var membershipConstraintCases = []struct {
-	name   string
 	held   *PermissionConstraints
 	target *PermissionConstraints
+	name   string
 	ok     bool
 }{
 	{name: "capped holder, uncapped group", held: &PermissionConstraints{MaxPurchaseAmount: 100}, target: nil, ok: false},
@@ -126,8 +126,8 @@ func TestGroupCeiling_CarvedOutCarryThroughHonoursConstraints(t *testing.T) {
 	stored := []Permission{{Action: ActionExecute, Resource: ResourcePurchases,
 		Constraints: &PermissionConstraints{MaxPurchaseAmount: 100}}}
 	cases := []struct {
-		name string
 		req  *PermissionConstraints
+		name string
 		ok   bool
 	}{
 		{name: "same cap", req: &PermissionConstraints{MaxPurchaseAmount: 100}, ok: true},

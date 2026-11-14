@@ -41,10 +41,10 @@ const (
 // adminLockedWrite describes one admin-affecting store write: how to mock its
 // statement for an outcome, how to call it, and the error a missing row gives.
 type adminLockedWrite struct {
-	name        string
 	expect      func(mock pgxmock.PgxPoolIface, outcome writeOutcome)
 	call        func(ctx context.Context, store *PostgresStore) error
 	assertNoRow func(t *testing.T, err error)
+	name        string
 }
 
 func expectLockedExec(mock pgxmock.PgxPoolIface, sqlRegex, verb string, args []any, outcome writeOutcome) {

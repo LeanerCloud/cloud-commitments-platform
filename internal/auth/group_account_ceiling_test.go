@@ -46,8 +46,8 @@ func TestAccountCeiling_RefusesWideningWithNoPermissionsSent(t *testing.T) {
 
 	widenings := []struct {
 		name     string
-		accounts []string
 		wantIn   string
+		accounts []string
 	}{
 		{name: "to additional accounts", accounts: []string{scopedAccountA, "acct-B"}, wantIn: `"acct-B"`},
 		// The two unrestricted spellings. An empty list is NOT a narrowing:
@@ -295,8 +295,8 @@ func TestAccountCeiling_FailsClosedWhenActorScopeUnresolvable(t *testing.T) {
 	ctx := context.Background()
 
 	for _, tc := range []struct {
-		name      string
 		groupResp func(*MockStore)
+		name      string
 	}{
 		{name: "actor's only group is missing", groupResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, ceilingActorGroupID).Return(nil, pgx.ErrNoRows)
@@ -345,8 +345,8 @@ func TestAccountCeiling_PartialActorResolutionThatWidensIsRefused(t *testing.T) 
 	const permGroup, scopeGroup = "g-perm", "g-scope"
 
 	for _, tc := range []struct {
-		name      string
 		scopeResp func(*MockStore)
+		name      string
 	}{
 		{name: "restricting group missing (ErrNoRows)", scopeResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, scopeGroup).Return(nil, pgx.ErrNoRows)

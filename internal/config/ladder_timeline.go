@@ -17,54 +17,54 @@ type LadderTimelineCursor struct {
 }
 
 type LadderTimelineEvent struct {
-	CreatedAt      time.Time            `json:"created_at"`
 	ScheduledDate  time.Time            `json:"scheduled_date"`
-	ExecutionID    *string              `json:"execution_id,omitempty"`
-	ID             string               `json:"id"`
-	RunID          string               `json:"run_id"`
-	ConfigID       string               `json:"config_id"`
-	AmountUSDHr    string               `json:"amount_usd_hr"`
+	CreatedAt      time.Time            `json:"created_at"`
 	AmountBasis    *LadderAmountBasis   `json:"amount_basis,omitempty"`
+	ExecutionID    *string              `json:"execution_id,omitempty"`
 	CommitmentRate *string              `json:"commitment_rate,omitempty"`
+	RunID          string               `json:"run_id"`
+	AmountUSDHr    string               `json:"amount_usd_hr"`
+	ConfigID       string               `json:"config_id"`
+	ID             string               `json:"id"`
 	ODUSDHr        string               `json:"od_usd_hr"`
-	Revision       int64                `json:"revision"`
 	Layer          ladder.LayerType     `json:"layer_type"`
 	Term           ladder.Term          `json:"term"`
 	Payment        ladder.PaymentOption `json:"payment_option"`
 	Status         ladder.TrancheStatus `json:"status"`
 	RunStatus      ladder.RunStatus     `json:"run_status"`
+	Revision       int64                `json:"revision"`
 }
 
 type LadderTimelinePage struct {
-	Events       []LadderTimelineEvent `json:"events"`
 	TotalUSDHr   string                `json:"total_usd_hr"`
 	TotalODUSDHr string                `json:"total_od_usd_hr"`
+	Events       []LadderTimelineEvent `json:"events"`
 	TotalCount   int64                 `json:"total_count"`
 }
 
 type LadderTimelineRun struct {
-	Actions           []LadderTimelineAction `json:"actions"`
-	StartedAt         time.Time              `json:"started_at"`
-	CreatedAt         time.Time              `json:"created_at"`
-	BaselineUSDHr     *string                `json:"baseline_usd_hr"`
-	TargetUSDHr       *string                `json:"target_usd_hr"`
-	ExistingUSDHr     *string                `json:"existing_usd_hr"`
-	GapUSDHr          *string                `json:"gap_usd_hr"`
-	ID                string                 `json:"id"`
-	ConfigID          string                 `json:"config_id"`
-	TotalHourlyCommit string                 `json:"total_hourly_commit"`
+	StartedAt         time.Time `json:"started_at"`
+	CreatedAt         time.Time `json:"created_at"`
+	BaselineUSDHr     *string   `json:"baseline_usd_hr"`
+	TargetUSDHr       *string   `json:"target_usd_hr"`
+	ExistingUSDHr     *string   `json:"existing_usd_hr"`
+	GapUSDHr          *string   `json:"gap_usd_hr"`
+	ID                string    `json:"id"`
+	ConfigID          string    `json:"config_id"`
+	TotalHourlyCommit string    `json:"total_hourly_commit"`
 	// ReasonCode is the plan's reason_code, set only when the run could not
 	// size its gap (for example "missing_discount_rate"). An ordinary run,
 	// including a target-met Hold, has none.
-	ReasonCode string           `json:"reason_code,omitempty"`
-	Status     ladder.RunStatus `json:"status"`
+	ReasonCode string                 `json:"reason_code,omitempty"`
+	Status     ladder.RunStatus       `json:"status"`
+	Actions    []LadderTimelineAction `json:"actions"`
 }
 
 type LadderTimelineAction struct {
-	DataSources []string `json:"data_sources,omitempty"`
 	Action      string   `json:"action"`
 	Layer       string   `json:"layer"`
 	Rationale   string   `json:"rationale"`
+	DataSources []string `json:"data_sources,omitempty"`
 }
 
 type LadderTimelineRunPage struct {

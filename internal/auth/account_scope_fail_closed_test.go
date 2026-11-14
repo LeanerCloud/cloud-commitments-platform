@@ -36,8 +36,8 @@ func TestResolveAllowedAccounts_FailsClosed(t *testing.T) {
 	ctx := context.Background()
 
 	for _, tc := range []struct {
-		name  string
 		setup func(*MockStore)
+		name  string
 	}{
 		{name: "group missing (pgx.ErrNoRows)", setup: func(ms *MockStore) {
 			ms.On("GetUserByID", ctx, scopeUserID).
@@ -161,8 +161,8 @@ func TestResolveAllowedAccounts_PartialResolutionThatWidensIsRefused(t *testing.
 	const permGroup, scopeGroup = "g-perm", "g-scope"
 
 	for _, tc := range []struct {
-		name      string
 		scopeResp func(*MockStore)
+		name      string
 	}{
 		{name: "restricting group missing (ErrNoRows)", scopeResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, scopeGroup).Return(nil, pgx.ErrNoRows)
@@ -279,8 +279,8 @@ func TestResolveAllowedAccounts_WildcardSurvivorToleratesSkippedGroup(t *testing
 	const seeded, scoped = "g-seeded", "g-scoped"
 
 	for _, tc := range []struct {
-		name      string
 		scopeResp func(*MockStore)
+		name      string
 	}{
 		{name: "stale membership missing (ErrNoRows)", scopeResp: func(ms *MockStore) {
 			ms.On("GetGroup", ctx, scoped).Return(nil, pgx.ErrNoRows)

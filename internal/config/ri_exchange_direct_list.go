@@ -10,19 +10,19 @@ import (
 // is the raw stored provider text: callers pass it through
 // purchase.SanitizeStoredError and never return it as is.
 type RIExchangeDirectRow struct {
-	ID                 string
-	Status             string
+	CreatedAt          time.Time
+	ResolvedAt         *time.Time
 	CloudAccountID     *string
-	Region             string
-	SourceIDs          []string
-	Targets            json.RawMessage
+	CompletedAt        *time.Time
 	MaxPaymentDue      string
+	ID                 string
 	MaxPaymentCurrency string
 	Error              string
 	ExecutedBy         string
-	CreatedAt          time.Time
-	CompletedAt        *time.Time
-	ResolvedAt         *time.Time
+	Region             string
+	Status             string
+	Targets            json.RawMessage
+	SourceIDs          []string
 }
 
 // RIExchangeDirectAccountRegion is one (account, region) pair of a row. A nil
@@ -42,16 +42,16 @@ type RIExchangeDirectCursor struct {
 // the set of (account, region) pairs the caller may see, derived by the
 // handler from the caller's own authorization; an empty set returns nothing.
 type RIExchangeDirectListFilter struct {
+	After    *RIExchangeDirectCursor
+	RIID     string // matched like the in-flight guard: trimmed, lower case
+	Region   string
 	Allowed  []RIExchangeDirectAccountRegion
 	Statuses []string // submitted and/or unknown; empty means both
-	RIID     string   // matched like the in-flight guard: trimmed, lower case
-	Region   string
 	Limit    int
-	After    *RIExchangeDirectCursor
 }
 
 // RIExchangeDirectListPage is one page, oldest first. Next is nil at the end.
 type RIExchangeDirectListPage struct {
-	Rows []RIExchangeDirectRow
 	Next *RIExchangeDirectCursor
+	Rows []RIExchangeDirectRow
 }

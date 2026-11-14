@@ -50,9 +50,9 @@ func TestDefaultSettings_ExpectedKeys(t *testing.T) {
 
 func TestDefaultSettings_PurchaseDefaults(t *testing.T) {
 	tests := []struct {
+		expectedValue interface{}
 		key           string
 		expectedType  string
-		expectedValue interface{}
 	}{
 		{key: "purchase_defaults.term", expectedType: "int", expectedValue: 3},
 		{key: "purchase_defaults.payment_option", expectedType: "string", expectedValue: "no-upfront"},
@@ -73,9 +73,9 @@ func TestDefaultSettings_PurchaseDefaults(t *testing.T) {
 
 func TestDefaultSettings_Notification(t *testing.T) {
 	tests := []struct {
+		expectedValue interface{}
 		key           string
 		expectedType  string
-		expectedValue interface{}
 	}{
 		{key: "notification.days_before", expectedType: "int", expectedValue: 3},
 		{key: "notification.email_enabled", expectedType: "bool", expectedValue: true},
@@ -117,9 +117,9 @@ func TestDefaultSettings_Providers(t *testing.T) {
 
 func TestDefaultSettings_Security(t *testing.T) {
 	tests := []struct {
+		expectedValue interface{}
 		key           string
 		expectedType  string
-		expectedValue interface{}
 	}{
 		{key: "security.session_duration_hours", expectedType: "int", expectedValue: 24},
 		{key: "security.lockout_attempts", expectedType: "int", expectedValue: 5},
@@ -143,9 +143,9 @@ func TestDefaultSettings_Security(t *testing.T) {
 
 func TestDefaultSettings_Scheduling(t *testing.T) {
 	tests := []struct {
+		expectedValue interface{}
 		key           string
 		expectedType  string
-		expectedValue interface{}
 	}{
 		{key: "scheduling.auto_collect", expectedType: "bool", expectedValue: false},
 		{key: "scheduling.collect_schedule", expectedType: "string", expectedValue: "rate(1 day)"},
@@ -166,9 +166,9 @@ func TestDefaultSettings_Scheduling(t *testing.T) {
 
 func TestDefaultSettings_AWS(t *testing.T) {
 	tests := []struct {
+		expectedValue interface{}
 		key           string
 		expectedType  string
-		expectedValue interface{}
 	}{
 		{key: "aws.rds.min_utilization_percent", expectedType: "float", expectedValue: 50.0},
 		{key: "aws.elasticache.min_utilization_percent", expectedType: "float", expectedValue: 50.0},
@@ -192,9 +192,9 @@ func TestDefaultSettings_AWS(t *testing.T) {
 
 func TestDefaultSettings_Thresholds(t *testing.T) {
 	tests := []struct {
+		expectedValue interface{}
 		key           string
 		expectedType  string
-		expectedValue interface{}
 	}{
 		{key: "thresholds.min_monthly_savings", expectedType: "float", expectedValue: 10.0},
 		{key: "thresholds.min_savings_percentage", expectedType: "float", expectedValue: 5.0},
@@ -246,9 +246,9 @@ func TestDefaultSettings_NoExecutionRetentionKey(t *testing.T) {
 
 func TestDefaultSettings_API(t *testing.T) {
 	tests := []struct {
+		expectedValue interface{}
 		key           string
 		expectedType  string
-		expectedValue interface{}
 	}{
 		{key: "api.rate_limit_requests_per_minute", expectedType: "int", expectedValue: 100},
 		{key: "api.rate_limit_enabled", expectedType: "bool", expectedValue: true},
@@ -268,8 +268,8 @@ func TestDefaultSettings_API(t *testing.T) {
 
 func TestGetDefaultValue(t *testing.T) {
 	tests := []struct {
-		key           string
 		expectedValue interface{}
+		key           string
 	}{
 		{key: "purchase_defaults.term", expectedValue: 3},
 		{key: "purchase_defaults.coverage", expectedValue: 80.0},

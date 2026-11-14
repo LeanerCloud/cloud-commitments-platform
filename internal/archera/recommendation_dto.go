@@ -15,45 +15,45 @@ var errRecommendationRowMissing = errors.New("archera recommendation row is unav
 // RecommendationComparisonDTO is the recommendation-only response: one current offer and its
 // vendor-linked candidates. It carries no plan totals, deltas, guarantees, source account or org ID.
 type RecommendationComparisonDTO struct {
-	RecommendationID      string                         `json:"recommendation_id"`
-	Status                MatchStatus                    `json:"status"`
-	Reason                Reason                         `json:"reason"`
+	Currency              *string                        `json:"currency"`
+	Current               *RecommendationOfferDTO        `json:"current"`
+	ComparableDelta       *string                        `json:"comparable_delta"`
 	AmountProvenance      Reason                         `json:"amount_provenance"`
 	EconomicStatus        Reason                         `json:"economic_status"`
 	FetchedAt             string                         `json:"fetched_at"`
-	Currency              *string                        `json:"currency"`
+	RecommendationID      string                         `json:"recommendation_id"`
 	CurrencyNote          string                         `json:"currency_note"`
-	ComparableDelta       *string                        `json:"comparable_delta"`
-	PremiumIncluded       bool                           `json:"premium_included"`
-	Current               *RecommendationOfferDTO        `json:"current"`
-	Candidates            []RecommendationAlternativeDTO `json:"candidates"`
+	Reason                Reason                         `json:"reason"`
+	Status                MatchStatus                    `json:"status"`
 	NonGatingDisclosure   string                         `json:"non_gating_disclosure"`
 	SponsorshipDisclosure string                         `json:"sponsorship_disclosure"`
+	Candidates            []RecommendationAlternativeDTO `json:"candidates"`
+	PremiumIncluded       bool                           `json:"premium_included"`
 }
 
 // RecommendationOfferDTO names the vendor's units explicitly. The native_* fields come from the
 // line item and stay null on candidates, which the vendor does not give a native identity.
 type RecommendationOfferDTO struct {
-	OfferID                  string        `json:"offer_id"`
-	Provider                 string        `json:"provider"`
-	CommitmentType           string        `json:"commitment_type"`
+	Monthly                  FinancialsDTO `json:"monthly"`
 	HourlySelectedCommitment *string       `json:"hourly_selected_commitment"`
 	NativeDurationSeconds    *string       `json:"native_duration_seconds"`
 	NativePlanType           *string       `json:"native_plan_type"`
 	NativeInstanceFamily     *string       `json:"native_instance_family"`
 	EffectiveContractTerm    *string       `json:"effective_contract_term"`
 	PaymentOption            *string       `json:"payment_option"`
-	LeaseAttached            bool          `json:"lease_attached"`
-	Monthly                  FinancialsDTO `json:"monthly"`
 	UpfrontCost              *string       `json:"upfront_one_time_cost"`
+	OfferID                  string        `json:"offer_id"`
+	Provider                 string        `json:"provider"`
+	CommitmentType           string        `json:"commitment_type"`
+	LeaseAttached            bool          `json:"lease_attached"`
 }
 
 type RecommendationAlternativeDTO struct {
+	Figures              *RecommendationOfferDTO `json:"figures"`
 	OfferID              string                  `json:"offer_id"`
 	Status               CandidateStatus         `json:"status"`
 	Reason               Reason                  `json:"reason"`
 	NativeIdentityStatus CandidateStatus         `json:"native_identity_status"`
-	Figures              *RecommendationOfferDTO `json:"figures"`
 }
 
 // BuildRecommendationComparison matches the stored recommendation against the vendor line items

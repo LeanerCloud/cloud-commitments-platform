@@ -233,8 +233,8 @@ func TestGrantCeiling_RejectsBlankConstraintEntries(t *testing.T) {
 	// permissions this endpoint exists to write.
 	accepted := []struct {
 		name       string
-		constraint APIPermissionConstraint
 		expect     PermissionConstraints
+		constraint APIPermissionConstraint
 	}{
 		{
 			name: "a populated multi-value list on every dimension",

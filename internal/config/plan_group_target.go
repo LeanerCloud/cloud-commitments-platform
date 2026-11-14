@@ -16,9 +16,9 @@ var ErrGroupTargetRefused = errors.New("group target edit refused")
 // (cap raises go through the grant gate, not this path). A nil field keeps the
 // stored value.
 type PlanGroupTarget struct {
-	GroupID               string
 	MaxStepCommitment     *float64
 	PlanMaxStepCommitment *float64
+	GroupID               string
 }
 
 // MergePlanGroupTarget returns a copy of plan with edit applied to the one

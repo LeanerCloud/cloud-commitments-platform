@@ -59,8 +59,8 @@ func TestCheckGroupCombination_MirrorsFrontend(t *testing.T) {
 	cases := []struct {
 		name     string
 		ids      []string
-		wantErr  bool
 		contains []string
+		wantErr  bool
 	}{
 		{name: "empty selection", ids: nil},
 		{name: "single view-only group", ids: []string{"v1"}},

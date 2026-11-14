@@ -11,24 +11,24 @@ import (
 // the raw stored provider text: callers pass it through
 // purchase.SanitizeStoredError and never return it as is.
 type RIExchangeDirectHistoryRow struct {
-	ID                 string
-	Provider           string
-	Status             string
+	CreatedAt          time.Time
+	NetPayable         *string
+	ResolvedAt         *time.Time
+	CompletedAt        *time.Time
 	CloudAccountID     *string
 	ProviderAccountID  *string
-	Region             string
-	SourceIDs          []string
-	Targets            json.RawMessage
 	MaxPaymentDue      string
+	ID                 string
 	MaxPaymentCurrency string
-	NetPayable         *string
 	NetPayableCurrency string
 	Error              string
 	ExecutedBy         string
-	CreatedAt          time.Time
-	CompletedAt        *time.Time
+	Region             string
+	Status             string
 	ResolvedStatus     string
-	ResolvedAt         *time.Time
+	Provider           string
+	Targets            json.RawMessage
+	SourceIDs          []string
 }
 
 // RIExchangeDirectHistoryFilter bounds the History listing. AllAccounts lifts
@@ -36,9 +36,9 @@ type RIExchangeDirectHistoryRow struct {
 // otherwise only rows whose cloud_account_id is in AccountIDs match.
 type RIExchangeDirectHistoryFilter struct {
 	Since       time.Time
+	AccountIDs  []string
 	Limit       int
 	AllAccounts bool
-	AccountIDs  []string
 }
 
 // RIExchangeDirectHistoryStore is the read-only History listing of direct

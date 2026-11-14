@@ -17,10 +17,10 @@ import (
 // doing anything else. setup stubs whatever the caller reads before that
 // lookup; call runs it against lookupUserID.
 type lookupCaller struct {
-	name       string
-	activeOnly bool
 	setup      func(ctx context.Context, m *MockStore)
 	call       func(ctx context.Context, s *Service) error
+	name       string
+	activeOnly bool
 }
 
 const (

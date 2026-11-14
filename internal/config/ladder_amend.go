@@ -41,11 +41,11 @@ func (a LadderAmendment) Validate() error {
 }
 
 type LadderAmendmentResult struct {
-	ID            string    `json:"id"`
-	Revision      int64     `json:"revision"`
 	ScheduledDate time.Time `json:"scheduled_date"`
+	ID            string    `json:"id"`
 	AmountUSDHr   string    `json:"amount_usd_hr"`
 	RunTotalUSDHr string    `json:"run_total_usd_hr"`
+	Revision      int64     `json:"revision"`
 }
 
 type LadderAmendmentStore interface {

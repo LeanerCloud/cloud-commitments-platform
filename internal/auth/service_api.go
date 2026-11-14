@@ -122,9 +122,9 @@ type APICreateUserResponse struct {
 // Active is a pointer so "not sent" differs from false; otherwise every PUT
 // that omits it would reactivate the user.
 type APIUpdateUserRequest struct {
+	Active *bool    `json:"active,omitempty"`
 	Email  string   `json:"email,omitempty"`
 	Groups []string `json:"groups,omitempty"`
-	Active *bool    `json:"active,omitempty"`
 }
 
 // APICreateGroupRequest is the request type for creating groups via API.

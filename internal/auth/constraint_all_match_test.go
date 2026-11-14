@@ -11,8 +11,8 @@ import (
 // every case below runs once per dimension that matchStringListConstraints
 // enforces.
 type constraintDimension struct {
-	name string
 	set  func(c *PermissionConstraints, values []string)
+	name string
 }
 
 func stringListDimensions() []constraintDimension {

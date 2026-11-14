@@ -28,19 +28,19 @@ const (
 // MFALoginToken is the stored state of a pending MFA login. Only the hash of
 // the token is stored; the raw value goes to the client once.
 type MFALoginToken struct {
-	UserID string
+	ExpiresAt time.Time
+	UserID    string
 	// PasswordVersion is the users.password_version the password step read;
 	// a password change before the code step voids the token.
 	PasswordVersion int64
 	Attempts        int
-	ExpiresAt       time.Time
 }
 
 // MFARequiredError is the mfa_required answer with its continuation token.
 // errors.Is(err, ErrMFARequired) holds for it.
 type MFARequiredError struct {
-	Token     string
 	ExpiresAt time.Time
+	Token     string
 }
 
 func (e *MFARequiredError) Error() string { return ErrMFARequired.Error() }

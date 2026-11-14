@@ -15,11 +15,11 @@ import (
 func TestLogin_AccountLockout_Bookkeeping(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
+		password   string
+		method     string
 		attempts   int
 		lockOffset time.Duration
-		password   string
 		mfa        bool
-		method     string
 	}{
 		{name: "locked", attempts: 5, lockOffset: time.Minute, password: "CorrectPassword123"},
 		{name: "below threshold", attempts: 2, password: "wrong", method: "RecordFailedLogin"},

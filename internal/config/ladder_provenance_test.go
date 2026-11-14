@@ -196,9 +196,9 @@ func TestRequireLadderCommitmentBasis(t *testing.T) {
 	od, native := LadderAmountOnDemand, LadderAmountCommitment
 	str := func(s string) *string { return &s }
 	for _, tc := range []struct {
-		name  string
 		basis *LadderAmountBasis
 		rate  *string
+		name  string
 		ok    bool
 	}{
 		{name: "nil basis", basis: nil, rate: nil, ok: false},

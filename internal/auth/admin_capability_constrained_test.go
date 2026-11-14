@@ -24,8 +24,8 @@ func constrainedAdminService(t *testing.T, c *PermissionConstraints) *Service {
 func TestAdminCapability_RequiresUnconstrainedGrant(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
-		name string
 		c    *PermissionConstraints
+		name string
 		want bool
 	}{
 		{name: "nil constraints", c: nil, want: true},
@@ -52,8 +52,8 @@ func TestAdminCapability_RequiresUnconstrainedGrant(t *testing.T) {
 
 func TestAdminCapability_ConstrainedGrantKeepsScopedMeaning(t *testing.T) {
 	for _, tc := range []struct {
-		name string
 		c    *PermissionConstraints
+		name string
 	}{
 		{name: "account scoped", c: &PermissionConstraints{AccountIDs: []string{"a"}}},
 		{name: "amount capped", c: &PermissionConstraints{MaxPurchaseAmount: 10}},

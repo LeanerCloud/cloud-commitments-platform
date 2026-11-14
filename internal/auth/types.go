@@ -56,28 +56,22 @@ type Permission struct {
 
 // PermissionConstraints limit permissions to specific accounts, providers, or services.
 type PermissionConstraints struct {
+	// AccountIDs limits to specific AWS/Azure/GCP accounts
+	AccountIDs []string `json:"account_ids,omitempty" dynamodbav:"AccountIDs"`
+	// Providers limits to specific cloud providers (aws, azure, gcp)
+	Providers []string `json:"providers,omitempty" dynamodbav:"Providers"`
+	// Services limits to specific services (ec2, rds, elasticache, etc.)
+	Services []string `json:"services,omitempty" dynamodbav:"Services"`
+	// Regions limits to specific regions
+	Regions []string `json:"regions,omitempty" dynamodbav:"Regions"`
+	// MaxPurchaseAmount limits the maximum purchase amount
+	MaxPurchaseAmount float64 `json:"max_purchase_amount,omitempty" dynamodbav:"MaxPurchaseAmount"`
 	// StrictScope is request-only: unknown or unbounded dimensions require an unrestricted grant.
 	StrictScope bool `json:"-" dynamodbav:"-"`
-
 	// Global is request-only: the action is deployment-wide, so only a grant
 	// carrying no constraint on any dimension satisfies it. Build it with
 	// GlobalConstraints.
 	Global bool `json:"-" dynamodbav:"-"`
-
-	// AccountIDs limits to specific AWS/Azure/GCP accounts
-	AccountIDs []string `json:"account_ids,omitempty" dynamodbav:"AccountIDs"`
-
-	// Providers limits to specific cloud providers (aws, azure, gcp)
-	Providers []string `json:"providers,omitempty" dynamodbav:"Providers"`
-
-	// Services limits to specific services (ec2, rds, elasticache, etc.)
-	Services []string `json:"services,omitempty" dynamodbav:"Services"`
-
-	// Regions limits to specific regions
-	Regions []string `json:"regions,omitempty" dynamodbav:"Regions"`
-
-	// MaxPurchaseAmount limits the maximum purchase amount
-	MaxPurchaseAmount float64 `json:"max_purchase_amount,omitempty" dynamodbav:"MaxPurchaseAmount"`
 }
 
 // GlobalConstraints is the request-side constraint set for a deployment-wide
@@ -93,16 +87,16 @@ func (c *PermissionConstraints) restricts() bool {
 
 // UserAPIKey represents a personal API key for a user with scoped permissions.
 type UserAPIKey struct {
-	CreatedAt   time.Time    `json:"created_at" dynamodbav:"CreatedAt"`
-	ExpiresAt   *time.Time   `json:"expires_at,omitempty" dynamodbav:"ExpiresAt"`
-	LastUsedAt  *time.Time   `json:"last_used_at,omitempty" dynamodbav:"LastUsedAt"`
-	ID          string       `json:"id" dynamodbav:"PK"`
-	UserID      string       `json:"user_id" dynamodbav:"UserID"`
-	Name        string       `json:"name" dynamodbav:"Name"`
-	KeyPrefix   string       `json:"key_prefix" dynamodbav:"KeyPrefix"`
-	KeyHash     string       `json:"-" dynamodbav:"KeyHash"`
-	Permissions []Permission `json:"permissions,omitempty" dynamodbav:"Permissions"`
-	IsActive    bool         `json:"is_active" dynamodbav:"IsActive"`
+	CreatedAt               time.Time    `json:"created_at" dynamodbav:"CreatedAt"`
+	ExpiresAt               *time.Time   `json:"expires_at,omitempty" dynamodbav:"ExpiresAt"`
+	LastUsedAt              *time.Time   `json:"last_used_at,omitempty" dynamodbav:"LastUsedAt"`
+	RequestCountWindowStart *time.Time   `json:"request_count_window_start,omitempty" dynamodbav:"RequestCountWindowStart,omitempty"`
+	KeyPrefix               string       `json:"key_prefix" dynamodbav:"KeyPrefix"`
+	Name                    string       `json:"name" dynamodbav:"Name"`
+	UserID                  string       `json:"user_id" dynamodbav:"UserID"`
+	KeyHash                 string       `json:"-" dynamodbav:"KeyHash"`
+	ID                      string       `json:"id" dynamodbav:"PK"`
+	Permissions             []Permission `json:"permissions,omitempty" dynamodbav:"Permissions"`
 	// PasswordVersion is the owner's User.PasswordVersion read when the key was minted.
 	PasswordVersion int64 `json:"-" dynamodbav:"PasswordVersion"`
 	// Usage counters (issue #340/#344 deferred sub-task -- migration 000094).
@@ -120,9 +114,9 @@ type UserAPIKey struct {
 	// to callers without going through it. RequestCountWindowStart is
 	// exposed so API consumers can see exactly which period the count
 	// covers instead of assuming "last 24h".
-	RequestCountTotal       int64      `json:"request_count_total" dynamodbav:"RequestCountTotal"`
-	RequestCountWindow      int64      `json:"request_count_window" dynamodbav:"RequestCountWindow"`
-	RequestCountWindowStart *time.Time `json:"request_count_window_start,omitempty" dynamodbav:"RequestCountWindowStart,omitempty"`
+	RequestCountTotal  int64 `json:"request_count_total" dynamodbav:"RequestCountTotal"`
+	RequestCountWindow int64 `json:"request_count_window" dynamodbav:"RequestCountWindow"`
+	IsActive           bool  `json:"is_active" dynamodbav:"IsActive"`
 }
 
 // AuthContext represents the complete authorization context for a user

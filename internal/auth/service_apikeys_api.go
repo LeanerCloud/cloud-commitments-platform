@@ -111,20 +111,6 @@ type APIKeyInfo struct {
 	// Exposed so consumers know exactly which period RequestCountWindow
 	// covers instead of assuming a true trailing "last 24h".
 	RequestCountWindowStart *time.Time `json:"request_count_window_start,omitempty"`
-	ID                      string     `json:"id"`
-	Name                    string     `json:"name"`
-	KeyPrefix               string     `json:"key_prefix"`
-	// Permissions is never omitempty: CreateAPIKey now rejects zero-length
-	// permissions outright (issue #61), so an empty array in a listing means
-	// a legacy key minted before that fix, distinguishable from a key that
-	// simply has no info populated. Hiding it behind omitempty made a
-	// zero-scope key indistinguishable from a fully-scoped one in
-	// listAPIKeys, which was itself part of the audit gap the issue raised.
-	// It uses the documented wire shape (constraints.accounts /
-	// constraints.max_amount), the same one the create request accepts
-	// (issue #951).
-	Permissions []APIPermission `json:"permissions"`
-	IsActive    bool            `json:"is_active"`
 	// Usage counters (issue #340/#344 deferred sub-task). RequestCountWindow
 	// is a fixed/tumbling window count, not a true rolling 24h total, and is
 	// zero once that window has closed -- see effectiveWindowUsage,
@@ -135,8 +121,22 @@ type APIKeyInfo struct {
 	// added the counter has no recoverable lifetime figure, and reporting 0
 	// for it would be a fabricated number. nil means unknown; see
 	// effectiveLifetimeUsage.
-	RequestCountTotal  *int64 `json:"request_count_total"`
-	RequestCountWindow int64  `json:"request_count_window"`
+	RequestCountTotal *int64 `json:"request_count_total"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	KeyPrefix         string `json:"key_prefix"`
+	// Permissions is never omitempty: CreateAPIKey now rejects zero-length
+	// permissions outright (issue #61), so an empty array in a listing means
+	// a legacy key minted before that fix, distinguishable from a key that
+	// simply has no info populated. Hiding it behind omitempty made a
+	// zero-scope key indistinguishable from a fully-scoped one in
+	// listAPIKeys, which was itself part of the audit gap the issue raised.
+	// It uses the documented wire shape (constraints.accounts /
+	// constraints.max_amount), the same one the create request accepts
+	// (issue #951).
+	Permissions        []APIPermission `json:"permissions"`
+	RequestCountWindow int64           `json:"request_count_window"`
+	IsActive           bool            `json:"is_active"`
 }
 
 // APIKeysUsageStatsTopKey is one entry in the top-keys list returned by
@@ -166,11 +166,11 @@ type APIKeysUsageStatsTopKey struct {
 // predates migration 000094 (see effectiveLifetimeUsage), so the UI can show
 // the total as a lower bound instead of presenting an undercount as exact.
 type APIKeysUsageStatsResponse struct {
+	TopKeys               []APIKeysUsageStatsTopKey `json:"top_keys"`
 	TotalActive           int                       `json:"total_active"`
 	TotalRequestsWindow   int64                     `json:"total_requests_window"`
 	TotalRequestsLifetime int64                     `json:"total_requests_lifetime"`
 	LifetimePartial       bool                      `json:"lifetime_partial"`
-	TopKeys               []APIKeysUsageStatsTopKey `json:"top_keys"`
 }
 
 // APICreateAPIKeyResponse represents the API response for creating an API key.

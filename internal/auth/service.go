@@ -53,12 +53,12 @@ type Service struct {
 	// Service.RecordUsageAsync for why the count is buffered instead of
 	// incremented once per flush.
 	pendingUsage       map[string]*apiKeyUsageEntry
-	pendingUsageMu     sync.Mutex
 	onPasswordChange   func(ctx context.Context, userID, newPassword string)
 	dashboardURL       string
 	csrfKey            []byte
 	sessionDuration    time.Duration
 	bcryptCostOverride int
+	pendingUsageMu     sync.Mutex
 }
 
 // ServiceConfig holds configuration for the auth service.

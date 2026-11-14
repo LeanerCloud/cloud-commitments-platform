@@ -107,10 +107,10 @@ func nettingFloat(total *big.Rat) (float64, error) {
 // commitment up, so CommitmentUSDPerHour/Rate never understates the exact
 // on-demand-equivalent amount. Legacy on-demand rows carry Rate 1.
 type LadderInFlightRow struct {
+	exactOD              *big.Rat // set by the store so legacy totals stay bit-identical to the exact sum
 	Layer                ladder.LayerType
 	CommitmentUSDPerHour float64
 	Rate                 float64
-	exactOD              *big.Rat // set by the store so legacy totals stay bit-identical to the exact sum
 }
 
 // assumeOnDemandIfUnknown covers only the amend path: rows from before 000121

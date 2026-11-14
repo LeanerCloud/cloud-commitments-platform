@@ -146,8 +146,8 @@ func TestLoginWithMFAToken_EveryMismatchSameAnswer(t *testing.T) {
 	ctx := context.Background()
 	lockedUntil := time.Now().Add(time.Minute)
 	cases := map[string]struct {
-		email  string
 		mutate func(u *User)
+		email  string
 	}{
 		"non-existent email":  {email: "nobody@example.com"},
 		"inactive user email": {email: "inactive@example.com"},

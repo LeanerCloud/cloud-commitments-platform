@@ -36,10 +36,6 @@ var planScheduleLockTimeout = 5 * time.Second
 // plan version the editor read. Name and NextExecutionDate change only when
 // set. RequestHash is the caller's hash of the canonical request.
 type PlanScheduleCommand struct {
-	CommandID         string
-	PlanID            string
-	Actor             string
-	RequestHash       string
 	ExpectedUpdatedAt time.Time
 	Name              *string
 	NextExecutionDate *time.Time
@@ -51,7 +47,11 @@ type PlanScheduleCommand struct {
 	// follows it.
 	ReplaceRootDate *time.Time
 	// Accounts replaces the plan's account set in the same transaction.
-	Accounts *[]string
+	Accounts    *[]string
+	CommandID   string
+	PlanID      string
+	Actor       string
+	RequestHash string
 }
 
 // PlanScheduleOutcome is what a command returns and what its receipt stores.

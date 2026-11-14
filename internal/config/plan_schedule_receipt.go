@@ -19,12 +19,12 @@ var ErrPlanScheduleReceiptExists = errors.New("plan schedule command receipt alr
 // RequestHash is the caller's hash of the canonical request; Outcome is the
 // response a replay of the same command returns verbatim.
 type PlanScheduleReceipt struct {
+	CreatedAt   time.Time
 	CommandID   string
 	PlanID      string
 	Actor       string
 	RequestHash string
 	Outcome     json.RawMessage
-	CreatedAt   time.Time
 }
 
 // GetPlanScheduleReceiptTx reads a receipt on tx. A missing receipt is (nil, nil).

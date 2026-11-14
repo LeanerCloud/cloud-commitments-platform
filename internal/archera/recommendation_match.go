@@ -16,25 +16,25 @@ const (
 )
 
 type RecommendationIdentity struct {
+	HourlyCommitment                                         *big.Rat
 	Provider, SourceAccountID, Service, PlanType, OfferingID string
 	Region, TopLevelRegion, InstanceFamily, Payment          string
 	CloudAccountID                                           string
 	NativeDurationSeconds                                    int64
-	HourlyCommitment                                         *big.Rat
 }
 
 type LineItemIdentity struct {
-	ID, PlanID, OfferID, Provider, SourceAccountID, ProviderOfferingID string
-	Type, PlanType, Region, InstanceFamily, Payment                    string
 	DurationSeconds, SelectedCommitment                                *big.Rat
+	Type, PlanType, Region, InstanceFamily, Payment                    string
+	ID, PlanID, OfferID, Provider, SourceAccountID, ProviderOfferingID string
 }
 
 type ComparisonIdentity struct {
 	Region                                                            *string
-	IsCurrent                                                         bool
-	LineItemID, CurrentOfferID, Provider, CurrentType, CurrentPayment string
 	CurrentSelectedAmount                                             *big.Rat
+	LineItemID, CurrentOfferID, Provider, CurrentType, CurrentPayment string
 	Candidates                                                        []CandidateIdentity
+	IsCurrent                                                         bool
 }
 
 type MatchStatus string

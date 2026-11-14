@@ -156,9 +156,9 @@ func TestUserSelectColumns_ScanUserReadsEveryColumnIntoItsField(t *testing.T) {
 	selectRe := regexp.QuoteMeta("SELECT " + userSelectColumns + "\n\t\tFROM users")
 
 	getters := []struct {
+		get  func(*PostgresStore) (*User, error)
 		name string
 		args []any
-		get  func(*PostgresStore) (*User, error)
 	}{
 		{name: "GetUserByID", args: []any{want.ID}, get: func(s *PostgresStore) (*User, error) {
 			return s.GetUserByID(context.Background(), want.ID)

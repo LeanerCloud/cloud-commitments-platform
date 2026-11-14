@@ -63,8 +63,8 @@ func TestMatchRecommendationAssociatesOnlyProvenResourceIdentity(t *testing.T) {
 
 func TestMatchRecommendationRefusesUnprovenAssociation(t *testing.T) {
 	tests := []struct {
-		name   string
 		change func(*RecommendationIdentity, *ComparisonIdentity, *LineItemIdentity)
+		name   string
 	}{
 		{name: "unusable_source", change: func(r *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
 			r.SourceAccountID = "source\naccount"

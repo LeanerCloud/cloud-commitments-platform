@@ -125,10 +125,10 @@ func TestCreateSession_RecordsPasswordVersion(t *testing.T) {
 func TestValidateSession_PasswordVersion(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {
+		wantErr        error
 		name           string
 		sessionVersion int64
 		userVersion    int64
-		wantErr        error
 	}{
 		{name: "same version", sessionVersion: 2, userVersion: 2},
 		{name: "password changed after login", sessionVersion: 1, userVersion: 2, wantErr: ErrSessionPasswordRotated},

@@ -23,12 +23,6 @@ import "strings"
 // established the principal genuinely has unlimited access -- the stateless
 // admin API key, or a group carrying the "*" wildcard.
 type AccountScope struct {
-	// Accounts is the explicit allow-list, meaningful only when
-	// Unrestricted is false. Entries are account identifiers (the cloud
-	// account ID, or a provider external ID) and are compared with the
-	// identifier the caller passes, never with a display name (issue #1034).
-	Accounts []string
-
 	// byUniqueName maps each display name carried by exactly one registered
 	// cloud account to that account. It lets a caller that knows an account by
 	// its external ID (for example a legacy row) identify it: Allows resolves
@@ -39,12 +33,15 @@ type AccountScope struct {
 	// WithRegisteredAccounts) disables the lookup, so forgetting to populate
 	// it fails closed.
 	byUniqueName map[string]RegisteredAccount
-
 	// internalIDs holds the ID of every registered account. External IDs are
 	// free text an account editor sets, so one can equal another account's
 	// ID; the name lookup never treats an internal ID as an external ID.
 	internalIDs map[string]struct{}
-
+	// Accounts is the explicit allow-list, meaningful only when
+	// Unrestricted is false. Entries are account identifiers (the cloud
+	// account ID, or a provider external ID) and are compared with the
+	// identifier the caller passes, never with a display name (issue #1034).
+	Accounts []string
 	// Unrestricted grants access to every account. Set it only where
 	// unlimited access has been positively established.
 	Unrestricted bool

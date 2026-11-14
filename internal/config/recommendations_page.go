@@ -13,12 +13,12 @@ type RecommendationListScope struct {
 	Filter RecommendationFilter
 	// EnabledProviders keeps only rows whose provider is listed. Empty keeps
 	// every provider (FilterRecommendationsByEnabledProviders).
-	EnabledProviders []string
+	EnabledProviders  []string
+	AllowedAccountIDs []string
 	// Restricted keeps only rows whose cloud_account_id is one of
 	// AllowedAccountIDs; rows without an account are dropped. The caller
 	// resolves the account scope to the exact set of IDs it allows.
-	Restricted        bool
-	AllowedAccountIDs []string
+	Restricted bool
 }
 
 // RecommendationTriple is an (account, provider, service) combination of the
@@ -38,15 +38,15 @@ type RecommendationTriple struct {
 // MinCountExempt is set for Savings Plans services, whose count is not an
 // instance count.
 type RecommendationOverrideRule struct {
-	Key            string
 	Config         *ServiceConfig
+	Key            string
 	MinCountExempt bool
 }
 
 // StoredRecommendation is a decoded cache row with its table primary key.
 type StoredRecommendation struct {
-	RowID string
 	Rec   RecommendationRecord
+	RowID string
 }
 
 // RecommendationPageQuery parameterizes PageStoredRecommendations.
@@ -61,13 +61,13 @@ type StoredRecommendation struct {
 // the rows that survive suppressions and overrides; the other rows are
 // filtered by Rules in SQL.
 type RecommendationPageQuery struct {
-	Scope            RecommendationListScope
-	Rules            []RecommendationOverrideRule
-	SuppressionKeys  []string
 	DecideSuppressed func(rows []StoredRecommendation) (keepRowIDs []string, err error)
 	// AfterID returns only rows whose ID sorts byte-wise after it; "" starts
 	// at the first row.
-	AfterID string
+	AfterID         string
+	Scope           RecommendationListScope
+	Rules           []RecommendationOverrideRule
+	SuppressionKeys []string
 	// Limit caps the returned rows.
 	Limit int
 }
@@ -82,12 +82,12 @@ type RecommendationPageQuery struct {
 // row whose overrides were not resolved); the caller must then serve the
 // request from the Go-side scan, and the other fields are unset.
 type RecommendationPage struct {
+	Fallback     string
+	Regions      []string
+	Rows         []RecommendationRecord
 	TotalCount   int
 	TotalSavings float64
 	TotalUpfront float64
-	Regions      []string
-	Rows         []RecommendationRecord
-	Fallback     string
 }
 
 // SuppressionTupleKey joins a suppression 6-tuple into the string
