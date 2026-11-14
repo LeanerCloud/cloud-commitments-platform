@@ -1196,7 +1196,7 @@ func TestService_UpdateUserProfile(t *testing.T) {
 	ctx := context.Background()
 	// Hashed once at MinCost: the subtests only need a hash that
 	// verifyPassword accepts, not the production work factor.
-	oldHash := TestPasswordHash(t, "OldPassword123")
+	oldHash := testPasswordHash(t, "OldPassword123")
 
 	t.Run("update email and password successfully", func(t *testing.T) {
 		mockStore := new(MockStore)

@@ -328,39 +328,21 @@ var _ EmailSenderInterface = (*MockEmailSender)(nil)
 
 // testCSRFKey is a fixed 32-byte key used across all test services so that
 // tests can reproduce the CSRF token derived by deriveCSRFToken without
-// calling a real key-generation path.
+// calling a real key-generation path. authtest.TestCSRFKey exposes the same
+// bytes to other packages.
 var testCSRFKey = []byte("test-csrf-key-32-bytes-padded---")
 
-// TestCSRFKey returns the fixed 32-byte CSRF key shared by test services.
-// Pass it as ServiceConfig.CSRFKey so a service built via NewService derives
-// CSRF tokens deterministically (no ephemeral random key), letting tests in
-// other packages reproduce the expected token with DeriveTestCSRFToken.
-func TestCSRFKey() []byte {
-	// Return a copy so callers cannot mutate the package-level key.
-	key := make([]byte, len(testCSRFKey))
-	copy(key, testCSRFKey)
-	return key
-}
-
-// TestPasswordHash returns a bcrypt hash of password at bcrypt.MinCost, for
+// testPasswordHash returns a bcrypt hash of password at bcrypt.MinCost, for
 // test fixtures in this and other packages that need a User.PasswordHash
 // verifyPassword will accept (issue #102: CreateAPIKey and the password-
 // rotation paths now re-verify the caller's password). MinCost keeps the
 // hash cheap to compute since tests only need a hash that round-trips
 // through bcrypt.CompareHashAndPassword, not the production work factor.
-func TestPasswordHash(t testing.TB, password string) string {
+func testPasswordHash(t testing.TB, password string) string {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	require.NoError(t, err)
 	return string(hash)
-}
-
-// DeriveTestCSRFToken returns the CSRF token a service configured with
-// TestCSRFKey expects for the given raw session token. It reuses the
-// production derivation (HMAC-SHA256(key, rawSessionToken)) so tests assert
-// the real contract rather than duplicating the crypto.
-func DeriveTestCSRFToken(rawSessionToken string) string {
-	return deriveCSRFToken(testCSRFKey, rawSessionToken)
 }
 
 // newTestService returns a minimal Service with fast bcrypt for unit tests.
