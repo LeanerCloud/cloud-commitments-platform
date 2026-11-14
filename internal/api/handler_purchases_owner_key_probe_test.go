@@ -146,7 +146,7 @@ func serveOKPExecute(t *testing.T, a *okpAuth, headers map[string]string) (int, 
 	purchaseMgr.On("DirectExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, "", errOKPReached).Maybe()
 
-	h := &Handler{auth: a, config: store, purchase: purchaseMgr}
+	h := &Handler{auth: a, config: store, purchase: purchaseMgr, rateLimiter: NewInMemoryRateLimiter()}
 	resp, err := h.HandleRequest(context.Background(), okpRequest(http.MethodPost, "/api/purchases/execute", directExecRecBody, headers))
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -217,7 +217,7 @@ func TestExecuteDirect_APIKeyFullScopeProbeErrorRefuses(t *testing.T) {
 	m.On("HasAPIKeyPermissionForConstraintsAPI", mock.Anything, okpKeyID, okpOwnerID, mock.Anything, auth.ResourcePurchases, mock.Anything).
 		Return(true, nil).Maybe()
 
-	h := &Handler{auth: m, config: store, purchase: purchaseMgr}
+	h := &Handler{auth: m, config: store, purchase: purchaseMgr, rateLimiter: NewInMemoryRateLimiter()}
 	_, err := h.executePurchase(context.Background(), &events.LambdaFunctionURLRequest{Headers: okpKeyHeaders(), Body: directExecRecBody})
 	require.ErrorIs(t, err, boom)
 	purchaseMgr.AssertNotCalled(t, "DirectExecute", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -254,7 +254,7 @@ func TestSessionOnlyPurchaseRoutes_RefuseAUserAPIKey(t *testing.T) {
 				}, nil).Maybe()
 				purchaseMgr := new(MockPurchaseManager)
 
-				h := &Handler{auth: newOKPAuth(verb), config: store, purchase: purchaseMgr}
+				h := &Handler{auth: newOKPAuth(verb), config: store, purchase: purchaseMgr, rateLimiter: NewInMemoryRateLimiter()}
 				resp, err := h.HandleRequest(context.Background(), okpRequest(http.MethodPost, rt.path, "{}", okpKeyHeaders()))
 				require.NoError(t, err)
 				require.NotNil(t, resp)

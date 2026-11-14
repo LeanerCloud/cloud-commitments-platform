@@ -309,7 +309,7 @@ func purchaseCSRFGuardFixture(action string, viaToken bool) func(t *testing.T) c
 				t.Fatalf("no money-moving call defined for action %q", action)
 			}
 		}
-		return csrfGuardFixture{h: &Handler{config: store, auth: m, purchase: pm}, refused: refused, allowed: allowed}
+		return csrfGuardFixture{h: &Handler{config: store, auth: m, purchase: pm, rateLimiter: NewInMemoryRateLimiter()}, refused: refused, allowed: allowed}
 	}
 }
 
@@ -352,5 +352,5 @@ func riApproveCSRFGuardFixture(t *testing.T) csrfGuardFixture {
 		t.Helper()
 		store.AssertCalled(t, "TransitionRIExchangeStatus", mock.Anything, csrfGuardRIID, "pending", "processing", mock.Anything)
 	}
-	return csrfGuardFixture{h: &Handler{config: store, auth: m}, refused: refused, allowed: allowed}
+	return csrfGuardFixture{h: &Handler{config: store, auth: m, rateLimiter: NewInMemoryRateLimiter()}, refused: refused, allowed: allowed}
 }

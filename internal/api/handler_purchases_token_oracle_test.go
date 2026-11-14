@@ -134,9 +134,10 @@ func oracleHandler(t *testing.T, caller oracleCaller, exec *config.PurchaseExecu
 	caller.grant(m)
 
 	return &Handler{
-		config:   store,
-		auth:     m,
-		purchase: purchase.NewManager(purchase.ManagerConfig{ConfigStore: store}),
+		config:      store,
+		auth:        m,
+		rateLimiter: NewInMemoryRateLimiter(),
+		purchase:    purchase.NewManager(purchase.ManagerConfig{ConfigStore: store}),
 	}
 }
 

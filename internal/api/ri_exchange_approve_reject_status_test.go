@@ -137,7 +137,7 @@ func riStatusHandler(t *testing.T, rec riStatusRecord, o riStatusOpts) *Handler 
 	}
 	a.On("ValidateCSRFToken", mock.Anything, "admin-bearer", "csrf-ok").Return(nil).Maybe()
 	a.On("ValidateCSRFToken", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("csrf mismatch")).Maybe()
-	h := &Handler{config: store, auth: a}
+	h := &Handler{config: store, auth: a, rateLimiter: NewInMemoryRateLimiter()}
 	if o.rateLimited {
 		rl := new(MockRateLimiter)
 		t.Cleanup(func() { rl.AssertExpectations(t) })

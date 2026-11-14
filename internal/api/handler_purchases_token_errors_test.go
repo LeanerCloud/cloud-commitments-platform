@@ -69,9 +69,10 @@ func tokenErrHandlerFor(t *testing.T, exec *config.PurchaseExecution, getErr err
 	}
 
 	return &Handler{
-		config:   store,
-		auth:     auth,
-		purchase: purchase.NewManager(purchase.ManagerConfig{ConfigStore: store}),
+		config:      store,
+		auth:        auth,
+		rateLimiter: NewInMemoryRateLimiter(),
+		purchase:    purchase.NewManager(purchase.ManagerConfig{ConfigStore: store}),
 	}
 }
 
