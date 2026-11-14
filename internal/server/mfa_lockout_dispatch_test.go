@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -36,7 +37,7 @@ func TestHandleRequest_MFADisableWrongCodesLockAccount(t *testing.T) {
 		GroupIDs: []string{auth.DefaultAdminGroupID},
 	}
 
-	mockStore := new(auth.MockStore)
+	mockStore := new(authtest.MockStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	mockStore.On("GetSession", mock.Anything, mock.AnythingOfType("string")).Return(&auth.Session{
 		Token: hashSessionTokenForTest(mfaLockoutToken), UserID: mfaLockoutUserID,
@@ -52,7 +53,7 @@ func TestHandleRequest_MFADisableWrongCodesLockAccount(t *testing.T) {
 		}
 	})
 
-	service := auth.NewService(auth.ServiceConfig{Store: mockStore, SessionDuration: time.Hour, CSRFKey: auth.TestCSRFKey()})
+	service := auth.NewService(auth.ServiceConfig{Store: mockStore, SessionDuration: time.Hour, CSRFKey: authtest.TestCSRFKey()})
 	handler := api.NewHandler(api.HandlerConfig{AuthService: newAuthServiceAdapter(service), RateLimiter: api.NewInMemoryRateLimiter()})
 
 	disable := func(code string) *events.LambdaFunctionURLResponse {
@@ -64,7 +65,7 @@ func TestHandleRequest_MFADisableWrongCodesLockAccount(t *testing.T) {
 		resp, err := handler.HandleRequest(context.Background(), &events.LambdaFunctionURLRequest{
 			Headers: map[string]string{
 				"Authorization": "Bearer " + mfaLockoutToken,
-				"X-CSRF-Token":  auth.DeriveTestCSRFToken(mfaLockoutToken),
+				"X-CSRF-Token":  authtest.DeriveTestCSRFToken(mfaLockoutToken),
 				"Content-Type":  "application/json",
 			},
 			Body: string(body),

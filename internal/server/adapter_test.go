@@ -10,6 +10,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -26,9 +27,9 @@ func hashSessionTokenForTest(token string) string {
 	return hex.EncodeToString(h[:])
 }
 
-func createMockAuthService(t *testing.T) (*authServiceAdapter, *auth.MockStore) {
+func createMockAuthService(t *testing.T) (*authServiceAdapter, *authtest.MockStore) {
 	t.Helper()
-	mockStore := new(auth.MockStore)
+	mockStore := new(authtest.MockStore)
 	service := auth.NewService(auth.ServiceConfig{
 		Store:           mockStore,
 		SessionDuration: time.Hour,
@@ -36,7 +37,7 @@ func createMockAuthService(t *testing.T) (*authServiceAdapter, *auth.MockStore) 
 		// reproducible and hermetic. Without this, NewService generates a
 		// random ephemeral key, so any test asserting a specific derived CSRF
 		// token (TestAuthServiceAdapter_ValidateCSRFToken) cannot reproduce it.
-		CSRFKey: auth.TestCSRFKey(),
+		CSRFKey: authtest.TestCSRFKey(),
 		// Hashing and Login's timing-equalizing compare run at the test
 		// cost; cost 12 takes seconds per call under -race.
 		BcryptCost: bcrypt.MinCost,
@@ -287,9 +288,9 @@ func TestAuthServiceAdapter_ValidateCSRFToken(t *testing.T) {
 	// ValidateCSRFToken recomputes the expected token as
 	// HMAC-SHA256(csrfKey, rawSessionToken); it never reads the stored
 	// CSRFToken column. Derive the matching token from the same fixed key the
-	// service was built with (auth.TestCSRFKey) so the assertion is hermetic
+	// service was built with (authtest.TestCSRFKey) so the assertion is hermetic
 	// and does not depend on an ambient CSRFKey from the environment.
-	csrfToken := auth.DeriveTestCSRFToken("session-token")
+	csrfToken := authtest.DeriveTestCSRFToken("session-token")
 	err := adapter.ValidateCSRFToken(ctx, "session-token", csrfToken)
 	require.NoError(t, err)
 }
@@ -447,7 +448,7 @@ func TestAuthServiceAdapter_CreateAPIKeyAPI(t *testing.T) {
 		ID:           "user-1",
 		Email:        "test@example.com",
 		Active:       true,
-		PasswordHash: auth.TestPasswordHash(t, password),
+		PasswordHash: authtest.TestPasswordHash(t, password),
 		GroupIDs:     []string{auth.DefaultAdminGroupID},
 	}, nil)
 	mockStore.On("GetGroup", ctx, auth.DefaultAdminGroupID).Return(&auth.Group{
@@ -478,7 +479,7 @@ func TestAuthServiceAdapter_CreateAPIKeyAPI_KeepsPermissionConstraints(t *testin
 	const password = "CorrectHorse@123"
 	mockStore.On("GetUserByID", ctx, "user-1").Return(&auth.User{
 		ID: "user-1", Email: "test@example.com", Active: true,
-		PasswordHash: auth.TestPasswordHash(t, password),
+		PasswordHash: authtest.TestPasswordHash(t, password),
 		GroupIDs:     []string{auth.DefaultAdminGroupID},
 	}, nil)
 	mockStore.On("GetGroup", ctx, auth.DefaultAdminGroupID).Return(&auth.Group{
@@ -614,18 +615,18 @@ func TestAuthServiceAdapter_SetupAdmin(t *testing.T) {
 //
 // This drives the full stack an HTTP request would: api.Router.Route ->
 // api.Handler.setupAdmin/login -> authServiceAdapter -> the real
-// *auth.Service, backed by an auth.MockStore that persists the user
+// *auth.Service, backed by an authtest.MockStore that persists the user
 // setupAdmin creates and hands it back to login. It fails on the pre-fix
 // setupAdmin handler (which skips decodeBase64Password) and passes once it
 // decodes like every other password handler.
 func TestSetupAdminThenLogin_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
-	mockStore := new(auth.MockStore)
+	mockStore := new(authtest.MockStore)
 	realAuth := auth.NewService(auth.ServiceConfig{
 		Store:           mockStore,
 		SessionDuration: time.Hour,
-		CSRFKey:         auth.TestCSRFKey(),
+		CSRFKey:         authtest.TestCSRFKey(),
 		DashboardURL:    "http://localhost:3000",
 		BcryptCost:      bcrypt.MinCost,
 	})
