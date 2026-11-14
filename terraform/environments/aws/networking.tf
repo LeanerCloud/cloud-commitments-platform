@@ -16,6 +16,9 @@ module "networking" {
   flow_logs_retention_days  = var.flow_logs_retention_days
   enable_nat_gateway        = true # Required for ECR access from private subnets
 
+  # Publishes the group metric the NAT outage alarm in monitoring.tf reads.
+  enable_nat_group_metrics = var.enable_nat_churn_alarm
+
   # When CloudFront fronts the Fargate ALB (enable_cdn = true), admit only
   # CloudFront's origin-facing prefix list so direct internet traffic cannot
   # bypass the distribution (#412). Mirrors how enable_cdn flips the Lambda

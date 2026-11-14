@@ -749,6 +749,17 @@ variable "enable_ladder_failure_alarm" {
   default     = false
 }
 
+# Its own flag, not tied to enable_monitoring: a stack that already runs
+# monitoring has a bootstrap that predates autoscaling:Enable/DisableMetricsCollection,
+# so piggybacking would 403 its next apply. Order: re-apply
+# terraform/environments/aws/ci-cd-permissions first, then set this to true
+# (with enable_monitoring = true so the alarm notifies someone).
+variable "enable_nat_churn_alarm" {
+  description = "Create the NAT outage alarm (fck-nat instance missing from service in 2 of 3 5-minute windows, e.g. a restart loop) and publish the ASG group metric it reads. Requires the ci-cd-permissions bootstrap to have been re-applied first. Notifies the monitoring SNS topic only when enable_monitoring is also true. After enabling, terminate the NAT instance once and watch the alarm. Thresholds are reasoned from the restart-loop timing, not observed."
+  type        = bool
+  default     = false
+}
+
 variable "alert_emails" {
   description = "Comma-separated email addresses subscribed to the alerts SNS topic. Supplied by the deploy workflow from the ALERT_EMAILS secret; never commit real addresses. Empty means alarms fire with nobody subscribed (the prod_alerts_reach_someone check in monitoring.tf warns)."
   type        = string

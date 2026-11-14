@@ -176,6 +176,7 @@
 ^scripts/generate-federation-iac_test\.go:[0-9]+:[[:space:]]*`aws_account_id[[:space:]]+=[[:space:]]+"111[1]222[2]333[3]"`,[[:space:]]*$
 ^scripts/generate-federation-iac_test\.go:[0-9]+:[[:space:]]*accountID:[[:space:]]+"000[0]111[1]222[2]",[[:space:]]*$
 ^terraform/environments/aws/tests/fargate_cdn_alb\.tftest\.hcl:[0-9]+:[[:space:]]*account_id[[:space:]]+=[[:space:]]+"123[4]567[8]901[2]"[[:space:]]*$
+^terraform/environments/aws/tests/nat_churn_alarm\.tftest\.hcl:[0-9]+:[[:space:]]*account_id[[:space:]]+=[[:space:]]+"123[4]567[8]901[2]"[[:space:]]*$
 
 # The bare AWS secret access key detector (#295) flags this line, which holds no
 # secret: an IAM OIDC thumbprint (a public certificate hash, upper-case hex) in a
