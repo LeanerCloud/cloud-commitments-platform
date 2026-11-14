@@ -6,6 +6,7 @@
 
 import {
   closeColumnFilterPopover,
+  isColumnFilterPopoverOpen,
   openColumnFilterPopover,
   rebindColumnFilterPopover,
   sortedDistinctValues,
@@ -205,6 +206,48 @@ describe('rebind after re-render', () => {
     filters['plans:count'] = { kind: 'expr', expr: '9' };
     rebindColumnFilterPopover('plans');
     expect(exprInput().value).toBe('>1');
+  });
+});
+
+describe('opt-in trigger selector, scroll following and open state', () => {
+  const scroll = (): void => { window.dispatchEvent(new Event('scroll')); };
+
+  test('isColumnFilterPopoverOpen is keyed by scope and column', () => {
+    openFor('plans', 'provider');
+    expect(isColumnFilterPopoverOpen('plans', 'provider')).toBe(true);
+    expect(isColumnFilterPopoverOpen('plans', 'count')).toBe(false);
+    expect(isColumnFilterPopoverOpen('riex', 'provider')).toBe(false);
+    closeColumnFilterPopover();
+    expect(isColumnFilterPopoverOpen('plans', 'provider')).toBe(false);
+  });
+
+  test('scrolling leaves the popover alone unless followOnScroll is set', () => {
+    openFor('plans', 'provider');
+    scroll();
+    expect(popovers()).toHaveLength(1);
+  });
+
+  test('followOnScroll closes the popover once the trigger is off screen', () => {
+    openColumnFilterPopover({ ...config('plans', 'provider'), followOnScroll: true }, trigger('plans', 'provider'));
+    scroll();
+    expect(popovers()).toHaveLength(0);
+  });
+
+  test('followOnScroll keeps the popover while the trigger is on screen', () => {
+    const btn = trigger('plans', 'provider');
+    btn.getBoundingClientRect = () => ({ left: 10, right: 40, top: 10, bottom: 30, width: 30, height: 20, x: 10, y: 10, toJSON: () => ({}) });
+    openColumnFilterPopover({ ...config('plans', 'provider'), followOnScroll: true }, btn);
+    scroll();
+    expect(popovers()).toHaveLength(1);
+  });
+
+  test('triggerSelector decides which outside clicks are left to the trigger', () => {
+    document.getElementById('plans')!.innerHTML += '<button class="other-btn">x</button>';
+    openColumnFilterPopover({ ...config('plans', 'provider'), triggerSelector: '.other-btn' }, trigger('plans', 'provider'));
+    document.querySelector('.other-btn')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    expect(popovers()).toHaveLength(1);
+    trigger('plans', 'count').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    expect(popovers()).toHaveLength(0);
   });
 });
 

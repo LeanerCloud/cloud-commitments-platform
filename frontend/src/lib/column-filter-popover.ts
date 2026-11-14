@@ -18,6 +18,7 @@
  */
 
 import { parseNumericFilter, type ColumnFilterKind } from './column-filters';
+import { anchorInView } from './table-scroll';
 
 export interface ColumnFilterPopoverConfig {
   // Owning table, e.g. 'plans'. Namespaces element ids and the open-popover
@@ -42,6 +43,12 @@ export interface ColumnFilterPopoverConfig {
   // re-renders, on resize and on close, because the table rewrites its
   // buttons on every render.
   findTrigger: () => HTMLElement | null;
+  // Selector of the table's trigger buttons; outside clicks on them are left
+  // to openColumnFilterPopover. Defaults to '.column-filter-btn'.
+  triggerSelector?: string;
+  // Follow the trigger while it scrolls on screen and close once it scrolls
+  // out of view (tables inside a scrolling container).
+  followOnScroll?: boolean;
 }
 
 interface OpenPopover {
@@ -55,6 +62,7 @@ interface OpenPopover {
 
 let open: OpenPopover | null = null;
 let listenersAttached = false;
+const SCROLL_OPTS: AddEventListenerOptions = { capture: true, passive: true };
 
 const defaultDisplay = (v: string): string => (v === '' ? '(empty)' : v);
 
@@ -244,7 +252,8 @@ function onOutsideMouseDown(e: MouseEvent): void {
   const target = e.target as Node | null;
   if (!target || open.el.contains(target)) return;
   // Trigger clicks are handled by openColumnFilterPopover (toggle / swap).
-  if (target instanceof Element && target.closest('.column-filter-btn')) return;
+  const triggerSelector = open.config.triggerSelector ?? '.column-filter-btn';
+  if (target instanceof Element && target.closest(triggerSelector)) return;
   closeColumnFilterPopover();
 }
 
@@ -264,8 +273,20 @@ function onResize(): void {
   positionPopover(open.el, trigger);
 }
 
+function onScroll(e: Event): void {
+  if (!open || !open.config.followOnScroll) return;
+  if (e.target instanceof Node && open.el.contains(e.target)) return;
+  const trigger = open.config.findTrigger();
+  if (trigger && anchorInView(trigger)) {
+    positionPopover(open.el, trigger);
+    return;
+  }
+  closeColumnFilterPopover();
+}
+
 function attachListeners(): void {
   if (listenersAttached) return;
+  window.addEventListener('scroll', onScroll, SCROLL_OPTS);
   document.addEventListener('mousedown', onOutsideMouseDown);
   document.addEventListener('keydown', onKeyDown);
   window.addEventListener('resize', onResize);
@@ -274,6 +295,7 @@ function attachListeners(): void {
 
 function detachListeners(): void {
   if (!listenersAttached) return;
+  window.removeEventListener('scroll', onScroll, SCROLL_OPTS);
   document.removeEventListener('mousedown', onOutsideMouseDown);
   document.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('resize', onResize);
@@ -340,6 +362,12 @@ export function rebindColumnFilterPopover(scope: string): void {
   trigger.setAttribute('aria-expanded', 'true');
   positionPopover(open.el, trigger);
   resync(open);
+}
+
+/** True while the popover for (scope, column) is open. */
+export function isColumnFilterPopoverOpen(scope: string, column: string): boolean {
+  dropIfDetached();
+  return open !== null && open.config.scope === scope && open.config.column === column;
 }
 
 /** Distinct values for a categorical column, '' first, then locale order. */
