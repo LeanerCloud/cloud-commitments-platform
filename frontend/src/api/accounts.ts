@@ -161,33 +161,33 @@ export async function createSelfAccount(): Promise<CloudAccount> {
 }
 
 export async function getAccount(id: string): Promise<CloudAccount> {
-  return apiRequest<CloudAccount>(`/accounts/${id}`);
+  return apiRequest<CloudAccount>(`/accounts/${encodeURIComponent(id)}`);
 }
 
 export async function updateAccount(id: string, req: CloudAccountRequest): Promise<CloudAccount> {
-  return apiRequest<CloudAccount>(`/accounts/${id}`, {
+  return apiRequest<CloudAccount>(`/accounts/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify(req)
   });
 }
 
 export async function deleteAccount(id: string): Promise<void> {
-  return apiRequest<void>(`/accounts/${id}`, { method: 'DELETE' });
+  return apiRequest<void>(`/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 export async function saveAccountCredentials(id: string, req: AccountCredentialsRequest): Promise<void> {
-  return apiRequest<void>(`/accounts/${id}/credentials`, {
+  return apiRequest<void>(`/accounts/${encodeURIComponent(id)}/credentials`, {
     method: 'POST',
     body: JSON.stringify(req)
   });
 }
 
 export async function testAccountCredentials(id: string): Promise<AccountTestResult> {
-  return apiRequest<AccountTestResult>(`/accounts/${id}/test`, { method: 'POST' });
+  return apiRequest<AccountTestResult>(`/accounts/${encodeURIComponent(id)}/test`, { method: 'POST' });
 }
 
 export async function listAccountServiceOverrides(id: string): Promise<AccountServiceOverride[]> {
-  return apiRequest<AccountServiceOverride[]>(`/accounts/${id}/service-overrides`);
+  return apiRequest<AccountServiceOverride[]>(`/accounts/${encodeURIComponent(id)}/service-overrides`);
 }
 
 export async function saveAccountServiceOverride(
@@ -197,7 +197,7 @@ export async function saveAccountServiceOverride(
   req: AccountServiceOverrideRequest
 ): Promise<AccountServiceOverride> {
   return apiRequest<AccountServiceOverride>(
-    `/accounts/${accountId}/service-overrides/${provider}/${service}`,
+    `/accounts/${encodeURIComponent(accountId)}/service-overrides/${encodeURIComponent(provider)}/${encodeURIComponent(service)}`,
     { method: 'PUT', body: JSON.stringify(req) }
   );
 }
@@ -208,7 +208,7 @@ export async function deleteAccountServiceOverride(
   service: string
 ): Promise<void> {
   return apiRequest<void>(
-    `/accounts/${accountId}/service-overrides/${provider}/${service}`,
+    `/accounts/${encodeURIComponent(accountId)}/service-overrides/${encodeURIComponent(provider)}/${encodeURIComponent(service)}`,
     { method: 'DELETE' }
   );
 }
@@ -308,11 +308,11 @@ export async function getFederationIaC(
 }
 
 export async function listPlanAccounts(planId: string): Promise<CloudAccount[]> {
-  return apiRequest<CloudAccount[]>(`/plans/${planId}/accounts`);
+  return apiRequest<CloudAccount[]>(`/plans/${encodeURIComponent(planId)}/accounts`);
 }
 
 export async function setPlanAccounts(planId: string, accountIds: string[]): Promise<void> {
-  return apiRequest<void>(`/plans/${planId}/accounts`, {
+  return apiRequest<void>(`/plans/${encodeURIComponent(planId)}/accounts`, {
     method: 'PUT',
     body: JSON.stringify({ account_ids: accountIds })
   });

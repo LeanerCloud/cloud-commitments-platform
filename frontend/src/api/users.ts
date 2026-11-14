@@ -21,7 +21,7 @@ export async function listUsers(): Promise<{ users: APIUser[] }> {
  * Get a single user
  */
 export async function getUser(userId: string): Promise<APIUser> {
-  return apiRequest<APIUser>(`/users/${userId}`);
+  return apiRequest<APIUser>(`/users/${encodeURIComponent(userId)}`);
 }
 
 /**
@@ -46,7 +46,7 @@ export async function createUser(req: CreateUserRequest): Promise<CreateUserResp
  * Update a user
  */
 export async function updateUser(userId: string, req: UpdateUserRequest): Promise<APIUser> {
-  return apiRequest<APIUser>(`/users/${userId}`, {
+  return apiRequest<APIUser>(`/users/${encodeURIComponent(userId)}`, {
     method: 'PUT',
     body: JSON.stringify(req)
   });
@@ -56,5 +56,5 @@ export async function updateUser(userId: string, req: UpdateUserRequest): Promis
  * Delete a user
  */
 export async function deleteUser(userId: string): Promise<void> {
-  return apiRequest<void>(`/users/${userId}`, { method: 'DELETE' });
+  return apiRequest<void>(`/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
 }

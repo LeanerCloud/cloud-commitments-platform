@@ -41,12 +41,12 @@ export async function createApiKey(req: CreateAPIKeyRequest): Promise<CreateAPIK
  * Revoke an API key
  */
 export async function revokeApiKey(keyId: string): Promise<void> {
-  return apiRequest<void>(`/api-keys/${keyId}/revoke`, { method: 'POST' });
+  return apiRequest<void>(`/api-keys/${encodeURIComponent(keyId)}/revoke`, { method: 'POST' });
 }
 
 /**
  * Delete an API key
  */
 export async function deleteApiKey(keyId: string): Promise<void> {
-  return apiRequest<void>(`/api-keys/${keyId}`, { method: 'DELETE' });
+  return apiRequest<void>(`/api-keys/${encodeURIComponent(keyId)}`, { method: 'DELETE' });
 }

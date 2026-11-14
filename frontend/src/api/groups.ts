@@ -16,7 +16,7 @@ export async function listGroups(): Promise<{ groups: APIGroup[] }> {
  * Get a single group
  */
 export async function getGroup(groupId: string): Promise<APIGroup> {
-  return apiRequest<APIGroup>(`/groups/${groupId}`);
+  return apiRequest<APIGroup>(`/groups/${encodeURIComponent(groupId)}`);
 }
 
 /**
@@ -33,7 +33,7 @@ export async function createGroup(req: CreateGroupRequest): Promise<APIGroup> {
  * Update a group
  */
 export async function updateGroup(groupId: string, req: UpdateGroupRequest): Promise<APIGroup> {
-  return apiRequest<APIGroup>(`/groups/${groupId}`, {
+  return apiRequest<APIGroup>(`/groups/${encodeURIComponent(groupId)}`, {
     method: 'PUT',
     body: JSON.stringify(req)
   });
@@ -43,5 +43,5 @@ export async function updateGroup(groupId: string, req: UpdateGroupRequest): Pro
  * Delete a group
  */
 export async function deleteGroup(groupId: string): Promise<void> {
-  return apiRequest<void>(`/groups/${groupId}`, { method: 'DELETE' });
+  return apiRequest<void>(`/groups/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
 }

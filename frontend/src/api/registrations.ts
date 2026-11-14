@@ -44,23 +44,23 @@ export async function listRegistrations(status?: string): Promise<AccountRegistr
 }
 
 export async function getRegistration(id: string): Promise<AccountRegistration> {
-  return apiRequest<AccountRegistration>(`/registrations/${id}`);
+  return apiRequest<AccountRegistration>(`/registrations/${encodeURIComponent(id)}`);
 }
 
 export async function approveRegistration(id: string, account: CloudAccountRequest): Promise<CloudAccount> {
-  return apiRequest<CloudAccount>(`/registrations/${id}/approve`, {
+  return apiRequest<CloudAccount>(`/registrations/${encodeURIComponent(id)}/approve`, {
     method: 'POST',
     body: JSON.stringify(account),
   });
 }
 
 export async function rejectRegistration(id: string, reason?: string): Promise<AccountRegistration> {
-  return apiRequest<AccountRegistration>(`/registrations/${id}/reject`, {
+  return apiRequest<AccountRegistration>(`/registrations/${encodeURIComponent(id)}/reject`, {
     method: 'POST',
     body: JSON.stringify({ reason: reason || '' }),
   });
 }
 
 export async function deleteRegistration(id: string): Promise<void> {
-  await apiRequest<void>(`/registrations/${id}`, { method: 'DELETE' });
+  await apiRequest<void>(`/registrations/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

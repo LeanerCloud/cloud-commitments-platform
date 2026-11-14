@@ -47,7 +47,7 @@ export async function executePurchase(
  * Get purchase details
  */
 export async function getPurchaseDetails(executionId: string): Promise<PurchaseDetails> {
-  return apiRequest<PurchaseDetails>(`/purchases/${executionId}`);
+  return apiRequest<PurchaseDetails>(`/purchases/${encodeURIComponent(executionId)}`);
 }
 
 /**
@@ -68,7 +68,7 @@ export async function getApprovalDetails(executionId: string, token: string): Pr
  * Cancel a scheduled purchase
  */
 export async function cancelPurchase(executionId: string): Promise<void> {
-  return apiRequest<void>(`/purchases/cancel/${executionId}`, { method: 'POST' });
+  return apiRequest<void>(`/purchases/cancel/${encodeURIComponent(executionId)}`, { method: 'POST' });
 }
 
 /**
@@ -81,7 +81,7 @@ export async function cancelPurchase(executionId: string): Promise<void> {
  * approve-{any,own} RBAC matrix.
  */
 export async function approvePurchase(executionId: string): Promise<void> {
-  return apiRequest<void>(`/purchases/approve/${executionId}`, { method: 'POST' });
+  return apiRequest<void>(`/purchases/approve/${encodeURIComponent(executionId)}`, { method: 'POST' });
 }
 
 /**
@@ -118,7 +118,7 @@ export interface RevokeQuote {
 }
 
 export async function getRevokeQuote(purchaseId: string): Promise<RevokeQuote> {
-  return apiRequest<RevokeQuote>(`/purchases/${purchaseId}/revoke/calculate`);
+  return apiRequest<RevokeQuote>(`/purchases/${encodeURIComponent(purchaseId)}/revoke/calculate`);
 }
 
 /**
@@ -134,7 +134,7 @@ export async function revokePurchase(purchaseId: string, quote?: RevokeQuote): P
       expected_refund_currency: quote.refund_currency,
     });
   }
-  return apiRequest<RevokePurchaseResult>(`/purchases/${purchaseId}/revoke`, init);
+  return apiRequest<RevokePurchaseResult>(`/purchases/${encodeURIComponent(purchaseId)}/revoke`, init);
 }
 
 /**
@@ -168,7 +168,7 @@ export async function retryPurchase(
   opts?: { force?: boolean },
 ): Promise<RetryPurchaseResult> {
   const qs = opts?.force ? '?force=true' : '';
-  return apiRequest<RetryPurchaseResult>(`/purchases/retry/${executionId}${qs}`, {
+  return apiRequest<RetryPurchaseResult>(`/purchases/retry/${encodeURIComponent(executionId)}${qs}`, {
     method: 'POST',
   });
 }
@@ -184,35 +184,35 @@ export async function getPlannedPurchases(): Promise<PlannedPurchasesResponse> {
  * Pause a planned purchase
  */
 export async function pausePlannedPurchase(purchaseId: string): Promise<void> {
-  return apiRequest<void>(`/purchases/planned/${purchaseId}/pause`, { method: 'POST' });
+  return apiRequest<void>(`/purchases/planned/${encodeURIComponent(purchaseId)}/pause`, { method: 'POST' });
 }
 
 /**
  * Resume a planned purchase
  */
 export async function resumePlannedPurchase(purchaseId: string): Promise<void> {
-  return apiRequest<void>(`/purchases/planned/${purchaseId}/resume`, { method: 'POST' });
+  return apiRequest<void>(`/purchases/planned/${encodeURIComponent(purchaseId)}/resume`, { method: 'POST' });
 }
 
 /**
  * Run a planned purchase immediately
  */
 export async function runPlannedPurchase(purchaseId: string): Promise<PurchaseResult> {
-  return apiRequest<PurchaseResult>(`/purchases/planned/${purchaseId}/run`, { method: 'POST' });
+  return apiRequest<PurchaseResult>(`/purchases/planned/${encodeURIComponent(purchaseId)}/run`, { method: 'POST' });
 }
 
 /**
  * Delete a planned purchase
  */
 export async function deletePlannedPurchase(purchaseId: string): Promise<void> {
-  return apiRequest<void>(`/purchases/planned/${purchaseId}`, { method: 'DELETE' });
+  return apiRequest<void>(`/purchases/planned/${encodeURIComponent(purchaseId)}`, { method: 'DELETE' });
 }
 
 /**
  * Create planned purchases for a plan
  */
 export async function createPlannedPurchases(planId: string, count: number, startDate: string): Promise<{ created: number }> {
-  return apiRequest<{ created: number }>(`/plans/${planId}/purchases`, {
+  return apiRequest<{ created: number }>(`/plans/${encodeURIComponent(planId)}/purchases`, {
     method: 'POST',
     body: JSON.stringify({ count, start_date: startDate })
   });
@@ -247,7 +247,7 @@ export async function createMarketplaceListing(
   const body = priceSchedule && priceSchedule.length > 0
     ? JSON.stringify({ price_schedule: priceSchedule })
     : undefined;
-  return apiRequest<MarketplaceListResult>(`/purchases/${purchaseId}/marketplace-list`, {
+  return apiRequest<MarketplaceListResult>(`/purchases/${encodeURIComponent(purchaseId)}/marketplace-list`, {
     method: 'POST',
     ...(body ? { body } : {}),
   });
@@ -258,7 +258,7 @@ export async function createMarketplaceListing(
  */
 export async function cancelMarketplaceListing(purchaseId: string): Promise<{ listing_id: string; listing_state: string }> {
   return apiRequest<{ listing_id: string; listing_state: string }>(
-    `/purchases/${purchaseId}/marketplace-cancel`,
+    `/purchases/${encodeURIComponent(purchaseId)}/marketplace-cancel`,
     { method: 'POST' },
   );
 }

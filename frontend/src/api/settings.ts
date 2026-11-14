@@ -17,7 +17,7 @@ export async function getConfig(): Promise<ConfigResponse> {
  * Update per-service configuration
  */
 export async function updateServiceConfig(provider: string, service: string, cfg: Partial<ServiceConfig>): Promise<void> {
-  return apiRequest<void>(`/config/service/${provider}/${service}`, {
+  return apiRequest<void>(`/config/service/${encodeURIComponent(provider)}/${encodeURIComponent(service)}`, {
     method: 'PUT',
     body: JSON.stringify(cfg)
   });
