@@ -194,3 +194,160 @@ func TestManager_SavePurchaseHistory_RevocationWindow(t *testing.T) {
 		})
 	}
 }
+
+func TestManager_ExecuteSinglePurchase_ServiceClientError(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockFactory := new(MockProviderFactory)
+	mockProvider := new(MockProvider)
+	mockSTS := new(MockSTSClient)
+	assertMocksOnCleanup(t, mockStore, mockFactory, mockProvider, mockSTS)
+
+	plan := &config.PurchasePlan{
+		ID:   "plan-svc-err",
+		Name: "Test Plan",
+	}
+
+	exec := &config.PurchaseExecution{
+		ExecutionID: "exec-svc-err",
+		PlanID:      "plan-svc-err",
+		StepNumber:  1,
+		Recommendations: []config.RecommendationRecord{
+			{
+				Provider:     "aws",
+				Service:      "rds",
+				ResourceType: "db.r5.large",
+				Region:       "eu-west-1",
+				Count:        2,
+				Savings:      200.0,
+				Selected:     true,
+			},
+		},
+	}
+
+	mockStore.On("GetPurchasePlan", ctx, "plan-svc-err").Return(plan, nil)
+	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProvider, nil)
+	mockProvider.On("GetServiceClient", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), common.ServiceRDS, "eu-west-1").Return(nil, errors.New("service client error"))
+	mockSTS.On("GetCallerIdentity", ctx, mock.Anything).Return(nil, errors.New("sts error"))
+
+	manager := &Manager{
+		config:          mockStore,
+		email:           mockEmail,
+		stsClient:       mockSTS,
+		providerFactory: mockFactory,
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	err := manager.executePurchase(ctx, exec)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "some purchases failed")
+	assert.Contains(t, exec.Recommendations[0].Error, "failed to get service client")
+}
+
+func TestManager_ExecuteSinglePurchase_PurchaseNotSuccessful(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockFactory := new(MockProviderFactory)
+	mockProvider := new(MockProvider)
+	mockServiceClient := new(MockServiceClient)
+	mockSTS := new(MockSTSClient)
+	assertMocksOnCleanup(t, mockStore, mockFactory, mockProvider, mockServiceClient, mockSTS)
+
+	plan := &config.PurchasePlan{
+		ID:   "plan-not-success",
+		Name: "Test Plan",
+	}
+
+	exec := &config.PurchaseExecution{
+		ExecutionID: "exec-not-success",
+		PlanID:      "plan-not-success",
+		Recommendations: []config.RecommendationRecord{
+			{
+				Provider:     "aws",
+				Service:      "elasticache",
+				ResourceType: "cache.r5.large",
+				Region:       "ap-southeast-1",
+				Count:        1,
+				Savings:      50.0,
+				Selected:     true,
+			},
+		},
+	}
+
+	mockStore.On("GetPurchasePlan", ctx, "plan-not-success").Return(plan, nil)
+	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProvider, nil)
+	mockProvider.On("GetServiceClient", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), common.ServiceElastiCache, "ap-southeast-1").Return(mockServiceClient, nil)
+	mockServiceClient.On("GetExistingCommitments", mock.Anything).Return([]common.Commitment(nil), nil)
+	mockServiceClient.On("PurchaseCommitment", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions")).Return(
+		common.PurchaseResult{Success: false}, nil,
+	)
+	mockSTS.On("GetCallerIdentity", ctx, mock.Anything).Return(nil, errors.New("sts error"))
+
+	manager := &Manager{
+		config:          mockStore,
+		email:           mockEmail,
+		stsClient:       mockSTS,
+		providerFactory: mockFactory,
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	err := manager.executePurchase(ctx, exec)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "some purchases failed")
+	assert.Contains(t, exec.Recommendations[0].Error, "purchase was not successful")
+}
+
+func TestManager_ExecuteSinglePurchase_PurchaseNotSuccessful_WithError(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockFactory := new(MockProviderFactory)
+	mockProvider := new(MockProvider)
+	mockServiceClient := new(MockServiceClient)
+	mockSTS := new(MockSTSClient)
+	assertMocksOnCleanup(t, mockStore, mockFactory, mockProvider, mockServiceClient, mockSTS)
+
+	plan := &config.PurchasePlan{
+		ID:   "plan-err-result",
+		Name: "Test Plan",
+	}
+
+	exec := &config.PurchaseExecution{
+		ExecutionID: "exec-err-result",
+		PlanID:      "plan-err-result",
+		Recommendations: []config.RecommendationRecord{
+			{
+				Provider:     "aws",
+				Service:      "opensearch",
+				ResourceType: "r5.large.search",
+				Region:       "us-west-2",
+				Count:        1,
+				Savings:      75.0,
+				Selected:     true,
+			},
+		},
+	}
+
+	specificErr := errors.New("capacity limit exceeded")
+	mockStore.On("GetPurchasePlan", ctx, "plan-err-result").Return(plan, nil)
+	mockFactory.On("CreateAndValidateProvider", mock.Anything, "aws", mock.Anything).Return(mockProvider, nil)
+	mockProvider.On("GetServiceClient", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), common.ServiceOpenSearch, "us-west-2").Return(mockServiceClient, nil)
+	mockServiceClient.On("PurchaseCommitment", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), mock.AnythingOfType("common.Recommendation"), mock.AnythingOfType("common.PurchaseOptions")).Return(
+		common.PurchaseResult{Success: false, Error: specificErr}, nil,
+	)
+	mockSTS.On("GetCallerIdentity", ctx, mock.Anything).Return(nil, errors.New("sts error"))
+
+	manager := &Manager{
+		config:          mockStore,
+		email:           mockEmail,
+		stsClient:       mockSTS,
+		providerFactory: mockFactory,
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	err := manager.executePurchase(ctx, exec)
+	assert.Error(t, err)
+	assert.Contains(t, exec.Recommendations[0].Error, "capacity limit exceeded")
+}
