@@ -1218,7 +1218,7 @@ func TestHandler_patchPlan_UpdateMultipleFields(t *testing.T) {
 	assert.Equal(t, 5, plan.NotificationDaysBefore)
 }
 
-// PATCH honours only name, enabled, auto_purchase and notification_days_before.
+// PATCH honors only name, enabled, auto_purchase and notification_days_before.
 // Any other PlanRequest field is ignored (documented on the PATCH operation in
 // openapi.yaml); this pins that contract so a change is deliberate (#1776).
 func TestHandler_patchPlan_OtherPlanRequestFieldsAreIgnored(t *testing.T) {
