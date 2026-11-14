@@ -914,7 +914,7 @@ function isPlanOverdue(plan: BackendPlan): boolean {
 // type, percent AND interval match the preset, the same rule Edit uses
 // (rampRadioValue), so the list never says "Weekly 20%" for a plan Edit opens
 // as Custom 20% / 7 days, or hides a 14-day interval behind "Weekly 25%" (#1185).
-function formatBackendRampSchedule(ramp: BackendPlan['ramp_schedule']): string {
+function formatBackendRampSchedule(ramp: BackendPlan['ramp_schedule'] | undefined): string {
   if (!ramp) return 'Immediate';
   if (!['immediate', 'weekly', 'monthly', 'custom'].includes(ramp.type)) return ramp.type || 'Unknown';
   const value = rampRadioValue(ramp);
@@ -947,16 +947,16 @@ async function loadPlanAccountNames(planId: string, cardEl: Element): Promise<vo
 // — only History and Delete remain — and a read-only "Unassigned" badge
 // is shown so operators can identify and re-scope the plan.
 /** "n/m steps", or NO_VALUE when the step count is missing or not positive (#136). */
-function formatRampProgress(ramp: { current_step?: number; total_steps?: number }): string {
-  const total = ramp.total_steps;
+function formatRampProgress(ramp: { current_step?: number; total_steps?: number } | undefined): string {
+  const total = ramp?.total_steps;
   if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0) return NO_VALUE;
-  return `${ramp.current_step || 0}/${total} steps`;
+  return `${ramp?.current_step || 0}/${total} steps`;
 }
 
 function renderPlanCard(plan: BackendPlan, canManagePlan: boolean, canDeletePlan: boolean, canAddPurchases: boolean): string {
   const info = extractPlanInfo(plan);
   const status = getStatusBadge(plan.enabled, plan.auto_purchase);
-  const rampSchedule = plan.ramp_schedule || { type: 'immediate', current_step: 0, total_steps: 1 };
+  const rampSchedule = plan.ramp_schedule;
   const overdue = isPlanOverdue(plan);
   // Hide the stale next_execution_date for disabled plans — keeping it
   // visible implies the plan will still run on that date, which it won't.
