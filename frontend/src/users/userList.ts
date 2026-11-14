@@ -243,7 +243,7 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
   // write-capable group is semantically contradictory (issue #1405).
   const revertCheckbox = (): void => {
     const cb = document.querySelector<HTMLInputElement>(
-      `.group-assign-checkbox[data-user-id="${userId}"][data-group-id="${groupId}"]`,
+      `.group-assign-checkbox[data-user-id="${CSS.escape(userId)}"][data-group-id="${CSS.escape(groupId)}"]`,
     );
     if (cb) cb.checked = !checked;
   };
@@ -297,7 +297,7 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
     // summary stay current without collapsing the row or re-rendering the
     // whole table (which would tear down all open panels).
     const panel = document.querySelector<HTMLElement>(
-      `.user-expand-panel[data-user-id="${userId}"]`,
+      `.user-expand-panel[data-user-id="${CSS.escape(userId)}"]`,
     );
     // innerHTML is intentional: renderUserExpandPanel returns server-derived HTML that
     // is already sanitized upstream; no unsanitized user-controlled input reaches here.
@@ -306,7 +306,7 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
     // Refresh the group-badge cell in the main row so it reflects the new
     // membership without a full re-render.
     const groupsCell = document.querySelector<HTMLElement>(
-      `tr.user-row[data-user-id="${userId}"] .groups-cell`,
+      `tr.user-row[data-user-id="${CSS.escape(userId)}"] .groups-cell`,
     );
     if (groupsCell) {
       groupsCell.innerHTML = updatedUser.groups.length > 0
@@ -324,7 +324,7 @@ async function toggleUserGroup(userId: string, groupId: string, checked: boolean
     showError(`Failed to update group membership: ${err.message}`);
     // Revert the checkbox
     const cb = document.querySelector<HTMLInputElement>(
-      `.group-assign-checkbox[data-user-id="${userId}"][data-group-id="${groupId}"]`,
+      `.group-assign-checkbox[data-user-id="${CSS.escape(userId)}"][data-group-id="${CSS.escape(groupId)}"]`,
     );
     if (cb) cb.checked = !checked;
   }
@@ -351,10 +351,10 @@ function setupUserTableListeners(): void {
       // re-rendering the whole table (preserves open expand panels).
       filteredUsers.filter(u => u.id !== SYNTHETIC_USER_ID).forEach(user => {
         const row = document.querySelector<HTMLElement>(
-          `tr.user-row[data-user-id="${user.id}"]`,
+          `tr.user-row[data-user-id="${CSS.escape(user.id)}"]`,
         );
         const cb = document.querySelector<HTMLInputElement>(
-          `.user-checkbox[data-user-id="${user.id}"]`,
+          `.user-checkbox[data-user-id="${CSS.escape(user.id)}"]`,
         );
         if (row) {
           if (checked) row.classList.add('row-selected');
@@ -383,7 +383,7 @@ function setupUserTableListeners(): void {
 
       // Toggle the row-selected class on just the affected row.
       const row = document.querySelector<HTMLElement>(
-        `tr.user-row[data-user-id="${userId}"]`,
+        `tr.user-row[data-user-id="${CSS.escape(userId)}"]`,
       );
       if (row) {
         if (nowChecked) row.classList.add('row-selected');
@@ -425,10 +425,10 @@ function setupUserTableListeners(): void {
       const userId = (btn as HTMLElement).dataset.userId;
       if (!userId) return;
       const expandRow = document.querySelector<HTMLElement>(
-        `tr.user-expand-row[data-user-id="${userId}"]`,
+        `tr.user-expand-row[data-user-id="${CSS.escape(userId)}"]`,
       );
       const panel = document.querySelector<HTMLElement>(
-        `.user-expand-panel[data-user-id="${userId}"]`,
+        `.user-expand-panel[data-user-id="${CSS.escape(userId)}"]`,
       );
       if (!expandRow || !panel) return;
 

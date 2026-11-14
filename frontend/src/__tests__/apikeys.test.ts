@@ -173,18 +173,18 @@ describe('API Keys Module', () => {
       consoleError.mockRestore();
     });
 
-    test('issue #9: renders empty state on unexpected response shape', async () => {
-      // The exact failure mode from the bug report: response has
-      // neither `api_keys` nor is an array. Old code crashed with
-      // TypeError; new code should render the empty state and not log
-      // an error.
-      (api.getApiKeys as jest.Mock).mockResolvedValue({ unexpected: 'shape' });
-
-      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
-      await expect(loadApiKeys()).resolves.toBeUndefined();
-      expect(document.getElementById('apikeys-list')?.textContent).toContain('No API keys yet');
-      expect(consoleError).not.toHaveBeenCalled();
-      consoleError.mockRestore();
+    test('unexpected response shape is an error, not "no keys" (#136 A11-018)', async () => {
+      // Neither `api_keys` nor a bare array: still must not crash (issue #9),
+      // but an operator reviewing credentials must not be told none exist.
+      for (const shape of [{ unexpected: 'shape' }, null]) {
+        (api.getApiKeys as jest.Mock).mockResolvedValue(shape);
+        const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+        await expect(loadApiKeys()).resolves.toBeUndefined();
+        const text = document.getElementById('apikeys-list')?.textContent ?? '';
+        expect(text).toContain('Failed to load API keys');
+        expect(text).not.toContain('No API keys yet');
+        consoleError.mockRestore();
+      }
     });
   });
 

@@ -87,6 +87,34 @@ describe('applyExecutionDeepLink', () => {
     setTimeoutSpy.mockRestore();
   });
 
+  test("lands on the actionable approval-queue row when the list is first in the DOM (#136 A12-061)", () => {
+    document.body.innerHTML = `
+      <div id="history-list"><table><tbody>
+        <tr data-execution-id="exec-dup" id="list-row"><td>l</td></tr>
+        <tr data-execution-id="exec-done" id="done-row"><td>d</td></tr>
+      </tbody></table></div>
+      <div id="purchases-approval-queue"><table><tbody>
+        <tr data-execution-id="exec-dup" id="queue-row"><td>q</td></tr>
+      </tbody></table></div>
+    `;
+    window.location.hash = '#history?execution=exec-dup';
+    expect(applyExecutionDeepLink()).toBe(true);
+    expect(document.getElementById('queue-row')!.classList.contains('history-row-highlight')).toBe(true);
+    expect(document.getElementById('list-row')!.classList.contains('history-row-highlight')).toBe(false);
+  });
+
+  test("lands on the list row for a non-pending execution (only in the list)", () => {
+    document.body.innerHTML = `
+      <div id="purchases-approval-queue"><table><tbody></tbody></table></div>
+      <div id="history-list"><table><tbody>
+        <tr data-execution-id="exec-done" id="done-row"><td>d</td></tr>
+      </tbody></table></div>
+    `;
+    window.location.hash = '#history?execution=exec-done';
+    expect(applyExecutionDeepLink()).toBe(true);
+    expect(document.getElementById('done-row')!.classList.contains('history-row-highlight')).toBe(true);
+  });
+
   test("returns false and skips work when no execution id in hash", () => {
     window.location.hash = '';
     expect(applyExecutionDeepLink()).toBe(false);

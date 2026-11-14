@@ -54,7 +54,7 @@ function row(id: string, status = 'completed', ts = '2026-10-01T00:00:00Z'): His
 }
 
 function page(purchases: HistoryPurchase[], extra: Partial<HistoryResponse> = {}): HistoryResponse {
-  return { summary: { total_purchases: 99 }, purchases, ...extra };
+  return { summary: { total_purchases: 99, total_completed: 99 }, purchases, ...extra };
 }
 
 function setupDOM(): void {

@@ -323,6 +323,25 @@ describe('openExchangeModal', () => {
     expect(executeBtn?.classList.contains('hidden')).toBe(true);
   });
 
+  it.each(['', '0', '-3', '2.5', '3abc'])(
+    'refuses count %p with an inline error instead of quoting one unit (#136 A12-064)',
+    async (bad) => {
+      const mockGetQuote = api.getExchangeQuote as jest.Mock;
+      mockGetQuote.mockClear();
+      openExchangeModal('ri-abc', 2, 'm5.large', [
+        { instance_type: 'm5.large', offering_id: '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91', effective_monthly_cost: 42.5 },
+      ]);
+      const countInput = modal.querySelector<HTMLInputElement>('.modal-exchange-count')!;
+      countInput.value = bad;
+      countInput.dispatchEvent(new Event('input'));
+      Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Get Quote')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(mockGetQuote).not.toHaveBeenCalled();
+      expect(modal.querySelector('#modal-exchange-result')?.textContent).toContain('count must be a whole number >= 1');
+    },
+  );
+
   it('invalidates a fetched quote when the target picker changes (issue #244)', async () => {
     const mockGetQuote = api.getExchangeQuote as jest.Mock;
     mockGetQuote.mockResolvedValueOnce({
@@ -1317,7 +1336,7 @@ describe('renderReshapeStalenessBanner', () => {
     renderReshapeStalenessBanner('soft', null);
     const banner = document.getElementById('ri-exchange-recommendations-freshness');
     expect(banner?.className).toContain('warning');
-    expect(banner?.textContent).toContain('may be up to 24h old');
+    expect(banner?.textContent).toContain('more than 12h old');
   });
 
   it('renders a hard-warning banner for staleness=hard', () => {

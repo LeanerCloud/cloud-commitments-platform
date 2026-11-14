@@ -235,6 +235,7 @@ describe('History Module', () => {
       (api.getHistory as jest.Mock).mockResolvedValue({
         summary: {
           total_purchases: 5,
+          total_completed: 5,
           total_upfront: 1000,
           total_monthly_savings: 200,
           total_annual_savings: 2400
@@ -247,6 +248,20 @@ describe('History Module', () => {
       const summary = document.getElementById('history-summary');
       expect(summary?.innerHTML).toContain('Total Purchases');
       expect(summary?.innerHTML).toContain('5');
+    });
+
+    test('absent total_completed renders the unknown marker, not total_purchases (#136 A12-060)', async () => {
+      (api.getHistory as jest.Mock).mockResolvedValue({
+        summary: { total_purchases: 10, total_pending: 3, total_upfront: 1, total_monthly_savings: 1, total_annual_savings: 12 },
+        purchases: []
+      });
+
+      await viewPlanHistory('plan-123');
+
+      const card = document.getElementById('history-summary')?.querySelector('.card');
+      expect(card?.textContent).toContain('Total Purchases');
+      expect(card?.textContent).not.toContain('10');
+      expect(card?.textContent).toContain('—');
     });
 
     test('handles API errors gracefully', async () => {
@@ -742,6 +757,7 @@ describe('History Module', () => {
       (api.getHistory as jest.Mock).mockResolvedValue({
         summary: {
           total_purchases: 3,
+          total_completed: 3,
           // total_upfront intentionally absent
           total_monthly_savings: 100,
           total_annual_savings: 1200,

@@ -187,9 +187,14 @@ export function readDeepLinkExecutionID(): string {
 export function applyExecutionDeepLink(): boolean {
   const execID = readDeepLinkExecutionID();
   if (!execID) return false;
-  const row = document.querySelector<HTMLTableRowElement>(
-    `tr[data-execution-id="${CSS.escape(execID)}"]`,
-  );
+  // A pending purchase has a row in both the approval queue and the list. The
+  // queue row carries the approve/cancel buttons (the list row only links to
+  // it), so email and badge deep links land there; any other status is only in
+  // the list. Explicit order, so it no longer depends on section order in the page.
+  const selector = `tr[data-execution-id="${CSS.escape(execID)}"]`;
+  const row = document.querySelector<HTMLTableRowElement>(`#purchases-approval-queue ${selector}`)
+    ?? document.querySelector<HTMLTableRowElement>(`#history-list ${selector}`)
+    ?? document.querySelector<HTMLTableRowElement>(selector);
   if (!row) {
     // Short-prefix the ID so the toast is readable but the user can
     // still cross-reference against the email if needed.
@@ -566,13 +571,12 @@ function renderHistorySummary(summary: HistorySummary | null): void {
     return;
   }
 
-  // total_completed / total_pending fall back to total_purchases so the
-  // summary renders sensibly against an older API deploy that hasn't shipped
-  // the new counters yet.
   const total = summary.total_purchases ?? null;
   // Failed, cancelled and expired rows bought nothing, so the card counts
-  // completed purchases only (matches Total Upfront Spent).
-  const completed = summary.total_completed ?? total;
+  // completed purchases only (matches Total Upfront Spent). An API that
+  // omits total_completed (older deploy) shows the unknown marker: falling
+  // back to total_purchases would count pending and failed rows as bought.
+  const completed = summary.total_completed ?? null;
   const completedDisplay = completed !== null ? String(completed) : NO_VALUE;
   const pending = summary.total_pending ?? 0;
   const detail = (total !== null && pending > 0)
@@ -751,7 +755,7 @@ function canCancelPendingRow(p: HistoryPurchase): boolean {
   if (status !== 'pending' && status !== 'notified') return false;
   const user = getCurrentUser();
   if (!user) return false;
-  if (canAccess('admin', '*') || canAccess('cancel-any', 'purchases')) return true;
+  if (canAccess('cancel-any', 'purchases')) return true;
   // cancel-own: only the original creator. Legacy rows with no
   // created_by_user_id can't be cancelled via this UI; the email-token
   // path remains the escape hatch.
@@ -900,7 +904,7 @@ function canRevokeCompletedRow(p: HistoryPurchase): boolean {
   //     the creator, like the cancel/approve/retry predicates (#320);
   //   * completed purchase_history rows carry no creator, so revoke-own is
   //     account-scoped server-side (see ActionRevokeOwn in auth/types.go).
-  if (canAccess('admin', '*') || canAccess('revoke-any', 'purchases')) return true;
+  if (canAccess('revoke-any', 'purchases')) return true;
   if (!canAccess('revoke-own', 'purchases')) return false;
   if (status !== 'scheduled') return true;
   return !!p.created_by_user_id && p.created_by_user_id === user.id;
@@ -1511,6 +1515,7 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
         </tr>
       </thead>
       <tbody>
+        ${statusFiltered.length > 0 && visible.length === 0 ? `<tr><td colspan="12" class="empty">No rows match the active column filters. Clear a filter to see them.</td></tr>` : ''}
         ${tableRows}
       </tbody>
     </table>
@@ -2176,6 +2181,7 @@ export function renderApprovalQueue(purchases: HistoryPurchase[]): void {
         </tr>
       </thead>
       <tbody>
+        ${pending.length > 0 && visible.length === 0 ? `<tr><td colspan="12" class="empty">No rows match the active column filters. Clear a filter to see them.</td></tr>` : ''}
         ${rows}
       </tbody>
     </table>

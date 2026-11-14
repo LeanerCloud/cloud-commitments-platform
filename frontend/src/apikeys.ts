@@ -52,9 +52,12 @@ export async function loadApiKeys(): Promise<void> {
   try {
     const response = await api.getApiKeys();
     const list = (response as { api_keys?: APIKeyInfo[] } | undefined)?.api_keys
-      ?? (Array.isArray(response) ? response as APIKeyInfo[] : undefined)
-      ?? [];
-    currentApiKeys = Array.isArray(list) ? list : [];
+      ?? (Array.isArray(response) ? response as APIKeyInfo[] : undefined);
+    // Neither known shape (a wrapped envelope, a truncated 200 resolving as
+    // null) is an error, not "no keys": an empty state would tell an operator
+    // reviewing credentials that none exist.
+    if (!Array.isArray(list)) throw new Error('Unexpected API keys response shape');
+    currentApiKeys = list;
     renderApiKeysList();
   } catch (error) {
     console.error('Failed to load API keys:', error);

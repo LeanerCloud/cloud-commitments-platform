@@ -62,6 +62,15 @@ let currentRecsLoaded = false;
 let riAccountNames: Map<string, string> = new Map();
 const exchangePaymentPattern = /^\d+(?:\.\d+)?$/;
 
+// A target count is a whole number >= 1; anything else (empty, 0, "2.5",
+// "3abc") is null so the form can refuse it instead of quoting one unit.
+function parseTargetCount(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) && n >= 1 ? n : null;
+}
+
 // Generation counter to prevent stale utilization data from overwriting fresh data
 let utilizationGeneration = 0;
 
@@ -484,6 +493,7 @@ function renderRIsTable(container: HTMLElement, accountID?: string): void {
         </tr>
       </thead>
       <tbody>
+        ${visibleRIs.length === 0 ? `<tr><td colspan="${canExchange ? 8 : 7}" class="empty">No rows match the active column filters. Clear a filter to see them.</td></tr>` : ''}
         ${visibleRIs.map(ri => {
           const utilPct = hasKnownUtilization(ri.reserved_instance_id)
             ? currentUtilization.get(ri.reserved_instance_id)!.utilization_percent
@@ -711,7 +721,7 @@ function renderTableCallout(el: HTMLElement, tone: 'warning' | 'error', lines: s
  * "ri-exchange-recommendations-freshness"; it is created here if absent.
  *
  * staleness: "" or undefined clears any existing banner (fresh data).
- * "soft"  : soft-warning copy ("data may be up to 12 h old").
+ * "soft"  : soft-warning copy ("data is more than 12 h old").
  * "hard"  : hard-warning copy ("data is more than 24 h old").
  */
 export function renderReshapeStalenessBanner(
@@ -753,7 +763,7 @@ export function renderReshapeStalenessBanner(
 
   const isSoft = staleness === 'soft';
   const copy = isSoft
-    ? `Cross-family alternatives are based on Cost Explorer recommendations that may be up to 24h old${ageLabel}. Some prices may be stale.`
+    ? `Cross-family alternatives are based on Cost Explorer recommendations that are more than 12h old${ageLabel}. Some prices may be stale.`
     : `Cross-family alternatives are based on Cost Explorer recommendations older than 24h${ageLabel}. Prices may be significantly out of date.`;
   renderTableCallout(banner, isSoft ? 'warning' : 'error', [copy]);
 }
@@ -1098,6 +1108,7 @@ function renderRecommendations(container: HTMLElement): void {
         </tr>
       </thead>
       <tbody>
+        ${visibleWithIdx.length === 0 ? `<tr><td colspan="${canExchange ? 8 : 7}" class="empty">No rows match the active column filters. Clear a filter to see them.</td></tr>` : ''}
         ${visibleWithIdx.map(({ rec, idx }) => {
           // The API can omit utilization_percent (the filter extractor
           // already maps it to NaN). Unknown renders as a neutral em-dash:
@@ -1566,9 +1577,8 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
     const prefixes = new Set<string>();
     for (const row of targetRows) {
       const alt = lookupCEAlt(row.offeringInput.value);
-      const rawCount = parseInt(row.countInput.value, 10);
-      const cnt = isNaN(rawCount) || rawCount < 1 ? 1 : rawCount;
-      if (!alt) {
+      const cnt = parseTargetCount(row.countInput.value);
+      if (!alt || cnt === null) {
         anyMissing = true;
         continue;
       }
@@ -1664,8 +1674,8 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
 
   // collectTargets reads each row into a validated target. Rows with
   // empty or non-UUID offering IDs are treated as an error; the first
-  // offending row's message is surfaced to the user. Count defaults to 1
-  // when the input is empty or non-numeric.
+  // offending row's message is surfaced to the user. A count that is not a
+  // whole number >= 1 is an error too (never defaulted).
   function collectTargets(): { targets: Array<{ offering_id: string; count: number }>; error?: string } {
     const targets: Array<{ offering_id: string; count: number }> = [];
     for (let i = 0; i < targetRows.length; i++) {
@@ -1681,8 +1691,10 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
           error: `Target ${i + 1}: "${offeringId}" is not a valid offering UUID. Please select an offering from the dropdown.`,
         };
       }
-      const rawCount = parseInt(row.countInput.value, 10);
-      const targetCount = isNaN(rawCount) || rawCount < 1 ? 1 : rawCount;
+      const targetCount = parseTargetCount(row.countInput.value);
+      if (targetCount === null) {
+        return { targets: [], error: `Target ${i + 1}: count must be a whole number >= 1.` };
+      }
       targets.push({ offering_id: offeringId, count: targetCount });
     }
     return { targets };

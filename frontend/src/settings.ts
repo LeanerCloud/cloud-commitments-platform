@@ -1779,9 +1779,9 @@ async function submitOverrideForm(e: Event): Promise<void> {
   if (paymentRaw !== '') req.payment = paymentRaw;
   if (coverageRaw !== '') {
     const n = Number(coverageRaw);
-    if (!Number.isFinite(n) || n < 0 || n > 100) {
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 100) {
       const errEl = document.getElementById('override-form-error');
-      if (errEl) errEl.textContent = 'Dashboard coverage must be between 0 and 100.';
+      if (errEl) errEl.textContent = 'Dashboard coverage must be a whole number between 0 and 100.';
       return;
     }
     req.coverage = n;

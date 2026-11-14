@@ -1179,7 +1179,23 @@ describe('Create-override modal', () => {
 
     expect(api.saveAccountServiceOverride).not.toHaveBeenCalled();
     const errEl = document.getElementById('override-form-error');
-    expect(errEl?.textContent).toContain('Dashboard coverage must be between 0 and 100');
+    expect(errEl?.textContent).toContain('Dashboard coverage must be a whole number between 0 and 100');
+  });
+
+  test('blocks submit when coverage is fractional (#136 A11-017)', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([]);
+
+    await expandOverridesPanel('acc-1');
+    (document.getElementById('override-service') as HTMLSelectElement).value = 'ec2';
+    (document.getElementById('override-coverage') as HTMLInputElement).value = '50.5';
+
+    (document.getElementById('override-form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(api.saveAccountServiceOverride).not.toHaveBeenCalled();
+    expect(document.getElementById('override-form-error')?.textContent).toContain('whole number');
   });
 
   test('save success closes the modal and reloads the panel', async () => {

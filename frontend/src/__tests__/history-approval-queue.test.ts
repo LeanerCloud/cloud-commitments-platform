@@ -514,4 +514,24 @@ describe('Approval queue card (issue #340 sub-task)', () => {
     expect(headerText).toContain('Payment');
     expect(headerText).toContain('Monthly Cost');
   });
+
+  test('column filters that exclude every row render an explanation in both tables (#136 A12-063)', async () => {
+    (getCurrentUser as jest.Mock).mockReturnValue(ADMIN_USER);
+    (state.getPurchaseHistoryColumnFilters as jest.Mock).mockReturnValue({ provider: { kind: 'set', values: ['gcp'] } });
+    (state.getApprovalQueueColumnFilters as jest.Mock).mockReturnValue({ provider: { kind: 'set', values: ['gcp'] } });
+    (api.getHistory as jest.Mock).mockResolvedValue({
+      summary: {},
+      purchases: [makeRow({ purchase_id: 'p-pending', status: 'pending', created_by_user_id: ADMIN_USER.id })],
+    });
+
+    await loadHistory();
+
+    for (const id of ['history-list', 'purchases-approval-queue']) {
+      const rows = document.getElementById(id)!.querySelectorAll('tbody tr');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.textContent).toContain('No rows match the active column filters');
+    }
+    (state.getPurchaseHistoryColumnFilters as jest.Mock).mockReturnValue({});
+    (state.getApprovalQueueColumnFilters as jest.Mock).mockReturnValue({});
+  });
 });

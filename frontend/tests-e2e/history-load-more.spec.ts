@@ -23,8 +23,8 @@ test('Load more appends the next history page and hides once has_more is false',
     const cursor = url.searchParams.get('cursor');
     cursors.push(cursor);
     await route.fulfill({ json: cursor === 'page-2'
-      ? { summary: { total_purchases: 1 }, purchases: [row('cccccccc', 'failed', 3)], truncated: false, has_more: false }
-      : { summary: { total_purchases: 3 }, purchases: [row('aaaaaaaa', 'pending', 1), row('bbbbbbbb', 'completed', 2)],
+      ? { summary: { total_purchases: 1, total_completed: 1 }, purchases: [row('cccccccc', 'failed', 3)], truncated: false, has_more: false }
+      : { summary: { total_purchases: 3, total_completed: 3 }, purchases: [row('aaaaaaaa', 'pending', 1), row('bbbbbbbb', 'completed', 2)],
         truncated: true, limit: 2, executions_limit: 2, has_more: true, next_cursor: 'page-2' } });
   });
 

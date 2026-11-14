@@ -2538,6 +2538,28 @@ describe('group assignment UX (issue #998)', () => {
     });
   });
 
+  describe('ids that are not valid selector text (#136)', () => {
+    it('reverts the checkbox on a failed save when the user id contains a quote', async () => {
+      const hostile = [{ id: 'u"]x', email: 'eve@test.com', groups: ['g1'], mfa_enabled: false }];
+      userState.setAllUsers(hostile as any);
+      userState.setFilteredUsers(hostile as any);
+      (api.updateUser as jest.Mock).mockRejectedValue(new Error('rejected'));
+      userList.renderUsers(hostile as any);
+
+      document.querySelector<HTMLButtonElement>('.user-expand-btn')!.click();
+      const cb = document.querySelector<HTMLInputElement>(
+        `.group-assign-checkbox[data-group-id="g2"]`,
+      );
+      expect(cb).toBeTruthy();
+      cb!.checked = true;
+      cb!.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(api.updateUser).toHaveBeenCalled();
+      expect(cb!.checked).toBe(false);
+    });
+  });
+
   // -----------------------------------------------------------------------
   // 3. Expand button reacts reliably (single listener bound per render)
   // -----------------------------------------------------------------------

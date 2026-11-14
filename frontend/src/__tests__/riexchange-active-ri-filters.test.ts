@@ -324,4 +324,12 @@ describe('Active Convertible RIs column filters (issue #1414)', () => {
     expect(document.body.querySelector('.column-filter-popover')).toBeNull();
     expect(document.activeElement).not.toBe(btn);
   });
+
+  test('a filter that excludes every row says so instead of a blank tbody (#136 A12-063)', async () => {
+    activeRiFilters = { instance_count: { kind: 'expr', expr: '>100' } };
+    await load();
+    const rows = document.querySelectorAll('#ri-exchange-instances-list tbody tr');
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.textContent).toContain('No rows match the active column filters');
+  });
 });
