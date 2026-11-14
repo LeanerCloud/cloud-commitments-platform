@@ -384,6 +384,8 @@ export interface ServiceConfig {
    *  (GUI equivalent of the CLI --min-count flag). 0 / undefined disables the
    *  filter. */
   min_count?: number;
+  /** Read-only row stamp the server sets on every save (issue #8). */
+  updated_at?: string;
 }
 
 /** Response from GET /api/info (unauthenticated). Only safe-to-expose fields. */

@@ -20,6 +20,7 @@ import { canAccess } from './permissions';
 import {
   injectServiceFilterControls,
   populateServiceFilterControls,
+  renderUpdatedStamp,
   readServiceFilterControls,
   isServiceFilterError,
 } from './serviceFilters';
@@ -3717,10 +3718,14 @@ export async function saveGlobalSettings(e: Event): Promise<void> {
       else cfg = { provider, service, ...changes };
       return api.updateServiceConfig(provider, service, cfg).then(() => {
         legacyRekeyedServices.delete(`${provider}/${service}`);
+        // The PUT does not return the row, so the stamp is the save time here;
+        // the next load shows the server's value.
+        const updatedAt = new Date().toISOString();
         loadedServiceConfigs = [
           ...loadedServiceConfigs.filter(s => !(s.provider === provider && s.service === service)),
-          { ...(base ?? {}), ...cfg } as api.ServiceConfig,
+          { ...(base ?? {}), ...cfg, updated_at: updatedAt } as api.ServiceConfig,
         ];
+        renderUpdatedStamp(field, updatedAt);
       });
     });
     // Only rows with a PUT take part in the outcome; an unchanged row is neither

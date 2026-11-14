@@ -19,6 +19,7 @@
 
 import type { ServiceConfig } from './api/types';
 import { isSavingsPlanService } from './lib/purchase-compatibility';
+import { buildLastUpdatedStamp } from './lib/last-updated';
 
 /** Identifies a single service card. Subset of a SERVICE_FIELDS entry. */
 export interface ServiceFilterTarget {
@@ -164,6 +165,21 @@ export function populateServiceFilterControls(t: ServiceFilterTarget, svc: Servi
     filterInputId(t.provider, t.service, MIN_COUNT_KEY),
   ) as HTMLInputElement | null;
   if (minEl) minEl.value = String(svc?.min_count ?? 0);
+
+  renderUpdatedStamp(t, svc?.updated_at);
+}
+
+/** Shows the row's updated_at on its card (issue #8); replaces any earlier stamp. */
+export function renderUpdatedStamp(t: ServiceFilterTarget, updatedAt: string | undefined): void {
+  const card = document.getElementById(t.termId)?.closest('.service-default-card');
+  if (!card) return;
+  card.querySelectorAll('.service-updated-stamp').forEach((el) => el.remove());
+  const stamp = buildLastUpdatedStamp(updatedAt);
+  if (!stamp) return;
+  const line = document.createElement('div');
+  line.className = 'service-updated-stamp';
+  line.appendChild(stamp);
+  card.appendChild(line);
 }
 
 /** Result of reading a card's filter inputs. */

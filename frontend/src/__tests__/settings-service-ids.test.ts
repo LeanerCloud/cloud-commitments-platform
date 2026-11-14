@@ -167,6 +167,22 @@ describe('Settings Azure/GCP service ids (issue #613)', () => {
     expect(Object.keys(second[0]!.cfg).sort()).toEqual(['provider', 'service', 'term']);
   });
 
+  it('moves the card stamp to the save time after a successful save (issue #8)', async () => {
+    mockConfig([
+      { provider: 'azure', service: 'compute', term: 1, payment: 'monthly', enabled: true, coverage: 80, updated_at: '2026-04-27T12:34:56Z' },
+    ]);
+    await loadGlobalSettings();
+    const stampOf = () => document.getElementById('azure-vm-term')!.closest('.service-default-card')!
+      .querySelector<HTMLTimeElement>('time.last-updated-stamp');
+    expect(stampOf()!.dateTime).toBe('2026-04-27T12:34:56.000Z');
+
+    (document.getElementById('azure-vm-term') as HTMLSelectElement).value = '3';
+    const before = Date.now();
+    await saveGlobalSettings(new Event('submit'));
+    expect(servicePuts('azure').some(c => c.service === 'compute')).toBe(true);
+    expect(new Date(stampOf()!.dateTime).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
   it('prefers a row already stored under the current id over its legacy twin', async () => {
     mockConfig([
       { provider: 'azure', service: 'vm', term: 1, payment: 'monthly', enabled: true, coverage: 80 },

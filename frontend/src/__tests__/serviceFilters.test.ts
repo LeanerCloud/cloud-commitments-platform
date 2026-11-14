@@ -20,6 +20,7 @@ import {
   type ServiceFilterTarget,
 } from '../serviceFilters';
 import type { ServiceConfig } from '../api/types';
+import { formatDateTime } from '../utils';
 
 const target: ServiceFilterTarget = { provider: 'aws', service: 'rds', termId: 'aws-rds-term' };
 
@@ -166,5 +167,43 @@ describe('read with no injected panel', () => {
       expect(v.include_engines).toEqual([]);
       expect(v.min_count).toBe(0);
     }
+  });
+});
+
+describe('populateServiceFilterControls updated stamp (issue #8)', () => {
+  const stampOf = (): HTMLTimeElement | null =>
+    document.querySelector<HTMLTimeElement>('.service-default-card time.last-updated-stamp');
+  const cfg = (updated_at?: string): ServiceConfig => ({
+    provider: 'aws', service: 'rds', enabled: true, term: 3, payment: 'all-upfront', coverage: 80, updated_at,
+  });
+
+  beforeEach(() => {
+    seedCard();
+    injectServiceFilterControls(target);
+  });
+
+  it('shows the row updated_at on the card', () => {
+    populateServiceFilterControls(target, cfg('2026-04-27T12:34:56Z'));
+    const stamp = stampOf();
+    expect(stamp).not.toBeNull();
+    expect(stamp!.textContent).toBe(`Updated ${formatDateTime('2026-04-27T12:34:56Z')}`);
+    expect(stamp!.title).toBe('Last updated 2026-04-27 12:34 UTC');
+  });
+
+  it('replaces the stamp on repopulate instead of stacking', () => {
+    populateServiceFilterControls(target, cfg('2026-04-27T12:34:56Z'));
+    populateServiceFilterControls(target, cfg('2026-05-01T08:00:00Z'));
+    expect(document.querySelectorAll('time.last-updated-stamp')).toHaveLength(1);
+    expect(stampOf()!.title).toBe('Last updated 2026-05-01 08:00 UTC');
+  });
+
+  it('removes the stamp when the row is absent or its stamp is unset', () => {
+    populateServiceFilterControls(target, cfg('2026-04-27T12:34:56Z'));
+    populateServiceFilterControls(target, undefined);
+    expect(stampOf()).toBeNull();
+    expect(document.querySelector('.service-updated-stamp')).toBeNull();
+    populateServiceFilterControls(target, cfg('2026-04-27T12:34:56Z'));
+    populateServiceFilterControls(target, cfg('0001-01-01T00:00:00Z'));
+    expect(stampOf()).toBeNull();
   });
 });
