@@ -2094,6 +2094,13 @@ describe('Recommendations Module', () => {
         expect(o.message).toBe('Azure prices unavailable for over a day; stale recommendations removed for 1 account');
         expect(o.message).not.toContain('acct-secret');
       });
+      test('renders a persistent banner above the summary, and clears it when the holds are gone', async () => {
+        document.body.innerHTML = '<section id="recommendations-summary"></section>';
+        await run([sweep(['a', 'b'])]);
+        const banner = document.getElementById('recommendations-hold-banner');
+        expect(banner?.textContent).toBe('Azure prices unavailable for over a day; stale recommendations removed for 2 accounts');
+        expect(banner?.nextElementSibling?.id).toBe('recommendations-summary');
+      });
       test('plural for 3 accounts', async () => {
         await run([sweep(['a', 'b', 'c'])]);
         expect((holdCalls()[0]![0] as { message: string }).message).toContain('removed for 3 accounts');

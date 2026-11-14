@@ -359,6 +359,24 @@ export function describeExpiredPricingHolds(f: RecommendationsFreshness): string
   return `Azure prices unavailable for over a day; stale recommendations removed for ${ids.size} ${noun}`;
 }
 
+const HOLD_BANNER_ID = 'recommendations-hold-banner';
+
+/** Keeps the expired-hold notice on the Opportunities page after the toast fades. */
+function renderExpiredHoldBanner(notice: string | null): void {
+  const existing = document.getElementById(HOLD_BANNER_ID);
+  const summary = document.getElementById('recommendations-summary');
+  if (!notice || !summary) {
+    existing?.remove();
+    return;
+  }
+  const banner = existing ?? document.createElement('div');
+  banner.id = HOLD_BANNER_ID;
+  banner.className = 'warning-message';
+  banner.setAttribute('role', 'status');
+  banner.textContent = notice;
+  if (!existing) summary.before(banner);
+}
+
 /**
  * Check freshness and fire a background refresh if the cache is stale or cold.
  * Fire-and-forget: does not block the table render that already happened.
@@ -399,6 +417,7 @@ export async function triggerAutoRefreshIfStale(
   if (skipNotice) showToast({ message: skipNotice, kind: 'warning' });
   const holdNotice = describeExpiredPricingHolds(freshness);
   if (holdNotice) showToast({ message: holdNotice, kind: 'warning' });
+  renderExpiredHoldBanner(holdNotice);
 
   const lastCollectedMs =
     freshness.last_collected_at === null
