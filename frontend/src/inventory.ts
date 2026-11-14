@@ -113,6 +113,12 @@ const ACTIVE_COMMITMENTS_COLS = 11;
  * Reads the current provider/account chips from state so that changing a
  * chip while on this sub-tab re-fetches with the new scope (issue #866).
  */
+// Request generations: a chip change re-invokes the loaders, and a slow older
+// response must not overwrite the newer scope's render (same pattern as
+// populateAccountOptions in topbar-filters.ts).
+let activeCommitmentsGen = 0;
+let coverageGen = 0;
+
 export async function loadActiveCommitments(): Promise<void> {
   const container = document.getElementById(ACTIVE_COMMITMENTS_LIST_ID);
   if (!container) return;
@@ -130,14 +136,17 @@ export async function loadActiveCommitments(): Promise<void> {
   // children for a clean handoff from the skeleton.
   showSkeletonRows(container, 5, ACTIVE_COMMITMENTS_COLS);
 
+  const gen = ++activeCommitmentsGen;
   try {
     const commitments = await api.listActiveCommitments({ provider: provider || undefined, accountID });
+    if (gen !== activeCommitmentsGen) return;
     // Cache for amortize-toggle re-renders (issue #1112).
     lastCommitments = commitments;
     lastCommitmentsProvider = provider || undefined;
     lastCommitmentsAccountID = accountID;
     renderActiveCommitmentsTable(container, commitments, provider, accountID);
   } catch (error) {
+    if (gen !== activeCommitmentsGen) return;
     teardownSkeleton(container);
     const err = error as Error;
     renderErrorCallout(container, {
@@ -417,6 +426,7 @@ export async function loadCoverageBreakdown(): Promise<void> {
   // One skeleton row per known provider while loading.
   showSkeletonRows(container, 3, 1);
 
+  const gen = ++coverageGen;
   try {
     // The config supplies each service's coverage target for the bars
     // (issue #726). It is optional: a failed read only drops the target tick.
@@ -424,9 +434,11 @@ export async function loadCoverageBreakdown(): Promise<void> {
       api.getCoverageBreakdown({ provider: provider || undefined, accountID }),
       Promise.resolve().then(() => api.getConfig()).catch(() => null),
     ]);
+    if (gen !== coverageGen) return;
     const targets = coverageTargetsFromConfig(cfg);
     renderCoverageBreakdown(container, data.providers, targets, provider || undefined, accountID);
   } catch (error) {
+    if (gen !== coverageGen) return;
     teardownSkeleton(container);
     const err = error as Error;
     renderErrorCallout(container, {

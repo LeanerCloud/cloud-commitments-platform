@@ -553,6 +553,15 @@ function applyDuplicateProviderFilter(accountsList: HTMLElement, provider: strin
   });
 }
 
+function renderDuplicateAccountsError(container: HTMLElement): void {
+  container.textContent = '';
+  const msg = document.createElement('p');
+  msg.className = 'dup-empty';
+  msg.setAttribute('role', 'alert');
+  msg.textContent = 'Could not load cloud accounts, so the duplicate cannot be scoped. Close this dialog and try again.';
+  container.appendChild(msg);
+}
+
 /**
  * Render the account checkbox list. Each row is a label + checkbox whose
  * value is the account name (names are what the backend matcher accepts
@@ -617,14 +626,23 @@ export async function openDuplicateGroupModal(groupId: string): Promise<void> {
     if (permsContainer) renderSourcePermissionBadges(permsContainer, source.permissions);
 
     // Populate accounts, then wire provider pills to filter them.
+    // A failed fetch must not read as "no accounts configured": that copy
+    // nudges the operator to duplicate unscoped, which inherits the source's
+    // full account scope. Show the failure and block submit instead.
+    const submitBtn = modal.querySelector<HTMLButtonElement>('button[type="submit"]');
     let accounts: api.CloudAccount[] = [];
+    let accountsFailed = false;
     try {
       accounts = await api.listAccounts();
     } catch (err) {
       console.error('Failed to list accounts for duplicate modal:', err);
-      accounts = [];
+      accountsFailed = true;
     }
-    if (accountsList) renderDuplicateAccountsList(accountsList, accounts);
+    if (submitBtn) submitBtn.disabled = accountsFailed;
+    if (accountsList) {
+      if (accountsFailed) renderDuplicateAccountsError(accountsList);
+      else renderDuplicateAccountsList(accountsList, accounts);
+    }
     if (providerFilter && accountsList) renderDuplicateProviderPills(providerFilter, accountsList);
 
     openModal(modal);

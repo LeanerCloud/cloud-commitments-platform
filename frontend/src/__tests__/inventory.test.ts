@@ -956,3 +956,52 @@ describe('loadCoverageBreakdown — coverage bar target and tone', () => {
     expect(document.querySelector('#coverage-providers .error')).toBeNull();
   });
 });
+
+describe('stale responses never overwrite a newer scope (#134)', () => {
+  beforeEach(() => {
+    clearDOM();
+    buildInventoryDOM();
+    jest.clearAllMocks();
+  });
+
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => { resolve = r; });
+    return { promise, resolve };
+  }
+
+  test('active commitments: a slow first response is discarded', async () => {
+    const slow = deferred<api.InventoryCommitment[]>();
+    (api.listActiveCommitments as jest.Mock)
+      .mockReturnValueOnce(slow.promise)
+      .mockResolvedValueOnce([makeCommitment({ account_name: 'GCP Newer' })]);
+
+    const first = loadActiveCommitments();
+    await loadActiveCommitments();
+    slow.resolve([makeCommitment({ account_name: 'AWS Stale' })]);
+    await first;
+
+    const text = document.getElementById('active-commitments-list')!.textContent ?? '';
+    expect(text).toContain('GCP Newer');
+    expect(text).not.toContain('AWS Stale');
+  });
+
+  test('coverage: a slow first response is discarded', async () => {
+    const slow = deferred<{ providers: ProviderCoverageSection[] }>();
+    const section = (provider: string): ProviderCoverageSection =>
+      ({ provider, services: [{ service: 'ec2', coverage_percent: 10 }] } as unknown as ProviderCoverageSection);
+    (api.getConfig as jest.Mock).mockResolvedValue(null);
+    (api.getCoverageBreakdown as jest.Mock)
+      .mockReturnValueOnce(slow.promise)
+      .mockResolvedValueOnce({ providers: [section('gcp')] });
+
+    const first = loadCoverageBreakdown();
+    await loadCoverageBreakdown();
+    slow.resolve({ providers: [section('aws')] });
+    await first;
+
+    const text = document.getElementById('coverage-providers')!.textContent?.toLowerCase() ?? '';
+    expect(text).toContain('gcp');
+    expect(text).not.toContain('aws');
+  });
+});

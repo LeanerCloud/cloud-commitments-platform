@@ -234,6 +234,30 @@ describe('handleExecutePurchase — single-record path', () => {
     expect(lastToastKind()).toBe('success');
   });
 
+  test.each(['0', '', 'abc', '50.5', '101'])(
+    'capacity %p is refused before any POST instead of being coerced',
+    async (typed) => {
+      const btn = setup();
+      (document.getElementById('bulk-purchase-capacity') as HTMLInputElement).value = typed;
+      btn.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(api.executePurchase).not.toHaveBeenCalled();
+      expect(lastToastKind()).toBe('error');
+      expect(lastToastMessage()).toContain('Capacity %');
+    },
+  );
+
+  test('capacity 50 is submitted as 50', async () => {
+    (api.executePurchase as jest.Mock).mockResolvedValue({ execution_id: 'e', status: 'queued', email_sent: true });
+    const btn = setup();
+    (document.getElementById('bulk-purchase-capacity') as HTMLInputElement).value = '50';
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect((api.executePurchase as jest.Mock).mock.calls[0]![1]).toBe(50);
+  });
+
   test('Finding 1 — without approval_recipient: toast falls back to generic copy', async () => {
     (api.executePurchase as jest.Mock).mockResolvedValue({
       execution_id: 'exec-2',
@@ -283,7 +307,7 @@ describe('handleExecutePurchase — single-record path', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(archera.openArcheraOfferModal).toHaveBeenCalledTimes(1);
-    expect(archera.openArcheraOfferModal).toHaveBeenCalledWith('purchase');
+    expect(archera.openArcheraOfferModal).toHaveBeenCalledWith();
   });
 
   // Issue #1694: a recorded failed execution must not leave Execute armed.
@@ -853,7 +877,7 @@ describe('handleFanOutExecute — fan-out path', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(archera.openArcheraOfferModal).toHaveBeenCalledTimes(1);
-    expect(archera.openArcheraOfferModal).toHaveBeenCalledWith('purchase');
+    expect(archera.openArcheraOfferModal).toHaveBeenCalledWith();
   });
 
   // Issue #597: details must be preserved in the POST body on the fan-out path.

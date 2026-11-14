@@ -2,7 +2,7 @@
  * Archera Insurance integration: post-action offer modal + education page.
  *
  * This module provides:
- *   - openArcheraOfferModal(context): small modal shown immediately after
+ *   - openArcheraOfferModal(): small modal shown immediately after
  *     the user approves a purchase in the pre-purchase confirmation and the
  *     approval-submission call succeeds. Offers "Sign up at Archera →"
  *     (opens archera.ai in a new tab) or "No thanks". Carries a "Learn more"
@@ -46,9 +46,6 @@ export const ARCHERA_PAGE_A_PATH = '/archera-insurance';
  */
 export const ARCHERA_PAGE_B_PATH = '/archera-insurance/how-it-works';
 
-/** Where the user came from: controls the offer modal's headline. */
-export type ArcheraContext = 'purchase' | 'plan';
-
 /**
  * Module-scoped reference to the element that was focused when the page
  * overlay was last opened. Restored on close so keyboard users return to
@@ -58,7 +55,7 @@ let _previouslyFocused: HTMLElement | null = null;
 
 /**
  * Open the Archera Insurance offer modal. Shown after a successful
- * purchase-approval submission or plan creation, never blocking the
+ * purchase-approval submission, never blocking the
  * action itself. The modal carries two equal-weight choices:
  *
  *   - "Sign up at Archera →" opens archera.ai in a new tab.
@@ -72,7 +69,7 @@ let _previouslyFocused: HTMLElement | null = null;
  *
  * TODO(@cristim): final copy review; confirm exact headline + button wording.
  */
-export function openArcheraOfferModal(context: ArcheraContext = 'purchase'): void {
+export function openArcheraOfferModal(): void {
   const container = document.getElementById('archera-offer-modal-container');
   if (!container) return;
 
@@ -101,10 +98,7 @@ export function openArcheraOfferModal(context: ArcheraContext = 'purchase'): voi
   const title = document.createElement('h2');
   title.id = 'archera-offer-title';
   title.className = 'archera-offer-title';
-  title.textContent =
-    context === 'plan'
-      ? 'Insure this plan with Archera?'
-      : 'Insure your commitments with Archera?';
+  title.textContent = 'Insure your commitments with Archera?';
   panel.appendChild(title);
 
   // TODO(@cristim): final copy review; verify pitch with Archera before merge.

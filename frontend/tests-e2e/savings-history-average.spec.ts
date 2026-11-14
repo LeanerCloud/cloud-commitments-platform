@@ -52,8 +52,8 @@ async function changePeriod(page: Page, period: string) {
 test.use({ timezoneId: 'UTC' });
 
 for (const [period, count, average, totalFull] of [
-  ['24h', 24, '$70.00/mo', '$240.00'], ['7d', 168, '$10.00/mo', '$1,680.00'],
-  ['30d', 30, '$56.00/mo', '$300.00'], ['90d', 90, '$18.67/mo', '$900.00'],
+  ['24h', 24, '$70.00/mo', '$240.00/mo'], ['7d', 168, '$10.00/mo', '$1,680.00/mo'],
+  ['30d', 30, '$56.00/mo', '$300.00/mo'], ['90d', 90, '$18.67/mo', '$900.00/mo'],
 ] as const) {
   test(period + ' averages the requested window regardless of missing zero buckets', async ({ page }) => {
     const errors: string[] = [];
@@ -66,7 +66,7 @@ for (const [period, count, average, totalFull] of [
       await changePeriod(page, period);
       await expect(page.locator('#avg-savings-label')).toHaveText('Avg monthly savings');
       await expect(page.locator('#avg-hourly-savings')).toHaveText(mode === 'full' ? '$10.00/mo' : average);
-      await expect(page.locator('#period-savings')).toHaveText(mode === 'full' ? totalFull : '$1,680.00');
+      await expect(page.locator('#period-savings')).toHaveText(mode === 'full' ? totalFull : '$1,680.00/mo');
       await expect(page.locator('#peak-savings')).toHaveText(mode === 'full' ? '$10.00/mo' : '$560.00/mo');
       const request = fixture.requests[fixture.requests.length - 1]!;
       const ms = period === '24h' || period === '7d' ? 3600000 : 86400000;
@@ -83,9 +83,9 @@ test('unit switches, refresh and empty/error states work on a narrow screen', as
   await page.goto('/purchases/history');
   await changePeriod(page, '7d');
   for (const [unit, label, average, total, peak] of [
-    ['hourly', 'Hourly', '$0.01/hr', '$2.30', '$0.77/hr'],
-    ['yearly', 'Yearly', '$120.00/yr', '$20,160.00', '$6,720.00/yr'],
-    ['monthly', 'Monthly', '$10.00/mo', '$1,680.00', '$560.00/mo'],
+    ['hourly', 'Hourly', '$0.01/hr', '$2.30/hr', '$0.77/hr'],
+    ['yearly', 'Yearly', '$120.00/yr', '$20,160.00/yr', '$6,720.00/yr'],
+    ['monthly', 'Monthly', '$10.00/mo', '$1,680.00/mo', '$560.00/mo'],
   ]) {
     await page.locator('#savings-unit').selectOption(unit!);
     await expect(page.locator('#avg-savings-label')).toHaveText('Avg ' + label.toLowerCase() + ' savings');

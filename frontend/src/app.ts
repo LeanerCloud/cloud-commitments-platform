@@ -61,6 +61,16 @@ function describeDuplicateSubmit(result: api.PurchaseResult): string {
   return `This matches an existing execution ${id}, so no new request was created; ${duplicateState(result.status)}. Check Purchase History.`;
 }
 
+/** Strict Capacity % parse: a whole number 1-100, never coerced. */
+export function parseCapacityPercent(raw: string): number | { error: string } {
+  const text = raw.trim();
+  const n = Number(text);
+  if (text === '' || !Number.isInteger(n) || n < 1 || n > 100) {
+    return { error: 'Capacity % must be a whole number from 1 to 100.' };
+  }
+  return n;
+}
+
 function describePublicInfoFailure(err: unknown): string {
   const status = (err as { status?: unknown } | null)?.status;
   const detail = typeof status === 'number' && status > 0 ? ` (HTTP ${status})` : '';
@@ -460,6 +470,18 @@ export async function handleExecutePurchase(): Promise<void> {
     return;
   }
 
+  // Read the sticky toolbar Capacity % so the execution record carries the
+  // user's intent. Parsed strictly and before the confirm dialog: 0, blank or
+  // fractional input used to coerce to 100 or truncate, submitting something
+  // other than what was typed. Absent toolbar (test harness) means 100.
+  const capacityInput = document.getElementById('bulk-purchase-capacity') as HTMLInputElement | null;
+  const capacity = capacityInput ? parseCapacityPercent(capacityInput.value) : 100;
+  if (typeof capacity !== 'number') {
+    showToast({ message: capacity.error, kind: 'error' });
+    return;
+  }
+  const capacityPercent = capacity;
+
   // Read the execute mode set by the modal toggle (issue #289).
   // "direct" means the session has execute-any/execute-own and chose to
   // bypass approval; "" is the default approval-required path.
@@ -523,14 +545,6 @@ export async function handleExecutePurchase(): Promise<void> {
     purchased: false,
   }));
 
-  // Read the sticky toolbar Capacity % so the execution record carries
-  // the user's intent in audit logs. Graceful fallback to 100 if the
-  // toolbar hasn't rendered yet (e.g. direct test harness call).
-  const capacityInput = document.getElementById('bulk-purchase-capacity') as HTMLInputElement | null;
-  const capacityPercent = capacityInput
-    ? Math.max(1, Math.min(100, parseInt(capacityInput.value, 10) || 100))
-    : 100;
-
   try {
     const result = await api.executePurchase(apiRecs, capacityPercent, executeMode || undefined);
     closePurchaseModal();
@@ -592,7 +606,7 @@ export async function handleExecutePurchase(): Promise<void> {
     // email-link execution completes, surfaces the optional coverage at
     // the moment the user has committed their intent. Gated on the
     // executePurchase success path so a failed submission shows no offer.
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     await loadDashboard();
   } catch (error) {
     const err = error as Error;
@@ -890,7 +904,7 @@ async function submitFanOutBuckets(buckets: FanOutBucket[]): Promise<void> {
   // newer modal the user opened before these POSTs settled. The offer would
   // stack on top of it. In retry mode it fires once a retry closes the modal.
   if (succeeded > 0 && !retrying && !replaced) {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
   }
 
   await loadDashboard();

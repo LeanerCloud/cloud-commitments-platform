@@ -14,7 +14,9 @@ import {
   addSelectedRecommendation,
   removeSelectedRecommendation,
   getSavingsChart,
-  setSavingsChart
+  setSavingsChart,
+  getCostPeriod,
+  setCostPeriod
 } from '../state';
 import type { Recommendation } from '../api';
 import { ADMINISTRATORS_GROUP_ID } from '../permissions';
@@ -220,5 +222,20 @@ describe('State Module', () => {
       expect(getRecommendations().length).toBe(1);
       expect(getSelectedRecommendationIDs().has('rec-0')).toBe(true);
     });
+  });
+});
+
+describe('getCostPeriod self-heals corrupt storage (#134)', () => {
+  afterEach(() => {
+    setCostPeriod('monthly');
+  });
+
+  test('a stale value is replaced by the default and later reads agree', () => {
+    setCostPeriod('yearly');
+    (localStorage.getItem as jest.Mock).mockReturnValue('weekly');
+    expect(getCostPeriod()).toBe('monthly');
+    expect(localStorage.setItem).toHaveBeenLastCalledWith('cudly.recs.costPeriod', 'monthly');
+    (localStorage.getItem as jest.Mock).mockReturnValue(null);
+    expect(getCostPeriod()).toBe('monthly');
   });
 });

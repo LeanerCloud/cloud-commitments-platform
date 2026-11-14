@@ -1125,6 +1125,24 @@ describe('groups/groupModals — duplicate', () => {
       expect(list?.textContent).toContain('No cloud accounts configured yet');
     });
 
+    it('a failed account fetch shows an error, not the empty-state copy, and blocks submit', async () => {
+      (api.listAccounts as jest.Mock).mockRejectedValueOnce(new Error('403'));
+      await groupModals.openDuplicateGroupModal('group-src');
+      const list = document.getElementById('dup-accounts-list');
+      expect(list?.textContent).toContain('Could not load cloud accounts');
+      expect(list?.textContent).not.toContain('No cloud accounts configured yet');
+      const submit = document.querySelector<HTMLButtonElement>('#group-duplicate-modal button[type="submit"]');
+      expect(submit?.disabled).toBe(true);
+    });
+
+    it('submit is enabled again after a successful account fetch', async () => {
+      (api.listAccounts as jest.Mock).mockRejectedValueOnce(new Error('503'));
+      await groupModals.openDuplicateGroupModal('group-src');
+      await groupModals.openDuplicateGroupModal('group-src');
+      const submit = document.querySelector<HTMLButtonElement>('#group-duplicate-modal button[type="submit"]');
+      expect(submit?.disabled).toBe(false);
+    });
+
     it('provider pill click filters visible accounts by provider', async () => {
       await groupModals.openDuplicateGroupModal('group-src');
       const pills = document.querySelectorAll('#dup-provider-filter button');

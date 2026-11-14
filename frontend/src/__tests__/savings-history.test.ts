@@ -347,7 +347,7 @@ describe('Savings History Module', () => {
         jest.useRealTimers();
       }
 
-      expect(document.getElementById('period-savings')?.textContent).toBe('$1,800.00');
+      expect(document.getElementById('period-savings')?.textContent).toBe('$1,800.00/mo');
       // 90d window: the average spreads the authoritative total over 90 days.
       expect(document.getElementById('avg-hourly-savings')?.textContent).toBe('$20.00/mo');
       // Peak has no wire counterpart, so it comes from the buckets.
@@ -365,7 +365,7 @@ describe('Savings History Module', () => {
 
       await loadSavingsHistory();
 
-      expect(document.getElementById('period-savings')?.textContent).toBe('$100.00');
+      expect(document.getElementById('period-savings')?.textContent).toBe('$100.00/mo');
       expect(document.getElementById('peak-savings')?.textContent).toBe('$100.00/mo');
     });
 
@@ -420,7 +420,7 @@ describe('Savings History Module', () => {
       await loadSavingsHistory();
 
       const periodSavingsEl = document.getElementById('period-savings');
-      expect(periodSavingsEl?.textContent).toBe('$5,000.00');
+      expect(periodSavingsEl?.textContent).toBe('$5,000.00/mo');
     });
 
     test('formats currency values under 1000 without suffix', async () => {
@@ -435,7 +435,7 @@ describe('Savings History Module', () => {
       await loadSavingsHistory();
 
       const periodSavingsEl = document.getElementById('period-savings');
-      expect(periodSavingsEl?.textContent).toBe('$500.00');
+      expect(periodSavingsEl?.textContent).toBe('$500.00/mo');
     });
 
     test('shows chart container when data is available', async () => {
@@ -1116,7 +1116,7 @@ describe('Savings History Module', () => {
 
       // Should calculate from data points
       const periodSavingsEl = document.getElementById('period-savings');
-      expect(periodSavingsEl?.textContent).toBe('$100.00');
+      expect(periodSavingsEl?.textContent).toBe('$100.00/mo');
     });
 
     test('handles missing stats elements', async () => {
@@ -1510,20 +1510,20 @@ describe('Savings History Module', () => {
       // Monthly: value is clean dollar total; sub-line reflects view mode
       await loadSavingsHistory();
       const periodElMonthly = document.getElementById('period-savings');
-      expect(periodElMonthly?.textContent).toBe('$730.00');
+      expect(periodElMonthly?.textContent).toBe('$730.00/mo');
       expect(document.getElementById('period-savings-unit')?.textContent).toContain('monthly');
 
       // Hourly: 730 / 730 = 1.00; sub-line updates to 'hourly'
       const unitSelect = document.getElementById('savings-unit') as HTMLSelectElement;
       unitSelect.value = 'hourly';
       await loadSavingsHistory();
-      expect(document.getElementById('period-savings')?.textContent).toBe('$1.00');
+      expect(document.getElementById('period-savings')?.textContent).toBe('$1.00/hr');
       expect(document.getElementById('period-savings-unit')?.textContent).toContain('hourly');
 
       // Yearly: 730 * 12 = 8760 -> $8,760.00; sub-line updates to 'yearly'
       unitSelect.value = 'yearly';
       await loadSavingsHistory();
-      expect(document.getElementById('period-savings')?.textContent).toBe('$8,760.00');
+      expect(document.getElementById('period-savings')?.textContent).toBe('$8,760.00/yr');
       expect(document.getElementById('period-savings-unit')?.textContent).toContain('yearly');
     });
 

@@ -189,7 +189,8 @@ export function clearAllRecommendationsColumnFilters(): void {
 
 // Post-filter visible list, set by recommendations.ts on every render
 // and read by plans.ts so plan-creation never includes filtered-out
-// rows. Defensive clone on read so callers can't mutate module state.
+// rows. The array is copied on read; the elements are shared with module
+// state, so callers must treat them as read-only.
 let visibleRecommendations: readonly Recommendation[] = [];
 
 export function getVisibleRecommendations(): readonly Recommendation[] {
@@ -226,8 +227,10 @@ export function getCostPeriod(): CostPeriod {
       costPeriodMemory = raw as CostPeriod;
       return raw as CostPeriod;
     }
-    // Corrupted/invalid value persisted — fall back to the static default
-    // ('monthly') rather than whatever leaked into in-memory state.
+    // Corrupted/invalid value persisted: repair storage and memory to the
+    // static default so every later read agrees.
+    costPeriodMemory = 'monthly';
+    localStorage.setItem(COST_PERIOD_LS_KEY, 'monthly');
     return 'monthly';
   } catch {
     // localStorage unavailable (private browsing, iframe sandbox) — use memory.

@@ -217,7 +217,7 @@ describe('openArcheraOfferModal', () => {
   });
 
   it('makes #archera-offer-modal-container visible', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const container = document.getElementById('archera-offer-modal-container')!;
     expect(container.classList.contains('hidden')).toBe(false);
   });
@@ -228,21 +228,15 @@ describe('openArcheraOfferModal', () => {
     expect(title?.textContent).toMatch(/commitments?/i);
   });
 
-  it('shows the plan-context headline for context=plan', () => {
-    openArcheraOfferModal('plan');
-    const title = document.getElementById('archera-offer-title');
-    expect(title?.textContent).toMatch(/plan/i);
-  });
-
   it('renders the disclosure line in the modal', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const container = document.getElementById('archera-offer-modal-container')!;
     expect(container.textContent).toMatch(/sponsors/i);
     expect(container.textContent).toMatch(/works fully without/i);
   });
 
   it('has a "Sign up at Archera" link with correct href, target=_blank, rel=noopener noreferrer', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const link = document.querySelector<HTMLAnchorElement>(
       '#archera-offer-modal-container a.archera-offer-signup',
     );
@@ -257,7 +251,7 @@ describe('openArcheraOfferModal', () => {
   });
 
   it('has a "No thanks" button that closes the modal', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const skip = document.querySelector<HTMLButtonElement>(
       '#archera-offer-modal-container button.archera-offer-skip',
     )!;
@@ -268,7 +262,7 @@ describe('openArcheraOfferModal', () => {
   });
 
   it('outside-click on the backdrop closes the modal', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const backdrop = document.querySelector<HTMLElement>(
       '#archera-offer-modal-container .archera-offer-backdrop',
     )!;
@@ -281,7 +275,7 @@ describe('openArcheraOfferModal', () => {
     const opener = document.createElement('button');
     document.body.appendChild(opener);
     opener.focus();
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const signup = document.querySelector<HTMLElement>('#archera-offer-modal-container a.archera-offer-signup')!;
     expect(document.activeElement).toBe(signup);
     signup.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
@@ -293,7 +287,7 @@ describe('openArcheraOfferModal', () => {
   });
 
   it('ESC closes when focus fell to the panel after a click on non-focusable text', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const panel = document.querySelector<HTMLElement>('#archera-offer-modal-container .archera-offer-panel')!;
     expect(panel.getAttribute('tabindex')).toBe('-1');
     panel.focus();
@@ -302,7 +296,7 @@ describe('openArcheraOfferModal', () => {
   });
 
   it('names the dialog by its title', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const panel = document.querySelector<HTMLElement>('#archera-offer-modal-container [role="dialog"]')!;
     expect(panel.getAttribute('aria-modal')).toBe('true');
     expect(panel.getAttribute('aria-labelledby')).toBe('archera-offer-title');
@@ -313,15 +307,15 @@ describe('openArcheraOfferModal', () => {
     const opener = document.createElement('button');
     document.body.appendChild(opener);
     opener.focus();
-    openArcheraOfferModal('purchase');
-    openArcheraOfferModal('plan');
+    openArcheraOfferModal();
+    openArcheraOfferModal();
     closeArcheraOfferModal();
     expect(document.activeElement).toBe(opener);
     opener.remove();
   });
 
   it('Shift+Tab from the summary does not escape the panel (summary is a trap stop)', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const container = document.getElementById('archera-offer-modal-container')!;
     const summary = container.querySelector<HTMLElement>('summary')!;
     const skip = container.querySelector<HTMLElement>('button.archera-offer-skip')!;
@@ -335,7 +329,7 @@ describe('openArcheraOfferModal', () => {
   });
 
   it('"Learn more" is a collapsed drop-down that expands inside the modal', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const details = document.querySelector<HTMLDetailsElement>(
       '#archera-offer-modal-container details.archera-offer-learnmore',
     )!;
@@ -360,21 +354,21 @@ describe('openArcheraOfferModal', () => {
   });
 
   it('re-opening replaces content rather than stacking', () => {
-    openArcheraOfferModal('purchase');
-    openArcheraOfferModal('plan');
+    openArcheraOfferModal();
+    openArcheraOfferModal();
     const container = document.getElementById('archera-offer-modal-container')!;
     const panels = container.querySelectorAll('.archera-offer-panel');
     expect(panels.length).toBe(1);
     const title = document.getElementById('archera-offer-title');
-    expect(title?.textContent).toMatch(/plan/i);
+    expect(title?.textContent).toMatch(/commitments/i);
   });
 
   it('re-opening does not stack a second keydown handler', () => {
     const container = document.getElementById('archera-offer-modal-container')!;
     const addSpy = jest.spyOn(container, 'addEventListener');
     try {
-      openArcheraOfferModal('purchase');
-      openArcheraOfferModal('plan');
+      openArcheraOfferModal();
+      openArcheraOfferModal();
       const keydowns = addSpy.mock.calls.filter(c => c[0] === 'keydown').length;
       expect(keydowns).toBe(1);
     } finally {
@@ -383,7 +377,7 @@ describe('openArcheraOfferModal', () => {
   });
 
   it('traps Tab focus inside the panel (Tab from last → first)', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const panel = document.querySelector<HTMLElement>(
       '#archera-offer-modal-container .archera-offer-panel',
     )!;
@@ -403,7 +397,7 @@ describe('openArcheraOfferModal', () => {
   });
 
   it('traps Shift+Tab focus inside the panel (Shift+Tab from first → last)', () => {
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     const panel = document.querySelector<HTMLElement>(
       '#archera-offer-modal-container .archera-offer-panel',
     )!;
@@ -428,7 +422,7 @@ describe('openArcheraOfferModal', () => {
 describe('closeArcheraOfferModal', () => {
   it('adds .hidden and clears content', () => {
     buildArcheraOfferContainer();
-    openArcheraOfferModal('purchase');
+    openArcheraOfferModal();
     closeArcheraOfferModal();
     const container = document.getElementById('archera-offer-modal-container')!;
     expect(container.classList.contains('hidden')).toBe(true);

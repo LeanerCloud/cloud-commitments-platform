@@ -271,10 +271,9 @@ function getPeriodDates(period: string): { start: Date; end: Date; interval: 'ho
 function renderSavingsStats(data: SavingsAnalyticsResponse, start: Date, end: Date, interval: 'hourly' | 'daily'): void {
     const periodSavingsEl = document.getElementById('period-savings');
     // The unit indicator belongs below the value, not inside the label.
-    // Period Savings is a cumulative dollar total over the selected date range,
-    // not a per-unit rate -- the label stays plain ("Period Savings") and the
-    // sub-line (#period-savings-unit) shows which view mode is active without
-    // implying a rate.
+    // Period Savings is the window's monthly-rate figure converted to the chosen
+    // unit, so it carries the same unit suffix as the neighbouring tiles; the
+    // sub-line (#period-savings-unit) names the active view mode.
     const periodSavingsLabelEl = document.getElementById('period-savings-label');
     const periodSavingsUnitEl = document.getElementById('period-savings-unit');
     const avgSavingsEl = document.getElementById('avg-hourly-savings');
@@ -324,9 +323,7 @@ function renderSavingsStats(data: SavingsAnalyticsResponse, start: Date, end: Da
     const displayPeak = convertFromMonthly(monthlyPeak, unit);
 
     if (periodSavingsEl) {
-        // Period Savings is the cumulative total over the selected date range
-        // (no per-unit rate suffix -- it is already a dollar total).
-        periodSavingsEl.textContent = formatCurrency(displayTotal, '$', 2);
+        periodSavingsEl.textContent = `${formatCurrency(displayTotal, '$', 2)}${suffix}`;
     }
     if (periodSavingsLabelEl) {
         periodSavingsLabelEl.textContent = 'Period savings';

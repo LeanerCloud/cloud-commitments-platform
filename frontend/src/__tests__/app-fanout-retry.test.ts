@@ -23,7 +23,7 @@ jest.mock('../history', () => ({}));
 jest.mock('../modules/savings-history', () => ({}));
 jest.mock('../riexchange', () => ({}));
 jest.mock('../purchases-deeplink', () => ({}));
-jest.mock('../archera', () => ({ handleArcheraDeeplink: jest.fn(), openArcheraOfferModal: (k: string) => openArcheraOfferModal(k) }));
+jest.mock('../archera', () => ({ handleArcheraDeeplink: jest.fn(), openArcheraOfferModal: () => openArcheraOfferModal() }));
 jest.mock('../modal', () => ({ closeModal: jest.fn() }));
 jest.mock('../recommendations', () => ({
   setupRecommendationsHandlers: jest.fn(),
@@ -136,7 +136,7 @@ describe('fan-out partial failure retry (issue #757)', () => {
 
     expect(postedServices()).toEqual(['rds', 'elasticache']);
     expect(closePurchaseModal).toHaveBeenCalledTimes(1);
-    expect(openArcheraOfferModal).toHaveBeenCalledWith('purchase');
+    expect(openArcheraOfferModal).toHaveBeenCalledWith();
   });
 
   test('a second partial failure keeps the earlier successes marked and counted', async () => {
@@ -191,7 +191,7 @@ describe('fan-out partial failure retry (issue #757)', () => {
     expect(toastMessages()).toContainEqual(expect.stringMatching(/^2 of 3 submitted · 1 failed: acct-bucket-1: quota exceeded/));
     expect(document.getElementById('fanout-result')).toBeNull();
     expect(document.querySelector('.fanout-bucket-result')).toBeNull();
-    expect(openArcheraOfferModal).toHaveBeenCalledWith('purchase');
+    expect(openArcheraOfferModal).toHaveBeenCalledWith();
   });
 
   test('results from a closed modal leave a newly opened bulk modal untouched', async () => {
