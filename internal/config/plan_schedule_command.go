@@ -44,6 +44,14 @@ type PlanScheduleCommand struct {
 	Name              *string
 	NextExecutionDate *time.Time
 	GroupTarget       *PlanGroupTarget
+	// DatesManaged adopts or releases the editor's ownership of the dates.
+	DatesManaged *bool
+	// ReplaceRootDate cancels the open root of the next step and inserts a
+	// new one on this date; it needs a managed plan. The plan's next date
+	// follows it.
+	ReplaceRootDate *time.Time
+	// Accounts replaces the plan's account set in the same transaction.
+	Accounts *[]string
 }
 
 // PlanScheduleOutcome is what a command returns and what its receipt stores.
@@ -53,6 +61,7 @@ type PlanScheduleOutcome struct {
 	Name              string     `json:"name"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 	NextExecutionDate *time.Time `json:"next_execution_date,omitempty"`
+	RootExecutionID   string     `json:"root_execution_id,omitempty"`
 	Replayed          bool       `json:"-"`
 }
 
@@ -62,6 +71,9 @@ func (c PlanScheduleCommand) validate() error {
 	}
 	if c.PlanID == "" || c.Actor == "" || c.RequestHash == "" || c.ExpectedUpdatedAt.IsZero() {
 		return errors.New("plan schedule command needs plan id, actor, request hash and expected version")
+	}
+	if c.Accounts != nil && len(*c.Accounts) == 0 {
+		return errors.New("plan schedule command cannot clear every account of a plan")
 	}
 	return nil
 }
@@ -114,8 +126,12 @@ func (s *PostgresStore) applyPlanScheduleCommandTx(ctx context.Context, tx pgx.T
 	return s.writePlanScheduleCommandTx(ctx, tx, locked, cmd)
 }
 
-// writePlanScheduleCommandTx writes the plan change and its receipt.
-func (s *PostgresStore) writePlanScheduleCommandTx(ctx context.Context, tx pgx.Tx, locked *PurchasePlan, cmd PlanScheduleCommand) (*PlanScheduleOutcome, error) {
+// buildScheduleNext applies the command's plan fields to a copy of locked and
+// judges the legacy managed-plan guard on it. The command owns the marker and
+// the dates; every other editor-owned field of a managed plan still goes
+// through the guard. On a managed plan the root is the date source, so a bare
+// NextExecutionDate is refused: it would diverge from the root that fires.
+func buildScheduleNext(locked *PurchasePlan, cmd PlanScheduleCommand) (*PurchasePlan, error) {
 	next := *locked
 	if cmd.GroupTarget != nil {
 		merged, err := MergePlanGroupTarget(locked, *cmd.GroupTarget)
@@ -128,14 +144,37 @@ func (s *PostgresStore) writePlanScheduleCommandTx(ctx context.Context, tx pgx.T
 	if cmd.Name != nil {
 		next.Name = *cmd.Name
 	}
+	if cmd.DatesManaged != nil {
+		next.RampSchedule.DatesManaged = *cmd.DatesManaged
+	}
 	if cmd.NextExecutionDate != nil {
+		if next.RampSchedule.DatesManaged {
+			return nil, fmt.Errorf("%w: plan %s is date-managed, set the date through the root", ErrPurchasePlanConflict, locked.ID)
+		}
 		next.NextExecutionDate = cmd.NextExecutionDate
 	}
-	if err := s.updatePurchasePlanGuardedTx(ctx, tx, locked, &next); err != nil {
+	guarded := next
+	guarded.RampSchedule.DatesManaged = locked.RampSchedule.DatesManaged
+	guarded.NextExecutionDate = locked.NextExecutionDate
+	if err := requireManagedPlanUpdateTx(locked, &guarded); err != nil {
+		return nil, err
+	}
+	return &next, nil
+}
+
+// writePlanScheduleCommandTx writes the plan change, roots, accounts and receipt.
+func (s *PostgresStore) writePlanScheduleCommandTx(ctx context.Context, tx pgx.Tx, locked *PurchasePlan, cmd PlanScheduleCommand) (*PlanScheduleOutcome, error) {
+	next, err := buildScheduleNext(locked, cmd)
+	if err != nil {
+		return nil, err
+	}
+	rootID, err := s.writeScheduleChangesTx(ctx, tx, next, cmd)
+	if err != nil {
 		return nil, err
 	}
 	outcome := &PlanScheduleOutcome{
 		PlanID: next.ID, Name: next.Name, UpdatedAt: next.UpdatedAt, NextExecutionDate: next.NextExecutionDate,
+		RootExecutionID: rootID,
 	}
 	stored, err := json.Marshal(outcome)
 	if err != nil {
@@ -184,4 +223,37 @@ func isTransientPlanScheduleErr(err error) bool {
 		return true
 	}
 	return false
+}
+
+// replaceScheduleRootStepTx runs the command's root replacement, if any, and
+// points next at the new root's date. It returns the new root's id.
+func (s *PostgresStore) replaceScheduleRootStepTx(ctx context.Context, tx pgx.Tx, next *PurchasePlan, cmd PlanScheduleCommand) (string, error) {
+	if cmd.ReplaceRootDate == nil {
+		return "", nil
+	}
+	if !next.RampSchedule.DatesManaged {
+		return "", fmt.Errorf("%w: plan %s is not date-managed, roots cannot be replaced", ErrPurchasePlanConflict, next.ID)
+	}
+	root, err := s.replacePlanScheduleRootTx(ctx, tx, next, cmd.Actor, *cmd.ReplaceRootDate)
+	if err != nil {
+		return "", err
+	}
+	next.NextExecutionDate = &root.ScheduledDate
+	return root.ExecutionID, nil
+}
+
+// writeScheduleChangesTx writes the root replacement, the plan row and the
+// accounts, in that order, and returns the new root's id.
+func (s *PostgresStore) writeScheduleChangesTx(ctx context.Context, tx pgx.Tx, next *PurchasePlan, cmd PlanScheduleCommand) (string, error) {
+	rootID, err := s.replaceScheduleRootStepTx(ctx, tx, next, cmd)
+	if err != nil {
+		return "", err
+	}
+	if err := s.updatePurchasePlanGuardedTx(ctx, tx, nil, next); err != nil {
+		return "", err
+	}
+	if cmd.Accounts == nil {
+		return rootID, nil
+	}
+	return rootID, s.setPlanAccountsTx(ctx, tx, next.ID, *cmd.Accounts)
 }
