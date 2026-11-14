@@ -165,3 +165,18 @@ func TestFckNatApplyOrderAndWiring(t *testing.T) {
 		t.Errorf("AttachNetworkInterface Resource must not be \"*\"; got %s", res)
 	}
 }
+
+// TestDeployPolicyGrantsFckNatAsgMetricsAndChurnAlarm pins the grants the
+// opt-in NAT churn alarm (#1763) needs. enabled_metrics on the ASG is applied
+// through Enable/DisableMetricsCollection; without them the first apply with
+// the alarm on fails with AccessDenied, which a plan never shows.
+func TestDeployPolicyGrantsFckNatAsgMetricsAndChurnAlarm(t *testing.T) {
+	const alarm = "arn:aws:cloudwatch:us-east-1:123456789012:alarm:cudly-prod-abc123-nat-instance-churn"
+	assertGranted(t, "fck-nat churn alarm (#1763)", []grantNeed{
+		{action: "autoscaling:EnableMetricsCollection", noResource: true},
+		{action: "autoscaling:DisableMetricsCollection", noResource: true},
+		{action: "cloudwatch:PutMetricAlarm", arn: alarm},
+		{action: "cloudwatch:DeleteAlarms", arn: alarm},
+		{action: "cloudwatch:TagResource", arn: alarm},
+	})
+}

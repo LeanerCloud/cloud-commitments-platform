@@ -151,6 +151,9 @@ resource "aws_iam_policy" "networking" {
           "autoscaling:CreateOrUpdateTags",
           "autoscaling:DeleteTags",
           "autoscaling:DescribeTags",
+          # enabled_metrics on the fck-nat ASG (NAT churn alarm, #1763).
+          "autoscaling:EnableMetricsCollection",
+          "autoscaling:DisableMetricsCollection",
         ]
         Resource = "*"
       },
