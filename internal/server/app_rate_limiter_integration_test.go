@@ -152,14 +152,14 @@ func TestApplicationRateLimiter(t *testing.T) {
 			checkCount(ip(7), "forgot_password_ip", 12)
 
 			type outcome struct {
-				status int
 				err    error
+				status int
 			}
 			forgotResults := make(chan outcome, 15)
 			for i := range 15 {
 				go func() {
 					status, reqErr := forgot(i%2, 100+i, ip(8))
-					forgotResults <- outcome{status, reqErr}
+					forgotResults <- outcome{status: status, err: reqErr}
 				}()
 			}
 			forgotStatuses := make(map[int]int)
@@ -175,7 +175,7 @@ func TestApplicationRateLimiter(t *testing.T) {
 			for i := range 12 {
 				go func() {
 					status, reqErr := request(i%2, "/api/auth/login", ip(4), "{")
-					results <- outcome{status, reqErr}
+					results <- outcome{status: status, err: reqErr}
 				}()
 			}
 			statuses := make(map[int]int)

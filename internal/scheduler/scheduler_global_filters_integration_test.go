@@ -40,23 +40,23 @@ func TestGlobalFiltersPersistedAmbientAndRegistered(t *testing.T) {
 	require.Len(t, all, 10)
 	for _, tc := range []struct {
 		name   string
-		policy config.ServiceConfig
-		want   []string
 		reason string
+		want   []string
+		policy config.ServiceConfig
 	}{
-		{"disabled", config.ServiceConfig{}, nil, "enabled=false"},
-		{"enabled", config.ServiceConfig{Enabled: true}, []string{"1", "10", "11", "sibling"}, ""},
+		{name: "disabled", policy: config.ServiceConfig{}, want: nil, reason: "enabled=false"},
+		{name: "enabled", policy: config.ServiceConfig{Enabled: true}, want: []string{"1", "10", "11", "sibling"}, reason: ""},
 		// The list drops count-1 recs under the floor, so their detail must say
 		// why, like every other dimension in this table (#120). min_count is
 		// only ever set on the service config (overrides have no MinCount).
-		{"minimum", config.ServiceConfig{Enabled: true, MinCount: 10}, []string{"10", "11", "sibling"}, "min_count"},
-		{"include engine", config.ServiceConfig{Enabled: true, IncludeEngines: []string{"postgres"}}, []string{"sibling"}, "engine"},
-		{"exclude engine", config.ServiceConfig{Enabled: true, ExcludeEngines: []string{"mysql"}}, []string{"sibling"}, "engine"},
-		{"include region", config.ServiceConfig{Enabled: true, IncludeRegions: []string{"us-west-2"}}, []string{"sibling"}, "region"},
-		{"exclude region", config.ServiceConfig{Enabled: true, ExcludeRegions: []string{"us-east-1"}}, []string{"sibling"}, "region"},
-		{"include type", config.ServiceConfig{Enabled: true, IncludeTypes: []string{"db.m5.10"}}, []string{"10"}, "resource_type"},
-		{"exclude type", config.ServiceConfig{Enabled: true, ExcludeTypes: []string{"db.m5.1"}}, []string{"10", "11", "sibling"}, "resource_type"},
-		{"exclude wins", config.ServiceConfig{Enabled: true, IncludeRegions: []string{"us-east-1", "us-west-2"}, ExcludeRegions: []string{"us-east-1"}}, []string{"sibling"}, "region"},
+		{name: "minimum", policy: config.ServiceConfig{Enabled: true, MinCount: 10}, want: []string{"10", "11", "sibling"}, reason: "min_count"},
+		{name: "include engine", policy: config.ServiceConfig{Enabled: true, IncludeEngines: []string{"postgres"}}, want: []string{"sibling"}, reason: "engine"},
+		{name: "exclude engine", policy: config.ServiceConfig{Enabled: true, ExcludeEngines: []string{"mysql"}}, want: []string{"sibling"}, reason: "engine"},
+		{name: "include region", policy: config.ServiceConfig{Enabled: true, IncludeRegions: []string{"us-west-2"}}, want: []string{"sibling"}, reason: "region"},
+		{name: "exclude region", policy: config.ServiceConfig{Enabled: true, ExcludeRegions: []string{"us-east-1"}}, want: []string{"sibling"}, reason: "region"},
+		{name: "include type", policy: config.ServiceConfig{Enabled: true, IncludeTypes: []string{"db.m5.10"}}, want: []string{"10"}, reason: "resource_type"},
+		{name: "exclude type", policy: config.ServiceConfig{Enabled: true, ExcludeTypes: []string{"db.m5.1"}}, want: []string{"10", "11", "sibling"}, reason: "resource_type"},
+		{name: "exclude wins", policy: config.ServiceConfig{Enabled: true, IncludeRegions: []string{"us-east-1", "us-west-2"}, ExcludeRegions: []string{"us-east-1"}}, want: []string{"sibling"}, reason: "region"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.policy.Provider, tc.policy.Service, tc.policy.Term, tc.policy.Payment = "aws", "rds", 1, "all-upfront"

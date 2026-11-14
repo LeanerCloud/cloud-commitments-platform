@@ -31,8 +31,8 @@ import (
 // shared Postgres server (#1400) can still log from background goroutines
 // (pgxpool's idle-connection creation) while the test reads the capture.
 type lockedBuffer struct {
-	mu  sync.Mutex
 	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {
@@ -49,16 +49,16 @@ func (b *lockedBuffer) String() string {
 
 type completenessHTTP struct {
 	resourceType string
+	spMode       string
+	spFallback   string
 	accounts     []any
 	details      []string
 	fallback     []string
-	failScope    bool
-	spMode       string
-	spFallback   string
+	requests     []completenessRequest
+	mu           sync.Mutex
 	rdsCalls     atomic.Int32
 	unexpected   atomic.Int32
-	mu           sync.Mutex
-	requests     []completenessRequest
+	failScope    bool
 }
 
 type completenessRequest struct {
@@ -188,16 +188,16 @@ func completenessProvider(t *testing.T, fixture *completenessHTTP) *MockProvider
 func TestAWSRecommendationCompletenessPersistence(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
-		registered    bool
-		details       []string
-		fallback      []string
-		failScope     bool
-		complete      bool
-		wantRows      int
 		spMode        string
 		spFallback    string
+		details       []string
+		fallback      []string
+		wantRows      int
 		failedDetails int
 		failedScopes  int
+		registered    bool
+		failScope     bool
+		complete      bool
 	}{
 		{name: "ambient mixed", details: []string{"2", "invalid"}, wantRows: 6},
 		{name: "ambient all invalid", details: []string{"invalid"}},
@@ -268,9 +268,9 @@ func TestAWSRecommendationCompletenessPersistence(t *testing.T) {
 				seed = append(seed, config.RecommendationRecord{ID: "complete-stale", Provider: "aws", CloudAccountID: &completeAccountID,
 					Service: "rds", Region: "us-east-1", ResourceType: "db.t3.large", Savings: 40, Count: 1, Term: 12, Payment: "no-upfront"})
 				for _, scope := range []struct {
-					id      string
 					account *string
-				}{{"uncollected", &uncollectedID}, {"ambient", nil}} {
+					id      string
+				}{{id: "uncollected", account: &uncollectedID}, {id: "ambient", account: nil}} {
 					seed = append(seed, config.RecommendationRecord{ID: scope.id, Provider: "aws", CloudAccountID: scope.account,
 						Service: "savings-plans-compute", Savings: 40, Count: 1, Term: 1, Payment: "no-upfront"})
 				}

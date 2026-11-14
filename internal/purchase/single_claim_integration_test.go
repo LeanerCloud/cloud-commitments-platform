@@ -139,14 +139,14 @@ func (r *reapingStore) SaveExecutionIfStatus(ctx context.Context, e *config.Purc
 // of its own, only its per-account copies do.
 func TestSingleClaim_ReaperInterleavingRecoversPurchasedRow(t *testing.T) {
 	for _, tc := range []struct {
+		newRow    func(ctx context.Context, t *testing.T, f *rampStepFixture) *config.PurchaseExecution
 		name      string
 		purchases int
-		newRow    func(ctx context.Context, t *testing.T, f *rampStepFixture) *config.PurchaseExecution
 	}{
-		{"single account", 1, func(ctx context.Context, t *testing.T, f *rampStepFixture) *config.PurchaseExecution {
+		{name: "single account", purchases: 1, newRow: func(ctx context.Context, t *testing.T, f *rampStepFixture) *config.PurchaseExecution {
 			return claimRaceRow(ctx, t, f, "notified")
 		}},
-		{"multi-account root", 3, func(ctx context.Context, t *testing.T, f *rampStepFixture) *config.PurchaseExecution {
+		{name: "multi-account root", purchases: 3, newRow: func(ctx context.Context, t *testing.T, f *rampStepFixture) *config.PurchaseExecution {
 			f.repairAccounts(ctx, t)
 			return f.saveRootExecution(ctx, t, 3)
 		}},

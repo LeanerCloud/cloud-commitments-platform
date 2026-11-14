@@ -24,10 +24,10 @@ import (
 // inside the locked transaction until released.
 type hookedLadderStore struct {
 	*config.PostgresStore
-	calls   atomic.Int32
 	entered chan struct{} // closed when the first builder is running under the lock
 	second  chan struct{} // closed if a second builder runs while the first is held
 	gate    chan struct{}
+	calls   atomic.Int32
 }
 
 func (h *hookedLadderStore) PlanAndSaveLadderRun(ctx context.Context, configID string, asOf time.Time, build config.LadderPlanBuilder) (*config.LadderRunDB, error) {

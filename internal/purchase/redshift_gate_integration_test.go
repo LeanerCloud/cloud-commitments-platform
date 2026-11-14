@@ -22,10 +22,10 @@ import (
 
 type redshiftGateFixture struct {
 	*rampStepFixture
-	mgr    *Manager
-	bought atomic.Int32
+	mgr *Manager
 	// beforeBuy runs inside each fake provider call.
 	beforeBuy func()
+	bought    atomic.Int32
 }
 
 func newRedshiftGateFixture(ctx context.Context, t *testing.T) *redshiftGateFixture {

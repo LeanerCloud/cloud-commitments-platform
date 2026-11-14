@@ -100,9 +100,9 @@ func (e *ladderB1Env) run(ctx context.Context, t *testing.T, now time.Time) stri
 }
 
 type b1Row struct {
-	amount float64
 	at     time.Time
 	status string
+	amount float64
 }
 
 func (e *ladderB1Env) rows(ctx context.Context, t *testing.T, runID string) []b1Row {
@@ -196,14 +196,14 @@ func TestLadderB1_NextRunNetsImmediateRowWithinGrace(t *testing.T) {
 	conn := ladderB1Conn(t.Context(), t)
 	cases := []struct {
 		name         string
+		wantImmediat string
 		after        time.Duration
 		wantNew      float64
-		wantImmediat string
 	}{
-		{"1h", time.Hour, 0, string(pkgladder.TrancheStatusScheduled)},
-		{"grace minus 1us", config.LadderFireGrace - time.Microsecond, 0, string(pkgladder.TrancheStatusScheduled)},
-		{"exactly grace", config.LadderFireGrace, 5, string(pkgladder.TrancheStatusCanceled)},
-		{"grace plus 1us", config.LadderFireGrace + time.Microsecond, 5, string(pkgladder.TrancheStatusCanceled)},
+		{name: "1h", after: time.Hour, wantNew: 0, wantImmediat: string(pkgladder.TrancheStatusScheduled)},
+		{name: "grace minus 1us", after: config.LadderFireGrace - time.Microsecond, wantNew: 0, wantImmediat: string(pkgladder.TrancheStatusScheduled)},
+		{name: "exactly grace", after: config.LadderFireGrace, wantNew: 5, wantImmediat: string(pkgladder.TrancheStatusCanceled)},
+		{name: "grace plus 1us", after: config.LadderFireGrace + time.Microsecond, wantNew: 5, wantImmediat: string(pkgladder.TrancheStatusCanceled)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
