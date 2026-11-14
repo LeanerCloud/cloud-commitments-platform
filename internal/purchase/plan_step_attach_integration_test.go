@@ -50,7 +50,8 @@ func attachPlanInDB(ctx context.Context, t *testing.T, store *config.PostgresSto
 
 func attachRec(id string, count int) config.RecommendationRecord {
 	acct := attachAccount
-	return config.RecommendationRecord{ID: id, Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
+	return config.RecommendationRecord{
+		CommitmentCurrency: "USD", ID: id, Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
 		Count: count, Term: 1, UpfrontCost: float64(count), Savings: 1, CloudAccountID: &acct}
 }
 

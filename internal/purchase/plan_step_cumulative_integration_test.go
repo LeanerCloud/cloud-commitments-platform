@@ -57,7 +57,8 @@ type cumFixture struct {
 // cumRec is a 100-unit-style rec of one instance type; the stored row holds the
 // full demand and prices every share.
 func cumRec(account, typ string, count int) config.RecommendationRecord {
-	return config.RecommendationRecord{ID: "rec-" + typ, Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: typ,
+	return config.RecommendationRecord{
+		CommitmentCurrency: "USD", ID: "rec-" + typ, Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: typ,
 		Count: count, Term: 1, Payment: "no-upfront", UpfrontCost: float64(count), Savings: float64(count) / 10, CloudAccountID: &account}
 }
 

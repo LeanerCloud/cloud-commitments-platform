@@ -130,7 +130,7 @@ func TestOfferingClassStampedOnHistoryMatchesPurchase(t *testing.T) {
 			exec := &config.PurchaseExecution{
 				ExecutionID: "exec-112",
 				Recommendations: []config.RecommendationRecord{
-					{Provider: "aws", Service: tc.service, ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+					{CommitmentCurrency: "USD", Provider: "aws", Service: tc.service, ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
 				},
 			}
 
@@ -158,7 +158,7 @@ func TestUnknownOfferingClassRefusesBeforePurchase(t *testing.T) {
 	exec := &config.PurchaseExecution{
 		ExecutionID: "exec-112-unknown",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+			{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
 		},
 	}
 
@@ -179,7 +179,7 @@ func TestUnknownOfferingClassRefusesBeforePurchase(t *testing.T) {
 // tokens match.
 func TestRetryReusesIdempotencyToken(t *testing.T) {
 	recs := []config.RecommendationRecord{
-		{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+		{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
 	}
 
 	original := &config.PurchaseExecution{
@@ -217,7 +217,7 @@ func TestLegacyRowFallsBackToExecutionID(t *testing.T) {
 		// IdempotencyKey deliberately empty (legacy NULL).
 		Source: common.PurchaseSourceWeb,
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+			{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
 		},
 	}
 	tokens := captureIdempotencyTokens(t, legacy)
@@ -329,7 +329,7 @@ func TestScheduledSweepOverlapDoesNotDoubleExecute(t *testing.T) {
 			Status:         "notified",
 			ScheduledDate:  time.Now().Add(-time.Minute),
 			Recommendations: []config.RecommendationRecord{
-				{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+				{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
 			},
 		}
 	}
@@ -872,16 +872,16 @@ func TestPlanLessExecutionRefusesAmbiguousAccountScope(t *testing.T) {
 		{
 			name: "two distinct accounts",
 			recs: []config.RecommendationRecord{
-				{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 100, Savings: 20, Selected: true, CloudAccountID: &acctA},
-				{Provider: "aws", Service: "ec2", ResourceType: "m5.xlarge", Region: "us-east-1", Count: 1, UpfrontCost: 200, Savings: 40, Selected: true, CloudAccountID: &acctB},
+				{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 100, Savings: 20, Selected: true, CloudAccountID: &acctA},
+				{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.xlarge", Region: "us-east-1", Count: 1, UpfrontCost: 200, Savings: 40, Selected: true, CloudAccountID: &acctB},
 			},
 			wantInError: []string{"do not resolve to a single cloud account", "2 cloud accounts (acct-a, acct-b)"},
 		},
 		{
 			name: "attributed and unattributed mixed",
 			recs: []config.RecommendationRecord{
-				{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 100, Savings: 20, Selected: true, CloudAccountID: &acctA},
-				{Provider: "aws", Service: "ec2", ResourceType: "m5.xlarge", Region: "us-east-1", Count: 1, UpfrontCost: 200, Savings: 40, Selected: true},
+				{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 100, Savings: 20, Selected: true, CloudAccountID: &acctA},
+				{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.xlarge", Region: "us-east-1", Count: 1, UpfrontCost: 200, Savings: 40, Selected: true},
 			},
 			wantInError: []string{"do not resolve to a single cloud account", "1 selected recommendation(s) carry no cloud_account_id while 1 target account acct-a"},
 		},

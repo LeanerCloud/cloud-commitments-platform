@@ -27,8 +27,8 @@ func attachRecs() []config.RecommendationRecord {
 	m := 10.0
 	acct := "acct-1"
 	return []config.RecommendationRecord{
-		{ID: "rec-b", Provider: "azure", Service: "compute", Region: "westeurope", ResourceType: "D2", Count: 1, Term: 1, MonthlyCost: &m, CloudAccountID: &acct, Savings: 1},
-		{ID: "rec-a", Provider: "azure", Service: "compute", Region: "westeurope", ResourceType: "D4", Count: 2, Term: 1, MonthlyCost: &m, CloudAccountID: &acct, Savings: 2},
+		{CommitmentCurrency: "USD", ID: "rec-b", Provider: "azure", Service: "compute", Region: "westeurope", ResourceType: "D2", Count: 1, Term: 1, MonthlyCost: &m, CloudAccountID: &acct, Savings: 1},
+		{CommitmentCurrency: "USD", ID: "rec-a", Provider: "azure", Service: "compute", Region: "westeurope", ResourceType: "D4", Count: 2, Term: 1, MonthlyCost: &m, CloudAccountID: &acct, Savings: 2},
 	}
 }
 

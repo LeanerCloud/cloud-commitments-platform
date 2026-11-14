@@ -205,7 +205,7 @@ func (f *rampStepFixture) purchaseCount() int {
 // rampStepRecommendation is the single rec every execution in these tests buys.
 func rampStepRecommendation() []config.RecommendationRecord {
 	return []config.RecommendationRecord{
-		{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
+		{CommitmentCurrency: "USD", Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300, Selected: true},
 	}
 }
 

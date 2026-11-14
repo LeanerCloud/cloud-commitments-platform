@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -40,8 +39,8 @@ func isBoundPlan(plan *config.PurchasePlan) bool {
 //   - a recommendation with a zero, negative or non-finite total commitment is
 //     refused (Azure monthly commitments have upfront 0, so upfront alone
 //     would pass anything);
-//   - a recommendation whose CommitmentCurrency is set and not USD is refused
-//     (the cap is USD; an empty currency is not refused here);
+//   - a recommendation whose CommitmentCurrency is not provably USD, other or
+//     empty (unknown), is refused: the cap is USD and nothing converts;
 //   - no recommendations is not a step that can buy, so it is not this
 //     check's concern and returns nil (the no-recommendations refusal owns it).
 //
@@ -186,11 +185,11 @@ func checkBoundGroupCaps(plan *config.PurchasePlan, totals map[string]float64) e
 }
 
 // capCommitment returns a rec's total commitment for the cap comparison, or
-// refuses it. The cap is USD with no FX conversion, so a set non-USD currency
-// is refused; an empty (unknown) currency passes.
+// refuses it. The cap is USD with no FX conversion, so a currency that is not
+// provably USD, other or empty (unknown), is refused (issue #1427).
 func capCommitment(rec *config.RecommendationRecord) (float64, error) {
-	if cur := strings.TrimSpace(rec.CommitmentCurrency); cur != "" && !config.IsUSDCommitmentCurrency(cur) {
-		return 0, fmt.Errorf("%w: recommendation %q is not priced in USD, so it cannot be compared against the USD cap", ErrStepCommitmentCap, rec.ID)
+	if !config.IsUSDCommitmentCurrency(rec.CommitmentCurrency) {
+		return 0, fmt.Errorf("%w: recommendation %q is not provably priced in USD, so it cannot be compared against the USD cap; refresh the recommendations so they carry a USD price", ErrStepCommitmentCap, rec.ID)
 	}
 	c := rec.TotalCommitment()
 	if !(c > 0) || math.IsInf(c, 0) {

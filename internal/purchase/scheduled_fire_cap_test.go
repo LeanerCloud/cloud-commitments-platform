@@ -21,7 +21,8 @@ func fireCapRow() config.PurchaseExecution {
 	row := dueExec("exec-age")
 	row.StepNumber = 1
 	row.Recommendations = []config.RecommendationRecord{{
-		Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
+		CommitmentCurrency: "USD",
+		Provider:           "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
 		Count: 1, UpfrontCost: 300, Savings: 60, Selected: true, CloudAccountID: aws.String("acct-fire"),
 	}}
 	return row

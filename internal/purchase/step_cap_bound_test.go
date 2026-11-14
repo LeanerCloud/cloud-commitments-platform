@@ -39,7 +39,7 @@ func group(cap *float64, ids ...string) config.ServiceConfig {
 func usd(v float64) *float64 { return &v }
 
 func TestCheckStepCommitmentCap_BoundPlans(t *testing.T) {
-	east, west := capRec("us-east-1", 100, ""), capRec("us-west-2", 100, "")
+	east, west := capRec("us-east-1", 100, "USD"), capRec("us-west-2", 100, "USD")
 	ke, kw := identity(t, east), identity(t, west)
 	recs := []config.RecommendationRecord{east, west}
 
@@ -87,6 +87,27 @@ func TestCheckStepCommitmentCap_BoundPlans(t *testing.T) {
 	})
 }
 
+// Issue #1427: a bound plan's caps are USD too, so a rec whose currency is
+// unknown is refused wherever a cap applies to it, and ignored where none does.
+func TestCheckStepCommitmentCap_BoundEmptyCurrency(t *testing.T) {
+	unknown := capRec("us-east-1", 100, "")
+	k := identity(t, unknown)
+	recs := []config.RecommendationRecord{unknown}
+
+	t.Run("a plan cap refuses it", func(t *testing.T) {
+		p := boundCapPlan(true, usd(1000), map[string]config.ServiceConfig{"aws/ec2#g1": group(nil, k)})
+		require.ErrorIs(t, CheckStepCommitmentCap(p, recs), ErrStepCommitmentCap)
+	})
+	t.Run("a group cap refuses it", func(t *testing.T) {
+		p := boundCapPlan(false, nil, map[string]config.ServiceConfig{"aws/ec2#g1": group(usd(500), k)})
+		require.ErrorIs(t, CheckStepCommitmentCap(p, recs), ErrStepCommitmentCap)
+	})
+	t.Run("no cap applies, so it is not compared", func(t *testing.T) {
+		p := boundCapPlan(false, nil, map[string]config.ServiceConfig{"aws/ec2#g1": group(nil, k)})
+		assert.NoError(t, CheckStepCommitmentCap(p, recs))
+	})
+}
+
 func TestStepCapApplies(t *testing.T) {
 	cap := usd(100)
 	assert.False(t, StepCapApplies(&config.PurchasePlan{}), "(guard) a manual uncapped plan skips the check, as before")
@@ -99,7 +120,7 @@ func TestStepCapApplies(t *testing.T) {
 
 // (guard) An unmarked plan keeps today's rules exactly.
 func TestCheckStepCommitmentCap_UnmarkedUnchanged(t *testing.T) {
-	recs := []config.RecommendationRecord{capRec("us-east-1", 100, "")}
+	recs := []config.RecommendationRecord{capRec("us-east-1", 100, "USD")}
 	p := &config.PurchasePlan{AutoPurchase: true, Services: map[string]config.ServiceConfig{"aws/ec2": {Provider: "aws", Service: "ec2", Enabled: true}}}
 	require.ErrorIs(t, CheckStepCommitmentCap(p, recs), ErrStepCommitmentCap)
 	p.MaxStepCommitment = usd(150)
@@ -110,7 +131,7 @@ func TestCheckStepCommitmentCap_UnmarkedUnchanged(t *testing.T) {
 // A step exactly at a cap passes, as for an unbound plan; one cent over is
 // refused. The same holds for the plan cap and for a group cap.
 func TestCheckStepCommitmentCap_BoundCapBoundary(t *testing.T) {
-	rec := capRec("us-east-1", 100, "")
+	rec := capRec("us-east-1", 100, "USD")
 	recs := []config.RecommendationRecord{rec}
 	key := identity(t, rec)
 	for _, tc := range []struct {
@@ -136,7 +157,7 @@ func TestCheckStepCommitmentCap_BoundCapBoundary(t *testing.T) {
 // A group cap that is not a usable positive finite number refuses the step, as
 // the plan cap does (planCapUsable), instead of silently turning the cap off.
 func TestCheckStepCommitmentCap_BoundGroupCapUnusableFailsClosed(t *testing.T) {
-	rec := capRec("us-east-1", 100, "")
+	rec := capRec("us-east-1", 100, "USD")
 	recs := []config.RecommendationRecord{rec}
 	key := identity(t, rec)
 	for name, c := range map[string]float64{"NaN": math.NaN(), "+Inf": math.Inf(1), "zero": 0, "negative": -5} {
@@ -153,7 +174,7 @@ func TestCheckStepCommitmentCap_BoundGroupCapUnusableFailsClosed(t *testing.T) {
 // A rec's commitment is upfront plus monthly * term * 12, so a cap that only
 // fits the upfront part must refuse it, and a cap equal to the whole passes.
 func TestCheckStepCommitmentCap_BoundCountsMonthlyCost(t *testing.T) {
-	rec := capRec("us-east-1", 50, "")
+	rec := capRec("us-east-1", 50, "USD")
 	monthly := 10.0
 	rec.MonthlyCost = &monthly
 	rec.Payment = "partial-upfront"
@@ -177,7 +198,7 @@ func TestCheckStepCommitmentCap_BoundCountsMonthlyCost(t *testing.T) {
 // A group with no cap of its own is held only by the plan cap: its recs count
 // toward the plan total, and it adds no group limit.
 func TestCheckStepCommitmentCap_BoundNilGroupCapUnderAPlanCap(t *testing.T) {
-	east, west := capRec("us-east-1", 100, ""), capRec("us-west-2", 100, "")
+	east, west := capRec("us-east-1", 100, "USD"), capRec("us-west-2", 100, "USD")
 	ke, kw := identity(t, east), identity(t, west)
 	recs := []config.RecommendationRecord{east, west}
 	p := boundCapPlan(true, usd(150), map[string]config.ServiceConfig{
@@ -193,7 +214,7 @@ func TestCheckStepCommitmentCap_BoundNilGroupCapUnderAPlanCap(t *testing.T) {
 // The resolver skips a disabled group, so a rec bound only to one is outside
 // every group here too, instead of being held to a cap that never applies.
 func TestCheckStepCommitmentCap_BoundDisabledGroupIsOutside(t *testing.T) {
-	rec := capRec("us-east-1", 100, "")
+	rec := capRec("us-east-1", 100, "USD")
 	key := identity(t, rec)
 	disabled := group(usd(1e9), key)
 	disabled.Enabled = false
@@ -204,7 +225,7 @@ func TestCheckStepCommitmentCap_BoundDisabledGroupIsOutside(t *testing.T) {
 // An identity bound by two groups is refused, not assigned to whichever group
 // the map visits last (validation refuses it, but a stored plan may hold one).
 func TestCheckStepCommitmentCap_BoundIdentityInTwoGroupsIsRefused(t *testing.T) {
-	rec := capRec("us-east-1", 100, "")
+	rec := capRec("us-east-1", 100, "USD")
 	key := identity(t, rec)
 	p := boundCapPlan(true, usd(1e9), map[string]config.ServiceConfig{
 		"aws/ec2#g1": group(usd(1e9), key), "aws/ec2#g2": group(usd(1e9), key),
@@ -221,7 +242,7 @@ func TestCheckStepCommitmentCap_BoundIdentityInTwoGroupsIsRefused(t *testing.T) 
 // A rec id carries an account number, so "outside every group" keeps only the
 // fixed head.
 func TestCheckStepCommitmentCap_BoundRefusalNotesKeepTheGroup(t *testing.T) {
-	rec := capRec("us-east-1", 100, "")
+	rec := capRec("us-east-1", 100, "USD")
 	key := identity(t, rec)
 	recs := []config.RecommendationRecord{rec}
 	for name, plan := range map[string]*config.PurchasePlan{

@@ -68,14 +68,15 @@ func armedExecution(provider, service string, retryAttemptN int, status string) 
 		Source:         common.PurchaseSourceWeb,
 		ScheduledDate:  time.Now(),
 		Recommendations: []config.RecommendationRecord{{
-			Provider:     provider,
-			Service:      service,
-			ResourceType: "Standard_D2s_v3",
-			Region:       "westeurope",
-			Count:        1,
-			Term:         3,
-			UpfrontCost:  30000,
-			Selected:     true,
+			CommitmentCurrency: "USD",
+			Provider:           provider,
+			Service:            service,
+			ResourceType:       "Standard_D2s_v3",
+			Region:             "westeurope",
+			Count:              1,
+			Term:               3,
+			UpfrontCost:        30000,
+			Selected:           true,
 		}},
 	}
 }

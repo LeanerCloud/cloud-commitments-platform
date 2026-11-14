@@ -269,6 +269,20 @@ func TestApproveViaToken_PlanStep_NonUSDCappedPlan(t *testing.T) {
 	assert.Equal(t, "pending", exec.Status)
 }
 
+// An unknown currency is not proven USD, so the USD plan cap refuses it with a
+// 403 that tells the approver to refresh (#1427).
+func TestApproveViaToken_PlanStep_EmptyCurrencyCappedPlanRefused(t *testing.T) {
+	exec, total := planStepExecution(t)
+	capAmount := total + 1
+	exec.Recommendations[0].CommitmentCurrency = ""
+	f := newTokenApprove(t, nil, autoPlan(&capAmount))
+	requireApproveRefused(t, f.purchase, f.approve(exec), 403)
+	assert.Equal(t, "pending", exec.Status)
+	err := f.handler.requirePlanStepCap(context.Background(), exec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refresh the recommendations")
+}
+
 // approveViaToken always holds a session (authorizeApprovalAction returns 401
 // without one), so a nil session reaches approveConstraintsForSession only
 // through direct callers such as the post-claim check; drive it directly.

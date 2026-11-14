@@ -163,13 +163,14 @@ func TestManager_ProcessScheduledPurchases_DuePurchase(t *testing.T) {
 			ScheduledDate: pastDate,
 			Recommendations: []config.RecommendationRecord{
 				{
-					Service:      "ec2",
-					ResourceType: "m5.large",
-					Region:       "us-east-1",
-					Count:        1,
-					Savings:      50.0,
-					UpfrontCost:  200.0,
-					Selected:     true,
+					CommitmentCurrency: "USD",
+					Service:            "ec2",
+					ResourceType:       "m5.large",
+					Region:             "us-east-1",
+					Count:              1,
+					Savings:            50.0,
+					UpfrontCost:        200.0,
+					Selected:           true,
 				},
 			},
 		},
@@ -489,7 +490,7 @@ func TestManager_RecoverStrandedApprovals_FailsStrandedRow(t *testing.T) {
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
 			// Azure Savings Plans: safe-fail path because OrderAlias has no idempotency key.
-			{Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 1, UpfrontCost: 500.0, Selected: true, Purchased: false},
+			{CommitmentCurrency: "USD", Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 1, UpfrontCost: 500.0, Selected: true, Purchased: false},
 		},
 	}
 	failedRow := stranded
@@ -587,7 +588,7 @@ func TestManager_RecoverStrandedApprovals_AWSOnlyRedrives(t *testing.T) {
 		Status:      "approved",
 		StepNumber:  1,
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
+			{CommitmentCurrency: "USD", Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
 		},
 	}
 	runningRow := stranded
@@ -676,7 +677,7 @@ func TestManager_RecoverStrandedApprovals_AzureReservationRedrives(t *testing.T)
 		Status:      "approved",
 		StepNumber:  1,
 		Recommendations: []config.RecommendationRecord{
-			{ID: "current-azure", Provider: "azure", Service: "compute", ResourceType: "Standard_D4s_v3", Region: "eastus", Count: 1, UpfrontCost: 300.0, Selected: true, Purchased: false},
+			{CommitmentCurrency: "USD", ID: "current-azure", Provider: "azure", Service: "compute", ResourceType: "Standard_D4s_v3", Region: "eastus", Count: 1, UpfrontCost: 300.0, Selected: true, Purchased: false},
 		},
 	}
 	mockStore.On("ListStoredRecommendations", mock.Anything, config.RecommendationFilter{Provider: "azure", RequireAzurePricingMigration: true}).Return(stranded.Recommendations, nil).Once()
@@ -762,7 +763,7 @@ func TestManager_RecoverStrandedApprovals_GCPRedrives(t *testing.T) {
 		Status:      "approved",
 		StepNumber:  1,
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "gcp", Service: "compute", ResourceType: "n2-standard-4", Region: "us-central1", Count: 2, UpfrontCost: 150.0, Selected: true, Purchased: false},
+			{CommitmentCurrency: "USD", Provider: "gcp", Service: "compute", ResourceType: "n2-standard-4", Region: "us-central1", Count: 2, UpfrontCost: 150.0, Selected: true, Purchased: false},
 		},
 	}
 	runningRow := stranded
@@ -834,9 +835,9 @@ func TestManager_RecoverStrandedApprovals_MixedAWSAzureSPSafeFails(t *testing.T)
 		PlanID:      "plan-mixed-sp",
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 100.0, Selected: true},
+			{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 100.0, Selected: true},
 			// Azure Savings Plans: not safe for re-drive; entire execution falls to safe-fail.
-			{Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 1, UpfrontCost: 100.0, Selected: true},
+			{CommitmentCurrency: "USD", Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 1, UpfrontCost: 100.0, Selected: true},
 		},
 	}
 	failedRow := stranded
@@ -878,7 +879,7 @@ func TestManager_RecoverStrandedApprovals_AzureSavingsPlansSafeFails(t *testing.
 		PlanID:      "plan-azure-sp",
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 2, UpfrontCost: 400.0, Selected: true},
+			{CommitmentCurrency: "USD", Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 2, UpfrontCost: 400.0, Selected: true},
 		},
 	}
 	failedRow := stranded
@@ -919,7 +920,7 @@ func TestManager_RecoverStrandedApprovals_LegacyNoExecutionIDSafeFails(t *testin
 		PlanID:      "plan-legacy",
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true},
+			{CommitmentCurrency: "USD", Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true},
 		},
 	}
 	failedRow := stranded
@@ -994,7 +995,7 @@ func TestManager_RecoverStrandedApprovals_SafeFail_ErrNotFoundIsBenign(t *testin
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
 			// Azure Savings Plans falls through to safe-fail path (no idempotency key).
-			{Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 1, UpfrontCost: 400.0, Selected: true},
+			{CommitmentCurrency: "USD", Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 1, UpfrontCost: 400.0, Selected: true},
 		},
 	}
 
@@ -1037,7 +1038,7 @@ func TestManager_RecoverStrandedApprovals_SafeFail_ErrExecutionNotInExpectedStat
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
 			// Azure Savings Plans routes to safe-fail (no idempotency key for re-drive).
-			{Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 1, UpfrontCost: 400.0, Selected: true},
+			{CommitmentCurrency: "USD", Provider: "azure", Service: "savingsplans", ResourceType: "Compute", Region: "eastus", Count: 1, UpfrontCost: 400.0, Selected: true},
 		},
 	}
 
@@ -1088,7 +1089,7 @@ func TestManager_RecoverStrandedApprovals_AWSRedrive_PersistenceFailurePropagate
 		PlanID:      "plan-aws-persist-456",
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
+			{CommitmentCurrency: "USD", Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
 		},
 	}
 	runningRow := stranded
@@ -1169,7 +1170,7 @@ func TestManager_RecoverStrandedApprovals_AWSRedrive_ExecAndPersistBothFail(t *t
 		PlanID:      "plan-aws-both-fail",
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
+			{CommitmentCurrency: "USD", Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 200.0, Selected: true, Purchased: false},
 		},
 	}
 	runningRow := stranded
@@ -1231,7 +1232,7 @@ func TestManager_RecoverStrandedApprovals_AWSClaimLost_NoRedrive(t *testing.T) {
 		PlanID:      "plan-aws-claimed",
 		Status:      "approved",
 		Recommendations: []config.RecommendationRecord{
-			{Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300.0, Selected: true},
+			{CommitmentCurrency: "USD", Provider: "aws", Service: "rds", ResourceType: "db.r5.large", Region: "us-east-1", Count: 1, UpfrontCost: 300.0, Selected: true},
 		},
 	}
 

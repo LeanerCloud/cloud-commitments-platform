@@ -233,7 +233,8 @@ func TestClaimAndExecuteWithin_NotifiedRowExecutes(t *testing.T) {
 		Status:      "notified",
 		StepNumber:  1,
 		Recommendations: []config.RecommendationRecord{{
-			Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
+			CommitmentCurrency: "USD",
+			Provider:           "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
 			Count: 1, UpfrontCost: 100, Selected: true,
 		}},
 	}
@@ -290,13 +291,14 @@ func TestClaimAndExecuteWithin_SaveError(t *testing.T) {
 	}
 
 	rec := config.RecommendationRecord{
-		Provider:     "aws",
-		Service:      "ec2",
-		ResourceType: "m5.large",
-		Region:       "us-east-1",
-		Count:        1,
-		UpfrontCost:  100,
-		Selected:     true,
+		CommitmentCurrency: "USD",
+		Provider:           "aws",
+		Service:            "ec2",
+		ResourceType:       "m5.large",
+		Region:             "us-east-1",
+		Count:              1,
+		UpfrontCost:        100,
+		Selected:           true,
 	}
 
 	exec := &config.PurchaseExecution{
@@ -629,15 +631,16 @@ func TestManager_ExecuteSinglePurchase_WithEngine(t *testing.T) {
 		PlanID:      "plan-engine",
 		Recommendations: []config.RecommendationRecord{
 			{
-				Provider:     "aws",
-				Service:      "rds",
-				ResourceType: "db.r5.large",
-				Engine:       "mysql",
-				Region:       "us-east-1",
-				Count:        1,
-				Savings:      150.0,
-				UpfrontCost:  600.0,
-				Selected:     true,
+				CommitmentCurrency: "USD",
+				Provider:           "aws",
+				Service:            "rds",
+				ResourceType:       "db.r5.large",
+				Engine:             "mysql",
+				Region:             "us-east-1",
+				Count:              1,
+				Savings:            150.0,
+				UpfrontCost:        600.0,
+				Selected:           true,
 			},
 		},
 	}
@@ -687,14 +690,15 @@ func TestManager_SavePurchaseHistory_Error(t *testing.T) {
 		PlanID:      "plan-hist-err",
 		Recommendations: []config.RecommendationRecord{
 			{
-				Provider:     "aws",
-				Service:      "ec2",
-				ResourceType: "c5.large",
-				Region:       "us-east-1",
-				Count:        2,
-				Savings:      80.0,
-				UpfrontCost:  320.0,
-				Selected:     true,
+				CommitmentCurrency: "USD",
+				Provider:           "aws",
+				Service:            "ec2",
+				ResourceType:       "c5.large",
+				Region:             "us-east-1",
+				Count:              2,
+				Savings:            80.0,
+				UpfrontCost:        320.0,
+				Selected:           true,
 			},
 		},
 	}
@@ -983,18 +987,19 @@ func TestManager_ExecuteSinglePurchase_DetailsByService(t *testing.T) {
 				FirstDispatchAt: &stampedAt,
 				Recommendations: []config.RecommendationRecord{
 					{
-						Provider:     "aws",
-						Service:      tc.service,
-						ResourceType: tc.resource,
-						Engine:       tc.engine,
-						Details:      detailsBlob,
-						Region:       tc.region,
-						Count:        1,
-						Term:         1,
-						Payment:      "All Upfront",
-						Savings:      10.0,
-						UpfrontCost:  100.0,
-						Selected:     true,
+						CommitmentCurrency: "USD",
+						Provider:           "aws",
+						Service:            tc.service,
+						ResourceType:       tc.resource,
+						Engine:             tc.engine,
+						Details:            detailsBlob,
+						Region:             tc.region,
+						Count:              1,
+						Term:               1,
+						Payment:            "All Upfront",
+						Savings:            10.0,
+						UpfrontCost:        100.0,
+						Selected:           true,
 					},
 				},
 			}
@@ -1124,10 +1129,11 @@ func TestManager_ExecuteSinglePurchase_LegacyEmptyDetails(t *testing.T) {
 				PlanID:      "plan-" + tc.name,
 				Recommendations: []config.RecommendationRecord{
 					{
-						Provider:     "aws",
-						Service:      tc.service,
-						ResourceType: tc.resource,
-						Engine:       tc.engine,
+						CommitmentCurrency: "USD",
+						Provider:           "aws",
+						Service:            tc.service,
+						ResourceType:       tc.resource,
+						Engine:             tc.engine,
 						// Details deliberately empty — simulates a
 						// row persisted before #453.
 						Region:      tc.region,

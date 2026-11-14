@@ -19,13 +19,13 @@ import (
 func f64(v float64) *float64 { return &v }
 
 func upfrontRec(upfront float64) config.RecommendationRecord {
-	return config.RecommendationRecord{ID: "r-upfront", Provider: "aws", Service: "ec2", Count: 1, Term: 1, UpfrontCost: upfront}
+	return config.RecommendationRecord{ID: "r-upfront", Provider: "aws", Service: "ec2", Count: 1, Term: 1, UpfrontCost: upfront, CommitmentCurrency: "USD"}
 }
 
 // azureMonthlyRec has upfront 0 and only a monthly charge, the shape that makes
 // an upfront-only cap blind.
 func azureMonthlyRec(monthly float64, termYears int) config.RecommendationRecord {
-	return config.RecommendationRecord{ID: "r-monthly", Provider: "azure", Service: "compute", Count: 1, Term: termYears, UpfrontCost: 0, MonthlyCost: f64(monthly)}
+	return config.RecommendationRecord{ID: "r-monthly", Provider: "azure", Service: "compute", Count: 1, Term: termYears, UpfrontCost: 0, MonthlyCost: f64(monthly), CommitmentCurrency: "USD"}
 }
 
 func currencyRec(currency string) config.RecommendationRecord {
@@ -44,7 +44,7 @@ func TestCheckStepCommitmentCap_Currency(t *testing.T) {
 	}{
 		{"USD passes", capped, []config.RecommendationRecord{currencyRec("USD")}, false},
 		{"padded lowercase usd passes", capped, []config.RecommendationRecord{currencyRec(" usd ")}, false},
-		{"empty currency passes", capped, []config.RecommendationRecord{currencyRec("")}, false},
+		{"empty currency refuses", capped, []config.RecommendationRecord{currencyRec("")}, true},
 		{"EUR refuses", capped, []config.RecommendationRecord{currencyRec("EUR")}, true},
 		{"JPY refuses", capped, []config.RecommendationRecord{currencyRec("JPY")}, true},
 		{"mixed batch with one EUR refuses", capped, []config.RecommendationRecord{currencyRec("USD"), currencyRec("EUR")}, true},
@@ -63,6 +63,10 @@ func TestCheckStepCommitmentCap_Currency(t *testing.T) {
 	err := CheckStepCommitmentCap(capped, []config.RecommendationRecord{currencyRec("EUR")})
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "EUR")
+	assert.Contains(t, err.Error(), "refresh the recommendations")
+	err = CheckStepCommitmentCap(capped, []config.RecommendationRecord{currencyRec("")})
+	require.ErrorIs(t, err, ErrStepCommitmentCap)
+	assert.Contains(t, err.Error(), "refresh the recommendations")
 }
 
 func TestCheckStepCommitmentCap(t *testing.T) {

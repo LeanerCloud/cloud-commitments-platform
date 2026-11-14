@@ -34,7 +34,8 @@ func TestManualPlanStep_AzureSizingPersistsWithoutAutoPurchase(t *testing.T) {
 	require.NoError(t, store.CreatePurchasePlan(ctx, plan))
 	require.NoError(t, store.SetPlanAccounts(ctx, plan.ID, []string{account.ID}))
 	monthly := 1000.0
-	rec := config.RecommendationRecord{ID: "manual-azure-rec", Provider: "azure", Service: "compute", Region: "westeurope", ResourceType: "Standard_D2s_v3",
+	rec := config.RecommendationRecord{
+		CommitmentCurrency: "USD", ID: "manual-azure-rec", Provider: "azure", Service: "compute", Region: "westeurope", ResourceType: "Standard_D2s_v3",
 		Count: 100, Term: 1, Payment: "monthly", MonthlyCost: &monthly, Savings: 500, CloudAccountID: &account.ID}
 	sender := newCountingSender(ctx)
 	m := &Manager{config: store, email: sender, resolver: planstepResolver{

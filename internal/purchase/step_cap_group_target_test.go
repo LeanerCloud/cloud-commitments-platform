@@ -9,7 +9,7 @@ import (
 
 // A merged group cap and a merged plan cap each refuse a step over them.
 func TestMergedGroupTargetCapsRefuseOverEffectiveCap(t *testing.T) {
-	rec := capRec("us-east-1", 100, "")
+	rec := capRec("us-east-1", 100, "USD")
 	g := func(c float64) config.ServiceConfig { return group(usd(c), identity(t, rec)) }
 	plan := boundCapPlan(true, usd(500), map[string]config.ServiceConfig{"aws/ec2#a": func() config.ServiceConfig { s := g(500); s.GroupID = "a"; return s }()})
 	recs := []config.RecommendationRecord{rec}

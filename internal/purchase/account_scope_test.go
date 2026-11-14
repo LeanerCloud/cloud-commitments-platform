@@ -16,7 +16,8 @@ func withAccount(rec config.RecommendationRecord, id string) config.Recommendati
 
 func scopedTestRec(accountID string) config.RecommendationRecord {
 	return withAccount(config.RecommendationRecord{
-		Provider: "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
+		CommitmentCurrency: "USD",
+		Provider:           "aws", Service: "ec2", ResourceType: "m5.large", Region: "us-east-1",
 		Count: 1, UpfrontCost: 300, Savings: 75, Selected: true,
 	}, accountID)
 }
