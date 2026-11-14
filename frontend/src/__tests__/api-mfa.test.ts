@@ -2,7 +2,7 @@
  * API client tests for the MFA endpoints + the login MFALoginError
  * branch (issue #497).
  */
-import { login, MFALoginError, setupMFA, enableMFA, disableMFA, regenerateMFARecoveryCodes } from '../api/auth';
+import { login, loginWithMFAToken, MFALoginError, setupMFA, enableMFA, disableMFA, regenerateMFARecoveryCodes } from '../api/auth';
 
 beforeEach(() => {
   global.fetch = jest.fn();
@@ -57,6 +57,23 @@ describe('login() MFA error branch', () => {
     mockFetchErr(401, { error: errMsg });
     await expect(login('u@x.com', 'pw')).rejects.toThrow(errMsg);
     await expect(login('u@x.com', 'pw')).rejects.not.toBeInstanceOf(MFALoginError);
+  });
+
+  test('mfa_required carries the continuation token when the server sends one', async () => {
+    mockFetchErr(401, { error: 'mfa_required', mfa_token: 'tok-abc' });
+    await expect(login('u@x.com', 'pw')).rejects.toMatchObject({ mfaToken: 'tok-abc' });
+  });
+
+  test('mfa_required without a token leaves mfaToken undefined', async () => {
+    mockFetchErr(401, { error: 'mfa_required' });
+    await expect(login('u@x.com', 'pw')).rejects.toMatchObject({ mfaToken: undefined });
+  });
+
+  test('loginWithMFAToken sends email, token and code with no password', async () => {
+    mockFetchOk({ token: 'tok' });
+    await loginWithMFAToken('u@x.com', 'tok-abc', '123456');
+    const call = (global.fetch as jest.Mock).mock.calls[0];
+    expect(JSON.parse(call[1].body)).toEqual({ email: 'u@x.com', mfa_token: 'tok-abc', mfa_code: '123456' });
   });
 
   test('mfaCode argument is sent on resubmit', async () => {

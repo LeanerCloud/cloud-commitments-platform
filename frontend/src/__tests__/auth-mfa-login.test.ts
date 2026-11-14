@@ -18,15 +18,18 @@ jest.mock('../utils', () => ({
 jest.mock('../api', () => {
   class MFALoginError extends Error {
     code: string;
-    constructor(code: string) {
+    mfaToken: string | undefined;
+    constructor(code: string, mfaToken?: string) {
       super(code);
       this.name = 'MFALoginError';
       this.code = code;
+      this.mfaToken = mfaToken;
       Object.setPrototypeOf(this, MFALoginError.prototype);
     }
   }
   return {
     login: jest.fn(),
+    loginWithMFAToken: jest.fn(),
     logout: jest.fn(),
     requestPasswordReset: jest.fn(),
     resetPassword: jest.fn(),
@@ -105,6 +108,30 @@ describe('Login two-step MFA flow', () => {
     // Verify the second call carried the code.
     expect(api.login).toHaveBeenNthCalledWith(2, 'user@x.com', 'pw', '123456');
     expect(reloadPage).toHaveBeenCalled();
+  });
+
+  test('with an mfa_token the code step sends the token and never the password (#134)', async () => {
+    const Ctor = (api as unknown as { MFALoginError: typeof Error }).MFALoginError as new (c: string, t?: string) => Error;
+    (api.login as jest.Mock).mockRejectedValueOnce(new Ctor('mfa_required', 'tok-123'));
+    (api.loginWithMFAToken as jest.Mock).mockResolvedValueOnce({ token: 'tok' });
+    await showLoginModal();
+    await submitLogin('user@x.com', 'pw');
+    await submitMFACode('123456');
+    expect(api.loginWithMFAToken).toHaveBeenCalledWith('user@x.com', 'tok-123', '123456');
+    expect(api.login).toHaveBeenCalledTimes(1);
+    expect(reloadPage).toHaveBeenCalled();
+  });
+
+  test('an invalid_mfa_token answer restarts at the first step with a clear notice', async () => {
+    const Ctor = (api as unknown as { MFALoginError: typeof Error }).MFALoginError as new (c: string, t?: string) => Error;
+    (api.login as jest.Mock).mockRejectedValueOnce(new Ctor('mfa_required', 'tok-123'));
+    (api.loginWithMFAToken as jest.Mock).mockRejectedValueOnce(new Error('invalid_mfa_token'));
+    await showLoginModal();
+    await submitLogin('user@x.com', 'pw');
+    await submitMFACode('123456');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById('login-email')).not.toBeNull();
+    expect(document.body.textContent).toContain('Log in again');
   });
 
   test('wrong MFA code stays on the MFA step and shows specific error', async () => {

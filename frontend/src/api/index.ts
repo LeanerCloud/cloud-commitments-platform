@@ -94,6 +94,7 @@ export {
 // Re-export auth functions
 export {
   login,
+  loginWithMFAToken,
   logout,
   getCurrentUser,
   getUserPermissions,

@@ -15,7 +15,7 @@ import type {
   MFARecoveryCodesResponse,
   MFALoginErrorCode,
 } from './types';
-import { fetchOrNetworkError, readJson, responseError } from './errors';
+import { fetchOrNetworkError, readJson, responseError, responseErrorWithBody } from './errors';
 import { clearPlanDraft } from '../lib/plan-form-draft';
 
 /**
@@ -26,10 +26,13 @@ import { clearPlanDraft } from '../lib/plan-form-draft';
  */
 export class MFALoginError extends Error {
   readonly code: MFALoginErrorCode;
-  constructor(code: MFALoginErrorCode) {
+  /** Short-lived continuation token the server issues with mfa_required; lets the code step skip the password. */
+  readonly mfaToken: string | undefined;
+  constructor(code: MFALoginErrorCode, mfaToken?: string) {
     super(code);
     this.name = 'MFALoginError';
     this.code = code;
+    this.mfaToken = mfaToken;
     // Restore prototype chain for instanceof checks across the
     // ts-jest compile boundary (Error subclasses lose this without
     // an explicit setPrototypeOf).
@@ -53,12 +56,24 @@ function isMFALoginErrorCode(s: unknown): s is MFALoginErrorCode {
  * for everything else.
  */
 export async function login(email: string, password: string, mfaCode?: string): Promise<LoginResponse> {
-  const API_BASE = getApiBase();
   // Base64 encode password to match backend expectation
   const payload: Record<string, string> = { email, password: base64Encode(password) };
   if (mfaCode) {
     payload.mfa_code = mfaCode;
   }
+  return postLogin(payload);
+}
+
+/**
+ * Second login leg using the `mfa_token` from the `mfa_required` answer, so
+ * the browser no longer keeps the password while the code prompt is open.
+ */
+export async function loginWithMFAToken(email: string, mfaToken: string, mfaCode: string): Promise<LoginResponse> {
+  return postLogin({ email, mfa_token: mfaToken, mfa_code: mfaCode });
+}
+
+async function postLogin(payload: Record<string, string>): Promise<LoginResponse> {
+  const API_BASE = getApiBase();
   const body = JSON.stringify(payload);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -72,9 +87,10 @@ export async function login(email: string, password: string, mfaCode?: string): 
   });
 
   if (!response.ok) {
-    const err = await responseError(response, 'Login failed');
+    const { error: err, body: errBody } = await responseErrorWithBody(response, 'Login failed');
     if (isMFALoginErrorCode(err.message)) {
-      throw new MFALoginError(err.message);
+      const token = errBody['mfa_token'];
+      throw new MFALoginError(err.message, typeof token === 'string' && token !== '' ? token : undefined);
     }
     throw err;
   }

@@ -666,6 +666,9 @@ function mapServerLoginError(message: string): string {
   ) {
     return 'Check your email address and password and try again';
   }
+  if (lower === 'invalid_mfa_token') {
+    return 'The two-factor prompt expired. Log in again.';
+  }
   return message;
 }
 
@@ -685,22 +688,29 @@ function showLoginError(message: string): void {
 // rest of the page's life. Never persisted.
 let pendingMFAEmail = '';
 let pendingMFAPassword = '';
+// Server-issued continuation token; when present the password is never kept.
+let pendingMFAToken = '';
 let pendingMFATimer: ReturnType<typeof setTimeout> | undefined;
 export const MFA_PENDING_TTL_MS = 5 * 60 * 1000;
 
 function clearPendingMFA(): void {
   pendingMFAEmail = '';
   pendingMFAPassword = '';
+  pendingMFAToken = '';
   if (pendingMFATimer !== undefined) {
     clearTimeout(pendingMFATimer);
     pendingMFATimer = undefined;
   }
 }
 
-function stashPendingMFA(email: string, password: string): void {
+function stashPendingMFA(email: string, password: string, mfaToken?: string): void {
   clearPendingMFA();
   pendingMFAEmail = email;
-  pendingMFAPassword = password;
+  if (mfaToken) {
+    pendingMFAToken = mfaToken;
+  } else {
+    pendingMFAPassword = password;
+  }
   pendingMFATimer = setTimeout(() => {
     pendingMFATimer = undefined;
     if (document.getElementById('mfa-code')) {
@@ -755,7 +765,7 @@ async function handleLogin(e: Event): Promise<void> {
       // First-leg success: password is correct, server wants the
       // TOTP code. Stash credentials in the closure and swap the
       // form to the MFA code prompt.
-      stashPendingMFA(email, password);
+      stashPendingMFA(email, password, error.mfaToken);
       showMFACodeStep();
       return;
     }
@@ -832,7 +842,9 @@ async function handleMFACodeSubmit(e: Event): Promise<void> {
   }
   document.getElementById('login-error')?.classList.add('hidden');
   try {
-    await api.login(pendingMFAEmail, pendingMFAPassword, code);
+    await (pendingMFAToken
+      ? api.loginWithMFAToken(pendingMFAEmail, pendingMFAToken, code)
+      : api.login(pendingMFAEmail, pendingMFAPassword, code));
     clearPendingMFA();
     document.getElementById('login-modal')?.remove();
     reloadPage();

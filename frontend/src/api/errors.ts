@@ -102,11 +102,19 @@ export async function fetchOrNetworkError(url: string, init?: RequestInit): Prom
  * 5xx or an unreadable body, otherwise the caller's fallback.
  */
 export async function responseError(response: Response, fallback: string): Promise<ApiError> {
-  const data = await response.json().catch(() => ({})) as { error?: unknown; message?: unknown };
-  const raw = typeof data.error === 'string' ? data.error : typeof data.message === 'string' ? data.message : '';
+  return (await responseErrorWithBody(response, fallback)).error;
+}
+
+/** responseError plus the parsed error body, for callers that read extra fields (the MFA token). */
+export async function responseErrorWithBody(
+  response: Response,
+  fallback: string,
+): Promise<{ error: ApiError; body: Record<string, unknown> }> {
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+  const raw = typeof body['error'] === 'string' ? body['error'] : typeof body['message'] === 'string' ? body['message'] : '';
   const generic = !raw || isGenericServerMessage(raw);
   const message = !generic ? raw : response.status >= 500 ? httpStatusMessage(response.status) : fallback;
-  return makeApiError(message, response.status, `HTTP ${response.status} from ${response.url || 'auth endpoint'}`);
+  return { error: makeApiError(message, response.status, `HTTP ${response.status} from ${response.url || 'auth endpoint'}`), body };
 }
 
 /** response.json() that fails with friendly text on an HTML or truncated body. */
