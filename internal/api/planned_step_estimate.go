@@ -25,8 +25,8 @@ type stepEstimator struct {
 
 // planEstimate is one plan's next-step estimate, computed once per request.
 type planEstimate struct {
-	recs []config.RecommendationRecord
 	note string
+	recs []config.RecommendationRecord
 }
 
 // newStepEstimator returns nil (no estimates) for a caller without

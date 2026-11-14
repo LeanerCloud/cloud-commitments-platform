@@ -96,8 +96,8 @@ func (*fanoutCredStore) LoadRaw(_ context.Context, _, _ string) ([]byte, error) 
 // fanoutServiceClient records the idempotency token of every commitment
 // purchase that reaches the "cloud". One recorded token == one real purchase.
 type fanoutServiceClient struct {
-	mu     sync.Mutex
 	tokens []string
+	mu     sync.Mutex
 }
 
 func (c *fanoutServiceClient) PurchaseCommitment(_ context.Context, _ common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {

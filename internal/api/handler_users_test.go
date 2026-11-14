@@ -396,10 +396,10 @@ func TestHandler_users_ContradictoryGroupsMessageDependsOnViewGroups(t *testing.
 	withView := append([]auth.Permission{{Action: auth.ActionView, Resource: auth.ResourceGroups}}, writeOnly...)
 
 	type caller struct {
+		headers map[string]string
 		perms   []auth.Permission
 		apiKey  bool
 		detail  bool
-		headers map[string]string
 	}
 	callers := map[string]caller{
 		"without view groups": {perms: writeOnly, headers: map[string]string{"Authorization": "Bearer tok"}},
@@ -532,10 +532,10 @@ func TestHandler_users_GroupGrantRefusalMessageDependsOnViewGroups(t *testing.T)
 	}
 	withView := append([]auth.Permission{{Action: auth.ActionView, Resource: auth.ResourceGroups}}, writeOnly...)
 	callers := map[string]struct {
+		headers map[string]string
 		perms   []auth.Permission
 		apiKey  bool
 		detail  bool
-		headers map[string]string
 	}{
 		"without view groups": {perms: writeOnly, headers: map[string]string{"Authorization": "Bearer tok"}},
 		"with view groups":    {perms: withView, detail: true, headers: map[string]string{"Authorization": "Bearer tok"}},

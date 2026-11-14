@@ -212,11 +212,11 @@ func TestHandleRequest_RevokeViaEmail_WrongTokenOnLapsedRowIsInvalid(t *testing.
 	longAgo := time.Now().Add(-2 * config.RevocationWindow)
 	hash := config.HashApprovalToken(tokenErrRawToken)
 	cases := []struct {
-		name      string
 		exec      config.PurchaseExecution
+		name      string
 		token     string
-		want      int
 		wantInMsg string
+		want      int
 	}{
 		{name: "wrong token on an expired link", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: "wrong", want: 403, wantInMsg: "invalid revocation token"},
 		{name: "wrong token past the revocation window", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &future, CompletedAt: &longAgo}, token: "wrong", want: 403, wantInMsg: "invalid revocation token"},

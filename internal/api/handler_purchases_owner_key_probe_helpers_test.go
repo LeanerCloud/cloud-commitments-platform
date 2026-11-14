@@ -36,10 +36,10 @@ func okpExecution(creator string) *config.PurchaseExecution {
 }
 
 type okpHelperCase struct {
+	call                   func(h *Handler, s *Session, creator string) error
 	name, anyVerb, ownVerb string
 	// narrow is a key scope holding no full-scope verb; defaults to ownVerb.
 	narrow []string
-	call   func(h *Handler, s *Session, creator string) error
 }
 
 var okpHelperCases = []okpHelperCase{

@@ -29,12 +29,12 @@ const (
 var drResolvedAt = time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC)
 
 type directResolveStore struct {
+	err error
 	*directListStore
 	rows   map[string]config.RIExchangeDirectRow
-	called int
-	got    config.RIExchangeDirectResolve
 	res    *config.RIExchangeDirectResolveResult
-	err    error
+	got    config.RIExchangeDirectResolve
+	called int
 }
 
 func (s *directResolveStore) GetRIExchangeDirectExecution(_ context.Context, id string) (*config.RIExchangeDirectRow, error) {
@@ -81,10 +81,10 @@ func drBody(outcome, extra string) string {
 var drFailedBody = drBody("failed", `,"acknowledge_unknown_outcome":true`)
 
 type drCaller struct {
+	email    string
 	perms    []auth.Permission
 	accounts []string // nil means unrestricted
 	adminKey bool
-	email    string
 }
 
 func (c drCaller) call(store *directResolveStore, id, body string) (any, error) {
@@ -163,8 +163,8 @@ func TestResolveRIExchangeDirect_ReplayIsReportedAndNotLogged(t *testing.T) {
 func TestResolveRIExchangeDirect_MapsStoreOutcomes(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
 		err  error
+		name string
 		want int
 	}{
 		{name: "missing at resolve time", err: config.ErrRIExchangeResolveNotFound, want: 404},

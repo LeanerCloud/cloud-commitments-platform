@@ -79,9 +79,9 @@ func TestResumeAmountCap_UpdateAnyChargesTotalCommitment(t *testing.T) {
 	other := pauseResumeOtherUser
 	for _, tc := range []struct {
 		name         string
+		recs         []config.RecommendationRecord
 		cap          float64
 		totalUpfront float64
-		recs         []config.RecommendationRecord
 		denied       bool
 	}{
 		{name: "no-upfront recurring cost above the cap", cap: 500, totalUpfront: 0, recs: noUpfrontRecs(), denied: true},
@@ -190,9 +190,9 @@ func TestResumeAmountCap_UncappedGrantElsewhereDoesNotLiftCap(t *testing.T) {
 	me := revokeConstraintsUser
 	other := pauseResumeOtherUser
 	for _, tc := range []struct {
+		creator *string
 		name    string
 		verb    string
-		creator *string
 	}{
 		{name: "update, creator's own row", verb: auth.ActionUpdate, creator: &me},
 		{name: "update-any, another user's row", verb: auth.ActionUpdateAny, creator: &other},

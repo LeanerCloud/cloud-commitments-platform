@@ -64,10 +64,10 @@ func TestLadderArmingGate_ConfigWrites(t *testing.T) {
 	cap1, cap03 := apgCap(1), apgCap(0.3)
 
 	tests := []struct {
-		name        string
-		caller      apgCaller
 		stored      *config.LadderConfigDB
+		name        string
 		body        string
+		caller      apgCaller
 		wantRefused bool
 	}{
 		{name: "create armed: admin refused", caller: admin, stored: nil, body: lgBody(true, auto, "1"), wantRefused: true},
@@ -136,9 +136,9 @@ func TestLadderArmingGate_ClearCapNonAWS(t *testing.T) {
 		return fmt.Sprintf(`{"cloud_account_id":"%s","provider":"gcp","enabled":true,"mode":"auto_approve","cadence":"daily",%s}`, lgAcct, ladderValidRamp)
 	}
 	tests := []struct {
+		stored      *config.LadderConfigDB
 		name        string
 		caller      apgCaller
-		stored      *config.LadderConfigDB
 		wantRefused bool
 	}{
 		{name: "clear cap: admin refused", caller: admin, stored: gcpStored(cap1), wantRefused: true},

@@ -60,9 +60,9 @@ func TestListRIExchangeDirectExecutions_FailsClosed(t *testing.T) {
 	boom := errors.New("backend down")
 	call := callDirectList
 	tests := []struct {
-		name  string
-		store *failingDirectListStore
 		auth  error
+		store *failingDirectListStore
+		name  string
 	}{
 		{name: "the pair query fails", store: &failingDirectListStore{directListStore: dlStore(rows...), pairsErr: boom}, auth: nil},
 		{name: "the page query fails", store: &failingDirectListStore{directListStore: dlStore(rows...), listErr: boom}, auth: nil},

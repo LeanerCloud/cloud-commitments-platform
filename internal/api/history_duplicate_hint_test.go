@@ -39,8 +39,8 @@ func TestHistoryRow_DuplicateHintKeptOutsideDefiniteAWSRefusals(t *testing.T) {
 	gcp := config.RecommendationRecord{Provider: "gcp", Service: "compute"}
 	cases := []struct {
 		name string
-		recs []config.RecommendationRecord
 		err  string
+		recs []config.RecommendationRecord
 	}{
 		{name: "gcp rate limit", recs: []config.RecommendationRecord{gcp, ec2}, err: gcpRate},
 		{name: "gcp not found", recs: []config.RecommendationRecord{gcp, ec2}, err: gcpNotFound},
@@ -72,8 +72,8 @@ func TestHistoryRow_ExecutorStoredAWSRefusalDropsDuplicateHint(t *testing.T) {
 		assert.True(t, row.RedriveUnsafe, name)
 	}
 	for name, c := range map[string]struct {
-		recs   []config.RecommendationRecord
 		stored string
+		recs   []config.RecommendationRecord
 	}{
 		"unknown head":   {recs: []config.RecommendationRecord{ec2}, stored: strings.Replace(ec2Stored, "failed to purchase EC2 RI", "failed to purchase GPU RI", 1)},
 		"5xx":            {recs: []config.RecommendationRecord{ec2}, stored: strings.Replace(ec2Stored, "StatusCode: 403", "StatusCode: 503", 1)},

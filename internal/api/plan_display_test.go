@@ -63,10 +63,10 @@ func TestBuildPlannedPurchaseProjectsAttachedQuantitiesAndTuple(t *testing.T) {
 	globalSP.ResourceType, globalSP.Region = "ComputeSP", "global"
 	cases := []struct {
 		name         string
-		recs         []config.RecommendationRecord
-		count        int
 		resourceType string
 		region       string
+		recs         []config.RecommendationRecord
+		count        int
 	}{
 		{name: "nil", recs: nil, count: 0, resourceType: "Various", region: "Multiple"},
 		{name: "empty", recs: []config.RecommendationRecord{}, count: 0, resourceType: "Various", region: "Multiple"},

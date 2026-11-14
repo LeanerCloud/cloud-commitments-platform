@@ -25,8 +25,6 @@ type AzureExchangeTargetBody struct {
 	SKU      string `json:"sku"`
 	Location string `json:"location"`
 	Term     string `json:"term"`
-	Quantity int32  `json:"quantity"`
-
 	// BillingScopeID is optional and is NOT the scope that gets charged:
 	// the handler always derives that from the request's authorized
 	// subscription_id (azureBillingScopeID), matching every other Azure
@@ -35,6 +33,7 @@ type AzureExchangeTargetBody struct {
 	// different subscription than the one their permission constraints
 	// were evaluated against.
 	BillingScopeID string `json:"billing_scope_id,omitempty"`
+	Quantity       int32  `json:"quantity"`
 }
 
 // AzureCompatibleOfferingsRequestBody is the request body for the
@@ -51,8 +50,8 @@ type AzureCompatibleOfferingsRequestBody struct {
 // though execute never trusts a client-supplied session -- see
 // executeAzureExchange).
 type AzureCompatibleOfferingsResponse struct {
-	Offerings []azureCompatibleOffering `json:"offerings"`
 	Preview   *azureExchangePreview     `json:"preview"`
+	Offerings []azureCompatibleOffering `json:"offerings"`
 }
 
 // AzureExecuteExchangeRequestBody is the request body for the execute
@@ -61,21 +60,21 @@ type AzureCompatibleOfferingsResponse struct {
 // or is denominated in a different currency.
 type AzureExecuteExchangeRequestBody struct {
 	SubscriptionID string                    `json:"subscription_id"`
-	Sources        []AzureExchangeSourceBody `json:"sources"`
-	Targets        []AzureExchangeTargetBody `json:"targets"`
 	MaxPaymentDue  string                    `json:"max_payment_due"`
 	Currency       string                    `json:"currency"`
+	Sources        []AzureExchangeSourceBody `json:"sources"`
+	Targets        []AzureExchangeTargetBody `json:"targets"`
 }
 
 // AzureExecuteExchangeResponse is the response from a successfully executed
 // Azure exchange.
 type AzureExecuteExchangeResponse struct {
-	SessionID          string   `json:"session_id"`
-	Status             string   `json:"status"`
 	NetPayable         *float64 `json:"net_payable"`
-	NetPayableCurrency string   `json:"net_payable_currency,omitempty"`
 	RefundsTotal       *float64 `json:"refunds_total"`
 	PurchasesTotal     *float64 `json:"purchases_total"`
+	SessionID          string   `json:"session_id"`
+	Status             string   `json:"status"`
+	NetPayableCurrency string   `json:"net_payable_currency,omitempty"`
 }
 
 // validateAzureExchangeSources checks the shared sources[] shape for both

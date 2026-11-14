@@ -57,8 +57,8 @@ func TestRunMarkedCollection_SanitizesStoredCollectionError(t *testing.T) {
 	want := "the cloud provider refused the purchase: CUDly's role is not allowed to make it in this account"
 
 	for name, tc := range map[string]struct {
-		lambdaARN string
 		invoker   LambdaInvokerInterface
+		lambdaARN string
 		sched     bool
 	}{
 		"async invoke": {lambdaARN: "arn:aws:lambda:us-east-1:123456789012:function:cudly", invoker: &stubLambdaInvoker{

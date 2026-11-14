@@ -260,10 +260,10 @@ func summarizeRecommendations(all, rows []config.RecommendationRecord) *Recommen
 // a list response one rec at a time, so a paginated scan can total every
 // filtered row without holding them all (issue #981).
 type recommendationsSummary struct {
+	regionSet    map[string]struct{}
 	count        int
 	totalSavings float64
 	totalUpfront float64
-	regionSet    map[string]struct{}
 }
 
 func (s *recommendationsSummary) add(rec *config.RecommendationRecord) {

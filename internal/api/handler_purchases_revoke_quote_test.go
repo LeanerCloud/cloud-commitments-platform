@@ -47,10 +47,10 @@ func TestHandleRequest_RevokeCalculate_AzureQuote(t *testing.T) {
 	empty := ""
 
 	cases := []struct {
-		name       string
 		resp       armreservations.CalculateRefundClientPostResponse
-		wantStatus int
+		name       string
 		wantErr    string
+		wantStatus int
 	}{
 		{
 			name:       "complete quote",

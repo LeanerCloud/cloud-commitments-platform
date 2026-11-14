@@ -357,8 +357,8 @@ func (h *Handler) updatePlan(ctx context.Context, httpReq *events.LambdaFunction
 		return nil, groupsErr
 	}
 	var capField struct {
-		MaxStepCommitment json.RawMessage `json:"max_step_commitment"`
 		ExpectedUpdatedAt *string         `json:"expected_updated_at"`
+		MaxStepCommitment json.RawMessage `json:"max_step_commitment"`
 	}
 	if err = json.Unmarshal([]byte(httpReq.Body), &capField); err != nil {
 		return nil, NewClientError(400, "invalid request body")

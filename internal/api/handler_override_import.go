@@ -50,39 +50,39 @@ const (
 // export's text) is set.
 type OverrideImportRequest struct {
 	Mode      string                `json:"mode,omitempty"`
-	DryRun    bool                  `json:"dry_run,omitempty"`
-	Overrides []OverrideTransferRow `json:"overrides,omitempty"`
 	CSV       string                `json:"csv,omitempty"`
+	Overrides []OverrideTransferRow `json:"overrides,omitempty"`
+	DryRun    bool                  `json:"dry_run,omitempty"`
 }
 
 // OverrideImportRowResult reports what import did, or would do, with one row.
 // Row is 1-based in file order.
 type OverrideImportRowResult struct {
-	Row       int    `json:"row"`
 	AccountID string `json:"account_id,omitempty"`
 	Provider  string `json:"provider"`
 	Service   string `json:"service"`
 	Action    string `json:"action"`
 	Error     string `json:"error,omitempty"`
+	Row       int    `json:"row"`
 }
 
 // OverrideImportReport is the import response. Applied is true when the
 // insert and update rows were written (never on a dry run, or in strict mode
 // with a rejected row).
 type OverrideImportReport struct {
+	Summary map[string]int            `json:"summary"`
 	Mode    string                    `json:"mode"`
+	Rows    []OverrideImportRowResult `json:"rows"`
 	DryRun  bool                      `json:"dry_run"`
 	Applied bool                      `json:"applied"`
-	Summary map[string]int            `json:"summary"`
-	Rows    []OverrideImportRowResult `json:"rows"`
 }
 
 // plannedOverride is a validated row with the stored override it replaces.
 type plannedOverride struct {
-	rowNum   int
 	account  *config.CloudAccount
 	row      *OverrideTransferRow
 	existing *config.AccountServiceOverride
+	rowNum   int
 }
 
 // importAccountServiceOverrides handles POST

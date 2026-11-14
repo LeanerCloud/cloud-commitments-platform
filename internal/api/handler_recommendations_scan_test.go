@@ -22,8 +22,8 @@ import (
 type chunkScanScheduler struct {
 	*MockScheduler
 	recs  []config.RecommendationRecord
-	chunk int
 	ctxs  []context.Context
+	chunk int
 }
 
 func (s *chunkScanScheduler) ScanRecommendations(ctx context.Context, _ config.RecommendationFilter, _ int, fn func([]config.RecommendationRecord) error) error {

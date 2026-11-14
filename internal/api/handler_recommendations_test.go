@@ -814,9 +814,9 @@ func TestGetRecommendations_MinSavingsFilters(t *testing.T) {
 func TestConfidenceBucketFor(t *testing.T) {
 	cases := []struct {
 		name    string
+		want    string
 		savings float64
 		count   int
-		want    string
 	}{
 		{name: "high requires both signals", savings: 250, count: 4, want: "high"},
 		{name: "savings without fleet falls to medium", savings: 250, count: 1, want: "medium"},

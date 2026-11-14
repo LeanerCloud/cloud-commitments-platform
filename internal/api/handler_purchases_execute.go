@@ -15,6 +15,15 @@ import (
 
 // ExecutePurchaseRequest represents the request to execute purchases.
 type ExecutePurchaseRequest struct {
+	// ExecuteMode controls whether this request bypasses the approval
+	// email and executes the purchase immediately. The only accepted
+	// non-empty value is "direct"; any other value is treated as the
+	// default approval-required flow. The handler re-checks the
+	// execute-any/execute-own RBAC gate before honoring "direct",
+	// even if the session already passed the execute:purchases gate in
+	// validateExecutePurchaseRequest, so a client that sets this field
+	// without the privilege receives a 403 rather than silent fallback.
+	ExecuteMode string `json:"execute_mode,omitempty"`
 	// Recommendations are matched against the stored recommendation set on
 	// (provider, cloud_account_id, service, region, resource_type, engine,
 	// term, payment). Only count, recommended_count and selected are taken
@@ -27,15 +36,6 @@ type ExecutePurchaseRequest struct {
 	// counts, so backend math ignores this field for purchase work.
 	// 0 / absent defaults to 100 ("full capacity").
 	CapacityPercent int `json:"capacity_percent,omitempty"`
-	// ExecuteMode controls whether this request bypasses the approval
-	// email and executes the purchase immediately. The only accepted
-	// non-empty value is "direct"; any other value is treated as the
-	// default approval-required flow. The handler re-checks the
-	// execute-any/execute-own RBAC gate before honoring "direct",
-	// even if the session already passed the execute:purchases gate in
-	// validateExecutePurchaseRequest, so a client that sets this field
-	// without the privilege receives a 403 rather than silent fallback.
-	ExecuteMode string `json:"execute_mode,omitempty"`
 }
 
 // validateExecutePurchaseRequest handles the permission check, body parse,

@@ -153,11 +153,11 @@ func scopeAllowedAccountIDs(scope auth.AccountScope, nameByID map[string]string)
 // row that proves a next page exists. The SQL page read fills it with
 // setPage instead.
 type recommendationsPageCollector struct {
-	page    recommendationsPage
 	summary recommendationsSummary
-	seenAny bool
+	page    recommendationsPage
 	lastID  string
 	rows    []config.RecommendationRecord
+	seenAny bool
 }
 
 func newRecommendationsPageCollector(page recommendationsPage) *recommendationsPageCollector {

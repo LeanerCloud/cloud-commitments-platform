@@ -120,10 +120,10 @@ func TestHandleRequest_ApprovalDetails_TokenAndContactBothRequired(t *testing.T)
 	future := time.Now().Add(time.Hour)
 	past := time.Now().Add(-time.Hour)
 	cases := []struct {
-		name     string
-		caller   oracleCaller
 		exec     *config.PurchaseExecution
+		name     string
 		token    string
+		caller   oracleCaller
 		wantCode int
 	}{
 		{name: "contact, wrong token", caller: contactCaller(), exec: pendingApprovalExec(future), token: "wrong", wantCode: 404},

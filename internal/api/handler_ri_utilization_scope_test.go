@@ -25,8 +25,8 @@ const (
 )
 
 type countingUtilEC2 struct {
-	instances []ec2svc.ConvertibleRI
 	err       error
+	instances []ec2svc.ConvertibleRI
 	calls     int
 }
 

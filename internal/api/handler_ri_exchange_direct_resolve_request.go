@@ -16,11 +16,11 @@ import (
 // status the operator saw in the list; outcome "failed" releases the source
 // RIs and needs acknowledge_unknown_outcome, which is refused for "completed".
 type riExchangeDirectResolveRequest struct {
+	CloudCheck     *riExchangeDirectResolveCloudCheck `json:"cloud_check"`
 	Outcome        string                             `json:"outcome"`
 	ExpectedStatus string                             `json:"expected_status"`
 	Reason         string                             `json:"reason"`
 	Acknowledge    bool                               `json:"acknowledge_unknown_outcome"`
-	CloudCheck     *riExchangeDirectResolveCloudCheck `json:"cloud_check"`
 }
 
 type riExchangeDirectResolveCloudCheck struct {

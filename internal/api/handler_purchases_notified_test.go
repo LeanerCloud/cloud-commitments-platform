@@ -47,9 +47,9 @@ func TestResumePlannedPurchase_PastScheduledDate(t *testing.T) {
 	ctx := context.Background()
 	recs := []config.RecommendationRecord{{ID: "rec-1", Count: 1, UpfrontCost: 100, CommitmentCurrency: "USD"}}
 	cases := []struct {
+		date      time.Time
 		name      string
 		recs      []config.RecommendationRecord
-		date      time.Time
 		wantMoved bool
 	}{
 		{name: "rec-bearing past date is moved", recs: recs, date: time.Now().Add(-48 * time.Hour), wantMoved: true},
@@ -107,9 +107,9 @@ func TestResumePlannedPurchase_RefusesWithoutVetoWindow(t *testing.T) {
 	ctx := context.Background()
 	recs := []config.RecommendationRecord{{ID: "rec-1", Count: 1, UpfrontCost: 100, CommitmentCurrency: "USD"}}
 	for _, tc := range []struct {
+		date    time.Time
 		name    string
 		recs    []config.RecommendationRecord
-		date    time.Time
 		refused bool
 	}{
 		{name: "rec-bearing past date, 0 days", recs: recs, date: time.Now().Add(-time.Hour), refused: true},

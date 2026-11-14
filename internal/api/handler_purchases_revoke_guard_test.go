@@ -47,11 +47,11 @@ func TestRevokePurchase_AzureRefundGuard(t *testing.T) {
 	}
 
 	tests := []struct {
+		quote      *armreservations.Price
 		name       string
 		body       string
-		quote      *armreservations.Price
-		wantCode   int // 0 means success
 		wantMsg    string
+		wantCode   int // 0 means success
 		wantCalc   int
 		wantReturn int
 	}{

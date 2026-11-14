@@ -20,8 +20,8 @@ import (
 
 // callOrder records the store calls in the order the handler makes them.
 type callOrder struct {
-	mu    sync.Mutex
 	calls []string
+	mu    sync.Mutex
 }
 
 func (o *callOrder) add(name string) func(mock.Arguments) {
@@ -126,8 +126,8 @@ type writeCtxState struct {
 // pgx does, and records the state of the context each write ran under.
 type ctxHonoringStore struct {
 	*MockConfigStore
-	mu     sync.Mutex
 	writes []writeCtxState
+	mu     sync.Mutex
 }
 
 func (s *ctxHonoringStore) seen(ctx context.Context) error {
@@ -179,11 +179,11 @@ func (s *ctxHonoringStore) ClearRevocationInFlight(ctx context.Context, purchase
 // context's error instead of the accepted response, or err when set (a Return
 // that failed anyway). It records the state of the context it ran under.
 type cancelAfterReturnClient struct {
-	cancel      context.CancelFunc
-	err         error
-	calls       int
-	ctxErr      error
 	deadline    time.Time
+	err         error
+	ctxErr      error
+	cancel      context.CancelFunc
+	calls       int
 	hasDeadline bool
 }
 
@@ -256,8 +256,8 @@ func TestCallAzureReturn_RequestCanceledAfterReturn_StillRecordsAndMarks(t *test
 // cancelingCalcRefundClient quotes a refund, then cancels the request before
 // the handler gets to the claim and the Return.
 type cancelingCalcRefundClient struct {
-	stubCalcRefundClientWithAmount
 	cancel context.CancelFunc
+	stubCalcRefundClientWithAmount
 }
 
 func (c *cancelingCalcRefundClient) Post(ctx context.Context, orderID string, body armreservations.CalculateRefundRequest, opts *armreservations.CalculateRefundClientPostOptions) (armreservations.CalculateRefundClientPostResponse, error) {

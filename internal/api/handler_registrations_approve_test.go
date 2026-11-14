@@ -85,10 +85,10 @@ func TestApproveRegistration_ApprovesAndCreatesInOneStoreCall(t *testing.T) {
 func TestApproveRegistration_StoreErrorsMapToResponses(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name     string
 		storeErr error
-		code     int // 0: not a client error (500)
+		name     string
 		message  string
+		code     int // 0: not a client error (500)
 	}{
 		{name: "already decided", storeErr: config.ErrRegistrationConflict, code: 409, message: "already processed"},
 		{name: "account already registered", storeErr: fmt.Errorf("failed to create cloud account: %w",

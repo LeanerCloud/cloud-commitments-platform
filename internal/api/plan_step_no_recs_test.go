@@ -70,10 +70,10 @@ func TestAddPurchasesToPlanCreatesFutureRoots(t *testing.T) {
 func TestAddPurchasesValidatesLockedPlan(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name     string
 		change   func(*config.PurchasePlan)
-		switchOn bool
+		name     string
 		want     string
+		switchOn bool
 	}{
 		{name: "disabled", change: func(p *config.PurchasePlan) { p.Enabled = false }, switchOn: true, want: "enabled"},
 		{name: "missing auto cap", change: func(p *config.PurchasePlan) { p.MaxStepCommitment = nil }, switchOn: true, want: "max_step_commitment"},

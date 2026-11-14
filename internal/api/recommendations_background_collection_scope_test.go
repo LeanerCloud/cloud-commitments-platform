@@ -21,8 +21,8 @@ import (
 // handler that reads recommendations marks the ctx it passes accordingly.
 
 type recsReadEndpoint struct {
-	name string
 	call func(h *Handler, ctx context.Context, req *events.LambdaFunctionURLRequest) error
+	name string
 }
 
 var recsReadEndpoints = []recsReadEndpoint{
@@ -86,8 +86,8 @@ func scopedAuth(accounts []string) *MockAuthService {
 func TestRecommendationsRead_BackgroundCollectionOnlyForUnrestrictedReaders(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name    string
 		auth    func() *MockAuthService
+		name    string
 		apiKey  bool
 		allowed bool
 	}{

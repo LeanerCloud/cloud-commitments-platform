@@ -58,8 +58,8 @@ func TestResolveRIExchangeDirect_ConstraintsUseTheRowsAccountAndRegion(t *testin
 	unattributed := dlRow(dlID2, nil, drRegion, "unknown", 3)
 	tests := []struct {
 		name  string
-		perms []auth.Permission
 		id    string
+		perms []auth.Permission
 		want  int // 0 = allowed
 	}{
 		{name: "grant for the row's region", perms: grant(auth.PermissionConstraints{Regions: []string{drRegion}}), id: dlID1, want: 0},

@@ -13,12 +13,12 @@ import (
 // riExchangeSpecSchema is the slice of an inline openapi.yaml schema these
 // checks read.
 type riExchangeSpecSchema struct {
-	Type       string   `yaml:"type"`
-	Required   []string `yaml:"required"`
 	Properties map[string]struct {
 		Type        string `yaml:"type"`
 		Description string `yaml:"description"`
 	} `yaml:"properties"`
+	Type     string   `yaml:"type"`
+	Required []string `yaml:"required"`
 }
 
 type riExchangeSpecMedia struct {

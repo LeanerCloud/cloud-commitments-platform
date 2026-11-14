@@ -57,8 +57,8 @@ func putOverride(t *testing.T, existing *config.AccountServiceOverride, body str
 // overrideMergeCases maps each overlay key to a body that changes it and the
 // edit that produces the expected row from the stored one.
 var overrideMergeCases = map[string]struct {
-	body  string
 	apply func(*config.AccountServiceOverride)
+	body  string
 }{
 	"enabled":         {body: `{"enabled":false}`, apply: func(o *config.AccountServiceOverride) { o.Enabled = ovPtr(false) }},
 	"term":            {body: `{"term":3}`, apply: func(o *config.AccountServiceOverride) { o.Term = ovPtr(3) }},

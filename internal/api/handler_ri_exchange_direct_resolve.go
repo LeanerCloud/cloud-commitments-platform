@@ -24,25 +24,25 @@ import (
 const riExchangeDirectRIIDMax = 200
 
 type riExchangeDirectListItem struct {
-	ID                 string          `json:"id"`
-	Status             string          `json:"status"`
-	Provider           string          `json:"provider"`
-	Region             string          `json:"region"`
+	ResolvableAt       time.Time       `json:"resolvable_at"`
+	CreatedAt          time.Time       `json:"created_at"`
 	CloudAccountID     *string         `json:"cloud_account_id"`
-	SourceIDs          []string        `json:"source_ids"`
-	Targets            json.RawMessage `json:"targets"`
+	Region             string          `json:"region"`
+	ID                 string          `json:"id"`
 	MaxPaymentDue      string          `json:"max_payment_due"`
 	MaxPaymentCurrency string          `json:"max_payment_currency"`
-	CreatedAt          time.Time       `json:"created_at"`
+	Provider           string          `json:"provider"`
 	ExecutedBy         string          `json:"executed_by"`
 	ErrorSummary       string          `json:"error_summary"`
+	Status             string          `json:"status"`
+	SourceIDs          []string        `json:"source_ids"`
+	Targets            json.RawMessage `json:"targets"`
 	Resolvable         bool            `json:"resolvable"`
-	ResolvableAt       time.Time       `json:"resolvable_at"`
 }
 
 type riExchangeDirectListResponse struct {
-	Executions []riExchangeDirectListItem `json:"executions"`
 	NextCursor string                     `json:"next_cursor"`
+	Executions []riExchangeDirectListItem `json:"executions"`
 }
 
 func parseRIExchangeDirectListQuery(q map[string]string) (config.RIExchangeDirectListFilter, error) {

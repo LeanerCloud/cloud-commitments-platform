@@ -36,8 +36,8 @@ const (
 
 // planAccountsWrite records what setPlanAccounts handed to the store.
 type planAccountsWrite struct {
-	called bool
 	ids    []string
+	called bool
 }
 
 // seedPlanAccountsStore wires the store so the request would SUCCEED

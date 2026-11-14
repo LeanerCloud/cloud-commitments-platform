@@ -26,15 +26,14 @@ const validMarketplacePurchaseID = "11111111-1111-1111-1111-111111111111"
 // Each field, when set, overrides the corresponding method's behavior and
 // records the last request so tests can assert on what was sent to AWS.
 type stubMarketplaceEC2 struct {
-	createFn     func(ctx context.Context, req ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error)
-	cancelFn     func(ctx context.Context, listingID string) (ec2svc.MarketplaceListingResult, error)
-	describeFn   func(ctx context.Context, listingID string) (ec2svc.MarketplaceListingResult, error)
-	fetchClassFn func(ctx context.Context, reservedInstancesID string) (string, error)
-
+	createFn        func(ctx context.Context, req ec2svc.MarketplaceListingRequest) (ec2svc.MarketplaceListingResult, error)
+	cancelFn        func(ctx context.Context, listingID string) (ec2svc.MarketplaceListingResult, error)
+	describeFn      func(ctx context.Context, listingID string) (ec2svc.MarketplaceListingResult, error)
+	fetchClassFn    func(ctx context.Context, reservedInstancesID string) (string, error)
+	lastCancelID    string
 	lastCreateReq   ec2svc.MarketplaceListingRequest
 	createCallCount int
 	cancelCallCount int
-	lastCancelID    string
 	// describeCallCount counts DescribeMarketplaceListing calls (issue #525).
 	describeCallCount int
 }
@@ -911,8 +910,8 @@ func TestMarketplaceListHTTP_UnlistableTermsReturn422(t *testing.T) {
 func TestMarketplaceListHTTP_ValidRIStillLists(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name      string
 		timestamp time.Time
+		name      string
 	}{
 		{name: "fresh", timestamp: time.Now()},
 		{name: "just over one month remaining", timestamp: time.Now().Add(-1050 * 24 * time.Hour)},

@@ -55,13 +55,13 @@ func TestUpdatePlan_RampShapeChange(t *testing.T) {
 	custom30 := config.RampSchedule{Type: "custom", PercentPerStep: 30, StepIntervalDays: 7, TotalSteps: 3}
 
 	tests := []struct {
-		name       string
 		stored     config.RampSchedule
-		step       int
+		name       string
 		body       string
+		wantType   string
+		step       int
 		wantStatus int
 		wantStep   int
-		wantType   string
 	}{
 		{name: "in-progress ramp, different shape is refused", stored: weekly, step: 3, body: `{"name":"p","ramp_schedule":"monthly-10pct"}`, wantStatus: 409, wantStep: 0, wantType: ""},
 		{name: "in-progress ramp, omitted ramp_schedule is refused", stored: weekly, step: 3, body: `{"name":"renamed"}`, wantStatus: 409, wantStep: 0, wantType: ""},
@@ -109,10 +109,10 @@ func TestUpdatePlan_EquivalentCustomRampKeepsStoredSchedule(t *testing.T) {
 	custom25 := config.RampSchedule{Type: "custom", PercentPerStep: 25, StepIntervalDays: 7, TotalSteps: 4}
 
 	tests := []struct {
-		name   string
 		stored config.RampSchedule
-		step   int
+		name   string
 		body   string
+		step   int
 	}{
 		{name: "in-progress weekly 20%, renamed via custom", stored: weekly20, step: 3,
 			body: `{"name":"renamed","ramp_schedule":"custom","custom_step_percent":20,"custom_interval_days":7}`},
@@ -203,11 +203,11 @@ func TestUpdatePlan_OmittedRampSchedule(t *testing.T) {
 	partialOneStep := config.RampSchedule{Type: "custom", PercentPerStep: 60, StepIntervalDays: 7, TotalSteps: 1}
 
 	tests := []struct {
-		name       string
 		stored     config.RampSchedule
+		name       string
 		body       string
-		wantStatus int
 		wantType   string
+		wantStatus int
 	}{
 		{name: "omitted over a stored weekly ramp is refused", stored: weekly, body: `{"name":"renamed"}`, wantStatus: 409, wantType: ""},
 		{name: "omitted over a stored one-step 60% custom ramp is refused", stored: partialOneStep, body: `{"name":"renamed"}`, wantStatus: 409, wantType: ""},

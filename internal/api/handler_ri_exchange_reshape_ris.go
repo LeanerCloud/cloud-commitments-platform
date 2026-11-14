@@ -272,8 +272,8 @@ type ConvertibleRIsResponse struct {
 // can show it before an exchange (#1692). AccountID is empty when the running
 // account could not be resolved.
 type convertibleRIWithAccount struct {
-	ec2ConvertibleRI
 	AccountID string `json:"account_id,omitempty"`
+	ec2ConvertibleRI
 }
 
 // RIUtilizationResponse holds per-RI utilization data.

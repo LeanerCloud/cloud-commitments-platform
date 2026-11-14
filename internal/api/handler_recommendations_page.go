@@ -56,9 +56,9 @@ const (
 // recommendationsPage is the parsed pagination request. enabled is false when
 // the caller sent neither limit nor cursor (legacy unpaginated mode).
 type recommendationsPage struct {
-	enabled bool
-	limit   int
 	afterID string
+	limit   int
+	enabled bool
 }
 
 // parseRecommendationsPage validates the optional limit and cursor query

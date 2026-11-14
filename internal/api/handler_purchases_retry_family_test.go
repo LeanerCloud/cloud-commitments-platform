@@ -48,9 +48,9 @@ func TestRetryFamilyGuard_RefusesWhenCounterpartKindWasRetried(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name         string
-		accountRow   bool
 		wantRetried  string
 		wantNotInMsg string
+		accountRow   bool
 	}{
 		{name: "root after an account row", accountRow: false, wantRetried: "account rows", wantNotInMsg: "root was"},
 		{name: "account row after the root", accountRow: true, wantRetried: "root", wantNotInMsg: "account rows was"},

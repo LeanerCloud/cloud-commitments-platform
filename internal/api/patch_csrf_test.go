@@ -32,15 +32,15 @@ const (
 // whether the route's state-changing store call ran.
 type patchCSRFFixture struct {
 	h       *Handler
-	session string
 	mutated func() bool
+	session string
 }
 
 type patchCSRFRow struct {
+	build func(t *testing.T) patchCSRFFixture
 	name  string
 	path  string
 	body  string
-	build func(t *testing.T) patchCSRFFixture
 }
 
 var patchCSRFRows = []patchCSRFRow{

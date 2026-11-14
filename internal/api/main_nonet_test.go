@@ -64,8 +64,8 @@ func TestMain(m *testing.M) {
 
 type noNetworkGuard struct {
 	ln      net.Listener
-	mu      sync.Mutex
 	blocked []string
+	mu      sync.Mutex
 }
 
 func startNoNetworkGuard() (*noNetworkGuard, error) {

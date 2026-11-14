@@ -140,8 +140,8 @@ func TestValidateAzureOfferingsBody(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		body    AzureCompatibleOfferingsRequestBody
 		wantErr string
+		body    AzureCompatibleOfferingsRequestBody
 	}{
 		{
 			name:    "missing subscription_id",
@@ -1615,8 +1615,8 @@ func TestExecuteAzureExchange_NonUSDDeniedOnOtherDimension(t *testing.T) {
 func TestExecuteAzureExchange_RequoteFailureAbortsBeforeCommit(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name     string
 		quoteErr error
+		name     string
 		wantCode int
 	}{
 		{name: "azure client fault", quoteErr: &azcore.ResponseError{StatusCode: 400, ErrorCode: "ReservationNotFound"}, wantCode: 400},
@@ -1653,10 +1653,10 @@ func TestExecuteAzureExchange_RequoteFailureAbortsBeforeCommit(t *testing.T) {
 func TestExecuteAzureExchange_CommitFailureClassification(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name       string
 		commitErr  error
-		wantCode   int
+		name       string
 		wantDetail string
+		wantCode   int
 	}{
 		{name: "azure client fault", commitErr: &azcore.ResponseError{StatusCode: 409, ErrorCode: "ReservationAlreadyExchanged"}, wantCode: 400, wantDetail: "the exchange request was rejected as invalid"},
 		{name: "transient failure", commitErr: fmt.Errorf("azure: ExecuteExchange: transport timeout"), wantCode: 500, wantDetail: "exchange execution failed"},
@@ -1924,10 +1924,10 @@ func TestRequireAzureSourceOwnership(t *testing.T) {
 
 	tests := []struct {
 		name    string
+		reason  string
 		owned   []azurecompute.ExchangeableReservation
 		sources []AzureExchangeSourceBody
 		wantErr bool
-		reason  string
 	}{
 		{
 			name:    "own reservation is allowed",

@@ -236,8 +236,8 @@ func TestDeletePlannedPurchase_KeyCancelAnyKeepsFullScope(t *testing.T) {
 func TestPlannedPurchaseRoutes_APIKeyFullScopeProbeErrorRefuses(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name, entryVerb string
 		call            func(h *Handler, req *events.LambdaFunctionURLRequest) error
+		name, entryVerb string
 	}{
 		{name: "pause", entryVerb: auth.ActionUpdate, call: func(h *Handler, req *events.LambdaFunctionURLRequest) error {
 			_, err := h.pausePlannedPurchase(context.Background(), req, keyScopeExecID)

@@ -29,11 +29,11 @@ var (
 )
 
 type resolveRIStore struct {
+	err error
 	*MockConfigStore
-	called int
-	got    config.RIExchangeResolve
 	res    *config.RIExchangeResolveResult
-	err    error
+	got    config.RIExchangeResolve
+	called int
 }
 
 func (s *resolveRIStore) ResolveStaleRIExchange(_ context.Context, r config.RIExchangeResolve) (*config.RIExchangeResolveResult, error) {
@@ -299,9 +299,9 @@ func TestResolveRIExchange_ConstraintsUseTheCheckedRegionAndTheDeploymentAccount
 	}
 	tests := []struct {
 		name       string
-		perms      []auth.Permission
 		region     string
 		deployment string
+		perms      []auth.Permission
 		want       int // 0 = allowed
 	}{
 		{name: "grant for the checked region, which is not us-east-1", perms: grant(auth.PermissionConstraints{Regions: []string{"eu-west-1"}}), region: "eu-west-1", deployment: scopedInAccount, want: 0},

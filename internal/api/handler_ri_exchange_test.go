@@ -956,9 +956,9 @@ func TestRejectRIExchange_EmptyStoredToken(t *testing.T) {
 // offered / offeredErr drive GetValidResourceTypes (the region's
 // instance type catalog); offeredCalls counts the catalog lookups.
 type fakeReshapeEC2Stub struct {
+	offeredErr   error
 	instances    []ec2svc.ConvertibleRI
 	offered      []string
-	offeredErr   error
 	offeredCalls int
 }
 
@@ -2381,8 +2381,8 @@ func TestClassifyRecsAge(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
-		age  time.Duration
 		want string
+		age  time.Duration
 	}{
 		{name: "zero age is fresh", age: 0, want: ""},
 		{name: "30 minutes is fresh", age: 30 * time.Minute, want: ""},

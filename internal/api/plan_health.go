@@ -41,8 +41,8 @@ var planHealthFactorCodes = []PlanHealthFactorCode{
 // of opaque: the frontend tooltip enumerates every factor and its penalty.
 type PlanHealthFactor struct {
 	Code    PlanHealthFactorCode `json:"code"`
-	Penalty int                  `json:"penalty"`
 	Note    string               `json:"note"`
+	Penalty int                  `json:"penalty"`
 }
 
 // Score bounds and per-factor weights for computePlanHealth. Named

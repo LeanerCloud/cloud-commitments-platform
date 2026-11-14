@@ -96,11 +96,11 @@ func TestCreatePlannedPurchases_StartDateMustBeInTheFuture(t *testing.T) {
 	require.NoError(t, err)
 
 	cases := []struct {
-		name      string
 		now       time.Time
+		name      string
 		startDate string
-		status    int
 		message   string
+		status    int
 	}{
 		{name: "yesterday is refused", now: midday, startDate: "2026-03-09", status: 400, message: "start_date must be in the future"},
 		{name: "long past date is refused", now: midday, startDate: "2020-01-01", status: 400, message: "start_date must be in the future"},

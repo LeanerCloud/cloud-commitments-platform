@@ -27,13 +27,13 @@ import (
 // import events and, for each audited row write, an event carrying the row's
 // audit context (issue #1493).
 type overrideTransferStore struct {
+	failEvent error
 	*MockConfigStore
-	accounts  []config.CloudAccount
 	overrides map[string][]config.AccountServiceOverride
+	failSave  func(*config.AccountServiceOverride) error
+	accounts  []config.CloudAccount
 	saved     []config.AccountServiceOverride
 	events    []overrideTransferEvent
-	failSave  func(*config.AccountServiceOverride) error
-	failEvent error
 }
 
 // overrideTransferEvent is one audit write the in-memory store received.

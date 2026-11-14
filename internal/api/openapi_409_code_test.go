@@ -39,12 +39,12 @@ func TestOpenAPI409NamesGuardCode(t *testing.T) {
 		node := doc.Paths[op.path][op.method]
 		var operation struct {
 			Responses map[string]struct {
-				Ref     string `yaml:"$ref"`
 				Content map[string]struct {
 					Schema struct {
 						Ref string `yaml:"$ref"`
 					} `yaml:"schema"`
 				} `yaml:"content"`
+				Ref string `yaml:"$ref"`
 			} `yaml:"responses"`
 		}
 		require.NoError(t, node.Decode(&operation), "%s %s", op.method, op.path)

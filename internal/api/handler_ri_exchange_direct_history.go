@@ -16,24 +16,24 @@ import (
 // (interactive) exchange. The raw stored error, the executing user id and the
 // API key id never leave the server.
 type riExchangeDirectHistoryItem struct {
-	ID                 string          `json:"id"`
-	Provider           string          `json:"provider"`
-	Status             string          `json:"status"`
-	Region             string          `json:"region"`
+	CreatedAt          time.Time       `json:"created_at"`
+	NetPayable         *string         `json:"net_payable"`
+	ResolvedAt         *time.Time      `json:"resolved_at"`
+	CompletedAt        *time.Time      `json:"completed_at"`
 	CloudAccountID     *string         `json:"cloud_account_id"`
 	ProviderAccountID  *string         `json:"provider_account_id"`
-	SourceIDs          []string        `json:"source_ids"`
-	Targets            json.RawMessage `json:"targets"`
 	MaxPaymentDue      string          `json:"max_payment_due"`
+	ID                 string          `json:"id"`
 	MaxPaymentCurrency string          `json:"max_payment_currency"`
-	NetPayable         *string         `json:"net_payable"`
 	NetPayableCurrency string          `json:"net_payable_currency"`
 	ErrorSummary       string          `json:"error_summary"`
 	ExecutedBy         string          `json:"executed_by"`
-	CreatedAt          time.Time       `json:"created_at"`
-	CompletedAt        *time.Time      `json:"completed_at"`
+	Region             string          `json:"region"`
+	Status             string          `json:"status"`
 	ResolvedStatus     string          `json:"resolved_status"`
-	ResolvedAt         *time.Time      `json:"resolved_at"`
+	Provider           string          `json:"provider"`
+	Targets            json.RawMessage `json:"targets"`
+	SourceIDs          []string        `json:"source_ids"`
 }
 
 func newRIExchangeDirectHistoryItem(r *config.RIExchangeDirectHistoryRow) riExchangeDirectHistoryItem {

@@ -15,13 +15,13 @@ import (
 func TestOpenAPIDialect303Schemas(t *testing.T) {
 	t.Parallel()
 	type schema struct {
-		Ref              string            `yaml:"$ref"`
-		Type             string            `yaml:"type"`
-		Nullable         bool              `yaml:"nullable"`
-		Required         []string          `yaml:"required"`
+		ExclusiveMinimum any               `yaml:"exclusiveMinimum"`
 		Properties       map[string]schema `yaml:"properties"`
 		Minimum          *int              `yaml:"minimum"`
-		ExclusiveMinimum any               `yaml:"exclusiveMinimum"`
+		Ref              string            `yaml:"$ref"`
+		Type             string            `yaml:"type"`
+		Required         []string          `yaml:"required"`
+		Nullable         bool              `yaml:"nullable"`
 	}
 	var spec struct {
 		Components struct {

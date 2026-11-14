@@ -106,8 +106,8 @@ func TestCoverageHandlerUnknownUpfrontSameService(t *testing.T) {
 func TestMarketplaceUnknownUpfront(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name, body string
 		cost       *float64
+		name, body string
 		allowed    bool
 	}{
 		{name: "unknown default"},

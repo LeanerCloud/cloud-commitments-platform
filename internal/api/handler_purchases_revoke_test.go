@@ -475,11 +475,11 @@ func TestAuthorizeSessionRevoke_RevokeAny_AccountScope(t *testing.T) {
 	outOfScope := "bbbb-2222"
 	empty := ""
 	cases := []struct {
-		name      string
-		scope     []string
 		accountID *string
+		name      string
 		external  string
 		wantErr   string
+		scope     []string
 	}{
 		{name: "in scope", scope: []string{inScope}, accountID: &inScope},
 		{name: "other account", scope: []string{inScope}, accountID: &outOfScope, wantErr: "account you do not have access to"},
@@ -539,12 +539,12 @@ func TestAuthorizeSessionRevoke_RevokeAny_ProviderAndUUIDAuthority(t *testing.T)
 	str := func(s string) *string { return &s }
 	const denied = "account you do not have access to"
 	cases := []struct {
-		name     string
-		scope    []string
-		accounts []config.CloudAccount
 		listErr  error
 		rec      config.PurchaseHistoryRecord
+		name     string
 		wantErr  string
+		scope    []string
+		accounts []config.CloudAccount
 	}{
 		{name: "same external id, scope holds other provider account, aws first", scope: []string{"u-az"},
 			accounts: []config.CloudAccount{awsDev, azProd}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}, wantErr: denied},
@@ -1018,16 +1018,16 @@ func TestAuthorizeSessionRevokeExecution_Matrix(t *testing.T) {
 	permErr := errors.New("permission service unavailable")
 
 	tests := []struct {
-		name          string
-		hasAnyReturn  bool
 		hasAnyErr     error
-		hasOwnReturn  bool
 		hasOwnErr     error
-		callsHasOwn   bool
 		creatorUserID *string
+		name          string
+		wantCode      int
+		hasAnyReturn  bool
+		hasOwnReturn  bool
+		callsHasOwn   bool
 		wantErr       bool
 		wantClientErr bool
-		wantCode      int
 	}{
 		{
 			// :312 hasAny allow -- grants access without ever consulting

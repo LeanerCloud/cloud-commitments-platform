@@ -44,11 +44,11 @@ var (
 // "completed" keeps the reserved amount on today's books and may name the
 // exchange id the operator found; acknowledge_unknown_outcome is refused for it.
 type riExchangeResolveRequest struct {
+	CloudCheck  *riExchangeResolveCloudCheck `json:"cloud_check"`
 	Outcome     string                       `json:"outcome"`
 	Reason      string                       `json:"reason"`
 	ExchangeID  string                       `json:"exchange_id"`
 	Acknowledge bool                         `json:"acknowledge_unknown_outcome"`
-	CloudCheck  *riExchangeResolveCloudCheck `json:"cloud_check"`
 }
 
 type riExchangeResolveCloudCheck struct {

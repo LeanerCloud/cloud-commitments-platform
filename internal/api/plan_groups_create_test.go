@@ -101,8 +101,8 @@ func TestCreatePlan_GroupsBindSelectedRecommendations(t *testing.T) {
 func TestCreatePlan_GroupsRefusals(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name, group, msg string
 		mutate           func(aws, azure []config.RecommendationRecord) ([]config.RecommendationRecord, []config.RecommendationRecord)
+		name, group, msg string
 	}{
 		{name: "missing id", group: `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":["r1","nope"]}`, msg: `recommendation "nope" was not found`, mutate: nil},
 		{name: "wrong term", group: `{"provider":"aws","service":"ec2","term":1,"payment":"all-upfront","recommendation_ids":["r1"]}`, msg: "does not match", mutate: nil},

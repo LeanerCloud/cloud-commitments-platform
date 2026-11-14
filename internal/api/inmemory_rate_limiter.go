@@ -96,8 +96,8 @@ func (rl *InMemoryRateLimiter) evictIfAtCap(now time.Time) {
 // Must be called with rl.mu held.
 func (rl *InMemoryRateLimiter) evictOldest() {
 	type kv struct {
-		key string
 		t   time.Time
+		key string
 	}
 	pairs := make([]kv, 0, len(rl.attempts))
 	for k, v := range rl.attempts {

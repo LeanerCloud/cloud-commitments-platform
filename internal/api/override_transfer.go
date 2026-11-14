@@ -19,31 +19,31 @@ import (
 // which keeps the stored value of any key the body omits. Overrides missing
 // from the file are left alone.
 type OverrideTransferRow struct {
-	AccountID         string     `json:"account_id,omitempty"`
-	AccountName       string     `json:"account_name,omitempty"`
-	AccountExternalID string     `json:"account_external_id,omitempty"`
-	Provider          string     `json:"provider"`
-	Service           string     `json:"service"`
+	Payment           *string    `json:"payment,omitempty"`
+	UpdatedAt         *time.Time `json:"updated_at,omitempty"`
+	CreatedAt         *time.Time `json:"created_at,omitempty"`
+	RampSchedule      *string    `json:"ramp_schedule,omitempty"`
+	Coverage          *float64   `json:"coverage,omitempty"`
 	Enabled           *bool      `json:"enabled,omitempty"`
 	Term              *int       `json:"term,omitempty"`
-	Payment           *string    `json:"payment,omitempty"`
-	Coverage          *float64   `json:"coverage,omitempty"`
-	RampSchedule      *string    `json:"ramp_schedule,omitempty"`
+	Service           string     `json:"service"`
+	AccountID         string     `json:"account_id,omitempty"`
+	Provider          string     `json:"provider"`
+	AccountExternalID string     `json:"account_external_id,omitempty"`
+	AccountName       string     `json:"account_name,omitempty"`
 	IncludeEngines    []string   `json:"include_engines,omitempty"`
 	ExcludeEngines    []string   `json:"exclude_engines,omitempty"`
 	IncludeRegions    []string   `json:"include_regions,omitempty"`
 	ExcludeRegions    []string   `json:"exclude_regions,omitempty"`
 	IncludeTypes      []string   `json:"include_types,omitempty"`
 	ExcludeTypes      []string   `json:"exclude_types,omitempty"`
-	CreatedAt         *time.Time `json:"created_at,omitempty"`
-	UpdatedAt         *time.Time `json:"updated_at,omitempty"`
 }
 
 // OverrideExport is the JSON export document.
 type OverrideExport struct {
-	Version    int                   `json:"version"`
 	ExportedAt time.Time             `json:"exported_at"`
 	Overrides  []OverrideTransferRow `json:"overrides"`
+	Version    int                   `json:"version"`
 }
 
 // overrideExportVersion is bumped when the row shape changes incompatibly.

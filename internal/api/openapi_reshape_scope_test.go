@@ -13,15 +13,15 @@ import (
 
 // reshapeSpecOp is the slice of an openapi.yaml operation these checks read.
 type reshapeSpecOp struct {
+	Responses map[string]struct {
+		Ref         string `yaml:"$ref"`
+		Description string `yaml:"description"`
+	} `yaml:"responses"`
 	Parameters []struct {
 		Ref      string `yaml:"$ref"`
 		Name     string `yaml:"name"`
 		Required bool   `yaml:"required"`
 	} `yaml:"parameters"`
-	Responses map[string]struct {
-		Ref         string `yaml:"$ref"`
-		Description string `yaml:"description"`
-	} `yaml:"responses"`
 }
 
 func loadReshapeSpecOp(t *testing.T, path, method string) reshapeSpecOp {

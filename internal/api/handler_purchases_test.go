@@ -393,11 +393,11 @@ func TestHandleRequest_approvePurchase_SessionFailureStatuses(t *testing.T) {
 	execID := "12345678-1234-1234-1234-123456789abc"
 	adminEmail := "admin@example.com"
 	cases := []struct {
-		name       string
-		final      *config.PurchaseExecution
 		err        error
-		wantStatus int
+		final      *config.PurchaseExecution
+		name       string
 		wantRow    string
+		wantStatus int
 	}{
 		{name: "four-eyes denial", final: nil, err: fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), wantStatus: 403, wantRow: ""},
 		{name: "lost claim", final: nil, err: fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), wantStatus: 409, wantRow: ""},
@@ -2286,9 +2286,9 @@ func TestHandler_runPlannedPurchase_NilExecution(t *testing.T) {
 func TestExecuteFailureError(t *testing.T) {
 	ran := &config.PurchaseExecution{Status: "failed"}
 	cases := []struct {
-		name  string
-		final *config.PurchaseExecution
 		err   error
+		final *config.PurchaseExecution
+		name  string
 		code  int // 0: not a client error, so the router answers a generic 500
 	}{
 		{name: "four-eyes denial", final: nil, err: fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), code: 403},
@@ -3656,8 +3656,8 @@ func TestHandler_cancelPurchase_DeepLink_CancelOwnBypassesContactEmailGate(t *te
 // triggers the fall-through to the contact_email gate.
 func TestIsPermissionDenied(t *testing.T) {
 	cases := []struct {
-		name string
 		err  error
+		name string
 		want bool
 	}{
 		{name: "nil error is not denial", err: nil, want: false},
@@ -4865,9 +4865,9 @@ func TestHandler_executePurchase_DirectExec_ExecuteAny(t *testing.T) {
 // does that once the claim is won, so a refused run leaves it unset.
 func TestHandler_executePurchase_DirectExec_FailureStatuses(t *testing.T) {
 	cases := []struct {
-		name       string
-		final      *config.PurchaseExecution
 		err        error
+		final      *config.PurchaseExecution
+		name       string
 		wantStatus int
 	}{
 		{name: "four-eyes denial", final: nil, err: fmt.Errorf("%w: same approver", purchase.ErrFourEyesDenied), wantStatus: 403},
@@ -6969,12 +6969,12 @@ func TestRequireDifferentApprover_ModeOn_SystemCreated(t *testing.T) {
 	ctx := context.Background()
 	creator := "user-creator"
 	cases := []struct {
-		name    string
 		session *Session
 		creator *string
-		system  bool
-		code    int
+		name    string
 		msg     string
+		code    int
+		system  bool
 	}{
 		{name: "system row, other user", session: &Session{UserID: "approver"}, creator: nil, system: true, code: 0, msg: ""},
 		{name: "unflagged nil row", session: &Session{UserID: "approver"}, creator: nil, system: false, code: 403, msg: "predates the dual-control feature"},

@@ -21,11 +21,11 @@ import (
 // tests pin which (account, region) pairs the handler hands it.
 
 type directListStore struct {
-	*MockConfigStore
-	rows       []config.RIExchangeDirectRow
 	lastFilter config.RIExchangeDirectListFilter
-	listCalls  int
-	pairCalls  int
+	*MockConfigStore
+	rows      []config.RIExchangeDirectRow
+	listCalls int
+	pairCalls int
 }
 
 func (s *directListStore) ListUnresolvedRIExchangeDirectAccountRegions(context.Context) ([]config.RIExchangeDirectAccountRegion, error) {

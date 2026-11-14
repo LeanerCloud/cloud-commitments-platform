@@ -198,11 +198,11 @@ func (m *MockScheduler) GetRecommendationByID(ctx context.Context, id string) (*
 // MockAuthService is a mock implementation of the auth service.
 type MockAuthService struct {
 	mock.Mock
-	// usageBookingsMu guards usageBookings.
-	usageBookingsMu sync.Mutex
 	// usageBookings records every key ID passed to RecordAPIKeyUsageAsync,
 	// in call order. See that method for why it does not use mock.Mock.
 	usageBookings []string
+	// usageBookingsMu guards usageBookings.
+	usageBookingsMu sync.Mutex
 }
 
 // RecordAPIKeyUsageAsync records the booking instead of routing through
