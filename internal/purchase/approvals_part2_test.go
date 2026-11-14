@@ -385,3 +385,92 @@ func TestApproveExecution_MintsRevocationToken(t *testing.T) {
 	// `updated` and rotateApprovalToken never receives it.
 	assert.Equal(t, config.HashApprovalToken("pre-rotate-token"), execution.ApprovalToken)
 }
+
+// TestManager_ApproveExecution_ExpiredToken is the regression guard for
+// issue #397: an approval token whose ApprovalTokenExpiresAt deadline has
+// passed must be rejected with "expired", not silently accepted. This
+// prevents a phished or log-leaked token from authorizing a purchase weeks
+// after the approval window closed.
+func TestManager_ApproveExecution_ExpiredToken(t *testing.T) {
+	ctx := context.Background()
+	manager, store, _ := newApproveManager(t)
+
+	past := time.Now().Add(-1 * time.Hour) // expired 1 hour ago
+	execution := &config.PurchaseExecution{
+		ExecutionID:            "exec-expired",
+		Status:                 "pending",
+		ApprovalToken:          config.HashApprovalToken("valid-token"),
+		ApprovalTokenExpiresAt: &past,
+	}
+	store.On("GetExecutionByID", ctx, "exec-expired").Return(execution, nil)
+
+	_, _, err := manager.ApproveExecution(ctx, "exec-expired", "valid-token", "", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expired")
+	// Token validation passes but the expiry check fires — TransitionExecutionStatus
+	// must never be called on an expired token.
+	store.AssertNotCalled(t, "TransitionExecutionStatusTokenPinned", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	store.AssertExpectations(t)
+}
+
+// TestManager_ApproveExecution_ValidTokenWithinTTL confirms that a
+// non-expired token still works (regression guard for the inverse case).
+func TestManager_ApproveExecution_ValidTokenWithinTTL(t *testing.T) {
+	ctx := context.Background()
+	manager, store, sender := newApproveManager(t)
+
+	future := time.Now().Add(7 * 24 * time.Hour)
+	execution := &config.PurchaseExecution{
+		ExecutionID:            "exec-live",
+		PlanID:                 "plan-live",
+		Status:                 "pending",
+		ApprovalToken:          config.HashApprovalToken("valid-token"),
+		ApprovalTokenExpiresAt: &future,
+	}
+	updated := &config.PurchaseExecution{
+		ExecutionID:     "exec-live",
+		PlanID:          "plan-live",
+		Status:          "approved",
+		ApprovalToken:   config.HashApprovalToken("valid-token"),
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
+	}
+	store.On("GetExecutionByID", ctx, "exec-live").Return(execution, nil)
+	store.On("TransitionExecutionStatusTokenPinned", ctx, "exec-live", approveFromStatuses, "running", (*string)(nil), "valid-token").Return(updated, nil)
+	stubExecuteChain(t, store, sender, "plan-live")
+
+	_, _, err := manager.ApproveExecution(ctx, "exec-live", "valid-token", "", nil)
+	require.NoError(t, err)
+	store.AssertExpectations(t)
+}
+
+// TestManager_ApproveExecution_NilExpiresAt_LegacyRow verifies backward
+// compatibility: rows created before migration 000051 have a nil
+// ApprovalTokenExpiresAt and must not be rejected (issue #397 explicitly
+// carves out legacy rows for compatibility).
+func TestManager_ApproveExecution_NilExpiresAt_LegacyRow(t *testing.T) {
+	ctx := context.Background()
+	manager, store, sender := newApproveManager(t)
+
+	execution := &config.PurchaseExecution{
+		ExecutionID:            "exec-legacy",
+		PlanID:                 "plan-legacy",
+		Status:                 "pending",
+		ApprovalToken:          config.HashApprovalToken("valid-token"),
+		ApprovalTokenExpiresAt: nil, // pre-migration row
+	}
+	updated := &config.PurchaseExecution{
+		ExecutionID:     "exec-legacy",
+		PlanID:          "plan-legacy",
+		Status:          "approved",
+		StepNumber:      1,
+		Recommendations: approvalTestRecs(),
+	}
+	store.On("GetExecutionByID", ctx, "exec-legacy").Return(execution, nil)
+	store.On("TransitionExecutionStatusTokenPinned", ctx, "exec-legacy", approveFromStatuses, "running", (*string)(nil), "valid-token").Return(updated, nil)
+	stubExecuteChain(t, store, sender, "plan-legacy")
+
+	_, _, err := manager.ApproveExecution(ctx, "exec-legacy", "valid-token", "", nil)
+	require.NoError(t, err)
+	store.AssertExpectations(t)
+}
