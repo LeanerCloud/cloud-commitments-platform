@@ -113,10 +113,10 @@ func TestAutoPurchaseScope_LadderConfigArm(t *testing.T) {
 		constraints *auth.PermissionConstraints
 		wantRefused bool
 	}{
-		{"scoped to the config's account: allowed", &auth.PermissionConstraints{AccountIDs: []string{lgAcct}}, false},
-		{"scoped to another account: refused", &auth.PermissionConstraints{AccountIDs: []string{apsAcctB}}, true},
-		{"scoped to another provider: refused", &auth.PermissionConstraints{Providers: []string{"azure"}}, true},
-		{"unconstrained: allowed", nil, false},
+		{name: "scoped to the config's account: allowed", constraints: &auth.PermissionConstraints{AccountIDs: []string{lgAcct}}, wantRefused: false},
+		{name: "scoped to another account: refused", constraints: &auth.PermissionConstraints{AccountIDs: []string{apsAcctB}}, wantRefused: true},
+		{name: "scoped to another provider: refused", constraints: &auth.PermissionConstraints{Providers: []string{"azure"}}, wantRefused: true},
+		{name: "unconstrained: allowed", constraints: nil, wantRefused: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, err := lgCall(t, apgCaller{perms: apsGrant(tc.constraints)}, nil, lgBody(true, "auto_approve", "1"))
@@ -210,9 +210,9 @@ func TestAutoPurchaseScope_ProviderChangeOnArmedPlan(t *testing.T) {
 		constraints *auth.PermissionConstraints
 		wantRefused bool
 	}{
-		{"aws-only grant adds an azure service: refused", &auth.PermissionConstraints{Providers: []string{"aws"}}, true},
-		{"grant covering both providers: allowed", &auth.PermissionConstraints{Providers: []string{"aws", "azure"}}, false},
-		{"unconstrained grant: allowed", nil, false},
+		{name: "aws-only grant adds an azure service: refused", constraints: &auth.PermissionConstraints{Providers: []string{"aws"}}, wantRefused: true},
+		{name: "grant covering both providers: allowed", constraints: &auth.PermissionConstraints{Providers: []string{"aws", "azure"}}, wantRefused: false},
+		{name: "unconstrained grant: allowed", constraints: nil, wantRefused: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := new(MockConfigStore)
@@ -241,9 +241,9 @@ func TestAutoPurchaseScope_ServicesAndRegionsConstraints(t *testing.T) {
 		constraints *auth.PermissionConstraints
 		wantRefused bool
 	}{
-		{"services grant covering the plan's service: allowed", &auth.PermissionConstraints{Services: []string{"rds"}}, false},
-		{"services grant for another service: refused", &auth.PermissionConstraints{Services: []string{"ec2"}}, true},
-		{"regions-constrained grant: refused", &auth.PermissionConstraints{Regions: []string{"us-east-1"}}, true},
+		{name: "services grant covering the plan's service: allowed", constraints: &auth.PermissionConstraints{Services: []string{"rds"}}, wantRefused: false},
+		{name: "services grant for another service: refused", constraints: &auth.PermissionConstraints{Services: []string{"ec2"}}, wantRefused: true},
+		{name: "regions-constrained grant: refused", constraints: &auth.PermissionConstraints{Regions: []string{"us-east-1"}}, wantRefused: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, err := apsPlanCall(t, apsGrant(tc.constraints), []string{apsAcctA})
@@ -272,9 +272,9 @@ func TestPlanArmEscalates_ProviderAndServiceWidening(t *testing.T) {
 		after *config.PurchasePlan
 		want  bool
 	}{
-		{"unchanged services", plan("aws/rds"), false},
-		{"same service name under a new provider", plan("aws/rds", "azure/rds"), true},
-		{"new service under the same provider", plan("aws/rds", "aws/ec2"), true},
+		{name: "unchanged services", after: plan("aws/rds"), want: false},
+		{name: "same service name under a new provider", after: plan("aws/rds", "azure/rds"), want: true},
+		{name: "new service under the same provider", after: plan("aws/rds", "aws/ec2"), want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, planArmEscalates(plan("aws/rds"), tc.after))
@@ -354,10 +354,10 @@ func TestAutoPurchaseScope_RetargetRefusesBoundKeyNamingAnotherEntry(t *testing.
 		stored      *config.PurchasePlan
 		wantRefused bool
 	}{
-		{"key names another provider and service", bound("gcp/compute#g1", entry("aws", "ec2")), true},
-		{"key names another service", bound("aws/compute#g1", entry("aws", "ec2")), true},
-		{"key without a provider prefix", bound("ec2#g1", entry("aws", "ec2")), true},
-		{"a key naming its own entry still moves", bound("aws/rds#g1", entry("aws", "rds")), false},
+		{name: "key names another provider and service", stored: bound("gcp/compute#g1", entry("aws", "ec2")), wantRefused: true},
+		{name: "key names another service", stored: bound("aws/compute#g1", entry("aws", "ec2")), wantRefused: true},
+		{name: "key without a provider prefix", stored: bound("ec2#g1", entry("aws", "ec2")), wantRefused: true},
+		{name: "a key naming its own entry still moves", stored: bound("aws/rds#g1", entry("aws", "rds")), wantRefused: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, err := apsSetAccounts(t, grant, tc.stored, apsAcctA)

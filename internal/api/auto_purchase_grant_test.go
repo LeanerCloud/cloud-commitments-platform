@@ -95,37 +95,37 @@ func TestAutoPurchaseGate_PlanWrites(t *testing.T) {
 		body        string
 		wantRefused bool
 	}{
-		{"patch arms a capped plan: admin without grant refused", admin, "patch", apgStoredPlan(false, apgCap(1000)), `{"auto_purchase":true}`, true},
-		{"patch arms a capped plan: execute:purchases allowed", granted, "patch", apgStoredPlan(false, apgCap(1000)), `{"auto_purchase":true}`, false},
-		{"patch arms a capped plan: admin API key refused", key, "patch", apgStoredPlan(false, apgCap(1000)), `{"auto_purchase":true}`, true},
-		{"patch enables a disabled armed-shaped plan: refused", admin, "patch", func() *config.PurchasePlan {
+		{name: "patch arms a capped plan: admin without grant refused", caller: admin, method: "patch", stored: apgStoredPlan(false, apgCap(1000)), body: `{"auto_purchase":true}`, wantRefused: true},
+		{name: "patch arms a capped plan: execute:purchases allowed", caller: granted, method: "patch", stored: apgStoredPlan(false, apgCap(1000)), body: `{"auto_purchase":true}`, wantRefused: false},
+		{name: "patch arms a capped plan: admin API key refused", caller: key, method: "patch", stored: apgStoredPlan(false, apgCap(1000)), body: `{"auto_purchase":true}`, wantRefused: true},
+		{name: "patch enables a disabled armed-shaped plan: refused", caller: admin, method: "patch", stored: func() *config.PurchasePlan {
 			p := apgStoredPlan(true, apgCap(1000))
 			p.Enabled = false
 			return p
-		}(), `{"enabled":true}`, true},
-		{"patch disarm with admin API key allowed", key, "patch", apgStoredPlan(true, apgCap(1000)), `{"auto_purchase":false}`, false},
-		{"patch rename of armed plan by admin allowed", admin, "patch", apgStoredPlan(true, apgCap(1000)), `{"name":"x"}`, false},
-		{"patch auto_purchase on a plan with NULL cap is not armed: allowed", admin, "patch", apgStoredPlan(false, nil), `{"auto_purchase":true}`, false},
-		{"put raises cap: admin refused", admin, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":2000}`, true},
-		{"put raises cap: admin API key refused", key, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":2000}`, true},
-		{"put raises cap: execute:purchases allowed", granted, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":2000}`, false},
-		{"put lowers cap: admin allowed", admin, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":500}`, false},
-		{"put same cap: admin allowed", admin, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":1000}`, false},
-		{"put 1000.0 is the same cap: admin allowed", admin, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":1000.0}`, false},
-		{"put 100.10 (binary-float trap) over 100.10 is the same cap: admin allowed", admin, "put", apgStoredPlan(true, apgCap(100.10)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":100.10}`, false},
-		{"put one cent more is a raise: admin refused", admin, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":1000.01}`, true},
-		{"put omitting the cap keeps it: admin allowed", admin, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":true}`, false},
-		{"put re-enables a disabled entry on an armed plan: admin refused", admin, "put", func() *config.PurchasePlan {
+		}(), body: `{"enabled":true}`, wantRefused: true},
+		{name: "patch disarm with admin API key allowed", caller: key, method: "patch", stored: apgStoredPlan(true, apgCap(1000)), body: `{"auto_purchase":false}`, wantRefused: false},
+		{name: "patch rename of armed plan by admin allowed", caller: admin, method: "patch", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"x"}`, wantRefused: false},
+		{name: "patch auto_purchase on a plan with NULL cap is not armed: allowed", caller: admin, method: "patch", stored: apgStoredPlan(false, nil), body: `{"auto_purchase":true}`, wantRefused: false},
+		{name: "put raises cap: admin refused", caller: admin, method: "put", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":2000}`, wantRefused: true},
+		{name: "put raises cap: admin API key refused", caller: key, method: "put", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":2000}`, wantRefused: true},
+		{name: "put raises cap: execute:purchases allowed", caller: granted, method: "put", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":2000}`, wantRefused: false},
+		{name: "put lowers cap: admin allowed", caller: admin, method: "put", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":500}`, wantRefused: false},
+		{name: "put same cap: admin allowed", caller: admin, method: "put", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":1000}`, wantRefused: false},
+		{name: "put 1000.0 is the same cap: admin allowed", caller: admin, method: "put", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":1000.0}`, wantRefused: false},
+		{name: "put 100.10 (binary-float trap) over 100.10 is the same cap: admin allowed", caller: admin, method: "put", stored: apgStoredPlan(true, apgCap(100.10)), body: `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":100.10}`, wantRefused: false},
+		{name: "put one cent more is a raise: admin refused", caller: admin, method: "put", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"p","enabled":true,"auto_purchase":true,"max_step_commitment":1000.01}`, wantRefused: true},
+		{name: "put omitting the cap keeps it: admin allowed", caller: admin, method: "put", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"p","enabled":true,"auto_purchase":true}`, wantRefused: false},
+		{name: "put re-enables a disabled entry on an armed plan: admin refused", caller: admin, method: "put", stored: func() *config.PurchasePlan {
 			p := apgStoredPlan(true, apgCap(1000))
 			p.Services = map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Enabled: false}}
 			return p
-		}(), `{"name":"p","enabled":true,"auto_purchase":true,"provider":"aws","service":"rds"}`, true},
-		{"put re-enables a disabled entry on an armed plan: execute:purchases allowed", granted, "put", func() *config.PurchasePlan {
+		}(), body: `{"name":"p","enabled":true,"auto_purchase":true,"provider":"aws","service":"rds"}`, wantRefused: true},
+		{name: "put re-enables a disabled entry on an armed plan: execute:purchases allowed", caller: granted, method: "put", stored: func() *config.PurchasePlan {
 			p := apgStoredPlan(true, apgCap(1000))
 			p.Services = map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Enabled: false}}
 			return p
-		}(), `{"name":"p","enabled":true,"auto_purchase":true,"provider":"aws","service":"rds"}`, false},
-		{"put disarms with admin API key allowed", key, "put", apgStoredPlan(true, apgCap(1000)), `{"name":"p","enabled":true,"auto_purchase":false}`, false},
+		}(), body: `{"name":"p","enabled":true,"auto_purchase":true,"provider":"aws","service":"rds"}`, wantRefused: false},
+		{name: "put disarms with admin API key allowed", caller: key, method: "put", stored: apgStoredPlan(true, apgCap(1000)), body: `{"name":"p","enabled":true,"auto_purchase":false}`, wantRefused: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

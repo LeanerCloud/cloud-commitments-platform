@@ -78,15 +78,15 @@ func TestGlobalConfigArmingGates_NoAuthCallInsideTransaction(t *testing.T) {
 		body        string
 		wantRefused bool
 	}{
-		{"arm auto-purchase, granted", afGranted, false, `{"auto_purchase_enabled":true}`, false},
-		{"arm auto-purchase, refused", afAdmin, false, `{"auto_purchase_enabled":true}`, true},
-		{"arm ladder execution, granted", afGranted, false, `{"laddering_enabled":true,"ladder_execution_enabled":true}`, false},
-		{"arm ladder execution, refused", afAdmin, false, `{"laddering_enabled":true,"ladder_execution_enabled":true}`, true},
-		{"arm RI exchange via config, granted", afGranted, false, `{"ri_exchange_enabled":true,"ri_exchange_mode":"auto"}`, false},
-		{"arm RI exchange via config, refused", afAdmin, false, `{"ri_exchange_enabled":true,"ri_exchange_mode":"auto"}`, true},
-		{"arm RI exchange via dedicated route, granted", afGranted, true, afRIExchangeArm, false},
-		{"arm RI exchange via dedicated route, refused", afAdmin, true, afRIExchangeArm, true},
-		{"ordinary save, admin", afAdmin, false, `{"approval_required":false}`, false},
+		{name: "arm auto-purchase, granted", perms: afGranted, dedicated: false, body: `{"auto_purchase_enabled":true}`, wantRefused: false},
+		{name: "arm auto-purchase, refused", perms: afAdmin, dedicated: false, body: `{"auto_purchase_enabled":true}`, wantRefused: true},
+		{name: "arm ladder execution, granted", perms: afGranted, dedicated: false, body: `{"laddering_enabled":true,"ladder_execution_enabled":true}`, wantRefused: false},
+		{name: "arm ladder execution, refused", perms: afAdmin, dedicated: false, body: `{"laddering_enabled":true,"ladder_execution_enabled":true}`, wantRefused: true},
+		{name: "arm RI exchange via config, granted", perms: afGranted, dedicated: false, body: `{"ri_exchange_enabled":true,"ri_exchange_mode":"auto"}`, wantRefused: false},
+		{name: "arm RI exchange via config, refused", perms: afAdmin, dedicated: false, body: `{"ri_exchange_enabled":true,"ri_exchange_mode":"auto"}`, wantRefused: true},
+		{name: "arm RI exchange via dedicated route, granted", perms: afGranted, dedicated: true, body: afRIExchangeArm, wantRefused: false},
+		{name: "arm RI exchange via dedicated route, refused", perms: afAdmin, dedicated: true, body: afRIExchangeArm, wantRefused: true},
+		{name: "ordinary save, admin", perms: afAdmin, dedicated: false, body: `{"approval_required":false}`, wantRefused: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

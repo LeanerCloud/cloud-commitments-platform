@@ -291,22 +291,22 @@ func TestExecutionEndpoints_OutOfScopeNoTokenIs404(t *testing.T) {
 		status string
 		call   func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error)
 	}{
-		{"approve wrong status", "completed", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+		{name: "approve wrong status", status: "completed", call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.approvePurchase(context.Background(), req, scopeTestExecID, "")
 		}},
-		{"cancel wrong status", "completed", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+		{name: "cancel wrong status", status: "completed", call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.cancelPurchase(context.Background(), req, scopeTestExecID, "")
 		}},
-		{"revoke completed", "completed", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+		{name: "revoke completed", status: "completed", call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.revokeViaEmailToken(context.Background(), req, scopeTestExecID, "")
 		}},
-		{"revoke pending", "pending", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+		{name: "revoke pending", status: "pending", call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.revokeViaEmailToken(context.Background(), req, scopeTestExecID, "")
 		}},
-		{"revoke notified", "notified", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+		{name: "revoke notified", status: "notified", call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.revokeViaEmailToken(context.Background(), req, scopeTestExecID, "")
 		}},
-		{"revoke failed", "failed", func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
+		{name: "revoke failed", status: "failed", call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.revokeViaEmailToken(context.Background(), req, scopeTestExecID, "")
 		}},
 	} {
@@ -341,8 +341,8 @@ func TestRevoke_AuthorizedNonRevocableStatusIs409(t *testing.T) {
 		scope []string
 		token string
 	}{
-		{"session", []string{scopeTestStage.ID}, ""},
-		{"token", []string{"Other"}, "email-token"},
+		{name: "session", scope: []string{scopeTestStage.ID}, token: ""},
+		{name: "token", scope: []string{"Other"}, token: "email-token"},
 	} {
 		for _, status := range []string{"pending", "notified", "failed"} {
 			t.Run(tc.name+"/"+status, func(t *testing.T) {

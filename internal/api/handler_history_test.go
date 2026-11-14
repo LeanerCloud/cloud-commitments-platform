@@ -2181,15 +2181,15 @@ func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
 		wantUnsafe bool
 		wantHint   string
 	}{
-		{"azure savings plans", failed("azure", "savingsplans", "boom"), true, ""},
-		{"unrecognized provider", failed("oracle", "compute", "boom"), true, ""},
-		{"failed aws ec2", failed("aws", "ec2", "boom"), true, ""},
-		{"failed mixed ec2+rds basket", config.PurchaseExecution{ExecutionID: "e-1", Status: "failed", Error: "boom", Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds"}, {Provider: "aws", Service: "ec2"}}}, true, ""},
-		{"pending ec2 gets no hint", withStatus("pending", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), false, ""},
-		{"canceled ec2 gets no hint", withStatus("canceled", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), false, ""},
-		{"aws rds is retryable", failed("aws", "rds", "boom"), false, ""},
-		{"refusal wins over failure-reason hint", failed("azure", "savingsplans", persistent), true, ""},
-		{"failure-reason hint kept when re-drive is safe", failed("aws", "rds", persistent), false, purchase.ResolveOpsHint(persistent)},
+		{name: "azure savings plans", exec: failed("azure", "savingsplans", "boom"), wantUnsafe: true, wantHint: ""},
+		{name: "unrecognized provider", exec: failed("oracle", "compute", "boom"), wantUnsafe: true, wantHint: ""},
+		{name: "failed aws ec2", exec: failed("aws", "ec2", "boom"), wantUnsafe: true, wantHint: ""},
+		{name: "failed mixed ec2+rds basket", exec: config.PurchaseExecution{ExecutionID: "e-1", Status: "failed", Error: "boom", Recommendations: []config.RecommendationRecord{{Provider: "aws", Service: "rds"}, {Provider: "aws", Service: "ec2"}}}, wantUnsafe: true, wantHint: ""},
+		{name: "pending ec2 gets no hint", exec: withStatus("pending", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), wantUnsafe: false, wantHint: ""},
+		{name: "canceled ec2 gets no hint", exec: withStatus("canceled", config.RecommendationRecord{Provider: "aws", Service: "ec2"}), wantUnsafe: false, wantHint: ""},
+		{name: "aws rds is retryable", exec: failed("aws", "rds", "boom"), wantUnsafe: false, wantHint: ""},
+		{name: "refusal wins over failure-reason hint", exec: failed("azure", "savingsplans", persistent), wantUnsafe: true, wantHint: ""},
+		{name: "failure-reason hint kept when re-drive is safe", exec: failed("aws", "rds", persistent), wantUnsafe: false, wantHint: purchase.ResolveOpsHint(persistent)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1885,30 +1885,30 @@ func TestHandler_mfaEndpoints_RateLimited(t *testing.T) {
 		call   func(h *Handler, req *events.LambdaFunctionURLRequest) error
 		body   string
 	}{
-		{"setup", "MFASetupAPI", []any{"user-1", "pw"}, []any{"", "", invalid},
-			func(h *Handler, r *events.LambdaFunctionURLRequest) error {
+		{name: "setup", method: "MFASetupAPI", args: []any{"user-1", "pw"}, ret: []any{"", "", invalid},
+			call: func(h *Handler, r *events.LambdaFunctionURLRequest) error {
 				_, err := h.mfaSetup(context.Background(), r)
 				return err
 			},
-			`{"password":"` + b64("pw") + `"}`},
-		{"enable", "MFAEnableAPI", []any{"user-1", "000000"}, []any{[]string(nil), invalid},
-			func(h *Handler, r *events.LambdaFunctionURLRequest) error {
+			body: `{"password":"` + b64("pw") + `"}`},
+		{name: "enable", method: "MFAEnableAPI", args: []any{"user-1", "000000"}, ret: []any{[]string(nil), invalid},
+			call: func(h *Handler, r *events.LambdaFunctionURLRequest) error {
 				_, err := h.mfaEnable(context.Background(), r)
 				return err
 			},
-			`{"code":"000000"}`},
-		{"disable", "MFADisableAPI", []any{"user-1", "pw", "000000"}, []any{invalid},
-			func(h *Handler, r *events.LambdaFunctionURLRequest) error {
+			body: `{"code":"000000"}`},
+		{name: "disable", method: "MFADisableAPI", args: []any{"user-1", "pw", "000000"}, ret: []any{invalid},
+			call: func(h *Handler, r *events.LambdaFunctionURLRequest) error {
 				_, err := h.mfaDisable(context.Background(), r)
 				return err
 			},
-			`{"password":"` + b64("pw") + `","code":"000000"}`},
-		{"regenerate", "MFARegenerateRecoveryCodesAPI", []any{"user-1", "000000"}, []any{[]string(nil), invalid},
-			func(h *Handler, r *events.LambdaFunctionURLRequest) error {
+			body: `{"password":"` + b64("pw") + `","code":"000000"}`},
+		{name: "regenerate", method: "MFARegenerateRecoveryCodesAPI", args: []any{"user-1", "000000"}, ret: []any{[]string(nil), invalid},
+			call: func(h *Handler, r *events.LambdaFunctionURLRequest) error {
 				_, err := h.mfaRegenerateRecoveryCodes(context.Background(), r)
 				return err
 			},
-			`{"code":"000000"}`},
+			body: `{"code":"000000"}`},
 	}
 	for _, tc := range cases {
 		for _, rotateIP := range []bool{false, true} {

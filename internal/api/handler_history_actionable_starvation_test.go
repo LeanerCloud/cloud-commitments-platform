@@ -117,8 +117,8 @@ func TestHandler_getHistory_ClassListingErrorKeepsOtherClass(t *testing.T) {
 		failActive bool
 		wantID     string
 	}{
-		{"terminal error keeps actionable", false, "pending-0"},
-		{"actionable error keeps terminal", true, "failed-0"},
+		{name: "terminal error keeps actionable", failActive: false, wantID: "pending-0"},
+		{name: "actionable error keeps terminal", failActive: true, wantID: "failed-0"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

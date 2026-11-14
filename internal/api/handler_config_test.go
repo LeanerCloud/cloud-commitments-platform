@@ -467,14 +467,14 @@ func TestHandler_updateConfig_GracePeriodDaysKeyCase(t *testing.T) {
 		body string
 		want map[string]int
 	}{
-		{"exact key replaces", `{"grace_period_days": {"aws": 5}}`, map[string]int{"aws": 5}},
-		{"mixed case replaces", `{"Grace_Period_Days": {"aws": 5}}`, map[string]int{"aws": 5}},
-		{"upper case replaces", `{"GRACE_PERIOD_DAYS": {"aws": 5}}`, map[string]int{"aws": 5}},
-		{"absent key preserves", `{"default_term": 1}`, map[string]int{"aws": 7, "azure": 3}},
+		{name: "exact key replaces", body: `{"grace_period_days": {"aws": 5}}`, want: map[string]int{"aws": 5}},
+		{name: "mixed case replaces", body: `{"Grace_Period_Days": {"aws": 5}}`, want: map[string]int{"aws": 5}},
+		{name: "upper case replaces", body: `{"GRACE_PERIOD_DAYS": {"aws": 5}}`, want: map[string]int{"aws": 5}},
+		{name: "absent key preserves", body: `{"default_term": 1}`, want: map[string]int{"aws": 7, "azure": 3}},
 		// An explicit null clears the stored map for every casing (json.Unmarshal
 		// of null into a map sets it to nil); these rows pin that as a control.
-		{"exact null clears", `{"grace_period_days": null}`, nil},
-		{"mixed case null clears", `{"Grace_Period_Days": null}`, nil},
+		{name: "exact null clears", body: `{"grace_period_days": null}`, want: nil},
+		{name: "mixed case null clears", body: `{"Grace_Period_Days": null}`, want: nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1686,12 +1686,12 @@ func TestHandler_updateConfig_EnabledProvidersWrite(t *testing.T) {
 		wantErr  bool
 		wantSave bool
 	}{
-		{"empty list refused", []string{"aws"}, `{"enabled_providers": []}`, true, false},
-		{"null refused", []string{"aws"}, `{"enabled_providers": null}`, true, false},
-		{"duplicate key differing in case refused", []string{"aws"}, `{"enabled_providers":["aws"],"ENABLED_PROVIDERS":[]}`, true, false},
-		{"mixed-case key refused", []string{"aws"}, `{"Enabled_Providers": []}`, true, false},
-		{"omitted key on stored empty row accepted", []string{}, `{"laddering_enabled": false}`, false, true},
-		{"one provider accepted", []string{}, `{"enabled_providers": ["aws"]}`, false, true},
+		{name: "empty list refused", stored: []string{"aws"}, body: `{"enabled_providers": []}`, wantErr: true, wantSave: false},
+		{name: "null refused", stored: []string{"aws"}, body: `{"enabled_providers": null}`, wantErr: true, wantSave: false},
+		{name: "duplicate key differing in case refused", stored: []string{"aws"}, body: `{"enabled_providers":["aws"],"ENABLED_PROVIDERS":[]}`, wantErr: true, wantSave: false},
+		{name: "mixed-case key refused", stored: []string{"aws"}, body: `{"Enabled_Providers": []}`, wantErr: true, wantSave: false},
+		{name: "omitted key on stored empty row accepted", stored: []string{}, body: `{"laddering_enabled": false}`, wantErr: false, wantSave: true},
+		{name: "one provider accepted", stored: []string{}, body: `{"enabled_providers": ["aws"]}`, wantErr: false, wantSave: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

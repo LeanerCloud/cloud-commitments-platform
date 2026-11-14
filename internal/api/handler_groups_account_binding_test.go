@@ -122,10 +122,10 @@ func TestCreateGroup_RefusesUnbindableAccountEntries(t *testing.T) {
 		scope []string
 		entry string
 	}{
-		{"unknown name", nil, "deleted-account"},
-		{"name shared by two accounts", nil, "shared"},
-		{"empty entry", nil, ""},
-		{"name of an account outside the actor's scope", []string{bindProd.ID}, "other"},
+		{name: "unknown name", scope: nil, entry: "deleted-account"},
+		{name: "name shared by two accounts", scope: nil, entry: "shared"},
+		{name: "empty entry", scope: nil, entry: ""},
+		{name: "name of an account outside the actor's scope", scope: []string{bindProd.ID}, entry: "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

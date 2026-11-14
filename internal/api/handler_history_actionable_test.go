@@ -252,15 +252,15 @@ func TestHistoryScope_ExecutionScope(t *testing.T) {
 		scope auth.AccountScope
 		want  *config.ExecutionScope
 	}{
-		{"unrestricted", auth.UnrestrictedScope(), nil},
-		{"empty denies attributed rows", auth.ScopeForAccounts(nil), &config.ExecutionScope{UserID: "u-1"}},
-		{"by id", auth.ScopeForAccounts([]string{actionableDevUUID}),
-			&config.ExecutionScope{UserID: "u-1", AccountIDs: []string{actionableDevUUID, "111111111111"}}},
-		{"name entry grants no account (#1034)", auth.ScopeForAccounts([]string{"dev"}).WithRegisteredAccounts([]auth.RegisteredAccount{
+		{name: "unrestricted", scope: auth.UnrestrictedScope(), want: nil},
+		{name: "empty denies attributed rows", scope: auth.ScopeForAccounts(nil), want: &config.ExecutionScope{UserID: "u-1"}},
+		{name: "by id", scope: auth.ScopeForAccounts([]string{actionableDevUUID}),
+			want: &config.ExecutionScope{UserID: "u-1", AccountIDs: []string{actionableDevUUID, "111111111111"}}},
+		{name: "name entry grants no account (#1034)", scope: auth.ScopeForAccounts([]string{"dev"}).WithRegisteredAccounts([]auth.RegisteredAccount{
 			{ID: actionableDevUUID, Name: "dev", ExternalID: "111111111111"}, {ID: actionableOtherUUID, Name: "other", ExternalID: "222222222222"},
-		}), &config.ExecutionScope{UserID: "u-1", AccountIDs: []string{"dev"}}},
-		{"literal external number", auth.ScopeForAccounts([]string{"222222222222"}),
-			&config.ExecutionScope{UserID: "u-1", AccountIDs: []string{"222222222222"}}},
+		}), want: &config.ExecutionScope{UserID: "u-1", AccountIDs: []string{"dev"}}},
+		{name: "literal external number", scope: auth.ScopeForAccounts([]string{"222222222222"}),
+			want: &config.ExecutionScope{UserID: "u-1", AccountIDs: []string{"222222222222"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

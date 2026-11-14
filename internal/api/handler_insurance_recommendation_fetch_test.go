@@ -132,13 +132,13 @@ func TestFetchRecommendationComparisonFailuresReturnNoPartialResult(t *testing.T
 		code  int
 		retry string
 	}{
-		"line_items": {func(c *recClient, _ *recProvider) { c.itemsErr = errors.New(recSpace) }, 502, ""},
-		"comparison": {func(c *recClient, _ *recProvider) { c.cmpErr = errors.New(recSpace) }, 502, ""},
-		"rate_limited": {func(c *recClient, _ *recProvider) {
+		"line_items": {setup: func(c *recClient, _ *recProvider) { c.itemsErr = errors.New(recSpace) }, code: 502, retry: ""},
+		"comparison": {setup: func(c *recClient, _ *recProvider) { c.cmpErr = errors.New(recSpace) }, code: 502, retry: ""},
+		"rate_limited": {setup: func(c *recClient, _ *recProvider) {
 			c.itemsErr = &insurance.HTTPError{StatusCode: 429, RetryAfter: 3 * time.Second}
-		}, 429, "3"},
-		"unsupported": {func(c *recClient, p *recProvider) { p.client = quoteOnly{c} }, 503, ""},
-		"deadline":    {func(c *recClient, _ *recProvider) { c.hang = true }, 504, ""},
+		}, code: 429, retry: "3"},
+		"unsupported": {setup: func(c *recClient, p *recProvider) { p.client = quoteOnly{c} }, code: 503, retry: ""},
+		"deadline":    {setup: func(c *recClient, _ *recProvider) { c.hang = true }, code: 504, retry: ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			prev := insuranceRecommendationTimeout

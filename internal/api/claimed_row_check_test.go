@@ -172,9 +172,9 @@ func TestClaimedRowCheck_TokenApprove(t *testing.T) {
 		perms []auth.Permission
 		plan  *config.PurchasePlan
 	}{
-		{"approve-own cap", []auth.Permission{cappedPerm(auth.ActionApproveOwn, total)}, autoPlan(nil)},
-		{"approve-any cap", []auth.Permission{cappedPerm(auth.ActionApproveAny, total)}, autoPlan(nil)},
-		{"no verb, plan step cap", nil, autoPlan(&total)},
+		{name: "approve-own cap", perms: []auth.Permission{cappedPerm(auth.ActionApproveOwn, total)}, plan: autoPlan(nil)},
+		{name: "approve-any cap", perms: []auth.Permission{cappedPerm(auth.ActionApproveAny, total)}, plan: autoPlan(nil)},
+		{name: "no verb, plan step cap", perms: nil, plan: autoPlan(&total)},
 	} {
 		t.Run(tc.name+"/repriced row refused", func(t *testing.T) {
 			f := newTokenApprove(t, tc.perms, tc.plan)
@@ -311,15 +311,15 @@ type scopedClaimPath struct {
 
 func scopedClaimPaths() []scopedClaimPath {
 	return []scopedClaimPath{
-		{"run now", "RunPlannedPurchaseNow", auth.Permission{Action: auth.ActionExecute, Resource: auth.ResourcePurchases},
-			"11111111-1111-1111-1111-111111111112",
-			func(_ *testing.T, f *scopedClaimFixture) error {
+		{name: "run now", call: "RunPlannedPurchaseNow", perm: auth.Permission{Action: auth.ActionExecute, Resource: auth.ResourcePurchases},
+			execID: "11111111-1111-1111-1111-111111111112",
+			run: func(_ *testing.T, f *scopedClaimFixture) error {
 				_, err := f.h.runPlannedPurchase(context.Background(), scopedBearer(), f.execID)
 				return err
 			}},
-		{"session approve", "ApproveAndExecute", auth.Permission{Action: auth.ActionApproveAny, Resource: auth.ResourcePurchases},
-			"abcdefab-cdef-abcd-efab-cdefabcdef02",
-			func(_ *testing.T, f *scopedClaimFixture) error {
+		{name: "session approve", call: "ApproveAndExecute", perm: auth.Permission{Action: auth.ActionApproveAny, Resource: auth.ResourcePurchases},
+			execID: "abcdefab-cdef-abcd-efab-cdefabcdef02",
+			run: func(_ *testing.T, f *scopedClaimFixture) error {
 				_, err := f.h.approvePurchase(context.Background(), scopedBearer(), f.execID, "")
 				return err
 			}},
@@ -398,9 +398,9 @@ func TestClaimedRowCheck_AccountScopeLookupErrorRefuses(t *testing.T) {
 		name  string
 		check func(h *Handler, s *Session) purchase.ClaimedRowCheck
 	}{
-		{"run now", (*Handler).runNowClaimCheck},
-		{"session approve", (*Handler).sessionApproveClaimCheck},
-		{"direct execute", (*Handler).directExecuteClaimCheck},
+		{name: "run now", check: (*Handler).runNowClaimCheck},
+		{name: "session approve", check: (*Handler).sessionApproveClaimCheck},
+		{name: "direct execute", check: (*Handler).directExecuteClaimCheck},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mockAuth := new(MockAuthService)

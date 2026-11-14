@@ -197,14 +197,14 @@ func TestInsuranceComparison_VendorErrorsAreSanitized(t *testing.T) {
 		code    int
 		retry   string
 	}{
-		{"401 echoing key", 401, echo, nil, 502, ""},
-		{"403", 403, echo, nil, 502, ""},
-		{"404", 404, echo, nil, 502, ""},
-		{"429 with Retry-After", 429, echo, http.Header{"Retry-After": {"120"}}, 429, "120"},
-		{"429 without Retry-After", 429, echo, nil, 429, ""},
-		{"429 zero Retry-After", 429, echo, http.Header{"Retry-After": {"0"}}, 429, ""},
-		{"500", 500, echo, nil, 502, ""},
-		{"oversized body", 200, strings.Repeat(" ", 9<<20), nil, 502, ""},
+		{name: "401 echoing key", status: 401, body: echo, headers: nil, code: 502, retry: ""},
+		{name: "403", status: 403, body: echo, headers: nil, code: 502, retry: ""},
+		{name: "404", status: 404, body: echo, headers: nil, code: 502, retry: ""},
+		{name: "429 with Retry-After", status: 429, body: echo, headers: http.Header{"Retry-After": {"120"}}, code: 429, retry: "120"},
+		{name: "429 without Retry-After", status: 429, body: echo, headers: nil, code: 429, retry: ""},
+		{name: "429 zero Retry-After", status: 429, body: echo, headers: http.Header{"Retry-After": {"0"}}, code: 429, retry: ""},
+		{name: "500", status: 500, body: echo, headers: nil, code: 502, retry: ""},
+		{name: "oversized body", status: 200, body: strings.Repeat(" ", 9<<20), headers: nil, code: 502, retry: ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -326,12 +326,12 @@ func TestMapInsuranceError_PinsEachStatusMessage(t *testing.T) {
 		code int
 		msg  string
 	}{
-		401: {502, "Archera rejected the configured credentials"},
-		403: {502, "Archera rejected the configured credentials"},
-		404: {502, "Archera organization or plan was not found"},
-		500: {502, "Archera service error"},
-		503: {502, "Archera service error"},
-		418: {502, "Archera request failed with HTTP 418"},
+		401: {code: 502, msg: "Archera rejected the configured credentials"},
+		403: {code: 502, msg: "Archera rejected the configured credentials"},
+		404: {code: 502, msg: "Archera organization or plan was not found"},
+		500: {code: 502, msg: "Archera service error"},
+		503: {code: 502, msg: "Archera service error"},
+		418: {code: 502, msg: "Archera request failed with HTTP 418"},
 	} {
 		ce, ok := IsClientError(mapInsuranceError(&insurance.HTTPError{StatusCode: status, Message: "vendor text"}))
 		require.True(t, ok)

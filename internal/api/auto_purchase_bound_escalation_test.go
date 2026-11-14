@@ -36,20 +36,20 @@ func TestPlanArmEscalates_BoundGroups(t *testing.T) {
 		after *config.PurchasePlan
 		want  bool
 	}{
-		{"unchanged", armedBoundPlan(), false},
-		{"narrowed bound set", edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.BoundIdentities = []string{"k1"} }), false},
-		{"lowered group cap", edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.MaxStepCommitment = apgCap(50) }), false},
-		{"coverage edit", edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.Coverage = 60 }), false},
-		{"new group", edited(func(p *config.PurchasePlan, _ *config.ServiceConfig) {
+		{name: "unchanged", after: armedBoundPlan(), want: false},
+		{name: "narrowed bound set", after: edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.BoundIdentities = []string{"k1"} }), want: false},
+		{name: "lowered group cap", after: edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.MaxStepCommitment = apgCap(50) }), want: false},
+		{name: "coverage edit", after: edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.Coverage = 60 }), want: false},
+		{name: "new group", after: edited(func(p *config.PurchasePlan, _ *config.ServiceConfig) {
 			p.Services["aws/ec2#g2"] = config.ServiceConfig{Provider: "aws", Service: "ec2", Enabled: true, Term: 3, Payment: "all-upfront", GroupID: "g2", BoundIdentities: []string{"k9"}}
-		}), true},
-		{"added bound identity", edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.BoundIdentities = []string{"k1", "k2", "k3"} }), true},
-		{"bound to unbound", edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.BoundIdentities = nil }), true},
-		{"raised group cap", edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.MaxStepCommitment = apgCap(200) }), true},
-		{"removed group cap (nil is unbounded)", edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.MaxStepCommitment = nil }), true},
-		{"term changed", edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.Term = 3 }), true},
-		{"payment changed", edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.Payment = "all-upfront" }), true},
-		{"marker removed", edited(func(p *config.PurchasePlan, _ *config.ServiceConfig) { p.RampSchedule.AllocationMode = "" }), true},
+		}), want: true},
+		{name: "added bound identity", after: edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.BoundIdentities = []string{"k1", "k2", "k3"} }), want: true},
+		{name: "bound to unbound", after: edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.BoundIdentities = nil }), want: true},
+		{name: "raised group cap", after: edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.MaxStepCommitment = apgCap(200) }), want: true},
+		{name: "removed group cap (nil is unbounded)", after: edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.MaxStepCommitment = nil }), want: true},
+		{name: "term changed", after: edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.Term = 3 }), want: true},
+		{name: "payment changed", after: edited(func(_ *config.PurchasePlan, g *config.ServiceConfig) { g.Payment = "all-upfront" }), want: true},
+		{name: "marker removed", after: edited(func(p *config.PurchasePlan, _ *config.ServiceConfig) { p.RampSchedule.AllocationMode = "" }), want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, planArmEscalates(armedBoundPlan(), tc.after))

@@ -47,8 +47,8 @@ func TestInsuranceStatus_AdminAPIKey_ReportsPresenceOnly(t *testing.T) {
 		ok      bool
 		missing []string
 	}{
-		"off":      {archera.Settings{}, false, []string{archera.EnvKeySecret, archera.EnvOrgID, archera.EnvPlanID}},
-		"complete": {full, true, []string{}},
+		"off":      {s: archera.Settings{}, ok: false, missing: []string{archera.EnvKeySecret, archera.EnvOrgID, archera.EnvPlanID}},
+		"complete": {s: full, ok: true, missing: []string{}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h := &Handler{apiKey: "admin-key", insurance: insuranceProvider(t, tc.s)}

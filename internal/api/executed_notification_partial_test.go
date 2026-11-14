@@ -205,12 +205,12 @@ func TestTokenApprove_FailureMappedByCause(t *testing.T) {
 		code   int // 0: a plain (500) error, not a client error
 		status string
 	}{
-		"provider failure after the claim": {failed, errors.New("AWS RI purchase failed"), 502, "failed"},
-		"final status not saved":           {partialRunRow(execID), fmt.Errorf("%w: terminal save failed; original execution error: %w", config.ErrAuditLoss, errPartialRun), 500, ""},
-		"4-eyes denial before the claim":   {nil, fmt.Errorf("%w: approver is the requester", purchase.ErrFourEyesDenied), 403, ""},
-		"lost claim":                       {nil, fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), 409, ""},
-		"token rotated before the claim":   {nil, fmt.Errorf("approve: %w", config.ErrApprovalTokenChanged), 403, ""},
-		"not started, store error":         {nil, errors.New("failed to get execution: db down"), 0, ""},
+		"provider failure after the claim": {final: failed, err: errors.New("AWS RI purchase failed"), code: 502, status: "failed"},
+		"final status not saved":           {final: partialRunRow(execID), err: fmt.Errorf("%w: terminal save failed; original execution error: %w", config.ErrAuditLoss, errPartialRun), code: 500, status: ""},
+		"4-eyes denial before the claim":   {final: nil, err: fmt.Errorf("%w: approver is the requester", purchase.ErrFourEyesDenied), code: 403, status: ""},
+		"lost claim":                       {final: nil, err: fmt.Errorf("approve: %w", config.ErrExecutionNotInExpectedStatus), code: 409, status: ""},
+		"token rotated before the claim":   {final: nil, err: fmt.Errorf("approve: %w", config.ErrApprovalTokenChanged), code: 403, status: ""},
+		"not started, store error":         {final: nil, err: errors.New("failed to get execution: db down"), code: 0, status: ""},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

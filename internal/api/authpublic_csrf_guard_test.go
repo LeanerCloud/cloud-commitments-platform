@@ -113,14 +113,14 @@ type csrfGuardRow struct {
 // dispatch falls through to the email-link branch, which also needs CSRF when
 // a session is present (issue #597).
 var authPublicCSRFGuardRows = []csrfGuardRow{
-	{"approve/session", "POST /api/purchases/approve/*", "POST", "/api/purchases/approve/" + csrfGuardExecID, "", purchaseCSRFGuardFixture("approve", false)},
-	{"approve/token", "POST /api/purchases/approve/*", "POST", "/api/purchases/approve/" + csrfGuardExecID, csrfGuardRawToken, purchaseCSRFGuardFixture("approve", true)},
-	{"cancel/session", "POST /api/purchases/cancel/*", "POST", "/api/purchases/cancel/" + csrfGuardExecID, "", purchaseCSRFGuardFixture("cancel", false)},
-	{"cancel/token", "POST /api/purchases/cancel/*", "POST", "/api/purchases/cancel/" + csrfGuardExecID, csrfGuardRawToken, purchaseCSRFGuardFixture("cancel", true)},
-	{"revoke/session", "POST /api/purchases/revoke/*", "POST", "/api/purchases/revoke/" + csrfGuardExecID, "", purchaseCSRFGuardFixture("revoke", false)},
-	{"revoke/token", "POST /api/purchases/revoke/*", "POST", "/api/purchases/revoke/" + csrfGuardExecID, csrfGuardRawToken, purchaseCSRFGuardFixture("revoke", true)},
-	{"ri-approve/session", "POST /api/ri-exchange/approve/*", "POST", "/api/ri-exchange/approve/" + csrfGuardRIID, "", riApproveCSRFGuardFixture},
-	{"ri-approve/session+token", "POST /api/ri-exchange/approve/*", "POST", "/api/ri-exchange/approve/" + csrfGuardRIID, "tok", riApproveCSRFGuardFixture},
+	{name: "approve/session", route: "POST /api/purchases/approve/*", method: "POST", path: "/api/purchases/approve/" + csrfGuardExecID, token: "", build: purchaseCSRFGuardFixture("approve", false)},
+	{name: "approve/token", route: "POST /api/purchases/approve/*", method: "POST", path: "/api/purchases/approve/" + csrfGuardExecID, token: csrfGuardRawToken, build: purchaseCSRFGuardFixture("approve", true)},
+	{name: "cancel/session", route: "POST /api/purchases/cancel/*", method: "POST", path: "/api/purchases/cancel/" + csrfGuardExecID, token: "", build: purchaseCSRFGuardFixture("cancel", false)},
+	{name: "cancel/token", route: "POST /api/purchases/cancel/*", method: "POST", path: "/api/purchases/cancel/" + csrfGuardExecID, token: csrfGuardRawToken, build: purchaseCSRFGuardFixture("cancel", true)},
+	{name: "revoke/session", route: "POST /api/purchases/revoke/*", method: "POST", path: "/api/purchases/revoke/" + csrfGuardExecID, token: "", build: purchaseCSRFGuardFixture("revoke", false)},
+	{name: "revoke/token", route: "POST /api/purchases/revoke/*", method: "POST", path: "/api/purchases/revoke/" + csrfGuardExecID, token: csrfGuardRawToken, build: purchaseCSRFGuardFixture("revoke", true)},
+	{name: "ri-approve/session", route: "POST /api/ri-exchange/approve/*", method: "POST", path: "/api/ri-exchange/approve/" + csrfGuardRIID, token: "", build: riApproveCSRFGuardFixture},
+	{name: "ri-approve/session+token", route: "POST /api/ri-exchange/approve/*", method: "POST", path: "/api/ri-exchange/approve/" + csrfGuardRIID, token: "tok", build: riApproveCSRFGuardFixture},
 }
 
 // csrfRouteKey names a route by method and path pattern ("*" marks the

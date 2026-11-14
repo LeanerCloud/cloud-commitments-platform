@@ -201,16 +201,16 @@ func TestCapOnlyHolder_ReadsStillServed(t *testing.T) {
 		call func(*Handler) (any, error)
 	}{
 		"ri-exchange config": {
-			auth.Permission{Action: auth.ActionView, Resource: auth.ResourceConfig, Constraints: capOnly()},
-			func(h *Handler) (any, error) { return h.getRIExchangeConfig(context.Background(), scopedRequest("")) },
+			perm: auth.Permission{Action: auth.ActionView, Resource: auth.ResourceConfig, Constraints: capOnly()},
+			call: func(h *Handler) (any, error) { return h.getRIExchangeConfig(context.Background(), scopedRequest("")) },
 		},
 		"ladder configs": {
-			auth.Permission{Action: auth.ActionView, Resource: auth.ResourceConfig, Constraints: capOnly()},
-			func(h *Handler) (any, error) { return h.getLadderConfigs(context.Background(), scopedRequest("")) },
+			perm: auth.Permission{Action: auth.ActionView, Resource: auth.ResourceConfig, Constraints: capOnly()},
+			call: func(h *Handler) (any, error) { return h.getLadderConfigs(context.Background(), scopedRequest("")) },
 		},
 		"plans": {
-			auth.Permission{Action: auth.ActionView, Resource: auth.ResourcePlans, Constraints: capOnly()},
-			func(h *Handler) (any, error) {
+			perm: auth.Permission{Action: auth.ActionView, Resource: auth.ResourcePlans, Constraints: capOnly()},
+			call: func(h *Handler) (any, error) {
 				return h.listPlans(context.Background(), scopedRequest(""), map[string]string{})
 			},
 		},
