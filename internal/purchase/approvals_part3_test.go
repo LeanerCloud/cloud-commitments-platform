@@ -383,3 +383,99 @@ func TestManager_CancelExecution(t *testing.T) {
 
 	mockStore.AssertExpectations(t)
 }
+
+// TestManager_ApproveAndExecute_FourEyesOn_PerUserAPIKey_DeniesSelfExecute
+// closes the exact HIGH gap an independent adversarial review found in an
+// earlier version of this fix: a per-user API key session
+// (Session.UserAPIKeyID != "") carries a real user UUID as Session.UserID
+// but an EMPTY Session.Email -- unlike a normal bearer-token session.
+// internal/api's fourEyesActorIdentity falls back to session.UserID (a UUID
+// string, not an email) whenever Email is empty; if checkDifferentApprover
+// only ever compared emails, that UUID string could never equal the
+// creator's real resolved email and self-direct-execute would silently
+// succeed. Comparing UUIDs first (tier 1, via transitionedBy) closes this
+// regardless of what the email-shaped actor string looks like.
+func TestManager_ApproveAndExecute_FourEyesOn_PerUserAPIKey_DeniesSelfExecute(t *testing.T) {
+	ctx := context.Background()
+	manager, store, _ := newApproveManager(t)
+
+	creatorID := "11111111-1111-1111-1111-111111111111"
+	execution := fourEyesManagerExec("exec-apikey-self", &creatorID)
+
+	store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
+	store.On("GetExecutionByID", ctx, "exec-apikey-self").Return(execution, nil)
+
+	// actor is the UUID string itself (empty Session.Email fallback), exactly
+	// what internal/api's fourEyesActorIdentity would pass for a per-user API
+	// key session; transitionedBy is the same UUID, populated regardless of
+	// Email by validUUIDPtrOrNil(&session.UserID).
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-apikey-self", creatorID, &creatorID, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "4-eyes mode requires a different approver")
+	store.AssertNotCalled(t, "TransitionExecutionStatus",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	store.AssertNotCalled(t, "GetUserEmailByID", mock.Anything, mock.Anything)
+	store.AssertExpectations(t)
+}
+
+// TestManager_ApproveAndExecute_FourEyesOn_NullCreatorDenied: a legacy row
+// with no recorded creator cannot satisfy "different from creator" and must
+// fail closed, mirroring the handler-level requireDifferentApprover behavior
+// for the same case.
+func TestManager_ApproveAndExecute_FourEyesOn_NullCreatorDenied(t *testing.T) {
+	ctx := context.Background()
+	manager, store, _ := newApproveManager(t)
+
+	execution := fourEyesManagerExec("exec-legacy", nil)
+	store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
+	store.On("GetExecutionByID", ctx, "exec-legacy").Return(execution, nil)
+
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-legacy", "someone@example.com", nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "predates the dual-control feature")
+	store.AssertExpectations(t)
+}
+
+// TestManager_ApproveAndExecute_FourEyesOn_EmptyActorDenied covers the
+// "actor identity is unknown" fail-closed branch explicitly: mode is on, the
+// execution has a recorded creator, but no actor identity was supplied.
+func TestManager_ApproveAndExecute_FourEyesOn_EmptyActorDenied(t *testing.T) {
+	ctx := context.Background()
+	manager, store, _ := newApproveManager(t)
+
+	creatorID := "user-creator"
+	execution := fourEyesManagerExec("exec-no-actor", &creatorID)
+	store.On("GetGlobalConfig", ctx).Return(fourEyesCfgOnForManager(), nil)
+	store.On("GetExecutionByID", ctx, "exec-no-actor").Return(execution, nil)
+
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-no-actor", "", nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no approver identity could be determined")
+	store.AssertExpectations(t)
+}
+
+// TestManager_ApproveAndExecute_FourEyesOff_AllowsSelfApprove is the
+// regression-continuity guard: mode off (the default) must behave exactly
+// as before this fix -- the creator may approve/direct-execute their own
+// row, and the FOUR-EYES GATE ITSELF performs no extra DB calls (it never
+// calls GetUserEmailByID, and never calls GetExecutionByID for identity
+// purposes since loadExecutionForFourEyes is skipped when mode is off).
+// rotateApprovalToken (called unconditionally after a successful execute,
+// issue #103) mutates the `updated` struct already in hand rather than
+// re-fetching by ID, so it adds no extra GetExecutionByID call either.
+func TestManager_ApproveAndExecute_FourEyesOff_AllowsSelfApprove(t *testing.T) {
+	ctx := context.Background()
+	manager, store, sender := newApproveManager(t)
+
+	creatorID := "user-creator"
+	updated := &config.PurchaseExecution{ExecutionID: "exec-mode-off", PlanID: "plan-fourEyes", Status: "approved", StepNumber: 1, Recommendations: approvalTestRecs()}
+	store.On("TransitionExecutionStatus", ctx, "exec-mode-off", approveFromStatuses, "running", &creatorID).Return(updated, nil)
+	stubExecuteChain(t, store, sender, "plan-fourEyes")
+
+	_, _, err := manager.ApproveAndExecute(ctx, "exec-mode-off", "creator@example.com", &creatorID, nil)
+	require.NoError(t, err)
+	store.AssertNotCalled(t, "GetExecutionByID", mock.Anything, mock.Anything)
+	store.AssertNotCalled(t, "GetUserEmailByID", mock.Anything, mock.Anything)
+	store.AssertExpectations(t)
+	sender.AssertExpectations(t)
+}
