@@ -13,7 +13,6 @@ import { rowIconButton } from './lib/row-icon-button';
 import {
   isValidCombination,
   getValidPaymentOptions,
-  getValidTermOptions,
   getCommitmentConfig,
   normalizePaymentValue,
 } from './commitmentOptions';
@@ -47,6 +46,7 @@ import {
 } from './modules/settings-fields';
 import {
   buildPaymentOverrideSelect,
+  buildTermOverrideSelect,
   cachedGlobalDefaults,
   getOverrideServicesForProvider,
   refreshRecommendationsAfterOverrideChange,
@@ -335,131 +335,6 @@ function renderAccountsList(
   // the table; they now live in the account-overrides-modal (issue #122)
   // so the accounts table stays compact and per-account scoping is
   // unambiguous.
-}
-
-/**
- * Build the per-row Term <select> for the overrides panel. Issue #110.
- *
- * Mirrors buildPaymentOverrideSelect (#23) verbatim: Inherit option +
- * provider/service-specific valid options + sparse PUT on change. The
- * options are filtered by the row's CURRENT payment via
- * `getValidTermOptions('aws', service, payment)`, so an RDS row with
- * payment=no-upfront does not list term=3 (the one hard AWS rule per
- * commitmentOptions.ts).
- *
- * When `term` is already set on the row, the Inherit option is disabled
- * for the same reason as Payment's Inherit: the backend has no
- * clear-field channel, so reverting to "no term" would require Delete.
- */
-function buildTermOverrideSelect(
-  accountId: string,
-  override: api.AccountServiceOverride,
-  panel: HTMLElement,
-): HTMLSelectElement {
-  const select = document.createElement('select');
-  select.className = 'override-term-select';
-  select.setAttribute(
-    'aria-label',
-    `Term for ${override.provider}/${override.service} override`,
-  );
-
-  const inheritOpt = document.createElement('option');
-  inheritOpt.value = '';
-  // Issue #112: show the current global term so the user knows what
-  // "Inherit" means without switching to the Purchasing tab.
-  inheritOpt.textContent = inheritCurrentlyLabel(termLabel(String(cachedGlobalDefaults.term)));
-  select.appendChild(inheritOpt);
-
-  // Filter the term dropdown to the (term, payment) combinations AWS
-  // supports for THIS service given the row's CURRENT payment. e.g. an
-  // RDS row with payment=no-upfront cannot upgrade to term=3.
-  // When payment is unset, getValidTermOptions falls back to the
-  // service's full term list (the underlying `getValidTermOptions`
-  // returns all terms whose invalidCombinations don't match the given
-  // payment; with payment='' nothing matches, so all terms are valid).
-  const currentPayment = override.payment ?? '';
-  const validTerms = getValidTermOptions(override.provider, override.service, currentPayment);
-
-  for (const { value, label } of validTerms) {
-    const opt = document.createElement('option');
-    opt.value = String(value);
-    opt.textContent = label;
-    select.appendChild(opt);
-  }
-
-  const initial = override.term !== undefined && override.term > 0 ? String(override.term) : '';
-
-  // If the row's CURRENT term isn't in the valid set (e.g., the row was
-  // saved before the filter shipped, or AWS tightened the rules), still
-  // render the current value so the row isn't silently mutated, but
-  // mark it as a problem.
-  const currentIsValid = initial === '' || validTerms.some(t => String(t.value) === initial);
-  if (!currentIsValid) {
-    const stale = document.createElement('option');
-    stale.value = initial;
-    stale.textContent = `${initial}yr (invalid for current payment — Delete the override and recreate)`;
-    stale.dataset['stale'] = 'true';
-    select.appendChild(stale);
-  }
-
-  select.value = initial;
-  select.dataset['previous'] = initial;
-
-  // If a term is already set, "Inherit" is not a clean transition (the
-  // backend has no clear-field channel). Same rationale as Payment.
-  if (initial !== '') {
-    inheritOpt.disabled = true;
-    inheritOpt.title = 'Use Delete to remove the override entirely (clears all fields including term)';
-  }
-
-  select.addEventListener('change', () => {
-    void handleTermOverrideChange(accountId, override, select, panel);
-  });
-
-  return select;
-}
-
-async function handleTermOverrideChange(
-  accountId: string,
-  override: api.AccountServiceOverride,
-  select: HTMLSelectElement,
-  panel: HTMLElement,
-): Promise<void> {
-  const previous = select.dataset['previous'] ?? '';
-  const next = select.value;
-  if (next === previous) return;
-  if (next === '') {
-    // Reverting to Inherit while a term is set is blocked above; defensive
-    // no-op here keeps types narrow if the option becomes selectable later.
-    select.value = previous;
-    return;
-  }
-  const termNum = parseInt(next, 10);
-  if (Number.isNaN(termNum)) {
-    select.value = previous;
-    return;
-  }
-  select.disabled = true;
-  try {
-    await api.saveAccountServiceOverride(accountId, override.provider, override.service, {
-      term: termNum,
-    });
-    select.dataset['previous'] = next;
-    showToast({
-      message: `Term override updated for ${override.provider}/${override.service}.`,
-      kind: 'success',
-    });
-    await loadOverridesPanel(accountId, panel, override.provider as AccountProvider);
-    await refreshRecommendationsAfterOverrideChange();
-  } catch (err) {
-    select.value = previous;
-    showToast({
-      message: `Failed to update term override: ${(err as Error).message}`,
-      kind: 'error',
-    });
-  } finally {
-    select.disabled = false;
-  }
 }
 
 /**
