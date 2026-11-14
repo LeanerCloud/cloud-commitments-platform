@@ -246,7 +246,9 @@ func (s *Scheduler) CollectRecommendations(ctx context.Context, ownerToken strin
 	logging.Infof("Collected %d recommendations with $%.2f/month potential savings",
 		len(allRecommendations), totalSavings)
 
+	heldBefore := s.expiredAzureHolds(ctx)
 	s.persistCollection(ctx, allRecommendations, successfulCollects, failedProviders, partial)
+	s.alertNewlyExpiredHolds(ctx, heldBefore)
 
 	// Send notification if we have recommendations
 	if len(allRecommendations) > 0 && totalSavings > 0 {
