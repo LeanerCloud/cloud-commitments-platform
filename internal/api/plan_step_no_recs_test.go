@@ -75,24 +75,24 @@ func TestAddPurchasesValidatesLockedPlan(t *testing.T) {
 		switchOn bool
 		want     string
 	}{
-		{"disabled", func(p *config.PurchasePlan) { p.Enabled = false }, true, "enabled"},
-		{"missing auto cap", func(p *config.PurchasePlan) { p.MaxStepCommitment = nil }, true, "max_step_commitment"},
-		{"invalid cap", func(p *config.PurchasePlan) { v := 1.005; p.MaxStepCommitment = &v }, true, "decimal"},
-		{"switch off", func(*config.PurchasePlan) {}, false, "disabled globally"},
-		{"complete", func(p *config.PurchasePlan) { p.RampSchedule.CurrentStep = 4 }, true, "remaining"},
-		{"negative step", func(p *config.PurchasePlan) { p.RampSchedule.CurrentStep = -1 }, true, "negative"},
-		{"no interval", func(p *config.PurchasePlan) { p.RampSchedule.StepIntervalDays = 0 }, true, "positive"},
-		{"no veto", func(p *config.PurchasePlan) { p.NotificationDaysBefore = 0 }, true, "veto"},
-		{"ignored filter", func(p *config.PurchasePlan) {
+		{name: "disabled", change: func(p *config.PurchasePlan) { p.Enabled = false }, switchOn: true, want: "enabled"},
+		{name: "missing auto cap", change: func(p *config.PurchasePlan) { p.MaxStepCommitment = nil }, switchOn: true, want: "max_step_commitment"},
+		{name: "invalid cap", change: func(p *config.PurchasePlan) { v := 1.005; p.MaxStepCommitment = &v }, switchOn: true, want: "decimal"},
+		{name: "switch off", change: func(*config.PurchasePlan) {}, switchOn: false, want: "disabled globally"},
+		{name: "complete", change: func(p *config.PurchasePlan) { p.RampSchedule.CurrentStep = 4 }, switchOn: true, want: "remaining"},
+		{name: "negative step", change: func(p *config.PurchasePlan) { p.RampSchedule.CurrentStep = -1 }, switchOn: true, want: "negative"},
+		{name: "no interval", change: func(p *config.PurchasePlan) { p.RampSchedule.StepIntervalDays = 0 }, switchOn: true, want: "positive"},
+		{name: "no veto", change: func(p *config.PurchasePlan) { p.NotificationDaysBefore = 0 }, switchOn: true, want: "veto"},
+		{name: "ignored filter", change: func(p *config.PurchasePlan) {
 			s := p.Services["azure:compute"]
 			s.IncludeRegions = []string{"eastus"}
 			p.Services["azure:compute"] = s
-		}, true, "include_regions"},
-		{"automatic", func(*config.PurchasePlan) {}, true, ""},
-		{"manual switch off", func(p *config.PurchasePlan) { p.AutoPurchase = false; p.MaxStepCommitment = nil }, false, ""},
-		{"immediate", func(p *config.PurchasePlan) {
+		}, switchOn: true, want: "include_regions"},
+		{name: "automatic", change: func(*config.PurchasePlan) {}, switchOn: true, want: ""},
+		{name: "manual switch off", change: func(p *config.PurchasePlan) { p.AutoPurchase = false; p.MaxStepCommitment = nil }, switchOn: false, want: ""},
+		{name: "immediate", change: func(p *config.PurchasePlan) {
 			p.RampSchedule = config.RampSchedule{Type: "immediate", PercentPerStep: 100, TotalSteps: 1}
-		}, true, ""},
+		}, switchOn: true, want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

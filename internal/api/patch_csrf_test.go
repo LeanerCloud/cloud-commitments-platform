@@ -44,9 +44,9 @@ type patchCSRFRow struct {
 }
 
 var patchCSRFRows = []patchCSRFRow{
-	{"plans", "/api/plans/" + patchCSRFPlan, `{"name":"Renamed"}`, patchPlanCSRFFixture},
-	{"ladder tranches", "/api/ladder/tranches/" + scopedInAccount,
-		`{"expected_revision":0,"scheduled_date":"2030-01-01T00:00:00Z","amount_usd_hr":"1.5"}`, ladderAmendCSRFFixture},
+	{name: "plans", path: "/api/plans/" + patchCSRFPlan, body: `{"name":"Renamed"}`, build: patchPlanCSRFFixture},
+	{name: "ladder tranches", path: "/api/ladder/tranches/" + scopedInAccount,
+		body: `{"expected_revision":0,"scheduled_date":"2030-01-01T00:00:00Z","amount_usd_hr":"1.5"}`, build: ladderAmendCSRFFixture},
 }
 
 // expectCSRF answers ValidateCSRFToken the way the real service does: only

@@ -241,10 +241,10 @@ func TestAuthServiceInterface_UserGroupWritesAreTyped(t *testing.T) {
 		req    reflect.Type
 		resp   reflect.Type
 	}{
-		{"CreateUserAPI", reflect.TypeOf(auth.APICreateUserRequest{}), reflect.TypeOf(&auth.APICreateUserResponse{})},
-		{"UpdateUserAPI", reflect.TypeOf(auth.APIUpdateUserRequest{}), reflect.TypeOf(&auth.APIUser{})},
-		{"CreateGroupAPI", reflect.TypeOf(auth.APICreateGroupRequest{}), reflect.TypeOf(&auth.APIGroup{})},
-		{"UpdateGroupAPI", reflect.TypeOf(auth.APIUpdateGroupRequest{}), reflect.TypeOf(&auth.APIGroup{})},
+		{method: "CreateUserAPI", req: reflect.TypeOf(auth.APICreateUserRequest{}), resp: reflect.TypeOf(&auth.APICreateUserResponse{})},
+		{method: "UpdateUserAPI", req: reflect.TypeOf(auth.APIUpdateUserRequest{}), resp: reflect.TypeOf(&auth.APIUser{})},
+		{method: "CreateGroupAPI", req: reflect.TypeOf(auth.APICreateGroupRequest{}), resp: reflect.TypeOf(&auth.APIGroup{})},
+		{method: "UpdateGroupAPI", req: reflect.TypeOf(auth.APIUpdateGroupRequest{}), resp: reflect.TypeOf(&auth.APIGroup{})},
 	}
 	for _, tc := range cases {
 		m, ok := iface.MethodByName(tc.method)

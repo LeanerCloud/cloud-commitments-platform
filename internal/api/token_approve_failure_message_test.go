@@ -37,13 +37,13 @@ func tokenFailureCases() []tokenFailureCase {
 		return fmt.Errorf("%w: %w", purchase.ErrClaimedRowRefused, NewClientError(403, msg))
 	}
 	return []tokenFailureCase{
-		{"audit loss", config.StatusPartiallyCompleted, fmt.Errorf("%w: terminal save failed; original execution error: %w", config.ErrAuditLoss, errOtherAcct), 500},
-		{"partial run", config.StatusPartiallyCompleted, fmt.Errorf("some purchases failed: %w", errOtherAcct), 502},
-		{"default failure", "failed", fmt.Errorf("provider call failed: %w", errOtherAcct), 502},
-		{"post-claim step cap", "failed", refusal(fmt.Sprintf("step total commitment 9000.00 exceeds max_step_commitment 100.00 (%s, %s)", otherAcctID, otherAcctName)), 403},
-		{"post-claim ladder (plain error)", "failed", fmt.Errorf("ladder tranche for %s (%s) no longer matches", otherAcctID, otherAcctName), 502},
-		{"stale Azure pricing", "failed", fmt.Errorf("%w: Azure recommendation %q no longer has the approved price", purchase.ErrStaleAzurePricing, "azure|"+otherAcctID+"|compute|eastus|D2s|"), 409},
-		{"audit loss wrapping stale pricing", "failed", fmt.Errorf("%w: terminal save failed (dial tcp 10.0.0.5:5432); original execution error: %w", config.ErrAuditLoss, fmt.Errorf("%w: Azure recommendation %q", purchase.ErrStaleAzurePricing, "azure|"+otherAcctID+"|compute|eastus|D2s|")), 500},
+		{name: "audit loss", status: config.StatusPartiallyCompleted, err: fmt.Errorf("%w: terminal save failed; original execution error: %w", config.ErrAuditLoss, errOtherAcct), code: 500},
+		{name: "partial run", status: config.StatusPartiallyCompleted, err: fmt.Errorf("some purchases failed: %w", errOtherAcct), code: 502},
+		{name: "default failure", status: "failed", err: fmt.Errorf("provider call failed: %w", errOtherAcct), code: 502},
+		{name: "post-claim step cap", status: "failed", err: refusal(fmt.Sprintf("step total commitment 9000.00 exceeds max_step_commitment 100.00 (%s, %s)", otherAcctID, otherAcctName)), code: 403},
+		{name: "post-claim ladder (plain error)", status: "failed", err: fmt.Errorf("ladder tranche for %s (%s) no longer matches", otherAcctID, otherAcctName), code: 502},
+		{name: "stale Azure pricing", status: "failed", err: fmt.Errorf("%w: Azure recommendation %q no longer has the approved price", purchase.ErrStaleAzurePricing, "azure|"+otherAcctID+"|compute|eastus|D2s|"), code: 409},
+		{name: "audit loss wrapping stale pricing", status: "failed", err: fmt.Errorf("%w: terminal save failed (dial tcp 10.0.0.5:5432); original execution error: %w", config.ErrAuditLoss, fmt.Errorf("%w: Azure recommendation %q", purchase.ErrStaleAzurePricing, "azure|"+otherAcctID+"|compute|eastus|D2s|")), code: 500},
 	}
 }
 

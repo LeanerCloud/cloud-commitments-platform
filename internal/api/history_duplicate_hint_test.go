@@ -42,13 +42,13 @@ func TestHistoryRow_DuplicateHintKeptOutsideDefiniteAWSRefusals(t *testing.T) {
 		recs []config.RecommendationRecord
 		err  string
 	}{
-		{"gcp rate limit", []config.RecommendationRecord{gcp, ec2}, gcpRate},
-		{"gcp not found", []config.RecommendationRecord{gcp, ec2}, gcpNotFound},
-		{"azure 500 on a capacity url", []config.RecommendationRecord{azSP}, azure500},
-		{"azure 429", []config.RecommendationRecord{azSP}, azure429},
-		{"aws 5xx", []config.RecommendationRecord{ec2}, aws503},
-		{"aws without a code", []config.RecommendationRecord{ec2}, "operation error EC2: X, https response error StatusCode: 403"},
-		{"non-aws rec beside a definite aws refusal", []config.RecommendationRecord{ec2, gcp}, fakeAWSDenied},
+		{name: "gcp rate limit", recs: []config.RecommendationRecord{gcp, ec2}, err: gcpRate},
+		{name: "gcp not found", recs: []config.RecommendationRecord{gcp, ec2}, err: gcpNotFound},
+		{name: "azure 500 on a capacity url", recs: []config.RecommendationRecord{azSP}, err: azure500},
+		{name: "azure 429", recs: []config.RecommendationRecord{azSP}, err: azure429},
+		{name: "aws 5xx", recs: []config.RecommendationRecord{ec2}, err: aws503},
+		{name: "aws without a code", recs: []config.RecommendationRecord{ec2}, err: "operation error EC2: X, https response error StatusCode: 403"},
+		{name: "non-aws rec beside a definite aws refusal", recs: []config.RecommendationRecord{ec2, gcp}, err: fakeAWSDenied},
 	}
 	for _, c := range cases {
 		row := executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: c.err, Recommendations: c.recs}, "", "")
@@ -75,12 +75,12 @@ func TestHistoryRow_ExecutorStoredAWSRefusalDropsDuplicateHint(t *testing.T) {
 		recs   []config.RecommendationRecord
 		stored string
 	}{
-		"unknown head":   {[]config.RecommendationRecord{ec2}, strings.Replace(ec2Stored, "failed to purchase EC2 RI", "failed to purchase GPU RI", 1)},
-		"5xx":            {[]config.RecommendationRecord{ec2}, strings.Replace(ec2Stored, "StatusCode: 403", "StatusCode: 503", 1)},
-		"empty provider": {[]config.RecommendationRecord{{Service: "ec2"}}, fakeAWSDenied},
-		"mixed run":      {[]config.RecommendationRecord{ec2}, ec2Stored + "; t4g.nano: purchase failed: purchase outcome unknown"},
-		"rds beside ec2": {[]config.RecommendationRecord{ec2, {Provider: "aws", Service: "rds"}}, ec2Stored + "; " + rdsStored},
-		"retried ec2":    {[]config.RecommendationRecord{ec2}, strings.Replace(ec2Stored, ", https response error", ", exceeded maximum number of attempts, 3, https response error", 1)},
+		"unknown head":   {recs: []config.RecommendationRecord{ec2}, stored: strings.Replace(ec2Stored, "failed to purchase EC2 RI", "failed to purchase GPU RI", 1)},
+		"5xx":            {recs: []config.RecommendationRecord{ec2}, stored: strings.Replace(ec2Stored, "StatusCode: 403", "StatusCode: 503", 1)},
+		"empty provider": {recs: []config.RecommendationRecord{{Service: "ec2"}}, stored: fakeAWSDenied},
+		"mixed run":      {recs: []config.RecommendationRecord{ec2}, stored: ec2Stored + "; t4g.nano: purchase failed: purchase outcome unknown"},
+		"rds beside ec2": {recs: []config.RecommendationRecord{ec2, {Provider: "aws", Service: "rds"}}, stored: ec2Stored + "; " + rdsStored},
+		"retried ec2":    {recs: []config.RecommendationRecord{ec2}, stored: strings.Replace(ec2Stored, ", https response error", ", exceeded maximum number of attempts, 3, https response error", 1)},
 	} {
 		row := executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: c.stored, Recommendations: c.recs}, "", "")
 		assert.Contains(t, row.OpsHint, "duplicate guard", name)

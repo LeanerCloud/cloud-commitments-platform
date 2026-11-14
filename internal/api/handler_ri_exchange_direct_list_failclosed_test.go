@@ -64,9 +64,9 @@ func TestListRIExchangeDirectExecutions_FailsClosed(t *testing.T) {
 		store *failingDirectListStore
 		auth  error
 	}{
-		{"the pair query fails", &failingDirectListStore{directListStore: dlStore(rows...), pairsErr: boom}, nil},
-		{"the page query fails", &failingDirectListStore{directListStore: dlStore(rows...), listErr: boom}, nil},
-		{"the constraint check fails with a non-403 error", &failingDirectListStore{directListStore: dlStore(rows...)}, boom},
+		{name: "the pair query fails", store: &failingDirectListStore{directListStore: dlStore(rows...), pairsErr: boom}, auth: nil},
+		{name: "the page query fails", store: &failingDirectListStore{directListStore: dlStore(rows...), listErr: boom}, auth: nil},
+		{name: "the constraint check fails with a non-403 error", store: &failingDirectListStore{directListStore: dlStore(rows...)}, auth: boom},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

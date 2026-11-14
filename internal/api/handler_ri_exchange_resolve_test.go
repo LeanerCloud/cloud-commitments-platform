@@ -304,11 +304,11 @@ func TestResolveRIExchange_ConstraintsUseTheCheckedRegionAndTheDeploymentAccount
 		deployment string
 		want       int // 0 = allowed
 	}{
-		{"grant for the checked region, which is not us-east-1", grant(auth.PermissionConstraints{Regions: []string{"eu-west-1"}}), "eu-west-1", scopedInAccount, 0},
-		{"grant for us-east-1 against another checked region", grant(auth.PermissionConstraints{Regions: []string{"us-east-1"}}), "eu-west-1", scopedInAccount, 403},
-		{"grant for the deployment's account", grant(auth.PermissionConstraints{AccountIDs: []string{scopedInAccount}}), "us-east-1", scopedInAccount, 0},
-		{"grant for another account than the deployment's", grant(auth.PermissionConstraints{AccountIDs: []string{scopedInAccount}}), "us-east-1", scopedOutAccount, 403},
-		{"grant for the other account, matching the deployment", grant(auth.PermissionConstraints{AccountIDs: []string{scopedOutAccount}}), "us-east-1", scopedOutAccount, 0},
+		{name: "grant for the checked region, which is not us-east-1", perms: grant(auth.PermissionConstraints{Regions: []string{"eu-west-1"}}), region: "eu-west-1", deployment: scopedInAccount, want: 0},
+		{name: "grant for us-east-1 against another checked region", perms: grant(auth.PermissionConstraints{Regions: []string{"us-east-1"}}), region: "eu-west-1", deployment: scopedInAccount, want: 403},
+		{name: "grant for the deployment's account", perms: grant(auth.PermissionConstraints{AccountIDs: []string{scopedInAccount}}), region: "us-east-1", deployment: scopedInAccount, want: 0},
+		{name: "grant for another account than the deployment's", perms: grant(auth.PermissionConstraints{AccountIDs: []string{scopedInAccount}}), region: "us-east-1", deployment: scopedOutAccount, want: 403},
+		{name: "grant for the other account, matching the deployment", perms: grant(auth.PermissionConstraints{AccountIDs: []string{scopedOutAccount}}), region: "us-east-1", deployment: scopedOutAccount, want: 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

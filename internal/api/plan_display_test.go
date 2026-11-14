@@ -68,21 +68,21 @@ func TestBuildPlannedPurchaseProjectsAttachedQuantitiesAndTuple(t *testing.T) {
 		resourceType string
 		region       string
 	}{
-		{"nil", nil, 0, "Various", "Multiple"},
-		{"empty", []config.RecommendationRecord{}, 0, "Various", "Multiple"},
-		{"Azure reservation quantity", []config.RecommendationRecord{azure}, 20, "Standard_D2s_v3", "westeurope"},
-		{"homogeneous tuples", []config.RecommendationRecord{rec(7, "Standard_D2s_v3", "westeurope"), rec(13, "Standard_D2s_v3", "westeurope")}, 20, "Standard_D2s_v3", "westeurope"},
-		{"mixed types", []config.RecommendationRecord{rec(7, "Standard_D2s_v3", "westeurope"), rec(13, "Standard_D4s_v3", "westeurope")}, 20, "Various", "westeurope"},
-		{"mixed regions", []config.RecommendationRecord{rec(7, "Standard_D2s_v3", "westeurope"), rec(13, "Standard_D2s_v3", "eastus")}, 20, "Standard_D2s_v3", "Multiple"},
-		{"unknown type", []config.RecommendationRecord{rec(7, "", "westeurope"), rec(13, "Standard_D2s_v3", "westeurope")}, 20, "Various", "westeurope"},
-		{"unknown region", []config.RecommendationRecord{rec(7, "Standard_D2s_v3", ""), rec(13, "Standard_D2s_v3", "westeurope")}, 20, "Standard_D2s_v3", "Multiple"},
-		{"reversed unknown fields", []config.RecommendationRecord{rec(13, "Standard_D2s_v3", "westeurope"), rec(7, "", "")}, 20, "Various", "Multiple"},
-		{"reversed mixed types", []config.RecommendationRecord{rec(13, "Standard_D4s_v3", "westeurope"), rec(7, "Standard_D2s_v3", "westeurope")}, 20, "Various", "westeurope"},
-		{"AWS RI instances", []config.RecommendationRecord{aws}, 6, "m5.large", "us-east-1"},
-		{"GCP vCPU units", []config.RecommendationRecord{gcp}, 12, "n2", "us-central1"},
-		{"Savings Plan hourly amount is not Count", []config.RecommendationRecord{sp}, 1, "Various", "Multiple"},
-		{"explicit Savings Plan tuple", []config.RecommendationRecord{globalSP}, 1, "ComputeSP", "global"},
-		{"mixed providers keep raw units", []config.RecommendationRecord{aws, gcp}, 18, "Various", "Multiple"},
+		{name: "nil", recs: nil, count: 0, resourceType: "Various", region: "Multiple"},
+		{name: "empty", recs: []config.RecommendationRecord{}, count: 0, resourceType: "Various", region: "Multiple"},
+		{name: "Azure reservation quantity", recs: []config.RecommendationRecord{azure}, count: 20, resourceType: "Standard_D2s_v3", region: "westeurope"},
+		{name: "homogeneous tuples", recs: []config.RecommendationRecord{rec(7, "Standard_D2s_v3", "westeurope"), rec(13, "Standard_D2s_v3", "westeurope")}, count: 20, resourceType: "Standard_D2s_v3", region: "westeurope"},
+		{name: "mixed types", recs: []config.RecommendationRecord{rec(7, "Standard_D2s_v3", "westeurope"), rec(13, "Standard_D4s_v3", "westeurope")}, count: 20, resourceType: "Various", region: "westeurope"},
+		{name: "mixed regions", recs: []config.RecommendationRecord{rec(7, "Standard_D2s_v3", "westeurope"), rec(13, "Standard_D2s_v3", "eastus")}, count: 20, resourceType: "Standard_D2s_v3", region: "Multiple"},
+		{name: "unknown type", recs: []config.RecommendationRecord{rec(7, "", "westeurope"), rec(13, "Standard_D2s_v3", "westeurope")}, count: 20, resourceType: "Various", region: "westeurope"},
+		{name: "unknown region", recs: []config.RecommendationRecord{rec(7, "Standard_D2s_v3", ""), rec(13, "Standard_D2s_v3", "westeurope")}, count: 20, resourceType: "Standard_D2s_v3", region: "Multiple"},
+		{name: "reversed unknown fields", recs: []config.RecommendationRecord{rec(13, "Standard_D2s_v3", "westeurope"), rec(7, "", "")}, count: 20, resourceType: "Various", region: "Multiple"},
+		{name: "reversed mixed types", recs: []config.RecommendationRecord{rec(13, "Standard_D4s_v3", "westeurope"), rec(7, "Standard_D2s_v3", "westeurope")}, count: 20, resourceType: "Various", region: "westeurope"},
+		{name: "AWS RI instances", recs: []config.RecommendationRecord{aws}, count: 6, resourceType: "m5.large", region: "us-east-1"},
+		{name: "GCP vCPU units", recs: []config.RecommendationRecord{gcp}, count: 12, resourceType: "n2", region: "us-central1"},
+		{name: "Savings Plan hourly amount is not Count", recs: []config.RecommendationRecord{sp}, count: 1, resourceType: "Various", region: "Multiple"},
+		{name: "explicit Savings Plan tuple", recs: []config.RecommendationRecord{globalSP}, count: 1, resourceType: "ComputeSP", region: "global"},
+		{name: "mixed providers keep raw units", recs: []config.RecommendationRecord{aws, gcp}, count: 18, resourceType: "Various", region: "Multiple"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

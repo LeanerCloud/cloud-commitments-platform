@@ -104,19 +104,19 @@ func TestCreatePlan_GroupsRefusals(t *testing.T) {
 		name, group, msg string
 		mutate           func(aws, azure []config.RecommendationRecord) ([]config.RecommendationRecord, []config.RecommendationRecord)
 	}{
-		{"missing id", `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":["r1","nope"]}`, `recommendation "nope" was not found`, nil},
-		{"wrong term", `{"provider":"aws","service":"ec2","term":1,"payment":"all-upfront","recommendation_ids":["r1"]}`, "does not match", nil},
-		{"wrong payment", `{"provider":"aws","service":"ec2","term":3,"payment":"no-upfront","recommendation_ids":["r1"]}`, "does not match", nil},
-		{"empty ids", `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":[]}`, "non-empty recommendation_ids", nil},
-		{"account outside plan", `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":["r1"]}`, "does not match", func(a, z []config.RecommendationRecord) ([]config.RecommendationRecord, []config.RecommendationRecord) {
+		{name: "missing id", group: `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":["r1","nope"]}`, msg: `recommendation "nope" was not found`, mutate: nil},
+		{name: "wrong term", group: `{"provider":"aws","service":"ec2","term":1,"payment":"all-upfront","recommendation_ids":["r1"]}`, msg: "does not match", mutate: nil},
+		{name: "wrong payment", group: `{"provider":"aws","service":"ec2","term":3,"payment":"no-upfront","recommendation_ids":["r1"]}`, msg: "does not match", mutate: nil},
+		{name: "empty ids", group: `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":[]}`, msg: "non-empty recommendation_ids", mutate: nil},
+		{name: "account outside plan", group: `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":["r1"]}`, msg: "does not match", mutate: func(a, z []config.RecommendationRecord) ([]config.RecommendationRecord, []config.RecommendationRecord) {
 			other := groupAcctOther
 			a[0].CloudAccountID = &other
 			return a, z
 		}},
-		{"ambiguous id", `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":["r1"]}`, "ambiguous", func(a, z []config.RecommendationRecord) ([]config.RecommendationRecord, []config.RecommendationRecord) {
+		{name: "ambiguous id", group: `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":["r1"]}`, msg: "ambiguous", mutate: func(a, z []config.RecommendationRecord) ([]config.RecommendationRecord, []config.RecommendationRecord) {
 			return append(a, a[0]), z
 		}},
-		{"two groups same shape", `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":["r2"]}`, "same provider, service, term and payment", nil},
+		{name: "two groups same shape", group: `{"provider":"aws","service":"ec2","term":3,"payment":"all-upfront","recommendation_ids":["r2"]}`, msg: "same provider, service, term and payment", mutate: nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

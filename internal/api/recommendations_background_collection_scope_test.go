@@ -26,15 +26,15 @@ type recsReadEndpoint struct {
 }
 
 var recsReadEndpoints = []recsReadEndpoint{
-	{"GET /api/recommendations", func(h *Handler, ctx context.Context, req *events.LambdaFunctionURLRequest) error {
+	{name: "GET /api/recommendations", call: func(h *Handler, ctx context.Context, req *events.LambdaFunctionURLRequest) error {
 		_, err := h.getRecommendations(ctx, req, map[string]string{})
 		return err
 	}},
-	{"GET /api/dashboard/summary", func(h *Handler, ctx context.Context, req *events.LambdaFunctionURLRequest) error {
+	{name: "GET /api/dashboard/summary", call: func(h *Handler, ctx context.Context, req *events.LambdaFunctionURLRequest) error {
 		_, err := h.getDashboardSummary(ctx, req, map[string]string{})
 		return err
 	}},
-	{"GET /api/inventory/coverage", func(h *Handler, ctx context.Context, req *events.LambdaFunctionURLRequest) error {
+	{name: "GET /api/inventory/coverage", call: func(h *Handler, ctx context.Context, req *events.LambdaFunctionURLRequest) error {
 		_, err := h.getCoverageBreakdown(ctx, req, map[string]string{})
 		return err
 	}},

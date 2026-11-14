@@ -144,72 +144,72 @@ func TestValidateAzureOfferingsBody(t *testing.T) {
 		wantErr string
 	}{
 		{
-			"missing subscription_id",
-			AzureCompatibleOfferingsRequestBody{Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
-			"subscription_id is required",
+			name:    "missing subscription_id",
+			body:    AzureCompatibleOfferingsRequestBody{Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
+			wantErr: "subscription_id is required",
 		},
 		{
-			"empty sources",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
-			"sources is required",
+			name:    "empty sources",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
+			wantErr: "sources is required",
 		},
 		{
-			"empty targets",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}},
-			"targets is required",
+			name:    "empty targets",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}},
+			wantErr: "targets is required",
 		},
 		{
-			"too many sources",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: manySources, Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
-			"sources exceeds the maximum",
+			name:    "too many sources",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: manySources, Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
+			wantErr: "sources exceeds the maximum",
 		},
 		{
-			"too many targets",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: manyTargets},
-			"targets exceeds the maximum",
+			name:    "too many targets",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: manyTargets},
+			wantErr: "targets exceeds the maximum",
 		},
 		{
-			"source missing reservation_id",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{missingReservationID}, Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
-			"sources[0].reservation_id is required",
+			name:    "source missing reservation_id",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{missingReservationID}, Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
+			wantErr: "sources[0].reservation_id is required",
 		},
 		{
-			"source quantity zero",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{zeroSourceQty}, Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
-			"sources[0].quantity must be >= 1",
+			name:    "source quantity zero",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{zeroSourceQty}, Targets: []AzureExchangeTargetBody{azureOfferingsTarget()}},
+			wantErr: "sources[0].quantity must be >= 1",
 		},
 		{
-			"target missing sku",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{missingSKU}},
-			"targets[0].sku is required",
+			name:    "target missing sku",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{missingSKU}},
+			wantErr: "targets[0].sku is required",
 		},
 		{
-			"target missing location",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{missingLocation}},
-			"targets[0].location is required",
+			name:    "target missing location",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{missingLocation}},
+			wantErr: "targets[0].location is required",
 		},
 		{
 			// Whitespace-only survives the empty check but trims to "" in
 			// targetLocations, i.e. a Regions constraint entry no permission
 			// can name. Reject it at the boundary instead.
-			"target location is whitespace only",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{blankLocation}},
-			"targets[0].location is required",
+			name:    "target location is whitespace only",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{blankLocation}},
+			wantErr: "targets[0].location is required",
 		},
 		{
-			"target names a foreign billing scope",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{foreignBillingScope}},
-			`targets[0].billing_scope_id "/subscriptions/someone-elses-sub" is not the billing scope of subscription "sub-1"`,
+			name:    "target names a foreign billing scope",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{foreignBillingScope}},
+			wantErr: `targets[0].billing_scope_id "/subscriptions/someone-elses-sub" is not the billing scope of subscription "sub-1"`,
 		},
 		{
-			"target quantity zero",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{zeroTargetQty}},
-			"targets[0].quantity must be >= 1",
+			name:    "target quantity zero",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{zeroTargetQty}},
+			wantErr: "targets[0].quantity must be >= 1",
 		},
 		{
-			"target unknown term",
-			AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{unknownTerm}},
-			`targets[0].term: unsupported term "P2Y"`,
+			name:    "target unknown term",
+			body:    AzureCompatibleOfferingsRequestBody{SubscriptionID: "sub-1", Sources: []AzureExchangeSourceBody{azureOfferingsSource()}, Targets: []AzureExchangeTargetBody{unknownTerm}},
+			wantErr: `targets[0].term: unsupported term "P2Y"`,
 		},
 	}
 	for _, tt := range tests {
@@ -1619,8 +1619,8 @@ func TestExecuteAzureExchange_RequoteFailureAbortsBeforeCommit(t *testing.T) {
 		quoteErr error
 		wantCode int
 	}{
-		{"azure client fault", &azcore.ResponseError{StatusCode: 400, ErrorCode: "ReservationNotFound"}, 400},
-		{"transient failure", fmt.Errorf("azure: CalculateExchange: transport timeout"), 500},
+		{name: "azure client fault", quoteErr: &azcore.ResponseError{StatusCode: 400, ErrorCode: "ReservationNotFound"}, wantCode: 400},
+		{name: "transient failure", quoteErr: fmt.Errorf("azure: CalculateExchange: transport timeout"), wantCode: 500},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1658,8 +1658,8 @@ func TestExecuteAzureExchange_CommitFailureClassification(t *testing.T) {
 		wantCode   int
 		wantDetail string
 	}{
-		{"azure client fault", &azcore.ResponseError{StatusCode: 409, ErrorCode: "ReservationAlreadyExchanged"}, 400, "the exchange request was rejected as invalid"},
-		{"transient failure", fmt.Errorf("azure: ExecuteExchange: transport timeout"), 500, "exchange execution failed"},
+		{name: "azure client fault", commitErr: &azcore.ResponseError{StatusCode: 409, ErrorCode: "ReservationAlreadyExchanged"}, wantCode: 400, wantDetail: "the exchange request was rejected as invalid"},
+		{name: "transient failure", commitErr: fmt.Errorf("azure: ExecuteExchange: transport timeout"), wantCode: 500, wantDetail: "exchange execution failed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

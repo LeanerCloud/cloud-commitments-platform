@@ -86,8 +86,8 @@ func TestGetConfig_ConstrainedAdminGetsNoSourceIdentity(t *testing.T) {
 		held *auth.PermissionConstraints
 		want bool
 	}{
-		{"unconstrained admin", nil, true},
-		{"constrained admin", providerOnly(), false},
+		{name: "unconstrained admin", held: nil, want: true},
+		{name: "constrained admin", held: providerOnly(), want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, store := adminHandler(t, tc.held, nil)

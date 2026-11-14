@@ -310,22 +310,22 @@ func TestHandleRequest_RIExchangeTokenRoutes_MissingAnswersLikeWrongToken(t *tes
 	}
 	// The baseline is a missing record as the mocks report it; every other
 	// probe must answer exactly like it.
-	baseline := probe{"missing record", riRecMissing, "wrong"}
+	baseline := probe{name: "missing record", rec: riRecMissing, token: "wrong"}
 	probes := []probe{
-		{"missing record reported as ErrNotFound", riRecMissingNotFound, "wrong"},
-		{"missing record reported as ErrNotFound with the real token's value", riRecMissingNotFound, riStatusRawToken},
-		{"pending record with a wrong token", riRecPending, "wrong"},
-		{"record without a token", riRecNoToken, "wrong"},
-		{"expired record with a wrong token", riRecExpired, "wrong"},
+		{name: "missing record reported as ErrNotFound", rec: riRecMissingNotFound, token: "wrong"},
+		{name: "missing record reported as ErrNotFound with the real token's value", rec: riRecMissingNotFound, token: riStatusRawToken},
+		{name: "pending record with a wrong token", rec: riRecPending, token: "wrong"},
+		{name: "record without a token", rec: riRecNoToken, token: "wrong"},
+		{name: "expired record with a wrong token", rec: riRecExpired, token: "wrong"},
 	}
 	callers := []struct {
 		name string
 		sess riStatusSession
 		opts riStatusOpts
 	}{
-		{"no session", riSessNone, riStatusOpts{}},
-		{"invalid session", riSessInvalid, riStatusOpts{}},
-		{"session without approve permission", riSessCSRF, riStatusOpts{noApprove: true}},
+		{name: "no session", sess: riSessNone, opts: riStatusOpts{}},
+		{name: "invalid session", sess: riSessInvalid, opts: riStatusOpts{}},
+		{name: "session without approve permission", sess: riSessCSRF, opts: riStatusOpts{noApprove: true}},
 	}
 	for _, action := range []string{"approve", "reject"} {
 		for _, caller := range callers {
@@ -368,13 +368,13 @@ func TestHandleRequest_ApproveRIExchange_ApproveOwnSessionNoOracle(t *testing.T)
 	other := riStatusOpts{approveOwn: true}
 	// The baseline is another user's pending exchange; every other probe
 	// must answer exactly like it.
-	baseline := probe{"another user's pending exchange", riRecPending, other}
+	baseline := probe{name: "another user's pending exchange", rec: riRecPending, opts: other}
 	probes := []probe{
-		{"missing record", riRecMissing, other},
-		{"missing record reported as ErrNotFound", riRecMissingNotFound, other},
-		{"another user's completed exchange", riRecPending, riStatusOpts{approveOwn: true, status: "completed"}},
-		{"another user's failed exchange", riRecPending, riStatusOpts{approveOwn: true, status: "failed"}},
-		{"another user's expired exchange", riRecExpired, other},
+		{name: "missing record", rec: riRecMissing, opts: other},
+		{name: "missing record reported as ErrNotFound", rec: riRecMissingNotFound, opts: other},
+		{name: "another user's completed exchange", rec: riRecPending, opts: riStatusOpts{approveOwn: true, status: "completed"}},
+		{name: "another user's failed exchange", rec: riRecPending, opts: riStatusOpts{approveOwn: true, status: "failed"}},
+		{name: "another user's expired exchange", rec: riRecExpired, opts: other},
 	}
 	for _, tc := range []struct {
 		name      string

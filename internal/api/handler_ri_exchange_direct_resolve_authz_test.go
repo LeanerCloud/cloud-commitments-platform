@@ -62,15 +62,15 @@ func TestResolveRIExchangeDirect_ConstraintsUseTheRowsAccountAndRegion(t *testin
 		id    string
 		want  int // 0 = allowed
 	}{
-		{"grant for the row's region", grant(auth.PermissionConstraints{Regions: []string{drRegion}}), dlID1, 0},
-		{"grant for another region", grant(auth.PermissionConstraints{Regions: []string{"us-east-1"}}), dlID1, 403},
-		{"grant for the row's account", grant(auth.PermissionConstraints{AccountIDs: []string{dlAcctA}}), dlID1, 0},
-		{"grant for another account", grant(auth.PermissionConstraints{AccountIDs: []string{dlAcctB}}), dlID1, 403},
-		{"grant for the deployment's account only", grant(auth.PermissionConstraints{AccountIDs: []string{"33333333-3333-4333-8333-333333333333"}}), dlID1, 403},
-		{"account-constrained grant never covers an unattributed row", grant(auth.PermissionConstraints{AccountIDs: []string{dlAcctA}}), dlID2, 403},
-		{"cap below the row's max_payment_due (100)", riCapped(99.99), dlID1, 403},
-		{"cap equal to it", riCapped(100), dlID1, 0},
-		{"cap above it", riCapped(5000), dlID1, 0},
+		{name: "grant for the row's region", perms: grant(auth.PermissionConstraints{Regions: []string{drRegion}}), id: dlID1, want: 0},
+		{name: "grant for another region", perms: grant(auth.PermissionConstraints{Regions: []string{"us-east-1"}}), id: dlID1, want: 403},
+		{name: "grant for the row's account", perms: grant(auth.PermissionConstraints{AccountIDs: []string{dlAcctA}}), id: dlID1, want: 0},
+		{name: "grant for another account", perms: grant(auth.PermissionConstraints{AccountIDs: []string{dlAcctB}}), id: dlID1, want: 403},
+		{name: "grant for the deployment's account only", perms: grant(auth.PermissionConstraints{AccountIDs: []string{"33333333-3333-4333-8333-333333333333"}}), id: dlID1, want: 403},
+		{name: "account-constrained grant never covers an unattributed row", perms: grant(auth.PermissionConstraints{AccountIDs: []string{dlAcctA}}), id: dlID2, want: 403},
+		{name: "cap below the row's max_payment_due (100)", perms: riCapped(99.99), id: dlID1, want: 403},
+		{name: "cap equal to it", perms: riCapped(100), id: dlID1, want: 0},
+		{name: "cap above it", perms: riCapped(5000), id: dlID1, want: 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

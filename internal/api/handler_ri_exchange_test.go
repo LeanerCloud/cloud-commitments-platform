@@ -2384,15 +2384,15 @@ func TestClassifyRecsAge(t *testing.T) {
 		age  time.Duration
 		want string
 	}{
-		{"zero age is fresh", 0, ""},
-		{"30 minutes is fresh", 30 * time.Minute, ""},
-		{"just under soft threshold", reshapeSoftStaleThreshold - time.Minute, ""},
-		{"exactly soft threshold", reshapeSoftStaleThreshold, "soft"},
-		{"13 hours is soft", 13 * time.Hour, "soft"},
-		{"just under hard threshold", reshapeHardStaleThreshold - time.Minute, "soft"},
-		{"exactly hard threshold", reshapeHardStaleThreshold, "hard"},
-		{"25 hours is hard", 25 * time.Hour, "hard"},
-		{"48 hours is hard", 48 * time.Hour, "hard"},
+		{name: "zero age is fresh", age: 0, want: ""},
+		{name: "30 minutes is fresh", age: 30 * time.Minute, want: ""},
+		{name: "just under soft threshold", age: reshapeSoftStaleThreshold - time.Minute, want: ""},
+		{name: "exactly soft threshold", age: reshapeSoftStaleThreshold, want: "soft"},
+		{name: "13 hours is soft", age: 13 * time.Hour, want: "soft"},
+		{name: "just under hard threshold", age: reshapeHardStaleThreshold - time.Minute, want: "soft"},
+		{name: "exactly hard threshold", age: reshapeHardStaleThreshold, want: "hard"},
+		{name: "25 hours is hard", age: 25 * time.Hour, want: "hard"},
+		{name: "48 hours is hard", age: 48 * time.Hour, want: "hard"},
 	}
 	for _, tc := range cases {
 		tc := tc

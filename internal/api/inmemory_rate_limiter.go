@@ -101,7 +101,7 @@ func (rl *InMemoryRateLimiter) evictOldest() {
 	}
 	pairs := make([]kv, 0, len(rl.attempts))
 	for k, v := range rl.attempts {
-		pairs = append(pairs, kv{k, v.resetTime})
+		pairs = append(pairs, kv{key: k, t: v.resetTime})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
 		return pairs[i].t.Before(pairs[j].t)

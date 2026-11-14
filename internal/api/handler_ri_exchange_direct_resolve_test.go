@@ -167,12 +167,12 @@ func TestResolveRIExchangeDirect_MapsStoreOutcomes(t *testing.T) {
 		err  error
 		want int
 	}{
-		{"missing at resolve time", config.ErrRIExchangeResolveNotFound, 404},
-		{"migration not applied", config.ErrRIExchangeDirectResolveNotReady, 503},
-		{"checked_at outside the window", fmt.Errorf("%w: checked_at is in the future", config.ErrRIExchangeResolveInvalid), 400},
-		{"already settled", fmt.Errorf("%w: the exchange is already completed", config.ErrRIExchangeResolveConflict), 409},
-		{"may still be in flight", fmt.Errorf("%w: the exchange may still be in flight; wait until 2026-11-08T09:10:00Z", config.ErrRIExchangeResolveConflict), 409},
-		{"already resolved differently", fmt.Errorf("%w: the exchange was already resolved as failed", config.ErrRIExchangeResolveConflict), 409},
+		{name: "missing at resolve time", err: config.ErrRIExchangeResolveNotFound, want: 404},
+		{name: "migration not applied", err: config.ErrRIExchangeDirectResolveNotReady, want: 503},
+		{name: "checked_at outside the window", err: fmt.Errorf("%w: checked_at is in the future", config.ErrRIExchangeResolveInvalid), want: 400},
+		{name: "already settled", err: fmt.Errorf("%w: the exchange is already completed", config.ErrRIExchangeResolveConflict), want: 409},
+		{name: "may still be in flight", err: fmt.Errorf("%w: the exchange may still be in flight; wait until 2026-11-08T09:10:00Z", config.ErrRIExchangeResolveConflict), want: 409},
+		{name: "already resolved differently", err: fmt.Errorf("%w: the exchange was already resolved as failed", config.ErrRIExchangeResolveConflict), want: 409},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

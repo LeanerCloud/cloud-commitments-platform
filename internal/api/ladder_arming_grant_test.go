@@ -70,26 +70,26 @@ func TestLadderArmingGate_ConfigWrites(t *testing.T) {
 		body        string
 		wantRefused bool
 	}{
-		{"create armed: admin refused", admin, nil, lgBody(true, auto, "1"), true},
-		{"create armed: admin API key refused", key, nil, lgBody(true, auto, "1"), true},
-		{"create armed: execute:purchases allowed", granted, nil, lgBody(true, auto, "1"), false},
-		{"create disabled auto: admin allowed", admin, nil, lgBody(false, auto, "1"), false},
-		{"create enabled email_approval: admin allowed", admin, nil, lgBody(true, email, "1"), false},
-		{"enable a disabled auto config: admin refused", admin, lgStored(false, auto, cap1), lgBody(true, auto, "1"), true},
-		{"enable a disabled auto config: admin API key refused", key, lgStored(false, auto, cap1), lgBody(true, auto, "1"), true},
-		{"email_approval to auto: admin refused", admin, lgStored(true, email, cap1), lgBody(true, auto, "1"), true},
-		{"email_approval to auto: execute:purchases allowed", granted, lgStored(true, email, cap1), lgBody(true, auto, "1"), false},
-		{"raise cap: admin refused", admin, lgStored(true, auto, cap1), lgBody(true, auto, "2"), true},
-		{"raise cap: admin API key refused", key, lgStored(true, auto, cap1), lgBody(true, auto, "2"), true},
-		{"raise cap: execute:purchases allowed", granted, lgStored(true, auto, cap1), lgBody(true, auto, "2"), false},
-		{"raise by one micro: admin refused", admin, lgStored(true, auto, cap1), lgBody(true, auto, "1.000001"), true},
-		{"same cap: admin allowed", admin, lgStored(true, auto, cap1), lgBody(true, auto, "1"), false},
-		{"same cap 0.3 (binary-float trap): admin allowed", admin, lgStored(true, auto, cap03), lgBody(true, auto, "0.30"), false},
-		{"lower cap: admin API key allowed", key, lgStored(true, auto, cap1), lgBody(true, auto, "0.5"), false},
-		{"set a cap on an uncapped armed config: admin API key allowed", key, lgStored(true, auto, nil), lgBody(true, auto, "5"), false},
-		{"disarm (disable): admin API key allowed", key, lgStored(true, auto, cap1), lgBody(false, auto, "1"), false},
-		{"switch to email_approval: admin API key allowed", key, lgStored(true, auto, cap1), lgBody(true, email, "1"), false},
-		{"raise cap while disabled: admin allowed", admin, lgStored(false, auto, cap1), lgBody(false, auto, "9"), false},
+		{name: "create armed: admin refused", caller: admin, stored: nil, body: lgBody(true, auto, "1"), wantRefused: true},
+		{name: "create armed: admin API key refused", caller: key, stored: nil, body: lgBody(true, auto, "1"), wantRefused: true},
+		{name: "create armed: execute:purchases allowed", caller: granted, stored: nil, body: lgBody(true, auto, "1"), wantRefused: false},
+		{name: "create disabled auto: admin allowed", caller: admin, stored: nil, body: lgBody(false, auto, "1"), wantRefused: false},
+		{name: "create enabled email_approval: admin allowed", caller: admin, stored: nil, body: lgBody(true, email, "1"), wantRefused: false},
+		{name: "enable a disabled auto config: admin refused", caller: admin, stored: lgStored(false, auto, cap1), body: lgBody(true, auto, "1"), wantRefused: true},
+		{name: "enable a disabled auto config: admin API key refused", caller: key, stored: lgStored(false, auto, cap1), body: lgBody(true, auto, "1"), wantRefused: true},
+		{name: "email_approval to auto: admin refused", caller: admin, stored: lgStored(true, email, cap1), body: lgBody(true, auto, "1"), wantRefused: true},
+		{name: "email_approval to auto: execute:purchases allowed", caller: granted, stored: lgStored(true, email, cap1), body: lgBody(true, auto, "1"), wantRefused: false},
+		{name: "raise cap: admin refused", caller: admin, stored: lgStored(true, auto, cap1), body: lgBody(true, auto, "2"), wantRefused: true},
+		{name: "raise cap: admin API key refused", caller: key, stored: lgStored(true, auto, cap1), body: lgBody(true, auto, "2"), wantRefused: true},
+		{name: "raise cap: execute:purchases allowed", caller: granted, stored: lgStored(true, auto, cap1), body: lgBody(true, auto, "2"), wantRefused: false},
+		{name: "raise by one micro: admin refused", caller: admin, stored: lgStored(true, auto, cap1), body: lgBody(true, auto, "1.000001"), wantRefused: true},
+		{name: "same cap: admin allowed", caller: admin, stored: lgStored(true, auto, cap1), body: lgBody(true, auto, "1"), wantRefused: false},
+		{name: "same cap 0.3 (binary-float trap): admin allowed", caller: admin, stored: lgStored(true, auto, cap03), body: lgBody(true, auto, "0.30"), wantRefused: false},
+		{name: "lower cap: admin API key allowed", caller: key, stored: lgStored(true, auto, cap1), body: lgBody(true, auto, "0.5"), wantRefused: false},
+		{name: "set a cap on an uncapped armed config: admin API key allowed", caller: key, stored: lgStored(true, auto, nil), body: lgBody(true, auto, "5"), wantRefused: false},
+		{name: "disarm (disable): admin API key allowed", caller: key, stored: lgStored(true, auto, cap1), body: lgBody(false, auto, "1"), wantRefused: false},
+		{name: "switch to email_approval: admin API key allowed", caller: key, stored: lgStored(true, auto, cap1), body: lgBody(true, email, "1"), wantRefused: false},
+		{name: "raise cap while disabled: admin allowed", caller: admin, stored: lgStored(false, auto, cap1), body: lgBody(false, auto, "9"), wantRefused: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -141,9 +141,9 @@ func TestLadderArmingGate_ClearCapNonAWS(t *testing.T) {
 		stored      *config.LadderConfigDB
 		wantRefused bool
 	}{
-		{"clear cap: admin refused", admin, gcpStored(cap1), true},
-		{"clear cap: admin API key refused", key, gcpStored(cap1), true},
-		{"uncapped stays uncapped: admin allowed", admin, gcpStored(nil), false},
+		{name: "clear cap: admin refused", caller: admin, stored: gcpStored(cap1), wantRefused: true},
+		{name: "clear cap: admin API key refused", caller: key, stored: gcpStored(cap1), wantRefused: true},
+		{name: "uncapped stays uncapped: admin allowed", caller: admin, stored: gcpStored(nil), wantRefused: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
