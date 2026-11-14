@@ -52,6 +52,7 @@ func azureRoundTripWantTargets() []azurecompute.ExchangeTarget {
 }
 
 func TestGetAzureCompatibleOfferings_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -82,6 +83,7 @@ func TestGetAzureCompatibleOfferings_RoundTripEveryField(t *testing.T) {
 }
 
 func TestExecuteAzureExchange_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := newDirectExchangeAuditStore()
 	store.GetCloudAccountByExternalIDFn = func(_ context.Context, _, externalID string) (*config.CloudAccount, error) {

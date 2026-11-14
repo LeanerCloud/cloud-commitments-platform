@@ -90,6 +90,7 @@ func postPlannedPurchaseForPlan(t *testing.T, now time.Time, startDate string, a
 // the first accepted date. The clock is injected so the UTC-midnight boundary
 // is exercised deterministically.
 func TestCreatePlannedPurchases_StartDateMustBeInTheFuture(t *testing.T) {
+	t.Parallel()
 	midday := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
 	losAngeles, err := time.LoadLocation("America/Los_Angeles")
 	require.NoError(t, err)
@@ -153,6 +154,7 @@ func noticeMarginMessage(earliest string) string {
 // the message names that first accepted midnight (a ceiling, so a threshold
 // that is itself a midnight names that day, not the next).
 func TestCreatePlannedPurchases_StartDateNoticeMargin(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name             string
 		now              time.Time
@@ -181,6 +183,7 @@ func TestCreatePlannedPurchases_StartDateNoticeMargin(t *testing.T) {
 // so each one would fail on its date; validateScheduledRamp returns the 409
 // before the D5 margin is computed.
 func TestCreatePlannedPurchases_NoNoticeWindowIsRefused(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
 	resp, store := postPlannedPurchaseForPlan(t, now, "2026-06-01", false, func(p *config.PurchasePlan) {
 		p.NotificationDaysBefore = 0
@@ -194,6 +197,7 @@ func TestCreatePlannedPurchases_NoNoticeWindowIsRefused(t *testing.T) {
 // TestHandlerClock_DefaultsToWallClock checks that a Handler built without an
 // injected clock (every production constructor) still uses time.Now.
 func TestHandlerClock_DefaultsToWallClock(t *testing.T) {
+	t.Parallel()
 	before := time.Now()
 	got := (&Handler{}).clock()
 	assert.False(t, got.Before(before), "clock() must not be earlier than time.Now() taken before it")

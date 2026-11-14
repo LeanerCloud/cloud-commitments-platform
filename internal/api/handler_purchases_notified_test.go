@@ -30,6 +30,7 @@ func notifiedAdminHandler(t *testing.T, ctx context.Context) (*Handler, *MockCon
 }
 
 func TestPausePlannedPurchase_AcceptsNotifiedRow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler, store, req := notifiedAdminHandler(t, ctx)
 	store.On("GetExecutionByID", ctx, notifiedExecID).Return(&config.PurchaseExecution{ExecutionID: notifiedExecID, Status: "notified"}, nil)
@@ -42,6 +43,7 @@ func TestPausePlannedPurchase_AcceptsNotifiedRow(t *testing.T) {
 }
 
 func TestResumePlannedPurchase_PastScheduledDate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	recs := []config.RecommendationRecord{{ID: "rec-1", Count: 1, UpfrontCost: 100, CommitmentCurrency: "USD"}}
 	cases := []struct {
@@ -82,6 +84,7 @@ func TestResumePlannedPurchase_PastScheduledDate(t *testing.T) {
 }
 
 func TestCancelOrRecoverExecution_ReleasesSuppressionsOfNotifiedRow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// cancelOrRecoverExecution is called directly, after authorization, so no
 	// session is involved: a store-only handler.
@@ -100,6 +103,7 @@ func TestCancelOrRecoverExecution_ReleasesSuppressionsOfNotifiedRow(t *testing.T
 // S13 on the resume path: a plan without a veto window must not have a due
 // recommendation-bearing row moved to "now"; nothing is changed.
 func TestResumePlannedPurchase_RefusesWithoutVetoWindow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	recs := []config.RecommendationRecord{{ID: "rec-1", Count: 1, UpfrontCost: 100, CommitmentCurrency: "USD"}}
 	for _, tc := range []struct {

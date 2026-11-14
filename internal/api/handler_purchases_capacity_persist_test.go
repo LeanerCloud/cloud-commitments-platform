@@ -18,6 +18,7 @@ import (
 // chose, and it is part of the duplicate-submit key. A stored value that
 // disagreed with the request would misreport what was bought.
 func TestExecutePurchase_PersistsCapacityPercent(t *testing.T) {
+	t.Parallel()
 	rec := `{"id": "", "provider": "aws", "service": "ec2", "resource_type": "m5.large", "term": 1, "payment": "all-upfront", "count": %d, "recommended_count": %d, "upfront_cost": 100.0, "savings": 50.0}`
 	cases := []struct {
 		name string
@@ -66,6 +67,7 @@ func TestExecutePurchase_PersistsCapacityPercent(t *testing.T) {
 // An absent or zero capacity_percent means full capacity; anything outside
 // 1..100 is a client bug and is refused rather than clamped.
 func TestNormalizeCapacityPercent(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		in, want int
 		ok       bool

@@ -36,6 +36,7 @@ func delayTokenHandler(t *testing.T, exec *config.PurchaseExecution) *Handler {
 }
 
 func TestHandleRequest_ApproveViaToken_DelayConfigured_ValidatesToken(t *testing.T) {
+	t.Parallel()
 	past := time.Now().Add(-time.Hour)
 	future := time.Now().Add(time.Hour)
 	hash := config.HashApprovalToken(tokenErrRawToken)
@@ -69,6 +70,7 @@ func TestHandleRequest_ApproveViaToken_DelayConfigured_ValidatesToken(t *testing
 }
 
 func TestHandleRequest_ApproveViaToken_DelayConfigured_ValidTokenSchedules(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	exec := &config.PurchaseExecution{Status: "pending", ApprovalToken: config.HashApprovalToken(tokenErrRawToken), ApprovalTokenExpiresAt: &future}
 	h := delayTokenHandler(t, exec)
@@ -95,6 +97,7 @@ func TestHandleRequest_ApproveViaToken_DelayConfigured_ValidTokenSchedules(t *te
 // stored token before the status CAS. The token-pinned CAS rejects it, and the
 // handler must answer 403 without scheduling or stamping the row.
 func TestHandleRequest_ApproveViaToken_DelayConfigured_TokenRotatedBeforeCASIs403(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	exec := &config.PurchaseExecution{Status: "notified", ApprovalToken: config.HashApprovalToken(tokenErrRawToken), ApprovalTokenExpiresAt: &future}
 	h := delayTokenHandler(t, exec)
@@ -113,6 +116,7 @@ func TestHandleRequest_ApproveViaToken_DelayConfigured_TokenRotatedBeforeCASIs40
 }
 
 func TestHandleRequest_ApproveViaToken_DelayConfigured_ReplayOfScheduledIs409(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	exec := &config.PurchaseExecution{Status: "scheduled", ApprovalToken: config.HashApprovalToken(tokenErrRawToken), ApprovalTokenExpiresAt: &future}
 	h := delayTokenHandler(t, exec)

@@ -16,6 +16,7 @@ import (
 // ri_exchange_* column and leave the rest of the global config alone: the write
 // is a partial update that shares the config lock with other writers.
 func TestUpdateRIExchangeConfig_StoresEveryFieldAndKeepsTheRest(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })

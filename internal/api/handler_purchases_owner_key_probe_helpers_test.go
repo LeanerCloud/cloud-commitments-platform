@@ -106,6 +106,7 @@ func okpKeySession() *Session { return &Session{UserID: okpOwnerID, UserAPIKeyID
 // *-any verb throughout, so a helper that probed the owner would let the
 // narrow key through (or wrongly route its own-row request to *-any).
 func TestPurchaseAuthzHelpers_FullScopeFollowsTheAPIKey(t *testing.T) {
+	t.Parallel()
 	for _, tc := range okpHelperCases {
 		narrow := tc.narrow
 		if narrow == nil {
@@ -140,6 +141,7 @@ func TestPurchaseAuthzHelpers_FullScopeFollowsTheAPIKey(t *testing.T) {
 // the owner's own grants, so a helper that swallowed the error or probed the
 // owner would succeed instead.
 func TestPurchaseAuthzHelpers_APIKeyVerbProbeErrorRefuses(t *testing.T) {
+	t.Parallel()
 	probe := []auth.PermissionConstraints{{}}
 	for _, tc := range okpHelperCases {
 		for _, failing := range []string{tc.anyVerb, tc.ownVerb} {
@@ -168,6 +170,7 @@ func TestPurchaseAuthzHelpers_APIKeyVerbProbeErrorRefuses(t *testing.T) {
 // TestPurchaseAuthzHelpers_AdminAPIKeyUnchanged: the stateless admin API key
 // still short-circuits every helper before any permission probe.
 func TestPurchaseAuthzHelpers_AdminAPIKeyUnchanged(t *testing.T) {
+	t.Parallel()
 	for _, tc := range okpHelperCases {
 		if tc.name == "approve token constraints" {
 			continue // approveConstraintsForSession exempts the admin key before this helper runs

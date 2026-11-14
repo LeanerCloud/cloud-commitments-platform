@@ -9,6 +9,7 @@ import (
 )
 
 func TestResolveRIExchangeDirect_RouteIsAuthUserPOST(t *testing.T) {
+	t.Parallel()
 	r := NewRouter(&Handler{})
 	for _, route := range r.routes {
 		if route.PathPrefix == "/api/ri-exchange/direct-executions/" && route.PathSuffix == "/resolve" {
@@ -25,6 +26,7 @@ func TestResolveRIExchangeDirect_RouteIsAuthUserPOST(t *testing.T) {
 // a margin covers clock skew. A later timeout bump must not silently open the
 // window.
 func TestResolveRIExchangeDirect_SettleAgeCoversTheExecutionWindow(t *testing.T) {
+	t.Parallel()
 	window := riExchangeExecutionTimeout + riExchangeTerminalSaveTimeout + time.Minute
 	assert.Greater(t, config.RIExchangeDirectResolveSubmittedAfter, window)
 }

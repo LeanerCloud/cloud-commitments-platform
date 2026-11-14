@@ -15,6 +15,7 @@ import (
 // Round-trip test for issue #1907 (pair R1): every RegistrationRequest field,
 // the credential pair included, reaches CreateAccountRegistration.
 func TestSubmitRegistration_RoundTripEveryField(t *testing.T) {
+	t.Parallel()
 	const payload = `{"access_key_id":"AKIAEXAMPLE","secret_access_key":"placeholder"}`
 	body := mustJSON(t, map[string]any{
 		"provider":              "aws",

@@ -43,6 +43,7 @@ func listRIs(t *testing.T, h *Handler, params map[string]string) *ConvertibleRIs
 }
 
 func TestListConvertibleRIs_LabelsEachRIWithTheRunningAccount(t *testing.T) {
+	t.Parallel()
 	ec2 := &countingUtilEC2{instances: []ec2svc.ConvertibleRI{
 		{ReservedInstanceID: "ri-a", InstanceType: "t4g.nano"},
 		{ReservedInstanceID: "ri-b", InstanceType: "m5.large"},
@@ -68,6 +69,7 @@ func TestListConvertibleRIs_LabelsEachRIWithTheRunningAccount(t *testing.T) {
 }
 
 func TestListConvertibleRIs_MatchingAccountFilterKeepsTheLabel(t *testing.T) {
+	t.Parallel()
 	ec2 := &countingUtilEC2{instances: []ec2svc.ConvertibleRI{{ReservedInstanceID: "ri-a"}}}
 	h := listRIsHandler(func(context.Context) (string, error) { return testRunningAccount, nil }, ec2)
 
@@ -80,6 +82,7 @@ func TestListConvertibleRIs_MatchingAccountFilterKeepsTheLabel(t *testing.T) {
 // Without an account filter the account only labels the rows, so an STS
 // failure must not hide the RIs; the label is left out instead.
 func TestListConvertibleRIs_UnresolvedAccountWithoutFilterStillLists(t *testing.T) {
+	t.Parallel()
 	ec2 := &countingUtilEC2{instances: []ec2svc.ConvertibleRI{{ReservedInstanceID: "ri-a"}}}
 	h := listRIsHandler(func(context.Context) (string, error) { return "", errors.New("sts denied") }, ec2)
 

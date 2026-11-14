@@ -15,6 +15,7 @@ import (
 )
 
 func TestMergeUpdatedPlan_MaxStepCommitment(t *testing.T) {
+	t.Parallel()
 	cap100, cap5 := 100.0, 5.0
 	existing := &config.PurchasePlan{Name: "p", MaxStepCommitment: &cap100,
 		RampSchedule: config.RampSchedule{Type: "immediate", PercentPerStep: 100, TotalSteps: 1}}
@@ -52,6 +53,7 @@ func TestMergeUpdatedPlan_MaxStepCommitment(t *testing.T) {
 }
 
 func TestUpdatePlan_CapNullKeepsAuthorization(t *testing.T) {
+	t.Parallel()
 	for _, status := range []int{403, 404} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			ctx := context.Background()

@@ -33,6 +33,7 @@ func retryWithLinkMocks(t *testing.T, failed *config.PurchaseExecution) (*Handle
 }
 
 func TestRetryOfProvenUnsentRowLinksViaUnsentCAS(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, provider, service string }{
 		{"aws ec2", "aws", "ec2"},
 		{"azure savings plans", "azure", "savingsplans"},
@@ -52,6 +53,7 @@ func TestRetryOfProvenUnsentRowLinksViaUnsentCAS(t *testing.T) {
 }
 
 func TestRetryOfProvenUnsentRowLosingUnsentLinkIs409(t *testing.T) {
+	t.Parallel()
 	failed := unsentRow("aws", "ec2")
 	handler, store := retryWithLinkMocks(t, failed)
 	store.On("LinkUnsentRetryExecutionAtomic", mock.Anything, mock.Anything, failed.ExecutionID, mock.AnythingOfType("string")).Return(false, nil).Once()
@@ -70,6 +72,7 @@ func TestRetryOfProvenUnsentRowLosingUnsentLinkIs409(t *testing.T) {
 // The proof is per row: a submitted EC2 row and a no_submission successor
 // (attempt 1) stay refused, whatever the flag says about later attempts.
 func TestRetryOfEC2RowWithoutAttemptZeroProofIsRefused(t *testing.T) {
+	t.Parallel()
 	submitted := redriveFailedRow(redriveUnsentExecID, "aws", "ec2")
 	attempt1 := unsentRow("aws", "ec2")
 	attempt1.RetryAttemptN = 1
@@ -85,6 +88,7 @@ func TestRetryOfEC2RowWithoutAttemptZeroProofIsRefused(t *testing.T) {
 
 // Rows that were never refused keep the plain CAS and never touch the new one.
 func TestRetryOfRDSRowStillLinksViaPlainCAS(t *testing.T) {
+	t.Parallel()
 	failed := unsentRow("aws", "rds")
 	handler, store := retryWithLinkMocks(t, failed)
 	store.On("LinkRetryExecutionAtomic", mock.Anything, mock.Anything, failed.ExecutionID, mock.AnythingOfType("string")).Return(true, nil).Once()
@@ -96,6 +100,7 @@ func TestRetryOfRDSRowStillLinksViaPlainCAS(t *testing.T) {
 }
 
 func TestExecutionToHistoryRow_RetryHintForUnsentRows(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name       string
 		provider   string

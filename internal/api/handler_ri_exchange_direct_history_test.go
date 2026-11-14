@@ -54,6 +54,7 @@ func dhCall(t *testing.T, store *directHistoryStore, accounts []string) (*RIExch
 }
 
 func TestGetRIExchangeHistory_ListsDirectExecutions(t *testing.T) {
+	t.Parallel()
 	acct, net := "u-b", "-12.50"
 	done := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
 	store := &directHistoryStore{MockConfigStore: new(MockConfigStore), rows: []config.RIExchangeDirectHistoryRow{
@@ -75,6 +76,7 @@ func TestGetRIExchangeHistory_ListsDirectExecutions(t *testing.T) {
 }
 
 func TestGetRIExchangeHistory_DirectExecutionsScopedToAccounts(t *testing.T) {
+	t.Parallel()
 	store := &directHistoryStore{MockConfigStore: new(MockConfigStore)}
 	_, err := dhCall(t, store, []string{"u-b"})
 	require.NoError(t, err)
@@ -83,6 +85,7 @@ func TestGetRIExchangeHistory_DirectExecutionsScopedToAccounts(t *testing.T) {
 }
 
 func TestGetRIExchangeHistory_DirectExecutionsEmptyBeforeMigration(t *testing.T) {
+	t.Parallel()
 	store := &directHistoryStore{MockConfigStore: new(MockConfigStore), err: config.ErrRIExchangeDirectResolveNotReady}
 	resp, err := dhCall(t, store, nil)
 	require.NoError(t, err)
@@ -91,6 +94,7 @@ func TestGetRIExchangeHistory_DirectExecutionsEmptyBeforeMigration(t *testing.T)
 }
 
 func TestGetRIExchangeHistory_DirectExecutionsStoreError(t *testing.T) {
+	t.Parallel()
 	store := &directHistoryStore{MockConfigStore: new(MockConfigStore), err: assert.AnError}
 	_, err := dhCall(t, store, nil)
 	require.Error(t, err)

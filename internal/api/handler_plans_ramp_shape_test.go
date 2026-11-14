@@ -49,6 +49,7 @@ func putPlan(t *testing.T, existing *config.PurchasePlan, body string) (*events.
 }
 
 func TestUpdatePlan_RampShapeChange(t *testing.T) {
+	t.Parallel()
 	const planID = "12345678-1234-1234-1234-123456789abc"
 	weekly := config.PresetRampSchedules[config.RampWeekly25Pct]
 	custom30 := config.RampSchedule{Type: "custom", PercentPerStep: 30, StepIntervalDays: 7, TotalSteps: 3}
@@ -99,6 +100,7 @@ func TestUpdatePlan_RampShapeChange(t *testing.T) {
 // plan keeps its progress, and the stored type, start date and next execution
 // date are kept rather than rebuilt, whether or not a step has completed.
 func TestUpdatePlan_EquivalentCustomRampKeepsStoredSchedule(t *testing.T) {
+	t.Parallel()
 	const planID = "12345678-1234-1234-1234-123456789abc"
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	next := time.Date(2026, 9, 22, 0, 0, 0, 0, time.UTC)
@@ -147,6 +149,7 @@ func TestUpdatePlan_EquivalentCustomRampKeepsStoredSchedule(t *testing.T) {
 // #1184: label-agnostic matching must not let a real change through on an
 // in-progress plan.
 func TestUpdatePlan_RealRampChangeOnNonPresetStillRefused(t *testing.T) {
+	t.Parallel()
 	const planID = "12345678-1234-1234-1234-123456789abc"
 	weekly20 := config.RampSchedule{Type: "weekly", PercentPerStep: 20, StepIntervalDays: 7, TotalSteps: 5, CurrentStep: 2}
 	// 30% and 33% both give 3 steps: only the percent differs.
@@ -191,6 +194,7 @@ func TestUpdatePlan_RealRampChangeOnNonPresetStillRefused(t *testing.T) {
 // buying the whole base in one step without a word; it is now refused, like the
 // in-progress case, unless the stored schedule already is the immediate one.
 func TestUpdatePlan_OmittedRampSchedule(t *testing.T) {
+	t.Parallel()
 	const planID = "12345678-1234-1234-1234-123456789abc"
 	weekly := config.PresetRampSchedules[config.RampWeekly25Pct]
 	immediate := config.PresetRampSchedules["immediate"]
@@ -234,6 +238,7 @@ func TestUpdatePlan_OmittedRampSchedule(t *testing.T) {
 // #1935: which preset a plan gets when ramp_schedule is omitted on create is
 // pinned here, since the API docs did not say: the immediate one.
 func TestPlanRequest_OmittedRampScheduleOnCreateIsImmediate(t *testing.T) {
+	t.Parallel()
 	plan := (&PlanRequest{Name: "p"}).toPurchasePlan()
 
 	assert.Equal(t, "immediate", plan.RampSchedule.Type)
@@ -245,6 +250,7 @@ func TestPlanRequest_OmittedRampScheduleOnCreateIsImmediate(t *testing.T) {
 // ramp_schedule "custom"; sent without it they would be ignored and the plan
 // would buy everything at once, so the request is refused.
 func TestDecodePlanRequest_CustomCadenceWithoutCustomSchedule(t *testing.T) {
+	t.Parallel()
 	refused := []string{
 		`{"name":"p","custom_step_percent":25}`,
 		`{"name":"p","custom_interval_days":7}`,

@@ -205,6 +205,7 @@ func TestDeletePlannedPurchase_UpdateAnyConstraintErrorDoesNotFallBack(t *testin
 // intersected with its owner), evaluated by the real auth.Service. The
 // keyScopeExec row is aws/ec2/us-east-1, created by another user.
 func TestDeletePlannedPurchase_APIKeyUpdateAnyFollowsKeyConstraints(t *testing.T) {
+	t.Parallel()
 	rt := keyScopeRoutes[0]
 	keyPerms := func(provider string) []auth.Permission {
 		return []auth.Permission{

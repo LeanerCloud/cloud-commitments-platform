@@ -52,6 +52,7 @@ func callDirectList(t *testing.T, store *failingDirectListStore, authErr error) 
 // A failure anywhere in the visibility chain is a server error with no
 // partial list: nothing is shown on a guess.
 func TestListRIExchangeDirectExecutions_FailsClosed(t *testing.T) {
+	t.Parallel()
 	rows := []config.RIExchangeDirectRow{
 		dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1),
 		dlRow(dlID2, dlPtr(dlAcctB), "eu-west-1", "unknown", 2),
@@ -86,6 +87,7 @@ func TestListRIExchangeDirectExecutions_FailsClosed(t *testing.T) {
 // Before migration 163 the list answers 503, whichever of its two store reads
 // notices first; it is not a generic 500.
 func TestListRIExchangeDirectExecutions_NotReadyIs503(t *testing.T) {
+	t.Parallel()
 	rows := []config.RIExchangeDirectRow{dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1)}
 	notReady := fmt.Errorf("list unresolved direct exchange rows: %w", config.ErrRIExchangeDirectResolveNotReady)
 	for name, store := range map[string]*failingDirectListStore{

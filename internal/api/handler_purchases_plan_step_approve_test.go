@@ -155,6 +155,7 @@ func autoPlan(cap *float64) *config.PurchasePlan {
 }
 
 func TestApproveViaToken_PlanStep_ApproveOwnCappedContactEmail(t *testing.T) {
+	t.Parallel()
 	exec, total := planStepExecution(t)
 
 	over := newTokenApprove(t, []auth.Permission{cappedPerm(auth.ActionApproveOwn, total-1)}, autoPlan(nil))
@@ -165,6 +166,7 @@ func TestApproveViaToken_PlanStep_ApproveOwnCappedContactEmail(t *testing.T) {
 }
 
 func TestApproveViaToken_PlanStep_ApproveAnyCap(t *testing.T) {
+	t.Parallel()
 	exec, total := planStepExecution(t)
 
 	over := newTokenApprove(t, []auth.Permission{cappedPerm(auth.ActionApproveAny, total-1)}, autoPlan(nil))
@@ -175,6 +177,7 @@ func TestApproveViaToken_PlanStep_ApproveAnyCap(t *testing.T) {
 }
 
 func TestApproveViaToken_PlanStep_ZeroTotalIs400(t *testing.T) {
+	t.Parallel()
 	exec, _ := planStepExecution(t)
 	exec.Recommendations[0].UpfrontCost = 0
 	exec.Recommendations[0].MonthlyCost = nil
@@ -183,6 +186,7 @@ func TestApproveViaToken_PlanStep_ZeroTotalIs400(t *testing.T) {
 }
 
 func TestApproveViaToken_PlanStep_NoVerbHonorsPlanCap(t *testing.T) {
+	t.Parallel()
 	exec, total := planStepExecution(t)
 	under, over := total+1, total-1
 
@@ -200,6 +204,7 @@ func TestApproveViaToken_PlanStep_NoVerbHonorsPlanCap(t *testing.T) {
 }
 
 func TestApproveViaToken_PlanStep_ManualPlan(t *testing.T) {
+	t.Parallel()
 	exec, total := planStepExecution(t)
 	over := total - 1
 
@@ -211,6 +216,7 @@ func TestApproveViaToken_PlanStep_ManualPlan(t *testing.T) {
 }
 
 func TestApproveConstraintsForSession_PlanStep_SessionlessAndAdminKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	exec, total := planStepExecution(t)
 	over := total - 1
@@ -227,6 +233,7 @@ func TestApproveConstraintsForSession_PlanStep_SessionlessAndAdminKey(t *testing
 }
 
 func TestApproveConstraintsForSession_UserCreatedRowUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	exec, total := planStepExecution(t)
 	exec.PlanID = ""
@@ -238,6 +245,7 @@ func TestApproveConstraintsForSession_UserCreatedRowUnchanged(t *testing.T) {
 }
 
 func TestApproveConstraintsForSession_PlanStep_PlanReadErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	exec, _ := planStepExecution(t)
 	f := newTokenApprove(t, nil, nil)
 	f.handler.config.(*MockConfigStore).GetPurchasePlanFn = func(context.Context, string) (*config.PurchasePlan, error) {
@@ -248,6 +256,7 @@ func TestApproveConstraintsForSession_PlanStep_PlanReadErrorFailsClosed(t *testi
 }
 
 func TestApproveViaToken_PlanStep_NonUSDCappedPlan(t *testing.T) {
+	t.Parallel()
 	exec, total := planStepExecution(t)
 	capAmount := total + 1
 
@@ -264,6 +273,7 @@ func TestApproveViaToken_PlanStep_NonUSDCappedPlan(t *testing.T) {
 // without one), so a nil session reaches approveConstraintsForSession only
 // through direct callers such as the post-claim check; drive it directly.
 func TestApproveConstraintsForSession_NilSession_NonUSDCappedPlanStep(t *testing.T) {
+	t.Parallel()
 	exec, total := planStepExecution(t)
 	capAmount := total + 1
 	f := newTokenApprove(t, nil, autoPlan(&capAmount))
@@ -285,6 +295,7 @@ func TestApproveConstraintsForSession_NilSession_NonUSDCappedPlanStep(t *testing
 // over-cap group, or a rec outside every group, is refused for the email-link
 // approver too.
 func TestApproveViaToken_PlanStep_ManualBoundPlanGroupCaps(t *testing.T) {
+	t.Parallel()
 	exec, total := planStepExecution(t)
 	key, err := config.RecIdentityKey(&exec.Recommendations[0])
 	require.NoError(t, err)

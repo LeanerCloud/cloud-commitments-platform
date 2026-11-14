@@ -28,6 +28,7 @@ func executeExchangeCaptured(t *testing.T, body string) exchange.ExchangeExecute
 // Every field of ExchangeExecuteRequestBody must reach the library request:
 // a dropped field would change what AWS exchanges or the cap it is bound by.
 func TestExecuteExchange_EveryBodyFieldReachesTheLibraryRequest(t *testing.T) {
+	t.Parallel()
 	t.Run("targets array", func(t *testing.T) {
 		got := executeExchangeCaptured(t, awsAuditBody)
 
@@ -86,6 +87,7 @@ func quoteCaptured(t *testing.T, body string) exchange.ExchangeQuoteRequest {
 // Every field of ExchangeQuoteRequestBody must reach the library request, so the
 // quote prices the exchange the caller asked for.
 func TestGetExchangeQuote_EveryBodyFieldReachesTheLibraryRequest(t *testing.T) {
+	t.Parallel()
 	t.Run("targets array", func(t *testing.T) {
 		got := quoteCaptured(t, `{
 			"ri_ids": ["ri-0a1b2c3d", "ri-4e5f6a7b"],

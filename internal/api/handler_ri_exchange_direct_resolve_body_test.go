@@ -14,6 +14,7 @@ import (
 // Body validation for the direct-row resolve. Every case is a 400 that never
 // reaches the store.
 func TestResolveRIExchangeDirect_BodyValidation(t *testing.T) {
+	t.Parallel()
 	check := func(region, at string) string {
 		return fmt.Sprintf(`"cloud_check":{"checked_region":%q,"checked_at":%q}`, region, at)
 	}
@@ -57,6 +58,7 @@ func TestResolveRIExchangeDirect_BodyValidation(t *testing.T) {
 
 // Reasons at the rune boundaries are accepted, and the stored note quotes them.
 func TestResolveRIExchangeDirect_ReasonBoundaries(t *testing.T) {
+	t.Parallel()
 	for name, reason := range map[string]string{
 		"10 runes":                strings.Repeat("é", 10),
 		"300 runes":               strings.Repeat("é", 300),
@@ -76,6 +78,7 @@ func TestResolveRIExchangeDirect_ReasonBoundaries(t *testing.T) {
 // completed does not need the acknowledgement; failed with it passes, and the
 // note records it.
 func TestResolveRIExchangeDirect_AckOnlyForFailed(t *testing.T) {
+	t.Parallel()
 	store := drStore()
 	_, err := drCaller{perms: riExecute}.call(store, dlID1, drBody("completed", ""))
 	require.NoError(t, err)

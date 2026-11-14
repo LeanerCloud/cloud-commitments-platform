@@ -56,6 +56,7 @@ func assertCountedResponse(t *testing.T, result any, handled *config.PurchasePla
 }
 
 func TestGetPlan_ReturnsCountedCopy(t *testing.T) {
+	t.Parallel()
 	h, store := boundResponseHandler(t)
 	stored := boundStoredPlan()
 	store.On("GetPurchasePlan", mock.Anything, boundResponsePlanID).Return(stored, nil)
@@ -65,6 +66,7 @@ func TestGetPlan_ReturnsCountedCopy(t *testing.T) {
 }
 
 func TestUpdatePlan_ReturnsCountedCopy(t *testing.T) {
+	t.Parallel()
 	h, store := boundResponseHandler(t)
 	var saved *config.PurchasePlan
 	store.On("GetPurchasePlan", mock.Anything, boundResponsePlanID).Return(boundStoredPlan(), nil)
@@ -76,6 +78,7 @@ func TestUpdatePlan_ReturnsCountedCopy(t *testing.T) {
 }
 
 func TestPatchPlan_ReturnsCountedCopy(t *testing.T) {
+	t.Parallel()
 	h, store := boundResponseHandler(t)
 	var saved *config.PurchasePlan
 	store.On("GetPurchasePlan", mock.Anything, boundResponsePlanID).Return(boundStoredPlan(), nil)
@@ -89,6 +92,7 @@ func TestPatchPlan_ReturnsCountedCopy(t *testing.T) {
 // The create body cannot carry bound groups, so the store stands in for a
 // plan that comes back from it with them.
 func TestCreatePlan_ReturnsCountedCopy(t *testing.T) {
+	t.Parallel()
 	h, store := boundResponseHandler(t)
 	account := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	var created *config.PurchasePlan
@@ -110,6 +114,7 @@ func TestCreatePlan_ReturnsCountedCopy(t *testing.T) {
 // GET /api/plans/{id} must carry them, and a PUT the form can send must leave
 // them in the saved plan.
 func TestGetPlan_ReturnsServiceFilters(t *testing.T) {
+	t.Parallel()
 	h, store := boundResponseHandler(t)
 	stored := multiServicePlan()
 	stored.ID = boundResponsePlanID
@@ -127,6 +132,7 @@ func TestGetPlan_ReturnsServiceFilters(t *testing.T) {
 }
 
 func TestUpdatePlan_KeepsServiceFilters(t *testing.T) {
+	t.Parallel()
 	h, store := boundResponseHandler(t)
 	var saved *config.PurchasePlan
 	existing := multiServicePlan()
@@ -144,6 +150,7 @@ func TestUpdatePlan_KeepsServiceFilters(t *testing.T) {
 // The bound branch of planForResponse rewrites every service entry, so the
 // filter fields must survive that copy too (issue #1737).
 func TestGetPlan_BoundPlanKeepsServiceFilters(t *testing.T) {
+	t.Parallel()
 	h, store := boundResponseHandler(t)
 	stored := boundStoredPlan()
 	g := stored.Services["aws/ec2#g1"]

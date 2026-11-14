@@ -110,6 +110,7 @@ func azureOfferingsTarget() AzureExchangeTargetBody {
 // --- validateAzureOfferingsBody / validateAzureExecuteBody ---
 
 func TestValidateAzureOfferingsBody(t *testing.T) {
+	t.Parallel()
 	manySources := make([]AzureExchangeSourceBody, maxAzureExchangeItems+1)
 	for i := range manySources {
 		manySources[i] = azureOfferingsSource()
@@ -224,6 +225,7 @@ func TestValidateAzureOfferingsBody(t *testing.T) {
 }
 
 func TestValidateAzureExecuteBody_RequiresCapAndCurrency(t *testing.T) {
+	t.Parallel()
 	base := AzureExecuteExchangeRequestBody{
 		SubscriptionID: "sub-1",
 		Sources:        []AzureExchangeSourceBody{azureOfferingsSource()},
@@ -256,6 +258,7 @@ func TestValidateAzureExecuteBody_RequiresCapAndCurrency(t *testing.T) {
 // while the rest of the suite (which only sends exact-case or deliberately
 // foreign scopes) stayed green.
 func TestValidateAzureExchangeTargets_BillingScopeCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	caseVariant := azureOfferingsTarget()
 	caseVariant.BillingScopeID = "/SUBSCRIPTIONS/Sub-1"
 	require.NoError(t, validateAzureExchangeTargets([]AzureExchangeTargetBody{caseVariant}, "sub-1"))
@@ -264,6 +267,7 @@ func TestValidateAzureExchangeTargets_BillingScopeCaseInsensitive(t *testing.T) 
 // --- getAzureCompatibleOfferings ---
 
 func TestGetAzureCompatibleOfferings_NoAuth(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 	_, err := h.getAzureCompatibleOfferings(context.Background(), &events.LambdaFunctionURLRequest{})
 	require.Error(t, err)
@@ -271,6 +275,7 @@ func TestGetAzureCompatibleOfferings_NoAuth(t *testing.T) {
 }
 
 func TestGetAzureCompatibleOfferings_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -296,6 +301,7 @@ func TestGetAzureCompatibleOfferings_InvalidJSON(t *testing.T) {
 // the list endpoint, these endpoints cannot silently do nothing -- the
 // caller asked to price a specific exchange).
 func TestGetAzureCompatibleOfferings_UnregisteredSubscription(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -323,6 +329,7 @@ func TestGetAzureCompatibleOfferings_UnregisteredSubscription(t *testing.T) {
 }
 
 func TestGetAzureCompatibleOfferings_AzureClientFault(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -351,6 +358,7 @@ func TestGetAzureCompatibleOfferings_AzureClientFault(t *testing.T) {
 }
 
 func TestGetAzureCompatibleOfferings_TransientErrorIs500(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -382,6 +390,7 @@ func TestGetAzureCompatibleOfferings_TransientErrorIs500(t *testing.T) {
 // nil (not zero-coerced) NetPayable when Azure omits it, alongside a
 // populated offering, proving the pointer money-field plumbing end to end.
 func TestGetAzureCompatibleOfferings_HappyPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -424,6 +433,7 @@ func TestGetAzureCompatibleOfferings_HappyPath(t *testing.T) {
 // move the charge outside the CloudAccount that checkAzureExecuteConstraints
 // evaluated the caller's AccountIDs constraint against.
 func TestToAzureExchangeTargets_DerivesBillingScope(t *testing.T) {
+	t.Parallel()
 	targets, err := toAzureExchangeTargets([]AzureExchangeTargetBody{
 		{SKU: "Standard_D4s_v3", Location: "eastus", Term: "P1Y", Quantity: 1},
 		{SKU: "Standard_D8s_v3", Location: "westus", Term: "P3Y", Quantity: 2, BillingScopeID: "/SUBSCRIPTIONS/SUB-1"},
@@ -441,6 +451,7 @@ func TestToAzureExchangeTargets_DerivesBillingScope(t *testing.T) {
 // Azure call. No CalculateExchange expectation is registered, so the mock
 // panics (failing the test) the instant the guard stops rejecting.
 func TestGetAzureCompatibleOfferings_ForeignBillingScopeRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -471,6 +482,7 @@ func TestGetAzureCompatibleOfferings_ForeignBillingScopeRejected(t *testing.T) {
 // checked against subscription_id, so a differing billing_scope_id would
 // charge an account the check never looked at.
 func TestExecuteAzureExchange_ForeignBillingScopeRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -532,6 +544,7 @@ func scopedAzureStore() *MockConfigStore {
 // without this gate the endpoint leaks another account's reservation
 // pricing.
 func TestGetAzureCompatibleOfferings_OutOfScopeSubscription(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -554,6 +567,7 @@ func TestGetAzureCompatibleOfferings_OutOfScopeSubscription(t *testing.T) {
 // an out-of-scope subscription must never reach CalculateExchange or
 // ExecuteExchange. Neither is registered on the mock, so any call panics.
 func TestExecuteAzureExchange_OutOfScopeSubscription(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -576,6 +590,7 @@ func TestExecuteAzureExchange_OutOfScopeSubscription(t *testing.T) {
 // the gate: a scoped session whose allowed_accounts DO cover the resolved
 // account still gets through to execution.
 func TestExecuteAzureExchange_InScopeSubscriptionAllowed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -614,6 +629,7 @@ func TestExecuteAzureExchange_InScopeSubscriptionAllowed(t *testing.T) {
 // check and the constraint check must both see the first row, from a single
 // lookup.
 func TestExecuteAzureExchange_ResolvesAccountOnce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -670,6 +686,7 @@ func TestExecuteAzureExchange_ResolvesAccountOnce(t *testing.T) {
 // path (no azureExchangeFactory), so the distinguishable message is only
 // avoided when the scope check genuinely runs first.
 func TestExecuteAzureExchange_ScopeCheckPrecedesClientBuild_Unregistered(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := scopedAzureAuth(t, "execute", "ri-exchange", []string{"acct-mine"})
 
@@ -702,6 +719,7 @@ func TestExecuteAzureExchange_ScopeCheckPrecedesClientBuild_Unregistered(t *test
 // DIFFERENT (non-404) error -- that divergence is exactly the signal this
 // test catches if the ordering regresses.
 func TestExecuteAzureExchange_ScopeCheckPrecedesClientBuild_RegisteredOutOfScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := scopedAzureAuth(t, "execute", "ri-exchange", []string{"acct-mine"})
 
@@ -741,6 +759,7 @@ func TestExecuteAzureExchange_ScopeCheckPrecedesClientBuild_RegisteredOutOfScope
 // error (same sentinel, same message), so a scoped caller cannot tell them
 // apart by probing subscription IDs.
 func TestExecuteAzureExchange_ScopeCheckDenialsAreIndistinguishable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	unregisteredAuth := scopedAzureAuth(t, "execute", "ri-exchange", []string{"acct-mine"})
@@ -775,6 +794,7 @@ func TestExecuteAzureExchange_ScopeCheckDenialsAreIndistinguishable(t *testing.T
 // --- executeAzureExchange: auth fail-closed ---
 
 func TestExecuteAzureExchange_NoAuth(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 	_, err := h.executeAzureExchange(context.Background(), &events.LambdaFunctionURLRequest{})
 	require.Error(t, err)
@@ -782,6 +802,7 @@ func TestExecuteAzureExchange_NoAuth(t *testing.T) {
 }
 
 func TestExecuteAzureExchange_MissingExecutePermission(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -805,6 +826,7 @@ func TestExecuteAzureExchange_MissingExecutePermission(t *testing.T) {
 // call: CalculateExchange must not be invoked when the constraint check
 // denies the request.
 func TestExecuteAzureExchange_ConstraintExceeded(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -862,6 +884,7 @@ const validAzureExecuteBodyKWD = `{
 // amount-neutralized disambiguation call is granted (every other dimension
 // is fine), isolating the amount constraint as the specific cause.
 func TestExecuteAzureExchange_NonUSDCurrencyBlindCapRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -907,6 +930,7 @@ func TestExecuteAzureExchange_NonUSDCurrencyBlindCapRejected(t *testing.T) {
 // not regress the common case: a USD request is checked directly (single
 // call, the real requested amount) and proceeds when within the cap.
 func TestExecuteAzureExchange_USDCurrencyCapStillEnforced(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -952,6 +976,7 @@ func TestExecuteAzureExchange_USDCurrencyCapStillEnforced(t *testing.T) {
 // constraint call is made, since the sentinel amount already passes when
 // the permission has no cap).
 func TestExecuteAzureExchange_NonUSDWithoutCapStillAllowed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -998,6 +1023,7 @@ func TestExecuteAzureExchange_NonUSDWithoutCapStillAllowed(t *testing.T) {
 // always rejected here as a mismatch against Azure's "USD", making a
 // well-formed request permanently unexecutable.
 func TestCheckAzureExchangeMoneyGuardrails_CurrencyCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	preview := &azurecompute.ExchangePreview{SessionID: "sess-1", NetPayable: toPtr(10.00), NetPayableCurrency: "USD"}
 	require.NoError(t, checkAzureExchangeMoneyGuardrails(preview, big.NewRat(100, 1), "usd"))
 }
@@ -1007,6 +1033,7 @@ func TestCheckAzureExchangeMoneyGuardrails_CurrencyCaseInsensitive(t *testing.T)
 // mistakenly returns (nil, nil, nil) from CalculateExchange must not panic
 // this handler.
 func TestCheckAzureExchangeMoneyGuardrails_NilPreviewRefused(t *testing.T) {
+	t.Parallel()
 	err := checkAzureExchangeMoneyGuardrails(nil, big.NewRat(100, 1), "USD")
 	require.Error(t, err, "a nil preview must be refused, not dereferenced")
 	assert.Contains(t, err.Error(), "nil preview")
@@ -1015,6 +1042,7 @@ func TestCheckAzureExchangeMoneyGuardrails_NilPreviewRefused(t *testing.T) {
 // --- executeAzureExchange: validation ---
 
 func TestExecuteAzureExchange_MalformedJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -1034,6 +1062,7 @@ func TestExecuteAzureExchange_MalformedJSON(t *testing.T) {
 }
 
 func TestExecuteAzureExchange_MissingMaxPaymentDue(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -1054,6 +1083,7 @@ func TestExecuteAzureExchange_MissingMaxPaymentDue(t *testing.T) {
 }
 
 func TestExecuteAzureExchange_InvalidMaxPaymentDue(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -1126,6 +1156,7 @@ func newAzureExecuteHandler(t *testing.T, opsClient azureExchangeClient, require
 }
 
 func TestExecuteAzureExchange_CapExceeded(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -1148,6 +1179,7 @@ func TestExecuteAzureExchange_CapExceeded(t *testing.T) {
 }
 
 func TestExecuteAzureExchange_PolicyErrorsBlockExecution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -1187,6 +1219,7 @@ func TestExecuteAzureExchange_PolicyErrorsBlockExecution(t *testing.T) {
 }
 
 func TestExecuteAzureExchange_CurrencyMismatchBlocksExecution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -1209,6 +1242,7 @@ func TestExecuteAzureExchange_CurrencyMismatchBlocksExecution(t *testing.T) {
 }
 
 func TestExecuteAzureExchange_NilNetPayableRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -1235,6 +1269,7 @@ func TestExecuteAzureExchange_NilNetPayableRefused(t *testing.T) {
 // SessionID this test's CalculateExchange mock returned, never a
 // client-supplied value (the request body carries none).
 func TestExecuteAzureExchange_HappyPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const freshSessionID = "sess-server-issued-99"
 
@@ -1309,6 +1344,7 @@ const validAzureExecuteBodyMultiRegion = `{
 // into another -- or pointing AccountIDs at the wrong account would leave
 // the whole suite green.
 func TestExecuteAzureExchange_ConstraintSetPinsAllDimensions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var captured []auth.PermissionConstraints
 
@@ -1369,6 +1405,7 @@ func TestExecuteAzureExchange_ConstraintSetPinsAllDimensions(t *testing.T) {
 // collapses "EastUS" and "eastus" into the single region they actually are,
 // instead of submitting two entries that must both be permitted.
 func TestTargetLocations_CanonicalizesCase(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		targets []AzureExchangeTargetBody
@@ -1424,6 +1461,7 @@ func TestTargetLocations_CanonicalizesCase(t *testing.T) {
 // Regions entries in the portal's casing and the permission check would
 // compare them literally against the lower-case names permissions store.
 func TestExecuteAzureExchange_ConstraintRegionsAreLowerCased(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var captured []auth.PermissionConstraints
 
@@ -1486,6 +1524,7 @@ func TestExecuteAzureExchange_ConstraintRegionsAreLowerCased(t *testing.T) {
 // MaxPurchaseAmount-carrying permission. Asserting the constraint check
 // receives the REAL 100.00 cap (not math.MaxFloat64) pins the USD path.
 func TestExecuteAzureExchange_LowercaseUSDTakesUSDCapPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -1534,6 +1573,7 @@ func TestExecuteAzureExchange_LowercaseUSDTakesUSDCapPath(t *testing.T) {
 // must be returned unchanged. Reporting the currency-specific 403 there
 // would send an operator chasing an FX problem that does not exist.
 func TestExecuteAzureExchange_NonUSDDeniedOnOtherDimension(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -1574,6 +1614,7 @@ func TestExecuteAzureExchange_NonUSDDeniedOnOtherDimension(t *testing.T) {
 // fails the test the instant a code change lets execution proceed on an
 // unpriced exchange.
 func TestExecuteAzureExchange_RequoteFailureAbortsBeforeCommit(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		quoteErr error
@@ -1611,6 +1652,7 @@ func TestExecuteAzureExchange_RequoteFailureAbortsBeforeCommit(t *testing.T) {
 // stay a 500 with the generic operation message, so a transient failure is
 // never mislabelled as a permanent client fault the caller should not retry.
 func TestExecuteAzureExchange_CommitFailureClassification(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		commitErr  error
@@ -1655,6 +1697,7 @@ func TestExecuteAzureExchange_CommitFailureClassification(t *testing.T) {
 // NetPayable -- the refund side of a downgrade, and a common Azure exchange
 // outcome -- must never be treated as exceeding a positive cap.
 func TestCheckAzureExchangeMoneyGuardrails_CapBoundaryAndRefunds(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		netPayable float64
@@ -1698,6 +1741,7 @@ func TestCheckAzureExchangeMoneyGuardrails_CapBoundaryAndRefunds(t *testing.T) {
 // account registered for subscription %q") is only avoided when the scope
 // check genuinely runs first, and require both denials to be identical.
 func TestGetAzureCompatibleOfferings_ScopeCheckPrecedesClientBuild(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	unregisteredStore := &MockConfigStore{}
@@ -1791,6 +1835,7 @@ func tenantListingWithForeignReservation() []azurecompute.ExchangeableReservatio
 // testify fails this test the instant a regression lets execution past the
 // gate -- the money path must not be reached at all.
 func TestExecuteAzureExchange_ForeignSourceReservationRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	opsClient.On("ListExchangeableReservations", mock.Anything).Return(tenantListingWithForeignReservation(), nil)
@@ -1814,6 +1859,7 @@ func TestExecuteAzureExchange_ForeignSourceReservationRefused(t *testing.T) {
 // read-side half: pricing another subscription's reservation leaks its
 // commitment value, so the same gate applies to the quote endpoint.
 func TestGetAzureCompatibleOfferings_ForeignSourceReservationRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "tok").Return(&Session{UserID: "user-1"}, nil)
@@ -1848,6 +1894,7 @@ func TestGetAzureCompatibleOfferings_ForeignSourceReservationRefused(t *testing.
 // knowing where the sources live -- so a listing failure legitimately returns
 // before HasPermissionForConstraintsAPI is ever called.
 func TestExecuteAzureExchange_SourceOwnershipLookupFailureRefuses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	opsClient.On("ListExchangeableReservations", mock.Anything).
@@ -1871,6 +1918,7 @@ func TestExecuteAzureExchange_SourceOwnershipLookupFailureRefuses(t *testing.T) 
 // including the fail-closed branches that are awkward to drive through the
 // whole handler.
 func TestRequireAzureSourceOwnership(t *testing.T) {
+	t.Parallel()
 	mine := azurecompute.ExchangeableReservation{ReservationID: "res-1", BillingScopeID: "/subscriptions/sub-1"}
 	theirs := azurecompute.ExchangeableReservation{ReservationID: "res-2", BillingScopeID: "/subscriptions/sub-2"}
 	ownerless := azurecompute.ExchangeableReservation{ReservationID: "res-3", BillingScopeID: ""}
@@ -1950,6 +1998,7 @@ func TestRequireAzureSourceOwnership(t *testing.T) {
 // ids are real elsewhere in the tenant -- the same failure this PR already
 // guards against for subscription ids.
 func TestRequireAzureSourceOwnership_DenialsAreIndistinguishable(t *testing.T) {
+	t.Parallel()
 	owned := []azurecompute.ExchangeableReservation{
 		{ReservationID: "res-2", BillingScopeID: "/subscriptions/sub-2"},
 	}
@@ -2062,6 +2111,7 @@ const foreignRegionSourceBody = `{
 // testify fails this test the instant a regression lets execution past the
 // gate -- the money path must not be reached at all.
 func TestExecuteAzureExchange_SourceRegionOutsidePermissionRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	opsClient.On("ListExchangeableReservations", mock.Anything).Return([]azurecompute.ExchangeableReservation{
@@ -2093,6 +2143,7 @@ func TestExecuteAzureExchange_SourceRegionOutsidePermissionRefused(t *testing.T)
 // Without it a grant that denied everything would satisfy every denial test
 // vacuously, and so would a matcher that refused any non-empty Regions list.
 func TestExecuteAzureExchange_RegionScopedCallerAllowedInsideRegion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	opsClient := new(mockAzureExchangeOpsClient)
@@ -2129,6 +2180,7 @@ func TestExecuteAzureExchange_RegionScopedCallerAllowedInsideRegion(t *testing.T
 // shape PR #1495 fixed. The unknownRegionConstraint sentinel makes it deny
 // instead.
 func TestExecuteAzureExchange_UnreportedSourceRegionRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	opsClient.On("ListExchangeableReservations", mock.Anything).Return([]azurecompute.ExchangeableReservation{
@@ -2162,6 +2214,7 @@ func TestExecuteAzureExchange_UnreportedSourceRegionRefused(t *testing.T) {
 // restriction"). Otherwise every Shared-scope reservation would become
 // unexchangeable for everyone.
 func TestExecuteAzureExchange_UnreportedSourceRegionAllowedWithoutRegionScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	opsClient.On("ListExchangeableReservations", mock.Anything).Return([]azurecompute.ExchangeableReservation{
@@ -2210,6 +2263,7 @@ func TestExecuteAzureExchange_UnreportedSourceRegionAllowedWithoutRegionScope(t 
 // ownership gate's identical denials were written to deny. Checking ownership
 // before the constraints closes it.
 func TestExecuteAzureExchange_UnownedSourceDenialsAreIndistinguishable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// One tenant listing for both probes: a reservation that exists, sits in
@@ -2264,6 +2318,7 @@ func TestExecuteAzureExchange_UnownedSourceDenialsAreIndistinguishable(t *testin
 // TestExchangeRegions covers the fold itself, including the branches that are
 // awkward to drive through the whole handler.
 func TestExchangeRegions(t *testing.T) {
+	t.Parallel()
 	owned := []azurecompute.ExchangeableReservation{
 		{ReservationID: "res-east", Region: "eastus"},
 		{ReservationID: "res-west", Region: "WestEurope"},
@@ -2346,6 +2401,7 @@ func TestExchangeRegions(t *testing.T) {
 // registers only the ownership listing, so a CalculateExchange or
 // ExecuteExchange call would fail the strict mock.
 func TestExecuteAzureExchange_FourEyesRefusesDirectExecute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)
@@ -2374,6 +2430,7 @@ func TestExecuteAzureExchange_FourEyesRefusesDirectExecute(t *testing.T) {
 // an unreadable global config must not be treated as "4-eyes off". The
 // handler returns a server error before any quote or exchange call.
 func TestExecuteAzureExchange_FourEyesPolicyLookupErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)

@@ -23,6 +23,7 @@ func conflictedBoundPlan() *config.PurchasePlan {
 }
 
 func TestPatchPlan_StoppingABoundPlanSkipsGroupChecks(t *testing.T) {
+	t.Parallel()
 	for _, body := range []string{`{"auto_purchase":false}`, `{"enabled":false}`, `{"enabled":false,"name":"stopped"}`} {
 		store, err := boundPatch(t, conflictedBoundPlan(), body)
 		require.NoError(t, err, body)

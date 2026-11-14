@@ -21,6 +21,7 @@ import (
 // before persisting anything, as internal/purchase does.
 
 func TestHandler_executePurchase_GlobalConfigErrorFailsBeforePersist(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -52,6 +53,7 @@ func TestHandler_executePurchase_GlobalConfigErrorFailsBeforePersist(t *testing.
 }
 
 func TestHandler_retryPurchase_GlobalConfigErrorFailsBeforePersist(t *testing.T) {
+	t.Parallel()
 	_, handler, mockConfig := retryDedupeFixture(t, false)
 	for _, c := range mockConfig.ExpectedCalls {
 		if c.Method == "GetGlobalConfig" {

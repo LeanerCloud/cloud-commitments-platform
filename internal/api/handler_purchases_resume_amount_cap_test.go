@@ -363,6 +363,7 @@ func TestResumeAmountCap_PlanStepRow(t *testing.T) {
 
 // A user API key is capped by its own constraints, not its uncapped owner's.
 func TestResumeAmountCap_APIKeyFollowsKeyCap(t *testing.T) {
+	t.Parallel()
 	rt := keyScopeRoute{name: "resume", method: http.MethodPost, suffix: "/resume", status: "paused"}
 	keyPerms := func(cap float64) []auth.Permission {
 		return []auth.Permission{revokePerm(auth.ActionUpdate, capOf(cap))}

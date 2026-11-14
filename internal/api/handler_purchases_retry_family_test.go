@@ -45,6 +45,7 @@ func expectFamilyClaim(store *MockConfigStore, order *[]string, row *config.Purc
 }
 
 func TestRetryFamilyGuard_RefusesWhenCounterpartKindWasRetried(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name         string
 		accountRow   bool
@@ -80,6 +81,7 @@ func TestRetryFamilyGuard_RefusesWhenCounterpartKindWasRetried(t *testing.T) {
 }
 
 func TestRetryFamilyGuard_UnclaimedFamilyProceedsLockBeforeClaimBeforeLink(t *testing.T) {
+	t.Parallel()
 	for _, accountRow := range []bool{false, true} {
 		failed := retryFamilyRow(accountRow)
 		handler, store := retryWithLinkMocks(t, failed)
@@ -97,6 +99,7 @@ func TestRetryFamilyGuard_UnclaimedFamilyProceedsLockBeforeClaimBeforeLink(t *te
 }
 
 func TestRetryFamilyGuard_SkippedWhereItCannotDoubleBuy(t *testing.T) {
+	t.Parallel()
 	rdsRow := retryFamilyRow(false)
 	rdsRow.Recommendations[0].Service = "rds"
 	noPlan := retryFamilyRow(false)
@@ -122,6 +125,7 @@ func TestRetryFamilyGuard_SkippedWhereItCannotDoubleBuy(t *testing.T) {
 // A failed lock or claim query is not a 409: nothing is linked and the error
 // surfaces, so the guard fails closed.
 func TestRetryFamilyGuard_StoreErrorsFailClosed(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("connection reset")
 	for _, lockFails := range []bool{true, false} {
 		failed := retryFamilyRow(false)
@@ -147,6 +151,7 @@ func TestRetryFamilyGuard_StoreErrorsFailClosed(t *testing.T) {
 // A legacy row without a key is its own family: its account rows carry
 // "<execution_id>:<account>", so the lock and claim use the execution ID.
 func TestRetryFamilyKey(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		key, want string
 	}{

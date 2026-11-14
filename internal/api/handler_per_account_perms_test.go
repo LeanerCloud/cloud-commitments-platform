@@ -114,6 +114,7 @@ func permsAccountList() []config.CloudAccount {
 // account-B record appears in the response and the ElementsMatch assertion
 // fails.
 func TestPerAccountPerms_Recommendations_ListFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	recA := config.RecommendationRecord{
@@ -166,6 +167,7 @@ func TestPerAccountPerms_Recommendations_ListFilter(t *testing.T) {
 // path through IsUnrestrictedAccess. Without this, the negative test above
 // could be masked by a bug that drops all records for everyone.
 func TestPerAccountPerms_Recommendations_ListFilter_AdminSeesAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	recA := config.RecommendationRecord{
@@ -205,6 +207,7 @@ func TestPerAccountPerms_Recommendations_ListFilter_AdminSeesAll(t *testing.T) {
 // getRecommendationDetail, the lookup would succeed and return a 200 exposing
 // account-B data.
 func TestPerAccountPerms_RecommendationDetail_CrossAccountRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	recB := config.RecommendationRecord{
@@ -241,6 +244,7 @@ func TestPerAccountPerms_RecommendationDetail_CrossAccountRejected(t *testing.T)
 // TestPerAccountPerms_RecommendationDetail_AllowedAccountReturns200 is the
 // paired positive test: the scoped user CAN fetch account-A's detail.
 func TestPerAccountPerms_RecommendationDetail_AllowedAccountReturns200(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Now().UTC()
 
@@ -291,6 +295,7 @@ func TestPerAccountPerms_RecommendationDetail_AllowedAccountReturns200(t *testin
 // Regression: removing filterPurchaseHistoryByAllowedAccounts from getHistory
 // causes both rows to appear and the assert.Len check fails.
 func TestPerAccountPerms_History_ListFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	rowA := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
@@ -346,6 +351,7 @@ func TestPerAccountPerms_History_ListFilter(t *testing.T) {
 // Regression: removing resolveAnalyticsAccountFilter (or its AccountScope.Allows
 // call) allows the analytics query to proceed and returns 200 to the caller.
 func TestPerAccountPerms_HistoryAnalytics_CrossAccountRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockClient := new(MockAnalyticsClient)
@@ -375,6 +381,7 @@ func TestPerAccountPerms_HistoryAnalytics_CrossAccountRejected(t *testing.T) {
 // TestPerAccountPerms_HistoryAnalytics_AllowedAccountSucceeds is the paired
 // positive case: account-A analytics are allowed for the scoped user.
 func TestPerAccountPerms_HistoryAnalytics_AllowedAccountSucceeds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	now := time.Now().UTC()
@@ -416,6 +423,7 @@ func TestPerAccountPerms_HistoryAnalytics_AllowedAccountSucceeds(t *testing.T) {
 // account A must reach the analytics client and receive results. This prevents
 // a regression that blocks all scoped users regardless of account.
 func TestPerAccountPerms_HistoryBreakdown_AllowedAccountSucceeds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	expectedData := map[string]BreakdownValue{
@@ -450,6 +458,7 @@ func TestPerAccountPerms_HistoryBreakdown_AllowedAccountSucceeds(t *testing.T) {
 // analytics test for the breakdown endpoint which shares the same
 // resolveAnalyticsAccountFilter guard.
 func TestPerAccountPerms_HistoryBreakdown_CrossAccountRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockClient := new(MockAnalyticsClient)
@@ -488,6 +497,7 @@ func TestPerAccountPerms_HistoryBreakdown_CrossAccountRejected(t *testing.T) {
 // causes both records to be aggregated, raising TotalRecommendations to 2 and
 // PotentialMonthlySavings to 300.
 func TestPerAccountPerms_DashboardSummary_AggregatesAllowedSubsetOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	recA := config.RecommendationRecord{
@@ -559,6 +569,7 @@ func TestPerAccountPerms_DashboardSummary_AggregatesAllowedSubsetOnly(t *testing
 // account's commitments. Here the store is asked for account A only, and the
 // account-B commitment never reaches the KPIs.
 func TestPerAccountPerms_DashboardSummary_CommitmentMetricsExcludeOtherAccounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockSched := new(MockScheduler)
@@ -608,6 +619,7 @@ func TestPerAccountPerms_DashboardSummary_CommitmentMetricsExcludeOtherAccounts(
 // (or its inner AccountScope.Allows call) allows the purchase to proceed and the
 // assertions below fail.
 func TestPerAccountPerms_ExecutePurchase_CrossAccountRejected403(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockStore := new(MockConfigStore)
@@ -663,6 +675,7 @@ func TestPerAccountPerms_ExecutePurchase_CrossAccountRejected403(t *testing.T) {
 // validatePurchaseRecommendationScope allows the purchase to proceed,
 // silently bypassing account-level scoping.
 func TestPerAccountPerms_ExecutePurchase_UnattributedRecRejected400(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockStore := new(MockConfigStore)
@@ -717,6 +730,7 @@ func TestPerAccountPerms_ExecutePurchase_UnattributedRecRejected400(t *testing.T
 // TestHandler_executePurchase_Success test — "failed" means "saved but email
 // could not send", not that the scope check blocked it.
 func TestPerAccountPerms_ExecutePurchase_AllowedAccountAccepted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockStore := new(MockConfigStore)
@@ -789,6 +803,7 @@ func TestPerAccountPerms_ExecutePurchase_AllowedAccountAccepted(t *testing.T) {
 // the scoped user to reach TransitionExecutionStatus and the AssertNotCalled
 // check fails.
 func TestPerAccountPerms_PlannedPurchase_CrossAccountPlanRejected404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	executionID := "eeeeeeee-eeee-4eee-eeee-eeeeeeeeeeee"
@@ -840,6 +855,7 @@ func TestPerAccountPerms_PlannedPurchase_CrossAccountPlanRejected404(t *testing.
 // nil/nil read that pulls every tenant's rows into memory first (issue #956
 // contract, PR #1221 review). The mock expectation pins the scoped args.
 func TestPerAccountPerms_CoverageBreakdown_RecsFilteredByAllowedAccounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	now := time.Now()
@@ -926,6 +942,7 @@ func TestPerAccountPerms_CoverageBreakdown_RecsFilteredByAllowedAccounts(t *test
 // unrestricted session aggregates both accounts — the positive path through
 // IsUnrestrictedAccess so the test above cannot pass by dropping all records.
 func TestPerAccountPerms_CoverageBreakdown_AdminSeesAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	now := time.Now()
@@ -1005,6 +1022,7 @@ func TestPerAccountPerms_CoverageBreakdown_AdminSeesAll(t *testing.T) {
 // nil, nil) for this exact request shape; the pinned mock args make that call
 // panic the test.
 func TestPerAccountPerms_InventoryCommitments_ScopedSQLRead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	now := time.Now()
@@ -1050,6 +1068,7 @@ func TestPerAccountPerms_InventoryCommitments_ScopedSQLRead(t *testing.T) {
 // emit no account predicate and match every tenant's rows (the same
 // short-circuit fetchCommitmentPurchases applies on the dashboard path).
 func TestPerAccountPerms_InventoryCommitments_ZeroAllowedAccountsNoQuery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockAuth := new(MockAuthService)
@@ -1091,6 +1110,7 @@ func TestPerAccountPerms_InventoryCommitments_ZeroAllowedAccountsNoQuery(t *test
 // TestPerAccountPerms_PlannedPurchase_AllowedAccountPlanSucceeds is the paired
 // positive case confirming the filter passes for account-A plans.
 func TestPerAccountPerms_PlannedPurchase_AllowedAccountPlanSucceeds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	executionID := "eeeeeeee-eeee-4eee-eeee-eeeeeeeeeee2"
@@ -1143,6 +1163,7 @@ func TestPerAccountPerms_PlannedPurchase_AllowedAccountPlanSucceeds(t *testing.T
 // causes the handler to proceed to the AWS SDK call and the assertion fails
 // because the scope check never fires.
 func TestPerAccountPerms_ListConvertibleRIs_ScopedOutsideAllowedReturnsEmpty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockStore := new(MockConfigStore)
@@ -1178,6 +1199,7 @@ func TestPerAccountPerms_ListConvertibleRIs_ScopedOutsideAllowedReturnsEmpty(t *
 // This is the positive path through IsUnrestrictedAccess — if it were missing,
 // the admin session would also go through the account check.
 func TestPerAccountPerms_ListConvertibleRIs_AdminSeesAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// Admin auth — ValidateSession returns Role:"admin" so getAllowedAccounts
@@ -1229,6 +1251,7 @@ func TestPerAccountPerms_ListConvertibleRIs_AdminSeesAll(t *testing.T) {
 // causes the handler to proceed to the AWS SDK call (Cost Explorer) and the
 // empty-list assertion fails because the scope check never fires.
 func TestPerAccountPerms_GetRIUtilization_ScopedOutsideAllowedReturnsEmpty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockStore := new(MockConfigStore)
@@ -1262,6 +1285,7 @@ func TestPerAccountPerms_GetRIUtilization_ScopedOutsideAllowedReturnsEmpty(t *te
 // Regression: an overly-broad scope check that blocks ALL scoped users
 // (not just out-of-scope ones) would return empty before reaching the stubs.
 func TestPerAccountPerms_GetRIUtilization_ScopedWithinAllowedProceedsToAWS(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockStore := new(MockConfigStore)
@@ -1303,6 +1327,7 @@ func TestPerAccountPerms_GetRIUtilization_ScopedWithinAllowedProceedsToAWS(t *te
 // causes the handler to proceed to the AWS SDK calls and the empty-list
 // assertion fails because the scope check never fires.
 func TestPerAccountPerms_GetReshapeRecommendations_ScopedOutsideAllowedReturnsEmpty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockStore := new(MockConfigStore)
@@ -1344,6 +1369,7 @@ func TestPerAccountPerms_GetReshapeRecommendations_ScopedOutsideAllowedReturnsEm
 // does NOT happen by ensuring the response is a valid *ReshapeRecommendationsResponse
 // (not an error and not an empty stub from the scope-reject branch).
 func TestPerAccountPerms_GetReshapeRecommendations_AdminSeesAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockStore := new(MockConfigStore)
@@ -1413,6 +1439,7 @@ func TestPerAccountPerms_GetReshapeRecommendations_AdminSeesAll(t *testing.T) {
 // Regression: without filterLadderConfigsByAllowedAccounts, this test fails
 // because the account-B config is included in the response.
 func TestPerAccountPerms_GetLadderConfigs_ScopedUserSeesOnlyOwnAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	cfgA := config.LadderConfigDB{ID: "cfg-a", CloudAccountID: permsAccA, Provider: "aws"}
@@ -1449,6 +1476,7 @@ func TestPerAccountPerms_GetLadderConfigs_ScopedUserSeesOnlyOwnAccount(t *testin
 // that when GetAllowedAccountsAPI returns an error, getLadderConfigs fails
 // closed (returns the error, not unfiltered configs).
 func TestPerAccountPerms_GetLadderConfigs_AllowedAccountsLookupError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	cfgA := config.LadderConfigDB{ID: "cfg-a", CloudAccountID: permsAccA, Provider: "aws"}
@@ -1485,6 +1513,7 @@ func TestPerAccountPerms_GetLadderConfigs_AllowedAccountsLookupError(t *testing.
 // (unrestricted) session bypasses the allowed_accounts gate and receives
 // every account's ladder config.
 func TestPerAccountPerms_GetLadderConfigs_AdminSeesAll(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	cfgA := config.LadderConfigDB{ID: "cfg-a", CloudAccountID: permsAccA, Provider: "aws"}

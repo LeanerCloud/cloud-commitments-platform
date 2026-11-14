@@ -14,6 +14,7 @@ import (
 // compute capacity (vcpu / memory_gb, #219) as the unpaged list. Both paged
 // sources, the SQL page (setPage) and the Go scan (add), end in response.
 func TestRecommendationsPageCollector_StampsComputeCapacity(t *testing.T) {
+	t.Parallel()
 	details, err := common.MarshalServiceDetails(&common.ComputeDetails{
 		InstanceType: "m5.2xlarge", Platform: "linux", Tenancy: "default", VCPU: 8, MemoryGB: 32,
 	})

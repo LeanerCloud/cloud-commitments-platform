@@ -16,6 +16,7 @@ import (
 // asserted only the name, enabled and the account arguments, so a field dropped
 // between PlanRequest and the stored plan went unnoticed.
 func TestCreatePlan_StoresEveryRequestedField(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })

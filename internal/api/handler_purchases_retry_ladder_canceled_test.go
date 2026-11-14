@@ -15,6 +15,7 @@ import (
 // cloud-commitments-go#554 keep the double-l spelling, new ones write "canceled"; Retry
 // must refuse a canceled tranche under either spelling.
 func TestGuardLadderTrancheForRetry_RefusesBothCanceledSpellings(t *testing.T) {
+	t.Parallel()
 	for _, stored := range []string{"canceled", "cancelled"} { //nolint:misspell // legacy stored ladder status value
 		t.Run(stored, func(t *testing.T) {
 			store := new(MockConfigStore)

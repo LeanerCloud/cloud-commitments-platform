@@ -51,6 +51,7 @@ func azureScopeHandler(t *testing.T, execute bool, client azureExchangeClient) *
 }
 
 func TestAzureExchangeScopePreserved(t *testing.T) {
+	t.Parallel()
 	for _, execute := range []bool{false, true} {
 		for _, scope := range []armreservations.AppliedScopeType{armreservations.AppliedScopeTypeShared, armreservations.AppliedScopeTypeSingle} {
 			name := "preview/" + string(scope)
@@ -120,6 +121,7 @@ func TestAzureExchangeScopePreserved(t *testing.T) {
 }
 
 func TestAzureExchangeScopeRefused(t *testing.T) {
+	t.Parallel()
 	base := azurecompute.ExchangeableReservation{ReservationID: "res-1", BillingScopeID: "/subscriptions/sub-1", AppliedScopeType: armreservations.AppliedScopeTypeShared, Region: "eastus", Quantity: 4}
 	missing := base
 	missing.AppliedScopeType = ""

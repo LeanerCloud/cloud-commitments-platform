@@ -14,6 +14,7 @@ import (
 // POST /api/register endpoint must be CR/LF-stripped and length-capped at the
 // data source before it is persisted or interpolated into any email header.
 func TestValidateRegistrationRequest_AccountNameSanitized(t *testing.T) {
+	t.Parallel()
 	t.Run("strips CRLF", func(t *testing.T) {
 		req := RegistrationRequest{
 			Provider:     "aws",
@@ -71,6 +72,7 @@ func TestValidateRegistrationRequest_AccountNameSanitized(t *testing.T) {
 // a second address, or a host with no TLD was stored as-is. It now applies
 // validateEmailFormat and stores the bare address.
 func TestValidateRegistrationRequest_ContactEmail(t *testing.T) {
+	t.Parallel()
 	valid := map[string]string{
 		"plain address":     "user@example.com",
 		"display-name form": "Jane Doe <jane@example.com>",

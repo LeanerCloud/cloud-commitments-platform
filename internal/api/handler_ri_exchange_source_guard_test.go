@@ -16,6 +16,7 @@ import (
 // #1050: an approval whose source RI is held by another processing exchange
 // fails with the true reason, naming only the shared RI, and never reaches AWS.
 func TestExecuteApprovedExchange_SourceInFlight_FailsWithSharedRIOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const id = "550e8400-e29b-41d4-a716-000000001050"
 	const blocker = "6f0e8400-e29b-41d4-a716-00000000b10c"

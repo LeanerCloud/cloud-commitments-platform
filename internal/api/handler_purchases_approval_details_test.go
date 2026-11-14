@@ -89,6 +89,7 @@ func assertReadOnly(t *testing.T, h *Handler) {
 // /api/purchases/{id}, but can read the details on the approval link with
 // the email token (issue #529).
 func TestHandleRequest_ApprovalDetails_ContactApproverWithoutViewPurchases(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	caller := contactCaller()
 
@@ -115,6 +116,7 @@ func TestHandleRequest_ApprovalDetails_ContactApproverWithoutViewPurchases(t *te
 
 // The token alone, or the contact email alone, never authorizes the read.
 func TestHandleRequest_ApprovalDetails_TokenAndContactBothRequired(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	past := time.Now().Add(-time.Hour)
 	cases := []struct {
@@ -147,6 +149,7 @@ func TestHandleRequest_ApprovalDetails_TokenAndContactBothRequired(t *testing.T)
 // exactly as GET /api/purchases/{id} allows; out of scope it needs the
 // contact gate like everyone else.
 func TestHandleRequest_ApprovalDetails_ViewPurchasesSession(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 
 	t.Run("in scope, no token", func(t *testing.T) {
@@ -172,6 +175,7 @@ func TestHandleRequest_ApprovalDetails_ViewPurchasesSession(t *testing.T) {
 // No session is 401 and a session without CSRF is 403, both before the
 // execution is read (issues #435, #597).
 func TestHandleRequest_ApprovalDetails_SessionAndCSRFBeforeLookup(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 
 	t.Run("no session", func(t *testing.T) {
@@ -199,6 +203,7 @@ func TestHandleRequest_ApprovalDetails_SessionAndCSRFBeforeLookup(t *testing.T) 
 // A signed-in caller who may not read the details gets the same status,
 // headers and body for an existing and a missing execution (issue #597).
 func TestHandleRequest_ApprovalDetails_SignedInCannotTellMissingFromExisting(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	for _, status := range []string{"pending", "completed", "orphan"} {
 		for _, token := range []string{"", tokenErrRawToken, "wrong"} {
@@ -230,6 +235,7 @@ func TestHandleRequest_ApprovalDetails_SignedInCannotTellMissingFromExisting(t *
 // The details route must not shadow the approve route it shares a prefix
 // with: POST /api/purchases/approve/{id} still reaches approvePurchase.
 func TestRouter_ApprovalDetailsDoesNotShadowApprove(t *testing.T) {
+	t.Parallel()
 	r := &Router{}
 	r.registerRoutes()
 	match := func(path string) Route {

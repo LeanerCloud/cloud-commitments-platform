@@ -13,6 +13,7 @@ import (
 // A PUT before step 1 may change the ramp shape, but a bound plan must keep
 // its bound_groups marker: dropping it would let the plan buy by filter.
 func TestUpdatePlan_KeepsBoundGroupsMarker(t *testing.T) {
+	t.Parallel()
 	const planID = "12345678-1234-1234-1234-123456789abc"
 	weekly := config.PresetRampSchedules[config.RampWeekly25Pct]
 	monthly := config.PresetRampSchedules[config.RampMonthly10Pct]

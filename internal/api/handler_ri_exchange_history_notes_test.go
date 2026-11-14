@@ -15,6 +15,7 @@ import (
 // source-RI guard's refusal and the outcome-unknown resolve note. A raw
 // provider error on another row is still summarized.
 func TestHandler_getRIExchangeHistory_ShowsRIExchangeNotes(t *testing.T) {
+	t.Parallel()
 	const (
 		sourceNote  = "RI exchange source RI is held by an exchange in progress: source RI(s) ri-0a1b2c3d already have an exchange in progress; resolve that exchange first"
 		outcomeNote = "outcome unknown: the provider returned an error; verify the source RIs and target reservation at AWS, then POST /api/ri-exchange/resolve/550e8400-e29b-41d4-a716-000000010501"

@@ -39,6 +39,7 @@ func submitRegistrationRequest() *events.LambdaFunctionURLRequest {
 }
 
 func TestSubmitRegistration_DuplicatePending_Returns409WithoutEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -61,6 +62,7 @@ func TestSubmitRegistration_DuplicatePending_Returns409WithoutEmail(t *testing.T
 // Errors that are not the duplicate sentinel must surface as a generic 500,
 // even when their text contains "duplicate", and must not leak the DB error.
 func TestSubmitRegistration_NonDuplicateErrors_Return500(t *testing.T) {
+	t.Parallel()
 	cases := map[string]error{
 		"text mentions duplicate": errors.New(
 			`duplicate: duplicate key value violates unique constraint "idx_account_registrations_pending_unique"`),
@@ -96,6 +98,7 @@ func TestSubmitRegistration_NonDuplicateErrors_Return500(t *testing.T) {
 // A reference-token collision is retryable: the handler regenerates the token
 // and re-inserts instead of telling the submitter the account is registered.
 func TestSubmitRegistration_TokenCollision_RetriesWithNewToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -118,6 +121,7 @@ func TestSubmitRegistration_TokenCollision_RetriesWithNewToken(t *testing.T) {
 }
 
 func TestSubmitRegistration_TokenCollision_GivesUpAs500(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -137,6 +141,7 @@ func TestSubmitRegistration_TokenCollision_GivesUpAs500(t *testing.T) {
 // The registration row and the admin notification both carry the bare
 // contact address, not the submitted display-name form (issue #311).
 func TestSubmitRegistration_StoresBareContactEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -161,6 +166,7 @@ func TestSubmitRegistration_StoresBareContactEmail(t *testing.T) {
 // A contact_email carrying a header after a line break is refused before
 // anything is stored or sent (issue #311).
 func TestSubmitRegistration_RejectsHeaderInjectionContactEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	store.On("CreateAccountRegistration", ctx, mock.Anything).Return(nil).Maybe()

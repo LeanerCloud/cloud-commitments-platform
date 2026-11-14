@@ -79,6 +79,7 @@ func pageTestReq() *events.LambdaFunctionURLRequest {
 // that each fit under the Lambda cap, and walking the cursor must return
 // every row exactly once.
 func TestGetRecommendations_PaginationBoundsResponse(t *testing.T) {
+	t.Parallel()
 	const total = 8000
 	recs := pageTestRecs(total)
 	h := pageTestHandler(t, recs, false, true)
@@ -127,6 +128,7 @@ func TestGetRecommendations_PaginationBoundsResponse(t *testing.T) {
 // compatibility: without limit/cursor the endpoint still returns every row,
 // in the order the scheduler gave them, with no next_cursor.
 func TestGetRecommendations_UnpaginatedShapeUnchanged(t *testing.T) {
+	t.Parallel()
 	recs := pageTestRecs(5)
 	// Copy the expected order before the call: the mock hands the handler
 	// this same backing array, so an in-place sort would also reorder recs.
@@ -158,6 +160,7 @@ func TestGetRecommendations_UnpaginatedShapeUnchanged(t *testing.T) {
 // three rows), so a paginated request fails instead of walking short. Legacy
 // mode does not sort or page and still returns every row.
 func TestGetRecommendations_PaginationRejectsDuplicateIDs(t *testing.T) {
+	t.Parallel()
 	recs := pageTestRecs(4)
 	recs[1].ID = recs[2].ID
 	h := pageTestHandler(t, recs, true, true)
@@ -173,6 +176,7 @@ func TestGetRecommendations_PaginationRejectsDuplicateIDs(t *testing.T) {
 }
 
 func TestGetRecommendations_PaginationPages(t *testing.T) {
+	t.Parallel()
 	recs := pageTestRecs(5) // rec-000000 .. rec-000004, stored in reverse
 	h := pageTestHandler(t, recs, false, true)
 	ctx := context.Background()
@@ -219,6 +223,7 @@ func TestGetRecommendations_PaginationPages(t *testing.T) {
 }
 
 func TestGetRecommendations_CursorWithoutLimitUsesDefaultPageSize(t *testing.T) {
+	t.Parallel()
 	recs := pageTestRecs(DefaultRecommendationsPageSize + 3)
 	h := pageTestHandler(t, recs, false, true)
 
@@ -231,6 +236,7 @@ func TestGetRecommendations_CursorWithoutLimitUsesDefaultPageSize(t *testing.T) 
 }
 
 func TestGetRecommendations_PaginationRejectsBadParams(t *testing.T) {
+	t.Parallel()
 	cases := map[string]map[string]string{
 		"zero limit":        {"limit": "0"},
 		"negative limit":    {"limit": "-1"},
@@ -264,6 +270,7 @@ func TestGetRecommendations_PaginationRejectsBadParams(t *testing.T) {
 }
 
 func TestGetRecommendations_PaginationMaxLimitAccepted(t *testing.T) {
+	t.Parallel()
 	h := pageTestHandler(t, pageTestRecs(3), false, true)
 	resp, err := h.getRecommendations(context.Background(), pageTestReq(), map[string]string{
 		"limit": strconv.Itoa(MaxRecommendationsPageSize),
@@ -311,6 +318,7 @@ func lambdaPayloadLen(t *testing.T, resp *RecommendationsResponse) (bodyInEnvelo
 // would be far over the Lambda cap, so pages must be cut by serialized bytes
 // while still visiting every row exactly once, in order, with full totals.
 func TestGetRecommendations_PageCutByByteBudget(t *testing.T) {
+	t.Parallel()
 	const total = 1500
 	recs := bigDetailsRecs(total, 1500) // ~10 KB per row in the envelope
 	h := pageTestHandler(t, recs, false, true)
@@ -361,6 +369,7 @@ func TestGetRecommendations_PageCutByByteBudget(t *testing.T) {
 // budget is returned on its own page so the walk advances, and the rows
 // around it still pack normally.
 func TestBuildBudgetedPage_OversizedRowAlone(t *testing.T) {
+	t.Parallel()
 	recs := pageTestRecs(6) // ~1 KB rows: rec-000000 .. rec-000005
 	huge := bigDetailsRecs(1, 8000)[0]
 	recs[2].Details = huge.Details // rec-000003 (pageTestRecs is reversed)
@@ -403,6 +412,7 @@ func TestBuildBudgetedPage_OversizedRowAlone(t *testing.T) {
 // fit (counting the summary, regions, keys and next_cursor), and the page
 // must be maximal, i.e. one more row would not have fit.
 func TestBuildBudgetedPage_TightBudgetSweep(t *testing.T) {
+	t.Parallel()
 	recs := pageTestRecs(6)
 	page := recommendationsPage{enabled: true, limit: MaxRecommendationsPageSize}
 	for budget := 1500; budget <= 7000; budget++ {

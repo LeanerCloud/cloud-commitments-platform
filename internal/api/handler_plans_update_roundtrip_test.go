@@ -19,6 +19,7 @@ import (
 // stored value and other stored services survive (documented on the OpenAPI
 // operation). The stored plan keeps the path id and its original timestamps.
 func TestUpdatePlan_OmittedFieldsResetAndStoredSettingsAreKept(t *testing.T) {
+	t.Parallel()
 	const planID = "12345678-1234-1234-1234-123456789abc"
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)

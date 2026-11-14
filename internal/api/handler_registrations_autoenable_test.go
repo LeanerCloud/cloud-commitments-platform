@@ -7,6 +7,7 @@ import (
 )
 
 func TestAccountHasCredentialFreePath(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		acct *config.CloudAccount
 		name string

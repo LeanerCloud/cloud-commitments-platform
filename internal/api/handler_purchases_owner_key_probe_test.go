@@ -169,6 +169,7 @@ func serveOKPExecute(t *testing.T, a *okpAuth, headers map[string]string) (int, 
 // take the execute-any branch whenever its owner held execute-any, and then
 // fail the key's execute-any Constraints check.
 func TestExecuteDirect_FullScopeFollowsTheAPIKey(t *testing.T) {
+	t.Parallel()
 	t.Run("key without execute-any or execute-own is refused", func(t *testing.T) {
 		code, reached := serveOKPExecute(t, newOKPAuth(auth.ActionExecute), okpKeyHeaders())
 		assert.Equal(t, http.StatusForbidden, code)
@@ -191,6 +192,7 @@ func TestExecuteDirect_FullScopeFollowsTheAPIKey(t *testing.T) {
 // TestExecuteDirect_APIKeyFullScopeProbeErrorRefuses: an error probing the
 // key's execute-any refuses the request instead of being read as "not held".
 func TestExecuteDirect_APIKeyFullScopeProbeErrorRefuses(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("key store down")
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -232,6 +234,7 @@ func TestExecuteDirect_APIKeyFullScopeProbeErrorRefuses(t *testing.T) {
 // whatever the key or its owner holds. The helpers now probe the key anyway
 // (see handler_purchases_owner_key_probe_helpers_test.go).
 func TestSessionOnlyPurchaseRoutes_RefuseAUserAPIKey(t *testing.T) {
+	t.Parallel()
 	routes := []struct {
 		name, path, anyVerb, ownVerb string
 	}{

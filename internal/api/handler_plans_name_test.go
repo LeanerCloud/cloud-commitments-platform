@@ -38,6 +38,7 @@ func requireNameTakenResponse(t *testing.T, err error) {
 }
 
 func TestCreatePlan_DuplicateNameUnrestrictedCallerGets409(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t)
 	store.NameTakenFixture = nameFixture(scopedOutAccount)
 
@@ -48,6 +49,7 @@ func TestCreatePlan_DuplicateNameUnrestrictedCallerGets409(t *testing.T) {
 }
 
 func TestCreatePlan_DuplicateNameWithOverlappingAccountGets409ForScopedCaller(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t, scopedInAccount)
 	store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
 		return &config.CloudAccount{ID: id, Name: "acct-" + id, Provider: "aws"}, nil
@@ -62,6 +64,7 @@ func TestCreatePlan_DuplicateNameWithOverlappingAccountGets409ForScopedCaller(t 
 // A scoped caller is never told about, or blocked by, a plan outside their
 // scope: the create succeeds and nothing in the response names the other plan.
 func TestCreatePlan_DuplicateNameOutsideScopeIsInvisible(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t, scopedInAccount)
 	store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
 		return &config.CloudAccount{ID: id, Name: "acct-" + id, Provider: "aws"}, nil
@@ -79,6 +82,7 @@ func TestCreatePlan_DuplicateNameOutsideScopeIsInvisible(t *testing.T) {
 
 // A plan with no accounts is invisible to a scoped caller, like requirePlanAccess.
 func TestCreatePlan_DuplicateNameWithoutAccountsIsInvisibleToScopedCaller(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t, scopedInAccount)
 	store.GetCloudAccountFn = func(_ context.Context, id string) (*config.CloudAccount, error) {
 		return &config.CloudAccount{ID: id, Name: "acct-" + id, Provider: "aws"}, nil
@@ -94,6 +98,7 @@ func TestCreatePlan_DuplicateNameWithoutAccountsIsInvisibleToScopedCaller(t *tes
 // A failure to resolve the caller's scope for the visibility check must fail
 // the request. Read as "nothing is visible" it would let a duplicate in.
 func TestCreatePlan_ScopeErrorFailsBeforeTheStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	scopeCalls := 0
 	probe := func(okCalls int) (*Handler, *MockConfigStore) {
@@ -128,6 +133,7 @@ func TestCreatePlan_ScopeErrorFailsBeforeTheStore(t *testing.T) {
 }
 
 func TestCreatePlan_ProviderMismatchGets400WithTheStoreMessage(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t)
 	msg := `account "az" has provider="azure", expected one of [aws]`
 	store.On("CreatePurchasePlanWithAccounts", mock.Anything, mock.Anything, mock.Anything, mock.Anything).

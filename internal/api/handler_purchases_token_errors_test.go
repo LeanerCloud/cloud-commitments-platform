@@ -90,6 +90,7 @@ func tokenErrRequest(action, token string) *events.LambdaFunctionURLRequest {
 }
 
 func TestHandleRequest_TokenActions_TokenAndStatusErrorsAre4xx(t *testing.T) {
+	t.Parallel()
 	past := time.Now().Add(-time.Hour)
 	future := time.Now().Add(time.Hour)
 	hash := config.HashApprovalToken(tokenErrRawToken)
@@ -129,6 +130,7 @@ func TestHandleRequest_TokenActions_TokenAndStatusErrorsAre4xx(t *testing.T) {
 }
 
 func TestHandleRequest_ApproveViaToken_NonPendingExecutionIs409(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	exec := &config.PurchaseExecution{Status: "completed", ApprovalToken: config.HashApprovalToken(tokenErrRawToken), ApprovalTokenExpiresAt: &future}
 	h := tokenErrHandler(t, exec, nil)
@@ -143,6 +145,7 @@ func TestHandleRequest_ApproveViaToken_NonPendingExecutionIs409(t *testing.T) {
 }
 
 func TestHandleRequest_RevokeViaEmail_MissingExecutionIs404(t *testing.T) {
+	t.Parallel()
 	h := tokenErrHandler(t, nil, config.ErrNotFound)
 	resp, err := h.HandleRequest(context.Background(), tokenErrRequest("revoke", tokenErrRawToken))
 	require.NoError(t, err)
@@ -150,6 +153,7 @@ func TestHandleRequest_RevokeViaEmail_MissingExecutionIs404(t *testing.T) {
 }
 
 func TestHandleRequest_CancelViaToken_LostCASIs409(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	exec := &config.PurchaseExecution{Status: "pending", ApprovalToken: config.HashApprovalToken(tokenErrRawToken), ApprovalTokenExpiresAt: &future}
 	h := tokenErrHandler(t, exec, nil)
@@ -169,6 +173,7 @@ func TestHandleRequest_CancelViaToken_LostCASIs409(t *testing.T) {
 // caller's fault (their link is no longer the current one), so it answers 403
 // "invalid approval token" like a wrong token, not a 500.
 func TestHandleRequest_TokenActions_TokenRotatedBeforeCASIs403(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	rotated := fmt.Errorf("approve: %w: execution %s", config.ErrApprovalTokenChanged, tokenErrExecID)
 	for _, action := range []string{"approve", "cancel"} {
@@ -201,6 +206,7 @@ func TestHandleRequest_TokenActions_TokenRotatedBeforeCASIs403(t *testing.T) {
 // 403 "invalid revocation token" whether the row's link is live, expired or
 // past its window; only the right token learns that the link has lapsed.
 func TestHandleRequest_RevokeViaEmail_WrongTokenOnLapsedRowIsInvalid(t *testing.T) {
+	t.Parallel()
 	past := time.Now().Add(-time.Hour)
 	future := time.Now().Add(time.Hour)
 	longAgo := time.Now().Add(-2 * config.RevocationWindow)

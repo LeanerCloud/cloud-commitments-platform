@@ -72,6 +72,7 @@ func assertNoReferenceToken(t *testing.T, body string) {
 }
 
 func TestListRegistrations_DoesNotExposeReferenceToken(t *testing.T) {
+	t.Parallel()
 	h, store := regTokenHandler(t)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	store.On("ListAccountRegistrations", mock.Anything, mock.Anything).
@@ -87,6 +88,7 @@ func TestListRegistrations_DoesNotExposeReferenceToken(t *testing.T) {
 }
 
 func TestGetRegistration_DoesNotExposeReferenceToken(t *testing.T) {
+	t.Parallel()
 	h, store := regTokenHandler(t)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	reg := regTokenFixture()
@@ -103,6 +105,7 @@ func TestGetRegistration_DoesNotExposeReferenceToken(t *testing.T) {
 // TestAccountRegistration_JSONOmitsReferenceToken pins the type itself, so
 // any future endpoint that serializes a registration inherits the redaction.
 func TestAccountRegistration_JSONOmitsReferenceToken(t *testing.T) {
+	t.Parallel()
 	b, err := json.Marshal(regTokenFixture())
 	require.NoError(t, err)
 	assert.NotContains(t, string(b), "reference_token")

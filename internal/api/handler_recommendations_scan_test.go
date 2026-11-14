@@ -99,6 +99,7 @@ func legacyResponse(t *testing.T, recs []config.RecommendationRecord, scoped boo
 // regression: a paginated request must page from the chunked scan and never
 // read the whole filtered set through ListRecommendations.
 func TestGetRecommendations_PaginatedRequestDoesNotLoadFullList(t *testing.T) {
+	t.Parallel()
 	recs := pageTestRecs(5)
 	ms := new(MockScheduler)
 	t.Cleanup(func() { ms.AssertExpectations(t) })
@@ -121,6 +122,7 @@ func TestGetRecommendations_PaginatedRequestDoesNotLoadFullList(t *testing.T) {
 // reader, across chunk sizes that put chunk boundaries before, on and after
 // page boundaries, including the exact-fit last page.
 func TestGetRecommendations_PagedWalkMatchesLegacyOrder(t *testing.T) {
+	t.Parallel()
 	recs := scanFilterRecs()
 	for _, scoped := range []bool{false, true} {
 		legacy := legacyResponse(t, recs, scoped)
@@ -175,6 +177,7 @@ func TestGetRecommendations_PagedWalkMatchesLegacyOrder(t *testing.T) {
 // duplicate lies beyond the requested page, while a duplicate whose twin a
 // filter removes is not a tie at all.
 func TestGetRecommendations_PagedDuplicateIDs(t *testing.T) {
+	t.Parallel()
 	recs := scanFilterRecs()
 	dup := recs[0] // "aws|b", in scope
 	dup.Region = "us-west-1"
@@ -203,6 +206,7 @@ func TestGetRecommendations_PagedDuplicateIDs(t *testing.T) {
 // on the paginated path: only an unrestricted reader's scan may kick a
 // background collection.
 func TestGetRecommendations_PagedReadBackgroundCollectionScope(t *testing.T) {
+	t.Parallel()
 	for _, scoped := range []bool{false, true} {
 		h, sched := scanTestHandler(scanFilterRecs(), 4, scoped)
 		_, err := h.getRecommendations(context.Background(), scopedRequest(""), map[string]string{"limit": "3"})
@@ -216,6 +220,7 @@ func TestGetRecommendations_PagedReadBackgroundCollectionScope(t *testing.T) {
 // a long scan the collector holds the page plus one look-ahead row, while
 // the summary counts every row.
 func TestRecommendationsPageCollector_HoldsOnePage(t *testing.T) {
+	t.Parallel()
 	recs := pageTestRecs(2000)
 	sort.Slice(recs, func(i, j int) bool { return recs[i].ID < recs[j].ID })
 	c := newRecommendationsPageCollector(recommendationsPage{enabled: true, limit: 10, afterID: recs[99].ID})
@@ -235,6 +240,7 @@ func TestRecommendationsPageCollector_HoldsOnePage(t *testing.T) {
 // TestRecommendationsPageCollector_RejectsOutOfOrderScan fails loudly when the
 // scan breaks its ordering contract, which would make the cursor skip rows.
 func TestRecommendationsPageCollector_RejectsOutOfOrderScan(t *testing.T) {
+	t.Parallel()
 	c := newRecommendationsPageCollector(recommendationsPage{enabled: true, limit: 10})
 	require.NoError(t, c.add([]config.RecommendationRecord{{ID: "b"}}))
 	err := c.add([]config.RecommendationRecord{{ID: "a"}})
@@ -244,6 +250,7 @@ func TestRecommendationsPageCollector_RejectsOutOfOrderScan(t *testing.T) {
 // TestGetRecommendations_PagedEmptyCache returns an empty page as a JSON
 // array, with zero totals and no cursor.
 func TestGetRecommendations_PagedEmptyCache(t *testing.T) {
+	t.Parallel()
 	h, _ := scanTestHandler(nil, 3, false)
 	resp, err := h.getRecommendations(context.Background(), &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer scoped-token"},

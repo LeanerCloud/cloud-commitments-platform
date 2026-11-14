@@ -104,6 +104,7 @@ func (c drCaller) call(store *directResolveStore, id, body string) (any, error) 
 }
 
 func TestResolveRIExchangeDirect_PassesOperatorDecisionToStore(t *testing.T) {
+	t.Parallel()
 	logs := captureLogs(t)
 	store := drStore()
 	out, err := drCaller{perms: riExecute, email: "ops@example.com"}.call(store, dlID1, drFailedBody)
@@ -135,6 +136,7 @@ func TestResolveRIExchangeDirect_PassesOperatorDecisionToStore(t *testing.T) {
 // The store replays only a byte-identical note and refuses any other as a
 // conflict, so two checks a fraction of a second apart must not share a note.
 func TestResolveRIExchangeDirect_SubSecondCheckedAtChangesNote(t *testing.T) {
+	t.Parallel()
 	body := func(at string) string {
 		return fmt.Sprintf(`{"outcome":"completed","expected_status":"unknown","reason":"source RIs still active in the EC2 console",`+
 			`"cloud_check":{"checked_region":%q,"checked_at":%q}}`, drRegion, at)
@@ -149,6 +151,7 @@ func TestResolveRIExchangeDirect_SubSecondCheckedAtChangesNote(t *testing.T) {
 }
 
 func TestResolveRIExchangeDirect_ReplayIsReportedAndNotLogged(t *testing.T) {
+	t.Parallel()
 	logs := captureLogs(t)
 	store := drStore()
 	store.res = &config.RIExchangeDirectResolveResult{ID: dlID1, Status: "unknown", ResolvedStatus: "failed",
@@ -160,6 +163,7 @@ func TestResolveRIExchangeDirect_ReplayIsReportedAndNotLogged(t *testing.T) {
 }
 
 func TestResolveRIExchangeDirect_MapsStoreOutcomes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -195,6 +199,7 @@ func TestResolveRIExchangeDirect_MapsStoreOutcomes(t *testing.T) {
 }
 
 func TestResolveRIExchangeDirect_Needs503WithoutTheStore(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", mock.Anything, "tok").Return(&Session{UserID: apgUserID}, nil).Maybe()
 	mockAuth.grantPermissions(riExecute)
@@ -207,6 +212,7 @@ func TestResolveRIExchangeDirect_Needs503WithoutTheStore(t *testing.T) {
 // The status the operator saw is part of the replay identity: a repeat that
 // changes only expected_status must not read as the same request.
 func TestResolveRIExchangeDirect_NoteDiffersByExpectedStatus(t *testing.T) {
+	t.Parallel()
 	body := func(expected string) string {
 		return fmt.Sprintf(`{"outcome":"failed","expected_status":%q,"reason":"source RIs still active in the EC2 console",`+
 			`"acknowledge_unknown_outcome":true,"cloud_check":{"checked_region":%q,"checked_at":%q}}`,
@@ -226,6 +232,7 @@ func TestResolveRIExchangeDirect_NoteDiffersByExpectedStatus(t *testing.T) {
 // keeps verbatim. The row's registered account must be admitted by that entry,
 // as by its internal id; another account's number must not admit it.
 func TestResolveRIExchangeDirect_AllowedAccountsMayNameTheAWSAccountNumber(t *testing.T) {
+	t.Parallel()
 	accounts := []config.CloudAccount{
 		{ID: dlAcctA, Provider: "aws", ExternalID: "111122223333"},
 		{ID: dlAcctB, Provider: "aws", ExternalID: "999999999999"},

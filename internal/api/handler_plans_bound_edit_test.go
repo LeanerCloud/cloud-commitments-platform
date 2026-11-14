@@ -19,6 +19,7 @@ func boundPlanForEdit() *config.PurchasePlan {
 }
 
 func TestMergeUpdatedPlanBoundPlanRefusesServiceFields(t *testing.T) {
+	t.Parallel()
 	for name, req := range map[string]*PlanRequest{
 		"same service":  {Name: "bound", RampSchedule: "immediate", Enabled: true, Provider: "aws", Service: "ec2"},
 		"other service": {Name: "bound", RampSchedule: "immediate", Enabled: true, Provider: "aws", Service: "rds"},
@@ -35,6 +36,7 @@ func TestMergeUpdatedPlanBoundPlanRefusesServiceFields(t *testing.T) {
 }
 
 func TestMergeUpdatedPlanBoundPlanAllowsPlanLevelEdit(t *testing.T) {
+	t.Parallel()
 	existing := boundPlanForEdit()
 	plan, err := mergeUpdatedPlan(existing, &PlanRequest{Name: "renamed", RampSchedule: "immediate", Enabled: true}, "p1", false)
 	require.NoError(t, err)
@@ -44,6 +46,7 @@ func TestMergeUpdatedPlanBoundPlanAllowsPlanLevelEdit(t *testing.T) {
 }
 
 func TestMergeUpdatedPlanUnboundPlanStillTakesServiceFields(t *testing.T) {
+	t.Parallel()
 	existing := boundPlanForEdit()
 	existing.RampSchedule.AllocationMode = ""
 	existing.Services = map[string]config.ServiceConfig{

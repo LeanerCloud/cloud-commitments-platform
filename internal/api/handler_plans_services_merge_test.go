@@ -34,6 +34,7 @@ func legacyEdit(service string) *PlanRequest {
 }
 
 func TestMergeUpdatedPlan_KeepsOtherServicesOnMultiServicePlan(t *testing.T) {
+	t.Parallel()
 	plan, err := mergeUpdatedPlan(multiServicePlan(), legacyEdit("ec2"), spPlanID, false)
 	require.NoError(t, err)
 
@@ -50,6 +51,7 @@ func TestMergeUpdatedPlan_KeepsOtherServicesOnMultiServicePlan(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_ReusesColonKeyFromMigration000040(t *testing.T) {
+	t.Parallel()
 	// Migration 000040 fanned "aws:savings-plans" out into four colon keys
 	// carrying the umbrella's value object verbatim (Service "savings-plans").
 	umbrella := config.ServiceConfig{Provider: "aws", Service: "savings-plans", Enabled: true, Term: 1, Payment: "no-upfront", Coverage: 80}
@@ -73,6 +75,7 @@ func TestMergeUpdatedPlan_ReusesColonKeyFromMigration000040(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_RejectsUnknownServiceOnMultiServicePlan(t *testing.T) {
+	t.Parallel()
 	// The single-service form cannot say which of several entries to
 	// replace; silently adding or swapping one could buy a service the user
 	// never meant to add, so refuse instead of guessing.
@@ -84,6 +87,7 @@ func TestMergeUpdatedPlan_RejectsUnknownServiceOnMultiServicePlan(t *testing.T) 
 }
 
 func TestMergeUpdatedPlan_SingleServicePlanStillSwitchesService(t *testing.T) {
+	t.Parallel()
 	existing := spPlan("ec2", immediateRamp())
 	plan, err := mergeUpdatedPlan(existing, legacyEdit("rds"), spPlanID, false)
 	require.NoError(t, err)
@@ -92,12 +96,14 @@ func TestMergeUpdatedPlan_SingleServicePlanStillSwitchesService(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_NoServiceInRequestKeepsAllServices(t *testing.T) {
+	t.Parallel()
 	plan, err := mergeUpdatedPlan(multiServicePlan(), &PlanRequest{Name: "renamed", RampSchedule: "immediate", Enabled: true}, spPlanID, false)
 	require.NoError(t, err)
 	assert.Equal(t, multiServicePlan().Services, plan.Services)
 }
 
 func TestMergeUpdatedPlan_DoesNotMutateExistingServices(t *testing.T) {
+	t.Parallel()
 	existing := multiServicePlan()
 	_, err := mergeUpdatedPlan(existing, legacyEdit("ec2"), spPlanID, false)
 	require.NoError(t, err)
@@ -105,6 +111,7 @@ func TestMergeUpdatedPlan_DoesNotMutateExistingServices(t *testing.T) {
 }
 
 func TestHandler_updatePlan_RenameKeepsAllServices(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := spHandler(t)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -137,6 +144,7 @@ func renameOnly() *PlanRequest {
 }
 
 func TestMergeUpdatedPlan_OmittedTargetCoverageKeepsStored(t *testing.T) {
+	t.Parallel()
 	req := renameOnly()
 	req.Term, req.Payment = ptr(1), ptr("all-upfront")
 	plan, err := mergeUpdatedPlan(storedTunedPlan(), req, spPlanID, false)
@@ -145,6 +153,7 @@ func TestMergeUpdatedPlan_OmittedTargetCoverageKeepsStored(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_OmittedTermKeepsStored(t *testing.T) {
+	t.Parallel()
 	req := renameOnly()
 	req.TargetCoverage, req.Payment = ptr(50), ptr("all-upfront")
 	plan, err := mergeUpdatedPlan(storedTunedPlan(), req, spPlanID, false)
@@ -153,6 +162,7 @@ func TestMergeUpdatedPlan_OmittedTermKeepsStored(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_OmittedPaymentKeepsStored(t *testing.T) {
+	t.Parallel()
 	req := renameOnly()
 	req.TargetCoverage, req.Term = ptr(50), ptr(1)
 	plan, err := mergeUpdatedPlan(storedTunedPlan(), req, spPlanID, false)
@@ -161,6 +171,7 @@ func TestMergeUpdatedPlan_OmittedPaymentKeepsStored(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_NameOnlyKeepsAllThree(t *testing.T) {
+	t.Parallel()
 	plan, err := mergeUpdatedPlan(storedTunedPlan(), renameOnly(), spPlanID, false)
 	require.NoError(t, err)
 	svc := plan.Services["aws/ec2"]
@@ -170,6 +181,7 @@ func TestMergeUpdatedPlan_NameOnlyKeepsAllThree(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_ExplicitFieldsApply(t *testing.T) {
+	t.Parallel()
 	req := renameOnly()
 	req.TargetCoverage, req.Term, req.Payment = ptr(90), ptr(3), ptr("no-upfront")
 	plan, err := mergeUpdatedPlan(storedTunedPlan(), req, spPlanID, false)
@@ -181,6 +193,7 @@ func TestMergeUpdatedPlan_ExplicitFieldsApply(t *testing.T) {
 }
 
 func TestToPurchasePlan_CreateWithoutFieldsAppliesDefaults(t *testing.T) {
+	t.Parallel()
 	svc := renameOnly().toPurchasePlan().Services["aws/ec2"]
 	assert.Equal(t, 80.0, svc.Coverage)
 	assert.Equal(t, 3, svc.Term)
@@ -188,6 +201,7 @@ func TestToPurchasePlan_CreateWithoutFieldsAppliesDefaults(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_OmittedFieldsKeptOnLegacyAliasKey(t *testing.T) {
+	t.Parallel()
 	existing := &config.PurchasePlan{ID: spPlanID, Name: "old", Enabled: true, NotificationDaysBefore: 3, RampSchedule: immediateRamp(),
 		Services: map[string]config.ServiceConfig{
 			"azure/vm": {Provider: "azure", Service: "vm", Enabled: true, Term: 1, Payment: "upfront", Coverage: 50},
@@ -204,6 +218,7 @@ func TestMergeUpdatedPlan_OmittedFieldsKeptOnLegacyAliasKey(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_EmptyPaymentAndZeroTermKeepStored(t *testing.T) {
+	t.Parallel()
 	req := renameOnly()
 	req.TargetCoverage, req.Term, req.Payment = ptr(50), ptr(0), ptr("")
 	plan, err := mergeUpdatedPlan(storedTunedPlan(), req, spPlanID, false)

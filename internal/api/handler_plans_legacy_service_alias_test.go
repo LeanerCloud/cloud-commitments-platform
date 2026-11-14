@@ -17,6 +17,7 @@ func b1s1Service(provider, service string, enabled bool) config.ServiceConfig {
 }
 
 func TestLegacyServiceB1S1Aliases(t *testing.T) {
+	t.Parallel()
 	for _, alias := range []struct{ provider, old, canonical string }{
 		{"azure", "vm", "compute"}, {"azure", "sql", "relational-db"}, {"azure", "redis", "cache"},
 		{"gcp", "cloudsql", "relational-db"}, {"gcp", "memorystore", "cache"}, {"azure", "compute", "compute"},
@@ -48,6 +49,7 @@ func TestLegacyServiceB1S1Aliases(t *testing.T) {
 }
 
 func TestLegacyServiceB1S1ExistingMergeControls(t *testing.T) {
+	t.Parallel()
 	req := config.ServiceConfig{Provider: "aws", Service: "savings-plans-compute", Enabled: true, Term: 3, Payment: "no-upfront", Coverage: 90}
 	requested := map[string]config.ServiceConfig{"aws/savings-plans-compute": req}
 	for _, keys := range [][]string{{"aws/savings-plans-compute", "aws:savings-plans-compute"}, {"aws:savings-plans-compute"}} {
@@ -89,6 +91,7 @@ func TestLegacyServiceB1S1ExistingMergeControls(t *testing.T) {
 }
 
 func TestLegacyServiceB1S1IndependentReplacementControls(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, provider, service string }{
 		{"same provider different canonical service", "azure", "cache"},
 		{"different provider same canonical service", "gcp", "compute"},

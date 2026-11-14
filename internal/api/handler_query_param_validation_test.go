@@ -29,6 +29,7 @@ func requireBadRequest(t *testing.T, err error) {
 }
 
 func TestHandler_getDashboardSummary_RejectsUnknownProvider(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, provider := range []string{"AWS", "ibm", "aws "} {
 		t.Run(provider, func(t *testing.T) {
@@ -47,6 +48,7 @@ func TestHandler_getDashboardSummary_RejectsUnknownProvider(t *testing.T) {
 }
 
 func TestHandler_getDashboardSummary_AllProviderMeansNoFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
 	mockStore := new(MockConfigStore)
@@ -85,6 +87,7 @@ func inventoryRowsForProviderTests() []config.PurchaseHistoryRecord {
 }
 
 func TestHandler_inventory_RejectsUnknownProvider(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	reads := map[string]func(*Handler, *events.LambdaFunctionURLRequest, map[string]string) error{
 		"commitments": func(h *Handler, req *events.LambdaFunctionURLRequest, p map[string]string) error {
@@ -111,6 +114,7 @@ func TestHandler_inventory_RejectsUnknownProvider(t *testing.T) {
 }
 
 func TestHandler_listActiveCommitments_AllProviderMeansNoFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -129,6 +133,7 @@ func TestHandler_listActiveCommitments_AllProviderMeansNoFilter(t *testing.T) {
 }
 
 func TestHandler_getCoverageBreakdown_AllProviderMeansNoFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -153,6 +158,7 @@ func TestHandler_getCoverageBreakdown_AllProviderMeansNoFilter(t *testing.T) {
 }
 
 func TestListAccounts_RejectsUnknownEnumParams(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	cases := map[string]map[string]string{
 		"enabled=1":     {"enabled": "1"},
@@ -200,6 +206,7 @@ func TestListAccounts_RejectsUnknownEnumParams(t *testing.T) {
 }
 
 func TestListAccounts_AcceptedFilterValues(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	listWith := func(t *testing.T, params map[string]string) config.CloudAccountFilter {
 		t.Helper()

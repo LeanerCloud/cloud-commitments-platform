@@ -195,6 +195,7 @@ func serveKeyScope(t *testing.T, rt keyScopeRoute, a *keyScopeAuth, creator stri
 // a key without update-any or cancel-any must not act on another user's
 // scheduled purchase through its owner's grant.
 func TestPlannedPurchaseRoutes_FullScopeFollowsTheAPIKey(t *testing.T) {
+	t.Parallel()
 	for _, rt := range keyScopeRoutes {
 		for _, verbs := range rt.narrow {
 			t.Run(rt.name+"/key "+verbs[0]+" on another user's row is refused", func(t *testing.T) {
@@ -222,6 +223,7 @@ func TestPlannedPurchaseRoutes_FullScopeFollowsTheAPIKey(t *testing.T) {
 // TestDeletePlannedPurchase_KeyCancelAnyKeepsFullScope: on DELETE, cancel-any
 // held by the key (not only by its owner) still cancels another user's row.
 func TestDeletePlannedPurchase_KeyCancelAnyKeepsFullScope(t *testing.T) {
+	t.Parallel()
 	rt := keyScopeRoutes[0]
 	_, reached := serveKeyScope(t, rt, newKeyScopeAuth(purchasesPerms(auth.ActionCancelAny)), keyScopeVictim, keyHeaders())
 	assert.True(t, reached)
@@ -232,6 +234,7 @@ func TestDeletePlannedPurchase_KeyCancelAnyKeepsFullScope(t *testing.T) {
 // "not held" and fall through to the creator branch, which would allow the
 // key owner's own row.
 func TestPlannedPurchaseRoutes_APIKeyFullScopeProbeErrorRefuses(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, entryVerb string
 		call            func(h *Handler, req *events.LambdaFunctionURLRequest) error

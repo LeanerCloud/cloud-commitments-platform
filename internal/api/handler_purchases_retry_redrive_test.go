@@ -195,6 +195,7 @@ func assertRedriveRefused(t *testing.T, err error, wantReasonFragment string) {
 // predicate the reaper's automatic re-drive already gated on, and refuses,
 // so no successor row exists and nothing can reach Azure.
 func TestRetryOfLandedAzureSavingsPlanPurchasesNothing(t *testing.T) {
+	t.Parallel()
 	// Both spellings the recommendation records use in the wild; the reaper's
 	// exclusion covers both and the retry path must not diverge.
 	cases := []struct {
@@ -229,6 +230,7 @@ func TestRetryOfLandedAzureSavingsPlanPurchasesNothing(t *testing.T) {
 // not what the operator clicking Retry is asking for; buying a second one on
 // purpose is a fresh purchase, not a retry.
 func TestRetryOfLandedAzureSavingsPlanIsNotForceOverridable(t *testing.T) {
+	t.Parallel()
 	failed := redriveFailedRow(redriveForceExecID, "azure", "savingsplans")
 
 	tokens, err := purchasesFiredByRetry(t, failed, sessionRetryReqWithForce())
@@ -245,6 +247,7 @@ func TestRetryOfLandedAzureSavingsPlanIsNotForceOverridable(t *testing.T) {
 // front of it. The AWS rec here is deliberately first, so a gate that checked
 // only the leading rec would pass this row straight through to Azure.
 func TestRetryOfMixedExecutionWithOneAzureSavingsPlanIsRefused(t *testing.T) {
+	t.Parallel()
 	failed := redriveFailedRow(redriveMixedExecID, "aws", "rds")
 	failed.Recommendations = append(failed.Recommendations, config.RecommendationRecord{
 		Provider:     "azure",
@@ -270,6 +273,7 @@ func TestRetryOfMixedExecutionWithOneAzureSavingsPlanIsRefused(t *testing.T) {
 // unknown provider was un-redrivable by the reaper yet freely retryable from
 // the API. The two paths now agree.
 func TestRetryOfUnknownProviderRowIsRefused(t *testing.T) {
+	t.Parallel()
 	failed := redriveFailedRow(redriveUnknownExecID, "oraclecloud", "compute")
 
 	tokens, err := purchasesFiredByRetry(t, failed, sessionRetryReq())
@@ -289,6 +293,7 @@ func TestRetryOfUnknownProviderRowIsRefused(t *testing.T) {
 // lineage key, which is what makes the provider-side dedupe engage if the
 // first attempt had in fact landed.
 func TestRetryOfFailedAzureReservationStillPurchasesOnce(t *testing.T) {
+	t.Parallel()
 	failed := redriveFailedRow(redriveAzureRIExecID, "azure", "compute")
 	failed.Recommendations[0].ID = "current-azure"
 
@@ -307,6 +312,7 @@ func TestRetryOfFailedAzureReservationStillPurchasesOnce(t *testing.T) {
 // the same client as ec2) and with ?force=true too. Redshift has its own gate
 // (handler_purchases_redshift_retry_test.go).
 func TestRetryOfFailedAWSEC2RowIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ provider, service string }{
 		{"aws", "ec2"}, {"aws", "compute"}, {"", "ec2"},
 	} {
@@ -330,6 +336,7 @@ func TestRetryOfFailedAWSEC2RowIsRefused(t *testing.T) {
 // RDS uses a deterministic reservation ID, so its retry is safe and must keep
 // working. A predicate that refused every AWS row would pass the test above.
 func TestRetryOfFailedAWSRDSRowStillPurchasesOnce(t *testing.T) {
+	t.Parallel()
 	failed := redriveFailedRow(redriveAWSRDSExecID, "aws", "rds")
 
 	tokens, err := purchasesFiredByRetry(t, failed, sessionRetryReq())

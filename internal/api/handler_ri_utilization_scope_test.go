@@ -111,6 +111,7 @@ func ownUtilEC2() *countingUtilEC2 {
 // A scoped user whose scope covers the payer account must not receive the
 // utilization of linked members' RIs, registered (B) or not (C).
 func TestGetRIUtilization_ScopedUserDoesNotSeeLinkedMemberRIs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ec2 := ownUtilEC2()
 	recs := &countingUtilRecs{rows: payerUtilizationRows()}
@@ -126,6 +127,7 @@ func TestGetRIUtilization_ScopedUserDoesNotSeeLinkedMemberRIs(t *testing.T) {
 // A scope entry that names the account instead of listing its UUID is not
 // bound to that account, so it reaches none of its rows (#1034).
 func TestGetRIUtilization_ScopeByAccountNameReachesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	auth := new(MockAuthService)
 	t.Cleanup(func() { auth.AssertExpectations(t) })
@@ -144,6 +146,7 @@ func TestGetRIUtilization_ScopeByAccountNameReachesNothing(t *testing.T) {
 
 // Unrestricted users keep every row and trigger no EC2 listing.
 func TestGetRIUtilization_UnrestrictedSeesAllRowsWithoutEC2Call(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	auth, req := adminDashboardReq(t, ctx)
 	ec2 := ownUtilEC2()
@@ -159,6 +162,7 @@ func TestGetRIUtilization_UnrestrictedSeesAllRowsWithoutEC2Call(t *testing.T) {
 
 // A listing failure fails closed: the error is returned, no rows.
 func TestGetRIUtilization_ScopedEC2ListFailureFailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ec2 := &countingUtilEC2{err: errors.New("describe failed")}
 	recs := &countingUtilRecs{rows: payerUtilizationRows()}
@@ -173,6 +177,7 @@ func TestGetRIUtilization_ScopedEC2ListFailureFailsClosed(t *testing.T) {
 
 // No own RIs means no visible rows, never "everything".
 func TestGetRIUtilization_ScopedWithNoOwnRIsSeesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ec2 := &countingUtilEC2{}
 	recs := &countingUtilRecs{rows: payerUtilizationRows()}
@@ -187,6 +192,7 @@ func TestGetRIUtilization_ScopedWithNoOwnRIsSeesNothing(t *testing.T) {
 // Out-of-scope deployment account: empty list, and neither Cost Explorer nor
 // EC2 is called.
 func TestGetRIUtilization_OutOfScopeDeploymentMakesNoAWSCalls(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ec2 := ownUtilEC2()
 	recs := &countingUtilRecs{rows: payerUtilizationRows()}
@@ -203,6 +209,7 @@ func TestGetRIUtilization_OutOfScopeDeploymentMakesNoAWSCalls(t *testing.T) {
 // Permission is checked before scope: a caller without view:purchases gets
 // the permission error and no AWS call is made.
 func TestGetRIUtilization_PermissionCheckedBeforeScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	auth := new(MockAuthService)
 	t.Cleanup(func() { auth.AssertExpectations(t) })
@@ -226,6 +233,7 @@ func TestGetRIUtilization_PermissionCheckedBeforeScope(t *testing.T) {
 // cache key (issue #120). With the old (region, lookback_days) key the second
 // account's request was served the first account's cached rows.
 func TestGetRIUtilization_AccountsInSameRegionDoNotShareCache(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	auth, req := adminDashboardReq(t, ctx)
 	req.QueryStringParameters = map[string]string{"region": "us-east-1", "lookback_days": "30"}
@@ -262,6 +270,7 @@ func TestGetRIUtilization_AccountsInSameRegionDoNotShareCache(t *testing.T) {
 // closed for every session, with no Cost Explorer call: without the account
 // the cache row cannot be keyed (issue #120).
 func TestGetRIUtilization_AccountResolutionErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	auth, req := adminDashboardReq(t, ctx)
 	recs := &countingUtilRecs{rows: payerUtilizationRows()}

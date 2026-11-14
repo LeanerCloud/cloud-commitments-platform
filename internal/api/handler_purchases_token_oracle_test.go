@@ -20,6 +20,7 @@ import (
 // existing execution on the email-link routes, so the routes are not an
 // existence oracle (issue #435).
 func TestHandleRequest_TokenActions_UnauthenticatedCannotTellMissingFromExisting(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	hash := config.HashApprovalToken(tokenErrRawToken)
 
@@ -145,6 +146,7 @@ func oracleHandler(t *testing.T, caller oracleCaller, exec *config.PurchaseExecu
 // header, must get the same status, headers and body for an existing and a
 // missing execution ID on approve, cancel and revoke (issue #597).
 func TestHandleRequest_TokenActions_SignedInCannotTellMissingFromExisting(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	hash := config.HashApprovalToken(tokenErrRawToken)
 

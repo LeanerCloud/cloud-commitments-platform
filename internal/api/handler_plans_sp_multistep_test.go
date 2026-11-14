@@ -41,6 +41,7 @@ func requireSP400(t *testing.T, err error) {
 }
 
 func TestCreatePlan_RejectsArmedMultiStepSavingsPlan(t *testing.T) {
+	t.Parallel()
 	h, _ := spHandler(t)
 	body := `{"name":"P","provider":"aws","service":"savingsplans","ramp_schedule":"weekly-25pct","enabled":true,"auto_purchase":true,"target_accounts":["bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]}`
 	_, err := h.createPlan(context.Background(), spReq(body))
@@ -48,6 +49,7 @@ func TestCreatePlan_RejectsArmedMultiStepSavingsPlan(t *testing.T) {
 }
 
 func TestMergeUpdatedPlan_RejectsArmedMultiStepSavingsPlan(t *testing.T) {
+	t.Parallel()
 	existing := &config.PurchasePlan{Name: "p", RampSchedule: config.RampSchedule{Type: "immediate", PercentPerStep: 100, TotalSteps: 1}}
 	_, err := mergeUpdatedPlan(existing, &PlanRequest{Name: "p", Provider: "aws", Service: "savingsplans",
 		RampSchedule: "weekly-25pct", Enabled: true, AutoPurchase: true}, "id", false)
@@ -74,12 +76,14 @@ func spPlan(service string, ramp config.RampSchedule) *config.PurchasePlan {
 }
 
 func TestPatchPlan_ArmingMultiStepSavingsPlanIs400(t *testing.T) {
+	t.Parallel()
 	weekly := config.RampSchedule{Type: "weekly", PercentPerStep: 25, StepIntervalDays: 7, TotalSteps: 4}
 	_, err := patchSP(t, spPlan("savingsplans", weekly), `{"enabled":true,"auto_purchase":true}`, false)
 	requireSP400(t, err)
 }
 
 func TestPatchPlan_SingleStepSavingsPlanAndMultiStepNonSPArmFine(t *testing.T) {
+	t.Parallel()
 	immediate := config.RampSchedule{Type: "immediate", PercentPerStep: 100, TotalSteps: 1}
 	weekly := config.RampSchedule{Type: "weekly", PercentPerStep: 25, StepIntervalDays: 7, TotalSteps: 4}
 	for name, plan := range map[string]*config.PurchasePlan{
@@ -95,6 +99,7 @@ func TestPatchPlan_SingleStepSavingsPlanAndMultiStepNonSPArmFine(t *testing.T) {
 }
 
 func TestPatchPlan_UnarmedMultiStepSavingsPlanIsAllowed(t *testing.T) {
+	t.Parallel()
 	weekly := config.RampSchedule{Type: "weekly", PercentPerStep: 25, StepIntervalDays: 7, TotalSteps: 4}
 	_, err := patchSP(t, spPlan("savingsplans", weekly), `{"name":"renamed"}`, true)
 	require.NoError(t, err)

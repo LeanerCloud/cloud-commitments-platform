@@ -178,6 +178,7 @@ func TestRunPlanned_UpdateAnyConstraintErrorDoesNotFallBack(t *testing.T) {
 // group holds an unbounded update-any). The keyScopeExec row is aws/ec2/
 // us-east-1, created by another user.
 func TestRunPlanned_APIKeyUpdateAnyFollowsKeyConstraints(t *testing.T) {
+	t.Parallel()
 	var run keyScopeRoute
 	for _, rt := range keyScopeRoutes {
 		if rt.name == "run" {

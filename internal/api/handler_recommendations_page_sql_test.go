@@ -21,6 +21,7 @@ import (
 // reader's exact account set), asks for one row past the page, and never
 // scans the cache.
 func TestGetRecommendations_PagedReadUsesSQLPage(t *testing.T) {
+	t.Parallel()
 	h, sched := scanTestHandler(scanFilterRecs(), 4, true)
 	in := scopedInAccount
 	rows := []config.RecommendationRecord{
@@ -56,6 +57,7 @@ func TestGetRecommendations_PagedReadUsesSQLPage(t *testing.T) {
 // handler's own filters reject, or rows out of cursor order. The response is
 // then exactly the scan's.
 func TestGetRecommendations_SQLPageFallsBackToScan(t *testing.T) {
+	t.Parallel()
 	in, out := scopedInAccount, "22222222-2222-4222-8222-222222222222"
 	cases := map[string]struct {
 		page *config.RecommendationPage
@@ -98,6 +100,7 @@ func TestGetRecommendations_SQLPageFallsBackToScan(t *testing.T) {
 // TestGetRecommendations_SQLPageErrorFails keeps a real read failure a
 // failure: only ErrRecommendationsPageNeedsScan falls back.
 func TestGetRecommendations_SQLPageErrorFails(t *testing.T) {
+	t.Parallel()
 	h, sched := scanTestHandler(scanFilterRecs(), 4, false)
 	sched.On("PageRecommendations", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("apply suppressions: db down"))
 	_, err := h.getRecommendations(context.Background(), scopedRequest(""), map[string]string{"limit": "3"})
@@ -110,6 +113,7 @@ func TestGetRecommendations_SQLPageErrorFails(t *testing.T) {
 // entry taken literally (registered or not), and no registered account the
 // list only names by external ID or display name.
 func TestScopeAllowedAccountIDs(t *testing.T) {
+	t.Parallel()
 	registered := []auth.RegisteredAccount{
 		{ID: "id-a", Name: "alpha", ExternalID: "ext-a"},
 		{ID: "id-b", Name: "beta", ExternalID: "ext-b"},

@@ -11,6 +11,7 @@ import (
 )
 
 func TestSessionPurchaseActionSelection(t *testing.T) {
+	t.Parallel()
 	lookupErr := errors.New("permission lookup failed")
 	for _, actions := range [][2]string{{auth.ActionSellAny, auth.ActionSellOwn}, {auth.ActionRevokeAny, auth.ActionRevokeOwn}} {
 		for _, failure := range []error{nil, lookupErr} {
@@ -35,6 +36,7 @@ func TestSessionPurchaseActionSelection(t *testing.T) {
 }
 
 func TestMarketplaceScopeLookupErrors(t *testing.T) {
+	t.Parallel()
 	lookupErr := errors.New("scope lookup failed")
 	for _, cancel := range []bool{false, true} {
 		for _, accountFailure := range []bool{false, true} {

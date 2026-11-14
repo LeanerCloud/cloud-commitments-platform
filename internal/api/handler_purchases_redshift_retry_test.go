@@ -31,6 +31,7 @@ func gateWithClock(t *testing.T, failed *config.PurchaseExecution, clock config.
 func ageOf(d time.Duration) *time.Duration { return &d }
 
 func TestCheckRedshiftRetryGate_LegacyStamplessPermanent(t *testing.T) {
+	t.Parallel()
 	failed := redshiftFailedRow(1, false)
 	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: time.Hour})
 
@@ -42,6 +43,7 @@ func TestCheckRedshiftRetryGate_LegacyStamplessPermanent(t *testing.T) {
 }
 
 func TestCheckRedshiftRetryGate_PastHorizonPermanent(t *testing.T) {
+	t.Parallel()
 	failed := redshiftFailedRow(1, false)
 	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: time.Hour, SinceStamp: ageOf(24 * time.Hour)})
 
@@ -49,6 +51,7 @@ func TestCheckRedshiftRetryGate_PastHorizonPermanent(t *testing.T) {
 }
 
 func TestCheckRedshiftRetryGate_InsideSettleRetryAfter(t *testing.T) {
+	t.Parallel()
 	failed := redshiftFailedRow(1, false)
 	// 9m59.5s since update leaves 500ms to wait, which must round up to 1s.
 	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: 10*time.Minute - 500*time.Millisecond, SinceStamp: ageOf(time.Hour)})
@@ -64,6 +67,7 @@ func TestCheckRedshiftRetryGate_InsideSettleRetryAfter(t *testing.T) {
 }
 
 func TestCheckRedshiftRetryGate_AfterSettleAllowed(t *testing.T) {
+	t.Parallel()
 	failed := redshiftFailedRow(1, false)
 	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: 10 * time.Minute, SinceStamp: ageOf(time.Hour)})
 
@@ -71,6 +75,7 @@ func TestCheckRedshiftRetryGate_AfterSettleAllowed(t *testing.T) {
 }
 
 func TestCheckRedshiftRetryGate_NoSubmissionAttempt0Skipped(t *testing.T) {
+	t.Parallel()
 	failed := redshiftFailedRow(0, true)
 	h := gateWithClock(t, failed, config.RedshiftRetryClock{SinceUpdate: 0, SinceStamp: nil})
 
@@ -78,6 +83,7 @@ func TestCheckRedshiftRetryGate_NoSubmissionAttempt0Skipped(t *testing.T) {
 }
 
 func TestCheckRedshiftRetryGate_NonRedshiftNeverReadsClock(t *testing.T) {
+	t.Parallel()
 	for _, svc := range []string{"ec2", "rds"} {
 		failed := redriveFailedRow(redshiftRetryExecID, "aws", svc)
 		store := new(MockConfigStore)
@@ -89,6 +95,7 @@ func TestCheckRedshiftRetryGate_NonRedshiftNeverReadsClock(t *testing.T) {
 }
 
 func TestCheckRedshiftRetryGate_ClockErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	failed := redshiftFailedRow(1, false)
 	store := new(MockConfigStore)
 	store.On("GetRedshiftRetryClock", mock.Anything, failed.ExecutionID).Return(config.RedshiftRetryClock{}, assert.AnError)
@@ -103,6 +110,7 @@ func TestCheckRedshiftRetryGate_ClockErrorFailsClosed(t *testing.T) {
 
 // The provider-level refusal no longer covers Redshift, so a Redshift Retry reaches the new gate.
 func TestLoadAndValidateRetry_RedshiftReachesTheNewGate(t *testing.T) {
+	t.Parallel()
 	failed := redshiftFailedRow(1, false)
 	session := &Session{UserID: retryCallerID, Email: "operator@example.com"}
 	h, store, _ := buildSessionRetryHandler(t, failed, session, false, true)
@@ -135,6 +143,7 @@ func persistedSuccessor(t *testing.T, failed *config.PurchaseExecution) *config.
 }
 
 func TestPersistRetryExecution_CopiesFirstDispatchAt(t *testing.T) {
+	t.Parallel()
 	stamp := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
 	failed := redshiftFailedRow(1, false)
 	failed.FirstDispatchAt = &stamp
@@ -147,6 +156,7 @@ func TestPersistRetryExecution_CopiesFirstDispatchAt(t *testing.T) {
 }
 
 func TestPersistRetryExecution_NoSubmissionAttempt0LeavesStampNil(t *testing.T) {
+	t.Parallel()
 	stamp := time.Now().Add(-time.Hour)
 	failed := redshiftFailedRow(0, true)
 	failed.FirstDispatchAt = &stamp
@@ -155,6 +165,7 @@ func TestPersistRetryExecution_NoSubmissionAttempt0LeavesStampNil(t *testing.T) 
 }
 
 func TestPersistRetryExecution_StamplessPredecessorStaysStampless(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, persistedSuccessor(t, redshiftFailedRow(1, false)).FirstDispatchAt)
 }
 
@@ -177,6 +188,7 @@ func retryRedshiftViaHandler(t *testing.T, failed *config.PurchaseExecution, clo
 }
 
 func TestRetryRedshift_InsideSettleRefusedWithRetryAfter(t *testing.T) {
+	t.Parallel()
 	stamp := time.Now().Add(-time.Hour)
 	failed := redshiftFailedRow(1, false)
 	failed.FirstDispatchAt = &stamp
@@ -194,6 +206,7 @@ func TestRetryRedshift_InsideSettleRefusedWithRetryAfter(t *testing.T) {
 }
 
 func TestRetryRedshift_AfterSettleCopiesStamp(t *testing.T) {
+	t.Parallel()
 	stamp := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
 	failed := redshiftFailedRow(1, false)
 	failed.FirstDispatchAt = &stamp
@@ -208,6 +221,7 @@ func TestRetryRedshift_AfterSettleCopiesStamp(t *testing.T) {
 }
 
 func TestRetryRedshift_LegacyStamplessRefused(t *testing.T) {
+	t.Parallel()
 	failed := redshiftFailedRow(1, false)
 
 	saved, err := retryRedshiftViaHandler(t, failed, config.RedshiftRetryClock{SinceUpdate: time.Hour}, sessionRetryReqWithForce())

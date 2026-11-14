@@ -14,6 +14,7 @@ import (
 // A late finalize can move a resolved row to completed or failed, so the
 // resolve response must document every provider status.
 func TestOpenAPIDirectResolveStatusEnumMatchesGoStatuses(t *testing.T) {
+	t.Parallel()
 	_, thisFile, _, _ := runtime.Caller(0)
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "openapi.yaml"))
 	require.NoError(t, err)

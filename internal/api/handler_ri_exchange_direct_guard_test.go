@@ -14,6 +14,7 @@ import (
 // #1829: a direct execute whose source RI is held by another exchange is
 // refused with a 409 before the submit claim and before any AWS call.
 func TestExecuteExchange_DirectGuard_RefusesWith409BeforeClaimAndAWS(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	store.saveErr = fmt.Errorf("%w: source RI(s) ri-0a1b2c3d are held by a direct exchange that may have reached AWS; an operator must verify the outcome at AWS and settle the record", config.ErrRIExchangeSourceInFlight)
 	h := awsAuditHandler(t, store, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
@@ -34,6 +35,7 @@ func TestExecuteExchange_DirectGuard_RefusesWith409BeforeClaimAndAWS(t *testing.
 
 // Any other save failure still refuses the exchange, but as a server error.
 func TestExecuteExchange_DirectGuard_OtherSaveErrorsStay5xx(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	store.saveErr = fmt.Errorf("connection refused")
 	h := awsAuditHandler(t, store, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {

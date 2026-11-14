@@ -50,6 +50,7 @@ func liveSubmit(id string, recs []config.RecommendationRecord) config.PurchaseEx
 // fingerprint, writing no suppressions and sending no approval email. The
 // real lock and race are covered by TestRetrySuccessorRacesFreshSubmit.
 func TestHandler_retryPurchase_RefusesIdenticalLiveSubmit(t *testing.T) {
+	t.Parallel()
 	failed, handler, mockConfig := retryDedupeFixture(t, true)
 	notifier := &recordingEmailNotifier{}
 	handler.emailNotifier = notifier
@@ -71,6 +72,7 @@ func TestHandler_retryPurchase_RefusesIdenticalLiveSubmit(t *testing.T) {
 
 // A recent submit with a different fingerprint does not block the retry.
 func TestHandler_retryPurchase_AllowsDifferentLiveSubmit(t *testing.T) {
+	t.Parallel()
 	failed, handler, mockConfig := retryDedupeFixture(t, true)
 	other := append([]config.RecommendationRecord(nil), failed.Recommendations...)
 	other[0].Count = 7
@@ -83,6 +85,7 @@ func TestHandler_retryPurchase_AllowsDifferentLiveSubmit(t *testing.T) {
 
 // A failure to read the recent submits fails the retry before any write.
 func TestHandler_retryPurchase_RecentSubmitsErrorFailsRetry(t *testing.T) {
+	t.Parallel()
 	_, handler, mockConfig := retryDedupeFixture(t, false)
 	mockConfig.On("ListRecentSubmitsTx", mock.Anything, mock.Anything, retryCallerID, mock.AnythingOfType("time.Time")).
 		Return(nil, errors.New("db down"))
@@ -100,6 +103,7 @@ func TestHandler_retryPurchase_RecentSubmitsErrorFailsRetry(t *testing.T) {
 // test onto the live submit path (#760): a failed dedupe read must fail the
 // submit, not fall through to an unchecked insert.
 func TestPersistExecution_RecentSubmitsErrorIsSurfaced(t *testing.T) {
+	t.Parallel()
 	mockConfig := new(MockConfigStore)
 	t.Cleanup(func() { mockConfig.AssertExpectations(t) })
 	mockConfig.On("ListRecentSubmitsTx", mock.Anything, mock.Anything, "", mock.AnythingOfType("time.Time")).
@@ -115,6 +119,7 @@ func TestPersistExecution_RecentSubmitsErrorIsSurfaced(t *testing.T) {
 // The empty-plan-step 409 is shown to users, so it must not name an internal
 // issue number (#1708).
 func TestHandler_retryPurchase_EmptyPlanStepMessageHasNoInternalRef(t *testing.T) {
+	t.Parallel()
 	failed, handler, _ := retryDedupeFixture(t, false)
 	failed.PlanID = "plan-1"
 	failed.Recommendations = nil
@@ -131,6 +136,7 @@ func TestHandler_retryPurchase_EmptyPlanStepMessageHasNoInternalRef(t *testing.T
 // #1048: retrying a plan step whose plan was deleted would mint a web-sourced
 // successor that slips past the fire-time guard, so the retry is refused.
 func TestHandler_retryPurchase_RefusesStepOfDeletedPlan(t *testing.T) {
+	t.Parallel()
 	failed, handler, _ := retryDedupeFixture(t, false)
 	failed.StepNumber = 2 // plan-less with a step: the plan was deleted
 
@@ -144,6 +150,7 @@ func TestHandler_retryPurchase_RefusesStepOfDeletedPlan(t *testing.T) {
 
 // An ad-hoc web row (no plan, no step) stays retryable.
 func TestHandler_retryPurchase_AdHocPlanlessStillRetryable(t *testing.T) {
+	t.Parallel()
 	failed, handler, _ := retryDedupeFixture(t, true)
 	require.Zero(t, failed.StepNumber)
 

@@ -54,6 +54,7 @@ func keysOf[V any](m map[string]V) []string {
 // [fail-first] The response carries exactly the allowlisted keys: never the raw
 // error, the executing user id or the API key id.
 func TestRIExchangeDirectListItem_KeysAreAllowlisted(t *testing.T) {
+	t.Parallel()
 	row := dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1)
 	row.Error = "InvalidParameterValue for account 123456789012 from 10.1.2.3: raw provider text"
 
@@ -78,6 +79,7 @@ func TestRIExchangeDirectListItem_KeysAreAllowlisted(t *testing.T) {
 }
 
 func TestRIExchangeDirectListItem_CloudAccountID(t *testing.T) {
+	t.Parallel()
 	attributed := dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1)
 	unattributed := dlRow(dlID2, nil, "eu-west-1", "unknown", 1)
 
@@ -91,6 +93,7 @@ func TestRIExchangeDirectListItem_CloudAccountID(t *testing.T) {
 }
 
 func TestRIExchangeDirectListItem_ResolvableHint(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	at := func(r config.RIExchangeDirectRow, created time.Time) config.RIExchangeDirectRow {
 		r.CreatedAt = created
@@ -116,6 +119,7 @@ func TestRIExchangeDirectListItem_ResolvableHint(t *testing.T) {
 }
 
 func TestParseRIExchangeDirectListQuery(t *testing.T) {
+	t.Parallel()
 	for name, q := range map[string]map[string]string{
 		"bad status":     {"status": "completed"},
 		"limit zero":     {"limit": "0"},
@@ -144,6 +148,7 @@ func TestParseRIExchangeDirectListQuery(t *testing.T) {
 }
 
 func TestRIExchangeDirectCursor_RoundTripKeepsMicroseconds(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 11, 7, 10, 20, 30, 123456000, time.UTC)
 	got, err := decodeRIExchangeDirectCursor(encodeRIExchangeDirectCursor(&config.RIExchangeDirectCursor{CreatedAt: at, ID: dlID2}))
 	require.NoError(t, err)

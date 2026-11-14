@@ -61,6 +61,7 @@ func submitWithCredential(t *testing.T, h *Handler, body string) (*config.Accoun
 }
 
 func TestSubmitRegistration_WithoutCredentialIsAccepted(t *testing.T) {
+	t.Parallel()
 	reg, err := submitWithCredential(t, &Handler{credStore: &MockCredentialStore{}}, registrationBody(t, "gcp", "", ""))
 	require.NoError(t, err)
 	require.NotNil(t, reg)
@@ -69,6 +70,7 @@ func TestSubmitRegistration_WithoutCredentialIsAccepted(t *testing.T) {
 }
 
 func TestSubmitRegistration_AcceptsValidCredential(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct{ provider, credType, payload string }{
 		"gcp wif from gcloud": {"gcp", "gcp_workload_identity_config", mustJSON(t, gcloudWIFConfig())},
 		"gcp wif with file source": {"gcp", "gcp_workload_identity_config", mustJSON(t, gcloudWIFConfigWith(
@@ -90,6 +92,7 @@ func TestSubmitRegistration_AcceptsValidCredential(t *testing.T) {
 }
 
 func TestSubmitRegistration_RejectsInvalidCredential(t *testing.T) {
+	t.Parallel()
 	wif := "gcp_workload_identity_config"
 	cases := map[string]struct{ provider, credType, payload, msg string }{
 		"type without payload":       {"gcp", wif, "", "must be provided together"},
@@ -127,6 +130,7 @@ func TestSubmitRegistration_RejectsInvalidCredential(t *testing.T) {
 // Without a credential store nothing can be kept, so neither field is
 // recorded on the registration (the payload was already dropped before).
 func TestSubmitRegistration_NoCredentialStoreRecordsNoCredential(t *testing.T) {
+	t.Parallel()
 	reg, err := submitWithCredential(t, &Handler{},
 		registrationBody(t, "gcp", "gcp_workload_identity_config", mustJSON(t, gcloudWIFConfig())))
 	require.NoError(t, err)
@@ -179,6 +183,7 @@ func approveWithCredential(t *testing.T, credType, payload, approvalBody string)
 }
 
 func TestApproveRegistration_SavesCheckedCredential(t *testing.T) {
+	t.Parallel()
 	payload := mustJSON(t, gcloudWIFConfig())
 	store, creds, result, err := approveWithCredential(t, "gcp_workload_identity_config", payload, gcpApprovalBody)
 	require.NoError(t, err)
@@ -193,6 +198,7 @@ func TestApproveRegistration_SavesCheckedCredential(t *testing.T) {
 }
 
 func TestApproveRegistration_WithoutCredentialSavesNothing(t *testing.T) {
+	t.Parallel()
 	_, creds, _, err := approveWithCredential(t, "", "", gcpApprovalBody)
 	require.NoError(t, err)
 	assert.Empty(t, creds.saved)
@@ -202,6 +208,7 @@ func TestApproveRegistration_WithoutCredentialSavesNothing(t *testing.T) {
 // credential that fails them. Approval refuses it with a 400 and leaves the
 // registration pending: nothing is transitioned, created or saved.
 func TestApproveRegistration_RefusesInvalidStoredCredential(t *testing.T) {
+	t.Parallel()
 	wif := "gcp_workload_identity_config"
 	cases := map[string]struct{ credType, payload, body, msg string }{
 		"non-google token_url": {wif, mustJSON(t, gcloudWIFConfigWith("token_url", "https://token.example.net/v1/token")),
@@ -253,17 +260,20 @@ func approveWithCredStore(t *testing.T, creds credentials.CredentialStore, paylo
 }
 
 func TestApproveRegistration_ClearsPayloadAfterSave(t *testing.T) {
+	t.Parallel()
 	store := approveWithCredStore(t, &recordingCredStore{}, mustJSON(t, gcloudWIFConfig()))
 	store.AssertNumberOfCalls(t, "ClearRegistrationCredentialPayload", 1)
 	store.AssertCalled(t, "ClearRegistrationCredentialPayload", mock.Anything, regCredRegID)
 }
 
 func TestApproveRegistration_KeepsPayloadWhenSaveFails(t *testing.T) {
+	t.Parallel()
 	store := approveWithCredStore(t, &failingCredStore{}, mustJSON(t, gcloudWIFConfig()))
 	store.AssertNotCalled(t, "ClearRegistrationCredentialPayload", mock.Anything, mock.Anything)
 }
 
 func TestApproveRegistration_KeepsPayloadWhenNothingSaved(t *testing.T) {
+	t.Parallel()
 	store := approveWithCredStore(t, &recordingCredStore{}, "")
 	store.AssertNotCalled(t, "ClearRegistrationCredentialPayload", mock.Anything, mock.Anything)
 }

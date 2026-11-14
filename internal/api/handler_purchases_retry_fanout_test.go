@@ -283,6 +283,7 @@ func failedPerAccountRow(execID, accountID string) *config.PurchaseExecution {
 // so even if C's first attempt had actually landed at the provider, the retry
 // dedupes instead of buying twice.
 func TestRetryOfFailedPerAccountRowDoesNotRefanOut(t *testing.T) {
+	t.Parallel()
 	failedC := failedPerAccountRow(fanoutFailedAcctCExecID, fanoutAcctC)
 
 	successor := retryFailedRow(t, failedC)
@@ -311,6 +312,7 @@ func TestRetryOfFailedPerAccountRowDoesNotRefanOut(t *testing.T) {
 // keep separate provider tokens, or one of the two legitimate purchases would
 // be silently deduped away and never happen.
 func TestRetryOfPerAccountRowsKeepsAccountsDistinct(t *testing.T) {
+	t.Parallel()
 	failedA := failedPerAccountRow(fanoutFailedAcctAExecID, fanoutAcctA)
 	failedC := failedPerAccountRow(fanoutFailedAcctCExecID, fanoutAcctC)
 
@@ -334,6 +336,7 @@ func TestRetryOfPerAccountRowsKeepsAccountsDistinct(t *testing.T) {
 // lineage key the first attempt would have used — so nothing is skipped and no
 // two accounts share a token.
 func TestRetryOfFailedRootRowStillFansOutToEveryAccount(t *testing.T) {
+	t.Parallel()
 	creator := retryCallerID
 	failedRoot := &config.PurchaseExecution{
 		ExecutionID: fanoutFailedRootExecID,

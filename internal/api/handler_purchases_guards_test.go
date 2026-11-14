@@ -188,6 +188,7 @@ func TestValidatePurchaseRecommendation_ErrorMessage(t *testing.T) {
 // logger's output, which would race against other SetOutput-using tests if
 // parallelized (see TestValidatePlanAccountProviders_GetAccountDBError_NoPIILeak).
 func TestValidatePurchaseRecommendation_NormalizationWarning(t *testing.T) {
+	t.Parallel()
 	logBuf := captureDefaultLog(t)
 
 	// Azure partial-upfront has no direct Azure equivalent; NormalizePaymentOption
@@ -215,6 +216,7 @@ func TestValidatePurchaseRecommendation_NormalizationWarning(t *testing.T) {
 //
 // Not run with t.Parallel(); see TestValidatePurchaseRecommendation_NormalizationWarning.
 func TestValidatePurchaseRecommendation_NoWarningWhenAlreadyCanonical(t *testing.T) {
+	t.Parallel()
 	logBuf := captureDefaultLog(t)
 
 	rec := validRec()
@@ -279,6 +281,7 @@ func TestValidatePurchaseRecommendation_SurfacesPaymentAdjustment(t *testing.T) 
 // Not run with t.Parallel(): captureDefaultLog mutates the shared default
 // logger's output (see TestValidatePurchaseRecommendation_NormalizationWarning).
 func TestValidatePurchaseRecommendation_NoAdjustmentForScheduleEquivalentRename(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		provider    string
@@ -344,6 +347,7 @@ func TestValidatePurchaseRecommendation_AdjustmentWhenScheduleChanges(t *testing
 // monthly; a green validator-level test alone could not prove the notice
 // survives to the response body the client actually sees.
 func TestHandler_executePurchase_SurfacesPaymentAdjustments(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -400,6 +404,7 @@ func TestHandler_executePurchase_SurfacesPaymentAdjustments(t *testing.T) {
 // (not an empty array), so existing clients see a byte-identical response on
 // the common case.
 func TestHandler_executePurchase_NoAdjustmentsWhenCanonical(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)

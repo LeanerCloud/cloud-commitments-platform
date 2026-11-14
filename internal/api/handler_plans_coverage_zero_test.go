@@ -16,6 +16,7 @@ import (
 // An explicit target_coverage of 0 is a plan that buys nothing: it is stored
 // and read back as 0, and only an omitted field takes the default of 80 (#523).
 func TestCreatePlan_TargetCoverageZeroIsStoredAndOmittedDefaults(t *testing.T) {
+	t.Parallel()
 	const accountID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	for _, tc := range []struct {
 		name, field string
@@ -61,6 +62,7 @@ func TestCreatePlan_TargetCoverageZeroIsStoredAndOmittedDefaults(t *testing.T) {
 }
 
 func TestUpdatePlan_TargetCoverageZeroIsStoredAndOmittedKeepsIt(t *testing.T) {
+	t.Parallel()
 	const planID = "12345678-1234-1234-1234-123456789abc"
 	for _, tc := range []struct {
 		name, field string

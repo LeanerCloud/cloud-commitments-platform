@@ -22,6 +22,7 @@ func newFinalizeExecution() *config.PurchaseExecution {
 // email-failure write must go through the status-guarded save with "pending"
 // as the only expected status, never through the unguarded full-row save.
 func TestFinalizePurchaseStatus_GuardsFailedWriteOnPending(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	store.On("SaveExecutionIfStatus", mock.Anything, mock.MatchedBy(func(e *config.PurchaseExecution) bool {
 		return e.ExecutionID == finalizeExecID && e.Status == "failed" && e.Error == "send failed: throttled"
@@ -44,6 +45,7 @@ func TestFinalizePurchaseStatus_GuardsFailedWriteOnPending(t *testing.T) {
 // The response must carry the row's real status, the caller's copy must stay
 // untouched, and nothing may be written over the row.
 func TestFinalizePurchaseStatus_LostGuardIsNoOp(t *testing.T) {
+	t.Parallel()
 	for _, current := range []string{"approved", "running", "completed", "canceled", "paused"} {
 		t.Run(current, func(t *testing.T) {
 			store := new(MockConfigStore)
@@ -69,6 +71,7 @@ func TestFinalizePurchaseStatus_LostGuardIsNoOp(t *testing.T) {
 // TestFinalizePurchaseStatus_LostGuardReReadFails falls back to "pending" when
 // the stored status cannot be re-read after a lost guard.
 func TestFinalizePurchaseStatus_LostGuardReReadFails(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	store.On("SaveExecutionIfStatus", mock.Anything, mock.Anything, []string{"pending"}).
 		Return(config.ErrExecutionNotInExpectedStatus).Once()
@@ -87,6 +90,7 @@ func TestFinalizePurchaseStatus_LostGuardReReadFails(t *testing.T) {
 // 500 that names the execution and carries the email reason, keeps the store
 // error reachable with errors.Is, and leaves the caller's copy untouched.
 func TestFinalizePurchaseStatus_WriteErrorSurfaces(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	saveErr := errors.New("connection reset")
 	store.On("SaveExecutionIfStatus", mock.Anything, mock.Anything, []string{"pending"}).
@@ -109,6 +113,7 @@ func TestFinalizePurchaseStatus_WriteErrorSurfaces(t *testing.T) {
 // the insert and the failed write (ErrNotFound from the guarded save) is a
 // save failure too, not a lost guard, so it gets the same 500.
 func TestFinalizePurchaseStatus_MissingRowSurfaces(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	store.On("SaveExecutionIfStatus", mock.Anything, mock.Anything, []string{"pending"}).
@@ -147,6 +152,7 @@ func requireEmailFailureNotRecorded(t *testing.T, err error, executionID, emailR
 // TestFinalizePurchaseStatus_EmailSentWritesNothing: a sent email leaves the
 // row pending and touches the store not at all.
 func TestFinalizePurchaseStatus_EmailSentWritesNothing(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	h := &Handler{config: store}
 	status, err := h.finalizePurchaseStatus(context.Background(), newFinalizeExecution(), true, "")
@@ -161,6 +167,7 @@ func TestFinalizePurchaseStatus_EmailSentWritesNothing(t *testing.T) {
 // the guarded write recording that failure errors too. Before the fix the
 // handler answered 200 {"status":"pending","email_sent":false}.
 func TestExecutePurchase_EmailFailureNotRecorded_Returns500(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	authSvc := new(MockAuthService)
@@ -196,6 +203,7 @@ func TestExecutePurchase_EmailFailureNotRecorded_Returns500(t *testing.T) {
 // and recording that failure errors. The response must be the 500 naming the
 // successor, not a 200 that reports it as pending.
 func TestRetryPurchase_EmailFailureNotRecorded_Returns500(t *testing.T) {
+	t.Parallel()
 	creator := retryOtherID
 	failedExec := &config.PurchaseExecution{
 		ExecutionID:     retryExecID,

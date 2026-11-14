@@ -16,6 +16,7 @@ import (
 // its owner. The keyScopeExec row is aws/ec2/us-east-1, created by another
 // user, and the owner's group holds an unbounded update-any.
 func TestPauseResumePlanned_APIKeyUpdateAnyFollowsKeyConstraints(t *testing.T) {
+	t.Parallel()
 	keyPerms := func(provider string) []auth.Permission {
 		return []auth.Permission{
 			{Action: auth.ActionUpdate, Resource: auth.ResourcePurchases},

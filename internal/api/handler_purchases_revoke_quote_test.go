@@ -41,6 +41,7 @@ func quoteHandlerRequest(purchaseID string) *events.LambdaFunctionURLRequest {
 }
 
 func TestHandleRequest_RevokeCalculate_AzureQuote(t *testing.T) {
+	t.Parallel()
 	amount := 75.25
 	currency := "USD"
 	empty := ""

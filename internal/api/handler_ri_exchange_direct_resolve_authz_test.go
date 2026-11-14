@@ -11,6 +11,7 @@ import (
 )
 
 func TestResolveRIExchangeDirect_Authorization(t *testing.T) {
+	t.Parallel()
 	unattributed := dlRow(dlID2, nil, drRegion, "unknown", 3)
 	tests := []struct {
 		name   string
@@ -50,6 +51,7 @@ func TestResolveRIExchangeDirect_Authorization(t *testing.T) {
 // The grant is judged against the ROW's account, region and payment cap. The
 // deployment's own account is a different one in every case.
 func TestResolveRIExchangeDirect_ConstraintsUseTheRowsAccountAndRegion(t *testing.T) {
+	t.Parallel()
 	grant := func(c auth.PermissionConstraints) []auth.Permission {
 		return []auth.Permission{{Action: auth.ActionExecute, Resource: "ri-exchange", Constraints: &c}}
 	}
@@ -86,6 +88,7 @@ func TestResolveRIExchangeDirect_ConstraintsUseTheRowsAccountAndRegion(t *testin
 }
 
 func TestResolveRIExchangeDirect_CappedGrantRefusesUnreadableAmount(t *testing.T) {
+	t.Parallel()
 	for _, due := range []string{"", "abc", "-1", "NaN", "+Inf"} {
 		t.Run(due, func(t *testing.T) {
 			row := dlRow(dlID1, dlPtr(dlAcctA), drRegion, "unknown", 1)
@@ -100,6 +103,7 @@ func TestResolveRIExchangeDirect_CappedGrantRefusesUnreadableAmount(t *testing.T
 
 // An uncapped grant never reads the amount, so an unreadable one passes.
 func TestResolveRIExchangeDirect_UncappedGrantIgnoresTheAmount(t *testing.T) {
+	t.Parallel()
 	row := dlRow(dlID1, dlPtr(dlAcctA), drRegion, "unknown", 1)
 	row.MaxPaymentDue = "abc"
 	store := drStore(row)
@@ -111,6 +115,7 @@ func TestResolveRIExchangeDirect_UncappedGrantIgnoresTheAmount(t *testing.T) {
 // No refusal or answer for one row may carry another row's id, and an
 // out-of-scope row answers exactly like a missing one.
 func TestResolveRIExchangeDirect_ResponsesNameOnlyTheRequestedRow(t *testing.T) {
+	t.Parallel()
 	var seen []string
 	collect := func(out any, err error) {
 		if err != nil {

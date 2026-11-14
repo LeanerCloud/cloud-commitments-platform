@@ -124,6 +124,7 @@ func regionGrant(regions ...string) []auth.Permission {
 }
 
 func TestListRIExchangeDirectExecutions_NeedsExecutePermission(t *testing.T) {
+	t.Parallel()
 	store := dlStore(dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1))
 	_, err := dlCall(t, store, []auth.Permission{{Action: auth.ActionView, Resource: auth.ResourcePurchases}}, nil, nil)
 	assert.Equal(t, 403, clientCode(t, err))
@@ -131,6 +132,7 @@ func TestListRIExchangeDirectExecutions_NeedsExecutePermission(t *testing.T) {
 }
 
 func TestListRIExchangeDirectExecutions_AccountScope(t *testing.T) {
+	t.Parallel()
 	store := dlStore(
 		dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1),
 		dlRow(dlID2, dlPtr(dlAcctB), "eu-west-1", "unknown", 2),
@@ -155,6 +157,7 @@ func TestListRIExchangeDirectExecutions_AccountScope(t *testing.T) {
 }
 
 func TestListRIExchangeDirectExecutions_GrantRegions(t *testing.T) {
+	t.Parallel()
 	store := dlStore(
 		dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1),
 		dlRow(dlID2, dlPtr(dlAcctA), "us-east-1", "unknown", 2),
@@ -187,6 +190,7 @@ func TestListRIExchangeDirectExecutions_GrantRegions(t *testing.T) {
 
 // A user API key is judged on its own permissions, not its owner's.
 func TestListRIExchangeDirectExecutions_UserAPIKeyIsNarrowerThanItsOwner(t *testing.T) {
+	t.Parallel()
 	store := dlStore(
 		dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1),
 		dlRow(dlID2, dlPtr(dlAcctA), "us-east-1", "unknown", 2),
@@ -214,6 +218,7 @@ func TestListRIExchangeDirectExecutions_UserAPIKeyIsNarrowerThanItsOwner(t *test
 // Rows of a denied region sit between visible ones: every returned row and
 // every cursor belongs to a visible pair, and paging is complete.
 func TestListRIExchangeDirectExecutions_CursorNeverPointsAtADeniedRow(t *testing.T) {
+	t.Parallel()
 	store := dlStore(
 		dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1),
 		dlRow(dlID2, dlPtr(dlAcctA), "us-east-1", "unknown", 2),
@@ -240,6 +245,7 @@ func TestListRIExchangeDirectExecutions_CursorNeverPointsAtADeniedRow(t *testing
 }
 
 func TestListRIExchangeDirectExecutions_NoStore503(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", mock.Anything, "tok").Return(&Session{UserID: apgUserID}, nil).Maybe()
 	mockAuth.grantPermissions(riExecute)
@@ -253,6 +259,7 @@ func TestListRIExchangeDirectExecutions_NoStore503(t *testing.T) {
 // the row of the account that number names, not hide it because only the
 // internal id was compared.
 func TestListRIExchangeDirectExecutions_AllowedAccountsMayNameTheAWSAccountNumber(t *testing.T) {
+	t.Parallel()
 	rows := []config.RIExchangeDirectRow{
 		dlRow(dlID1, dlPtr(dlAcctA), "eu-west-1", "unknown", 1),
 		dlRow(dlID2, dlPtr(dlAcctB), "eu-west-1", "unknown", 2),

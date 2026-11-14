@@ -65,6 +65,7 @@ func outcomeUnknownRecord(id string) *config.RIExchangeRecord {
 
 // [fail-first] The email-token path.
 func TestApproveRIExchange_TokenPath_OutcomeUnknownStaysProcessing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const id = "550e8400-e29b-41d4-a716-000000010501"
 	const token = "outcome-unknown-token"
@@ -83,6 +84,7 @@ func TestApproveRIExchange_TokenPath_OutcomeUnknownStaysProcessing(t *testing.T)
 
 // [fail-first] The session path, which also stamps approved_by.
 func TestApproveRIExchange_SessionPath_OutcomeUnknownStaysProcessingAndStampsApprover(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const id = "550e8400-e29b-41d4-a716-000000010502"
 	ownerID, approverID := "owner-1050", "approver-1050"
@@ -113,6 +115,7 @@ func TestApproveRIExchange_SessionPath_OutcomeUnknownStaysProcessingAndStampsApp
 // [guard] A failed note write is logged; the outcome is still reported and the
 // row is still never failed.
 func TestExecuteApprovedExchange_OutcomeUnknownNoteWriteFailureStillReported(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const id = "550e8400-e29b-41d4-a716-000000010503"
 	store := new(MockConfigStore)
@@ -131,6 +134,7 @@ func TestExecuteApprovedExchange_OutcomeUnknownNoteWriteFailureStillReported(t *
 
 // [guard] A plain failure still fails the row and stays retryable.
 func TestExecuteApprovedExchange_PlainFailureStillFails(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const id = "550e8400-e29b-41d4-a716-000000010504"
 	store := new(MockConfigStore)

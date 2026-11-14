@@ -11,6 +11,7 @@ import (
 )
 
 func TestHandler_resolveRegistrationRecipients_AdminsBecomeApprovers(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	globalNotify := "global@cudly.example"
 
@@ -41,6 +42,7 @@ func TestHandler_resolveRegistrationRecipients_AdminsBecomeApprovers(t *testing.
 }
 
 func TestHandler_resolveRegistrationRecipients_NoAdminsTriggersBroadcastFallback(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	globalNotify := "global@cudly.example"
 
@@ -67,6 +69,7 @@ func TestHandler_resolveRegistrationRecipients_NoAdminsTriggersBroadcastFallback
 }
 
 func TestHandler_resolveRegistrationRecipients_OmitsGlobalWhenAlreadyAdmin(t *testing.T) {
+	t.Parallel()
 	// The global notification email might itself be one of the admin
 	// accounts — in that case it should not appear twice (once as an
 	// admin To/Cc entry, once as the explicit global-notify Cc).
@@ -94,6 +97,7 @@ func TestHandler_resolveRegistrationRecipients_OmitsGlobalWhenAlreadyAdmin(t *te
 }
 
 func TestHandler_gatherAdminEmails_NilAuth(t *testing.T) {
+	t.Parallel()
 	h := &Handler{} // no auth configured
 	emails := h.gatherAdminEmails(context.Background())
 	require.Empty(t, emails)
