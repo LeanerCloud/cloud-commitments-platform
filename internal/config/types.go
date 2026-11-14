@@ -13,17 +13,19 @@ import (
 
 // GlobalConfig represents the global CUDly configuration.
 type GlobalConfig struct {
-	EnabledProviders       []string `json:"enabled_providers" dynamodbav:"enabled_providers"`
-	NotificationEmail      *string  `json:"notification_email,omitempty" dynamodbav:"notification_email,omitempty"`
-	AutoCollect            bool     `json:"auto_collect"`
-	CollectionSchedule     string   `json:"collection_schedule"`
-	NotificationDaysBefore int      `json:"notification_days_before"`
-	ApprovalRequired       bool     `json:"approval_required" dynamodbav:"approval_required"`
-	DefaultTerm            int      `json:"default_term" dynamodbav:"default_term"`
-	DefaultPayment         string   `json:"default_payment" dynamodbav:"default_payment"`
-	DefaultCoverage        float64  `json:"default_coverage" dynamodbav:"default_coverage"`
-	DefaultRampSchedule    string   `json:"default_ramp_schedule" dynamodbav:"default_ramp_schedule"`
-
+	AutoPurchaseChangedVia *string `json:"-" db:"auto_purchase_changed_via"`
+	NotificationEmail      *string `json:"notification_email,omitempty" dynamodbav:"notification_email,omitempty"`
+	// AutoPurchaseChanged{By,At,Via} stamp the last change of the switch
+	// (migration 000115): actor, time, credential kind. NULL = never changed.
+	// json:"-" so PUT /api/config cannot forge them by unmarshalling onto this
+	// struct; the whole-config upsert round-trips them (read, modify, write).
+	AutoPurchaseChangedBy     *string    `json:"-" db:"auto_purchase_changed_by"`
+	AutoPurchaseChangedAt     *time.Time `json:"-" db:"auto_purchase_changed_at"`
+	LadderExecutionChangedVia *string    `json:"-" db:"ladder_execution_changed_via"`
+	LadderExecutionChangedAt  *time.Time `json:"-" db:"ladder_execution_changed_at"`
+	// LadderExecutionChanged{By,At,Via} stamp the last change of
+	// LadderExecutionEnabled (migration 000116); same json:"-" reasoning.
+	LadderExecutionChangedBy *string `json:"-" db:"ladder_execution_changed_by"`
 	// GracePeriodDays is a per-provider window (in days) during which
 	// just-purchased capacity is suppressed from the recommendations
 	// list so users don't re-buy the same capacity while the cloud
@@ -32,16 +34,22 @@ type GlobalConfig struct {
 	// (7). An explicit 0 disables suppression for that provider. Use
 	// GracePeriodFor to read a specific provider's effective value (it
 	// applies the default + safety clamp).
-	GracePeriodDays map[string]int `json:"grace_period_days,omitempty" dynamodbav:"grace_period_days,omitempty"`
-
-	// RI Exchange automation settings
-	RIExchangeEnabled              bool    `json:"ri_exchange_enabled" dynamodbav:"ri_exchange_enabled"`
-	RIExchangeMode                 string  `json:"ri_exchange_mode" dynamodbav:"ri_exchange_mode"`
-	RIExchangeUtilizationThreshold float64 `json:"ri_exchange_utilization_threshold" dynamodbav:"ri_exchange_utilization_threshold"`
-	RIExchangeMaxPerExchangeUSD    float64 `json:"ri_exchange_max_per_exchange_usd" dynamodbav:"ri_exchange_max_per_exchange_usd"`
-	RIExchangeMaxDailyUSD          float64 `json:"ri_exchange_max_daily_usd" dynamodbav:"ri_exchange_max_daily_usd"`
-	RIExchangeLookbackDays         int     `json:"ri_exchange_lookback_days" dynamodbav:"ri_exchange_lookback_days"`
-
+	GracePeriodDays     map[string]int `json:"grace_period_days,omitempty" dynamodbav:"grace_period_days,omitempty"`
+	CollectionSchedule  string         `json:"collection_schedule"`
+	DefaultRampSchedule string         `json:"default_ramp_schedule" dynamodbav:"default_ramp_schedule"`
+	DefaultPayment      string         `json:"default_payment" dynamodbav:"default_payment"`
+	RIExchangeMode      string         `json:"ri_exchange_mode" dynamodbav:"ri_exchange_mode"`
+	// OfferingClass controls the EC2 Reserved Instance offering class used
+	// during purchase. Accepted values: "convertible" (default) and
+	// "standard". Convertible RIs can be exchanged for a different
+	// instance family/size/region/OS; Standard RIs are locked to the exact
+	// instance type for the full term but are ~5% cheaper.
+	// Unknown values are rejected at purchase time with an explicit error.
+	OfferingClass                  string   `json:"offering_class,omitempty" dynamodbav:"offering_class,omitempty"`
+	EnabledProviders               []string `json:"enabled_providers" dynamodbav:"enabled_providers"`
+	RIExchangeMaxPerExchangeUSD    float64  `json:"ri_exchange_max_per_exchange_usd" dynamodbav:"ri_exchange_max_per_exchange_usd"`
+	RIExchangeUtilizationThreshold float64  `json:"ri_exchange_utilization_threshold" dynamodbav:"ri_exchange_utilization_threshold"`
+	RIExchangeLookbackDays         int      `json:"ri_exchange_lookback_days" dynamodbav:"ri_exchange_lookback_days"`
 	// RecommendationsCacheStaleHours is the age (hours) at which the
 	// recommendations cache is considered stale and a background refresh
 	// fires automatically (stale-while-revalidate). 0 disables automatic
@@ -49,7 +57,6 @@ type GlobalConfig struct {
 	// still work regardless. Valid range: 0–8760 (up to one year).
 	// Default: 24.
 	RecommendationsCacheStaleHours int `json:"recommendations_cache_stale_hours" db:"recommendations_cache_stale_hours"`
-
 	// RecommendationsLookbackDays is the AWS Cost Explorer lookback window
 	// (days) used when fetching fresh recommendations. Must be one of 7,
 	// 30, or 60 -- the AWS Cost Explorer LookbackPeriodInDays enum.
@@ -57,21 +64,24 @@ type GlobalConfig struct {
 	// internally); this setting applies to AWS only.
 	// Default: 7.
 	RecommendationsLookbackDays int `json:"recommendations_lookback_days" db:"recommendations_lookback_days"`
-
 	// PurchaseDelayHours is the Gmail-style pre-fire delay (issue #291 wave-2).
 	// When > 0, approving a purchase defers the actual cloud SDK call by this
 	// many hours. The user receives a "scheduled, revoke before X" email
 	// immediately after approval and may cancel at $0 until the window closes.
 	// 0 means immediate-execute (backward compat). Valid range: [0, 168].
 	// Default: 48.
-	PurchaseDelayHours int `json:"purchase_delay_hours" db:"purchase_delay_hours"`
-
-	// LadderingEnabled is the global kill-switch for the commitment-laddering
-	// feature (issue #1333 phase 3). When false (the default), no laddering
-	// engine runs fire regardless of per-account LadderConfig.Enabled settings.
-	// Set to true to allow per-account configs to activate individually.
-	LadderingEnabled bool `json:"laddering_enabled" db:"laddering_enabled"`
-
+	PurchaseDelayHours     int     `json:"purchase_delay_hours" db:"purchase_delay_hours"`
+	NotificationDaysBefore int     `json:"notification_days_before"`
+	DefaultTerm            int     `json:"default_term" dynamodbav:"default_term"`
+	DefaultCoverage        float64 `json:"default_coverage" dynamodbav:"default_coverage"`
+	RIExchangeMaxDailyUSD  float64 `json:"ri_exchange_max_daily_usd" dynamodbav:"ri_exchange_max_daily_usd"`
+	// RI Exchange automation settings
+	RIExchangeEnabled bool `json:"ri_exchange_enabled" dynamodbav:"ri_exchange_enabled"`
+	// AutoPurchaseEnabled is the global kill switch for AutoPurchase plans
+	// (migration 000112; the scheduling.auto_purchase default). Default false:
+	// no AutoPurchase plan notifies or executes until an operator opts in.
+	// Manual purchases (Opportunities, token approval) are unaffected.
+	AutoPurchaseEnabled bool `json:"auto_purchase_enabled" db:"auto_purchase_enabled"`
 	// LadderExecutionEnabled gates ladder purchases and reshapes (migration
 	// 000083). BOTH LadderingEnabled AND LadderExecutionEnabled must be true
 	// for a sweep that buys or reshapes to act. Planning (ladder_run) never
@@ -80,35 +90,13 @@ type GlobalConfig struct {
 	// that enable laddering produce plans but never call AWS purchase APIs
 	// until an operator explicitly opts in.
 	LadderExecutionEnabled bool `json:"ladder_execution_enabled" db:"ladder_execution_enabled"`
-
-	// AutoPurchaseEnabled is the global kill switch for AutoPurchase plans
-	// (migration 000112; the scheduling.auto_purchase default). Default false:
-	// no AutoPurchase plan notifies or executes until an operator opts in.
-	// Manual purchases (Opportunities, token approval) are unaffected.
-	AutoPurchaseEnabled bool `json:"auto_purchase_enabled" db:"auto_purchase_enabled"`
-
-	// AutoPurchaseChanged{By,At,Via} stamp the last change of the switch
-	// (migration 000115): actor, time, credential kind. NULL = never changed.
-	// json:"-" so PUT /api/config cannot forge them by unmarshalling onto this
-	// struct; the whole-config upsert round-trips them (read, modify, write).
-	AutoPurchaseChangedBy  *string    `json:"-" db:"auto_purchase_changed_by"`
-	AutoPurchaseChangedAt  *time.Time `json:"-" db:"auto_purchase_changed_at"`
-	AutoPurchaseChangedVia *string    `json:"-" db:"auto_purchase_changed_via"`
-
-	// LadderExecutionChanged{By,At,Via} stamp the last change of
-	// LadderExecutionEnabled (migration 000116); same json:"-" reasoning.
-	LadderExecutionChangedBy  *string    `json:"-" db:"ladder_execution_changed_by"`
-	LadderExecutionChangedAt  *time.Time `json:"-" db:"ladder_execution_changed_at"`
-	LadderExecutionChangedVia *string    `json:"-" db:"ladder_execution_changed_via"`
-
-	// OfferingClass controls the EC2 Reserved Instance offering class used
-	// during purchase. Accepted values: "convertible" (default) and
-	// "standard". Convertible RIs can be exchanged for a different
-	// instance family/size/region/OS; Standard RIs are locked to the exact
-	// instance type for the full term but are ~5% cheaper.
-	// Unknown values are rejected at purchase time with an explicit error.
-	OfferingClass string `json:"offering_class,omitempty" dynamodbav:"offering_class,omitempty"`
-
+	ApprovalRequired       bool `json:"approval_required" dynamodbav:"approval_required"`
+	// LadderingEnabled is the global kill-switch for the commitment-laddering
+	// feature (issue #1333 phase 3). When false (the default), no laddering
+	// engine runs fire regardless of per-account LadderConfig.Enabled settings.
+	// Set to true to allow per-account configs to activate individually.
+	LadderingEnabled bool `json:"laddering_enabled" db:"laddering_enabled"`
+	AutoCollect      bool `json:"auto_collect"`
 	// RequireDifferentApprover enables 4-eyes approval mode (issue #1005).
 	// When true, the user who created a purchase execution cannot approve it
 	// themselves; a different person with approval rights must do so. This is
@@ -213,64 +201,64 @@ func (g *GlobalConfig) GracePeriodFor(provider string) int {
 // display-only: the dashboard scales projected savings by it and nothing in
 // purchase execution reads it (issue #345).
 type ServiceConfig struct {
-	Provider       string   `json:"provider" dynamodbav:"provider"`
-	Service        string   `json:"service" dynamodbav:"service"`
-	Enabled        bool     `json:"enabled" dynamodbav:"enabled"`
-	Term           int      `json:"term" dynamodbav:"term"`
-	Payment        string   `json:"payment" dynamodbav:"payment"`
-	Coverage       float64  `json:"coverage" dynamodbav:"coverage"`
-	RampSchedule   string   `json:"ramp_schedule" dynamodbav:"ramp_schedule"`
-	IncludeEngines []string `json:"include_engines,omitempty" dynamodbav:"include_engines,omitempty"`
-	ExcludeEngines []string `json:"exclude_engines,omitempty" dynamodbav:"exclude_engines,omitempty"`
-	IncludeRegions []string `json:"include_regions,omitempty" dynamodbav:"include_regions,omitempty"`
-	ExcludeRegions []string `json:"exclude_regions,omitempty" dynamodbav:"exclude_regions,omitempty"`
-	IncludeTypes   []string `json:"include_types,omitempty" dynamodbav:"include_types,omitempty"`
-	ExcludeTypes   []string `json:"exclude_types,omitempty" dynamodbav:"exclude_types,omitempty"`
-	// MinCount is the GUI/persisted equivalent of the CLI --min-count flag:
-	// the minimum instance/node count a recommendation must carry to be
-	// surfaced. Applied at read time by
-	// scheduler.filterRecsByResolvedConfigs against the persisted
-	// RecommendationRecord.Count. 0 (the default) disables the filter,
-	// matching the CLI flag's 0-no-floor semantics.
-	MinCount int `json:"min_count,omitempty" dynamodbav:"min_count,omitempty"`
+	MaxStepCommitment *float64   `json:"max_step_commitment,omitempty" dynamodbav:"max_step_commitment,omitempty"`
+	UpdatedAt         *time.Time `json:"updated_at,omitempty" dynamodbav:"updated_at,omitempty"`
 	// CreatedAt and UpdatedAt are the service_configs row's own timestamps
 	// (issue #8), read-only. The store fills them on every read and from the
 	// upsert's RETURNING clause; no write path stores a caller's value. Nil
 	// (omitted from JSON) on a config that is not a stored row, such as an
 	// entry of a purchase plan's services map.
 	CreatedAt *time.Time `json:"created_at,omitempty" dynamodbav:"created_at,omitempty"`
-	UpdatedAt *time.Time `json:"updated_at,omitempty" dynamodbav:"updated_at,omitempty"`
+	Provider  string     `json:"provider" dynamodbav:"provider"`
+	Service   string     `json:"service" dynamodbav:"service"`
 	// GroupID, BoundIdentities and MaxStepCommitment describe one config group
 	// of a bound plan (issue #1746). BoundIdentities holds RecIdentityKey values;
 	// MaxStepCommitment is the group's own per-step cap. All are empty on legacy
 	// entries and on the global and per-account service settings.
-	GroupID           string   `json:"group_id,omitempty" dynamodbav:"group_id,omitempty"`
-	BoundIdentities   []string `json:"bound_identities,omitempty" dynamodbav:"bound_identities,omitempty"`
-	MaxStepCommitment *float64 `json:"max_step_commitment,omitempty" dynamodbav:"max_step_commitment,omitempty"`
+	GroupID         string   `json:"group_id,omitempty" dynamodbav:"group_id,omitempty"`
+	Payment         string   `json:"payment" dynamodbav:"payment"`
+	RampSchedule    string   `json:"ramp_schedule" dynamodbav:"ramp_schedule"`
+	ExcludeRegions  []string `json:"exclude_regions,omitempty" dynamodbav:"exclude_regions,omitempty"`
+	IncludeRegions  []string `json:"include_regions,omitempty" dynamodbav:"include_regions,omitempty"`
+	ExcludeEngines  []string `json:"exclude_engines,omitempty" dynamodbav:"exclude_engines,omitempty"`
+	IncludeTypes    []string `json:"include_types,omitempty" dynamodbav:"include_types,omitempty"`
+	ExcludeTypes    []string `json:"exclude_types,omitempty" dynamodbav:"exclude_types,omitempty"`
+	IncludeEngines  []string `json:"include_engines,omitempty" dynamodbav:"include_engines,omitempty"`
+	BoundIdentities []string `json:"bound_identities,omitempty" dynamodbav:"bound_identities,omitempty"`
+	// MinCount is the GUI/persisted equivalent of the CLI --min-count flag:
+	// the minimum instance/node count a recommendation must carry to be
+	// surfaced. Applied at read time by
+	// scheduler.filterRecsByResolvedConfigs against the persisted
+	// RecommendationRecord.Count. 0 (the default) disables the filter,
+	// matching the CLI flag's 0-no-floor semantics.
+	MinCount int     `json:"min_count,omitempty" dynamodbav:"min_count,omitempty"`
+	Coverage float64 `json:"coverage" dynamodbav:"coverage"`
+	Term     int     `json:"term" dynamodbav:"term"`
 	// BoundCount is response-only: plan responses replace BoundIdentities with
 	// its length so a large selection does not bloat every plan read. It is
 	// never stored or read from a request.
-	BoundCount int `json:"bound_count,omitempty" dynamodbav:"-"`
+	BoundCount int  `json:"bound_count,omitempty" dynamodbav:"-"`
+	Enabled    bool `json:"enabled" dynamodbav:"enabled"`
 }
 
 // PurchasePlan represents a saved purchase plan for automated execution.
 type PurchasePlan struct {
-	ID                     string                   `json:"id" dynamodbav:"id"`
-	Name                   string                   `json:"name" dynamodbav:"name"`
-	Enabled                bool                     `json:"enabled" dynamodbav:"enabled"`
-	AutoPurchase           bool                     `json:"auto_purchase" dynamodbav:"auto_purchase"`
-	NotificationDaysBefore int                      `json:"notification_days_before" dynamodbav:"notification_days_before"`
-	Services               map[string]ServiceConfig `json:"services" dynamodbav:"services"`
-	RampSchedule           RampSchedule             `json:"ramp_schedule" dynamodbav:"ramp_schedule"`
-	CreatedAt              time.Time                `json:"created_at" dynamodbav:"created_at"`
-	UpdatedAt              time.Time                `json:"updated_at" dynamodbav:"updated_at"`
-	NextExecutionDate      *time.Time               `json:"next_execution_date,omitempty" dynamodbav:"next_execution_date,omitempty"`
-	LastExecutionDate      *time.Time               `json:"last_execution_date,omitempty" dynamodbav:"last_execution_date,omitempty"`
-	LastNotificationSent   *time.Time               `json:"last_notification_sent,omitempty" dynamodbav:"last_notification_sent,omitempty"`
+	CreatedAt time.Time `json:"created_at" dynamodbav:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" dynamodbav:"updated_at"`
 	// MaxStepCommitment caps the TOTAL commitment (RecommendationRecord.TotalCommitment)
 	// one ramp step may auto-purchase. nil means no cap is set, and auto-purchase of
 	// recommendation-bearing steps is refused (fail closed). Always > 0 when set.
-	MaxStepCommitment *float64 `json:"max_step_commitment,omitempty" dynamodbav:"max_step_commitment,omitempty"`
+	MaxStepCommitment      *float64                 `json:"max_step_commitment,omitempty" dynamodbav:"max_step_commitment,omitempty"`
+	LastNotificationSent   *time.Time               `json:"last_notification_sent,omitempty" dynamodbav:"last_notification_sent,omitempty"`
+	LastExecutionDate      *time.Time               `json:"last_execution_date,omitempty" dynamodbav:"last_execution_date,omitempty"`
+	NextExecutionDate      *time.Time               `json:"next_execution_date,omitempty" dynamodbav:"next_execution_date,omitempty"`
+	Services               map[string]ServiceConfig `json:"services" dynamodbav:"services"`
+	RampSchedule           RampSchedule             `json:"ramp_schedule" dynamodbav:"ramp_schedule"`
+	ID                     string                   `json:"id" dynamodbav:"id"`
+	Name                   string                   `json:"name" dynamodbav:"name"`
+	NotificationDaysBefore int                      `json:"notification_days_before" dynamodbav:"notification_days_before"`
+	AutoPurchase           bool                     `json:"auto_purchase" dynamodbav:"auto_purchase"`
+	Enabled                bool                     `json:"enabled" dynamodbav:"enabled"`
 	// Unassigned is true when the plan has zero rows in plan_accounts.
 	// This can happen for legacy plans created before target_accounts was
 	// required (issue #743). Such plans are invisible when an account filter
@@ -298,14 +286,14 @@ func (m RampAllocationMode) SizesByPercent() bool {
 
 // RampSchedule defines how purchases are spread over time.
 type RampSchedule struct {
+	StartDate        time.Time          `json:"start_date" dynamodbav:"start_date"`
 	Type             string             `json:"type" dynamodbav:"type"` // immediate, weekly, monthly, custom
+	AllocationMode   RampAllocationMode `json:"allocation_mode,omitempty" dynamodbav:"allocation_mode,omitempty"`
 	PercentPerStep   float64            `json:"percent_per_step" dynamodbav:"percent_per_step"`
 	StepIntervalDays int                `json:"step_interval_days" dynamodbav:"step_interval_days"`
 	CurrentStep      int                `json:"current_step" dynamodbav:"current_step"`
 	TotalSteps       int                `json:"total_steps" dynamodbav:"total_steps"`
-	StartDate        time.Time          `json:"start_date" dynamodbav:"start_date"`
 	DatesManaged     bool               `json:"dates_managed,omitempty" dynamodbav:"dates_managed,omitempty"`
-	AllocationMode   RampAllocationMode `json:"allocation_mode,omitempty" dynamodbav:"allocation_mode,omitempty"`
 }
 
 // PresetRampSchedules provides common ramp-up configurations.
@@ -371,32 +359,39 @@ type ExecutionStatusCounts map[string]int
 
 // PurchaseExecution represents a single execution of a purchase plan.
 type PurchaseExecution struct {
-	PlanID           string                 `json:"plan_id" dynamodbav:"plan_id"`
-	ExecutionID      string                 `json:"execution_id" dynamodbav:"execution_id"`
-	Status           string                 `json:"status" dynamodbav:"status"` // pending, notified, approved, canceled, completed, failed
-	StepNumber       int                    `json:"step_number" dynamodbav:"step_number"`
-	ScheduledDate    time.Time              `json:"scheduled_date" dynamodbav:"scheduled_date"`
-	NotificationSent *time.Time             `json:"notification_sent,omitempty" dynamodbav:"notification_sent,omitempty"`
-	ApprovalToken    string                 `json:"approval_token,omitempty" dynamodbav:"approval_token,omitempty"` // SHA-256 hex digest (approval_token_hash column), never the raw token
-	Recommendations  []RecommendationRecord `json:"recommendations" dynamodbav:"recommendations"`
-	TotalUpfrontCost float64                `json:"total_upfront_cost" dynamodbav:"total_upfront_cost"`
-	EstimatedSavings float64                `json:"estimated_savings" dynamodbav:"estimated_savings"`
-	CompletedAt      *time.Time             `json:"completed_at,omitempty" dynamodbav:"completed_at,omitempty"`
-	Error            string                 `json:"error,omitempty" dynamodbav:"error,omitempty"`
-	TTL              int64                  `json:"ttl,omitempty" dynamodbav:"ttl,omitempty"`
-	CloudAccountID   *string                `json:"cloud_account_id,omitempty" dynamodbav:"cloud_account_id,omitempty"`
-	// Source identifies the CUDly surface that triggered this execution
-	// ("cudly-cli" or "cudly-web"). Propagated into PurchaseOptions and
-	// stamped as a tag/label onto every commitment this execution buys.
-	Source string `json:"source,omitempty" dynamodbav:"source,omitempty"`
+	ScheduledDate time.Time  `json:"scheduled_date" dynamodbav:"scheduled_date"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty" dynamodbav:"completed_at,omitempty"`
 	// ApprovedBy / CancelledBy carry the email of the session-authenticated
 	// user who acted on this execution via the auth-gated deep-link flow
 	// (frontend /purchases/{action}/:id → login-if-needed → session-authed
 	// endpoint). Nil on legacy token-only approve/cancel paths — the
 	// handler / History UI falls back to the notification email as the
 	// accountable party in that case. Nullable TEXT in Postgres.
-	ApprovedBy  *string `json:"approved_by,omitempty" dynamodbav:"approved_by,omitempty"`
-	CancelledBy *string `json:"cancelled_by,omitempty" dynamodbav:"cancelled_by,omitempty"`
+	ApprovedBy *string `json:"approved_by,omitempty" dynamodbav:"approved_by,omitempty"`
+	// ScheduledExecutionAt is set by the Gmail-style pre-fire delay path
+	// (issue #291 wave-2) when an approve defers the cloud SDK call. The
+	// scheduler fires the actual SDK call when this timestamp is in the past.
+	// NULL on every immediate-execute row. Migration 000065.
+	ScheduledExecutionAt *time.Time `json:"scheduled_execution_at,omitempty" dynamodbav:"scheduled_execution_at,omitempty"`
+	// RetryExecutionID points from a *failed* execution to the new
+	// execution created when the user clicked Retry (issue #47). Set
+	// only on the original failed row; NULL on every other row including
+	// the retry itself (the retry's own RetryAttemptN > 0 is the
+	// "this is a retry" marker). Forms a forward-pointing chain:
+	// failed_v1.retry_execution_id = failed_v2.execution_id, etc.
+	// Migration 000042 self-FKs the column ON DELETE SET NULL so a
+	// cleanup of a successor doesn't cascade-delete its predecessor.
+	RetryExecutionID *string    `json:"retry_execution_id,omitempty" dynamodbav:"retry_execution_id,omitempty"`
+	NotificationSent *time.Time `json:"notification_sent,omitempty" dynamodbav:"notification_sent,omitempty"`
+	// FirstDispatchAt is the time of the first dispatch of a purchase lineage.
+	// Server-only; insert-only in the upsert, set once by the dispatch stamp (migration 000154).
+	FirstDispatchAt *time.Time `json:"-" dynamodbav:"-"`
+	// ExecutedByUserID is the UUID of the session user who triggered a
+	// direct-execute (issue #289, execute-any/execute-own) or a run-now. NULL on rows
+	// that went through the normal approval flow. Together with
+	// pre_approval_skip_reason it marks a skipped approval email/wait (see ApprovedBy).
+	// Migration 000058 adds the column.
+	ExecutedByUserID *string `json:"executed_by_user_id,omitempty" dynamodbav:"executed_by_user_id,omitempty"`
 	// CreatedByUserID is the UUID of the session-authenticated user who
 	// triggered this execution (e.g. clicked Execute on the Recommendations
 	// page or submitted the bulk-purchase modal). NULL on rows created
@@ -406,39 +401,6 @@ type PurchaseExecution struct {
 	// — a non-admin may cancel only executions they themselves created.
 	// NULL is treated as "not the current user".
 	CreatedByUserID *string `json:"created_by_user_id,omitempty" dynamodbav:"created_by_user_id,omitempty"`
-	// CreatedBySystem marks a row the scheduler sweep minted with no human
-	// initiator (issue #233). Server-only and insert-only: never bound from a
-	// request, never rewritten by the upsert. Implies CreatedByUserID == nil
-	// (CHECK in migration 000130).
-	CreatedBySystem bool `json:"-" dynamodbav:"-"`
-	// FirstDispatchAt is the time of the first dispatch of a purchase lineage.
-	// Server-only; insert-only in the upsert, set once by the dispatch stamp (migration 000154).
-	FirstDispatchAt *time.Time `json:"-" dynamodbav:"-"`
-	// RetryExecutionID points from a *failed* execution to the new
-	// execution created when the user clicked Retry (issue #47). Set
-	// only on the original failed row; NULL on every other row including
-	// the retry itself (the retry's own RetryAttemptN > 0 is the
-	// "this is a retry" marker). Forms a forward-pointing chain:
-	// failed_v1.retry_execution_id = failed_v2.execution_id, etc.
-	// Migration 000042 self-FKs the column ON DELETE SET NULL so a
-	// cleanup of a successor doesn't cascade-delete its predecessor.
-	RetryExecutionID *string `json:"retry_execution_id,omitempty" dynamodbav:"retry_execution_id,omitempty"`
-	// RetryAttemptN is the position of this execution in a retry chain.
-	// 0 (default) on every fresh execution; 1 on the first retry of any
-	// failed row; n+1 on the n+1-th retry. The handler reads the
-	// predecessor's count and stamps n+1 atomically with the new
-	// INSERT inside the retry transaction. The History UI uses this to
-	// soft-block retries past a threshold so an obviously-stuck
-	// configuration doesn't accumulate dozens of dead retry rows.
-	// Migration 000042 added the column with default 0 so legacy rows
-	// look exactly like fresh first-retry candidates.
-	RetryAttemptN int `json:"retry_attempt_n,omitempty" dynamodbav:"retry_attempt_n,omitempty"`
-	// CapacityPercent records what fraction of the originally-recommended
-	// counts the user chose when the bulk Purchase flow submitted this
-	// execution (1..100). Audit-only: the Recommendations slice already
-	// carries the scaled counts, so backend math is unaffected by this
-	// field. Defaults to 100 for legacy and scheduler-driven executions.
-	CapacityPercent int `json:"capacity_percent,omitempty" dynamodbav:"capacity_percent,omitempty"`
 	// ApprovalTokenExpiresAt is the UTC deadline after which the
 	// ApprovalToken must be rejected by ApproveExecution and
 	// loadCancelableExecution (issue #397). Set at execution creation to
@@ -448,20 +410,22 @@ type PurchaseExecution struct {
 	// field is non-nil). Migration 000051 adds the column; new rows
 	// always carry a non-nil value.
 	ApprovalTokenExpiresAt *time.Time `json:"approval_token_expires_at,omitempty" dynamodbav:"approval_token_expires_at,omitempty"`
-	// ExecutedByUserID is the UUID of the session user who triggered a
-	// direct-execute (issue #289, execute-any/execute-own) or a run-now. NULL on rows
-	// that went through the normal approval flow. Together with
-	// pre_approval_skip_reason it marks a skipped approval email/wait (see ApprovedBy).
-	// Migration 000058 adds the column.
-	ExecutedByUserID *string `json:"executed_by_user_id,omitempty" dynamodbav:"executed_by_user_id,omitempty"`
-	// ExecutedAt is the UTC timestamp when the direct-execute or run-now path fired.
-	// NULL for rows on the normal approval flow. Migration 000058.
-	ExecutedAt *time.Time `json:"executed_at,omitempty" dynamodbav:"executed_at,omitempty"`
 	// PreApprovalSkipReason is a human-readable token describing why the
 	// approval email/scheduled wait was skipped: "direct-execute permission" or
 	// "run-now". NULL on every normal-flow row.
 	// Migration 000058.
 	PreApprovalSkipReason *string `json:"pre_approval_skip_reason,omitempty" dynamodbav:"pre_approval_skip_reason,omitempty"`
+	CloudAccountID        *string `json:"cloud_account_id,omitempty" dynamodbav:"cloud_account_id,omitempty"`
+	// ExecutedAt is the UTC timestamp when the direct-execute or run-now path fired.
+	// NULL for rows on the normal approval flow. Migration 000058.
+	ExecutedAt  *time.Time `json:"executed_at,omitempty" dynamodbav:"executed_at,omitempty"`
+	CancelledBy *string    `json:"cancelled_by,omitempty" dynamodbav:"cancelled_by,omitempty"`
+	Status      string     `json:"status" dynamodbav:"status"` // pending, notified, approved, canceled, completed, failed
+	// Source identifies the CUDly surface that triggered this execution
+	// ("cudly-cli" or "cudly-web"). Propagated into PurchaseOptions and
+	// stamped as a tag/label onto every commitment this execution buys.
+	Source string `json:"source,omitempty" dynamodbav:"source,omitempty"`
+	Error  string `json:"error,omitempty" dynamodbav:"error,omitempty"`
 	// IdempotencyKey is the stable lineage anchor the per-rec provider
 	// idempotency token is derived from (issue #1012). Unlike ExecutionID
 	// it is NOT regenerated on Retry or multi-account fan-out: it is
@@ -472,12 +436,36 @@ type PurchaseExecution struct {
 	// commitment is never bought twice. Empty on rows created before
 	// migration 000066 — the derivation falls back to ExecutionID for those
 	// (identical to the pre-fix behavior for a single un-retried execution).
-	IdempotencyKey string `json:"idempotency_key,omitempty" dynamodbav:"idempotency_key,omitempty"`
-	// ScheduledExecutionAt is set by the Gmail-style pre-fire delay path
-	// (issue #291 wave-2) when an approve defers the cloud SDK call. The
-	// scheduler fires the actual SDK call when this timestamp is in the past.
-	// NULL on every immediate-execute row. Migration 000065.
-	ScheduledExecutionAt *time.Time `json:"scheduled_execution_at,omitempty" dynamodbav:"scheduled_execution_at,omitempty"`
+	IdempotencyKey  string                 `json:"idempotency_key,omitempty" dynamodbav:"idempotency_key,omitempty"`
+	PlanID          string                 `json:"plan_id" dynamodbav:"plan_id"`
+	ApprovalToken   string                 `json:"approval_token,omitempty" dynamodbav:"approval_token,omitempty"` // SHA-256 hex digest (approval_token_hash column), never the raw token
+	ExecutionID     string                 `json:"execution_id" dynamodbav:"execution_id"`
+	Recommendations []RecommendationRecord `json:"recommendations" dynamodbav:"recommendations"`
+	// CapacityPercent records what fraction of the originally-recommended
+	// counts the user chose when the bulk Purchase flow submitted this
+	// execution (1..100). Audit-only: the Recommendations slice already
+	// carries the scaled counts, so backend math is unaffected by this
+	// field. Defaults to 100 for legacy and scheduler-driven executions.
+	CapacityPercent int `json:"capacity_percent,omitempty" dynamodbav:"capacity_percent,omitempty"`
+	// RetryAttemptN is the position of this execution in a retry chain.
+	// 0 (default) on every fresh execution; 1 on the first retry of any
+	// failed row; n+1 on the n+1-th retry. The handler reads the
+	// predecessor's count and stamps n+1 atomically with the new
+	// INSERT inside the retry transaction. The History UI uses this to
+	// soft-block retries past a threshold so an obviously-stuck
+	// configuration doesn't accumulate dozens of dead retry rows.
+	// Migration 000042 added the column with default 0 so legacy rows
+	// look exactly like fresh first-retry candidates.
+	RetryAttemptN    int     `json:"retry_attempt_n,omitempty" dynamodbav:"retry_attempt_n,omitempty"`
+	TTL              int64   `json:"ttl,omitempty" dynamodbav:"ttl,omitempty"`
+	EstimatedSavings float64 `json:"estimated_savings" dynamodbav:"estimated_savings"`
+	TotalUpfrontCost float64 `json:"total_upfront_cost" dynamodbav:"total_upfront_cost"`
+	StepNumber       int     `json:"step_number" dynamodbav:"step_number"`
+	// CreatedBySystem marks a row the scheduler sweep minted with no human
+	// initiator (issue #233). Server-only and insert-only: never bound from a
+	// request, never rewritten by the upsert. Implies CreatedByUserID == nil
+	// (CHECK in migration 000130).
+	CreatedBySystem bool `json:"-" dynamodbav:"-"`
 	// NoSubmission is the persisted proof that this execution failed before
 	// any cloud purchase call was made (migration 000113). Only the
 	// pre-submission failure paths set it; the reaper and every
@@ -625,12 +613,95 @@ func (e *PurchaseExecution) IsCancelable() bool {
 
 // RecommendationRecord stores a recommendation with purchase status.
 type RecommendationRecord struct {
-	ID           string `json:"id" dynamodbav:"id"`
-	Provider     string `json:"provider" dynamodbav:"provider"`
-	Service      string `json:"service" dynamodbav:"service"`
-	Region       string `json:"region" dynamodbav:"region"`
-	ResourceType string `json:"resource_type" dynamodbav:"resource_type"`
-	Engine       string `json:"engine,omitempty" dynamodbav:"engine,omitempty"`
+	// MonthlyCost is nil when the provider API did not return a monthly
+	// recurring breakdown (rendered as "—" in the UI, not "$0").
+	// Backward-compatible with DynamoDB: existing items with a numeric 0
+	// attribute unmarshal as a pointer to 0.0; absent attributes unmarshal
+	// as nil. No migration needed.
+	MonthlyCost *float64 `json:"monthly_cost" dynamodbav:"monthly_cost"`
+	MemoryGB    *float64 `json:"memory_gb,omitempty" dynamodbav:"-"`
+	// VCPU and MemoryGB surface the compute size of the recommended
+	// instance type so the frontend's Capacity column can render
+	// "<vcpu> vCPU / <memory> GB" without parsing the opaque Details blob
+	// (#219). They are NOT persisted: the canonical source is the typed
+	// ComputeDetails nested inside Details (config must stay free of
+	// pkg/common imports). The api layer decodes Details via
+	// common.DecodeServiceDetailsFor in buildRecommendationsResponse and
+	// stamps these top-level fields on the way out, so the API JSON carries
+	// them at the top level where the frontend already reads them.
+	//
+	// Pointers (not plain int/float64) so "absent / non-compute / unknown
+	// size" serializes as omitted rather than a misleading 0: the frontend
+	// renders absent as "—", and a literal 0 would otherwise look like a
+	// real "0 vCPU / 0 GB" capacity. dynamodbav:"-" because they are
+	// derived-on-read, never stored.
+	VCPU *int `json:"vcpu,omitempty" dynamodbav:"-"`
+	// PrimarySuppressionExecutionID identifies the execution whose
+	// suppression contributed the most to this tuple (ties broken by
+	// newest created_at). The frontend badge deep-links to Purchase
+	// History filtered to this execution.
+	PrimarySuppressionExecutionID *string `json:"primary_suppression_execution_id,omitempty" dynamodbav:"primary_suppression_execution_id,omitempty"`
+	// SuppressionExpiresAt is the earliest expiry across all active
+	// suppression rows contributing to this tuple. The frontend uses it
+	// to render "Xd remaining" on the recently-purchased badge.
+	SuppressionExpiresAt *time.Time `json:"suppression_expires_at,omitempty" dynamodbav:"suppression_expires_at,omitempty"`
+	SourceAccountID      *string    `json:"source_account_id,omitempty" dynamodbav:"source_account_id,omitempty"`
+	CloudAccountID       *string    `json:"cloud_account_id,omitempty" dynamodbav:"cloud_account_id,omitempty"`
+	// SavingsPercentage is the provider-authoritative effective savings %
+	// reported directly by the cloud provider (AWS Cost Explorer
+	// `EstimatedMonthlySavingsPercentage`, Azure / GCP converters' computed
+	// SavingsPercentage). It is the same figure the CLI/reporter prints
+	// verbatim (github.com/LeanerCloud/cloud-commitments-go/pkg/reporter);
+	// persisting it lets the GUI show the identical number instead of
+	// re-deriving it client-side from savings / on-demand. Persisted via
+	// the recommendations row's JSONB `payload` column; no DDL needed.
+	//
+	// nil means the provider did not report a percentage; the frontend then
+	// falls back to the client-side reconstruction (effectiveSavingsPct).
+	// When non-nil, the frontend prefers this value so the displayed % cannot
+	// drift from the provider's authoritative number and AWS recs missing
+	// on_demand_cost still render a real % rather than an em-dash (see #323).
+	SavingsPercentage *float64 `json:"savings_percentage" dynamodbav:"savings_percentage,omitempty"`
+	// OnDemandCost is the canonical on-demand monthly baseline for the
+	// recommended commitment, sourced directly from the cloud provider
+	// (Azure `CostWithNoReservedInstances`, AWS Cost Explorer
+	// `EstimatedMonthlyOnDemandCost`). Persisted via the recommendations
+	// row's JSONB `payload` column — no DDL needed.
+	//
+	// nil means the provider API did not return a baseline; the frontend
+	// falls back to reconstructing on-demand from `monthly_cost + savings
+	// + amortized_upfront`. When non-nil, the frontend prefers the raw
+	// value over reconstruction so anomalies in the reconstructed
+	// denominator (e.g. Azure all-upfront recs where monthly_cost=$0
+	// collapses the denominator) don't inflate the displayed effective
+	// savings %. See #274.
+	OnDemandCost *float64 `json:"on_demand_cost,omitempty" dynamodbav:"on_demand_cost,omitempty"`
+	Error        string   `json:"error,omitempty" dynamodbav:"error,omitempty"`
+	ResourceType string   `json:"resource_type" dynamodbav:"resource_type"`
+	Payment      string   `json:"payment" dynamodbav:"payment"`
+	Provider     string   `json:"provider" dynamodbav:"provider"`
+	Service      string   `json:"service" dynamodbav:"service"`
+	Region       string   `json:"region" dynamodbav:"region"`
+	Engine       string   `json:"engine,omitempty" dynamodbav:"engine,omitempty"`
+	// CommitmentCurrency is the ISO 4217 code UpfrontCost and MonthlyCost are
+	// denominated in, copied from common.Recommendation.CommitmentCurrency at
+	// collection time. Empty means unknown: the provider parser could not
+	// prove the currency of every payment leg, or the row predates the field.
+	// The purchase spend caps are USD, so a rec that is not provably USD is
+	// never compared against one (issue #361). Persisted via the
+	// recommendations row's JSONB `payload` column, and with the execution's
+	// recommendations JSONB; no DDL needed.
+	CommitmentCurrency string `json:"commitment_currency,omitempty" dynamodbav:"commitment_currency,omitempty"`
+	// AvailabilityZone is the zonal EC2 reservation's AZ name (e.g.
+	// "us-east-1a"), empty for regional and non-EC2 recs. It mirrors
+	// ComputeDetails.AvailabilityZone inside Details (config must not import
+	// pkg/common) so the identity tuple, the rec ID and the recommendations
+	// natural key can distinguish two zonal recs that differ only by AZ
+	// (issue #792). The scheduler stamps it at collection time; request recs
+	// echo it from the listed rec.
+	AvailabilityZone string `json:"availability_zone,omitempty" dynamodbav:"availability_zone,omitempty"`
+	ID               string `json:"id" dynamodbav:"id"`
+	PurchaseID       string `json:"purchase_id,omitempty" dynamodbav:"purchase_id,omitempty"`
 	// Details preserves the full common.ServiceDetails payload from the
 	// source common.Recommendation so the purchase path can reconstruct
 	// the correct typed *Details pointer at execute time (issue #453).
@@ -650,95 +721,6 @@ type RecommendationRecord struct {
 	// carry the full Details, so non-default platforms (Windows EC2,
 	// Postgres RDS, etc.) round-trip correctly.
 	Details json.RawMessage `json:"details,omitempty" dynamodbav:"-"`
-	// AvailabilityZone is the zonal EC2 reservation's AZ name (e.g.
-	// "us-east-1a"), empty for regional and non-EC2 recs. It mirrors
-	// ComputeDetails.AvailabilityZone inside Details (config must not import
-	// pkg/common) so the identity tuple, the rec ID and the recommendations
-	// natural key can distinguish two zonal recs that differ only by AZ
-	// (issue #792). The scheduler stamps it at collection time; request recs
-	// echo it from the listed rec.
-	AvailabilityZone string `json:"availability_zone,omitempty" dynamodbav:"availability_zone,omitempty"`
-	Count            int    `json:"count" dynamodbav:"count"`
-	// RecommendedCount is the pre-scaling count the collector originally
-	// recommended, before the bulk-purchase Capacity % slider scaled it down.
-	// The web execute path stamps it so the backend can verify the
-	// client-supplied capacity_percent against the scaled Count
-	// (floor(RecommendedCount*pct/100) must equal Count) rather than trusting
-	// a decorative audit field that could silently disagree (#647). Optional:
-	// 0 / absent means "not supplied" (legacy callers, scheduler/CLI rows,
-	// retry replays) and the consistency check is skipped for that rec.
-	RecommendedCount int     `json:"recommended_count,omitempty" dynamodbav:"recommended_count,omitempty"`
-	Term             int     `json:"term" dynamodbav:"term"`
-	Payment          string  `json:"payment" dynamodbav:"payment"`
-	UpfrontCost      float64 `json:"upfront_cost" dynamodbav:"upfront_cost"`
-	// MonthlyCost is nil when the provider API did not return a monthly
-	// recurring breakdown (rendered as "—" in the UI, not "$0").
-	// Backward-compatible with DynamoDB: existing items with a numeric 0
-	// attribute unmarshal as a pointer to 0.0; absent attributes unmarshal
-	// as nil. No migration needed.
-	MonthlyCost *float64 `json:"monthly_cost" dynamodbav:"monthly_cost"`
-	Savings     float64  `json:"savings" dynamodbav:"savings"`
-	// OnDemandCost is the canonical on-demand monthly baseline for the
-	// recommended commitment, sourced directly from the cloud provider
-	// (Azure `CostWithNoReservedInstances`, AWS Cost Explorer
-	// `EstimatedMonthlyOnDemandCost`). Persisted via the recommendations
-	// row's JSONB `payload` column — no DDL needed.
-	//
-	// nil means the provider API did not return a baseline; the frontend
-	// falls back to reconstructing on-demand from `monthly_cost + savings
-	// + amortized_upfront`. When non-nil, the frontend prefers the raw
-	// value over reconstruction so anomalies in the reconstructed
-	// denominator (e.g. Azure all-upfront recs where monthly_cost=$0
-	// collapses the denominator) don't inflate the displayed effective
-	// savings %. See #274.
-	OnDemandCost *float64 `json:"on_demand_cost,omitempty" dynamodbav:"on_demand_cost,omitempty"`
-	// CommitmentCurrency is the ISO 4217 code UpfrontCost and MonthlyCost are
-	// denominated in, copied from common.Recommendation.CommitmentCurrency at
-	// collection time. Empty means unknown: the provider parser could not
-	// prove the currency of every payment leg, or the row predates the field.
-	// The purchase spend caps are USD, so a rec that is not provably USD is
-	// never compared against one (issue #361). Persisted via the
-	// recommendations row's JSONB `payload` column, and with the execution's
-	// recommendations JSONB; no DDL needed.
-	CommitmentCurrency string `json:"commitment_currency,omitempty" dynamodbav:"commitment_currency,omitempty"`
-	// SavingsPercentage is the provider-authoritative effective savings %
-	// reported directly by the cloud provider (AWS Cost Explorer
-	// `EstimatedMonthlySavingsPercentage`, Azure / GCP converters' computed
-	// SavingsPercentage). It is the same figure the CLI/reporter prints
-	// verbatim (github.com/LeanerCloud/cloud-commitments-go/pkg/reporter);
-	// persisting it lets the GUI show the identical number instead of
-	// re-deriving it client-side from savings / on-demand. Persisted via
-	// the recommendations row's JSONB `payload` column; no DDL needed.
-	//
-	// nil means the provider did not report a percentage; the frontend then
-	// falls back to the client-side reconstruction (effectiveSavingsPct).
-	// When non-nil, the frontend prefers this value so the displayed % cannot
-	// drift from the provider's authoritative number and AWS recs missing
-	// on_demand_cost still render a real % rather than an em-dash (see #323).
-	SavingsPercentage *float64 `json:"savings_percentage" dynamodbav:"savings_percentage,omitempty"`
-	Selected          bool     `json:"selected" dynamodbav:"selected"`
-	Purchased         bool     `json:"purchased" dynamodbav:"purchased"`
-	PurchaseID        string   `json:"purchase_id,omitempty" dynamodbav:"purchase_id,omitempty"`
-	Error             string   `json:"error,omitempty" dynamodbav:"error,omitempty"`
-	CloudAccountID    *string  `json:"cloud_account_id,omitempty" dynamodbav:"cloud_account_id,omitempty"`
-	SourceAccountID   *string  `json:"source_account_id,omitempty" dynamodbav:"source_account_id,omitempty"`
-	// SuppressedCount is the cumulative count already committed against
-	// this recommendation's suppression key (account, provider, service,
-	// region, resource_type, engine, plus availability zone, platform and
-	// tenancy, issue #816) within the active grace window. The
-	// scheduler subtracts this from Count before returning the rec to
-	// the frontend; a rec where SuppressedCount ≥ original count is
-	// dropped entirely. Populated by the scheduler — zero on writes.
-	SuppressedCount int `json:"suppressed_count,omitempty" dynamodbav:"suppressed_count,omitempty"`
-	// SuppressionExpiresAt is the earliest expiry across all active
-	// suppression rows contributing to this tuple. The frontend uses it
-	// to render "Xd remaining" on the recently-purchased badge.
-	SuppressionExpiresAt *time.Time `json:"suppression_expires_at,omitempty" dynamodbav:"suppression_expires_at,omitempty"`
-	// PrimarySuppressionExecutionID identifies the execution whose
-	// suppression contributed the most to this tuple (ties broken by
-	// newest created_at). The frontend badge deep-links to Purchase
-	// History filtered to this execution.
-	PrimarySuppressionExecutionID *string `json:"primary_suppression_execution_id,omitempty" dynamodbav:"primary_suppression_execution_id,omitempty"`
 	// UsageHistory is a short time-series of daily RI-coverage percentages
 	// (0-100) for the last N days of the lookback window, ordered from
 	// oldest to newest. nil means the collector did not populate it (e.g.
@@ -748,23 +730,29 @@ type RecommendationRecord struct {
 	// recommendations JSONB payload — no DDL change needed (closes #239
 	// Part 1 for AWS).
 	UsageHistory []float64 `json:"usage_history,omitempty" dynamodbav:"usage_history,omitempty"`
-	// VCPU and MemoryGB surface the compute size of the recommended
-	// instance type so the frontend's Capacity column can render
-	// "<vcpu> vCPU / <memory> GB" without parsing the opaque Details blob
-	// (#219). They are NOT persisted: the canonical source is the typed
-	// ComputeDetails nested inside Details (config must stay free of
-	// pkg/common imports). The api layer decodes Details via
-	// common.DecodeServiceDetailsFor in buildRecommendationsResponse and
-	// stamps these top-level fields on the way out, so the API JSON carries
-	// them at the top level where the frontend already reads them.
-	//
-	// Pointers (not plain int/float64) so "absent / non-compute / unknown
-	// size" serializes as omitted rather than a misleading 0: the frontend
-	// renders absent as "—", and a literal 0 would otherwise look like a
-	// real "0 vCPU / 0 GB" capacity. dynamodbav:"-" because they are
-	// derived-on-read, never stored.
-	VCPU     *int     `json:"vcpu,omitempty" dynamodbav:"-"`
-	MemoryGB *float64 `json:"memory_gb,omitempty" dynamodbav:"-"`
+	Count        int       `json:"count" dynamodbav:"count"`
+	// SuppressedCount is the cumulative count already committed against
+	// this recommendation's suppression key (account, provider, service,
+	// region, resource_type, engine, plus availability zone, platform and
+	// tenancy, issue #816) within the active grace window. The
+	// scheduler subtracts this from Count before returning the rec to
+	// the frontend; a rec where SuppressedCount ≥ original count is
+	// dropped entirely. Populated by the scheduler — zero on writes.
+	SuppressedCount int     `json:"suppressed_count,omitempty" dynamodbav:"suppressed_count,omitempty"`
+	Term            int     `json:"term" dynamodbav:"term"`
+	Savings         float64 `json:"savings" dynamodbav:"savings"`
+	// RecommendedCount is the pre-scaling count the collector originally
+	// recommended, before the bulk-purchase Capacity % slider scaled it down.
+	// The web execute path stamps it so the backend can verify the
+	// client-supplied capacity_percent against the scaled Count
+	// (floor(RecommendedCount*pct/100) must equal Count) rather than trusting
+	// a decorative audit field that could silently disagree (#647). Optional:
+	// 0 / absent means "not supplied" (legacy callers, scheduler/CLI rows,
+	// retry replays) and the consistency check is skipped for that rec.
+	RecommendedCount int     `json:"recommended_count,omitempty" dynamodbav:"recommended_count,omitempty"`
+	UpfrontCost      float64 `json:"upfront_cost" dynamodbav:"upfront_cost"`
+	Purchased        bool    `json:"purchased" dynamodbav:"purchased"`
+	Selected         bool    `json:"selected" dynamodbav:"selected"`
 }
 
 // PurchaseSuppression records the per-tuple grace window after a bulk
@@ -773,22 +761,22 @@ type RecommendationRecord struct {
 // insert; deleted inside the same transaction as a cancel/expire status
 // transition.
 type PurchaseSuppression struct {
-	ID              string    `json:"id"`
-	ExecutionID     string    `json:"execution_id"`
-	AccountID       string    `json:"account_id"`
-	Provider        string    `json:"provider"`
-	Service         string    `json:"service"`
-	Region          string    `json:"region"`
-	ResourceType    string    `json:"resource_type"`
-	Engine          string    `json:"engine"`
-	SuppressedCount int       `json:"suppressed_count"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	CreatedAt       time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
 	// Variant narrows the row to one availability zone, platform and tenancy
 	// on its 6-tuple (issue #816, migration 000134). nil means the variant is
 	// unknown: rows written before 000134 or by code predating #816. Such a
 	// row is a wildcard over its 6-tuple (see AppliesTo).
-	Variant *SuppressionVariant `json:"variant,omitempty"`
+	Variant         *SuppressionVariant `json:"variant,omitempty"`
+	ID              string              `json:"id"`
+	ExecutionID     string              `json:"execution_id"`
+	AccountID       string              `json:"account_id"`
+	Provider        string              `json:"provider"`
+	Service         string              `json:"service"`
+	Region          string              `json:"region"`
+	ResourceType    string              `json:"resource_type"`
+	Engine          string              `json:"engine"`
+	SuppressedCount int                 `json:"suppressed_count"`
 }
 
 // SuppressionVariant is the part of the suppression key beyond the 6-tuple:
@@ -918,14 +906,14 @@ func (s *PurchaseSuppression) AppliesTo(v *SuppressionVariant) bool {
 // query rather than in SQL (avoids a computed column). These two filters are
 // independent and can be combined.
 type RecommendationFilter struct {
-	RequireAzurePricingMigration bool
 	Provider                     string   // "aws" / "azure" / "gcp" / "" (all)
 	Service                      string   // "" = all services
 	Region                       string   // "" = all regions
+	ID                           string   // "" = all ids; non-empty = exact match on the id column
 	AccountIDs                   []string // nil/empty = all accounts
 	MinSavingsUSD                float64  // 0 = no floor on monthly savings dollar amount
 	MinSavingsPct                float64  // 0 = no floor on savings percentage (0–100 scale)
-	ID                           string   // "" = all ids; non-empty = exact match on the id column
+	RequireAzurePricingMigration bool
 }
 
 // RecommendationScanKey is a stored recommendation's position in the keyset
@@ -943,8 +931,8 @@ type RecommendationScanKey struct {
 // next chunk resumes. Done is true when fewer rows than the limit were read,
 // so nothing matches after Last.
 type RecommendationChunk struct {
-	Recs []RecommendationRecord
 	Last *RecommendationScanKey
+	Recs []RecommendationRecord
 	Done bool
 }
 
@@ -1034,7 +1022,22 @@ const PricingHoldMaxAge = 36 * time.Hour
 // collection. A "scope" is the unit a sweep fails in: a subscription for
 // Azure, a project for GCP, and a service/region collection scope for AWS.
 type PartialProviderSweep struct {
-	Provider string `json:"provider"`
+	// Reasons counts the failure causes by PartialReason* category.
+	Reasons map[string]int `json:"reasons"`
+	// HeldSince records when each held account (by HeldAccountIDs entry, or the
+	// nil UUID for an ambient hold) was first held in the current streak.
+	HeldSince map[string]time.Time `json:"held_since,omitempty"`
+	Provider  string               `json:"provider"`
+	// HeldAccountIDs lists the platform cloud-account UUIDs (not cloud
+	// account numbers) whose previous-cycle rows are held through a pricing
+	// outage; the purchase path refuses their recommendations. It can contain
+	// the nil UUID (all zeros) for the ambient identity, which has no account;
+	// the API shows it only to callers with an unrestricted account scope.
+	HeldAccountIDs []string `json:"held_account_ids,omitempty"`
+	// ExpiredHoldAccountIDs lists accounts whose hold passed PricingHoldMaxAge
+	// and whose stale rows were evicted. It is carried until the account
+	// re-prices or stops being an enabled Azure account.
+	ExpiredHoldAccountIDs []string `json:"expired_hold_account_ids,omitempty"`
 	// IncompleteAccounts is how many accounts (registered, or the single
 	// ambient host identity) returned rows from an incomplete sweep.
 	IncompleteAccounts int `json:"incomplete_accounts"`
@@ -1050,21 +1053,6 @@ type PartialProviderSweep struct {
 	// dropped as invalid (GCP: non-USD, malformed amount or plan, unknown
 	// term) while returning the rest. Those accounts' sweeps were complete.
 	SkippedRecommendations int `json:"skipped_recommendations"`
-	// Reasons counts the failure causes by PartialReason* category.
-	Reasons map[string]int `json:"reasons"`
-	// HeldAccountIDs lists the platform cloud-account UUIDs (not cloud
-	// account numbers) whose previous-cycle rows are held through a pricing
-	// outage; the purchase path refuses their recommendations. It can contain
-	// the nil UUID (all zeros) for the ambient identity, which has no account;
-	// the API shows it only to callers with an unrestricted account scope.
-	HeldAccountIDs []string `json:"held_account_ids,omitempty"`
-	// HeldSince records when each held account (by HeldAccountIDs entry, or the
-	// nil UUID for an ambient hold) was first held in the current streak.
-	HeldSince map[string]time.Time `json:"held_since,omitempty"`
-	// ExpiredHoldAccountIDs lists accounts whose hold passed PricingHoldMaxAge
-	// and whose stale rows were evicted. It is carried until the account
-	// re-prices or stops being an enabled Azure account.
-	ExpiredHoldAccountIDs []string `json:"expired_hold_account_ids,omitempty"`
 }
 
 // SuccessfulCollect identifies a (provider, account) pair whose collection
@@ -1080,8 +1068,8 @@ type PartialProviderSweep struct {
 // rows are evicted independently of any registered-account rows under
 // the same provider.
 type SuccessfulCollect struct {
-	Provider       string
 	CloudAccountID *string
+	Provider       string
 }
 
 // RIUtilizationCacheKey identifies one cached Cost Explorer
@@ -1103,11 +1091,11 @@ type RIUtilizationCacheKey struct {
 // TTL freshness is evaluated in the caller (api-layer cache wrapper)
 // based on FetchedAt vs. a caller-supplied TTL.
 type RIUtilizationCacheEntry struct {
+	FetchedAt      time.Time
 	CloudAccountID string
 	Region         string
-	LookbackDays   int
 	Payload        []byte
-	FetchedAt      time.Time
+	LookbackDays   int
 }
 
 // PurchaseHistoryFilter is the filter set consumed by
@@ -1116,14 +1104,6 @@ type RIUtilizationCacheEntry struct {
 // GetAllPurchaseHistory). See the implementation docstring for the per-field
 // semantics and the dual-column account predicate.
 type PurchaseHistoryFilter struct {
-	// Provider matches purchase_history.provider exactly. Empty skips the clause.
-	Provider string
-	// PlanID matches purchase_history.plan_id exactly; HistorySummaryAggregate
-	// also applies it to purchase_executions.plan_id. Empty skips the clause.
-	PlanID string
-	// AccountIDs matches purchase_history.cloud_account_id (the cloud_accounts
-	// UUID FK) with ANY($). Empty/nil skips this half of the account predicate.
-	AccountIDs []string
 	// ExternalIDsByProvider matches purchase_history.account_id (the
 	// cloud-provider external account number) scoped per provider. The caller
 	// resolves AccountIDs to their (provider, external_id) pairs and groups the
@@ -1151,6 +1131,14 @@ type PurchaseHistoryFilter struct {
 	// unrestricted caller. Like the execution scope it is a superset of the
 	// handler's Go scope check, which still runs on the rows.
 	Scope *ExecutionScope
+	// Provider matches purchase_history.provider exactly. Empty skips the clause.
+	Provider string
+	// PlanID matches purchase_history.plan_id exactly; HistorySummaryAggregate
+	// also applies it to purchase_executions.plan_id. Empty skips the clause.
+	PlanID string
+	// AccountIDs matches purchase_history.cloud_account_id (the cloud_accounts
+	// UUID FK) with ANY($). Empty/nil skips this half of the account predicate.
+	AccountIDs []string
 	// Limit caps the row count; clamped to [1, MaxListLimit] with a
 	// DefaultListLimit fallback when <= 0.
 	Limit int
@@ -1197,17 +1185,31 @@ const PurchaseAmountBasisLegacyWindow PurchaseAmountBasis = "legacy_window"
 // layer never writes it (tag `dynamodbav:"-"` keeps it out of persistence),
 // and the API layer populates it as "completed" or "pending" before returning.
 type PurchaseHistoryRecord struct {
-	AccountID    string    `json:"account_id" dynamodbav:"account_id"`
-	PurchaseID   string    `json:"purchase_id" dynamodbav:"purchase_id"`
-	Timestamp    time.Time `json:"timestamp" dynamodbav:"timestamp"`
-	Provider     string    `json:"provider" dynamodbav:"provider"`
-	Service      string    `json:"service" dynamodbav:"service"`
-	Region       string    `json:"region" dynamodbav:"region"`
-	ResourceType string    `json:"resource_type" dynamodbav:"resource_type"`
-	Count        int       `json:"count" dynamodbav:"count"`
-	Term         int       `json:"term" dynamodbav:"term"`
-	Payment      string    `json:"payment" dynamodbav:"payment"`
-	UpfrontCost  *float64  `json:"upfront_cost" dynamodbav:"upfront_cost"`
+	Timestamp time.Time `json:"timestamp" dynamodbav:"timestamp"`
+	// --- Revocation window fields (issue #290) ---
+	//
+	// RevocationWindowClosesAt is set when the purchase_history row is
+	// written: Timestamp + the provider-specific free-cancel window
+	// (Azure: 7 days). NULL for AWS EC2 (no direct cancel API) and GCP
+	// (no free-cancel window). Persisted in purchase_history.
+	RevocationWindowClosesAt *time.Time `json:"revocation_window_closes_at,omitempty" dynamodbav:"revocation_window_closes_at,omitempty"`
+	UpfrontCost              *float64   `json:"upfront_cost" dynamodbav:"upfront_cost"`
+	// ReturnPostedAt is when the revoke handler recorded that Azure accepted
+	// the Return (MarkRevocationReturnPosted, migration 000148). Set means the
+	// refund was issued; unset proves nothing, because the stamp is best-effort
+	// (issue #1522). Read only by GetPurchaseHistoryByPurchaseID and never
+	// serialized, so history responses do not expose it.
+	ReturnPostedAt *time.Time `json:"-" dynamodbav:"-"`
+	// --- Refund-quote audit fields (issue #290 Finding #4, migration 000071) ---
+	//
+	// CalcRefundAmount is the amount Azure quoted at CalculateRefund time, captured
+	// for audit and TOCTOU-divergence detection in the two-step revoke confirm flow.
+	// NULL for revocations that predate this feature or where Azure returned no amount.
+	CalcRefundAmount *float64 `json:"calc_refund_amount,omitempty" dynamodbav:"calc_refund_amount,omitempty"`
+	// RevokedAt is set by the revoke endpoint when the provider API
+	// confirmed the cancellation / refund. Persisted.
+	RevokedAt      *time.Time `json:"revoked_at,omitempty" dynamodbav:"revoked_at,omitempty"`
+	CloudAccountID *string    `json:"cloud_account_id,omitempty" dynamodbav:"cloud_account_id,omitempty"`
 	// MonthlyCost is nil when the provider API did not return a monthly
 	// recurring breakdown for this commitment (e.g. Azure all-upfront where
 	// no recurring charge exists at the commitment layer). GCP commitments
@@ -1217,49 +1219,41 @@ type PurchaseHistoryRecord struct {
 	// distorting totals. Migration 000063 dropped the NOT NULL constraint so
 	// new rows can carry NULL; existing rows with 0.0 are preserved as-is
 	// (those are real zeros from AWS all-upfront commitments).
-	MonthlyCost      *float64 `json:"monthly_cost" dynamodbav:"monthly_cost"`
-	EstimatedSavings float64  `json:"estimated_savings" dynamodbav:"estimated_savings"`
-	PlanID           string   `json:"plan_id,omitempty" dynamodbav:"plan_id,omitempty"`
-	PlanName         string   `json:"plan_name,omitempty" dynamodbav:"plan_name,omitempty"`
-	RampStep         int      `json:"ramp_step,omitempty" dynamodbav:"ramp_step,omitempty"`
-	CloudAccountID   *string  `json:"cloud_account_id,omitempty" dynamodbav:"cloud_account_id,omitempty"`
+	MonthlyCost *float64 `json:"monthly_cost" dynamodbav:"monthly_cost"`
+	// CreatedByUserEmail is the email address of the user who created the
+	// underlying execution, resolved from CreatedByUserID via the auth
+	// service. Populated only on synthesized execution rows (pending,
+	// notified, failed, expired, canceled) when a valid user ID is
+	// present; empty for scheduler-driven executions, legacy NULL-creator
+	// rows, and completed purchase_history rows. Excluded from DB
+	// persistence (resolved at read time). The UI renders this in the
+	// Approval Queue "Created by" column instead of the raw UUID.
+	CreatedByUserEmail string `json:"created_by_user_email,omitempty" dynamodbav:"-"`
+	// SupportCaseID is non-empty when RevokedVia == "support-case".
+	// Persisted.
+	SupportCaseID string `json:"support_case_id,omitempty" dynamodbav:"support_case_id,omitempty"`
+	// ListingState mirrors the AWS marketplace listing state (see the
+	// ListingState* constants). Empty when not listed. Persisted in
+	// purchase_history via migration 000087.
+	ListingState string `json:"listing_state,omitempty" dynamodbav:"listing_state,omitempty"`
+	// ListingID is the AWS ReservedInstancesListingId returned by
+	// CreateReservedInstancesListing. Empty when the RI has not been
+	// listed. Persisted in purchase_history via migration 000087.
+	ListingID string `json:"listing_id,omitempty" dynamodbav:"listing_id,omitempty"`
+	// OfferingClass records whether this commitment is a 'standard' or
+	// 'convertible' RI. NULL on pre-migration rows. The Sell-on-Marketplace
+	// button renders only when this equals "standard" (issue #292).
+	// Persisted in purchase_history via migration 000087.
+	OfferingClass string `json:"offering_class,omitempty" dynamodbav:"offering_class,omitempty"`
+	PlanID        string `json:"plan_id,omitempty" dynamodbav:"plan_id,omitempty"`
+	PlanName      string `json:"plan_name,omitempty" dynamodbav:"plan_name,omitempty"`
+	Source        string `json:"source,omitempty" dynamodbav:"source,omitempty"`
+	ResourceType  string `json:"resource_type" dynamodbav:"resource_type"`
 	// AmountBasis is set from the amount_basis column; no writer names it.
 	AmountBasis PurchaseAmountBasis `json:"amount_basis,omitempty" dynamodbav:"-"`
 	Status      string              `json:"status,omitempty" dynamodbav:"-"`
-	// Approver holds the email address the approval request was sent to (or
-	// would have been, if SES failed). Set only on pending rows, so the
-	// History UI can show "awaiting approval from <addr>" and the user knows
-	// exactly whose inbox to check. Excluded from DB persistence.
-	Approver string `json:"approver,omitempty" dynamodbav:"-"`
-	Source   string `json:"source,omitempty" dynamodbav:"source,omitempty"`
-	// StatusDescription carries a short human-readable explanation for non-
-	// completed rows. For "failed", this is the stored Error message (e.g.
-	// "send failed: Missing domain"). For "expired", a canned reminder that
-	// the 7-day approval window elapsed. Empty on completed/pending rows —
-	// those speak for themselves via Status alone.
-	StatusDescription string `json:"status_description,omitempty" dynamodbav:"-"`
-	// CreatedByUserID propagates the originating execution's
-	// created_by_user_id so the History UI can decide whether to render
-	// the inline Cancel button (issue #46): a non-admin user only sees
-	// the button on their own pending rows. Set only for synthesized
-	// pending/notified rows (executions); empty on completed history
-	// rows (where the action has already completed). Excluded from DB
-	// persistence.
-	CreatedByUserID string `json:"created_by_user_id,omitempty" dynamodbav:"-"`
-	// CreatedBySystem propagates the execution's scheduler-created marker (#233).
-	CreatedBySystem bool `json:"created_by_system,omitempty" dynamodbav:"-"`
-	// RetryExecutionID propagates the originating execution's pointer to
-	// its successor when the user retried it (issue #47). Set only on
-	// the *original* failed row that has been retried; the History UI
-	// renders an inline "Retried as #abc" link to the successor row when
-	// this is non-empty. Excluded from DB persistence (synthesized from
-	// purchase_executions).
-	RetryExecutionID string `json:"retry_execution_id,omitempty" dynamodbav:"-"`
-	// RetryAttemptN propagates the originating execution's retry-chain
-	// position so the History UI can render "↻ Retry of #xyz" inline
-	// links on retry rows (n > 0) and gate the Retry button against the
-	// soft-block threshold (n >= 5). Excluded from DB persistence.
-	RetryAttemptN int `json:"retry_attempt_n,omitempty" dynamodbav:"-"`
+	PurchaseID  string              `json:"purchase_id" dynamodbav:"purchase_id"`
+	Provider    string              `json:"provider" dynamodbav:"provider"`
 	// OpsHint is a short operator-actionable message rendered inline in
 	// place of the Retry button when the failure reason on the row
 	// matches a known-persistent-misconfiguration pattern (e.g.
@@ -1268,10 +1262,52 @@ type PurchaseHistoryRecord struct {
 	// empty otherwise. Excluded from DB persistence (computed at read
 	// time so updates to the persistent-failure map land instantly).
 	OpsHint string `json:"ops_hint,omitempty" dynamodbav:"-"`
-	// RedriveUnsafe is true when OpsHint is a permanent refusal from
-	// purchase.RetryRefusalReason (provider has no duplicate guard), not an
-	// operator-fixable misconfiguration. Computed at read time, like OpsHint.
-	RedriveUnsafe bool `json:"redrive_unsafe,omitempty" dynamodbav:"-"`
+	// CreatedByUserID propagates the originating execution's
+	// created_by_user_id so the History UI can decide whether to render
+	// the inline Cancel button (issue #46): a non-admin user only sees
+	// the button on their own pending rows. Set only for synthesized
+	// pending/notified rows (executions); empty on completed history
+	// rows (where the action has already completed). Excluded from DB
+	// persistence.
+	CreatedByUserID string `json:"created_by_user_id,omitempty" dynamodbav:"-"`
+	// CalcRefundCurrency is the ISO-4217 currency code from the CalculateRefund quote
+	// (e.g. "USD"). NULL when CalcRefundAmount is NULL.
+	CalcRefundCurrency string `json:"calc_refund_currency,omitempty" dynamodbav:"calc_refund_currency,omitempty"`
+	// RetryExecutionID propagates the originating execution's pointer to
+	// its successor when the user retried it (issue #47). Set only on
+	// the *original* failed row that has been retried; the History UI
+	// renders an inline "Retried as #abc" link to the successor row when
+	// this is non-empty. Excluded from DB persistence (synthesized from
+	// purchase_executions).
+	RetryExecutionID string `json:"retry_execution_id,omitempty" dynamodbav:"-"`
+	Service          string `json:"service" dynamodbav:"service"`
+	// StatusDescription carries a short human-readable explanation for non-
+	// completed rows. For "failed", this is the stored Error message (e.g.
+	// "send failed: Missing domain"). For "expired", a canned reminder that
+	// the 7-day approval window elapsed. Empty on completed/pending rows —
+	// those speak for themselves via Status alone.
+	StatusDescription string `json:"status_description,omitempty" dynamodbav:"-"`
+	Payment           string `json:"payment" dynamodbav:"payment"`
+	// RevokedVia identifies how the revocation was completed: "direct-api"
+	// (provider returned 2xx) or "support-case" (AWS Support case filed).
+	// Persisted.
+	RevokedVia string `json:"revoked_via,omitempty" dynamodbav:"revoked_via,omitempty"`
+	// Approver holds the email address the approval request was sent to (or
+	// would have been, if SES failed). Set only on pending rows, so the
+	// History UI can show "awaiting approval from <addr>" and the user knows
+	// exactly whose inbox to check. Excluded from DB persistence.
+	Approver  string `json:"approver,omitempty" dynamodbav:"-"`
+	AccountID string `json:"account_id" dynamodbav:"account_id"`
+	Region    string `json:"region" dynamodbav:"region"`
+	// RetryAttemptN propagates the originating execution's retry-chain
+	// position so the History UI can render "↻ Retry of #xyz" inline
+	// links on retry rows (n > 0) and gate the Retry button against the
+	// soft-block threshold (n >= 5). Excluded from DB persistence.
+	RetryAttemptN    int     `json:"retry_attempt_n,omitempty" dynamodbav:"-"`
+	RampStep         int     `json:"ramp_step,omitempty" dynamodbav:"ramp_step,omitempty"`
+	EstimatedSavings float64 `json:"estimated_savings" dynamodbav:"estimated_savings"`
+	Count            int     `json:"count" dynamodbav:"count"`
+	Term             int     `json:"term" dynamodbav:"term"`
 	// IsAuditGap marks a synthesized "completed" row whose purchase_history
 	// write failed after a successful purchase (issue #621). Such a row is
 	// reconstructed from the execution so the purchase stays visible, but its
@@ -1284,44 +1320,12 @@ type PurchaseHistoryRecord struct {
 	// rows loaded from the DB always leave this false. Excluded from DB
 	// persistence (set only at read time on synthesized rows).
 	IsAuditGap bool `json:"is_audit_gap,omitempty" dynamodbav:"-"`
-	// CreatedByUserEmail is the email address of the user who created the
-	// underlying execution, resolved from CreatedByUserID via the auth
-	// service. Populated only on synthesized execution rows (pending,
-	// notified, failed, expired, canceled) when a valid user ID is
-	// present; empty for scheduler-driven executions, legacy NULL-creator
-	// rows, and completed purchase_history rows. Excluded from DB
-	// persistence (resolved at read time). The UI renders this in the
-	// Approval Queue "Created by" column instead of the raw UUID.
-	CreatedByUserEmail string `json:"created_by_user_email,omitempty" dynamodbav:"-"`
-
-	// --- Revocation window fields (issue #290) ---
-	//
-	// RevocationWindowClosesAt is set when the purchase_history row is
-	// written: Timestamp + the provider-specific free-cancel window
-	// (Azure: 7 days). NULL for AWS EC2 (no direct cancel API) and GCP
-	// (no free-cancel window). Persisted in purchase_history.
-	RevocationWindowClosesAt *time.Time `json:"revocation_window_closes_at,omitempty" dynamodbav:"revocation_window_closes_at,omitempty"`
-	// RevokedAt is set by the revoke endpoint when the provider API
-	// confirmed the cancellation / refund. Persisted.
-	RevokedAt *time.Time `json:"revoked_at,omitempty" dynamodbav:"revoked_at,omitempty"`
-	// RevokedVia identifies how the revocation was completed: "direct-api"
-	// (provider returned 2xx) or "support-case" (AWS Support case filed).
-	// Persisted.
-	RevokedVia string `json:"revoked_via,omitempty" dynamodbav:"revoked_via,omitempty"`
-	// SupportCaseID is non-empty when RevokedVia == "support-case".
-	// Persisted.
-	SupportCaseID string `json:"support_case_id,omitempty" dynamodbav:"support_case_id,omitempty"`
-
-	// --- Refund-quote audit fields (issue #290 Finding #4, migration 000071) ---
-	//
-	// CalcRefundAmount is the amount Azure quoted at CalculateRefund time, captured
-	// for audit and TOCTOU-divergence detection in the two-step revoke confirm flow.
-	// NULL for revocations that predate this feature or where Azure returned no amount.
-	CalcRefundAmount *float64 `json:"calc_refund_amount,omitempty" dynamodbav:"calc_refund_amount,omitempty"`
-	// CalcRefundCurrency is the ISO-4217 currency code from the CalculateRefund quote
-	// (e.g. "USD"). NULL when CalcRefundAmount is NULL.
-	CalcRefundCurrency string `json:"calc_refund_currency,omitempty" dynamodbav:"calc_refund_currency,omitempty"`
-
+	// RedriveUnsafe is true when OpsHint is a permanent refusal from
+	// purchase.RetryRefusalReason (provider has no duplicate guard), not an
+	// operator-fixable misconfiguration. Computed at read time, like OpsHint.
+	RedriveUnsafe bool `json:"redrive_unsafe,omitempty" dynamodbav:"-"`
+	// CreatedBySystem propagates the execution's scheduler-created marker (#233).
+	CreatedBySystem bool `json:"created_by_system,omitempty" dynamodbav:"-"`
 	// --- Partial-success reconciliation (issue #290 Finding #6, migration 000072) ---
 	//
 	// RevocationInFlight is set to true immediately before the Azure Return API call
@@ -1330,26 +1334,6 @@ type PurchaseHistoryRecord struct {
 	// can detect and retry the MarkPurchaseRevoked write without re-calling Azure
 	// (preventing a duplicate-refund error).
 	RevocationInFlight bool `json:"revocation_in_flight,omitempty" dynamodbav:"revocation_in_flight,omitempty"`
-	// ReturnPostedAt is when the revoke handler recorded that Azure accepted
-	// the Return (MarkRevocationReturnPosted, migration 000148). Set means the
-	// refund was issued; unset proves nothing, because the stamp is best-effort
-	// (issue #1522). Read only by GetPurchaseHistoryByPurchaseID and never
-	// serialized, so history responses do not expose it.
-	ReturnPostedAt *time.Time `json:"-" dynamodbav:"-"`
-
-	// OfferingClass records whether this commitment is a 'standard' or
-	// 'convertible' RI. NULL on pre-migration rows. The Sell-on-Marketplace
-	// button renders only when this equals "standard" (issue #292).
-	// Persisted in purchase_history via migration 000087.
-	OfferingClass string `json:"offering_class,omitempty" dynamodbav:"offering_class,omitempty"`
-	// ListingID is the AWS ReservedInstancesListingId returned by
-	// CreateReservedInstancesListing. Empty when the RI has not been
-	// listed. Persisted in purchase_history via migration 000087.
-	ListingID string `json:"listing_id,omitempty" dynamodbav:"listing_id,omitempty"`
-	// ListingState mirrors the AWS marketplace listing state (see the
-	// ListingState* constants). Empty when not listed. Persisted in
-	// purchase_history via migration 000087.
-	ListingState string `json:"listing_state,omitempty" dynamodbav:"listing_state,omitempty"`
 }
 
 // Validate rejects a record SavePurchaseHistory cannot store without losing
@@ -1387,13 +1371,6 @@ type MarketplaceListingClaim struct {
 // MarketplaceListingSettlement is what the marketplace status poller records
 // when a listing reaches a terminal state on AWS (issue #27).
 type MarketplaceListingSettlement struct {
-	// PurchaseID and ListingID identify the row and the listing it must still
-	// record; a row that moved on to another listing is left alone.
-	PurchaseID string
-	ListingID  string
-	// State is the terminal AWS state: ListingStateClosed or
-	// ListingStateCancelled.
-	State string
 	// ListedAt is the listing's AWS CreateDate; nil keeps the stored value.
 	ListedAt *time.Time
 	// ProceedsReceived is the USD the seller receives for the sold instances,
@@ -1401,6 +1378,13 @@ type MarketplaceListingSettlement struct {
 	// could not be determined; the row is then polled again.
 	ProceedsReceived *float64
 	FeePaid          *float64
+	// PurchaseID and ListingID identify the row and the listing it must still
+	// record; a row that moved on to another listing is left alone.
+	PurchaseID string
+	ListingID  string
+	// State is the terminal AWS state: ListingStateClosed or
+	// ListingStateCancelled.
+	State string
 }
 
 // MarketplaceListingProceedsTotal is one RI's RI Marketplace sales summed over
@@ -1436,31 +1420,18 @@ const (
 
 // RIExchangeRecord represents a record in the ri_exchange_history table.
 type RIExchangeRecord struct {
-	ID                 string   `json:"id"`
-	AccountID          string   `json:"account_id"`
-	ExchangeID         string   `json:"exchange_id"`
-	Region             string   `json:"region"`
-	SourceRIIDs        []string `json:"source_ri_ids"`
-	SourceInstanceType string   `json:"source_instance_type"`
-	SourceCount        int      `json:"source_count"`
-	TargetOfferingID   string   `json:"target_offering_id"`
-	TargetInstanceType string   `json:"target_instance_type"`
-	TargetCount        int      `json:"target_count"`
-	PaymentDue         string   `json:"payment_due"`
-	Status             string   `json:"status"`
-	ApprovalToken      string   `json:"approval_token,omitempty"` // raw when passed to SaveRIExchangeRecord (hashed there); the hash when read back
-	Error              string   `json:"error,omitempty"`
-	Mode               string   `json:"mode"`
+	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
 	// CreatedByUserID is the UUID of the session user who submitted the exchange.
 	// Always nil today: every exchange is created by the scheduler or the ladder
 	// engine, and pkg/exchange.ExchangeRecord carries no creator (the 4-eyes
 	// policy for creator-less rows is requireDifferentRIExchangeApprover in
 	// internal/api, issue #518). Exposed to the frontend so the Approve button
 	// can apply the approve-own ownership check client-side.
-	CreatedByUserID *string `json:"created_by_user_id,omitempty"`
-	// ApprovedBy carries the email of the session user who approved the exchange
-	// via the dashboard Approve button (issue #300). Nil when no session resolves (pure email-link approval).
-	ApprovedBy *string `json:"approved_by,omitempty"`
+	CreatedByUserID *string    `json:"created_by_user_id,omitempty"`
+	CloudAccountID  *string    `json:"cloud_account_id,omitempty"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
 	// LadderRunID links this exchange record to the ladder run that created it
 	// (cudly-ladder engine). Nil for standalone ri_exchange_reshape task records.
 	// The database column ri_exchange_history.ladder_run_id was added in migration
@@ -1473,113 +1444,121 @@ type RIExchangeRecord struct {
 	// (the standalone-origin sweep would cancel it). This is acceptable: a
 	// deleted run has no owner to approve its pendings, so canceling them on the
 	// next standalone sweep is the safe outcome, not a leak.
-	LadderRunID    *string    `json:"ladder_run_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
-	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
-	CloudAccountID *string    `json:"cloud_account_id,omitempty"`
+	LadderRunID *string `json:"ladder_run_id,omitempty"`
+	// ApprovedBy carries the email of the session user who approved the exchange
+	// via the dashboard Approve button (issue #300). Nil when no session resolves (pure email-link approval).
+	ApprovedBy         *string  `json:"approved_by,omitempty"`
+	SourceInstanceType string   `json:"source_instance_type"`
+	TargetInstanceType string   `json:"target_instance_type"`
+	PaymentDue         string   `json:"payment_due"`
+	Status             string   `json:"status"`
+	ApprovalToken      string   `json:"approval_token,omitempty"` // raw when passed to SaveRIExchangeRecord (hashed there); the hash when read back
+	Error              string   `json:"error,omitempty"`
+	Mode               string   `json:"mode"`
+	AccountID          string   `json:"account_id"`
+	TargetOfferingID   string   `json:"target_offering_id"`
+	ExchangeID         string   `json:"exchange_id"`
+	ID                 string   `json:"id"`
+	Region             string   `json:"region"`
+	SourceRIIDs        []string `json:"source_ri_ids"`
+	SourceCount        int      `json:"source_count"`
+	TargetCount        int      `json:"target_count"`
 }
 
 // ConfigSetting represents a configuration setting for the defaults system.
 type ConfigSetting struct { //nolint:revive // exported: doc comment style intentional
-	Key         string    `json:"key"`
+	UpdatedAt   time.Time `json:"updated_at"`
 	Value       any       `json:"value"`
+	Key         string    `json:"key"`
 	Type        string    `json:"type"` // int, float, bool, string, json
 	Category    string    `json:"category"`
 	Description string    `json:"description"`
-	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // CloudAccount represents a single managed cloud account/subscription/project.
 type CloudAccount struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Description  string `json:"description,omitempty"`
-	ContactEmail string `json:"contact_email,omitempty"`
-	Enabled      bool   `json:"enabled"`
-	Provider     string `json:"provider"`
-	ExternalID   string `json:"external_id"`
-
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	AzureTenantID string    `json:"azure_tenant_id,omitempty"`
+	// Azure-specific
+	AzureSubscriptionID string `json:"azure_subscription_id,omitempty"`
+	CreatedBy           string `json:"created_by,omitempty"`
+	Provider            string `json:"provider"`
+	ExternalID          string `json:"external_id"`
 	// AWS-specific
 	AWSAuthMode             string `json:"aws_auth_mode,omitempty"`
 	AWSRoleARN              string `json:"aws_role_arn,omitempty"`
 	AWSExternalID           string `json:"aws_external_id,omitempty"`
 	AWSBastionID            string `json:"aws_bastion_id,omitempty"`
 	AWSWebIdentityTokenFile string `json:"aws_web_identity_token_file,omitempty"`
-	AWSIsOrgRoot            bool   `json:"aws_is_org_root,omitempty"`
-
-	// Azure-specific
-	AzureSubscriptionID string `json:"azure_subscription_id,omitempty"`
-	AzureTenantID       string `json:"azure_tenant_id,omitempty"`
-	AzureClientID       string `json:"azure_client_id,omitempty"`
-	AzureAuthMode       string `json:"azure_auth_mode,omitempty"`
-
-	// GCP-specific
-	GCPProjectID   string `json:"gcp_project_id,omitempty"`
-	GCPClientEmail string `json:"gcp_client_email,omitempty"`
-	GCPAuthMode    string `json:"gcp_auth_mode,omitempty"`
+	Name                    string `json:"name"`
+	AzureClientID           string `json:"azure_client_id,omitempty"`
+	ContactEmail            string `json:"contact_email,omitempty"`
+	ID                      string `json:"id"`
 	// GCPWIFAudience is the full Workload Identity Pool provider
 	// resource used as the STS audience when exchanging a CUDly
 	// KMS-signed JWT for a GCP access token. Only set for accounts
 	// using the secret-free workload_identity_federation path.
 	// Shape: //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
 	GCPWIFAudience string `json:"gcp_wif_audience,omitempty"`
-
-	// Derived (not stored in DB)
-	CredentialsConfigured bool   `json:"credentials_configured"`
-	BastionAccountName    string `json:"bastion_account_name,omitempty"`
-	IsSelf                bool   `json:"is_self,omitempty"`
+	// GCP-specific
+	GCPProjectID       string `json:"gcp_project_id,omitempty"`
+	GCPClientEmail     string `json:"gcp_client_email,omitempty"`
+	GCPAuthMode        string `json:"gcp_auth_mode,omitempty"`
+	AzureAuthMode      string `json:"azure_auth_mode,omitempty"`
+	Description        string `json:"description,omitempty"`
+	BastionAccountName string `json:"bastion_account_name,omitempty"`
 	// Notices are warnings the API derives for the response, such as the
 	// aws-cn Savings Plans limitation (issue #1194).
 	Notices []AccountNotice `json:"notices,omitempty"`
-
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	CreatedBy string    `json:"created_by,omitempty"`
+	IsSelf  bool            `json:"is_self,omitempty"`
+	// Derived (not stored in DB)
+	CredentialsConfigured bool `json:"credentials_configured"`
+	AWSIsOrgRoot          bool `json:"aws_is_org_root,omitempty"`
+	Enabled               bool `json:"enabled"`
 }
 
 // CloudAccountFilter for ListCloudAccounts queries.
 type CloudAccountFilter struct {
 	Provider  *string
 	Enabled   *bool
-	Search    string  // substring match on name or external_id
 	BastionID *string // return accounts whose aws_bastion_id = *BastionID
+	Search    string  // substring match on name or external_id
 }
 
 // AccountServiceOverride is a sparse per-account override on top of the global ServiceConfig.
 // Nil pointer fields inherit the global value.
 type AccountServiceOverride struct {
-	ID             string    `json:"id"`
-	AccountID      string    `json:"account_id"`
-	Provider       string    `json:"provider"`
-	Service        string    `json:"service"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	RampSchedule   *string   `json:"ramp_schedule,omitempty"`
 	Enabled        *bool     `json:"enabled,omitempty"`
 	Term           *int      `json:"term,omitempty"`
 	Payment        *string   `json:"payment,omitempty"`
 	Coverage       *float64  `json:"coverage,omitempty"`
-	RampSchedule   *string   `json:"ramp_schedule,omitempty"`
+	Provider       string    `json:"provider"`
+	ID             string    `json:"id"`
+	Service        string    `json:"service"`
+	AccountID      string    `json:"account_id"`
 	IncludeEngines []string  `json:"include_engines,omitempty"`
-	ExcludeEngines []string  `json:"exclude_engines,omitempty"`
-	IncludeRegions []string  `json:"include_regions,omitempty"`
 	ExcludeRegions []string  `json:"exclude_regions,omitempty"`
 	IncludeTypes   []string  `json:"include_types,omitempty"`
 	ExcludeTypes   []string  `json:"exclude_types,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	IncludeRegions []string  `json:"include_regions,omitempty"`
+	ExcludeEngines []string  `json:"exclude_engines,omitempty"`
 }
 
 // AccountRegistration represents a self-service registration request from a
 // target account owner. Submitted via POST /api/register during Terraform apply
 // of the federation IaC, then approved or rejected by a CUDly admin.
 type AccountRegistration struct {
-	ID                   string     `json:"id"`
-	ReferenceToken       string     `json:"-"`      // registrant's status credential; only submitRegistration returns it (#310)
-	Status               string     `json:"status"` // pending, approved, rejected
-	Provider             string     `json:"provider"`
-	ExternalID           string     `json:"external_id"`
-	AccountName          string     `json:"account_name"`
-	ContactEmail         string     `json:"contact_email"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+	CreatedAt            time.Time  `json:"created_at"`
+	CloudAccountID       *string    `json:"cloud_account_id,omitempty"`
+	ReviewedAt           *time.Time `json:"reviewed_at,omitempty"`
+	ReviewedBy           *string    `json:"reviewed_by,omitempty"`
+	AzureClientID        string     `json:"azure_client_id,omitempty"`
+	GCPProjectID         string     `json:"gcp_project_id,omitempty"`
 	Description          string     `json:"description,omitempty"`
 	SourceProvider       string     `json:"source_provider,omitempty"`
 	AWSRoleARN           string     `json:"aws_role_arn,omitempty"`
@@ -1587,21 +1566,21 @@ type AccountRegistration struct {
 	AWSExternalID        string     `json:"aws_external_id,omitempty"`
 	AzureSubscriptionID  string     `json:"azure_subscription_id,omitempty"`
 	AzureTenantID        string     `json:"azure_tenant_id,omitempty"`
-	AzureClientID        string     `json:"azure_client_id,omitempty"`
+	ID                   string     `json:"id"`
 	AzureAuthMode        string     `json:"azure_auth_mode,omitempty"`
-	GCPProjectID         string     `json:"gcp_project_id,omitempty"`
+	ContactEmail         string     `json:"contact_email"`
 	GCPClientEmail       string     `json:"gcp_client_email,omitempty"`
 	GCPAuthMode          string     `json:"gcp_auth_mode,omitempty"`
 	GCPWIFAudience       string     `json:"gcp_wif_audience,omitempty"` // Full WIF provider resource; only set for federated path.
 	RegCredentialType    string     `json:"reg_credential_type,omitempty"`
-	RegCredentialPayload string     `json:"-"`                         // never returned in API responses (encrypted at rest)
-	HasCredentials       bool       `json:"has_credentials,omitempty"` // derived: true when reg_credential_type is set
+	RegCredentialPayload string     `json:"-"` // never returned in API responses (encrypted at rest)
+	ReferenceToken       string     `json:"-"` // registrant's status credential; only submitRegistration returns it (#310)
 	RejectionReason      string     `json:"rejection_reason,omitempty"`
-	CloudAccountID       *string    `json:"cloud_account_id,omitempty"`
-	ReviewedBy           *string    `json:"reviewed_by,omitempty"`
-	ReviewedAt           *time.Time `json:"reviewed_at,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	AccountName          string     `json:"account_name"`
+	ExternalID           string     `json:"external_id"`
+	Provider             string     `json:"provider"`
+	Status               string     `json:"status"`                    // pending, approved, rejected
+	HasCredentials       bool       `json:"has_credentials,omitempty"` // derived: true when reg_credential_type is set
 }
 
 // AccountRegistrationFilter for ListAccountRegistrations queries.
@@ -1692,42 +1671,37 @@ type LadderConfigDB struct {
 // NULL means "not computed", not "$0"). Field order minimizes GC
 // pointer-scan range: explicit pointer fields come before scalars.
 type LadderRunDB struct {
-	// Nullable monetary snapshot: nil means "not computed", never $0.
-	BaselineUSDHr *float64 `json:"baseline_usd_hr,omitempty"`
-	TargetUSDHr   *float64 `json:"target_usd_hr,omitempty"`
-	ExistingUSDHr *float64 `json:"existing_usd_hr,omitempty"`
-	GapUSDHr      *float64 `json:"gap_usd_hr,omitempty"`
-
-	// Nullable FK and optional text fields (all pointer types).
-	ConfigID               *string    `json:"config_id,omitempty"`
+	// Required timestamps.
+	StartedAt              time.Time  `json:"started_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+	CreatedAt              time.Time  `json:"created_at"`
+	FireAt                 *time.Time `json:"fire_at,omitempty"`
+	Cadence                *string    `json:"cadence,omitempty"`
 	CompletedAt            *time.Time `json:"completed_at,omitempty"`
 	ApprovalTokenHash      *string    `json:"approval_token_hash,omitempty"`
 	ApprovalTokenExpiresAt *time.Time `json:"approval_token_expires_at,omitempty"`
 	ApprovedBy             *string    `json:"approved_by,omitempty"`
 	CancelledBy            *string    `json:"cancelled_by,omitempty"`
-	FireAt                 *time.Time `json:"fire_at,omitempty"`
+	// Nullable monetary snapshot: nil means "not computed", never $0.
+	BaselineUSDHr *float64 `json:"baseline_usd_hr,omitempty"`
 	// Mode and Cadence are nullable in the DB (populated from LadderConfigDB
 	// at run creation time; nil only for legacy / partially-failed rows).
-	Mode    *string `json:"mode,omitempty"`
-	Cadence *string `json:"cadence,omitempty"`
-
-	// Plan JSON blob (JSONB, NOT NULL DEFAULT '{}').
-	Plan json.RawMessage `json:"plan"`
-
-	// Non-nullable accumulator totals (initialised to 0, not measurements;
-	// zero is a meaningful value for these counters unlike the monetary snapshot).
-	TotalHourlyCommit float64 `json:"total_hourly_commit"`
-	TotalUpfrontCost  float64 `json:"total_upfront_cost"`
-	EstimatedSavings  float64 `json:"estimated_savings"`
-
+	Mode *string `json:"mode,omitempty"`
+	// Nullable FK and optional text fields (all pointer types).
+	ConfigID      *string  `json:"config_id,omitempty"`
+	TargetUSDHr   *float64 `json:"target_usd_hr,omitempty"`
+	ExistingUSDHr *float64 `json:"existing_usd_hr,omitempty"`
+	GapUSDHr      *float64 `json:"gap_usd_hr,omitempty"`
 	// Required string / enum fields.
 	ID     string           `json:"id"`
 	Status ladder.RunStatus `json:"status"`
-
-	// Required timestamps.
-	StartedAt time.Time `json:"started_at"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	// Plan JSON blob (JSONB, NOT NULL DEFAULT '{}').
+	Plan             json.RawMessage `json:"plan"`
+	EstimatedSavings float64         `json:"estimated_savings"`
+	TotalUpfrontCost float64         `json:"total_upfront_cost"`
+	// Non-nullable accumulator totals (initialised to 0, not measurements;
+	// zero is a meaningful value for these counters unlike the monetary snapshot).
+	TotalHourlyCommit float64 `json:"total_hourly_commit"`
 }
 
 // LadderTrancheDB mirrors the ladder_tranches table (migration 000081).
@@ -1735,28 +1709,26 @@ type LadderRunDB struct {
 // audit rows only in PR-2 (no firing sweep wired yet). Field order
 // minimizes GC pointer-scan range.
 type LadderTrancheDB struct {
-	// Nullable FK pointers.
-	ConfigID    *string `json:"config_id,omitempty"`
-	RunID       *string `json:"run_id,omitempty"`
-	ExecutionID *string `json:"execution_id,omitempty"` // references purchase_executions.execution_id
+	ScheduledDate time.Time `json:"scheduled_date"`
+	CreatedAt     time.Time `json:"created_at"`
+	RunID         *string   `json:"run_id,omitempty"`
+	ExecutionID   *string   `json:"execution_id,omitempty"` // references purchase_executions.execution_id
 	// SettledAt is stamped by TransitionLadderTrancheTx when the tranche
 	// becomes completed; a CHECK requires it on every completed row.
 	SettledAt *time.Time `json:"settled_at,omitempty"`
 	// Nil basis preserves unproven history; native rates are lossless rational text.
 	AmountBasis    *LadderAmountBasis `json:"amount_basis,omitempty"`
 	CommitmentRate *string            `json:"commitment_rate,omitempty"`
-
+	// Nullable FK pointers.
+	ConfigID *string `json:"config_id,omitempty"`
 	// Required fields.
 	ID            string               `json:"id"`
-	LayerType     ladder.LayerType     `json:"layer_type"`
-	Term          ladder.Term          `json:"term"`
 	PaymentOption ladder.PaymentOption `json:"payment_option"`
 	Status        ladder.TrancheStatus `json:"status"`
-
+	Term          ladder.Term          `json:"term"`
+	LayerType     ladder.LayerType     `json:"layer_type"`
 	// Monetary and timing.
-	AmountUSDHr   float64   `json:"amount_usd_hr"`
-	ScheduledDate time.Time `json:"scheduled_date"`
-	CreatedAt     time.Time `json:"created_at"`
+	AmountUSDHr float64 `json:"amount_usd_hr"`
 }
 
 // IsUSDCommitmentCurrency is the one rule for "this CommitmentCurrency is
