@@ -36,6 +36,7 @@ func adminInventoryReq(t *testing.T, ctx context.Context) (*MockAuthService, *ev
 // returns a non-nil empty slice — the frontend renders `.empty` on
 // length==0, but a nil response would force a null check.
 func TestHandler_listActiveCommitments_Empty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -63,6 +64,7 @@ func TestHandler_listActiveCommitments_Empty(t *testing.T) {
 // guards the predicate's behavior in the inventory-handler context so a
 // future refactor (e.g. moving to days-from-now) trips here too.
 func TestHandler_listActiveCommitments_FiltersExpired(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -143,6 +145,7 @@ func TestHandler_listActiveCommitments_FiltersExpired(t *testing.T) {
 // "acc-1" is a known cloud_accounts UUID (no external id in this fixture), so
 // it is matched on cloud_account_id only (issue #701/#498/#866).
 func TestHandler_listActiveCommitments_AccountFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -187,6 +190,7 @@ func TestHandler_listActiveCommitments_AccountFilter(t *testing.T) {
 // query param filters results in-memory, returning only commitments whose
 // Provider field matches the requested value (issue #866).
 func TestHandler_listActiveCommitments_ProviderFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -237,6 +241,7 @@ func TestHandler_listActiveCommitments_ProviderFilter(t *testing.T) {
 // surfacing the imminent end_date on top keeps the UI's order intuitive
 // without forcing the frontend to re-sort.
 func TestHandler_listActiveCommitments_SortedByExpiry(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -314,6 +319,7 @@ func splitPurchaseID(id string) string {
 // the inventory handler now share this predicate — drift here would
 // cause the two views to disagree about which commitments are active.
 func TestHandler_isActiveCommitment_Predicate(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	p := config.PurchaseHistoryRecord{UpfrontCost: new(float64),
 		Timestamp: now.AddDate(-1, 0, 0),
@@ -342,6 +348,7 @@ func TestHandler_isActiveCommitment_Predicate(t *testing.T) {
 // sums are correctly attributed per service and the overall coverage% is
 // computed across all services in the provider.
 func TestBuildCoverageBreakdown_SingleProvider(t *testing.T) {
+	t.Parallel()
 	covered := map[string]*float64{
 		"aws:ec2": new(float64(200.0)),
 		"aws:rds": new(float64(100.0)),
@@ -383,6 +390,7 @@ func TestBuildCoverageBreakdown_SingleProvider(t *testing.T) {
 // data in either map gets Services=nil and OverallCoveragePct=nil — not
 // a zero — per feedback_nullable_not_zero.
 func TestBuildCoverageBreakdown_EmptyProvider(t *testing.T) {
+	t.Parallel()
 	covered := map[string]*float64{"aws:ec2": new(float64(100.0))}
 	onDemand := map[string]float64{"aws:ec2": 100.0}
 
@@ -401,12 +409,14 @@ func TestBuildCoverageBreakdown_EmptyProvider(t *testing.T) {
 // TestBuildCoverageBreakdown_ZeroBothSides verifies that a service with
 // both covered=0 and on_demand=0 produces a nil CoveragePct, not 0.
 func TestBuildCoverageBreakdown_ZeroBothSides(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, coveragePct(new(float64), 0), "no usage: coverage% must be nil, not 0")
 }
 
 // TestBuildCoverageBreakdown_OnlyOnDemand verifies that a provider with
 // recommendations but no commitments shows 0% coverage (not nil).
 func TestBuildCoverageBreakdown_OnlyOnDemand(t *testing.T) {
+	t.Parallel()
 	covered := map[string]*float64{}
 	onDemand := map[string]float64{"azure:compute": 500.0}
 
@@ -429,6 +439,7 @@ func TestBuildCoverageBreakdown_OnlyOnDemand(t *testing.T) {
 // TestHandler_getCoverageBreakdown_Integration exercises the full handler
 // path including auth and purchase-history filtering.
 func TestHandler_getCoverageBreakdown_Integration(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockScheduler := new(MockScheduler)
@@ -493,6 +504,7 @@ func TestHandler_getCoverageBreakdown_Integration(t *testing.T) {
 //   - The aws provider section reflects only the acc-1+aws rows on both
 //     sides (covered=200, on-demand=300 → 40% coverage).
 func TestHandler_getCoverageBreakdown_ProviderAndAccountChip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockScheduler := new(MockScheduler)
@@ -618,6 +630,7 @@ func TestHandler_getCoverageBreakdown_ProviderAndAccountChip(t *testing.T) {
 // OverallCoveragePct). Post-fix both surfaces agree that Azure has an active,
 // covered commitment.
 func TestHandler_getCoverageBreakdown_AzureAllUpfrontConsistency(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockScheduler := new(MockScheduler)
@@ -716,6 +729,7 @@ func TestHandler_getCoverageBreakdown_AzureAllUpfrontConsistency(t *testing.T) {
 // no cap. Pre-fix the handler took the capped path and returned an empty list;
 // post-fix the old commitment must be present.
 func TestHandler_listActiveCommitments_NoTruncationBeyond1000(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })

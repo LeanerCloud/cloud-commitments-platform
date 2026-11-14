@@ -12,6 +12,7 @@ import (
 )
 
 func TestHandler_listGroups_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -46,6 +47,7 @@ func TestHandler_listGroups_Success(t *testing.T) {
 }
 
 func TestHandler_createGroup_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -79,6 +81,7 @@ func TestHandler_createGroup_Success(t *testing.T) {
 }
 
 func TestHandler_getGroup_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -111,6 +114,7 @@ func TestHandler_getGroup_Success(t *testing.T) {
 }
 
 func TestHandler_updateGroup_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -144,6 +148,7 @@ func TestHandler_updateGroup_Success(t *testing.T) {
 }
 
 func TestHandler_deleteGroup_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -172,6 +177,7 @@ func TestHandler_deleteGroup_Success(t *testing.T) {
 	assert.Equal(t, "group deleted", resp["status"])
 }
 func TestHandler_createGroup_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -194,6 +200,7 @@ func TestHandler_createGroup_InvalidJSON(t *testing.T) {
 }
 
 func TestHandler_updateGroup_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -216,6 +223,7 @@ func TestHandler_updateGroup_InvalidJSON(t *testing.T) {
 }
 
 func TestHandler_deleteGroup_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

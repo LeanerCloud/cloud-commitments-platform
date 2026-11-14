@@ -28,6 +28,7 @@ func (s *amendmentTestStore) AmendLadderTranche(_ context.Context, id, accountID
 }
 
 func TestLadderAmendmentScopeAndActor(t *testing.T) {
+	t.Parallel()
 	for _, accountID := range []string{scopedInAccount, scopedOutAccount} {
 		h, original := ladderScopedHandler(t)
 		store := &amendmentTestStore{MockConfigStore: original, accountID: accountID}
@@ -46,6 +47,7 @@ func TestLadderAmendmentScopeAndActor(t *testing.T) {
 }
 
 func TestLadderAmendmentStrictPayload(t *testing.T) {
+	t.Parallel()
 	for _, body := range []string{
 		`{"scheduled_date":"2030-01-01T00:00:00Z","amount_usd_hr":"1"}`,
 		`{"expected_revision":0,"scheduled_date":"2030-01-01T00:00:00Z","amount_usd_hr":"1","actor":"spoof"}`,
@@ -65,6 +67,7 @@ func TestLadderAmendmentStrictPayload(t *testing.T) {
 }
 
 func TestLadderAmendmentStatusErrors(t *testing.T) {
+	t.Parallel()
 	for _, example := range []struct {
 		err  error
 		code int

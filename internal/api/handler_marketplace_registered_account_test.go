@@ -45,6 +45,7 @@ func registeredLookupHandler(transport aws.HTTPClient, accounts []config.CloudAc
 }
 
 func TestLoadMarketplaceAWSConfig_NoCloudAccountResolvesRegisteredAccount(t *testing.T) {
+	t.Parallel()
 	empty := ""
 	for name, id := range map[string]*string{"nil": nil, "empty": &empty} {
 		t.Run(name, func(t *testing.T) {
@@ -65,6 +66,7 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountResolvesRegisteredAccount(t *tes
 // A registered role_arn account assumes its own role, so the lookup goes
 // through the same resolver as a row with a cloud account.
 func TestLoadMarketplaceAWSConfig_NoCloudAccountRegisteredRoleAccountAssumesRole(t *testing.T) {
+	t.Parallel()
 	h := registeredLookupHandler(assumeRoleSTS{200, marketplaceAssumeRoleOKXML}, []config.CloudAccount{*roleAccount()}, nil)
 
 	cfg, err := h.loadMarketplaceAWSConfig(context.Background(), noCloudAccountRow(nil, marketplaceMemberAccount))
@@ -76,6 +78,7 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountRegisteredRoleAccountAssumesRole
 // A registered role_arn account without a role ARN keeps the resolver's
 // host-only rule: a non-host account is refused, never signed as the host.
 func TestLoadMarketplaceAWSConfig_NoCloudAccountRegisteredRoleWithoutARNRefused(t *testing.T) {
+	t.Parallel()
 	account := config.CloudAccount{ID: "acct-member", Provider: "aws", ExternalID: marketplaceMemberAccount, AWSAuthMode: "role_arn"}
 	h := registeredLookupHandler(hostSTSTransport{}, []config.CloudAccount{account}, nil)
 
@@ -92,6 +95,7 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountRegisteredRoleWithoutARNRefused(
 // host's credentials), the account is still refused, but the tenant-visible
 // message must not tell the tenant to set aws_role_arn.
 func TestLoadMarketplaceAWSConfig_RegisteredRoleWithoutARNHostCheckFailure(t *testing.T) {
+	t.Parallel()
 	account := config.CloudAccount{ID: "acct-host", Provider: "aws", ExternalID: marketplaceHostAccount, AWSAuthMode: "role_arn"}
 	h := registeredLookupHandler(hostRejectedSTS, []config.CloudAccount{account}, nil)
 
@@ -108,6 +112,7 @@ func TestLoadMarketplaceAWSConfig_RegisteredRoleWithoutARNHostCheckFailure(t *te
 // An id that matches no single registered AWS account keeps #261's rule: the
 // host's credentials only for the host account, otherwise a 400.
 func TestLoadMarketplaceAWSConfig_NoCloudAccountUnresolvedFallsBackToHostCheck(t *testing.T) {
+	t.Parallel()
 	member := registeredMember()
 	twin := member
 	twin.ID = "acct-twin"
@@ -146,6 +151,7 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountUnresolvedFallsBackToHostCheck(t
 
 // A failed account lookup is a server error, not a fallback to the host.
 func TestLoadMarketplaceAWSConfig_NoCloudAccountLookupErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	h := registeredLookupHandler(countingSTS{&calls, hostSTSTransport{}}, nil, errors.New("db down"))
 
@@ -162,6 +168,7 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountLookupErrorFailsClosed(t *testin
 // End to end through both handlers: a no-cloud-account row owned by a
 // registered member account is listed and canceled with that account's keys.
 func TestMarketplaceHandlers_NoCloudAccountRegisteredRow(t *testing.T) {
+	t.Parallel()
 	run := map[string]func(*Handler) (any, error){
 		"list": func(h *Handler) (any, error) {
 			return h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)

@@ -18,6 +18,7 @@ import (
 // applied to every group: tenant B's groups and another user's ambient
 // execution must not reach a user scoped to tenant A.
 func TestGetHistory_SummaryComesFromScopedAggregate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -75,6 +76,7 @@ func TestGetHistory_SummaryComesFromScopedAggregate(t *testing.T) {
 // TestGetHistory_SummaryFilterMatchesRowFetchFilter fails if the handler ever
 // hands the aggregate a different purchase_history filter than the row fetch.
 func TestGetHistory_SummaryFilterMatchesRowFetchFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -109,6 +111,7 @@ func TestGetHistory_SummaryFilterMatchesRowFetchFilter(t *testing.T) {
 // usable when the aggregate errors: the summary covers the listed rows and
 // SummaryComplete says so.
 func TestGetHistory_SummaryFallsBackToPageWhenAggregateFails(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -134,6 +137,7 @@ func TestGetHistory_SummaryFallsBackToPageWhenAggregateFails(t *testing.T) {
 // Lambda the stale-approval sweep runs synchronously, and if it ran before the
 // aggregate the cards would count as expired a row the list shows as pending.
 func TestGetHistory_LambdaSweepRunsAfterSummaryAggregate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const staleID = "stale-exec"
 	stale := config.PurchaseExecution{
@@ -166,6 +170,7 @@ func TestGetHistory_LambdaSweepRunsAfterSummaryAggregate(t *testing.T) {
 // status the History view lists may add dollars to the totals. If one ever
 // does, the aggregate must start summing execution dollars too.
 func TestAddHistoryRowToSummary_ExecutionRowsCarryNoDollars(t *testing.T) {
+	t.Parallel()
 	for _, status := range historyExecutionStatuses() {
 		exec := config.PurchaseExecution{
 			Status: status, Error: "x", TotalUpfrontCost: 100, EstimatedSavings: 10,
@@ -185,6 +190,7 @@ func TestAddHistoryRowToSummary_ExecutionRowsCarryNoDollars(t *testing.T) {
 // rows equals adding the n rows one at a time, including an unknown upfront
 // cost making the total unknown.
 func TestAddHistoryRowToSummary_GroupMatchesRows(t *testing.T) {
+	t.Parallel()
 	a, b := 10.5, 4.25
 	rows := []config.PurchaseHistoryRecord{
 		{Status: "completed", UpfrontCost: &a, EstimatedSavings: 1},

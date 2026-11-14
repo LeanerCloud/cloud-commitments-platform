@@ -18,6 +18,7 @@ import (
 // set out-of-band; a new record stores the whole body).
 // The older tests save through mock.Anything or check one field at a time.
 func TestUpdateServiceConfig_StoresEveryOverlayFieldFromTheBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })

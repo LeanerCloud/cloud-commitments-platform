@@ -55,6 +55,7 @@ func requireServerError(t *testing.T, err error) {
 }
 
 func TestHandler_getUser_MissingUserIs404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth, req := notFoundAdminReq(t, ctx, "/api/users/"+notFoundTestID)
 	mockAuth.On("GetUser", ctx, notFoundTestID).
@@ -67,6 +68,7 @@ func TestHandler_getUser_MissingUserIs404(t *testing.T) {
 }
 
 func TestHandler_getUser_StoreFailureStays500(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth, req := notFoundAdminReq(t, ctx, "/api/users/"+notFoundTestID)
 	mockAuth.On("GetUser", ctx, notFoundTestID).Return(nil, errors.New("connection refused"))
@@ -78,6 +80,7 @@ func TestHandler_getUser_StoreFailureStays500(t *testing.T) {
 }
 
 func TestHandler_getGroup_MissingGroupIs404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for name, storeErr := range map[string]error{
 		"no rows":   fmt.Errorf("%w: %w", auth.ErrGroupNotFound, pgx.ErrNoRows),
@@ -96,6 +99,7 @@ func TestHandler_getGroup_MissingGroupIs404(t *testing.T) {
 }
 
 func TestHandler_getGroup_StoreFailureStays500(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth, req := notFoundAdminReq(t, ctx, "/api/groups/"+notFoundTestID)
 	mockAuth.On("GetGroupAPI", ctx, notFoundTestID).Return(nil, errors.New("connection refused"))
@@ -109,6 +113,7 @@ func TestHandler_getGroup_StoreFailureStays500(t *testing.T) {
 // The not-owned case gets the same 404 and message as a missing key, so a
 // caller cannot tell another user's key ID from one that does not exist.
 func TestHandler_APIKeyDeleteRevoke_MissingOrNotOwnedIs404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	serviceErrs := map[string]func(action string) error{
 		"missing": func(string) error { return auth.ErrAPIKeyNotFound },
@@ -139,6 +144,7 @@ func TestHandler_APIKeyDeleteRevoke_MissingOrNotOwnedIs404(t *testing.T) {
 }
 
 func TestHandler_APIKeyDeleteRevoke_StoreFailureStays500(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	storeErr := errors.New("failed to get API key: connection refused")
 

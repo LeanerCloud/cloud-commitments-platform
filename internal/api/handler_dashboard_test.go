@@ -44,6 +44,7 @@ func adminDashboardReq(t *testing.T, ctx context.Context) (*MockAuthService, *ev
 }
 
 func TestHandler_getDashboardSummary(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
 	t.Cleanup(func() { mockScheduler.AssertExpectations(t) })
@@ -111,6 +112,7 @@ func (s *dashboardOverrideStore) GetAccountServiceOverride(_ context.Context, ac
 // "potential savings" so the dashboard reflects the user's intended
 // commitment, not the un-overridden total.
 func TestHandler_getDashboardSummary_PerAccountCoverageScalesSavings(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
 	t.Cleanup(func() { mockScheduler.AssertExpectations(t) })
@@ -162,6 +164,7 @@ func float64Ptr(f float64) *float64 { return &f }
 // that from a configured 0, so only a per-account override's pointer coverage
 // (issue #523) is honored as a configured 0%.
 func TestHandler_getDashboardSummary_ZeroCoverageInServiceConfigFallsThroughToFull(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
 	t.Cleanup(func() { mockScheduler.AssertExpectations(t) })
@@ -204,6 +207,7 @@ func TestHandler_getDashboardSummary_ZeroCoverageInServiceConfigFallsThroughToFu
 // summarizeRecommendationsWithCoverage table-driven unit tests cover the
 // scaling math in isolation from the handler / store / auth dependencies.
 func TestSummarizeRecommendationsWithCoverage(t *testing.T) {
+	t.Parallel()
 	acctA := "acct-A"
 	acctB := "acct-B"
 	rec := func(account string, savings float64) config.RecommendationRecord {
@@ -294,6 +298,7 @@ func TestSummarizeRecommendationsWithCoverage(t *testing.T) {
 // A bug in the scaling formula (e.g., double-applying coverage, off-by-factor-100)
 // would be caught here.
 func TestSummarizeRecommendationsWithCoverage_100PctContract(t *testing.T) {
+	t.Parallel()
 	acctA := "acct-A"
 	acctB := "acct-B"
 	keyA := config.AccountConfigKey(acctA, "aws", "ec2")
@@ -338,6 +343,7 @@ func TestSummarizeRecommendationsWithCoverage_100PctContract(t *testing.T) {
 // service with recommendations but no purchases to falsely report non-zero
 // CurrentSavings (issue #1031).
 func TestSummarizeRecommendationsWithCoverage_DoesNotSetCurrentSavings(t *testing.T) {
+	t.Parallel()
 	acctA := "acct-A"
 	keyEC2 := config.AccountConfigKey(acctA, "aws", "ec2")
 	keyRDS := config.AccountConfigKey(acctA, "aws", "rds")
@@ -377,6 +383,7 @@ func TestSummarizeRecommendationsWithCoverage_DoesNotSetCurrentSavings(t *testin
 // PotentialSavings = 600 (100+200+300) for cell-1 plus 50 for cell-2 = 650,
 // whereas the correct per-cell MAX is 300 + 50 = 350.
 func TestSummarizeRecommendationsWithCoverage_DedupesVariantsPerCell(t *testing.T) {
+	t.Parallel()
 	acct := "acct-A"
 	// cellVariant builds one term/payment variant of the SAME physical-resource
 	// cell: identical provider/account/service/region/resource_type/engine, only
@@ -420,6 +427,7 @@ func TestSummarizeRecommendationsWithCoverage_DedupesVariantsPerCell(t *testing.
 }
 
 func TestHandler_getUpcomingPurchases(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -504,6 +512,7 @@ func TestHandler_getUpcomingPurchases(t *testing.T) {
 // widget defaulted to "no owner known" and either showed Cancel for
 // everyone (when ungated) or for nobody (when gated) -- both wrong.
 func TestHandler_getUpcomingPurchases_PropagatesCreatedByUserID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -561,6 +570,7 @@ func TestHandler_getUpcomingPurchases_PropagatesCreatedByUserID(t *testing.T) {
 // "execution row with deleted parent plan" cleanup-gap edge case: rather
 // than crash, the widget hides the orphan. Cleanup is a separate concern.
 func TestHandler_getUpcomingPurchases_OrphanExecutionSkipped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -600,6 +610,7 @@ func (m *mockStoreWithPlanAccounts) GetPlanAccounts(_ context.Context, planID st
 // accounts include "Production". Plan B is attributed to "Staging" and must
 // be filtered out.
 func TestHandler_getUpcomingPurchases_ScopedUser(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -670,6 +681,7 @@ func TestHandler_getUpcomingPurchases_ScopedUser(t *testing.T) {
 // that a plan with no associated accounts is hidden from scoped users — the
 // safe default when we can't attribute the plan to a specific account.
 func TestHandler_getUpcomingPurchases_ScopedUser_SkipsUnattributed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -710,6 +722,7 @@ func TestHandler_getUpcomingPurchases_ScopedUser_SkipsUnattributed(t *testing.T)
 }
 
 func TestHandler_getPublicInfo(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("with auth service and admin exists", func(t *testing.T) {
@@ -818,6 +831,7 @@ func TestHandler_getPublicInfo(t *testing.T) {
 }
 
 func TestHandler_getDeploymentInfo(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("returns ARN-derived URL and account ID", func(t *testing.T) {
@@ -865,6 +879,7 @@ func TestHandler_getDeploymentInfo(t *testing.T) {
 }
 
 func TestHandler_calculateCommitmentMetrics(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("no purchase history", func(t *testing.T) {
@@ -1096,6 +1111,7 @@ func TestHandler_calculateCommitmentMetrics(t *testing.T) {
 // active set with no cap. Pre-fix the handler took the capped path and
 // reported 0 active commitments; post-fix it must report the old commitment.
 func TestHandler_calculateCommitmentMetrics_NoTruncationBeyond1000(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Now()
 
@@ -1150,6 +1166,7 @@ func TestHandler_calculateCommitmentMetrics_NoTruncationBeyond1000(t *testing.T)
 // TestAggregateActiveCommitmentsPerService covers the core primitive used by
 // both the KPI total and the per-service chart CurrentSavings.
 func TestAggregateActiveCommitmentsPerService(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	active := func(service string, savings float64) config.PurchaseHistoryRecord {
 		return config.PurchaseHistoryRecord{
@@ -1204,6 +1221,7 @@ func TestAggregateActiveCommitmentsPerService(t *testing.T) {
 // getDashboardSummary populates ServiceSavings.CurrentSavings from active
 // purchase history so the Home chart's green bars render real data.
 func TestHandler_getDashboardSummary_CurrentSavingsPopulated(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Now()
 
@@ -1268,6 +1286,7 @@ func TestHandler_getDashboardSummary_CurrentSavingsPopulated(t *testing.T) {
 // TestHandler_getDashboardSummary_CurrentSavingsJSON verifies the wire shape:
 // current_savings must be present in the JSON-encoded response.
 func TestHandler_getDashboardSummary_CurrentSavingsJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Now()
 
@@ -1321,6 +1340,7 @@ func TestHandler_getDashboardSummary_CurrentSavingsJSON(t *testing.T) {
 // CurrentSavings for services that appear in the purchase-history result, so
 // services with no purchases retained the wrong non-zero value.
 func TestHandler_getDashboardSummary_CurrentSavingsZeroWhenNoCommitments(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// No purchases at all — represents a new account that has recommendations
@@ -1365,6 +1385,7 @@ func TestHandler_getDashboardSummary_CurrentSavingsZeroWhenNoCommitments(t *test
 }
 
 func TestHandler_calculateCurrentCoverage(t *testing.T) {
+	t.Parallel()
 	handler := &Handler{}
 
 	t.Run("no potential savings with commitments returns 100%", func(t *testing.T) {
@@ -1399,6 +1420,7 @@ func TestHandler_calculateCurrentCoverage(t *testing.T) {
 // 200 with active_commitments 0, committed_monthly 0, ytd_savings 0 and
 // current_coverage 100: a fabricated "fully covered" dashboard.
 func TestHandleRequest_DashboardSummary_PurchaseHistoryErrorIs500(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
 	t.Cleanup(func() { mockScheduler.AssertExpectations(t) })
@@ -1436,6 +1458,7 @@ func TestHandleRequest_DashboardSummary_PurchaseHistoryErrorIs500(t *testing.T) 
 // of the 0/0 coverage case (issue #72): current_coverage is an explicit null,
 // which the dashboard renders as "--", never 100.
 func TestGetDashboardSummary_NothingToMeasure_CoverageIsNull(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockScheduler := new(MockScheduler)
 	t.Cleanup(func() { mockScheduler.AssertExpectations(t) })
@@ -1459,6 +1482,7 @@ func TestGetDashboardSummary_NothingToMeasure_CoverageIsNull(t *testing.T) {
 }
 
 func TestHandler_getDashboardSummary_Errors(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("scheduler error", func(t *testing.T) {
@@ -1564,6 +1588,7 @@ func TestHandler_getDashboardSummary_Errors(t *testing.T) {
 // fetchCommitmentPurchases short-circuits on the non-nil-but-empty sentinel
 // and GetActivePurchaseHistory is never called.
 func TestGetDashboardSummary_ScopedUser_ExplicitOutOfScopeAccountIsIgnored(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const scopedUserID = "viewer-1"
 	const acctAUUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
@@ -1620,6 +1645,7 @@ func TestGetDashboardSummary_ScopedUser_ExplicitOutOfScopeAccountIsIgnored(t *te
 // explicitly requests an account it DOES have access to must still see that
 // account's commitment KPIs, not get zeroed out by the new intersection.
 func TestGetDashboardSummary_ScopedUser_ExplicitInScopeAccountStillWorks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const scopedUserID = "viewer-1"
 	const acctAUUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
@@ -1698,6 +1724,7 @@ func TestGetDashboardSummary_ScopedUser_ExplicitInScopeAccountStillWorks(t *test
 // hit under its real provider, so GetActivePurchaseHistory is still called
 // with that id and the KPIs are NOT zeroed.
 func TestGetDashboardSummary_ScopedUser_LegacyExternalAccountIDStillMatchesAllowedAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const scopedUserID = "viewer-1"
 	const acctAUUID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
@@ -1759,6 +1786,7 @@ func TestGetDashboardSummary_ScopedUser_LegacyExternalAccountIDStillMatchesAllow
 }
 
 func TestHandler_getUpcomingPurchases_Errors(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("get pending executions error", func(t *testing.T) {
@@ -1809,6 +1837,7 @@ func TestHandler_getUpcomingPurchases_Errors(t *testing.T) {
 // gap in February would score 0 months, and a year-start-to-now gap spanning
 // months of varying length could be off by 1.
 func TestElapsedWholeMonths(t *testing.T) {
+	t.Parallel()
 	t.Run("same instant returns 0", func(t *testing.T) {
 		now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
 		assert.Equal(t, 0, elapsedWholeMonths(now, now))
@@ -1857,6 +1886,7 @@ func TestElapsedWholeMonths(t *testing.T) {
 // Regression for 01-L2: the previous recs[:0] form reused the input's backing
 // array, so any element written during filtering overwrote the original.
 func TestFilterDashboardRecommendations_FreshSlice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// Seed: two accounts A (allowed) and B (blocked). After filtering, only
@@ -1915,6 +1945,7 @@ func TestFilterDashboardRecommendations_FreshSlice(t *testing.T) {
 // used an unordered map range + break, which could return a different service on
 // each call when the plan has more than one entry.
 func TestFirstServiceConfig(t *testing.T) {
+	t.Parallel()
 	t.Run("empty services returns zero value", func(t *testing.T) {
 		plan := &config.PurchasePlan{Services: map[string]config.ServiceConfig{}}
 		got := firstServiceConfig(plan)
@@ -1954,6 +1985,7 @@ func TestFirstServiceConfig(t *testing.T) {
 // regardless of whether its term window is still open. Pre-fix, isActiveCommitment
 // did not check RevokedAt, so revoked rows slipped through into KPI totals.
 func TestIsActiveCommitment_RevokedReturnsFalse(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	revokedAt := now.AddDate(0, -1, 0) // revoked 1 month ago
 	p := config.PurchaseHistoryRecord{
@@ -1973,6 +2005,7 @@ func TestIsActiveCommitment_RevokedReturnsFalse(t *testing.T) {
 // GetActivePurchaseHistory (e.g., from a DB snapshot before the SQL fix was
 // deployed) must not contribute to activeCommitments or committedMonthly.
 func TestHandler_calculateCommitmentMetrics_RevokedExcluded(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Now()
 	revokedAt := now.AddDate(0, -1, 0)
@@ -2018,6 +2051,7 @@ func TestHandler_calculateCommitmentMetrics_RevokedExcluded(t *testing.T) {
 // restricted to that provider only. Pre-fix, calculateCommitmentMetrics ignored
 // the provider param, so aws-only KPIs mixed in azure/gcp purchases.
 func TestHandler_calculateCommitmentMetrics_ProviderFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Now()
 	purchases := []config.PurchaseHistoryRecord{
@@ -2053,6 +2087,7 @@ func TestHandler_calculateCommitmentMetrics_ProviderFilter(t *testing.T) {
 // execution carries no recommendations must be flagged so the dashboard does
 // not present its $0 savings as data (platform#609).
 func TestHandleRequest_DashboardUpcomingFlagsStepWithoutRecommendations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -2110,6 +2145,7 @@ func TestHandleRequest_DashboardUpcomingFlagsStepWithoutRecommendations(t *testi
 // override is unset, a zero override beats a global 0, a 50 override beats a
 // global 0, and an account with a configured 80 scales to 80.
 func TestHandler_getDashboardSummary_ZeroCoverageVersusUnset(t *testing.T) {
+	t.Parallel()
 	acct := func(s string) *string { return &s }
 	rec := func(a string) config.RecommendationRecord {
 		return config.RecommendationRecord{Provider: "aws", Service: "rds", Savings: 100.0, CloudAccountID: acct(a)}

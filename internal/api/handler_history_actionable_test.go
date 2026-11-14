@@ -79,6 +79,7 @@ func pendingForAccount(id, account string, scheduled time.Time) config.PurchaseE
 // unfiltered read returns MaxListLimit of those rows; the scoped read the
 // handler now issues returns the user's own row.
 func TestHandleRequest_History_ScopedPendingNotCrowdedOutByOtherAccounts(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	others := make([]config.PurchaseExecution, config.MaxListLimit)
 	for i := range others {
@@ -111,6 +112,7 @@ func TestHandleRequest_History_ScopedPendingNotCrowdedOutByOtherAccounts(t *test
 // The request's provider filter reaches the actionable SQL read, and
 // an unrestricted caller sends no scope.
 func TestHandleRequest_History_ActionableQueryCarriesFilters(t *testing.T) {
+	t.Parallel()
 	var got config.ExecutionsByStatusesQuery
 	store := new(MockConfigStore)
 	store.On("GetExecutionsByStatusesFiltered", mock.Anything, mock.MatchedBy(isActionableQuery)).
@@ -134,6 +136,7 @@ func TestHandleRequest_History_ActionableQueryCarriesFilters(t *testing.T) {
 // reads pending/notified rows past the expiry window with no filter or scope.
 // An unfiltered, unrestricted load reuses the class it already read.
 func TestHandleRequest_History_StaleSweepIgnoresFiltersAndScope(t *testing.T) {
+	t.Parallel()
 	t.Run("narrowed", func(t *testing.T) {
 		var sweep config.ExecutionsByStatusesQuery
 		store := new(MockConfigStore)
@@ -176,6 +179,7 @@ func isPlanQuery(planID string) func(config.ExecutionsByStatusesQuery) bool {
 // not hide the plan's own pending row. The plan-less read returns the other
 // plans' rows; the read carrying the plan returns the plan's row.
 func TestHandleRequest_History_PlanPendingNotCrowdedOutByOtherPlans(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	others := make([]config.PurchaseExecution, config.MaxListLimit)
 	for i := range others {
@@ -206,6 +210,7 @@ func TestHandleRequest_History_PlanPendingNotCrowdedOutByOtherPlans(t *testing.T
 // separate unfiltered stale sweep: other plans' stale approvals are expired by
 // any History load, plan view or not.
 func TestHandleRequest_History_PlanViewStillSweepsAllStaleApprovals(t *testing.T) {
+	t.Parallel()
 	var sweep config.ExecutionsByStatusesQuery
 	store := new(MockConfigStore)
 	store.On("GetExecutionsByStatusesFiltered", mock.Anything, mock.MatchedBy(isActionableQuery)).Return([]config.PurchaseExecution{}, nil)
@@ -223,11 +228,13 @@ func TestHandleRequest_History_PlanViewStillSweepsAllStaleApprovals(t *testing.T
 }
 
 func TestIsNarrowed_PlanID(t *testing.T) {
+	t.Parallel()
 	assert.False(t, isNarrowed(&config.ExecutionsByStatusesQuery{Statuses: actionableExecutionStatuses}))
 	assert.True(t, isNarrowed(&config.ExecutionsByStatusesQuery{Statuses: actionableExecutionStatuses, PlanID: actionablePlanUUID}))
 }
 
 func TestActionableExecutionsQuery_AccountValues(t *testing.T) {
+	t.Parallel()
 	f := historyFilters{
 		AccountIDs:            []string{actionableDevUUID},
 		ExternalIDsByProvider: map[string][]string{"aws": {"111111111111"}, "": {"333333333333"}},
@@ -239,6 +246,7 @@ func TestActionableExecutionsQuery_AccountValues(t *testing.T) {
 }
 
 func TestHistoryScope_ExecutionScope(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		scope auth.AccountScope
@@ -266,6 +274,7 @@ func TestHistoryScope_ExecutionScope(t *testing.T) {
 // scheduled later (a plan step) must still reach the queue, while terminal
 // rows keep the range.
 func TestHandleRequest_History_PendingOutsideDateRangeStillListed(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	future := pendingForAccount("future-pending", actionableDevUUID, now.Add(72*time.Hour))
 	old := config.PurchaseExecution{
@@ -296,6 +305,7 @@ func TestHandleRequest_History_PendingOutsideDateRangeStillListed(t *testing.T) 
 }
 
 func TestActionableExecutionsQuery_NeverDateBounded(t *testing.T) {
+	t.Parallel()
 	f := historyFilters{HasDate: true, Start: time.Now().AddDate(0, 0, -7), End: time.Now()}
 	q := actionableExecutionsQuery(&f, &historyScope{allowed: auth.UnrestrictedScope()})
 	assert.Nil(t, q.Start)
@@ -304,6 +314,7 @@ func TestActionableExecutionsQuery_NeverDateBounded(t *testing.T) {
 }
 
 func TestMatchesExecution_DateRangeSkipsActionableStatuses(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	f := historyFilters{HasDate: true, Start: now.AddDate(0, 0, -7), End: now}
 	later := now.Add(72 * time.Hour)

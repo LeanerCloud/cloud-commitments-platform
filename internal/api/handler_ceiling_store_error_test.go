@@ -48,6 +48,7 @@ func (a realWriteAuth) CreateGroupAPI(ctx context.Context, actor string, req aut
 }
 
 func TestHandler_writes_CeilingStoreErrorOmitsDetailForGroupViewer(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	session := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "ops@example.com"}
 	mockAuth := new(MockAuthService)

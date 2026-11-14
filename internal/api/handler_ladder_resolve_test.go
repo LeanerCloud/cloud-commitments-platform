@@ -69,6 +69,7 @@ func clientCode(t *testing.T, err error) int {
 }
 
 func TestLadderResolve_Authorization(t *testing.T) {
+	t.Parallel()
 	constrained := []auth.Permission{{Action: auth.ActionExecute, Resource: auth.ResourcePurchases,
 		Constraints: &auth.PermissionConstraints{AccountIDs: []string{scopedOutAccount}}}}
 	tests := []struct {
@@ -99,6 +100,7 @@ func TestLadderResolve_Authorization(t *testing.T) {
 // A principal whose account list excludes the tranche's account gets the
 // enumeration-safe not-found, like the amend endpoint.
 func TestLadderResolve_OutOfScopeAccount(t *testing.T) {
+	t.Parallel()
 	store := newResolveStore()
 	store.account = scopedOutAccount
 	mockAuth := new(MockAuthService)
@@ -112,6 +114,7 @@ func TestLadderResolve_OutOfScopeAccount(t *testing.T) {
 }
 
 func TestLadderResolve_BodyValidation(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("x", 301)
 	check := func(acct, region, svc, at string) string {
 		return fmt.Sprintf(`"acknowledge_unknown_outcome":true,"cloud_check":{"checked_account_id":%q,"checked_region":%q,"checked_service":%q,"checked_at":%q}`, acct, region, svc, at)
@@ -145,6 +148,7 @@ func TestLadderResolve_BodyValidation(t *testing.T) {
 }
 
 func TestLadderResolve_CompletedIsNotImplemented(t *testing.T) {
+	t.Parallel()
 	store := newResolveStore()
 	err := resolveCall(t, apgCaller{perms: apgAdminPlus}, store, `{"outcome":"completed","reason":"verified the commitment in the console"}`)
 	assert.Equal(t, 501, clientCode(t, err))
@@ -152,6 +156,7 @@ func TestLadderResolve_CompletedIsNotImplemented(t *testing.T) {
 }
 
 func TestLadderResolve_StatusReasonIsDeterministic(t *testing.T) {
+	t.Parallel()
 	proven := newResolveStore()
 	require.NoError(t, resolveCall(t, apgCaller{perms: apgAdminPlus}, proven, resolveProvenBody))
 	assert.Equal(t, `operator:failed:proven: reason="verified no purchase in the cloud console"`, proven.got.StatusReason)
@@ -168,6 +173,7 @@ func TestLadderResolve_StatusReasonIsDeterministic(t *testing.T) {
 }
 
 func TestLadderResolve_StoreErrorsMapToStatus(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		err  error
 		want int
@@ -194,6 +200,7 @@ func TestLadderResolve_StoreErrorsMapToStatus(t *testing.T) {
 }
 
 func TestLadderResolve_BadIDIsNotFound(t *testing.T) {
+	t.Parallel()
 	store := newResolveStore()
 	h, req := (apgCaller{perms: apgAdminPlus}).handlerAndReq(store.MockConfigStore, resolveProvenBody)
 	h.config = store

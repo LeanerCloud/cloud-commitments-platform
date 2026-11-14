@@ -140,6 +140,7 @@ func adminSession(t *testing.T, authSvc *MockAuthService) {
 // --- Gap 3 handler tests (issue #292) ---
 
 func TestMarketplaceList_ConvertibleRejected(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -161,6 +162,7 @@ func TestMarketplaceList_ConvertibleRejected(t *testing.T) {
 }
 
 func TestMarketplaceList_SellOwnAllowed(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	ec2 := &stubMarketplaceEC2{}
@@ -198,6 +200,7 @@ func TestMarketplaceList_SellOwnAllowed(t *testing.T) {
 }
 
 func TestMarketplaceList_SellOwnDeniedWrongAccount(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	t.Cleanup(func() { cfgStore.AssertExpectations(t) })
 	authSvc := &MockAuthService{}
@@ -226,6 +229,7 @@ func TestMarketplaceList_SellOwnDeniedWrongAccount(t *testing.T) {
 }
 
 func TestMarketplaceList_DuplicateActiveListing409(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	t.Cleanup(func() { cfgStore.AssertExpectations(t) })
 	authSvc := &MockAuthService{}
@@ -248,6 +252,7 @@ func TestMarketplaceList_DuplicateActiveListing409(t *testing.T) {
 }
 
 func TestMarketplaceList_AWSClientFaultMapsTo400(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	t.Cleanup(func() { cfgStore.AssertExpectations(t) })
 	authSvc := &MockAuthService{}
@@ -279,6 +284,7 @@ func TestMarketplaceList_AWSClientFaultMapsTo400(t *testing.T) {
 }
 
 func TestMarketplaceList_AWSServerFaultMapsTo502(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	t.Cleanup(func() { cfgStore.AssertExpectations(t) })
 	authSvc := &MockAuthService{}
@@ -309,6 +315,7 @@ func TestMarketplaceList_AWSServerFaultMapsTo502(t *testing.T) {
 }
 
 func TestMarketplaceList_UnknownErrorMapsTo502(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	t.Cleanup(func() { cfgStore.AssertExpectations(t) })
 	authSvc := &MockAuthService{}
@@ -337,6 +344,7 @@ func TestMarketplaceList_UnknownErrorMapsTo502(t *testing.T) {
 }
 
 func TestMarketplaceList_DBFailureCompensatingRollback(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -365,6 +373,7 @@ func TestMarketplaceList_DBFailureCompensatingRollback(t *testing.T) {
 }
 
 func TestMarketplaceList_DBFailureAndCancelFailureKeepsListing(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		recordErr error
@@ -410,6 +419,7 @@ func TestMarketplaceList_DBFailureAndCancelFailureKeepsListing(t *testing.T) {
 }
 
 func TestMarketplaceList_CancelFailureRecordsNonActiveStateAsPending(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name       string
 		awsState   string
@@ -461,6 +471,7 @@ func TestMarketplaceList_CancelFailureRecordsNonActiveStateAsPending(t *testing.
 }
 
 func TestMarketplaceList_CancelFailureAfterRequestContextCanceledStillRecords(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
@@ -492,6 +503,7 @@ func TestMarketplaceList_CancelFailureAfterRequestContextCanceledStillRecords(t 
 }
 
 func TestMarketplaceList_DefaultScheduleProrationMath(t *testing.T) {
+	t.Parallel()
 	// remaining=12, term=12, count=1, upfront=1200 => per-unit residual
 	// 1200*12/12/1 = 1200; default price = 1200*0.95 = 1140.
 	schedule, err := resolveMarketplacePriceSchedule(nil, 12, 12, 1, new(float64(1200)))
@@ -521,6 +533,7 @@ func TestMarketplaceList_DefaultScheduleProrationMath(t *testing.T) {
 }
 
 func TestMarketplaceCancel_HappyPath(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -546,6 +559,7 @@ func TestMarketplaceCancel_HappyPath(t *testing.T) {
 }
 
 func TestMarketplaceCancel_NoActiveListing409(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	t.Cleanup(func() { cfgStore.AssertExpectations(t) })
 	authSvc := &MockAuthService{}
@@ -571,6 +585,7 @@ func TestMarketplaceCancel_NoActiveListing409(t *testing.T) {
 // for one RI would be a real double-listing on the money path). This test fails
 // on the pre-guard code, which called AWS unconditionally after the read-check.
 func TestMarketplaceList_ConcurrentClaimLoses409(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -598,6 +613,7 @@ func TestMarketplaceList_ConcurrentClaimLoses409(t *testing.T) {
 // surfaced (not swallowed) and blocks the AWS call, so a broken slot-reservation
 // never silently proceeds to create an unguarded listing.
 func TestMarketplaceList_ClaimErrorMapsToInternal(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -625,6 +641,7 @@ func TestMarketplaceList_ClaimErrorMapsToInternal(t *testing.T) {
 // This is the fail-before/pass-after regression test (the old code accepted
 // Price >= 0, so Price=0 was accepted; the fix requires Price > 0).
 func TestResolveMarketplacePriceSchedule_ZeroPriceRejected(t *testing.T) {
+	t.Parallel()
 	_, err := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 		{TermMonths: 6, Price: 0},
 	}, 6, 12, 1, new(float64(1200)))
@@ -639,6 +656,7 @@ func TestResolveMarketplacePriceSchedule_ZeroPriceRejected(t *testing.T) {
 // = $60). This FAILS on the pre-fix code, which multiplied Price*TermMonths
 // (5*12 = $60) and compared against a $60 floor, letting it pass.
 func TestResolveMarketplacePriceSchedule_BelowFloorRejected(t *testing.T) {
+	t.Parallel()
 	_, err := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 		{TermMonths: 12, Price: 5.0},
 	}, 12, 12, 1, new(float64(1200)))
@@ -653,6 +671,7 @@ func TestResolveMarketplacePriceSchedule_BelowFloorRejected(t *testing.T) {
 // price is rejected; a $21 price is accepted -- proving the floor divides the
 // row total by count instead of applying the $1,200 row total per unit.
 func TestResolveMarketplacePriceSchedule_PerUnitFloor(t *testing.T) {
+	t.Parallel()
 	_, errBelow := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 		{TermMonths: 12, Price: 19.0},
 	}, 12, 12, 3, new(float64(1200)))
@@ -677,6 +696,7 @@ func TestResolveMarketplacePriceSchedule_PerUnitFloor(t *testing.T) {
 // This FAILS on the pre-fix code (no error, schedule[0].Price == 0) and
 // PASSES after (explicit error, nil schedule).
 func TestResolveMarketplacePriceSchedule_ZeroDefaultPriceRejected(t *testing.T) {
+	t.Parallel()
 	schedule, err := resolveMarketplacePriceSchedule(nil, 12, 12, 1, new(float64))
 	require.Error(t, err, "a no-upfront RI must not silently produce a $0 default listing")
 	assert.Nil(t, schedule)
@@ -696,6 +716,7 @@ func TestResolveMarketplacePriceSchedule_ZeroDefaultPriceRejected(t *testing.T) 
 // caller arbitrarily inflate the tier's implied value). remaining=6, tier
 // term=12 -> rejected.
 func TestResolveMarketplacePriceSchedule_TermExceedsRemainingRejected(t *testing.T) {
+	t.Parallel()
 	_, err := resolveMarketplacePriceSchedule([]MarketplacePriceTier{
 		{TermMonths: 12, Price: 1000},
 	}, 6, 12, 1, new(float64(1200)))
@@ -709,6 +730,7 @@ func TestResolveMarketplacePriceSchedule_TermExceedsRemainingRejected(t *testing
 // it, and proceeds when AWS reports "standard". This is the sell path becoming
 // reachable for externally-created Standard RIs.
 func TestMarketplaceList_EmptyOfferingClassFetchedStandard(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -747,6 +769,7 @@ func TestMarketplaceList_EmptyOfferingClassFetchedStandard(t *testing.T) {
 // guard: when AWS reports the RI is "convertible", the handler must reject
 // with 400 even if offering_class was empty in the DB (not silently proceed).
 func TestMarketplaceList_EmptyOfferingClassFetchedConvertible(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -780,6 +803,7 @@ func TestMarketplaceList_EmptyOfferingClassFetchedConvertible(t *testing.T) {
 // TestComputeRemainingMonths exercises the helper directly, confirming it treats
 // its termMonths parameter as months (not years).
 func TestComputeRemainingMonths(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	const month = time.Duration(float64(24*30.4375) * float64(time.Hour))
 	remaining := func(purchase time.Time, termMonths int) int {
@@ -834,6 +858,7 @@ func marketplaceListHTTPRequest() *events.LambdaFunctionURLRequest {
 // must reach the client as a 422 with a reason, never a 500, and must not
 // claim a listing slot or call AWS.
 func TestMarketplaceListHTTP_UnlistableTermsReturn422(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		mutate   func(r *config.PurchaseHistoryRecord)
@@ -884,6 +909,7 @@ func TestMarketplaceListHTTP_UnlistableTermsReturn422(t *testing.T) {
 // TestMarketplaceListHTTP_ValidRIStillLists guards the boundary on the other
 // side: a fresh RI and one with a bit over one month remaining both list (200).
 func TestMarketplaceListHTTP_ValidRIStillLists(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		timestamp time.Time
@@ -926,6 +952,7 @@ func TestMarketplaceListHTTP_ValidRIStillLists(t *testing.T) {
 // A caller-supplied schedule with term_months=30 was rejected pre-fix because
 // remainingMonths was 1 (30 > 1); post-fix it is accepted.
 func TestMarketplaceList_TermYearsConvertedToMonths(t *testing.T) {
+	t.Parallel()
 	t.Run("default schedule price reflects true remaining value", func(t *testing.T) {
 		cfgStore := &MockConfigStore{}
 		authSvc := &MockAuthService{}
@@ -1007,6 +1034,7 @@ func TestMarketplaceList_TermYearsConvertedToMonths(t *testing.T) {
 // rule: a purchase_history row with term=0 (invalid -- valid years are 1 or 3)
 // must produce an explicit error, not a garbage price computed from 0*12=0 months.
 func TestMarketplaceList_InvalidTermReturnsError(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)
@@ -1028,6 +1056,7 @@ func TestMarketplaceList_InvalidTermReturnsError(t *testing.T) {
 // timestamp must be refused, not priced as if 1 month of the term remained
 // (issue #98: a $36k 3-year RI would otherwise be listed at ~$950).
 func TestMarketplaceList_ZeroTimestampReturnsError(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	authSvc := &MockAuthService{}
 	adminSession(t, authSvc)

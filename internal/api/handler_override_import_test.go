@@ -31,6 +31,7 @@ func actions(r *OverrideImportReport) []string {
 }
 
 func TestImportOverrides_ExportReimportIsUnchanged(t *testing.T) {
+	t.Parallel()
 	for _, format := range []string{"json", "csv"} {
 		t.Run(format, func(t *testing.T) {
 			store := newOverrideTransferStore()
@@ -54,6 +55,7 @@ func TestImportOverrides_ExportReimportIsUnchanged(t *testing.T) {
 }
 
 func TestImportOverrides_MatchesAnotherTenantsRowsByExternalID(t *testing.T) {
+	t.Parallel()
 	store := newOverrideTransferStore()
 	h := transferHandler(t, store, nil)
 	rows := []OverrideTransferRow{{
@@ -72,6 +74,7 @@ func TestImportOverrides_MatchesAnotherTenantsRowsByExternalID(t *testing.T) {
 }
 
 func TestImportOverrides_RowIsDesiredState(t *testing.T) {
+	t.Parallel()
 	store := newOverrideTransferStore()
 	h := transferHandler(t, store, nil)
 	// The stored ec2 override has enabled, term and payment; the row keeps
@@ -103,6 +106,7 @@ func badImportRows() []OverrideTransferRow {
 }
 
 func TestImportOverrides_StrictRejectsAllWithReport(t *testing.T) {
+	t.Parallel()
 	store := newOverrideTransferStore()
 	h := transferHandler(t, store, []string{xferAWS, xferAzure})
 
@@ -117,6 +121,7 @@ func TestImportOverrides_StrictRejectsAllWithReport(t *testing.T) {
 }
 
 func TestImportOverrides_BestEffortAppliesValidRows(t *testing.T) {
+	t.Parallel()
 	store := newOverrideTransferStore()
 	h := transferHandler(t, store, []string{xferAWS, xferAzure})
 
@@ -144,6 +149,7 @@ func TestImportOverrides_BestEffortAppliesValidRows(t *testing.T) {
 }
 
 func TestImportOverrides_DryRunWritesNothing(t *testing.T) {
+	t.Parallel()
 	store := newOverrideTransferStore()
 	h := transferHandler(t, store, nil)
 	rows := []OverrideTransferRow{
@@ -160,6 +166,7 @@ func TestImportOverrides_DryRunWritesNothing(t *testing.T) {
 }
 
 func TestImportOverrides_RejectsMalformedRequests(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"bad json":       `{`,
 		"bad mode":       `{"mode":"yolo","csv":"provider,service\naws,ec2"}`,
@@ -181,6 +188,7 @@ func TestImportOverrides_RejectsMalformedRequests(t *testing.T) {
 }
 
 func TestImportOverrides_CSVRejectsNaNCoverage(t *testing.T) {
+	t.Parallel()
 	store := newOverrideTransferStore()
 	h := transferHandler(t, store, nil)
 	csv := "account_id,provider,service,coverage\n" + xferAWS + ",aws,ec2,NaN\n"
@@ -193,6 +201,7 @@ func TestImportOverrides_CSVRejectsNaNCoverage(t *testing.T) {
 }
 
 func TestImportOverrides_RequiresUpdateAccounts(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 	mockAuth.On("ValidateSession", context.Background(), "admin-token").Return(adminAccountSession(), nil)
@@ -215,6 +224,7 @@ func fortyImportRows() []OverrideTransferRow {
 }
 
 func TestImportOverrides_StrictLateOverlongRampWritesNothing(t *testing.T) {
+	t.Parallel()
 	store := newOverrideTransferStore()
 	h := transferHandler(t, store, nil)
 	rows := fortyImportRows()
@@ -234,6 +244,7 @@ func TestImportOverrides_StrictLateOverlongRampWritesNothing(t *testing.T) {
 }
 
 func TestImportOverrides_StoreFailureRollsBackEveryWrite(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{overrideImportStrict, overrideImportBestEffort} {
 		t.Run(mode, func(t *testing.T) {
 			store := newOverrideTransferStore()
@@ -257,6 +268,7 @@ func TestImportOverrides_StoreFailureRollsBackEveryWrite(t *testing.T) {
 }
 
 func TestImportOverrides_RejectsValuesOutsideColumnBounds(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		row  OverrideTransferRow
 		want string

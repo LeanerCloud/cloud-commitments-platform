@@ -12,6 +12,7 @@ import (
 // store, a different value than the caller sent. PUT /api/config now refuses it
 // the way PUT /api/ri-exchange/config does.
 func TestUpdateConfig_RefusesAWrittenThresholdOutsideItsRange(t *testing.T) {
+	t.Parallel()
 	for name, body := range map[string]string{
 		"zero":                        `{"ri_exchange_utilization_threshold": 0}`,
 		"mixed-case zero":             `{"Ri_Exchange_Utilization_Threshold": 0}`,
@@ -37,6 +38,7 @@ func TestUpdateConfig_RefusesAWrittenThresholdOutsideItsRange(t *testing.T) {
 }
 
 func TestUpdateConfig_AcceptsAValidWrittenThreshold(t *testing.T) {
+	t.Parallel()
 	for _, body := range []string{
 		`{"ri_exchange_utilization_threshold": 0.1}`,
 		`{"ri_exchange_utilization_threshold": 80}`,
@@ -56,6 +58,7 @@ func TestUpdateConfig_AcceptsAValidWrittenThreshold(t *testing.T) {
 // Presence-based: a save that does not write the threshold must keep working
 // on a row that still stores a legacy 0.
 func TestUpdateConfig_StoredZeroThresholdDoesNotBlockUnrelatedWrites(t *testing.T) {
+	t.Parallel()
 	for name, body := range map[string]string{
 		"partial save":   `{"default_term": 3}`,
 		"null threshold": `{"ri_exchange_utilization_threshold": null}`,

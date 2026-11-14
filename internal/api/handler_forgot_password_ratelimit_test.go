@@ -36,6 +36,7 @@ func requireForgotOK(t *testing.T, result any, err error, msgAndArgs ...any) {
 // The per-IP and per-email limits on forgot-password are separate buckets.
 // Pinning both keeps the handler comment and the config in step (#13).
 func TestGetDefaultRateLimits_ForgotPasswordBuckets(t *testing.T) {
+	t.Parallel()
 	limits := getDefaultRateLimits()
 	assert.Equal(t, NewRateLimitConfig(10, 5*60), limits["forgot_password"], "per-email bucket")
 	assert.Equal(t, NewRateLimitConfig(10, 15*60), limits["forgot_password_ip"], "per-IP bucket")
@@ -45,6 +46,7 @@ func TestGetDefaultRateLimits_ForgotPasswordBuckets(t *testing.T) {
 // Issue #13: one client walking many addresses (one request per address) used
 // to be allowed without limit because only the per-email bucket existed.
 func TestHandler_forgotPassword_PerIPCapAcrossDistinctEmails(t *testing.T) {
+	t.Parallel()
 	limit := getDefaultRateLimits()["forgot_password_ip"].MaxAttempts
 	require.Less(t, limit, 100)
 
@@ -75,6 +77,7 @@ func TestHandler_forgotPassword_PerIPCapAcrossDistinctEmails(t *testing.T) {
 // the rightmost (proxy-appended) X-Forwarded-For entry. A forwarded-for header
 // that reaches the handler must not open a fresh bucket.
 func TestHandler_forgotPassword_PerIPCapIgnoresForwardedHeaders(t *testing.T) {
+	t.Parallel()
 	limit := getDefaultRateLimits()["forgot_password_ip"].MaxAttempts
 
 	mockAuth := new(MockAuthService)
@@ -100,6 +103,7 @@ func TestHandler_forgotPassword_PerIPCapIgnoresForwardedHeaders(t *testing.T) {
 // The per-IP check runs before the body is parsed, so a flood of malformed
 // bodies spends the same budget as well-formed ones.
 func TestHandler_forgotPassword_MalformedBodiesSpendIPBudget(t *testing.T) {
+	t.Parallel()
 	limit := getDefaultRateLimits()["forgot_password_ip"].MaxAttempts
 
 	mockAuth := new(MockAuthService)
@@ -117,6 +121,7 @@ func TestHandler_forgotPassword_MalformedBodiesSpendIPBudget(t *testing.T) {
 // A request refused by the per-IP bucket must not spend the target address's
 // per-email budget or reach the reset service.
 func TestHandler_forgotPassword_PerIPDeniedSkipsEmailBucket(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	rl := new(MockRateLimiter)
 	t.Cleanup(func() { rl.AssertExpectations(t) })
@@ -133,6 +138,7 @@ func TestHandler_forgotPassword_PerIPDeniedSkipsEmailBucket(t *testing.T) {
 // Like the per-email bucket (02-M1), the per-IP bucket fails open on a limiter
 // error so the endpoint's response does not expose limiter health.
 func TestHandler_forgotPassword_PerIPLimiterErrorFailsOpen(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 	mockAuth.On("RequestPasswordReset", mock.Anything, "user@example.com").Return(nil).Once()
@@ -149,6 +155,7 @@ func TestHandler_forgotPassword_PerIPLimiterErrorFailsOpen(t *testing.T) {
 
 // Concurrent requests from one client admit exactly the bucket size.
 func TestHandler_forgotPassword_PerIPCapConcurrent(t *testing.T) {
+	t.Parallel()
 	limit := getDefaultRateLimits()["forgot_password_ip"].MaxAttempts
 	const callers = 40
 

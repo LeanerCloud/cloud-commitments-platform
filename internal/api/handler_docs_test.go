@@ -30,6 +30,7 @@ var swaggerUITagRe = regexp.MustCompile(`<(?:link|script)[^>]*unpkg\.com/swagger
 // or the SRI integrity attributes that close #447/#541. A regression here means
 // the public docs page is back to loading unpinned, unverified CDN scripts.
 func TestServeDocsUISwaggerUITagsKeepVersionPinAndSRI(t *testing.T) {
+	t.Parallel()
 	body := docsBodyForTest(t)
 
 	tags := swaggerUITagRe.FindAllString(body, -1)
@@ -59,6 +60,7 @@ func TestServeDocsUISwaggerUITagsKeepVersionPinAndSRI(t *testing.T) {
 // SRI hashes shared with frontend/src/docs.html (PR #521) so the two surfaces
 // cannot drift apart.
 func TestServeDocsUIUsesSharedSRIConstants(t *testing.T) {
+	t.Parallel()
 	body := docsBodyForTest(t)
 	require.Contains(t, body, swaggerUICSSSRI)
 	require.Contains(t, body, swaggerUIBundleSRI)
@@ -71,6 +73,7 @@ func TestServeDocsUIUsesSharedSRIConstants(t *testing.T) {
 // element-level SRI does not grant CSP load permission. If this changes,
 // re-verify the page still renders before removing the host.
 func TestDocsPageCSPAllowsUnpkgHostForScripts(t *testing.T) {
+	t.Parallel()
 	scriptSrc := ""
 	for _, directive := range strings.Split(docsPageCSP, ";") {
 		if strings.HasPrefix(strings.TrimSpace(directive), "script-src") {

@@ -14,6 +14,7 @@ import (
 const planFilterUUID = "11111111-1111-4111-8111-111111111111"
 
 func TestParseHistoryFilters_PlanID(t *testing.T) {
+	t.Parallel()
 	f, err := parseHistoryFilters(map[string]string{"plan_id": planFilterUUID})
 	require.NoError(t, err)
 	assert.Equal(t, planFilterUUID, f.PlanID)
@@ -37,6 +38,7 @@ func TestParseHistoryFilters_PlanID(t *testing.T) {
 }
 
 func TestHistoryFilters_PlanIDMatchesExecution(t *testing.T) {
+	t.Parallel()
 	f := historyFilters{PlanID: planFilterUUID}
 	assert.True(t, f.matchesExecution(config.PurchaseExecution{PlanID: planFilterUUID}))
 	assert.False(t, f.matchesExecution(config.PurchaseExecution{PlanID: "22222222-2222-4222-8222-222222222222"}))
@@ -47,6 +49,7 @@ func TestHistoryFilters_PlanIDMatchesExecution(t *testing.T) {
 // TestGetHistory_PlanIDReachesStoreFilters checks that plan_id reaches both the
 // row fetch and the summary aggregate, and that an absent plan_id sets neither.
 func TestGetHistory_PlanIDReachesStoreFilters(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, planID string }{{"with plan", planFilterUUID}, {"without plan", ""}} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -77,6 +80,7 @@ func TestGetHistory_PlanIDReachesStoreFilters(t *testing.T) {
 }
 
 func TestGetHistory_BadPlanIDIs400(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth, req := adminHistoryReq(t, ctx)
 	handler := &Handler{auth: mockAuth, config: new(MockConfigStore)}

@@ -26,6 +26,7 @@ func (s *stubCommitmentOpts) Validate(ctx context.Context, provider, service str
 }
 
 func TestGetCommitmentOptions_NilService_ReturnsUnavailable(t *testing.T) {
+	t.Parallel()
 	h := &Handler{commitmentOpts: nil}
 
 	resp, err := h.getCommitmentOptions(context.Background())
@@ -36,6 +37,7 @@ func TestGetCommitmentOptions_NilService_ReturnsUnavailable(t *testing.T) {
 }
 
 func TestGetCommitmentOptions_ErrNoData_ReturnsUnavailable(t *testing.T) {
+	t.Parallel()
 	h := &Handler{commitmentOpts: &stubCommitmentOpts{
 		getFn: func(context.Context) (commitmentopts.Options, error) {
 			return nil, commitmentopts.ErrNoData
@@ -50,6 +52,7 @@ func TestGetCommitmentOptions_ErrNoData_ReturnsUnavailable(t *testing.T) {
 }
 
 func TestGetCommitmentOptions_UnexpectedError_CollapsesToUnavailable(t *testing.T) {
+	t.Parallel()
 	// Any non-ErrNoData failure (DB blip, ctx cancellation, etc.) must
 	// still return 200 + unavailable so the Settings page overlay doesn't
 	// break on transient server issues. The error is logged, not returned.
@@ -68,6 +71,7 @@ func TestGetCommitmentOptions_UnexpectedError_CollapsesToUnavailable(t *testing.
 }
 
 func TestNewHandler_CommitmentOptsWired(t *testing.T) {
+	t.Parallel()
 	// Regression guard: silently dropping the HandlerConfig → Handler wire
 	// (via a field rename or accidental removal) would re-introduce the
 	// "endpoint always returns unavailable" bug we already fixed once.
@@ -77,6 +81,7 @@ func TestNewHandler_CommitmentOptsWired(t *testing.T) {
 }
 
 func TestGetCommitmentOptions_EmptyAWS_CollapsesToUnavailable(t *testing.T) {
+	t.Parallel()
 	// Probe succeeded but returned nothing for AWS. Treating this as
 	// unavailable keeps the frontend on its hardcoded fallback rather than
 	// rendering an empty constraint set.
@@ -94,6 +99,7 @@ func TestGetCommitmentOptions_EmptyAWS_CollapsesToUnavailable(t *testing.T) {
 }
 
 func TestGetCommitmentOptions_Success_ReturnsAWSCombos(t *testing.T) {
+	t.Parallel()
 	h := &Handler{commitmentOpts: &stubCommitmentOpts{
 		getFn: func(context.Context) (commitmentopts.Options, error) {
 			return commitmentopts.Options{

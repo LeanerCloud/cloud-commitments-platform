@@ -16,6 +16,7 @@ func newOIDCRequest(path string) *events.LambdaFunctionURLRequest {
 }
 
 func TestHandleOIDCIgnoresUnrelatedPaths(t *testing.T) {
+	t.Parallel()
 	h := &Handler{dashboardURL: "https://cudly.example.com"}
 	for _, p := range []string{"/api/health", "/.well-known/acme-challenge", "/login", ""} {
 		if _, handled := h.HandleOIDC(context.Background(), newOIDCRequest(p)); handled {
@@ -25,6 +26,7 @@ func TestHandleOIDCIgnoresUnrelatedPaths(t *testing.T) {
 }
 
 func TestHandleOIDCReturns404WhenSignerMissing(t *testing.T) {
+	t.Parallel()
 	h := &Handler{dashboardURL: "https://cudly.example.com"}
 	for _, p := range []string{oidcDiscoveryPath, oidcJWKSPath} {
 		resp, handled := h.HandleOIDC(context.Background(), newOIDCRequest(p))
@@ -38,6 +40,7 @@ func TestHandleOIDCReturns404WhenSignerMissing(t *testing.T) {
 }
 
 func TestHandleOIDCDiscovery(t *testing.T) {
+	t.Parallel()
 	signer, err := oidc.NewLocalSigner()
 	if err != nil {
 		t.Fatalf("local signer: %v", err)
@@ -68,6 +71,7 @@ func TestHandleOIDCDiscovery(t *testing.T) {
 }
 
 func TestHandleOIDCJWKS(t *testing.T) {
+	t.Parallel()
 	signer, err := oidc.NewLocalSigner()
 	if err != nil {
 		t.Fatalf("local signer: %v", err)
@@ -96,6 +100,7 @@ func TestHandleOIDCJWKS(t *testing.T) {
 }
 
 func TestHandleOIDCPopulatesIssuerCache(t *testing.T) {
+	t.Parallel()
 	signer, err := oidc.NewLocalSigner()
 	if err != nil {
 		t.Fatalf("local signer: %v", err)
@@ -114,6 +119,7 @@ func TestHandleOIDCPopulatesIssuerCache(t *testing.T) {
 }
 
 func TestResolveIssuerURLPrefersConfiguredIssuer(t *testing.T) {
+	t.Parallel()
 	h := &Handler{
 		issuerURL:    "https://from-env.example.com/",
 		dashboardURL: "https://dashboard.example.com",
@@ -127,6 +133,7 @@ func TestResolveIssuerURLPrefersConfiguredIssuer(t *testing.T) {
 }
 
 func TestResolveIssuerURLFallsBackToDashboard(t *testing.T) {
+	t.Parallel()
 	h := &Handler{dashboardURL: "https://dashboard.example.com/"}
 	req := &events.LambdaFunctionURLRequest{}
 	req.RequestContext.DomainName = "lambda.aws"
@@ -136,6 +143,7 @@ func TestResolveIssuerURLFallsBackToDashboard(t *testing.T) {
 }
 
 func TestResolveIssuerURLFallsBackToRequestDomain(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 	req := &events.LambdaFunctionURLRequest{}
 	req.RequestContext.DomainName = "lambda.aws"

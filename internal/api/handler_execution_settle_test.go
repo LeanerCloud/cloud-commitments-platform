@@ -11,6 +11,7 @@ import (
 )
 
 func TestDecodeExecutionSettle(t *testing.T) {
+	t.Parallel()
 	ok, err := decodeExecutionSettle(`{"reason":"  checked the account  ","acknowledge_unknown_outcome":true}`)
 	require.NoError(t, err)
 	require.Equal(t, "checked the account", ok.Reason)
@@ -34,6 +35,7 @@ func TestDecodeExecutionSettle(t *testing.T) {
 }
 
 func TestMapExecutionSettleError(t *testing.T) {
+	t.Parallel()
 	require.True(t, IsNotFoundError(mapExecutionSettleError(config.ErrExecutionSettleNotFound)))
 	for sentinel, code := range map[error]int{config.ErrExecutionSettleInvalid: 400, config.ErrExecutionSettleConflict: 409} {
 		var ce *clientError

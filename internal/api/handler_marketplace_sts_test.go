@@ -58,6 +58,7 @@ func assertNoRoleLeak(t *testing.T, ce *clientError) {
 }
 
 func TestMarketplaceCancel_TransientAssumeRoleFailureIsRetryable(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		client     aws.HTTPClient
@@ -89,6 +90,7 @@ func TestMarketplaceCancel_TransientAssumeRoleFailureIsRetryable(t *testing.T) {
 }
 
 func TestMarketplaceList_ThrottledAssumeRoleIsRetryable(t *testing.T) {
+	t.Parallel()
 	h := realEC2Handler(t, standardRow(), assumeRoleSTS{400, marketplaceAssumeRoleThrottleXML})
 	h.awsCfg.Retryer = noRetry
 
@@ -103,6 +105,7 @@ func TestMarketplaceList_ThrottledAssumeRoleIsRetryable(t *testing.T) {
 
 // The access-denied class must keep the fixed 400 with retries disabled too.
 func TestMarketplaceCancel_DeniedAssumeRoleKeeps400(t *testing.T) {
+	t.Parallel()
 	h := realEC2Handler(t, activeListingRow(), assumeRoleSTS{403, marketplaceAssumeRoleDenyXML})
 	h.awsCfg.Retryer = noRetry
 
@@ -121,6 +124,7 @@ func stsAssumeRoleErr(inner error) error {
 }
 
 func TestMapAWSMarketplaceError_AssumeRoleClasses(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		inner    error

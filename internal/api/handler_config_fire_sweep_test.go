@@ -20,6 +20,7 @@ func fireSweepRouter(t *testing.T, off bool) (*Router, func() bool) {
 }
 
 func TestUpdateConfig_RefusesDelayWhenNoFireSweep(t *testing.T) {
+	t.Parallel()
 	r, wrote := fireSweepRouter(t, true)
 
 	_, err := r.Route(context.Background(), "PUT", genericPath, autoGateTokenReq(`{"purchase_delay_hours": 48}`))
@@ -35,6 +36,7 @@ func TestUpdateConfig_RefusesDelayWhenNoFireSweep(t *testing.T) {
 }
 
 func TestUpdateConfig_AllowsZeroDelayWhenNoFireSweep(t *testing.T) {
+	t.Parallel()
 	r, _ := fireSweepRouter(t, true)
 
 	_, err := r.Route(context.Background(), "PUT", genericPath, autoGateTokenReq(`{"purchase_delay_hours": 0}`))
@@ -43,6 +45,7 @@ func TestUpdateConfig_AllowsZeroDelayWhenNoFireSweep(t *testing.T) {
 }
 
 func TestUpdateConfig_StoredDelayDoesNotBlockUnrelatedWrites(t *testing.T) {
+	t.Parallel()
 	for body, name := range map[string]string{
 		`{"default_term": 3}`:            "partial save",
 		`{"purchase_delay_hours": null}`: "null delay",
@@ -63,6 +66,7 @@ func TestUpdateConfig_StoredDelayDoesNotBlockUnrelatedWrites(t *testing.T) {
 }
 
 func TestUpdateConfig_RefusesMixedCaseDelayKeyWhenNoFireSweep(t *testing.T) {
+	t.Parallel()
 	r, wrote := fireSweepRouter(t, true)
 
 	_, err := r.Route(context.Background(), "PUT", genericPath, autoGateTokenReq(`{"Purchase_Delay_Hours": 24}`))
@@ -72,6 +76,7 @@ func TestUpdateConfig_RefusesMixedCaseDelayKeyWhenNoFireSweep(t *testing.T) {
 }
 
 func TestUpdateConfig_AllowsDelayWhenFireSweepRuns(t *testing.T) {
+	t.Parallel()
 	r, _ := fireSweepRouter(t, false)
 
 	_, err := r.Route(context.Background(), "PUT", genericPath, autoGateTokenReq(`{"purchase_delay_hours": 48}`))
@@ -80,6 +85,7 @@ func TestUpdateConfig_AllowsDelayWhenFireSweepRuns(t *testing.T) {
 }
 
 func TestUpdateConfig_RefusesDelayHiddenByDuplicateNullKey(t *testing.T) {
+	t.Parallel()
 	r, wrote := fireSweepRouter(t, true)
 
 	_, err := r.Route(context.Background(), "PUT", genericPath, autoGateTokenReq(`{"purchase_delay_hours": 48, "purchase_delay_hours": null}`))
@@ -89,6 +95,7 @@ func TestUpdateConfig_RefusesDelayHiddenByDuplicateNullKey(t *testing.T) {
 }
 
 func TestPurchaseDelay_RefusesStoredDelayWhenNoFireSweep(t *testing.T) {
+	t.Parallel()
 	for off, wantErr := range map[bool]bool{true: true, false: false} {
 		mockStore := new(MockConfigStore)
 		mockStore.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{PurchaseDelayHours: 48}, nil)

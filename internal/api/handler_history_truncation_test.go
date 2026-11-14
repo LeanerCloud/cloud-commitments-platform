@@ -63,6 +63,7 @@ func runAdminHistory(t *testing.T, completed []config.PurchaseHistoryRecord, exe
 }
 
 func TestHandler_getHistory_TruncatedWhenCompletedPastLimit(t *testing.T) {
+	t.Parallel()
 	body := runAdminHistory(t, historyRows(config.DefaultListLimit+1), nil, map[string]string{})
 	assert.Equal(t, true, body["truncated"], "an older completed row is not on this page")
 	assert.Equal(t, true, body["has_more"])
@@ -73,6 +74,7 @@ func TestHandler_getHistory_TruncatedWhenCompletedPastLimit(t *testing.T) {
 // Paging reads one row past the page (issue #674), so exactly a page's worth
 // of rows is no longer a false positive.
 func TestHandler_getHistory_NotTruncatedWhenCompletedExactlyAtLimit(t *testing.T) {
+	t.Parallel()
 	body := runAdminHistory(t, historyRows(config.DefaultListLimit), nil, map[string]string{})
 	assert.Equal(t, false, body["truncated"])
 	assert.Equal(t, false, body["has_more"])
@@ -80,6 +82,7 @@ func TestHandler_getHistory_NotTruncatedWhenCompletedExactlyAtLimit(t *testing.T
 }
 
 func TestHandler_getHistory_TruncatedWhenExecutionsPastLimit(t *testing.T) {
+	t.Parallel()
 	// Terminal executions share the page with completed purchases.
 	body := runAdminHistory(t, nil, failedExecutionsPastLimit(), map[string]string{})
 	assert.Equal(t, true, body["truncated"])
@@ -105,12 +108,14 @@ func cleanCompletedExecutions(n int) []config.PurchaseExecution {
 // Clean completed executions are skipped by the handler (and excluded by the
 // store query), so a mature tenant must not see a permanent banner.
 func TestHandler_getHistory_NotTruncatedByCleanCompletedExecutions(t *testing.T) {
+	t.Parallel()
 	body := runAdminHistory(t, historyRows(3), cleanCompletedExecutions(config.DefaultListLimit), map[string]string{})
 	assert.Equal(t, false, body["truncated"])
 	assert.Len(t, body["purchases"], 3)
 }
 
 func TestHandler_getHistory_AuditGapCompletedExecutionsCountTowardCap(t *testing.T) {
+	t.Parallel()
 	execs := cleanCompletedExecutions(config.DefaultListLimit + 1)
 	for i := range execs {
 		execs[i].Error = "history write failed"
@@ -123,6 +128,7 @@ func TestHandler_getHistory_AuditGapCompletedExecutionsCountTowardCap(t *testing
 // Terminal executions share the page with completed purchases (issue #674),
 // so their cap follows the limit parameter.
 func TestHandler_getHistory_ExecutionsLimitFollowsLimit(t *testing.T) {
+	t.Parallel()
 	body := runAdminHistory(t, historyRows(2), failedExecutionsPastLimit(), map[string]string{"limit": "500"})
 	assert.EqualValues(t, 500, body["limit"])
 	assert.EqualValues(t, 500, body["executions_limit"])
@@ -134,6 +140,7 @@ func TestHandler_getHistory_ExecutionsLimitFollowsLimit(t *testing.T) {
 // response must expose it so the truncation banner can quote the cap that was
 // actually hit instead of the terminal-class cap (issue #686).
 func TestHandler_getHistory_ActionableExecutionsLimitExposed(t *testing.T) {
+	t.Parallel()
 	body := runAdminHistory(t, nil, pendingExecutions(config.MaxListLimit), map[string]string{})
 	assert.Equal(t, true, body["truncated"])
 	assert.EqualValues(t, config.MaxListLimit, body["actionable_executions_limit"])
@@ -141,6 +148,7 @@ func TestHandler_getHistory_ActionableExecutionsLimitExposed(t *testing.T) {
 }
 
 func TestHandler_getHistory_TruncatedHonorsCustomLimit(t *testing.T) {
+	t.Parallel()
 	body := runAdminHistory(t, historyRows(6), nil, map[string]string{"limit": "5"})
 	assert.Equal(t, true, body["truncated"])
 	assert.Len(t, body["purchases"], 5)
@@ -148,6 +156,7 @@ func TestHandler_getHistory_TruncatedHonorsCustomLimit(t *testing.T) {
 }
 
 func TestHandler_getHistory_NotTruncatedUnderLimit(t *testing.T) {
+	t.Parallel()
 	body := runAdminHistory(t, historyRows(config.DefaultListLimit-1), pendingExecutions(config.DefaultListLimit-1), map[string]string{})
 	assert.Equal(t, false, body["truncated"])
 	assert.EqualValues(t, config.DefaultListLimit, body["limit"])
@@ -158,6 +167,7 @@ func TestHandler_getHistory_NotTruncatedUnderLimit(t *testing.T) {
 // has_more is judged on those too (issue #674), so other tenants' volume
 // changes neither flag, and no count is exposed.
 func TestHandler_getHistory_ScopedUserTruncationLeaksNoCounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const scopedUserID = "scoped-user-id"
 	own := scopedUserID

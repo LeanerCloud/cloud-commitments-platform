@@ -23,6 +23,7 @@ import (
 const ceilingGroupID = "11111111-1111-1111-1111-111111111111"
 
 func TestUpdateGroup_ThreadsSessionActorAndMaps403(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -56,6 +57,7 @@ func TestUpdateGroup_ThreadsSessionActorAndMaps403(t *testing.T) {
 }
 
 func TestCreateGroup_ThreadsSessionActorAndMaps403(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -86,6 +88,7 @@ func TestCreateGroup_ThreadsSessionActorAndMaps403(t *testing.T) {
 }
 
 func TestDeleteGroup_SystemManagedMaps403(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -117,6 +120,7 @@ func TestDeleteGroup_SystemManagedMaps403(t *testing.T) {
 // sentinel the ceiling recognizes. Passing an empty string here would make
 // the ceiling fail closed on every admin-key group write instead.
 func TestUpdateGroup_AdminAPIKeyActorIsSentinel(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, auth.AdminAPIKeyActorID, apiKeyAdminUserID,
 		"the admin-API-key session identity must be the sentinel auth.grantCeilingPermissions recognizes")
 
@@ -143,6 +147,7 @@ func TestUpdateGroup_AdminAPIKeyActorIsSentinel(t *testing.T) {
 // group update the auth service refuses because it would contradict members'
 // group combinations is a 400 with the explanation, not a 500.
 func TestUpdateGroup_ContradictoryMembersMaps400(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

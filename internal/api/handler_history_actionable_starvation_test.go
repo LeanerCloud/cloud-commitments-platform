@@ -51,6 +51,7 @@ func runStarvationHistory(t *testing.T, ctx context.Context, store *MockConfigSt
 }
 
 func TestHandler_getHistory_PendingNotStarvedByNewerTerminalRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Now()
 	execs := executionsWithStatus(150, "failed", now, "failed")
@@ -74,6 +75,7 @@ func TestHandler_getHistory_PendingNotStarvedByNewerTerminalRows(t *testing.T) {
 }
 
 func TestHandler_getHistory_ReturnsMoreThanDefaultLimitPendingRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Now()
 	pending := executionsWithStatus(config.DefaultListLimit+50, "pending", now, "pending")
@@ -89,6 +91,7 @@ func TestHandler_getHistory_ReturnsMoreThanDefaultLimitPendingRows(t *testing.T)
 }
 
 func TestHandler_getHistory_FetchesDisjointClassesWithTheirLimits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := newStarvationStore(ctx)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -107,6 +110,7 @@ func TestHandler_getHistory_FetchesDisjointClassesWithTheirLimits(t *testing.T) 
 }
 
 func TestHandler_getHistory_ClassListingErrorKeepsOtherClass(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	tests := []struct {
 		name       string
@@ -145,6 +149,7 @@ func TestHandler_getHistory_ClassListingErrorKeepsOtherClass(t *testing.T) {
 // no-executions early return: when both class listings fail the response
 // carries only completed history and must still flag incomplete results.
 func TestHandler_getHistory_BothClassListingsFailSetTruncated(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := newStarvationStore(ctx)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -161,6 +166,7 @@ func TestHandler_getHistory_BothClassListingsFailSetTruncated(t *testing.T) {
 // of the listing-error signal: two successful but empty listings are a
 // complete result and must not raise the banner.
 func TestHandler_getHistory_EmptyClassListingsNotTruncated(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := newStarvationStore(ctx)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -173,6 +179,7 @@ func TestHandler_getHistory_EmptyClassListingsNotTruncated(t *testing.T) {
 }
 
 func TestHandler_getHistory_TruncatedPerClass(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	tests := []struct {
 		name          string
@@ -203,6 +210,7 @@ func TestHandler_getHistory_TruncatedPerClass(t *testing.T) {
 }
 
 func TestHandler_getHistory_StaleSweepBoundedToDefaultListLimit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	stale := executionsWithStatus(150, "pending", time.Now().Add(-8*24*time.Hour), "stale")
 	store := newStarvationStore(ctx)
@@ -224,6 +232,7 @@ func TestHandler_getHistory_StaleSweepBoundedToDefaultListLimit(t *testing.T) {
 // future pending ramp steps exceed the actionable cap, and the pending
 // approval due today must still be returned, with truncated set.
 func TestHandler_getHistory_DueApprovalNotCrowdedOutByFutureRampSteps(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Now()
 	var execs []config.PurchaseExecution

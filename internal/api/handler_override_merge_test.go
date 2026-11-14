@@ -76,6 +76,7 @@ var overrideMergeCases = map[string]struct {
 // A single-key PUT (what the Settings UI sends) changes that key and keeps
 // every other stored field (#1775).
 func TestSaveAccountServiceOverride_SingleKeyKeepsOtherFields(t *testing.T) {
+	t.Parallel()
 	for key, tc := range overrideMergeCases {
 		t.Run(key, func(t *testing.T) {
 			want := fullStoredOverride()
@@ -92,6 +93,7 @@ func TestSaveAccountServiceOverride_SingleKeyKeepsOtherFields(t *testing.T) {
 
 // An explicit JSON null clears only that key back to inherit.
 func TestSaveAccountServiceOverride_ExplicitNullClearsOnlyThatKey(t *testing.T) {
+	t.Parallel()
 	for key := range overrideMergeCases {
 		t.Run(key, func(t *testing.T) {
 			want := fullStoredOverride()
@@ -133,6 +135,7 @@ func clearOverrideKey(o *config.AccountServiceOverride, key string) {
 
 // Key matching follows encoding/json: a differently-cased key still counts as sent.
 func TestSaveAccountServiceOverride_KeyMatchIsCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	want := fullStoredOverride()
 	want.Term = ovPtr(3)
 	got, err := putOverride(t, fullStoredOverride(), `{"Term":3}`, nil)
@@ -143,6 +146,7 @@ func TestSaveAccountServiceOverride_KeyMatchIsCaseInsensitive(t *testing.T) {
 
 // [] sets an empty list, which is not the same as null clearing the key.
 func TestSaveAccountServiceOverride_EmptyListSetsEmptyNotNil(t *testing.T) {
+	t.Parallel()
 	want := fullStoredOverride()
 	want.IncludeRegions = []string{}
 	got, err := putOverride(t, fullStoredOverride(), `{"include_regions":[]}`, nil)
@@ -153,6 +157,7 @@ func TestSaveAccountServiceOverride_EmptyListSetsEmptyNotNil(t *testing.T) {
 
 // With no stored row the result carries only the sent fields.
 func TestSaveAccountServiceOverride_NoExistingRowKeepsOnlySentFields(t *testing.T) {
+	t.Parallel()
 	got, err := putOverride(t, nil, `{"term":1,"include_regions":["us-east-1"]}`, nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, got.ID)
@@ -168,6 +173,7 @@ func TestSaveAccountServiceOverride_NoExistingRowKeepsOnlySentFields(t *testing.
 
 // The (term, payment) check sees the merged pair, not just the sent key.
 func TestSaveAccountServiceOverride_ComboCheckedOnMergedRow(t *testing.T) {
+	t.Parallel()
 	existing := &config.AccountServiceOverride{
 		ID: "ov-1", AccountID: overrideMergeAccount, Provider: "aws", Service: "rds",
 		Payment: ovPtr("no-upfront"),
@@ -191,6 +197,7 @@ func TestSaveAccountServiceOverride_ComboCheckedOnMergedRow(t *testing.T) {
 // Every json field of the request is merged: a new field must be added to the
 // overlay allowlist (and to overrideMergeCases) or this fails.
 func TestAccountServiceOverrideRequest_EveryFieldIsMerged(t *testing.T) {
+	t.Parallel()
 	var tags []string
 	rt := reflect.TypeOf(AccountServiceOverrideRequest{})
 	for i := 0; i < rt.NumField(); i++ {
@@ -216,6 +223,7 @@ func TestAccountServiceOverrideRequest_EveryFieldIsMerged(t *testing.T) {
 // The store locks on the id it is given, so a mixed-case path id must reach it
 // as the stored account's canonical id.
 func TestSaveAccountServiceOverride_UsesCanonicalAccountID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

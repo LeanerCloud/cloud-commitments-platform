@@ -91,6 +91,7 @@ func walkHistoryPages(t *testing.T, h *Handler, req *events.LambdaFunctionURLReq
 // stream order, and the pending approval, older than every other row, must be
 // on the first page (an offset over one merged list would put it last).
 func TestHandler_getHistory_PagesThroughEveryRowOnce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// Recent, so the pending row is not stale and no expiry sweep runs.
 	base := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
@@ -148,6 +149,7 @@ func TestHandler_getHistory_PagesThroughEveryRowOnce(t *testing.T) {
 // exactly once and nothing else; no cursor may name a hidden row; and the
 // last page must say has_more=false although account-B rows follow it.
 func TestHandler_getHistory_ScopedPagingStaysInScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	accA, accB := permsAccA, permsAccB
@@ -231,6 +233,7 @@ func TestHandler_getHistory_ScopedPagingStaysInScope(t *testing.T) {
 // fetched with a cursor neither lists nor sweeps actionable executions: they
 // were all on the first page.
 func TestHandler_getHistory_CursorPageOmitsActionableRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	var purchases []config.PurchaseHistoryPageRow
@@ -263,6 +266,7 @@ func TestHandler_getHistory_CursorPageOmitsActionableRows(t *testing.T) {
 // issue #686 signal on paged reads: when terminal executions cannot be read
 // the purchases still page, and the response says rows are missing.
 func TestHandler_getHistory_TerminalExecutionsFailureFlagsTruncated(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	base := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	row, _ := purchaseFixture("p-0", "acct", base, pageUUID(0xa, 0))
@@ -285,6 +289,7 @@ func TestHandler_getHistory_TerminalExecutionsFailureFlagsTruncated(t *testing.T
 // TestHandler_getHistory_PurchaseHistoryFailureFailsRequest keeps the
 // pre-paging contract: a purchase_history read error is a server error.
 func TestHandler_getHistory_PurchaseHistoryFailureFailsRequest(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -299,6 +304,7 @@ func TestHandler_getHistory_PurchaseHistoryFailureFailsRequest(t *testing.T) {
 }
 
 func TestHistoryStreamSource_RefusesAKeysetReadThatDoesNotAdvance(t *testing.T) {
+	t.Parallel()
 	cursor := config.HistoryPageKey{Timestamp: time.Unix(100, 0), Source: config.HistorySourcePurchase, ID: pageUUID(1, 1)}
 	src := historyStreamSource{
 		after: &cursor,
@@ -312,6 +318,7 @@ func TestHistoryStreamSource_RefusesAKeysetReadThatDoesNotAdvance(t *testing.T) 
 }
 
 func TestHistoryCursor_RoundTrip(t *testing.T) {
+	t.Parallel()
 	for _, key := range []config.HistoryPageKey{
 		{Timestamp: time.Date(2026, 9, 1, 12, 0, 0, 123456000, time.UTC), Source: config.HistorySourcePurchase, ID: pageUUID(0xa, 1)},
 		{Timestamp: time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC), Source: config.HistorySourceExecution, ID: pageUUID(0xe, 2)},
@@ -328,6 +335,7 @@ func TestHistoryCursor_RoundTrip(t *testing.T) {
 // validation: anything but an unchanged next_cursor value is a 400, and so is
 // an offset.
 func TestParseHistoryFilters_PagingParams(t *testing.T) {
+	t.Parallel()
 	enc := func(raw string) string { return b64url(raw) }
 	id := pageUUID(0xa, 1)
 	valid := encodeHistoryCursor(config.HistoryPageKey{Timestamp: time.Unix(1700000000, 0), Source: config.HistorySourcePurchase, ID: id})
@@ -378,6 +386,7 @@ func TestParseHistoryFilters_PagingParams(t *testing.T) {
 // TestHandler_getHistory_InvalidCursorReadsNothing checks the 400 happens
 // before any store read.
 func TestHandler_getHistory_InvalidCursorReadsNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	mockAuth, req := adminHistoryReq(t, ctx)
@@ -394,6 +403,7 @@ func TestHandler_getHistory_InvalidCursorReadsNothing(t *testing.T) {
 }
 
 func TestHistoryStreamBatch(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, config.DefaultListLimit, historyStreamBatch(1))
 	assert.Equal(t, config.DefaultListLimit+1, historyStreamBatch(config.DefaultListLimit))
 	assert.Equal(t, 501, historyStreamBatch(500))

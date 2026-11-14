@@ -154,6 +154,7 @@ func upcomingIDs(resp *UpcomingPurchaseResponse) []string {
 }
 
 func TestGetUpcomingPurchases_NoFilterUnchanged(t *testing.T) {
+	t.Parallel()
 	ids := upcomingIDsFor(t, nil, nil)
 	assert.Equal(t, []string{"exec-gcp", "exec-multi", "exec-multi-stage", "exec-prod", "exec-stage"}, ids)
 
@@ -163,6 +164,7 @@ func TestGetUpcomingPurchases_NoFilterUnchanged(t *testing.T) {
 }
 
 func TestGetUpcomingPurchases_ProviderFilter(t *testing.T) {
+	t.Parallel()
 	ids := upcomingIDsFor(t, nil, map[string]string{"provider": "gcp"})
 	assert.Equal(t, []string{"exec-gcp"}, ids)
 
@@ -174,6 +176,7 @@ func TestGetUpcomingPurchases_ProviderFilter(t *testing.T) {
 }
 
 func TestGetUpcomingPurchases_InvalidFilterIs400(t *testing.T) {
+	t.Parallel()
 	for name, params := range map[string]map[string]string{
 		"unknown provider":     {"provider": "oracle"},
 		"non-uuid account_ids": {"account_ids": "not-a-uuid"},
@@ -191,6 +194,7 @@ func TestGetUpcomingPurchases_InvalidFilterIs400(t *testing.T) {
 }
 
 func TestGetUpcomingPurchases_AccountFilter(t *testing.T) {
+	t.Parallel()
 	// A plan-level parent buys in every plan account, so it matches when any
 	// of them is selected; the fan-out child matches only its own account.
 	ids := upcomingIDsFor(t, nil, map[string]string{"account_ids": upAcctProd})
@@ -213,6 +217,7 @@ func TestGetUpcomingPurchases_AccountFilter(t *testing.T) {
 }
 
 func TestGetUpcomingPurchases_ProviderAndAccountCombine(t *testing.T) {
+	t.Parallel()
 	ids := upcomingIDsFor(t, nil, map[string]string{"provider": "gcp", "account_ids": upAcctProd + "," + upAcctGCP})
 	assert.Equal(t, []string{"exec-gcp"}, ids)
 
@@ -224,6 +229,7 @@ func TestGetUpcomingPurchases_ProviderAndAccountCombine(t *testing.T) {
 // that account dropped from the filter (an empty result, not someone else's
 // rows and not an error), the same as /api/dashboard/summary.
 func TestGetUpcomingPurchases_OutOfScopeAccount(t *testing.T) {
+	t.Parallel()
 	allowed := []string{upAcctProd, upAcctGCP}
 
 	// Baseline: the session scope alone hides every row touching Staging.
@@ -250,6 +256,7 @@ func TestGetUpcomingPurchases_OutOfScopeAccount(t *testing.T) {
 
 // Through the real router: the query string reaches the handler.
 func TestHandleRequest_DashboardUpcomingAppliesQueryFilters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{config: upcomingFilterStore(t), corsAllowedOrigin: "*", apiKey: "test-key"}
 	req := &events.LambdaFunctionURLRequest{

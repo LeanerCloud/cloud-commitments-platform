@@ -15,6 +15,7 @@ import (
 )
 
 func TestHandler_login_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -50,6 +51,7 @@ func TestHandler_login_Success(t *testing.T) {
 }
 
 func TestHandler_login_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -64,6 +66,7 @@ func TestHandler_login_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_login_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -80,6 +83,7 @@ func TestHandler_login_InvalidBody(t *testing.T) {
 }
 
 func TestHandler_login_AuthError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -111,6 +115,7 @@ func TestHandler_login_AuthError(t *testing.T) {
 // error messages (e.g. "internal: user 42 locked since 2025-01-01") must never
 // be forwarded to the client because they reveal account state.
 func TestHandler_login_OpaqueError_HidesInternalMessage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -143,6 +148,7 @@ func TestHandler_login_OpaqueError_HidesInternalMessage(t *testing.T) {
 }
 
 func TestHandler_logout_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -165,6 +171,7 @@ func TestHandler_logout_Success(t *testing.T) {
 }
 
 func TestHandler_logout_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -181,6 +188,7 @@ func TestHandler_logout_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_logout_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -197,6 +205,7 @@ func TestHandler_logout_NoToken(t *testing.T) {
 }
 
 func TestHandler_logout_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -222,6 +231,7 @@ func TestHandler_logout_Error(t *testing.T) {
 }
 
 func TestHandler_getCurrentUser_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -258,6 +268,7 @@ func TestHandler_getCurrentUser_Success(t *testing.T) {
 }
 
 func TestHandler_getCurrentUser_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -274,6 +285,7 @@ func TestHandler_getCurrentUser_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_getCurrentUser_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -290,6 +302,7 @@ func TestHandler_getCurrentUser_NoToken(t *testing.T) {
 }
 
 func TestHandler_getCurrentUser_InvalidSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -311,6 +324,7 @@ func TestHandler_getCurrentUser_InvalidSession(t *testing.T) {
 }
 
 func TestHandler_getCurrentUser_UserNotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -338,6 +352,7 @@ func TestHandler_getCurrentUser_UserNotFound(t *testing.T) {
 }
 
 func TestHandler_checkAdminExists_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -361,6 +376,7 @@ func TestHandler_checkAdminExists_Success(t *testing.T) {
 }
 
 func TestHandler_checkAdminExists_NoAdmin(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -384,6 +400,7 @@ func TestHandler_checkAdminExists_NoAdmin(t *testing.T) {
 }
 
 func TestHandler_checkAdminExists_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -402,6 +419,7 @@ func TestHandler_checkAdminExists_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_checkAdminExists_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -425,6 +443,7 @@ func TestHandler_checkAdminExists_Error(t *testing.T) {
 }
 
 func TestHandler_setupAdmin_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -465,6 +484,7 @@ func TestHandler_setupAdmin_Success(t *testing.T) {
 }
 
 func TestHandler_setupAdmin_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -484,6 +504,7 @@ func TestHandler_setupAdmin_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_setupAdmin_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -505,6 +526,7 @@ func TestHandler_setupAdmin_InvalidBody(t *testing.T) {
 }
 
 func TestHandler_setupAdmin_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -529,6 +551,7 @@ func TestHandler_setupAdmin_Error(t *testing.T) {
 }
 
 func TestHandler_forgotPassword_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -546,6 +569,7 @@ func TestHandler_forgotPassword_Success(t *testing.T) {
 }
 
 func TestHandler_forgotPassword_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -557,6 +581,7 @@ func TestHandler_forgotPassword_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_forgotPassword_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -570,6 +595,7 @@ func TestHandler_forgotPassword_InvalidBody(t *testing.T) {
 }
 
 func TestHandler_forgotPassword_ErrorStillReturnsSuccess(t *testing.T) {
+	t.Parallel()
 	// Even if the email doesn't exist, we return success to prevent email enumeration
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
@@ -588,6 +614,7 @@ func TestHandler_forgotPassword_ErrorStillReturnsSuccess(t *testing.T) {
 }
 
 func TestHandler_resetPassword_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -612,6 +639,7 @@ func TestHandler_resetPassword_Success(t *testing.T) {
 }
 
 func TestHandler_resetPassword_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -623,6 +651,7 @@ func TestHandler_resetPassword_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_resetPassword_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -638,6 +667,7 @@ func TestHandler_resetPassword_InvalidBody(t *testing.T) {
 // Issues #460 + #461: token-status endpoint surfaces expired / used
 // state before the user types into a form that can never submit.
 func TestHandler_resetPasswordStatus_Valid(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -655,6 +685,7 @@ func TestHandler_resetPasswordStatus_Valid(t *testing.T) {
 }
 
 func TestHandler_resetPasswordStatus_Invite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -672,6 +703,7 @@ func TestHandler_resetPasswordStatus_Invite(t *testing.T) {
 }
 
 func TestHandler_resetPasswordStatus_Expired(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -688,6 +720,7 @@ func TestHandler_resetPasswordStatus_Expired(t *testing.T) {
 }
 
 func TestHandler_resetPasswordStatus_Used(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -704,6 +737,7 @@ func TestHandler_resetPasswordStatus_Used(t *testing.T) {
 }
 
 func TestHandler_resetPasswordStatus_MissingToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -720,6 +754,7 @@ func TestHandler_resetPasswordStatus_MissingToken(t *testing.T) {
 }
 
 func TestHandler_resetPasswordStatus_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -730,6 +765,7 @@ func TestHandler_resetPasswordStatus_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_resetPassword_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -759,6 +795,7 @@ func TestHandler_resetPassword_Error(t *testing.T) {
 // issue #595), which must map to the same 400 and message as an unknown
 // token rather than a 500 or a status that reveals account state.
 func TestHandler_resetPassword_InvalidResetToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -781,6 +818,7 @@ func TestHandler_resetPassword_InvalidResetToken(t *testing.T) {
 
 // A reset that lost a race to a concurrent account change is a 409, not a 500 (issue #493).
 func TestHandler_resetPassword_UserChanged(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -802,6 +840,7 @@ func TestHandler_resetPassword_UserChanged(t *testing.T) {
 // the error escaped as a plain error and got mapped to 500 / "Internal
 // server error" by the response writer.
 func TestHandler_resetPassword_ErrorIsClientError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -822,6 +861,7 @@ func TestHandler_resetPassword_ErrorIsClientError(t *testing.T) {
 	assert.Contains(t, ce.Error(), "current password")
 }
 func TestHandler_updateProfile_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -855,6 +895,7 @@ func TestHandler_updateProfile_Success(t *testing.T) {
 }
 
 func TestHandler_updateProfile_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -872,6 +913,7 @@ func TestHandler_updateProfile_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_updateProfile_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -889,6 +931,7 @@ func TestHandler_updateProfile_NoToken(t *testing.T) {
 }
 
 func TestHandler_updateProfile_InvalidSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -913,6 +956,7 @@ func TestHandler_updateProfile_InvalidSession(t *testing.T) {
 // changePassword endpoint test
 
 func TestHandler_changePassword_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -946,6 +990,7 @@ func TestHandler_changePassword_Success(t *testing.T) {
 }
 
 func TestHandler_changePassword_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 
@@ -963,6 +1008,7 @@ func TestHandler_changePassword_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_changePassword_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -990,6 +1036,7 @@ func TestHandler_changePassword_InvalidBody(t *testing.T) {
 }
 
 func TestHandler_updateProfile_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1015,6 +1062,7 @@ func TestHandler_updateProfile_InvalidJSON(t *testing.T) {
 // as "user@host" with a 400 before reaching the auth service, mirroring the
 // constraint that sign-up already enforces.
 func TestHandler_updateProfile_RejectsInvalidEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1044,6 +1092,7 @@ func TestHandler_updateProfile_RejectsInvalidEmail(t *testing.T) {
 // TestHandler_updateProfile_AcceptsValidEmail verifies that a well-formed
 // address passes validation and reaches the auth service unchanged.
 func TestHandler_updateProfile_AcceptsValidEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1071,6 +1120,7 @@ func TestHandler_updateProfile_AcceptsValidEmail(t *testing.T) {
 // (issue #929). The acting user is checking their own credential so a precise
 // message is safe and helpful.
 func TestHandler_updateProfile_WrongCurrentPassword(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1100,6 +1150,7 @@ func TestHandler_updateProfile_WrongCurrentPassword(t *testing.T) {
 // conflict is surfaced as 409 with a privacy-preserving message that does NOT
 // confirm whether another account holds the address (issue #929).
 func TestHandler_updateProfile_DuplicateEmail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1132,6 +1183,7 @@ func TestHandler_updateProfile_DuplicateEmail(t *testing.T) {
 // auth service now refuses; that refusal must reach the caller as a 400, not
 // a 500.
 func TestHandler_updateProfile_DisplayNameEmailIs400(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1155,6 +1207,7 @@ func TestHandler_updateProfile_DisplayNameEmailIs400(t *testing.T) {
 }
 
 func TestHandler_credentialWritesMapConcurrentChangeToConflict(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	userID := "12345678-1234-1234-1234-123456789abc"
 	mockAuth := new(MockAuthService)
@@ -1184,6 +1237,7 @@ func TestHandler_credentialWritesMapConcurrentChangeToConflict(t *testing.T) {
 // string rather than the plaintext, and the user gets locked out after
 // completing the reset.
 func TestHandler_resetPassword_DecodesBase64(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -1214,6 +1268,7 @@ func TestHandler_resetPassword_DecodesBase64(t *testing.T) {
 // payload must surface as a 4xx, not a 5xx, so the operator gets a clear
 // "the link/payload is bad" instead of "internal server error".
 func TestHandler_resetPassword_InvalidBase64(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1234,6 +1289,7 @@ func TestHandler_resetPassword_InvalidBase64(t *testing.T) {
 // errors from ConfirmPasswordReset are mapped to 400 ClientError so the frontend
 // can surface the specific reason (e.g. "password must contain..." criteria).
 func TestHandler_resetPassword_ClientErrorSubstrings(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1258,6 +1314,7 @@ func TestHandler_resetPassword_ClientErrorSubstrings(t *testing.T) {
 // errors from ConfirmPasswordReset (DB outages, crypto failures, etc.) are NOT
 // wrapped as 400 ClientError so the framework's default 500-mapping can fire.
 func TestHandler_resetPassword_ServerSideErrorPassesThrough(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1296,6 +1353,7 @@ func authedReq(token, body string) *events.LambdaFunctionURLRequest {
 }
 
 func TestHandler_login_MFARequired_ReturnsMFASentinel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("Login", ctx, mock.Anything).Return((*LoginResponse)(nil), ErrMFARequired_test()).Once()
@@ -1314,6 +1372,7 @@ func TestHandler_login_MFARequired_ReturnsMFASentinel(t *testing.T) {
 }
 
 func TestHandler_login_InvalidMFACode_ReturnsCodedSentinel(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("Login", ctx, mock.Anything).Return((*LoginResponse)(nil), ErrInvalidMFACode_test()).Once()
@@ -1332,6 +1391,7 @@ func TestHandler_login_InvalidMFACode_ReturnsCodedSentinel(t *testing.T) {
 }
 
 func TestHandler_mfaSetup_HappyPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	session := &Session{UserID: "user-1", Email: "u@x.com"}
@@ -1348,6 +1408,7 @@ func TestHandler_mfaSetup_HappyPath(t *testing.T) {
 }
 
 func TestHandler_mfaSetup_WrongPassword(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	session := &Session{UserID: "user-1", Email: "u@x.com"}
@@ -1369,6 +1430,7 @@ func TestHandler_mfaSetup_WrongPassword(t *testing.T) {
 }
 
 func TestHandler_mfaEnable_HappyPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	session := &Session{UserID: "user-1", Email: "u@x.com"}
@@ -1384,6 +1446,7 @@ func TestHandler_mfaEnable_HappyPath(t *testing.T) {
 }
 
 func TestHandler_mfaEnable_NoSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "bad").Return(nil, errors.New("invalid session"))
@@ -1398,6 +1461,7 @@ func TestHandler_mfaEnable_NoSession(t *testing.T) {
 }
 
 func TestHandler_mfaDisable_HappyPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	session := &Session{UserID: "user-1", Email: "u@x.com"}
@@ -1411,6 +1475,7 @@ func TestHandler_mfaDisable_HappyPath(t *testing.T) {
 }
 
 func TestHandler_mfaRegenerateRecoveryCodes_HappyPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	session := &Session{UserID: "user-1", Email: "u@x.com"}
@@ -1438,6 +1503,7 @@ func ErrInvalidMFACode_test() error { return mfaInvalidSentinel }  //nolint:revi
 // Tests for GET /api/auth/me/permissions (issue #917).
 
 func TestHandler_getCurrentUserPermissions_NoAuthService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{auth: nil}
 	req := &events.LambdaFunctionURLRequest{}
@@ -1447,6 +1513,7 @@ func TestHandler_getCurrentUserPermissions_NoAuthService(t *testing.T) {
 }
 
 func TestHandler_getCurrentUserPermissions_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1460,6 +1527,7 @@ func TestHandler_getCurrentUserPermissions_NoToken(t *testing.T) {
 }
 
 func TestHandler_getCurrentUserPermissions_InvalidSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1476,6 +1544,7 @@ func TestHandler_getCurrentUserPermissions_InvalidSession(t *testing.T) {
 // TestHandler_getCurrentUserPermissions_RegularUser asserts that a non-admin user
 // with two groups gets the union of their groups' permissions and is_admin == false.
 func TestHandler_getCurrentUserPermissions_RegularUser(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1506,6 +1575,7 @@ func TestHandler_getCurrentUserPermissions_RegularUser(t *testing.T) {
 // TestHandler_getCurrentUserPermissions_Admin asserts that an Administrators-group
 // member gets the {admin, *} wildcard and is_admin == true.
 func TestHandler_getCurrentUserPermissions_Admin(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1531,6 +1601,7 @@ func TestHandler_getCurrentUserPermissions_Admin(t *testing.T) {
 
 // TestHandler_getCurrentUserPermissions_Unauth ensures unauthenticated requests get 401.
 func TestHandler_getCurrentUserPermissions_Unauth(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1551,6 +1622,7 @@ func TestHandler_getCurrentUserPermissions_Unauth(t *testing.T) {
 // must fail loudly (server error) rather than silently degrade to an empty
 // permission set (which would render as "user lost access" in the frontend).
 func TestHandler_getCurrentUserPermissions_UnexpectedPayload(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1577,6 +1649,7 @@ func TestHandler_getCurrentUserPermissions_UnexpectedPayload(t *testing.T) {
 // sessions, so the handler must honor an X-API-Key-authenticated request
 // instead of forcing a bearer session a second time and returning 401.
 func TestHandler_getCurrentUserPermissions_AdminAPIKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1599,6 +1672,7 @@ func TestHandler_getCurrentUserPermissions_AdminAPIKey(t *testing.T) {
 // Since issue #62 the handler describes the KEY's effective permissions,
 // never the owning user's (GetUserPermissionsAPI must not be consulted).
 func TestHandler_getCurrentUserPermissions_UserAPIKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1628,6 +1702,7 @@ func TestHandler_getCurrentUserPermissions_UserAPIKey(t *testing.T) {
 // a key that validates without a usable key record cannot be described, so
 // the handler refuses instead of falling back to the owner's permissions.
 func TestHandler_getCurrentUserPermissions_UserAPIKeyWithoutKeyRecordRefuses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1653,6 +1728,7 @@ func TestHandler_getCurrentUserPermissions_UserAPIKeyWithoutKeyRecordRefuses(t *
 // messages: if either the HTTP status or the error body differ between the two
 // paths, an attacker can determine whether an email address is registered.
 func TestHandler_login_ErrorEquivalence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	encodedPassword := base64.StdEncoding.EncodeToString([]byte("SomePassword1!"))
 
@@ -1706,10 +1782,12 @@ func TestHandler_login_ErrorEquivalence(t *testing.T) {
 // ---------------------------------------------------------------
 
 func TestMapMFAServiceError_Nil(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, mapMFAServiceError(nil))
 }
 
 func TestMapMFAServiceError_NonSentinelPassesThrough(t *testing.T) {
+	t.Parallel()
 	plain := errors.New("database connection lost")
 	got := mapMFAServiceError(plain)
 	_, isClient := IsClientError(got)
@@ -1728,30 +1806,37 @@ func testMFASentinel400(t *testing.T, sentinel error, name string) {
 }
 
 func TestMapMFAServiceError_InvalidPassword_Is400(t *testing.T) {
+	t.Parallel()
 	testMFASentinel400(t, auth.ErrMFAInvalidPassword, "ErrMFAInvalidPassword")
 }
 
 func TestMapMFAServiceError_InvalidCode_Is400(t *testing.T) {
+	t.Parallel()
 	testMFASentinel400(t, auth.ErrMFAInvalidCode, "ErrMFAInvalidCode")
 }
 
 func TestMapMFAServiceError_CodeRequired_Is400(t *testing.T) {
+	t.Parallel()
 	testMFASentinel400(t, auth.ErrMFACodeRequired, "ErrMFACodeRequired")
 }
 
 func TestMapMFAServiceError_NoEnrollmentInProgress_Is400(t *testing.T) {
+	t.Parallel()
 	testMFASentinel400(t, auth.ErrMFANoEnrollmentInProgress, "ErrMFANoEnrollmentInProgress")
 }
 
 func TestMapMFAServiceError_EnrollmentExpired_Is400(t *testing.T) {
+	t.Parallel()
 	testMFASentinel400(t, auth.ErrMFAEnrollmentExpired, "ErrMFAEnrollmentExpired")
 }
 
 func TestMapMFAServiceError_NotEnabled_Is400(t *testing.T) {
+	t.Parallel()
 	testMFASentinel400(t, auth.ErrMFANotEnabled, "ErrMFANotEnabled")
 }
 
 func TestMapMFAServiceError_AuthFailed_Is401(t *testing.T) {
+	t.Parallel()
 	// ErrMFAAuthFailed must map to 401 (not 400) to prevent user enumeration:
 	// both "user not found" and "DB error" paths surface as opaque 401.
 	wrapped := fmt.Errorf("some context: %w", auth.ErrMFAAuthFailed)
@@ -1765,6 +1850,7 @@ func TestMapMFAServiceError_AuthFailed_Is401(t *testing.T) {
 // Issue #227: refusing to replace an enabled factor, and losing an enrollment
 // race, are client conflicts rather than 500s.
 func TestHandler_mfaSetupAndEnable_ConflictsAre409(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, sentinel := range []error{auth.ErrMFAAlreadyEnabled, auth.ErrUserChanged} {
 		mockAuth := new(MockAuthService)
@@ -1788,6 +1874,7 @@ func TestHandler_mfaSetupAndEnable_ConflictsAre409(t *testing.T) {
 // Issue #94: every MFA route that checks a password, TOTP or recovery code
 // must be throttled per IP and per session user.
 func TestHandler_mfaEndpoints_RateLimited(t *testing.T) {
+	t.Parallel()
 	limit := getDefaultRateLimits()["mfa"].MaxAttempts
 	invalid := auth.ErrMFAInvalidCode
 	cases := []struct {
@@ -1855,6 +1942,7 @@ func TestHandler_mfaEndpoints_RateLimited(t *testing.T) {
 }
 
 func TestHandler_mfaEnable_RateLimiterErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
 	mockAuth.On("ValidateSession", mock.Anything, "tok").Return(&Session{UserID: "user-1"}, nil)

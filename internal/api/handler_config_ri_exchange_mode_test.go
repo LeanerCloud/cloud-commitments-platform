@@ -55,6 +55,7 @@ func assertModeRejected(t *testing.T, err error, store *mocks.MockConfigStore) {
 }
 
 func TestUpdateConfig_RejectsInvalidRIExchangeMode(t *testing.T) {
+	t.Parallel()
 	// Typos, the empty string, wrong case and padded values. The consumer
 	// matches the two valid values exactly, so none of these is "close enough".
 	for _, mode := range []string{"Auto", "AUTO", "Manual", "", "atuo", "automatic", "enabled", " auto", "manual "} {
@@ -72,6 +73,7 @@ func TestUpdateConfig_RejectsInvalidRIExchangeMode(t *testing.T) {
 // TestUpdateConfig_InvalidRIExchangeModeRejectedBeforeGate pins the order: a
 // malformed write is a 400, never a 403 that reveals the caller's grant state.
 func TestUpdateConfig_InvalidRIExchangeModeRejectedBeforeGate(t *testing.T) {
+	t.Parallel()
 	r, store := autoGateSessionRouter(t, autoGateAdminOnly, disarmedConfig())
 
 	_, err := r.Route(context.Background(), "PUT", genericPath,
@@ -81,6 +83,7 @@ func TestUpdateConfig_InvalidRIExchangeModeRejectedBeforeGate(t *testing.T) {
 }
 
 func TestUpdateConfig_AcceptsValidRIExchangeMode(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"manual", "auto"} {
 		t.Run("mode="+mode, func(t *testing.T) {
 			r, store := autoGateSessionRouter(t, autoGateAdminPlusExchange, disarmedConfig())
@@ -107,6 +110,7 @@ func legacyModeConfig(mode string) config.GlobalConfig {
 // stored. Otherwise a single legacy row would 400 every partial settings save,
 // including the laddering kill-switch toggle.
 func TestUpdateConfig_LegacyStoredModeDoesNotBlockUnrelatedWrites(t *testing.T) {
+	t.Parallel()
 	for name, body := range map[string]string{
 		"unrelated field":      `{"laddering_enabled":true}`,
 		"explicit JSON null":   `{"ri_exchange_mode":null,"laddering_enabled":true}`,
@@ -128,6 +132,7 @@ func TestUpdateConfig_LegacyStoredModeDoesNotBlockUnrelatedWrites(t *testing.T) 
 // TestUpdateConfig_LegacyStoredModeCanBeRepaired pins the repair path for a
 // legacy row: sending a valid mode replaces it.
 func TestUpdateConfig_LegacyStoredModeCanBeRepaired(t *testing.T) {
+	t.Parallel()
 	r, store := autoGateSessionRouter(t, autoGateAdminOnly, legacyModeConfig("Auto"))
 
 	_, err := r.Route(context.Background(), "PUT", genericPath,
@@ -140,6 +145,7 @@ func TestUpdateConfig_LegacyStoredModeCanBeRepaired(t *testing.T) {
 // TestUpdateConfig_LegacyStoredModeResentIsRejected pins that a caller cannot
 // re-assert a legacy value just because it is already stored.
 func TestUpdateConfig_LegacyStoredModeResentIsRejected(t *testing.T) {
+	t.Parallel()
 	r, store := autoGateSessionRouter(t, autoGateAdminPlusExchange, legacyModeConfig("Auto"))
 
 	_, err := r.Route(context.Background(), "PUT", genericPath,
@@ -149,6 +155,7 @@ func TestUpdateConfig_LegacyStoredModeResentIsRejected(t *testing.T) {
 }
 
 func TestUpdateConfig_RejectsCaseFoldedAndDuplicateInvalidRIExchangeMode(t *testing.T) {
+	t.Parallel()
 	for name, body := range map[string]string{
 		"upper key":              `{"RI_EXCHANGE_MODE":"Auto"}`,
 		"mixed key":              `{"Ri_Exchange_Mode":"automatic"}`,
@@ -165,6 +172,7 @@ func TestUpdateConfig_RejectsCaseFoldedAndDuplicateInvalidRIExchangeMode(t *test
 }
 
 func TestUpdateConfig_LegacyStoredModeResentWithCaseFoldedKeyIsRejected(t *testing.T) {
+	t.Parallel()
 	r, store := autoGateSessionRouter(t, autoGateAdminPlusExchange, legacyModeConfig("Auto"))
 	_, err := r.Route(context.Background(), "PUT", genericPath, autoGateTokenReq(`{"RI_EXCHANGE_MODE":"Auto"}`))
 	assertModeRejected(t, err, store)

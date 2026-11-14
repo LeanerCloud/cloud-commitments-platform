@@ -16,6 +16,7 @@ import (
 // Tests for buildResponse error handling
 
 func TestHandler_buildResponse_WithError(t *testing.T) {
+	t.Parallel()
 	handler := &Handler{}
 	headers := map[string]string{"Content-Type": "application/json"}
 
@@ -28,6 +29,7 @@ func TestHandler_buildResponse_WithError(t *testing.T) {
 }
 
 func TestHandler_buildResponse_MarshalError(t *testing.T) {
+	t.Parallel()
 	handler := &Handler{}
 	headers := map[string]string{"Content-Type": "application/json"}
 
@@ -44,6 +46,7 @@ func TestHandler_buildResponse_MarshalError(t *testing.T) {
 }
 
 func TestHandler_buildResponse_NilBody(t *testing.T) {
+	t.Parallel()
 	handler := &Handler{}
 	headers := map[string]string{"Content-Type": "application/json"}
 
@@ -59,6 +62,7 @@ func TestHandler_buildResponse_NilBody(t *testing.T) {
 // Tests for validateSecurityContext
 
 func TestHandler_validateSecurityContext_PublicEndpoint(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -71,6 +75,7 @@ func TestHandler_validateSecurityContext_PublicEndpoint(t *testing.T) {
 }
 
 func TestHandler_validateSecurityContext_Unauthorized(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{apiKey: "secret-key"}
 
@@ -85,6 +90,7 @@ func TestHandler_validateSecurityContext_Unauthorized(t *testing.T) {
 }
 
 func TestHandler_validateSecurityContext_CSRFFailure(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -112,6 +118,7 @@ func TestHandler_validateSecurityContext_CSRFFailure(t *testing.T) {
 // Tests for request validation
 
 func TestHandler_validateRequestContext_BodyTooLarge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -128,6 +135,7 @@ func TestHandler_validateRequestContext_BodyTooLarge(t *testing.T) {
 }
 
 func TestHandler_validateRequestContext_InvalidContentType(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -154,6 +162,7 @@ func TestHandler_validateRequestContext_InvalidContentType(t *testing.T) {
 // Tests for setSecurityHeaders - additional coverage
 
 func TestSetSecurityHeaders_AllHeaders(t *testing.T) {
+	t.Parallel()
 	headers := make(map[string]string)
 	result := setSecurityHeaders(headers)
 
@@ -197,6 +206,7 @@ func strictAuthMock(t *testing.T) *MockAuthService {
 }
 
 func TestRouter_Handlers_Coverage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const testID = "11111111-1111-1111-1111-111111111111"
 
@@ -750,6 +760,7 @@ func TestRouter_Handlers_Coverage(t *testing.T) {
 
 // Test handler_plans functions.
 func TestHandler_listPlans_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -772,6 +783,7 @@ func TestHandler_listPlans_Error(t *testing.T) {
 }
 
 func TestHandler_getPlan_NotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -796,6 +808,7 @@ func TestHandler_getPlan_NotFound(t *testing.T) {
 // Tests for handler_users
 
 func TestHandler_deleteUser_CannotDeleteSelf(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -818,6 +831,7 @@ func TestHandler_deleteUser_CannotDeleteSelf(t *testing.T) {
 }
 
 func TestHandler_deleteUser_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -841,6 +855,7 @@ func TestHandler_deleteUser_Error(t *testing.T) {
 // Tests for handler_groups
 
 func TestHandler_deleteGroup_DeleteFailed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -864,6 +879,7 @@ func TestHandler_deleteGroup_DeleteFailed(t *testing.T) {
 // Tests for forgotPassword
 
 func TestHandler_forgotPassword_SuccessOnError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -886,12 +902,14 @@ func TestHandler_forgotPassword_SuccessOnError(t *testing.T) {
 // Test for validation decodeBase64Password
 
 func TestDecodeBase64Password_InvalidBase64(t *testing.T) {
+	t.Parallel()
 	// Test with invalid base64
 	_, err := decodeBase64Password("not-valid-base64!!!")
 	assert.Error(t, err)
 }
 
 func TestDecodeBase64Password_ValidBase64(t *testing.T) {
+	t.Parallel()
 	// "test123" encoded in base64
 	result, err := decodeBase64Password("dGVzdDEyMw==")
 	assert.NoError(t, err)
@@ -900,6 +918,7 @@ func TestDecodeBase64Password_ValidBase64(t *testing.T) {
 
 // Test NewHandler with API key loaded.
 func TestNewHandler_WithDependencies(t *testing.T) {
+	t.Parallel()
 	mockStore := new(MockConfigStore)
 	mockScheduler := new(MockScheduler)
 	mockPurchase := new(MockPurchaseManager)
@@ -922,6 +941,7 @@ func TestNewHandler_WithDependencies(t *testing.T) {
 // Test handler_groups additional coverage
 
 func TestHandler_createGroup_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -937,6 +957,7 @@ func TestHandler_createGroup_NoToken(t *testing.T) {
 }
 
 func TestHandler_createGroup_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -958,6 +979,7 @@ func TestHandler_createGroup_InvalidBody(t *testing.T) {
 }
 
 func TestHandler_getGroup_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -975,6 +997,7 @@ func TestHandler_getGroup_NoToken(t *testing.T) {
 // Test handler_plans additional coverage
 
 func TestHandler_deletePlan_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1001,6 +1024,7 @@ func TestHandler_deletePlan_Success(t *testing.T) {
 }
 
 func TestHandler_deletePlan_NoToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -1016,6 +1040,7 @@ func TestHandler_deletePlan_NoToken(t *testing.T) {
 }
 
 func TestHandler_deletePlan_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })

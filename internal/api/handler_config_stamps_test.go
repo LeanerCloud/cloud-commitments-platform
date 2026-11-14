@@ -18,6 +18,7 @@ import (
 // TestGetConfig_ServiceRowsCarryStamps: GET /api/config returns each service
 // row's stamps as RFC 3339 strings, and omits them for a config that has none.
 func TestGetConfig_ServiceRowsCarryStamps(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	created := time.Date(2026, 4, 27, 12, 34, 0, 0, time.UTC)
 	updated := created.Add(26 * time.Hour)
@@ -56,6 +57,7 @@ func TestGetConfig_ServiceRowsCarryStamps(t *testing.T) {
 // GET response's stamps (or forges them) must not reach the row the store
 // writes, even for a first save where there is no stored row to merge onto.
 func TestUpdateServiceConfig_IgnoresClientStamps(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -91,6 +93,7 @@ func TestUpdateServiceConfig_IgnoresClientStamps(t *testing.T) {
 // global service setting must not store a client's group_id,
 // bound_identities or max_step_commitment.
 func TestUpdateServiceConfig_IgnoresClientGroupFields(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })

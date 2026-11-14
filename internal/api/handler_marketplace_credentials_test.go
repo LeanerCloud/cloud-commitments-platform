@@ -97,6 +97,7 @@ func signingKeyID(t *testing.T, cfg aws.Config) string {
 }
 
 func TestMarketplaceList_UsesPurchaseAccountCredentials(t *testing.T) {
+	t.Parallel()
 	h, built := marketplaceAccountHandler(t, memberAccount(), standardRow())
 
 	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
@@ -107,6 +108,7 @@ func TestMarketplaceList_UsesPurchaseAccountCredentials(t *testing.T) {
 }
 
 func TestMarketplaceCancel_UsesPurchaseAccountCredentials(t *testing.T) {
+	t.Parallel()
 	row := standardRow()
 	row.ListingState = config.ListingStateActive
 	row.ListingID = "ril-cancel"
@@ -119,6 +121,7 @@ func TestMarketplaceCancel_UsesPurchaseAccountCredentials(t *testing.T) {
 }
 
 func TestMarketplaceList_RoleARNAccountWithoutRoleRefusedWhenNotHost(t *testing.T) {
+	t.Parallel()
 	account := &config.CloudAccount{ID: "acct-1", Provider: "aws", ExternalID: "222222222222", AWSAuthMode: "role_arn"}
 	h, built := marketplaceAccountHandler(t, account, standardRow())
 
@@ -133,6 +136,7 @@ func TestMarketplaceList_RoleARNAccountWithoutRoleRefusedWhenNotHost(t *testing.
 }
 
 func TestMarketplaceList_RoleARNAccountWithoutRoleAllowedForHost(t *testing.T) {
+	t.Parallel()
 	account := &config.CloudAccount{ID: "acct-1", Provider: "aws", ExternalID: marketplaceHostAccount, AWSAuthMode: "role_arn"}
 	h, built := marketplaceAccountHandler(t, account, standardRow())
 
@@ -192,6 +196,7 @@ func assertTenantSafeRoleDenial(t *testing.T, err error) {
 }
 
 func TestMarketplaceList_AssumeRoleDeniedReturnsFixedMessage(t *testing.T) {
+	t.Parallel()
 	h := realEC2Handler(t, standardRow(), assumeRoleSTS{403, marketplaceAssumeRoleDenyXML})
 
 	_, err := h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
@@ -200,6 +205,7 @@ func TestMarketplaceList_AssumeRoleDeniedReturnsFixedMessage(t *testing.T) {
 }
 
 func TestMarketplaceCancel_AssumeRoleDeniedReturnsFixedMessage(t *testing.T) {
+	t.Parallel()
 	row := standardRow()
 	row.ListingState = config.ListingStateActive
 	row.ListingID = "ril-cancel"
@@ -222,6 +228,7 @@ func (d deniedCancelEC2) CancelMarketplaceListing(ctx context.Context, id string
 }
 
 func TestMarketplaceList_CompensationAssumeRoleDeniedReturnsFixedMessage(t *testing.T) {
+	t.Parallel()
 	cfgStore := &MockConfigStore{}
 	t.Cleanup(func() { cfgStore.AssertExpectations(t) })
 	authSvc := &MockAuthService{}
@@ -255,6 +262,7 @@ func TestMarketplaceList_CompensationAssumeRoleDeniedReturnsFixedMessage(t *test
 }
 
 func TestMarketplaceList_RoleARNAccountAssumesRole(t *testing.T) {
+	t.Parallel()
 	h, built := marketplaceAccountHandler(t, roleAccount(), standardRow())
 	h.awsCfg.HTTPClient = assumeRoleSTS{200, marketplaceAssumeRoleOKXML}
 
@@ -265,6 +273,7 @@ func TestMarketplaceList_RoleARNAccountAssumesRole(t *testing.T) {
 }
 
 func TestMarketplaceCancel_RoleARNAccountAssumesRole(t *testing.T) {
+	t.Parallel()
 	row := standardRow()
 	row.ListingState = config.ListingStateActive
 	row.ListingID = "ril-cancel"
@@ -278,6 +287,7 @@ func TestMarketplaceCancel_RoleARNAccountAssumesRole(t *testing.T) {
 }
 
 func TestLoadMarketplaceAWSConfig_FailsClosed(t *testing.T) {
+	t.Parallel()
 	newHandler := func(t *testing.T, account *config.CloudAccount, lookupErr error) *Handler {
 		cfgStore := &MockConfigStore{}
 		t.Cleanup(func() { cfgStore.AssertExpectations(t) })
@@ -369,6 +379,7 @@ func hostOnlyHandler(transport aws.HTTPClient) *Handler {
 // A row with no cloud account gets the host's credentials only when its AWS
 // account id is the host account (issue #261).
 func TestLoadMarketplaceAWSConfig_NoCloudAccountHostRowUsesHostCredentials(t *testing.T) {
+	t.Parallel()
 	empty, blank := "", "  "
 	for name, id := range map[string]*string{"nil": nil, "empty": &empty, "blank": &blank} {
 		t.Run(name, func(t *testing.T) {
@@ -385,6 +396,7 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountHostRowUsesHostCredentials(t *te
 }
 
 func TestLoadMarketplaceAWSConfig_NoCloudAccountRefusedUnlessHost(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		owner     string
 		transport aws.HTTPClient
@@ -418,6 +430,7 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountRefusedUnlessHost(t *testing.T) 
 // account never reaches EC2, and one owned by the host account is signed with
 // the host's credentials.
 func TestMarketplaceHandlers_NoCloudAccountRow(t *testing.T) {
+	t.Parallel()
 	run := map[string]func(*Handler) (any, error){
 		"list": func(h *Handler) (any, error) {
 			return h.marketplaceList(context.Background(), marketplaceReq(), validMarketplacePurchaseID)
@@ -471,6 +484,7 @@ func TestMarketplaceHandlers_NoCloudAccountRow(t *testing.T) {
 }
 
 func TestMapAWSMarketplaceError_GenuineEC2ErrorsKeepTheirOwnCategory(t *testing.T) {
+	t.Parallel()
 	want := map[string]string{
 		"InvalidReservedInstancesId.NotFound": purchase.ErrCategoryMessage(purchase.ErrCategoryUnavailable),
 	}
@@ -496,6 +510,7 @@ func TestMapAWSMarketplaceError_GenuineEC2ErrorsKeepTheirOwnCategory(t *testing.
 // AuthFailure and UnauthorizedOperation mean this deployment's own role lacks
 // a permission: a 502 the operator must fix, not a 400 the caller could (#100).
 func TestMapAWSMarketplaceError_DeploymentIAMGapIs502(t *testing.T) {
+	t.Parallel()
 	for _, code := range []string{"UnauthorizedOperation", "AuthFailure"} {
 		t.Run(code, func(t *testing.T) {
 			err := &smithy.OperationError{
@@ -528,6 +543,7 @@ func (*missingKeyStore) LoadRaw(context.Context, string, string) ([]byte, error)
 }
 
 func TestLoadMarketplaceAWSConfig_ResolverErrorNeverFallsBackToHost(t *testing.T) {
+	t.Parallel()
 	stores := map[string]credentials.CredentialStore{
 		"store error":        &loadErrStore{},
 		"missing access key": &missingKeyStore{},
@@ -560,6 +576,7 @@ func TestLoadMarketplaceAWSConfig_ResolverErrorNeverFallsBackToHost(t *testing.T
 // linking the AWS guide) and a stable reason to branch on. The classification
 // keys on the code alone, whatever fault AWS reports.
 func TestMapAWSMarketplaceError_SellerNotRegistered(t *testing.T) {
+	t.Parallel()
 	for _, fault := range []smithy.ErrorFault{smithy.FaultClient, smithy.FaultUnknown} {
 		t.Run(fault.String(), func(t *testing.T) {
 			err := &smithy.OperationError{
@@ -584,6 +601,7 @@ func TestMapAWSMarketplaceError_SellerNotRegistered(t *testing.T) {
 // Other AWS client faults keep their own text and carry no reason, so a client
 // branching on reason never mistakes them for the seller precondition.
 func TestMapAWSMarketplaceError_OtherClientFaultsHaveNoReason(t *testing.T) {
+	t.Parallel()
 	err := &smithy.GenericAPIError{Code: "InvalidParameterValue", Message: "bad price", Fault: smithy.FaultClient}
 
 	ce, ok := IsClientError(mapAWSMarketplaceError("create listing", err))
