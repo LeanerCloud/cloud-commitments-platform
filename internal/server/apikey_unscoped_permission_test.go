@@ -9,6 +9,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -55,7 +56,7 @@ func TestHandleRequest_UnscopedAPIKey_DeniedOnAdminOwner(t *testing.T) {
 		Permissions: []auth.Permission{{Action: auth.ActionAdmin, Resource: auth.ResourceAll}},
 	}
 
-	mockStore := new(auth.MockStore)
+	mockStore := new(authtest.MockStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
 	mockStore.On("GetAPIKeyByHash", mock.Anything, keyHash).Return(key, nil)
@@ -66,7 +67,7 @@ func TestHandleRequest_UnscopedAPIKey_DeniedOnAdminOwner(t *testing.T) {
 	service := auth.NewService(auth.ServiceConfig{
 		Store:           mockStore,
 		SessionDuration: time.Hour,
-		CSRFKey:         auth.TestCSRFKey(),
+		CSRFKey:         authtest.TestCSRFKey(),
 	})
 	handler := api.NewHandler(api.HandlerConfig{
 		AuthService:       newAuthServiceAdapter(service),

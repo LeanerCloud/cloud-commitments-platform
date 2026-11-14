@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,7 @@ func TestAuthServiceAdapter_ConstrainedAdminKeyRefusedOutOfScope(t *testing.T) {
 	const ownerPass = "CorrectHorse@123" // throwaway fixture credential
 	owner := &auth.User{
 		ID: "user-1", Email: "test@example.com", Active: true,
-		PasswordHash: auth.TestPasswordHash(t, ownerPass),
+		PasswordHash: authtest.TestPasswordHash(t, ownerPass),
 		GroupIDs:     []string{auth.DefaultAdminGroupID},
 	}
 	mockStore.On("GetUserByID", ctx, "user-1").Return(owner, nil)

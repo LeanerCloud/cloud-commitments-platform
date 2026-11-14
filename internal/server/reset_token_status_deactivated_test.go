@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -23,14 +24,14 @@ import (
 
 const deactivatedResetRawToken = "deactivated-user-reset-token"
 
-func newResetTokenHarness(t *testing.T) (*api.Handler, *auth.MockStore) {
+func newResetTokenHarness(t *testing.T) (*api.Handler, *authtest.MockStore) {
 	t.Helper()
-	mockStore := new(auth.MockStore)
+	mockStore := new(authtest.MockStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 	service := auth.NewService(auth.ServiceConfig{
 		Store:           mockStore,
 		SessionDuration: time.Hour,
-		CSRFKey:         auth.TestCSRFKey(),
+		CSRFKey:         authtest.TestCSRFKey(),
 	})
 	return api.NewHandler(api.HandlerConfig{AuthService: newAuthServiceAdapter(service), RateLimiter: api.NewInMemoryRateLimiter()}), mockStore
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -92,7 +93,7 @@ func newUsageBookingHarness(t *testing.T, groupPermissions []auth.Permission) *u
 	}
 	group := &auth.Group{ID: "group-1", Name: "harness", Permissions: groupPermissions}
 
-	mockStore := new(auth.MockStore)
+	mockStore := new(authtest.MockStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
 
 	mockStore.On("GetAPIKeyByHash", mock.Anything, keyHash).
@@ -123,7 +124,7 @@ func newUsageBookingHarness(t *testing.T, groupPermissions []auth.Permission) *u
 	service := auth.NewService(auth.ServiceConfig{
 		Store:           mockStore,
 		SessionDuration: time.Hour,
-		CSRFKey:         auth.TestCSRFKey(),
+		CSRFKey:         authtest.TestCSRFKey(),
 	})
 	h.handler = api.NewHandler(api.HandlerConfig{
 		AuthService:       newAuthServiceAdapter(service),

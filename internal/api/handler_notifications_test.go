@@ -209,24 +209,6 @@ func TestScopeLabel_KnownScopes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// redactEmailLocal
-// ---------------------------------------------------------------------------
-
-func TestRedactEmailLocal(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"user@example.com", "us***@example.com"},
-		{"ab@x.com", "***@x.com"},
-		{"a@x.com", "***@x.com"},
-		{"noemail", "***"},
-	}
-	for _, c := range cases {
-		assert.Equal(t, c.want, redactEmailLocal(c.in), "input: %s", c.in)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // isPublicEndpoint includes /api/notifications/unsubscribe
 // ---------------------------------------------------------------------------
 

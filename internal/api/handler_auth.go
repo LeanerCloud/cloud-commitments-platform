@@ -11,6 +11,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/redact"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -423,9 +424,9 @@ func (h *Handler) forgotPassword(ctx context.Context, req *events.LambdaFunction
 		allowed, err := h.rateLimiter.AllowWithEmail(ctx, strings.ToLower(strings.TrimSpace(pwdReq.Email)), "forgot_password")
 		if err != nil {
 			logging.Errorf("ALERT: rate limiter error on forgot_password for %s; proceeding fail-open (02-M1): %v",
-				redactEmail(pwdReq.Email), err)
+				redact.Email(pwdReq.Email), err)
 		} else if !allowed {
-			logging.Warnf("Rate limit exceeded for forgot password: %s", redactEmail(pwdReq.Email))
+			logging.Warnf("Rate limit exceeded for forgot password: %s", redact.Email(pwdReq.Email))
 			// Always return success message to prevent email enumeration
 			return map[string]string{"status": "if the email exists, a reset link has been sent"}, nil
 		}
@@ -795,19 +796,4 @@ func (h *Handler) mfaRegenerateRecoveryCodes(ctx context.Context, req *events.La
 		return nil, mapMFAServiceError(err)
 	}
 	return &MFARegenerateResponse{RecoveryCodes: codes}, nil
-}
-
-// redactEmail returns a redacted version of an email address for safe logging.
-// e.g. "user@example.com" -> "us***@example.com".
-func redactEmail(email string) string {
-	at := strings.LastIndex(email, "@")
-	if at < 0 {
-		return "***"
-	}
-	local := email[:at]
-	domain := email[at:] // includes the '@'
-	if len(local) <= 2 {
-		return "***" + domain
-	}
-	return local[:2] + "***" + domain
 }
