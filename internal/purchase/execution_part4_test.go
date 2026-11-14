@@ -335,3 +335,108 @@ func TestExecutePurchase_SingleAccount_CredResolutionError(t *testing.T) {
 
 	mockStore.AssertExpectations(t)
 }
+
+// TestExecutePurchase_SingleAccount_AzureUsesResolvedCreds asserts that the
+// single-account path resolves per-account credentials via resolveAccountProvider
+// when exec.Recommendations all share the same cloud_account_id (direct-execute
+// Azure purchase -- PlanID is empty, exec.CloudAccountID is nil).
+//
+// This is the regression test for issue #602: before the fix, nil was passed as
+// provCfg, which caused DefaultAzureCredential to fall through its entire chain
+// (EnvironmentCredential, WorkloadIdentity, ManagedIdentity, CLI) and fail in
+// the Lambda runtime where none of these are available.
+//
+// After the fix, singleCloudAccountIDFromRecs derives the account from the recs,
+// GetCloudAccount fetches the CloudAccount record, and resolveAccountProvider
+// constructs a provider.Config with explicit creds. The factory receives
+// a non-nil provCfg, which the assertion captures via MatchedBy.
+func TestExecutePurchase_SingleAccount_AzureUsesResolvedCreds(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	mockEmail := new(MockEmailSender)
+	mockSTS := new(MockSTSClient)
+	mockFactory := new(MockProviderFactory)
+	mockProviderInst := new(MockProvider)
+	mockServiceClient := new(MockServiceClient)
+	assertMocksOnCleanup(t, mockEmail, mockSTS, mockProviderInst, mockServiceClient)
+
+	acctID := "azure-acct-1"
+	// Direct-execute: no PlanID, no exec-level CloudAccountID.
+	// All recs share the same cloud_account_id so singleCloudAccountIDFromRecs
+	// returns &acctID.
+	exec := &config.PurchaseExecution{
+		ExecutionID: "exec-azure-direct",
+		PlanID:      "",
+		StepNumber:  0,
+		Source:      common.PurchaseSourceWeb,
+		Recommendations: []config.RecommendationRecord{
+			{
+				Provider:       "azure",
+				Service:        "compute",
+				ResourceType:   "Standard_B1ls",
+				Region:         "eastus",
+				Count:          1,
+				Savings:        10.0,
+				UpfrontCost:    50.0,
+				Selected:       true,
+				CloudAccountID: &acctID,
+			},
+		},
+	}
+
+	azureAccount := &config.CloudAccount{
+		ID:                  acctID,
+		Provider:            "azure",
+		AzureAuthMode:       "managed_identity",
+		AzureSubscriptionID: "sub-111",
+	}
+
+	// GetCloudAccount is called with the account ID derived from the recs.
+	mockStore.On("GetCloudAccount", ctx, acctID).Return(azureAccount, nil)
+	mockStore.On("SavePurchaseHistory", ctx, mock.AnythingOfType("*config.PurchaseHistoryRecord")).Return(nil)
+	mockEmail.On("SendPurchaseConfirmation", ctx, mock.AnythingOfType("email.NotificationData")).Return(nil)
+	mockSTS.On("GetCallerIdentity", ctx, mock.AnythingOfType("*sts.GetCallerIdentityInput")).Return(&sts.GetCallerIdentityOutput{
+		Account: aws.String("123456789012"),
+	}, nil)
+
+	// The core assertion: factory must receive a non-nil provCfg.
+	// Before the fix, nil was passed and Azure SDK fell back to DefaultAzureCredential.
+	// After the fix, resolveAzureProvider populates ProviderOverride on the config.
+	mockFactory.On("CreateAndValidateProvider", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), "azure",
+		mock.MatchedBy(func(cfg *provider.Config) bool {
+			return cfg != nil && cfg.ProviderOverride != nil
+		}),
+	).Return(mockProviderInst, nil)
+	// Issue #626: rec.Service is "compute" (canonical), which must map to
+	// common.ServiceCompute — not the AWS-legacy ServiceEC2 that the old
+	// mapServiceType returned. The mock previously expected ServiceEC2 and
+	// silently encoded the production bug because mocks return success
+	// regardless of the ServiceType passed in.
+	mockProviderInst.On("GetServiceClient", mock.MatchedBy(hasPerRecDeadline(30*time.Second)), common.ServiceCompute, "eastus").Return(mockServiceClient, nil)
+	mockServiceClient.On("PurchaseCommitment", mock.MatchedBy(hasPerRecDeadline(30*time.Second)),
+		mock.AnythingOfType("common.Recommendation"),
+		mock.AnythingOfType("common.PurchaseOptions"),
+	).Return(common.PurchaseResult{Success: true, CommitmentID: "azure-res-1"}, nil)
+
+	// credStore needed because AzureAuthMode is "managed_identity"; for managed
+	// identity, ResolveAzureTokenCredentialWithOpts returns a ManagedIdentityCredential
+	// without touching the store. We still supply a non-nil credStore so the
+	// guard `if account.AzureAuthMode != "managed_identity" && m.credStore == nil`
+	// is not triggered.
+	mockCredStore := &MockCredentialStore{}
+
+	manager := &Manager{
+		config:          mockStore,
+		email:           mockEmail,
+		stsClient:       mockSTS,
+		providerFactory: mockFactory,
+		credStore:       mockCredStore,
+		dashboardURL:    "https://dashboard.example.com",
+	}
+
+	err := manager.executePurchase(ctx, exec)
+	require.NoError(t, err)
+
+	mockStore.AssertExpectations(t)
+	mockFactory.AssertExpectations(t)
+}
