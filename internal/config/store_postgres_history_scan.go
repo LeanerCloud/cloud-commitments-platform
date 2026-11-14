@@ -20,19 +20,19 @@ import (
 // cyclomatic complexity under the gocyclo budget as columns accrue across
 // issues #290 (revocation) and #292 (marketplace).
 type purchaseHistoryNullables struct {
-	upfrontCost              sql.NullFloat64
-	monthlyCost              sql.NullFloat64
-	planID                   sql.NullString
-	planName                 sql.NullString
-	cloudAccountID           sql.NullString
 	revocationWindowClosesAt *time.Time
 	revokedAt                *time.Time
+	planName                 sql.NullString
+	cloudAccountID           sql.NullString
+	planID                   sql.NullString
 	revokedVia               sql.NullString
 	supportCaseID            sql.NullString
 	offeringClass            sql.NullString
 	listingID                sql.NullString
 	listingState             sql.NullString
 	amountBasis              sql.NullString
+	upfrontCost              sql.NullFloat64
+	monthlyCost              sql.NullFloat64
 }
 
 // applyTo reconciles the nullable columns into record. monthly_cost is left as

@@ -93,13 +93,6 @@ linters:
           - govet
         text: "unusedwrite"
         path: _test\.go
-      # fieldalignment: purchaseHistoryNullables in store_postgres.go is the one
-      # remaining violation; that file is frozen for concurrent work (#297).
-      # Drop this rule once the struct is reordered.
-      - linters:
-          - govet
-        text: "fieldalignment"
-        path: internal/config/store_postgres\.go
       - linters:
           - errcheck
           - gosec
