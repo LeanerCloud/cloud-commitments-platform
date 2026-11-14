@@ -94,6 +94,7 @@ func newPauseClaimFixture(t *testing.T) *pauseClaimFixture {
 	globalCfg, err := f.store.GetGlobalConfig(ctx)
 	require.NoError(t, err)
 	globalCfg.AutoPurchaseEnabled = true
+	globalCfg.PurchaseDelayHours = 0 // these tests exercise immediate execution; the migrated default is 48
 	require.NoError(t, f.store.SaveGlobalConfig(ctx, globalCfg))
 	accounts, err := f.store.GetPlanAccounts(ctx, plan.ID)
 	require.NoError(t, err)
