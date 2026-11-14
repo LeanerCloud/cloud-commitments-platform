@@ -15,9 +15,9 @@ import (
 
 type ladderTimelineRequest struct {
 	store     config.LadderTimelineStore
+	cursor    *config.LadderTimelineCursor
 	accountID string
 	provider  string
-	cursor    *config.LadderTimelineCursor
 }
 
 func (h *Handler) ladderTimelineScope(ctx context.Context, req *events.LambdaFunctionURLRequest) (ladderTimelineRequest, error) {

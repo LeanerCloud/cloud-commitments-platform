@@ -114,8 +114,8 @@ func TestHandler_getHistory_ClassListingErrorKeepsOtherClass(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
 		name       string
-		failActive bool
 		wantID     string
+		failActive bool
 	}{
 		{name: "terminal error keeps actionable", failActive: false, wantID: "pending-0"},
 		{name: "actionable error keeps terminal", failActive: true, wantID: "failed-0"},

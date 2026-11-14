@@ -463,9 +463,9 @@ func putGraceBody(t *testing.T, body string) map[string]int {
 // already clears it, so null handling is pinned only as clear-on-null.
 func TestHandler_updateConfig_GracePeriodDaysKeyCase(t *testing.T) {
 	tests := []struct {
+		want map[string]int
 		name string
 		body string
-		want map[string]int
 	}{
 		{name: "exact key replaces", body: `{"grace_period_days": {"aws": 5}}`, want: map[string]int{"aws": 5}},
 		{name: "mixed case replaces", body: `{"Grace_Period_Days": {"aws": 5}}`, want: map[string]int{"aws": 5}},
@@ -1681,8 +1681,8 @@ func TestHandler_updateConfig_RequiresUpdateConfigPermission(t *testing.T) {
 func TestHandler_updateConfig_EnabledProvidersWrite(t *testing.T) {
 	cases := []struct {
 		name     string
-		stored   []string
 		body     string
+		stored   []string
 		wantErr  bool
 		wantSave bool
 	}{

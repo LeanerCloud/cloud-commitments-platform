@@ -205,11 +205,11 @@ func TestGrantPermissionsScoped_ConstrainedCheckFailsClosedOnEmptyConstraintSets
 // inside-only one. Only the pair distinguishes them.
 type constrainedGrantCase struct {
 	permConstraints *auth.PermissionConstraints
-	inside          auth.PermissionConstraints
-	outside         auth.PermissionConstraints
 	name            string
 	action          string
 	resource        string
+	inside          auth.PermissionConstraints
+	outside         auth.PermissionConstraints
 }
 
 // constrainedGrantCases covers all five constraint dimensions. Each case holds

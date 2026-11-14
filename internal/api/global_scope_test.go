@@ -197,8 +197,8 @@ func TestInsuranceStatus_ConstrainedViewerGets404(t *testing.T) {
 // gate applies to writes (and to the collection kick), not to these actions.
 func TestCapOnlyHolder_ReadsStillServed(t *testing.T) {
 	reads := map[string]struct {
-		perm auth.Permission
 		call func(*Handler) (any, error)
+		perm auth.Permission
 	}{
 		"ri-exchange config": {
 			perm: auth.Permission{Action: auth.ActionView, Resource: auth.ResourceConfig, Constraints: capOnly()},

@@ -371,10 +371,10 @@ func TestUpsertLadderConfig_UncappedAWSRejected(t *testing.T) {
 func TestUpsertLadderConfig_NumericFieldKeyCase(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		key, value string
-		got        func(*config.LadderConfigDB) any
 		want       any
 		def        any
+		got        func(*config.LadderConfigDB) any
+		key, value string
 	}{
 		{key: "Target_Coverage", value: "73.5", got: func(c *config.LadderConfigDB) any { return c.TargetCoverage }, want: 73.5, def: config.DefaultLadderTargetCoverage},
 		{key: "BUFFER_FRACTION", value: "0.35", got: func(c *config.LadderConfigDB) any { return c.BufferFraction }, want: 0.35, def: config.DefaultLadderBufferFraction},

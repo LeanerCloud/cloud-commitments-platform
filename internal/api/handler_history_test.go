@@ -2176,10 +2176,10 @@ func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
 	}
 	const persistent = "FROM_EMAIL not configured"
 	tests := []struct {
-		name       string
 		exec       config.PurchaseExecution
-		wantUnsafe bool
+		name       string
 		wantHint   string
+		wantUnsafe bool
 	}{
 		{name: "azure savings plans", exec: failed("azure", "savingsplans", "boom"), wantUnsafe: true, wantHint: ""},
 		{name: "unrecognized provider", exec: failed("oracle", "compute", "boom"), wantUnsafe: true, wantHint: ""},

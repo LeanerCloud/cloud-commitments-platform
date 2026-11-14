@@ -95,10 +95,10 @@ func TestHandleRequest_AccountScope_SharedDisplayName(t *testing.T) {
 	registered := []config.CloudAccount{sharedNameAWS, sharedNameAzure, sharedNameSolo}
 
 	for _, tc := range []struct {
+		reachable map[string]bool // GET /api/accounts/{id} -> 200 (true) or 404
 		name      string
 		scope     []string
 		wantList  []string
-		reachable map[string]bool // GET /api/accounts/{id} -> 200 (true) or 404
 	}{
 		{
 			name:     "shared name grants neither same-named account",

@@ -28,8 +28,8 @@ func historyExecutionStatuses() []string {
 // include a row the scoped user could not see in the list (issue #675).
 type historyScope struct {
 	allowed  auth.AccountScope
-	accounts []config.CloudAccount
 	userID   string
+	accounts []config.CloudAccount
 }
 
 // loadHistoryScope resolves the session's account scope. The cloud account

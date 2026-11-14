@@ -119,8 +119,8 @@ func TestCreateGroup_RefusesUnbindableAccountEntries(t *testing.T) {
 	all := []config.CloudAccount{bindProd, bindDupA, bindDupB, bindOther, bindDupC}
 	for _, tc := range []struct {
 		name  string
-		scope []string
 		entry string
+		scope []string
 	}{
 		{name: "unknown name", scope: nil, entry: "deleted-account"},
 		{name: "name shared by two accounts", scope: nil, entry: "shared"},

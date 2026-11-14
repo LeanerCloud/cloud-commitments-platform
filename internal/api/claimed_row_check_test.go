@@ -168,9 +168,9 @@ func TestClaimedRowCheck_TokenApprove(t *testing.T) {
 		return &c
 	}
 	for _, tc := range []struct {
+		plan  *config.PurchasePlan
 		name  string
 		perms []auth.Permission
-		plan  *config.PurchasePlan
 	}{
 		{name: "approve-own cap", perms: []auth.Permission{cappedPerm(auth.ActionApproveOwn, total)}, plan: autoPlan(nil)},
 		{name: "approve-any cap", perms: []auth.Permission{cappedPerm(auth.ActionApproveAny, total)}, plan: autoPlan(nil)},
@@ -302,11 +302,11 @@ func scopedBearer() *events.LambdaFunctionURLRequest {
 }
 
 type scopedClaimPath struct {
+	run    func(t *testing.T, f *scopedClaimFixture) error
+	perm   auth.Permission
 	name   string
 	call   string // purchase manager method that buys
-	perm   auth.Permission
 	execID string
-	run    func(t *testing.T, f *scopedClaimFixture) error
 }
 
 func scopedClaimPaths() []scopedClaimPath {
@@ -395,8 +395,8 @@ func TestClaimedRowCheck_AccountScopeLookupErrorRefuses(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	for _, tc := range []struct {
-		name  string
 		check func(h *Handler, s *Session) purchase.ClaimedRowCheck
+		name  string
 	}{
 		{name: "run now", check: (*Handler).runNowClaimCheck},
 		{name: "session approve", check: (*Handler).sessionApproveClaimCheck},

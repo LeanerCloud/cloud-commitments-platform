@@ -746,17 +746,17 @@ type historyFilters struct {
 	Start                 time.Time
 	End                   time.Time
 	ExternalIDsByProvider map[string][]string
-	Provider              string
-	LegacyAccountID       string
+	// Cursor is the stream position the page starts after (issue #674); nil
+	// for the first page.
+	Cursor          *config.HistoryPageKey
+	Provider        string
+	LegacyAccountID string
 	// PlanID narrows the history to one purchase plan's purchases and
 	// executions (the plan-history view's plan_id); empty means no plan filter.
 	PlanID     string
 	AccountIDs []string
 	Limit      int
 	HasDate    bool
-	// Cursor is the stream position the page starts after (issue #674); nil
-	// for the first page.
-	Cursor *config.HistoryPageKey
 }
 
 // parseHistoryFilters validates and normalises the /api/history query string.

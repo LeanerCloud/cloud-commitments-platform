@@ -73,9 +73,9 @@ func TestGlobalConfigArmingGates_NoAuthCallInsideTransaction(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name        string
+		body        string
 		perms       []auth.Permission
 		dedicated   bool
-		body        string
 		wantRefused bool
 	}{
 		{name: "arm auto-purchase, granted", perms: afGranted, dedicated: false, body: `{"auto_purchase_enabled":true}`, wantRefused: false},

@@ -21,8 +21,8 @@ import (
 // embedded stubEmailNotifier.
 type recordingExecutedNotifier struct {
 	stubEmailNotifier
-	calls    int
 	captured email.NotificationData
+	calls    int
 }
 
 func (r *recordingExecutedNotifier) SendPurchaseExecutedNotification(_ context.Context, data email.NotificationData) error {

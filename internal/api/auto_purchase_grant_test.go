@@ -88,11 +88,11 @@ func TestAutoPurchaseGate_PlanWrites(t *testing.T) {
 	key := apgCaller{key: true}
 
 	tests := []struct {
-		name        string
-		caller      apgCaller
-		method      string // patch | put
 		stored      *config.PurchasePlan
+		name        string
+		method      string // patch | put
 		body        string
+		caller      apgCaller
 		wantRefused bool
 	}{
 		{name: "patch arms a capped plan: admin without grant refused", caller: admin, method: "patch", stored: apgStoredPlan(false, apgCap(1000)), body: `{"auto_purchase":true}`, wantRefused: true},

@@ -35,8 +35,8 @@ type discoverOrgProbe struct {
 	h       *Handler
 	store   *MockConfigStore
 	creds   *countingCredStore
-	called  bool
 	created []config.CloudAccount
+	called  bool
 }
 
 func newDiscoverOrgProbe(t *testing.T, rootID string, scope ...string) *discoverOrgProbe {

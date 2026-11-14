@@ -44,8 +44,8 @@ func TestInsuranceStatus_AdminAPIKey_ReportsPresenceOnly(t *testing.T) {
 	full := archera.Settings{OrgID: insTestOrg, PlanID: insTestPlan, KeySecretRef: insTestRef}
 	for name, tc := range map[string]struct {
 		s       archera.Settings
-		ok      bool
 		missing []string
+		ok      bool
 	}{
 		"off":      {s: archera.Settings{}, ok: false, missing: []string{archera.EnvKeySecret, archera.EnvOrgID, archera.EnvPlanID}},
 		"complete": {s: full, ok: true, missing: []string{}},

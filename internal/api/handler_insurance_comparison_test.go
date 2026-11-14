@@ -31,11 +31,11 @@ const (
 
 type vendorTransport struct {
 	t       *testing.T
-	calls   int
-	status  int
-	body    string
 	headers http.Header
 	lastReq *http.Request
+	body    string
+	calls   int
+	status  int
 }
 
 func (v *vendorTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -190,12 +190,12 @@ func TestInsuranceComparison_VendorErrorsAreSanitized(t *testing.T) {
 	fragment := insTestKey[:12]
 	echo := `{"message":"bad key ` + insTestKey + ` fragment ` + fragment + `"}`
 	cases := []struct {
-		name    string
-		status  int
-		body    string
 		headers http.Header
-		code    int
+		name    string
+		body    string
 		retry   string
+		status  int
+		code    int
 	}{
 		{name: "401 echoing key", status: 401, body: echo, headers: nil, code: 502, retry: ""},
 		{name: "403", status: 403, body: echo, headers: nil, code: 502, retry: ""},
@@ -323,8 +323,8 @@ func TestInsuranceComparison_RealRequestPath_RetryAfter(t *testing.T) {
 
 func TestMapInsuranceError_PinsEachStatusMessage(t *testing.T) {
 	for status, want := range map[int]struct {
-		code int
 		msg  string
+		code int
 	}{
 		401: {code: 502, msg: "Archera rejected the configured credentials"},
 		403: {code: 502, msg: "Archera rejected the configured credentials"},

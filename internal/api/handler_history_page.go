@@ -146,8 +146,8 @@ type historyStreamRow struct {
 // historyStreamSource reads one table's half of the stream in keyset batches.
 type historyStreamSource struct {
 	fetch func(ctx context.Context, after *config.HistoryPageKey) ([]historyStreamRow, error)
-	buf   []historyStreamRow
 	after *config.HistoryPageKey
+	buf   []historyStreamRow
 	batch int
 	done  bool
 }
@@ -182,11 +182,11 @@ func (s *historyStreamSource) head(ctx context.Context) (*historyStreamRow, erro
 // stream order.
 type historyStream struct {
 	h                *Handler
-	scope            historyScope
 	filters          *historyFilters
+	scope            historyScope
+	approver         string
 	purchases        historyStreamSource
 	executions       historyStreamSource
-	approver         string
 	approverResolved bool
 	// executionsFailed reports that a terminal-execution read failed. The
 	// stream then continues with purchase_history rows only, as History did
@@ -357,9 +357,9 @@ func sameOptionalString(a, b *string) bool {
 
 // historyPage is one page of the stream.
 type historyPage struct {
-	rows []config.PurchaseHistoryRecord
 	// nextCursor is set when more visible rows follow the page.
 	nextCursor string
+	rows       []config.PurchaseHistoryRecord
 	// incomplete reports that terminal executions could not be read.
 	incomplete bool
 }

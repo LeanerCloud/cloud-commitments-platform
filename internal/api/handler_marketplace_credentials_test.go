@@ -159,8 +159,8 @@ const (
 // assumeRoleSTS answers AssumeRole with the given status and body and every
 // other STS call as the host account.
 type assumeRoleSTS struct {
-	status int
 	body   string
+	status int
 }
 
 func (a assumeRoleSTS) Do(r *http.Request) (*http.Response, error) {
@@ -398,8 +398,8 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountHostRowUsesHostCredentials(t *te
 func TestLoadMarketplaceAWSConfig_NoCloudAccountRefusedUnlessHost(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct {
-		owner     string
 		transport aws.HTTPClient
+		owner     string
 		wantSTS   bool
 	}{
 		"member account":     {owner: "222222222222", transport: hostSTSTransport{}, wantSTS: true},

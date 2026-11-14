@@ -20,8 +20,8 @@ func TestValidateAWSExternalID(t *testing.T) {
 	cases := []struct {
 		name        string
 		input       string
-		wantError   bool
 		errContains string
+		wantError   bool
 	}{
 		// --- Valid values ---
 		{name: "uuid", input: "550e8400-e29b-41d4-a716-446655440000", wantError: false, errContains: ""},

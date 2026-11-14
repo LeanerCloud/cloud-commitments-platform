@@ -51,15 +51,15 @@ var leakMarkers = []string{probeHostAcct, probeHostRoleARN, "assumed-role/host",
 // identity signed the request; AssumeRole / AssumeRoleWithWebIdentity hand out
 // session keys unless told to fail.
 type probeSTS struct {
-	denyAssumeRole   bool
 	identityErrCode  string
-	block            bool
-	transportErr     bool
+	assumeSigners    []string // access key that signed each AssumeRole
+	mu               sync.Mutex
 	assumeRoles      atomic.Int32
 	webIdentityCalls atomic.Int32
 	identityCalls    atomic.Int32
-	mu               sync.Mutex
-	assumeSigners    []string // access key that signed each AssumeRole
+	denyAssumeRole   bool
+	block            bool
+	transportErr     bool
 }
 
 // assumeRoleSigners returns the access key IDs that signed each AssumeRole.
@@ -351,13 +351,13 @@ func TestTestAccountCredentials_AWSProbeTimeout(t *testing.T) {
 func TestTestAccountCredentials_AWSValidConfigsProbeCallerIdentity(t *testing.T) {
 	tokenFile := writeTokenFile(t)
 	tests := []struct {
-		name        string
 		acct        *config.CloudAccount
+		name        string
 		payload     string
 		wantAcct    string
+		wantSigners []string
 		wantAssume  int32
 		wantWebAuth int32
-		wantSigners []string
 	}{
 		{
 			name:     "access_keys",

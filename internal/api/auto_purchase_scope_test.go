@@ -109,8 +109,8 @@ func TestAutoPurchaseScope_PlanCreateArm(t *testing.T) {
 func TestAutoPurchaseScope_LadderConfigArm(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name        string
 		constraints *auth.PermissionConstraints
+		name        string
 		wantRefused bool
 	}{
 		{name: "scoped to the config's account: allowed", constraints: &auth.PermissionConstraints{AccountIDs: []string{lgAcct}}, wantRefused: false},
@@ -206,8 +206,8 @@ func TestAutoPurchaseScope_ProviderChangeOnArmedPlan(t *testing.T) {
 	t.Parallel()
 	put := `{"name":"p","enabled":true,"auto_purchase":true,"provider":"azure","service":"vm","term":3,"payment":"monthly"}`
 	for _, tc := range []struct {
-		name        string
 		constraints *auth.PermissionConstraints
+		name        string
 		wantRefused bool
 	}{
 		{name: "aws-only grant adds an azure service: refused", constraints: &auth.PermissionConstraints{Providers: []string{"aws"}}, wantRefused: true},
@@ -237,8 +237,8 @@ func TestAutoPurchaseScope_ProviderChangeOnArmedPlan(t *testing.T) {
 func TestAutoPurchaseScope_ServicesAndRegionsConstraints(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name        string
 		constraints *auth.PermissionConstraints
+		name        string
 		wantRefused bool
 	}{
 		{name: "services grant covering the plan's service: allowed", constraints: &auth.PermissionConstraints{Services: []string{"rds"}}, wantRefused: false},
@@ -268,8 +268,8 @@ func TestPlanArmEscalates_ProviderAndServiceWidening(t *testing.T) {
 		return p
 	}
 	for _, tc := range []struct {
-		name  string
 		after *config.PurchasePlan
+		name  string
 		want  bool
 	}{
 		{name: "unchanged services", after: plan("aws/rds"), want: false},
@@ -350,8 +350,8 @@ func TestAutoPurchaseScope_RetargetRefusesBoundKeyNamingAnotherEntry(t *testing.
 		return config.ServiceConfig{Provider: provider, Service: service, Enabled: true, MinCount: 1, GroupID: "g1", BoundIdentities: []string{"k1"}}
 	}
 	for _, tc := range []struct {
-		name        string
 		stored      *config.PurchasePlan
+		name        string
 		wantRefused bool
 	}{
 		{name: "key names another provider and service", stored: bound("gcp/compute#g1", entry("aws", "ec2")), wantRefused: true},

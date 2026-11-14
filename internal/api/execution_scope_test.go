@@ -68,8 +68,8 @@ var scopeTestKinds = []scopeTestKind{
 }
 
 type scopeTestScope struct {
-	name  string
 	scope func(k scopeTestKind) []string
+	name  string
 	allow bool
 }
 
@@ -80,9 +80,9 @@ var scopeTestScopes = []scopeTestScope{
 }
 
 type scopeTestEndpoint struct {
+	call   func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error)
 	name   string
 	status string
-	call   func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error)
 	// readOnly endpoints reach no mutation, so an allowed call succeeds
 	// instead of answering errScopeTestReached.
 	readOnly bool
@@ -287,9 +287,9 @@ func TestExecutionEndpoints_ScopeMatrix(t *testing.T) {
 func TestExecutionEndpoints_OutOfScopeNoTokenIs404(t *testing.T) {
 	adhoc := scopeTestKinds[2]
 	for _, tc := range []struct {
+		call   func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error)
 		name   string
 		status string
-		call   func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error)
 	}{
 		{name: "approve wrong status", status: "completed", call: func(h *Handler, req *events.LambdaFunctionURLRequest) (any, error) {
 			return h.approvePurchase(context.Background(), req, scopeTestExecID, "")
@@ -338,8 +338,8 @@ func TestRevoke_AuthorizedNonRevocableStatusIs409(t *testing.T) {
 	stageOnly := scopeTestKind{recs: []config.RecommendationRecord{scopeTestRec("rec-stage", &scopeTestStage.ID)}}
 	for _, tc := range []struct {
 		name  string
-		scope []string
 		token string
+		scope []string
 	}{
 		{name: "session", scope: []string{scopeTestStage.ID}, token: ""},
 		{name: "token", scope: []string{"Other"}, token: "email-token"},

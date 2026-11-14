@@ -10,11 +10,11 @@ import (
 )
 
 type amendmentTestStore struct {
+	err error
 	*MockConfigStore
 	accountID string
-	called    bool
 	actor     string
-	err       error
+	called    bool
 }
 
 func (s *amendmentTestStore) LadderTrancheScope(context.Context, string) (string, string, error) {

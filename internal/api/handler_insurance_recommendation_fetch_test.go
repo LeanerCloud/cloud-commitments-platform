@@ -21,14 +21,14 @@ const (
 )
 
 type recClient struct {
-	items     []insurance.LineItem
-	cmp       *insurance.Comparison
 	itemsErr  error
 	cmpErr    error
-	hang      bool
+	cmp       *insurance.Comparison
+	request   insurance.ComparisonRequest
+	items     []insurance.LineItem
 	itemCalls int
 	cmpCalls  int
-	request   insurance.ComparisonRequest
+	hang      bool
 }
 
 func (c *recClient) LineItems(ctx context.Context, _ string) ([]insurance.LineItem, error) {
@@ -129,8 +129,8 @@ func TestFetchRecommendationComparisonNoneOrAmbiguousSkipsComparison(t *testing.
 func TestFetchRecommendationComparisonFailuresReturnNoPartialResult(t *testing.T) {
 	for name, tc := range map[string]struct {
 		setup func(*recClient, *recProvider)
-		code  int
 		retry string
+		code  int
 	}{
 		"line_items": {setup: func(c *recClient, _ *recProvider) { c.itemsErr = errors.New(recSpace) }, code: 502, retry: ""},
 		"comparison": {setup: func(c *recClient, _ *recProvider) { c.cmpErr = errors.New(recSpace) }, code: 502, retry: ""},

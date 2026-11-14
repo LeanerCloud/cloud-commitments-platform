@@ -25,13 +25,13 @@ import (
 // the handler through several requests against one evolving row.
 type fakeListingDB struct {
 	*MockConfigStore
-	row      config.PurchaseHistoryRecord
-	token    string
-	schedule []byte
-	// failRecords makes the next N UpdatePurchaseHistoryListing calls fail.
-	failRecords int
 	// staleOnce, when set, is returned by the next GetPurchaseHistoryByPurchaseID.
 	staleOnce *config.PurchaseHistoryRecord
+	row       config.PurchaseHistoryRecord
+	token     string
+	schedule  []byte
+	// failRecords makes the next N UpdatePurchaseHistoryListing calls fail.
+	failRecords int
 }
 
 func newFakeListingDB() *fakeListingDB {
@@ -92,8 +92,8 @@ func (f *fakeListingDB) recordCanceled(listingID string) {
 
 type fakeAWSListing struct {
 	id, state, token string
-	count            int32
 	schedule         []ec2svc.MarketplacePriceTier
+	count            int32
 }
 
 // fakeMarketplaceAWS dedups CreateReservedInstancesListing on ClientToken like
@@ -101,11 +101,11 @@ type fakeAWSListing struct {
 // a repeat with different parameters is IdempotentParameterMismatch.
 type fakeMarketplaceAWS struct {
 	listings []*fakeAWSListing
+	creates  []ec2svc.MarketplaceListingRequest
 	// loseResponses makes the next N creates succeed on AWS but fail for the caller.
 	loseResponses int
-	failCancel    bool
-	creates       []ec2svc.MarketplaceListingRequest
 	finds         int
+	failCancel    bool
 }
 
 func (a *fakeMarketplaceAWS) byToken(token string) *fakeAWSListing {
@@ -462,9 +462,9 @@ func TestMarketplaceListHTTP_PersistsTheSchedule(t *testing.T) {
 }
 
 type fakeDescribeListings struct {
-	out []sdkec2types.ReservedInstancesListing
 	err error
 	in  *sdkec2.DescribeReservedInstancesListingsInput
+	out []sdkec2types.ReservedInstancesListing
 }
 
 func (f *fakeDescribeListings) DescribeReservedInstancesListings(_ context.Context, in *sdkec2.DescribeReservedInstancesListingsInput, _ ...func(*sdkec2.Options)) (*sdkec2.DescribeReservedInstancesListingsOutput, error) {

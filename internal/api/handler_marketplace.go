@@ -173,9 +173,9 @@ type MarketplaceListRequest struct {
 type MarketplaceListResponse struct {
 	ListingID     string                 `json:"listing_id"`
 	ListingState  string                 `json:"listing_state"`
+	Note          string                 `json:"note,omitempty"`
 	PriceSchedule []MarketplacePriceTier `json:"price_schedule"`
 	AWSFeePercent float64                `json:"aws_fee_percent"`
-	Note          string                 `json:"note,omitempty"`
 }
 
 // validateMarketplaceListRequest performs the pre-flight checks shared by the

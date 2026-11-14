@@ -32,8 +32,8 @@ func edited(f func(p *config.PurchasePlan, g *config.ServiceConfig)) *config.Pur
 func TestPlanArmEscalates_BoundGroups(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name  string
 		after *config.PurchasePlan
+		name  string
 		want  bool
 	}{
 		{name: "unchanged", after: armedBoundPlan(), want: false},

@@ -22,12 +22,12 @@ import (
 const resolveTrancheID = "0f0f0f0f-1111-4222-8333-444444444444"
 
 type resolveTestStore struct {
+	err error
 	*MockConfigStore
+	res     *config.LadderResolveResult
+	got     config.LadderResolveFailed
 	account string
 	called  int
-	got     config.LadderResolveFailed
-	res     *config.LadderResolveResult
-	err     error
 }
 
 func (s *resolveTestStore) LadderTrancheScope(context.Context, string) (string, string, error) {

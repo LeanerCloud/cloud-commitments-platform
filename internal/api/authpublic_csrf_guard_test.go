@@ -99,12 +99,12 @@ type csrfGuardFixture struct {
 }
 
 type csrfGuardRow struct {
+	build  func(t *testing.T) csrfGuardFixture
 	name   string
 	route  string // csrfRouteKey of the AuthPublic route this row must dispatch to
 	method string
 	path   string
 	token  string
-	build  func(t *testing.T) csrfGuardFixture
 }
 
 // authPublicCSRFGuardRows are the AuthPublic routes with a session-authed

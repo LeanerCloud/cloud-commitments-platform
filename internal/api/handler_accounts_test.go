@@ -822,10 +822,10 @@ func TestDeleteAccount_FKViolationRace_RequeriesPreflight(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name       string
-		pending    int
-		live       int
 		wantReason string
 		wantKey    string
+		pending    int
+		live       int
 	}{
 		{name: "pending row raced in", pending: 2, live: 0, wantReason: "pending_executions", wantKey: "pending_count"},
 		{name: "active row raced in", pending: 0, live: 1, wantReason: "active_executions", wantKey: "active_count"},

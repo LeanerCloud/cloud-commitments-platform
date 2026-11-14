@@ -37,11 +37,11 @@ var (
 // Only outcome "failed" is implemented; "completed" needs the commitment
 // visibility adapter and answers 501 until it exists.
 type ladderResolveRequest struct {
+	CloudCheck  *ladderResolveCloudCheck `json:"cloud_check"`
 	Outcome     string                   `json:"outcome"`
 	Reason      string                   `json:"reason"`
 	Note        string                   `json:"note"`
 	Acknowledge bool                     `json:"acknowledge_unknown_outcome"`
-	CloudCheck  *ladderResolveCloudCheck `json:"cloud_check"`
 }
 
 type ladderResolveCloudCheck struct {

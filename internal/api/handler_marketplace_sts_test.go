@@ -60,8 +60,8 @@ func assertNoRoleLeak(t *testing.T, ce *clientError) {
 func TestMarketplaceCancel_TransientAssumeRoleFailureIsRetryable(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name       string
 		client     aws.HTTPClient
+		name       string
 		wantCode   int
 		retryAfter bool
 	}{
@@ -126,8 +126,8 @@ func stsAssumeRoleErr(inner error) error {
 func TestMapAWSMarketplaceError_AssumeRoleClasses(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name     string
 		inner    error
+		name     string
 		wantCode int
 	}{
 		{name: "access denied", inner: &smithy.GenericAPIError{Code: "AccessDenied", Message: "no " + marketplaceTenantRoleARN, Fault: smithy.FaultClient}, wantCode: 400},

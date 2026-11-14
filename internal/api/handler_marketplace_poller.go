@@ -35,11 +35,11 @@ import (
 
 // marketplaceListingStatus is what the poller needs from one AWS listing.
 type marketplaceListingStatus struct {
+	// CreatedAt is the listing's CreateDate; zero when AWS did not report it.
+	CreatedAt time.Time
 	ListingID string
 	// State is the AWS listing status, lowercased.
 	State string
-	// CreatedAt is the listing's CreateDate; zero when AWS did not report it.
-	CreatedAt time.Time
 	// SoldCount is the number of the listing's instances AWS reports as sold.
 	SoldCount int64
 	// UnitPrice is the per-instance USD price of the listing's active price

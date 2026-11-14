@@ -36,9 +36,9 @@ const (
 // not recognize inside the block is an error, so a layout change in a bundle
 // fails loudly instead of silently dropping a provider.
 type providerScanner struct {
-	state providerScanState
 	cur   bundleProvider
 	out   []bundleProvider
+	state providerScanState
 }
 
 // parseRequiredProviders returns the required_providers entries of a bundle's

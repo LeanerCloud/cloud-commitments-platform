@@ -27,46 +27,76 @@ import (
 
 // Handler processes HTTP requests.
 type Handler struct {
-	config             config.StoreInterface
-	credStore          credentials.CredentialStore
-	purchase           PurchaseManagerInterface
-	scheduler          SchedulerInterface
-	auth               AuthServiceInterface
-	secretsARN         string
-	apiKey             string // Cached API key
-	corsAllowedOrigin  string // CORS allowed origin
+	awsCfgErr error // error from loading the base config, if any
+	credStore credentials.CredentialStore
+	purchase  PurchaseManagerInterface
+	scheduler SchedulerInterface
+	auth      AuthServiceInterface
+	// collectionSchedule is HandlerConfig.RecommendationSchedule parsed once
+	// at construction. Nil when the schedule is unset or unparsable, which
+	// makes next_collection_at null.
+	collectionSchedule schedexpr.Schedule
+	// commitmentOpts discovers which AWS (term, payment) combinations
+	// each service actually sells and validates saves against that data.
+	// Nil is valid: the endpoint returns unavailable and save-side
+	// validation no-ops, deferring to the frontend's hardcoded rules.
+	commitmentOpts CommitmentOptsInterface
+	// lambdaInvoker is the async-invoke client used by postRefreshRecommendations
+	// and triggerColdStartCollect. In production it is constructed lazily from the
+	// cached awsCfg. Tests inject a stub to avoid live Lambda calls.
+	lambdaInvoker      LambdaInvokerInterface
 	rateLimiter        RateLimiterInterface
-	emailNotifier      email.SenderInterface           // Optional: purchase approval emails
-	dashboardURL       string                          // Base URL for approval/cancel links
+	emailNotifier      email.SenderInterface // Optional: purchase approval emails
+	config             config.StoreInterface
 	analyticsClient    AnalyticsClientInterface        // Optional: analytics client (Postgres-backed in prod)
 	analyticsCollector AnalyticsCollectorInterface     // Optional: snapshot collector
 	analyticsSnapshots AnalyticsSnapshotStoreInterface // Optional: savings-snapshot time-series store
 	signer             oidc.Signer                     // Optional: OIDC issuer signer (backed by cloud KMS)
 	insurance          InsuranceProvider               // Optional: Archera comparison (nil = off)
-	issuerURL          string                          // Canonical OIDC issuer URL (falls back to dashboardURL / request domain)
-	isLambda           bool                            // Lambda mode from HandlerConfig.IsLambda; gates background goroutines
-
-	awsCfgOnce sync.Once  // guards one-time loading of the base AWS config; load it through getBaseAWSConfig
-	awsCfg     aws.Config // cached base AWS config (no region override)
-	awsCfgErr  error      // error from loading the base config, if any
+	// Optional resolver for the running AWS account number, injected by
+	// the listConvertibleRIs tests so the account-scoping branch can run
+	// without live STS credentials. When nil (production default), the
+	// handler calls h.resolveAWSAccountID. Returns the raw AWS account
+	// number (e.g. "123456789012"), matching the account_id chip value.
+	riInstancesAccountResolver func(context.Context) (string, error)
+	// executeExchangeFn is the RI exchange execution function injected by tests.
+	// When nil (the production default), awsExchangeExecutor returns
+	// exchange.ExecuteExchange directly. Tests inject a stub so the handler
+	// can be exercised end-to-end without live AWS credentials or a real RI.
+	executeExchangeFn func(ctx context.Context, req exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error)
+	// Optional Azure revoke client factory injected by tests. When nil, the
+	// revoke handlers use the production Azure credential and client
+	// constructors.
+	azureRevokeFactory *azureRevokeClientFactory
+	// exchangeQuoteFn is the RI exchange quote function injected by tests.
+	// When nil (the production default), awsExchangeQuoter returns
+	// exchange.GetExchangeQuote, which builds its own EC2/STS clients from the
+	// ambient AWS SDK chain. Tests inject a stub so getExchangeQuote never
+	// resolves credentials, probes IMDS or calls EC2 (#855).
+	exchangeQuoteFn func(ctx context.Context, req exchange.ExchangeQuoteRequest) (*exchange.ExchangeQuoteSummary, error)
+	// now is the wall clock for the start_date guard in
+	// validatePurchaseScheduling. Nil (the production default) means
+	// time.Now; tests inject a fixed instant so date-boundary cases are
+	// deterministic. Read it through h.clock().
+	now func() time.Time
 	// loadAWSCfg loads the base AWS config for getBaseAWSConfig. Nil (the
 	// production default) means loadDefaultAWSConfig in provider_wiring.go;
 	// tests inject a stub to observe the context the load runs under.
 	loadAWSCfg func(context.Context) (aws.Config, error)
-
-	sourceIdentityOnce sync.Once       // guards one-time source identity resolution
-	sourceID           *sourceIdentity // cached source cloud identity
-
-	// Postgres-backed TTL cache for Cost Explorer
-	// GetReservationUtilization. Dashboard + RI Exchange page hits
-	// read from the shared cache table so Lambda containers don't each
-	// fan out to a paid CE API call on every page load. See
-	// ri_utilization_cache.go for the rationale; in-memory was ruled
-	// out because Lambda's short container lifetime means each cold
-	// start would bypass the cache entirely.
-	riUtilizationCacheOnce sync.Once
+	// Optional org-discovery factory used by tests to avoid live AWS
+	// Organizations API calls. When nil (production default), the handler
+	// falls back to accounts.DiscoverOrgAccounts which dials Organizations
+	// via the credentials resolved for the org-root account.
+	discoverOrgFn func(context.Context, aws.Config) (*accounts.OrgDiscoveryResult, error)
+	sourceID      *sourceIdentity // cached source cloud identity
+	// Optional account-resolver injection point used by the reshape
+	// handler integration test. When nil (the production default), the
+	// handler calls h.resolveAWSCloudAccountID which in turn invokes
+	// sts.GetCallerIdentity — fine in Lambda but fails on dev machines
+	// without AWS credentials. Tests set this to a fixed-result fake so
+	// the integration suite runs hermetically.
+	reshapeAccountResolver func(context.Context) (string, error)
 	riUtilizationCache     *riUtilizationCache
-
 	// Optional AWS-client injection points used by the reshape handler
 	// integration test. When nil (the production default), the
 	// handler falls back to the direct AWS SDK constructors
@@ -79,11 +109,9 @@ type Handler struct {
 	// fields stay nil.
 	reshapeEC2Factory  func(aws.Config) reshapeEC2Client
 	reshapeRecsFactory func(aws.Config) reshapeRecsClient
-
 	// Optional target-offerings EC2 client factory injected by tests. When nil
 	// (the production default), listTargetOfferings uses awsprovider.NewEC2ClientDirect.
 	targetOfferingsEC2Factory func(aws.Config) targetOfferingsEC2Client
-
 	// Optional Azure exchange client factory injected by tests. When nil
 	// (the production default), buildAzureExchangeClient resolves the
 	// registered CloudAccount's per-subscription credentials and constructs
@@ -91,86 +119,38 @@ type Handler struct {
 	// interface covers listing exchangeable reservations plus pricing
 	// (CalculateExchange) and committing (ExecuteExchange) an exchange.
 	azureExchangeFactory func(subscriptionID string) azureExchangeClient
-
 	// Optional marketplace EC2 client factory injected by tests. When nil
 	// (the production default), buildMarketplaceEC2Client uses
 	// awsprovider.NewEC2ClientDirect.
 	marketplaceEC2Factory func(aws.Config) marketplaceEC2Client
-
 	// Optional listing-finder injected by tests. When nil, the marketplace
 	// reconcile uses the AWS SDK directly (see awsMarketplaceListingFinder).
 	marketplaceFinderFactory func(aws.Config) marketplaceListingFinder
-
-	// Optional account-resolver injection point used by the reshape
-	// handler integration test. When nil (the production default), the
-	// handler calls h.resolveAWSCloudAccountID which in turn invokes
-	// sts.GetCallerIdentity — fine in Lambda but fails on dev machines
-	// without AWS credentials. Tests set this to a fixed-result fake so
-	// the integration suite runs hermetically.
-	reshapeAccountResolver func(context.Context) (string, error)
-
-	// Optional resolver for the running AWS account number, injected by
-	// the listConvertibleRIs tests so the account-scoping branch can run
-	// without live STS credentials. When nil (production default), the
-	// handler calls h.resolveAWSAccountID. Returns the raw AWS account
-	// number (e.g. "123456789012"), matching the account_id chip value.
-	riInstancesAccountResolver func(context.Context) (string, error)
-
-	// Optional org-discovery factory used by tests to avoid live AWS
-	// Organizations API calls. When nil (production default), the handler
-	// falls back to accounts.DiscoverOrgAccounts which dials Organizations
-	// via the credentials resolved for the org-root account.
-	discoverOrgFn func(context.Context, aws.Config) (*accounts.OrgDiscoveryResult, error)
-
-	// now is the wall clock for the start_date guard in
-	// validatePurchaseScheduling. Nil (the production default) means
-	// time.Now; tests inject a fixed instant so date-boundary cases are
-	// deterministic. Read it through h.clock().
-	now func() time.Time
-
-	// lambdaInvoker is the async-invoke client used by postRefreshRecommendations
-	// and triggerColdStartCollect. In production it is constructed lazily from the
-	// cached awsCfg. Tests inject a stub to avoid live Lambda calls.
-	lambdaInvoker LambdaInvokerInterface
-
-	// commitmentOpts discovers which AWS (term, payment) combinations
-	// each service actually sells and validates saves against that data.
-	// Nil is valid: the endpoint returns unavailable and save-side
-	// validation no-ops, deferring to the frontend's hardcoded rules.
-	commitmentOpts CommitmentOptsInterface
-
-	// executeExchangeFn is the RI exchange execution function injected by tests.
-	// When nil (the production default), awsExchangeExecutor returns
-	// exchange.ExecuteExchange directly. Tests inject a stub so the handler
-	// can be exercised end-to-end without live AWS credentials or a real RI.
-	executeExchangeFn func(ctx context.Context, req exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error)
-	// executionTimeoutOverride, when positive, replaces riExchangeExecutionTimeout
-	// for the direct executes. Tests only.
-	executionTimeoutOverride time.Duration
-
-	// exchangeQuoteFn is the RI exchange quote function injected by tests.
-	// When nil (the production default), awsExchangeQuoter returns
-	// exchange.GetExchangeQuote, which builds its own EC2/STS clients from the
-	// ambient AWS SDK chain. Tests inject a stub so getExchangeQuote never
-	// resolves credentials, probes IMDS or calls EC2 (#855).
-	exchangeQuoteFn func(ctx context.Context, req exchange.ExchangeQuoteRequest) (*exchange.ExchangeQuoteSummary, error)
-
+	awsCfg                   aws.Config // cached base AWS config (no region override)
 	// encryptionKeySource is the env var name that resolved the credential
 	// encryption key. Empty when no credStore is configured. Read only by the
 	// /health credential_store check, which keeps it out of the public body
 	// and logs the dev-key case server-side (#15).
 	encryptionKeySource string
-
-	// Optional Azure revoke client factory injected by tests. When nil, the
-	// revoke handlers use the production Azure credential and client
-	// constructors.
-	azureRevokeFactory *azureRevokeClientFactory
-
-	// collectionSchedule is HandlerConfig.RecommendationSchedule parsed once
-	// at construction. Nil when the schedule is unset or unparsable, which
-	// makes next_collection_at null.
-	collectionSchedule schedexpr.Schedule
-
+	issuerURL           string // Canonical OIDC issuer URL (falls back to dashboardURL / request domain)
+	corsAllowedOrigin   string // CORS allowed origin
+	apiKey              string // Cached API key
+	dashboardURL        string // Base URL for approval/cancel links
+	secretsARN          string
+	// executionTimeoutOverride, when positive, replaces riExchangeExecutionTimeout
+	// for the direct executes. Tests only.
+	executionTimeoutOverride time.Duration
+	sourceIdentityOnce       sync.Once // guards one-time source identity resolution
+	// Postgres-backed TTL cache for Cost Explorer
+	// GetReservationUtilization. Dashboard + RI Exchange page hits
+	// read from the shared cache table so Lambda containers don't each
+	// fan out to a paid CE API call on every page load. See
+	// ri_utilization_cache.go for the rationale; in-memory was ruled
+	// out because Lambda's short container lifetime means each cold
+	// start would bypass the cache entirely.
+	riUtilizationCacheOnce sync.Once
+	awsCfgOnce             sync.Once // guards one-time loading of the base AWS config; load it through getBaseAWSConfig
+	isLambda               bool      // Lambda mode from HandlerConfig.IsLambda; gates background goroutines
 	// fireSweepOff is HandlerConfig.FireSweepOff.
 	fireSweepOff bool
 }
@@ -579,10 +559,10 @@ func (h *Handler) requirePermissionConstraints(ctx context.Context, session *Ses
 // the pre-write state of anything but its scalar fields. Narrowing to the four
 // fields the decision actually reads makes that a non-question.
 type riExchangeArmState struct {
-	enabled     bool
 	mode        string
 	perExchange float64
 	daily       float64
+	enabled     bool
 }
 
 func riExchangeArmStateOf(cfg *config.GlobalConfig) riExchangeArmState {

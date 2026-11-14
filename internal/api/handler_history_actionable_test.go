@@ -248,9 +248,9 @@ func TestActionableExecutionsQuery_AccountValues(t *testing.T) {
 func TestHistoryScope_ExecutionScope(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name  string
-		scope auth.AccountScope
 		want  *config.ExecutionScope
+		scope auth.AccountScope
+		name  string
 	}{
 		{name: "unrestricted", scope: auth.UnrestrictedScope(), want: nil},
 		{name: "empty denies attributed rows", scope: auth.ScopeForAccounts(nil), want: &config.ExecutionScope{UserID: "u-1"}},

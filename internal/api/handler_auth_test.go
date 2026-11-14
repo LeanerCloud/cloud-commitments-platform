@@ -1878,12 +1878,12 @@ func TestHandler_mfaEndpoints_RateLimited(t *testing.T) {
 	limit := getDefaultRateLimits()["mfa"].MaxAttempts
 	invalid := auth.ErrMFAInvalidCode
 	cases := []struct {
+		call   func(h *Handler, req *events.LambdaFunctionURLRequest) error
 		name   string
 		method string
+		body   string
 		args   []any
 		ret    []any
-		call   func(h *Handler, req *events.LambdaFunctionURLRequest) error
-		body   string
 	}{
 		{name: "setup", method: "MFASetupAPI", args: []any{"user-1", "pw"}, ret: []any{"", "", invalid},
 			call: func(h *Handler, r *events.LambdaFunctionURLRequest) error {

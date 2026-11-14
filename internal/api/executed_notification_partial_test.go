@@ -200,10 +200,10 @@ func TestTokenApprove_FailureMappedByCause(t *testing.T) {
 	failed := partialRunRow(execID)
 	failed.Status = "failed"
 	cases := map[string]struct {
-		final  *config.PurchaseExecution
 		err    error
-		code   int // 0: a plain (500) error, not a client error
+		final  *config.PurchaseExecution
 		status string
+		code   int // 0: a plain (500) error, not a client error
 	}{
 		"provider failure after the claim": {final: failed, err: errors.New("AWS RI purchase failed"), code: 502, status: "failed"},
 		"final status not saved":           {final: partialRunRow(execID), err: fmt.Errorf("%w: terminal save failed; original execution error: %w", config.ErrAuditLoss, errPartialRun), code: 500, status: ""},

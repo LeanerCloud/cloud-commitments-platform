@@ -119,8 +119,8 @@ func TestLoadMarketplaceAWSConfig_NoCloudAccountUnresolvedFallsBackToHostCheck(t
 	azure := member
 	azure.Provider = "azure"
 	cases := map[string]struct {
-		accounts []config.CloudAccount
 		owner    string
+		accounts []config.CloudAccount
 		wantHost bool
 	}{
 		"unregistered member":            {accounts: nil, owner: marketplaceMemberAccount},
