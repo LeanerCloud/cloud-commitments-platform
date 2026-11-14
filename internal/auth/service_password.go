@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/redact"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -328,7 +329,7 @@ func resetRecentlyIssued(user *User, email string) bool {
 	tokenAge := lifetime - remaining
 	if tokenAge < PasswordResetRateLimit {
 		logging.Debugf("Password reset rate-limited for %s (token age %s < %s)",
-			redactEmail(email), tokenAge.Round(time.Second), PasswordResetRateLimit)
+			redact.Email(email), tokenAge.Round(time.Second), PasswordResetRateLimit)
 		return true
 	}
 	return false
@@ -340,21 +341,21 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Don't reveal if email exists
-			logging.Debugf("Password reset requested for non-existent email: %s", redactEmail(email))
+			logging.Debugf("Password reset requested for non-existent email: %s", redact.Email(email))
 			return nil
 		}
 		return err
 	}
 	if user == nil {
 		// Don't reveal if email exists
-		logging.Debugf("Password reset requested for non-existent email: %s", redactEmail(email))
+		logging.Debugf("Password reset requested for non-existent email: %s", redact.Email(email))
 		return nil
 	}
 
 	// A deactivated account gets no reset link (A03-006), answered exactly like
 	// an unknown email so the endpoint cannot tell the two apart.
 	if user.DeactivatedAt != nil {
-		logging.Debugf("Password reset requested for deactivated account: %s", redactEmail(email))
+		logging.Debugf("Password reset requested for deactivated account: %s", redact.Email(email))
 		return nil
 	}
 
@@ -380,7 +381,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	if err := s.store.SetPasswordResetToken(ctx, user, readExpiry); err != nil {
 		if errors.Is(err, ErrUserChanged) {
 			// Deactivated, re-addressed or reset concurrently: answer as for an ineligible account.
-			logging.Debugf("Password reset skipped for concurrently changed account: %s", redactEmail(email))
+			logging.Debugf("Password reset skipped for concurrently changed account: %s", redact.Email(email))
 			return nil
 		}
 		return err
@@ -592,38 +593,4 @@ func (s *Service) processPasswordReset(user *User, newPassword string) error {
 
 	user.PasswordHash = passwordHash
 	return nil
-}
-
-// redactEmail returns a redacted version of an email address safe for debug logs.
-// Both the local part and the domain are partially masked to reduce PII exposure
-// for low-entropy addresses (03-L1, see also feedback_pii_in_logs).
-// Example: "user@example.com" -> "us***@ex***.com".
-func redactEmail(email string) string {
-	at := strings.LastIndex(email, "@")
-	if at < 0 {
-		return "***"
-	}
-	local := email[:at]
-	domain := email[at+1:] // without '@'
-	if len(local) <= 2 {
-		local = "***"
-	} else {
-		local = local[:2] + "***"
-	}
-
-	// Mask the domain: keep the TLD but redact the hostname.
-	// e.g. "example.com" -> "ex***.com"
-	dot := strings.LastIndex(domain, ".")
-	if dot < 0 || dot == 0 {
-		domain = "***"
-	} else {
-		tld := domain[dot:]  // ".com"
-		host := domain[:dot] // "example"
-		if len(host) <= 2 {
-			domain = "***" + tld
-		} else {
-			domain = host[:2] + "***" + tld
-		}
-	}
-	return local + "@" + domain
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/redact"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
@@ -248,7 +249,7 @@ func (s *Sender) createVerificationRequest(ctx context.Context, email string) er
 		return fmt.Errorf("failed to create email identity verification: %w", err)
 	}
 
-	logging.Infof("Created email verification request for %s - check inbox for verification email", redactEmail(email))
+	logging.Infof("Created email verification request for %s - check inbox for verification email", redact.Email(email))
 	return nil
 }
 
@@ -289,9 +290,9 @@ func (s *Sender) SendToEmailWithCCMultipart(ctx context.Context, toEmail string,
 	}
 
 	if len(cc) > 0 {
-		logging.Debugf("Sent multipart email to %s (cc %d): %s", redactEmail(toEmail), len(cc), subject)
+		logging.Debugf("Sent multipart email to %s (cc %d): %s", redact.Email(toEmail), len(cc), subject)
 	} else {
-		logging.Debugf("Sent multipart email to %s: %s", redactEmail(toEmail), subject)
+		logging.Debugf("Sent multipart email to %s: %s", redact.Email(toEmail), subject)
 	}
 	return nil
 }
@@ -326,9 +327,9 @@ func (s *Sender) SendToEmailWithCC(ctx context.Context, toEmail string, ccEmails
 	}
 
 	if len(cc) > 0 {
-		logging.Debugf("Sent email to %s (cc %d): %s", redactEmail(toEmail), len(cc), subject)
+		logging.Debugf("Sent email to %s (cc %d): %s", redact.Email(toEmail), len(cc), subject)
 	} else {
-		logging.Debugf("Sent email to %s: %s", redactEmail(toEmail), subject)
+		logging.Debugf("Sent email to %s: %s", redact.Email(toEmail), subject)
 	}
 	return nil
 }
@@ -349,7 +350,7 @@ func (s *Sender) ensureSandboxRecipientVerified(ctx context.Context, toEmail str
 	if !inSandbox {
 		return nil
 	}
-	logging.Infof("SES is in sandbox mode - checking if recipient %s is verified", redactEmail(toEmail))
+	logging.Infof("SES is in sandbox mode - checking if recipient %s is verified", redact.Email(toEmail))
 
 	verified, err := s.isEmailVerified(ctx, toEmail)
 	if err != nil {
@@ -357,10 +358,10 @@ func (s *Sender) ensureSandboxRecipientVerified(ctx context.Context, toEmail str
 		return nil
 	}
 	if verified {
-		logging.Infof("Recipient email %s is verified - proceeding with send", redactEmail(toEmail))
+		logging.Infof("Recipient email %s is verified - proceeding with send", redact.Email(toEmail))
 		return nil
 	}
-	logging.Warnf("Recipient email %s is not verified in sandbox mode - creating verification request", redactEmail(toEmail))
+	logging.Warnf("Recipient email %s is not verified in sandbox mode - creating verification request", redact.Email(toEmail))
 	if err := s.createVerificationRequest(ctx, toEmail); err != nil {
 		logging.Warnf("Failed to create verification request: %v", err)
 		// Use the real address in the user-facing message so the recipient
@@ -499,9 +500,9 @@ func (s *Sender) sendToEmailWithCCMultipartHeaders(
 		return fmt.Errorf("failed to send email via SES: %w", err)
 	}
 	if len(cc) > 0 {
-		logging.Debugf("Sent multipart email to %s (cc %d): %s", redactEmail(toEmail), len(cc), subject)
+		logging.Debugf("Sent multipart email to %s (cc %d): %s", redact.Email(toEmail), len(cc), subject)
 	} else {
-		logging.Debugf("Sent multipart email to %s: %s", redactEmail(toEmail), subject)
+		logging.Debugf("Sent multipart email to %s: %s", redact.Email(toEmail), subject)
 	}
 	return nil
 }
@@ -531,9 +532,9 @@ func (s *Sender) sendToEmailWithCCHeaders(
 		return fmt.Errorf("failed to send email via SES: %w", err)
 	}
 	if len(cc) > 0 {
-		logging.Debugf("Sent email to %s (cc %d): %s", redactEmail(toEmail), len(cc), subject)
+		logging.Debugf("Sent email to %s (cc %d): %s", redact.Email(toEmail), len(cc), subject)
 	} else {
-		logging.Debugf("Sent email to %s: %s", redactEmail(toEmail), subject)
+		logging.Debugf("Sent email to %s: %s", redact.Email(toEmail), subject)
 	}
 	return nil
 }
@@ -730,19 +731,4 @@ type SkippedExchange struct {
 	SourceRIID         string
 	SourceInstanceType string
 	Reason             string
-}
-
-// redactEmail returns a redacted version of an email address for safe logging.
-// e.g. "user@example.com" -> "us***@example.com".
-func redactEmail(email string) string {
-	at := strings.LastIndex(email, "@")
-	if at < 0 {
-		return "***"
-	}
-	local := email[:at]
-	domain := email[at:] // includes the '@'
-	if len(local) <= 2 {
-		return "***" + domain
-	}
-	return local[:2] + "***" + domain
 }

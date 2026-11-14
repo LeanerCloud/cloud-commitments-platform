@@ -39,7 +39,7 @@ func TestCreateVerificationRequest_RedactsAddressInLog(t *testing.T) {
 	require.NoError(t, s.createVerificationRequest(context.Background(), "customer.person@example.com"))
 
 	out := logs.String()
-	assert.Contains(t, out, "Created email verification request for cu***@example.com")
+	assert.Contains(t, out, "Created email verification request for cu***@ex***.com")
 	assert.NotContains(t, out, "customer.person@example.com")
 }
 
@@ -72,7 +72,7 @@ func TestSMTPSender_SendLogsRedactRecipient(t *testing.T) {
 				require.NoError(t, err)
 
 				out := logs.String()
-				assert.Contains(t, out, "via SMTP to cu***@example.com", "send must be logged with the redacted address")
+				assert.Contains(t, out, "via SMTP to cu***@ex***.com", "send must be logged with the redacted address")
 				assert.NotContains(t, out, to)
 				assert.NotContains(t, out, "other.person@example.com")
 			})
