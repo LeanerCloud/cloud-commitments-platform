@@ -15,7 +15,7 @@ import (
 // mutePageCSP is the Content-Security-Policy for the unsubscribe confirmation
 // page. The page is intentionally minimal (no external scripts or styles), so
 // we can lock it down tightly.
-const mutePageCSP = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
+const mutePageCSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
 
 // unsubscribeConfirmTmpl is the HTML confirmation page rendered after a
 // successful one-click unsubscribe. No user-supplied data is interpolated via
@@ -36,6 +36,32 @@ p{line-height:1.6}
 <h1>You have been unsubscribed.</h1>
 <p>You will no longer receive <strong>{{.ScopeLabel}}</strong> emails at this address.</p>
 <p>This preference is saved. You do not need to click again.</p>
+</body>
+</html>
+`))
+
+// unsubscribeConfirmFormTmpl is the GET page. Link prefetchers and mail
+// scanners issue GET against every URL in a message, so GET must not mute
+// anything: the form POSTs the RFC 8058 one-click body, the only mutating path.
+var unsubscribeConfirmFormTmpl = template.Must(template.New("unsub-form").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unsubscribe</title>
+<style>
+body{font-family:sans-serif;max-width:480px;margin:80px auto;padding:0 1rem;color:#222}
+h1{font-size:1.4rem}
+p{line-height:1.6}
+</style>
+</head>
+<body>
+<h1>Unsubscribe from {{.ScopeLabel}} emails?</h1>
+<p>Confirm to stop receiving <strong>{{.ScopeLabel}}</strong> emails at this address.</p>
+<form method="POST" action="{{.Action}}">
+<input type="hidden" name="List-Unsubscribe" value="One-Click">
+<button type="submit">Confirm unsubscribe</button>
+</form>
 </body>
 </html>
 `))
@@ -80,7 +106,8 @@ func unsubscribeRequestParams(req *events.LambdaFunctionURLRequest) (token, emai
 // unsubscribeHandler handles GET and RFC 8058 POST requests to
 // /api/notifications/unsubscribe.
 // The URL carries a signed token that encodes (email, scope); the handler
-// verifies the HMAC, upserts the mute row, and returns a confirmation page.
+// verifies the HMAC. GET returns a confirm form and mutates nothing; POST
+// upserts the mute row and returns a confirmation page.
 //
 // Auth: AuthPublic (token-based, no login required — mirrors approve/cancel).
 func (h *Handler) unsubscribeHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, _ map[string]string) (any, error) {
@@ -105,6 +132,10 @@ func (h *Handler) unsubscribeHandler(ctx context.Context, req *events.LambdaFunc
 		return nil, NewClientError(401, "invalid or expired unsubscribe token")
 	}
 
+	if req.RequestContext.HTTP.Method == "GET" {
+		return renderUnsubscribeConfirmForm(token, email, scope)
+	}
+
 	if err := h.config.UpsertNotificationMute(ctx, email, scope, token); err != nil {
 		logging.Errorf("notifications/unsubscribe: store error: %v", err)
 		return nil, fmt.Errorf("could not save unsubscribe preference: %w", err)
@@ -119,6 +150,24 @@ func (h *Handler) unsubscribeHandler(ctx context.Context, req *events.LambdaFunc
 		return nil, fmt.Errorf("render unsubscribe page: %w", err)
 	}
 
+	return &rawResponse{
+		contentType: "text/html; charset=utf-8",
+		body:        buf.String(),
+		csp:         mutePageCSP,
+	}, nil
+}
+
+// renderUnsubscribeConfirmForm answers GET with a form that POSTs back to the
+// same path with the same signed query, so the mute needs an explicit click.
+func renderUnsubscribeConfirmForm(token, email, scope string) (any, error) {
+	query := url.Values{"token": {token}, "email": {email}, "scope": {scope}}
+	var buf strings.Builder
+	if err := unsubscribeConfirmFormTmpl.Execute(&buf, struct{ ScopeLabel, Action string }{
+		ScopeLabel: scopeLabel(scope),
+		Action:     "?" + query.Encode(),
+	}); err != nil {
+		return nil, fmt.Errorf("render unsubscribe form: %w", err)
+	}
 	return &rawResponse{
 		contentType: "text/html; charset=utf-8",
 		body:        buf.String(),

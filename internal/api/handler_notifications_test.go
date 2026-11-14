@@ -39,6 +39,10 @@ func TestUnsubscribeHandler_Success(t *testing.T) {
 	r := newTestRouter(h)
 
 	req := &events.LambdaFunctionURLRequest{
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{Method: "POST"},
+		},
+		Body: "List-Unsubscribe=One-Click",
 		QueryStringParameters: map[string]string{
 			"token": token,
 			"email": email,
@@ -52,6 +56,36 @@ func TestUnsubscribeHandler_Success(t *testing.T) {
 	assert.Equal(t, "text/html; charset=utf-8", raw.contentType)
 	assert.Contains(t, raw.body, "Unsubscribed")
 	assert.Contains(t, raw.body, "purchase approval request")
+}
+
+// A prefetcher's GET must never mute: it gets a confirm form that POSTs the
+// one-click body back to the same signed query (#100).
+func TestUnsubscribeHandler_GETRendersConfirmFormWithoutMuting(t *testing.T) {
+	ctx := context.Background()
+	email := "user+tag@example.com"
+	scope := string(common.ScopePurchaseApprovals)
+	token := validUnsubToken(t, email, scope)
+
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertNotCalled(t, "UpsertNotificationMute") })
+	r := newTestRouter(&Handler{config: mockStore})
+
+	req := &events.LambdaFunctionURLRequest{
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{Method: "GET"},
+		},
+		QueryStringParameters: map[string]string{"token": token, "email": email, "scope": scope},
+	}
+	result, err := r.unsubscribeHandler(ctx, req, nil)
+	require.NoError(t, err)
+	raw, ok := result.(*rawResponse)
+	require.True(t, ok)
+	assert.Contains(t, raw.body, `method="POST"`)
+	assert.Contains(t, raw.body, `name="List-Unsubscribe" value="One-Click"`)
+	assert.Contains(t, raw.body, "token="+token)
+	assert.Contains(t, raw.body, "email=user%2Btag%40example.com")
+	assert.NotContains(t, raw.body, "You have been unsubscribed")
+	assert.Contains(t, raw.csp, "form-action 'self'")
 }
 
 func TestUnsubscribeHandler_POSTRejectsInvalidOneClickBody(t *testing.T) {
@@ -186,6 +220,10 @@ func TestUnsubscribeHandler_StoreError_Returns500(t *testing.T) {
 	r := newTestRouter(h)
 
 	req := &events.LambdaFunctionURLRequest{
+		RequestContext: events.LambdaFunctionURLRequestContext{
+			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{Method: "POST"},
+		},
+		Body: "List-Unsubscribe=One-Click",
 		QueryStringParameters: map[string]string{
 			"token": token,
 			"email": email,
