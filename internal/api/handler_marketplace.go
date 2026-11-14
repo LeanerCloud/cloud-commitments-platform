@@ -433,8 +433,14 @@ var awsMarketplaceClientFaultCodes = map[string]bool{
 	"IncorrectState":                        true,
 	"InvalidReservedInstancesListingId":     true,
 	"ReservedInstancesListingAlreadyExists": true,
-	"AuthFailure":                           true,
-	"UnauthorizedOperation":                 true,
+}
+
+// awsMarketplaceDeploymentFaultCodes are AWS codes that mean this deployment's
+// own credentials or IAM role lack a permission. That is an operator defect,
+// not caller input, so they map to 502 even though AWS tags them client faults.
+var awsMarketplaceDeploymentFaultCodes = map[string]bool{
+	"AuthFailure":           true,
+	"UnauthorizedOperation": true,
 }
 
 const marketplaceRoleAssumptionMessage = "could not assume the role configured for this account"
@@ -476,8 +482,9 @@ const marketplaceSellerNotRegisteredReason = "seller_not_registered"
 // AWS client-fault errors (4xx-category codes) produce a 400 with a category
 // message, never the AWS text, which carries ARNs and request IDs. SellerNotRegistered
 // is the exception: its 400 carries marketplaceSellerNotRegisteredMessage and
-// reason seller_not_registered instead. All other errors produce a 502
-// (AWS-side failure). STS AssumeRole failures are classified by
+// reason seller_not_registered instead. All other errors, including AWS
+// AuthFailure and UnauthorizedOperation (this deployment's IAM gap), produce a
+// 502. STS AssumeRole failures are classified by
 // roleAssumptionClientError and never echo the AWS text.
 func mapAWSMarketplaceError(opMsg string, err error) error {
 	if opErr := roleAssumptionOperationError(err); opErr != nil {
@@ -489,7 +496,8 @@ func mapAWSMarketplaceError(opMsg string, err error) error {
 			return NewClientErrorWithDetails(400, marketplaceSellerNotRegisteredMessage,
 				map[string]any{"reason": marketplaceSellerNotRegisteredReason})
 		}
-		if awsMarketplaceClientFaultCodes[apiErr.ErrorCode()] || apiErr.ErrorFault() == smithy.FaultClient {
+		if !awsMarketplaceDeploymentFaultCodes[apiErr.ErrorCode()] &&
+			(awsMarketplaceClientFaultCodes[apiErr.ErrorCode()] || apiErr.ErrorFault() == smithy.FaultClient) {
 			logging.Warnf("marketplace: %s: provider rejected the request: %v", opMsg, err)
 			category, msg := purchase.SummarizeProviderError(err)
 			if category == purchase.ErrCategoryUnknown {

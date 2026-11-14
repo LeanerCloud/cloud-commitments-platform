@@ -473,9 +473,8 @@ func TestMarketplaceHandlers_NoCloudAccountRow(t *testing.T) {
 func TestMapAWSMarketplaceError_GenuineEC2ErrorsKeepTheirOwnCategory(t *testing.T) {
 	want := map[string]string{
 		"InvalidReservedInstancesId.NotFound": purchase.ErrCategoryMessage(purchase.ErrCategoryUnavailable),
-		"UnauthorizedOperation":               purchase.ErrCategoryMessage(purchase.ErrCategoryAccessDenied),
 	}
-	for _, code := range []string{"InvalidReservedInstancesId.NotFound", "UnauthorizedOperation"} {
+	for _, code := range []string{"InvalidReservedInstancesId.NotFound"} {
 		t.Run(code, func(t *testing.T) {
 			const msg = "the ec2 service said no"
 			err := &smithy.OperationError{
@@ -490,6 +489,26 @@ func TestMapAWSMarketplaceError_GenuineEC2ErrorsKeepTheirOwnCategory(t *testing.
 			assert.Equal(t, 400, ce.code)
 			assert.Equal(t, want[code], ce.message, "a category message, not the provider text")
 			assert.NotEqual(t, marketplaceRoleAssumptionMessage, ce.message)
+		})
+	}
+}
+
+// AuthFailure and UnauthorizedOperation mean this deployment's own role lacks
+// a permission: a 502 the operator must fix, not a 400 the caller could (#100).
+func TestMapAWSMarketplaceError_DeploymentIAMGapIs502(t *testing.T) {
+	for _, code := range []string{"UnauthorizedOperation", "AuthFailure"} {
+		t.Run(code, func(t *testing.T) {
+			err := &smithy.OperationError{
+				ServiceID:     "EC2",
+				OperationName: "CreateReservedInstancesListing",
+				Err:           &smithy.GenericAPIError{Code: code, Message: "arn:aws:iam::123456789012:role/x is not authorized", Fault: smithy.FaultClient},
+			}
+
+			ce, ok := IsClientError(mapAWSMarketplaceError("create listing", err))
+
+			require.True(t, ok)
+			assert.Equal(t, 502, ce.code)
+			assert.NotContains(t, ce.message, "123456789012", "the provider text stays in the log")
 		})
 	}
 }
