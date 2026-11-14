@@ -16,12 +16,12 @@ import (
 // triples, the suppressions in sups, and a page built by page, which sees the
 // query (and can call its DecideSuppressed) like the Postgres store does.
 type pageStore struct {
-	mockOverrideStore
-	triples []config.RecommendationTriple
-	sups    []config.PurchaseSuppression
 	supsErr error
 	page    func(q config.RecommendationPageQuery) (config.RecommendationPage, error)
+	triples []config.RecommendationTriple
+	sups    []config.PurchaseSuppression
 	queries []config.RecommendationPageQuery
+	mockOverrideStore
 }
 
 func (m *pageStore) ListActiveSuppressions(_ context.Context) ([]config.PurchaseSuppression, error) {

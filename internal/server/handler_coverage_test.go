@@ -288,8 +288,8 @@ func storeWithStaleRecords(s *mockConfigStoreForExchangeStale) config.StoreInter
 // ----- helper mock types -----
 
 type mockConfigStoreForExchangeComplete struct {
-	mockConfigStoreForExchange
 	completeFunc func(ctx context.Context, id, exchangeID string) error
+	mockConfigStoreForExchange
 }
 
 func (m *mockConfigStoreForExchangeComplete) CompleteRIExchange(ctx context.Context, id string, exchangeID string) error {
@@ -300,8 +300,8 @@ func (m *mockConfigStoreForExchangeComplete) CompleteRIExchange(ctx context.Cont
 }
 
 type mockConfigStoreForExchangeFail struct {
-	mockConfigStoreForExchange
 	failFunc func(ctx context.Context, id, errorMsg string) error
+	mockConfigStoreForExchange
 }
 
 func (m *mockConfigStoreForExchangeFail) FailRIExchange(ctx context.Context, id string, errorMsg string) error {
@@ -312,8 +312,8 @@ func (m *mockConfigStoreForExchangeFail) FailRIExchange(ctx context.Context, id 
 }
 
 type mockConfigStoreForExchangeStale struct {
-	mockConfigStoreForExchange
 	staleFunc func(ctx context.Context, olderThan time.Duration) ([]config.RIExchangeRecord, error)
+	mockConfigStoreForExchange
 }
 
 func (m *mockConfigStoreForExchangeStale) GetStaleProcessingExchanges(ctx context.Context, olderThan time.Duration) ([]config.RIExchangeRecord, error) {

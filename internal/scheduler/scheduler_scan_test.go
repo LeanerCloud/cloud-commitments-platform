@@ -21,8 +21,8 @@ type scanStore struct {
 	supsErr        error
 	chunkErr       error
 	overrideLookup map[string]int
+	sups           []config.PurchaseSuppression
 	mockOverrideStore
-	sups       []config.PurchaseSuppression
 	chunkReads int
 }
 
