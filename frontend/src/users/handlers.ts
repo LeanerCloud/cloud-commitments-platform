@@ -35,13 +35,6 @@ export function setupUserHandlers(): void {
   }
 
   // Filter dropdowns
-  const roleFilterEl = document.getElementById('user-role-filter') as HTMLSelectElement;
-  if (roleFilterEl) {
-    roleFilterEl.addEventListener('change', (e) => {
-      handleFilterChange('role', (e.target as HTMLSelectElement).value);
-    });
-  }
-
   const mfaFilterEl = document.getElementById('user-mfa-filter') as HTMLSelectElement;
   if (mfaFilterEl) {
     mfaFilterEl.addEventListener('change', (e) => {

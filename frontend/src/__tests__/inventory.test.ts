@@ -964,10 +964,11 @@ describe('stale responses never overwrite a newer scope (#134)', () => {
     jest.clearAllMocks();
   });
 
-  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: Error) => void } {
     let resolve!: (v: T) => void;
-    const promise = new Promise<T>((r) => { resolve = r; });
-    return { promise, resolve };
+    let reject!: (e: Error) => void;
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
   }
 
   test('active commitments: a slow first response is discarded', async () => {
@@ -1003,5 +1004,47 @@ describe('stale responses never overwrite a newer scope (#134)', () => {
     const text = document.getElementById('coverage-providers')!.textContent?.toLowerCase() ?? '';
     expect(text).toContain('gcp');
     expect(text).not.toContain('aws');
+  });
+
+  test('active commitments: a slow first request rejecting after a newer success leaves the DOM alone', async () => {
+    const slow = deferred<api.InventoryCommitment[]>();
+    (api.listActiveCommitments as jest.Mock)
+      .mockReturnValueOnce(slow.promise)
+      .mockResolvedValueOnce([makeCommitment({ account_name: 'GCP Newer' })]);
+
+    const first = loadActiveCommitments();
+    await loadActiveCommitments();
+    const container = document.getElementById('active-commitments-list')!;
+    const before = container.innerHTML;
+    slow.reject(new Error('stale boom'));
+    await first;
+
+    expect(container.innerHTML).toBe(before);
+    expect(container.textContent).toContain('GCP Newer');
+    expect(container.textContent).not.toContain('stale boom');
+    expect(container.querySelector('.error')).toBeNull();
+  });
+
+  test('coverage: a slow first request rejecting after a newer success leaves the DOM alone', async () => {
+    const slow = deferred<{ providers: ProviderCoverageSection[] }>();
+    const section = {
+      provider: 'gcp', services: [{ service: 'ec2', coverage_percent: 10 }],
+    } as unknown as ProviderCoverageSection;
+    (api.getConfig as jest.Mock).mockResolvedValue(null);
+    (api.getCoverageBreakdown as jest.Mock)
+      .mockReturnValueOnce(slow.promise)
+      .mockResolvedValueOnce({ providers: [section] });
+
+    const first = loadCoverageBreakdown();
+    await loadCoverageBreakdown();
+    const container = document.getElementById('coverage-providers')!;
+    const before = container.innerHTML;
+    slow.reject(new Error('stale boom'));
+    await first;
+
+    expect(container.innerHTML).toBe(before);
+    expect(container.textContent?.toLowerCase()).toContain('gcp');
+    expect(container.textContent).not.toContain('stale boom');
+    expect(container.querySelector('.error')).toBeNull();
   });
 });

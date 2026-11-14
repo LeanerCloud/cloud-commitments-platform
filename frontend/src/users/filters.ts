@@ -2,17 +2,14 @@
  * User filtering functionality
  */
 
-import { ADMINISTRATORS_GROUP_ID } from '../permissions';
 import {
   allUsers,
   filteredUsers,
   searchQuery,
-  roleFilter,
   mfaFilter,
   groupFilter,
   setFilteredUsers,
   setSearchQuery,
-  setRoleFilter,
   setMfaFilter,
   setGroupFilter,
   availableGroups
@@ -28,15 +25,6 @@ export function applyFilters(): void {
     // Search filter
     if (searchQuery && !user.email.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false;
-    }
-
-    // Role filter: map legacy role values to group membership checks
-    // (PR #912 dropped user.role; admin = Administrators group member).
-    if (roleFilter) {
-      const isAdminUser = Array.isArray(user.groups) &&
-        user.groups.includes(ADMINISTRATORS_GROUP_ID);
-      if (roleFilter === 'admin' && !isAdminUser) return false;
-      if (roleFilter !== 'admin' && isAdminUser) return false;
     }
 
     // MFA filter
@@ -72,9 +60,6 @@ export function handleUserSearch(query: string): void {
  */
 export function handleFilterChange(filterType: string, value: string): void {
   switch (filterType) {
-    case 'role':
-      setRoleFilter(value);
-      break;
     case 'mfa':
       setMfaFilter(value);
       break;
@@ -93,15 +78,11 @@ export function handleFilterChange(filterType: string, value: string): void {
  */
 export function clearFilters(): void {
   setSearchQuery('');
-  setRoleFilter('');
   setMfaFilter('');
   setGroupFilter('');
 
   const searchInput = document.getElementById('user-search') as HTMLInputElement;
   if (searchInput) searchInput.value = '';
-
-  const roleSelect = document.getElementById('user-role-filter') as HTMLSelectElement;
-  if (roleSelect) roleSelect.value = '';
 
   const mfaSelect = document.getElementById('user-mfa-filter') as HTMLSelectElement;
   if (mfaSelect) mfaSelect.value = '';

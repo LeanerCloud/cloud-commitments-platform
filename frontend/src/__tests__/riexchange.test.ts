@@ -237,6 +237,47 @@ describe('openExchangeModal', () => {
     // validateExecuteExchangeBody rejected every UI-initiated exchange
     // with a 400. This must equal the region the quote resolved.
     expect(execReq.region).toBe('us-west-2');
+    // The whole body the backend's ExchangeExecuteRequestBody decodes: the
+    // singleton target, the quoted payment as the spend cap, and the region.
+    expect(execReq).toEqual({
+      ri_ids: ['ri-abc'],
+      target_offering_id: offeringUUID,
+      target_count: 3,
+      max_payment_due_usd: '12.50',
+      region: 'us-west-2',
+    });
+  });
+
+  it('executes a multi-target exchange with targets[] and the total spend cap', async () => {
+    const mockExecute = api.executeExchange as jest.Mock;
+    (api.getExchangeQuote as jest.Mock).mockResolvedValueOnce({
+      IsValidExchange: true, ValidationFailureReason: '', CurrencyCode: 'USD', PaymentDueRaw: '7.25',
+      SourceHourlyPriceRaw: '', SourceRemainingUpfrontRaw: '', SourceRemainingTotalRaw: '',
+      TargetHourlyPriceRaw: '', TargetRemainingUpfrontRaw: '', TargetRemainingTotalRaw: '', Region: 'eu-west-1',
+    });
+    mockExecute.mockResolvedValueOnce({ exchange_id: 'exch-2', quote: {} });
+    const uuid1 = '4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91';
+    const uuid2 = '7e123456-0000-4567-abcd-ef0123456789';
+    openExchangeModal('ri-multi', 1, 'm5.large', [
+      { instance_type: 'm5.large', offering_id: uuid1, effective_monthly_cost: 40.0 },
+    ]);
+    modal.querySelector<HTMLButtonElement>('#modal-exchange-add-target')?.click();
+    const rows = modal.querySelectorAll<HTMLDivElement>('.exchange-target-row');
+    rows[1]!.querySelector<HTMLInputElement>('.modal-exchange-target')!.value = uuid2;
+    rows[1]!.querySelector<HTMLInputElement>('.modal-exchange-count')!.value = '2';
+    Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Get Quote')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    Array.from(modal.querySelectorAll('button')).find((b) => b.textContent === 'Execute Exchange')?.click();
+    document.querySelector<HTMLButtonElement>('.modal-confirm-actions .btn-destructive')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecute.mock.calls[0][0]).toEqual({
+      ri_ids: ['ri-multi'],
+      targets: [{ offering_id: uuid1, count: 1 }, { offering_id: uuid2, count: 2 }],
+      max_payment_due_usd: '7.25',
+      region: 'eu-west-1',
+    });
   });
 
   it('names instance types and the hourly price change in the execute confirm', async () => {

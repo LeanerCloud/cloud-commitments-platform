@@ -12,7 +12,6 @@ export let availableGroups: APIGroup[] = [];
 export let allUsers: APIUser[] = [];
 export let filteredUsers: APIUser[] = [];
 export let searchQuery = '';
-export let roleFilter = '';
 export let mfaFilter = '';
 export let groupFilter = '';
 
@@ -38,10 +37,6 @@ export function setFilteredUsers(users: APIUser[]): void {
 
 export function setSearchQuery(query: string): void {
   searchQuery = query;
-}
-
-export function setRoleFilter(filter: string): void {
-  roleFilter = filter;
 }
 
 export function setMfaFilter(filter: string): void {

@@ -261,7 +261,6 @@ describe('users/state', () => {
     userState.setAvailableGroups([]);
     userState.setCurrentEditingUser(null);
     userState.setSearchQuery('');
-    userState.setRoleFilter('');
     userState.setMfaFilter('');
     userState.setGroupFilter('');
   });
@@ -354,11 +353,6 @@ describe('users/state', () => {
       expect(userState.searchQuery).toBe('test@email.com');
     });
 
-    it('should set role filter', () => {
-      userState.setRoleFilter('admin');
-      expect(userState.roleFilter).toBe('admin');
-    });
-
     it('should set MFA filter', () => {
       userState.setMfaFilter('enabled');
       expect(userState.mfaFilter).toBe('enabled');
@@ -371,12 +365,10 @@ describe('users/state', () => {
 
     it('should allow empty filter values', () => {
       userState.setSearchQuery('');
-      userState.setRoleFilter('');
       userState.setMfaFilter('');
       userState.setGroupFilter('');
 
       expect(userState.searchQuery).toBe('');
-      expect(userState.roleFilter).toBe('');
       expect(userState.mfaFilter).toBe('');
       expect(userState.groupFilter).toBe('');
     });
@@ -402,13 +394,11 @@ describe('users/filters', () => {
         <span id="selected-count">0</span>
       </div>
       <input type="text" id="user-search" />
-      <select id="user-role-filter"><option value="">All</option></select>
       <select id="user-mfa-filter"><option value="">All</option></select>
       <select id="user-group-filter"><option value="">All</option></select>
     `;
     userState.setAllUsers(mockUsers as any);
     userState.setSearchQuery('');
-    userState.setRoleFilter('');
     userState.setMfaFilter('');
     userState.setGroupFilter('');
     userState.clearSelectedUserIds();
@@ -432,21 +422,6 @@ describe('users/filters', () => {
     it('should filter by partial email match', () => {
       userState.setSearchQuery('@test.com');
       userFilters.applyFilters();
-      expect(userState.filteredUsers.length).toBe(3);
-    });
-
-    it('should filter by admin role (Administrators group membership)', () => {
-      userState.setRoleFilter('admin');
-      userFilters.applyFilters();
-      // Only the user in the Administrators group matches
-      expect(userState.filteredUsers.length).toBe(1);
-      expect(userState.filteredUsers[0]?.email).toBe('admin@test.com');
-    });
-
-    it('should filter non-admin users with role filter', () => {
-      userState.setRoleFilter('user'); // non-admin = not in Administrators group
-      userFilters.applyFilters();
-      // 3 users not in Administrators group
       expect(userState.filteredUsers.length).toBe(3);
     });
 
@@ -483,25 +458,8 @@ describe('users/filters', () => {
       expect(userState.filteredUsers.length).toBe(0);
     });
 
-    it('should combine multiple filters (mfa + admin group)', () => {
-      userState.setMfaFilter('enabled');
-      userState.setRoleFilter('admin');
-      userFilters.applyFilters();
-      expect(userState.filteredUsers.length).toBe(1);
-      expect(userState.filteredUsers[0]?.email).toBe('admin@test.com');
-    });
-
-    it('should combine search and non-admin role filter', () => {
-      userState.setSearchQuery('user');
-      userState.setRoleFilter('user'); // non-admin
-      userFilters.applyFilters();
-      // 'user@test.com' and 'another.user@example.com' match search + non-admin
-      expect(userState.filteredUsers.length).toBe(2);
-    });
-
     it('should combine all filters', () => {
       userState.setSearchQuery('user');
-      userState.setRoleFilter('user'); // non-admin
       userState.setMfaFilter('enabled');
       userState.setGroupFilter('users');
       userFilters.applyFilters();
@@ -543,13 +501,6 @@ describe('users/filters', () => {
   });
 
   describe('handleFilterChange', () => {
-    it('should handle role filter change (admin = Administrators group)', () => {
-      userFilters.handleFilterChange('role', 'admin');
-      expect(userState.roleFilter).toBe('admin');
-      // Only the Administrators group member matches
-      expect(userState.filteredUsers.length).toBe(1);
-    });
-
     it('should handle mfa filter change', () => {
       userFilters.handleFilterChange('mfa', 'enabled');
       expect(userState.mfaFilter).toBe('enabled');
@@ -565,7 +516,6 @@ describe('users/filters', () => {
     it('should ignore unknown filter types', () => {
       userFilters.handleFilterChange('unknown', 'value');
       // Should not throw and filters should remain unchanged
-      expect(userState.roleFilter).toBe('');
       expect(userState.mfaFilter).toBe('');
       expect(userState.groupFilter).toBe('');
     });
@@ -574,41 +524,36 @@ describe('users/filters', () => {
   describe('clearFilters', () => {
     it('should clear all filters', () => {
       userState.setSearchQuery('test');
-      userState.setRoleFilter('admin');
       userState.setMfaFilter('enabled');
       userState.setGroupFilter('00000000-0000-5000-8000-000000000001');
 
       userFilters.clearFilters();
 
       expect(userState.searchQuery).toBe('');
-      expect(userState.roleFilter).toBe('');
       expect(userState.mfaFilter).toBe('');
       expect(userState.groupFilter).toBe('');
     });
 
     it('should reset filter inputs', () => {
       const searchInput = document.getElementById('user-search') as HTMLInputElement;
-      const roleSelect = document.getElementById('user-role-filter') as HTMLSelectElement;
       const mfaSelect = document.getElementById('user-mfa-filter') as HTMLSelectElement;
       const groupSelect = document.getElementById('user-group-filter') as HTMLSelectElement;
 
       searchInput.value = 'test';
-      roleSelect.value = 'admin';
       mfaSelect.value = 'enabled';
       groupSelect.value = 'admins';
 
       userFilters.clearFilters();
 
       expect(searchInput.value).toBe('');
-      expect(roleSelect.value).toBe('');
       expect(mfaSelect.value).toBe('');
       expect(groupSelect.value).toBe('');
     });
 
     it('should re-render all users after clearing', () => {
-      userState.setRoleFilter('admin');
+      userState.setMfaFilter('disabled');
       userFilters.applyFilters();
-      // Only 1 Administrators-group member
+      // Only 1 user has MFA disabled
       expect(userState.filteredUsers.length).toBe(1);
 
       userFilters.clearFilters();
@@ -1950,11 +1895,6 @@ describe('users/handlers', () => {
     document.body.innerHTML = `
       <form id="user-form"></form>
       <input type="text" id="user-search" />
-      <select id="user-role-filter">
-        <option value="">All</option>
-        <option value="admin">Admin</option>
-        <option value="user">User</option>
-      </select>
       <select id="user-mfa-filter">
         <option value="">All</option>
         <option value="enabled">Enabled</option>
@@ -1978,7 +1918,6 @@ describe('users/handlers', () => {
     userState.setAllUsers([]);
     userState.setFilteredUsers([]);
     userState.setSearchQuery('');
-    userState.setRoleFilter('');
     userState.setMfaFilter('');
     userState.setGroupFilter('');
     userState.clearSelectedUserIds();
@@ -2019,16 +1958,6 @@ describe('users/handlers', () => {
       expect(userState.searchQuery).toBe('test');
     });
 
-    it('should set up role filter handler', () => {
-      userHandlers.setupUserHandlers();
-
-      const roleFilter = document.getElementById('user-role-filter') as HTMLSelectElement;
-      roleFilter.value = 'admin';
-      roleFilter.dispatchEvent(new Event('change', { bubbles: true }));
-
-      expect(userState.roleFilter).toBe('admin');
-    });
-
     it('should set up mfa filter handler', () => {
       userHandlers.setupUserHandlers();
 
@@ -2051,7 +1980,6 @@ describe('users/handlers', () => {
 
     it('should set up clear filters button handler', () => {
       userState.setSearchQuery('test');
-      userState.setRoleFilter('admin');
 
       userHandlers.setupUserHandlers();
 
@@ -2059,7 +1987,6 @@ describe('users/handlers', () => {
       clearBtn?.click();
 
       expect(userState.searchQuery).toBe('');
-      expect(userState.roleFilter).toBe('');
     });
 
     it('should populate group filter dropdown', () => {
@@ -2146,7 +2073,6 @@ describe('users module integration', () => {
       <div id="groups-list"></div>
       <div id="user-stats"></div>
       <input type="text" id="user-search" />
-      <select id="user-role-filter"><option value="">All</option></select>
       <select id="user-mfa-filter"><option value="">All</option></select>
       <select id="user-group-filter"><option value="">All</option></select>
       <div id="bulk-actions-bar" class="hidden">
@@ -2162,7 +2088,6 @@ describe('users module integration', () => {
     userState.setAvailableGroups([]);
     userState.clearSelectedUserIds();
     userState.setSearchQuery('');
-    userState.setRoleFilter('');
     userState.setMfaFilter('');
     userState.setGroupFilter('');
 
@@ -2234,7 +2159,6 @@ describe('users bulk-actions toolbar', () => {
     document.body.innerHTML = `
       <form id="user-form"></form>
       <input type="text" id="user-search" />
-      <select id="user-role-filter"><option value="">All</option></select>
       <select id="user-mfa-filter"><option value="">All</option></select>
       <select id="user-group-filter"><option value="">All Groups</option></select>
       <button id="clear-filters-btn">Clear</button>

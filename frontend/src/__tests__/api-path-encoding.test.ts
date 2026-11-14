@@ -9,8 +9,8 @@ import { getPlan, patchPlan } from '../api/plans';
 import { getUser, deleteUser } from '../api/users';
 import { revokeApiKey, deleteApiKey } from '../api/apikeys';
 import { getRegistration } from '../api/registrations';
-import { getAccount, saveAccountServiceOverride } from '../api/accounts';
-import { getPurchaseDetails, getRevokeQuote, cancelMarketplaceListing, pausePlannedPurchase } from '../api/purchases';
+import { getAccount, saveAccountServiceOverride, listPlanAccounts, setPlanAccounts } from '../api/accounts';
+import { getPurchaseDetails, getRevokeQuote, cancelMarketplaceListing, pausePlannedPurchase, retryPurchase } from '../api/purchases';
 
 const EVIL = 'a/../b?x#y';
 const ENC = encodeURIComponent(EVIL);
@@ -43,6 +43,10 @@ describe('API path ids are encoded', () => {
     ['getRevokeQuote', () => getRevokeQuote(EVIL), `/api/purchases/${ENC}/revoke/calculate`],
     ['cancelMarketplaceListing', () => cancelMarketplaceListing(EVIL), `/api/purchases/${ENC}/marketplace-cancel`],
     ['pausePlannedPurchase', () => pausePlannedPurchase(EVIL), `/api/purchases/planned/${ENC}/pause`],
+    ['retryPurchase', () => retryPurchase(EVIL), `/api/purchases/retry/${ENC}`],
+    ['retryPurchase force', () => retryPurchase(EVIL, { force: true }), `/api/purchases/retry/${ENC}?force=true`],
+    ['listPlanAccounts', () => listPlanAccounts(EVIL), `/api/plans/${ENC}/accounts`],
+    ['setPlanAccounts', () => setPlanAccounts(EVIL, ['a']), `/api/plans/${ENC}/accounts`],
   ];
 
   test.each(calls)('%s', async (_name, call, expectedUrl) => {

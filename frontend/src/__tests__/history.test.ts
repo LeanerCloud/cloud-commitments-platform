@@ -65,7 +65,7 @@ jest.mock('../state', () => ({
 }));
 
 import * as api from '../api';
-import { getAmortizeUpfront } from '../state';
+import { getAmortizeUpfront, setAmortizeUpfront, subscribeAmortizeUpfront } from '../state';
 import { switchTab } from '../navigation';
 import { canAccess } from '../permissions';
 
@@ -836,6 +836,76 @@ describe('History Module', () => {
       const allDashes = (summary?.innerHTML.match(/—/g) || []).length;
       expect(allDashes).toBeGreaterThanOrEqual(4);
       expect(summary?.querySelector('.value.savings')).toBeNull();
+    });
+  });
+
+  // Issue #1957 (A12-037): the amortize toggle wiring itself, not only the
+  // per-row values it produces.
+  describe('amortize toggle', () => {
+    const purchase = {
+      timestamp: '2026-09-29T00:00:00Z', provider: 'aws', service: 'ec2', resource_type: 'm5.large',
+      region: 'us-east-1', count: 1, term: 1, upfront_cost: 1200, monthly_cost: 100, estimated_savings: 300,
+    };
+    const mountDOM = (): void => {
+      document.body.innerHTML = `
+        <div id="history-controls"></div>
+        <div id="history-summary"></div>
+        <div id="history-list"></div>
+        <div id="purchases-approval-queue-section"><div id="purchases-approval-queue"></div></div>
+      `;
+    };
+    const load = async (): Promise<void> => {
+      (api.getHistory as jest.Mock).mockResolvedValue({ summary: {}, purchases: [
+        { ...purchase, purchase_id: 'complete', status: 'completed' },
+        { ...purchase, purchase_id: 'pending', status: 'pending' },
+      ] });
+      await loadHistory();
+    };
+    const headers = (id: string): string[] =>
+      Array.from(document.querySelectorAll(`#${id} th`)).map(th => th.textContent ?? '');
+    const checkbox = (id: string): HTMLInputElement => document.getElementById(id) as HTMLInputElement;
+
+    test('mounts one checkbox per table, once, reflecting the stored toggle', async () => {
+      mountDOM();
+      (getAmortizeUpfront as jest.Mock).mockReturnValue(true);
+      await load();
+      await load();
+      expect(document.querySelectorAll('#history-amortize-checkbox')).toHaveLength(1);
+      expect(document.querySelectorAll('#approval-queue-amortize-checkbox')).toHaveLength(1);
+      expect(checkbox('history-amortize-checkbox').checked).toBe(true);
+      expect(checkbox('approval-queue-amortize-checkbox').checked).toBe(true);
+    });
+
+    test('changing a checkbox writes the new value to state', async () => {
+      mountDOM();
+      await load();
+      const cb = checkbox('history-amortize-checkbox');
+      cb.checked = true;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(setAmortizeUpfront).toHaveBeenCalledWith(true);
+      const qcb = checkbox('approval-queue-amortize-checkbox');
+      qcb.checked = false;
+      qcb.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(setAmortizeUpfront).toHaveBeenLastCalledWith(false);
+    });
+
+    test('a toggle flip re-renders both tables from the cache and syncs both checkboxes', async () => {
+      mountDOM();
+      await load();
+      setupHistoryHandlers();
+      expect(headers('history-list')).toContain('Monthly Cost');
+      expect(headers('purchases-approval-queue')).toContain('Monthly Cost');
+      const fetches = (api.getHistory as jest.Mock).mock.calls.length;
+
+      (getAmortizeUpfront as jest.Mock).mockReturnValue(true);
+      const redraw = (subscribeAmortizeUpfront as jest.Mock).mock.calls[0]![0] as () => void;
+      redraw();
+
+      expect(headers('history-list')).toContain('Monthly Cost (amortized)');
+      expect(headers('purchases-approval-queue')).toContain('Monthly Cost (amortized)');
+      expect(checkbox('history-amortize-checkbox').checked).toBe(true);
+      expect(checkbox('approval-queue-amortize-checkbox').checked).toBe(true);
+      expect((api.getHistory as jest.Mock).mock.calls.length).toBe(fetches);
     });
   });
 });
