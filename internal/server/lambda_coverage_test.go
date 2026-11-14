@@ -158,7 +158,7 @@ func TestHandleLambdaHTTPEvent_DecodesBase64FormBody(t *testing.T) {
 	}
 
 	app := &Application{
-		API: api.NewHandler(api.HandlerConfig{ConfigStore: mockStore, AuthService: sessionOnlyAuth{}}),
+		API: api.NewHandler(api.HandlerConfig{ConfigStore: mockStore, AuthService: sessionOnlyAuth{}, RateLimiter: api.NewInMemoryRateLimiter()}),
 	}
 
 	encodedBody := base64.StdEncoding.EncodeToString([]byte("token=body-token"))
