@@ -52,8 +52,8 @@ func TestRedshiftRetryWait(t *testing.T) {
 	ec2.Service = "ec2"
 	s := redshiftRetrySettle
 	tests := []struct {
-		name  string
 		exec  *config.PurchaseExecution
+		name  string
 		since time.Duration
 		want  time.Duration
 	}{

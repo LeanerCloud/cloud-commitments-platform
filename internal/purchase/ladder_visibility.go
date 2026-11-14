@@ -104,8 +104,8 @@ func spCountsAsExisting(sp sptypes.SavingsPlan, e expectedPlan) bool {
 }
 
 type ladderFetchGroup struct {
-	account, region string
 	execs           map[string][]expectedPlan // execution ID -> its plans
+	account, region string
 }
 
 // PrefetchLadderVisibility resolves, outside any transaction, whether the

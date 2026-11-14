@@ -18,12 +18,12 @@ import (
 // resuming strictly after the given key. It also counts reads so tests can
 // check that override lookups are not repeated per chunk.
 type scanStore struct {
-	mockOverrideStore
-	sups           []config.PurchaseSuppression
 	supsErr        error
 	chunkErr       error
-	chunkReads     int
 	overrideLookup map[string]int
+	mockOverrideStore
+	sups       []config.PurchaseSuppression
+	chunkReads int
 }
 
 func (m *scanStore) ListActiveSuppressions(_ context.Context) ([]config.PurchaseSuppression, error) {
@@ -44,8 +44,8 @@ func (m *scanStore) ListStoredRecommendationsChunk(_ context.Context, _ config.R
 		return config.RecommendationChunk{}, m.chunkErr
 	}
 	type row struct {
-		key config.RecommendationScanKey
 		rec config.RecommendationRecord
+		key config.RecommendationScanKey
 	}
 	rows := make([]row, len(m.recs))
 	for i := range m.recs {

@@ -17,11 +17,11 @@ import (
 // real-PostgreSQL behavior is in expired_root_readopt_integration_test.go.
 
 type readoptClaim struct {
+	date  time.Time
 	m     *Manager
 	store *readoptStore
 	plan  *config.PurchasePlan
 	rows  []config.PurchaseExecution
-	date  time.Time
 }
 
 // newReadoptClaim builds an overdue manual plan with one expired root. The fake
@@ -58,9 +58,9 @@ func (rc *readoptClaim) claim() (stepClaim, error) {
 
 func TestReadoptClaim_OnlyApprovalNeedingPlansReachTheCAS(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
 		global  *config.GlobalConfig
 		mutate  func(*config.PurchasePlan)
+		name    string
 		wantCAS bool
 	}{
 		{name: "manual plan", global: &config.GlobalConfig{}, mutate: nil, wantCAS: true},
@@ -120,8 +120,8 @@ func TestReadoptClaim_NotReArmableRowsStayBlocked(t *testing.T) {
 
 func TestReadoptClaim_CASOutcomes(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
 		err         error
+		name        string
 		wantSkipped bool
 	}{
 		{name: "lost CAS is the quiet skip", err: config.ErrExecutionNotInExpectedStatus, wantSkipped: true},

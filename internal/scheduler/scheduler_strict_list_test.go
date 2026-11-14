@@ -13,8 +13,8 @@ import (
 
 // Fixture/mock evidence: in-memory fakes, no database.
 type strictStore struct {
-	mockSuppressionStore
 	listErr, supErr, overrideErr error
+	mockSuppressionStore
 }
 
 func (s *strictStore) ListStoredRecommendations(ctx context.Context, f config.RecommendationFilter) ([]config.RecommendationRecord, error) {

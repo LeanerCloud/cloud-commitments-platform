@@ -19,8 +19,8 @@ func TestRetryRefusalReason(t *testing.T) {
 	unknown := config.RecommendationRecord{Provider: "oracle", Service: "compute"}
 
 	tests := []struct {
-		name    string
 		exec    *config.PurchaseExecution
+		name    string
 		refused bool
 	}{
 		{name: "NS attempt 0 failed EC2", exec: retryExec(config.StatusFailed, true, 0, ec2), refused: false},

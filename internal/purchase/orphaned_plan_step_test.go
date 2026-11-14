@@ -20,8 +20,8 @@ import (
 // orphanSaves records every row the executor persists, so a test can read the
 // terminal status and error the operator will see.
 type orphanSaves struct {
-	mu   sync.Mutex
 	rows []config.PurchaseExecution
+	mu   sync.Mutex
 }
 
 func (s *orphanSaves) last() config.PurchaseExecution {
@@ -209,8 +209,8 @@ func TestFireScheduledStillFiresAdHocPlanlessExecutions(t *testing.T) {
 func TestRunNowAndDirectExecuteRefuseOrphanedStep(t *testing.T) {
 	user := "11111111-2222-3333-4444-555555555555"
 	cases := map[string]struct {
-		from []string
 		run  func(*Manager, string) (*config.PurchaseExecution, string, error)
+		from []string
 	}{
 		"run now": {from: []string{"pending", "notified", "paused"}, run: func(m *Manager, id string) (*config.PurchaseExecution, string, error) {
 			return m.RunPlannedPurchaseNow(context.Background(), id, "operator@example.com", &user, nil)

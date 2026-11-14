@@ -190,9 +190,9 @@ func TestSaveTerminalExecution_ReleasesSuppressionsOnlyBeforeSubmission(t *testi
 	completed := failedRow()
 	completed.Status = "completed"
 	cases := []struct {
-		name    string
-		exec    config.PurchaseExecution
 		err     error
+		exec    config.PurchaseExecution
+		name    string
 		release bool
 	}{
 		{name: "failed before any provider call", exec: failedRow(), err: beforeSubmission(errors.New("credential resolution failed")), release: true},

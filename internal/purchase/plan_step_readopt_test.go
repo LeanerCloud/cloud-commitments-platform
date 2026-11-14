@@ -26,9 +26,9 @@ func TestShouldReadoptExpiredPlan_Admission(t *testing.T) {
 	fourEyes := &config.GlobalConfig{RequireDifferentApprover: true, AutoPurchaseEnabled: true}
 	recent := now.Add(-time.Hour)
 	for _, tc := range []struct {
-		name   string
-		plan   config.PurchasePlan
 		global *config.GlobalConfig
+		plan   config.PurchasePlan
+		name   string
 		auto   bool
 		listed bool
 		want   bool

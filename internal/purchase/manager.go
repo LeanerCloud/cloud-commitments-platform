@@ -27,28 +27,28 @@ type STSClient interface {
 
 // ManagerConfig holds configuration for the purchase manager.
 type ManagerConfig struct {
+	ProviderFactory provider.FactoryInterface
 	AmbientAWSCreds aws.CredentialsProvider
-	EmailSender     email.SenderInterface
 	STSClient       STSClient
 	AssumeRoleSTS   credentials.STSClient
+	CredentialStore credentials.CredentialStore
+	OIDCSigner      oidc.Signer
+	// AttemptJournal records each purchase attempt durably (go#107). Nil keeps
+	// the provider's own window dedupe.
+	AttemptJournal AttemptJournal
+	EmailSender    email.SenderInterface
+	ConfigStore    config.StoreInterface
 	// BastionSTSFactory builds the STS client a bastion-mode account's target
 	// role is assumed with, signed with the bastion account's credentials.
 	// Without it bastion accounts fail to resolve (issue #263).
 	BastionSTSFactory      credentials.STSClientFactory
-	CredentialStore        credentials.CredentialStore
-	ProviderFactory        provider.FactoryInterface
-	ConfigStore            config.StoreInterface
-	OIDCSigner             oidc.Signer
-	OIDCIssuerURL          string
 	DashboardURL           string
+	OIDCIssuerURL          string
 	NotificationDaysBefore int
 	// MaxDueRowAge caps how long after its due time the fire and process
 	// sweeps may still buy a row (issue #712); an older row is failed
 	// unbought instead. Zero means DefaultMaxDueRowAge.
 	MaxDueRowAge time.Duration
-	// AttemptJournal records each purchase attempt durably (go#107). Nil keeps
-	// the provider's own window dedupe.
-	AttemptJournal AttemptJournal
 }
 
 // AttemptJournal is the journal the manager hands to providers. It must also
@@ -61,25 +61,25 @@ type AttemptJournal interface {
 
 // Manager handles purchase workflow.
 type Manager struct {
-	config          config.StoreInterface
+	resolver        stepResolver
 	email           email.SenderInterface
 	stsClient       STSClient
 	assumeRoleSTS   credentials.STSClient
-	bastionSTS      credentials.STSClientFactory
+	config          config.StoreInterface
 	ambientAWSCreds aws.CredentialsProvider
 	credStore       credentials.CredentialStore
 	attemptJournal  AttemptJournal
 	providerFactory provider.FactoryInterface
 	oidcSigner      oidc.Signer
-	dashboardURL    string
+	bastionSTS      credentials.STSClientFactory
 	oidcIssuerURL   string
-	notifyDays      int
-	resolver        stepResolver
-	// maxDueRowAge is ManagerConfig.MaxDueRowAge; read it via dueRowMaxAge.
-	maxDueRowAge time.Duration
+	dashboardURL    string
 	// budgets lets tests shorten purchase deadlines. Production leaves it
 	// zero, which means the default durations below.
-	budgets purchaseBudgets
+	budgets    purchaseBudgets
+	notifyDays int
+	// maxDueRowAge is ManagerConfig.MaxDueRowAge; read it via dueRowMaxAge.
+	maxDueRowAge time.Duration
 }
 
 // ProcessResult holds the result of processing scheduled purchases.

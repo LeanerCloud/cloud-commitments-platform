@@ -54,9 +54,9 @@ func TestApplySuppressions_EngineMappingDoesNotWidenBeyondAzureSQL(t *testing.T)
 	aws := azureSQLRec("mysql")
 	aws.Provider, aws.Service = "aws", "rds"
 	for _, tc := range []struct {
-		name string
 		rec  config.RecommendationRecord
 		sup  config.PurchaseSuppression
+		name string
 	}{
 		{name: "aws rds engine empty does not hide mysql", rec: aws, sup: azureSQLSuppression("aws", "rds", "")},
 		{name: "azure sql engine empty does not hide mysql", rec: azureSQLRec("mysql"), sup: azureSQLSuppression("azure", "relational-db", "")},

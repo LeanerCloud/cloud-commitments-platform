@@ -24,8 +24,8 @@ import (
 
 func TestSafeFail_StampIsGuardedOnFailed(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
 		saveErr error
+		name    string
 	}{
 		{name: "guard holds", saveErr: nil},
 		// The flip to failed already landed; a lost stamp is an audit gap, not

@@ -60,9 +60,9 @@ func TestPlanNeedsApproval_Modes(t *testing.T) {
 	on := &config.GlobalConfig{RequireDifferentApprover: true}
 	off := &config.GlobalConfig{}
 	cases := []struct {
-		name   string
-		plan   config.PurchasePlan
 		global *config.GlobalConfig
+		plan   config.PurchasePlan
+		name   string
 		want   bool
 	}{
 		{name: "manual plan", plan: config.PurchasePlan{}, global: off, want: true},

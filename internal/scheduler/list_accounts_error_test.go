@@ -17,9 +17,9 @@ import (
 func TestCollectRecommendations_ListAccountsErrorFailsClosed(t *testing.T) {
 	listErr := errors.New("connection reset by peer")
 	tests := []struct {
-		name    string
 		env     map[string]string
 		collect func(*Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error)
+		name    string
 	}{
 		{name: "aws", env: nil, collect: func(s *Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error) {
 			return s.collectAWSRecommendations(context.Background(), &config.GlobalConfig{})

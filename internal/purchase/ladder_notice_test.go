@@ -14,9 +14,9 @@ import (
 // captureNotifier records every notice; hook runs inside the send and err is
 // returned after it.
 type captureNotifier struct {
-	got  []email.NotificationData
-	hook func(email.NotificationData)
 	err  error
+	hook func(email.NotificationData)
+	got  []email.NotificationData
 }
 
 func (c *captureNotifier) SendPurchaseScheduledNotification(ctx context.Context, d email.NotificationData) error {

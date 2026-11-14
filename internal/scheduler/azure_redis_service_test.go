@@ -54,9 +54,9 @@ func TestApplySuppressions_AdvisorRedisEngineStableAcrossGoBump(t *testing.T) {
 	require.Equal(t, "", oldRec.Engine)
 	require.Equal(t, "redis", newRec.Engine)
 	for _, tc := range []struct {
+		rec       config.RecommendationRecord
 		name      string
 		supEngine string
-		rec       config.RecommendationRecord
 	}{
 		{name: "old suppression hides new rec", supEngine: oldRec.Engine, rec: newRec},
 		{name: "new suppression hides old rec", supEngine: newRec.Engine, rec: oldRec},

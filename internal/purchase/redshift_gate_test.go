@@ -20,12 +20,12 @@ func gateRec(account string, count int) config.RecommendationRecord {
 }
 
 type gateRun struct {
+	stamp  time.Time
 	err    error
 	exec   *config.PurchaseExecution
-	finds  []config.RedshiftTuple
 	family string
+	finds  []config.RedshiftTuple
 	locked []config.RedshiftTuple
-	stamp  time.Time
 	window time.Duration
 }
 
@@ -172,8 +172,8 @@ func TestRedshiftDispatchGate_PicksTheRefusalTextByConflictKind(t *testing.T) {
 	running := config.RedshiftLineageConflict{ExecutionID: "r", Status: "running", Recommendations: rs}
 	done := config.RedshiftLineageConflict{ExecutionID: "d", Status: config.StatusCompleted, RecentBuy: true, Recommendations: rs}
 	for name, tc := range map[string]struct {
-		conflicts []config.RedshiftLineageConflict
 		want      string
+		conflicts []config.RedshiftLineageConflict
 	}{
 		"only failed":           {conflicts: []config.RedshiftLineageConflict{failed}, want: redshiftFailedConflictRefusal},
 		"failed beside running": {conflicts: []config.RedshiftLineageConflict{failed, running}, want: redshiftConflictRefusal},

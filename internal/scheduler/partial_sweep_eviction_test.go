@@ -20,8 +20,8 @@ func TestAWSIncompleteSweep(t *testing.T) {
 		FailedDetails: 2, FailedScopes: 1, Causes: []error{errors.New("malformed quantity"), errors.New("API scope failed")},
 	}
 	for _, tc := range []struct {
-		name     string
 		err      error
+		name     string
 		complete bool
 		fatal    bool
 	}{
@@ -48,9 +48,9 @@ func TestAWSIncompleteSweep(t *testing.T) {
 func TestAWSIncompleteFallbackCannotAuthorizeEviction(t *testing.T) {
 	incomplete := &awsrecommendations.IncompleteRecommendationsError{FailedDetails: 1, Causes: []error{errors.New("invalid quantity")}}
 	for _, tc := range []struct {
-		name     string
 		firstErr error
 		lastErr  error
+		name     string
 	}{
 		{name: "all-invalid then complete", firstErr: incomplete},
 		{name: "empty then incomplete", lastErr: incomplete},
@@ -138,10 +138,10 @@ func partialSweepErr(failedSubscriptionIDs ...string) *azureprovider.PartialSubs
 // tolerateIncompleteSweep was uncovered (audit finding A16-007): a partial
 // GCP sweep could enter the eviction roster with the whole suite green.
 type partialSweepCase struct {
-	provider   string
-	env        map[string]string
 	partialErr error
+	env        map[string]string
 	collect    func(*Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error)
+	provider   string
 }
 
 func partialSweepCases() []partialSweepCase {

@@ -74,8 +74,8 @@ func TestLadderInstrument_ComputeSPRecordReachesServiceClient(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		term   ladder.Term
-		amount float64
 		want   string
+		amount float64
 		hourly float64
 	}{
 		{name: "1yr", term: ladder.Term1Year, amount: 0.123456, want: "1yr", hourly: 0.12345},

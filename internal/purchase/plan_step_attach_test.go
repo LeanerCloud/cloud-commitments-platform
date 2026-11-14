@@ -77,8 +77,8 @@ func TestAttach_NewRowIsPendingWithoutTokenAndRotatesIn(t *testing.T) {
 
 func TestAttach_NoMatchWaitsForGraceThenFailsOnce(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
 		next     time.Time
+		name     string
 		wantFail bool
 	}{
 		{name: "before the deadline", next: time.Now().Add(-6 * 24 * time.Hour), wantFail: false},
@@ -297,8 +297,8 @@ func TestAttach_ZeroCoveragePlanFailsTheStepVisibly(t *testing.T) {
 
 func TestAttach_ManualPlanRequiresExplicitRootAndHonorsOptionalCap(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
 		cap        *float64
+		name       string
 		root       bool
 		wantAttach bool
 	}{

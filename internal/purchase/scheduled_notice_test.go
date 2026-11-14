@@ -49,8 +49,8 @@ func TestSendScheduledNotice_RecipientAndRevokeURL(t *testing.T) {
 	exec := &config.PurchaseExecution{ExecutionID: "e1", ScheduledExecutionAt: &closes}
 
 	cases := []struct {
-		name, dashboard, actor, wantTo, wantRevoke string
 		cfg                                        *config.GlobalConfig
+		name, dashboard, actor, wantTo, wantRevoke string
 	}{
 		{name: "global email wins", dashboard: "https://d.example", actor: "bob@example.com", wantTo: notify, wantRevoke: "https://d.example/purchases#history?execution=e1", cfg: &config.GlobalConfig{NotificationEmail: &notify}},
 		{name: "actor fallback, no dashboard", dashboard: "", actor: "bob@example.com", wantTo: "bob@example.com", wantRevoke: "", cfg: &config.GlobalConfig{}},

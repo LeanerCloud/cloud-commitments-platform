@@ -124,10 +124,10 @@ func TestSweepGap_ProviderSweepIsSanitized(t *testing.T) {
 // collectAWSForAccount or collectGCPForAccount fails this test (A16-007).
 func TestCollectProvider_RegisteredAccountPartialSweep(t *testing.T) {
 	for _, tc := range []struct {
-		provider   string
-		account    config.CloudAccount
 		partialErr error
 		collect    func(*Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error)
+		account    config.CloudAccount
+		provider   string
 	}{
 		{
 			provider: "aws",

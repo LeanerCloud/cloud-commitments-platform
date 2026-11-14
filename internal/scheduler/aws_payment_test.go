@@ -60,8 +60,8 @@ func TestFetchAndConvert_AWSFallbackPaymentOption(t *testing.T) {
 // embedded interface.
 type spPaymentCE struct {
 	awsrec.CostExplorerAPI
-	mu        sync.Mutex
 	spPayment []types.PaymentOption
+	mu        sync.Mutex
 }
 
 func (c *spPaymentCE) GetReservationPurchaseRecommendation(context.Context, *awscostexplorer.GetReservationPurchaseRecommendationInput, ...func(*awscostexplorer.Options)) (*awscostexplorer.GetReservationPurchaseRecommendationOutput, error) {

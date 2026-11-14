@@ -25,15 +25,15 @@ const (
 )
 
 type lateSave struct {
-	exec     config.PurchaseExecution
 	deadline time.Time
 	done     time.Time
+	exec     config.PurchaseExecution
 }
 
 // lateLogBuf is a goroutine-safe log sink.
 type lateLogBuf struct {
-	mu  sync.Mutex
 	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
 func (b *lateLogBuf) Write(p []byte) (int, error) {
@@ -52,18 +52,17 @@ func (b *lateLogBuf) String() string {
 // account at a time (or two): A buys at once, B is in flight when the run
 // deadline passes, C and D never start (issue #1672).
 type lateFixture struct {
-	m     *Manager
-	exec  *config.PurchaseExecution
-	mu    sync.Mutex
-	saves []lateSave
-	mails []email.NotificationData
-	logs  *lateLogBuf
-
-	client *MockServiceClient
+	cMailEnd time.Time
+	m        *Manager
+	exec     *config.PurchaseExecution
+	logs     *lateLogBuf
+	client   *MockServiceClient
+	saves    []lateSave
+	mails    []email.NotificationData
+	mu       sync.Mutex
 	// blockCMail makes the email about account C alone wait for its context
 	// (at most 2s) and records when it ended in cMailEnd.
 	blockCMail bool
-	cMailEnd   time.Time
 }
 
 // newLateFixture builds the fan-out. acctSave handles the saves of started

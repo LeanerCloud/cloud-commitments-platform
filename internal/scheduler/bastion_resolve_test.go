@@ -34,8 +34,8 @@ const hostAccountNum = "111111111111"
 
 // schedRecordingSTS records which role ARNs it was asked to assume.
 type schedRecordingSTS struct {
-	mu    sync.Mutex
 	roles []string
+	mu    sync.Mutex
 }
 
 func (r *schedRecordingSTS) AssumeRole(_ context.Context, in *sts.AssumeRoleInput, _ ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {

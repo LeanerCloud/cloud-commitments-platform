@@ -51,8 +51,8 @@ func TestB3C1OverdueHelpers(t *testing.T) {
 	global := &config.GlobalConfig{GracePeriodDays: map[string]int{"aws": 2, "azure": 5, "gcp": 90}}
 	require.Equal(t, 5, planGraceDays(&plan, global), "disabled larger grace cannot extend the window")
 	for _, tc := range []struct {
-		name string
 		now  time.Time
+		name string
 		want bool
 	}{
 		{name: "entry_before", now: date.Add(-time.Microsecond), want: false},

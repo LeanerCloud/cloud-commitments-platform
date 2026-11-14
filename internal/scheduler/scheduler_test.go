@@ -1308,8 +1308,8 @@ func TestScheduler_ListRecommendations_ColdStart_NonLambda_KicksBackgroundCollec
 	scheduler := &Scheduler{config: mockStore, isLambda: false}
 
 	type listResult struct {
-		recs []config.RecommendationRecord
 		err  error
+		recs []config.RecommendationRecord
 	}
 	listDone := make(chan listResult, 1)
 	go func() {

@@ -18,8 +18,8 @@ import (
 
 // lateRows collects the late accounts' rows from the fan-out goroutines.
 type lateRows struct {
-	mu   sync.Mutex
 	rows []*config.PurchaseExecution
+	mu   sync.Mutex
 }
 
 // add keeps a copy of row when it ended failed or partially_completed, the only

@@ -54,8 +54,8 @@ func bareStepExecution() config.PurchaseExecution {
 // fan-out saves from goroutines, so it must be mutex-guarded and read after the
 // run, never asserted from inside a goroutine.
 type saveRecorder struct {
-	mu    sync.Mutex
 	saved []config.PurchaseExecution
+	mu    sync.Mutex
 }
 
 func (r *saveRecorder) save(_ context.Context, exec *config.PurchaseExecution) error {

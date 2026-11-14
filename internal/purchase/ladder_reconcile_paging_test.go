@@ -16,25 +16,24 @@ import (
 // pagingFake serves tranches in order with real keyset semantics (strictly
 // after the cursor) and decides each by its execution status.
 type pagingFake struct {
-	tranches []config.LadderTrancheDB
-	status   map[string]string // tranche ID -> chain tail status
-	lockErr  map[string]error
-	listErr  error
-	moved    []string
-	cursors  []*config.LadderFiredCursor
-
+	listErr    error
+	globalErr  error
+	disableErr map[string]error  // config ID -> error
+	status     map[string]string // tranche ID -> chain tail status
+	lockErr    map[string]error
+	notMoved   map[string]bool // tranche ID -> the CAS transition loses the race
+	noProof    map[string]bool // tranche ID -> chain tail lacks the no_submission proof
 	// D5 hooks: the global config served in the tx, the ids passed to
 	// DisableLadderConfigTx, and what that call returns.
 	global       *config.GlobalConfig
-	globalErr    error
-	globalReads  int
-	disabled     []string
-	disableErr   map[string]error // config ID -> error
-	alreadyOff   map[string]bool  // config ID -> already disabled
 	onGlobalRead func()
-	noProof      map[string]bool // tranche ID -> chain tail lacks the no_submission proof
-	notMoved     map[string]bool // tranche ID -> the CAS transition loses the race
-	txResults    []error         // what each WithTx callback returned
+	alreadyOff   map[string]bool // config ID -> already disabled
+	moved        []string
+	disabled     []string
+	cursors      []*config.LadderFiredCursor
+	tranches     []config.LadderTrancheDB
+	txResults    []error // what each WithTx callback returned
+	globalReads  int
 }
 
 func (f *pagingFake) ListFiredLadderTranches(_ context.Context, after *config.LadderFiredCursor, limit int) ([]config.LadderTrancheDB, error) {

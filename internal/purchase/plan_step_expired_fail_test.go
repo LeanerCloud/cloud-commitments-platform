@@ -23,9 +23,9 @@ func expiredFailPlan(mutate func(*config.PurchasePlan)) *config.PurchasePlan {
 func TestExpiredAutoRootFailable(t *testing.T) {
 	noFourEyes := &config.GlobalConfig{AutoPurchaseEnabled: true}
 	for _, tc := range []struct {
-		name   string
 		plan   *config.PurchasePlan
 		global *config.GlobalConfig
+		name   string
 		auto   bool
 		want   bool
 	}{

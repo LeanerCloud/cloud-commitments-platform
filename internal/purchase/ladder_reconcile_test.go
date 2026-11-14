@@ -31,11 +31,11 @@ func TestDecideFiredTranche(t *testing.T) {
 	next := "e2"
 	linked.RetryExecutionID = &next
 	cases := []struct {
-		name    string
-		chain   []config.LadderChainNode
 		visible func(string) (bool, error)
+		name    string
 		want    ladder.TrancheStatus
 		reason  string
+		chain   []config.LadderChainNode
 		waiting bool
 	}{
 		{name: "failed with proof", chain: []config.LadderChainNode{chainNode("e1", "failed", true)}, visible: visibleAlways, want: ladder.TrancheStatusFailed, reason: "no_submission", waiting: false},

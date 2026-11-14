@@ -191,10 +191,10 @@ func forEachFiredPage(ctx context.Context, store LadderReconcileStore, batch int
 
 // ladderOutcome is what reconcileTx decided and did for one tranche.
 type ladderOutcome struct {
+	head     time.Time
 	verdict  ladderVerdict
 	moved    bool
 	disabled bool // the failed tranche's config was switched off
-	head     time.Time
 }
 
 func reconcileOne(ctx context.Context, store LadderReconcileStore, vis CommitmentVisibility, now time.Time, tr config.LadderTrancheDB, res *LadderReconcileResult) error {

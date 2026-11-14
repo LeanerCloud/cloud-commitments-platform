@@ -52,9 +52,9 @@ func TestAzureStepTwo_ExecuteAndFinalize(t *testing.T) {
 	repriced.UpfrontCost++ // Azure re-collection between notify and run
 
 	for _, tc := range []struct {
-		name      string
 		rec       config.RecommendationRecord
 		current   config.RecommendationRecord
+		name      string
 		wantCalls int
 		wantErr   bool
 	}{

@@ -160,9 +160,9 @@ func TestReconcileD5_BusyConfigDefersAndStaysFired(t *testing.T) {
 
 func TestReconcileD5_GlobalReadFailuresNeverDisableOrSkip(t *testing.T) {
 	cases := []struct {
-		name      string
-		global    *config.GlobalConfig
 		globalErr error
+		global    *config.GlobalConfig
+		name      string
 	}{
 		{name: "read error", global: nil, globalErr: errors.New("db down")},
 		{name: "nil config", global: nil, globalErr: nil},

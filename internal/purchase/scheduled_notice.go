@@ -92,10 +92,10 @@ func SendScheduledNotice(ctx context.Context, n ScheduledNotifier, globalCfg *co
 // LadderNoticeFacts are what an automatic ladder purchase's notice states
 // beyond the execution itself.
 type LadderNoticeFacts struct {
-	HourlyCommitment float64
-	TermYears        int
 	AccountLabel     string
 	TrancheID        string
+	HourlyCommitment float64
+	TermYears        int
 }
 
 // SendLadderNotice sends the scheduled notice of an automatic ladder purchase.

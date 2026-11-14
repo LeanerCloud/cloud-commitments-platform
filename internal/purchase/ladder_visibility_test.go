@@ -20,19 +20,19 @@ import (
 // visFake is both the reconcile store and the SP API. inTx lets the API assert
 // it is never reached while a reconcile transaction is open.
 type visFake struct {
-	mu           sync.Mutex
-	inTx         bool
+	apiErr       error
+	execs        map[string]*config.PurchaseExecution
+	scheduledAt  *time.Time // due time reported on every chain node
+	factoryAccts []string
+	plans        []sptypes.SavingsPlan
+	fired        []config.LadderTrancheDB
+	completed    []string
+	lastStates   []sptypes.SavingsPlanState
 	callsInTx    int
 	calls        int
 	factoryHits  int
-	factoryAccts []string
-	apiErr       error
-	plans        []sptypes.SavingsPlan
-	fired        []config.LadderTrancheDB
-	execs        map[string]*config.PurchaseExecution
-	completed    []string
-	lastStates   []sptypes.SavingsPlanState
-	scheduledAt  *time.Time // due time reported on every chain node
+	mu           sync.Mutex
+	inTx         bool
 }
 
 func (f *visFake) ListFiredLadderTranches(context.Context, *config.LadderFiredCursor, int) ([]config.LadderTrancheDB, error) {
@@ -241,9 +241,9 @@ func TestRunLadderReconcile_ScheduledTailIsNotStale(t *testing.T) {
 	future := time.Now().Add(time.Hour)
 	overdue := time.Now().Add(-LadderFiredStaleAfter - time.Hour)
 	cases := []struct {
+		due       *time.Time
 		name      string
 		status    string
-		due       *time.Time
 		wantStale int
 	}{
 		{name: "scheduled in the future", status: "scheduled", due: &future, wantStale: 0},

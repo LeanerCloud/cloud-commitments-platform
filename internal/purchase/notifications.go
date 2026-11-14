@@ -289,13 +289,13 @@ func (m *Manager) getOrCreateExecution(ctx context.Context, plan *config.Purchas
 // stepClaim is the outcome of claimPlanStep: a freshly recorded failed row, an
 // empty pre-created row to fail, a quiet skip error, or the row to notify.
 type stepClaim struct {
-	number        int
+	blocked       error
 	existing      *config.PurchaseExecution
 	emptyRoot     *config.PurchaseExecution
-	blocked       error
 	failedNew     *config.PurchaseExecution
-	targetMet     bool
 	failureReason string
+	number        int
+	targetMet     bool
 }
 
 // adoptableRootRow picks the row a notification tick may notify for a step

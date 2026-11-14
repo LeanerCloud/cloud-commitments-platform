@@ -16,9 +16,9 @@ import (
 // the scheduler must match the Partial() method, not the type (issue #1472).
 type skipErr struct {
 	msg     string
-	partial bool
-	count   int
 	reasons []string
+	count   int
+	partial bool
 }
 
 // kindSkipErr is skipErr that also reports a kind per skip reason, as Azure's

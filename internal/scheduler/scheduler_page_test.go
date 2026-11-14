@@ -99,8 +99,8 @@ func TestPageRecommendations_SuppressionsDecidedInGo(t *testing.T) {
 func TestPageRecommendations_FallsBackToScan(t *testing.T) {
 	triple := config.RecommendationTriple{AccountID: pageAccount, Provider: "aws", Service: "rds", HasAccount: true}
 	cases := []struct {
-		name  string
 		setup func(*pageStore)
+		name  string
 	}{
 		{name: "override resolution fails", setup: func(s *pageStore) { s.getGlobalErr = errors.New("db down") }},
 		{name: "empty but present account", setup: func(s *pageStore) {

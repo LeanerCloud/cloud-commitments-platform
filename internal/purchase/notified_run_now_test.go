@@ -56,8 +56,8 @@ func TestRunNow_NotifiedRowReachesStaleAzurePricingRefusal(t *testing.T) {
 func TestScheduler_NotifiedRowRespectsPushedScheduledDate(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {
-		name      string
 		date      time.Time
+		name      string
 		wantClaim bool
 	}{
 		{name: "inside the veto window", date: time.Now().Add(48 * time.Hour), wantClaim: false},

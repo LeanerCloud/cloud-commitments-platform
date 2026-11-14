@@ -28,6 +28,10 @@ import (
 // accounts are access-scoped, so naming them there would leak which
 // subscriptions exist to users not authorized for them.
 type sweepGap struct {
+	reasons map[string]int
+	// heldAccountIDs are the platform account UUIDs whose rows are held for
+	// that reason; the collector that knows the account fills them in.
+	heldAccountIDs     []string
 	incompleteAccounts int
 	attemptedScopes    int
 	failedScopes       int
@@ -39,13 +43,9 @@ type sweepGap struct {
 	// skippedOnly is true when every sweep merged into this gap lost nothing
 	// but invalid recommendations, so the account's sweep itself was complete.
 	skippedOnly bool
-	reasons     map[string]int
 	// pricingUnavailable is set when a skip meant the price could not be
 	// fetched, so the previous cycle's rows are held (see recordSkips).
 	pricingUnavailable bool
-	// heldAccountIDs are the platform account UUIDs whose rows are held for
-	// that reason; the collector that knows the account fills them in.
-	heldAccountIDs []string
 }
 
 // holdsEviction reports whether the sweep must stay out of the succeeded-

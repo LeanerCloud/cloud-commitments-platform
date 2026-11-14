@@ -135,8 +135,8 @@ func TestCheckStepCommitmentCap_BoundCapBoundary(t *testing.T) {
 	recs := []config.RecommendationRecord{rec}
 	key := identity(t, rec)
 	for _, tc := range []struct {
-		name    string
 		plan    func(cap float64) *config.PurchasePlan
+		name    string
 		wantErr bool
 	}{
 		{name: "plan cap", plan: func(c float64) *config.PurchasePlan {

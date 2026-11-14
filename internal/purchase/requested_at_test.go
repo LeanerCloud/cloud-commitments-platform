@@ -138,12 +138,12 @@ func TestExecuteSinglePurchase_EmptyTokenOptsOtherwiseUntouched(t *testing.T) {
 }
 
 type redshiftFinalizeRun struct {
+	err        error
+	store      *MockConfigStore
 	events     []string
 	stampedIDs []string
 	opts       []common.PurchaseOptions
 	saves      []config.PurchaseExecution
-	store      *MockConfigStore
-	err        error
 }
 
 // runRedshiftFinalize drives executeAndFinalize for exec with a capturing

@@ -21,11 +21,11 @@ import (
 // dedupingRedshiftClient mirrors go's adoption rule: a node started at or after
 // RequestedAt minus the 5m skew is adopted instead of bought again.
 type dedupingRedshiftClient struct {
+	nodeStart time.Time
 	*MockServiceClient
-	mu           sync.Mutex
 	opts         []common.PurchaseOptions
 	nodes        []time.Time
-	nodeStart    time.Time
+	mu           sync.Mutex
 	loseResponse bool
 }
 
@@ -51,9 +51,9 @@ type redriveRig struct {
 	store   *MockConfigStore
 	client  *dedupingRedshiftClient
 	journal *fakeAttemptJournal
-	saves   []config.PurchaseExecution
 	minted  map[string]time.Time
 	rows    map[string]*config.PurchaseExecution
+	saves   []config.PurchaseExecution
 }
 
 // coalescingStore mirrors StampFirstDispatchTx's COALESCE: a row's own stamp wins over a minted one.
