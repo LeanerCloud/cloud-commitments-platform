@@ -190,6 +190,8 @@ func TestValidateApprovalToken_TTLAndPrecedence(t *testing.T) {
 	}
 }
 
+// --- Regression tests for issue #609 (orphan-account guard, ApproveExecution path) ---
+
 // TestManager_ApproveExecution_NonAWSOrphanReturnsError is the regression
 // guard for issue #609 on the token-authenticated ApproveExecution path (used
 // by the token-link and legacy email-link flows). An execution
@@ -385,6 +387,8 @@ func TestApproveExecution_MintsRevocationToken(t *testing.T) {
 	// `updated` and rotateApprovalToken never receives it.
 	assert.Equal(t, config.HashApprovalToken("pre-rotate-token"), execution.ApprovalToken)
 }
+
+// --- Regression tests for issue #397 (token TTL enforcement) ---
 
 // TestManager_ApproveExecution_ExpiredToken is the regression guard for
 // issue #397: an approval token whose ApprovalTokenExpiresAt deadline has
