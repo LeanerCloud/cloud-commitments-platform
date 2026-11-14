@@ -74,7 +74,7 @@ describe('Direct exchanges in History (#1883)', () => {
     expect(rows[1]!.textContent).toContain('cap $100.00');
     expect(rows[1]!.textContent).toContain('Resolved by operator: failed');
     expect(rows[1]!.textContent).toContain('outcome unknown');
-    expect(history().textContent).not.toContain('No exchange history found');
+    expect(history().textContent).not.toContain("You haven't exchanged any RIs yet");
   });
 
   it('shows a dash, not USD, when the currency is empty or missing', async () => {
@@ -111,6 +111,8 @@ describe('Direct exchanges in History (#1883)', () => {
     mockHistory([], []);
     await loadRIExchange();
     await flush();
-    expect(history().textContent).toContain('No exchange history found');
+    expect(history().querySelector('p.empty')?.textContent).toBe(
+      "You haven't exchanged any RIs yet. When you exchange, it appears here.",
+    );
   });
 });

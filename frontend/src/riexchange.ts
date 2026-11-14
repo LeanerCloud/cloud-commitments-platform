@@ -2232,7 +2232,7 @@ function renderExchangeHistory(
     container.textContent = '';
     const emptyP = document.createElement('p');
     emptyP.className = 'empty';
-    emptyP.textContent = 'No exchange history found.';
+    emptyP.textContent = "You haven't exchanged any RIs yet. When you exchange, it appears here.";
     container.appendChild(emptyP);
     return;
   }
