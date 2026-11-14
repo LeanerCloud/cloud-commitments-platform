@@ -19,7 +19,7 @@
 -- rebuilds idx_ri_exchange_history_account, and ADD CONSTRAINT scans every row.
 --
 -- Recovering from a refused rollback: golang-migrate marks the version dirty
--- before running this file and maybeAutoHealDirty will not clear it. This file
+-- before running this file and maybeRefuseDirty will not clear it. This file
 -- raises before changing the schema, so the database still matches 000137.
 -- Set CUDLY_FORCE_MIGRATION_VERSION=137 (the CURRENT version), redeploy, remove
 -- the env var, then archive or reconcile the non-AWS rows if the rollback is
