@@ -64,11 +64,61 @@ function createCell(content: string | HTMLElement): HTMLTableCellElement {
   return td;
 }
 
+const EMAIL_MAX_CHARS = 28;
+
+function createEmailCell(email: string): HTMLTableCellElement {
+  const td = document.createElement('td');
+  td.textContent = email.length > EMAIL_MAX_CHARS ? `${email.slice(0, EMAIL_MAX_CHARS - 1)}\u2026` : email;
+  if (email.length > EMAIL_MAX_CHARS) td.title = email;
+  return td;
+}
+
+function copyViaTextarea(text: string): boolean {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  ta.remove();
+  return ok;
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to the legacy path (insecure context, denied permission).
+    }
+  }
+  return copyViaTextarea(text);
+}
+
 function createCodeCell(text: string): HTMLTableCellElement {
   const td = document.createElement('td');
   const code = document.createElement('code');
   code.textContent = text;
   td.appendChild(code);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'copy-btn';
+  btn.title = 'Copy external ID';
+  btn.setAttribute('aria-label', `Copy external ID ${text}`);
+  btn.textContent = 'Copy';
+  btn.addEventListener('click', () => {
+    void copyText(text).then(ok => {
+      if (ok) showToast({ message: 'External ID copied', kind: 'success' });
+      else showToast({ message: 'Copy failed: select the ID and copy it manually', kind: 'error' });
+    });
+  });
+  td.appendChild(btn);
   return td;
 }
 
@@ -95,8 +145,52 @@ function createNameCell(name: string): HTMLTableCellElement {
   return td;
 }
 
+// Ids of pending rows ticked for the bulk action. Pruned on every render, so
+// a row that is no longer pending drops out; failed rows stay pending and stay ticked.
+const selectedIds = new Set<string>();
+let bulkRunning = false;
+
+// Update the bulk bar and checkboxes in place: rebuilding the table on each
+// toggle would drop keyboard focus and stop a user from ticking several rows.
+function syncSelection(container: HTMLElement): void {
+  const boxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[data-reg-id]'));
+  for (const box of boxes) {
+    box.checked = selectedIds.has(box.dataset['regId'] ?? '');
+    box.disabled = bulkRunning;
+  }
+  const all = container.querySelector<HTMLInputElement>('input[data-select-all]');
+  if (all) {
+    all.checked = boxes.length > 0 && boxes.every(b => b.checked);
+    all.disabled = bulkRunning;
+  }
+  const btn = container.querySelector<HTMLButtonElement>('#registrations-bulk-reject');
+  if (btn) {
+    btn.textContent = `Reject ${selectedIds.size}`;
+    btn.disabled = bulkRunning || selectedIds.size === 0;
+  }
+}
+
+function renderBulkBar(container: HTMLElement, pending: AccountRegistration[]): void {
+  const bar = document.createElement('div');
+  bar.className = 'registrations-bulk-bar';
+  const rejectBtn = document.createElement('button');
+  rejectBtn.type = 'button';
+  rejectBtn.className = 'btn btn-small btn-warning';
+  rejectBtn.id = 'registrations-bulk-reject';
+  rejectBtn.addEventListener('click', () => {
+    void handleBulkReject(pending.filter(r => selectedIds.has(r.id)));
+  });
+  bar.appendChild(rejectBtn);
+  container.appendChild(bar);
+}
+
 function renderRegistrationsTable(container: HTMLElement, regs: AccountRegistration[]): void {
   container.textContent = '';
+
+  const pending = regs.filter(r => r.status === 'pending');
+  for (const id of Array.from(selectedIds)) {
+    if (!pending.some(r => r.id === id)) selectedIds.delete(id);
+  }
 
   if (regs.length === 0) {
     const p = document.createElement('p');
@@ -106,11 +200,29 @@ function renderRegistrationsTable(container: HTMLElement, regs: AccountRegistrat
     return;
   }
 
+  if (pending.length > 0) renderBulkBar(container, pending);
+
   const table = document.createElement('table');
   table.className = 'data-table';
 
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
+  const selectTh = document.createElement('th');
+  if (pending.length > 0) {
+    const all = document.createElement('input');
+    all.type = 'checkbox';
+    all.dataset['selectAll'] = '1';
+    all.setAttribute('aria-label', 'Select all pending registrations');
+    all.addEventListener('change', () => {
+      for (const r of pending) {
+        if (all.checked) selectedIds.add(r.id);
+        else selectedIds.delete(r.id);
+      }
+      syncSelection(container);
+    });
+    selectTh.appendChild(all);
+  }
+  headerRow.appendChild(selectTh);
   for (const h of ['Provider', 'Name', 'External ID', 'Contact', 'Submitted', 'Status', 'Actions']) {
     const th = document.createElement('th');
     th.textContent = h;
@@ -122,15 +234,37 @@ function renderRegistrationsTable(container: HTMLElement, regs: AccountRegistrat
   const tbody = document.createElement('tbody');
   for (const reg of regs) {
     const row = document.createElement('tr');
+    const selectTd = document.createElement('td');
+    if (reg.status === 'pending') {
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.dataset['regId'] = reg.id;
+      box.setAttribute('aria-label', `Select registration ${reg.account_name || reg.external_id}`);
+      box.addEventListener('change', () => {
+        if (box.checked) selectedIds.add(reg.id);
+        else selectedIds.delete(reg.id);
+        syncSelection(container);
+      });
+      selectTd.appendChild(box);
+    }
+    row.appendChild(selectTd);
     row.appendChild(createCell(providerLabel(reg.provider)));
     row.appendChild(createNameCell(reg.account_name));
     row.appendChild(createCodeCell(reg.external_id));
-    row.appendChild(createCell(reg.contact_email));
+    row.appendChild(createEmailCell(reg.contact_email));
     row.appendChild(createCell(formatDateTime(reg.created_at)));
 
     const statusTd = document.createElement('td');
     statusTd.className = 'registration-status';
     statusTd.appendChild(createStatusBadge(reg.status));
+    if (reg.status === 'approved') {
+      // An approved row always has a live cloud_account_id (deleteAccount
+      // resets the link to pending). It is a status, so it lives here.
+      const created = document.createElement('span');
+      created.className = 'text-muted ml-xs';
+      created.textContent = 'Account created';
+      statusTd.appendChild(created);
+    }
     if (reg.has_credentials) {
       const credBadge = document.createElement('span');
       credBadge.className = `${badgeClass('info')} ml-xs`;
@@ -161,14 +295,6 @@ function renderRegistrationsTable(container: HTMLElement, regs: AccountRegistrat
       });
       rejectBtn.addEventListener('click', () => void handleReject(reg));
       actions.appendChild(rejectBtn);
-    } else if (reg.status === 'approved') {
-      // After deleteAccount resets the linked registration back to pending, and
-      // the 000021 migration healed historical drift, an approved row always has
-      // a live cloud_account_id. Render accordingly.
-      const span = document.createElement('span');
-      span.className = 'text-muted';
-      span.textContent = 'Account created';
-      actions.appendChild(span);
     } else if (reg.rejection_reason) {
       const span = document.createElement('span');
       span.className = 'text-muted';
@@ -190,6 +316,7 @@ function renderRegistrationsTable(container: HTMLElement, regs: AccountRegistrat
   }
   table.appendChild(tbody);
   container.appendChild(table);
+  syncSelection(container);
 }
 
 /** Load and render registrations list. */
@@ -249,7 +376,7 @@ async function handleDelete(reg: AccountRegistration): Promise<void> {
   }
 }
 
-async function handleReject(reg: AccountRegistration): Promise<void> {
+function buildReasonBody(): { body: HTMLElement; reasonInput: HTMLTextAreaElement } {
   const body = document.createElement('div');
   const label = document.createElement('label');
   label.textContent = 'Reason (optional)';
@@ -259,6 +386,46 @@ async function handleReject(reg: AccountRegistration): Promise<void> {
   reasonInput.rows = 3;
   reasonInput.className = 'registration-reject-reason';
   body.append(label, reasonInput);
+  return { body, reasonInput };
+}
+
+async function handleBulkReject(regs: AccountRegistration[]): Promise<void> {
+  if (regs.length === 0) return;
+  const { body, reasonInput } = buildReasonBody();
+  const ok = await confirmDialog({
+    title: `Reject ${regs.length} registration${regs.length === 1 ? '' : 's'}?`,
+    body,
+    confirmLabel: `Reject ${regs.length}`,
+    destructive: true,
+  });
+  if (!ok) return;
+  const reason = reasonInput.value.trim() || undefined;
+  const listEl = document.getElementById('registrations-list');
+  bulkRunning = true;
+  if (listEl) syncSelection(listEl);
+  const failed: string[] = [];
+  try {
+    for (const reg of regs) {
+      try {
+        await api.rejectRegistration(reg.id, reason);
+      } catch (err) {
+        failed.push(`${reg.account_name || reg.external_id} (${friendlyError(err)})`);
+      }
+    }
+  } finally {
+    bulkRunning = false;
+  }
+  if (failed.length > 0) {
+    showToast({
+      message: `Rejected ${regs.length - failed.length} of ${regs.length}. Failed: ${failed.join('; ')}`,
+      kind: 'error',
+    });
+  }
+  await loadRegistrations();
+}
+
+async function handleReject(reg: AccountRegistration): Promise<void> {
+  const { body, reasonInput } = buildReasonBody();
   const ok = await confirmDialog({
     title: `Reject registration for "${reg.account_name}"?`,
     body,
