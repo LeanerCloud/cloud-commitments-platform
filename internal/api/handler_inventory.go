@@ -251,10 +251,9 @@ func (h *Handler) fetchCoverageOnDemandRecs(ctx context.Context, session *Sessio
 	}
 	recs, err := h.scheduler.ListRecommendations(h.recommendationsReadContext(ctx, session, scope), buildCoverageRecFilter(params))
 	if err != nil {
-		// Non-fatal: recommendations are best-effort for coverage display.
-		// An empty rec list is treated as "no uncovered gap": coverage
-		// shows covered-only totals rather than failing the whole page.
-		return nil, nil
+		// An empty rec list would read as "no uncovered gap" and render 100%
+		// coverage, so a failed read fails the page instead.
+		return nil, fmt.Errorf("failed to get recommendations: %w", err)
 	}
 	return h.filterRecommendationsByScope(ctx, scope, recs)
 }

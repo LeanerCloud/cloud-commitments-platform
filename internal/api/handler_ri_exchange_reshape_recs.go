@@ -117,13 +117,17 @@ func (h *Handler) getReshapeRecommendations(ctx context.Context, req *events.Lam
 }
 
 // attachReshapeStaleness populates the RecsStaleness and RecsCollectedAt
-// fields on resp from the recommendations_state table. Non-fatal: errors
-// are logged and the response ships without staleness metadata so the
-// reshape table itself is unaffected by a DB read-side failure.
+// fields on resp from the recommendations_state table. Non-fatal: a read
+// error is logged and reported as hard-stale, so the reshape table itself is
+// unaffected by a DB read-side failure but the UI never shows unknown data as
+// fresh.
 func (h *Handler) attachReshapeStaleness(ctx context.Context, resp *ReshapeRecommendationsResponse) {
 	freshness, err := h.config.GetRecommendationsFreshness(ctx)
 	if err != nil {
-		logging.Warnf("getReshapeRecommendations: could not check recs freshness (banner suppressed): %v", err)
+		// Unknown freshness is hard-stale, like the cold-start case below: an
+		// empty RecsStaleness would tell the UI the data is fresh.
+		logging.Warnf("getReshapeRecommendations: could not check recs freshness (reporting hard-stale): %v", err)
+		resp.RecsStaleness = "hard"
 		return
 	}
 	resp.RecsCollectedAt = freshness.LastCollectedAt
