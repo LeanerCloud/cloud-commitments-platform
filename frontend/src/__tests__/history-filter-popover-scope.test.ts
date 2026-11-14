@@ -123,4 +123,68 @@ describe('history filter popover scoping (issue #281)', () => {
     const heading = popovers()[0]?.querySelector('h3');
     expect(heading?.id).toBe('queue-column-filter-provider-heading');
   });
+
+  test('mousedown on a history trigger is left to the trigger (no outside-click close)', () => {
+    const { historyBtn } = mountTables();
+    open('history', historyBtn);
+    historyBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    expect(popovers()).toHaveLength(1);
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    expect(popovers()).toHaveLength(0);
+  });
+
+  test('a commit that re-renders the table re-anchors and re-expands the popover', () => {
+    const { historyBtn } = mountTables();
+    const historyBox = document.getElementById('history')!;
+    openHistoryColumnPopover({
+      scope: 'history', column: 'provider', anchor: historyBtn, currentFilter: undefined,
+      headerLabel: 'Provider', kind: 'categorical', distinctValues: ['aws', 'azure'],
+      onCommit: () => {
+        // Re-render with a plain (not expanded) button: the adapter must fix it.
+        historyBox.innerHTML = '<button class="history-column-filter-btn" data-filter-scope="history" data-column="provider" aria-expanded="false"></button>';
+      },
+    });
+    const cb = document.querySelector<HTMLInputElement>('.column-filter-popover input[data-value="aws"]')!;
+    cb.checked = false;
+    cb.dispatchEvent(new Event('change'));
+    const newBtn = historyBox.querySelector<HTMLElement>('.history-column-filter-btn')!;
+    expect(newBtn.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  describe('scroll handling', () => {
+    const onScreen = (el: HTMLElement): void => {
+      el.getBoundingClientRect = () => ({ left: 10, right: 40, top: 10, bottom: 30, width: 30, height: 20, x: 10, y: 10, toJSON: () => ({}) });
+    };
+    const scroll = (): void => { window.dispatchEvent(new Event('scroll')); };
+
+    test('closes when the trigger scrolls out of view, stays while visible', () => {
+      const { historyBtn } = mountTables();
+      onScreen(historyBtn);
+      open('history', historyBtn);
+      popovers()[0]!.style.top = '999px';
+      scroll();
+      expect(popovers()).toHaveLength(1);
+      // Followed the trigger: repositioned just below it (bottom 30 + 4).
+      expect(popovers()[0]!.style.top).toBe('34px');
+      historyBtn.getBoundingClientRect = () => new DOMRect(0, 0, 0, 0);
+      scroll();
+      expect(popovers()).toHaveLength(0);
+    });
+
+    test('removes the scroll listener, with the same options, when the popover closes', () => {
+      const { historyBtn } = mountTables();
+      const add = jest.spyOn(window, 'addEventListener');
+      const remove = jest.spyOn(window, 'removeEventListener');
+      try {
+        open('history', historyBtn);
+        closeOpenHistoryPopover();
+        const scrollCalls = (spy: jest.SpyInstance): unknown[][] => spy.mock.calls.filter((c) => c[0] === 'scroll');
+        expect(scrollCalls(add)).toHaveLength(1);
+        expect(scrollCalls(remove)).toEqual(scrollCalls(add));
+      } finally {
+        add.mockRestore();
+        remove.mockRestore();
+      }
+    });
+  });
 });
