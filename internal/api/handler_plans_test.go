@@ -17,6 +17,7 @@ import (
 )
 
 func TestHandler_listPlans(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -61,6 +62,7 @@ func TestHandler_listPlans(t *testing.T) {
 }
 
 func TestHandler_listPlans_AccountIDsFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -107,6 +109,7 @@ func TestHandler_listPlans_AccountIDsFilter(t *testing.T) {
 // failed execution belonging to a DIFFERENT plan must not bleed into this
 // plan's score.
 func TestHandler_listPlans_HealthScoreReflectsFailedExecutions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -163,6 +166,7 @@ func TestHandler_listPlans_HealthScoreReflectsFailedExecutions(t *testing.T) {
 // 100 reads as healthy, 0 as broken -- would put a number in front of an
 // operator that is indistinguishable from a measured one.
 func TestHandler_listPlans_HealthScoreUnknownOnCountsFetchError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -203,6 +207,7 @@ func TestHandler_listPlans_HealthScoreUnknownOnCountsFetchError(t *testing.T) {
 // plan's own failures fall outside that page and it renders a confident
 // "healthy" badge while actually being unhealthy.
 func TestHandler_listPlans_HealthUsesExactCountsNotTruncatedPage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -239,6 +244,7 @@ func TestHandler_listPlans_HealthUsesExactCountsNotTruncatedPage(t *testing.T) {
 // CleanupOldExecutions purges terminal rows but never "failed" ones, a plan
 // that failed once years ago would stay penalized forever.
 func TestHandler_listPlans_HealthCountsUseTheLookbackWindow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -274,6 +280,7 @@ func TestHandler_listPlans_HealthCountsUseTheLookbackWindow(t *testing.T) {
 // TestHandler_listPlans_EmptyListSkipsCountsQuery: with no plans to score
 // there is nothing to attach health to, so the aggregate query must not run.
 func TestHandler_listPlans_EmptyListSkipsCountsQuery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -296,6 +303,7 @@ func TestHandler_listPlans_EmptyListSkipsCountsQuery(t *testing.T) {
 }
 
 func TestHandler_createPlan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -332,6 +340,7 @@ func TestHandler_createPlan(t *testing.T) {
 }
 
 func TestHandler_createPlan_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -363,6 +372,7 @@ func TestHandler_createPlan_InvalidBody(t *testing.T) {
 // HTTP 400 and never reaches CreatePurchasePlan. This is the design invariant
 // every purchase_plans row must have at least one matching plan_accounts row.
 func TestHandler_createPlan_RejectsEmptyTargetAccounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -407,6 +417,7 @@ func TestHandler_createPlan_RejectsEmptyTargetAccounts(t *testing.T) {
 // inside the atomic create returns a 500 ClientError with the generic message
 // and does not leak the raw store error.
 func TestHandler_createPlan_StoreFailureReturns500NoLeak(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -444,6 +455,7 @@ func TestHandler_createPlan_StoreFailureReturns500NoLeak(t *testing.T) {
 // malformed UUID in target_accounts is rejected before any DB write — same
 // validation contract as PUT /plans/:id/accounts (handler_accounts_plans.go).
 func TestHandler_createPlan_RejectsInvalidTargetAccountUUID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -472,6 +484,7 @@ func TestHandler_createPlan_RejectsInvalidTargetAccountUUID(t *testing.T) {
 }
 
 func TestHandler_getPlan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -516,6 +529,7 @@ func TestHandler_getPlan(t *testing.T) {
 // (like updatePlan / patchPlan / getPlanForPurchaseCreation) so the frontend
 // can tell "plan is gone" from a server error and reconcile the stale row.
 func TestHandler_getPlan_NotFound_MapsTo404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -544,6 +558,7 @@ func TestHandler_getPlan_NotFound_MapsTo404(t *testing.T) {
 }
 
 func TestHandler_updatePlan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -592,6 +607,7 @@ func TestHandler_updatePlan(t *testing.T) {
 // steps 1..N that had already executed. A PUT that resubmits the same
 // ramp schedule preset must leave the ramp's progress untouched.
 func TestHandler_updatePlan_PreservesCompletedRampSteps(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -664,6 +680,7 @@ func TestHandler_updatePlan_PreservesCompletedRampSteps(t *testing.T) {
 }
 
 func TestHandler_deletePlan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -694,6 +711,7 @@ func TestHandler_deletePlan(t *testing.T) {
 }
 
 func TestHandler_updatePlan_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -762,6 +780,7 @@ func createStepsViaTx(ctx context.Context, h *Handler, count int, creator *strin
 // Pre-fix the field shipped zero-valued (nil pointer), making every
 // freshly scheduled row look like a legacy unattributed entry.
 func TestHandler_createPlannedPurchases_StampsCreator(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -816,6 +835,7 @@ func TestHandler_createPlannedPurchases_StampsCreator(t *testing.T) {
 // the admin / update-any management path exactly like a legacy scheduler-
 // created row would.
 func TestHandler_createPlannedPurchases_AdminAPIKeyCreatorIsNil(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -868,6 +888,7 @@ func TestHandler_createPlannedPurchases_AdminAPIKeyCreatorIsNil(t *testing.T) {
 // the rollback semantics by making the 3rd SavePurchaseExecutionTx
 // call fail and confirming UpdatePurchasePlan was never reached.
 func TestHandler_createPlannedPurchases_MidLoopFailureRollsBack(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -950,6 +971,7 @@ func TestHandler_createPlannedPurchases_MidLoopFailureRollsBack(t *testing.T) {
 }
 
 func TestHandler_createPlannedPurchases_InvalidCount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -978,6 +1000,7 @@ func TestHandler_createPlannedPurchases_InvalidCount(t *testing.T) {
 }
 
 func TestHandler_createPlannedPurchases_InvalidDate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1008,6 +1031,7 @@ func TestHandler_createPlannedPurchases_InvalidDate(t *testing.T) {
 // Profile endpoint tests
 
 func TestHandler_createPlannedPurchases_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1036,6 +1060,7 @@ func TestHandler_createPlannedPurchases_InvalidJSON(t *testing.T) {
 }
 
 func TestHandler_createPlannedPurchases_PlanNotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1074,6 +1099,7 @@ func TestHandler_createPlannedPurchases_PlanNotFound(t *testing.T) {
 }
 
 func TestCalculateNextExecutionDate(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -1124,6 +1150,7 @@ func TestCalculateNextExecutionDate(t *testing.T) {
 // Tests for patchPlan
 
 func TestHandler_patchPlan_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1171,6 +1198,7 @@ func TestHandler_patchPlan_Success(t *testing.T) {
 }
 
 func TestHandler_patchPlan_UpdateMultipleFields(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1222,6 +1250,7 @@ func TestHandler_patchPlan_UpdateMultipleFields(t *testing.T) {
 // Any other PlanRequest field is ignored (documented on the PATCH operation in
 // openapi.yaml); this pins that contract so a change is deliberate (#1776).
 func TestHandler_patchPlan_OtherPlanRequestFieldsAreIgnored(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1259,6 +1288,7 @@ func TestHandler_patchPlan_OtherPlanRequestFieldsAreIgnored(t *testing.T) {
 }
 
 func TestHandler_patchPlan_InvalidUUID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 
@@ -1277,6 +1307,7 @@ func TestHandler_patchPlan_InvalidUUID(t *testing.T) {
 }
 
 func TestHandler_patchPlan_InvalidBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -1304,6 +1335,7 @@ func TestHandler_patchPlan_InvalidBody(t *testing.T) {
 }
 
 func TestHandler_patchPlan_NotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1443,6 +1475,7 @@ func TestHandler_updatePlan_GetPlanDBError_NoPIILeak(t *testing.T) {
 }
 
 func TestHandler_patchPlan_NilPlan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1473,6 +1506,7 @@ func TestHandler_patchPlan_NilPlan(t *testing.T) {
 }
 
 func TestHandler_patchPlan_EmptyName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1509,6 +1543,7 @@ func TestHandler_patchPlan_EmptyName(t *testing.T) {
 }
 
 func TestHandler_patchPlan_InvalidNotificationDays(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1545,6 +1580,7 @@ func TestHandler_patchPlan_InvalidNotificationDays(t *testing.T) {
 }
 
 func TestHandler_patchPlan_NegativeNotificationDays(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1581,6 +1617,7 @@ func TestHandler_patchPlan_NegativeNotificationDays(t *testing.T) {
 }
 
 func TestHandler_patchPlan_UpdateError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1630,6 +1667,7 @@ func TestHandler_patchPlan_UpdateError(t *testing.T) {
 // the 500/404 inconsistency: createPlan with a target_accounts entry whose
 // UUID is not present in the store must return 404, not 500.
 func TestHandler_createPlan_UnknownAccountReturns404(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -1665,6 +1703,7 @@ func TestHandler_createPlan_UnknownAccountReturns404(t *testing.T) {
 // failure on CreatePurchasePlan returns a well-formed 500 ClientError instead
 // of a raw unwrapped error (which would look the same but is less explicit).
 func TestHandler_createPlan_DBErrorOnCreateReturns500WithLog(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -1705,6 +1744,7 @@ func TestHandler_createPlan_DBErrorOnCreateReturns500WithLog(t *testing.T) {
 // stopped -- the exact reading the issue was filed about. Withhold the score
 // instead, the same way an unreadable execution-count fetch does.
 func TestHandler_listPlans_StuckRampFetchFailureLeavesHealthUnknown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -1737,6 +1777,7 @@ func TestHandler_listPlans_StuckRampFetchFailureLeavesHealthUnknown(t *testing.T
 // wiring check: a plan the store reports as stuck must come back carrying the
 // ramp_blocked factor rather than the wall-clock behind_schedule proxy.
 func TestHandler_listPlans_StuckRampProducesTheBlockedFactor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -1796,6 +1837,7 @@ func TestHandler_listPlans_StuckRampProducesTheBlockedFactor(t *testing.T) {
 // under a fresh idempotency lineage: the accounts that already committed buy the
 // same commitment a second time, with no provider-side dedupe to catch it.
 func TestHandler_createPlannedPurchases_RefusesAPartlyBoughtStep(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -1843,6 +1885,7 @@ func TestHandler_createPlannedPurchases_RefusesAPartlyBoughtStep(t *testing.T) {
 // control: the guard must not block the ordinary case, or it would break
 // scheduling entirely while looking like it works.
 func TestHandler_createPlannedPurchases_AllowsAnUnstartedStep(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -1887,6 +1930,7 @@ func TestHandler_createPlannedPurchases_AllowsAnUnstartedStep(t *testing.T) {
 // protects a money path, so an unreadable answer must refuse rather than mint
 // rows that might re-fan-out over accounts that already bought.
 func TestHandler_createPlannedPurchases_FailsClosedWhenTheProbeFails(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -1921,6 +1965,7 @@ func TestHandler_createPlannedPurchases_FailsClosedWhenTheProbeFails(t *testing.
 }
 
 func TestHandler_planWrites_RefuseOutOfRangeTargetCoverage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const planID = "12345678-1234-1234-1234-123456789abc"
 	for _, coverage := range []string{"-1", "101"} {
