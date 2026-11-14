@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -21,7 +22,7 @@ import (
 // Issue #62: GET /api/auth/me/permissions must describe a user API key by its
 // EFFECTIVE permissions (key ∩ owner), not by its owner's full set. These
 // tests drive HandleRequest (middleware, router, handler) into a real
-// auth.Service backed by auth.MockStore, so the reported set comes from the
+// auth.Service backed by authtest.MockStore, so the reported set comes from the
 // same ComputeEffectivePermissions path that enforcement uses.
 
 const (
@@ -40,7 +41,7 @@ var adminAll = auth.Permission{Action: auth.ActionAdmin, Resource: auth.Resource
 type mePermsAuth struct {
 	*MockAuthService
 	service *auth.Service
-	store   *auth.MockStore
+	store   *authtest.MockStore
 }
 
 func (a *mePermsAuth) ValidateUserAPIKeyAPI(ctx context.Context, apiKey string) (any, any, error) {
@@ -87,7 +88,7 @@ func newMePermsAuth(ownerPerms, keyPerms []auth.Permission, keyByID func(*auth.U
 		ID: mePermsKeyID, UserID: mePermsOwnerID, KeyHash: base64.RawURLEncoding.EncodeToString(sum[:]),
 		IsActive: true, ExpiresAt: &expires, Permissions: keyPerms,
 	}
-	store := new(auth.MockStore)
+	store := new(authtest.MockStore)
 	store.On("GetAPIKeyByHash", mock.Anything, key.KeyHash).Return(key, nil).Maybe()
 	if keyByID == nil {
 		store.On("GetAPIKeyByID", mock.Anything, mePermsKeyID).Return(key, nil).Maybe()
@@ -108,7 +109,7 @@ func newMePermsAuth(ownerPerms, keyPerms []auth.Permission, keyByID func(*auth.U
 	m.On("GetAllowedAccountsAPI", mock.Anything, mePermsOwnerID).Return([]string{}, nil).Maybe()
 	return &mePermsAuth{
 		MockAuthService: m,
-		service:         auth.NewService(auth.ServiceConfig{Store: store, CSRFKey: auth.TestCSRFKey()}),
+		service:         auth.NewService(auth.ServiceConfig{Store: store, CSRFKey: authtest.TestCSRFKey()}),
 		store:           store,
 	}
 }
@@ -136,7 +137,7 @@ func decodeMePermissions(t *testing.T, resp *events.LambdaFunctionURLResponse) U
 }
 
 // storeCalled reports whether the auth store recorded a call to method.
-func storeCalled(store *auth.MockStore, method string) bool {
+func storeCalled(store *authtest.MockStore, method string) bool {
 	for _, c := range store.Calls {
 		if c.Method == method {
 			return true

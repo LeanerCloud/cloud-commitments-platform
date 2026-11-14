@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth/authtest"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -18,7 +19,7 @@ import (
 // constraints in the documented OpenAPI shape (constraints.accounts /
 // constraints.max_amount), the same shape POST /api/api-keys accepts. These
 // tests drive the real HTTP handler into the real auth.Service (backed by
-// auth.MockStore, so no database). That the create path stores the
+// authtest.MockStore, so no database). That the create path stores the
 // constraints is covered at the service and adapter level by #957's tests.
 
 const (
@@ -48,15 +49,15 @@ func (a *realAPIKeyAuth) ListUserAPIKeysAPI(ctx context.Context, userID string) 
 // newAPIKeyRoundtripHandler returns a handler wired to a real auth.Service,
 // the store behind it, and a pointer that receives the key the service hands
 // to the store.
-func newAPIKeyRoundtripHandler(t *testing.T) (*Handler, *auth.MockStore, **auth.UserAPIKey) {
+func newAPIKeyRoundtripHandler(t *testing.T) (*Handler, *authtest.MockStore, **auth.UserAPIKey) {
 	t.Helper()
-	store := new(auth.MockStore)
+	store := new(authtest.MockStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	user := &auth.User{
 		ID:           roundtripUserID,
 		Email:        "owner@example.com",
 		Active:       true,
-		PasswordHash: auth.TestPasswordHash(t, roundtripOwnerPw),
+		PasswordHash: authtest.TestPasswordHash(t, roundtripOwnerPw),
 		GroupIDs:     []string{auth.DefaultAdminGroupID},
 	}
 	store.On("GetUserByID", mock.Anything, roundtripUserID).Return(user, nil)
@@ -77,7 +78,7 @@ func newAPIKeyRoundtripHandler(t *testing.T) (*Handler, *auth.MockStore, **auth.
 	mockAuth.On("ValidateCSRFToken", mock.Anything, roundtripToken, roundtripCSRF).Return(nil).Maybe()
 	mockAuth.grantAdmin()
 
-	service := auth.NewService(auth.ServiceConfig{Store: store, CSRFKey: auth.TestCSRFKey()})
+	service := auth.NewService(auth.ServiceConfig{Store: store, CSRFKey: authtest.TestCSRFKey()})
 	return &Handler{auth: &realAPIKeyAuth{MockAuthService: mockAuth, service: service}}, store, stored
 }
 
