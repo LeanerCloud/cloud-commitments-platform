@@ -6,6 +6,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -782,4 +783,19 @@ func TestFilteredProbers_PageCapYieldsNoCombos(t *testing.T) {
 			assert.Empty(t, got, "a capped walk must not record a partial matrix")
 		})
 	}
+}
+
+// TestSPPlanKeysMatchLibrarySlugs pins the probed Savings Plans service keys to
+// the library's per-plan-type slugs, the ones the frontend and purchase use (#7).
+func TestSPPlanKeysMatchLibrarySlugs(t *testing.T) {
+	planTypes := common.SavingsPlansPlanTypes()
+	got := make([]string, 0, len(spPlanKeys))
+	want := make([]string, 0, len(planTypes))
+	for _, pk := range spPlanKeys {
+		got = append(got, pk.service)
+	}
+	for _, pt := range planTypes {
+		want = append(want, string(pt))
+	}
+	assert.ElementsMatch(t, want, got)
 }
