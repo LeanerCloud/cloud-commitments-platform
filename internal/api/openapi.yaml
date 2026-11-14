@@ -689,6 +689,12 @@ paths:
       operationId: patchPlan
       tags: [Plans]
       summary: Partially update a purchase plan
+      description: >-
+        Honours only name, enabled, auto_purchase and notification_days_before.
+        The request body uses the PlanRequest schema, but every other PlanRequest
+        field (provider, service, term, payment, ramp_schedule, target_accounts and
+        the rest) is ignored, not rejected. Use PUT /api/plans/{id} to change them,
+        and PUT /api/plans/{id}/accounts to change the plan's accounts.
       parameters:
         - $ref: '#/components/parameters/CSRFToken'
       requestBody:

@@ -196,7 +196,8 @@ const GLOBAL_CONFIG_FIELDS: ReadonlyArray<readonly [keyof api.Config, readonly s
 ];
 
 // Cached service configs from last load — used as base when saving to preserve
-// non-UI fields (ramp_schedule, include_engines, etc.) that SaveServiceConfig replaces entirely.
+// non-UI fields when a row is re-keyed. For an existing row the server overlays only
+// the UI-editable keys and ignores ramp_schedule; it honours ramp_schedule only on a row's first save.
 let loadedServiceConfigs: api.ServiceConfig[] = [];
 
 // Rows loaded from an old Settings id (#613) and not yet written under the

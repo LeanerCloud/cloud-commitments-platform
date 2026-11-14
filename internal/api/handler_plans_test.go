@@ -1218,6 +1218,46 @@ func TestHandler_patchPlan_UpdateMultipleFields(t *testing.T) {
 	assert.Equal(t, 5, plan.NotificationDaysBefore)
 }
 
+// PATCH honours only name, enabled, auto_purchase and notification_days_before.
+// Any other PlanRequest field is ignored (documented on the PATCH operation in
+// openapi.yaml); this pins that contract so a change is deliberate (#1776).
+func TestHandler_patchPlan_OtherPlanRequestFieldsAreIgnored(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	mockAuth := new(MockAuthService)
+	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
+
+	adminSession := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}
+	existingPlan := &config.PurchasePlan{
+		ID:       "11111111-1111-1111-1111-111111111111",
+		Name:     "Original Name",
+		Services: map[string]config.ServiceConfig{"aws/rds": {Provider: "aws", Service: "rds", Term: 1}},
+	}
+
+	mockAuth.On("ValidateSession", ctx, "admin-token").Return(adminSession, nil)
+	mockAuth.grantAdmin()
+	mockStore.On("GetPurchasePlan", ctx, "11111111-1111-1111-1111-111111111111").Return(existingPlan, nil)
+	mockStore.On("UpdatePurchasePlan", ctx, mock.MatchedBy(func(p *config.PurchasePlan) bool {
+		svc := p.Services["aws/rds"]
+		return p.Name == "Original Name" && p.Enabled && svc.Term == 1 && len(p.Services) == 1
+	})).Return(nil)
+
+	handler := &Handler{config: mockStore, auth: mockAuth}
+	req := &events.LambdaFunctionURLRequest{
+		Headers: map[string]string{"Authorization": "Bearer admin-token"},
+		Body:    `{"enabled": true, "provider": "azure", "service": "vm", "term": 3, "ramp_schedule": "weekly-25pct", "target_accounts": ["x"]}`,
+	}
+	result, err := handler.patchPlan(ctx, req, "11111111-1111-1111-1111-111111111111")
+	require.NoError(t, err)
+
+	plan := result.(*config.PurchasePlan)
+	assert.True(t, plan.Enabled)
+	assert.Equal(t, "Original Name", plan.Name)
+	assert.Equal(t, 1, plan.Services["aws/rds"].Term)
+	assert.Len(t, plan.Services, 1)
+}
+
 func TestHandler_patchPlan_InvalidUUID(t *testing.T) {
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
