@@ -89,23 +89,23 @@ type ManagerInterface interface {
 
 // Scheduler handles scheduled tasks.
 type Scheduler struct {
-	stsClient       STSClient
-	purchase        ManagerInterface
+	ambientAWSCreds aws.CredentialsProvider
+	config          config.StoreInterface
 	email           email.SenderInterface
 	providerFactory provider.FactoryInterface
 	credStore       credentials.CredentialStore
 	oidcSigner      oidc.Signer
 	assumeRoleSTS   credentials.STSClient
+	stsClient       STSClient
+	purchase        ManagerInterface
 	bastionSTS      credentials.STSClientFactory
-	ambientAWSCreds aws.CredentialsProvider
-	config          config.StoreInterface
+	alertRetry      map[string]bool
 	dashboardURL    string
 	oidcIssuerURL   string
 	cacheTTL        time.Duration
+	alertRetryMu    sync.Mutex
 	collecting      atomic.Bool
 	isLambda        bool
-	alertRetryMu    sync.Mutex
-	alertRetry      map[string]bool
 }
 
 // defaultCacheTTL is the fallback when CUDLY_RECOMMENDATION_CACHE_TTL is
